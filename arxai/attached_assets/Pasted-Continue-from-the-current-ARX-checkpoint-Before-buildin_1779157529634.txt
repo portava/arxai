@@ -1,0 +1,390 @@
+Continue from the current ARX checkpoint.
+
+Before building anything, check what already exists first and reuse current code:
+- Market Scanner
+- Ruby AI explanation panels
+- MT5 Setup
+- Master Bridge Demo/Live routing
+- admin dashboard
+- economic calendar / impact calendar work
+- trade ticket
+- live/demo command pipeline
+- chart components
+- auth/admin logic
+- one-click trade logic if any
+- queues, idempotency, command locks, and performance utilities
+
+Do not blindly rebuild.
+Do not place a live trade.
+Do not auto-enable live trading.
+Do not expose bridge tokens or secrets.
+Keep all master bridge user approval toggles and live safety gates in place.
+
+Build the missing pieces for the next ARX upgrade:
+
+PART 1 — SELECTED MARKET INTELLIGENCE WINDOW
+
+Add a persistent “Ruby Market Intelligence” window/panel for any selected market.
+
+When a user selects a symbol/pair from scanner, watchlist, trade page, chart, or search, show a small window that explains that market throughout the day.
+
+The panel should update on a smart interval and when important events happen.
+
+It should explain the selected market using all available criteria:
+- trend direction
+- market structure
+- support/resistance
+- key zones
+- momentum
+- volatility
+- volume if available
+- recent candles
+- higher timeframe context
+- spread
+- session/time of day
+- economic calendar events
+- impact calendar events
+- major news/current events if available
+- surprise/random event alerts
+- user’s trade history on that symbol
+- open positions on that symbol
+- Ruby’s current bias: Buy / Sell / Neutral
+- confidence level
+- invalidation point
+- possible stop loss area
+- possible take profit area
+- risk warning
+
+Keep it compact. Do not create a giant paragraph.
+
+Format example:
+- Bias: Buy / Sell / Neutral
+- Why it matters now:
+- Key level:
+- Risk:
+- Upcoming event:
+- Confidence:
+- Ruby note:
+
+If the user clicks/selects the market, show “Highlights”:
+- strongest bullish reason
+- strongest bearish reason
+- key support
+- key resistance
+- upcoming event risk
+- suggested caution
+- latest scanner signal
+- related open trade if any
+
+Ruby must never promise profit. Use careful language:
+“This may favor buyers.”
+“This setup weakens if…”
+“Wait for confirmation if momentum fades.”
+
+PART 2 — DIRECT SYMBOL / PAIR SELECTOR IN SCANNER
+
+Update Market Scanner so users can select a direct pair or symbol instead of only grouped categories.
+
+Add:
+- search input: “Search symbol or pair…”
+- direct symbol dropdown
+- recent symbols
+- favorite symbols
+- popular symbols
+- asset type filter: Forex, Metals, Crypto, Stocks, Indices if supported
+- broker symbol compatibility check
+
+Examples:
+- EURUSD
+- GBPUSD
+- USDJPY
+- XAUUSD
+- BTCUSD
+- AAPL
+
+If broker uses suffixes like EURUSDm or EURUSD., the app should map/display clean symbol but send correct broker symbol.
+
+Scanner should support:
+- grouped scan mode
+- direct symbol mode
+- selected symbol intelligence panel
+- direct trade from selected symbol
+
+PART 3 — CLEAN UP UI LANGUAGE
+
+Clean up technical/code language across the UI.
+
+Replace raw backend labels for normal users with friendly labels.
+
+Examples:
+- FILLED_DEMO → Filled
+- MASTER_LIVE_BLOCKED → Blocked
+- USER_NOT_APPROVED_FOR_MASTER_LIVE → Admin approval required
+- MASTER_BRIDGE_HEARTBEAT_STALE → Bridge disconnected or stale
+- BRIDGE_BINDING_MISMATCH → Bridge mismatch detected
+- REJECTED_READ_ONLY_MODE_ACTIVE → Bridge is in read-only mode
+
+Keep raw technical codes available only in:
+- Admin debug
+- advanced diagnostics
+- logs
+- expandable “technical details”
+
+Normal user UI should feel clean, polished, and understandable.
+
+PART 4 — ECONOMIC CALENDAR + IMPACT CALENDAR AUDIT
+
+Check what we already built for:
+- economic calendar
+- impact calendar
+- major upcoming events
+- surprise/randomly announced events
+- high-impact news alerts
+- event impact on symbols/pairs
+
+Do not duplicate it.
+
+If missing or incomplete, build/finish:
+
+Economic Calendar page/card:
+- event name
+- country/currency
+- expected impact: low / medium / high
+- time/date
+- forecast
+- previous
+- actual
+- affected symbols
+- countdown
+- source/status
+- Ruby summary
+
+Impact Calendar / Market Impact Feed:
+- major upcoming events
+- surprise events
+- unscheduled announcements
+- central bank statements
+- inflation/jobs/rate decision alerts
+- geopolitical/market shock alerts if available
+- symbol impact mapping
+
+Add event badges to Market Scanner and Trade Ticket:
+- “High-impact event soon”
+- “News risk”
+- “Spread/volatility warning”
+- “Surprise event detected”
+
+Ruby Market Intelligence should include event warnings when a selected market is affected.
+
+PART 5 — LIVE TRADE CHART ENTRY WINDOW
+
+Whenever a user places a live trade, show a window next to the trade that displays the position entry on the chart.
+
+Requirements:
+- small chart preview beside/under the trade result
+- entry price line
+- stop loss line
+- take profit line
+- current price
+- direction marker: Buy/Sell
+- broker ticket
+- volume
+- floating P/L
+- time entered
+- source: Trade page / Scanner / Ruby / Master Bridge
+- status: Open / Closed / Rejected / Failed
+
+If chart component already exists, reuse it.
+If no chart component exists, build a lightweight mini-chart first.
+
+For mobile, show this as an expandable “View on Chart” panel.
+
+PART 6 — ADMIN LOGIN + ADMIN ACCESS CONTROL
+
+Check existing auth first.
+
+Add or finish Admin Login and admin-only routing.
+
+Requirements:
+- admin login page
+- admin role/permission check
+- server-side admin guard
+- admin dashboard protected from normal users
+- master bridge dashboard admin-only
+- user master live approval toggles admin-only
+- audit logs for admin actions
+- no frontend-only security
+
+Admin actions to audit:
+- user approval
+- user disable/suspend/risk lock
+- bridge mode change
+- kill switch
+- emergency stop
+- live setting changes
+- master bridge selection
+- risk setting changes
+
+PART 7 — ONE-CLICK TRADE TOGGLE
+
+Add a user-controlled one-click trade toggle.
+
+Default must be OFF.
+
+When OFF:
+- every trade requires normal confirmation
+
+When ON:
+- user can submit faster, but still server-guarded
+
+Requirements:
+- user must explicitly enable it
+- show risk warning
+- require typed confirmation when enabling:
+  ENABLE ONE CLICK TRADING
+- allow separate toggles for demo and live:
+  demo_one_click_enabled
+  live_one_click_enabled
+
+Live one-click must require:
+- user approved for live
+- master live toggle on if using master bridge
+- risk disclosure accepted
+- stop loss default configured
+- max lot configured
+- kill switch available
+- live mode enabled
+- admin policy allows live one-click
+
+Even with one-click enabled, server must still enforce:
+- user approval
+- bridge readiness
+- max lot
+- stop loss rule
+- daily loss
+- exposure limits
+- idempotency
+- duplicate prevention
+- market open
+- symbol allowed
+
+Show clear UI:
+“One-click trading is ON”
+“One-click trading is OFF”
+
+PART 8 — MULTI-USER PERFORMANCE + CONCURRENCY
+
+Design and implement smooth performance for multiple users trading at the same time.
+
+Important scenario:
+What happens if 10 users place a trade at the same time, or the same trade at the same time?
+
+Build server-side concurrency controls:
+
+1. Command queue
+All trade requests become queued commands before EA dispatch.
+
+2. Idempotency
+Every trade submit must have idempotency key.
+Duplicate taps or repeated requests must not create duplicate trades.
+
+3. Per-user locks
+Prevent one user from accidentally submitting the same trade multiple times at once.
+
+4. Master bridge dispatch lock
+Only one dispatch worker should send commands to a single MT5 bridge at a time, or use safe ordered batching if supported.
+
+5. Risk reservation
+Before sending to MT5, reserve exposure/margin/risk for that user.
+If the trade fails/rejects, release reservation.
+If filled, convert reservation into real allocation.
+
+6. Exposure checks must be atomic
+If 10 users try the same EURUSD trade at once, the app must:
+- check master exposure limit atomically
+- allow only the trades that fit limits
+- block the rest with:
+  MASTER_ACCOUNT_EXPOSURE_LIMIT_REACHED
+
+7. Queue statuses
+Show:
+- Queued
+- Waiting for bridge
+- Sent to MT5
+- Filled
+- Rejected
+- Failed
+- Blocked
+
+8. Rate limits
+Add:
+- per-user submit rate limit
+- per-symbol cooldown
+- bridge command throughput limit
+- admin-configurable limits
+
+9. Scaling
+Use efficient polling or websocket/SSE updates so UI does not constantly spam the server.
+
+10. Multi-user safety
+If two users place the same trade:
+- each gets their own ARX command
+- each gets their own allocation if filled
+- broker side may produce separate tickets on hedging accounts
+- on netting accounts, app must allocate internally
+
+11. Failure handling
+If bridge disconnects:
+- queue pauses
+- no new commands dispatch
+- UI says bridge disconnected
+- commands remain pending or fail safely based on timeout policy
+
+12. Performance dashboard
+Admin dashboard should show:
+- queue depth
+- pending commands
+- dispatch rate
+- average fill time
+- rejected count
+- failed count
+- bridge latency
+- heartbeat age
+- active users
+- commands per minute
+
+PART 9 — QA TESTS
+
+Add or update tests for:
+
+1. Selected market intelligence panel appears.
+2. Direct symbol search works in scanner.
+3. Scanner can switch between grouped and direct-symbol mode.
+4. Ruby Market Intelligence shows highlights.
+5. UI no longer shows raw technical codes to normal users.
+6. Economic calendar existing work is detected/reused.
+7. High-impact event warning appears on affected symbols.
+8. Live trade chart entry window appears after live trade result.
+9. Admin login blocks normal users.
+10. Admin pages require server-side admin role.
+11. One-click trading is OFF by default.
+12. One-click trading requires typed confirmation to enable.
+13. One-click still respects risk/bridge/server guards.
+14. Ten simultaneous trade requests do not duplicate commands.
+15. Ten simultaneous requests respect master exposure limit.
+16. Same user double tap creates only one command.
+17. Bridge dispatch lock prevents unsafe parallel sends.
+18. Queue statuses update correctly.
+19. Market Scanner master live remains user-toggle gated.
+20. No secrets exposed.
+
+Acceptance proof:
+- selected market explanation window works
+- direct symbol scanner works
+- economic/impact calendar status is reported: existing/reused or newly completed
+- live trade chart window is visible
+- admin login exists and protects admin dashboard
+- one-click toggle exists and defaults OFF
+- concurrency test with 10 simultaneous trade requests passes
+- user approval/master bridge safety remains enforced
+- no live trade auto-fires during QA

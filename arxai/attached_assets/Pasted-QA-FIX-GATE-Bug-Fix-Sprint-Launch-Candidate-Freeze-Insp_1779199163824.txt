@@ -1,0 +1,58 @@
+QA/FIX GATE — Bug Fix Sprint + Launch Candidate Freeze
+
+Inspect the bug fix sprint and launch candidate freeze work from the previous pass.
+
+Do not rebuild unrelated systems. Only repair missing or broken launch-critical pieces.
+
+Verify:
+
+1. Full staging dry-run report was inspected.
+2. Blockers were grouped by critical, high, medium, and low.
+3. Critical blockers were fixed or clearly listed as remaining blockers.
+4. High blockers were fixed or clearly listed as remaining blockers.
+5. No unrelated feature expansion happened.
+6. No safety checks were removed to make tests pass.
+7. Launch candidate version was created.
+8. Release notes exist.
+9. Known issues list exists.
+10. Manual QA checklist exists.
+11. Rollback/deployment notes exist.
+12. Launch candidate QA script exists and is runnable.
+13. Demo mode still works and cannot create live commands.
+14. Personal MT5 setup/status still works.
+15. Shared Master request/approval/allocation still works.
+16. Normal users cannot see shared master global totals.
+17. User A cannot see User B data.
+18. Admin pages/APIs remain protected.
+19. Ruby uses only current-user context for normal users.
+20. Ruby admin context only works for authenticated admins.
+21. Ruby voice cannot bypass trade confirmation.
+22. Voice trade commands prepare/confirm instead of silently executing.
+23. Kill switches still block live commands.
+24. Close-only still blocks new opens and allows only safe verified exits.
+25. Reconciliation still marks uncertain items NEEDS_REVIEW.
+26. Audit center and exports remain protected and masked.
+27. Disclosures/legal warnings still block required live flows.
+28. Production mode defaults live execution OFF.
+29. Feature flags fail closed.
+30. Mock/fake data does not appear in production runtime.
+31. Public health/errors do not expose internals.
+32. Secret leak probes pass.
+33. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+34. arx_live_commands count was captured before and after.
+35. No live trade was fired during QA.
+36. arx_live_commands count stayed unchanged.
+
+Return:
+- PASS/FAIL table
+- launch candidate version
+- files inspected
+- tests run
+- blockers fixed
+- remaining blockers
+- remaining risks
+- manual QA routes/screens
+- release notes path
+- known issues path
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

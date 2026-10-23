@@ -1,0 +1,376 @@
+Run an ARX Historical Candle Depth Fix.
+
+The chart is still only showing about 6 months of history. This is not acceptable for Smart Chart, Ruby historical reads, scanner context, backtesting, or user chart scrolling.
+
+Current visible issue:
+- EURUSD chart only reaches around 6 months.
+- UI shows “Provider free tier has no older-than cursor.”
+- UI says “Historical only / no live price marker.”
+- Ruby has limited visibility.
+- User cannot scroll back years.
+- This means ARX still does not have true deep historical candle coverage.
+
+Do not fake historical candles.
+Do not use simulator candles for user-facing chart history.
+Do not pretend provider-limited history is full history.
+Do not weaken Chart Truth, Scanner Truth, Risk Governor, AACI, or Security Handshake.
+Do not let third-party history become execution truth.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Find exactly why chart history stops at ~6 months and fix the system so ARX supports deeper verified history.
+
+The chart should support scrolling back as far as real historical data exists.
+
+If deep history does not exist yet, the UI must say exactly:
+“Deep history not available yet.”
+
+But do not leave the system pretending 6 months is enough.
+
+==================================================
+STEP 1 — FIND THE ACTUAL 6-MONTH LIMIT
+==================================================
+
+Inspect every place that may be limiting history:
+
+Frontend:
+- ARXNativeChart
+- Smart Chart page
+- ScannerChartPanel
+- chart hooks
+- candle query builder
+- timeframe/range selector
+- default lookback range
+- max bars requested
+- scroll/backfill handler
+- infinite-scroll historical loader
+- any hardcoded 6mo / 180d / 183d / 200d / 5000 candle limit
+
+Backend:
+- /api/chart/candles
+- /api/data/candles legacy endpoint
+- chartDataService
+- marketDataRouter
+- provider adapters
+- mt5Provider
+- candle warehouse if present
+- historical candle service if present
+- cache/dedup layer
+- provider max range
+- provider no older-than cursor handling
+
+Search for:
+- 6 months
+- 180
+- 183
+- 200
+- 365
+- lookback
+- maxBars
+- limit
+- from
+- to
+- start
+- end
+- olderThan
+- cursor
+- historicalDepth
+- dateRange
+- range
+
+Return the exact file/line causing the 6-month cap.
+
+==================================================
+STEP 2 — SEPARATE “CHART RANGE” FROM “HISTORICAL COVERAGE”
+==================================================
+
+ARX needs separate concepts:
+
+1. Current chart display range
+Example: 1D, 1W, 1M, 6M, 1Y, 5Y, All.
+
+2. Actual historical coverage available
+Example:
+- recent_only
+- 6_months
+- 1_year
+- 5_years
+- deep_available
+- unavailable
+
+Do not use a provider’s 6-month limit as the app’s maximum chart history.
+
+Add or verify fields:
+
+type HistoricalCoverage = {
+  symbol: string;
+  timeframe: string;
+  earliestCandleTime: number | null;
+  latestCandleTime: number | null;
+  candleCount: number;
+  coverageDays: number;
+  coverageStatus:
+    | "none"
+    | "recent_only"
+    | "six_months"
+    | "one_year"
+    | "multi_year"
+    | "deep_available";
+  source: "mt5_broker" | "candle_warehouse" | "provider" | "uploaded_history" | "unknown";
+  deepHistoryAvailable: boolean;
+  blockedReason?: string;
+};
+
+==================================================
+STEP 3 — FIX FRONTEND REQUESTING
+==================================================
+
+If frontend is only asking for 6 months, fix it.
+
+Chart should support:
+- 1D
+- 1W
+- 1M
+- 3M
+- 6M
+- 1Y
+- 5Y
+- ALL
+
+If user scrolls left:
+- request older candles
+- do not stop at 6 months unless backend says no deeper history exists
+- show loading state while fetching older candles
+- dedupe candles
+- preserve scroll position
+- do not refetch the same range endlessly
+
+If backend says provider has no older-than cursor:
+- stop provider pagination
+- show “Deep history not available from this feed”
+- offer broker/MT5 history source when available
+
+==================================================
+STEP 4 — FIX BACKEND HISTORICAL REQUEST CONTRACT
+==================================================
+
+/api/chart/candles should support explicit historical range:
+
+GET /api/chart/candles?symbol=EURUSD&timeframe=D1&from=...&to=...&limit=...
+
+and/or older-than pagination:
+
+GET /api/chart/candles?symbol=EURUSD&timeframe=D1&olderThan=...&limit=...
+
+Return:
+
+{
+  "candles": [],
+  "feedStatus": {},
+  "historicalCoverage": {},
+  "hasMoreHistory": true,
+  "nextOlderThan": 1710000000,
+  "historyUnavailableReason": null
+}
+
+If provider has no older-than cursor:
+- hasMoreHistory: false
+- historyUnavailableReason: "PROVIDER_NO_OLDER_THAN_CURSOR"
+
+If warehouse has older candles:
+- use warehouse first for historical ranges
+- use provider/MT5 for recent live merge
+
+==================================================
+STEP 5 — BUILD REAL DEEP HISTORY PATH
+==================================================
+
+Provider free tier cannot page deeper history. So ARX needs a real historical path.
+
+Preferred architecture:
+
+1. ARX Candle Warehouse
+Persist every accepted candle into database by:
+- symbol
+- brokerSymbol
+- timeframe
+- source
+- openTime
+- open
+- high
+- low
+- close
+- volume
+- spread
+- sourceQuality
+- createdAt
+- updatedAt
+
+2. MT5 CopyRates Historical Backfill
+Use the v2 kernel / EA to pull broker historical candles with CopyRates.
+
+Backfill should support:
+- symbol
+- timeframe
+- start date or bar count
+- max bars per push
+- batch uploads
+- progress tracking
+- retry
+- gap detection
+- duplicate candle update by symbol+timeframe+openTime
+
+3. Historical/live merge
+For chart:
+- old candles from candle warehouse
+- newest/live candles from MT5 broker feed
+- merge without duplicates
+- show source badges honestly
+
+==================================================
+STEP 6 — MT5 HISTORICAL BACKFILL TASK
+==================================================
+
+Plan or implement backend support for requesting MT5 history:
+
+Backend sends remote config/task:
+
+{
+  "type": "HISTORICAL_BACKFILL",
+  "symbol": "EURUSD",
+  "brokerSymbol": "EURUSD",
+  "timeframes": ["M15", "H1", "H4", "D1"],
+  "bars": 5000,
+  "requestId": "hist_EURUSD_D1_001"
+}
+
+Kernel/EA:
+- receives task
+- calls CopyRates
+- sends candles in batches
+- includes requestId
+- includes timeframe
+- includes first/last candle time
+- backend stores in candle warehouse
+- backend reports progress
+
+Do not overload terminal:
+- one symbol/timeframe at a time at first
+- batch limit
+- admin-triggered first
+- expand later
+
+==================================================
+STEP 7 — UI BEHAVIOR
+==================================================
+
+The chart should no longer just stop silently around 6 months.
+
+If deep history exists:
+- user can scroll back
+- 1Y / 5Y / ALL works
+- Ruby can use historical context if coverage is enough
+
+If deep history does not exist:
+Show:
+“Only 6 months available from this feed.”
+“Deep history requires MT5 backfill or historical provider.”
+
+If provider has no cursor:
+Show:
+“Provider cannot load older candles.”
+
+If MT5 backfill is available but not run:
+Show admin:
+“Run MT5 historical backfill.”
+
+Regular user:
+“More history is being prepared.”
+
+==================================================
+STEP 8 — RUBY / SMART CHART BEHAVIOR
+==================================================
+
+Ruby must distinguish:
+
+- current live read
+- recent historical read
+- deep historical read
+- backtest-supported read
+
+If only 6 months exists:
+Ruby can say:
+“I only have about 6 months of history here, so I can read current structure but not long-term behavior.”
+
+Ruby must not say:
+- “multi-year comparison”
+- “5-year pattern”
+- “historically this setup”
+- “backtest confirms”
+
+unless warehouse/backfill/provider proves that coverage exists.
+
+Smart Chart should show:
+- Current range available
+- Historical coverage
+- Earliest candle date
+- Deep history status
+- Backtest eligible: yes/no
+
+==================================================
+STEP 9 — TESTS
+==================================================
+
+Add/update tests:
+
+1. Frontend does not hardcode 6-month max range.
+2. Chart can request 1Y / 5Y / ALL.
+3. Backend supports from/to or olderThan historical queries.
+4. Provider with no older-than cursor returns hasMoreHistory=false.
+5. Provider no-cursor does not retry endlessly.
+6. Warehouse candles can extend history beyond provider limit.
+7. MT5 historical backfill stores candles by symbol+timeframe+openTime.
+8. Duplicate candles are deduped.
+9. Historical/live merge does not duplicate latest candles.
+10. Ruby does not claim deep history when coverage is 6 months.
+11. Smart Chart shows historical coverage honestly.
+12. Backtest is blocked when deep history is unavailable.
+13. User can scroll left until actual earliest candle.
+14. If no more history, UI shows clear reason.
+15. Execution/account truth remains unchanged.
+
+Run:
+- chart tests
+- market data tests
+- historical coverage tests
+- Ruby read tests
+- typecheck
+- CI guards if feasible
+
+==================================================
+COMPLETION REPORT
+==================================================
+
+Return:
+
+- exact reason chart stops at 6 months
+- exact files/lines causing limitation
+- whether frontend request is capped
+- whether backend provider is capped
+- whether warehouse exists
+- whether MT5 CopyRates backfill exists
+- files changed
+- historical coverage contract added/updated
+- chart range / scroll behavior updated
+- backend range query updated
+- candle warehouse status
+- MT5 backfill plan/status
+- Ruby/Smart Chart historical behavior updated
+- tests added/updated
+- typecheck/guard results
+- remaining blockers
+
+Final rule:
+Six months of provider-limited candles is not deep history. ARX must either load real deeper history from MT5/warehouse/historical provider or clearly state that deeper history is not available yet.

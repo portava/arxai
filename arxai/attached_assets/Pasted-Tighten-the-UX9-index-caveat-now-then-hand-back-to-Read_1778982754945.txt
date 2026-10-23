@@ -1,0 +1,51 @@
+Tighten the UX9 index caveat now, then hand back to Readiness/Onboarding → Compliance.
+
+This is not a new feature push. This is a small safety/data-integrity hardening pass based on your own caveat.
+
+Fix the remaining UX9 caveats:
+
+1. live_positions unique index
+- Inspect the current DB schema/migrations first.
+- The current unique index on live_positions(broker_position_id) is global.
+- Replace it with a tenant-safe unique constraint/index on:
+  (user_id, broker_position_id)
+- Do not drop data.
+- Do not break existing queries.
+- Make sure all live_positions reads/writes still scope by authenticated user_id.
+- Handle migration safely if the old index exists.
+- If duplicate global broker_position_id records already exist across different users, preserve them if they have different user_id values.
+
+2. Add seeded multi-user fixture coverage for T508
+Upgrade the current static/minimal HTTP test with seeded multi-user cases covering:
+- duplicate broker callback for same user and same broker_position_id
+- same broker_position_id reported by two different users/EAs must not collide
+- wrong actionRequestId is rejected
+- ticket collision across users is tenant-safe
+- watchdog state transitions stay per-user
+- reconciler never opens/closes trades
+- reconciler only records broker-reported results
+- no secrets exposed
+- PAPER_ONLY hard-lock remains intact
+- placeLiveOrderGuarded still returns BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED
+
+3. QA
+Run:
+- typecheck
+- existing CI guards
+- T508 / UX9 tests
+- any migration/schema validation available
+- build if appropriate
+
+Final report must include:
+- files changed
+- migration/index changed
+- tests added/updated
+- commands run
+- what passed
+- what failed
+- confirmation PAPER_ONLY is still intact
+- confirmation no live trade execution was enabled
+- confirmation live_positions is tenant-safe by (user_id, broker_position_id)
+
+After this hardening pass is green, do not continue deeper into UX9. Return to the agreed order:
+Readiness/Onboarding first, then Compliance Control Center.

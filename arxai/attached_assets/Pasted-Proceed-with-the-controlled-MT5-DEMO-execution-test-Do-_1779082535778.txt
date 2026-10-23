@@ -1,0 +1,73 @@
+Proceed with the controlled MT5 DEMO execution test.
+
+Do NOT unlock live trading.
+Do NOT enable live execution.
+Do NOT enable shared MT5 routing.
+Do NOT enable live auto-close.
+Do NOT expose bridge tokens, broker passwords, account passwords, session secrets, API keys, hashes, or private values.
+Do NOT fake broker status, account type, balance, P&L, market data, candles, TP targets, fills, or execution results.
+
+Preconditions:
+1. Confirm EA v1.26 is installed, compiled, and attached on the VPS.
+2. Confirm account_type_explicit_demo = PASS.
+3. Confirm VERIFIED_DEMO = true.
+4. Confirm bridgeConnected = true.
+5. Confirm heartbeatFresh = true.
+6. Confirm user_owns_bridge = PASS.
+7. Confirm safety_envelope_intact = PASS.
+8. Confirm live trading remains BLOCKED.
+9. Confirm shared MT5 routing remains BLOCKED.
+10. Confirm live auto-close remains ALERT_ONLY.
+
+Test flow:
+1. Open MT5 Setup page → Demo Execution Control card.
+2. Arm MT5_DEMO_EXECUTION for the logged-in user.
+3. Create one minimum-size demo market order only:
+   - Volume: smallest allowed, usually 0.01
+   - Symbol: use a major available demo symbol
+   - Type: market order
+   - Include SL/TP only if valid and available
+4. Require explicit user confirmation before dispatch.
+5. Dispatch the command through:
+   POST /api/me/demo-commands/:id/dispatch
+6. Let EA v1.26 poll and execute only if all demo gates pass.
+7. Reconcile broker result.
+8. Update trade card, journal, notification, audit trail, and command status.
+9. Do not fake fill or P&L.
+10. Do not send any live command.
+
+After the demo order appears and reconciles:
+1. Modify SL/TP on the demo trade after confirmation.
+2. Reconcile the modify result.
+3. Close the demo trade after confirmation.
+4. Reconcile the close result.
+5. Confirm journal/performance/audit updated.
+
+Run:
+1. Typecheck
+2. CI guards
+3. Demo execution gate test
+4. Demo market order test
+5. Demo SL/TP modify test
+6. Demo close test
+7. Broker reconciliation test
+8. Secret leakage scan
+9. Per-user isolation regression
+10. Live trading locked regression
+11. Shared MT5 routing blocked regression
+12. Safety-envelope regression
+
+End with:
+- Demo execution arm result
+- Demo order result
+- Broker ticket/order id if safely available
+- SL/TP modify result
+- Close result
+- Reconciliation result
+- Journal/performance result
+- Audit result
+- Whether any live command was attempted
+- Confirmation live trading remains BLOCKED
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation live auto-close remains ALERT_ONLY
+- Final answer: DEMO EXECUTION TEST PASSED or NOT READY, with reasons.

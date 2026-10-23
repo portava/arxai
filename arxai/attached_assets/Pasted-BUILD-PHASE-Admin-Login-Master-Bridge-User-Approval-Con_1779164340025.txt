@@ -1,0 +1,146 @@
+BUILD PHASE — Admin Login + Master Bridge User Approval Console
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Create a secure admin-only area where the operator can log in, view connected bridge status, register/map the shared master MT5 account, and manually approve which users are allowed to trade through the master bridge. Even if the bridge is open, no user should be able to trade live through it unless the admin explicitly enables that user.
+
+1. Inspect existing auth first
+- Check what login/auth/session system already exists.
+- Reuse existing auth if available.
+- Do not create duplicate auth systems.
+- If no admin role exists, add the smallest safe role-based admin layer.
+- Do not hardcode admin credentials in frontend code.
+- Use environment variables or existing user role records for bootstrap admin access.
+- Admin routes must fail closed.
+
+2. Admin login / admin-only access
+- Add an admin login or admin-gated route.
+- Protect all admin pages and admin APIs.
+- Non-admin users must not be able to access:
+  - master bridge controls
+  - user approval toggles
+  - shared account mapping
+  - live execution settings
+  - audit logs
+- If unauthorized, show a clean message: “Admin access required.”
+- Do not expose stack traces or backend errors.
+
+3. Master bridge status panel
+Create an admin page/panel showing:
+- connected bridge status
+- heartbeat status
+- bridge account name/number if safely available
+- broker/server if safely available
+- bridge mode: Read-only / Demo execution / Live execution
+- EA flags:
+  - ReadOnlyMode
+  - EnableLiveExecution
+  - connected URL/base URL status
+- backend live flag:
+  - ARX_LIVE_BROKER_EXECUTION_ENABLED
+- current shared master mapping status
+- last bridge callback time
+- last command status
+- warning if anything is missing
+
+Do not show secrets, bridge tokens, API keys, session secrets, token hashes, or raw credentials.
+
+4. Shared master account mapping
+- Add admin UI/API to register or update a shared master account mapping.
+- This should create/update the shared_master_accounts row needed by SHARED_MASTER_MT5.
+- The UI should clearly show whether the current connected bridge is mapped.
+- If it is not mapped, show:
+  “Master account not mapped. Live shared trading is blocked until an admin maps this bridge.”
+- Keep SHARED_MASTER_MT5 fail-closed if mapping is missing.
+- Do not auto-map silently without admin confirmation.
+
+5. User approval console
+Add an admin console listing users with:
+- user name/email/id
+- account mode
+- demo access status
+- live shared master access status
+- one-click demo permission
+- one-click live permission
+- risk limit profile if available
+- last activity
+- last trade command status
+- approval toggle
+
+Admin should be able to:
+- approve a user for shared master live trading
+- revoke a user from shared master live trading
+- enable/disable one-click live permission per user
+- enable/disable one-click demo permission per user
+- set basic per-user live limits if existing risk settings support it:
+  - max lot size
+  - max open positions
+  - max daily loss
+  - max exposure per symbol
+  - allowed symbols
+- If risk limit system already exists, connect to it.
+- If it does not exist, add only a minimal placeholder structure and do not overbuild.
+
+6. Live safety integration
+Update the live trade safety gate so live SHARED_MASTER_MT5 trading requires all of these:
+
+- backend global live execution enabled
+- connected bridge healthy
+- EA live execution enabled
+- EA not in read-only mode
+- shared master account mapped
+- user approved by admin for shared master live trading
+- user account/session valid
+- symbol allowed
+- exposure reservation passed
+- cooldown passed
+- risk checks passed
+- confirmation or approved one-click path passed
+
+If any condition fails, block the trade with a clean user-facing reason.
+
+7. Admin audit logs
+Add audit logs for:
+- admin login
+- failed admin access attempt
+- shared master account mapped/updated
+- user live approval enabled
+- user live approval revoked
+- one-click live permission changed
+- risk limit changed
+- live trade blocked because user was not approved
+- live trade blocked because master account was not mapped
+- live trade blocked because bridge was unhealthy
+
+Do not log secrets.
+
+8. UI cleanup
+- Keep admin UI simple and readable.
+- Use user-facing labels, not code-heavy wording.
+- Advanced technical details can go in expandable sections.
+- Make mobile layout usable enough for operator checks.
+
+9. Tests
+Add or update tests for:
+- non-admin cannot access admin page
+- non-admin cannot call admin APIs
+- admin can view bridge status
+- admin can map shared master account
+- SHARED_MASTER_MT5 still fails closed when unmapped
+- admin can approve/revoke user
+- unapproved user cannot live trade through master bridge
+- approved user still cannot live trade if bridge/mapping/risk/exposure/cooldown fails
+- one-click live still requires admin permission and safety gates
+- no secrets exposed in admin responses
+- no live command is created during tests without full approval
+
+Return:
+- what was built
+- files changed
+- admin route names
+- API route names
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired during this build

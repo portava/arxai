@@ -1,0 +1,239 @@
+ARX AI is ready for controlled live activation, but the current screenshots still show blockers:
+- Broker Execution: Disabled
+- Live Mode: Demo
+- Routing: User-Owned Bridge
+- Shared Live Trading: Off
+- Master Bridge: Off
+- No master bridge connected yet
+- Typed confirmation phrase is still showing
+- Admin should not have to type phrases to activate live controls
+
+GOAL:
+Perform a controlled live activation setup for the OWNER account only, using safe switch-based admin controls. Do not open live access to all users. Do not place any live trades automatically.
+
+IMPORTANT:
+Do not execute a real trade from this command.
+This command is only to make the live system ready, connected, gated, and controllable.
+
+1. REMOVE TYPED CONFIRMATION PHRASES
+The Live Shared Account / Activation Wizard still shows:
+“Type confirmation phrase: ENABLE LIVE TRADING”
+
+Remove typed confirmation phrase requirements from this page.
+
+Replace with:
+- ON/OFF switches
+- Confirmation modals
+- Confirm / Cancel buttons
+
+Dangerous actions still require a modal, but no typing:
+- Enable Broker Execution
+- Switch Platform Mode to Live
+- Switch Routing to Shared Master MT5
+- Enable Shared Live Trading
+- Enable Master Bridge Live
+- Release/Engage Kill Switch
+- Approve live access for a user
+
+2. FIX LIVE SHARED ACCOUNT PAGE MOBILE UI
+Clean the Live Shared Account page on mobile.
+
+Current issue:
+Tabs are still partially cut off/overlapping horizontally.
+
+Fix with:
+- Horizontal scroll pill tabs with proper spacing
+OR
+- Mobile dropdown section selector
+
+Tabs/sections should be:
+- Live Account
+- Approved Users
+- Bridge Health
+- Open Trades
+- Kill Switches
+- Audit
+
+No overlapping text. No hidden buttons. Bottom nav and Ruby bubble must not cover controls.
+
+3. CONNECT / PIN MASTER BRIDGE FLOW
+The page says:
+“No master bridge connected yet.”
+
+Create a clean operator flow:
+
+Step 1: Detect MT5 bridge / EA heartbeat
+- Show “Bridge Connected” only if the live EA/bridge is actually connected.
+- Show last heartbeat time.
+- Show account login masked, broker name if available, server, balance/equity if available.
+- Do not expose broker password or secrets.
+
+Step 2: Pin Current Master Bridge
+- Add button: “Pin Current Master Bridge”
+- Only enable this button when bridge heartbeat is valid.
+- Use confirmation modal:
+  “This will set the connected MT5 account as the live shared master bridge.”
+- No typing.
+
+Step 3: Verify bridge is pinned
+- Show friendly status:
+  “Master Bridge: Connected”
+  “Last heartbeat: ___”
+  “Execution mode: Disabled/Enabled”
+
+If no bridge is connected, do not pretend live is ready. Show:
+“Connect MT5 bridge first, then pin the master bridge.”
+
+4. CONTROLLED OWNER-ONLY LIVE ACTIVATION
+Enable live capability only for the OWNER account first:
+- andraie.co@gmail.com
+- role: OWNER/admin/operator if already configured
+
+Do not enable live trading for any other user.
+
+Owner account should have:
+- Account Approved: ON
+- User Enabled: ON
+- Paper Trading: ON
+- Demo Trading: ON
+- Live Trading: ON only after modal confirm
+- Shared/Master Bridge: ON only after modal confirm
+- Broker Execution Permission: ON only after modal confirm
+- Max lot size set to the safest small default
+- Max daily loss set to a safe small default
+- Max open trades set to 1 for first live test
+- Stop loss required: ON
+- Take profit required: ON
+- One-click trading: OFF for first live test
+- AI auto-close: OFF / alert-only for first live test
+- AI auto-trading: OFF unless manually enabled later
+
+5. LIVE GATES
+Create/repair a clear 16-gate live readiness evaluator.
+
+Live should show PASS only when:
+- Owner is signed in
+- Owner has live trading approved
+- Owner has shared/master bridge approved if using shared bridge
+- Master bridge is pinned
+- MT5/EA heartbeat is fresh
+- Broker execution is enabled
+- Platform mode is LIVE
+- Routing is correct
+- Kill switch is released
+- Stop loss requirement is active
+- Risk template is assigned
+- Max lot size is set
+- Max daily loss is set
+- Max open trades is set
+- Audit logging is working
+- Order preview/confirmation is working
+- No regular user has unauthorized live access
+- Environment/server live execution flag is configured if required
+
+If any gate fails, show a friendly blocker list, not raw backend variable names.
+
+6. FRIENDLY LABELS ONLY
+Do not show raw backend/internal labels in the main UI.
+
+Replace:
+- ARX_LIVE_BROKER_EXECUTION_ENABLED
+- platformMode=DEMO
+- routing=USER_OWNED
+- sharedLiveTradingEnabled
+- masterBridgeLiveEnabled
+- arx_live_commands
+- API route names
+
+With:
+- Broker Execution: On/Off
+- Live Mode: Demo/Live
+- Routing: User-Owned Bridge / Shared Master Bridge
+- Shared Live Trading: On/Off
+- Master Bridge: Connected/Not Connected
+- Pending Commands: 0
+
+Move technical details into collapsed admin-only “Advanced Technical Details.”
+
+7. LIVE ACTIVATION SWITCHES
+Add clear switches in Activation Wizard:
+
+- Broker Execution: ON/OFF
+- Platform Live Mode: ON/OFF
+- Shared Master Routing: ON/OFF
+- Shared Live Trading: ON/OFF
+- Master Bridge Live: ON/OFF
+- Kill Switch Released: ON/OFF
+
+Each switch:
+- Saves to backend/database/server state
+- Updates UI immediately
+- Rolls back if save fails
+- Writes to audit log
+- Requires confirmation modal for dangerous actions
+- Does not require typing
+
+8. FIRST LIVE TEST MODE
+Add a “First Live Test Mode” for OWNER only.
+
+When enabled:
+- Max open live trades = 1
+- One-click trading = OFF
+- AI auto-trading = OFF
+- AI auto-close = alert-only
+- Require SL = ON
+- Require TP = ON
+- Manual order confirmation required
+- Lot size capped to smallest safe value supported by broker/symbol
+- Show warning before sending any real order
+- Log every step
+
+This mode should prepare the system for one tiny manual live test, but should not place a trade automatically.
+
+9. SECURITY
+Regular users must not see:
+- Live Shared Account operator controls
+- Broker execution controls
+- Kill switches
+- Activation Wizard
+- Bridge technical details
+- Admin audit logs
+- Other users
+- Backend route names
+- API names
+- Env/internal labels
+
+Only OWNER/admin/operator can see this page.
+
+10. AUDIT LOG
+Every live activation action must be audited:
+- Admin/operator
+- Action
+- Previous value
+- New value
+- Timestamp
+- Confirmation accepted
+- Result
+- Target user if applicable
+
+11. ACCEPTANCE TEST
+Before stopping, verify:
+- Typed confirmation phrase is gone.
+- Switches replace typed confirmations.
+- Dangerous switches use confirmation modals.
+- Mobile tabs do not overlap.
+- Bridge status clearly says connected or not connected.
+- Pin Current Master Bridge only works when bridge heartbeat exists.
+- Broker Execution can only turn on after confirmation.
+- Platform Live Mode can only turn on after confirmation.
+- Shared Master Routing can only turn on after confirmation.
+- Owner account can be live-approved.
+- Other users are not live-approved automatically.
+- First Live Test Mode exists and is safe.
+- No live trade is placed automatically.
+- Regular users cannot see live operator controls.
+- Friendly labels replace backend/internal labels.
+- Audit log records all changes.
+- Login, scanner, Ruby voice/chat, trade modal, admin user controls, and bridge status still work.
+
+Run typecheck/build and fix all errors before stopping.

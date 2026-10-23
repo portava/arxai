@@ -1,0 +1,259 @@
+PHASE 22H — AUDIT FIRST, THEN PATCH ARX AI FOLLOW-UP MEMORY + SCANNER COMPLETION
+
+Do NOT start by rebuilding or adding duplicate systems.
+
+FIRST: inspect the current ARX AI implementation and determine what is already done, partially done, missing, broken, or duplicated. Only after that, make the smallest necessary adjustments.
+
+CURRENT USER ISSUE:
+The user asked ARX AI to check the scanner and tell them what market is good to trade right now.
+
+ARX replied:
+“Understood. Let’s take a look at the market scanner. Please give me a moment to gather the latest data on potential trading opportunities.”
+
+Then the user sent:
+“?”
+
+Instead of continuing the scanner request, ARX explained the current page/dashboard using getCurrentPageHelp.
+
+That is wrong. “?” should have followed up on the unresolved scanner request.
+
+MAIN GOAL:
+Check what is already implemented first, then patch only what is needed so ARX AI:
+- remembers recent chat context inside the active session
+- understands short follow-ups like “?”, “and?”, “what did you find?”
+- does not misroute scanner follow-ups to page help
+- actually calls scanner/market-data tools when available
+- clearly says when market data/scanner data is unavailable
+- does not fake live trading recommendations
+- keeps voice and text using the same AI context
+
+STRICT RULES:
+1. Do not rebuild the AI popup.
+2. Do not redesign the UI.
+3. Do not duplicate existing systems.
+4. Do not remove working voice/realtime features.
+5. Do not fake scanner data.
+6. Do not fake market data connection.
+7. Do not route “?” to page help unless the previous unresolved request was actually page help.
+8. Do not tell the user “I don’t retain prior turns” if the current chat history is visible.
+9. Do not leave the assistant saying “give me a moment” without completing the tool action or explaining why it cannot.
+
+STEP 1 — AUDIT CURRENT IMPLEMENTATION FIRST
+
+Inspect the codebase and report what currently exists for each item below.
+
+Create a checklist with status:
+- DONE
+- PARTIAL
+- MISSING
+- BROKEN
+- DUPLICATE
+- UNSAFE
+
+Audit these areas:
+
+A. AI popup/chat frontend
+- Where chat messages are stored
+- Whether recent chat history is preserved
+- Whether each message sends sessionId/userId
+- Whether typed and voice messages use the same send path
+- Whether quick suggestions use the same chat send path
+
+B. Backend AI route
+- Whether backend receives chat history
+- Whether backend receives user/session identity
+- Whether backend receives current page/app context
+- Whether backend receives market/MT5 status
+- Whether backend has a system prompt/context builder
+- Whether backend has tool/function routing
+
+C. Follow-up handling
+- What currently happens when user sends “?”
+- What currently happens when user sends “and?”, “what happened?”, “did you check?”, “what did you find?”
+- Whether previous unresolved requests are tracked
+- Whether there is any pendingAction or equivalent system
+
+D. getCurrentPageHelp routing
+- Where getCurrentPageHelp is triggered
+- Why it was triggered for “?”
+- Whether page help has overly broad matching logic
+- Whether page help is wrongly prioritized over unresolved actions
+
+E. Scanner / market data
+- Whether a scanner page exists
+- Whether a scanner backend endpoint exists
+- Whether scanner returns real candidates
+- Whether scanner depends on MT5/market data
+- Whether market data disconnected state is available to AI
+- Whether scanner request currently returns real data, placeholder data, or no data
+
+F. Voice context
+- Whether voice transcript goes through the same AI route as text
+- Whether voice follow-up has memory
+- Whether voice creates isolated one-off prompts
+
+G. Loading states
+- Whether THINKING/loading clears properly after tool failure
+- Whether input/buttons remain usable after scanner failure
+- Whether failed scanner/tool requests leave the UI stuck
+
+Before patching, output a short internal report in Replit response:
+- files inspected
+- what is already working
+- what is missing
+- what is broken
+- what should not be touched
+- exact patch plan
+
+STEP 2 — ONLY PATCH GAPS FOUND IN AUDIT
+
+After the audit, patch only the missing or broken pieces. Do not replace working systems.
+
+Required behavior after patch:
+
+1. Short follow-up resolver
+Messages like:
+- “?”
+- “??”
+- “and?”
+- “so?”
+- “what happened?”
+- “did you check?”
+- “what did you find?”
+- “you didn’t answer”
+- “I asked you a question”
+- “right now?”
+
+must resolve against the most recent unresolved user request or pending action.
+
+For the exact case:
+User: “Check scanner and tell me what market is good to trade right now.”
+Assistant: “Let me check…”
+User: “?”
+
+ARX should follow up on the scanner request, not explain the page.
+
+2. Pending action tracking
+If not already implemented, add a lightweight pendingAction object.
+
+Example:
+{
+  "type": "market_scanner",
+  "status": "pending" | "running" | "completed" | "failed",
+  "userIntent": "find good market to trade right now",
+  "lastAssistantPromise": "Let’s take a look at the market scanner...",
+  "requiredData": ["scanner_results", "market_data"],
+  "blockingIssue": null
+}
+
+When ARX says it is going to check something, it must either:
+- call the related endpoint/tool and return a result, or
+- immediately explain why it cannot.
+
+Do not leave unresolved “give me a moment” responses.
+
+3. Chat history/session memory
+If chat history is not already sent/stored, add it.
+
+Requirements:
+- Use logged-in userId if available.
+- Use anonymous sessionId if user is not logged in.
+- Send recent 10–20 chat turns or compact history summary to backend.
+- Include last user request.
+- Include last assistant response.
+- Include last unresolved action.
+- Use the same context for typed messages, voice transcripts, and quick suggestions.
+
+4. Fix getCurrentPageHelp routing
+getCurrentPageHelp should only trigger for clear page-help requests, such as:
+- “What page am I on?”
+- “Explain this page”
+- “How do I use this screen?”
+- “What does this button do?”
+- “Help me with this dashboard”
+
+It must NOT trigger for:
+- “?”
+- “and?”
+- “what happened?”
+- “I asked you a question”
+- scanner requests
+- trade opportunity requests
+- MT5 bridge questions
+- risk questions
+
+5. Scanner behavior
+Check whether a real scanner endpoint exists.
+
+If scanner data exists:
+ARX should return ranked paper-trade candidates with:
+- symbol
+- direction bias
+- setup type
+- confidence
+- risk level
+- reason
+- invalidation condition
+- paper-only warning
+
+If market data is disconnected:
+ARX should say:
+“Market data is not connected yet, so I can’t honestly tell you the best market right now. Connect MT5 or a live data feed, then I can scan live conditions. For now, I can help you choose what to watch based on your trading style.”
+
+If scanner backend is not ready:
+ARX should say:
+“The scanner backend is not fully wired to live data yet. I can see the scanner intent, but I can’t return real candidates until the scanner endpoint is connected.”
+
+Do not fake candidates.
+
+6. Trading answer safety
+When user asks what to trade right now:
+- check scanner/market data first
+- do not guarantee profit
+- do not say “perfect trade”
+- do not recommend live execution while live execution is locked
+- keep it paper-only / decision-support language
+
+7. Loading state cleanup
+Make sure:
+- THINKING does not stay stuck
+- scanner failure clears loading
+- text input stays usable
+- quick suggestions stay usable
+- voice does not break text chat
+
+STEP 3 — QA / FIX GATE
+
+After patching, run QA and fix failures before stopping.
+
+QA must verify:
+
+1. Ask: “Check scanner and tell me what market is good to trade right now.”
+2. ARX attempts scanner/market-data route if available.
+3. If market data is disconnected, ARX says so clearly and does not fake candidates.
+4. After that, send: “?”
+5. ARX follows up on the scanner request.
+6. “?” does not call getCurrentPageHelp unless page help was the prior topic.
+7. Ask: “I asked you a question earlier.”
+8. ARX checks current chat context and answers the unresolved scanner question.
+9. Voice transcript follow-ups use the same context as typed messages.
+10. Quick suggestion buttons still work.
+11. Text input remains usable after scanner failure.
+12. THINKING/loading clears after scanner completion or failure.
+13. No raw backend errors appear.
+14. No fake live market recommendations appear while market data is disconnected.
+15. Mobile Safari layout remains stable.
+
+Only continue if QA passes. If anything fails, fix it and rerun QA.
+
+FINAL REPORT REQUIRED:
+After completion, report:
+- files inspected
+- files changed
+- what was already done before patching
+- what was missing or broken
+- why “?” was routed wrong
+- how follow-up memory now works
+- scanner endpoint status
+- what ARX says when market data is disconnected
+- confirmation that typed chat, voice chat, and quick suggestions share the same context

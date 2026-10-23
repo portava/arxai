@@ -1,0 +1,153 @@
+Good — the security CI guard is clean. Since you’re setting up MT5/VPS now, the next phase should be MT5 VPS Bridge Setup + Read-Only Heartbeat Verification.
+
+Paste this into Replit:
+
+Continue to the next phase: MT5 VPS Bridge Setup + Read-Only Heartbeat Verification.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, journal, prop-firm, first-run readiness, audit, or security-role gates.
+Do NOT expose secrets.
+Do NOT print MT5_BRIDGE_TOKEN or any private value.
+Before coding:
+1. Read SECURITY_ROLE_HARDENING_REPORT.md.
+2. Confirm final verdict says READY FOR NEXT PHASE.
+3. Confirm typecheck green, 12/12 CI guards green, paper E2E unchanged, frontend serving, and all safety invariants unchanged.
+4. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+Goal:
+Prepare the app for my real VPS + MT5 desktop bridge setup in read-only mode, so I can safely confirm heartbeat/sync without enabling live execution.
+A. MT5 Bridge Setup Checklist
+Add or verify an operator checklist for:
+- VPS created
+- Windows Server connected by Remote Desktop
+- MT5 installed on VPS
+- Demo MT5 account logged in
+- ARX bridge EA file installed
+- EA compiled with 0 errors
+- EA attached to chart
+- Algo Trading ON
+- WebRequest URL allowed
+- Bridge token configured in Replit secrets
+- ReadOnlyMode=true
+- AllowOrderExecution=false
+- Heartbeat received
+- Broker snapshot read-only received if available
+B. Bridge Diagnostics Endpoint
+Verify or add a read-only diagnostics endpoint showing:
+- bridgeConfigured
+- tokenConfigured boolean only
+- bridgeConnected
+- lastHeartbeatAt
+- heartbeatFresh
+- bridgeMode
+- readOnlyMode
+- allowOrderExecution
+- allowModification
+- allowClose
+- lastError
+- updatedAt
+Rules:
+- Never return token value.
+- Never return secrets.
+- Missing token must show configured:false.
+- Stale heartbeat must show disconnected/offline.
+- Live command permissions must remain false.
+C. Frontend Bridge Diagnostics UI
+Update only the MT5/Bridge/Readiness area as needed to show:
+- MT5 Bridge Setup Checklist
+- Bridge Offline / Waiting for heartbeat
+- Read-only mode
+- Live execution locked
+- Command execution disabled
+- Last heartbeat time
+- WebRequest URL to add in MT5, if safe to show
+- Missing setup steps
+D. EA Setup Instructions In-App
+Add clear instructions for:
+- Open MT5 on VPS
+- File → Open Data Folder
+- MQL5 → Experts
+- Add bridge EA
+- Compile in MetaEditor
+- Tools → Options → Expert Advisors
+- Allow WebRequest for listed URL
+- Attach EA to chart
+- Confirm Experts/Journal tab messages
+Do not include secrets in the instructions.
+E. Heartbeat Verification
+Confirm backend handles:
+- valid heartbeat
+- missing token
+- invalid token
+- stale heartbeat
+- duplicate heartbeat
+- read-only mode heartbeat
+- allowOrderExecution=false heartbeat
+All must remain safe.
+F. Audit Trail
+Audit:
+- bridge diagnostics viewed
+- heartbeat received
+- heartbeat rejected invalid token
+- heartbeat stale
+- bridge checklist viewed
+- broker snapshot unavailable
+- broker snapshot received read-only
+Each audit entry must include:
+- userId if applicable
+- action
+- bridge status
+- reason if rejected/unavailable
+- timestamp
+G. Safety Regression
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = DISABLED
+- Broker placement layer remains locked
+- Backend per-user isolation intact
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No secrets exposed
+- No fake broker status, broker balance, market data, trades, P&L, TP targets, or bridge status
+Run:
+1. Typecheck
+2. Full CI guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Bridge diagnostics endpoint tests
+7. Token redaction/secret leakage tests
+8. Heartbeat valid/invalid/stale tests
+9. Read-only bridge tests
+10. Command execution disabled tests
+11. Audit trail tests
+12. Per-user isolation regression
+13. Safety-envelope regression
+14. Broker-placement locked regression
+15. MT5 bridge UI smoke test
+16. Mandatory code review / architect review
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages unless required for the blocker.
+- Rerun all checks.
+End with a report showing:
+- Files inspected
+- Files changed
+- Bridge checklist result
+- Diagnostics endpoint result
+- Frontend bridge UI result
+- Heartbeat verification result
+- Secret redaction result
+- Tests run/pass/fail
+- Code review result
+- Current bridge status
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR MT5 VPS CONNECTION TEST or NOT READY, with reasons.

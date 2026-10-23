@@ -1,0 +1,81 @@
+Fix the MT5 bridge token handshake mismatch.
+
+Problem:
+Bridge diagnostics show heartbeat occasionally accepted, broker snapshot available, but /api/mt5/commands rejects with TOKEN_NO_USER_MATCH. The EA input label still suggests using MT5_BRIDGE_TOKEN, but current per-user command endpoints require a per-user bridge token. This creates confusion and partial success.
+
+Do NOT expose MT5_BRIDGE_TOKEN.
+Do NOT print any token value.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT enable MT5 command execution.
+Do NOT weaken any safety gate.
+
+Goal:
+Make the MT5 EA and backend use one clear per-user bridge token for the VPS/EA connection, while preserving read-only safety.
+
+Required fixes:
+
+1. Backend token contract
+- Heartbeat and command polling must validate the same per-user bridge token model.
+- If system MT5_BRIDGE_TOKEN is still needed for internal/system checks, keep it server-only.
+- Do not allow the EA to use the shared system token for per-user command polling.
+- TOKEN_NO_USER_MATCH should clearly mean the EA token does not match an active per-user mt5_connection row.
+- Diagnostics should report true/false only, never token values.
+
+2. MT5 Setup page
+- Confirm the logged-in user can generate/regenerate a per-user bridge token.
+- Add/verify a copy button.
+- Label it exactly:
+  “Per-user bridge token — paste into MT5 EA Inputs → BridgeToken”
+- Warning:
+  “Do not screenshot or share this token.”
+- Show token only once after generation.
+- Old/revoked tokens must not validate.
+
+3. EA input label cleanup
+Update/export the EA so the BridgeToken input description no longer says “Paste same value as MT5_BRIDGE_TOKEN.”
+Replace it with:
+“Paste the per-user bridge token from ARX MT5 Setup.”
+
+4. EA behavior
+- Use the same BridgeToken input for heartbeat and poll requests.
+- Do not use multiple token sources.
+- Do not hardcode MT5_BRIDGE_TOKEN.
+- Log only token withheld / length or short fingerprint, never full token.
+- Keep defaults:
+  ReadOnlyMode=true
+  AllowOrderExecution=false
+  AllowModification=false
+  AllowClose=false
+
+5. Export updated EA package
+Create/update:
+mt5-bridge-export/ReplitMT5BridgeEA.mq5
+mt5-bridge-export/README_MT5_BRIDGE_SETUP.md
+mt5-bridge-export/SAFE_DEFAULTS.md
+
+6. Tests
+Run:
+- Typecheck
+- Full CI guards
+- Secret leakage grep
+- Heartbeat valid per-user token test
+- Commands poll valid per-user token test
+- Invalid token test
+- Revoked token test
+- System token rejected on per-user endpoint test
+- Bridge diagnostics no-secret test
+- MT5 commands force-BLOCKED test
+- Live trading locked regression
+- Auto-close ALERT_ONLY regression
+
+End with:
+- Exact EA export path
+- Exact MT5 Setup page/route where I copy the per-user token
+- Whether heartbeat and commands now use the same per-user token contract
+- Confirmation no token values were printed
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY TO REPLACE EA TOKEN AND TEST or NOT READY, with reasons.

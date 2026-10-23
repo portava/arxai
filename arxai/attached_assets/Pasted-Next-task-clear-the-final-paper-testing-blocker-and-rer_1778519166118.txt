@@ -1,0 +1,64 @@
+Next task: clear the final paper-testing blocker and rerun readiness verification.
+
+Current state from the last audit:
+- 13/14 PASS
+- 1 conditional blocker remains
+- 2 unacknowledged CRITICAL alerts are preventing paper session start
+- Live trading is confirmed disabled by multiple independent systems
+- Backend safety, risk controls, security, and permission gates are working correctly
+- PP is correctly blocking session start until critical alerts are acknowledged
+
+Do the following carefully:
+
+1. Open or inspect the Notifications system.
+2. Find the 2 unacknowledged CRITICAL alerts.
+3. Add or confirm a safe acknowledgement workflow:
+   - Alerts must be visible to the user.
+   - User must intentionally acknowledge them.
+   - Acknowledgement must be logged.
+   - Do not auto-clear alerts silently.
+   - Do not delete the alerts from history.
+4. After acknowledgement, rerun:
+   - /api/permission/status
+   - /api/risk-governor/status
+   - /api/readiness/status
+   - /api/broker-readonly/status
+   - /api/paper-sessions/preflight
+   - full readiness checklist
+   - CI guard can-place-trades-invariant
+   - CI guard paper-autopilot-isolation
+5. Confirm the following:
+   - Paper session start is now allowed.
+   - Live trading remains disabled.
+   - canPlaceTrades remains false for live trading.
+   - canPlaceLiveTrade remains false.
+   - broker mode remains READ_ONLY for live trading.
+   - paper testing uses isolated paper-only execution.
+   - No live positions, live orders, or MT5 command tables are modified.
+6. Investigate the 1 endpoint checklist failure only if it is quick and safe.
+   - If it is only docs/codegen/reachability, mark it as non-blocking.
+   - Do not let this delay paper testing unless it is an actual runtime safety failure.
+7. Start Controlled Paper Session #1 only after alerts are acknowledged and preflight passes.
+8. Paper Session #1 rules:
+   - Paper trading only.
+   - Maximum 1 symbol.
+   - Maximum 3 to 5 simulated trade decisions.
+   - No real broker execution.
+   - No live MT5 execution.
+   - Log every AI decision, rejection, entry reason, exit reason, confidence score, risk score, and rule gate result.
+9. After the first controlled paper session, produce a report showing:
+   - Number of paper trade decisions
+   - Approved vs rejected trades
+   - Why each trade was approved or rejected
+   - Whether risk governor blocked anything
+   - Whether the AI followed trading rules
+   - Whether learning confidence improved
+   - Whether any safety gates failed
+   - Whether live trading stayed disabled the entire time
+
+Hard rules:
+- Do not enable live trading.
+- Do not weaken safety gates.
+- Do not bypass the critical alert acknowledgement requirement.
+- Do not fake pass results.
+- Paper testing may begin only after the 2 critical alerts are acknowledged and PP preflight passes.

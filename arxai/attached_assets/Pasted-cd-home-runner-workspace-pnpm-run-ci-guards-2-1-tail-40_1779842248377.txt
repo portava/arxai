@@ -1,0 +1,41 @@
+cd /home/runner/workspace && pnpm run ci:guards 2>&1 | tail -40
+  · Schema OK at lib/db/src/schema/liveTrading.ts
+[PASS] live-order-risk-limits
+  · Verified 9 hard-coded limits and 25 guard checks.
+[PASS] security-role-header-allowlist
+  · Direct reads of the `x-security-role` header are forbidden outside the approved files.
+  · Approved (allowlisted) authority sources:
+  ·   - artifacts/api-server/src/lib/security/session.ts (single auditable control point)
+  ·   - artifacts/api-server/src/lib/security/middleware.ts (server-derived resolver)
+  ·   - artifacts/api-server/src/routes/adminTrading.ts (header-hint-must-match-session pattern)
+  · All other server code MUST resolve role via `readRoleFromRequest(req)` from
+  · `lib/security/middleware.ts`. Never trust client-supplied role headers.
+[PASS] live-broker-execution-defaults (Phase B 9-invariant bundle)
+[PASS] master-live-bridge-binding-non-bypassable
+  · BRIDGE_BINDING_MISMATCH still enforced
+  · master-live gate wired ahead of Phase B
+  · no auto-fire callers
+  · detector/gate import-clean
+[PASS] master-live-user-approval-required
+  · user-access gate wired before master-bridge gate inside SHARED_MASTER_MT5
+  · all admin mutations require ADMIN + write audit row
+  · user endpoint requireUser + no email/role leak
+  · gate library import-clean
+[PASS] one-click-concurrency
+[PASS] scanner-selected-market-safety
+[FAIL] per-user-isolation-me-routes (1 violation)
+  - meTTS.ts:73 [R1-handler-not-auth-gated] router.get("/me/assistant/tts/voices", (_req, res) => {
+  · scanned 56 route file(s) containing /me/* routes; 248 /me/* handlers evaluated
+[PASS] master-bridge-modern-demo-dispatch-uses-routing
+[PASS] master-bridge-live-locked
+[PASS] master-bridge-secrets-not-leaked
+[PASS] risky-wording-frontend
+  · 0 forbidden wording matches across 1 path(s) / 11 pattern(s)
+[PASS] no-internal-names-user-ui
+  · 0 internal-name leaks in user-facing UI (5 patterns, 19 admin paths excluded)
+
+22/23 guards passed in 0.89s
+/home/runner/workspace/scripts:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/scripts@0.0.0 ci:guards: `tsx ./src/ci/run-all.ts`
+Exit status 1
+ ELIFECYCLE  Command failed with exit code 1.

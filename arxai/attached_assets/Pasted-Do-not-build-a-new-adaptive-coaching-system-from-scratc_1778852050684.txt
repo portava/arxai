@@ -1,0 +1,85 @@
+Do not build a new adaptive coaching system from scratch.
+
+First check whether Adaptive Performance Intelligence / Personalized Coaching already exists from the current journal, calendar, risk manager, prop firm mode, setup scoring, entry timing coach, and assistant systems.
+
+The goal is to verify and connect what is already available, not duplicate it.
+
+Audit existing systems for:
+- trade journal insights
+- calendar performance summaries
+- win/loss day aggregation
+- risk behavior tracking
+- prop firm rule status
+- setup scoring history
+- entry timing coaching
+- mistake/pattern detection
+- discipline score or coaching score
+- assistant coaching summaries
+- performance insight cards
+- weekly/daily review logic
+- user-specific data isolation
+- fresh-user empty states
+
+For every item found, report:
+1. File path
+2. Function/component/route name
+3. Whether it is active or dead code
+4. Whether frontend and backend are connected
+5. Whether assistant can access it
+6. Whether it uses real current-user data
+7. Whether it shows fake/sample/demo insights
+8. Whether it respects paper-only/liveLocked
+9. Whether it duplicates another system
+
+Then classify everything as:
+A. Already exists and works
+B. Exists but disconnected
+C. Exists but incomplete
+D. Exists but unsafe/inaccurate
+E. Missing
+F. Duplicate/conflicting
+
+Only after the audit, make minimal fixes:
+- connect existing insight data to the assistant
+- connect existing performance summaries to the UI
+- remove or label fake/sample insights
+- fix fresh-user empty states
+- fix user-isolation issues
+- fix any unsafe coaching language
+- do not create duplicate insight engines
+- do not invent weaknesses, strengths, win rates, or performance patterns
+- do not enable live trading
+- keep paper-only/liveLocked active
+
+The assistant should only say performance insights exist when real user data supports them.
+
+Fresh users should see:
+- No performance insights yet
+- No trade history to analyze yet
+- No journal patterns yet
+- No setup history yet
+- Create paper trades and journal them to unlock coaching insights
+
+Returning users should only see insights from their own real trades, journal entries, calendar results, setup scores, and risk events.
+
+Run typecheck/build/lint if available.
+
+Final report:
+Give me an Existing Adaptive Coaching Audit + Gap Fix Report with:
+1. What already existed
+2. What was already working
+3. What was disconnected
+4. What was incomplete
+5. What was duplicated
+6. What was adjusted
+7. Files changed
+8. Assistant coaching status
+9. UI insight status
+10. Fresh-user honesty result
+11. Returning-user isolation result
+12. Typecheck/build result
+13. Confirmation no fake insights are shown
+14. Confirmation no live trade execution is enabled
+15. Confirmation paper-only/liveLocked remains active
+
+Stop after the report. Do not proceed to another feature.

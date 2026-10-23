@@ -1,0 +1,135 @@
+Continue from the current checkpoint. Slice 1 + Slice 2 are complete. Now update/build MASTER BRIDGE LIVE using the CURRENT CONNECTED BRIDGE as the platform master bridge.
+
+Do not create a new bridge.
+Do not use stale bridge records.
+Do not use mock bridge records.
+Do not require users to connect their own MT5.
+Do not guess bridge id manually.
+Do not auto-place a live trade.
+
+First, detect the current connected bridge from the freshest REAL MT5 heartbeat.
+
+Select the platform master bridge by this priority:
+1. freshest real heartbeat
+2. EA version v1.27 or newer
+3. AccountType REAL/LIVE for master live
+4. terminalConnected=true
+5. algoTradingAllowed=true
+6. ReadOnlyMode=false
+7. EnableLiveExecution=true
+8. token accepted
+9. broker/server present
+10. MT5 account number present
+11. not MOCK
+12. not stale
+13. matching current operator/admin account
+
+Set:
+platform_master_bridge_connection_id = current connected bridge id
+
+Use this same bridge for:
+- MASTER_BRIDGE_LIVE_ENABLED
+- Master Live Dashboard
+- Live Trading page
+- approved user master live commands
+- Market Scanner master live commands
+- master live positions and allocations
+
+If the current connected bridge is DEMO:
+- block master live with MASTER_LIVE_REQUIRES_REAL_BRIDGE
+
+If the current connected bridge is REAL/LIVE:
+- mark it as Active Master Live Bridge
+- show it everywhere master live is referenced
+- allow routing only after all live gates pass
+
+Required UI:
+Master Bridge Dashboard must show:
+- Main Bridge: Current Connected Bridge
+- bridge id
+- MT5 account number
+- broker/server
+- account type
+- EA version
+- heartbeat age
+- ReadOnlyMode
+- EnableLiveExecution
+- MaxLiveLot
+- terminal connected
+- algo trading allowed
+
+MT5 Setup must show:
+“Current connected bridge is being used as the ARX Master Bridge.”
+
+Live Trading must show:
+“Master Live Bridge: Current Connected Bridge.”
+
+Server rules:
+- All master live commands must store selected bridge id.
+- All master live results must come back from the same bridge id.
+- If result bridge id does not match command bridge id, reject with BRIDGE_BINDING_MISMATCH.
+- If heartbeat goes stale, block new commands with MASTER_BRIDGE_HEARTBEAT_STALE.
+- If mock heartbeat is latest, block with MASTER_BRIDGE_REAL_HEARTBEAT_REQUIRED.
+- If AccountType is not REAL/LIVE, block with MASTER_LIVE_REQUIRES_REAL_BRIDGE.
+
+Now build/finish MASTER_BRIDGE_LIVE_ENABLED using this current connected bridge:
+
+1. Approved users can place trades through the single operator-connected LIVE MT5 bridge.
+2. Users do not need their own MT5 account.
+3. Every live command maps back to:
+   - user_id
+   - virtual_live_account_id
+   - command_id
+   - bridge_connection_id
+   - broker_ticket
+4. Users only see their own trades, allocations, P/L, and history.
+5. Admin sees all master bridge activity.
+
+Master live dispatch requires all gates:
+- bridgeMode = MASTER_BRIDGE_LIVE_ENABLED
+- platform_master_bridge_connection_id is set
+- selected bridge equals current connected bridge
+- shared_live_trading_enabled=true
+- ARX_LIVE_BROKER_EXECUTION_ENABLED=true
+- kill switch inactive
+- emergency stop inactive
+- user approved for live
+- user accepted risk disclosure
+- user has live virtual account
+- symbol allowed
+- lot within user max
+- lot within master max
+- master exposure within limit
+- daily loss limit not exceeded
+- stop loss present unless admin override
+- EA v1.27+ heartbeat fresh
+- AccountType REAL/LIVE
+- ReadOnlyMode=false
+- EnableLiveExecution=true
+- terminalConnected=true
+- algoTradingAllowed=true
+- idempotency key unused
+
+If any check fails:
+MASTER_LIVE_BLOCKED:<exact_reason>
+
+Keep:
+- PER_USER_BRIDGE available as fallback
+- MASTER_BRIDGE_DEMO working
+- MASTER_BRIDGE_LIVE_LOCKED blocking live
+- no live trade auto-fire
+- no secrets exposed
+- no EA code changes unless absolutely required
+
+Acceptance proof:
+- Current connected bridge is detected.
+- Current connected bridge is saved as platform master bridge.
+- Master Bridge Dashboard shows the current connected bridge.
+- Live Trading shows the current connected bridge.
+- MASTER_BRIDGE_LIVE_ENABLED uses that bridge only.
+- Stale/mock bridges are ignored.
+- Approved user can create a master live command only when all gates pass.
+- Non-approved user is blocked.
+- User isolation works.
+- Market Scanner master live routes through current connected bridge for approved users.
+- No live trade auto-fires during build/QA.

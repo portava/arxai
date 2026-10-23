@@ -1,0 +1,202 @@
+Paste this next:
+
+Continue to the next phase: Alerts + Notifications + Push Readiness for Trading Safety.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, or ALERT_ONLY gates.
+Do NOT fake market data, candles, scanner opportunities, P&L, news, current events, bridge status, or TP targets.
+Do NOT redesign unrelated pages.
+Before coding:
+1. Read the latest QA report appended to docs/FULL_TRADING_INTELLIGENCE_ENGINE_QA_REPORT.md.
+2. Confirm final answer says READY FOR NEXT PHASE.
+3. Confirm typecheck, 11/11 guards, 8/8 stop-limit QA, market-data cleanup, per-user isolation, and runtime checks were green.
+4. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+Goal:
+Build a real per-user alert and notification system so ARX AI can warn users about trade risk, stale data, bridge issues, scanner changes, TP/SL proximity, and AI close warnings — without executing trades.
+A. Notification Model
+Create or verify per-user notifications with:
+- notificationId
+- userId
+- type
+- title
+- message
+- severity: INFO, WARNING, CRITICAL
+- source: AI, SYSTEM, MARKET_DATA, BRIDGE, TRADE, RISK, SCANNER
+- relatedTradeId/orderId if relevant
+- read/unread
+- deliveredInApp
+- deliveredPush if push is configured
+- createdAt
+- readAt
+- metadata
+Rules:
+- Every notification must be scoped to authenticated userId.
+- No cross-user notification leakage.
+- Missing auth returns 401.
+- Wrong-owner access returns 403/404.
+B. In-App Notification Center
+Add or upgrade UI to show:
+- unread count
+- notification list
+- severity labels
+- source labels
+- timestamp
+- mark as read
+- mark all as read
+- filter by All, Trade, Risk, AI, Market, Bridge, System
+- detail view if useful
+Notifications should include clear safety language:
+- “Alert only — no trade was executed”
+- “Live execution locked”
+- “MT5 command blocked”
+- “Market data stale”
+- “Bridge offline”
+- “Trade near stop loss”
+- “Trade near take profit”
+- “AI close warning”
+C. Push Notification Readiness
+Add or verify push-notification settings:
+- Push Notifications: Configured / Not Configured
+- User opt-in required
+- Browser permission status
+- Push token/subscription storage per user if supported
+- Unsubscribe option
+- Test notification button only for safe test notification
+Rules:
+- Push must not be required for in-app alerts.
+- If push is not configured, show “Push notifications not configured” honestly.
+- Do not fake push delivery.
+- Do not expose secrets/VAPID/private keys.
+- Do not send push to the wrong user.
+- If push infrastructure is missing, create a safe placeholder/status layer and keep delivery disabled.
+D. Alert Rules
+Add backend alert rules for:
+- market_data_stale
+- market_data_unavailable
+- scanner_offline
+- candles_unavailable
+- bridge_offline
+- bridge_heartbeat_stale
+- broker_balance_unavailable
+- command_blocked
+- command_execution_disabled
+- auto_close_alert_only
+- activity_unknown
+- risk_limit_near
+- risk_limit_breached
+- trade_near_stop_loss
+- trade_near_take_profit
+- tp_targets_unavailable
+- ai_close_warning
+- duplicate_action_blocked
+Rules:
+- Alerts must be generated from real backend state only.
+- No fake market/trade conditions.
+- No fake TP/SL proximity without current price.
+- If data is missing, create “unavailable/stale” alert, not a fake analysis alert.
+E. AI Alert Behavior
+AI may generate warning notifications only when:
+- user asks for analysis
+- a monitored condition is detected from real data
+- safety gate says alerting is allowed
+AI must not:
+- execute trades
+- queue real MT5 commands
+- claim a trade was closed
+- claim certainty
+- invent market data or TP/SL levels
+AI close warnings must say:
+“AI alert only — review manually. No trade was closed.”
+F. Trade Card Alert Integration
+Trade/order cards should show:
+- latest alert badge
+- risk warning if near SL/TP and data is fresh
+- data unavailable warning if P&L/SL/TP distance cannot be calculated
+- AI close warning if generated
+- command blocked warning if attempted action was blocked
+G. Audit Trail
+Audit log:
+- notification created
+- notification read
+- mark all read
+- push opt-in changed
+- push delivery attempted
+- push unavailable
+- test notification sent
+- alert rule evaluated
+- alert suppressed due to missing data
+- AI alert generated
+- duplicate alert suppressed
+Each audit entry should include:
+- userId
+- notificationId if relevant
+- tradeId/orderId if relevant
+- action
+- source
+- severity
+- reason
+- timestamp
+H. Duplicate / Spam Protection
+Add alert de-duplication:
+- same alert type + same trade/order + same user should not spam repeatedly
+- use cooldown windows
+- critical alerts may repeat only after state changes or cooldown
+- audit duplicate suppression
+I. Preserve Safety
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = disabled
+- Backend per-user isolation intact
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No fake market/current-events/candle/news/TP/P&L data introduced
+After implementation, run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Notification ownership tests
+7. Unauthenticated 401 tests
+8. Wrong-owner 403/404 tests
+9. In-app notification create/read tests
+10. Mark all read tests
+11. Push configured/unconfigured tests
+12. Test notification safe-mode test
+13. Alert rule tests
+14. Duplicate alert suppression tests
+15. AI alert honesty tests
+16. Trade-card alert badge tests
+17. Market-data stale alert tests
+18. Bridge offline alert tests
+19. Command execution disabled alert tests
+20. Audit trail tests
+21. Per-user isolation regression
+22. Safety-envelope regression
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks.
+End with a report showing:
+- Files inspected
+- Files changed
+- Notification model result
+- In-app notification UI result
+- Push readiness result
+- Alert rules result
+- AI alert behavior result
+- Trade-card alert integration result
+- Tests run and pass/fail results
+- Current push status
+- Current notification status
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

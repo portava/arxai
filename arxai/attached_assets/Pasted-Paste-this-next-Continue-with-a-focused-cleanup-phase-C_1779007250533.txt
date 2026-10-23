@@ -1,0 +1,192 @@
+Paste this next:
+
+Continue with a focused cleanup phase: Close the remaining Prop Firm Mode P2/P3 deferred items from the latest QA report.
+Do NOT build unrelated features.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, journal, prop-firm, or audit gates.
+Do NOT fake prop firm rules, trades, P&L, drawdown, win rate, account status, candles, news, current events, TP targets, or bridge status.
+Do NOT redesign unrelated pages.
+Before coding:
+1. Read the latest Prop Firm Mode QA section appended to docs/FULL_TRADING_INTELLIGENCE_ENGINE_QA_REPORT.md.
+2. Confirm final answer says READY FOR NEXT PHASE.
+3. Confirm the only remaining deferred items are:
+   - trailing drawdown / max risk per trade / max open trades / max pending orders / position-size limits / news-weekend-overnight restrictions schema + rule-engine extension
+   - push/in-app notifications with verbatim prop-firm alert language wired to notification service
+   - pre-existing broker-placement architectural review remains runtime-locked
+4. If any P0/P1 issue exists, stop and fix that first.
+Implement only these deferred items:
+A. Prop Rule Schema Extension
+Add or verify prop-firm rule fields for:
+- trailingDrawdownEnabled
+- trailingDrawdownAmount
+- trailingDrawdownType
+- maxRiskPerTrade
+- maxOpenTrades
+- maxPendingOrders
+- maxPositionSize
+- newsTradingAllowed
+- weekendHoldingAllowed
+- overnightHoldingAllowed
+- strictGuardrailsEnabled
+Rules:
+- Defaults must be safe.
+- Prop Firm Mode default remains OFF.
+- Custom/user-entered rules must not be presented as official verified prop firm rules.
+- Missing data must return INSUFFICIENT_DATA with reason, not fake compliance.
+B. Rule Engine Extension
+Extend the prop-firm challenge rule engine to evaluate:
+- trailing drawdown
+- max risk per trade
+- max open trades
+- max pending orders
+- position-size limits
+- news trading restriction if configured
+- weekend holding restriction if configured
+- overnight holding restriction if configured
+Result statuses must remain:
+- COMPLIANT
+- WARNING
+- VIOLATION
+- BLOCKED
+- INSUFFICIENT_DATA
+- PROP_MODE_OFF
+Rules:
+- Use only logged-in user’s paper/demo ledger, trades, orders, journal, market data, news/current-events availability, and risk settings.
+- If current price, P&L, equity, or news/current-events data is unavailable, return INSUFFICIENT_DATA with a clear reason.
+- Do not fabricate news, weekend/overnight status, P&L, balance, drawdown, or rule compliance.
+- Strict guardrails may block paper actions only.
+- Live trading remains blocked.
+C. Prop Firm Notification Wiring
+Wire prop-firm alerts into the existing notification service using exact safe language.
+Create in-app notifications for:
+- trailing drawdown warning
+- trailing drawdown breached
+- max risk per trade warning
+- max risk per trade breached
+- max open trades reached
+- max pending orders reached
+- max position size warning
+- max position size breached
+- news trading restriction warning
+- weekend holding restriction warning
+- overnight holding restriction warning
+- prop rule insufficient data
+- prop rule blocked paper action
+Required notification language:
+- “Prop firm rule warning — no trade was executed.”
+- “Prop firm guardrail blocked this paper action.”
+- “Live execution remains locked.”
+Rules:
+- Notifications must be per-user scoped.
+- No cross-user notification leakage.
+- Push delivery must fail closed if push is not configured.
+- Do not fake push delivery.
+- Deduplicate repeated alerts with cooldown.
+D. UI Updates
+Update Prop Firm UI / Risk UI / Trade Ticket only where needed to show:
+- trailing drawdown status
+- max risk per trade status
+- max open trades status
+- max pending orders status
+- position-size limit status
+- news/weekend/overnight restriction status
+- strict guardrail status
+- insufficient data reasons
+- latest prop-firm warning notification if relevant
+UI must clearly label:
+- Paper/Demo/Live Locked
+- Prop Firm Mode OFF/ACTIVE
+- Live execution locked
+- No trade executed
+E. Broker Placement Architectural Review
+Do not implement broker placement.
+Do not unlock broker placement.
+Do not create live execution path.
+Add or verify a guard/review note confirming:
+- Broker placement layer remains runtime-locked.
+- placeLiveOrderGuarded still rejects.
+- MT5 commands remain force-BLOCKED.
+- Shared MT5 routing remains BLOCKED.
+- Command execution remains DISABLED.
+- Any future broker-placement implementation must pass a separate live-readiness gate.
+F. Audit Trail
+Audit log:
+- prop trailing drawdown rule evaluated
+- max risk per trade rule evaluated
+- max open trades rule evaluated
+- max pending orders rule evaluated
+- max position-size rule evaluated
+- news/weekend/overnight rule evaluated
+- prop rule warning created
+- prop rule violation created
+- prop rule block created
+- prop notification created
+- duplicate prop alert suppressed
+- insufficient data fallback
+Each audit entry must include:
+- userId
+- propFirmProfileId if relevant
+- tradeId/orderId if relevant
+- action
+- rule checked
+- result
+- reason
+- timestamp
+G. Preserve Safety
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = DISABLED
+- Backend per-user isolation intact
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No fake trades, P&L, drawdown, prop status, market data, candles, news, current events, TP targets, or bridge status
+Run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Prop schema tests
+7. Trailing drawdown rule tests
+8. Max risk per trade rule tests
+9. Max open trades rule tests
+10. Max pending orders rule tests
+11. Position-size limit rule tests
+12. News/weekend/overnight restriction tests
+13. Insufficient data fallback tests
+14. Prop notification wiring tests
+15. Duplicate prop alert suppression tests
+16. Push fail-closed regression tests
+17. AI prop firm honesty regression
+18. Audit trail tests
+19. Per-user isolation regression
+20. Safety-envelope regression
+21. Broker-placement locked regression
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks.
+End with a report showing:
+- Files inspected
+- Files changed
+- Deferred item completion status
+- Prop rule schema result
+- Rule engine extension result
+- Notification wiring result
+- UI result
+- Broker-placement locked review result
+- Tests run/pass/fail
+- Current Prop Firm Mode status
+- Remaining gated/deferred items
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

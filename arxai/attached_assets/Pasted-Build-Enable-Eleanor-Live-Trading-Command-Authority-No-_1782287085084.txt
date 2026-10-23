@@ -1,0 +1,217 @@
+Build — Enable Eleanor Live Trading Command Authority. No simulator defaults for trading-capable flows.
+
+Goal:
+Make Eleanor chat a real live-trading command interface. A user should be able to type or speak a direct trading instruction to Eleanor, and Eleanor should convert it into a live trade request that goes through the same safest live execution pipeline as manual trading.
+
+Important:
+This does NOT mean Eleanor can randomly trade on her own.
+This means Eleanor can execute when the user gives a clear trading command, such as:
+- “Eleanor, buy EURUSD now with 0.01 lot, SL 20 pips, TP 40 pips.”
+- “Enter XAUUSD if price reaches 2335, stop loss 2325, take profit 2355.”
+- “Close my EURUSD trade.”
+- “Move my stop loss to breakeven.”
+- “Take partial profit at 50%.”
+- “Enter when price breaks above 200 EMA and forms FVG, exit at next resistance.”
+
+Core rule:
+Any system that is built to trade must be live-enabled. Do not leave trading-capable flows in simulator/demo-only mode. Demo/simulator may exist only as an explicit testing mode, not as the default or hidden path for production trading.
+
+Required implementation:
+
+1. Eleanor chat live command parser
+Add/upgrade Eleanor chat so typed or spoken commands can produce structured live trade intents:
+
+Supported actions:
+- OPEN_MARKET
+- OPEN_LIMIT
+- OPEN_STOP
+- CLOSE_POSITION
+- CLOSE_ALL_FOR_SYMBOL
+- PARTIAL_CLOSE
+- MODIFY_SL_TP
+- MOVE_STOP_TO_BREAKEVEN
+- CANCEL_PENDING_ORDER
+
+Supported fields:
+- symbol
+- side: BUY/SELL
+- volume/lot size
+- entry type: market/limit/stop/conditional
+- entry price
+- stop loss
+- take profit
+- trailing stop if supported
+- partial close percentage
+- ticket/position id when needed
+- strategy condition text
+- expiration for pending/conditional orders
+- risk percent if user gives risk instead of lot size
+
+2. Live by default for approved traders
+For approved and live-activated traders:
+- Eleanor trade commands should target LIVE mode by default.
+- Do not silently downgrade Eleanor commands to SIMULATED/DEMO.
+- If the user is not live-approved, return a clear blocked response explaining what live requirement is missing.
+- If the system is in test/demo mode, label it honestly and visibly.
+
+3. Eleanor must use the approved live execution pipeline
+Do not let Eleanor insert directly into mt5_commands.
+Do not let Eleanor use the old /api/me/trades/close direct queue bypass.
+Do not let Eleanor bypass broker/risk/audit gates.
+
+Eleanor live commands must route through the safest live execution path:
+
+Eleanor command
+→ structured intent
+→ server-side validation
+→ live account/readiness check
+→ risk validation
+→ emergency stop / kill switch check
+→ bridge/token/heartbeat check
+→ position ownership check for close/modify
+→ create live draft/action request
+→ user confirmation when required
+→ dispatchLiveCommand / approved live pipeline
+→ broker/EA result reconciliation
+→ honest audit log
+→ honest UI status
+
+4. User confirmation model
+For market orders:
+- Eleanor may prepare the order from chat.
+- If the user command is explicit enough, allow one-tap confirmation.
+- If “one-click Eleanor execution” is enabled for the user, allow immediate execution only after the user has armed that setting and accepted the live-risk disclosure.
+- Never let vague suggestions execute.
+
+For conditional orders:
+- User can tell Eleanor an entry condition and exit rules.
+- Eleanor should create a conditional live trade plan.
+- The system should monitor the condition only if conditional execution is supported and live-approved.
+- When triggered, it must still pass all risk, bridge, emergency, and dispatch checks.
+- If conditional automation is not fully built, create the pending plan visibly as “armed but not executable” until the backend watcher exists.
+
+5. Entry and exit instruction support
+Eleanor must support instructions like:
+
+“Buy EURUSD now. Stop below the last swing low. Take profit at 1.0950.”
+
+“Sell XAUUSD at 2330. Stop 2340. TP 2310.”
+
+“Enter US30 when price breaks above 200 EMA and retests. Stop below retest low. TP 2R.”
+
+“On VIX75, enter after FVG forms on 5M with 1H and 4H trend aligned. SL under FVG. TP at next liquidity.”
+
+For any subjective/strategy-based command:
+- Eleanor must convert it into a transparent trade plan.
+- Show exact executable conditions.
+- If any condition cannot be evaluated mechanically, Eleanor must ask the user to confirm the exact numeric entry/SL/TP before execution.
+
+6. Remove simulator defaults from trading UI
+Audit and update all trading-capable frontend paths:
+- QuickTradeModal
+- Eleanor chat command UI
+- instant trade command UI
+- scanner-to-ticket flow
+- manual ticket
+- open/close trade panels
+- admin live controls
+
+For approved live traders:
+- default mode should be LIVE.
+- buttons/copy should not imply demo/simulated unless explicitly selected.
+- live-disabled states should be blocked honestly.
+
+7. Keep simulator only as explicit test mode
+Simulator/demo should remain only for:
+- non-approved users
+- training mode
+- backtesting
+- QA/dev environments
+- explicit user-selected practice mode
+
+It should never silently receive a command that the user expected to be live.
+
+8. Close path must be fixed before Eleanor close uses it
+Before enabling Eleanor live closes:
+- Do not use /api/me/trades/close direct mt5_commands insert.
+- Route Eleanor CLOSE through the approved live command pipeline.
+- Fix audit so CLOSE is not marked EXECUTED until broker confirmation.
+- Scope pending close dedupe by userId + mt5ConnectionId + ticket.
+- Verify ticket ownership server-side.
+
+9. Audit logging
+Every Eleanor-assisted trade must log:
+- source: ELEANOR_CHAT
+- user command text
+- parsed structured intent
+- whether Eleanor suggested or user commanded
+- user confirmation timestamp if required
+- final submitted fields
+- risk result
+- liveCommandId
+- broker command id
+- EA/broker result
+- final status: pending/executed/rejected/failed/stale
+
+Do not overwrite historical audit rows.
+
+10. Safety and blocking
+Eleanor must refuse or block execution if:
+- user is not approved for live
+- user account is suspended/disabled
+- emergency stop is active
+- kill switch is active
+- bridge is offline/stale
+- broker token missing
+- EA is read-only
+- risk check fails
+- symbol is not allowed
+- lot size exceeds cap
+- stop loss is missing when required
+- ticket ownership fails
+- command is vague or incomplete
+
+11. UI wording
+Update Eleanor responses:
+
+When ready to trade:
+“Live trade prepared. Review and confirm.”
+
+When one-click live is armed and command is complete:
+“Live trade submitted. Waiting for broker confirmation.”
+
+When blocked:
+“Live trading is blocked because [specific reason]. No order was sent.”
+
+When conditional:
+“Live conditional plan armed. Entry will trigger only if all conditions are met and live safety checks pass.”
+
+Never say “executed” until broker confirmation is received.
+
+12. Tests and CI guards
+Add tests proving:
+- approved live trader can command Eleanor to prepare/submit live trade
+- non-approved user is blocked
+- investor is blocked
+- emergency stop blocks Eleanor execution
+- kill switch blocks Eleanor execution
+- bridge offline blocks Eleanor execution
+- vague command does not execute
+- Eleanor cannot insert mt5_commands directly
+- Eleanor cannot use /api/me/trades/close bypass
+- CLOSE goes through approved pipeline
+- audit says PENDING/SUBMITTED before broker confirmation, not EXECUTED
+- broker rejection updates UI/audit honestly
+- simulator is not default for approved live traders
+- demo/simulator only happens when explicitly selected or env requires it
+
+13. Acceptance criteria
+Pass only if:
+- Eleanor chat can create live trade intents from explicit user commands.
+- Approved live traders default to LIVE, not SIMULATED.
+- Eleanor live opens route through the approved live dispatch pipeline.
+- Eleanor live closes do not use the old direct queue bypass.
+- No trading-capable production flow silently defaults to simulator.
+- Every live command has honest pending/executed/rejected/stale status.
+- All safety gates remain enforced.
+- CI prevents future assistant/scanner code from gaining unsafe direct broker access.

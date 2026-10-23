@@ -1,0 +1,194 @@
+Now begin Phase 18: Institutional-Grade UI Refinement.
+
+Goal:
+Transform the app from “developer dashboard” into a premium professional trading operating system.
+
+Core philosophy:
+- High-end fintech
+- Minimal clutter
+- Fast scanning
+- Confidence-inspiring
+- Clean information hierarchy
+- Mobile-first responsiveness
+- Premium animations without being distracting
+
+Design direction:
+Blend inspiration from:
+- Bloomberg Terminal
+- TradingView
+- modern hedge fund dashboards
+- Apple-level spacing and polish
+- premium fintech SaaS
+
+Build a global design system.
+
+Create folders:
+
+/client/src/design-system
+/client/src/design-system/components
+/client/src/design-system/tokens
+/client/src/design-system/layouts
+
+Create reusable design tokens:
+
+Spacing:
+xs, sm, md, lg, xl, xxl
+
+Border radius:
+sm, md, lg, xl
+
+Shadow system:
+subtle, elevated, modal
+
+Typography:
+- display
+- heading
+- subheading
+- body
+- caption
+- mono data font
+
+Color system:
+Backgrounds:
+- primary background
+- elevated cards
+- hover states
+- sidebar
+- modal
+
+Status colors:
+- bullish
+- bearish
+- warning
+- danger
+- success
+- neutral
+- inactive
+
+Confidence scale colors:
+0-40 weak
+41-70 moderate
+71-85 strong
+86-100 elite setup
+
+Volatility states:
+- calm
+- normal
+- expanding
+- dangerous
+
+Risk states:
+- low
+- moderate
+- high
+- blocked
+
+Create reusable components:
+
+1. SignalCard
+Shows:
+- symbol
+- direction
+- confidence
+- strategy
+- volatility state
+- market condition
+- risk approval
+- AI explanation summary
+
+2. ConfidenceMeter
+Animated horizontal meter.
+
+3. RiskBadge
+Low / Moderate / High / Blocked.
+
+4. VolatilityBadge
+Calm / Expanding / Dangerous.
+
+5. MarketConditionBadge
+Trending / Range / Chop / Breakout / Reversal Risk.
+
+6. MT5StatusIndicator
+Connected / Disconnected / Delayed.
+
+7. TradeHealthMeter
+0-100 score with color transitions.
+
+8. AIInsightCard
+Displays:
+- setup quality
+- invalidation
+- trade warning
+- management suggestion
+
+9. ExposureCard
+Shows market exposure visually.
+
+10. FloatingActionPanel
+Quick actions:
+- pause bot
+- kill switch
+- close all
+- scanner
+- alerts
+
+11. PremiumTable
+Responsive institutional-style table.
+
+12. ChartContainer
+Reusable chart wrapper with:
+- loading state
+- empty state
+- responsive resizing
+
+13. Modal system
+Professional confirmations:
+- close all
+- enable live mode
+- delete strategy
+- apply risk changes
+
+Animation rules:
+- subtle only
+- smooth fades
+- hover elevation
+- live pulse for active signals
+- no excessive motion
+
+Navigation refinement:
+Desktop:
+- collapsible sidebar
+- grouped navigation
+- sticky topbar
+
+Mobile:
+- bottom nav
+- slide-out panels
+- swipeable watchlists
+- floating quick actions
+- condensed scanner cards
+
+Performance:
+- lazy load pages
+- optimize charts
+- avoid unnecessary re-renders
+- skeleton loading states
+
+Important:
+The app must feel:
+- fast
+- premium
+- intelligent
+- trustworthy
+- uncluttered
+- professional
+
+Avoid:
+- gamer UI
+- neon overload
+- excessive widgets
+- too many charts at once
+- overwhelming statistics
+
+Every screen should answer:
+“What does the trader actually need right now?”

@@ -1,0 +1,183 @@
+Pass 8 — command lifecycle & reconciliation integrity. Read-only. No edits, no tasks, no workflow changes.
+
+Goal:
+Prove whether ARX command truth stays correct from command creation through EA pickup, callback, reconciliation, audit log, trade state, and UI display. Anchor this pass on the Pass 7 highest-risk surfaces:
+
+A = POST /api/me/trades/open
+B = POST /api/trade/place
+C = POST /api/me/trades/close
+EA poll = /mt5/commands
+EA result callback = MT5 command-result handler
+Known risk anchor = executionReconciler.ts broad audit update keyed only by (userId, symbol)
+
+Required proof areas:
+
+1. Command state machine
+Trace every possible mt5_commands transition:
+- insert as PENDING
+- claimed/polled by EA
+- marked sent/claimed/in-progress, if applicable
+- callback received
+- executed / failed / rejected / timeout / stale
+- retry or duplicate callback behavior
+
+For every transition, prove:
+- exact file + line
+- WHERE clause
+- whether update is atomic
+- whether it keys by command id, mt5 command id, user id, symbol, connection id, or another weak key
+- whether stale/duplicate/late callbacks can mutate the wrong row
+
+2. EA poll and claim integrity
+Re-read the EA polling route directly, not through mangled grep output.
+
+Prove:
+- the exact SELECT/UPDATE/claim logic
+- whether claiming is atomic
+- whether two EA polls can claim the same PENDING command
+- whether poll filters by status/userId/mt5ConnectionId only, or also action/safetyMode/source
+- whether commands from legacy/direct paths are indistinguishable from Phase-B mirrored commands
+- whether safetyMode is enforced before pickup or only recorded
+
+3. EA result callback truth
+Trace the callback route from request body validation through reconciliation.
+
+Prove:
+- how the callback identifies the command
+- whether commandId is required
+- whether fallback matching exists
+- whether fallback matching can match by userId/symbol/action/time instead of stable id
+- whether a result from one command can update another command
+- whether duplicate results are idempotent
+- whether late results after timeout are accepted or rejected
+- whether bridge token/auth is required on callback
+
+4. Reconciliation integrity
+Deep-read executionReconciler.ts and every caller.
+
+Prove:
+- command row update key
+- trade row update key
+- live trade/action row update key
+- audit-log update key
+- account/balance/position refresh side effects
+- whether reconciliation is monotonic or can downgrade/overwrite terminal truth
+- whether rejected/failed results clear false success UI
+- whether “EXECUTED” means broker-confirmed execution or only queued/sent
+
+Specifically verify Pass 7 finding:
+executionReconciler.ts:257–265 appears to update trade_command_audit_log by only userId + symbol. Confirm if this is true. If true, classify whether it can clobber unrelated historical audit rows.
+
+5. Timeout and offline bridge behavior
+Find all stale-command, timeout, cleanup, retry, watchdog, and bridge-offline handlers.
+
+Prove:
+- what happens when a command is inserted but EA never polls it
+- what happens when EA claims it but never sends a result
+- what happens when bridge token is unset
+- what happens when EA is ReadOnlyMode=true
+- what frontend status appears during these states
+- whether premature EXECUTED audit rows can remain forever
+- whether users/admins can see honest pending/stale/failure state
+
+6. UI command truth
+Trace frontend surfaces that display:
+- open trade success
+- close trade success
+- pending command state
+- rejected command state
+- failed command state
+- stale/offline bridge state
+- trade history/audit history
+
+For each surface prove:
+- data endpoint
+- status field used
+- refresh cadence
+- whether optimistic UI can show success before broker confirmation
+- whether later reconciliation corrects UI
+- whether manual refresh or auto-refresh pulls true command state or only positions
+
+7. Audit append-only truth
+Find every insert/update/delete against:
+- trade_command_audit_log
+- mt5_commands
+- live trade/action/result logs
+- any broker execution table
+
+Prove:
+- whether audit evidence is append-only
+- whether any code overwrites historical audit status/rejectionReason
+- whether any DELETE exists
+- whether audit entries carry command id / correlation id
+- whether direct mt5_commands inserts always create a matching audit row
+- whether audit rows can exist without commands or commands without audit rows
+
+8. Direct insert inventory
+Freshly locate every db.insert(mt5CommandsTable) or insert into mt5_commands.
+
+For each direct insert, classify:
+- endpoint/job/source
+- OPEN/CLOSE/MODIFY/other
+- LIVE-capable or demo-only
+- UI-reachable or direct API only
+- whether it uses dispatchLiveCommand
+- whether it uses orderGuard/placeOrder
+- whether it creates audit row
+- whether EA poll can pick it up
+
+Do not trust previous pass results; re-read directly.
+
+9. CI/test coverage
+Find tests/checks/scripts that would catch:
+- direct mt5_commands inserts outside approved pipeline
+- premature EXECUTED audit row before broker confirmation
+- audit UPDATE without command id
+- reconciliation keyed only by userId/symbol
+- duplicate callback idempotency
+- late callback after timeout
+- investor execution through A/B/C
+- LIVE UI mode path on QuickTradeModal
+- close command bypassing orderGuard/dispatchLiveCommand
+
+Classify each as:
+- covered strongly
+- covered weakly
+- not covered
+- located but assertion not proven
+
+10. Classification standard
+Use the same class system:
+- Class 1: clean/proven safe
+- Class 2: active risk
+- Class 3: defense-in-depth or integrity gap
+- Class 4: dormant/config-gated risk
+- Class 5: unresolved/deferred
+
+Required output format:
+
+PASS 8 — Command Lifecycle / Reconciliation / Audit Truth — REPORT
+
+Sections:
+1. Executive verdict
+2. Command state-machine matrix
+3. EA poll/claim truth
+4. EA result callback truth
+5. Reconciliation truth
+6. Timeout/offline bridge truth
+7. UI display truth
+8. Audit append-only truth
+9. Direct mt5_commands insert inventory
+10. CI/test coverage
+11. New findings added to held fix-ledger
+12. Net risk ranking
+
+Important:
+- Read-only only.
+- Do not edit files.
+- Do not create tasks.
+- Do not run migrations.
+- Do not change workflows.
+- Do not rely on rg/grep matched text if token mangling appears. Use filename/line discovery only, then read files directly.
+- Give exact file:line proof for every claim.
+- If a claim cannot be proven, mark it Class 5 instead of assuming.

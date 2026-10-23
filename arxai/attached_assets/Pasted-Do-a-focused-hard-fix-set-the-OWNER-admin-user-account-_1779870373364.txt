@@ -1,0 +1,305 @@
+Do a focused hard fix: set the OWNER/admin-user account to an unrestricted LIVE_SHARED trading profile and remove every app-level prerequisite that keeps blocking the owner from trading.
+
+Target account:
+
+* userId: 4
+* email: andraie.co@gmail.com
+* role: OWNER/admin-user
+
+Current issue:
+The app still blocks the owner/admin-user in scanner/live shared ticket with messages like:
+
+* “Your account isn’t set up for the shared live route yet”
+* “Complete account allocation”
+* “Previewing as User”
+* generic “BLOCKED”
+* demo/paper/test/preview detours
+* risk cap/default/stop-loss prerequisites
+
+This must stop for the OWNER/admin-user account.
+
+Do not place trades during QA.
+Do not insert arx_live_commands during QA.
+Do not type operator phrases.
+Do not fake broker connection, fake balance, fake candles, fake positions, or fake validation.
+Do not weaken normal-user safety.
+Do not remove restrictions from regular users.
+Do not expose secrets, tokens, raw backend constants, gate names, table names, or diagnostics to normal users.
+
+Create checkpoint first:
+checkpoint: owner-indestructible-live-shared-profile
+
+Goal:
+For user 4 / OWNER only, create an “indestructible live trade” profile:
+
+* Always LIVE_SHARED.
+* Never preview mode.
+* Never demo mode.
+* Never paper mode.
+* Never simulator/tester mode.
+* No per-user allocation prerequisite.
+* No risk-cap prerequisite.
+* No allowed-symbol prerequisite.
+* No max-lot prerequisite.
+* No max-open-position prerequisite.
+* No daily-loss prerequisite.
+* No forced stop-loss prerequisite unless owner explicitly turns it on.
+* No “safe default 0.1” warning.
+* No “complete allocation” blocker.
+* No “contact operator” blocker.
+* No “user preview cannot submit” blocker for this account.
+* No second popup.
+* One-click or one-confirm trade flow from every trade entry surface.
+
+True hard broker safety still remains:
+
+* authenticated owner session required
+* active live shared/master bridge required
+* broker/MT5/Deriv symbol must exist
+* order payload must be valid
+* broker must accept the order
+* kill switch still blocks if active
+* audit logging still records every attempted live action
+* final user click/confirmation still required unless one-click mode is explicitly enabled for owner
+
+Task 1 — Force owner account mode to LIVE_SHARED:
+For user 4 / OWNER:
+
+1. /api/me/account-mode must always resolve currentAccountMode=LIVE_SHARED when authenticated.
+2. Do not return DEMO, PAPER, TEST, SIMULATOR, or PREVIEW for owner.
+3. If X-Arx-View-Mode:user-preview is present for owner, ignore it or clear it.
+4. Remove “Previewing as User” badge for owner’s own trading session.
+5. Owner clicking user/admin toggle must not downgrade trade permissions.
+6. Owner trade pages must never render preview-only disabled behavior.
+
+Task 2 — Owner shared-master account shell:
+For user 4 / OWNER:
+
+1. Auto-attach to SHARED_MASTER_MT5 if not already attached.
+2. If no user_slot_allocation exists, do not block owner.
+3. Use the active shared master bridge/account as the owner’s available live trading source.
+4. Show owner balance/equity/headroom from the live shared/master bridge in admin/owner context.
+5. Do not show “allocation required” for owner.
+6. Do not show “account isn’t set up for shared live route” for owner.
+7. Normal users still require explicit allocation.
+
+Task 3 — Owner unrestricted risk profile:
+For user 4 / OWNER:
+
+* manualTradingEnabled=true
+* liveTradingEnabled=true
+* ownerUnrestricted=true
+* requireStopLoss=false unless explicitly changed by owner
+* allowedSymbols=null/empty means all broker-supported symbols
+* maxLot=null means unrestricted
+* maxOpenPositions=null means unrestricted
+* dailyLossLimitUsd=null means unrestricted
+* no safe default cap
+* no beginner/default/starter/demo caps
+* no forced risk-cap setup
+
+Normal users:
+
+* keep all assigned caps
+* keep allocation requirements
+* keep stop-loss requirements when enabled
+* keep symbol restrictions
+* keep risk limits
+
+Task 4 — Fix all trade entry surfaces for owner:
+Apply this owner live profile to every trade entry surface:
+
+* Market Scanner Buy/Sell
+* Scanner one-modal live ticket
+* Live AI Assist
+* Live Chart Buy/Sell
+* Trade Command Room
+* Manual Ticket
+* Live Shared page
+* Ruby trade suggestion/review
+* Any quick trade / one-click trade button
+* Any mobile or compact trade entry view
+
+For owner in LIVE_SHARED:
+
+1. Buy/Sell should open the real LIVE_SHARED ticket.
+2. No demo route.
+3. No paper route.
+4. No tester workflow.
+5. No preview blocker.
+6. No second modal.
+7. No “Use LIVE SHARED above.”
+8. No “complete allocation.”
+9. No “contact operator.”
+10. No generic BLOCKED without exact reason.
+11. No raw gate fields in the visible UI.
+12. Validate should pass to final Confirm if the only blockers were owner allocation/risk/default prerequisites.
+13. If a true hard broker blocker exists, show the exact clean reason.
+
+Task 5 — One-click / one-confirm requirement:
+Owner must be able to trade from anywhere using either:
+
+* one-click trade, if owner enables one-click, or
+* one clean confirmation prompt.
+
+Implement/verify:
+
+1. Owner setting: oneClickTradingEnabled=true/false.
+2. If one-click ON: Buy/Sell performs the final owner-confirmed submit flow with one click, after server validation.
+3. If one-click OFF: Buy/Sell opens one modal and one final Confirm Trade button.
+4. No typed phrase.
+5. No multi-step wizard.
+6. No second popup.
+7. No demo/paper/test detour.
+8. No hidden disabled button.
+
+Task 6 — Fix scanner modal currently blocking:
+The current screenshot shows:
+“Your account isn’t set up for the shared live route yet. Contact your operator to complete account allocation.”
+
+For OWNER this is wrong.
+
+Fix the validator so owner does not need a per-user allocation row.
+If owner is authenticated and live shared bridge exists, validation should continue.
+
+If still blocked, allowed owner blockers are only:
+
+* kill switch active
+* live bridge disconnected
+* broker unavailable
+* invalid symbol
+* invalid order payload
+* broker rejects trade
+* insufficient broker account margin/capacity
+* authentication/session invalid
+
+Task 7 — Remove preview mode from owner:
+Search all:
+
+* previewingAsUser
+* X-Arx-View-Mode
+* user-preview
+* Previewing as User
+* preview-only
+* Exit user preview
+
+For user 4/OWNER:
+
+* do not render preview mode
+* do not block trade actions because of preview
+* do not disable Validate/Confirm
+* do not return user-preview envelope from backend
+* do not store owner in preview state
+
+Admin preview for other users may remain if needed, but owner’s own trading account must stay live.
+
+Task 8 — Clean UI copy:
+Replace owner-facing blockers with clean direct copy.
+
+Bad for owner:
+
+* “Your account isn’t set up”
+* “Contact your operator”
+* “Allocation required”
+* “Risk settings required”
+* “Safe default exceeded”
+* “Stop loss required” when requireStopLoss=false
+* “Preview mode only”
+* “Tester workflow”
+* “Simulator only”
+* “Use LIVE SHARED above”
+* raw gate names / booleans / constants
+
+Good:
+
+* “Ready for live shared review.”
+* “All safety checks passed.”
+* “Confirm trade.”
+* “Trade blocked: live bridge disconnected.”
+* “Trade blocked: broker rejected symbol.”
+* “Trade blocked: kill switch active.”
+* “Trade blocked: insufficient broker margin.”
+
+Task 9 — Backend validation route:
+Find the backend route used by scanner/live shared/live AI/chart/manual tickets.
+
+Ensure owner path:
+
+1. resolves owner profile
+2. bypasses app-level allocation/risk prerequisites
+3. still runs hard broker/safety validation
+4. returns clean user-facing reasons
+5. does not write arx_live_commands during validation
+6. writes live command only after intentional final submit/confirm
+
+Task 10 — Regression tests:
+Add/repair tests proving:
+
+1. OWNER always resolves LIVE_SHARED.
+2. OWNER cannot be downgraded to preview/demo/paper/test by user-preview header.
+3. OWNER with no allocation row still passes allocation gate using live shared master source.
+4. OWNER missing risk caps still passes risk-cap prerequisite.
+5. OWNER missing stop loss passes when requireStopLoss=false.
+6. OWNER lot > default cap does not show safe-default warning.
+7. OWNER all symbols allowed when allowedSymbols empty/null.
+8. OWNER scanner modal validates to Confirm when no hard broker blocker exists.
+9. OWNER live AI assist validates through LIVE_SHARED, not tester.
+10. OWNER chart Buy/Sell opens LIVE_SHARED ticket.
+11. OWNER one-click/one-confirm flow is available.
+12. Normal users still require allocation/caps.
+13. Normal users still block when caps are exceeded.
+14. Kill switch still blocks OWNER.
+15. Broker disconnected still blocks OWNER.
+16. Invalid symbol still blocks OWNER.
+17. arx_live_commands remains 0 during validation tests.
+
+Task 11 — Real UI verification:
+Open the real app as owner and verify:
+
+* no Previewing as User badge
+* account mode stays Live Shared Master MT5
+* scanner Buy/Sell opens one LIVE_SHARED modal
+* Validate does not block for allocation/risk/default prerequisites
+* Confirm Trade appears in the same modal
+* live AI assist symbol select works
+* live AI assist confirm uses live path
+* chart Buy/Sell uses live path
+* no demo/paper/test/simulator copy
+* no ghost positions
+* no stale alerts
+* no raw admin diagnostics in normal user pages
+* arx_live_commands remains 0 during QA
+
+Task 12 — Final QA:
+Run:
+
+* pnpm run typecheck
+* pnpm run build if available
+* pnpm run ci:guards
+* test:account-mode
+* test:admin-unrestricted-risk
+* test:mode-scope
+* test:live-shared-reason-copy
+* test:chart-symbol-propagation
+* test:scanner-real-feed
+* test:live-phaseB
+* test:demo-arming
+* test:demo-verify
+* new owner-indestructible-live-profile tests
+* arx_live_commands count before/after
+
+Final report only:
+
+* exact owner blockers removed
+* files/routes changed
+* owner account-mode result
+* owner allocation/risk profile result
+* scanner modal result
+* live AI assist result
+* chart trade result
+* one-click/one-confirm status
+* normal user restrictions still intact
+* QA results
+* arx_live_commands count
+* confirmation no live trades placed during QA
+* confirmation no safety gates weakened

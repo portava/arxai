@@ -1,0 +1,130 @@
+Begin Brand + Public Identity System phase.
+
+Goal:
+Create the public-facing identity, design language, trust perception, and communication style for the AI Trading Governance & Intelligence Infrastructure platform.
+
+Core brand feeling:
+- calm
+- intelligent
+- trustworthy
+- institutional
+- operationally precise
+- modern
+- minimal
+- confidence under pressure
+
+Avoid:
+- gambling energy
+- hype AI branding
+- neon overload
+- “get rich quick” messaging
+- unrealistic claims
+- aggressive trading culture
+
+Define:
+
+1. Brand Positioning
+
+Primary positioning:
+“AI Trading Governance & Intelligence Infrastructure”
+
+Secondary positioning:
+- intelligent trading co-pilot
+- validation-first platform
+- risk-first architecture
+- replayable trading intelligence
+- behavioral intelligence infrastructure
+
+2. Visual Identity Direction
+
+Define:
+- color philosophy
+- typography philosophy
+- spacing philosophy
+- motion philosophy
+- dashboard philosophy
+- alert philosophy
+- trust surfaces
+
+3. UX Personality
+
+Define:
+- tone of explanations
+- tone of warnings
+- tone of recovery prompts
+- tone of risk notifications
+- tone of onboarding
+
+Rules:
+- calm
+- non-shaming
+- professional
+- operationally clear
+
+4. Public Messaging
+
+Define messaging for:
+- homepage
+- onboarding
+- investor materials
+- enterprise materials
+- API documentation
+- replay surfaces
+- validation surfaces
+
+5. Trust Design
+
+Define:
+- explainability presentation
+- replay visibility
+- validation visibility
+- governance visibility
+- audit visibility
+- automation-stage visibility
+
+6. Product Naming Structure
+
+Define naming system for:
+- platform
+- APIs
+- vault
+- replay system
+- Trader DNA
+- validation systems
+- execution systems
+
+7. Brand Architecture
+
+Define:
+- master brand
+- product family structure
+- API naming structure
+- enterprise naming structure
+
+8. UI Design Principles
+
+Design for:
+- clarity
+- low cognitive load
+- attention hierarchy
+- operational focus
+- calm interaction
+- trust reinforcement
+
+9. Long-Term Brand Vision
+
+Define:
+- infrastructure brand vision
+- enterprise trust vision
+- developer ecosystem vision
+- platform authority vision
+
+Deliver:
+- brand strategy
+- visual direction
+- messaging framework
+- UX tone guide
+- naming framework
+- trust-design framework
+- UI philosophy
+- long-term brand vision

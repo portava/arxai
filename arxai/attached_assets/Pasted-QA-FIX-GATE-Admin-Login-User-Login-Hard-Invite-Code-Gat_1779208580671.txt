@@ -1,0 +1,53 @@
+QA/FIX GATE — Admin Login + User Login + Hard Invite Code Gate
+
+Inspect the auth/invite hardening work from the previous pass.
+
+Do not rebuild unrelated systems.
+Only repair missing auth/invite-critical pieces.
+Do not fire trades.
+Do not create live commands.
+
+Verify:
+
+1. ARX_BETA_INVITE_REQUIRED exists or equivalent hard invite gate exists.
+2. Registration requires a valid invite when invite gate is enabled.
+3. Registration without invite is blocked.
+4. Invalid invite is blocked.
+5. Revoked invite is blocked.
+6. Expired invite is blocked.
+7. Already-used invite is blocked.
+8. Valid invite allows registration.
+9. Invite acceptance is one-time use.
+10. Beta cap is enforced server-side.
+11. 10 accepted users are allowed.
+12. 11th user is blocked or waitlisted server-side.
+13. Direct API calls cannot bypass invite gate.
+14. Invite code validation uses safe hashing where supported.
+15. Invite codes/hashes are not exposed in public frontend, public APIs, logs, or normal user UI.
+16. Admin can still create/copy/revoke invites through protected admin UI/API.
+17. Non-admin users cannot access invite admin routes/APIs.
+18. Invite accept/reject/revoke/cap-block events are audited.
+19. Audit insert failure aborts invite acceptance where required by the repo pattern.
+20. User login still works.
+21. Admin login/admin route protection still works.
+22. Logout clears frontend query/client user cache.
+23. Logout/login switch does not leak previous user dashboard, scanner, Ruby memory, notifications, trades, or account state.
+24. No hardcoded admin credentials are present in frontend code.
+25. requireAdmin output remains production-safe.
+26. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, invite hashes, or sensitive bridge payloads are exposed.
+27. No live trade is fired during QA.
+28. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- auth routes checked
+- invite routes checked
+- admin screens checked
+- issues found
+- fixes applied
+- remaining blockers
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

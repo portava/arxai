@@ -1,0 +1,92 @@
+T016A — RECONCILE MT5 ONE-CLICK STATUS WITH ARX ONE-CONFIRM STATUS
+
+Issue:
+The MT5 terminal visibly has One Click Trading enabled. Screenshot evidence shows MT5 Options → Trade → One Click Trading is checked.
+
+However, ARX/Replit reports one-click is off. That means ARX is likely checking the wrong source or confusing two different concepts.
+
+Important distinction:
+
+1. MT5 terminal One Click Trading = terminal-side setting.
+2. ARX AI single-confirm / one-click live trading = app-side permission/UX setting.
+
+Do not assume MT5 one-click is off.
+Do not ask the user to re-enable it in MT5.
+Do not switch to Demo.
+Do not use Paper Trading.
+Do not fake execution.
+Do not bypass live safety gates.
+Do not place a live trade in this task.
+Do not reset live broker execution config.
+Do not weaken permissions, allocation, kill switch, freeze, live approval, ownership, or MT5 confirmation rules.
+
+Required work:
+
+1. Inspect how ARX determines “one-click is off.”
+2. Identify whether that status comes from:
+    * MT5 EA heartbeat
+    * MT5 terminal config
+    * ARX database setting
+    * owner/admin preference
+    * env variable
+    * live gate diagnostic
+    * frontend label only
+    * stale cached status
+    * incorrect field name
+    * old Paper/Demo mode setting
+3. Separate the labels clearly:
+    * “MT5 One Click: ON/OFF/UNKNOWN”
+    * “ARX Single Confirm: ON/OFF”
+    * “Live Trade Gates: PASS/BLOCKED”
+    * “Final Confirm Required: YES/NO”
+4. If the EA/bridge cannot actually read MT5 terminal One Click Trading status, do not report it as OFF.
+    Report it as:
+    “MT5 One Click: Enabled manually in terminal / Not readable by bridge”
+    or
+    “MT5 One Click: Unknown to ARX”
+5. Do not block ARX live trading solely because ARX cannot read MT5 terminal one-click status, unless this is intentionally required by an existing safety rule.
+6. ARX one-click/single-confirm should be controlled by the app’s owner/admin setting:
+    * owner/admin only
+    * LIVE only
+    * protected by all live gates
+    * no Paper/Demo fallback
+    * still requires MT5 confirmation before success
+7. Add/update admin diagnostics so owner/admin can see:
+    * MT5 terminal one-click status if readable
+    * if not readable, show “Not readable from bridge”
+    * ARX single-confirm setting
+    * whether the app will use single Confirm
+    * whether final live dispatch is allowed
+    * exact reason if blocked
+8. Update user-facing language:
+    * Do not say “one-click is off” if only ARX single-confirm is off.
+    * Do not say “MT5 one-click is off” unless the bridge truly reads that from MT5.
+    * Say “ARX Single Confirm is off” if the app-side setting is off.
+    * Say “MT5 terminal setting is not readable by ARX” if applicable.
+9. Check for stale cache:
+    * clear/refetch runtime diagnostics
+    * refetch EA heartbeat
+    * refetch account mode
+    * refetch owner/admin settings
+    * verify frontend is not showing stale one-click state
+10. Run:
+
+* pnpm run health:workflows
+* typecheck
+* ci:guards
+* live-readiness gate check
+* admin diagnostics smoke test
+* Scanner trade modal smoke test
+
+Final report must include:
+
+1. exact source ARX used when it said one-click was off
+2. whether MT5 terminal one-click status is readable by bridge
+3. corrected labels/statuses
+4. ARX single-confirm setting value
+5. whether owner/admin can enable ARX single-confirm
+6. whether live gates still pass
+7. confirmation no live trade was placed
+8. confirmation no safety gate was bypassed
+9. confirmation no Demo/Paper fallback was used
+10. tests passed

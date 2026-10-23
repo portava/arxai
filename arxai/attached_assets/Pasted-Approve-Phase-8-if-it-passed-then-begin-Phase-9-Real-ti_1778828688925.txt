@@ -1,0 +1,350 @@
+Approve Phase 8 if it passed, then begin Phase 9: Real-time personal dashboard intelligence, user-scoped status cards, risk alerts, session health, trade quality score, and MT5 heartbeat visibility for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT place live trades.
+- Do NOT enable live execution.
+- Keep liveLocked = true.
+- Keep READ_ONLY / PAPER_ONLY active.
+- Keep AllowOrderExecution = false.
+- Do NOT touch MT5 EA .mq5 files.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT move to Phase 10 until Phase 9 QA passes.
+
+Current status:
+- Phase 1 identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Phase 3 per-user MT5 connections/trading sessions: PASS.
+- Phase 4 per-user MT5 command routing: PASS.
+- Phase 5 paper trades, journal, calendar: expected PASS.
+- Phase 6 AI trade review/coaching: expected PASS.
+- Phase 7 playbook/checklist: expected PASS.
+- Phase 8 Risk Governor: expected PASS.
+- Now build Phase 9: make the dashboard feel alive, personal, and connected to the backend ecosystem.
+
+Main goal:
+The ARX AI dashboard should no longer feel static, fake, or forced. It should show a real user-specific command center based on that user’s MT5 connection, paper sessions, risk settings, paper trades, journal, AI reviews, playbooks, checklist results, and Risk Governor events.
+
+Phase 9A — Dashboard intelligence aggregator:
+Create a centralized user-scoped dashboard intelligence service.
+
+It should pull only the logged-in user’s data from:
+- mt5_connections
+- trading_sessions
+- paper_trades
+- trade_journal_entries
+- performance calendar/summaries
+- ai_trade_reviews
+- trading_playbooks
+- pre_trade_checks
+- risk_settings
+- risk_governor_events
+- mt5_commands
+- user alerts/notifications if available
+
+Create endpoint:
+GET /api/me/dashboard/intelligence
+
+Response should include:
+- user status
+- active trading session
+- MT5 connection status
+- heartbeat freshness
+- risk governor status
+- today’s P/L
+- today’s trade count
+- open paper trades
+- closed paper trades
+- win/loss count
+- trade quality score
+- discipline score
+- most recent AI insight
+- active playbook count
+- checklist pass/fail summary
+- latest blocked risk event
+- alerts
+- recommended next action
+
+Everything must be scoped by req.authUser.id.
+
+Phase 9B — Status cards:
+Create backend-ready dashboard cards.
+
+Endpoint:
+GET /api/me/dashboard/cards
+
+Cards should include:
+1. MT5 Bridge Status
+   - waiting / connected / stale / disconnected
+   - last heartbeat
+   - broker
+   - account
+   - read-only mode
+   - live locked
+
+2. Session Health
+   - no session / active / paused / closed
+   - session duration
+   - trades taken
+   - session P/L
+   - session risk status
+
+3. Risk Governor
+   - safe / warning / blocked / cooldown
+   - reason
+   - daily loss status
+   - max trades status
+   - cooldown timer if active
+
+4. Paper Trading Performance
+   - today’s P/L
+   - win rate
+   - trades today
+   - average win/loss if available
+
+5. Trade Quality Score
+   - 0–100 score
+   - based on checklist, journal, risk compliance, and AI review grades
+
+6. AI Coach
+   - current focus
+   - biggest warning
+   - best next action
+
+7. Playbook Discipline
+   - active playbook
+   - checklist pass rate
+   - trades taken without playbook
+
+Do not show fake stats for first-time users.
+
+Phase 9C — First-time user dashboard:
+If the user has no real app data yet, show a clean first-time state.
+
+Frontend should display:
+- “Welcome to ARX AI”
+- “Connect MT5 to begin tracking”
+- “Start a paper session”
+- “Create your first playbook”
+- “Risk Governor is active with safe defaults”
+- “No trades recorded yet”
+- “No AI insights yet”
+
+Do NOT show:
+- fake balances
+- fake win rates
+- fake trades
+- fake connected MT5 state
+- fake AI insights
+- demo data as if it belongs to the user
+
+Phase 9D — Real-time refresh behavior:
+Add safe refresh behavior for dashboard intelligence.
+
+Requirements:
+- Dashboard should refresh MT5 heartbeat/status periodically.
+- Use polling or existing query refresh pattern.
+- Do not spam the backend.
+- Suggested interval:
+  - MT5 status: every 5–10 seconds
+  - dashboard intelligence: every 15–30 seconds
+  - AI/coaching summaries: manual refresh or slower interval
+
+If the app uses React Query or similar, use proper query keys:
+- ["me", "dashboard", "intelligence"]
+- ["me", "dashboard", "cards"]
+- ["me", "mt5-status"]
+- ["me", "risk-status"]
+
+Phase 9E — Alerts system:
+Create or finalize user-owned dashboard alerts.
+
+Table if needed:
+dashboard_alerts or user_alerts
+
+Fields:
+- id
+- userId
+- alertType
+- severity: info/warning/critical
+- title
+- message
+- source: mt5/risk/ai/session/playbook/calendar/system
+- status: unread/read/dismissed
+- actionLabel nullable
+- actionTarget nullable
+- createdAt
+- readAt nullable
+- dismissedAt nullable
+
+Routes:
+- GET /api/me/alerts
+- POST /api/me/alerts/:id/read
+- POST /api/me/alerts/:id/dismiss
+- POST /api/me/alerts/read-all
+
+Alerts should be created for:
+- MT5 disconnected
+- stale heartbeat
+- risk governor block
+- cooldown started
+- max daily loss approaching
+- session has no journal entries
+- trade closed without review
+- playbook missing
+- checklist failed
+- AI coaching plan updated
+
+All alerts must be user-scoped.
+
+Phase 9F — Trade quality score:
+Create a user-scoped trade quality scoring service.
+
+Score should use:
+- stop loss present
+- take profit present
+- risk within limit
+- reward-to-risk acceptable
+- playbook selected
+- checklist completed
+- journal reason written
+- discipline score
+- execution score
+- AI review grades
+- risk governor pass/warning/block events
+- overtrading/revenge trading flags
+
+Output:
+- score 0–100
+- label: weak / improving / disciplined / elite
+- reasons
+- next improvement
+
+Endpoint:
+GET /api/me/trade-quality-score
+
+For first-time users:
+Return null or “not enough data yet,” not fake scores.
+
+Phase 9G — Session health:
+Create endpoint:
+GET /api/me/session-health
+
+It should return:
+- current active session
+- status
+- session duration
+- number of trades
+- P/L
+- risk usage
+- open paper trades
+- recent losses
+- cooldown status
+- journal completion rate
+- current recommendation
+
+Recommendations examples:
+- “Start a paper session to begin tracking.”
+- “You are in a cooldown. Wait before opening another trade.”
+- “Your session is healthy. Keep following your playbook.”
+- “You are approaching your max trades per day.”
+
+Phase 9H — Frontend dashboard UI:
+Only update dashboard/status card areas.
+
+Dashboard should feel like a real command center:
+- Personal, not global
+- Clean and modern
+- No fake data
+- No clutter
+- No unrelated redesign
+- Mobile responsive
+
+Add sections:
+1. Command Center header
+2. MT5 Bridge Status card
+3. Active Session card
+4. Risk Governor card
+5. Today’s Performance card
+6. Trade Quality Score card
+7. AI Coach card
+8. Alerts panel
+9. Quick actions:
+   - Connect MT5
+   - Start paper session
+   - Create paper trade
+   - Open journal
+   - Review last trade
+   - Create playbook
+
+Quick actions should only appear when relevant.
+
+Phase 9I — Safety:
+Hard rules:
+- Dashboard cannot place trades.
+- Quick actions cannot bypass Risk Governor.
+- No live execution commands.
+- No OrderSend path.
+- No live trade button unless it is locked/disabled and clearly marked future/locked.
+- MT5 status is read-only.
+- AI coach cannot enable live trading.
+
+Phase 9J — Tests:
+Add/extend tests:
+
+1. User A dashboard only shows User A data.
+2. User B cannot see User A dashboard intelligence.
+3. First-time user gets empty states.
+4. User with MT5 connection sees own MT5 status.
+5. Stale heartbeat creates warning state.
+6. Risk Governor block appears on dashboard.
+7. Alerts are user-scoped.
+8. User B cannot read/dismiss User A alerts.
+9. Trade quality score uses only User A data.
+10. Session health uses only User A active session.
+11. No fake global data appears.
+12. No live trade command is created.
+13. MT5 EA files untouched.
+14. Raw bridge token is never exposed.
+
+Phase 9K — QA/fix gate:
+After implementation, run QA and fix every issue before stopping.
+
+QA must confirm:
+- App starts.
+- Login/register/logout/me still work.
+- Phase 2 user scoping still passes.
+- Phase 3 MT5 connection isolation still passes.
+- Phase 4 command isolation still passes.
+- Phase 5 paper trade/journal/calendar still pass.
+- Phase 6 AI review/coaching still pass.
+- Phase 7 playbook/checklist still pass.
+- Phase 8 Risk Governor still passes.
+- Dashboard intelligence works.
+- Status cards work.
+- Alerts work.
+- Trade quality score works.
+- Session health works.
+- First-time dashboard shows no fake data.
+- User A/User B isolation passes.
+- No live trades executed.
+- No MT5 EA files changed.
+- Safety contract still passes.
+- Existing unrelated paperIntelligence.ts:123 typecheck issue is reported separately if still present.
+
+Final report format:
+1. Files changed
+2. Tables added/changed
+3. Routes added/changed
+4. Dashboard intelligence result
+5. Status cards result
+6. Alerts result
+7. Trade quality score result
+8. Session health result
+9. First-time user state result
+10. User A/User B isolation result
+11. Safety verification
+12. Remaining errors
+13. Phase 9 PASS or FAIL
+14. Stop and wait for my approval before Phase 10

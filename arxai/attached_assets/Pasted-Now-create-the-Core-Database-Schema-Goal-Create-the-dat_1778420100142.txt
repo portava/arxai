@@ -1,0 +1,266 @@
+Now create the Core Database Schema.
+
+Goal:
+Create the database structure needed for the full trading app before adding more features.
+
+Tables needed:
+
+users
+- id
+- email
+- name
+- created_at
+
+settings
+- id
+- user_id
+- active_symbol
+- active_market_type
+- account_mode
+- theme
+- created_at
+- updated_at
+
+symbols
+- id
+- symbol
+- display_name
+- market_type
+- broker_symbol
+- risk_level
+- recommended_timeframes
+- trading_sessions
+- minimum_confidence
+- default_risk_per_trade
+- notes
+
+risk_settings
+- id
+- user_id
+- mode
+- risk_per_trade
+- max_daily_loss
+- max_weekly_loss
+- max_trades_per_day
+- max_open_trades
+- stop_after_losing_streak
+- cooldown_minutes
+- minimum_confidence
+- max_lot_size
+- max_spread
+- news_filter_enabled
+- volatility_filter_enabled
+- created_at
+- updated_at
+
+strategy_settings
+- id
+- user_id
+- strategy_name
+- enabled
+- market_type
+- settings_json
+- minimum_confidence
+- created_at
+- updated_at
+
+signals
+- id
+- symbol
+- market_type
+- direction
+- confidence
+- entry
+- stop_loss
+- take_profit
+- risk_reward
+- strategy
+- market_condition
+- technical_bias
+- macro_bias
+- session
+- news_risk
+- volatility_state
+- risk_approved
+- blocked_reason
+- ai_explanation
+- created_at
+
+trade_plans
+- id
+- signal_id
+- user_id
+- final_recommendation
+- market_thesis
+- invalidation
+- management_plan
+- risk_audit_json
+- created_at
+
+trades
+- id
+- user_id
+- signal_id
+- trade_plan_id
+- mt5_ticket
+- symbol
+- market_type
+- direction
+- lot_size
+- entry
+- stop_loss
+- take_profit
+- exit_price
+- status
+- result
+- profit_loss
+- r_multiple
+- strategy
+- confidence
+- session
+- market_condition
+- news_risk
+- volatility_state
+- opened_at
+- closed_at
+- created_at
+- updated_at
+
+trade_management_events
+- id
+- trade_id
+- event_type
+- old_value
+- new_value
+- reason
+- ai_suggestion
+- created_at
+
+journal_entries
+- id
+- trade_id
+- notes
+- emotion_before
+- emotion_after
+- mistake_tags
+- success_tags
+- lesson_learned
+- ai_review
+- screenshot_url
+- created_at
+- updated_at
+
+daily_performance
+- id
+- user_id
+- date
+- total_trades
+- wins
+- losses
+- breakeven
+- net_profit_loss
+- total_r
+- win_rate
+- best_trade_id
+- worst_trade_id
+- ai_daily_recap
+- notes
+- created_at
+- updated_at
+
+learning_insights
+- id
+- user_id
+- insight_type
+- symbol
+- market_type
+- strategy
+- session
+- timeframe
+- volatility_state
+- confidence_range
+- insight_text
+- recommendation
+- strength
+- sample_size
+- created_at
+
+entry_sniper_results
+- id
+- signal_id
+- trade_id
+- symbol
+- original_entry
+- ideal_entry
+- actual_entry
+- early_entry_score
+- late_entry_score
+- actual_entry_score
+- max_favorable_move
+- max_adverse_move
+- entry_quality_score
+- lesson
+- created_at
+
+mt5_connection
+- id
+- user_id
+- status
+- api_key_hash
+- last_heartbeat
+- account_number
+- broker_name
+- account_balance
+- account_equity
+- margin
+- free_margin
+- mode
+- created_at
+- updated_at
+
+mt5_commands
+- id
+- command_type
+- payload_json
+- status
+- mt5_result
+- error
+- created_at
+- completed_at
+
+alerts
+- id
+- user_id
+- type
+- severity
+- title
+- message
+- symbol
+- read
+- created_at
+
+backtests
+- id
+- user_id
+- symbol
+- market_type
+- strategy
+- settings_json
+- starting_balance
+- ending_balance
+- total_trades
+- wins
+- losses
+- win_rate
+- profit_factor
+- max_drawdown
+- expectancy
+- result_json
+- created_at
+
+Requirements:
+- Use PostgreSQL if available.
+- If PostgreSQL is not available, create a clean abstraction so local JSON/mock storage can work temporarily.
+- Do not hardcode data storage into UI components.
+- Use service/repository pattern.
+- Include seed data for symbols, risk modes, and strategy defaults.

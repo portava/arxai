@@ -1,0 +1,112 @@
+P0 fix: AI assistant shows “Safety envelope mismatch — assistant disabled.”
+
+Do NOT bypass the safety envelope.
+Do NOT remove the safety check.
+Do NOT fake safety values.
+Do NOT unlock live trading.
+Do NOT enable real auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT weaken paper-only, MT5 bridge, ALERT_ONLY, user ownership, risk, attribution, or command queue gates.
+
+Goal:
+Fix the mismatch between the frontend assistant safety-envelope validator and the backend safety-envelope payload so the assistant can answer read-only questions while all execution gates remain locked.
+
+Steps:
+
+1. Reproduce and locate the mismatch
+- Open the AI assistant.
+- Ask: “How’s the system looking?”
+- Inspect browser console and network response.
+- Search the codebase for:
+  - “Safety envelope mismatch”
+  - “assistant disabled”
+  - safetyEnvelope
+  - SAFETY_ENVELOPE
+  - commandExecutionAllowed
+  - bridgeReadOnly
+  - activityStatus
+- Identify the exact frontend validator and exact backend payload that disagree.
+
+2. Compare frontend expected fields vs backend returned fields
+Verify both sides agree on required field names, types, enum values, and defaults for:
+- userAuthenticated
+- userOwnsTrade
+- bridgeConnected
+- bridgeReadOnly
+- tokenValid
+- liveTradingUnlocked
+- sharedRoutingUnlocked
+- paperMode
+- activityStatus
+- userOptIn
+- inactivityConfirmed
+- highConfidenceConfirmed
+- duplicateActionClear
+- riskLimitsPassed
+- attributionComplete
+- currentPriceAvailable
+- brokerDataFresh
+- commandExecutionAllowed
+
+Also verify:
+- ALERT_ONLY is not treated as a failure for read-only AI chat.
+- BLOCKED live trading is not treated as a failure for read-only AI chat.
+- bridgeConnected=false is not treated as a failure for read-only AI chat.
+- activityStatus="UNKNOWN" is only a hard block for auto-close execution, not for read-only assistant answers.
+- commandExecutionAllowed=false is expected and safe today.
+
+3. Centralize the safety envelope contract
+- Create or update one shared browser-safe TypeScript module for the safety envelope schema/types.
+- Frontend and backend must use the same contract.
+- Use ESM imports only.
+- Do not add require().
+- Do not import Node-only modules into frontend/shared browser code.
+- If server-only logic exists, keep it server-only and export only browser-safe types/helpers to the frontend.
+
+4. Fix the assistant behavior
+- The assistant should only disable itself if the safety envelope is missing, malformed, unauthenticated when auth is required, or internally inconsistent.
+- The assistant should stay enabled for read-only Q&A when execution gates are locked.
+- When gates are locked, the assistant should answer honestly and display safety status:
+  - Paper-only
+  - Live execution locked
+  - MT5 bridge offline/read-only
+  - Shared MT5 routing locked
+  - Auto-close ALERT_ONLY
+  - Command execution disabled
+- The assistant must never claim it can execute, close, modify, or queue live trades.
+
+5. Add/verify tests
+Add or update tests for:
+- Valid locked safety envelope allows read-only AI response.
+- commandExecutionAllowed=false does not disable read-only assistant.
+- bridgeConnected=false does not disable read-only assistant.
+- activityStatus="UNKNOWN" blocks auto-close but not read-only assistant.
+- Missing required envelope field disables assistant.
+- Malformed envelope disables assistant.
+- Frontend/backend schema stays aligned.
+- No fake safety values are accepted.
+
+6. Run checks
+Run:
+- Typecheck
+- Full guard suite
+- Frontend build/runtime load check
+- Browser smoke test for AI assistant
+- AI read-only question test
+- Auto-close gate test
+- Command queue blocked/execution-disabled test
+- Per-user isolation test
+
+7. End with report
+Report:
+- Exact cause of safety envelope mismatch
+- Exact files changed
+- Frontend expected envelope before/after
+- Backend returned envelope before/after
+- Tests run and results
+- Confirmation AI assistant can answer read-only questions
+- Confirmation live trading remains BLOCKED
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

@@ -1,0 +1,161 @@
+Run the final ARX AI closed-beta readiness check.
+
+Important rules:
+- Do NOT create a separate admin login page.
+- Keep one login screen only.
+- Admin/operator access must remain role-based after login.
+- Do NOT fire any real live trades during this check.
+- Do NOT rebuild unrelated features.
+- Inspect what already exists first, then fix only broken, missing, or disconnected beta-readiness items.
+- Treat this as invite-only closed beta readiness, not public launch readiness.
+
+Current known status:
+- ARX_AUTH_RBAC_VERIFIED passed.
+- One login screen works.
+- Role-based admin access works.
+- Regular users are blocked at UI and backend.
+- Admin is seeded correctly.
+- No secrets leaked.
+- arx_live_commands stayed 0→0.
+- Deriv synthetic scanner feed was previously verified.
+- Some pre-existing TypeScript QA script issues were flagged and should be confirmed clean before final readiness.
+
+Final readiness checklist:
+
+1. TypeScript / CI cleanliness
+- Confirm the previously flagged QA script issues are fixed:
+  - qaRubyVoiceTradingGuardrails no invalid displayName insert.
+  - qaScannerBridgeRouting no rootDir violation.
+  - qaScannerSelectedMarket no rootDir violation.
+- Run typecheck.
+- Run all relevant QA scripts.
+- Confirm CI guards pass.
+
+2. Authentication and roles
+- App loads to login first, not dashboard.
+- One login screen only.
+- Admin/operator logs in through the same login screen.
+- Admin/operator tools appear only after backend role confirmation.
+- Regular users cannot access admin tools through UI or direct URL.
+- New accounts default to role: user.
+- New accounts default to Trading Off.
+
+3. Closed beta invite system
+- Confirm invite code system exists and is connected to account creation.
+- Confirm admin/operator can create, view, disable, and track invite codes.
+- Prepare exactly 10 closed-beta invite codes or 10 tester slots.
+- Invite users should default to:
+  - role: user
+  - Trading Off
+  - Demo Allowed only if admin enables it
+  - Live Trading Off until manually approved
+- Invite codes should not expose admin privileges.
+
+4. Admin/operator control center
+- Confirm admin/operator can see tester list.
+- Confirm admin/operator can approve demo access per user.
+- Confirm admin/operator can approve live access per user.
+- Confirm admin/operator can disable trading per user.
+- Confirm master kill switch exists and blocks all trading.
+- Confirm per-user kill switch exists and blocks only that user.
+- Confirm all permission changes are audit logged.
+
+5. Trading safety
+- User cannot enable live trading for themselves.
+- User cannot bypass live permissions from frontend or API.
+- Live commands are blocked unless:
+  - user is approved
+  - live mode is enabled
+  - kill switches are off
+  - risk checks pass
+  - confirmation is completed
+- SL and TP fields exist on trade tickets.
+- User can enter/edit stop loss and take profit before placing a trade.
+- System supports buy, sell, buy limit, sell limit, buy stop, sell stop, buy stop limit, and sell stop limit where broker/bridge mode supports them.
+- Trade receipt clearly shows:
+  - demo or live
+  - symbol
+  - order type
+  - lot size
+  - entry
+  - SL
+  - TP
+  - risk/reward
+  - timestamp
+  - status
+
+6. Demo trading readiness
+- Demo trade can be tested end-to-end.
+- Demo positions show open P/L.
+- User can close demo position with confirmation.
+- Demo trades are clearly labeled as demo.
+- No demo balance is displayed as real money.
+
+7. Deriv scanner/feed readiness
+- DERIV_APP_ID is read only from backend env.
+- Scanner uses real Deriv feed when DERIV_APP_ID is present.
+- No fabricated market data appears as real data.
+- Volatility synthetic markets are included.
+- User can select direct symbol/pair instead of only grouped scanner categories.
+- Selected-market detail view works.
+- Ruby explanation window appears for selected scanner market.
+- Scanner cards show enough useful data to support a trade decision without feeling fake.
+
+8. Ruby AI readiness
+- Ruby is the only AI assistant name shown in app.
+- Ruby chat is scoped per user.
+- Ruby remembers each user’s own chat/trading context unless cleared.
+- Ruby can explain:
+  - selected scanner markets
+  - open trades
+  - why a market may be buy/sell
+  - pullback vs retracement
+  - continuation vs fakeout
+  - when risk is too high
+  - possible SL/TP zones
+- Ruby uses available trading tools, market history, indicators, scanner data, news/current events if connected, and user trade context.
+- Ruby cannot place, close, or modify live trades without permission and confirmation.
+- Ruby can recommend closing a trade, but action must still respect permission gates.
+
+9. Mobile UI readiness
+- Login works on mobile.
+- Dashboard works on mobile.
+- Scanner works on mobile.
+- Trade panel works on mobile.
+- Ruby chat works on mobile.
+- Admin/operator tools work on mobile for admin users only.
+- Bottom nav is fixed to the viewport.
+- Bottom nav does not float while scrolling.
+- No white gap appears under bottom nav.
+- Each user feels like they are using their own private trading workspace.
+
+10. Security and secrets
+- No API keys leak to frontend.
+- No seed passwords leak to frontend or logs.
+- No admin-only data leaks to regular users.
+- Admin routes are backend-protected.
+- Trading routes are backend-protected.
+- Sensitive actions are audit logged.
+- arx_live_commands remains 0 unless a deliberate approved command is created in a safe test mode.
+
+Fix only what fails.
+
+After all checks, print a final beta-readiness report:
+- Typecheck/CI: PASS/FAIL
+- Auth/RBAC: PASS/FAIL
+- Invite system: PASS/FAIL
+- 10 tester invites: PASS/FAIL
+- Admin control center: PASS/FAIL
+- Demo trading: PASS/FAIL
+- Live trading permission gates: PASS/FAIL
+- Kill switches: PASS/FAIL
+- Deriv scanner/feed: PASS/FAIL
+- Ruby AI readiness: PASS/FAIL
+- Mobile UI: PASS/FAIL
+- Security/secrets: PASS/FAIL
+- Live command safety: PASS/FAIL
+
+Final line must be one of:
+“READY FOR CLOSED BETA TESTING”
+or
+“NOT READY — FIXES NEEDED”

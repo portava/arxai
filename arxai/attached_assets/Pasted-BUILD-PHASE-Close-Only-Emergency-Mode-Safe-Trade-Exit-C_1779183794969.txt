@@ -1,0 +1,251 @@
+BUILD PHASE — Close-Only Emergency Mode + Safe Trade Exit Controls
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+When the operator activates Close-Only Emergency Mode, ARX AI must block all new trade openings while still allowing safe, verified exits from existing user-owned positions. The system should help users reduce risk without allowing unsafe, blind, duplicated, or cross-user close actions.
+
+Important:
+Check what already exists first. Reuse the current liveCommandPipeline, trade queue, kill switches, admin controls, user ownership checks, shared master ledger, bridge mapping, exposure reservations, cooldowns, Ruby context, audit logs, and confirmation system. Do not create a second trade execution path.
+
+1. Inspect existing close/exit systems first
+Inspect:
+- existing close trade flow
+- partial close support if any
+- SL/TP edit flow
+- trade ownership checks
+- shared master ledger mapping
+- queue statuses
+- bridge close command format
+- liveCommandPipeline
+- kill switch / close-only state
+- admin dashboard controls
+- Ruby trade explanation
+- audit logs
+- tests around closing trades
+
+Only build missing pieces.
+
+2. Close-only mode rules
+When close-only mode is active:
+
+Allowed if safe:
+- close user-owned open position
+- partial close user-owned position if supported
+- cancel user-owned pending order if supported
+- reduce exposure
+- view positions
+- ask Ruby about open risk
+- refresh position state
+- admin review of unsafe positions
+
+Blocked:
+- new market buy/sell
+- new pending buy/sell orders
+- increasing lot size
+- adding new exposure
+- opening hedge positions unless explicitly supported as a risk-reduction action
+- one-click opening
+- scanner-to-open trade
+- Ruby voice open trade
+- auto-trade opening
+
+3. Safe close verification
+Before any close request is allowed, verify:
+
+- authenticated userId
+- position belongs to current user
+- account mode matches position
+- position is still open
+- symbol matches
+- lot size is valid
+- close size does not exceed open size
+- shared master ledger maps position to this user
+- bridge/account mapping is known
+- MT5/app state is not uncertain
+- queue is not blocked for safe close actions
+- no duplicate close is already pending
+- command idempotency key is unique
+- live safety still passes for exit action
+- admin/operator state allows safe close
+
+If any ownership or state check fails, block and mark NEEDS_REVIEW instead of sending a blind close command.
+
+4. Emergency close request flow
+Add or improve the user-facing close flow:
+
+- Close trade button
+- Partial close button if supported
+- Close reason / confirmation prompt
+- Position details readback:
+  - symbol
+  - direction
+  - lot size
+  - entry price
+  - current price
+  - current P/L
+  - account mode
+- Clear warning if market is volatile or bridge state is delayed
+- Confirmation required before sending
+- Show status after submit:
+  - Close request received
+  - Checking safety
+  - Waiting in queue
+  - Sending close request
+  - Close confirmed
+  - Close rejected
+  - Needs review
+
+Do not use raw backend status labels in normal user UI.
+
+5. Admin emergency controls
+Add admin-only controls for:
+
+A. Enable/disable close-only mode
+- requires confirmation
+- requires reason
+- blocks new opens immediately
+
+B. Close-only by scope if not already supported
+- global close-only
+- per-user close-only
+- per-symbol close-only
+- per-bridge close-only
+- shared-master close-only
+
+C. Cancel unsafe open commands
+- admin can cancel queued open commands before dispatch
+- admin cannot cancel already-dispatched commands blindly
+- if uncertain, mark NEEDS_REVIEW
+
+D. View exit readiness
+Admin can see:
+- open positions by user
+- positions eligible for safe close
+- positions blocked from safe close
+- why a close is blocked
+- stale positions
+- duplicate close attempts
+- NEEDS_REVIEW exit items
+
+Do not expose secrets.
+
+6. Queue behavior in close-only mode
+Update queue logic so:
+
+- new open commands are blocked
+- pending open commands are paused or cancelled based on admin action
+- close commands can continue only if safe
+- partial close commands can continue only if supported and safe
+- duplicate close commands are ignored or blocked
+- stale close commands expire or move to NEEDS_REVIEW
+- uncertain bridge/MT5 state marks NEEDS_REVIEW instead of retrying blindly
+- live command count is not increased by blocked opens
+
+7. Shared master safety
+For SHARED_MASTER_MT5:
+
+- close request must map to the correct user ledger entry
+- user can close only their allocated/mapped position
+- if multiple users are in same symbol, close only the requesting user’s mapped exposure
+- if master position netting makes exact user-level close uncertain, block and mark NEEDS_REVIEW
+- normal user must not see other users’ exposure
+- admin can see unresolved mapping issues
+- do not guess ownership
+
+8. Personal MT5 safety
+For Personal MT5:
+
+- user can only close positions from their own connected bridge/account
+- if heartbeat is stale, warn or block based on safety settings
+- if position cannot be verified, mark NEEDS_REVIEW
+- do not route personal MT5 close commands through shared master logic
+
+9. Demo safety
+For Demo:
+
+- demo close-only should work using demo positions only
+- demo close should never create live commands
+- demo open commands should be blocked only if close-only applies to demo scope
+- live kill switch should not break demo unless explicitly scoped
+
+10. Ruby awareness
+Ruby should understand close-only and safe exit state.
+
+Ruby can explain:
+- “Close-only mode is active.”
+- “You can close existing trades, but you cannot open new ones right now.”
+- “This close request needs review because the system cannot verify the position.”
+- “Your position is already pending close.”
+- “This trade cannot be closed from your account because ownership cannot be verified.”
+- “The bridge heartbeat is stale, so I’m blocking unsafe action.”
+
+Ruby must not:
+- claim a trade was closed unless confirmed
+- close a trade without confirmation
+- reveal other users or shared master global exposure
+- expose secrets
+
+11. Voice guardrail connection
+If Ruby voice is active:
+
+- “Close my trade” should prepare the close confirmation, not execute silently
+- “Close all my trades” should show a confirmation list first
+- “Cancel” should clear the pending close action
+- ambiguous close commands should ask which trade
+- voice close must use the same safe close pipeline
+
+12. Audit logs
+Add audit logs for:
+- close-only mode enabled/disabled
+- scoped close-only enabled/disabled
+- new open blocked by close-only
+- close request created
+- close request blocked
+- close request queued
+- close request dispatched
+- close confirmed
+- close rejected
+- duplicate close ignored
+- close marked NEEDS_REVIEW
+- admin cancelled queued open command
+- admin reviewed unsafe exit
+- voice close confirmation requested/cancelled
+
+Do not log raw audio, bridge tokens, API keys, account credentials, session secrets, token hashes, or sensitive bridge payloads.
+
+13. Tests
+Add or update tests for:
+- close-only blocks new market opens
+- close-only blocks new pending orders
+- close-only allows safe close of user-owned position
+- close-only blocks close if ownership cannot be verified
+- close-only blocks close if MT5/app state is uncertain
+- duplicate close request does not send duplicate bridge command
+- user cannot close another user’s trade
+- shared master user can only close mapped ledger position
+- same symbol across two users does not cross-close
+- personal MT5 close does not route through shared master
+- demo close never creates live command
+- voice close requires confirmation
+- Ruby explains close-only state
+- admin can enable/disable close-only with reason
+- non-admin cannot use close-only controls
+- admin can cancel queued open command before dispatch
+- stale close command becomes EXPIRED or NEEDS_REVIEW
+- no secrets exposed
+- no live close/open command created during tests unless full safety flow and confirmation pass
+
+Return:
+- what was built
+- files changed
+- close-only rules added
+- admin route/API names
+- user route/UI names
+- queue behavior
+- Ruby behavior
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation arx_live_commands count stayed unchanged unless an approved test explicitly used a safe mock path

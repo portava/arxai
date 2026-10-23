@@ -1,0 +1,478 @@
+T019 — SYSTEM-WIDE OWNER-APPROVED LIVE TRADING UNRESTRICTED MODE VIA ADMIN RISK GOVERNANCE
+
+Current issue:
+ARX AI is still enforcing restrictions across the app that I did not personally set in Admin Risk/Governance. This makes live trading harder than it should be. ARX is a LIVE trading app. If I want a restriction, I will set it myself in the admin risk setup.
+
+Owner instruction:
+Remove all app-added live trading restrictions system-wide unless they are explicitly enabled in Admin Risk/Governance.
+
+This applies across the entire app:
+
+1. Scanner
+2. Trade page
+3. Chart trading
+4. Ruby actions
+5. Admin trade tools
+6. One-click / Single Confirm
+7. Live shared master bridge
+8. Trade modal
+9. Pending orders
+10. Close / partial close / reverse / break-even actions
+11. Symbol search
+12. Any live execution path
+13. Any backend live dispatch path
+14. Any frontend validation path
+
+Product direction:
+ARX AI is LIVE-first.
+Do not use Demo.
+Do not use Paper Trading.
+Do not use fake execution.
+Do not use simulated trade data.
+Do not fabricate MT5 tickets.
+Do not claim success unless MT5 confirms.
+Do not add training wheels unless Admin Risk/Governance turns them on.
+
+This is not a rebuild.
+Do not redesign the app.
+Do not duplicate trading systems.
+Do not reset live broker execution config.
+Do not weaken auth, owner/admin identity, user ownership, master-account privacy, MT5 connection truth, broker validation, or MT5 confirmation.
+
+Core rule:
+The only restrictions that should block owner/admin LIVE trading are:
+
+A. Non-negotiable technical/security truth checks:
+
+1. User must be authenticated.
+2. User must be owner/admin or explicitly live-approved.
+3. Request must be tied to the correct ARX user/account.
+4. Trade must be recorded in the ARX ledger.
+5. Server-side user ownership filtering must remain.
+6. Normal users must not see other users’ trades.
+7. Master account data must not leak.
+8. MT5 bridge must be connected.
+9. EA/terminal must be connected.
+10. Broker symbol must exist and be tradable.
+11. Broker lot rules must be valid.
+12. Broker precision/tick rules must be valid.
+13. Broker must accept the order.
+14. MT5 must return a real ticket/order/position/deal ID.
+15. ARX must not show success before MT5 confirms.
+16. No Demo/Paper/fake fallback.
+
+B. Restrictions I personally enable in Admin Risk/Governance:
+Everything else must be configurable and default OFF for owner/admin unrestricted live trading.
+
+PART 1 — System-wide audit of all live trade restrictions
+
+Audit every frontend and backend restriction that can block live trading.
+
+Search the entire codebase for restrictions including but not limited to:
+
+1. requireStopLoss
+2. requireTakeProfit
+3. requireSL
+4. requireTP
+5. stop loss required
+6. take profit required
+7. maxLot
+8. maxLiveLot
+9. maxOpenPositions
+10. dailyLossLimit
+11. allowedSymbols
+12. blockedSymbols
+13. scannerLiveEnabled
+14. liveTestMode
+15. firstLiveTest
+16. testSymbol
+17. requireScannerSignal
+18. requireRubyExplanation
+19. requireBacktest
+20. requireNewsCheck
+21. requireRiskReward
+22. requireConfirmation
+23. second confirmation
+24. Review → Confirm flow
+25. one-click disabled
+26. single-confirm disabled
+27. spread limit
+28. market-hours app block
+29. allocation block
+30. freeze block
+31. kill switch block
+32. live approval block
+33. owner/admin restriction
+34. pending order restriction
+35. close trade restriction
+36. partial close restriction
+37. reverse trade restriction
+38. break-even restriction
+39. chart trading restriction
+40. symbol-specific restrictions
+41. V75 restrictions
+42. synthetic restrictions
+43. EURUSD-only restriction
+44. hardcoded 0.01 restriction
+45. hardcoded no-live restriction
+46. Demo/Paper legacy blocker
+47. frontend-only validation that blocks before backend
+48. hidden backend fallback preventing dispatch
+
+For each restriction, classify it as:
+
+1. Non-negotiable technical/security truth check.
+2. Broker/MT5-required validation.
+3. Admin Risk/Governance-controlled restriction.
+4. Hardcoded app-added restriction to remove.
+5. Warning only.
+6. Dead legacy code.
+7. Paper/Demo leftover to remove from active flow.
+
+Create/update:
+docs/T019_SYSTEM_WIDE_RESTRICTION_AUDIT.md
+
+PART 2 — Create one source of truth: Admin Risk/Governance
+
+All app-added restrictions must come from Admin Risk/Governance only.
+
+Create or repair a single policy source used by frontend and backend:
+
+getEffectiveTradingGovernance(userId, accountMode, role)
+
+It should return all configurable restrictions, including:
+
+1. requireStopLoss
+2. requireTakeProfit
+3. maxLotPerTrade
+4. maxOpenPositions
+5. maxDailyTrades
+6. maxDailyLoss
+7. allowedSymbols
+8. blockedSymbols
+9. requireSpreadLimit
+10. spreadLimitValue
+11. requireScannerSignal
+12. requireRubyExplanation
+13. requireBacktest
+14. requireNewsCheck
+15. requireRiskReward
+16. allowMarketOrders
+17. allowPendingOrders
+18. allowPartialClose
+19. allowReverse
+20. allowBreakEven
+21. allowChartTrading
+22. allowOneClick
+23. allowSingleConfirm
+24. requireSecondConfirm
+25. allowOwnerUnrestrictedLiveMode
+26. enforceAllocationLimit
+27. enforceKillSwitch
+28. enforceAccountFreeze
+29. enforceMarketHoursAppCheck
+30. enforceSymbolAllowlist
+
+Default owner/admin unrestricted live policy:
+
+1. requireStopLoss = false
+2. requireTakeProfit = false
+3. requireScannerSignal = false
+4. requireRubyExplanation = false
+5. requireBacktest = false
+6. requireNewsCheck = false
+7. requireRiskReward = false
+8. allowMarketOrders = true
+9. allowPendingOrders = true
+10. allowPartialClose = true
+11. allowReverse = true
+12. allowBreakEven = true
+13. allowChartTrading = true
+14. allowOneClick = true
+15. allowSingleConfirm = true
+16. requireSecondConfirm = false
+17. enforceMarketHoursAppCheck = false unless owner/admin enables it
+18. enforceSymbolAllowlist = false unless owner/admin enables it
+19. enforceAllocationLimit = false for owner/admin unless enabled in Governance
+20. enforceKillSwitch = only if owner/admin enables/activates kill switch
+21. enforceAccountFreeze = only if owner/admin freezes the account
+22. maxLotPerTrade = no app-added cap unless Governance sets one
+23. maxOpenPositions = no app-added cap unless Governance sets one
+24. allowedSymbols = unrestricted unless Governance sets allowlist
+25. blockedSymbols = none unless Governance sets blocklist
+
+Important:
+Broker/MT5 may still reject invalid symbols, invalid lots, market-closed instruments, unavailable Market Watch symbols, invalid stops, invalid filling mode, or disconnected terminal. That is not an app restriction. That is broker truth.
+
+PART 3 — Remove all hardcoded app-added blockers
+
+Remove or refactor hardcoded app-added blockers system-wide.
+
+Examples:
+
+1. Remove hardcoded require Stop Loss.
+2. Remove hardcoded require Take Profit.
+3. Remove hardcoded max lot 0.01 unless Governance sets it.
+4. Remove hardcoded EURUSD-only test symbol.
+5. Remove hardcoded first-live-test restrictions.
+6. Remove hardcoded max one position.
+7. Remove hardcoded scannerLiveEnabled block.
+8. Remove hardcoded allowedSymbols block unless Governance enables allowlist.
+9. Remove hardcoded spread limit unless Governance enables spread limit.
+10. Remove hardcoded require scanner signal.
+11. Remove hardcoded require Ruby explanation.
+12. Remove hardcoded require backtest/news/history.
+13. Remove forced Review → Final Confirm double step.
+14. Remove frontend disabled Confirm button caused by missing SL/TP unless Governance requires SL/TP.
+15. Remove arbitrary block on V75/synthetics unless broker/MT5 rejects or Governance blocks.
+16. Remove any Demo/Paper legacy blocker in active live flow.
+
+Do not remove:
+
+1. MT5 confirmation requirement.
+2. Broker rule validation.
+3. Auth.
+4. Owner/admin/live approval identity.
+5. Server-side ownership filtering.
+6. Ledger recording.
+7. Master bridge privacy.
+8. No fake execution rule.
+9. No success before MT5 ticket rule.
+
+PART 4 — Owner/admin unrestricted live mode
+
+Add/repair:
+
+Owner Live Control Mode
+
+When ON:
+
+1. Owner/admin can place live trades without app-added restrictions.
+2. Stop Loss optional.
+3. Take Profit optional.
+4. Symbol unrestricted by ARX unless Governance blocklist/allowlist is enabled.
+5. Lot unrestricted by ARX unless Governance max lot is enabled.
+6. Market orders allowed.
+7. Pending orders allowed.
+8. Partial close allowed.
+9. Reverse allowed.
+10. Break-even allowed.
+11. Chart trading allowed.
+12. Ruby does not block execution.
+13. Scanner signal does not block execution.
+14. News/backtest/history does not block execution.
+15. Single Confirm is ON.
+16. No second confirm.
+
+Still required:
+
+1. authenticated owner/admin
+2. LIVE broker execution enabled
+3. MT5/EA connected
+4. broker accepts symbol/order
+5. MT5 ticket/order/position/deal returned
+6. ARX ledger records trade
+7. no fake success
+
+PART 5 — System-wide frontend behavior
+
+Update frontend so the UI no longer blocks owner/admin live trading for app-added restrictions.
+
+Scanner:
+
+1. Confirm button enabled when symbol, direction, and lot are present.
+2. SL optional unless Governance requires it.
+3. TP optional unless Governance requires it.
+4. Ruby explanation optional unless Governance requires it.
+5. Scanner signal optional unless Governance requires it.
+6. Show Governance chips only as information, not blockers, unless enabled.
+
+Trade page:
+
+1. Open Trade should not require SL/TP unless Governance requires them.
+2. Close should not require extra confirmation unless Governance requires it.
+3. Partial close/reverse/break-even allowed unless Governance disables them.
+4. Do not show unsynced ARX commands as confirmed live positions.
+
+Chart trading:
+
+1. Buy/Sell allowed from chart.
+2. Drag SL/TP optional.
+3. Pending orders allowed unless Governance disables.
+4. Confirm means final action if Single Confirm is ON.
+
+Ruby:
+
+1. Ruby can assist but must not block trades unless Governance requires Ruby approval/explanation.
+2. Ruby cannot bypass backend truth.
+3. Ruby cannot fake execution.
+
+PART 6 — System-wide backend behavior
+
+Backend live dispatch must evaluate:
+
+1. Non-negotiable technical/security truth checks.
+2. Broker/MT5 validation.
+3. Effective Governance policy.
+
+Backend must not apply old hardcoded app restrictions after Governance says OFF.
+
+For each block, backend response must include:
+
+1. category: BROKER / TECHNICAL / GOVERNANCE / SECURITY
+2. clean user reason
+3. admin diagnostic reason
+4. whether owner/admin can change it in Governance
+5. whether it is broker/MT5 and cannot be changed in app
+
+Examples:
+
+1. “Blocked by Governance: Stop Loss is required.”
+2. “Blocked by Governance: Max lot is 0.01.”
+3. “Blocked by Broker: Symbol is not available in MT5 Market Watch.”
+4. “Blocked by Broker: Market is closed.”
+5. “Blocked by Technical Readiness: MT5 bridge disconnected.”
+6. “Blocked by Security: User is not approved for live trading.”
+
+PART 7 — Admin Risk/Governance UI
+
+Admin Risk setup must clearly expose and control these settings.
+
+Create/repair UI sections:
+
+1. Owner Live Control Mode
+2. Required SL/TP
+3. Lot and position limits
+4. Daily trade/loss limits
+5. Symbol allowlist/blocklist
+6. Spread rules
+7. Market-hours app check
+8. Confirmation rules
+9. Ruby/scanner/backtest requirements
+10. Allocation enforcement
+11. Kill switch
+12. Freeze controls
+
+Each setting should show:
+
+1. ON/OFF
+2. current value
+3. who it applies to: owner/admin/users
+4. whether it blocks trading
+5. whether broker can still reject regardless
+
+Default owner/admin state:
+Owner Live Control Mode ON.
+App-added restrictions OFF.
+
+PART 8 — Live trade proof required
+
+After system-wide restriction cleanup, prove with one real live trade.
+
+Do not use Demo.
+Do not use Paper.
+Do not fake execution.
+
+Use a symbol that MT5 can actually execute right now.
+
+If V75/V25 is not available in MT5 Market Watch or broker rejects it:
+
+1. Do not pretend it works.
+2. Show clean broker message.
+3. Use another symbol currently executable through MT5.
+
+If forex is closed:
+
+1. Do not force EURUSD.
+2. Use an available tradable live symbol if one exists.
+3. If no symbols are currently executable, report exact broker limitation and keep the app ready.
+
+Before execution:
+
+1. health:workflows
+2. live readiness
+3. Owner Live Control Mode status
+4. Governance settings dump
+5. broker symbol rules
+6. arx_live_commands before count/max_id
+7. MT5 open positions before
+8. ARX open positions before
+
+Execution:
+
+1. Choose confirmed executable live symbol.
+2. Use smallest broker-valid lot.
+3. Do not require SL unless Governance requires SL.
+4. Do not require TP unless Governance requires TP.
+5. Press Confirm once.
+6. Show pending state immediately.
+7. MT5 executes.
+8. Capture real MT5 ticket/order/position/deal ID.
+9. ARX stores MT5 ID.
+10. Trade appears with Entry/Now/P&L.
+11. Close immediately through ARX.
+12. MT5 confirms close.
+13. ARX records close.
+14. Positions return to previous count.
+
+Do not mark complete without MT5-confirmed execution unless no tradable symbol exists and that is proven by broker/terminal truth.
+
+PART 9 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. Governance policy tests
+5. Owner Live Control Mode tests
+6. Stop Loss optional tests
+7. Take Profit optional tests
+8. max lot Governance test
+9. allowed symbols Governance test
+10. single-confirm test
+11. backend block category tests
+12. Scanner trade modal tests
+13. chart trading tests
+14. Ruby non-blocking test
+15. Trade page display test
+16. route containment tests
+17. live-readiness tests
+
+PART 10 — Final report required
+
+Final report must include:
+
+1. all hardcoded restrictions found
+2. all restrictions removed
+3. all restrictions moved to Governance
+4. current owner/admin Governance settings
+5. Owner Live Control Mode status
+6. confirmation SL optional when Governance OFF
+7. confirmation TP optional when Governance OFF
+8. confirmation max lot controlled by Governance
+9. confirmation symbols controlled by Governance/broker truth
+10. confirmation Ruby/scanner/backtest do not block unless Governance ON
+11. confirmation Single Confirm ON
+12. block response categories implemented
+13. selected live test symbol
+14. whether MT5 executed a live trade
+15. MT5 ticket/order/position/deal ID
+16. open price
+17. close price
+18. P/L
+19. ARX ledger verification
+20. Trade page verification
+21. Scanner/chart verification
+22. arx_live_commands before/after
+23. confirmation trade closed
+24. if no trade placed, exact broker/terminal reason
+25. confirmation no Demo/Paper/fake execution used
+26. confirmation no security/privacy/MT5 truth checks bypassed
+27. health:workflows result
+28. typecheck result
+29. ci:guards result
+30. remaining risks
+
+Completion standard:
+This is complete only when all app-added owner/admin live trade restrictions are controlled by Admin Risk/Governance system-wide, default owner/admin restrictions are OFF, and one real live trade is executed and closed with MT5 confirmation if any tradable live symbol is available.

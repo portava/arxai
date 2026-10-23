@@ -1,0 +1,231 @@
+Proceed with T005 UI surface wiring for the Global Instant Trade Router, then begin T006 QA cleanup.
+
+Current checkpoint:
+- Global Instant Trade Router backend is ready.
+- Safety invariants are preserved.
+- Demo path is untouched.
+- Ruby AI trade commands are gated.
+- Per-user isolation is maintained.
+- Remaining work listed by agent:
+  T005 UI surfaces wiring executeInstantTrade() directly into ChartTradeEntry / Scanner / SelectedMarketPanel / OpenLivePositions
+  T006 QA + cleanup
+
+Important:
+Do not remove backend safety gates.
+Do not bypass live readiness.
+Do not auto-arm live trading.
+Do not enable AI autonomous trading by default.
+Do not expose internal function names to normal users.
+Do not create duplicate pages/components.
+Wire the active runtime UI components only.
+
+1. Wire instant trade router into all trade-capable UI surfaces
+
+Use the existing Global Instant Trade Router as the only live execution path.
+
+Wire it into:
+- Trade page Quick Trade BUY/SELL
+- Scanner BUY/SELL buttons
+- SelectedMarketPanel BUY/SELL buttons
+- ChartTradeEntry BUY/SELL buttons
+- OpenLivePositions CLOSE button
+- OpenLivePositions CLOSE ALL button
+- Market cards where trade actions exist
+- Watchlist trade actions if present
+- Alert/opportunity trade actions if present
+- Ruby text command execution
+- Ruby voice command execution
+
+Every surface should call the same shared execution function/router.
+
+2. One-click behavior
+
+When the approved user has One-Click Live Mode enabled:
+- BUY executes instantly.
+- SELL executes instantly.
+- CLOSE executes instantly.
+- CLOSE ALL executes instantly if enabled.
+- No per-trade confirmation modal.
+- No confirmation checkbox.
+- No required stop loss.
+- No required take profit.
+- No large repeated real-money warning modal.
+
+Keep compact status only:
+- LIVE READY
+- READY TO ARM
+- ACCOUNT NOT APPROVED
+- LIVE DISABLED
+- KILL SWITCH ACTIVE
+- CLOSE ONLY
+
+3. Standard mode behavior
+
+If One-Click Live Mode is disabled:
+- keep Standard Mode available.
+- Standard Mode may use the older ticket/confirmation flow.
+- Do not remove Standard Mode.
+
+4. Ruby command wiring
+
+Ruby text and voice commands should route to the same instant trade router.
+
+Direct commands should execute only when clear:
+- Buy EURUSD 0.01
+- Sell EURUSD 0.01
+- Buy this
+- Sell this
+- Close my EURUSD trade
+- Close all trades
+- Close all profitable trades
+- Move stop loss to break even
+- Set take profit to 1.0920
+
+Ruby must not trade from vague questions like:
+- What should I trade?
+- Is EURUSD good?
+- Do you think I should buy?
+- Find me a setup.
+
+For vague requests, Ruby should analyze only.
+
+If a direct trade command is missing required info:
+- use saved defaults when available.
+- otherwise ask only for the missing value.
+- do not show warning popups.
+
+5. Do not expose internal names to users
+
+Normal users must never see:
+- executeInstantTrade
+- executeTradeIntent
+- validateLiveTrade
+- aiInstantTradeCommandsEnabled
+- allowRubyOpenCommands
+- serverLiveExecutionEnabled
+- oneClickLiveTradingEnabled
+- API route names
+- raw tool/function names
+- raw JSON
+- stack traces
+
+Use friendly labels:
+- Sending trade…
+- Closing position…
+- Checking trade readiness…
+- Ruby is thinking…
+- Ruby is typing…
+- Ruby is checking your open trades…
+- Live trading is not armed yet.
+- Account not approved.
+- Kill switch active.
+
+Internal names may appear only inside collapsed admin/dev “Developer details,” never in regular user UI.
+
+6. UI cleanup while wiring
+
+Keep the app simple-first.
+
+Scanner:
+- Focus tab should show selected market, Ruby read, confidence, risk, Buy/Sell/View Chart/Ask Ruby.
+- Results/Symbols/Advanced should hold scanner lists, symbol groups, diagnostics, feed details.
+
+Trade:
+- Quick Trade should show selected symbol, volume, Buy, Sell, position summary, compact status.
+- Advanced should hold pending order types and detailed controls.
+
+Ruby:
+- Chat should show clean messages and Ruby thinking/typing indicators.
+- Do not show internal tool chips.
+
+Positions:
+- Show clear one-click CLOSE buttons.
+- CLOSE should be visible and thumb-friendly on mobile.
+
+7. Backend gates still required
+
+Instant live execution must still require:
+- authenticated user
+- approved live/shared trading access
+- one-click mode enabled for one-click route
+- Ruby AI command trading enabled for Ruby open commands
+- server dispatch armed
+- kill switch inactive for new/open-risk orders
+- real LIVE bridge, not MOCK
+- fresh EA heartbeat
+- EA v1.27+
+- ReadOnlyMode=false
+- EnableLiveExecution=true
+- terminalConnected=true
+- algoTradingAllowed=true
+- volume within max lot
+- daily loss limit not breached
+- symbol allowed
+- account/bridge approved
+
+Do not require:
+- stop loss
+- take profit
+- per-order confirmation checkbox
+- repeated warning modal
+
+8. CLOSE behavior
+
+CLOSE and CLOSE ALL should be reduce-only.
+
+If kill switch is active:
+- block new open/increase-risk orders.
+- allow reduce-only close if backend/EA supports safe close.
+- show CLOSE ONLY status.
+
+9. Audit logs
+
+Every instant action must log:
+- user id
+- account id
+- bridge id
+- source
+- action
+- symbol
+- order type
+- volume
+- stopLoss or null
+- takeProfit or null
+- Ruby raw command if applicable
+- parsed intent if applicable
+- accepted/rejected
+- rejection reason
+- broker command id if accepted
+- timestamp
+
+10. Run tests
+
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm --filter @workspace/scripts run test:live-phaseB
+
+Add/update tests proving:
+- Trade page BUY/SELL uses instant router.
+- Scanner BUY/SELL uses instant router.
+- ChartTradeEntry BUY/SELL uses instant router.
+- SelectedMarketPanel BUY/SELL uses instant router.
+- Position CLOSE uses instant router.
+- CLOSE ALL uses instant router.
+- Ruby text command routes to instant router.
+- Ruby voice command routes to instant router.
+- Vague Ruby questions do not trade.
+- Blank SL/TP are allowed in one-click mode.
+- Unapproved user cannot trade.
+- Server dispatch off blocks live open orders.
+- Kill switch blocks new live open orders.
+- Max lot blocks oversized orders.
+- Daily loss limit blocks trades after limit breach.
+- Internal function names do not appear in normal user UI.
+- Mobile layout has no horizontal overflow.
+- Ruby bubble and bottom nav do not cover trade buttons.
+
+Do not remove features.
+Do not create duplicate components.
+Do not change backend safety behavior.
+Complete T005 wiring first, then proceed into T006 QA cleanup.

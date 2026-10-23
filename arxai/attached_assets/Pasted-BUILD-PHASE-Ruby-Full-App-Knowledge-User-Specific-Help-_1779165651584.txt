@@ -1,0 +1,282 @@
+BUILD PHASE — Ruby Full App Knowledge + User-Specific Help Brain
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Upgrade Ruby so she can answer questions about the entire ARX AI app, explain every feature, understand the current user’s account state, help troubleshoot trading/app issues, and give user-specific guidance without exposing admin-only data, other users, shared master totals, secrets, or fake information.
+
+Ruby should feel like the user’s private ARX AI assistant.
+
+1. Inspect existing Ruby/AI system first
+- Inspect current Ruby chat UI, AI routes, prompt builder, memory system, trading context tools, scanner context, chart context, account shell, onboarding status, notifications, admin approval status, queue status, trade ledger, and app route/component structure.
+- Reuse existing Ruby/chat infrastructure.
+- Do not create a second disconnected AI system.
+- Only add missing app-knowledge, user-context, routing, memory, and safety pieces.
+
+2. Full app knowledge map
+Create or strengthen an internal app knowledge map Ruby can use.
+
+Ruby should know:
+- what ARX AI is
+- what Ruby is
+- what each page does
+- what each button/action does
+- how onboarding works
+- how demo mode works
+- how personal MT5 mode works
+- how shared master access works
+- how admin approval works
+- how allocations/risk profiles work
+- how one-click trading works
+- how scanner/direct symbol search works
+- how Ruby market explanations work
+- how chart position windows work
+- how trade tickets work
+- how pending orders work
+- how SL/TP editing works
+- how closing trades works
+- how trade queue/status works
+- how P/L calendar works
+- how notifications work
+- how account mode switching works
+- how safety gates work
+- how bridge connection/heartbeat works
+- what users can do next based on their current state
+
+Keep this knowledge generated from current routes/components/configs where possible so it does not become stale.
+
+3. User-specific Ruby context
+Ruby must answer based on the authenticated user’s private data only.
+
+Ruby can use:
+- current userId from backend session
+- account mode
+- onboarding status
+- approval status
+- allocation status
+- risk profile
+- account shell
+- user’s own balance/equity/P/L
+- user’s own open trades
+- user’s own pending orders
+- user’s own closed trades
+- user’s own scanner selections
+- user’s own watchlist
+- user’s own notifications
+- user’s own trade queue status
+- user’s own Ruby chat memory
+- user’s own app settings
+
+Ruby must not use frontend-provided userId.
+
+4. App help brain
+Ruby should be able to answer user questions like:
+- “How do I place a trade?”
+- “Why can’t I trade live?”
+- “Why is my account waiting for approval?”
+- “How do I connect MT5?”
+- “Is my bridge connected?”
+- “Why is this trade blocked?”
+- “What does one-click trading do?”
+- “How do I edit stop loss?”
+- “Where is my P/L calendar?”
+- “Why is my trade queued?”
+- “What does needs review mean?”
+- “How do I switch from demo to live?”
+- “What is my max lot size?”
+- “What is my daily loss limit?”
+- “What should I do next?”
+
+Answers should be direct, clean, and specific to the user’s actual account state.
+
+5. Trading context brain
+Ruby should use all available trading tools, market history, scanner context, chart context, indicators, economic calendar, impact calendar, market news, current events, and real-world news when answering trading questions.
+
+Ruby should be able to answer:
+- “What market looks good right now?”
+- “Why is EURUSD moving?”
+- “Is this a pullback or reversal?”
+- “Should I wait or enter?”
+- “Where should I place TP?”
+- “Where is risk increasing?”
+- “Is my trade still valid?”
+- “Why did Ruby call this risky?”
+- “What event could move this symbol today?”
+
+Ruby must clearly label uncertainty and avoid pretending to know unavailable data.
+
+6. Status-aware responses
+Ruby should check the actual user/account/trade state before answering.
+
+Examples:
+- If user has no trades: “You don’t have any open trades yet.”
+- If onboarding incomplete: “Finish account setup first.”
+- If shared master pending: “You’re waiting for admin approval.”
+- If allocation missing: “Your allocation has not been assigned yet.”
+- If bridge disconnected: “The bridge is not connected right now.”
+- If trade blocked: explain the actual safety gate reason.
+- If command queued: explain the queue status.
+- If trade filled: explain the mapped position.
+- If no scanner symbol selected: prompt user to choose a symbol.
+
+Ruby should not give generic answers when real state is available.
+
+7. Private memory
+Ruby should maintain user-specific saved chats and memory unless the user clears it.
+
+Add or verify:
+- memory is scoped by authenticated userId
+- memory is not shared across users
+- memory is separated from admin/global data
+- user can clear Ruby memory
+- Ruby does not remember fake first-load data
+- logout/login switch does not leak previous user chat context
+- Ruby can summarize the current user’s previous conversations only when allowed
+
+8. Navigation help
+Ruby should be able to guide users around the app.
+
+Ruby can say:
+- “Go to My Scanner and choose a symbol.”
+- “Open My Trades, then select the position.”
+- “Your account setup is under My Account.”
+- “Admin approval is required before shared live trading.”
+- “Your one-click toggle is off right now.”
+
+If deep links/routes exist, connect Ruby replies to safe route names/buttons.
+
+9. Action suggestions
+Ruby should suggest safe next actions based on state.
+
+Examples:
+- “Start in demo mode.”
+- “Finish onboarding.”
+- “Request shared master access.”
+- “Wait for admin approval.”
+- “Choose a symbol to scan.”
+- “Open a trade ticket, but review risk first.”
+- “Refresh bridge status.”
+- “Ask admin to assign allocation.”
+- “Review why this trade was blocked.”
+
+Ruby should not execute trades, close trades, change SL/TP, enable one-click, or switch live mode without explicit user action and existing safety gates.
+
+10. Admin-safe behavior
+Normal users must not be able to ask Ruby for:
+- other user data
+- shared master global balance
+- admin approval console data
+- bridge secrets
+- API keys
+- session secrets
+- account credentials
+- token hashes
+- raw server logs
+- private audit logs
+- all-user trade queue data
+
+If a normal user asks, Ruby should respond with a clean boundary:
+“I can only show your private account, trades, risk, and performance.”
+
+Admins may ask Ruby admin-level questions only on admin routes or admin-authenticated context.
+
+11. Ruby and admin mode
+For admin users only, Ruby can explain:
+- bridge health
+- queue health
+- shared master mapping status
+- pending user approvals
+- needs-review items
+- per-user allocation summaries
+- why a user is blocked from live trading
+- admin next steps
+
+Even for admins, Ruby must not expose secrets.
+
+12. Error/troubleshooting brain
+Ruby should explain app errors in user-facing language:
+- no raw stack traces
+- no backend code dumps
+- no secret exposure
+- no scary technical language unless expanded by user
+- clear next step
+- route/action to fix if available
+
+Examples:
+- “Your trade was blocked because your account is waiting for approval.”
+- “The bridge heartbeat has not updated yet.”
+- “This symbol is not enabled for your account.”
+- “Your daily loss limit has been reached.”
+- “This command needs admin review before it can continue.”
+
+13. Ruby UI cleanup
+Make Ruby feel present and useful:
+- Ruby window should be visible where expected.
+- Ruby should show current context chips if available:
+  - Account
+  - Scanner
+  - Trade
+  - Risk
+  - Setup
+  - Help
+- Ruby should avoid developer/code-heavy language.
+- Ruby should not clutter the page.
+- Mobile Ruby chat should remain usable.
+
+14. Prompt and tool safety
+Harden Ruby prompt building:
+- always include user privacy boundary
+- include current user state only
+- include app knowledge map
+- include trading context only when relevant
+- include admin context only for admin users
+- prevent prompt injection from user-provided market/news text
+- never include raw secrets in prompts
+- never include another user’s records in prompts
+- never claim a live trade was placed unless system status confirms it
+
+15. Audit logs
+Add safe audit logs for:
+- Ruby app-help request
+- Ruby trading-help request
+- Ruby user-state lookup
+- Ruby blocked private/admin data request
+- Ruby memory cleared
+- Ruby route suggestion clicked
+- Ruby error explanation requested
+
+Do not log secrets.
+
+16. Tests
+Add or update tests for:
+- Ruby answers app feature questions
+- Ruby explains onboarding state
+- Ruby explains live trading blocked by pending approval
+- Ruby explains allocation missing
+- Ruby explains bridge disconnected
+- Ruby explains trade queued/blocked/needs-review
+- Ruby uses only authenticated user data
+- User A cannot ask Ruby about User B data
+- Ruby does not reveal shared master global totals to normal users
+- Ruby does not expose admin-only data to normal users
+- admin Ruby context works only for admin
+- Ruby memory is scoped per user
+- clearing Ruby memory works
+- logout/login does not leak previous user Ruby context
+- Ruby does not reference fake trades on first load
+- Ruby does not claim live trade fired unless status confirms it
+- no secrets exposed in prompts, logs, UI, routes, or responses
+- no live command created during tests
+
+Return:
+- what was built
+- files changed
+- Ruby knowledge map behavior
+- user context sources connected
+- admin context rules
+- memory behavior
+- Ruby route/UI changes
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired during this build

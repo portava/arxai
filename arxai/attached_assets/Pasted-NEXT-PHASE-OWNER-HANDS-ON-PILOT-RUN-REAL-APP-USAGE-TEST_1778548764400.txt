@@ -1,0 +1,372 @@
+NEXT PHASE: OWNER HANDS-ON PILOT RUN — REAL APP USAGE TEST
+
+Goal:
+Run the app as a real owner/tester session instead of adding more features.
+
+Do not build new systems in this phase.
+Do not fake MT5 connection.
+Do not place real broker orders.
+Do not claim broker fills.
+Do not expose secrets.
+Do not block owner tester access.
+Keep MT5 deferred until desktop/VPS MT5 bridge is connected later.
+
+==================================================
+1. VERIFY REPAIR SPRINT IS CLEAN
+==================================================
+
+Before starting the pilot, verify:
+
+- GET /api/release/readiness
+- GET /api/system/full-health
+- GET /api/auth/permissions
+- GET /api/admin/issues
+- GET /api/broker/status
+- npm run test:system
+
+Required before pilot:
+
+- P0 remaining = 0
+- P1 remaining = 0
+- owner role active
+- full tester access active
+- simulator ready
+- live tester workflows open
+- MT5 connected = false
+- MT5 deferred = true
+- real broker execution available = false
+- risk governor active
+- kill switch UI active
+- secrets hidden
+
+If P0 or P1 issues remain, stop and fix them first.
+
+==================================================
+2. START OWNER PILOT SESSION
+==================================================
+
+Create test session:
+
+Owner Hands-On Pilot Run #1
+
+Track:
+
+- routes visited
+- buttons clicked
+- simulator trades submitted
+- live tester intents created
+- AI trade ideas generated
+- AI ideas approved/rejected
+- risk blocks triggered
+- errors encountered
+- mobile layout issues
+- slow pages
+- confusing labels
+- journal/calendar updates
+- audit events
+- feedback submitted
+
+Show banner:
+
+“Owner Pilot Run #1 Active — MT5 Deferred, Simulator + Tester Workflows Active”
+
+==================================================
+3. PILOT FLOW A — MAIN DASHBOARD
+==================================================
+
+Test:
+
+1. Open dashboard.
+2. Confirm global tester banner.
+3. Confirm MT5 deferred banner.
+4. Confirm live chart preview loads.
+5. Confirm risk status visible.
+6. Confirm simulator status visible.
+7. Confirm live intent count visible.
+8. Confirm quick actions work.
+
+Expected:
+- dashboard feels usable
+- no blank sections
+- no fake broker execution
+- no hidden tester workflows
+
+==================================================
+4. PILOT FLOW B — TRADE COMMAND ROOM
+==================================================
+
+Test:
+
+1. Open Trade Command Room.
+2. Change selected symbol to XAUUSD.
+3. Confirm chart updates.
+4. Confirm trade ticket updates.
+5. Confirm scanner updates.
+6. Confirm risk panel updates.
+7. Confirm AI explanation panel is visible.
+8. Confirm decision stream is visible.
+
+Expected:
+- this page feels like the main trading workspace
+- symbol sync works
+- chart and ticket are connected
+
+==================================================
+5. PILOT FLOW C — DEMO MANUAL SIMULATOR TRADE
+==================================================
+
+Create one valid simulator trade:
+
+- symbol: XAUUSD or EURUSD
+- lot size: small
+- stop loss: required
+- take profit: required
+- risk: within profile
+- environment: DEMO_SIMULATOR
+
+Confirm:
+
+- risk governor approves or gives clear warning
+- OMS creates order
+- simulator fills or queues order correctly
+- position manager updates
+- P/L engine updates
+- journal updates
+- calendar updates
+- audit log updates
+
+Then create one bad trade:
+
+- missing stop loss
+
+Expected:
+- bad trade is rejected clearly
+- rejection reason appears
+- risk event is logged
+
+==================================================
+6. PILOT FLOW D — AI TRADE IDEA
+==================================================
+
+Test:
+
+1. Generate AI trade idea.
+2. Confirm AI trade card appears.
+3. Confirm confidence score.
+4. Confirm risk score.
+5. Confirm opportunity score.
+6. Confirm entry sniper score.
+7. Confirm reason for trade.
+8. Confirm invalidation reason.
+9. Reject one AI idea.
+10. Approve one AI simulator idea only if risk passes.
+
+Expected:
+- AI feels explainable
+- user understands why trade was suggested
+- risk governor remains in control
+
+==================================================
+7. PILOT FLOW E — LIVE TESTER INTENT
+==================================================
+
+Test live workflow without MT5 execution:
+
+1. Open Live Manual Tester.
+2. Fill a live-style trade.
+3. Click Submit Live Intent.
+4. Confirm status = PENDING_MT5_CONNECTION.
+5. Confirm brokerExecution = false.
+6. Confirm live intent queue updates.
+
+Then test Live AI Assist Tester:
+
+1. Generate live-style AI idea.
+2. Approve into live intent queue.
+3. Confirm no broker order is placed.
+
+Expected:
+- live pages are fully open
+- tester workflow works
+- MT5 requirement is clear
+- no real broker execution happens
+
+==================================================
+8. PILOT FLOW F — AUTOPILOT / SHADOW
+==================================================
+
+Test:
+
+1. Start Autopilot Observe Only.
+2. Force scan.
+3. Confirm observation logs.
+4. Stop autopilot.
+
+Then:
+
+1. Start Shadow Mode.
+2. Create one shadow decision.
+3. Track outcome.
+4. Confirm shadow journal updates.
+
+Expected:
+- AI can watch and log without trading
+- results stay separated from simulator/live intents
+
+==================================================
+9. PILOT FLOW G — RECORDS CHECK
+==================================================
+
+Open and verify:
+
+- Orders
+- Positions
+- Journal
+- Calendar
+- P/L summary
+- AI decisions
+- Live intent queue
+- Risk events
+- Audit vault
+- Performance scorecard
+
+Expected:
+- records are visible
+- environment labels are correct
+- simulator, shadow, and live tester intents are not mixed
+
+==================================================
+10. PILOT FLOW H — MOBILE CHECK
+==================================================
+
+Test mobile usability:
+
+- dashboard
+- live chart
+- trade command room
+- trade ticket
+- live manual tester
+- market scanner
+- orders
+- positions
+- journal
+- calendar
+
+Expected:
+- no horizontal overflow
+- buttons are tappable
+- chart fits screen
+- kill switch remains reachable
+- cards are readable
+
+==================================================
+11. CAPTURE ISSUES DURING PILOT
+==================================================
+
+For every issue, create an item in /admin/issues.
+
+Classify:
+
+P0:
+- app crash
+- owner locked out
+- secrets exposed
+- MT5 falsely connected
+- real broker execution falsely available
+
+P1:
+- simulator broken
+- live tester intent broken
+- AI trade card broken
+- journal/calendar missing
+- OMS broken
+- mobile nav broken
+
+P2:
+- confusing UI
+- unclear label
+- bad empty state
+- slow page
+- layout issue
+
+P3:
+- copy polish
+- spacing
+- tooltip improvement
+
+Do not fix P3 during pilot unless very quick.
+
+==================================================
+12. END PILOT + GENERATE REPORT
+==================================================
+
+Generate:
+
+OWNER HANDS-ON PILOT RUN #1 REPORT
+
+Include:
+
+1. Pilot status:
+- completed yes/no
+- beta usable yes/no
+- owner access preserved yes/no
+
+2. Core app:
+- dashboard pass/fail
+- command room pass/fail
+- live chart pass/fail
+- symbol sync pass/fail
+
+3. Trading:
+- demo manual simulator pass/fail
+- bad trade rejection pass/fail
+- AI simulator idea pass/fail
+- live manual tester intent pass/fail
+- live AI tester intent pass/fail
+
+4. AI:
+- scanner pass/fail
+- autopilot observe pass/fail
+- shadow mode pass/fail
+- AI explanations clear yes/no
+
+5. Records:
+- OMS pass/fail
+- positions pass/fail
+- P/L pass/fail
+- journal pass/fail
+- calendar pass/fail
+- audit pass/fail
+
+6. Mobile:
+- usable yes/no
+- broken pages
+- layout issues
+
+7. Bugs:
+- P0 found
+- P1 found
+- P2 found
+- P3 found
+- issues created
+
+8. MT5 truth:
+- MT5 connected yes/no
+- MT5 deferred yes/no
+- real broker execution available yes/no
+- no fake broker execution yes/no
+
+9. Final decision:
+- READY FOR DAILY OWNER TESTING
+- NEEDS P0/P1 REPAIR
+- NEEDS UI POLISH
+- WAITING ON MT5 SETUP
+
+Hard rules:
+- Do not fake pass results.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills.
+- Do not expose secrets.
+- Do not block owner tester access.
+- Do not hide live tester workflows.

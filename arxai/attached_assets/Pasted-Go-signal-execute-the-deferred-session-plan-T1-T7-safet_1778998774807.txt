@@ -1,0 +1,170 @@
+Go signal: execute the deferred session-plan T1–T7 safety/visibility features now.
+
+Do NOT unlock live trading.
+Do NOT enable real auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send real MT5 execution, modification, cancel, or close commands.
+Do NOT weaken paper-only, live-trading, MT5 bridge, ALERT_ONLY, user confirmation, user ownership, duplicate-action, risk-limit, attribution, command queue, safety-envelope, or activityStatus gates.
+Do NOT suppress runtime overlays.
+Do NOT redesign unrelated pages.
+Check what already exists first, then adjust only what is needed.
+
+Before coding:
+1. Read the latest runtime/safety-envelope QA report.
+2. Confirm final status is READY FOR NEXT PHASE.
+3. Confirm frontend state matches backend state.
+4. Confirm app loads without the require runtime overlay.
+5. Confirm typecheck, 11/11 guards, 8/8 stop-limit QA, page smoke tests, fail-closed bridge endpoints, per-user 401 unauth checks, and safety-envelope validation were green.
+6. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+
+Build only these deferred P2/T1–T7 items:
+
+T1. Protective Auto-Close UI
+- Add/finish a clear Protective Auto-Close settings area.
+- Default must be OFF.
+- User opt-in required.
+- Saving preferences must NOT unlock execution.
+- Show current status as ALERT_ONLY unless every required gate passes.
+- Clearly show missing gate reasons:
+  - bridgeConnected=false
+  - activityStatus="UNKNOWN"
+  - opt-in missing
+  - inactivity not confirmed
+  - high-confidence multi-signal missing
+  - paper/live unlock missing
+  - duplicate-action protection active
+- UI must say: “Alert Only — AI can warn you, but cannot close this trade” when gates are missing.
+
+T2. Activity Ping Hook
+- Add/finish frontend activity tracking for logged-in user/session.
+- Support ACTIVE, IDLE, AWAY, UNKNOWN.
+- Default/fallback must be UNKNOWN.
+- App closed/backgrounded/stale/verification failed must return UNKNOWN.
+- Send activity status to backend per user/session only.
+- No cross-user leakage.
+- Backend must continue treating UNKNOWN as hard block for auto-close execution.
+
+T3. Trade Card Safety Badges
+Add/finish backend-driven badges on trade/order cards:
+- Paper Only
+- Live Trading Blocked
+- Bridge Offline / MT5 Read-Only
+- ALERT_ONLY
+- Auto-Close OFF
+- Auto-Close Opt-In Required
+- Activity Unknown
+- Data Insufficient
+- News Unavailable
+- Current Events Unavailable
+- TP Targets Available / TP Targets Unavailable
+- SL/TP Editable if supported
+- Manual Close Available / Blocked
+- Command Execution Disabled
+
+Badges must reflect real backend state, not hardcoded fake UI labels.
+
+T4. Separate Current Events / Real-World News Channel
+- Add/finish a separate current-events / real-world-news data path.
+- Do not silently reuse financial market news as current-events coverage.
+- If no provider/API key exists, return connected:false, events:[], and a clear unavailable reason.
+- AI must say current events / real-world news are unavailable instead of inventing.
+- Current events can only be a risk/context modifier, not a fake trading signal.
+- Do not substitute simulator data.
+
+T5. decisionStatus Enum Cleanup
+- Add/centralize a literal decisionStatus enum while preserving backward compatibility.
+- Include:
+  - STRONG_SETUP
+  - WAIT
+  - AVOID
+  - REVIEW
+  - HOLD
+  - NEWS_RISK_HIGH
+  - DATA_INSUFFICIENT
+  - SCANNER_OFFLINE
+  - BRIDGE_OFFLINE
+  - ALERT_ONLY
+- Map old strings like bestOpportunities, watchClosely, and dataInsufficient to the new enum without breaking existing UI.
+
+T6. bridgeMode Enum Cleanup
+- Consolidate bridgeMode into an explicit enum:
+  - OFFLINE
+  - READ_ONLY
+  - PAPER_ONLY
+  - LIVE_LOCKED
+- Preserve existing derived behavior from status + readOnlyMode + allowOrderExecution.
+- Default/fallback must be OFFLINE.
+- Stale heartbeat must force OFFLINE.
+- Frontend must display the enum honestly.
+
+T7. Reconciliation + Command Status Enum Cleanup
+- Centralize reconciliation status enum so executionReconciler and AI-facing getReconciliationStatus use the same contract.
+- Ensure statuses include:
+  - MATCHED
+  - APP_ONLY
+  - BROKER_ONLY
+  - MISMATCHED
+  - ATTRIBUTION_MISSING
+  - STALE_BROKER_DATA
+  - BRIDGE_OFFLINE
+  - RECONCILIATION_BLOCKED
+- Add explicit command statuses if missing:
+  - DRAFT
+  - BLOCKED
+  - PAPER_ONLY
+  - QUEUED_LOCKED
+  - REJECTED
+  - EXECUTION_DISABLED
+- Today, all real MT5 command paths must still resolve to BLOCKED or EXECUTION_DISABLED.
+
+Contract/safety requirements:
+- Use shared browser-safe TypeScript contracts where frontend and backend both need the same enum/schema.
+- Use ESM imports only.
+- Do not introduce require().
+- Do not import Node-only modules into frontend/shared browser code.
+- Server-only logic must stay server-only.
+- Safety envelope must allow read-only AI Q&A while execution gates remain locked.
+- commandExecutionAllowed=false must NOT disable read-only AI chat.
+
+After implementation, run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test for no require overlay
+6. AI assistant read-only question test
+7. Safety-envelope alignment test
+8. Auto-close gate tests
+9. Activity UNKNOWN hard-block test
+10. Current-events unavailable fallback tests
+11. Trade-card badge backend-state tests
+12. bridgeMode enum tests
+13. decisionStatus enum mapping tests
+14. Reconciliation enum tests
+15. Command status BLOCKED/EXECUTION_DISABLED tests
+16. Per-user isolation tests
+17. Audit trail tests
+18. Frontend smoke test for Protective Auto-Close UI, trade cards, bridge/reconciliation UI, AI assistant, and dashboard
+
+If any test fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun the full checks after fixes.
+
+End with a report showing:
+- Files inspected
+- Files changed
+- T1–T7 completion status
+- UI areas added/updated
+- Backend endpoints/types/contracts touched
+- Tests run and pass/fail results
+- Runtime status
+- Safety-envelope status
+- Auto-close execution status
+- MT5/live trading status
+- Shared MT5 routing status
+- Command queue status
+- Remaining gated/deferred items
+- Whether frontend state matches backend state
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

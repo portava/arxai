@@ -1,0 +1,117 @@
+Choose option 1.
+
+Plan the full Profit Mission System roadmap now as a chained sequence of phase tasks.
+
+Do not build the whole system in one large task.
+
+Create a Phase 1 → Phase 9 roadmap where each phase:
+- has a clear goal
+- lists files/modules likely touched
+- defines backend/frontend scope
+- defines safety boundaries
+- defines tests
+- defines acceptance criteria
+- depends on the previous phase
+- can be approved and run separately
+
+Roadmap structure:
+
+Phase 1 — Mission Planner + Feasibility Engine + Dashboard Shell
+- mission creation model
+- starting amount / target amount / timeframe
+- required return and pace calculations
+- feasibility tiers
+- risk/probability warnings
+- dashboard shell only
+- no trade execution
+
+Phase 2 — Mission Journal + Event Log + Mission States
+- mission lifecycle
+- pause/resume/cancel
+- mission events
+- progress snapshots
+- audit trail
+
+Phase 3 — Multi-Agent Proposal System
+- Scalper Agent
+- Trend Agent
+- Reversal Agent
+- Gold Agent
+- Synthetic Agent
+- Forex Agent
+- Risk Agent
+- Execution Judge
+- structured proposals only
+- no execution yet
+
+Phase 4 — Agent Ranking, Promotion/Demotion, and Debate
+- agent scores
+- contextual ranking by symbol/session/timeframe
+- agent debate
+- no-trade scoring
+- learning camp/probation/elite statuses
+
+Phase 5 — Edge Engine + Opportunity Queue + Trade Drafts
+- edge scoring
+- opportunity ranking
+- trade draft system
+- mission impact preview
+- approval/reject/watch states
+
+Phase 6 — Risk Governor + Anti-Blowup Layer
+- loss limits
+- drawdown rules
+- revenge-trade detector
+- overtrading detector
+- no-martingale default
+- cooldowns
+- emergency stop conditions
+
+Phase 7 — Execution Quality + Exposure + Net Profit Filter
+- spread/slippage checks
+- stale quote checks
+- net profit after costs
+- correlated exposure guard
+- capital efficiency score
+- broker/feed health gate
+
+Phase 8 — Exit Manager Pro + Profit Locks + Compounding
+- partials if supported
+- break-even moves
+- trailing stops
+- mission target close/protect logic
+- profit milestones
+- giveback guard
+- controlled compounding from realized profit only
+
+Phase 9 — Testing Lab Integration + Demo/Live Promotion Gates
+- backtest mission strategies
+- forward-test mission strategies
+- strategy drift detection
+- demo approval gates
+- supervised micro-live gates
+- live auto only after explicit enablement and all gates pass
+
+For each phase, include:
+- exact build scope
+- what not to touch
+- DB changes if any
+- API endpoints if any
+- UI surfaces if any
+- tests
+- validation commands
+- rollback plan
+
+Hard boundaries for every phase:
+- do not bypass live execution gates
+- do not touch MT5 bridge execution unless the phase explicitly requires read-only status
+- do not weaken kill switches
+- do not bypass Trade Health
+- do not bypass Scanner Truth
+- do not enable live auto silently
+- do not use martingale by default
+- do not promise guaranteed profit
+- do not force trades when no valid edge exists
+
+After the roadmap is written:
+Stop and wait for approval before building Phase 1.

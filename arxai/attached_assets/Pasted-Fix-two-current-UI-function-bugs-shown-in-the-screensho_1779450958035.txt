@@ -1,0 +1,128 @@
+Fix two current UI/function bugs shown in the screenshot:
+
+1. Admin/User mode toggle does not work.
+2. Market category/symbol menu stays open after selecting a market.
+
+SCOPE LOCK:
+Only work on:
+- Admin/User mode toggle behavior
+- Effective user/admin mode state
+- Admin visibility refresh after toggle
+- Market picker collapse behavior after symbol selection
+- Small UI state fixes needed for those two issues
+
+Do not change:
+- MT5 execution logic
+- live/demo permissions
+- kill switches
+- admin approvals
+- scanner scoring
+- Ruby intelligence
+- historical/news logic
+- auth architecture except the tiny session/mode fix required
+- open-trade P/L calculations
+- backend trading safety systems
+- layout redesigns outside these bugs
+
+BUG 1 — Admin/User toggle not working
+
+Inspect first:
+- mode switch component
+- user profile/menu toggle
+- auth/session store
+- effectiveRole / effectiveMode logic
+- localStorage/sessionStorage mode persistence
+- backend admin route guard
+- frontend admin visibility checks
+- side menu / bottom nav / admin card visibility
+
+Expected behavior:
+- Andraie/admin-capable accounts can switch between Admin Mode and Regular Mode.
+- Regular non-admin users never see the toggle.
+- When switched to Regular Mode:
+  - hide all admin controls immediately
+  - hide admin menu items
+  - hide admin dashboard access
+  - hide admin-only cards/buttons
+  - hide master account metrics
+  - block direct admin routes
+  - admin API calls return clean 403/admin-mode-required response
+  - app behaves like a normal user account
+- When switched back to Admin Mode:
+  - admin controls return
+  - admin routes/API access return
+  - admin dashboard/menu items return
+
+Fix requirements:
+- Make the toggle clickable/tappable on mobile.
+- Make it update effective mode immediately without needing full refresh unless required.
+- Persist the selected mode safely for the session.
+- Do not rely only on frontend hiding for security.
+- Backend/admin route guard must check both:
+  1. user has admin role
+  2. admin mode is currently active
+- If admin mode is OFF, admin APIs must be blocked server-side.
+- Keep Andraie’s admin role intact. Only change active/effective mode.
+
+Clean user message:
+If an admin URL is opened while in Regular Mode, show:
+“Admin Mode required”
+or redirect to Cockpit.
+
+No raw errors, route names, function names, or stack traces.
+
+BUG 2 — Market picker should collapse after market selection
+
+Current issue:
+When user taps a market symbol inside the expanded horizontal category menu, the category/symbol grid stays open and takes too much space.
+
+Expected behavior:
+- User taps category chip, symbols expand.
+- User taps a symbol.
+- Selected market updates everywhere.
+- The expanded symbol grid collapses automatically.
+- Category chip row can stay visible, but the large symbol list should close.
+- The selected market should show clearly in the selected symbol pill/card.
+- User can tap/change category again to reopen symbol selection.
+
+Apply this behavior to:
+- Scanner market picker
+- AI/Ruby market picker
+- Symbols tab market picker
+- Favorites/recent symbol selection
+- Search result Load selection, if applicable
+
+When a symbol is selected, update:
+- current market focus
+- top symbol selector
+- chart/focus symbol
+- Ruby market explanation
+- scanner result context
+- trade ticket symbol
+- selected symbol pill/card
+
+Implementation detail:
+After successful symbol selection, set expandedCategory/activeCategory/openCategory to null/closed.
+Do not remove horizontal category chips.
+Do not go back to vertical accordions.
+
+Mobile behavior:
+- No giant open symbol panel after selection.
+- No bottom nav overlap.
+- Ruby floating bubble must not block selected market card.
+- Search row should still fit.
+- Selected market card should remain visible.
+
+Acceptance checklist:
+1. Admin/User toggle is tappable.
+2. Admin-capable account can switch to Regular Mode.
+3. Regular Mode hides all admin controls.
+4. Regular Mode blocks admin routes and admin APIs.
+5. Regular Mode hides master account metrics.
+6. Switching back to Admin Mode restores admin controls.
+7. Regular non-admin users never see the toggle.
+8. Selecting a market collapses the expanded symbol grid.
+9. Selected market still updates Ruby, scanner, trade ticket, chart/focus, and top selector.
+10. Horizontal market category chips remain.
+11. No MT5 execution, live/demo permissions, kill switches, admin approvals, scanner scoring, Ruby brain, historical/news logic, or backend trading safety logic changed.
+12. No live trades placed.

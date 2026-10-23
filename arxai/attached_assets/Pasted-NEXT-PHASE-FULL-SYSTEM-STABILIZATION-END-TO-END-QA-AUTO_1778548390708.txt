@@ -1,0 +1,443 @@
+NEXT PHASE: FULL SYSTEM STABILIZATION + END-TO-END QA + AUTO-FIX PASS
+
+Goal:
+Stabilize the entire trading app after the recent feature expansion.
+
+The app now includes:
+- full tester access
+- live chart
+- MT5-deferred mode
+- simulated market engine
+- strategy lab
+- backtesting
+- market replay
+- trade grader
+- market scanner
+- command room
+- market data layer
+- news risk filter
+- session clock
+- OMS
+- position manager
+- P/L engine
+- Risk Governor 2.0
+- AI Autopilot Orchestrator
+- Shadow Mode
+- Forward Testing
+- Strategy Promotion Gates
+- AI Readiness Score
+
+Now make sure the full system is stable, connected, and testable.
+
+Important:
+- Do not add random new features.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim real broker fills.
+- Keep full tester access open.
+- Keep MT5 deferred until user connects desktop/VPS bridge later.
+- Do not hide any live tester workflows.
+- Fix broken systems instead of building around them.
+
+==================================================
+1. RUN FULL ROUTE AUDIT
+==================================================
+
+Audit every route and auto-fix broken pages.
+
+Routes to verify:
+
+- /
+- /dashboard
+- /trading-command-center
+- /trade-command-room
+- /charts
+- /live-chart
+- /manual-trade-ticket
+- /demo-trading
+- /paper-trading
+- /live-trading
+- /live-manual
+- /live-ai-assist
+- /live-ai-auto-test
+- /live-intent-queue
+- /orders
+- /positions
+- /journal
+- /calendar
+- /learning-loop
+- /strategy-lab
+- /backtesting
+- /market-replay
+- /trade-grader
+- /ai-coach
+- /performance-scorecard
+- /market-scanner
+- /watchlist
+- /alerts-center
+- /session-plan
+- /market-sessions
+- /news-risk
+- /market-health
+- /data-quality
+- /risk-profile
+- /risk-command-center
+- /risk-events
+- /prop-firm-mode
+- /autopilot-control-center
+- /shadow-mode
+- /forward-testing
+- /strategy-tournament
+- /confidence-calibration
+- /strategy-promotion
+- /ai-readiness-score
+- /shadow-journal
+- /broker
+- /mt5-status
+- /mt5-setup
+- /broker-reconciliation
+- /audit-vault
+- /safety-logs
+- /testing-control-center
+- /tester-playbook
+- /settings
+- /admin/system-health
+
+Every route must render:
+- real data
+- simulator data
+- empty state
+- MT5 deferred state
+- or error card with retry button
+
+No blank screens.
+No black screens.
+No hidden tester routes.
+No dead navigation links.
+
+==================================================
+2. RUN FULL API AUDIT
+==================================================
+
+Audit all API endpoints.
+
+Check:
+
+- endpoint exists
+- response shape is valid
+- errors are handled
+- missing MT5 does not crash endpoint
+- simulator fallback works where appropriate
+- environment separation is respected
+- audit log is written when required
+
+Create:
+
+GET /api/system/full-health
+
+It should return:
+
+{
+  "appOpen": true,
+  "fullTesterAccess": true,
+  "mt5Connected": false,
+  "mt5Deferred": true,
+  "realBrokerExecutionAvailable": false,
+  "routes": {},
+  "apis": {},
+  "riskGovernor": {},
+  "oms": {},
+  "autopilot": {},
+  "shadowMode": {},
+  "marketData": {},
+  "audit": {},
+  "warnings": [],
+  "blockers": []
+}
+
+==================================================
+3. FIX GLOBAL STATE CONSISTENCY
+==================================================
+
+Make sure these states agree across frontend and backend:
+
+- selectedTradingSymbol
+- currentTradingMode
+- executionEnvironment
+- fullTesterAccess
+- mt5Connected
+- mt5Deferred
+- brokerExecutionAvailable
+- simulatorActive
+- riskGovernorStatus
+- killSwitchStatus
+- autopilotStatus
+- shadowModeStatus
+- marketDataProvider
+- liveIntentCount
+
+If one page says MT5 is connected and another says deferred, fix it.
+
+If one page says live execution is available while MT5 is missing, fix it.
+
+Correct final state right now:
+
+- Full Tester Access: active
+- MT5 Connected: false
+- MT5 Deferred: true
+- Broker Execution Available: false
+- Simulator: available
+- Live Tester Workflows: open
+- Real Broker Orders: unavailable until MT5 bridge connects
+
+==================================================
+4. ADD GLOBAL ERROR BOUNDARIES
+==================================================
+
+Add app-wide error protection.
+
+If any component fails:
+
+- show friendly error card
+- show retry button
+- show “Report / Copy Error”
+- do not crash the whole app
+- do not show blank screen
+
+Add error boundaries around:
+
+- dashboard
+- live chart
+- trade command room
+- market scanner
+- autopilot
+- OMS
+- risk governor
+- journal/calendar
+- MT5 pages
+- testing control center
+
+==================================================
+5. ADD LOADING + EMPTY STATES
+==================================================
+
+Every major page should have:
+
+- loading state
+- empty state
+- error state
+- retry action
+- explanation if MT5 is deferred
+
+Example empty state:
+
+“No simulator trades yet. Run a demo manual test or seed demo data.”
+
+Example MT5 state:
+
+“MT5 bridge is not connected yet. You can continue using simulator and live tester workflows.”
+
+==================================================
+6. VERIFY ENVIRONMENT SEPARATION
+==================================================
+
+Confirm these environments never mix:
+
+- PAPER
+- DEMO_SIMULATOR
+- LIVE_TESTER_INTENT
+- SHADOW
+- FORWARD_TEST
+- FUTURE_MT5_DEMO
+- FUTURE_MT5_LIVE
+
+Audit:
+
+- orders
+- positions
+- journal
+- calendar
+- P/L
+- learning loop
+- performance scorecard
+- audit logs
+- AI readiness score
+
+If any environment mixes records incorrectly, fix it.
+
+==================================================
+7. RUN END-TO-END TEST LADDER
+==================================================
+
+Run this full test sequence:
+
+1. Full app route smoke test
+2. Onboarding test
+3. Live chart render test
+4. Market data simulator test
+5. Demo manual simulator trade
+6. Demo AI assist simulator trade
+7. Demo AI auto simulator trade
+8. Live manual tester intent
+9. Live AI assist tester intent
+10. Live AI auto tester intent
+11. OMS order lifecycle test
+12. Position manager open/close test
+13. P/L engine test
+14. Risk Governor 2.0 rejection test
+15. Market scanner test
+16. Strategy lab test
+17. Backtesting test
+18. Market replay test
+19. Autopilot observe-only test
+20. Autopilot demo simulator test
+21. Shadow mode test
+22. Forward testing test
+23. Strategy promotion gate test
+24. AI readiness score test
+25. Journal/calendar update test
+26. Audit vault test
+27. Kill switch UI test
+28. MT5 deferred honesty test
+
+Auto-fix any failed non-MT5 item.
+
+MT5-required items should be marked:
+
+“Deferred until MT5 bridge is connected.”
+
+==================================================
+8. ADD REGRESSION TEST SUITE
+==================================================
+
+Create automated regression tests for:
+
+- route rendering
+- API health
+- permission state
+- MT5 deferred state
+- simulator order flow
+- live intent flow
+- risk governor blocks
+- OMS lifecycle
+- P/L calculation
+- autopilot safety locks
+- shadow mode decisions
+- environment separation
+- audit logging
+
+Add command:
+
+npm run test:system
+
+or equivalent project command.
+
+==================================================
+9. ADD SYSTEM HEALTH DASHBOARD
+==================================================
+
+Improve:
+
+/admin/system-health
+
+Show:
+
+- route health
+- API health
+- frontend errors
+- backend errors
+- simulator status
+- market data status
+- OMS status
+- risk governor status
+- autopilot status
+- shadow mode status
+- MT5 status
+- audit log status
+- database status
+- last full test result
+
+Add buttons:
+
+- Run Full Health Check
+- Run Route Test
+- Run API Test
+- Run Simulator Test
+- Run Risk Test
+- Run Autopilot Test
+- Run Shadow Test
+- Export System Report
+
+==================================================
+10. CREATE FINAL STABILIZATION REPORT
+==================================================
+
+Generate:
+
+FULL SYSTEM STABILIZATION REPORT
+
+Include:
+
+1. Route audit:
+- total routes
+- passed routes
+- failed routes
+- fixed routes
+
+2. API audit:
+- total endpoints
+- passed endpoints
+- failed endpoints
+- fixed endpoints
+
+3. Global state:
+- full tester access active yes/no
+- MT5 deferred yes/no
+- broker execution correctly unavailable yes/no
+- simulator active yes/no
+
+4. Core systems:
+- live chart pass/fail
+- market data layer pass/fail
+- OMS pass/fail
+- position manager pass/fail
+- P/L engine pass/fail
+- risk governor pass/fail
+- autopilot pass/fail
+- shadow mode pass/fail
+- forward testing pass/fail
+- strategy promotion pass/fail
+- AI readiness score pass/fail
+
+5. Environment separation:
+- paper separated yes/no
+- demo simulator separated yes/no
+- live tester intents separated yes/no
+- shadow separated yes/no
+- future MT5 separated yes/no
+
+6. Safety:
+- kill switch UI pass/fail
+- risk governor pass/fail
+- audit logging pass/fail
+- MT5 honesty pass/fail
+- no fake broker execution yes/no
+
+7. Final state:
+- FULL TESTER ACCESS ACTIVE: yes/no
+- LIVE CHART ACTIVE: yes/no
+- SIMULATOR READY: yes/no
+- LIVE TESTER WORKFLOWS OPEN: yes/no
+- MT5 REQUIRED LATER: yes/no
+- REAL BROKER EXECUTION LOCKED UNTIL MT5: yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not place real orders.
+- Do not claim broker fills.
+- Do not hide tester routes.
+- Do not block tester workflows.
+- Do not remove risk governor.
+- Do not remove kill switch UI.
+- Do not mix environments.
+- Fix broken systems before adding new features.

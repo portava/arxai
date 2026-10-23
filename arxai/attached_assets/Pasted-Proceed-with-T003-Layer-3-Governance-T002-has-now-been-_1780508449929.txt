@@ -1,0 +1,226 @@
+Proceed with T003 — Layer 3 Governance.
+
+T002 has now been verified and wired across Ruby, Scanner, Risk, Scalp, Admin trace, and app-wide advisory surfaces. Continue from that verified state.
+
+Do not rebuild the app. Do not undo the T002 wiring. Build the next layer on top of the existing operational agent scoring/lifecycle system.
+
+T003 GOAL
+
+Build the Governance/Court/Factory layer so the AI agent ecosystem becomes a coordinated decision system instead of separate advisory agents.
+
+The agents must interact with each other, challenge each other, confirm each other, downgrade weak signals, escalate conflicts, and produce final governance outcomes that can affect Ruby explanations, Scanner rankings, risk warnings, scalp/flame confidence, and admin visibility.
+
+1. Governance Court
+
+Create a governance decision layer where multiple agents can participate in the same app decision.
+
+Governance should support reviews for:
+
+* Scanner opportunities
+* Focus scan results
+* Broad scan results
+* Builder scan results
+* Ruby market explanations
+* Ruby trade recommendation explanations
+* Flame scalp opportunities
+* Risk/reward analysis
+* Stop loss / take profit reasoning
+* Market confidence grading
+* News/current-event conflicts
+* Agent lifecycle changes
+* Agent performance disputes
+
+Each governance review should allow agents to submit:
+
+* support
+* caution
+* challenge
+* downgrade request
+* rejection request
+* escalation request
+* needs-more-data request
+* performance/speed objection
+
+2. Agent Challenge System
+
+Agents must be able to challenge each other.
+
+Examples:
+
+* Risk AI can challenge a buy/sell recommendation if risk is too high.
+* Flame Scalp Agent can challenge a scanner result if momentum is weak, choppy, late, or not a true flame.
+* News/Current Events Agent can challenge technical setups when news risk is high.
+* Market Structure Agent can challenge entries that go against larger structure.
+* Reward-to-Risk Agent can challenge trades where stop loss or take profit does not make sense.
+* Traffic Controller can challenge unnecessary agent participation if too many agents are slowing the system.
+* Lifecycle Agent can reduce the influence of agents with poor recent performance.
+
+3. Governance Outcomes
+
+Every governance review must produce a final clear outcome:
+
+* approved
+* approved with caution
+* downgraded
+* rejected
+* escalated to admin
+* needs more data
+* muted due to low confidence
+* delayed due to speed/performance concern
+* learning-camp review required
+
+The outcome must include:
+
+* final decision
+* participating agents
+* agent positions
+* challenges raised
+* winning reasoning
+* confidence score
+* impact on Scanner/Ruby/Risk/Scalp/Admin
+* timestamp
+* surface/workflow affected
+
+4. Real App Influence
+
+Governance must affect real app behavior.
+
+Wire governance output into:
+
+* Scanner ranking adjustments
+* Ruby plain-English explanations
+* Risk warnings
+* Flame scalp confidence
+* trade recommendation strength
+* market explanation confidence
+* admin trace
+* agent lifecycle scoring
+
+If governance downgrades a signal, the Scanner score should change.
+
+If governance rejects a setup, Ruby should explain why in plain English.
+
+If governance escalates a conflict, admin should see it.
+
+If governance says more data is needed, the app should not pretend the signal is strong.
+
+5. Admin Governance Trace
+
+Add or upgrade admin-only governance visibility.
+
+Admin/OWNER should be able to see:
+
+* governance review ID
+* surface reviewed
+* market/symbol reviewed
+* agents involved
+* each agent’s stance
+* challenges submitted
+* final decision
+* score impact
+* Ruby explanation impact
+* Scanner ranking impact
+* Risk warning impact
+* Scalp/flame impact
+* whether any agent was demoted, muted, promoted, or sent to Learning Camp
+* whether Traffic Controller limited agent participation for speed
+
+This must be gated to admin/OWNER only.
+
+Do not expose backend function names, raw route names, database table names, code terms, or internal schema names to normal users.
+
+6. Agent Factory
+
+Build a controlled Agent Factory system.
+
+High-performing agents can recommend the creation of a new specialized agent only when a real missing task is detected.
+
+Do not allow random, uncontrolled, self-replicating agent creation.
+
+A proposed new agent must include:
+
+* proposed name
+* purpose
+* reason it is needed
+* workflow gap it solves
+* allowed inputs
+* allowed outputs
+* permissions
+* failure conditions
+* scorecard
+* testing requirements
+* admin visibility
+* activation requirements
+
+New agents should start as shadow/advisory only.
+
+They should not gain influence until they pass validation and admin/OWNER can see why they are needed.
+
+7. Agent Household Behavior
+
+Build the household-style interaction model.
+
+Agents should behave like a coordinated household:
+
+* stronger agents can mentor weaker agents
+* failing agents can be sent to Learning Camp
+* unnecessary agents can step back
+* agents can call for help from specialists
+* agents can challenge unsafe decisions
+* agents can recommend new specialized agents
+* agents can lose influence when they slow the system
+* agents can gain influence when they consistently improve results
+
+This should be operational, not decorative.
+
+8. Speed Protection
+
+Governance must not slow down the app.
+
+Add Traffic Controller routing so:
+
+* not every agent runs on every action
+* only relevant agents are called
+* low-impact agents stay quiet
+* slow agents are skipped or reduced
+* governance depth changes based on decision importance
+* high-impact decisions get more review
+* low-impact UI explanations get lighter review
+
+The app must remain fast.
+
+9. QA / Proof Required Before Completion
+
+After building T003, run full proof that governance is real and not decorative.
+
+Prove:
+
+* agents can challenge each other
+* challenges produce final governance outcomes
+* Scanner scores change because of governance
+* Ruby explanations change because of governance
+* Risk AI can downgrade a setup through governance
+* Flame Scalp Agent can challenge weak flame signals
+* News/current-event agent can challenge technical-only setups
+* Traffic Controller can reduce unnecessary agent participation
+* Agent Factory can propose a new agent with required fields
+* new agents do not activate without validation
+* admin can see the governance trace
+* normal users do not see internal backend/code terms
+* app remains fast
+* T002 scoring/lifecycle still works after T003
+* live execution path is not accidentally changed during this phase
+
+10. Completion Standard
+
+Do not mark T003 complete until:
+
+* governance is wired into real workflows
+* governance outcomes affect the app
+* admin can inspect decisions
+* Ruby can explain governance influence plainly
+* Scanner/risk/scalp surfaces respond to governance decisions
+* all validation/typecheck/guard tests pass
+* disconnected, fake, duplicated, or unused governance code is fixed or removed
+
+Continue from the current merged green state. Preserve existing app behavior. Add the governance layer as the next operational intelligence layer.

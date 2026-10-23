@@ -1,0 +1,250 @@
+How do I turn on one click trading in app?
+
+Go to MT5 Setup at /mt5-setup, then find the “ARX Single Confirm (One-Click)” card.
+
+
+To enable it, type the exact phrase “ENABLE ONE CLICK TRADING” in that card. You can enable it separately for demo and live. For the live scope, you also need per-user master-live access to be approved and armed.
+
+
+Important: this is the ARX in-app one-click setting, not the MT5 terminal’s own One Click Trading checkbox. It does not bypass safety checks — every order still goes through the full guard chain, and I can’t toggle it for you.
+
+
+Next: open /mt5-setup and look for the ARX Single Confirm (One-Click) card.
+
+Looking for one click
+
+It’s on the MT5 Setup page, not this admin screen.
+
+
+Look for the card named ARX Single Confirm (One-Click) on /mt5-setup. If it’s currently off, the card will show OFF with enable controls. To turn it on, you must type the exact phrase ENABLE ONE CLICK TRADING.
+
+
+A couple of important points:
+
+It’s the ARX in-app one-click setting, not the MT5 terminal checkbox.
+
+You can enable demo and live separately.
+
+Live one-click still won’t bypass safety gates, and live is currently locked/read-only.
+
+
+Next: open MT5 Setup and scroll to ARX Single Confirm (One-Click). If you want, I can also explain why you won’t see it on the /admin/live-shared page.
+
+What’s your name
+
+I’m ARX AI.
+
+Sashay market
+
+You’re on the Market Scanner area, but page help for this exact screen isn’t mapped yet.
+
+
+What this page is for:
+
+It’s where ARX looks for possible setups to watch
+
+It helps rank markets by setup quality, risk, and confidence
+
+It’s for decision support, not instant execution
+
+Right now the app is in paper-only / read-only safety mode, so even if you find a setup here, it won’t place a live trade
+
+
+If you meant “scan the market”, I can do that next and tell you what looks strongest right now.
+
+Usdjpy market anylysis
+
+Market label: Choppy / no clear edge on M15.
+
+
+Trend
+
+Primary trend: flat on M15
+
+Higher timeframe trend: flat on H4
+
+This is more range behavior than trend behavior right now
+
+
+Key levels
+
+Recent range is roughly 159.326 to 159.502
+
+A clean break outside that box would matter more than anything inside it
+
+Clear invalidation / continuation levels are not available from live data beyond that range structure
+
+
+Risks
+
+Main risk is chop — that score is very elevated
+
+Reversal and fakeout risk are not the main issue here; the bigger problem is just lack of edge
+
+
+Bullish scenario
+
+Buyers would need to hold above the recent range and show a proper breakout beyond 159.502
+
+
+Bearish scenario
+
+Sellers would need to break and hold below about 159.326 to suggest weakness is taking over
+
+
+Stance
+
+Quick read: wait. USDJPY looks sideways, not clean.
+
+In this condition, breakouts can fail and entries in the middle of the range are usually lower quality.
+
+
+Data quality
+
+Source: composite market feed
+
+Freshness: Delayed
+
+Quality: good
+
+
+Next: if you want, I can give you either a simple buy/sell bias with invalidation for USDJPY, or a trade/no-trade decision for it right now.
+
+Analyze my open trades
+
+Quick read: you have 2 open BUY trades on VOLATILITY 75 (1S) INDEX, and I can see the positions, but I can’t judge continuation vs reversal honestly yet because the live trade data is incomplete.
+
+
+Why:
+
+Both trades are coming through SHARED_MASTER_MT5
+
+Both are flagged waiting for sync
+
+For both trades, entry price, current price, unrealized P&L, take profit, and M15 candle data are missing
+
+The trade intelligence on both comes back as “No clear signal”, and the market context is “Data insufficient”
+
+
+Risk:
+
+Your only clear hard level right now is the stop loss at 4000
+
+Trend alignment is UNKNOWN, so I can’t tell you this is a pullback, continuation, fakeout, or reversal with confidence
+
+These are synthetic volatility trades, and here the platform can see attribution records, but the current live market context for these trades is not available
+
+
+What to watch:
+
+First, wait for sync / quote data to populate so we get current price and candles
+
+If you want a decision-style answer next, I can check which of the two has higher exit urgency once enough data is available
+
+If your intent is to act anyway, I can prepare a close review for one of them — but ARX is in paper-only / read-only safety mode right now, so nothing executes automatically
+
+
+Next: say “analyze trade 1”, “analyze trade 2”, or “prepare close review for trade 1”.
+
+?
+
+Quick read: both of your open trades are still not analyzable from live price action. I can see 2 BUY trades on VOLATILITY 75 (1S) INDEX, but both are waiting for sync and the market context is Data insufficient.
+
+
+Why:
+
+Both trades are on SHARED_MASTER_MT5
+
+Both are missing current price, entry price, unrealized P&L, take profit, and M15 candle data
+
+For both, the trade intelligence label is No clear signal
+
+Trend alignment is UNKNOWN, so I can’t honestly call this a continuation, pullback, reversal, or fakeout
+
+
+Risk:
+
+The only reliable hard level I can point to right now is your stop loss at 4000
+
+Live market data is not available for these trades right now, so any hold/close call from price action would be guessing
+
+Also, your view is still under paper-only / read-only safety, so ARX won’t execute anything automatically
+
+
+What to watch:
+
+Wait for the trades to finish syncing so price, P&L, and candles populate
+
+If you want to act without waiting, I can prepare a close review for one of them
+
+If you want, I can also check which trade has the higher urgency first once the live context comes through
+
+
+Next: say “prepare close review for att_225” or “prepare close review for att_226”.
+
+how to raise my required lot size
+
+That depends on which limit you mean:
+
+
+Your personal risk cap / max lot → change it in your Risk Settings
+
+Shared-live max lot approval → that is controlled by an admin in the live shared activation flow
+
+EA-side max live lot on the master bridge → also admin-controlled
+
+Broker minimum lot / step size → that comes from the broker/account and can’t be overridden in ARX
+
+
+If you mean your own trading limits, go to the Risk Settings page and raise the allowed size there, as long as it still fits your daily loss and open-trade limits.
+
+
+If you mean shared master live trading, I can explain the exact blockers, but I can’t change it myself. For that path, an operator must verify:
+
+the server live-execution hard switch is enabled
+
+your per-user kill switch is released
+
+the bridge heartbeat is fresh with live execution enabled and read-only off
+
+your approved user cap allows the higher lot size
+
+
+Next: if you want, say “check my lot-size limit” and I’ll look up your current cap, or say “explain shared-live lot limits” and I’ll walk you through that path.
+
+read on v75
+
+Market label: Data insufficient
+
+
+Live market data is not available for VOLATILITY 75 (1S) INDEX, so I can’t give you an honest price-action read on trend, pullback, fakeout, or reversal right now.
+
+
+Data quality
+
+Source: composite market feed
+
+Freshness: ERROR
+
+Quality: insufficient
+
+Missing: quote data and candles for M1, M5, M15, M30, H1, H4, and D1
+
+
+Also, the platform is in paper-only safety with live locked and read-only mode on, so I’m limited to analysis only here.
+
+
+Next: if you want, I can still help with either a rule-based trade plan for V75 or check whether one of your open V75 trades needs review based on the data we do have.
+
+Good afternoon. You're live-connected through Shared Master MT5.
+
+
+London/NY Overlap session is active (high liquidity).
+
+VOLATILITY 75 INDEX is available for analysis, but not live-executable on the current bridge.
+
+You have 15 open positions right now.
+
+Master MT5: balance $2,037.36, equity $2,155.07, open P/L $2,079.35.
+
+Latest headline: We're trimming 2 stocks — a surging AI winner and one that's left plenty to be desired (CNBC).

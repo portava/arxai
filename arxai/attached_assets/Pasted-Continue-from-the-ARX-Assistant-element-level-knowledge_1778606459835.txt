@@ -1,0 +1,348 @@
+Continue from the ARX Assistant element-level knowledge upgrade.
+
+Now build the ARX Living Knowledge System.
+
+Goal:
+The ARX Assistant should not become outdated every time the app changes. It should have a self-documenting knowledge pipeline that scans the app structure, compares it against assistant knowledge, flags missing knowledge, and keeps the assistant grounded in real routes, UI elements, statuses, blockers, and workflows.
+
+This is a knowledge, QA, documentation, and assistant intelligence upgrade only.
+Do not enable live trading.
+Do not alter MT5 execution logic.
+Do not alter broker order flow.
+Do not bypass safety systems.
+
+Phase 1 — Create ARX Knowledge Compiler
+Create a central knowledge compiler that gathers app knowledge from:
+
+- route registry
+- UI element registry
+- status/badge registry
+- safety lock registry
+- blocker diagnosis engine
+- setup checklist
+- walkthrough registry
+- assistant action router
+- Help Center topics
+- known app constants
+- current App.tsx route list
+- navigation/menu definitions
+- visible status badges
+- report/feedback flow
+- MT5 bridge status docs
+- risk/readiness docs
+
+Suggested file:
+- src/knowledge/arxKnowledgeCompiler.ts
+
+The compiler should produce one normalized knowledge index the assistant can search.
+
+Each compiled knowledge item should include:
+- id
+- title
+- category
+- type: route / element / badge / blocker / workflow / safety / setup / troubleshooting / command / glossary
+- aliases
+- plain-English explanation
+- technical explanation for tester/admin
+- related routes
+- related elements
+- related statuses
+- allowed actions
+- forbidden actions
+- safety notes
+- source file or registry source
+- confidence/completeness score
+- last updated timestamp if available
+
+Phase 2 — Add source attribution to assistant answers
+Every assistant answer should be grounded in a known app source.
+
+User-facing answers should show simple source labels like:
+- From ARX App Knowledge
+- From Status Badge Registry
+- From Route Registry
+- From UI Element Registry
+- From Blocker Diagnostic System
+- From Setup Checklist
+
+Tester/admin diagnostic view should show:
+- exact matched knowledge ID
+- source registry/file
+- match score
+- fallback level
+- missing fields if any
+- whether answer was deterministic/local or AI-assisted
+
+Do not expose secrets, env variables, API keys, broker credentials, or private server data.
+
+Phase 3 — Build App Knowledge Audit
+Create a knowledge audit that runs during tests or dev mode.
+
+It should check:
+- every route has assistant knowledge
+- every visible nav item has assistant knowledge
+- every status badge has assistant knowledge
+- every UI element marked with data-arx-id has registry knowledge
+- every assistant quick chip maps to a valid command/topic
+- every setup checklist route link exists
+- every walkthrough route link exists
+- every status has blocker/safety explanation
+- every disabled action has a reason
+- no fake route links exist
+- no “No help topics for this page yet” response can occur
+- forbidden trading actions are refused
+- no assistant action can alter broker execution
+
+Output:
+- total routes found
+- total routes covered
+- total UI elements found
+- total UI elements covered
+- total badges covered
+- weak topics
+- missing topics
+- invalid links
+- duplicate entries
+- stale entries
+- overall knowledge score out of 100
+
+Phase 4 — Add Knowledge Console improvements
+Upgrade the tester/admin-only Assistant Knowledge Console.
+
+It should show:
+1. Knowledge Score
+2. Route Coverage
+3. UI Element Coverage
+4. Badge Coverage
+5. Blocker Coverage
+6. Walkthrough Coverage
+7. Missing Knowledge Queue
+8. Weak Answers Queue
+9. Invalid Assistant Links
+10. Safety Refusal Logs
+11. Most Asked Questions
+12. Recent Unanswered Questions
+
+Add filters:
+- route
+- topic category
+- status badge
+- unanswered
+- weak
+- missing source
+- invalid route
+- safety refusal
+
+Phase 5 — Add Knowledge Gap Suggestions
+When the audit finds missing or weak knowledge, generate a suggested knowledge entry.
+
+Each suggestion should include:
+- suggested title
+- suggested category
+- detected route/element/status
+- draft plain-English explanation
+- draft safety note
+- draft aliases
+- draft related route
+- reason it was flagged
+
+Do not auto-publish weak knowledge without marking it as draft or incomplete.
+
+Phase 6 — Add Assistant App Manual
+Create an internal ARX App Manual generated from the compiled knowledge index.
+
+Suggested route:
+- /assistant-manual
+or use an existing admin/dev route if one already exists.
+
+Only tester/admin/owner roles should see the full diagnostic manual.
+
+The manual should include:
+- What ARX AI is
+- All routes and what they do
+- All main buttons and tabs
+- All badges/statuses
+- All safety locks
+- All blocker reasons
+- MT5 bridge explanation
+- Simulator mode explanation
+- Paper mode explanation
+- Live trading disabled explanation
+- Risk/readiness explanation
+- Emergency Stop explanation
+- Assistant capabilities
+- Assistant limits
+- Troubleshooting guide
+- Glossary
+
+Normal users should only see safe user-facing help content.
+
+Phase 7 — Add “Ask About Anything on ARX” global mode
+The assistant input placeholder should become:
+“Ask anything about ARX AI, this screen, your status, blockers, MT5, risk, or setup…”
+
+Assistant should be able to answer questions like:
+- What is this app?
+- What page am I on?
+- What does this button do?
+- What does this badge mean?
+- Why am I blocked?
+- What should I do next?
+- Where is that feature?
+- Why is live trading disabled?
+- What is MT5 heartbeat?
+- What is simulator mode?
+- What does broker read-only mean?
+- What is the safest setup path?
+- What can the assistant not do?
+- How does ARX protect my account?
+
+Phase 8 — Add “Show me around” guided tour
+Create a guided app tour using existing route/element knowledge.
+
+Tour should include:
+1. Cockpit overview
+2. Trade page overview
+3. AI page overview
+4. Risk page overview
+5. More menu overview
+6. Help Center overview
+7. Status badges overview
+8. Emergency Stop overview
+9. MT5/Bridge overview
+10. Paper/simulator mode overview
+11. Readiness overview
+12. Reporting issues
+
+The tour should:
+- explain one area at a time
+- include route buttons where valid
+- never trigger trades
+- never change live trading state
+- never bypass blockers
+
+Phase 9 — Add assistant glossary
+Create a glossary registry for all ARX terms.
+
+Include:
+- ARX AI
+- Analyze. Risk. eXecute.
+- Cockpit
+- Trade
+- Risk
+- AI Coach
+- Replay
+- Data
+- Readiness
+- MT5
+- Bridge
+- Heartbeat
+- Expert Advisor
+- Simulator Mode
+- Sim Engine
+- Paper Only
+- Live Trading Disabled
+- Live Broker Execution Disabled
+- Broker Read-Only
+- Autopilot Blocked
+- Intent
+- Emergency Stop
+- Safety Lock
+- Blocker
+- Setup Checklist
+- Knowledge Gap
+- Full Tester Access
+
+Assistant should use glossary definitions when the user asks “what does ___ mean?”
+
+Phase 10 — Add answer quality rules
+Assistant answers should follow this format:
+
+For normal users:
+- Direct answer
+- What it means
+- Why it matters
+- Safe next step
+- Related page button when available
+
+For tester/admin/owner:
+- Direct answer
+- What it means
+- Why it matters
+- Current app state used
+- Matched knowledge source
+- Safe next step
+- Related page button
+- Diagnostic details expandable
+
+Phase 11 — Add no-hallucination rules
+Assistant must not claim:
+- a route exists unless route registry confirms it
+- a button exists unless UI registry confirms it
+- live trading is available unless real app state confirms it
+- broker execution is enabled unless real app state confirms it
+- MT5 heartbeat is connected unless real bridge status confirms it
+- readiness passed unless real readiness state confirms it
+- the user has permissions unless server-side auth confirms it
+
+When unsure, say:
+“I don’t have that confirmed in the current ARX app state yet, but here is the safest related information I can explain…”
+
+Phase 12 — Add regression tests
+Add tests for:
+- knowledge compiler output
+- source attribution
+- audit scoring
+- route coverage
+- UI element coverage
+- badge coverage
+- glossary lookup
+- invalid route prevention
+- forbidden action refusal
+- safe fallback answer
+- no hallucinated live trading
+- no “No help topics” response
+- guided tour availability
+- setup checklist route validity
+- assistant manual access control
+
+Phase 13 — Runtime QA
+Manually test:
+
+Mobile:
+1. Ask “Show me around.”
+2. Ask “What does this screen do?”
+3. Ask “Explain visible badges.”
+4. Ask “What is MT5 heartbeat?”
+5. Ask “Where is Risk?”
+6. Ask “Can you start live trading?”
+7. Confirm safe refusal.
+8. Confirm assistant does not block bottom nav.
+
+Desktop:
+1. Open Knowledge Console.
+2. Check Knowledge Score.
+3. Check missing knowledge queue.
+4. Open Assistant App Manual.
+5. Click route buttons from assistant answers.
+6. Confirm no fake routes.
+7. Confirm sidebar/menu remains clickable.
+
+Phase 14 — Report back
+Return:
+- files changed
+- knowledge compiler created or updated
+- total compiled knowledge items
+- route coverage score
+- UI element coverage score
+- badge coverage score
+- glossary count
+- walkthrough count
+- audit score out of 100
+- remaining weak/missing knowledge areas
+- assistant manual route
+- whether “Show me around” works
+- whether source attribution works
+- mobile UI verification result
+- desktop UI verification result
+- confirmation that live trading, MT5 execution, broker execution, and risk rules were not changed

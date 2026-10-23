@@ -1,0 +1,50 @@
+Continue from the latest checkpoint and complete T004–T006 only.
+
+Before changing anything, inspect the current codebase and confirm what already exists. Reuse existing architecture and do not rebuild working systems from scratch.
+
+Scope:
+1. Complete T004: user-facing endpoints
+   - Add or verify clean user-facing API/UI pathways for scanner data, selected symbol focus, Ruby market explanations, trade-readiness status, and user-safe live/demo/paper state visibility.
+   - Do not expose internal function names, backend route names, evaluator names, raw guard names, stack traces, or developer terminology to users.
+   - All user-facing labels must be plain language.
+
+2. Complete T005: scanner + Ruby integration
+   - The scanner page should allow users to search any available symbol, not only click preset symbols.
+   - All symbol groups should be collapsible, searchable, and clickable to switch market focus.
+   - When a symbol is selected, Ruby should explain that market using available chart/history, market structure, indicators, volatility, news/current events if available, and trading tools.
+   - Add a small Ruby explanation panel/window near the selected market.
+   - Scanner trade actions must support instant one-click style execution only when the user has the proper approval state and required risk confirmations already satisfied.
+   - Preserve guardrails: no unauthorized live/shared-master trading, no bypassing admin enablement, no hidden live flip.
+
+3. Complete T006: QA cleanup
+   - Run a full QA pass on the last implemented changes.
+   - Check scanner, Ruby chat, symbol search, collapsible symbol lists, bottom menu spacing, mobile layout, one-click trade UI, trade confirmation/risk controls, and live/demo/paper state labels.
+   - Fix anything broken, missing, or visually confusing.
+   - Make sure the bottom menu is fixed with no gap underneath on mobile.
+   - Make sure Ruby always shows a user-friendly “Ruby is thinking…” / typing state with animated dots while responding.
+   - Make sure no internal function names or backend implementation names appear anywhere in the user UI.
+
+Housekeeping:
+- Check these orphaned files:
+  - lib/symbolRegistry.ts
+  - components/scanner/SymbolExplorer.tsx
+- If they are still unused and have no active imports, either remove them safely or move their useful logic into the active scanner implementation.
+- Do not leave dead duplicate UI files that confuse future builds.
+- After cleanup, run typecheck/build/lint if available and fix all errors caused by this work.
+
+Safety requirements:
+- Do not introduce server-side broker credentials.
+- Do not weaken placeLiveOrderGuarded or any live/shared-master safeguards.
+- Do not change the Phase B 16-gate evaluator unless required to fix a bug, and if touched, preserve default-deny behavior.
+- Default state must remain deny unless admin role, typed confirmation phrase, and required precondition checks are satisfied.
+
+Acceptance criteria:
+- Users can search and select symbols cleanly.
+- Symbol groups are collapsible and not overwhelming.
+- Ruby explains the active selected market clearly.
+- Scanner and Ruby feel connected.
+- UI is cleaner without removing features.
+- Bottom nav has no mobile gap.
+- No internal function names are visible to users.
+- Build/typecheck passes.
+- Existing live-trading safety remains locked unless proper admin/user approvals are present.

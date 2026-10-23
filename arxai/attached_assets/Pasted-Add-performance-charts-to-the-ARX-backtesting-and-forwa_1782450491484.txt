@@ -1,0 +1,79 @@
+Add performance charts to the ARX backtesting and forward-testing system.
+
+Scope:
+Build a charting layer for both backtests and forward tests so users can visually compare strategy performance over time, not just read table results.
+
+Requirements:
+
+1. Backtest chart panel
+- Add a chart section to the backtesting results screen.
+- Show equity curve over time.
+- Show balance curve if available.
+- Show drawdown curve or drawdown bars.
+- Show trade markers on the chart when possible:
+  - Buy entries
+  - Sell entries
+  - Closed wins
+  - Closed losses
+- The chart must be tied to the selected symbol, timeframe, strategy, and test run.
+
+2. Forward-test chart panel
+- Add the same charting system to forward testing.
+- Show live/forward equity progression.
+- Show open/closed trade markers.
+- Show realized P/L and floating P/L if available.
+- Make it clear when data is forward-test/live-observed versus historical backtest data.
+
+3. Comparison mode
+- Allow users to compare:
+  - Backtest vs forward test
+  - Strategy A vs Strategy B
+  - Same strategy across different symbols/timeframes
+- At minimum, support overlaying two equity curves on the same chart.
+- Label each curve clearly.
+
+4. Summary metrics beside chart
+Display compact metrics near the chart:
+- Net profit
+- Win rate
+- Profit factor
+- Max drawdown
+- Total trades
+- Average R multiple if available
+- Long vs short performance
+- Best/worst trade
+- Test date range
+- Data quality/freshness status
+
+5. Data honesty
+- Do not invent missing chart points.
+- If chart data is incomplete, stale, simulated, forward-only, or missing candles, show a clear status message.
+- Backtest results must be labeled as historical simulation.
+- Forward-test results must be labeled as observed forward performance.
+- Never mix backtest and forward-test data without labeling them.
+
+6. UX
+- Add timeframe controls or zoom if existing chart library supports it.
+- Keep chart responsive on mobile and desktop.
+- Add loading, empty, and error states.
+- If there are no completed test runs, show an empty state explaining that a test must be run first.
+- Keep chart styling consistent with the ARX dashboard.
+
+7. Backend/API
+- Reuse existing backtest/forward-test result storage if available.
+- If chart series data is not currently stored, add a safe result-series model/table or response field that stores timestamped equity, balance, drawdown, and trade marker points.
+- Do not break existing backtest or forward-test APIs.
+- Add migrations only if necessary.
+- Preserve existing safety guards and do not touch live execution paths.
+
+8. Tests
+- Add backend tests proving chart series data is returned correctly for a completed run.
+- Add frontend render tests proving:
+  - chart appears for a completed backtest
+  - chart appears for a completed forward test
+  - empty state appears with no data
+  - backtest and forward-test labels are honest
+- Run affected tests, typechecks, and ci guards.
+
+Acceptance:
+A user can open a completed backtest or forward-test run and immediately see a clean performance chart showing equity, drawdown, and trade markers, with honest labels and summary metrics. The system must support comparing backtest vs forward-test performance without weakening any live-trading safety guardrails.

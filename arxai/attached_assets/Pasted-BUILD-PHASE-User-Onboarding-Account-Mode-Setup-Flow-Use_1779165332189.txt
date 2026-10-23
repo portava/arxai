@@ -1,0 +1,235 @@
+BUILD PHASE — User Onboarding + Account Mode Setup Flow
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Create a clean first-time user onboarding flow so every user enters ARX AI with the correct account mode, trading status, approval status, allocation, risk profile, and private workspace. Each user should feel like they are using the app by themselves.
+
+1. Inspect existing auth and user setup first
+- Inspect current login/auth/session system.
+- Inspect user model, account shell, risk profiles, admin approvals, shared master ledger, demo mode, personal MT5 bridge mode, and shared master MT5 mode.
+- Reuse existing models/routes where possible.
+- Do not create duplicate auth, account, or onboarding systems.
+- Add only missing onboarding/setup pieces.
+
+2. First-time user detection
+- Detect when a user has logged in but has not completed account setup.
+- Redirect first-time users to onboarding before showing the full trading dashboard.
+- Returning users who already completed setup should go directly to their private dashboard.
+- If onboarding is incomplete, show a clean “Finish account setup” state.
+- Do not show fake balances, fake trades, or shared master information during setup.
+
+3. Account mode selection
+Create a simple onboarding screen where users choose one account path:
+
+A. Demo Trading
+- User gets a private demo workspace.
+- Assign demo virtual balance if not already assigned.
+- Apply default demo risk profile.
+- Demo must not create live commands.
+- Demo user should see “Demo Mode Active.”
+
+B. Connect My Own MT5
+- User chooses personal MT5 bridge/account mode.
+- Show setup status:
+  - Not connected
+  - Waiting for heartbeat
+  - Connected
+  - Read-only
+  - Demo execution enabled
+  - Live execution enabled, if safely approved
+- Provide clean setup instructions without exposing secrets.
+- User should only see their own personal MT5 status.
+- Do not route personal MT5 users through shared master logic.
+
+C. Request Shared Master Access
+- User requests operator approval to trade through the shared master bridge.
+- User should see:
+  - Waiting for approval
+  - Approved but allocation missing
+  - Approved and ready
+  - Paused/restricted
+- User cannot trade live until admin approval, assigned allocation, risk profile, bridge health, mapping, and all safety gates pass.
+- Do not show the full shared master balance or other users.
+
+4. Account setup completion
+On completion, create or update:
+- user account shell
+- selected account mode
+- default/private workspace
+- risk profile
+- account status
+- onboarding status
+- Ruby context scope
+- notification preferences
+- one-click defaults OFF
+- dashboard route preference
+
+Do not enable one-click trading during onboarding.
+
+5. Private dashboard routing
+After onboarding:
+- Demo users go to their private demo dashboard.
+- Personal MT5 users go to their private MT5 setup/status dashboard.
+- Shared master users go to their private workspace with approval/allocation status.
+- Every dashboard must filter by authenticated session userId.
+- Never trust frontend-provided userId.
+
+6. Admin approval connection
+For shared master users:
+- Add them to the admin approval console as “Pending Shared Master Access.”
+- Admin can:
+  - approve/revoke access
+  - assign allocation
+  - assign risk profile
+  - pause/restrict account
+  - set allowed symbols
+  - set max lot size
+  - set max open trades
+  - set max daily loss
+- User status should update cleanly after admin action.
+
+7. User-facing account status cards
+Add clean account status cards showing:
+- Account Mode
+- Trading Status
+- Approval Status
+- My Balance or Demo Balance, only if available
+- My Risk Profile
+- Daily Loss Remaining
+- Available Risk
+- Bridge/Connection Status, only when relevant
+- Next Step
+
+Use simple labels:
+- Demo Mode Active
+- Waiting for Admin Approval
+- Allocation Needed
+- Ready to Trade
+- Account Paused
+- Connection Needed
+- Setup Incomplete
+
+Avoid code-heavy labels.
+
+8. Ruby onboarding awareness
+Ruby should understand the user’s onboarding/account status.
+
+Ruby can explain:
+- how to start in demo mode
+- why the user is waiting for approval
+- why live trading is blocked
+- whether allocation is missing
+- whether personal MT5 is connected
+- what the next step is
+- what account mode the user selected
+
+Ruby must not reveal:
+- other users
+- full shared master balance
+- admin-only data
+- bridge tokens
+- API keys
+- account credentials
+- session secrets
+
+9. Notifications
+Add private notifications for:
+- onboarding started
+- onboarding completed
+- account mode selected
+- shared master access requested
+- admin approval granted
+- admin approval revoked
+- allocation assigned
+- account paused/restricted
+- personal MT5 connected
+- personal MT5 disconnected
+- setup incomplete reminder
+
+Only the current user should see their own notifications.
+
+10. Safety rules
+The onboarding flow must enforce:
+- one-click defaults OFF
+- live trading disabled until all safety gates pass
+- shared master users blocked until admin approval and allocation exist
+- demo mode cannot create live commands
+- personal MT5 mode cannot access shared master routes
+- shared master users cannot see global shared master data
+- users cannot switch into live mode without proper backend approval
+- no live command is created during onboarding
+
+11. Account mode switching
+Add safe account mode switching if not already present.
+
+Rules:
+- User can switch from Demo to Personal MT5 setup.
+- User can request Shared Master Access.
+- Switching to shared master live mode requires admin approval.
+- Switching modes must not expose another mode’s data incorrectly.
+- Existing trades must remain tied to the account mode they were created under.
+- Do not let a mode switch convert demo trades into live trades.
+
+12. UI/UX polish
+Make onboarding feel clean and premium:
+- Welcome screen
+- Choose account path
+- Explain each option clearly
+- Show progress steps
+- Show next required action
+- Make mobile layout clean
+- Avoid technical backend wording
+- Keep advanced details in expandable sections only
+
+Suggested user-facing language:
+- “Start safely in demo mode.”
+- “Connect your own MT5 account.”
+- “Request access to operator-approved live trading.”
+- “Your account is private. You only see your own trades, risk, and performance.”
+
+13. Audit logs
+Add safe audit logs for:
+- onboarding started
+- onboarding completed
+- account mode selected
+- shared master access requested
+- account mode switched
+- setup incomplete
+- admin approval status changed
+- allocation assigned
+- risk profile assigned
+- blocked live access during onboarding
+
+Do not log secrets.
+
+14. Tests
+Add or update tests for:
+- first-time user is redirected to onboarding
+- returning completed user skips onboarding
+- demo onboarding creates private demo account shell
+- demo onboarding cannot create live command
+- personal MT5 onboarding creates private setup state
+- shared master request creates pending approval state
+- shared master user cannot trade before admin approval
+- shared master user cannot trade before allocation is assigned
+- one-click defaults OFF after onboarding
+- user cannot access another user’s onboarding/account setup
+- account mode switching does not mix demo/live/shared data
+- Ruby only explains current user onboarding status
+- notifications are private per user
+- non-admin cannot approve themselves
+- no secrets exposed
+- no live command created during tests without full approval
+
+Return:
+- what was built
+- files changed
+- onboarding routes
+- user API routes
+- admin API/routes touched
+- account mode setup behavior
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired during this build

@@ -1,0 +1,213 @@
+Inspect the most recent Trade Lifecycle + Order Ticket Integration phase before continuing.
+
+Do NOT build new features yet.
+Do NOT unlock live trading.
+Do NOT enable real auto-close execution.
+Do NOT weaken paper-only, live-trading, MT5 bridge, ALERT_ONLY, user confirmation, user ownership, or activityStatus gates.
+Do NOT redesign unrelated pages.
+
+Your job is to audit the work that was just completed, fix only confirmed P0/P1 issues, rerun checks, and produce a clear QA report.
+
+Verify these exact items:
+
+1. Order Ticket / Trade Placement Flow
+Confirm users can choose:
+- Buy Market
+- Sell Market
+- Buy Limit
+- Sell Limit
+- Buy Stop
+- Sell Stop
+- Buy Stop Limit
+- Sell Stop Limit
+
+For each order type, verify:
+- Correct required fields appear.
+- Entry price / stop price / limit price requirements are enforced.
+- Buy/sell price-direction validation is correct.
+- Live market price is shown only when honestly available.
+- If live price is unavailable, submission is blocked or saved as draft/paper only.
+- Order status clearly shows Paper, Draft, Blocked, or Live-Eligible.
+- Live execution remains blocked unless all backend gates pass.
+
+2. Stop Loss / Take Profit On Trade Creation
+Verify users can enter:
+- One Stop Loss
+- One or multiple Take Profit targets
+- Optional TP1 / TP2 / TP3 targets
+
+Confirm:
+- Risk/reward preview works only when enough data exists.
+- Estimated risk amount works only when account/equity data exists.
+- TP unavailable state appears when targets cannot be calculated honestly.
+- AI/sniper recommendations include TP targets only when data quality is sufficient.
+- No fake TP targets are generated.
+
+3. Edit SL/TP After Trade Creation
+Verify SL/TP can be edited from:
+- Open trade cards
+- Paper trade cards
+- Pending order cards
+- Trade detail view
+
+Every edit must:
+- Show confirmation prompt.
+- Show old value vs new value.
+- Show current safety status.
+- Respect MT5/live execution gates.
+- Save as paper/draft if live execution is blocked.
+- Never send live modification commands unless all gates pass.
+
+4. Manual Close / One-Click Close
+Verify:
+- Close trade button exists where appropriate.
+- One-click close shortcut requires confirmation.
+- Estimated profit/loss displays only when available.
+- Live close blocked state appears when gates are missing.
+- Paper close only appears in paper mode.
+- Duplicate close actions are blocked.
+
+Manual close must not bypass:
+- MT5 bridge gate
+- live trading lock
+- paper-only lock
+- user confirmation
+- per-user ownership check
+
+5. AI Trade Assistant On Trade Cards
+Verify users can ask AI about a specific trade:
+- Where is this trade going?
+- Why is it moving this way?
+- Should I close?
+- Pullback, retracement, continuation, or fakeout?
+- Where should TP be placed?
+- Should stop loss be moved?
+
+Confirm AI uses available:
+- Trading tools
+- Market history
+- Scanner data
+- Candles if connected
+- Market news
+- Current events / real-world news channel
+- User trade context
+- Risk profile if available
+- Current SL/TP placement
+
+Confirm AI honesty rules:
+- Says what data is missing.
+- Does not fabricate candles, news, scanner signals, bridge status, TP targets, confidence, or certainty.
+- Does not execute trades from chat.
+- May recommend, warn, or alert only.
+
+6. Trade Card State / Badges
+Confirm every trade/order card reflects real backend state for:
+- Symbol
+- Direction
+- Order type
+- Entry price
+- Stop Loss
+- Take Profit targets
+- Current price if available
+- Profit/loss if available
+- Paper / Draft / Blocked / Live-Eligible
+- Bridge Offline
+- ALERT_ONLY
+- Auto-Close OFF
+- Activity Unknown
+- Data Insufficient
+- News Unavailable
+- TP Targets Available / Unavailable
+- SL/TP Editable
+- Manual Close Available / Blocked
+
+No fake UI-only status is allowed.
+
+7. Per-User Trade Ownership
+Confirm all actions are scoped to the logged-in user:
+- Create order draft
+- Edit SL/TP
+- View trade cards
+- Ask AI about trade
+- Close trade
+- Read trade history
+- Read audit trail
+
+No user can see, edit, close, analyze, or modify another user’s trades.
+
+8. Audit Trail
+Confirm audit logging exists for:
+- Order ticket opened
+- Order draft created
+- Paper order created
+- SL edited
+- TP edited
+- AI trade analysis requested
+- AI close warning generated
+- Manual close requested
+- Manual close blocked
+- Duplicate action blocked
+- MT5 command blocked
+- Bridge offline fallback
+
+Each audit entry must include:
+- userId
+- tradeId/orderId
+- action
+- previous value if relevant
+- new value if relevant
+- safety gate status
+- timestamp
+
+9. Safety Regression
+Confirm all remain true:
+- Auto-close remains ALERT_ONLY unless every gate passes.
+- Live trading remains BLOCKED unless explicitly unlocked and every required gate passes.
+- MT5 commands remain blocked while bridge/token/live gates are missing.
+- No AI open/add/widen trade tools exist.
+- No fake candles.
+- No fake scanner opportunities.
+- No fake news.
+- No fake TP targets.
+- No fake bridge status.
+- UNKNOWN activity hard-blocks auto-close.
+- Per-user SQL/session filters remain intact.
+
+Run these checks:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Trading intelligence regression
+5. Scanner/news/current-events fallback tests
+6. Auto-close gate tests
+7. Activity UNKNOWN hard-block test
+8. SL/TP create/edit tests
+9. Pending order validation tests
+10. Manual close confirmation/blocking tests
+11. AI trade-card question tests
+12. Per-user trade isolation tests
+13. Audit trail tests
+14. Frontend smoke test for order ticket, trade cards, trade detail, AI trade assistant, SL/TP edit flow, and manual close flow
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun the full checks after fixes.
+
+End with a QA report showing:
+- Files inspected
+- Files changed, if any
+- Tests run
+- Pass/fail result for each test
+- Order types confirmed
+- SL/TP behavior confirmed
+- Manual close behavior confirmed
+- AI trade assistant behavior confirmed
+- Per-user isolation result
+- Audit trail result
+- Remaining gated/deferred items
+- Auto-close execution status
+- MT5/live trading status
+- Whether frontend state matches backend state
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

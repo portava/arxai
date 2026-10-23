@@ -1,0 +1,624 @@
+New task: Research-backed Strategy Intelligence Upgrade — pivots, direction, entries, order flow, and timing.
+
+Goal:
+Upgrade ARX AI’s strategy engine so Eleanor can read the market like a structured trading system, not just isolated patterns.
+
+This upgrade should feed into:
+- Strategy Engine
+- Scanner Truth
+- Pattern Truth
+- Trendline Truth
+- Backtesting
+- Forward Testing
+- Scalp Builder
+- Chart Read
+- Auto Bot evaluation
+- Eleanor reasoning block
+
+Core principle:
+Every trade idea must answer five questions:
+1. Direction — should we be looking buy, sell, wait, or no-trade?
+2. Location — is price at a meaningful pivot/support/resistance/trendline zone?
+3. Entry — what exact trigger confirms the trade?
+4. Timing — is this the right session, candle state, volatility state, and market phase?
+5. Order flow — does pressure support or reject the setup?
+
+Do not let any one factor create trade permission alone.
+
+Architecture:
+Create a shared Market Intelligence Layer:
+
+MarketIntelligenceSnapshot:
+- symbol
+- timeframe
+- timestamp
+- feedStatus
+- freshness
+- directionVerdict
+- pivotVerdict
+- entryVerdict
+- orderFlowVerdict
+- timingVerdict
+- patternVerdict
+- trendlineVerdict
+- riskContext
+- finalBias
+- confidence
+- warnings[]
+- explanation
+
+This snapshot should become a child input to:
+- Scanner Truth
+- Eleanor Chart Read
+- Scalp Builder
+- Testing Lab
+- Auto Bot readiness
+- Strategy Evaluation
+
+Important:
+This is a read/analysis upgrade only.
+It must not bypass live execution gates.
+
+SECTION 1 — Strategy Engine
+
+Define Strategy Engine as:
+A rule-based and evidence-based framework that combines market structure, trend, pivots, patterns, order flow, timing, and risk into a trade thesis.
+
+Strategy Engine should produce:
+StrategyVerdict:
+- strategy_id
+- strategy_name
+- symbol
+- timeframe
+- mode: research / backtest / forward_test / live_read
+- direction: buy / sell / wait / no_trade / mixed
+- setupType: breakout / pullback / reversal / continuation / scalp / trend / range / news-risk / no-edge
+- entryPlan
+- stopPlan
+- targetPlan
+- invalidationPlan
+- confidence
+- quality: poor / fair / good / strong
+- readiness: research_only / context_only / watchlist / conditional / ready_candidate / blocked
+- reasons[]
+- warnings[]
+- requiredConfirmations[]
+- dataSnapshot
+
+Strategy inputs:
+- trend direction
+- market structure
+- pivot points
+- support/resistance
+- trendlines
+- chart patterns
+- candle patterns
+- volume/order flow
+- session timing
+- spread/slippage
+- news/calendar risk
+- volatility
+- historical reliability
+- forward-test reliability
+- risk/reward
+
+Strategy rules:
+- Direction must come from confluence, not one signal.
+- Entry must be triggered by confirmation, not prediction.
+- Stop must be tied to invalidation.
+- Target must be tied to liquidity, pivots, support/resistance, ATR, or structure.
+- No trade if reward-to-risk is poor.
+- No trade if feed is stale/historical.
+- No trade if data is insufficient.
+- No trade if order flow contradicts the setup.
+- No trade if price already reached the target and is too late.
+
+SECTION 2 — Pivot Points
+
+Define Pivot Points:
+Objective price levels calculated from prior period high, low, and close. They act as possible support/resistance and direction-change zones.
+
+Add PivotTruth module.
+
+PivotTruth should calculate:
+- classic pivots
+- Fibonacci pivots optional
+- Camarilla pivots optional
+- Woodie pivots optional
+
+Start with classic pivots:
+Pivot = (High + Low + Close) / 3
+R1 = 2 × Pivot - Low
+S1 = 2 × Pivot - High
+R2 = Pivot + (High - Low)
+S2 = Pivot - (High - Low)
+R3 = High + 2 × (Pivot - Low)
+S3 = Low - 2 × (High - Pivot)
+
+PivotTruthVerdict:
+- pivotSourceTimeframe: daily / weekly / monthly / session
+- pivot
+- r1
+- r2
+- r3
+- s1
+- s2
+- s3
+- currentZone:
+  - above_pivot
+  - below_pivot
+  - at_pivot
+  - at_support
+  - at_resistance
+  - between_levels
+  - breakout_zone
+  - rejection_zone
+- nearestLevel
+- distanceToNearestLevel
+- pivotBias: bullish / bearish / neutral / mixed
+- reactionStatus:
+  - approaching
+  - rejecting
+  - holding
+  - breaking
+  - retesting
+  - failed_break
+- confidence
+- warnings[]
+
+Pivot behavior:
+- Above pivot = bullish lean, not buy permission.
+- Below pivot = bearish lean, not sell permission.
+- At pivot = decision zone.
+- At R/S level = reaction zone.
+- Breakout through R/S requires close + momentum + follow-through.
+- Rejection from R/S requires wick/reversal/failed close confirmation.
+- If target is too close to next pivot level, cap quality.
+- If price is stuck between levels, mark as no-edge or wait.
+- If price already moved from pivot to R2/R3 or S2/S3, check exhaustion/too-late.
+
+Pivot integration:
+Scanner should show:
+- nearest pivot level
+- distance to level
+- pivot bias
+- reaction status
+- target room
+
+Eleanor should explain:
+- “Price is above the daily pivot, so bullish pressure has context, but entry still needs confirmation.”
+- “Price is approaching R1, so buying here has limited room unless R1 breaks cleanly.”
+- “Price rejected S1, which supports a conditional bounce setup.”
+
+SECTION 3 — Direction Engine
+
+Create DirectionTruth module.
+
+Direction means the preferred trading side based on structure and context.
+
+DirectionTruth inputs:
+- higher-timeframe trend
+- current-timeframe structure
+- trendlines
+- moving average slope optional
+- pivot location
+- support/resistance
+- pattern status
+- order flow pressure
+- session behavior
+- news risk
+- volatility state
+
+DirectionTruthVerdict:
+- htfDirection: bullish / bearish / neutral / mixed
+- ltfDirection: bullish / bearish / neutral / mixed
+- scalpDirection: buy / sell / wait / mixed
+- conflict: boolean
+- conflictReason
+- directionConfidence
+- allowedBias:
+  - buy_only
+  - sell_only
+  - both_sides
+  - wait_only
+  - no_trade
+- reason[]
+- invalidationLevel
+
+Direction rules:
+- If HTF and LTF align, confidence can rise.
+- If HTF conflicts with LTF, mark conditional or wait.
+- If price is mid-range, direction confidence drops.
+- If price is at major pivot/support/resistance, direction must wait for reaction.
+- If pattern is forming but unconfirmed, direction stays conditional.
+- If feed is limited/stale, direction is context-only.
+
+SECTION 4 — Entry Points
+
+Create EntryTruth module.
+
+Entry point means the exact condition that must happen before a trade is valid.
+
+EntryTruth should never say “enter now” without:
+- direction
+- level
+- confirmation
+- invalidation
+- risk/reward
+- timing approval
+- feed approval
+
+Entry types:
+1. Breakout entry
+2. Pullback entry
+3. Retest entry
+4. Reversal entry
+5. Continuation entry
+6. Liquidity sweep entry
+7. Trendline break/retest entry
+8. Pivot rejection entry
+9. Pivot breakout entry
+10. Inside-bar breakout entry
+
+EntryTruthVerdict:
+- entryType
+- entryStatus:
+  - not_available
+  - forming
+  - waiting_confirmation
+  - confirmed_candidate
+  - missed
+  - too_late
+  - invalidated
+- proposedEntryPrice
+- entryZone
+- confirmationTrigger
+- invalidationTrigger
+- stopLossLevel
+- targetLevels[]
+- minimumRR
+- currentRR
+- targetRoomStatus: enough_room / limited_room / no_room
+- confidence
+- warnings[]
+
+Entry rules:
+- Breakout requires close beyond level, not wick only.
+- Retest requires hold/rejection after break.
+- Pullback requires trend still intact.
+- Reversal requires exhaustion + structure change.
+- Liquidity sweep requires sweep + reclaim/rejection.
+- Pivot rejection requires reaction candle.
+- Trendline break requires close beyond line and ideally retest.
+- Entry is too late if price moved too far from trigger.
+- Entry is invalidated if the setup level fails.
+
+SECTION 5 — Order Flow
+
+Create OrderFlowTruth module.
+
+Definition:
+Order flow measures buying/selling pressure using available market data. Where true Level 2/depth/tape is unavailable, use proxy order-flow metrics and label them honestly.
+
+OrderFlow data tiers:
+
+Tier 1 — True order flow if available:
+- bid/ask depth
+- market depth
+- volume at price
+- aggressive buys/sells
+- delta
+- cumulative delta
+- spread
+- liquidity imbalance
+- iceberg/absorption signals if available
+
+Tier 2 — Proxy order flow:
+- tick volume
+- candle body/wick pressure
+- volume spike
+- spread widening
+- momentum impulse
+- rejection candles
+- liquidity sweep behavior
+- bid/ask quote movement if available
+
+Tier 3 — Not available:
+- no volume/depth/proxy reliable enough
+- mark order flow unavailable
+- do not fake it
+
+OrderFlowTruthVerdict:
+- dataTier: true_order_flow / proxy_order_flow / unavailable
+- pressure: buying / selling / balanced / mixed / unknown
+- strength: weak / moderate / strong
+- absorptionDetected
+- imbalanceDetected
+- spreadCondition: normal / wide / unstable / unknown
+- volumeCondition: low / normal / high / spike / unknown
+- liquiditySweep:
+  - detected
+  - side: buy_side / sell_side
+  - reclaimed
+- supportsDirection: yes / no / mixed / unknown
+- confidence
+- warnings[]
+
+Order flow rules:
+- If true depth is unavailable, UI must say proxy order flow.
+- Proxy order flow cannot be treated as institutional order flow.
+- Wide spread downgrades entry quality.
+- Low liquidity downgrades timing.
+- Strong rejection at pivot/support/resistance can support reversal thesis.
+- Strong buying into resistance may still be dangerous if no breakout close.
+- Strong selling into support may still be dangerous if no breakdown close.
+- Absorption at a level should trigger caution.
+- Order flow contradiction caps Scanner/Scalp confidence.
+
+SECTION 6 — Timing
+
+Create TimingTruth module.
+
+Timing means whether the setup is happening at a useful moment.
+
+Timing inputs:
+- session: Asia / London / New York / overlap / synthetic continuous
+- candle close state
+- volatility state
+- spread state
+- news/calendar proximity
+- time since signal
+- time since breakout
+- distance from entry trigger
+- market phase: trend / range / compression / expansion / exhaustion
+- recent trade frequency
+- cooldown rules
+
+TimingTruthVerdict:
+- session
+- timingStatus:
+  - good
+  - early
+  - late
+  - wait_for_close
+  - wait_for_retest
+  - news_blocked
+  - spread_blocked
+  - low_liquidity
+  - exhausted
+- candleState:
+  - forming
+  - closed_confirmed
+  - wick_only
+  - impulse
+  - indecision
+- volatilityState:
+  - low
+  - normal
+  - high
+  - extreme
+- signalAge
+- distanceFromTrigger
+- cooldownActive
+- confidence
+- warnings[]
+
+Timing rules:
+- Do not confirm breakout on a still-forming candle unless strategy explicitly allows intrabar scalp mode.
+- If signal is old, mark late/missed.
+- If price is far from trigger, mark chase/too-late.
+- If major news is near, block or downgrade.
+- If spread is wide, block or downgrade.
+- If session is illiquid for that symbol, downgrade.
+- If volatility is extreme, require wider risk or no trade.
+- If compression is forming, wait for expansion/break.
+- If expansion already happened, check exhaustion.
+
+SECTION 7 — Confluence Score
+
+Create ConfluenceTruth module.
+
+Confluence means multiple independent reasons agree.
+
+Confluence inputs:
+- direction
+- pivot
+- support/resistance
+- trendline
+- pattern
+- order flow
+- timing
+- risk/reward
+- historical reliability
+- forward-test reliability
+
+ConfluenceVerdict:
+- score: 0–100
+- alignedFactors[]
+- conflictingFactors[]
+- missingFactors[]
+- confidence
+- finalAction:
+  - no_trade
+  - wait
+  - watch
+  - conditional
+  - ready_candidate
+  - blocked
+- reason
+
+Scoring rules:
+- Feed truth is a hard cap.
+- Candle sufficiency is a hard cap.
+- Risk/reward is a hard cap.
+- Direction conflict caps score.
+- Order flow contradiction caps score.
+- Timing late/exhausted caps score.
+- Backtest success only informs confidence, never grants readiness.
+- Forward-test success informs confidence, never grants execution permission.
+- No single indicator can exceed system caps.
+
+SECTION 8 — System-wide integration
+
+Scanner:
+Add columns/badges:
+- Direction
+- Pivot Zone
+- Entry Status
+- Order Flow
+- Timing
+- Confluence
+- Target Room
+- Tested Edge
+
+Scanner row example:
+EURUSD M15
+Direction: Conditional Sell
+Pivot: Below daily pivot, near S1
+Entry: Waiting for S1 break + retest
+Order Flow: Proxy selling pressure, moderate
+Timing: Wait for candle close
+Confluence: 68/100
+Status: Watchlist, not ready
+
+Chart:
+Overlay:
+- pivot levels
+- entry zone
+- stop level
+- target levels
+- trendlines
+- pattern zones
+- timing warnings
+- order-flow badges if available
+
+Eleanor:
+Reasoning block must include:
+Decision:
+Why:
+Evidence:
+- Direction:
+- Pivot:
+- Entry:
+- Order Flow:
+- Timing:
+- Pattern:
+- Trendline:
+- Risk:
+Confirmation:
+Invalidation:
+Trader Test:
+Risk Note:
+
+Testing Lab:
+Backtesting should test:
+- pivot strategies
+- breakout entries
+- retest entries
+- order-flow proxy filters
+- timing filters
+- session filters
+- confluence thresholds
+
+Forward testing should track:
+- signals generated
+- confirmations missed
+- late entries
+- false breakouts
+- order-flow disagreement
+- timing failures
+- pivot reaction accuracy
+
+Pattern Reliability:
+Add:
+- pivot reaction win rate
+- breakout retest success rate
+- order-flow agreement win rate
+- timing filter impact
+- session-specific edge
+
+Auto Bot:
+Auto Bot cannot trade unless:
+- DirectionTruth passes
+- EntryTruth confirms
+- TimingTruth passes
+- OrderFlowTruth does not contradict
+- Risk rules pass
+- Scanner Truth allows
+- Trade Health allows
+- live gates allow
+
+Even then:
+Testing stats do not grant live permission.
+They only inform confidence.
+
+SECTION 9 — UI labels
+
+Use honest labels:
+- True order flow
+- Proxy order flow
+- Order flow unavailable
+- Waiting for candle close
+- Waiting for retest
+- Entry missed
+- Too late to chase
+- Pivot rejection forming
+- Pivot breakout confirmed
+- Direction conflict
+- No edge
+- Context only
+- Feed limited
+
+Do not use misleading labels:
+- institutional order flow if only proxy data exists
+- confirmed breakout from wick only
+- live confirmed on stale/historical feed
+- ready now from backtest stats alone
+- guaranteed edge
+
+SECTION 10 — Tests
+
+Add tests:
+1. Pivot levels calculated from prior high/low/close.
+2. Price above pivot creates bullish lean but not buy permission.
+3. Price below pivot creates bearish lean but not sell permission.
+4. Pivot rejection requires reaction confirmation.
+5. Pivot breakout requires close beyond level.
+6. Direction conflict caps confidence.
+7. Entry cannot confirm from wick-only breakout.
+8. Entry too far from trigger marks too_late.
+9. True order flow unavailable falls back to proxy only if proxy data exists.
+10. Proxy order flow is labeled proxy.
+11. Order-flow contradiction caps setup.
+12. Timing waits for candle close when required.
+13. Timing marks stale signal as late.
+14. News/spread/liquidity timing blocks or downgrades setup.
+15. Confluence score cannot bypass feed truth.
+16. Backtest success cannot create ready_now.
+17. Forward-test success cannot create live permission.
+18. Scanner displays direction/pivot/entry/orderflow/timing correctly.
+19. Eleanor reasoning includes all required sections.
+20. Auto Bot cannot execute from MarketIntelligenceSnapshot alone.
+
+Validation:
+- strategy engine tests
+- pivot truth tests
+- direction truth tests
+- entry truth tests
+- order-flow truth tests
+- timing truth tests
+- confluence tests
+- scanner truth cap tests
+- Eleanor reasoning tests
+- backtest/forward-test integration tests
+- typecheck:ci
+- ci-guards
+- targeted-tests
+- safety-integration alone
+- architect code review
+
+Hard boundary:
+Do not touch live execution gates, MT5 bridge execution, broker dispatch, trade ticket execution, kill switches, owner/admin permissions, or risk bypass logic.
+
+This upgrade improves analysis, strategy quality, explanations, testing, and confidence.
+It must never grant trade permission by itself.

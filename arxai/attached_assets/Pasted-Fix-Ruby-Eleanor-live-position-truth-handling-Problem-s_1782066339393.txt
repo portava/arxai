@@ -1,0 +1,99 @@
+Fix Ruby/Eleanor live-position truth handling.
+
+Problem shown in mobile screenshots:
+- User asks about the current position.
+- Ruby says V75 1s position is a BUY.
+- User says “I’m in a sell not a buy.”
+- Ruby later admits live sell trades exist on GBPUSD and AAPL.OQ, but still keeps referencing V75 1s BUY rows that are waiting for sync.
+- This is unsafe because Ruby is mixing scanner/suggested/unsynced trade rows with actual live MT5 positions.
+
+Implement a strict live position attribution contract:
+
+1. Add/centralize a PositionTruthResolver used by Ruby/Eleanor, Cockpit, Trade panel, Open Trades, and Scanner action panels.
+   It must separate:
+   - verified_live_position
+   - attributed_but_incomplete_position
+   - scanner_signal
+   - pending_order
+   - historical/closed position
+   - unsynced/unknown row
+
+2. Ruby may only answer hold/close/manage-current-position questions using verified_live_position rows.
+
+A verified_live_position requires all of:
+   - broker/MT5 ticket or position id
+   - symbol
+   - side: BUY or SELL
+   - volume/lot
+   - entry price
+   - current/bid/ask price
+   - unrealized P/L or enough live price data to compute it
+   - bridge id/account source
+   - opened_at or last_update timestamp
+   - freshness status not stale
+   - attribution status confirmed for the current user/master allocation
+
+3. If any of those fields are missing, Ruby must not say:
+   - “your position is a BUY”
+   - “your position is a SELL”
+   - “hold”
+   - “close”
+   - “safe”
+   - “TP/SL recommendation”
+   - “continuation/reversal”
+
+Instead Ruby must say:
+   “I can’t verify the exact live position yet. I see incomplete/unsynced rows, so I should not give hold/close advice until the live MT5 position sync confirms ticket, side, entry, current price, and P/L.”
+
+4. Add a correction path:
+   If the user contradicts Ruby’s direction, for example “I’m in a sell not a buy,” Ruby must immediately:
+   - stop referencing the previous assumed symbol/side
+   - re-query verified live positions
+   - list only verified open live positions with side and symbol
+   - ask the user to pick the matching one if more than one exists
+   - if no verified matching sell exists, say the trade is not synced/attributed yet
+   - never continue claiming the previous BUY position
+
+5. Update quick suggestion chips.
+   Do not show a chip like “GBPUSD · F · Wait” unless it maps to a verified position or verified scanner context.
+   For current-position questions, chips should be generated from verified_live_position only.
+   If sync is incomplete, show “Sync incomplete” / “Refresh positions” / “Open Trade panel”, not directional advice.
+
+6. Fix V75 1s attribution:
+   Unsynced V75 1s rows waiting for sync must not appear as the user’s current live position.
+   They can appear only under an “Unsynced / incomplete rows” section.
+   Label them clearly:
+   - “Not verified as your active position”
+   - “No hold/close advice available”
+
+7. Add UI badges for every position row:
+   - Verified live
+   - Sync incomplete
+   - Stale
+   - Scanner signal only
+   - Closed/historical
+   - Pending order
+
+8. Add tests:
+   - User asks “what about the position I’m in now” while only scanner V75 BUY exists and verified GBPUSD SELL exists → Ruby must discuss GBPUSD SELL or ask which verified sell.
+   - User says “I’m in a sell not a buy” after Ruby guessed BUY → Ruby must retract and re-query, not defend the BUY.
+   - Unsynced V75 BUY rows must never be used for current-position advice.
+   - Missing price/entry/P&L must block hold/close recommendation.
+   - Scanner signals must never be promoted to live positions.
+   - Shared master attribution incomplete must block current-position advice.
+   - Quick suggestion chips must not show directional action unless verified.
+
+9. Preserve all existing wiring:
+   - Do not break MT5 bridge ingestion.
+   - Do not remove scanner.
+   - Do not remove Ruby/Eleanor chat.
+   - Do not remove shared master routing.
+   - Do not loosen live execution gates.
+   - This truth resolver can only block unsafe advice, never grant trade permission.
+
+Expected result:
+Ruby should respond like this when data is incomplete:
+“I can’t verify the exact live trade yet. I see unsynced rows, but I don’t have confirmed ticket, side, entry, current price, and P/L. I won’t call it a buy/sell or give hold/close advice until the MT5 live position sync confirms it.”
+
+And when verified:
+“You have a verified live GBPUSD SELL, ticket ___, entry ___, current ___, P/L ___, last synced ___ seconds ago. Now I can review hold vs close.”

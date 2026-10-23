@@ -1,0 +1,199 @@
+INSPECTION PHASE — Admin Login + User Login + Invite Code System Check
+
+Use the current codebase.
+
+Do not build anything yet.
+Do not rebuild unrelated systems.
+Do not modify auth behavior in this pass.
+Do not create users, invites, trades, or live commands.
+Do not enable public registration.
+Do not enable live trading.
+
+Goal:
+Check what already exists for admin login, normal user login, registration, invite codes, beta cohort limits, session handling, role protection, and invite-gated access before we build or change anything.
+
+1. Inspect authentication system
+Check what already exists for:
+- user login
+- user registration
+- logout
+- session handling
+- password auth / email auth / magic link / OAuth if any
+- authenticated session userId
+- session expiration
+- protected routes
+- frontend auth state
+- backend auth middleware
+- mobile login behavior
+- logout cache clearing
+
+Return:
+- auth files found
+- login/register routes
+- session storage method
+- whether backend uses authenticated session userId instead of frontend userId
+- current risks
+
+2. Inspect admin login / admin role
+Check:
+- admin login route/page
+- admin role model
+- admin middleware such as requireAdmin
+- admin-only API protection
+- admin dashboard protection
+- failed non-admin access handling
+- production-safe error output
+- whether admin credentials are hardcoded anywhere
+- whether admin bootstrap uses env/config/user role safely
+
+Return:
+- admin files found
+- admin routes/APIs
+- role/permission logic
+- whether non-admins can access admin routes
+- gaps
+
+3. Inspect invite code system
+Check what already exists for:
+- invite code model/table
+- beta invite model/table
+- invite creation
+- invite revocation
+- invite expiration
+- invite acceptance
+- one-time-use invites
+- invite email binding if any
+- invite code hashing if any
+- invite-gated registration
+- server-side invite validation
+- direct API bypass protection
+
+Return:
+- invite files found
+- invite routes/APIs
+- invite storage method
+- whether registration currently requires invite
+- whether invite gate is frontend-only or backend-enforced
+- gaps
+
+4. Inspect 10-user beta cap
+Check:
+- ARX_PRIVATE_BETA_10 cohort
+- max accepted users = 10
+- accepted count logic
+- pending invite logic
+- 11th user blocked/waitlisted logic
+- server-side beta cap enforcement
+- admin Beta Control Center
+- accepted / pending / revoked / expired invite states
+
+Return:
+- cohort files found
+- current beta cap behavior
+- whether cap is server-enforced
+- risks
+
+5. Inspect environment flags
+Check if these or equivalents exist:
+- ARX_BETA_INVITE_REQUIRED
+- APP_ENV / NODE_ENV
+- live execution flags
+- public registration flag
+- admin bootstrap flag/config
+- feature flags for beta/admin/invites
+
+Return:
+- flags found
+- missing flags
+- unsafe defaults
+- whether production fails closed
+
+6. Inspect user separation after login
+Check:
+- user dashboard filters by authenticated userId
+- user trades filtered by authenticated userId
+- user P/L filtered by authenticated userId
+- user Ruby memory filtered by authenticated userId
+- user notifications filtered by authenticated userId
+- user scanner/watchlist state filtered by authenticated userId
+- logout/login clears cached state
+
+Return:
+- files/routes checked
+- possible cross-user leak risks
+- cache/session risks
+
+7. Inspect tests
+Find existing tests/scripts for:
+- user login
+- admin login
+- non-admin blocked from admin routes
+- invite required registration
+- invalid invite blocked
+- revoked invite blocked
+- expired invite blocked
+- used invite blocked
+- beta cap 10 users
+- 11th user blocked/waitlisted
+- User A cannot see User B data
+- logout/login clears cache
+- no secrets exposed
+- no live command created
+
+Return:
+- tests found
+- tests missing
+- recommended tests to add
+
+8. Security check
+Verify:
+- no admin credentials in frontend code
+- no invite codes exposed publicly
+- no session secrets exposed
+- no API keys exposed
+- no bridge tokens exposed
+- invite exports admin-only
+- admin routes fail closed
+- normal users cannot call admin APIs directly
+
+9. Return existing-vs-missing matrix
+Return a table:
+
+Feature | Existing / Partial / Missing | Files | Routes/APIs | Risk Level | Recommended Next Action
+
+Include:
+- user login
+- user registration
+- logout
+- admin login
+- admin role/middleware
+- invite code generation
+- invite code validation
+- invite revocation
+- invite expiration
+- one-time-use invite
+- 10-user cap
+- 11th user block/waitlist
+- admin beta dashboard
+- invite export/copy
+- audit logs
+- tests
+
+10. Build recommendation only
+Do not build yet.
+
+After inspection, recommend the smallest safe build plan for:
+
+Admin Login + User Login + Hard Invite Code Gate
+
+Return:
+- existing systems found
+- files inspected
+- routes/APIs inspected
+- env flags found
+- tests found
+- gaps found
+- security risks
+- exact minimal build plan
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

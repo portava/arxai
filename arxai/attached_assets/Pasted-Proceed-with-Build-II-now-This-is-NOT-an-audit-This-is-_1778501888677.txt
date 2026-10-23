@@ -1,0 +1,502 @@
+Proceed with Build II now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build II = Trader Coach + Playbook Generator.
+
+Goal:
+Create a Trader Coach system that reads the trading calendar, AI decisions, paper trades, debriefs, learning events, mistake patterns, strategy edges, autopilot history, and Risk Governor status, then turns that data into clear coaching instructions and a living playbook.
+
+The coach should answer:
+- What should I improve today?
+- What mistakes keep repeating?
+- What setups are working?
+- What setups should I avoid?
+- What did the AI learn from recent trades?
+- What should be in my trading playbook?
+- What rules should I follow before the next paper session?
+- Should I trade, pause, review, or only observe?
+- What is my weekly improvement plan?
+
+Important:
+Build II must NOT place trades.
+Build II must NOT enable live trading.
+Build II must NOT call MT5 live execution.
+Build II must NOT modify canPlaceTrades.
+Build II must NOT recommend live trading.
+Build II is coaching, playbook, review, and improvement planning only.
+
+Current system:
+- Build AA = trade decision orchestrator
+- Build BB = auto-debrief
+- Build CC = learning feedback engine
+- Build DD = read-only market data
+- Build EE = paper execution engine
+- Build FF = paper autopilot loop
+- Build GG = trading calendar + AI command center
+- Build HH = risk governor + trader readiness
+- Build II = trader coach + playbook generator
+
+Core requirement:
+Create one coaching engine that turns system data into practical coaching reports, playbook rules, pre-session checklists, post-session reviews, and weekly improvement plans.
+
+Build II tasks:
+
+1. Inspect existing data sources
+
+Find and read from:
+- trade_decision_logs
+- paper_trades
+- paper_execution_logs
+- auto-debrief / post-trade debrief tables
+- learning_events
+- strategy_edges
+- mistake_patterns
+- market data logs
+- autopilot_cycles
+- autopilot_cycle_logs
+- performance_daily_snapshots
+- performance_symbol_snapshots
+- ai_performance_snapshots
+- risk_governor_evaluations
+- risk_governor_events
+
+If any source is missing, return safe empty coaching guidance instead of crashing.
+
+2. Create Trader Coach Service
+
+Create a service that returns:
+
+{
+  coach_report_id,
+  generated_at,
+  mode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  reportType: "DAILY" | "WEEKLY" | "SESSION" | "PLAYBOOK",
+  traderStatus: {
+    readinessScore,
+    readinessGrade,
+    readinessLevel,
+    governorStatus,
+    paperTradingAllowed,
+    autopilotAllowed,
+    liveTradingAllowed: false
+  },
+  performanceSummary: {
+    totalTrades,
+    closedTrades,
+    winRate,
+    netPnl,
+    bestSymbol,
+    worstSymbol,
+    bestSetup,
+    weakestSetup,
+    decisionToWinRate,
+    learningConfidence
+  },
+  topStrengths: [],
+  topWeaknesses: [],
+  repeatedMistakes: [],
+  activeRiskFlags: [],
+  currentFocusAreas: [],
+  nextBestActions: [],
+  preSessionChecklist: [],
+  postSessionReviewQuestions: [],
+  playbookUpdates: [],
+  warnings: [],
+  coachingSummary,
+  generatedBy: "SYSTEM_TRADER_COACH"
+}
+
+3. Create coaching logic
+
+The coach should generate guidance from data:
+
+If repeated losses:
+- recommend pause/review
+- identify mistake pattern
+- add cooldown or checklist rule
+- recommend paper-only observation
+
+If high-risk decisions:
+- recommend risk reduction
+- add rule about skipping high risk_score trades
+- highlight examples from recent trades
+
+If wide-spread/stale-data blocks:
+- recommend avoiding bad market conditions
+- add market quality checklist item
+
+If same-symbol overexposure:
+- recommend max same-symbol rule
+- remind user about cooldowns
+
+If learning confidence is low:
+- recommend more paper sample size
+- do not exaggerate confidence
+- clearly say data is still early
+
+If setup is performing well:
+- convert into playbook entry
+- identify symbol, timeframe, signal combination, risk profile, and best conditions
+
+If setup is performing poorly:
+- mark as avoid/review
+- identify failure pattern
+- add guardrail
+
+4. Create Playbook Generator
+
+Create playbook entries from learned strategy edge data.
+
+Each playbook entry should include:
+
+{
+  playbook_entry_id,
+  title,
+  status: "ACTIVE" | "WATCHLIST" | "AVOID" | "REVIEW",
+  symbol,
+  timeframe,
+  setupName,
+  actionBias,
+  conditionsRequired: [],
+  entryRules: [],
+  riskRules: [],
+  invalidationRules: [],
+  marketDataRequirements: [],
+  sniperEntryRequirements: [],
+  mistakeWarnings: [],
+  confidenceLevel: "LOW" | "MEDIUM" | "HIGH",
+  sampleSize,
+  winRate,
+  avgPnl,
+  edgeScore,
+  lastUpdated,
+  source: "SYSTEM_GENERATED"
+}
+
+Rules:
+- Do not mark anything HIGH confidence unless sample size is strong.
+- Small sample size should be WATCHLIST, not ACTIVE.
+- Losing setups should become REVIEW or AVOID.
+- Repeated mistake patterns should become mistakeWarnings.
+- Live trading must never be recommended.
+
+5. Create Daily Coach
+
+Daily coach should generate:
+- today’s risk status
+- whether paper trading is allowed or paused
+- best focus for today
+- setups to watch
+- setups to avoid
+- mistake to avoid today
+- pre-session checklist
+- session limit reminders
+- daily paper loss reminder
+- live trading disabled reminder
+
+6. Create Weekly Improvement Plan
+
+Weekly plan should generate:
+
+{
+  week_start,
+  week_end,
+  mainGoal,
+  focusAreas: [],
+  rulesToPractice: [],
+  mistakesToReduce: [],
+  setupsToStudy: [],
+  setupsToAvoid: [],
+  paperTradingTargets: {
+    maxTradesPerDay,
+    maxLossPerDay,
+    requiredDebriefs,
+    minQualityScore,
+    reviewDays
+  },
+  progressMetrics: [],
+  reviewQuestions: [],
+  successCriteria: [],
+  warnings: []
+}
+
+7. Create Pre-Session Checklist
+
+Generate a checklist before paper trading:
+
+- Risk Governor status checked
+- Daily loss limit not hit
+- No cooldown active
+- Market data quality acceptable
+- Spread acceptable
+- No same-symbol conflict
+- Trade window must be GOOD
+- Sniper score must pass
+- Decision confidence must meet threshold
+- Risk score must stay below max
+- Stop loss and take profit required
+- Live trading disabled
+- Paper mode only
+
+8. Create Post-Session Review
+
+Generate review questions:
+
+- Did I follow the AI decision?
+- Did I obey the Risk Governor?
+- Did I take trades during bad data/spread?
+- Did I overtrade?
+- Did I respect cooldowns?
+- Did the setup match the playbook?
+- What mistake repeated?
+- What should the system learn from this?
+- What rule should be added or changed?
+
+9. Add database tables if needed
+
+Additive only.
+
+Create:
+
+trader_coach_reports:
+- id
+- coach_report_id
+- report_type
+- mode
+- live_trading_status
+- readiness_score
+- readiness_grade
+- readiness_level
+- governor_status
+- performance_summary jsonb
+- top_strengths jsonb
+- top_weaknesses jsonb
+- repeated_mistakes jsonb
+- active_risk_flags jsonb
+- current_focus_areas jsonb
+- next_best_actions jsonb
+- pre_session_checklist jsonb
+- post_session_review_questions jsonb
+- playbook_updates jsonb
+- warnings jsonb
+- coaching_summary
+- generated_by
+- created_at
+
+trading_playbook_entries:
+- id
+- playbook_entry_id
+- title
+- status
+- symbol
+- timeframe
+- setup_name
+- action_bias
+- conditions_required jsonb
+- entry_rules jsonb
+- risk_rules jsonb
+- invalidation_rules jsonb
+- market_data_requirements jsonb
+- sniper_entry_requirements jsonb
+- mistake_warnings jsonb
+- confidence_level
+- sample_size
+- win_rate
+- avg_pnl
+- edge_score
+- source
+- created_at
+- updated_at
+
+weekly_improvement_plans:
+- id
+- week_start
+- week_end
+- main_goal
+- focus_areas jsonb
+- rules_to_practice jsonb
+- mistakes_to_reduce jsonb
+- setups_to_study jsonb
+- setups_to_avoid jsonb
+- paper_trading_targets jsonb
+- progress_metrics jsonb
+- review_questions jsonb
+- success_criteria jsonb
+- warnings jsonb
+- created_at
+- updated_at
+
+trader_coach_logs:
+- id
+- coach_report_id
+- event_type
+- severity
+- message
+- details jsonb
+- created_at
+
+10. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+GET /api/trader-coach/status
+POST /api/trader-coach/generate
+GET /api/trader-coach/daily
+GET /api/trader-coach/weekly
+GET /api/trader-coach/session-prep
+GET /api/trader-coach/post-session-review
+GET /api/trader-coach/playbook
+POST /api/trader-coach/playbook/generate
+GET /api/trader-coach/playbook/:id
+POST /api/trader-coach/demo
+GET /api/trader-coach/logs?limit=50
+
+11. Integrate with GG frontend
+
+Add or update frontend pages/components:
+
+A. Trader Coach page
+Show:
+- coach summary
+- readiness status
+- current focus areas
+- next best actions
+- repeated mistakes
+- strengths/weaknesses
+- warnings
+
+B. Playbook page
+Show:
+- active setups
+- watchlist setups
+- review setups
+- avoid setups
+- confidence level
+- sample size
+- setup rules
+- mistake warnings
+
+C. Daily Prep panel
+Show:
+- pre-session checklist
+- Risk Governor status
+- paper mode only badge
+- live trading disabled badge
+- daily focus
+- setups to watch/avoid
+
+D. Weekly Plan panel
+Show:
+- weekly main goal
+- practice rules
+- mistakes to reduce
+- progress metrics
+- success criteria
+
+12. Safety language
+
+All coaching output must:
+- avoid promising profits
+- avoid recommending live trading
+- remind that this is paper/simulation mode
+- say sample size is limited when relevant
+- use practical improvement language, not hype
+- never claim the system guarantees winning trades
+
+13. Required test scenarios
+
+A. Empty database returns safe beginner coaching.
+B. Small sample size returns cautious coaching.
+C. Repeated mistake pattern creates specific coaching advice.
+D. Winning setup creates WATCHLIST or ACTIVE playbook entry depending on sample size.
+E. Losing setup creates REVIEW or AVOID playbook entry.
+F. Risk Governor locked status makes coach recommend pause/watch-only.
+G. Daily coach returns checklist and focus.
+H. Weekly plan returns improvement plan.
+I. Playbook generation is idempotent and updates entries instead of duplicating.
+J. Frontend routes/pages are accessible.
+K. Live trading remains disabled.
+L. Existing AA-HH systems still work.
+
+14. Logs
+
+Every coach generation should log:
+- generation started
+- data sources read
+- missing data sources
+- governor status read
+- performance data read
+- mistake patterns read
+- playbook updates created/updated
+- warnings generated
+- report stored
+- generation completed
+
+15. Preserve existing behavior
+
+Do not break:
+- Build AA decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- performance endpoints
+- existing frontend routes
+
+Acceptance criteria:
+- Trader Coach service exists.
+- Coach can generate daily, weekly, session, and playbook guidance.
+- Playbook entries are created from real system learning data.
+- Repeated mistakes become coaching instructions.
+- Risk Governor status controls coaching tone.
+- Frontend pages are accessible.
+- No live trading is enabled or recommended.
+- App typechecks/builds.
+- Raw outputs prove all major scenarios work.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Frontend routes/pages added
+5. Where II reads GG performance data
+6. Where II reads HH Risk Governor data
+7. Where II reads CC strategy edges and mistake patterns
+8. Where II reads BB debriefs
+9. Raw output from /api/trader-coach/status
+10. Raw output from /api/trader-coach/generate
+11. Raw output from /api/trader-coach/daily
+12. Raw output from /api/trader-coach/weekly
+13. Raw output from /api/trader-coach/session-prep
+14. Raw output from /api/trader-coach/post-session-review
+15. Raw output from /api/trader-coach/playbook
+16. Raw output from /api/trader-coach/playbook/generate
+17. Raw output from /api/trader-coach/demo
+18. Empty-state proof
+19. Small sample size proof
+20. Repeated mistake coaching proof
+21. Winning setup playbook proof
+22. Losing setup playbook proof
+23. Risk Governor locked coaching proof
+24. Playbook idempotency proof
+25. Frontend route proof
+26. Live-trade isolation proof
+27. Any errors or warnings
+28. Whether Build II is fully complete or partially complete
+29. Final Build II score out of 10

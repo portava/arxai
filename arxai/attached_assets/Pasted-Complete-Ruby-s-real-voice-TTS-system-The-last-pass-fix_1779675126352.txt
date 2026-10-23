@@ -1,0 +1,222 @@
+Complete Ruby’s real voice/TTS system. The last pass fixed runtime fallback and TypeScript issues, but the admin-only Ruby Voice Settings panel, provider health checks, test voice buttons, route diagnostics, replay button, and settings sync were not completed.
+
+DO NOT rebuild unrelated sections.
+DO NOT break the currently working Ruby listen/mic flow.
+DO NOT settle for browser speech fallback only. We need to verify real OpenAI and ElevenLabs voice generation.
+
+CURRENT STATUS FROM LAST AGENT PASS:
+- Ruby voice/listen flow works.
+- useRubyTTS fallback to browser speechSynthesis was added.
+- Some state desync was fixed.
+- Typecheck is green.
+- But browser-side toggle still uses tts.* storage keys.
+- Admin-only test voice buttons were not added.
+- Provider health checks were not added.
+- Per-route voice diagnostics were not added.
+- Replay button was not added.
+
+GOAL:
+Add a complete Admin → Ruby Voice Settings system that lets admin test and confirm:
+- ElevenLabs real voice works.
+- OpenAI real voice works.
+- Browser fallback works.
+- Ruby replay works.
+- Ruby stop speaking works.
+- Ruby settings save and reload correctly.
+
+1. SYNC RUBY VOICE SETTINGS KEYS
+Audit the current Ruby voice settings and storage keys.
+
+Fix any mismatch between:
+- frontend toggle keys
+- backend settings keys
+- database/user settings keys
+- admin settings keys
+- localStorage/session fallback keys if used
+
+The browser-side toggle currently uses tts.* because it owns enabled/setEnabled/supported.
+Make sure both sides agree on the final setting names or add a compatibility mapping.
+
+Do not let user-visible behavior desync from saved backend settings.
+
+2. ADD ADMIN → RUBY VOICE SETTINGS PANEL
+Add or repair an admin-only Ruby Voice Settings panel.
+
+Location:
+Admin / Operator area → Ruby Voice Settings
+
+The panel should include simple controls:
+
+Main Voice Controls:
+- Ruby TTS Enabled: ON/OFF
+- Speak Ruby Responses: ON/OFF
+- Auto-Listen After Ruby Speaks: ON/OFF
+- Browser Fallback Enabled: ON/OFF
+
+Provider:
+- Provider Mode: Auto / ElevenLabs / OpenAI / Browser Only
+- Save Provider Settings button
+
+OpenAI Settings:
+- OpenAI configured: Yes/No
+- OpenAI model field or selector
+- OpenAI voice selector
+- OpenAI style/instructions field for Ruby’s tone
+- Test OpenAI Voice button
+
+ElevenLabs Settings:
+- ElevenLabs configured: Yes/No
+- ElevenLabs voice ID field
+- ElevenLabs model selector
+- Test ElevenLabs Voice button
+
+Diagnostics:
+- Last provider used
+- Last TTS success/failure
+- Last error, admin-friendly only
+- Last generated audio MIME type
+- Last audio byte size
+- Last response time
+- Last fallback reason
+
+Do not expose API keys.
+Do not show raw stack traces in normal UI.
+
+3. ADD PROVIDER HEALTH CHECKS
+Create admin-only provider health diagnostics.
+
+Health checks must test:
+- OPENAI_API_KEY exists server-side
+- ELEVENLABS_API_KEY exists server-side
+- OpenAI TTS route can generate short audio
+- ElevenLabs TTS route can generate short audio
+- Audio response is playable
+- Correct Content-Type is returned
+- Audio byte size is greater than zero
+
+Show friendly admin statuses:
+- Ready
+- Missing API Key
+- Missing Voice ID
+- Invalid Voice ID
+- Provider Rejected Request
+- Quota/Billing Issue
+- Timed Out
+- Generated Audio But Playback Failed
+- Browser Fallback Used
+
+Regular users must not see provider diagnostics.
+
+4. ADD TEST VOICE BUTTONS
+Add buttons:
+- Test OpenAI Voice
+- Test ElevenLabs Voice
+- Test Browser Fallback
+- Test Auto Provider
+
+Each test should:
+- Generate a short Ruby phrase like:
+  “Ruby voice test successful. I’m online and ready.”
+- Play the audio in the browser.
+- Show loading state.
+- Show success/failure.
+- Record diagnostic result.
+- Not require a chat message.
+- Not expose provider raw errors to regular users.
+
+5. ADD REPLAY + STOP SPEAKING
+Add Ruby audio controls in the user Ruby chat area:
+- Replay last Ruby response
+- Stop speaking
+
+Requirements:
+- Replay uses the last generated audio if available.
+- If cached audio is unavailable, regenerate TTS from the last Ruby text response.
+- Stop speaking cancels current audio and browser speech fallback.
+- Prevent Ruby from speaking over herself.
+- Starting a new Ruby response stops any previous Ruby audio.
+
+6. CONFIRM REAL PROVIDER OUTPUT
+Make sure the app can clearly tell the difference between:
+- ElevenLabs generated audio
+- OpenAI generated audio
+- Browser speech fallback
+
+Admin diagnostics should show:
+- Provider requested
+- Provider actually used
+- Whether fallback happened
+- Why fallback happened
+
+Do not falsely mark provider success if browser fallback was used.
+
+7. SERVER-SIDE ONLY PROVIDER CALLS
+Make sure OpenAI and ElevenLabs calls happen server-side only.
+
+API keys must not appear in:
+- frontend bundle
+- browser localStorage
+- browser console
+- network response body
+- Ruby messages
+- user-visible UI
+
+8. FIX TTS ROUTE RESPONSE HANDLING
+Audit /api/ruby/tts or equivalent route.
+
+Make sure:
+- It returns correct audio content-type.
+- It does not return JSON when frontend expects audio.
+- It handles binary buffers correctly.
+- It supports provider=auto/openai/elevenlabs/browser.
+- It returns clear JSON only when intentionally returning diagnostics.
+- It handles empty text, long text, invalid voice, missing key, timeout, quota issue, and provider failure.
+
+9. MOBILE PLAYBACK
+Verify on mobile Safari/iPhone width:
+- Audio only autoplay after user has interacted with Ruby voice mode.
+- If browser blocks playback, show “Tap to hear Ruby.”
+- Replay button works.
+- Stop speaking button works.
+- Ruby voice controls are not covered by bottom nav or Ruby bubble.
+
+10. USER-FACING RUBY BEHAVIOR
+Regular users should only see:
+- Ruby Voice ON/OFF
+- Speak Responses ON/OFF
+- Auto-Listen ON/OFF
+- Replay
+- Stop Speaking
+- Tap to hear Ruby if needed
+
+Regular users should NOT see:
+- OpenAI key status
+- ElevenLabs key status
+- voice IDs
+- model IDs
+- provider route names
+- stack traces
+- backend errors
+- admin diagnostics
+
+11. ACCEPTANCE TEST
+Before stopping, verify:
+- Ruby still listens to voice input.
+- Ruby still answers in text.
+- Ruby speaks with ElevenLabs when selected and configured.
+- Ruby speaks with OpenAI when selected and configured.
+- Ruby falls back to browser speech only when premium provider fails or Browser Only is selected.
+- Admin can test OpenAI voice without sending a chat message.
+- Admin can test ElevenLabs voice without sending a chat message.
+- Admin can see provider health checks.
+- Admin can see whether fallback was used.
+- Replay last Ruby response works.
+- Stop speaking works.
+- Ruby does not overlap multiple audio streams.
+- Missing API key shows admin-only friendly warning.
+- Invalid ElevenLabs voice ID shows admin-only friendly warning.
+- No API keys appear anywhere client-side.
+- Regular users do not see admin Ruby voice diagnostics.
+- Login, scanner, trade modal, admin controls, bridge status, and Ruby chat still work.
+
+Run typecheck/build after changes and fix any errors before stopping.

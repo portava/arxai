@@ -1,0 +1,82 @@
+Inspect the MT5 demo execution flow because the UI shows “Dispatched to MT5 DEMO” with command id dmcmd_7a61dc1e-414d-47a0-b3fd-16315573b5c2, but no order fills in MT5.
+
+Do not rebuild from scratch. First inspect the existing code, logs, database/command queue, MT5 bridge routes, and EA polling flow.
+
+Find and fix the exact break between:
+
+1. User clicks Draft/Confirm/Dispatch demo order
+2. Backend creates command
+3. Command is stored in the MT5 demo command queue
+4. EA polls Replit for pending demo commands
+5. EA receives the command
+6. EA executes the demo market order
+7. EA posts execution/fill result back to Replit
+8. UI updates the trade table with filled/rejected status
+
+Specific checks:
+
+- Investigate why the UI badge says canDispatch:false while the toast still says “Dispatched to MT5 DEMO.”
+- If canDispatch is false, the UI must not claim the order was dispatched. It should say exactly which gate blocked it.
+- If the command was accepted into the queue, canDispatch should not remain false unless execution is intentionally blocked.
+- Verify the backend route that creates demo commands is not only creating a draft but calling it dispatched.
+- Verify the EA polling endpoint returns the pending command to MT5.
+- Verify the command is not immediately marked consumed/expired before the EA gets it.
+- Verify the EA v1.26 command format matches the backend command format exactly.
+- Verify the EA expects the same fields the backend sends: command id, symbol, side, volume, stop loss, take profit, account type, execution mode, and demo authorization.
+- Verify EURUSD symbol mapping works for the broker. If broker uses EURUSDm, EURUSD.a, EURUSD.pro, etc., map the requested symbol to the broker’s actual symbol.
+- Verify lot size 0.01 meets the broker min lot, step lot, and margin requirements.
+- Verify the EA is not in read-only mode when demo execution is armed.
+- Verify AllowOrderExecution / demo execution input is enabled for demo only.
+- Verify WebRequest allowlist URL matches the live Replit URL exactly.
+- Verify MT5 Algo Trading is enabled, the EA is attached to an active chart, and the terminal is connected.
+- Check MT5 Experts and Journal rejection reasons and surface them back into the app.
+
+Add a clear command lifecycle status in the UI table:
+
+queued
+sent_to_ea
+ea_received
+order_send_attempted
+filled
+rejected
+blocked
+expired
+
+For every blocked or rejected order, show the exact reason, for example:
+
+- canDispatch false
+- EA not polling
+- WebRequest blocked
+- Algo Trading disabled
+- symbol not found
+- invalid volume
+- insufficient margin
+- market closed
+- trade context busy
+- order send failed with MT5 retcode
+- EA still in read-only mode
+
+Also add a “Bridge Debug” panel for demo execution showing:
+
+- last EA heartbeat time
+- last command requested by EA
+- last command delivered to EA
+- last execution report received
+- pending command count
+- last MT5 retcode/message
+- active account type
+- EA version
+- read-only status
+- allow execution status
+- WebRequest status if known
+
+After fixing, run an end-to-end demo test:
+
+- create demo BUY EURUSD 0.01
+- verify command appears in queue
+- verify EA receives it
+- verify MT5 attempts OrderSend
+- verify result is posted back
+- verify UI trade table updates with filled or rejected reason
+
+Do not enable live trading. Keep live broker execution disabled. This fix is for DEMO execution only.

@@ -1,0 +1,261 @@
+Build the ARX AI Execution Audit + Ledger Reconciliation + Broker Failure Handling layer.
+
+SCOPE LOCK:
+Only work on:
+1. Trade lifecycle audit logs.
+2. User slot/fund ledger records.
+3. Broker/MT5 reconciliation checks.
+4. Execution failure handling and clean status reporting.
+5. Admin/user views needed to display audit and reconciliation results.
+
+Do not:
+- Enable live trading.
+- Place live trades.
+- Change kill switches.
+- Change admin approval rules.
+- Change existing live/demo permission gates.
+- Change scanner logic.
+- Change Ruby intelligence.
+- Redesign unrelated pages.
+- Refactor working systems unless needed for this audit/ledger layer.
+
+GOAL:
+Make ARX AI safer and more reliable by tracking every important trading event, matching app trades to MT5 broker records, and showing clean failure/reconciliation states.
+
+This phase should improve safety, accountability, and backend reliability without changing actual execution permissions.
+
+PART 1 — Trade lifecycle audit log
+
+Create or verify a backend audit system that records every major trade lifecycle event.
+
+Track events such as:
+- trade_ticket_opened
+- trade_precheck_started
+- trade_precheck_passed
+- trade_precheck_failed
+- trade_submitted_to_bridge
+- broker_order_accepted
+- broker_order_rejected
+- broker_order_filled
+- broker_order_partially_filled
+- position_opened
+- stop_loss_updated
+- take_profit_updated
+- trade_close_requested
+- trade_closed
+- trade_close_failed
+- bridge_disconnected
+- bridge_timeout
+- stale_mt5_data
+- kill_switch_blocked
+- admin_permission_blocked
+- risk_rule_blocked
+- margin_check_failed
+- invalid_symbol
+- invalid_stops
+- market_closed
+- slippage_exceeded
+
+Each audit event should include:
+- userId
+- role
+- symbol
+- direction if relevant
+- volume if relevant
+- trade ticket/order/position id if available
+- clientOrderId/correlationId
+- status
+- reason
+- timestamp
+- source: user, Ruby, admin, system, MT5 bridge
+- safe user-facing message
+- internal technical details stored server-side only
+
+Do not expose raw backend errors to users.
+
+PART 2 — Add correlation IDs / idempotency for trade flow
+
+Every trade ticket submission should have a unique clientOrderId or correlationId.
+
+Purpose:
+- prevent duplicate order submissions
+- connect frontend trade ticket to backend logs
+- connect backend request to MT5 order/position/deal
+- allow admin to trace exactly what happened
+
+Rules:
+- If the user taps BUY/SELL repeatedly, duplicate requests should be blocked or safely ignored.
+- The same clientOrderId should not create multiple broker orders.
+- Store correlationId in audit logs and trade records.
+- Do not change execution permissions.
+
+PART 3 — User slot/fund ledger
+
+Create or verify a ledger for slotted funds in shared/master MT5 mode.
+
+Ledger records should support:
+- slot_created
+- slot_allocation_added
+- slot_allocation_removed
+- slot_balance_adjusted
+- trade_reserved_margin
+- trade_released_margin
+- realized_profit_added
+- realized_loss_deducted
+- commission_recorded
+- swap_recorded
+- admin_adjustment
+- reconciliation_adjustment
+
+Each ledger entry should include:
+- userId
+- slotId
+- amount
+- currency
+- balanceBefore
+- balanceAfter
+- reason
+- relatedTradeId if any
+- createdBy
+- timestamp
+
+Regular users should only see their own slot ledger.
+Admin can see all user slot ledgers.
+
+Do not expose full master MT5 account balance to regular users.
+
+PART 4 — Broker/MT5 reconciliation
+
+Build a read-only reconciliation service that compares app-side records against MT5 bridge data.
+
+Compare:
+- app open trades vs MT5 open positions
+- app closed trades vs MT5 deal/history records if available
+- app P/L vs MT5-reported P/L
+- user-assigned trades vs MT5 ticket/magic/comment mapping
+- app slot balances vs realized P/L ledger
+- stale records vs broker truth
+
+Reconciliation statuses:
+- matched
+- app_missing_broker_position
+- broker_position_unassigned
+- pnl_mismatch
+- stale_price_data
+- missing_ticket_id
+- closed_on_broker_open_in_app
+- open_on_broker_missing_in_app
+- needs_admin_review
+
+Unassigned MT5 positions:
+- admin-only
+- never show to regular users
+- label cleanly as “Unassigned Broker Position”
+- do not auto-assign unless there is a reliable existing mapping
+
+PART 5 — Failure handling
+
+Make broker/MT5 failures understandable and safe.
+
+User-facing examples:
+- “Broker connection is unavailable. Try again after connection is restored.”
+- “This trade was blocked by your risk settings.”
+- “This symbol is unavailable right now.”
+- “Stop loss or take profit is too close to entry for this broker.”
+- “Market is closed for this symbol.”
+- “Margin is not sufficient for this position size.”
+- “Trade status is pending confirmation from the broker.”
+
+Admin/internal logs can keep more detail, but user UI must stay clean.
+
+Do not show:
+- stack traces
+- raw MT5 errors
+- backend route names
+- internal function names
+- secrets
+- bridge credentials
+- database errors
+
+PART 6 — Admin audit/reconciliation view
+
+Add or improve an admin-only audit/reconciliation screen.
+
+Admin should see:
+- recent trade audit events
+- failed trade attempts
+- blocked trade attempts
+- broker reconciliation status
+- unassigned MT5 positions
+- per-user slot ledger summaries
+- stale/disconnected bridge warnings
+- filters by user, symbol, status, event type, date
+
+Admin actions can include:
+- mark reviewed
+- add internal note
+- refresh reconciliation
+- view related trade/user/slot
+
+Do not add manual trade execution here.
+Do not add live permission changes here unless already existing.
+
+PART 7 — Regular user history view
+
+Regular users should have a simple trade activity/history view showing:
+- trade opened
+- trade closed
+- trade blocked
+- trade failed
+- P/L realized
+- current open P/L
+- clean reason messages
+
+Regular users should not see:
+- admin notes
+- master account balance
+- other users
+- raw broker errors
+- system internals
+
+PART 8 — Backend safety checks
+
+Verify:
+- audit logs are written even when trade attempts fail
+- failed API requests produce clean user messages
+- backend permission checks are server-side
+- admin-only routes are protected
+- regular users cannot access reconciliation data for others
+- no read-only audit endpoint can place trades
+- no live execution state is changed
+
+PART 9 — UI requirements
+
+Keep UI clean:
+- compact cards/tables
+- filters at top
+- mobile-friendly
+- clear status colors
+- no clutter
+- no giant text blocks
+- no debug-looking labels
+- no duplicate menus
+
+Add navigation only where needed:
+- Admin: Audit / Reconciliation
+- Regular user: Activity / Trade History, if not already present
+
+PART 10 — Acceptance checklist
+
+Do not finish until:
+1. Trade lifecycle audit events are recorded.
+2. Correlation IDs/idempotency exist for trade ticket flow.
+3. User slot ledger exists or is verified.
+4. Reconciliation compares app records to MT5/broker data.
+5. Unassigned broker positions are admin-only.
+6. Regular users only see their own trades, ledger, and clean messages.
+7. Admin can inspect audit and reconciliation results.
+8. Broker errors are converted to clean user-facing messages.
+9. No secrets/raw errors/stack traces are exposed.
+10. No live trades were placed.
+11. No execution permissions, kill switches, or admin approval rules were changed.

@@ -1,0 +1,47 @@
+QA/FIX GATE — Broker/Regulatory Mode Separation + Legal Risk Warnings
+
+Inspect the Broker/Regulatory Mode Separation and Legal Risk Warning work from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Demo, Personal MT5, and Shared Master modes are clearly separated.
+2. Demo mode is clearly labeled simulated/demo.
+3. Demo mode cannot create live commands.
+4. Personal MT5 mode does not route through shared master logic.
+5. Shared Master mode requires admin approval, allocation, risk profile, mapping, safety gates, and compliance-review flag.
+6. Shared Master UI does not show full master account balance to normal users.
+7. User-facing copy avoids unsafe claims like guaranteed profit, risk-free, licensed, broker, custody, deposit, or investment advice unless intentionally reviewed.
+8. Required disclosures are shown before live personal MT5 execution.
+9. Required disclosures are shown before shared master access request.
+10. Required disclosures are shown before one-click live enablement.
+11. Required disclosures are respected in voice trading confirmations.
+12. Disclosure acceptance is stored by authenticated userId and version.
+13. Disclosure version changes force reacceptance.
+14. Backend blocks live actions when required disclosure is missing.
+15. Backend blocks shared master live access if compliance approval flag is false.
+16. Backend blocks disabled payment/custody wording/features if no system exists.
+17. Normal users cannot access compliance admin panel.
+18. Non-admin users cannot change compliance flags.
+19. Admin compliance flag changes require confirmation and reason.
+20. User cannot self-approve shared master access.
+21. Trade ticket, live confirmation, one-click, voice confirmation, and SL/TP edit flows show short risk reminders.
+22. Ruby explains mode/risk boundaries safely.
+23. Ruby does not claim legal approval, licensed status, guaranteed profits, or regulatory compliance.
+24. Ruby does not reveal admin-only compliance settings to normal users beyond clean status.
+25. Audit logs are created for disclosure views, acceptances, missing-disclosure blocks, compliance flag changes, and failed non-admin access.
+26. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+27. No live trade is fired during QA.
+28. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- risky wording found/fixed
+- issues found
+- fixes applied
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

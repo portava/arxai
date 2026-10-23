@@ -1,0 +1,137 @@
+Continue from the last successful checkpoint.
+
+Do not change or unlock live execution. Keep liveLocked=true, allowOrderExecution=false for live, commandExecutionAllowed=false for live, and brokerPlacementImplemented=false. This phase is DEMO ONLY.
+
+PHASE: ARX Demo Trading UX + Ruby Memory + Scanner Entry Cleanup
+
+First inspect the existing code before making changes. Reuse existing services, tables, routes, schemas, components, and naming where possible. Do not create duplicate systems if one already exists.
+
+Fix and improve these areas:
+
+1. Recent Demo Commands visibility
+- Audit the Recent Demo Commands table/card.
+- Make sure every demo command appears, including pending, dispatched, filled, rejected, failed, timeout, and canceled states.
+- Do not only show successful fills.
+- Add clear status badges:
+  - DRAFTED
+  - CONFIRMED
+  - SENT_TO_MT5_DEMO
+  - FILLED_DEMO
+  - REJECTED_DEMO
+  - FAILED_DEMO
+  - TIMEOUT_DEMO
+- Show source, symbol, side, lot size, account, bridgeId, ticket, fillPrice, reason/error message if any, and timestamp.
+- Make the table/card mobile friendly.
+
+2. Trade result confirmation
+- After a user submits a demo trade, show a clear result message.
+- If filled: “Demo trade filled successfully” with ticket, fill price, symbol, side, lot size.
+- If rejected/failed: “Demo trade was not filled” with the exact reason returned by the bridge/MT5.
+- Add toast notification plus visible confirmation card.
+- Do not silently fail.
+- Do not show fake success if MT5 did not return a fill.
+
+3. Recent Scanner Trades
+- Make sure trades opened from MARKET_SCANNER appear in both:
+  - Recent Demo Commands
+  - Recent Scanner Trades
+- Include the command lifecycle and terminal result.
+- Preserve source=MARKET_SCANNER.
+
+4. Open Demo Positions
+- Fix Open Demo Positions so all active/open demo positions show.
+- Show profit/loss, entry price, current price if available, symbol, side, lot size, SL, TP, bridge/account, ticket, and opened time.
+- Add one-click close button for demo positions only.
+- Before closing, show confirmation modal.
+- After close, show filled/closed/rejected result clearly.
+
+5. Market Scanner trade entry
+- Add a clean “Trade Demo” action directly on scanner result cards.
+- The user should be able to place a demo trade from the scanner page without leaving the scanner.
+- Modal must include:
+  - symbol
+  - buy/sell direction
+  - lot size
+  - optional stop loss
+  - optional take profit
+  - order type if already supported
+  - bridge/account being used
+  - final confirmation button
+- The command source must be MARKET_SCANNER.
+- Show the final MT5 result after dispatch.
+
+6. Ruby explanation window on scanner
+- On each scanner result, include a small Ruby explanation panel/window.
+- Label all AI/system assistant responses as Ruby.
+- Ruby should explain why the market appears buy/sell/avoid based on available data only:
+  - chart/history
+  - market structure
+  - indicators
+  - available scanner signals
+  - news/current events only if available in the app
+- If data is missing, Ruby must say what is missing instead of pretending.
+- Keep wording short, useful, and trader-friendly.
+
+7. Saved Ruby chat memory
+- Rename/standardize the app AI assistant as Ruby everywhere:
+  - system AI
+  - AI chat
+  - AI prompts
+  - scanner explanation
+  - trade analysis
+- Add persistent saved chats unless the user clears them.
+- Store Ruby messages in the app database/backlog tied to the logged-in user.
+- Ruby should be able to load prior user chat history for context.
+- Add a clear “Clear Ruby Memory” or “Clear Chat History” option.
+- Do not store fake memory in frontend-only state.
+
+8. Menu search
+- Add a search bar at the top of the menu/sidebar.
+- Users should be able to search menu options because the menu is large.
+- Search should filter grouped menu items live.
+- Keep grouped/collapsible sidebar sections.
+- Do not remove existing menu options unless already intentionally hidden elsewhere.
+
+9. MT5 Bridge UI cleanup
+- Organize the MT5 Bridge page so it is cleaner and more user-friendly.
+- Separate into clear cards:
+  - Active Bridge
+  - Account
+  - EA Version
+  - Read Only status
+  - Execution enabled status
+  - Heartbeat freshness
+  - Last command
+  - Last fill/rejection
+  - Old/Stale bridges ignored
+- Clearly label demo vs live.
+- Add warning: Live execution locked/disabled.
+- Do not expose confusing raw fields as the primary UI, but keep advanced details collapsible.
+
+10. Data integrity
+- Make sure all trade lifecycle events are stored and displayed from the backend/database, not hardcoded frontend demo data.
+- Remove or clearly mark any fake placeholder trading rows.
+- The app should look fresh for a new user if there is no real data.
+- If no data exists, show empty states instead of fake trades.
+
+11. Tests / QA
+- Add or update reusable QA scripts to verify:
+  - scanner demo trade creates command with source=MARKET_SCANNER
+  - command is bound to the active armed demo bridge
+  - command lifecycle appears in Recent Demo Commands
+  - filled/rejected result appears correctly
+  - scanner trades table updates
+  - open demo positions table updates
+  - live execution remains disabled
+  - Ruby messages persist and can be cleared
+  - menu search filters menu items
+  - MT5 Bridge UI shows active bridge cleanly
+- Run the tests.
+- Fix all failing tests before stopping.
+
+At the end, provide a concise report with:
+- files changed
+- what was fixed
+- test results
+- whether live execution is still disabled
+- the exact command to rerun the QA script.

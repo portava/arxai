@@ -1,0 +1,147 @@
+P0 fix before any next phase: replace the per-browser UI gate / roadmap per-user isolation with real backend-enforced per-user isolation.
+
+Do NOT build new trading features yet.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT weaken any safety envelope, command queue, MT5, paper-only, ALERT_ONLY, or risk gates.
+Do NOT remove the warning note unless real backend isolation is implemented and tested.
+
+Problem seen in app UI:
+“Note: this is a per-browser UI gate. Real per-user data isolation is on roadmap — see docs/TODO_PER_USER_ISOLATION.md.”
+
+That contradicts the required safety model. For ARX AI, all user data must be isolated by authenticated backend user/session, not only by browser/local UI state.
+
+Goal:
+Implement and verify real per-user backend isolation across the app.
+
+Required fixes:
+
+1. Audit current auth/isolation model
+- Read docs/TODO_PER_USER_ISOLATION.md.
+- Find all places using per-browser, localStorage, mock user, beta tester, demo user, or client-only identity as the source of truth.
+- Search for:
+  - TODO_PER_USER_ISOLATION
+  - localStorage user
+  - demo user
+  - beta tester user
+  - mockUser
+  - currentUser
+  - per-browser
+  - req.authUser
+  - userId
+  - eq(*.userId
+- Identify every endpoint that reads/writes user-owned data.
+
+2. Backend-authenticated user ownership
+All user-owned backend routes must derive userId from authenticated backend session only, not from frontend payload.
+
+Apply this to:
+- ledgers
+- portfolio
+- trades
+- orders
+- pending orders
+- SL/TP edits
+- manual close requests
+- audit trail
+- AI assistant context
+- AI portfolio tools
+- AI bridge/reconciliation tools
+- activity ping
+- protective auto-close settings
+- notifications
+- risk settings
+- command queue
+- reconciliation
+- shared MT5 virtual account records
+
+Rules:
+- Frontend must never be trusted to provide userId for ownership.
+- Any userId sent from frontend must be ignored or rejected.
+- Every read/write must filter by authenticated userId.
+- Missing auth must return 401.
+- Wrong ownership must return 403 or 404.
+- No user can read, edit, close, analyze, or audit another user’s data.
+
+3. Database/query protection
+For every user-owned table/query:
+- Add or verify userId ownership column.
+- Add or verify eq(table.userId, req.authUser.id) on reads/writes.
+- For updates/deletes, include both id and userId in WHERE conditions.
+- For command queue records, require userId + auditId + tradeId/orderId attribution.
+- For shared MT5 virtual records, require virtualSubAccountId + userId ownership.
+- Broker/master account records may exist globally, but user-facing reads must only expose safe scoped summaries.
+
+4. Frontend behavior
+- Replace the “per-browser UI gate” note with a real status only after backend isolation passes tests.
+- If user is not authenticated, show sign-in/locked state.
+- Do not show another user’s dashboard, trades, ledger, AI context, or audit data.
+- AI assistant must use backend-authenticated user context only.
+
+5. AI assistant isolation
+AI must only access:
+- the logged-in user’s ledger
+- the logged-in user’s trades/orders
+- the logged-in user’s portfolio/risk settings
+- the logged-in user’s activity status
+- scoped bridge/reconciliation summaries only
+
+AI must not access or summarize another user’s data.
+
+6. Tests to add/verify
+Create two test users: User A and User B.
+
+Test:
+- User A cannot read User B ledger.
+- User A cannot read User B trades.
+- User A cannot edit User B SL/TP.
+- User A cannot close User B trade.
+- User A cannot view User B audit logs.
+- User A cannot access User B AI portfolio context.
+- User A cannot access User B command queue records.
+- User A cannot access User B protective auto-close settings.
+- User A cannot modify User B risk settings.
+- Unauthenticated requests return 401.
+- Wrong-owner requests return 403 or 404.
+- Frontend does not render protected user data before auth is verified.
+
+7. Preserve safety rules
+Confirm all remain true:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = disabled
+- No fake balance, P&L, bridge status, scanner data, news, current events, or TP targets
+- Safety envelope still allows read-only AI Q&A but blocks execution
+
+8. Run checks
+Run:
+- Typecheck
+- Full guard suite
+- Frontend build/runtime load check
+- Browser smoke test
+- Auth required tests
+- Per-user isolation tests
+- Wrong-owner read/write tests
+- AI per-user context tests
+- Command queue ownership tests
+- Audit trail ownership tests
+- Protective auto-close ownership tests
+- Ledger/trade/portfolio ownership tests
+- Safety regression tests
+
+End with a report showing:
+- What the original per-browser gate was doing
+- Exact files changed
+- Endpoints protected
+- Tables/queries protected
+- Tests run and pass/fail results
+- Whether docs/TODO_PER_USER_ISOLATION.md is now resolved or still partially open
+- Whether the UI note was removed or replaced
+- Confirmation frontend state matches backend-authenticated state
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

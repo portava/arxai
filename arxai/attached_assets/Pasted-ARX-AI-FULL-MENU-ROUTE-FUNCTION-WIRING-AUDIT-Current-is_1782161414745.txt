@@ -1,0 +1,644 @@
+ARX AI — FULL MENU ROUTE + FUNCTION WIRING AUDIT
+
+Current issue:
+The ARX app has menu selections/sidebar items that do not reliably route to their correct page/function. Screenshot shows a page failing with:
+
+Failed to load: AUTH_REQUIRED
+
+Also Eleanor is reading the page as “Operator Command Center” while the selected/sidebar context is not clearly matching the loaded page. This means routing, auth guards, page mapping, and Eleanor screen-context mapping may be out of sync.
+
+Mission:
+Run a full audit of every ARX menu item, submenu item, icon button, page route, and page-level action. Every menu selection must route to its correct directory/page. Every visible menu item must be wired to its real function. If a function/page exists but is not wired, wire it. If a function/page does not exist, build the minimal correct page/function and wire it only if it is required by the menu item.
+
+Do not redesign the app.
+Do not delete menu items without approval.
+Do not break working screens.
+Do not bypass auth.
+Do not bypass trading/risk/live execution safety.
+Do not weaken account permissions.
+Do not fake functionality.
+Do not hide broken pages behind cosmetic placeholders unless the feature is intentionally coming soon.
+
+============================================================
+CORE RULE
+============================================================
+
+Every menu selection must have one valid outcome:
+
+1. Route to the correct existing page.
+2. Open the correct existing panel/modal.
+3. Trigger the correct existing function.
+4. Call the correct backend/API function.
+5. If missing, build the minimal correct function/page and wire it.
+6. If intentionally unavailable for the user role, show a clear permission/block message.
+7. If intentionally future-only, show a clear Coming Soon page/state.
+
+No menu item should:
+- route to the wrong page
+- route to a blank page
+- route to a page with AUTH_REQUIRED unless the user truly lacks auth
+- silently fail
+- use href="#"
+- use empty onClick
+- use console.log only
+- point to a removed route
+- point to an unmapped page key
+- show the wrong Eleanor/Ruby help context
+
+============================================================
+PHASE 1 — BUILD COMPLETE MENU INVENTORY
+============================================================
+
+Audit every sidebar/menu section currently in ARX.
+
+From the screenshot and existing app, include at minimum:
+
+PRIMARY:
+- Cockpit
+- Market Scanner
+- Trade
+- Eleanor / Ruby AI
+- Open Trades
+- Positions
+- Risk
+- Profit Mission
+- Alerts
+
+MARKETS & TOOLS:
+- Live Market Chart
+- Watchlist
+- Manual Ticket
+- MT5 Setup
+- Market Heat Map
+- Economic Calendar
+- News Risk
+
+PERFORMANCE & HISTORY:
+- Win/Loss Report
+- Account Analytics
+- Trade History
+- Journal
+- Scalp Journal
+- Trading School
+
+ACCOUNT & CONTROL:
+- Account
+- Settings
+- Help
+- Emergency Stop
+
+ADVANCED TRADING:
+- Strategy Vault
+- Backtesting
+- Scalp Builder
+- Trade Templates
+- Automation / AI Auto if present
+- Any other advanced menu items currently in code
+
+ADVANCED AI & STRATEGY:
+- Ruby/Eleanor strategy panels
+- AI scanner settings
+- mission/agent panels if present
+- any backend AI/Claude/OpenAI tools if exposed
+
+ADVANCED RISK & DATA:
+- Market Data diagnostics
+- Bridge diagnostics
+- Live readiness
+- Symbol diagnostics
+- Feed diagnostics
+- Admin/operator diagnostics if present
+
+ADMIN/OPERATOR:
+- Admin dashboard
+- User management
+- Registration/invite keys
+- Bridge management
+- Live shared bridge assignment
+- Role/permission management
+- Audit logs
+- Market data diagnostics
+- Operator Command Center
+
+Also inventory:
+- top symbol selector
+- session selector
+- notification bell
+- admin/account icon
+- logout icon
+- search box result actions
+- collapsed sidebar button
+- floating Eleanor/Ruby button
+- footer/search controls
+- every page tab
+- every page button/card CTA
+
+============================================================
+PHASE 2 — ROUTE MAP AUDIT
+============================================================
+
+Create a single authoritative menu route map.
+
+Example shape:
+
+{
+  id: "market-scanner",
+  label: "Market Scanner",
+  path: "/market-scanner",
+  component: MarketScannerPage,
+  requiredAuth: true,
+  requiredRole: null,
+  requiredPermission: "scanner.view",
+  helpContextKey: "market-scanner"
+}
+
+Every menu item needs:
+- id
+- label
+- route path
+- component/page
+- auth requirement
+- role/permission requirement
+- icon
+- active route matching rule
+- Eleanor/Ruby help context key
+- status: ready | permission_blocked | coming_soon
+
+Do not rely on loose label matching.
+Use stable IDs.
+
+Fix any route mismatch:
+- sidebar label points to wrong path
+- path exists but component missing
+- component exists but route missing
+- route exists but nav active state wrong
+- old route names not redirected
+- admin route exposed to non-admin
+- route requires auth but user is logged in and still gets AUTH_REQUIRED incorrectly
+
+============================================================
+PHASE 3 — FIX AUTH_REQUIRED BUG
+============================================================
+
+The screenshot shows:
+Failed to load: AUTH_REQUIRED
+
+Investigate exactly why this appears.
+
+Check:
+- is the user actually authenticated?
+- is the route requiring admin/operator permission?
+- is the page API returning AUTH_REQUIRED incorrectly?
+- is the frontend calling an admin endpoint from a non-admin page?
+- is session token missing from fetch credentials?
+- is cookie/auth header not included?
+- did route loader call /api/admin/* while user is not admin?
+- did menu route point to Operator Command Center by mistake?
+- is the selected menu item not matching the rendered page?
+- is an API response not handled with permission fallback?
+
+Fix expected behavior:
+- If user is not logged in: redirect to login.
+- If user is logged in but lacks role: render permission page, not raw AUTH_REQUIRED.
+- If user is logged in and has permission: page loads.
+- If only one widget/API on page lacks permission: show that widget as restricted, do not crash whole page if possible.
+- If admin-only menu item is visible to non-admin by mistake: hide or disable it with clear reason based on product rules.
+
+Do not bypass auth. Fix the auth routing/permission handling.
+
+============================================================
+PHASE 4 — PAGE/FUNCTION WIRING BY MENU ITEM
+============================================================
+
+For each menu item:
+
+1. Click menu item.
+2. Confirm route changes.
+3. Confirm page loads.
+4. Confirm page title matches menu.
+5. Confirm component matches route.
+6. Confirm page API calls are correct.
+7. Confirm no AUTH_REQUIRED unless expected.
+8. Confirm Eleanor/Ruby page context matches loaded page.
+9. Confirm every major button on that page works.
+10. If function missing, build minimal correct function and wire it.
+
+If page is not implemented:
+- Build a minimal production-safe scaffold page.
+- It should include title, purpose, empty/loading/error states, and connect to any existing APIs.
+- Do not create fake trading functionality.
+- For execution-sensitive pages, scaffold should be read-only unless existing safe execution APIs exist.
+
+============================================================
+PHASE 5 — EXPECTED PAGE PURPOSES
+============================================================
+
+Wire pages according to these purposes.
+
+Cockpit:
+- account snapshot
+- mode status
+- live/demo/simulated readiness
+- open P/L
+- open trades
+- risk state
+- bridge status
+- quick actions routed safely
+
+Market Scanner:
+- scanner page
+- symbol/timeframe scanner
+- candle chart
+- Eleanor/Ruby read
+- broad scan
+- opportunity map
+- feed readiness
+- no auth crash
+
+Trade:
+- trade ticket/execution page
+- must preserve all safety/risk/live gates
+- no live execution bypass
+- disabled state if account trading disabled
+
+Eleanor / Ruby AI:
+- AI assistant page
+- conversation/help context
+- market read tools
+- route to AI panel
+- must not call wrong page context
+
+Open Trades:
+- active positions/orders
+- same source as positions/dashboard
+- refresh works
+- empty state if none
+
+Positions:
+- current broker/app positions
+- MT5/shared bridge visibility rules
+- no ghost positions
+
+Risk:
+- risk dashboard
+- risk limits
+- drawdown
+- risk-of-ruin if present
+- safety gates visible
+
+Profit Mission:
+- goals/profit mission tracking
+- if missing, build scaffold and wire to existing metrics if any
+
+Alerts:
+- alert list
+- create/manage alerts if available
+- empty state if none
+
+Live Market Chart:
+- standalone chart page
+- symbol/timeframe route
+- candle feed
+- chart tools if present
+
+Watchlist:
+- watchlist symbols
+- add/remove symbols
+- approved-symbol safe list
+
+Manual Ticket:
+- manual order ticket
+- preserve risk gates
+- block if not permitted
+- do not bypass live settings
+
+MT5 Setup:
+- bridge setup instructions
+- EA status
+- bridge heartbeat
+- download/config if present
+
+Market Heat Map:
+- heat map page
+- if no data, build safe empty/degraded state
+
+Economic Calendar:
+- calendar page
+- if news/calendar provider missing, show configured fallback and diagnostics
+
+News Risk:
+- news risk page
+- no crash if news feed unavailable
+- degraded state
+
+Win/Loss Report:
+- performance report
+- historical trades
+- empty state if none
+
+Account Analytics:
+- equity/balance/performance analytics
+- investor/trader visibility rules
+
+Trade History:
+- closed trades/history
+- filters
+- pagination if exists
+
+Journal:
+- trading journal
+- create/edit/view entries if existing
+- if missing, build minimal journal CRUD scaffold only if backend exists or build simple backend
+
+Scalp Journal:
+- scalp-specific journal
+- link scanner/generated trades if exists
+
+Trading School:
+- course/trading school page
+- lessons/modules
+- progress if exists
+
+Account:
+- account page
+- user role
+- mode
+- profile
+- bridge assignment/readiness if applicable
+
+Settings:
+- settings page
+- preferences
+- trading mode controls only if allowed
+- no unsafe bypass
+
+Help:
+- help page
+- support/docs
+- explain features
+
+Emergency Stop:
+- emergency stop page/button
+- must be wired safely
+- require confirmation
+- stops/blocks automation according to existing backend rules
+- do not fake emergency stop
+
+Admin/operator items:
+- only visible to admins/operators
+- route to admin pages
+- permission fallback if directly visited
+
+Registration/invite keys:
+- admin key generation/list/revoke
+- preserve one-use key rules
+
+Market Data diagnostics:
+- bridge/feed/candle/symbol diagnostics
+- admin/operator only if intended
+
+Operator Command Center:
+- admin/operator command monitoring
+- must not appear when clicking unrelated menu item
+
+============================================================
+PHASE 6 — ELEANOR/RUBY CONTEXT MAPPING
+============================================================
+
+Screenshot shows Eleanor saying the screen is Operator Command Center, but the app/sidebar context appears mismatched.
+
+Fix Eleanor/Ruby screen context mapping.
+
+Create/repair:
+getPageHelpContext(routeId/path)
+
+Each page should provide:
+- pageId
+- title
+- user-friendly explanation
+- available actions
+- safety status
+- relevant diagnostics
+- trading permission status
+
+Eleanor/Ruby must not infer page from stale state.
+
+On route change:
+- update assistant context to current route/menu item
+- clear stale previous page context
+- fetch page-specific help card if mapped
+- if unmapped, show generic but correct route name, not wrong page
+
+Acceptance:
+- On Market Scanner, Eleanor says Market Scanner.
+- On Cockpit, Eleanor says Cockpit.
+- On Operator Command Center, Eleanor says Operator Command Center only there.
+- If page help card missing, show “Help for this page is not configured yet” with correct page name.
+
+============================================================
+PHASE 7 — SEARCH BOX WIRING
+============================================================
+
+Sidebar search should:
+- search menu items
+- search pages
+- navigate to selected result
+- not route to wrong page
+- not expose admin-only pages to non-admin
+- show permission-disabled results if desired
+- close after navigation
+
+Test search result:
+- Market Scanner
+- Trade
+- MT5 Setup
+- Settings
+- Admin pages if admin
+
+============================================================
+PHASE 8 — MENU VISIBILITY/PERMISSIONS
+============================================================
+
+Implement consistent menu permission logic.
+
+Rules:
+- Public/non-auth users: should not see authenticated app shell.
+- Trader: trading/scanner/account pages according to permissions.
+- Investor: view-only investor pages, no execution pages unless intentionally read-only.
+- Student: school/training pages, limited market tools if intended.
+- Admin/operator: admin/diagnostics/users/keys/bridge tools.
+- Disabled trading account: can view allowed pages but execution buttons disabled.
+
+Do not show admin-only items to non-admin unless disabled with explanation is product-approved.
+
+============================================================
+PHASE 9 — BUTTON/FUNCTION AUDIT INSIDE EACH PAGE
+============================================================
+
+For every page, audit and fix:
+- primary CTA
+- secondary CTA
+- refresh buttons
+- filters
+- tabs
+- dropdowns
+- symbol selector
+- timeframe selector
+- scan buttons
+- prepare trade
+- ask Eleanor/Ruby
+- open chart
+- open ticket
+- save buttons
+- cancel buttons
+- edit buttons
+- delete buttons
+- archive buttons
+- export buttons
+- download buttons
+- emergency buttons
+- admin action buttons
+
+No empty handlers.
+No wrong endpoint calls.
+No dead buttons.
+No silent failures.
+
+If function exists:
+- wire it.
+
+If function missing and required:
+- build minimal safe function.
+
+If function intentionally not ready:
+- disable with Coming Soon/explanation.
+
+============================================================
+PHASE 10 — API ROUTE AUDIT
+============================================================
+
+For every page/API call:
+- endpoint exists
+- method matches
+- auth included
+- permission check correct
+- payload shape correct
+- response shape normalized
+- frontend handles loading/error/success
+- raw AUTH_REQUIRED is translated into user-safe UI
+
+Search for:
+- 404
+- 401
+- 403
+- AUTH_REQUIRED
+- PERMISSION_DENIED
+- missing credentials
+- bad route params
+- undefined symbol/userId/accountId
+- admin endpoint used on non-admin page
+
+Fix where found.
+
+============================================================
+PHASE 11 — COMPATIBILITY REDIRECTS
+============================================================
+
+If route names changed, preserve old routes with redirects.
+
+Examples:
+- /scanner -> /market-scanner
+- /ruby -> /eleanor or current AI route
+- /ai -> /eleanor or current AI route
+- /manual-ticket -> /trade/manual or current route
+- /profile -> /account if applicable
+- /admin/keys -> /admin/registration-keys if applicable
+
+Only add redirects that match existing app conventions.
+
+============================================================
+PHASE 12 — TEST MATRIX
+============================================================
+
+Test every sidebar item by clicking it.
+
+For each:
+- route path correct
+- page title correct
+- page component correct
+- active nav highlight correct
+- auth/permission behavior correct
+- Eleanor/Ruby context correct
+- no console errors
+- no AUTH_REQUIRED raw crash
+- no blank page
+
+Test both:
+- normal trader/test user
+- admin/operator user
+
+If available, also test:
+- investor
+- student
+- disabled trading account
+
+Desktop:
+- 1440px+
+- 1024px
+
+Mobile/tablet if supported:
+- nav/menu opens
+- routes work
+- no overlap
+
+============================================================
+FINAL ACCEPTANCE CRITERIA
+============================================================
+
+The app passes this standard:
+
+- Every menu item routes to its correct page.
+- Every submenu item routes to its correct page.
+- Every route has a component or safe intentional state.
+- Every existing function is wired to its visible UI.
+- Missing required functions are built minimally and wired.
+- Admin/operator pages are permission-gated correctly.
+- Non-admin users do not hit raw admin AUTH_REQUIRED crashes.
+- Trader/investor/student roles see appropriate pages.
+- Eleanor/Ruby identifies the correct screen.
+- Search results route correctly.
+- No dead buttons.
+- No href="#".
+- No console.log-only actions.
+- No blank pages.
+- No raw AUTH_REQUIRED page failures.
+- Build passes.
+- TypeScript passes.
+- No console errors after clicking through every menu item.
+
+============================================================
+FINAL REPORT REQUIRED
+============================================================
+
+Return a full audit report:
+
+1. Total menu items found
+2. Total submenu items found
+3. Route map created/updated
+4. Broken routes found
+5. Broken auth/permission gates found
+6. AUTH_REQUIRED root cause
+7. Pages/components created because missing
+8. Existing functions wired
+9. Missing functions built
+10. Buttons/actions fixed
+11. Admin/operator visibility fixes
+12. Eleanor/Ruby context mapping fixes
+13. Redirects added
+14. Files changed
+15. Tests run
+16. Build/typecheck result
+17. Remaining TODOs, if any
+
+Final result:
+Every ARX sidebar/menu selection routes to its correct page/directory, every page action is wired to its correct function/API, missing required functions are built safely, auth/permission handling is correct, Eleanor/Ruby page context is accurate, and no menu item produces a raw AUTH_REQUIRED or dead page.

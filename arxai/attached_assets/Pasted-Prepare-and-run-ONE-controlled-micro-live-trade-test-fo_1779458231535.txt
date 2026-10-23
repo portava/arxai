@@ -1,0 +1,191 @@
+Prepare and run ONE controlled micro live trade test for ARX AI.
+
+IMPORTANT:
+This is not a full live launch.
+This is one operator-approved micro live trade test only.
+
+SCOPE LOCK:
+Only work on:
+1. Live trade preflight verification.
+2. Operator/admin approval confirmation.
+3. One tiny live order test flow.
+4. Audit logging.
+5. Broker/MT5 confirmation.
+6. Immediate post-trade verification.
+7. Optional immediate close test if explicitly confirmed in-app.
+
+Do not:
+- Enable live trading for all users.
+- Enable live AI auto-trading.
+- Enable public live trading.
+- Disable kill switches.
+- Remove admin approvals.
+- Change scanner logic.
+- Change Ruby intelligence.
+- Change risk rules except temporary test gating if already supported.
+- Place more than one live test order.
+- Place any order without final in-app operator confirmation.
+
+GOAL:
+Safely test whether ARX AI can send one tiny live trade through the MT5 bridge and correctly receive broker confirmation, position status, P/L, audit logs, and account metrics.
+
+PHASE 1 — Preflight checks before any order
+Before enabling or sending anything, verify:
+
+System:
+- App builds.
+- Backend starts.
+- /api/healthz returns 200.
+- No server errors.
+- No browser JS errors on Trade page.
+- Admin/Regular mode works.
+- Andraie is in Admin Mode.
+- Regular users remain blocked from live controls.
+
+Broker/MT5:
+- MT5 bridge connected.
+- EA connected and responding.
+- Account info readable.
+- Open positions readable.
+- Symbol list readable.
+- Current price readable.
+- Account currency readable.
+- Broker allows trading for selected symbol.
+- Market is open for selected symbol.
+- Spread is readable.
+- Stops level/min distance is readable if available.
+- Free margin is sufficient.
+
+Safety gates:
+- Kill switch OFF only for this controlled test if existing system requires it.
+- Admin approval active for Andraie only.
+- User-level live approval active for Andraie only.
+- Broker execution enabled only for Andraie/test session.
+- All other users remain locked.
+- Default-deny remains active for everyone else.
+- No public users can access live execution.
+
+PHASE 2 — Test trade constraints
+Create a one-trade live test with strict limits:
+
+- Account: Andraie/admin operator only.
+- Mode: live broker test.
+- Order count: max 1.
+- Symbol: use currently selected symbol only if tradable.
+- Volume: minimum broker-permitted lot size.
+- Direction: require operator to choose BUY or SELL in the app.
+- Stop loss: required.
+- Take profit: optional but recommended.
+- Max risk: smallest practical amount supported by broker/account.
+- Slippage/deviation: conservative.
+- No martingale.
+- No averaging down.
+- No AI auto-entry.
+- No repeat attempts without operator approval.
+
+If symbol, lot, spread, margin, or stops are unsafe or unavailable:
+BLOCK the trade and show clean reason.
+
+PHASE 3 — Final confirmation gate
+Before sending the live order, show a final in-app confirmation modal:
+
+Title:
+Live Broker Test Confirmation
+
+Must show:
+- Symbol
+- Direction
+- Lot size
+- Entry price estimate
+- Stop loss
+- Take profit
+- Estimated max loss
+- Spread
+- Account balance
+- Free margin
+- Broker execution status
+- Kill switch status
+- Admin approval status
+
+Require the operator to type:
+CONFIRM LIVE TEST
+
+Also require a checkbox:
+“I understand this sends one real broker order.”
+
+Only after both are completed can the app submit the order.
+
+PHASE 4 — Place exactly one test order
+If all gates pass:
+- Submit exactly one order to MT5.
+- Generate correlationId/clientOrderId.
+- Write audit event before submission.
+- Write audit event after broker response.
+- Capture MT5 ticket/order id.
+- Capture broker result code/message internally.
+- Show clean user-facing result.
+
+If rejected:
+- Do not retry automatically.
+- Show clean reason.
+- Log broker rejection internally.
+
+If accepted:
+- Show:
+  “Live test order accepted”
+  ticket/position reference in clean format
+  symbol
+  direction
+  lot size
+  entry price
+  current P/L
+
+PHASE 5 — Post-trade verification
+After order opens, verify:
+- Position appears in Open Trades.
+- Live P/L updates.
+- Account balance/equity/free margin/margin/margin level update.
+- Trade audit log records the event.
+- Slot/user assignment is correct.
+- Regular users cannot see the trade.
+- Admin can see the test in audit/reconciliation.
+- Broker/MT5 reconciliation marks it matched.
+
+PHASE 6 — Optional close test
+Do not close automatically unless the in-app operator explicitly confirms.
+
+If operator chooses to close:
+- Show Close Live Test Confirmation.
+- Require typed phrase:
+CONFIRM CLOSE TEST
+- Submit close request.
+- Verify position closes in MT5.
+- Verify closed trade appears in history/audit.
+- Verify realized P/L and ledger update if supported.
+
+PHASE 7 — Immediately restore safe state
+After test order is rejected, opened, or closed:
+- Do not leave broad live trading enabled.
+- Keep only the existing approved operator gates.
+- Confirm other users remain locked.
+- Confirm kill switch/admin approval behavior remains intact.
+- Confirm no additional orders can be sent without a new confirmation.
+
+FINAL OUTPUT REQUIRED:
+Return:
+1. Preflight result.
+2. Whether live test was blocked or allowed.
+3. Symbol tested.
+4. Direction.
+5. Lot size.
+6. Stop loss / take profit.
+7. MT5 ticket/order id if placed.
+8. Broker response.
+9. Open Trades verification.
+10. Account metrics verification.
+11. Audit log verification.
+12. Reconciliation verification.
+13. Whether trade remains open or was closed.
+14. Final safety state.
+15. Confirmation only one live order was attempted.
+16. Confirmation no other users were enabled.

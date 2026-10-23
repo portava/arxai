@@ -1,0 +1,784 @@
+ARX AI FULL TRADING INTELLIGENCE ENGINE — USE ALL TRADING TOOLS + MARKET HISTORY + MARKET NEWS + CURRENT EVENTS FOR EVERY TRADING DECISION
+
+Upgrade ARX AI so every trading decision, trading question, trade recommendation, sniper setup, close/hold answer, risk assumption, market assumption, and AI explanation uses:
+
+1. All available trading tools
+2. Market structure and technical tools
+3. Historical market behavior
+4. Recent price history
+5. Market news
+6. Economic calendar/news if available
+7. Current events / real-world news if available
+8. User account/risk context
+9. Open trade context
+10. Scanner/radar context
+
+Do NOT rebuild.
+Do NOT redesign.
+Do NOT bypass risk controls.
+Do NOT bypass confirmation guards.
+Do NOT bypass paper/live lock.
+Do NOT fake live market data.
+Do NOT fake news.
+Do NOT invent current events.
+Do NOT claim certainty.
+Do NOT make a trading decision from one tool alone.
+Do NOT create duplicate AI/scanner/risk systems.
+
+Patch the existing ARX AI assistant, scanner/radar, trade recommendation, sniper, risk, MT5, and trade-context systems so they use one shared intelligence/confluence layer.
+
+==================================================
+PHASE 1 — INSPECT CURRENT TRADING INTELLIGENCE FLOW
+==================================================
+
+Inspect current files for:
+
+1. AI assistant trading answers
+2. AI system prompt
+3. AI tools/functions
+4. Scanner/radar logic
+5. Opportunity radar
+6. Sniper recommendation logic
+7. Trade recommendation logic
+8. Trade close/hold logic
+9. Protective auto-close logic
+10. Risk governor
+11. MT5 market/account/position context
+12. Trade ticket prefill logic
+13. Journal/audit logic
+14. Existing market data provider integrations
+15. Existing news/current events provider integrations
+16. Existing historical price data integrations
+17. Environment variables for market/news APIs
+
+Do not create a duplicate brain.
+
+Use the current ARX AI ecosystem and add a shared intelligence layer.
+
+==================================================
+PHASE 2 — CREATE SHARED FULL INTELLIGENCE CONTEXT
+==================================================
+
+Create or update a shared module called something like:
+
+arxTradingIntelligenceEngine
+or
+tradingDecisionContext
+or
+arxConfluenceEngine
+
+This module should gather all available data before ARX AI answers trading questions.
+
+The context should include:
+
+1. Live / current market data
+   - Symbol
+   - Bid/Ask
+   - Spread
+   - Current price
+   - Data freshness
+   - Live/demo/preview/delayed/disconnected status
+
+2. Historical market data
+   - Recent candles
+   - Higher timeframe candles
+   - Session history
+   - Previous day high/low
+   - Weekly high/low if available
+   - Monthly high/low if available
+   - Recent volatility history
+   - Recent trend behavior
+   - Historical support/resistance
+   - Historical reaction zones
+   - Prior breakout/fakeout zones
+   - Historical ATR/average movement if available
+
+3. Market structure
+   - Trend direction
+   - Higher highs/lower lows
+   - Break of structure
+   - Change of character
+   - Range vs trend
+   - Consolidation
+   - Pullback vs retracement vs reversal
+   - Continuation vs fakeout
+
+4. Support and resistance
+   - Recent swing highs/lows
+   - Key levels
+   - Historical reaction levels
+   - Previous high/low
+   - Session high/low
+   - Daily high/low
+   - Weekly high/low if available
+
+5. Liquidity
+   - Liquidity sweeps
+   - Equal highs/lows
+   - Stop-hunt zones
+   - Imbalance/fair value gaps if already supported
+   - Order blocks if already supported
+   - Recent liquidity grabs
+   - Historical liquidity zones
+
+6. Momentum indicators
+   - RSI if available
+   - MACD if available
+   - Stochastic if available
+   - Momentum strength if available
+   - Momentum divergence if available
+
+7. Trend indicators
+   - EMA/SMA if available
+   - VWAP if available
+   - Moving average slope/cross
+   - Trend strength
+
+8. Volatility
+   - ATR if available
+   - Volatility expansion/contraction
+   - Stop distance suitability
+   - TP distance realism
+   - Historical average movement
+   - Current movement compared to historical movement
+
+9. Volume / tick volume
+   - Volume confirmation if available
+   - Low-volume warning if available
+   - Breakout volume if available
+   - Volume divergence if available
+
+10. Candlestick / price action
+   - Rejection candle
+   - Engulfing candle
+   - Pin bar/wick rejection
+   - Breakout candle
+   - Fakeout candle
+   - Exhaustion candle
+   - Continuation candle
+   - Strong close / weak close analysis
+
+11. Multi-timeframe alignment
+   - Higher timeframe trend
+   - Lower timeframe entry
+   - Conflicting timeframe warning
+   - Alignment score
+   - HTF bias vs LTF setup
+
+12. Sessions/time
+   - Current trading session
+   - London/New York/Asia session behavior if available
+   - Session open/close risk
+   - Low-liquidity time warning
+   - Historical behavior for that session if available
+
+13. Market news
+   - Symbol-specific headlines if available
+   - Asset-class news if available
+   - Broker/provider news if available
+   - Financial news from configured API if available
+   - News timestamp
+   - Source name
+   - URL/source reference if available
+   - Sentiment if available
+   - Impact level if available
+
+14. Economic calendar / macro events
+   - CPI
+   - PPI
+   - NFP
+   - Unemployment
+   - GDP
+   - FOMC / Fed events
+   - Interest rate decisions
+   - Central bank speeches
+   - PMI
+   - Retail sales
+   - Crude oil inventories if relevant
+   - Currency-specific events
+   - High-impact calendar events if available
+
+15. Current events / real-world news
+   - Geopolitical events if available
+   - War/conflict headlines if market-relevant
+   - Banking/financial system headlines
+   - Major company/index headlines
+   - Commodity supply shock headlines
+   - Oil/gold/USD-related events
+   - Government/regulatory events if market-relevant
+   - Natural disasters only if market-relevant
+   - Major global risk-on/risk-off events
+
+16. Correlation
+   - Related symbols if supported
+   - USD strength if supported
+   - Index/commodity/currency correlation if available
+   - Gold/oil/index/forex relationships if available
+   - If unavailable, say correlation unavailable
+
+17. User account/risk
+   - Balance/equity
+   - Open trades
+   - Floating P/L
+   - Margin/free margin
+   - Risk settings
+   - Daily loss limit
+   - Prop firm rules if present
+   - Lot size risk
+   - Drawdown status
+
+18. Trade-specific context
+   - Entry
+   - Stop Loss
+   - Take Profit
+   - Risk/reward
+   - Current P/L
+   - Distance to SL/TP
+   - Trade invalidation
+   - Trade still valid or invalidated
+   - Pullback/reversal/continuation/fakeout status
+
+==================================================
+PHASE 3 — DATA AVAILABILITY MAP
+==================================================
+
+Add a data availability map.
+
+Every tool/source should report:
+
+- available: true/false
+- dataStatus: live/demo/preview/delayed/stale/unavailable
+- lastUpdatedAt
+- provider/source
+- confidence
+- reasonUnavailable
+- apiKeyMissing: true/false
+- sourceUrl or sourceName if available
+
+Sources should be separated:
+
+1. MT5 live/bridge data
+2. Market data provider
+3. Historical price provider
+4. Scanner/radar engine
+5. Economic calendar provider
+6. Financial news provider
+7. General/current events provider
+8. User account/risk data
+9. Journal/history data
+
+If a source is unavailable, ARX AI must say it is unavailable.
+
+Do not fake missing indicators, news, events, history, or MT5 data.
+
+==================================================
+PHASE 4 — NEWS + CURRENT EVENTS RULES
+==================================================
+
+Add strict rules for news/current events.
+
+ARX AI must never invent news.
+
+For every news/current event used in a trading answer, store/show:
+
+- headline or short summary
+- source/provider
+- publishedAt
+- fetchedAt
+- impacted symbol/asset/currency if available
+- relevance reason
+- confidence/impact level
+- whether it is confirmed or unverified
+
+If no real news source is configured, ARX AI must say:
+
+“News/current events data is unavailable because no live news provider is connected.”
+
+If news is stale, ARX AI must say:
+
+“News data is stale and should not be treated as live.”
+
+If news is unrelated to the symbol/setup, do not use it as a reason.
+
+If current events are broad or uncertain, treat them as risk context, not proof.
+
+Do not allow AI to say:
+- “News caused this move” unless there is actual relevant news data.
+- “Current events confirm this trade” unless supported by real source data.
+- “This will move because of news” as certainty.
+
+Use safer language:
+- “Relevant news may be influencing volatility.”
+- “There is not enough news data to confirm the cause.”
+- “This setup carries event-risk because of the scheduled release.”
+
+==================================================
+PHASE 5 — HISTORICAL MARKET CONTEXT RULES
+==================================================
+
+Add historical market behavior to trading analysis.
+
+For each symbol, when available, use:
+
+1. Recent candles
+2. Prior session behavior
+3. Previous day high/low
+4. Weekly/monthly levels if available
+5. Average true range / average movement
+6. Historical reaction levels
+7. Repeated rejection zones
+8. Breakout/fakeout history
+9. Volatility regime
+10. Whether price is extended compared to normal movement
+
+For recommendations, include:
+
+- historical levels supporting the setup
+- historical levels warning against the setup
+- whether current price is near a known reaction zone
+- whether current volatility is normal, elevated, or low
+- whether TP/SL is realistic based on historical movement
+
+Do not say “history shows” unless historical data was actually checked.
+
+==================================================
+PHASE 6 — CONFLUENCE SCORING
+==================================================
+
+Every trade idea or answer should include a confluence score.
+
+Score these categories:
+
+1. Live market data quality
+2. Historical market context
+3. Market structure
+4. Support/resistance
+5. Liquidity
+6. Momentum
+7. Trend
+8. Volatility
+9. Volume/tick volume
+10. Multi-timeframe alignment
+11. Session/time risk
+12. Market news
+13. Economic calendar/current events
+14. Correlation
+15. Risk/reward
+16. User account/risk safety
+
+Output:
+
+- bullishSignals
+- bearishSignals
+- neutralSignals
+- conflictingSignals
+- missingSignals
+- historicalContextSummary
+- newsContextSummary
+- currentEventsSummary
+- confidenceScore
+- riskScore
+- decisionStatus
+
+Decision status options:
+
+- STRONG_SETUP
+- MODERATE_SETUP
+- WEAK_SETUP
+- WAIT
+- AVOID
+- INSUFFICIENT_DATA
+- NEWS_RISK_HIGH
+- BLOCKED_BY_RISK
+- BLOCKED_BY_GUARDS
+
+Important:
+High confluence does not mean guaranteed profit.
+It only means the available tools and sources agree.
+
+==================================================
+PHASE 7 — APPLY TO ALL AI TRADING QUESTIONS
+==================================================
+
+Every trading-related AI answer must use the intelligence engine first.
+
+This includes:
+
+- What should I trade?
+- What market looks good?
+- Should I buy or sell?
+- Give me a sniper entry.
+- Is this a pullback?
+- Is this a retracement?
+- Is this continuation?
+- Is this a fakeout?
+- Should I close?
+- Should I hold?
+- Should I move my SL?
+- Where should I put TP?
+- Why is this trade moving?
+- Why am I losing?
+- Is this trade still valid?
+- What does the scanner see?
+- What is the safest setup?
+- What is the best trade right now?
+- What does market news say?
+- Is there news affecting this symbol?
+- Are current events affecting the market?
+- Is there a high-impact event today?
+
+AI response must include:
+
+1. What tools were checked
+2. What historical market data was checked
+3. What news/current events were checked
+4. What tools agreed
+5. What tools disagreed
+6. What data was unavailable
+7. Final decision or recommendation
+8. Confidence
+9. Risk warning
+10. SL/TP guidance when relevant
+11. Confirmation requirement before any action
+
+==================================================
+PHASE 8 — TRADE RECOMMENDATION REQUIREMENTS
+==================================================
+
+Any trade recommendation must include:
+
+- Symbol
+- Direction
+- Setup type
+- Entry or entry zone
+- Stop Loss / invalidation
+- TP1 / TP2 / TP3 if data supports it
+- Risk/reward
+- Confluence score
+- Historical market context
+- News/current events context
+- Tools supporting the setup
+- Tools warning against the setup
+- Data status
+- Risk status
+- User confirmation required
+
+If there is not enough data, return:
+
+“INSUFFICIENT_DATA — I cannot responsibly recommend a trade from the current toolset.”
+
+If news/current events are unavailable, say:
+
+“News/current events were not available, so this recommendation does not include live news risk.”
+
+==================================================
+PHASE 9 — SNIPER SETUP REQUIREMENTS
+==================================================
+
+Sniper setups must be stricter.
+
+A Sniper setup should require:
+
+1. Strong entry location
+2. Tight invalidation
+3. Clear liquidity or structure reason
+4. Strong risk/reward
+5. Multi-timeframe agreement or clear lower-timeframe tactical setup
+6. TP levels
+7. Historical level/context support
+8. News/current events risk check
+9. Reversal/fakeout warning
+10. Time sensitivity
+11. Spread/volatility check
+12. No major missing data that would make the setup unsafe
+
+If sniper conditions are not met, AI should say:
+
+“This is not a sniper setup. It may be a regular setup, wait setup, or avoid.”
+
+If news/current events are unavailable, do not label the setup “fully confirmed.”
+
+==================================================
+PHASE 10 — CLOSE / HOLD / PROTECTIVE EXIT DECISIONS
+==================================================
+
+For any close/hold question, use all available tools plus history and news.
+
+Check:
+
+- Current P/L
+- Distance to SL
+- Distance to TP
+- Trade invalidation
+- Structure shift
+- Momentum shift
+- Liquidity sweep
+- Reversal signal
+- ATR/volatility
+- Historical reaction zone
+- Historical giveback behavior if available
+- Session/news risk
+- Economic calendar/current events risk
+- Risk/reward deterioration
+- Profit giveback
+- User risk rules
+- Protective auto-close settings if available
+
+Response must classify:
+
+- HOLD
+- SCALE_OUT
+- MOVE_TO_BREAKEVEN if user strategy/rules allow
+- TIGHTEN_SL if supported
+- CLOSE_RECOMMENDED
+- CLOSE_NOW_IF_CONFIRMED
+- ALERT_ONLY
+- INSUFFICIENT_DATA
+
+AI must not close automatically unless Protective Auto-Close rules are enabled and all safety guards pass.
+
+==================================================
+PHASE 11 — ASSUMPTION CONTROL
+==================================================
+
+Any trading assumption must be verified before being stated.
+
+Do not say:
+
+- “This is reversing”
+- “This is continuation”
+- “Liquidity was swept”
+- “News caused this”
+- “Current events caused this”
+- “Trend is bullish”
+- “Support will hold”
+- “This is safe”
+
+Unless the available tools, history, and news support it.
+
+Instead say:
+
+- “Available structure suggests…”
+- “Historical behavior around this level suggests…”
+- “Momentum currently leans…”
+- “News data is unavailable, so I cannot confirm a news driver.”
+- “This looks like a possible fakeout, but confirmation is incomplete.”
+
+Add an assumption checker that flags:
+
+- unsupported assumption
+- stale data assumption
+- missing market data assumption
+- missing historical data assumption
+- missing news data assumption
+- missing current-events data assumption
+- missing volume assumption
+- conflicting signal assumption
+
+==================================================
+PHASE 12 — SCANNER / RADAR UPDATE
+==================================================
+
+Update scanner/radar/opportunity outputs so ranked opportunities include:
+
+- confluenceScore
+- toolBreakdown
+- historicalContext
+- newsContext
+- currentEventsContext
+- availableTools
+- missingTools
+- bullishSignals
+- bearishSignals
+- conflictWarnings
+- SL suggestion
+- TP targets
+- RR
+- decisionStatus
+- dataCompleteness
+- newsRiskLevel
+
+Scanner should not rank something as strong if:
+
+- key tools are missing
+- signals conflict heavily
+- news/current event risk is high
+- historical context warns against the setup
+- data is stale or incomplete
+
+==================================================
+PHASE 13 — NEWS/CURRENT EVENTS PROVIDER HANDLING
+==================================================
+
+Inspect existing providers first.
+
+If providers already exist, use them.
+
+If missing, add safe provider interfaces only. Do not hardcode secrets.
+
+Use environment variables only, such as:
+
+- FINNHUB_API_KEY if already used
+- NEWS_API_KEY if already planned
+- ECONOMIC_CALENDAR_API_KEY if already planned
+- Any existing provider key already in the app
+
+Do not expose secrets.
+
+If no key is configured:
+- app still works
+- AI reports news unavailable
+- scanner reports news unavailable
+- no crash
+- no fake headlines
+
+==================================================
+PHASE 14 — RISK GOVERNOR INTEGRATION
+==================================================
+
+The intelligence engine can recommend, but risk governor remains the authority.
+
+Before any trade action:
+
+- Risk governor must validate
+- Action guards must validate
+- Confirmation must be required
+- Shared Master rules must validate
+- Paper/live lock must validate
+
+AI should clearly say:
+
+“Even if the setup looks strong, the trade can still be blocked by risk rules.”
+
+News/current events should increase caution, not bypass rules.
+
+==================================================
+PHASE 15 — UI DISPLAY
+==================================================
+
+Keep UI clean.
+
+On recommendation cards, show:
+
+- Confluence score
+- Direction
+- Entry
+- SL
+- TP levels
+- RR
+- Historical context
+- News/current events status
+- Tools checked
+- Missing data
+- Confidence
+- Risk warning
+
+Use collapsible sections:
+
+“Why ARX AI thinks this”
+“Market history checked”
+“News/current events checked”
+“Tools checked”
+“Warnings”
+“Risk”
+
+Do not overcrowd mobile UI.
+
+==================================================
+PHASE 16 — JOURNAL / AUDIT
+==================================================
+
+When a user acts on a recommendation, save:
+
+- tools checked
+- historical data checked
+- news/current events checked
+- confluence score
+- signals used
+- missing data
+- SL/TP suggested
+- user-selected entry/SL/TP
+- risk/reward at time of decision
+- AI recommendation timestamp
+- data status
+- news status
+- current-events status
+- whether user changed anything
+
+This helps review ARX AI decisions later.
+
+==================================================
+PHASE 17 — TESTING
+==================================================
+
+Run:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm test if available
+- pnpm run build if available
+- AI tests if available
+- scanner/radar tests if available
+- risk governor tests if available
+- trade recommendation tests if available
+- news provider fallback tests if available
+- historical data fallback tests if available
+
+Manual tests:
+
+1. Ask “What should I trade?”
+2. Confirm AI checks trading tools, market history, news, and current events before answering.
+3. Ask “Give me a sniper setup.”
+4. Confirm AI rejects weak setups as not sniper.
+5. Ask “Is this a pullback or reversal?”
+6. Confirm AI uses structure, momentum, liquidity, volatility, history, and news status.
+7. Ask “Should I close my trade?”
+8. Confirm AI uses open trade context, reversal tools, historical levels, and news/current event risk.
+9. Ask “Where should I place TP?”
+10. Confirm TP uses structure, historical movement, RR, and confluence.
+11. Remove/simulate missing live news API.
+12. Confirm AI says news unavailable instead of guessing.
+13. Remove/simulate missing historical data.
+14. Confirm AI says historical data unavailable instead of guessing.
+15. Confirm scanner/radar shows confluence score and news risk.
+16. Confirm risk governor still blocks unsafe trades.
+17. Confirm AI does not promise profit.
+18. Confirm no fake live data or fake news was added.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Create or update:
+
+FULL_TRADING_INTELLIGENCE_ENGINE_REPORT.md
+
+Include:
+
+1. Files inspected
+2. Files changed
+3. Trading tools connected
+4. Historical market data integration
+5. Market news integration
+6. Current events integration
+7. Data availability map
+8. Confluence scoring model
+9. AI behavior changes
+10. Scanner/radar changes
+11. Trade recommendation changes
+12. Sniper setup changes
+13. Close/hold decision changes
+14. Risk governor integration
+15. UI changes
+16. Journal/audit changes
+17. Tests run
+18. Typecheck result
+19. CI guard result
+20. Remaining limitations
+21. Any unavailable tools/data sources
+22. Any missing API keys/env vars
+23. Confirmation that no fake live data was added
+24. Confirmation that no fake news/current events were added
+25. Confirmation that risk/confirmation/paper/live guards remain enforced
+
+Stop after this slice and report.

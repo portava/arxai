@@ -1,0 +1,443 @@
+Deep dive and fix only the Scanner Chart global candle failure.
+
+Current screenshot shows:
+
+* Market Scanner selected symbol: Volatility 75 Index
+* Status: Feed unavailable / Analysis only / Idle
+* Chart area renders but shows: “No live candles for VOLATILITY 75 INDEX right now. We don’t fabricate data…”
+* Trade Health below still sees 3 open positions
+* User reports the chart now does not show for anything, not only V75
+
+This means the chart component is mounted and the honest empty-state is displaying, but the global candle/feed pipeline is failing or being blocked for all symbols.
+
+This task is scanner-chart only.
+Do not rebuild the app.
+Do not redesign the chart.
+Do not change live execution.
+Do not place trades.
+Do not change bridge execution.
+Do not change investor portal.
+Do not change dashboard P/L work except if a shared hook accidentally broke chart candles.
+Do not add fake/static/mock/paper/demo candles.
+Do not remove truth/freshness gates just to make candles appear.
+Do not label stale or unavailable candles as live.
+
+Goal:
+Find why the scanner chart is returning “No live candles” for every symbol and restore honest chart behavior using real/fresh candle data where available.
+
+====================================================
+PART 1 — CONFIRM GLOBAL FAILURE
+
+First verify whether the failure is truly global.
+
+Test scanner chart candle availability for:
+
+1. EURUSD
+2. XAUUSD / Gold if available
+3. Volatility 75 Index / V75
+4. At least one other known available forex pair
+5. Any symbol that previously worked
+
+For each symbol/timeframe, record:
+
+* selected symbol display name
+* canonical symbol
+* backend/broker symbol
+* timeframe
+* candle request URL/params
+* response status
+* response body shape
+* candle count returned
+* freshness/source status
+* frontend hook output
+* chart adapter output
+* final chart render state
+
+Do not rely only on the UI. Inspect the actual request and the backend handler.
+
+====================================================
+PART 2 — TRACE THE PIPELINE END TO END
+
+Trace this exact pipeline:
+
+Scanner selected symbol
+→ symbol normalization
+→ timeframe selection
+→ frontend candle hook/query
+→ candle API endpoint
+→ backend candle provider
+→ feed/source selection
+→ candle response
+→ frontend candle adapter
+→ chart render guard
+→ chart empty-state decision
+
+For every layer, answer:
+
+* Was it called?
+* What exact symbol did it receive?
+* What exact timeframe did it receive?
+* Did it return candles?
+* If not, why not?
+* Did a truth/freshness gate block it?
+* Did an adapter/filter remove the candles?
+* Did a response-shape mismatch make valid candles appear empty?
+* Did a recent shared snapshot/SSE/handshake hook change accidentally replace or block candle data?
+
+====================================================
+PART 3 — FIND THE EXACT GLOBAL BREAKPOINT
+
+Classify the failure as one of these:
+
+A. Selected symbol issue
+
+* scanner symbol is undefined/null
+* display name not mapped to backend symbol
+* V75/Volatility naming mismatch
+* symbol dropdown value not compatible with candle endpoint
+* selected market state not passed to chart
+
+B. Timeframe issue
+
+* timeframe undefined
+* timeframe format mismatch
+* endpoint expects M1 but frontend sends 1m
+* provider rejects certain timeframe
+* recent timeframe tabs broke query
+
+C. Frontend request issue
+
+* hook not called
+* query disabled
+* query key wrong
+* cache stuck on unavailable
+* missing dependency
+* auth issue
+* wrong endpoint path
+* SSE/live snapshot hook accidentally replacing candle hook
+* stale/error state swallowed
+
+D. Backend endpoint issue
+
+* endpoint returns empty for all
+* auth/session issue
+* provider not reached
+* provider throws but endpoint hides error
+* response shape changed
+* source/freshness gate rejects all candles
+
+E. Provider/feed issue
+
+* MT5 candle store empty
+* Deriv feed unavailable
+* third-party/historical provider disabled
+* updateCandlesFromMT5 not called
+* EA quote push exists but candle push missing
+* provider ignores timeframe
+* no true candle feed exists
+
+F. Adapter/formatter issue
+
+* response has candles but frontend expects data
+* timestamp parse failure
+* numeric conversion failure
+* all candles filtered as invalid/stale
+* source tag mismatch
+* required fields missing: open/high/low/close/time
+
+G. Render guard issue
+
+* chart has data but guard says feed unavailable
+* handshake result blocks chart incorrectly
+* analysis-only state forced globally
+* stale state treated as no data
+* chart waits for Ruby signal/news/snapshot before rendering
+
+H. CSS/container issue
+
+* unlikely because empty state is visible, but still check if data exists and chart is hidden
+
+Identify the exact category and evidence.
+
+====================================================
+PART 4 — CHECK RECENT CHANGES THAT COULD HAVE CAUSED GLOBAL BLOCK
+
+Inspect recent changes around:
+
+* LiveAccountSnapshot hook
+* SSE account snapshot hook
+* Dashboard/Open Trades shared truth work
+* ARX Handshake System if started
+* Ruby Market Edge chart overlay changes
+* scanner truth contract
+* feed availability truth badges
+* “analysis only” state
+* no-fabrication empty-state logic
+* selected symbol dropdown changes
+* market scanner chart refactor
+* chart candle hook/query refactor
+
+Look specifically for:
+
+* a global “feed unavailable” flag now applied to all chart requests
+* a hook that now depends on account snapshot instead of candle data
+* a failed import causing candle hook fallback to empty
+* a freshness checker treating missing quote as missing candles
+* a symbol source mismatch after display-name normalization
+* a query disabled condition that is always false
+* a chart adapter receiving one shape and expecting another
+
+Do not blame recent changes without evidence.
+
+====================================================
+PART 5 — CANDLE ENDPOINT DIRECT TEST
+
+Directly test the candle endpoint used by scanner chart.
+
+For each of EURUSD, XAUUSD/Gold, V75, and one known forex pair, run endpoint-level checks.
+
+Report:
+
+* endpoint path
+* request params
+* response status
+* candle count
+* first candle shape
+* last candle timestamp
+* source
+* freshness
+* error if any
+
+If backend returns candles but frontend chart says no candles:
+the bug is frontend hook/adapter/render guard.
+
+If backend returns empty for all:
+the bug is endpoint/provider/feed gate.
+
+If backend returns error but frontend hides it:
+fix user-safe error handling.
+
+====================================================
+PART 6 — RESPONSE SHAPE CHECK
+
+Compare backend response shape to frontend expected shape.
+
+Backend may return:
+
+* candles
+* data
+* ohlc
+* rows
+* items
+
+Candle fields may be:
+
+* time / timestamp / t
+* open / o
+* high / h
+* low / l
+* close / c
+* volume / v
+* source
+* freshness
+
+Frontend chart must receive normalized candles:
+
+{
+time,
+open,
+high,
+low,
+close,
+volume?,
+source?,
+freshness?
+}
+
+If shape mismatch is the cause, fix the adapter only.
+Do not change provider unless necessary.
+
+====================================================
+PART 7 — SYMBOL NORMALIZATION CHECK
+
+The screenshot shows “Volatility 75 Index” / “VOLATILITY 75 INDEX”.
+
+Check whether the backend expects:
+
+* Volatility 75 Index
+* VOLATILITY 75 INDEX
+* Volatility 75 Index
+* V75
+* R_75
+* volatility_75
+* broker-specific name from arx_symbol_specs
+* displayName vs symbol
+
+Also check EURUSD:
+If EURUSD also fails, the issue is likely not V75-only but a global query/provider/render gate.
+
+Report mapping table:
+
+displayName → selectedValue → canonicalSymbol → brokerSymbol → endpointSymbol
+
+====================================================
+PART 8 — TRUTH GATE CHECK
+
+The empty state says:
+“No live candles… We don’t fabricate data…”
+
+That wording may be correct for unavailable feeds, but if it is shown for all symbols, verify the truth gate.
+
+Find the exact condition that sets:
+
+* feedUnavailable
+* analysisOnly
+* noLiveCandles
+* chartUnavailable
+* hasLiveCandles false
+
+Check if it requires:
+
+* live candles only
+* fresh quote
+* fresh candle
+* broker feed
+* EA candle feed
+* scanner status
+* selected symbol tradability
+* heartbeat
+* account snapshot
+* Ruby signal
+
+If the gate is too strict and blocks valid non-fabricated candles, fix the gate.
+
+Do not allow fabricated candles.
+But do allow real available candle sources if they are properly labeled:
+
+* live
+* fresh
+* delayed
+* stale
+* historical
+* analysis-only
+
+If data is delayed/historical, chart may show it only if clearly labeled and if product rules allow. If current rule requires live-only candles, then the UI must explain exactly what source is missing.
+
+====================================================
+PART 9 — EXPECTED USER-FACING STATES
+
+After fix, scanner chart should show one of these truthful states:
+
+1. Real fresh candles available
+
+* Render chart
+* Badge: Fresh / Live based on source truth
+
+2. Delayed/stale candles available
+
+* Render chart only if product truth contract allows stale/delayed charting
+* Badge: Stale/Delayed
+* Clear warning
+
+3. No candle feed, but quote exists
+
+* Empty chart with:
+    “Live quote is available, but chart candles are not syncing for this symbol/timeframe.”
+
+4. No market data at all
+
+* Empty chart with:
+    “Waiting for market data.”
+
+5. Provider error
+
+* Empty/error state with:
+    “Chart feed error. Ruby can still analyze available account/position data.”
+
+Do not show generic “No live candles” for every cause.
+Differentiate quote available vs candle unavailable vs symbol mapping issue vs backend error.
+
+====================================================
+PART 10 — MINIMAL FIX ONLY AFTER FINDINGS
+
+After root cause is proven, apply the smallest safe fix.
+
+Possible fixes:
+
+* correct symbol mapping
+* correct timeframe mapping
+* re-enable candle hook query
+* correct endpoint path
+* fix response adapter shape
+* fix render guard that blocks all candles
+* fix global feedUnavailable flag
+* fix freshness gate using wrong source
+* fix cache key/dependency
+* restore chart hook disconnected by recent snapshot/SSE work
+* add honest empty-state distinctions
+
+Do not:
+
+* rewrite chart
+* add fake candles
+* remove all truth checks
+* switch to unrelated data source without proving it
+* make a cosmetic-only fix
+
+====================================================
+PART 11 — TESTS / VERIFICATION
+
+Run:
+
+* pnpm run typecheck
+* scanner/chart relevant tests if available
+* ci guards if safe
+
+Runtime checks:
+
+* EURUSD chart shows if candles are available
+* V75 chart shows real candles if available OR shows correct source-specific unavailable message
+* timeframe switch works
+* selected market switch updates chart
+* Focus Scan selected chart works
+* Broad Scan selected chart works
+* empty state differentiates:
+    * no candles
+    * quote-only
+    * stale candles
+    * provider error
+    * symbol mapping failure
+* no fake candles added
+* no live execution changed
+* mobile chart visible
+
+====================================================
+PART 12 — FINAL FINDINGS REPORT REQUIRED
+
+Report back with:
+
+1. Whether failure was global or symbol-specific
+2. Files inspected
+3. Scanner chart pipeline map
+4. Selected symbol mapping findings
+5. Timeframe findings
+6. Endpoint request/response findings
+7. Provider/feed findings
+8. Frontend hook findings
+9. Adapter/formatter findings
+10. Render guard/truth gate findings
+11. CSS/container findings
+12. Recent-change impact findings
+13. Exact root cause
+14. Fix applied, if applied
+15. Files changed
+16. Tests run and results
+17. Runtime verification results for EURUSD
+18. Runtime verification results for V75
+19. Confirmation no fake data added
+20. Confirmation no live execution path changed
+21. Remaining blocker if true candle feed is missing
+
+Final rule:
+The mission is not just “make the chart appear.”
+The mission is to restore the scanner chart’s honest behavior and identify why every symbol is currently showing no candles.

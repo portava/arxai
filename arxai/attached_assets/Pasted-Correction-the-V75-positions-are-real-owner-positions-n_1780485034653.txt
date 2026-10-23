@@ -1,0 +1,50 @@
+Correction: the V75 positions are real owner positions, not phantom positions.
+
+Do not treat the V75 positions as fake, phantom, stale, or closed just because their database rows are old or because the latest EA snapshot did not include them.
+
+Required behavior:
+1. Treat V75 positions as real if they are currently open in the live MT5/broker account.
+2. Do not hide real V75 positions from active open-position views.
+3. Do not reconcile them out unless the live MT5/broker snapshot clearly confirms they are closed.
+4. Do not mark them as phantom based only on stale database timestamps.
+5. Do not auto-close them.
+6. Do not convert them to ALERT_ONLY.
+7. Do not remove them from owner/admin position visibility.
+
+Fix the reconciliation logic:
+1. Current live broker/MT5 open positions are the source of truth.
+2. Database rows are only stale if they have no matching current broker position and remain absent after the allowed heartbeat/snapshot grace period.
+3. If an EA snapshot is incomplete, delayed, or missing symbols, show a warning:
+   “Position sync incomplete — waiting for broker confirmation.”
+4. Do not classify missing V75 rows as phantom until the system receives a reliable full broker position snapshot.
+5. Synthetic index positions such as V75 and V25 must be supported as real positions.
+6. Do not apply forex-only assumptions to synthetic indices.
+7. Do not estimate fake forex margin for V75/V25.
+8. Show margin as unavailable/incomplete if broker margin data is not available, but keep the position visible.
+
+UI behavior:
+1. Show real V75 positions in Open Positions.
+2. Label them as broker-synced if confirmed by MT5.
+3. If sync is uncertain, show:
+   “Live position — broker confirmation pending”
+   instead of hiding them.
+4. Do not show them as phantom unless confirmed closed at broker.
+5. Do not let stale/old timestamps override live broker reality.
+
+Testing:
+1. Verify current live MT5 open positions from the VPS EA snapshot.
+2. Confirm the V75 positions are still open or closed based on broker data, not database age alone.
+3. If V75 positions are open, confirm they display in the app as real open positions.
+4. If V75 positions are closed, confirm they move to history with broker-confirmed close data.
+5. Confirm no real synthetic index positions are hidden as phantom.
+6. Confirm stale non-matching rows are still hidden only when broker-confirmed absent.
+7. Confirm live position/account sync mirror still works.
+8. Confirm T015 manual LIVE continuation remains active.
+9. Confirm no demo, paper, mock, or simulation fallback exists on the active LIVE path.
+
+Final report:
+1. List all currently open broker-confirmed positions.
+2. Confirm whether each V75 position is open or closed according to live MT5/broker data.
+3. Confirm whether any position was hidden and why.
+4. Confirm the app no longer treats real V75 positions as phantom solely because of stale timestamps.
+5. Confirm synthetic indices are handled separately from forex margin assumptions.

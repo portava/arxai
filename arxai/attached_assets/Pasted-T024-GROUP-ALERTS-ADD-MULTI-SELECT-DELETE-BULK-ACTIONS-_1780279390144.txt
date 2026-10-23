@@ -1,0 +1,271 @@
+T024 — GROUP ALERTS + ADD MULTI-SELECT DELETE / BULK ACTIONS
+
+Current issue:
+The Alerts page is cluttered and repetitive. The screenshot shows many separate alerts with the same type:
+
+“Holding longer than your intraday window”
+“EURUSD buy/sell has been open #### min — beyond your 240 min target.”
+
+These alerts are repeated as individual cards, making the page hard to read. The user wants alerts grouped and multi-select delete added.
+
+Scope:
+This task is only for the Alerts page alert organization and deletion UX.
+
+Do not change live execution.
+Do not change Governance.
+Do not change Ruby behavior.
+Do not place trades.
+Do not use Demo/Paper/fake data.
+Do not weaken route containment or user privacy.
+
+Primary goal:
+Make Alerts usable by grouping repeated alerts and adding multi-select delete/bulk actions.
+
+PART 1 — Audit current Alerts data and UI
+
+Find where the Alerts page gets:
+
+1. alert list
+2. unread count
+3. read/unread state
+4. dismiss/delete action
+5. Mark all read action
+6. alert timestamps
+7. alert type/category
+8. related symbol/trade ID
+9. title/message
+10. severity
+
+Identify:
+
+1. frontend component
+2. backend endpoint
+3. database table/model
+4. whether dismiss means hide, mark read, archive, or delete
+5. whether alerts are user-scoped
+6. whether alerts are currently duplicated by polling/event logic
+
+PART 2 — Group repeated alerts
+
+Group alerts by useful categories so the page is not a long repeated list.
+
+Required grouping:
+
+1. Trade duration alerts
+    * Example: “Holding longer than your intraday window”
+    * Group by symbol + direction + alert type + target window
+    * Show latest time and count
+    * Example: “EURUSD BUY — holding beyond 240 min · 3 alerts”
+2. Trade execution alerts
+    * placed
+    * rejected
+    * closed
+    * MT5 confirmed
+    * MT5 failed
+3. Risk/Governance alerts
+    * allocation
+    * kill switch
+    * freeze
+    * max loss
+    * governance block
+4. MT5/Bridge alerts
+    * bridge disconnected
+    * EA heartbeat stale
+    * account sync stale
+    * symbol not tradable
+    * broker rejected
+5. Ruby/Market alerts
+    * news risk
+    * volatility warning
+    * watch level hit
+    * scanner signal
+6. System alerts
+    * app updates
+    * diagnostics
+    * health warnings
+
+Each group should show:
+
+1. group title
+2. count
+3. latest timestamp
+4. summary
+5. expandable list of individual alerts
+6. bulk actions for that group
+
+Default view:
+
+1. show grouped summaries
+2. newest groups first
+3. collapsed by default if there are many alerts
+4. allow expand/collapse
+
+PART 3 — Prevent duplicate alert spam
+
+Investigate why many similar alerts are created at the same timestamp.
+
+The screenshot shows repeated intraday-window alerts at the same time. Fix duplicate generation if needed.
+
+Rules:
+
+1. Do not create a new alert every poll for the same unresolved condition.
+2. Use deduping key such as:
+    * userId
+    * alertType
+    * symbol
+    * direction
+    * positionId/tradeId if available
+    * target window
+    * active condition
+3. If the condition persists, update the existing alert count/latest timestamp instead of creating endless duplicates.
+4. Optionally create a new alert only when:
+    * status changes
+    * threshold changes
+    * position changes
+    * user dismissed it and condition re-triggers after cooldown
+5. Add cooldown for repeated alerts, such as 15–60 minutes depending on severity.
+6. Do not spam “holding longer than intraday window” every minute.
+
+PART 4 — Add multi-select mode
+
+Add multi-select behavior to Alerts page.
+
+Requirements:
+
+1. Add “Select” button near top of Alerts page.
+2. When Select is active:
+    * show checkboxes on alert groups and individual alerts
+    * allow selecting one, many, or all visible
+    * keep bottom/nav usable
+    * show selected count
+3. Add actions:
+    * Delete selected
+    * Mark selected as read
+    * Mark selected as unread if supported
+    * Clear selection
+4. Add “Select all” for current filter/group.
+5. Add “Delete all read” if safe.
+6. Add confirmation before deleting many alerts:
+    “Delete 12 alerts?”
+7. Do not require confirmation for deleting one alert unless existing UX already does.
+
+Mobile:
+
+1. checkboxes must be touch-friendly
+2. bulk action bar should stick near bottom or top
+3. avoid overlapping bottom navigation
+4. allow swipe or tap X for single delete if already supported
+
+PART 5 — Delete behavior
+
+Implement delete/archive cleanly.
+
+Preferred behavior:
+
+1. Soft delete or archive alerts instead of hard delete, unless the existing model already supports hard delete safely.
+2. Deleted alerts should disappear from the user’s Alerts page.
+3. Deleted alerts should not affect audit logs or trade ledger.
+4. Deleting an alert must not delete the underlying trade, command, or event.
+5. Deleting grouped summary should delete/archive all alerts inside that group after confirmation.
+
+Endpoint requirements:
+
+1. delete one alert
+2. bulk delete selected alerts
+3. mark one read
+4. bulk mark read
+5. mark all read
+6. optionally delete all read
+
+Security:
+
+1. user can only delete their own alerts
+2. owner/admin can manage admin alerts only if intended
+3. normal users cannot delete system audit logs
+4. no cross-user alert access
+
+PART 6 — Filters and cleanup
+
+Improve Alerts page controls.
+
+Add or repair filters:
+
+1. All
+2. Unread
+3. Trading
+4. Risk
+5. MT5/Bridge
+6. Ruby/Market
+7. System
+8. Deleted/Archived only if needed for admin
+
+Add sorting:
+
+1. newest first default
+2. severity first optional
+
+Add empty states:
+
+1. “No alerts.”
+2. “No unread alerts.”
+3. “No alerts in this category.”
+
+PART 7 — UI copy
+
+Clean up wording.
+
+Current repeated wording:
+“Holding longer than your intraday window”
+“EURUSD buy has been open 5099 min — beyond your 240 min target.”
+
+Improve grouped summary:
+“EURUSD BUY has been beyond your 240-minute intraday window.”
+“5 repeated alerts · latest 8:45 PM”
+
+Individual expanded row:
+“Open 5,099 min · target 240 min · created 5/31/2026 8:45 PM”
+
+If the trade is already closed/reconciled:
+
+1. do not continue generating active holding alerts
+2. show historical/reconciled status if needed
+
+PART 8 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. alerts list test
+5. alert grouping test
+6. repeated alert dedupe test
+7. multi-select UI test
+8. bulk delete endpoint test
+9. bulk mark-read endpoint test
+10. owner/user access test
+11. mobile Alerts page smoke test
+12. regression test to confirm deleting alerts does not delete trades/ledger rows
+
+PART 9 — Final report required
+
+Final report must include:
+
+1. files/components changed
+2. alert data source audited
+3. grouping logic added
+4. duplicate alert cause found
+5. dedupe/cooldown behavior added
+6. multi-select behavior added
+7. bulk delete behavior added
+8. mark-read behavior verified
+9. security/user-scope verification
+10. mobile UI verification
+11. confirmation trade/ledger records are not deleted
+12. health:workflows result
+13. typecheck result
+14. ci:guards result
+15. remaining risks
+
+Completion standard:
+This task is complete only when Alerts are grouped, repeated alerts are deduped or collapsed, the user can multi-select alerts, bulk delete/mark read works safely, and the Alerts page is cleaner on mobile without changing trade execution or ledger integrity.

@@ -1,0 +1,20 @@
+// ── ARX AI Design System: barrel ───────────────────────────────────────────
+export { SignalDirectionBadge } from "./SignalDirectionBadge";
+export { ConfidenceMeter } from "./ConfidenceMeter";
+export { StatusBadge } from "./StatusBadge";
+export { PnLValue } from "./PnLValue";
+export { StatCard } from "./StatCard";
+export { PageHeader } from "./PageHeader";
+export { EmptyState } from "./EmptyState";
+export { RiskBadge } from "./RiskBadge";
+export { VolatilityBadge } from "./VolatilityBadge";
+export { MarketConditionBadge } from "./MarketConditionBadge";
+export { MT5StatusIndicator } from "./MT5StatusIndicator";
+export { TradeHealthMeter } from "./TradeHealthMeter";
+export { AIInsightCard } from "./AIInsightCard";
+export { SignalCard } from "./SignalCard";
+export { ChartContainer } from "./ChartContainer";
+export { PremiumTable, type PremiumColumn } from "./PremiumTable";
+export { ConfirmDialog } from "./ConfirmDialog";
+export { FloatingActionPanel } from "./FloatingActionPanel";
+export { ExposureCard, type ExposureRow } from "./ExposureCard";

@@ -1,0 +1,396 @@
+T018 — FIX ARX POSITIONS STUCK WAITING FOR MT5 SYNC / NO REAL MT5 EXECUTION
+
+Current real issue:
+Trades are not truly executing in MT5.
+
+In the app, after attempting a live trade, the Trade page shows “My Live Trades” cards for EURUSD BUY 0.01, but the cards show:
+
+* Entry: —
+* Now: —
+* TP: —
+* “Waiting for MT5 sync — P&L not yet available.”
+* The user reports nothing real fires in MT5.
+
+This means ARX is showing live trade/position cards without confirmed MT5 execution, or the MT5 acknowledgement/sync loop is broken.
+
+Do not mark this fixed until a real live trade is confirmed by MT5 with a real ticket/order/position/deal ID, appears correctly in ARX with entry/price/P&L data, and then closes successfully through ARX with MT5 confirmation.
+
+Product direction:
+ARX AI is LIVE-first for owner/admin operation.
+Do not use Demo.
+Do not use Paper Trading.
+Do not fake execution.
+Do not use simulated trade data.
+Do not fabricate MT5 tickets.
+Do not claim success based on ARX UI cards alone.
+Do not claim success based on queued ARX commands alone.
+Do not bypass backend safety gates.
+Do not weaken permissions, ownership checks, kill switch, allocation checks, freeze checks, live approval, account-type validation, symbol validation, lot validation, stop validation, or MT5 confirmation rules.
+
+This is not a rebuild.
+Fix the existing live execution wiring in place.
+
+PRIMARY GOAL:
+Find why ARX creates/shows live position cards but MT5 does not actually execute or sync the trade. Repair the real ARX → bridge → EA → MT5 → bridge → ARX confirmation loop.
+
+PART 1 — Freeze new duplicate live attempts until diagnosis
+
+Before testing again, prevent accidental duplicate live orders during this debugging pass.
+
+1. Check current ARX live pending/open records for the owner/admin.
+2. Check MT5 actual open positions.
+3. Check arx_live_commands.
+4. Check ARX live positions/ledger.
+5. Identify every EURUSD BUY 0.01 card shown as “Waiting for MT5 sync.”
+6. Determine whether each card has:
+    * ARX command ID
+    * MT5 ticket
+    * MT5 order ID
+    * MT5 position ID
+    * MT5 deal ID
+    * bridge request ID
+    * EA acknowledgement
+    * status
+    * created_at
+    * updated_at
+    * last sync time
+    * error/retcode/comment
+
+If ARX has records with no MT5 ticket and MT5 has no matching position:
+
+1. Do not treat them as real open trades.
+2. Mark them as failed/expired/rejected/reconciled according to the existing ledger model.
+3. Preserve audit history.
+4. Remove them from active “My Live Trades” open-position view.
+5. Do not delete real trade records without audit.
+6. Do not close anything at broker if no broker position exists.
+
+PART 2 — Find the exact point where execution stops
+
+Trace one failed live order end-to-end.
+
+Trace:
+
+1. Frontend Confirm button click.
+2. Frontend request payload.
+3. Backend live order endpoint.
+4. Auth/owner/admin validation.
+5. LIVE_SHARED/live mode validation.
+6. Allocation gate.
+7. Kill switch gate.
+8. Freeze gate.
+9. Symbol allowlist gate.
+10. Symbol mapping.
+11. Lot validation.
+12. SL/TP validation.
+13. Backend command creation.
+14. Bridge dispatch call.
+15. EA/bridge receive event.
+16. MT5 OrderSend / trade request call.
+17. MT5 response / retcode / comment.
+18. Bridge acknowledgement back to API.
+19. ARX command status update.
+20. ARX position ledger update.
+21. MT5 sync poll/heartbeat.
+22. Trade page live positions query.
+23. Scanner/chart overlay query.
+
+Find exactly which one is failing or missing.
+
+Do not guess.
+Do not stop at “Waiting for MT5 sync.”
+Capture the exact missing handoff.
+
+PART 3 — Check for premature ARX position creation
+
+ARX must not show a trade as open unless MT5 confirms it.
+
+Required rules:
+
+1. Before MT5 confirms, UI status may show:
+    * “Sending…”
+    * “Confirming with broker…”
+    * “Queued…”
+    * “Rejected”
+    * “Failed”
+2. After MT5 confirms with ticket/order/position/deal, UI may show:
+    * Open position
+    * Entry price
+    * Current price
+    * P/L
+    * SL/TP
+    * Close controls
+3. ARX must not create or display a normal open position card just because:
+    * frontend Confirm was clicked
+    * backend command row was created
+    * bridge request was queued
+    * local draft exists
+    * command is pending
+    * MT5 sync has not happened
+
+Fix if needed:
+
+1. Separate pending live commands from confirmed live positions.
+2. Show pending commands in a separate “Pending broker confirmation” area.
+3. Only show confirmed MT5 positions under “My Live Trades.”
+4. If a pending command times out or is rejected, mark it failed and show the clean reason.
+5. Never leave indefinite “Waiting for MT5 sync” cards as if trades are open.
+
+PART 4 — Inspect bridge/EA dispatch
+
+Check the live bridge and EA.
+
+Verify:
+
+1. Bridge is connected to the correct MT5 terminal.
+2. EA v1.29 is attached and running.
+3. Algo trading is enabled.
+4. EA EnableLiveExecution is ON.
+5. EA ReadOnly is OFF.
+6. MT5 account is the intended live account.
+7. Terminal is connected.
+8. Symbol exists in MT5 Market Watch.
+9. The exact symbol name sent by ARX matches MT5 broker symbol.
+10. EURUSD order requests reach the EA/bridge.
+11. EA logs show receipt of the command.
+12. MT5 Journal/Experts logs show OrderSend attempt.
+13. MT5 retcode/comment is captured and returned to ARX.
+14. If no OrderSend appears in MT5 logs, the command never reached MT5.
+
+If command never reaches MT5:
+
+1. Fix API → bridge dispatch.
+2. Fix bridge queue/transport.
+3. Fix EA subscription/polling.
+4. Fix command routing/connection ID.
+5. Fix user/account to bridge binding.
+
+If command reaches MT5 but is rejected:
+
+1. Capture retcode/comment.
+2. Fix symbol/lot/filling/stops/market/account permission if app-side.
+3. If broker-side restriction, report exact broker limitation.
+
+PART 5 — Check connection/account binding
+
+The app shows “Live (Shared Master MT5)” and broker info “Deriv (SVG) LLC ••••0041.”
+
+Verify:
+
+1. The owner/admin ARX user is bound to bridge connection 287 or current active bridge.
+2. The bridge is bound to the same MT5 terminal/account shown in the app.
+3. The EA heartbeat is from the same terminal/account.
+4. The command dispatcher uses the same connection ID that the heartbeat reports.
+5. The Trade page reads positions from the same connection/account that commands are sent to.
+6. Scanner/chart overlays read from the same confirmed position source.
+7. There is no mismatch between:
+    * master bridge connection
+    * per-user bridge
+    * Deriv bridge
+    * MT5 terminal account
+    * ARX LIVE_SHARED ledger
+    * frontend selected account mode
+
+If account/connection mismatch exists, fix it.
+Do not create a duplicate bridge.
+Do not create a second execution path.
+Bind the existing live execution path correctly.
+
+PART 6 — Check symbol mapping and execution compatibility
+
+For the current screenshot, ARX shows EURUSD BUY 0.01 cards.
+
+Verify:
+
+1. EURUSD is available in MT5 Market Watch.
+2. The broker symbol is exactly EURUSD or identify actual suffix/prefix.
+3. If broker uses suffix/prefix, map ARX EURUSD to actual broker symbol safely.
+4. Lot 0.01 is valid.
+5. Filling mode is valid.
+6. Order type BUY is valid.
+7. Market is open.
+8. SL/TP values are valid or omitted if not required.
+9. Stop distance is valid.
+10. Price precision is valid.
+
+If the app sent EURUSD but MT5 expects something like EURUSD. or another broker-specific symbol, fix the symbol resolver and diagnostics.
+
+PART 7 — Fix the Trade page display logic
+
+The Trade page must not mislead the user.
+
+Current misleading state:
+“My Live Trades” shows cards as if positions exist, but Entry/Now are blank and P&L unavailable.
+
+Fix display rules:
+
+1. Confirmed MT5 positions:
+    * show in My Live Trades
+    * show Entry
+    * show Now
+    * show P/L
+    * show ticket/position ID in admin diagnostics
+    * allow Review Close
+2. Pending broker confirmation:
+    * show in “Pending Live Commands” or inline pending status
+    * show command ID
+    * show “Confirming with MT5…”
+    * do not show as open position
+    * auto-expire or mark failed after timeout
+3. Failed/rejected commands:
+    * show clean reason
+    * do not remain in active positions
+    * include admin diagnostics
+4. Orphan ARX records with no MT5 position:
+    * reconcile with audit note
+    * remove from active live positions
+    * do not call broker close if no broker ticket exists
+
+PART 8 — Improve user-facing messages
+
+Replace vague blocked/stuck messages with clean reasons.
+
+Examples:
+
+1. “Order still pending: waiting for MT5 ticket.”
+2. “Order failed: command did not reach MT5.”
+3. “Order rejected by MT5: [clean broker reason].”
+4. “Order not placed: symbol mapping failed.”
+5. “Order not placed: bridge is not connected to the active MT5 account.”
+6. “Order not placed: broker returned invalid volume.”
+7. “No broker position found. This ARX record was reconciled.”
+
+Admin-only diagnostics should include:
+
+1. command ID
+2. bridge connection ID
+3. MT5 retcode/comment
+4. symbol sent
+5. broker symbol resolved
+6. user ID
+7. allocation ID
+8. request ID
+9. timestamps
+10. current ledger status
+
+Normal users must not see raw stack traces, backend route names, DB errors, env names, or secrets.
+
+PART 9 — Prove with one real live trade
+
+After fixing the real issue, run one controlled live trade.
+
+Rules:
+
+1. Use LIVE only.
+2. Use owner/admin account only.
+3. Use EURUSD unless V75 is explicitly confirmed tradable and intended.
+4. Use lot 0.01 or the smallest broker-allowed lot.
+5. Do not let Ruby choose direction.
+6. This is a wiring test only.
+7. Do not open more than one trade.
+8. Close immediately after verification.
+
+Before execution record:
+
+1. arx_live_commands count/max_id.
+2. ARX open positions count.
+3. MT5 open positions count.
+4. owner allocation.
+5. bridge connection ID.
+6. account mode.
+7. selected symbol.
+8. symbol rules.
+9. all live gate results.
+
+Execution:
+
+1. Open Scanner.
+2. Draft BUY or SELL.
+3. Press real Confirm once.
+4. Confirm frontend shows pending immediately.
+5. Confirm backend creates command.
+6. Confirm command reaches bridge/EA.
+7. Confirm MT5 OrderSend happens.
+8. Confirm MT5 returns success retcode.
+9. Capture MT5 ticket/order/position/deal ID.
+10. Confirm ARX stores the MT5 ID.
+11. Confirm ARX position card shows Entry, Now, and P/L.
+12. Confirm Scanner/chart shows trade.
+13. Confirm Ruby can explain it.
+14. Close through ARX.
+15. Confirm close reaches MT5.
+16. Confirm MT5 close success.
+17. Confirm ARX marks closed.
+18. Confirm ARX and MT5 open positions return to previous count.
+19. Do not open a second trade.
+
+If live trade fails again:
+
+1. Do not mark complete.
+2. Report exact failure point.
+3. Fix and retest.
+4. Continue until real MT5 confirmation succeeds or an external broker limitation is proven.
+
+PART 10 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. live-readiness gate check
+5. bridge dispatch test
+6. EA command receipt test if available
+7. symbol mapping test
+8. pending-command timeout/reconcile test
+9. Trade page display logic test
+10. Scanner smoke test
+11. admin diagnostics smoke test
+
+PART 11 — Final report required
+
+Final report must include:
+
+1. exact reason ARX showed “Waiting for MT5 sync”
+2. whether a command reached the bridge
+3. whether a command reached the EA
+4. whether MT5 OrderSend was called
+5. MT5 retcode/comment from failed attempt, if any
+6. root cause
+7. files changed
+8. stale/pending ARX records reconciled
+9. improved display behavior
+10. improved user-facing message
+11. health:workflows result
+12. selected live-test symbol
+13. all live gates before trade
+14. arx_live_commands before count/max_id
+15. MT5 open positions before
+16. ARX open positions before
+17. real MT5 ticket/order/position/deal ID
+18. open price
+19. close price
+20. open time
+21. close time
+22. P/L
+23. ARX ledger verification
+24. Trade page verification with Entry/Now/P&L
+25. Scanner/chart verification
+26. Ruby explanation verification
+27. arx_live_commands after count/max_id
+28. MT5 open positions after
+29. ARX open positions after
+30. confirmation only one live trade was opened
+31. confirmation trade was closed
+32. confirmation no Demo/Paper/fake execution used
+33. confirmation no safety gate was bypassed
+34. typecheck result
+35. ci:guards result
+36. remaining risks
+
+Completion standard:
+This task is not complete until ARX places one real live trade, MT5 confirms it with a real ticket/order/position/deal ID, ARX displays it with Entry/Now/P&L, and ARX closes it with MT5 confirmation.
+
+Do not mark complete while trades remain stuck at “Waiting for MT5 sync.”
+Do not mark complete if no real MT5 ticket exists.
+Do not mark complete if the Trade page shows fake/unsynced positions as live trades.

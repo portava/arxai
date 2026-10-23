@@ -1,0 +1,77 @@
+EA v1.26 is now armed correctly. MT5 shows:
+AccountType=DEMO
+ReadOnlyMode=false
+EnableDemoExecution=true
+heartbeat HTTP 200
+sync-account HTTP 200
+sync-positions HTTP 200
+
+The bridge is alive, but the Experts tab still does not show a fresh [CMD] received or OrderSend result after placing the ARX demo trade.
+
+Now debug and fix the command delivery path only.
+
+Do not rebuild the EA unless absolutely necessary. Focus on server/app/queue routing.
+
+Run a real EURUSD 0.02 demo test from the ARX dashboard and trace the exact command id through every layer:
+
+1. When I press place demo trade in ARX, log:
+   - user/session id
+   - account id / connection id
+   - symbol
+   - side
+   - volume
+   - lot
+   - command id
+   - endpoint hit
+   - DB row created or queue entry created
+
+2. Confirm the command is stored in the same table/queue that /api/mt5/commands returns.
+
+3. Confirm /api/mt5/commands returns the pending command to the EA using the same:
+   - bridge token
+   - connection id
+   - account id
+   - environment mode demo
+   - symbol
+
+4. Add server logs for every EA poll:
+   - token accepted/rejected
+   - connection id
+   - account id
+   - number of pending commands returned
+   - returned command ids
+
+5. Add server logs when command result is posted back:
+   - command id
+   - status FILLED / REJECTED / ERROR
+   - ticket
+   - retcode
+   - message
+
+6. If ARX creates the command but EA polling returns 0 commands, fix the account/session/connection routing mismatch.
+
+7. If EA receives the command but does not OrderSend, surface the exact EA rejection reason.
+
+8. If MT5 rejects OrderSend, surface MT5 retcode and broker message in ARX.
+
+9. Update ARX UI so the trade ticket stays in one of these clear states:
+   - QUEUED
+   - SENT_TO_EA
+   - RECEIVED_BY_EA
+   - ORDER_SEND_ATTEMPTED
+   - FILLED
+   - REJECTED
+   - ERROR
+
+10. Add a debug panel showing:
+   - latest command id created by ARX
+   - latest command id returned to EA
+   - latest command id acknowledged by EA
+   - latest result posted back by EA
+
+Acceptance proof required:
+- ARX command id created
+- /api/mt5/commands returns same command id
+- EA Experts tab shows same command id received
+- EA shows OrderSend result
+- ARX UI shows final FILLED or REJECTED status

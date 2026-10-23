@@ -1,0 +1,69 @@
+P0 runtime continuity gate before any next phase.
+
+Do NOT build new features yet.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT weaken any safety gate.
+
+The app previously showed this browser runtime error:
+[plugin:runtime-error-plugin] Can't find variable: require
+
+Before continuing, verify the app is actually loading cleanly in the browser.
+
+Step 1 — Confirm runtime error is fixed
+- Search the entire project for browser-side CommonJS/Node usage:
+  - require(
+  - module.exports
+  - exports.
+  - fs
+  - path
+  - child_process
+  - os
+  - Node crypto imported into frontend/shared browser code
+- Identify any file imported by React/client/frontend code that still uses Node-only logic.
+- If found, fix it by moving Node-only logic to server-only modules or converting browser-safe code to ESM/browser APIs.
+- Do NOT hide the overlay with server.hmr.overlay=false.
+
+Step 2 — Verify frontend loads
+Run:
+1. Typecheck
+2. Full guard suite
+3. Frontend build
+4. Start dev server
+5. Open the app route and confirm the browser loads without:
+   - “Can’t find variable: require”
+   - Vite runtime overlay
+   - blank screen
+   - console crash
+
+Step 3 — Reconfirm Phase 26 safety state
+Confirm the following are still true:
+- Auto-close execution = ALERT_ONLY / hard-blocked
+- MT5/live trading = BLOCKED
+- Shared MT5 routing = BLOCKED
+- Per-user SQL/session filters intact
+- No fake balance, P&L, bridge status, news, TP targets, or current events
+- AI portfolio tools remain read-only and per-user scoped
+
+Step 4 — If runtime is clean, continue to next phase
+Only if all checks pass, continue to:
+MT5 Bridge Read-Only Sync + Reconciliation + Command Queue Safety.
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun the full checks.
+
+End with a report showing:
+- Whether the require runtime error is fixed
+- Exact file that caused it, if any
+- Files changed
+- Typecheck result
+- Guard result
+- Frontend build result
+- Browser load result
+- Phase 26 safety status
+- Whether it continued into MT5 Bridge Read-Only Sync
+- Final answer: READY TO CONTINUE or NOT READY, with reasons.

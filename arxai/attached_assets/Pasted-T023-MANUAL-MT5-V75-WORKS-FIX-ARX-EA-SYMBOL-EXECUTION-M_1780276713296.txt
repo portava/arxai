@@ -1,0 +1,206 @@
+T023 — MANUAL MT5 V75 WORKS, FIX ARX/EA SYMBOL EXECUTION MISMATCH
+
+Important correction:
+The user can trade V75 directly from the MT5 terminal.
+
+Therefore, the issue is not that V75 is unavailable, not tradable, or missing from Market Watch.
+
+If manual MT5 trading works, then the broker account can trade the symbol. The failure is in the ARX → bridge → EA symbol resolution, pre-trade guard, or OrderSend preparation path.
+
+Do not keep reporting “symbol not selectable” or “terminal/broker truth” as the final answer unless you prove why the EA cannot select the same exact symbol that MT5 manual trading can use.
+
+Current confirmed facts:
+
+1. ARX can place live EURUSD.
+2. MT5 can manually trade V75.
+3. ARX V75 command reaches the EA.
+4. EA rejects before OrderSend with NULL retcode / EA_REJECTED_NO_DETAIL.
+5. Therefore, the bug is likely in ARX symbol mapping, EA symbol resolution, EA pre-trade guard, or synthetic-specific OrderSend preparation.
+
+Goal:
+Make ARX place the same V75 symbol that the user can manually trade in MT5.
+
+Do not use Demo.
+Do not use Paper.
+Do not fake execution.
+Do not fabricate tickets.
+Do not bypass MT5 confirmation.
+Do not bypass security, ownership, or broker truth checks.
+Do not mark complete until ARX places one real V75 live trade, MT5 returns a real ticket/order/position/deal ID, ARX records it, and the trade is closed.
+
+PART 1 — Compare manual MT5 symbol vs ARX/EA symbol
+
+Capture the exact symbol used by manual MT5 trading.
+
+From the MT5 terminal / EA, report:
+
+1. Active chart symbol where manual V75 trade works.
+2. ChartSymbol(0) if available.
+3. Exact Market Watch symbol name.
+4. Exact symbol string length.
+5. Any hidden characters, suffixes, spaces, parentheses, or capitalization.
+6. Whether it is:
+    * Volatility 75 Index
+    * Volatility 75 (1s) Index
+    * another exact broker string.
+
+Then compare against:
+
+1. ARX display symbol.
+2. ARX internal symbol.
+3. ARX brokerSymbol.
+4. Symbol sent to bridge.
+5. Symbol received by EA.
+6. Symbol passed to SymbolSelect.
+7. Symbol passed to CTrade.Buy/Sell or OrderSend.
+
+Report any mismatch.
+
+PART 2 — Add an EA echo diagnostic
+
+Add or use an admin-only diagnostic that makes the EA echo:
+
+1. requestedSymbol from ARX
+2. resolvedBrokerSymbol
+3. exact symbol selected
+4. SymbolSelect(symbol, true) result
+5. SymbolInfoInteger(symbol, SYMBOL_SELECT)
+6. SymbolInfoInteger(symbol, SYMBOL_VISIBLE)
+7. SymbolInfoInteger(symbol, SYMBOL_TRADE_MODE)
+8. bid
+9. ask
+10. min volume
+11. max volume
+12. volume step
+13. digits
+14. point
+15. filling mode
+16. stops level
+17. freeze level
+18. GetLastError() after each failed symbol/rule call
+
+This must be returned before the EA rejects, so we know exactly why it refuses before OrderSend.
+
+PART 3 — Fix mapping to use the exact MT5 symbol
+
+If ARX is sending a short code like V75, map it to the exact MT5 broker symbol.
+
+Examples:
+
+1. V75 must map to the exact symbol manually tradable in MT5.
+2. V75_1S must map to the exact Volatility 75 (1s) Index symbol if that is the user’s intended symbol.
+3. Do not guess between normal V75 and 1s V75.
+4. The UI must show which one is selected.
+5. The backend must send the exact brokerSymbol to the EA.
+6. The EA must use that exact brokerSymbol for SymbolSelect and OrderSend.
+
+PART 4 — Compare manual order settings vs EA order settings
+
+Manual MT5 trading may work because MT5 automatically uses symbol-specific order parameters.
+
+Compare:
+
+1. manual symbol
+2. manual volume
+3. manual order type
+4. manual filling mode
+5. manual deviation
+6. manual SL/TP empty or set
+7. bid/ask used
+8. volume min/step
+9. price digits
+10. stop levels
+
+Then compare EA order request:
+
+1. symbol
+2. volume
+3. order type
+4. filling mode
+5. deviation
+6. SL/TP
+7. price
+8. magic/comment
+9. expiration/type_time if used
+
+Fix the EA to use symbol-compatible defaults for Deriv synthetic indices.
+
+Do not apply EURUSD/forex assumptions to V75.
+
+PART 5 — Fix EA pre-trade guard
+
+If MT5 manual trade works, the EA pre-trade guard should not reject with no detail.
+
+Update the guard so it either:
+
+1. resolves the exact same broker symbol and proceeds to OrderSend, or
+2. returns a precise reason why it cannot.
+
+No more EA_REJECTED_NO_DETAIL.
+
+Required reject reasons:
+
+1. SYMBOL_STRING_MISMATCH
+2. SYMBOL_SELECT_FAILED
+3. SYMBOL_NOT_VISIBLE
+4. SYMBOL_TRADE_DISABLED
+5. NO_BID_ASK
+6. INVALID_VOLUME
+7. INVALID_FILLING_MODE
+8. INVALID_STOPS
+9. ACCOUNT_TRADE_DISABLED
+10. TERMINAL_TRADE_DISABLED
+11. MQL_TRADE_DISABLED
+12. UNKNOWN_PRE_ORDER_FAILURE_WITH_GETLASTERROR
+
+PART 6 — Execute one ARX V75 live proof trade
+
+After fixing mapping/guard/order settings:
+
+1. Use LIVE only.
+2. Use owner/admin account.
+3. Use the exact same V75 symbol that the user can manually trade.
+4. Use smallest broker-valid lot.
+5. No SL/TP unless Governance requires it.
+6. Single Confirm.
+7. Do not let Ruby choose direction.
+8. Press Confirm once.
+9. Confirm EA reaches OrderSend.
+10. Confirm MT5 returns success retcode.
+11. Capture real MT5 ticket/order/position/deal ID.
+12. Confirm ARX stores the ID.
+13. Confirm trade appears with Entry/Now/P&L.
+14. Close immediately through ARX.
+15. Confirm MT5 close.
+16. Confirm ARX ledger close.
+17. Do not open more than one trade.
+
+PART 7 — Final report required
+
+Final report must include:
+
+1. exact symbol manually tradable in MT5
+2. exact symbol ARX previously sent
+3. exact mismatch found
+4. exact brokerSymbol now used
+5. EA echo diagnostic result
+6. SymbolSelect result
+7. trade mode
+8. bid/ask
+9. volume min/max/step
+10. filling mode
+11. whether OrderSend was called
+12. MT5 retcode/comment
+13. MT5 ticket/order/position/deal ID if executed
+14. ARX ledger verification
+15. Trade page verification
+16. Scanner/chart verification
+17. close verification
+18. confirmation no Demo/Paper/fake execution used
+19. confirmation no security/broker truth checks bypassed
+20. health:workflows result
+21. typecheck result
+22. ci:guards result
+
+Completion standard:
+This task is complete only when ARX can place the same V75 symbol the user can manually trade in MT5, or when the EA returns a precise technical mismatch proving exactly why the ARX/EA path differs from manual MT5 trading.

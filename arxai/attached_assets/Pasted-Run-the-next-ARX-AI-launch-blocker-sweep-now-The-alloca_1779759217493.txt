@@ -1,0 +1,219 @@
+Run the next ARX AI launch blocker sweep now.
+
+The allocations system is now green:
+- Runtime QA: 72/72 PASS
+- Typecheck: clean
+- CI guards: 23/23 PASS
+- Phase B 16-gate: 20/20 PASS
+- Demo arming: 18/18 PASS
+- Demo verify: 13/13 PASS
+- arx_live_commands count: 0
+- No duplicate allocation system
+- No fake balances
+- No master balance leak to normal users
+- No operator phrases submitted
+- No safety gates weakened
+
+Do not redo the allocations work unless this sweep finds a real regression.
+
+Main objective:
+Find and fix the remaining launch blockers across Deriv, macro/news data, scanner historical data, Ruby runtime behavior, and full UI click-through.
+
+Important:
+Do NOT rebuild the app.
+Do NOT create duplicate systems.
+Do NOT fake data.
+Do NOT fake live readiness.
+Do NOT expose secrets.
+Do NOT weaken safety gates.
+Do NOT insert live commands.
+Do NOT type operator phrases.
+Do NOT hide real blockers.
+Only fix what is actually broken.
+
+Create checkpoint first:
+checkpoint: pre-final-launch-blocker-sweep
+
+1. Deriv credential/API mode
+Deriv is still the biggest unresolved provider issue.
+
+Audit and fix:
+- Detect whether current Deriv credentials are legacy numeric app_id + legacy token, or new PAT/app-client format.
+- Do not send PAT-style credentials into legacy WebSocket v3 incorrectly.
+- Do not send long alphanumeric app IDs as legacy numeric app_id.
+- Add or verify credential-mode resolver.
+- Admin diagnostics should clearly show:
+  - credential mode detected
+  - app ID format valid/invalid, masked
+  - token format valid/invalid, masked
+  - selected Deriv connection strategy
+  - sanitized failure reason
+  - active_symbols test
+  - ticks test
+  - ticks_history test
+
+Normal users should never see raw 401s, provider internals, tokens, app IDs, WebSocket errors, or backend constants.
+
+If credentials are operator-side wrong, do not pretend code fixed it. Show exact admin-only action needed.
+
+2. Deriv/Volatility scanner support
+Verify:
+- V75
+- Volatility 75
+- V75 1s
+- V25 1s
+- V10
+- V50
+- V100
+
+These should route to Deriv or MT5, not TwelveData.
+
+If Deriv credentials are not valid yet:
+- Scanner should show a clean user-facing “feed unavailable” or “symbol not available” message.
+- Admin should see the sanitized credential reason.
+- Do not show “no feed” just because TwelveData failed.
+
+3. Macro/news/dataHub connectors
+Earlier deleted/stale dataHub.ts included connector ideas like FRED, CoinGecko, Marketaux, Alpaca News.
+
+ARX ecosystem requires Ruby/scanner to use market news, macro data, economic data, and current events when relevant.
+
+Audit:
+- Which macro/news/economic providers are currently configured in env/secrets.
+- Which providers are actually used.
+- Which providers are configured but unused.
+- Which providers are not configured.
+- Whether scanner/Ruby can access news/macro context.
+- Whether Provider Health shows news/macro provider status.
+
+Fix only what is already configured and clearly broken/unwired.
+Do not add new paid provider dependencies unless the code/secrets already exist.
+If a provider is missing credentials, show admin-only “credential needed.”
+
+4. Scanner historical data
+Re-test scanner historical candles after the allocations work.
+
+Verify:
+- EURUSD
+- BTCUSD/BTCUSDT
+- XAUUSD
+- AAPL
+- V75 if Deriv/MT5 supports it
+- V75 1s if Deriv/MT5 supports it
+
+Check timeframes:
+- 1m
+- 5m
+- 15m
+- 1h
+- 4h
+- 1d
+
+Scanner must:
+- use the unified Market Data Router
+- not rely only on TwelveData
+- not run scoring without candles
+- not show false “no historical data”
+- not silently return empty arrays
+- not fake candles
+
+5. Ruby runtime behavior
+Do a real runtime check, not just structural code review.
+
+Test:
+- simple prompt
+- app-help prompt
+- market prompt
+- deep market prompt
+- voice auto-speak
+- selected voice
+- stale audio cancellation
+- research summarization
+
+Ruby should:
+- start responding quickly
+- show typing/thinking immediately
+- type naturally instead of dumping one giant block
+- summarize research instead of pasting raw research
+- not read full research out loud
+- not speak minutes later
+- cancel stale TTS if a new message arrives
+- use selected voice
+- keep backend/provider/debug details hidden from normal users
+
+If runtime testing needs an interactive session, create a lightweight test harness or manual checklist and run what can be automated. Fix clear code issues.
+
+6. Full UI click-through smoke test
+Go through the actual app UI and verify every active launch-critical section:
+- login
+- user dashboard
+- admin dashboard
+- admin allocations
+- user allocation view
+- MT5 bridge page
+- Provider Health
+- Deriv Health
+- scanner
+- market search
+- watchlist
+- charts
+- Ruby assistant
+- trade ticket
+- command queue
+- live readiness
+- paper/demo/live mode sections
+- mobile nav
+
+For every visible:
+- button
+- toggle
+- tab
+- dropdown
+- search bar
+- filter
+- modal
+- menu item
+- form
+- card action
+
+Confirm it either works or is accurately disabled with a clean reason.
+
+No deleted routes. No dead buttons. No 404s. No backend constants visible to users. No admin controls visible to normal users.
+
+7. Final QA commands
+Run:
+- typecheck
+- build
+- lint if available
+- CI guards
+- Phase B / 16-gate tests
+- demo arming
+- demo verify
+- allocation runtime QA
+- provider health checks
+- scanner historical checks
+- Ruby runtime checks if available
+- route/import graph checks
+- user/admin visibility leak checks
+
+8. Fix strategy
+If a fix breaks something else:
+- rollback that specific change
+- repair through the shared source of truth
+- retest both areas
+- create checkpoint after safe fix
+
+Do not return obvious fixable errors. Fix them.
+
+Final report:
+Include:
+- checkpoints created
+- Deriv status and exact remaining operator action if any
+- macro/news provider status
+- scanner historical data status
+- Ruby runtime status
+- UI click-through status
+- routes/buttons/toggles tested
+- fixes made
+- remaining launch blockers
+- whether app is launch-ready for live UI, live bridge, scanner, Ruby, and allocations

@@ -1,0 +1,373 @@
+PHASE 22L — AUDIT FIRST, THEN CONNECT ARX AI TO REAL APP TOOLS, SCANNER, MT5, RISK, AND TRADE DATA
+
+Do NOT rebuild the app. Do NOT redesign the UI. Do NOT duplicate existing systems.
+
+FIRST inspect what already exists, then patch only what is missing or broken.
+
+WHY THIS PHASE MATTERS:
+ARX AI should not answer from guesses when the app already has data or tools. If the user asks about scanner, MT5 bridge, trades, risk, account setup, calendar, or app usage, ARX should check the correct app system first, then answer based on real available data.
+
+MAIN GOAL:
+Turn ARX AI into a real app-aware assistant.
+
+ARX should be able to:
+- check MT5 bridge status
+- check market data status
+- check scanner candidates
+- check user trade history
+- check paper-trading performance
+- check risk settings
+- check onboarding/setup progress
+- check current page context
+- answer follow-ups using memory
+- explain when data is unavailable
+- never fake live market data
+- never recommend live execution while live execution is locked
+
+STRICT RULES:
+1. Audit first before patching.
+2. Do not fake scanner results.
+3. Do not fake MT5 bridge connection.
+4. Do not fake market data.
+5. Do not recommend live trading while live execution is locked.
+6. Do not mix one user’s data with another user’s data.
+7. Do not let AI memory override real current app state.
+8. Do not let failed tools break normal AI chat.
+9. Do not show raw backend errors.
+10. Do not duplicate routes or tool systems if they already exist.
+
+STEP 1 — AUDIT CURRENT TOOL / APP DATA SYSTEM FIRST
+
+Inspect and report what currently exists for:
+
+A. ARX AI tool routing
+- Does backend AI route support tools/functions?
+- Is there a tool registry?
+- Are tools called before final AI response?
+- Are tool results added to AI context?
+- Are failed tools handled cleanly?
+- Are tool calls logged?
+
+B. MT5 bridge
+- Existing MT5 heartbeat/status route
+- Whether status is user-specific
+- Whether frontend already reads bridge status
+- Whether AI can access bridge status
+- Whether status is real or placeholder
+
+C. Market data
+- Current market data route/provider
+- Whether market data is connected
+- Whether live/cached/demo states are labeled
+- Whether AI can see market data state
+- Whether disconnected state blocks scanner correctly
+
+D. Market scanner
+- Scanner UI/page
+- Scanner backend route
+- Scanner algorithm
+- Scanner candidate structure
+- Whether scanner uses real market data
+- Whether scanner currently returns placeholder/demo data
+- Whether AI can call scanner
+
+E. Trade/risk systems
+- Paper trade records
+- Trade journal
+- Win/loss calendar
+- Risk profile/settings
+- Trading style settings
+- AI analysis history
+- Whether all are scoped by userId/sessionId
+
+F. Page/app help
+- getCurrentPageHelp route/tool
+- Current page context source
+- Whether page help is too broad
+- Whether “?” still wrongly triggers page help
+
+Before patching, output:
+- files inspected
+- systems already working
+- partial systems
+- missing systems
+- unsafe/shared systems
+- duplicated systems
+- exact minimal patch plan
+
+STEP 2 — CREATE OR FIX A CANONICAL ARX TOOL REGISTRY
+
+If no clean tool registry exists, create one. If one exists, improve it.
+
+Required tools:
+
+1. getCurrentPageContext
+Purpose:
+Only explain the current page when the user clearly asks for page help.
+
+2. getMT5BridgeStatus
+Purpose:
+Return this user/session’s MT5 bridge connection status.
+
+Expected response:
+{
+  "ok": true,
+  "connected": true/false,
+  "lastHeartbeatAt": "...",
+  "accountMode": "paper" | "demo" | "live_locked",
+  "message": "..."
+}
+
+3. getMarketDataStatus
+Purpose:
+Tell whether live market data is available.
+
+Expected response:
+{
+  "ok": true,
+  "connected": true/false,
+  "source": "MT5" | "broker_feed" | "cached" | "none",
+  "timestamp": "...",
+  "message": "..."
+}
+
+4. getScannerCandidates
+Purpose:
+Return real scanner candidates only if market data exists.
+
+Expected response:
+{
+  "ok": true/false,
+  "marketDataConnected": true/false,
+  "source": "MT5" | "broker_feed" | "cached" | "none",
+  "timestamp": "...",
+  "candidates": [
+    {
+      "symbol": "XAUUSD",
+      "directionBias": "long" | "short" | "neutral",
+      "setupType": "breakout" | "pullback" | "trend continuation" | "range" | "avoid",
+      "confidence": 0-100,
+      "riskLevel": "low" | "medium" | "high",
+      "reason": "...",
+      "invalidIf": "...",
+      "paperTradeOnly": true
+    }
+  ],
+  "warnings": []
+}
+
+If market data is disconnected:
+{
+  "ok": false,
+  "code": "MARKET_DATA_NOT_CONNECTED",
+  "message": "Market data is not connected yet. Connect MT5 or a live data feed before using the scanner.",
+  "candidates": []
+}
+
+5. getRiskProfile
+Purpose:
+Return this user/session’s risk settings.
+
+6. getTradeHistory
+Purpose:
+Return this user/session’s paper trades/trade journal only.
+
+7. analyzeTrades
+Purpose:
+Analyze this user’s trade history if trades exist.
+
+8. getOnboardingStatus
+Purpose:
+Return setup progress:
+- risk settings completed
+- trading style completed
+- MT5 connected
+- first AI analysis completed
+- scanner ready
+
+9. getConversationMemory
+Purpose:
+Return recent messages, summary, and pendingAction for this user/session.
+
+10. updatePendingAction
+Purpose:
+Track unresolved scanner, MT5, risk, or trade-analysis requests.
+
+STEP 3 — PATCH AI INTENT ROUTING PRIORITY
+
+ARX should route messages in this order:
+
+1. Check pendingAction / unresolved follow-up
+Examples:
+- “?”
+- “and?”
+- “what happened?”
+- “did you check?”
+- “what did you find?”
+- “I asked you earlier”
+
+2. Check explicit tool request
+Examples:
+- “Check MT5 bridge”
+- “Analyze my trades”
+- “Check scanner”
+- “What market is good right now?”
+- “Explain my risk”
+
+3. Check current app/page help only if clearly requested
+Examples:
+- “How do I use this page?”
+- “What screen am I on?”
+- “Explain this dashboard”
+
+4. General AI response
+Use memory and app context, but do not invent live data.
+
+IMPORTANT:
+“?” should NEVER trigger page help unless the previous unresolved topic was page help.
+
+STEP 4 — MAKE SCANNER REQUESTS COMPLETE PROPERLY
+
+When user asks:
+“Check scanner and tell me what market is good to trade right now.”
+
+ARX must:
+1. Check market data status.
+2. If connected, call scanner.
+3. If scanner returns candidates, rank them.
+4. If no data, say exactly why.
+5. If scanner backend is missing, say scanner is not wired yet.
+6. Do not respond with “give me a moment” unless it completes the action in the same response flow.
+
+Correct disconnected response:
+“Market data is not connected yet, so I can’t honestly tell you the best market right now. Connect MT5 or a live data feed, then I can scan live conditions. For now, I can help you choose what to watch based on your trading style.”
+
+STEP 5 — TRADING SAFETY RULES
+
+When ARX discusses trades:
+- Use paper-trading language.
+- Include risk warnings.
+- Include invalidation conditions.
+- Do not guarantee profit.
+- Do not say “perfect trade.”
+- Do not place live trades.
+- Do not recommend live execution while live execution is locked.
+- If market data is unavailable, say that clearly.
+
+ARX can say:
+“Based on available scanner data, this is a paper-trade candidate.”
+
+ARX must not say:
+“This is the best live trade to take now.”
+
+STEP 6 — MAKE TOOL RESULTS USER-SPECIFIC
+
+Every tool call must be scoped by:
+- userId if logged in
+- anonymousSessionId if not logged in
+- conversationId where applicable
+
+Audit and patch any route that returns shared/global:
+- trades
+- scanner results
+- MT5 status
+- risk settings
+- AI history
+- calendar results
+- onboarding status
+
+No cross-user data leaks.
+
+STEP 7 — TOOL FAILURE HANDLING
+
+If a tool fails:
+- return clean JSON
+- log details server-side only
+- show user-safe message
+- keep AI chat usable
+- keep text input usable
+- keep quick suggestions usable
+- clear loading state
+
+Do not show:
+- stack traces
+- raw SQL errors
+- raw OpenAI errors
+- raw JSON dumps
+- node paths
+- HTML errors
+
+STEP 8 — UI STATUS STATES
+
+When ARX calls a tool, use accurate status labels:
+
+- “Checking MT5…”
+- “Checking scanner…”
+- “Analyzing trades…”
+- “Reading risk settings…”
+- “Reviewing setup…”
+
+Do not leave:
+- THINKING forever
+- SPEAKING when no audio plays
+- realtime ready when voice is not ready
+- market connected when disconnected
+
+STEP 9 — VOICE, TEXT, AND QUICK SUGGESTIONS MUST USE SAME TOOL ROUTER
+
+All of these should go through the same AI route:
+- typed message
+- voice transcript
+- quick suggestion buttons
+- auto-listen voice command
+
+Examples:
+Voice: “Check scanner.”
+Then voice: “What did you find?”
+ARX should follow up on scanner.
+
+Quick suggestion: “Market update”
+ARX should check market data status first.
+
+Typed: “?”
+ARX should check pendingAction first.
+
+STEP 10 — QA / FIX GATE
+
+After patching, run QA and fix failures before stopping.
+
+QA must verify:
+
+1. “Check MT5 bridge” calls MT5 bridge status tool.
+2. “Check scanner and tell me what market is good right now” calls market data/scanner tools.
+3. If market data is disconnected, ARX does not fake candidates.
+4. If scanner candidates exist, ARX ranks them with reason, risk, confidence, and invalidation.
+5. “?” after scanner request follows up on scanner request.
+6. “How do I use this page?” calls page help.
+7. “?” does not call page help unless page help was the prior topic.
+8. “Analyze my trades” checks this user’s trade history only.
+9. New user does not see another user’s trades or AI memory.
+10. Quick suggestions use the same tool router.
+11. Voice transcripts use the same tool router.
+12. Failed tool request does not break text chat.
+13. Loading state clears after success or failure.
+14. No raw backend errors appear.
+15. Market data disconnected does not break general AI chat.
+16. Paper-only/live execution locked state remains enforced.
+17. Mobile Safari layout remains stable.
+
+Only continue if QA passes. If anything fails, fix it and rerun QA.
+
+FINAL REPORT REQUIRED:
+After completion, report:
+- files inspected
+- files changed
+- existing tools found
+- tools created or patched
+- how ARX chooses which tool to call
+- how scanner requests work now
+- how MT5/market data status is checked
+- how user-specific data is enforced
+- how voice/text/quick suggestions share the same tool router
+- QA results
+- remaining recommended improvements

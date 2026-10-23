@@ -1,0 +1,227 @@
+T020 — FRESH LIVE EXECUTION PROOF ONLY, NO MORE GOVERNANCE CHANGES
+
+Continue from T019.
+
+T019 completed the system-wide governance-controlled restriction shift:
+
+1. Owner/admin app-added restrictions are now controlled by Admin Risk/Governance.
+2. Owner Live Control Mode works and is recoverable.
+3. Stop Loss / Take Profit / lot caps / symbol limits / scanner/Ruby/backtest/news requirements are governance-controlled.
+4. No live-gate bypass was introduced.
+5. No fake ticket was fabricated.
+6. Normal/non-approved users keep protective defaults.
+7. Tests passed: ci:guards 26/26, live-gov-dispatch 16/16, phaseB 20/20, architect review passed.
+
+Do not redo T019.
+Do not change governance again unless a direct bug blocks execution.
+Do not add more app-added restrictions.
+Do not rebuild.
+Do not use Demo.
+Do not use Paper.
+Do not fake execution.
+Do not claim success from an old historical ticket only.
+Do not claim success from “sent to bridge.”
+Do not claim success from ARX-only command rows.
+Do not claim success unless MT5 confirms a fresh live trade.
+
+Primary goal:
+Place one fresh real LIVE trade through ARX and close it immediately with MT5 confirmation.
+
+Completion standard:
+This task is complete only when a fresh live trade is placed after this task begins, MT5 returns a real ticket/order/position/deal ID, ARX records it, the trade appears with real Entry/Now/P&L, and the trade is closed through ARX with MT5 close confirmation.
+
+PART 1 — No more code changes unless required
+
+First, do not start by editing code.
+
+Run checks and attempt fresh live execution with the current system.
+
+Only change code if:
+
+1. a real app bug blocks execution
+2. the UI still blocks owner/admin despite Governance OFF
+3. ARX still misreports pending as executed
+4. bridge/EA handoff is broken
+5. symbol mapping is wrong
+6. MT5 returns a fixable app-side rejection
+
+If the block is broker/terminal/market truth, do not change app code. Report it clearly.
+
+PART 2 — Find a currently tradable MT5 symbol
+
+Because prior attempts failed due to forex being closed and synthetic symbols not being selectable/tradable in Market Watch, first identify a symbol the connected MT5 terminal can actually execute right now.
+
+Check MT5/bridge for:
+
+1. visible Market Watch symbols
+2. selectable symbols
+3. trade mode allowed
+4. market open status
+5. min lot
+6. lot step
+7. digits/tick size
+8. spread
+9. supported filling mode
+10. whether OrderSend can be attempted
+
+Preferred order:
+
+1. EURUSD if forex is open.
+2. Any other confirmed open forex symbol if forex is open.
+3. Any confirmed tradable synthetic/index symbol already visible in MT5 Market Watch.
+4. Do not use V75/V25 unless they are actually visible/selectable/tradable in this MT5 terminal.
+5. Do not pretend a symbol is tradable if MT5 cannot execute it.
+
+If no symbol is currently tradable:
+
+1. Do not fake a trade.
+2. Report exact broker/terminal reason.
+3. Leave the app one-click-ready.
+4. Provide the next exact operator step needed, such as adding the symbol to Market Watch or waiting for market open.
+
+PART 3 — Preflight
+
+Run:
+
+1. pnpm run health:workflows
+2. live-readiness check
+3. admin runtime diagnostics
+4. bridge/EA heartbeat check
+5. effective Governance dump for owner/admin
+6. symbol rules check for selected symbol
+
+Confirm:
+
+1. frontend serving
+2. api-server serving
+3. MT5 bridge connected
+4. EA/terminal connected
+5. account type LIVE/REAL
+6. LIVE_SHARED active
+7. owner/admin approved/armed
+8. Owner Live Control Mode ON
+9. app-added restrictions OFF unless Governance explicitly enables them
+10. SL optional
+11. TP optional
+12. Single Confirm ON
+13. broker symbol exists/tradable
+14. lot valid
+15. market open
+16. MT5 can accept order
+17. ARX ledger ready
+18. no Demo/Paper/fake fallback
+
+Record baseline:
+
+1. arx_live_commands count
+2. arx_live_commands max_id
+3. ARX open positions
+4. MT5 open positions
+5. selected symbol
+6. broker symbol
+7. lot
+8. direction
+9. owner allocation/current governance state
+
+PART 4 — Place one fresh live trade
+
+Rules:
+
+1. LIVE only.
+2. Owner/admin only.
+3. Use the selected currently tradable MT5 symbol.
+4. Use smallest broker-valid lot.
+5. No SL required unless Governance requires SL.
+6. No TP required unless Governance requires TP.
+7. One Confirm only.
+8. Do not let Ruby choose the direction.
+9. This is a wiring proof, not a strategy trade.
+10. Place only one trade.
+
+Execution:
+
+1. Open ARX.
+2. Go to Scanner or Trade page.
+3. Select the confirmed tradable symbol.
+4. Choose BUY or SELL manually.
+5. Press Confirm once.
+6. Confirm ARX shows pending, not fake executed.
+7. Confirm backend dispatch.
+8. Confirm bridge receives.
+9. Confirm EA receives.
+10. Confirm MT5 OrderSend occurs.
+11. Capture MT5 success retcode.
+12. Capture fresh MT5 ticket/order/position/deal ID.
+13. Confirm ARX stores MT5 ID.
+14. Confirm Trade page shows Entry / Now / P&L.
+15. Confirm Scanner/chart shows the trade.
+16. Confirm Ruby can explain it without exposing internals.
+17. Close immediately through ARX.
+18. Confirm MT5 close succeeds.
+19. Confirm ARX marks closed.
+20. Confirm open positions return to previous count.
+21. Do not open a second trade.
+
+PART 5 — If execution fails
+
+If execution fails:
+
+1. Do not mark complete.
+2. Do not claim success.
+3. Report exact failure layer:
+    * frontend validation
+    * backend governance
+    * backend security
+    * bridge dispatch
+    * EA receipt
+    * MT5 OrderSend
+    * broker rejection
+    * sync/ledger
+    * close path
+4. Report exact clean reason.
+5. If app-side, fix the smallest issue and retest.
+6. If broker/terminal-side, do not fake or bypass. Report exact operator action needed.
+
+PART 6 — Final report required
+
+Final report must include:
+
+1. selected tradable symbol
+2. broker symbol
+3. why this symbol was selected
+4. health:workflows result
+5. effective Governance state
+6. all live readiness results
+7. baseline arx_live_commands count/max_id
+8. baseline ARX open positions
+9. baseline MT5 open positions
+10. MT5 OrderSend result
+11. MT5 ticket/order/position/deal ID
+12. direction
+13. lot
+14. open price
+15. open time
+16. close result
+17. close price
+18. close time
+19. P/L
+20. ARX command verification
+21. ARX ledger verification
+22. Trade page Entry/Now/P&L verification
+23. Scanner/chart verification
+24. Ruby explanation verification
+25. after arx_live_commands count/max_id
+26. after ARX open positions
+27. after MT5 open positions
+28. confirmation trade closed
+29. confirmation no second trade opened
+30. confirmation no Demo/Paper/fake execution used
+31. confirmation no governance/security/broker truth bypassed
+32. typecheck result if code changed
+33. ci:guards result if code changed
+34. remaining risks
+
+Do not complete this task with only diagnostics.
+Do not complete this task with only old historical proof.
+Do not complete this task with “market closed” unless no tradable MT5 symbol exists right now.
+If no tradable symbol exists, report exactly what I need to do in MT5 to make one tradable.

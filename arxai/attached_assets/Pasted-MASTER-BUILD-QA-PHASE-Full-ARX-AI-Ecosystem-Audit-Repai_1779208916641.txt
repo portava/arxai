@@ -1,0 +1,545 @@
+MASTER BUILD/QA PHASE — Full ARX AI Ecosystem Audit + Repair Pass
+
+Use the current codebase. Check everything first before changing anything.
+
+Goal:
+Perform a complete full-system audit of ARX AI as one connected ecosystem and as individual features. Verify every feature, safety gate, AI/Ruby intelligence layer, scanner, watchlist, calendar alerts, trading flow, admin controls, beta invite system, live pilot controls, mobile UI, and saved-user-state system. Fix anything broken, missing, disconnected, duplicated, unsafe, out of place, or not matching the intended product vision.
+
+Important:
+Do not rebuild unrelated working systems.
+Do not remove safety gates to make tests pass.
+Do not enable public live trading.
+Do not fire live trades during QA.
+Do not create real live bridge commands during QA.
+Do not expose secrets.
+Do not mix user data.
+Do not trust frontend userId.
+Use authenticated backend session userId.
+Preserve working features.
+Fix only confirmed broken, missing, incomplete, disconnected, or unsafe pieces.
+
+Product vision:
+ARX AI is an AI trading fortress for disciplined trading decisions. Ruby is the private AI assistant for each user. Each user should feel like they are using the app alone, even if backend live routing uses operator-controlled/shared infrastructure. Demo, personal MT5, and operator-funded live pilot must remain clearly separated.
+
+1. Full system inventory first
+Before fixing anything, inspect and inventory:
+
+- auth/login/logout
+- admin login/role protection
+- invite code gate
+- 10-user private beta
+- operator-funded live pilot
+- onboarding
+- account mode setup
+- user private dashboard
+- user account shell
+- virtual balance/allocation
+- risk profiles
+- demo trading
+- personal MT5 setup
+- shared/operator-funded live pilot mode
+- MT5 bridge
+- shared master mapping
+- one-click trading
+- trade ticket
+- pending orders
+- SL/TP editing
+- close trade
+- close-only emergency mode
+- kill switches
+- force-review mode
+- trade queue
+- concurrency protections
+- exposure reservations
+- cooldowns
+- reconciliation center
+- NEEDS_REVIEW workflow
+- audit log center
+- evidence export
+- disclosure/legal/risk warning flow
+- production lockdown
+- mobile/iPhone Safari
+- Ruby text chat
+- Ruby voice
+- Ruby memory/learning
+- Ruby app knowledge
+- Ruby trading intelligence
+- scanner
+- direct symbol search
+- selected market explanation
+- watchlist
+- saved markets/setups
+- economic calendar
+- impact calendar
+- alert/watch calendar
+- news/current-events integration
+- chart position window
+- P/L calendar
+- notifications
+- feedback/report tool
+- docs/runbooks/checklists
+- test scripts
+- secret masking
+- no-live-command evidence
+
+Return an existing/missing/broken matrix before repairs.
+
+2. Ecosystem connection audit
+Verify every major system is connected correctly:
+
+- onboarding creates the correct private account shell
+- account mode controls which features user sees
+- user dashboard only shows current user data
+- scanner connects to selected symbol context
+- Ruby uses selected symbol/trade/account context
+- watchlist saves per user
+- saved alerts save per user
+- calendar alerts connect to scanner/Ruby/watchlist
+- trade ticket uses selected symbol and account mode
+- trade queue receives only confirmed trade actions
+- live pipeline checks every safety gate
+- admin approval connects to user readiness
+- risk profile connects to trade blocking
+- allocation connects to user balance/risk
+- ledger connects trades to user P/L
+- P/L calendar uses only user ledger/history
+- notifications are private
+- Ruby memory is private
+- audit logs record critical actions
+- reconciliation handles uncertain states
+- production readiness blocks unsafe launch
+- beta invite gate controls access
+- mobile layout does not block core flows
+
+Fix broken connections.
+
+3. User login, admin login, and invite code
+Verify/fix:
+
+- user login works
+- admin login works
+- logout works
+- logout clears query/client/user cache
+- admin routes are protected
+- non-admin cannot access admin APIs
+- invite-gated registration works
+- ARX_BETA_INVITE_REQUIRED or equivalent exists
+- valid invite allows registration
+- missing/invalid/revoked/expired/used invite blocks registration
+- beta cap is server-enforced at 10 accepted users
+- 11th user is blocked or waitlisted
+- invite codes/hashes are not exposed
+- admin can create/copy/revoke invites
+- audit logs record invite events
+
+4. Per-user privacy and private workspace
+Verify/fix:
+
+- User A cannot see User B dashboard
+- User A cannot see User B trades
+- User A cannot see User B P/L
+- User A cannot see User B notifications
+- User A cannot see User B scanner state
+- User A cannot see User B watchlist
+- User A cannot see User B Ruby memory
+- User A cannot close/edit/cancel User B trade
+- logout/login switch clears stale state
+- cached data is keyed by authenticated userId
+- backend ignores frontend-provided userId for protected data
+
+5. Saved feature system
+Verify/fix all save/persist features:
+
+- saved symbols
+- saved watchlist
+- saved scanner selections
+- saved market notes
+- saved Ruby chats/memory
+- saved trade ideas
+- saved chart/trade notes
+- saved alerts
+- saved economic calendar events
+- saved impact-calendar events
+- saved user preferences
+- saved account mode
+- saved risk settings
+- saved notification preferences
+
+Rules:
+- saved items must be private per user
+- saved items must persist after refresh/login
+- saved items must clear from UI on logout
+- User A cannot see User B saved items
+- Ruby can reference only current user’s saved items
+- admin can view only when admin-authorized and safe
+- no secrets stored in saved items
+
+6. Ruby AI intelligence and learning capabilities
+Audit Ruby as an AI brain, not just a chat box.
+
+Verify/fix Ruby can:
+
+App intelligence:
+- explain what ARX AI is
+- explain every page
+- explain every account mode
+- explain onboarding
+- explain demo/personal MT5/operator-funded live pilot
+- explain admin approval
+- explain disclosures
+- explain risk profiles
+- explain why a feature is locked
+- explain what user should do next
+
+Trading intelligence:
+- use scanner context
+- use chart history
+- use market structure
+- use support/resistance
+- use indicators already available
+- use volume if available
+- use economic calendar
+- use impact calendar
+- use news/current events where available
+- use open trade context
+- use user risk profile
+- use watchlist/saved markets
+- label uncertainty when data is missing
+- never guarantee profit
+- never claim legal approval
+- never claim a trade fired unless system confirms it
+
+Learning/memory:
+- remember user conversations only under current user
+- save user-specific Ruby memory
+- allow user to clear memory
+- no cross-user memory leak
+- no fake first-load memory
+- Ruby should improve responses from user’s history/preferences/watchlist/trading style
+- Ruby should not store raw audio
+- Ruby should not store secrets
+- Ruby should not use admin/global data for normal users
+
+Voice:
+- auto-listen state works
+- tap-to-start fallback for iOS
+- silence detection sends once
+- empty/duplicate transcripts ignored
+- Ruby speaks response if enabled
+- mic pauses while Ruby speaks
+- voice cannot bypass confirmation
+- voice cannot bypass live safety gates
+- voice close/edit/open actions require confirmation
+
+7. Scanner system
+Verify/fix scanner:
+
+- direct symbol search works
+- grouped scanner still works
+- broker suffix/prefix normalization works
+- unavailable symbol shows clean message
+- scanner opens clean with no fake recommendation
+- selected market detail loads
+- Ruby explanation appears after symbol selection
+- scanner highlights show:
+  - bias
+  - confidence
+  - volatility
+  - trend state
+  - support/resistance
+  - possible entry zone
+  - suggested SL area
+  - suggested TP areas
+  - upcoming high-impact events
+  - risk warnings
+- scanner-to-trade opens safe trade ticket
+- scanner does not bypass confirmation
+- scanner does not create live command without full safety gates
+- scanner analysis refresh is throttled/cached
+- scanner does not spam AI/backend
+
+8. Watchlist, watch calendar, and alert system
+Verify/fix watch/calendar alert ecosystem:
+
+Watchlist:
+- user can save/remove symbols
+- watchlist is private per user
+- watchlist persists
+- watchlist supports scanner/Ruby context
+
+Watch calendar / alert calendar:
+- user can watch symbols/events
+- user can set alerts for:
+  - price level
+  - support/resistance zone
+  - volatility spike
+  - scanner bias change
+  - Ruby risk warning
+  - economic calendar event
+  - impact calendar event
+  - surprise/high-impact news event
+  - open trade warning
+  - TP/SL proximity
+  - daily loss warning
+  - bridge/account status issue
+- alerts are private per user
+- alerts show in notifications
+- alerts can be dismissed
+- alerts do not duplicate/spam
+- alerts respect quiet/frequency limits if available
+- alerts do not trigger from fake data
+- alerts do not expose other users
+
+Calendar:
+- economic calendar is connected where existing
+- impact calendar is connected where existing
+- surprise/random event detection is connected if available
+- events are labeled Low/Medium/High/Critical
+- Ruby can explain event relevance to selected symbol
+- scanner can show upcoming event risk
+- user can save/watch events
+
+If parts are missing, add the smallest safe adapter/UI connection needed.
+
+9. Trading flows
+Verify/fix:
+
+Demo:
+- demo works safely
+- demo trades never create live commands
+- demo P/L updates privately
+
+Personal MT5:
+- personal setup state works
+- heartbeat/read-only/live flags shown safely
+- personal MT5 does not route through shared master
+- live blocked unless all gates pass
+
+Operator-funded live pilot:
+- max 10 approved users
+- each user individually approved
+- assigned allocation required
+- risk profile required
+- disclosures required
+- compliance flag required
+- shared master mapping required
+- bridge health required
+- global live flag required
+- EA live enabled and not read-only required
+- kill switch inactive required
+- close-only/force-review respected
+- exposure/cooldown/risk checks required
+- confirmation required
+- one-click live OFF by default
+
+Trade ticket:
+- symbol
+- direction
+- lot size
+- SL
+- TP
+- order type
+- risk estimate
+- account mode
+- confirmation
+- clean blocked reason
+
+Pending orders:
+- buy limit
+- sell limit
+- buy stop
+- sell stop
+- buy stop limit
+- sell stop limit
+- validation by price direction and account mode
+
+SL/TP:
+- edit works only for owned trades
+- confirmation required
+- validation required
+
+Close:
+- close owned trade only
+- close confirmation required
+- close-only mode allows only safe verified exits
+- no cross-user close
+- uncertain state becomes NEEDS_REVIEW
+
+10. Admin/operator ecosystem
+Verify/fix:
+
+- Admin dashboard
+- Beta Control Center
+- Live Pilot Control Center
+- User approval console
+- Shared master mapping
+- Bridge status
+- Readiness dashboard
+- Kill switches
+- Close-only controls
+- Queue controls
+- Reconciliation center
+- Audit log center
+- Evidence export
+- Compliance/disclosure panel
+- Production readiness checklist
+
+Admin must be able to:
+- approve/revoke users
+- create/revoke invites
+- pause/resume users
+- set allocations
+- set risk profiles
+- pause symbols
+- pause bridges
+- disable all live trading
+- enable close-only
+- force review
+- view blocked/queued/failed/needs-review commands
+- export masked evidence
+- see no-live-command evidence
+
+Non-admin must not access any admin control.
+
+11. Safety and compliance gates
+Verify/fix all gates:
+
+- global live flag
+- admin approval
+- disclosure accepted
+- compliance/legal review flag
+- operator-funded allocation
+- risk profile
+- max lot size
+- max open trades
+- daily loss
+- allowed symbols
+- bridge health
+- shared master mapping
+- EA read-only/live flags
+- queue pause
+- kill switch
+- close-only mode
+- force-review mode
+- exposure reservation
+- cooldown
+- idempotency
+- confirmation
+- one-click permission
+
+Every blocked action must return clean user-facing reason.
+
+12. Audit, reconciliation, and evidence
+Verify/fix:
+
+- every critical action creates audit log
+- blocked trade actions are audited
+- invite events are audited
+- admin actions are audited
+- Ruby/voice guardrail events are audited
+- kill switches audited
+- reconciliation audited
+- evidence export masks secrets
+- no-live-command evidence available
+- NEEDS_REVIEW workflow works
+- uncertain ownership is never guessed
+- duplicate callbacks do not double-settle
+- stuck reservations detected
+- failed commands do not retry blindly
+
+13. Production, mobile, and UI polish
+Verify/fix:
+
+- production live defaults OFF
+- feature flags fail closed
+- mock data hidden in production
+- no fake first-load data
+- empty states clean
+- mobile iPhone Safari works
+- Ruby widget does not block buttons
+- keyboard does not break forms
+- chart/trade ticket fits mobile
+- admin mobile screens usable enough
+- no raw stack traces
+- no raw SQL errors
+- no raw bridge payloads
+- no code-heavy user errors
+
+14. Tests and full QA script
+Create or update one master QA script:
+
+npm run qa:arx-full-ecosystem
+
+It should run or orchestrate the strongest existing checks for:
+- auth/login/logout
+- invite gate
+- 10-user beta
+- user privacy isolation
+- Ruby intelligence/context
+- Ruby voice
+- scanner/direct symbol
+- watchlist/saved features
+- watch calendar/alerts
+- economic/impact calendar
+- trade ticket
+- pending orders
+- SL/TP
+- close trade
+- demo trading
+- live pilot gates
+- queue/concurrency
+- kill switches
+- close-only
+- reconciliation
+- audit/export
+- admin protection
+- production lockdown
+- mobile critical smoke checks
+- secret leak probes
+- no-live-command evidence
+
+Script must:
+- snapshot arx_live_commands before
+- run checks
+- snapshot arx_live_commands after
+- fail if count changes unexpectedly
+- fail on secret leak
+- output PASS/FAIL report
+- list remaining blockers
+
+15. Repair rules
+Fix everything confirmed broken/missing/out of place, but follow these rules:
+
+- smallest safe fix
+- do not rewrite working systems
+- do not duplicate systems
+- do not bypass safety
+- do not hide failures
+- document remaining issues
+- classify blockers critical/high/medium/low
+- keep live execution off during QA
+
+16. Return final report
+Return:
+
+- overall ecosystem PASS/FAIL
+- feature matrix
+- what was broken/missing
+- what was fixed
+- what remains
+- critical blockers
+- high blockers
+- medium issues
+- low issues
+- files changed
+- tests added/run
+- master QA script name
+- Ruby intelligence status
+- scanner/watch/calendar alert status
+- saved feature status
+- admin/user/invite status
+- live safety status
+- mobile status
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

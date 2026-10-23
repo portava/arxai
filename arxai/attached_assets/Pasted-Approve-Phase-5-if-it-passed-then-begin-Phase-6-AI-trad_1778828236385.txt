@@ -1,0 +1,254 @@
+Approve Phase 5 if it passed, then begin Phase 6: AI trade review engine, mistake detection, trader coaching, and performance insights for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT place live trades.
+- Do NOT enable live execution.
+- Keep liveLocked = true.
+- Keep READ_ONLY / PAPER_ONLY active.
+- Keep AllowOrderExecution = false.
+- Do NOT touch MT5 EA .mq5 files.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT move to Phase 7 until Phase 6 QA passes.
+
+Current status:
+- Phase 1 identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Phase 3 per-user MT5 connections/trading sessions: PASS.
+- Phase 4 per-user command routing: PASS.
+- Phase 5 paper trade lifecycle, journal, calendar: expected PASS before this phase.
+- Now build AI review and coaching on top of the user’s own trading data.
+
+Main goal:
+The app should analyze each user’s paper trades, journal entries, session performance, calendar results, and behavior patterns to help them become a better trader — without ever placing trades.
+
+Phase 6A — AI trade review model:
+Create or finalize a user-owned ai_trade_reviews table.
+
+Required fields:
+- id
+- userId
+- paperTradeId
+- tradingSessionId nullable
+- reviewStatus: pending/completed/failed
+- setupGrade
+- entryGrade
+- exitGrade
+- riskGrade
+- disciplineGrade
+- overallGrade
+- aiConfidence
+- strengths json/text
+- weaknesses json/text
+- mistakeTags json/text
+- riskNotes
+- entryNotes
+- exitNotes
+- disciplineNotes
+- improvementPlan
+- createdAt
+- updatedAt
+
+Rules:
+- Every review must belong to userId.
+- Never accept userId from frontend.
+- User can only review their own trades.
+- AI review must never trigger live broker execution.
+
+Phase 6B — Backend routes:
+Add or verify these scoped routes:
+
+- GET /api/me/ai-trade-reviews
+- POST /api/me/paper-trades/:id/review
+- GET /api/me/paper-trades/:id/review
+- GET /api/me/trading-sessions/:id/ai-summary
+- GET /api/me/performance-insights
+- GET /api/me/coaching-plan
+
+Requirements:
+- requireUser on every route.
+- Scope all queries by req.authUser.id.
+- Verify paperTradeId belongs to req.authUser.id.
+- Verify tradingSessionId belongs to req.authUser.id.
+- Do not return global AI analysis to personal user dashboard.
+
+Phase 6C — AI review logic:
+Build an internal AI review engine that scores a trade using available fields:
+
+Inputs:
+- symbol
+- side
+- entryPrice
+- exitPrice
+- stopLoss
+- takeProfit
+- lotSize/positionSize
+- riskAmount
+- riskPercent
+- rewardRiskRatio
+- pnl
+- pnlPercent
+- reasonForEntry
+- reasonForExit
+- journal notes
+- disciplineScore
+- executionScore
+- mistakeTags
+- setupGrade
+- session result
+- calendar day result
+
+Review should analyze:
+1. Was the trade planned clearly?
+2. Was risk defined before entry?
+3. Was the reward-to-risk ratio reasonable?
+4. Did the trader follow their own plan?
+5. Was the exit disciplined or emotional?
+6. Did the trade match the strategy tag?
+7. Was the loss controlled?
+8. Was the win managed properly?
+9. What mistake pattern is appearing?
+10. What should the trader do better next time?
+
+Use structured output:
+- setupGrade: A-F or 0-100
+- entryGrade
+- exitGrade
+- riskGrade
+- disciplineGrade
+- overallGrade
+- mistakeTags
+- strengths
+- weaknesses
+- improvementPlan
+- nextTradeFocus
+
+Phase 6D — Pattern detection:
+Create user-owned performance insight logic.
+
+Analyze across user’s paper trades and journal entries:
+- most traded symbols
+- win rate by symbol
+- win rate by strategyTag
+- average win
+- average loss
+- best/worst trading days
+- most common mistakeTags
+- revenge trading signs
+- overtrading signs
+- poor risk/reward signs
+- closing winners too early
+- holding losers too long
+- trading without journal/reason
+- inconsistent disciplineScore
+- session performance trends
+
+Add a simple insight severity:
+- info
+- warning
+- critical
+
+Example insights:
+- “You win more often on trades with a defined stop loss.”
+- “Your losses are larger when no reasonForEntry is written.”
+- “Your best performance comes from London session setups.”
+- “You are taking too many trades after a losing trade.”
+
+Phase 6E — Coaching plan:
+Create a personalized coaching plan endpoint:
+
+GET /api/me/coaching-plan
+
+It should return:
+- current trader profile
+- top 3 strengths
+- top 3 weaknesses
+- top 3 mistakes to fix
+- recommended focus for next session
+- risk rule suggestion
+- journaling prompt
+- weekly goal
+- confidence note
+
+The coaching must be practical and app-native, not generic.
+
+Phase 6F — Frontend UI:
+Update only the trade review, trade detail, session summary, and dashboard insight areas.
+
+Add:
+- “Review this trade”
+- “AI Trade Review”
+- “Setup Grade”
+- “Risk Grade”
+- “Discipline Grade”
+- “Mistake Tags”
+- “What went well”
+- “What to fix”
+- “Next trade focus”
+- “Performance Insights”
+- “Coaching Plan”
+
+First-time states:
+- “No AI reviews yet”
+- “Close a paper trade to unlock AI review”
+- “Your coaching plan will improve as you journal more trades”
+
+Do not show fake AI insights for first-time users.
+
+Phase 6G — Safety:
+Hard rules:
+- AI cannot place trades.
+- AI cannot queue live orders.
+- AI cannot bypass liveLocked.
+- AI cannot turn AllowOrderExecution on.
+- AI can only review, summarize, score, and coach.
+- Any AI recommendation must be labeled educational/paper-trading guidance.
+
+Phase 6H — Tests:
+Add tests:
+
+1. User A reviews own paper trade.
+2. User B cannot review User A’s trade.
+3. User B cannot read User A’s AI review.
+4. AI review creates structured grades.
+5. AI review stores mistakeTags and improvementPlan.
+6. Session AI summary only includes that user’s trades.
+7. Performance insights only use that user’s data.
+8. Coaching plan only uses that user’s data.
+9. First-time user sees empty state.
+10. Live trade execution remains blocked.
+11. MT5 EA files untouched.
+12. No raw bridge token exposed.
+
+Phase 6I — QA/fix gate:
+After implementation, run QA and fix every issue before stopping.
+
+QA must confirm:
+- App starts.
+- Login/register/logout/me still work.
+- Phase 2 user scoping still passes.
+- Phase 3 MT5 connection isolation still passes.
+- Phase 4 command isolation still passes.
+- Phase 5 paper trade/journal/calendar still pass.
+- AI trade review works.
+- Performance insights work.
+- Coaching plan works.
+- No fake global AI data leaks into user dashboards.
+- No live trades executed.
+- No MT5 EA files changed.
+- Safety contract still passes.
+- Existing unrelated paperIntelligence.ts:123 typecheck issue is reported separately if still present.
+
+Final report format:
+1. Files changed
+2. Tables added/changed
+3. Routes added/changed
+4. AI trade review result
+5. Pattern detection result
+6. Coaching plan result
+7. User A/User B isolation result
+8. Safety verification
+9. Remaining errors
+10. Phase 6 PASS or FAIL
+11. Stop and wait for my approval before Phase 7

@@ -1,0 +1,70 @@
+Begin Phase 9 only: Portfolio Manager + Capital Allocation Intelligence.
+
+Do not build Evolution or unrestricted live auto-execution yet.
+
+Goal:
+Allocate risk, authority, and capital intelligently across strategies, symbols, sessions, and agents based on validation quality, survival quality, execution quality, decision quality, and market conditions.
+
+Build:
+
+/src/domain/portfolio-manager/
+  portfolioManager.types.ts
+  portfolioManager.engine.ts
+  riskBudget.engine.ts
+  strategyAllocation.engine.ts
+  capitalRotation.engine.ts
+  exposureBalancer.engine.ts
+  reserveCapital.engine.ts
+  performanceWeightedAllocation.engine.ts
+  symbolPriority.engine.ts
+  sessionPriority.engine.ts
+  agentAuthorityAllocation.engine.ts
+  convictionWeightedAllocation.engine.ts
+  survivalWeightedAllocation.engine.ts
+
+Rules:
+- Approved strategies do not automatically receive equal allocation.
+- Allocation must consider:
+  - validation quality
+  - edge durability
+  - execution quality
+  - decision quality
+  - survival score
+  - market regime fit
+  - trader behavior risk
+  - confidence health
+  - strategy trust score
+- High-risk or degrading strategies must lose allocation.
+- Reserve capital/risk must remain available during dangerous conditions.
+- Exposure Balancer must reduce correlated risk.
+- ConvictionWeightedAllocation can increase or reduce size dynamically.
+- SurvivalWeightedAllocation prioritizes long-term survivability over short-term profit.
+- Portfolio Manager cannot bypass Risk Governor or Control Tower.
+- All allocation changes must be logged into the Black Box Vault.
+
+Required outputs:
+- portfolioRiskBudget
+- strategyAllocationMap
+- reserveAllocation
+- convictionAllocation
+- survivalAllocation
+- exposureRiskScore
+- correlatedExposureScore
+- recommendedRestrictions
+- recommendedAggressionLevel
+
+Acceptance criteria:
+- Strategies receive dynamic allocation.
+- Exposure balancing works across symbols and strategies.
+- Dangerous conditions increase reserve allocation.
+- Allocation adapts to confidence health and edge durability.
+- Existing tests still pass.
+- No unrestricted live auto-execution yet.
+
+After Phase 9, stop and report:
+1. Files created
+2. Allocation systems implemented
+3. Exposure balancing implemented
+4. Survival weighting implemented
+5. Tests passed/failed
+6. Whether Phase 10 is safe to begin

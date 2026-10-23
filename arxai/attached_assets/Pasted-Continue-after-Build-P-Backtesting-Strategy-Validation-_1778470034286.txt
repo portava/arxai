@@ -1,0 +1,110 @@
+Continue after Build P — Backtesting & Strategy Validation Engine.
+
+Now begin Build Q — Paper Trading Sandbox.
+
+Goal:
+Create a realistic paper trading environment where users can test strategies, AI trade plans, risk rules, and execution flow without touching live broker funds.
+
+Tasks:
+
+1. Audit existing systems:
+- live execution safety layer
+- replay simulator
+- backtesting engine
+- trade plan builder
+- risk lock system
+- trader scoring
+- AI coach
+- broker/MT5 service
+
+2. Add paper trading models:
+
+paper_accounts:
+- id
+- user_id
+- account_name
+- starting_balance
+- current_balance
+- equity
+- margin_used
+- is_active
+- created_at
+- updated_at
+
+paper_orders:
+- id
+- user_id
+- paper_account_id
+- symbol
+- direction
+- order_type
+- lot_size
+- entry_price
+- stop_loss
+- take_profit
+- status
+- opened_at
+- closed_at
+- profit_loss
+- created_at
+- updated_at
+
+paper_trade_events:
+- id
+- user_id
+- paper_order_id
+- event_type
+- message
+- created_at
+
+3. Paper trading should support:
+- simulated buy/sell
+- simulated stop loss
+- simulated take profit
+- paper account balance
+- paper equity
+- simulated P/L
+- trade history
+- risk rules
+- AI feedback
+- strategy fit testing
+
+4. API routes:
+- POST create paper account
+- GET paper accounts
+- GET active paper account
+- POST place paper order
+- PATCH update paper order
+- POST close paper order
+- GET paper orders
+- GET paper trade history
+
+5. Frontend components:
+- Paper Trading Page
+- Paper Account Card
+- Paper Order Ticket
+- Paper Open Positions Panel
+- Paper Trade History
+- Paper Performance Summary
+
+6. Connect to:
+- Trade Plan Builder
+- AI Coach
+- Strategy Engine
+- Risk Management
+- Trader Growth Score
+
+Important:
+- Paper trading must never call live broker execution routes.
+- Clearly label all paper trades as simulated.
+- Paper trading can improve practice scores, but must not corrupt live trading stats.
+- Do not claim simulated results guarantee live results.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How paper trading is isolated from live execution
+6. Errors or limitations
+7. Recommended next build

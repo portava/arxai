@@ -1,0 +1,258 @@
+T029 — FIX PHANTOM OPEN POSITIONS + REQUIRE LIVE P/L ON EVERY POSITION
+
+Current issue:
+The Cockpit / ARX Allocation section shows open positions that do not appear in MT5.
+
+Screenshot shows:
+
+Open Positions (3):
+
+1. XAUUSD — SELL — 0.1 — Entry blank — Opened blank
+2. BTCUSDT — SELL — 0.1 — Entry blank — Opened blank
+3. BTCUSDT — SELL — 0.01 — Entry blank — Opened blank
+
+But the user says nothing was executed and these positions are not visible in MT5.
+
+Also, each position should display a live profit/loss amount. Current rows do not show live P/L.
+
+This is unacceptable.
+
+ARX must never show a position as “open” unless it is backed by a real MT5-confirmed open position or clearly labeled as pending/manual/unattributed review.
+
+Scope:
+This task is only for open-position truth, phantom/orphan cleanup, MT5 reconciliation, and live P/L display.
+
+Do not change live execution.
+Do not change Governance.
+Do not change order placement.
+Do not place a trade.
+Do not use Demo.
+Do not use Paper.
+Do not fake positions.
+Do not fabricate MT5 data.
+Do not hide real errors.
+
+Primary goal:
+The app must show only real MT5-confirmed open positions in “Open Positions,” and every open position must show live P/L, entry, current price, and MT5 ticket/position linkage.
+
+PART 1 — Audit the displayed open positions
+
+Investigate the three displayed positions:
+
+1. XAUUSD SELL 0.1
+2. BTCUSDT SELL 0.1
+3. BTCUSDT SELL 0.01
+
+For each record, report:
+
+1. ARX position id
+2. ARX command id if any
+3. userId
+4. allocationId
+5. source
+6. status
+7. symbol
+8. side
+9. lot
+10. entryPrice
+11. currentPrice
+12. openedAt
+13. closedAt
+14. mt5Ticket
+15. mt5OrderId
+16. mt5PositionId
+17. mt5DealId
+18. lastMt5SyncAt
+19. whether a matching MT5 open position exists
+20. whether this came from ARX execution, manual MT5 sync, seed/test data, stale mock, or reconciliation bug
+
+If no MT5 match exists:
+
+1. do not display it as an open live position
+2. mark it as orphan/reconciled/failed according to the ledger model
+3. preserve audit history
+4. remove it from active Open Positions view
+
+PART 2 — Enforce MT5-confirmed open-position rule
+
+Open Positions must be based on the latest MT5 open-position snapshot.
+
+Rules:
+
+1. A position can appear under “Open Positions” only if it has a matching real MT5 open position.
+2. Matching should use MT5 ticket/position ID where available.
+3. If no ticket/position ID exists, match by broker-provided position identifier only if reliable.
+4. ARX-only draft/pending records must not appear under Open Positions.
+5. Reconciled records must not appear under Open Positions.
+6. Failed/rejected records must not appear under Open Positions.
+7. Old seeded/test/demo records must not appear under live Open Positions.
+8. Manual MT5 positions may appear only if they are real MT5 positions and clearly labeled “Manual MT5 / Unassigned” until attributed.
+
+PART 3 — Fix blank Entry / Opened fields
+
+No active open-position row should show blank critical fields.
+
+For real MT5 positions, show:
+
+1. Symbol
+2. Side
+3. Lot
+4. Entry price
+5. Current price
+6. Live P/L
+7. Open time
+8. SL if set
+9. TP if set
+10. MT5 ticket/position ID in admin details
+11. Source:
+
+* ARX
+* Manual MT5
+* Ruby
+* Admin
+
+If any field is missing from MT5:
+
+1. show “Syncing…” briefly
+2. mark stale if not resolved
+3. do not leave blank dashes indefinitely
+4. admin details should show missing field cause
+
+PART 4 — Add live P/L to every position
+
+Every open position row/card must show live P/L.
+
+Required:
+
+1. show live unrealized P/L amount
+2. show color/style for profit vs loss
+3. update from MT5 snapshot
+4. update every sync interval
+5. show account currency
+6. if P/L unavailable, show “Syncing P/L…” and stale status
+7. never show fake $0.00 unless MT5 actually reports 0.00
+
+Display examples:
+
+1. P/L: +$1.24
+2. P/L: -$0.83
+3. P/L: Syncing…
+4. P/L: Stale — last MT5 sync 22s ago
+
+PART 5 — Reconcile ARX vs MT5 positions
+
+Implement or repair reconciliation.
+
+On each MT5 sync:
+
+1. Pull all real MT5 open positions.
+2. Compare against ARX active positions.
+3. If MT5 has position and ARX has no record:
+    * create manual/unattributed admin-visible record
+    * source = Manual MT5
+    * do not expose to normal users unless attributed
+4. If ARX has active position and MT5 has no match:
+    * mark as reconciled / broker-closed / orphan-resolved
+    * remove from Open Positions
+    * preserve audit trail
+5. If ARX has position and MT5 has match:
+    * update entry, current price, P/L, SL, TP, lot, open time, ticket
+6. If MT5 position closed:
+    * mark closed with close time/price/P&L if available
+
+PART 6 — Fix allocation exposure calculations
+
+Allocation must not count phantom positions as active exposure.
+
+Rules:
+
+1. Only real MT5-confirmed open positions reserve/consume exposure.
+2. Reconciled/phantom/orphan records must not reduce available allocation.
+3. Manual MT5 positions affect master equity/free margin through MT5 snapshot.
+4. If manual MT5 positions are unattributed, admin should see them but user allocations should not be randomly charged.
+5. Available allocation must recalculate after reconciliation.
+
+PART 7 — UI cleanup
+
+In the ARX Allocation / Open Positions section:
+
+1. Show only real open positions.
+2. Add columns:
+    * Symbol
+    * Side
+    * Lot
+    * Entry
+    * Now
+    * P/L
+    * Opened
+    * Source
+3. If mobile space is tight, use compact cards.
+4. Add “Last MT5 sync” near the section.
+5. If there are no real MT5 open positions, show:
+    “No MT5-confirmed open positions.”
+6. If orphan records were found, show admin-only notice:
+    “3 stale ARX records reconciled. View activity.”
+7. Do not show DEMO account panels in active live cockpit unless explicitly in an admin setup section.
+
+PART 8 — Backend/API requirements
+
+Create or repair endpoints as needed:
+
+1. getRealOpenPositions
+2. getMT5OpenPositions
+3. reconcileOpenPositions
+4. getOpenPositionPnl
+5. refreshPositionSnapshot
+
+Requirements:
+
+1. owner/admin only for master view
+2. normal users only see their own authorized positions
+3. no master account leakage
+4. no fake data
+5. no demo/paper fallback
+6. stale snapshot clearly flagged
+
+PART 9 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. MT5 open-position sync test
+5. ARX orphan-position reconciliation test
+6. phantom position exclusion test
+7. manual MT5 position detection test
+8. live P/L display test
+9. allocation exposure recalculation test
+10. owner/admin master view access test
+11. normal user privacy test
+12. Cockpit mobile UI smoke test
+13. Trade page open-position UI smoke test
+
+Do not place a live trade for this task.
+
+PART 10 — Final report required
+
+Final report must include:
+
+1. exact source of the XAUUSD/BTCUSDT phantom rows
+2. whether each row had MT5 ticket/position ID
+3. whether each row matched real MT5 open positions
+4. reconciliation action taken for each row
+5. confirmation phantom rows no longer appear as open
+6. confirmation real MT5 positions show live P/L
+7. confirmation Entry/Now/Opened fields are populated for real positions
+8. confirmation allocation exposure ignores phantom records
+9. confirmation manual MT5 positions are detected and labeled
+10. files changed
+11. health:workflows result
+12. typecheck result
+13. ci:guards result
+14. confirmation no live trade placed
+15. confirmation no Demo/Paper/fake data used
+16. remaining risks
+
+Completion standard:
+This task is complete only when Open Positions shows only real MT5-confirmed open trades, phantom ARX records are reconciled out of active view, every real open position has live P/L, entry, current price, opened time, and allocation calculations no longer count phantom positions as active exposure.

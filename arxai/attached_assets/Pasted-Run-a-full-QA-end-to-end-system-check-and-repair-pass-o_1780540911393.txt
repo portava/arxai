@@ -1,0 +1,909 @@
+Run a full QA, end-to-end system check, and repair pass on the entire ARX AI app after the Agent Ecosystem add-on.
+
+This is not a new feature request. This is a full verification, repair, completion, and stabilization pass.
+
+Your job is to go through every feature one by one, confirm what works, identify what is broken, fix broken items, add missing pieces that were required by the prior Agent Ecosystem scope, and prove the ecosystem is functional end-to-end.
+
+Do not assume anything works. Verify it.
+
+Do not skip a feature because it is complicated.
+
+Do not mark the task complete until the app is working, the ecosystem is functional, and all required flows have been tested.
+
+Do not remove existing working features.
+
+Do not rebuild the app.
+
+Do not introduce paper trading.
+
+Do not introduce simulation mode.
+
+Do not block the existing live-trading mission.
+
+Do not break Ruby, scanner, MT5/live bridge, admin dashboard, authentication, existing users, investor view, trader view, or current live trade flow.
+
+============================================================
+PRIMARY GOAL
+
+Perform a complete QA and end-to-end repair pass across:
+
+1. Existing ARX AI app
+2. Ruby assistant
+3. Scanner
+4. Live trade flow
+5. MT5/live bridge paths
+6. Admin dashboard
+7. User/trader dashboard
+8. Investor view-only dashboard
+9. Auth and role separation
+10. Agent Ecosystem add-on
+11. Agent ranks, scores, status, promotion, demotion
+12. Agent Learning Camp
+13. Agent Factory / child agent creation
+14. Agent Traffic Controller / speed governor
+15. Agent Immune System
+16. Agent Court
+17. Truth-locked prediction journal
+18. Trade Review AI scoring
+19. No-trade reward system
+20. Daily Household Report
+21. Admin controls for agents
+22. Performance and speed impact
+
+The system should work as one connected product.
+
+============================================================
+ABSOLUTE RULES
+
+1. This is a QA and repair pass, not a redesign.
+2. Keep all current working features.
+3. Fix what is broken.
+4. Add what is missing from the agreed ecosystem scope.
+5. Reuse current code where possible.
+6. Do not duplicate major systems.
+7. Do not create dead UI buttons.
+8. Do not create UI pages that are not connected to backend data.
+9. Do not create backend models with no UI/admin access when UI was required.
+10. Do not create fake completed states.
+11. Do not say something works unless it was tested.
+12. If a feature exists visually but does not function, connect it.
+13. If a backend exists but no UI exists, add the missing UI.
+14. If a UI exists but no backend exists, add the backend.
+15. If a feature is partially built, finish it.
+16. If something breaks during QA, fix it before moving on.
+17. If performance becomes slow, optimize before finishing.
+18. Existing live execution paths must not be slowed by deep AI reasoning.
+19. Agent ecosystem should be an add-on layer, not a replacement of current trading logic.
+20. Ruby stays the user-facing voice.
+
+============================================================
+STEP 1 — FULL PROJECT AUDIT
+
+Start by auditing the entire codebase.
+
+Inspect:
+
+* Frontend routes/pages
+* Backend routes/controllers
+* Database schema/models/migrations
+* Auth and role logic
+* Admin permissions
+* Ruby AI services
+* Scanner services
+* Trade execution services
+* MT5/live bridge services
+* Investor view logic
+* User/trader dashboard
+* Live positions/orders/history
+* Agent ecosystem services
+* Agent-related database tables
+* Agent admin UI
+* Agent scoring/review logic
+* Logging
+* Error handling
+* Performance bottlenecks
+
+Create an internal checklist of every feature and mark:
+
+* Working
+* Partially working
+* Broken
+* Missing
+* Duplicate
+* Dead code
+* Unconnected UI
+* Unconnected backend
+* Performance issue
+* Needs test
+
+Then repair each item.
+
+============================================================
+STEP 2 — EXISTING APP REGRESSION CHECK
+
+Before focusing only on agents, confirm the existing ARX AI app still works.
+
+Check these one by one:
+
+Authentication:
+
+* Login works.
+* Logout works.
+* Session persists correctly.
+* Wrong credentials fail safely.
+* User roles load correctly.
+* Admin role is separate from trader role.
+* Investor view-only role is separate from trader/admin.
+* No regular user can access admin controls.
+* No investor can place trades.
+* No user has access to two conflicting profiles at the same time.
+
+Ruby:
+
+* Ruby chat opens.
+* Ruby responds.
+* Ruby uses plain English.
+* Ruby can explain market conditions.
+* Ruby does not overload users with raw agent data.
+* Ruby can summarize agent consensus.
+* Ruby does not expose unnecessary internal logs unless admin-facing.
+* Ruby voice features are not broken if they already exist.
+* Ruby does not stall because of agent ecosystem calls.
+
+Scanner:
+
+* Scanner page loads.
+* Scanner results load.
+* Focus search works.
+* Broad search works.
+* Scalp opportunity detection still works.
+* Scanner can show Ruby explanations.
+* Scanner does not freeze.
+* Scanner does not display fake or stale data as live.
+* Scanner ranking works.
+* Scanner can filter low-quality opportunities.
+* Scanner can show when an opportunity is watchlist/no-trade instead of forcing a trade.
+
+Live trade flow:
+
+* Live trade buttons still appear where they should.
+* Live trade confirmation still works.
+* Trade action UI gives immediate feedback.
+* Live execution path is not blocked by nonessential AI.
+* Emergency close / close trade flow is prioritized.
+* Existing live bridge/result mapping is not broken.
+* Trade results still return to UI where supported.
+* Positions/orders/history still display.
+* Errors are shown clearly.
+
+Admin:
+
+* Admin dashboard loads.
+* Admin-only controls are protected.
+* Admin can see users.
+* Admin can see live-trading permissions where applicable.
+* Admin can manage required app settings.
+* Admin can access new agent ecosystem controls.
+* Admin UI does not expose controls to normal traders or investors.
+
+Investor view:
+
+* Investor login works.
+* Investor dashboard is view-only.
+* Investor can see funds/allocation information.
+* Investor cannot access trader execution controls.
+* Investor cannot access admin controls.
+* Investor allocation preferences save if implemented.
+* Investor flow does not conflict with trader flow.
+
+Fix anything broken before continuing.
+
+============================================================
+STEP 3 — DATABASE AND MIGRATION CHECK
+
+Inspect all migrations and schema.
+
+Confirm the following exist and work:
+
+Agent tables:
+
+* agents
+* agent_predictions or equivalent truth-locked journal table
+* agent_reviews or equivalent scoring/review table
+* agent_learning_camp_records
+* agent_creation_requests
+* agent_family_tree or parent/child relationships
+* agent_household_reports
+* agent_disagreements / agent_court_records if implemented
+* agent_speed_metrics
+* agent_status_history
+* agent_score_history
+
+Confirm fields exist for:
+
+Agent:
+
+* id
+* name
+* role
+* department/family
+* parent_agent_id
+* created_by_agent_id
+* created_by_user_id
+* creation_reason
+* mission_statement
+* allowed_tasks
+* forbidden_tasks
+* current_rank
+* current_status
+* trust_score
+* quality_score
+* speed_score
+* protection_score
+* usefulness_score
+* authority_weight
+* live_influence_allowed
+* can_create_agents
+* creation_right_level
+* current_mode
+* specialty_tags
+* weakness_tags
+* mistake_profile
+* learning_camp_count
+* shutdown_warning_count
+* last_active_at
+* last_reviewed_at
+* created_at
+* updated_at
+* archived_at
+
+Prediction journal:
+
+* original prediction cannot be edited after lock
+* later reviews append new records instead of modifying locked prediction
+* timestamps work
+* symbol/timeframe/setup/trade type are recorded
+* agent decision is recorded
+* confidence is recorded
+* reasoning summary is recorded
+
+Fix missing schema fields or broken migrations.
+
+Seed the default core agents if not already present:
+
+* Ruby
+* Market Structure AI
+* Scalp AI
+* Risk AI
+* Entry Timing AI
+* Exit / TP AI
+* Scanner AI
+* Trade Review AI
+* Agent Traffic Controller AI
+* Agent Immune System AI
+* Learning Camp AI
+* Agent Factory AI
+* Promotion Board AI
+* Execution AI
+
+Make seeding idempotent so it does not duplicate agents on every run.
+
+============================================================
+STEP 4 — AGENT ECOSYSTEM FUNCTIONAL QA
+
+Test every core ecosystem feature one by one.
+
+A. Agent existence
+
+* Core agents exist.
+* No duplicate core agents are created.
+* Agents have valid ranks.
+* Agents have valid statuses.
+* Agents have valid modes.
+* Agents have scores.
+* Agents have authority weights.
+* New agents start in Shadow Mode with 0% live authority.
+
+B. Agent Constitution
+
+* Constitution exists in config/code.
+* Admin can view it.
+* Agents reference it in system behavior.
+* Constitution includes rules for capital protection, quality over quantity, speed, no hidden uncertainty, no authority without proof, no uncontrolled agent creation, truth locking, step-back discipline, and admin override.
+
+C. Truth-locked prediction journal
+Test:
+
+* Create an agent prediction.
+* Lock it.
+* Attempt to edit locked prediction.
+* Confirm edit is blocked.
+* Add review later.
+* Confirm review appends without changing original prediction.
+
+D. Trade Review AI
+Test:
+
+* Trade Review AI can review a prediction.
+* Review can score decision quality.
+* Review can score outcome.
+* Review can score protection.
+* Review can score speed.
+* Review can score usefulness.
+* Review can score confidence calibration.
+* Agent scores update from review.
+
+E. Promotion Board
+Test:
+
+* Good performance can trigger promotion recommendation.
+* Poor performance can trigger Warning.
+* Continued poor performance can trigger Probation.
+* Continued poor performance can trigger Learning Camp or Restricted status.
+* Repeated failure can trigger Shutdown Recommended.
+* Full shutdown requires admin approval unless emergency restriction is required.
+
+F. Learning Camp
+Test:
+
+* Agent can enter Learning Camp.
+* Learning Camp records reason.
+* Learning Camp creates correction rules.
+* Agent can move to Shadow Mode after retraining.
+* Agent can return to Supervised Mode.
+* Agent does not regain full authority automatically without performance proof.
+* Learning Camp count updates.
+
+G. Agent Factory
+Test:
+
+* Qualified agent can create/request child agent.
+* Unqualified agent cannot create child agent.
+* Duplicate child agent is blocked.
+* New child agent gets birth certificate.
+* New child starts Shadow Mode.
+* New child has 0% live authority.
+* Parent/child relationship is saved.
+* Parent accountability works.
+
+H. Agent Traffic Controller
+Test modes:
+
+* Live Execution Mode
+* Scalp Mode
+* Scanner Mode
+* Ruby Explanation Mode
+* Learning Mode
+* Agent Creation Mode
+* Deep Review Mode
+
+Confirm:
+
+* Only required agents run in Live Execution Mode.
+* Only scalp-critical agents run in Scalp Mode.
+* Learning Camp and Agent Factory do not run during live execution.
+* Deep analysis does not block urgent actions.
+* Nonessential agents are sent to Silent Support, Sleeping, Background, or On-Demand Only.
+
+I. Speed Awareness / Step Back
+Test:
+
+* Agent runtime is measured.
+* Agent duplicate output is detected.
+* Agent usefulness per millisecond is tracked.
+* Slow agent can step back.
+* Agent can switch to Fast Mode.
+* Agent can go Silent Support.
+* Agent can go On-Demand Only.
+* Step-back is logged.
+* Correct step-back can earn reward.
+
+J. Agent Immune System
+Test detection for:
+
+* Duplicate agents
+* Too many child agents
+* Low value-to-speed ratio
+* Repeated generic analysis
+* Mission drift
+* Reckless behavior
+* Agent trying to influence live trades before authority
+* Agent family bloat
+
+Test actions:
+
+* Quarantine recommendation
+* Merge recommendation
+* Retire recommendation
+* Archive recommendation
+* Learning Camp recommendation
+* Remove creation rights
+* Reduce authority
+* Freeze department/family
+
+K. Agent Court
+Test disagreement:
+
+* Scalp AI approves.
+* Risk AI rejects.
+* Entry AI cautions.
+* Market Structure AI warns.
+* Agent Court considers specialty, performance, risk veto, setup type, and speed.
+* Ruby final summary reflects the correct downgrade.
+* Disagreement is saved for later review.
+
+L. No-trade reward system
+Test:
+
+* Agent rejects weak setup.
+* Rejected setup later performs poorly.
+* Agent receives protection/no-trade reward.
+* No-trade reward affects score.
+* Scanner AI receives reward for filtering noise.
+
+M. Daily Household Report
+Test:
+
+* Report generates.
+* Report includes best/worst agents.
+* Promotions/demotions.
+* Learning Camp movement.
+* New agents.
+* Agents that stepped back.
+* Slow agents.
+* Bad trades blocked.
+* Quality trades found.
+* No-trade wins.
+* Department performance.
+* Bloat warnings.
+* Speed warnings.
+* What system learned.
+* Admin recommendations.
+
+Fix every failed item.
+
+============================================================
+STEP 5 — ADMIN UI QA
+
+Inspect admin UI and confirm all required agent controls exist and function.
+
+Admin sections required:
+
+1. Agent Ecosystem Overview
+    Must show:
+
+* Total agents
+* Active agents
+* Shadow agents
+* Learning Camp agents
+* Restricted agents
+* Shutdown recommended agents
+* Average trust score
+* Average speed score
+* Average quality score
+
+2. Agent Family Tree
+    Must show:
+
+* Parent/child structure
+* Department/family grouping
+* Agent status
+* Agent rank
+* Department score
+* Bloat warning if applicable
+
+3. Agent Detail Page
+    Must show:
+
+* Mission
+* Rank
+* Status
+* Scores
+* Authority weight
+* Creation rights
+* Mode
+* Mistake profile
+* Recent predictions
+* Recent reviews
+* Learning Camp history
+* Children created
+* Speed cost
+* Usefulness score
+* Admin controls
+
+4. Admin Controls
+    Must work:
+
+* Promote
+* Demote
+* Send to Learning Camp
+* Restrict
+* Shutdown
+* Archive
+* Restore
+* Freeze creation rights
+* Approve child agent activation
+* Merge agents
+* Retire agents
+* Change authority weight
+* Put agent On-Demand Only
+* Put agent Sleeping
+* Freeze all new agent creation
+
+5. Agent Creation Requests
+    Must show:
+
+* Requesting agent
+* Proposed child agent
+* Reason
+* Expected value
+* Expected speed cost
+* Duplication check
+* Risk check
+* Approval status
+* Approve/reject controls if required
+
+6. Household Reports
+    Must show:
+
+* Daily reports
+* Search/filter
+* Agent performance history
+* Speed warnings
+* Learning Camp summaries
+
+Fix all missing UI, broken buttons, unconnected calls, or permission leaks.
+
+============================================================
+STEP 6 — RUBY USER-FACING QA
+
+Test Ruby with different scenarios.
+
+Ruby should not dump all internal agent logs to user.
+
+Ruby should summarize clearly.
+
+Test prompts:
+
+1. “Analyze V75 right now.”
+    Expected:
+    Ruby gives a clear summary and may mention relevant agent consensus only if useful.
+2. “Is this a scalp?”
+    Expected:
+    Ruby uses Scalp AI, Risk AI, Entry AI, Exit AI, Market Structure fast-check.
+3. “Why is this not a good trade?”
+    Expected:
+    Ruby explains risk, entry, support/resistance, and agent downgrade plainly.
+4. “What are your agents saying?”
+    Expected:
+    Ruby summarizes important agent consensus without overwhelming.
+5. “Why did you reject this trade?”
+    Expected:
+    Ruby explains no-trade reasoning and protection logic.
+6. “Which agents are weak right now?”
+    Expected:
+    Admin-only if sensitive. Normal user should receive only safe summary if allowed.
+7. “Is Scalp AI in Learning Camp?”
+    Expected:
+    Ruby can answer if user/admin permissions allow.
+
+Fix Ruby if:
+
+* She gives too much raw internal data.
+* She ignores agent consensus.
+* She fails to explain downgrades.
+* She recommends trades despite Risk AI veto.
+* She becomes slow because of too many agents.
+* She breaks current voice/chat behavior.
+
+============================================================
+STEP 7 — SCANNER END-TO-END QA
+
+Run scanner QA.
+
+Confirm:
+
+* Scanner loads.
+* Scanner refresh works.
+* Focus search works.
+* Broad search works.
+* Scalp scanner works.
+* Scanner uses Agent Traffic Controller.
+* Scanner does not call all agents unnecessarily.
+* Scanner can mark:
+    * Strong opportunity
+    * Watchlist
+    * Caution
+    * No-trade
+    * Rejected setup
+* Scanner can show Ruby explanation.
+* Scanner can show scalp opportunities.
+* Scanner can show multi-entry scalp possibilities only when quality supports it.
+* Scanner filters low-quality setups.
+* Scanner rewards no-trade/filtering when applicable.
+* Scanner does not become significantly slower.
+
+Fix scanner if:
+
+* Results do not load.
+* Agent calls block UI.
+* Too many agents run at once.
+* All setups look like trade opportunities.
+* Risk downgrade is ignored.
+* Scalp logic is not connected.
+* Ruby explanation is disconnected.
+* UI lags badly.
+
+============================================================
+STEP 8 — LIVE EXECUTION SAFETY AND SPEED QA
+
+Confirm Agent Ecosystem does not slow live execution.
+
+Test:
+
+* Open trade UI action.
+* Close trade UI action.
+* Emergency close flow if present.
+* Live position refresh.
+* Live trade status update.
+* Error handling from bridge.
+* UI feedback after button press.
+* Backend action is not waiting on Learning Camp, Agent Factory, Promotion Board, or deep review.
+
+Required behavior:
+
+* Live execution has priority.
+* Nonessential AI steps back.
+* Traffic Controller switches to Live Execution Mode.
+* Execution AI and Risk AI can run critical checks.
+* Deep analysis runs before/after, not blocking urgent execution.
+* Existing live bridge path remains intact.
+
+Fix any delay or broken flow.
+
+============================================================
+STEP 9 — PERFORMANCE QA
+
+Measure before/after and optimize.
+
+Measure:
+
+* App initial load time.
+* Dashboard load time.
+* Ruby response time.
+* Scanner load time.
+* Scanner refresh time.
+* Scalp signal processing time.
+* Agent runtime per agent.
+* Agent ecosystem total overhead.
+* Live action UI response time.
+* Backend live action response time.
+* Database query times for agent tables.
+* Household report generation time.
+
+If slow:
+
+* Add caching for decision packets.
+* Move Learning Camp to background.
+* Move Household Reports to background.
+* Put slow agents On-Demand Only.
+* Use Traffic Controller to reduce active agents.
+* Batch database writes where safe.
+* Avoid duplicate agent calls.
+* Index database fields used in queries.
+* Paginate admin agent logs.
+* Avoid loading every prediction on dashboard at once.
+
+Do not finish until performance is acceptable and live/scalp features remain fast.
+
+============================================================
+STEP 10 — ERROR HANDLING AND LOGGING QA
+
+Add/fix clear logging for:
+
+* Agent creation
+* Agent prediction lock
+* Agent review
+* Score update
+* Promotion/demotion
+* Learning Camp entry/exit
+* Agent step-back
+* Agent Traffic Controller routing
+* Agent Immune System recommendation
+* Agent Court disagreement
+* No-trade reward
+* Household report generation
+* Live execution bypassing nonessential agents
+* Errors/failures
+
+Errors should not crash the app.
+
+If an agent fails:
+
+* Ruby/scanner should degrade gracefully.
+* Log the failure.
+* Do not break live trade UI.
+* Use fallback logic if needed.
+* Mark agent as error/unavailable if repeated failures occur.
+
+============================================================
+STEP 11 — SECURITY AND PERMISSION QA
+
+Confirm:
+
+* Normal traders cannot access admin agent controls.
+* Investors cannot access trade execution.
+* Investors cannot access admin controls.
+* Admin can access agent controls.
+* Agent internal logs are not exposed to unauthorized users.
+* Agent shutdown/promote/demote actions require admin permission.
+* Agent creation approval controls are admin protected where required.
+* API endpoints validate role permissions.
+* Users cannot manipulate agent scores from frontend.
+* Locked predictions cannot be edited through API.
+* Authority weights cannot be changed by non-admin users.
+* No sensitive internal config is exposed.
+
+Fix every permission issue.
+
+============================================================
+STEP 12 — END-TO-END SCENARIOS
+
+Run these end-to-end scenarios.
+
+Scenario 1: Clean trade idea
+
+* Scanner finds setup.
+* Traffic Controller selects agents.
+* Agents produce structured opinions.
+* Risk AI approves.
+* Ruby summarizes.
+* Prediction locks.
+* Trade Review later scores.
+* Agent scores update.
+
+Scenario 2: Weak setup rejected
+
+* Scanner finds weak setup.
+* Risk AI rejects.
+* Entry AI warns.
+* Ruby says watchlist/no-trade.
+* Prediction locks.
+* Market later confirms weakness.
+* No-trade reward applies.
+
+Scenario 3: Agent disagreement
+
+* Scalp AI approves.
+* Risk AI rejects.
+* Entry AI cautions.
+* Agent Court resolves.
+* Ruby downgrades.
+* Disagreement record saved.
+* Later review updates agent records.
+
+Scenario 4: Agent slows system
+
+* Agent runtime is high.
+* Traffic Controller detects delay.
+* Agent steps back to Silent Support or On-Demand Only.
+* Speed score updates.
+* Ruby/scanner remain fast.
+
+Scenario 5: Agent goes to Learning Camp
+
+* Agent has repeated poor-quality calls.
+* Promotion Board sends to Learning Camp.
+* Learning Camp records correction.
+* Agent returns Shadow/Supervised.
+* Authority remains reduced.
+
+Scenario 6: Agent creates child agent
+
+* Qualified agent detects repeated task gap.
+* Agent Factory checks duplication.
+* Risk/Immune System checks safety.
+* Child agent created.
+* Child starts Shadow Mode.
+* Parent relationship saved.
+* Child cannot influence live recommendations yet.
+
+Scenario 7: Admin manages agent
+
+* Admin opens Agent Detail.
+* Admin changes mode.
+* Admin sends to Learning Camp.
+* Admin restores.
+* Admin freezes creation rights.
+* UI updates correctly.
+
+Scenario 8: Live execution
+
+* User initiates live action.
+* Traffic Controller uses Live Execution Mode.
+* Nonessential agents step back.
+* Live action is not blocked.
+* UI shows status.
+* Logs show bypass behavior.
+
+Fix any failed scenario.
+
+============================================================
+STEP 13 — CLEANUP DEAD CODE AND DUPLICATES
+
+After fixes, inspect for:
+
+* Duplicate agent services
+* Duplicate routes
+* Duplicate models
+* Dead UI pages
+* Dead buttons
+* Unused agent components
+* Multiple conflicting scoring functions
+* Multiple conflicting status enums
+* Hardcoded fake agent data
+* Placeholder-only features
+* Console errors
+* Broken imports
+* Type errors
+* Lint errors
+* Build errors
+
+Remove, merge, or fix safely.
+
+Do not delete working features blindly.
+
+============================================================
+STEP 14 — FINAL VERIFICATION BEFORE COMPLETE
+
+Before marking complete:
+
+1. Run the app.
+2. Run migrations.
+3. Confirm seed does not duplicate core agents.
+4. Open main dashboard.
+5. Open Ruby.
+6. Open scanner.
+7. Open admin dashboard.
+8. Open Agent Ecosystem Overview.
+9. Open Agent Family Tree.
+10. Open Agent Detail.
+11. Create/test a prediction journal entry.
+12. Lock prediction.
+13. Review prediction.
+14. Update scores.
+15. Trigger Warning/Probation/Learning Camp with test data.
+16. Create child agent in Shadow Mode.
+17. Confirm child has 0% live authority.
+18. Test Traffic Controller mode routing.
+19. Test agent step-back.
+20. Test no-trade reward.
+21. Generate Household Report.
+22. Test role permissions.
+23. Test live execution path is not blocked.
+24. Check console logs.
+25. Check server logs.
+26. Check database errors.
+27. Check performance.
+
+Only then mark the work complete.
+
+============================================================
+FINAL RESPONSE REQUIRED
+
+When done, provide a clear QA report with:
+
+1. What was broken.
+2. What was fixed.
+3. What was missing.
+4. What was added.
+5. What features were tested.
+6. Which tests passed.
+7. Any remaining issues.
+8. Performance before/after if measurable.
+9. Confirmation that existing app features still work.
+10. Confirmation that Agent Ecosystem is functional end-to-end.
+11. Confirmation that live execution paths were not blocked by nonessential AI.
+12. Exact files changed.
+
+Do not give a vague summary. Provide proof.

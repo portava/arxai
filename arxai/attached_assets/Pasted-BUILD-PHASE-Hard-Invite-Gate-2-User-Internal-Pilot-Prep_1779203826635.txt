@@ -1,0 +1,159 @@
+BUILD PHASE — Hard Invite Gate + 2-User Internal Pilot Prep
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Before inviting real beta users, hard-gate registration so the private beta is truly invite-only, then prepare a controlled 2-user internal pilot before expanding to all 10 users.
+
+Important:
+Do not enable public registration.
+Do not enable public live trading.
+Do not create real live bridge commands.
+Do not fire live trades.
+Do not bypass safety gates.
+
+1. Inspect existing beta invite/auth system first
+Check:
+- auth/register route
+- login/session system
+- beta cohort model
+- beta invite model
+- admin beta dashboard
+- invite creation/revoke/pause logic
+- cohort cap logic
+- audit logs
+- feature/env flags
+
+Reuse the current beta system. Do not create a duplicate invite system.
+
+2. Add hard registration invite gate
+Add an environment-controlled hard gate:
+
+ARX_BETA_INVITE_REQUIRED=true
+
+When enabled:
+- registration requires a valid invite code
+- invite must exist
+- invite must not be revoked
+- invite must not be expired
+- invite must not already be accepted
+- invite must match the user/email if invite email binding exists
+- cohort must have fewer than 10 accepted users
+- 11th accepted user must be blocked or waitlisted
+- failed invite attempts show clean user-facing messages
+
+Clean messages:
+- “Private beta invite required.”
+- “This invite has expired.”
+- “This invite was already used.”
+- “This invite is no longer active.”
+- “Private beta is currently full.”
+
+3. Keep beta cap enforced server-side
+Do not rely only on UI/admin behavior.
+
+Server must enforce:
+- max accepted users = 10
+- no duplicate acceptance
+- no bypass through direct API call
+- revoked invite cannot register
+- paused beta user cannot trade
+- non-beta user cannot enter beta workspace when invite gate is active
+
+4. Admin Beta Control Center updates
+Update admin beta dashboard to show:
+- invite gate status: ON/OFF
+- accepted users / 10
+- seats remaining
+- pending invites
+- revoked invites
+- expired invites
+- waitlisted/blocked attempts if tracked
+- last invite acceptance
+- no-live-command evidence
+
+Admin actions:
+- create invite
+- revoke invite
+- pause/resume beta user
+- copy invite code/link
+- view beta audit events
+
+5. 2-user internal pilot mode
+Add a documented pilot step before full 10-user beta:
+
+Pilot cohort:
+- Internal Pilot User 1
+- Internal Pilot User 2
+
+Both should test:
+- login/register via invite
+- onboarding
+- demo mode
+- scanner
+- Ruby chat
+- Ruby voice fallback if available
+- trade ticket demo flow
+- chart/trade detail
+- logout/login cache clearing
+- feedback submission
+
+Do not approve live trading for pilot users.
+
+6. Audit logs
+Add audit logs for:
+- invite gate enabled/disabled if config surfaced
+- invite validation failed
+- invite accepted
+- invite rejected
+- beta cap reached
+- 11th user blocked/waitlisted
+- beta user paused/resumed
+- internal pilot started
+- internal pilot completed
+- blocked live attempt by beta user
+
+Do not log secrets.
+
+7. Tests
+Add or update tests for:
+- registration blocked without invite when ARX_BETA_INVITE_REQUIRED=true
+- valid invite allows registration
+- revoked invite blocks registration
+- expired invite blocks registration
+- used invite cannot be reused
+- 10 accepted users allowed
+- 11th user blocked or waitlisted
+- direct API cannot bypass invite gate
+- non-admin cannot access beta admin APIs
+- paused beta user cannot trade
+- beta user defaults to demo
+- beta user cannot create live command by default
+- User 1 cannot see User 2 data
+- logout/login clears cache
+- no secrets exposed
+- no live command created during tests
+- arx_live_commands count stays unchanged
+
+8. Documentation
+Update:
+- PRIVATE_BETA_10_OPERATOR_RUNBOOK.md
+- PRIVATE_BETA_10_CHECKLIST.md
+- PRIVATE_BETA_10_TEST_PLAN.md
+
+Add:
+- “Start with 2 internal testers for 24 hours before inviting all 10.”
+- “Do not enable live trading during the first 24-hour internal pilot.”
+- “Confirm arx_live_commands remains 0 before expanding.”
+
+Return:
+- what was built
+- files changed
+- env flag added/used
+- registration gate behavior
+- admin beta dashboard changes
+- tests added/run
+- docs updated
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

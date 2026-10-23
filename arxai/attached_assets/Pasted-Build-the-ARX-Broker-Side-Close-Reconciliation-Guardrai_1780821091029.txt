@@ -1,0 +1,442 @@
+Build the ARX Broker-Side Close Reconciliation Guardrail.
+
+This task fixes the broker-side close persistence gap.
+
+Current reality:
+Positions closed manually at the broker, closed by SL, closed by TP, margin stop-out, or otherwise closed entirely broker-side do not produce an ARX-initiated LIVE_FILLED CLOSE command. Because the current persistence reconciler only stamps closed_at when it can match an ARX-initiated LIVE_FILLED close command, broker-side closes can remain in arx_live_positions with closed_at IS NULL indefinitely.
+
+The display layer may already hide these rows once they are brokerConfirmedAbsent from a reliable snapshot, but the database row remains open forever. That creates phantoms for any system reading raw arx_live_positions: risk/exposure, analytics, reconciliation center, admin tools, agent logic, and future reports.
+
+This is not a bug in the current ARX-initiated close reconciler. It is a real design gap for broker-side closes.
+
+Do not implement naive one-snapshot auto-close.
+
+Auto-closing based on one missing snapshot is dangerous because an unreliable EA snapshot, dropped symbol, Market Watch issue, stale bridge, or incomplete sweep could make a real open position look absent. The fix must be conservative, multi-snapshot, audited, reversible/traceable, and never touch the broker.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Add a safe broker-absence reconciliation path that can stamp closed_at on arx_live_positions only when a position is confirmed absent from the broker across multiple reliable snapshots.
+
+This should convert the current manual admin repair into an automated, conservative, auditable sweep.
+
+The reconciler must distinguish:
+
+1. ARX-initiated close
+   Existing path.
+   Requires matching ARX LIVE_FILLED CLOSE command.
+   Keep this unchanged.
+
+2. Broker-side close
+   New path.
+   No ARX close command exists.
+   Position is absent from reliable broker snapshots across N consecutive reliable sweeps.
+   Stamp closed_at with reconcile_state such as RECONCILED_BROKER_ABSENT.
+   Emit audit/reconciliation event.
+   Never send a broker command.
+
+==================================================
+ABSOLUTE PRESERVATION RULES
+==================================================
+
+Do not rebuild the positions system.
+Do not replace arx_live_positions.
+Do not replace MT5 bridge logic.
+Do not replace EA snapshot ingestion.
+Do not replace existing ARX-initiated close reconciliation.
+Do not create a new execution path.
+Do not send broker close commands.
+Do not auto-close on a single missing snapshot.
+Do not weaken per-user ownership isolation.
+Do not hide real live positions because of an unreliable snapshot.
+Do not expose backend/debug/internal wording to regular users.
+
+Preserve:
+- existing LIVE_FILLED CLOSE reconciliation
+- existing display-layer brokerConfirmedAbsent behavior
+- existing reconciliation center alert/manual flow
+- existing Open Trades UI behavior
+- existing user ownership filtering
+- existing Risk Governor / AACI / Security assumptions
+- existing audit/vault/event conventions
+
+==================================================
+STEP 1 — INSPECT CURRENT RECONCILIATION PATHS
+==================================================
+
+Before editing, inspect and document:
+
+- arx_live_positions schema
+- routes/mt5.ts position snapshot handlers
+- POST /api/mt5/sync-live-positions
+- POST /api/mt5/positions-snapshot
+- display-layer positionFreshness.ts or equivalent
+- brokerConfirmedAbsent logic
+- snapshotReliable logic
+- reconciliation center detector
+- reconciliation/detect.ts or equivalent
+- existing ARX-initiated close reconciler
+- findGhostClosedPositionIds if present
+- admin manual reconciliation flow
+- audit_events / vault_events / state_transitions patterns
+- tests around positions, reconciliation, shared positions truth, vault mutation, and close reconciliation
+
+Return findings in the completion report before summarizing changes.
+
+==================================================
+STEP 2 — DEFINE BROKER-ABSENT GHOST CONTRACT
+==================================================
+
+Create or finalize a pure helper, ideally unit-testable offline:
+
+findBrokerAbsentGhostPositionIds(input)
+
+or follow existing project naming convention.
+
+Input should include enough data to decide safely:
+
+- open arx_live_positions rows where closed_at IS NULL
+- latest reliable broker snapshot positions
+- snapshot reliability signal
+- bridge connection / account context
+- symbol mapping context if needed
+- consecutive absence counter/history
+- freshness timestamps
+- user/account/bridge ownership
+- excluded/protected rows
+- existing ARX close command matches if any
+
+Output should include:
+
+type BrokerAbsentGhostCandidate = {
+  positionId: string;
+  userId: string;
+  bridgeConnectionId?: string;
+  brokerTicket?: string;
+  mt5PositionTicket?: string;
+  symbol: string;
+  absentSnapshotCount: number;
+  firstAbsentAt?: string;
+  lastAbsentAt?: string;
+  lastReliableSnapshotAt?: string;
+  reason: "BROKER_CONFIRMED_ABSENT";
+  safeToStampClosed: boolean;
+  blockedReason?: string;
+};
+
+The helper must be pure and testable without database access if possible.
+
+==================================================
+STEP 3 — SAFETY CONDITIONS FOR AUTO-STAMPING CLOSED_AT
+==================================================
+
+Only stamp closed_at when ALL are true:
+
+1. Position row is currently open in ARX:
+   closed_at IS NULL
+
+2. Position belongs to the same authenticated / bridge / account scope:
+   no cross-user or cross-bridge reconciliation
+
+3. Latest snapshot is reliable:
+   snapshotReliable === true or equivalent existing reliability contract
+
+4. Snapshot was a complete sweep:
+   not partial, not stale, not degraded, not symbol-limited unless symbol coverage is verified
+
+5. Position is absent from broker snapshot:
+   broker ticket / MT5 position ticket not present in reliable snapshot
+
+6. Position has been absent across N consecutive reliable snapshots:
+   suggested default N = 3
+   configurable constant/policy
+
+7. Absence window is old enough:
+   suggested minimum age: 60–180 seconds depending existing heartbeat/snapshot cadence
+   configurable constant/policy
+
+8. No active ARX close command is pending for this position:
+   do not race existing ARX close flow
+
+9. No unresolved snapshot/mapping conflict:
+   if symbol mapping, ticket mapping, bridge binding, or account mode is uncertain, do not auto-stamp
+
+10. Reconciliation center does not mark this as unsafe:
+   if detector flags partial snapshot, bridge stale, source mismatch, or suspicious state, keep ALERT_ONLY
+
+If any condition fails:
+- do not stamp closed_at
+- keep current alert/manual reconciliation behavior
+- record safe diagnostic if admin-only
+- preserve row
+
+==================================================
+STEP 4 — RECONCILE STATE AND AUDIT TRAIL
+==================================================
+
+When a broker-side close is confirmed and stamped, use a distinct reconcile state.
+
+Suggested value:
+RECONCILED_BROKER_ABSENT
+
+or if existing enum naming uses another convention:
+BROKER_ABSENCE_RECONCILED
+
+Do not reuse ARX-initiated close state.
+
+Stamp:
+- closed_at
+- reconcile_state
+- reconciled_at if column exists
+- reconcile_reason if column exists
+- last_broker_absent_at if column exists/future-ready
+- broker_absent_snapshot_count if column exists/future-ready
+- updated_at
+
+Closed_at selection:
+Prefer the safest available timestamp:
+1. last reliable snapshot timestamp when position was confirmed absent, or
+2. first absent timestamp after last seen broker present, or
+3. current server time if no better timestamp exists
+
+Do not pretend to know exact broker close time if unavailable.
+Use audit metadata to distinguish estimated reconciliation close time from broker actual close time.
+
+Audit event required:
+- event type: BROKER_SIDE_CLOSE_RECONCILED or similar
+- positionId
+- userId
+- bridgeConnectionId
+- brokerTicket/mt5PositionTicket if safe
+- symbol
+- absentSnapshotCount
+- firstAbsentAt
+- lastAbsentAt
+- lastReliableSnapshotAt
+- reconcileState
+- actor: system
+- source: broker_absence_reconciler
+- no secrets
+- no raw sensitive payloads
+
+If vault/state transition conventions apply, follow them.
+
+==================================================
+STEP 5 — CONSECUTIVE ABSENCE TRACKING
+==================================================
+
+Implement consecutive reliable absence tracking safely.
+
+Options:
+A. If schema already has fields for absence tracking, use them.
+B. If not, add a small future-safe tracking table or state table if migrations are standard.
+C. If schema changes are risky, compute from recent reliable snapshot logs if already persisted.
+D. If none exists, implement the pure helper and dry-run/report first, then mark DB-write follow-up.
+
+Do not add fragile in-memory-only absence counters for production reconciliation, because process restarts would reset evidence.
+
+The absence counter must reset if:
+- position appears in a reliable snapshot again
+- snapshot is unreliable or partial
+- bridge/account context changes
+- symbol/ticket mapping becomes uncertain
+- position is manually reconciled by admin
+- ARX close command fills
+
+==================================================
+STEP 6 — DRY-RUN MODE FIRST
+==================================================
+
+Add dry-run support before DB-write mode.
+
+Dry-run should report:
+
+- candidate count
+- safe-to-stamp count
+- blocked candidate count
+- blocked reasons
+- sample position IDs/tickets for admin
+- absent snapshot counts
+- oldest candidate age
+- estimated rows that would be stamped closed
+
+Admin-only route or CLI/job output is acceptable depending project convention.
+
+Do not expose to regular users.
+
+==================================================
+STEP 7 — DB-WRITE MODE WITH FEATURE FLAG / POLICY
+==================================================
+
+Add a conservative feature flag/policy constant.
+
+Suggested:
+
+BROKER_ABSENCE_AUTO_RECONCILE_ENABLED=false by default if product wants manual enable
+
+or if project uses config constants:
+brokerAbsenceAutoReconcilePolicy = {
+  enabled: false,
+  requiredReliableAbsences: 3,
+  minimumAbsentAgeMs: 120000,
+  requireCompleteSnapshot: true
+}
+
+If enabled:
+- run the safe stamping path
+- emit audit event
+- update reconciliation center state
+- do not send broker commands
+
+If disabled:
+- keep dry-run / admin candidate visibility
+- do not mutate closed_at
+
+Given this touches live position persistence, default can be false unless Replit/operator explicitly enables after tests.
+
+==================================================
+STEP 8 — RECONCILIATION CENTER INTEGRATION
+==================================================
+
+Update reconciliation center detector/admin view:
+
+Current behavior:
+Detects orphan/broker-absent rows and surfaces for manual admin resolution.
+
+New behavior:
+- keep manual admin resolution
+- add candidate status:
+  - alert_only
+  - accumulating_absence_evidence
+  - eligible_for_broker_absence_reconcile
+  - auto_reconciled_broker_absent
+  - blocked_due_to_unreliable_snapshot
+  - blocked_due_to_mapping_conflict
+  - blocked_due_to_pending_arx_close
+
+Do not remove manual repair flow.
+
+Admin should be able to see why a row was or was not auto-reconciled.
+
+==================================================
+STEP 9 — DISPLAY / OPEN TRADES / RAW TABLE CONSUMER ALIGNMENT
+==================================================
+
+Ensure all consumers agree:
+
+- display layer hides brokerConfirmedAbsent rows appropriately
+- persistence layer can stamp safe confirmed broker-side closes
+- raw arx_live_positions readers should not treat RECONCILED_BROKER_ABSENT rows as open
+- Open Trades should not show reconciled rows
+- risk/exposure should exclude reconciled rows
+- analytics should classify them as broker-side closes
+- Wins & Losses can receive/derive final close state if enough data exists
+- Account Analytics should not count them as currently open
+- agent logic should not manage them as open
+- admin diagnostics can still show history
+
+==================================================
+STEP 10 — TESTS REQUIRED
+==================================================
+
+Add/update tests.
+
+Pure helper tests:
+
+1. One reliable snapshot absence does NOT auto-stamp.
+2. N consecutive reliable absences marks candidate safe.
+3. Unreliable snapshot does NOT count.
+4. Partial snapshot does NOT count.
+5. Position reappears resets absence count.
+6. Pending ARX close command blocks broker-absence auto-stamp.
+7. Cross-bridge mismatch blocks.
+8. Cross-user mismatch blocks.
+9. Symbol/ticket mapping uncertainty blocks.
+10. Candidate emits correct reason and counts.
+11. Feature disabled results in dry-run only.
+12. Feature enabled stamps only safe candidates.
+
+Integration tests if feasible:
+
+- broker-side manual close simulated by reliable snapshots absent across N sweeps → closed_at stamped, reconcile_state = RECONCILED_BROKER_ABSENT, audit event emitted.
+- SL/TP broker-side close simulated same path.
+- flaky single missing snapshot → no closed_at.
+- EA incomplete snapshot → no closed_at.
+- ARX-initiated close still uses existing LIVE_FILLED close path unchanged.
+- Open Trades excludes reconciled broker-absent rows.
+- risk/exposure excludes reconciled broker-absent rows.
+- reconciliation center shows candidate state.
+
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- relevant position/reconciliation tests
+- test:shared-positions-truth if available
+- full pnpm run ci if feasible
+
+==================================================
+STEP 11 — USER / ADMIN MESSAGING
+==================================================
+
+Regular users should not see internal reconciliation language.
+
+If needed, user-facing:
+“Position history is being reconciled.”
+“Closed broker-side position was synced.”
+
+Admin-facing:
+Can show:
+- broker absent
+- reliable snapshot count
+- candidate state
+- reconcile_state
+- audit event
+- dry-run result
+
+No secrets, no raw payloads, no bridge tokens.
+
+==================================================
+STEP 12 — COMPLETION REPORT REQUIRED
+==================================================
+
+Return:
+
+- files inspected
+- current ARX-initiated close reconciler summary
+- current display-layer brokerConfirmedAbsent summary
+- current reconciliation center orphan detector summary
+- chosen absence tracking approach
+- feature flag/policy default
+- files changed
+- pure helper added/location
+- DB-write path added or dry-run only status
+- reconcile_state used
+- audit event added
+- admin/reconciliation center changes
+- Open Trades/risk/exposure/analytics consumer alignment
+- tests added/updated
+- typecheck result
+- ci guards result
+- relevant test results
+- dry-run output if available
+- whether auto-reconcile is enabled or disabled by default
+- remaining blockers
+- recommended rollout steps
+
+==================================================
+ROLLOUT GUIDANCE
+==================================================
+
+Recommended rollout:
+
+1. Land pure helper and tests.
+2. Land dry-run mode.
+3. Run dry-run against current data.
+4. Review candidates.
+5. Enable DB-write mode only after confirming snapshotReliable logic and reconciliation detector agree.
+6. Monitor audit events and reconciliation center.
+7. Keep manual admin repair as fallback.
+
+Final rule:
+Broker-side closes must not stay phantom-open forever, but ARX must never stamp a real live position closed from a single unreliable absence. Use multiple reliable snapshots, explicit reconcile_state, audit events, and no broker-side commands.

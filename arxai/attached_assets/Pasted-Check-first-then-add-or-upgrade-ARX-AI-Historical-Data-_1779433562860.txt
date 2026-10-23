@@ -1,0 +1,331 @@
+Check first, then add or upgrade ARX AI Historical Data + Backtest Intelligence.
+
+SCOPE LOCK:
+Only work on:
+1. Historical market data services.
+2. Historical data storage/cache if needed.
+3. Scanner historical-analysis integration.
+4. Ruby/AI historical-analysis context.
+5. Trade setup/backtest summary shown before trade ticket decisions.
+6. Backend read-only endpoints required for historical analysis.
+
+Do not:
+- Enable live trading.
+- Place live trades.
+- Change MT5 execution permissions.
+- Change kill switches.
+- Change admin approval rules.
+- Change existing trade execution logic.
+- Change login/auth.
+- Redesign unrelated pages.
+- Refactor unrelated backend systems.
+
+GOAL:
+Every major scanner, Ruby, and trade-decision workflow should use historical market data before giving a trade read.
+
+If ARX AI is looking at a market now, it should also check what the chart did historically:
+- this time yesterday
+- this time last week
+- this time last month
+- this time last year
+- up to 5 years ago if data is available
+- previous days, weeks, months, and years
+- similar time of day
+- similar trading session
+- similar volatility conditions
+- similar trend/structure setups
+
+Important:
+The user said “chat,” but interpret this as “chart” unless there is an actual chat-history feature involved.
+
+PHASE 1 — INSPECT FIRST
+Before building anything, inspect the current app for existing:
+- historical data service
+- MT5 rates/candles endpoint
+- Deriv historical data feed
+- Finnhub/other market data provider usage
+- cached candle database/table
+- scanner scoring engine
+- Ruby market context builder
+- backtest service
+- strategy simulation code
+- indicator calculation utilities
+- market/session/timezone utilities
+- symbol normalization logic
+- chart/candle storage models
+- existing endpoints like /history, /candles, /rates, /backtest, /scanner
+
+Do not create duplicate systems if one already exists.
+Upgrade existing systems first.
+
+PHASE 2 — HISTORICAL DATA SERVICE
+Create or upgrade a normalized HistoricalMarketDataService.
+
+It should support:
+- forex
+- metals
+- indices
+- crypto
+- stocks, if provider supports them
+- synthetic indices / Deriv symbols, if feed is configured
+
+Data format should normalize:
+- symbol
+- provider
+- timeframe
+- timestamp
+- open
+- high
+- low
+- close
+- volume/tickVolume if available
+- spread if available
+- source freshness
+- data quality status
+
+Preferred data sources:
+1. Existing MT5 bridge historical rates/candles, if available.
+2. Existing broker/provider APIs already configured.
+3. Existing Deriv feed for synthetic indices, if configured.
+4. Existing Finnhub or market data APIs, if already configured.
+
+Do not fake historical data.
+If history is unavailable, return clean “history unavailable” state.
+
+PHASE 3 — TIMEFRAME COVERAGE
+Support these timeframes if data is available:
+- M1
+- M5
+- M15
+- M30
+- H1
+- H4
+- D1
+- W1
+- MN1
+
+Scanner and Ruby should at minimum use:
+- selected active timeframe
+- one lower timeframe when available
+- one higher timeframe when available
+- daily context
+- weekly/monthly context when available
+
+PHASE 4 — HISTORICAL COMPARISON ENGINE
+Create or upgrade a HistoricalPatternAnalyzer.
+
+For any selected symbol, it should compare current market behavior against:
+- same time yesterday
+- same time last week
+- same time last month
+- same time last year
+- same weekday/session over the last several weeks
+- same hour/session over recent history
+- similar volatility periods
+- similar trend strength periods
+- similar support/resistance retests
+- similar breakout/pullback/reversal setups
+
+It should calculate:
+- direction after similar setup
+- average move after setup
+- win/loss historical bias
+- average drawdown before move
+- average time to target
+- volatility range
+- spread behavior if available
+- session behavior
+- historical risk level
+- confidence score based on sample size and quality
+
+Do not overstate confidence when sample size is small.
+If historical sample is weak, say so.
+
+PHASE 5 — BACKTEST ENGINE
+Create or upgrade a lightweight read-only backtest engine.
+
+Before scanner/Ruby recommends or rates a possible trade setup, run a quick historical test.
+
+Backtest should support:
+- symbol
+- timeframe
+- direction: BUY or SELL
+- entry zone
+- suggested stop loss
+- suggested take profit
+- risk/reward
+- lookback period
+- session filter
+- spread/slippage estimate if available
+- max drawdown
+- win rate
+- average win
+- average loss
+- profit factor
+- expected value
+- sample size
+- number of matching setups
+- best/worst historical outcome
+- similar setup results
+
+Backtest output should be a decision-support summary, not a promise.
+
+Example output:
+- Historical bias: Bearish
+- Similar setups found: 42
+- Win rate: 61%
+- Avg drawdown before target: 8.4 pips
+- Avg time to target: 3h 20m
+- Risk warning: Setup fails often above 1.08038
+
+Do not place trades from backtest.
+Do not alter execution permissions.
+
+PHASE 6 — SCANNER INTEGRATION
+Upgrade Market Scanner so every scanner result can use historical data.
+
+Scanner should include:
+- current setup read
+- historical bias
+- same-time historical behavior
+- backtest score
+- historical volatility score
+- historical drawdown risk
+- session-based performance
+- confidence adjusted by historical sample size
+- “History unavailable” if data missing
+
+Scanner ranking should consider:
+- current market structure
+- current indicators
+- volatility
+- news/calendar risk if available
+- historical behavior
+- backtested setup quality
+- risk/reward quality
+- spread/market conditions
+
+Do not hide current scanner logic. Add historical scoring into the decision stack.
+
+PHASE 7 — RUBY / AI INTEGRATION
+Ruby must use historical data in all trading-related answers.
+
+When user asks:
+- “Should I buy?”
+- “Should I sell?”
+- “What market looks good?”
+- “Is this a pullback?”
+- “Is this a fakeout?”
+- “When should I close?”
+- “What’s the best setup?”
+- “Analyze EURUSD”
+- “Check the scanner”
+- “What should I trade now?”
+
+Ruby should receive a structured HistoricalDecisionPack with:
+- current market snapshot
+- multi-timeframe trend
+- same-time yesterday behavior
+- same-time last week behavior
+- same-time last month behavior
+- same-time last year behavior if available
+- 5-year lookback if available
+- similar setup backtest summary
+- support/resistance history
+- volatility history
+- drawdown history
+- confidence/sample size
+- unavailable data warnings
+
+Ruby should explain it cleanly:
+- “Historically, this setup has worked better during London session.”
+- “Same-time comparisons are mixed, so confidence is lower.”
+- “The last 30 similar pullbacks reached target 58% of the time.”
+- “History is unavailable for this symbol/timeframe, so I’m relying on current structure only.”
+
+Ruby must not pretend data exists.
+
+PHASE 8 — TRADE TICKET PRE-CHECK
+Before a BUY or SELL trade ticket is opened or confirmed, show a compact “Historical Check” panel.
+
+Panel should include:
+- Backtest bias
+- Similar setups found
+- Win rate
+- Average drawdown
+- Average time to target
+- Historical volatility risk
+- Historical support/resistance warning
+- Confidence adjusted by data quality
+- “Proceed to Trade Ticket” or keep existing ticket flow
+
+This panel should not block trading unless existing risk rules block it.
+It should inform the user before decision.
+
+PHASE 9 — DATA QUALITY + PERFORMANCE
+Historical data can be heavy, so implement safe performance rules:
+- Cache candles by symbol/timeframe.
+- Avoid repeatedly pulling 5 years of data on every page load.
+- Use incremental refresh where possible.
+- Use background update if existing architecture supports it.
+- Add backend throttling.
+- Keep scanner fast by using cached history.
+- If history is stale, label it.
+- If provider limit is reached, show clean unavailable state.
+- Do not overload MT5 bridge or external APIs.
+
+PHASE 10 — UI REQUIREMENTS
+Add clean, compact UI where needed:
+- Scanner card: “Historical Bias”
+- Scanner card: “Backtest”
+- Ruby read: “Historical Context”
+- Trade ticket: “Historical Check”
+- Symbol details: “Past Behavior”
+
+Keep UI simple:
+- no giant tables by default
+- use expandable details
+- show top-level summary first
+- avoid debug labels
+- no internal route/function names
+- no raw API errors
+
+PHASE 11 — BACKEND ENDPOINTS
+Reuse existing endpoints if available.
+If missing, add minimal read-only endpoints such as:
+- GET /api/market/history
+- GET /api/market/candles
+- POST /api/market/historical-analysis
+- POST /api/market/backtest
+- GET /api/scanner/results-with-history
+- POST /api/ruby/historical-decision-pack
+
+Endpoint rules:
+- read-only only
+- permission checked
+- rate limited if needed
+- clean error responses
+- no secrets exposed
+- no raw stack traces
+- no trade execution
+
+PHASE 12 — ACCEPTANCE CHECKLIST
+Do not finish until:
+1. Existing historical/backtest code is inspected first.
+2. No duplicate historical system is created if one already exists.
+3. Scanner uses historical data when available.
+4. Ruby uses historical data for trading decisions/questions.
+5. Trade ticket flow shows a historical check before decision confirmation.
+6. Same-time comparisons work:
+   - yesterday
+   - last week
+   - last month
+   - last year
+   - up to 5 years if available
+7. Similar setup backtest summary works.
+8. Data unavailable states are clean.
+9. Historical data is never faked.
+10. Performance is protected with caching/throttling.
+11. No live trades are placed.
+12. No execution permissions, kill switches, or admin approvals are changed.
+13. App builds.

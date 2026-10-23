@@ -1,0 +1,121 @@
+Continue from the latest checkpoint and complete T006 only: final QA cleanup pass and final readiness report.
+
+This is not a feature-building phase. Do not add new major features. Inspect, verify, fix only broken/incomplete/unsafe/confusing issues, then report.
+
+Before changing anything:
+- Inspect the current codebase and latest checkpoint.
+- Confirm U3, U5, and U6 are complete or clearly report what is still incomplete.
+- Confirm ARX_LIVE_BROKER_EXECUTION_ENABLED is unset/cleared.
+- Confirm Gate 1 is default-deny/off.
+- Confirm no live trades are placed during this QA.
+- Use read-only probes only unless fixing UI/code.
+
+Final QA scope:
+
+1. Build/typecheck/lint
+- Run typecheck/build/lint if available.
+- Fix all errors caused by recent work.
+- Do not refactor unrelated working code.
+
+2. Guard and safety verification
+Verify:
+- placeLiveOrderGuarded remains hard-locked.
+- Phase B 16-gate evaluator remains default-deny.
+- Admin approval is still required.
+- Typed confirmation phrase is still required.
+- Precondition checks are still required.
+- EA live execution checks still block when not enabled.
+- Symbol allowlist checks still block when empty/missing.
+- Per-user isolation remains intact.
+- No server-side broker credentials were introduced.
+- No hidden live/shared-master flip exists.
+- No unauthorized user can access live broker execution.
+
+3. User-facing UI QA
+Verify normal users do not see:
+- internal function names
+- backend route names
+- guard names
+- evaluator names
+- raw error codes without plain-language explanation
+- stack traces
+- developer-only identifiers
+
+Check these pages/areas:
+- login
+- request access
+- invite code
+- forgot password
+- dashboard
+- market scanner
+- selected market panel
+- scanner trade modal
+- Ruby chat
+- /ai-command-center
+- mobile bottom nav
+- side menu
+- admin/operator surfaces
+
+4. /ai-command-center final check
+Verify:
+- 4 tabs exist and work: Chat, Market Read, Commands, Memory
+- Ruby typing/thinking animation works
+- Ruby market explanation panel works
+- MobileBottomNav AI button routes to /ai-command-center
+- Page is mobile-friendly and not cluttered
+
+5. Dashboard final check
+Verify:
+- dashboard.tsx is simple-first
+- important info appears first
+- advanced/admin/diagnostic areas are collapsed or organized
+- no dashboard features were removed
+- no duplicate alerts or repetitive wording overwhelm users
+
+6. Scanner final check
+Verify:
+- Market Scanner is treated as a primary tool
+- scanner search works
+- symbol groups/chips are mobile-friendly
+- symbol focus switching works
+- Ruby explains selected market
+- scanner trade buttons preserve confirmations, stop loss, take profit, order type, risk controls, and approval checks
+- blocked trades show plain-language reasons
+
+7. Mobile final check
+Verify:
+- bottom nav has no gap underneath
+- safe-area padding is correct
+- major pages fit mobile screens
+- tabs/chips/buttons are usable on iPhone-sized screens
+- no floating menu/header blocks important controls
+
+8. Cleanup
+- Check for dead duplicate scanner UI files.
+- Check SymbolExplorer and symbolRegistry usage.
+- Remove only files proven unused and safe to delete.
+- Do not delete anything uncertain.
+- Check opengraph.jpg drift and report whether it remains untouched.
+- Do not make unrelated asset changes.
+
+9. Final readiness report
+Return a concise final report with:
+- What passed
+- What was fixed
+- What remains
+- Any known risks
+- Whether live trading remains safely blocked by default
+- Whether demo/simulator still works
+- Final system score out of 100
+- Score explanation based on current trading software expectations, safety posture, mobile UX, scanner/Ruby intelligence, backend readiness, and execution readiness
+
+Acceptance criteria:
+- Typecheck/build/lint pass if available.
+- Guard/Phase B tests pass if available.
+- Normal user UI has no internal-name leaks.
+- Mobile nav and /ai-command-center work.
+- Dashboard is cleaner.
+- Scanner/Ruby flow works.
+- Live/shared-master execution remains default-deny and protected.
+- No live trades placed during QA.
+- Final report is clear enough to decide the next development phase.

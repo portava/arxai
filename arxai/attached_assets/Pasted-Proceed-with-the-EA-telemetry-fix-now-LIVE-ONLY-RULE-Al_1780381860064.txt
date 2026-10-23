@@ -1,0 +1,139 @@
+Proceed with the EA telemetry fix now.
+
+LIVE-ONLY RULE:
+All execution-path testing must use the real LIVE MT5 path. Do not mark complete from typecheck alone. The final proof must be a real LIVE MT5 fill/ticket or a precise real MT5/broker rejection after the EA reports the correct live terminal telemetry.
+
+Problem:
+ARX is blocking because the master-live gate reads:
+
+capabilities.eaInputs {
+  terminalConnected,
+  algoTradingAllowed,
+  enableLiveExecution,
+  readOnlyMode
+}
+
+But EA v1.50 is not reporting the `eaInputs` block at all. The EA is alive, connected, and reporting fresh account balance/equity, but ARX cannot prove the terminal is live-capable because the required terminal execution fields are missing.
+
+Task:
+Update the EA heartbeat/capability/status payload so it emits the required live terminal state fields every heartbeat and in any health/capability response.
+
+Required EA payload shape:
+
+eaInputs: {
+  terminalConnected: boolean,
+  algoTradingAllowed: boolean,
+  enableLiveExecution: boolean,
+  readOnlyMode: boolean,
+  terminalTradeAllowed: boolean | null,
+  mqlTradeAllowed: boolean | null,
+  expertTradeAllowed: boolean | null,
+  accountTradeAllowed: boolean | null,
+  arm1: boolean,
+  arm2OrderSend: boolean,
+  arm3: boolean,
+  arm4: boolean,
+  arm5: boolean,
+  arm6: boolean,
+  arm7: boolean,
+  arm8: boolean
+}
+
+Field meanings:
+1. terminalConnected
+- true only when the MT5 terminal is connected to the broker/server.
+- Use the correct MQL5 terminal/account connection status.
+
+2. algoTradingAllowed
+- true only when automated/algo trading is genuinely allowed.
+- Derive from the best available MT5/MQL flags.
+- Also expose the subfields so ARX can diagnose which one is false.
+
+3. enableLiveExecution
+- true when the EA input ARM #2 / OrderSend at all is true.
+- false when ARM #2 is false.
+- Do not fake this in backend.
+
+4. readOnlyMode
+- false when the EA is allowed to send orders.
+- true when the EA is in a non-execution/read-only state.
+- Must be explicitly reported by the EA.
+
+5. ARM state summary
+- Report all ARM switches so admin diagnostics clearly show what is enabled.
+
+Backend requirements:
+1. Ingest `eaInputs` from the EA heartbeat/capability payload.
+2. Store it in the same capabilities/diagnostics location the master-live gate reads.
+3. Do not fake or default missing values to passing.
+4. Keep fail-closed behavior when fields are missing or false.
+5. Update admin diagnostics so it shows:
+   - reported true/false values
+   - missing/not reported separately from false
+6. Do not bypass the gate.
+7. Do not weaken no-fake-ticket/no-phantom-position rules.
+8. Do not use Demo/Paper fallback.
+
+After code change:
+1. Compile the EA in MetaEditor.
+2. Attach/reload it on the live Deriv MT5 terminal.
+3. Set:
+   - ARM #1 = true
+   - ARM #2 / OrderSend at all = true
+   - all other ARM switches true if they control features currently exposed in ARX
+   - ReadOnlyMode = false if separate input exists
+   - EnableLiveExecution = true if separate input exists
+4. Confirm Algo Trading is ON in MT5.
+5. Confirm the terminal is logged into the live account.
+6. Wait for heartbeat.
+7. Confirm ARX sees:
+   - terminalConnected = true
+   - algoTradingAllowed = true
+   - enableLiveExecution = true
+   - readOnlyMode = false
+   - arm2OrderSend = true
+   - EA version v1.50+
+   - fresh heartbeat
+   - fresh account snapshot
+   - fresh symbol inventory
+
+Then run one LIVE execution attempt through ARX:
+- Use exact backend brokerSymbol.
+- Use smallest broker-valid lot.
+- BUY or SELL only.
+- Capture commandId.
+- Capture EA received timestamp.
+- Capture whether OrderSend was called.
+- Capture MT5 retcode.
+- Capture broker message.
+- Capture ticket/deal/position ID if filled.
+- Confirm ARX only shows position if MT5 returned a real ticket.
+
+Tests/checks:
+Run:
+pnpm --filter @workspace/api-server run build
+pnpm run typecheck
+pnpm run ci:guards
+
+Also run any EA telemetry / master-live gate test available. If none exists, add a small test that proves:
+- missing eaInputs fails
+- eaInputs false fails
+- eaInputs true passes
+- missing is displayed as “not reported,” not “disconnected”
+
+Final report:
+- EA file changed
+- backend files changed
+- exact telemetry fields emitted
+- exact location where backend stores eaInputs
+- admin diagnostics output
+- ARX gate result before/after
+- live commandId
+- MT5 retcode
+- broker message
+- ticket/deal/position ID if filled
+- if rejected, exact real rejection reason
+- confirmation no fake success and no phantom position
+
+Completion standard:
+This is complete only when ARX receives the live telemetry correctly and a real LIVE execution attempt reaches MT5, returning either a real fill/ticket or a precise real MT5/broker rejection.

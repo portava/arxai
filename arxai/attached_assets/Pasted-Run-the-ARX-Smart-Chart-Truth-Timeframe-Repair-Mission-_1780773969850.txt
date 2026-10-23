@@ -1,0 +1,1231 @@
+Run the ARX Smart Chart Truth + Timeframe Repair Mission.
+
+This is NOT a chart redesign task yet. This is a chart data integrity, timeframe accuracy, rendering accuracy, mirror sync, and Ruby-read protection task.
+
+The screenshots show that the chart is inconsistent by timeframe:
+- 5m looks closer to real market candles.
+- 15m appears to have too little structure/history.
+- 1h shows only a few oversized candles.
+- 4h and 1D compress price action due to scaling/history/outlier behavior.
+- 1D shows a suspicious abnormal downside wick that may be a bad tick, corrupted candle, provider mismatch, or scale/outlier issue.
+- XAUUSD latest price appears inconsistent across views.
+- Ruby is still showing directional states like WAIT / bullish / neutral even when candle truth may not be verified.
+
+This means the issue is deeper than candlestick styling. It may involve source, OHLC mapping, aggregation, historical/live merge, symbol mirror, bid/ask/last basis, price precision, scaling, or Ruby reading stale/mismatched chart state.
+
+Do not add new overlays.
+Do not redesign the full chart UI yet.
+Do not add extra intelligence panels yet.
+Do not make the candles “prettier” without proving the data is correct first.
+
+Fix chart truth first.
+
+==================================================
+ABSOLUTE PRESERVATION RULES
+==================================================
+
+Do not rebuild the app.
+Do not replace the chart route unless absolutely necessary.
+Do not replace Ruby.
+Do not replace Scanner.
+Do not replace Risk Governor.
+Do not replace AACI.
+Do not replace the Security Handshake.
+Do not replace MT5/shared bridge logic.
+Do not replace the execution route.
+Do not create a new trading path.
+Do not fake candle data.
+Do not use mock/sample/dev candles in live mode.
+Do not generate synthetic candlesticks from weak line data unless clearly marked as dev-only or unavailable for trading decisions.
+Do not let Ruby give confident buy/sell reads from invalid, stale, mismatched, or incomplete candle data.
+Do not let Self-Trade AI use chart confirmation unless Chart Truth passes.
+
+Preserve all existing wiring:
+- selected symbol state
+- selected timeframe state
+- chart candle feed
+- scanner connection
+- Ruby chart read connection
+- Plan Buy / Plan Sell actions
+- Trade Ticket connection
+- MT5/shared bridge route
+- Risk Governor
+- AACI
+- Security Handshake
+- Open Trades
+- My Alerts
+- Market Timing Brain / Heat Map if present
+- Economic Calendar / News if present
+- bottom navigation
+- Ruby floating button
+- admin/user visibility rules
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Make the ARX Smart Chart prove that the candles are real, synced, fresh, correctly timed, correctly mirrored, correctly scaled, and correctly rendered before Ruby, Scanner, Self-Trade AI, Risk Governor, AACI, or Trade Planning use the chart for trading decisions.
+
+Final locked rule:
+
+ARX Smart Chart must prove candle truth before candle beauty, and prove chart truth before Ruby confidence, Scanner confirmation, or Self-Trade action.
+
+==================================================
+CORE MODULE NAME
+==================================================
+
+Create or upgrade this module:
+
+ARX Candle Truth Engine
+
+Purpose:
+Verify the chart is showing accurate, live, symbol-matched, timeframe-matched OHLC candles before Ruby, Scanner, Self-Trade AI, Trade Planning, or AACI use chart context.
+
+Also create or upgrade:
+
+- ChartDataAdapter
+- SymbolResolver / SymbolDirectory integration
+- CandleSourceRouter
+- OHLCAggregator
+- HistoricalLiveMergeEngine
+- ChartMirrorLayer
+- CandleTruthEngine
+- ChartTruthScore engine
+- ChartReadScore engine
+- RubyChartGate
+- AACIChartHandshake
+- ChartDiagnostics
+- ChartSafeMode
+
+Reuse existing services/hooks/components if already present.
+
+==================================================
+STEP 1 — INSPECT CURRENT CHART WIRING FIRST
+==================================================
+
+Before editing, inspect and document:
+
+- chart route
+- chart component file(s)
+- chart library/rendering method
+- candle data source
+- source of historical candles
+- source of live updates/ticks
+- current OHLC object shape
+- current selected symbol state
+- current selected timeframe state
+- current timeframe switch handler
+- current symbol switch handler
+- current scanner-to-chart wiring
+- current Ruby chart read wiring
+- current trade ticket wiring
+- current Plan Buy / Plan Sell wiring
+- current Open Trades overlay wiring
+- current Risk Governor wiring
+- current AACI wiring
+- current Security Handshake wiring
+- current news/heat overlays if any
+- current support/resistance layer
+- current y-axis scale logic
+- current price precision logic
+- current mobile chart height/layout logic
+
+Return findings in completion report.
+
+Do not proceed by guessing.
+
+==================================================
+STEP 2 — IDENTIFY ACTUAL CANDLE SOURCE
+==================================================
+
+Identify exactly where candles come from for XAUUSD and all supported market families.
+
+Possible sources:
+- MT5 bridge
+- Deriv feed
+- TwelveData
+- stored historical candles
+- internal tick aggregation
+- mock/sample/dev data
+- unknown source
+
+For each source, identify:
+- source name
+- mode: live/demo/dev/mock
+- symbol field
+- timeframe field
+- OHLC fields
+- timestamp field
+- price basis: bid / ask / mid / last / unknown
+- update method: historical pull / websocket / polling / tick aggregation
+- freshness timestamp
+- supported timeframes
+
+Hard rule:
+If app mode is live/shared MT5, do not use mock/sample/dev candles for chart trading decisions.
+
+If mock/sample/dev candles are detected in live mode:
+- block Ruby confident chart read
+- block Self-Trade chart confirmation
+- show user-safe message
+- show admin diagnostic
+- do not silently continue
+
+==================================================
+STEP 3 — STANDARDIZE VERIFIED CANDLE CONTRACT
+==================================================
+
+Create one standard candle contract used by chart, Ruby, Scanner confirmation, AACI, and Self-Trade.
+
+Suggested type:
+
+type VerifiedCandle = {
+  symbol: string;
+  timeframe: string;
+  source: "mt5" | "deriv" | "twelvedata" | "internal_ohlc" | "mock" | "unknown";
+  sourceMode?: "live" | "demo" | "dev" | "mock" | "unknown";
+  priceBasis?: "bid" | "ask" | "mid" | "last" | "unknown";
+
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+
+  volume?: number;
+  tickVolume?: number;
+  spread?: number;
+
+  isFinal: boolean;
+  receivedAt: number;
+
+  providerSymbol?: string;
+  brokerSymbol?: string;
+
+  qualityFlags: string[];
+};
+
+Everything using candles should use normalized VerifiedCandle or a clearly mapped adapter from raw provider data.
+
+Do not let Ruby, Scanner, or Self-Trade read random component-level candle formats.
+
+==================================================
+STEP 4 — OHLC INTEGRITY VALIDATION
+==================================================
+
+Create a candle validation function.
+
+For each candle, verify:
+
+- timestamp exists
+- timestamp is valid
+- open exists
+- high exists
+- low exists
+- close exists
+- all OHLC values are numbers
+- high >= open
+- high >= close
+- high >= low
+- low <= open
+- low <= close
+- open is inside high/low range
+- close is inside high/low range
+- high >= low
+- price is not zero unless asset legitimately supports it
+- price is not negative
+- price precision is preserved
+- candle symbol matches selected symbol
+- candle timeframe matches selected timeframe
+- candle source is allowed for current app mode
+- candle source is not mock/dev in live trading context
+- candle order is ascending
+- no duplicate timestamps
+- no duplicate timeframe buckets
+- no impossible gaps unless symbol/session profile allows it
+- latest candle freshness is acceptable
+
+If validation fails:
+- mark Chart Truth degraded or failed
+- do not let Ruby give confident read
+- do not let Self-Trade use chart confirmation
+- show clean user state
+- show admin diagnostics only to admin
+
+User-facing:
+“Chart data is syncing. Ruby will read the market once candles are verified.”
+
+Admin-facing:
+Show reason category:
+- OHLC issue
+- timestamp issue
+- duplicate candle
+- source issue
+- mock data detected
+- symbol mismatch
+- timeframe mismatch
+- stale feed
+- bad tick/outlier
+- precision issue
+- live merge issue
+
+==================================================
+STEP 5 — VERIFY TRUE OHLC, NOT LINE DATA PRETENDING TO BE CANDLES
+==================================================
+
+Confirm whether chart receives true OHLC bars.
+
+If true OHLC exists:
+Use it directly after validation.
+
+If only ticks/last price exist:
+Use OHLCAggregator.
+
+If only line data exists and cannot create true OHLC:
+- disable candlestick mode for that source
+- show line/tick chart clearly labeled
+- disable candle-structure Ruby read
+- disable chart-based self-trade confirmation
+
+Do not fake candlesticks from poor data.
+
+==================================================
+STEP 6 — OHLC FIELD MAPPING TEST
+==================================================
+
+Verify mapping explicitly:
+
+- raw open maps to VerifiedCandle.open
+- raw high maps to VerifiedCandle.high
+- raw low maps to VerifiedCandle.low
+- raw close maps to VerifiedCandle.close
+- raw timestamp maps to VerifiedCandle.time
+- raw volume/tickVolume maps correctly if available
+
+Add fixture/dev-only tests:
+- bullish raw candle renders bullish
+- bearish raw candle renders bearish
+- doji renders correctly
+- long upper wick uses high correctly
+- long lower wick uses low correctly
+- open/close are not swapped
+- high/low are not swapped
+- timestamp appears in correct order
+
+If high/low/open/close mapping is wrong, fix at adapter level.
+
+==================================================
+STEP 7 — TIMEFRAME-BY-TIMEFRAME AUDIT AND REPAIR
+==================================================
+
+Audit every supported timeframe independently:
+
+- 1m
+- 5m
+- 15m
+- 1h
+- 4h
+- 1D
+
+For each timeframe verify:
+
+- correct candle source
+- correct timeframe label
+- correct bucket duration
+- correct candle count
+- correct historical candle load
+- correct live update behavior
+- correct current forming candle
+- correct x-axis time spacing
+- correct price precision
+- correct y-axis scale
+- no stale candles from previous timeframe
+- no duplicate candles
+- no outlier corruption
+- Ruby reads same timeframe user sees
+
+Bucket rules:
+
+- 1m = 60 seconds
+- 5m = 5 minutes
+- 15m = 15 minutes
+- 1h = 1 hour
+- 4h = 4 hours
+- 1D = daily broker/session-aligned candle
+
+No M1 candles displayed under M15.
+No M15 candles displayed under H1.
+No old timeframe candles staying after timeframe switch.
+
+Screenshots show specific issues:
+- 1h showing only a few oversized candles: investigate insufficient bars, aggregation failure, or visible range/scale issue.
+- 15m showing too little structure: investigate candle count/history load.
+- 4h/1D scale too wide: investigate y-axis visible range, old extremes, outliers, and auto-scale.
+- 1D abnormal downside wick: investigate bad tick, corrupted candle, provider mismatch, broker/session issue, or outlier.
+- 5m looks more believable: compare its pipeline against broken timeframes.
+
+==================================================
+STEP 8 — OHLCAggregator FOR TICK DATA
+==================================================
+
+If ticks are used, build/repair OHLCAggregator.
+
+For each timeframe bucket:
+
+- first tick in bucket = open
+- highest tick in bucket = high
+- lowest tick in bucket = low
+- latest tick in bucket = close
+- tick count/tick volume = tickVolume if available
+- spread from bid/ask if available
+- candle isFinal = false until bucket closes
+- candle isFinal = true after bucket closes
+
+Do not create a new candle on every tick.
+Do not duplicate the current candle.
+Do not assign ticks to the wrong timeframe bucket.
+Do not overwrite closed candles except through verified historical correction/backfill with audit flag.
+
+==================================================
+STEP 9 — CURRENT FORMING CANDLE BEHAVIOR
+==================================================
+
+Verify the latest candle updates correctly.
+
+Current forming candle rules:
+- open stays fixed as first tick in bucket
+- high updates only when price exceeds current high
+- low updates only when price falls below current low
+- close updates with latest tick/price
+- candle remains same timestamp until bucket closes
+- new candle starts only when new bucket starts
+
+Ruby must distinguish:
+- current forming candle
+- closed candle confirmation
+- current tick pressure
+
+Ruby language:
+“Buy pressure is forming, but this candle has not closed. Confirmation is not complete.”
+
+Self-trade rule:
+If strategy requires candle close, do not execute on forming candle.
+
+==================================================
+STEP 10 — HISTORICAL + LIVE MERGE REPAIR
+==================================================
+
+Repair how historical candles and live updates merge.
+
+Prevent:
+- duplicate latest candle
+- historical/latest overlap
+- gaps between historical and live
+- closed candle overwritten incorrectly
+- live tick creating new candle too early
+- old symbol candles remaining after symbol switch
+- old timeframe candles remaining after timeframe switch
+
+Reconnect flow:
+- feed reconnects
+- detect missing time range
+- request historical backfill
+- merge backfilled candles
+- validate OHLC
+- resume live updates
+- allow Ruby read only after validation
+
+If backfill fails:
+Show “Chart data is syncing” and block confident read.
+
+==================================================
+STEP 11 — CANDLE COUNT AND HISTORY REQUIREMENTS
+==================================================
+
+Load enough candles per timeframe.
+
+Minimum:
+- at least 150 valid candles where provider/timeframe supports it
+
+Ideal:
+- 300–1000 candles depending performance and timeframe
+
+Default visible range:
+- 80–150 candles on mobile where practical
+
+Read-type history requirements:
+- scalp read: 80–150 candles
+- structure read: 300+ candles
+- swing read: 500–1000 candles
+- support/resistance read: enough for session + previous day/week context
+- news reaction read: pre-news and post-news candles
+
+If history is short:
+Ruby can only give limited read.
+
+User-facing:
+“Limited chart history loaded. Ruby can give short-term context only.”
+
+Do not let Ruby claim major support/resistance from only a few candles.
+
+==================================================
+STEP 12 — PRICE PRECISION AND SYMBOL PROFILE
+==================================================
+
+Create or use a normalized Symbol Directory.
+
+Each symbol profile should include:
+
+- displaySymbol
+- brokerSymbol
+- providerSymbol
+- assetClass
+- allowedTimeframes
+- pricePrecision
+- pipSize
+- pointSize
+- pointValue if available
+- minLot
+- maxLot
+- isSynthetic
+- is24_7
+- session profile
+- candle gap rules
+- spread rules
+- tick speed expectations
+- price basis support
+- provider priority
+
+This is essential for:
+- XAUUSD
+- Forex pairs
+- US30 / indices
+- Deriv volatility indices
+- 1-second volatility indices
+- Boom/Crash/Step if supported
+- crypto/stocks if supported later
+
+Wrong precision can make candles look flat, stretched, or fake.
+
+==================================================
+STEP 13 — BROKER / EXECUTION PRICE ALIGNMENT
+==================================================
+
+Compare visible chart price with execution price source.
+
+Track:
+- chart latest close
+- chart latest price
+- MT5 bid
+- MT5 ask
+- broker latest
+- spread
+- expected entry
+- actual fill after execution
+- slippage
+
+If chart price and broker/execution price mismatch beyond tolerance:
+- mark chart/execution alignment failed
+- pause Ruby live execution confidence
+- block Self-Trade chart confirmation
+- warn user cleanly
+
+User-facing:
+“Chart and execution price are syncing. Trade action paused until market context is verified.”
+
+Admin-facing:
+Show safe diagnostic:
+chart latest, broker bid/ask, diff, tolerance, source.
+
+Do not expose raw secrets or backend payloads.
+
+==================================================
+STEP 14 — BID / ASK / MID / LAST BASIS
+==================================================
+
+The chart must know candle basis:
+
+- bid candles
+- ask candles
+- mid candles
+- last-price candles
+- unknown basis
+
+Ruby must factor this into:
+- buy entry
+- sell entry
+- stop placement
+- spread buffer
+- slippage estimate
+- break-even
+- SL/TP visualization
+
+If basis unknown:
+- cap scalp confidence
+- show admin diagnostic
+- user-facing status remains clean
+
+==================================================
+STEP 15 — SPREAD-AWARE SL/TP AND STOP BUFFER READINESS
+==================================================
+
+Do not fully redesign the trade overlay yet, but prepare chart data to support:
+
+- entry line
+- bid/ask zone
+- spread buffer
+- SL danger zone
+- TP zone
+- break-even adjusted for spread
+
+When Plan Buy / Plan Sell exists:
+Ensure it uses chart truth + broker price context before showing confidence.
+
+If spread data missing:
+Cap scalp/trade confidence and inform Ruby context.
+
+==================================================
+STEP 16 — BAD TICK / OUTLIER DETECTION
+==================================================
+
+Detect suspicious candles/ticks.
+
+Flag:
+- single-tick price spike
+- impossible candle range
+- wick far outside normal volatility
+- price jump not confirmed by next ticks
+- provider correction event if known
+- zero-volume ghost candle
+- abnormal daily wick
+- candle range far above symbol/timeframe norms
+- price outside broker tolerance
+- source disagreement
+
+Do not silently delete suspicious candles.
+Do not smooth them away.
+Do not rewrite OHLC without audit.
+
+Actions:
+- mark candle quality flag
+- reduce Chart Truth Score
+- widen y-axis handling or exclude from visible auto-scale only if clearly marked
+- show admin diagnostic
+- Ruby caution or read pause depending severity
+
+For screenshot:
+Investigate 1D abnormal downside wick around 2000 while XAUUSD is near 4327. Determine whether it is:
+- real historical data
+- provider error
+- wrong symbol
+- wrong source
+- bad tick
+- scale bug
+- adjusted/unadjusted data mismatch
+- corrupted candle
+
+==================================================
+STEP 17 — CANDLE REPAIR RULES
+==================================================
+
+Repair rules:
+
+- do not invent missing candles
+- do not smooth candles
+- do not rewrite OHLC silently
+- mark gaps clearly
+- request reload/backfill
+- use fallback source only if verified
+- label fallback source
+- pause Ruby confidence until repaired
+- log repair actions safely
+
+==================================================
+STEP 18 — Y-AXIS SCALE AND RENDERING REPAIR
+==================================================
+
+Fix rendering only after data validation.
+
+Rendering requirements:
+- large chart canvas
+- full-width chart area
+- taller mobile chart height
+- visible candle bodies
+- visible wicks
+- clear bullish/bearish candles
+- minimum candle body width
+- proper candle spacing
+- readable right-side price axis
+- latest price marker
+- bid/ask line if available
+- current forming candle updates live
+- no candle clipping
+- no distorted y-axis
+- no forced smoothing
+- no line chart pretending to be candles
+
+Y-axis rules:
+- auto-scale to visible candles
+- include wick highs/lows of visible valid candles
+- do not include unrelated far old extremes unless zoomed out
+- handle flagged outliers without flattening current action
+- provide reset scale
+- keep latest price visible
+
+If too many candles compress visibility:
+Adjust default visible range instead of making candles unreadable.
+
+==================================================
+STEP 19 — TIME AXIS AND TIMEZONE TRUTH
+==================================================
+
+Internally use consistent timestamps.
+
+Track:
+- UTC timestamp
+- broker/server time if available
+- user local display time
+- session label
+- candle close time
+- news event time conversion
+
+Ruby must know whether it refers to:
+- user local time
+- broker time
+- New York/London/Tokyo session time
+
+Add candle close countdown if already easy/future-ready:
+“M15 candle closes in 03:42”
+
+Do not let timezone shifts create wrong candle buckets.
+
+==================================================
+STEP 20 — CHART MIRROR LAYER
+==================================================
+
+Create/repair ChartMirrorLayer.
+
+Mirror Lock states:
+- On
+- Off
+
+When Mirror Lock is ON:
+The following must agree:
+- header selected symbol
+- chart symbol
+- chart timeframe
+- Ruby read symbol/timeframe
+- Scanner focus symbol/timeframe
+- Trade Ticket symbol/timeframe context
+- Open Trade overlay symbol
+- Heat/News context
+- AACI chart snapshot
+- Self-Trade agent context if applicable
+
+When Mirror Lock is OFF:
+User can inspect a different chart without changing Scanner/Trade focus. UI must clearly show inspection mode.
+
+Mirror status states:
+- Mirrored
+- Syncing
+- Conflict
+- Refreshing
+- Stale
+
+User-facing:
+“Mirrored · XAUUSD · M5”
+“Chart syncing…”
+
+If conflict:
+Pause confident Ruby read.
+
+==================================================
+STEP 21 — CHART TRUTH SCORE
+==================================================
+
+Implement Chart Truth Score.
+
+Formula:
+
+CHART_TRUTH_SCORE =
+0.20 × OHLCIntegrity
++ 0.15 × SourceAuthenticity
++ 0.13 × TimeframeAccuracy
++ 0.12 × SymbolMirrorAccuracy
++ 0.10 × HistoricalLiveMergeQuality
++ 0.09 × FeedFreshness
++ 0.08 × PricePrecision
++ 0.07 × RenderAccuracy
++ 0.04 × ScaleQuality
++ 0.02 × InteractionStability
+
+Labels:
+- 95–100: Verified market chart
+- 85–94: Healthy
+- 75–84: Usable but watch
+- 60–74: Degraded
+- below 60: chart read blocked
+
+Hard rules:
+- Chart Truth < 75: no confident Ruby buy/sell read.
+- Chart Truth < 75: Scanner cannot use chart as confirmation.
+- Chart Truth < 75: Self-Trade cannot use chart confirmation.
+- No true OHLC source: no candlestick mode.
+- Mirror fail: chart-based trade confirmation blocked.
+- Feed stale: autonomous chart-based action blocked.
+
+==================================================
+STEP 22 — CHART READ SCORE
+==================================================
+
+Separate Chart Truth from Chart Read.
+
+Chart Truth Score = Is the data real, fresh, synced, and correctly rendered?
+Chart Read Score = Is the market setup readable/tradable?
+
+Examples:
+Chart Truth: 97
+Chart Read: 38
+Meaning: candles are real, but no good trade.
+
+Chart Truth: 48
+Chart Read: blocked
+Meaning: Ruby cannot give serious read.
+
+Ruby should not confuse a high-quality chart with a good trade.
+
+==================================================
+STEP 23 — RUBY CHART GATE
+==================================================
+
+Ruby Chart Read requires:
+
+- Chart Truth Pass
+- Mirror Pass
+- Freshness Pass
+- Timeframe Pass
+- AACI Chart Handshake Pass
+- verified RubyChartContext object
+
+If not passed:
+Ruby may say:
+“Chart data is syncing. I’ll read the market once candles are verified.”
+
+Ruby may not give:
+- bullish/bearish confidence
+- buy/sell confirmation
+- entry recommendation
+- self-trade confirmation
+- false certainty
+
+Ruby must read structured data, not just the visual canvas.
+
+Create RubyChartContext:
+
+type RubyChartContext = {
+  symbol: string;
+  timeframe: string;
+  candles: VerifiedCandle[];
+  latestPrice?: number;
+  bid?: number;
+  ask?: number;
+  spread?: number;
+  priceBasis?: string;
+  session?: string;
+  newsPhase?: string;
+  heatState?: string;
+  chartTruthScore: number;
+  chartReadScore?: number;
+  mirrorStatus: string;
+  feedStatus: string;
+  openPositionContext?: any;
+  scannerContext?: any;
+  aaciChartHandshake?: any;
+};
+
+Ruby should include a compact trust line:
+“Read source: Verified M5 candles · Live feed · Mirror synced”
+
+If limited:
+“Read limited: only 48 candles loaded · short-term view only”
+
+==================================================
+STEP 24 — SELF-TRADE AND SCANNER GATING
+==================================================
+
+Self-Trade AI cannot use chart confirmation unless:
+
+- Chart Truth passes
+- Mirror passes
+- Freshness passes
+- timeframe passes
+- broker price alignment passes
+- AACI passes
+- Risk Governor passes
+- Security Handshake passes
+
+Scanner can show its own signal, but cannot mark “chart confirmed” unless Chart Truth passes.
+
+Trade planning can prepare a plan, but confidence should be limited if chart truth is degraded.
+
+==================================================
+STEP 25 — AACI CHART HANDSHAKE
+==================================================
+
+Add AACI chart handshake.
+
+Handshake fields:
+- ChartSource: PASS/WARN/FAIL
+- OHLCIntegrity: PASS/WARN/FAIL
+- TimeframeAccuracy: PASS/WARN/FAIL
+- MirrorSync: PASS/WARN/FAIL
+- FeedFreshness: PASS/WARN/FAIL
+- HistoricalLiveMerge: PASS/WARN/FAIL
+- BrokerPriceAlignment: PASS/WARN/FAIL
+- RenderHealth: PASS/WARN/FAIL
+- RubyReadAllowed: PASS/WARN/FAIL
+- SelfTradeChartAllowed: PASS/WARN/FAIL
+
+AACI receives:
+- Chart Truth Score
+- Chart Read Score
+- candle freshness
+- mirror status
+- OHLC source
+- execution price alignment
+- Ruby read permission
+- Self-Trade chart permission
+
+If chart handshake fails:
+Lower AACI confidence or block autonomous chart-based action.
+
+==================================================
+STEP 26 — USER SAFE STATES
+==================================================
+
+Regular users see only clean messages:
+
+- Chart data is syncing.
+- Candles are refreshing.
+- Live candles unavailable.
+- Ruby is waiting for verified candle data.
+- Chart and execution price are syncing.
+- Limited chart history loaded.
+- This chart is in line mode because OHLC candles are unavailable.
+- Mirror syncing.
+
+No raw backend/debug/provider errors.
+
+==================================================
+STEP 27 — ADMIN DIAGNOSTICS
+==================================================
+
+Admin-only diagnostics should classify:
+
+- Data source failure
+- OHLC mapping failure
+- Aggregation failure
+- Mirror failure
+- Timeframe mismatch
+- Live merge failure
+- Price precision failure
+- Rendering failure
+- Scale failure
+- Overlay anchoring failure
+- Ruby context failure
+- Execution price mismatch
+- Bad tick/outlier detected
+- Mock data detected
+- Stale feed
+- Insufficient history
+
+Admin diagnostics may show:
+- source
+- timeframe
+- candle count
+- last candle time
+- latest chart price
+- broker bid/ask
+- diff/tolerance
+- validation failures
+- outlier flags
+- chart truth score
+
+Do not show secrets or raw sensitive payloads.
+
+==================================================
+STEP 28 — CHART SAFE MODE
+==================================================
+
+If chart truth fails, enter Chart Safe Mode.
+
+Safe Mode behavior:
+- show chart syncing state
+- Ruby read paused
+- chart-based trade confirmation unavailable
+- self-trade chart confirmation paused
+- open trades still visible if execution data is available
+- manual controls still follow existing app permissions/Risk Governor
+- no fake candles
+- no false confidence
+
+==================================================
+STEP 29 — CHART MODE RULES
+==================================================
+
+Chart mode permissions:
+
+- Candlestick mode requires true OHLC.
+- Bar mode requires true OHLC.
+- Line mode can use last/bid/mid.
+- Heikin Ashi later requires verified OHLC and must be labeled transformed.
+- Replay mode requires stored snapshots.
+- Trade review mode requires decision snapshots.
+
+If OHLC fails:
+Switch to line/tick mode if available and label clearly.
+Disable candle-pattern reads.
+
+==================================================
+STEP 30 — OVERLAY ANCHORING SAFETY
+==================================================
+
+Do not build new overlays yet, but protect existing overlays.
+
+Every overlay should be anchored by:
+- symbol
+- timeframe
+- price
+- time range
+- source
+- createdAt
+- validUntil if applicable
+
+If user switches symbol/timeframe:
+- hide
+- reload
+- or recalculate overlays
+- never show USDJPY levels on XAUUSD
+- never show old timeframe lines as current if invalid
+
+This applies to:
+- support/resistance
+- entry lines
+- SL/TP
+- news markers
+- heat zones
+- liquidity levels
+- open trade overlays
+
+==================================================
+STEP 31 — DECISION SNAPSHOTS
+==================================================
+
+Every serious Ruby chart read should save or prepare a snapshot:
+
+- symbol
+- timeframe
+- last verified candles reference
+- chart truth score
+- chart read score
+- Ruby read
+- scanner agreement
+- news phase
+- heat state
+- AACI score
+- entry/SL/TP if planned
+- timestamp
+- feed status
+- mirror status
+- price basis
+
+This feeds:
+- Wins & Losses
+- Account Analytics
+- Chart Replay
+- Ruby learning
+- AACI learning
+
+If persistence is not ready, create future-ready type/service without breaking.
+
+==================================================
+STEP 32 — REPLAY TRUTH RULE
+==================================================
+
+Trade replay must preserve what was known at the time.
+
+Replay should show:
+- what Ruby saw at entry
+- candles available then
+- chart truth score then
+- live price/feed state then
+- scanner/heat/news/AACI state then
+- what changed after
+
+Do not judge Ruby with future-corrected data unless labeled.
+
+==================================================
+STEP 33 — PERFORMANCE BUDGET
+==================================================
+
+Chart must remain fast.
+
+Rules:
+- do not rerender whole page on every tick
+- update only latest candle when possible
+- throttle crosshair updates
+- debounce symbol/timeframe switching
+- lazy-load heavy overlays
+- virtualize heavy marker/replay layers later
+- keep Ruby panel separate from chart render loop
+- track chart render latency if possible
+- avoid expensive recalculation on every tick
+
+Speed matters. If chart rendering lags, AACI speed score should degrade.
+
+==================================================
+STEP 34 — VISUAL REPAIR AFTER DATA TRUTH
+==================================================
+
+After Candle Truth is verified, fix visual chart.
+
+Minimum visual quality:
+- candles must resemble professional market data
+- bullish/bearish bodies obvious
+- wicks clearly visible
+- price axis readable
+- latest price marker readable
+- chart fills useful vertical space
+- timeframe switching feels smooth
+- zoom/pan/crosshair if chart library supports it
+- reset scale button if possible
+- no oversized fake-looking candles caused by too few bars
+- no chart compressed by far outlier unless intentionally zoomed out
+
+Mobile requirement:
+The chart should be large enough to read. Intelligence panels must not crush the candle canvas.
+
+==================================================
+STEP 35 — TIMEFRAME QA TABLE REQUIRED
+==================================================
+
+After repair, return this table:
+
+Timeframe | Candle count | Source | OHLC pass | Aggregation pass | Forming candle pass | Merge pass | Outlier pass | Mirror pass | Price alignment pass | Scale pass | Ruby allowed
+
+Rows:
+- 1m
+- 5m
+- 15m
+- 1h
+- 4h
+- 1D
+
+Do not mark complete until each timeframe is audited.
+
+If a timeframe cannot pass due to provider limitation, state why and put it in safe mode.
+
+==================================================
+STEP 36 — KNOWN FIXTURE TESTS
+==================================================
+
+Add dev/test fixture checks where possible:
+
+- bullish candle renders bullish
+- bearish candle renders bearish
+- doji renders correctly
+- long upper wick renders correctly
+- long lower wick renders correctly
+- gap renders correctly
+- forming candle updates in place
+- timeframe switch clears old candles
+- symbol switch clears old candles
+- invalid OHLC candle is rejected
+- duplicate timestamp rejected
+- mock candle blocked in live mode
+- outlier flagged
+
+These fixtures must not be used as live data.
+
+==================================================
+STEP 37 — FINAL QA
+==================================================
+
+Verify:
+
+1. Real OHLC source identified.
+2. No mock candles in live mode.
+3. OHLC fields mapped correctly.
+4. Timeframe aggregation correct.
+5. 1m audited.
+6. 5m audited.
+7. 15m audited.
+8. 1h audited.
+9. 4h audited.
+10. 1D audited.
+11. Forming candle updates in place.
+12. Historical/live merge correct.
+13. Symbol mirror correct.
+14. Timeframe mirror correct.
+15. Price precision correct.
+16. Enough history loaded.
+17. Bad ticks/outliers flagged.
+18. 1D abnormal wick investigated.
+19. Y-axis scale fixed.
+20. Candles visually readable.
+21. Chart/execution price checked.
+22. Bid/ask/mid/last basis identified or marked unknown.
+23. Ruby read gated by Chart Truth.
+24. Scanner chart confirmation gated.
+25. Self-Trade chart confirmation gated.
+26. AACI chart handshake added.
+27. User-safe messages added.
+28. Admin diagnostics added.
+29. Chart Safe Mode added.
+30. Mobile chart layout readable.
+31. Existing Plan Buy / Plan Sell wiring preserved.
+32. Existing MT5/shared bridge route preserved.
+33. Existing Risk Governor preserved.
+34. Existing AACI preserved.
+35. Existing Security Handshake preserved.
+36. Existing Ruby floating button and bottom nav preserved.
+37. Build/typecheck/lint pass.
+38. No runtime errors.
+
+==================================================
+COMPLETION REPORT REQUIRED
+==================================================
+
+Return:
+
+- files changed
+- chart route/component inspected
+- chart source identified
+- candle source by asset/source
+- VerifiedCandle contract added
+- Symbol Directory changes
+- OHLC mapping confirmed
+- OHLCAggregator status
+- historical/live merge status
+- timeframe audit table
+- bad tick/outlier handling
+- 1D abnormal wick finding
+- price precision status
+- broker/execution price alignment status
+- bid/ask/mid/last basis status
+- Chart Truth Score implemented
+- Chart Read Score implemented
+- RubyChartGate implemented
+- AACI Chart Handshake implemented
+- Self-Trade chart gating implemented
+- Scanner chart confirmation gating implemented
+- Chart Safe Mode implemented
+- admin diagnostics added
+- user-safe states added
+- visual rendering improvements
+- performance protections
+- QA results
+- remaining follow-up needed
+
+IMPORTANT:
+Do not move on to smart overlays, extra chart design, Ruby panels, or new intelligence layers until the chart passes truth validation. ARX Smart Chart must prove candle truth before candle beauty, and chart truth before Ruby confidence, Scanner confirmation, or Self-Trade action.

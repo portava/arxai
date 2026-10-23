@@ -1,0 +1,63 @@
+Upgrade Phase 10 into an Ecosystem Evolution + Governance Intelligence Architecture.
+
+Goal:
+Transform the AI Economy and Evolution Sandbox into a self-governing adaptive financial ecosystem focused on collective survival, ecosystem fitness, evolutionary safety, and systemic resilience.
+
+Add:
+
+/src/domain/ecosystem-fitness/
+  ecosystemFitness.engine.ts
+  contributionScore.engine.ts
+  diversificationContribution.engine.ts
+  executionStressContribution.engine.ts
+  behavioralStressContribution.engine.ts
+  systemicFragility.engine.ts
+
+/src/domain/evolution-constitution/
+  evolutionConstitution.engine.ts
+  forbiddenMutationRules.engine.ts
+  governanceLaws.engine.ts
+
+/src/domain/evolution-sandbox/
+  ecosystemSimulation.engine.ts
+  correlatedFailureScenario.engine.ts
+  ecosystemStress.engine.ts
+  massDisagreementScenario.engine.ts
+
+/src/domain/evolution-memory/
+  mutationMemory.engine.ts
+  collapseHistory.engine.ts
+  adaptationHistory.engine.ts
+
+/src/domain/ecosystem-politics/
+  authorityHierarchy.engine.ts
+  emergencyVeto.engine.ts
+  governanceVoting.engine.ts
+
+/src/domain/evolution-fraud/
+  fakeEdgeDetector.engine.ts
+  overfitMutationDetector.engine.ts
+  statisticalIllusion.engine.ts
+
+/src/domain/strategy-species/
+  speciesClassification.engine.ts
+  extinctionRisk.engine.ts
+  adaptationCapacity.engine.ts
+  ecosystemBalance.engine.ts
+
+/src/domain/ecosystem-survival/
+  ecosystemSurvival.engine.ts
+  civilizationStressTest.engine.ts
+  systemicRecovery.engine.ts
+
+Rules:
+- Ecosystem health matters more than isolated strategy profit.
+- Strategies must improve ecosystem fitness to gain authority.
+- Evolution Constitution defines permanent safety laws.
+- Forbidden mutations can never be promoted.
+- Sandbox evolution must simulate ecosystem-wide stress, not only isolated strategies.
+- Evolutionary memory prevents repeated dangerous mutations.
+- Governance hierarchy defines emergency veto authority.
+- Fraud detection must identify fake edge and fragile optimization.
+- Ecosystem survival score must continuously measure whole-system survivability.
+- All ecosystem governance changes and evolution results must be logged into the Black Box Vault.

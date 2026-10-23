@@ -1,0 +1,105 @@
+Continue after Build R — Prop Firm Challenge Mode.
+
+Now begin Build S — AI Accountability & Rule Contract System.
+
+Goal:
+Create a system where traders commit to personal trading rules before each session, and the app tracks whether they respected or violated those rules.
+
+Tasks:
+
+1. Audit existing systems:
+- Risk Lock System
+- Trade Plan Builder
+- Trade Journal
+- Trader Scoring
+- AI Coach
+- Weekly Review
+- Prop Challenge Mode
+
+2. Add database models:
+
+trading_rule_contracts:
+- id
+- user_id
+- contract_name
+- max_trades_per_day
+- max_daily_loss_percent
+- max_risk_per_trade_percent
+- allowed_sessions
+- allowed_symbols
+- required_rr_minimum
+- cooldown_after_losses
+- no_trade_conditions
+- is_active
+- created_at
+- updated_at
+
+trading_rule_violations:
+- id
+- user_id
+- contract_id
+- trade_id
+- violation_type
+- severity
+- message
+- created_at
+
+session_commitments:
+- id
+- user_id
+- contract_id
+- session_date
+- commitment_text
+- status
+- started_at
+- ended_at
+- created_at
+
+3. Add rule examples:
+- No more than 3 trades per day
+- Stop after 2 losses
+- Risk no more than 1% per trade
+- Only trade London/New York session
+- Only take 2:1 R:R or better
+- No trading during high-impact news
+- No live trading after risk lock
+- No trading outside approved strategy
+
+4. API routes:
+- POST create trading rule contract
+- GET trading rule contracts
+- PATCH update trading rule contract
+- POST start session commitment
+- POST end session commitment
+- POST evaluate rule violations
+- GET rule violations
+
+5. Frontend components:
+- Rule Contract Builder
+- Session Commitment Screen
+- Rule Compliance Card
+- Violation Feed
+- Accountability Score Card
+
+6. Connect to:
+- Risk Lock System
+- Trade Plan Builder
+- Execution Safety Layer
+- Trader Growth Score
+- AI Coach
+- Weekly Review
+
+Important:
+- Do not block trades unless hard rules require it.
+- Show soft warnings before hard locks.
+- Make the experience feel like accountability, not punishment.
+- No guaranteed-profit claims.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How rule contracts connect to execution safety
+6. Errors or limitations
+7. Recommended next build

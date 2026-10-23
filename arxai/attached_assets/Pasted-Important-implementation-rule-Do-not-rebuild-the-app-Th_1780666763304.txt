@@ -1,0 +1,754 @@
+Important implementation rule:
+Do not rebuild the app.
+
+This is an upgrade to the existing ARX AI system, not a replacement, rewrite, redesign, or rebuild.
+
+Preserve the current app architecture, routes, components, services, hooks, database models, live bridge flow, scanner flow, Ruby flow, Smart Chart flow, trade modal flow, admin/user/investor role system, and all existing permissions.
+
+Before changing anything:
+1. Inspect what already exists.
+2. Identify the current source of truth for each function.
+3. Reuse existing code wherever possible.
+4. Upgrade missing pieces only.
+5. Do not duplicate services.
+6. Do not create parallel systems that conflict with existing ones.
+7. Do not remove current functionality to make the upgrade easier.
+8. Do not break the live execution path.
+9. Do not break scanner, Ruby, Smart Chart, trade modal, open positions, retcodes, investor portal, admin controls, or role permissions.
+
+This upgrade must make the entire system more connected.
+
+Build an internal ARX Handshake System so every major layer checks in with the others before producing user-facing analysis, trade previews, alerts, investor reporting, or admin decisions.
+
+The purpose of the handshake system:
+Every layer, function, module, and agent should know whether the required connected systems are available, fresh, valid, and aligned.
+
+Ruby should not give a signal unless scanner data, chart data, symbol specs, broker state, news context, execution conditions, user/account permissions, and risk logic have checked in successfully.
+
+Investor values should not update unless investor ledger, NAV engine, broker mirror, pool allocation, lock status, fee logic, and reconciliation status have checked in successfully.
+
+Trade preview should not open unless signal state, symbol specs, account state, execution cost, slippage, SL/TP validation, bridge readiness, and permissions have checked in successfully.
+
+====================================================
+PART 1 — DO NOT REBUILD / DO NOT DUPLICATE
+====================================================
+
+Strict rules:
+- Do not rebuild the app.
+- Do not rewrite the app from scratch.
+- Do not replace existing scanner, Ruby, Smart Chart, trade modal, bridge, investor portal, or admin dashboard.
+- Do not create disconnected duplicate services.
+- Do not create a second bridge path unless explicitly required.
+- Do not create fake/mock/simulated/Paper Trading fallbacks.
+- Do not change live execution behavior.
+- Do not remove working functionality.
+- Do not hide broken wiring behind new UI.
+- Do not hardcode fake data to make screens look finished.
+- Do not expose backend/internal wording to users.
+
+This must be an integration upgrade.
+
+Every new feature must plug into the existing system.
+
+====================================================
+PART 2 — SYSTEM-WIDE WIRING AUDIT
+====================================================
+
+Before building the handshake system, perform a wiring audit across the current app.
+
+Audit these layers:
+
+1. Auth / Role Layer
+- admin
+- trader/user
+- investor
+- permissions
+- route guards
+- API permissions
+- Andraie.co@gmail.com trader-only split if already implemented
+- separate admin login
+- investor view-only restrictions
+
+2. Market Data Layer
+- live price
+- bid/ask
+- spread
+- OHLC/candles
+- historical data
+- symbol directory
+- arx_symbol_specs
+- tick value
+- tick size
+- point
+- digits
+- contract size
+- min/max lot
+- lot step
+- trade mode
+- market session
+- freshness timestamps
+
+3. Scanner Layer
+- Focus Scan
+- Broad Scan
+- Ruby Scalp Signals
+- Ruby Scalp Builder
+- scanner result ranking
+- scanner cache
+- symbol selection
+- selected-symbol state
+- signal lifecycle
+- signal freshness
+
+4. Ruby Intelligence Layer
+- Ruby market explanation
+- Ruby scanner explanation
+- Ruby chat prompt
+- Ruby trade analysis
+- Ruby voice/text state
+- Ruby memory/context
+- Ruby reason chain
+- Ruby news/economic explanation
+- Ruby signal quality tracking
+
+5. Smart Chart Layer
+- chart data
+- selected symbol sync
+- chart overlays
+- Ruby zones
+- news/event overlay
+- support/resistance zones
+- entry/watch/late/invalid zones
+- execution cost overlay
+- trade health overlay
+
+6. News / Economic Layer
+- economic calendar
+- high-impact events
+- headlines
+- market-impact mapping
+- affected symbols/currencies
+- event timestamps
+- news freshness
+- news severity
+- post-news monitoring
+
+7. Broker / Bridge Layer
+- EA heartbeat
+- bridge readiness
+- broker account mirror
+- balance/equity
+- margin/free margin
+- open position sync
+- command/result mapping
+- retcodes
+- fill price
+- slippage
+- spread at entry
+- position visibility
+- freshness
+
+8. Risk / Execution Preview Layer
+- lot validation
+- SL/TP validation
+- margin check
+- reward-to-risk
+- slippage estimate
+- spread cost
+- starting drawdown estimate
+- break-even distance
+- order type recommendation
+- trade survivability
+- account impact
+
+9. Trade Modal / Order Layer
+- selected symbol wiring
+- direction wiring
+- order type
+- lot size
+- SL/TP
+- Ruby explanation
+- live readiness checks
+- confirm live trade
+- retcode/result display
+
+10. Open Trade Management Layer
+- current positions
+- TP progress
+- SL distance
+- trade health
+- break-even suggestion
+- partial close guidance
+- invalidation monitoring
+- close warning
+
+11. Investor / Fund Book Layer
+- investor ledger
+- strategy pools
+- NAV/unit accounting
+- broker mirror overlay
+- 30-day deposit lock
+- available vs locked balance
+- fees
+- 60/40 internal waterfall admin-only
+- weekly investor explanation
+- statements
+- discrepancy/reconciliation
+
+12. Admin Layer
+- admin dashboard
+- user management
+- investor management
+- bridge controls
+- kill switches
+- Ruby quality dashboard
+- discrepancy center
+- audit logs
+- settings/tuning controls
+
+Deliver audit results:
+- what is wired correctly
+- what is partially wired
+- what is disconnected
+- what is duplicated
+- what is stale or unused
+- what needs repair
+- what must not be touched
+
+====================================================
+PART 3 — INTERNAL ARX HANDSHAKE SYSTEM
+====================================================
+
+Build a shared internal handshake system.
+
+Suggested naming:
+- arxHandshakeService
+- systemHandshakeService
+- arxSystemHealthService
+- arxLayerCoordinator
+- arxSignalReadinessService
+
+Use current project naming style.
+
+The handshake system should provide a standard way for layers to check each other before action.
+
+Handshake output should include:
+
+{
+  handshakeId,
+  contextType,
+  contextId,
+  requestedBy,
+  timestamp,
+  overallStatus,
+  layersChecked,
+  blockers,
+  warnings,
+  freshness,
+  permissions,
+  recommendations,
+  safeToProceed,
+  userFacingMessage,
+  adminDetails
+}
+
+overallStatus:
+- READY
+- READY_WITH_WARNINGS
+- WAITING_FOR_DATA
+- STALE
+- BLOCKED
+- DEGRADED
+- ERROR
+
+safeToProceed:
+- true
+- false
+
+Layer check status:
+- PASS
+- WARN
+- FAIL
+- SKIPPED
+- NOT_AVAILABLE
+
+Each layer check should include:
+- layerName
+- status
+- lastUpdated
+- freshnessAgeSeconds
+- required
+- reason
+- userFacingMessage
+- adminDetails
+
+====================================================
+PART 4 — REQUIRED HANDSHAKE TYPES
+====================================================
+
+Implement at least these handshake types:
+
+1. Scanner Signal Handshake
+Used before Ruby presents scanner signal as actionable.
+
+Must check:
+- live price freshness
+- candle data freshness
+- symbol specs available
+- selected symbol valid
+- scanner result available
+- signal lifecycle state
+- late/do-not-chase status
+- news risk
+- spread/slippage conditions
+- execution cost viability
+- risk/reward viability
+- Ruby explanation ready
+- chart overlay sync
+- user permissions if trade action is shown
+- bridge readiness if Build Trade is shown
+
+2. Smart Chart Overlay Handshake
+Used before chart overlays are drawn.
+
+Must check:
+- chart data loaded
+- selected symbol matches scanner symbol
+- Ruby signal exists
+- levels/zones available
+- news events mapped to symbol
+- execution cost data available if layer enabled
+- trade health data available if open position exists
+- overlay timestamps/freshness
+
+3. Trade Preview Handshake
+Used before opening Build Trade / trade modal from Ruby/scanner/chart.
+
+Must check:
+- signal not stale
+- signal not late unless user is only reviewing
+- symbol specs available
+- bid/ask fresh
+- spread acceptable
+- slippage estimate available
+- lot size valid
+- SL/TP valid
+- margin sufficient
+- account live-enabled if live
+- user allowed to trade
+- bridge ready
+- kill switch off
+- no critical discrepancy
+- no conflicting open trade warning unacknowledged if applicable
+
+4. Live Trade Health Handshake
+Used after trade is open.
+
+Must check:
+- position exists in broker/EA position sync
+- position freshness
+- selected symbol matches
+- TP/SL known
+- current price fresh
+- Ruby original signal available if trade came from Ruby
+- trade health engine active
+- retcode/fill data stored
+- slippage actual vs estimate if available
+
+5. Investor Value Handshake
+Used before displaying investor balance/current value.
+
+Must check:
+- investor ledger scoped to authenticated investor
+- investor holdings loaded
+- current NAV available
+- broker mirror overlay available if applicable
+- pool assignments valid
+- locked funds calculated
+- available withdrawal calculated
+- fees applied
+- reconciliation passed or status shown
+- no critical discrepancy
+- investor cannot see other investor data
+- ARX internal waterfall hidden
+
+6. Weekly Investor Report Handshake
+Used before publishing weekly account story/report.
+
+Must check:
+- weekly NAV close completed
+- broker sync fresh/reconciled
+- investor ledger reconciled
+- P/L calculation completed
+- fees calculated
+- locked deposit status included
+- economic/news attribution available or marked unavailable
+- no stale data
+- no critical discrepancy
+- report visible only to correct investor
+- ARX internal waterfall excluded
+
+7. Admin Fund Control Handshake
+Used before admin approves deposits/withdrawals/waterfall/adjustments.
+
+Must check:
+- admin permission
+- audit logging available
+- affected investor/pool data loaded
+- reconciliation status
+- lock/freeze status
+- required reason/note captured
+- action does not violate policy
+
+8. Ruby Explanation Handshake
+Used before Ruby answers scanner/trade questions.
+
+Must check:
+- market data context
+- scanner context
+- chart context
+- news/economic context
+- symbol-specific playbook
+- execution/risk context if trade-related
+- user role context
+- no internal wording leakage
+- explanation includes required fields
+
+====================================================
+PART 5 — HANDSHAKE CONTRACT BETWEEN LAYERS
+====================================================
+
+Every major layer should expose a lightweight readiness/check method.
+
+Examples:
+- marketData.checkReadiness(symbol)
+- scanner.checkSignalReadiness(symbol)
+- ruby.checkExplanationReadiness(context)
+- chart.checkOverlayReadiness(symbol)
+- news.checkMarketImpact(symbol)
+- broker.checkBridgeReadiness()
+- risk.checkTradePreviewReadiness(setup)
+- tradeModal.checkPrefillReadiness(setup)
+- investorFund.checkValueReadiness(investorId)
+- admin.checkActionReadiness(action)
+
+Do not force all code into one huge file.
+Use a shared coordinator that calls existing services.
+
+The handshake should not slow the app badly.
+Cache results where safe.
+Use freshness timestamps.
+Do not re-fetch everything unnecessarily if valid data already exists.
+
+====================================================
+PART 6 — HOW HANDSHAKE SHOULD AFFECT USER UI
+====================================================
+
+The handshake should produce clean user-facing states.
+
+Examples:
+
+Scanner:
+If scanner data is fresh but news risk is high:
+“Setup forming, but news risk is high. Ruby is watching zones, not recommending entry yet.”
+
+If price signal is late:
+“Late — do not chase. Price moved too far from Ruby’s entry zone.”
+
+If market data is stale:
+“Waiting for fresh price before Ruby updates this signal.”
+
+Smart Chart:
+If news event mapped:
+“USD CPI in 12 minutes — high impact for Gold/EURUSD/US30.”
+
+Trade Preview:
+If SL/TP invalid:
+“Ruby needs a valid stop loss and take profit before this trade can be reviewed.”
+
+If bridge not ready:
+“Live bridge is not ready. Ruby can analyze but cannot prepare live execution.”
+
+Investor:
+If reconciliation passed:
+“Portfolio Status: Fresh.”
+
+If broker sync stale:
+“Portfolio update delayed. Values may change after broker sync completes.”
+
+Admin:
+If discrepancy blocks payout:
+“Critical discrepancy detected. Withdrawals and weekly report publishing are paused until resolved.”
+
+====================================================
+PART 7 — HANDSHAKE SHOULD NOT BECOME A HARD BLOCK EVERYWHERE
+====================================================
+
+Use blocking only when necessary.
+
+Blocking examples:
+- stale trade signal used for live trade
+- missing symbol specs for lot/slippage calculation
+- invalid SL/TP
+- insufficient margin
+- investor data mismatch
+- critical discrepancy
+- user lacks permission
+- bridge not ready for live trade
+- kill switch active
+- locked funds withdrawal attempt
+
+Warning examples:
+- news risk high
+- spread elevated
+- explanation partial
+- economic driver unknown
+- chart overlay missing non-critical layer
+- confidence mixed
+- broker sync delayed but investor value clearly marked under review
+
+Degraded mode:
+If news is unavailable, Ruby can still analyze technicals but must say:
+“No confirmed news driver available from current data.”
+
+If slippage history unavailable, Ruby can estimate from spread/volatility and say:
+“Slippage estimate is based on current spread and volatility because recent execution history is unavailable.”
+
+====================================================
+PART 8 — HANDSHAKE LOGGING AND ADMIN VISIBILITY
+====================================================
+
+Log handshake results for important actions:
+- scanner actionable signal
+- Build Trade clicked
+- trade modal opened
+- live trade submitted
+- chart alert shown
+- investor value displayed
+- weekly report published
+- deposit/withdrawal approved
+- profit waterfall approved
+- admin adjustment made
+
+Admin should have a System Handshake Monitor showing:
+- recent handshakes
+- pass/warn/fail counts
+- most common blockers
+- stale layers
+- disconnected services
+- data freshness problems
+- user-facing impact
+- admin-only details
+
+Do not show raw internal logs to normal users.
+Admin-only can see details.
+
+====================================================
+PART 9 — CROSS-LAYER EVENT BUS / CHECK-IN SYSTEM
+====================================================
+
+If the app already has an event bus/state system, reuse it.
+If not, create a lightweight internal check-in/event system.
+
+Purpose:
+When a key layer updates, connected layers know.
+
+Events:
+- MARKET_PRICE_UPDATED
+- CANDLE_DATA_UPDATED
+- SYMBOL_SPECS_UPDATED
+- SCANNER_SIGNAL_UPDATED
+- RUBY_EXPLANATION_UPDATED
+- CHART_OVERLAY_UPDATED
+- NEWS_EVENT_UPDATED
+- BROKER_HEARTBEAT_UPDATED
+- POSITION_SYNC_UPDATED
+- TRADE_RESULT_UPDATED
+- INVESTOR_NAV_UPDATED
+- INVESTOR_LEDGER_UPDATED
+- DISCREPANCY_OPENED
+- DISCREPANCY_RESOLVED
+- USER_ROLE_UPDATED
+
+Examples:
+When market price updates:
+- scanner refreshes relevant signal
+- chart overlay updates
+- execution cost preview recalculates
+- open trade health recalculates
+
+When news event updates:
+- chart event overlay updates
+- scanner news risk updates
+- Ruby explanation updates
+- signal stage may downgrade
+
+When position sync updates:
+- open trades update
+- trade health updates
+- investor broker mirror overlay updates
+- discrepancy center checks
+
+When investor NAV updates:
+- investor dashboard updates
+- weekly report readiness updates
+- withdrawal availability recalculates
+
+====================================================
+PART 10 — CROSS-LAYER CONSISTENCY RULES
+====================================================
+
+Enforce consistency:
+
+1. Selected symbol consistency
+Scanner selected symbol, Smart Chart selected symbol, Ruby explanation, and trade modal symbol must match unless user intentionally changes it.
+
+2. Signal consistency
+Ruby explanation must refer to the same signal/level shown on chart.
+
+3. Chart consistency
+Chart levels must match Ruby text:
+- entry zone
+- late zone
+- invalidation
+- TP/SL
+
+4. Trade preview consistency
+Trade modal prefill must match current Ruby setup:
+- symbol
+- direction
+- lot
+- order type
+- entry
+- SL
+- TP
+- explanation
+- risk estimate
+
+5. Investor consistency
+Investor dashboard value must match:
+- investor units
+- current NAV
+- locked/unlocked status
+- fees
+- reconciliation status
+
+6. Admin consistency
+Admin fund control values must reconcile with investor-facing values but include admin-only internal layers.
+
+If inconsistency is detected:
+- create handshake warning or discrepancy
+- block sensitive action if financial/execution-critical
+- show clean message to user/admin
+
+====================================================
+PART 11 — QA / TESTING REQUIREMENTS
+====================================================
+
+Run full QA.
+
+Backend tests:
+1. Scanner Signal Handshake
+- passes when all required data fresh
+- warns when news risk high
+- blocks when stale signal used for trade
+- blocks when missing symbol specs
+- blocks when signal late and user tries Build Trade
+
+2. Smart Chart Handshake
+- overlays draw only when symbol/chart/signal align
+- news marker shows for relevant symbol
+- stale overlay warning works
+
+3. Trade Preview Handshake
+- blocks missing SL/TP if required
+- blocks invalid lot
+- blocks stale price
+- blocks bridge not ready
+- blocks user without permission
+- warns spread/slippage elevated
+
+4. Investor Value Handshake
+- investor sees only own data
+- blocks or under-review when reconciliation critical
+- excludes ARX internal waterfall
+- excludes other investor data
+- locked funds excluded from withdrawable
+
+5. Weekly Report Handshake
+- blocks publishing if broker sync stale
+- blocks if discrepancy critical
+- excludes ARX internal waterfall
+- includes investor-only data
+
+6. Admin Handshake
+- requires admin role
+- requires reason for sensitive actions
+- audit log created
+
+7. Event Bus / Check-in
+- price update triggers scanner/chart/risk recalculation
+- news update triggers chart/scanner/Ruby update
+- position update triggers trade health/investor overlay update
+- NAV update triggers investor dashboard/withdrawal recalculation
+
+Frontend tests:
+- scanner shows handshake states cleanly
+- chart overlay syncs with Ruby text
+- trade modal shows blocker/warning messages
+- investor dashboard shows fresh/under-review correctly
+- admin monitor shows handshake failures
+- no normal user sees backend internals
+- mobile layout remains clean
+
+Regression tests:
+- scanner still works
+- Ruby still works
+- Smart Chart still works
+- trade modal still works
+- live bridge status still works
+- retcode display still works
+- open positions visibility still works
+- investor portal still works
+- admin dashboard still works
+- no live execution path changed
+- no Paper Trading/simulator/mock/fake fallback added
+
+====================================================
+PART 12 — FINAL DELIVERY PROOF REQUIRED
+====================================================
+
+Report back with:
+
+1. Files changed
+2. Existing systems reused
+3. Systems not rebuilt confirmation
+4. Handshake service/module created
+5. Handshake types implemented
+6. Layer readiness methods added
+7. Event/check-in system proof
+8. Scanner handshake proof
+9. Smart Chart handshake proof
+10. Trade Preview handshake proof
+11. Ruby Explanation handshake proof
+12. Investor Value handshake proof
+13. Weekly Report handshake proof
+14. Admin handshake proof
+15. System Handshake Monitor proof if completed
+16. Cross-layer consistency proof
+17. Permission/security proof
+18. Performance timing proof
+19. Mobile UI proof
+20. Confirmation no live execution path changed
+21. Confirmation no duplicate/parallel systems created
+22. Confirmation no investor/trader/user sees internal admin-only details
+23. Known limitations or deferred items
+
+Final rule:
+Do not report complete unless the upgrade is integrated across the system.
+
+This is not a rebuild.
+This is not a disconnected feature.
+Every major layer should check in with the others.
+Every function should know whether its required connected systems are fresh, valid, and aligned.
+Ruby, Scanner, Smart Chart, Trade Preview, Broker Mirror, Investor Fund Book, and Admin Controls must communicate through the internal handshake/check-in system.

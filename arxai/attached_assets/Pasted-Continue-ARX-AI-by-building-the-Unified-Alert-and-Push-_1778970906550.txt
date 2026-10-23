@@ -1,0 +1,385 @@
+Continue ARX AI by building the Unified Alert and Push Notification System.
+
+Do not rebuild blindly. Inspect the current:
+- Sniper Exit Alerts
+- Live Trade Intelligence alerts
+- Trade Decision Orchestrator alerts
+- Smart Exit Plan alerts
+- Economic Calendar/Event Risk alerts
+- Risk Governor alerts
+- Trade Action Center notifications
+- MT5 Execution Reconciliation notifications
+- existing notification center
+- user alert preferences
+- push notification setup if any
+- mobile/iPhone Safari behavior
+- admin trading controls
+
+Goal:
+Create one unified alert system that receives alerts from every trading subsystem, prioritizes them, prevents spam, delivers them in-app and by push when supported, and tracks whether the user saw or acted on them.
+
+Important:
+Do not auto-close trades.
+Do not auto-open trades.
+Do not execute from notifications.
+Do not bypass backend guards.
+Do not expose secrets.
+Live trade actions still require explicit confirmation.
+
+PART 1 — Unified Alert Model
+
+Create one central alert/notification model for:
+
+Alert categories:
+- Trade exit
+- Trade decision
+- Risk warning
+- Broker rejection
+- Execution update
+- Event/news risk
+- MT5 connection
+- Admin/emergency
+- Account routing
+- Symbol/broker rules
+- AI recommendation
+
+Alert severity:
+- Info
+- Watch
+- Warning
+- Urgent
+- Critical
+
+Alert status:
+- unread
+- read
+- acknowledged
+- dismissed
+- action_reviewed
+- expired
+
+Every alert should include:
+- user_id
+- category
+- severity
+- title
+- message
+- related_trade_id if any
+- related_action_id if any
+- related_command_id if any
+- recommended_action
+- action_button_label
+- deep_link
+- data_quality
+- created_at
+- expires_at
+- acknowledged_at
+- delivered_in_app
+- delivered_push
+- push_status
+- cooldown_key
+
+PART 2 — Alert Priority Engine
+
+Build priority logic.
+
+Critical examples:
+- live trade close urgency high
+- trade invalidated
+- MT5 disconnected while live trades are open
+- emergency stop activated
+- broker rejected close request
+- command stuck/stale
+- high-impact news window for open live trade
+
+Urgent examples:
+- profit giveback threshold hit
+- close review recommended
+- risk limit near breach
+- spread/volatility dangerous
+- invalidation level near
+
+Warning examples:
+- market context weakening
+- event risk upcoming
+- stale data
+- symbol rules issue
+
+The alert system should prioritize:
+1. live trade risk
+2. close/protect-profit alerts
+3. execution failures
+4. MT5 connection problems
+5. event/news risk
+6. general info
+
+PART 3 — In-App Notification Center
+
+Create or update Notification Center.
+
+It should show:
+- All
+- Trading
+- Risk
+- AI
+- MT5
+- Admin/System
+
+Each notification card should show:
+- severity badge
+- title
+- message
+- time
+- related trade/action if any
+- status
+- primary action button
+- secondary action button
+
+Actions:
+- View Trade
+- Review Close
+- Ask AI
+- View Action
+- View Risk Details
+- Mark Read
+- Dismiss
+
+No execution from a notification directly. Any trading action opens the correct review modal first.
+
+PART 4 — Push Notification Support
+
+If push notification infrastructure exists:
+- connect unified alerts to push delivery
+- respect user preferences
+- respect quiet hours
+- respect severity thresholds
+- include safe message only
+- no account numbers
+- no MT5 credentials
+- no tokens
+- no sensitive shared master info
+
+If push notification infrastructure does not exist:
+- create clean push-ready architecture/stub
+- show push status as “not configured”
+- keep in-app alerts fully working
+
+Push notification examples:
+- “ARX AI: Your EURUSD trade needs review.”
+- “ARX AI: Profit is fading on an open trade.”
+- “ARX AI: MT5 connection issue detected.”
+- “ARX AI: Broker rejected your action. Tap to review.”
+
+PART 5 — Alert Cooldown and Anti-Spam
+
+Add cooldown rules:
+- same trade + same reason should not alert repeatedly
+- severity escalation can break cooldown
+- critical alerts can repeat after a safer interval
+- user dismissal should pause same alert type temporarily
+- acknowledged alerts should not keep firing unless the condition worsens
+
+Track:
+- last alert time
+- last severity
+- last condition value
+- user response
+- ignored count
+
+PART 6 — User Alert Preferences
+
+Add or update Alert Preferences page.
+
+User controls:
+- enable/disable all trading alerts
+- enable/disable push alerts
+- enable/disable in-app alerts
+- alert sensitivity: conservative / balanced / aggressive
+- quiet hours
+- minimum severity for push
+- close urgency alerts
+- profit giveback alerts
+- event/news risk alerts
+- MT5 disconnect alerts
+- broker rejection alerts
+- execution update alerts
+- AI recommendation alerts
+
+Live mode:
+- critical live-risk alerts should be strongly recommended.
+- If user disables critical live alerts, show warning.
+
+PART 7 — Admin Alert Controls
+
+Admin Trading Control should show:
+- alert system status
+- push system status
+- alerts sent today
+- failed push deliveries
+- critical alerts active
+- users with live trades and disabled alerts
+- MT5 disconnect alerts
+- emergency stop alerts
+- alert worker health
+
+Admin controls:
+- pause non-critical alerts
+- pause all alerts
+- send admin test alert
+- view failed deliveries
+- view alert logs
+- force in-app alert for emergency notice
+
+PART 8 — AI Assistant Alert Awareness
+
+Update AI so users can ask:
+
+- Do I have any urgent alerts?
+- Which trades need attention?
+- Did you alert me to close anything?
+- Why did I get this alert?
+- What happens if I ignore this alert?
+- Are my notifications on?
+- Why didn’t I get a push alert?
+- What alerts did I miss?
+- Which alerts are critical?
+
+AI must answer from real alert data only.
+AI must not invent alerts.
+AI must not claim push was delivered unless delivery status says so.
+
+PART 9 — Alert Timeline
+
+Add alert events into trade timeline and user audit timeline:
+
+- alert created
+- alert delivered in-app
+- push sent
+- push failed
+- user opened alert
+- user dismissed alert
+- user reviewed action
+- user ignored alert
+- condition escalated
+- alert expired
+
+PART 10 — Mobile UI
+
+Optimize notifications for iPhone Safari:
+- notification cards readable
+- urgent alerts visible
+- action buttons reachable
+- no overlap with bottom menu
+- modals fit screen
+- badge count updates
+- notification drawer does not block trading action modals
+
+PART 11 — Backend/API
+
+Add or update endpoints:
+
+- GET /api/alerts
+- GET /api/alerts/unread-count
+- PATCH /api/alerts/:id/read
+- PATCH /api/alerts/:id/acknowledge
+- PATCH /api/alerts/:id/dismiss
+- POST /api/alerts/:id/action
+- GET /api/alerts/preferences
+- PATCH /api/alerts/preferences
+- POST /api/admin/alerts/test
+- GET /api/admin/alerts/overview
+- PATCH /api/admin/alerts/settings
+
+Add tables if missing:
+
+unified_alerts:
+- id
+- user_id
+- category
+- severity
+- title
+- message
+- related_trade_id
+- related_action_id
+- related_command_id
+- recommended_action
+- action_button_label
+- deep_link
+- data_quality
+- status
+- delivered_in_app
+- delivered_push
+- push_status
+- cooldown_key
+- created_at
+- expires_at
+- acknowledged_at
+- dismissed_at
+
+alert_preferences:
+- user_id
+- trading_alerts_enabled
+- push_enabled
+- in_app_enabled
+- sensitivity
+- quiet_hours_enabled
+- quiet_hours_start
+- quiet_hours_end
+- minimum_push_severity
+- close_urgency_alerts
+- profit_giveback_alerts
+- event_risk_alerts
+- mt5_disconnect_alerts
+- broker_rejection_alerts
+- execution_update_alerts
+- ai_recommendation_alerts
+- updated_at
+
+alert_delivery_logs:
+- id
+- alert_id
+- user_id
+- delivery_channel
+- delivery_status
+- failure_reason
+- delivered_at
+- created_at
+
+PART 12 — Tests
+
+Add or update tests for:
+1. Unified alert created from trade exit alert.
+2. Unified alert created from execution rejection.
+3. Unified alert created from event risk.
+4. User sees only their own alerts.
+5. Shared-master users do not see other users’ alerts.
+6. Alert cooldown prevents duplicate spam.
+7. Severity escalation creates new alert.
+8. Notification center filters work.
+9. Alert action opens review modal, not execution.
+10. Live close alert requires confirmation before close.
+11. User preferences control in-app alerts.
+12. User preferences control push alerts if configured.
+13. Quiet hours suppress non-critical push.
+14. Critical alerts still appear in-app.
+15. Admin test alert works.
+16. AI can explain a real alert.
+17. AI does not invent alerts.
+18. Alert timeline records user actions.
+19. Mobile notification UI works.
+20. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Unified Alert model status
+- Notification Center status
+- Push notification status
+- cooldown/anti-spam status
+- user preferences status
+- admin alert controls status
+- AI alert awareness status
+- alert timeline status
+- mobile status
+- tests passed
+- remaining blockers

@@ -1,0 +1,417 @@
+Proceed with Build SS now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build SS = Final UI Polish, Accessibility, and Mobile Responsiveness Pass.
+
+Goal:
+Polish the full trading app UI so it feels clean, professional, easy to navigate, mobile-friendly, and safe for controlled PAPER TESTING.
+
+The app should now feel like one finished product instead of separate backend systems.
+
+Important:
+Build SS must NOT place trades.
+Build SS must NOT enable live trading.
+Build SS must NOT call MT5 live execution.
+Build SS must NOT modify canPlaceTrades.
+Build SS must NOT expose API secrets.
+Build SS must NOT recommend live trading.
+Build SS is frontend polish, accessibility, responsiveness, layout cleanup, visual consistency, loading states, empty states, and user experience refinement only.
+
+Current system:
+- AA = trade decision orchestrator
+- BB = auto-debrief
+- CC = learning feedback engine
+- DD = read-only market data
+- EE = paper execution engine
+- FF = paper autopilot
+- GG = trading calendar + AI command center
+- HH = risk governor
+- II = trader coach + playbook
+- JJ = replay simulator + strategy lab
+- KK = data import + broker read-only connector
+- LL = notification center
+- MM = system health/admin/audit
+- NN = security/roles/permissions
+- OO = readiness gate
+- PP = paper session manager
+- QQ = unified trading cockpit
+- RR = guided onboarding + smart help
+- SS = final UI polish, accessibility, and mobile responsiveness
+
+Core requirement:
+Make the user-facing app clean, readable, mobile-first, safe-looking, and easy to operate from the Trading Cockpit.
+
+Build SS tasks:
+
+1. Review frontend routes and UI
+
+Polish these pages/components:
+
+Main:
+- Trading Cockpit
+- Paper Sessions
+- Calendar
+- Coach
+- Playbook
+
+Practice:
+- Replay Simulator
+- Strategy Lab
+- Data Import
+
+System:
+- Notifications
+- Risk Governor
+- Readiness Gate
+- System Health
+- Security
+- Broker Read-Only
+- Help Center
+- Onboarding
+
+2. Create consistent visual system
+
+Add or clean up:
+
+- shared page layout
+- consistent cards
+- consistent buttons
+- consistent badges
+- consistent status pills
+- consistent empty states
+- consistent loading states
+- consistent error states
+- consistent section headers
+- consistent mobile spacing
+- consistent table/card behavior
+- consistent icons where available
+
+Use clear status labels:
+
+- PAPER ONLY
+- LIVE DISABLED
+- READ ONLY
+- REPLAY ONLY
+- ACTIVE
+- PAUSED
+- BLOCKED
+- WATCH ONLY
+- LOCKED
+- SAFE TO PAPER TEST
+- ACTION REQUIRED
+
+3. Improve Trading Cockpit polish
+
+The cockpit should feel like the main home screen.
+
+Polish:
+
+- sticky safety header
+- clear primary next action
+- active session card
+- open paper trades card
+- today performance card
+- coach card
+- alerts card
+- autopilot card
+- system health card
+- onboarding/help widget
+
+Make sure:
+- the most important action is obvious
+- blocked reasons are easy to understand
+- critical alerts are visible
+- live trading disabled badge is always visible
+- no live trading button exists
+- no unsafe controls appear
+
+4. Mobile-first responsiveness
+
+Make all main pages work well on phone.
+
+Requirements:
+- no horizontal overflow
+- no tiny tables on mobile
+- tables collapse into cards where needed
+- buttons are large enough to tap
+- cards have readable spacing
+- drawers/modals fit mobile screens
+- sidebar/menu becomes mobile-friendly
+- sticky safety header does not cover content
+- notification drawer is usable on mobile
+- Help/Why Blocked drawer is readable
+- session controls are easy to tap
+
+5. Accessibility pass
+
+Improve accessibility across the app.
+
+Requirements:
+- proper semantic headings
+- buttons have accessible names
+- icons have labels or aria-hidden
+- status badges have readable text
+- form fields have labels
+- color is not the only way to communicate status
+- focus states are visible
+- keyboard navigation works for key actions
+- modals/drawers trap focus if supported
+- escape closes modals/drawers where appropriate
+- contrast is readable
+- error messages are associated with fields
+- loading states are announced or clearly visible
+
+Target practical WCAG-style accessibility improvements where possible.
+
+6. Loading, empty, and error states
+
+Add polished states for:
+
+Trading Cockpit:
+- loading dashboard
+- no active session
+- no paper trades
+- no performance data
+- no coach report
+- blocked session
+- critical alert
+
+Paper Sessions:
+- no sessions
+- session loading
+- blocked preflight
+- session ended
+
+Calendar:
+- no trades this month
+- loading calendar
+- day with no data
+
+Coach/Playbook:
+- no coach report yet
+- no playbook entries yet
+- low sample size state
+
+Replay/Strategy Lab:
+- no scenarios
+- replay running
+- replay failed
+- simulation-only reminder
+
+Data Import:
+- no imports
+- import rejected
+- partial import
+- validation warnings
+
+System pages:
+- no logs
+- degraded subsystem
+- blocked readiness
+- security warning
+- read-only broker disconnected
+
+7. Make blocked states helpful
+
+Every blocked state should explain:
+
+{
+  what happened,
+  why it happened,
+  which system blocked it,
+  safest next step,
+  link to related page
+}
+
+Examples:
+- “Paper session blocked because the Readiness Gate failed.”
+- “Autopilot paused by the Risk Governor.”
+- “Paper execution requires an active paper session.”
+- “Critical safety alert must be acknowledged.”
+- “Broker is read-only. Live trading is disabled.”
+
+8. Improve notifications UI
+
+Polish:
+
+- notification bell
+- unread count
+- critical count
+- notification drawer
+- notification center page
+- critical safety banner
+- read/acknowledge/dismiss/snooze buttons
+- digest panel
+
+Critical alerts should be visually obvious but not chaotic.
+
+9. Improve onboarding/help UI
+
+Polish:
+
+- onboarding modal
+- progress tracker
+- step cards
+- safety acknowledgement cards
+- Help Center
+- Help Drawer
+- Why Blocked drawer
+- mobile drawer layout
+
+Keep the language plain and user-friendly.
+
+10. Improve visual hierarchy
+
+Across all pages:
+- reduce clutter
+- group related information
+- make primary action obvious
+- hide advanced details behind expand/collapse
+- use summary cards before detailed tables
+- reduce repetitive labels
+- avoid overloading one screen
+
+11. Frontend performance polish
+
+Improve where reasonable:
+
+- avoid unnecessary repeated fetches
+- add loading skeletons/spinners
+- avoid rendering huge tables without limits
+- use pagination/limits where existing endpoints support them
+- avoid frontend crashes if API data is missing
+- keep fallback values safe and readable
+
+12. Safe copy review
+
+All UI copy must:
+- say paper-only where relevant
+- say live trading disabled where relevant
+- say replay is simulation only
+- avoid profit guarantees
+- avoid telling the user to go live
+- avoid hype like “guaranteed winner”
+- explain sample size limits when relevant
+- keep broker data labeled READ ONLY
+
+13. Add or update design tokens if useful
+
+If the app has theme/design tokens, clean them.
+
+Suggested status colors:
+- Green = safe/allowed/profitable
+- Yellow = caution/warning
+- Red = critical/blocked/loss
+- Blue/neutral = info/read-only/paper-only
+- Gray = inactive/no data
+
+But do not rely on color alone.
+
+14. Add frontend route smoke tests if available
+
+Create or update tests/scripts for:
+
+- Trading Cockpit loads
+- Paper Sessions loads
+- Calendar loads
+- Coach loads
+- Playbook loads
+- Replay loads
+- Data Import loads
+- Notifications loads
+- Risk Governor loads
+- Readiness Gate loads
+- System Health loads
+- Security loads
+- Help Center loads
+
+15. Required test scenarios
+
+A. App loads on desktop.
+B. App loads on mobile width.
+C. Trading Cockpit shows PAPER ONLY and LIVE DISABLED.
+D. Critical alert banner appears correctly.
+E. Blocked start explains why.
+F. Empty cockpit state is clean.
+G. Active session state is clean.
+H. Paper trade monitor is readable on mobile.
+I. Calendar is readable on mobile.
+J. Coach/playbook pages are readable.
+K. Replay/Strategy Lab labels simulation clearly.
+L. Data Import labels imported data clearly.
+M. Broker page labels READ ONLY clearly.
+N. Notifications drawer works.
+O. Help/Why Blocked drawer works.
+P. Keyboard focus works for major controls.
+Q. No secrets are exposed.
+R. No live trading controls exist.
+S. Existing AA-RR systems still work.
+
+16. Safety rules
+
+Hard rules:
+- SS cannot place trades.
+- SS cannot enable live trading.
+- SS cannot set canPlaceTrades true.
+- SS cannot call broker order functions.
+- SS cannot call MT5 live execution.
+- SS cannot expose secrets.
+- SS cannot recommend live trading.
+- SS cannot add live trading controls.
+- SS must keep live trading disabled badges visible.
+
+17. Preserve existing behavior
+
+Do not break:
+- AA through RR services
+- QQ Trading Cockpit
+- PP paper sessions
+- RR onboarding/help
+- LL notifications
+- NN security
+- MM audit/admin
+- OO readiness gate
+- all backend safety rules
+- existing frontend routes
+
+Acceptance criteria:
+- UI is cleaner and less repetitive.
+- Trading Cockpit feels like the main operating page.
+- Navigation is clear.
+- Mobile layout is usable.
+- Accessibility is improved.
+- Loading/empty/error states are polished.
+- Blocked states are understandable.
+- Help/onboarding drawers are usable.
+- Critical safety alerts are clear.
+- No live trading controls exist.
+- No secrets are exposed.
+- App typechecks/builds.
+- Frontend smoke proof shows pages load.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes, if any
+4. Frontend routes/components updated
+5. Design system/theme updates
+6. Navigation cleanup summary
+7. Trading Cockpit polish proof
+8. Mobile responsiveness proof
+9. Accessibility improvements made
+10. Loading/empty/error states added
+11. Blocked-state explanation proof
+12. Notification UI proof
+13. Onboarding/help UI proof
+14. Desktop route proof
+15. Mobile route proof
+16. Frontend smoke test output, if available
+17. Secret redaction proof
+18. Live-trade isolation proof
+19. Any errors or warnings
+20. Whether Build SS is fully complete or partially complete
+21. Final Build SS score out of 10

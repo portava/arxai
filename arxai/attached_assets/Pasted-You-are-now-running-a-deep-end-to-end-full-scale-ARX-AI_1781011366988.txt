@@ -1,0 +1,1526 @@
+You are now running a deep, end-to-end, full-scale ARX AI system audit, wiring verification, scanner/feed/candle-history audit, floating-error audit, repair, optimization, and grading pass.
+
+This is not a normal QA pass. This must be a complete ecosystem audit touching every frontend page, route, menu item, tab, button, form, modal, chart interaction, scanner function, Ruby AI function, admin function, user function, backend endpoint, service, hook, database model/table, realtime stream, MT5 bridge function, market data function, candle history function, risk/governance function, and live trade function.
+
+The goal is to catch 99% of bugs, wasted features, dead buttons, unused pages, wrong data, fake passes, broken wiring, stale information, broken ecosystem connections, duplicate features, dormant code, misleading UI, scanner/feed failures, candle-history failures, and floating errors around the app.
+
+IMPORTANT PRODUCT CONTEXT:
+This is ARX AI: Analyze. Risk. eXecute.
+Ruby is the in-app AI assistant. All AI/user-facing analysis should appear from Ruby, not raw backend wording.
+This app is being prepared for live trading operation.
+Live trade testing must be included as part of the audit using the existing approved live test pathway and approved user/operator account only. Do not add new “block live” behavior. Do not convert this into demo-only testing. Live trading paths must be honestly tested, but every live test must use the smallest safe micro lot available and must produce a full audit trail showing exact command, route, MT5 bridge status, EA result, UI update, and final position/account state.
+Do not expose internal function names, backend terms, raw route names, stack traces, or developer language to regular users.
+Wiring integrity is one of the most important parts of this audit. No feature can pass unless its full chain is proven from UI action to truth source and back to UI.
+Scanner, feed, candle history, and floating errors require a dedicated special audit. Do not let the scanner pass if candles only show a few hours/days or six months when the app expects deeper history.
+
+PHASE 1 — FULL SYSTEM INVENTORY
+
+First, do a full codebase inventory before changing anything.
+
+Create an audit file/report named:
+ARX_DEEP_SYSTEM_AUDIT.md
+
+Inventory every discovered item under these sections:
+
+1. Frontend Pages
+
+* file path
+* route path
+* user/admin visibility
+* purpose
+* data source
+* backend dependencies
+* buttons/tabs/forms on page
+* whether page is active, duplicate, dormant, or disconnected
+
+2. Navigation/Menu Items
+
+* label
+* destination
+* role visibility
+* whether it works
+* whether it opens the correct page
+* whether it duplicates another page
+* whether it has dead links or empty areas
+
+3. UI Buttons and Clickable Controls
+    For every button/control:
+
+* label/text/icon
+* file/component
+* click handler
+* backend call if any
+* expected behavior
+* actual behavior
+* pass/fail
+* truth source
+* whether it is UI-only with no backend
+* whether backend exists but UI does not connect to it
+
+4. Frontend Components
+
+* component name
+* file
+* where used
+* props/data source
+* active/dormant/duplicate
+* risk of breaking if changed
+
+5. Backend Routes/API Endpoints
+    For every endpoint:
+
+* method/path
+* auth required
+* admin/user scope
+* input contract
+* output contract
+* consumers
+* truth source
+* error handling
+* whether endpoint is used
+* whether endpoint is duplicate/dormant
+
+6. Services/Hooks/Utilities
+    For every service/hook:
+
+* purpose
+* inputs
+* outputs
+* consumers
+* truth source
+* whether active/dormant/duplicate
+* performance concerns
+
+7. Database Models/Tables
+
+* table/model
+* purpose
+* frontend consumers
+* backend consumers
+* stale/unused fields
+* missing indexes
+* risk-sensitive fields
+
+8. MT5/Bridge Functions
+
+* heartbeat
+* command queue
+* execution result mapping
+* account snapshot
+* open positions
+* closed positions/history
+* quote/candle ingestion
+* live vs stale state handling
+* master bridge mode
+* own bridge mode if present
+* admin approval gates
+* per-user allocation/scope
+* bridge error handling
+
+9. Market Data / Feed / Candle Functions
+
+* quote providers
+* candle providers
+* historical candle fetchers
+* candle cache/storage
+* candle pagination/backfill
+* timeframe mappers
+* symbol mappers
+* Deriv volatility feed support
+* Polygon feed support if present
+* TwelveData feed support if present
+* MT5 candle/history support if present
+* fallback providers
+* stale-feed detection
+* source/freshness metadata
+* chart consumers
+* scanner consumers
+* Ruby consumers
+* backend endpoints serving candles/quotes
+* any old/demo/mock/composite candle paths
+
+10. Ruby AI Functions
+
+* market analysis
+* scanner explanation
+* chart explanation
+* trade recommendation
+* post-trade explanation
+* risk explanation
+* chat memory
+* tool/data access
+* whether Ruby is grounded in current selected symbol and live/stale feed truth
+* whether Ruby exposes internal/backend wording to users
+
+11. Trading Functions
+
+* manual buy
+* manual sell
+* one-click scalp
+* multi-trade scalp
+* Ruby-commanded trade
+* scanner trade
+* chart trade
+* close trade
+* modify SL/TP
+* cancel pending command
+* pending/filled/rejected state handling
+* open trade sync
+* dashboard sync
+* journal/history sync
+
+PHASE 2 — ECOSYSTEM MAP
+
+Build a complete ecosystem map showing how the app is supposed to work from user action to final truth state.
+
+At minimum map these chains:
+
+A. Login/Invite Flow
+request access → admin approval/invite → login → role detection → correct dashboard
+
+B. Dashboard Live Account Flow
+MT5 bridge/account snapshot → backend normalized snapshot → dashboard cards → realtime refresh → stale/error state
+
+C. Open Trades Flow
+MT5 open positions → backend live positions endpoint/SSE → Open Trades UI → dashboard totals → close/modify actions
+
+D. Scanner Flow
+symbol source → feed availability → scanner result → selected symbol → chart → Ruby explanation → trade buttons → live order path
+
+E. Chart Flow
+selected symbol → candle endpoint → source/freshness check → quote alignment → historical candle backfill/pagination → render candles or honest unavailable state → draggable SL/TP/order tools
+
+F. Ruby Flow
+selected market/user request → data gathering → chart/history/news/risk context → plain-English explanation → entry/SL/TP/reward/risk → optional trade command
+
+G. Live Trade Flow
+user action → frontend intent → backend order request → permission/governance check → MT5 command queue → EA receives command → broker result → result mapping → UI state → dashboard/open trades/history
+
+H. Admin/User Permission Flow
+authenticated user → role/scope detection → frontend visibility → backend enforcement → admin controls → user controls
+
+I. Realtime Flow
+MT5 updates → backend snapshot → SSE/polling/websocket → dashboard/open trades/scanner/chart updates
+
+J. Market Data Flow
+symbol selection → symbol mapping → provider selection → quote fetch → candle fetch → historical backfill → cache/storage → freshness validation → scanner/chart/Ruby consumers → UI freshness state
+
+K. Floating Error Flow
+frontend error source → visible UI error/toast/banner/card → backend/API/log source → root cause → correct user-safe message → fix/retest
+
+For each chain, identify:
+
+* expected files/functions involved
+* actual files/functions involved
+* missing links
+* stale/cache points
+* where fake success can happen
+* where wrong information can enter
+* where UI can display stale/misleading data
+* where floating errors are created, displayed, duplicated, or not cleared
+
+PHASE 2B — FULL WIRING AUDIT
+
+Wiring is one of the most important parts of this audit. Do not only test whether a page, button, route, or backend function exists. Prove that every feature is correctly wired from frontend action → state update → backend request → backend service → database/MT5/feed/Ruby truth source → normalized response → UI update → realtime refresh → history/logging where applicable.
+
+For every feature, document the complete wiring chain.
+
+For each UI control, page, tab, menu item, Ruby command, scanner action, chart action, admin toggle, live trade button, settings control, candle request, feed request, and error message, verify:
+
+1. Frontend Wiring
+
+* Is the visible UI control connected to a real handler?
+* Is the handler actually triggered on click/change/submit?
+* Does the handler pass the correct symbol, user ID, account mode, trade mode, role, timeframe, lot size, SL, TP, direction, source, cursor, candle limit, lookback range, and provider preference?
+* Does it update loading, pending, success, error, empty, unavailable, and stale states correctly?
+* Does it prevent double-fire, duplicate trade submission, duplicate scanner refresh, stale symbol execution, and stale candle rendering?
+* Does it preserve existing routes, hooks, and state instead of bypassing them?
+
+2. API Wiring
+
+* Does the frontend call the correct backend endpoint?
+* Is the endpoint still active?
+* Is the request payload shaped correctly?
+* Does the backend validate and normalize the payload?
+* Does the backend return the response shape the frontend expects?
+* Are errors returned in plain user-safe language?
+* Are old endpoints still being called by mistake?
+* Are duplicate endpoints competing?
+
+3. Service Wiring
+
+* Does the backend endpoint call the correct service?
+* Is the service using the correct user scope, symbol, bridge mode, account mode, feed source, timeframe, lookback range, and risk/governance profile?
+* Is the service connected to the current live architecture, not an old demo/mock path?
+* Are adapter layers correctly connected?
+* Are fallback paths honest and labeled?
+
+4. Data Wiring
+
+* Does the feature read from the correct database table/model/cache?
+* Does it write to the correct table/model/log?
+* Are writes persisted?
+* Are reads refreshed after writes?
+* Are stale cache values invalidated?
+* Are duplicate sources causing mismatched information?
+* Does frontend state match backend truth after refresh?
+
+5. MT5/Execution Wiring
+    For all trade-related functions, verify:
+
+* UI trade intent reaches the backend execution endpoint.
+* Backend uses the correct live/shared/own bridge path.
+* Command is inserted into the correct MT5 command queue.
+* EA receives the correct command.
+* EA/broker result maps back to the correct user and trade.
+* Open Trades updates from MT5 truth.
+* Dashboard updates from the same normalized account snapshot.
+* Trade history/journal updates correctly.
+* Ruby post-trade explanation uses the real result, not assumed success.
+
+6. Scanner Wiring
+    Verify:
+
+* Scanner selected symbol is the same symbol used by chart, Ruby, trade panel, and scanner explanation.
+* Broad Scan results use the correct data source.
+* Focus mode uses the correct focused symbol.
+* Search result selection updates every dependent component.
+* Buy/Sell from scanner uses the same selected symbol the user sees.
+* Scanner explanation does not reference a different symbol, stale feed, or old result.
+* Scanner confidence and recommendation output are wired to actual scanner inputs, not placeholders.
+* Scanner errors are cleared/replaced when symbol/feed/timeframe changes.
+
+7. Chart/Candle Wiring
+    Verify:
+
+* Chart uses the selected symbol and timeframe.
+* Candle endpoint, quote endpoint, provider, and freshness logic agree.
+* Candle history supports backwards scrolling/pagination/backfill beyond the current visible window.
+* Ruby chart analysis uses the same chart data displayed to the user.
+* Entry/SL/TP drawings match the trade ticket values.
+* Dragging SL/TP updates the trade ticket.
+* Trade ticket updates chart overlays.
+* Executed trades appear on chart if supported.
+* Stale/unavailable feed state blocks misleading live rendering.
+* Chart does not silently fall back to fake, composite, demo, or wrong-symbol candles.
+
+8. Ruby Wiring
+    Verify:
+
+* Ruby receives the correct user message, selected symbol, timeframe, scanner context, chart context, account context, risk context, feed freshness, candle history depth, and trade state.
+* Ruby tool calls are connected to real app services, not placeholders.
+* Ruby can explain why it is taking or avoiding a trade using the same truth sources the app displays.
+* Ruby can draw or request chart overlays for entry, SL, and TP before execution.
+* Ruby-commanded trades use the exact same execution path as manual/scanner/chart trades.
+* Ruby post-trade explanations are based on real MT5/EA result.
+* Ruby never fabricates a pass, fill, rejection, feed status, candle status, or market condition.
+
+9. Admin/User Wiring
+    Verify:
+
+* Admin toggle changes actual role/scope behavior, not only UI visibility.
+* User approval toggle affects backend live-trade permission.
+* Allocation changes affect trading permissions and account math where intended.
+* Freeze/disable user blocks backend actions.
+* Regular users cannot access admin endpoints directly.
+* Switching admin/user view refreshes visibility and data scope correctly.
+
+10. Realtime Wiring
+    Verify:
+
+* MT5/account/trade updates flow into the same normalized backend snapshot.
+* Dashboard and Open Trades consume the same truth source.
+* Scanner/chart feed freshness updates are not stale.
+* SSE/WebSocket/polling updates are not duplicated.
+* Closing/reopening pages does not create duplicate listeners.
+* Freshness timestamps are visible in backend state.
+* UI does not keep showing stale values after backend truth changes.
+
+11. Settings Wiring
+    Verify:
+
+* Every setting toggle persists.
+* Reloading the app preserves saved setting.
+* Saved setting actually changes behavior.
+* Settings do not only change the UI.
+* Old settings do not override new settings.
+* Admin settings and user settings are scoped correctly.
+
+For every wiring chain, classify the result as:
+
+WORKING_FULL_CHAIN
+PARTIAL_FRONTEND_ONLY
+PARTIAL_BACKEND_ONLY
+BROKEN_HANDLER
+BROKEN_API_CALL
+BROKEN_SERVICE_CHAIN
+BROKEN_DATA_MAPPING
+BROKEN_REALTIME_UPDATE
+BROKEN_PERMISSION_WIRING
+BROKEN_MT5_EXECUTION_WIRING
+BROKEN_FEED_WIRING
+BROKEN_CANDLE_HISTORY_WIRING
+BROKEN_ERROR_STATE_WIRING
+STALE_OR_DUPLICATE_SOURCE
+DORMANT_OR_UNUSED
+DANGEROUS_FAKE_SUCCESS
+
+For every broken or partial wiring chain, document:
+
+* exact starting UI/function
+* exact expected destination
+* where the chain breaks
+* files involved
+* missing or incorrect payload fields
+* wrong endpoint/service/table/provider used
+* user impact
+* severity
+* repair plan
+* fix applied
+* retest evidence
+
+Do not mark any feature as passed unless the full wiring chain is proven from action to truth source and back to UI.
+
+PHASE 3 — TRUTH CONTRACTS
+
+Every test must use a truth contract. Do not mark anything passed because it visually appears okay.
+
+Create a Truth Contract table with:
+
+* Function/Feature
+* Source of Truth
+* Expected Result
+* Actual Result
+* Evidence
+* Pass/Fail
+* Severity
+* Fix Needed
+
+Use these truth sources:
+
+1. Live Account/Dashboard Truth
+    Source of truth:
+
+* MT5 bridge account snapshot
+* balance
+* equity
+* margin
+* free margin
+* margin level
+* floating P/L
+* open position count
+
+Pass condition:
+Dashboard must match normalized MT5 account snapshot within a small tolerance. It must not show cached/fake/stale P/L as live.
+
+2. Open Trades Truth
+    Source of truth:
+
+* MT5 open positions
+* backend normalized live position snapshot
+
+Pass condition:
+Every live MT5 position must appear in UI with correct symbol, direction, lot, entry, SL, TP, current price, floating P/L, and status. Closed positions must disappear from Open Trades and move to history if history exists.
+
+3. Scanner Truth
+    Source of truth:
+
+* selected symbol
+* feed availability
+* candle freshness
+* quote freshness
+* scanner calculation inputs
+* historical lookback depth
+* timeframe selected
+* provider used
+* Ruby/scanner explanation context
+
+Pass condition:
+Scanner must not rank or recommend a market using missing, stale, mismatched, incomplete, or wrong-symbol data without clearly labeling it. Scanner results must match the selected market and must not fabricate confidence. Scanner result, chart, Ruby explanation, and trade ticket must agree on the same symbol, timeframe, direction, price, feed state, and data freshness.
+
+4. Chart Truth
+    Source of truth:
+
+* candle source
+* quote source
+* feed freshness timestamp
+* selected symbol
+* selected timeframe
+* requested candle range
+* returned candle range
+* visible chart range
+* historical backfill/pagination status
+
+Pass condition:
+Chart must render only valid candles for the selected symbol and timeframe. If feed is unavailable/stale/mismatched, show honest unavailable/stale state. Do not show composite or stale candles as live. Users must be able to scroll backwards into deeper candle history when available. If the provider only has limited history, the UI must clearly say so and must not pretend full history exists.
+
+5. Candle History Truth
+    Source of truth:
+
+* requested timeframe
+* requested lookback range
+* provider/MT5/backend historical data availability
+* backend candle count
+* oldest returned candle timestamp
+* newest returned candle timestamp
+* pagination cursor/backfill status
+* cache/storage state
+
+Pass condition:
+For every supported symbol/timeframe, the system must prove how far back candle history goes. The chart must not be limited to only a few hours/days unless the provider truly only has that much data. If the app expects months or years, verify backfill and pagination. If only six months are available, document the provider/source limitation and add a truthful UI state. Candle history must load additional older candles when the user scrolls back, if available.
+
+Required candle-history checks:
+
+* M1
+* M5
+* M15
+* M30
+* H1
+* H4
+* D1
+* all supported Deriv volatility symbols
+* forex symbols
+* gold
+* indices
+* scanner-selected symbols
+* chart-selected symbols
+
+For each symbol/timeframe record:
+
+* requested limit
+* returned candle count
+* oldest timestamp
+* newest timestamp
+* provider
+* source
+* freshness
+* pagination supported yes/no
+* backfill supported yes/no
+* chart scroll-back result
+* pass/fail
+
+6. Feed Truth
+    Source of truth:
+
+* configured providers
+* active provider per symbol
+* quote response
+* candle response
+* feed freshness timestamp
+* provider health
+* fallback chain
+* symbol mapping
+* provider error logs
+
+Pass condition:
+Every symbol must have a clearly identified feed source. The app must not silently mix unrelated providers or map the wrong symbol. If Polygon is configured, verify whether ARX actually uses Polygon for the intended symbols and whether the new key is loaded. If TwelveData is present, verify what it feeds and whether it is still used. If Deriv volatility symbols require a different feed, verify whether that feed exists and is wired. Feed errors must be shown honestly and not hidden behind fake candles or fake scanner results.
+
+7. Ruby Truth
+    Source of truth:
+
+* selected symbol
+* current quote/candles
+* indicators/market structure
+* account/risk settings where relevant
+* news/events if available
+* trade state
+* feed/candle freshness
+
+Pass condition:
+Ruby must analyze the correct market, use available current data, disclose stale/unavailable data, explain entry/SL/TP/risk/reward/confidence, and never expose backend function names or developer terms to normal users.
+
+8. Live Trade Truth
+    Source of truth:
+
+* backend order request
+* risk/governance decision
+* MT5 command queue
+* EA/broker execution result
+* resulting MT5 position or rejection
+
+Pass condition:
+A live trade test only passes if the trade request reaches the correct execution path, receives a real EA/broker result, maps the result correctly, and UI/dashboard/open trades update from the actual MT5 truth state. A 200 response alone is not a pass.
+
+9. Admin/User Permission Truth
+    Source of truth:
+
+* authenticated user role
+* backend role enforcement
+* UI visibility rules
+
+Pass condition:
+Admin-only features must be hidden from regular users and blocked by backend if accessed directly. User/admin toggle must actually change the visible scope and backend permission behavior.
+
+10. Wiring Truth
+    Source of truth:
+
+* actual handler execution
+* actual request payload
+* actual backend route
+* actual service call
+* actual database/feed/MT5/Ruby truth source
+* actual normalized response
+* actual UI state update
+* actual realtime refresh
+
+Pass condition:
+A feature only passes if the full wiring chain is proven from the user-facing action to the correct truth source and back to the UI. Visual behavior alone is not a pass. Backend 200 alone is not a pass. A database write alone is not a pass unless the UI and ecosystem read the updated truth correctly.
+
+11. Floating Error Truth
+    Source of truth:
+
+* browser console
+* frontend error boundary
+* network errors
+* backend logs
+* visible toasts/banners/cards
+* React runtime errors
+* failed API responses
+* unhandled promise rejections
+* provider errors
+* auth/permission errors
+
+Pass condition:
+Every visible error floating around the app must be traced to its root cause, classified, fixed, and retested. No persistent user-facing error should remain without either a real fix or a truthful, user-safe explanation. Console errors and network errors cannot be ignored just because the page visually loads.
+
+12. Speed Truth
+    Source of truth:
+
+* measured timestamps
+* frontend performance marks
+* backend logs
+* network timings
+
+Pass condition:
+Critical trading actions must acknowledge instantly and complete within measurable thresholds. Record exact durations.
+
+Suggested thresholds:
+
+* UI response to button click: under 250ms
+* backend order request accepted: under 1 second if bridge healthy
+* dashboard/open trades refresh after MT5 change: under 1–3 seconds
+* scanner symbol switch visible response: under 500ms
+* chart first render: under 1.5 seconds when feed available
+* candle backfill response: under 1.5 seconds for normal range, with honest loading state if longer
+* Ruby typing indicator: under 150ms
+* Ruby first response activity: under 1 second when possible
+
+PHASE 4 — AUTOMATED AND MANUAL TEST MATRIX
+
+Create a complete test matrix and run it.
+
+For every tested item, record:
+
+* Test ID
+* Feature
+* File/function/component
+* User role used
+* Action performed
+* Expected result
+* Actual result
+* Truth contract
+* Wiring chain result
+* Evidence
+* Result: PASS / FAIL / PARTIAL / BLOCKED
+* Severity: Critical / High / Medium / Low
+* Fix applied
+* Retest result
+
+Test every category below.
+
+A. Authentication/Login/Invite Tests
+
+* login page loads first when not authenticated
+* app does not incorrectly load dashboard before auth
+* invite-only signup rules work
+* request access page works
+* forgot password works or has honest state
+* approved user can login
+* unapproved user cannot access live features
+* admin role detected correctly
+* regular user role detected correctly
+* route protection works on direct URL access
+* frontend auth state matches backend auth state
+
+B. Navigation Tests
+
+* every bottom nav item
+* every side menu item
+* every admin menu item
+* every user menu item
+* every tab
+* every back/collapse behavior
+* every repeated menu item
+* every unknown icon/circled section
+* every hidden/dormant page
+* every menu destination is wired to the correct component and route
+
+Classify every navigation item as:
+Working / Broken / Duplicate / Dormant / Admin-only / User-facing / Should remove / Should merge / Needs empty state / Broken wiring
+
+C. Floating Error Tests
+Perform a special pass across the entire app looking for floating errors.
+
+Check:
+
+* visible red/yellow error boxes
+* toast errors
+* warning banners
+* cards showing raw errors
+* blank panels
+* loading states that never end
+* console errors
+* network 4xx/5xx
+* failed API calls
+* repeated error spam
+* errors that stay after navigation
+* errors that reappear after refresh
+* React render errors
+* unhandled promise errors
+* stale feed errors
+* auth errors
+* permission errors
+* scanner/chart feed errors
+* Ruby errors
+* MT5 bridge errors
+
+For each error record:
+
+* exact visible text
+* page/component
+* screenshot or DOM/log evidence if available
+* triggering action
+* backend/API call if any
+* root cause
+* user impact
+* whether message is user-safe
+* whether it should be hidden, fixed, rewritten, or converted into an empty state
+* fix applied
+* retest result
+
+D. Dashboard Tests
+
+* balance
+* equity
+* margin
+* free margin
+* margin level
+* open P/L
+* open trade count
+* live/stale indicator
+* refresh behavior
+* error state
+* empty state
+* performance
+* consistency with Open Trades
+* dashboard wiring to same normalized account snapshot used elsewhere
+
+E. Open Trades Tests
+
+* open trades display
+* P/L display
+* symbol/direction/lot/entry/SL/TP/current price
+* close trade button
+* modify SL/TP
+* partial close if supported
+* pending state
+* fill state
+* reject state
+* history handoff
+* dashboard sync
+* wiring from MT5 truth to backend snapshot to UI
+
+F. SPECIAL SCANNER SYSTEM AUDIT
+
+Scanner is a priority system. Do not treat it as just a visual page. Audit it as a decision engine, feed consumer, chart coordinator, Ruby context provider, and trade-entry surface.
+
+Scanner inventory:
+
+* all scanner files/components
+* scanner state stores/hooks
+* scanner backend endpoints
+* scanner services
+* scanner scoring/ranking logic
+* scanner symbol list source
+* scanner feed source
+* scanner candle source
+* scanner quote source
+* scanner explanation source
+* scanner trade buttons
+* scanner tabs: Focus/Broad Scan or current equivalent
+* scanner empty/error/loading states
+* scanner performance bottlenecks
+
+Scanner tests:
+
+* scanner page loads
+* scanner does not show floating errors
+* scanner does not show stale backend/developer errors to users
+* Focus tab works
+* Broad Scan tab works
+* results appear under the correct tab
+* symbol search works
+* market group collapse works
+* clicking market collapses the back/menu panel if that is the intended UI behavior
+* selected market highlights correctly
+* selected symbol updates scanner header
+* selected symbol updates chart
+* selected symbol updates Ruby explanation
+* selected symbol updates trade ticket
+* selected symbol updates buy/sell action
+* changing timeframe updates scanner/chart/Ruby consistently
+* scanner result uses actual feed/candle/quote data
+* scanner confidence is based on real computed inputs
+* scanner does not use stale/missing feed as live
+* scanner does not analyze one symbol while displaying another
+* scanner handles Deriv volatility symbols
+* scanner handles forex
+* scanner handles gold
+* scanner handles indices
+* scanner handles unavailable feed honestly
+* scanner handles partial feed honestly
+* scanner handles stale feed honestly
+* scanner handles provider failure honestly
+* scanner buy button uses selected symbol and correct direction
+* scanner sell button uses selected symbol and correct direction
+* scanner trade path reaches live execution path
+* scanner trade result updates Open Trades and Dashboard
+* scanner explanation uses the same selected symbol, timeframe, feed, candle history, and price shown to user
+* scanner does not fabricate “buy/sell” confidence
+* scanner does not leave old explanation after symbol changes unless clearly labeled as previous
+* scanner does not leave old chart after symbol changes
+* scanner does not leave old trade ticket after symbol changes
+* scanner can recover after API/feed failure
+* scanner performance meets threshold
+* scanner has no duplicate API spam or runaway polling
+
+Scanner truth checks:
+For every scanner-tested symbol/timeframe, record:
+
+* selected symbol in UI
+* symbol sent to backend
+* symbol used by scanner service
+* symbol used by chart
+* symbol used by Ruby
+* symbol used by trade ticket
+* quote source
+* candle source
+* oldest candle returned
+* newest candle returned
+* candle count
+* feed freshness
+* scanner recommendation
+* explanation generated
+* trade action result if tested
+* pass/fail
+
+Scanner grading:
+Give scanner sub-scores:
+
+* Scanner UI: __/100
+* Scanner Wiring: __/100
+* Scanner Data Accuracy: __/100
+* Scanner Feed Freshness: __/100
+* Scanner Candle History Use: __/100
+* Scanner Ruby Integration: __/100
+* Scanner Trade Execution Path: __/100
+* Scanner Performance: __/100
+* Scanner Overall: __/100
+
+G. SPECIAL CANDLE HISTORY AUDIT
+
+The current known problem: candle history is too shallow. Some timeframes show only a few hours, some markets only a few days, and candle history may only go back six months. Users must be able to scroll back much farther when data is available. The whole candles/history system may still not be reaching the app.
+
+Audit the candle system deeply.
+
+Find:
+
+* where candle requests originate
+* chart candle endpoint
+* scanner candle endpoint if separate
+* Ruby candle/history data access
+* provider adapters
+* MT5 history import/use
+* Polygon/TwelveData/Deriv adapters if present
+* cache/storage layer
+* candle DB table if present
+* pagination cursor logic
+* scroll-back handler
+* timeframe mapper
+* symbol mapper
+* candle limit defaults
+* max lookback restrictions
+* six-month cap source
+* any hardcoded limits
+* any provider-specific limits
+* any frontend chart limit
+* any backend query limit
+* any cache truncation
+* any date conversion/timezone bug
+* any duplicate candle path where scanner and chart use different data
+
+Test candle history for all major supported groups:
+
+* Volatility 10/25/50/75/100 if supported
+* 1s volatility symbols if supported
+* forex majors
+* gold
+* indices
+* any symbol shown in scanner
+
+Test timeframes:
+
+* M1
+* M5
+* M15
+* M30
+* H1
+* H4
+* D1
+
+For every symbol/timeframe test:
+
+* request candles
+* record request payload
+* record provider used
+* record candle count returned
+* record oldest candle timestamp
+* record newest candle timestamp
+* record expected minimum history
+* record actual available history
+* scroll chart backward
+* confirm whether older candles load
+* confirm whether backend is called for older candles
+* confirm whether UI appends/prepends correctly
+* confirm whether scanner can access the same history
+* confirm whether Ruby can access the same history
+* classify as PASS / LIMITED_BY_PROVIDER / BROKEN_BACKFILL / BROKEN_FRONTEND_SCROLL / BROKEN_BACKEND_LIMIT / BROKEN_CACHE / WRONG_SYMBOL / WRONG_TIMEFRAME / STALE
+
+Required pass behavior:
+
+* If older candles are available, chart must load them when user scrolls back.
+* If older candles are not available, UI must clearly say the provider/source only has limited history.
+* Scanner must not claim it used deep history if only shallow history was available.
+* Ruby must not claim deep historical analysis unless that history was actually retrieved.
+* Do not use fake generated candles to fill missing history.
+* Do not silently cap at six months unless that is a documented provider limit and the UI explains it.
+
+Fix requirements:
+
+* Remove accidental frontend/backend hardcoded shallow limits.
+* Add or repair candle pagination/backfill if provider supports it.
+* Ensure scanner, chart, and Ruby use a shared candle-history service or at least a shared truth contract.
+* Ensure candle responses include source, freshness, oldest timestamp, newest timestamp, count, requested range, returned range, limitedByProvider, pagination cursor, and stale status.
+* Ensure chart shows honest loading, unavailable, stale, and limited-history states.
+* Ensure user can scroll back as far as available data allows.
+* Do not break chart drawing tools, scanner selection, or trade overlays while fixing candle history.
+
+H. SPECIAL FEED AUDIT
+
+Audit every feed provider and verify what is actually feeding ARX.
+
+Find:
+
+* all configured market data providers
+* all environment variables/API keys required
+* all provider adapters
+* all active provider routes
+* all fallback logic
+* which provider feeds which symbol group
+* whether Polygon is configured and actually being used
+* whether TwelveData is configured and actually being used
+* whether Deriv volatility symbols have a real feed source
+* whether MT5 is being used as quote/history source
+* whether any mock/demo/composite feed remains in active user flow
+* whether scanner, chart, Ruby, and dashboard use consistent feed truth
+
+For each provider:
+
+* verify key exists without exposing key
+* verify health check
+* verify quote support
+* verify candle support
+* verify symbol mapping
+* verify timeframe mapping
+* verify error handling
+* verify rate limit behavior
+* verify fallback behavior
+* verify stale/fresh state
+
+For each symbol group:
+
+* provider used for quotes
+* provider used for candles
+* provider used for historical data
+* provider used by scanner
+* provider used by chart
+* provider used by Ruby
+* provider used by trade execution if relevant
+* fallback provider
+* freshness threshold
+* visible UI state
+
+Feed pass rules:
+
+* No symbol can appear tradeable/scannable/chartable unless its feed state is known.
+* No stale feed can be displayed as live.
+* No wrong-symbol provider mapping can pass.
+* No fallback provider can silently change symbol meaning.
+* No provider error can create fake confidence.
+* If a provider lacks data for Deriv volatility symbols, the app must show honest feed unavailable or route those symbols to the correct Deriv/MT5 feed if implemented.
+
+I. Chart Tests
+
+* chart renders selected symbol
+* correct timeframe
+* correct candles
+* feed unavailable state
+* stale feed state
+* quote/candle mismatch detection
+* draggable order tools
+* entry/SL/TP preview drawing
+* Ruby can draw proposed entry/SL/TP before trade
+* trade menu opens
+* chart does not disappear on symbol switch
+* chart does not render wrong market
+* chart does not fake live data
+* chart performance
+* chart wiring syncs selected symbol, timeframe, candle data, overlays, and trade ticket values
+* chart scroll-back loads older candles if available
+* chart clearly shows limited-history state if provider is limited
+
+J. Ruby AI Tests
+
+* Ruby typing indicator appears immediately with animated dots
+* Ruby answers as Ruby
+* no backend/internal names exposed
+* selected market explanation is correct
+* scanner explanation is correct
+* chart explanation is correct
+* Ruby gives plain-English and technical breakdown
+* Ruby states entry, stop loss, take profit, planned loss, planned gain, confidence, and invalidation before any trade recommendation
+* Ruby explains what happened after trade
+* Ruby admits stale/unavailable data
+* Ruby does not over-paste raw research
+* Ruby response speed
+* Ruby memory/chat persistence if implemented
+* Ruby can use chart tools to draw entry/SL/TP preview before trade
+* Ruby can access all intended trading tools without inventing unavailable ones
+* Ruby-commanded trades use the exact same execution wiring as manual/scanner/chart trades
+* Ruby does not claim candle history depth that was not actually retrieved
+
+K. Live Trading Tests
+Test every live trade path using the smallest safe live test size and approved user/operator account only.
+
+Paths to test:
+
+* manual Buy
+* manual Sell
+* scanner Buy
+* scanner Sell
+* chart Buy/Sell
+* Ruby-commanded trade
+* one-click scalp
+* multi-trade scalp if implemented
+* close trade
+* modify SL
+* modify TP
+* cancel pending command if supported
+* rejected trade handling
+* failed bridge handling
+* stale bridge handling
+* user not approved handling
+* admin approved user handling
+* own bridge mode if present
+* shared master bridge mode if present
+
+For every live trade test, record:
+
+* symbol
+* lot
+* direction
+* entry request
+* SL
+* TP
+* expected risk
+* expected reward
+* frontend action timestamp
+* backend receive timestamp
+* command queue timestamp
+* MT5/EA receive timestamp if available
+* broker/EA result
+* final UI status
+* dashboard update
+* open trades update
+* history/journal update
+* complete wiring chain result
+* pass/fail
+
+Do not mark a live trade path passed unless MT5/EA/broker truth confirms it and the UI updates correctly from that truth.
+
+L. Risk/Governance Tests
+
+* admin account unrestricted behavior if configured
+* regular user approval requirement
+* master bridge approval toggle
+* allocation logic
+* freeze/disable user
+* per-user scope
+* requireStopLoss behavior where configured
+* one-click scalping behavior
+* live trade permission gates
+* backend enforcement, not just UI enforcement
+* every governance setting is wired to actual backend behavior
+
+Important:
+If a rule exists, verify it is intentional. If it is old, contradictory, or blocking the current live mission, flag it as legacy and ask whether it should be removed or migrated. Do not silently preserve outdated restrictions that contradict the current product mode.
+
+M. Admin Controls Tests
+
+* admin dashboard visibility
+* admin/user toggle
+* user list
+* only real users shown
+* approval toggle
+* allocation edit
+* freeze/disable
+* invite generation
+* request access review
+* regular user cannot see admin controls
+* direct URL access blocked for non-admin
+* admin settings save correctly to backend
+* no fake UI toggles
+* every admin control is wired to persisted backend state and actual behavior
+
+N. Settings Tests
+
+* account settings
+* trading mode settings
+* governance settings
+* voice settings
+* Ruby settings
+* bridge settings
+* feed/provider settings if present
+* candle/history settings if present
+* any toggles that do not persist
+* any settings that save but do not affect behavior
+* settings survive reload
+* settings affect the real feature they claim to control
+
+O. Voice Tests
+
+* Ruby voice setting
+* default voice Bella if still intended
+* auto-play response if still implemented
+* no delayed voice minutes later
+* no duplicate voice playback
+* graceful fallback if voice provider unavailable
+* voice settings are wired to actual voice behavior
+
+P. Realtime/SSE/Polling Tests
+
+* account snapshot stream
+* open trades stream
+* heartbeat
+* stale state
+* scanner refresh
+* chart/quote refresh
+* candle refresh/backfill
+* feed status refresh
+* reconnect behavior
+* cleanup on page close
+* no memory leaks
+* no duplicate subscriptions
+* no cross-user data leak
+* dashboard/open trades consistency
+* realtime wiring uses one shared normalized truth source where appropriate
+
+Q. Data Feed Tests
+
+* Deriv volatility symbols
+* forex
+* gold
+* indices
+* quote freshness
+* candle freshness
+* historical data availability
+* timeframe correctness
+* missing feed behavior
+* fallback behavior
+* no fabricated live candle behavior
+* scanner uses same feed truth as chart/header
+* feed wiring does not silently switch to wrong symbols or stale composite data
+
+R. History/Journal Tests
+
+* filled trades recorded
+* rejected trades recorded or visibly reported
+* closed trades recorded
+* P/L recorded accurately
+* Ruby post-trade explanation stored if intended
+* trade source recorded: scanner/chart/Ruby/manual/scalp
+* history wiring reads from actual trade lifecycle events, not guessed UI status
+
+S. Performance Tests
+Instrument every major action individually and record timings.
+
+Measure:
+
+* app load
+* login
+* dashboard load
+* account snapshot refresh
+* open trades refresh
+* scanner load
+* scanner result calculation
+* scanner symbol switch
+* scanner explanation update
+* chart render
+* candle initial load
+* candle scroll-back/backfill load
+* feed health check
+* Ruby typing indicator start
+* Ruby first response
+* Ruby full response
+* trade button click to backend
+* backend to command queue
+* command queue to MT5/EA result
+* MT5 result to UI update
+* close trade action
+* admin toggle save
+* settings save
+
+Flag:
+
+* duplicate API calls
+* unnecessary polling
+* slow queries
+* frontend render bottlenecks
+* stale cache
+* blocking AI requests
+* repeated re-renders
+* heavy dormant components
+* oversized bundles
+* scanner API spam
+* candle backfill delays
+* feed provider rate-limit problems
+
+T. Dead/Wasted Feature Detection
+Find and classify:
+
+* unused components
+* unused backend endpoints
+* orphan pages
+* dead buttons
+* placeholder pages
+* duplicate pages
+* duplicate scanner logic
+* duplicate account snapshot logic
+* duplicate candle/feed logic
+* old demo-only paths that conflict with live mode
+* old mock feed/candle paths still active
+* old risk restrictions that conflict with approved current product behavior
+* hidden panels accidentally visible to users
+* UI features with no backend
+* backend functions with no UI
+* features giving wrong or stale information
+* broken wiring chains
+* system functions not involved in the ecosystem
+
+Do not delete anything risky without evidence. First classify:
+
+* remove now
+* hide from users
+* merge with existing feature
+* convert to empty state
+* keep but fix wiring
+* keep for future but remove from active nav
+* admin-only
+
+PHASE 5 — FIXING RULES
+
+After the audit identifies failures, fix them carefully.
+
+Rules:
+
+1. Preserve working wiring.
+2. Do not remove features unless clearly dead, duplicate, or unused and documented.
+3. Do not redesign the whole app during audit unless required to fix broken behavior.
+4. Do not expose backend/internal wording to users.
+5. Do not fake pass anything.
+6. Do not use frontend-only success for backend-critical actions.
+7. Do not mark live trade passed unless MT5/EA/broker result confirms it.
+8. Fix the root cause, not the symptom.
+9. After each fix, rerun the failed test and connected ecosystem tests.
+10. If a fix risks breaking another system, choose a safer adapter/wrapper approach instead.
+11. Preserve routes, hooks, services, state stores, permissions, MT5 bridge paths, scanner paths, Ruby paths, realtime update paths, feed paths, and candle-history paths unless you prove they are broken and replace them with a verified equivalent.
+12. Do not bypass existing wiring to make a test pass. If existing wiring is wrong, repair the chain properly.
+13. If a UI feature is not wired, either wire it fully, hide it, or convert it into a truthful empty state.
+14. If a backend function is not involved with the ecosystem, document it and classify it as dormant, future-use, duplicate, or remove candidate.
+15. Every fix must include a retest showing the full wiring chain works.
+16. For scanner/feed/candle fixes, do not make chart, Ruby, and scanner use separate conflicting data truth. Prefer one normalized market data truth contract.
+17. For floating errors, do not simply hide the error unless it is redundant and the underlying root cause is fixed or represented by a better user-safe state.
+18. For candle history, do not generate fake candles to cover missing data. Fix retrieval/backfill/pagination or show honest provider limitation.
+
+PHASE 6 — GRADING
+
+Grade each system from 0–100 and give letter grade.
+
+Use this scoring:
+90–100 = A, production/live ready
+80–89 = B, works but needs optimization
+70–79 = C, partially ready/risky
+60–69 = D, unstable or incomplete
+Below 60 = F, broken/misleading/dangerous
+
+Grade these:
+
+* Login/Auth/Invite Flow
+* Navigation/Menu System
+* Floating Error Health
+* Dashboard
+* Open Trades
+* Live Trade Execution
+* MT5 Bridge
+* Scanner UI
+* Scanner Wiring
+* Scanner Data Accuracy
+* Scanner Feed Freshness
+* Scanner Candle History Use
+* Scanner Ruby Integration
+* Scanner Trade Execution Path
+* Scanner Performance
+* Scanner Overall
+* Chart
+* Candle History
+* Feed System
+* Ruby AI
+* Risk/Governance
+* Admin Controls
+* User Permissions
+* Settings
+* Voice
+* Realtime Updates
+* Data Feeds
+* History/Journal
+* Performance
+* Code Health
+* Dead Feature Cleanup
+* Wiring Integrity
+* Overall ARX AI System
+
+For each grade include:
+
+* score
+* reason
+* evidence
+* top failures
+* fixes applied
+* remaining risks
+* next recommended upgrade
+
+Wiring Integrity must carry extra weight in the final overall score. If Wiring Integrity is below 85/100, the app cannot receive an overall grade higher than B, even if the UI looks good. If Live Trade Execution is below 90/100, the app cannot be considered live-production ready. If Data Accuracy is below 90/100, the app cannot be considered trustworthy. If Scanner Overall is below 90/100, the app cannot be considered decision-ready. If Candle History is below 85/100, scanner and Ruby must not claim deep historical analysis. If Feed System is below 90/100, scanner/chart/Ruby must show honest feed limitation states.
+
+PHASE 7 — FINAL REPORT FORMAT
+
+Update ARX_DEEP_SYSTEM_AUDIT.md with these sections:
+
+1. Executive Summary
+
+* overall app grade
+* live trading readiness grade
+* wiring integrity grade
+* scanner grade
+* candle history grade
+* feed system grade
+* floating error health grade
+* top 10 critical issues found
+* top 10 fixes completed
+* top remaining risks
+
+2. Complete Inventory
+
+* pages
+* routes
+* buttons
+* endpoints
+* services
+* hooks
+* database models
+* MT5 functions
+* market data/feed functions
+* candle history functions
+* Ruby functions
+* trading functions
+
+3. Ecosystem Map
+
+* login flow
+* dashboard flow
+* open trades flow
+* scanner flow
+* chart flow
+* Ruby flow
+* live trade flow
+* admin/user flow
+* realtime flow
+* market data flow
+* floating error flow
+
+4. Wiring Audit
+    For each major feature:
+
+* starting UI/action
+* expected chain
+* actual chain
+* break point if any
+* classification
+* files involved
+* fix applied
+* retest evidence
+
+5. Special Scanner Audit
+    Include:
+
+* scanner inventory
+* scanner wiring map
+* scanner data truth
+* scanner/chart/Ruby/trade consistency table
+* scanner errors found
+* scanner fixes applied
+* scanner retest results
+* scanner grade breakdown
+
+6. Special Candle History Audit
+    Include:
+
+* candle endpoint inventory
+* provider inventory
+* hardcoded limits found
+* six-month cap source if any
+* scroll-back behavior
+* pagination/backfill behavior
+* symbol/timeframe history table
+* oldest/newest candle per symbol/timeframe
+* fixes applied
+* retest results
+* candle history grade
+
+7. Special Feed Audit
+    Include:
+
+* active providers
+* provider health
+* which provider feeds which symbol group
+* Polygon usage verification if present
+* TwelveData usage verification if present
+* Deriv/MT5 volatility feed verification
+* fallback behavior
+* stale/unavailable states
+* fixes applied
+* retest results
+* feed grade
+
+8. Floating Error Audit
+    Include:
+
+* every visible error
+* every console/network error class
+* root cause
+* user impact
+* fix/rewrite/hide decision
+* retest result
+* remaining errors if any
+
+9. Truth Contract Results
+    For each major system:
+
+* source of truth
+* expected
+* actual
+* pass/fail
+* evidence
+
+10. Full Function Test List
+    Every tested function/control must be listed with:
+
+* name
+* location
+* role
+* expected result
+* actual result
+* truth contract
+* wiring result
+* pass/fail
+* severity
+* fix applied
+* retest result
+
+11. Dead/Dormant/Wasted Features
+    List:
+
+* function/page/component
+* why it is dormant/wasted
+* recommendation
+* action taken or not taken
+
+12. Broken/Misleading Information
+    List every place the app showed wrong, stale, fake, or misleading information.
+13. Live Trade Test Report
+    Include:
+
+* each live trade path tested
+* symbol
+* lot
+* direction
+* timestamps
+* backend path
+* MT5/EA result
+* UI result
+* dashboard/open trades result
+* wiring result
+* pass/fail
+
+14. Performance Report
+    Include:
+
+* measured timings
+* slow actions
+* root causes
+* fixes applied
+* before/after times
+
+15. Final Grades
+    Score each system and overall.
+16. Remaining Work
+    List only what still needs human decision or external credentials/API access.
+
+PHASE 8 — FINAL ACCEPTANCE RULE
+
+Do not finish until:
+
+* every page has been inventoried
+* every route has been checked
+* every menu item has been clicked/tested
+* every major button has been tested
+* every backend endpoint has been classified
+* every important feature has a verified wiring chain from UI action to backend/service/database/MT5/feed/Ruby truth source and back to UI
+* no feature is marked passed if it only works visually but is not fully wired
+* no backend function is marked useful unless at least one active UI/API/Ruby/system path uses it
+* no UI element is allowed to remain active if it has no real handler, no backend path, or no truthful empty state
+* every live trade path has been tested or clearly marked blocked with reason
+* every scanner/chart/Ruby truth contract has been checked
+* scanner has received its own special audit and grade
+* candle history has received its own special audit and grade
+* feed providers have received their own special audit and grade
+* floating errors have received their own special audit and grade
+* every admin/user permission path has been checked
+* every dormant/dead/duplicate feature has been listed
+* every fake-pass risk has been identified
+* every fix has been retested
+* final grades are assigned
+* ARX_DEEP_SYSTEM_AUDIT.md is complete
+
+If something cannot be tested because credentials, MT5, EA, market feed, API key, provider support, environment variable, or external service access is missing, do not mark it passed. Mark it BLOCKED and state exactly what is missing.
+
+Now begin the audit. Do not skip steps. Do not give a fake pass. Do not hide failures. Repair what is broken, optimize what is slow, verify the wiring, perform the special scanner/feed/candle-history/floating-error audits, and retest after every repair.

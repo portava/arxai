@@ -1,0 +1,181 @@
+Run a full runtime/UI QA pass on the new ARX AI allocations system and repair anything broken.
+
+The allocation rewire appears complete and all backend checks are green, but now I need the real app UI verified end-to-end.
+
+Important:
+Do NOT create duplicate allocation systems.
+Do NOT fake balances, allocations, or trading capacity.
+Do NOT insert live trade commands.
+Do NOT type or submit operator phrases.
+Do NOT weaken safety gates.
+Do NOT expose master account balance, credentials, backend constants, table names, or raw debug values to normal users.
+Do NOT stop at obvious fixable UI/runtime errors. Fix them.
+
+Create checkpoint first:
+checkpoint: pre-allocations-runtime-ui-qa
+
+Main objective:
+Verify the allocations system works in the actual running app, not just in typecheck/guards.
+
+Test and repair:
+
+1. Admin allocations page
+Open and fully test:
+- /admin/allocations
+- any related admin live/user slot pages
+- allocation summary
+- user allocation list
+- search users
+- filters
+- add funds
+- remove funds
+- set allocation
+- transfer allocation
+- freeze user
+- unfreeze user
+- AI sleeve enable/disable
+- AI sleeve amount
+- AI strategy mode
+- AI max lot
+- AI max daily loss
+- allocation history/audit log
+- refresh buttons
+- mobile layout
+
+Every button, modal, form, dropdown, toggle, tab, table action, card action, and search/filter must work or show an accurate disabled reason.
+
+2. Backend route verification
+Verify the page no longer calls deleted/broken endpoints.
+
+Confirm these allocation routes work correctly:
+- admin allocation list
+- admin allocation summary/headroom
+- allocation history
+- add allocation
+- remove allocation
+- set allocation
+- transfer allocation
+- freeze allocation
+- unfreeze allocation
+- AI sleeve update
+- me allocation endpoint
+
+No 404s. No 500s. No stale /api/admin/allocations route references unless those routes now exist and are intentionally supported.
+
+3. User allocation view
+Log in or simulate as a normal user and verify the user only sees:
+- their own allocated amount
+- available capacity
+- used risk/margin
+- open P/L if available
+- daily P/L if available
+- live approval status
+- frozen/locked reason if applicable
+- AI sleeve status if enabled
+- risk caps
+
+Normal user must NOT see:
+- master bridge full balance
+- other users
+- admin controls
+- raw table names
+- backend constants
+- internal route names
+- credentials
+- provider/debug details
+
+4. Live shared trading integration
+Verify allocation state is used by the existing live shared trading flow.
+
+Check:
+- frozen user cannot open new live trades
+- allocationStatus=frozen blocks commands
+- tradingFrozen blocks entry commands
+- AI trading freeze blocks AI sleeve behavior
+- maxLot still respects user cap and master MaxLiveLot
+- allowedSymbols still enforced
+- maxOpenPositions still enforced
+- dailyLossLimitUsd still enforced
+- requireStopLoss still enforced
+- allocation does not bypass admin approval
+- allocation does not bypass kill switches
+- allocation does not bypass Phase B / 16-gate validation
+- stale account snapshot blocks actions requiring fresh master balance
+- stale commands cannot execute
+
+Do not execute live trades during QA.
+
+5. Master bridge/account capacity
+Verify allocation math:
+- admin cannot allocate more than master available capacity
+- admin cannot remove more than unused available allocation if exposure exists
+- transfer locks both rows safely
+- add/set operations use master headroom
+- AI sleeve cannot exceed total user allocation
+- manual + AI allocation math is correct
+- legacy normalized rows remain correct
+- no fake/synthetic numbers shown as real
+- failed refresh does not overwrite real balances with zero
+
+6. Audit logs
+Every allocation mutation must create an audit entry:
+- admin user ID
+- target user ID
+- action
+- before value
+- after value
+- reason/comment if provided
+- timestamp
+
+Verify audit logs show in admin UI and are not visible to normal users.
+
+7. Cross-app UI consistency
+Verify allocation values/status appear correctly anywhere relevant:
+- admin dashboard
+- live bridge dashboard
+- user dashboard
+- trade ticket
+- live readiness panel
+- Ruby trade assistant
+- scanner trade entry
+- command queue
+- user account/live status page
+- mobile views
+
+No page should still show old/broken allocation state, missing allocation, fake zero, or deleted route errors.
+
+8. Regression checks
+Run:
+- typecheck
+- build
+- lint if available
+- CI guards
+- Phase B / 16-gate tests
+- demo arming/verify tests
+- route/import graph check
+- no internal names exposed to user UI
+- permission/isolation checks
+
+9. Fix strategy
+If any UI action fails:
+- fix it immediately if the cause is clear
+- retest the exact action
+- retest adjacent allocation/live-safety behavior
+- create a checkpoint after the fix
+
+If a fix breaks something else:
+- rollback that specific change
+- repair through the shared source of truth instead of patching both sides
+- retest before moving on
+
+Final report:
+Give me:
+- pages tested
+- buttons/toggles/forms tested
+- routes verified
+- fixes made
+- audit log verification result
+- normal user leak check result
+- live safety verification result
+- checkpoints/commits created
+- anything still requiring operator action

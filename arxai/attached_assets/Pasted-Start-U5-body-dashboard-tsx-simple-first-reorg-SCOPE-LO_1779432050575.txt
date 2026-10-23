@@ -1,0 +1,156 @@
+Start U5 body — dashboard.tsx simple-first reorg.
+
+SCOPE LOCK:
+Only work on the main dashboard/cockpit body layout and the small components/styles directly required for that dashboard body.
+
+Do not change:
+- MT5 bridge logic
+- trade execution logic
+- live/demo permissions
+- kill switches
+- admin approvals
+- Ruby intelligence
+- scanner calculations
+- auth/login
+- backend routes
+- slot allocation math
+- open-trade P/L calculations
+- side menu architecture
+- bottom nav architecture
+
+GOAL:
+Make the main dashboard/cockpit body simple-first, clean, mobile-friendly, and useful at a glance.
+
+The dashboard should feel like the user’s command home, not a crowded technical page.
+
+Dashboard priority order:
+1. Account / trading status summary
+2. Open Trades / Current P&L snapshot
+3. Market Scanner shortcut / best current opportunities
+4. Ruby insight card
+5. Risk status summary
+6. Alerts / Watchlist / Calendar preview
+7. Recent activity / trade history preview
+
+Required dashboard layout:
+
+Top area:
+- Clean welcome/header area
+- Current selected symbol, if relevant
+- Trading state chip:
+  - Trading Off
+  - Broker Execution Disabled
+  - Simulator
+  - Trading Access Locked
+  - Broker Execution Enabled
+- Do not show “LIVE MODE — REAL MONEY”
+- Do not show “live money”
+- Do not show “real money” outside explicit consent gates only
+
+Primary summary cards:
+Create a simple card grid that shows:
+- Slot Balance or Account Balance, depending on current mode
+- Equity
+- Open P/L
+- Free Margin
+- Margin Level %
+- Active Trades count
+
+For regular users:
+- Show only their own account/slot metrics
+- Never show master MT5 balance
+
+For admin:
+- Admin can see admin summaries only if already supported by current permissions
+
+Open Trades preview:
+- Show top active positions with live P/L if available
+- If no open trades, show a clean empty state:
+  “No open trades right now.”
+- Include a button/link:
+  “View Open Trades”
+
+Market Scanner shortcut:
+- Add a strong dashboard card:
+  “Market Scanner”
+- Show brief scanner preview if data exists:
+  symbol, direction bias, confidence, risk note
+- Add button:
+  “Open Scanner”
+- Market Scanner must feel important and easy to access
+
+Ruby card:
+- Show a compact Ruby insight card:
+  “Ruby is ready to analyze your market.”
+- If selected symbol exists, show:
+  “Ask Ruby about [symbol]”
+- Add button:
+  “Ask Ruby”
+- Do not expose raw prompts, backend names, or debug text
+
+Risk card:
+- Show:
+  Daily Risk Left
+  Open Risk
+  Drawdown
+  AI Discipline
+- Use clean status chips:
+  OK
+  Warning
+  Locked
+- Add button:
+  “Open Risk”
+
+Alerts / Calendar preview:
+- Compact section only
+- Show next market alert/news/calendar event if available
+- If unavailable:
+  “No major alerts right now.”
+
+Recent activity:
+- Show recent trade/audit/activity items if available
+- If empty:
+  “No recent activity yet.”
+
+Mobile UX:
+- Must fit iPhone screen cleanly
+- No horizontal overflow
+- No overlapping chips
+- No giant empty sections
+- Cards should stack neatly
+- Bottom nav should not cover content
+- Add proper safe-area padding at bottom
+- Keep tap targets comfortable
+
+Desktop UX:
+- Use a clean responsive grid
+- Important cards first
+- Avoid huge blank areas
+
+Data behavior:
+- Reuse existing backend hooks/endpoints.
+- Do not invent fake live balances or fake P/L.
+- If data is unavailable, show clean loading/empty/disconnected states.
+- Do not show mock data as real data.
+- Do not make backend changes unless a tiny read-only contract fix is absolutely required for the dashboard to display existing data.
+
+Cleanup:
+- Remove duplicate or unused dashboard-only UI blocks if proven unused.
+- Remove dashboard debug labels.
+- Remove dashboard internal names.
+- Do not delete shared components unless proven unused across the app.
+
+Acceptance checklist:
+1. Dashboard body is cleaner and simpler.
+2. Important information appears first.
+3. Market Scanner is clearly visible from dashboard.
+4. Open Trades / P&L summary is visible.
+5. Ruby shortcut is visible.
+6. Risk summary is visible.
+7. Mobile dashboard has no overlap or horizontal overflow.
+8. Bottom nav does not cover dashboard content.
+9. No “LIVE MODE — REAL MONEY,” “live money,” or “real money” appears in normal dashboard UI.
+10. Regular users cannot see master account metrics.
+11. No backend trading logic changed.
+12. No live trades placed.
+13. App still builds.

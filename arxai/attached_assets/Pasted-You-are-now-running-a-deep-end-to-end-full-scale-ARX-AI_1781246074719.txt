@@ -1,0 +1,776 @@
+You are now running a deep, end-to-end, full-scale ARX AI system audit, repair, optimization, and grading pass.
+
+This is not a normal QA pass. This must be a complete ecosystem audit touching every frontend page, route, menu item, tab, button, form, modal, chart interaction, scanner function, Ruby AI function, admin function, user function, backend endpoint, service, hook, database model/table, realtime stream, MT5 bridge function, risk/governance function, and live trade function.
+
+The goal is to catch 99% of bugs, wasted features, dead buttons, unused pages, wrong data, fake passes, stale information, broken ecosystem connections, duplicate features, dormant code, misleading UI, and features that are not actually wired to truth.
+
+IMPORTANT PRODUCT CONTEXT:
+This is ARX AI: Analyze. Risk. eXecute.
+Ruby is the in-app AI assistant. All AI/user-facing analysis should appear from Ruby, not raw backend wording.
+This app is being prepared for live trading operation.
+Live trade testing must be included as part of the audit using the existing approved live test pathway and approved user/operator account only. Do not add new “block live” behavior. Do not convert this into demo-only testing. Live trading paths must be honestly tested, but every live test must use the smallest safe micro lot available and must produce a full audit trail showing exact command, route, MT5 bridge status, EA result, UI update, and final position/account state.
+Do not expose internal function names, backend terms, raw route names, stack traces, or developer language to regular users.
+
+PHASE 1 — FULL SYSTEM INVENTORY
+
+First, do a full codebase inventory before changing anything.
+
+Create an audit file/report named:
+ARX_DEEP_SYSTEM_AUDIT.md
+
+Inventory every discovered item under these sections:
+
+1. Frontend Pages
+- file path
+- route path
+- user/admin visibility
+- purpose
+- data source
+- backend dependencies
+- buttons/tabs/forms on page
+- whether page is active, duplicate, dormant, or disconnected
+
+2. Navigation/Menu Items
+- label
+- destination
+- role visibility
+- whether it works
+- whether it opens the correct page
+- whether it duplicates another page
+- whether it has dead links or empty areas
+
+3. UI Buttons and Clickable Controls
+For every button/control:
+- label/text/icon
+- file/component
+- click handler
+- backend call if any
+- expected behavior
+- actual behavior
+- pass/fail
+- truth source
+- whether it is UI-only with no backend
+- whether backend exists but UI does not connect to it
+
+4. Frontend Components
+- component name
+- file
+- where used
+- props/data source
+- active/dormant/duplicate
+- risk of breaking if changed
+
+5. Backend Routes/API Endpoints
+For every endpoint:
+- method/path
+- auth required
+- admin/user scope
+- input contract
+- output contract
+- consumers
+- truth source
+- error handling
+- whether endpoint is used
+- whether endpoint is duplicate/dormant
+
+6. Services/Hooks/Utilities
+For every service/hook:
+- purpose
+- inputs
+- outputs
+- consumers
+- truth source
+- whether active/dormant/duplicate
+- performance concerns
+
+7. Database Models/Tables
+- table/model
+- purpose
+- frontend consumers
+- backend consumers
+- stale/unused fields
+- missing indexes
+- risk-sensitive fields
+
+8. MT5/Bridge Functions
+- heartbeat
+- command queue
+- execution result mapping
+- account snapshot
+- open positions
+- closed positions/history
+- quote/candle ingestion
+- live vs stale state handling
+- master bridge mode
+- own bridge mode if present
+- admin approval gates
+- per-user allocation/scope
+- bridge error handling
+
+9. Ruby AI Functions
+- market analysis
+- scanner explanation
+- chart explanation
+- trade recommendation
+- post-trade explanation
+- risk explanation
+- chat memory
+- tool/data access
+- whether Ruby is grounded in current selected symbol and live/stale feed truth
+- whether Ruby exposes internal/backend wording to users
+
+10. Trading Functions
+- manual buy
+- manual sell
+- one-click scalp
+- multi-trade scalp
+- Ruby-commanded trade
+- scanner trade
+- chart trade
+- close trade
+- modify SL/TP
+- cancel pending command
+- pending/filled/rejected state handling
+- open trade sync
+- dashboard sync
+- journal/history sync
+
+PHASE 2 — ECOSYSTEM MAP
+
+Build a complete ecosystem map showing how the app is supposed to work from user action to final truth state.
+
+At minimum map these chains:
+
+A. Login/Invite Flow
+request access → admin approval/invite → login → role detection → correct dashboard
+
+B. Dashboard Live Account Flow
+MT5 bridge/account snapshot → backend normalized snapshot → dashboard cards → realtime refresh → stale/error state
+
+C. Open Trades Flow
+MT5 open positions → backend live positions endpoint/SSE → Open Trades UI → dashboard totals → close/modify actions
+
+D. Scanner Flow
+symbol source → feed availability → scanner result → selected symbol → chart → Ruby explanation → trade buttons → live order path
+
+E. Chart Flow
+selected symbol → candle endpoint → source/freshness check → quote alignment → render candles or honest unavailable state → draggable SL/TP/order tools
+
+F. Ruby Flow
+selected market/user request → data gathering → chart/history/news/risk context → plain-English explanation → entry/SL/TP/reward/risk → optional trade command
+
+G. Live Trade Flow
+user action → frontend intent → backend order request → permission/governance check → MT5 command queue → EA receives command → broker result → result mapping → UI state → dashboard/open trades/history
+
+H. Admin/User Permission Flow
+authenticated user → role/scope detection → frontend visibility → backend enforcement → admin controls → user controls
+
+I. Realtime Flow
+MT5 updates → backend snapshot → SSE/polling/websocket → dashboard/open trades/scanner/chart updates
+
+For each chain, identify:
+- expected files/functions involved
+- actual files/functions involved
+- missing links
+- stale/cache points
+- where fake success can happen
+- where wrong information can enter
+- where UI can display stale/misleading data
+
+PHASE 3 — TRUTH CONTRACTS
+
+Every test must use a truth contract. Do not mark anything passed because it visually appears okay.
+
+Create a Truth Contract table with:
+
+- Function/Feature
+- Source of Truth
+- Expected Result
+- Actual Result
+- Evidence
+- Pass/Fail
+- Severity
+- Fix Needed
+
+Use these truth sources:
+
+1. Live Account/Dashboard Truth
+Source of truth:
+- MT5 bridge account snapshot
+- balance
+- equity
+- margin
+- free margin
+- margin level
+- floating P/L
+- open position count
+
+Pass condition:
+Dashboard must match normalized MT5 account snapshot within a small tolerance. It must not show cached/fake/stale P/L as live.
+
+2. Open Trades Truth
+Source of truth:
+- MT5 open positions
+- backend normalized live position snapshot
+
+Pass condition:
+Every live MT5 position must appear in UI with correct symbol, direction, lot, entry, SL, TP, current price, floating P/L, and status. Closed positions must disappear from Open Trades and move to history if history exists.
+
+3. Scanner Truth
+Source of truth:
+- selected symbol
+- feed availability
+- candle freshness
+- quote freshness
+- scanner calculation inputs
+
+Pass condition:
+Scanner must not rank or recommend a market using missing, stale, or mismatched data without clearly labeling it. Scanner results must match the selected market and must not fabricate confidence.
+
+4. Chart Truth
+Source of truth:
+- candle source
+- quote source
+- feed freshness timestamp
+- selected symbol
+
+Pass condition:
+Chart must render only valid candles for the selected symbol. If feed is unavailable/stale/mismatched, show honest unavailable/stale state. Do not show composite or stale candles as live.
+
+5. Ruby Truth
+Source of truth:
+- selected symbol
+- current quote/candles
+- indicators/market structure
+- account/risk settings where relevant
+- news/events if available
+- trade state
+
+Pass condition:
+Ruby must analyze the correct market, use available current data, disclose stale/unavailable data, explain entry/SL/TP/risk/reward/confidence, and never expose backend function names or developer terms to normal users.
+
+6. Live Trade Truth
+Source of truth:
+- backend order request
+- risk/governance decision
+- MT5 command queue
+- EA/broker execution result
+- resulting MT5 position or rejection
+
+Pass condition:
+A live trade test only passes if the trade request reaches the correct execution path, receives a real EA/broker result, maps the result correctly, and UI/dashboard/open trades update from the actual MT5 truth state. A 200 response alone is not a pass.
+
+7. Admin/User Permission Truth
+Source of truth:
+- authenticated user role
+- backend role enforcement
+- UI visibility rules
+
+Pass condition:
+Admin-only features must be hidden from regular users and blocked by backend if accessed directly. User/admin toggle must actually change the visible scope and backend permission behavior.
+
+8. Speed Truth
+Source of truth:
+- measured timestamps
+- frontend performance marks
+- backend logs
+- network timings
+
+Pass condition:
+Critical trading actions must acknowledge instantly and complete within measurable thresholds. Record exact durations.
+
+Suggested thresholds:
+- UI response to button click: under 250ms
+- backend order request accepted: under 1 second if bridge healthy
+- dashboard/open trades refresh after MT5 change: under 1–3 seconds
+- scanner symbol switch visible response: under 500ms
+- chart first render: under 1.5 seconds when feed available
+- Ruby typing indicator: under 150ms
+- Ruby first response activity: under 1 second when possible
+
+PHASE 4 — AUTOMATED AND MANUAL TEST MATRIX
+
+Create a complete test matrix and run it.
+
+For every tested item, record:
+
+- Test ID
+- Feature
+- File/function/component
+- User role used
+- Action performed
+- Expected result
+- Actual result
+- Truth contract
+- Evidence
+- Result: PASS / FAIL / PARTIAL / BLOCKED
+- Severity: Critical / High / Medium / Low
+- Fix applied
+- Retest result
+
+Test every category below.
+
+A. Authentication/Login/Invite Tests
+- login page loads first when not authenticated
+- app does not incorrectly load dashboard before auth
+- invite-only signup rules work
+- request access page works
+- forgot password works or has honest state
+- approved user can login
+- unapproved user cannot access live features
+- admin role detected correctly
+- regular user role detected correctly
+- route protection works on direct URL access
+
+B. Navigation Tests
+- every bottom nav item
+- every side menu item
+- every admin menu item
+- every user menu item
+- every tab
+- every back/collapse behavior
+- every repeated menu item
+- every unknown icon/circled section
+- every hidden/dormant page
+
+Classify every navigation item as:
+Working / Broken / Duplicate / Dormant / Admin-only / User-facing / Should remove / Should merge / Needs empty state
+
+C. Dashboard Tests
+- balance
+- equity
+- margin
+- free margin
+- margin level
+- open P/L
+- open trade count
+- live/stale indicator
+- refresh behavior
+- error state
+- empty state
+- performance
+- consistency with Open Trades
+
+D. Open Trades Tests
+- open trades display
+- P/L display
+- symbol/direction/lot/entry/SL/TP/current price
+- close trade button
+- modify SL/TP
+- partial close if supported
+- pending state
+- fill state
+- reject state
+- history handoff
+- dashboard sync
+
+E. Scanner Tests
+- scanner loads
+- Focus tab
+- Broad Scan tab
+- symbol search
+- collapsible/clickable market groups
+- selecting market updates chart and Ruby
+- results appear under Broad Scan, not wrong tab
+- scanner does not use stale/missing feed as live
+- scanner explanation window works
+- buy/sell from scanner works
+- scanner ranking uses real available inputs
+- scanner handles Deriv volatility symbols
+- scanner handles forex/gold/indices
+- scanner performance
+
+F. Chart Tests
+- chart renders selected symbol
+- correct timeframe
+- correct candles
+- feed unavailable state
+- stale feed state
+- quote/candle mismatch detection
+- draggable order tools
+- entry/SL/TP preview drawing
+- Ruby can draw proposed entry/SL/TP before trade
+- trade menu opens
+- chart does not disappear on symbol switch
+- chart does not render wrong market
+- chart does not fake live data
+- chart performance
+
+G. Ruby AI Tests
+- Ruby typing indicator appears immediately with animated dots
+- Ruby answers as Ruby
+- no backend/internal names exposed
+- selected market explanation is correct
+- scanner explanation is correct
+- chart explanation is correct
+- Ruby gives plain-English and technical breakdown
+- Ruby states entry, stop loss, take profit, planned loss, planned gain, confidence, and invalidation before any trade recommendation
+- Ruby explains what happened after trade
+- Ruby admits stale/unavailable data
+- Ruby does not over-paste raw research
+- Ruby response speed
+- Ruby memory/chat persistence if implemented
+- Ruby can use chart tools to draw entry/SL/TP preview before trade
+- Ruby can access all intended trading tools without inventing unavailable ones
+
+H. Live Trading Tests
+Test every live trade path using the smallest safe live test size and approved user/operator account only.
+
+Paths to test:
+- manual Buy
+- manual Sell
+- scanner Buy
+- scanner Sell
+- chart Buy/Sell
+- Ruby-commanded trade
+- one-click scalp
+- multi-trade scalp if implemented
+- close trade
+- modify SL
+- modify TP
+- cancel pending command if supported
+- rejected trade handling
+- failed bridge handling
+- stale bridge handling
+- user not approved handling
+- admin approved user handling
+- own bridge mode if present
+- shared master bridge mode if present
+
+For every live trade test, record:
+- symbol
+- lot
+- direction
+- entry request
+- SL
+- TP
+- expected risk
+- expected reward
+- frontend action timestamp
+- backend receive timestamp
+- command queue timestamp
+- MT5/EA receive timestamp if available
+- broker/EA result
+- final UI status
+- dashboard update
+- open trades update
+- history/journal update
+- pass/fail
+
+Do not mark a live trade path passed unless MT5/EA/broker truth confirms it.
+
+I. Risk/Governance Tests
+- admin account unrestricted behavior if configured
+- regular user approval requirement
+- master bridge approval toggle
+- allocation logic
+- freeze/disable user
+- per-user scope
+- requireStopLoss behavior where configured
+- one-click scalping behavior
+- live trade permission gates
+- backend enforcement, not just UI enforcement
+
+Important:
+If a rule exists, verify it is intentional. If it is old, contradictory, or blocking the current live mission, flag it as legacy and ask whether it should be removed or migrated. Do not silently preserve outdated restrictions that contradict the current product mode.
+
+J. Admin Controls Tests
+- admin dashboard visibility
+- admin/user toggle
+- user list
+- only real users shown
+- approval toggle
+- allocation edit
+- freeze/disable
+- invite generation
+- request access review
+- regular user cannot see admin controls
+- direct URL access blocked for non-admin
+- admin settings save correctly to backend
+- no fake UI toggles
+
+K. Settings Tests
+- account settings
+- trading mode settings
+- governance settings
+- voice settings
+- Ruby settings
+- bridge settings
+- any toggles that do not persist
+- any settings that save but do not affect behavior
+
+L. Voice Tests
+- Ruby voice setting
+- default voice Bella if still intended
+- auto-play response if still implemented
+- no delayed voice minutes later
+- no duplicate voice playback
+- graceful fallback if voice provider unavailable
+
+M. Realtime/SSE/Polling Tests
+- account snapshot stream
+- open trades stream
+- heartbeat
+- stale state
+- reconnect behavior
+- cleanup on page close
+- no memory leaks
+- no duplicate subscriptions
+- no cross-user data leak
+- dashboard/open trades consistency
+
+N. Data Feed Tests
+- Deriv volatility symbols
+- forex
+- gold
+- indices
+- quote freshness
+- candle freshness
+- historical data availability
+- timeframe correctness
+- missing feed behavior
+- fallback behavior
+- no fabricated live candle behavior
+- scanner uses same feed truth as chart/header
+
+O. History/Journal Tests
+- filled trades recorded
+- rejected trades recorded or visibly reported
+- closed trades recorded
+- P/L recorded accurately
+- Ruby post-trade explanation stored if intended
+- trade source recorded: scanner/chart/Ruby/manual/scalp
+
+P. Performance Tests
+Instrument every major action individually and record timings.
+
+Measure:
+- app load
+- login
+- dashboard load
+- account snapshot refresh
+- open trades refresh
+- scanner load
+- scanner result calculation
+- symbol switch
+- chart render
+- Ruby typing indicator start
+- Ruby first response
+- Ruby full response
+- trade button click to backend
+- backend to command queue
+- command queue to MT5/EA result
+- MT5 result to UI update
+- close trade action
+- admin toggle save
+- settings save
+
+Flag:
+- duplicate API calls
+- unnecessary polling
+- slow queries
+- frontend render bottlenecks
+- stale cache
+- blocking AI requests
+- repeated re-renders
+- heavy dormant components
+- oversized bundles
+
+Q. Dead/Wasted Feature Detection
+Find and classify:
+- unused components
+- unused backend endpoints
+- orphan pages
+- dead buttons
+- placeholder pages
+- duplicate pages
+- duplicate scanner logic
+- duplicate account snapshot logic
+- old demo-only paths that conflict with live mode
+- old risk restrictions that conflict with approved current product behavior
+- hidden panels accidentally visible to users
+- UI features with no backend
+- backend functions with no UI
+- features giving wrong or stale information
+
+Do not delete anything risky without evidence. First classify:
+- remove now
+- hide from users
+- merge with existing feature
+- convert to empty state
+- keep but fix wiring
+- keep for future but remove from active nav
+- admin-only
+
+PHASE 5 — FIXING RULES
+
+After the audit identifies failures, fix them carefully.
+
+Rules:
+1. Preserve working wiring.
+2. Do not remove features unless clearly dead, duplicate, or unused and documented.
+3. Do not redesign the whole app during audit unless required to fix broken behavior.
+4. Do not expose backend/internal wording to users.
+5. Do not fake pass anything.
+6. Do not use frontend-only success for backend-critical actions.
+7. Do not mark live trade passed unless MT5/EA/broker result confirms it.
+8. Fix the root cause, not the symptom.
+9. After each fix, rerun the failed test and connected ecosystem tests.
+10. If a fix risks breaking another system, choose a safer adapter/wrapper approach instead.
+
+PHASE 6 — GRADING
+
+Grade each system from 0–100 and give letter grade.
+
+Use this scoring:
+90–100 = A, production/live ready
+80–89 = B, works but needs optimization
+70–79 = C, partially ready/risky
+60–69 = D, unstable or incomplete
+Below 60 = F, broken/misleading/dangerous
+
+Grade these:
+
+- Login/Auth/Invite Flow
+- Navigation/Menu System
+- Dashboard
+- Open Trades
+- Live Trade Execution
+- MT5 Bridge
+- Scanner
+- Chart
+- Ruby AI
+- Risk/Governance
+- Admin Controls
+- User Permissions
+- Settings
+- Voice
+- Realtime Updates
+- Data Feeds
+- History/Journal
+- Performance
+- Code Health
+- Dead Feature Cleanup
+- Overall ARX AI System
+
+For each grade include:
+- score
+- reason
+- evidence
+- top failures
+- fixes applied
+- remaining risks
+- next recommended upgrade
+
+PHASE 7 — FINAL REPORT FORMAT
+
+Update ARX_DEEP_SYSTEM_AUDIT.md with these sections:
+
+1. Executive Summary
+- overall app grade
+- live trading readiness grade
+- top 10 critical issues found
+- top 10 fixes completed
+- top remaining risks
+
+2. Complete Inventory
+- pages
+- routes
+- buttons
+- endpoints
+- services
+- hooks
+- database models
+- MT5 functions
+- Ruby functions
+- trading functions
+
+3. Ecosystem Map
+- login flow
+- dashboard flow
+- open trades flow
+- scanner flow
+- chart flow
+- Ruby flow
+- live trade flow
+- admin/user flow
+- realtime flow
+
+4. Truth Contract Results
+For each major system:
+- source of truth
+- expected
+- actual
+- pass/fail
+- evidence
+
+5. Full Function Test List
+Every tested function/control must be listed with:
+- name
+- location
+- role
+- expected result
+- actual result
+- pass/fail
+- severity
+- fix applied
+- retest result
+
+6. Dead/Dormant/Wasted Features
+List:
+- function/page/component
+- why it is dormant/wasted
+- recommendation
+- action taken or not taken
+
+7. Broken/Misleading Information
+List every place the app showed wrong, stale, fake, or misleading information.
+
+8. Live Trade Test Report
+Include:
+- each live trade path tested
+- symbol
+- lot
+- direction
+- timestamps
+- backend path
+- MT5/EA result
+- UI result
+- dashboard/open trades result
+- pass/fail
+
+9. Performance Report
+Include:
+- measured timings
+- slow actions
+- root causes
+- fixes applied
+- before/after times
+
+10. Final Grades
+Score each system and overall.
+
+11. Remaining Work
+List only what still needs human decision or external credentials/API access.
+
+PHASE 8 — FINAL ACCEPTANCE RULE
+
+Do not finish until:
+
+- every page has been inventoried
+- every route has been checked
+- every menu item has been clicked/tested
+- every major button has been tested
+- every backend endpoint has been classified
+- every live trade path has been tested or clearly marked blocked with reason
+- every scanner/chart/Ruby truth contract has been checked
+- every admin/user permission path has been checked
+- every dormant/dead/duplicate feature has been listed
+- every fake-pass risk has been identified
+- every fix has been retested
+- final grades are assigned
+- ARX_DEEP_SYSTEM_AUDIT.md is complete
+
+If something cannot be tested because credentials, MT5, EA, market feed, or environment variable is missing, do not mark it passed. Mark it BLOCKED and state exactly what is missing.
+
+Now begin the audit. Do not skip steps. Do not give a fake pass. Do not hide failures. Repair what is broken, optimize what is slow, and retest after every repair.

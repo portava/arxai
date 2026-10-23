@@ -1,0 +1,234 @@
+Continue the ARX AI Feature Truth Audit with a focused cleanup pass.
+
+Goals:
+1. Keep /live-ai-auto-test, but fix it so it is honest, useful, admin/dev-only, and not misleading.
+2. Fix the unresolved test:fundbook CI failure correctly.
+3. Run a dedicated Fund Book / Investor Portal Truth Pass covering investor NAV, units, pool visibility, tier pricing, deposits, withdrawals, payout claims, and all related UI/API/test contracts.
+4. Apply only safe, targeted fixes. Do not weaken safety, isolation, investor protection, or live execution contracts.
+
+Important context:
+The previous audit fixed three misleading surfaces:
+- /stocks-center no longer fabricates random AI signals.
+- /live-manual no longer shows fake risk math.
+- LiveTradeCard no longer shows unconditional false blocked/offline badges.
+
+Confirmed strong systems:
+- Scanner
+- Chart trading
+- Manual live trading path
+- Kill switch
+- One-click
+- Admin approval
+- MT5 bridge status
+- Open/closed positions
+- Notifications/event truth
+- Eleanor/Ruby assisted execution path
+- Profit Mission
+- Backtesting Lab
+- Auto Pilot admin error handling
+
+Subdue / keep hidden:
+- /stocks-center should remain subdued unless a real provider is added.
+- /live-ai-auto-test should remain admin/dev-only, but keep and fix it.
+- “Coming soon” controls may remain only if honest and not primary navigation.
+
+Part A — Fix /live-ai-auto-test honestly
+
+Audit /live-ai-auto-test completely:
+- Route/page
+- Backend endpoint/API it calls
+- Any stores/services/hooks it uses
+- Buttons/toggles/inputs
+- Status cards
+- Logs/events
+- Admin route restrictions
+- Tests
+
+This page should remain an admin/dev live-AI test harness, not a normal user-facing trading surface.
+
+Required behavior:
+- Must be admin/owner-only.
+- Must clearly label itself as an admin/dev test tool.
+- Must not appear in normal trader navigation.
+- Must not show fake “AI running,” “trade sent,” “live,” “profit,” or “success” states unless backend truth confirms it.
+- If it submits an audit-only live intent and the backend returns accepted=false, the UI must show that honestly.
+- If it is not allowed to execute trades directly, the page must say that clearly.
+- If the test harness can only validate the planner/intent path, label it as such.
+- If the page calls /api/live-intent/submit or similar and that endpoint is audit-only, the UI copy must say “intent submitted for audit/planning validation” rather than “trade executed.”
+- All errors, 403s, stale bridge, kill switch, missing approval, missing bridge, or blocked execution states must render honestly.
+- No direct live execution bypass.
+- No local-only fake success state.
+- No Math.random or fake generated results in user-visible live states.
+
+Safe fixes to apply:
+- Rename misleading labels if needed.
+- Add an honest banner explaining this is an admin/dev live-AI test harness.
+- Disable or relabel buttons that imply real execution if the endpoint is audit-only.
+- Add clear result cards for:
+  - accepted
+  - rejected
+  - blocked
+  - forbidden
+  - stale bridge
+  - kill switch active
+  - no live approval
+  - backend/network failure
+- Add/adjust tests proving it is admin-only and honest.
+
+Part B — Fix test:fundbook correctly
+
+Current known failure:
+- test:fundbook expects the investor Fund Book view to include CASH_RESERVE.
+- On June 19, commit 55f05663, meFundBook.ts was intentionally changed so investor Fund Book visibility is Balanced-only.
+- The endpoint now hides non-Balanced pools from investor view.
+- The test was never updated and still expects CASH_RESERVE.
+- This is a stale test contract, not a product code bug.
+
+Correct fix:
+- Do not weaken the Fund Book visibility contract.
+- Do not re-expose CASH_RESERVE to investors if the June 19 contract says it should be hidden.
+- Do not blindly switch assertions to BALANCED if that breaks NAV/unit pricing assumptions.
+- Update the test to assert the correct current contract:
+  - Investor Fund Book view hides CASH_RESERVE.
+  - Balanced-only visibility is enforced.
+  - Unit ownership, ownership percent, pool isolation, and NAV math are still verified correctly.
+  - If direct DB reads are needed to verify hidden pool math/isolation, use them in the test rather than expecting the hidden pool to appear in the API response.
+  - Keep isolation assertions strong.
+  - Keep investor protection strong.
+- Add comments in the test explaining the June 19 visibility contract so this does not get re-diagnosed later.
+
+Then run test:fundbook and full CI validation.
+
+Part C — Dedicated Fund Book / Investor Portal Truth Pass
+
+Audit the entire investor system end-to-end.
+
+Scope:
+1. Investor portal routes/pages
+2. Fund Book endpoint(s)
+3. Pool/NAV endpoints
+4. Unit ownership calculations
+5. Deposits
+6. Withdrawals
+7. Lock periods
+8. Early withdrawal penalty logic
+9. Weekly payout claims
+10. Investor balance display
+11. Pool visibility rules
+12. Tier pricing / Balanced-only visibility
+13. Admin investor controls
+14. Ledger/audit logs
+15. Investor/account isolation
+16. Any route that shows NAV, pool value, unit value, ownership %, returns, deposits, withdrawals, payouts, fees, or penalties
+
+For each investor feature, classify it as:
+- REAL
+- PARTIAL
+- SHELL
+- HIDDEN
+- MISLEADING
+- DUPLICATE
+- SHOULD BE SUBDUED
+- NEEDS PRODUCT DECISION
+
+Truth rules:
+- Do not show fake NAV.
+- Do not show fake investor balance.
+- Do not show fake deposits.
+- Do not show fake withdrawals.
+- Do not show fake ownership units.
+- Do not show fake payout availability.
+- Do not show fake historical returns.
+- Do not imply funds are withdrawable if lock/penalty rules block it.
+- Do not imply pool ownership if the user has no units.
+- Do not expose admin-only pool internals to normal investors.
+- Do not expose hidden pools if visibility rules say they are hidden.
+- Do not calculate investor value from local-only UI state.
+- Do not display stale pool values as final/current without timestamp/status.
+
+Audit these specific claims:
+- Investor NAV is real and sourced from backend truth.
+- Unit count is real and investor-specific.
+- Ownership percentage is real and isolated per investor.
+- Pool visibility is intentional and tested.
+- Balanced-only visibility matches current product contract.
+- CASH_RESERVE hiding is intentional and tested.
+- Deposits are real or honestly marked pending/unavailable.
+- Withdrawals are real or honestly marked pending/unavailable.
+- 30-day lock is enforced or honestly not built.
+- Early withdrawal penalty is enforced or honestly not built.
+- Weekly payout is real or honestly marked as not yet active.
+- Pool performance is real or honestly historical/indicative.
+- Admin investor actions are not reachable by normal users.
+- Investor portal cannot place trades or bypass execution gates.
+
+Deliverables:
+1. Investor/Fund Book truth table with file:line proof.
+2. List of misleading investor claims found.
+3. List of shell/partial investor features.
+4. List of hidden backend functions without UI calls.
+5. List of UI surfaces without backend truth.
+6. Fixes applied.
+7. Tests updated/added.
+8. Validation results.
+
+Part D — Tests and guards to add/update
+
+Add/update tests for:
+
+/live-ai-auto-test
+- Admin-only route restriction.
+- Honest audit/dev banner.
+- Accepted/rejected/blocked result rendering.
+- 403 renders access denied.
+- accepted=false does not display “trade executed.”
+- No direct live execution bypass.
+- No fake success state.
+
+Fund Book / Investor Portal:
+- Investor Fund Book hides CASH_RESERVE under the June 19 Balanced-only contract.
+- Balanced-only visible pool behavior is tested.
+- Hidden pool isolation is still verified using direct DB assertions if needed.
+- Investor cannot see another investor’s units.
+- NAV/unit math is correct for the visible pool.
+- Deposit/withdrawal/payout UI does not claim unavailable functionality is live.
+- Lock/penalty states are either enforced or honestly shown as unavailable.
+- Investor portal cannot call live trade execution routes.
+
+Guards:
+- Investor UI cannot import live execution writers.
+- Fund Book API cannot leak hidden pools.
+- Investor portal cannot display fake NAV/payout/deposit/withdrawal values from hardcoded or random data.
+- /live-ai-auto-test remains admin/dev-only.
+
+Part E — Validation
+
+Run:
+- test:fundbook
+- all investor/fundbook tests
+- /live-ai-auto-test tests
+- relevant frontend tests
+- relevant backend/API tests
+- dashboard/app typecheck
+- scripts typecheck
+- full CI guards
+- full CI lane that previously failed
+
+Final response must include:
+1. What was fixed in /live-ai-auto-test
+2. What the page now honestly does
+3. What test:fundbook was changed to assert
+4. Fund Book / Investor Portal truth map summary
+5. Any misleading investor claims found and fixed
+6. Any investor features that should be subdued or hidden
+7. Any product decisions still needed
+8. Exact validation commands and pass/fail results
+
+Acceptance criteria:
+- /live-ai-auto-test is kept, admin/dev-only, honest, and tested.
+- test:fundbook passes by reflecting the correct June 19 Balanced-only visibility contract.
+- CASH_RESERVE is not re-exposed incorrectly.
+- Investor Fund Book visibility, unit math, ownership isolation, and NAV truth are tested.
+- Investor portal does not lie about deposits, withdrawals, payouts, lock periods, ownership, or NAV.
+- No investor route or test harness bypasses live execution gates.
+- Full CI is green or any remaining red is proven unrelated with file/test evidence.

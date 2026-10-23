@@ -1,0 +1,79 @@
+Run the next ARX AI post-merge QA pass focused on LIVE manual trading readiness after the V75/V25 live position sync fix.
+
+Do not place a live trade automatically.
+Do not rerun T014.
+Do not use demo, paper, mock, or simulation.
+Do not hide or reconcile real V75/V25 positions unless a complete live broker snapshot confirms they are closed.
+
+Scope:
+1. Confirm the V75/V25 position sync fix remains intact.
+2. Confirm all real V75 positions are visible in Open Positions.
+3. Confirm synthetic indices do not use fake forex margin estimates.
+4. Confirm incomplete/stale snapshots show:
+   “Position sync incomplete — waiting for broker confirmation.”
+5. Confirm stale row timestamps alone never hide broker-real positions.
+6. Confirm live bridge heartbeat is fresh from the VPS.
+7. Confirm MT5/EA heartbeat is active.
+8. Confirm T015 remains the active owner/admin manual LIVE trading continuation phase.
+9. Confirm owner/admin allocation remains $7.00 unless manually changed.
+10. Confirm the live account is not frozen and kill switch is not active.
+
+Manual trade flow QA:
+1. Check every manual trade entry point:
+   - Scanner trade modal
+   - Main Trade page
+   - Market scanner result cards
+   - Ruby trade suggestion cards
+   - Cockpit trading controls
+   - Chart trading controls
+   - Live bridge test panel
+   - Any BUY/SELL ticket
+   - Any order-entry modal
+   - Any mobile quick-trade surface
+2. Confirm every active manual LIVE trade button says Confirm, Confirm Buy, or Confirm Sell.
+3. Confirm no active manual LIVE trade button still says Review.
+4. Confirm Confirm is the final action before live dispatch.
+5. Confirm no second confirmation modal appears after Confirm.
+6. Confirm pressing Confirm queues/sends the live order only if all live gates pass.
+7. Confirm Stop Loss and Take Profit are optional for owner/admin manual LIVE trades.
+8. Confirm blank SL/TP does not block Confirm.
+9. Confirm blank SL/TP sends null/undefined, not 0 or entry price.
+10. Confirm inline warning appears when SL/TP are blank:
+   “Stop Loss and Take Profit are not set. Confirm will send this live order without automatic exit protection.”
+11. Confirm BUY validation only runs if BUY-side SL/TP values are entered.
+12. Confirm SELL validation only runs if SELL-side SL/TP values are entered.
+13. Confirm Ruby bias mismatch warning appears inline only and does not create another confirmation step.
+
+Safety gates:
+Confirm these still run before any live dispatch:
+1. LIVE bridge readiness
+2. Live account connected
+3. Live EA heartbeat active
+4. Live execution master switch enabled
+5. Andraie.co@gmail.com owner/admin approval
+6. Kill switch not active
+7. Account not frozen
+8. Allocation permits trade
+9. Symbol tradable
+10. Lot size valid
+11. Order type valid
+12. Margin/balance sufficient where broker data allows
+13. Audit logging active
+14. No demo/paper/mock/sim fallback
+
+Ruby/live wording:
+1. Confirm active LIVE surfaces do not say “Test in demo first.”
+2. Confirm active LIVE surfaces say:
+   “Decision support only — confirm live readiness and risk before trading.”
+3. Confirm Ruby gives useful structure-based reads, not generic “no edge” only.
+4. Confirm Ruby does not expose backend/internal function names to users.
+
+Final report:
+1. Are all V75 positions visible and correctly treated as real?
+2. Is the VPS bridge heartbeat fresh?
+3. Is T015 active?
+4. Are all manual live trade entry points using Confirm as the final action?
+5. Are SL/TP optional everywhere for owner/admin manual LIVE trades?
+6. Are all safety gates still active?
+7. Is there any active Paper/Demo/Mock/Sim fallback on the LIVE path?
+8. Is the app ready for the next manual owner/admin LIVE trade from inside the app?

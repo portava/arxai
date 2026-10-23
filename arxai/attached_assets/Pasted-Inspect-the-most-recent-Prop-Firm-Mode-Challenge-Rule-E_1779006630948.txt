@@ -1,0 +1,215 @@
+Inspect the most recent Prop Firm Mode + Challenge Rule Engine + Compliance Guardrails phase before continuing.
+
+Do NOT build new features yet.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, journal, or audit gates.
+Do NOT fake prop firm rules, trades, P&L, drawdown, win rate, account status, candles, news, current events, TP targets, or bridge status.
+Do NOT redesign unrelated pages.
+
+Your job is to audit the Prop Firm Mode phase, fix only confirmed P0/P1 issues, rerun checks, and produce a clear QA report.
+
+Verify:
+
+1. Prop Firm Settings
+- Default is OFF for every user.
+- User opt-in is required.
+- Settings are scoped to authenticated userId.
+- Unauthenticated requests return 401.
+- Wrong-owner requests return 403 or 404.
+- Custom firm/challenge values do not claim to be official verified prop rules unless verified.
+- LIVE_LOCKED / FUNDED_LIVE_LOCKED does not unlock execution.
+
+2. Challenge Rule Engine
+Confirm it evaluates:
+- daily loss usage
+- total loss usage
+- trailing drawdown usage
+- profit target progress
+- max risk per trade
+- max open trades
+- max pending orders
+- position size limits
+- trading day count
+- consistency rule if configured
+- news/weekend/overnight restrictions if configured
+- violation status
+- warning status
+- pass/fail readiness
+
+Confirm statuses work:
+- COMPLIANT
+- WARNING
+- VIOLATION
+- BLOCKED
+- INSUFFICIENT_DATA
+- PROP_MODE_OFF
+
+3. Data Honesty
+- Use only logged-in user’s paper/demo trades, ledger, journal, and risk settings.
+- Do not calculate from fake trades.
+- If P&L, equity, current price, or drawdown data is unavailable, return INSUFFICIENT_DATA with a clear reason.
+- Do not invent funded status, challenge pass/fail, balance, drawdown, or compliance state.
+
+4. Prop Firm Dashboard UI
+Confirm UI shows:
+- Prop Firm Mode status
+- Challenge/account name
+- Account size
+- Starting balance
+- Current paper/demo balance
+- Daily loss remaining
+- Total loss remaining
+- Drawdown remaining
+- Profit target progress
+- Trading days completed
+- Rule compliance status
+- Active warnings
+- Violations
+- Last reset time
+- Data quality status
+
+Confirm:
+- Paper/Demo/Live Locked labels are clear.
+- Empty state is honest when no trades exist.
+- Metrics depending on live/fresh price show unavailable when market data is stale/missing.
+
+5. Trade Ticket + Risk Integration
+When Prop Firm Mode is active, confirm:
+- Order ticket shows prop firm risk status.
+- Max risk per trade warning/block works.
+- Daily loss warning/block works.
+- Drawdown warning/block works.
+- Max open trades warning/block works.
+- Max position size warning/block works.
+- Clear block reason is shown.
+- Blocks are audit logged.
+- Rule engine runs before paper/live/MT5 command paths.
+- Live trading remains blocked.
+
+6. Alerts + Notifications
+Confirm alerts exist for:
+- Prop Firm Mode enabled/disabled
+- daily loss warning
+- daily loss breached
+- max drawdown warning
+- max drawdown breached
+- profit target reached
+- max open trades reached
+- trade blocked by prop rule
+- insufficient data for prop rule
+- consistency warning
+- news/weekend/overnight restriction warning if configured
+
+Confirm alert language says:
+- “Prop firm rule warning — no trade was executed.”
+- “Prop firm guardrail blocked this paper action.”
+- “Live execution remains locked.”
+
+7. AI Prop Firm Awareness
+Verify AI can answer:
+- Am I close to breaking a rule?
+- How much daily loss do I have left?
+- How close am I to the profit target?
+- Can I take this trade under my prop rules?
+- Am I over-risking?
+- What rule should I watch today?
+- Did I violate any challenge rules?
+- What would make this trade non-compliant?
+
+Confirm AI:
+- Uses only logged-in user’s prop settings, ledger, trades, journal, and risk data.
+- Says when Prop Firm Mode is OFF or not configured.
+- Says when data is insufficient.
+- Does not invent official prop firm rules.
+- Does not invent P&L, balance, drawdown, compliance, or rule status.
+- Does not execute or queue trades.
+
+8. Audit Trail
+Confirm audit logs exist for:
+- prop firm mode enabled
+- prop firm mode disabled
+- prop settings updated
+- prop rule evaluated
+- prop rule passed
+- prop rule warning
+- prop rule violation
+- prop rule block
+- profit target reached
+- daily reset applied
+- insufficient data fallback
+- AI prop firm analysis requested
+
+Each audit entry must include:
+- userId
+- propFirmProfileId if relevant
+- tradeId/orderId if relevant
+- action
+- previous value if relevant
+- new value if relevant
+- rule checked
+- result
+- reason
+- timestamp
+
+9. Safety Regression
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = disabled
+- Backend per-user isolation intact
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No fake trades, P&L, drawdown, prop status, market data, candles, news, TP targets, or bridge status
+
+Run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Prop firm settings ownership tests
+7. Unauthenticated 401 tests
+8. Wrong-owner 403/404 tests
+9. Prop rule engine tests
+10. Daily loss/max drawdown tests
+11. Profit target progress tests
+12. Insufficient data fallback tests
+13. Trade ticket prop-rule warning/block tests
+14. Alert/notification integration tests
+15. AI prop firm honesty tests
+16. Audit trail tests
+17. Per-user isolation regression
+18. Safety-envelope regression
+19. Runtime smoke test for Prop Firm UI, Risk page, Trade ticket, AI assistant, and notifications
+20. Mandatory code review / architect review
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks.
+
+End with a QA report showing:
+- Files inspected
+- Files changed, if any
+- Prop Firm settings result
+- Rule engine result
+- Dashboard UI result
+- Trade/risk integration result
+- Alerts result
+- AI prop firm result
+- Audit trail result
+- Tests run/pass/fail
+- Code review result
+- Current Prop Firm Mode status
+- Remaining gated/deferred items
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

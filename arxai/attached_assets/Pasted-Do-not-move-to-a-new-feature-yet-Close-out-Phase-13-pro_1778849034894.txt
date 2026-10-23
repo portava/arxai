@@ -1,0 +1,32 @@
+Do not move to a new feature yet. Close out Phase 13 properly with a cleanup + QA gate.
+
+Fix the pre-existing TypeScript error in paperIntelligence.ts:123 without weakening or bypassing any safety logic. Do not use ts-ignore, any, skipLibCheck, or temporary suppression. Find the real type mismatch, fix it cleanly, and keep all paper-only / liveLocked protections intact.
+
+Then run a full verification pass for the ARX AI assistant upgrade:
+
+1. Run npm run check / typecheck and confirm there are 0 TypeScript errors.
+2. Run lint/build if available and confirm the app builds cleanly.
+3. Verify the AI assistant opens correctly from every page where it should appear.
+4. Verify typed chat still works.
+5. Verify streaming text responses work token-by-token or chunk-by-chunk.
+6. Verify the assistant can answer app-specific questions about ARX AI, MT5 bridge status, paper-only mode, trade journal, calendar, risk tools, prop firm mode, and user sessions.
+7. Verify the assistant does not expose MT5_BRIDGE_TOKEN, SESSION_SECRET, apiKeyHash, password hashes, or hidden secrets.
+8. Verify per-user isolation is preserved on every assistant request and every DB query.
+9. Verify no fake live market data is shown. If no provider key is configured, show “Market data provider not connected.”
+10. Verify voice mode behavior:
+   - If using the Replit AI proxy, clearly document that voice is degraded gpt-audio mode.
+   - If direct OPENAI_API_KEY is not configured, do not claim true WebRTC Realtime is active.
+   - Voice must have visible listening state, mute/stop controls, and fallback to text if mic or voice fails.
+11. Verify the assistant never guarantees profits, never gives unsafe trading certainty, and always keeps trading guidance risk-aware.
+12. Verify fresh-user flow: register/login → open assistant → ask about MT5 bridge → receive correct answer that bridge is not connected unless heartbeat exists → assistant confirms system is paper-only/liveLocked.
+13. Verify returning-user flow: user logs in → assistant keeps that user’s sessions isolated from other users.
+14. Verify the UI is clean on first load with no fake/demo user data unless explicitly labeled as demo/sample.
+
+After fixing and testing, give me a Phase 13 completion report with:
+- Files changed
+- The exact paperIntelligence.ts:123 issue and how it was fixed
+- Tests run
+- Pass/fail result for each assistant capability
+- Current voice mode status: degraded gpt-audio or true WebRTC Realtime
+- What is still needed to activate true OpenAI Realtime via direct OPENAI_API_KEY
+- Confirmation that all safety guards remain green

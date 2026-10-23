@@ -1,0 +1,210 @@
+Paste this next as the QA/fix gate for Per-User Account Ledger + Portfolio/P&L + Shared MT5 Account Safety Model:
+
+Inspect the most recent Per-User Account Ledger + Portfolio/P&L + Shared MT5 Account Safety Model phase before continuing.
+Do NOT build new features yet.
+Do NOT unlock live trading.
+Do NOT enable real auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send real MT5 execution, modification, or close commands.
+Do NOT weaken paper-only, live-trading, MT5 bridge, ALERT_ONLY, user ownership, user confirmation, duplicate-action, risk-limit, attribution, or activityStatus gates.
+Do NOT redesign unrelated UI or touch unrelated pages.
+Your job is to audit the work that was just completed, fix only confirmed P0/P1 issues, rerun checks, and produce a clear QA report.
+Verify these exact items:
+1. Per-User Virtual Account Ledger
+Confirm every logged-in user has their own ledger fields:
+- userId
+- accountMode: PAPER, DEMO, SHARED_MT5_VIRTUAL, or LIVE_LOCKED
+- startingBalance
+- currentBalance
+- availableBalance
+- usedMargin if available
+- equity if available
+- realizedPnL
+- unrealizedPnL
+- totalFees/commission if available
+- openTradeCount
+- pendingOrderCount
+- lastUpdatedAt
+Confirm:
+- Users see only their own ledger.
+- No cross-user balance leakage.
+- No cross-user trade/order/P&L leakage.
+- Paper/demo values are clearly labeled.
+- Broker balance is not invented.
+- If MT5 bridge is offline or locked, UI shows “Broker balance unavailable.”
+2. Shared MT5 Account Safety Model
+Confirm shared MT5 routing remains disabled/locked.
+Verify the safety model supports:
+- masterAccountId
+- virtualSubAccountId
+- userId ownership
+- trade allocation records
+- order allocation records
+- per-user virtual balance
+- per-user realized/unrealized P&L
+- per-user risk limits
+- per-user max open trades
+- per-user max daily loss
+- per-user max position size
+- per-user lockout status
+Confirm:
+- No user can affect another user’s allocation.
+- Every trade/order is attributable to one user.
+- Every future MT5 command path requires userId, virtualSubAccountId, tradeId/orderId, and auditId.
+- Missing attribution blocks the command.
+- Shared/master account routing shows BLOCKED unless explicitly enabled and gated.
+3. Portfolio Dashboard / Trade Summary UI
+Confirm the portfolio area shows:
+- Current paper/demo balance
+- Equity if honestly available
+- Available balance
+- Realized P&L
+- Unrealized P&L
+- Today’s P&L
+- Open trades
+- Pending orders
+- Win/loss summary if available
+- Risk status
+- Account mode badge: Paper, Demo, Shared MT5 Virtual Locked, Live Locked
+- Bridge status
+- Data status
+Confirm:
+- No fake live broker balance.
+- Broker unavailable state appears when data is unavailable.
+- P&L unavailable reason appears when price/candle/symbol data is missing.
+- UI uses backend state, not hardcoded fake values.
+4. Live Trade P&L Calculation
+Verify each open trade/order card calculates only when enough real data exists:
+- Current price
+- Entry price
+- Direction
+- Lot/position size
+- Unrealized P&L
+- P&L percentage
+- Risk to Stop Loss
+- Reward to each Take Profit
+- Distance to SL/TP in price and percent
+Confirm fallback behavior:
+- If current price is missing, P&L is not calculated.
+- If position size is missing, partial P&L unavailable reason appears.
+- If symbol specs/pip value are missing, partial P&L unavailable reason appears.
+- No fake P&L is displayed.
+5. Risk Controls / User Limits
+Confirm per-user risk controls exist for:
+- max risk per trade
+- max daily loss
+- max open trades
+- max pending orders
+- max position size
+- cooldown after losses
+- paper/demo mode lock
+- live trading locked status
+Confirm:
+- Risk controls block order submission when violated.
+- Block reason is clearly shown.
+- Blocks are audit logged.
+- Risk controls run before paper/live/MT5 command paths.
+- Live trading remains locked.
+6. Audit Trail Expansion
+Confirm audit logging exists for:
+- Ledger created
+- Ledger updated
+- Balance adjusted
+- Paper P&L recalculated
+- Trade allocation created
+- Shared MT5 route blocked
+- Attribution missing blocked
+- Risk limit checked
+- Risk limit passed
+- Risk limit blocked
+- Portfolio viewed
+- Broker balance unavailable fallback
+Each audit entry must include:
+- userId
+- virtualSubAccountId if available
+- tradeId/orderId if relevant
+- action
+- previous value if relevant
+- new value if relevant
+- safety gate status
+- reason if blocked
+- timestamp
+7. AI Portfolio Awareness
+Verify AI can answer only from the logged-in user’s own data:
+- How is my account doing?
+- Am I overexposed?
+- How much am I risking?
+- Which trade is hurting me most?
+- Which trade is closest to SL?
+- Which trade is closest to TP?
+- Should I reduce risk?
+- What is my current open P&L?
+Confirm AI uses:
+- User’s own ledger only
+- User’s own trades only
+- Current market data only if connected
+- Risk settings
+- SL/TP positions
+- Market news only if available
+- Current events / real-world news only if available
+Confirm AI honesty rules:
+- Does not fabricate balance, equity, P&L, broker status, current price, exposure, news, or confidence.
+- Explains what data is missing.
+- Advises, warns, or alerts only.
+- Does not execute trades from chat.
+8. Safety Regression
+Confirm all remain true:
+- Auto-close remains ALERT_ONLY unless every required gate passes.
+- Live trading remains BLOCKED unless explicitly unlocked and every required gate passes.
+- Shared MT5 routing remains BLOCKED unless explicitly unlocked and every required gate passes.
+- MT5 commands remain blocked while bridge/token/live gates are missing.
+- No AI open/add/widen trade tools exist.
+- No fake candles.
+- No fake scanner opportunities.
+- No fake news.
+- No fake current events.
+- No fake TP targets.
+- No fake P&L.
+- No fake bridge status.
+- UNKNOWN activity hard-blocks auto-close.
+- Per-user SQL/session filters remain intact.
+Run these checks:
+1. Typecheck
+2. Full guard suite
+3. Trading intelligence regression
+4. Stop-limit/order-type QA
+5. SL/TP create/edit tests
+6. Manual close confirmation/blocking tests
+7. Per-user trade isolation tests
+8. Ledger ownership/isolation tests
+9. Shared MT5 attribution-block tests
+10. Shared MT5 routing disabled test
+11. Risk limit block tests
+12. P&L calculation tests with available data
+13. P&L unavailable fallback tests with missing data
+14. Broker balance unavailable fallback tests
+15. AI portfolio question tests
+16. Audit trail tests
+17. Frontend smoke test for portfolio dashboard, trade cards, account badges, risk blocks, ledger display, and P&L display
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun the full checks after fixes.
+End with a QA report showing:
+- Files inspected
+- Files changed, if any
+- Tests run
+- Pass/fail result for each test
+- Ledger isolation result
+- Shared MT5 safety result
+- P&L calculation/fallback result
+- Risk controls result
+- AI portfolio awareness result
+- Audit trail result
+- Remaining gated/deferred items
+- Auto-close execution status
+- MT5/live trading status
+- Shared MT5 routing status
+- Whether frontend state matches backend state
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

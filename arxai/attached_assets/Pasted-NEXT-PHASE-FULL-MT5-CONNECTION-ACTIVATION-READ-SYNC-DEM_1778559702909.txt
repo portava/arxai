@@ -1,0 +1,489 @@
+NEXT PHASE: FULL MT5 CONNECTION ACTIVATION — READ, SYNC, DEMO EXECUTION, GUARDED LIVE READY
+
+Goal:
+MT5 bridge is now connected. Fully connect ARX AI to MT5 so the app can use real MT5 account data, symbols, orders, positions, and eventually guarded execution.
+
+Brand:
+ARX AI
+Analyze. Risk. eXecute.
+The AI trading fortress built for disciplined decisions.
+
+Important:
+Do not fake connection status.
+Do not place live-money orders during this setup phase without explicit manual confirmation.
+Do not bypass Risk Governor.
+Do not bypass placeLiveOrderGuarded().
+Do not remove kill switch.
+Do not expose secrets.
+Do not let AI silently place real live trades.
+Do not mark broker execution ready until read/write command verification passes.
+
+==================================================
+1. VERIFY REAL MT5 CONNECTION
+==================================================
+
+First run:
+
+GET /api/broker/status
+GET /api/broker/connection-check
+GET /api/broker/account
+GET /api/broker/symbols
+GET /api/positions/live
+GET /api/orders/live
+GET /api/data-quality
+GET /api/system/full-health
+
+Confirm:
+
+- MT5 heartbeat received
+- bridge token accepted
+- account detected
+- account ID readable
+- balance readable
+- equity readable
+- margin readable
+- free margin readable
+- symbols readable
+- open positions readable
+- open orders readable
+- last heartbeat timestamp fresh
+- environment detected as demo or live
+- secret values hidden
+
+If any of these fail, stop and report exact blocker.
+
+==================================================
+2. UPDATE GLOBAL MT5 STATE
+==================================================
+
+If verification passes, update app-wide state:
+
+mt5Connected = true
+mt5Deferred = false
+brokerExecutionAvailable = depends on EA AllowOrderExecution and app safety readiness
+realBrokerDataReadable = true
+
+Update global banners:
+
+If MT5 connected but order execution still locked:
+“MT5 CONNECTED — account data is live. Broker execution remains locked until order execution verification passes.”
+
+If MT5 connected and demo execution verified:
+“MT5 CONNECTED — demo broker execution available through guarded routing.”
+
+If live execution is armed later:
+“LIVE MONEY MODE ACTIVE — real losses possible.”
+
+Do not show green execution status until execution is truly verified.
+
+==================================================
+3. CONNECT MT5 DATA TO APP SYSTEMS
+==================================================
+
+Replace simulator-only data where MT5 data is available.
+
+Use MT5 data for:
+
+- broker status
+- account balance
+- equity
+- margin
+- free margin
+- symbols
+- spread
+- open broker positions
+- open broker orders
+- real account snapshot
+- data quality panel
+- dashboard broker card
+- global status bar
+- MT5 status page
+- broker reconciliation
+
+Keep simulator available separately.
+
+Do not mix:
+
+- DEMO_SIMULATOR
+- LIVE_TESTER_INTENT
+- MT5_DEMO
+- MT5_LIVE
+- SHADOW
+- FORWARD_TEST
+
+==================================================
+4. UPDATE DATA QUALITY PANEL
+==================================================
+
+On /data-quality show:
+
+- Market data provider: MT5_BRIDGE if available
+- Chart provider: TradingView chart visualization
+- Broker executable source: MT5_BRIDGE only if order execution verified
+- Last heartbeat
+- Last account snapshot
+- Last position snapshot
+- Last order snapshot
+- Quote freshness
+- Broker environment: demo/live
+- Data freshness pass/fail
+
+Important label:
+“TradingView chart is for visualization. MT5 bridge is the broker execution source.”
+
+==================================================
+5. ENABLE BROKER RECONCILIATION
+==================================================
+
+Activate /broker-reconciliation.
+
+Compare:
+
+A. Local ARX orders  
+B. Local ARX live intents  
+C. MT5 broker orders  
+D. MT5 broker positions  
+
+Show:
+
+- matched orders
+- unmatched local intents
+- unmatched broker positions
+- closed broker positions
+- sync status
+- reconciliation warnings
+
+If MT5 has positions that ARX did not create, show:
+
+“External MT5 position detected. Manage carefully.”
+
+Do not auto-close anything.
+
+==================================================
+6. ENABLE MT5 DEMO ORDER COMMAND ROUTING
+==================================================
+
+Before live trading, enable MT5 demo command routing.
+
+Required command path:
+
+ARX AI app → placeLiveOrderGuarded/order guard → MT5 command queue → EA poll → EA execution → command ack/reject → ARX order status update
+
+Command types:
+
+- PLACE_ORDER
+- CLOSE_POSITION
+- MODIFY_STOP_LOSS
+- MODIFY_TAKE_PROFIT
+- CANCEL_ORDER
+
+For demo broker execution, environment must be:
+
+MT5_DEMO
+
+If MT5_ENVIRONMENT=demo and EA AllowOrderExecution=true, allow guarded demo broker order test.
+
+If EA AllowOrderExecution=false, show:
+“MT5 connected read-only. Set AllowOrderExecution=true in EA inputs to test demo broker orders.”
+
+==================================================
+7. BUILD/VERIFY MT5 COMMAND ACK FLOW
+==================================================
+
+Verify endpoints:
+
+GET /api/mt5/commands/poll
+POST /api/mt5/commands/ack
+POST /api/mt5/commands/reject
+
+Command lifecycle:
+
+- CREATED
+- QUEUED_FOR_MT5
+- POLLED_BY_EA
+- ACKNOWLEDGED_BY_EA
+- REJECTED_BY_EA
+- SUBMITTED_TO_BROKER
+- FILLED_BROKER
+- PARTIALLY_FILLED_BROKER
+- CLOSED_BROKER
+- ERROR
+
+Every command must have:
+
+- commandId
+- orderId
+- environment
+- symbol
+- direction
+- lotSize
+- stopLoss
+- takeProfit
+- idempotencyKey
+- approvedByGuard
+- riskGovernorResult
+- createdAt
+- expiresAt
+
+==================================================
+8. DEMO BROKER TEST ONLY FIRST
+==================================================
+
+Run first real MT5 execution test on DEMO only.
+
+Test invalid demo broker orders first:
+
+A. Missing stop loss  
+B. Lot size too high  
+C. Risk above configured max  
+D. Unsupported symbol  
+E. Duplicate idempotency key  
+F. Kill switch active  
+
+Expected:
+- each rejected before MT5 execution
+- rejection logged
+- risk event logged
+- audit log updated
+
+Then allow one tiny demo broker test order only if all guards pass:
+
+- environment: MT5_DEMO
+- lot size: 0.01 or broker minimum
+- stop loss required
+- take profit or exit logic required
+- max risk within profile
+- user manually confirms
+- AI autopilot off
+
+After test:
+
+- broker order appears
+- broker position appears if filled
+- ARX order status updates
+- ARX position sync updates
+- journal updates
+- calendar updates
+- audit updates
+- reconciliation passes
+
+==================================================
+9. LIVE MANUAL READINESS AFTER DEMO PASSES
+==================================================
+
+Only after MT5_DEMO order test passes, run live manual readiness.
+
+Required:
+
+- MT5 environment confirmed live
+- user intentionally switches environment to live
+- LIVE_TRADING_ALLOWED=true in Replit Secrets
+- EA AllowOrderExecution=true
+- Risk Governor active
+- kill switch inactive
+- max daily loss configured
+- max loss per trade configured
+- max lot size configured
+- max open positions configured
+- audit logging active
+- broker reconciliation active
+- invalid order tests pass
+- user confirmation phrase required
+
+Confirmation phrase:
+
+I ACCEPT REAL MONEY RISK
+
+Do not arm live if phrase is not exact.
+
+==================================================
+10. ONE TINY LIVE MANUAL TEST ONLY
+==================================================
+
+Only if user explicitly chooses live manual test and readiness passes:
+
+Allow one tiny live manual order:
+
+- mode: LIVE_MANUAL
+- AI autopilot off
+- max lot size: 0.01 or broker minimum
+- max open live positions: 1
+- max loss: $5 or less unless user changes it manually
+- stop loss required
+- take profit or defined exit logic required
+- user manually submits
+- order goes through placeLiveOrderGuarded()
+- audit logs everything
+
+Do not start live AI auto yet.
+
+==================================================
+11. LIVE AI ASSIST AFTER LIVE MANUAL PASSES
+==================================================
+
+Only after one tiny live manual test passes:
+
+Enable LIVE_AI_ASSIST.
+
+Rules:
+
+- AI can generate trade cards
+- user approval required
+- approval expires after 60 seconds
+- no silent execution
+- every approved order goes through placeLiveOrderGuarded()
+- max lot 0.01
+- max loss still controlled
+- stop loss required
+- take profit or exit logic required
+
+==================================================
+12. LIVE AI AUTO TEST REMAINS LOCKED UNTIL PROVEN
+==================================================
+
+Do not enable live AI auto immediately.
+
+LIVE_AI_AUTO_TEST requires:
+
+- MT5 connected
+- demo broker execution passed
+- one tiny live manual test passed
+- live AI assist passed
+- risk governor passed
+- kill switch passed
+- reconciliation passed
+- no P0/P1 issues
+- user manually arms it
+
+Default live AI auto caps:
+
+- max 1 live AI trade per session
+- max 3 live AI trades per day
+- max lot 0.01
+- max open live position 1
+- stop after 1 loss
+- cooldown 15 minutes
+- stop if spread high
+- stop if confidence low
+- stop if risk governor blocks
+- stop if kill switch pressed
+
+==================================================
+13. UPDATE UI ROUTES
+==================================================
+
+Update these pages for connected MT5:
+
+- /dashboard
+- /broker
+- /mt5-status
+- /broker-reconciliation
+- /data-quality
+- /manual-trade-ticket
+- /live-manual
+- /live-ai-assist
+- /orders
+- /positions
+- /journal
+- /calendar
+- /risk-command-center
+- /testing-control-center
+- /daily-testing
+- /release-status
+
+Make sure each page clearly shows:
+
+- MT5 connected yes/no
+- environment demo/live
+- order execution read-only/available
+- broker account status
+- risk governor status
+- kill switch status
+
+==================================================
+14. RUN FULL MT5 INTEGRATION TEST
+==================================================
+
+Run:
+
+- MT5 heartbeat test
+- account snapshot test
+- symbols read test
+- orders read test
+- positions read test
+- command queue test
+- command ack/reject test
+- invalid order rejection test
+- demo broker order test, if allowed
+- reconciliation test
+- journal/calendar sync test
+- risk governor test
+- kill switch test
+- audit log test
+- no secret leak test
+
+==================================================
+15. GENERATE FINAL REPORT
+==================================================
+
+Generate:
+
+ARX AI FULL MT5 CONNECTION REPORT
+
+Include:
+
+1. MT5 connection:
+- heartbeat received yes/no
+- account readable yes/no
+- balance readable yes/no
+- equity readable yes/no
+- margin readable yes/no
+- symbols readable yes/no
+- positions readable yes/no
+- orders readable yes/no
+
+2. Environment:
+- current MT5 environment demo/live
+- app environment matches yes/no
+- execution mode read-only/demo/live
+
+3. Command routing:
+- command queue active yes/no
+- EA polling active yes/no
+- ack/reject active yes/no
+- idempotency active yes/no
+
+4. Demo broker test:
+- invalid orders rejected yes/no
+- demo order test attempted yes/no
+- demo order result
+- reconciliation result
+
+5. Live readiness:
+- live manual ready yes/no
+- live AI assist ready yes/no
+- live AI auto locked yes/no
+
+6. Safety:
+- Risk Governor active yes/no
+- kill switch active yes/no
+- max loss limits active yes/no
+- stop loss required yes/no
+- audit logs active yes/no
+- secrets hidden yes/no
+
+7. Final status:
+- MT5 FULLY CONNECTED FOR DATA: yes/no
+- MT5 DEMO EXECUTION READY: yes/no
+- LIVE MANUAL READY: yes/no
+- LIVE AI ASSIST READY: yes/no
+- LIVE AI AUTO TEST LOCKED UNTIL APPROVED: yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not place live orders during setup unless user explicitly confirms live test.
+- Do not claim broker fills unless MT5 confirms them.
+- Do not expose secrets.
+- Do not bypass Risk Governor.
+- Do not bypass placeLiveOrderGuarded().
+- Do not let AI silently place real trades.

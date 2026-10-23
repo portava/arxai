@@ -1,0 +1,97 @@
+Fix the known ARX validation issues found during the Full Live Activation merge investigation.
+
+Scope:
+Clean up the remaining known validation reds that were confirmed unrelated to the Full Live Activation task, so future validation runs are cleaner and easier to trust.
+
+Known issues to fix:
+
+1. test:fundbook-tier
+Issue:
+This test is failing due to known dev-DB pool-drift/data pollution.
+
+Goal:
+Make the test deterministic and isolated.
+
+Requirements:
+- Inspect the test:fundbook-tier setup and teardown.
+- Identify which seeded rows, pool state, account data, investor/trader data, or cached values drift across runs.
+- Make the test use isolated seeded fixtures or a test transaction/reset pattern.
+- Do not rely on existing dev DB state.
+- Do not weaken fundbook, NAV, tier, payout, allocation, or investor accounting logic.
+- If the test depends on current date/time, freeze or control the time source.
+- If test order affects the result, remove order dependency.
+
+Acceptance:
+test:fundbook-tier passes repeatedly on a clean run and after other tests have run.
+
+2. test:mode-scope PART G
+Issue:
+The source-scan contract is stale. It still flags meTrades.ts importing liveCommandPipeline, but that import is now legitimate because of the prior Cluster-D close-after-revocation/pipeline routing work.
+
+Goal:
+Update the contract so it protects against unsafe bypasses without blocking the approved pipeline import.
+
+Requirements:
+- Read the PART G source-scan logic.
+- Confirm exactly why meTrades.ts imports liveCommandPipeline.
+- Allow only the approved import/function path needed for the legitimate close/modify/live-pipeline route.
+- Do not broadly whitelist the file.
+- Do not remove the guard.
+- The guard must still fail if meTrades.ts or other patched routes directly insert into mt5_commands, call broker-send primitives, or bypass the sanctioned live pipeline.
+- Add a targeted fixture/regression test proving:
+  - approved pipeline import is allowed
+  - direct command-table write is still blocked
+  - direct broker send is still blocked
+  - legacy close bypass remains blocked
+
+Acceptance:
+test:mode-scope passes while still protecting against unsafe direct execution paths.
+
+3. meCachedReadEndToEndTest
+Issue:
+The full-CI offline lane failed because TwelveData returned HTTP 429 during /api/me/opportunity-map, causing timestamp drift and making the cache isolation assertion fail. This is an external-provider flake, not a real cross-user cache leak.
+
+Goal:
+Make the test deterministic and offline-safe.
+
+Requirements:
+- Inspect meCachedReadEndToEndTest, especially /api/me/opportunity-map.
+- Remove dependency on live TwelveData/network behavior.
+- Stub/mock the market data provider used by the test.
+- Ensure both users receive deterministic provider responses.
+- Preserve the original purpose of the test: prove /me cached reads do not leak data across users.
+- The test should fail on a real cross-user cache leak, not on provider rate limits.
+- Add explicit assertions that provider 429s are handled honestly if that path is tested separately.
+
+Acceptance:
+meCachedReadEndToEndTest passes without depending on TwelveData availability or rate limits.
+
+General rules:
+- Check first, then fix.
+- Do not weaken live trading safety gates.
+- Do not weaken investor/fundbook accounting correctness.
+- Do not remove tests just to get green.
+- Do not mark flaky tests as skipped unless there is a separate replacement test preserving the same protection.
+- Prefer deterministic fixtures, provider stubs, isolated test data, and narrow guard updates.
+- Keep changes focused on the three known validation reds only.
+
+Verification required:
+Run:
+- test:fundbook-tier
+- test:mode-scope
+- meCachedReadEndToEndTest or the script that contains it
+- full relevant integration lane if safe
+- ci:guards
+- affected typechecks
+- full CI if environment allows
+
+Report:
+- root cause for each issue
+- exact files changed
+- what protection was preserved
+- tests run
+- exact pass/fail counts
+- any remaining unrelated flakes
+
+Acceptance:
+The three known validation issues are fixed at the source. Future validation should not fail on dev-DB pollution, stale mode-scope contract rules, or TwelveData 429 rate-limit flakes, and no ARX live-trading, fundbook, investor, cache-isolation, or execution-safety protections are weakened.

@@ -1,0 +1,539 @@
+Do one full ARX AI bug-fix pass from the screenshots. Fix the actual broken UI/data wiring, not just labels.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type or submit operator phrases.
+Do not recommend lot size.
+Do not fake balances, allocations, positions, orders, P/L, alerts, provider status, or live readiness.
+Do not bypass safety gates, kill switches, approvals, risk caps, or the 16-gate validation.
+Do not expose master balance to normal users.
+Do not expose backend constants, table names, route names, provider errors, raw tokens, debug fields, or internal booleans to normal users.
+Do not create duplicate systems.
+Only fix what is broken.
+If a fix breaks something else, rollback that specific change and repair through the shared source of truth.
+
+Create checkpoint first:
+checkpoint: pre-screenshot-bug-sweep-live-ui-mode-routing
+
+Main problem:
+The app header says Live Trading Active / Live Execution Armed, but many pages still show demo, paper, simulator, mock, live disabled, read-only, checklist, stale alerts, zero allocation, or internal/debug states. These views are reading different backend sources and mixing paper/demo/test/live data.
+
+Fix this with one consistent live/account mode source of truth.
+
+Core requirements:
+1. Live mode is the active user/app mode.
+2. Demo and paper should not appear across live pages except as a simple option in Settings to switch modes.
+3. Live mode pages must not show paper/demo/test data.
+4. User pages must show the logged-in user’s live shared allocation/account shell.
+5. Admin pages can show master/live bridge data.
+6. Normal users cannot see master balance or admin diagnostics.
+7. All pages must use the same account mode/readiness resolver.
+
+Create or repair a unified frontend/backend resolver for:
+- currentAccountMode: LIVE_SHARED / DEMO / PAPER
+- liveBridgeStatus
+- liveExecutionArmed
+- brokerExecutionStatus
+- userSharedMasterAssignment
+- userAllocation
+- userRiskCaps
+- userAccountShell
+- activeConnectionId
+- activeUserId
+- role: admin/user
+- page visibility/wording rules
+
+Use that resolver everywhere instead of page-specific stale flags.
+
+Bug group 1 — /my-account still shows zero after admin allocation:
+Screenshot shows:
+- My Balance $0
+- My Equity $0
+- Assigned Allocation $0
+- Bridge Preference says “Use my own MT5 bridge”
+even though admin allocated funds to andraie.co@gmail.com and AI sleeve.
+
+Fix:
+1. Trace admin allocation → user_slot_allocation → virtual_trading_accounts/account shell → /api/me/allocation → /api/me/account → /my-account.
+2. Verify allocation belongs to the same logged-in user/email/userId.
+3. Fix email case mismatch, duplicate user, auth session mismatch, or stale cache if present.
+4. If user is attached to SHARED_MASTER_MT5, /my-account must show:
+   - account mode: SHARED_MASTER_MT5
+   - assigned allocation
+   - manual allocation
+   - AI sleeve allocation/status
+   - user balance from assigned allocation/account shell
+   - user equity from assigned allocation plus/minus user P/L
+   - available capacity
+   - used margin/risk
+   - user risk caps
+   - frozen/locked reason if applicable
+5. Do not show “Use my own MT5 bridge” as active for an attached shared-master user.
+6. Do not show master balance to normal users.
+7. User balance/equity must update after admin Add/Set/Transfer/AI sleeve update and Refresh shell.
+
+Bug group 2 — Settings still says MT5 Bridge Not Configured:
+Screenshot shows settings page:
+- MT5 Bridge: Not Configured
+- old MT5_BRIDGE_TOKEN / 503 warning
+while the header says Live Execution Armed.
+
+Fix:
+1. Settings must use the same live bridge source as the header.
+2. If active shared master live bridge exists, do not show legacy “MT5 Bridge Not Configured” as the main state.
+3. Move old personal MT5 bridge setup into optional mode-specific settings.
+4. In live shared mode, show:
+   - Shared Master MT5 connected
+   - user assigned/not assigned
+   - account shell status
+   - live bridge status
+5. Only show personal MT5 bridge setup if the user chooses “Use my own MT5 bridge.”
+6. Demo/paper settings should only appear as a mode switch option, not as blocking banners in live mode.
+
+Bug group 3 — Auto-Trade must not disable manual trading:
+Auto-Trade toggle should enable AI trading permissions/sleeve only.
+
+Fix:
+1. Auto-Trade ON must not disable manual trading.
+2. Manual trading should remain available unless blocked by real safety gates:
+   - frozen
+   - no allocation
+   - missing risk caps
+   - symbol not allowed
+   - stop-loss required but missing
+   - daily loss limit reached
+   - max open positions reached
+   - live bridge unavailable
+   - admin disabled manual trading
+3. Separate flags:
+   - manualTradingEnabled
+   - aiAutoTradingEnabled
+   - aiSleeveEnabled
+   - aiSleeveAllocation
+4. UI must explain these separately.
+
+Bug group 4 — Profile/user mode routes to admin gate:
+Screenshot shows clicking profile/user mode leads to “Admin tools require Admin mode.”
+
+Fix:
+1. Clicking the user profile/name should open the user profile/account menu, not admin-control.
+2. Admin-only pages should remain protected.
+3. If admin previews user mode, profile should still show the user profile/account page, not admin tools.
+4. If user tries admin route, show a clean “Admin access required” page, not confusing profile behavior.
+5. Admin viewing a user profile should not show demo/paper/checklist noise.
+
+Bug group 5 — Alerts cannot close and stale MT5 disconnected alerts repeat:
+Screenshot shows many “MT5 bridge disconnected” alerts even though live bridge is armed/fresh, and close buttons do not work.
+
+Fix:
+1. Make alerts dismissible.
+2. Persist dismissed alerts per user.
+3. Deduplicate repeated alerts.
+4. Scope bridge alerts by active connectionId/accountMode.
+5. If current live bridge heartbeat is fresh, suppress stale disconnected alerts from older/demo/paper connections.
+6. Add “Clear resolved alerts” action.
+7. Notification count must update after dismiss/clear.
+8. Do not let old paper/demo alerts appear in live mode.
+
+Bug group 6 — Alerts page crash:
+Screenshot:
+Cannot read properties of undefined (reading 'replace')
+at alerts.tsx using s.type.replace.
+
+Fix:
+1. Add safe defaults for alert type/status/severity.
+2. Do not call .replace on undefined.
+3. Unknown alert types should render as “Unknown” or be filtered safely.
+4. Page must not crash if backend returns partial alert settings.
+5. Add regression test for missing type/status fields.
+
+Bug group 7 — Broker reconciliation crash:
+Screenshot:
+Cannot read properties of undefined (reading 'length')
+for:
+- r.brokerOrders.length
+- r.brokerPositions.length
+- r.mismatches.length
+
+Fix:
+1. Default brokerOrders, brokerPositions, mismatches to [].
+2. Add safe response normalization.
+3. If reconciliation data is missing, show clean empty state.
+4. Do not crash.
+5. Add regression test for missing arrays.
+
+Bug group 8 — Live trading control crash:
+Screenshot:
+Invalid time value
+at new Date(e.createdAt).toISOString().
+
+Fix:
+1. Add safe date formatter.
+2. If createdAt is missing/invalid, show “—” or “Unknown time.”
+3. Normalize audit events before render.
+4. Add regression test for invalid/missing createdAt.
+5. Page must not crash.
+
+Bug group 9 — Paper/demo/checklist noise in live mode:
+Screenshots show:
+- “Ready to place paper trade”
+- “Connect MT5 demo account”
+- “Trade calendar for paper trades”
+- “Live trading is DISABLED”
+- “Simulator only”
+- demo/paper onboarding checklists
+- paper/demo readiness language
+while live mode is armed.
+
+Fix:
+1. In LIVE_SHARED mode, remove paper/demo onboarding, checklist, simulator-only language, and paper trade prompts from primary pages.
+2. Demo/paper should only appear inside Settings as a mode switch option.
+3. Live pages should use live-specific wording.
+4. Trade calendar must not show paper trades in live mode.
+5. Command room must not say “Simulator only” in live mode.
+6. Readiness/help pages must not say mock/disconnected/disabled if live bridge is armed.
+7. If a feature is paper-only, hide it from live pages or label it clearly under the mode switch/settings area.
+
+Bug group 10 — Mode separation for all data:
+Screenshots show live pages populated with demo/paper/test data:
+- Live Intent Queue has 35 old tester/demo intents.
+- Calendar shows paper/demo stats despite no live trades.
+- Recent scanner trades/demo commands appear in live.
+- Position panels show stale live/test positions even when user has none.
+- Alerts show stale bridge disconnect messages.
+
+Fix:
+1. Every query must filter by:
+   - userId
+   - accountMode
+   - accountShellId/connectionId where relevant
+   - source/mode: LIVE_SHARED / DEMO / PAPER / TEST
+2. Live pages must not show DEMO/PAPER/TEST rows.
+3. Demo/paper pages must not show live rows.
+4. Existing old rows should be tagged/archived/mode-scoped, not deleted if audit-relevant.
+5. Live Intent Queue in live mode should show only live shared intents for the current user/account.
+6. Calendar in live mode should show only live trades/P&L; if no live trades, show zeros/empty.
+7. Trade history/open positions/P&L must be mode-scoped.
+8. Scanner “Recent trades” label must be mode-aware.
+
+Bug group 11 — User says no open positions, app shows one:
+Screenshot shows “My open positions 1” with Volatility 75 live position even though user says nothing is open.
+
+Fix:
+1. Reconcile positions from current live MT5 connection/account.
+2. Filter positions by current user allocation/account shell and accountMode.
+3. Do not show stale/test/demo positions in live.
+4. If broker positions endpoint shows no open positions, remove/hide stale local ghost positions from user view.
+5. Admin diagnostics may show stale reconciliation rows, but user live view must show true current open positions only.
+6. Add “last position sync” time.
+7. Add safe cleanup/archive path for stale position rows without deleting audit logs.
+
+Bug group 12 — Live Trading page contradicts header:
+Screenshots show header says Live Execution Armed but page says:
+- live execution layer not enabled
+- real broker execution locked
+- waiting for server master switch
+- pre-arm checks failing
+- authenticated operator/admin failed
+- typed phrase required
+- account mismatch
+
+Fix:
+1. Live Trading page must use same live readiness resolver as header.
+2. If header says live armed, page must not show locked/disabled/checklist unless the same resolver says a true blocker exists.
+3. Remove stale checklist panels from live mode after armed.
+4. Admin diagnostics can still show detailed gate states behind an expandable admin-only panel.
+5. Normal live page should show clean:
+   - Live bridge active
+   - Trading armed
+   - Account connected
+   - Allocation/risk status
+   - Ready/Blocked reason if any
+6. Do not expose raw gate names/expected strings to normal users.
+
+Bug group 13 — Remove typed-phrase trade confirmations:
+User requested no typing phrases to confirm trades.
+
+Fix:
+1. Remove typed-phrase requirements from trade execution UI.
+2. Remove visible phrases like:
+   - ENABLE LIVE TRADING
+   - QUEUE MICRO LIVE TEST
+   - EXECUTE LIVE SHARED
+   - ROLL BACK LIVE SHARED TRADING
+   from user/admin trade flows.
+3. Replace with button-based confirmations:
+   - Review trade ticket
+   - Confirm
+   - Cancel
+   - Risk summary acceptance checkbox if needed
+4. Keep server-side safety gates, approvals, kill switches, risk caps, validation, and audit logs intact.
+5. If old backend requires phrase fields, refactor safely so UI uses explicit confirmation intent/event instead.
+6. Do not allow silent/automatic trading.
+7. Every live order still requires explicit user/admin confirmation and server validation.
+
+Bug group 14 — Live AI Assist contradicts itself and exposes internals:
+Screenshot shows:
+- Live AI Assist Tester
+- canExecuteRealBrokerOrder: false
+- canSubmitLiveIntent: true
+- mt5Connected: true
+while header says live execution armed.
+
+Fix:
+1. Remove raw backend booleans from UI.
+2. Replace with clean statuses:
+   - AI assist available
+   - Live order requires review
+   - Allocation/risk missing
+   - Ready to review trade
+   - Trade blocked: [clean reason]
+3. Use the same live readiness resolver as header.
+4. Rename/remove “Tester” language in live mode.
+5. AI Assist should not say live is unavailable if live resolver says active.
+6. If only submit-intent is allowed, explain in clean user language.
+7. Do not show canExecuteRealBrokerOrder/canSubmitLiveIntent/mt5Connected fields to normal users.
+
+Bug group 15 — Scanner says real feed connected but still uses simulator:
+Screenshot says:
+- Synthetic-index feed connected
+- scanner cards continue to use simulator analysis pipeline
+- symbol not available in simulator
+
+Fix:
+1. Synthetic/volatility scanner analysis must use real Deriv/MT5/Market Data Router feed when available.
+2. Do not run live synthetic symbols through simulator.
+3. Remove “symbol not available in simulator” when real feed exists.
+4. Use real ticks/candles/history for:
+   - score
+   - confidence
+   - risk
+   - bias
+   - setup
+   - Ruby explanation
+   - trade setup
+5. If historical candles are missing, show exact clean reason.
+6. Do not fake candles.
+7. Do not degrade confidence only because simulator lacks symbol.
+8. Keep simulator only for explicit paper/demo mode.
+
+Bug group 16 — Trade Command Room still says simulator:
+Screenshot shows:
+- Trade Command Room subtitle: “Simulator only”
+- Quick ticket still says LIVE_LOCKED + risk gates
+while live execution is armed.
+
+Fix:
+1. Make command room mode-aware.
+2. In LIVE_SHARED mode, remove “Simulator only.”
+3. Live manual ticket should open live shared trade ticket using current validation.
+4. AI assist should generate live review cards, not simulator-only cards.
+5. In paper/demo mode, keep simulator wording.
+6. Do not mix wording.
+
+Bug group 17 — Trade Action Center user mode has admin/operator wording:
+Screenshot shows user mode page with:
+“AI drafts and your manual review requests will appear here.”
+
+Fix:
+1. User mode should not show admin/operator review language.
+2. If no pending actions, say “No pending trade actions.”
+3. If user has pending confirmation, show only their own pending confirmations.
+4. Admin review/approval language belongs only in admin/operator views.
+5. Do not expose admin action center controls in user mode.
+
+Bug group 18 — Notification Center thinks live trading disabled:
+Screenshot shows Notification Center:
+- ALERTS_ONLY
+- LIVE TRADING DISABLED
+while header says Live Execution Armed.
+
+Fix:
+1. Notification Center must read current live/account mode resolver.
+2. In live mode, show live alert status.
+3. Remove “paper-only/live trading disabled” wording when live is active.
+4. Push notification status should be independent of live mode.
+5. Trade alerts should support live mode.
+6. No provider/backend constants in normal UI.
+
+Bug group 19 — Audit Log and Safety Logs route to the same page:
+Screenshot shows Audit Vault and Safety Logs opening same-looking Audit Log page.
+
+Fix:
+Option A:
+- Make one page with clear tabs:
+  - Audit Log
+  - Safety Logs
+  - System Events
+Option B:
+- Route them to distinct pages.
+Do not leave two menu items that feel duplicated/confusing.
+
+Bug group 20 — Remove excessive live money warning banners:
+Screenshots show repeated “real money risk/live trading active” and risk banners across pages.
+
+Fix:
+1. Keep one top global live-mode bar.
+2. Remove repeated inner-page live money warning banners.
+3. Only show action-specific risk warning inside final live trade confirmation/ticket.
+4. Footer risk disclosure should be minimized or not repeated on every scroll-heavy page if top live bar is present.
+5. Keep legally necessary text concise and not duplicated everywhere.
+
+Bug group 21 — Help panel/system status stale:
+Screenshot shows Help/System Status:
+- MT5 mode Mock
+- MT5 connected no
+- live broker dispatch off
+while header says live armed.
+
+Fix:
+1. Help/status panel must use same live resolver.
+2. Do not show mock/no/off when current live bridge is active.
+3. Hide backend env text from user-facing help.
+4. Admin diagnostics can show detailed resolver values in admin-only mode.
+
+Bug group 22 — Calendar shows paper trades/live disabled:
+Screenshot shows Trading Calendar:
+- “Daily P&L, win rate, and AI activity for paper trades”
+- Live trading disabled
+- Net P&L/month and trades from paper/demo
+while user says no live trades.
+
+Fix:
+1. Calendar must be mode-scoped.
+2. In live mode, show live P&L/trades only.
+3. If no live trades, show 0/empty.
+4. Do not display paper P&L/trades in live mode.
+5. Demo/paper data appears only when mode switch is set to demo/paper.
+
+Bug group 23 — Live shared page typed-phrase/internal explanation:
+Screenshot shows Live Shared Account page explaining typed phrase.
+
+Fix:
+1. Remove typed phrase language from main page.
+2. Button should say “Open live shared trade ticket.”
+3. Actual confirmation should be button-based.
+4. Keep safety validations server-side.
+5. No operator phrase text in normal UI.
+
+Bug group 24 — Page crash prevention globally:
+Audit all active routes for unsafe access patterns:
+- .length on possibly undefined arrays
+- .replace on possibly undefined strings
+- new Date(...).toISOString() on invalid values
+- .map on undefined
+- object field assumptions from partial API responses
+
+Fix across app:
+1. Add normalization helpers.
+2. Add safe date formatter.
+3. Add safe array helper.
+4. Add safe string label helper.
+5. Add route-level empty/loading/error states.
+6. Add regression tests for the three known crashes:
+   - /alerts
+   - /broker-reconciliation
+   - /live-trading-control
+
+Bug group 25 — Admin/User mode separation:
+Top mode switch and role preview must not leak admin screens into user mode.
+
+Fix:
+1. User mode should hide admin controls.
+2. Admin mode can show admin diagnostics.
+3. Admin previewing user mode should see the user experience only.
+4. User profile button should not open admin-control.
+5. Admin viewing a user profile should show live allocation/account state without paper/demo noise.
+
+Bug group 26 — Account mode data cleanup:
+Create a safe data normalization/migration if needed:
+1. Tag existing paper/demo/test rows with correct mode.
+2. Ensure live rows are not mixed with old tester rows.
+3. Do not delete audit logs.
+4. Do not delete broker records.
+5. Archive/hide stale demo/test rows from live UI.
+6. Add mode filters to all queries.
+
+Pages to audit and fix:
+- /my-account
+- /settings
+- /admin-control
+- /dashboard
+- /alerts
+- /notifications
+- /trading-calendar
+- /trade
+- /live-trading
+- /live-trading-control
+- /live-shared
+- /live-ai-assist
+- /live-intent-queue
+- /broker-reconciliation
+- /live-chart
+- /market-scanner
+- /open-trades
+- /trade-history
+- /action-center
+- /help
+- /safety-logs
+- /audit-vault
+- /admin/allocations
+- user profile/admin profile routes
+- mobile views for these pages
+
+QA requirements:
+Run safe QA without placing trades.
+
+Verify:
+1. /my-account shows assigned allocation/balance/equity after admin allocation.
+2. User account mode shows SHARED_MASTER_MT5 when attached.
+3. AI sleeve allocation appears correctly.
+4. Bridge preference no longer defaults to own MT5 when user is shared-master attached.
+5. Settings no longer says MT5 bridge not configured when live shared bridge is active.
+6. Auto-Trade does not disable manual trading.
+7. Alerts can be dismissed.
+8. Stale MT5 disconnected alerts are not shown when current heartbeat is fresh.
+9. /alerts does not crash.
+10. /broker-reconciliation does not crash.
+11. /live-trading-control does not crash.
+12. Live pages do not show paper/demo/test data.
+13. Calendar live mode shows no live trades if there are none.
+14. Live Intent Queue live mode hides demo/paper/test intents.
+15. Open positions live mode shows only true current live positions.
+16. If no positions are open, it shows none.
+17. Scanner synthetic analysis uses real feed, not simulator.
+18. Command room does not say simulator-only in live mode.
+19. Notification Center does not say live trading disabled when live is armed.
+20. Live AI Assist does not expose raw booleans and matches live readiness.
+21. Trade Action Center user mode does not show admin/operator wording.
+22. Help status uses same live source as header.
+23. Audit Log/Safety Logs are distinct or tabbed clearly.
+24. Repeated real money banners are removed except global header and final trade confirmation.
+25. Typed phrase confirmations are removed from UI and replaced by button confirmations.
+26. No live trade is placed.
+27. arx_live_commands count remains 0 during QA.
+28. No operator phrases are typed.
+29. No safety gates are weakened.
+30. Normal users cannot see master balance/other users/admin controls.
+31. Admin can still see diagnostics.
+32. Typecheck passes.
+33. Build passes.
+34. CI guards pass.
+35. Phase B / 16-gate tests pass.
+36. Demo tests pass.
+37. Allocation runtime QA passes.
+38. Add regression tests for mode separation and crash fixes.
+
+Final report only:
+- bugs fixed grouped by screenshot issue
+- files/routes changed
+- source-of-truth resolver changes
+- pages tested
+- crash regression tests added
+- mode separation tests added
+- whether /my-account now reflects allocation
+- whether live pages no longer show paper/demo/test data
+- whether stale/duplicate warnings were removed
+- whether no live commands were inserted
+- QA results
+- remaining issues only if they require human credentials or manual browser action

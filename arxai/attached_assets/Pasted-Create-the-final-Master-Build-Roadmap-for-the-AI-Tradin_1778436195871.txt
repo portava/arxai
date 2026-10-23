@@ -1,0 +1,119 @@
+Create the final Master Build Roadmap for the AI Trading Operating System.
+
+Important:
+Do not add more architecture ideas.
+Do not build everything at once.
+Turn the full ecosystem into a controlled implementation sequence.
+
+Roadmap phases:
+
+1. Foundation Safety Core
+- Control Tower
+- Risk Governor
+- Global State Machine
+- System Modes
+- Kill Switch
+- Recovery Mode
+- Resilience Engine
+
+2. Black Box Vault
+- Event-sourced vault
+- Shadow audit mode
+- data integrity
+- replay-ready storage
+- privacy guard
+- training eligibility
+
+3. Agent System V2
+- sensors
+- specialist agents
+- red team
+- blue team
+- judge
+- authority levels
+- contracts
+- versioning
+- shadow comparison
+
+4. Execution Intelligence
+- slippage prediction
+- spread behavior
+- fill probability
+- broker scorecard
+- transaction cost analysis
+- execution quality grading
+
+5. Trader DNA + Cognitive Intelligence
+- personal baseline
+- personal edge fingerprint
+- behavior evidence
+- recovery protocol
+- temporal behavior
+- contextual behavior
+- personal risk prescription
+
+6. Replay Lab + Counterfactual Simulation
+- candle replay
+- blocked trade replay
+- missed trade replay
+- decision tree replay
+- what-if engine
+- stress injection
+- lesson confidence
+
+7. Validation Command Center
+- staged validation
+- out-of-sample testing
+- walk-forward testing
+- Monte Carlo
+- adversarial validation
+- continuous validation
+- strategy quarantine
+- system health
+
+8. Decision Intelligence
+- decision quality
+- expectancy
+- conviction
+- strategic patience
+- no-trade quality
+- future risk simulation
+- decision governance
+
+9. Portfolio Manager
+- risk budget
+- dynamic allocation
+- capital climate
+- reserve expansion
+- capital efficiency
+- portfolio health
+- liquidity-aware deployment
+
+10. AI Economy + Evolution Sandbox
+- agent reputation
+- strategy lifecycle
+- sandbox-only evolution
+- ecosystem fitness
+- evolution constitution
+- fraud detection
+- ecosystem survival score
+
+For every phase include:
+- purpose
+- dependencies
+- exact files/folders
+- implementation steps
+- tests
+- UI requirements
+- data requirements
+- success criteria
+- failure conditions
+- rollback plan
+
+Global rules:
+- No unrestricted live auto-execution until all safety, validation, and risk systems are complete.
+- Evolution never touches live money directly.
+- Risk Governor and Control Tower outrank every AI system.
+- Every important decision must be logged into the Black Box Vault.
+- Every AI decision must be explainable, replayable, and auditable.
+- Do not proceed to the next phase until current phase tests pass.

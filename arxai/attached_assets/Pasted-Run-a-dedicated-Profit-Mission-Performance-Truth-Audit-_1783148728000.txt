@@ -1,0 +1,272 @@
+Run a dedicated Profit Mission Performance Truth Audit for ARX AI.
+
+Goal:
+Make sure Profit Mission, also called Profit Machine, can actually perform as it stipulates — meaning it can create a mission, track the mission, connect to real live account/trade/P&L truth, dispatch trades only through the approved 18-gate live execution path when allowed, update progress from real closed/open trades, stop or block when limits are hit, and never fake success.
+
+Do not rebuild Profit Mission. First inspect what is already built, then patch only confirmed gaps. No fake green validation.
+
+Core requirement:
+Profit Mission must not be a visual goal tracker only. It must be a real mission lifecycle system connected to:
+- real user/admin mission config
+- real market/account/bridge state
+- real trade dispatch path when allowed
+- real open/closed trade state
+- real realized/unrealized P&L
+- real progress/currentValue updates
+- real timeline/audit events
+- real blocked/failed/completed conditions
+
+Profit Mission must never bypass:
+- live approval
+- user/account isolation
+- bridge freshness
+- kill switch
+- entitlement checks
+- one-click/autopilot consent where required
+- the existing instant-trade → 18-gate live pipeline
+
+Audit these Profit Mission capabilities one by one:
+
+1. Mission creation
+Verify:
+- User/admin can define profit target.
+- User/admin can define starting amount/current base.
+- User/admin can define max loss/drawdown.
+- User/admin can define markets/symbol scope.
+- User/admin can define timeframe/session/mode if supported.
+- User/admin can define whether Auto Pilot can participate if supported.
+- Mission is persisted to backend/database.
+- Mission is not just local state.
+- Validation prevents impossible/unsafe inputs.
+- UI shows backend rejection honestly.
+
+2. Mission lifecycle
+Verify all lifecycle states work:
+- NOT_STARTED
+- ACTIVE
+- PAUSED
+- BLOCKED
+- COMPLETED
+- FAILED
+- CANCELLED/ARCHIVED if supported
+
+For each state, prove:
+- How state is entered
+- How state is persisted
+- What UI shows
+- What buttons are enabled/disabled
+- What backend endpoint updates it
+- What audit/timeline event is created
+
+3. Mission dispatch / trade participation
+Verify:
+- Profit Mission can create or request trade drafts only through the existing live execution path.
+- No mission code directly writes to broker/MT5 mailbox.
+- No mission code directly bypasses executeInstantTrade, live ops draft, or the 18-gate pipeline.
+- Mission trade requests are tied to missionId.
+- Mission trade attempts are logged.
+- Rejected/blocked trade attempts do not show success.
+- Mission does not keep running as “performing” if all dispatch attempts are blocked.
+
+If Profit Mission is only allowed to coordinate with Auto Pilot instead of directly dispatching, verify that contract and update UI copy to say so honestly.
+
+4. Real P&L tracking
+Verify:
+- Mission progress uses real open and/or closed trades according to the product contract.
+- Realized P&L from closed mission trades updates mission progress.
+- currentValue updates from startingAmount + realizedProfit.
+- Unrealized P&L is either included clearly as floating/indicative or excluded clearly.
+- Progress bar does not remain stuck at 0%.
+- Progress does not use fake, random, hardcoded, fixture, or stale values.
+- Progress resets/updates correctly after trade close.
+- Mission cannot show completed unless real P&L reaches the target.
+- Mission cannot show failed unless real loss/drawdown reaches the limit.
+- Mission displays timestamp/source for last progress update if available.
+
+5. Protection / stop conditions
+Verify Profit Mission stops, pauses, blocks, or fails honestly when:
+- Profit target is reached
+- Max loss is reached
+- Max drawdown is reached
+- Bridge is stale/offline
+- Kill switch is active
+- Live approval is missing
+- Market data is missing
+- Entitlement is missing
+- Auto Pilot is disabled when required
+- User/account isolation fails
+- Risk/governance rejects the mission trade
+- Trade pipeline rejects the order
+
+No “ACTIVE” or “RUNNING” state should remain if the mission cannot legally or technically continue.
+
+6. Timeline / audit trail
+Verify:
+- Mission created event
+- Mission started event
+- Mission paused/resumed event
+- Mission trade requested event
+- Mission trade accepted/rejected event
+- Mission trade filled/closed event, if available
+- Mission progress updated event
+- Mission target completed event
+- Mission failed/stopped event
+- Mission blocked event
+- Mission manual override/admin action event
+
+Timeline must not be fake local UI only. If some events are missing, add them or mark as missing.
+
+7. UI honesty
+Inspect the Profit Mission UI:
+- Buttons
+- Start/Pause/Resume/Stop
+- Launch Mission
+- Mission progress card
+- Profit target card
+- Max loss card
+- Current value card
+- Trade history section
+- Timeline/log
+- Auto Pilot connection section
+- Blocked reason section
+- Empty/error/loading states
+
+Fix any UI that:
+- Shows mission is running when backend says blocked/failed/inactive
+- Shows fake progress
+- Shows fake P&L
+- Shows fake “AI performing”
+- Shows stale state after backend rejection
+- Enables start/launch when required backend truth is missing
+- Hides blocked reasons
+- Does not refresh after trade close
+- Has dead buttons or local-only success
+
+8. Central brain connection
+Verify whether Profit Mission is connected to the central ARX brain/Eleanor/planner:
+- Does the mission tell the central planner what the target/constraints are?
+- Does Auto Pilot read mission goals?
+- Does Eleanor know there is an active mission?
+- Can Eleanor explain mission status using backend truth?
+- Do scanner/chart signals feed mission decisions where intended?
+- Are mission trades tagged with missionId?
+- Are mission constraints applied before dispatch?
+
+If Profit Mission is not connected to the central brain, classify:
+- should connect now
+- should remain independent
+- should be labeled as tracker-only
+- should be subdued
+
+9. Simulation/demo/mock leak scan
+Search all Profit Mission-related code for:
+- mock
+- demo
+- paper
+- simulator
+- simulated
+- dummy
+- fixture
+- Math.random
+- fake
+- placeholder
+- TODO
+- coming soon
+- localOnly
+- sample
+- stub
+- hardcoded
+- inMemory
+- dryRun
+- generateDummy
+
+Separate:
+- valid tests
+- valid fixtures
+- invalid user-facing mock
+- invalid live-path simulation
+- misleading fake display
+
+Fix any invalid user-facing mock/simulation behavior.
+
+10. Tests to add/update
+Add or update tests proving:
+
+Creation/lifecycle:
+- Mission creation persists to backend.
+- Start/Pause/Resume/Stop updates backend truth and UI.
+- Backend rejection does not leave fake success state.
+
+P&L/progress:
+- Closed mission trade with realized profit updates currentValue.
+- Closed mission trade with realized loss updates currentValue.
+- Progress percentage updates from real realized P&L.
+- Mission completes only when target is truly reached.
+- Mission fails/pauses only when real loss/drawdown threshold is reached.
+- Unrealized P&L is either clearly excluded or clearly marked floating.
+
+Execution path:
+- Mission trade dispatch uses the same instant-trade/live pipeline as manual trades.
+- Mission cannot import or call broker/MT5 mailbox writer directly.
+- Mission cannot bypass approval, kill switch, bridge freshness, or entitlement.
+- Blocked dispatch renders blocked reason.
+
+UI:
+- Active mission renders actual backend state.
+- Blocked mission renders blocked reason.
+- Timeline renders real backend events.
+- Start button does not fake success.
+- Progress does not remain stuck at 0% after trade close.
+
+Central brain:
+- Active mission context is visible to Auto Pilot/Eleanor if that is the intended contract.
+- If not connected, UI labels mission honestly as tracker/goal mode.
+
+11. Guards to add/update
+Add static guards if missing:
+- Profit Mission cannot import direct live execution/MT5 writer modules.
+- Profit Mission trade requests must include missionId.
+- Profit Mission routes cannot use Math.random/fake P&L in user-facing code.
+- Profit Mission currentValue/progress cannot be only local state.
+- Backtest/testing routes cannot share mission live dispatch code unless explicitly gated.
+
+12. Validation
+Run:
+- all Profit Mission domain tests
+- all Profit Mission frontend/page tests
+- mission planner tests
+- mission warroom tests
+- scanner/chart/live execution regression tests if touched
+- backend/API tests for mission routes
+- dashboard/frontend typecheck
+- scripts/backend typecheck
+- CI guards
+- full CI lane if available
+
+Do not mark complete unless each lane has explicit PASS output. If a lane disappears, times out, or is killed, mark it INCOMPLETE and rerun in smaller units.
+
+Final report must include:
+
+1. What Profit Mission currently can actually do
+2. What it claimed to do but could not do
+3. Whether it can truly perform trades or only coordinate/track them
+4. Exact execution path from mission → trade request → live pipeline
+5. Exact P&L/progress path from trade close → realized P&L → currentValue/progress
+6. Exact stop/complete/fail rules
+7. Whether it is connected to Eleanor/central brain
+8. Mock/demo/simulation leaks found
+9. UI lies found and fixed
+10. Files changed
+11. Tests/guards added or updated
+12. Exact validation commands and pass/fail counts
+13. Remaining product decisions, if any
+
+Acceptance criteria:
+- Profit Mission can perform exactly what the UI says it can perform.
+- If it cannot perform a claim, the claim is removed, renamed, subdued, or clearly marked unavailable.
+- No fake progress, fake profit, fake running state, or fake trade success.
+- Mission progress updates from real P&L.
+- Mission trade path uses the existing gated live pipeline only.
+- Mission cannot bypass safety or account isolation.
+- Mission lifecycle and timeline are real and tested.
+- Validation is explicit, not assumed.

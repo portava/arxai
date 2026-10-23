@@ -1,0 +1,123 @@
+Now build Phase 10: Real Market Data Provider Layer.
+
+Goal:
+Create a clean data-provider system so the app can later connect to multiple live data sources without rewriting the strategy engine.
+
+Create folders:
+
+/server/data
+/server/data/providers
+/server/data/cache
+/server/data/normalizers
+
+Create files:
+
+1. /server/data/types.ts
+
+Define:
+
+Candle:
+{
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+}
+
+MarketQuote:
+{
+  symbol: string;
+  bid?: number;
+  ask?: number;
+  spread?: number;
+  last?: number;
+  timestamp: string;
+}
+
+DataProvider:
+{
+  name: string;
+  getCandles(symbol, timeframe, limit): Promise<Candle[]>;
+  getQuote(symbol): Promise<MarketQuote>;
+  isConnected(): Promise<boolean>;
+}
+
+2. /server/data/providers/mockProvider.ts
+
+Create realistic mock candle data for:
+- EURUSD
+- GBPUSD
+- USDJPY
+- US30
+- NAS100
+- AAPL
+- TSLA
+- Volatility 75 Index
+- Volatility 75 1s Index
+- Volatility 25 1s Index
+
+Mock data should simulate:
+- trending markets
+- choppy markets
+- volatility expansion
+- pullbacks
+- liquidity sweeps
+
+3. /server/data/providers/mt5Provider.ts
+
+Create placeholder provider that will receive candle/quote data from MT5 bridge.
+
+Functions:
+- updateCandlesFromMT5()
+- updateQuoteFromMT5()
+- getCandles()
+- getQuote()
+- isConnected()
+
+4. /server/data/providers/alphaVantageProvider.ts
+
+Placeholder for stock/forex data API.
+
+Use environment variable:
+ALPHA_VANTAGE_API_KEY
+
+Do not break app if key is missing.
+Return mock data if no key.
+
+5. /server/data/providers/twelveDataProvider.ts
+
+Placeholder for forex/stocks/indices data API.
+
+Use environment variable:
+TWELVE_DATA_API_KEY
+
+Do not break app if key is missing.
+Return mock data if no key.
+
+6. /server/data/normalizers/symbolNormalizer.ts
+
+Convert app symbols to broker/API symbols.
+
+Examples:
+EURUSD -> EUR/USD where needed
+US30 -> Dow Jones / US30 broker symbol
+Volatility 75 Index -> broker-specific symbol
+
+7. /server/data/dataManager.ts
+
+Create one main interface:
+
+getMarketData(symbol, timeframe, limit)
+getLatestQuote(symbol)
+getProviderStatus()
+
+Provider priority:
+1. MT5 provider if connected
+2. External API provider if key exists
+3. Mock provider fallback
+
+Important:
+The strategy engine should never care where data comes from.
+It only receives normalized candles and quotes.

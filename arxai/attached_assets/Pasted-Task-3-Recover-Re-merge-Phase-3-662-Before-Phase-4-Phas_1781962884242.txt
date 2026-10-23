@@ -1,0 +1,52 @@
+Task 3 — Recover / Re-merge Phase 3 (#662) Before Phase 4
+
+Phase 4 is blocked because Phase 3’s implementation is missing from this environment.
+
+I need you to recover or re-merge the real Phase 3 task output from Task #662 into the current environment. Do not rebuild it from scratch unless explicitly approved after recovery fails.
+
+Confirmed by local investigation:
+
+- Pickaxe search for mission_agents / mission_proposals across all local refs only found planning/roadmap docs.
+- No local git ref contains implementation files named missionAgent* or missionProposal*.
+- No local ref contains proposal endpoints such as /proposals or listMissionAgents.
+- No “Multi-Agent Proposal System” / #662 implementation commit exists in any local branch.
+- The actual Phase 3 code appears to exist only in the platform task record for #662, not in this reachable repo state.
+- Task #663 / Phase 4 must remain IN_PROGRESS but blocked until #662 is truly restored.
+
+Required action:
+
+1. Re-trigger or re-run the platform merge for Task #662.
+2. Bring the actual Phase 3 implementation into the current environment.
+3. Do not guess-merge an arbitrary subrepl-* branch.
+4. Do not create a replacement self-contained foundation for Phase 4.
+5. Do not mark Phase 4 complete until the real Phase 3 foundation is present and verified.
+
+After the platform merge lands, run a verification pass and produce a merge report showing:
+
+- Which Phase 3 files landed.
+- Which migrations landed.
+- Which schemas/tables exist, especially mission agents and proposals.
+- Which routes/endpoints landed.
+- Which services/hooks landed.
+- Which UI surfaces landed.
+- Whether there were conflicts.
+- Whether any local duplicate/partial mission agent or proposal foundation exists.
+- Whether Phase 4 can safely extend the restored Phase 3 code.
+
+Expected Phase 3 foundation to verify:
+
+- mission_agents data model/table/schema.
+- mission_proposals data model/table/schema.
+- Server routes for listing mission agents and proposals.
+- Proposal creation/update/read endpoints.
+- Any services, hooks, or API clients required by the Phase 3 proposal system.
+- Any UI surface or admin/operator surface created in Phase 3.
+- No fake/stub-only version unless that was the actual approved Phase 3 output.
+
+Blocking rule:
+
+Phase 4 must not proceed until Phase 3 #662 is actually present in this environment. If #662 cannot be recovered by platform merge, stop and report exactly what failed, then wait for approval before creating a fallback implementation.
+
+Goal:
+
+Restore the real Phase 3 implementation first, verify it, then resume Phase 4 on top of the verified Phase 3 foundation.

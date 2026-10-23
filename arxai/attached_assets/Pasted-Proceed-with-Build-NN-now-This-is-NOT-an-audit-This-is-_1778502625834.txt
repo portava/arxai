@@ -1,0 +1,602 @@
+Proceed with Build NN now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build NN = Security, Roles, Permissions, and Data Protection.
+
+Goal:
+Create a security layer that protects the entire trading app, controls access to sensitive systems, prevents unauthorized actions, protects user/account data, masks secrets, logs security events, and makes sure every build from AA through MM remains safe.
+
+The system should answer:
+- Who is allowed to access each feature?
+- Which actions are admin-only?
+- Which actions are read-only?
+- Are secrets protected?
+- Are broker/account values masked?
+- Are security events being logged?
+- Are dangerous actions blocked?
+- Are demo/test systems separated from real data?
+- Are live-trading actions still impossible?
+- Are all API endpoints protected consistently?
+
+Important:
+Build NN must NOT place trades.
+Build NN must NOT enable live trading.
+Build NN must NOT call MT5 live execution.
+Build NN must NOT modify canPlaceTrades.
+Build NN must NOT expose API secrets.
+Build NN must NOT recommend live trading.
+Build NN is security, roles, permissions, privacy, audit, and data protection only.
+
+Current system:
+- Build AA = trade decision orchestrator
+- Build BB = auto-debrief
+- Build CC = learning feedback engine
+- Build DD = read-only market data
+- Build EE = paper execution engine
+- Build FF = paper autopilot loop
+- Build GG = trading calendar + AI command center
+- Build HH = risk governor
+- Build II = trader coach + playbook
+- Build JJ = replay simulator + strategy lab
+- Build KK = data import + broker read-only connector
+- Build LL = notification center
+- Build MM = system health, audit, and admin control
+- Build NN = security, roles, permissions, and data protection
+
+Core requirement:
+Create one central security and permission system that every future endpoint/action can check before doing anything sensitive.
+
+Build NN tasks:
+
+1. Inspect existing auth/security
+
+Find existing files/routes/tables for:
+- users
+- sessions
+- auth middleware
+- admin routes
+- role checks
+- audit logs
+- security logs
+- API keys/secrets
+- environment variables
+- broker credentials
+- market data credentials
+- MM admin control
+- LL notifications
+- KK broker read-only connector
+- frontend navigation/menu
+
+Do not duplicate existing auth if usable.
+Integrate cleanly.
+
+2. Create Security Service
+
+Create a service that returns:
+
+{
+  security_status_id,
+  generated_at,
+  appMode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  authStatus: {
+    authConfigured,
+    sessionProtectionEnabled,
+    csrfProtectionEnabled,
+    rateLimitEnabled,
+    roleSystemEnabled
+  },
+  permissionStatus: {
+    rolesConfigured,
+    permissionsConfigured,
+    protectedRoutesCount,
+    unprotectedSensitiveRoutes,
+    adminOnlyRoutes,
+    readOnlyRoutes
+  },
+  dataProtectionStatus: {
+    secretRedactionEnabled,
+    accountMaskingEnabled,
+    brokerSecretsProtected,
+    marketDataSecretsProtected,
+    exportAvailable,
+    demoDataSeparated
+  },
+  securityFlags: [],
+  warnings: [],
+  criticalFindings: [],
+  recommendedActions: []
+}
+
+3. Create roles
+
+If the app does not already have roles, create safe role structure:
+
+OWNER:
+- full access to paper-only/admin/reporting features
+- can manage users/roles
+- can run health checks
+- can stop autopilot
+- can emergency WATCH_ONLY
+- cannot enable live trading
+
+ADMIN:
+- can manage paper-only operations
+- can run health/admin actions
+- can view logs
+- cannot manage owner role
+- cannot enable live trading
+
+TRADER:
+- can run AA decisions
+- can create paper trades if HH allows
+- can run paper autopilot if allowed
+- can view own reports/playbook
+- cannot manage security/admin settings
+
+ANALYST:
+- read-only access to reports, calendar, replay, coach, playbook
+- cannot create paper trades
+- cannot run autopilot
+- cannot change settings
+
+VIEWER:
+- limited read-only dashboard access
+- cannot access broker snapshots unless masked
+- cannot change anything
+
+SYSTEM:
+- internal service role for AA-MM service-to-service calls
+- cannot place live trades
+- must be logged when used
+
+4. Create permissions
+
+Create permissions such as:
+
+- decision:read
+- decision:create
+- paper_trade:read
+- paper_trade:create
+- paper_trade:close
+- paper_autopilot:read
+- paper_autopilot:start
+- paper_autopilot:stop
+- replay:read
+- replay:run
+- strategy_lab:run
+- performance:read
+- coach:read
+- coach:generate
+- risk_governor:read
+- risk_governor:evaluate
+- notifications:read
+- notifications:manage
+- data_import:read
+- data_import:create
+- broker_readonly:read
+- admin:health_check
+- admin:watch_only
+- admin:rebuild
+- audit:read
+- audit:export
+- security:read
+- security:manage_roles
+- security:manage_settings
+- forbidden:live_trade_enable
+- forbidden:broker_execute
+- forbidden:set_can_place_trades_true
+
+Hard rule:
+Forbidden permissions must always reject.
+They should exist only so attempted use can be detected, rejected, audited, and alerted.
+
+5. Add permission middleware
+
+Create reusable middleware/functions:
+
+- requireAuth
+- requireRole
+- requirePermission
+- requireAdmin
+- requireOwner
+- requirePaperOnlyMode
+- forbidLiveTradingAction
+- maskSensitiveOutput
+- recordSecurityEvent
+
+Apply permission checks to sensitive routes across:
+- AA decision creation
+- EE paper execution
+- FF autopilot start/stop
+- HH risk governor
+- MM admin control
+- KK broker read-only snapshots
+- LL notification management
+- data import
+- replay/strategy lab
+- coach generation
+- audit export
+- security settings
+
+Do not break public/safe demo endpoints unless they expose sensitive data.
+
+6. Protect dangerous actions
+
+Any request attempting to:
+- enable live trading
+- set canPlaceTrades true
+- call broker.placeOrder
+- call orderSend
+- call positionClose
+- change BROKER_MODE away from read_only
+- change MARKET_DATA_MODE away from read_only
+- disable critical safety alerts
+- expose secrets
+- disable audit logging
+- disable Risk Governor
+
+must return:
+
+{
+  status: "REJECTED",
+  severity: "CRITICAL",
+  reason,
+  liveTradingStatus: "DISABLED",
+  audit_id,
+  notification_id
+}
+
+7. Data protection
+
+Implement output redaction/masking:
+
+Secrets must never appear in responses/logs:
+- API keys
+- API secrets
+- broker passwords
+- tokens
+- session secrets
+- database URLs
+- full account IDs
+- private env values
+
+Mask account IDs:
+- show only last 4 characters
+- example: "****1234"
+
+Mask tokens:
+- example: "sk_****REDACTED"
+
+Add a reusable redaction utility used by:
+- KK broker read-only connector
+- MM exports
+- LL notifications
+- audit logs
+- health reports
+- security reports
+
+8. Security event logging
+
+Create security events for:
+- login/session created if auth exists
+- permission granted
+- permission denied
+- role changed
+- sensitive endpoint accessed
+- forbidden action attempted
+- secret redaction triggered
+- suspicious repeated denied requests
+- admin/security setting changed
+- export created
+- emergency WATCH_ONLY triggered
+- live trading enable attempt
+
+9. Database changes if needed
+
+Additive only.
+
+Create:
+
+security_roles:
+- id
+- role_key
+- name
+- description
+- is_system_role
+- created_at
+- updated_at
+
+security_permissions:
+- id
+- permission_key
+- name
+- description
+- category
+- is_forbidden
+- created_at
+- updated_at
+
+security_role_permissions:
+- id
+- role_id
+- permission_id
+- allowed
+- created_at
+- updated_at
+
+security_user_roles:
+- id
+- user_id
+- role_id
+- assigned_by
+- created_at
+- updated_at
+
+security_events:
+- id
+- security_event_id
+- event_type
+- severity
+- actor_user_id
+- actor_role
+- permission_key
+- route
+- method
+- ip_address
+- user_agent
+- status
+- message
+- metadata jsonb
+- created_at
+
+security_access_logs:
+- id
+- request_id
+- user_id
+- role
+- route
+- method
+- status_code
+- permission_required
+- allowed
+- reason
+- metadata jsonb
+- created_at
+
+security_settings:
+- id
+- auth_required
+- role_system_enabled
+- audit_logging_enabled
+- secret_redaction_enabled
+- rate_limit_enabled
+- critical_alerts_always_on
+- paper_only_enforced
+- live_trading_permanently_disabled
+- created_at
+- updated_at
+
+data_protection_exports:
+- id
+- export_id
+- requested_by
+- export_type
+- status
+- redacted
+- file_reference
+- metadata jsonb
+- created_at
+
+10. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+GET /api/security/status
+POST /api/security/check
+GET /api/security/roles
+POST /api/security/roles
+GET /api/security/permissions
+GET /api/security/role-permissions
+POST /api/security/role-permissions
+GET /api/security/user-roles
+POST /api/security/user-roles
+POST /api/security/test-permission
+POST /api/security/forbidden-action-test
+GET /api/security/events?limit=50
+GET /api/security/access-logs?limit=50
+GET /api/security/settings
+POST /api/security/settings
+POST /api/security/demo
+POST /api/security/export-data
+GET /api/security/data-protection/exports?limit=20
+POST /api/security/redaction-test
+
+11. Integrate with MM Admin Control
+
+MM admin actions must call NN before execution.
+
+Confirm NN blocks:
+- live trading enable
+- canPlaceTrades true
+- unsafe broker mode
+- unsafe market data mode
+- critical alert disabling
+- secret exposure
+- audit logging disabling
+
+MM should log NN security decision in audit logs.
+
+12. Integrate with LL Notifications
+
+LL should create notifications for:
+- forbidden action attempted
+- repeated permission denied
+- live trading attempt
+- secret exposure attempt
+- unsafe security setting attempt
+- role changed
+- emergency WATCH_ONLY triggered
+
+13. Integrate with HH Risk Governor
+
+HH should read NN security status.
+
+If NN reports:
+- live trading attempt
+- redaction disabled
+- auth disabled on sensitive routes
+- dangerous permission granted
+- canPlaceTrades true
+- broker unsafe mode
+
+HH must return WATCH_ONLY or LOCKED as appropriate.
+
+14. Frontend pages/components
+
+Add or update:
+
+A. Security Center page
+Show:
+- security status
+- role system status
+- protected routes status
+- data protection status
+- secret redaction status
+- critical findings
+- recommended actions
+
+B. Roles & Permissions page
+Show:
+- roles
+- permissions
+- role permission matrix
+- forbidden permissions clearly locked
+- user role assignment if users exist
+
+C. Security Events page
+Show:
+- denied requests
+- forbidden action attempts
+- role changes
+- exports
+- redaction events
+
+D. Data Protection panel
+Show:
+- redaction status
+- masked broker/account info
+- export controls
+- demo data separation status
+
+No live trading controls.
+
+15. Required test scenarios
+
+A. Security status returns PAPER_ONLY and live DISABLED.
+B. Roles and permissions seed correctly.
+C. Owner/Admin/Trader/Analyst/Viewer/System permissions differ correctly.
+D. Forbidden permissions always reject.
+E. Sensitive endpoint without permission is denied.
+F. Allowed permission passes.
+G. Live trading enable attempt is rejected, audited, and notified.
+H. canPlaceTrades true attempt is rejected, audited, and notified.
+I. BROKER_MODE live attempt is rejected.
+J. MARKET_DATA_MODE non-read-only attempt is rejected.
+K. Secret redaction removes API keys/secrets from output.
+L. Account masking works.
+M. Repeated denied requests create security warning.
+N. MM admin actions are protected by NN.
+O. HH reacts to NN critical findings.
+P. LL creates notification for forbidden action.
+Q. Frontend security pages are accessible.
+R. Existing AA-MM systems still work.
+S. No live trades are placed.
+
+16. Logs
+
+Every security decision should log:
+- request received
+- auth checked
+- role checked
+- permission checked
+- result allowed/denied
+- reason
+- sensitive output redacted
+- security event created if needed
+
+17. Preserve existing behavior
+
+Do not break:
+- Build AA decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- Build II trader coach and playbook
+- Build JJ replay simulator and strategy lab
+- Build KK data import and broker read-only connector
+- Build LL notification center
+- Build MM system health/admin/audit
+- manual debrief
+- manual paper close
+- analytics
+- existing frontend routes
+
+Acceptance criteria:
+- Security service exists.
+- Roles and permissions exist.
+- Sensitive routes are protected.
+- Forbidden actions are always rejected.
+- Secrets are redacted.
+- Account IDs are masked.
+- Security events are logged.
+- MM admin actions are protected by NN.
+- HH can detect NN critical security findings.
+- LL notifies on security events.
+- Frontend security pages exist.
+- Live trading remains disabled.
+- App typechecks/builds.
+- Raw outputs prove all major scenarios work.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Frontend routes/pages added
+5. Where NN protects AA
+6. Where NN protects EE
+7. Where NN protects FF
+8. Where NN protects HH
+9. Where NN protects KK
+10. Where NN protects LL
+11. Where NN protects MM
+12. Raw output from /api/security/status
+13. Raw output from /api/security/check
+14. Raw output from roles endpoint
+15. Raw output from permissions endpoint
+16. Raw output from test-permission endpoint
+17. Raw output from forbidden-action-test endpoint
+18. Raw output from security events
+19. Raw output from access logs
+20. Raw output from settings endpoint
+21. Raw output from redaction-test
+22. Roles/permissions proof
+23. Forbidden action rejection proof
+24. Secret redaction proof
+25. Account masking proof
+26. MM integration proof
+27. HH integration proof
+28. LL notification proof
+29. Frontend route proof
+30. Live-trade isolation proof
+31. Any errors or warnings
+32. Whether Build NN is fully complete or partially complete
+33. Final Build NN score out of 10

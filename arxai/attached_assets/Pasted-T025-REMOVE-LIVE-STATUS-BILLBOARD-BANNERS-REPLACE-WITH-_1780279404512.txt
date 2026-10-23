@@ -1,0 +1,188 @@
+T025 — REMOVE LIVE STATUS BILLBOARD BANNERS / REPLACE WITH SIMPLE LIVE CHIP
+
+Current issue:
+The Scanner page has large live-status banners taking up too much space. The user circled the top live/shared master warning banner and said:
+
+“Remove all banners. Not a billboard. A simple live will do.”
+
+Screenshot shows a large horizontal banner with:
+
+* “Live (Shared Master MT5)”
+* “Live trading is active on your shared-maste…”
+* “REAL MONEY RISK”
+* large “Live (Shared)” button/chip
+* plus another “Live (Shared Master MT5)” chip below
+
+This is too bulky and repetitive for a high-speed trading app.
+
+Scope:
+This task is only for removing/collapsing repetitive live-status banners and replacing them with a compact live indicator.
+
+Do not change live execution.
+Do not change Governance.
+Do not change permissions.
+Do not change MT5 bridge behavior.
+Do not change Ruby.
+Do not place trades.
+Do not use Demo/Paper/fake data.
+
+Primary goal:
+Remove billboard-style live banners across the app and replace them with a small, clean LIVE status chip.
+
+PART 1 — Audit all live/demo/risk banners
+
+Search the app for all large banners/cards/alerts that show:
+
+1. Live (Shared Master MT5)
+2. Live trading is active
+3. Real money risk
+4. Live (Shared)
+5. Shared Master MT5 status banners
+6. Demo mode banners
+7. Paper Trading banners
+8. Read-only/live locked banners
+9. repeated account mode banners
+10. risk disclosure billboard cards on trading screens
+
+Find all components/files rendering these banners, especially on:
+
+1. Scanner
+2. Cockpit
+3. Trade page
+4. Ruby panel
+5. More/settings
+6. Admin/live pages
+7. Mobile layout header
+
+PART 2 — Replace with compact status chip
+
+Use one small status indicator instead of large banners.
+
+Required compact chip:
+
+1. text: “LIVE”
+2. optional subtext only if needed: “Shared MT5”
+3. small shield/lightning/dot icon if already available
+4. color: existing live green style
+5. tap/click opens account/live details if needed
+6. no large red billboard
+7. no repeated full-width banner
+
+Example:
+“● LIVE · Shared MT5”
+
+or:
+“LIVE”
+
+The chip should appear in the top header/account status area only once per page.
+
+PART 3 — Remove repetitive risk billboard
+
+Remove the large “REAL MONEY RISK” banner from active trading screens.
+
+Replace with:
+
+1. compact “LIVE” chip
+2. optional small tooltip/help text on tap:
+    “Live trading uses real funds.”
+3. optional More/Legal/Risk page for full disclosure if needed
+
+Do not show giant risk text on the trading surface every time.
+Do not make Scanner feel like a billboard.
+
+PART 4 — Keep important warning behavior only when needed
+
+Do not remove meaningful alerts when there is an actual problem.
+
+Keep compact warnings for:
+
+1. MT5 bridge disconnected
+2. EA heartbeat stale
+3. broker not tradable
+4. account frozen
+5. kill switch active
+6. governance block
+7. order rejected
+8. insufficient funds
+9. market closed
+10. symbol unavailable
+
+But these should be compact and contextual, not permanent billboard banners.
+
+PART 5 — Remove duplicated live chips
+
+The screenshot shows live status in multiple places.
+
+Rules:
+
+1. Only one main live chip should appear in the page header.
+2. Do not repeat “Live (Shared Master MT5)” directly under another live banner.
+3. Do not show both “Live (Shared Master MT5)” and “Live (Shared)” unless one is hidden inside details.
+4. Account status details can live in a collapsible drawer or account panel.
+
+PART 6 — Mobile layout requirements
+
+On mobile:
+
+1. reclaim vertical space
+2. no full-width live billboard
+3. Scanner chart should move higher
+4. live chip should fit in one line
+5. no horizontal overflow
+6. no duplicated status rows
+7. bottom nav remains unchanged
+
+PART 7 — Copy rules
+
+Do not show these phrases as permanent banners:
+
+1. “Live trading is active on your shared-master…”
+2. “REAL MONEY RISK”
+3. “Live (Shared)” as a large button
+4. “Demo mode” unless the user is actually in a demo-only area
+5. “Paper Trading” anywhere in active flow
+
+Allowed compact copy:
+
+1. “LIVE”
+2. “LIVE · Shared MT5”
+3. “MT5 connected”
+4. “Bridge connected”
+5. “Live trading uses real funds” only in tooltip/details
+
+PART 8 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. Scanner mobile smoke test
+5. Scanner desktop smoke test
+6. Cockpit live status smoke test
+7. Trade page live status smoke test
+8. Ruby panel live status smoke test
+9. no duplicate live banner test
+10. no Demo/Paper active-flow copy test
+11. route containment test
+
+PART 9 — Final report required
+
+Final report must include:
+
+1. files/components changed
+2. all removed/collapsed banners
+3. new compact live chip behavior
+4. where live details are accessible
+5. confirmation Scanner chart moved higher / vertical space improved
+6. confirmation no live execution logic changed
+7. confirmation no Governance logic changed
+8. confirmation no permissions changed
+9. confirmation no Demo/Paper copy remains in active flow
+10. health:workflows result
+11. typecheck result
+12. ci:guards result
+13. remaining risks
+
+Completion standard:
+This task is complete only when large repetitive live/risk banners are removed from active trading screens, one compact LIVE chip remains, vertical space is reclaimed on mobile, and no trading, Governance, MT5, or permission logic is changed.

@@ -1,0 +1,224 @@
+BUILD PHASE — Ruby Voice Auto-Listen + Speech Response Loop
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Make Ruby work like a natural live voice assistant. When the Ruby chat is open, the user should be able to speak naturally, Ruby should detect when the user stops speaking, send the message automatically, respond with text and speech, then return to listening for the next user response.
+
+Ruby should feel conversational, hands-free, private, and safe.
+
+1. Inspect current Ruby voice/chat system first
+- Inspect current Ruby chat UI.
+- Inspect existing speech-to-text, microphone, voice input, audio recording, text-to-speech, streaming response, chat memory, Ruby prompt builder, and mobile UI code.
+- Reuse existing Ruby systems where possible.
+- Do not create a second disconnected Ruby assistant.
+- Only add the missing auto-listen, speech response, loop state, privacy, and safety pieces.
+
+2. Voice state machine
+Create a clear Ruby voice state system:
+
+- Closed
+- Open / Ready
+- Requesting microphone permission
+- Listening
+- User speaking
+- Silence detected
+- Transcribing
+- Sending to Ruby
+- Ruby thinking
+- Ruby speaking
+- Returning to listening
+- Paused
+- Muted
+- Error / Permission blocked
+
+The UI should show the current state in clean language, such as:
+- “Listening…”
+- “I heard you.”
+- “Ruby is thinking…”
+- “Ruby is speaking…”
+- “Paused”
+- “Microphone permission needed”
+
+Avoid code-heavy labels.
+
+3. Auto-listen behavior
+When Ruby chat is open:
+- Ruby should automatically start listening after microphone permission is granted.
+- Ruby should detect when the user starts speaking.
+- Ruby should keep listening while the user is talking.
+- When the user stops speaking for a short silence window, automatically stop capture and send the transcript to Ruby.
+- Do not require the user to press send after speaking.
+- After Ruby responds, Ruby should automatically return to listening unless the user pauses/mutes voice mode.
+- Add manual fallback buttons:
+  - Start listening
+  - Pause listening
+  - Mute Ruby
+  - Stop voice mode
+  - Send transcript manually
+  - Clear transcript
+
+Important mobile note:
+- Respect iOS/Safari/browser audio restrictions.
+- If the browser requires a tap before mic/audio playback, show a clean prompt like:
+  “Tap to start Ruby Voice.”
+- After the user taps once, keep the conversation loop active while Ruby is open.
+
+4. Speech-to-text
+Add or improve speech-to-text so:
+- partial transcript appears live while the user speaks
+- final transcript is cleaned before sending
+- silence detection does not cut the user off too early
+- background noise does not constantly submit empty messages
+- very short accidental sounds are ignored
+- users can edit transcript before sending if auto-send is paused
+- failed transcription shows a clean error and retry option
+
+5. Silence detection
+Implement safe voice activity/silence detection:
+- detect speech start
+- detect speech end
+- configurable silence timeout
+- minimum speech duration
+- minimum transcript length
+- prevent duplicate sends
+- prevent sending empty transcripts
+- prevent sending the same transcript twice
+- handle interruptions cleanly
+
+Suggested defaults:
+- silence window around 900–1500ms
+- ignore captures under 1 second unless transcript is meaningful
+- do not submit whitespace or repeated fragments
+
+6. Ruby speech response
+Ruby should respond with:
+- text response in the chat
+- spoken audio response when voice mode is on
+
+Add controls:
+- speaker on/off
+- stop speaking
+- replay last response
+- voice speed if easy
+- voice selection if already supported
+
+Ruby should not keep listening to her own spoken response. Prevent feedback loops by pausing mic capture while Ruby is speaking, then resume listening after speech ends.
+
+7. Barge-in / interruption
+Allow the user to interrupt Ruby:
+- If the user starts speaking while Ruby is speaking, stop Ruby’s speech and listen to the user.
+- If barge-in is too complex for the current stack, add a clear “Tap to interrupt Ruby” button now and leave real barge-in as a TODO.
+- Do not let Ruby’s own audio become user input.
+
+8. Context-aware voice
+Voice messages should use the same Ruby brain as text chat:
+- app help
+- onboarding status
+- account mode
+- bridge status
+- scanner context
+- trade context
+- queue status
+- risk profile
+- user’s private trading workspace
+- current chart/selected symbol
+- current trade if selected
+
+Ruby must only use authenticated current-user data.
+
+9. Trading safety
+Voice must not bypass any trading safety.
+
+Ruby can discuss trades by voice, but:
+- do not place a trade from voice without explicit confirmation
+- do not close a trade from voice without explicit confirmation
+- do not edit SL/TP from voice without explicit confirmation
+- do not enable one-click from voice without existing approval flow
+- do not switch live mode from voice without backend approval
+- all live actions still require the full safety gates
+
+If user says “buy EURUSD now,” Ruby should open or prepare the trade ticket and ask for confirmation unless the existing approved one-click path is active and all safety gates pass.
+
+10. Privacy and permissions
+- Do not listen when Ruby chat is closed.
+- Do not listen after user pauses/stops voice mode.
+- Show mic status clearly.
+- Do not store raw audio unless explicitly needed and approved by architecture.
+- Store transcripts only under the current authenticated user’s Ruby memory rules.
+- Clear active transcript on logout/account switch.
+- Do not leak voice transcripts across users.
+- Do not expose secrets in prompts, logs, UI, or responses.
+
+11. Mobile UI
+Make the Ruby voice UI clean on mobile:
+- visible Ruby mic button
+- clear listening animation/state
+- transcript preview
+- speaking indicator
+- pause/mute controls
+- compact layout
+- no blocking scanner/trade buttons
+- works when keyboard is closed
+- does not hide important app controls
+
+12. Error handling
+Handle:
+- microphone denied
+- microphone unavailable
+- browser does not support selected speech API
+- speech-to-text failure
+- text-to-speech failure
+- network failure while sending transcript
+- Ruby response failure
+- audio playback blocked
+- user logs out while listening
+- user switches account mode while listening
+
+Use clean user-facing messages and safe fallbacks.
+
+13. Audit logs
+Add safe audit logs for:
+- voice mode started
+- voice mode paused/stopped
+- microphone permission denied
+- transcript submitted
+- Ruby speech response started
+- Ruby speech response stopped/interrupted
+- voice command blocked by safety gate
+- memory cleared from voice session
+
+Do not log raw audio, secrets, bridge tokens, API keys, session secrets, token hashes, or account credentials.
+
+14. Tests
+Add or update tests for:
+- Ruby starts listening when chat opens after permission
+- voice state machine transitions correctly
+- silence detection submits transcript once
+- empty transcript is not sent
+- duplicate transcript is not sent
+- Ruby speaks response when speaker is enabled
+- mic pauses while Ruby is speaking
+- mic resumes after Ruby finishes speaking
+- user can pause voice mode
+- user can mute Ruby speech
+- permission denied shows clean fallback
+- logout clears active transcript/listening state
+- User A voice transcript does not appear for User B
+- voice cannot bypass trade confirmation
+- voice cannot bypass live safety gates
+- no live command created during tests
+- no secrets exposed in prompts/logs/UI/responses
+
+Return:
+- what was built
+- files changed
+- voice state machine behavior
+- speech-to-text behavior
+- text-to-speech behavior
+- mobile behavior
+- safety behavior
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired during this build

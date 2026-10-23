@@ -1,0 +1,114 @@
+Begin Productization + UX Simplification Phase.
+
+Goal:
+Transform the AI Trading Operating System from a complex internal architecture into a calm, trustworthy, professional product experience.
+
+Core UX philosophy:
+- Professional clarity under pressure
+- Calm exterior, powerful interior
+- Minimal visible complexity
+- AI explains, not overwhelms
+- Trust first, excitement second
+
+Build:
+
+/src/ui/system-surfaces/
+  dashboard/
+  command-center/
+  safety-center/
+  replay-center/
+  validation-center/
+  trader-dna-center/
+  portfolio-center/
+
+/src/ui/design-system/
+  typography/
+  spacing/
+  motion/
+  glass/
+  alerts/
+  state-colors/
+  attention-priority/
+
+/src/ui/attention/
+  uiAttentionEngine.ts
+  focusPriority.engine.ts
+  cognitiveLoadLimiter.engine.ts
+
+Requirements:
+
+1. Dashboard Simplification
+- Show only the most important information.
+- Hide secondary complexity behind expandable detail layers.
+- Reduce visible noise dramatically.
+
+2. Attention Hierarchy
+Highest priority:
+- danger
+- risk
+- execution instability
+- recovery mode
+- blocked trades
+
+Medium priority:
+- validated opportunities
+- confidence changes
+- portfolio climate
+
+Low priority:
+- historical analytics
+- secondary metrics
+- background diagnostics
+
+3. Explainability UI
+Every important AI decision must explain:
+- what happened
+- why it matters
+- what action is recommended
+- what changed
+- confidence level
+- risk level
+
+4. System State Visualization
+Clearly display:
+- NORMAL
+- DEFENSIVE
+- RECOVERY
+- DEGRADED
+- LOCKDOWN
+- PRESERVATION
+
+5. Cognitive Load Reduction
+- Reduce unnecessary notifications.
+- Reduce clutter during dangerous conditions.
+- Slow pacing during high cognitive stress.
+
+6. Premium Product Feel
+Target experience:
+- Bloomberg confidence
+- Apple simplicity
+- Stripe clarity
+- F1 telemetry precision
+
+Avoid:
+- neon overload
+- dashboard chaos
+- giant widget walls
+- excessive animations
+- emotional overload
+
+7. API-First Product Structure
+Prepare all major engines to eventually become:
+- reusable services
+- enterprise APIs
+- independently scalable modules
+
+Deliver:
+- UX architecture map
+- navigation structure
+- dashboard hierarchy
+- design system rules
+- attention hierarchy rules
+- system-state visual rules
+- onboarding flow outline
+- trust-surface strategy

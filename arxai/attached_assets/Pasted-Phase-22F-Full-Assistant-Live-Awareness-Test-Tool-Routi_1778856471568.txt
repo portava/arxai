@@ -1,0 +1,358 @@
+Phase 22F — Full Assistant Live-Awareness Test + Tool Routing Fixes
+
+Before making changes, inspect Phase 22C, 22D, and 22E results. Do not continue if:
+- `/api/me/notifications*` is not canonical
+- `getRecentNotifications` is missing
+- push status is not truthful
+- market provider status is not truthful
+- assistant market tools can fabricate data
+
+Goal:
+Make the ARX AI assistant fully aware of the app’s real systems through live tools and truthful status checks. The assistant must answer trading, risk, bridge, journal, notification, prop firm, and market questions from actual app data only. If something is disconnected, empty, disabled, stale, or not configured, the assistant must say that clearly.
+
+This phase is not for redesigning UI. This phase is for assistant intelligence, tool routing, live-awareness, and full end-to-end truth testing.
+
+Current known systems to verify:
+- MT5 bridge status
+- MT5 heartbeat
+- paper/live safety mode
+- read-only mode
+- allow order execution flag
+- risk limits
+- pre-trade risk checks
+- trade journal
+- performance summary
+- adaptive coaching
+- notifications/alerts
+- push notification status
+- market data provider status
+- market snapshot
+- market news
+- prop firm mode
+- user isolation
+- fresh-user empty states
+
+Tasks:
+
+1. Full assistant tool inventory
+Inspect the current assistant tool registry and list every registered tool.
+
+Confirm whether these tools exist and work:
+- `getMT5BridgeStatus`
+- `getMT5Heartbeat`
+- `getRiskLimits`
+- `runPreTradeRiskCheck`
+- `getMarketSnapshot`
+- `getRecentMarketNews`
+- `getMarketDataProviderStatus`
+- `getRecentNotifications`
+- `getPropFirmModeStatus`
+- any trade journal/performance/adaptive coaching tools
+- any assistant status/config tools
+
+Return a tool map before edits:
+- tool name
+- file path
+- purpose
+- requires auth yes/no
+- data source
+- safety flags returned
+- empty-state behavior
+
+2. Add or strengthen unified assistant status check
+Create or improve a single assistant-accessible status tool if one does not already exist.
+
+Preferred name:
+`getAssistantLiveAwarenessStatus`
+
+It should return a real status summary for the authenticated user only.
+
+It must include:
+- userId
+- bridgeConnected
+- lastHeartbeatAt
+- mt5AccountDetected if available
+- safetyMode
+- readOnlyMode
+- allowOrderExecution
+- riskLimitsConfigured
+- tradingStyleConfigured
+- propFirmModeEnabled
+- marketDataProviderConnected
+- marketDataProviderName
+- marketDataStale
+- notificationsUnread
+- pushConfigured
+- pushEnabled
+- activePushSubscriptions
+- journalHasTrades
+- performanceSummaryAvailable
+- assistantToolsAvailable count
+- missingTools list
+- warnings list
+- generatedAt
+
+Rules:
+- Require authenticated user context.
+- Never expose secrets.
+- Never fabricate connection status.
+- Never return another user’s data.
+- If a system is missing, return a warning instead of crashing.
+
+3. Assistant routing rules
+Update assistant routing rules so common user questions call the right tools first.
+
+Examples:
+
+Bridge/MT5:
+- “Is MT5 connected?”
+- “Is my bridge connected?”
+- “When was the last heartbeat?”
+- “Why is my EA not connected?”
+Must call:
+- `getMT5BridgeStatus`
+- `getMT5Heartbeat`
+
+Risk:
+- “Can I take this trade?”
+- “Is this trade safe?”
+- “Why was this blocked?”
+- “What is my risk?”
+Must call:
+- `getRiskLimits`
+- `runPreTradeRiskCheck`
+
+Market:
+- “What is EURUSD doing?”
+- “What’s the market looking like?”
+- “Any news on this pair?”
+Must call:
+- `getMarketDataProviderStatus`
+- `getMarketSnapshot`
+- `getRecentMarketNews`
+
+Notifications:
+- “Do I have alerts?”
+- “Any warnings?”
+- “Any risk alerts?”
+Must call:
+- `getRecentNotifications`
+
+Prop firm:
+- “Am I safe for my challenge?”
+- “What’s my daily drawdown?”
+- “Can I pass this prop firm?”
+Must call:
+- `getPropFirmModeStatus`
+- risk/performance tools if needed
+
+Journal/coaching:
+- “How am I doing?”
+- “What’s my win rate?”
+- “What should I improve?”
+- “What’s my trading style?”
+Must call:
+- performance/journal/coaching tools before answering.
+
+4. Assistant answer honesty rules
+Update the assistant prompt/system instructions so it follows these rules:
+
+- Never claim live market data is available unless provider status says connected.
+- Never claim MT5 is connected unless bridge/heartbeat says connected.
+- Never claim push notifications are active unless push status says configured and enabled.
+- Never claim a user has alerts unless `getRecentNotifications` returns alerts.
+- Never claim the user has a risk profile unless risk settings exist.
+- Never claim prop firm mode is active unless tool status confirms it.
+- Never claim a trade is safe without running the risk check.
+- Never guarantee wins, perfect entries, profitability, or funded-account success.
+- Always mention when data is stale, disconnected, empty, or not configured.
+- Always separate paper-mode feedback from live-trading feedback.
+- If order execution is disabled, clearly say the app is analysis-only/read-only.
+
+5. Create assistant scenario regression tests
+Add tests that simulate user questions and verify the assistant calls the right tools.
+
+Required test scenarios:
+
+A. Fresh user
+- no trades
+- no notifications
+- no risk settings
+- no market provider
+- no bridge heartbeat
+Expected:
+- assistant says empty/not configured/disconnected
+- no fabricated data
+
+B. Returning paper user
+- has paper trades
+- has journal/performance data
+- has notifications
+Expected:
+- assistant reports only that user’s data
+- assistant uses journal/performance/notification tools
+
+C. Bridge disconnected
+Expected:
+- assistant does not claim MT5 is connected
+- assistant gives setup/heartbeat troubleshooting
+
+D. Market provider disconnected
+Expected:
+- assistant refuses live market claims
+- assistant says provider is not connected
+
+E. Market provider connected with mocked response
+Expected:
+- assistant names provider
+- assistant includes freshness/staleness
+- assistant uses real/mock-normalized provider response only
+
+F. Risk check
+Expected:
+- assistant calls risk tools before saying whether a trade is ready
+- assistant identifies missing risk settings
+
+G. Prop firm mode
+Expected:
+- assistant uses prop firm mode status
+- assistant does not guarantee challenge success
+
+H. Push notification status
+Expected:
+- assistant reports push not configured, available, disabled, or enabled truthfully
+
+I. Cross-user isolation
+Expected:
+- user A cannot see user B trades, alerts, notifications, risk settings, prop firm status, or bridge data
+
+6. Add assistant evidence/debug envelope
+For internal debug/testing only, add a non-user-facing evidence envelope to assistant responses or test logs.
+
+It should track:
+- toolsCalled
+- toolResultsSummary
+- missingRequiredTools
+- staleDataFlags
+- safetyFlags
+- userId
+- requestId
+
+Do not expose this debug envelope in normal production UI unless there is already a developer/debug mode.
+
+7. Frontend assistant behavior check
+Inspect the assistant chat UI.
+
+Verify:
+- assistant is visible where it should be visible
+- assistant uses real backend responses
+- assistant does not show fake suggestions as live facts
+- assistant shows disconnected/empty states clearly
+- assistant does not claim execution ability if order execution is disabled
+- assistant can answer app-specific questions using tool data
+- assistant gracefully handles backend/tool failures
+
+Do not redesign the assistant UI in this phase unless a small fix is required for truthfulness.
+
+8. Safety mode consistency
+Verify every assistant response related to trading includes the correct safety context:
+- paper mode
+- live locked
+- read-only mode
+- order execution enabled/disabled
+- prop firm mode if active
+- risk limits configured/missing
+- market data connected/disconnected
+
+If safety flags are missing from a tool response, add them.
+
+9. Tests required
+Add/update tests for:
+
+Backend:
+- `getAssistantLiveAwarenessStatus` requires auth
+- status tool returns current user only
+- missing systems return warnings instead of crashing
+- safety flags are included
+- no secrets are exposed
+
+Assistant routing:
+- bridge questions call bridge tools
+- market questions call market tools
+- alert questions call notification tool
+- risk questions call risk tools
+- prop firm questions call prop firm tool
+- journal questions call journal/performance tools
+- assistant does not answer from guesses when tool data is required
+
+Honesty:
+- no fake live market data
+- no fake notifications
+- no fake bridge connection
+- no fake risk settings
+- no fake journal stats
+- no guaranteed win/profit/funded claims
+
+Frontend:
+- assistant chat handles empty states
+- assistant chat handles disconnected provider
+- assistant chat handles tool failure
+- no frontend copy claims unavailable systems are active
+
+10. QA gate
+After implementation, run:
+- typecheck
+- lint if available
+- all unit tests
+- backend route tests
+- assistant tool tests
+- assistant routing scenario tests
+- frontend smoke test
+- cross-user isolation tests
+- forbidden honesty scan
+- secret exposure scan
+
+Search for forbidden or risky phrases:
+- `guaranteed`
+- `100% win`
+- `perfect entry guaranteed`
+- `live market data active` unless gated by provider connected
+- `push notifications active` unless gated by push enabled
+- `MT5 connected` unless gated by bridge connected
+- `sample`
+- `fake`
+- `placeholder`
+- `dummy`
+- `lorem`
+
+11. Final report required
+Return a Phase 22F report with:
+- files inspected
+- files changed
+- assistant tools found
+- assistant tools added/updated
+- missing tools
+- routing rules updated
+- live-awareness status result
+- fresh-user result
+- returning-user result
+- bridge awareness result
+- market awareness result
+- notification awareness result
+- push awareness result
+- risk awareness result
+- prop firm awareness result
+- journal/coaching awareness result
+- cross-user isolation result
+- UI honesty result
+- tests passed/failed
+- remaining Phase 22G work
+
+Important constraints:
+- Do not redesign the app.
+- Do not fake tool data.
+- Do not expose secrets.
+- Do not build live trade execution.
+- Do not guarantee profitable trades.
+- Do not allow assistant to answer live system questions without tools.
+- Do not move to Phase 22G unless QA passes.

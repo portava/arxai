@@ -1,0 +1,225 @@
+Pass 15 — final consolidation and prioritized fix-task plan. Read-only planning only. No edits, no tasks created, no migrations, no workflow changes unless explicitly approved after this report.
+
+Goal:
+Consolidate the full held audit ledger from Passes 3–14 into one prioritized repair sequence. The output should be a task-ready plan, but do not create tasks yet. Group related findings into coherent fixes, rank by risk/blast radius, define acceptance criteria, tests, CI guards, rollback notes, and dependency order.
+
+Important:
+This is consolidation only. Do not re-audit everything from scratch unless needed to resolve conflicts. Use the held ledger from prior passes and only re-read files if a finding conflicts, is ambiguous, or must be grouped accurately.
+
+Naming directive:
+The assistant is Eleanor. Do not call it Ruby in user-facing task titles or recommendations. Legacy code/file names containing ruby* should be treated as rename debt.
+
+Required consolidation inputs:
+Include, at minimum, the held findings from:
+
+Earlier accepted ledger:
+- Allocation foundations to preserve:
+  - finalized-basis withdrawable
+  - separate indicative estimate
+  - trader-facing payable view
+  - waterfall cadence governance
+  - honest manual-run messaging
+- Display-freshness unification
+- Refresh truth / wording relabel
+- Eleanor rename debt
+- P4-1 deep-history lazy load
+- P5-1 Reverse non-atomic
+- P5-2 “16-gate” / “18-gate” copy drift
+- brokerHealth reconnect auth / orphan command row
+
+Pass 6:
+- P6-1 placeOrder → broker OPEN outside Phase-B 18-gate
+- P6-2 /me/trades/close direct queue + premature EXECUTED
+
+Pass 7:
+- P7-1 executionReconciler audit update keyed only userId + symbol
+- P7-2 A/C lack route-level denyInvestorExecution
+- P7-3 live-readiness CI blind spot outside liveTrading/
+
+Pass 8:
+- P8-1 reconciler audit update keyed userId + symbol
+- P8-2 /mt5/command-result lacks monotonicity guard
+- P8-3 close writes EXECUTED at queue time; primary EA callback never reconciles audit
+- P8-4 close dedupe not userId-scoped + leaks foreign commandId
+- P8-5 safetyMode/origin not enforced at EA pickup; no source column
+- P8-6 brokerHealth RECONNECT insert lacks userId/mt5ConnectionId → orphan row
+
+Pass 9:
+- Include all Pass 9 findings from the delivered Pass 9 report:
+  - investor / role / approved-trader / admin / client-field / ownership / emergency-stop / CI findings
+  - especially anything about A/B/C role gating, live activation, close ownership, admin route boundaries, and client-supplied fields
+
+Pass 10:
+- P10-1 Eleanor naming drift
+- P10-2 AI authority CI gap
+- P10-3 AI_AUTO naming collision / non-live autopilot naming debt
+- Preserve positive invariant: Eleanor LLM/tool output cannot directly execute; deterministic explicit-user command path uses safer gated executeInstant path.
+
+Pass 11:
+- P11-1 QuickTradeModal/my-trades default mode should derive from entitled mode, not hardcoded SIMULATED
+- P11-2 stale orderGuard gate-8 MT5_BRIDGE_TOKEN contradiction vs per-user token model
+- P11-3 mt5_commands.safety_mode should reflect real mode on OPEN or not be treated as safety-bearing
+- P11-4 /me/trades/close inline checks must stay in lockstep with guard chain and not become Eleanor’s path
+- P11-5 distinguish audit EXECUTED real vs simulated fills
+
+Pass 12:
+- P12-1 Win/Loss + Analytics snapshot computed from paper_orders; label paper/practice or move to broker-confirmed source
+- P12-2 executionReconciler audit update keyed userId+symbol clobbers historical audit rows
+- P12-3 premature/ambiguous audit EXECUTED never corrected on primary EA path
+- P12-4 admin “realised P/L” sums floatingPl on closed rows
+- P12-5 preserve clean money paths
+
+Pass 13:
+- P13-1 close audit/timeline false confirmation
+- P13-2 Eleanor naming drift
+- P13-3 paper analytics label unproven
+- P13-4 block messages lack explicit “No order was sent”
+- P13-5 CI gaps for timeout notification, rejected-close reappearance, close-audit-before-broker, emergency-stop banner coverage
+- P13-6 unresolved UI coverage: QuickTradeModal visible simulator label, emergency banner on all live surfaces, advisory-only wording when live disabled
+
+Pass 14:
+- P14-1 legacy fallbackProvider re-stamps synthetic candle times to now
+- P14-2 display-freshness split
+- P14-3 watchlist per-row freshness missing
+- P14-4 Eleanor naming drift in market explanation
+- P14-5 mock/shim provider debt
+- P14-6 weak tests: refresh wording, provider-limit visibility, session timezone, watchlist stale quote
+- P14-7 chart timeframe normalization gap
+
+Required grouping:
+Group findings into task clusters, not one task per finding. Suggested clusters:
+
+A. Critical live command convergence
+Unify all live OPEN/CLOSE/MODIFY paths onto one approved live command pipeline.
+Remove or retire legacy direct queue /me/trades/close.
+Route QuickTradeModal live path to executeInstant/dispatchLiveCommand, not stale placeOrder if appropriate.
+Keep Eleanor on the safe executeInstant path.
+Close audit/timeline must become pending/submitted until broker result.
+Ticket ownership/dedupe must be userId + mt5ConnectionId + ticket scoped.
+
+B. Command result and audit truth
+Make /mt5/command-result monotonic.
+Unify primary EA callback with reconciler or move safe reconciliation into primary path.
+Key audit updates by commandId/liveCommandId, not userId+symbol.
+Separate SIMULATED_FILL, QUEUED, SUBMITTED, EXECUTED, REJECTED, FAILED, STALE.
+Do not overwrite historical audit rows.
+
+C. Live mode / simulator removal / entitlement defaults
+Approved live traders default to LIVE.
+Simulator/demo only explicit practice/dev/test.
+Remove stale MT5_BRIDGE_TOKEN global gate or replace with per-user token readiness.
+Make PaperOrderTicket clearly practice-only.
+Add no-silent-downgrade and no-fake-success tests.
+
+D. Role / permission / investor boundary hardening
+Add route-level denyInvestorExecution or equivalent to all live-capable endpoints.
+Re-check Pass 9 findings.
+Server-derive userId/account/mt5ConnectionId/mode entitlement.
+Ensure admin act-on-behalf paths are explicit, role-gated, audited, and cannot bypass kill switch.
+
+E. Eleanor live command authority
+Enable Eleanor chat live command authority per new product direction:
+- approved live users can type/speak explicit commands
+- Eleanor produces structured intents
+- vague commands block
+- live default for approved traders
+- conditional plans only if backend watcher exists; otherwise visible armed/non-executable draft
+- no direct mt5_commands insert
+- no /me/trades/close bypass
+- honest pending/broker-confirmed wording
+Preserve AI boundary: model text alone cannot execute.
+
+F. Reporting / analytics honesty
+Move Win/Loss / analytics off paper_orders or label as practice.
+Fix admin realised P/L source.
+Preserve money integrity foundations.
+Make audit/history labels distinguish sim vs live.
+
+G. Market-data / freshness / fallback honesty
+Remove synthetic timestamp re-stamp or make fallback impossible in live UI.
+Unify freshness display across chart/cockpit/heat map/watchlist.
+Add watchlist row-level freshness.
+Fix chart timeframe normalization.
+Strengthen refresh wording and provider-limit visibility.
+Keep router no-fabrication invariant.
+
+H. Naming / copy / UX honesty
+Complete Ruby → Eleanor rename for user-facing copy.
+Fix “16-gate/18-gate” drift.
+Add “No order was sent” to block messages.
+Rename/clarify Refresh wording.
+Ensure emergency/advisory banners appear on all live-capable surfaces.
+
+I. CI / guardrail expansion
+Add CI guards covering:
+- direct mt5_commands inserts outside approved pipeline
+- assistant/Eleanor/scanner import of broker execution modules
+- close bypass impossible
+- audit update requires commandId/liveCommandId
+- command result monotonic terminal status
+- live endpoints have route-level investor deny
+- approved live users do not default SIMULATED
+- simulated fills not labeled real EXECUTED
+- stale data not shown as live
+- fallback/mock not production live
+- emergency banners on live surfaces
+- user-facing Ruby naming drift
+
+Required output format:
+
+PASS 15 — Final Consolidation / Prioritized Repair Plan — REPORT
+
+Sections:
+
+1. Executive summary
+- highest-risk fix groups
+- what is clean and must be preserved
+- what must not be changed accidentally
+
+2. Prioritized task clusters
+For each cluster:
+- task title
+- findings covered
+- class/risk
+- files/areas touched
+- implementation summary
+- acceptance criteria
+- required tests
+- required CI guards
+- rollback notes
+- dependencies
+- estimated blast radius: low/medium/high
+
+3. Must-preserve invariants
+List the clean truths from the audit that must stay true after fixes, including:
+- money paths exclude simulator/queued/premature rows
+- finalized NAV/withdrawable basis preserved
+- Eleanor LLM output cannot directly execute
+- executeInstant path keeps gates
+- marketDataRouter never fabricates live data
+- calendar/news unavailable is not low risk
+- scanner signals are advisory until gated execution
+- emergency/kill switch remains fail-closed
+- no silent downgrade from LIVE to simulator
+
+4. Recommended task order
+Give a numbered sequence for implementation. Start with highest-risk command/audit fixes, then mode/defaults, then reporting/freshness/copy, then CI hardening.
+
+5. Consolidated fix ledger
+Deduplicate all P4–P14 findings into final issue IDs.
+
+6. Test/CI matrix
+Map each issue cluster to exact tests/guards to add.
+
+7. Final go/no-go recommendation
+State whether the system should be considered ready for full live-first Eleanor trading before or after each cluster.
+
+Important:
+- Planning only.
+- No edits.
+- No task creation.
+- No migrations.
+- No workflow changes.
+- Do not lose any held ledger item.
+- If Pass 9 findings are not available in the local transcript, mark “Pass 9 findings must be merged from its report before task creation” instead of inventing them.
+- Do not call the assistant Ruby in final task titles unless quoting legacy code names. Use Eleanor.

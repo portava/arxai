@@ -1,0 +1,269 @@
+Continue only if Phase 15B passed cleanly.
+
+Do not start live trading.
+Do not rebuild the assistant.
+Do not duplicate market-data systems.
+Do not add fake prices, fake news, fake calendars, fake balances, or fake MT5 data.
+
+PHASE 16A GOAL:
+Audit the existing market-data, news, economic calendar, symbol lookup, and real-world awareness systems first. Then adjust only what is missing or broken so ARX AI Assistant can safely know whether live market data is connected, unavailable, delayed, demo, or provider-ready.
+
+This phase is not about placing trades. This phase is about honest data awareness.
+
+STEP 1 — Audit existing systems first
+
+Search the entire codebase for:
+
+- market data
+- live quote
+- quote provider
+- symbol search
+- symbol overview
+- stock data
+- forex data
+- crypto data
+- economic calendar
+- market news
+- financial news
+- trading sessions
+- provider adapter
+- Alpha Vantage
+- Finnhub
+- Polygon
+- Twelve Data
+- NewsAPI
+- TradingView
+- marketDataProvider
+- getLiveQuote
+- getMarketNews
+- getEconomicCalendar
+- getSymbolOverview
+- getTradingSessionContext
+- assistant market tools
+- assistant provider status
+- fake/demo/sample market data
+
+Create an internal inventory before changing anything.
+
+For each item found, identify:
+- File path
+- Function/route/component name
+- What it currently does
+- Whether it is active or unused
+- Whether frontend and backend are connected
+- Whether assistant can access it
+- Whether it uses real provider data or fake/demo data
+- Whether it handles missing API keys honestly
+- Whether it exposes any secret/API-key risk
+- Whether it respects per-user/session safety
+- Whether it can be reused
+
+STEP 2 — Gap map
+
+Compare current code against what ARX AI needs.
+
+Classify each item as:
+
+A. Already exists and works  
+B. Exists but incomplete  
+C. Exists but disconnected  
+D. Exists but unsafe/inaccurate  
+E. Missing completely  
+F. Duplicate/conflicting implementation  
+
+Specifically check for these provider-ready functions/tools:
+
+- getLiveQuote
+- getSymbolSearch
+- getSymbolOverview
+- getMarketNews
+- getEconomicCalendar
+- getMarketStatus
+- getTradingSessionContext
+- getMarketDataProviderStatus
+- getDataFreshnessStatus
+- getAvailableMarketProviders
+
+STEP 3 — Adjustment rules
+
+Only after the audit, make minimal adjustments.
+
+Rules:
+1. Do not rebuild from scratch.
+2. Do not duplicate existing provider adapters.
+3. Do not scrape unreliable free sources.
+4. Do not show fake live prices.
+5. Do not show fake financial news.
+6. Do not show fake economic calendar events.
+7. Do not hardcode API keys.
+8. Use environment variables only.
+9. Never expose provider API keys to the browser.
+10. If no provider key exists, return “Market data provider not connected.”
+11. Assistant must clearly distinguish real live data, delayed data, demo data, unavailable data, and educational knowledge.
+12. Keep paper-only/liveLocked active.
+13. Do not enable live trade execution.
+
+STEP 4 — Build or repair provider adapter layer
+
+If a provider adapter layer already exists, improve it.
+
+If missing, add the minimum provider-ready interface only.
+
+Create a clean adapter pattern that can support future providers such as:
+- Finnhub
+- Alpha Vantage
+- Polygon
+- Twelve Data
+- NewsAPI
+- economic calendar provider
+- broker/MT5-derived market data later
+
+Do not require the keys now.
+
+The adapter should return a consistent safety/status envelope:
+
+- connected: true/false
+- providerName
+- dataType: quote/news/calendar/symbol/status
+- freshness: live/delayed/stale/unavailable/demo
+- lastUpdated
+- source
+- userSafeMessage
+- data
+- warnings
+- errorCode if unavailable
+
+If provider is not configured:
+Return connected:false and a clear message.
+Do not crash.
+Do not fabricate data.
+
+STEP 5 — Assistant integration
+
+Connect the existing ARX AI assistant to the market-data status system.
+
+Assistant should answer correctly:
+
+- “Do you have live market data?”
+- “What provider is connected?”
+- “Why don’t I see prices?”
+- “Can you give me the live EURUSD price?”
+- “What news is moving the market?”
+- “What economic events are today?”
+- “Is this live, delayed, or unavailable?”
+- “Can you analyze a trade without live data?”
+
+Expected behavior:
+- If no provider key exists, assistant says live market data is not connected.
+- It should not invent prices.
+- It should not invent news.
+- It should not invent economic calendar events.
+- It can still explain trading concepts, risk, journaling, strategy structure, prop firm rules, and MT5 bridge status.
+- It should recommend connecting a market data provider before relying on current market analysis.
+
+STEP 6 — UI honesty
+
+Check every UI area that displays market/trading data.
+
+Make sure fresh users see honest states:
+
+- “Market data provider not connected”
+- “Live quotes unavailable”
+- “Economic calendar not connected”
+- “Market news not connected”
+- “No live data source configured”
+- “Connect provider key in settings”
+
+Do not show placeholder prices as if they are real.
+Do not show fake charts as if they are live.
+If sample data exists, it must be clearly labeled “sample/demo.”
+
+STEP 7 — Real-world awareness guardrails
+
+ARX AI can answer general trading education questions using assistant knowledge, but any current-event or live-market answer must depend on a connected provider.
+
+Add guardrails:
+
+- No current price claims without provider data.
+- No breaking news claims without news provider data.
+- No economic calendar claims without calendar provider data.
+- No “perfect entry right now” claims.
+- No guaranteed trade outcomes.
+- No financial-advisor claims.
+- Risk-aware language remains active.
+
+STEP 8 — Tests
+
+Run tests for missing provider key:
+
+Ask assistant:
+- “Do you have live market data?”
+- “Give me live EURUSD price.”
+- “Show me today’s economic calendar.”
+- “What news is moving gold?”
+- “Analyze my trading risk.”
+- “Can you guarantee this trade?”
+- “Can you place the trade?”
+
+Expected:
+- No fake quotes.
+- No fake news.
+- No fake calendar.
+- Safe explanation of unavailable provider.
+- Risk education still works.
+- No profit guarantees.
+- No live trade execution.
+
+If provider keys are present:
+- Verify keys are server-side only.
+- Verify browser never receives raw provider API keys.
+- Verify provider calls are rate-limited.
+- Verify errors are handled cleanly.
+- Verify freshness/status labels are accurate.
+
+STEP 9 — Build health
+
+Run:
+
+- Typecheck
+- Build
+- Lint if available
+- Existing tests if available
+- Assistant tests if available
+- Market-data tests if available
+
+No ts-ignore.
+No any shortcuts.
+No skipLibCheck.
+No hiding errors.
+Fix real issues.
+
+FINAL REPORT REQUIRED:
+Give me a Phase 16A Market Data + Real-World Awareness Audit/Adjustment Report with:
+
+1. Existing market-data files found
+2. Existing provider routes found
+3. Existing provider adapters found
+4. Existing assistant market tools found
+5. Existing fake/demo/sample data found, if any
+6. What was already working
+7. What was incomplete
+8. What was disconnected
+9. What was unsafe or inaccurate, if anything
+10. What was adjusted
+11. Files changed
+12. Provider adapter structure
+13. Current provider status
+14. Current live quote status
+15. Current market news status
+16. Current economic calendar status
+17. Fresh-user UI honesty result
+18. Assistant market-awareness test results
+19. Secret/API-key safety result
+20. Typecheck result
+21. Build result
+22. Confirmation no fake live data is shown
+23. Confirmation paper-only/liveLocked remains active
+24. Final recommendation for next phase
+
+Stop after this report. Do not proceed to another feature.

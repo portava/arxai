@@ -1,0 +1,2107 @@
+Build and upgrade ARX AI with a full Ruby Market Timing Brain system.
+
+This system must combine:
+- Market Heat Map
+- Critical News Heat
+- Big Money Movement Windows
+- Broad Market Flow
+- Institutional Movement Intelligence
+- Session/Kill Zone Timing
+- Liquidity/Trap Detection
+- Buy/Sell Pressure Windows
+- Timeframe Performance Intelligence
+- Heat-Based Alerts
+- Heat-Based Scanner Ranking
+- Heat-Based Self-Trade Decisions
+- Heat-Based Risk Governor Adjustments
+- Heat-Based Open Trade Management
+- Heat-Based Trade Review Learning
+
+This should become one connected ecosystem layer, not a standalone heat map page only.
+
+Ruby must learn not only what the market is doing, but when markets usually move, when big money is likely active, when news changes movement behavior, when the move is clean, when the move is dangerous, when the move is late, and what traders/self-trade agents should do next.
+
+==================================================
+ABSOLUTE PRESERVATION RULE
+==================================================
+
+This is a system intelligence and UI integration upgrade.
+
+Do not rebuild the app.
+Do not replace Ruby.
+Do not replace Scanner.
+Do not replace Smart Chart.
+Do not replace Economic Calendar.
+Do not replace Risk Governor.
+Do not replace Self-Trade AI.
+Do not replace Open Trades.
+Do not replace My Alerts.
+Do not replace Account Analytics.
+Do not replace Wins & Losses.
+Do not replace MT5/shared master bridge logic.
+Do not create a new trade execution path.
+Do not bypass risk checks.
+Do not bypass permissions.
+Do not fake market data, heat scores, news events, broad market flow, historical behavior, or alerts.
+
+Before editing, inspect the existing app and identify current wiring for:
+
+- selected symbol
+- selected timeframe
+- chart data
+- market feeds
+- candle data
+- scanner results
+- scanner ranking
+- Ruby market reads
+- Ruby chart reads
+- Ruby popup chat
+- Ruby memory
+- Ruby lessons
+- economic calendar
+- critical news alerts
+- news impact levels
+- upcoming event warnings
+- affected symbols
+- self-trade agents
+- self-trade handshake network
+- self-trade live decisions
+- risk governor
+- account exposure
+- open positions
+- open P/L
+- closed trades
+- wins/losses
+- account analytics
+- my alerts
+- notification count
+- alert read/unread
+- alert dismiss/snooze/resolve
+- smart chart overlays
+- global header
+- bottom nav
+- Ruby floating button
+- admin/user role visibility
+
+Reuse existing hooks, services, routes, schemas, stores, contexts, and components where they exist.
+Extend them safely.
+Do not duplicate business logic.
+Do not expose backend/internal/debug language to regular users.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Ruby should build a Market Timing Brain that answers:
+
+1. When does this market usually move?
+2. When are buyers usually stronger?
+3. When are sellers usually stronger?
+4. When is the market usually dangerous?
+5. When does the market usually fake out?
+6. When does institutional/big money movement usually enter?
+7. Is the current heat clean, dirty, news-driven, exhausted, or a trap?
+8. Is the movement early, active, late, or already completed?
+9. Does broad market flow confirm the chart?
+10. Does critical news change the risk?
+11. Which market has the best usable edge right now?
+12. Which market should traders avoid right now?
+13. What is the best action now?
+
+Ruby must never treat volatility as edge by itself.
+
+Core rule:
+
+Movement only becomes edge when timing, structure, broad flow, risk, spread, and entry zone agree.
+
+==================================================
+SYSTEM NAME
+==================================================
+
+Use this feature name:
+
+Ruby Market Timing Brain
+
+Submodules:
+- Market Heat Map
+- News-Adjusted Market Heat
+- Big Money Movement Windows
+- Broad Market Flow Engine
+- Session/Kill Zone Engine
+- Liquidity Trap Detector
+- Tradeability Score Engine
+- Heat Alert Engine
+- Heat-Based Risk Adapter
+- Heat-Based Scanner Boost
+- Heat-Based Self-Trade Handshake
+- Heat Learning Engine
+
+==================================================
+MAIN PAGE / ROUTE
+==================================================
+
+Create or upgrade a dedicated page:
+
+/market-heat-map
+
+or follow the existing app route convention.
+
+Page title:
+
+Market Heat Map
+
+Subtitle:
+
+Track market movement windows, critical news heat, broad flow, and Ruby’s timing guidance.
+
+This page should be accessible from:
+- Cockpit
+- Scanner
+- Smart Chart
+- Economic Calendar
+- My Alerts
+- Self-Trade AI
+- Trade Command Room
+- Ruby Command Center
+- Open Trades
+- sidebar/menu if available
+
+Do not replace bottom nav.
+
+Bottom nav remains:
+- Cockpit
+- Trade
+- Scanner
+- AI
+- Me
+
+==================================================
+MARKET HEAT MAP PAGE TABS
+==================================================
+
+Create tabs:
+
+1. Now
+2. Today
+3. By Symbol
+4. By Session
+5. Buy/Sell Windows
+6. Danger Windows
+7. News Heat
+8. Broad Flow
+9. Replay
+10. Settings / Admin Data Status
+
+Settings/Admin Data Status should be admin-only where appropriate.
+
+==================================================
+GLOBAL DESIGN SYSTEM
+==================================================
+
+Use ARX dark fortress style:
+
+Background: #070A0F
+Card background: #0E131B
+Elevated card: #111827
+Card inner surface: #151B26
+Border: rgba(255,255,255,0.08)
+Strong blue border: rgba(47,140,255,0.35)
+
+ARX blue: #2F8CFF
+Ruby cyan: #35D7FF
+Ruby purple: #C45BFF
+Profit green: #22C55E
+Loss red: #EF4444
+Warning yellow: #FFCC4D
+High risk orange: #F97316
+Critical red: #E11D48
+Gold: #FACC15
+
+Primary text: #F5F7FA
+Secondary text: #A7AFBE
+Muted text: #6F7785
+
+Heat color language:
+- Cold: muted blue/gray
+- Normal: neutral blue
+- Active: cyan/blue
+- Hot: green/cyan
+- Extreme: orange/red
+- Dangerous: red/purple
+- Clean Heat: green/cyan
+- Dirty Heat: orange
+- Trap Heat: red/orange
+- News Heat: purple/red
+- Exhausted Heat: muted red/orange
+- Compression Heat: blue/purple
+- Wake-Up Market: cyan
+
+Use:
+- rounded cards
+- heat chips
+- progress bars
+- heat grids
+- timeline rows
+- session bands
+- symbol cards
+- alert cards
+- smart empty states
+- mobile-first layout
+- no horizontal overflow
+- bottom nav safe
+- Ruby button safe
+
+==================================================
+CORE HEAT STATES
+==================================================
+
+Support heat states:
+
+- Cold
+- Normal
+- Active
+- Hot
+- Extreme
+- Danger
+- Wake-Up
+- Compression
+- Clean Heat
+- Dirty Heat
+- Trap Heat
+- News Heat
+- Exhausted Heat
+- False Heat
+- Too Hot To Touch
+
+Ruby should avoid only saying “hot.”
+Ruby must explain what kind of heat it is.
+
+Example:
+
+USDJPY:
+Heat State: Hot but clean
+Best Action: Wait for pullback
+
+XAUUSD:
+Heat State: Extreme but dirty
+Best Action: No first-candle chase
+
+V75:
+Heat State: Clean flame heat
+Best Action: Entry only inside zone
+
+==================================================
+HEAT SCORE VS TRADEABILITY SCORE
+==================================================
+
+Every heat card/read must separate:
+
+- Heat Score
+- Tradeability Score
+- Edge Score
+- Danger Score
+- Trap Probability
+- Room To Move
+- Timing Grade
+- Entry Permission
+
+Example:
+
+Heat Score: 92/100
+Tradeability Score: 48/100
+Edge: 61/100
+Danger: 79/100
+Trap Probability: 72/100
+Room To Move: 22/100
+Timing Grade: C-
+Entry Permission: Wait
+
+Meaning:
+The market is moving, but it is not clean enough to trade yet.
+
+Do not let high heat automatically mean trade permission.
+
+==================================================
+ENTRY PERMISSION STATES
+==================================================
+
+Each market/setup should output:
+
+- Not Ready
+- Prepare Only
+- Entry Zone Forming
+- Entry Allowed
+- Entry Window Closing
+- Entry Late
+- Protect Only
+- Avoid
+- Expired
+
+Example:
+
+USDJPY Heat: Hot
+Entry Permission: Prepare Only
+Reason: Market is moving, but price has not pulled back into the ideal entry zone.
+
+==================================================
+BEST ACTION OUTPUT
+==================================================
+
+Every heat read should end with one clear Best Action.
+
+Allowed outputs:
+
+- Trade now
+- Prepare only
+- Wait for pullback
+- Wait for retest
+- Wait for candle close
+- Wait for second-candle confirmation
+- Avoid
+- Protect open trades
+- Reduce size
+- No add-ons
+- Watch opposite market
+- Choose cleaner side
+- Open Scanner
+- Ask Ruby
+- No trade
+
+Example:
+
+Heat State: Hot but dirty
+Move Stage: First news reaction
+Entry Permission: Wait
+Best Action: Protect open trades and wait for confirmation
+Next Check: 5-minute candle close
+
+==================================================
+MARKET MOVEMENT STAGES
+==================================================
+
+Ruby must classify movement stage:
+
+- Quiet Before Storm
+- Wake-Up
+- Compression
+- Early Move
+- Active Move
+- First Reaction
+- Confirmation
+- Retest Phase
+- Continuation Phase
+- Exhaustion
+- Reversal Risk
+- Move Already Happened
+- Edge Decaying
+- Expired
+
+Example:
+
+Heat is high, but the move is late.
+70% of the usual session move already happened.
+New entries have poor reward-to-risk unless price pulls back.
+
+==================================================
+HEAT SOURCE BREAKDOWN
+==================================================
+
+Ruby must explain what is causing heat.
+
+Heat Source options:
+
+- Session liquidity
+- Critical news
+- Broad USD flow
+- Broad market flow
+- Volatility-family rotation
+- Stop hunt
+- Technical breakout
+- Compression breakout
+- Low-liquidity spike
+- Rollover spread
+- Pre-news positioning
+- Post-news reaction
+- Related market delay
+- Unknown / mixed
+
+Each heat read should include:
+
+Heat Source:
+Primary cause
+Confidence
+Backup cause if relevant
+
+Example:
+
+Heat reason: Broad USD flow + New York open
+Confidence: 82%
+Backup reason: CPI positioning may also be contributing
+
+==================================================
+GLOBAL SESSION HEAT MAP
+==================================================
+
+Ruby should track and display major time windows:
+
+- Asia open
+- Tokyo open
+- Asia mid-session
+- London pre-open
+- London open
+- London continuation
+- New York pre-market
+- US data release window
+- New York open
+- London/New York overlap
+- New York lunch
+- New York close
+- Rollover
+- Friday close
+- Monday open
+- Month-end / quarter-end
+- Holiday/thin liquidity if detectable
+- Synthetic/volatility active windows
+
+Each window should have:
+- heat level
+- fakeout risk
+- tradeability
+- common behavior
+- best symbols
+- danger symbols
+- best action
+
+Example:
+
+Current window: New York Open Kill Zone
+Movement potential: High
+Fakeout risk: Medium
+Best action: Wait for first structure break and retest
+
+==================================================
+USER LOCAL TIME + MARKET SESSION TIME
+==================================================
+
+Show both:
+
+- user local time
+- market session/window
+
+Example:
+
+Your time: 9:30 PM
+Market window: New York Open
+Heat: High
+
+Use existing timezone/user settings if available.
+If not, use browser timezone.
+Do not hardcode timezone.
+
+==================================================
+MARKET-SPECIFIC HEAT PROFILES
+==================================================
+
+Each symbol should have a time behavior profile.
+
+For every symbol where data exists, Ruby should learn/display:
+
+- best trading hours
+- most volatile hours
+- dangerous hours
+- common reversal windows
+- common breakout windows
+- common buy-pressure windows
+- common sell-pressure windows
+- fakeout-prone windows
+- low-liquidity windows
+- news-sensitive windows
+- best timeframe by window
+- worst timeframe by window
+- average session range
+- average spread by window if available
+- best setup type by window
+- worst setup type by window
+
+Example USDJPY:
+
+Best movement windows:
+- Tokyo open
+- London open
+- New York open
+- London/New York overlap
+
+Danger windows:
+- before CPI/FOMC/NFP
+- rollover spread widening
+- late Friday liquidity
+
+Example XAUUSD:
+Hot windows:
+- London open
+- New York open
+- high-impact USD news
+
+Danger windows:
+- CPI/FOMC/NFP first candle
+- spread expansion during news
+- fakeout after first reaction
+
+Example V75:
+Hot windows:
+- momentum flame periods
+- volatility-family rotation windows
+
+Danger windows:
+- extended candle exhaustion
+- opposite-pair conflict
+- late-entry chase zones
+
+Use only symbols available in the app/broker.
+Do not mark unavailable symbols as tradable.
+
+==================================================
+BUY/SELL PRESSURE WINDOWS
+==================================================
+
+Ruby should learn/display:
+
+- when buyers usually step in
+- when sellers usually step in
+- when reversals usually happen
+- when fakeouts usually happen
+- when trend continuation usually works
+- when scalps usually fail
+- when swing entries usually work
+
+For each symbol/timeframe:
+
+Buy Side Score
+Sell Side Score
+Best Side
+Reason
+
+Example:
+
+USDJPY:
+Buy side: 78/100
+Sell side: 41/100
+Best side: Buy
+Reason: broad USD flow and session momentum support upside.
+
+==================================================
+BUYER/SELLER CONTROL METER
+==================================================
+
+Create a control meter:
+
+- Buyers in control
+- Sellers in control
+- Control shifting
+- No clear control
+- Liquidity trap forming
+
+Example:
+
+Buyers were in control during London, but New York is rejecting the high.
+Ruby sees control shifting. Avoid adding buys until confirmation.
+
+==================================================
+TIMEFRAME PERFORMANCE MAP
+==================================================
+
+Ruby should learn/display best timeframe by market and window.
+
+Example:
+
+USDJPY:
+M1: useful for quick scalps only during active sessions
+M5: best for flame scalp and pullback entries
+M15: best for structure confirmation
+H1: best for directional bias
+H4: best for swing context
+
+V75:
+M1: high opportunity but high danger
+M5: better confirmation
+M15: better trend structure
+H1: major direction
+
+Output:
+Best timeframe now
+Confirmation timeframe
+Avoid timeframe
+
+Example:
+
+Best timeframe now:
+M5 for entry
+M15 for confirmation
+H1 for bias
+
+Avoid:
+M1 — too noisy during this window.
+
+==================================================
+BROAD MARKET FLOW ENGINE
+==================================================
+
+Ruby must learn from broad market data, not only isolated symbols.
+
+Use available data sources for:
+- Forex majors
+- USD strength behavior / DXY if available
+- XAUUSD
+- US indices
+- volatility/synthetic markets
+- yield/bond-sensitive data if available
+- economic calendar reactions
+- session behavior
+- cross-market correlation
+
+Before validating a setup, check broad market flow.
+
+Example USDJPY Buy:
+
+Broad market checks:
+USD strength: Confirming
+JPY weakness: Confirming
+Gold: Not conflicting
+Equity risk mood: Neutral
+News risk: Medium
+Session heat: Hot
+
+Decision:
+Watch for pullback confirmation.
+
+Example Broad Conflict:
+
+USDJPY chart looks bullish, but broad USD flow is mixed.
+EURUSD is not confirming USD strength and gold is unstable.
+Ruby lowers confidence and waits.
+
+==================================================
+INSTITUTIONAL FLOW SCORE
+==================================================
+
+Add Institutional Flow Score: 0–100.
+
+Breakdown example:
+
+Session liquidity: 20/25
+Broad market alignment: 18/25
+Historical movement window: 17/20
+News catalyst: 8/15
+Correlation confirmation: 7/10
+Spread/slippage safety: 4/5
+
+Total: 74/100
+
+Labels:
+- Isolated movement
+- Broad market confirming
+- Institutional flow likely
+- Institutional flow weak
+- Institutional flow failed
+- Competing catalysts detected
+
+Ruby should not call something “big money” unless multiple factors confirm.
+
+Institutional confirmation checklist:
+- session timing confirms
+- broad market confirms
+- related symbols confirm
+- volume/tick speed confirms if available
+- spread is not abnormal
+- move is not exhausted
+- news catalyst supports direction
+
+==================================================
+COMPETING CATALYST DETECTION
+==================================================
+
+If multiple catalysts conflict, Ruby must detect it.
+
+Example:
+
+Competing catalysts detected.
+
+USD news supports USD strength, but risk sentiment is pushing indices higher and gold is unstable.
+
+Ruby’s action:
+Lower confidence and wait for confirmation.
+
+==================================================
+INSTITUTIONAL FLOW FAILED ALERT
+==================================================
+
+If broad flow was confirming but fails, alert:
+
+Institutional Flow Failed
+
+USDJPY was showing bullish pressure, but EURUSD and XAUUSD are no longer confirming USD strength.
+
+Ruby is lowering buy confidence.
+
+Connect to:
+- My Alerts
+- Scanner
+- Smart Chart
+- Open Trades
+- Self-Trade AI
+- Ruby popup
+
+==================================================
+CRITICAL NEWS INTEGRATION
+==================================================
+
+This system must tie directly into the existing Critical News Alert / Economic Calendar system.
+
+Critical news must update every layer:
+- Heat Map
+- Scanner
+- Smart Chart
+- Risk Governor
+- Self-Trade AI
+- Open Trades
+- My Alerts
+- Ruby explanations
+- Post-trade learning
+- Account Analytics
+- Wins & Losses
+
+Core rule:
+
+Critical news does not only create an alert — it changes market heat, risk scoring, trade permission, scanner ranking, self-trade behavior, and Ruby’s explanation across the whole app.
+
+==================================================
+NEWS-ADJUSTED MARKET HEAT
+==================================================
+
+Create News-Adjusted Market Heat.
+
+Combine:
+
+- economic calendar event impact
+- time until event
+- affected currency/symbols
+- historical movement during this news type
+- current session heat
+- spread/slippage risk
+- broad market confirmation
+- fakeout risk
+- first-candle danger
+- post-news confirmation window
+- self-trade permission state
+
+Before news:
+- heat rising
+- risk increasing
+- spread/slippage danger likely
+- prepare/watch/protect
+
+At release:
+- extreme heat
+- critical news active
+- first-candle danger
+- wait unless News Mode authorized
+
+After release:
+- heat active
+- direction forming
+- second-candle confirmation/retest
+- scanner can rank clean setups again once stable
+
+After settling:
+- heat normalizing
+- trend/reversal confirmed
+- tradeability may improve
+
+==================================================
+NEWS PHASES
+==================================================
+
+Every high/critical news event should have phases:
+
+- Pre-news positioning
+- 30m before: prepare only
+- 15m before: no new scalps
+- 5m before: protect only
+- At release: no first-candle chase
+- 0–2m after: dangerous first spike
+- 3–6m after: fakeout risk
+- 6–12m after: possible confirmation window
+- 12–20m after: continuation/exhaustion
+- Settled / normalizing
+
+These are defaults and should be configurable/adaptive.
+
+==================================================
+NEWS TYPE PERSONALITY
+==================================================
+
+Ruby should learn event personality.
+
+Examples:
+
+CPI:
+- fast USD/gold moves
+- fakeouts
+- second-leg continuation
+
+NFP:
+- two-way spikes
+- delayed direction
+
+FOMC:
+- rate decision reaction
+- statement reaction
+- press conference reversal risk
+
+Interest rate decision:
+- may be priced in unless surprise/tone changes
+
+Fed speech:
+- can move slower or suddenly depending wording
+
+Each event type should have:
+- fast reaction symbols
+- delayed reaction symbols
+- trap-prone symbols
+- clean continuation symbols
+- spread-danger symbols
+- best timeframe after release
+- worst timeframe after release
+- best post-news entry window
+
+==================================================
+SURPRISE SCORE
+==================================================
+
+When actual data releases, compare:
+
+- Actual
+- Forecast
+- Previous
+- Deviation
+- Directional surprise
+- Expected pressure
+
+Example:
+
+Actual CPI: 3.4%
+Forecast: 3.1%
+Surprise: hotter than expected
+Likely pressure: USD strength, gold weakness, indices caution
+
+Feed this into:
+- Scanner
+- Smart Chart
+- Self-Trade News Mode
+- My Alerts
+- Ruby popup
+- Market Heat Map
+
+If actual data is not available, show pending. Do not fake it.
+
+==================================================
+FIRST REACTION VS REAL DIRECTION
+==================================================
+
+Ruby must separate:
+- first reaction
+- fakeout risk
+- confirmation candle
+- retest phase
+- continuation phase
+- exhaustion phase
+
+Example:
+
+USDJPY spiked up after CPI, but the second candle failed to hold.
+Ruby sees fakeout risk. Wait for retest before buying.
+
+==================================================
+NEWS-SAFE TRADE PERMISSIONS
+==================================================
+
+Use permission labels:
+
+- Normal trading allowed
+- Reduce size only
+- Scalps blocked
+- Protect only
+- News reaction mode only
+- Wait for confirmation
+- No new trades
+
+Do not create backend blocks unless existing Risk Governor supports/enforces them.
+But Self-Trade AI and UI should respect these states.
+
+==================================================
+CRITICAL NEWS MOVEMENT PLAYBOOKS
+==================================================
+
+Create playbooks for major event types.
+
+CPI playbook:
+- avoid first candle
+- watch USD pairs and gold
+- wait for spread normalization
+- confirm second move
+- rank USDJPY/XAUUSD/EURUSD reaction
+
+FOMC playbook:
+- rate decision reaction
+- statement reaction
+- press conference reversal risk
+- delayed indices response
+
+NFP playbook:
+- first spike danger
+- two-way volatility
+- wait for direction confirmation
+
+These playbooks should drive Ruby guidance and Self-Trade News Mode.
+
+==================================================
+OPEN POSITION NEWS EXPOSURE ALERTS
+==================================================
+
+If trader or agent has an open position before critical news:
+
+Alert:
+
+Critical USD news in 15 minutes.
+
+You have EURUSD Buy open.
+This position may be exposed to USD volatility.
+
+Ruby recommends:
+- avoid adding
+- check stop loss
+- consider partial protection
+- wait for news reaction before new entries
+
+Connect to:
+- Open Trades
+- My Alerts
+- Ruby popup
+- Risk Governor
+- Self-Trade AI
+- Smart Chart
+
+==================================================
+NEWS CHANGED THE MARKET ALERTS
+==================================================
+
+If news invalidates a setup:
+
+Setup invalidated by news.
+
+Before CPI, USDJPY Buy was valid.
+After release, broad USD flow reversed and spread expanded.
+Ruby cancelled the setup.
+
+Update:
+- Scanner
+- Trade plan
+- Self-Trade Live Decisions
+- Audit Log
+- My Alerts
+
+==================================================
+POST-NEWS REACTION BOARD
+==================================================
+
+After critical news, Ruby should compare affected markets.
+
+Example:
+
+USDJPY: bullish continuation forming
+EURUSD: bearish continuation forming
+XAUUSD: unstable, fakeout risk
+US30: delayed reaction
+DXY: confirming USD strength if available
+
+Then rank the cleanest post-news trade.
+
+==================================================
+QUIET BEFORE STORM DETECTION
+==================================================
+
+Detect low movement before major catalyst.
+
+Example:
+
+Quiet Before Storm
+
+Low movement now, but high-impact catalyst soon.
+Do not assume market is safe just because volatility is low.
+
+==================================================
+LIQUIDITY VACUUM DETECTION
+==================================================
+
+After news, price may move because liquidity is poor.
+
+Example:
+
+Liquidity Vacuum
+
+Price is moving fast, but spread and slippage risk are elevated.
+This is dangerous heat, not clean opportunity.
+
+==================================================
+LIQUIDITY / TRAP INTELLIGENCE
+==================================================
+
+Ruby must estimate where stops/liquidity may be sitting:
+
+- above session highs
+- below session lows
+- previous day high/low
+- weekly high/low
+- round numbers
+- support/resistance
+- pre-news consolidation zones
+- obvious retail breakout zones
+
+Add Liquidity Destination forecast:
+
+- possible liquidity target
+- next magnet
+- stretch target
+- room to move
+
+Example:
+
+Possible liquidity target: Asian session high
+Next magnet: previous day low
+Stretch target: round number 160.00
+
+==================================================
+SESSION HIGH/LOW INTELLIGENCE
+==================================================
+
+Smart Chart/Heat Map should mark:
+
+- Asian session high/low
+- London session high/low
+- New York session high/low
+- previous day high/low
+- weekly high/low
+
+Alert:
+
+USDJPY is approaching Asian session high during London open.
+This is a common breakout-or-rejection zone.
+Wait for confirmation before entering.
+
+==================================================
+LIQUIDITY RAID COMPLETED CONFIRMATION
+==================================================
+
+Ruby should detect when stop hunt may be complete.
+
+Example:
+
+Liquidity raid completed.
+Price swept the Asian high, rejected, and closed back below.
+Ruby is now watching for sell confirmation.
+
+==================================================
+TRAP PROBABILITY SCORE
+==================================================
+
+Score 0–100.
+
+Trap factors:
+- session high/low sweep
+- previous day high/low sweep
+- oversized candle after compression
+- first-candle news spike
+- weak follow-through
+- spread widening
+- broad market conflict
+- retail breakout zone
+
+Example:
+
+Trap Probability: 72/100
+Reason: price swept session high, spread widened, and broad market confirmation is weak.
+Best action: wait for retest.
+
+==================================================
+TRAP TYPES
+==================================================
+
+Detect:
+- breakout trap
+- reversal trap
+- late-entry trap
+- news first-candle trap
+- range-middle trap
+- liquidity sweep trap
+- fake continuation trap
+- trap before breakout
+
+Example:
+
+Potential trap before breakout.
+Price swept the low, reclaimed structure, and buyers are stepping in.
+Wait for retest confirmation.
+
+==================================================
+ROOM TO MOVE SCORE
+==================================================
+
+Score 0–100.
+
+Use:
+- distance to liquidity target
+- average session range
+- distance to support/resistance
+- current move completion
+- remaining room
+- target distance vs risk
+
+Example:
+
+Room to Move: 22/100
+Reason: price is already near the next major liquidity target.
+Best action: do not chase.
+
+==================================================
+AVERAGE SESSION RANGE TRACKING
+==================================================
+
+Track typical movement per symbol/session.
+
+Example:
+
+USDJPY usually moves 42 pips during London session.
+It has already moved 36 pips.
+Remaining room may be limited.
+
+V75 has already completed 78% of its typical M15 momentum burst range.
+New scalp entries are late unless a fresh flame forms.
+
+==================================================
+MOVE ALREADY HAPPENED / MISSED MOVE DETECTOR
+==================================================
+
+Alert:
+
+Missed Move Detected
+
+USDJPY already moved through the clean entry window.
+Ruby recommends waiting for a new pullback instead of chasing.
+
+Also support:
+Best window may have passed.
+Move already priced in.
+Edge decaying.
+Too late.
+Wait for second chance.
+
+==================================================
+SECOND CHANCE / RE-ENTRY WATCH
+==================================================
+
+After missed move:
+
+Second chance setup forming.
+Price is pulling back into the prior breakout zone.
+Ruby is waiting for confirmation.
+
+==================================================
+COMPRESSION BEFORE EXPANSION DETECTOR
+==================================================
+
+Detect:
+- small candles
+- tight range
+- narrowing highs/lows
+- low volatility before session/news
+- tick speed increasing if available
+- spread stable
+
+Alert:
+
+Compression Detected
+
+USDJPY is coiling before a high-movement window.
+Ruby is watching for breakout direction.
+
+==================================================
+MARKET WAKE-UP DETECTION
+==================================================
+
+Detect market waking up:
+
+- candle size increasing
+- tick speed increasing if available
+- spread stable
+- compression breaking
+- related markets moving
+- session window approaching
+
+Alert:
+
+Market Wake-Up Detected
+
+USDJPY is moving from cold to active.
+Ruby is watching for the first clean pullback.
+
+==================================================
+FALSE HEAT DETECTOR
+==================================================
+
+Detect heat from:
+- spread expansion
+- low liquidity
+- stale feeds
+- bad candles/data gap
+- rollover
+- illiquid spike
+
+Alert:
+
+False Heat Warning
+
+Movement is coming from spread expansion or thin liquidity, not clean directional flow.
+Best action: avoid.
+
+==================================================
+MARKET FATIGUE DETECTOR
+==================================================
+
+Detect:
+- smaller follow-through candles
+- larger wicks
+- slower candle speed
+- repeated failed highs/lows
+- tick/volume slowdown if available
+- range tightening after expansion
+
+Alert:
+
+Market fatigue detected.
+
+USDJPY is still hot, but momentum is slowing near resistance.
+Ruby recommends protecting profits instead of adding.
+
+==================================================
+HEAT EXHAUSTION STOP RULE
+==================================================
+
+Self-Trade and Scanner should reject new entries if heat is exhausted.
+
+Example:
+
+Heat: 91/100
+Exhaustion: 78%
+Decision: no new entry.
+Reason: most of the typical move has already happened.
+
+==================================================
+STRATEGY MATCHING
+==================================================
+
+Map heat condition to strategy:
+
+Clean early heat:
+- breakout/retest
+- pullback entry
+
+Dirty news heat:
+- wait
+- protect
+- confirmed reaction only
+
+Exhausted heat:
+- no chase
+- wait for re-entry
+
+Cold market:
+- no scalp
+- swing watch only
+
+Compression heat:
+- prepare breakout plan
+
+Trap heat:
+- wait for reclaim/rejection
+
+==================================================
+BEST MARKET RIGHT NOW / AVOID RIGHT NOW
+==================================================
+
+Cockpit and Scanner should show:
+
+Best Markets Right Now:
+1. USDJPY — Clean heat, buy side favored
+2. V75 — Flame window active
+3. US30 — NY open momentum forming
+
+Avoid Right Now:
+1. XAUUSD — Dirty news heat
+2. EURUSD — Choppy mid-range
+3. V100 — Move exhausted
+
+Use real heat data only.
+If unavailable, show empty state.
+
+==================================================
+EDGE RANKING
+==================================================
+
+Ruby should rank current edges, not just symbols.
+
+Example:
+
+1. USDJPY pullback after NY confirmation — Strong edge
+2. V75 flame continuation — Good edge
+3. XAUUSD post-news retest — Watch only
+4. EURUSD breakout — Avoid, fakeout risk
+
+==================================================
+HEAT-TO-SCANNER BOOST
+==================================================
+
+Scanner scoring should include heat context.
+
+Example:
+
+Base setup score: 76
+Heat timing boost: +8
+Broad flow confirmation: +6
+News risk penalty: -5
+Final scanner score: 85
+
+Scanner should boost:
+- clean heat
+- early/active move
+- broad flow confirmation
+- best timeframe alignment
+- room to move
+- low trap risk
+
+Scanner should penalize:
+- dirty heat
+- exhausted heat
+- poor tradeability
+- high spread
+- news first candle
+- broad conflict
+- low room to move
+
+==================================================
+HEAT-TO-RISK HANDOFF
+==================================================
+
+Risk Governor should receive heat context.
+
+Suggested mapping:
+
+Clean heat:
+- normal risk
+
+Dirty heat:
+- reduce 50%
+
+News heat:
+- reduce 70% or wait
+
+Exhausted heat:
+- no entry
+
+Cold market:
+- no scalp
+
+Too hot to touch:
+- protect only / no new entries
+
+Do not create hard backend blocks unless current Risk Governor supports it.
+But pass/display the recommendation.
+
+==================================================
+HEAT-TO-LOT-SIZING HANDOFF
+==================================================
+
+Risk-aware lot sizer should use heat state.
+
+Example:
+
+Base risk: $10
+News heat: Extreme
+Spread risk: Medium
+Fakeout risk: High
+Adjusted risk: $3
+Lot reduced by 70%
+Reason: post-news volatility still unstable.
+
+==================================================
+PRE-TRADE HEAT CHECKLIST
+==================================================
+
+Before manual or self-trade entry, show:
+
+Heat: Hot
+Move stage: Early
+Broad flow: Confirming
+News risk: Medium
+Trap risk: Low
+Room to move: Good
+Spread: Acceptable
+Entry permission: Allowed inside zone only
+
+This should appear in:
+- Trade Command Room
+- Scanner
+- Smart Chart
+- Self-Trade Live Decisions
+- Ruby popup
+
+==================================================
+WHY NOW EXPLANATION
+==================================================
+
+Every heat-based idea should answer:
+
+- Why this market?
+- Why this direction?
+- Why this time window?
+- Why not wait?
+- What invalidates it?
+
+==================================================
+BEST WAITING REASON
+==================================================
+
+When Ruby says wait, show exactly why.
+
+Waiting for:
+- pullback into entry zone
+- spread to normalize
+- second candle confirmation
+- broad USD flow to confirm
+- liquidity sweep to complete
+- heat to cool
+- news phase to finish
+
+==================================================
+NEXT CANDLE CONFIRMATION
+==================================================
+
+Ruby can explain what the next candle needs to do.
+
+Example:
+
+For buy confirmation, Ruby wants the next M5 candle to hold above 159.40 and close with low lower-wick rejection.
+If it fails, the setup becomes weaker.
+
+Do not present this as guaranteed prediction.
+
+==================================================
+HEAT CONFIDENCE DECAY
+==================================================
+
+Heat alerts and setup confidence must decay.
+
+Example:
+
+USDJPY Hot Window started 28 minutes ago.
+Heat remains active, but entry edge is decaying.
+Ruby will require pullback confirmation.
+
+Setup confidence dropped from 81% to 64%.
+Reason: heat window fading and price did not enter ideal zone.
+
+==================================================
+EDGE EXPIRATION
+==================================================
+
+Every heat edge should expire.
+
+Example:
+
+USDJPY NY Open Edge
+Started: 9:30 AM
+Edge age: 22m
+Status: active but decaying
+Expires if no pullback forms in 8m
+
+==================================================
+HEAT ALERTS
+==================================================
+
+Add alert types:
+
+- Hot Market Alert
+- Danger Window Alert
+- Buy Pressure Window
+- Sell Pressure Window
+- Volatility Spike Alert
+- Low Liquidity Alert
+- Session Open Alert
+- News Danger Window
+- Market Wake-Up Alert
+- Compression Alert
+- Missed Move Alert
+- Second Chance Setup Alert
+- Institutional Flow Confirming
+- Institutional Flow Failed
+- Broad Market Conflict
+- Fakeout Risk High
+- Trap Probability High
+- Heat Conflict With Open Trade
+- Open Trade Heat Protection
+- Too Hot To Touch
+- Do Not Trade Yet
+
+Alerts should go to:
+- My Alerts
+- Ruby popup
+- Scanner
+- Smart Chart
+- Open Trades
+- Self-Trade Live Decisions
+- Risk panels where relevant
+
+==================================================
+SMART SNOOZE FOR HEAT ALERTS
+==================================================
+
+Allow snooze until:
+- next candle close
+- next session open
+- after news release
+- spread normalizes
+- price enters entry zone
+- Ruby sees confirmation
+
+If snooze not wired, make future-ready/disabled.
+
+==================================================
+WHAT CHANGED ALERT UPDATES
+==================================================
+
+Update existing alerts instead of spamming new ones.
+
+Example:
+
+USDJPY Heat Alert Updated
+
+Old state:
+Hot but waiting
+
+New state:
+Entry zone forming
+
+What changed:
+Price pulled back into ideal zone and broad USD flow remains supportive.
+
+==================================================
+HEAT ALERT THROTTLING / NO-SPAM RULES
+==================================================
+
+Rules:
+- do not send same heat alert repeatedly within short window
+- update existing alert where possible
+- group repeated heat alerts in My Alerts
+- escalate only when severity changes
+- resolve alert when heat window expires
+- allow manual snooze
+
+==================================================
+OPEN TRADE HEAT MANAGER
+==================================================
+
+Every open trade should show heat status.
+
+Example:
+
+Open Trade Heat Status:
+Current window: New York Open
+Heat: High
+Risk: Fakeout near resistance
+Suggested management: protect before adding
+
+If heat conflicts with open trade:
+
+Heat conflict with open trade.
+Your USDJPY Buy is open, but New York flow is turning bearish.
+Ruby recommends reviewing protection before adding.
+
+Actions:
+- Protect
+- Move SL to BE
+- Take partial
+- No add-ons
+- Tighten stop
+- Exit if structure breaks
+
+Only show actions that already exist or future-ready disabled.
+
+==================================================
+SELF-TRADE AI INTEGRATION
+==================================================
+
+Add Market Timing Brain as handshake step.
+
+Before any autonomous entry, Self-Trade AI must check:
+
+- heat state
+- heat score
+- tradeability score
+- entry permission
+- broad flow
+- news phase
+- trap probability
+- room to move
+- timing grade
+- spread/slippage
+- heat edge expiration
+- best action
+
+Self-trade should reject or reduce risk if:
+- dirty heat
+- exhausted heat
+- no entry permission
+- high trap probability
+- news first candle
+- low room to move
+- broad flow conflict
+- heat confidence decayed
+- false heat detected
+
+Self-trade can approve if:
+- clean heat
+- tradeability high
+- room to move good
+- broad flow confirms
+- entry zone valid
+- risk governor approves
+
+Every self-trade must store heat permission tags:
+
+- heat_state_at_entry
+- heat_score
+- tradeability_score
+- move_stage
+- news_phase
+- trap_probability
+- room_to_move
+- timing_grade
+- best_action_at_entry
+- entry_permission
+
+==================================================
+SELF-TRADE AGENT HEAT DISCIPLINE SCORE
+==================================================
+
+Agent competition should score heat discipline.
+
+Positive:
+- entered during clean heat
+- avoided dirty heat
+- protected during danger window
+- waited for confirmation
+- used correct timeframe
+- selected best market window
+
+Negative:
+- chased exhausted heat
+- ignored news heat
+- entered cold market scalp
+- ignored fakeout window
+- ignored broad conflict
+- ignored no-entry state
+
+==================================================
+SMART CHART INTEGRATION
+==================================================
+
+Smart Chart should show heat overlays/bands where safe:
+
+- Asia open
+- London open
+- New York open
+- overlap
+- rollover
+- news event windows
+- hot/cold zones
+- buy-pressure windows
+- sell-pressure windows
+- fakeout-prone zones
+- session highs/lows
+- previous day highs/lows
+- heat state markers
+
+Do not break existing chart engine.
+If chart overlay support is limited, implement future-ready overlay data and simple visible markers first.
+
+==================================================
+SCANNER INTEGRATION
+==================================================
+
+Scanner cards should show:
+
+- Heat
+- Tradeability
+- Best timeframe
+- Buy pressure
+- Sell pressure
+- Danger
+- Broad flow
+- News phase
+- Entry permission
+- Timing grade
+
+Example:
+
+Heat: Hot
+Best timeframe: M5/M15
+Buy window: Active
+Sell pressure: Weak
+Danger: Medium news risk
+Entry permission: Wait for pullback
+
+==================================================
+TRADE COMMAND ROOM INTEGRATION
+==================================================
+
+Before trade entry, display heat pre-check:
+
+- heat state
+- tradeability
+- news risk
+- timing grade
+- entry permission
+- best action
+- risk mode
+
+If tradeability is low, show warning:
+
+Market is moving, but entry quality is poor.
+Ruby recommends waiting for confirmation.
+
+Do not block manual trading unless current Risk Governor rules allow.
+
+==================================================
+ECONOMIC CALENDAR INTEGRATION
+==================================================
+
+Economic Calendar should show:
+- news-adjusted heat
+- pre/live/post news phase
+- affected market heat
+- best post-news watchlist
+- event personality
+- surprise score after release
+- first reaction vs confirmation state
+- Ruby news + heat read
+
+==================================================
+MY ALERTS INTEGRATION
+==================================================
+
+My Alerts should include:
+- heat alerts
+- grouped heat alerts
+- heat alert updates
+- smart snooze
+- heat alert detail drawer
+- why it matters
+- Ruby explanation
+- recommended action
+- open scanner/trade/calendar
+- mark resolved/dismiss/snooze
+
+==================================================
+ACCOUNT ANALYTICS / WINS & LOSSES LEARNING
+==================================================
+
+Trade review should show heat context:
+
+At entry:
+Heat: Hot
+Move stage: Late
+Trap risk: High
+Ruby’s recommended action: Wait
+Outcome: Loss
+Lesson: Avoid late entries during exhausted heat.
+
+Add heat-based tags:
+
+- Clean heat win
+- Dirty heat loss
+- News heat trap
+- Exhausted heat chase
+- Cold market mistake
+- Good wait decision
+- Perfect timing
+- Late entry
+- Ignored fakeout window
+- Entered during no-entry heat
+- Protected during danger window
+
+==================================================
+HEAT MAP REPLAY
+==================================================
+
+Add Replay tab/future-ready view.
+
+Show:
+- when heat started rising
+- when news hit
+- when broad flow confirmed
+- when fakeout occurred
+- when best entry appeared
+- when movement exhausted
+- when Ruby alerted
+- trade entries/exits if available
+
+If data not available:
+Show:
+Market heat replay will appear after heat snapshots are recorded.
+
+==================================================
+HEAT MAP LEARNING REPORT
+==================================================
+
+At end of day, Ruby should save/report:
+
+- best heat window
+- worst heat trap
+- cleanest market
+- most dangerous market
+- best session
+- worst session
+- best timeframe
+- worst timeframe
+- best agent timing
+- worst agent timing
+- best user timing
+- missed move events
+- false heat events
+
+Connect to:
+- Ruby Memory
+- Account Analytics
+- Wins & Losses
+- Self-Trade Competition
+- Reports
+
+==================================================
+HEAT MAP DATA STATUS
+==================================================
+
+Admin-only data status card:
+
+- session clock working
+- historical session data loaded
+- economic calendar connected
+- news data connected
+- spread feed active
+- broad market symbols connected
+- volatility matrix active
+- last heat calculation time
+- heat snapshots stored
+- alert throttle active
+- data quality score
+
+Regular user only sees simple:
+Market timing data active
+or
+Market timing data unavailable right now.
+
+==================================================
+DATA HONESTY / EMPTY STATES
+==================================================
+
+Do not fake heat data.
+
+If insufficient data:
+- Market heat data will appear after enough market history is available.
+- Broad flow is unavailable right now.
+- News-adjusted heat is waiting for calendar data.
+- Heat replay will appear after heat snapshots are recorded.
+- Ruby needs more history before identifying buyer/seller windows.
+- No heat alerts right now.
+- Market timing data unavailable right now.
+
+If using derived basic logic because history is incomplete, label it as:
+Basic timing estimate
+not learned behavior.
+
+==================================================
+USER / ADMIN VISIBILITY
+==================================================
+
+Regular users can see:
+- market heat reads
+- alerts
+- Ruby explanations
+- scanner heat
+- trade heat pre-check
+- open trade heat status
+- user-specific learning
+
+Regular users must not see:
+- raw backend calculations
+- raw API responses
+- provider data
+- internal debug logs
+- admin-only data health
+- other users’ history
+- hidden system formulas
+
+Admin can see advanced data status if role-protected.
+
+==================================================
+LANGUAGE CLEANUP
+==================================================
+
+Do not show regular users:
+- backend
+- API
+- raw function names
+- internal enums
+- provider JSON
+- LLM call
+- system prompt
+- command queue
+- debug
+- raw market payloads
+
+Use:
+- Market heat
+- Tradeability
+- Entry permission
+- Broad flow
+- News phase
+- Trap risk
+- Room to move
+- Best action
+- Ruby’s timing read
+- Market timing data
+
+==================================================
+SUGGESTED COMPONENTS
+==================================================
+
+Create/update where safe:
+
+MarketHeatMapPage
+MarketHeatTabs
+MarketHeatSummaryCard
+MarketHeatNowGrid
+MarketHeatSymbolCard
+MarketHeatTimeline
+SessionHeatCard
+BuySellPressureCard
+DangerWindowsCard
+NewsAdjustedHeatCard
+BroadFlowCard
+InstitutionalFlowCard
+LiquidityTrapCard
+TradeabilityScoreCard
+HeatAlertCard
+HeatReplayPanel
+HeatDataStatusAdminCard
+HeatPreTradeChecklist
+OpenTradeHeatStatusCard
+ScannerHeatBadge
+SmartChartHeatOverlay
+RubyMarketTimingReadCard
+
+Services/helpers where architecture supports:
+
+marketTimingBrainService
+heatScoreEngine
+tradeabilityScoreEngine
+newsAdjustedHeatEngine
+broadMarketFlowEngine
+sessionHeatEngine
+liquidityTrapDetector
+roomToMoveEngine
+heatAlertEngine
+heatLearningEngine
+heatToRiskAdapter
+heatToScannerBoost
+heatToSelfTradeHandshake
+
+Reuse existing services if already present.
+
+==================================================
+QA REQUIRED
+==================================================
+
+After implementation, run build/typecheck/lint if available and verify:
+
+1. Market Heat Map route loads.
+2. Tabs work.
+3. Global header works.
+4. Bottom nav works.
+5. Ruby floating button works.
+6. Selected symbol remains synced.
+7. Heat states display from real/available data or empty states.
+8. No fake heat data appears.
+9. News-adjusted heat uses existing Economic Calendar where available.
+10. Critical news phase displays correctly.
+11. Heat score and tradeability score are separate.
+12. Entry permission displays correctly.
+13. Broad flow displays real/available data or empty state.
+14. Trap probability displays real/derived data or empty state.
+15. Room to move displays real/derived data or empty state.
+16. Scanner shows heat badges without breaking scan.
+17. Scanner ranking uses heat safely if wired.
+18. Trade page shows heat pre-check without breaking trade flow.
+19. Smart Chart overlay does not break chart.
+20. Open Trades shows heat status without mixing closed trades.
+21. My Alerts receives heat alerts and groups duplicates.
+22. Alert snooze/update works if supported or future-ready.
+23. Self-Trade handshake includes heat check.
+24. Risk Governor receives heat context/recommendation without bypassing rules.
+25. Economic Calendar shows news heat context.
+26. Wins & Losses shows heat tags where data exists.
+27. Account Analytics/Reports can receive heat learning where wired.
+28. Admin-only data status is hidden from regular users.
+29. No backend/internal/debug wording appears to regular users.
+30. Mobile layout has no horizontal overflow.
+31. Content is not hidden behind bottom nav.
+32. TypeScript/build/lint/runtime errors are fixed.
+
+==================================================
+COMPLETION REPORT REQUIRED
+==================================================
+
+Return:
+
+- files changed
+- routes added/updated
+- components created/updated
+- services/helpers created/updated
+- existing hooks/services preserved
+- Economic Calendar integration confirmed
+- Critical News Alert integration confirmed
+- Scanner integration confirmed
+- Smart Chart integration confirmed
+- Trade page integration confirmed
+- Self-Trade AI handshake integration confirmed
+- Risk Governor handoff confirmed
+- Open Trades heat management confirmed
+- My Alerts heat alerts confirmed
+- Wins/Losses learning tags confirmed
+- Account Analytics/Reports learning handoff confirmed
+- admin/user visibility confirmed
+- empty states preserved
+- data honesty confirmed
+- mobile QA passed
+- remaining follow-up needed
+
+IMPORTANT:
+Ruby Market Timing Brain should not simply alert that a market is moving. It must decide whether that movement creates a usable edge, a dangerous trap, a late/exhausted move, a news-risk situation, or a live trade management risk. Preserve all existing wiring first, then add timing intelligence safely across the ecosystem.

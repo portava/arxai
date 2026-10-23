@@ -1,0 +1,222 @@
+BUILD PHASE — Per-User Private Trading Workspace + Shared Master Ledger
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Make every user feel like they are using ARX AI by themselves, even when the backend uses a shared master MT5 bridge. Each user must have a private trading workspace, private trade history, private P/L, private Ruby context, private notifications, and private account-like ledger view. No user should see or feel another user’s activity.
+
+1. Inspect current user/session/account model first
+- Inspect current auth, user sessions, account mode handling, trade command model, queue, positions, P/L tracking, scanner, Ruby chat, notifications, and admin approval systems.
+- Reuse existing models and routes where possible.
+- Do not create a second disconnected account system.
+- Only add the missing per-user isolation and ledger pieces.
+
+2. Private user trading workspace
+Each user should have their own isolated app experience:
+- My Dashboard
+- My Scanner selections
+- My watchlist
+- My open trades
+- My pending orders
+- My closed trades
+- My trade history
+- My P/L calendar
+- My risk settings
+- My Ruby chat memory/context
+- My notifications
+- My one-click settings
+- My broker/bridge/account mode status
+- My account performance
+
+A user should never see global/shared master activity unless they are an admin viewing admin pages.
+
+3. Shared master should feel personal to each user
+For SHARED_MASTER_MT5 mode:
+- Do not show the user the full shared master account as if it belongs to everyone.
+- Show a user-specific account shell instead:
+  - personal assigned balance/equity if available
+  - personal available risk
+  - personal open exposure
+  - personal realized P/L
+  - personal unrealized P/L
+  - personal win/loss stats
+  - personal trade calendar
+  - personal active positions
+  - personal trade limits
+- Behind the scenes, map every master execution back to the correct user.
+- The user should feel like they are trading their own private account, while the operator/admin sees the shared master overview.
+
+4. Per-user shared master ledger
+Add or strengthen a ledger system that records every shared-master trade allocation per user.
+
+Ledger entries should include:
+- userId
+- commandId
+- positionId
+- masterExecutionId if available
+- sharedMasterAccountId
+- bridgeId
+- symbol
+- direction
+- order type
+- requested lot size
+- filled lot size
+- entry price
+- exit price if closed
+- stop loss
+- take profit
+- open time
+- close time
+- realized P/L
+- unrealized P/L
+- spread/fees/slippage if available
+- status
+- reservationId
+- risk allocation used
+- source page: scanner, chart, Ruby chat, manual ticket, etc.
+- createdAt / updatedAt
+
+The ledger must support partial fills, rejects, failed commands, cancelled orders, and needs-review states if the queue supports them.
+
+5. Personal P/L allocation
+For shared master trading:
+- Calculate each user’s P/L based only on their own mapped trades.
+- Do not show total master account P/L to normal users.
+- Do not mix P/L across users.
+- If the bridge gives only account-level changes, reconcile them back to user command/position mapping where possible.
+- If exact allocation is uncertain, mark the affected trade/ledger item as NEEDS_REVIEW instead of guessing.
+- Admin should see both:
+  - total shared master account performance
+  - per-user allocated performance
+
+6. Private trade history and P/L calendar
+Each user should have a personal trade history and performance calendar showing:
+- daily P/L
+- winning days
+- losing days
+- number of trades per day
+- best trade
+- worst trade
+- open P/L
+- closed P/L
+- win rate
+- average win/loss if available
+- symbols traded
+- account mode used: Demo / Personal MT5 / Shared Master MT5
+
+Users should only see their own data.
+
+7. User-specific open positions
+When a user views open positions:
+- Show only positions created by that user.
+- For shared master mode, derive the user’s position from ledger/command mapping, not from the entire MT5 master account.
+- If multiple users are in the same symbol, each user should only see their own entry, lot size, SL/TP, P/L, and status.
+- User A must not be able to close, edit, view, or affect User B’s position.
+
+8. Personal Ruby context
+Ruby should feel private to each user:
+- Ruby should only reference that user’s trades, risk settings, watchlist, scanner selections, chat history, and account mode.
+- Ruby should not mention other users, shared account totals, or global bridge activity to normal users.
+- Ruby can explain:
+  - “your trade”
+  - “your open risk”
+  - “your P/L today”
+  - “your active position”
+  - “your trade is queued”
+  - “your account is waiting for admin approval”
+- Ruby should not say a trade belongs to the user unless it is mapped to that user.
+
+9. Notifications must be private
+Each user should only receive notifications for their own:
+- trade opened
+- trade filled
+- trade rejected
+- trade closed
+- SL/TP update
+- queue status
+- Ruby warning
+- risk alert
+- admin approval status
+- bridge/account mode issue that affects them
+
+Admin may receive global/system notifications separately.
+
+10. Admin overview vs user view
+Separate normal user views from admin views.
+
+Normal users see:
+- only their own trading workspace
+- their own allocated balance/risk/P/L
+- their own positions and history
+- their own Ruby explanations
+
+Admins see:
+- shared master account overview
+- all user approvals
+- all user ledger allocations
+- queue health
+- bridge health
+- per-user P/L breakdown
+- reconciliation warnings
+- needs-review items
+
+11. Data safety and access control
+Add strict access checks so:
+- every user route filters by userId
+- every user API filters by userId
+- every trade action validates ownership
+- every ledger lookup validates ownership
+- every notification lookup validates ownership
+- every Ruby context lookup validates ownership
+- admin-only data is blocked from normal users
+
+Do not trust frontend userId. Use authenticated session userId on the backend.
+
+12. UI/UX feeling
+Clean up the user-facing experience so it feels personal:
+- Use “My Trades,” “My Performance,” “My Risk,” “My Watchlist,” “My Ruby Notes”
+- Avoid labels that expose shared infrastructure like “shared master account” to normal users unless needed for transparency.
+- Show simple status language:
+  - Connected
+  - Waiting for approval
+  - Trade pending
+  - Trade active
+  - Trade closed
+  - Needs review
+- Keep technical details in expandable sections only.
+
+13. Reconciliation safety
+If a shared master MT5 position cannot be confidently mapped to a user:
+- do not show it to any normal user
+- mark it as admin NEEDS_REVIEW
+- alert admin
+- prevent unsafe close/edit actions until resolved
+
+14. Tests
+Add or update tests for:
+- User A cannot see User B dashboard data
+- User A cannot see User B open trades
+- User A cannot see User B closed trades
+- User A cannot see User B P/L calendar
+- User A cannot see User B notifications
+- User A cannot ask Ruby about User B trade
+- User A cannot close/edit User B trade
+- shared master trade maps to the correct user ledger
+- two users trading same symbol receive separate P/L
+- admin can see per-user allocations
+- normal user cannot see shared master global totals
+- unmapped master execution becomes NEEDS_REVIEW
+- private Ruby context only uses current user data
+- no secrets exposed
+- no live command created during tests without full approval
+
+Return:
+- what was built
+- files changed
+- ledger model/table changes
+- user route/API names
+- admin route/API names
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired during this build

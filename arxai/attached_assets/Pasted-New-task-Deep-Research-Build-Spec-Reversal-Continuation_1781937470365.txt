@@ -1,0 +1,740 @@
+New task: Deep Research + Build Spec — Reversal, Continuation, Candlestick, Structure, Scalping, Consolidation Pattern Library.
+
+Goal:
+Upgrade ARX AI’s chart intelligence so Eleanor can identify and explain every meaningful buy, sell, scalp, reversal, continuation, consolidation, and no-trade structure across:
+- Forex
+- Gold / XAUUSD
+- US30 / indices
+- Deriv synthetics
+- Crypto if supported
+- Metals
+- High-volatility symbols
+
+This must feed:
+- Pattern Truth
+- Trendline Truth
+- Direction Truth
+- Pivot Truth
+- Entry Truth
+- OrderFlow Truth
+- Timing Truth
+- Scanner Truth
+- Chart Read
+- Scalp Builder
+- Backtesting
+- Forward Testing
+- Auto Bot evaluation
+- Eleanor reasoning block
+- Pattern outcome learning loop
+
+Core rule:
+Patterns are evidence, not permission.
+
+A pattern can:
+- explain
+- warn
+- confirm
+- invalidate
+- downgrade
+- classify market phase
+- guide entry/stop/target planning
+- improve strategy testing
+
+A pattern cannot:
+- create READY_NOW alone
+- bypass feed truth
+- bypass candle sufficiency
+- bypass Trade Health
+- bypass risk gates
+- bypass live execution gates
+- override stale/historical feed state
+
+Research requirement:
+Before building, create a researched pattern inventory from reputable sources:
+- classic technical analysis pattern references
+- candlestick pattern references
+- Bulkowski-style pattern performance research where available
+- CMT/technical-analysis education references where available
+- broker/forex educational references only for definitions, not guaranteed performance
+- internal ARX backtest/forward-test results once available
+
+Important:
+Do not treat any outside source as guaranteed profitability.
+Every external pattern claim must become a testable detector and be validated inside ARX using backtesting and forward testing.
+
+SECTION 1 — Pattern families to support
+
+Create a master Pattern Library grouped by function:
+
+A. Bearish reversal patterns
+- Shooting star
+- Bearish engulfing
+- Evening star
+- Evening doji star
+- Dark cloud cover
+- Hanging man
+- Bearish pin bar
+- Bearish outside bar
+- Bearish inside-bar breakdown
+- Three black crows
+- Tweezer top
+- Double top
+- Triple top
+- Head and shoulders
+- Rising wedge breakdown
+- Failed breakout / bull trap
+- Break of uptrend line
+- Uptrend channel breakdown
+- Lower high after trendline break
+- Change of character bearish
+- Market structure shift bearish
+- Liquidity sweep above resistance then reclaim failure
+- Exhaustion wick after extension
+- Blow-off top / parabolic exhaustion
+
+B. Bullish reversal patterns
+- Hammer
+- Inverted hammer
+- Bullish engulfing
+- Morning star
+- Morning doji star
+- Piercing line
+- Bullish pin bar
+- Bullish outside bar
+- Bullish inside-bar breakout
+- Three white soldiers
+- Tweezer bottom
+- Double bottom
+- Triple bottom
+- Inverse head and shoulders
+- Falling wedge breakout
+- Failed breakdown / bear trap
+- Break of downtrend line
+- Downtrend channel breakout
+- Higher low after trendline break
+- Change of character bullish
+- Market structure shift bullish
+- Liquidity sweep below support then reclaim
+- Exhaustion wick after selloff
+- Selling climax / capitulation bounce
+
+C. Continuation patterns
+- Bull flag
+- Bear flag
+- Bull pennant
+- Bear pennant
+- Ascending triangle
+- Descending triangle
+- Symmetrical triangle
+- Rectangle continuation
+- Range continuation
+- Breakout-retest continuation
+- Pullback to moving average / structure
+- Trendline bounce continuation
+- Channel continuation
+- Measured move continuation
+- Inside-bar continuation
+- Three methods continuation
+- Stair-step trend continuation
+- Higher-low continuation
+- Lower-high continuation
+
+D. Consolidation / no-trade structures
+- Range
+- Rectangle
+- Triangle forming
+- Compression
+- Low volatility squeeze
+- Chop zone
+- Inside-bar cluster
+- Doji cluster
+- Overlapping candles
+- Mid-range no-edge zone
+- Pre-news compression
+- Liquidity trap zone
+- Balanced order-flow zone
+- Pivot-to-pivot dead zone
+
+E. Scalping structures
+- Micro pullback
+- Break-and-retest scalp
+- Liquidity sweep scalp
+- Wick rejection scalp
+- Flag scalp
+- Opening impulse scalp
+- Session breakout scalp
+- Range-edge bounce scalp
+- VWAP/mean reversion scalp if data exists
+- Momentum continuation scalp
+- Failed breakout scalp
+- Exhaustion fade scalp
+- ATR extension scalp warning
+- Too-late chase detector
+- Spread/liquidity block
+- Candle-close wait detector
+
+F. Trend structures
+- Uptrend
+- Downtrend
+- Range
+- Higher highs / higher lows
+- Lower highs / lower lows
+- Break of structure
+- Change of character
+- Market structure shift
+- Trendline respect
+- Trendline break
+- Trendline retest
+- Trendline reclaim
+- Channel up
+- Channel down
+- Channel break
+- Acceleration trend
+- Flattening trend
+- Exhausted trend
+
+G. Support/resistance structures
+- Horizontal support
+- Horizontal resistance
+- Support flip to resistance
+- Resistance flip to support
+- Round-number level
+- Prior day high/low
+- Prior week high/low
+- Session high/low
+- Pivot point
+- R1/R2/R3
+- S1/S2/S3
+- Supply zone
+- Demand zone
+- Liquidity pool
+- Equal highs
+- Equal lows
+- Untested level
+- Repeated rejection level
+
+H. Gold / XAUUSD specific behavior
+Gold should emphasize:
+- news sensitivity
+- USD strength/weakness
+- yield/Fed-sensitive volatility
+- sharp wick reversals
+- liquidity sweeps
+- session behavior around London/NY
+- high ATR expansion
+- strong support/resistance respect
+- stop-distance adjustments
+- spread/slippage caution
+- exhaustion after fast moves
+
+I. US30 / indices specific behavior
+US30 should emphasize:
+- New York session timing
+- opening range behavior
+- volatility spikes
+- news/event sensitivity
+- trend days vs chop days
+- pullback continuation
+- gap behavior if available
+- liquidity sweeps near prior highs/lows
+- high ATR risk
+- fast reversal warnings
+
+J. Forex specific behavior
+Forex should emphasize:
+- session overlaps
+- pair-specific volatility
+- spread conditions
+- news/calendar risk
+- pivot behavior
+- London breakout
+- NY continuation/reversal
+- support/resistance flips
+- trendline retests
+- false breakouts around liquidity levels
+
+K. Deriv synthetics specific behavior
+Synthetics should emphasize:
+- no traditional macro news dependence
+- continuous market behavior
+- volatility-index-specific behavior
+- Boom/Crash spike logic
+- Step/Jump behavior
+- synthetic feed truth
+- proxy order-flow only unless true depth exists
+- ATR/volatility-normalized stops
+- do not apply forex news rules directly
+- pattern stats must be separated from forex/gold/indices
+
+SECTION 2 — Shooting Star detector
+
+Add a dedicated ShootingStarTruth detector.
+
+Definition:
+A shooting star is a bearish reversal candle that appears after an uptrend or bullish move. It has:
+- small real body near the candle low
+- long upper wick
+- little or no lower wick
+- price pushed higher intrabar but closed near the low
+- strongest near resistance, pivot, upper channel, or after extension
+
+Required measurements:
+- bodySize
+- upperWickSize
+- lowerWickSize
+- candleRange
+- upperWickToBodyRatio
+- bodyPositionPercent
+- priorTrendStrength
+- distanceFromSupportResistance
+- ATR extension
+- volume/tick-volume spike if available
+- next candle confirmation
+
+ShootingStarTruthVerdict:
+- detected: boolean
+- status: forming / unconfirmed / confirmed / failed
+- locationQuality: poor / fair / good / strong
+- priorTrend: uptrend / range / downtrend / unknown
+- upperWickRatio
+- bodyNearLow: boolean
+- nearResistance: boolean
+- nearPivotResistance: boolean
+- exhaustionContext: boolean
+- confirmationLevel
+- invalidationLevel
+- bearishBias: none / weak / moderate / strong
+- warnings[]
+
+Rules:
+- Do not classify shooting star as valid bearish reversal without prior uptrend or bullish push.
+- Do not confirm from candle shape alone.
+- Confirm only if next candle closes below shooting star low or price breaks supporting structure.
+- Invalidate if price breaks above shooting star high and holds.
+- Strongest if at resistance, R1/R2/R3, upper trendline, prior high, or after ATR extension.
+- Weak if mid-range.
+- Weak if feed is stale/historical.
+- Weak if lower wick is large.
+- Weak if candle body is not near the low.
+- Weak if there is no room to target.
+- Mark too-late if price already dumped far from the trigger before entry.
+
+Eleanor example:
+Decision: WAIT / Conditional SELL
+Why: A shooting star formed after an upward push, but confirmation is still needed.
+Evidence:
+- Candlestick: Shooting star unconfirmed.
+- Location: Near resistance/R1.
+- Trend: Prior bullish push is extended.
+- Timing: Wait for next candle close below the shooting star low.
+Confirmation: Sell thesis strengthens below [level].
+Invalidation: Cancel if price closes above the shooting star high.
+Risk Note: Do not short the wick alone without confirmation.
+
+SECTION 3 — Detector contract
+
+Every detector must output the same base contract:
+
+PatternDetection:
+- id
+- patternName
+- family:
+  - bullish_reversal
+  - bearish_reversal
+  - continuation
+  - consolidation
+  - scalp
+  - structure
+  - no_trade
+  - exhaustion
+- symbol
+- assetClass:
+  - forex
+  - synthetic
+  - gold
+  - index
+  - crypto
+  - metal
+  - unknown
+- timeframe
+- detectedAt
+- status:
+  - forming
+  - unconfirmed
+  - confirmed
+  - failed
+  - invalidated
+  - exhausted
+  - too_late
+- direction:
+  - buy
+  - sell
+  - wait
+  - no_trade
+  - mixed
+- confidence
+- quality
+- confirmationLevel
+- invalidationLevel
+- entryZone
+- stopZone
+- targetZones[]
+- targetRoomStatus
+- riskRewardEstimate
+- supportingEvidence[]
+- conflictingEvidence[]
+- warnings[]
+- snapshot
+
+SECTION 4 — Reversal logic
+
+A reversal is not valid just because a candle appears.
+
+Reversal requires at least one of:
+- prior trend exhaustion
+- failure at major level
+- break of structure
+- trendline break
+- lower high after bullish trend
+- higher low after bearish trend
+- liquidity sweep and reclaim
+- candle confirmation
+- volume/order-flow support if available
+- pivot rejection
+- support/resistance flip
+
+Reversal statuses:
+- early warning
+- forming
+- conditional
+- confirmed
+- failed
+- too_late
+
+Rules:
+- Early reversal warning cannot create ready status.
+- Confirmed reversal still needs entry, timing, risk, and feed approval.
+- Reversal against strong HTF trend should be downgraded.
+- Reversal into nearby support/resistance should be downgraded.
+- Reversal after full target move should be too_late.
+
+SECTION 5 — Continuation logic
+
+A continuation pattern is not valid until the trend resumes.
+
+Continuation requires:
+- existing trend
+- pause/consolidation
+- controlled pullback or compression
+- breakout/retest or continuation trigger
+- target room
+- no major contradiction from higher timeframe
+- timing approval
+
+Continuation statuses:
+- forming
+- waiting_breakout
+- waiting_retest
+- confirmed
+- failed
+- exhausted
+
+Rules:
+- Triangle/flag/pennant forming = wait.
+- Breakout wick only = unconfirmed.
+- Clean close + retest = stronger.
+- Failed breakout = trap/failure.
+- Continuation into major opposing level = downgraded.
+- Continuation after extended move = exhaustion warning.
+
+SECTION 6 — Consolidation logic
+
+Consolidation should usually reduce trade aggression.
+
+Consolidation detector should identify:
+- range high
+- range low
+- midpoint
+- compression
+- candle overlap
+- lower ATR
+- inside-bar cluster
+- repeated failed breaks
+- balanced pressure
+
+Consolidation statuses:
+- range
+- compression
+- breakout_pending
+- false_break
+- confirmed_breakout
+- no_edge
+
+Rules:
+- Mid-range = no edge.
+- Range edge = possible bounce setup only with confirmation.
+- Breakout requires close outside range.
+- Failed breakout returns to range or trap.
+- Compression requires wait for expansion.
+- No directional bias while price is trapped inside range.
+
+SECTION 7 — Buy/Sell/Scalp classification
+
+Every setup should classify the trade idea:
+
+TradeReadClassification:
+- buy_candidate
+- sell_candidate
+- scalp_candidate
+- swing_candidate
+- reversal_candidate
+- continuation_candidate
+- consolidation_no_trade
+- wait_for_confirmation
+- too_late
+- blocked
+
+Classification rules:
+- Buy candidate requires bullish direction + valid location + entry confirmation.
+- Sell candidate requires bearish direction + valid location + entry confirmation.
+- Scalp candidate requires short-term timing + tight invalidation + spread/liquidity approval.
+- Consolidation no-trade if price is mid-range or choppy.
+- Too late if entry trigger is far behind current price.
+- Blocked if feed/trade health/risk fails.
+
+SECTION 8 — Asset-specific adaptation
+
+Do not treat all symbols the same.
+
+Create AssetPatternProfile:
+- assetClass
+- volatilityProfile
+- sessionProfile
+- spreadProfile
+- patternReliabilityOverrides
+- defaultATRMultiplier
+- minimumCandleCount
+- newsSensitivity
+- orderFlowMode:
+  - true
+  - proxy
+  - unavailable
+- warningRules[]
+
+Forex:
+- use session/calendar/spread heavily
+- pivots and support/resistance important
+- false breakouts around liquidity common
+- use pair-specific volatility
+
+Gold:
+- use ATR expansion and news sensitivity heavily
+- wick rejection and liquidity sweeps important
+- avoid tight stops during high volatility
+- downgrade before/after major USD news unless strategy allows it
+
+US30/indices:
+- session timing critical
+- opening range important
+- trend day vs chop day classification
+- high volatility risk controls
+- avoid treating premarket/low liquidity the same as NY session
+
+Synthetics:
+- no traditional news/calendar dependency
+- separate pattern stats by synthetic symbol
+- use volatility-normalized logic
+- Boom/Crash spike-specific detectors later
+- proxy order-flow only unless provider gives real depth
+- do not import forex assumptions blindly
+
+SECTION 9 — Research database
+
+Create PatternResearchSource model:
+- id
+- sourceName
+- sourceType:
+  - book
+  - website
+  - internal_backtest
+  - internal_forward_test
+  - academic
+  - broker_education
+- patternName
+- assetClass
+- timeframe
+- claimedBehavior
+- confidenceInSource
+- notes
+- citationUrl optional
+- createdAt
+
+Create PatternReliabilityStats:
+- patternName
+- assetClass
+- symbol
+- timeframe
+- session
+- sampleSize
+- winRate
+- averageR
+- profitFactor
+- falseBreakRate
+- confirmationSuccessRate
+- retestSuccessRate
+- exhaustionFailureRate
+- lastUpdated
+
+Important:
+External sources seed the detector library.
+Internal backtesting/forward testing becomes the source of truth for ARX reliability.
+
+SECTION 10 — Scanner integration
+
+Scanner rows should show:
+- detected pattern
+- family
+- status
+- direction
+- location quality
+- confirmation needed
+- invalidation level
+- target room
+- reliability stats
+- asset-specific warning
+
+Examples:
+Shooting Star
+Family: Bearish reversal
+Status: Unconfirmed
+Direction: Conditional sell
+Location: Near R1/resistance
+Confirmation: Close below candle low
+Invalidation: Break above candle high
+Target room: Limited/Enough
+Reliability: Not enough ARX sample yet
+
+Bull Flag
+Family: Continuation
+Status: Waiting breakout
+Direction: Conditional buy
+Confirmation: Close above flag high + retest hold
+Invalidation: Break below flag low
+Warning: Extended move, check exhaustion
+
+Consolidation
+Family: No-trade
+Status: Mid-range chop
+Direction: Wait
+Confirmation: Breakout or range-edge reaction
+Warning: No edge inside range
+
+SECTION 11 — Eleanor reasoning block
+
+Eleanor must explain every pattern like this:
+
+Decision:
+Why:
+Evidence:
+- Pattern:
+- Structure:
+- Candlestick:
+- Trendline:
+- Pivot/SR:
+- Order Flow:
+- Timing:
+- Asset Context:
+- Risk:
+Confirmation:
+Invalidation:
+Trader Test:
+Risk Note:
+
+For shooting star:
+Decision: Conditional SELL / WAIT
+Why: Shooting star shows sellers rejected higher prices, but confirmation is required.
+Confirmation: Sell only after close below the shooting star low or failed retest.
+Invalidation: Cancel if price closes above the wick high.
+Risk Note: A shooting star in the middle of a range is weaker than one at resistance.
+
+SECTION 12 — Backtesting + forward testing
+
+Every detector must be testable.
+
+Backtest:
+- detect pattern historically
+- enter only according to confirmation rules
+- record win/loss/R
+- compare immediate entry vs confirmation entry
+- compare with/without pivot filter
+- compare with/without timing filter
+- compare with/without trendline filter
+
+Forward test:
+- record pattern when it appears
+- record whether confirmation happened
+- record if setup expired
+- record if entry was too late
+- record final result
+- update PatternReliabilityStats
+
+Do not promote any pattern from external research alone.
+Promotion requires ARX internal testing.
+
+SECTION 13 — Required tests
+
+Add detector tests:
+1. Shooting star requires prior uptrend.
+2. Shooting star requires long upper wick and small body near low.
+3. Shooting star is unconfirmed until next candle confirmation.
+4. Shooting star fails if price closes above wick high.
+5. Shooting star at resistance scores higher than mid-range shooting star.
+6. Hammer requires prior downtrend.
+7. Engulfing requires true body engulf.
+8. Morning/evening star require three-candle structure.
+9. Triangle forming remains wait.
+10. Triangle breakout requires close beyond boundary.
+11. Flag continuation requires prior impulse.
+12. Flag failure invalidates continuation thesis.
+13. Rectangle mid-range is no-trade.
+14. Range edge requires confirmation.
+15. Trendline break requires close, not wick only.
+16. Support/resistance flip requires retest behavior.
+17. Consolidation suppresses aggressive trade labels.
+18. Scalp setup requires timing/spread approval.
+19. Synthetic pattern stats are separate from forex stats.
+20. Gold high-volatility warning downgrades tight-stop setups.
+21. US30 low-liquidity timing warning downgrades scalp setup.
+22. Backtest success cannot create READY_NOW alone.
+23. Forward-test success cannot bypass live gates.
+24. Pattern cannot override stale/feed-limited status.
+25. Eleanor reasoning includes confirmation and invalidation.
+
+Validation:
+- pattern detector tests
+- candlestick detector tests
+- reversal tests
+- continuation tests
+- consolidation tests
+- asset-profile tests
+- pattern reliability tests
+- scanner truth cap tests
+- Eleanor reasoning tests
+- backtest/forward-test integration tests
+- typecheck:ci
+- ci-guards
+- targeted-tests
+- safety-integration alone
+- architect code review
+
+Hard boundary:
+Do not touch live execution gates.
+Do not touch MT5 bridge execution.
+Do not touch broker dispatch.
+Do not touch kill switches.
+Do not touch owner/admin permissions.
+Do not bypass risk rules.
+
+This upgrade is read-quality, strategy-quality, testing-quality, and explanation-quality only.
+Patterns may support or downgrade a thesis.
+They must never grant live trade permission by themselves.

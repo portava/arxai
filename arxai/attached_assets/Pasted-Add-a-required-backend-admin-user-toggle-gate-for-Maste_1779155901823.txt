@@ -1,0 +1,86 @@
+Add a required backend/admin user toggle gate for Master Bridge Live.
+
+Even if the master bridge is connected, open, and live-enabled, users must NOT be able to randomly join and start trading.
+
+Master live trading must require explicit operator/admin approval per user.
+
+Add user-level backend controls:
+
+approved_for_master_live = false by default
+master_live_trading_enabled = false by default
+master_live_approved_by
+master_live_approved_at
+master_live_disabled_by
+master_live_disabled_at
+master_live_status:
+- NOT_APPROVED
+- APPROVED
+- SUSPENDED
+- DISABLED
+- RISK_LOCKED
+
+Admin must manually select/toggle each user before they can access master live trading.
+
+Rules:
+1. New users default to NOT_APPROVED.
+2. Users cannot see or access master live trade buttons unless approved.
+3. Users cannot place master live trades unless:
+   - approved_for_master_live=true
+   - master_live_trading_enabled=true
+   - user accepted live risk disclosure
+   - user has live risk settings configured
+   - user is not suspended/risk locked
+4. If user is not approved, block with:
+   USER_NOT_APPROVED_FOR_MASTER_LIVE
+5. If user approval toggle is off, block with:
+   USER_MASTER_LIVE_TOGGLE_OFF
+6. If user is suspended, block with:
+   USER_MASTER_LIVE_SUSPENDED
+7. If user is risk locked, block with:
+   USER_MASTER_LIVE_RISK_LOCKED
+
+Admin dashboard must include a “Master Live User Access” section showing:
+- user id
+- name/email
+- approval status
+- master live toggle on/off
+- allowed symbols
+- max lot
+- daily loss limit
+- stop loss required
+- scanner live enabled
+- last trade time
+- current exposure
+- daily P/L
+- suspend/disable button
+- audit log
+
+Add audit logging for every toggle:
+- admin user id
+- target user id
+- action: APPROVED / ENABLED / DISABLED / SUSPENDED / RISK_LOCKED / RESET
+- timestamp
+- reason/notes
+
+Market Scanner:
+- show live trading locked unless the user is approved and toggled on
+- message:
+  “Master live trading requires admin approval.”
+
+Trade page:
+- hide or disable master live ticket for unapproved users
+- show:
+  “Your account is not approved for master live trading.”
+
+Server-side enforcement:
+Do not rely on frontend hiding.
+Every master live command must check the backend user toggle before command creation and before dispatch.
+
+Acceptance proof:
+- Random/new user cannot access master live trading.
+- Approved user with toggle off cannot trade.
+- Approved user with toggle on can access ticket only if all other live gates pass.
+- Suspended/risk-locked user is blocked.
+- Admin can approve/disable/suspend users.
+- All approval/toggle actions are audit logged.
+- No user can bypass this through API calls.

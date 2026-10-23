@@ -1,0 +1,374 @@
+BUILD PHASE — Production Launch Readiness Checklist + Environment Lockdown
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Prepare ARX AI for a safe production-style launch environment by locking down environment variables, secrets, live execution flags, admin access, database migrations, feature flags, test/prod separation, deployment checks, logs, monitoring, rollback readiness, and no-live-command safety evidence.
+
+Important:
+This phase should NOT turn on public live trading.
+This phase should make sure production is locked down so live execution cannot accidentally happen unless every legal, admin, user, bridge, risk, disclosure, and safety gate is intentionally approved.
+
+1. Inspect current environment/deployment setup first
+Inspect:
+- Replit environment variables
+- production/staging/dev mode checks
+- database connection handling
+- migration system
+- auth/session secrets
+- OpenAI/Ruby keys
+- market/news/calendar API keys
+- MT5 bridge tokens
+- bridge base URLs
+- live execution flags
+- admin bootstrap config
+- feature flags
+- logging config
+- CI/test scripts
+- health check routes
+- deployment scripts
+- current README/docs if any
+
+Do not create duplicate config systems.
+
+2. Environment separation
+Create or harden clear environment modes:
+
+- development
+- test
+- staging
+- production
+
+Each mode should have explicit behavior.
+
+Development:
+- demo allowed
+- mock services allowed only when clearly marked
+- live execution disabled by default
+
+Test:
+- no real live commands
+- mock bridge only
+- seeded test data allowed only inside test mode
+
+Staging:
+- production-like
+- demo/sandbox only unless explicitly approved
+- live execution disabled by default
+- admin-only testing
+
+Production:
+- no mock user-facing data
+- no fake trades
+- no fake balances
+- no debug panels for normal users
+- no raw errors
+- live execution disabled unless all required flags and approvals pass
+
+3. Live execution environment lockdown
+Verify and enforce:
+
+- ARX_LIVE_BROKER_EXECUTION_ENABLED defaults false
+- shared master live disabled by default
+- one-click live disabled by default
+- global one-click live disable respected
+- close-only / kill switch states respected
+- production shared master live blocked unless compliance approval flag is true
+- production shared master live blocked unless admin explicitly approves user
+- production live blocked if disclosure acceptance missing
+- production live blocked if bridge mapping missing
+- production live blocked if bridge health unknown/stale
+- production live blocked if EA is read-only or live flag false
+- production live blocked if queue paused or force-review active
+- production live blocked if allocation/risk profile missing
+- production live blocked if risk/exposure/cooldown fails
+
+No live command should be created during this phase.
+
+4. Required environment variables checklist
+Create or update a safe startup check that reports missing required env vars without revealing their values.
+
+Check for categories like:
+
+Core:
+- NODE_ENV / APP_ENV
+- DATABASE_URL
+- SESSION_SECRET
+- APP_BASE_URL
+
+AI/Ruby:
+- OpenAI/API key config if used
+- model config if used
+
+Market data:
+- market data provider keys
+- news provider keys
+- economic calendar keys if used
+
+Bridge:
+- MT5 bridge token/secret
+- allowed bridge base URL
+- bridge signing secret if used
+
+Admin:
+- bootstrap admin email/id if used
+- admin role config
+
+Safety:
+- ARX_LIVE_BROKER_EXECUTION_ENABLED
+- global live kill switch state
+- shared master compliance approval flag
+- one-click global disable flag
+
+The startup check should show:
+- present / missing
+- required / optional
+- environment scope
+- safe setup note
+
+Never print actual secret values.
+
+5. Secret masking and leak protection
+Verify/fix:
+- no secrets in frontend bundle
+- no secrets in API responses
+- no secrets in logs
+- no secrets in Ruby prompts
+- no secrets in audit exports
+- no secrets in Replit console output from health checks
+- bridge evidence masking uses the centralized masking chokepoint
+- CI/probes fail if a route exposes bridge tokens, API keys, session secrets, token hashes, account credentials, or raw bridge payloads
+
+6. Production startup guard
+Add a production startup guard that blocks unsafe startup or shows hard warnings if:
+
+- SESSION_SECRET missing or weak
+- DATABASE_URL missing
+- admin auth not configured
+- live flag enabled without compliance approval
+- live flag enabled without kill switch system
+- live flag enabled without disclosure enforcement
+- live flag enabled without audit logging
+- live flag enabled without bridge secret masking
+- live flag enabled in test/dev accidentally
+- mock data is enabled in production
+- debug mode is enabled in production
+
+Do not expose secret values.
+
+7. Feature flag checklist
+Create or verify feature flags for:
+
+- demo trading
+- personal MT5 connection
+- personal MT5 live execution
+- shared master access request
+- shared master live execution
+- one-click demo
+- one-click live
+- Ruby voice
+- Ruby voice trade commands
+- scanner-to-trade
+- close-only mode
+- force-review mode
+- audit export
+- reconciliation center
+- admin dashboard
+- compliance panel
+
+Feature flags must fail closed when missing or invalid.
+
+8. Database migration and backup readiness
+Inspect and harden:
+
+- migration scripts
+- schema drift checks
+- required tables present
+- audit log table present
+- command queue tables present
+- ledger tables present
+- account shell/risk profile tables present
+- disclosure acceptance tables present
+- kill switch/operator control tables present
+- reconciliation tables present if used
+- rollback notes
+- backup/export plan if available
+
+Do not run destructive migrations without confirmation.
+Do not wipe production data.
+
+9. Health checks
+Create or improve safe health check routes:
+
+Public/basic health:
+- app running
+- database reachable, without details
+- no secrets
+
+Admin health/readiness:
+- database status
+- queue status
+- bridge heartbeat status
+- Ruby service status
+- market data status
+- audit logging status
+- live readiness blockers
+- env checklist summary
+- no-live-command counter if available
+
+Normal users must not access admin readiness details.
+
+10. Deployment checklist page
+Add an admin-only Production Readiness Checklist page showing:
+
+- Environment mode
+- Database connected
+- Migrations current
+- Auth/session configured
+- Admin access configured
+- Secrets present and masked
+- Ruby configured
+- Market/news/calendar APIs configured
+- Bridge configured
+- Bridge heartbeat
+- Live flag status
+- Kill switches active/ready
+- One-click default off
+- Compliance review status
+- Disclosure version active
+- Audit logging active
+- Reconciliation center active
+- No mock data in production
+- No-live-command evidence
+- Tests passing status if available
+- Last deployment/check timestamp
+- Remaining blockers
+
+11. Logging and monitoring readiness
+Add or verify safe logs for:
+
+- app startup
+- env readiness summary
+- auth/admin access failures
+- bridge heartbeat stale
+- queue stuck/stale
+- reconciliation issues
+- kill switch changes
+- live command blocked
+- no-live-command QA evidence
+- secret masking probe failures
+
+Logs must be useful but not expose secrets.
+
+12. Rate limit and abuse protections
+Inspect/add basic protections for:
+
+- login/admin login attempts
+- Ruby chat requests
+- Ruby voice transcript submits
+- trade ticket submits
+- trade command submit
+- bridge callbacks
+- admin kill switch APIs
+- audit export APIs
+- reconciliation APIs
+
+Use existing middleware if available.
+Do not overbuild.
+
+13. Error handling lockdown
+Ensure production errors:
+- show clean user-facing messages
+- do not show stack traces
+- do not show raw SQL errors
+- do not show raw bridge payloads
+- do not show env variable names with values
+- are logged safely for admin review
+
+14. Public launch blockers
+Add a clear admin-only launch blocker checklist.
+
+Block public/live launch if:
+- legal/compliance review incomplete
+- disclosures missing or outdated
+- live safety tests failing
+- no kill switch
+- no audit logging
+- no reconciliation workflow
+- bridge masking not verified
+- admin auth not locked
+- live flag enabled accidentally
+- mock data visible
+- open critical NEEDS_REVIEW items exist
+- arx_live_commands count changed during QA unexpectedly
+
+15. Ruby production readiness awareness
+Ruby should be able to explain:
+
+For normal users:
+- current account status
+- why live trading is disabled
+- why approval/disclosure/allocation is needed
+- that production safety gates are active
+
+For admins:
+- launch readiness blockers
+- environment readiness
+- live flag state
+- kill switch state
+- missing configuration categories
+- no-live-command evidence
+
+Ruby must not expose secrets or raw config values.
+
+16. Audit logs
+Add audit logs for:
+- readiness checklist viewed
+- environment readiness check run
+- startup guard warning generated
+- deployment checklist exported/viewed
+- launch blocker detected
+- secret masking probe run
+- admin health check viewed
+- non-admin attempted admin readiness access
+- production live blocked by environment lock
+- feature flag changed
+- config readiness changed
+
+Do not log secrets.
+
+17. Tests
+Add or update tests for:
+- production defaults live execution disabled
+- missing/invalid live flag fails closed
+- shared master live blocked when compliance flag false
+- live blocked when disclosure missing
+- live blocked when admin approval missing
+- live blocked when allocation/risk missing
+- live blocked when bridge unhealthy
+- one-click live defaults off
+- feature flags fail closed
+- mock data hidden in production
+- health check public route does not expose internals
+- admin readiness route protected
+- non-admin cannot access production readiness dashboard
+- env checklist masks secret values
+- error responses do not show stack traces in production
+- audit export remains protected
+- secret leak probes pass
+- no live command created during tests
+- arx_live_commands count stays unchanged
+
+Return:
+- what was built
+- files changed
+- environment modes found/added
+- startup guard behavior
+- feature flags added/verified
+- readiness checklist route
+- health check routes
+- tests added/run
+- manual deployment checklist
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

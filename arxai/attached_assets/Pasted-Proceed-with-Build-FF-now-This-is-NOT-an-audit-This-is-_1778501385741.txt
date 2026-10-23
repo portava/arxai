@@ -1,0 +1,374 @@
+Proceed with Build FF now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build FF = Safe Paper Autopilot / Sniper Practice Loop.
+
+Goal:
+Create a controlled paper-only autopilot loop that lets the AI practice finding high-quality trade windows, execute simulated paper trades through Build EE, monitor open paper trades, close them when SL/TP/manual conditions happen, trigger Build BB auto-debrief, and feed Build CC learning.
+
+Important:
+Build FF must NOT place live trades.
+Build FF must NOT call MT5 live execution.
+Build FF must NOT enable canPlaceTrades.
+Build FF must NOT bypass Build AA, BB, CC, DD, or EE safety rules.
+Build FF must run in PAPER mode only.
+
+Current system:
+- Build AA = central trade decision orchestrator.
+- Build BB = closed-trade auto-debrief.
+- Build CC = learning feedback engine.
+- Build DD = read-only market data layer.
+- Build EE = paper execution engine.
+- Build FF must now automate the safe paper practice loop.
+
+Core requirement:
+Create a controlled autopilot cycle that does this:
+
+1. Load allowed paper symbols/watchlist.
+2. Fetch read-only market data from Build DD.
+3. Run Build AA decision evaluation.
+4. Apply extra sniper-entry filters.
+5. If approved, send decision to Build EE for paper execution.
+6. Monitor existing paper trades through EE monitor.
+7. Close paper trades when SL/TP/manual logic triggers.
+8. Let Build BB auto-debrief closed trades.
+9. Let Build CC process learning payloads.
+10. Log the entire cycle.
+
+Build FF tasks:
+
+1. Inspect existing background/task/scheduler structure
+Find if the app already has:
+- cron jobs
+- scheduled tasks
+- loop services
+- queue workers
+- paper trade monitor
+- settings storage
+- watchlist storage
+- logs
+
+Do not duplicate usable systems.
+Integrate cleanly.
+
+2. Create Paper Autopilot Service
+
+Create a service that can run one controlled cycle:
+
+{
+  autopilot_cycle_id,
+  mode: "PAPER_ONLY",
+  status: "COMPLETED" | "SKIPPED" | "FAILED",
+  started_at,
+  finished_at,
+  symbols_checked,
+  decisions_created,
+  paper_trades_opened,
+  paper_trades_rejected,
+  paper_trades_monitored,
+  paper_trades_closed,
+  debriefs_triggered,
+  learning_events_triggered,
+  warnings,
+  errors
+}
+
+3. Add autopilot settings
+
+Create safe settings with defaults:
+
+{
+  enabled: false,
+  mode: "PAPER_ONLY",
+  symbols: ["Volatility 75 Index"],
+  timeframes: ["M5"],
+  interval_seconds: 60,
+  max_cycles_per_start: 10,
+  max_open_paper_trades: 3,
+  max_same_symbol_trades: 1,
+  max_daily_paper_loss: 300,
+  min_confidence: 70,
+  max_risk_score: 40,
+  require_trade_window_good: true,
+  require_market_data_good: true,
+  require_learning_not_blocked: true,
+  require_sniper_score: true,
+  min_sniper_entry_score: 75,
+  cooldown_minutes_after_trade: 15,
+  cooldown_minutes_after_loss: 30,
+  paper_only: true,
+  live_trading_allowed: false
+}
+
+Hard rule:
+live_trading_allowed must always remain false in Build FF.
+
+4. Create sniper-entry filter
+
+Build FF should not paper-execute every AA approval.
+
+Create an additional sniper filter that scores:
+
+- spread quality
+- volatility stability
+- liquidity/session quality
+- candle confirmation
+- risk/reward quality
+- distance to stop loss
+- distance to take profit
+- recent loss/revenge-trade cooldown
+- same-symbol conflict
+- learning/mistake warnings from CC
+- trade window status from AA
+- market data quality from DD
+
+Return:
+
+{
+  sniperEntryScore,
+  status: "PASS" | "WAIT" | "REJECT",
+  reasons,
+  blockers,
+  warnings
+}
+
+Only PASS can execute through EE.
+
+5. Controlled loop behavior
+
+Build FF should support:
+
+- run one cycle manually
+- start controlled paper loop
+- stop controlled paper loop
+- check status
+- update settings
+- view logs
+
+No uncontrolled infinite loop.
+
+If start is called:
+- run only up to max_cycles_per_start
+- respect interval_seconds
+- stop if enabled becomes false
+- stop if max daily paper loss is hit
+- stop if too many errors occur
+- stop if live trading is detected
+- stop if safety status is unsafe
+
+6. Paper-only execution
+
+When a symbol/timeframe passes:
+- call Build AA to create decision
+- if decision.shouldTrade is false, log HOLD and move on
+- if decision passes AA but fails sniper filter, log WAIT/REJECT
+- if decision passes sniper filter, call Build EE paper execution endpoint/service
+- never auto-execute live
+- never call broker order functions
+
+7. Paper monitoring inside each cycle
+
+Each cycle should:
+- fetch open paper trades
+- call Build EE monitor
+- update unrealized P&L
+- detect SL/TP hit
+- close paper trades if needed
+- allow BB to trigger auto-debrief
+- allow CC to process learning
+
+8. Add database tables if needed
+
+Additive only.
+
+autopilot_settings:
+- id
+- enabled
+- mode
+- symbols jsonb
+- timeframes jsonb
+- interval_seconds
+- max_cycles_per_start
+- max_open_paper_trades
+- max_same_symbol_trades
+- max_daily_paper_loss
+- min_confidence
+- max_risk_score
+- min_sniper_entry_score
+- cooldown_minutes_after_trade
+- cooldown_minutes_after_loss
+- paper_only
+- live_trading_allowed
+- created_at
+- updated_at
+
+autopilot_cycles:
+- id
+- autopilot_cycle_id
+- mode
+- status
+- started_at
+- finished_at
+- symbols_checked
+- decisions_created
+- paper_trades_opened
+- paper_trades_rejected
+- paper_trades_monitored
+- paper_trades_closed
+- debriefs_triggered
+- learning_events_triggered
+- warnings jsonb
+- errors jsonb
+- created_at
+
+autopilot_cycle_logs:
+- id
+- autopilot_cycle_id
+- symbol
+- timeframe
+- step
+- status
+- message
+- details jsonb
+- created_at
+
+autopilot_symbol_cooldowns:
+- id
+- symbol
+- action
+- reason
+- cooldown_until
+- last_trade_id
+- last_decision_id
+- created_at
+- updated_at
+
+9. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+POST /api/paper-autopilot/demo
+POST /api/paper-autopilot/run-once
+POST /api/paper-autopilot/start
+POST /api/paper-autopilot/stop
+GET /api/paper-autopilot/status
+GET /api/paper-autopilot/settings
+POST /api/paper-autopilot/settings
+GET /api/paper-autopilot/cycles?limit=20
+GET /api/paper-autopilot/logs?limit=50
+POST /api/paper-autopilot/sniper-check
+
+10. Required test scenarios
+
+A. Run one cycle with fallback/read-only DD data.
+B. AA returns HOLD and FF does not execute.
+C. AA returns valid trade but sniper filter returns WAIT and FF does not execute.
+D. AA returns valid trade and sniper filter PASS creates paper trade through EE.
+E. Duplicate decision does not create duplicate paper trade.
+F. Open paper trades are monitored each cycle.
+G. TP hit closes paper trade and triggers BB.
+H. SL hit closes paper trade and triggers BB.
+I. BB creates auto-debrief.
+J. CC processes learning payload.
+K. Daily paper loss limit stops autopilot.
+L. Same-symbol conflict blocks new paper trade.
+M. Cooldown after loss blocks revenge trade.
+N. Start loop respects max_cycles_per_start.
+O. Stop endpoint stops loop safely.
+P. Live-trade isolation proof.
+
+11. Logs
+
+Every FF cycle should log:
+- cycle started
+- settings loaded
+- symbol checked
+- market data received from DD
+- AA decision created
+- sniper filter result
+- EE paper execution result
+- paper monitor result
+- paper close result
+- BB debrief result
+- CC learning result
+- cooldown applied
+- cycle completed/skipped/failed
+- any safety shutdown reason
+
+12. Safety rules
+
+Hard safety:
+- PAPER_ONLY mode only.
+- live_trading_allowed must remain false.
+- Never call live broker execution.
+- Never call MT5 live order placement.
+- Never enable canPlaceTrades.
+- Never bypass AA safety blockers.
+- Never bypass EE eligibility rules.
+- Never run uncontrolled infinite loops.
+- Never execute if AA says HOLD.
+- Never execute if sniper filter does not PASS.
+- Never execute if daily paper loss limit is hit.
+- Never execute if same-symbol conflict exists unless settings allow.
+- Never execute if cooldown is active.
+- Never expose API secrets.
+
+13. Preserve existing behavior
+
+Do not break:
+- Build AA decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- manual debrief
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- existing frontend routes
+
+Acceptance criteria:
+- FF can run one controlled paper-only cycle.
+- FF can start/stop a controlled paper-only loop.
+- FF scans symbols and timeframes.
+- FF calls AA for decisions.
+- FF uses sniper filter before paper execution.
+- FF calls EE only for valid paper trades.
+- FF monitors open paper trades.
+- FF allows closed paper trades to trigger BB.
+- FF allows BB to hand learning to CC.
+- FF logs every cycle.
+- FF never places live trades.
+- App typechecks/builds.
+- Raw outputs prove the full paper autopilot loop works.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Autopilot settings defaults
+5. Where FF calls AA
+6. Where FF calls DD
+7. Where FF calls EE
+8. Where FF allows BB/CC after paper close
+9. Raw output from /api/paper-autopilot/demo
+10. Raw output from /api/paper-autopilot/run-once
+11. Raw output from /api/paper-autopilot/start
+12. Raw output from /api/paper-autopilot/status
+13. Raw output from /api/paper-autopilot/stop
+14. Sample sniper filter PASS output
+15. Sample sniper filter WAIT/REJECT output
+16. Sample autopilot cycle record
+17. Sample autopilot cycle logs
+18. Proof TP/SL close triggers BB and CC
+19. Daily loss/cooldown/same-symbol safety proof
+20. Live-trade isolation proof
+21. Any errors or warnings
+22. Whether Build FF is fully complete or partially complete
+23. Final Build FF score out of 10

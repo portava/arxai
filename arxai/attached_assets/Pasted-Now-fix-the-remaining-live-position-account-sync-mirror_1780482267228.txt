@@ -1,0 +1,96 @@
+Now fix the remaining live position/account sync mirror issue.
+
+The live execution proof passed:
+- EURUSD BUY 0.01 filled live
+- MT5 retcode 10009
+- broker message “Request executed”
+- real broker ticket 40800917742
+- arx_live_commands moved from SENT_TO_MT5_LIVE to LIVE_FILLED
+- user-facing command endpoint shows the correct filled result
+
+Remaining problem:
+The filled EURUSD position is not appearing in `slot-summary` / `arx_live_positions`, and account/balance/free-margin mirrors may still be stale. The command path is proven, but the position/account snapshot path is not updating the UI correctly.
+
+Goal:
+After a real MT5 fill, ARX must show the live open position and live account values from the EA position/account sync path.
+
+Fix only the live position/account sync mirror.
+
+Requirements:
+1. Trace the EA position/account push path:
+   - EA account snapshot push
+   - EA open positions push
+   - EA pending orders push
+   - backend ingestion endpoint
+   - DB tables / mirror rows
+   - slot-summary endpoint
+   - cockpit/open positions UI endpoint
+
+2. Determine why the real filled ticket `40800917742` is not showing in:
+   - `arx_live_positions`
+   - `slot-summary`
+   - My Live Trades / Open Positions UI
+
+3. Confirm whether the EA is actually sending the open position snapshot after the fill.
+   - If yes, fix backend ingestion/mapping.
+   - If no, fix EA snapshot push timing or payload.
+   - If the endpoint is failing, fix the endpoint and report the exact status.
+
+4. The open position mirror must be based on real MT5 ticket data only.
+   - Do not fabricate positions.
+   - Do not create a position from `LIVE_FILLED` alone unless the broker ticket is confirmed and clearly marked as pending MT5 snapshot confirmation.
+   - Do not show rejected commands as positions.
+   - Do not reuse stale rows.
+
+5. The UI must show freshness:
+   - FRESH
+   - STALE
+   - MISSING
+
+6. The filled EURUSD ticket must appear with:
+   - broker ticket
+   - symbol / brokerSymbol
+   - side
+   - lot
+   - entry price if available
+   - current price if available
+   - floating P/L if available
+   - opened time
+   - source: ARX / MT5
+   - freshness status
+
+7. Account mirror must refresh after the fill:
+   - balance
+   - equity
+   - free margin
+   - margin used
+   - open position count
+   - last snapshot time
+
+8. UI must not depend on old stale snapshot rows from June 1.
+9. Refresh button must force the newest available bridge/account/position data.
+10. If the EA posts every X seconds, the UI should clearly show “last synced X seconds ago.”
+
+Run:
+pnpm --filter @workspace/api-server run build
+pnpm --filter @workspace/trading-dashboard run typecheck
+pnpm run typecheck
+pnpm run ci:guards
+
+Live proof required:
+Use the existing live filled ticket `40800917742` first.
+
+Report:
+- whether EA sent the position snapshot containing ticket 40800917742
+- backend endpoint that received it
+- DB table/row where it is stored
+- slot-summary result before/after
+- My Live Trades result before/after
+- account snapshot before/after
+- freshness status
+- whether ticket 40800917742 appears in UI
+- whether floating P/L appears
+- whether stale June 1 mirror data is replaced or marked stale
+
+Completion standard:
+This is complete only when the real open EURUSD live position from ticket 40800917742 appears in ARX open positions / slot-summary from the MT5 snapshot path, with current account values and freshness shown.

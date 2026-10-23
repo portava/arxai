@@ -1,0 +1,279 @@
+Pass 14 — market-data / feed-status / economic-calendar honesty truth. Read-only. No edits, no tasks, no migrations, no workflow changes.
+
+Goal:
+Prove whether ARX market data, scanner signals, chart candles, live prices, feed status labels, economic calendar, news risk, volatility/session labels, and Eleanor/scanner explanations honestly distinguish live, delayed, stale, simulated, fallback, unavailable, provider-limited, and manually-derived data.
+
+Important context from prior passes:
+- Money paths are clean.
+- Command/audit/UI issues remain around broker confirmation and wording.
+- Scanner/chart candle source previously appeared honest: GET /api/chart/candles is the single honest source, never falls back to simulator, and embeds feedStatus.
+- Deep-history lazy-load issue remains in held ledger.
+- Display-freshness unification remains in held ledger.
+- Refresh truth / wording remains in held ledger.
+- Economic calendar / news risk / market scanner truth still need final proof.
+- Do not call the assistant Ruby in report text except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+
+Required proof areas:
+
+1. Market-data source inventory
+Freshly locate every backend/frontend source for:
+- live price
+- bid/ask
+- spread
+- candles
+- chart history
+- scanner price
+- scanner trend/bias
+- FVG / EMA / strategy signals
+- heat map
+- watchlist prices
+- volatility index prices
+- forex prices
+- US30 / XAUUSD prices
+- session labels
+- market open/closed
+- economic calendar
+- news risk
+- FRED/macro data if present
+- fallback/mock/demo provider
+- provider limit / depth limit labels
+
+For each:
+- file + line
+- source/provider
+- refresh cadence
+- freshness/staleness threshold
+- fallback behavior
+- UI label shown
+- classification
+
+2. Chart candle truth
+Audit:
+- /api/chart/candles
+- /api/chart/history
+- chartCandlesQuery
+- live chart frontend
+- market scanner chart preview
+- candle cache/history logic
+
+Prove:
+- whether candles are live/confirmed/delayed/stale labeled
+- whether simulator candles can appear as live
+- whether provider limits are exposed
+- whether deep history beyond provider limit is honest
+- whether last-updated/feedStatus is surfaced
+- whether refresh button pulls real provider truth or cached data only
+- whether missing candles create empty states, not fabricated candles
+
+3. Scanner truth
+Audit scanner backend and UI:
+- scannerTruth
+- useScannerTruth
+- market-scanner page
+- scanner confidence
+- scanner bias/trend labels
+- FVG signals
+- EMA / 200 EMA / 50 MA
+- strategy conditions
+- multi-timeframe trend
+- AI/Eleanor explanations
+- scanner-to-ticket/pre-fill path
+
+Prove:
+- whether scanner uses the same live candle/price source as chart
+- whether stale scanner data blocks or downgrades recommendations
+- whether confidence/trend/bias is display-only
+- whether scanner can generate execution authority
+- whether FVG/EMA/trend signals are mechanically computed or advisory text
+- whether stale or missing data is labeled
+- whether scanner empty states are honest
+
+4. Feed status / freshness truth
+Find all feed status models, badges, chips, hooks, and copy.
+
+Prove:
+- statuses available: live, delayed, stale, offline, unavailable, simulated, fallback, provider-limited, read-only, demo
+- exact thresholds
+- whether frontend thresholds match backend thresholds
+- whether display-freshness is unified or split
+- whether stale data can still be displayed as live
+- whether refresh wording implies real-time when it only refreshes app cache
+- whether manual refresh updates source truth
+- whether auto-refresh can hide stale provider/bridge data
+
+5. Economic calendar truth
+Audit economic calendar route/service/frontend.
+
+Prove:
+- source/provider
+- whether events are real provider data, cached, manually seeded, or fallback
+- whether unavailable provider state is labeled
+- whether event times/timezones are correct
+- whether impact labels are provider-derived or app-derived
+- whether stale calendar data is labeled
+- whether empty state says unavailable/no events instead of inventing
+- whether calendar events affect trade blocking/risk only when fresh
+
+6. News risk / macro/FRED truth
+Audit:
+- news risk service
+- macro/FRED service
+- Eleanor/news-risk explanations
+- scanner risk filters
+- risk calendar gating
+
+Prove:
+- whether data source is current, cached, or fallback
+- whether FRED date-only series are labeled date-only and not intraday
+- whether unavailable/missing macro data is labeled
+- whether stale news risk blocks live execution or only warns
+- whether Eleanor says “risk unavailable” instead of “low risk”
+- whether risk filters use honest stale/unavailable states
+
+7. Watchlist / heat map / market overview truth
+Audit watchlist, heat map, market overview, Cockpit market cards.
+
+Prove:
+- price source
+- freshness display
+- refresh cadence
+- whether simulated/default prices can appear
+- whether stale quotes are labeled
+- whether unavailable instruments show empty/error state
+- whether cross-market symbols share source truth
+- whether display prices match execution prices or are clearly separate
+
+8. Session / market-open truth
+Audit session labels:
+- London/New York/Asia
+- market open/closed
+- forex session
+- synthetic/Deriv always-on symbols
+- weekend / holiday behavior
+- volatility index session assumptions
+
+Prove:
+- whether sessions are timezone-correct
+- whether market-closed symbols block execution or warn
+- whether synthetic symbols are treated differently from forex/indices
+- whether session copy can mislead execution availability
+- whether clock/timezone source is consistent
+
+9. Eleanor market explanation truth
+Trace Eleanor responses that mention:
+- trend
+- bias
+- confidence
+- FVG
+- EMA
+- liquidity
+- news risk
+- market session
+- live price
+- stale data
+- unavailable data
+
+Prove:
+- whether Eleanor uses feedStatus/freshness
+- whether Eleanor refuses to overstate stale/unavailable data
+- whether Eleanor distinguishes analysis from execution
+- whether Eleanor recommendations include data age/source when needed
+- whether legacy Ruby copy is user-facing naming drift
+
+10. Refresh / auto-refresh truth
+Audit refresh buttons, auto-refresh hooks, polling, query invalidation.
+
+Prove:
+- which refreshes pull provider/broker truth
+- which refresh only app cache
+- whether “Refresh” wording is honest
+- whether auto-refresh every 5s pulls true source or stale cache
+- whether charts/scanner/trades use consistent cadence
+- whether closed trades / stale candles / stale bridge states resolve honestly
+- whether refresh can mask provider outage
+
+11. Fallback/mock/demo provider truth
+Freshly locate every:
+- mock provider
+- fallback provider
+- demo provider
+- synthetic fixture
+- seeded calendar
+- static price
+- fake candle
+- sample scanner signal
+- development-only data source
+
+For each:
+- file + line
+- whether production-reachable
+- whether UI labels it demo/mock/fallback
+- whether execution can use it
+- whether CI prevents mock data in live views
+
+12. CI/test coverage
+Find tests/checks/scripts that would catch:
+- simulator/mock candles shown as live
+- stale feed shown as live
+- fallback calendar shown as real provider
+- FRED date-only data treated as intraday
+- scanner signal generated from stale candles without warning
+- scanner/Eleanor says risk low when risk unavailable
+- refresh button implying source refresh when only cache refreshes
+- provider limit hidden from chart history
+- mock provider available in production live view
+- session timezone error
+- market-closed execution allowed without warning
+- watchlist stale quote shown as live
+- chart/scanner source drift
+- user-facing Ruby naming drift in market explanation cards
+
+Classify coverage:
+- strong
+- weak
+- not covered
+- located but assertion not proven
+
+13. Classification standard
+Use same class system:
+- Class 1: clean/proven safe
+- Class 2: active risk
+- Class 3: defense-in-depth or integrity/honesty gap
+- Class 4: dormant/config-gated risk
+- Class 5: unresolved/deferred
+
+Required output format:
+
+PASS 14 — Market-Data / Feed-Status / Calendar Honesty Truth — REPORT
+
+Sections:
+1. Executive verdict
+2. Market-data source inventory
+3. Chart candle truth
+4. Scanner truth
+5. Feed status / freshness truth
+6. Economic calendar truth
+7. News risk / macro/FRED truth
+8. Watchlist / heat map / market overview truth
+9. Session / market-open truth
+10. Eleanor market explanation truth
+11. Refresh / auto-refresh truth
+12. Fallback/mock/demo provider truth
+13. CI/test coverage
+14. New findings added to held fix-ledger
+15. Net risk ranking
+16. Final consolidation readiness
+
+Important:
+- Read-only only.
+- Do not edit files.
+- Do not create tasks.
+- Do not run migrations.
+- Do not change workflows.
+- Do not rely on rg/grep matched text if token mangling appears. Use filename/line discovery only, then read files directly.
+- Give exact file:line proof for every claim.
+- If a claim cannot be proven, mark it Class 5 instead of assuming.
+- Do not call the assistant Ruby in the report except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+
+After Pass 14:
+Proceed to Pass 15 — final consolidation and fix-task plan. Fold the full held ledger from Passes 4–14 into a prioritized repair sequence with task order, blast radius, tests, CI guards, and rollback notes.

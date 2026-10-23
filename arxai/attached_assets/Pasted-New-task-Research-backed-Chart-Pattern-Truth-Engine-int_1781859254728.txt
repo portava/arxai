@@ -1,0 +1,406 @@
+New task: Research-backed Chart Pattern Truth Engine integrated into Scanner Truth.
+
+Goal:
+Teach Ruby and Scanner to detect chart patterns in a measurable, testable way, and make pattern intelligence part of Scanner Truth without letting patterns bypass feed truth, trade health, or live execution gates.
+
+Research foundation:
+Use a research-backed approach:
+1. Automatic pattern recognition should be systematic and measurable, not subjective.
+2. Pattern detection should use clear geometry/structure rules:
+   - swing highs/lows
+   - neckline/trigger levels
+   - breakout/retest points
+   - candle displacement
+   - compression/expansion
+   - support/resistance context
+   - momentum and volatility confirmation
+3. Pattern value must be tracked statistically:
+   - success rate by symbol
+   - success rate by timeframe
+   - success rate by session
+   - average favorable excursion
+   - average adverse excursion
+   - average realized R
+   - false-breakout rate
+   - late-entry failure rate
+4. Pattern detection must return uncertainty:
+   - forming
+   - confirmed
+   - failed
+   - exhausted
+   - invalidated
+
+Important:
+Pattern detection is part of Scanner Truth, not a replacement for Scanner Truth.
+Patterns can raise or lower setup quality only inside the existing truth contract.
+Patterns must never create live-trade permission by themselves.
+
+Hard rule:
+A chart pattern may:
+- explain
+- rank
+- confirm
+- downgrade
+- warn
+- improve confidence within caps
+
+A chart pattern may NOT:
+- override historical-only/feed-limited status
+- override low-confidence chart read
+- override trade-health eligibility
+- override risk gates
+- trigger live execution by itself
+- turn “wait for confirmation” into “valid now” unless the confirmation actually exists
+
+Build in phases.
+
+Phase 1 — Research and pattern library:
+Create a chart pattern research inventory with:
+- pattern name
+- category
+- detection rules
+- confirmation rule
+- invalidation rule
+- target logic
+- failure modes
+- context filters
+- minimum candle requirements
+- timeframe suitability
+- market suitability
+- known false-positive risks
+
+Pattern groups:
+A. Reversal:
+- double top
+- double bottom
+- triple top
+- triple bottom
+- head and shoulders
+- inverse head and shoulders
+- rounded top/bottom
+- V reversal
+- bull trap
+- bear trap
+
+B. Continuation:
+- bull flag
+- bear flag
+- bull pennant
+- bear pennant
+- ascending triangle
+- descending triangle
+- symmetrical triangle
+- rectangle continuation
+- channel continuation
+- pullback continuation
+
+C. Breakout/retest:
+- breakout and retest
+- breakdown and retest
+- support flip to resistance
+- resistance flip to support
+- range breakout
+- failed retest
+- liquidity sweep and reclaim
+- liquidity sweep and rejection
+
+D. Candlestick/price action:
+- engulfing candle
+- pin bar / rejection wick
+- doji / indecision
+- inside bar
+- outside bar
+- morning star
+- evening star
+- three-bar reversal
+- displacement candle
+- exhaustion candle
+- compression breakout
+
+E. Structure:
+- higher high / higher low sequence
+- lower high / lower low sequence
+- break of structure
+- change of character
+- market structure shift
+- equal highs/equal lows
+- trendline break
+- channel break
+- range midpoint rejection
+- premium/discount reaction
+
+F. Scalp/flare:
+- flame/ignition candle
+- run-on continuation
+- run-on exhaustion
+- pullback tap
+- retest scalp
+- micro range break
+- spread trap
+- fake momentum
+- too-late chase
+- liquidity grab scalp
+
+Phase 2 — Pattern detection contract:
+Create a shared PatternTruthVerdict contract.
+
+pattern_truth_verdict:
+- symbol
+- timeframe
+- feedStatus
+- freshness
+- detectedPatterns[]
+- dominantPattern
+- patternBias: bullish / bearish / mixed / neutral
+- patternConfidence: 0–100
+- patternQuality: poor / fair / good / strong
+- patternStatus: none / forming / confirmed / failed / exhausted / invalidated
+- confirmationLevel
+- invalidationLevel
+- target1
+- target2
+- measuredMoveTarget
+- supportResistanceContext
+- momentumContext
+- volatilityContext
+- trendContext
+- rrContext
+- falseBreakoutRisk
+- chaseRisk
+- confidenceCapReason
+- scannerTruthImpact
+- rubyExplanation
+- warnings[]
+
+detected_pattern:
+- id
+- name
+- category
+- direction
+- status
+- confidence
+- quality
+- startTime
+- confirmationTime
+- triggerLevel
+- invalidationLevel
+- targetLevels
+- measuredMove
+- candlesUsed
+- swingPointsUsed
+- reason
+- failureModes
+- historicalStats
+
+Phase 3 — Detection engine:
+Build a deterministic pattern detector using:
+- swing high/low extraction
+- ATR/volatility normalization
+- slope/angle tolerance
+- neckline/trigger detection
+- support/resistance proximity
+- wick/body ratios
+- compression/expansion measures
+- momentum confirmation
+- retest validation
+- late-entry/exhaustion detection
+
+Do not rely on vague visual matching only.
+Every pattern must be explainable by measurable conditions.
+
+Detection rules examples:
+1. Head and shoulders:
+- requires prior uptrend
+- three peaks
+- middle peak higher than left/right shoulders
+- shoulders within tolerance
+- neckline identified from troughs
+- status forming until neckline break
+- confirmed only after neckline break/retest
+- invalidated if price reclaims right shoulder or neckline by threshold
+
+2. Double bottom:
+- requires prior downtrend
+- two lows within tolerance
+- neckline between lows
+- confirmed only on neckline break
+- invalidated by decisive break below second low
+- cap confidence if no momentum expansion on breakout
+
+3. Bull flag:
+- requires impulse leg up
+- controlled pullback/channel down
+- pullback does not retrace too much of impulse
+- confirmed on break of flag high
+- exhausted if target already reached
+- invalidated if pullback breaks impulse origin or deep retracement threshold
+
+4. Bear flag:
+- requires impulse leg down
+- controlled pullback/channel up
+- confirmed on break of flag low
+- cap confidence if sell target is directly into major support
+- invalidated if price reclaims flag high
+
+5. Liquidity sweep:
+- price takes prior high/low
+- closes back inside range
+- confirmation requires reclaim/rejection candle
+- no trade if only wick exists without reclaim confirmation
+
+Phase 4 — Integrate into Scanner Truth:
+Add PatternTruthVerdict as a child input to Scanner Truth.
+
+Scanner Truth should combine:
+- feed truth
+- candle sufficiency
+- market structure
+- trade health/readiness
+- scalp/flare
+- pattern truth
+- news/calendar risk
+- spread/slippage
+- open exposure
+
+PatternTruthVerdict can influence:
+- setup explanation
+- confidence cap
+- edge score
+- entry quality
+- chase warning
+- too-late classification
+- conditional vs confirmed wording
+
+PatternTruthVerdict cannot influence:
+- live execution permission
+- broker dispatch
+- kill switch
+- risk gate bypass
+- owner/admin overrides
+- trade button final execution
+
+Scanner Truth rules:
+1. If feed is historical-only or unconfirmed:
+   - patterns may display as historical/context only
+   - no pattern can show “live-confirmed”
+   - no pattern can make Scanner say “ready now”
+
+2. If pattern is forming:
+   - Scanner label must be “forming setup” or “needs confirmation”
+   - cannot be “valid now” or “ready now”
+
+3. If pattern is confirmed:
+   - Scanner may increase setup quality only if feed/readiness/risk also allow it
+
+4. If pattern is exhausted:
+   - Scanner must classify as “too late to chase”
+
+5. If pattern conflicts with chart read:
+   - downgrade to mixed/conditional
+   - explain the conflict
+
+6. If pattern target is inside nearby support/resistance:
+   - cap quality
+   - add limited-room warning
+
+7. If chart read says low confidence:
+   - pattern must be confirmed before Scalp Builder can call it strong
+   - otherwise label conditional
+
+Phase 5 — Ruby behavior:
+Ruby should explain patterns in plain language:
+- what pattern she sees
+- whether it is forming or confirmed
+- what confirms it
+- what invalidates it
+- whether the entry is early, clean, late, or dangerous
+- how pattern affects buy/sell/no-trade decision
+- how it fits HTF bias and support/resistance
+- whether it supports scalp, intraday, or swing
+
+Ruby should say:
+“Pattern detected, but not confirmed yet.”
+“Pattern confirmed, but feed is not live-confirmed.”
+“Pattern is late/exhausted — avoid chase.”
+“Pattern conflicts with HTF bias — confidence capped.”
+“Pattern target is too close to support/resistance — limited room.”
+
+Phase 6 — Scalp/Flare integration:
+Scalp Builder must consume PatternTruthVerdict.
+
+Rules:
+- forming pattern = conditional scalp
+- confirmed pattern = valid scalp only if feed and risk allow
+- failed pattern = no trade
+- exhausted pattern = too late
+- low chart confidence + forming pattern = not strong
+- near support/resistance = cap quality
+- target inside support/resistance = limited-room warning
+- scalp cannot say “valid now” unless pattern confirmation exists or another explicit lower-timeframe trigger exists
+
+Phase 7 — Learning loop:
+Track every detected pattern outcome.
+
+pattern_outcome:
+- pattern_id
+- symbol
+- timeframe
+- session
+- detected_at
+- confirmed_at
+- status_at_detection
+- trade_taken
+- trade_id
+- entry
+- stop
+- target
+- realized_r
+- max_favorable_excursion
+- max_adverse_excursion
+- outcome: win / loss / breakeven / skipped / invalidated
+- reason_win_loss
+- feed_status_at_detection
+- spread_slippage_context
+- news_context
+- post_trade_review
+
+Learning outputs:
+- pattern win rate by symbol/timeframe
+- pattern false-positive rate
+- average R by pattern
+- average MFE/MAE
+- best sessions for pattern
+- worst markets for pattern
+- pattern reliability score
+- Ruby confidence adjustment by market/timeframe
+
+Phase 8 — Tests:
+Add deterministic fixtures.
+
+Tests:
+1. Forming head-and-shoulders does not become confirmed before neckline break.
+2. Confirmed head-and-shoulders requires neckline break and does not bypass feed truth.
+3. Bull flag forming caps confidence.
+4. Bull flag exhausted becomes too-late.
+5. Double bottom needs neckline break before bullish confirmation.
+6. Liquidity sweep requires reclaim/rejection confirmation.
+7. Bear flag near major support adds limited-room warning.
+8. Pattern on historical-only feed renders context-only.
+9. Pattern against HTF bias caps confidence.
+10. Pattern target inside support/resistance caps quality.
+11. PatternTruthVerdict feeds Scanner Truth.
+12. Scanner Truth cannot be upgraded to ready-now by pattern alone.
+13. Scalp Builder downgrades forming pattern to conditional.
+14. Ruby explains confirmation and invalidation levels.
+15. Auto bot cannot execute from pattern detection alone.
+16. Pattern outcome logging updates reliability stats.
+17. Pattern detector fails closed when candles are insufficient.
+18. Pattern detection uses normalized symbol/timeframe and source/freshness.
+19. Synthetic-market pattern stats are tracked separately from forex/indices.
+20. Pattern overlay hides live-ready wording when feed is stale.
+
+Hard boundary:
+Do not touch live execution gates, broker dispatch, MT5 execution, emergency stop, kill switches, owner/admin permissions, or live order eligibility.
+Pattern Truth is read-quality and decision-support only.
+It may explain, rank, confirm, or downgrade.
+It must never grant live execution permission.

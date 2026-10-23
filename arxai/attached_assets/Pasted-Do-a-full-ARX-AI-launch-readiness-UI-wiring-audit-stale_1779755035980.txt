@@ -1,0 +1,367 @@
+Do a full ARX AI launch-readiness UI wiring audit, stale-code cleanup, performance cleanup, and interaction repair pass.
+
+This is a hard detailed pass. The goal is to make the entire app faster, cleaner, correctly wired, and launch-ready.
+
+Important:
+Do NOT rebuild the app from scratch.
+Do NOT create duplicate systems.
+Do NOT delete working features.
+Do NOT fake backend data, fake provider status, fake balances, fake trading readiness, or fake API health.
+Do NOT bypass trading safety gates, kill switches, approval gates, validation gates, or audit logs.
+Do NOT expose backend constants, secrets, provider tokens, internal API names, debug labels, or raw errors to normal users.
+Do NOT remove code unless you have proven it is unused, stale, duplicated, or wrongly routed.
+
+Primary mission:
+Go through every single page, tab, button, toggle, menu option, search bar, filter, dropdown, selector, card, modal, drawer, accordion, wizard step, admin panel, user panel, scanner section, Ruby section, trading section, provider/API section, MT5 bridge section, dashboard widget, and mobile navigation item.
+
+Make sure every UI element:
+1. Renders correctly.
+2. Calls the correct backend route/service/config.
+3. Uses the correct mode: live/demo/paper/admin/user.
+4. Uses the correct data source.
+5. Handles loading, success, empty, stale, disabled, error, and permission states cleanly.
+6. Does not show false or stale errors.
+7. Does not expose internal/backend details to normal users.
+8. Actually works when clicked, toggled, typed into, selected, submitted, refreshed, or revisited.
+
+Rollback and checkpoint safety:
+Before starting:
+1. Check git status.
+2. Create a checkpoint/commit:
+   checkpoint: pre-ui-wiring-performance-cleanup
+
+If git is unavailable:
+- Use Replit checkpoint/history if available.
+- If no Replit checkpoint exists, create timestamped backup copies of files before changing them.
+
+After each meaningful fix, create a checkpoint/commit with a clear message, such as:
+- fix: wire scanner filters to market data router
+- fix: clean stale route and duplicate component
+- fix: repair admin toggle backend action
+- fix: remove unused UI folder safely
+- fix: speed app by removing duplicate fetch loops
+- fix: route Ruby controls to active backend config
+
+Do not make one huge untraceable change.
+
+Part 1: Build a complete app inventory
+Create an internal inventory of the entire app structure.
+
+Inventory:
+1. All frontend routes/pages.
+2. All admin routes/pages.
+3. All user routes/pages.
+4. All tabs inside each page.
+5. All buttons.
+6. All toggles/switches.
+7. All dropdowns/selectors.
+8. All search bars.
+9. All filters.
+10. All forms and submit actions.
+11. All modals/drawers/popups.
+12. All menu/sidebar/bottom-nav items.
+13. All cards/widgets that fetch data.
+14. All scanner panels.
+15. All Ruby assistant panels.
+16. All MT5 bridge panels.
+17. All API/provider health panels.
+18. All trading ticket/command queue panels.
+19. All settings/config screens.
+20. All mobile-specific layouts/interactions.
+
+For each UI item, map:
+- page/route
+- user role allowed to see it
+- component/file location
+- backend endpoint/service it calls
+- config/source of truth it reads from
+- expected behavior
+- actual current behavior
+- whether it is working, broken, stale, duplicated, unused, or miswired
+
+Part 2: Find stale folders, duplicate systems, and wrong routing
+Deep search the repo for:
+- old folders
+- duplicate pages
+- duplicate scanner systems
+- duplicate Ruby systems
+- duplicate market data routers
+- duplicate provider clients
+- duplicate MT5 bridge clients
+- duplicate admin panels
+- unused route files
+- unused components
+- dead tabs
+- abandoned directories
+- outdated constants
+- old mock data
+- old paper/demo configs leaking into live mode
+- hardcoded TwelveData routes
+- hardcoded fake balances
+- hardcoded fallback statuses
+- placeholder buttons
+- TODO-only features
+- console.log spam
+- debug panels visible to normal users
+- unused imports
+- unreachable routes
+- orphaned services
+- stale API endpoints
+- conflicting environment/config readers
+
+Do not delete blindly.
+For each stale/duplicate item:
+1. Confirm whether it is referenced.
+2. Confirm whether it is active in routing.
+3. Confirm whether another newer implementation exists.
+4. Confirm whether removing it affects build/tests.
+5. If safe, remove it.
+6. If unsure, quarantine/deprecate it behind an internal archive comment or move only if safe.
+7. If it is stale but still needed, rewire it to the correct counterpart instead of deleting.
+
+Part 3: Performance cleanup
+Clean unnecessary code that slows the app.
+
+Check and fix:
+1. Duplicate API fetches.
+2. Repeated provider calls on every render.
+3. Repeated scanner loops.
+4. Repeated Ruby research calls for simple prompts.
+5. Duplicate market data subscriptions.
+6. Memory leaks in WebSocket/event listeners.
+7. Unclosed intervals/timeouts.
+8. Stale polling loops.
+9. Over-fetching on tab switch.
+10. Over-fetching on every keystroke in search bars.
+11. Search bars without debounce.
+12. Filters that refetch unnecessarily.
+13. Components that re-render too often.
+14. Large debug payloads loaded into normal user UI.
+15. Heavy admin diagnostics loaded for normal users.
+16. Large unused imports/packages.
+17. Dead code included in production bundle.
+18. Console logging large payloads.
+19. TTS/audio jobs not cancelled when stale.
+20. Historical data requests repeated unnecessarily.
+
+Add safe debounce/caching where appropriate:
+- search bars
+- scanner filters
+- market symbol search
+- provider health refresh
+- chart/history loads
+- Ruby prompt supporting data
+- watchlist refresh
+- account balance refresh
+
+Do not cache live trading validation in a way that weakens safety. Live dispatch must still revalidate at execution time.
+
+Part 4: Full UI wiring audit and repair
+For every page and interactive element:
+1. Click it.
+2. Toggle it.
+3. Type into it.
+4. Select options.
+5. Submit forms.
+6. Change filters.
+7. Refresh page after setting changes.
+8. Test desktop and mobile layout.
+9. Confirm correct backend call fires.
+10. Confirm correct data updates.
+11. Confirm no console/runtime errors.
+12. Confirm no network 404/500 errors unless truly external/missing credential.
+13. Confirm disabled states are accurate.
+14. Confirm permissions are correct for admin vs normal users.
+15. Confirm old/stale UI does not override newer backend state.
+
+Specific areas to verify:
+- Login
+- User dashboard
+- Admin dashboard
+- Live status UI
+- Paper/demo/live mode selector
+- Admin approvals
+- User live approval state
+- Kill switch UI
+- Commands tab
+- MT5 bridge page
+- MT5 balance/account sync
+- Scanner tabs
+- Scanner filters
+- Broad scan/focus scan if present
+- Market search
+- Symbol selector
+- Watchlist
+- Historical data display
+- Chart data
+- Ruby chat
+- Ruby voice settings
+- Ruby typing/response behavior
+- Ruby market explanation panel
+- Trade ticket
+- SL/TP fields
+- order type selector
+- risk preview
+- order confirmation
+- provider/API health panel
+- Deriv/Volatility feed
+- TwelveData/normal market feed
+- mobile bottom nav
+- side menus
+- collapsible panels
+- settings pages
+- admin-only diagnostics
+
+Part 5: Backend configuration correctness
+Make sure every UI piece calls the correct backend source of truth.
+
+Verify correct wiring for:
+1. Live mode state.
+2. Paper mode state.
+3. Demo mode state.
+4. User approval state.
+5. User risk caps.
+6. Allowed symbols.
+7. Max lot.
+8. Max open positions.
+9. Daily loss limit.
+10. Require stop loss.
+11. MT5 bridge status.
+12. MT5 heartbeat.
+13. MT5 account balance/equity/free margin.
+14. Master/shared bridge mode.
+15. Provider/API health.
+16. Market Data Router.
+17. Deriv active symbols/ticks/ticks_history.
+18. TwelveData normal market data.
+19. Historical candles.
+20. Scanner scoring.
+21. Ruby market research.
+22. Ruby voice selection.
+23. Ruby TTS playback.
+24. Command queue status.
+25. Live dispatch validation.
+26. Rollback/kill switch state.
+
+If a UI item is wired to stale config, mock config, local-only state, old backend route, or duplicate service:
+- rewire it to the current correct backend/config source.
+- remove or deprecate the stale path only after proving safe.
+
+Part 6: Stale folder and directory repair
+Look for folders/directories that are not connected to the current app but contain newer or older versions of features.
+
+For each stale directory:
+1. Identify what it contains.
+2. Identify whether the active app uses it.
+3. Identify whether it contains newer logic that should replace older wired logic.
+4. Identify whether it contains old logic that should be removed.
+5. Do not leave two competing versions of the same feature.
+6. Wire the correct version into the active app.
+7. Remove or archive the wrong version safely.
+8. Run build/tests after each cleanup.
+
+Part 7: User-facing polish
+Normal users should see:
+- clean working UI
+- accurate live-ready statuses
+- clean loading states
+- clean empty states
+- clean locked states
+- clean errors only when real
+- no debug spam
+- no backend constants
+- no provider/token/API details
+- no contradictory badges
+- no broken buttons
+- no dead tabs
+- no filters that do nothing
+- no search bars that return nothing because they are miswired
+
+Admin users can see:
+- diagnostics
+- provider health
+- bridge health
+- command queue
+- user approval/risk caps
+- raw-enough sanitized debugging
+- no exposed secrets
+
+Part 8: Automated/targeted testing
+Use whatever testing tools exist in the project.
+
+Run:
+- install/build
+- typecheck
+- lint
+- unit tests
+- integration tests
+- e2e/browser tests if available
+
+If no e2e tests exist, create a lightweight internal smoke test or manual-browser script if the stack supports it, covering:
+1. Load every route.
+2. Click every visible button.
+3. Toggle every switch.
+4. Open every tab.
+5. Open every dropdown.
+6. Type in every search bar.
+7. Apply every filter.
+8. Submit non-dangerous forms safely.
+9. Confirm no console errors.
+10. Confirm no broken network routes.
+
+Do NOT submit real live trade commands or operator phrases automatically.
+Do NOT execute live trades in automated QA.
+Do NOT type:
+- QUEUE MICRO LIVE TEST
+- EXECUTE LIVE SHARED
+- ROLL BACK LIVE SHARED TRADING
+
+Part 9: Fix strategy when one repair breaks another
+If a fix breaks another feature:
+1. Stop that approach.
+2. Roll back only that specific change.
+3. Identify why the dependency broke.
+4. Repair at the shared source of truth instead of patching both ends.
+5. Prefer small, reversible changes.
+6. Add guards/adapters where needed.
+7. Retest both the original bug and the feature that almost broke.
+8. Save a checkpoint after the safe fix.
+
+Do not leave regressions behind.
+
+Part 10: Required final verification
+After all fixes, verify:
+1. App boots cleanly.
+2. Every route loads.
+3. Every tab works.
+4. Every button either works or is accurately disabled with a clear reason.
+5. Every toggle changes the correct backend state or shows permission/locked reason.
+6. Every menu option routes correctly.
+7. Every search bar returns correct results or clean empty state.
+8. Every filter actually filters the correct data.
+9. Every dropdown/selector changes the correct state.
+10. Scanner historical data is wired correctly.
+11. Provider/API Health is accurate.
+12. MT5 balance/account state is wired correctly.
+13. Deriv/Volatility feed is routed correctly.
+14. Ruby responds cleanly and does not dump research.
+15. Ruby voice uses selected voice and does not play stale audio.
+16. Live UI looks launch-ready when gates pass.
+17. Paper/demo state does not poison live state.
+18. Normal users do not see admin/debug/internal details.
+19. Admin diagnostics still work.
+20. Mobile UI is usable.
+21. No duplicate/stale systems are active.
+22. No fake data/statuses were introduced.
+23. No safety gates were bypassed.
+
+Final response should include:
+- checkpoints/commits created
+- stale/duplicate folders found
+- stale/duplicate code removed or rewired
+- pages/routes tested
+- buttons/toggles/tabs/search/filter sections tested
+- backend wiring fixes made
+- performance fixes made
+- remaining issues that truly require outside credentials or human-only action
+- launch-readiness status

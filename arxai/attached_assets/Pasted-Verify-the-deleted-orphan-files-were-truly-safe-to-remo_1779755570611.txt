@@ -1,0 +1,280 @@
+Verify the deleted orphan files were truly safe to remove by comparing them against the full ARX AI feature ecosystem we have discussed so far.
+
+Important:
+Do NOT assume “unused import” means “unimportant.”
+Do NOT permanently remove important planned or unfinished logic just because it was not mounted.
+Do NOT create duplicate systems.
+Do NOT rebuild the app from scratch.
+Do NOT weaken live trading safety.
+Do NOT fake balances, fake feeds, fake provider health, fake execution readiness, fake candles, or fake scanner results.
+Do NOT expose secrets, backend constants, provider tokens, raw API errors, or internal labels to normal users.
+
+Rollback safety:
+1. Before verification, create a checkpoint/commit:
+   checkpoint: verify-deleted-files-against-full-arx-ecosystem
+2. Inspect the pre-deletion checkpoint/diff.
+3. Restore files only if they contain important logic that is missing from the active app.
+4. If restoring causes conflicts, do not force it. Extract the useful logic and wire it into the correct current system safely.
+5. After each restored/wired fix, create another checkpoint.
+6. If a restore breaks something, rollback that specific change and repair another way.
+
+Deleted files to verify:
+- adminAllocations.ts
+- meAllocation.ts
+- meMood.ts
+- mePrivacy.ts
+- meTradingView.ts
+- meDerivSync.ts
+- tradingviewWebhook.ts
+- derivSync.ts
+- shadowPersistence.ts
+- traderDnaFeed.ts
+- globalLearningService.ts
+- dataHub.ts
+- any other recently deleted orphan/stale files
+
+Full ARX AI ecosystem/features to compare against:
+
+1. Brand/app identity
+- ARX AI means Analyze. Risk. eXecute.
+- Ruby is the AI assistant.
+- App should feel like an AI trading fortress for disciplined decisions.
+- Ruby should power AI chat, AI prompts, trade explanations, scanner explanations, and memory.
+
+2. Ruby assistant
+- Ruby already exists; do not rebuild her.
+- Ruby should respond quickly.
+- Ruby should type naturally, not paste huge blocks instantly.
+- Ruby should summarize research instead of dumping full internal research.
+- Ruby should not expose raw API payloads, backend logs, hidden prompts, internal scores, or JSON to users.
+- Ruby should use the selected voice.
+- Bella should be default if no active voice is selected.
+- Previewing a voice should not change the active voice.
+- TTS should not block text responses.
+- Stale audio should be cancelled if a newer message exists.
+- Ruby should not read out loud minutes later.
+- Ruby should use concise spoken answers, not full research reports.
+- Ruby should have saved chats/memory unless user clears it.
+- Ruby should use trading tools, market history, news, indicators, and current events when relevant.
+
+3. Ruby voice / TTS
+- Voice settings page exists.
+- Selected voice must match actual spoken voice.
+- Active voice source of truth must persist.
+- “Use this voice” and preview must be separate.
+- No backend voice IDs or provider debug text visible to normal users.
+- Voice must auto-speak when enabled but never play stale delayed audio.
+
+4. Market scanner
+- Users should be able to trade directly from scanner.
+- Scanner should include Focus and Broad Scan style flows.
+- Broad scan should scan across wider markets.
+- Results should live inside the scanner, not as confusing separate pages.
+- Scanner must use historical data, live data, indicators, market structure, risk/reward, stop loss, take profit, and confidence scoring.
+- Scanner should back-check previous days/weeks/months/years when needed.
+- Scanner should include Ruby explanation windows explaining buy/sell reasoning.
+- Scanner should support market search, collapsible symbol groups, watchlist, filters, and clickable symbols.
+- Scanner should not show “no historical data” unless all valid providers fail.
+- Scanner should not silently analyze without candles.
+
+5. Market Data Router and APIs
+- ARX has multiple APIs attached; do not hardcode only TwelveData.
+- TwelveData should be one provider, not the whole market data system.
+- Unified Market Data Router must power scanner, charts, Ruby, trade ticket, watchlist, market search, and backtest/history.
+- For MT5 tradable symbols, prefer broker/MT5 feed when available.
+- For Deriv synthetic/volatility symbols, use Deriv or MT5 broker feed, not TwelveData.
+- Provider fallback should exist.
+- Only show “no feed” after all valid providers fail.
+- Add/admin Provider Health panel should show configured/working/failing/unused providers without exposing secrets.
+- Admin diagnostics should show selected provider, fallback chain, last tick, last candle, sanitized failure reason.
+- Normal users should not see provider names, keys, raw 401s, WebSocket errors, stack traces, or debug constants.
+
+6. Deriv / Volatility / Synthetic indices
+- Support Deriv API/WebSocket where credentials are valid.
+- Support active_symbols, ticks, ticks_history.
+- Support aliases:
+  - Volatility 10, V10, V10 1s
+  - Volatility 25, V25, V25 1s
+  - Volatility 50, V50, V50 1s
+  - Volatility 75, V75, V75 1s
+  - Volatility 100, V100, V100 1s
+- Fix credential mode mismatch if present:
+  - legacy numeric app_id + legacy WebSocket token
+  - newer PAT-style token + app/client ID
+- Do not send the wrong credential format into the wrong Deriv endpoint.
+- If Deriv is degraded due to credentials, show admin-only exact sanitized reason.
+
+7. MT5 bridge / EA / live broker mode
+- MT5 bridge has heartbeat, commands, sync-account, sync-positions, diagnostics, command results.
+- EA version should be checked when required.
+- EA version 1.27 or higher is expected for live readiness.
+- Fresh heartbeat required.
+- EnableLiveExecution=true required for live dispatch.
+- ReadOnlyMode=false required for live dispatch.
+- MaxLiveLot must be <= per-user cap, usually 0.01 default unless changed by admin.
+- App must not fake broker execution readiness.
+- Read-only mode must block execution.
+- Broker placement layer must be real, not just label-changed.
+- Stale commands must not execute.
+- Commands can be admin-cancelled if queued but not picked up.
+- Every live dispatch must revalidate at execution time.
+
+8. Live shared/master bridge
+- ARX supports centralized/master MT5 bridge mode.
+- Users can trade through one shared operator-connected MT5 account.
+- Only admin-approved users can trade through shared bridge.
+- Users should not randomly join and start live trading.
+- Backend/admin toggles must control who is approved.
+- Shared account mode needs strict per-user ledgering, allocation, audit logs, risk caps, and isolation.
+- Admin should be able to manually allocate balance/trading capacity to each user.
+- Admin should be able to add/remove allocated balance.
+- Admin should be able to freeze a user account.
+- Admin should be able to allocate some funds to AI trading for a user, following system rules.
+- Each user should feel like they are using the app by themselves, even in shared bridge mode.
+- Normal users should see their assigned allocation/capacity, used risk, open P/L, and approval state.
+- Admin can see master bridge account balance/equity/free margin.
+
+9. MT5 account balance/account sync
+- App should reflect real MT5 balance/equity/free margin when money exists in MT5.
+- Do not show paper/demo balance as live balance.
+- Do not overwrite real balance with zero after failed refresh.
+- Show stale warning if account sync is old.
+- Refresh after bridge reconnect, order open/close, app load, login, and manual admin refresh.
+- Live validation should block if fresh account data cannot be verified.
+
+10. Live trading safety
+- Server hard kill secret:
+  ARX_LIVE_BROKER_EXECUTION_ENABLED=true
+- Per-user kill switch must be released through wizard.
+- At least one user must be approved with risk caps:
+  - allowedSymbols
+  - maxLot
+  - maxOpenPositions
+  - dailyLossLimitUsd
+  - requireStopLoss
+- Micro Live Test requires human operator phrases:
+  - QUEUE MICRO LIVE TEST
+  - EXECUTE LIVE SHARED
+- AI/app must never type or submit these phrases automatically.
+- Emergency rollback phrase:
+  - ROLL BACK LIVE SHARED TRADING
+- Rollback must re-engage kill switch, cancel queued-but-unpicked-up commands, and preserve audit logs.
+- 16-gate validation pipeline must remain intact.
+- A preview that passed can still be blocked later at execution time.
+- No safety gates, approvals, risk caps, kill switches, or audits may be bypassed.
+
+11. Trade ticket/order controls
+- Users should enter stop loss and take profit.
+- Users should be able to edit stop loss and take profit when allowed.
+- Support market buy/sell.
+- Support buy limit, sell limit, buy stop, sell stop, buy stop limit, sell stop limit if implemented/required.
+- Risk/reward should include reasonable stop loss based on market assessment.
+- Broker spread/slippage should be considered so stops are not placed unrealistically.
+- Trade ticket must show correct price source, symbol mapping, live/paper/demo mode, risk result, and confirmation.
+- User confirmation required.
+
+12. Admin/user system
+- No separate admin login page.
+- Same login system with role-based permissions.
+- Regular users see only user features.
+- User creation should be invitation-only right now.
+- Regular users should not see admin/debug controls.
+- Admin cockpit should handle approvals, users, risk caps, routing, bridge status, Provider Health, commands, and diagnostics.
+- Admin can enable/disable live user access.
+- Admin can manage allocations/freezes.
+
+13. Paper/demo/live separation
+- Paper trading should not block live readiness.
+- Paper mode should have separate ledger, simulated fills, and balance.
+- Demo mode should not poison live mode.
+- Live mode should use live readiness resolver.
+- Paper errors should show only in paper mode/admin diagnostics.
+- Live UI should show only true live blockers.
+
+14. UI launch polish
+- The app is intended to launch ready.
+- UI should not show false errors, stale debug warnings, backend constants, endpoint names, or raw flags.
+- If live is armed and gates pass, UI should look live-ready.
+- If blocked, show one clean user-facing reason.
+- Go through every page, tab, button, toggle, menu item, search bar, filter, selector, modal, drawer, and interactive section.
+- Confirm every UI element calls correct backend/config.
+- Fix stale folders/directories that should be wired to the right counterpart.
+- Remove duplicate or unused code only after verifying it is truly unused.
+- Mobile UI must be clean and not crowded.
+
+15. News/current events/trading intelligence
+- Ruby/scanner should use market news, economic data, world events, and current events where relevant.
+- News from leaders/world events/economic decisions can affect markets.
+- Do not expose raw news API payloads.
+- News/current events should support scanner/Ruby intelligence, not block normal simple chat.
+
+16. Trading tools and historical learning
+- Ruby should understand and use trading tools such as indicators, trend, support/resistance, volatility, Fibonacci if implemented/available, price action, market structure, backtesting, historical movement, news, and account/trade context.
+- Historical trade data uploads/imports should be useful to improve analysis.
+- The ecosystem should learn from user trading history individually and from aggregated platform-level patterns where privacy-safe and permitted.
+- Per-user isolation must remain intact.
+- Global learning should not leak one user’s private data to another user.
+
+17. Deleted-file-specific feature concerns
+For each deleted file, compare contents against these features:
+- adminAllocations.ts / meAllocation.ts:
+  Could relate to shared bridge allocations, user balances, user trading capacity, freezes, manual add/remove funds, AI allocation.
+- meDerivSync.ts / derivSync.ts:
+  Could relate to Deriv feed, active symbols, V75/V25, ticks, ticks_history, credential routing.
+- traderDnaFeed.ts / globalLearningService.ts:
+  Could relate to platform learning, trader behavior, Ruby intelligence, aggregated learning, history-based intelligence.
+- dataHub.ts:
+  Could relate to central data routing/market router/provider hub.
+- meTradingView.ts / tradingviewWebhook.ts:
+  Could relate to charting, TradingView alerts, webhook feeds, chart integration, market signal intake.
+- shadowPersistence.ts:
+  Could relate to memory, backup persistence, event storage, or state sync.
+- mePrivacy.ts:
+  Could relate to user privacy and data visibility.
+- meMood.ts:
+  Could relate to mood/energy/preferences if any Ruby/user profile personalization exists.
+- Any other deleted file:
+  Check against all current and planned ARX systems before deciding.
+
+Verification process:
+1. Inspect each deleted file from the pre-deletion checkpoint.
+2. Search for its functions, exports, routes, table names, event names, concepts, and related UI labels.
+3. Determine whether the active app already has a better current replacement.
+4. Determine whether the deleted file contains important logic not present anywhere else.
+5. Determine whether it was an old duplicate, planned future feature, forgotten route, or truly dead code.
+6. If important logic exists only there:
+   - restore the file or extract the logic
+   - wire it into the current correct system
+   - avoid duplicate systems
+   - retest impacted features
+7. If it is duplicate/old:
+   - keep deleted and document the active replacement.
+8. If it is planned but not launch-critical:
+   - document as planned/not active, do not wire unless needed.
+9. If truly dead:
+   - keep deleted and document why.
+
+Testing after verification:
+Run:
+- typecheck
+- build
+- lint if available
+- route/import graph check
+- provider health check
+- scanner historical data check
+- MT5 bridge/account sync check
+- Ruby chat/voice check
+- admin/user permission check
+- live safety guard tests
+
+Required final report:
+Give a file-by-file table:
+- deleted file name
+- what feature it seemed related to
+- whether it was dead, duplicate, planned, forgotten, or restored
+- active replacement if duplicate
+- action taken
+- tests run
+- checkpoint/commit created
+
+Only report “needs operator decision” if there is genuinely no safe way to decide from code.

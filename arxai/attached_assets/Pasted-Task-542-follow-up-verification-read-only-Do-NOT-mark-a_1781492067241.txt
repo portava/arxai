@@ -1,0 +1,21 @@
+Task #542 follow-up verification — read-only. Do NOT mark anything complete or edit code unless a check FAILS. Report each item PASS/FAIL with evidence inline.
+
+CONTEXT: #542 added per-symbol synthetic feed truth (Phase 1) and a per-symbol live-confirmation requirement on the synthetic live-entry floor at preflight + dispatch (Phase 2). Two required items were not shown as proven in the report — confirm them now.
+
+1. STOP-LOSS POLICY ON SYNTHETICS (the one I most need confirmed):
+   - Show the code path where a synthetic (Deriv) live order is checked against the stop-loss policy (requireStopLoss / allowOrdersWithoutStopLoss). Paste the exact lines.
+   - Confirm there is NO synthetic carve-out — i.e. a synthetic order with no stop-loss is rejected/blocked when requireStopLoss applies, same as any other instrument.
+   - Is there a test asserting this? If yes, name it and paste its result. If NO test exists, say so plainly (do not invent one in this pass) — that's a FAIL to flag, not to silently fix.
+
+2. PREFLIGHT + DISPATCH LOCKSTEP:
+   - Paste both the preflight and the dispatch-stage synthetic live-confirmation checks side by side. Confirm they use the SAME per-symbol live-confirmation condition, so there is no path that passes one stage but not the other (e.g. confirms at preflight, then the tick goes stale before dispatch — what happens?).
+   - State explicitly: can a synthetic order that was live-confirmed at preflight reach the broker if its per-symbol feed went stale/awaiting before dispatch? It must be re-checked at dispatch and blocked. Show the dispatch re-check.
+
+3. SYNTHETIC ENTRY CONFIRM STEP:
+   - Mint a temp session (established recipe). For a genuinely live-confirmed synthetic, confirm the entry flow presents the human confirmation step before any order is placed — do NOT place a live order; stop at the confirm boundary and screenshot it.
+   - For a synthetic on a stale/awaiting feed, confirm entry is BLOCKED with the honest SYNTHETIC_FEED_NOT_LIVE_CONFIRMED reason — screenshot it.
+
+4. PER-SYMBOL SOURCING IS COMPLETE, not just in the one function QA hit:
+   - Grep for every read of feedReadinessState and lastTickTime (and the global hasRecentTick / getLastTickAgeMs). Confirm no user-facing feed-state surface still reads the GLOBAL tick state for a specific symbol. List each site and whether it's per-symbol or global.
+
+Report PASS/FAIL per item with the pasted evidence. If item 1 has no SL test, or item 2 has no dispatch re-check, propose the fix but do NOT apply it — I'll decide.

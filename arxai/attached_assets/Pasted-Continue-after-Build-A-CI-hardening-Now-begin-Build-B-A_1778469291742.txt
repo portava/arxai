@@ -1,0 +1,93 @@
+Continue after Build A — CI hardening.
+
+Now begin Build B — Architecture Consolidation.
+
+Goal:
+Clean up the trading app architecture without rebuilding or deleting working systems.
+
+Tasks:
+
+1. Review Build A findings
+- Read the CI/hardening report
+- Identify duplicate routes
+- Identify duplicate services
+- Identify duplicate dashboard widgets
+- Identify broken imports
+- Identify unsafe logic
+- Identify areas with overlapping responsibilities
+
+2. Consolidate backend services
+Make sure each major system has one clear service:
+
+- trade feedback service
+- trader scoring service
+- AI coach service
+- market intelligence service
+- adaptive strategy service
+- replay simulator service
+- risk management service
+- broker/MT5 service
+
+Do not create duplicate services.
+
+3. Consolidate API routes
+Make sure each route has one clear purpose.
+
+Clean up:
+- duplicate endpoints
+- overlapping handlers
+- unused test routes
+- unsafe mutation routes
+- inconsistent response formats
+
+4. Consolidate frontend pages/components
+Make sure the dashboard does not have repeated widgets.
+
+Clean up:
+- duplicate cards
+- repeated coach panels
+- repeated score widgets
+- repeated market status blocks
+- repeated replay panels
+
+5. Create architecture map
+Create or update documentation showing:
+
+- frontend pages
+- components
+- backend services
+- API routes
+- database tables
+- data flow
+- MT5/broker flow
+- AI coach flow
+- scoring flow
+- replay simulator flow
+
+6. Add safety notes
+Document:
+- what should not be touched
+- what is live-trading sensitive
+- what is mock/demo only
+- what requires broker credentials
+- what requires human confirmation before live execution
+
+Important rules:
+- Do not rebuild from scratch.
+- Do not delete working systems unless clearly unused and safe.
+- Do not break MT5/broker integration.
+- Do not remove CI checks.
+- Do not make guaranteed-profit claims.
+- Preserve all user data.
+- Keep replay/practice trading separate from live trading.
+
+Final output required:
+
+1. Files changed
+2. Routes consolidated
+3. Services consolidated
+4. Components consolidated
+5. Duplicates removed or flagged
+6. Architecture map location
+7. Remaining risks
+8. Recommended next build

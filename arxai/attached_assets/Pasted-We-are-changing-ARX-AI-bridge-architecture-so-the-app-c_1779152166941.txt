@@ -1,0 +1,336 @@
+We are changing ARX AI bridge architecture so the app can operate from ONE centralized MT5 account/bridge instead of requiring every user to connect their own MT5 account.
+
+Do not break the current per-user bridge system yet. Add this as a new optional architecture mode.
+
+Feature name:
+Centralized Master MT5 Bridge Mode
+
+Goal:
+Only the platform/operator connects one MT5 account with one EA. Users trade through ARX, and ARX routes approved commands through the master bridge while keeping per-user attribution, risk limits, command history, position mapping, and P/L tracking inside the app.
+
+IMPORTANT SAFETY:
+For now, build this as DEMO-FIRST and COMPLIANCE-LOCKED for LIVE.
+Do not allow pooled real-money user trading through the master live account until a compliance/legal approval flag exists.
+
+PART 1 — BRIDGE MODE SETTING
+
+Add a platform setting:
+
+bridgeMode:
+- PER_USER_BRIDGE
+- MASTER_BRIDGE_DEMO
+- MASTER_BRIDGE_LIVE_LOCKED
+- MASTER_BRIDGE_LIVE_ENABLED
+
+Default:
+PER_USER_BRIDGE
+
+Add admin-only UI to switch mode.
+
+If MASTER_BRIDGE_DEMO is selected:
+- users do not need to connect MT5
+- all demo trade commands route to the active platform master demo bridge
+
+If MASTER_BRIDGE_LIVE_LOCKED:
+- UI can preview master live trading
+- live commands remain blocked
+
+If MASTER_BRIDGE_LIVE_ENABLED:
+- only available after compliance approval, master switch, kill switch clear, live unlock, and risk gates pass
+
+PART 2 — MASTER BRIDGE TABLES / DATA MODEL
+
+Add or update backend models:
+
+master_mt5_bridge_connections:
+- id
+- mode: DEMO / LIVE
+- broker_server
+- mt5_account_number
+- ea_version
+- account_type
+- read_only_mode
+- enable_demo_execution
+- enable_live_execution
+- max_lot
+- last_heartbeat_at
+- terminal_connected
+- algo_trading_allowed
+- status
+- created_at
+- updated_at
+
+virtual_trading_accounts:
+- id
+- user_id
+- mode: DEMO / LIVE
+- virtual_balance
+- virtual_equity
+- virtual_margin
+- virtual_free_margin
+- risk_tier
+- daily_loss_limit
+- max_lot
+- allowed_symbols
+- status
+
+master_bridge_commands:
+- id
+- user_id
+- virtual_account_id
+- master_bridge_connection_id
+- source_page
+- source_signal_id
+- command_type
+- symbol
+- side
+- order_type
+- requested_volume
+- executed_volume
+- stop_loss
+- take_profit
+- status
+- broker_ticket
+- fill_price
+- mt5_retcode
+- broker_message
+- reject_reason
+- idempotency_key
+- created_at
+- sent_to_mt5_at
+- filled_at
+- rejected_at
+
+master_position_allocations:
+- id
+- user_id
+- virtual_account_id
+- master_bridge_command_id
+- broker_ticket
+- symbol
+- side
+- allocated_volume
+- entry_price
+- current_price
+- floating_pl
+- realized_pl
+- stop_loss
+- take_profit
+- status
+- opened_at
+- closed_at
+
+PART 3 — ROUTING LOGIC
+
+Create a routing layer:
+
+resolveTradeExecutionBridge(userId, mode)
+
+Rules:
+1. If bridgeMode=PER_USER_BRIDGE:
+   use the user's own MT5 bridge.
+2. If bridgeMode=MASTER_BRIDGE_DEMO:
+   route demo commands to the active platform demo master bridge.
+3. If bridgeMode=MASTER_BRIDGE_LIVE_LOCKED:
+   block live commands with:
+   MASTER_LIVE_BRIDGE_LOCKED
+4. If bridgeMode=MASTER_BRIDGE_LIVE_ENABLED:
+   route live commands only if all compliance/risk/live gates pass.
+
+Do not allow frontend-only routing decisions. Server must enforce this.
+
+PART 4 — USER EXPERIENCE
+
+When master bridge mode is enabled, update the UI:
+
+MT5 Setup page:
+- show “Platform Master Bridge Active”
+- users should not be asked to install EA
+- users should see:
+  “Your trades are routed through ARX’s connected MT5 bridge.”
+
+Trade ticket:
+- show execution mode:
+  “Master Demo Bridge”
+  or
+  “Master Live Bridge — compliance locked”
+- show user’s virtual account balance/risk
+- show master bridge readiness
+- show confirmation before submitting
+
+Market Scanner:
+- Buy/Sell buttons should work without each user connecting MT5
+- scanner trade source remains MARKET_SCANNER
+- show Ruby’s Setup Reason
+- route to master bridge according to bridge mode
+
+Ruby:
+- Ruby should explain:
+  “This account is using the ARX master bridge. Your trade is tracked under your ARX virtual account.”
+
+PART 5 — POSITION ATTRIBUTION
+
+Every trade placed through the master bridge must be mapped back to the user.
+
+Use:
+- broker_ticket
+- command_id
+- user_id
+- virtual_account_id
+- magic number if EA supports it
+- order comment containing ARX command id
+
+EA order comment format:
+ARX|user:{userId}|cmd:{commandId}|src:{source}
+
+If MT5 broker truncates comments, still store mapping server-side by command id and ticket.
+
+PART 6 — HEDGING VS NETTING ACCOUNT HANDLING
+
+Detect account margin mode:
+
+If MT5 account is HEDGING:
+- allow separate positions per user where broker supports it
+- map each broker ticket to one ARX command/user
+
+If MT5 account is NETTING:
+- warn admin:
+  “Netting accounts merge same-symbol positions. ARX must use internal allocation accounting.”
+- do not promise one broker ticket per user position
+- maintain internal allocation ledger
+- show users virtual allocated positions, not raw broker net position only
+
+PART 7 — RISK CONTROLS
+
+Add per-user risk controls even though the master account is shared:
+
+- max lot per user
+- max open trades per user
+- max daily loss per user
+- max symbol exposure per user
+- max total platform exposure per symbol
+- max total master account exposure
+- stop loss required
+- duplicate command protection
+- cooldown after rejected/failed orders
+- emergency platform kill switch
+
+If any user exceeds risk limits, block only that user’s command, not the whole bridge.
+
+If master account exposure limit is reached, block all new commands with:
+MASTER_ACCOUNT_EXPOSURE_LIMIT_REACHED
+
+PART 8 — COMPLIANCE LOCK FOR LIVE MASTER ACCOUNT
+
+Add compliance gate:
+
+masterLiveComplianceApproved=false by default
+
+Master live trading must remain blocked unless:
+- masterLiveComplianceApproved=true
+- ARX_LIVE_BROKER_EXECUTION_ENABLED=true
+- live kill switch inactive
+- master EA v1.27+ heartbeat fresh
+- AccountType REAL/LIVE
+- ReadOnlyMode=false
+- EnableLiveExecution=true
+- user is approved for live
+- user accepted live risk disclosure
+- stop loss present
+- max lot/risk limits pass
+
+If master live is not compliance approved, block with:
+MASTER_LIVE_COMPLIANCE_LOCK
+
+Add admin warning:
+“Using one live MT5 account for multiple users may create regulatory, custody, allocation, and managed-account obligations. Do not enable without legal/compliance approval.”
+
+PART 9 — EA SUPPORT
+
+Update EA only if needed.
+
+EA should support master bridge command payloads:
+- command id
+- user id
+- virtual account id
+- source page
+- symbol
+- side
+- order type
+- volume
+- SL
+- TP
+- mode
+- idempotency key
+
+EA must write back:
+- command id
+- broker ticket
+- fill price
+- executed volume
+- retcode
+- broker message
+- result status
+
+Do not expose bridge token in logs.
+
+PART 10 — REPORTING
+
+Add admin Master Bridge Dashboard:
+
+Show:
+- active master bridge status
+- EA version
+- account number
+- broker/server
+- account balance/equity
+- total open exposure
+- open broker positions
+- user allocations
+- recent master commands
+- failed/rejected commands
+- orphan broker positions
+- reconciliation warnings
+
+Add user-facing “My Trades” page:
+- show only that user’s virtual trades/allocations
+- do not show other users’ trades
+- do not expose master broker account details beyond approved display
+
+PART 11 — MIGRATION SAFETY
+
+Do not remove current per-user bridge flow.
+
+Add mode switch safely:
+- existing users keep PER_USER_BRIDGE unless admin changes mode
+- master mode can be tested in demo first
+- rollback option to PER_USER_BRIDGE
+
+PART 12 — ACCEPTANCE TESTS
+
+Build tests for:
+
+1. PER_USER_BRIDGE still works.
+2. MASTER_BRIDGE_DEMO allows a user without MT5 setup to place demo trade.
+3. Master demo command routes to platform master bridge.
+4. User id and command id are stored.
+5. Filled master trade maps back to correct user.
+6. User A cannot see User B trade details.
+7. Duplicate tap does not create duplicate master orders.
+8. Per-user max lot blocks oversized trade.
+9. Master account exposure limit blocks all users when reached.
+10. Market Scanner trade routes through master bridge in master mode.
+11. Ruby explains master bridge mode correctly.
+12. MASTER_BRIDGE_LIVE_LOCKED blocks all live commands.
+13. MASTER_BRIDGE_LIVE_ENABLED is impossible unless compliance flag and live gates pass.
+14. Kill switch blocks all master live commands.
+15. Demo bridge remains unaffected.
+16. No bridge tokens, API keys, broker passwords, or secrets leak in UI/logs/Ruby memory.
+
+Acceptance proof required:
+- One user with no personal MT5 connection can place a demo trade through MASTER_BRIDGE_DEMO.
+- Trade appears under that user’s ARX account.
+- Broker ticket maps to the correct ARX command/user.
+- Admin dashboard shows master bridge activity.
+- User cannot see other users’ allocations.
+- Live master bridge remains compliance locked unless explicitly approved.

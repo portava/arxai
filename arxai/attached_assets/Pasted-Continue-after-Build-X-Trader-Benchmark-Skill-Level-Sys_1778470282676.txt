@@ -1,0 +1,100 @@
+Continue after Build X — Trader Benchmark & Skill Level System.
+
+Now begin Build Y — AI Mentor Mode.
+
+Goal:
+Create a personalized AI mentor that gives the trader daily guidance based on their skill level, trading rules, recent mistakes, strongest edge, current market condition, and weekly improvement goals.
+
+Tasks:
+
+1. Audit existing systems:
+- AI Coach
+- Trader Skill Level
+- Weekly Reviews
+- Trade Journal
+- Playbook
+- Edge Discovery
+- Strategy Engine
+- Market Intelligence
+- Risk Lock System
+- Session Readiness
+
+2. Add database models:
+
+ai_mentor_sessions:
+- id
+- user_id
+- session_type
+- skill_level
+- main_focus
+- mentor_message
+- recommended_action
+- related_goal_id
+- related_trade_id
+- related_strategy_id
+- created_at
+
+mentor_action_items:
+- id
+- user_id
+- mentor_session_id
+- action_title
+- action_description
+- status
+- due_date
+- created_at
+- updated_at
+
+3. Mentor session types:
+- DAILY_BRIEFING
+- PRE_MARKET_GUIDANCE
+- POST_TRADE_GUIDANCE
+- WEEKLY_RESET
+- RISK_WARNING
+- CONFIDENCE_REBUILD
+- DISCIPLINE_CHECK
+
+4. AI Mentor should generate:
+- daily trading focus
+- top warning
+- one rule to respect today
+- one mistake to avoid
+- one strength to lean into
+- recommended drill
+- recommended strategy condition
+- clear next action
+
+5. API routes:
+- POST generate mentor session
+- GET latest mentor session
+- GET mentor sessions
+- GET mentor action items
+- PATCH update mentor action item
+
+6. Frontend components:
+- AI Mentor Page
+- Daily Mentor Briefing Card
+- Mentor Action Items
+- Mentor Warning Card
+- Mentor History
+
+7. Connect to:
+- Dashboard
+- Session Readiness
+- Trade Plan Builder
+- Weekly Review
+- AI Coach
+
+Important:
+- Mentor should guide behavior, not promise profits.
+- Keep advice short, direct, and actionable.
+- Do not allow mentor messages to bypass execution safety.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How AI Mentor connects to skill level, weekly review, and readiness
+6. Errors or limitations
+7. Recommended next build

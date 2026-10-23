@@ -1,0 +1,199 @@
+NEXT PHASE: CREATE MT5 EXPERT ADVISOR BRIDGE PACKAGE
+
+Goal:
+Create the actual MT5 bridge package that I can install into MetaTrader 5 so my Replit trading app can read my broker/account data and later route guarded demo/live trades.
+
+Current status:
+- App-side broker bridge scaffold exists
+- 11/11 safety guards pass
+- No real orders placed
+- Live trading still locked
+- Missing piece: real MT5 bridge/Expert Advisor running on user side
+
+Build the MT5 bridge package now.
+
+1. Create downloadable MT5 EA bridge files
+
+Create:
+
+/mt5-bridge/ReplitMT5BridgeEA.mq5
+/mt5-bridge/README_SETUP.md
+/mt5-bridge/BRIDGE_TESTING_CHECKLIST.md
+
+The EA should support these inputs:
+
+- ServerBaseUrl
+- BridgeToken
+- Environment = demo/live
+- AccountId
+- ReadOnlyMode = true by default
+- AllowOrderExecution = false by default
+- PollIntervalSeconds = 2
+- SendHeartbeat = true
+- SendAccountSnapshot = true
+- SendPositionsSnapshot = true
+- SendOrdersSnapshot = true
+
+2. EA must send token securely
+
+Every request from MT5 EA to Replit must include:
+
+X-MT5-Bridge-Token: <token>
+
+Do not expose token in logs.
+Do not hardcode token into source.
+User will paste token into EA input settings manually.
+
+3. Create or confirm app-side MT5 endpoints
+
+The EA should communicate with:
+
+POST /api/mt5/heartbeat
+POST /api/mt5/account/snapshot
+POST /api/mt5/positions/snapshot
+POST /api/mt5/orders/snapshot
+GET /api/mt5/commands/poll
+POST /api/mt5/commands/ack
+POST /api/mt5/commands/reject
+GET /api/broker/connection-check
+GET /api/broker/status
+GET /api/broker/account
+GET /api/positions/live
+GET /api/orders/live
+
+4. Read-only first
+
+The first EA version must be READ-ONLY.
+
+It may:
+- send heartbeat
+- send account balance/equity/margin
+- send open positions
+- send open orders
+- send symbol/spread info
+- poll for commands
+
+It must NOT:
+- place live orders
+- close live positions
+- modify live orders
+- cancel live orders
+- call OrderSend
+- call trade execution methods
+
+If a command attempts execution while ReadOnlyMode=true, the EA must reject it and report:
+
+"EA_READ_ONLY_MODE_ACTIVE"
+
+5. Add command structure for future order testing
+
+Commands should be supported but blocked for now:
+
+{
+  "commandId": "...",
+  "type": "PLACE_ORDER" | "CLOSE_POSITION" | "CANCEL_ORDER",
+  "environment": "DEMO" | "LIVE",
+  "symbol": "...",
+  "direction": "BUY" | "SELL",
+  "lotSize": 0.01,
+  "stopLoss": number,
+  "takeProfit": number,
+  "idempotencyKey": "...",
+  "approvedByGuard": true
+}
+
+For now, EA should only acknowledge/reject commands. No execution.
+
+6. Replit Secrets checklist
+
+Update README_SETUP.md to tell me to set these Replit Secrets:
+
+BROKER_PROVIDER=mt5
+MT5_BRIDGE_TOKEN=<long random token>
+MT5_ENVIRONMENT=demo
+MT5_ACCOUNT_ID=<optional>
+LIVE_TRADING_ALLOWED=false
+
+Also explain:
+- The token can be any long random private string.
+- The same token must be pasted into the EA input setting.
+- Never paste the token into chat.
+- Never commit it into code.
+
+7. MT5 setup instructions
+
+README should explain:
+
+1. Open MetaTrader 5.
+2. Go to File → Open Data Folder.
+3. Open MQL5 → Experts.
+4. Place ReplitMT5BridgeEA.mq5 inside Experts.
+5. Restart MT5 or refresh Navigator.
+6. Compile the EA in MetaEditor.
+7. Attach the EA to a chart.
+8. Enable Algo Trading.
+9. Go to Tools → Options → Expert Advisors.
+10. Allow WebRequest for the Replit app URL.
+11. Add the Replit app base URL.
+12. Paste BridgeToken into EA inputs.
+13. Keep ReadOnlyMode=true for first test.
+14. Keep AllowOrderExecution=false for first test.
+
+8. Broker connection verification
+
+After EA is installed and running, the app should show:
+
+- bridge heartbeat received
+- MT5 account detected
+- account readable
+- equity readable
+- balance readable
+- margin readable
+- positions readable
+- orders readable
+- environment = demo/live
+- readOnlyReady = true
+- liveOrderReady = false
+
+9. Add frontend bridge setup panel
+
+On /broker and /mt5-status, add:
+
+- Download MT5 EA Bridge button
+- Setup instructions
+- Required secrets checklist
+- Last heartbeat timestamp
+- Account read status
+- Equity read status
+- Position read status
+- Order read status
+- Environment status
+- Read-only status
+- Live execution locked status
+
+10. Final test report
+
+After creating the bridge package, generate:
+
+MT5 EA BRIDGE PACKAGE REPORT
+
+Include:
+
+- files created
+- endpoints verified
+- Replit Secrets required
+- setup steps
+- current bridge connection status
+- whether heartbeat is waiting
+- whether account data is waiting
+- whether live order execution remains locked
+- whether 11/11 safety guards still pass
+
+Hard rules:
+- Do not place real orders.
+- Do not enable live execution yet.
+- Do not expose secret values.
+- Do not remove kill switch.
+- Do not remove risk governor.
+- Do not bypass placeLiveOrderGuarded().
+- Keep ReadOnlyMode=true by default.

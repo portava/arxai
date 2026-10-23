@@ -1,0 +1,267 @@
+Phase 22E — Real Market Data Provider Setup + Assistant Market Awareness
+
+Before making changes, inspect Phase 22D results. Do not continue if push notifications failed QA or if `/api/me/notifications` is not still canonical.
+
+Goal:
+Connect ARX AI to a real market data provider using secure backend-only API keys. The app and assistant must truthfully show whether market data is connected, disconnected, stale, limited, or unavailable. Do not fake market prices, news, alerts, provider status, or trading signals.
+
+Known current status:
+- `/api/me/assistant/market-status` currently returns provider:"none", connected:false.
+- Assistant tools already include `getMarketSnapshot`, `getRecentMarketNews`, and `getMarketDataProviderStatus`.
+- Provider keys are not configured yet.
+- Existing accepted env keys include:
+  - `FINNHUB_API_KEY`
+  - `ALPHA_VANTAGE_API_KEY`
+  - `POLYGON_API_KEY`
+  - `NEWSAPI_API_KEY`
+
+Important:
+- This phase is for market data awareness only.
+- Do not build live trade execution.
+- Do not create guaranteed entry/win claims.
+- Do not expose API keys to the frontend.
+- Do not hardcode real API keys.
+- Do not replace the current AI system; build into it.
+
+Tasks:
+
+1. Full pre-check
+Inspect and report the existing market-related files/routes/tools before editing.
+
+Find:
+- market provider status route
+- assistant market tools
+- market snapshot service
+- recent market news service
+- scanner/risk systems that need market context
+- frontend areas displaying market data/provider status
+- any fake/sample/placeholder market data
+
+Return a short file map before implementation.
+
+2. Create provider abstraction
+Create or strengthen a backend market provider layer.
+
+It should support:
+- provider detection
+- provider health check
+- quote/snapshot fetch
+- recent news fetch if available
+- normalized response shape
+- stale/failed/error states
+- provider priority/fallback order
+
+Provider priority:
+1. Polygon, if `POLYGON_API_KEY` exists
+2. Finnhub, if `FINNHUB_API_KEY` exists
+3. Alpha Vantage, if `ALPHA_VANTAGE_API_KEY` exists
+4. NewsAPI only for news if `NEWSAPI_API_KEY` exists
+5. none
+
+Do not require all providers.
+Use whichever provider key exists.
+
+3. Environment safety
+Support these env variables:
+- `POLYGON_API_KEY`
+- `FINNHUB_API_KEY`
+- `ALPHA_VANTAGE_API_KEY`
+- `NEWSAPI_API_KEY`
+
+Rules:
+- Never expose API keys to frontend.
+- `/api/me/assistant/market-status` and any public/client status endpoint may only expose:
+  - provider name
+  - connected true/false
+  - configured true/false
+  - supported features
+  - last successful fetch time
+  - stale true/false
+  - setup hint
+- Add/update `.env.example` if present.
+- If no keys exist, return an honest disconnected state.
+
+4. Canonical market status endpoint
+Make sure the canonical authenticated endpoint returns a clean status object.
+
+Expected shape:
+{
+  provider: "polygon" | "finnhub" | "alpha_vantage" | "newsapi" | "none",
+  connected: boolean,
+  configured: boolean,
+  features: {
+    quotes: boolean,
+    news: boolean,
+    snapshots: boolean
+  },
+  lastCheckedAt: string | null,
+  lastSuccessfulFetchAt: string | null,
+  stale: boolean,
+  notes: string,
+  keysExposed: false
+}
+
+If not configured:
+Return:
+{
+  provider: "none",
+  connected: false,
+  configured: false,
+  notes: "No market data provider configured."
+}
+
+5. Market snapshot endpoint/service
+Create or update a safe market snapshot service.
+
+It should:
+- accept symbols/pairs from authenticated user requests
+- validate symbols
+- fetch real data from configured provider
+- normalize fields:
+  - symbol
+  - price
+  - change
+  - changePercent
+  - bid/ask if available
+  - high/low if available
+  - open/previousClose if available
+  - timestamp
+  - provider
+  - stale
+- cache briefly to avoid API spam
+- return honest unavailable responses if no provider exists
+- never return fake values
+
+6. Market news endpoint/service
+Create or update recent market news.
+
+It should:
+- use provider news if available
+- optionally use `NEWSAPI_API_KEY` if configured
+- normalize:
+  - headline
+  - source
+  - url
+  - publishedAt
+  - symbols/tags if available
+  - provider
+- return empty state if no news provider is configured
+- never invent headlines
+
+7. Connect assistant tools
+Update assistant tools so:
+
+`getMarketDataProviderStatus`
+- returns the canonical provider status
+
+`getMarketSnapshot`
+- uses real provider data only
+- returns disconnected/unavailable if no provider exists
+
+`getRecentMarketNews`
+- uses real provider/news data only
+- returns empty/unavailable if no provider exists
+
+Assistant must answer truthfully:
+- If no provider is connected, say market data is not connected.
+- If provider is connected, name the provider and explain freshness/staleness.
+- If data is stale, say it is stale.
+- If the user asks for live market conditions and no provider exists, do not guess.
+
+8. Risk/scanner integration
+Connect market status into risk/scanner systems only as awareness.
+
+Rules:
+- Risk checks can say “market data unavailable” if provider is disconnected.
+- Scanner can refuse live-scan claims if provider is disconnected.
+- Do not generate fake trading signals.
+- Do not claim a setup is live-confirmed unless real data was fetched successfully.
+- Do not allow market data failure to crash the app.
+
+9. UI update
+Only update existing market/assistant/status UI.
+
+UI should show:
+- Market data: Connected / Not connected / Stale
+- Provider name if connected
+- Setup hint if disconnected
+- Last updated time if available
+- No fake market numbers
+- No fake “live” labels
+
+Fresh user should see a clean disconnected state until a provider is configured.
+
+10. Tests required
+Add/update tests for:
+
+Backend:
+- no API keys returns provider none / connected false
+- configured key returns provider configured true
+- private keys are not exposed
+- snapshot endpoint rejects invalid symbols
+- snapshot endpoint returns honest unavailable state if no provider
+- snapshot endpoint normalizes real provider response using mocked provider response
+- news endpoint returns honest empty/unavailable state if no provider
+- news endpoint normalizes mocked provider response
+- cache prevents repeated unnecessary calls
+- provider failure returns safe error without crashing
+
+Assistant:
+- `getMarketDataProviderStatus` reports connected false when no key exists
+- `getMarketSnapshot` does not fabricate values when no provider exists
+- `getRecentMarketNews` does not fabricate headlines
+- assistant market questions route to market tools first
+- assistant includes provider/staleness in answer
+
+Frontend:
+- no fake market data appears
+- provider disconnected state displays honestly
+- connected provider status displays without exposing keys
+- UI does not claim live market data unless provider is connected
+
+11. QA gate
+After implementation, run:
+- typecheck
+- lint if available
+- unit tests
+- backend route tests
+- assistant tool tests
+- frontend smoke test
+- forbidden fake/placeholder market scan
+- grep/search for exposed key strings in frontend bundle/source
+
+Search for:
+- `POLYGON_API_KEY`
+- `FINNHUB_API_KEY`
+- `ALPHA_VANTAGE_API_KEY`
+- `NEWSAPI_API_KEY`
+- `fake market`
+- `sample price`
+- `placeholder market`
+- `live signal`
+- `guaranteed`
+- `100% win`
+
+12. Final report required
+Return a Phase 22E report with:
+- files inspected
+- files changed
+- provider abstraction status
+- env variable status
+- market status endpoint result
+- snapshot result
+- news result
+- assistant market awareness result
+- risk/scanner honesty result
+- UI honesty result
+- tests passed/failed
+- remaining Phase 22F work
+
+Important constraints:
+- Do not redesign the app.
+- Do not fake market data.
+- Do not expose API keys.
+- Do not hardcode real keys.
+- Do not build live trade execution.
+- Do not claim guaranteed wins.
+- Do not move to Phase 22F unless QA passes.

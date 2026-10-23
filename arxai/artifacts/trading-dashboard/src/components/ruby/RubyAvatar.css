@@ -1,0 +1,151 @@
+/* RubyAvatar.css — all motion is CSS-only, GPU-friendly (transform/opacity),
+   and fully disabled under prefers-reduced-motion. Color is backed by labels
+   and badges so status never depends on color alone. */
+
+.ruby-avatar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  line-height: 1;
+}
+.ruby-avatar--interactive {
+  cursor: pointer;
+  border-radius: 9999px;
+}
+.ruby-avatar--interactive:focus-visible {
+  outline: 2px solid var(--ruby-accent);
+  outline-offset: 2px;
+}
+.ruby-avatar[disabled] { cursor: default; }
+
+.ruby-avatar__ringwrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+
+.ruby-avatar__svg { position: relative; z-index: 2; display: block; }
+
+/* aura breathing (idle) */
+.ruby-aura { transform-origin: center; animation: ruby-breathe 4.5s ease-in-out infinite; }
+
+/* outer reactive rings */
+.ruby-avatar__ring,
+.ruby-avatar__ring--2 {
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--ruby-accent);
+  opacity: 0.5;
+  z-index: 1;
+}
+.ruby-avatar__ring { animation: ruby-pulse 3.4s ease-in-out infinite; }
+.ruby-avatar__ring--2 { inset: -7px; opacity: 0.22; animation: ruby-pulse 3.4s ease-in-out infinite 0.6s; }
+
+/* ---- listening: expanding voice rings ---- */
+.ruby-wave {
+  position: absolute; inset: -4px; border-radius: 9999px;
+  border: 2px solid var(--ruby-accent); opacity: 0; z-index: 1;
+  animation: ruby-ripple 1.6s ease-out infinite;
+}
+.ruby-wave--2 { animation-delay: 0.8s; }
+
+/* ---- speaking: soundwave bars ---- */
+.ruby-bars {
+  position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: flex-end; gap: 2px; height: 12px; z-index: 3;
+}
+.ruby-bars i {
+  width: 2.5px; height: 4px; border-radius: 2px; background: var(--ruby-accent);
+  animation: ruby-eq 0.9s ease-in-out infinite;
+}
+.ruby-bars i:nth-child(2) { animation-delay: 0.15s; }
+.ruby-bars i:nth-child(3) { animation-delay: 0.3s; }
+.ruby-bars i:nth-child(4) { animation-delay: 0.45s; }
+
+/* ---- thinking: three orbiting dots ---- */
+.ruby-orbit { position: absolute; inset: -6px; z-index: 3; animation: ruby-spin 2.4s linear infinite; }
+.ruby-orbit i {
+  position: absolute; width: 5px; height: 5px; border-radius: 9999px; background: var(--ruby-accent);
+  top: 50%; left: 50%; margin: -2.5px 0 0 -2.5px;
+}
+.ruby-orbit i:nth-child(1) { transform: rotate(0deg) translateX(calc(50% + 8px)); }
+.ruby-orbit i:nth-child(2) { transform: rotate(120deg) translateX(calc(50% + 8px)); opacity: 0.7; }
+.ruby-orbit i:nth-child(3) { transform: rotate(240deg) translateX(calc(50% + 8px)); opacity: 0.45; }
+
+/* ---- analyzingMarket: radar sweep ---- */
+.ruby-radar {
+  position: absolute; inset: 2px; border-radius: 9999px; overflow: hidden; z-index: 1; opacity: 0.7;
+  background: conic-gradient(from 0deg, transparent 0deg, var(--ruby-accent) 40deg, transparent 80deg);
+  -webkit-mask: radial-gradient(circle, transparent 38%, #000 40%);
+          mask: radial-gradient(circle, transparent 38%, #000 40%);
+  animation: ruby-spin 2.2s linear infinite;
+}
+
+/* ---- status badges ---- */
+.ruby-badge {
+  position: absolute; right: -2px; bottom: -2px; z-index: 4;
+  display: grid; place-items: center;
+  width: 16px; height: 16px; border-radius: 9999px;
+  font-size: 10px; font-weight: 800; color: #0B0F16;
+  box-shadow: 0 0 0 2px #0B0F16;
+}
+.ruby-badge--ok { background: var(--success, #42E6A4); animation: ruby-pop 0.4s ease-out; }
+.ruby-badge--warn { background: var(--warning, #FFCC4D); animation: ruby-attn 1.8s ease-in-out infinite; }
+.ruby-badge--off { background: var(--txt-muted, #6F7785); }
+
+/* risk/alert: whole avatar gets a controlled attention pulse */
+.ruby-avatar[data-state="riskWarning"] .ruby-avatar__ring,
+.ruby-avatar[data-state="alert"] .ruby-avatar__ring {
+  animation: ruby-attn 1.8s ease-in-out infinite;
+}
+
+/* disconnected: dim everything */
+.ruby-avatar[data-state="disconnected"] { filter: grayscale(0.7); opacity: 0.65; }
+.ruby-avatar[data-state="disconnected"] .ruby-avatar__ring,
+.ruby-avatar[data-state="disconnected"] .ruby-aura { animation: none; }
+
+/* eyes shimmer on active states */
+.ruby-avatar[data-state="listening"] .ruby-eye,
+.ruby-avatar[data-state="speaking"] .ruby-eye,
+.ruby-avatar[data-state="thinking"] .ruby-eye,
+.ruby-avatar[data-state="analyzingMarket"] .ruby-eye {
+  animation: ruby-eyeshimmer 1.4s ease-in-out infinite;
+}
+
+/* labels */
+.ruby-avatar__labels { display: flex; flex-direction: column; gap: 1px; text-align: left; }
+.ruby-avatar__label { font-size: 0.8125rem; font-weight: 600; color: var(--foreground, #F5F7FA); }
+.ruby-avatar__sublabel { font-size: 0.6875rem; color: var(--txt-muted, #6F7785); }
+
+/* keyframes */
+@keyframes ruby-breathe { 0%,100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes ruby-pulse { 0%,100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 0.2; transform: scale(1.04); } }
+@keyframes ruby-ripple { 0% { opacity: 0.55; transform: scale(0.85); } 100% { opacity: 0; transform: scale(1.5); } }
+@keyframes ruby-eq { 0%,100% { height: 4px; } 50% { height: 12px; } }
+@keyframes ruby-spin { to { transform: rotate(360deg); } }
+@keyframes ruby-pop { 0% { transform: scale(0); } 70% { transform: scale(1.3); } 100% { transform: scale(1); } }
+@keyframes ruby-attn { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+@keyframes ruby-eyeshimmer { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* reduced motion: kill all looped animation, keep static + status legible */
+@media (prefers-reduced-motion: reduce) {
+  .ruby-avatar *,
+  .ruby-avatar .ruby-aura,
+  .ruby-avatar .ruby-avatar__ring,
+  .ruby-avatar .ruby-orbit,
+  .ruby-avatar .ruby-radar,
+  .ruby-avatar .ruby-bars i,
+  .ruby-avatar .ruby-wave,
+  .ruby-avatar .ruby-badge,
+  .ruby-avatar .ruby-eye {
+    animation: none !important;
+  }
+  .ruby-wave { display: none; }
+  .ruby-avatar[data-reduced="1"] .ruby-avatar__ring { opacity: 0.4; }
+}

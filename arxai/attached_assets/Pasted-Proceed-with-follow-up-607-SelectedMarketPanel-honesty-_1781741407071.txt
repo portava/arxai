@@ -1,0 +1,46 @@
+Proceed with follow-up #607: SelectedMarketPanel honesty safety-net test.
+
+Goal:
+Lock that the SelectedMarketPanel does not present degraded/unconfirmed selected symbols as clean live-ready execution opportunities.
+
+Surface:
+SelectedMarketPanel — especially:
+- selected market feed warning
+- withheld levels/analysis state
+- BUY/SELL open-ticket buttons
+- any “ready/live/confirmed” copy around the selected symbol
+
+Scope:
+Test-first. Only make a minimal display-only fix if the test exposes a real contradiction.
+
+Fixture:
+- selected symbol is degraded / feed-unconfirmed / historical-only / read-only
+- shared scanner truth is not FULL or not live-confirmed
+- selected panel still renders for that symbol
+
+Assertions:
+- Panel may still render the selected symbol and safe context.
+- Panel must show honest degraded/feed warning if that is current behavior.
+- Panel must not render misleading copy:
+  - “Live-confirmed”
+  - “Execution-ready”
+  - “Ready to trade”
+  - “Clean setup”
+  - “Verified”
+  - “AACI verified”
+- If BUY/SELL buttons render because they open a separately gated ticket, the test must assert they are not labeled or surrounded as live-ready/execution-ready by the panel itself.
+- If current expected behavior is to hide/disable BUY/SELL on degraded feed, lock that instead.
+- Do not change the live execution gate stack.
+
+Hard boundary:
+Do not touch live execution, trade ticket internals, broker dispatch, Ruby, backend scan logic, or shared contract unless the test proves a real selected-panel display bug. This task is about SelectedMarketPanel presentation only.
+
+Validation:
+- Add or extend the closest SelectedMarketPanel test.
+- If no test exists, create the smallest component test with mocked scanner/feed truth.
+- trading-dashboard typecheck clean.
+- relevant scanner suite green.
+- ci:guards green.
+
+Why this next:
+BroadScanOpportunityMap is now locked at row, CTA, group, mixed-group, and selected-map-inspector levels. SelectedMarketPanel is the remaining selected-symbol surface with explicit BUY/SELL affordances, so it needs a dedicated honesty safety-net.

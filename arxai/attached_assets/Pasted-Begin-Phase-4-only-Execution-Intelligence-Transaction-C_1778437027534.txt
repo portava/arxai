@@ -1,0 +1,70 @@
+Begin Phase 4 only: Execution Intelligence + Transaction Cost Analysis.
+
+Do not build Replay Lab, Portfolio Manager, Evolution, or unrestricted live auto-execution yet.
+
+Goal:
+Protect the system from real-world execution problems like spread spikes, slippage, latency, poor fills, broker instability, and hidden transaction costs.
+
+Build:
+
+/src/domain/execution-intelligence/
+  executionIntelligence.types.ts
+  preTradeCostEstimator.engine.ts
+  implementationShortfall.engine.ts
+  effectiveSpread.engine.ts
+  realizedSpread.engine.ts
+  marketImpact.engine.ts
+  timingRisk.engine.ts
+  opportunityCost.engine.ts
+  executionBenchmark.engine.ts
+  executionQualityGrade.engine.ts
+  brokerScorecard.engine.ts
+  executionLearning.engine.ts
+  orderTacticSelector.engine.ts
+
+Rules:
+- Execution Intelligence cannot place trades directly.
+- It can recommend EXECUTE, WAIT, REDUCE_SIZE, LIMIT_ONLY, CANCEL, SOFT_BLOCK, or HARD_BLOCK.
+- Every proposed trade must receive a preTradeCostEstimate.
+- Every filled trade must receive a postTradeExecutionReport.
+- Compare:
+  - expected fill vs actual fill
+  - decision price vs execution price
+  - spread at signal vs spread at fill
+  - latency at decision vs latency at fill
+  - broker health before vs after execution
+- If estimated execution cost destroys the trade’s expected edge, block the trade.
+- If execution quality is poor, reduce size or require limit orders.
+- If broker reliability is degraded, force WAIT, REDUCE_SIZE, or LOCKDOWN depending on severity.
+- ExecutionRiskScore must be consumed by Risk Governor.
+- ExecutionHealth must be consumed by Control Tower.
+- All execution intelligence records must be logged into the Black Box Vault.
+- Keep all previous phase tests passing.
+- No unrestricted live auto-execution yet.
+
+Required outputs:
+- preTradeCostEstimate
+- postTradeExecutionReport
+- executionRiskScore
+- executionQualityGrade
+- implementationShortfall
+- brokerReliabilityScore
+- recommendedExecutionAction
+- plainEnglishExplanation
+
+Execution verdicts:
+- EXECUTION_CLEAN
+- EXECUTION_ACCEPTABLE
+- EXECUTION_COSTLY
+- EXECUTION_UNSTABLE
+- EXECUTION_BLOCKED
+
+After Phase 4, stop and report:
+1. Files created
+2. Execution risk factors implemented
+3. Transaction cost analysis implemented
+4. Broker scorecard implemented
+5. Risk Governor integration completed
+6. Control Tower integration completed
+7. Tests passed/failed
+8. Whether Phase 5 is safe to begin

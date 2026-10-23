@@ -1,0 +1,198 @@
+Paste this next:
+
+Continue to the next phase: Full App Beta Readiness + End-to-End Regression QA.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, journal, prop-firm, first-run readiness, or audit gates.
+Do NOT fake live trades, live P&L, win rate, market data, candles, news, current events, TP targets, broker balance, bridge status, or performance stats.
+Do NOT redesign the app globally unless a P0/P1 usability issue blocks beta readiness.
+Before coding:
+1. Read the latest QA report appended to docs/FULL_TRADING_INTELLIGENCE_ENGINE_QA_REPORT.md.
+2. Confirm Audit Trail is now FULL for the paper-trade lifecycle.
+3. Confirm final answer says READY FOR NEXT PHASE.
+4. Confirm all 21 verification checks passed.
+5. Confirm live trading remains BLOCKED, auto-close remains ALERT_ONLY, shared MT5 routing remains BLOCKED, and MT5 commands remain force-BLOCKED.
+6. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+Goal:
+Run a full beta-readiness audit across the entire ARX AI app so a first-time tester can use the app safely in paper mode without broken navigation, fake data, dead buttons, misleading status, or hidden safety issues.
+A. Route/Page Inventory
+Inspect every main route/page and confirm it loads:
+- Cockpit / Dashboard
+- Trade
+- Order ticket
+- Trade detail
+- AI assistant
+- Risk
+- Prop Firm Mode
+- Journal
+- Trade History
+- Performance
+- Notifications
+- Market Health
+- MT5 Bridge / Broker Read-Only
+- Reconciliation
+- Protective Auto-Close
+- Settings / More
+- First-run readiness checklist
+For each page:
+- Verify route loads without runtime errors.
+- Verify mobile layout is usable.
+- Verify no blank screens.
+- Verify no broken imports.
+- Verify no fake sample data is shown as real.
+- Verify unauthenticated protected pages return/handle 401 safely.
+B. Navigation + Button Audit
+Inspect all visible navigation and buttons:
+- Bottom nav
+- Sidebar/menu
+- Header/topbar actions
+- AI floating button
+- Trade actions
+- Settings actions
+- Refresh/recheck buttons
+- Notification actions
+- Journal/performance actions
+- Prop firm actions
+Confirm:
+- Buttons either work, are disabled with a reason, or are hidden.
+- No dead buttons.
+- No wrong-route navigation.
+- No page opens unrelated content.
+- No action bypasses backend safety gates.
+- No action uses frontend-only userId ownership.
+C. End-to-End Paper User Flow
+Run a complete safe beta tester flow:
+1. Fresh user opens app.
+2. First-run readiness loads from backend.
+3. User sees live trading locked.
+4. User checks market data status.
+5. User opens order ticket.
+6. User creates a paper draft/order only when valid.
+7. User adds SL/TP.
+8. Trade card updates.
+9. Alert/notification is created.
+10. Journal entry is created/updated.
+11. Performance updates only if enough real paper trade data exists.
+12. AI can explain the paper trade.
+13. Manual close requires confirmation.
+14. Closed paper trade updates journal/performance.
+15. Audit trail records lifecycle events.
+Rules:
+- Use test fixtures only inside automated tests.
+- Do not show fake sample trades in real UI.
+- Do not route to MT5.
+- Do not create live commands.
+D. AI Assistant Full Readiness
+Verify AI can answer safely about:
+- System readiness
+- Market data status
+- Scanner status
+- Trade/order status
+- Paper account status
+- Journal/performance status
+- Prop firm rules
+- Notifications/alerts
+- Bridge/reconciliation status
+- Why live trading is locked
+- Why auto-close is alert-only
+Confirm AI:
+- Uses logged-in user data only.
+- Explains missing/stale data.
+- Does not invent trades, P&L, prices, candles, news, TP/SL, bridge status, or performance.
+- Does not execute or queue trades.
+- Keeps read-only Q&A enabled even when execution gates are locked.
+E. Mobile UI / iPhone Safari Readiness
+Audit mobile behavior:
+- Bottom nav fixed correctly with safe-area padding.
+- No content hidden behind bottom nav.
+- AI assistant panel is usable on mobile.
+- Keyboard does not permanently block input/actions.
+- Important buttons remain tappable.
+- Long tables/cards do not overflow badly.
+- Modals can close.
+- Confirmation prompts fit screen.
+- Scrolling works on all primary pages.
+Fix only P0/P1 mobile blockers.
+F. Error + Empty State Readiness
+Verify honest states for:
+- No paper trades yet
+- No journal entries yet
+- No performance history yet
+- Market data stale/unavailable
+- Scanner offline
+- Current events unavailable
+- News unavailable
+- MT5 bridge offline/read-only
+- Push not configured
+- Prop Firm Mode off
+- Broker balance unavailable
+- P&L unavailable
+- TP targets unavailable
+Each state should explain what is unavailable and what the user can safely do next.
+G. Security + Ownership Regression
+Confirm:
+- All /api/me/* endpoints require auth.
+- Unauthenticated requests return 401.
+- Wrong-owner reads/writes return 403/404.
+- Frontend never supplies trusted userId.
+- Backend uses req.authUser.id/session only.
+- Audit, notifications, journal, trades, orders, prop firm, risk, command queue, AI context, and readiness are per-user scoped.
+- No secrets are exposed.
+H. Safety Regression
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = DISABLED
+- Broker placement layer remains locked
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No fake live trades, live P&L, market data, candles, news, current events, TP targets, broker balance, or bridge status
+Run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Route/page load smoke test
+7. Navigation/button audit test
+8. Mobile layout smoke test
+9. First-run readiness regression
+10. Full paper trade E2E test
+11. Journal/performance integration regression
+12. Notification/alert regression
+13. Prop firm/risk regression
+14. Market data stale/unavailable regression
+15. AI assistant honesty regression
+16. Auth 401 tests
+17. Wrong-owner 403/404 tests
+18. Secret leakage tests
+19. Audit trail regression
+20. Safety-envelope regression
+21. Broker-placement locked regression
+22. Mandatory code review / architect review
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages unless required for the blocker.
+- Rerun all checks.
+End with a beta-readiness report showing:
+- Pages/routes inspected
+- Buttons/navigation inspected
+- Files changed, if any
+- Full paper E2E result
+- Mobile readiness result
+- AI readiness result
+- Empty/error state result
+- Security/isolation result
+- Tests run/pass/fail
+- Remaining P0/P1 blockers, if any
+- Remaining P2/P3 polish, if any
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: BETA READY or NOT BETA READY, with reasons.

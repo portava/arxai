@@ -1,0 +1,13 @@
+{
+  "name": "ARX AI",
+  "short_name": "ARX",
+  "description": "ARX AI — Analyze. Risk. eXecute. The AI trading fortress built for disciplined decisions.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050B14",
+  "theme_color": "#1E7BFF",
+  "icons": [
+    { "src": "/brand/arx-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

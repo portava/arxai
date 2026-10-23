@@ -1,0 +1,325 @@
+Add Claude as a secondary AI provider inside ARX AI without replacing the existing Ruby/OpenAI flow.
+
+GOAL:
+ARX AI should support a multi-model AI router where Ruby can use OpenAI as the primary front-facing assistant and Claude as a secondary deep-reasoning/audit provider. Claude should be available for deeper code/system audits, scanner/feed/candle-history diagnosis, long-context market reasoning, and fallback responses when OpenAI is unavailable. Do not break existing Ruby chat, scanner, MT5 bridge, risk engine, admin permissions, live trade wiring, or existing AI endpoints.
+
+IMPORTANT:
+This is not a visual redesign.
+This is not a rebuild.
+Do not remove OpenAI.
+Do not rename Ruby.
+Do not let Claude bypass the ARX risk engine.
+Do not let Claude place trades directly.
+All live trade execution must still go through the existing backend trade intent, risk contract, admin approval, MT5 bridge, and execution pipeline.
+
+PHASE 1 — INVENTORY CURRENT AI WIRING FIRST
+
+Before adding anything, inspect the existing app and produce a short internal report in code comments or logs showing:
+
+1. Existing Ruby chat endpoints.
+2. Existing OpenAI client/service files.
+3. Existing scanner AI explanation files.
+4. Existing market analysis files.
+5. Existing trade plan / risk explanation files.
+6. Existing MT5 execution path.
+7. Existing live trading approval gates.
+8. Existing environment variable pattern.
+9. Existing frontend hooks/components that call Ruby.
+10. Existing backend AI response schema.
+
+Do not guess. Reuse current architecture.
+
+PHASE 2 — ADD PROVIDER ENVIRONMENT VARIABLES
+
+Add support for these environment variables:
+
+ANTHROPIC_API_KEY=
+AI_PRIMARY_PROVIDER=openai
+AI_SECONDARY_PROVIDER=claude
+AI_ENABLE_CLAUDE=true
+AI_ENABLE_PROVIDER_FALLBACK=true
+AI_DEEP_AUDIT_PROVIDER=claude
+AI_MARKET_REASONING_PROVIDER=openai
+AI_CODE_AUDIT_PROVIDER=claude
+
+Do not expose API keys to frontend.
+Do not log API keys.
+Add safe missing-key handling.
+
+If ANTHROPIC_API_KEY is missing, Claude features should show a clean unavailable state instead of crashing the app.
+
+PHASE 3 — CREATE AI PROVIDER ADAPTER
+
+Create a backend AI provider adapter layer if one does not already exist.
+
+Suggested structure, but adapt to current project:
+
+server/ai/providers/types.ts
+server/ai/providers/openaiProvider.ts
+server/ai/providers/claudeProvider.ts
+server/ai/aiRouter.ts
+
+The shared provider interface should support:
+
+- providerName
+- modelName
+- available()
+- generateText()
+- generateStructured()
+- streamText() if current app supports streaming
+- maxContextNotes
+- supportsVision flag
+- supportsTools flag
+- supportsLongContext flag
+
+The app should be able to call AI through one shared router instead of hardcoding OpenAI everywhere.
+
+Do not rewrite every endpoint unless necessary. Wrap the existing OpenAI logic safely.
+
+PHASE 4 — CLAUDE PROVIDER
+
+Install the official Anthropic SDK if missing.
+
+Implement Claude provider using ANTHROPIC_API_KEY.
+
+Claude should support:
+
+1. Deep audit prompts.
+2. Long-context scanner/feed diagnosis.
+3. Code/system reasoning.
+4. Market reasoning backup.
+5. Explanation rewriting.
+6. Fallback response if OpenAI fails.
+
+Claude responses must be normalized into the same response shape Ruby already uses.
+
+No Claude-specific raw response should leak into the frontend.
+
+PHASE 5 — AI ROUTER RULES
+
+Create a routing layer with these rules:
+
+1. Normal Ruby chat:
+   - Primary: OpenAI
+   - Fallback: Claude only if OpenAI fails or user/admin explicitly selects Claude
+
+2. Scanner explanation:
+   - Primary: OpenAI
+   - Optional second opinion: Claude
+   - Final response must clearly show if it is Ruby’s primary read or Claude-assisted review
+
+3. Deep scanner/candle/feed audit:
+   - Primary: Claude
+   - Secondary: OpenAI fallback
+
+4. Code/system audit:
+   - Primary: Claude
+   - Secondary: OpenAI fallback
+
+5. Long trade lesson / education content:
+   - Use router setting, default OpenAI unless Claude is selected
+
+6. Live trade decision:
+   - AI may explain and suggest
+   - AI may not execute directly
+   - Execution must still pass ARX risk engine and existing MT5 command path
+
+PHASE 6 — FRONTEND MODEL CONTROL FOR ADMIN ONLY
+
+Add an admin-only AI provider control panel.
+
+Location:
+Use an existing admin/settings/system area. Do not clutter the user trading interface.
+
+Admin controls:
+
+- Primary Ruby Provider: OpenAI / Claude
+- Secondary Provider: OpenAI / Claude / Off
+- Deep Audit Provider: Claude / OpenAI
+- Enable Provider Fallback: On / Off
+- Enable Claude: On / Off
+- Test OpenAI Connection
+- Test Claude Connection
+- Run AI Router Health Check
+
+Regular users should not see these controls.
+
+Regular users should still see Ruby, not model names, unless an admin/debug mode is active.
+
+PHASE 7 — RUBY UI LANGUAGE
+
+Ruby should remain the visible assistant name.
+
+Do not show “Claude says” to normal users.
+
+Acceptable normal-user language:
+
+- “Ruby reviewed the market structure.”
+- “Ruby ran a deeper audit.”
+- “Ruby checked the scanner feed.”
+- “Ruby used a secondary reasoning pass.”
+
+Admin/debug mode may show:
+
+- Provider used: openai
+- Secondary provider used: claude
+- Fallback triggered: true/false
+- Latency
+- Token usage if available
+- Error reason if provider failed
+
+PHASE 8 — STRUCTURED RESPONSE CONTRACT
+
+All AI providers must return normalized structured output where needed.
+
+For market/trade analysis, normalize into:
+
+{
+  providerUsed,
+  fallbackUsed,
+  symbol,
+  timeframe,
+  action,
+  confidence,
+  entryReason,
+  invalidationReason,
+  stopLoss,
+  takeProfit,
+  maxPlannedLoss,
+  expectedReward,
+  riskRewardRatio,
+  candleFreshness,
+  dataSourcesUsed,
+  warnings,
+  riskEngineRequired,
+  executionAllowedByAIOnly: false
+}
+
+Important:
+executionAllowedByAIOnly must always be false.
+The backend risk engine remains final authority.
+
+PHASE 9 — CLAUDE DEEP AUDIT MODE
+
+Add a Claude-powered deep audit action for admin.
+
+Admin should be able to run:
+
+1. Scanner audit
+2. Candle history audit
+3. Feed freshness audit
+4. MT5 bridge audit
+5. Open trades / P&L truth audit
+6. Frontend wiring audit
+7. AI response truth audit
+
+Each audit should return:
+
+- What was checked
+- Files/functions involved
+- Expected truth contract
+- Actual result
+- Pass/fail
+- Severity
+- Suspected cause
+- Recommended fix
+- Whether fix was applied
+- Whether retest passed
+
+Do not produce fake passes. If something cannot be verified, mark it as “UNVERIFIED”, not passed.
+
+PHASE 10 — PROVIDER FALLBACK SAFETY
+
+If OpenAI fails during normal Ruby chat:
+
+- Retry once if safe.
+- If still failing, use Claude if enabled.
+- Response should still appear from Ruby.
+- Add admin/debug metadata only for admin.
+
+If Claude fails during deep audit:
+
+- Retry once if safe.
+- If still failing, fallback to OpenAI if enabled.
+- Mark audit provider fallback clearly in admin/debug output.
+
+No provider failure should crash the app.
+
+PHASE 11 — TEST ROUTES
+
+Add backend test/health routes, admin-only:
+
+GET /api/admin/ai/providers/status
+POST /api/admin/ai/providers/test-openai
+POST /api/admin/ai/providers/test-claude
+POST /api/admin/ai/router/test
+POST /api/admin/ai/deep-audit/scanner
+POST /api/admin/ai/deep-audit/candles
+POST /api/admin/ai/deep-audit/feed
+POST /api/admin/ai/deep-audit/mt5
+POST /api/admin/ai/deep-audit/open-trades
+
+Protect all routes with existing admin authentication and role checks.
+
+PHASE 12 — QA / TRUTH TESTS
+
+After implementation, run a full AI-provider QA gate.
+
+Test:
+
+1. App boots with ANTHROPIC_API_KEY missing.
+   Expected: no crash, Claude unavailable state.
+
+2. App boots with ANTHROPIC_API_KEY present.
+   Expected: Claude status available.
+
+3. Ruby chat still works with OpenAI primary.
+   Expected: existing Ruby behavior preserved.
+
+4. Claude fallback works.
+   Simulate OpenAI failure.
+   Expected: Ruby responds using Claude fallback.
+
+5. Claude deep audit works.
+   Expected: audit returns file/function list, truth contract, pass/fail, and no fake pass.
+
+6. Scanner explanation still works.
+   Expected: scanner cards still show Ruby explanation.
+
+7. Trade execution path is unchanged.
+   Expected: no AI provider can bypass risk engine or MT5 command pipeline.
+
+8. Admin-only provider settings are hidden from regular users.
+   Expected: regular users cannot see or call provider controls.
+
+9. API keys are not exposed.
+   Expected: no key in frontend bundle, logs, network response, or UI.
+
+10. Existing live trading wiring remains intact.
+    Expected: current live trade flow still uses existing approvals, risk checks, and MT5 bridge.
+
+PHASE 13 — FINAL REPORT
+
+When done, produce a final report with:
+
+- Files changed
+- New files added
+- Existing files reused
+- AI routes added
+- Environment variables added
+- Provider routing behavior
+- Claude features available
+- OpenAI features preserved
+- Tests run
+- Pass/fail results
+- Any unverified items
+- Any risks or follow-up fixes
+
+Do not mark complete unless:
+- OpenAI still works
+- Claude works or gracefully shows unavailable when key missing
+- Ruby remains the visible assistant
+- Admin-only controls are protected
+- Scanner explanations still work
+- No live trade path was bypassed
+- Risk engine remains final authority

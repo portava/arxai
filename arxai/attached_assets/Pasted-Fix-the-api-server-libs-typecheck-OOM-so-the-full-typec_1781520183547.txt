@@ -1,0 +1,23 @@
+Fix the api-server / libs typecheck OOM so the full typecheck gate works again. This is an environment/build-config task, not a feature.
+
+PROBLEM: `tsc --build` over the composite libs (and the api-server package) gets cgroup-killed (exit 137/143) in this sandbox at every heap cap — raising --max-old-space-size makes it WORSE (confirms it's a per-process cgroup ceiling, not host memory; ~6GB is free when it dies). Consequence: the last several merges have NO passing full typecheck — "green" has meant tsx-ran-the-test + manual symbol checks, which would miss a real type regression. Restore a working typecheck.
+
+INVESTIGATE FIRST (read-only, report before changing):
+- What is the actual cgroup memory ceiling for a bash process here? (cat /sys/fs/cgroup/memory.max or equivalent.) Report it.
+- Which tsc invocation OOMs — `typecheck:libs` (tsc --build over all composite project refs), the api-server package typecheck, or both? Report the exact commands and where each dies.
+- Is the cost from project-references building ALL libs at once, or one specific large package? Identify the heaviest.
+
+THEN FIX (pick the approach that actually fits under the ceiling — explain the choice):
+Options, in rough order of preference — use whichever works, don't over-engineer:
+1. Scope/split the typecheck: run per-package tsc serially (libs → api-server → dashboard) instead of one big `--build`, each as its own process so none exceeds the ceiling. Wire a `typecheck:ci` script that runs them in sequence and aggregates pass/fail.
+2. tsc memory/perf flags: `--incremental` with on-disk build info, `tsBuildInfoFile`, `--assumeChangesOnlyAffectDirectDependencies`, or disabling the most expensive checks only if they're non-load-bearing (do NOT weaken real type safety to pass — splitting/incremental is preferred over loosening checks).
+3. If a single package genuinely can't fit, identify why (a pathological type, a huge generated file like the orval client) and isolate/exclude only that generated artifact from the typecheck if it's machine-generated and separately validated.
+
+HARD RULES:
+- Do NOT weaken type safety to make it pass (no blanket `skipLibCheck` added where it wasn't, no `any`-ing, no excluding real source). Scoping/incremental/serial execution is the fix, not loosening.
+- The result must be a typecheck command that ACTUALLY RUNS TO COMPLETION and reports real pass/fail for every package — proven by pasted output showing exit 0 (or real errors), not another OOM.
+- If after honest effort a package truly cannot typecheck within the ceiling, say so explicitly and report what it'd need (more memory, a build split) rather than faking green.
+
+VERIFY: run the new typecheck:ci end-to-end and PASTE the full output showing it completes for libs + api-server + dashboard. Then deliberately introduce a trivial type error in one package, run it, and show it CATCHES the error (proving the gate actually works) — then revert the error.
+
+REPORT: the cgroup ceiling; which invocation OOM'd and why; the fix chosen and why; the passing typecheck:ci output; the caught-error proof; and confirmation no type safety was weakened. Wire typecheck:ci into the pre-commit/CI chain if there's a natural place (alongside ci:guards).

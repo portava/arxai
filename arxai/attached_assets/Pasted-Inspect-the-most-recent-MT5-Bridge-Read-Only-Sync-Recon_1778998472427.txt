@@ -1,0 +1,291 @@
+Inspect the most recent MT5 Bridge Read-Only Sync + Reconciliation + Command Queue Safety phase before continuing.
+
+Do NOT build new features yet.
+Do NOT unlock live trading.
+Do NOT enable real auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send real MT5 execution, modification, cancel, or close commands.
+Do NOT weaken paper-only, live-trading, MT5 bridge, ALERT_ONLY, user confirmation, user ownership, duplicate-action, risk-limit, attribution, command queue, or activityStatus gates.
+Do NOT suppress runtime overlays.
+Do NOT redesign unrelated UI or touch unrelated pages.
+
+Your job is to audit the work that was just completed, fix only confirmed P0/P1 issues, rerun checks, and produce a clear QA report.
+
+Verify these exact items:
+
+1. Runtime Stability
+Confirm the previous browser crash is still fixed:
+- No “Can’t find variable: require”
+- No CommonJS require() in browser/client/frontend-imported files
+- No module.exports or exports. in frontend-imported files
+- No Node-only modules imported into React/client/shared browser code
+- App loads without Vite runtime overlay
+- App does not render a blank screen
+- HMR overlay was not disabled to hide errors
+
+2. MT5 Bridge Health + Read-Only Status
+Confirm bridge health tracks:
+- bridgeConnected
+- lastHeartbeatAt
+- bridgeMode: OFFLINE, READ_ONLY, PAPER_ONLY, LIVE_LOCKED
+- accountLogin if safely available
+- serverName if safely available
+- terminalConnected if available
+- eaVersion if available
+- readOnlyMode
+- allowOrderExecution
+- allowModification
+- allowClose
+- tokenValid
+- latencyMs if available
+- lastError
+- updatedAt
+
+Confirm:
+- Default/fallback is OFFLINE.
+- Stale heartbeat becomes OFFLINE.
+- Missing bridge data is shown as unavailable, not invented.
+- Live command permissions remain false/locked.
+- Frontend reflects real bridge state.
+
+3. Read-Only Broker Snapshot Ingestion
+Verify safe read-only ingestion for:
+- broker account snapshot if available
+- balance
+- equity
+- margin
+- free margin
+- open broker positions
+- pending broker orders
+- symbol prices
+- symbol specs/pip value if available
+- spreads if available
+- timestamps for broker data
+
+Confirm:
+- Broker values do not overwrite per-user paper/demo ledger.
+- Broker values are labeled Broker Read-Only or Broker Unavailable.
+- Missing symbol specs produce partial unavailable reasons.
+- Stale price data is marked stale and blocks live-like decisions.
+- No fake broker balance, broker equity, prices, or P&L.
+
+4. Broker/App Reconciliation
+Verify reconciliation compares:
+- app paper trades/orders
+- app virtual trades/orders
+- broker read-only positions/orders
+- tradeId/orderId attribution
+- virtualSubAccountId attribution
+- symbol
+- direction
+- entry price
+- lot size
+- SL/TP
+- status
+
+Confirm supported reconciliation statuses:
+- MATCHED
+- APP_ONLY
+- BROKER_ONLY
+- MISMATCHED
+- ATTRIBUTION_MISSING
+- STALE_BROKER_DATA
+- BRIDGE_OFFLINE
+- RECONCILIATION_BLOCKED
+
+Confirm:
+- Reconciliation does not execute changes.
+- Broker-only positions without attribution are flagged, not randomly assigned.
+- Mismatches are audit logged.
+- Missing attribution blocks future command routing.
+- Per-user isolation remains intact.
+
+5. Command Queue Safety Shell
+Verify command queue supports:
+- PLACE_ORDER
+- MODIFY_SLTP
+- CLOSE_TRADE
+- CANCEL_PENDING_ORDER
+- SYNC_REQUEST
+- RECONCILE_REQUEST
+
+Each command record must include:
+- commandId
+- userId
+- virtualSubAccountId if relevant
+- tradeId/orderId if relevant
+- auditId
+- commandType
+- payload
+- safetyGateSnapshot
+- status: DRAFT, BLOCKED, PAPER_ONLY, QUEUED_LOCKED, REJECTED, EXECUTION_DISABLED
+- blockReason
+- createdAt
+- updatedAt
+
+Confirm:
+- All real MT5 commands resolve to BLOCKED or EXECUTION_DISABLED today.
+- Missing userId, virtualSubAccountId, tradeId/orderId, or auditId blocks command routing.
+- Duplicate command IDs are blocked.
+- Commands cannot cross users.
+- Auto-close command generation remains ALERT_ONLY and EXECUTION_DISABLED.
+
+6. Safety Gate Snapshot
+Confirm every trade-related action can save a safety snapshot with:
+- userAuthenticated
+- userOwnsTrade
+- bridgeConnected
+- bridgeReadOnly
+- tokenValid
+- liveTradingUnlocked
+- sharedRoutingUnlocked
+- paperMode
+- activityStatus
+- userOptIn
+- inactivityConfirmed
+- highConfidenceConfirmed
+- duplicateActionClear
+- riskLimitsPassed
+- attributionComplete
+- currentPriceAvailable
+- brokerDataFresh
+- commandExecutionAllowed
+
+Confirm:
+- Snapshot is saved into audit logs and command queue records.
+- Any false required gate gives a clear block reason.
+- UNKNOWN activity remains a hard block for auto-close execution.
+
+7. Frontend Bridge + Reconciliation Visibility
+Confirm UI shows real backend state for:
+- Bridge status
+- Read-only broker status
+- Last heartbeat
+- Broker data freshness
+- Broker balance unavailable state
+- Reconciliation status
+- App-only trades
+- Broker-only unattributed positions
+- Mismatched SL/TP or lot size
+- Command queue locked/disabled state
+
+UI must clearly say:
+- MT5 Bridge Read-Only
+- Live execution locked
+- Shared MT5 routing locked
+- Commands are being audited but not executed
+
+No fake connected status.
+
+8. AI Bridge/Reconciliation Awareness
+Verify AI can answer:
+- Is my MT5 connected?
+- Is the bridge live?
+- Why can’t this trade be closed?
+- Is this trade synced with MT5?
+- Why is broker balance unavailable?
+- Are any trades missing attribution?
+- Is this app trade matched to broker state?
+
+Confirm AI:
+- Uses real bridge/read-only/reconciliation state.
+- Explains missing data honestly.
+- Never says MT5 is connected unless heartbeat is fresh.
+- Never implies live execution is enabled.
+- Never executes or queues real commands from chat.
+- Uses only the logged-in user’s scoped data.
+
+9. Audit Trail Expansion
+Confirm audit logs exist for:
+- Bridge heartbeat received
+- Bridge heartbeat stale
+- Broker snapshot received
+- Broker snapshot unavailable
+- Broker data stale
+- Reconciliation started
+- Reconciliation completed
+- Reconciliation mismatch found
+- Broker-only unattributed position found
+- Command draft created
+- Command blocked
+- Execution disabled
+- Duplicate command blocked
+- Safety gate snapshot created
+
+Each audit entry must include:
+- userId if applicable
+- virtualSubAccountId if applicable
+- tradeId/orderId if relevant
+- commandId if relevant
+- action
+- previous value if relevant
+- new value if relevant
+- safety gate status
+- reason if blocked
+- timestamp
+
+10. Safety Regression
+Confirm all remain true:
+- Auto-close remains ALERT_ONLY unless every required gate passes.
+- Live trading remains BLOCKED unless explicitly unlocked and every required gate passes.
+- Shared MT5 routing remains BLOCKED unless explicitly unlocked and every required gate passes.
+- MT5 commands remain blocked while bridge/token/live gates are missing.
+- No AI open/add/widen trade tools exist.
+- No fake candles.
+- No fake scanner opportunities.
+- No fake news.
+- No fake current events.
+- No fake TP targets.
+- No fake P&L.
+- No fake bridge status.
+- UNKNOWN activity hard-blocks auto-close.
+- Per-user SQL/session filters remain intact.
+
+Run these checks:
+1. Typecheck
+2. Full guard suite
+3. Frontend build/runtime load check
+4. Browser smoke test for no require overlay
+5. Trading intelligence regression
+6. Stop-limit/order-type QA
+7. SL/TP create/edit tests
+8. Manual close confirmation/blocking tests
+9. Per-user trade isolation tests
+10. Ledger ownership/isolation tests
+11. Shared MT5 attribution-block tests
+12. Bridge heartbeat fresh/stale tests
+13. Broker snapshot unavailable fallback tests
+14. Reconciliation matched/mismatched/unattributed tests
+15. Command queue blocked/execution-disabled tests
+16. Safety gate snapshot tests
+17. Duplicate command block tests
+18. AI bridge/reconciliation question tests
+19. Audit trail tests
+20. Frontend smoke test for bridge status, reconciliation UI, broker read-only UI, trade cards, portfolio dashboard, and command locked state
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun the full checks after fixes.
+
+End with a QA report showing:
+- Files inspected
+- Files changed, if any
+- Runtime status
+- Browser load result
+- Tests run
+- Pass/fail result for each test
+- Bridge health result
+- Broker read-only sync result
+- Reconciliation result
+- Command queue safety result
+- Safety gate snapshot result
+- AI bridge awareness result
+- Audit trail result
+- Remaining gated/deferred items
+- Auto-close execution status
+- MT5/live trading status
+- Shared MT5 routing status
+- Whether frontend state matches backend state
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

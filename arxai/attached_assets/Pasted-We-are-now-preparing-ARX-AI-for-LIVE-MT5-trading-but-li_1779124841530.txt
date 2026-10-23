@@ -1,0 +1,263 @@
+We are now preparing ARX AI for LIVE MT5 trading, but live execution must be protected, gated, logged, and reversible.
+
+Do not simply flip live execution on globally.
+
+Current state:
+- Demo MT5 bridge works.
+- EA v1.26 demo execution works.
+- Live broker execution is currently disabled.
+- Ruby is the assistant.
+- Market Scanner can create demo trade commands.
+- Live mode must remain separate from demo mode.
+
+Build a protected LIVE TRADING ENABLEMENT system.
+
+PART 1 — LIVE MODE SAFETY GATE
+
+Add a Live Trading Unlock page/section inside MT5 Setup.
+
+Live trading can only be enabled after all checks pass:
+
+1. Authenticated operator/admin user only.
+2. MT5 account is confirmed as LIVE, not demo.
+3. Fresh EA heartbeat exists.
+4. EA version is v1.26 or newer.
+5. Terminal connected = true.
+6. Algo trading allowed = true.
+7. EA reports ReadOnlyMode=false.
+8. EA reports live execution allowed.
+9. Server live execution flag enabled.
+10. User accepts live trading risk confirmation.
+11. User types exact confirmation phrase:
+   ENABLE LIVE TRADING
+12. User confirms account number and broker/server.
+13. User confirms max lot limit.
+14. User confirms daily loss limit.
+15. User confirms kill switch is available.
+
+If any check fails, keep live trading disabled and show the exact failed reason.
+
+PART 2 — SERVER LIVE EXECUTION FLAG
+
+Add server-side live execution control.
+
+There must be a backend setting such as:
+
+- liveBrokerExecutionEnabled: false by default
+- liveTradingArmedAt
+- liveTradingArmedByUserId
+- liveTradingMaxLot
+- liveTradingDailyLossLimit
+- liveTradingAllowedSymbols
+- liveTradingKillSwitchEnabled
+
+Live trade commands must be rejected server-side unless liveBrokerExecutionEnabled=true and all live guard checks pass.
+
+Never rely only on frontend checks.
+
+PART 3 — LIVE COMMAND PIPELINE
+
+Create a separate live command pipeline from demo.
+
+Do not reuse demo commands in a way that can accidentally route demo trades as live.
+
+Live statuses:
+- LIVE_DRAFT
+- LIVE_CONFIRMATION_REQUIRED
+- LIVE_APPROVED
+- SENT_TO_MT5_LIVE
+- LIVE_FILLED
+- LIVE_REJECTED
+- LIVE_FAILED
+- LIVE_BLOCKED
+- LIVE_CANCELLED
+- LIVE_CLOSED
+
+Live command rows must store:
+- user id
+- account id
+- bridge connection id
+- mt5 account number
+- broker/server
+- symbol
+- side
+- order type
+- requested volume
+- executed volume
+- stop loss
+- take profit
+- source page
+- Ruby explanation summary if applicable
+- confirmation timestamp
+- broker ticket
+- fill price
+- MT5 retcode
+- broker message
+- full rejection reason
+- created_at
+- sent_to_mt5_at
+- filled_at/rejected_at
+- closed_at if closed
+
+PART 4 — LIVE UI MODE
+
+Update the app so the user always knows whether they are in DEMO or LIVE.
+
+Add a persistent mode badge:
+- DEMO MODE — safe paper trading
+- LIVE MODE — real money trading
+
+When live mode is enabled:
+- Use red/orange warning accents.
+- Show account number and broker.
+- Show max lot limit.
+- Show daily loss limit.
+- Show kill switch button.
+
+Every live trade ticket must show:
+“LIVE TRADE — REAL MONEY CAN BE LOST.”
+
+Require confirmation before every live order.
+
+PART 5 — LIVE TRADE TICKET
+
+Live trade modal must include:
+
+- symbol
+- side
+- order type:
+  - market order
+  - buy limit
+  - sell limit
+  - buy stop
+  - sell stop
+  - buy stop limit
+  - sell stop limit
+- volume / lot size
+- stop loss
+- take profit
+- estimated risk
+- estimated reward
+- risk/reward ratio
+- margin impact
+- spread
+- account balance
+- free margin
+- max lot warning
+- daily loss warning
+- confirmation checkbox
+- final submit button
+
+Block live orders if:
+- no stop loss is entered, unless admin override is enabled
+- lot size exceeds allowed max
+- daily loss limit reached
+- symbol is not allowed
+- market is closed
+- bridge is stale
+- EA is not live-armed
+- terminal is disconnected
+- live execution flag is off
+
+PART 6 — LIVE MARKET SCANNER TRADING
+
+Market Scanner can support live trading only after live mode is unlocked.
+
+Before unlock:
+- Scanner Buy/Sell buttons must default to demo.
+- Live option should be locked with message:
+  “Live trading is disabled. Enable protected live mode in MT5 Setup.”
+
+After unlock:
+- Scanner trade modal may allow LIVE, but must show:
+  - Ruby’s Setup Reason
+  - confidence level
+  - invalidation point
+  - suggested stop loss area
+  - suggested take profit area
+  - live risk warning
+  - final confirmation
+
+All scanner live trades must store source = MARKET_SCANNER_LIVE.
+
+PART 7 — LIVE POSITIONS MANAGEMENT
+
+Add Live Positions panel separate from Demo Positions.
+
+Show:
+- ticket
+- symbol
+- side
+- volume
+- entry price
+- current price
+- floating P/L
+- stop loss
+- take profit
+- opened time
+- source command id
+- source page
+- Ruby note if applicable
+
+Actions:
+- close selected live position
+- modify stop loss
+- modify take profit
+- close all live positions emergency button
+
+Every live close/modify action requires confirmation.
+
+PART 8 — EMERGENCY KILL SWITCH
+
+Add a visible live kill switch.
+
+When activated:
+1. Disable new live trade commands immediately.
+2. Mark liveBrokerExecutionEnabled=false.
+3. Keep demo trading unaffected.
+4. Optionally allow user to choose:
+   - Disable new live trades only
+   - Disable new live trades and close all ARX-opened live positions
+5. Log who activated it and when.
+
+PART 9 — RUBY LIVE WARNINGS
+
+Ruby must clearly distinguish trading ideas from execution.
+
+Ruby can explain:
+- possible setup
+- risk
+- support/resistance
+- momentum
+- trend
+- volatility
+- news/current events
+- invalidation
+- stop loss / take profit zones
+
+Ruby must not use guaranteed-profit language.
+
+Ruby live trade language must include:
+“This is not guaranteed. Confirm risk before placing a live trade.”
+
+PART 10 — ACCEPTANCE TESTS
+
+Do not mark live trading complete until these tests pass:
+
+1. Live mode is disabled by default.
+2. Demo trades still work.
+3. Live trade attempt is blocked while live flag is off.
+4. Live unlock page shows every requirement.
+5. Failed requirement shows exact reason.
+6. User must type ENABLE LIVE TRADING before live mode activates.
+7. Live mode badge appears after enablement.
+8. Live trade ticket requires confirmation.
+9. Live trade with no stop loss is blocked by default.
+10. Live trade above max lot is blocked.
+11. Live command uses live pipeline, not demo pipeline.
+12. Live command result shows LIVE_FILLED, LIVE_REJECTED, or LIVE_FAILED.
+13. Live positions panel updates after fill.
+14. Kill switch disables new live trades immediately.
+15. Market Scanner live trade stays locked until live mode is enabled.
+16. All live actions are logged.
+17. No API keys, bridge tokens, or broker passwords are exposed in UI or Ruby memory.

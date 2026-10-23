@@ -1,0 +1,49 @@
+QA/FIX GATE — Private Beta Operator Setup + Limited 10-User Test Plan
+
+Inspect the 10-user private beta setup from the previous pass.
+
+Do not rebuild unrelated systems.
+Only repair missing or broken beta-critical pieces.
+Do not fire live trades.
+Do not create real live bridge commands.
+
+Verify:
+
+1. Private beta is invite-only.
+2. Beta cohort is capped at exactly 10 accepted users.
+3. 11th user is blocked or placed on waitlist.
+4. Admin can invite users.
+5. Admin can revoke invites.
+6. Admin can pause/resume beta users.
+7. Non-admin users cannot access beta admin dashboard or beta APIs.
+8. Beta users default to demo/testing mode.
+9. Beta users cannot create live commands by default.
+10. Live trading remains disabled unless every legal/admin/disclosure/allocation/risk/bridge/safety gate passes.
+11. One-click live defaults OFF.
+12. User 1 cannot see User 2 dashboard, trades, P/L, notifications, scanner state, or Ruby memory.
+13. All 10 users have isolated private workspaces.
+14. Multiple beta users can scan/trade demo on the same symbol without cross-user leaks.
+15. Logout/login switch clears cached user data.
+16. Admin Beta Control Center shows accepted/pending/paused users and activity safely.
+17. Feedback/report tool works.
+18. Feedback does not capture secrets or raw sensitive bridge data.
+19. Private beta onboarding copy is clear.
+20. PRIVATE_BETA_10_CHECKLIST.md exists.
+21. PRIVATE_BETA_10_OPERATOR_RUNBOOK.md exists.
+22. PRIVATE_BETA_10_TEST_PLAN.md exists.
+23. Audit logs are created for invites, acceptances, revokes, pauses, feedback, beta limit reached, and blocked live attempts.
+24. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+25. No live trade is fired during QA.
+26. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- beta routes/screens checked
+- issues found
+- fixes applied
+- remaining blockers
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

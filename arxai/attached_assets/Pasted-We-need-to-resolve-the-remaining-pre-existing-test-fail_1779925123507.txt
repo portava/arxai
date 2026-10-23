@@ -1,0 +1,86 @@
+We need to resolve the remaining pre-existing test failure without destroying real trading audit history.
+
+Current issue:
+test:master-bridge fails T16_arx_live_commands_unchanged because arx_live_commands already contains 21 rows from previous activity before this turn started. The test assertion expects the table count to be 0, but this is wrong for a persistent database with existing live-command history.
+
+Do not blindly delete production/live audit rows unless they are confirmed test-only rows.
+
+Do the following:
+
+1. Inspect arx_live_commands safely.
+   - Show count.
+   - Show created_at timestamps.
+   - Show user_id/admin_id if available.
+   - Show command/action type.
+   - Show environment/mode fields if available.
+   - Determine whether these 21 rows are real historical audit rows, seeded test rows, duplicate junk, or failed test artifacts.
+
+2. Fix the failing test correctly.
+   - Change T16_arx_live_commands_unchanged so it does NOT require the table to be empty.
+   - Instead, capture the baseline row count before the tested action.
+   - Run the tested action.
+   - Capture the row count after.
+   - Assert that afterCount === beforeCount when the flow is supposed to create no new live command rows.
+   - Also assert that no new row IDs were inserted during the test window.
+   - The test should prove “no new live command was created,” not “the table is empty.”
+
+3. Add proper test isolation.
+   - If this suite uses the real dev DB, make the tests baseline-aware.
+   - If possible, move master-bridge tests to a dedicated test database/schema or transaction rollback mode.
+   - Do not let tests depend on an empty persistent table.
+   - Do not let old live-command audit records cause false failures.
+
+4. Add an admin-safe cleanup tool only if needed.
+   - Create a script/report that can identify test-only arx_live_commands rows.
+   - Do not auto-delete.
+   - Output a dry-run list first.
+   - Require explicit confirmation before deleting anything.
+   - Never delete real live-command history or audit records.
+
+5. Build the missing timing matrix harness.
+   - Create a logged-in LIVE_SHARED Playwright test user/session.
+   - Drive the actual browser UI flows needed for PARTs 9–14.
+   - Measure real action timing from button press to UI response and backend confirmation.
+   - Cover scanner, Ruby chat response, Ruby voice response, open trade, close trade, admin allocation, account freeze/unfreeze, mode toggle, symbol selection, notification/alert dismiss, and dashboard load.
+   - Send any action over 1000ms to /api/admin/performance/client-action.
+   - Print local dev-console [perf:slow] logs.
+   - Generate a final timing matrix report with:
+     action name,
+     expected max time,
+     actual time,
+     pass/fail,
+     frontend delay,
+     backend delay,
+     bottleneck file/function,
+     fix applied.
+
+6. Performance expectations:
+   - Simple button UI feedback should appear in under 150ms.
+   - Tab/page switch should feel instant and complete under 500ms.
+   - Scanner initial results should appear as fast as possible, ideally under 1–2 seconds with cached/preloaded data.
+   - Ruby typing/thinking indicator should appear immediately under 150ms.
+   - Ruby first response token should begin quickly after backend starts responding.
+   - Trade open/close confirmation must show immediate pending state, then confirmed/rejected state after broker/backend response.
+   - No action should leave the user wondering whether the click worked.
+
+7. Retest everything after the fix:
+   - pnpm --filter @workspace/trading-dashboard run typecheck
+   - pnpm run ci:guards
+   - test:live-phaseB
+   - test:live-pass-path
+   - test:demo-arming
+   - test:demo-verify
+   - test:chart-symbol-propagation
+   - test:live-shared-reason-copy
+   - test:account-mode
+   - test:master-bridge
+   - any Playwright/UI/performance tests added for PARTs 9–14
+
+8. Final output required:
+   - Tell me whether the 21 arx_live_commands rows are real audit history or test junk.
+   - Tell me what files were changed.
+   - Tell me whether the test was re-baselined or whether safe cleanup was needed.
+   - Show all test results.
+   - Show the final timing matrix.
+   - Confirm no live command rows were inserted during the test unless explicitly intended.
+   - Confirm no production/live audit history was deleted.

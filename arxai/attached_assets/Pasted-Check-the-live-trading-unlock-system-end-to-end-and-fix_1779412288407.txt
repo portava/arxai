@@ -1,0 +1,106 @@
+Check the live trading unlock system end-to-end and fix the 2 remaining failing checks without bypassing safety.
+
+Current screenshot state:
+- Live EA heartbeat is real and fresh.
+- bridge id: 287
+- mode: LIVE
+- accountType: live
+- MT5 account: 62470041
+- broker: Deriv (SVG) LLC
+- server: DerivSVG-Server
+- EA version: 1.27
+- heartbeat fresh: true
+- ReadOnlyMode: false
+- EnableLiveExecution: true
+- MaxLiveLot: 0.1
+- terminalConnected: true
+- algoTradingAllowed: true
+- UI still shows LIVE BROKER EXECUTION DISABLED.
+- 15-check gate shows 13/15 passing.
+- #9 Server live execution flag enabled is failing.
+- #12 Account number and broker/server confirmed is failing even though the visible MT5 account field shows 62470041.
+
+Tasks:
+
+1. Inspect the entire live readiness gate, server-side live execution flag, database/env live execution settings, admin/operator permissions, and all related API endpoints before making changes.
+
+2. Fix check #12 properly:
+   - Do not compare the wrong fields.
+   - Normalize account number comparison by trimming whitespace and comparing as strings.
+   - Split broker/server confirmation into separate confirmation fields if needed:
+     a. MT5 account number confirm
+     b. Broker confirm
+     c. Server confirm
+   - The UI should show the exact values from the freshest live bridge:
+     Account: 62470041
+     Broker: Deriv (SVG) LLC
+     Server: DerivSVG-Server
+   - Add “copy exact value” buttons beside each bridge value so the operator can paste the exact match.
+   - The gate should pass only when the operator-confirmed values match the freshest non-revoked LIVE bridge identity.
+   - If it fails, show exactly which value failed and what value is expected.
+
+3. Fix check #9 properly:
+   - Find why the server live execution flag is pinned OFF.
+   - Replace hard-coded Phase A blocking with a real admin/operator-controlled server flag.
+   - The default state must remain OFF.
+   - Add/verify an admin-only endpoint/action to arm live broker execution only after all other checks pass.
+   - Add/verify an admin-only endpoint/action to disarm live broker execution immediately.
+   - The emergency kill switch must still override everything and block all new live orders.
+   - Do not allow random users to enable live execution.
+   - Do not allow live broker dispatch unless:
+     a. authenticated admin/operator is approved
+     b. live bridge is real, fresh, and non-mock
+     c. EA v1.27+ is connected
+     d. ReadOnlyMode=false
+     e. EnableLiveExecution=true
+     f. terminalConnected=true
+     g. algoTradingAllowed=true
+     h. account/broker/server confirmation matches exactly
+     i. risk acknowledgement is checked
+     j. typed phrase ENABLE LIVE TRADING matches
+     k. max lot and daily loss limit are valid
+     l. kill switch is not active
+     m. server live execution flag is enabled
+
+4. Add clear UI status:
+   - If the EA is live-ready but backend dispatch is blocked, show:
+     “EA READY / SERVER DISPATCH OFF”
+   - If all checks pass but not armed, show:
+     “READY TO ARM”
+   - If armed, show:
+     “LIVE BROKER EXECUTION ENABLED”
+   - If kill switch is active, show:
+     “KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED”
+
+5. Fix the mobile layout on this page:
+   - The Live EA Heartbeat Debug table is horizontally cut off on iPhone Safari.
+   - Values should wrap or stack under labels on mobile.
+   - No important values should be hidden off-screen.
+   - Keep bottom navigation fixed but make sure it does not cover buttons or checklist items.
+
+6. Add audit logging for every live execution state change:
+   - who changed it
+   - old state
+   - new state
+   - timestamp
+   - bridge id
+   - account number
+   - broker
+   - server
+   - reason/action source
+
+7. Run tests after fixing:
+   - Test live heartbeat debug endpoint.
+   - Test live readiness endpoint.
+   - Test #12 with exact account/broker/server values.
+   - Test #12 with wrong values and confirm it fails.
+   - Test #9 default OFF.
+   - Test admin arming only after all checks pass.
+   - Test kill switch blocks new live orders even if armed.
+   - Test mobile page does not overflow horizontally.
+
+Important:
+Do not remove the live safety gate.
+Do not bypass confirmation.
+Do not enable AI auto-trading by default.
+Only make the system correctly recognize the real live EA bridge and allow the approved operator/admin to arm the server-side live broker execution flag after every check passes.

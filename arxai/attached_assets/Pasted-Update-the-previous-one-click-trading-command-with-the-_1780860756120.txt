@@ -1,0 +1,482 @@
+Update the previous one-click trading command with the following permission model and scope.
+
+This applies to all instances of trading throughout ARX AI.
+
+The goal is a true armed one-click system across the entire app, where Buy/Sell becomes immediate after the user has armed one-click mode. The system must support both shared-bridge users and users connected to their own MT5 bridge.
+
+Do not rebuild the app. Do not remove active features. Do not expose admin-only controls to normal users. Do not add paper/demo wording to the live flow. Do not change global live broker execution settings unless already intentionally configured elsewhere.
+
+MAIN UPDATE
+
+One-click trading must work across every trading surface, but eligibility depends on bridge type:
+
+1. Shared Bridge Users
+
+* Admin/OWNER must explicitly allow one-click execution for each shared-bridge user before that user can arm it.
+* A shared-bridge user cannot self-enable one-click unless admin/OWNER has granted them one-click permission.
+* Once admin/OWNER grants the permission, the user can arm one-click themselves from the user UI.
+* After the user arms it and agrees, Buy/Sell buttons across the app immediately send orders through the shared MT5 bridge/live execution path with no extra confirmation.
+* Admin/OWNER must be able to revoke one-click permission for any shared-bridge user.
+* If revoked, the user’s one-click armed state must immediately become inactive.
+
+2. Own Bridge Users
+
+* If a user is connected to their own MT5 bridge and the bridge is live/ready, the user can arm one-click trading themselves.
+* They do not need admin approval to arm one-click on their own bridge unless an existing role/permission rule already requires trading permission.
+* Once armed, Buy/Sell buttons across the app immediately send orders through that user’s own MT5 bridge with no extra confirmation.
+* The user can disarm one-click at any time.
+* If their bridge disconnects or becomes stale, one-click execution must stop sending and show the real connection blocker.
+
+3. Admin/OWNER
+
+* Admin/OWNER can use one-click if eligible.
+* Admin/OWNER can grant/revoke shared-bridge one-click permission for users.
+* Admin/OWNER can see one-click status, bridge type, permission state, armed state, source surface, order result, and audit logs.
+
+PART 1 — ONE-CLICK PERMISSION MODEL
+
+Add or update the one-click permission model.
+
+One-click status should distinguish:
+
+* bridge type: shared bridge / own bridge / no bridge
+* admin shared-bridge permission: allowed / not allowed / revoked
+* user armed state: armed / disarmed
+* execution readiness: ready / blocked / stale / unavailable
+* role eligibility: admin / trader / investor / logged-out
+* reason if blocked
+
+Rules:
+
+A. Shared Bridge
+
+* requires admin/OWNER one-click permission
+* requires user to arm one-click and agree
+* requires user trade permission
+* requires shared bridge connected/fresh
+* requires valid order defaults
+* requires live execution path available
+* if admin permission is missing, user sees:
+    “One-click trading needs admin approval for shared bridge accounts.”
+* if admin permission is revoked, disarm automatically and show:
+    “One-click trading was disabled by admin.”
+
+B. Own Bridge
+
+* user can self-arm
+* requires user trade permission
+* requires own bridge connected/fresh
+* requires valid order defaults
+* requires live execution path available
+* if own bridge is stale/disconnected, show:
+    “Your bridge is not ready for one-click execution.”
+
+C. Investor/View-Only
+
+* cannot arm one-click
+* cannot see Buy/Sell execution controls
+* cannot access one-click trading controls
+
+D. Logged-Out
+
+* cannot arm one-click
+* cannot access trading routes or endpoints
+
+PART 2 — ONE-CLICK ARMING FLOW
+
+When an eligible user tries to arm one-click, show a clear arming modal.
+
+Modal title:
+Arm One-Click Trading
+
+Modal body:
+One-Click Trading is designed for speed. Once armed, pressing Buy or Sell anywhere in ARX AI will immediately send the order to MT5 without another confirmation screen.
+
+By arming this mode, you agree that every Buy or Sell tap is your final confirmation for that trade.
+
+Use this only when you are ready for immediate execution.
+
+For shared bridge accounts, one-click must be allowed by admin before it can be armed. For your own connected bridge, you can arm it yourself once your bridge is ready.
+
+Buttons:
+
+* Cancel
+* I Agree — Arm One-Click Trading
+
+After agreement:
+
+* set armed state to true
+* show “One-Click Armed”
+* show bridge type: Shared Bridge or Own Bridge
+* show current symbol/lot defaults where relevant
+* show quick Disarm control
+
+Do not show repeated warnings after arming.
+
+PART 3 — APPLY TO ALL TRADING INSTANCES
+
+One-click must apply consistently to all trading surfaces.
+
+Wire the same shared one-click execution handler into every Buy/Sell action across:
+
+* Trade page
+* New Trade tab
+* Manual Trade Ticket Buy/Sell buttons
+* One-Click Scalp tab
+* Scalping panels
+* Markets page
+* Focus Scan cards
+* Broad Scan cards
+* Flame Scalp cards
+* Market Scanner results
+* Selected Market Explanation window
+* AI Trading page
+* AI Trading Intelligence trade actions if present
+* Ruby trade action cards
+* Ruby command-based Buy/Sell actions if present
+* Watchlist trade buttons if present
+* Floating trade buttons if present
+* Mobile Buy/Sell buttons if present
+* Any quick trade panel
+* Any chart-side Buy/Sell action
+* Any duplicated or hidden trade action that still exists
+
+Do not leave any Buy/Sell button with a separate confirmation flow when one-click is armed.
+
+When one-click is armed:
+
+* Buy immediately sends Buy order.
+* Sell immediately sends Sell order.
+* No confirmation modal.
+* No “are you sure?”
+* No Ruby follow-up approval.
+* No scanner confirmation.
+* No risk interstitial that delays sending.
+* No review screen.
+* No duplicate safety popup.
+* The arming agreement is the confirmation.
+
+PART 4 — WHAT ONE-CLICK BYPASSES
+
+When armed, one-click bypasses user-facing advisory checks and confirmation friction, including:
+
+* confirmation modals
+* risk warning interstitials
+* Ruby asking for final approval
+* scanner approval popups
+* review order screens
+* caution banners that prevent execution
+* secondary trade-ticket confirmation
+* advisory/governance delays
+
+The app may still log advisory/risk/governance context in the background, but it must not hold the order after the user has armed one-click.
+
+PART 5 — WHAT ONE-CLICK MUST NOT FAKE OR IGNORE
+
+One-click bypasses advisory confirmation friction. It must not fake technical execution.
+
+Still require:
+
+* authenticated user
+* correct role
+* trading permission
+* shared-bridge one-click permission if on shared bridge
+* own bridge connected/fresh if using own bridge
+* shared bridge connected/fresh if using shared bridge
+* valid account mode
+* valid symbol
+* valid lot size
+* valid order payload
+* live execution route available
+* broker/bridge response mapping
+* truthful status display
+
+If execution cannot happen, show the real blocker:
+
+* Bridge unavailable
+* Bridge stale
+* Own bridge not connected
+* Shared bridge permission not granted
+* One-click permission revoked
+* Invalid symbol
+* Missing one-click lot size
+* Broker rejected order
+* Live execution unavailable
+* User not allowed to trade
+* Account data unavailable
+
+Do not show fake success.
+Do not show filled unless broker confirms fill.
+Do not show queued as filled.
+Do not show disconnected if connected.
+Do not show connected if stale/disconnected.
+Do not mention paper/demo/simulation in live flow.
+
+PART 6 — ADMIN CONTROLS FOR SHARED BRIDGE ONE-CLICK
+
+Add admin/OWNER controls for shared-bridge one-click permissions.
+
+Admin must be able to:
+
+* view all shared-bridge users
+* see whether each user is allowed to use one-click
+* grant one-click permission
+* revoke one-click permission
+* see whether the user has armed one-click
+* see last one-click action
+* see one-click order result status
+* see bridge type used
+* see source surface of the click
+* see blocked/rejected reasons
+* audit all one-click actions
+
+Suggested admin location:
+Admin Hub > Live Controls or Admin Hub > Permissions.
+
+Do not expose these controls to normal users.
+
+PART 7 — OWN BRIDGE SELF-ARMING
+
+For users connected to their own bridge:
+
+* show One-Click arm/disarm control in user UI
+* no admin one-click approval required unless existing trade permission requires it
+* one-click only works while their own bridge is connected/fresh
+* if bridge becomes stale/disconnected, execution stops and the UI shows the blocker
+* if bridge reconnects, the armed state can remain visible but execution readiness must update truthfully
+
+User-facing label example:
+“One-Click Armed — Own Bridge Ready”
+
+If stale:
+“One-Click Armed — Bridge Reconnecting”
+
+If disconnected:
+“One-Click Armed — Bridge Unavailable”
+
+PART 8 — SHARED BRIDGE USER UI
+
+For shared-bridge users:
+
+If admin has not allowed one-click:
+
+* show disabled one-click control with:
+    “Admin approval required for shared bridge one-click.”
+
+If admin has allowed one-click:
+
+* allow the user to arm it
+* show:
+    “One-Click available for your shared bridge account.”
+
+If armed:
+
+* show:
+    “One-Click Armed — Shared Bridge Ready”
+
+If admin revokes:
+
+* disarm automatically
+* show:
+    “One-click trading was disabled by admin.”
+
+PART 9 — ORDER DEFAULTS
+
+One-click must require clear order defaults.
+
+Before arming, confirm:
+
+* default lot size exists
+* selected symbol/context is valid
+* account/bridge context is available
+* order type is market by default unless context specifies otherwise
+* optional SL/TP defaults are loaded if configured
+
+If no lot size exists:
+
+* do not arm one-click
+* show:
+    “Set a one-click lot size before arming.”
+
+Do not guess a random lot size.
+Do not use dummy account capital.
+Do not size from stale balances.
+
+PART 10 — AUDIT LOGGING
+
+Log every one-click event:
+
+* user id
+* role
+* bridge type: shared / own
+* shared-bridge one-click permission state if applicable
+* armed state
+* symbol
+* side
+* lot size
+* order type
+* SL/TP if included
+* source surface
+* timestamp
+* order payload summary
+* MT5 command id if available
+* result: queued / accepted / filled / rejected / blocked / failed / unknown
+* blocker/rejection reason
+* broker response summary if available
+
+Normal users should see plain order history.
+Admin/OWNER should see deeper audit details.
+
+PART 11 — RUBY BEHAVIOR
+
+Ruby must follow the same one-click permission truth.
+
+When one-click is not armed:
+
+* Ruby can say one-click must be armed first.
+
+When shared bridge user lacks admin one-click permission:
+
+* Ruby should say:
+    “One-click needs admin approval for your shared bridge account.”
+
+When own bridge user is eligible:
+
+* Ruby can say:
+    “You can arm one-click from your trade settings once your bridge is ready.”
+
+When one-click is armed:
+
+* Ruby must not ask for confirmation before Buy/Sell execution.
+* Ruby must not add follow-up warnings.
+* Ruby must not mention paper/demo/simulation in live flow.
+* Ruby must state real result:
+    queued, accepted, filled, rejected, blocked, or failed.
+
+Ruby must not expose backend function names, route names, env names, schema names, or internal code terms to normal users.
+
+PART 12 — UI TRUTH CONTRACT UPDATE
+
+Update the UI Truth Contract to include:
+
+1. One-click armed truth
+
+* if armed, UI must show armed
+* if disarmed, UI must not behave as armed
+* if revoked, armed state must be disabled
+* if shared bridge permission missing, user cannot arm
+* if own bridge ready, user can self-arm
+
+2. Bridge-type truth
+
+* shared bridge one-click requires admin permission
+* own bridge one-click can be user-armed
+* UI must show Shared Bridge vs Own Bridge correctly
+* no connected/disconnected contradictions
+
+3. Execution truth
+
+* one-click does not mean guaranteed fill
+* result must show queued/accepted/filled/rejected/blocked truthfully
+* no fake success
+* no demo/paper language in live flow
+
+PART 13 — TESTING REQUIREMENTS
+
+Run or add tests for:
+
+A. Permission model
+
+* shared bridge user cannot arm without admin one-click permission
+* shared bridge user can arm after admin approval
+* shared bridge permission revoke disarms user
+* own bridge user can self-arm when bridge is ready
+* own bridge user cannot execute when bridge is stale/disconnected
+* investor cannot arm
+* logged-out cannot arm
+
+B. All trading surfaces
+
+* Trade Buy/Sell uses one-click handler
+* Scanner Buy/Sell uses one-click handler
+* Focus Scan Buy/Sell uses one-click handler
+* Broad Scan Buy/Sell uses one-click handler
+* Flame Scalp Buy/Sell uses one-click handler
+* Market Explanation Buy/Sell uses one-click handler
+* AI Trading Buy/Sell uses one-click handler
+* Ruby action Buy/Sell uses one-click handler if present
+* mobile/floating Buy/Sell uses one-click handler if present
+
+C. Armed behavior
+
+* no confirmation modal after arming
+* no Ruby approval follow-up after arming
+* no scanner confirmation after arming
+* no risk interstitial blocking after arming
+* order sends immediately when button is pressed
+
+D. Technical blockers
+
+* missing lot size blocks arming
+* invalid symbol blocks execution
+* disconnected bridge blocks execution
+* stale bridge blocks execution
+* broker rejection shows rejected
+* queued does not show filled
+* filled only shows after broker confirmation
+
+E. UI truth
+
+* live one-click flow does not mention paper/demo/simulation
+* shared bridge vs own bridge labels are correct
+* armed status matches actual state
+* revoked permission disables armed mode
+* no internal backend wording leaks to users
+
+Run:
+
+* typecheck
+* one-click permission tests
+* one-click execution handler tests
+* bridge-type tests
+* all Buy/Sell surface wiring tests
+* role-gating tests
+* Ruby wording tests
+* UI Truth tests
+* CI guards
+* architect review if available
+
+FINAL REPORT
+
+Report:
+
+1. How one-click permission model was implemented.
+2. Shared bridge admin approval controls added.
+3. Own bridge self-arming behavior added.
+4. Where the arm/disarm controls appear.
+5. Every Buy/Sell surface wired.
+6. What order defaults are required.
+7. How revocation/disarm works.
+8. What audit logging was added.
+9. How Ruby behavior changed.
+10. UI Truth Contract additions.
+11. Tests passed.
+12. Any remaining blockers.
+
+COMPLETION STANDARD
+
+Do not mark complete until:
+
+* one-click applies to all trading instances
+* shared bridge users require admin one-click approval before arming
+* own bridge users can self-arm when their bridge is connected/ready
+* users must agree before one-click becomes armed
+* after armed, Buy/Sell sends immediately with no confirmation/follow-up
+* all Buy/Sell buttons use the shared one-click handler
+* execution results are truthful
+* revoked shared-bridge permission disarms one-click
+* investor/view-only users cannot arm or execute
+* no paper/demo wording appears in live flow
+* no fake success state appears
+* validation/tests pass
+* live broker execution settings are not accidentally changed globally

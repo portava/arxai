@@ -1,0 +1,138 @@
+I am giving explicit owner sign-off to proceed with Phase 3 broker placement and MT5 EA execution support.
+
+Continue from the current completed structure. Do not restart or rebuild blindly.
+
+Goal:
+Finish the full admin-controlled DEMO/LIVE trading upgrade.
+
+Proceed with Phase 3:
+1. Implement the broker placement layer.
+2. Implement guarded placeLiveOrderGuarded and placeDemoOrderGuarded flows.
+3. Add EA execution support for MT5 demo/live trade commands.
+4. Add OrderSend / trade.Buy / trade.Sell / OrderModify / PositionClose only inside the guarded EA execution layer.
+5. Add the admin Trading Control UI page.
+6. Add assistant tools for requestDemoOrder and requestLiveOrder, but keep them fully guarded.
+7. Connect admin master switch to:
+   - Trading Off
+   - Demo Trading
+   - Live Trading
+8. Keep default platform mode OFF after build.
+9. Do not turn Live Trading on automatically.
+10. Do not enable all users live by default.
+
+Owner intent:
+Paper-only should no longer be the normal user-facing mode.
+The user-facing platform modes should be:
+- Trading Off
+- Demo Trading Active
+- Live Trading Active
+
+Required protections:
+1. Demo orders only execute on verified MT5 demo accounts.
+2. Live orders only execute on verified MT5 live accounts.
+3. Live orders require explicit user confirmation.
+4. Emergency stop blocks all new orders.
+5. Suspended users cannot trade.
+6. Risk limits must be enforced before any command reaches MT5.
+7. Duplicate commands must be rejected.
+8. Expired commands must be rejected.
+9. Wrong account type must be rejected.
+10. All trade attempts must be audit logged.
+11. All admin mode changes must be audit logged.
+12. AI cannot bypass backend guards.
+13. AI cannot silently place live trades.
+14. No secrets may appear in logs or UI.
+
+EA execution rules:
+The EA may execute only if:
+- backend command status is approved
+- platform mode matches account type
+- command is not expired
+- command id is not duplicate
+- account type is verified
+- risk check passed
+- live confirmation exists for live commands
+- emergency stop is false
+- user is not suspended
+- bridge token is valid
+
+EA must refuse execution if:
+- platform mode is off
+- emergency stop is active
+- account type mismatch
+- invalid token
+- expired command
+- duplicate command
+- failed risk check
+- missing live confirmation
+- user/connection mismatch
+
+Admin UI required:
+Create Admin Trading Control page with:
+- current platform mode
+- Trading Off button
+- Demo Trading button
+- Live Trading button
+- emergency stop toggle
+- user trading status list
+- per-user suspend/revoke controls
+- demo/live account counts
+- blocked user/account mismatch list
+- trade command audit log
+- admin action audit log
+
+Assistant behavior:
+AI must answer:
+- Is trading on?
+- Are we in demo or live mode?
+- Can I trade?
+- Why is my trade blocked?
+- Is my MT5 account demo or live?
+- What is the current platform mode?
+
+AI trade behavior:
+- In demo mode, AI can prepare a demo trade ticket and submit only after backend guard approval.
+- In live mode, AI can prepare a live trade ticket but must require explicit confirmation before sending.
+- AI cannot place trades for another user.
+- AI cannot bypass backend guard chain.
+
+After implementation:
+Run the full test suite and add tests for:
+1. Admin can switch to Trading Off.
+2. Admin can switch to Demo Trading.
+3. Admin can switch to Live Trading.
+4. Trading Off blocks new orders.
+5. Demo mode blocks live accounts.
+6. Live mode blocks demo accounts.
+7. Demo order routes only to demo account.
+8. Live order routes only to live account.
+9. Emergency stop blocks orders.
+10. Suspended user cannot trade.
+11. Risk limits block oversized trades.
+12. Expired commands are rejected.
+13. Duplicate commands are rejected.
+14. Live trade requires explicit confirmation.
+15. AI cannot bypass guards.
+16. User cannot access another user’s trade commands.
+17. All trade attempts are audit logged.
+18. All admin changes are audit logged.
+19. MT5 heartbeat still works.
+20. MT5 sync-account still works.
+21. MT5 sync-positions still works.
+22. MT5 command polling still works.
+23. No secrets are exposed.
+24. No old paper-only wording appears in normal user-facing UI.
+
+Final report required:
+Return:
+- PASS or FAIL
+- current platform mode
+- admin UI status
+- broker placement layer status
+- EA execution status
+- demo trading status
+- live trading status
+- tests passed
+- remaining blockers
+- exact admin steps to enable Demo Trading
+- exact admin steps to enable Live Trading

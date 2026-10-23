@@ -1,0 +1,247 @@
+Continue building ARX AI Live Trade Intelligence.
+
+Do not rebuild blindly. Inspect the current Live Trade Intelligence, Sniper Exit Alerts, Open Trades UI, MT5 sync, command queue, close review modal, AI assistant context, notification system, user routing mode, and shared-master attribution first.
+
+Goal:
+Upgrade the system from just analyzing trades to actively monitoring open trades, alerting users, and learning from each exit decision.
+
+Build these improvements:
+
+1. Trade Detail Intelligence Page
+
+Create or improve a Trade Detail page for each open trade.
+
+The page must show:
+- symbol
+- buy/sell
+- lot size
+- entry price
+- current price
+- stop loss
+- take profit
+- account type: demo/live
+- routing mode: user-owned MT5 or shared-master MT5
+- current P&L
+- current pips/points
+- peak profit
+- max drawdown while open
+- MFE
+- MAE
+- profit giveback
+- trade age
+- current AI label
+- close urgency score
+- continuation score
+- pullback/retracement score
+- reversal risk score
+- fakeout risk score
+- volatility risk score
+- data quality score
+
+Add action buttons:
+- Ask AI
+- Review Close
+- Set Alert
+- Move Stop Review
+- Partial Close Review
+- Hold and Monitor
+
+Do not execute from one tap. Every action must open a confirmation/review modal first.
+
+2. Sniper Exit Watchlist
+
+Create a “Sniper Exit Watchlist” section that automatically lists open trades needing attention.
+
+Include trades where:
+- profit is fading
+- price is near stop loss
+- price is near take profit
+- reversal risk is rising
+- fakeout risk is rising
+- close urgency is high
+- trade is close to break-even after being in profit
+- trade has exceeded preferred hold time
+- volatility/spread risk is high if data exists
+
+Each card should show:
+- trade
+- current P&L
+- alert reason
+- urgency tier
+- recommended action
+- Review Close button
+
+3. Alert Delivery
+
+Wire trade exit alerts into the app notification system.
+
+Alert types:
+- In-app notification
+- Push notification if supported
+- Assistant notification bubble
+- Trade card badge
+
+Alert examples:
+- “EURUSD profit is fading. You are still positive, but price has given back 42% from peak.”
+- “Gold is near your stop loss. Review risk.”
+- “Close urgency is high. Tap to review exit options.”
+- “Momentum has weakened. This may be a retracement or possible reversal.”
+
+Do not send repeated spam alerts. Add cooldown logic:
+- no duplicate alert for the same trade/reason within a reasonable time window
+- allow urgent alerts to override cooldown only when severity increases
+
+4. User Exit Preferences
+
+Add user preferences for trade alerts:
+
+- alerts enabled
+- push alerts enabled
+- in-app alerts enabled
+- sniper exit sensitivity:
+  - conservative
+  - balanced
+  - aggressive
+- minimum profit before close alerts
+- profit giveback alert percent
+- max hold time
+- preferred trade style:
+  - scalping
+  - intraday
+  - swing
+  - custom
+- alert me before take profit
+- alert me before stop loss
+- alert me when profit drops near break-even
+- alert me when reversal risk is high
+
+5. AI Exit Conversation Memory
+
+When a user asks AI about a trade, save the AI analysis history for that trade.
+
+The trade should have a conversation timeline:
+- user asked
+- AI answered
+- alert fired
+- user reviewed close
+- user confirmed close
+- user ignored alert
+- trade later closed
+- result after alert
+
+This helps the user see:
+- what AI warned about
+- whether the warning was helpful
+- whether closing would have protected profit
+- whether holding was better
+
+6. Exit Decision Feedback Loop
+
+After a trade closes, create a post-trade exit review.
+
+Show:
+- entry
+- exit
+- peak unrealized profit
+- final realized P&L
+- profit given back before close
+- AI close alerts fired
+- whether user acted on alert
+- whether close was manual, AI-reviewed, SL, TP, or MT5 close
+- what the AI saw
+- what actually happened
+
+Add simple labels:
+- Great exit
+- Early exit
+- Late exit
+- Protected profit
+- Held too long
+- Ignored close alert
+- Stop loss hit
+- Take profit hit
+- Data insufficient
+
+7. Assistant Upgrade
+
+AI should be able to answer:
+
+- Which of my trades need attention right now?
+- Which trade is closest to reversing?
+- Which trade is giving back the most profit?
+- Should I close anything?
+- Which open trade has the highest close urgency?
+- Which trade is still healthy?
+- Which trade looks like a fakeout?
+- Which trade is only pulling back?
+- What is my safest exit plan?
+- Did I ignore any close alerts?
+- Did AI warn me before this trade reversed?
+
+AI must answer from real trade state only. If data is missing, say so.
+
+8. Guardrails
+
+AI must never:
+- guarantee maximum profit
+- promise a trade will win
+- silently close a trade
+- bypass backend guards
+- hide live risk
+- expose another user’s trades
+- expose shared master account credentials
+- invent candles, P&L, signals, or news data
+
+AI should use language like:
+- “Based on available data”
+- “This appears to be”
+- “This may be”
+- “The risk is increasing”
+- “Consider reviewing a close”
+- “I need more candle/scanner data to judge this accurately”
+
+9. Mobile UI
+
+Make sure trade cards, alert modals, and Trade Detail page work well on iPhone Safari.
+
+Check:
+- no buttons hidden behind bottom menu
+- modals fit screen
+- close/review buttons are reachable
+- alert badges are readable
+- sidebar remains clean and collapsible
+- active trades are easy to scan
+
+10. Tests
+
+Add or update tests for:
+1. Trade detail page loads only user’s own trade.
+2. Shared-master user sees only attributed trade data.
+3. Sniper Exit Watchlist shows high urgency trades.
+4. Alerts fire when profit giveback threshold is reached.
+5. Alerts do not spam duplicates.
+6. User preferences change alert sensitivity.
+7. Review Close opens modal and does not execute instantly.
+8. Live close requires explicit confirmation.
+9. Emergency stop blocks close.
+10. Suspended user cannot close.
+11. AI can list trades needing attention.
+12. AI does not invent missing market data.
+13. AI cannot access another user’s trade timeline.
+14. Exit review is created after trade closes.
+15. Ignored alerts are recorded.
+16. No secrets exposed.
+17. Mobile layout passes.
+
+Final report:
+Return:
+- PASS or FAIL
+- Trade Detail page status
+- Sniper Exit Watchlist status
+- alert delivery status
+- user preferences status
+- AI trade conversation memory status
+- exit feedback loop status
+- mobile UI status
+- tests passed
+- remaining blockers

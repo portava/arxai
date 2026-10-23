@@ -1,0 +1,322 @@
+Run the Final Full-System Review + Controlled Paper Testing Launch Gate.
+
+This is NOT a new feature build.
+Do not start Build TT.
+Do not add new features unless a critical test fails and a small fix is required.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not expose API secrets.
+Do not recommend live trading.
+Do not add live trading controls.
+
+Goal:
+Review the entire trading app from Build AA through Build SS and determine whether it is safe, stable, polished, and understandable enough to begin controlled PAPER TESTING only.
+
+Final review must verify:
+
+1. Full system build health
+Run all relevant commands:
+- typecheck
+- build
+- API validation
+- frontend build validation
+- database/schema validation
+- frontend smoke tests if available
+- readiness gate
+- integration tests
+- security tests if available
+
+Show exact commands run and pass/fail results.
+
+2. Confirm all builds AA through SS are present
+
+Verify:
+
+AA - Trade Decision Orchestrator
+BB - Auto-Debrief
+CC - Learning Feedback Engine
+DD - Read-Only Market Data
+EE - Paper Execution Engine
+FF - Paper Autopilot
+GG - Trading Calendar + AI Command Center
+HH - Risk Governor
+II - Trader Coach + Playbook
+JJ - Replay Simulator + Strategy Lab
+KK - Data Import + Broker Read-Only Connector
+LL - Notification Center
+MM - System Health + Admin + Audit
+NN - Security + Roles + Permissions
+OO - Readiness Gate
+PP - Paper Session Manager
+QQ - Unified Trading Cockpit
+RR - Guided Onboarding + Smart Help
+SS - UI Polish + Mobile + Accessibility
+
+For each build, confirm:
+- service exists
+- routes exist
+- database tables exist if needed
+- frontend page exists if needed
+- safety rules are still enforced
+- no live trading is enabled
+
+3. Run final OO readiness gate
+
+Run:
+
+POST /api/readiness/run
+GET /api/readiness/status
+GET /api/readiness/checklist
+
+Confirm:
+- appMode is PAPER_ONLY
+- liveTradingStatus is DISABLED
+- canProceedToPaperTesting is true or clearly explains why not
+- canProceedToLiveTrading is false
+- critical failures are empty or clearly listed
+- readiness score and grade are shown
+- recommended fixes are practical
+
+4. Run final PP paper session workflow
+
+Test the user’s real workflow:
+
+- Open Trading Cockpit
+- Run preflight
+- Start paper session if allowed
+- Confirm session becomes ACTIVE
+- Confirm PP stores session rules/goals
+- Confirm EE respects session rules
+- Confirm FF respects session rules
+- Pause session
+- Resume session
+- End session
+- Generate session report
+
+Confirm:
+- only one active session can exist
+- blocked states explain why
+- live trading remains disabled
+- session report includes trades/P&L/mistakes/lessons when available
+
+5. Run final paper-only loop test
+
+Run or simulate:
+
+AA decision →
+EE paper execution only if valid →
+paper trade monitoring →
+paper trade close →
+BB auto-debrief →
+CC learning →
+GG performance update →
+HH risk governor review →
+II coach update →
+LL notification →
+MM audit →
+NN security check →
+PP session report →
+QQ cockpit update
+
+Confirm:
+- decision_id is preserved
+- paper trade links to decision
+- debrief links to paper trade
+- learning processes once
+- no duplicate debriefs
+- no duplicate learning events
+- no live trades are placed
+
+6. Run final Trading Cockpit UX test
+
+Verify QQ/SS UI:
+
+- Trading Cockpit is the main operating page
+- safety header is visible
+- PAPER ONLY badge visible
+- LIVE TRADING DISABLED badge visible
+- primary next action is clear
+- active session panel works
+- open paper trades panel works
+- today performance panel works
+- coach panel works
+- alerts panel works
+- autopilot panel works
+- system health panel works
+- onboarding/help widget works
+
+Confirm no live trading buttons or broker execution buttons exist.
+
+7. Run mobile and accessibility review
+
+Verify:
+- mobile layout has no horizontal overflow
+- cockpit is readable on mobile
+- session controls are easy to tap
+- notification drawer works
+- help drawer works
+- why-blocked drawer works
+- tables collapse or remain readable
+- buttons have accessible names
+- forms have labels
+- focus states are visible
+- color is not the only status indicator
+- critical alerts are readable
+
+8. Run security and secret review
+
+Verify NN and MM:
+
+- roles exist
+- permissions exist
+- forbidden permissions reject
+- sensitive routes are protected
+- audit logs are created
+- security events are created
+- secrets are redacted
+- account IDs are masked
+- frontend output contains no API secrets
+- exports contain no secrets
+
+Search for:
+BROKER_API_KEY
+BROKER_API_SECRET
+MARKET_DATA_API_KEY
+DATABASE_URL
+session secrets
+raw broker tokens
+full account IDs
+
+Confirm none are exposed.
+
+9. Run live-trade isolation review
+
+Search all files changed across AA through SS.
+
+Confirm there are no live execution calls in new systems:
+
+executeTrade
+execute-trade
+mt5 order placement
+MT5 order placement
+livePosition modification
+live order
+setCanPlaceTrades
+live broker execution
+broker.placeOrder
+orderSend
+positionClose
+modifyOrder
+real order placement
+
+Confirm:
+- canPlaceTrades remains false
+- liveTradingAllowed remains false
+- canPlaceLiveTrade remains false
+- broker mode remains READ_ONLY
+- market data mode remains read_only
+- all live trading UI remains hidden/nonexistent
+
+10. Run final notification and blocked-state test
+
+Verify:
+
+- critical alert appears
+- critical alert blocks paper session start when required
+- readiness blocked state explains why
+- Risk Governor paused state explains why
+- no active session state explains why paper execution is blocked
+- broker read-only explanation works
+- onboarding/help explains paper-only mode
+
+11. Run final frontend route smoke test
+
+Confirm these routes load:
+
+Main:
+- Trading Cockpit
+- Paper Sessions
+- Calendar
+- Coach
+- Playbook
+
+Practice:
+- Replay Simulator
+- Strategy Lab
+- Data Import
+
+System:
+- Notifications
+- Risk Governor
+- Readiness Gate
+- System Health
+- Security
+- Broker Read-Only
+- Help Center
+- Onboarding
+
+Confirm:
+- no route crashes
+- no route exposes secrets
+- no route shows live trading controls
+- all major pages show safe empty/loading/error states
+
+12. Produce final paper testing launch checklist
+
+Create a final checklist:
+
+Before starting paper testing:
+- readiness gate passed
+- Risk Governor allows paper testing
+- no critical alerts
+- security clean
+- broker read-only
+- market data read-only
+- session preflight passed
+- paper-only badge visible
+- live disabled badge visible
+- max session loss set
+- max paper trades set
+- coach focus reviewed
+- notifications working
+- audit logging working
+
+13. Produce final rating
+
+Give final ratings:
+
+- Backend safety: /10
+- Paper workflow: /10
+- AI decision loop: /10
+- Learning loop: /10
+- Risk controls: /10
+- Security/data protection: /10
+- UX/navigation: /10
+- Mobile readiness: /10
+- Overall readiness for controlled PAPER TESTING: /10
+- Live trading readiness: always 0/10 and disabled
+
+14. Final response format
+
+Return:
+
+1. Final review passed or failed
+2. Commands/tests run
+3. Build AA through SS status table
+4. Readiness gate output
+5. Paper session workflow proof
+6. Full paper-only loop proof
+7. Trading Cockpit UX proof
+8. Mobile/accessibility proof
+9. Security/secret redaction proof
+10. Live-trade isolation proof
+11. Notification/blocked-state proof
+12. Frontend route proof
+13. Final paper testing launch checklist
+14. Known issues
+15. Must-fix before paper testing
+16. Nice-to-have improvements later
+17. Final ratings
+18. Whether the system is safe to begin controlled PAPER TESTING
+19. Whether live trading remains fully disabled

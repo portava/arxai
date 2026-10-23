@@ -1,0 +1,244 @@
+Approve Phase 4 if it passed, then begin Phase 5: User-safe paper trading lifecycle, trade journal, and performance calendar for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT place live trades.
+- Do NOT enable live execution.
+- Keep liveLocked = true.
+- Keep READ_ONLY / PAPER_ONLY active.
+- Keep AllowOrderExecution = false.
+- Do NOT touch MT5 EA .mq5 files unless absolutely required and approved.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT move to Phase 6 until Phase 5 QA passes.
+
+Current status:
+- Phase 1 identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Phase 3 per-user MT5 connections/trading sessions: PASS.
+- Phase 4 per-user command routing: expected PASS before this phase.
+- Now build the user-safe paper trading layer.
+
+Main goal:
+A logged-in user should be able to create a safe paper trade, track it through its lifecycle, journal the reasoning, and see win/loss performance by day — all scoped to that user only. Nothing should place a real broker order.
+
+Phase 5A — Paper trade lifecycle model:
+Create or finalize a user-owned paper_trades table.
+
+Required fields:
+- id
+- userId
+- tradingSessionId nullable
+- mt5ConnectionId nullable
+- symbol
+- side: buy/sell
+- status: planned/open/closed/cancelled/failed
+- entryType: market/limit/stop/manual
+- plannedEntryPrice nullable
+- entryPrice nullable
+- exitPrice nullable
+- stopLoss nullable
+- takeProfit nullable
+- lotSize or positionSize
+- riskAmount nullable
+- riskPercent nullable
+- rewardRiskRatio nullable
+- pnl nullable
+- pnlPercent nullable
+- openedAt nullable
+- closedAt nullable
+- cancelledAt nullable
+- strategyTag nullable
+- setupGrade nullable
+- aiConfidence nullable
+- reasonForEntry nullable
+- reasonForExit nullable
+- mistakeTags nullable
+- screenshotUrl nullable
+- notes nullable
+- createdAt
+- updatedAt
+
+Rules:
+- Every paper trade must have userId.
+- Never accept userId from frontend.
+- All reads/writes must scope by req.authUser.id.
+- No paper trade route should call real OrderSend or broker execution.
+
+Phase 5B — Backend routes:
+Add or verify these user-owned routes:
+
+- GET /api/me/paper-trades
+- POST /api/me/paper-trades
+- GET /api/me/paper-trades/:id
+- PATCH /api/me/paper-trades/:id
+- POST /api/me/paper-trades/:id/open
+- POST /api/me/paper-trades/:id/close
+- POST /api/me/paper-trades/:id/cancel
+- GET /api/me/trading-sessions/:id/paper-trades
+
+Requirements:
+- requireUser on every route.
+- userId = req.authUser.id on every query.
+- Validate symbol, side, size, entry, stop loss, take profit.
+- Block impossible values such as negative lot size, invalid price, missing symbol.
+- Calculate risk/reward safely when enough values exist.
+- Calculate P/L when closed.
+- Closing a trade should update the connected trading session metrics.
+
+Phase 5C — Trade journal:
+Create or finalize trade_journal_entries table.
+
+Required fields:
+- id
+- userId
+- paperTradeId nullable
+- tradingSessionId nullable
+- title
+- body
+- mood nullable
+- disciplineScore nullable
+- executionScore nullable
+- mistakeTags nullable
+- lessonLearned nullable
+- createdAt
+- updatedAt
+
+Routes:
+- GET /api/me/trade-journal
+- POST /api/me/trade-journal
+- GET /api/me/trade-journal/:id
+- PATCH /api/me/trade-journal/:id
+- DELETE /api/me/trade-journal/:id
+
+Rules:
+- All entries must be scoped to the logged-in user.
+- Users cannot attach journal entries to another user’s trade/session.
+- If a journal entry links to a paperTradeId, verify that trade belongs to the same user.
+
+Phase 5D — Performance calendar:
+Create a user-owned daily performance summary system.
+
+Either create a table or compute from paper trades:
+- userId
+- date
+- tradesCount
+- wins
+- losses
+- breakeven
+- totalPnl
+- totalRisk
+- bestTrade
+- worstTrade
+- winRate
+- notes
+
+Routes:
+- GET /api/me/performance-calendar
+- GET /api/me/performance-calendar/:date
+- GET /api/me/performance-summary
+
+The calendar should show:
+- green/winning days
+- red/losing days
+- neutral/no-trade days
+- total P/L per day
+- number of trades
+- win/loss count
+
+Do not show fake global calendar data for first-time users.
+
+Phase 5E — Frontend UI:
+Only update the trading/session/journal/calendar areas needed.
+
+Add clean first-time states:
+- “No paper trades yet”
+- “Start a paper trade to track your decisions”
+- “Your performance calendar will populate after your first closed trade”
+- “No journal entries yet”
+
+Add user-safe actions:
+- Create paper trade
+- Open paper trade
+- Close paper trade
+- Cancel paper trade
+- Add journal note
+- View performance calendar
+- View session performance
+
+Do not make the UI claim real execution happened. Use clear labels:
+- Paper Trade
+- Simulated Entry
+- Simulated Close
+- Read-only MT5 bridge
+
+Phase 5F — AI preparation, but no full AI trading yet:
+Add structured fields that allow the AI to later analyze trades:
+- setupGrade
+- mistakeTags
+- disciplineScore
+- executionScore
+- reasonForEntry
+- reasonForExit
+- lessonLearned
+
+But do not let AI auto-place trades.
+AI can summarize and score paper trades only.
+
+Phase 5G — Safety rules:
+Hard block anything that looks like live execution.
+
+Confirm:
+- No real broker order route is called.
+- No OrderSend command is queued.
+- LIVE_BUY, LIVE_SELL, MODIFY_LIVE_ORDER, CLOSE_LIVE_POSITION remain blocked.
+- PAPER_ORDER_TEST remains paper-only.
+- liveLocked remains true.
+- AllowOrderExecution remains false.
+
+Phase 5H — Tests:
+Add/extend tests.
+
+Required tests:
+1. User A creates paper trade.
+2. User B cannot see User A paper trade.
+3. User B cannot update/close/cancel User A paper trade.
+4. User A opens and closes a paper trade.
+5. P/L calculates correctly.
+6. Trading session metrics update correctly.
+7. Calendar day updates after closed trade.
+8. Journal entry links only to User A’s own trade.
+9. Invalid trade values are rejected.
+10. Live trade command is blocked.
+11. First-time user sees empty states, not global demo data.
+
+Phase 5I — QA/fix gate:
+After implementation, run QA and fix every issue before stopping.
+
+QA must confirm:
+- App starts.
+- Login/register/logout/me still work.
+- Phase 2 user scoping still passes.
+- Phase 3 per-user MT5 connection isolation still passes.
+- Phase 4 command isolation still passes.
+- Paper trade lifecycle works.
+- Journal works.
+- Calendar works.
+- No global demo data leaks into user dashboards.
+- No live trades executed.
+- No MT5 EA files changed unless explicitly reported.
+- Safety contract still passes.
+- Existing unrelated paperIntelligence.ts:123 typecheck issue is reported separately if still present.
+
+Final report format:
+1. Files changed
+2. Tables added/changed
+3. Routes added/changed
+4. Paper trade lifecycle result
+5. Journal result
+6. Calendar result
+7. User A/User B isolation result
+8. Safety verification
+9. Remaining errors
+10. Phase 5 PASS or FAIL
+11. Stop and wait for my approval before Phase 6

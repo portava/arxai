@@ -1,0 +1,115 @@
+Continue with a small cleanup phase: Close the 5 documented P2/P3 deferred items from the latest T1–T7 + Market Data QA report.
+
+Do NOT build unrelated features.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, or ALERT_ONLY gates.
+Do NOT fake market data, candles, scanner opportunities, P&L, news, current events, bridge status, or TP targets.
+Do NOT redesign unrelated pages.
+
+Before coding:
+1. Read the latest QA section appended to docs/FULL_TRADING_INTELLIGENCE_ENGINE_QA_REPORT.md.
+2. Confirm final answer says READY FOR NEXT PHASE.
+3. Confirm the only remaining items are:
+   - bridgeMode enum vocabulary divergence
+   - reconciliation enum vocabulary divergence
+   - missing discrete “Current Events Unavailable” badge label
+   - missing discrete “Command Execution Disabled” badge label
+   - rateLimitStatus not exposed as a discrete field
+4. If any P0/P1 issue exists, stop and fix that first.
+
+Fix only these items:
+
+A. bridgeMode Enum Vocabulary Alignment
+- Centralize bridgeMode literals into the shared browser-safe contract.
+- Required literals:
+  - OFFLINE
+  - READ_ONLY
+  - PAPER_ONLY
+  - LIVE_LOCKED
+- Preserve existing behavior.
+- Default/fallback must be OFFLINE.
+- Stale heartbeat must force OFFLINE.
+- Frontend and backend must use the same enum vocabulary.
+- Do not change safety behavior.
+
+B. Reconciliation Enum Vocabulary Alignment
+- Centralize reconciliation statuses so backend, frontend, executionReconciler, and AI-facing getReconciliationStatus use the same literals.
+- Required statuses:
+  - MATCHED
+  - APP_ONLY
+  - BROKER_ONLY
+  - MISMATCHED
+  - ATTRIBUTION_MISSING
+  - STALE_BROKER_DATA
+  - BRIDGE_OFFLINE
+  - RECONCILIATION_BLOCKED
+- Preserve backward compatibility if old values exist.
+- Do not execute reconciliation changes; this is visibility/contract cleanup only.
+
+C. Add Discrete “Current Events Unavailable” Badge
+- Add a real backend-driven badge/status label for Current Events Unavailable.
+- It must appear only when the current-events channel returns connected:false or unavailable.
+- Do not reuse market-news status silently.
+- AI must continue saying current events are unavailable instead of inventing.
+
+D. Add Discrete “Command Execution Disabled” Badge
+- Add a real backend-driven badge/status label for Command Execution Disabled.
+- It must reflect commandExecutionAllowed=false / execution disabled state.
+- It must not imply an error if execution is intentionally locked.
+- Live trading must remain blocked.
+
+E. Expose rateLimitStatus As Discrete Field
+- Expose rateLimitStatus in provider health response/UI when available.
+- UI should show Provider Rate Limited when applicable.
+- Refresh/recheck must remain rate-limited server-side.
+- Do not bypass limits.
+- Audit refresh attempts as before.
+
+Contract requirements:
+- Use shared browser-safe TypeScript contracts where frontend/backend both need types.
+- Use ESM imports only.
+- Do not introduce require().
+- Do not import Node-only modules into browser/shared frontend code.
+- Server-only logic stays server-only.
+
+After implementation, run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. bridgeMode enum contract tests
+7. Reconciliation enum contract tests
+8. Badge backend-state tests for Current Events Unavailable
+9. Badge backend-state tests for Command Execution Disabled
+10. Provider rateLimitStatus tests
+11. AI honesty regression for current-events unavailable
+12. Command queue BLOCKED/EXECUTION_DISABLED regression
+13. Per-user isolation regression
+14. Safety-envelope regression
+15. Market data freshness regression
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks.
+
+End with a report showing:
+- Files inspected
+- Files changed
+- The 5 deferred items and their completion status
+- Tests run and pass/fail results
+- Runtime status
+- Frontend/backend enum contract status
+- Badge status result
+- rateLimitStatus result
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Confirmation no fake market/current-events data was introduced
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

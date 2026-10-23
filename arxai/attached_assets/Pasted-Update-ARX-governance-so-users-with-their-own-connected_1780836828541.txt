@@ -1,0 +1,519 @@
+Update ARX governance so users with their own connected MT5 bridge can define their own trading governance and are not restricted by ARX operator/shared-bridge limits.
+
+This is a governance-scope separation task.
+
+The product rule:
+
+1. Users trading through their own personal MT5 bridge are trading their own broker account and their own capital.
+   They should be allowed to set their own trading governance rules.
+   ARX should not impose operator/shared-bridge restrictions on them.
+
+2. Users trading through the shared/master MT5 bridge are trading through the operator-controlled bridge.
+   They must remain subject to admin approval, operator allocation, platform risk controls, shared-bridge caps, and admin governance.
+
+Do not rebuild the app.
+Do not replace MT5 bridge logic.
+Do not replace execution routes.
+Do not bypass authentication.
+Do not bypass bridge ownership verification.
+Do not bypass security handshake.
+Do not bypass audit logging.
+Do not bypass idempotency / duplicate command protection.
+Do not allow one user to trade another user’s bridge.
+Do not weaken shared/master bridge restrictions.
+Do not remove admin controls from shared bridge users.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Separate governance by bridge ownership:
+
+- PERSONAL_BRIDGE governance
+- SHARED_MASTER_BRIDGE governance
+
+For PERSONAL_BRIDGE users:
+Allow complete trading freedom based on their own settings.
+
+For SHARED_MASTER_BRIDGE users:
+Keep existing admin/operator restrictions.
+
+==================================================
+DEFINE BRIDGE GOVERNANCE MODES
+==================================================
+
+Create or verify a bridge governance resolver.
+
+Suggested modes:
+
+PERSONAL_BRIDGE_SELF_GOVERNED
+SHARED_BRIDGE_OPERATOR_GOVERNED
+NO_BRIDGE
+UNKNOWN
+
+A user is PERSONAL_BRIDGE_SELF_GOVERNED only when:
+
+- the MT5 bridge belongs to that authenticated user
+- the bridge is connected
+- the bridge ownership is verified
+- the bridge is not the shared/master/operator bridge
+- the user is not trading from operator allocation
+- the user is not using pooled/shared funds
+- the user is not impersonating another bridge
+- the bridge session is fresh enough for execution
+
+A user is SHARED_BRIDGE_OPERATOR_GOVERNED when:
+
+- they trade through the centralized/master bridge
+- they use operator allocation
+- they use shared bridge execution
+- admin approval is required
+- admin caps apply
+
+==================================================
+PERSONAL BRIDGE USER FREEDOM
+==================================================
+
+For users on their own MT5 bridge, remove ARX-imposed trading restrictions such as:
+
+- operator max lot cap
+- operator daily trade count cap
+- operator daily loss cap
+- operator weekly loss cap
+- operator allowed-symbol list
+- operator max open positions
+- operator forced stop-loss requirement
+- shared bridge allocation cap
+- admin approval requirement for live trading
+- admin toggle requirement for trade access
+- shared bridge risk profile
+- shared bridge live execution prerequisites that only exist to protect operator funds
+
+These users should be able to set their own rules:
+
+- max lot size
+- max open positions
+- daily loss limit
+- weekly loss limit
+- allowed symbols
+- require stop loss yes/no
+- max trades per day
+- scalping allowed yes/no
+- news trading allowed yes/no
+- AI assist allowed yes/no
+- AI auto allowed yes/no if available for personal bridge
+- one-click trading allowed yes/no
+- confirmation required yes/no
+- personal kill switch settings
+
+If they set no personal limits, ARX should not invent operator-style limits for them.
+
+UI language:
+“You are trading through your own MT5 bridge. Your trading rules are self-governed.”
+
+==================================================
+NON-NEGOTIABLE PLATFORM SAFETY THAT STILL REMAINS
+==================================================
+
+These are not trading restrictions. They protect app integrity.
+
+Always keep:
+
+1. Authentication
+User must be logged in.
+
+2. Bridge ownership check
+User can only trade through their own bridge unless admin/operator shared bridge access is explicitly granted.
+
+3. Bridge freshness
+Do not send commands to a stale/disconnected bridge.
+
+4. Symbol mapping
+Do not send a command if the symbol cannot be resolved to the connected MT5 broker symbol.
+
+5. Idempotency
+Prevent duplicate orders from double taps, retries, stream reconnects, or repeated command submissions.
+
+6. Replay protection
+Do not allow old commands to be resent.
+
+7. Command integrity
+Command payload must not change after approval/dispatch.
+
+8. Audit logging
+Every live command must be auditable.
+
+9. Result mapping
+Broker fill/reject must map back to ARX command truth.
+
+10. Security Handshake
+Protect identity, permissions, bridge ownership, route safety, and command integrity.
+
+11. User consent / personal settings
+If the user enables one-click or AI auto for their own bridge, store that preference clearly.
+
+12. No cross-user access
+A user cannot read, control, or trade another user’s bridge/account.
+
+13. No fake fills
+Never mark filled without broker-confirmed result.
+
+14. Emergency app integrity stop
+If ARX detects command duplication, route corruption, spoofed bridge, or account mismatch, block execution.
+
+Do not remove these.
+
+==================================================
+RISK GOVERNOR BEHAVIOR BY GOVERNANCE MODE
+==================================================
+
+Update Risk Governor so it behaves differently by bridge governance mode.
+
+For SHARED_BRIDGE_OPERATOR_GOVERNED:
+Risk Governor enforces:
+- admin allocation
+- max lot
+- allowed symbols
+- daily/weekly loss caps
+- open position caps
+- required stop-loss if configured
+- operator kill switch
+- user approval toggle
+- shared bridge limits
+- admin restrictions
+
+For PERSONAL_BRIDGE_SELF_GOVERNED:
+Risk Governor should become a personal governance interpreter, not an operator limiter.
+
+It should enforce only:
+- the user’s own configured rules
+- bridge ownership
+- bridge health/freshness
+- symbol resolution
+- command integrity
+- security requirements
+- platform safety requirements
+
+If user has no personal rule configured:
+- do not block for missing operator limits
+- do not apply shared bridge restrictions
+- do not force stop loss
+- do not force max lot beyond broker/app technical validation
+- do not force allowed symbol list beyond what the connected broker supports
+
+Risk message for personal bridge:
+“Allowed by your personal MT5 bridge governance.”
+
+Risk message for shared bridge:
+“Checked against shared bridge governance.”
+
+==================================================
+AACI BEHAVIOR BY GOVERNANCE MODE
+==================================================
+
+AACI should understand governance mode.
+
+For personal bridge:
+AACI checks system cohesion:
+- bridge connected
+- symbol mapped
+- account snapshot available if needed
+- command route ready
+- security handshake passed
+- audit ready
+- duplicate/replay protection active
+- chart/scanner truth if action depends on chart/scanner
+- user personal rules if configured
+
+AACI should not block because admin shared-bridge approval is missing.
+
+For shared bridge:
+AACI keeps current admin/operator checks.
+
+Add AACI field:
+governanceMode:
+- PERSONAL_BRIDGE_SELF_GOVERNED
+- SHARED_BRIDGE_OPERATOR_GOVERNED
+- NO_BRIDGE
+- UNKNOWN
+
+==================================================
+SECURITY HANDSHAKE BEHAVIOR
+==================================================
+
+Security Handshake must remain mandatory.
+
+For personal bridge, it verifies:
+- authenticated user
+- owns bridge
+- bridge token/session valid
+- bridge belongs to user
+- command is fresh
+- idempotency key valid
+- no replay
+- route is allowed
+- audit writable
+- no account/bridge mismatch
+
+It must not enforce shared-bridge admin approval when governanceMode is PERSONAL_BRIDGE_SELF_GOVERNED.
+
+==================================================
+UI / SETTINGS CHANGES
+==================================================
+
+Add or update settings for personal bridge users:
+
+Section title:
+Personal MT5 Bridge Governance
+
+Copy:
+“You are trading through your own MT5 bridge. ARX will follow the trading rules you set for your own account.”
+
+Controls:
+- One-click trading
+- Require confirmation
+- Require stop loss
+- Max lot size
+- Max open positions
+- Daily loss limit
+- Weekly loss limit
+- Allowed symbols
+- News trading
+- Scalping
+- AI assist
+- AI auto if available
+- Personal kill switch
+
+Add option:
+“No personal limit”
+
+If user chooses no limit:
+ARX should not substitute shared bridge restrictions.
+
+Add clear status chip:
+Self-governed bridge
+
+Shared bridge users should see:
+Operator-governed bridge
+
+Do not show personal bridge freedom settings to shared bridge users unless they connect their own bridge.
+
+==================================================
+TRADE BUTTON / EXECUTION COPY
+==================================================
+
+For personal bridge users:
+
+Trade button states should not say:
+- awaiting admin approval
+- shared bridge allocation required
+- operator approval required
+- admin disabled live trading
+
+Unless they are actually using shared bridge.
+
+Use:
+- Ready on your bridge
+- Bridge connected
+- Personal rules passed
+- Sending to your MT5
+- Filled by your MT5
+- Rejected by your MT5
+
+For shared bridge users:
+Keep existing shared bridge/admin wording.
+
+==================================================
+RUBY BEHAVIOR
+==================================================
+
+Ruby must understand governance mode.
+
+For personal bridge:
+Ruby should say:
+“You’re on your own MT5 bridge, so ARX is following your personal governance settings.”
+
+Ruby should not say:
+“Admin approval required”
+“Shared bridge allocation required”
+“Operator cap blocked this trade”
+
+unless user is actually on shared bridge.
+
+Ruby can still warn:
+- bridge stale
+- symbol cannot be mapped
+- duplicate command blocked
+- chart/scanner data not verified
+- spread high
+- news risk
+- user’s personal rule blocked it
+
+Ruby should distinguish:
+- “blocked by your personal rule”
+- “blocked by platform safety”
+- “blocked by shared bridge governance”
+
+==================================================
+SELF-TRADE AI BEHAVIOR
+==================================================
+
+For personal bridge users:
+Allow Self-Trade AI to operate under the user’s personal governance if the user enables it.
+
+Required:
+- user owns bridge
+- user enabled AI auto/assist
+- user accepted personal governance
+- bridge fresh
+- security handshake passed
+- command integrity/idempotency passed
+- strategy input truth gates passed
+- user personal rules passed if configured
+
+Do not require shared bridge admin allocation or approval.
+
+For shared bridge users:
+Keep all admin/operator approval and allocation requirements.
+
+==================================================
+ADMIN DASHBOARD
+==================================================
+
+Admin should be able to see governance mode safely:
+
+- Personal bridge self-governed
+- Shared bridge operator-governed
+- No bridge
+- Unknown
+
+Admin should not control personal bridge trading limits unless product policy explicitly allows admin compliance oversight.
+
+Admin can still see:
+- security incidents
+- bridge spoofing attempts
+- platform abuse
+- failed handshakes
+- duplicate command blocks
+- audit logs if role allows
+
+Do not let admin/shared bridge settings accidentally override personal bridge self-governance.
+
+==================================================
+DATA MODEL / POLICY
+==================================================
+
+Create or update policy object:
+
+type TradingGovernancePolicy = {
+  governanceMode: "PERSONAL_BRIDGE_SELF_GOVERNED" | "SHARED_BRIDGE_OPERATOR_GOVERNED" | "NO_BRIDGE" | "UNKNOWN";
+  userId: string;
+  bridgeId?: string;
+  source: "personal_bridge" | "shared_bridge" | "none";
+
+  personalRules?: {
+    oneClickTrading?: boolean;
+    requireConfirmation?: boolean;
+    requireStopLoss?: boolean;
+    maxLot?: number | null;
+    maxOpenPositions?: number | null;
+    dailyLossLimit?: number | null;
+    weeklyLossLimit?: number | null;
+    allowedSymbols?: string[] | null;
+    newsTradingAllowed?: boolean;
+    scalpingAllowed?: boolean;
+    aiAssistAllowed?: boolean;
+    aiAutoAllowed?: boolean;
+    personalKillSwitch?: boolean;
+  };
+
+  sharedRules?: {
+    adminApproved: boolean;
+    allocationRequired: boolean;
+    allocationAmount?: number;
+    maxLot?: number;
+    maxOpenPositions?: number;
+    dailyLossLimit?: number;
+    weeklyLossLimit?: number;
+    allowedSymbols?: string[];
+    requireStopLoss?: boolean;
+    operatorKillSwitch?: boolean;
+  };
+
+  platformIntegrity: {
+    authenticated: boolean;
+    bridgeOwnedByUser: boolean;
+    bridgeFresh: boolean;
+    symbolMapped: boolean;
+    idempotencyReady: boolean;
+    replayProtected: boolean;
+    auditReady: boolean;
+    securityHandshakeReady: boolean;
+  };
+};
+
+Use this policy in Risk Governor/AACI/trade readiness instead of scattered checks.
+
+==================================================
+TESTS REQUIRED
+==================================================
+
+Add/update tests:
+
+1. Personal bridge user can trade without admin approval.
+2. Personal bridge user is not blocked by shared bridge allocation.
+3. Personal bridge user is not blocked by shared bridge max lot.
+4. Personal bridge user is not blocked by shared bridge allowed-symbol list.
+5. Personal bridge user is not forced to use stop loss unless their own rule requires it.
+6. Personal bridge user can set no personal max lot.
+7. Personal bridge user can enable one-click trading.
+8. Personal bridge user can disable confirmation.
+9. Personal bridge user can configure their own daily/weekly limits.
+10. Personal bridge user’s own limit blocks trade when configured.
+11. Personal bridge user cannot trade through someone else’s bridge.
+12. Personal bridge stale/disconnected blocks trade.
+13. Duplicate command still blocked.
+14. Replay command still blocked.
+15. Symbol mapping failure still blocks trade.
+16. Security Handshake still required.
+17. Audit event still written.
+18. Shared bridge user still requires admin approval/allocation.
+19. Shared bridge restrictions still apply.
+20. Ruby uses correct governance language.
+21. UI shows Self-governed bridge for personal bridge.
+22. UI shows Operator-governed bridge for shared bridge.
+23. Self-Trade on personal bridge uses personal governance, not shared allocation.
+24. Self-Trade on shared bridge still uses admin/operator governance.
+
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- relevant risk/governance tests
+- relevant live execution readiness tests
+- relevant Ruby copy tests
+- full pnpm run ci if feasible
+
+==================================================
+COMPLETION REPORT
+==================================================
+
+Return:
+
+- files inspected
+- existing bridge ownership logic found
+- governance mode resolver added/updated
+- Risk Governor changes
+- AACI changes
+- Security Handshake changes
+- UI/settings changes
+- Ruby language changes
+- Self-Trade changes
+- shared bridge restrictions preserved
+- personal bridge freedom confirmed
+- platform integrity checks preserved
+- tests added/updated
+- typecheck/build/guard results
+- remaining blockers
+
+Final rule:
+Personal MT5 bridge users are self-governed. They should not inherit shared/master bridge restrictions. Shared bridge users remain operator-governed. Platform integrity checks still remain mandatory for everyone.

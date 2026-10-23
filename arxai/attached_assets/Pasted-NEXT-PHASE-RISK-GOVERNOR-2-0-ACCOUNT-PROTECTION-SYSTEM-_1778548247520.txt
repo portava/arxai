@@ -1,0 +1,497 @@
+NEXT PHASE: RISK GOVERNOR 2.0 + ACCOUNT PROTECTION SYSTEM
+
+Goal:
+Upgrade the trading app’s risk system into a professional account protection layer.
+
+The app already has:
+- full tester access
+- live chart
+- simulator market engine
+- strategy lab
+- backtesting
+- market scanner
+- command room
+- market data layer
+- OMS
+- position manager
+- P/L engine
+- MT5 deferred
+
+Now build the protection layer that controls:
+- max daily loss
+- max weekly loss
+- max trade risk
+- drawdown
+- exposure
+- overtrading
+- revenge trading
+- news risk
+- spread risk
+- volatility risk
+- correlated trades
+- AI auto-trading limits
+- future MT5 live execution safety
+
+Important:
+Do not fake MT5 connection.
+Do not place real orders.
+Do not claim broker execution is available.
+Keep full tester access open.
+Do not hide pages.
+Risk should control execution decisions, not navigation access.
+
+==================================================
+1. CREATE ACCOUNT RISK PROFILE
+==================================================
+
+Create page:
+
+/risk-profile
+
+Allow tester/admin to configure:
+
+- starting simulated balance
+- current simulated balance
+- max risk per trade
+- max daily loss
+- max weekly loss
+- max monthly drawdown
+- max open positions
+- max open trades per symbol
+- max trades per day
+- max AI trades per session
+- max AI trades per day
+- max lot size
+- minimum risk/reward
+- minimum AI confidence
+- minimum entry sniper score
+- minimum opportunity score
+- stop after consecutive losses
+- cooldown after loss
+- cooldown after win
+- allowed symbols
+- blocked symbols
+- allowed sessions
+- blocked sessions
+
+Preset profiles:
+
+1. Ultra Conservative
+2. Conservative
+3. Balanced Tester
+4. Aggressive Simulator
+5. Prop Firm Challenge
+6. Custom
+
+Default should be Conservative.
+
+==================================================
+2. CREATE RISK BUDGET ENGINE
+==================================================
+
+Create a risk budget system.
+
+Track:
+
+- daily risk used
+- weekly risk used
+- open risk
+- remaining risk
+- risk per environment
+- risk per symbol
+- risk per strategy
+- risk by AI vs manual
+- current drawdown
+- peak simulated equity
+- max allowed drawdown
+
+Example response:
+
+{
+  "dailyRiskLimit": 10,
+  "dailyRiskUsed": 2.5,
+  "dailyRiskRemaining": 7.5,
+  "weeklyRiskLimit": 50,
+  "weeklyRiskUsed": 12,
+  "openRisk": 5,
+  "currentDrawdown": 1.2,
+  "maxDrawdownAllowed": 5,
+  "riskStatus": "OK | CAUTION | BLOCK"
+}
+
+==================================================
+3. CREATE EXPOSURE MANAGER
+==================================================
+
+Track exposure across:
+
+- symbol
+- asset class
+- direction
+- strategy
+- AI/manual source
+
+Detect:
+
+- too many open positions
+- too much exposure to one symbol
+- same-direction stacking
+- opposite-direction conflict
+- correlated exposure
+- duplicate setup
+- repeated entries after loss
+
+For now, add simple correlation groups:
+
+- EURUSD / GBPUSD
+- USDJPY / EURUSD inverse USD exposure
+- XAUUSD / USD pairs
+- BTCUSDT / ETHUSDT
+- AAPL / TSLA / NASDAQ tech
+
+If exposure risk is high, return:
+
+EXPOSURE_WARNING
+
+or:
+
+EXPOSURE_BLOCK
+
+==================================================
+4. CREATE DRAWDOWN PROTECTION
+==================================================
+
+Add drawdown rules:
+
+- daily drawdown lock
+- weekly drawdown lock
+- max loss per strategy
+- max loss per symbol
+- stop after consecutive losses
+- stop after AI loses one live-style tester intent
+- stop after poor grade streak
+- stop after overtrading detected
+
+When triggered, show:
+
+“Trading paused by account protection.”
+
+This should block execution/simulation submissions, but still allow the user to view every page.
+
+==================================================
+5. CREATE OVERTRADING + REVENGE TRADING DETECTOR
+==================================================
+
+Detect:
+
+- too many trades in short time
+- rapid re-entry after loss
+- increasing lot size after loss
+- repeated same setup after rejection
+- AI attempting trades below threshold
+- manual user overriding too many warnings
+
+Labels:
+
+- NORMAL
+- CAUTION
+- OVERTRADING_RISK
+- REVENGE_TRADING_RISK
+- HARD_BLOCK
+
+Add this to:
+
+- trade ticket
+- AI trade card
+- scanner cards
+- live intent queue
+- journal
+- AI coach
+- performance scorecard
+
+==================================================
+6. CREATE PRE-TRADE RISK CHECKLIST
+==================================================
+
+Before any trade is accepted into simulator, demo, or live intent queue, run:
+
+- account risk profile check
+- max lot check
+- max loss check
+- stop loss exists
+- take profit or exit logic exists
+- risk/reward check
+- spread check
+- volatility check
+- news risk check
+- session check
+- exposure check
+- drawdown check
+- overtrading check
+- AI confidence check
+- entry sniper score check
+- opportunity score check
+- duplicate order check
+- idempotency key check
+- audit logger check
+
+Return:
+
+{
+  "approved": true/false,
+  "riskLevel": "LOW | MEDIUM | HIGH | BLOCK",
+  "hardBlocks": [],
+  "warnings": [],
+  "riskBudget": {},
+  "exposure": {},
+  "drawdown": {},
+  "overtrading": {},
+  "requiredChanges": []
+}
+
+==================================================
+7. CREATE RISK COMMAND CENTER
+==================================================
+
+Create page:
+
+/risk-command-center
+
+Show:
+
+- risk profile
+- daily risk used
+- weekly risk used
+- open risk
+- remaining risk
+- drawdown
+- exposure
+- consecutive wins/losses
+- overtrading status
+- active risk locks
+- current trade limits
+- AI trading permission status
+- manual trading permission status
+- simulator permission status
+- live tester permission status
+- future MT5 permission status
+
+Add controls:
+
+- pause all trading
+- resume simulator trading
+- reset simulator risk day
+- change risk profile
+- view risk logs
+- export risk report
+
+==================================================
+8. CREATE RISK EVENT LOG
+==================================================
+
+Create page:
+
+/risk-events
+
+Log every risk decision:
+
+- trade approved
+- trade rejected
+- warning issued
+- drawdown lock triggered
+- max loss hit
+- overtrading detected
+- news risk detected
+- exposure warning
+- AI confidence too low
+- stop loss missing
+- risk/reward too low
+- daily loss reached
+- kill switch pressed
+
+Each event should include:
+
+- timestamp
+- environment
+- symbol
+- source
+- orderId
+- risk rule
+- severity
+- decision
+- explanation
+- auditLogId
+
+==================================================
+9. CONNECT RISK GOVERNOR TO OMS
+==================================================
+
+Every order must flow:
+
+1. Create draft order
+2. Run Risk Governor 2.0
+3. If approved, submit to simulator or live intent queue
+4. If rejected, store as RISK_REJECTED
+5. Log risk event
+6. Update audit log
+7. Update decision stream
+8. Update journal if needed
+
+Do not allow simulated fills unless risk approves.
+
+For live tester intent:
+- If risk approves, save as PENDING_MT5_CONNECTION
+- If risk rejects, save as REJECTED_BY_RISK
+- Do not place broker order
+
+==================================================
+10. CONNECT RISK GOVERNOR TO AI
+==================================================
+
+AI must receive risk feedback.
+
+For every AI idea:
+
+- show risk result
+- show hard blocks
+- show warnings
+- show required changes
+- explain why AI should wait or reject
+- store whether AI respected risk governor
+
+AI should learn:
+
+- which setups are rejected most
+- which symbols create risk problems
+- whether confidence scores are too aggressive
+- whether entry quality is improving
+- whether overtrading risk is increasing
+
+==================================================
+11. CREATE PROP FIRM CHALLENGE MODE
+==================================================
+
+Create optional tester mode:
+
+/prop-firm-mode
+
+Allow user to set:
+
+- challenge starting balance
+- profit target
+- max daily drawdown
+- max total drawdown
+- min trading days
+- max lot size
+- max positions
+- news trading allowed yes/no
+- weekend holding allowed yes/no
+- consistency rule
+
+Show:
+
+- challenge progress
+- profit target progress
+- daily drawdown remaining
+- total drawdown remaining
+- passed rules
+- failed rules
+- account status: ACTIVE / WARNING / FAILED / PASSED
+
+This is simulator only until MT5 connects.
+
+==================================================
+12. UPDATE DASHBOARD
+==================================================
+
+Add cards:
+
+- Risk Status
+- Daily Risk Remaining
+- Open Risk
+- Drawdown Status
+- Exposure Status
+- Overtrading Risk
+- Active Risk Locks
+- Prop Firm Progress
+- AI Risk Discipline Score
+
+==================================================
+13. API ENDPOINTS
+==================================================
+
+Create or update:
+
+GET /api/risk-profile
+POST /api/risk-profile
+PATCH /api/risk-profile
+
+GET /api/risk/budget
+GET /api/risk/exposure
+GET /api/risk/drawdown
+GET /api/risk/overtrading
+POST /api/risk/pre-trade-check
+GET /api/risk/events
+POST /api/risk/pause
+POST /api/risk/resume
+POST /api/risk/reset-simulator-day
+
+GET /api/prop-firm/status
+POST /api/prop-firm/configure
+POST /api/prop-firm/reset
+
+==================================================
+14. FINAL TEST
+==================================================
+
+Run:
+
+- route smoke test
+- risk profile test
+- risk budget test
+- exposure manager test
+- drawdown protection test
+- overtrading detector test
+- pre-trade checklist test
+- OMS risk integration test
+- AI risk feedback test
+- live tester intent risk rejection test
+- simulator approved trade test
+- simulator rejected trade test
+- prop firm mode test
+- risk event log test
+- dashboard update test
+- audit integration test
+- MT5 deferred honesty test
+
+Generate:
+
+RISK GOVERNOR 2.0 + ACCOUNT PROTECTION REPORT
+
+Include:
+
+- Risk Profile active yes/no
+- Risk Budget Engine active yes/no
+- Exposure Manager active yes/no
+- Drawdown Protection active yes/no
+- Overtrading Detector active yes/no
+- Pre-Trade Checklist active yes/no
+- Risk Command Center active yes/no
+- Risk Event Log active yes/no
+- OMS integration active yes/no
+- AI integration active yes/no
+- Prop Firm Mode active yes/no
+- Dashboard updated yes/no
+- Full tester access still active yes/no
+- MT5 still deferred yes/no
+- Real broker execution still not faked yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not place real orders.
+- Do not claim real broker fills.
+- Do not remove full tester access.
+- Do not hide live workflows.
+- Do not mix simulator, tester intent, and future real broker data.
+- Do not remove kill switch UI.
+- Do not bypass risk governor.

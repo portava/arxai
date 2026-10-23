@@ -1,0 +1,260 @@
+Phase 22G — Live AI Chat Mode + Voice Input/Speech Output
+
+Before making changes, inspect Phase 22F results. Do not continue if assistant live-awareness, tool routing, and truthfulness tests did not pass.
+
+Goal:
+Upgrade the ARX AI assistant chat into a cleaner live-chat experience where the assistant can listen while the chat is open, respond quickly, optionally speak responses aloud, and still use real backend tools for trading, MT5, risk, market, journal, notifications, push, and prop firm awareness.
+
+This phase is for assistant UX + voice interaction.
+Do not build live trade execution.
+Do not fake AI intelligence.
+Do not bypass tool routing from Phase 22F.
+
+Current desired behavior:
+- Less menu/selection friction inside AI chat.
+- Chat should feel like a real conversation.
+- When AI chat is open, the user can enable Live Mode.
+- In Live Mode, the assistant can listen continuously while the chat panel remains open.
+- Assistant can respond with text and optional speech.
+- Assistant must stop listening when chat closes, Live Mode is turned off, or the user taps stop/mute.
+- Assistant must never listen silently in the background.
+
+Tasks:
+
+1. Full pre-check
+Inspect current assistant UI and backend before editing.
+
+Find:
+- assistant chat component/widget
+- assistant launcher/icon
+- assistant backend route
+- assistant streaming route if any
+- tool-calling pipeline
+- assistant prompt/system rules
+- current quick action/menu selection UI
+- current mobile behavior
+- current close/outside-click behavior
+- current audio/mic/speech code if any
+
+Return a short file map before implementation.
+
+2. Live chat UX cleanup
+Update the assistant chat UI so it feels like a live chat, not a form/menu system.
+
+Requirements:
+- Keep the assistant visible where it is currently intended to be visible.
+- Reduce excessive selection buttons.
+- Move secondary options into a compact menu or “More” area.
+- Keep text input always available.
+- Add a clear Live Mode toggle.
+- Add clear states:
+  - Idle
+  - Listening
+  - Thinking
+  - Speaking
+  - Muted
+  - Error
+- Add a clear stop button.
+- Close chat when clicking/tapping outside if that behavior already exists or was requested.
+- Animate open/close smoothly without blocking app navigation.
+- Do not redesign the whole app.
+
+3. Voice input / speech-to-text
+Add browser-supported voice input.
+
+Preferred approach:
+- Use native browser speech recognition if supported.
+- Gracefully fall back to press-to-talk or typed input if unsupported.
+- Do not crash on iOS/Safari/unsupported browsers.
+- Do not require voice for assistant use.
+
+Rules:
+- Ask microphone permission only after the user intentionally enables Live Mode or taps the mic.
+- Never auto-start microphone on page load.
+- Never listen when the assistant panel is closed.
+- Never listen while the user is logged out unless existing app auth rules allow assistant access.
+- Show visible listening indicator while mic is active.
+- Add pause/resume/stop controls.
+- Stop listening after repeated silence, errors, or panel close.
+- Do not store raw audio unless the app already has an explicit, secure reason to do so.
+
+4. Continuous listening while chat is open
+Implement Live Mode as a controlled session.
+
+Behavior:
+- When chat is open and Live Mode is enabled, assistant listens for user speech.
+- Convert speech to text.
+- Send final transcript to the existing assistant backend.
+- Do not send every tiny partial transcript unless necessary.
+- Avoid duplicate sends.
+- Add debounce/silence handling.
+- After assistant responds, return to listening if Live Mode is still enabled.
+- If the user interrupts while assistant is speaking, stop speech and listen again.
+
+5. Speech output / text-to-speech
+Add optional assistant speech response.
+
+Preferred approach:
+- Use browser `speechSynthesis` if supported.
+- Add toggle: “Speak responses”
+- Add mute button.
+- Add stop speaking button.
+- Do not speak sensitive account details unless the user explicitly asks.
+- Do not speak API keys, secrets, tokens, raw logs, or private debug data.
+- Spoken response must match the truthful assistant answer.
+- If speech is unsupported, show honest unavailable state.
+
+6. Assistant backend connection
+Live chat must use the existing assistant backend/tool pipeline.
+
+Requirements:
+- All messages still go through the Phase 22F assistant routing system.
+- Assistant must still call tools for:
+  - MT5 bridge questions
+  - heartbeat questions
+  - market questions
+  - risk questions
+  - prop firm questions
+  - notification questions
+  - push status questions
+  - journal/performance/coaching questions
+- Voice input must not bypass the normal assistant safety and tool routing.
+- Voice answers must include the same safety context as typed answers.
+
+7. Trading safety rules for voice
+Add strict safety behavior for voice interactions.
+
+Rules:
+- Voice cannot execute trades in this phase.
+- If user says “place a trade,” “buy,” “sell,” “close trade,” or similar, assistant must explain that execution is disabled/read-only unless the app has explicitly enabled order execution.
+- If order execution is disabled, assistant can analyze only.
+- Assistant must never say a trade is guaranteed.
+- Assistant must never claim “perfect entry guaranteed.”
+- Assistant must always run risk tools before saying whether a trade is ready.
+- Assistant must separate paper/demo feedback from live-trading feedback.
+
+8. User preferences
+Add or update assistant preferences.
+
+Preferences should include:
+- Live Mode enabled/disabled
+- Speak responses enabled/disabled
+- Mic permission known/unknown/denied if available
+- Preferred voice if browser supports it
+- Auto-listen after assistant response enabled/disabled
+- Save preferences per user if a settings system already exists
+- Otherwise use local storage safely as a temporary fallback
+
+Do not expose one user’s preferences to another user.
+
+9. Mobile behavior
+Optimize for mobile.
+
+Check:
+- iPhone/Safari support limitations
+- keyboard does not cover the input
+- mic button is easy to tap
+- stop button is easy to tap
+- chat panel does not hide critical navigation
+- assistant bubble does not block main app actions
+- listening indicator is visible
+- speech gracefully falls back if unsupported
+
+10. Error handling
+Handle:
+- microphone denied
+- speech recognition unsupported
+- speech recognition timeout
+- service/backend unavailable
+- assistant tool failure
+- disconnected market provider
+- disconnected MT5 bridge
+- no notifications
+- no risk settings
+- logged-out user
+
+Every failure must produce a clear, honest user-facing response.
+
+11. Tests required
+Add/update tests for:
+
+Frontend:
+- assistant opens/closes correctly
+- outside click closes chat if enabled
+- Live Mode toggle starts listening only after user action
+- mic does not start on page load
+- mic stops when chat closes
+- unsupported speech recognition does not crash
+- permission denied shows helpful state
+- duplicate transcripts are not sent
+- assistant response can be spoken when speech synthesis is supported
+- mute/stop speaking works
+- Live Mode resumes listening after response only when enabled
+- mobile layout does not block input/nav
+
+Backend/assistant:
+- voice transcript uses the same assistant endpoint as typed input
+- assistant tool routing still works for voice requests
+- bridge questions call bridge tools
+- market questions call market tools
+- alert questions call notification tools
+- risk questions call risk tools
+- prop firm questions call prop firm tools
+- journal questions call journal/performance tools
+- assistant does not invent data when systems are disconnected
+
+Safety:
+- voice cannot execute trades
+- order execution disabled state is respected
+- no guaranteed win/profit/perfect entry claims
+- no secrets are spoken or displayed
+- no raw debug envelope appears in production UI
+
+12. QA gate
+After implementation, run:
+- typecheck
+- lint if available
+- all tests
+- frontend smoke test
+- assistant routing tests
+- mobile/responsive smoke test
+- forbidden honesty scan
+- secret exposure scan
+
+Search for:
+- `guaranteed`
+- `100% win`
+- `perfect entry guaranteed`
+- `fake`
+- `sample`
+- `placeholder`
+- `dummy`
+- `lorem`
+- exposed API key names in frontend output
+- microphone auto-start on page load
+
+13. Final report required
+Return a Phase 22G report with:
+- files inspected
+- files changed
+- assistant UI status
+- Live Mode status
+- voice input status
+- speech output status
+- fallback behavior
+- mobile behavior
+- assistant routing result
+- trading safety result
+- privacy/mic permission result
+- tests passed/failed
+- remaining Phase 22H work
+
+Important constraints:
+- Do not redesign the entire app.
+- Do not build live trade execution.
+- Do not fake assistant responses.
+- Do not bypass assistant tools.
+- Do not start microphone without user action.
+- Do not listen outside the open assistant chat.
+- Do not expose secrets.
+- Do not move to Phase 22H unless QA passes.

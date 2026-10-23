@@ -1,0 +1,46 @@
+Before making changes, inspect the current MT5 bridge/auth implementation, existing users table/session table/bridge token tables, and the current EA command polling requirements.
+
+Goal:
+Fix the remaining MT5 bridge issue for user 4 / andraie.co@gmail.com by generating a secure per-user MT5 bridge token that works with GET /api/mt5/commands, while keeping the bridge paper-only and live trading locked.
+
+Requirements:
+1. Do not modify safetyCore.ts unless absolutely required.
+2. Do not expose raw MT5_BRIDGE_TOKEN, apiKeyHash, SESSION_SECRET, or any existing secret in logs, UI, screenshots, or responses.
+3. Generate a new per-user bridge token for user id 4 only.
+4. Store only the secure hash of the token in the database.
+5. Show the raw token only once in the secure Replit console output with clear instructions that it must be copied into the EA X-MT5-Bridge-Token input/header.
+6. Verify that:
+   - POST /api/mt5/heartbeat stays 200
+   - POST /api/mt5/sync-account stays 200
+   - POST /api/mt5/sync-positions stays 200
+   - GET /api/mt5/commands returns 200 using the new per-user token
+   - GET /api/mt5/commands still returns 401 with the wrong/system token
+7. Keep these safety values active in every assistant/trading response:
+   safetyMode: "paper_only"
+   liveLocked: true
+   readOnlyMode: true
+   allowOrderExecution: false
+8. Do not enable live trading.
+9. Do not add OrderSend, trade.Buy, trade.Sell, PositionClose, OrderModify, or any live execution logic.
+10. Add or update a small admin/dev-only script or endpoint named something like generate-user-mt5-token that can generate a per-user bridge token safely when needed.
+11. After the token is generated, run a full QA test and print:
+   - user id
+   - masked token preview only after initial one-time display
+   - command polling status
+   - heartbeat status
+   - account sync status
+   - position sync status
+   - safety lock status
+
+Also fix the workflow issue:
+1. Inspect why trading-dashboard workflow says port 24210 is already in use.
+2. Do not change app architecture unless needed.
+3. Stop the duplicate/old process cleanly.
+4. Restart the dashboard workflow.
+5. Confirm the UI loads fresh and shows the MT5 bridge connected paper-only state for andraie.co@gmail.com.
+
+Important:
+Make only the minimum changes necessary.
+After changes, run tests.
+If any test fails, fix it before reporting completion.
+Give me a final report showing exactly what changed, what passed, and what I need to paste into MT5 EA inputs.

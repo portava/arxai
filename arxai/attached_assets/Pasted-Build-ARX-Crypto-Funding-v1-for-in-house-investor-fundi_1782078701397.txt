@@ -1,0 +1,305 @@
+Build ARX Crypto Funding v1 for in-house investor funding.
+
+Goal:
+Allow approved investors to fund their ARX investor allocation by buying USDC/USDT inside the app through a third-party crypto on-ramp. Purchased crypto should land in a dedicated ARX pool treasury wallet, then ARX confirms the deposit, records the ledger credit, and creates investor allocation/units.
+
+Important:
+Do not build ARX as a crypto exchange.
+Do not build ARX as a public wallet app.
+Do not use my personal wallet.
+Use a dedicated ARX treasury/pool wallet.
+Do not auto-send funds to the broker.
+Do not count pending crypto deposits as active investor capital.
+Do not let investors place trades.
+Do not use guaranteed-return language.
+
+Preferred asset:
+- USDC first
+- USDT second
+- BTC optional later, not default
+
+Provider strategy:
+Create a provider abstraction for:
+- Stripe Crypto Onramp
+- MoonPay
+- Transak
+- Manual crypto transfer fallback
+
+For v1, provider can be stubbed/mock if live provider credentials are not ready, but the code structure must be ready for real provider integration.
+
+Core flow:
+
+1. Investor is approved
+- Investor must already have an approved InvestorAccount.
+- Non-approved users cannot access crypto funding.
+
+2. Investor starts crypto funding
+Investor chooses:
+- amount in USD
+- asset: USDC or USDT
+- network if supported
+- funding provider
+
+System creates a CryptoFundingIntent.
+
+3. Provider checkout/on-ramp opens
+- Provider handles payment, card/bank flow, KYC, fraud checks, and crypto purchase.
+- Destination wallet is the ARX Pool Treasury Wallet, not user wallet.
+
+4. Provider/webhook confirms transaction
+System records:
+- provider transaction ID
+- tx hash if available
+- asset
+- network
+- amount received
+- fiat value at receipt
+- confirmation count
+- status
+
+5. Deposit waits for admin verification
+Status becomes:
+- pending_admin_verification
+
+6. Admin confirms funds received
+Only admin can mark a crypto deposit confirmed.
+
+7. Ledger entry is created
+Confirmed deposit creates immutable InvestorLedgerEntry:
+- type: crypto_deposit_confirmed
+- amount
+- investorAccountId
+- txHash/provider reference
+- balanceAfter
+
+8. Allocation/units are created
+After confirmation, admin can allocate funds into the ARX investor pool.
+System calculates:
+- principal amount
+- NAV at entry
+- units
+- lockup start
+- lockup end
+- allocation status
+
+9. Investor dashboard updates
+Investor sees:
+- deposit status
+- confirmed amount
+- allocation
+- current value
+- NAV
+- P/L
+- lockup period
+- withdrawal eligibility
+
+Statuses:
+
+CryptoFundingIntent status:
+- created
+- provider_started
+- kyc_pending
+- payment_pending
+- crypto_pending
+- pending_confirmation
+- pending_admin_verification
+- confirmed
+- allocated
+- failed
+- cancelled
+
+CryptoWithdrawalRequest status:
+- requested
+- under_review
+- approved
+- processing
+- paid
+- denied
+- cancelled
+
+Data models:
+
+CryptoFundingIntent:
+- id
+- investorAccountId
+- provider
+- asset
+- network
+- fiatAmountRequested
+- cryptoAmountExpected
+- destinationWalletAddress
+- providerCheckoutUrl
+- providerTransactionId
+- status
+- createdAt
+- updatedAt
+- expiresAt
+
+CryptoFundingTransaction:
+- id
+- fundingIntentId
+- provider
+- asset
+- network
+- txHash
+- fiatValueAtReceipt
+- cryptoAmountReceived
+- confirmations
+- providerTransactionId
+- status
+- receivedAt
+- adminVerifiedAt
+- adminVerifiedBy
+- adminNote
+
+CryptoWithdrawalRequest:
+- id
+- investorAccountId
+- allocationId
+- amountFiat
+- asset
+- network
+- destinationWalletAddress
+- provider
+- status
+- txHash
+- providerPayoutId
+- requestedAt
+- approvedAt
+- approvedByAdminId
+- paidAt
+- adminNote
+
+TreasuryWallet:
+- id
+- poolId
+- label
+- asset
+- network
+- walletAddress
+- isActive
+- createdAt
+
+InvestorLedgerEntry:
+Add ledger entry types:
+- crypto_deposit_intent_created
+- crypto_deposit_confirmed
+- crypto_deposit_allocated
+- crypto_withdrawal_requested
+- crypto_withdrawal_approved
+- crypto_withdrawal_paid
+- crypto_adjustment
+
+Admin UI:
+
+Add Admin → Investor Funding screen.
+
+Admin can:
+- view all crypto funding intents
+- view pending confirmations
+- view tx hash/provider reference
+- verify funds received
+- reject/flag suspicious deposits
+- allocate confirmed deposits to pool
+- view treasury wallet balances if provider/API supports it
+- export funding ledger CSV
+
+Investor UI:
+
+Add Investor Portal → Fund Account.
+
+Investor can:
+- choose USDC/USDT
+- enter USD amount
+- see warning/disclosure
+- start provider checkout
+- see funding status
+- see confirmed deposits
+- see allocations
+- request withdrawal
+
+Investor cannot:
+- edit confirmed deposits
+- mark funds received
+- send funds directly to broker
+- trigger trades
+- see treasury wallet private keys
+- see other investors
+
+Withdrawal flow:
+
+1. Investor requests withdrawal.
+2. Admin reviews.
+3. Admin approves or denies.
+4. If approved, admin processes payout manually or through supported provider/off-ramp later.
+5. Admin records tx hash/provider payout ID.
+6. Ledger marks withdrawal paid.
+7. Investor dashboard updates.
+
+Broker transfer:
+
+For v1:
+- Broker transfer is admin-controlled only.
+- Add status/action: “Ready for broker transfer.”
+- Do not automate broker funding yet.
+- Do not let investor deposits automatically become broker deposits.
+- Do not let investors trigger broker transfers.
+
+Security:
+- Admin-only write actions for confirmations, allocations, and withdrawals.
+- Investor can only view their own records.
+- No private keys stored in app database.
+- No seed phrases stored anywhere.
+- No wallet secrets logged.
+- All provider webhooks must verify signatures.
+- All crypto funding events must be audit logged.
+- Pending/unconfirmed deposits must be excluded from NAV, capital, P/L, and risk calculations.
+
+Required copy:
+Use:
+- “Fund with crypto”
+- “Deposit pending confirmation”
+- “Confirmed deposit”
+- “Current value”
+- “Risk of loss”
+- “Not guaranteed”
+
+Do not use:
+- “Guaranteed profit”
+- “Guaranteed return”
+- “Instant profit”
+- “Risk-free”
+- “Deposit instantly earns”
+
+Disclosure text:
+“This portal is for internal investor tracking. Crypto funding is not counted as active capital until confirmed and approved. Trading involves risk of loss. Values are not guaranteed.”
+
+Tests:
+Add tests for:
+- non-approved investor cannot create crypto funding intent
+- approved investor can create funding intent
+- pending deposit does not affect investor balance
+- pending deposit does not affect pool NAV
+- pending deposit does not affect trading risk capital
+- webhook records transaction but does not allocate automatically
+- only admin can confirm deposit
+- confirmed deposit creates immutable ledger entry
+- allocation only allowed after confirmation
+- investor cannot see other investors’ funding records
+- investor cannot trigger broker transfer
+- investor cannot place trades
+- withdrawal request requires admin approval
+- provider webhook signature verification fails safely
+- no wallet secrets/private keys are stored or logged
+
+Acceptance criteria:
+- Investors can start a crypto funding request using USDC/USDT.
+- Crypto is directed to an ARX Pool Treasury Wallet.
+- Deposits remain pending until provider/on-chain confirmation.
+- Admin must verify before deposit becomes confirmed.
+- Confirmed deposits create ledger entries.
+- Allocations/units are created only after confirmation.
+- Pending crypto never counts as active capital.
+- Withdrawals are request-only and admin-approved.
+- No automatic broker transfer exists in v1.
+- No live trading gate or risk gate is bypassed.

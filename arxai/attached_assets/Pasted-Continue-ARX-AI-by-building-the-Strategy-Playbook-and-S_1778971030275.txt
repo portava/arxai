@@ -1,0 +1,362 @@
+Continue ARX AI by building the Strategy Playbook and Setup Quality Engine.
+
+Do not rebuild blindly. Inspect the current:
+- AI Performance Coach
+- Trade Journal Intelligence
+- Risk Governor
+- Position Sizing Engine
+- Market Context Engine
+- Smart Exit Plan Engine
+- Trade Decision Orchestrator
+- Trade Action Center
+- Scanner
+- Open Trades
+- Trade History
+- Calendar
+- user-owned MT5 routing
+- shared-master routing
+- AI assistant context builder
+
+Goal:
+Create a system where users can define, track, score, and improve their trading setups.
+
+The AI should know:
+- what setup the user is trying to trade
+- whether the market matches that setup
+- whether the entry is high quality or low quality
+- whether the user is repeating bad setups
+- which setups perform best over time
+- which setups should be avoided
+
+Important:
+Do not guarantee profitable trades.
+Do not auto-place trades.
+Do not bypass Risk Governor.
+Do not invent strategy performance.
+Use only real scanner, market, trade, journal, and execution data.
+
+PART 1 — User Strategy Playbooks
+
+Create a Strategy Playbook system.
+
+Each user can create trading strategies/playbooks with:
+
+- strategy name
+- description
+- preferred symbols
+- preferred sessions
+- preferred timeframe
+- setup type
+- entry rules
+- exit rules
+- invalidation rules
+- risk rules
+- minimum risk/reward
+- max spread allowed
+- news filter preference
+- preferred hold time
+- example notes
+- active/inactive status
+
+Default setup templates:
+- Breakout
+- Pullback continuation
+- Reversal
+- Liquidity sweep
+- Range bounce
+- Trend continuation
+- News avoidance setup
+- Scalping setup
+- Custom setup
+
+PART 2 — Setup Quality Score
+
+For every trade ticket or scanner opportunity, calculate a Setup Quality Score from 0–100.
+
+Use available data:
+- trend alignment
+- market context
+- key levels
+- entry timing
+- risk/reward
+- stop loss placement
+- take profit placement
+- spread risk
+- volatility risk
+- news/event risk
+- session context
+- user strategy rules
+- prior performance of this setup
+- risk governor result
+- data quality
+
+Labels:
+- A+ setup
+- A setup
+- B setup
+- C setup
+- Low-quality setup
+- Avoid setup
+- Data insufficient
+
+The system must explain why the score was given.
+
+PART 3 — Pre-Trade AI Checklist
+
+Before opening a trade, show a checklist:
+
+- Does this match your selected strategy?
+- Is trend aligned?
+- Is market context favorable?
+- Is risk/reward acceptable?
+- Is stop loss valid?
+- Is lot size valid?
+- Is spread acceptable?
+- Is news risk acceptable?
+- Is this within your daily limits?
+- Are you chasing?
+- Are you revenge trading?
+- Is data fresh?
+
+The trade ticket should show:
+- setup score
+- matched playbook
+- warnings
+- missing data
+- AI recommendation:
+  - Good to review
+  - Wait for confirmation
+  - Avoid trade
+  - Reduce size
+  - Data insufficient
+
+Do not block unless Risk Governor blocks it. But clearly warn if setup quality is poor.
+
+PART 4 — Setup Tagging
+
+Every trade should have setup tags.
+
+Tags can come from:
+- user selected setup
+- AI suggested setup
+- scanner signal
+- market context classification
+- journal review
+
+Tags:
+- breakout
+- failed breakout
+- pullback
+- deep retracement
+- continuation
+- reversal
+- liquidity sweep
+- fakeout
+- range
+- trend trade
+- countertrend
+- news-risk trade
+- high-spread trade
+- revenge trade possible
+- chase entry possible
+
+PART 5 — Strategy Performance Tracking
+
+Track performance by setup/playbook:
+
+For each strategy:
+- total trades
+- win rate
+- realized P&L
+- average win
+- average loss
+- profit factor if available
+- average entry quality
+- average exit quality
+- average hold time
+- best symbol
+- worst symbol
+- best session
+- worst session
+- mistake tags
+- ignored alerts
+- setup quality average
+
+Show:
+- which strategies are working
+- which strategies are losing
+- which setups should be paused
+- which setups need better rules
+
+PART 6 — AI Strategy Coach
+
+Update AI so users can ask:
+
+- What strategy am I trading best?
+- Which setup should I avoid?
+- Was this a good setup?
+- Does this trade match my playbook?
+- Am I chasing this entry?
+- Is this a revenge trade?
+- Which setup loses me the most money?
+- What should my rules be for this strategy?
+- Should I pause this setup?
+- What is my A+ setup?
+- Build me a playbook from my best trades.
+
+AI must use real trade/journal/performance data only.
+If there is not enough data, AI must say so.
+
+PART 7 — Scanner Integration
+
+Scanner cards should show:
+
+- matching strategy/playbook
+- setup quality score
+- setup label
+- reason
+- risk warning
+- Ask AI
+- Open Trade Review
+
+Examples:
+- “A setup — pullback aligns with your trend-continuation playbook.”
+- “C setup — trend is weak and news risk is high.”
+- “Avoid — spread is above your rule.”
+
+PART 8 — Trade Journal Integration
+
+Closed trade journal entries should include:
+
+- selected setup
+- AI-detected setup
+- setup quality at entry
+- whether setup matched user rules
+- entry quality
+- exit quality
+- result
+- lesson learned
+
+If the user took a low-quality setup and lost, mark it clearly:
+“Loss followed a low-quality setup warning.”
+
+If the user took an A setup and lost, mark:
+“Setup was valid, but outcome failed. Review execution and exit.”
+
+PART 9 — Admin Controls
+
+Admin should be able to:
+- view strategy system status
+- view common setup performance across users without exposing private trade details
+- disable risky default templates if needed
+- set global risk warnings for certain setup types
+- require setup selection before opening live trade if enabled
+
+PART 10 — Backend/API
+
+Add endpoints:
+
+- GET /api/strategies
+- POST /api/strategies
+- PATCH /api/strategies/:id
+- DELETE /api/strategies/:id
+- POST /api/setups/score
+- GET /api/setups/performance
+- POST /api/trades/:id/setup-tag
+- GET /api/coach/strategy-insights
+- POST /api/coach/build-playbook
+
+Add tables if missing:
+
+user_strategy_playbooks:
+- id
+- user_id
+- name
+- description
+- setup_type
+- preferred_symbols
+- preferred_sessions
+- preferred_timeframes
+- entry_rules
+- exit_rules
+- invalidation_rules
+- risk_rules
+- minimum_rr
+- max_spread
+- news_filter
+- preferred_hold_time
+- active
+- created_at
+- updated_at
+
+trade_setup_scores:
+- id
+- user_id
+- trade_id nullable
+- strategy_id nullable
+- symbol
+- setup_type
+- setup_quality_score
+- setup_label
+- matched_rules
+- failed_rules
+- warnings
+- data_quality
+- explanation
+- created_at
+
+strategy_performance_stats:
+- id
+- user_id
+- strategy_id
+- total_trades
+- win_count
+- loss_count
+- win_rate
+- realized_pnl
+- average_win
+- average_loss
+- profit_factor
+- average_entry_quality
+- average_exit_quality
+- best_symbol
+- worst_symbol
+- best_session
+- worst_session
+- updated_at
+
+PART 11 — Tests
+
+Add or update tests for:
+1. User can create strategy playbook.
+2. User can only see their own playbooks.
+3. Setup quality score uses real available data.
+4. Missing market data returns data insufficient.
+5. Trade ticket shows setup quality before confirmation.
+6. Scanner cards show setup score.
+7. Journal stores setup tag and score.
+8. Strategy performance uses real closed trades only.
+9. AI can explain why setup score is high or low.
+10. AI does not invent performance stats.
+11. User cannot access another user’s strategy performance.
+12. Shared-master trades are scoped by attribution.
+13. Low-quality setup warning appears.
+14. Live trade still requires explicit confirmation.
+15. Risk Governor still has final authority.
+16. No secrets are exposed.
+17. Mobile playbook and setup score UI works.
+
+Final report:
+Return:
+- PASS or FAIL
+- Strategy Playbook status
+- Setup Quality Score status
+- Pre-Trade Checklist status
+- Scanner integration status
+- Journal integration status
+- Strategy Performance status
+- AI Strategy Coach status
+- Admin controls status
+- mobile status
+- tests passed
+- remaining blockers

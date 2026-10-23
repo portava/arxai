@@ -1,0 +1,286 @@
+Approve Phase 6 if it passed, then begin Phase 7: AI strategy/playbook builder, setup rules, and pre-trade checklist system for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT place live trades.
+- Do NOT enable live execution.
+- Keep liveLocked = true.
+- Keep READ_ONLY / PAPER_ONLY active.
+- Keep AllowOrderExecution = false.
+- Do NOT touch MT5 EA .mq5 files.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT move to Phase 8 until Phase 7 QA passes.
+
+Current status:
+- Phase 1 identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Phase 3 per-user MT5 connections/trading sessions: PASS.
+- Phase 4 per-user MT5 command routing: PASS.
+- Phase 5 paper trades, journal, calendar: expected PASS.
+- Phase 6 AI trade review and coaching: expected PASS.
+- Now build Phase 7: turn each user’s trade history, AI reviews, mistakes, and winning setups into repeatable playbooks.
+
+Main goal:
+ARX AI should help a trader build disciplined, repeatable strategy playbooks based on their own paper trades, journal notes, AI trade reviews, performance insights, and coaching plan. The system should not place trades. It should help the user define rules before they trade.
+
+Phase 7A — User-owned strategy/playbook model:
+Create or finalize trading_playbooks table.
+
+Required fields:
+- id
+- userId
+- title
+- description
+- strategyType
+- marketType nullable
+- preferredSymbols json/text nullable
+- preferredSessions json/text nullable
+- timeframe nullable
+- entryModel
+- exitModel
+- riskModel
+- invalidationRules json/text nullable
+- confirmationRules json/text nullable
+- avoidRules json/text nullable
+- checklist json/text nullable
+- status: draft/active/archived
+- source: manual/ai_generated/from_trade_history/from_single_trade
+- confidenceScore nullable
+- winRateSnapshot nullable
+- sampleSize nullable
+- createdAt
+- updatedAt
+
+Rules:
+- Every playbook must belong to userId.
+- Never accept userId from frontend.
+- All playbook reads/writes must scope by req.authUser.id.
+
+Phase 7B — Playbook rules/checklist:
+Create or finalize playbook_rules table.
+
+Required fields:
+- id
+- userId
+- playbookId
+- ruleType: entry/exit/risk/avoid/confirmation/session/psychology
+- ruleText
+- severity: required/recommended/optional
+- orderIndex
+- createdAt
+- updatedAt
+
+Create or finalize pre_trade_checks table.
+
+Required fields:
+- id
+- userId
+- playbookId
+- paperTradeId nullable
+- tradingSessionId nullable
+- symbol
+- side nullable
+- checklistResult json/text
+- passedRequiredCount
+- failedRequiredCount
+- score
+- decision: pass/warning/block
+- notes
+- createdAt
+- updatedAt
+
+Phase 7C — Backend routes:
+Add or verify scoped routes:
+
+Playbooks:
+- GET /api/me/playbooks
+- POST /api/me/playbooks
+- GET /api/me/playbooks/:id
+- PATCH /api/me/playbooks/:id
+- DELETE /api/me/playbooks/:id or archive instead
+- POST /api/me/playbooks/:id/archive
+- POST /api/me/playbooks/:id/activate
+
+Rules:
+- GET /api/me/playbooks/:id/rules
+- POST /api/me/playbooks/:id/rules
+- PATCH /api/me/playbooks/:id/rules/:ruleId
+- DELETE /api/me/playbooks/:id/rules/:ruleId
+
+AI generation:
+- POST /api/me/playbooks/generate-from-history
+- POST /api/me/paper-trades/:id/promote-to-playbook
+- POST /api/me/playbooks/:id/improve
+
+Pre-trade checklist:
+- POST /api/me/playbooks/:id/pre-trade-check
+- GET /api/me/pre-trade-checks
+- GET /api/me/pre-trade-checks/:id
+
+Every route must:
+- requireUser
+- scope by req.authUser.id
+- verify the playbook/trade/session belongs to the logged-in user
+- never return another user’s playbook, rule, or checklist result
+
+Phase 7D — AI playbook generation:
+Build AI logic that uses the user’s own data only.
+
+Inputs:
+- user’s closed paper trades
+- AI trade reviews
+- journal entries
+- strategyTag
+- setupGrade
+- disciplineScore
+- executionScore
+- win/loss results
+- mistakeTags
+- performance insights
+- coaching plan
+
+The AI should generate:
+- playbook title
+- strategy description
+- ideal market conditions
+- preferred symbols
+- preferred sessions
+- entry rules
+- confirmation rules
+- risk rules
+- exit rules
+- avoid rules
+- emotional discipline rules
+- pre-trade checklist
+- mistakes this playbook is designed to prevent
+
+Do not generate fake success claims. If sample size is small, say so:
+“Not enough trade history yet. This playbook is a starter draft and should be tested in paper mode.”
+
+Phase 7E — Promote winning trades into playbooks:
+Allow a user to turn a strong paper trade into a playbook draft.
+
+When the user clicks “Promote to Playbook,” the system should:
+- pull that paper trade
+- pull linked journal entry if available
+- pull AI review if available
+- create a draft playbook
+- extract entry/exit/risk rules
+- add avoid rules based on mistakes
+- keep it user-scoped
+
+Phase 7F — Pre-trade checklist engine:
+Build a checklist score before a paper trade is opened.
+
+A pre-trade check should evaluate:
+- Is there a selected playbook?
+- Is the symbol allowed by the playbook?
+- Is the session/timeframe aligned?
+- Is stop loss defined?
+- Is take profit defined?
+- Is risk amount acceptable?
+- Is reward-to-risk acceptable?
+- Did the user write a reason for entry?
+- Are required confirmation rules met?
+- Are avoid rules triggered?
+- Is the user revenge trading or overtrading based on recent session behavior?
+
+Output:
+- score 0–100
+- decision: pass / warning / block
+- failed rules
+- passed rules
+- improvement note
+
+Important:
+A block decision must block PAPER trade opening only inside the app workflow unless user overrides with a note. It must never interact with real broker execution.
+
+Phase 7G — Frontend UI:
+Only update strategy/playbook/checklist areas.
+
+Add:
+- Playbooks page or panel
+- Create Playbook
+- Generate from My History
+- Promote Trade to Playbook
+- Playbook detail view
+- Rule list
+- Pre-trade checklist
+- Checklist score
+- Pass / Warning / Block result
+- “Test this in paper mode”
+- “Not enough history yet” state
+
+First-time states:
+- “No playbooks yet”
+- “Create your first trading playbook”
+- “Close more paper trades to let ARX AI generate better strategy rules”
+
+Do not show fake playbooks as if they belong to the user.
+
+Phase 7H — Safety:
+Hard rules:
+- AI cannot place trades.
+- Playbooks cannot place trades.
+- Checklist cannot place live trades.
+- No live order command can be queued.
+- No OrderSend path can be triggered.
+- LIVE_BUY, LIVE_SELL, MODIFY_LIVE_ORDER, CLOSE_LIVE_POSITION remain blocked.
+- liveLocked remains true.
+- AllowOrderExecution remains false.
+- Everything remains paper/read-only.
+
+Phase 7I — Tests:
+Add tests:
+
+1. User A creates playbook.
+2. User B cannot see User A playbook.
+3. User B cannot edit/delete User A playbook.
+4. User A generates playbook from own trade history.
+5. User B cannot generate from User A’s trades.
+6. User A promotes own paper trade to playbook.
+7. User B cannot promote User A’s trade.
+8. Pre-trade checklist evaluates a User A playbook.
+9. Checklist blocks invalid setup.
+10. Checklist passes valid paper setup.
+11. First-time user sees empty state.
+12. No live trade command is created.
+13. MT5 EA files untouched.
+14. Raw bridge token is never exposed.
+
+Phase 7J — QA/fix gate:
+After implementation, run QA and fix every issue before stopping.
+
+QA must confirm:
+- App starts.
+- Login/register/logout/me still work.
+- Phase 2 user scoping still passes.
+- Phase 3 MT5 connection isolation still passes.
+- Phase 4 command isolation still passes.
+- Phase 5 paper trade/journal/calendar still pass.
+- Phase 6 AI review/coaching still pass.
+- Playbook CRUD works.
+- AI playbook generation works.
+- Promote trade to playbook works.
+- Pre-trade checklist works.
+- User A/User B isolation passes.
+- No fake global playbooks leak into user dashboards.
+- No live trades executed.
+- No MT5 EA files changed.
+- Safety contract still passes.
+- Existing unrelated paperIntelligence.ts:123 typecheck issue is reported separately if still present.
+
+Final report format:
+1. Files changed
+2. Tables added/changed
+3. Routes added/changed
+4. Playbook system result
+5. AI generation result
+6. Promote trade result
+7. Pre-trade checklist result
+8. User A/User B isolation result
+9. Safety verification
+10. Remaining errors
+11. Phase 7 PASS or FAIL
+12. Stop and wait for my approval before Phase 8

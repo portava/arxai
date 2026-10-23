@@ -1,0 +1,312 @@
+NEXT PHASE: DAILY OWNER TESTING MODE + PERFORMANCE REVIEW LOOP
+
+Goal:
+Turn the app into a daily testing system so the owner can use it repeatedly, track AI performance, capture bugs, and decide when the system is ready for MT5 connection later.
+
+Do not add random new trading features.
+Do not fake MT5 connection.
+Do not place real broker orders.
+Do not claim broker fills.
+Do not expose secrets.
+Do not block owner tester access.
+Keep MT5 deferred until desktop/VPS MT5 bridge is connected later.
+
+==================================================
+1. CREATE DAILY TESTING MODE
+==================================================
+
+Create page:
+
+/daily-testing
+
+This should guide the owner through a daily trading-app test session.
+
+Daily testing flow:
+
+1. Open dashboard
+2. Confirm MT5 deferred
+3. Confirm simulator active
+4. Confirm live chart active
+5. Run market scanner
+6. Review top opportunity
+7. Generate AI trade idea
+8. Run one demo manual simulator trade
+9. Run one demo AI simulator trade
+10. Submit one live tester intent
+11. Start shadow mode
+12. Run autopilot observe-only
+13. Review journal/calendar/audit logs
+14. Submit feedback or bugs
+15. Generate daily test report
+
+Each step should show:
+
+- Start button
+- Expected result
+- Pass / Fail / Needs Review
+- Notes
+- Related logs
+- Create Issue button
+
+==================================================
+2. CREATE DAILY TEST SESSION RECORDS
+==================================================
+
+Each daily session should store:
+
+- sessionId
+- date
+- user role
+- device type
+- symbols tested
+- strategies tested
+- demo manual trades
+- demo AI trades
+- live tester intents
+- shadow decisions
+- autopilot observations
+- risk blocks
+- journal entries
+- calendar updates
+- bugs reported
+- AI performance summary
+- owner notes
+- final status
+
+Session status:
+
+- COMPLETED
+- PARTIAL
+- FAILED
+- NEEDS_REPAIR
+
+==================================================
+3. CREATE DAILY PERFORMANCE REVIEW
+==================================================
+
+Create page:
+
+/daily-performance-review
+
+Show:
+
+- total simulator trades today
+- manual trades
+- AI trades
+- wins
+- losses
+- open positions
+- simulated P/L
+- win rate
+- average R
+- best setup
+- worst setup
+- AI confidence accuracy
+- risk governor blocks
+- live tester intents created
+- bugs found
+- owner rating for the day
+
+Separate clearly:
+
+- DEMO_SIMULATOR
+- LIVE_TESTER_INTENT
+- SHADOW
+- FORWARD_TEST
+
+Do not mix results.
+
+==================================================
+4. CREATE AI IMPROVEMENT NOTES
+==================================================
+
+After each daily test, generate AI improvement notes:
+
+- What AI did well
+- What AI did poorly
+- Best trade idea
+- Worst trade idea
+- Most common rejection reason
+- Whether AI overtraded
+- Whether AI respected risk
+- Whether confidence scores were accurate
+- What to improve next session
+
+Example:
+
+“AI performed best on trend-continuation setups but produced weak ideas during choppy market conditions. Tomorrow, require stronger trend score and avoid setups below 75 opportunity score.”
+
+==================================================
+5. CREATE OWNER RATING SYSTEM
+==================================================
+
+After each session, let owner rate:
+
+- App usability: 1-10
+- AI trade quality: 1-10
+- Risk control clarity: 1-10
+- Speed/performance: 1-10
+- Mobile experience: 1-10
+- Overall confidence: 1-10
+
+Also ask:
+
+- What felt broken?
+- What felt confusing?
+- What felt impressive?
+- What should be improved next?
+
+Save ratings for trend tracking.
+
+==================================================
+6. CREATE WEEKLY TEST SUMMARY
+==================================================
+
+Create page:
+
+/weekly-testing-summary
+
+Show:
+
+- sessions completed
+- total simulator trades
+- AI trade ideas generated
+- live tester intents created
+- bugs found
+- bugs fixed
+- average owner rating
+- average AI confidence score
+- average trade grade
+- simulated P/L
+- best strategy
+- worst strategy
+- most common issue
+- MT5 readiness status
+
+Weekly conclusion:
+
+- KEEP TESTING
+- NEEDS BUG FIX SPRINT
+- READY FOR MT5 SETUP
+- READY FOR DEMO BROKER TESTING AFTER MT5
+
+Do not mark ready for real live-money auto trading while MT5 is deferred.
+
+==================================================
+7. CREATE READINESS TREND
+==================================================
+
+Track readiness over time:
+
+- beta readiness score
+- AI readiness score
+- risk discipline score
+- owner confidence score
+- bug count
+- P0/P1 count
+- simulator stability
+- mobile usability
+- MT5 setup status
+
+Create chart/cards showing whether the system is improving.
+
+==================================================
+8. UPDATE DASHBOARD
+==================================================
+
+Add dashboard cards:
+
+- Start Daily Test
+- Last Daily Test Result
+- AI Improvement Notes
+- Today’s Simulator P/L
+- Today’s Live Tester Intents
+- Current Readiness Score
+- Owner Confidence Trend
+- Open Bugs
+- MT5 Deferred Status
+
+==================================================
+9. UPDATE TESTING CONTROL CENTER
+==================================================
+
+Add buttons:
+
+- Start Daily Testing Session
+- View Daily Performance Review
+- View Weekly Testing Summary
+- Export Daily Report
+- Export Weekly Report
+- Create Bug From Session
+
+==================================================
+10. API ENDPOINTS
+==================================================
+
+Create or update:
+
+GET /api/daily-testing/status
+POST /api/daily-testing/start
+POST /api/daily-testing/step
+POST /api/daily-testing/complete
+GET /api/daily-testing/sessions
+GET /api/daily-testing/session/:id
+
+GET /api/daily-performance-review
+POST /api/daily-performance-review/rating
+
+GET /api/weekly-testing-summary
+GET /api/readiness/trend
+
+GET /api/export/daily-testing-report
+GET /api/export/weekly-testing-report
+
+==================================================
+11. FINAL TEST
+==================================================
+
+Run:
+
+- daily testing route test
+- start daily session test
+- step completion test
+- demo simulator step test
+- live tester intent step test
+- shadow step test
+- autopilot observe step test
+- daily performance review test
+- owner rating test
+- weekly summary test
+- readiness trend test
+- export report test
+- dashboard update test
+- testing control center update test
+- MT5 deferred honesty test
+
+Generate:
+
+DAILY OWNER TESTING MODE REPORT
+
+Include:
+
+- Daily Testing page active yes/no
+- Daily session tracking active yes/no
+- Daily Performance Review active yes/no
+- AI Improvement Notes active yes/no
+- Owner Rating System active yes/no
+- Weekly Testing Summary active yes/no
+- Readiness Trend active yes/no
+- Dashboard updated yes/no
+- Testing Control Center updated yes/no
+- MT5 still deferred yes/no
+- Real broker execution still not faked yes/no
+- Ready for daily owner testing yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills.
+- Do not expose secrets.
+- Do not block owner tester access.
+- Do not hide live tester workflows.
+- Do not mark live broker execution as ready until MT5 bridge is connected.

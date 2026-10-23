@@ -1,0 +1,1329 @@
+Build the full ARX AI “Ruby Flame Scalp Engine.”
+
+This is a major trading-intelligence upgrade. Do not treat scalping as a smaller version of normal trading. Scalping must be its own dedicated intelligence layer with separate scoring, timing, live monitoring, add-on logic, exit logic, and post-trade learning.
+
+Critical live-trading rule:
+Do not place live trades automatically during this build or QA.
+Do not rerun T014.
+Do not use demo, paper, mock, or simulation fallback on the active LIVE execution path.
+T015 remains the active owner/admin manual LIVE continuation phase.
+Manual owner/admin live trades must still use the existing one-tap Confirm / Confirm Buy / Confirm Sell flow as the final action before dispatch.
+Do not add a second confirmation modal.
+Do not force SL/TP for owner/admin manual LIVE trades.
+Keep all live safety gates, kill switch checks, freeze checks, allocation checks, live bridge readiness checks, broker/EA checks, and audit logging intact.
+
+Product goal:
+Create a full Ruby Flame Scalp Engine that can:
+
+1. Detect scalp opportunities.
+2. Separate scalp trades from longer trades.
+3. Identify running flame momentum.
+4. Measure flame quality, flame age, flame stage, and chase risk.
+5. Determine whether the scalp is BUY, SELL, WAIT, or NO SCALP.
+6. Identify whether the scalp is one-stick, short burst, momentum continuation, or multi-entry run-on flame.
+7. Recommend when to enter, wait, add, hold, close latest, close partial, or close all.
+8. Manage multiple scalp entries as one basket.
+9. Adjust recommendations based on spread, execution speed, broker latency, bridge heartbeat, symbol personality, and current market structure.
+10. Learn from scalp outcomes over time.
+
+Important:
+Ruby must never call something a scalp just because it is on a lower timeframe.
+Ruby must never call a trade a scalp without answering “Why now?”
+Ruby must not use swing/long-trade logic for scalp decisions.
+Ruby must not keep stale scalp signals active after the move is gone.
+Ruby must warn when a user is chasing.
+Ruby must warn when the flame is exhausted.
+Ruby must manage the trade after entry, not just find the entry.
+
+Core definition:
+A scalp is a short-duration momentum opportunity where price shows immediate directional pressure strong enough to move quickly over the next 1–5 candles, sometimes extending to several candles only if the running flame remains healthy.
+
+Ruby should think:
+“Is there a fast, tradable burst happening right now, and can the user enter, add, manage, or exit before the burst is over?”
+
+Do not let Ruby think:
+“Is this market generally bullish or bearish?”
+That is long-trade logic, not scalp logic.
+
+Create these engine modules or equivalent architecture:
+
+1. ScalpClassifier
+2. RunningFlameDetector
+3. FlameStageAnalyzer
+4. EntryTimingAnalyzer
+5. ChaseRiskDetector
+6. ScalpRunwayAnalyzer
+7. SpreadExecutionFilter
+8. HigherTimeframeDangerFilter
+9. ScalpScoreEngine
+10. OneStickScalpDetector
+11. MultiEntryScalpManager
+12. ScalpBasketManager
+13. ExitUrgencyMonitor
+14. FailedFlameLockout
+15. SymbolScalpPersonalityEngine
+16. ScalpSignalDecayEngine
+17. ScalpAlertEngine
+18. ScalpJournalLearningEngine
+19. RubyScalpExplanationFormatter
+20. ScalpCockpitUI
+
+If the app already has related components, upgrade and reuse them. Do not duplicate conflicting logic. Search first, then extend safely.
+
+==================================================
+SECTION 1 — SCALP STATUS SYSTEM
+
+Ruby must classify every scalp read into one of these:
+
+1. Strong scalp
+2. Possible scalp
+3. Weak scalp / wait for confirmation
+4. Not a scalp
+
+Direction must be separate:
+
+1. BUY
+2. SELL
+3. WAIT
+4. MIXED
+5. NO SCALP
+
+Ruby output must always separate:
+
+1. Direction
+2. Setup quality
+3. Entry timing
+4. Flame stage
+5. Scalp score
+6. Add-on permission
+7. Exit urgency
+
+Example:
+Direction: SELL
+Setup Quality: Strong
+Entry Timing: Clean
+Flame Stage: Active
+Scalp Score: 86
+Add-On Permission: Level 2
+Exit Urgency: Normal
+
+Do not merge these into one vague answer.
+
+==================================================
+SECTION 2 — SCALP SCORE
+
+Create a Scalp Score from 0–100.
+
+Base scoring:
+
+1. Running flame / candle momentum: 25 points
+2. Short-term trend alignment: 15 points
+3. Clean entry location: 15 points
+4. Target reachable within scalp window: 15 points
+5. Spread/execution quality: 10 points
+6. Pullback/reversal clarity: 10 points
+7. Higher-timeframe danger check: 10 points
+
+Classification:
+
+1. 80–100 = Strong scalp
+2. 65–79 = Possible scalp
+3. 50–64 = Weak scalp / wait for confirmation
+4. Below 50 = Not a scalp
+
+The score must be separate from long-trade score.
+Do not mix scalp score with swing, sniper, long, or general market score.
+
+==================================================
+SECTION 3 — RUNNING FLAME DETECTION
+
+Create Running Flame detection.
+
+Running flame means candles are moving with immediate pressure in one direction.
+
+Measure:
+
+1. Consecutive same-direction candles.
+2. Candle body size compared to recent average body size.
+3. Candle body expansion or contraction.
+4. Candle close position inside the candle range.
+5. Wicks against the move.
+6. Wicks in favor of the move.
+7. Close near high for BUY flame.
+8. Close near low for SELL flame.
+9. Momentum acceleration.
+10. Whether price is breaking structure or only moving inside chop.
+11. Whether the last 1–5 candles show directional pressure.
+12. Whether a pullback is controlled or becoming reversal.
+13. Whether the current candle is continuing, stalling, or rejecting.
+14. Whether the flame is early, active, late, or exhausted.
+
+BUY flame signs:
+
+1. Consecutive bullish candles.
+2. Bodies expanding or staying strong.
+3. Closes near candle highs.
+4. Pullbacks shallow.
+5. Lower wicks show rejection.
+6. Price reclaiming or breaking micro resistance.
+7. No major resistance immediately ahead.
+
+SELL flame signs:
+
+1. Consecutive bearish candles.
+2. Bodies expanding or staying strong.
+3. Closes near candle lows.
+4. Pullbacks shallow.
+5. Upper wicks show rejection.
+6. Price rejecting or breaking micro support.
+7. No major support immediately ahead.
+
+Ruby must label flame state:
+
+1. None
+2. Igniting
+3. Active
+4. Run-on
+5. Stretched
+6. Weakening
+7. Exhausted
+8. Failed
+9. Reversal risk
+
+==================================================
+SECTION 4 — FLAME STAGE MODEL
+
+Use this scalp flame cycle:
+
+1. Ignition
+
+* First strong candle or breakout is starting.
+* First entry may be possible.
+* Must still confirm “why now.”
+
+2. Confirmation
+
+* Second candle or retest confirms direction.
+* Add-on may become possible.
+
+3. Run-on Flame
+
+* Multiple candles continue with strong closes.
+* Multi-entry can be considered if exposure allows.
+* Must watch for stretch and danger zones.
+
+4. Stretch
+
+* Move is still going but may be late.
+* Stop adding by default.
+* Protect profit.
+* Only caution add allowed if rules permit.
+
+5. Weakening
+
+* Bodies shrink, wicks appear, pullbacks deepen.
+* Close latest entry or partial may be recommended.
+* No new add-ons.
+
+6. Exhaustion
+
+* Strong reversal wick, engulfing candle, failed continuation, or target/danger reached.
+* Close all or avoid new entry.
+* Signal expires.
+
+7. Reversal
+
+* Opposite pressure confirms.
+* Original scalp invalid.
+* Opposite scalp only allowed after new confirmation, not immediately by impulse.
+
+Ruby must use flame stage to control:
+
+1. Entry recommendation
+2. Add-on permission
+3. Hold/exit recommendation
+4. Scalp signal freshness
+5. Trade ticket warnings
+
+==================================================
+SECTION 5 — SCALP FRESHNESS AND SIGNAL DECAY
+
+Scalp signals must expire.
+
+Track signal age:
+
+1. Fresh = 0–1 candle old
+2. Active = 1–3 candles old
+3. Late = 4–6 candles old
+4. Expired = 7+ candles old or after rejection/exhaustion
+
+Add scalp confidence decay:
+
+1. At signal: full score
+2. After 1 weak/no-continuation candle: reduce score
+3. After 2 no-continuation candles: downgrade to weak/wait
+4. After reversal wick or failed breakout: invalidate
+5. After target/danger zone reached: expire
+6. After spread spike or stale bridge heartbeat: downgrade or block
+
+Ruby must say:
+“This was a valid scalp earlier, but it is now late.”
+or
+“Signal expired — wait for a new pullback/retest or new flame ignition.”
+
+Do not keep stale scalp recommendations active.
+
+==================================================
+SECTION 6 — WHY NOW GATE
+
+Every scalp recommendation must answer:
+“Why now?”
+
+Valid “why now” reasons:
+
+1. Flame just ignited.
+2. Breakout just closed.
+3. Pullback just rejected.
+4. Retest just held.
+5. Continuation candle confirmed.
+6. Liquidity sweep snapped back.
+7. Support failed with strong close.
+8. Resistance failed with strong close.
+9. Candle pressure expanded after compression.
+10. Micro range broke with strong close.
+
+If Ruby cannot produce a clear “why now,” then classification must be:
+Not a scalp or Wait.
+
+Do not allow vague reasons like:
+
+1. “Market looks bullish.”
+2. “Trend is down.”
+3. “Indicators agree.”
+4. “Could go higher.”
+5. “Momentum exists.”
+
+Those are not enough for scalp entry.
+
+==================================================
+SECTION 7 — ENTRY TIMING ANALYZER
+
+Separate setup quality from entry timing.
+
+Entry timing grades:
+
+1. Early
+2. Clean
+3. Acceptable
+4. Late
+5. Chasing
+6. No entry
+
+Ruby can say:
+“Direction is SELL and setup is strong, but entry timing is chasing. Wait for pullback or new break.”
+
+Entry timing should measure:
+
+1. Distance from flame ignition.
+2. Number of candles since flame started.
+3. Distance from last pullback/retest.
+4. Distance to nearest support/resistance.
+5. Distance from short-term mean/average candle range.
+6. Whether the current candle has already traveled too far.
+7. Whether last candle closed with rejection wick.
+8. Whether price is entering directly into target/danger zone.
+9. Whether the user is entering after the main move already happened.
+
+Block or warn when:
+
+1. Entry is chasing.
+2. Flame has run too many candles.
+3. Price is near danger.
+4. Reversal wick appears.
+5. Target is too close.
+6. Spread/cost consumes the move.
+
+==================================================
+SECTION 8 — CHASE RISK DETECTOR
+
+Add Chase Risk scoring.
+
+Chase risk levels:
+
+1. Low
+2. Medium
+3. High
+4. Extreme
+
+Detect chase risk when:
+
+1. Price has already moved several candles in one direction.
+2. Last candle is unusually large after an existing run.
+3. Price is far from last pullback/retest.
+4. Price is near support/resistance/danger zone.
+5. Candle closes with large rejection wick.
+6. Candle bodies begin shrinking.
+7. Momentum is fading.
+8. User attempts market entry after flame stretch.
+9. User attempts add-on after run-on flame is already late.
+
+Ruby wording:
+“Direction may be correct, but this is chase risk.”
+“Do not add here — wait for pullback/retest.”
+“Flame is stretched. Manage exits instead of adding.”
+
+==================================================
+SECTION 9 — SCALP RUNWAY
+
+Scalp runway means how much room remains before the next danger zone.
+
+Measure:
+
+1. Distance to nearest support/resistance.
+2. Distance to previous swing high/low.
+3. Distance to liquidity pocket.
+4. Distance to recent reversal wick.
+5. Distance to expected scalp target.
+6. Distance relative to spread/cost.
+7. Distance relative to recent average candle size.
+
+Runway labels:
+
+1. Clear runway
+2. Moderate runway
+3. Tight runway
+4. No runway
+
+Ruby must not call a strong scalp if there is no room left.
+Example:
+“Bullish flame is active, but buy scalp has tight runway because resistance is directly ahead.”
+
+==================================================
+SECTION 10 — SPREAD, SLIPPAGE, LATENCY, EXECUTION FILTER
+
+Scalping depends on execution speed.
+
+Add SpreadExecutionFilter.
+
+Measure:
+
+1. Current spread.
+2. Normal spread for symbol.
+3. Spread spike versus normal.
+4. Expected scalp move versus spread.
+5. Bridge heartbeat freshness.
+6. EA heartbeat freshness.
+7. Order queue latency.
+8. Broker response time.
+9. Recent slippage.
+10. Rejected order rate.
+11. VPS/bridge status.
+12. Execution ON/OFF.
+13. Symbol trade permissions.
+
+Rule:
+Expected scalp move should be meaningfully larger than spread/cost, preferably 2x–3x minimum, configurable by symbol.
+
+If spread/latency is poor:
+
+1. Downgrade scalp score.
+2. Block one-stick scalps if execution is not excellent.
+3. Warn user:
+    “Scalp setup exists, but execution quality is poor.”
+    “Do not take one-stick scalp while bridge/EA heartbeat is stale.”
+    “Spread consumes too much of the expected scalp move.”
+
+==================================================
+SECTION 11 — TIMEFRAME LOGIC
+
+Scalping must use lower timeframes for entry and higher timeframes for danger/context.
+
+Recommended:
+
+1. M1/M2/M5 or lowest available = execution timing
+2. M15 or nearest medium = local structure
+3. H1 = danger/context filter
+4. H4/D1 = major bias only, not direct scalp timing
+
+If synthetic index intervals differ, use:
+
+1. Shortest available = execution
+2. Next higher = local structure
+3. Higher available = danger/context
+
+Ruby must distinguish:
+
+1. Scalp direction
+2. Higher timeframe bias
+3. Conflict or alignment
+
+Examples:
+“Scalp direction: BUY. Higher timeframe bias: SELL. This is a counter-trend scalp, so take profit faster.”
+“Scalp direction: SELL. Higher timeframe bias: SELL. This is trend-aligned, so continuation potential is cleaner.”
+
+==================================================
+SECTION 12 — SCALP SETUP TYPES
+
+Ruby must label scalp setup type:
+
+1. Breakout scalp
+2. Retest scalp
+3. Continuation scalp
+4. Rejection scalp
+5. Reversal scalp
+6. Exhaustion scalp
+7. Liquidity sweep scalp
+8. Failed breakout reversal scalp
+9. Pullback scalp
+10. No scalp / chop
+
+Each setup type needs different confirmation.
+
+Breakout scalp:
+
+* Needs strong close through level.
+* Avoid if candle is already too stretched.
+
+Retest scalp:
+
+* Needs broken level to hold.
+* Better entry timing than chasing breakout.
+
+Continuation scalp:
+
+* Needs flame active and shallow pullback.
+* Avoid if flame weakening.
+
+Rejection scalp:
+
+* Needs wick rejection and close away from danger.
+* Target nearest liquidity/mean.
+
+Liquidity sweep scalp:
+
+* Needs sweep, rejection, snapback.
+* Must be fast and cautious.
+
+Exhaustion scalp:
+
+* Opposite-direction scalp only after confirmation.
+* Do not call reversal too early.
+
+No scalp/chop:
+
+* Mixed candles, overlapping candles, no clean target, spread too high, or fakeouts.
+
+==================================================
+SECTION 13 — ONE-STICK SCALP MODE
+
+A one-stick scalp is a special high-speed scalp targeting one candle or one immediate burst.
+
+Allow one-stick scalp only when:
+
+1. Flame just ignited.
+2. Breakout/rejection candle is strong.
+3. Spread is clean.
+4. Execution speed is excellent.
+5. Bridge heartbeat is fresh.
+6. EA heartbeat is fresh.
+7. Target is very nearby but still larger than cost.
+8. No major danger zone is directly in front.
+9. The user is not late/chasing.
+10. “Why now” is clear.
+
+One-stick scalp output:
+
+1. Type: One-stick momentum scalp
+2. Direction: BUY/SELL/WAIT
+3. Expected window: 1 candle
+4. Entry trigger
+5. Quick target
+6. Fast invalidation
+7. Execution quality
+8. Exit urgency
+
+If execution quality is bad, block one-stick scalp recommendation.
+
+==================================================
+SECTION 14 — MULTI-TRADE SCALP / RUN-ON FLAME
+
+Add Multi-Trade Scalp logic.
+
+A multi-trade scalp is when a run-on flame is strong enough for multiple manual entries within one fast momentum move.
+
+Ruby must not blindly recommend adding. Every add-on needs its own score and reason.
+
+Multi-entry status:
+
+1. Allowed
+2. Caution
+3. Do Not Add
+4. Close/Manage Only
+
+Add-on permission levels:
+
+1. Level 0 = no add allowed
+2. Level 1 = add only on pullback/retest
+3. Level 2 = add on continuation confirmation
+4. Level 3 = strong run-on flame, multiple adds allowed within risk
+
+Allow add-ons only when:
+
+1. Original scalp score is strong enough, usually 75+.
+2. Flame stage is Igniting, Confirmation, Active, or Run-on.
+3. Entry timing is Early, Clean, or Acceptable.
+4. Add-on timing is not Chasing.
+5. Price has not reached target/danger zone.
+6. Spread/execution remains clean.
+7. Total exposure remains within allocation/risk.
+8. Previous position has profit cushion or strong fresh confirmation exists.
+9. Pullbacks are shallow.
+10. No major opposite wick/rejection appears.
+11. No failed flame or lockout active.
+
+Block add-ons when:
+
+1. Flame is Stretched, Weakening, Exhausted, Failed, or Reversal risk.
+2. Price is near target/danger zone.
+3. Candle bodies are shrinking.
+4. Opposite wick/rejection appears.
+5. Spread widens.
+6. Bridge/EA heartbeat is stale.
+7. User already has too many entries.
+8. Total basket exposure is too high.
+9. Floating profit is shrinking fast.
+10. User is averaging into a losing scalp without confirmation.
+
+Add-on styles:
+
+1. Flame Add-On = add when momentum continues strongly.
+2. Pullback Add-On = add when shallow pullback rejects.
+3. Breakout Add-On = add after next micro level breaks.
+4. Retest Add-On = add after broken level holds.
+5. Do Not Add = flame late, stretched, choppy, or near danger.
+
+Default max scalp entries per flame:
+
+1. Conservative: 1–2
+2. Balanced: 2–3
+3. Aggressive/Owner admin: 2–4 within allocation and safety gates
+4. No new add-ons after target zone is reached
+5. No new add-ons during weakening/exhaustion
+
+Do not increase size late in the flame.
+Do not recommend full-size add-ons after stretch.
+Entry 1 can be normal scalp size.
+Entry 2 can be same or smaller if continuation confirms.
+Entry 3 should usually be smaller.
+Entry 4 should be caution/micro only if allowed at all.
+
+==================================================
+SECTION 15 — PROFIT CUSHION AND REVENGE-TRADE FILTER
+
+Ruby must distinguish planned scale-in from emotional averaging/revenge.
+
+Allowed scale-in:
+“Adding into confirmed momentum with profit cushion and flame still active.”
+
+Dangerous add:
+“Adding because the first trade is losing and user wants to recover.”
+
+Profit cushion rule:
+
+1. Prefer add-ons only when earlier entry is in profit or not under pressure.
+2. If first entry is negative, require stronger confirmation for add-on.
+3. Do not add into losing scalp without fresh structure confirmation.
+4. Do not allow add-on if basket is under pressure and flame is not active.
+
+Ruby warning:
+“This add-on would average into a losing scalp without confirmation. That is not a valid flame add.”
+
+==================================================
+SECTION 16 — SCALP BASKET MANAGER
+
+When multiple scalp positions exist on the same symbol/direction/session, treat them as one scalp basket.
+
+Basket panel must show:
+
+1. Symbol
+2. Direction
+3. Number of entries
+4. Total lots/exposure
+5. Average basket entry
+6. Best entry
+7. Worst/latest entry
+8. Combined floating P/L
+9. Basket break-even
+10. Distance to scalp target
+11. Distance to danger/invalidation
+12. Flame health
+13. Add-on slots remaining
+14. Latest-entry risk
+15. Recommended action:
+
+* Hold
+* Add
+* Do not add
+* Close latest
+* Close partial
+* Close all
+* Trail tightly
+* Protect basket
+
+Basket management rules:
+
+1. Latest entry is usually riskiest.
+2. If flame weakens, close newest/latest entry first.
+3. If basket is profitable and flame weakens, protect basket.
+4. If basket hits target zone, take partial or close all.
+5. If flame invalidates, close all or warn urgent close.
+6. Do not let late add-ons turn a winning basket into a losing basket.
+7. If basket break-even is near current price and momentum fades, warn user.
+8. If basket is under pressure and flame weakens, no add-ons.
+
+Ruby examples:
+“Entry 3 is late. If momentum fades, close Entry 3 first.”
+“Basket is in profit. Protect it — no more adds while flame is stretched.”
+“Flame weakening. Close latest add-on or take partial.”
+
+==================================================
+SECTION 17 — EXIT URGENCY MONITOR
+
+Post-entry is mandatory. Ruby must manage the scalp after entry.
+
+Exit urgency levels:
+
+1. None
+2. Watch
+3. Protect profit
+4. Close latest
+5. Close partial
+6. Close all
+7. Emergency exit
+
+Monitor:
+
+1. Candle closes in/against trade direction.
+2. Candle wick rejection.
+3. Momentum continuation/failure.
+4. Flame stage changes.
+5. Target zone reached.
+6. Danger zone reached.
+7. Spread spike.
+8. Bridge/EA latency.
+9. Basket P/L shrinking.
+10. Latest entry under pressure.
+11. Opposite strong candle.
+12. Price closes back inside broken range.
+13. Pullback becomes reversal.
+
+Ruby alerts:
+
+1. “Scalp still alive — candle closing near low/high.”
+2. “Flame weakening — do not add.”
+3. “Close latest entry first if next candle fails.”
+4. “Basket in profit — protect it.”
+5. “Exit warning — reversal wick against trade.”
+6. “Close partial — first target reached.”
+7. “Close all — flame invalidated.”
+
+Do not use long-trade exit language like “let it breathe” for scalps unless the flame remains active.
+
+==================================================
+SECTION 18 — FAILED FLAME LOCKOUT AND COOLDOWN
+
+After a flame fails, Ruby must avoid repeated low-quality entries.
+
+Failed flame signs:
+
+1. Breakout candle fully retraced.
+2. Strong opposite candle.
+3. Long wick against direction.
+4. Next candle cannot continue.
+5. Price closes back inside range.
+6. Support/resistance rejects the move.
+7. Spread spike ruins setup.
+8. Multiple failed breaks.
+
+Lockout rules:
+
+1. After failed BUY flame, block/downgrade BUY scalps for 2–3 candles unless new structure forms.
+2. After failed SELL flame, block/downgrade SELL scalps for 2–3 candles unless new structure forms.
+3. After two failed scalps on same symbol, require stronger confirmation.
+4. In chop, reduce alert frequency.
+5. Do not keep firing signals during repeated fakeouts.
+
+Ruby wording:
+“Bearish flame failed. Lockout SELL scalp suggestions for 3 candles unless a new breakdown forms.”
+
+==================================================
+SECTION 19 — DO-NOT-SCALP CONDITIONS
+
+Create hard “No Scalp” filters.
+
+No scalp when:
+
+1. Choppy overlapping candles.
+2. No clear candle pressure.
+3. Spread too high.
+4. Bridge heartbeat stale.
+5. EA heartbeat stale.
+6. Execution latency high.
+7. Price too close to danger zone.
+8. Flame already exhausted.
+9. Multiple failed breaks.
+10. No clear target.
+11. Target too small after spread/cost.
+12. User/basket already overexposed.
+13. Basket already under pressure.
+14. Higher timeframe danger directly ahead.
+15. Candle closed with strong reversal wick.
+16. Current candle is in the middle of a range.
+17. Recent signal expired.
+18. Add-on would be averaging into loss without confirmation.
+
+Ruby must be willing to say:
+“No scalp right now.”
+“No scalp — chop.”
+“No scalp — flame expired.”
+“No scalp — spread too high.”
+“No scalp — entry is chasing.”
+“No scalp — basket already under pressure.”
+
+==================================================
+SECTION 20 — SYMBOL PERSONALITY ENGINE
+
+Scalping must adapt per symbol.
+
+Track symbol personality:
+
+1. Normal candle size.
+2. Normal body-to-wick behavior.
+3. Normal spread.
+4. Normal flame length.
+5. Average run-on candle count.
+6. Reversal behavior.
+7. Fakeout frequency.
+8. Best scalp timeframe.
+9. Best add-on conditions.
+10. Best exit behavior.
+11. Average slippage.
+12. Average broker fill speed.
+13. Common danger zones.
+14. Synthetic index behavior versus forex behavior.
+
+Synthetic index handling:
+
+1. V75/V25/V10/V100 should not be treated like forex.
+2. Do not apply fake forex margin assumptions to synthetic indices.
+3. Use broker-confirmed data where available.
+4. If broker margin data unavailable, show unavailable/incomplete.
+5. Still treat broker-confirmed V75/V25 positions as real positions.
+6. Candle speed/reversal rules must be more sensitive for volatile synthetic indices.
+
+Example personality notes:
+
+1. V75: violent flame, fast reversal risk, aggressive exit warnings.
+2. V25: fast movement, but may have different flame length.
+3. EURUSD: slower flame, more spread/target sensitivity.
+4. Gold: momentum bursts, wick-heavy, avoid chasing late spikes.
+
+==================================================
+SECTION 21 — RISK PERSONALITY MODES
+
+Add configurable scalp risk profiles without weakening safety gates.
+
+Modes:
+
+1. Conservative Scalp Mode
+2. Balanced Scalp Mode
+3. Aggressive Scalp Mode
+4. Owner/Admin High-Speed Mode
+
+These modes adjust thresholds, not safety gates.
+
+Example:
+Conservative:
+
+* Strong scalp threshold 85+
+* Add-ons mostly pullback/retest only
+* Max entries 1–2
+* Reject late entries strongly
+
+Balanced:
+
+* Strong threshold 80+
+* Possible threshold 70+
+* Max entries 2–3
+
+Aggressive/Owner admin:
+
+* Possible threshold 65+
+* Allows faster entries and run-on flame logic
+* Max entries 2–4 inside allocation/safety gates
+* Still blocks stale heartbeat, spread spikes, exhaustion, and overexposure
+
+Never let risk profile disable:
+
+1. Kill switch
+2. Freeze check
+3. Allocation check
+4. Live bridge readiness
+5. Broker/EA readiness
+6. Audit logging
+7. No demo/paper/mock/sim fallback
+
+==================================================
+SECTION 22 — SCALP COCKPIT UI
+
+Create a clear “Ruby Flame Scalp Cockpit” UI.
+
+It should appear in:
+
+1. Scanner detail page
+2. Selected market analysis panel
+3. Trade ticket/modal
+4. Open position management panel
+5. Ruby chat when asking about scalps
+6. Mobile quick view
+
+Scalp cockpit must show:
+
+1. Scalp Status
+2. Direction
+3. Scalp Score
+4. Flame Stage
+5. Flame Age
+6. Scalp Freshness
+7. Entry Timing
+8. Chase Risk
+9. Scalp Runway
+10. Spread Quality
+11. Execution Quality
+12. Higher-Timeframe Context
+13. Why Now
+14. Entry Trigger
+15. Target Zone
+16. Invalidation Zone
+17. Add-On Permission Level
+18. Basket Status if positions exist
+19. Exit Urgency if positions exist
+20. Ruby Recommendation
+
+Use compact visual labels:
+
+1. Hot Flame
+2. Igniting
+3. Active
+4. Stretched
+5. Weakening
+6. Exhausted
+7. No Scalp
+8. Chasing
+9. Add Allowed
+10. Do Not Add
+11. Close Latest
+12. Protect Basket
+
+Keep UI clean and fast. Do not overload the page with huge paragraphs. Use expandable “Why” details.
+
+==================================================
+SECTION 23 — SCANNER BEHAVIOR
+
+Add scalp-specific scanner mode or toggle.
+
+Scanner must:
+
+1. Rank symbols by Scalp Score.
+2. Highlight Running Flame opportunities.
+3. Separate scalp score from swing/normal trade score.
+4. Show BUY/SELL/WAIT for scalp separately from normal bias.
+5. Show flame stage.
+6. Show entry timing.
+7. Show chase risk.
+8. Show scalp freshness.
+9. Show spread/execution quality.
+10. Show add-on permission if user already has position.
+11. Show no scalp reason if rejected.
+12. Alert “flame ignition” when a new scalp begins.
+13. Alert “flame weakening” when scalp is dying.
+14. Alert “window closing” when signal gets late.
+15. Alert “do not chase” when user missed clean entry.
+16. Alert “multi-entry possible” only when run-on flame and basket risk allow it.
+
+Scanner alert examples:
+
+1. Bullish flame igniting
+2. Bearish flame igniting
+3. Add-on possible
+4. Add only on pullback
+5. Do not chase
+6. Flame stretched — stop adding
+7. Exit latest entry
+8. Close partial
+9. Close all if reversal confirms
+10. No scalp — chop
+
+Focus Scan:
+Ruby should recommend scalp opportunities when the selected symbol has qualified scalp score.
+
+Broad Scan:
+Ruby should surface top scalp opportunities across symbols.
+
+Do not mix scalp opportunities with long-trade recommendations without labeling them separately.
+
+==================================================
+SECTION 24 — RUBY OUTPUT FORMAT
+
+For every scalp read, Ruby must output:
+
+1. Scalp Status:
+    Strong / Possible / Weak / Not a scalp
+2. Direction:
+    BUY / SELL / WAIT
+3. Scalp Score:
+    0–100
+4. Flame Stage:
+    Igniting / Active / Run-on / Stretched / Weakening / Exhausted / Failed / None
+5. Flame Age:
+    Number of candles since signal began
+6. Entry Timing:
+    Early / Clean / Acceptable / Late / Chasing / No entry
+7. Expected Scalp Window:
+    1 candle / 1–3 candles / 3–5 candles / several candles if flame continues
+8. Why Now:
+    The immediate reason this is or is not a scalp
+9. Entry Trigger:
+    What must happen before entry
+10. Target Idea:
+    Nearby scalp target, not long-trade target
+11. Invalidation:
+    Where the scalp is wrong
+12. Add-On Permission:
+    Level 0–3 or Do Not Add
+13. Basket Status:
+    If positions exist
+14. Exit Urgency:
+    If positions exist
+15. Danger:
+    Spread, chop, support/resistance, reversal, exhaustion, higher timeframe conflict, bridge/EA latency
+
+Example Ruby output:
+“Scalp Status: Possible SELL scalp.
+Score: 74.
+Flame Stage: Active but getting stretched.
+Why now: three bearish candles are closing near the lows after a micro support break.
+Entry Timing: Acceptable, but not early.
+Window: 1–3 candles.
+Add-On Permission: Level 1 — add only on shallow pullback/retest, not market chase.
+Danger: support is nearby and the flame has already run 3 candles.
+Action: Sell only if the next candle continues below the current low or rejects a small pullback.”
+
+==================================================
+SECTION 25 — LIVE TRADE TICKET INTEGRATION
+
+When user opens a trade ticket from a scalp signal:
+
+1. Ticket must show LIVE mode if active mode is live.
+2. No demo/paper/mock/sim fallback on active LIVE path.
+3. Confirm remains final action.
+4. No second confirmation modal.
+5. SL/TP remain optional for owner/admin manual LIVE trades.
+6. If SL/TP blank, show inline warning only:
+    “Stop Loss and Take Profit are not set. Confirm will send this live order without automatic exit protection.”
+7. Ruby may suggest scalp TP/SL/invalidation, but must not force them.
+8. If user selects opposite direction from Ruby’s scalp direction, show inline warning only:
+    “Ruby’s scalp bias is SELL, but this ticket is set to BUY.”
+9. Ticket should show:
+    * Scalp Score
+    * Flame Stage
+    * Entry Timing
+    * Chase Risk
+    * Add-On Permission
+    * Why Now
+    * Invalidation
+    * Target Zone
+
+If scalp score does not qualify:
+Do not default ticket side from scalp.
+Show “No qualified scalp — manual override only.”
+
+==================================================
+SECTION 26 — OPEN SCALP MANAGEMENT
+
+When the user has open scalp positions, Ruby must switch to management mode.
+
+Management mode must answer:
+
+1. Is the scalp still alive?
+2. Is the flame still active?
+3. Should the user hold?
+4. Should the user add?
+5. Should the user stop adding?
+6. Should the user close latest entry?
+7. Should the user close partial?
+8. Should the user close all?
+9. Is the basket profitable?
+10. Is the latest entry putting basket at risk?
+
+Open scalp action labels:
+
+1. Hold
+2. Add allowed
+3. Add only on pullback
+4. Do not add
+5. Protect basket
+6. Close latest
+7. Close partial
+8. Close all
+9. Emergency exit warning
+
+Do not auto-close trades unless a separate user-approved live auto-management feature is explicitly enabled later.
+For now, provide urgent recommendations/alerts and keep manual confirmation required for user actions.
+
+==================================================
+SECTION 27 — SCALP JOURNAL LEARNING
+
+Add scalp journal fields.
+
+For every scalp signal and trade, log:
+
+1. Symbol
+2. Timeframe
+3. Direction
+4. Setup type
+5. Scalp score at signal
+6. Flame stage at signal
+7. Flame age
+8. Entry timing
+9. Chase risk
+10. Spread
+11. Bridge latency
+12. EA heartbeat age
+13. Order queue latency
+14. Entry price
+15. Exit price
+16. Exit reason
+17. Add-on count
+18. Add-on scores
+19. Basket average entry
+20. Basket P/L
+21. Did flame continue?
+22. Did Ruby warn correctly?
+23. Was entry late?
+24. Was add-on valid?
+25. Was exit warning triggered?
+26. Final result
+27. Lesson learned
+
+Ruby should use this data to improve symbol personality and future scalp thresholds.
+
+Add after-action scalp review:
+After trade closes, show:
+
+1. Result
+2. Entry timing grade
+3. Flame stage at entry
+4. Main reason for win/loss
+5. Did add-ons help or hurt
+6. Better entry or exit
+7. Lesson for next scalp
+
+Example:
+“Scalp Result: -$0.10. Entry Timing: Late. Flame Stage: Stretched. Main issue: entered after 5 candles of movement. Better entry: pullback/retest only.”
+
+==================================================
+SECTION 28 — DATA AND API REQUIREMENTS
+
+Add backend endpoints or extend existing endpoints for:
+
+1. Get scalp read for symbol/timeframe
+2. Get scalp score for symbol
+3. Get running flame state
+4. Get scalp scanner rankings
+5. Get open scalp basket status
+6. Get scalp alerts
+7. Get scalp journal entries
+8. Get scalp personality by symbol
+9. Record scalp signal
+10. Record scalp trade outcome
+11. Update scalp learning metrics
+12. Get live execution quality for scalp eligibility
+
+Suggested endpoint names can vary based on existing app patterns, but must be consistent and documented.
+
+Do not expose raw backend/internal function names to normal users.
+Ruby should display plain-English explanations.
+
+==================================================
+SECTION 29 — DATABASE / STORAGE
+
+Create or update storage for:
+
+1. scalp_signals
+2. scalp_scores
+3. scalp_baskets
+4. scalp_basket_entries
+5. scalp_alerts
+6. scalp_journal
+7. symbol_scalp_personality
+8. scalp_execution_metrics
+9. failed_flame_lockouts
+10. scalp_user_preferences
+
+If existing tables exist, migrate safely.
+Do not break existing trade/order/position tables.
+Do not break live position sync.
+Do not hide real V75/V25 positions.
+Do not alter broker-confirmed position truth logic.
+
+==================================================
+SECTION 30 — MOBILE UI
+
+Mobile is critical.
+
+Mobile scalp UI must be:
+
+1. Fast
+2. Compact
+3. Easy to read
+4. No huge walls of text
+5. Clear action labels
+6. Expandable details
+7. No floating bottom navigation gaps
+8. No clipped trade buttons
+9. Confirm button reachable
+10. Flame status visible without scrolling too far
+
+Mobile cards should show:
+
+1. Direction
+2. Score
+3. Flame stage
+4. Entry timing
+5. Chase risk
+6. Add permission
+7. Action
+
+==================================================
+SECTION 31 — TESTING
+
+Run a full build and QA pass.
+
+Do not place live trades during automated QA.
+
+Test scenarios:
+
+1. BUY running flame
+2. SELL running flame
+3. One-stick scalp
+4. Multi-candle scalp
+5. Run-on flame multi-entry opportunity
+6. Pullback add-on
+7. Retest add-on
+8. Breakout add-on
+9. Do-not-add late flame
+10. Flame exhaustion
+11. Flame failure
+12. Reversal after flame
+13. Chop/no scalp
+14. Spread too high
+15. Execution latency too high
+16. Bridge heartbeat stale
+17. EA heartbeat stale
+18. Near support danger
+19. Near resistance danger
+20. Higher-timeframe conflict
+21. Counter-trend scalp
+22. Trend-aligned scalp
+23. Scalp signal expiration
+24. Scalp confidence decay
+25. Failed flame lockout
+26. Basket with 1 entry
+27. Basket with 2 entries
+28. Basket with 3 entries
+29. Latest entry risk
+30. Close latest recommendation
+31. Close partial recommendation
+32. Close all recommendation
+33. Post-trade scalp journal
+34. Symbol personality update
+35. V75 synthetic index behavior
+36. EURUSD forex behavior
+37. Trade ticket scalp panel
+38. Scanner scalp ranking
+39. Ruby scalp explanation
+40. Mobile scalp cockpit
+
+Live path tests:
+
+1. Confirm active LIVE path has no paper/mock/sim fallback.
+2. Confirm active LIVE path does not show “Test in demo first.”
+3. Confirm active LIVE path uses T015.
+4. Confirm Confirm / Confirm Buy / Confirm Sell remains final manual action.
+5. Confirm no second confirmation modal.
+6. Confirm SL/TP optional for owner/admin manual LIVE trades.
+7. Confirm safety gates still run before dispatch.
+8. Confirm audit logging still records all live order attempts.
+9. Confirm no auto-trade happens during QA.
+
+Validation:
+
+1. Run type checks.
+2. Run lint.
+3. Run build.
+4. Run backend tests.
+5. Run frontend tests.
+6. Run API route tests.
+7. Run mobile layout checks.
+8. Run manual smoke checks.
+9. Fix failures.
+10. Rerun validation until clean.
+
+==================================================
+SECTION 32 — ACCEPTANCE CRITERIA
+
+This build is not complete until:
+
+1. Ruby can clearly identify scalp vs non-scalp.
+2. Ruby can explain running flame behavior.
+3. Ruby can classify flame stage.
+4. Ruby can score scalp quality 0–100.
+5. Ruby can identify entry timing and chase risk.
+6. Ruby can detect when scalp is late or expired.
+7. Ruby can answer “Why now?”
+8. Ruby can identify one-stick scalp opportunities.
+9. Ruby can identify run-on flame multi-entry opportunities.
+10. Ruby can block bad add-ons.
+11. Ruby can manage open scalp baskets.
+12. Ruby can recommend hold/add/do-not-add/close latest/close partial/close all.
+13. Ruby can monitor exit urgency after entry.
+14. Ruby can log scalp outcomes.
+15. Ruby can update symbol scalp personality.
+16. Scanner can rank scalp opportunities separately.
+17. Scalp cockpit UI is visible and clean.
+18. Trade ticket shows scalp context.
+19. Mobile UI is usable and fast.
+20. Live safety gates remain intact.
+21. No live trade is placed automatically during build/QA.
+22. No demo/paper/mock/sim fallback exists on active LIVE path.
+23. V75/V25 real positions remain visible if broker-confirmed open.
+24. T015 remains active.
+25. Validation passes cleanly.
+
+Final report required:
+
+1. Files/components changed.
+2. New modules created.
+3. Data models/tables added or reused.
+4. API endpoints added or updated.
+5. Scanner changes completed.
+6. Ruby explanation changes completed.
+7. Trade ticket integration completed.
+8. Basket management completed.
+9. Journal/learning system completed.
+10. Mobile UI status.
+11. Test results.
+12. Known limitations.
+13. Whether the app is ready for owner/admin manual LIVE scalp testing from inside the app.
+14. Confirm no live trade was placed automatically during the build.

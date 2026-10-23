@@ -1,0 +1,293 @@
+Pass 12 — reporting / P&L / realized-balance / fund-book integrity truth. Read-only. No edits, no tasks, no migrations, no workflow changes.
+
+Goal:
+Prove whether ARX reporting, realized P&L, balances, investor fund book, allocations, payouts, withdrawable balance, admin dashboards, and user-facing performance screens use broker-confirmed/finalized truth only — not queued commands, simulated fills, stale positions, broad audit updates, or premature EXECUTED rows.
+
+Important context from prior passes:
+- /api/me/trades/close can write premature trade_command_audit_log status:"EXECUTED" before broker confirmation.
+- /mt5/command-result is the live EA callback route and does not reconcile trade_command_audit_log.
+- executionReconciler audit update keys only userId + symbol and can clobber historical rows.
+- placeOrder sets audit finalStatus:"EXECUTED" for both QUEUED real commands and SIMULATED_FILL, with mode as the only differentiator.
+- mt5_commands.safetyMode can be misleading: OPEN rows can remain paper_only while payload.mode is LIVE.
+- QuickTradeModal defaults SIMULATED and /me/trades/open cannot actually go live due stale MT5_BRIDGE_TOKEN gate.
+- Eleanor safe live path is executeInstant, not /me/trades/close.
+- Allocation foundations from prior passes must be preserved: finalized-basis withdrawable, separate indicative estimate, trader-facing payable view, waterfall cadence governance, honest manual-run messaging.
+
+Required proof areas:
+
+1. Financial truth source inventory
+Freshly locate every table/schema/service/route/component that contributes to:
+- realized P&L
+- unrealized P&L
+- account balance
+- equity
+- margin/free margin
+- deposits
+- withdrawals
+- investor balances
+- allocations
+- pool balance
+- fund book
+- payable amount
+- withdrawable amount
+- trader performance
+- admin revenue/profit dashboards
+- win/loss report
+- trade history
+- journal/scalp journal performance
+- account analytics
+- investor portfolio
+- admin allocation dashboard
+
+For each:
+- file + line
+- data source table/API
+- whether source is broker-confirmed, EA-reported, simulated, derived, cached, or manual
+- whether stale/fallback values are labeled honestly
+
+2. Broker-confirmed vs queued-command separation
+Trace whether reporting ever treats these as finalized:
+- mt5_commands status PENDING/DELIVERED/claimed/sent
+- command queued but not broker-confirmed
+- trade_command_audit_log status EXECUTED from queue time
+- SIMULATED_FILL
+- pending close command
+- failed/rejected/stale command
+- watchdog-failed command
+- EA ReadOnlyMode no-op
+
+For each hit:
+- exact file + line
+- whether it feeds P&L/balance/reporting
+- whether mode/accountType is checked
+- whether broker result is required
+- whether user/admin UI can confuse queued with executed
+
+3. Realized P&L calculation truth
+Find every realized P&L calculation.
+
+Prove:
+- whether it uses closed broker positions/deals/history only
+- whether it uses open-position mark-to-market by mistake
+- whether it includes simulated trades
+- whether it includes queued-but-unconfirmed closes
+- whether rejected closes are excluded
+- whether duplicate/late callbacks can double-count
+- whether partial closes are handled correctly
+- whether fees/commission/swaps/spread are included or excluded and labeled honestly
+- whether currency conversion is handled and timestamped
+
+4. Unrealized P&L / open-position truth
+Find every unrealized P&L calculation.
+
+Prove:
+- whether it uses current broker/EA positions
+- whether it uses scanner/chart price
+- whether it uses stale cached price
+- whether stale price is labeled
+- whether open positions disappear only after broker-confirmed close
+- whether pending close state is shown separately
+- whether rejected close reappears honestly
+- whether simulated open positions are separated from live positions
+
+5. Balance/equity/fund-book truth
+Trace:
+- user balance
+- live MT5 balance
+- equity
+- account analytics balance
+- investor balance
+- pool balance
+- allocation pool
+- manual exposure
+- unassigned funds
+- withdrawable balance
+- payable balance
+- profit share
+- fees
+- investor ledger
+
+Prove:
+- exact source of each number
+- whether it is finalized vs indicative
+- whether it uses real broker balance or app-derived balance
+- whether it can be stale
+- whether stale status is displayed
+- whether simulator/demo balances can enter live/investor views
+- whether admin manual adjustments are logged
+- whether arithmetic is append-only and reconcilable
+
+6. Allocation and waterfall integrity
+Re-read allocation/waterfall/admin allocation logic.
+
+Prove:
+- whether allocation uses finalized P&L only
+- whether it excludes simulated/demo trades
+- whether it excludes pending/unconfirmed commands
+- whether it uses broker-confirmed closed trades
+- whether manual waterfall runs are honestly labeled
+- whether cadence/period boundaries are enforced
+- whether investor/trader payable views are separated from indicative estimates
+- whether admin override/manual exposure surfaces are audit-logged
+
+Preserve prior ledger foundations unless directly disproven:
+- finalized-basis withdrawable
+- separate indicative estimate
+- trader-facing payable view
+- waterfall cadence governance
+- honest manual-run messaging
+
+7. Audit-log integrity impact
+Trace how these flawed audit conditions affect reporting:
+- close path premature EXECUTED
+- placeOrder EXECUTED for QUEUED and SIMULATED_FILL
+- executionReconciler broad userId+symbol update
+- audit rows without command id
+- commands without audit rows
+- mt5_commands safetyMode mismatch
+
+For each:
+- does it affect financial reporting?
+- does it affect user-facing history only?
+- does it affect compliance/admin audit only?
+- does it affect payout/withdrawable calculations?
+- exact file + line
+
+8. Trade history / win-loss / analytics truth
+Audit:
+- Trade History
+- Win/Loss Report
+- Account Analytics
+- Journal
+- Scalp Journal
+- Open Trades
+- Positions
+- Admin execution history
+- Investor performance views
+
+For each:
+- endpoint called
+- table/source used
+- whether live vs demo/simulated is distinguished
+- whether status pending/executed/rejected/stale is distinguished
+- whether “executed” means broker-confirmed
+- whether refresh cadence is adequate
+- whether fallback/stale data is labeled
+
+9. Withdrawal / payable / investor-money truth
+Trace any endpoint or component that shows or computes:
+- withdrawable balance
+- available balance
+- payable balance
+- payout request amount
+- investor claim amount
+- performance fee
+- manager fee
+- platform fee
+- profit split
+- deposit credit
+- USDT/BTC/app-wallet balance if present
+- manual admin credit/debit
+
+Prove:
+- whether it uses finalized ledger only
+- whether unsettled P&L is excluded
+- whether simulated/demo P&L is excluded
+- whether pending withdrawals are reserved
+- whether failed withdrawals release funds
+- whether deposits are confirmed before available
+- whether manual edits are audited
+- whether user can see indicative vs final clearly
+
+10. Staleness and refresh truth
+For every financial/reporting surface:
+- prove refresh source
+- prove staleness threshold
+- prove last-updated display
+- prove whether manual refresh uses real source or cached/app state
+- prove whether auto-refresh can mask stale broker data
+- prove whether closed trades can remain open due stale cache
+- prove whether rejected/failed commands update dashboards honestly
+
+11. Admin reporting truth
+Audit admin dashboards and admin financial views.
+
+Prove:
+- whether admin totals are based on finalized broker truth
+- whether admin views can include simulator data
+- whether admin sees pending vs confirmed separately
+- whether admin can distinguish bridge-offline stale numbers
+- whether admin allocation views are role-gated
+- whether admin manual changes are logged append-only
+- whether admin reports can be exported with misleading status labels
+
+12. CI/test coverage
+Find tests/checks/scripts that would catch:
+- simulated fill counted as live realized P&L
+- queued command counted as executed trade
+- premature close audit counted in realized reporting
+- broad audit update clobbering historical reporting
+- stale balance shown as fresh
+- withdrawable using indicative/unfinalized P&L
+- allocation using unconfirmed command result
+- investor balance including demo/sim trades
+- pending withdrawal not reserved
+- failed withdrawal not released
+- trade history labeling queued as executed
+- admin dashboard mixing live and simulated totals
+- manual adjustment without audit row
+
+Classify coverage:
+- strong
+- weak
+- not covered
+- located but assertion not proven
+
+13. Classification standard
+Use same class system:
+- Class 1: clean/proven safe
+- Class 2: active risk
+- Class 3: defense-in-depth or integrity gap
+- Class 4: dormant/config-gated risk
+- Class 5: unresolved/deferred
+
+Required output format:
+
+PASS 12 — Reporting / P&L / Realized-Balance / Fund-Book Integrity Truth — REPORT
+
+Sections:
+1. Executive verdict
+2. Financial truth source inventory
+3. Broker-confirmed vs queued-command separation
+4. Realized P&L truth
+5. Unrealized P&L / open-position truth
+6. Balance/equity/fund-book truth
+7. Allocation and waterfall integrity
+8. Audit-log integrity impact on reporting
+9. Trade history / win-loss / analytics truth
+10. Withdrawal / payable / investor-money truth
+11. Staleness and refresh truth
+12. Admin reporting truth
+13. CI/test coverage
+14. New findings added to held fix-ledger
+15. Net risk ranking
+16. Next remaining audit pass recommendation
+
+Important:
+- Read-only only.
+- Do not edit files.
+- Do not create tasks.
+- Do not run migrations.
+- Do not change workflows.
+- Do not rely on rg/grep matched text if token mangling appears. Use filename/line discovery only, then read files directly.
+- Give exact file:line proof for every claim.
+- If a claim cannot be proven, mark it Class 5 instead of assuming.
+- Do not call the assistant Ruby in the report except when quoting legacy code/file names. Report user-facing Ruby as Eleanor naming drift.
+
+After Pass 12:
+Continue remaining audit sequence unless a Class 2 issue requires pausing for acceptance.
+
+Recommended remaining passes:
+Pass 13 — notifications/alerts/safety-banner honesty truth.
+Pass 14 — market-data/feed-status/economic-calendar honesty truth.
+Pass 15 — final consolidation and fix-task plan.

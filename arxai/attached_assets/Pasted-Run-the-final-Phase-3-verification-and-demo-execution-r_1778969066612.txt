@@ -1,0 +1,131 @@
+Run the final Phase 3 verification and demo execution readiness check.
+
+Do not add new features. Verify and fix blockers only.
+
+Important first:
+Clarify which token the new ARX_AI_Bridge.mq5 EA requires:
+1. Does it require the per-user MT5 bridge token?
+2. Or does it require the global MT5_BRIDGE_TOKEN env value?
+3. Confirm which one is correct for the current /api/mt5/commands route.
+4. If the docs/screens say the wrong token type, fix the docs and UI instructions.
+5. Do not print or expose any full raw token in logs or UI.
+
+Now verify Phase 3 end-to-end:
+
+1. Admin Trading Control UI
+Confirm:
+- Trading Control page exists in the sidebar.
+- Admin can see current platform mode.
+- Admin can switch to Trading Off.
+- Admin can switch to Demo Trading.
+- Admin can switch to Live Trading.
+- Emergency stop toggle works.
+- User table shows trading status.
+- Enable demo button works.
+- Approve live button works.
+- Audit logs display.
+
+2. Backend guard chain
+Confirm the full guard chain blocks bad orders:
+- platform mode off blocks orders
+- emergency stop blocks orders
+- suspended user blocks orders
+- wrong account type blocks orders
+- missing MT5 connection blocks orders
+- demo requires demo account
+- live requires verified live account
+- live requires disclosure acceptance
+- live requires confirmedByUser:true
+- oversized trade is rejected
+- expired command is rejected
+- duplicate command is rejected
+- wrong token is rejected
+- cross-user command access is rejected
+
+3. Demo trading test
+Set platform mode to Demo Trading.
+Enable demo for user 4 / andraie.co@gmail.com.
+Confirm user 4 has a demo MT5 connection.
+Confirm the EA is installed on a demo MT5 account with:
+- AllowOrderExecution=true
+- TradingMode="DEMO"
+- correct BridgeToken type
+- BackendBaseUrl set correctly
+
+Then run a small demo order test:
+- create demo order command
+- confirm backend approves it
+- confirm command appears in MT5 command polling
+- confirm EA receives it
+- confirm EA executes it on the demo account only
+- confirm trade_command_audit_log records it
+- confirm dashboard/journal updates if connected
+- confirm live account execution does not happen
+
+4. Live trading dry gate
+Do not place a real live order yet.
+Only verify the live guards:
+- Live mode requires verified live MT5 account.
+- Live mode requires disclosure accepted.
+- Live mode requires confirmedByUser:true.
+- Live mode rejects demo accounts.
+- Live mode rejects if emergency stop is active.
+- Live mode rejects if user is not approved.
+- Live mode rejects if risk limits fail.
+
+5. EA compile check
+Confirm attached_assets/ARX_AI_Bridge.mq5 compiles cleanly in MetaEditor.
+If there are compile errors, fix them.
+Confirm the EA contains execution logic only inside the guarded command path.
+
+6. User-facing language
+Confirm normal users no longer see old paper-only wording.
+Normal users should see only:
+- Trading Off
+- Demo Trading Active
+- Live Trading Active
+
+Internal/admin diagnostics may still show legacy safety state only if needed.
+
+7. AI assistant
+Confirm AI can answer:
+- Is trading on?
+- Are we in demo or live mode?
+- Can I place a trade?
+- Why is my trade blocked?
+- Is my MT5 account demo or live?
+- What is the current platform mode?
+
+Confirm:
+- AI can prepare demo trade tickets.
+- AI can prepare live trade tickets.
+- AI cannot bypass backend guards.
+- AI cannot silently place live trades.
+- Live trade requires explicit confirmation.
+
+8. Safety and logs
+Confirm:
+- no secrets exposed
+- all trade attempts audit logged
+- all admin mode changes audit logged
+- MT5 heartbeat still works
+- sync-account still works
+- sync-positions still works
+- command polling still works
+- user data remains isolated
+
+Final report required:
+Return:
+- PASS or FAIL
+- current platform mode
+- correct EA token type
+- admin UI status
+- demo execution status
+- live dry-gate status
+- EA compile status
+- assistant trade tools status
+- audit log status
+- remaining blockers
+- exact steps I should follow in MT5 for the demo execution test
+- exact steps I should follow in admin panel to enable demo trading
+- exact steps I should follow later to enable live trading

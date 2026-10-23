@@ -1,0 +1,309 @@
+Build ARX Treasury Controls v1 for investor crypto funding.
+
+Goal:
+After crypto deposits land in the ARX Pool Treasury Wallet and are confirmed, admin needs a controlled system to manage:
+- treasury wallet records
+- confirmed pool capital
+- investor allocations
+- withdrawal requests
+- payout tracking
+- broker transfer readiness
+- admin audit logs
+
+Important:
+Do not automate broker funding yet.
+Do not automate crypto payouts yet unless a provider payout integration is explicitly configured.
+Do not store private keys.
+Do not let investors trigger broker transfers.
+Do not let investors trigger direct wallet payouts.
+Do not count pending funds as capital.
+
+Core sections:
+
+1. Admin Treasury Dashboard
+
+Create Admin → Treasury.
+
+Show:
+- Total confirmed treasury deposits
+- Pending crypto deposits
+- Confirmed but unallocated deposits
+- Allocated investor capital
+- Pending withdrawal requests
+- Paid withdrawals
+- Funds marked ready for broker transfer
+- Treasury wallet list
+- Latest funding transactions
+- Latest ledger entries
+
+TreasuryWallet records:
+- id
+- poolId
+- label
+- asset
+- network
+- walletAddress
+- isActive
+- createdAt
+- createdByAdminId
+
+Rules:
+- Only admin can create or deactivate treasury wallet records.
+- Never store private keys or seed phrases.
+- Wallet address only.
+- Display warning:
+  “This app tracks treasury wallet activity but does not store wallet private keys.”
+
+2. Confirmed Capital Queue
+
+Create a queue for deposits that are:
+- confirmed
+- admin verified
+- not yet allocated
+
+Admin actions:
+- allocate to investor pool
+- flag for review
+- reject/void with reason if mistaken
+- add admin note
+
+Deposit cannot move to allocation until:
+- provider/on-chain confirmation exists
+- admin verified it
+- investor account is approved
+- deposit is not flagged
+- amount is positive
+- asset/network is supported
+
+3. Investor Allocation Creation
+
+When admin allocates a confirmed deposit:
+- calculate NAV at entry
+- calculate units
+- set principal amount
+- set lockup start date
+- set lockup end date
+- create InvestorAllocation
+- create immutable InvestorLedgerEntry
+- update investor dashboard
+
+Allocation formula:
+- units = principalAmount / navPerUnitAtEntry
+
+If no NAV exists yet:
+- initialize pool NAV at 1.00 or admin-defined starting NAV
+- log that NAV was initialized
+
+Allocation status:
+- active
+- locked
+- withdrawn
+- closed
+- cancelled
+
+4. Withdrawal Request Review
+
+Investor can request withdrawal from their portal.
+
+Investor request fields:
+- allocationId
+- requestedAmountFiat
+- preferredAsset: USDC / USDT
+- network
+- destinationWalletAddress
+- note
+
+Withdrawal rules:
+- investor can only request from their own allocation
+- request cannot exceed eligible withdrawable value
+- if lockup is active, mark request as early_withdrawal_review
+- if lockup expired, mark request as standard_review
+- withdrawal does not reduce value until admin approves/marks paid
+- pending withdrawal should show separately from current value
+
+Withdrawal statuses:
+- requested
+- early_withdrawal_review
+- standard_review
+- under_review
+- approved
+- processing
+- paid
+- denied
+- cancelled
+
+5. Admin Withdrawal Approval
+
+Admin can:
+- approve
+- deny
+- request more info
+- mark processing
+- mark paid
+- add tx hash
+- add provider payout ID
+- add admin note
+
+When marked paid:
+- create InvestorLedgerEntry type crypto_withdrawal_paid
+- reduce investor allocation/current value
+- store tx hash/provider reference
+- update investor dashboard
+- update pool totals
+
+Do not allow mark paid unless:
+- admin approved first
+- payout amount is valid
+- destination wallet is present
+- tx hash or payout reference is entered, unless admin chooses manual cash/bank payout label
+
+6. Broker Transfer Readiness
+
+Add internal admin-only workflow:
+“Mark funds ready for broker transfer.”
+
+This does not move money automatically.
+
+BrokerTransferIntent:
+- id
+- poolId
+- amountFiat
+- asset
+- network
+- sourceTreasuryWalletId
+- destinationBrokerLabel
+- status
+- createdByAdminId
+- approvedByAdminId
+- completedAt
+- txHashOrReference
+- adminNote
+- createdAt
+
+Statuses:
+- drafted
+- ready_for_transfer
+- approved
+- transferred
+- cancelled
+
+Rules:
+- investor cannot see or trigger broker transfers
+- broker transfer does not change individual investor balances by itself
+- broker transfer is internal treasury movement
+- must be audit logged
+- must not bypass live trade/risk engine
+
+7. Investor Portal Updates
+
+Investor should see:
+- confirmed deposits
+- active allocations
+- current value
+- P/L
+- lockup date
+- withdrawal eligibility
+- pending withdrawal requests
+- withdrawal history
+- disclosure text
+
+Investor should not see:
+- other investors
+- full treasury balance
+- private wallet details
+- broker transfer records
+- admin notes
+- private keys/secrets
+
+8. Ledger Rules
+
+Every money event must create an immutable ledger entry:
+- crypto_deposit_confirmed
+- crypto_deposit_allocated
+- withdrawal_requested
+- withdrawal_approved
+- withdrawal_paid
+- withdrawal_denied
+- broker_transfer_intent_created
+- broker_transfer_marked_ready
+- broker_transfer_completed
+- manual_adjustment
+
+Ledger entries should never be edited.
+If correction is needed, create a reversal/adjustment entry.
+
+9. Audit Logs
+
+Audit every admin action:
+- treasury wallet created/deactivated
+- deposit verified
+- deposit allocated
+- withdrawal approved/denied/paid
+- broker transfer intent created
+- broker transfer marked transferred
+- manual adjustment made
+
+Audit log fields:
+- adminUserId
+- action
+- entityType
+- entityId
+- beforeJson
+- afterJson
+- createdAt
+- ip/device if available
+
+10. Safety / Permissions
+
+Hard rules:
+- Investors are view-only except deposit requests and withdrawal requests.
+- Investors cannot trade.
+- Investors cannot trigger broker transfers.
+- Investors cannot mark deposits confirmed.
+- Investors cannot mark withdrawals paid.
+- Pending funds excluded from NAV and risk capital.
+- Broker transfer intents do not affect investor allocations directly.
+- No private keys stored.
+- No seed phrases stored.
+- No wallet secrets logged.
+- Admin-only write routes protected.
+
+11. Required Copy
+
+Use this disclosure in investor portal:
+“This portal is for internal investor tracking. Crypto funding is not counted as active capital until confirmed and approved. Trading involves risk of loss. Values are not guaranteed.”
+
+Use this treasury warning in admin:
+“ARX tracks treasury wallet activity for accounting and reporting. This app does not store wallet private keys or seed phrases.”
+
+12. Tests
+
+Add tests for:
+- investor cannot access treasury dashboard
+- admin can create treasury wallet address record
+- private key fields are rejected if submitted
+- pending deposits do not appear in confirmed capital
+- only admin can verify crypto deposits
+- allocation requires confirmed deposit
+- allocation creates units and ledger entry
+- investor can request withdrawal
+- investor cannot request more than eligible amount
+- lockup-active withdrawal gets early review status
+- admin can approve withdrawal
+- withdrawal cannot be marked paid without approval
+- mark paid creates ledger entry and updates investor value
+- investor cannot trigger broker transfer
+- broker transfer intent is admin-only
+- broker transfer does not change investor allocation directly
+- every admin money action creates audit log
+- pending funds excluded from NAV, P/L, risk, and bot capital
+
+Acceptance criteria:
+- Admin has a Treasury dashboard.
+- Confirmed crypto deposits can be allocated into investor pool.
+- Investors can request withdrawals.
+- Admin controls approval and payout marking.
+- Broker transfer readiness is tracked but not automated.
+- All money actions create immutable ledger and audit records.
+- Investors remain view-only and cannot trade or move funds.
+- No wallet private keys or seed phrases are stored.

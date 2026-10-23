@@ -1,0 +1,238 @@
+Now build Phase 4: the Market Brain.
+
+Create a modular market intelligence engine that separates technical analysis, macro analysis, session analysis, and risk analysis.
+
+Create these folders:
+
+/server/brain
+/server/brain/technical
+/server/brain/macro
+/server/brain/sessions
+/server/brain/news
+/server/brain/scoring
+/server/brain/symbols
+
+Files to create:
+
+1. /server/brain/symbols/symbolRegistry.ts
+
+Create full symbol groups:
+
+Forex Majors:
+EURUSD, GBPUSD, USDJPY, USDCHF, USDCAD, AUDUSD, NZDUSD
+
+Forex Minors:
+EURGBP, EURJPY, EURCHF, EURAUD, EURCAD, EURNZD,
+GBPJPY, GBPCHF, GBPAUD, GBPCAD, GBPNZD,
+AUDJPY, AUDCHF, AUDCAD, AUDNZD,
+NZDJPY, NZDCHF, NZDCAD,
+CADJPY, CADCHF,
+CHFJPY
+
+Indices:
+US30, NAS100, SPX500, GER40, UK100, JP225
+
+Stocks:
+AAPL, MSFT, NVDA, TSLA, AMZN, META, GOOGL, AMD, NFLX, JPM, BAC, XOM, WMT, COST
+
+Synthetic:
+Volatility 75 Index,
+Volatility 75 1s Index,
+Volatility 25 1s Index
+
+Each symbol should include:
+- displayName
+- category
+- brokerSymbol
+- riskLevel
+- tradingSessions
+- recommendedTimeframes
+- minimumConfidence
+- defaultRiskPerTrade
+- notes
+
+2. /server/brain/technical/technicalEngine.ts
+
+Create function analyzeTechnical(symbol, candles).
+
+Return:
+{
+ trendDirection,
+ trendStrength,
+ emaAlignment,
+ rsiState,
+ atrState,
+ supportLevels,
+ resistanceLevels,
+ structure,
+ liquiditySweep,
+ candleStrength,
+ volatilityExpansion,
+ chopScore,
+ technicalBias,
+ technicalScore,
+ reasons
+}
+
+3. /server/brain/macro/macroEngine.ts
+
+Create placeholder macro engine.
+
+For forex, calculate:
+- baseCurrencyStrength
+- quoteCurrencyStrength
+- interestRateBias
+- inflationBias
+- jobsBias
+- GDPBias
+- riskSentimentBias
+- macroBias
+- macroScore
+
+For indices, calculate:
+- dollarBias
+- bondYieldBias
+- fedBias
+- inflationRisk
+- earningsSentiment
+- riskSentiment
+- macroBias
+- macroScore
+
+For stocks, calculate:
+- sectorBias
+- earningsRisk
+- newsSentiment
+- relativeStrength
+- macroBias
+- macroScore
+
+For synthetic volatility indices:
+- macroScore should be neutral
+- macroBias should say “Not news-driven”
+- explain that synthetic indices are structure/volatility driven
+
+4. /server/brain/sessions/sessionEngine.ts
+
+Detect current session:
+- Asia
+- London
+- New York
+- London/New York overlap
+- Off-hours
+
+Return:
+{
+ session,
+ liquidityLevel,
+ recommendedMarkets,
+ caution,
+ sessionScore
+}
+
+Session logic:
+- Forex is most active during London and New York.
+- JPY/AUD/NZD pairs can move more during Asia.
+- US30/NAS100/SPX500 are most important around New York session.
+- Synthetic volatility can run 24/7.
+
+5. /server/brain/news/newsRiskEngine.ts
+
+Create placeholder economic calendar/news filter.
+
+Return:
+{
+ majorNewsSoon,
+ affectedCurrencies,
+ affectedIndices,
+ riskLevel,
+ blockTrading,
+ reason
+}
+
+Block trades around:
+- FOMC
+- CPI
+- NFP
+- Fed speeches
+- interest rate decisions
+- GDP
+- retail sales
+- unemployment data
+- major earnings for stocks
+
+6. /server/brain/scoring/confluenceScoring.ts
+
+Create a final score engine.
+
+Final confidence score should combine:
+- technicalScore
+- macroScore
+- sessionScore
+- newsRiskPenalty
+- volatilityPenalty
+- spreadPenalty
+- strategyMatchScore
+
+Formula:
+confidence =
+technicalScore * 0.45 +
+macroScore * 0.20 +
+sessionScore * 0.10 +
+strategyMatchScore * 0.15 -
+newsRiskPenalty -
+volatilityPenalty -
+spreadPenalty
+
+For synthetic volatility:
+confidence =
+technicalScore * 0.65 +
+strategyMatchScore * 0.25 +
+sessionScore * 0.05 -
+volatilityPenalty -
+spreadPenalty
+
+7. /server/brain/marketBrain.ts
+
+Create function analyzeMarket(symbol, candles, accountState, settings).
+
+It should call:
+- technicalEngine
+- macroEngine
+- sessionEngine
+- newsRiskEngine
+- confluenceScoring
+- riskManager
+
+Return final decision:
+
+{
+ symbol,
+ category,
+ direction,
+ confidence,
+ entry,
+ stopLoss,
+ takeProfit,
+ riskReward,
+ strategy,
+ marketCondition,
+ technicalBias,
+ macroBias,
+ session,
+ newsRisk,
+ riskApproved,
+ blockedReason,
+ reasons,
+ timestamp
+}
+
+Important rules:
+- WAIT is a strong valid result.
+- Do not force BUY/SELL.
+- If confidence is below minimum, return WAIT.
+- If risk manager blocks trade, return WAIT.
+- If newsRiskEngine says blockTrading, return WAIT.
+- If market is choppy, return WAIT unless mean reversion strategy is enabled.
+- For Volatility 75 1s, require higher confidence than normal.
+- For US30, block trades during major U.S. news unless user disables filter.

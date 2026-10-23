@@ -1,0 +1,540 @@
+Run a full ARX AI end-to-end system audit, repair, cleanup, and live-connectivity test.
+
+Goal:
+Test the entire ARX AI ecosystem piece by piece from frontend to backend to MT5 bridge and back again. Fix broken wiring, remove dormant UI, reduce repetitive information, confirm every feature works, confirm Scanner/chart trading works, confirm Ruby works across the app, and perform one controlled dummy LIVE trade test only if the approved owner/admin live-test conditions are met.
+
+Do not blindly rebuild the app.
+Do not delete working systems.
+Do not hide broken features.
+Do not mark anything complete without testing it.
+Do not remove trading safety validation that protects real execution.
+Do not use Paper Trading or simulated trade data anywhere in the active production app.
+The app should only support DEMO and LIVE.
+
+System-Wide Audit Scope:
+Inspect and test the full app in this order:
+
+1. Authentication
+2. User roles and permissions
+3. Admin access through normal login role permissions
+4. Invite-only user access
+5. DEMO/LIVE account mode handling
+6. User allocation balances
+7. Account freeze/unfreeze
+8. Admin approval toggles
+9. Kill switch
+10. MT5 bridge connection
+11. MT5 EA connection
+12. Scanner page
+13. Broad Scan
+14. Focus Scan
+15. Scanner search
+16. Scanner results
+17. Scanner chart trading workstation
+18. Market selection
+19. Trade modal
+20. Chart-based trade actions
+21. Open positions
+22. Pending orders
+23. Trade history
+24. User trade ledger
+25. Shared/master bridge user filtering
+26. Ruby chat
+27. Ruby voice input
+28. Ruby speech output
+29. Ruby memory/saved chats
+30. Ruby market explanations
+31. Ruby action execution
+32. News/current-events data if connected
+33. Historical data/backtest data if connected
+34. Economic calendar if connected
+35. Admin dashboard
+36. User dashboard
+37. Mobile layout
+38. Desktop layout
+39. Bottom navigation
+40. Notifications/alerts if present
+41. Error handling
+42. Logs
+43. Performance and page speed
+44. Database integrity
+45. API route health
+46. Environment variables and missing config detection
+47. Security/privacy leaks
+48. UI clutter and dormant interface cleanup
+
+Full Wiring Test:
+For every major feature, verify:
+
+1. The frontend button/input exists.
+2. The frontend action calls the correct backend route/service.
+3. The backend validates the user and permission.
+4. The backend calls the correct internal service or MT5 bridge action.
+5. The service returns a clean success/failure result.
+6. The database updates correctly if needed.
+7. The UI updates only after confirmed success.
+8. Failed actions show a clean user-facing message.
+9. Admin logs capture technical detail.
+10. Normal users do not see backend route names, function names, stack traces, bridge internals, environment variables, or raw database errors.
+
+Dormant UI Cleanup:
+Find every UI element that appears to do nothing, is disconnected, repeats information, or exposes development/admin clutter to users.
+
+For each dormant UI item:
+
+1. Identify where it appears.
+2. Check if it has a real function.
+3. Check if it has backend wiring.
+4. Check if it has database support.
+5. Check if it has active user value.
+6. If it is useful but disconnected, wire it properly.
+7. If it is useful but too large/cluttered, collapse it into a menu, drawer, tooltip, or advanced section.
+8. If it is truly dead, remove it.
+9. If it is admin-only, hide it from normal users.
+10. If it is repetitive, consolidate it into one clean status area.
+
+Do not remove useful functionality just to reduce clutter.
+Do not remove Scanner, Ruby, trade controls, admin controls, bridge controls, or risk controls.
+Clean and simplify the UI without weakening the app.
+
+Repetitive Information Cleanup:
+Remove or consolidate repeated alerts, repeated status cards, repeated warning text, repeated bridge messages, and repeated account-mode labels.
+
+Rules:
+
+1. One clear bridge status area is enough.
+2. One clear account mode label is enough.
+3. One clean trade-readiness indicator is enough.
+4. Do not show the same warning in multiple places on the same page.
+5. Keep critical warnings, but make them compact.
+6. Move long explanations into expandable “Details” or “Why?” sections.
+7. Ruby should explain in plain English, not dump raw diagnostic information.
+
+Scanner / Chart Trading Test:
+Fully test the Scanner chart trading workstation.
+
+Verify:
+
+1. Chart appears at the top of Scanner.
+2. Chart loads before Ruby and scanner results finish.
+3. Broad Scan still works.
+4. Focus Scan still works.
+5. Scanner search works.
+6. Selecting a market updates the chart.
+7. Live candles or live price feed loads.
+8. Bid/ask/spread show correctly.
+9. User’s own open positions appear on chart.
+10. User’s own pending orders appear on chart.
+11. Other users’ trades never reach frontend payload.
+12. Master MT5 account data is never exposed.
+13. Entry line appears.
+14. SL line appears.
+15. TP line appears.
+16. Pending entry line appears.
+17. SL dragging works.
+18. TP dragging works.
+19. Pending order entry dragging works.
+20. Confirm sends the update to backend/MT5 bridge.
+21. Cancel restores previous confirmed value.
+22. Failed update rolls back visually.
+23. Buy Market works.
+24. Sell Market works.
+25. Buy Limit works.
+26. Sell Limit works.
+27. Buy Stop works.
+28. Sell Stop works.
+29. Close full position works.
+30. Partial close works.
+31. Reverse position works.
+32. Break-even works.
+33. Close all for symbol is permission-gated.
+34. Cancel all pending for symbol is permission-gated.
+35. Mobile drag works.
+36. Fullscreen chart mode works if implemented.
+37. Normal users never see backend or bridge internals.
+
+MT5 Bridge / Trading Execution Test:
+Test every MT5-connected action through backend validation.
+
+Required test coverage:
+
+1. getLiveQuote
+2. getCandles
+3. getSymbolTradeRules
+4. getUserOpenPositions
+5. getUserPendingOrders
+6. getUserChartTrades
+7. openMarketOrder
+8. placePendingOrder
+9. modifyPosition
+10. modifyPendingOrder
+11. cancelPendingOrder
+12. closePosition
+13. partialClosePosition
+14. reversePosition
+15. moveStopToBreakEven
+16. symbolCloseAll
+17. symbolCancelAllPending
+
+Every action must validate:
+
+1. logged-in user
+2. permission
+3. DEMO or LIVE only
+4. user allocation
+5. account not frozen
+6. kill switch not active
+7. bridge connected
+8. EA connected if required
+9. symbol allowed
+10. lot size valid
+11. price precision valid
+12. margin rules
+13. broker stop-distance rules
+14. trade ownership
+15. pending order ownership
+16. MT5 confirmation before UI success
+
+Shared/Master Bridge Privacy Test:
+Because ARX AI may use one centralized/master MT5 bridge, verify the ARX ownership ledger is the real user-filtering layer.
+
+Test:
+
+1. User A cannot see User B trades.
+2. User B cannot see User A trades.
+3. User payload only includes that user’s authorized trades.
+4. Frontend does not receive all trades and hide them visually.
+5. Admin-only views are role-gated.
+6. Trade ledger maps every MT5 ticket/order to:
+    * userId
+    * accountMode
+    * mt5Ticket
+    * mt5PositionId if available
+    * mt5OrderId if available
+    * symbol
+    * direction
+    * lotSize
+    * entryPrice
+    * stopLoss
+    * takeProfit
+    * status
+    * openedBy
+    * allocationId
+    * source
+    * createdAt
+    * updatedAt
+    * closedAt if closed
+
+Ruby Full-App Agent Upgrade:
+Ruby should be able to do anything the user can do in the app, and more, but only through the same permission system.
+
+Ruby must be able to:
+
+1. Navigate app sections.
+2. Explain any page in plain English.
+3. Read user-permitted account status.
+4. Read user-permitted trades.
+5. Explain scanner results.
+6. Explain selected chart market.
+7. Explain open trades.
+8. Explain pending orders.
+9. Explain risk/reward.
+10. Explain spread and volatility.
+11. Explain news/current-event impact if connected.
+12. Search symbols.
+13. Change selected Scanner symbol.
+14. Open trade ticket drawer.
+15. Prepare market order details.
+16. Prepare pending order details.
+17. Prepare SL/TP modification.
+18. Prepare close/partial-close/reverse actions.
+19. Execute allowed actions only after required user/admin confirmation.
+20. Help admin review users.
+21. Help admin inspect logs.
+22. Help admin find broken wiring.
+23. Help admin summarize system health.
+24. Help admin locate dormant UI.
+25. Help admin identify slow functions.
+26. Help users understand errors without exposing internals.
+27. Ask the user to repeat if voice input is unclear.
+28. Speak responses back when voice mode is enabled.
+29. Save chat history and memory unless user clears it.
+
+Ruby must not:
+
+1. Bypass backend permissions.
+2. Bypass account freeze.
+3. Bypass kill switch.
+4. Bypass live approval.
+5. Bypass allocation limits.
+6. Bypass admin-only controls.
+7. Execute LIVE trades without required confirmation or approved settings.
+8. Show backend routes.
+9. Show function names.
+10. Show stack traces.
+11. Show bridge internals.
+12. Show other users’ trades.
+13. Invent fake trade results.
+14. Use Paper Trading fallback.
+15. Pretend a trade executed when MT5 did not confirm it.
+
+Ruby “Even More” Capabilities:
+Ruby should also be able to do more than a normal user by acting as an app intelligence layer where permitted.
+
+Add or verify Ruby can:
+
+1. Run app health checks.
+2. Detect disconnected UI.
+3. Detect repeated information.
+4. Detect slow actions.
+5. Detect missing backend wiring.
+6. Detect failed MT5 bridge actions.
+7. Detect stale market data.
+8. Detect broken chart overlays.
+9. Detect hidden frontend-only actions.
+10. Detect user-facing technical leaks.
+11. Detect permission mismatches.
+12. Detect failed voice input.
+13. Recommend fixes to admin.
+14. Summarize QA results.
+15. Explain what changed after each system update.
+
+Ruby should have tool/action access through a controlled action registry:
+
+1. Every Ruby action must map to a real app action.
+2. Every Ruby action must declare required permission.
+3. Every Ruby action must declare whether confirmation is required.
+4. Trading actions must always go through backend validation.
+5. Admin actions must require admin role.
+6. Dangerous actions must have explicit confirmation unless already covered by approved one-click trading settings.
+7. Ruby should never call hidden/unvalidated backend functions directly.
+
+Voice Test:
+Test Ruby’s voice system fully.
+
+Verify:
+
+1. Microphone permission request works.
+2. Ruby listens when chat voice mode is active.
+3. Ruby stops listening correctly.
+4. Ruby detects silence.
+5. Ruby asks user to repeat if unclear.
+6. Speech-to-text result appears correctly.
+7. Ruby responds in text.
+8. Ruby responds in voice if enabled.
+9. Ruby does not keep listening when user leaves chat if that is the intended behavior.
+10. Ruby does not expose internal debug text through speech.
+11. Ruby works on mobile.
+12. Ruby works on desktop.
+
+Performance Test:
+Speed is critical.
+
+Measure and log:
+
+1. App initial load time.
+2. Login response time.
+3. Scanner page load time.
+4. Chart first render time.
+5. Market selection to chart update time.
+6. Search symbol response time.
+7. Broad Scan response time.
+8. Focus Scan response time.
+9. Ruby response time.
+10. Voice input recognition time.
+11. Buy/Sell button click to backend request time.
+12. Backend request to MT5 bridge time.
+13. MT5 bridge response time.
+14. UI confirmation update time.
+15. Close trade response time.
+16. Modify SL/TP response time.
+17. Pending order placement response time.
+18. Page navigation response time.
+
+Target:
+
+1. UI click feedback should appear immediately.
+2. Page actions should show visual response under 100ms where possible.
+3. Scanner/chart interactions should feel instant.
+4. Slow backend actions should show “Working…” or “Updating…” immediately.
+5. Do not block the full page when only one card/action is loading.
+6. Do not let Ruby block trading actions.
+
+Dummy LIVE Trade Connectivity Test:
+Perform one controlled dummy LIVE trade test only if all of the following are true:
+
+1. Logged-in account is the approved owner/admin live-test account.
+2. LIVE mode is enabled for that account.
+3. MT5 live bridge is connected.
+4. EA is connected and ready.
+5. Kill switch is not active.
+6. Account is not frozen.
+7. Allocation is available.
+8. Broker symbol is valid.
+9. Lot size is broker-minimum or configured live-test minimum.
+10. Spread is within configured live-test maximum.
+11. Market is open.
+12. The environment has LIVE_DUMMY_TRADE_TEST_ENABLED=true or equivalent admin-approved setting.
+
+Dummy trade rules:
+
+1. Use the configured TEST_SYMBOL if present.
+2. If no TEST_SYMBOL exists, use the safest configured highly liquid allowed test symbol.
+3. Use broker-minimum lot size, such as 0.01, unless broker minimum differs.
+4. This trade is for connectivity testing only, not strategy.
+5. Do not open multiple dummy trades.
+6. Do not scale in.
+7. Do not let Ruby choose direction based on strategy for this test.
+8. Use the configured neutral test direction if available.
+9. If no test direction is configured, require admin to pick BUY or SELL in the app.
+10. After the order fills, verify the MT5 ticket/order appears.
+11. Verify ARX ledger records it.
+12. Verify the trade appears on the Scanner chart only for the correct user.
+13. Verify Ruby can explain the trade in plain English.
+14. Immediately close the dummy trade after verifying the full wiring.
+15. Verify close confirmation from MT5.
+16. Verify ARX ledger marks it closed.
+17. Verify chart removes or marks it closed.
+18. Log final fill price, close price, ticket, symbol, lot, duration, and any P/L.
+19. Show clean admin-only result.
+20. Do not expose raw bridge details to normal users.
+
+If LIVE dummy trade conditions are not met:
+
+1. Do not fake the test.
+2. Do not mark LIVE trading as verified.
+3. Report exactly which readiness condition failed.
+4. Keep DEMO test results separate from LIVE test results.
+
+Full App Functional Test:
+Test all visible pages and features.
+
+For each page:
+
+1. Load page.
+2. Check layout.
+3. Check mobile.
+4. Check desktop.
+5. Click every button.
+6. Submit every form with valid data.
+7. Submit every form with invalid data.
+8. Confirm loading states.
+9. Confirm success states.
+10. Confirm error states.
+11. Confirm permissions.
+12. Confirm no internal technical text leaks.
+13. Confirm no dead UI.
+14. Confirm no repetitive clutter.
+15. Confirm no console errors.
+16. Confirm no failed network calls unless expected and handled.
+
+Database / Integrity Test:
+Check:
+
+1. Users table.
+2. Roles.
+3. Permissions.
+4. Account modes.
+5. Allocations.
+6. Trades.
+7. Pending orders.
+8. Ledger records.
+9. Ruby chats.
+10. Ruby memory.
+11. Scanner data.
+12. Market data cache.
+13. Logs.
+14. Admin audit records.
+
+Fix:
+
+1. Missing indexes causing slowness.
+2. Broken foreign keys.
+3. Orphan trade records.
+4. Trades without user ownership.
+5. Pending orders without user ownership.
+6. Duplicate mode fields.
+7. Paper/simulated records still connected to active production flow.
+8. Stale test records appearing in user-facing pages.
+
+Security / Privacy Test:
+Verify:
+
+1. Normal users cannot access admin routes.
+2. Normal users cannot see admin dashboard.
+3. Normal users cannot see bridge internals.
+4. Normal users cannot see other users.
+5. Normal users cannot see other users’ trades.
+6. Normal users cannot trade with another user’s allocation.
+7. Frozen users cannot trade.
+8. Unapproved users cannot trade live.
+9. Kill switch blocks live execution.
+10. Backend enforces permissions even if frontend is bypassed.
+11. Frontend hiding is not the only protection.
+12. API responses are filtered server-side.
+13. Logs do not leak secrets.
+14. Environment variables are never exposed to frontend.
+
+Error Handling Cleanup:
+Normal user messages should be clean, such as:
+
+1. “Trade placed.”
+2. “Trade updated.”
+3. “Trade closed.”
+4. “Order cancelled.”
+5. “Trade update failed. Please try again.”
+6. “This price is too close to the current market.”
+7. “This order type is not valid at that price.”
+8. “Insufficient available allocation.”
+9. “Bridge connection unavailable.”
+10. “You do not have permission for this action.”
+
+Admin logs should contain detailed technical reasons.
+
+Do not show users:
+
+1. stack traces
+2. backend route names
+3. function names
+4. bridge internals
+5. raw MT5 error dumps
+6. database errors
+7. JSON blobs
+8. environment variable names
+9. server file paths
+
+Final Completion Report:
+After audit, fixes, cleanup, and testing, provide a completion report with:
+
+1. Overall system status
+2. Files changed
+3. Routes tested
+4. Routes fixed
+5. Components cleaned
+6. Dormant UI removed
+7. Repetitive UI consolidated
+8. Scanner status
+9. Chart trading status
+10. Ruby status
+11. Voice status
+12. MT5 bridge status
+13. DEMO trading test result
+14. LIVE dummy trade test result
+15. Dummy trade ticket if executed
+16. Dummy trade open/close verification
+17. User privacy verification
+18. Master bridge privacy verification
+19. Remaining disabled controls, if any
+20. Any bridge actions still missing
+21. Performance measurements
+22. Tests passed
+23. Tests failed
+24. Tests fixed
+25. Remaining risks
+26. Exact next recommended fixes, if any
+
+Important:
+Do not stop at checking if pages render.
+This must be a true end-to-end wiring test of the full ARX AI ecosystem.
+Every visible action should either work, be properly wired, or be removed/disabled with a clean explanation.
+Ruby should become the app’s intelligent command layer, but every Ruby action must go through the same backend permissions, account rules, and MT5 confirmation system as a normal user action.

@@ -1,0 +1,294 @@
+T017 — PLACE REAL LIVE TRADE AND VERIFY MT5 CONFIRMATION
+
+The app has not proven live execution yet.
+
+Current issue:
+The app still has not placed a real live trade with MT5 confirmation. I need one controlled LIVE trade to go through from ARX → MT5 → ARX, with proof that MT5 accepted it, returned a real ticket/order ID, and that ARX recorded it correctly.
+
+Do not mark this task complete until:
+
+1. One real LIVE trade is placed through ARX.
+2. MT5 confirms the order/trade went through.
+3. ARX receives and stores the real MT5 ticket/order ID.
+4. The trade appears in ARX open positions / chart / ledger.
+5. The trade is closed immediately through ARX.
+6. MT5 confirms the close.
+7. ARX records the close.
+8. Final report includes before/after proof.
+
+Product direction:
+ARX AI is LIVE-first.
+Do not use Demo.
+Do not use Paper Trading.
+Do not use fake execution.
+Do not use simulated trade data.
+Do not fabricate an MT5 ticket.
+Do not claim success from a pending command only.
+Do not claim success from frontend UI only.
+Do not claim success from backend logs only.
+MT5 must confirm the live trade.
+
+This is not a rebuild.
+Do not redesign the app.
+Do not duplicate trading systems.
+Do not reset live broker execution config.
+Do not weaken backend permissions, ownership checks, kill switch, allocation checks, freeze checks, live approval, account type validation, or MT5 confirmation rules.
+
+PRIMARY GOAL:
+Place one controlled LIVE trade with real MT5 confirmation, then close it immediately.
+
+PART 1 — Preflight: verify live environment
+
+Before placing the trade, run:
+
+1. pnpm run health:workflows
+2. live-readiness gate check
+3. admin/runtime health check
+4. MT5 bridge health check
+5. EA heartbeat check
+6. account mode check
+7. allocation check
+8. symbol rules check
+
+Confirm:
+
+1. frontend serving
+2. api-server serving
+3. /api/healthz returns 200
+4. MT5 bridge connected
+5. EA heartbeat healthy
+6. account type recognized as LIVE/REAL
+7. account mode is LIVE_SHARED or active LIVE mode
+8. owner/admin session is active
+9. owner/admin is approved/armed for LIVE
+10. kill switch inactive
+11. account not frozen
+12. allocation available
+13. ReadOnly is OFF
+14. EnableLiveExecution is ON
+15. MaxLiveLot is 0.01 or expected live-test max
+16. live broker execution env remains ON
+17. trade ownership ledger ready
+
+If any gate fails:
+
+1. Do not place the trade.
+2. Report the exact failed gate.
+3. Fix the gate if it is an app wiring/config issue.
+4. Retest.
+5. Do not switch to Demo.
+6. Do not use Paper.
+7. Do not fake success.
+
+PART 2 — Choose the live test symbol honestly
+
+The user attempted V75 and saw:
+
+“SELL V75 blocked”
+
+First determine whether V75 / Volatility 75 is truly tradable through the current MT5 bridge and broker account.
+
+Check:
+
+1. Is V75 in the ARX live allowlist?
+2. What exact MT5 broker symbol maps to V75?
+3. Does MT5 Market Watch show the symbol active?
+4. Does the EA/bridge report symbol trade allowed?
+5. What are the broker rules:
+    * min lot
+    * max lot
+    * lot step
+    * tick size
+    * digits/precision
+    * stop level
+    * freeze level
+    * market open status
+    * spread
+6. Can the bridge place an order for that exact symbol?
+
+If V75 is truly tradable:
+
+1. Use V75 for the live proof trade.
+2. Fix any symbol mapping, precision, stop-distance, or allowlist issue that caused the block.
+3. Place one small live test trade on V75.
+
+If V75 is not tradable through this MT5 bridge/broker account:
+
+1. Do not fake V75 support.
+2. Do not mark V75 fixed.
+3. Show a clean user-facing message:
+    “V75 is not currently tradable through this live bridge.”
+4. Use the approved EURUSD live micro-trade instead.
+5. Clearly report why V75 could not be used.
+
+PART 3 — Live trade execution requirements
+
+Use the smallest safe live trade size.
+
+Default:
+
+1. Symbol: V75 only if confirmed tradable, otherwise EURUSD.
+2. Lot: 0.01 or the smallest broker-allowed lot if different.
+3. Direction: use the current selected user direction if manually selected in UI. Do not let Ruby choose direction.
+4. This is a wiring test, not a strategy trade.
+5. Do not open more than one trade.
+
+Before pressing Confirm, record:
+
+1. arx_live_commands row count
+2. arx_live_commands max_id
+3. owner open positions count
+4. MT5 open positions count
+5. owner allocation
+6. selected symbol
+7. requested direction
+8. requested lot
+9. requested SL/TP if used
+10. live gate table
+
+Execution:
+
+1. Open ARX app.
+2. Go to Scanner.
+3. Select the final approved live-test symbol.
+4. Open Buy or Sell modal.
+5. Set lot to 0.01 or smallest allowed lot.
+6. Press the real Confirm button once.
+7. Confirm pending state appears immediately.
+8. Confirm backend request fires.
+9. Confirm MT5 accepts the order.
+10. Capture real MT5 ticket/order ID.
+11. Confirm ARX receives the MT5 ticket/order ID.
+12. Confirm ARX writes the live command row.
+13. Confirm ARX writes/updates the position ledger.
+14. Confirm Scanner/chart shows the open trade.
+15. Confirm Ruby can explain the open trade in plain English.
+16. Close the trade immediately through ARX.
+17. Confirm close request reaches MT5.
+18. Confirm MT5 confirms the close.
+19. Confirm ARX marks the trade closed.
+20. Confirm Scanner/chart removes or marks the trade closed.
+21. Confirm owner open positions return to 0.
+22. Confirm no second trade was opened.
+
+PART 4 — Required MT5 confirmation proof
+
+The report must include actual MT5 confirmation evidence.
+
+Include:
+
+1. MT5 ticket/order ID
+2. MT5 position ID if available
+3. MT5 deal ID if available
+4. MT5 open response/status
+5. MT5 close response/status
+6. symbol sent to MT5
+7. symbol accepted by MT5
+8. lot accepted by MT5
+9. open price
+10. close price
+11. open timestamp
+12. close timestamp
+13. final P/L
+14. any MT5 retcode/comment if returned
+
+Do not report success unless MT5 confirms success.
+
+If MT5 rejects:
+
+1. Report exact MT5 retcode/comment.
+2. Report exact ARX gate or bridge reason.
+3. Fix the real issue if it is app-side.
+4. Retest.
+5. Do not fabricate success.
+
+PART 5 — UI error fix for blocked order
+
+The current user-facing message is too generic:
+
+“SELL V75 blocked”
+“A server safety check refused this order.”
+
+Improve the message so it tells the user the clean reason.
+
+Examples:
+
+1. “Order blocked: V75 is not tradable through this live bridge.”
+2. “Order blocked: Stop Loss is too close for V75.”
+3. “Order blocked: Lot size is invalid for this symbol.”
+4. “Order blocked: Symbol rules are unavailable.”
+5. “Order blocked: Allocation is unavailable.”
+6. “Order blocked: Market is closed.”
+
+Admin diagnostics should show:
+
+1. exact gate name
+2. normalized symbol
+3. broker symbol
+4. lot validation
+5. price precision validation
+6. stop-distance validation
+7. bridge response
+8. MT5 retcode/comment if any
+
+Normal users should not see stack traces, backend routes, DB errors, env names, or raw bridge internals.
+
+PART 6 — Tests
+
+Run after the live trade:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. live-readiness gate check
+5. Scanner smoke test
+6. live single-confirm test
+7. admin diagnostics smoke test
+8. route containment test
+
+PART 7 — Final report required
+
+Final report must include:
+
+1. selected live-test symbol
+2. whether V75 is truly tradable through this bridge
+3. if V75 blocked, exact reason
+4. if another symbol used, exact reason
+5. live gate table before trade
+6. arx_live_commands before count/max_id
+7. owner open positions before
+8. MT5 open positions before
+9. MT5 ticket/order ID
+10. MT5 position ID if available
+11. MT5 deal ID if available
+12. direction
+13. lot
+14. open price
+15. close price
+16. open time
+17. close time
+18. final P/L
+19. ARX live command row verification
+20. ARX ledger verification
+21. Scanner/chart verification
+22. Ruby explanation verification
+23. arx_live_commands after count/max_id
+24. owner open positions after
+25. MT5 open positions after
+26. confirmation only one live trade was opened
+27. confirmation trade was closed
+28. confirmation no Demo/Paper/fake execution used
+29. confirmation no safety gate was bypassed
+30. improved blocked-message behavior
+31. health:workflows result
+32. typecheck result
+33. ci:guards result
+34. remaining risks
+
+Completion standard:
+This task is not complete until a real live trade is placed through ARX, MT5 confirms it with a real ticket/order ID, ARX records it, the trade is closed through ARX, and MT5 confirms the close.
+
+Do not mark complete based only on diagnostics.
+Do not mark complete based only on gate checks.
+Do not mark complete based only on frontend modal behavior.
+Do not mark complete until MT5 confirms live execution and close.

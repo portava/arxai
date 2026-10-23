@@ -1,0 +1,231 @@
+Continue from the last completed trading app phase.
+
+Now build the ADAPTIVE STRATEGY ENGINE.
+
+Goal:
+Create a system that learns which strategies, setups, sessions, symbols, and market conditions perform best for each trader.
+
+Do not rebuild from scratch.
+Do not delete current data.
+Do not remove MT5/broker logic.
+Do not make guaranteed-profit claims.
+
+PHASE 1 — Inspect Existing Strategy Logic
+
+Inspect the project and identify:
+
+- Existing trade strategy fields
+- Existing trade feedback logic
+- Existing trader score logic
+- Existing market intelligence logic
+- Existing AI coach files
+- Existing dashboard components
+
+Then explain where the Adaptive Strategy Engine should connect.
+
+PHASE 2 — Add Strategy Data Models
+
+Create safe migrations/tables for:
+
+strategy_profiles:
+- id
+- user_id
+- strategy_name
+- description
+- preferred_symbols
+- preferred_timeframes
+- preferred_sessions
+- risk_profile
+- min_rr_required
+- max_trades_per_day
+- is_active
+- created_at
+- updated_at
+
+strategy_performance:
+- id
+- user_id
+- strategy_id
+- symbol
+- timeframe
+- session_name
+- market_condition
+- total_trades
+- win_rate
+- avg_profit_loss
+- avg_rr
+- average_entry_score
+- average_exit_score
+- average_emotional_score
+- average_execution_score
+- best_condition
+- worst_condition
+- expectancy
+- last_updated
+
+strategy_recommendations:
+- id
+- user_id
+- strategy_id
+- recommendation_type
+- title
+- message
+- confidence_score
+- priority_level
+- created_at
+
+PHASE 3 — Build Strategy Analysis Service
+
+Create a service that analyzes:
+
+- Which strategies perform best
+- Which strategies perform worst
+- Best symbols per strategy
+- Best timeframes per strategy
+- Best sessions per strategy
+- Best market conditions per strategy
+- Worst market conditions per strategy
+- Average risk-to-reward per strategy
+- Expectancy per strategy
+- Emotional discipline per strategy
+- Execution quality per strategy
+
+The system should detect patterns like:
+
+- “This trader performs best with breakout setups during strong trend conditions.”
+- “This trader loses most during choppy markets.”
+- “This strategy performs poorly after two losing trades.”
+- “This trader should avoid scalping during low-liquidity sessions.”
+
+PHASE 4 — Add Strategy Fit Score
+
+Create a Strategy Fit Score from 0–100.
+
+Factors:
+- Historical win rate
+- Average R:R
+- Expectancy
+- Discipline score
+- Emotional control
+- Market condition match
+- Session match
+- Symbol match
+- Timeframe match
+
+Example output:
+
+Strategy Fit Score: 84/100  
+Status: Strong Match  
+Reason: This strategy performs best during clean bullish trend conditions with strong liquidity.
+
+PHASE 5 — Add Strategy Recommendation Logic
+
+Create recommendation types:
+
+- USE_MORE
+- REDUCE_USE
+- AVOID_CONDITION
+- IMPROVE_EXECUTION
+- IMPROVE_EXIT
+- IMPROVE_ENTRY
+- LOWER_RISK
+- RETIRE_STRATEGY
+- TEST_IN_SIMULATION
+
+Examples:
+
+“Use this strategy more during London/New York overlap.”
+
+“Avoid this strategy in ranging markets.”
+
+“Your entries are strong, but exits are reducing profitability.”
+
+“This strategy has positive expectancy but weak emotional discipline after losses.”
+
+PHASE 6 — API Routes
+
+Create routes for:
+
+- GET all user strategies
+- POST create strategy profile
+- PATCH update strategy profile
+- GET strategy performance
+- POST calculate strategy performance
+- GET strategy recommendations
+- GET strategy fit score
+- GET best strategy for current market
+
+PHASE 7 — Frontend Components
+
+Create or update:
+
+1. Strategy Command Center
+Shows:
+- Active strategies
+- Fit score
+- Win rate
+- Avg R:R
+- Expectancy
+- Best condition
+- Worst condition
+
+2. Strategy Fit Card
+Shows:
+- Current market condition
+- Best matching strategy
+- Fit score
+- Recommendation
+
+3. Strategy Performance Breakdown
+Shows:
+- By symbol
+- By timeframe
+- By session
+- By market condition
+
+4. Strategy Recommendation Panel
+Shows:
+- What to use more
+- What to avoid
+- What to improve
+- What to test in simulation
+
+PHASE 8 — Connect to Market Intelligence + AI Coach
+
+Update AI Coach so it combines:
+
+- Trader score
+- Trade feedback
+- Market intelligence
+- Strategy performance
+
+Example coaching messages:
+
+“Your breakout strategy has an 82% fit score in the current market, but only if spread remains normal.”
+
+“Your reversal strategy performs poorly in strong trend conditions. Current market bias suggests waiting.”
+
+“Your best results come from trend continuation setups during high-liquidity sessions.”
+
+PHASE 9 — Testing
+
+Test:
+
+- Strategy creation
+- Strategy performance calculation
+- Fit score accuracy
+- Recommendations generation
+- Dashboard rendering
+- AI coach strategy-aware messages
+- Mobile responsiveness
+- No broken existing features
+
+Final output required:
+
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How strategy engine connects to Market Intelligence and Trader Growth Score
+6. Errors or limitations
+7. Recommended next phase

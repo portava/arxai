@@ -1,0 +1,117 @@
+The demo bridge is executing trades, but the ARX UI reporting is incomplete.
+
+Current issue:
+- Not all MT5 positions are showing in Recent Demo Commands.
+- Some filled positions are visible in MT5 but not clearly shown in ARX as FILLED_DEMO.
+- The app does not clearly tell the user whether a fill succeeded or failed.
+- Recent Demo Commands only shows command rows, but users need to see actual MT5 positions and match them to command results.
+
+Fix the demo trade reporting and reconciliation layer.
+
+Important distinction:
+Recent Demo Commands should show ARX command history.
+Open Demo Positions should show real MT5 positions from /api/mt5/sync-positions.
+Trade Result should show whether the most recent user action filled, rejected, failed, or is still pending.
+
+Implement this:
+
+1. Add/repair “Open Demo Positions” panel.
+   Pull from the latest MT5 positions snapshot, not only command rows.
+   Show every open MT5 demo position:
+   - broker ticket
+   - symbol
+   - side
+   - volume
+   - entry price
+   - current price
+   - floating P/L
+   - opened time
+   - source command id if matched
+   - match status: MATCHED_TO_ARX_COMMAND or ORPHAN_MT5_POSITION
+
+2. Reconcile command rows to MT5 positions.
+   Match by:
+   - broker ticket first
+   - then symbol + side + volume + near timestamp
+   - then account/bridge connection id
+   Any MT5 position without a matching ARX command should still display as ORPHAN_MT5_POSITION, not disappear.
+
+3. Fix Recent Demo Commands status normalization.
+   The UI must recognize all terminal statuses as final:
+   - FILLED_DEMO
+   - MT5_DEMO_FILLED
+   - DEMO_FILLED
+   - REJECTED
+   - MT5_DEMO_REJECTED
+   - DEMO_REJECTED
+   - FAILED
+   - DEMO_FAILED
+   - BLOCKED
+   - DEMO_CANCELLED
+
+   Normalize them visually to:
+   - FILLED
+   - REJECTED
+   - FAILED
+   - BLOCKED
+   - CANCELLED
+   - PENDING
+
+4. Expand Recent Demo Commands from last 10 to last 50 with pagination or “View more.”
+   Do not hide older filled rows just because more test commands were created.
+
+5. Add a clear trade result banner/toast after every submitted demo order.
+   It should say:
+   - “Demo trade filled” with symbol, side, volume, broker ticket, fill price, and time.
+   - “Demo trade rejected” with exact rejection reason and MT5 retcode.
+   - “Demo trade failed” with server/EA failure reason.
+   - “Demo trade pending” while waiting for EA pickup/result.
+
+6. Add a “Latest Demo Trade Result” card.
+   Show:
+   - latest command id
+   - current lifecycle status
+   - symbol
+   - side
+   - requested volume
+   - executed volume
+   - broker ticket
+   - fill price
+   - reject reason
+   - elapsed time
+   - last updated time
+
+7. Fix blank/zero values in rejected rows.
+   If rejected/failed/blocked, never show empty reason.
+   Display the actual source:
+   - app guard reason
+   - server reason
+   - EA reason
+   - MT5 retcode and broker message
+
+8. Add a reconciliation QA check.
+   Compare:
+   - count of latest MT5 open positions
+   - count displayed in ARX Open Demo Positions
+   - count of filled command rows with broker tickets
+   - count displayed in Recent Demo Commands
+
+   If counts differ, show a warning:
+   “MT5 positions and ARX command history are out of sync. Refresh/reconcile needed.”
+
+9. Add a manual “Refresh MT5 Positions” button.
+   It should request the latest account/position snapshot from the bridge and update the UI.
+
+10. Do not say demo trade succeeded just because a command was created.
+    Only show success after:
+    - status is FILLED_DEMO or equivalent final filled status
+    - broker ticket exists
+    - fill price exists
+    - executed volume exists
+
+Acceptance proof:
+- Every open position visible in MT5 mobile appears in ARX Open Demo Positions.
+- Recent Demo Commands shows all recent command outcomes, not just the last 10.
+- A newly placed demo order shows a clear filled/rejected/failed result message.
+- Rejected and failed rows show actual reasons, not blanks or zeros.
+- Orphan MT5 positions are still displayed and labeled.

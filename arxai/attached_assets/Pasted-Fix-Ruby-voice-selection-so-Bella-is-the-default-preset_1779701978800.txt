@@ -1,0 +1,54 @@
+Fix Ruby voice selection so Bella is the default preset voice for all users, not just a preview option.
+
+Important context:
+- The voice preview currently works when I click a voice.
+- The problem is that clicking preview does NOT select/save that voice as Ruby’s active speaking voice.
+- Bella should be the default preset voice for Ruby across the whole app and all users.
+- Users should hear Ruby speak with Bella automatically unless an admin later changes the global default.
+
+Before adding anything new:
+1. Search the existing codebase for all voice, TTS, ElevenLabs, OpenAI speech, Ruby voice, voice preset, selectedVoice, voiceId, voice settings, and preview voice logic.
+2. Check whether Bella already exists in the voice list/config.
+3. Reuse the existing voice system if present. Do not create duplicate voice systems.
+
+Required fix:
+1. Set Bella as the app-wide default Ruby voice.
+2. Make sure Bella is marked as selected/active in the UI when the voice settings page loads.
+3. Make sure clicking a voice does two separate things correctly:
+   - Preview button: only plays the sample.
+   - Select / Set Voice action: saves that voice as Ruby’s active voice.
+4. If the current UI only has preview buttons, add a clear “Use This Voice” / “Set as Ruby Voice” action.
+5. When Bella is selected, save the selected voice ID/name into the correct persistent place:
+   - global app config, or
+   - admin voice settings table, or
+   - user settings fallback,
+   depending on what already exists.
+6. Ruby’s live speech output must always read from the saved active voice setting, not from the last previewed voice.
+7. If no voice is saved for a user, fallback to Bella automatically.
+8. Do not expose backend voice IDs, provider names, internal function names, or technical settings to normal users.
+9. Admin can see/manage voice settings if that admin area already exists, but regular users should only experience Ruby speaking with the active preset.
+
+Bella requirements:
+- Find Bella’s exact ElevenLabs voice ID from the existing configured voices or environment/config.
+- If Bella exists but is missing an ID, wire the existing Bella voice object properly.
+- Do not hardcode a wrong ID if the app already has a configured Bella voice.
+- If multiple providers exist, make sure the app knows Bella is the active ElevenLabs voice preset for Ruby.
+
+Acceptance tests:
+1. Open the app fresh with a normal user account.
+2. Ruby voice should show Bella as selected by default.
+3. Ask Ruby a question.
+4. Ruby should automatically speak using Bella without requiring me to press play.
+5. Click preview on another voice.
+6. The preview should play, but Ruby’s selected active voice should remain Bella unless I click “Use This Voice.”
+7. Click “Use This Voice” on another voice.
+8. Ruby should now use that selected voice for actual responses.
+9. Refresh the app.
+10. The selected voice should persist.
+11. Log in as a different/new user.
+12. Ruby should default to Bella unless admin/global settings say otherwise.
+13. Confirm no internal voice IDs, backend names, or provider debug text appear to users.
+
+After fixing:
+- Run a full QA against Ruby voice preview, voice selection, saved default, auto-speech, and mobile behavior.
+- Make sure this does not break Ruby chat, Ruby typing/thinking animation, auto-listen, or normal text responses.

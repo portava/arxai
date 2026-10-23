@@ -1,0 +1,110 @@
+Add drag-to-modify SL/TP on ARX charts.
+
+Scope:
+Allow approved traders to move Stop Loss and Take Profit directly from the chart by dragging the SL/TP lines, while preserving every live-trading safety gate and audit rule.
+
+Requirements:
+
+1. Chart SL/TP lines
+- Show active trade entry, Stop Loss, and Take Profit lines on the chart.
+- Lines must be tied to the selected symbol and the current trader’s own open positions only.
+- Use clear labels:
+  - Entry
+  - Stop Loss
+  - Take Profit
+  - Position size
+  - Current floating P/L if available
+- For multiple open positions on the same symbol, show each position separately and avoid confusing overlapping lines.
+
+2. Drag behavior
+- Let traders drag the Stop Loss line to a new price.
+- Let traders drag the Take Profit line to a new price.
+- On drag start, highlight the line being moved.
+- During drag, show the new price, distance in points/pips, and estimated risk/reward change.
+- On drop, submit a MODIFY request for that position.
+- Do not submit while the user is still dragging.
+- Do not allow dragging the entry line unless future scope explicitly supports position adjustment.
+
+3. Confirmation behavior
+- If True One Click is OFF:
+  - After drop, show a small confirmation panel with old SL/TP, new SL/TP, and risk/reward change.
+  - User must confirm before the MODIFY request is sent.
+- If True One Click is ON:
+  - Dropping the line sends the MODIFY request immediately.
+  - Still show a toast/status message that the modification was sent.
+- Never bypass the existing one-click consent/audit rules.
+
+4. Live execution path
+- All SL/TP changes must route through the existing approved live command pipeline.
+- Use the same MODIFY_LIVE_POSITION / modify SL-TP path already used by Eleanor/manual trade controls.
+- Do not write directly to mt5_commands.
+- Do not call broker-send primitives directly.
+- Do not use legacy close/modify bypass routes.
+- Preserve all 18 live dispatch gates:
+  - live approval
+  - full activation/arming
+  - bridge heartbeat/freshness
+  - kill switch
+  - account disabled/suspended
+  - symbol approval
+  - ownership checks
+  - risk checks
+  - broker validation
+  - audit honesty
+  - and all existing dispatch protections.
+
+5. Safety and validation
+- Validate that the trader owns the position before allowing modification.
+- Validate the ticket/position ID belongs to the current user or approved shared bridge scope.
+- Validate SL/TP side rules:
+  - Buy position SL must be below current/entry price when required by broker rules.
+  - Buy position TP must be above current/entry price when required by broker rules.
+  - Sell position SL must be above current/entry price when required by broker rules.
+  - Sell position TP must be below current/entry price when required by broker rules.
+- Validate broker minimum stop distance if available.
+- If the modification is rejected, show a human-readable reason, not a raw gate code.
+- If price is stale or bridge freshness is missing, block the drag-submit and explain why.
+
+6. Audit trail
+- Record every drag-based modify attempt in the live command/audit system.
+- Include:
+  - user ID
+  - symbol
+  - broker ticket/position ID
+  - old SL/TP
+  - requested new SL/TP
+  - source: CHART_DRAG
+  - one-click mode status
+  - result: queued, blocked, rejected, or broker-confirmed
+- Broker confirmation must remain honest:
+  - “Sent/queued” is not the same as “filled/modified.”
+  - Only show confirmed after bridge/broker confirmation.
+
+7. UI states
+- Add loading state while modification is being submitted.
+- Add pending state while waiting for broker confirmation.
+- Add success state after broker confirmation.
+- Add rejected/blocked state with humanized reason.
+- On mobile, make line handles large enough to drag accurately.
+- Add a lock/disable state when user is not approved for live modification.
+
+8. Chart/scanner safety guard
+- Extend the chart/scanner no-bypass CI guard if needed so drag-based SL/TP modification cannot introduce a direct command-table write or broker-send bypass.
+- The guard must cover the new drag-submit handler and prove it routes through the sanctioned modify pipeline only.
+
+9. Tests
+- Add frontend tests proving:
+  - SL line renders for an open position.
+  - TP line renders for an open position.
+  - Dragging SL opens confirmation when one-click is OFF.
+  - Dragging TP submits immediately when one-click is ON.
+  - Blocked modification shows a humanized reason.
+- Add backend/integration tests proving:
+  - drag-based modify routes through the approved live pipeline.
+  - ownership checks are enforced.
+  - revoked/unapproved traders cannot increase risk or modify live positions.
+  - audit source is recorded as CHART_DRAG.
+- Run affected route tests, frontend tests, typechecks, and ci guards.
+
+Acceptance:
+A trader can open the ARX chart, see their live position SL/TP lines, drag Stop Loss or Take Profit to a new level, and submit the modification safely through the existing live MODIFY pipeline. The feature must never bypass live safety gates, ownership checks, broker confirmation honesty, one-click consent, or audit logging.

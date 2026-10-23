@@ -1,0 +1,127 @@
+Begin Competitive Positioning + Category Creation phase.
+
+Goal:
+Define the market category, strategic positioning, competitive differentiation, and category leadership narrative for the AI Trading Governance & Intelligence Infrastructure platform.
+
+Core strategic objective:
+Do NOT position the company as:
+- an AI trading bot
+- a signal app
+- a prediction engine
+- a copy trading platform
+
+Instead:
+Create and define a new category:
+“AI Trading Governance & Intelligence Infrastructure”
+
+Define:
+
+1. Market Category Strategy
+
+Explain:
+- what category currently exists
+- why existing AI trading categories are flawed
+- why governance infrastructure is the next evolution
+- why validation, replay, execution intelligence, and Trader DNA create a fundamentally different category
+
+2. Competitive Positioning
+
+Compare against:
+- signal platforms
+- copy trading
+- generic AI bots
+- quant tools
+- broker tools
+- GPT trading wrappers
+
+Highlight differences:
+- governance
+- replayability
+- explainability
+- behavioral intelligence
+- validation infrastructure
+- execution intelligence
+- ecosystem safety
+
+3. Category Narrative
+
+Create language for:
+- investors
+- enterprises
+- retail users
+- prop firms
+- brokerages
+- developers
+
+4. Market Timing Narrative
+
+Explain:
+- why current AI trading approaches are unsafe
+- why governance infrastructure becomes increasingly necessary
+- why explainability and validation matter more as automation grows
+
+5. Trust Positioning
+
+Position the company around:
+- trust
+- governance
+- survivability
+- accountability
+- operational clarity
+
+Not:
+- hype automation
+- unrealistic profitability claims
+
+6. Strategic Differentiators
+
+Define defensible advantages:
+- Trader DNA
+- Black Box Vault
+- Replay Intelligence
+- Validation Command Center
+- Execution Intelligence
+- Ecosystem Governance
+- Continuous Validation
+
+7. Long-Term Market Vision
+
+Define:
+- how the category evolves
+- why infrastructure wins over standalone bots
+- why governance layers become mandatory
+- why replayability and explainability become industry standards
+
+8. Messaging Framework
+
+Create messaging for:
+- homepage
+- enterprise sales
+- investor deck
+- onboarding
+- API platform
+- developer ecosystem
+
+9. Strategic Risk Positioning
+
+Avoid:
+- “guaranteed profits”
+- “predict the market perfectly”
+- “fully autonomous wealth machine”
+
+Instead emphasize:
+- decision quality
+- governance
+- validation
+- risk management
+- intelligent oversight
+
+Deliver:
+- category strategy
+- competitive positioning map
+- differentiation framework
+- category narrative
+- trust positioning
+- long-term market vision
+- messaging framework
+- strategic positioning document

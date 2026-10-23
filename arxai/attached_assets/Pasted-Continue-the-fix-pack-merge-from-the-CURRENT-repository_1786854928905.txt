@@ -1,0 +1,74 @@
+Continue the fix-pack merge from the CURRENT repository state. Do not restart from scratch and do not discard any already-merged work.
+
+Current known state:
+- main already contains Theme A, Theme B, C12, C3, D
+- C12 was validated after fixing only a brittle source-text test
+- C3 targeted tests passed
+- D targeted tests passed
+- the automated runner stopped on fix/theme-f-missions-honest
+- later themes G / G-cut / H / E were NOT merged after that stop
+
+Your job:
+
+1. Inspect the current git state first:
+   - git status
+   - current HEAD / recent log
+   - whether a merge is currently in progress
+   - which theme branches are already ancestors of main
+   Do not assume state from this prompt if git disagrees.
+
+2. Diagnose Theme F from the current state.
+   - If Theme F is already merged but validation failed, identify the exact failing typecheck/test.
+   - If Theme F is mid-merge, resolve the current conflict semantically.
+   - Preserve all legitimate CI/test wiring from previously merged themes.
+   - For package.json conflicts, combine additions rather than choosing blanket --ours or --theirs.
+   - Never alter production behavior merely to satisfy a brittle source-text assertion; if implementation is correct and a test is over-specific, repair the test narrowly and explain why.
+
+3. Validate Theme F before continuing:
+   - pnpm run typecheck
+   - run every test:* script introduced or changed by Theme F
+   - verify no conflict markers remain
+   - verify affected package.json files parse as JSON
+
+4. If Theme F is green, continue automatically through the remaining unmerged branches in this order:
+   - fix/theme-g-finish-real-backends
+   - fix/theme-g-cut-dead-surfaces
+   - fix/theme-h-access-tier
+   - fix/theme-e-invite-hardening
+
+5. For EACH theme:
+   - merge only that theme
+   - resolve conflicts semantically
+   - run pnpm run typecheck
+   - detect and run that theme's newly added or changed test:* scripts
+   - stop immediately on any failure or any source-code conflict that cannot be resolved with high confidence
+   - do not continue to the next theme until the current one is green
+
+6. Safe conflict rules:
+   - root package.json: preserve accumulated CI commands and add incoming theme commands exactly once
+   - child package.json files: preserve prior scripts plus incoming scripts; do not guess dependency/config conflicts
+   - source-code conflicts: inspect intent from both branches and surrounding tests before resolving
+   - never delete prior theme tests to make the merge easier
+
+7. Do NOT:
+   - deploy
+   - publish
+   - push production
+   - mutate databases
+   - change secrets/env
+   - force-push
+   - reset main
+   - squash away prior merge history
+   - silently skip failing tests
+
+8. When finished, report:
+   - every theme merged
+   - merge/follow-up commit hashes
+   - conflicts encountered and how each was resolved
+   - typecheck result after each theme
+   - targeted test suites and pass/fail counts
+   - any test that required a narrow test-only correction
+   - final git status
+   - exact list of any themes not merged and why
+
+Work autonomously through all remaining themes until either everything is green or you hit a real blocker. Do not ask me to perform routine shell steps yourself.

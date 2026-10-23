@@ -1,0 +1,128 @@
+Execute T002 / Phase 2: Per-user data scoping for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT touch the MT5 EA .mq5 files.
+- Do NOT place trades.
+- Do NOT enable live execution.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT rebuild the app design.
+- Do NOT continue to Phase 3 until Phase 2 QA passes.
+- Keep the existing login/register/session system from T001 intact.
+- Keep safety contract intact: ReadOnlyMode / PaperOnly / AllowOrderExecution false unless already safely gated.
+
+Current status from audit:
+- Per-user identity foundation: working
+- Backend deny-by-default: working
+- Per-user data scoping: NOT IMPLEMENTED
+- Per-user trading sessions: NOT IMPLEMENTED
+- Per-user MT5 connections: NOT IMPLEMENTED
+
+Goal of this phase:
+Every logged-in user must only see, create, update, and delete their own app data. No route should return global trading data to a logged-in user unless it is intentionally public/system-level and documented.
+
+Step 1 — Inventory all user-facing data:
+Audit all database tables and backend routes that return or mutate user-facing data, including but not limited to:
+- trading sessions
+- paper trades
+- trade journal
+- calendar/win-loss days
+- MT5 bridge status shown in app
+- MT5 account snapshots
+- MT5 positions
+- command history
+- AI analysis history
+- user preferences
+- dashboard cards
+- notifications
+- strategy/risk profiles
+- watchlists
+- saved setups
+- receipts/logs related to trading
+- any mock/demo trading data currently shown in the UI
+
+Create a short table:
+Route / table / current behavior / needs userId? / fix applied.
+
+Step 2 — Schema migration:
+Add userId ownership to every user-owned table that currently lacks it.
+
+Requirements:
+- Add userId column where needed.
+- Link userId to the users table.
+- Add indexes for userId and common query filters.
+- Do not destroy existing data.
+- For existing demo/global rows, either:
+  A) assign them to a seeded demo user, or
+  B) mark them as system/demo rows and exclude them from authenticated user personal views.
+- Do not leak demo/global data into real user sessions unless explicitly requested as demo mode.
+
+Step 3 — Route protection:
+For every user-owned route:
+- Require authenticated user.
+- Use requireUser or the project’s existing auth middleware.
+- Scope all SELECT queries with userId = req.authUser.id.
+- Scope all UPDATE/DELETE mutations with userId = req.authUser.id.
+- Scope all INSERT/CREATE actions to automatically set userId = req.authUser.id.
+- Never accept userId directly from the client for ownership unless admin-only and explicitly validated.
+
+Step 4 — Frontend wiring:
+Update the frontend only where needed so it uses the logged-in user’s scoped data.
+
+Requirements:
+- Do not hardcode fake personal data.
+- If no user data exists, show a clean first-time-user state.
+- First-time user state should say things like:
+  “No trading sessions yet”
+  “Connect MT5 to begin tracking”
+  “No trades recorded yet”
+  “Your calendar will populate after your first session”
+- Do not show stale global/demo trading data as if it belongs to the user.
+
+Step 5 — Protect MT5 bridge display without implementing Phase 3 yet:
+For this phase, do not fully build per-user MT5 connections yet. But prevent the frontend from showing another user/global MT5 connection as personal.
+
+Until Phase 3 is implemented:
+- If MT5 connection is global/system-level, label it clearly as system/demo bridge or hide it from personal dashboard.
+- Personal dashboard should not claim “your MT5 connected” unless the connection is tied to the logged-in user.
+- Keep bridge backend endpoints working.
+- Do not break /api/mt5/heartbeat/status or /api/mt5/bridge-diagnostics.
+
+Step 6 — Tests:
+Create/extend tests for user isolation.
+
+Required test scenario:
+- Create User A.
+- Create User B.
+- Create trading/session/journal/calendar data for User A.
+- Log in as User B.
+- Confirm User B cannot read, update, delete, or see User A’s data.
+- Confirm User B sees empty first-time states.
+- Confirm unauthenticated requests are denied.
+- Confirm existing auth/session tests still pass.
+
+Step 7 — QA/fix gate:
+After implementation, run a QA gate and fix every issue before stopping.
+
+QA must confirm:
+- App starts without new errors.
+- Existing login/register/logout/me still work.
+- No route returns global user-owned data to logged-in users.
+- User A vs User B isolation passes.
+- First-time user state appears when a user has no data.
+- No MT5 EA file changed.
+- No live trade placed.
+- Safety contract still passes.
+- Existing known paperIntelligence.ts:123 typecheck error is reported separately if still pre-existing and unrelated.
+- No unrelated UI was changed.
+
+Final report format:
+1. Files changed
+2. Tables migrated
+3. Routes scoped by userId
+4. Frontend first-time states added
+5. User A/User B isolation result
+6. Any routes intentionally left global and why
+7. Any errors remaining
+8. Whether Phase 2 is PASS or FAIL
+9. Do not begin T003 / Phase 3 until I approve

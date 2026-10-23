@@ -1,0 +1,557 @@
+ARX AI — Approved Trader Live Bridge Activation + Admin Hub Cleanup
+
+Current problem:
+Approved traders attached to the shared bridge are still seeing their accounts as DEMO instead of LIVE. This makes the app look and behave like they are not connected to live trading, even after approval.
+
+Mission:
+Make every approved human trader assigned to the live shared bridge show and operate as LIVE-ready, simplify the Admin Hub approval flow, and move approved bots/AI agents to a separate list so admins do not have to scroll through bots to find new human users.
+
+Important:
+Do NOT remove risk checks.
+Do NOT bypass emergency stop.
+Do NOT bypass broker/bridge execution checks.
+Do NOT give bots live permission just because human traders are approved.
+Do NOT mix demo bridge state with live shared bridge state.
+Do NOT leave approved users stuck in demo display mode.
+
+The target result:
+Approved human traders on the live bridge should show:
+- Account mode: LIVE
+- Bridge: connected/shared live bridge
+- Trading readiness: trade ready
+- Manual trading: enabled if their approved trader permissions allow it
+- Scanner/Trade Ticket/Manual Ticket: live account context
+- Dashboard/Cockpit/Account: live account context
+
+============================================================
+PART 1 — DEFINE ONE APPROVED TRADER LIVE STATE
+============================================================
+
+Create or fix one shared resolver:
+
+buildApprovedTraderLiveState(userId)
+
+It should return:
+
+{
+  userId,
+  isHumanUser: true,
+  isBotOrAgent: false,
+  approvalStatus: "approved",
+  traderStatus: "approved_trader",
+  assignedBridgeId,
+  bridgeMode: "live",
+  accountMode: "live",
+  displayMode: "LIVE",
+  canUseLiveBridge: true,
+  canViewLiveAccount: true,
+  canPlaceManualTrades: boolean,
+  canQueueLiveTrades: boolean,
+  canExecuteLiveTrades: boolean,
+  riskProfileReady: boolean,
+  emergencyStopActive: boolean,
+  blockingReasons: [],
+  warnings: []
+}
+
+Approved human traders should be live-ready when:
+- user is approved as trader
+- user is assigned to an active live shared bridge
+- bridge is connected/fresh enough
+- account is not disabled/suspended
+- emergency stop is not active
+- user is not bot/agent/system user
+- required risk profile exists or safe default risk profile exists
+
+If all checks pass:
+accountMode/displayMode must be LIVE.
+
+If any check fails:
+show exact blocking reason.
+
+Do not leave the user in DEMO just because the app default is demo.
+
+============================================================
+PART 2 — BACKFILL ALL APPROVED HUMAN TRADERS
+============================================================
+
+Run an idempotent migration/script:
+
+For every human user where:
+- role = trader OR trader role exists
+- approval_status = approved OR approved_trader = true
+- not bot
+- not ai_agent
+- not system user
+- not archived/deleted
+
+Do:
+1. Assign them to the active shared live bridge if not already assigned.
+2. Set their account/trading display mode to live.
+3. Set their bridge scope to live shared bridge.
+4. Preserve their risk profile.
+5. Preserve per-user limits.
+6. Preserve emergency stop status.
+7. Preserve any disabled/suspended status.
+8. Do not enable bots/agents.
+9. Do not auto-approve unapproved users.
+
+Add clear audit log:
+“Approved trader activated on live shared bridge.”
+
+This script must be safe to run multiple times.
+
+============================================================
+PART 3 — FIX DEMO/LIVE DISPLAY BUG
+============================================================
+
+Find every place that still labels approved bridge traders as DEMO.
+
+Check:
+- Cockpit
+- Account
+- Trade page
+- Manual Ticket
+- Market Scanner
+- Open Trades
+- Positions
+- Risk
+- Admin Hub
+- Live readiness endpoint
+- top header mode pill
+- bridge status pill
+- user account card
+- trade ticket payload
+- scanner execution context
+
+Replace scattered logic with the shared resolver.
+
+Do not use:
+if user.mode missing -> demo
+if account.defaultMode -> demo
+if app env default -> demo
+if no personal broker account -> demo
+
+For approved traders assigned to shared live bridge:
+mode should resolve from bridge assignment and trader approval, not old demo default.
+
+Expected display:
+- Approved trader + live bridge = LIVE
+- Approved trader + no bridge = Needs live bridge assignment
+- Not approved = Demo / restricted / pending
+- Investor = View-only live if investor has live account visibility, not trade-enabled
+- Bot/agent = Agent/bot list, not human trader live list
+
+============================================================
+PART 4 — FIX TRADE READINESS ENDPOINTS
+============================================================
+
+Update or create:
+
+GET /api/me/live-readiness
+
+For approved human traders, it should return:
+
+{
+  ok: true,
+  accountMode: "live",
+  displayMode: "LIVE",
+  approvedTrader: true,
+  assignedLiveBridge: true,
+  bridgeConnected: true,
+  tradeReady: true,
+  canPlaceManualTrades: true/false based on permission,
+  canQueueLiveTrades: true/false,
+  canExecuteLiveTrades: true/false,
+  blockingReasons: [],
+  warnings: []
+}
+
+If blocked:
+return exact reason, not generic demo.
+
+Examples:
+- “No active shared live bridge assigned.”
+- “Emergency stop is active.”
+- “Trading is disabled for this account.”
+- “Risk profile is missing.”
+- “Bridge heartbeat is stale.”
+- “User is not approved as a trader.”
+
+Update admin endpoint:
+
+GET /api/admin/users/:userId/live-readiness
+
+Same resolver, admin-visible diagnostics.
+
+============================================================
+PART 5 — FIX TRADE TICKET / EXECUTION CONTEXT
+============================================================
+
+When approved human trader opens Trade or Manual Ticket:
+- use live shared bridge context
+- show LIVE account
+- load approved symbols
+- load live account snapshot
+- allow manual trade flow if permission allows
+- still run full risk checks before any order
+- still require bridge execution confirmation
+- still block if emergency stop or user disabled
+
+Do not let frontend decide live vs demo alone.
+Backend must verify live readiness before accepting trade action.
+
+Execution endpoint should verify:
+- user approved trader
+- assigned live bridge
+- bridge connected
+- symbol approved
+- risk check passed
+- emergency stop off
+- order payload valid
+
+Then execute through live bridge.
+
+If rejected:
+return clear reason.
+
+============================================================
+PART 6 — ADMIN HUB SIMPLIFICATION
+============================================================
+
+Clean up Admin Hub approval management.
+
+Create a simple Admin Hub section:
+
+Admin → Trader Approvals
+
+Tabs:
+1. Pending Human Traders
+2. Approved Live Traders
+3. Blocked / Needs Attention
+4. Bots & AI Agents
+
+Do not mix bots/agents into the human approval queue.
+
+============================================================
+PENDING HUMAN TRADERS TAB
+============================================================
+
+Show only real human users who need approval.
+
+Columns:
+- Name/email
+- Requested role
+- Created date
+- Verification status if available
+- Current mode
+- Bridge assignment
+- Risk profile status
+- Actions
+
+Actions:
+- Approve for Live Bridge
+- Reject
+- View Details
+
+Approve for Live Bridge should:
+1. mark user approved trader
+2. assign active shared live bridge
+3. set accountMode/displayMode live
+4. create risk profile if safe default missing
+5. log action
+6. refresh user live readiness
+7. move user to Approved Live Traders tab
+
+This must be one clean admin action.
+
+============================================================
+APPROVED LIVE TRADERS TAB
+============================================================
+
+Show approved human traders only.
+
+Columns:
+- Name/email
+- LIVE status
+- bridge connected/stale
+- trading enabled/disabled
+- risk profile
+- last active
+- open trades
+- account snapshot if available
+- actions
+
+Actions:
+- View readiness
+- Disable trading
+- Reassign bridge
+- Reset risk profile
+- Remove live access
+- View user
+
+The status should be obvious:
+- LIVE Ready
+- Needs bridge
+- Bridge stale
+- Emergency stop
+- Disabled
+- Risk missing
+
+============================================================
+BLOCKED / NEEDS ATTENTION TAB
+============================================================
+
+Show human traders who are approved but not trade-ready.
+
+Reasons:
+- no bridge assignment
+- bridge stale
+- risk profile missing
+- account disabled
+- emergency stop
+- missing approved symbols
+- permission mismatch
+
+Add repair actions:
+- Attach to active live bridge
+- Create safe default risk profile
+- Refresh readiness
+- Enable trading if admin permission allows
+- Recheck bridge
+
+============================================================
+BOTS & AI AGENTS TAB
+============================================================
+
+Move all approved bots, AI agents, system agents, scanner agents, Ruby/Eleanor agents, Claude/OpenAI backend agents, and automation accounts to this separate list.
+
+Identify by:
+- user_type = bot
+- user_type = ai_agent
+- is_bot = true
+- is_ai_agent = true
+- role includes bot/agent/system
+- email/domain/internal marker if already used
+- service account flag
+- metadata.type
+
+Bots/agents should not appear in:
+- Pending Human Traders
+- Approved Live Traders
+
+Bots/agents should appear only in:
+- Bots & AI Agents
+
+Bot/agent columns:
+- Name
+- Type
+- Status
+- Permissions
+- Last activity
+- Approved tools
+- Actions
+
+Actions:
+- View
+- Disable
+- Adjust permissions
+- Rotate key if applicable
+- Audit logs
+
+Do not grant bots live execution unless a separate explicit bot approval system already exists.
+
+============================================================
+PART 7 — ADMIN APPROVAL ACTION
+============================================================
+
+Create one backend action:
+
+POST /api/admin/traders/:userId/approve-live
+
+Behavior:
+- admin/operator only
+- verify target is human user
+- verify target is not bot/agent/system
+- mark user approved trader
+- attach to active live shared bridge
+- set live account mode/display mode
+- ensure approved symbols assignment
+- ensure default risk profile if missing
+- create audit log
+- return live readiness result
+
+Response:
+{
+  ok: true,
+  userId,
+  accountMode: "live",
+  displayMode: "LIVE",
+  assignedBridgeId,
+  tradeReady,
+  blockingReasons,
+  warnings
+}
+
+If target is bot/agent:
+return:
+{
+  ok: false,
+  code: "BOT_AGENT_NOT_ALLOWED_IN_HUMAN_TRADER_APPROVAL",
+  message: "Bots and AI agents must be managed from the Bots & AI Agents tab."
+}
+
+============================================================
+PART 8 — BULK REPAIR ACTION
+============================================================
+
+Add admin-only action:
+
+POST /api/admin/traders/bulk-activate-approved-live
+
+Behavior:
+- finds all approved human traders
+- assigns active shared live bridge if missing
+- fixes demo display mode to live
+- repairs approved symbol assignment if missing
+- does not touch unapproved users
+- does not touch bots/agents
+- does not bypass safety blockers
+- returns summary
+
+Response:
+{
+  ok: true,
+  scanned,
+  activated,
+  alreadyLive,
+  needsAttention,
+  skippedBotsAgents,
+  skippedUnapproved,
+  errors: []
+}
+
+Add this as a button in Admin Hub:
+“Repair Approved Traders Live Access”
+
+Require confirmation:
+“This will attach all approved human traders to the live shared bridge and set their account display to LIVE. Risk checks and emergency stop remain active.”
+
+============================================================
+PART 9 — SYMBOLS + BRIDGE ASSIGNMENT
+============================================================
+
+Approved live traders should inherit approved symbols from:
+1. user-specific approved symbols
+2. shared live bridge approved symbols
+3. role/group approved symbols
+4. admin defaults
+
+Do not show “no symbols” if bridge/default approved symbols exist.
+
+If no approved symbols exist:
+show blocking reason:
+“No approved symbols assigned.”
+
+Admin repair should offer:
+“Apply default approved symbols.”
+
+============================================================
+PART 10 — UI COPY
+============================================================
+
+Replace confusing Demo copy for approved traders.
+
+Bad:
+Demo
+Trading not enabled
+No live account
+
+Good:
+LIVE
+Live bridge assigned
+Trade ready
+Live trading disabled by admin
+Emergency stop active
+Bridge stale
+Risk profile missing
+Needs live bridge assignment
+
+Show separate labels:
+- Account mode: LIVE/DEMO
+- Permission: Enabled/Disabled
+- Bridge: Connected/Stale/Disconnected
+- Risk: Ready/Blocked
+- Execution: Available/Blocked
+
+============================================================
+PART 11 — SAFETY PRESERVATION
+============================================================
+
+Even after this implementation:
+- unapproved users cannot trade live
+- bots/agents cannot be approved through human trader approval
+- emergency stop still blocks trading
+- risk profile still required
+- symbol approval still required
+- stale bridge blocks execution
+- account disabled blocks execution
+- backend validates every order
+- frontend display cannot override backend readiness
+
+This implementation makes approved traders live-ready, not unsafe.
+
+============================================================
+PART 12 — TESTS / VERIFICATION
+============================================================
+
+Test users:
+1. Approved human trader assigned to bridge but showing demo
+2. Approved human trader with no bridge
+3. Pending human trader
+4. Investor
+5. Bot/AI agent
+6. Admin/operator
+
+Test:
+- approved human trader now shows LIVE
+- approved human trader live-readiness returns accountMode live
+- cockpit shows LIVE
+- trade page shows LIVE
+- manual ticket shows LIVE
+- scanner execution context shows LIVE if allowed
+- user can reach trade ticket if approved and no blockers
+- backend still blocks if emergency stop active
+- backend still blocks stale bridge
+- backend still blocks missing symbol approval
+- pending user remains not live
+- investor remains view-only
+- bots/agents moved to Bots & AI Agents tab
+- bots/agents do not appear in human trader lists
+- admin approval button works
+- bulk repair action works
+- no raw AUTH_REQUIRED
+- build passes
+- TypeScript passes
+- no console errors
+
+============================================================
+FINAL REPORT REQUIRED
+============================================================
+
+Return:
+1. Root cause approved traders were showing demo
+2. Files changed
+3. Resolver added/updated
+4. Backfill/bulk repair action added
+5. Admin Hub tabs added/updated
+6. Bots/AI agents separation logic
+7. Approval flow simplification
+8. Live readiness endpoint changes
+9. Trade ticket/execution context fixes
+10. Safety/risk gates preserved
+11. Test results
+12. Any approved traders still blocked and exact reason
+
+Final result:
+All approved human traders assigned to the shared live bridge show as LIVE and are trade-ready when no safety blockers exist. Admin Hub has a simple approval workflow, bots/AI agents are separated into their own list, and the system is ready for approved users to trade through the live bridge.

@@ -1,0 +1,2009 @@
+Upgrade ARX Native Chart into Chart Brain v2: a fast, intelligent, self-critical, Ruby-aware, agent-aware decision surface.
+
+This is not a rebuild.
+This is not a redesign-only task.
+This is not a TradingView removal task.
+This is not permission to break live trading.
+This is not permission to introduce paper trading.
+This is not permission to fake intelligence with static labels.
+
+The purpose of this upgrade is to make the ARX chart act like it lives inside Ruby’s brain.
+
+The chart should not only display candles. It should produce structured market understanding that Ruby, scanner, Risk AI, Scalp AI, Entry AI, Exit AI, Market Structure AI, Agent Court, Trade Review AI, and Learning Camp can all use.
+
+The chart must become Ruby’s:
+
+* eyes
+* memory
+* nervous system
+* risk awareness
+* trade discipline
+* decision receipt engine
+* review surface
+* agent training ground
+
+The chart is only successful if it helps Ruby and the agents read the market more naturally, faster, more accurately, and with better discipline than a normal chart.
+
+Do not pass this task unless the chart is actually doing what it is supposed to do. If something fails, rerun, fix, retest, and only pass when the full flow is working.
+
+============================================================
+NON-NEGOTIABLE RULES
+
+1. Do not remove TradingView fallback/reference.
+2. Do not break ARX Native Chart’s current candle rendering.
+3. Do not break scanner.
+4. Do not break Ruby.
+5. Do not break the Agent Ecosystem.
+6. Do not break MT5/live bridge.
+7. Do not break live trade execution.
+8. Do not let AI overlays block candle rendering.
+9. Do not let chart intelligence block live open/close/emergency-close actions.
+10. Do not run deep learning/replay/similarity search during live execution.
+11. Do not introduce paper trading as a product feature.
+12. Do not present replay as paper trading.
+13. Do not fake live candles.
+14. Do not fake Ruby/agent signals.
+15. Do not show placeholder overlays as if they are real.
+16. Do not create dead buttons.
+17. Do not create admin pages with fake data.
+18. Do not bypass current backend trade checks.
+19. Do not allow chart buttons to directly execute trades outside existing live execution path.
+20. Do not mark complete until QA proves the chart intelligence is real, fast, connected, and useful.
+
+============================================================
+PRIMARY GOAL
+
+Build Chart Brain v2.
+
+Chart Brain v2 must create a live structured intelligence state for every active symbol/timeframe.
+
+Ruby and agents should read from this state before giving chart analysis.
+
+The chart should be able to answer:
+
+* What is the market doing?
+* What is price trying to prove?
+* What has price failed to prove?
+* Is the setup early, clean, late, stale, or invalid?
+* Is this scalp-only or worth holding?
+* Where is the danger?
+* What would change the decision?
+* What would invalidate the idea?
+* What is the best next action?
+* Have we seen similar setups before?
+* Which agent is best qualified to judge this moment?
+* Is the chart data reliable enough for live confirmation?
+* Is the AI signal fresh or decaying?
+* Is this a trade, watchlist, or no-trade?
+* Did Ruby and the agents learn from the outcome?
+
+The chart must become an intelligence layer, not only a display component.
+
+============================================================
+SYSTEM ARCHITECTURE TARGET
+
+Build the chart brain using layered architecture:
+
+Layer 1: Truth Layer
+
+* candle data
+* feed status
+* source
+* latency
+* missing candles
+* stale feed detection
+* symbol mapping confidence
+* AI usable yes/no
+
+Layer 2: Fast Chart State Layer
+
+* current candle
+* latest closed candle
+* candle pressure
+* wick/body analysis
+* current price
+* current position
+* TP/SL/invalidation
+* support/resistance proximity
+* feed quality
+* fast risk check
+* fast scalp check
+
+Layer 3: Market Understanding Layer
+
+* trend/range/chop
+* market regime
+* level personality
+* candle intent
+* market pressure
+* setup stage
+* setup aging
+* timeframe agreement
+* contradiction detection
+* evidence stack
+* trade readiness
+* best next action
+
+Layer 4: Agent Integration Layer
+
+* Risk AI
+* Scalp AI
+* Entry Timing AI
+* Exit/TP AI
+* Market Structure AI
+* Scanner AI
+* Agent Court
+* Trade Review AI
+* Learning Camp AI
+* Agent Traffic Controller
+
+Layer 5: Ruby Intelligence Layer
+
+* Ruby draft read
+* Ruby chart summary
+* Ruby “what would change my mind”
+* Ruby “why not now”
+* Ruby trade plan explanation
+* Ruby natural market sentences
+
+Layer 6: Review/Learning Layer
+
+* decision receipts
+* chart event memory
+* setup fingerprints
+* similar setup foundation
+* trade review
+* no-trade review
+* Learning Camp replay hooks
+* mistake memory
+
+Layer 7: Benchmark Layer
+
+* Chart Brain Score
+* Chart Speed Score
+* Chart Reliability Score
+* Ruby Read Quality Score
+* Agent Chart Accuracy Score
+* No-Trade Discipline Score
+
+============================================================
+PHASE 0 — AUDIT CURRENT CHART BEFORE UPGRADING
+
+Before building, inspect the current ARX Native Chart.
+
+Audit:
+
+1. Current ARX Native Chart component files.
+2. Current chart data source.
+3. Current candle API endpoints.
+4. Current feed status endpoint.
+5. Current chart stream/polling method.
+6. Current TradingView fallback status.
+7. Current symbol/timeframe controls.
+8. Current overlay support.
+9. Current live position overlay support.
+10. Current Ruby integration, if any.
+11. Current scanner integration, if any.
+12. Current agent/governance integration, if any.
+13. Current chart performance issues.
+14. Current mobile behavior.
+15. Current chart errors in console/server logs.
+16. Current admin diagnostics, if any.
+17. Current live execution path references.
+18. Current places where chart could accidentally touch live trade actions.
+
+Deliver an internal audit before changing major logic.
+
+Do not proceed blindly.
+
+Acceptance:
+
+* Current chart structure is understood.
+* Existing working pieces are preserved.
+* Safe upgrade points are identified.
+* Live execution path is identified and protected.
+
+============================================================
+PHASE 1 — CHART TRUTH LAYER
+
+Build or verify the Truth Layer.
+
+The chart must know whether it can be trusted before Ruby or agents rely on it.
+
+Create/verify Chart Truth State:
+
+{
+symbol,
+displaySymbol,
+timeframe,
+source,
+isLive,
+lastTickAt,
+lastCandleAt,
+latencyMs,
+missingCandles,
+stale,
+candleSequenceValid,
+symbolMappingConfidence,
+priceMatchesBroker,
+quality,
+aiUsable,
+warning,
+updatedAt
+}
+
+Rules:
+
+* If feed is stale, aiUsable=false.
+* If candles are missing, aiUsable=false or caution depending severity.
+* If symbol mapping confidence is low, aiUsable=false.
+* If price source is unknown, aiUsable=false or caution.
+* If chart data is clean, aiUsable=true.
+* Ruby must not present live trade confirmation from dirty data.
+* Agents must downgrade decisions when chart truth is poor.
+
+Add or verify visual badge:
+
+* Feed: Live / Delayed / Stale / Missing / Reconnecting
+* Source: MT5 / Deriv / Internal / Unknown
+* Latency
+* Missing candles
+* AI usable: Yes/No
+* Warning message if needed
+
+Add backend logic:
+
+* validateCandleSequence
+* detectMissingCandles
+* detectStaleFeed
+* detectSymbolMappingConfidence
+* compareChartPriceToBrokerPrice where possible
+* return aiUsable flag
+
+Acceptance:
+
+* Chart clearly shows clean vs bad feed.
+* Ruby receives chart truth state.
+* Risk/agent logic can read aiUsable.
+* Bad data causes downgrade/refusal.
+* No fake data shown as live.
+
+QA:
+
+* Test clean feed.
+* Test stale feed.
+* Test missing candles.
+* Test invalid symbol.
+* Test source unknown.
+* Test aiUsable=false.
+* Confirm Ruby does not call dirty chart data “confirmed.”
+
+============================================================
+PHASE 2 — CHART INTELLIGENCE STATE
+
+Create a centralized Chart Intelligence State object.
+
+This is the living object Ruby and agents read.
+
+For each active symbol/timeframe, create/update:
+
+{
+symbol,
+timeframe,
+truthState,
+currentCandle,
+latestClosedCandle,
+candleStats,
+marketStructure,
+marketRegime,
+levelPersonality,
+marketPressure,
+timeframeAgreement,
+scalpState,
+riskState,
+entryState,
+exitState,
+setupState,
+evidenceStack,
+contradictionStack,
+bestNextAction,
+rubyDraftRead,
+agentConsensus,
+decisionState,
+speedState,
+lastUpdated
+}
+
+Current candle data:
+
+* open/high/low/close
+* body size
+* upper wick size
+* lower wick size
+* candle direction
+* candle range
+* candle progress
+* complete/incomplete
+* candle speed if available
+* relation to previous candles
+* relation to key levels
+
+Candle stats:
+
+* body-to-range ratio
+* wick ratio
+* consecutive bullish/bearish pressure
+* acceleration
+* exhaustion risk
+* rejection strength
+* follow-through strength
+* candle intent label
+
+Market structure:
+
+* trend/range/chop
+* support levels
+* resistance levels
+* active level
+* nearest danger level
+* breakout/retest status
+* failed breakout status
+* higher timeframe conflict
+
+Market regime:
+
+* trending
+* ranging
+* choppy
+* breakout attempt
+* breakout failure
+* pullback continuation
+* reversal attempt
+* exhaustion
+* scalp flame
+* no-trade condition
+
+Market pressure:
+
+* buyer pressure
+* seller pressure
+* neutral pressure
+* pressure change since last candle
+* pressure winner
+* pressure confidence
+
+Setup state:
+
+* no setup
+* idea forming
+* watchlist
+* trigger zone
+* confirmation needed
+* entry valid
+* trade active
+* management
+* exit decision
+* review
+* stale
+* invalid
+
+Decision state:
+
+* active trade
+* watchlist
+* caution
+* no-trade
+* wait
+* protect
+* partial
+* exit
+* invalid
+* stale
+
+Acceptance:
+
+* Chart Intelligence State updates when candles update.
+* Ruby can fetch/read latest state.
+* Agents can fetch/read latest state.
+* State is persisted or cached safely.
+* State does not block candle rendering.
+* State has timestamp and staleness check.
+
+QA:
+
+* Create state for V75 M15.
+* Switch timeframe and confirm new state.
+* Switch symbol and confirm new state.
+* Confirm stale state is not reused as fresh.
+* Confirm empty state handled safely.
+
+============================================================
+PHASE 3 — FAST BRAIN / SLOW BRAIN SPEED ARCHITECTURE
+
+Implement strict speed separation.
+
+Fast Brain:
+Runs immediately or near-instantly.
+
+Fast Brain includes:
+
+* candle rendering
+* current price
+* feed status
+* open position line
+* live P/L
+* current candle pressure
+* basic support/resistance proximity
+* chase risk quick score
+* flame strength quick score
+* risk veto quick check
+* entry timing quick check
+* exit/TP quick check
+* Chart Pulse
+* Ruby Draft Read from cached state
+
+Slow Brain:
+Runs background only.
+
+Slow Brain includes:
+
+* similar setup search
+* deep historical comparison
+* Learning Camp
+* replay
+* agent promotion/demotion
+* household reports
+* long review
+* model benchmarking
+* advanced setup fingerprint mining
+
+Speed rules:
+
+* Candles must never wait for Slow Brain.
+* Live execution must never wait for Slow Brain.
+* Scalp Mode must never wait for Slow Brain.
+* Ruby can answer from Fast Brain first, then update later if deep info arrives.
+* Slow Brain should write updated insight to memory/cache after completion.
+
+Create speed budgets:
+
+Candle render/crosshair/pan/zoom:
+
+* target 0–100ms UI response
+
+Fast chart state:
+
+* target 100–500ms
+
+Fast scalp read:
+
+* target 100–800ms
+
+Ruby chart read:
+
+* target 1–3 seconds, faster if cached
+
+Deep review/similarity/Learning Camp:
+
+* background only
+
+Add Chart Speed State:
+
+{
+renderLatencyMs,
+feedLatencyMs,
+stateBuildMs,
+overlayLatencyMs,
+rubyReadMs,
+agentRuntimeMs,
+slowBrainRuntimeMs,
+activeMode,
+slowBrainBlockedLiveExecution,
+score
+}
+
+Acceptance:
+
+* Candles render before AI overlays.
+* Ruby can answer from cached chart intelligence.
+* Deep processing does not block chart.
+* Live trade actions are not blocked.
+* Slow agents step back or move background.
+
+QA:
+
+* Measure candle render time.
+* Measure state build time.
+* Measure Ruby read time.
+* Measure scanner read time.
+* Measure live action path.
+* Confirm live_execution_blocked_by_ai=false.
+* Confirm Slow Brain not called during live execution.
+
+============================================================
+PHASE 4 — CHART PULSE PANEL
+
+Build a compact Chart Pulse.
+
+Chart Pulse should be visible on or near the chart without clutter.
+
+It should show:
+
+* Feed: Live/Stale/Delayed
+* Market regime
+* Bias
+* Active level
+* Momentum
+* Risk
+* Trade readiness
+* Best next action
+* Setup age
+* Agent Court status
+* Ruby status
+
+Example output:
+
+V75 Chart Pulse:
+
+* Feed: Live
+* Regime: Range under resistance
+* Bias: Neutral-bearish
+* Momentum: Fading bounce
+* Risk: Elevated
+* Trade readiness: Watchlist
+* Best action: Wait for break/retest
+* Ruby status: No strong buy yet
+* Agent Court: Risk caution active
+
+Chart Pulse must be generated from Chart Intelligence State, not hardcoded.
+
+Acceptance:
+
+* Pulse updates when state changes.
+* Pulse changes with symbol/timeframe.
+* Pulse warns when feed is dirty.
+* Pulse shows no-trade/watchlist when appropriate.
+* Pulse stays short and readable on mobile.
+
+QA:
+
+* Clean bullish state.
+* Bearish state.
+* Choppy/no-trade state.
+* Stale feed state.
+* Agent conflict state.
+* Open trade state.
+
+============================================================
+PHASE 5 — MARKET SENTENCE ENGINE
+
+Create a Market Sentence Engine that turns chart state into natural language.
+
+This powers Ruby’s more natural readings.
+
+Do not output raw indicator jargon unless useful.
+
+Market Sentence Engine should produce:
+
+1. Current market sentence
+2. What price is proving
+3. What price has failed to prove
+4. Current risk sentence
+5. Entry timing sentence
+6. Scalp sentence
+7. Best next action sentence
+8. What would change the decision
+9. What invalidates the idea
+10. Signal freshness sentence
+
+Examples:
+
+Bad:
+“MA slope is -0.2 and wick ratio is 0.61.”
+
+Good:
+“Price is trying to bounce, but the push is weakening under resistance.”
+
+Good:
+“The buy is early. Buyers are present, but they have not taken control yet.”
+
+Good:
+“This is scalp-only unless price breaks and holds above resistance.”
+
+Good:
+“The setup is becoming stale because it did not confirm within the expected candle window.”
+
+The sentence engine must use Chart Intelligence State.
+
+Acceptance:
+
+* Ruby can use generated sentences.
+* Sentences match market state.
+* Sentences avoid generic filler.
+* Sentences explain why, not just what.
+
+QA:
+
+* Bullish bounce under resistance.
+* Bearish rejection.
+* Choppy range.
+* Breakout attempt.
+* Failed breakout.
+* Scalp flame.
+* Stale signal.
+* Risk veto.
+
+============================================================
+PHASE 6 — SETUP STAGE, AGING, DECAY, AND EXPIRATION
+
+Build setup lifecycle intelligence.
+
+Every setup should have:
+
+* setupId
+* setupType
+* direction
+* tradeType
+* stage
+* age
+* freshness
+* decayScore
+* expiresAt or expiration condition
+* invalidation condition
+* confirmation condition
+* current validity
+
+Stages:
+
+* no setup
+* idea forming
+* watchlist
+* trigger zone
+* confirmation needed
+* entry valid
+* trade active
+* management
+* exit decision
+* review
+* stale
+* invalid
+
+Freshness:
+
+* fresh
+* developing
+* mature
+* late
+* stale
+* invalid
+
+Decay rules:
+
+* Scalp ideas decay fastest.
+* Intraday ideas decay slower.
+* Swing/structure ideas decay by level/close conditions.
+* If price stalls too long, confidence decays.
+* If confirmation fails within expected candles, setup becomes stale.
+* If invalidation breaks, setup becomes invalid.
+* If opposite signal appears, setup downgrades.
+
+Ruby must say when a setup is stale or late.
+
+Example:
+“This setup expired. It did not confirm within the expected candle window.”
+
+Acceptance:
+
+* Setup age is tracked.
+* Signal freshness is visible.
+* Ruby reads freshness/decay.
+* Old signals stop appearing as active.
+* Stale ideas downgrade automatically.
+* Invalid ideas are marked invalid.
+
+QA:
+
+* Fresh setup.
+* Developing setup.
+* Mature setup.
+* Late setup.
+* Stale setup.
+* Invalid setup.
+* Scalp expires after candle window.
+* Structure setup remains valid until level event.
+
+============================================================
+PHASE 7 — LEVEL PERSONALITY AND MARKET MEMORY
+
+Build level intelligence.
+
+Support/resistance levels should have personalities, not just prices.
+
+For each important level, track:
+
+{
+levelId,
+symbol,
+timeframe,
+price,
+type: support | resistance | pivot | breakout | retest,
+personality: fresh | defended | weakening | broken | retest_pending | trap_zone | scalp_only | invalidated,
+touchCount,
+rejectionCount,
+breakCount,
+retestCount,
+lastTouchedAt,
+lastRejectedAt,
+strengthScore,
+weaknessScore,
+trapRisk,
+notes
+}
+
+Ruby should be able to say:
+
+* “This is defended resistance.”
+* “This support is weakening.”
+* “This breakout is not proven yet.”
+* “This level is becoming a trap zone.”
+* “A buy under this defended resistance is risky.”
+
+Market memory should track important chart events:
+
+* support held
+* resistance rejected
+* breakout failed
+* breakout confirmed
+* retest held
+* retest failed
+* scalp flame formed
+* wick trap
+* Risk AI veto
+* Agent Court conflict
+* Ruby changed bias
+* signal expired
+* trade entered
+* trade exited
+* no-trade protected capital
+
+Do not store every candle equally. Store meaningful events.
+
+Acceptance:
+
+* Levels have personality.
+* Ruby references level personality.
+* Events are stored.
+* Chart Pulse can show active level personality.
+* Similar setup foundation can use event memory later.
+
+QA:
+
+* First touch level = fresh.
+* Multiple rejections = defended.
+* Smaller rejections over time = weakening.
+* Break and hold = broken/retest pending.
+* Fakeout = trap zone.
+* Level invalidated = invalidated.
+
+============================================================
+PHASE 8 — CANDLE INTENT AND PRESSURE ENGINE
+
+Build candle intent reading.
+
+Every important candle should receive:
+
+* intent label
+* buyer pressure score
+* seller pressure score
+* rejection score
+* exhaustion score
+* continuation score
+* trap score
+* candle importance score
+
+Candle intent labels:
+
+* pushing
+* rejecting
+* trapping
+* exhausting
+* absorbing
+* continuing
+* breaking structure
+* failing to break structure
+* neutral/noise
+
+Examples:
+A large green candle with long upper wick into resistance should not be treated as clean bullish.
+It should say:
+“Buyers pushed, but sellers rejected the top near resistance.”
+
+A bearish candle with long lower wick at support should say:
+“Sellers pushed lower, but buyers defended support.”
+
+Acceptance:
+
+* Candle details show intent.
+* Ruby can explain candle intent.
+* Scalp AI uses pressure/exhaustion.
+* Risk AI uses rejection/trap.
+* Entry AI uses late/chase.
+
+QA:
+
+* Strong bullish continuation.
+* Bullish rejection wick.
+* Bearish rejection wick.
+* Exhaustion candle.
+* Wick trap.
+* Breakout candle.
+* Failed breakout candle.
+* Noise candle.
+
+============================================================
+PHASE 9 — TIMEFRAME AGREEMENT AND MULTI-TIMEFRAME VISION
+
+Build multi-timeframe chart context.
+
+For each symbol, Ruby should know at least:
+
+* current chart timeframe
+* lower timeframe state if available
+* higher timeframe state if available
+* M15
+* M30
+* H1
+* H4 where supported
+
+Create Timeframe Agreement Score:
+
+0–30 = conflict
+31–60 = mixed
+61–80 = acceptable
+81–100 = strong alignment
+
+Track:
+
+* lower timeframe bias
+* current timeframe bias
+* higher timeframe bias
+* structure conflict
+* scalp-only warning
+* higher timeframe permission/rejection
+
+Example:
+M15 bullish bounce
+M30 neutral
+H1 bearish
+H4 bearish
+
+Ruby should say:
+“Lower timeframe is trying to bounce, but higher timeframe is still against it. This is scalp-only unless resistance breaks.”
+
+Acceptance:
+
+* Multi-timeframe state is built.
+* Ruby uses timeframe agreement.
+* Trade readiness downgrades when timeframes conflict.
+* Scalp-only labels appear when lower timeframe conflicts with higher timeframe.
+* Chart does not block if one timeframe is unavailable.
+
+QA:
+
+* Full agreement bullish.
+* Full agreement bearish.
+* Lower bullish / higher bearish.
+* Lower bearish / higher bullish.
+* Missing higher timeframe data.
+* Stale higher timeframe data.
+
+============================================================
+PHASE 10 — EVIDENCE STACK AND CONTRADICTION DETECTOR
+
+Build Evidence Stack.
+
+Every setup should have:
+
+Evidence For:
+
+* support bounce
+* resistance break
+* momentum improving
+* wick rejection in favor
+* trend alignment
+* clean retest
+* agent agreement
+* similar setup positive history
+
+Evidence Against:
+
+* resistance nearby
+* support nearby
+* higher timeframe conflict
+* entry late
+* chase risk
+* weak close
+* bad risk/reward
+* agent disagreement
+* stale signal
+* data quality poor
+
+Contradiction Detector should flag:
+
+For buy:
+
+* under defended resistance
+* higher timeframe bearish
+* upper wick rejection
+* bad risk/reward
+* similar setups failed
+* Risk AI veto
+* entry late/chase
+* no clear invalidation
+
+For sell:
+
+* above defended support
+* higher timeframe bullish
+* lower wick rejection
+* bad risk/reward
+* sellers exhausted
+* entry late after big drop
+* no clear target
+
+Ruby should say:
+“There are too many contradictions for a clean buy.”
+
+Acceptance:
+
+* Evidence stack created.
+* Contradictions created.
+* Trade readiness uses evidence/contradictions.
+* Ruby explains both sides.
+* Agent Court can use contradiction data.
+
+QA:
+
+* Buy with strong evidence.
+* Buy with contradictions.
+* Sell with strong evidence.
+* Sell with contradictions.
+* Mixed setup.
+* No-trade due to contradictions.
+
+============================================================
+PHASE 11 — TRADE READINESS GATES AND QUALITY LABEL
+
+Build Trade Readiness Meter.
+
+Readiness gates:
+
+1. Data clean
+2. Support/resistance mapped
+3. Market regime not low-quality chop
+4. Entry not late/chase
+5. Risk/reward acceptable
+6. Invalidation clear
+7. Target realistic
+8. Timeframe agreement acceptable
+9. Agent Court not vetoing
+10. Signal fresh
+11. Similar setup history not dangerous if available
+12. User/context risk acceptable if available
+
+Score:
+0–20 = No trade
+21–40 = Weak
+41–60 = Watchlist
+61–80 = Caution / possible
+81–100 = Clean setup
+
+Quality labels:
+
+* A+ Clean Trade
+* A Trade
+* B Watchlist
+* C Risky / Early
+* D Low Quality
+* F No Trade
+
+Important:
+A trade with strong momentum but bad risk should not become A.
+A trade with poor data cannot be A.
+A late/chase entry cannot be A.
+A Risk AI veto should heavily downgrade.
+
+Acceptance:
+
+* Readiness score visible.
+* Quality label visible.
+* Ruby references score naturally.
+* Scanner ranking can use score.
+* Risk AI can downgrade score.
+* No-trade states are respected.
+
+QA:
+
+* A clean setup.
+* Watchlist setup.
+* Risky early setup.
+* Low quality setup.
+* No-trade setup.
+* Momentum but poor risk.
+* Clean structure but late entry.
+
+============================================================
+PHASE 12 — RISK, SCALP, ENTRY, AND EXIT INTELLIGENCE PANELS
+
+Add compact panels or collapsible sections, not clutter.
+
+Risk Panel:
+
+* risk decision
+* no-trade reason
+* danger level
+* invalidation
+* support/resistance proximity
+* risk/reward concern
+* veto active yes/no
+
+Scalp Panel:
+
+* flame strength
+* chase risk
+* exhaustion risk
+* candle speed
+* multi-entry eligibility
+* scalp decision: active/watchlist/no-trade
+* scalp expiration window
+
+Entry Panel:
+
+* entry quality: early/clean/late/chase/wait
+* retest status
+* confirmation needed
+* what candle is needed next
+
+Exit Panel:
+
+* target realism
+* partial TP zone
+* exit pressure
+* trail/break-even suggestion
+* hold vs scalp-only warning
+
+These panels should be driven by Chart Intelligence State and agent outputs.
+
+Acceptance:
+
+* Panels show real values.
+* Panels update with chart state.
+* Panels hide/collapse on mobile.
+* Panels do not slow chart rendering.
+* Panels do not run deep analysis during live execution.
+
+QA:
+
+* Risk veto.
+* Scalp active.
+* Scalp stale.
+* Entry clean.
+* Entry late.
+* Exit partial.
+* Exit warning.
+
+============================================================
+PHASE 13 — RUBY DRAFT READ AND NATURAL CHART BRAIN
+
+Create Ruby Draft Read.
+
+For every watched symbol/timeframe, maintain a prepared Ruby read:
+
+{
+symbol,
+timeframe,
+timestamp,
+summary,
+bias,
+activeLevel,
+marketRegime,
+tradeReadiness,
+bestNextAction,
+riskWarning,
+setupStage,
+setupFreshness,
+whatWouldChangeMind,
+invalidation,
+oppositeScenario,
+confidenceBreakdown,
+agentConsensusSummary
+}
+
+Ruby should use this when user asks about the chart.
+
+Ruby should answer naturally:
+
+Example:
+“V75 is trying to bounce, but it is still under defended resistance. The buy is early. Momentum is decent, but entry and risk are weak, so I would keep it watchlist unless price breaks and holds above 29,289.”
+
+Ruby should always be able to answer:
+
+* what is happening
+* what matters
+* why it matters
+* best next action
+* what changes the decision
+* what invalidates it
+* whether it is early/clean/late/stale/invalid
+
+Acceptance:
+
+* Ruby uses Chart Intelligence State.
+* Ruby references chart truth if feed is dirty.
+* Ruby references setup stage/freshness.
+* Ruby references Risk AI/Agent Court when relevant.
+* Ruby does not dump raw internal data.
+* Ruby feels natural and decisive.
+
+QA prompts:
+
+* “Analyze this chart.”
+* “Is this a buy?”
+* “Is this a scalp?”
+* “Why not now?”
+* “What would change your mind?”
+* “What invalidates this?”
+* “Should I hold or close?”
+* “What are the agents saying?”
+* “Why is Risk AI warning?”
+
+============================================================
+PHASE 14 — WHAT WOULD CHANGE MY MIND / OPPOSITE SCENARIO ENGINE
+
+Build explicit decision-change logic.
+
+For every setup, generate:
+
+What improves this trade:
+
+* break above/below key level
+* candle close confirmation
+* retest holds
+* wick rejection in favor
+* Risk AI removes veto
+* Entry AI marks clean
+* Timeframe agreement improves
+* Signal refreshes
+
+What weakens this trade:
+
+* momentum fades
+* rejection wick
+* no confirmation
+* signal aging
+* agent disagreement worsens
+* market turns choppy
+
+What invalidates:
+
+* break below/above invalidation
+* failed retest
+* opposite structure forms
+* stale expiration
+* data becomes unusable
+
+Opposite scenario:
+
+* if buy idea, what makes sell possible
+* if sell idea, what makes buy possible
+
+Ruby must include this when asked.
+
+Acceptance:
+
+* Engine generates clear conditions.
+* Conditions are tied to actual levels/state.
+* Ruby can explain them.
+* Chart can display them in panel.
+
+QA:
+
+* Buy setup.
+* Sell setup.
+* No-trade setup.
+* Open trade management.
+* Stale setup.
+* Risk veto setup.
+
+============================================================
+PHASE 15 — DECISION FORK MAP AND NEXT CANDLE EXPECTATION
+
+Build Decision Fork Map.
+
+For current setup, map likely branches:
+
+Example:
+Current: price under resistance.
+
+Branch A:
+Break and close above resistance → buy watchlist improves.
+
+Branch B:
+Break above then wick back below → fakeout risk.
+
+Branch C:
+Reject resistance again → sell/scalp-down idea forms.
+
+Branch D:
+Chop sideways → signal decays/no-trade.
+
+Branch E:
+Break support → buy invalid.
+
+Also generate next 1–3 candle expectations.
+
+For a buy:
+
+* next candle should hold above breakout/retest
+* pullback should be shallow
+* wick should reject lower prices
+* pressure should not collapse
+
+For a sell:
+
+* next candle should reject resistance or break support
+* bounce should be weak
+* wick should reject higher prices
+
+Acceptance:
+
+* Fork map exists.
+* Ruby can answer “what should happen next?”
+* Setup downgrades if expected candle behavior fails.
+* Fork map does not force predictions as certainty.
+
+QA:
+
+* Breakout branch.
+* Fakeout branch.
+* Rejection branch.
+* Chop branch.
+* Invalidation branch.
+* Expected candle succeeds.
+* Expected candle fails.
+
+============================================================
+PHASE 16 — EMOTIONAL PROTECTION AND USER BEHAVIOR GUARD
+
+Build chart-level emotional protection.
+
+Detect:
+
+* chase entry
+* revenge entry
+* overtrade risk
+* bias lock
+* holding scalp too long
+* add-too-late risk
+* ignoring invalidation
+* repeated early entries
+* forcing buys under resistance
+* forcing sells above support
+
+Use existing trade/user history if available.
+Do not shame the user.
+Use plain protective language.
+
+Ruby examples:
+“This looks like a chase entry. The cleaner move already happened.”
+“This matches your common early-entry pattern. Waiting for confirmation would reduce risk.”
+“This was marked scalp-only. Holding too long increases risk.”
+“You are asking for a buy, but the chart keeps rejecting resistance.”
+
+Acceptance:
+
+* Protection detects common behavioral risks.
+* Ruby can mention risk respectfully.
+* User behavior signals do not override actual market truth.
+* Admin can view behavior patterns if needed.
+* Investor users do not see inappropriate trading controls.
+
+QA:
+
+* Late chase case.
+* Immediate re-entry after loss.
+* Too many trades in short time.
+* Holding scalp past expiration.
+* Bias repeated question case.
+
+============================================================
+PHASE 17 — CHART EVENT MEMORY AND DECISION RECEIPTS
+
+Create chart event memory.
+
+Store meaningful events:
+
+* level touch
+* level rejection
+* breakout
+* failed breakout
+* retest
+* retest failure
+* wick trap
+* flame event
+* exhaustion event
+* Risk AI veto
+* Agent Court conflict
+* Ruby recommendation
+* no-trade recommendation
+* setup became stale
+* setup invalidated
+* trade plan created
+* trade entered
+* trade exited
+* trade reviewed
+* Learning Camp marker created
+
+Create Decision Receipt for every official Ruby recommendation or chart trade plan.
+
+Decision Receipt fields:
+
+* receiptId
+* timestamp
+* userId
+* symbol
+* timeframe
+* chartTruthState
+* chartIntelligenceState snapshot
+* market sentence
+* key levels
+* setup stage
+* setup freshness
+* readiness score
+* quality label
+* agent votes
+* Risk AI warning
+* Agent Court result
+* Ruby final read
+* confidence breakdown
+* what would change decision
+* invalidation
+* expiration
+* user action if any
+* later outcome
+* review status
+
+Receipts must be immutable after creation, except later outcome/review appended separately.
+
+Acceptance:
+
+* Official reads create receipts.
+* Receipts are viewable in admin/history.
+* Receipts support review and Learning Camp.
+* Original receipt cannot be rewritten.
+* Later outcomes append.
+
+QA:
+
+* Ruby read receipt.
+* No-trade receipt.
+* Trade plan receipt.
+* Open trade receipt.
+* Review appended.
+* Attempt edit original blocked.
+
+============================================================
+PHASE 18 — SETUP FINGERPRINT AND SIMILAR SETUP FOUNDATION
+
+Build setup fingerprinting foundation.
+
+Do not overbuild full machine learning yet.
+Start with structured fingerprints.
+
+Fingerprint example:
+“V75 M15 early buy under defended resistance with H4 bearish conflict and rising but late momentum.”
+
+Fingerprint fields:
+
+* symbol
+* timeframe
+* direction
+* tradeType
+* marketRegime
+* higherTimeframeBias
+* activeLevelType
+* levelPersonality
+* distanceToLevel
+* candlePressure
+* wickBehavior
+* entryQuality
+* riskRewardQuality
+* agentAgreement
+* Risk AI status
+* setupStage
+* setupFreshness
+* readinessScore
+* qualityLabel
+* outcome
+
+Create endpoint/service:
+findSimilarSetups(fingerprint, limit)
+
+Initial implementation can search past receipts/events/fingerprints by structured similarity.
+
+Ruby can say:
+“This resembles prior early buys under defended resistance. Historically, ARX performs better after break-and-hold confirmation.”
+
+Acceptance:
+
+* Fingerprints are created for setups.
+* Fingerprints are stored.
+* Similar setup service exists.
+* Ruby can reference similar setup only when enough data exists.
+* If not enough data, Ruby says there is not enough history yet.
+
+QA:
+
+* Create fingerprint.
+* Store fingerprint.
+* Query similar.
+* No similar case.
+* Similar positive history.
+* Similar negative history.
+
+============================================================
+PHASE 19 — CHART BRAIN BENCHMARK DASHBOARD
+
+Create admin dashboard: Chart Brain Benchmark.
+
+Scores:
+
+1. Feed Truth Score
+2. Chart Reliability Score
+3. Chart Speed Score
+4. Structure Read Score
+5. Timing Score
+6. Risk Detection Score
+7. Scalp Accuracy Score
+8. Entry Quality Score
+9. Exit Realism Score
+10. Agent Agreement Quality Score
+11. Ruby Explanation Quality Score
+12. No-Trade Discipline Score
+13. Review/Learning Score
+14. Similar Setup Usefulness Score
+15. Overall Chart Brain Score
+
+Score meaning:
+Below 70 = decorative / not intelligent enough
+70–80 = useful but needs improvement
+80–90 = strong AI chart
+90–95 = excellent
+95+ = chart feels alive inside Ruby’s brain
+
+Dashboard should show:
+
+* latest scores
+* trend over time
+* weak areas
+* recent failed reads
+* recent successful no-trades
+* speed warnings
+* feed warnings
+* agent disagreement quality
+* Ruby read quality
+* recommended fixes
+
+Acceptance:
+
+* Dashboard uses real data.
+* No fake scores.
+* Scores update from receipts/reviews/traces.
+* Admin can inspect weak areas.
+* Non-admin cannot access.
+
+QA:
+
+* Empty data state.
+* Some data state.
+* Failed read lowers score.
+* Good read improves score.
+* Speed issue lowers score.
+* Feed issue lowers score.
+
+============================================================
+PHASE 20 — CHART MODES AND UI ORGANIZATION
+
+Organize chart intelligence into modes so it does not become cluttered.
+
+Modes:
+
+1. Clean Mode
+
+* candles
+* price
+* positions
+* basic feed status
+
+2. AI Mode
+
+* Ruby notes
+* agent consensus
+* readiness
+* evidence
+* contradictions
+* Agent Court
+
+3. Scalp Mode
+
+* flame
+* chase risk
+* exhaustion
+* entry/exit fast state
+* multi-entry eligibility
+
+4. Risk Mode
+
+* no-trade zones
+* invalidation
+* danger zones
+* risk veto
+* pain map
+
+5. Review Mode
+
+* entry/exit
+* max profit
+* max drawdown
+* trade grade
+* decision receipt
+
+6. Learning Mode
+
+* agent mistakes
+* replay markers
+* correction rules
+* Learning Camp links
+
+7. Admin Diagnostics Mode
+
+* feed status
+* latency
+* overlay health
+* chart errors
+* benchmark score
+
+Rules:
+
+* Do not show all overlays at once.
+* Mobile should use bottom sheets/collapsible panels.
+* Keep execution controls clear.
+* Clean Mode must stay fast.
+* Scalp Mode must stay fast.
+* Deep Review/Learning does not run during live execution.
+
+Acceptance:
+
+* Modes switch cleanly.
+* Mode switch does not break chart.
+* Mobile is not cluttered.
+* Execution remains accessible.
+* Fallback remains available.
+
+QA:
+
+* Each mode loads.
+* Each mode empty state.
+* Each mode with data.
+* Mobile mode switch.
+* Feed warning in each mode.
+
+============================================================
+PHASE 21 — CHART COMMAND ACTIONS
+
+Add chart command actions carefully.
+
+Long-press/tap candle or level should allow:
+
+* Ask Ruby about this candle
+* Explain this candle
+* Why not now?
+* What would change your mind?
+* Mark support
+* Mark resistance
+* Create watch zone
+* Create alert
+* Plan buy above
+* Plan sell below
+* Set invalidation here
+* Set TP here
+* Show agent disagreement
+* Show decision receipt
+* Replay from here, if Review/Learning mode
+* Hide overlays
+
+Rules:
+
+* Actions must be permission-aware.
+* Investor cannot access trade actions.
+* Normal user cannot access admin diagnostics.
+* Trade planning does not equal live execution.
+* Live execution only through existing backend path.
+* No dead actions.
+
+Acceptance:
+
+* Long press works.
+* Actions are role-aware.
+* Ruby candle explanation works.
+* Plan actions create draft plan only.
+* Invalid actions hidden/disabled.
+* Mobile works.
+
+QA:
+
+* Candle tap.
+* Level tap.
+* Investor role.
+* Trader role.
+* Admin role.
+* Empty data.
+* Stale feed.
+
+============================================================
+PHASE 22 — AI-AWARE ALERTS
+
+Build AI-aware chart alerts.
+
+Alert types:
+
+* price crosses level
+* price breaks and holds level
+* retest holds
+* Risk AI veto turns off
+* Risk AI veto turns on
+* Entry AI changes from late to clean
+* Scalp AI detects flame
+* Scalp signal becomes late
+* Agent Court changes from conflict to agreement
+* watchlist becomes active
+* active setup becomes stale
+* setup invalidates
+* open trade enters danger zone
+* partial TP zone reached
+* no-trade zone clears
+
+Rules:
+
+* Alerts should be based on chart intelligence state.
+* Alerts should not spam.
+* Alerts should expire when setup expires.
+* Alerts should be role-aware.
+* Alerts should not execute trades.
+
+Acceptance:
+
+* Alerts can be created.
+* Alerts trigger from real state changes.
+* Alerts expire.
+* Alerts are shown in notification system if available.
+* No spam loops.
+
+QA:
+
+* Price alert.
+* Risk veto alert.
+* Setup stale alert.
+* Trade danger alert.
+* Agent Court alert.
+* Expired alert.
+
+============================================================
+PHASE 23 — LIVE EXECUTION SAFETY RECHECK
+
+After all chart intelligence upgrades, rerun live execution safety check.
+
+Verify:
+
+* Chart Brain does not directly execute live trades.
+* Chart buttons do not bypass backend.
+* Existing live execution path is unchanged.
+* Emergency close still works.
+* Live close/open does not wait on Slow Brain.
+* Agent Court does not block live submission once user action is already submitted.
+* Learning Camp never runs in live execution path.
+* Similar setup search never blocks live execution.
+* Replay never touches live execution.
+* Decision receipts are append-only and non-blocking.
+* If chart fails, existing trade controls remain usable.
+* TradingView fallback remains available.
+
+Acceptance:
+
+* live_execution_blocked_by_ai=false
+* no nonessential agent call in live critical path
+* no direct chart-to-MT5 execution
+* no regression in live trade UI
+
+QA:
+
+* Open trade path.
+* Close trade path.
+* Emergency close if present.
+* Feed failure during open position.
+* Chart crash simulation.
+* Fallback switch.
+
+============================================================
+PHASE 24 — PERFORMANCE AND SPEED QA
+
+Measure:
+
+* candle render latency
+* crosshair response
+* pan/zoom smoothness
+* feed latency
+* state build time
+* overlay load time
+* Ruby draft read time
+* Ruby response time
+* scanner response time
+* Scalp Mode response time
+* risk quick check time
+* Agent Court time
+* decision receipt write time
+* benchmark dashboard load time
+* admin diagnostics load time
+* mobile performance
+* memory usage after chart open for extended time
+
+Targets:
+
+* Candle/crosshair UI should feel instant.
+* Fast chart state should be under 500ms where possible.
+* Scalp quick read should be under 800ms where possible.
+* Ruby should use cached state and respond within normal app expectations.
+* Slow Brain must be background.
+* Live execution must not be slowed.
+
+If slow:
+
+* cache chart intelligence packets
+* reduce overlays
+* lazy load deep panels
+* move similarity to background
+* paginate receipts/events
+* throttle candle updates
+* debounce overlay updates
+* use requestAnimationFrame where appropriate
+* avoid rerendering entire page
+* memoize expensive calculations
+* add indexes
+* move heavy review to background runner
+* put slow agents On-Demand Only
+
+Do not pass if chart becomes sluggish.
+
+============================================================
+PHASE 25 — FULL END-TO-END BEHAVIOR TESTS
+
+Run these scenarios end to end.
+
+Scenario 1: Clean chart read
+
+* Feed clean
+* Structure clear
+* Ruby analyzes chart
+    Expected:
+* Ruby uses Chart Intelligence State.
+* Chart Pulse matches Ruby.
+* Decision receipt created.
+
+Scenario 2: Dirty data
+
+* Feed stale or missing candles
+    Expected:
+* Chart badge warns.
+* aiUsable=false.
+* Ruby refuses/downgrades live confirmation.
+
+Scenario 3: Early buy under resistance
+Expected:
+
+* Level personality shows defended resistance.
+* Entry state says early.
+* Risk warns.
+* Readiness score low/watchlist.
+* Ruby says not clean yet.
+* What-would-change-mind says break and hold.
+
+Scenario 4: Scalp flame but chase risk high
+Expected:
+
+* Scalp flame shows momentum.
+* Chase risk high.
+* Entry AI late/chase.
+* Risk downgrades.
+* Ruby says too late/watchlist/no-trade.
+
+Scenario 5: Agent conflict
+Expected:
+
+* Scalp AI approves.
+* Risk AI rejects.
+* Entry AI cautions.
+* Agent Court triggers.
+* Final decision downgraded.
+* Conflict badge appears.
+* Receipt stores disagreement.
+
+Scenario 6: Open trade management
+Expected:
+
+* Entry line, P/L, TP/SL/invalidation visible.
+* Ruby changes from entry analysis to management analysis.
+* Exit AI gives partial/hold/exit logic.
+* Risk warns near invalidation.
+
+Scenario 7: Setup becomes stale
+Expected:
+
+* Setup age increases.
+* Freshness decays.
+* Ruby says setup expired.
+* Active marker removed/downgraded.
+
+Scenario 8: No-trade discipline
+Expected:
+
+* No-trade reason shown.
+* No-trade receipt created.
+* Later review can reward protection.
+
+Scenario 9: Similar setup recall
+Expected:
+
+* Fingerprint created.
+* Similar setup search runs in background/when requested.
+* Ruby references history only if enough data exists.
+
+Scenario 10: Learning Camp hook
+Expected:
+
+* Bad read/trade review creates mistake memory.
+* Learning Camp marker can attach to chart event.
+* Original receipt remains immutable.
+
+Scenario 11: Mobile use
+Expected:
+
+* Chart readable.
+* Modes work.
+* Long press works.
+* Panels collapse.
+* No clutter.
+
+Scenario 12: Live safety
+Expected:
+
+* Live open/close still works.
+* Chart intelligence does not block execution.
+* Fallback remains.
+
+Fix every failed scenario.
+Rerun failed scenario after fixing.
+Do not pass until all critical scenarios pass.
+
+============================================================
+PHASE 26 — FINAL ACCEPTANCE CRITERIA
+
+This task is complete only when:
+
+1. Chart Truth Layer exists.
+2. Chart Intelligence State exists.
+3. Ruby reads Chart Intelligence State.
+4. Agents can read Chart Intelligence State.
+5. Chart Pulse exists and updates.
+6. Feed quality controls AI trust.
+7. Market Sentence Engine exists.
+8. Setup aging/decay/expiration works.
+9. Level personality works.
+10. Candle intent/pressure works.
+11. Timeframe agreement works.
+12. Evidence stack works.
+13. Contradiction detector works.
+14. Trade readiness score works.
+15. Quality label works.
+16. Risk/Scalp/Entry/Exit panels use real state.
+17. What-would-change-my-mind works.
+18. Opposite scenario works.
+19. Decision fork map works.
+20. Emotional protection detects obvious behavior risks if data exists.
+21. Decision receipts are created and immutable.
+22. Chart event memory stores meaningful events.
+23. Setup fingerprints are created.
+24. Similar setup search foundation exists.
+25. Chart Brain Benchmark dashboard exists.
+26. Chart modes exist and do not clutter.
+27. Chart command actions work.
+28. AI-aware alerts foundation works if notification system exists.
+29. TradingView fallback remains.
+30. Live execution remains protected.
+31. Slow Brain never blocks live execution.
+32. Candle rendering remains fast.
+33. Admin can inspect chart benchmark/diagnostics.
+34. Non-admin cannot access admin diagnostics.
+35. Investor cannot trade from chart.
+36. No fake signals are shown as real.
+37. No paper trading product feature is introduced.
+38. Tests pass.
+39. Failed tests are rerun after fixes.
+40. Final report proves the chart does and acts exactly as required.
+
+============================================================
+FINAL REPORT REQUIRED
+
+When finished, provide a detailed report.
+
+Do not give a vague “completed successfully.”
+
+Report must include:
+
+1. Current chart audit findings.
+2. Files changed.
+3. Components added.
+4. Backend services added.
+5. Endpoints added/changed.
+6. Database/schema changes.
+7. Chart Truth Layer proof.
+8. Chart Intelligence State proof.
+9. Ruby integration proof.
+10. Agent integration proof.
+11. Chart Pulse proof.
+12. Market Sentence Engine examples.
+13. Setup aging/decay proof.
+14. Level personality proof.
+15. Candle intent proof.
+16. Timeframe agreement proof.
+17. Evidence/contradiction proof.
+18. Trade readiness score proof.
+19. Risk/Scalp/Entry/Exit panel proof.
+20. Decision receipt proof.
+21. Event memory proof.
+22. Setup fingerprint proof.
+23. Similar setup foundation proof.
+24. Chart Brain Benchmark proof.
+25. Chart mode proof.
+26. Command action proof.
+27. Alert foundation proof.
+28. Live execution safety proof.
+29. TradingView fallback proof.
+30. Role permission proof.
+31. Performance measurements.
+32. Tests run.
+33. Tests passed.
+34. Tests failed and fixed.
+35. Tests rerun after fix.
+36. Remaining limitations.
+37. Next recommended phase.
+
+Do not mark this task complete unless the chart is doing what it is supposed to do:
+
+* reading the market,
+* grounding Ruby,
+* guiding agents,
+* protecting from bad trades,
+* staying fast,
+* creating receipts,
+* learning from outcomes,
+* and preserving live execution safety.
+
+If it is only prettier, it failed.
+If it only shows overlays but Ruby does not use them, it failed.
+If it only stores state but does not affect reads, it failed.
+If it slows live trading, it failed.
+If it fakes intelligence, it failed.
+If TradingView fallback breaks, it failed.
+If live execution breaks, it failed.
+
+Rerun. Fix. Retest. Then report.

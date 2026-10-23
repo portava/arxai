@@ -1,0 +1,64 @@
+FINAL QA GATE — ARX Full Ecosystem Readiness Verification
+
+Inspect the final ecosystem repair gate.
+
+Do not rebuild unrelated systems.
+Only repair remaining critical/high issues.
+Do not fire live trades.
+Do not create real live bridge commands.
+
+Verify:
+
+1. Full ecosystem report exists.
+2. Master QA script exists and runs.
+3. User login works.
+4. Admin login works.
+5. Invite-gated registration works.
+6. 10-user cap is server-enforced.
+7. User privacy isolation passes.
+8. Saved features are private per user.
+9. Ruby intelligence works.
+10. Ruby memory is user-scoped.
+11. Ruby voice cannot bypass confirmation.
+12. Scanner works.
+13. Watchlist works.
+14. Watch calendar/alerts work or missing pieces are clearly documented.
+15. Economic/impact calendar connects to Ruby/scanner where available.
+16. Alerts are private and non-spammy.
+17. Demo trading works without live commands.
+18. Personal MT5 stays separate.
+19. Operator-funded live pilot requires all gates.
+20. Trade ticket requires confirmation.
+21. Pending orders validate correctly.
+22. SL/TP edits require confirmation and ownership.
+23. Close trade requires confirmation and ownership.
+24. Kill switches work.
+25. Close-only works.
+26. Force-review works.
+27. Queue/concurrency/idempotency protections work.
+28. Reconciliation/NEEDS_REVIEW works.
+29. Audit logs cover critical actions.
+30. Evidence export masks secrets.
+31. Admin dashboards are protected.
+32. Non-admin users cannot access admin APIs.
+33. Production live defaults OFF.
+34. Feature flags fail closed.
+35. Mobile-critical flows still work.
+36. No fake first-load data appears.
+37. No raw backend errors show to users.
+38. Secret leak probes pass.
+39. No bridge tokens, API keys, account credentials, session secrets, token hashes, invite hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+40. No live trade is fired during QA.
+41. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining blockers
+- remaining risks
+- final readiness recommendation
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

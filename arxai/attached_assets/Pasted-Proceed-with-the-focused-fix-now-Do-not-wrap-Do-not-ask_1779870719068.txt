@@ -1,0 +1,62 @@
+Proceed with the focused fix now.
+
+Do not wrap. Do not ask again. Apply the OWNER bypass to requireSharedRouting and verify that user 4 / andraie.co@gmail.com can place a live trade from the scanner/live shared flow after this, subject only to real broker-level blockers.
+
+The goal after this command:
+
+* My OWNER account must stay LIVE_SHARED.
+* My OWNER account must not be in preview mode.
+* My OWNER account must not be blocked by missing shared_master_account rows.
+* My OWNER account must not be blocked by missing allocation route tuple.
+* My OWNER account must not be blocked by per-user allocation prerequisites.
+* My OWNER account must not be blocked by default risk caps.
+* My OWNER account must not be blocked by stop-loss requirements unless I explicitly enable requireStopLoss.
+* Scanner Buy/Sell must open the one-modal LIVE_SHARED ticket.
+* Validate must either pass to the same-modal Confirm Trade step, or show only a true hard broker blocker.
+* The old blocker “Your account isn’t set up for the shared live route yet” must be gone for OWNER.
+* No “contact your operator” message for OWNER.
+* No preview-only blocker for OWNER’s normal session.
+* No second popup.
+* No typed phrase in the UI.
+* No demo/paper/tester route.
+
+Apply the proposed fix:
+
+1. Add OWNER bypass to requireSharedRouting in tradesLiveShared.ts.
+2. For isOwnerUnrestricted, fall back to the owner’s active live mt5_connections row when shared_master_account_id / virtual_account_id tuple is missing.
+3. Keep downstream hard broker checks intact:
+    * active bridge
+    * valid symbol
+    * valid order payload
+    * kill switch
+    * broker acceptance
+    * audit log
+4. Add one regression test to adminUnrestrictedRiskTest proving OWNER passes requireSharedRouting without shared_master_accounts row, while normal users still get ROUTING_NOT_RESOLVED.
+5. Re-run:
+    * test:live-shared-reason-copy
+    * test:admin-unrestricted-risk
+    * test:account-mode
+    * test:mode-scope
+    * test:live-phaseB
+    * ci:guards
+    * typecheck
+6. Real browser verify as user 4:
+    * /market-scanner
+    * Buy GBPUSD
+    * Validate
+    * confirm it reaches PASS + inline Confirm Trade, or a specific hard broker blocker only
+    * do not click final Confirm during QA
+7. Confirm arx_live_commands count remains 0 during QA.
+
+Important:
+Do not build a full 12-task rewrite right now. Do this focused fix first because this is the exact remaining blocker preventing my OWNER account from reaching live trade confirmation.
+
+Final report only:
+
+* root cause fixed
+* file changed
+* whether OWNER now passes requireSharedRouting
+* scanner modal validation result
+* tests passed
+* arx_live_commands count
+* confirmation no live trade was placed during QA

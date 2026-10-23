@@ -1,0 +1,96 @@
+Task: Upgrade Eleanor Options Response Logic
+
+Goal:
+Whenever a trader asks Eleanor for “options,” “trade options,” “what are my options,” “give me setups,” “possible entries,” “where can I enter,” or similar language, Eleanor must return structured actionable trade options instead of only a general verdict.
+
+Required behavior:
+Eleanor should recommend one or more possible trade scenarios depending on current market structure. Each option must include:
+
+- Direction: BUY, SELL, or WAIT
+- Entry zone: a price range, not a single exact price when possible
+- Stop loss zone: where the trade idea is invalidated
+- Take profit zones:
+  - TP1: conservative / first liquidity or structure target
+  - TP2: mid target
+  - TP3: extended target if momentum continues
+- Confirmation trigger: what price action must happen before entry is valid
+- Invalidation: what cancels the setup
+- Risk note: whether this is low, medium, or high confidence
+- Reasoning: structure, trend, momentum, support/resistance, FVG/EMA behavior, liquidity, or higher-timeframe bias
+
+Important:
+Eleanor must not force a trade. If the chart is unclear, she should still give options, but the first option should be WAIT / no-trade with clear conditions for when a trade becomes valid.
+
+Example response format:
+
+Eleanor’s Trade Options
+
+Option 1 — Conditional BUY
+Entry zone:
+Buy only if price reclaims and holds above [entry range].
+
+Stop loss:
+Below [support / invalidation level].
+
+Take profits:
+TP1: [near resistance / first liquidity]
+TP2: [next resistance / structure high]
+TP3: [extended move target]
+
+Confirmation:
+Wait for a strong candle close above [level] or a pullback that holds [support/FVG/EMA zone].
+
+Invalidation:
+A decisive close below [level] cancels the buy idea.
+
+Reasoning:
+Higher timeframe trend, momentum, support/resistance, and current structure support this only after confirmation.
+
+Option 2 — Conditional SELL
+Entry zone:
+Sell only if price rejects [resistance range] or breaks below [support level].
+
+Stop loss:
+Above [resistance / invalidation level].
+
+Take profits:
+TP1: [nearest support]
+TP2: [next support / liquidity zone]
+TP3: [extended downside target]
+
+Confirmation:
+Look for rejection, bearish close, failed retest, or break of structure.
+
+Invalidation:
+A clean close back above [level] cancels the sell idea.
+
+Reasoning:
+This is valid only if bullish momentum fails and sellers take control.
+
+Option 3 — WAIT
+Best action:
+Wait if price is trapped mid-range, momentum is weak, or higher-timeframe bias is unclear.
+
+What to wait for:
+- Break and retest of resistance
+- Sweep and reclaim of support
+- FVG formation in trend direction
+- EMA/MA reclaim based on the trader’s strategy
+
+Rules:
+- Never provide entry without stop loss.
+- Never provide take profit without explaining why that zone matters.
+- Never say “guaranteed,” “sure win,” or “safe trade.”
+- Always label setups as Conditional unless all confirmation already exists.
+- Use live chart/feed levels when available.
+- If data is stale, delayed, or unavailable, say so clearly and avoid pretending the levels are live.
+- If confidence is low, say “waiting is valid.”
+- If the user asks for scalping options, use tighter zones and near targets.
+- If the user asks for swing options, use higher-timeframe support/resistance and wider targets.
+- If the user’s FVG strategy applies, Eleanor should prioritize:
+  1. 4H and 1H trend direction
+  2. 5M pullback
+  3. Break below 200 EMA and 50 MA
+  4. Reclaim back above moving averages
+  5. FVG formation
+  6. Entry on FVG mitigation or confirmed continuation

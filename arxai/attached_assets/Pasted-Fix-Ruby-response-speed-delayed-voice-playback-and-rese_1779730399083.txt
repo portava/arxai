@@ -1,0 +1,166 @@
+Fix Ruby response speed, delayed voice playback, and research-dump behavior.
+
+Ruby already exists. Do NOT rebuild Ruby from scratch. Do NOT create a duplicate assistant, voice system, research system, market scanner, or chat pipeline.
+
+Current bugs:
+1. Ruby takes way too long to respond after I send a prompt.
+2. Ruby reads out loud minutes after the chat was sent.
+3. Ruby pastes the entirety of her research instead of giving a clean answer.
+4. Ruby feels like she is copying/pasting a long report instead of responding like a real assistant.
+5. Voice/TTS seems to be blocking or lagging behind the chat response.
+
+Goal:
+Ruby should respond quickly, type naturally, speak shortly after the answer starts or finishes, and summarize research instead of dumping everything.
+
+Before changing code:
+Search the entire codebase for:
+- Ruby chat pipeline
+- assistant response generation
+- research mode
+- market analysis
+- scanner analysis
+- prompt builder
+- system prompt
+- tool/result aggregation
+- source/research output
+- streaming
+- typewriter
+- TTS
+- ElevenLabs
+- OpenAI speech
+- audio queue
+- auto speak
+- voice playback
+- response renderer
+- message history
+- memory retrieval
+- market data calls
+- news calls
+- fetch loops
+- timeout handling
+
+Identify the exact flow:
+user sends message → Ruby shows thinking → data/research tools run → model response generated → text displays → TTS generated → audio plays.
+
+Fix the flow, do not patch only the UI.
+
+Required response behavior:
+1. Ruby must show “Ruby is thinking…” or animated typing dots immediately after the user sends a message.
+2. Ruby must begin showing a user-facing response quickly.
+3. Ruby should not wait for all research, TTS, market data, news, or background checks before showing something.
+4. For normal questions, Ruby should answer conversationally and quickly.
+5. For trading/market questions, Ruby may research, but she should summarize findings instead of pasting raw research.
+6. Ruby should never paste the entire research payload, raw source dumps, JSON, provider responses, backend logs, or full tool output into the chat.
+7. Ruby should only show the final useful answer, with short supporting highlights.
+8. If deeper research is available, Ruby can show a collapsed “Research details” section or an admin/debug-only detail panel, but normal users should not see raw dumps.
+
+Response length rules:
+1. Default Ruby answer should be concise.
+2. For normal chat: 2–6 short paragraphs max.
+3. For market analysis: use clean sections:
+   - Quick read
+   - Why
+   - Risk
+   - What to watch
+4. Do not paste every article, every candle check, every indicator reading, every API result, or every internal scoring step.
+5. Ruby should say “I’m still checking deeper data” only if progressive research is still running.
+6. If Ruby needs more time, show a short progressive status message, not silence.
+
+Speed optimization:
+1. Remove duplicate API calls from the normal Ruby response path.
+2. Cache reusable market/context data where safe.
+3. Do not run full scanner-wide analysis for a basic Ruby chat message.
+4. Do not run full historical/news/multi-provider research unless the user asks for market analysis or trade reasoning.
+5. Add timeouts for slow tools/API calls.
+6. If a provider is slow, Ruby should continue with available data and mention the missing data briefly.
+7. Do not block the visible response on slow research unless the answer truly requires it.
+8. Use progressive loading for heavy market analysis.
+
+Voice/TTS fix:
+1. TTS must not block Ruby’s text response.
+2. Ruby’s text response should appear first or stream while TTS prepares.
+3. TTS should use the final concise answer, not the full research dump.
+4. TTS should not read raw research, raw data, JSON, logs, source payloads, or long internal analysis.
+5. TTS should start quickly after the concise response is ready.
+6. If TTS takes too long, show the text anyway and skip/delay voice gracefully.
+7. Add a max wait timeout for TTS generation.
+8. Add audio queue protection so old delayed audio does not play minutes later after the conversation has moved on.
+9. If the user sends a new message before old audio plays, cancel or discard stale audio.
+10. Every TTS job should be tied to a message ID.
+11. Only play audio for the newest active Ruby response.
+12. If a response is stale, do not play its audio.
+13. If the selected voice changes before playback, use the current active voice for the new response only.
+14. Voice should auto-speak when ready, but not minutes late.
+
+Natural typing:
+1. Ruby’s text should not appear as one giant pasted block.
+2. Use true streaming if available.
+3. If true streaming is not available, use a frontend typewriter/chunk renderer.
+4. Reveal short chunks naturally.
+5. Do not reveal giant paragraphs instantly.
+6. Do not type painfully slow.
+7. Auto-scroll should follow smoothly without jumping aggressively.
+8. Typing dots stop only when Ruby’s visible response is complete.
+
+Research handling:
+1. Separate internal research from user-facing response.
+2. Internal research can be stored in metadata/logs.
+3. User-facing response should be a summarized answer.
+4. Admin/debug mode can inspect full research details if needed.
+5. Normal users should never see:
+   - raw API payloads
+   - backend constants
+   - tool result dumps
+   - hidden prompt content
+   - full research transcript
+   - internal scoring objects
+   - long unfiltered source lists
+6. Ruby should synthesize the research into a clean explanation.
+
+Market/trading-specific behavior:
+1. For quick market questions, Ruby should give a fast preliminary answer using available live data.
+2. If deeper scanner/news/history analysis is still running, show:
+   - “I’m checking deeper confirmation now…”
+3. When deeper analysis completes, Ruby can update or append a short follow-up.
+4. Do not make the user wait silently for the full deep scan.
+5. Do not read a full market report out loud unless the user asks for full detail.
+6. Spoken version should be shorter than the written version.
+
+Suggested pipeline:
+1. User sends message.
+2. Immediately show Ruby typing/thinking.
+3. Classify prompt:
+   - simple chat
+   - account/app help
+   - market quick answer
+   - deep market research
+   - trade action/validation
+4. For simple chat, answer quickly without heavy research.
+5. For market quick answer, use live quote/context first.
+6. For deep market research, stream short status updates while tools run.
+7. Generate concise final answer.
+8. Render answer progressively.
+9. Generate TTS from concise answer only.
+10. Play TTS only if message is still current.
+
+Acceptance tests:
+1. Ask Ruby a simple question. She should start responding within a few seconds.
+2. Ruby should not run full market research for a simple question.
+3. Ask Ruby about a market. She should show immediate thinking/typing feedback.
+4. Ruby should not paste raw research into the chat.
+5. Ruby should summarize research into clean user-facing sections.
+6. Ruby should not read the entire research out loud.
+7. Ruby voice should start shortly after the concise response is ready.
+8. Ruby should not speak minutes later.
+9. Send a new message before old audio plays. Old audio should be cancelled or ignored.
+10. TTS failure or delay should not block text response.
+11. Ruby response should type naturally instead of appearing as one pasted block.
+12. Refresh/mobile behavior should still work.
+13. Selected voice should still match the voice being used.
+14. No backend logs, provider payloads, API errors, research dumps, or internal constants should appear to normal users.
+15. Existing Ruby memory, scanner, chart, market data, and trade validation features should not break.
+
+After fixing:
+Run full QA on Ruby simple chat, Ruby market analysis, Ruby voice playback, delayed/stale audio cancellation, typing animation, research summarization, selected voice matching, mobile UI, and admin/debug research visibility.
+
+Repair anything that fails before stopping.

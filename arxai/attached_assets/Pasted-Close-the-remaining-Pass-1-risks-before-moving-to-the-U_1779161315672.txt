@@ -1,0 +1,60 @@
+Close the remaining Pass 1 risks before moving to the UX pass.
+
+Do not place live trades.
+Do not enable public master live trading.
+Do not bypass master live user approval toggles.
+Do not expose secrets.
+
+Current confirmed state:
+- No live trade fired.
+- arx_live_commands count remained 0.
+- One-click safety gates remain enforced.
+- Master live access gate remains enforced.
+- Selected-market route requires session auth, which is correct.
+- Ruby market explanation is deterministic, which is acceptable.
+- Current cache is in-process per server instance.
+
+Fix/complete these remaining risks:
+
+1. Add authenticated UI/E2E test for the selected-market intelligence panel.
+   Use Playwright or the existing UI test harness.
+   Test:
+   - logged-in user opens scanner/trade page
+   - selects a symbol
+   - Ruby Market Intelligence panel renders
+   - highlights render
+   - unauthenticated user gets AUTH_REQUIRED
+   - no secret data appears
+
+2. Add a clear cache abstraction.
+   Keep in-process cache for current single-server mode, but make it ready for Redis/distributed cache later.
+
+   Add:
+   - cache adapter interface
+   - in-memory implementation
+   - Redis-ready placeholder or env-based adapter
+   - clear note in admin/performance dashboard:
+     “Current cache mode: in-process” or “distributed”
+
+3. Add performance warning if app is horizontally scaled while using in-process cache.
+   Admin dashboard should show:
+   - cache mode
+   - cache TTL
+   - server instance id if available
+   - warning if distributed mode is not enabled
+
+4. Confirm selected-market intelligence does not spam AI/LLM calls.
+   Keep deterministic/template Ruby explanation from analyzeMarket output.
+   Add note:
+   “Ruby Market Intelligence uses cached market analysis and updates on interval/event triggers.”
+
+5. Run full QA again.
+
+Acceptance proof:
+- Authenticated UI test passes for selected-market panel.
+- Unauthenticated access returns AUTH_REQUIRED.
+- Cache mode is visible in admin/performance dashboard.
+- In-process cache limitation is documented in UI or admin diagnostics.
+- No live trades fired.
+- arx_live_commands remains 0.
+- All existing Pass 1 safety tests still pass.

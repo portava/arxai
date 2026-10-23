@@ -1,0 +1,150 @@
+GREEN LIGHT: Proceed with live testing while building the Live Test Cycle.
+
+The MT5 account has $9 dedicated specifically for live testing. Do not keep waiting for another approval prompt before proving the real bridge path. We need the system to open and close real test trades during the build so issues surface immediately instead of stacking later.
+
+IMPORTANT PRODUCT RULE:
+Do not create any new modes.
+The only user-facing modes remain:
+- Demo
+- Live
+- Live Shared
+
+Live Test Cycle is a tool/action inside Live or Live Shared. It is not a new mode.
+
+AUTHORIZATION:
+You are authorized to build and run the live test cycle during this session using the OWNER account only.
+
+Allowed live test:
+- OWNER only
+- Live Shared bridge path
+- 0.01 EURUSD by default
+- One test trade at a time
+- Open one real test trade
+- Confirm EA/broker response
+- Automatically close the same trade
+- Record open/close latency
+- Report result clearly
+
+DO NOT:
+- open multiple trades at once
+- run endless automated trading
+- approve regular users automatically
+- bypass the 16-gate evaluator
+- bypass the liveTrading chokepoint
+- bypass broker execution env AND operator switch
+- bypass kill switch
+- bypass bridge heartbeat
+- bypass master bridge pinning
+- bypass allocation/account checks
+- bypass audit logging
+- create new trading modes
+- reintroduce Paper, View Only, Watch Only, or Analysis Only as modes
+
+BUILD REQUIREMENTS:
+Replace the old ControlledLiveTestButton completely.
+
+Build the full Live Test Cycle:
+- preview endpoint
+- start endpoint
+- status polling
+- open command
+- fill detection
+- auto-close command
+- close verification
+- close-failure lock
+- manual resolve if close fails
+- latency recorder
+- audit events
+- owner-only panel
+- dry-run simulation test
+- real live test run after gates pass
+
+LIVE TEST FLOW:
+1. Build the Live Test Cycle feature.
+2. Run dry-run simulation first.
+3. If dry-run passes, run the real live test cycle.
+4. Open exactly one 0.01 EURUSD live test trade through the Live Shared bridge.
+5. Wait for EA/broker response.
+6. Once the open is confirmed, automatically close that same trade.
+7. If close fails, lock the cycle and show:
+   “Manual close required.”
+8. Do not open another test until the first cycle is completed or manually resolved.
+
+PRECHECK BEFORE REAL LIVE TEST:
+Before inserting the live test command, confirm:
+- OWNER is signed in
+- MT5 EA heartbeat is fresh
+- master bridge is pinned
+- broker execution env is enabled
+- operator broker execution is ON
+- effective broker execution is enabled
+- kill switch is released
+- EA reports EnableLiveExecution=true
+- EA reports ReadOnlyMode=false
+- EA reports allowOrderExecution=true
+- marketOrders capability=true
+- symbol EURUSD is MT5-tradable
+- account balance is enough for 0.01 test
+- no existing ARX live test trade is open
+- 16-gate evaluator passes
+- liveTrading chokepoint passes
+
+IF ANYTHING FAILS:
+Do not force the trade.
+Do not fake success.
+Do not continue opening more trades.
+Show the exact blocker and fix it if it is code-side.
+If it is operator-side, report exactly what must be changed.
+
+AUTO-CLOSE REQUIREMENT:
+After a test trade opens, the system must close it automatically while testing.
+
+Close timing:
+- close immediately after open fill confirmation
+OR
+- close after a short verification delay if needed for position snapshot
+
+Track:
+- command inserted time
+- EA pull time
+- broker fill time
+- position detected time
+- close command inserted time
+- close pull time
+- close result time
+- total open latency
+- total close latency
+- full cycle duration
+
+AUDIT LOG:
+Record:
+- preview
+- dry-run pass/fail
+- live test start
+- open command queued
+- EA pulled open
+- broker open result
+- close command queued
+- EA pulled close
+- broker close result
+- cycle completed
+- cycle failed
+- manual close required if applicable
+
+FINAL REPORT:
+Return:
+- Live Test Cycle build status
+- Dry-run result
+- Real live test result
+- Open command id
+- MT5 ticket if available
+- Close command id
+- Open latency
+- Close latency
+- Realized P/L
+- arx_live_commands before/after
+- Whether any trade remains open
+- Any blockers found
+- Confirmation that no new modes were created
+
+Proceed now. Build and live-test in the same pass.

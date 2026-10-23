@@ -1,0 +1,256 @@
+Build the ultimate MT5-connected AI trading command center.
+
+App name: High Roll Market AI
+
+Goal:
+Create a professional multi-market trading web app that analyzes markets, generates trade signals, manages risk, journals trades, and connects to MT5 through a bridge. Do not guarantee profit. Demo mode first. Live trading locked until manually enabled.
+
+Markets:
+- Forex majors
+- Forex minors
+- Forex exotics
+- US30
+- NAS100
+- SPX500
+- GER40
+- UK100
+- JP225
+- U.S. stocks
+- Crypto placeholders
+- Volatility 75 Index
+- Volatility 75 1s Index
+- Volatility 25 1s Index
+
+Core architecture:
+Replit is the brain.
+MT5 is the execution hand.
+The broker account stays inside MT5.
+The Replit app sends trade instructions to MT5.
+MT5 sends account/trade status back to Replit.
+
+Build pages:
+1. Dashboard
+2. Market Scanner
+3. AI Trade Assistant
+4. Strategy Builder
+5. Risk Control Center
+6. MT5 Bridge Setup
+7. Live Trades
+8. Trade Journal
+9. Backtest Lab
+10. Performance Analytics
+11. News/Economic Calendar
+12. Settings
+
+Dashboard:
+Show:
+- bot status: OFF, DEMO, LIVE LOCKED
+- selected market
+- selected symbol
+- current signal
+- confidence score
+- market condition
+- trend direction
+- volatility state
+- session
+- news risk
+- account balance placeholder
+- today P/L
+- open trades
+- drawdown
+- emergency stop button
+
+AI Trade Assistant:
+Create an assistant that explains:
+- why a trade is good
+- why a trade is dangerous
+- what could invalidate the trade
+- safer lot size
+- best stop loss zone
+- best take profit zone
+- whether to wait
+- whether market is choppy
+- whether news risk is too high
+
+Signal object:
+Every signal must return:
+
+{
+  symbol,
+  marketType,
+  direction: "BUY | SELL | WAIT",
+  confidence,
+  entry,
+  stopLoss,
+  takeProfit,
+  riskReward,
+  strategy,
+  marketCondition,
+  technicalBias,
+  macroBias,
+  session,
+  newsRisk,
+  volatilityState,
+  riskApproved,
+  blockedReason,
+  aiExplanation,
+  timestamp
+}
+
+Strategies:
+1. Trend Continuation
+2. Break of Structure
+3. Liquidity Sweep Reversal
+4. Pullback Continuation
+5. Volatility Expansion
+6. Mean Reversion
+7. Session Breakout
+8. News Avoidance
+9. Stock Momentum
+10. Index Momentum
+
+Indicators:
+- EMA
+- SMA
+- RSI
+- ATR
+- MACD
+- Bollinger Bands
+- VWAP placeholder
+- support/resistance
+- swing highs/lows
+- break of structure
+- change of character
+- liquidity sweep
+- candle strength
+- wick rejection
+- volume spike placeholder
+
+Risk Control Center:
+Add:
+- max daily loss
+- max weekly loss
+- max trades per day
+- max open trades
+- stop after losing streak
+- cooldown after loss
+- risk per trade %
+- max lot size
+- minimum confidence
+- max spread
+- no trading during news
+- no trading during abnormal volatility
+- no trading during choppy market
+- emergency kill switch
+- close all trades button placeholder
+- live trading lock
+
+Risk modes:
+Conservative:
+risk 0.25%, daily loss 1%, max 3 trades, confidence 80+
+
+Balanced:
+risk 0.5%, daily loss 2%, max 5 trades, confidence 75+
+
+Aggressive:
+risk 1%, daily loss 3%, max 8 trades, confidence 70+
+
+Synthetic special rules:
+- Volatility 75 1s requires +10 confidence
+- Volatility 75 uses smaller lot sizing
+- Synthetic indices ignore news and focus on structure, ATR, and volatility
+- WAIT is better than forcing trades
+
+MT5 Bridge Setup:
+Create API endpoints:
+
+GET /api/mt5/status
+POST /api/mt5/signal
+POST /api/mt5/execute
+POST /api/mt5/close
+POST /api/mt5/modify
+POST /api/mt5/sync-account
+POST /api/mt5/sync-positions
+
+Execution modes:
+1. Mock Mode
+2. Demo MT5 Mode
+3. Live MT5 Mode Locked
+
+Trade instruction payload:
+
+{
+  apiKey,
+  command: "OPEN | CLOSE | MODIFY",
+  symbol,
+  direction,
+  lot,
+  entryType: "MARKET | LIMIT | STOP",
+  entry,
+  stopLoss,
+  takeProfit,
+  magicNumber,
+  comment,
+  strategy,
+  confidence
+}
+
+MT5 bridge requirements:
+- Generate webhook URL
+- Generate API key
+- Show connection status
+- Show last MT5 heartbeat
+- Show broker account number placeholder
+- Show open positions synced from MT5
+- Show error logs
+
+Trade Journal:
+Automatically save:
+- signal
+- execution result
+- entry
+- exit
+- profit/loss
+- strategy
+- confidence
+- screenshot placeholder
+- AI explanation
+- mistake tags
+- lesson learned
+
+Performance Analytics:
+Show:
+- win rate
+- profit factor
+- average win
+- average loss
+- max drawdown
+- best symbol
+- worst symbol
+- best strategy
+- worst strategy
+- equity curve
+- daily P/L chart
+- session performance
+- AI confidence performance
+
+Backtest Lab:
+Allow CSV upload:
+time, open, high, low, close, volume
+
+Backtest:
+- test all strategies
+- compare symbol behavior
+- show equity curve
+- show drawdown
+- show best settings
+- do not overfit warning
+
+Safety disclaimers:
+Add across app:
+“Trading is risky. This app is for research and education. No AI or strategy guarantees profit. Demo test before live trading.”
+
+UI:
+Make it premium, clean, dark, spacious, mobile responsive.
+No clutter.
+Use tabs, cards, status badges, and clear risk warnings.

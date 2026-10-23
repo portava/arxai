@@ -1,0 +1,98 @@
+# COMMAND — VOLATILITY SYSTEM: ONE TRUTH FOR SYNTHETIC FEEDS, THEN LIVE ENTRY
+
+Read this entire command before changing anything. Two phases, in order: PHASE 1 makes the synthetic (Deriv volatility) feed state HONEST and consistent across every volatility surface; PHASE 2 lets a *genuinely* live-confirmed synthetic feed reach the live-entry path through the EXISTING gated pipeline. Phase 2 depends on Phase 1 being correct. Do not start Phase 2 until Phase 1 passes. Do not mark complete until the COMPLETION STANDARD passes with pasted evidence.
+
+## THE CONTRADICTION (verified on live screenshots, Jun 14, V75(1s) 30m)
+
+The Ruby Chart Read feed popup for "Volatility 75 (1s) Index" shows, in ONE panel:
+- State: **Live**, Source: deriv, Latency: 268 ms, Last candle: **just now**, Last tick: **3–7s ago**, Missing candles: **0**, Readiness: **LIVE_FEED**
+- AND: AI-usable: **Not confirmed**
+
+…while the page above it says "Historical data — analysis only", "Live feed unavailable · Analysis only", "Data is incomplete — historical context only, not valid for a live entry."
+
+A feed cannot be both "Live, last candle just now, 0 missing" and "unavailable / historical only" for the same symbol at the same instant.
+
+## ROOT CAUSE (already traced in source — do not re-litigate the location)
+
+Two DIFFERENT scopes of "is there a recent tick" feed the two halves:
+
+- The popup's "State / Last tick / Readiness LIVE_FEED" come from **`getDerivFeedStatus()`** (`lib/data/providers/derivProvider.ts` ~L139), which uses **`client.hasRecentTick()` — a GLOBAL check** (true if ANY subscribed synthetic ticked recently).
+- The "AI-usable / not-confirmed → historical-only" downgrade comes from the **PER-SYMBOL** gate **`hasRecentDerivTickFor(symbol, 30_000)`** (~L92), which checks the cached tick for THAT EXACT Deriv id (`getCachedTickByDerivId(resolveDerivSymbol(label).derivId)`). Its own comment: "so one ticking symbol does NOT promote the rest." This sets `syntheticAwaitingTick` in `chartDataService.ts` (~L225 `hasLiveTick = hasRecentDerivTickFor(symbol)`), which forces `classifyCandleFreshness` to at-least "delayed" → `buildFeedStatus` sets `aiUsable = (quality === "clean") = false` (`lib/data/freshness.ts` ~L118-122, L297).
+
+So the popup shows the GLOBAL feed is live while the PER-SYMBOL gate says THIS symbol (V75 1s) has no recent tick. Both can be internally "correct" yet the screen is a lie.
+
+## PHASE 1 — MAKE THE SYNTHETIC FEED STATE HONEST (per-symbol, consumed everywhere)
+
+### 1A. Determine the actual truth FIRST (prove, don't assume)
+For "Volatility 75 (1s) Index" specifically, establish empirically whether the PER-SYMBOL tick is genuinely arriving:
+- Confirm `resolveDerivSymbol("Volatility 75 (1s) Index")` maps to the correct Deriv id for the **1-second variant** (e.g. the `1HZ75V`-class id, NOT the standard `R_75`). A label→id mismatch for the `(1s)` variant would make `getCachedTickByDerivId` look up the wrong key and return no tick even while the symbol streams.
+- Confirm the WS client is actually subscribing to and caching ticks under that exact id (`getCachedTickByDerivId(thatId)` returns a tick with a fresh epoch).
+- Report which is true:
+  - (A) V75(1s) IS ticking per-symbol within 30s → the per-symbol gate is WRONG (resolution/caching bug); the feed is genuinely live and the "historical only" downgrade is a false negative.
+  - (B) V75(1s) is NOT ticking per-symbol (only other synthetics are) → the per-symbol gate is RIGHT; the POPUP is misleading by showing global "Live / just now" for a symbol that isn't individually confirmed.
+
+Do not skip this. The fix direction depends on it. If (A), fix the resolution/caching so a genuinely-streaming symbol is recognized. If (B), fix the popup. In practice, fix BOTH halves so they can never disagree again — but the PROVEN truth decides which way the verdict lands for V75(1s).
+
+### 1B. One per-symbol synthetic verdict, consumed by every surface
+There must be a single per-symbol synthetic feed verdict (live-confirmed / awaiting-tick / stale / unavailable), derived from the SAME per-symbol signal, that EVERY volatility surface reads:
+- the feed-status popup ("State / Last tick / AI-usable / Readiness")
+- the chart "Live feed unavailable · Analysis only" / "LAST-KNOWN" banner
+- the DATA / RUBY header cards ("Historical only" / "Limited read")
+- Ruby Chart Read badge ("Unconfirmed / No AI")
+- the scanner verdict + Opportunity Map row for the symbol
+- the Scalp Builder card's validity
+- the Trade Health feed badge
+
+Rule: the popup's per-symbol fields MUST reflect the per-symbol verdict for the displayed symbol — never the global feed. If V75(1s) is individually live, all of them say live; if it's individually awaiting, the popup honestly says "awaiting a confirmed live tick for THIS symbol" instead of a misleading global "Live · just now." Same one-truth principle as Task #512, extended to the synthetic per-symbol case. No surface computes its own synthetic feed verdict.
+
+### 1C. The fix must be DIRECTIONALLY CORRECT — not permissive
+This is non-negotiable: the gate must become *accurate*, not *lenient*.
+- A genuinely live per-symbol synthetic (recent per-symbol tick, 0 missing, fresh) → reads LIVE_CONFIRMED / AI-usable.
+- A synthetic that genuinely has history but NO recent per-symbol tick → still reads awaiting/historical and is NOT AI-usable.
+- One ticking synthetic must NOT promote a non-ticking one (preserve the existing per-row isolation).
+You are fixing false-negatives (genuinely-live read as historical). You must NOT introduce false-positives (historical read as live). Do not "resolve" the contradiction by blanket-treating synthetics as always-live.
+
+## PHASE 2 — OPEN LIVE ENTRY FOR GENUINELY-LIVE SYNTHETICS (existing gates intact)
+
+Only after Phase 1: when the corrected per-symbol synthetic verdict is genuinely LIVE_CONFIRMED, the scanner/entry surfaces may treat that synthetic as a valid live-entry feed — lifting the "Approval required — trading isn't available from the scanner in this mode" / "historical only, not valid for a live entry" block for that symbol.
+
+### NON-NEGOTIABLE RULES FOR PHASE 2
+- The existing server-side execution gates run UNCHANGED on every synthetic order — the 16-gate evaluator, per-click lot caps, master-live access, kill switch, rate limit, exposure reservation. Lifting the feed-state block does NOT bypass, weaken, or skip any of them. Grep the live pipeline and confirm the synthetic path flows through the SAME `createLiveDraft → confirmLiveCommand → dispatchLiveCommand` gate chain as everything else — no synthetic-specific shortcut.
+- The block lifts ONLY when the feed is genuinely live-confirmed per Phase 1. An awaiting/stale synthetic STILL blocks entry, with the honest reason shown. (Fixing false-negatives, not creating false-positives — same as 1C.)
+- Human confirmation at the broker boundary stays. "Live entry available" means the Plan/Build → confirm flow becomes available; it does NOT mean an order fires on tap, and it does NOT arm one-click. Do not remove or auto-satisfy the confirmation step.
+- No AI/Ruby auto-execution. Ruby giving a live read on a now-confirmed synthetic is fine; Ruby placing the order is not — that stays behind its existing explicit per-user flags. Lifting the feed block must not enable AI-initiated execution.
+- STOP-LOSS POLICY APPLIES TO SYNTHETICS. Opening this path must NOT relax `requireStopLoss` / `allowOrdersWithoutStopLoss`. (Evidence this matters: the live screenshots show an open V75 position with NO stop-loss and "downside is uncapped." Making synthetics easier to enter makes the SL gate MORE important, not less.) Confirm the SL policy gate is enforced on the synthetic entry path; do not carve out an exception.
+- No global live-exec setting changes. Scope strictly to letting a confirmed-live synthetic feed be a valid entry feed.
+
+## PHASE 3 — TESTS
+
+Add tests (repo's node:test / vitest conventions):
+1. PER-SYMBOL ACCURACY: a symbol with a fresh cached per-symbol tick → verdict live-confirmed / aiUsable; a symbol with history but no recent per-symbol tick → awaiting / not aiUsable. One ticking symbol does not promote a non-ticking one.
+2. NO CONTRADICTION: for a given symbol+timeframe it is impossible to emit "State: Live / last tick just now" in the popup while the same symbol's gate says awaiting — both derive from the one per-symbol verdict.
+3. RESOLUTION: `resolveDerivSymbol` maps the `(1s)` variant label to the correct 1s-variant Deriv id (distinct from the standard variant); a tick cached under that id is seen by `hasRecentDerivTickFor`.
+4. ENTRY GATING (Phase 2): a synthetic with a genuine live-confirmed verdict → entry path available AND the order still traverses the full 16-gate chain; a synthetic that is awaiting/stale → entry blocked with the honest reason.
+5. SL POLICY: a synthetic order without a stop-loss is rejected/blocked when `requireStopLoss` applies — no synthetic exception.
+6. Keep existing truth/resilience tests green (Task #512/#520/#531 suites).
+
+## PHASE 4 — VERIFY + QA
+
+Run for real and paste outputs: typecheck:libs, api-server typecheck (scoped if it OOMs, per precedent — free the IDE tsserver, run serially), trading-dashboard typecheck, `pnpm run ci:guards`, plus the new tests.
+
+Authenticated runtime QA (mint a temp session per the established recipe), on the V75(1s) scanner page:
+- Screenshot the feed popup AND the page header AGREEING — either both live-confirmed, or both honestly awaiting — never the current split. State which truth landed (A or B from 1A) and why.
+- If genuinely live: screenshot the entry path now AVAILABLE for V75(1s), and confirm the order flow still presents the confirm step (do NOT place a live order — stop at the confirm boundary and screenshot it).
+- If genuinely awaiting: screenshot the honest awaiting state and confirm entry is still blocked.
+- Confirm a synthetic entry attempt without a stop-loss is blocked when SL policy applies.
+
+## FINAL REPORT
+
+Report: the 1A determination (A or B) with the evidence; the per-symbol verdict type and every surface rewired to it; the popup scope fix (per-symbol, not global); the Phase-2 gating change and proof the synthetic order traverses the unchanged 16-gate chain; SL-policy enforcement on synthetics; test names with real pass/fail; the QA screenshots; and explicit confirmation that no server-side gate, kill switch, confirmation step, AI-execution flag, or global live-exec setting was weakened.
+
+## COMPLETION STANDARD — all must be true
+
+- The per-symbol synthetic feed verdict is single-sourced and consumed by every volatility surface; the popup reflects the per-symbol (not global) state; the screenshot contradiction is reproduced-then-resolved with evidence, and the resolved state matches the PROVEN per-symbol truth.
+- The gate is directionally correct: genuinely-live synthetics read live; genuinely-awaiting synthetics still read awaiting and are not AI-usable; no false-positives introduced.
+- A genuinely live-confirmed synthetic can reach the live-entry path, and that path runs the UNCHANGED full 16-gate evaluator + human confirmation; an awaiting/stale synthetic is still blocked.
+- Stop-loss policy is enforced on synthetic orders with no carve-out.
+- No AI-initiated no-confirm execution; no server gate / kill switch / confirm step / global live-exec setting weakened.
+- typecheck (libs + both packages) green; ci:guards green; all new + existing tests pass — outputs pasted.

@@ -1,0 +1,48 @@
+QA/FIX GATE — Hard Invite Gate + 2-User Internal Pilot Prep
+
+Inspect the hard invite gate and 2-user internal pilot prep from the previous pass.
+
+Do not rebuild unrelated systems.
+Only repair missing or broken beta-critical pieces.
+Do not fire live trades.
+Do not create real live bridge commands.
+
+Verify:
+
+1. ARX_BETA_INVITE_REQUIRED exists or equivalent hard invite gate exists.
+2. Registration requires a valid invite when invite gate is enabled.
+3. Registration without invite is blocked.
+4. Revoked invite is blocked.
+5. Expired invite is blocked.
+6. Already-used invite is blocked.
+7. Invite acceptance is tied to authenticated/new user correctly.
+8. Beta accepted-user cap is enforced server-side.
+9. 10 accepted beta users are allowed.
+10. 11th user is blocked or waitlisted server-side.
+11. Direct API calls cannot bypass the invite gate.
+12. Admin can create/revoke beta invites.
+13. Admin Beta Control Center shows invite gate status and accepted users / 10.
+14. Non-admin users cannot access beta dashboard or beta APIs.
+15. Beta users default to demo/testing mode.
+16. Beta users cannot create live commands by default.
+17. Paused beta users cannot trade.
+18. User 1 cannot see User 2 dashboard, trades, P/L, notifications, scanner state, or Ruby memory.
+19. Logout/login switch clears cached user state.
+20. 2-user internal pilot checklist is documented.
+21. Private beta docs were updated.
+22. Audit logs are created for invite accept/reject/revoke, cap reached, blocked 11th user, pause/resume, and blocked live attempt.
+23. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+24. No live trade is fired during QA.
+25. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- beta invite routes/screens checked
+- issues found
+- fixes applied
+- remaining blockers
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

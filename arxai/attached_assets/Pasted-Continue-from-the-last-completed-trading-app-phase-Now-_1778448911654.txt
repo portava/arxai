@@ -1,0 +1,182 @@
+Continue from the last completed trading app phase.
+
+Now build the MARKET INTELLIGENCE ENGINE.
+
+Goal:
+Create a market brain that analyzes the market before the app gives trade feedback, coaching, alerts, or execution suggestions.
+
+Do not rebuild the app from scratch.
+Do not delete current data.
+Do not remove existing broker/MT5 logic.
+
+PHASE 1 — Inspect Existing Market Data Flow
+
+First inspect the current project and identify:
+
+- Where price data enters the app
+- Where MT5/broker data is handled
+- Existing candle/price models
+- Existing API routes for market data
+- Existing dashboard market widgets
+- Existing strategy/AI files
+
+Then explain where the Market Intelligence Engine should be connected.
+
+PHASE 2 — Create Market Intelligence Data Model
+
+Add safe database tables/models for:
+
+market_snapshots:
+- id
+- symbol
+- timeframe
+- open
+- high
+- low
+- close
+- volume
+- spread
+- volatility_score
+- liquidity_score
+- momentum_score
+- trend_direction
+- session_name
+- market_condition
+- created_at
+
+market_intelligence_reports:
+- id
+- user_id
+- symbol
+- timeframe
+- trend_score
+- volatility_score
+- liquidity_score
+- momentum_score
+- risk_score
+- market_condition
+- best_trade_bias
+- warning_message
+- ai_summary
+- created_at
+
+PHASE 3 — Build Market Analysis Service
+
+Create a service that analyzes:
+
+- Trend direction
+- Volatility level
+- Liquidity level
+- Spread quality
+- Momentum strength
+- Price structure
+- Session behavior
+- Choppy vs clean conditions
+- Breakout conditions
+- Reversal conditions
+- Consolidation zones
+
+Return a market condition label:
+
+- Strong Bullish Trend
+- Strong Bearish Trend
+- Weak Trend
+- Ranging Market
+- High Volatility
+- Low Liquidity
+- Choppy Market
+- Breakout Forming
+- Reversal Risk
+- No-Trade Zone
+
+PHASE 4 — Add Market Risk Filter
+
+Before any trade recommendation, feedback, or AI coach suggestion, the system should check market conditions.
+
+Create risk labels:
+
+- SAFE
+- CAUTION
+- DANGER
+- NO TRADE
+
+Rules:
+
+- High volatility + wide spread = DANGER
+- Low liquidity = CAUTION or NO TRADE
+- Choppy market = CAUTION
+- Clean trend + good liquidity = SAFE
+- Major reversal risk = DANGER
+- Spread too wide = NO TRADE
+
+PHASE 5 — API Routes
+
+Create routes for:
+
+- GET market intelligence by symbol
+- GET latest market condition
+- POST generate market intelligence report
+- GET market risk status
+- GET best trading windows
+- GET no-trade warnings
+
+PHASE 6 — Frontend Components
+
+Add clean dashboard components:
+
+1. Market Brain Card
+Shows:
+- Symbol
+- Current condition
+- Trend direction
+- Risk status
+- Best trade bias
+- Warning message
+
+2. Market Quality Meter
+Shows:
+- Trend score
+- Momentum score
+- Volatility score
+- Liquidity score
+- Spread quality
+
+3. No-Trade Warning Banner
+Only appears when market risk is DANGER or NO TRADE.
+
+4. Best Trading Window Card
+Shows when the trader historically performs best and when current conditions are cleanest.
+
+PHASE 7 — Connect to AI Coach
+
+Update AI Coach so it references market conditions.
+
+Examples:
+
+“The market is currently choppy. Your historical performance drops during choppy conditions, so reduce size or wait.”
+
+“Liquidity is strong and trend quality is high. This is closer to your best-performing environment.”
+
+“Spread is wider than normal. Avoid forcing entries until execution conditions improve.”
+
+PHASE 8 — Testing
+
+Test:
+
+- Market report generation
+- Risk status labels
+- No-trade warnings
+- Dashboard rendering
+- AI coach market-aware messages
+- Mobile responsiveness
+- No broken existing trade feedback system
+
+Final output required:
+
+1. Files changed
+2. Models/tables added
+3. API routes added
+4. Frontend components added
+5. How the Market Intelligence Engine connects to the trader scoring system
+6. Errors or limitations
+7. Recommended next phase

@@ -1,0 +1,403 @@
+Continue ARX AI by building the Opportunity Radar and AI Scanner Brain.
+
+Do not rebuild blindly. Inspect the current:
+- Trading Tool Registry
+- Tool Selection Engine
+- Indicator Calculation Engine
+- Confluence Engine
+- Scanner
+- Watchlist
+- Market Context Engine
+- Strategy Playbook
+- Setup Quality Engine
+- Risk Governor
+- Broker Symbol Specs Engine
+- Economic Calendar/Event Risk Engine
+- Trade Action Center
+- AI assistant context builder
+- user-owned MT5 routing
+- shared-master routing
+- alert system
+
+Goal:
+Create an AI Scanner Brain that scans available symbols, applies the correct trading tools, ranks opportunities, explains why a market is worth watching, and helps users decide whether to wait, enter, avoid, or review a trade ticket.
+
+Important:
+Do not auto-place trades.
+Do not auto-open trades.
+Do not bypass Risk Governor.
+Do not guarantee profit.
+Do not invent market data.
+Do not invent candle data.
+Do not expose secrets.
+Any demo/live trade action still requires user confirmation.
+Any live trade still requires explicit confirmation.
+
+PART 1 — Opportunity Radar Engine
+
+Create an Opportunity Radar service that scans:
+- user watchlist symbols
+- broker-available symbols
+- admin-approved symbols
+- scanner-selected symbols
+- strategy-preferred symbols
+
+For each symbol, collect:
+- market context
+- indicator tool results
+- confluence score
+- setup quality score
+- strategy match
+- trend direction
+- volatility risk
+- spread risk
+- news/event risk
+- session context
+- broker symbol availability
+- risk governor preview
+- data freshness
+- data quality
+
+Output one opportunity object:
+
+opportunity:
+- symbol
+- broker_symbol
+- timeframe
+- direction_bias: bullish / bearish / neutral / mixed
+- opportunity_score: 0-100
+- setup_quality_score: 0-100
+- confluence_score: 0-100
+- risk_score: 0-100
+- strategy_match
+- label
+- reason_summary
+- key_level_to_watch
+- invalidation_level
+- suggested_action
+- data_quality
+- created_at
+
+Labels:
+- Strong opportunity
+- Watchlist opportunity
+- Wait for confirmation
+- Choppy / no clear edge
+- High risk
+- Avoid for now
+- Data insufficient
+
+Suggested actions:
+- WATCH
+- ASK_AI
+- SET_ALERT
+- REVIEW_DEMO_TRADE
+- REVIEW_LIVE_TRADE
+- WAIT_FOR_CONFIRMATION
+- AVOID
+- DATA_INSUFFICIENT
+
+PART 2 — Multi-Timeframe Scanner
+
+Scan each symbol across:
+- M1
+- M5
+- M15
+- M30
+- H1
+- H4
+- D1 if available
+
+For each timeframe, show:
+- trend
+- momentum
+- structure
+- volatility
+- support/resistance
+- confluence
+- setup quality
+- data freshness
+
+Then create one combined multi-timeframe view:
+- lower timeframe signal
+- higher timeframe trend
+- alignment score
+- conflict warning
+- best timeframe to watch
+
+Example:
+“M15 pullback is forming, but H1 trend is still bullish. Wait for M15 continuation confirmation.”
+
+PART 3 — Opportunity Ranking
+
+Rank opportunities by:
+- confluence score
+- setup quality
+- strategy match
+- risk/reward quality
+- trend alignment
+- event/news risk
+- spread risk
+- broker availability
+- user preferences
+- historical performance of similar setups
+- data quality
+
+Do not rank opportunities with insufficient data above verified opportunities.
+
+Create sections:
+- Best Opportunities
+- Watch Closely
+- Wait for Confirmation
+- High Risk / Avoid
+- Data Insufficient
+
+PART 4 — Scanner Cards UI
+
+Update Scanner page with AI-ranked cards.
+
+Each card should show:
+- symbol
+- broker symbol
+- direction bias
+- opportunity score
+- setup quality score
+- confluence score
+- risk score
+- strategy match
+- key level
+- news/session warning
+- spread warning
+- data quality
+- last updated
+- why it matters
+
+Buttons:
+- Ask AI
+- Set Alert
+- Review Trade
+- Add to Watchlist
+- View Market Context
+- View Tools Used
+
+Do not allow instant execution from scanner.
+Review Trade must open a trade ticket first.
+
+PART 5 — Watchlist Intelligence
+
+Upgrade Watchlist so each symbol shows:
+- current opportunity state
+- trend bias
+- risk badge
+- event risk badge
+- spread status
+- strategy match
+- alert status
+- last scan time
+
+Allow users to:
+- pin symbols
+- mute symbols
+- set preferred timeframe
+- set alert threshold
+- choose strategy/playbook per symbol
+
+PART 6 — AI Scanner Conversation
+
+Update AI so users can ask:
+
+- What is the best market to watch right now?
+- What symbol has the strongest setup?
+- What should I avoid right now?
+- Is gold giving a good setup?
+- Which pair has the cleanest trend?
+- Which setup matches my playbook?
+- What is the best opportunity for scalping?
+- What is the best opportunity for intraday?
+- Why did you rank EURUSD higher than XAUUSD?
+- What tools did you use to rank this?
+- Which market has too much news risk?
+- Which market has the best risk/reward?
+
+AI must answer from real scanner/tool/opportunity data only.
+If data is stale or missing, AI must say so.
+
+AI response format:
+1. Direct answer
+2. Top opportunity
+3. Why it ranked high
+4. Tools used
+5. Risk warnings
+6. What to wait for
+7. Suggested next action
+
+PART 7 — Opportunity Alerts
+
+Create alerts when:
+- a symbol crosses opportunity score threshold
+- setup quality improves
+- confluence strengthens
+- price reaches key level
+- confirmation level breaks
+- invalidation level breaks
+- news risk increases
+- spread becomes too high
+- watched setup becomes valid
+- watched setup becomes invalid
+
+Alert actions:
+- View Scanner Card
+- Ask AI
+- Review Trade
+- Set Follow-Up Alert
+
+No instant execution.
+
+PART 8 — Strategy Playbook Integration
+
+For each user strategy/playbook:
+- scan symbols matching that strategy
+- identify matching setups
+- score setup quality
+- show whether the setup follows user rules
+- warn when user is about to enter outside their playbook
+
+Scanner should show:
+- matched playbook
+- passed rules
+- failed rules
+- missing data
+- AI recommendation
+
+PART 9 — Risk Governor Preview
+
+Before scanner suggests Review Trade, check:
+- platform mode
+- routing mode
+- symbol allowed
+- broker symbol available
+- risk limits
+- event restrictions
+- spread restrictions
+- account readiness
+
+Show:
+- Trade review available
+- Trading blocked
+- Demo only
+- Live pending approval
+- Risk warning
+- Symbol unavailable
+
+PART 10 — Admin Scanner Controls
+
+Add admin controls:
+- enable/disable scanner
+- set default scan interval
+- set allowed symbols
+- block symbols globally
+- set max symbols per user
+- set max scan frequency
+- pause alerts
+- view scanner health
+- view stale data sources
+- view provider errors
+
+PART 11 — Backend/API
+
+Add endpoints:
+
+- GET /api/opportunities
+- GET /api/opportunities/top
+- GET /api/opportunities/:symbol
+- POST /api/opportunities/scan
+- POST /api/opportunities/:symbol/ask-ai
+- POST /api/opportunities/:symbol/set-alert
+- GET /api/watchlist/intelligence
+- PATCH /api/watchlist/:symbol/preferences
+- GET /api/admin/scanner/overview
+- PATCH /api/admin/scanner/settings
+
+Add tables if missing:
+
+opportunity_scans:
+- id
+- user_id
+- symbol
+- broker_symbol
+- timeframe
+- direction_bias
+- opportunity_score
+- setup_quality_score
+- confluence_score
+- risk_score
+- strategy_id
+- label
+- reason_summary
+- key_level_to_watch
+- invalidation_level
+- suggested_action
+- tools_used
+- data_quality
+- created_at
+
+watchlist_symbol_preferences:
+- id
+- user_id
+- symbol
+- broker_symbol
+- preferred_timeframe
+- strategy_id
+- alert_threshold
+- pinned
+- muted
+- created_at
+- updated_at
+
+scanner_settings:
+- id
+- enabled
+- default_scan_interval_seconds
+- max_symbols_per_user
+- max_scan_frequency
+- alerts_enabled
+- updated_by_admin_id
+- updated_at
+
+PART 12 — Tests
+
+Add or update tests for:
+1. Opportunity Radar uses real available data only.
+2. Missing candle data marks opportunity data insufficient.
+3. Users only see their own watchlist opportunities.
+4. Shared-master users only see allowed broker symbols.
+5. Opportunity ranking does not rank stale data as strong.
+6. Multi-timeframe alignment works.
+7. Scanner card shows tools used.
+8. Review Trade opens ticket, not instant execution.
+9. Risk Governor preview blocks unavailable trades.
+10. Event/news risk lowers or blocks opportunity when configured.
+11. Strategy playbook match affects setup score.
+12. AI explains opportunity ranking using real data.
+13. AI does not invent scanner results.
+14. Opportunity alerts respect cooldown.
+15. Admin can pause scanner alerts.
+16. Mobile Scanner cards work on iPhone Safari.
+17. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Opportunity Radar status
+- Multi-Timeframe Scanner status
+- Opportunity Ranking status
+- Scanner Cards UI status
+- Watchlist Intelligence status
+- AI Scanner Conversation status
+- Opportunity Alerts status
+- Strategy Playbook integration status
+- Risk Governor preview status
+- Admin Scanner Controls status
+- mobile status
+- tests passed
+- remaining blockers

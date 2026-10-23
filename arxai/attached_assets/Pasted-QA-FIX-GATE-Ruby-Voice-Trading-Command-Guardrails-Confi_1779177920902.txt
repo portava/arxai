@@ -1,0 +1,43 @@
+QA/FIX GATE — Ruby Voice Trading Command Guardrails + Confirmation Flow
+
+Inspect the Ruby voice trading command guardrails from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Voice trading uses the existing Ruby brain and existing trade pipeline, not a duplicate execution path.
+2. Ruby can detect voice intents for opening, closing, editing SL, editing TP, cancelling orders, and asking trade/risk questions.
+3. “Buy EURUSD” prepares a trade ticket but does not execute automatically.
+4. “Sell XAUUSD” prepares a trade ticket but does not execute automatically.
+5. Live voice trades require clear confirmation.
+6. Demo voice trades still prevent duplicate submit.
+7. Voice close trade requires confirmation.
+8. Voice SL edit requires confirmation.
+9. Voice TP edit requires confirmation.
+10. Ruby reads back the action before confirmation.
+11. User can cancel a pending voice action.
+12. Duplicate transcripts do not create duplicate commands.
+13. Ambiguous trade commands ask for clarification instead of guessing.
+14. Voice commands only use authenticated current-user data.
+15. User A cannot close, edit, cancel, or view User B’s trade through voice.
+16. Voice cannot bypass one-click rules.
+17. Voice cannot bypass admin approval.
+18. Voice cannot bypass allocation/risk profile checks.
+19. Voice cannot bypass max lot size, max open trades, daily loss, allowed symbols, exposure, cooldown, bridge health, shared master mapping, or queue pause checks.
+20. Voice cannot create live commands from demo state.
+21. Ruby explains blocked voice actions clearly.
+22. Pending voice action card shows extracted details, missing fields, risk estimate, confirm, cancel, and edit controls.
+23. Mobile voice confirmation UI is usable and does not block key chart/trade controls.
+24. Audit logs are created for voice intent, prepared ticket, confirmation requested, confirmation cancelled, blocked action, and submitted action.
+25. No raw audio, secrets, bridge tokens, API keys, account credentials, session secrets, token hashes, or private user data are exposed in prompts, logs, UI, routes, or responses.
+26. No live trade is fired during QA.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining risks
+- confirmation that no live trade was fired

@@ -1,0 +1,264 @@
+PHASE 22F — FIX ARX AI SSE STREAM EVENT SHAPE + RECONNECTING STATUS
+
+Continue from the current ARX AI assistant work. Do NOT rebuild the app. Do NOT redesign the AI popup. Patch the existing AI chat/voice streaming system.
+
+CURRENT ISSUE FROM SCREENSHOT:
+The ARX AI popup now shows:
+“Received unexpected SSE event shape”
+
+The header also says:
+“RECONNECTING”
+and
+“Market data: not connected”
+
+This means the frontend SSE/EventSource/fetch-stream parser and backend AI streaming route are not using the same event format. Fix the stream contract instead of hiding the problem.
+
+GOAL:
+Make ARX AI chat streaming stable. The frontend should correctly understand all backend AI stream events, ignore safe heartbeat/ping events, handle provider-specific OpenAI events through a backend normalizer, and never show technical parser errors to users.
+
+STRICT RULES:
+1. Do not remove the AI popup.
+2. Do not rebuild the whole UI.
+3. Do not fake market data connection.
+4. Do not fake AI connection.
+5. Do not show “Received unexpected SSE event shape” to users.
+6. Do not show raw backend errors, raw OpenAI events, stack traces, HTML, or JSON dumps in the chat panel.
+7. Keep text chat, voice chat, and auto-listen mode working.
+8. The AI should still answer general app/trading questions even if market data is disconnected.
+
+TASK A — INSPECT CURRENT STREAMING SETUP FIRST
+Find and report the files/routes responsible for:
+- ARX AI popup component
+- AI chat send function
+- SSE/EventSource/fetch streaming client code
+- backend AI chat streaming route
+- OpenAI streaming/realtime adapter
+- reconnecting status logic
+- market data connection status logic
+
+Before patching, identify:
+- what event shape the frontend expects
+- what event shape the backend is actually sending
+- which event caused “Received unexpected SSE event shape”
+- whether the stream uses EventSource or fetch ReadableStream
+- whether OpenAI provider events are being passed directly to the frontend
+
+TASK B — CREATE ONE CANONICAL ARX STREAM CONTRACT
+Define one stable internal frontend-facing event contract.
+
+All backend AI streaming responses should emit ONLY these safe ARX event types to the frontend:
+
+1. status
+{
+  "type": "status",
+  "status": "connected" | "processing" | "reconnecting" | "done",
+  "message": "optional clean message"
+}
+
+2. delta
+{
+  "type": "delta",
+  "text": "partial assistant text"
+}
+
+3. done
+{
+  "type": "done",
+  "messageId": "optional id",
+  "final": true
+}
+
+4. error
+{
+  "type": "error",
+  "code": "AI_STREAM_ERROR" | "AI_OFFLINE" | "NETWORK_ERROR" | "VOICE_TOO_LARGE" | "UNKNOWN",
+  "message": "clean user-safe message"
+}
+
+5. ping
+{
+  "type": "ping",
+  "ts": 123456789
+}
+
+The frontend must not depend directly on raw OpenAI event names or random backend-specific shapes.
+
+TASK C — NORMALIZE BACKEND STREAM EVENTS
+Patch the backend AI streaming route so it converts all provider/internal events into the canonical ARX stream contract.
+
+The backend should:
+- Convert text deltas into { type: "delta", text: "..." }
+- Convert completion into { type: "done", final: true }
+- Convert heartbeat into { type: "ping", ts: Date.now() }
+- Convert errors into { type: "error", code, message }
+- Never forward raw provider events directly to the frontend
+- Never forward stack traces
+- Never forward HTML error responses
+- Never forward node_modules paths
+- Never forward raw OpenAI payloads unless in server-only logs
+
+If the backend receives an unknown provider event:
+- log it server-side in development/debug only
+- do not break the user-facing stream
+- either ignore it or map it to a safe status/ping event
+
+TASK D — FIX SSE HEADERS AND STREAM FORMAT
+If using Server-Sent Events, make sure the backend sends proper SSE formatting:
+
+Headers:
+- Content-Type: text/event-stream
+- Cache-Control: no-cache, no-transform
+- Connection: keep-alive
+
+Each message should be sent as:
+
+data: {"type":"delta","text":"hello"}
+
+with a blank line after it.
+
+Heartbeat can be:
+
+data: {"type":"ping","ts":123456789}
+
+or a comment heartbeat:
+
+: ping
+
+Do not send malformed JSON.
+Do not send multiple JSON objects on one data line.
+Do not send partial JSON.
+Do not send HTML responses through the SSE route.
+
+TASK E — FIX FRONTEND STREAM PARSER
+Patch the ARX AI frontend streaming parser so it:
+- safely buffers stream chunks
+- only parses complete SSE messages
+- handles chunk boundaries correctly
+- accepts the canonical ARX event contract
+- ignores ping events
+- appends delta text to the assistant message
+- finalizes message on done
+- shows clean messages on error
+- does not crash the popup on unknown events
+
+If an unknown event shape is received:
+- do not show “Received unexpected SSE event shape” to the user
+- log it to console only in development
+- show a clean fallback message only if the stream cannot continue:
+  “ARX AI had trouble reading the response. Please try again.”
+
+TASK F — ADD NON-STREAMING FALLBACK
+If streaming fails, the AI chat should retry once using the regular non-streaming JSON chat endpoint.
+
+Flow:
+1. Try streaming response.
+2. If stream parser fails or connection drops early, retry once with non-streaming chat.
+3. If fallback succeeds, show the response normally.
+4. If fallback fails, show:
+   “ARX AI is reconnecting. Try again in a moment.”
+
+Do not duplicate assistant messages.
+
+TASK G — SEPARATE AI STATUS FROM MARKET DATA STATUS
+The header currently says “RECONNECTING” while market data says not connected.
+
+Fix the logic so:
+- AI connection status is based on AI endpoint/stream health.
+- Market data connection status is based on MT5/market heartbeat only.
+- Market data disconnected should not force the entire AI assistant into “RECONNECTING.”
+- ARX AI should still answer general app, risk, strategy, and usage questions without market data.
+- Only live-price/live-market questions should mention that market data is unavailable.
+
+Correct behavior:
+- If AI works but market data is disconnected:
+  Header should not say full AI “RECONNECTING.”
+  It can show “AI ready” and separately “Market data: not connected.”
+- If AI stream fails:
+  Show “AI reconnecting.”
+- If both are connected:
+  Show “AI ready” and “Market data connected.”
+
+TASK H — KEEP VOICE AND AUTO-LISTEN WORKING
+Make sure this SSE fix does not break the voice system.
+
+Voice mode should:
+- auto-listen only while popup is open
+- stop listening when the popup closes
+- stop recording when speech ends
+- send one request per spoken message
+- pause listening while AI is speaking
+- resume listening after AI speech ends if auto-listen is enabled
+- use clean errors only
+
+If voice response uses the same SSE stream, make sure the voice path also receives canonical ARX events.
+
+TASK I — CLEAN USER-FACING ERROR MESSAGES
+Replace technical messages with clean messages:
+
+- Unexpected SSE event shape:
+  “ARX AI had trouble reading the response. Please try again.”
+
+- Stream disconnected:
+  “ARX AI is reconnecting. Try again in a moment.”
+
+- Market data disconnected:
+  “Market data is not connected yet. I can still answer general trading and app questions.”
+
+- Voice too large:
+  “Voice clip is too long. Please try a shorter message.”
+
+- Network issue:
+  “Connection issue. Please try again.”
+
+Never show:
+- “SSE event shape”
+- raw event objects
+- raw JSON dumps
+- HTML
+- stack traces
+- OpenAI internal event names
+- server paths
+- node_modules paths
+
+TASK J — QUICK SUGGESTIONS MUST STILL WORK
+Verify these buttons still send proper prompts:
+- Analyze my trades
+- Check MT5 bridge
+- Explain my risk
+- Market update
+- How do I use this?
+
+If market data is disconnected:
+- “Market update” should explain that live market data is unavailable and offer a general market-analysis mode or instructions to reconnect MT5/market feed.
+- Other buttons should still work normally.
+
+TASK K — QA / FIX GATE
+After patching, run full QA before stopping.
+
+QA must verify:
+1. AI text chat sends successfully.
+2. Streaming response works.
+3. Unknown backend stream events no longer crash the popup.
+4. “Received unexpected SSE event shape” never appears to the user.
+5. Non-streaming fallback works if streaming fails.
+6. Backend sends canonical ARX stream events only.
+7. Frontend handles ping/status/delta/done/error correctly.
+8. Market data disconnected does not break AI chat.
+9. AI status and market data status are separate.
+10. Voice auto-listen still works only while popup is open.
+11. Mic stops when popup closes.
+12. AI does not record itself while speaking.
+13. Quick suggestion buttons work.
+14. Mobile Safari layout does not overflow.
+15. No raw server errors appear in the UI.
+
+Only continue if QA passes. If anything fails, fix it first and rerun QA.
+
+After finishing, report:
+- files changed
+- exact cause of the SSE shape mismatch
+- frontend expected shape
+- backend previous actual shape
+- final canonical ARX event shape
+- how reconnecting status was corrected
+- whether text chat, voice chat, and quick suggestions pass QA

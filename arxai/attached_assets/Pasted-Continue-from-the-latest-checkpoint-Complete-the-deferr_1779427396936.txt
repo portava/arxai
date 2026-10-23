@@ -1,0 +1,105 @@
+Continue from the latest checkpoint. Complete the deferred items only: U3, U5, U6, and T005. Do not rebuild working systems from scratch.
+
+Before editing:
+- Inspect the current codebase.
+- Confirm the latest checkpoint state.
+- Confirm the bottom mobile AI nav button points to /ai-command-center, not the old route.
+- Confirm scanner, Ruby, live/demo/paper state labels, bottom nav spacing, and trade guard status still work.
+
+TASK U3 — /ai-command-center 4-tab refactor
+Refactor /ai-command-center into a clean, simple 4-tab user-facing command center:
+
+Tabs:
+1. Chat
+   - Ruby live chat
+   - Ruby typing/thinking state with animated dots
+   - Voice/listen controls if already present
+   - Saved conversation access if already present
+
+2. Market Read
+   - Selected market/symbol explanation
+   - Scanner-linked Ruby market insight
+   - Plain-language explanation of trend, volatility, risk, structure, indicators, and available news/current-event context
+
+3. Commands
+   - User-safe trading commands/actions
+   - No raw backend route names, guard names, function names, evaluator names, or stack traces
+   - Any blocked action must explain the reason in plain language
+
+4. Memory
+   - User-facing saved chat/memory/preferences area if already present
+   - Keep it clean and simple
+   - Do not expose internal storage names or backend implementation details
+
+Requirements:
+- Keep the UI simple-first and mobile-friendly.
+- Do not remove existing features.
+- Move clutter into tabs, collapsible areas, or clean cards.
+- Make the page feel like Ruby’s main command center, not a developer panel.
+- The MobileBottomNav AI button must route here.
+
+TASK U5 — dashboard.tsx simple-first reorganization
+Reorganize the dashboard so the first screen is easier for users to understand.
+
+Keep all existing features, but reduce clutter:
+- Put the most important user info first:
+  - account status
+  - live/demo/paper mode
+  - account balance/equity/margin/free margin/margin level if available
+  - active open trades with real-time P/L money value if available
+  - Ruby status/quick insight
+  - scanner summary
+- Move advanced, admin, diagnostic, or rarely used sections into collapsible cards/tabs.
+- Remove repetitive wording and duplicate alerts.
+- Do not expose raw identifiers or internal implementation names to normal users.
+- Admin/operator developer-detail drawers may remain only where project policy already allows them, but normal user pages must stay clean.
+
+TASK T005 — ScannerTradeModal migration to instant router
+Migrate ScannerTradeModal toward the instant router safely.
+
+Requirements:
+- Check the current ScannerTradeModal and instant router first.
+- Preserve demo-only behavior where required.
+- Do not force live behavior where the router rejects non-live.
+- If scanner trade execution is not allowed due to mode/state/approval, show a plain-language blocked message.
+- If approved and allowed, scanner trade action should use the same user-safe trade flow as the instant router.
+- Keep confirmations, risk controls, stop loss, take profit, order type, and approval checks intact.
+- No unauthorized live/shared-master trade path.
+- No hidden live flip.
+- No weakening placeLiveOrderGuarded or Phase B 16-gate default-deny behavior.
+
+TASK U6 — mobile e2e + smoke regression sweep
+Run or add the smallest practical mobile regression tests available in this project.
+
+Check:
+- login page loads correctly
+- forgot password/request access/use invite code work or fail gracefully
+- bottom mobile nav has no gap underneath
+- AI nav opens /ai-command-center
+- /ai-command-center tabs work on mobile
+- dashboard loads and is not overwhelming
+- scanner search works
+- symbol groups collapse/expand
+- selected symbol changes market focus
+- Ruby explanation panel appears
+- Ruby typing/thinking animation appears while responding
+- trade buttons do not bypass confirmations
+- blocked live/shared-master states show plain-language reasons
+- no internal function names appear in normal user UI
+
+Safety rules:
+- Do not introduce server-side broker credentials.
+- Do not weaken live/shared-master safeguards.
+- Do not change Phase B 16-gate evaluator unless there is a real bug, and preserve default-deny behavior.
+- Do not remove admin approval, typed confirmation phrase, or precondition checks.
+- Do not expose internal function names, route names, evaluator names, stack traces, or raw guard names to normal users.
+- Keep per-user isolation intact.
+
+Acceptance criteria:
+- /ai-command-center is a clean 4-tab Ruby command center.
+- Mobile AI nav points to /ai-command-center.
+- Dashboard is simpler without losing features.
+- ScannerTradeModal uses the safest compatible instant-router path or gives a clear blocked reason.
+- Mobile smoke/e2e checks pass or failures are fixed.
+- Typecheck/build/lint pass if available.
+- Existing live trading safety remains locked unless proper approvals are present.

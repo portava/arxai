@@ -1,0 +1,359 @@
+/* ─── Design tokens ─────────────────────────────────────────────────────────── */
+.arx-aicon {
+  --arx-aicon-stroke: 1.2;
+  --arx-aicon-status-radius: 14.5;
+  --arx-aicon-color-cyan: #22d3ee;
+  --arx-aicon-color-cyan-soft: #67e8f9;
+  --arx-aicon-color-cyan-pale: #a5f3fc;
+  --arx-aicon-color-ink: #082f49;
+  --arx-aicon-color-glint: #e0f2fe;
+  --arx-aicon-color-mark: #f0f9ff;
+  --arx-aicon-color-warning: #f59e0b;
+  --arx-aicon-color-error: #ef4444;
+  --arx-aicon-aura-opacity: 0.85;
+  --arx-aicon-aura-duration: 3.6s;
+  --arx-aicon-core-duration: 3.2s;
+  display: inline-block;
+  position: relative;
+  line-height: 0;
+}
+
+:root {
+  --arx-assistant-z: 40;
+  --arx-assistant-bottom-mobile: calc(env(safe-area-inset-bottom) + 96px);
+  --arx-assistant-bottom-desktop: 6rem;
+  --arx-assistant-right: 1rem;
+  --arx-assistant-right-desktop: 1.5rem;
+}
+
+.arx-aicon svg { display: block; overflow: visible; }
+
+/* ─── Idle: rich breathing aura with colour shift ────────────────────────────── */
+.arx-aicon .arx-aicon-aura {
+  transform-origin: 50% 50%;
+  animation: arx-aicon-aura 3.6s ease-in-out infinite;
+}
+
+/* ─── Core orb: slow float + scale, with subtle colour pulse ─────────────────── */
+.arx-aicon .arx-aicon-core {
+  transform-origin: 50% 50%;
+  animation: arx-aicon-float 4s ease-in-out infinite;
+  transition: transform 320ms cubic-bezier(.4,.0,.2,1),
+              opacity 240ms ease;
+}
+
+/* ─── Orbit dots: slow continuous rotation ───────────────────────────────────── */
+.arx-aicon .arx-aicon-orbit {
+  transform-origin: 50% 50%;
+  animation: arx-aicon-orbit 7s linear infinite;
+}
+
+/* ─── Bubble tail ────────────────────────────────────────────────────────────── */
+.arx-aicon .arx-aicon-tail {
+  opacity: 0;
+  transform-origin: 70% 70%;
+  transform: scale(0.4);
+  transition: opacity 280ms ease, transform 280ms cubic-bezier(.34,1.56,.64,1);
+}
+
+/* ─── ARX wordmark ───────────────────────────────────────────────────────────── */
+.arx-aicon .arx-aicon-mark {
+  opacity: 0;
+  transition: opacity 220ms ease 80ms;
+}
+
+/* ─── Hover: faster aura + brightness burst ─────────────────────────────────── */
+.arx-aicon[data-state="hover"] .arx-aicon-aura {
+  animation: arx-aicon-aura-hover 1.4s ease-in-out infinite;
+}
+.arx-aicon[data-state="hover"] .arx-aicon-core {
+  animation: arx-aicon-float 1.8s ease-in-out infinite;
+  filter: brightness(1.25) drop-shadow(0 0 6px #22d3ee88);
+}
+
+/* ─── Opening: dramatic scale burst ─────────────────────────────────────────── */
+.arx-aicon[data-state="opening"] {
+  animation: arx-aicon-open-burst 0.42s cubic-bezier(.34,1.56,.64,1) forwards;
+}
+.arx-aicon[data-state="opening"] .arx-aicon-aura {
+  animation: arx-aicon-aura-burst 0.42s ease-out forwards;
+}
+.arx-aicon[data-state="opening"] .arx-aicon-core {
+  animation: arx-aicon-core-burst 0.38s cubic-bezier(.34,1.56,.64,1) forwards;
+}
+
+/* ─── Open state ─────────────────────────────────────────────────────────────── */
+.arx-aicon[data-state="open"] .arx-aicon-core,
+.arx-aicon[data-state="thinking"] .arx-aicon-core,
+.arx-aicon[data-state="typing"] .arx-aicon-core,
+.arx-aicon[data-state="ready"] .arx-aicon-core {
+  animation: arx-aicon-open-breathe 3s ease-in-out infinite;
+}
+.arx-aicon[data-state="open"] .arx-aicon-aura {
+  animation: arx-aicon-aura-open 2.8s ease-in-out infinite;
+}
+
+/* ─── Closing: shrink + fade ─────────────────────────────────────────────────── */
+.arx-aicon[data-state="closing"] {
+  animation: arx-aicon-close-shrink 0.32s cubic-bezier(.4,.0,.2,1) forwards;
+}
+.arx-aicon[data-state="closing"] .arx-aicon-aura {
+  animation: arx-aicon-aura-close 0.32s ease-in forwards;
+}
+
+/* Show/hide tail and mark */
+.arx-aicon[data-state="opening"] .arx-aicon-tail,
+.arx-aicon[data-state="open"] .arx-aicon-tail,
+.arx-aicon[data-state="thinking"] .arx-aicon-tail,
+.arx-aicon[data-state="typing"] .arx-aicon-tail,
+.arx-aicon[data-state="ready"] .arx-aicon-tail {
+  opacity: 1;
+  transform: scale(1);
+}
+.arx-aicon[data-state="opening"] .arx-aicon-mark,
+.arx-aicon[data-state="open"] .arx-aicon-mark,
+.arx-aicon[data-state="ready"] .arx-aicon-mark {
+  opacity: 1;
+}
+.arx-aicon[data-state="closing"] .arx-aicon-tail { opacity: 0; transform: scale(0.4); }
+.arx-aicon[data-state="closing"] .arx-aicon-mark { opacity: 0; }
+
+/* Hide orbit when open */
+.arx-aicon[data-state="opening"] .arx-aicon-orbit,
+.arx-aicon[data-state="open"] .arx-aicon-orbit,
+.arx-aicon[data-state="thinking"] .arx-aicon-orbit,
+.arx-aicon[data-state="typing"] .arx-aicon-orbit,
+.arx-aicon[data-state="ready"] .arx-aicon-orbit {
+  opacity: 0;
+}
+
+/* ─── Particles ──────────────────────────────────────────────────────────────── */
+.arx-aicon .arx-aicon-particle { opacity: 0; transform-origin: 50% 50%; }
+
+.arx-aicon[data-state="hover"] .arx-aicon-particle,
+.arx-aicon[data-state="opening"] .arx-aicon-particle,
+.arx-aicon[data-state="ready"] .arx-aicon-particle {
+  animation: arx-aicon-particle 1.2s ease-out forwards;
+}
+.arx-aicon[data-state="hover"] .arx-aicon-particle,
+.arx-aicon[data-state="opening"] .arx-aicon-particle { animation-iteration-count: infinite; }
+.arx-aicon[data-state="hover"] .arx-aicon-particle.p2,
+.arx-aicon[data-state="opening"] .arx-aicon-particle.p2 { animation-delay: .4s; }
+.arx-aicon[data-state="hover"] .arx-aicon-particle.p3,
+.arx-aicon[data-state="opening"] .arx-aicon-particle.p3 { animation-delay: .8s; }
+
+/* ─── Idle floating particles (new — subtle continuous bloom) ─────────────────── */
+.arx-aicon[data-state="idle"] .arx-aicon-particle {
+  animation: arx-aicon-particle-idle 4s ease-in-out infinite;
+  opacity: 0;
+}
+.arx-aicon[data-state="idle"] .arx-aicon-particle.p2 { animation-delay: 1.3s; }
+.arx-aicon[data-state="idle"] .arx-aicon-particle.p3 { animation-delay: 2.6s; }
+
+/* ─── Thinking ring ──────────────────────────────────────────────────────────── */
+.arx-aicon .arx-aicon-think-ring { opacity: 0; transform-origin: 50% 50%; }
+.arx-aicon[data-state="thinking"] .arx-aicon-think-ring {
+  opacity: 1;
+  animation: arx-aicon-think 1.05s linear infinite;
+}
+
+/* ─── Typing dots ────────────────────────────────────────────────────────────── */
+.arx-aicon .arx-aicon-typing-dot { opacity: 0; }
+.arx-aicon[data-state="typing"] .arx-aicon-mark { opacity: 0; }
+.arx-aicon[data-state="typing"] .arx-aicon-typing-dot {
+  animation: arx-aicon-typing 1.2s ease-in-out infinite;
+}
+.arx-aicon[data-state="typing"] .arx-aicon-typing-dot.d2 { animation-delay: 0.18s; }
+.arx-aicon[data-state="typing"] .arx-aicon-typing-dot.d3 { animation-delay: 0.36s; }
+
+/* ─── Ready pulse ────────────────────────────────────────────────────────────── */
+.arx-aicon[data-state="ready"] .arx-aicon-aura {
+  animation: arx-aicon-ready 0.9s ease-out 1;
+}
+
+/* ─── Status rings ───────────────────────────────────────────────────────────── */
+.arx-aicon .arx-aicon-status-ring {
+  fill: none; stroke-width: 1.2; opacity: 0;
+  transform-origin: 50% 50%;
+  transition: opacity 200ms ease;
+}
+.arx-aicon[data-status="warning"] .arx-aicon-status-ring {
+  stroke: var(--arx-aicon-color-warning); opacity: 0.85;
+  animation: arx-aicon-status-pulse 2.4s ease-in-out infinite;
+}
+.arx-aicon[data-status="error"] .arx-aicon-status-ring {
+  stroke: var(--arx-aicon-color-error); opacity: 0.9;
+  animation: arx-aicon-status-pulse 1.6s ease-in-out infinite;
+}
+
+/* ─── Disabled ───────────────────────────────────────────────────────────────── */
+.arx-aicon[data-state="disabled"] {
+  filter: grayscale(0.85) brightness(0.6); opacity: 0.7;
+}
+.arx-aicon[data-state="disabled"] .arx-aicon-aura,
+.arx-aicon[data-state="disabled"] .arx-aicon-core,
+.arx-aicon[data-state="disabled"] .arx-aicon-orbit,
+.arx-aicon[data-state="disabled"] .arx-aicon-particle { animation: none; }
+
+/* ─── Keyframes ──────────────────────────────────────────────────────────────── */
+
+/* Idle aura: deeper breathing with colour shift */
+@keyframes arx-aicon-aura {
+  0%   { transform: scale(0.88); opacity: .45; filter: hue-rotate(0deg);   }
+  30%  { transform: scale(1.04); opacity: .75; filter: hue-rotate(12deg);  }
+  60%  { transform: scale(1.10); opacity: .90; filter: hue-rotate(-8deg);  }
+  100% { transform: scale(0.88); opacity: .45; filter: hue-rotate(0deg);   }
+}
+
+/* Hover aura: fast bright pulse */
+@keyframes arx-aicon-aura-hover {
+  0%, 100% { transform: scale(1.02); opacity: .80; }
+  50%       { transform: scale(1.16); opacity: 1;   filter: brightness(1.3); }
+}
+
+/* Idle float: gentle vertical drift + scale */
+@keyframes arx-aicon-float {
+  0%   { transform: scale(1)    translateY(0px);   }
+  25%  { transform: scale(1.03) translateY(-1.2px); }
+  50%  { transform: scale(1.06) translateY(-2px);   }
+  75%  { transform: scale(1.03) translateY(-1.2px); }
+  100% { transform: scale(1)    translateY(0px);   }
+}
+
+/* Opening burst: whole icon pops out */
+@keyframes arx-aicon-open-burst {
+  0%   { transform: scale(0.8) rotate(-6deg); opacity: 0.6; }
+  60%  { transform: scale(1.18) rotate(2deg); opacity: 1;   }
+  100% { transform: scale(1)    rotate(0deg); opacity: 1;   }
+}
+
+/* Opening aura burst */
+@keyframes arx-aicon-aura-burst {
+  0%   { transform: scale(0.6); opacity: 0; }
+  50%  { transform: scale(1.4); opacity: 1; }
+  100% { transform: scale(1.1); opacity: 0.85; }
+}
+
+/* Opening core burst */
+@keyframes arx-aicon-core-burst {
+  0%   { transform: scale(0.7); }
+  65%  { transform: scale(1.15); }
+  100% { transform: scale(1.04); }
+}
+
+/* Open breathe: gentle pulsing while panel is open */
+@keyframes arx-aicon-open-breathe {
+  0%, 100% { transform: scale(1.03); }
+  50%       { transform: scale(1.08); }
+}
+
+/* Open aura: warm glow while panel open */
+@keyframes arx-aicon-aura-open {
+  0%, 100% { transform: scale(1.05); opacity: .70; }
+  50%       { transform: scale(1.15); opacity: 1;   }
+}
+
+/* Closing shrink */
+@keyframes arx-aicon-close-shrink {
+  0%   { transform: scale(1.04) rotate(0deg);  opacity: 1;   }
+  40%  { transform: scale(0.88) rotate(-4deg); opacity: 0.8; }
+  100% { transform: scale(1)    rotate(0deg);  opacity: 1;   }
+}
+
+/* Closing aura fade */
+@keyframes arx-aicon-aura-close {
+  0%   { transform: scale(1.1); opacity: 0.8; }
+  100% { transform: scale(0.7); opacity: 0;   }
+}
+
+/* Orbit rotation */
+@keyframes arx-aicon-orbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Particles: hover/opening — shoot outward */
+@keyframes arx-aicon-particle {
+  0%   { opacity: 0;   transform: translate(0,0) scale(0.6); }
+  25%  { opacity: 0.9; }
+  100% { opacity: 0;   transform: translate(var(--dx, 8px), var(--dy, -10px)) scale(0.1); }
+}
+
+/* Particles: idle — slow gentle float */
+@keyframes arx-aicon-particle-idle {
+  0%   { opacity: 0;    transform: translate(0,0) scale(0.5); }
+  20%  { opacity: 0.5; }
+  80%  { opacity: 0.2;  transform: translate(calc(var(--dx,8px)*0.5), calc(var(--dy,-10px)*0.5)) scale(0.3); }
+  100% { opacity: 0;    transform: translate(calc(var(--dx,8px)*0.6), calc(var(--dy,-10px)*0.6)) scale(0.1); }
+}
+
+/* Thinking ring spin */
+@keyframes arx-aicon-think {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Typing dots bounce */
+@keyframes arx-aicon-typing {
+  0%, 100% { opacity: 0.25; transform: translateY(0);    }
+  50%       { opacity: 1;    transform: translateY(-2px); }
+}
+
+/* Ready cyan flash */
+@keyframes arx-aicon-ready {
+  0%   { transform: scale(0.95); opacity: 0.85; }
+  40%  { transform: scale(1.25); opacity: 1;    filter: brightness(1.4); }
+  100% { transform: scale(1.06); opacity: 0.85; }
+}
+
+/* Status ring pulse */
+@keyframes arx-aicon-status-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%       { opacity: 1; }
+}
+
+/* ─── Candlesticks ───────────────────────────────────────────────────────────── */
+.arx-aicon .arx-aicon-candles {
+  transform-origin: 50% 60%;
+}
+/* Idle: candles grow up one by one */
+.arx-aicon[data-state="idle"] .arx-aicon-candles rect:nth-child(2) {
+  animation: arx-candle-grow 3s ease-in-out infinite;
+}
+.arx-aicon[data-state="idle"] .arx-aicon-candles rect:nth-child(5) {
+  animation: arx-candle-grow 3s ease-in-out 0.6s infinite;
+}
+.arx-aicon[data-state="idle"] .arx-aicon-candles rect:nth-child(8) {
+  animation: arx-candle-grow 3s ease-in-out 1.2s infinite;
+}
+.arx-aicon[data-state="idle"] .arx-aicon-candles rect:nth-child(11) {
+  animation: arx-candle-grow 3s ease-in-out 1.8s infinite;
+}
+/* Hover: candles pulse brighter */
+.arx-aicon[data-state="hover"] .arx-aicon-candles {
+  filter: brightness(1.4) drop-shadow(0 0 2px #4ade8077);
+}
+
+@keyframes arx-candle-grow {
+  0%, 100% { transform: scaleY(1);    transform-origin: bottom; opacity: 0.9; }
+  40%       { transform: scaleY(1.15); transform-origin: bottom; opacity: 1;   }
+  70%       { transform: scaleY(0.92); transform-origin: bottom; opacity: 0.8; }
+}
+
+/* ─── Reduced motion ─────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .arx-aicon .arx-aicon-aura,
+  .arx-aicon .arx-aicon-core,
+  .arx-aicon .arx-aicon-orbit,
+  .arx-aicon .arx-aicon-particle,
+  .arx-aicon .arx-aicon-think-ring,
+  .arx-aicon .arx-aicon-typing-dot,
+  .arx-aicon .arx-aicon-status-ring,
+  .arx-aicon[data-state="opening"],
+  .arx-aicon[data-state="closing"] { animation: none !important; }
+  .arx-aicon .arx-aicon-tail,
+  .arx-aicon .arx-aicon-core,
+  .arx-aicon .arx-aicon-mark { transition: none !important; }
+  .arx-aicon[data-status="warning"] .arx-aicon-status-ring { opacity: 0.85; }
+  .arx-aicon[data-status="error"]   .arx-aicon-status-ring { opacity: 0.9;  }
+}

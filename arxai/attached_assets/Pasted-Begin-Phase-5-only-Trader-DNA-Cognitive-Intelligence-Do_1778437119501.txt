@@ -1,0 +1,119 @@
+Begin Phase 5 only: Trader DNA + Cognitive Intelligence.
+
+Do not build Replay Lab, Portfolio Manager, Evolution, or unrestricted live auto-execution yet.
+
+Goal:
+Build evidence-based personal trading intelligence that identifies the trader’s edge, danger zones, behavior patterns, recovery needs, and permission limits without making unsupported emotional assumptions.
+
+Build:
+
+/src/domain/trader-dna/
+  traderDNA.types.ts
+  traderProfile.engine.ts
+  personalBaseline.engine.ts
+  behaviorEvidence.engine.ts
+  edgeFingerprint.engine.ts
+  traderStateClassifier.engine.ts
+  overrideForensics.engine.ts
+  postLossBehavior.engine.ts
+  disciplineScore.engine.ts
+  personalDrawdownProfile.engine.ts
+  bestConditions.engine.ts
+  worstConditions.engine.ts
+  personalRiskAdjustment.engine.ts
+
+/src/domain/trader-dna/prescription/
+  personalRiskPrescription.engine.ts
+  recoveryProtocol.engine.ts
+  tradeLimitPolicy.engine.ts
+  sizingThrottlePolicy.engine.ts
+  confirmationPolicy.engine.ts
+  paperModeFallback.engine.ts
+
+/src/domain/trader-dna/temporal/
+  decisionSequence.engine.ts
+  pacingAnalysis.engine.ts
+  escalationPattern.engine.ts
+  recoveryTrajectory.engine.ts
+
+/src/domain/trader-dna/contextual/
+  contextualBehavior.engine.ts
+  marketBehaviorInteraction.engine.ts
+  volatilityBehaviorInteraction.engine.ts
+  executionStressBehavior.engine.ts
+
+/src/domain/trader-dna/recovery/
+  recoveryEffectiveness.engine.ts
+  cooldownEffectiveness.engine.ts
+  restrictionEffectiveness.engine.ts
+
+/src/domain/trader-dna/long-horizon/
+  behavioralDrift.engine.ts
+  disciplineTrend.engine.ts
+  aggressionTrend.engine.ts
+  overrideTrend.engine.ts
+
+/src/domain/cognitive/
+  cognitiveState.types.ts
+  behavioralRiskEvidence.engine.ts
+  cognitiveLoad.engine.ts
+  stressModel.engine.ts
+  fatigueModel.engine.ts
+  pacing.engine.ts
+  emotionalDegradation.engine.ts
+  cooldownPolicy.engine.ts
+  permissionThrottle.engine.ts
+  cognitiveRecoveryScore.engine.ts
+
+/src/domain/cognitive/adaptive/
+  adaptivePacing.engine.ts
+  notificationIntensity.engine.ts
+  uiDensityAdjustment.engine.ts
+  permissionSensitivity.engine.ts
+
+Rules:
+- Do not label the trader emotionally without evidence.
+- Use neutral language like “elevated risk pattern detected,” not “you are emotional.”
+- Build a personal baseline before making strong behavior decisions.
+- Compare current behavior against the trader’s normal behavior.
+- Trader DNA and Cognitive systems cannot place trades.
+- They can recommend WAIT, REDUCE_SIZE, COOLDOWN, RECOVERY_MODE, PAPER_MODE, or HARD_BLOCK.
+- Risk Governor consumes traderRiskScore and cognitiveRiskScore.
+- Control Tower consumes recommendedPermissionLevel.
+- Personal Risk Prescription must output specific permission changes, not vague warnings.
+- Recovery protocols must define how permissions are restored.
+- Temporal analysis must evaluate behavior sequences, not isolated events.
+- Contextual analysis must combine behavior with volatility, execution stress, disagreement score, and global state.
+- Long-horizon analysis must detect gradual discipline, aggression, and override drift.
+- All behavior evidence, prescriptions, recovery outcomes, and drift analysis must be logged into the Black Box Vault.
+- Keep all previous phase tests passing.
+- No unrestricted live auto-execution yet.
+
+Required outputs:
+- personalEdgeFingerprint
+- personalDangerFingerprint
+- behaviorEvidenceScore
+- disciplineScore
+- overrideQualityScore
+- postLossRiskScore
+- traderRiskScore
+- cognitiveRiskScore
+- prescriptionLevel
+- restrictedActions
+- allowedActions
+- recoveryRequirements
+- permissionRestoreConditions
+- recommendedPermissionLevel
+- plainEnglishExplanation
+
+After Phase 5, stop and report:
+1. Files created
+2. Personal baseline system completed
+3. Edge/Danger fingerprint completed
+4. Behavior evidence system completed
+5. Risk prescription system completed
+6. Temporal/contextual behavior systems completed
+7. Cognitive engine completed
+8. Risk Governor and Control Tower integration completed
+9. Tests passed/failed
+10. Whether Phase 6 is safe to begin

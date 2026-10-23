@@ -1,0 +1,433 @@
+Build ARX Investor Compliance + KYC + Disclosure Gate v1.
+
+Goal:
+Create a controlled investor onboarding and approval system before any user can fund an investor account, receive allocation, view funding instructions, or participate in the ARX investor pool.
+
+This system should protect ARX by making sure every investor has:
+- an InvestorAccount
+- identity/KYC status
+- risk disclosure acknowledgment
+- investor profile
+- admin approval
+- deposit eligibility status
+- audit trail
+
+Important:
+Do not allow public deposits.
+Do not allow unapproved users to fund.
+Do not allow users to bypass disclosures.
+Do not allow investors to trade.
+Do not use guaranteed-profit language.
+Do not expose investor records to other investors.
+
+Core rule:
+A user cannot access crypto funding, manual funding instructions, investor allocations, or withdrawal features until their InvestorAccount is approved.
+
+Investor onboarding flow:
+
+1. User requests investor access
+User submits:
+- legal name
+- email
+- phone
+- country/state
+- date of birth if needed
+- investor type:
+  - individual
+  - business/entity
+- planned investment range
+- funding preference:
+  - crypto
+  - bank/manual
+  - undecided
+- experience level:
+  - beginner
+  - intermediate
+  - advanced
+- risk acknowledgment checkbox
+
+Status becomes:
+- investor_access_requested
+
+2. Investor disclosure screen
+Before funding, user must acknowledge:
+- trading involves risk of loss
+- values are not guaranteed
+- investor portal is internal tracking
+- deposits do not become active capital until confirmed and approved
+- withdrawals require admin approval
+- lockup rules may apply
+- crypto transfers may be irreversible
+- ARX performance share applies only to profits if enabled
+
+User must check:
+- I understand trading involves risk of loss.
+- I understand returns are not guaranteed.
+- I understand withdrawals require review and approval.
+- I understand crypto deposits are not credited until confirmed.
+- I understand the investor portal is for internal tracking.
+
+Save:
+- disclosureVersion
+- acceptedAt
+- ip/device if available
+- userId
+
+3. KYC/provider placeholder
+Add a KYC provider abstraction, even if v1 is manual.
+
+Supported modes:
+- manual_admin_review
+- provider_stub
+- future_provider
+
+KYC statuses:
+- not_started
+- pending
+- submitted
+- passed
+- failed
+- requires_more_info
+- expired
+
+For v1:
+- admin can manually mark KYC status.
+- system must be ready to connect real KYC provider later.
+
+4. Admin investor review screen
+Create Admin → Investor Approvals.
+
+Admin can view:
+- pending investor requests
+- submitted investor profile
+- disclosure acceptance status
+- KYC status
+- planned investment range
+- funding preference
+- risk acknowledgment
+- admin notes
+- approval history
+
+Admin actions:
+- approve investor
+- deny investor
+- request more information
+- mark KYC passed
+- mark KYC failed
+- suspend investor
+- reactivate investor
+- add admin note
+
+Investor statuses:
+- requested
+- pending_disclosure
+- pending_kyc
+- pending_admin_review
+- approved
+- denied
+- suspended
+- closed
+
+Deposit eligibility:
+- eligible
+- blocked_pending_disclosure
+- blocked_pending_kyc
+- blocked_pending_admin_review
+- blocked_suspended
+- blocked_denied
+
+5. Funding gate
+Before creating any CryptoFundingIntent or manual deposit request, check:
+
+Investor must have:
+- InvestorAccount exists
+- status = approved
+- disclosure accepted
+- KYC status = passed or manually approved
+- deposit eligibility = eligible
+- not suspended
+- no compliance block
+
+If any check fails:
+- block funding
+- show exact reason
+- do not create funding intent
+
+Example messages:
+- “Investor approval is required before funding.”
+- “Please accept the risk disclosure before funding.”
+- “Your investor review is still pending.”
+- “Funding is currently disabled for this account.”
+
+6. Withdrawal gate
+Investor can request withdrawal only if:
+- InvestorAccount approved or previously approved
+- allocation exists
+- withdrawal not blocked by admin
+- destination wallet/payment info exists
+- amount is within eligible withdrawal amount
+
+Suspended users:
+- cannot add new deposits
+- can still view existing records
+- withdrawal requests require admin review
+
+7. Compliance hold system
+Add ability for admin to place hold on investor or deposit.
+
+ComplianceHold:
+- id
+- investorAccountId
+- entityType
+  - investor_account
+  - deposit
+  - withdrawal
+  - allocation
+- entityId
+- reason
+- status
+  - active
+  - resolved
+  - cancelled
+- createdByAdminId
+- resolvedByAdminId
+- createdAt
+- resolvedAt
+- notes
+
+If hold is active:
+- block new funding
+- block allocation
+- block withdrawal approval
+- show admin-only reason
+- investor sees generic message:
+  “Your account requires review before this action can continue.”
+
+8. Data model additions
+
+InvestorProfile:
+- id
+- investorAccountId
+- legalName
+- phone
+- country
+- state
+- investorType
+- plannedInvestmentRange
+- fundingPreference
+- experienceLevel
+- createdAt
+- updatedAt
+
+InvestorDisclosureAcceptance:
+- id
+- investorAccountId
+- disclosureVersion
+- disclosureTitle
+- acceptedAt
+- ipAddress
+- userAgent
+- createdAt
+
+InvestorKycReview:
+- id
+- investorAccountId
+- provider
+- providerReferenceId
+- status
+- reviewedByAdminId
+- reviewedAt
+- expiresAt
+- failureReason
+- notes
+- createdAt
+- updatedAt
+
+InvestorComplianceHold:
+- id
+- investorAccountId
+- entityType
+- entityId
+- reasonCode
+- adminNote
+- status
+- createdByAdminId
+- resolvedByAdminId
+- createdAt
+- resolvedAt
+
+InvestorAdminNote:
+- id
+- investorAccountId
+- adminUserId
+- note
+- visibility
+  - admin_only
+- createdAt
+
+9. API routes
+
+Investor routes:
+- POST /api/investors/request-access
+- GET /api/investors/me/status
+- POST /api/investors/me/disclosures/accept
+- GET /api/investors/me/deposit-eligibility
+- GET /api/investors/me/profile
+- PATCH /api/investors/me/profile
+
+Admin routes:
+- GET /api/admin/investors/approvals
+- GET /api/admin/investors/:id
+- POST /api/admin/investors/:id/approve
+- POST /api/admin/investors/:id/deny
+- POST /api/admin/investors/:id/request-more-info
+- POST /api/admin/investors/:id/kyc/mark-passed
+- POST /api/admin/investors/:id/kyc/mark-failed
+- POST /api/admin/investors/:id/suspend
+- POST /api/admin/investors/:id/reactivate
+- POST /api/admin/investors/:id/holds
+- POST /api/admin/investors/:id/notes
+
+10. Investor UI
+
+Add Investor Onboarding screen.
+
+Sections:
+- investor access request
+- investor profile form
+- risk disclosure acceptance
+- KYC/review status
+- approval status
+- next step
+
+Status examples:
+- “Pending admin review”
+- “Disclosure required”
+- “KYC review pending”
+- “Approved — funding enabled”
+- “Funding disabled — contact admin”
+
+If not approved, hide/disable:
+- Fund with crypto
+- manual funding instructions
+- withdrawal request
+- allocation actions
+
+11. Admin UI
+
+Create Admin → Investor Approvals.
+
+Tabs:
+- New Requests
+- Pending Disclosure
+- Pending KYC
+- Pending Review
+- Approved
+- Suspended
+- Denied
+
+Each investor row shows:
+- name
+- email
+- country/state
+- planned investment range
+- funding preference
+- disclosure status
+- KYC status
+- deposit eligibility
+- account status
+- last activity
+- review button
+
+Review detail page:
+- profile
+- disclosures
+- KYC status
+- funding history
+- allocations
+- withdrawals
+- compliance holds
+- admin notes
+- audit log
+
+12. Audit logging
+
+Audit every action:
+- investor requested access
+- disclosure accepted
+- profile updated
+- KYC status changed
+- investor approved
+- investor denied
+- investor suspended
+- investor reactivated
+- compliance hold added/resolved
+- admin note added
+- funding eligibility checked and blocked
+
+13. Security and privacy
+
+Rules:
+- investor can only access their own investor profile
+- investor cannot view other investor records
+- investor cannot change approval status
+- investor cannot mark KYC passed
+- investor cannot remove compliance hold
+- investor cannot bypass disclosure
+- admin-only routes require admin role
+- sensitive investor info should not be exposed in public UI
+- do not log full personal documents
+- do not send private investor details to Ruby unless needed for a user-facing explanation
+
+14. Required copy
+
+Use:
+- “Investor access request”
+- “Risk disclosure”
+- “Pending review”
+- “Funding eligibility”
+- “Approved for funding”
+- “Risk of loss”
+- “Not guaranteed”
+
+Do not use:
+- “Guaranteed returns”
+- “Risk-free”
+- “Instant approval”
+- “Guaranteed profit”
+- “Safe investment”
+
+Disclosure text:
+“Trading involves risk of loss. Values are not guaranteed. Deposits are not counted as active investor capital until confirmed and approved. Withdrawals require review and approval. This portal is for internal investor tracking.”
+
+15. Tests
+
+Add tests for:
+- user can request investor access
+- investor cannot fund before approval
+- investor cannot fund before disclosure acceptance
+- investor cannot fund before KYC/manual approval
+- approved investor can access funding
+- denied investor cannot fund
+- suspended investor cannot create new funding intent
+- investor can only view own profile
+- investor cannot view another investor’s records
+- investor cannot mark own KYC passed
+- investor cannot approve self
+- admin can approve investor
+- admin can deny investor
+- admin can suspend investor
+- compliance hold blocks funding
+- disclosure acceptance stores version and timestamp
+- funding eligibility returns exact block reason
+- admin action creates audit log
+- no guaranteed-return language appears in investor onboarding/funding UI
+
+Acceptance criteria:
+- Investor onboarding exists before funding.
+- Funding is blocked until approval, disclosure, and KYC/manual review pass.
+- Admin has an investor approval dashboard.
+- Compliance holds can block funding, allocation, and withdrawal approval.
+- All investor approval actions are audit logged.
+- Investors remain view-only and cannot trade.
+- Crypto funding and manual funding cannot bypass the investor approval gate.

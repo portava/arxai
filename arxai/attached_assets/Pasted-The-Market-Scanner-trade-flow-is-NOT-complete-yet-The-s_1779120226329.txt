@@ -1,0 +1,82 @@
+The Market Scanner trade flow is NOT complete yet.
+
+The scanner is rejecting with REJECTED_READ_ONLY_MODE_ACTIVE, but the MT5 bridge has already successfully filled demo trades on the real armed bridge.
+
+Important mismatch:
+- Previous successful FILLED_DEMO rows used bridge 284.
+- Current scanner test says operator account user 4 / account 106929717 / bridge 231.
+- That means Market Scanner may be routing trade commands to a stale/read-only bridge instead of the currently armed bridge.
+
+Fix the scanner trade routing.
+
+Do not say “nothing to fix” until a scanner-originated trade reaches FILLED_DEMO or a real broker rejection.
+
+Tasks:
+
+1. Audit bridge selection logic for scanner trades.
+   Find where MARKET_SCANNER trade commands choose:
+   - user id
+   - account id
+   - bridge_connection_id
+   - mt5 account number
+   - demo/live mode
+   - EA version
+   - ReadOnlyMode
+   - EnableDemoExecution
+
+2. Ensure Market Scanner uses the same active bridge selected on the MT5 Setup page.
+
+3. Active demo bridge should be chosen only if latest heartbeat confirms:
+   - AccountType=DEMO
+   - ReadOnlyMode=false
+   - EnableDemoExecution=true
+   - EA version >= 1.26
+   - heartbeat is fresh
+   - terminal connected
+   - demo execution allowed
+
+4. If multiple bridges exist for the same user/account, do not pick an old/stale bridge.
+   Sort/select by:
+   - most recent heartbeat
+   - armed demo status
+   - matching account number
+   - matching user session
+   - not read-only
+   - demo execution enabled
+
+5. Add a visible bridge selector/status line in the scanner trade modal:
+   - Bridge ID
+   - MT5 account
+   - EA version
+   - ReadOnlyMode
+   - Demo execution enabled
+   - Last heartbeat
+   - Status: Ready / Not Ready
+
+6. If the selected bridge is read-only, block the Submit button before sending and show:
+   “Selected bridge is read-only. Open MT5 Setup and arm demo execution or choose the active demo bridge.”
+
+7. Scanner should not create a trade command against a read-only bridge if another armed bridge is available.
+
+8. Update the scanner trade command payload to store:
+   - source = MARKET_SCANNER
+   - selected bridge_connection_id
+   - account id
+   - mt5 account number
+   - bridge readiness snapshot
+   - Ruby setup reason summary
+
+9. Add a runtime test:
+   - Find current active armed bridge.
+   - Open Market Scanner.
+   - Submit one controlled EURUSD BUY 0.02 demo scanner trade.
+   - Verify the command uses the armed bridge, not stale bridge 231 if bridge 231 is read-only.
+   - Verify result becomes FILLED_DEMO or a true MT5/broker rejection.
+
+Acceptance proof:
+- Scanner modal shows the active armed bridge details before submit.
+- Scanner command uses the same bridge that MT5 Setup says is armed.
+- Scanner trade appears in Recent Scanner Trades.
+- Scanner trade appears in Recent Demo Commands with source MARKET_SCANNER.
+- If filled, Open Demo Positions shows the new position.
+- If rejected, rejection reason is not READ_ONLY_MODE_ACTIVE unless no armed bridge exists.

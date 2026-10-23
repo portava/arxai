@@ -1,0 +1,204 @@
+Ruby voice input/listening now works, but the real voice output using ElevenLabs API and OpenAI API is not working. Fix Ruby’s premium voice/TTS system end-to-end.
+
+GOAL:
+Ruby should be able to speak with real generated voices using either:
+- ElevenLabs TTS
+- OpenAI TTS
+- Browser/system speech fallback if premium voice fails
+
+Do not break the current working Ruby voice/listening system.
+
+IMPORTANT:
+Do not expose API keys in frontend code, logs, browser console, network responses, Ruby messages, or user-visible UI.
+All OpenAI and ElevenLabs calls must happen server-side only through protected backend routes.
+
+FIRST: AUDIT CURRENT VOICE SYSTEM
+Before changing code, inspect and summarize:
+- Current Ruby voice input/listen flow
+- Current Ruby speech output flow
+- Existing frontend audio playback code
+- Existing backend voice/TTS routes
+- Existing env/secrets used for OpenAI and ElevenLabs
+- Any console/server errors
+- Whether Ruby currently uses browser Web Speech API, OpenAI, ElevenLabs, or mixed fallback
+- Whether the app is trying to call ElevenLabs/OpenAI directly from the browser
+
+CHECK ENV / SECRETS
+Verify these are supported through Replit Secrets / environment variables:
+
+Required:
+- OPENAI_API_KEY
+- ELEVENLABS_API_KEY
+
+Recommended:
+- RUBY_TTS_PROVIDER=elevenlabs/openai/browser/auto
+- RUBY_OPENAI_TTS_MODEL=gpt-4o-mini-tts
+- RUBY_OPENAI_TTS_VOICE=alloy or another supported OpenAI voice
+- RUBY_ELEVENLABS_VOICE_ID=valid ElevenLabs voice id
+- RUBY_ELEVENLABS_MODEL_ID=eleven_flash_v2_5 or eleven_multilingual_v2
+- RUBY_TTS_ENABLED=true
+- RUBY_VOICE_FALLBACK_ENABLED=true
+
+If env vars are missing, show admin-only setup warnings. Do not show secrets.
+
+BACKEND REQUIREMENTS
+Create or repair a server-side Ruby TTS service with a clean provider abstraction:
+
+RubyTTSService:
+- speakWithOpenAI(text, options)
+- speakWithElevenLabs(text, options)
+- speakWithBrowserFallback(text, options)
+- chooseProvider(userSettings/adminSettings/env)
+- return playable audio to frontend
+
+Add/repair backend route:
+- POST /api/ruby/tts
+
+Request body:
+- text
+- provider preference: auto/openai/elevenlabs/browser
+- voice settings if allowed
+- conversation id/message id if needed
+
+Response:
+Either:
+- audio/mpeg or audio/wav binary audio
+OR
+- JSON with a secure temporary audio URL/blob reference
+
+Do not return raw provider responses to frontend if they contain internal details.
+
+OPENAI TTS REQUIREMENTS
+Implement OpenAI TTS server-side:
+- Use OPENAI_API_KEY from server env only.
+- Use model from RUBY_OPENAI_TTS_MODEL, default gpt-4o-mini-tts.
+- Use voice from RUBY_OPENAI_TTS_VOICE.
+- Send Ruby’s final assistant response text to TTS.
+- Return playable audio with correct Content-Type.
+- Handle errors cleanly:
+  - missing API key
+  - invalid model
+  - invalid voice
+  - quota/billing issue
+  - provider timeout
+  - empty text
+  - text too long
+
+ELEVENLABS TTS REQUIREMENTS
+Implement ElevenLabs TTS server-side:
+- Use ELEVENLABS_API_KEY from server env only.
+- Use RUBY_ELEVENLABS_VOICE_ID.
+- Use RUBY_ELEVENLABS_MODEL_ID.
+- Call ElevenLabs text-to-speech endpoint server-side.
+- Return playable audio with correct Content-Type.
+- Handle errors cleanly:
+  - missing API key
+  - missing/invalid voice id
+  - free tier voice/library restriction
+  - quota/billing issue
+  - provider timeout
+  - empty text
+  - text too long
+
+FRONTEND REQUIREMENTS
+Repair Ruby audio playback:
+- When Ruby finishes generating a text answer, send that text to /api/ruby/tts.
+- Play returned audio automatically only after user has interacted with Ruby/voice mode, so mobile Safari does not block playback.
+- Show clear states:
+  - Ruby is thinking…
+  - Ruby is speaking…
+  - Voice unavailable, using fallback…
+  - Voice failed, tap to play…
+- Add a visible replay button for Ruby’s last response.
+- Add a stop speaking button.
+- Do not block the chat response if TTS fails.
+- If premium voice fails, use browser/system speech fallback.
+- If browser autoplay blocks audio, show “Tap to hear Ruby.”
+
+AUDIO HANDLING
+Fix audio playback issues:
+- Correct MIME type: audio/mpeg for mp3 or correct wav type if using wav.
+- Convert backend audio buffer properly.
+- Do not try to play JSON as audio.
+- Do not double-encode base64 unless needed.
+- If using base64, decode correctly into Blob.
+- Revoke object URLs after playback.
+- Prevent overlapping Ruby audio.
+- Cancel previous speech/audio when new response starts.
+
+ADMIN / SETTINGS
+Add or repair admin-only Ruby Voice Settings:
+- TTS enabled ON/OFF
+- Provider: Auto / ElevenLabs / OpenAI / Browser fallback
+- OpenAI voice selector
+- ElevenLabs voice id input
+- ElevenLabs model selector
+- Test voice button
+- Save settings
+- Show provider health
+- Show last TTS error admin-only
+
+Regular users should only see simple voice controls:
+- Ruby voice ON/OFF
+- Auto-listen ON/OFF
+- Speak responses ON/OFF
+- Voice style if allowed
+
+Do not show API keys, raw provider errors, endpoint names, or backend config to regular users.
+
+PROVIDER HEALTH CHECK
+Add admin-only diagnostics:
+- Check OpenAI key configured: yes/no
+- Check ElevenLabs key configured: yes/no
+- Test OpenAI TTS with short phrase
+- Test ElevenLabs TTS with short phrase
+- Show whether audio was generated
+- Show friendly error if failed
+- Do not expose secrets
+
+RUBY BEHAVIOR
+Ruby should:
+- Listen to user
+- Transcribe/understand user
+- Respond in chat
+- Speak the response out loud if Speak Responses is ON
+- Ask user to repeat if voice input is unclear
+- Continue conversation naturally
+- Not stop after one answer if auto-listen is enabled
+- Not expose backend/provider details to regular users
+
+FALLBACK LOGIC
+Use provider selection like this:
+- If admin/user selected ElevenLabs, try ElevenLabs first, then OpenAI, then browser fallback.
+- If admin/user selected OpenAI, try OpenAI first, then ElevenLabs, then browser fallback.
+- If provider is Auto, try ElevenLabs if configured, then OpenAI if configured, then browser fallback.
+- If premium voice is disabled, use browser fallback only.
+
+SECURITY
+- API keys must stay server-side.
+- Never store API keys in localStorage or frontend bundle.
+- Never send provider keys to browser.
+- Never show provider stack traces to users.
+- Regular users should not see admin diagnostics.
+- Audit admin changes to Ruby voice provider/settings.
+
+ACCEPTANCE TEST
+Before stopping, verify:
+1. Ruby still listens to voice input.
+2. Ruby still answers in text.
+3. Ruby speaks response using ElevenLabs when provider is ElevenLabs and env is configured.
+4. Ruby speaks response using OpenAI when provider is OpenAI and env is configured.
+5. Ruby falls back to browser/system voice if premium provider fails.
+6. Audio plays on mobile Safari after user interaction.
+7. Replay button works.
+8. Stop speaking button works.
+9. Ruby does not speak over herself.
+10. No API keys appear in frontend, console, logs, network response, or UI.
+11. Regular users do not see backend/provider technical errors.
+12. Admin can test OpenAI and ElevenLabs voice from settings.
+13. Missing ElevenLabs voice id gives a clear admin-only error.
+14. Missing API key gives a clear admin-only error.
+15. TTS failure does not break Ruby chat.
+16. Login, scanner, trade modal, admin controls, and bridge status still work.
+
+Do not rebuild unrelated sections. Reuse the working Ruby voice/listen system and only repair the real voice/TTS provider layer.

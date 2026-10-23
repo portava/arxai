@@ -1,0 +1,45 @@
+QA/FIX GATE — Ruby Voice Auto-Listen + Speech Response Loop
+
+Inspect the Ruby voice auto-listen and speech response work from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Ruby voice uses the existing Ruby chat/brain system, not a duplicate assistant.
+2. Ruby chat opens into a ready/listening state after microphone permission is granted.
+3. Browser/mobile permission requirements are handled with a clean “Tap to start Ruby Voice” style prompt when needed.
+4. Ruby detects when the user starts speaking.
+5. Ruby detects when the user stops speaking.
+6. Silence detection automatically submits the final transcript.
+7. Empty, accidental, or duplicate transcripts are not submitted.
+8. User can see live/partial transcript while speaking.
+9. User can pause listening.
+10. User can stop voice mode.
+11. User can mute Ruby’s spoken response.
+12. Ruby responds with text and speech when voice mode is enabled.
+13. Mic capture pauses while Ruby is speaking.
+14. Mic resumes after Ruby finishes speaking.
+15. Ruby does not listen to her own voice response.
+16. User can interrupt Ruby or use a fallback interrupt button.
+17. Ruby voice uses current user’s private account/trade/scanner/risk/context only.
+18. User A voice transcript or memory cannot leak into User B.
+19. Voice commands cannot place trades without required confirmation.
+20. Voice commands cannot close trades without required confirmation.
+21. Voice commands cannot edit SL/TP without required confirmation.
+22. Voice commands cannot bypass live safety gates, one-click rules, admin approval, allocation, bridge mapping, exposure, cooldown, or risk limits.
+23. Ruby gives clean voice-friendly explanations for blocked actions.
+24. Voice state clears safely on logout/account switch.
+25. Mobile UI is usable and does not block key app controls.
+26. Permission denied, STT failure, TTS failure, network failure, and audio-blocked states show clean fallbacks.
+27. No raw audio, secrets, bridge tokens, API keys, account credentials, session secrets, or token hashes are exposed in prompts, logs, UI, routes, or responses.
+28. No live trade is fired during QA.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining risks
+- confirmation that no live trade was fired

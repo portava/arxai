@@ -1,0 +1,195 @@
+Fix the ARX AI User Control Center bugs shown in the screenshots.
+
+CURRENT PROBLEMS:
+- The admin tabs overlap each other on mobile.
+- User Control Center is unorganized and hard to use.
+- Searching for Andraie / andraie.co@gmail.com does not find the account.
+- The User Approvals tab only shows pending/invited users, so active users are hidden from search.
+- The Permissions tab is showing generated/test/seed users such as armgate, demogate, qa-symex, arx.local, and arx.test accounts.
+- Admin should only see real users who signed up or were invited outside the app, not accounts created internally for testing.
+- The controls for giving users access are too complicated. Admin should be able to approve users and give access in the easiest possible way.
+
+REQUIREMENTS:
+
+1. FIX MOBILE TAB LAYOUT
+Redesign the User Control Center tabs so they do not overlap on mobile.
+Use one of these clean layouts:
+- Horizontal scrollable pill tabs, one row only, no wrapping
+OR
+- A compact dropdown selector on mobile
+OR
+- A clean 2-column grid with proper spacing and no overlap
+
+Tabs must remain:
+- User Approvals
+- Permissions
+- Push Settings
+- Trading Access
+- Risk Templates
+- Audit Log
+
+Do not let tab labels sit on top of card titles. Add proper spacing between tabs and content.
+
+2. MAKE ADMIN ACCESS CONTROLS SIMPLE
+Giving users access to anything should not be complicated.
+
+Create the easiest possible admin workflow:
+- Admin searches for a user.
+- Admin taps/clicks one clear “Manage Access” button.
+- A simple access panel opens.
+- Admin can approve, disable, assign role, set trading mode, approve demo/live, enable shared bridge, and assign risk settings from one place.
+
+The admin should not have to jump across multiple confusing tabs just to give one user access.
+
+Each real user row/card should include simple quick actions:
+- Manage Access
+- Approve User
+- Enable Demo
+- Request/Approve Live
+- Enable Shared Bridge
+- Disable User
+
+Inside “Manage Access,” organize controls into simple sections:
+- Account Access
+- Trading Access
+- Bridge Access
+- Ruby / AI Access
+- Scanner Access
+- Risk Limits
+- Templates
+- Notes / Audit History
+
+Use friendly labels, not backend labels.
+Examples:
+- “Approve User” instead of accountStatus update
+- “Enable Live Trading” instead of liveTradingApproved
+- “Enable Shared Bridge” instead of sharedBridgeApproved
+- “Max Lot Size” instead of maxLotSize
+- “Require Stop Loss” instead of stopLossRequired
+
+Add quick presets/templates for admin:
+- Paper Only
+- Demo Tester
+- Demo + Scanner
+- Live Pending Review
+- Live Approved Conservative
+- Live Approved Standard
+- Disable Trading
+- Emergency Lockdown
+
+Admin should be able to apply a preset in one click, preview what changes, then confirm.
+
+For dangerous access changes, keep it safe but still simple:
+- Live trading approval requires clear confirmation.
+- Shared/master bridge approval requires clear confirmation.
+- Raising max lot size or max daily loss requires confirmation.
+- Bulk live access requires per-user confirmation.
+- Normal lower-risk settings should not require too many steps.
+
+The goal is:
+simple for admin, hidden from users, safe for live trading.
+
+3. CLEAN USER LIST SOURCE
+Audit where the fake/test users are coming from.
+Find all seeded/generated/test accounts, including patterns like:
+- armgate-*
+- demogate-*
+- qa-symex-*
+- *@arx.local
+- *@arx.test
+- any users created by seed scripts, QA scripts, demo scripts, bridge test scripts, or automation tests
+
+Do not show these users in the normal Admin User Control Center.
+
+Add a safe filter:
+- Real Users: default view
+- Pending Users
+- Active Users
+- Disabled/Suspended Users
+- Test/System Users: hidden by default, only visible to admin if explicitly opened
+
+If the database has no isTestUser/isSystemUser field, add one safely and backfill obvious test accounts as isTestUser=true.
+
+Do not delete test users unless deletion is already safe. Hide/archive them from real admin workflows instead.
+
+4. FIX USER SEARCH
+The search box must search across all real users, not only pending users.
+Search should support:
+- full email
+- partial email
+- name
+- user id
+- invite code
+- account status
+- role
+- trading mode
+
+Searching “andraie”, “andraie.co@gmail.com”, or the exact signed-up email should find the account whether it is pending, invited, active, approved, disabled, paper, demo, or live.
+
+Normalize email search:
+- lowercase
+- trim spaces
+- ignore accidental casing
+- support partial match
+
+5. FIX USER APPROVALS TAB
+User Approvals should show:
+- pending users
+- invited users
+- users awaiting approval
+
+But the search field inside User Approvals should either:
+A) Clearly say “Search pending/invited users only”
+OR preferably:
+B) Search all real users and show a note if the user is already active, such as:
+“This user is already active. Manage them in Permissions or Trading Access.”
+
+6. FIX PERMISSIONS TAB
+Permissions tab should show only real users by default.
+Each user card/row should show:
+- email/name
+- account status
+- role
+- trading mode
+- live trading approval status
+- shared/master bridge approval status
+- last login if available
+- invite code if available
+- clear Manage Access button
+
+Do not expose backend-looking generated emails or test accounts in this default list.
+
+7. ADD EMPTY STATE CLARITY
+If no users match, show:
+“No real users found for this search.”
+Do not say “No pending users” when the search is actually across all users.
+
+8. PROTECT ADMIN/USER SEPARATION
+Regular users must never see:
+- User Control Center
+- User Approvals
+- Permissions
+- Push Settings
+- Trading Access
+- Risk Templates
+- Audit Log
+- Test/System Users
+- Backend/internal account names
+
+9. ACCEPTANCE TEST
+After fixing, verify:
+- User Control Center tabs do not overlap on iPhone/mobile width.
+- Card titles are not covered by tabs.
+- Bottom nav does not cover the user list content.
+- Searching for Andraie / andraie.co@gmail.com finds the real account if it exists.
+- Active users can be found from search.
+- Pending users still appear in User Approvals.
+- Test users like armgate, demogate, qa-symex, arx.local, and arx.test are hidden by default.
+- Test users are only visible in a separate admin-only Test/System Users view.
+- Admin can give a user access from one simple Manage Access panel.
+- Admin does not need to jump through multiple complicated pages to approve or update one user.
+- Dangerous live/shared bridge actions remain protected by confirmation.
+- Regular users cannot access any admin controls.
+- No existing login, scanner, Ruby, trading modal, bridge status, or admin permissions are broken.
+
+Reuse existing code where possible. Do not rebuild unrelated pages.

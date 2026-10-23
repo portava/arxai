@@ -1,0 +1,105 @@
+Continue to T008: pre-live repository cleanup and final full-system green pass.
+
+Do not rebuild from scratch. Do not change the live shared-account trading architecture. Do not weaken any gates. Do not flip ARX_LIVE_BROKER_EXECUTION_ENABLED. Do not release the kill switch.
+
+Current state:
+- Phase A/B/C/T006/T007 live shared-account system is production-ready under default-deny.
+- T007 activation cockpit exists.
+- Manual/scanner/Ruby live shared flows exist.
+- Live command dispatch remains blocked until operator activation and all gates pass.
+- T007 QA found pre-existing scripts-package type/rootDir issues unrelated to T007.
+
+Goal:
+Fix the remaining pre-existing scripts-package QA/typecheck issues cleanly, then run a final full-system green pass before live activation.
+
+Inspect these files and related tsconfig/package settings:
+- scripts/src/qaOneClickConcurrency.ts
+- scripts/src/qaOperatorFundedLivePilot.ts
+- scripts/src/qaPerUserTradingMode.ts
+- scripts/src/qaPrivateBeta10.ts
+- scripts/tsconfig.json
+- root tsconfig references
+- package scripts for typecheck/QA
+
+Fix only the structural scripts-package issues:
+- rootDir/include mismatch
+- nullable-string mismatches
+- import path issues
+- shared type references
+- tsconfig scope problems
+- script-only compile issues
+
+Rules:
+- Do not change api-server live shared validation logic.
+- Do not change live shared execution logic.
+- Do not change arx_live_commands behavior.
+- Do not change shared_trade_attribution behavior.
+- Do not change kill switch behavior.
+- Do not change ARX_LIVE_BROKER_EXECUTION_ENABLED behavior.
+- Do not add MT5 credentials or new env vars.
+- Do not expose secrets.
+- Do not alter demo/paper trading.
+- Do not alter user isolation.
+- Do not alter admin activation wizard gates.
+- Do not remove tests just to make typecheck pass.
+
+After fixing scripts, run:
+- api-server typecheck
+- dashboard typecheck
+- scripts typecheck
+- repo-wide typecheck if available
+- 22/22 CI guards
+- 19/19 Phase B truth table
+- demo verification
+- demo arming tests
+- live shared activation route smoke test
+- secret leak scan
+- console log/error scan
+- route check
+
+Verify:
+- /admin/live-shared still works.
+- /admin/live-shared/activation still works.
+- Admin sidebar links still work.
+- Activation checklist still works.
+- Activation wizard still cannot skip steps.
+- Hard kill false/missing still blocks execution.
+- Kill switch still blocks execution.
+- Bridge stale/disconnected still blocks execution.
+- Validation cannot execute.
+- Execution always re-validates.
+- Manual live shared flow still validates first.
+- Scanner live shared flow still validates first.
+- Ruby cannot execute without confirmation.
+- Regular users only see their own records.
+- Admin sees all shared live records.
+- No frontend path directly queues live commands.
+- arx_live_commands count remains 0 unless a deliberate gated test creates a non-executable test row.
+- No MT5 credentials were added.
+- No secrets appear in frontend, API responses, logs, docs, or source.
+
+Create or update:
+- docs/live-shared-final-prelive-audit.md
+
+The audit should summarize:
+- What script issues were fixed
+- Whether all package typechecks pass
+- Whether all CI guards pass
+- Whether Phase A/B/C/T006/T007 behavior was preserved
+- Whether default-deny remains active
+- Whether any live dispatch path is still blocked until operator activation
+- Any remaining issues before go-hot
+
+Acceptance checks:
+- Scripts typecheck passes.
+- API server typecheck passes.
+- Dashboard typecheck passes.
+- CI guards pass.
+- Phase B truth table passes.
+- Demo tests pass.
+- Activation cockpit still works.
+- No live gates were weakened.
+- No credentials exposed.
+- No broken routes.
+- No blank pages.
+- No console errors.

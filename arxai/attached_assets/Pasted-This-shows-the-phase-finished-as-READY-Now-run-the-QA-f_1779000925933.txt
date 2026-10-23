@@ -1,0 +1,152 @@
+This shows the phase finished as READY. Now run the QA/fix gate before moving on.
+
+Paste this:
+
+Inspect the most recent T1–T7 Frontend Wiring + Market Data Freshness phase before continuing.
+Do NOT build new features yet.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT fake market data, candles, scanner opportunities, P&L, news, current events, bridge status, or TP targets.
+Do NOT suppress runtime overlays.
+Do NOT redesign unrelated pages.
+Your job is to audit the work that was just completed, fix only confirmed P0/P1 issues, rerun checks, and produce a clear QA report.
+Verify:
+1. T1 Protective Auto-Close UI
+- Default is OFF.
+- User opt-in is required.
+- Saving preferences does not unlock execution.
+- Missing gates display clearly.
+- Status remains ALERT_ONLY unless all required gates pass.
+2. T2 Activity Ping
+- ACTIVE, IDLE, AWAY, UNKNOWN are supported.
+- UNKNOWN is the default/fallback.
+- App background/stale/failure returns UNKNOWN.
+- UNKNOWN hard-blocks auto-close execution.
+- Activity is scoped per authenticated user/session.
+3. T3 Trade Card Safety Badges
+Confirm backend-driven badges work for:
+- Paper Only
+- Live Trading Blocked
+- Bridge Offline / MT5 Read-Only
+- ALERT_ONLY
+- Auto-Close OFF
+- Auto-Close Opt-In Required
+- Activity Unknown
+- Data Insufficient
+- News Unavailable
+- Current Events Unavailable
+- TP Targets Available / Unavailable
+- SL/TP Editable
+- Manual Close Available / Blocked
+- Command Execution Disabled
+4. T4 Current Events Channel
+- Current events / real-world news are separate from market news.
+- Missing provider returns connected:false, events:[], and clear reason.
+- AI does not invent current events.
+- Current events are risk/context only, not fake trade signals.
+5. T5 decisionStatus Enum
+Confirm centralized enum includes:
+- STRONG_SETUP
+- WAIT
+- AVOID
+- REVIEW
+- HOLD
+- NEWS_RISK_HIGH
+- DATA_INSUFFICIENT
+- SCANNER_OFFLINE
+- BRIDGE_OFFLINE
+- ALERT_ONLY
+Confirm old statuses still map without breaking UI.
+6. T6 bridgeMode Enum
+Confirm explicit bridgeMode supports:
+- OFFLINE
+- READ_ONLY
+- PAPER_ONLY
+- LIVE_LOCKED
+Confirm stale heartbeat forces OFFLINE.
+7. T7 Reconciliation + Command Status Enum
+Confirm reconciliation statuses include:
+- MATCHED
+- APP_ONLY
+- BROKER_ONLY
+- MISMATCHED
+- ATTRIBUTION_MISSING
+- STALE_BROKER_DATA
+- BRIDGE_OFFLINE
+- RECONCILIATION_BLOCKED
+Confirm command statuses include:
+- DRAFT
+- BLOCKED
+- PAPER_ONLY
+- QUEUED_LOCKED
+- REJECTED
+- EXECUTION_DISABLED
+Confirm all real MT5 command paths still resolve to BLOCKED or EXECUTION_DISABLED.
+8. Market Data Freshness
+Verify:
+- Provider health tracks configured, connected, lastSuccessfulFetchAt, lastAttemptedFetchAt, staleAfterMs, isStale, rateLimitStatus, lastError, unavailableReason.
+- Provider is not marked healthy from config alone.
+- Stale data displays as stale, not healthy.
+- Market snapshot service returns structured fresh/stale/unavailable state.
+- No fake candles, prices, spreads, scanner opportunities, P&L, or TP targets.
+- Scanner returns opportunities:[] with reason when data is stale/unavailable.
+- AI says market data is stale/unavailable and refuses unsupported trade/TP claims.
+- Refresh/Recheck provider is auth-gated, audit-logged, rate-limited, and does not execute trades.
+9. Safety Regression
+Confirm all remain true:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = disabled
+- Backend per-user isolation intact
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No fake balance, P&L, bridge status, scanner data, news, current events, candles, prices, or TP targets
+Run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. AI assistant read-only test
+7. Safety-envelope alignment test
+8. Protective Auto-Close UI tests
+9. Activity UNKNOWN hard-block test
+10. Trade-card badge backend-state tests
+11. Current-events unavailable fallback tests
+12. decisionStatus enum mapping tests
+13. bridgeMode enum tests
+14. Reconciliation enum tests
+15. Command status BLOCKED/EXECUTION_DISABLED tests
+16. Provider-health configured/unconfigured tests
+17. Fresh/stale/unavailable snapshot tests
+18. Rate-limit/timeout fallback tests
+19. Scanner stale/unavailable block tests
+20. AI market-data honesty tests
+21. Refresh/recheck provider tests
+22. Audit trail tests
+23. Per-user isolation regression tests
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun the full checks.
+End with a QA report showing:
+- Files inspected
+- Files changed, if any
+- T1–T7 status
+- Market data freshness status
+- Provider health result
+- Scanner reliability result
+- AI honesty result
+- Frontend/backend state match
+- Tests run and pass/fail results
+- Remaining gated/deferred items
+- Live trading status
+- Auto-close status
+- Shared MT5 routing status
+- MT5 command status
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

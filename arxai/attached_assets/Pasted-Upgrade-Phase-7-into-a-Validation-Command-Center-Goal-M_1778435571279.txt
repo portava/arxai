@@ -1,0 +1,122 @@
+Upgrade Phase 7 into a Validation Command Center.
+
+Goal:
+Make validation institutional-grade by testing not only profitability, but durability, statistical reliability, execution realism, risk survival, regime fit, trader behavior impact, and edge decay.
+
+Add:
+
+/src/domain/validation-command-center/
+  validationCommandCenter.engine.ts
+  validationScorecard.engine.ts
+  statisticalSignificance.engine.ts
+  monteCarloValidator.engine.ts
+  regimeSpecificValidator.engine.ts
+  stressValidation.engine.ts
+  executionRealityValidator.engine.ts
+  traderBehaviorValidator.engine.ts
+  edgeDurability.engine.ts
+  outOfSampleValidator.engine.ts
+  validationConfidence.engine.ts
+  validationAuditReport.engine.ts
+
+Upgrade validation stages:
+- BACKTEST
+- OUT_OF_SAMPLE_TEST
+- WALK_FORWARD
+- MONTE_CARLO_STRESS_TEST
+- REGIME_SPECIFIC_TEST
+- EXECUTION_REALITY_TEST
+- SHADOW_MODE
+- PAPER_TRADING
+- MICRO_LOT_LIVE
+- LIMITED_LIVE
+- FULL_GOVERNED_LIVE
+
+Validation must now grade:
+
+1. Edge Quality
+- expectancy
+- profit factor
+- average win/loss
+- RR quality
+- setup frequency
+- consistency
+
+2. Risk Survival
+- max drawdown
+- drawdown duration
+- worst losing streak
+- recovery time
+- tail-risk exposure
+- account survival probability
+
+3. Statistical Reliability
+- sample size
+- confidence interval
+- out-of-sample performance
+- walk-forward stability
+- Monte Carlo robustness
+- overfitting risk
+
+4. Market Regime Fit
+- trend performance
+- chop performance
+- high-volatility performance
+- low-liquidity performance
+- news-risk performance
+- session-specific performance
+
+5. Execution Reality
+- slippage sensitivity
+- spread sensitivity
+- latency sensitivity
+- fill probability
+- implementation shortfall
+- broker reliability impact
+
+6. Trader Behavior Impact
+- performance after losses
+- performance after overrides
+- overtrading risk
+- discipline impact
+- cognitive-risk sensitivity
+
+7. Edge Durability
+- recent performance decay
+- historical stability
+- regime drift
+- false approval trend
+- false block trend
+- confidence calibration drift
+
+Rules:
+- A strategy cannot pass validation based on profit alone.
+- A strategy with strong profit but dangerous drawdown must fail or be restricted.
+- A strategy with good backtest but poor out-of-sample results must fail.
+- A strategy with good signals but poor execution quality must be restricted.
+- A strategy that only works in one market regime must be labeled regime-specific.
+- A strategy showing edge decay must be demoted or moved back to shadow mode.
+- Monte Carlo stress testing must randomize trade order, slippage, spreads, and execution delay.
+- Validation score must be explainable in plain English.
+- Risk Governor can freeze validation promotion.
+- Control Tower controls rollout authority.
+- Black Box Vault stores every validation report.
+
+Required outputs:
+- validationScorecard
+- liveReadinessScore
+- edgeDurabilityScore
+- survivalScore
+- executionRealityScore
+- statisticalConfidenceScore
+- regimeFitScore
+- traderBehaviorSafetyScore
+- overfittingRiskScore
+- recommendedStage
+- restrictions
+- promotionDecision
+- demotionDecision
+- plainEnglishExplanation
+
+Final rule:
+Nothing earns live authority unless it proves it can survive bad markets, bad fills, trader behavior risk, and changing regimes.

@@ -1,0 +1,171 @@
+BUILD PHASE — Generate 10 Invite Links + Operator-Funded Live Pilot Slots
+
+Use the current codebase. Check what exists first. Do not rebuild unrelated systems.
+
+Goal:
+Create exactly 10 private beta invite links and prepare each accepted user for a controlled operator-funded live pilot slot. Users should enter through invite code only, default to demo/testing mode, and only become live-enabled after admin individually approves them and all safety gates pass.
+
+Important:
+Do not enable public registration.
+Do not globally turn live trading on for everyone.
+Do not create live commands during build or QA.
+Do not fire live trades during QA.
+Do not bypass legal/disclosure/admin/allocation/risk/bridge/safety gates.
+
+1. Inspect current readiness first
+Check:
+- ARX_FULL_ECOSYSTEM_READINESS_REPORT.md
+- master QA result
+- auth/login status
+- admin login status
+- hard invite gate
+- beta cohort
+- invite system
+- live pilot system
+- operator-funded disclosure
+- admin dashboard
+- no-live-command evidence
+
+If critical/high blockers remain, stop and report them before creating invites.
+
+2. Confirm beta cohort
+Create or confirm:
+
+Cohort:
+ARX_PRIVATE_BETA_10
+
+Rules:
+- max accepted users: 10
+- invite-only
+- server-side cap enforced
+- 11th user blocked or waitlisted
+- default account mode: Demo Tester
+- one-click live: OFF
+- public registration: OFF
+- live trading: OFF until individually approved
+
+3. Generate exactly 10 invite links
+Create exactly 10 one-time invite links:
+
+- ARX-BETA-USER-01
+- ARX-BETA-USER-02
+- ARX-BETA-USER-03
+- ARX-BETA-USER-04
+- ARX-BETA-USER-05
+- ARX-BETA-USER-06
+- ARX-BETA-USER-07
+- ARX-BETA-USER-08
+- ARX-BETA-USER-09
+- ARX-BETA-USER-10
+
+Each invite must:
+- be one-time use
+- expire in 14 days unless admin changes it
+- be revocable by admin
+- default to demo/testing mode
+- not enable live trading
+- not enable one-click live
+- not auto-approve shared/operator-funded live access
+- be stored securely using hashed invite code if supported
+- only show plaintext invite link inside protected admin UI/export
+
+4. Prepare live pilot slots, but do not approve live yet
+For each accepted invite slot, prepare a pending live slot record:
+
+Mode:
+OPERATOR_FUNDED_LIVE_PILOT_PENDING
+
+Each slot should require before live approval:
+- admin approval
+- operator-funded live disclosure accepted
+- assigned allocation
+- risk profile
+- allowed symbols
+- max lot size
+- max open trades
+- daily loss limit
+- shared master mapping if shared master mode
+- bridge healthy
+- EA live enabled and not read-only
+- global live flag enabled
+- kill switch inactive
+- close-only inactive for new opens
+- force-review inactive unless intentionally used
+- queue not paused
+- exposure/cooldown/risk checks
+- confirmation
+
+5. Admin Beta / Live Pilot dashboard
+Update or confirm admin dashboard shows:
+- invite gate: ON
+- accepted users: 0/10 initially
+- pending invites: 10
+- seats remaining: 10
+- each invite status
+- copy link button
+- revoke button
+- accepted user status after registration
+- live pilot status per user:
+  - Demo Only
+  - Pending Live Approval
+  - Live Approved
+  - Paused
+  - Revoked
+- no-live-command evidence
+
+6. Admin export
+Add or confirm admin-only export/copy:
+- copy all 10 invite links
+- CSV export with label, invite link, status, expiration
+- protected behind admin auth
+- audit export action
+- do not expose invite links to normal users
+
+7. Audit logs
+Audit:
+- beta cohort confirmed
+- 10 invites generated
+- invite copied/exported
+- invite accepted
+- invite rejected
+- invite revoked
+- invite expired
+- beta cap reached
+- 11th user blocked/waitlisted
+- live pilot slot created
+- live approval pending
+- blocked live attempt before approval
+
+Do not log secrets, bridge tokens, API keys, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads.
+
+8. Tests
+Add/run tests for:
+- exactly 10 invites exist
+- registration blocked without invite
+- valid invite allows registration
+- used invite cannot be reused
+- revoked invite blocks registration
+- expired invite blocks registration
+- 10 accepted users allowed
+- 11th user blocked/waitlisted server-side
+- accepted users default to demo mode
+- live pilot status is pending, not approved
+- one-click live defaults OFF
+- non-admin cannot view/copy/export invites
+- User 1 cannot see User 2 data
+- no secrets exposed
+- no live command created
+- arx_live_commands count unchanged
+
+Return:
+- what was built
+- files changed
+- invite count
+- accepted count
+- admin route for invite links
+- export route if added
+- live pilot slot behavior
+- tests added/run
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

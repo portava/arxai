@@ -1,0 +1,129 @@
+Continue from the completed investor statement file cleanup checkpoint.
+
+The cleanup regression test is complete and passing:
+- scripts/src/investorStatementFileCleanupTest.ts
+- registered as test:investor-statement-file-cleanup
+- 29/29 assertions passing
+
+Now perform the next validation layer without breaking the completed work.
+
+GOAL:
+Make sure investor statement files are not only cleaned up correctly when replaced, but are also served, accessed, restored, deleted, and permission-controlled correctly across the full app.
+
+Do not rewrite working logic unnecessarily. First inspect the existing implementation, routes, services, storage helpers, permissions, investor dashboard usage, admin statement manager usage, and object/file serving path. Then add only the missing coverage and fixes.
+
+Required checks:
+
+1. Statement file serving validation
+- Find the route/API/service responsible for serving uploaded investor statement files.
+- Confirm an investor can only access their own statement files.
+- Confirm admin can access investor statement files only through admin-authorized routes.
+- Confirm unrelated users cannot access another investor’s statement file by guessing URL/object path.
+- Confirm deleted/orphaned objects do not serve successfully.
+- Confirm external-link statement files are not routed through internal object serving.
+- Confirm restored statements still point to a valid file if soft-remove was used.
+
+2. Statement replacement validation
+- Keep the existing replacement cleanup behavior.
+- Verify replacing statement A’s file with statement B’s uploaded file does not delete B’s file.
+- Verify replacing an internal object file with an external link deletes only the old orphaned internal object.
+- Verify replacing an external link with an uploaded file does not attempt to delete the old external link.
+- Verify replacing fileUrl with the same fileUrl is a no-op.
+- Verify missing/already-deleted old objects do not throw.
+
+3. Investor dashboard validation
+- Open the investor dashboard statement area.
+- Confirm every displayed statement download/view link resolves correctly.
+- Confirm replaced statements show only the new file/link.
+- Confirm soft-removed statements do not appear in normal investor view unless intentionally restored.
+- Confirm restored statements reappear correctly.
+- Confirm errors are clean user-facing messages, not raw stack traces or backend paths.
+
+4. Admin statement manager validation
+- Confirm admin can upload, replace, link, soft-remove, restore, and permanently delete statement files.
+- Confirm admin sees accurate status:
+  uploaded file
+  external link
+  missing file
+  soft removed
+  restored
+  deleted
+- Confirm admin actions update audit logs.
+- Confirm object cleanup does not delete active files still referenced by another statement.
+- Confirm bulk/admin operations cannot orphan active files.
+
+5. Permission and security validation
+- Add tests proving object access is scoped by user ownership and admin role.
+- Add tests for direct object URL guessing.
+- Add tests for unauthenticated access.
+- Add tests for investor trying to access another investor statement.
+- Add tests for admin access.
+- Add tests for disabled/frozen investor access if that rule exists in the app.
+- Do not expose raw /objects paths to users unless the app intentionally uses signed or guarded file routes.
+
+6. Storage integrity validation
+- Search the database for references to statement file URLs.
+- Confirm a file is only deleted when no active statement references it.
+- Add helper logic if needed:
+  isInternalObjectUrl()
+  normalizeObjectPath()
+  countActiveReferencesToObject()
+  safelyDeleteUnreferencedStatementObject()
+- The delete helper must be idempotent.
+- The delete helper must never throw on already-missing objects.
+- The delete helper must never delete external links.
+- The delete helper must never delete objects still referenced by another active statement.
+
+7. Regression test requirements
+Add a new runnable test file, separate from the existing cleanup test, named something like:
+
+scripts/src/investorStatementFileServingAccessTest.ts
+
+Register it in package.json as:
+
+test:investor-statement-file-serving-access
+
+The test must run against the real app wiring as much as possible, not mocked assumptions.
+
+It must prove:
+- investor can access own statement file
+- investor cannot access another investor’s file
+- unauthenticated access is rejected
+- admin can access through approved admin path
+- replaced files resolve to the new file only
+- orphaned old files no longer serve
+- external links are handled safely
+- soft-remove keeps file available for restore
+- permanent delete removes or blocks access correctly
+- missing object returns clean 404/controlled error, not crash
+- active shared file references are not deleted accidentally
+
+8. Run all related tests
+Run:
+- existing investor statement cleanup test
+- new serving/access test
+- any existing investor statement tests
+- any storage/object tests
+- any auth/permission tests related to investor files
+- full TypeScript/build check if available
+
+Do not pass unless:
+- all tests pass
+- no TypeScript errors
+- no route/security regressions
+- no broken investor dashboard links
+- no admin statement manager breakage
+- no raw backend paths or stack traces appear in user UI
+
+9. Final report format
+When complete, report:
+- files inspected
+- files changed
+- tests added
+- exact commands run
+- exact pass/fail counts
+- security cases proven
+- any follow-up gaps that remain
+
+Important:
+Do not mark complete if only backend cleanup passes. The goal is full investor statement file lifecycle confidence: upload, view, replace, soft-remove, restore, permanent delete, admin access, investor access, and blocked unauthorized access.

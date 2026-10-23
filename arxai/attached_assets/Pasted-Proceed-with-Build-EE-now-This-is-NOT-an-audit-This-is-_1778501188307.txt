@@ -1,0 +1,348 @@
+Proceed with Build EE now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build EE = Paper Execution Engine.
+
+Goal:
+Allow approved Build AA trade decisions to create simulated/paper trades only, using the read-only market data layer from Build DD.
+
+Important:
+Build EE must NOT place live trades.
+Build EE must NOT call MT5 live execution.
+Build EE must NOT enable canPlaceTrades.
+Build EE must NOT bypass Build AA safety.
+Build EE must NOT execute real broker orders.
+Build EE only creates and manages simulated paper trades.
+
+Current system:
+- Build AA = central trade decision orchestrator.
+- Build BB = closed-trade auto-debrief.
+- Build CC = learning feedback engine.
+- Build DD = read-only market data layer.
+- Build EE must now create safe paper trades from valid AA decisions.
+
+Core requirement:
+When Build AA returns a valid trade decision with shouldTrade: true, Build EE can convert that decision into a paper trade record with simulated entry, stop loss, take profit, position size, and lifecycle tracking.
+
+Build EE tasks:
+
+1. Inspect existing paper trading system
+Find existing files/tables/routes for:
+- paper trades
+- paper orders
+- simulated positions
+- open trades
+- trade history
+- trade close flow
+- Build BB close trigger
+- analytics
+
+Do not duplicate existing paper trading logic if usable.
+Integrate with the existing system.
+
+2. Create Paper Execution Service
+
+Create a service that accepts a Build AA decision object and returns:
+
+{
+  execution_id,
+  decision_id,
+  trade_id,
+  symbol,
+  action,
+  status: "PAPER_OPENED" | "PAPER_REJECTED" | "PAPER_PENDING",
+  entry_price,
+  stop_loss,
+  take_profit,
+  position_size,
+  risk_amount,
+  confidence,
+  risk_score,
+  execution_mode: "PAPER",
+  fill_type: "SIMULATED_MARKET" | "SIMULATED_LIMIT",
+  slippage_applied,
+  spread_applied,
+  rejection_reason,
+  warnings,
+  created_at
+}
+
+3. Paper execution eligibility rules
+
+Only create a paper trade if all are true:
+
+- decision.shouldTrade === true
+- decision.action is BUY or SELL
+- decision.action is not HOLD
+- decision.decision_id exists
+- tradeWindow.status is GOOD
+- confidence meets minimum threshold
+- riskScore is below max threshold
+- marketDataSummary exists
+- marketDataSummary.dataQualityStatus is GOOD or acceptable
+- spread is not too wide
+- volatility is not EXTREME unless strategy explicitly allows it
+- stopLoss exists
+- takeProfit exists
+- positionSize exists and is greater than zero
+- no critical warnings exist
+- no duplicate paper trade already exists for the same decision_id
+- no conflicting open paper position exists for same symbol/action unless allowed by settings
+
+If any rule fails, return PAPER_REJECTED with clear rejection_reason.
+
+4. Idempotency
+
+The same Build AA decision_id must never create multiple paper trades.
+
+If execute is called twice with the same decision_id:
+- return the existing paper trade
+- do not create a duplicate
+- do not duplicate analytics
+- do not duplicate logs
+
+5. Simulated fill logic
+
+Use Build DD market data.
+
+For BUY:
+- simulated entry should use ask or mid + spread/slippage logic.
+
+For SELL:
+- simulated entry should use bid or mid - spread/slippage logic.
+
+Apply small configurable simulated slippage.
+
+Return:
+- requested entry
+- simulated filled entry
+- spread applied
+- slippage applied
+- timestamp
+
+6. Paper trade lifecycle
+
+Create or update paper trade status support:
+
+- PAPER_PENDING
+- PAPER_OPEN
+- PAPER_CLOSED_WIN
+- PAPER_CLOSED_LOSS
+- PAPER_CLOSED_BREAK_EVEN
+- PAPER_CLOSED_MANUAL
+- PAPER_CANCELLED
+- PAPER_REJECTED
+
+Make sure Build BB auto-debrief can detect paper close statuses from Build EE.
+
+7. Add paper trade monitor
+
+Create a safe paper trade monitor that can evaluate open paper trades against current market data.
+
+For each open paper trade:
+- fetch current market data from DD
+- check if stop loss was hit
+- check if take profit was hit
+- calculate unrealized P&L
+- update max favorable excursion
+- update max adverse excursion
+- if SL/TP hit, close paper trade
+- trigger Build BB auto-debrief after close
+
+This should be safe and manually callable through an endpoint or script.
+Do not run an uncontrolled infinite loop.
+
+8. Risk and position sizing
+
+Use existing risk settings if available.
+
+If missing, create safe fallback defaults:
+- max risk per paper trade: 1% simulated account equity
+- default simulated account equity: 10000
+- max open paper trades: 3
+- max same-symbol paper trades: 1
+- max daily paper losses: configurable fallback
+- position size must be capped
+
+Paper position sizing should return:
+{
+  account_equity,
+  risk_percent,
+  risk_amount,
+  stop_distance,
+  calculated_position_size,
+  capped_position_size,
+  reason
+}
+
+9. Database changes if needed
+
+Additive only.
+
+If missing, create or update paper trade storage with fields like:
+
+paper_trades:
+- id
+- execution_id
+- decision_id
+- symbol
+- action
+- status
+- entry_price
+- current_price
+- exit_price
+- stop_loss
+- take_profit
+- position_size
+- risk_amount
+- pnl
+- pnl_percent
+- confidence
+- risk_score
+- entry_reason
+- invalidation_reason
+- market_data_snapshot jsonb
+- decision_snapshot jsonb
+- execution_snapshot jsonb
+- opened_at
+- closed_at
+- close_reason
+- created_at
+- updated_at
+
+paper_execution_logs:
+- id
+- execution_id
+- decision_id
+- trade_id
+- symbol
+- action
+- status
+- message
+- details jsonb
+- created_at
+
+10. Add endpoints or scripts
+
+Create endpoints or equivalent scripts:
+
+POST /api/paper-execution/from-decision
+POST /api/paper-execution/demo
+GET /api/paper-execution/open
+GET /api/paper-execution/trades?limit=20
+GET /api/paper-execution/trade/:id
+POST /api/paper-execution/monitor
+POST /api/paper-execution/close/:id
+
+Also make sure:
+POST /api/trade-decision/evaluate
+can still return a decision without auto-executing unless explicitly requested.
+
+11. Required test scenarios
+
+A. Valid AA decision creates one paper trade.
+B. Same decision_id called twice does not create duplicate trade.
+C. HOLD decision is rejected.
+D. Low confidence decision is rejected.
+E. High risk decision is rejected.
+F. Bad market data decision is rejected.
+G. Wide spread decision is rejected.
+H. Missing SL/TP/position size decision is rejected.
+I. Existing same-symbol conflict is rejected or handled by settings.
+J. Paper trade monitor updates unrealized P&L.
+K. Paper trade monitor closes trade when TP is hit.
+L. Paper trade monitor closes trade when SL is hit.
+M. Closed paper trade triggers Build BB auto-debrief.
+N. Build BB sends payload to Build CC.
+O. No live trades are placed.
+
+12. Build AA integration
+
+Do not make AA automatically execute by default.
+
+Instead:
+- AA creates decision.
+- EE can execute paper trade from decision only through explicit paper endpoint or safe paper mode setting.
+- Live mode remains disabled.
+
+13. Logs
+
+Every paper execution should log:
+- decision received
+- eligibility pass/fail
+- market data used
+- position sizing calculation
+- simulated fill
+- trade created or rejected
+- idempotency result
+- monitor result
+- close result
+- BB trigger result
+- CC learning handoff result if trade closes
+
+14. Safety rules
+
+Hard safety:
+- Never call live broker execution.
+- Never call MT5 live order placement.
+- Never enable canPlaceTrades.
+- Never turn paper approval into real order approval.
+- Never auto-run uncontrolled loops.
+- Never execute if decision is HOLD.
+- Never execute if decision_id is missing.
+- Never execute if safety blockers exist.
+- Never execute if market data is missing/degraded beyond allowed rules.
+
+15. Preserve existing behavior
+
+Do not break:
+- Build AA decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- manual debrief
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- existing frontend routes
+
+Acceptance criteria:
+- A valid AA decision can create a simulated paper trade.
+- Invalid decisions are rejected safely.
+- Same decision_id cannot create duplicate trades.
+- Paper trades use DD market data for simulated fills.
+- Open paper trades can be monitored.
+- SL/TP can close paper trades.
+- Closed paper trades trigger BB auto-debrief.
+- BB can still hand learning payload to CC.
+- Live trading remains impossible.
+- App typechecks/builds.
+- Raw outputs prove the system works.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes
+4. Where EE reads AA decision objects
+5. Where EE reads DD market data
+6. Where EE triggers BB after paper close
+7. Raw output for valid paper execution
+8. Raw output for duplicate decision_id idempotency
+9. Raw output for rejected HOLD decision
+10. Raw output for rejected high-risk decision
+11. Raw output for paper monitor update
+12. Raw output for TP close
+13. Raw output for SL close
+14. Sample paper_trades record
+15. Sample paper_execution_logs record
+16. Proof BB auto-debrief triggered after close
+17. Proof CC learning payload still works after BB
+18. Live-trade isolation proof
+19. Any errors or warnings
+20. Whether Build EE is fully complete or partially complete
+21. Final Build EE score out of 10

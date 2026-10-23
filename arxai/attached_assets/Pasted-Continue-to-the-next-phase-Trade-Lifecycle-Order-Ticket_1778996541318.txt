@@ -1,0 +1,223 @@
+Continue to the next phase: Trade Lifecycle + Order Ticket Integration.
+
+Do NOT unlock live trading.
+Do NOT enable real auto-close execution.
+Do NOT weaken any safety gate.
+Do NOT rebuild unrelated pages.
+Check what already exists first, then adjust only what is needed.
+
+Before coding:
+1. Read the latest frontend safety visibility QA report.
+2. Confirm final status is READY FOR NEXT PHASE.
+3. Confirm P0/P1 issues are still None.
+4. Confirm typecheck, guard suite, stop-limit/order-type QA, trading intelligence regression, auto-close gate tests, activity UNKNOWN hard-block test, and per-user isolation test were green.
+5. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+
+Implement this phase as a complete paper-safe trade lifecycle flow:
+
+A. Order Ticket UI / Trade Placement Flow
+Create or upgrade the order ticket so users can clearly choose:
+- Buy Market
+- Sell Market
+- Buy Limit
+- Sell Limit
+- Buy Stop
+- Sell Stop
+- Buy Stop Limit
+- Sell Stop Limit
+
+For every order type:
+- Show the correct required fields.
+- Validate required entry price, stop price, and/or limit price.
+- Validate price direction based on buy/sell logic.
+- Show live market price if available.
+- If live price is unavailable, show “Live price unavailable” and block real submission.
+- Clearly label whether the order is Paper, Draft, Blocked, or Live-Eligible.
+- Live execution must remain blocked unless all backend gates pass.
+
+B. Stop Loss / Take Profit Fields
+Users must be able to enter Stop Loss and Take Profit when placing a trade.
+
+Support:
+- One Stop Loss price
+- One or multiple Take Profit targets
+- Optional TP1 / TP2 / TP3 style targets
+- Risk/reward preview
+- Estimated risk amount if account/equity data exists
+- “TP unavailable” state if targets cannot be calculated honestly
+
+Rules:
+- Do not invent TP targets.
+- If scanner/news/candle/market data is missing, show why TP is unavailable.
+- If AI recommends a sniper trade, include suggested TP positions only when data quality is sufficient.
+- If insufficient data, AI must say it cannot safely recommend TP positions.
+
+C. Edit SL/TP After Trade Is Created
+Users should be able to edit Stop Loss and Take Profit:
+- On open/live trade cards
+- On paper trade cards
+- On pending order cards
+- From the trade detail view
+
+Every edit must:
+- Open a confirmation prompt.
+- Show old value vs new value.
+- Show current safety status.
+- Respect MT5/live execution gates.
+- Save as paper/draft if live execution is blocked.
+- Never send live modification commands unless all gates pass.
+
+D. Manual Close / One-Click Close With Prompt
+Add or verify manual close controls:
+- Close trade button
+- One-click close shortcut if supported
+- Confirmation prompt before closing
+- Show estimated profit/loss if available
+- Show “Live close blocked” if gates are missing
+- Show “Paper close only” when in paper mode
+- No duplicate close actions
+
+Manual close must not bypass:
+- MT5 bridge gate
+- live trading lock
+- paper-only lock
+- user confirmation
+- per-user ownership check
+
+E. AI Trade Assistant On Trade Cards
+Users must be able to ask AI about a specific trade:
+- Where do you think this trade is going?
+- Why is it moving this way?
+- Should I close?
+- Is this a pullback or retracement?
+- Is this continuation or fakeout?
+- Where should I place TP?
+- Should I move my stop loss?
+
+AI response must use:
+- Trading tools
+- Market history
+- Scanner data
+- Candles if connected
+- Market news
+- Current events / real-world news channel
+- User trade context
+- Risk profile if available
+- Current SL/TP placement
+
+AI must be honest:
+- If data is missing, say what is missing.
+- Do not fabricate candles, news, scanner signals, bridge status, TP targets, or confidence.
+- Do not claim certainty.
+- Do not execute trades from chat.
+- AI may recommend, warn, or alert, but execution remains gated.
+
+F. Trade Card State / Badges
+Every trade/order card should show real backend-driven state:
+- Symbol
+- Direction
+- Order type
+- Entry price
+- Stop Loss
+- Take Profit targets
+- Current price if available
+- Profit/loss if available
+- Paper / Draft / Blocked / Live-Eligible status
+- Bridge Offline
+- ALERT_ONLY
+- Auto-Close OFF
+- Activity Unknown
+- Data Insufficient
+- News Unavailable
+- TP Targets Available / Unavailable
+- SL/TP Editable
+- Manual Close Available / Blocked
+
+No fake UI-only status.
+
+G. Per-User Trade Ownership
+Confirm all trade/order actions are scoped to the logged-in user:
+- Creating order draft
+- Editing SL/TP
+- Viewing trade cards
+- Asking AI about trade
+- Closing trade
+- Reading trade history
+- Reading audit trail
+
+No user can see or modify another user’s trades.
+
+H. Audit Trail
+Add or verify audit logging for:
+- Order ticket opened
+- Order draft created
+- Paper order created
+- SL edited
+- TP edited
+- AI trade analysis requested
+- AI close warning generated
+- Manual close requested
+- Manual close blocked
+- Duplicate action blocked
+- MT5 command blocked
+- Bridge offline fallback
+
+Each audit entry should include:
+- userId
+- tradeId/orderId
+- action
+- previous value if relevant
+- new value if relevant
+- safety gate status
+- timestamp
+
+I. Preserve All Existing Safety Rules
+Keep these unchanged:
+- Auto-close remains ALERT_ONLY unless every required gate passes.
+- Live trading remains BLOCKED unless explicitly unlocked and every required gate passes.
+- MT5 commands remain blocked while bridge/token/live gates are missing.
+- No AI open/add/widen trade tools.
+- No fake candles.
+- No fake scanner opportunities.
+- No fake news.
+- No fake TP targets.
+- No fake bridge status.
+- UNKNOWN activity hard-blocks auto-close.
+- Per-user SQL/session filters stay intact.
+
+After implementation, run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Trading intelligence regression
+5. Scanner/news/current-events fallback tests
+6. Auto-close gate tests
+7. Activity UNKNOWN hard-block test
+8. SL/TP create/edit tests
+9. Pending order validation tests
+10. Manual close confirmation/blocking tests
+11. AI trade-card question tests
+12. Per-user trade isolation tests
+13. Frontend smoke test for order ticket, trade cards, trade detail, AI trade assistant, and SL/TP edit flow
+
+If any test fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks.
+
+End with a report showing:
+- Files inspected
+- Files changed
+- New UI areas added
+- Backend endpoints/types touched
+- Order types confirmed
+- SL/TP behavior confirmed
+- Manual close behavior confirmed
+- AI trade assistant behavior confirmed
+- Tests run
+- Pass/fail results
+- Remaining gated/deferred items
+- Auto-close status
+- MT5/live trading status
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

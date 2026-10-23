@@ -1,0 +1,245 @@
+BUILD PHASE — Operator-Funded 10-User Live Pilot
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Allow exactly 10 approved private beta users to trade live using operator-owned capital only. Users are not depositing money, withdrawing money, investing money, or receiving ownership of the master account. Each user receives a controlled operator-assigned trading allocation for testing under strict risk limits.
+
+Important:
+Do not create public live trading.
+Do not describe this as deposits, withdrawals, custody, investor funds, or user-owned broker balance.
+Do not enable profit-sharing, payouts, or user withdrawals in this phase.
+Do not bypass legal/compliance flags.
+Do not bypass admin approval.
+Do not bypass disclosures.
+Do not bypass risk limits.
+Do not bypass bridge health, shared master mapping, queue, exposure, cooldown, kill switch, close-only, force-review, or confirmation gates.
+Do not create live commands during build or QA.
+
+1. Inspect current beta/live systems first
+Inspect:
+- ARX_PRIVATE_BETA_10 cohort
+- hard invite gate
+- accepted beta users
+- admin beta dashboard
+- live pilot controls
+- account shells
+- risk profiles
+- disclosure acceptance
+- compliance review flags
+- shared master mapping
+- liveCommandPipeline
+- trade queue
+- kill switches
+- close-only mode
+- force-review mode
+- audit logs
+- no-live-command counter
+
+Reuse existing systems. Do not create a duplicate live execution path.
+
+2. Create operator-funded live pilot mode
+Add or confirm admin-only mode:
+
+ARX_OPERATOR_FUNDED_LIVE_PILOT_10
+
+Rules:
+- max approved live users: 10
+- users must be accepted beta users
+- all capital is operator-owned
+- users receive an assigned trading allocation only
+- no deposits
+- no withdrawals
+- no user-funded account balance language
+- no profit-sharing language
+- no investment-pool language
+- no public access
+- live approval is per user
+- live approval can be revoked per user instantly
+
+3. User-facing wording
+Replace risky wording for this mode.
+
+Use:
+- “Operator-funded live pilot”
+- “Assigned trading allocation”
+- “Live access approved by operator”
+- “Trading limits”
+- “Your private performance view”
+- “Your allocated P/L view”
+
+Do not use:
+- deposit
+- withdrawal
+- custody
+- investor funds
+- client funds
+- pooled customer funds
+- guaranteed profit
+- managed money
+- licensed broker
+- regulated broker
+- your master account balance
+
+4. Admin Live Pilot Control Center
+For each of the 10 users, show:
+- user name/email/id
+- beta status
+- onboarding status
+- disclosure status
+- operator-funded live approval status
+- assigned allocation
+- risk profile
+- allowed symbols
+- max lot size
+- max open trades
+- max daily loss
+- daily loss remaining
+- one-click live status
+- bridge/mapping readiness
+- kill switch status
+- live readiness result
+- last safety block
+- last command status
+
+Admin actions:
+- approve operator-funded live access
+- revoke operator-funded live access
+- assign allocation
+- assign risk profile
+- set max lot size
+- set allowed symbols
+- set daily loss limit
+- pause user
+- resume user
+- force user back to demo-only
+- disable all 10 live users instantly
+- export pilot readiness evidence
+
+5. Required gates before any live command
+A live command may only be created if all are true:
+
+- user is one of the accepted 10 beta users
+- user is individually approved for operator-funded live pilot
+- user accepted required live disclosures
+- operator compliance/legal review flag is approved
+- user has assigned operator-funded allocation
+- user has risk profile
+- symbol is allowed
+- lot size is within limit
+- daily loss limit not reached
+- max open trades not exceeded
+- global backend live flag enabled
+- global kill switch inactive
+- close-only not blocking opens
+- force-review inactive unless admin intentionally wants review state
+- queue not paused
+- bridge healthy
+- shared master account mapped
+- EA live enabled
+- EA not read-only
+- exposure reservation passes
+- cooldown passes
+- confirmation passes
+- one-click path only if separately approved
+
+6. One-click live stays OFF
+For all 10 users:
+- one-click live defaults OFF
+- admin must separately permit one-click live per user
+- user must separately enable it with typed phrase
+- global one-click disable overrides all user toggles
+- one-click cannot bypass any safety gate
+
+7. Operator-funded disclosure
+Add/update disclosure acceptance for this pilot:
+
+User must acknowledge:
+- funds are operator-owned
+- access can be paused/revoked at any time
+- assigned allocation is not a deposit
+- assigned allocation is not withdrawable
+- Ruby analysis is informational
+- trading involves risk
+- results are not guaranteed
+- live orders require confirmation
+- app may place user actions into review if safety state is uncertain
+
+Store acceptance by:
+- authenticated userId
+- disclosure version
+- acceptedAt
+- mode: OPERATOR_FUNDED_LIVE_PILOT
+- text hash/version
+
+8. Ruby behavior
+Ruby should explain:
+- “You are in an operator-funded live pilot.”
+- “Your allocation is assigned by the operator.”
+- “This is not a deposit or withdrawable balance.”
+- “Your live access is approved/paused/waiting.”
+- “This trade is blocked because your max lot size is exceeded.”
+- “I prepared the ticket. Please confirm before any live order is sent.”
+
+Ruby must not:
+- promise profits
+- call ARX AI a broker
+- say users own the master account
+- say the allocation is withdrawable
+- claim legal approval
+- reveal other users
+- reveal master global balance
+
+9. Audit logs
+Add audit logs for:
+- operator-funded live pilot enabled/disabled
+- user approved for operator-funded live
+- user revoked from operator-funded live
+- allocation assigned/changed
+- disclosure accepted
+- live command blocked by pilot gate
+- one-click live denied
+- emergency disable all pilot users
+- user paused/resumed
+- risky wording blocked/replaced
+
+Do not log secrets.
+
+10. Tests
+Add or update tests for:
+- only 10 accepted beta users can be operator-funded live candidates
+- 11th user cannot be live approved
+- user without disclosure is blocked
+- user without allocation is blocked
+- user without risk profile is blocked
+- unapproved user is blocked
+- paused user is blocked
+- demo user cannot create live command
+- bridge unhealthy blocks
+- shared master unmapped blocks
+- compliance flag false blocks
+- kill switch blocks all pilot users
+- close-only blocks new opens
+- force-review marks command NEEDS_REVIEW
+- one-click live OFF by default
+- one-click cannot bypass gates
+- user-facing UI does not say deposit/withdrawal/custody/user funds
+- Ruby explains operator-funded pilot safely
+- User 1 cannot see User 2 data
+- non-admin cannot approve live users
+- no secrets exposed
+- no live command created during QA
+- arx_live_commands count stays unchanged
+
+Return:
+- what was built
+- files changed
+- pilot mode added
+- user-facing wording changed
+- admin route/API names
+- disclosure behavior
+- safety gates verified
+- tests added/run
+- remaining risks
+- confirmation no live trade was fired during build/QA
+- confirmation arx_live_commands count stayed unchanged

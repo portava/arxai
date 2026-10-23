@@ -1,0 +1,1054 @@
+Build this as an ADD-ON intelligence layer to the existing ARX AI system. Do not rebuild the app. Do not replace Ruby, the scanner, live trade flow, MT5 bridge, live execution paths, existing database, existing users, existing admin system, or existing trading features. This task is to add a governed self-growing AI agent ecosystem on top of the current system.
+
+IMPORTANT:
+This is not a redesign.
+This is not a rewrite.
+This is not a separate app.
+This is not paper trading.
+This is not a simulation feature.
+This must integrate into the current live ARX AI system and current Ruby/scanner/trade review architecture.
+
+Goal:
+Create the ARX AI Agent Ecosystem: a self-improving AI workforce where multiple AI agents work under Ruby, earn promotions, lose authority, go to Learning Camp, create new specialist agents when needed, step back when they slow the system, and improve trade decision quality over time. Ruby remains the main user-facing AI voice. The other agents can operate behind the scenes unless their output is needed.
+
+Core principle:
+Agents are rewarded for QUALITY, PROTECTION, SPEED, DISCIPLINE, and USEFULNESS — not for calling more trades.
+
+Agents should be rewarded for:
+- Finding high-quality trade opportunities
+- Rejecting bad trades
+- Warning Ruby about danger
+- Identifying late/chase entries
+- Protecting capital
+- Knowing when to say “no trade”
+- Being fast
+- Stepping back when their input is not needed
+- Creating useful child agents only when a real task gap exists
+- Improving after Learning Camp
+
+Agents should be penalized for:
+- Low-quality trade calls
+- Chasing candles late
+- Ignoring major support/resistance
+- Bad risk/reward
+- Calling trades too close to danger zones
+- Overconfidence
+- Repeating another agent’s work
+- Slowing the scanner or live execution unnecessarily
+- Creating duplicate/useless agents
+- Failing to step back when not needed
+- Repeating mistakes after Learning Camp
+- Trying to influence live recommendations before earning authority
+
+Build the following system.
+
+====================================================================
+1. AGENT ECOSYSTEM FOUNDATION
+====================================================================
+
+Add an internal agent ecosystem layer with the following default core agents if they do not already exist:
+
+1. Ruby
+Role: Lead Trading Desk Manager and user-facing AI voice.
+Purpose: Coordinate all agent opinions, speak clearly to the user, summarize trade logic, and present only useful information.
+
+2. Market Structure AI
+Role: Reads higher timeframe structure.
+Purpose: Trend, range, support/resistance, breakout, reversal, major zones, higher timeframe bias.
+
+3. Scalp AI
+Role: Detects scalp opportunities.
+Purpose: Flame candle runs, one-stick to several-stick momentum, fast continuation, pullback continuation, quick exit setups, multi-entry scalp possibilities.
+
+4. Risk AI
+Role: Safety guardian.
+Purpose: Risk/reward, overexposure, late entries, bad zones, max loss risk, danger warnings, and veto power.
+
+5. Entry Timing AI
+Role: Entry quality specialist.
+Purpose: Clean entry, early/late/chase detection, retest logic, candle timing, confirmation rules.
+
+6. Exit / TP AI
+Role: Exit specialist.
+Purpose: Realistic take profit zones, partial TP, trailing logic, scalp exit versus hold logic, invalidation zones.
+
+7. Scanner AI
+Role: Opportunity scout.
+Purpose: Search across symbols/timeframes and bring forward the best opportunities only.
+
+8. Trade Review AI
+Role: Report card and truth-review system.
+Purpose: Grade all agent predictions after the market plays out.
+
+9. Agent Traffic Controller AI
+Role: Speed and workflow governor.
+Purpose: Decide which agents should run for each situation so the system stays fast.
+
+10. Agent Immune System AI
+Role: Ecosystem health protector.
+Purpose: Detect duplicate, useless, slow, reckless, bloated, or mission-drifting agents.
+
+11. Learning Camp AI
+Role: Retraining system.
+Purpose: Retrain underperforming agents and return them only after improvement.
+
+12. Agent Factory AI
+Role: Controlled agent creation.
+Purpose: Allow qualified agents to create new specialist agents from templates without outside coding.
+
+13. Promotion Board AI
+Role: Rank and authority manager.
+Purpose: Evaluate promotions, demotions, authority changes, Learning Camp placement, and shutdown recommendations.
+
+14. Execution AI
+Role: Live execution flow monitor.
+Purpose: Ensure AI reasoning does not block or slow live trade execution paths.
+
+Use existing AI/provider services already in the app where possible. Do not add a completely separate AI stack unless required. Reuse current Ruby infrastructure wherever possible.
+
+====================================================================
+2. AGENT DATABASE MODEL
+====================================================================
+
+Create persistent database tables/models for agents.
+
+Each agent should have:
+
+- id
+- name
+- role
+- department/family
+- parent_agent_id
+- created_by_agent_id
+- created_by_user_id if admin created
+- creation_reason
+- mission_statement
+- allowed_tasks
+- forbidden_tasks
+- current_rank
+- current_status
+- trust_score
+- quality_score
+- speed_score
+- protection_score
+- usefulness_score
+- authority_weight
+- live_influence_allowed boolean
+- can_create_agents boolean
+- creation_right_level
+- current_mode
+- specialty_tags
+- weakness_tags
+- mistake_profile
+- learning_camp_count
+- shutdown_warning_count
+- last_active_at
+- last_reviewed_at
+- created_at
+- updated_at
+- archived_at
+
+Statuses:
+- Active
+- Warning
+- Probation
+- Learning Camp
+- Restricted
+- Shadow Mode
+- Training Mode
+- Supervised Mode
+- Sleeping
+- On-Demand Only
+- Archived
+- Shutdown Recommended
+- Shutdown
+
+Modes:
+- Full Active
+- Fast Mode
+- Silent Support
+- On-Demand Only
+- Sleeping
+- Shadow Mode
+- Background Review
+- Learning Camp
+
+Ranks:
+- Trainee
+- Junior Analyst
+- Analyst
+- Senior Analyst
+- Lead Analyst
+- Chief Agent
+- Department Lead
+- Trading Desk Executive
+
+Authority weights:
+- Trainee: 0%
+- Shadow Mode: 0%
+- Junior: 1% to 5%
+- Analyst: 5% to 10%
+- Senior: 10% to 20%
+- Lead: 20% to 30%
+- Chief: configurable
+- Risk AI can have veto rights when enabled
+- Ruby has final communication authority, not unchecked trade authority
+
+Do not allow new agents to start with live trade influence.
+Every new agent must start in Shadow Mode with 0% live authority.
+
+====================================================================
+3. AGENT CONSTITUTION
+====================================================================
+
+Create an internal “Agent Constitution” that every agent must follow.
+
+Permanent laws:
+
+1. Protect capital before seeking profit.
+2. Quality over quantity.
+3. No agent is rewarded for calling more trades.
+4. No agent may influence live recommendations without proven performance.
+5. No new agent may start with live authority.
+6. No agent may hide uncertainty.
+7. No agent may ignore Risk AI danger warnings.
+8. No agent may slow live execution unless its input is necessary to protect the user or improve execution.
+9. No agent may create another agent without a clear repeated task gap or failure pattern.
+10. No agent may duplicate another agent’s job without justification.
+11. No agent may drift outside its mission.
+12. No agent may rewrite history after results.
+13. Every prediction must be truth-locked before the result.
+14. Agents must step back when their input is redundant, slow, stale, or outside their specialty.
+15. No-trade decisions can be as valuable as trade recommendations.
+16. Learning Camp is correction, not deletion.
+17. Shutdown is last resort after repeated failure, unless safety requires immediate restriction.
+18. Admin retains final override.
+
+Store this constitution in code/config and expose it in admin view.
+
+====================================================================
+4. TRUTH-LOCKED PREDICTION JOURNAL
+====================================================================
+
+Create a truth-locked prediction journal for every agent decision.
+
+Every time an agent contributes to a trade idea, scanner signal, rejection, warning, or no-trade decision, store:
+
+- prediction_id
+- agent_id
+- trade_id or scanner_signal_id if applicable
+- symbol
+- timeframe
+- session
+- market_condition
+- setup_type
+- direction
+- entry_zone
+- invalidation_zone
+- stop_loss_suggestion
+- take_profit_suggestion
+- partial_take_profit_suggestion
+- confidence_score
+- decision: approve / caution / reject / no-trade / observe
+- reasoning_summary
+- risk_warning
+- expected_movement
+- expected_time_horizon
+- trade_type: scalp / intraday / swing / watchlist / no-trade
+- timestamp_created
+- locked boolean
+- locked_at
+- outcome_status
+- outcome_reviewed_at
+
+Once locked, the original prediction cannot be edited. Later reviews must be appended as new review records.
+
+This prevents agents from rewriting history.
+
+====================================================================
+5. TRADE REVIEW AND SCORING ENGINE
+====================================================================
+
+Create a scoring engine that reviews agent predictions after enough market movement or trade result data exists.
+
+Score separately:
+
+A. Decision Quality Score
+Was the agent’s reasoning professional before the outcome?
+
+B. Outcome Score
+Did price behave as expected?
+
+C. Protection Score
+Did the agent protect the user from bad trades?
+
+D. Speed Score
+Did the agent provide value without slowing the system?
+
+E. Usefulness Score
+Did the agent’s input actually change or improve the final decision?
+
+F. Calibration Score
+Did confidence match reality?
+
+Reward points:
+- Clean setup identification
+- Good entry timing
+- Good risk/reward
+- Correct support/resistance awareness
+- Correct trade type classification
+- Realistic TP/SL
+- Correct no-trade decision
+- Correctly blocking a bad setup
+- Correctly downgrading a weak setup
+- Correctly admitting uncertainty
+- Fast useful output
+- Stepping back when not needed
+
+Penalty points:
+- Late/chase entry
+- Ignoring major support/resistance
+- Bad risk/reward
+- Overconfidence on weak setup
+- Wrong trade type
+- Unrealistic TP
+- No invalidation
+- Trade immediately violates invalidation
+- Duplicate analysis
+- Slow output with low decision impact
+- Repeating mistakes after Learning Camp
+- Creating unnecessary agents
+- Failing to step back
+- Mission drift
+
+Important:
+A winning trade can still receive a poor decision score if it was reckless or lucky.
+A losing trade can still receive a decent decision score if the setup was clean and properly invalidated.
+Do not reward profit alone.
+
+====================================================================
+6. PROMOTION, DEMOTION, AND AUTHORITY SYSTEM
+====================================================================
+
+Create Promotion Board logic.
+
+Agents should be evaluated over rolling windows:
+- Last 10 decisions
+- Last 25 decisions
+- Last 50 decisions
+- Last 100 decisions
+
+Promotion criteria should consider:
+- Decision quality
+- Protection score
+- Speed score
+- Usefulness
+- Calibration
+- No-trade quality
+- Mistake reduction
+- Learning Camp improvement
+- Parent responsibility if agent created children
+
+Demotion criteria:
+- Repeated low-quality calls
+- Repeated late/chase entries
+- Repeated poor risk/reward
+- Repeated slow performance
+- Repeated duplicate commentary
+- Repeated failure after Learning Camp
+- Mission drift
+- Child agent failures caused by poor parent supervision
+
+Status rules:
+- 3 poor-quality decisions in rolling window: Warning
+- 5 poor-quality decisions: Probation
+- 8 poor-quality decisions: Restricted or Learning Camp
+- 10+ poor-quality decisions: Shutdown Recommended
+- Admin approval required for full shutdown unless system safety requires immediate restriction
+
+Promotion unlocks:
+- Higher authority weight
+- More scanner influence
+- Ability to challenge other agents
+- More visibility to Ruby
+- Access to deeper analysis tools
+- Ability to create child agents if qualified
+- Department lead status
+
+Demotion causes:
+- Lower authority weight
+- Loss of creation rights
+- Shadow Mode or Learning Camp
+- Restricted influence
+- On-Demand Only mode
+- Shutdown recommendation
+
+====================================================================
+7. LEARNING CAMP
+====================================================================
+
+Add Learning Camp as retraining for underperforming agents.
+
+Agents enter Learning Camp when:
+- They repeatedly fail their mission
+- They repeat the same mistake pattern
+- They slow the system without enough value
+- They create poor child agents
+- They fail after warning/probation
+- Risk AI or Promotion Board recommends retraining
+
+Learning Camp stages:
+
+1. Failure Review
+Identify exactly what went wrong.
+
+2. Pattern Correction
+Create correction rules based on mistakes.
+
+3. Replay Training
+Review historical trades/signals where the agent failed.
+
+4. Shadow Mode
+Agent watches live markets but has 0% influence.
+
+5. Supervised Return
+Agent returns with reduced authority and requires approval from stronger agents.
+
+6. Full Return or Further Restriction
+If it improves, authority can slowly return.
+If not, restrict, archive, merge, or shutdown recommend.
+
+Learning Camp should create records:
+- agent_id
+- reason
+- failure_patterns
+- correction_rules
+- training_examples
+- start_date
+- end_date
+- return_status
+- performance_after_return
+
+Agents should “know” they are at risk of Learning Camp or shutdown through their current status and score context.
+
+====================================================================
+8. AGENT FACTORY / SELF-REPLICATING ECOSYSTEM
+====================================================================
+
+Create Agent Factory so good agents can create new specialist agents without outside coding.
+
+This must be controlled and governed, not uncontrolled code generation.
+
+Important:
+Agents are not writing new application source code.
+Agents are creating new agent records, missions, prompts, rules, scoring profiles, tools access settings, and workflow roles from approved templates.
+
+Qualified agents can create child agents only when:
+- They have sufficient rank/trust
+- They have creation rights
+- They identify a repeated failure pattern
+- They identify a missing specialty
+- The new agent has a clear mission
+- The new agent does not duplicate an existing agent
+- The Agent Immune System approves no duplication/bloat
+- Risk AI does not flag danger
+- The new agent starts in Shadow Mode with 0% live authority
+
+New agent birth certificate must include:
+- Agent name
+- Parent agent
+- Created by
+- Creation reason
+- Problem it solves
+- Mission
+- Allowed tasks
+- Forbidden tasks
+- Training focus
+- Starting rank
+- Starting authority: 0%
+- Starting mode: Shadow Mode
+- Risk level
+- Promotion requirement
+- Shutdown/Learning Camp rules
+- Expected value
+- Expected speed cost
+
+Example:
+If Scalp AI keeps failing on wick exhaustion, it can create Wick Exhaustion AI.
+If Scanner AI brings too much noise, it can create Noise Filter AI.
+If Entry AI struggles with breakouts, it can create Fakeout Detection AI.
+If Exit AI struggles with multi-position scalps, it can create Multi-Entry Exit Manager AI.
+
+Parent accountability:
+If the child agent succeeds, the parent gains leadership points.
+If the child agent creates noise, slows the system, or fails repeatedly, the parent loses leadership points and may lose creation rights.
+
+====================================================================
+9. AGENT FAMILY TREE
+====================================================================
+
+Create family/departments for agents.
+
+Examples:
+
+Ruby Household
+- Market Structure Department
+- Scalp Department
+- Risk Department
+- Entry Department
+- Exit Department
+- Scanner Department
+- Review Department
+- Execution Department
+- Agent Operations Department
+
+Each department can have child agents.
+
+Track:
+- Parent agent
+- Child agents
+- Department score
+- Strongest child
+- Weakest child
+- Department speed cost
+- Department usefulness
+- Department Learning Camp count
+- Department bloat risk
+
+Add admin UI to view the family tree.
+
+====================================================================
+10. AGENT TRAFFIC CONTROLLER / SPEED GOVERNOR
+====================================================================
+
+This is required.
+
+Build Agent Traffic Controller AI to decide which agents run based on situation.
+
+The Traffic Controller should know the active mode:
+
+1. Live Execution Mode
+Fastest. Only execution-critical agents run.
+
+2. Scalp Mode
+Fast. Only scalp-critical agents run.
+
+3. Scanner Mode
+Moderate. Find and rank opportunities quickly.
+
+4. Ruby Explanation Mode
+Slower allowed. More agents can contribute to plain-English explanation.
+
+5. Learning Mode
+Background only. Never interfere with live execution.
+
+6. Agent Creation Mode
+Background only. Never during active execution.
+
+7. Deep Review Mode
+For post-trade/post-session review only.
+
+Agent Traffic Controller responsibilities:
+- Decide which agents should run
+- Put nonessential agents to Silent Support, Sleeping, or On-Demand Only
+- Prevent duplicate analysis
+- Prevent slow agents from blocking live execution
+- Enforce latency budgets
+- Let urgent execution actions bypass deep analysis
+- Wake sleeping agents only when needed
+
+Example routing for V75 scalp:
+Run:
+- Scalp AI
+- Risk AI
+- Entry Timing AI
+- Exit AI
+- Execution AI if trade action is involved
+
+Fast check:
+- Market Structure AI
+
+Silent/background:
+- News AI unless relevant
+- Agent Factory
+- Learning Camp
+- Promotion Board
+- Deep Review AI
+
+Example routing for deep user question:
+Run:
+- Ruby
+- Market Structure AI
+- Risk AI
+- Trade Review AI
+- relevant specialist agents
+
+Latency budget guidelines:
+- Live trade open/close UI feedback: immediate
+- Live execution action: never wait on nonessential AI
+- Emergency close: highest priority
+- Scalp signal decision: very fast
+- Scanner refresh: fast enough to stay useful
+- Deep Ruby explanation: can take longer only after decision is formed
+- Learning Camp and Agent Factory: background only
+
+====================================================================
+11. SPEED AWARENESS AND STEP-BACK SYSTEM
+====================================================================
+
+Every agent must track:
+
+- Average runtime
+- Last runtime
+- Total delay added
+- Whether it changed the final decision
+- Duplicate analysis rate
+- Usefulness per millisecond
+- Speed cost score
+- Step-back history
+
+Agents should self-step-back when:
+- Their input is redundant
+- They are outside their specialty
+- Their analysis is stale
+- They are slowing live execution
+- They have low recent usefulness
+- Another agent is better suited
+- The current mode requires speed
+
+Step-back modes:
+- Fast Mode
+- Silent Support
+- On-Demand Only
+- Sleeping
+- Background Only
+- Archived
+
+Agents should be rewarded for stepping back correctly.
+
+Examples of internal acknowledgement:
+- “My analysis overlaps with Market Structure AI. I am stepping back.”
+- “This is a fast scalp cycle. I am switching to Fast Mode.”
+- “My recent usefulness is low and I am adding delay. I recommend On-Demand Only.”
+- “Risk AI is better suited for this decision. I will remain silent unless called.”
+
+Build this as internal logs and optional admin-visible messages, not necessarily user-facing unless Ruby chooses to summarize.
+
+====================================================================
+12. AGENT IMMUNE SYSTEM
+====================================================================
+
+Build Agent Immune System AI.
+
+It detects and handles:
+- Duplicate agents
+- Too many child agents
+- Agents creating agents without real need
+- Agents repeating generic analysis
+- Agents slowing scanner/live execution
+- Agents trying to influence live decisions before authority
+- Mission drift
+- Reckless agents
+- Overly conservative agents that block everything without reason
+- Agent families becoming bloated
+- Agents with low value-to-speed ratio
+
+Actions it can recommend or apply:
+- Quarantine
+- Merge
+- Retire
+- Archive
+- Send to Learning Camp
+- Remove creation rights
+- Reduce authority
+- Put on On-Demand Only
+- Freeze a department/family
+- Recommend shutdown
+
+Risk AI should be able to trigger immediate restriction if an agent becomes dangerous.
+
+====================================================================
+13. AGENT COURT FOR DISAGREEMENTS
+====================================================================
+
+When agents disagree, do not simply average opinions.
+
+Create Agent Court logic.
+
+Agent Court considers:
+- Which agent has specialty authority for this setup
+- Recent performance in this exact market condition
+- Symbol-specific performance
+- Timeframe-specific performance
+- Trade-type-specific performance
+- Risk AI veto
+- Whether this is scalp/intraday/swing/no-trade
+- Historical record of similar disagreements
+- Speed requirements
+- Confidence calibration
+
+Example:
+Scalp AI says buy.
+Risk AI says too close to resistance.
+Entry AI says entry is late.
+Market Structure AI says H4 is bearish.
+
+Ruby should not blindly recommend buy.
+Ruby should downgrade:
+“Scalp AI detected momentum, but Risk AI and Entry AI rejected the timing. Setup is watchlist only unless confirmation improves.”
+
+Store disagreement records so the system learns who was right later.
+
+====================================================================
+14. NO-TRADE REWARD SYSTEM
+====================================================================
+
+This is critical.
+
+The system must reward agents for no-trade decisions when they protect the user.
+
+Create scoring records for:
+- Bad trade blocked
+- Weak setup rejected
+- Late entry avoided
+- Poor risk/reward avoided
+- Dangerous support/resistance respected
+- Choppy market avoided
+- Overtrading prevented
+- Confirmation required correctly
+- Scanner noise filtered
+
+No-trade reward should be equal in importance to trade reward.
+
+Ruby should be able to say:
+“ARX reviewed 40 setups. Only 3 were worth attention. Risk AI blocked 14 weak trades and 9 later failed.”
+
+====================================================================
+15. AGENT CREATION RIGHTS AND POPULATION CONTROL
+====================================================================
+
+Do not allow uncontrolled agent multiplication.
+
+Add population controls:
+- Max active agents per department
+- Max trainee agents per department
+- Duplicate detection
+- Cost-to-value threshold
+- Minimum task gap proof
+- Parent accountability
+- Agent merge/retirement workflow
+- Creation cooldown period
+- Admin setting to freeze all new agent creation
+- Admin setting to require approval before child agents leave Shadow Mode
+
+Creation rights:
+- Trainee: cannot create
+- Junior: can suggest
+- Analyst: can request
+- Senior: can create Shadow Mode child agents if allowed
+- Lead: can create and supervise child agents
+- Chief: can propose department restructuring
+- Ruby/Admin: final override
+
+New agents must pass:
+- Shadow predictions
+- Minimum sample size
+- Quality threshold
+- Speed threshold
+- Usefulness threshold
+- Risk approval
+Before any live recommendation influence.
+
+====================================================================
+16. AGENT MERGE / RETIRE / ABSORB / ARCHIVE
+====================================================================
+
+Build cleanup actions.
+
+Merge:
+Combine two similar agents into one stronger agent.
+
+Retire:
+Remove an agent from active work because it no longer adds value.
+
+Absorb:
+A stronger agent takes useful knowledge from a weaker agent.
+
+Archive:
+Keep history but stop running the agent.
+
+Quarantine:
+Temporarily restrict an agent/family due to danger, bloat, or poor behavior.
+
+Admin should see these recommendations and be able to approve or manually apply.
+
+====================================================================
+17. DAILY HOUSEHOLD REPORT
+====================================================================
+
+Create a daily Ruby Agent Household Report.
+
+Include:
+- Best performing agent
+- Weakest agent
+- Agents promoted
+- Agents demoted
+- Agents sent to Learning Camp
+- Agents returned from Learning Camp
+- New agents created
+- Agent creation requests
+- Agents that stepped back to save speed
+- Agents that slowed the system
+- Bad trades blocked
+- Quality trades found
+- No-trade wins
+- Scanner noise filtered
+- Department/family performance
+- Agent bloat warnings
+- Speed warnings
+- What the system learned today
+- Recommended admin actions
+
+This report should be visible in admin dashboard and optionally summarized by Ruby.
+
+====================================================================
+18. ADMIN DASHBOARD ADDITIONS
+====================================================================
+
+Add admin UI sections:
+
+1. Agent Ecosystem Overview
+- Total agents
+- Active agents
+- Shadow agents
+- Learning Camp agents
+- Restricted agents
+- Shutdown recommended agents
+- Average trust score
+- Average speed score
+- Average quality score
+
+2. Agent Family Tree
+- Parent/child structure
+- Department scores
+- Agent ranks/statuses
+
+3. Agent Detail Page
+Show:
+- Mission
+- Rank
+- Status
+- Scores
+- Authority weight
+- Creation rights
+- Mistake profile
+- Recent predictions
+- Recent reviews
+- Learning Camp history
+- Children created
+- Speed cost
+- Usefulness score
+- Admin controls
+
+4. Admin Controls
+Allow:
+- Promote
+- Demote
+- Send to Learning Camp
+- Restrict
+- Shutdown
+- Archive
+- Restore
+- Freeze creation rights
+- Approve child agent activation
+- Merge agents
+- Retire agents
+- Change authority weight
+- Put agent in On-Demand Only
+- Put agent in Sleeping mode
+
+5. Agent Creation Requests
+Show:
+- Requesting agent
+- Proposed child agent
+- Reason
+- Expected value
+- Expected speed cost
+- Duplication check
+- Risk check
+- Approval status
+
+6. Household Reports
+Daily reports with filter/search.
+
+====================================================================
+19. USER-FACING RUBY BEHAVIOR
+====================================================================
+
+Ruby should remain the clean user-facing voice.
+
+Ruby should not overwhelm users with every agent message.
+
+Ruby should summarize only what matters:
+
+Example:
+“Scalp AI sees momentum, but Risk AI and Entry AI downgraded the setup because price is too close to resistance. I would treat this as watchlist only unless confirmation improves.”
+
+Example:
+“ARX reviewed 28 setups. Only 2 passed the quality filter. I’m not recommending the rest because they are late or low risk/reward.”
+
+Example:
+“Scalp AI is currently in Learning Camp for repeated late-entry behavior, so I’m relying more on Risk AI and Entry Timing AI for scalp confirmation.”
+
+Example:
+“Several agents stepped back to preserve speed. Only scalp-critical agents are active for this live decision.”
+
+Ruby should be plain English, not overloaded.
+Ruby should explain technical reasons only when useful.
+
+====================================================================
+20. INTEGRATION WITH CURRENT SCANNER AND LIVE TRADE FLOW
+====================================================================
+
+Integrate this layer into current scanner and trade idea flow.
+
+The scanner should:
+- Use Agent Traffic Controller to decide needed agents
+- Ask relevant agents for fast structured opinions
+- Rank opportunities based on quality, risk, speed, and confidence
+- Avoid flooding user with weak signals
+- Reward Scanner AI for filtering noise
+- Allow Ruby to recommend only high-quality setups
+
+Trade recommendation flow:
+1. Scanner or user request identifies possible setup
+2. Traffic Controller chooses relevant agents
+3. Agents produce structured outputs
+4. Risk AI checks danger
+5. Agent Court resolves disagreement if needed
+6. Ruby gives final plain-English summary
+7. Prediction journal truth-locks agent decisions
+8. Outcome is reviewed later
+9. Scores/ranks/statuses update
+
+Live execution:
+Do not let AI ecosystem slow or block proven live execution paths.
+Execution actions must get priority.
+Deep analysis can happen before or after, not during urgent execution.
+Emergency close/open action must not wait on nonessential agents.
+
+====================================================================
+21. STRUCTURED AGENT OUTPUT FORMAT
+====================================================================
+
+All agents should output internally in structured JSON-like format:
+
+{
+  agentName:
+  agentId:
+  mode:
+  status:
+  decision: approve | caution | reject | no_trade | observe | step_back
+  confidence:
+  tradeType:
+  direction:
+  entryZone:
+  invalidation:
+  tpSuggestion:
+  riskWarning:
+  reasoningShort:
+  isUniqueContribution:
+  duplicateOf:
+  speedCostMs:
+  shouldSpeakToRuby:
+  shouldStepBack:
+  stepBackReason:
+}
+
+Do not require long paragraphs internally.
+Ruby can translate into plain English.
+
+====================================================================
+22. TESTING REQUIREMENTS
+====================================================================
+
+After implementation, test thoroughly.
+
+Do not just claim it works. Prove it.
+
+Test cases:
+
+1. Existing Ruby still responds.
+2. Existing scanner still loads.
+3. Existing live trade flow is not broken.
+4. Agents are created in database.
+5. Core agents exist after migration/seed.
+6. New agent starts in Shadow Mode with 0% authority.
+7. Agent prediction gets truth-locked.
+8. Locked prediction cannot be edited.
+9. Trade Review AI can add a review.
+10. Agent score updates after review.
+11. Agent can move from Active to Warning.
+12. Agent can move to Learning Camp.
+13. Learning Camp creates correction rules.
+14. Agent can return in Supervised Mode.
+15. Good agent can request/create child agent if qualified.
+16. Duplicate child agent is blocked.
+17. Agent with low score cannot create child agent.
+18. Agent Traffic Controller limits agents in Scalp Mode.
+19. Agent Traffic Controller limits agents in Live Execution Mode.
+20. Slow agent steps back.
+21. Step-back earns speed/usefulness reward.
+22. Agent Immune System detects duplicate/slow/useless agents.
+23. Agent Court resolves disagreement.
+24. No-trade decision can receive reward.
+25. Admin dashboard displays agents.
+26. Admin can promote/demote/restrict/send to Learning Camp/archive.
+27. Daily Household Report generates.
+28. Scanner does not slow down badly.
+29. Ruby summarizes agent consensus cleanly.
+30. Existing app performance is not degraded.
+
+Performance tests:
+- Measure scanner before and after.
+- Measure Ruby response before and after.
+- Measure live action UI response before and after.
+- Measure each agent runtime.
+- Show logs of which agents stepped back.
+- Optimize any slow path before marking complete.
+
+If the agent ecosystem slows live execution or scanner heavily, do not ignore it. Find the bottleneck, reduce active agents, move slow work to background, cache decision packets, or put agents into On-Demand Only/Fast Mode.
+
+====================================================================
+23. ACCEPTANCE CRITERIA
+====================================================================
+
+This is complete only when:
+
+- ARX has an Agent Ecosystem layer without rebuilding the app.
+- Ruby remains the main user-facing AI.
+- Multiple agents can contribute behind the scenes.
+- Agents have ranks, statuses, scores, authority, and creation rights.
+- Agents can be promoted/demoted.
+- Weak agents can go to Learning Camp.
+- Good agents can create child agents from templates without code changes.
+- Child agents start in Shadow Mode with 0% live authority.
+- Agent parent/child family tree exists.
+- Agents can step back when they slow the system.
+- Speed is scored and visible.
+- No-trade decisions are rewarded.
+- Agent predictions are truth-locked.
+- Trade Review AI grades agents later.
+- Agent Traffic Controller protects speed.
+- Agent Immune System protects ecosystem health.
+- Admin dashboard can manage the ecosystem.
+- Daily Household Report exists.
+- Existing scanner and live trade flow still work.
+- No paper trading feature is introduced.
+- No simulation mode is introduced.
+- No existing working feature is broken.
+
+Before finishing, run the app, inspect logs, test the UI, test backend routes, test database migration, and verify the existing live trading/scanner/Ruby flows still operate.
+
+If something breaks, fix it before passing the work.
+Do not say it is done until the system is actually working end-to-end.

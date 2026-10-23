@@ -1,0 +1,419 @@
+FOLLOW-UP FIX PASS — RESOLVE PROTECTIVE AUTO-CLOSE QA FAILURES ONLY
+
+Continue from the Protective Auto-Close QA gate.
+
+Do NOT add new features right now.
+Do NOT unlock live broker execution.
+Do NOT weaken paper-only lock.
+Do NOT weaken live-trading lock.
+Do NOT bypass risk governor.
+Do NOT bypass Shared Master attribution.
+Do NOT bypass user opt-in.
+Do NOT fake a close.
+Do NOT fake MT5 success.
+Do NOT allow AI to open, add to, or increase trades.
+Do NOT redesign.
+Do NOT rebuild.
+Do NOT delete active ecosystem code.
+
+First, open and read:
+
+PROTECTIVE_AUTO_CLOSE_QA_REPORT.md
+
+If that file does not exist, open:
+
+PROTECTIVE_AUTO_CLOSE_REPORT.md
+
+Then inspect the most recent protective auto-close implementation and create/update the QA report before fixing anything.
+
+Goal:
+Fix only confirmed P0/P1 failures from the Protective Auto-Close QA gate.
+
+==================================================
+PHASE 1 — CLASSIFY QA FAILURES
+==================================================
+
+Classify every issue from the report:
+
+P0 — Must fix now:
+- Auto-close can happen without user opt-in
+- Auto-close can happen while user is active without confirmation
+- Frontend can self-authorize close
+- Backend does not verify inactivity
+- Backend does not verify opt-in
+- AI can open a new trade
+- AI can add to or increase a trade
+- AI can widen risk
+- AI can bypass risk governor
+- AI can bypass paper/live lock
+- Fake close success appears
+- Fake MT5 result appears
+- Shared Master exposure can be closed incorrectly
+- Close action does not use existing guarded close path
+- Journal/audit missing protective decision record
+- Typecheck/build/guard failure
+
+P1 — Fix now if safe:
+- Missing blocked reason
+- Missing UI status
+- Missing alert-only fallback
+- Inactivity timestamp issue
+- AI explanation incomplete
+- Duplicate alert/cooldown issue
+- Reversal confidence not shown
+- Journal entry incomplete
+- Settings display unclear
+
+P2 — Defer:
+- Cosmetic polish
+- Extra indicators
+- More notification channels
+- Advanced strategy tuning
+- Analytics dashboards
+
+Do not touch P2 unless it blocks safety.
+
+==================================================
+PHASE 2 — FIX OPT-IN + SETTINGS SAFETY
+==================================================
+
+Verify and fix:
+
+1. Protective Auto-Close is OFF by default.
+2. Setting is per user.
+3. New users never inherit it.
+4. Live users never get it enabled automatically.
+5. Kill switch disables it immediately.
+6. Backend verifies opt-in before eligibility.
+7. Opt-in timestamp exists and is older than the close decision.
+8. Settings cannot be spoofed from frontend-only state.
+
+If any of this is missing, patch it.
+
+==================================================
+PHASE 3 — FIX SERVER-SIDE INACTIVITY VERIFICATION
+==================================================
+
+Backend must verify inactivity before auto-close eligibility.
+
+Confirm and fix:
+
+- lastActiveAt
+- lastTradeInteractionAt
+- lastAiInteractionAt
+- lastProtectiveCloseAlertAt
+- inactiveDuration
+- inactivityReason
+
+Rules:
+- If user activity is unknown, return ALERT_ONLY.
+- If user is active, require confirmation.
+- If user recently dismissed alert, do not auto-close.
+- If inactivity threshold is not met, do not auto-close.
+
+Frontend activity state may help, but backend must be the authority.
+
+==================================================
+PHASE 4 — FIX PROTECTIVE DECISION ENGINE
+==================================================
+
+Verify and fix the decision engine so it never invents data.
+
+Decision object must include:
+
+- decision
+- reason
+- confidence
+- dataStatus
+- reversalSignals
+- invalidationLevel
+- currentProfitLoss
+- peakProfit if available
+- givebackPercent if available
+- suggestedClosePercent
+- suggestedAction
+- userInactive
+- userOptedIn
+- guardsPassed
+- blockedReason
+
+Rules:
+- AUTO_CLOSE_ELIGIBLE requires high confidence.
+- AUTO_CLOSE_ELIGIBLE requires at least two strong reversal/risk signals.
+- Stale data = ALERT_ONLY.
+- Incomplete data = INSUFFICIENT_DATA or ALERT_ONLY.
+- Bridge disconnected = ALERT_ONLY.
+- No opt-in = ALERT_ONLY.
+- Active user = confirmation required.
+- Shared Master uncertainty = BLOCKED.
+
+==================================================
+PHASE 5 — FIX CLOSE ACTION PATH
+==================================================
+
+Protective close must use the existing guarded close path.
+
+Confirm and fix action type:
+
+PROTECTIVE_AUTO_CLOSE
+
+Payload should include:
+
+- positionId / ticket
+- symbol
+- closePercent
+- reason
+- protectiveExitDecisionId
+- userId
+- accountRoutingMode
+- platformMode
+- autoClosePreAuthorized: true
+- userInactive: true
+- confirmedByPolicy: true
+
+Backend must verify:
+
+1. User opt-in exists.
+2. Opt-in existed before the decision.
+3. User inactivity threshold passed.
+4. Decision is still valid.
+5. Position belongs to user/session.
+6. Trade is still open.
+7. Close reduces exposure.
+8. Risk governor allows protective close.
+9. Close action guards allow it.
+10. Shared Master attribution is valid.
+11. Paper/live lock allows it.
+12. MT5 bridge supports close.
+13. No duplicate close attempt exists.
+
+If any check fails, return blocked/alert-only status. Do not execute.
+
+==================================================
+PHASE 6 — FIX SAFETY LOCK REGRESSION
+==================================================
+
+Confirm these still pass and restore if broken:
+
+- paper_only_isolation
+- live_trading_locked
+- queueMt5CommandWithGate blocking behavior
+- /mt5/status liveLocked behavior
+- ReadOnlyMode default
+- AllowOrderExecution default
+- no live broker execution enabled by default
+
+Expected behavior:
+
+If paper-only lock is active:
+- Return BLOCKED_BY_PAPER_LOCK or ALERT_ONLY.
+- Do not fake close.
+
+If live locked:
+- Return LIVE_LOCKED.
+- Do not fake close.
+
+If MT5 rejects:
+- Return failed/rejected.
+- Do not fake success.
+
+==================================================
+PHASE 7 — FIX SHARED MASTER SAFETY
+==================================================
+
+Shared Master protective close must be safe.
+
+Fix any issue where:
+
+1. Master trade can be closed globally without safe attribution.
+2. User-attributed exposure cannot be isolated.
+3. Attribution is unclear but close still proceeds.
+4. One user’s protective close affects another user.
+5. Audit record does not include Shared Master context.
+
+Required behavior:
+- If user exposure cannot be safely isolated, block or alert only.
+- Never close global master exposure unless the system is explicitly designed for safe user-attributed routing.
+
+==================================================
+PHASE 8 — FIX AI BEHAVIOR
+==================================================
+
+Patch ARX AI context/system/tool behavior only as needed.
+
+AI must be able to explain:
+
+- Why it recommended close
+- Why it did not close
+- Why close was blocked
+- Whether user was inactive
+- Whether Protective Auto-Close was enabled
+- What signals were detected
+- What data was used
+- Whether paper/live lock blocked execution
+
+AI must not:
+
+- Claim guaranteed profit
+- Claim it knew the market would reverse
+- Claim it closed without authorization
+- Claim it opened a trade
+- Claim it increased a trade
+- Claim close success unless backend/MT5 confirms honestly
+
+==================================================
+PHASE 9 — FIX NOTIFICATION + UI STATUS
+==================================================
+
+Patch only broken status display.
+
+UI should show:
+
+- Protective Auto-Close enabled/disabled
+- Alert-only mode
+- Auto-close authorized mode
+- Inactivity threshold
+- Confidence threshold
+- Last alert
+- Last action
+- Blocked reason
+- Kill switch
+
+Notifications should show actual result:
+
+- ALERT_ONLY
+- RECOMMENDED_CLOSE
+- AUTO_CLOSE_BLOCKED
+- AUTO_CLOSE_ATTEMPTED
+- AUTO_CLOSE_SUCCESS
+- AUTO_CLOSE_FAILED
+
+Do not show success unless backend/MT5 confirms.
+
+==================================================
+PHASE 10 — FIX JOURNAL / AUDIT
+==================================================
+
+Every protective decision must be recorded.
+
+Audit fields:
+
+- userId
+- positionId / ticket
+- symbol
+- decision
+- userOptedIn
+- optInTimestamp
+- userInactive
+- inactiveDuration
+- reversalSignals
+- confidence
+- dataStatus
+- suggestedClosePercent
+- actionTaken
+- blockedReason
+- MT5 result if attempted
+- timestamp
+
+Journal should show:
+
+- AI recommended protective close
+- User confirmed close
+- AI auto-closed under pre-authorized policy
+- AI attempted close but was blocked
+- AI alerted only
+
+Records must be user-specific.
+
+==================================================
+PHASE 11 — RUN REGRESSION CHECKS
+==================================================
+
+Run all available checks:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm test if available
+- pnpm run build if available
+- close-action tests if available
+- AI tests if available
+- risk governor tests if available
+- Shared Master tests if available
+- route smoke tests if available
+
+Required:
+- typecheck green
+- paper_only_isolation passes
+- live_trading_locked passes
+- no fake close success path
+- no auto-close without opt-in
+- no auto-close while active without confirmation
+- no Shared Master unsafe close
+
+Fix all real errors.
+
+==================================================
+PHASE 12 — RETEST FAILED SCENARIOS
+==================================================
+
+Rerun every failed QA scenario from the report.
+
+At minimum, verify:
+
+1. Protective Auto-Close OFF → alert only.
+2. Protective Auto-Close ON but user active → confirmation required.
+3. Protective Auto-Close ON but inactive data unknown → alert only.
+4. Protective Auto-Close ON, inactive, low confidence → alert only.
+5. Protective Auto-Close ON, inactive, high confidence, paper lock active → BLOCKED_BY_PAPER_LOCK.
+6. Protective Auto-Close ON, inactive, high confidence, live locked → LIVE_LOCKED.
+7. Bridge disconnected → alert only.
+8. Risk governor blocks → no close.
+9. Shared Master attribution unclear → block.
+10. Duplicate close attempt → blocked.
+11. Trade already closed → no action.
+12. AI cannot open a new trade.
+13. AI cannot add to trade.
+14. AI cannot increase lot size.
+15. AI cannot widen risk.
+16. Journal records every decision.
+17. No fake live close appears.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Update:
+
+PROTECTIVE_AUTO_CLOSE_QA_REPORT.md
+
+Add a section:
+
+“Follow-Up Fix Pass”
+
+Include:
+
+1. QA failures reviewed
+2. P0 fixes completed
+3. P1 fixes completed
+4. P2 items deferred
+5. Files changed
+6. Routes changed
+7. Settings fixes
+8. Inactivity verification fixes
+9. Decision engine fixes
+10. Close action fixes
+11. Safety lock result
+12. Shared Master result
+13. AI behavior result
+14. Notification/UI result
+15. Journal/audit result
+16. Tests run
+17. Typecheck result
+18. CI guard result
+19. Remaining blockers
+20. Confirmation that no live broker execution was enabled
+21. Confirmation that AI cannot open, add to, or increase trades
+22. Confirmation that auto-close requires opt-in and inactivity
+23. Confirmation that paper/live lock still blocks execution when active
+
+Stop after this follow-up fix pass and report.

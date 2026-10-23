@@ -1,0 +1,230 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "tCSnPOto3g7I-EvCx2zKz"
+uri = "file://artifacts/trading-dashboard/AUDIT_REPORT.md"
+type = "text"
+title = "Foundation Audit Report"
+
+[[outputs]]
+id = "f-87n9MOiflHBISD0H1Bh"
+uri = "file://docs/IMPLEMENTATION_ROADMAP.md"
+type = "text"
+title = "High Roll Trading AI — Master Implementation Roadmap"
+
+[[outputs]]
+id = "jxzsd5UKeSUioZxYff7Sa"
+uri = "file://MASTER_BUILD_ROADMAP.md"
+type = "text"
+title = "Master Build Roadmap — AI Trading OS"
+
+[[outputs]]
+id = "1HoAZMs_-U2oOwZBu6bLc"
+uri = "file://mt5-bridge-export.tar.gz"
+type = "unspecified"
+title = "Full MT5 bridge package v1.24 (EA + setup docs)"
+
+[[outputs]]
+id = "TW7Wo42KF7c5fbPIPLpGq"
+uri = "file://mt5-bridge-export/README_MT5_BRIDGE_SETUP.md"
+type = "text"
+title = "README_MT5_BRIDGE_SETUP.md — install + verify steps"
+
+[[outputs]]
+id = "D-eErBoQK2XkDTlZ_Qxi2"
+uri = "file://mt5-bridge-export/SAFE_DEFAULTS.md"
+type = "text"
+title = "SAFE_DEFAULTS.md — safety settings reference"
+
+[[outputs]]
+id = "GmwZwKjFzg8wXTXidbUU0"
+uri = "file://downloads/ReplitMT5BridgeEA-v1.23.tar.gz"
+type = "unspecified"
+title = "ReplitMT5BridgeEA v1.23 (timer-driven EA)"
+
+[[outputs]]
+id = "czKAG8oP5IFZLR4hrWiXm"
+uri = "file://downloads/ReplitMT5BridgeEA-v1.24.tar.gz"
+type = "unspecified"
+title = "ReplitMT5BridgeEA v1.24 (GetTickCount64 fix — survives weekends)"
+
+[[outputs]]
+id = "iYt_nVixZ1ncTpI2QgO0X"
+uri = "file://downloads/ARX_MT5_Bridge_EA_v1.26.tar.gz"
+type = "unspecified"
+title = "ARX MT5 Bridge EA v1.26 (demo execution ready)"
+
+[[outputs]]
+id = "2HhdYUpfklbpaQKUZV17q"
+uri = "file://dist/ReplitMT5BridgeEA_v1.26_selfheal.tar.gz"
+type = "unspecified"
+title = "ReplitMT5BridgeEA v1.26 (symbol/lot self-heal)"
+
+[[outputs]]
+id = "L7wf2hv1jZpLQEJgZ1kv9"
+uri = "file://dist/ReplitMT5BridgeEA_v1.26_volume_fix.tar.gz"
+type = "unspecified"
+title = "ReplitMT5BridgeEA v1.26 (volume-key + self-heal)"
+
+[[outputs]]
+id = "XtObmfqqrmJ4RtVs5t82n"
+uri = "file://dist/ReplitMT5BridgeEA-v1.27.tar.gz"
+type = "unspecified"
+title = "ReplitMT5BridgeEA v1.27 — tar.gz archive"
+
+[[outputs]]
+id = "hLwpmjonP8ptcSePd71jO"
+uri = "file://dist/ReplitMT5BridgeEA-v1.27.mq5.txt"
+type = "text"
+title = "ReplitMT5BridgeEA v1.27 — plain source (rename .txt → .mq5)"
+
+[[outputs]]
+id = "bMksTOa5YkVuOQu1rK9V4"
+uri = "file://dist/ReplitMT5BridgeEA-all-versions.tar.gz"
+type = "unspecified"
+title = "ReplitMT5BridgeEA — all 3 versions bundled"
+
+[[outputs]]
+id = "QqriDOCdhE1Bcs3JALkya"
+uri = "file://dist/ReplitMT5BridgeEA_v127.mq5.txt"
+type = "text"
+title = "ReplitMT5BridgeEA_v127.mq5 (rename .txt → .mq5)"
+
+[[outputs]]
+id = "zq6Gf1Zyz9Fj-opZVWdVw"
+uri = "file://dist/INSTALL_v127.md"
+type = "text"
+title = "Install notes — v1.27"
+
+[[outputs]]
+id = "U4Ca1lXQNt6jWMPV2Du9V"
+uri = "file://screenshots/01_live_trading_gate.jpg"
+type = "image"
+title = "/live-trading — auth gate (no live UI exposed pre-login)"
+
+[[outputs]]
+id = "xyuxIE-wjhCt6LCx1oGlt"
+uri = "file://screenshots/02_market_scanner.jpg"
+type = "image"
+title = "/market-scanner — auth gate (scanner is locked behind login)"
+
+[[outputs]]
+id = "jKqkGiLAZNtFpqVscoaHC"
+uri = "file://screenshots/03_demo_trading.jpg"
+type = "image"
+title = "/demo-trading — auth gate (demo still routes through auth)"
+
+[[outputs]]
+id = "46zdALT1kzyWIfrYGv7Rf"
+uri = "file://exports/arx-ai.zip"
+type = "unspecified"
+title = "ARX AI codebase (HEAD)"
+
+[[outputs]]
+id = "TkZ2C_pY5Mo6c1y3uUX37"
+uri = "file://.local/paper-inventory.md"
+type = "text"
+title = "Paper Trading Removal — Phase 0 + Phase 1 Inventory"
+
+[[outputs]]
+id = "JzuX1vFvKm66ZocBmppBn"
+uri = "file://dist/ReplitMT5BridgeEA_v129.mq5.gz"
+type = "unspecified"
+title = "ReplitMT5BridgeEA_v129.mq5 (latest EA, gzip)"
+
+[[outputs]]
+id = "H01LoawldaJJHE_kiF4uP"
+uri = "file://.local/downloads/ARX_AI_Universal_Agent_v150.zip"
+type = "unspecified"
+title = "ARX AI Universal Agent v1.50 — FIXED (EA source + setup README)"
+
+[[outputs]]
+id = "laZ1ldHn74CJwWd9mADsZ"
+uri = "file://dist/ARX_AI_Universal_Agent_v150.zip"
+type = "unspecified"
+title = "ARX AI Universal Agent EA v1.50 (corrected build)"
+
+[[outputs]]
+id = "bGXy9orK0nIi5ng4iUWtF"
+uri = "file://dist/ARX_AI_Bridge_v150.zip"
+type = "unspecified"
+title = "ARX AI Bridge EA v1.50 (+ setup guide)"
+
+[[outputs]]
+id = "zwubi5v0N2Bh64N3GO0eS"
+uri = "file://dist/ARX_AI_Bridge_v2_Beta_Kernel.zip"
+type = "unspecified"
+title = "ARX AI Bridge v2 Beta Kernel — EA + wire contract"
+
+[[outputs]]
+id = "XBLx6yzFb4j1Zsavl3v5x"
+uri = "file://docs/MARKET_DATA_API_AUDIT.md"
+type = "text"
+title = "ARX AI — Market-Data / API Inventory Audit"
+
+[[outputs]]
+id = "6pLRRyJknlNgwzn3kCkOi"
+uri = "file://.local/exports/ARX_AI_Bridge_v2.zip"
+type = "unspecified"
+title = "ARX AI Bridge v2 — EA source (.mq5) + protocol contract"
+
+[[outputs]]
+id = "1iHRWwj0EuTU9GzMfuAnX"
+uri = "file://dist/ARX_AI_Universal_Agent_v152.zip"
+type = "unspecified"
+title = "ARX AI Universal Agent EA v1.52 (.mq5)"
+
+[[outputs]]
+id = "1aiTkprrBRZOCoIIyvxce"
+uri = "file://downloads/ARX_AI_Universal_Agent_v154.zip"
+type = "unspecified"
+title = "ARX AI Universal Agent EA — v1.54 (MQL5 source)"
+
+[[outputs]]
+id = "FjdRNcYWf_OLQn4xVB6Oz"
+uri = "file://arx-src.tar.gz"
+type = "unspecified"
+title = "ARX AI — source archive (arx-src.tar.gz)"
+
+[[outputs]]
+id = "IunsZrpH4EgZvO52ZP5d2"
+uri = "file://docs/ARX_DEEP_SYSTEM_AUDIT.md"
+type = "text"
+title = "ARX AI — Deep System Audit (graded, read-only)"
+
+[[outputs]]
+id = "sNa9pX8OT6N58OzVBKdLJ"
+uri = "file://arx-src.tar"
+type = "unspecified"
+title = "ARX AI — source archive (arx-src.tar)"
+
+[[outputs]]
+id = "rBe3MX2KMLGRT-FUrw0FX"
+uri = "file://dist/arx-src.tar.gz"
+type = "unspecified"
+title = "arx-src.tar.gz — ARX AI source archive"
+
+[[outputs]]
+id = "eYebEjrv-Eeuya4QOBUgx"
+uri = "file://dist/arx-ai-project.tar.gz"
+type = "unspecified"
+title = "ARX AI Project (source archive)"
+
+[[outputs]]
+id = "U6k-YO8tYC04QxDxn4Y1t"
+uri = "file://exports/arx-ai-source.tar.gz"
+type = "unspecified"
+title = "ARX AI — source code (tar.gz)"
+
+[[outputs]]
+id = "jR78nQkhyP3huF6gYxVsG"
+uri = "file://exports/arx-ai-source-20260630-195234.tar.gz"
+type = "unspecified"
+title = "ARX AI — source tarball (current main)"
+
+[[outputs]]
+id = "4AviwzZrW6aR_1obBTTTe"
+uri = "file://attached_assets/RUNTIME_VERIFICATION_REPORT.md"
+type = "text"
+title = "ARX AI — Runtime Verification Report (Checks 1–6)"

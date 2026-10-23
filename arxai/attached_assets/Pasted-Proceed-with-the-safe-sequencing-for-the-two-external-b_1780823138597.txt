@@ -1,0 +1,158 @@
+Proceed with the safe sequencing for the two external blockers.
+
+Do not force unsafe writes. Do not fake broker candles. Do not mark MT5 as a contributing provider until real EA candle push is verified. Do not change live broker execution settings.
+
+PHASE 1 — RECONCILER DRY-RUN FIRST
+
+Start with the reconciler in dry-run mode.
+
+Goal:
+Verify that the reconciler only flags genuine broker-side closed positions before enabling database writes.
+
+Requirements:
+- Run the reconciler without writing changes to position rows yet.
+- Log what would be updated if writes were enabled.
+- Identify positions absent from broker snapshots.
+- Track proposed absence streak behavior in dry-run output.
+- Track proposed first_absent_at behavior in dry-run output.
+- Confirm it does not falsely mark active broker positions as closed.
+- Confirm it handles temporary broker/bridge snapshot gaps without immediately treating positions as closed.
+- Confirm it requires repeated absence evidence before considering a row eligible.
+- Confirm it reports exact reason for each dry-run flag.
+
+Dry-run report must include:
+- position id
+- symbol
+- broker ticket / MT5 ticket
+- last known state
+- current broker snapshot presence/absence
+- proposed absence_streak
+- proposed first_absent_at
+- whether the row would be eligible for close reconciliation
+- why it was or was not eligible
+- whether any uncertainty exists
+
+Do not enable writes yet.
+
+PHASE 2 — ADD RECONCILER WRITE SUPPORT BEHIND A DRY-RUN FLAG
+
+Add the two additive columns needed for future reconciler persistence:
+
+- absence_streak
+- first_absent_at
+
+Rules:
+- Add columns safely and additively.
+- Do not break existing rows.
+- Default behavior must remain dry-run unless explicitly enabled.
+- Add a feature flag or config switch for reconciler writes.
+- Default must be write-disabled/dry-run.
+- Add a caller that can persist absence streaks and first_absent_at only when writes are explicitly enabled.
+- When dry-run is enabled, it must log proposed writes but not persist them.
+- When writes are enabled later, it must only write after the same eligibility checks pass.
+
+Do not mark broker-side closes as final from one missing snapshot. Require repeated absence evidence.
+
+PHASE 3 — VALIDATION BEFORE WRITE ENABLEMENT
+
+Before any writes are enabled, run several dry-run cycles and report:
+
+- how many positions were checked
+- how many were present in broker snapshot
+- how many were absent once
+- how many were repeatedly absent
+- how many would be eligible for reconciliation
+- how many were uncertain
+- whether any active broker position was incorrectly flagged
+- whether V75/manual/master positions are classified correctly
+- whether ARX-attributed positions remain isolated correctly
+
+Completion requirement:
+Do not enable reconciler writes until dry-run proves it only flags genuine broker-side closes.
+
+PHASE 4 — EA CANDLE PUSH READINESS CHECK
+
+Prepare the app side for EA candle push into:
+
+/api/mt5/sync-candles
+
+But do not fake candle data.
+
+Requirements:
+- Verify the endpoint exists and validates incoming CopyRates-style bars.
+- Verify symbol mapping is correct.
+- Verify timeframe mapping is correct.
+- Verify incoming candle timestamps are normalized correctly.
+- Verify duplicate candles update/merge safely.
+- Verify missing candles do not create fake data.
+- Verify MT5 provider stays non-contributing until real EA candles arrive.
+- Verify non-synthetic markets continue using the third-party composite until MT5 candle push is live and verified.
+- Add admin visibility showing whether MT5 candle feed is contributing, non-contributing, stale, or unavailable.
+
+PHASE 5 — EA CANDLE PUSH CONTRACT
+
+Create or confirm a clear contract for what the EA must send to /api/mt5/sync-candles.
+
+Document expected payload fields:
+- bridge connection id
+- account id if required
+- symbol
+- timeframe
+- bars array
+- bar timestamp
+- open
+- high
+- low
+- close
+- tick volume / volume if available
+- spread if available
+- source/provider
+- EA version
+- sent_at timestamp
+
+Add validation:
+- reject malformed bars
+- reject impossible OHLC values
+- reject unknown symbols unless mapping exists
+- reject stale payloads if needed
+- never accept fake placeholder candles as live broker bars
+
+PHASE 6 — POST-EA VERIFICATION PLAN
+
+Once the EA candle push is actually live, run a sanity check before trusting MT5 as a chart provider.
+
+Verification:
+- Pick one non-synthetic symbol.
+- Compare ARX chart candles against the broker terminal.
+- Confirm latest candle time matches.
+- Confirm OHLC values match.
+- Confirm timeframe matches.
+- Confirm no missing/duplicated bars.
+- Confirm chart source label shows MT5 only after verification.
+- Only then allow MT5 to become a contributing provider for that symbol/timeframe.
+
+PHASE 7 — QA
+
+Run:
+- typecheck
+- reconciler dry-run tests
+- migration/schema tests
+- endpoint validation tests
+- candle payload validation tests
+- provider contribution tests
+- role-gated admin visibility tests
+- CI guards
+- architect review if available
+
+Final report must include:
+- reconciler dry-run findings
+- whether absence_streak and first_absent_at were added safely
+- whether writes remain disabled by default
+- what must be proven before enabling writes
+- whether /api/mt5/sync-candles is ready for EA payloads
+- whether MT5 remains non-contributing until real candles arrive
+- exact EA payload contract
+- remaining steps needed on the EA side
+- confirmation that live broker execution settings were untouched
+
+Do not mark complete unless the app is safer and more honest than before: no fake candles, no premature broker-close writes, no stale/dummy provider claims, and no live execution setting changes.

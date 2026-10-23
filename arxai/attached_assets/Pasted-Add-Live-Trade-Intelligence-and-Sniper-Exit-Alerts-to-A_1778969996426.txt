@@ -1,0 +1,382 @@
+Add Live Trade Intelligence and Sniper Exit Alerts to ARX AI.
+
+Before coding, inspect the current:
+- open trades / active positions system
+- MT5 sync-position data
+- trade command queue
+- close-position command
+- user-owned MT5 routing
+- shared master MT5 routing
+- trade attribution ledger
+- AI assistant context builder
+- scanner / market data system
+- push notification system if present
+- one-click close confirmation modal
+- admin trading controls
+- risk guard chain
+
+Goal:
+Users should be able to ask the AI about any open demo/live trade and get intelligent trade management guidance.
+
+The AI should answer questions like:
+1. Where do you think this trade is going?
+2. Why is the trade moving like this?
+3. Should I keep holding?
+4. When should I close?
+5. Is this a pullback or retracement?
+6. Is this continuation or a fakeout?
+7. Is this a reversal?
+8. Is price hunting liquidity?
+9. Is my profit fading?
+10. Should I close now, partial close, move stop loss, or wait?
+11. What would invalidate this trade?
+12. What is the best exit plan based on my timeframe?
+
+Important safety behavior:
+- AI must never guarantee profit.
+- AI must never say it knows the future.
+- AI must explain probabilities and scenarios.
+- AI must clearly say when data is missing.
+- AI must not silently close trades.
+- Any close action must require user confirmation.
+- Live close must require explicit confirmation.
+- AI must not bypass backend trade guards.
+- AI must not expose MT5 credentials, bridge tokens, API keys, secrets, or shared master account credentials.
+
+Build this as a new system:
+
+LIVE TRADE INTELLIGENCE ENGINE
+
+For every open trade, calculate and store a live trade intelligence snapshot.
+
+Use available data:
+- symbol
+- side buy/sell
+- entry price
+- current price
+- stop loss
+- take profit
+- lot size
+- account type demo/live
+- routing mode user-owned/shared-master
+- open time
+- unrealized P&L
+- pips/points in profit or loss
+- max favorable excursion, MFE
+- max adverse excursion, MAE
+- profit giveback from peak
+- position age
+- current spread if available
+- current volatility if available
+- ATR if available
+- recent candles from scanner/market data if available
+- session context if available
+- trend direction
+- support/resistance zones if available
+- liquidity zones if available
+- news/economic risk if available
+- user risk limits
+- user trading style/timeframe if available
+
+If some data is unavailable, do not fake it. Mark it as unavailable and continue with what exists.
+
+Create trade analysis scores:
+- continuationScore: 0-100
+- pullbackScore: 0-100
+- reversalRiskScore: 0-100
+- fakeoutRiskScore: 0-100
+- profitProtectionScore: 0-100
+- closeUrgencyScore: 0-100
+- holdConfidenceScore: 0-100
+- trendStrengthScore: 0-100
+- volatilityRiskScore: 0-100
+- newsRiskScore: 0-100 if data exists
+
+Create AI labels:
+- “Strong continuation”
+- “Healthy pullback”
+- “Deep retracement”
+- “Possible reversal”
+- “Possible fakeout”
+- “Profit fading”
+- “Protect profit”
+- “Close consideration”
+- “Partial close consideration”
+- “Wait for confirmation”
+- “No clear signal”
+
+Create recommended action:
+- HOLD
+- WATCH_CLOSELY
+- MOVE_STOP_TO_BREAKEVEN
+- TRAIL_STOP
+- PARTIAL_CLOSE
+- CLOSE_CONSIDERATION
+- CLOSE_NOW_PROMPT
+- NO_ACTION_DATA_INSUFFICIENT
+
+Do not execute automatically. These are decision-support recommendations only.
+
+SNIPER EXIT ALERTS
+
+Add an alert system that monitors open trades and alerts users when the exit conditions become important.
+
+Alert tiers:
+1. Info
+2. Watch
+3. Warning
+4. Urgent
+
+Alert examples:
+- “Your EURUSD buy is up 18 pips but profit has pulled back 35% from peak. Consider protecting profit.”
+- “Momentum is weakening. This may be a retracement or early reversal.”
+- “Price is approaching resistance. Watch for rejection.”
+- “Close urgency is high. Tap to review close ticket.”
+- “Your live trade is at risk of giving back profit. Review exit options.”
+
+Alert rules:
+- Alert when unrealized profit drops a configured percentage from peak.
+- Alert when price approaches stop loss.
+- Alert when price approaches take profit.
+- Alert when reversalRiskScore rises above threshold.
+- Alert when fakeoutRiskScore rises above threshold.
+- Alert when closeUrgencyScore rises above threshold.
+- Alert before high-impact news if economic calendar data exists.
+- Alert when spread/volatility becomes dangerous if available.
+- Alert when trade exceeds user’s intended hold time.
+- Alert when trade reaches user-defined profit target.
+- Alert when trade moves from profit to near break-even.
+
+Add user preferences:
+- enable/disable trade intelligence alerts
+- alert threshold conservative/balanced/aggressive
+- preferred trade style:
+  - scalping
+  - intraday
+  - swing
+  - custom
+- preferred check frequency
+- profit giveback alert percentage
+- minimum P&L before close alerts
+- allow push notifications
+- allow in-app alerts
+- allow sound/vibration if supported
+
+SNIPER CLOSE FLOW
+
+When the AI thinks the user should consider closing:
+1. Send alert.
+2. Show trade card with reason.
+3. Show “Review Close” button.
+4. Open close confirmation modal.
+5. Modal shows:
+   - symbol
+   - side
+   - lot size
+   - current P&L
+   - peak P&L
+   - profit giveback
+   - reason for close alert
+   - account type demo/live
+   - routing mode
+   - warning if live
+6. User confirms.
+7. Backend validates full close guard chain again.
+8. Queue CLOSE_POSITION command.
+9. Audit log records the full lifecycle.
+10. UI shows Closing / Closed / Rejected.
+
+For live trades:
+- Never instant-close from alert.
+- Require explicit confirmation.
+- Modal must say:
+  “This will close a LIVE trade and may realize profit or loss.”
+- Keep confirmedByUser:true requirement.
+
+AI TRADE CONVERSATION
+
+Update AI context so the user can ask about a specific open trade.
+
+The AI should support:
+- “Check my EURUSD trade.”
+- “Should I close my gold trade?”
+- “Is this a fakeout?”
+- “Is this just a pullback?”
+- “Why is my trade negative?”
+- “Why is my profit dropping?”
+- “Where is price likely heading next?”
+- “What is the safest close plan?”
+- “What should I watch for in the next 5 minutes?”
+- “Set an alert if this starts reversing.”
+- “Tell me when I should consider closing.”
+
+AI response format should include:
+1. Current trade status
+2. What price is doing
+3. Scenario A: continuation
+4. Scenario B: pullback/retracement
+5. Scenario C: reversal/fakeout
+6. Key level to watch
+7. Exit plan
+8. Risk warning
+9. Suggested action button if applicable:
+   - Review Close
+   - Set Alert
+   - Hold and Monitor
+   - Partial Close Review
+   - Move Stop Review
+
+Example response:
+“Your EURUSD buy is currently +12.4 pips. Momentum is still holding, but profit has pulled back 28% from the peak. This looks more like a healthy pullback unless price breaks below 1.08420. If it rejects again at resistance, close urgency increases. Suggested action: hold for now, but set a close alert below 1.08420.”
+
+Do not use fake market data. If candles or scanner data are missing, say:
+“I can see your MT5 position and P&L, but I do not have enough live candle/scanner data to judge continuation vs fakeout accurately.”
+
+BACKEND/API
+
+Add endpoints if missing:
+- GET /api/trades/open
+- GET /api/trades/:id/intelligence
+- POST /api/trades/:id/ask-ai
+- POST /api/trades/:id/close-review
+- POST /api/trades/:id/alerts
+- GET /api/trade-alerts
+- PATCH /api/trade-alerts/preferences
+
+Add database tables if needed:
+
+trade_intelligence_snapshots:
+- id
+- user_id
+- trade_id
+- connection_id
+- routing_mode
+- account_type
+- symbol
+- side
+- entry_price
+- current_price
+- unrealized_pnl
+- pnl_pips
+- mfe
+- mae
+- profit_giveback_percent
+- continuation_score
+- pullback_score
+- reversal_risk_score
+- fakeout_risk_score
+- profit_protection_score
+- close_urgency_score
+- hold_confidence_score
+- recommended_action
+- explanation
+- data_quality
+- created_at
+
+trade_exit_alerts:
+- id
+- user_id
+- trade_id
+- alert_type
+- severity
+- title
+- message
+- recommended_action
+- acknowledged_at
+- created_at
+
+trade_alert_preferences:
+- user_id
+- alerts_enabled
+- push_enabled
+- in_app_enabled
+- style
+- sensitivity
+- profit_giveback_percent
+- min_profit_before_alert
+- max_hold_time_minutes
+- created_at
+- updated_at
+
+USER UI
+
+Update Open Trades / Active Positions cards to show:
+- current P&L
+- pips/points
+- profit/loss color state
+- peak profit if tracked
+- profit giveback
+- AI insight label
+- close urgency
+- recommended action
+- “Ask AI”
+- “Set Alert”
+- “Review Close”
+- “Open Trade Details”
+
+Trade detail page should include:
+- P&L chart if available
+- entry/current/SL/TP
+- AI analysis
+- continuation/pullback/reversal/fakeout scores
+- recent alerts
+- close review button
+- audit trail
+
+ASSISTANT SAFETY
+
+AI must never:
+- guarantee maximum profit
+- promise a trade will win
+- claim certainty
+- close a live trade without confirmation
+- bypass the backend guard chain
+- expose another user’s trades
+- expose shared master account credentials
+
+AI should say:
+- “Based on available data”
+- “This looks like”
+- “The risk is”
+- “The invalidation level is”
+- “Consider reviewing a close”
+- “I need more data to judge this accurately”
+
+TESTS
+
+Add tests for:
+1. User can ask AI about their own open trade.
+2. User cannot ask AI about another user’s trade.
+3. AI sees user-owned MT5 trades only for that user.
+4. AI sees shared-master trades only through that user’s attribution ledger.
+5. Missing candle/scanner data is disclosed.
+6. Positive trade shows profit state.
+7. Negative trade shows loss state.
+8. MFE/MAE and profit giveback calculate correctly.
+9. Close urgency alert is created when thresholds hit.
+10. Alert opens close review, not instant close.
+11. Live close requires explicit confirmation.
+12. Demo close requires confirmation modal.
+13. Backend guard chain still validates close command.
+14. Emergency stop blocks close.
+15. Suspended user cannot close.
+16. AI cannot bypass backend guards.
+17. Trade alerts are user-scoped.
+18. Push/in-app alert preferences work.
+19. No secrets exposed.
+20. Shared master credentials never appear to user.
+
+Final report:
+Return:
+- PASS or FAIL
+- live trade intelligence status
+- sniper exit alert status
+- AI trade conversation status
+- close review flow status
+- P&L/MFE/MAE tracking status
+- user-owned routing status
+- shared-master routing status
+- live confirmation protection status
+- alert preferences status
+- tests passed
+- remaining blockers

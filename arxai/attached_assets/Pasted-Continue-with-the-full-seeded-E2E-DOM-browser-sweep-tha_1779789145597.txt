@@ -1,0 +1,269 @@
+Continue with the full seeded E2E DOM/browser sweep that was marked out of scope. Make it in scope now.
+
+The previous pass proved the backend/data-shape contract, but it did not fully test the actual browser DOM across the pages where the screenshot bugs appeared. Build the seeded test harness and run the real page sweep now.
+
+Do not place live trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake production data.
+Do not expose admin diagnostics to normal users.
+Do not run destructive tests against production-like URLs.
+Do not skip the E2E because no auth cookie exists.
+
+Create checkpoint first:
+checkpoint: seeded-e2e-dom-sweep-live-mode-ui
+
+Hard env guard:
+The seeded E2E harness must refuse to run if:
+- NODE_ENV=production
+- target URL is a production/replit.app public deployment
+- QA_ALLOW_DB_MUTATION is not explicitly true
+- test database/schema is not isolated
+- arx_live_commands count is not checked before and after
+
+Task 1 — Create safe seeded E2E fixture:
+Create a local/test-only seeded dataset with:
+- admin/operator user
+- normal user attached to SHARED_MASTER_MT5
+- user allocation
+- AI sleeve allocation
+- risk caps
+- shared master bridge shell
+- live account mode resolver returning LIVE_SHARED
+- one stale demo/paper/test row for each mode-separated surface
+- one valid live row where needed
+- alerts with missing fields
+- reconciliation response with missing arrays
+- audit event with invalid/missing createdAt
+- empty live positions case
+- optional live position case
+- scanner trade rows tagged by mode
+- calendar/P&L rows tagged by mode
+
+The fixture must be isolated and cleaned up by fixture/session token only. Never delete broad rows by owner/user ID.
+
+Task 2 — Add authenticated browser test:
+Use the safest existing auth helper. If none exists, create a local-only E2E auth fixture that:
+- works only in test/dev
+- cannot place trades
+- cannot access production
+- can test admin and normal user views
+- supports admin preview-as-user mode
+
+Restart the API server/workflow after adding new routers or route imports so the routes are actually mounted.
+
+Task 3 — Full DOM/content sweep:
+Run Playwright or the project’s browser E2E equivalent against these pages:
+
+- /my-account
+- /settings
+- /notifications
+- /help
+- /live-ai-assist
+- /trade
+- /live-shared
+- /trading-calendar
+- /live-intent-queue
+- /open-trades
+- /live-chart
+- /market-scanner
+- /alerts
+- /broker-reconciliation
+- /live-trading-control
+- /admin/allocations
+- /action-center
+- /safety-logs
+- /audit-vault
+
+For each page:
+1. Load as normal user where applicable.
+2. Load as admin where applicable.
+3. Load as admin previewing user where applicable.
+4. Assert there is no Vite/runtime red overlay.
+5. Assert there are no uncaught console errors.
+6. Assert the page agrees with the global LIVE_SHARED resolver.
+7. Assert normal-user UI does not expose admin diagnostics.
+8. Assert the page does not show stale demo/paper/test rows while in live mode.
+9. Assert the page does not show raw backend booleans, table names, route names, gate constants, or provider/debug text to normal users.
+
+Task 4 — Live mode forbidden copy checks:
+In LIVE_SHARED normal-user view, these phrases must not appear on primary live pages, except inside Settings as a mode switch option or inside admin-only diagnostics:
+
+- paper trade
+- demo trade
+- simulator only
+- mock
+- live trading disabled
+- MT5 bridge not configured
+- type ENABLE LIVE TRADING
+- QUEUE MICRO LIVE TEST
+- EXECUTE LIVE SHARED
+- canExecuteRealBrokerOrder
+- canSubmitLiveIntent
+- mt5Connected:
+- brokerExecutionStatus
+- liveBrokerExecutionEnabled
+- primaryReason
+- blockReasons
+- BROKER_PLACEMENT_LAYER
+- READ_ONLY
+- endpoint mounted
+- raw JSON
+- database table names
+- backend route names
+
+Fix any page that fails by migrating it to useTradingMode() and the unified account-mode resolver.
+
+Task 5 — Verify the known screenshot bugs:
+The E2E must specifically test and fix:
+
+1. /my-account
+- Shows SHARED_MASTER_MT5 for attached user.
+- Shows assigned allocation.
+- Shows AI sleeve allocation when configured.
+- Shows balance/equity from user allocation shell.
+- Does not show own MT5 bridge as active when shared-master attached.
+- Does not show $0 when real allocation exists.
+
+2. /settings
+- Does not show stale MT5 Bridge Not Configured when shared master live bridge is active.
+- Personal MT5 bridge setup appears only as optional bridge/mode preference.
+
+3. /notifications
+- Does not say ALERTS_ONLY / LIVE TRADING DISABLED when live is armed.
+- Push notification status remains separate from live trading mode.
+- Live trade alerts are live-aware.
+
+4. /alerts
+- Does not crash when alert type/status/severity is missing.
+- Alerts can be dismissed.
+- Dismissal persists per user.
+- Repeated stale bridge disconnected alerts are deduped and hidden when current live heartbeat is fresh.
+
+5. /broker-reconciliation
+- Does not crash when brokerOrders, brokerPositions, or mismatches are undefined.
+- Shows clean empty state.
+
+6. /live-trading-control
+- Does not crash on invalid/missing createdAt.
+- Uses safe date formatter.
+
+7. /trading-calendar
+- In live mode, only shows live trade/P&L rows.
+- If no live trades exist, shows empty/zero live state.
+- Does not show paper/demo stats.
+
+8. /live-intent-queue
+- Shows only LIVE_SHARED intents for current user/account.
+- Hides demo/paper/test intents.
+
+9. /open-trades and live chart position panel
+- Shows only true current live positions for current user/account shell/mode.
+- If no current live positions exist, shows no open positions.
+- Does not show stale demo/test/ghost positions.
+
+10. /market-scanner
+- Synthetic/volatility scanner uses real Market Data Router feed when connected.
+- Does not show “symbol not available in simulator” when real feed exists.
+- Does not say simulator pipeline in live mode.
+- Uses clean live shared wording.
+
+11. /trade and Trade Command Room
+- Does not say “Simulator only” in live mode.
+- Uses live shared ticket/review/confirm wording.
+- No typed-phrase wording in UI.
+
+12. /live-shared
+- No typed phrase language.
+- Uses button-based confirmation copy only.
+- Server safety remains intact.
+
+13. /live-ai-assist
+- Does not show raw booleans.
+- Does not say Tester in live mode.
+- Uses clean readiness labels.
+
+14. /action-center
+- User mode does not show admin/operator review language.
+- If no pending user actions, says “No pending trade actions.”
+
+15. /help
+- Does not say MT5 mode Mock / MT5 connected no when resolver says live bridge is active.
+- Does not expose backend env text to normal users.
+
+16. /safety-logs and /audit-vault
+- Either route to distinct pages or one clearly tabbed page.
+- Menu labels must not feel duplicated/confusing.
+
+Task 6 — Mode-scoped query verification:
+Add tests proving every live page query is filtered by:
+- userId
+- currentAccountMode
+- accountShellId or sharedMasterAccountId where relevant
+- connectionId where relevant
+- source/mode LIVE_SHARED / DEMO / PAPER / TEST
+
+Do not delete audit-relevant old rows. Hide or archive stale rows from live UI by mode scope.
+
+Task 7 — Global page crash hardening:
+Audit active routes and fix unsafe patterns:
+- .length on possibly undefined arrays
+- .replace on possibly undefined strings
+- new Date(...).toISOString() on invalid dates
+- .map on undefined
+- assuming partial API responses are complete
+
+Use or create:
+- safeArray()
+- safeString()
+- safeDate()
+- safeLabel()
+
+Add regression coverage for every fixed crash.
+
+Task 8 — Remove excessive live warning duplication:
+Keep one global live-mode bar.
+Remove repeated inner-page live money/risk banners.
+Show action-specific risk warning only inside final trade review/confirmation.
+Keep required disclosure concise.
+
+Task 9 — QA after fixes:
+Run:
+- typecheck
+- build
+- ci:guards
+- test:account-mode
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:live-broker-resolver
+- attached-active-case
+- allocation runtime QA
+- seeded E2E DOM/content sweep
+- arx_live_commands count before/after
+
+Required final checks:
+1. No live trades placed.
+2. arx_live_commands count remains 0.
+3. Narrow env parser unchanged.
+4. No safety gates weakened.
+5. Normal users do not see admin diagnostics.
+6. No typed-phrase wording in normal UI.
+7. No demo/paper/test data appears on live pages.
+8. No runtime overlay crashes remain.
+9. User account allocation shell displays correctly.
+10. All migrated pages agree with the unified account-mode resolver.
+
+Final report only:
+- seeded fixture created
+- pages tested
+- failures found
+- fixes made
+- regression tests added
+- QA results
+- arx_live_commands count
+- confirmation no live trades were placed
+- confirmation no safety gates were weakened
+- remaining issues only if they require human credentials or manual browser action

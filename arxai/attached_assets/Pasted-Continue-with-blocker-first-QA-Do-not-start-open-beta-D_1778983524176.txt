@@ -1,0 +1,128 @@
+Continue with blocker-first QA.
+
+Do not start open beta.
+Do not invite external Shared Master testers yet.
+Do not add new features.
+
+Current priority order:
+
+PHASE 1 — Fix Opportunity Radar rule integration blocker first
+
+The current QA says Opportunity Radar / AI Scanner Brain still FAILS because Radar does not respect account rules, prop-firm rules, safety mode, or Risk Governor output.
+
+Fix criterion #6 now.
+
+Required implementation:
+1. Wire Opportunity Radar to the full Risk Governor using runActionGuards().
+2. Do not create a second partial rule system.
+3. Build the required ActionGuardInput per opportunity using:
+   - user/account id
+   - symbol
+   - side/direction
+   - setup quality
+   - risk/reward data if available
+   - account/profile/rule context
+   - safetyCore status
+   - trading_rule_contracts
+   - prop-firm/shared-master constraints if available
+4. Add scan-level caching so the same account/rule/safety context is not repeatedly fetched for every symbol.
+5. Radar should label every opportunity as:
+   - CLEAR
+   - WARNING_BY_RULE
+   - BLOCKED_BY_RULE
+   - DATA_INCOMPLETE
+6. Blocked opportunities should still be visible in Radar, but clearly marked with:
+   - rule name
+   - reason
+   - source
+   - severity
+   - current value
+   - allowed limit
+   - what user needs to fix
+7. AI Scanner Brain must explain rule results from actual Risk Governor output.
+8. Scanner viewing must never place, close, or queue trades.
+9. Live trade queueing must still require explicit confirmation.
+10. Confirmed violation_action = block should prevent LIVE queueing only at trade queue/submit time.
+
+Tests required:
+- Radar uses runActionGuards().
+- Rule-blocked symbols become BLOCKED_BY_RULE.
+- Warn rules become WARNING_BY_RULE.
+- Missing rule data becomes DATA_INCOMPLETE or warning, not fabricated.
+- AI Scanner Brain explains why an opportunity passed, warned, blocked, or has incomplete data.
+- Live queue hard-blocks only confirmed block violations.
+- Scanner does not auto-open or auto-close trades.
+- Existing live trading safety guards remain green.
+
+Run:
+- pnpm run typecheck
+- ci guards
+- relevant Radar / scanner / Risk Governor tests
+- any existing playbook or trading safety tests
+
+Report:
+1. Files changed
+2. Where runActionGuards() was wired
+3. Cache strategy
+4. Radar labels added
+5. AI Scanner Brain explanation behavior
+6. Tests run
+7. PASS/FAIL for criterion #6
+8. Remaining blockers
+
+
+PHASE 2 — After criterion #6 passes, open a blocker-fix session for Shared Master criticals
+
+Only after Phase 1 is green, fix the 3 critical Shared Master blockers.
+
+Critical blocker 1:
+Shared Master has no user/admin API surface.
+Build:
+- /api/shared-account/*
+- /api/admin/shared-master/*
+Users must be able to see their own virtual balance, allocation, P&L, and shared-master status.
+Admins must be able to manage shared-master allocations safely.
+
+Critical blocker 2:
+Shared Master virtual P&L never syncs back from reconciler.
+Fix executionReconciler close-handler so it updates:
+- virtualBalance
+- virtualRealizedPnl
+- virtualUnrealizedPnl
+- dailyPnl
+This must update per assigned user/allocation, not globally.
+
+Critical blocker 3:
+Unattributed master trades have nowhere to land.
+Add:
+- unattributed_master_trades table
+- handler for unmatched EA/broker tickets
+- admin alert surface
+Do not silently drop unmatched broker trades.
+
+Tests required:
+- shared user sees only own allocation/P&L
+- admin can see/manage shared-master state
+- reconciler updates virtual P&L on close
+- allocation cap can fire from real reconciled P&L
+- unmatched master trade is stored and alerts admin
+- shared users never see master credentials
+- data isolation remains enforced
+
+Final rule:
+Do not mark open beta ready until:
+- Radar rule integration passes
+- the 3 Shared Master criticals are fixed
+- full lifecycle e2e test exists
+- SUPPORT role enforcement exists
+- account rules/prop firm engine is no longer 2/10
+- mobile Safari is manually verified
+
+For now, allowed beta status is:
+Closed internal technical beta only:
+- you
+- 1–2 hand-picked internal testers
+- USER_OWNED_MT5 demo only
+- no external Shared Master testers
+- no live-trading testers
+- no open private beta

@@ -1,0 +1,121 @@
+Before creating the final roadmap, upgrade the weak areas of the AI Trading Operating System.
+
+Goal:
+Strengthen the ecosystem in the areas that currently limit real-world performance: execution realism, attention/UX, complexity control, explainability, infrastructure resilience, cognitive awareness, and stress testing.
+
+Add these 7 upgrade layers:
+
+1. Execution Microstructure Engine
+Path:
+/src/domain/execution-microstructure/
+
+Files:
+- slippagePredictor.engine.ts
+- spreadBehavior.engine.ts
+- fillProbability.engine.ts
+- liquidityDepth.engine.ts
+- executionStress.engine.ts
+- brokerReliability.engine.ts
+- orderQuality.engine.ts
+
+Purpose:
+The AI must check whether a trade can survive real execution conditions before approval.
+
+2. Attention Engine
+Path:
+/src/domain/attention/
+
+Files:
+- attentionEngine.ts
+- urgencyRanking.engine.ts
+- dangerPriority.engine.ts
+- setupPriority.engine.ts
+- uiFocus.engine.ts
+- cognitiveLoad.engine.ts
+
+Purpose:
+Reduce dashboard overload by showing only what matters most right now.
+
+3. Complexity Governor
+Path:
+/src/domain/complexity-governor/
+
+Files:
+- complexityGovernor.engine.ts
+- redundancyDetector.engine.ts
+- agentEfficiency.engine.ts
+- computeBudget.engine.ts
+- latencyBudget.engine.ts
+- simplificationAdvisor.engine.ts
+
+Purpose:
+Prevent the AI ecosystem from becoming bloated, slow, repetitive, or impossible to debug.
+
+4. Explainability Layer
+Path:
+/src/domain/explainability/
+
+Files:
+- explanationEngine.ts
+- confidenceNarrative.engine.ts
+- dangerNarrative.engine.ts
+- decisionNarrative.engine.ts
+- tradeReasoning.engine.ts
+
+Purpose:
+Every AI decision must explain why it approved, waited, reduced size, blocked, or entered recovery mode.
+
+5. Resilience Engine
+Path:
+/src/domain/resilience/
+
+Files:
+- failover.engine.ts
+- heartbeatMonitor.engine.ts
+- dataIntegrity.engine.ts
+- reconnectManager.engine.ts
+- degradedMode.engine.ts
+- safeShutdown.engine.ts
+
+Purpose:
+The system must survive MT5 disconnects, bad data, latency spikes, websocket failures, and broker instability.
+
+6. Cognitive Performance Engine
+Path:
+/src/domain/cognitive/
+
+Files:
+- cognitiveLoad.engine.ts
+- stressModel.engine.ts
+- fatigueModel.engine.ts
+- pacing.engine.ts
+- emotionalDegradation.engine.ts
+
+Purpose:
+Improve Trader DNA by detecting decision fatigue, revenge trading risk, emotional degradation, and overstimulation.
+
+7. Market Stress Lab
+Path:
+/src/domain/stress-lab/
+
+Files:
+- flashCrashScenario.engine.ts
+- liquidityCollapse.engine.ts
+- slippageStorm.engine.ts
+- newsChaos.engine.ts
+- fakeBreakoutScenario.engine.ts
+
+Purpose:
+Stress-test strategies, agents, and risk rules against extreme synthetic market conditions.
+
+Global rules:
+- These layers should not place live trades directly.
+- Execution Microstructure can block or reduce trade size.
+- Attention Engine controls what the UI emphasizes.
+- Complexity Governor can disable nonessential agents during high latency or overload.
+- Explainability Layer must generate plain-English reasoning.
+- Resilience Engine can force DEGRADED_MODE, LOCKDOWN, or SAFE_SHUTDOWN.
+- Cognitive Engine can force cooldown, recovery mode, or reduced permissions.
+- Stress Lab is simulation-only.
+- All outputs must be logged into the Black Box Vault.
+- Risk Governor and Control Tower remain above all systems.

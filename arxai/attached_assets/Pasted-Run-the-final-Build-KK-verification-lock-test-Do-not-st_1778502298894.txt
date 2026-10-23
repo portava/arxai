@@ -1,0 +1,599 @@
+Run the final Build KK verification lock-test.
+
+Do not start Build LL.
+Do not add new features unless a Build KK test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not recommend live trading.
+Do not expose API secrets.
+Do not change Build AA, BB, CC, DD, EE, FF, GG, HH, II, or JJ logic except to fix Build KK read-only/data-import integration issues.
+
+Build KK goal:
+Create a Data Import + Broker Read-Only Connector layer that imports/validates candle data, stores imported historical candles, creates Build JJ replay scenarios from imports, optionally feeds Build DD with imported historical fallback data, and exposes broker/account/symbol/position/quote data in READ_ONLY mode only.
+
+Verify Build KK only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Data Import Service proof
+
+Confirm the Data Import Service exists.
+
+Show exact files/functions for:
+- dataImportService
+- candleValidationService
+- candleNormalizationService
+- importedDataCatalog
+- dataImportRoutes
+- dataImportLogs
+- imported candle to replay scenario integration
+- imported candle to DD fallback integration
+
+Confirm the service returns this structure:
+
+{
+  import_id,
+  status: "VALIDATED" | "IMPORTED" | "REJECTED" | "PARTIAL",
+  symbol,
+  timeframe,
+  source,
+  candles_received,
+  candles_valid,
+  candles_rejected,
+  start_time,
+  end_time,
+  dataQuality,
+  created_at
+}
+
+3. Broker Read-Only Connector proof
+
+Confirm the Broker Read-Only Connector exists.
+
+Show exact files/functions for:
+- brokerReadOnlyService
+- brokerReadOnlyProviders
+- brokerReadOnlyTypes
+- brokerReadOnlyHealthCheck
+- brokerReadOnlyRoutes
+- brokerReadOnlyLogs
+- broker snapshot storage
+- MT5 read-only placeholder/adapter if present
+- Deriv read-only placeholder/adapter if present
+
+Confirm the connector returns this structure:
+
+{
+  connector_id,
+  mode: "READ_ONLY",
+  provider,
+  connected,
+  account,
+  symbols,
+  openPositions,
+  latestQuotes,
+  dataQuality,
+  liveTradingAllowed: false,
+  canPlaceLiveTrade: false,
+  generatedAt
+}
+
+4. Database verification
+
+Confirm these tables exist:
+
+data_imports
+imported_candles
+broker_readonly_snapshots
+broker_readonly_logs
+data_import_logs
+
+Confirm data_imports includes:
+id,
+import_id,
+symbol,
+timeframe,
+source,
+status,
+candles_received,
+candles_valid,
+candles_rejected,
+start_time,
+end_time,
+data_quality,
+warnings,
+errors,
+created_at,
+updated_at.
+
+Confirm imported_candles includes:
+id,
+candle_id,
+import_id,
+symbol,
+timeframe,
+time,
+open,
+high,
+low,
+close,
+volume,
+source,
+created_at.
+
+Confirm broker_readonly_snapshots includes:
+id,
+snapshot_id,
+provider,
+mode,
+connected,
+account_masked,
+symbols,
+open_positions,
+latest_quotes,
+data_quality,
+live_trading_allowed,
+can_place_live_trade,
+created_at.
+
+Confirm broker_readonly_logs includes:
+id,
+connector_id,
+event_type,
+severity,
+message,
+details,
+created_at.
+
+Confirm data_import_logs includes:
+id,
+import_id,
+event_type,
+severity,
+message,
+details,
+created_at.
+
+5. Environment safety proof
+
+Confirm these variables are supported:
+
+BROKER_PROVIDER
+BROKER_MODE=read_only
+BROKER_API_KEY
+BROKER_API_SECRET
+BROKER_ACCOUNT_ID
+BROKER_SERVER
+BROKER_BASE_URL
+
+Confirm:
+- BROKER_MODE defaults to read_only if missing
+- BROKER_MODE values other than read_only are rejected
+- API keys/secrets are never exposed in frontend
+- API keys/secrets are never returned by endpoints
+- API keys/secrets are never logged
+- account ID is masked in outputs
+- liveTradingAllowed is always false
+- canPlaceLiveTrade is always false
+
+6. Endpoint verification
+
+Run and show raw output for:
+
+POST /api/data-import/demo
+
+POST /api/data-import/validate
+
+POST /api/data-import/candles
+
+GET /api/data-import/imports?limit=20
+
+GET /api/data-import/imports/:id
+
+GET /api/data-import/imports/:id/candles?limit=200
+
+POST /api/data-import/imports/:id/create-replay-scenario
+
+GET /api/data-import/logs?limit=50
+
+GET /api/broker-readonly/status
+
+POST /api/broker-readonly/health-check
+
+GET /api/broker-readonly/account
+
+GET /api/broker-readonly/symbols
+
+GET /api/broker-readonly/positions
+
+GET /api/broker-readonly/quotes?symbols=Volatility%2075%20Index
+
+POST /api/broker-readonly/snapshot
+
+GET /api/broker-readonly/snapshots?limit=20
+
+GET /api/broker-readonly/logs?limit=50
+
+POST /api/broker-readonly/demo
+
+7. Valid candle import proof
+
+Run a valid JSON/manual candle import.
+
+Confirm:
+- status is IMPORTED or VALIDATED
+- candles_received count is correct
+- candles_valid count is correct
+- candles_rejected is 0
+- normalized candles are stored
+- start_time and end_time are correct
+- dataQuality.status is GOOD or acceptable
+
+Show raw JSON output.
+
+8. Empty import proof
+
+Run an empty candle import.
+
+Confirm:
+- status is REJECTED
+- clear validation error is returned
+- no imported_candles are created
+- no replay scenario is created
+- no crash occurs
+
+Show raw JSON output.
+
+9. Bad OHLC validation proof
+
+Run bad candles with:
+- high lower than low
+- high lower than open/close
+- low higher than open/close
+- non-numeric price
+- missing open/high/low/close
+- invalid timestamp
+
+Confirm:
+- bad rows are rejected or import becomes PARTIAL/REJECTED
+- invalidOhlcCount is counted
+- warnings/errors are clear
+- valid rows can still import in PARTIAL mode if supported
+- no crash occurs
+
+Show raw JSON output.
+
+10. Duplicate timestamp proof
+
+Run candles with duplicate timestamps.
+
+Confirm:
+- duplicateCount is detected
+- duplicates are rejected or deduplicated safely
+- dataQuality warnings mention duplicates
+- stored candles do not create unsafe duplicate records
+
+Show raw JSON output.
+
+11. Gap detection proof
+
+Run candles with missing intervals for the selected timeframe.
+
+Confirm:
+- gapCount is detected
+- warnings mention the missing candle gaps
+- import can be DEGRADED/PARTIAL if gaps are non-fatal
+- replay readiness clearly reflects data quality
+
+Show raw JSON output.
+
+12. Unsupported timeframe proof
+
+Run import with unsupported timeframe.
+
+Confirm:
+- import is rejected safely
+- error explains supported timeframes
+- no candles are stored
+
+Show raw JSON output.
+
+13. Imported data catalog proof
+
+Run imports list/detail endpoints.
+
+Confirm catalog shows:
+- import_id
+- symbol/timeframe
+- status
+- candle count
+- data quality score/status
+- start/end range
+- replay eligibility
+- DD fallback eligibility if supported
+- validation warnings
+
+Show raw JSON output.
+
+14. Build JJ replay scenario integration proof
+
+Create a replay scenario from an imported candle set.
+
+Confirm:
+- replay_scenarios record is created
+- source is IMPORTED
+- candles are preserved
+- scenario_id is returned
+- no paper trades are created
+- no live trades are created
+
+Then run a Build JJ replay from the imported scenario and show it works.
+
+Show raw JSON output.
+
+15. Build DD imported fallback proof
+
+Confirm where KK integrates with Build DD.
+
+Show:
+- imported candles can be listed or used as historical fallback
+- imported data is labeled IMPORTED
+- imported historical data is not mislabeled as REAL live quote data
+- AA decisions using imported historical data outside replay include warnings
+- imported data does not create live market execution permission
+
+Show raw JSON output.
+
+16. Broker read-only demo proof
+
+Run broker read-only demo/status endpoints.
+
+Confirm output includes:
+- mode: READ_ONLY
+- provider
+- connected status
+- masked account
+- symbols
+- open positions read-only
+- latest quotes
+- dataQuality
+- liveTradingAllowed: false
+- canPlaceLiveTrade: false
+
+Show raw JSON output.
+
+17. Unsafe broker mode rejection proof
+
+Simulate BROKER_MODE not equal to read_only.
+
+Confirm:
+- connector rejects provider
+- no account/position/order action is allowed
+- liveTradingAllowed remains false
+- canPlaceLiveTrade remains false
+- clear CRITICAL warning/log is created
+
+Show raw JSON output.
+
+18. Broker snapshot proof
+
+Run snapshot endpoint.
+
+Confirm:
+- broker_readonly_snapshots record is created
+- account ID is masked
+- open positions are read-only
+- latest quotes are read-only
+- no order tickets are created
+- no live execution is possible
+
+Show raw JSON output.
+
+19. Secret redaction proof
+
+Search endpoint outputs and logs.
+
+Confirm:
+- BROKER_API_KEY is never printed
+- BROKER_API_SECRET is never printed
+- raw credentials are never returned
+- frontend code does not contain secrets
+- logs only show redacted/masked values
+
+Show proof.
+
+20. HH Risk Governor integration proof
+
+Show exactly where HH reads broker read-only status.
+
+Simulate unsafe broker mode.
+
+Confirm HH returns:
+- liveTradingStatus: DISABLED
+- liveTradingAllowed: false
+- allowedActions.canPlaceLiveTrade: false
+- hardBlocks includes unsafe broker mode / non-read-only mode
+
+Show raw JSON output.
+
+21. GG Command Center integration proof
+
+Run GG AI Command Center or related status endpoint.
+
+Confirm GG displays:
+- broker read-only status
+- latest broker snapshot time
+- data import status
+- latest import quality
+- imported candle count
+- live trading disabled badge
+- read-only badge
+- no live execution controls
+
+Show raw JSON output.
+
+22. II Trader Coach integration proof
+
+Run II coach endpoint.
+
+Confirm coach can mention:
+- imported/demo/read-only data status
+- data quality warnings if degraded
+- replay testing recommendation if imported data exists
+- no live trading recommendation
+
+Show raw JSON output.
+
+23. Frontend route proof
+
+Confirm frontend pages/routes are accessible for:
+- Data Import page
+- Broker Read-Only Status page/panel
+
+Confirm UI:
+- shows import quality
+- shows candles received/valid/rejected
+- shows button/control to create replay scenario
+- shows broker READ_ONLY badge
+- shows live trading DISABLED badge
+- masks account ID
+- does not include live execution buttons
+- does not expose secrets
+
+24. Logs proof
+
+Show data_import_logs proving:
+- import received
+- validation started
+- validation results
+- candles stored
+- import rejected/partial/imported
+- replay scenario created
+- errors/warnings
+
+Show broker_readonly_logs proving:
+- connector health check
+- provider selected
+- read-only mode verified
+- snapshot created
+- account masked
+- symbols read
+- positions read
+- unsafe mode rejected
+- errors/warnings
+
+25. Live-trade isolation proof
+
+Search Build KK files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5 order placement,
+MT5 order placement,
+livePosition modification,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+orderSend,
+positionClose,
+modifyOrder,
+real order placement,
+or anything that can place, close, or modify real trades.
+
+Confirm Build KK does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+- Build HH liveTradingAllowed rules
+
+Confirm Build KK always labels:
+- broker mode as READ_ONLY
+- live trading as DISABLED
+- imported data as IMPORTED
+- demo data as DEMO
+- replay data as SIMULATION/REPLAY
+
+26. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- Build II trader coach and playbook
+- Build JJ replay simulator and strategy lab
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- performance endpoints
+- risk governor endpoints
+- coach endpoints
+- replay endpoints
+- existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Data Import Service proof
+7. Broker Read-Only Connector proof
+8. Environment safety proof
+9. Raw data import demo output
+10. Raw validate output
+11. Raw candle import output
+12. Raw imports catalog output
+13. Raw imported candles output
+14. Raw create replay scenario output
+15. Raw broker status output
+16. Raw broker health-check output
+17. Raw broker account output
+18. Raw broker symbols output
+19. Raw broker positions output
+20. Raw broker quotes output
+21. Raw broker snapshot output
+22. Valid import proof
+23. Empty import proof
+24. Bad OHLC proof
+25. Duplicate timestamp proof
+26. Gap detection proof
+27. Unsupported timeframe proof
+28. Imported replay scenario proof
+29. DD imported fallback proof
+30. Broker read-only proof
+31. Unsafe broker mode rejection proof
+32. Secret redaction proof
+33. HH unsafe broker detection proof
+34. GG broker/data display proof
+35. II data-quality coaching proof
+36. Frontend route proof
+37. Logs proof
+38. Live-trade isolation proof
+39. Any fixes made during verification
+40. Final Build KK score out of 10
+41. Whether it is safe to proceed to Build LL

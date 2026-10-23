@@ -1,0 +1,442 @@
+Add a new Scanner Intelligence + Ruby AI strategy module for my primary trading strategy: HTF trend + LTF pullback recovery + Fair Value Gap entry.
+
+CRITICAL RULES:
+- Do not remove, weaken, or break any existing scanner, Ruby, chart, MT5 bridge, risk, live execution, one-click trade, open trades, dashboard, candle, or feed-truth wiring.
+- This is an ADDITIVE intelligence layer.
+- Preserve all current scanner routes, hooks, services, permissions, bridge status, symbol handling, candles, chart overlays, trade ticket wiring, Ruby explanations, and live/manual trade paths.
+- This strategy can recommend and explain trades, draw setup zones, and prefill trade tickets, but it must not bypass the existing execution path.
+- Do not create fake confidence. If candles/feed are missing, stale, simulator, delayed, or incomplete, show an honest “not enough clean data” reason.
+
+BUILD: “FVG Trend Pullback Strategy Engine”
+
+My strategy:
+
+If 4H timeframe and 1H timeframe are both in an uptrend, look for a pullback on the 5M timeframe. On 5M, price should break below the 200 EMA and 50 MA during the pullback, then break back above them. After reclaiming the moving averages, price should form a bullish Fair Value Gap. That FVG becomes the entry zone for a continuation trade in the direction of the higher-timeframe trend.
+
+Also support the bearish version:
+If 4H and 1H are both in a downtrend, look for a pullback on 5M. On 5M, price should break above the 200 EMA and 50 MA during the pullback, then break back below them. After losing the moving averages, price should form a bearish Fair Value Gap. That FVG becomes the entry zone for a continuation short.
+
+Create this as a named scanner/Ruby strategy:
+- Name: “HTF Trend FVG Pullback”
+- Short label: “FVG Pullback”
+- Strategy family: trend-continuation / smart-money / fair-value-gap
+- Timeframes required: 4H, 1H, 5M
+- Direction modes: bullish and bearish
+- Main entry logic: higher-timeframe trend alignment + 5M pullback through MA structure + reclaim/rejection + fresh FVG
+
+IMPLEMENTATION DETAILS:
+
+1. Create a shared strategy engine file/module
+Create a centralized module such as:
+
+client/src/lib/strategyEngines/fvgTrendPullback.ts
+
+or use the existing scanner strategy folder if one already exists.
+
+The module must export:
+- analyzeFvgTrendPullback(input)
+- detectHtfTrend(candles, direction)
+- detectPullbackThroughMAs(candles5m)
+- detectMAReclaim(candles5m)
+- detectFairValueGap(candles5m, direction)
+- scoreFvgTrendPullback(result)
+- explainFvgTrendPullback(result)
+- buildFvgChartOverlays(result)
+
+Do not duplicate logic across scanner, chart, and Ruby. One source of truth.
+
+2. Required input data
+The engine needs:
+- symbol
+- latest clean candle data for 4H
+- latest clean candle data for 1H
+- latest clean candle data for 5M
+- feed freshness metadata
+- current bid/ask if available
+- spread if available
+- session if available
+- existing scanner/Ruby market context if already provided
+
+If any required timeframe is missing or stale:
+- Return status: “not_ready”
+- Do not force a signal
+- Explain exactly what is missing, example:
+  “FVG Pullback not ready: 5M candles are stale / 1H data unavailable / not enough 4H candles to confirm trend.”
+
+3. Trend detection rules
+
+Bullish HTF trend:
+4H and 1H should both confirm upward bias using a balanced method:
+- Price above 200 EMA
+- 50 MA or 50 EMA above 200 EMA, or trending upward
+- Recent structure has higher highs / higher lows where possible
+- Recent candle closes support upward continuation
+- Avoid calling it bullish if price is chopping directly through the 200 EMA with no structure
+
+Bearish HTF trend:
+- Price below 200 EMA
+- 50 MA or 50 EMA below 200 EMA, or trending downward
+- Recent structure has lower highs / lower lows where possible
+- Recent candle closes support downward continuation
+- Avoid calling it bearish if price is chopping directly through the 200 EMA with no structure
+
+Trend verdicts:
+- strong_uptrend
+- weak_uptrend
+- neutral
+- weak_downtrend
+- strong_downtrend
+
+The strategy should require:
+- bullish setup: 4H = strong_uptrend or weak_uptrend AND 1H = strong_uptrend or weak_uptrend
+- bearish setup: 4H = strong_downtrend or weak_downtrend AND 1H = strong_downtrend or weak_downtrend
+
+If 4H and 1H disagree, return:
+status: “blocked”
+reason: “4H and 1H trend are not aligned.”
+
+4. 5M pullback rules
+
+Bullish setup:
+After HTF bullish alignment:
+- Detect that price pulled back below the 50 MA and 200 EMA on 5M.
+- Then detect that price broke/reclaimed back above both the 50 MA and 200 EMA.
+- Reclaim should be candle-close based, not only wick based.
+- Stronger score if reclaim candle has impulse body, closes near high, or breaks recent minor structure.
+
+Bearish setup:
+After HTF bearish alignment:
+- Detect that price pulled back above the 50 MA and 200 EMA on 5M.
+- Then detect that price broke/rejected back below both the 50 MA and 200 EMA.
+- Rejection should be candle-close based, not only wick based.
+- Stronger score if rejection candle has impulse body, closes near low, or breaks recent minor structure.
+
+Return pullback state:
+- no_pullback
+- pullback_active
+- reclaim_pending
+- reclaimed_waiting_for_fvg
+- fvg_formed
+- entry_zone_active
+- missed_entry
+- invalidated
+
+5. FVG detection rules
+
+Bullish FVG:
+Use standard 3-candle imbalance logic:
+- Candle 1 high is below Candle 3 low
+- Gap between Candle 1 high and Candle 3 low creates bullish FVG zone
+- Candle 2 should ideally be displacement/impulse candle
+- FVG should form after MA reclaim, not before
+- Prefer fresh/unmitigated FVGs
+- Track whether price has returned into the FVG
+
+Bullish FVG zone:
+- fvgLow = candle1.high
+- fvgHigh = candle3.low
+- midpoint = 50% of FVG zone
+
+Bearish FVG:
+- Candle 1 low is above Candle 3 high
+- Gap between Candle 1 low and Candle 3 high creates bearish FVG zone
+- Candle 2 should ideally be displacement/impulse candle
+- FVG should form after MA rejection/loss, not before
+- Prefer fresh/unmitigated FVGs
+
+Bearish FVG zone:
+- fvgLow = candle3.high
+- fvgHigh = candle1.low
+- midpoint = 50% of FVG zone
+
+FVG states:
+- fresh
+- partially_filled
+- fully_mitigated
+- invalidated
+
+Do not use an already fully mitigated FVG as a fresh entry signal.
+
+6. Entry logic
+
+Bullish entry idea:
+- HTF trend aligned up
+- 5M pullback below 200 EMA and 50 MA happened
+- 5M reclaim above 200 EMA and 50 MA happened
+- Bullish FVG formed after reclaim
+- Entry zone is inside the bullish FVG, preferably around midpoint or lower half of FVG
+- Stop loss suggestion below recent 5M swing low or below FVG invalidation
+- Take profit suggestions:
+  - TP1: recent 5M structure high
+  - TP2: next liquidity high / 1H swing high
+  - TP3: continuation target if trend is strong
+
+Bearish entry idea:
+- HTF trend aligned down
+- 5M pullback above 200 EMA and 50 MA happened
+- 5M loss/rejection below 200 EMA and 50 MA happened
+- Bearish FVG formed after rejection
+- Entry zone is inside the bearish FVG, preferably around midpoint or upper half of FVG
+- Stop loss suggestion above recent 5M swing high or above FVG invalidation
+- Take profit suggestions:
+  - TP1: recent 5M structure low
+  - TP2: next liquidity low / 1H swing low
+  - TP3: continuation target if trend is strong
+
+7. Scoring system
+
+Create a 0–100 setup quality score.
+
+Suggested scoring:
+- 25 points: 4H trend quality
+- 20 points: 1H trend quality
+- 15 points: clean 5M pullback through 50 MA and 200 EMA
+- 15 points: strong reclaim/rejection back through both averages
+- 15 points: fresh FVG after reclaim/rejection
+- 5 points: FVG has good size, not too tiny or too massive
+- 5 points: spread/session/volatility conditions acceptable
+
+Signal grades:
+- 90–100: A+ prime setup
+- 80–89: A quality setup
+- 70–79: B valid setup
+- 60–69: C developing / caution
+- below 60: no trade / not enough quality
+
+Scanner tags:
+- “HTF aligned”
+- “Pullback active”
+- “Reclaim confirmed”
+- “FVG formed”
+- “Waiting on FVG return”
+- “Inside FVG”
+- “Missed entry”
+- “Invalidated”
+- “No clean FVG”
+- “HTF conflict”
+- “Data not ready”
+
+8. Scanner UI updates
+
+Add this strategy to the Market Scanner intelligence layer.
+
+For each symbol row/card, show:
+- FVG Pullback status
+- Direction: Bullish / Bearish / Neutral
+- Score
+- Setup stage
+- HTF trend: 4H + 1H
+- 5M state
+- FVG zone if present
+- Entry zone
+- Suggested SL/TP if valid
+- “Why” explanation button
+
+Example scanner row copy:
+
+“EURUSD — FVG Pullback: Bullish setup developing. 4H and 1H are aligned upward. 5M pulled below the 50/200 MA and reclaimed both. Waiting for fresh bullish FVG return.”
+
+If full setup active:
+
+“EURUSD — A setup. 4H/1H uptrend confirmed. 5M reclaimed 50/200 MA and created a fresh bullish FVG. Price is inside the entry zone.”
+
+Do not mark it as a trade signal if data is incomplete.
+
+9. Chart overlays
+
+Add visual overlays to Scanner chart and ARX Native Chart without breaking existing draggable trade/order tools.
+
+When FVG strategy is active, draw:
+- 4H trend badge
+- 1H trend badge
+- 5M 50 MA
+- 5M 200 EMA
+- Pullback break point
+- Reclaim/rejection candle marker
+- FVG rectangle zone
+- FVG midpoint line
+- Suggested entry area
+- Suggested SL line
+- Suggested TP1/TP2/TP3 lines
+- Invalidated label if price breaks the invalidation level
+
+Ruby should also be able to draw this on command:
+- “Ruby, draw the FVG setup.”
+- “Show me why this is a buy.”
+- “Show me the FVG entry, SL and TP.”
+- “Is this a valid FVG pullback?”
+
+10. Ruby AI update
+
+Update Ruby’s market explanation system so she understands and explains this strategy in plain English.
+
+Ruby should answer like:
+
+“On EURUSD, the 4H and 1H are both pushing upward, so I’m only interested in buys. The 5M pulled under the 50 and 200 averages, which gives us the discount pullback. Then price reclaimed both averages and left a bullish FVG. The clean entry area is the FVG return zone, not the top of the move. Invalidation is below the pullback low.”
+
+Ruby must avoid generic answers. She should explicitly mention:
+- 4H trend
+- 1H trend
+- 5M pullback
+- 50 MA / 200 EMA break
+- reclaim or rejection
+- FVG zone
+- entry logic
+- invalidation
+- why she would wait or skip
+
+Ruby skip example:
+
+“I would not take this yet. 4H is bullish, but 1H is neutral and the 5M has not reclaimed the 200 EMA. That means the pullback has not proven continuation yet.”
+
+11. Alerts
+
+Add optional scanner alerts for this strategy:
+- HTF trend aligned
+- Pullback through MA detected
+- Reclaim/rejection confirmed
+- Fresh FVG formed
+- Price returned into FVG entry zone
+- Setup invalidated
+
+Alerts should use existing alerts infrastructure if present. Do not create a disconnected duplicate alert system.
+
+12. Trade ticket integration
+
+When the setup is valid, allow the scanner/chart/Ruby to prefill the trade ticket with:
+- Symbol
+- Direction
+- Entry zone
+- Suggested SL
+- Suggested TP levels
+- Strategy tag: HTF_TREND_FVG_PULLBACK
+- Setup score
+- Setup explanation
+
+Important:
+- Prefill does not mean forced execution.
+- Existing trade execution path still handles the actual order.
+- Do not break one-click trading.
+- Do not add extra owner/admin confirmations.
+- Do not bypass bridge/risk/execution code.
+
+13. Data honesty
+
+Add truth fields to the result:
+- dataReady: boolean
+- requiredTimeframesPresent: boolean
+- staleTimeframes: string[]
+- missingTimeframes: string[]
+- usingSimulator: boolean
+- canAnalyze: boolean
+- canSignal: boolean
+- reasonIfNotReady: string
+
+If data is stale or missing, Scanner and Ruby must say so clearly.
+
+14. Types
+
+Create or extend types:
+
+type FvgTrendPullbackDirection =
+  | "bullish"
+  | "bearish"
+  | "neutral";
+
+type FvgTrendPullbackStage =
+  | "not_ready"
+  | "htf_conflict"
+  | "waiting_for_pullback"
+  | "pullback_active"
+  | "reclaim_pending"
+  | "reclaimed_waiting_for_fvg"
+  | "fvg_formed"
+  | "entry_zone_active"
+  | "missed_entry"
+  | "invalidated";
+
+type FvgState =
+  | "none"
+  | "fresh"
+  | "partially_filled"
+  | "fully_mitigated"
+  | "invalidated";
+
+type FvgTrendPullbackResult = {
+  symbol: string;
+  strategyId: "HTF_TREND_FVG_PULLBACK";
+  strategyName: "HTF Trend FVG Pullback";
+  direction: FvgTrendPullbackDirection;
+  stage: FvgTrendPullbackStage;
+  score: number;
+  grade: string;
+  htf: {
+    fourHourTrend: string;
+    oneHourTrend: string;
+    aligned: boolean;
+  };
+  fiveMinute: {
+    pulledThroughMAs: boolean;
+    reclaimedMAs: boolean;
+    rejectedMAs: boolean;
+    ma50: number | null;
+    ema200: number | null;
+  };
+  fvg: {
+    state: FvgState;
+    low: number | null;
+    high: number | null;
+    midpoint: number | null;
+    createdAt: string | null;
+    mitigatedPercent: number;
+  };
+  tradeIdea: {
+    entryLow: number | null;
+    entryHigh: number | null;
+    preferredEntry: number | null;
+    stopLoss: number | null;
+    takeProfit1: number | null;
+    takeProfit2: number | null;
+    takeProfit3: number | null;
+    invalidation: number | null;
+  };
+  truth: {
+    dataReady: boolean;
+    requiredTimeframesPresent: boolean;
+    staleTimeframes: string[];
+    missingTimeframes: string[];
+    usingSimulator: boolean;
+    canAnalyze: boolean;
+    canSignal: boolean;
+    reasonIfNotReady: string | null;
+  };
+  explanation: string;
+  tags: string[];
+};
+
+15. Tests
+
+Add tests for:
+- bullish HTF aligned + valid 5M pullback + reclaim + bullish FVG = valid setup
+- bearish HTF aligned + valid 5M pullback + rejection + bearish FVG = valid setup
+- 4H bullish but 1H bearish = blocked
+- missing 5M candles = not_ready
+- stale 1H candles = not_ready
+- bullish FVG formed before MA reclaim = not valid
+- fully mitigated FVG = not fresh signal
+- price missed entry and moved away = missed_entry
+- price violates invalidation = invalidated
+- Ruby explanation includes HTF trend, 5M pullback, MA reclaim/rejection, FVG, entry, SL, TP, and skip reason when invalid
+
+16. Acceptance criteria
+
+After build, I should be able to:
+- Open scanner and see the new FVG Pullback intelligence on symbols.
+- See whether 4H and 1H trend align.
+- See whether 5M is waiting for pullback, reclaim, FVG, entry, or invalidation.
+- Click a setup and see the FVG drawn on the chart.
+- Ask Ruby why the setup is valid or invalid.
+- Ask Ruby to draw the FVG setup with entry, SL, and TP.
+- Have the trade ticket prefilled from a valid setup.
+- See honest messages when data is missing or stale.
+- Existing scanner/chart/Ruby/live trading/dashboard/open trade systems must still work.

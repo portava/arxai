@@ -1,0 +1,509 @@
+MAJOR FIX: Scanner truth-state errors + candle history depth + feed reliability audit.
+
+This is not a cosmetic fix. The screenshots show serious data, feed, chart, Ruby, scanner, and execution-state contradictions. Fix this as a full scanner/chart/feed integrity repair.
+
+Current visible problems from screenshots:
+1. App says LIVE · Shared MT5 while the selected market says Historical only.
+2. Trading says Enabled while selected symbol execution may not be available through current MT5 bridge.
+3. Ruby says Limited read but Ruby Market Read also shows green “Live feed updated.”
+4. Chart says last-known / live feed unavailable while still rendering candles like active data.
+5. Ruby gives language like “entry approaching” even though data says historical only.
+6. Scalp Builder cannot build because live symbol specs are missing.
+7. Position Manager shows Volatility 25 (1s) while selected scanner market is Volatility 75 Index without clearly separating them.
+8. The feed falls off.
+9. Only a few hours of candles are available on some timeframes.
+10. Some markets only show a few days.
+11. Users cannot scroll back far enough.
+12. Candles are still not fully reaching the app.
+
+Primary goal:
+Fix the entire market data pipeline so ARX AI has reliable, deep, scrollable candle history for every supported market/timeframe, while the UI truthfully separates:
+- global bridge live status
+- selected symbol data status
+- selected symbol execution status
+- Ruby read/actionability status
+- chart history depth
+- broker symbol specs readiness
+
+Do not redesign the screen yet. This is a data integrity, feed reliability, chart history, and truth-contract fix.
+
+====================================================
+PART 1 — BUILD ONE SCANNER/SYMBOL TRUTH CONTRACT
+====================================================
+
+Create or locate one shared truth builder:
+
+buildScannerSymbolTruth(symbol, timeframe)
+
+or
+
+useScannerSymbolTruth(symbol, timeframe)
+
+Every scanner/chart/Ruby/scalp/timing component must consume this same truth object.
+
+Required output:
+
+{
+  selectedSymbol,
+  displayName,
+  timeframe,
+
+  globalBridge: {
+    mode: "shared_mt5" | "user_mt5" | "demo" | "offline",
+    isLiveBridge: boolean,
+    tradingGloballyEnabled: boolean,
+    heartbeatFresh: boolean,
+    lastHeartbeatAt,
+    label
+  },
+
+  symbolData: {
+    status: "live" | "stale" | "historical_only" | "unavailable",
+    source: "mt5" | "deriv" | "polygon" | "twelvedata" | "cache" | "synthetic" | "unknown",
+    lastPrice,
+    lastCandleTime,
+    lastUpdatedAt,
+    ageMs,
+    candlesAvailable,
+    oldestCandleTime,
+    newestCandleTime,
+    historyDepthMs,
+    historyDepthLabel,
+    isActionableForLiveEntry: boolean,
+    reason
+  },
+
+  symbolExecution: {
+    tradableThroughCurrentBridge: boolean,
+    frontendSymbol,
+    brokerSymbol,
+    symbolMapped: boolean,
+    specsAvailable: boolean,
+    reason
+  },
+
+  brokerSpecs: {
+    tickSize,
+    tickValue,
+    point,
+    pointValue,
+    contractSize,
+    minLot,
+    maxLot,
+    lotStep,
+    spread,
+    stopLevel,
+    freezeLevel,
+    digits,
+    available: boolean,
+    missing: []
+  },
+
+  rubyReadiness: {
+    canGiveHistoricalRead: boolean,
+    canGiveLiveRead: boolean,
+    canSuggestActionableEntry: boolean,
+    canBuildScalp: boolean,
+    reason
+  },
+
+  chartReadiness: {
+    canRenderHistoricalChart: boolean,
+    canRenderLiveChart: boolean,
+    canScrollBack: boolean,
+    loadedCandles,
+    requestedCandles,
+    hasMoreHistory,
+    historyLoadStatus,
+    reason
+  }
+}
+
+No component should invent separate status labels.
+
+====================================================
+PART 2 — FIX CONTRADICTORY UI STATES
+====================================================
+
+Rules:
+
+1. Global bridge live does not mean selected symbol is live.
+Show separately:
+- Bridge: LIVE · Shared MT5
+- Market data: Live / Stale / Historical only / Unavailable
+- Symbol execution: Enabled / Not available through current bridge
+- Ruby: Live read / Historical read only / Not actionable
+
+2. Ruby Market Read must not show green “Live feed” unless symbolData.status === "live".
+
+If symbolData.status is historical_only:
+Show:
+“Historical feed · not actionable”
+
+If stale:
+Show:
+“Stale feed · not actionable”
+
+If unavailable:
+Show:
+“Feed unavailable”
+
+3. Ruby must not say “entry approaching” as if live when the feed is historical only.
+
+Replace with:
+“Historical pattern shows a possible setup, but live confirmation is missing, so Ruby cannot treat this as an actionable entry.”
+
+4. Chart must not show stale/last-known candles as live.
+If candles are historical:
+- badge chart as “Historical chart”
+- disable live price marker or mark it “last-known”
+- show oldest/newest candle range
+- show “history loaded through [date/time]”
+- show “more history loading” when user scrolls back
+
+5. Scalp Builder must remain blocked until:
+- live feed confirmed
+- execution symbol mapped
+- broker specs loaded
+- tick value available
+- lot step available
+- stop/freeze levels known if broker provides them
+- spread available
+- account/user risk snapshot available
+
+When blocked, show exact missing items, not vague wording.
+
+6. Position Manager must clearly separate selected market from open positions.
+If selected scanner market is V75 but open position is Volatility 25 (1s), show:
+“Open position on different symbol: Volatility 25 (1s) Index”
+Do not mix it into V75 analysis.
+
+====================================================
+PART 3 — FIX CANDLE HISTORY DEPTH
+====================================================
+
+This is critical.
+
+Users must be able to scroll back far into chart history. A few hours or a few days is not acceptable.
+
+Required chart history targets:
+
+For synthetic/Deriv volatility indices:
+- 1m: minimum 30 days available, preferred 90+ days
+- 5m: minimum 90 days available
+- 15m: minimum 180 days available
+- 1h: minimum 1 year available
+- 4h: minimum 2 years available if provider supports it
+- 1D: minimum 5 years available if provider supports it
+
+For forex/metals/indices/crypto:
+- 1m: minimum 30 days
+- 5m: minimum 90 days
+- 15m: minimum 180 days
+- 1h: minimum 1 year
+- 4h: minimum 2 years
+- 1D: minimum 5 years
+
+If provider cannot supply that much, the API must return:
+- provider limit
+- actual oldest candle
+- actual candle count
+- reason
+- next available source fallback
+
+Do not silently show only a few hours.
+
+====================================================
+PART 4 — BUILD PAGINATED CANDLE LOADING
+====================================================
+
+The chart must support infinite/history scroll.
+
+Implement candle pagination/backfill:
+
+Endpoint shape preferred:
+
+GET /api/market/candles?symbol=V75&timeframe=15m&limit=1000&before=timestamp
+
+Response:
+
+{
+  symbol,
+  timeframe,
+  candles: [
+    { time, open, high, low, close, volume, source }
+  ],
+  meta: {
+    source,
+    status: "live" | "stale" | "historical_only" | "unavailable",
+    requestedLimit,
+    returnedCount,
+    oldestCandleTime,
+    newestCandleTime,
+    hasMoreHistory,
+    nextBefore,
+    providerLimitReached,
+    providerMessage,
+    cacheHit,
+    fetchedAt
+  }
+}
+
+Chart behavior:
+- Initial load should request enough candles to fill the screen plus buffer.
+- When user scrolls left near the oldest loaded candle, request older candles using before=oldestCandleTime.
+- Merge older candles without duplicates.
+- Preserve scroll position after older candles load.
+- Do not reset chart view on every refresh.
+- Do not destroy user scroll position when live updates arrive.
+- Add loading state: “Loading older candles…”
+- Add end state: “Earliest available candle reached: [date].”
+
+====================================================
+PART 5 — ADD CANDLE STORAGE / CACHE
+====================================================
+
+Do not rely only on live frontend fetches.
+
+Create a candle storage/cache layer:
+- Store candles by symbol + timeframe + source + time.
+- Use unique key: symbol/timeframe/time/source.
+- Prevent duplicates.
+- Upsert newer candles.
+- Backfill older candles on demand.
+- Cache successful provider responses.
+- Use stored candles immediately while fetching fresh ones.
+- Mark cache freshness.
+
+Preferred backend service:
+
+marketDataService.getCandles({
+  symbol,
+  timeframe,
+  limit,
+  before,
+  after,
+  sourcePreference
+})
+
+It should:
+1. Check local database/cache first.
+2. Return cached candles quickly.
+3. Fetch missing older candles from provider.
+4. Merge provider candles into cache.
+5. Return unified ordered candles.
+6. Include freshness/depth metadata.
+
+====================================================
+PART 6 — FIX FEED FALL-OFF
+====================================================
+
+Investigate why the feed falls off.
+
+Audit:
+- WebSocket/SSE lifecycle
+- reconnect logic
+- mobile Safari tab sleep behavior
+- Replit server sleep/restart behavior
+- provider rate limits
+- API failures
+- symbol mapping failures
+- stale heartbeat handling
+- frontend state clearing
+- chart component remounts
+- query cache invalidation
+- timeframe switching
+- selected symbol switching
+
+Add robust reconnect:
+- exponential backoff
+- automatic resubscribe to selected symbol/timeframe
+- heartbeat monitor
+- stale timer
+- visible reconnecting badge
+- do not erase existing candles when feed drops
+- keep last-known candles but label them stale
+- resume live updates when feed returns
+
+Feed state rules:
+- If live feed drops, keep chart visible but mark stale.
+- Do not switch to fake live.
+- Do not clear candles unless symbol/timeframe changes.
+- If new candles stop arriving past expected interval, mark stale.
+- When feed returns, append missing candles/backfill gap.
+
+Expected stale thresholds:
+- 1m: stale if no candle/tick update beyond 2–3 minutes
+- 5m: stale if no candle/tick update beyond 7–10 minutes
+- 15m: stale if no update beyond 20 minutes
+- 1h: stale if no update beyond 70 minutes
+- 4h: stale if no update beyond 5 hours
+- 1D: stale if no update beyond 36 hours
+
+For tick/live quote feeds, use a much shorter stale threshold where available.
+
+====================================================
+PART 7 — PROVIDER ROUTING
+====================================================
+
+Audit every market category and document what feeds it:
+
+- Deriv volatility indices
+- Forex
+- Metals
+- Indices
+- Crypto
+- Any synthetic symbols
+
+For each category, map:
+- live quote source
+- candle history source
+- execution source
+- broker symbol
+- fallback source
+- provider limits
+
+Important:
+V75 and other Deriv synthetic indices should not depend on a provider that does not support deep historical V75 candles.
+If MT5 is the execution source and also has history, pull candle history from MT5 where possible.
+If Deriv is used for data-only symbols, use Deriv historical candles where possible.
+If provider only returns shallow history, add backfill/caching and show provider limit.
+
+====================================================
+PART 8 — MT5 HISTORY PULL
+====================================================
+
+If MT5 bridge can provide candle history, add or repair an MT5 candle-history command.
+
+The app needs to request:
+- symbol
+- timeframe
+- start/end or count/before
+- number of candles
+- broker symbol mapping
+
+MT5/EA should return:
+- OHLCV candles
+- symbol
+- timeframe
+- oldest/newest
+- count
+- error if symbol not found or history unavailable
+
+If MT5 only returns a small number, fix the EA/server command to support larger pulls and paginated history.
+
+Make sure MQL5 side is not hardcoded only to _Symbol or current chart Period() for all data. It must support requested symbol/timeframe for scanner/chart history where safe.
+
+====================================================
+PART 9 — SYMBOL DEPTH DIAGNOSTICS PAGE / ADMIN PANEL
+====================================================
+
+Add admin-only diagnostics for market data depth:
+
+For each symbol/timeframe show:
+- source
+- requested candle count
+- returned candle count
+- oldest candle
+- newest candle
+- history depth
+- live quote age
+- candle age
+- provider errors
+- cache count
+- can load more history
+- execution mapping
+- broker specs loaded/missing
+
+Add a “Test Candle Depth” button:
+- tests 1m, 5m, 15m, 1h, 4h, 1D
+- reports pass/fail
+- shows exact oldest candle per timeframe
+
+This must be admin-only and not exposed to normal users.
+
+====================================================
+PART 10 — ACCEPTANCE TESTS
+====================================================
+
+Run these tests and do not pass until they are true:
+
+Test 1: V75 15m depth
+- Load V75 15m.
+- Confirm more than a few hours of candles.
+- Scroll left repeatedly.
+- Older candles load.
+- Chart does not reset.
+- hasMoreHistory works.
+
+Test 2: V75 1m depth
+- Load at least 30 days if provider supports.
+- If not, show exact provider limit and reason.
+
+Test 3: V75 1h/4h/1D depth
+- User can scroll back months/years depending timeframe.
+- Oldest candle shown in diagnostics.
+
+Test 4: Feed drop recovery
+- Simulate feed disconnect.
+- Chart remains visible.
+- Badge changes to stale.
+- Ruby becomes not actionable.
+- Reconnect resumes feed.
+- Missing candle gap is backfilled.
+
+Test 5: No false live labels
+- When historical only, no component says green Live feed.
+- Ruby, chart, timing, scalp, scanner header all agree.
+
+Test 6: Global bridge live but selected symbol historical
+- App can show bridge live.
+- Selected symbol says historical only.
+- Ruby is not actionable.
+- Trade/scalp blocked only for that symbol.
+
+Test 7: Execution-enabled symbol
+- If selected symbol is mapped to MT5 and specs are loaded, show execution enabled.
+- Scalp builder can proceed only after live feed + specs + risk snapshot are available.
+
+Test 8: Different open position symbol
+- If V25 position is open while V75 selected, Position Manager labels it as different symbol.
+- V75 scanner read does not treat V25 position as V75 evidence.
+
+Test 9: Mobile Safari/Replit behavior
+- Switch tabs or let phone screen idle briefly.
+- Feed should reconnect.
+- Existing candles should remain.
+- No blank chart.
+- No stale data labeled live.
+
+Test 10: Cross-timeframe history
+- Switch 1m, 5m, 15m, 1h, 4h, 1D.
+- Each timeframe loads proper history depth.
+- Switching timeframe does not corrupt symbol truth state.
+
+====================================================
+PART 11 — DO NOT BREAK EXISTING LIVE TRADING
+====================================================
+
+Do not disable live trading globally.
+Do not add demo-only restrictions.
+Do not remove scanner trade buttons.
+Do not remove Ruby.
+Do not remove scalp builder.
+Do not remove existing MT5 command path.
+Do not remove admin approvals.
+Do not remove user risk checks.
+Do not fake candle data.
+Do not mark historical candles as live.
+
+Fix the truth, fix the feed, fix the candle depth, and keep the live trading system intact.
+
+Final pass condition:
+The Scanner passes only when:
+1. every visible status agrees with the shared truth contract,
+2. V75 and other markets have deep scrollable candles,
+3. feed drops are handled without losing the chart,
+4. Ruby never treats historical/stale data as live,
+5. users can scroll back months/years where the provider supports it,
+6. admin diagnostics prove exactly how many candles exist per symbol/timeframe/source.

@@ -1,0 +1,73 @@
+Deriv is still degraded because the app is mixing Deriv credential systems.
+
+The current Replit secrets appear to be the newer Deriv Developer/PAT format:
+- DERIV_APP_ID is a long alphanumeric app/client ID
+- DERIV_API_TOKEN starts with pat_
+
+But the current ARX Deriv adapter appears to expect the older Deriv WebSocket v3 format:
+- short numeric app_id
+- legacy account API token
+
+Do not keep returning “no code change can fix this” without giving the app a proper compatibility path.
+
+Task:
+1. Inspect the current Deriv integration and identify which API family it actually uses:
+   - legacy Deriv WebSocket v3 using wss://ws.derivws.com/websockets/v3?app_id=NUMERIC_ID
+   - or new Deriv Developers API / PAT flow
+
+2. Add a credential-mode resolver:
+   - If DERIV_API_TOKEN starts with pat_ and DERIV_APP_ID is long/alphanumeric, treat it as NEW_DERIV_PAT mode.
+   - If DERIV_APP_ID is numeric and token is legacy format, treat it as LEGACY_WS_V3 mode.
+   - Do not attempt the wrong connection type for the detected credential format.
+
+3. If NEW_DERIV_PAT mode is detected:
+   - Use the correct Deriv Developers API/PAT flow.
+   - Do not send the long app/client ID as a legacy WebSocket app_id.
+   - Do not send a pat_ token into a legacy authorize flow if that endpoint rejects it.
+   - Implement the correct WebSocket/OTP/auth flow required by the newer Deriv API, or provide an exact admin-only message explaining which endpoint/scopes are unsupported.
+
+4. If LEGACY_WS_V3 mode is detected:
+   - Use wss://ws.derivws.com/websockets/v3?app_id=<numeric app_id>.
+   - Authorize with the legacy account token only if required.
+   - Pull active_symbols, ticks, and ticks_history through the legacy WebSocket provider.
+
+5. Rename or document secrets clearly so operators do not confuse them:
+   - DERIV_LEGACY_APP_ID for numeric legacy app_id if legacy mode is used.
+   - DERIV_LEGACY_API_TOKEN for legacy token if legacy mode is used.
+   - DERIV_APP_ID / DERIV_API_TOKEN can remain for new PAT mode if already used.
+   - Support backward compatibility if existing secrets are present.
+
+6. Add admin-only Deriv Health diagnostics showing:
+   - detected credential mode
+   - app id format valid/invalid, masked
+   - token format valid/invalid, masked
+   - selected connection strategy
+   - connection result
+   - sanitized failure reason
+   - active_symbols result count
+   - tick test result
+   - ticks_history test result
+   - last successful candle time
+
+7. Normal users should never see:
+   - credential mode names
+   - app IDs
+   - token details
+   - raw 401 errors
+   - provider stack traces
+   - backend constants
+
+8. Scanner/market data behavior:
+   - Volatility/Synthetic symbols should route to Deriv or MT5, not TwelveData.
+   - Only show “No historical data” after the correct Deriv mode and all valid fallback providers fail.
+   - Do not fake candles.
+   - Do not silently return empty data.
+
+9. Acceptance tests:
+   - With pat_ token + long app/client ID, app should not try legacy WebSocket v3 incorrectly.
+   - With numeric legacy app_id + legacy token, legacy WebSocket mode should work.
+   - Provider Health must explain the correct required credential type if the configured mode is incomplete.
+   - V75, Volatility 75, V75 1s, V25 1s should try the correct Deriv route.
+   - Scanner historical data should no longer fail because the app used the wrong Deriv auth flow.
+   - No secrets are exposed.
+   - No live trading safety gates are bypassed.

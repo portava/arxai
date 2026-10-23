@@ -1,0 +1,104 @@
+The deployed ARX live trading unlock page is still showing the old broken runtime behavior even after previous code/tests passed.
+
+Current deployed screenshot state:
+- Top badge still says LIVE BROKER EXECUTION DISABLED.
+- Gate still shows 12/15 passing.
+- #9 Server live execution flag enabled is failing with old text:
+  “Phase A: server live execution is pinned OFF until Phase B...”
+- #11 Type exactly: ENABLE LIVE TRADING is failing even though the visible field appears to show ENABLE LIVE TRADING.
+- #12 Account number and broker/server confirmed is failing.
+- UI still has one combined “Broker / server (confirm)” field.
+- User entered DerivSVG-Server, but gate says broker/server does not match bridge Deriv (SVG) LLC.
+- This proves the deployed UI/API still has old logic or stale build code.
+
+Do a deployed-runtime fix, not just unit tests.
+
+Tasks:
+
+1. Find the exact component/API currently powering the deployed live unlock UI.
+   - Search for the old phrase:
+     “Phase A: server live execution is pinned OFF”
+   - Remove/replace every active runtime usage of this old copy.
+   - Confirm there is not a duplicate legacy live unlock component still mounted.
+   - Confirm /admin/live-shared is using the new component and not an older readiness component.
+
+2. Fix the state model:
+   - Do NOT count serverLiveExecutionEnabled=false as a failed pre-arm check.
+   - Pre-arm checks should exclude the final server armed flag.
+   - If every pre-arm check passes and serverLiveExecutionEnabled=false, show:
+     READY TO ARM
+     or
+     EA READY / SERVER DISPATCH OFF
+   - Only show LIVE BROKER EXECUTION ENABLED after an approved admin/operator arms serverLiveExecutionEnabled=true.
+   - Execute endpoint must still refuse live dispatch unless serverLiveExecutionEnabled=true.
+
+3. Fix #9:
+   - Remove #9 from the “locked failed checks” count unless the user is already attempting live execution.
+   - Rename it visually to something like:
+     “Server dispatch status”
+   - OFF should display as:
+     “OFF — ready to arm after pre-arm checks pass”
+   - ON should display as:
+     “ON — live broker dispatch enabled”
+   - Kill switch must override both states.
+
+4. Fix #12 completely:
+   - Replace the single combined “Broker / server (confirm)” field with three separate fields:
+     a. MT5 account number confirm
+     b. Broker confirm
+     c. Server confirm
+   - Use detected values from the freshest non-revoked LIVE bridge:
+     Account: 62470041
+     Broker: Deriv (SVG) LLC
+     Server: DerivSVG-Server
+   - Normalize all comparisons by trimming whitespace and comparing strings exactly after trim.
+   - Account field must compare to 62470041.
+   - Broker field must compare to Deriv (SVG) LLC.
+   - Server field must compare to DerivSVG-Server.
+   - Add “copy exact value” buttons next to each detected value.
+   - If any field fails, show exactly which field failed:
+     Account mismatch: expected 62470041
+     Broker mismatch: expected Deriv (SVG) LLC
+     Server mismatch: expected DerivSVG-Server
+
+5. Fix #11:
+   - Confirm the typed phrase input is a real controlled value, not just placeholder text.
+   - The gate should receive the actual current typed value.
+   - Trim leading/trailing whitespace before comparison.
+   - Internal spaces must still match exactly.
+   - Expected phrase:
+     ENABLE LIVE TRADING
+   - If it fails, display the actual received length/value in safe debug mode for admin only so we can see whether it is empty, stale, placeholder-only, or mismatched.
+
+6. Fix stale deploy/build risk:
+   - Add a visible admin-only build/runtime marker on /admin/live-shared showing:
+     active commit hash or build id
+     active readiness component filename
+     active API route name
+     readiness schema version
+   - This lets us confirm the deployed page is using the corrected code and not an old duplicate.
+
+7. Fix mobile layout while touching this page:
+   - Ruby floating button must not cover checklist items or live controls.
+   - Bottom nav must not cover buttons/checklist rows.
+   - The page must not require horizontal scrolling.
+   - Confirmation fields should stack cleanly on iPhone Safari.
+
+8. Re-run:
+   - pnpm run typecheck
+   - pnpm run ci:guards
+   - pnpm --filter @workspace/scripts run test:live-phaseB
+   - Add/update tests proving:
+     a. Server flag OFF + all pre-arm checks pass = READY TO ARM, not LOCKED.
+     b. Server flag OFF still blocks actual execute endpoint.
+     c. Account/broker/server are separate confirmations.
+     d. Phrase input uses actual typed value, not placeholder/stale state.
+     e. Old “Phase A pinned OFF” message no longer appears in deployed live unlock UI.
+
+Important:
+Do not auto-arm live trading.
+Do not bypass the live safety gate.
+Do not enable AI auto-trading by default.
+Do not remove the kill switch.
+Do not let tester access or normal users arm broker execution.
+The goal is to fix the deployed runtime UI so it separates LOCKED, READY TO ARM, ARMED, and KILL SWITCH ACTIVE correctly.

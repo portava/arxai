@@ -1,0 +1,197 @@
+Continue with T007: crash hardening, route cleanup, and runtime-safe formatting across the remaining active pages.
+
+Current completed state:
+- T003 complete: unified live/account-mode resolver.
+- T004 complete: /my-account allocation shell.
+- T005 complete: alerts/notifications dismissal and scoping.
+- T006 complete: mode-scope filters across LIVE_SHARED / DEMO / PAPER / TEST.
+- typecheck green.
+- ci:guards 23/23 PASS.
+- test:account-mode 59/59 PASS.
+- test:mode-scope 29/29 PASS.
+- alert-notification-contract 13/13 PASS.
+- live-phaseB 20/20 PASS.
+- demo-arming 18/18 PASS.
+- demo-verify 13/13 PASS.
+- arx_live_commands unchanged.
+- no live trades placed.
+- no operator phrases typed.
+- no safety gates weakened.
+
+Now fix the remaining runtime crash class completely.
+
+Known screenshot crashes:
+1. /alerts crashed from calling .replace on undefined alert type.
+2. /broker-reconciliation crashed from calling .length on undefined brokerOrders / brokerPositions / mismatches.
+3. /live-trading-control crashed from new Date(e.createdAt).toISOString() on invalid/missing createdAt.
+4. There may be more pages with the same unsafe patterns.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake data.
+Do not hide real errors with blank screens.
+Do not expose raw backend errors to normal users.
+
+Create checkpoint first:
+checkpoint: t007-crash-hardening-route-safe-formatters
+
+Task 1 — Create shared safe formatting utilities:
+Create or repair shared frontend helpers:
+- safeArray(value): returns [] unless value is an array.
+- safeString(value, fallback = ""): returns fallback unless value is a usable string/number.
+- safeLabel(value, fallback = "Unknown"): safe title/label formatting.
+- safeDate(value, fallback = "—"): safely renders invalid/missing dates.
+- safeCount(value): safe number/count display.
+- safeMoney(value): safe currency display without NaN.
+- safePercent(value): safe percent display without NaN.
+- normalizeApiList(value): normalizes API list responses that may be {items}, {data}, [] or undefined.
+
+Use existing utilities if already present; do not duplicate if reusable helpers exist.
+
+Task 2 — Audit all active routes for unsafe render patterns:
+Search and fix:
+- .length on possibly undefined
+- .replace on possibly undefined
+- .map on possibly undefined
+- .filter on possibly undefined
+- .toISOString() on possibly invalid date
+- new Date(x) without validation
+- direct access to nested API fields without fallback
+- math producing NaN in UI
+- Object.values(undefined)
+- Object.keys(undefined)
+- .toFixed() on non-number
+- rendering raw error objects
+
+Pages/components to audit:
+- alerts
+- notifications
+- broker reconciliation
+- live trading control
+- trading calendar
+- live intent queue
+- open trades / my trades
+- live chart side panel
+- market scanner
+- trade ticket
+- live shared
+- live AI assist
+- action center
+- help/system status
+- admin allocations
+- audit vault
+- safety logs
+- settings
+- my account
+- dashboard widgets
+- shared cards/tables/list components
+
+Task 3 — Fix known crash pages:
+1. /alerts:
+- no .replace on undefined
+- missing type/status/severity/message/date must render cleanly
+- page must support empty list and malformed rows
+- dismiss/read controls must still work
+
+2. /broker-reconciliation:
+- brokerOrders, brokerPositions, mismatches default to []
+- missing reconciliation object renders clean empty state
+- counts use safeCount/safeArray
+- no runtime overlay
+
+3. /live-trading-control:
+- invalid/missing createdAt renders “—” or “Unknown time”
+- audit rows normalize before render
+- no toISOString() crash
+- no raw gate constants to normal users
+
+Task 4 — Route cleanup:
+Map actual registered routes from App.tsx/router config and compare with sidebar/menu links.
+
+Fix:
+1. No sidebar link points to a stale/non-registered route.
+2. No page refers to dead route paths.
+3. If aliases exist, redirect cleanly.
+4. Audit Vault and Safety Logs should either:
+   - route to distinct pages, or
+   - share one page with clear tabs and clear menu behavior.
+5. Open Trades menu should route to actual registered route, not stale /open-trades if that route does not exist.
+6. Any stale route references from screenshots should be corrected.
+
+Task 5 — Empty/error/loading states:
+Every active page must show:
+- clean loading state
+- clean empty state
+- clean user-safe error state
+- no Vite/runtime overlay
+- no raw backend JSON
+- no stack trace
+- no internal constants in normal user UI
+
+Admin pages can show sanitized diagnostics, but not secrets.
+
+Task 6 — Regression tests:
+Add tests for:
+1. /alerts handles missing type/status/severity/message/date.
+2. /broker-reconciliation handles missing brokerOrders/brokerPositions/mismatches.
+3. /live-trading-control handles invalid/missing createdAt.
+4. safeArray/safeString/safeDate/safeLabel helpers.
+5. route map contains no stale sidebar links.
+6. Audit Vault / Safety Logs behavior is intentional and tested.
+7. Open Trades link uses actual registered route.
+8. No runtime crash from undefined arrays/dates in migrated pages.
+9. arx_live_commands count unchanged.
+
+Task 7 — E2E smoke:
+Run a small browser smoke test for:
+- /alerts
+- /broker-reconciliation
+- /live-trading-control
+- /trading-calendar
+- /live-intent-queue
+- /my-account
+- /settings
+- /market-scanner
+- /trade
+- /live-shared
+- /live-ai-assist
+- /admin/allocations
+
+For each:
+- page loads
+- no red runtime overlay
+- no uncaught console error
+- no raw error object visible
+- empty state renders cleanly if data missing
+
+Task 8 — QA:
+Run:
+- typecheck
+- build if available
+- ci:guards
+- test:account-mode
+- test:mode-scope
+- test:alert-notification-contract
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:live-broker-resolver
+- allocation runtime QA
+- new crash-hardening tests
+- route-map tests
+- arx_live_commands count before/after
+
+Final report only:
+- unsafe patterns found and fixed
+- routes corrected
+- pages tested
+- tests added
+- QA results
+- arx_live_commands count
+- confirmation no live trades placed
+- confirmation no operator phrases typed
+- confirmation no safety gates weakened
+- remaining issues only if they require human credentials/manual browser action

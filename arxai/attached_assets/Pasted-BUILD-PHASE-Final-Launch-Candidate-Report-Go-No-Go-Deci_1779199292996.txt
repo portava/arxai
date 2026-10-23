@@ -1,0 +1,349 @@
+BUILD PHASE — Final Launch Candidate Report + Go/No-Go Decision
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Create the final internal launch candidate report for ARX AI and produce a clear GO / CONDITIONAL GO / NO-GO decision based on safety, privacy, mobile readiness, Ruby readiness, admin readiness, production lockdown, live execution safety, audit evidence, and no-live-command proof.
+
+Important:
+Do not add new major features.
+Do not fire live trades.
+Do not create real live bridge commands.
+Do not turn on public live trading.
+Do not bypass any safety gate to make the report look better.
+This phase is for final review, evidence collection, launch decisioning, and documentation.
+
+1. Inspect all final QA outputs first
+Review the latest results from:
+
+- End-to-End Staging Dry Run
+- Launch Candidate Freeze
+- Manual Mobile QA + iPhone Safari Final Pass
+- Production Launch Readiness + Environment Lockdown
+- Audit Log Center + Evidence Export
+- Broker/Regulatory Mode Separation
+- Reconciliation Center
+- Close-Only Emergency Mode
+- Live Readiness Dashboard + Kill Switches
+- Ruby Voice Guardrails
+- Ruby Full App Knowledge
+- User Onboarding
+- Per-User Private Workspace
+- Shared Master Ledger
+- Virtual Balance/Risk Profiles
+- Multi-User Queue
+- Admin Approval Console
+- Scanner/Ruby Market Explanation
+- Trade Position Chart Window
+
+Do not assume a phase passed unless there is evidence.
+
+2. Create final launch candidate report
+Create or update a report file:
+
+LAUNCH_CANDIDATE_GO_NO_GO.md
+
+Suggested title:
+ARX AI Launch Candidate Go/No-Go Report
+
+Include:
+
+- launch candidate version
+- build/commit identifier if available
+- environment tested
+- date/time generated
+- tester/operator
+- summary decision:
+  - GO
+  - CONDITIONAL GO
+  - NO-GO
+- reason for decision
+- major systems reviewed
+- critical blockers
+- high blockers
+- medium issues
+- low issues
+- remaining risks
+- manual QA coverage
+- automated QA coverage
+- no-live-command evidence
+- safety gate evidence
+- privacy evidence
+- secret masking evidence
+- admin protection evidence
+- mobile/iPhone Safari evidence
+- Ruby/Ruby Voice evidence
+- audit/export evidence
+- compliance/legal warning evidence
+- production readiness evidence
+- rollback readiness
+- recommended next action
+
+3. Go/No-Go decision rules
+Use strict decision logic.
+
+GO only if:
+- no critical blockers remain
+- no high safety blockers remain
+- no user privacy leaks remain
+- no admin access leaks remain
+- no secret exposure remains
+- no unexpected live commands were created
+- arx_live_commands count stayed unchanged during QA
+- production live execution defaults OFF
+- admin routes are protected
+- user data is isolated
+- Ruby does not leak other-user/admin/secret data
+- voice cannot bypass confirmations or safety gates
+- kill switches work
+- close-only works
+- reconciliation works
+- audit/export masking works
+- disclosures/risk warnings block required live flows
+- mobile Safari critical flows work
+
+CONDITIONAL GO if:
+- no critical blockers remain
+- no live safety/privacy/secret blockers remain
+- only medium/low issues remain
+- issues are documented with clear workarounds
+- launch scope is limited to safe mode, private beta, demo-only, or admin-supervised staging
+
+NO-GO if any of these exist:
+- live command fired unexpectedly
+- arx_live_commands changed unexpectedly
+- user privacy leak
+- admin access leak
+- secret exposure
+- Ruby leaks other-user/admin/secret data
+- voice can bypass trade confirmation
+- live safety gate can be bypassed
+- kill switch fails
+- close-only fails
+- shared master ownership/ledger mapping is unsafe
+- reconciliation guesses uncertain ownership
+- production starts with live enabled by default
+- disclosures/compliance flag can be bypassed
+- mobile flow blocks core use
+- test evidence is missing for critical safety areas
+
+4. Final safety evidence
+Collect and include evidence for:
+
+- arx_live_commands count before final QA
+- arx_live_commands count after final QA
+- confirmation no live trade fired
+- global live flag status
+- global kill switch status
+- one-click live default status
+- close-only state behavior
+- force-review behavior
+- queue pause behavior
+- bridge health masking
+- shared master mapping fail-closed behavior
+- unapproved user live block
+- missing allocation block
+- missing disclosure block
+- compliance flag false block
+- risk/exposure/cooldown block
+- demo cannot create live command
+
+5. Final privacy evidence
+Confirm and report:
+
+- User A cannot see User B dashboard
+- User A cannot see User B trades
+- User A cannot see User B P/L
+- User A cannot see User B notifications
+- User A cannot ask Ruby about User B
+- User A cannot close/edit User B trade
+- logout/login clears user cache
+- normal users cannot see shared master global totals
+- normal users cannot access admin routes/APIs
+- user APIs filter by authenticated session userId
+
+6. Final Ruby evidence
+Confirm and report:
+
+- Ruby answers app questions correctly
+- Ruby explains current user account state
+- Ruby explains why trading is blocked
+- Ruby explains scanner/trade context
+- Ruby explains queued/blocked/NEEDS_REVIEW states
+- Ruby does not claim guaranteed profits
+- Ruby does not claim legal approval
+- Ruby does not expose secrets
+- Ruby does not expose other users
+- Ruby admin context only works for authenticated admins
+- Ruby memory is scoped per user
+- Ruby memory clears when requested
+
+7. Final Ruby Voice evidence
+Confirm and report:
+
+- voice auto-listen works where supported
+- iOS tap-to-start fallback exists
+- silence detection does not duplicate submit
+- empty transcripts are ignored
+- Ruby speech does not feed into mic
+- voice commands prepare tickets instead of executing silently
+- live voice trades require confirmation
+- voice close requires confirmation
+- voice cannot bypass admin approval
+- voice cannot bypass allocation/risk/disclosure/bridge/queue/kill switch gates
+- voice state clears on logout/account switch
+
+8. Final admin/operator evidence
+Confirm and report:
+
+- admin login protected
+- admin approval console works
+- shared master mapping works or fails closed
+- readiness dashboard works
+- kill switches work
+- queue controls work
+- close-only controls work
+- reconciliation center works
+- audit center works
+- evidence export works and masks secrets
+- compliance panel protected
+- production readiness panel protected
+- non-admin users blocked from all admin APIs
+
+9. Final mobile evidence
+Confirm and report:
+
+- iPhone Safari app loads
+- login/logout works
+- onboarding works
+- dashboard works
+- scanner works
+- Ruby chat works
+- Ruby voice fallback works
+- trade ticket fits
+- confirmation modals fit
+- chart/trade detail usable
+- admin screens usable enough
+- keyboard does not break core flows
+- Ruby widget does not block key buttons
+- no previous-user cache appears
+
+10. Final production readiness evidence
+Confirm and report:
+
+- production live defaults OFF
+- feature flags fail closed
+- env checklist masks values
+- startup guard catches unsafe config
+- public health route does not expose internals
+- production errors do not expose stack traces/raw SQL/raw bridge payloads
+- mock/fake data hidden in production
+- launch blockers listed
+- no public/shared live launch when compliance review incomplete
+
+11. Create final launch checklist
+Create or update:
+
+FINAL_LAUNCH_CHECKLIST.md
+
+Include sections:
+
+- Pre-launch environment checklist
+- Admin checklist
+- User onboarding checklist
+- Demo trading checklist
+- Personal MT5 checklist
+- Shared master checklist
+- Safety gate checklist
+- Ruby checklist
+- Ruby Voice checklist
+- Mobile checklist
+- Audit/export checklist
+- Reconciliation checklist
+- Legal/risk disclosure checklist
+- Rollback checklist
+- Emergency operator checklist
+
+12. Create final known issues list
+Create or update:
+
+KNOWN_ISSUES_LAUNCH_CANDIDATE.md
+
+Include:
+- issue
+- severity
+- affected area
+- workaround
+- owner
+- whether launch-blocking
+- recommended fix phase
+
+13. Create final operator runbook
+Create or update:
+
+OPERATOR_RUNBOOK_LAUNCH_CANDIDATE.md
+
+Include:
+- how to verify live is OFF
+- how to check no-live-command evidence
+- how to pause all live trading
+- how to enable close-only mode
+- how to pause a user
+- how to pause a symbol
+- how to pause a bridge
+- how to view NEEDS_REVIEW
+- how to export audit evidence
+- how to revoke shared master access
+- how to respond to bridge heartbeat failure
+- how to handle stuck reservations
+- how to handle user support issue
+- how to rollback
+
+14. Final QA script
+Create or update a final verification script:
+
+npm run qa:final-go-no-go
+
+The script should:
+- run the highest-priority launch candidate tests
+- verify admin route protection
+- verify user privacy isolation
+- verify Ruby data boundaries
+- verify voice trade guardrails
+- verify kill switches
+- verify close-only
+- verify reconciliation
+- verify audit/export masking
+- verify production live defaults OFF
+- verify feature flags fail closed
+- run secret leak probes
+- snapshot arx_live_commands before/after
+- fail if arx_live_commands count changes unexpectedly
+- output final PASS/FAIL summary
+
+15. Do not hide blockers
+If any blocker remains:
+- list it clearly
+- mark severity
+- mark whether launch-blocking
+- do not label GO if launch-blocking safety/privacy/secret/live issues remain
+
+16. Return final result
+Return:
+- final GO / CONDITIONAL GO / NO-GO decision
+- reason for decision
+- files created/updated
+- final QA script name
+- tests run
+- pass/fail summary
+- critical blockers
+- high blockers
+- remaining medium/low issues
+- launch checklist path
+- known issues path
+- operator runbook path
+- no-live-command evidence
+- arx_live_commands count before
+- arx_live_commands count after
+- confirmation that no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

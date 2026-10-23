@@ -1,0 +1,207 @@
+Fix ARX AI live bridge balance visibility and admin fund distribution.
+
+Do not give lot-size recommendations.
+Do not place a trade.
+Do not insert live commands.
+Do not type operator phrases.
+Do not bypass safety gates.
+Do not fake the balance.
+Do not fake allocation headroom.
+Do not show paper/demo balances as live bridge funds.
+Do not expose master account balance to normal users.
+
+Current problem:
+The live MT5 account has a balance, but the app/admin allocations system is not showing the amount registered to the live bridge. Because the admin cannot see the master/live bridge balance, there is no clear way to distribute that balance to users.
+
+This must be fixed.
+
+Goal:
+Admin should see the real live bridge/master MT5 account balance, equity, free margin, currency, and last sync time. Then admin should be able to distribute/allocate part of that available live bridge balance to approved users.
+
+Important distinction:
+1. Master/live bridge balance = actual money in the connected MT5 live account.
+2. Distributable headroom = master live balance/free margin minus existing allocated/reserved exposure.
+3. User allocation = the amount admin assigns to a user from the master bridge.
+4. User available capacity = assigned allocation minus used/reserved exposure.
+5. Paper/demo balance must not affect any of the above.
+
+Task 1 — Find the broken balance path:
+Trace the full path:
+MT5 live account → EA account info → bridge /sync-account or heartbeat payload → backend stored account snapshot → admin master bridge summary → /admin/allocations UI.
+
+Search for:
+- sync-account
+- account snapshot
+- master account config
+- master bridge balance
+- balance
+- equity
+- freeMargin
+- margin
+- accountNumber
+- currency
+- lastSync
+- master.configured
+- user_slot_allocation
+- admin allocations summary
+- live bridge summary
+- MT5 account info
+
+Find exactly where the real MT5 live account balance is getting lost, hidden, overwritten, defaulted to zero, or not displayed.
+
+Task 2 — Fix live bridge account sync:
+The backend must store the latest live MT5 account snapshot with:
+- account login/number, masked in UI
+- broker/server name if available
+- account type live/demo
+- balance
+- equity
+- margin
+- free margin
+- margin level
+- currency
+- leverage if available
+- last account sync timestamp
+- connectionId / bridgeId
+- heartbeat freshness
+
+Do not replace a real balance with zero if a refresh fails.
+If data is stale, show the last known value with a stale warning.
+
+Task 3 — Fix admin bridge balance display:
+Admin pages must show the real live bridge account balance when available, even if master.configured=false.
+
+master.configured=false should not hide the live MT5 balance.
+It should only mean user allocation setup is incomplete.
+
+Admin UI should show:
+- Live bridge connected
+- Account masked
+- Balance
+- Equity
+- Free margin
+- Currency
+- Last updated
+- Distributable headroom
+- Already allocated
+- Reserved/used exposure
+- Available to allocate
+- Stale/fresh sync status
+
+Normal users must not see full master balance.
+
+Task 4 — Fix admin allocation/distribution flow:
+In /admin/allocations, add or repair a clear admin workflow:
+
+1. Display master live bridge balance and available allocation headroom.
+2. Select user.
+3. Enter allocation amount manually.
+4. Save allocation.
+5. Update user allocation record.
+6. Recalculate:
+   - total allocated
+   - remaining headroom
+   - user available capacity
+7. Show success state.
+8. Write audit log entry.
+
+Admin should be able to:
+- allocate funds from master bridge to a user
+- increase user allocation
+- decrease user allocation if unused capacity allows
+- freeze/unfreeze allocation
+- view allocation history
+- see why allocation is blocked
+
+Task 5 — Fix master.configured logic:
+master.configured should not depend on hiding balance.
+
+Correct states:
+- Live bridge balance available, but no users allocated → show balance and “No users allocated yet.”
+- User allocated, but risk caps incomplete → show “Risk caps required.”
+- User allocated and complete → show ready state only if all other gates pass.
+- Account sync stale → show balance stale warning and block actions requiring fresh data.
+- No account snapshot → show “Waiting for live account sync.”
+
+Task 6 — Fix backend calculations:
+Use real live bridge values to calculate:
+- master balance
+- master free margin
+- total allocated to users
+- total reserved/used allocation
+- available headroom
+- per-user allocation
+- per-user available capacity
+
+Do not use:
+- paper ledger
+- demo ledger
+- placeholder zero
+- fake account numbers
+- mock balances
+- frontend-only values
+
+Task 7 — Admin/user privacy:
+Admin can see:
+- master balance
+- all allocations
+- users
+- audit logs
+- bridge/account health
+
+Normal user can only see:
+- their allocation
+- their available capacity
+- their risk caps
+- their approval/frozen status
+- their open P/L if available
+
+Normal user must not see:
+- master balance
+- other users
+- backend table names
+- internal flags
+- route names
+- credentials
+- debug data
+
+Task 8 — QA:
+Run safe QA without placing trades.
+
+Verify:
+1. MT5 live account balance exists in the EA/bridge payload.
+2. Backend stores the latest account snapshot.
+3. Admin can see the real live bridge balance.
+4. Admin can see distributable headroom.
+5. master.configured=false does not hide the balance.
+6. Admin can allocate funds to a user from available headroom.
+7. Allocation updates the user’s available capacity.
+8. Allocation writes an audit log.
+9. Normal user sees only their own allocation.
+10. Normal user cannot see master balance.
+11. Paper/demo balances do not affect live allocation.
+12. Failed refresh does not overwrite live balance with zero.
+13. Stale account snapshot shows a stale warning.
+14. Live readiness uses the allocation state correctly.
+15. arx_live_commands count remains 0.
+16. No live trade is placed.
+17. No operator phrases are typed.
+18. Typecheck passes.
+19. CI guards pass.
+20. Phase B / 16-gate tests pass.
+21. Allocation runtime QA passes.
+22. Mobile admin allocation page works.
+
+Create checkpoint before and after:
+- checkpoint: pre-live-bridge-balance-distribution-fix
+- checkpoint: fix-live-bridge-balance-distribution
+
+Final report only:
+- where the balance path was broken
+- files/routes changed
+- whether admin now sees live bridge balance
+- whether allocation/distribution works
+- current master balance visibility status
+- current allocated users count
+- QA results
+- remaining operator-only actions, if any

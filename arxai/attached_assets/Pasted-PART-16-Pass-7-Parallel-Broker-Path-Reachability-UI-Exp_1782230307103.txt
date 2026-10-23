@@ -1,0 +1,210 @@
+PART 16 — Pass 7: Parallel Broker Path Reachability / UI Exposure / EA Pickup Truth
+
+Continue in READ-ONLY mode.
+
+Do not edit files.
+Do not create tasks.
+Do not restart workflows.
+Do not run migrations.
+Do not change env vars.
+Do not “fix” anything yet.
+
+Context:
+Pass 6 found two separate live-capable broker paths outside the intended Phase B dispatchLiveCommand chokepoint:
+
+P6-1:
+lib/adminTrading/placeOrder.ts
+→ orderGuard.ts runOrderGuards 10-gate path
+→ brokerPlacement.ts dispatchToBroker
+→ inserts PENDING mt5_commands action:"OPEN", mode:"LIVE"
+
+Reachable from:
+- routes/meTrades.ts POST /me/trades/open
+- routes/tradePlacement.ts POST /trade/place
+
+Current runtime lock:
+- MT5_BRIDGE_TOKEN unset causes BRIDGE_TOKEN_UNSET rejection.
+- But BROKER_PLACEMENT_LAYER_ENABLED=true.
+- CI readiness lock only covers lib/liveTrading/, not lib/adminTrading/.
+- If MT5_BRIDGE_TOKEN is set, this path may bypass the Phase B 18-gate.
+
+P6-2:
+routes/meTrades.ts POST /me/trades/close
+→ direct mt5_commands insert action:"CLOSE", status:"PENDING"
+→ stamps trade_command_audit_log status:"EXECUTED" before broker confirmation
+
+This bypasses:
+- dispatchLiveCommand
+- livePhaseBDispatchGate 18-gate
+- placeOrder/runOrderGuards 10-gate
+
+And appears deliverable because:
+- EA poll /mt5/commands picks up PENDING rows scoped by connection.
+- No proven safetyMode/source filter blocks safetyMode:"live_locked".
+
+Goal:
+Determine whether P6-1 and P6-2 are reachable from current UI/client flows, whether the EA will actually pick them up, whether auth/user scoping is sufficient, and whether any environment/config/feature flag makes them reachable in production/live.
+
+Primary questions:
+1. Does any current frontend call /me/trades/open with mode:"LIVE"?
+2. Does any current frontend call /trade/place with mode:"LIVE"?
+3. Does any current frontend call /me/trades/close for real live positions?
+4. Are these endpoints exposed through Trade page, Open Trades, Positions, Manual Ticket, Scanner, Ruby, Watchlist, Chart, Admin, or legacy components?
+5. Does the live EA poll and execute PENDING rows from these paths exactly the same way it executes Phase B mirrored commands?
+6. Does mt5_commands have any origin/source/safetyMode/accountMode filtering that prevents legacy PENDING rows from reaching the EA?
+7. Does /me/trades/close have any broker-result callback that later corrects the premature EXECUTED audit row?
+8. Are route auth, ownership, and account scoping sufficient to prevent cross-user execution?
+9. Are these endpoints protected by denyInvestorExecution / requireUser / live activation gates?
+10. Are they included in any CI guard, regression test, or readiness lock?
+
+Files to inspect directly:
+
+Frontend/client call-sites:
+- Search for:
+  /me/trades/open
+  /me/trades/close
+  /trade/place
+  me/trades
+  trade/place
+  open trade
+  close trade
+  placeOrder
+  closeTrade
+  submitLive
+  mode: "LIVE"
+  accountMode: "LIVE"
+  accountMode
+  LIVE
+- Inspect likely files:
+  pages/trade.tsx
+  pages/open-trades.tsx
+  pages/positions.tsx
+  pages/manual-ticket.tsx
+  pages/live-market-chart.tsx
+  pages/market-scanner.tsx
+  components/trade/*
+  components/live/*
+  components/positions/*
+  hooks/useLive*
+  hooks/useTrades*
+  lib/api*
+  lib/live*
+  any legacy trade panels
+
+Backend route proof:
+- routes/meTrades.ts
+  - POST /me/trades/open
+  - POST /me/trades/close
+  - Middleware stack
+  - userId derivation
+  - position ownership check
+  - mode handling
+  - routing resolution
+  - audit behavior
+  - any result reconciliation
+
+- routes/tradePlacement.ts
+  - POST /trade/place
+  - Middleware stack
+  - userId derivation
+  - mode handling
+  - account scoping
+  - whether it is still registered in server route mount
+
+- server route registration:
+  - Verify whether meTrades.ts and tradePlacement.ts are mounted.
+  - Verify route prefixes.
+  - Verify whether they are reachable in the running app.
+
+EA / command pickup proof:
+- routes/mt5.ts
+  - /mt5/commands polling endpoint
+  - exact WHERE clause
+  - status filter
+  - connection/account filter
+  - action filter
+  - source/safetyMode filter, if any
+  - whether action OPEN/CLOSE PENDING rows from legacy paths are deliverable
+  - whether claim/update is atomic
+  - whether broker result callback writes back to the right audit/result tables for legacy commands
+
+- mt5_commands schema / migrations
+  - source/origin fields
+  - status lifecycle
+  - indexes
+  - idempotency fields
+  - command ownership fields
+  - relation to trade_command_audit_log
+  - whether row origin can distinguish Phase B vs legacy
+
+Config/env/flag proof:
+- Search and read:
+  MT5_BRIDGE_TOKEN
+  BROKER_PLACEMENT_LAYER_ENABLED
+  brokerPlacementImplemented
+  liveLocked
+  BUILD_TT
+  PHASE_B
+  LIVE_TRADING
+  safetyMode
+  live_locked
+  allowLive
+  enableLive
+  readiness lock
+- Determine whether production/live expected env would set MT5_BRIDGE_TOKEN.
+- Determine whether setting MT5_BRIDGE_TOKEN unlocks P6-1.
+- Determine whether P6-2 is already unlocked without MT5_BRIDGE_TOKEN.
+
+CI/test proof:
+- scripts/check-live-trading-readiness-lock.ts
+- package.json scripts
+- tests around meTrades, tradePlacement, mt5_commands, broker placement
+- Verify whether any CI guard would fail if lib/adminTrading/placeOrder.ts sends to broker.
+- Verify whether any test catches EXECUTED-before-confirm on close.
+
+Required classification:
+For each of these paths:
+
+A. /me/trades/open
+B. /trade/place
+C. /me/trades/close
+
+Classify:
+- Mounted/reachable: yes/no
+- UI reachable: yes/no/inconclusive
+- Live-capable: yes/no
+- Uses Phase B dispatchLiveCommand: yes/no
+- Uses 18-gate: yes/no
+- Uses broker-ticket truth: yes/no
+- EA can pick up PENDING row: yes/no
+- Auth/session scoped: yes/no
+- Investor blocked: yes/no
+- Current runtime blocked: yes/no
+- What unlocks it
+- Risk class
+- Exact file/line proof
+
+Risk classification guide:
+Class 1: Safe/proven impossible
+Class 2: Unsafe active risk
+Class 3: UX/safety surprise or incomplete guard
+Class 4: dormant debt / dangerous if config changes
+Class 5: inconclusive, needs more proof
+
+Expected deliverables:
+1. Reachability matrix for P6-1 and P6-2.
+2. UI call-site matrix.
+3. EA pickup truth matrix.
+4. Config/env unlock matrix.
+5. CI/test coverage matrix.
+6. Final verdict:
+   - “Parallel path is dormant only”
+   - “Parallel close path is active”
+   - “Legacy paths are UI-reachable”
+   - or “Not reachable from UI but still mounted API risk”
+7. Held fix-ledger additions only. No tasks.
+
+Important:
+Do not broaden into new feature work.
+Do not propose fixes until proof is complete.
+This pass is about reachability and live pickup truth only.

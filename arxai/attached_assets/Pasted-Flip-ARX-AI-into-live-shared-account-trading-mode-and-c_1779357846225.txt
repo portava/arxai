@@ -1,0 +1,426 @@
+Flip ARX AI into live shared-account trading mode and connect the operator live MT5 account through the existing bridge.
+
+Do not rebuild the app from scratch. First inspect what already exists for:
+- MT5 bridge
+- Demo/live/paper mode
+- Master/shared account mode
+- User approval toggles
+- Admin/operator dashboard
+- Invite users
+- Kill switches
+- Trade execution
+- Ruby trade assistant
+- Scanner trade buttons
+- SL/TP manager
+- Risk/reward logic
+- Trade ledger
+- Audit logs
+- Existing environment variables / secrets
+
+Goal:
+Switch the app from individual MT5-account dependency into shared live-account mode where one operator-connected MT5 live account powers execution, while every approved user trades through the app with isolated user-level permissions, logs, balances, allocations, and risk controls.
+
+Important:
+Do not hardcode live account credentials anywhere.
+Use Replit Secrets / environment variables only.
+
+Expected live shared-account environment variables:
+- ARX_TRADING_MODE=live
+- ARX_ACCOUNT_MODE=shared
+- ARX_SHARED_LIVE_ENABLED=true
+- ARX_MASTER_BRIDGE_ENABLED=true
+- ARX_MASTER_BRIDGE_MODE=live
+- MT5_SHARED_BRIDGE_BASE_URL=
+- MT5_SHARED_LIVE_LOGIN=
+- MT5_SHARED_LIVE_PASSWORD=
+- MT5_SHARED_LIVE_SERVER=
+- MT5_SHARED_LIVE_ACCOUNT_NAME=
+- MT5_SHARED_LIVE_BROKER=
+- MT5_SHARED_LIVE_CURRENCY=
+- MT5_SHARED_LIVE_MAX_TOTAL_EXPOSURE=
+- MT5_SHARED_LIVE_MAX_USER_EXPOSURE=
+- MT5_SHARED_LIVE_MAX_DAILY_LOSS=
+- MT5_SHARED_LIVE_MAX_OPEN_TRADES_PER_USER=
+
+If these secrets do not exist, create clear missing-secret status messages in the admin/operator dashboard, but do not crash the app.
+
+Live shared-account mode requirements:
+
+1. Global mode
+Set the app’s active trading mode to:
+- Live trading
+- Shared account
+- Master bridge execution
+
+The app should no longer require each user to connect their own MT5 account when shared-account mode is enabled.
+
+2. Live account connection
+Update the backend bridge connection layer so the live shared MT5 account is loaded from environment secrets.
+
+Create or update a service similar to:
+- sharedLiveAccountService
+- masterBridgeService
+- mt5LiveBridgeService
+
+It should:
+- Connect to the existing MT5 bridge using the shared live account credentials.
+- Verify heartbeat.
+- Verify account info.
+- Verify balance/equity/margin/free margin.
+- Verify trading permissions.
+- Verify broker/server name.
+- Verify symbol availability.
+- Verify order placement endpoint availability.
+- Verify order close/modify endpoint availability.
+- Show connection status in admin dashboard.
+
+3. Admin/operator dashboard
+Add or update a clear Live Shared Account panel.
+
+Show:
+- Live account connection status
+- Bridge heartbeat
+- Broker/server
+- Account currency
+- Balance
+- Equity
+- Margin
+- Free margin
+- Open exposure
+- Open trades
+- Approved users
+- Pending users
+- Global live trading status
+- Master kill switch status
+- Last sync time
+- Last bridge error
+- Last order response
+
+Add controls:
+- Enable/disable global shared live trading
+- Enable/disable master bridge
+- Enable/disable manual live trades
+- Enable/disable Ruby-assisted live trades
+- Enable/disable scanner trade entries
+- Emergency kill switch
+- Close all shared-account positions
+- Disable all user live trading
+- Refresh bridge status
+- Reconnect bridge
+
+Keep admin access role-based through the existing login system. Do not create a separate admin login page.
+
+4. User approval system
+Every user must have individual live shared-account approval.
+
+Add or update user fields:
+- liveTradingApproved
+- sharedAccountApproved
+- maxUserExposure
+- maxDailyLoss
+- maxOpenTrades
+- allowedSymbols
+- allowedOrderTypes
+- tradeMode
+- canUseRubyLiveAssist
+- canUseScannerTradeEntry
+- canUseOneClickTrade
+- approvalDate
+- approvedByAdminId
+
+Even if the shared live account is connected, users should not be able to trade live unless their account has live shared approval enabled by admin.
+
+5. User-facing mode
+For approved users, show:
+- Live Shared Account mode
+- Available user allocation
+- User open trades
+- User P/L
+- User daily P/L
+- User exposure
+- User risk limits
+- Open positions
+- Pending orders
+- Trade history
+- Ruby trade review
+
+For unapproved users, show:
+- Demo/paper mode
+- Request live access or “Live access pending”
+- No live trade buttons
+
+6. Trade execution
+Update trade execution so live shared-account trades flow through the master bridge.
+
+Every order must include:
+- userId
+- symbol
+- side
+- orderType
+- lotSize
+- entryPrice if pending
+- stopLoss
+- takeProfit
+- riskAmount
+- riskPercent
+- rewardRatio
+- reason
+- source: manual / scanner / Ruby
+- accountMode: shared
+- tradingMode: live
+- timestamp
+
+Before sending order:
+- Confirm global live shared trading is enabled.
+- Confirm master bridge is connected.
+- Confirm kill switch is off.
+- Confirm user is approved.
+- Confirm user risk limits.
+- Confirm symbol allowed.
+- Confirm lot size valid.
+- Confirm stop loss valid.
+- Confirm take profit valid.
+- Confirm margin available.
+- Confirm spread/slippage safety.
+- Confirm broker stop-level distance.
+- Confirm order type supported.
+
+Support:
+- Market buy
+- Market sell
+- Buy limit
+- Sell limit
+- Buy stop
+- Sell stop
+- Buy stop limit
+- Sell stop limit
+- Modify SL
+- Modify TP
+- Close trade
+- Partial close if already supported
+- Cancel pending order
+
+7. Shared ledger
+Because multiple users trade through one live account, create or update a shared-account ledger.
+
+Track:
+- Master MT5 ticket/order ID
+- Internal ARX trade ID
+- User ID
+- Symbol
+- Side
+- Lot size
+- Entry
+- SL
+- TP
+- Open time
+- Close time
+- Commission
+- Swap
+- Gross P/L
+- Net P/L
+- User allocation impact
+- Trade source
+- Ruby/scanner reason
+- Risk snapshot at entry
+- Risk snapshot at close
+
+Make sure users only see their own trades and P/L unless they are admin.
+
+8. Scanner live trade entry
+Update scanner cards so approved users can place live shared-account trades directly from scanner results.
+
+Scanner card should show:
+- Buy/sell bias
+- Confidence
+- Entry idea
+- Reasonable stop loss
+- Take profit targets
+- Risk/reward ratio
+- Spread warning
+- Volatility warning
+- News/current event warning
+- Ruby explanation summary
+- Trade button
+
+Before placing scanner trade, show confirmation:
+- Symbol
+- Direction
+- Lot size
+- Entry type
+- SL
+- TP
+- Risk amount
+- Reward ratio
+- Live shared-account warning
+- Confirm button
+
+9. Ruby live trading
+Update Ruby so she understands live shared-account mode.
+
+Ruby should be able to answer:
+- Are we connected to live?
+- Is the shared account active?
+- Which users are approved?
+- What trades are open?
+- What is my current P/L?
+- Should I close this trade?
+- Is this a pullback, retracement, continuation, or fakeout?
+- Where should SL/TP be based on the current market?
+- What is the risk/reward?
+- Is the bridge healthy?
+- Is the market too volatile?
+- Are there news/current events affecting this setup?
+
+Ruby can suggest live trades only if:
+- User is approved
+- Shared live mode is enabled
+- Bridge is connected
+- Risk checks pass
+- Confirmation is required before execution
+
+10. Safety and control systems to preserve
+Do not delete or bypass:
+- Kill switches
+- User approval toggles
+- Risk limits
+- Trade confirmation
+- SL/TP validation
+- Trade logs
+- Audit logs
+- Demo/paper mode
+- Admin permissions
+- Bridge health checks
+- Error handling
+- User isolation
+
+11. UI cleanup while implementing
+Keep the UI clean and tabbed.
+
+Admin shared-account tabs:
+- Live Account
+- Approved Users
+- Bridge Health
+- Risk Limits
+- Open Trades
+- Kill Switches
+- Audit Logs
+
+User trading tabs:
+- Place Trade
+- Open Positions
+- Pending Orders
+- SL / TP Manager
+- Risk / Reward
+- Trade History
+- Ruby Review
+
+Scanner tabs:
+- Best Setups
+- Volatility Markets
+- Forex
+- Synthetic Indices
+- Watchlist
+- News Impact
+
+12. Backend live readiness endpoint
+Create or update an endpoint like:
+
+GET /api/admin/live-shared/readiness
+
+Return:
+- tradingMode
+- accountMode
+- sharedLiveEnabled
+- masterBridgeEnabled
+- bridgeConnected
+- heartbeatOk
+- credentialsPresent
+- accountInfoOk
+- tradingPermissionOk
+- killSwitchActive
+- approvedUsersCount
+- openTradesCount
+- errors
+- warnings
+- lastCheckedAt
+
+13. Live connection test endpoint
+Create or update an endpoint like:
+
+POST /api/admin/live-shared/test-connection
+
+It should:
+- Load live shared-account secrets
+- Ping bridge
+- Request account info
+- Request open positions
+- Request supported symbols
+- Return success/failure clearly
+- Store last result for dashboard display
+
+14. Order dry-validation endpoint
+Create or update:
+
+POST /api/trades/live-shared/validate
+
+This validates a live order before sending it.
+
+Return:
+- approved true/false
+- errors
+- warnings
+- adjustedStopLoss if broker stop-level requires more distance
+- marginEstimate
+- riskEstimate
+- rewardEstimate
+- finalOrderPayload
+
+15. Actual execution endpoint
+Create or update:
+
+POST /api/trades/live-shared/execute
+
+Only execute when:
+- validation passes
+- user approval passes
+- global shared live enabled
+- master bridge enabled
+- kill switch off
+- confirmation included
+- bridge connected
+
+16. Final mode switch
+After implementation, set the application default mode to shared live-account mode when the required environment variables are present.
+
+If env vars are missing:
+- Do not crash
+- Show “Live shared account not connected”
+- Keep demo/paper available
+
+Acceptance checks:
+- App does not load directly into dashboard unless already authenticated.
+- Shared live account mode appears in admin dashboard.
+- Live account connection status works.
+- Admin can test live bridge connection.
+- Admin can enable/disable shared live trading.
+- Admin can approve individual users.
+- Approved users can see live shared-account trading controls.
+- Unapproved users cannot place live trades.
+- Users do not need their own MT5 account in shared mode.
+- Trade execution uses the shared live bridge.
+- Trades are logged per user.
+- Users only see their own trades.
+- Admin sees all shared-account trades.
+- SL/TP entry and editing work.
+- Pending orders work.
+- Scanner trade buttons work for approved users.
+- Ruby understands shared live-account mode.
+- Kill switch blocks all live execution.
+- Bridge disconnect blocks all live execution.
+- Risk checks block invalid orders.
+- No duplicate alerts.
+- No broken tabs.
+- No console errors.
+- No backend errors.
+- No secrets are printed to logs or UI.

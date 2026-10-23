@@ -1,0 +1,152 @@
+URGENT QA/FIX GATE — VERIFY AND CORRECT MT5 STOP-LIMIT RELATIONSHIP BEFORE EA/BRIDGE UPGRADE
+
+Pause the EA/bridge pending-order execution upgrade until this is verified.
+
+The previous report says the app was aligned to:
+- BUY_STOP_LIMIT: limit >= trigger
+- SELL_STOP_LIMIT: limit <= trigger
+
+That appears reversed for MetaTrader 5.
+
+Verify against official MT5 stop-limit behavior:
+
+BUY_STOP_LIMIT:
+- Stop trigger / stop level should be above current Ask.
+- Stop-limit price should be below the stop trigger / stop level.
+- This creates a Buy Limit after the stop trigger is reached.
+
+SELL_STOP_LIMIT:
+- Stop trigger / stop level should be below current Bid.
+- Stop-limit price should be above the stop trigger / stop level.
+- This creates a Sell Limit after the stop trigger is reached.
+
+Treat this as a P0 trading-safety correctness issue.
+
+==================================================
+PHASE 1 — INSPECT EVERY STOP-LIMIT RULE
+==================================================
+
+Inspect all places where BUY_STOP_LIMIT and SELL_STOP_LIMIT are defined, validated, documented, tested, or explained.
+
+Check:
+
+1. artifacts/api-server/src/lib/tradeAction/orderTicketValidation.ts
+2. artifacts/api-server/src/lib/tradeAction/orderTypes.ts
+3. artifacts/api-server/src/lib/tradeAction/riskGovernorEnforcement.ts
+4. components/trading/QuickTradeModal.tsx
+5. lib/assistant/tools.ts
+6. lib/assistant/systemPrompt.ts
+7. lib/api-spec/openapi.yaml
+8. Generated typed client/Zod schemas
+9. Any validator tests
+10. Any UI validation helpers
+11. Any AI tool docs
+12. TRADE_TICKET_QA_REPORT.md
+13. TRADE_TICKET_LAYERED_SLICE_REPORT.md
+
+Do not proceed until every stop-limit reference is checked.
+
+==================================================
+PHASE 2 — CORRECT THE RULE IF NEEDED
+==================================================
+
+If the current code says BUY limit >= trigger or SELL limit <= trigger, correct it.
+
+Required canonical MT5 relationship:
+
+BUY_STOP_LIMIT:
+- triggerPrice > currentAsk when live price is available
+- stopLimitPrice < triggerPrice
+- stopLoss < stopLimitPrice
+- takeProfit > stopLimitPrice
+
+SELL_STOP_LIMIT:
+- triggerPrice < currentBid when live price is available
+- stopLimitPrice > triggerPrice
+- stopLoss > stopLimitPrice
+- takeProfit < stopLimitPrice
+
+If broker/symbol rules allow equality, document that clearly and only allow equality if the symbol/MT5 response confirms it. Otherwise default to strict below/above as the safe rule.
+
+This must be a hard backend validation error, not just a warning.
+
+Frontend and backend must agree.
+
+AI docs and assistant explanations must agree.
+
+==================================================
+PHASE 3 — UPDATE TESTS
+==================================================
+
+Update or add validator tests proving:
+
+1. BUY_STOP_LIMIT valid when:
+   - trigger above current Ask
+   - stopLimit below trigger
+   - SL below stopLimit
+   - TP above stopLimit
+
+2. BUY_STOP_LIMIT invalid when:
+   - stopLimit above trigger
+   - stopLimit equal trigger unless broker/symbol support confirms equality
+
+3. SELL_STOP_LIMIT valid when:
+   - trigger below current Bid
+   - stopLimit above trigger
+   - SL above stopLimit
+   - TP below stopLimit
+
+4. SELL_STOP_LIMIT invalid when:
+   - stopLimit below trigger
+   - stopLimit equal trigger unless broker/symbol support confirms equality
+
+5. Backend rejects the same invalid tickets the UI rejects.
+
+6. AI explanations describe the same rule.
+
+==================================================
+PHASE 4 — UPDATE REPORTS / DOCS
+==================================================
+
+Update the QA report to clearly state:
+
+- The previous stop-limit rule was reviewed.
+- Whether it was correct or corrected.
+- Final MT5 rule now enforced.
+- Files changed.
+- Tests proving the rule.
+
+If the previous report claimed the opposite rule, amend it so future phases do not build the EA/bridge on the wrong assumption.
+
+==================================================
+PHASE 5 — RUN CHECKS
+==================================================
+
+Run:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- validator unit sweep
+- any trade-ticket validation tests
+- API/server smoke tests if available
+
+Fix all real errors.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Report:
+
+1. Whether the rule was reversed before this pass.
+2. Final enforced BUY_STOP_LIMIT relationship.
+3. Final enforced SELL_STOP_LIMIT relationship.
+4. Files changed.
+5. Tests run.
+6. Validator pass count.
+7. Typecheck result.
+8. CI guard result.
+9. Confirmation frontend/backend/AI docs all match.
+10. Whether it is now safe to continue to the EA/bridge pending-order execution upgrade.
+
+Do not continue to the EA/bridge upgrade until this stop-limit rule is correct and tests are green.

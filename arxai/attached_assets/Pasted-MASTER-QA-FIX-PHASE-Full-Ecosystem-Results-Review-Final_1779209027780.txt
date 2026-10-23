@@ -1,0 +1,237 @@
+MASTER QA/FIX PHASE — Full Ecosystem Results Review + Final Repair Gate
+
+Use the current codebase and the report from the previous full ecosystem audit.
+
+Goal:
+Review the full ARX AI ecosystem audit results, fix every remaining critical/high blocker, confirm all major systems work together, and produce a final readiness status for the 10-user private beta / operator-funded live pilot.
+
+Important:
+Do not add new major features.
+Do not rebuild unrelated systems.
+Do not fire live trades during QA.
+Do not create real live bridge commands during QA.
+Do not enable public live trading.
+Do not bypass safety gates.
+Do not hide failed tests.
+Do not silence errors without fixing the cause.
+
+1. Review the previous ecosystem audit report
+Inspect:
+- feature matrix
+- missing features
+- broken features
+- out-of-place features
+- critical blockers
+- high blockers
+- medium issues
+- low issues
+- tests run
+- failed tests
+- skipped tests
+- no-live-command evidence
+- arx_live_commands before/after count
+
+Classify everything into:
+- Must fix now
+- Safe to defer
+- Needs manual QA
+- Needs legal/operator review
+- Post-beta improvement
+
+2. Fix all critical/high blockers
+Fix any issue involving:
+- user privacy leak
+- admin access leak
+- invite gate bypass
+- beta cap bypass
+- live safety gate bypass
+- Ruby leaking user/admin/secret data
+- voice bypassing confirmation
+- scanner-to-trade bypassing confirmation
+- one-click safety failure
+- kill switch failure
+- close-only failure
+- force-review failure
+- queue/concurrency/idempotency failure
+- shared master/operator-funded ledger mismatch
+- watchlist/alert cross-user leak
+- saved data cross-user leak
+- audit/export secret leak
+- production live defaulting ON
+- raw secret exposure
+- live command created unexpectedly
+
+Do not move forward if any of these remain unresolved.
+
+3. Save feature verification
+Verify saved features specifically:
+- saved symbols
+- saved watchlist
+- saved scanner selections
+- saved market notes
+- saved trade ideas
+- saved Ruby memory
+- saved chat history
+- saved alerts
+- saved calendar events
+- saved user preferences
+- saved notification preferences
+- saved account mode
+- saved risk profile
+
+Rules:
+- persists after refresh/login
+- clears from UI on logout
+- scoped to authenticated userId
+- User A cannot see User B saved items
+- Ruby only references current user saved data
+
+Fix broken saved-feature behavior.
+
+4. Ruby intelligence final check
+Verify Ruby can:
+- explain the full app
+- explain every account mode
+- explain onboarding status
+- explain why live trading is blocked
+- explain scanner results
+- explain watchlist/alerts
+- explain calendar impact
+- explain trade ticket risk
+- explain open trade context
+- explain queue/blocked/NEEDS_REVIEW states
+- explain operator-funded pilot status
+- remember user preferences safely
+- clear memory when requested
+
+Ruby must not:
+- promise profits
+- claim legal approval
+- expose another user
+- expose admin-only data to normal users
+- expose secrets
+- claim a trade fired unless confirmed
+
+Fix any Ruby context, memory, or prompt boundary issue.
+
+5. Scanner/watch calendar/alert final check
+Verify:
+- scanner direct symbol works
+- grouped scanner works
+- selected market explanation works
+- scanner highlights are readable
+- scanner-to-trade opens ticket only
+- watchlist works
+- user can save/remove watched symbols
+- alert calendar works or missing parts are clearly listed
+- alerts trigger privately
+- alerts do not spam
+- economic calendar connects to Ruby/scanner
+- impact calendar connects to Ruby/scanner
+- high-impact events can create warnings
+- user can dismiss alerts
+- notification center receives alerts privately
+
+Fix broken/missing alert wiring if already intended by current architecture.
+
+6. Admin/user/invite final check
+Verify:
+- user login works
+- admin login works
+- logout clears cache
+- invite-gated registration works
+- valid invite works
+- invalid/revoked/expired/used invite blocks
+- 10-user beta cap is server-enforced
+- 11th user blocked or waitlisted
+- admin can create/copy/revoke invites
+- non-admin cannot access invite/admin APIs
+- invite events are audited
+- no invite codes/hashes leak publicly
+
+7. Trading safety final check
+Verify:
+- demo cannot create live command
+- personal MT5 stays separate
+- operator-funded live pilot requires all gates
+- global live flag required
+- compliance flag required
+- disclosure required
+- admin approval required
+- allocation required
+- risk profile required
+- bridge health required
+- shared master mapping required
+- EA live enabled / not read-only required
+- kill switch respected
+- close-only respected
+- force-review respected
+- queue pause respected
+- exposure reservation required
+- cooldown required
+- confirmation required
+- one-click live OFF by default
+
+8. Master QA script
+Run or create/update:
+
+npm run qa:arx-full-ecosystem
+
+It must:
+- snapshot arx_live_commands before
+- run auth/invite tests
+- run user isolation tests
+- run Ruby intelligence tests
+- run Ruby voice guardrail tests
+- run scanner/watchlist/alert tests
+- run trade ticket safety tests
+- run queue/concurrency tests
+- run admin protection tests
+- run audit/export masking tests
+- run production lockdown tests
+- run secret leak probes
+- snapshot arx_live_commands after
+- fail if count changes unexpectedly
+- output final PASS/FAIL summary
+
+9. Final readiness report
+Create or update:
+
+ARX_FULL_ECOSYSTEM_READINESS_REPORT.md
+
+Include:
+- overall PASS/FAIL
+- critical blockers
+- high blockers
+- medium issues
+- low issues
+- fixed items
+- deferred items
+- manual QA items
+- Ruby intelligence status
+- scanner/watch/calendar alert status
+- saved feature status
+- admin/user/invite status
+- live safety status
+- mobile status
+- beta/live pilot readiness
+- no-live-command evidence
+- arx_live_commands before
+- arx_live_commands after
+- final recommendation:
+  - Ready for 10-user demo beta
+  - Ready for operator-funded live pilot setup
+  - Not ready
+
+10. Return
+Return:
+- overall PASS/FAIL
+- what was fixed
+- files changed
+- tests run
+- master QA script result
+- remaining blockers
+- remaining risks
+- readiness recommendation
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

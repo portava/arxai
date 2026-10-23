@@ -1,0 +1,371 @@
+T018 — DO NOT STOP UNTIL MT5 ACTUALLY EXECUTES A LIVE TRADE
+
+Current issue:
+After pressing Confirm in ARX, the UI says:
+
+“SELL VOLATILITY 75 (1S) INDEX sent”
+“Routed through the gated trade pipeline.”
+
+But no real live trade appears in MT5.
+
+This is not success.
+
+ARX routed/sent/queued/confirmed UI is not enough. The task is not complete until MT5 actually executes a live trade and returns a real MT5 ticket/order/position/deal confirmation.
+
+Product direction:
+ARX AI is LIVE-first.
+Do not use Demo.
+Do not use Paper Trading.
+Do not use fake execution.
+Do not use simulated trade data.
+Do not fabricate MT5 tickets.
+Do not claim success based on ARX UI toast.
+Do not claim success based on “sent,” “routed,” “queued,” or “command created.”
+Do not claim success based on backend acceptance only.
+Do not mark complete until MT5 confirms live execution.
+
+This is not a rebuild.
+Fix the existing live execution wiring in place.
+Do not weaken permissions, allocation, kill switch, freeze, live approval, account-type validation, symbol validation, lot validation, stop validation, or MT5 confirmation rules.
+Do not bypass safety gates.
+Do not reset live broker execution config.
+
+PRIMARY GOAL:
+Find why ARX says the trade was sent/routed but MT5 does not actually open the live trade. Fix the exact broken handoff and prove with one real MT5-confirmed live trade that opens and then closes.
+
+IMPORTANT COMPLETION RULE:
+The task is not complete until ALL of these are true:
+
+1. ARX sends one live trade request.
+2. The request reaches the bridge/EA.
+3. MT5 OrderSend or equivalent real broker execution is called.
+4. MT5 returns a real success response.
+5. A real MT5 ticket/order/position/deal ID is captured.
+6. ARX stores that MT5 ID.
+7. The open trade appears in ARX with real entry/price/P&L data.
+8. The trade is visible in MT5.
+9. The trade is closed through ARX.
+10. MT5 confirms the close.
+11. ARX records the close.
+12. Final report proves the full loop.
+
+“Routed through the gated trade pipeline” is only a pending/queued state. It must not be reported as successful execution.
+
+PART 1 — Reproduce the exact current false-success path
+
+Use the current owner/admin LIVE session.
+
+Reproduce the same flow:
+
+1. Open the running app preview.
+2. Go to Scanner.
+3. Select Volatility 75 (1s) Index / V75 if that is the current selected symbol.
+4. Draft SELL.
+5. Press Confirm.
+6. Capture the UI toast:
+    “SELL VOLATILITY 75 (1S) INDEX sent”
+    “Routed through the gated trade pipeline.”
+7. Confirm whether MT5 actually opened the trade.
+8. Capture ARX command record.
+9. Capture bridge dispatch logs.
+10. Capture EA logs.
+11. Capture MT5 Experts/Journal logs.
+12. Capture MT5 open positions before/after.
+13. Capture ARX live positions before/after.
+14. Capture arx_live_commands before/after.
+15. Capture any retcode/comment/error.
+
+Do not stop at frontend toast.
+Trace the request until it either reaches MT5 or fails before MT5.
+
+PART 2 — Separate “sent” from “executed”
+
+Fix wording and state handling.
+
+ARX must clearly distinguish:
+
+1. Draft created
+2. Confirm clicked
+3. Backend accepted
+4. Sent to bridge
+5. Received by EA
+6. Submitted to MT5
+7. Executed by MT5
+8. Synced into ARX ledger
+9. Visible in chart/trade page
+10. Closed by MT5
+
+The UI must not imply execution when only backend/bridge routing happened.
+
+Replace misleading success toast:
+
+Current:
+“SELL VOLATILITY 75 (1S) INDEX sent”
+“Routed through the gated trade pipeline.”
+
+Better:
+
+1. “Order sent to bridge — waiting for MT5 confirmation.”
+2. “Order pending: MT5 has not confirmed execution yet.”
+3. “Order executed: MT5 ticket #[ticket].”
+4. “Order rejected by MT5: [clean reason].”
+5. “Order failed: command did not reach MT5.”
+
+Only show “executed” or “trade placed” after MT5 returns a real success response.
+
+PART 3 — Find the exact handoff failure
+
+Trace the live order through each layer:
+
+1. Frontend Confirm button.
+2. Frontend request payload.
+3. Backend live order endpoint.
+4. Live gate validation.
+5. ARX command creation.
+6. Command status after creation.
+7. Bridge dispatch call.
+8. Bridge connection ID used.
+9. EA command polling/subscription.
+10. EA command receipt.
+11. MT5 OrderSend call.
+12. MT5 retcode/comment.
+13. Bridge acknowledgement.
+14. Backend status update.
+15. Ledger position creation/update.
+16. Trade page query.
+17. Scanner/chart overlay query.
+
+For each layer, report:
+
+1. reached: yes/no
+2. timestamp
+3. ID used
+4. status
+5. error, if any
+
+Find the first layer where the chain stops.
+
+Likely failure areas to inspect:
+
+1. ARX creates command but bridge never picks it up.
+2. Bridge picks up command but sends to wrong connection.
+3. EA heartbeat healthy but EA is not polling/receiving commands.
+4. Command symbol does not match broker symbol.
+5. V75 display symbol maps incorrectly to MT5 symbol.
+6. MT5 rejects but retcode is not returned to ARX.
+7. Command remains pending indefinitely.
+8. ARX creates position record before MT5 confirms.
+9. Trade page shows unsynced ARX records as live trades.
+10. Bridge only supports Forex symbols, not Deriv synthetic indices.
+11. V75 requires a different symbol name, filling mode, or volume rules.
+12. Algo trading / EA setting allows heartbeat but not trade dispatch.
+
+PART 4 — Verify whether V75 is truly executable through MT5 bridge
+
+The current UI uses:
+Volatility 75 (1s) Index / V75
+
+Verify:
+
+1. Exact ARX symbol ID.
+2. Exact display symbol.
+3. Exact broker/MT5 symbol name.
+4. Whether the symbol exists in MT5 Market Watch.
+5. Whether it is visible and selected in MT5.
+6. Whether symbol trade mode allows trading.
+7. min lot
+8. max lot
+9. lot step
+10. digits
+11. tick size
+12. stops level
+13. freeze level
+14. filling mode
+15. market open status
+16. spread
+17. whether EA/bridge supports this symbol
+18. whether connected broker account supports this synthetic index
+
+If V75 is not truly executable through the connected MT5 bridge:
+
+1. Do not show it as live-executable.
+2. Do not allow Confirm live on it.
+3. Show clean message:
+    “V75 is not currently executable through this MT5 bridge.”
+4. Keep it as watch/analysis only if desired.
+5. Use the approved executable live symbol for proof, such as EURUSD.
+6. Do not claim V75 live execution works.
+
+If V75 is executable:
+
+1. Fix symbol mapping/rules/bridge handoff until MT5 executes it.
+2. Prove with one V75 live trade.
+
+PART 5 — Fix command status and reconciliation
+
+ARX command status must reflect reality.
+
+Required status model:
+
+1. DRAFT
+2. VALIDATED
+3. SENT_TO_BRIDGE
+4. RECEIVED_BY_EA
+5. SUBMITTED_TO_MT5
+6. MT5_EXECUTED
+7. MT5_REJECTED
+8. SYNCED_TO_LEDGER
+9. CLOSE_SENT
+10. CLOSED_BY_MT5
+11. FAILED
+12. EXPIRED
+
+If the current system does not track all of these, add the minimum needed to stop false success:
+
+1. distinguish SENT_TO_BRIDGE from MT5_EXECUTED
+2. capture MT5 ticket on execution
+3. capture MT5 rejection reason
+4. expire stuck pending commands
+5. reconcile ARX records that never became real MT5 positions
+
+PART 6 — Fix Trade page display
+
+The Trade page must not show unsynced commands as open live trades.
+
+Rules:
+
+1. Show confirmed MT5 positions under “My Live Trades.”
+2. Show commands waiting for MT5 under “Pending broker confirmation.”
+3. Show rejected/failed commands separately or as clean toast/history.
+4. Do not show Entry/Now/P&L blanks as if they are real open trades.
+5. If no MT5 ticket exists, it is not a confirmed live trade.
+6. If MT5 has no matching position, do not show it as open.
+7. Preserve audit trail.
+
+PART 7 — Execute one real live trade after repair
+
+After the handoff issue is fixed, run one real live trade.
+
+Preferred:
+
+1. Use V75 only if proven executable.
+2. Otherwise use EURUSD or another confirmed executable LIVE symbol.
+
+Rules:
+
+1. LIVE only.
+2. owner/admin only.
+3. smallest broker-allowed lot, such as 0.01.
+4. do not let Ruby choose direction.
+5. one trade only.
+6. close immediately after confirmation.
+
+Before execution:
+
+1. record arx_live_commands count/max_id
+2. record ARX open positions
+3. record MT5 open positions
+4. record owner allocation
+5. record bridge connection ID
+6. record selected symbol
+7. record symbol mapping
+8. record all live gates
+
+Execution:
+
+1. Press real Confirm once.
+2. Confirm frontend shows pending, not executed.
+3. Confirm backend accepts.
+4. Confirm bridge receives.
+5. Confirm EA receives.
+6. Confirm MT5 OrderSend is called.
+7. Confirm MT5 success retcode.
+8. Capture MT5 ticket/order/position/deal ID.
+9. Confirm ARX stores MT5 ID.
+10. Confirm Trade page shows Entry/Now/P&L.
+11. Confirm Scanner/chart shows the trade.
+12. Confirm Ruby explains the live trade.
+13. Close through ARX.
+14. Confirm MT5 close success.
+15. Confirm ARX marks closed.
+16. Confirm open positions return to previous count.
+17. Do not open a second trade.
+
+If trade fails:
+
+1. Do not mark complete.
+2. Report exact layer and reason.
+3. Fix app-side issue if app-side.
+4. If broker/symbol external limitation, prove it and use an executable live symbol.
+5. Continue until one real MT5-confirmed trade opens/closes.
+
+PART 8 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. live-readiness gate check
+5. bridge dispatch test
+6. EA command receipt test
+7. symbol mapping test
+8. command status transition test
+9. pending command timeout/reconcile test
+10. Trade page display test
+11. Scanner smoke test
+12. live single-confirm test
+13. admin diagnostics smoke test
+
+PART 9 — Final report required
+
+Final report must include:
+
+1. exact reason ARX said “sent/routed” but MT5 did not execute
+2. first broken layer in the chain
+3. whether command reached bridge
+4. whether command reached EA
+5. whether MT5 OrderSend was called
+6. MT5 retcode/comment, if any
+7. whether V75 is truly executable through current bridge
+8. if V75 not executable, exact reason
+9. symbol used for final proof trade
+10. symbol mapping
+11. files changed
+12. command status changes
+13. Trade page display changes
+14. improved toast/user messaging
+15. arx_live_commands before count/max_id
+16. ARX open positions before
+17. MT5 open positions before
+18. MT5 ticket/order/position/deal ID
+19. open price
+20. close price
+21. open time
+22. close time
+23. P/L
+24. ARX ledger verification
+25. Trade page Entry/Now/P&L verification
+26. Scanner/chart verification
+27. Ruby explanation verification
+28. arx_live_commands after count/max_id
+29. ARX open positions after
+30. MT5 open positions after
+31. confirmation only one trade opened
+32. confirmation trade closed
+33. confirmation no Demo/Paper/fake execution used
+34. confirmation no safety gate bypassed
+35. health:workflows result
+36. typecheck result
+37. ci:guards result
+38. remaining risks
+
+Completion standard:
+This task is complete only when MT5 actually executes one live trade, ARX captures the real MT5 ticket/order/position/deal ID, the trade appears with Entry/Now/P&L, and the trade closes successfully through ARX with MT5 confirmation.
+
+Do not complete based on “sent.”
+Do not complete based on “routed.”
+Do not complete based on “queued.”
+Do not complete based on ARX-only command rows.
+Do not complete based on UI toast.
+MT5 confirmation is required.

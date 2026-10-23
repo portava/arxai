@@ -1,0 +1,259 @@
+You confirmed the prior audit found missing readiness/onboarding features. Now you are authorized to BUILD IN the missing features, but do it safely and incrementally.
+
+IMPORTANT SAFETY RULES:
+- Do NOT remove the existing HARD PAPER_ONLY / CI guard protections.
+- Do NOT enable live trading by default.
+- Live trading must remain blocked unless every required live gate passes.
+- Do NOT expose secrets, API keys, broker credentials, MT5 master account credentials, tokens, or env values to the frontend or AI response surfaces.
+- Do NOT rebuild the whole app.
+- First inspect what already exists, then adjust and extend the current architecture.
+- Preserve working UI, routing, auth, MT5 bridge logic, and CI guards.
+
+GOAL:
+Complete the missing ARX AI trading readiness/onboarding system so each user has a clear setup state before trading, demo trading, shared-master MT5 allocation, user-owned MT5 connection, or live approval.
+
+PHASE 1 — Inspect Existing Code First
+Before editing, inspect and report the current files/routes/components related to:
+- onboarding
+- readiness
+- MT5 bridge
+- trading engine
+- auth/session/user identity
+- dashboard cards
+- admin pages/routes
+- AI tool registry
+- CI guard scripts
+- mobile/iPhone Safari layout
+
+Find existing files before creating new ones. Reuse existing structures wherever possible.
+
+PHASE 2 — Add Per-User Trading Readiness Engine
+Create or extend a centralized readiness engine that evaluates readiness PER USER, not globally.
+
+Add a 14-status setup/readiness model covering at minimum:
+
+1. user_authenticated
+2. profile_complete
+3. risk_profile_complete
+4. trading_disclaimer_accepted
+5. paper_only_guard_active
+6. paper_session_available
+7. mt5_bridge_connected
+8. mt5_heartbeat_recent
+9. account_mode_selected
+10. user_owned_mt5_ready
+11. shared_master_mt5_ready
+12. demo_trading_ready
+13. live_account_verified
+14. admin_live_approval_granted
+
+Each status should return:
+- id
+- label
+- status: pass | fail | warning | blocked | not_required
+- requiredFor: paper | demo | live | user_owned_mt5 | shared_master_mt5
+- blockerReason
+- userFriendlyExplanation
+- nextStep
+- adminOnly boolean if needed
+- lastCheckedAt
+
+The engine must support two routing modes:
+
+A) USER_OWNED_MT5
+- User connects their own MT5 account/bridge.
+- Demo readiness requires user bridge heartbeat and demo account validation.
+- Live readiness requires live disclosure, verified live account, admin approval, and valid routing.
+
+B) SHARED_MASTER_MT5
+- Users do not connect their own MT5.
+- System allocates or maps the user to a shared master/demo/paper allocation.
+- Demo readiness requires virtual_trading_account or shared allocation readiness.
+- Live readiness still requires disclosure + admin approval + live-account gating.
+- No user should affect another user’s readiness.
+
+PHASE 3 — Fix Per-User Auth Wiring
+Inspect current route handlers. Any readiness/onboarding/trading handler using _req or ignoring authenticated user must be fixed.
+
+Every readiness and onboarding route must resolve the actual current user from the app’s auth/session system.
+
+Do not allow anonymous/global mutation of readiness state.
+
+Add safe fallback behavior:
+- If user is not authenticated, return unauthorized or a blocked readiness result.
+- Never use a hardcoded default user for production logic.
+- Test that User A readiness does not modify or expose User B readiness.
+
+PHASE 4 — Add Readiness API Endpoints
+Create or complete backend endpoints for:
+
+GET /api/readiness/me
+Returns the current user’s full readiness scorecard.
+
+GET /api/readiness/me/blockers
+Returns only current blockers and next steps.
+
+GET /api/onboarding/me/progress
+Returns percent complete, current stage, completed steps, missing steps.
+
+POST /api/onboarding/me/accept-disclosure
+Stores user acceptance of trading/live-risk disclosure.
+
+POST /api/onboarding/me/account-mode
+Stores selected routing mode:
+- USER_OWNED_MT5
+- SHARED_MASTER_MT5
+
+Admin endpoints:
+GET /api/admin/readiness/users
+Returns all users’ readiness summaries for admin dashboard.
+
+POST /api/admin/readiness/users/:userId/approve-live
+Allows admin to approve live trading only after required gates are satisfied.
+
+POST /api/admin/readiness/users/:userId/revoke-live
+Allows admin to revoke live trading permission.
+
+All admin endpoints must require admin permission.
+
+PHASE 5 — Add AI Readiness Tools
+Add the 4 AI readiness tools that the audit said are missing:
+
+1. getMyTradingReadiness
+- Returns the user’s setup/readiness state.
+- Must not expose secrets.
+- Must explain whether user can paper/demo/live trade.
+
+2. explainReadinessBlockers
+- Explains why a user is blocked.
+- Must translate technical blockers into simple steps.
+
+3. listMyOnboardingSteps
+- Shows completed and missing onboarding/setup steps.
+
+4. getOnboardingProgress
+- Shows percentage complete, current stage, and next best action.
+
+The AI should answer questions like:
+- “Am I ready to trade?”
+- “Why can’t I connect MT5?”
+- “What do I still need to finish?”
+- “Can I live trade yet?”
+- “Am I on user-owned MT5 or shared master MT5?”
+
+AI must never reveal:
+- secret keys
+- master MT5 credentials
+- broker tokens
+- server env values
+- raw internal auth/session tokens
+
+PHASE 6 — Dashboard Trading Setup Readiness Card
+The audit found the existing ReadinessScoreCard is mental-state related, not setup-state related.
+
+Add a separate dashboard card called:
+
+Trading Setup Readiness
+
+It should show:
+- setup percentage
+- current account mode
+- paper/demo/live readiness
+- MT5 bridge heartbeat status
+- blocker count
+- next step
+- button: View Setup Checklist
+- button: Ask AI Why I’m Blocked
+
+Do not remove the mental-state readiness card if it is used elsewhere. This must be a separate trading setup card.
+
+PHASE 7 — Onboarding / Setup Checklist UI
+Create or update the onboarding/readiness page so the user can clearly see the 14-status checklist.
+
+The page should show:
+- Completed
+- Needs Attention
+- Blocked
+- Not Required
+- Next Best Step
+
+It should support both:
+- User-Owned MT5 setup
+- Shared Master MT5 setup
+
+The user should be able to select account mode, but live mode must stay blocked unless disclosure + admin approval + live account gate pass.
+
+PHASE 8 — Admin Readiness Dashboard
+Add an admin readiness page showing all users with:
+- user name/email/id
+- selected MT5 mode
+- readiness percent
+- paper/demo/live readiness
+- heartbeat status
+- disclosure accepted
+- live account verified
+- admin approval status
+- actions to approve/revoke live access
+
+Admin approval must be impossible if the user has not completed required disclosure/live gating.
+
+PHASE 9 — Add Missing Tests
+Create the missing test file:
+
+scripts/src/phase-onboarding-test.ts
+
+Also add the missing package script if appropriate:
+
+test:onboarding
+
+Tests must verify:
+- 14 readiness statuses exist
+- per-user readiness is isolated
+- USER_OWNED_MT5 readiness path works
+- SHARED_MASTER_MT5 readiness path works
+- live trading is blocked without disclosure
+- live trading is blocked without admin approval
+- live trading is blocked without valid live routing
+- AI readiness tools exist and return sanitized responses
+- no secrets are exposed
+- dashboard setup card exists
+- admin readiness endpoint exists
+- unauthenticated readiness request is blocked
+- mobile/iPhone Safari layout does not hide key readiness actions
+
+PHASE 10 — Mobile/iPhone Safari Verification
+Run a mobile viewport check for the readiness/onboarding UI.
+
+Specifically verify:
+- no content is hidden under bottom nav
+- readiness tables/cards do not overflow horizontally
+- admin table is usable on mobile or collapses into cards
+- buttons are tappable
+- AI readiness actions are visible
+- setup checklist is readable
+
+PHASE 11 — QA Gate
+After implementation, run:
+
+- typecheck
+- lint if available
+- all existing CI guard tests
+- onboarding readiness test
+- route tests if available
+- build
+- mobile viewport check
+
+Then provide a final report with:
+
+1. Files changed
+2. Endpoints added/updated
+3. AI tools added
+4. UI pages/cards added
+5. Tests added
+6. What passed
+7. What failed
+8. Any remaining blockers
+9. Confirmation that PAPER_ONLY / live-trading safety guard still passes
+10. Confirmation that secrets are not exposed
+
+Do not move on until the readiness/onboarding system passes QA.

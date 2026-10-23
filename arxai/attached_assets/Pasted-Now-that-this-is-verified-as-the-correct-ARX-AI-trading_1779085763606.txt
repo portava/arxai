@@ -1,0 +1,93 @@
+Now that this is verified as the correct ARX AI trading app project, fix the Demo Execution Test Panel numeric command ID bug.
+
+Problem:
+Browser crashed with:
+c.id.slice is not a function
+
+Also:
+Confirm refused with COMMAND_NOT_FOUND.
+
+Cause:
+demo_commands.id is a numeric serial ID, but frontend code treats it like a string ID. The modal may also be using a stale/display/temp ID instead of the real backend command id.
+
+Do NOT unlock live trading.
+Do NOT enable live execution.
+Do NOT enable shared MT5 routing.
+Do NOT enable live auto-close.
+Do NOT expose bridge tokens, broker passwords, account passwords, session secrets, cookies, API keys, hashes, or private values.
+Do NOT send any MT5 command automatically during this fix.
+
+Fix:
+
+1. Frontend numeric ID handling
+- Search the ARX frontend for:
+  c.id.slice
+  command.id.slice
+  .id.slice(
+  demo command display ID helpers
+- Replace unsafe usage with a safe display helper:
+  String(id).slice(...)
+- Numeric IDs must work in:
+  recent demo command list
+  selected command state
+  confirmation modal
+  confirm action
+  dispatch action
+  refresh command status
+
+2. Draft → confirm → dispatch flow
+- Ensure Draft demo order stores the exact backend numeric command id.
+- Confirmation modal must use the real backend command id.
+- Confirm endpoint must target the existing command row.
+- Dispatch endpoint must target the confirmed existing command row.
+- Do not use temporary IDs or display IDs for API calls.
+
+3. Backend route parsing
+- Verify confirm/dispatch routes parse numeric command IDs safely.
+- Use Number(req.params.id) or equivalent safe parser if DB id is numeric.
+- Reject invalid IDs cleanly.
+- Lookup must include authenticated userId.
+- Wrong user must return COMMAND_NOT_FOUND or 403/404.
+
+4. Stale modal safety
+- If the page reloads after a runtime crash, close stale confirmation state.
+- Refetch recent demo commands after draft, confirm, and dispatch.
+- Do not dispatch from stale command state.
+
+5. Preserve all gates
+- Dispatch still requires:
+  armed=true
+  VERIFIED_DEMO=true
+  accountType=demo
+  EA v1.26+
+  heartbeatFresh=true
+  user confirmation
+  risk/duplicate checks
+- Live trading remains BLOCKED.
+- Shared MT5 routing remains BLOCKED.
+- Live auto-close remains ALERT_ONLY.
+
+Run:
+1. Typecheck
+2. Full CI guard suite
+3. Demo command numeric ID test
+4. Draft command creates row test
+5. Confirm command by numeric id test
+6. Dispatch command by numeric id test
+7. COMMAND_NOT_FOUND regression test
+8. Frontend Demo Execution Test Panel smoke test
+9. Secret leakage scan
+10. Live trading locked regression
+11. Shared MT5 routing blocked regression
+12. Safety-envelope regression
+
+End with:
+- File that caused c.id.slice error
+- Files changed
+- Whether draft → confirm → dispatch now uses numeric IDs correctly
+- Whether COMMAND_NOT_FOUND is fixed
+- Confirmation no MT5 command was sent during the fix
+- Confirmation live trading remains BLOCKED
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation live auto-close remains ALERT_ONLY
+- Final answer: DEMO COMMAND FLOW FIXED or NOT READY, with reasons.

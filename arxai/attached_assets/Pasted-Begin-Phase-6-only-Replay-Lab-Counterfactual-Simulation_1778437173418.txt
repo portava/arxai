@@ -1,0 +1,89 @@
+Begin Phase 6 only: Replay Lab + Counterfactual Simulation.
+
+Do not build Portfolio Manager, Evolution, or unrestricted live auto-execution yet.
+
+Goal:
+Create a replay and simulation system that learns from executed trades, blocked trades, missed setups, user overrides, agent votes, execution conditions, Trader DNA state, and market conditions.
+
+Build:
+
+/src/domain/replay-lab/
+  replay.types.ts
+  replayEngine.ts
+  candlePlayback.engine.ts
+  marketSnapshotReplay.engine.ts
+  agentReplay.engine.ts
+  judgeReplay.engine.ts
+  blockedTradeReplay.engine.ts
+  missedTradeReplay.engine.ts
+  overrideReplay.engine.ts
+  executionReplay.engine.ts
+  traderDNAReplay.engine.ts
+  globalStateReplay.engine.ts
+  whatIfEngine.ts
+  replayScoring.engine.ts
+  lessonGenerator.engine.ts
+
+/src/domain/replay-lab/simulation/
+  decisionTreeReplay.engine.ts
+  alternatePath.engine.ts
+  counterfactualSimulation.engine.ts
+  survivalReplay.engine.ts
+  replayStressInjection.engine.ts
+
+/src/domain/replay-lab/analysis/
+  replayCluster.engine.ts
+  replayPattern.engine.ts
+  replayRiskHeatmap.engine.ts
+  lessonConfidence.engine.ts
+  decisionSequenceScoring.engine.ts
+  regretRelief.engine.ts
+
+Rules:
+- Replay Lab cannot place trades.
+- Replay Lab is simulation and learning only.
+- Every replay must reconstruct:
+  - candle sequence
+  - market conditions
+  - agent votes
+  - judge verdict
+  - execution conditions
+  - Trader DNA state
+  - cognitive state
+  - global state
+  - risk state
+  - Control Tower mode
+  - final outcome
+- Replay must support branching alternate decision paths.
+- Replay scoring must prioritize survival, consistency, drawdown control, discipline quality, expectancy, and execution realism — not only profit.
+- Replay stress injection must simulate spread spikes, slippage, latency, fake breakouts, volatility shocks, and delayed execution.
+- Replay clustering must group similar wins, losses, execution failures, overrides, and behavioral states.
+- Lesson confidence must measure reliability before reinforcing learning.
+- RegretRelief engine must track blocked losses avoided, blocked winners missed, stressful trades, confidence-damaging trades, and discipline-improving trades.
+- Replay results can update Agent Performance, Trader DNA, Confidence Calibration, and Validation Readiness.
+- All replay paths, simulations, lessons, and scoring outputs must be logged into the Black Box Vault.
+- Keep all previous phase tests passing.
+- No unrestricted live auto-execution yet.
+
+Required outputs:
+- replaySummary
+- replayScore
+- whatIfComparisons
+- alternatePathResults
+- lessonSummary
+- lessonConfidenceScore
+- decisionQualityDelta
+- expectancyDelta
+- survivalDelta
+- regretReliefSummary
+- plainEnglishExplanation
+
+After Phase 6, stop and report:
+1. Files created
+2. Replay systems implemented
+3. Counterfactual simulations implemented
+4. Stress injection implemented
+5. Replay analysis implemented
+6. Lesson generation implemented
+7. Tests passed/failed
+8. Whether Phase 7 is safe to begin

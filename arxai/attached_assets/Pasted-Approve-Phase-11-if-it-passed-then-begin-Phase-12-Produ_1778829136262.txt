@@ -1,0 +1,303 @@
+Approve Phase 11 if it passed, then begin Phase 12: Production readiness, full-system health audit, security hardening, launch blocker cleanup, and final QA for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT place live trades.
+- Do NOT enable live execution.
+- Keep liveLocked = true.
+- Keep READ_ONLY / PAPER_ONLY active.
+- Keep AllowOrderExecution = false.
+- Do NOT touch MT5 EA .mq5 files unless explicitly required and approved.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT redesign unrelated UI.
+- Do NOT add fake demo data to personal dashboards.
+- Do NOT move to Phase 13 until Phase 12 QA passes.
+
+Current status:
+- Phase 1 identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Phase 3 per-user MT5 connections/trading sessions: PASS.
+- Phase 4 per-user MT5 command routing: PASS.
+- Phase 5 paper trades, journal, calendar: expected PASS.
+- Phase 6 AI review/coaching: expected PASS.
+- Phase 7 playbook/checklist: expected PASS.
+- Phase 8 Risk Governor: expected PASS.
+- Phase 9 dashboard intelligence: expected PASS.
+- Phase 10 notifications/activity timeline: expected PASS.
+- Phase 11 reports/exports: expected PASS.
+- Now perform Phase 12: make the app production-ready and clean up launch blockers.
+
+Main goal:
+ARX AI should be safe, stable, user-scoped, launch-ready, and honest on first load. The app should not show fake information, should not leak data between users, should not expose secrets, should not pretend MT5 is connected when it is not, and should not allow live execution until explicitly approved in a future phase.
+
+Phase 12A — Full route and feature inventory:
+Audit every backend route and frontend feature.
+
+Create a table:
+- Feature
+- Backend routes
+- Frontend page/component
+- User-scoped? yes/no
+- Auth required? yes/no
+- Uses real data? yes/no
+- Fake/global data removed? yes/no
+- Safety risk? yes/no
+- Fix applied
+
+Include:
+- auth/login/register/logout/me
+- dashboard intelligence
+- MT5 connections
+- MT5 heartbeat/status
+- MT5 command polling/results
+- trading sessions
+- paper trades
+- trade journal
+- calendar/performance
+- AI trade reviews
+- coaching plan
+- playbooks
+- pre-trade checklist
+- Risk Governor
+- notifications
+- activity timeline
+- reports/exports
+- AI assistant popup
+- account/settings
+- any admin/system/diagnostic routes
+
+Fix any route that returns user-owned data without req.authUser.id scoping.
+
+Phase 12B — Security hardening:
+Audit and fix security issues.
+
+Check:
+1. Secrets are never sent to frontend.
+2. Raw bridge tokens are never returned after creation.
+3. Token hashes are never exported or displayed.
+4. Report exports exclude secrets.
+5. Notifications exclude secrets.
+6. Activity timeline excludes secrets.
+7. MT5 bridge logs do not print tokens.
+8. Invalid/revoked bridge tokens are rejected.
+9. Global MT5 token fallback does not appear as a personal user connection.
+10. User A cannot access User B data.
+11. User-owned routes require login.
+12. Public routes only expose safe public data.
+13. CORS is not overly permissive for sensitive routes.
+14. Error responses do not expose stack traces in production mode.
+15. File downloads cannot access another user’s reports.
+16. Uploaded/generated file paths are sanitized.
+17. Rate limiting or abuse protection exists for auth, bridge, AI, and report generation routes where practical.
+18. Session cookies/auth tokens use safe settings available in the current stack.
+
+Do not weaken existing security to make tests pass.
+
+Phase 12C — System health endpoints:
+Create or finalize safe system health endpoints.
+
+Public safe endpoint:
+- GET /api/healthz
+
+It should return only:
+- ok true/false
+- app status
+- version/build if available
+- uptime
+- timestamp
+
+Authenticated system diagnostic endpoint:
+- GET /api/me/system-health
+
+It should return user-safe health:
+- auth status
+- user account status
+- personal MT5 connection count
+- personal active session status
+- personal risk governor status
+- notification unread count
+- report export status
+- no secrets
+
+Optional admin-only endpoint if admin role exists:
+- GET /api/admin/system-health
+
+Only add admin route if admin role/auth already exists or can be safely added.
+Do not expose sensitive secrets in admin route either.
+
+Phase 12D — Launch blocker cleanup:
+Find and fix launch blockers.
+
+Check:
+- frontend crashes
+- broken buttons
+- routes returning 404/500
+- dashboard stuck loading
+- AI assistant popup not opening/closing correctly
+- AI assistant hidden behind plus button
+- AI assistant not visible on every page if that was the intended design
+- MT5 bridge status showing fake connected state
+- menu/navigation issues
+- bottom menu not fixed properly
+- old global/demo trading data shown to logged-in users
+- first-time user state missing
+- broken report downloads
+- notification center errors
+- risk settings missing defaults
+- calendar showing fake data
+- paper trade lifecycle errors
+- command queue leaks
+- any typecheck/test errors
+
+Fix every blocker that is inside scope.
+
+Phase 12E — First-load honesty audit:
+Make the app look clean and truthful for a new user.
+
+For a brand-new logged-in user:
+- no fake balance
+- no fake trades
+- no fake MT5 connection
+- no fake AI reviews
+- no fake reports
+- no fake notifications
+- no fake calendar history
+- no fake win rate
+- no fake command history
+- no fake risk events
+
+Show clean states:
+- “Connect MT5 to begin tracking”
+- “Start your first paper session”
+- “No paper trades yet”
+- “No journal entries yet”
+- “No AI reviews yet”
+- “Risk Governor is active with safe defaults”
+- “No reports yet”
+- “No notifications yet”
+
+Phase 12F — Safety contract audit:
+Verify the safety contract across the full app.
+
+Hard requirements:
+- liveLocked remains true.
+- readOnlyMode remains true by default.
+- allowOrderExecution remains false.
+- AllowOrderExecution cannot be enabled from frontend.
+- No route queues LIVE_BUY, LIVE_SELL, MODIFY_LIVE_ORDER, or CLOSE_LIVE_POSITION.
+- No route calls real broker execution.
+- No OrderSend path is available.
+- AI cannot place trades.
+- dashboard cannot place trades.
+- notifications cannot place trades.
+- reports cannot place trades.
+- playbooks/checklists cannot place trades.
+- Risk Governor blocks live execution regardless of override.
+
+If any live execution path exists, disable/block it and report exactly where it was found.
+
+Phase 12G — Performance and reliability:
+Audit performance and reliability.
+
+Check:
+- dashboard polling intervals are reasonable
+- MT5 heartbeat/status endpoints do not spam notifications
+- report generation is bounded or paginated
+- AI review/coaching endpoints do not overload app startup
+- database queries use userId indexes
+- command polling is efficient
+- stale heartbeat detection works
+- loading/error/empty states exist
+- no infinite loops in frontend queries
+- no repeated duplicate notifications
+- no console errors on main pages
+
+Fix issues found.
+
+Phase 12H — AI assistant app knowledge:
+Audit the AI assistant behavior.
+
+Requirements:
+- AI assistant remains visible on every intended page.
+- Clicking outside closes it.
+- Close animation works.
+- It uses compact runtime context.
+- It does not dump the full app context every message.
+- It can answer questions about the app’s features.
+- It understands MT5 bridge, heartbeat, safe mode, paper trades, Risk Governor, AI reviews, playbooks, notifications, reports, and dashboard status.
+- It does not claim a user has data that does not exist.
+- It does not claim MT5 is connected unless user-scoped status says connected.
+- It does not offer to place live trades.
+
+Fix issues in the AI assistant only if needed.
+
+Phase 12I — Tests:
+Run or add tests for:
+
+1. Auth still works.
+2. User A/User B isolation across all major data types.
+3. MT5 per-user connection isolation.
+4. MT5 command isolation.
+5. Invalid/revoked bridge token rejection.
+6. Paper trade lifecycle safety.
+7. Journal user scoping.
+8. Calendar user scoping.
+9. AI review user scoping.
+10. Playbook/checklist user scoping.
+11. Risk Governor blocking logic.
+12. Notifications user scoping.
+13. Activity timeline user scoping.
+14. Reports/downloads user scoping.
+15. New user first-load empty states.
+16. No raw bridge token exposed.
+17. No token hash exposed.
+18. No live trade command created.
+19. No MT5 EA files changed.
+20. App starts without crashing.
+
+Phase 12J — Final QA/fix gate:
+After implementation, run a full QA gate and fix every issue before stopping.
+
+QA must confirm:
+- App starts successfully.
+- Login/register/logout/me work.
+- Main pages load.
+- Navigation works.
+- Dashboard intelligence works.
+- MT5 status works.
+- MT5 bridge personal connection status works.
+- Command polling remains token-scoped.
+- Paper trades work.
+- Journal works.
+- Calendar works.
+- AI trade review works.
+- Coaching plan works.
+- Playbooks/checklists work.
+- Risk Governor works.
+- Notifications work.
+- Activity timeline works.
+- Reports/exports work.
+- AI assistant works.
+- First-time user sees honest empty states.
+- Existing users see only their own data.
+- No fake global data leaks.
+- No secrets exposed.
+- No live trades executed.
+- No MT5 EA files changed.
+- Safety contract passes.
+
+Final report format:
+1. Files changed
+2. Routes audited
+3. Security fixes made
+4. Launch blockers found/fixed
+5. System health result
+6. First-time user state result
+7. AI assistant result
+8. User A/User B isolation result
+9. Safety contract result
+10. Performance/reliability result
+11. Remaining errors
+12. Remaining launch blockers, if any
+13. Phase 12 PASS or FAIL
+14. Stop and wait for my approval before Phase 13

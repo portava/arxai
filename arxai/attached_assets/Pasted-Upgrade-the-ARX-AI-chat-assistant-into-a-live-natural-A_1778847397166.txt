@@ -1,0 +1,161 @@
+Upgrade the ARX AI chat assistant into a live, natural AI assistant instead of a menu-heavy chatbot.
+
+Goal:
+Make the AI chat feel like a real live assistant. Reduce forced selections and let users ask anything naturally. The assistant should automatically understand whether the user is asking about the ARX app, MT5 bridge, trading strategy, risk, market news, account data, prop firm mode, or general questions.
+
+Scope:
+Work only on the ARX AI assistant/chat system, its UI behavior, backend AI routing, context loading, and tool integration. Do not redesign unrelated app pages.
+
+Frontend requirements:
+1. Replace the large selection/menu-heavy AI chat layout with a cleaner live-chat interface.
+2. When opened, show:
+   - Header: ARX AI
+   - Status indicator: Online / Listening / Thinking / Speaking / Mic Off
+   - Main prompt: “Ask me anything about your account, trades, MT5 bridge, risk, strategy, market news, or how to use ARX.”
+   - Text input placeholder: “Ask ARX…”
+   - Send button
+   - Mic button for optional voice mode
+   - Small collapsed suggestion chips, not a large forced selection menu
+3. Suggestions should be minimal and collapsible:
+   - Analyze my trades
+   - Check MT5 bridge
+   - Explain my risk
+   - Market update
+   - How do I use this?
+4. The user should never be forced to choose a category before asking.
+5. AI should stream responses in real time instead of waiting for the full answer.
+6. If the user clicks outside the AI panel, close the panel with a smooth animation.
+7. When the panel closes, stop any active listening/mic session.
+8. Add visible privacy indicators:
+   - Mic Off
+   - Listening
+   - Muted
+   - Session Ended
+9. Do not automatically activate microphone without explicit user permission. Once the user enables voice mode, keep listening while the chat is open until the user mutes or closes it.
+
+Backend/AI architecture:
+Create an AI orchestration layer that routes every message automatically. Do not rely on frontend category selections.
+
+Add intent detection for:
+1. app_support
+2. mt5_bridge
+3. trade_journal
+4. risk_management
+5. trading_strategy
+6. market_news
+7. prop_firm_mode
+8. account_status
+9. execution_request
+10. general_question
+
+The assistant should receive context based on intent:
+- App support questions should use ARX feature documentation and current app routes.
+- MT5 questions should use bridge status, heartbeat status, EA setup, and connection logs.
+- Trading questions should use strategy rules, risk rules, trade journal, account state, and current market data when available.
+- Market/news questions should use live web/news search or the configured market data provider.
+- Execution requests should always run risk checks first and require explicit confirmation before any live trade.
+
+Add tool/function calling layer:
+Create backend callable tools for:
+- getCurrentUserContext()
+- getAppFeatureMap()
+- getMT5BridgeStatus()
+- getMT5Heartbeat()
+- getAccountSnapshot()
+- getOpenPositions()
+- getTradeJournalSummary()
+- getDailyPnLCalendar()
+- getRiskLimits()
+- runPreTradeRiskCheck()
+- getMarketSnapshot(symbol)
+- getEconomicCalendar()
+- getRecentMarketNews(query)
+- explainFeature(routeOrFeatureName)
+- createSupportDiagnosticReport()
+
+Important safety rules:
+1. ARX must not promise guaranteed profits.
+2. ARX must separate education, analysis, and trade execution.
+3. ARX must show data freshness when using market data.
+4. ARX must say when it does not have live data.
+5. ARX must require explicit confirmation before any live trade.
+6. Demo trades can be easier to test, but should still show what happened clearly.
+7. If live trading is disabled, ARX should explain that execution is blocked.
+8. If ReadOnlyMode is active, ARX can analyze but cannot place trades.
+
+Knowledge base:
+Build or prepare an ARX knowledge base that the assistant can search. Include:
+- App overview
+- Feature descriptions
+- MT5 bridge setup
+- EA setup
+- Demo/live trade difference
+- Prop firm mode
+- Risk rules
+- Trade journal system
+- AI assistant rules
+- Troubleshooting
+- User onboarding
+- Common trading terms
+
+Memory/context:
+Since users will log in, every AI session should be tied to the signed-in user. The assistant should load only that user’s allowed data:
+- User ID
+- Account mode
+- Demo/live status
+- Risk profile
+- Trading style
+- Connected broker/MT5 status
+- Recent trades
+- Preferences
+- Subscription/permission level if applicable
+
+Privacy:
+Do not expose one user’s trading data to another user. Keep all AI context scoped by authenticated user ID. Log AI actions and tool calls for debugging.
+
+Voice mode:
+Implement voice mode as an optional enhancement:
+- Use browser mic permission.
+- Show clear “Listening” indicator.
+- Stop listening on close.
+- Add fallback to text if browser voice is unsupported.
+- If realtime voice API is available, use WebRTC/realtime session through the backend, never exposing API keys in the frontend.
+
+Response format:
+ARX should answer with:
+- Direct answer first
+- Then explanation
+- Then suggested next action
+For trading analysis, use:
+- Bias
+- Setup quality
+- Risk level
+- Entry condition
+- Invalidation
+- What to avoid
+- Confidence level
+- Data freshness
+
+QA requirements:
+After implementation, run a full QA check:
+1. Open/close AI panel
+2. Click outside to close
+3. Text question works
+4. Voice mode works or gracefully falls back
+5. Streaming responses work
+6. AI can answer app questions
+7. AI can answer MT5 bridge questions
+8. AI can answer trading questions
+9. AI can check user-specific trade/account data
+10. AI refuses/blocks unsafe live execution without confirmation
+11. No fake data is shown
+12. If data is missing, AI says what is missing
+13. No user data leaks between sessions
+
+After QA, provide a report:
+- What changed
+- What files were edited
+- What tools/functions were added
+- What still needs API keys or provider setup
+- What passed QA
+- What failed and was fixed

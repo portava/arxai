@@ -1,0 +1,339 @@
+# Cockpit — Owner/Admin Master-Position Visibility (Option A)
+
+**Scope:** visibility only. No execution change, no EA change, no attribution-rule
+change, no weakening of regular-user isolation. Two surgical edits + an item-4
+decision that needs 4 query results.
+
+Files:
+- `artifacts/api-server/src/routes/meSharedAccount.ts` — add an owner/admin branch to the **positions** route (pure insertion; regular path untouched).
+- `artifacts/trading-dashboard/src/components/dashboard/cockpit/CockpitCards.tsx` — label rows ARX / Manual / Pending in `OpenPositionsCard`.
+
+---
+
+## EDIT 1 — backend import (`meSharedAccount.ts`)
+
+Add `inArray` to the drizzle import. Replace this line:
+
+```ts
+import { and, desc, eq, gte, isNull, isNotNull, ne, sql } from "drizzle-orm";
+```
+
+with:
+
+```ts
+import { and, desc, eq, gte, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
+```
+
+---
+
+## EDIT 2 — backend owner/admin branch (`meSharedAccount.ts`)
+
+In the **positions** route, insert the block below **between** these two existing lines:
+
+```ts
+router.get("/me/shared-account/positions", requireUser, async (req, res) => {
+  const userId = req.authUser!.id;
+  try {
+                       // ← INSERT THE BLOCK HERE, right after `try {`
+    const raw = await db.select({          // ← (this existing line stays as-is)
+```
+
+Block to insert:
+
+```ts
+    // ── OWNER/ADMIN ONLY: full master-account exposure (operator safety) ─────
+    // Real ADMIN/OWNER session only — admin-previewing-as-user is downgraded by
+    // isAdminOrOwner() and falls through to the regular attributed-only path
+    // below. Reads the pinned master's OPEN positions DIRECTLY from
+    // arx_live_positions (the MT5 sync source of truth) so manual/unattributed
+    // master positions (e.g. hand-placed V75 shorts) are visible to the operator.
+    // Read-only. No execution. Attribution rules and regular-user isolation are
+    // untouched. Same scope the Account Snapshot count uses, so card and count
+    // always agree. Per-row label:
+    //   source "ARX"     → an ARX attribution exists for this broker ticket
+    //          "PENDING" → attribution exists but is still pending fill
+    //          "MANUAL"  → no attribution: a manual/external master position
+    if (isAdminOrOwner(req)) {
+      const masterConnId = await resolveActiveMasterConnectionId();
+      if (masterConnId == null) {
+        res.json({ ok: true, userId, scope: "MASTER", masterConnectionId: null, count: 0, lastMt5SyncAt: null, reconciledOrphanCount: 0, rows: [], note: "MASTER_BRIDGE_NOT_PINNED" });
+        return;
+      }
+      const connRows = await db.select({ ownerId: mt5ConnectionTable.userId })
+        .from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
+      const masterOwnerUserId = connRows[0]?.ownerId ?? null;
+      if (masterOwnerUserId == null) {
+        res.json({ ok: true, userId, scope: "MASTER", masterConnectionId: masterConnId, count: 0, lastMt5SyncAt: null, reconciledOrphanCount: 0, rows: [], note: "MASTER_CONNECTION_MISSING" });
+        return;
+      }
+
+      // All real OPEN master positions — not closed, not operator-reconciled.
+      const masterRows = await db.select({
+        id: arxLivePositionsTable.id,
+        brokerTicket: arxLivePositionsTable.brokerTicket,
+        symbol: arxLivePositionsTable.symbol,
+        side: arxLivePositionsTable.side,
+        volume: arxLivePositionsTable.volume,
+        entryPrice: arxLivePositionsTable.entryPrice,
+        currentPrice: arxLivePositionsTable.currentPrice,
+        pnl: arxLivePositionsTable.floatingPl,
+        stopLoss: arxLivePositionsTable.stopLoss,
+        takeProfit: arxLivePositionsTable.takeProfit,
+        openedAt: arxLivePositionsTable.openedAt,
+        lastSyncedAt: arxLivePositionsTable.lastSyncedAt,
+      })
+        .from(arxLivePositionsTable)
+        .where(and(
+          eq(arxLivePositionsTable.userId, masterOwnerUserId),
+          eq(arxLivePositionsTable.bridgeConnectionId, masterConnId),
+          isNull(arxLivePositionsTable.closedAt),
+          isNull(arxLivePositionsTable.reconcileState),
+        ))
+        .orderBy(desc(arxLivePositionsTable.openedAt));
+
+      // Label by ARX attribution WITHOUT widening any user's visibility. This is
+      // the owner/admin operator view; we look up attributions for the pinned
+      // master by broker ticket (trimmed both sides so a stray space can't break
+      // the match) and derive ARX / PENDING / MANUAL.
+      const tickets = masterRows.map((r) => String(r.brokerTicket ?? "").trim()).filter((t) => t.length > 0);
+      const attrByTicket = new Map<string, { status: string; attrUserId: number }>();
+      if (tickets.length > 0) {
+        const attrRows = await db.select({
+          ticket: sharedTradeAttributionTable.mt5PositionTicket,
+          status: sharedTradeAttributionTable.status,
+          attrUserId: sharedTradeAttributionTable.userId,
+        })
+          .from(sharedTradeAttributionTable)
+          .where(and(
+            eq(sharedTradeAttributionTable.masterConnectionId, masterConnId),
+            isNotNull(sharedTradeAttributionTable.mt5PositionTicket),
+            ne(sharedTradeAttributionTable.mt5PositionTicket, ""),
+            inArray(sharedTradeAttributionTable.mt5PositionTicket, tickets),
+          ));
+        for (const a of attrRows) {
+          const key = String(a.ticket ?? "").trim();
+          if (!key) continue;
+          const existing = attrByTicket.get(key);
+          if (!existing || a.status === "open") attrByTicket.set(key, { status: a.status, attrUserId: a.attrUserId });
+        }
+      }
+
+      const now = Date.now();
+      let lastMt5SyncAt: Date | null = null;
+      const rows = masterRows.map((r) => {
+        const synced = r.lastSyncedAt ? new Date(r.lastSyncedAt) : null;
+        if (synced && (lastMt5SyncAt == null || synced > lastMt5SyncAt)) lastMt5SyncAt = synced;
+        const key = String(r.brokerTicket ?? "").trim();
+        const attr = attrByTicket.get(key) ?? null;
+        const source: "ARX" | "PENDING" | "MANUAL" = attr == null ? "MANUAL" : attr.status === "pending" ? "PENDING" : "ARX";
+        return {
+          id: r.id,
+          symbol: r.symbol,
+          side: r.side,
+          lotSize: r.volume,
+          entryPrice: r.entryPrice ?? null,
+          currentPrice: r.currentPrice ?? null,
+          pnl: r.pnl ?? null,
+          stopLoss: r.stopLoss ?? null,
+          takeProfit: r.takeProfit ?? null,
+          openedAt: r.openedAt ? new Date(r.openedAt).toISOString() : null,
+          lastSyncedAt: synced ? synced.toISOString() : null,
+          brokerTicket: key,
+          source,
+          attributedUserId: attr?.attrUserId ?? null,
+          stale: synced == null || (now - synced.getTime()) > POSITION_FRESH_MS,
+        };
+      });
+
+      // Recently operator-reconciled master positions (honest "N reconciled" note).
+      const dayAgo = new Date(now - 24 * 60 * 60 * 1000);
+      const recRows = await db.select({ count: sql<number>`count(*)::int` })
+        .from(arxLivePositionsTable)
+        .where(and(
+          eq(arxLivePositionsTable.userId, masterOwnerUserId),
+          eq(arxLivePositionsTable.bridgeConnectionId, masterConnId),
+          isNotNull(arxLivePositionsTable.reconcileState),
+          gte(arxLivePositionsTable.reconciledAt, dayAgo),
+        ));
+      const reconciledOrphanCount = Number(recRows[0]?.count ?? 0);
+
+      res.json({
+        ok: true, userId, scope: "MASTER", masterConnectionId: masterConnId,
+        count: rows.length,
+        lastMt5SyncAt: lastMt5SyncAt ? (lastMt5SyncAt as Date).toISOString() : null,
+        reconciledOrphanCount, rows,
+      });
+      return;
+    }
+```
+
+Everything after this (the `const raw = …` regular-user block) stays **exactly as it is** —
+that is the per-user, ARX-attributed-only path and it must not change.
+
+---
+
+## EDIT 3 — frontend labels (`CockpitCards.tsx`)
+
+Replace the whole `OpenPositionsCard` function (the one that starts
+`export function OpenPositionsCard() {`) with:
+
+```tsx
+export function OpenPositionsCard() {
+  const posQ = useGetMeSharedAccountPositions({
+    query: { queryKey: getGetMeSharedAccountPositionsQueryKey(), refetchInterval: 5000 },
+  });
+
+  type PositionRow = {
+    id: number; symbol: string; side: string; lotSize: number;
+    stopLoss?: number | null; takeProfit?: number | null;
+    pnl?: number | null; stale?: boolean;
+    source?: "ARX" | "MANUAL" | "PENDING"; attributedUserId?: number | null;
+  };
+  const rows = (posQ.data?.rows ?? []) as PositionRow[];
+  const count = posQ.data?.count ?? 0;
+  const scope = (posQ.data as { scope?: string } | undefined)?.scope;
+
+  // Owner/admin master view labels real exposure; regular users only ever get
+  // ARX-attributed rows (no `source` field → no badge), isolation unchanged.
+  const SOURCE_BADGE: Record<string, { text: string; tone: "success" | "warning" | "info" }> = {
+    ARX: { text: "ARX", tone: "success" },
+    MANUAL: { text: "Manual", tone: "warning" },
+    PENDING: { text: "Pending", tone: "info" },
+  };
+
+  return (
+    <CockpitCard
+      title="Open Positions"
+      icon={<Briefcase className="h-[18px] w-[18px]" />}
+      accent="blue"
+      badge={String(count)}
+      loading={posQ.isLoading}
+      data-testid="cockpit-open-positions"
+    >
+      {scope === "MASTER" && (
+        <p className="mb-2 text-[11px] text-txt-muted">
+          Master-account exposure — every real open position, including manual / unattributed.
+        </p>
+      )}
+      {rows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-6 text-center">
+          <Briefcase className="mb-2 h-6 w-6 text-txt-muted" />
+          <p className="text-sm font-medium text-foreground">No open positions</p>
+          <p className="text-xs text-txt-muted">You have no open trades right now.</p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border/50">
+          {rows.slice(0, 6).map((r) => {
+            const badge = r.source ? SOURCE_BADGE[r.source] : null;
+            return (
+              <li key={r.id} className="flex items-center gap-3 py-2.5" data-testid={`position-${r.id}`}>
+                <div className={cn("rounded-md p-1.5", r.side === "BUY" ? "bg-success/10 text-success" : "bg-danger/10 text-danger")}>
+                  {r.side === "BUY" ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-sm font-semibold">{r.symbol}</span>
+                    {badge && <Pill tone={badge.tone}>{badge.text}</Pill>}
+                  </div>
+                  <div className="text-[11px] text-txt-muted">
+                    {r.lotSize} lot
+                    {r.stopLoss != null ? ` · SL ${r.stopLoss}` : ""}
+                    {r.takeProfit != null ? ` · TP ${r.takeProfit}` : ""}
+                  </div>
+                </div>
+                <div className={cn("shrink-0 font-mono text-sm font-semibold", pnlClass(r.pnl))}>
+                  {r.stale || r.pnl == null ? "—" : formatPnl(r.pnl)}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <SectionLink href="/positions" data-testid="positions-manage">Manage positions</SectionLink>
+    </CockpitCard>
+  );
+}
+```
+
+(`Pill`, `cn`, `pnlClass`, `formatPnl`, `CockpitCard`, `SectionLink`, `Briefcase`,
+`TrendingUp`, `TrendingDown` are all already imported in this file.)
+
+> Note: the new response fields (`source`, `scope`, `attributedUserId`, `note`,
+> `masterConnectionId`) aren't in the generated Orval type, which is why the
+> frontend casts. Regenerating `@workspace/api-client-react` later would let you
+> drop the casts — optional, not required for this fix.
+
+---
+
+## ITEM 4 — Account Snapshot count: confirm the root cause first (no fake counts)
+
+The count code already reads `arx_live_positions` directly — scoped to the
+master owner + the pinned master connection + `reconcile_state IS NULL`. So a 0
+means one of: master not pinned, the rows don't carry that exact owner/conn, or
+they're reconciled. **EDIT 2 shares the same scope**, so it surfaces the V75s
+only if those rows actually match the pinned master. Run these and paste them:
+
+```sql
+-- Q1  open positions + the exact fields the scope filters on
+SELECT id, user_id, bridge_connection_id, broker_ticket, symbol, side,
+       volume, floating_pl, reconcile_state, last_synced_at
+FROM arx_live_positions WHERE closed_at IS NULL ORDER BY opened_at DESC;
+
+-- Q2  the pinned master (active config row)
+SELECT id, master_connection_id, label, is_active
+FROM arx_master_account_config WHERE is_active = true;
+
+-- Q3  the master connection's owner + heartbeat freshness
+SELECT id, user_id, broker_name, server_name, last_heartbeat
+FROM mt5_connection
+WHERE id = (SELECT master_connection_id FROM arx_master_account_config WHERE is_active = true LIMIT 1);
+
+-- Q4  open attributions vs live tickets (explains the regular-user join)
+SELECT a.id, a.user_id, a.status, a.mt5_position_ticket,
+       p.broker_ticket, p.symbol, p.floating_pl
+FROM shared_trade_attribution a
+LEFT JOIN arx_live_positions p
+  ON p.broker_ticket = a.mt5_position_ticket AND p.closed_at IS NULL
+WHERE a.status = 'open' ORDER BY a.created_at DESC LIMIT 30;
+```
+
+Decision (let **M** = Q2.master_connection_id, **O** = Q3.user_id):
+
+| What Q1 shows for the V75 rows | Why the count is 0 | Fix (no faking) |
+|---|---|---|
+| `user_id = O`, `bridge_connection_id = M`, `reconcile_state` null | Count *should already* be ≥N → screenshot was pre-fix/stale. | Nothing to fix in the count; EDIT 2 surfaces them on the card. |
+| `bridge_connection_id ≠ M` | EA posts positions under a connection id that isn't the pinned master. | Repoint `arx_master_account_config.master_connection_id` to the connection the EA actually posts under, **or** fix the snapshot-ingest to stamp the master conn id. Your call once we see M vs the row value. I will **not** drop the `bridge_connection_id` filter (that would overcount across accounts). |
+| `user_id ≠ O` | Positions stored under a different user than the master owner. | Ingest/owner mapping mismatch — fix the mapping, not the query. |
+| `reconcile_state` is set (EXTERNAL/IGNORED/IMPORTED) | Intentionally excluded as operator-reconciled. | If wrong, clear `reconcile_state` via the operator action; don't change the query. |
+| **Q2 returns no row** | No active master pinned → snapshot null → falls back to virtual alloc (0). | Pin the master: activate an `arx_master_account_config` row pointing at the master connection. |
+
+Q4: if rows come back with `mt5_position_ticket` populated but `broker_ticket`
+NULL (no join match), the regular-user card's tickets aren't lining up — fix
+ticket normalization on the **write** side (store the same string the EA reports)
+without broadening visibility. If Q4 returns nothing, there simply are no open
+attributions, so the regular-user card is correctly empty.
+
+---
+
+## Build + QA proof (item 7)
+
+```bash
+cd ~/workspace
+pnpm --filter @workspace/api-server run build
+pnpm --filter @workspace/trading-dashboard run typecheck
+pnpm run ci:guards
+```
+
+Then, in the running app:
+
+1. **Owner/admin** → Cockpit → Open Positions shows the real V75 master positions, each badged **Manual** (until attributed). ✅ *operator sees true exposure* — provided Q1 confirms the V75 rows match the pinned master (else apply the item-4 fix first).
+2. **Regular funded user** (or admin **previewing as** a user) → Open Positions does **not** show the V75 manual positions — only their own ARX-attributed rows. ✅ isolation intact (regular path unchanged; `isAdminOrOwner` excludes preview).
+3. **Account Snapshot** Open Trades / Open P/L for owner/admin reflect real master exposure once the item-4 cause is applied. Count code direct-reads `arx_live_positions` — never fabricated.
+4. **ARX-attributed** positions still show (badged **ARX** in the owner view; unchanged for regular users).
+5. **Investor** view untouched — investors still see only their fund/accounting allocation; no raw master positions.
+
+### Safety invariants held
+- Read-only: no writes, no order placement, no EA change, no attribution-rule change.
+- Regular-user path is a literal no-op in this patch (pure insertion above it).
+- Owner/admin branch gated by `isAdminOrOwner` (real ADMIN/OWNER session; preview-as-user downgraded).
+- No count is fabricated; item 4 is fixed at its real cause, chosen from the query results.

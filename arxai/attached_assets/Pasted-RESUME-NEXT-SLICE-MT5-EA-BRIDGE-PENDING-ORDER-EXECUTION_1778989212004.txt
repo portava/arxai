@@ -1,0 +1,449 @@
+RESUME NEXT SLICE — MT5 EA/BRIDGE PENDING ORDER EXECUTION UPGRADE
+
+Continue from the completed stop-limit QA gate.
+
+Current confirmed status:
+- Trade-ticket layered slice is complete.
+- Typecheck is green.
+- CI guards are green.
+- Pending-order drafts validate correctly.
+- No fake live success exists.
+- Pending orders are still draft-only because the MT5 EA/bridge cannot place, modify, or cancel pending orders yet.
+- The next required slice is pending-order execution support in the EA/bridge.
+
+Do NOT rebuild.
+Do NOT redesign.
+Do NOT delete active ecosystem code.
+Do NOT create duplicate bridge systems.
+Do NOT change the QuickTradeModal UI unless a small wiring fix is required.
+Do NOT change DB schema unless absolutely required.
+Do NOT bypass confirmation guards.
+Do NOT bypass risk governor.
+Do NOT bypass Shared Master attribution.
+Do NOT fake success.
+Do NOT enable live execution by default.
+
+==================================================
+PHASE 1 — READ CURRENT REPORTS FIRST
+==================================================
+
+Open and read:
+
+1. TRADE_TICKET_QA_REPORT.md
+2. TRADE_TICKET_LAYERED_SLICE_REPORT.md if it exists
+3. Any stop-limit QA report created in the last gate
+4. Any MT5 bridge / EA files currently in the repo
+
+Confirm the final stop-limit rule from the latest QA report before coding.
+
+If the stop-limit rule is not clearly documented, stop and report before making bridge changes.
+
+==================================================
+PHASE 2 — INSPECT CURRENT MT5 BRIDGE ARCHITECTURE
+==================================================
+
+Inspect:
+
+1. mt5_commands table/schema
+2. Bridge polling endpoint
+3. Command submit endpoint
+4. Existing market order command path
+5. Existing close position path
+6. Existing modify position path, if present
+7. Existing EA/MQL5 file
+8. Existing EA command parser
+9. Existing backend bridge service
+10. Existing command result callback / result polling route
+11. Read-only mode
+12. AllowOrderExecution / live trading lock
+13. Shared Master routing and attribution
+14. Journal/audit logging for command results
+
+Do not create a new bridge if one already exists.
+
+Patch the current bridge.
+
+==================================================
+PHASE 3 — ADD COMMAND CAPABILITY DISCLOSURE
+==================================================
+
+Add or update bridge capability reporting so the app can know whether the connected EA supports:
+
+- marketOrders
+- marketOrderSLTP
+- pendingOrders
+- stopLimitOrders
+- modifyPositionProtection
+- modifyPendingOrders
+- cancelPendingOrders
+- expiration
+- sharedMasterSafeRouting
+
+Expose capability status through the existing bridge/account/status context.
+
+If EA version is available, include:
+- eaVersion
+- bridgeVersion
+- capability list
+- lastHeartbeatAt
+
+Frontend and AI should never assume support. They should read capability state.
+
+==================================================
+PHASE 4 — ADD BACKEND COMMAND TYPES
+==================================================
+
+Add support for these command kinds using the existing command queue:
+
+1. PLACE_PENDING_ORDER
+2. MODIFY_POSITION_PROTECTION
+3. MODIFY_PENDING_ORDER
+4. CANCEL_PENDING_ORDER
+
+Keep existing market order command flow intact.
+
+Supported order types:
+
+- BUY_LIMIT
+- SELL_LIMIT
+- BUY_STOP
+- SELL_STOP
+- BUY_STOP_LIMIT
+- SELL_STOP_LIMIT
+
+Payload for PLACE_PENDING_ORDER:
+
+- userId
+- symbol
+- orderType
+- lotSize
+- entryPrice
+- stopTriggerPrice
+- stopLimitPrice
+- stopLoss
+- takeProfit
+- expiration if supported
+- confirmedByUser
+- platformMode
+- accountRoutingMode
+- sharedMaster attribution fields if applicable
+
+Payload for MODIFY_POSITION_PROTECTION:
+
+- positionId / ticket
+- symbol
+- stopLoss
+- takeProfit
+- confirmedByUser
+
+Payload for MODIFY_PENDING_ORDER:
+
+- orderId / ticket
+- symbol
+- entryPrice if supported
+- stopTriggerPrice if stop-limit
+- stopLimitPrice if stop-limit
+- stopLoss
+- takeProfit
+- expiration if supported
+- confirmedByUser
+
+Payload for CANCEL_PENDING_ORDER:
+
+- orderId / ticket
+- symbol
+- confirmedByUser
+
+Before inserting any mt5_commands row:
+- Re-validate order ticket
+- Run risk governor
+- Run action guards
+- Require confirmedByUser
+- Respect read-only mode
+- Respect live locked mode
+- Respect tradingDisabled
+- Respect bridge disconnected state
+- Respect Shared Master routing/attribution
+- Respect per-user scope
+
+Do not mark anything PLACED until MT5 returns a real ticket/order id.
+
+==================================================
+PHASE 5 — WIRE PENDING ORDER DRAFTS TO COMMAND QUEUE
+==================================================
+
+Update pendingOrderDraft.ts or the active draft route only.
+
+Current behavior:
+- Validated draft is saved.
+- pendingStatus = EA_UPGRADE_REQUIRED.
+- No mt5_commands row is inserted.
+
+New behavior:
+
+If EA capability pendingOrders is false:
+- Keep current draft-only behavior.
+- pendingStatus = EA_UPGRADE_REQUIRED or BRIDGE_UNSUPPORTED.
+- No command row inserted.
+
+If EA capability pendingOrders is true and all guards pass:
+- Insert one mt5_commands row.
+- Link draft to commandId.
+- Set pendingStatus = QUEUED.
+- Return honest queued status.
+
+If bridge disconnected:
+- pendingStatus = BRIDGE_DISCONNECTED.
+- No command row inserted.
+
+If risk blocks:
+- pendingStatus = BLOCKED_BY_RISK.
+- No command row inserted.
+
+If live locked/read-only:
+- pendingStatus = LIVE_LOCKED or READ_ONLY.
+- No command row inserted.
+
+Do not fake PLACED.
+
+Only MT5 confirmation with a real ticket/order id can set PLACED.
+
+==================================================
+PHASE 6 — UPDATE OR GENERATE EA/MQL5 FILE
+==================================================
+
+If the EA/MQL5 file exists, patch it.
+
+If no EA file exists in the repo, generate a new upgraded EA file in the bridge/export location and clearly report the file path.
+
+EA requirements:
+
+1. Keep safety defaults:
+   - ReadOnlyMode remains true by default if currently true.
+   - AllowOrderExecution remains false by default unless existing app intentionally enables demo execution.
+   - Never execute broker actions unless EA input allows it and backend command is authorized.
+
+2. Support pending order placement:
+   - BUY_LIMIT
+   - SELL_LIMIT
+   - BUY_STOP
+   - SELL_STOP
+   - BUY_STOP_LIMIT
+   - SELL_STOP_LIMIT
+
+3. Support market orders with SL/TP if existing market execution supports it.
+
+4. Support modifying open position SL/TP by ticket.
+
+5. Support modifying pending orders:
+   - entry price where allowed
+   - trigger/limit price for stop-limit where allowed
+   - stopLoss
+   - takeProfit
+   - expiration if supported
+
+6. Support canceling pending orders by ticket.
+
+7. Respect MT5 symbol rules:
+   - digits/precision
+   - min lot
+   - max lot
+   - lot step
+   - stops level
+   - freeze level
+   - supported filling mode
+   - supported expiration mode
+
+8. Return command result clearly:
+   - commandId
+   - status
+   - mt5Ticket/orderId
+   - errorCode
+   - errorMessage
+   - executedAt
+   - symbol
+   - orderType
+
+Never silently ignore failed commands.
+Never return success if MT5 rejects the command.
+
+==================================================
+PHASE 7 — RESULT HANDLING
+==================================================
+
+Update command result handling.
+
+When EA returns success:
+- Save MT5 ticket/order id.
+- Set command status = SUCCESS.
+- Set pendingStatus = PLACED for pending orders.
+- Record journal/audit event.
+
+When EA returns rejection:
+- Save error code/message.
+- Set command status = REJECTED or FAILED.
+- Set pendingStatus = REJECTED.
+- Show rejection reason to user.
+- Record journal/audit event.
+
+When command times out:
+- Set status = TIMEOUT or STALE if existing system supports it.
+- Do not call it placed.
+- Show honest pending/unknown state.
+
+==================================================
+PHASE 8 — FRONTEND STATUS WIRING ONLY
+==================================================
+
+Do not redesign UI.
+
+Only update status wiring if needed.
+
+Pending order draft UI should show:
+
+- Draft only
+- EA upgrade required
+- Bridge unsupported
+- Bridge disconnected
+- Queued
+- Placed
+- Rejected
+- Canceled
+- Triggered if available
+
+If pending order is queued:
+- Show QUEUED.
+
+If pending order is placed:
+- Show PLACED only with MT5 ticket/order id.
+
+If rejected:
+- Show rejection reason.
+
+Do not show fake success.
+
+==================================================
+PHASE 9 — AI CONTEXT UPDATE
+==================================================
+
+Update ARX AI assistant context only where needed.
+
+AI should know:
+
+- EA capability status
+- pending order draft status
+- command queue status
+- MT5 ticket/order id if placed
+- rejection reason if rejected
+- whether order is draft-only, queued, placed, rejected, canceled, or triggered
+
+AI must not:
+- Claim pending order is live unless MT5 confirmed ticket/order id
+- Claim order was placed if it is only queued
+- Claim order was placed if it is only a draft
+- Bypass risk governor
+- Bypass confirmation
+- Promise profit
+
+==================================================
+PHASE 10 — JOURNAL / AUDIT
+==================================================
+
+Record user-specific events:
+
+- Pending order draft created
+- Pending order submitted to MT5
+- Pending order queued
+- Pending order accepted by MT5
+- Pending order rejected by MT5
+- Pending order modified
+- Pending order canceled
+- Pending order triggered if available
+- Open position SL/TP modified
+- Failed SL/TP modification
+- Failed pending order cancellation
+
+Shared Master attribution must remain correct.
+
+Do not write virtual equity on every unrealized tick.
+
+==================================================
+PHASE 11 — TESTS
+==================================================
+
+Run:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- validator unit sweep
+- API route smoke tests
+- bridge command mapping tests if available
+- EA command mapping tests if available
+- pnpm test if available
+- pnpm run build if available
+
+If a script does not exist, report it clearly.
+
+Fix all real errors.
+
+==================================================
+PHASE 12 — MANUAL TEST MATRIX
+==================================================
+
+Verify:
+
+1. Pending order with bridge unsupported remains draft/EA_UPGRADE_REQUIRED.
+2. Pending order with bridge disconnected does not queue.
+3. Pending order without confirmation does not queue.
+4. Pending order blocked by risk governor does not queue.
+5. Valid Buy Limit queues only when EA capability supports pendingOrders.
+6. Valid Sell Limit queues only when supported.
+7. Valid Buy Stop queues only when supported.
+8. Valid Sell Stop queues only when supported.
+9. Valid Buy Stop Limit queues only when supported.
+10. Valid Sell Stop Limit queues only when supported.
+11. Invalid stop-limit relationship is blocked before queue.
+12. MT5 success sets PLACED only after ticket/order id exists.
+13. MT5 rejection sets REJECTED with reason.
+14. Modify open position SL/TP requires confirmation.
+15. Modify pending order requires confirmation.
+16. Cancel pending order requires confirmation.
+17. AI explains draft/queued/placed/rejected correctly.
+18. Shared Master attribution remains correct.
+19. No fake live success appears.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Create or update:
+
+MT5_PENDING_ORDER_BRIDGE_UPGRADE_REPORT.md
+
+Include:
+
+1. What was inspected
+2. What was already supported
+3. What was added
+4. Files changed
+5. EA/MQL5 file path changed or generated
+6. Backend command types added
+7. API routes changed
+8. DB/schema changes if any
+9. Bridge capability disclosure status
+10. Pending draft-to-command behavior
+11. Command result behavior
+12. Frontend status changes
+13. AI context changes
+14. Journal/audit changes
+15. Tests run
+16. Typecheck result
+17. CI guard result
+18. Remaining manual MT5 setup required
+19. Exact EA file user must attach to MT5
+20. Exact WebRequest URL instructions if changed
+21. Confirmation that no fake success was added
+22. Confirmation that pending orders only show PLACED after MT5 confirms ticket/order id
+23. Confirmation that risk/confirmation/Shared Master guards remain enforced
+
+Stop after this slice and report.

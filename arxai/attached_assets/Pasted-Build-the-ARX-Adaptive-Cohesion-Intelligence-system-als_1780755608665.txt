@@ -1,0 +1,2158 @@
+Build the ARX Adaptive Cohesion Intelligence system, also called AACI 2.0.
+
+AACI 2.0 is the master adaptive cohesion algorithm for ARX AI. Its job is to make sure the entire ARX ecosystem works as one connected intelligent trading system.
+
+AACI must constantly check whether Ruby, Scanner, Smart Chart, Market Timing Brain, Economic Calendar, Critical News Alerts, Self-Trade AI, Risk Governor, MT5 Shared Bridge, Open Trades, My Alerts, Account Analytics, Wins & Losses, Agent Ledger, Audit Log, user permissions, and admin controls are all working from the same truth.
+
+This is not a normal QA checker. This is an adaptive AI control layer that grows with the system.
+
+AACI should:
+
+* collect system state
+* normalize it into a shared truth snapshot
+* check freshness and speed
+* check permissions and hard gates
+* compare systems for agreement
+* detect conflicts
+* calculate cohesion score
+* calculate market truth score
+* calculate risk alignment
+* calculate execution readiness
+* calculate speed/latency edge
+* calculate uncertainty
+* calculate data lineage trust
+* calculate learning integrity
+* recommend action
+* block or allow actions based on thresholds
+* reconcile after execution
+* alert if something breaks
+* learn from outcomes
+* update trust scores over time
+* protect itself from bad learning
+* keep full audit records
+
+Do not rebuild the app.
+Do not replace existing systems.
+Do not replace Ruby.
+Do not replace Scanner.
+Do not replace Smart Chart.
+Do not replace Self-Trade AI.
+Do not replace Risk Governor.
+Do not replace MT5/shared master bridge logic.
+Do not replace the execution route.
+Do not create a new trade execution path.
+Do not bypass permissions.
+Do not bypass Risk Governor.
+Do not bypass allocation limits.
+Do not bypass kill switches.
+Do not fake data.
+Do not expose backend/debug/internal wording to regular users.
+
+Preserve all existing wiring first.
+
+==================================================
+CORE PURPOSE
+
+AACI answers this question:
+
+“Are all ARX systems aligned, fresh, fast, safe, explainable, and trustworthy enough to allow this action?”
+
+Risk Governor answers:
+
+“Is this trade safe?”
+
+AACI answers:
+
+“Are all systems working together correctly enough to trust this decision?”
+
+Final trading logic:
+
+Risk Governor PASS
+
+* AACI PASS
+* Bridge Ready
+* Permission Valid
+* Allocation Available
+* Audit Ready
+    = Action may proceed through existing execution route.
+
+If Risk Governor passes but AACI fails, do not execute. Use one of:
+
+* WATCH_ONLY
+* PREPARE_ONLY
+* WAIT_FOR_CONFIRMATION
+* REDUCE_SIZE
+* PROTECT_OPEN_TRADE
+* RECONCILE_SYSTEM
+* BLOCK
+* ALERT_ADMIN
+
+==================================================
+ABSOLUTE SAFETY RULE
+
+AACI can learn, adapt, score, recommend, block, reconcile, and improve.
+
+But AACI can never override:
+
+* admin governance
+* user permissions
+* agent funding requirements
+* allocation limits
+* Risk Governor hard blocks
+* global kill switch
+* per-agent kill switch
+* bridge health
+* daily loss limits
+* weekly loss limits
+* max drawdown limits
+* max lot limits
+* symbol restrictions
+* audit logging requirements
+* execution route requirements
+
+AACI must learn like AI but behave like a disciplined operator.
+
+==================================================
+FINAL AUTHORITY HIERARCHY
+
+Respect this authority order:
+
+1. Admin governance
+2. Funding/allocation limits
+3. Kill switches
+4. Risk Governor hard blocks
+5. Bridge/data health
+6. AACI cohesion score
+7. Ruby/Self-Trade intelligence
+8. Agent strategy preference
+
+No lower layer can override a higher layer.
+
+==================================================
+BEFORE BUILDING — INSPECT EXISTING APP
+
+Before writing code, inspect the current app and identify existing wiring for:
+
+* authentication/session
+* admin role
+* regular user role
+* invite-only access
+* user permissions
+* selected symbol
+* selected timeframe
+* account mode
+* live/shared MT5 state
+* bridge heartbeat
+* MT5 command route
+* MT5 result mapping
+* open positions
+* open P/L
+* closed trades
+* account balance
+* equity
+* margin
+* free margin
+* allocation
+* user allocation
+* self-trade agent allocation
+* Risk Governor
+* daily loss limits
+* weekly loss limits
+* kill switches
+* Scanner
+* scanner signals
+* scanner ranking
+* Smart Chart
+* chart candles
+* chart overlays
+* Ruby market read
+* Ruby chart read
+* Ruby popup
+* Ruby chat
+* Ruby memory
+* Ruby lessons
+* Market Timing Brain / Heat Map if present
+* Economic Calendar
+* critical news alerts
+* My Alerts
+* notification count
+* alert pipeline
+* alert read/unread state
+* Open Trades
+* Wins & Losses
+* Account Analytics
+* Self-Trade AI
+* agent ledger
+* agent audit log
+* command/intent queue
+* order ticket
+* execution services
+* admin dashboards
+* system health pages
+
+Reuse existing hooks, services, schemas, stores, contexts, components, and routes wherever possible.
+
+Do not duplicate business logic.
+
+==================================================
+AACI PHASED BUILD
+
+Build AACI in phases.
+
+Phase 1:
+Shared Truth Snapshot + Handshake Registry
+
+Phase 2:
+Cohesion Score + Conflict Detector + Data Freshness Monitor
+
+Phase 3:
+Speed/Latency Edge + Edge Decay + Signal Age Tracking
+
+Phase 4:
+Pre-Execution Cohesion Gate
+
+Phase 5:
+Post-Execution Reconciliation
+
+Phase 6:
+Learning Layer + Trust Scores + Drift Detection + Bad-Learning Prevention
+
+Phase 7:
+Admin System Cohesion Page
+
+Phase 8:
+Integrations across Ruby, Scanner, Trade, Self-Trade, Risk, Alerts, Open Trades, Analytics, Wins/Losses
+
+Run QA after each phase before moving forward.
+
+==================================================
+MAIN FORMULA
+
+Implement the AACI 2.0 master score.
+
+Formula:
+
+ARX_AACI_2 =
+HARD_GATE
+× SPEED_VALIDITY
+× UNCERTAINTY_CONFIDENCE
+× DATA_LINEAGE_TRUST
+× SELF_LEARNING_INTEGRITY
+× 100
+× sigmoid(
+0.13F
+
+* 0.12G
+* 0.12R
+* 0.11M
+* 0.10S
+* 0.09E
+* 0.08D
+* 0.07A
+* 0.07L
+* 0.05Q
+* 0.04U
+* 0.02X
+
+* P
+    )
+
+Where:
+
+F = Data Freshness
+G = System Agreement / Graph Cohesion
+R = Risk Alignment
+M = Market Truth
+S = Speed / Latency Edge
+E = Execution Readiness
+D = Drift Detection
+A = Audit & Alert Readiness
+L = Learned Trust
+Q = Data Quality
+U = UI State Consistency
+X = Explainability Completeness
+P = Penalties
+
+HARD_GATE is binary.
+
+If HARD_GATE = 0, final action must be BLOCK, WATCH_ONLY, RECONCILE_SYSTEM, or ALERT_ADMIN depending on failure reason.
+
+Do not allow live execution if HARD_GATE = 0.
+
+==================================================
+HARD SAFETY GATE
+
+Create a hard gate function.
+
+HARD_GATE = 1 only if all required hard gates pass.
+
+Required hard gates:
+
+* authenticated user/session valid
+* user or agent permission valid
+* user/agent has trading approval
+* agent has allocated funds if self-trade
+* agent is active if self-trade
+* autonomy level allows requested action if self-trade
+* Risk Governor hard checks pass
+* daily loss limit not hit
+* weekly loss limit not hit
+* max drawdown not hit
+* global kill switch off
+* per-agent kill switch off if agent trade
+* bridge is available
+* bridge heartbeat fresh
+* market feed fresh
+* symbol is tradable
+* selected symbol matches execution symbol
+* lot size valid
+* allocation sufficient
+* margin check valid if available
+* execution route available
+* audit logger available
+* action is role-permissioned
+
+HARD_GATE formula:
+
+H =
+permission
+× funded
+× active
+× autonomyAllowed
+× riskPass
+× lossLimitPass
+× bridgeReady
+× feedFresh
+× symbolTradable
+× allocationAvailable
+× executionRouteReady
+× auditReady
+
+Each factor is 1 or 0.
+
+If any is 0, block live action.
+
+Return hardGateFailures as clean reason codes and user-facing messages.
+
+Regular-user messages must be plain English.
+
+Examples:
+
+* Trading paused by risk controls.
+* Bridge unavailable.
+* Market data is refreshing.
+* Agent has no allocated funds.
+* This action is not available for your account.
+* Audit logging unavailable, so autonomous trading is paused.
+
+Do not show raw internal names like canPlaceTrades, LIVE_LOCKED, backend, command queue, or API route names to regular users.
+
+==================================================
+SHARED TRUTH SNAPSHOT
+
+Create a normalized Shared Truth Snapshot.
+
+This should collect the current trusted state from major systems.
+
+Example structure:
+
+type AaciSharedTruthSnapshot = {
+snapshotId: string;
+timestamp: string;
+
+user: {
+userId: string;
+role: “admin” | “user” | string;
+isApproved?: boolean;
+canTrade?: boolean;
+};
+
+symbolContext: {
+selectedSymbol?: string;
+selectedTimeframe?: string;
+executionSymbol?: string;
+scannerSymbol?: string;
+chartSymbol?: string;
+rubySymbol?: string;
+};
+
+account: {
+mode?: “live” | “demo” | “unknown”;
+route?: “shared_mt5” | “user_mt5” | “unknown”;
+balance?: number;
+equity?: number;
+openPl?: number;
+freeMargin?: number;
+marginLevel?: number;
+allocation?: number;
+lastUpdated?: string;
+};
+
+bridge: {
+status: “connected” | “unavailable” | “stale” | “unknown”;
+heartbeatAgeMs?: number;
+lastHeartbeat?: string;
+executionRouteReady?: boolean;
+};
+
+positions: {
+openCount: number;
+mt5OpenCount?: number;
+appOpenCount?: number;
+mismatch?: boolean;
+lastUpdated?: string;
+};
+
+scanner?: {
+bias?: “buy” | “sell” | “neutral” | “mixed”;
+score?: number;
+lastUpdated?: string;
+};
+
+smartChart?: {
+bias?: “bullish” | “bearish” | “neutral” | “mixed”;
+structureScore?: number;
+lastCandleTime?: string;
+lastUpdated?: string;
+};
+
+ruby?: {
+bias?: “buy” | “sell” | “neutral” | “mixed”;
+confidence?: number;
+explanationReady?: boolean;
+lastUpdated?: string;
+};
+
+heat?: {
+heatScore?: number;
+tradeabilityScore?: number;
+entryPermission?: string;
+bestAction?: string;
+lastUpdated?: string;
+};
+
+news?: {
+riskLevel?: “low” | “medium” | “high” | “critical” | “unknown”;
+phase?: string;
+nextEventTime?: string;
+affectedSymbols?: string[];
+lastUpdated?: string;
+};
+
+risk?: {
+hardPass?: boolean;
+riskMode?: string;
+dailyLossHit?: boolean;
+weeklyLossHit?: boolean;
+drawdownLimitHit?: boolean;
+lastUpdated?: string;
+};
+
+selfTradeAgent?: {
+agentId?: string;
+agentName?: string;
+funded?: boolean;
+active?: boolean;
+autonomyLevel?: number;
+quotaProgress?: string;
+ledgerHealthy?: boolean;
+};
+
+alerts?: {
+pipelineReady?: boolean;
+unreadCount?: number;
+lastUpdated?: string;
+};
+
+audit?: {
+auditReady?: boolean;
+lastDecisionId?: string;
+};
+};
+
+The Shared Truth Snapshot should be used by all AACI scoring functions.
+
+Do not let different modules calculate decision truth from isolated state if AACI snapshot exists.
+
+==================================================
+HANDSHAKE REGISTRY
+
+Create a standardized handshake registry.
+
+Each major decision should have handshakes from relevant systems.
+
+Handshake type:
+
+type AaciHandshake = {
+system:
+| “Ruby”
+| “Scanner”
+| “SmartChart”
+| “MarketTimingBrain”
+| “EconomicCalendar”
+| “RiskGovernor”
+| “SelfTradeAI”
+| “SelfTradeSupervisor”
+| “MT5Bridge”
+| “OpenTrades”
+| “MyAlerts”
+| “AccountAnalytics”
+| “WinsLosses”
+| “AgentLedger”
+| “AuditLog”
+| “Permissions”
+| “ExecutionRoute”;
+
+status: “PASS” | “WARN” | “FAIL” | “STALE” | “MISSING”;
+score: number;
+message: string;
+lastUpdated?: string;
+latencyMs?: number;
+required: boolean;
+};
+
+Every major action should create a decision with handshakes.
+
+Examples:
+
+Self-trade entry handshakes:
+
+* Scanner
+* SmartChart
+* MarketTimingBrain
+* EconomicCalendar
+* RiskGovernor
+* SelfTradeSupervisor
+* AgentLedger
+* MT5Bridge
+* ExecutionRoute
+* AuditLog
+* MyAlerts
+
+Manual trade handshakes:
+
+* Permissions
+* RiskGovernor
+* MT5Bridge
+* ExecutionRoute
+* AuditLog
+* OpenTrades
+
+Ruby market explanation handshakes:
+
+* Scanner
+* SmartChart
+* MarketTimingBrain
+* EconomicCalendar
+* Ruby
+* DataFreshness
+
+If a required handshake fails, AACI score should fall or HARD_GATE should fail depending on severity.
+
+==================================================
+DECISION OBJECT
+
+Every major AACI decision must create a standard object.
+
+type AaciDecision = {
+decisionId: string;
+timestamp: string;
+
+actorType: “user” | “ruby” | “self_trade_agent” | “admin” | “system”;
+actorId?: string;
+
+symbol?: string;
+timeframe?: string;
+actionRequested: string;
+
+hardGatePass: boolean;
+hardGateFailures: string[];
+
+dataFreshnessScore: number;
+graphCohesionScore: number;
+riskAlignmentScore: number;
+marketTruthScore: number;
+speedLatencyScore: number;
+executionReadinessScore: number;
+driftScore: number;
+auditAlertReadinessScore: number;
+learnedTrustScore: number;
+dataQualityScore: number;
+uiConsistencyScore: number;
+explainabilityScore: number;
+
+speedValidity: number;
+uncertaintyConfidence: number;
+dataLineageTrust: number;
+selfLearningIntegrity: number;
+
+finalAaciScore: number;
+
+recommendedAction:
+| “ALLOW”
+| “ALLOW_REDUCED_SIZE”
+| “PREPARE_ONLY”
+| “WAIT_FOR_CONFIRMATION”
+| “WATCH_ONLY”
+| “PROTECT_OPEN_TRADE”
+| “EXIT_OR_REDUCE”
+| “RECONCILE_SYSTEM”
+| “BLOCK”
+| “ALERT_ADMIN”;
+
+explanation: string;
+userFacingExplanation: string;
+systemConflicts: string[];
+staleInputs: string[];
+requiredFollowUps: string[];
+
+handshakes: AaciHandshake[];
+
+createdAuditEvent: boolean;
+alertCreated?: boolean;
+};
+
+Store and display this in admin System Cohesion / Audit Log where role allows.
+
+For regular users, display only clean explanation and action.
+
+==================================================
+DATA FRESHNESS SCORE — F
+
+Data Freshness measures whether the app is using current data.
+
+Inputs:
+
+* market feed age
+* candle age
+* scanner read age
+* Ruby read age
+* heat snapshot age
+* economic calendar age
+* bridge heartbeat age
+* account snapshot age
+* open positions refresh age
+* risk state age
+* alert state age
+
+Score each source 0–100.
+
+Suggested freshness thresholds:
+
+* market feed: fresh under 1 second where possible
+* scanner: fresh under 1–3 seconds for fast markets
+* Ruby read: fresh based on context
+* bridge heartbeat: fresh under app-defined bridge threshold
+* open positions: fresh under 1–3 seconds after execution
+* economic calendar: fresh based on provider update cycle
+* heat snapshot: fresh under active market threshold
+
+Formula:
+
+F = weighted_average(
+marketFeedFreshness,
+candleFreshness,
+scannerFreshness,
+rubyFreshness,
+heatFreshness,
+newsFreshness,
+bridgeFreshness,
+accountFreshness,
+positionFreshness,
+riskFreshness
+)
+
+If critical data is stale, add penalty and potentially block.
+
+Examples:
+
+* If MT5 heartbeat stale: block live execution.
+* If open positions stale: pause autonomous position management.
+* If scanner stale: do not use scanner signal for self-trade.
+* If heat stale: recalculate heat before using.
+* If news stale: cap confidence around critical news.
+
+==================================================
+GRAPH COHESION / SYSTEM AGREEMENT SCORE — G
+
+Graph Cohesion checks whether systems agree.
+
+Compare:
+
+* selected symbol across pages
+* timeframe across Scanner/Chart/Ruby
+* account state across Cockpit/Account/Trade
+* open positions across MT5/Open Trades/Account Analytics
+* Scanner bias vs Smart Chart bias
+* Ruby explanation vs Scanner/Chart data
+* Heat Map vs News phase
+* Risk Governor vs Trade action
+* Agent Ledger vs allocation
+* Alert pipeline vs event severity
+* Audit log vs action
+
+Formula:
+
+G = weighted_average(
+symbolConsistency,
+timeframeConsistency,
+accountConsistency,
+positionConsistency,
+scannerChartAgreement,
+rubyScannerAgreement,
+heatNewsAgreement,
+riskTradeAgreement,
+ledgerAgreement,
+alertAuditAgreement,
+uiStateConsistency
+)
+
+Conflict examples:
+
+Scanner says Buy
+Smart Chart says Bearish
+Market Timing Brain says Exhausted Heat
+Risk Governor says Safe
+
+Result:
+Conflict detected.
+Recommended action: WAIT_FOR_CONFIRMATION or WATCH_ONLY.
+
+MT5 reports 0 positions
+Open Trades shows 1 position
+
+Result:
+Position sync mismatch.
+Recommended action: RECONCILE_SYSTEM.
+Pause autonomous management until reconciled.
+
+==================================================
+RISK ALIGNMENT SCORE — R
+
+Risk Governor still owns hard approval.
+
+AACI adds risk alignment scoring after hard risk pass.
+
+Inputs:
+
+* daily risk health
+* weekly risk health
+* drawdown safety
+* margin health
+* exposure health
+* correlation safety
+* volatility-family exposure
+* news risk safety
+* spread/slippage safety
+* agent quota pressure
+* recovery/protect mode
+* open position risk
+
+Formula:
+
+R =
+0.18 × dailyRiskHealth
+
+* 0.14 × weeklyRiskHealth
+* 0.14 × marginHealth
+* 0.13 × exposureHealth
+* 0.12 × correlationSafety
+* 0.11 × drawdownSafety
+* 0.08 × newsRiskSafety
+* 0.06 × spreadSlippageSafety
+* 0.04 × agentQuotaSafety
+
+Risk outputs:
+
+* Normal risk
+* Reduced risk
+* Protect only
+* Watch only
+* No new trades
+
+If Risk Governor hard blocks, HARD_GATE = 0.
+
+==================================================
+MARKET TRUTH SCORE — M
+
+Market Truth measures whether the trade idea is supported by market intelligence.
+
+Inputs:
+
+* scanner score
+* smart chart structure score
+* market heat/tradeability
+* broad market flow
+* institutional flow
+* entry zone quality
+* room to move
+* volatility relationship confirmation
+* news compatibility
+* trend/timeframe alignment
+* trap probability
+* late entry risk
+* exhausted heat risk
+* spread/slippage safety
+
+Formula:
+
+M =
+0.14 × scannerScore
+
+* 0.14 × chartStructure
+* 0.12 × tradeability
+* 0.10 × broadFlow
+* 0.10 × institutionalFlow
+* 0.10 × entryZoneQuality
+* 0.08 × roomToMove
+* 0.08 × volatilityRelationship
+* 0.07 × newsCompatibility
+* 0.07 × timeframeAlignment
+
+* 0.13 × trapProbability
+* 0.11 × lateEntryRisk
+* 0.09 × exhaustedHeatRisk
+
+Output labels:
+
+90–100: Strong aligned market truth
+80–89: Good
+70–79: Acceptable
+60–69: Watch only
+Below 60: No trade
+
+Important:
+Heat Score is not trade permission.
+A market can be hot and still not tradable.
+
+==================================================
+SPEED / LATENCY EDGE SCORE — S
+
+Speed is a core part of ARX.
+
+Ruby must not only be right.
+Ruby must be right early enough for the trade to still have edge.
+
+Speed measures the app’s ability to go from market movement to action quickly enough.
+
+Inputs:
+
+* market feed speed
+* scanner decision speed
+* Ruby response speed
+* risk check speed
+* execution route speed
+* MT5 round-trip speed
+* Open Trades sync speed
+* alert delivery speed
+* UI render speed
+* signal age
+* edge remaining
+
+Formula:
+
+S =
+0.18 × marketFeedSpeed
+
+* 0.15 × scannerDecisionSpeed
+* 0.13 × rubyResponseSpeed
+* 0.12 × riskCheckSpeed
+* 0.12 × executionRouteSpeed
+* 0.10 × mt5RoundTripSpeed
+* 0.08 × openTradesSyncSpeed
+* 0.07 × alertDeliverySpeed
+* 0.05 × uiRenderSpeed
+
+Track benchmarks:
+
+* UI action response: under 100–300ms
+* Risk check: under 300–800ms
+* Trade command prepared: under 500ms
+* Market feed update: under 500ms–1s where possible
+* Scanner candidate refresh: under 1–3s
+* Ruby short explanation: under 1.5–3s
+* MT5 command send: under 1s
+* Open Trades refresh after fill: under 1–3s
+* Alert delivery: under 1–2s
+
+These are targets. Actual bridge speed should be measured and logged.
+
+==================================================
+EDGE DECAY / SPEED VALIDITY
+
+Every setup has edge decay.
+
+Formula:
+
+EdgeDecay = e ^ (-SignalAge / EdgeHalfLife)
+
+SpeedAdjustedMarketTruth = MarketTruth × EdgeDecay
+
+Final Decision Value should include:
+
+FinalDecisionValue =
+AACI_SCORE
+× EdgeDecay
+× ExecutionSpeedConfidence
+
+Use different EdgeHalfLife by strategy:
+
+* Flame scalp: 15–45 seconds
+* Fast scalp: 30–90 seconds
+* M5 pullback: 2–8 minutes
+* M15 setup: 5–20 minutes
+* Swing setup: 30–120 minutes
+* News first reaction: very short
+* Post-news confirmation: a few minutes
+
+Speed states:
+
+* Early
+* On Time
+* Decaying
+* Late
+* Expired
+* Too Slow To Execute
+
+If signal is expired:
+Recommended action = WAIT_FOR_CONFIRMATION or WATCH_ONLY.
+
+If speed is too slow:
+No autonomous execution.
+
+==================================================
+EXECUTION READINESS SCORE — E
+
+Execution Readiness checks if action can be executed and reconciled.
+
+Inputs:
+
+* MT5 bridge heartbeat freshness
+* command route available
+* symbol mapping valid
+* lot size valid
+* SL/TP valid
+* spread acceptable
+* slippage estimate acceptable
+* order queue healthy
+* result mapping healthy
+* Open Trades refresh healthy
+* account snapshot fresh
+
+Formula:
+
+E =
+0.16 × bridgeFreshness
+
+* 0.14 × commandRouteHealth
+* 0.12 × symbolMappingHealth
+* 0.12 × lotValidation
+* 0.10 × slTpValidation
+* 0.10 × spreadSafety
+* 0.09 × slippageSafety
+* 0.08 × orderQueueHealth
+* 0.08 × resultMappingHealth
+* 0.07 × openTradeSyncHealth
+* 0.04 × accountSnapshotHealth
+
+If MT5 says filled but Open Trades does not update:
+Trigger reconciliation warning and force position refresh.
+
+==================================================
+DRIFT DETECTION SCORE — D
+
+Markets and agents change. AACI must detect drift.
+
+Track drift in:
+
+* agent win rate
+* strategy win rate
+* symbol behavior
+* session behavior
+* news reaction behavior
+* heat alert accuracy
+* spread/slippage profile
+* scanner accuracy
+* Ruby accuracy
+* volatility relationship accuracy
+* execution quality
+
+Drift Score should reward stable/reliable behavior and penalize detected drift.
+
+If drift detected:
+
+* reduce trust
+* lower lot size
+* raise setup threshold
+* move agent to watch/shadow mode if needed
+* alert admin if severe
+* log drift event
+
+Example:
+
+Agent Blaze used to win V75 flame scalps at 64%.
+This week that setup dropped to 38%.
+Drift detected.
+Ruby raises minimum setup score and reduces risk.
+
+==================================================
+AUDIT & ALERT READINESS SCORE — A
+
+Autonomous action requires traceability.
+
+Inputs:
+
+* audit log available
+* decision ID created
+* trade thesis saved
+* agent owner tag attached
+* risk decision saved
+* Ruby explanation saved
+* alert pipeline available
+* My Alerts update available
+* post-trade review path available
+
+Formula:
+
+A =
+0.18 × auditReady
+
+* 0.14 × decisionIdCreated
+* 0.14 × thesisSaved
+* 0.12 × ownerTagAttached
+* 0.12 × riskDecisionSaved
+* 0.10 × rubyExplanationSaved
+* 0.08 × alertPipelineReady
+* 0.08 × reviewPathReady
+* 0.04 × dataLineageSaved
+
+If audit readiness fails:
+Do not allow autonomous live execution.
+
+==================================================
+LEARNED TRUST SCORE — L
+
+Each module/agent/signal should have a trust score that changes over time.
+
+Use Bayesian-style trust:
+
+trust_i(t) = alpha_i / (alpha_i + beta_i)
+
+Start with neutral priors:
+
+alpha = 3
+beta = 3
+trust = 0.50
+
+When a module is correct:
+
+alpha_i += reward_quality
+
+When a module is wrong:
+
+beta_i += penalty_quality
+
+Track trust for:
+
+* Scanner
+* Smart Chart
+* Ruby
+* Market Timing Brain
+* Heat Map
+* News Engine
+* Broad Flow Engine
+* Volatility Matrix
+* Risk Governor soft-read
+* Self-Trade Agent
+* Strategy
+* Symbol
+* Session
+* Timeframe
+* Alert Engine
+* Execution path
+
+Examples:
+
+Scanner predicted Buy and trade worked:
+scanner_alpha += 1
+
+Heat Map said dirty heat/avoid and market trapped:
+heat_alpha += 1
+
+Ruby said wait but waiting missed a clean move:
+ruby_beta += 0.5
+
+Agent Blaze entered exhausted heat and lost:
+agent_blaze_beta += 1
+late_entry_detector_alpha += 1
+
+L = weighted_average(moduleTrustScores)
+
+==================================================
+ADAPTIVE WEIGHT UPDATE
+
+Weights should grow with the system but stay inside safety limits.
+
+Formula:
+
+W_k(t+1) = clip(
+W_k(t)
+
+* η × outcomeError × signalContribution_k
+
+* λ × safetyViolation_k
+* μ × staleDataPenalty_k,
+    W_min,
+    W_max
+    )
+
+Where:
+
+η = learning rate
+λ = safety penalty strength
+μ = stale data penalty strength
+outcomeError = actualOutcome - expectedOutcome
+signalContribution_k = how much this signal influenced the decision
+
+Use small learning rate:
+
+η = 0.01 to 0.05
+
+Safety penalties must be stronger than profit rewards.
+
+λ > η
+
+Do not allow adaptive weights to override hard gates.
+
+==================================================
+DATA QUALITY SCORE — Q
+
+Data Quality checks whether inputs are trustworthy.
+
+Inputs:
+
+* missing data
+* stale data
+* duplicate symbol mapping
+* mismatched account values
+* bad candle gaps
+* unavailable spread data
+* unavailable economic calendar
+* unavailable heat snapshots
+* unstable provider
+* bridge heartbeat issues
+
+If data quality is poor:
+Cap confidence.
+Reduce score.
+Block autonomous action if critical.
+
+==================================================
+UI STATE CONSISTENCY SCORE — U
+
+UI state should match backend/app state.
+
+Check:
+
+* selected symbol displayed equals selected symbol state
+* live/shared status is accurate
+* open positions count matches data
+* account snapshot matches latest
+* alert count matches notifications
+* regular users do not see admin controls
+* disabled actions match permissions
+* trade buttons reflect actual availability
+* Ruby status matches thinking/listening/speaking state
+
+If UI shows wrong state:
+Flag system cohesion warning.
+
+==================================================
+EXPLAINABILITY COMPLETENESS — X
+
+Autonomous actions must be explainable.
+
+Explainability inputs:
+
+* thesis saved
+* why now
+* why this market
+* why this direction
+* entry zone known
+* invalidation known
+* stop known
+* target known
+* risk known
+* exit plan known
+* handshakes known
+* confidence breakdown known
+
+If Ruby cannot explain a fully autonomous setup:
+Recommended action = WATCH_ONLY or PREPARE_ONLY.
+
+User-facing:
+Ruby cannot explain this setup clearly enough yet. Watch only.
+
+==================================================
+UNCERTAINTY CONFIDENCE
+
+Measure uncertainty.
+
+UncertaintyPenalty =
+0.25 × missingData
+
+* 0.20 × conflictingSignals
+* 0.15 × lowSampleHistory
+* 0.15 × highNewsChaos
+* 0.10 × spreadInstability
+* 0.10 × modelDisagreement
+* 0.05 × staleLearning
+
+UNCERTAINTY_CONFIDENCE = 1 - UncertaintyPenalty
+
+If uncertainty is high:
+Use WAIT, REDUCE_SIZE, WATCH_ONLY, or BLOCK.
+
+==================================================
+DATA LINEAGE TRUST
+
+Every decision should know data sources.
+
+Track lineage:
+
+* scanner data source
+* chart/candle source
+* economic calendar source
+* MT5 account source
+* open positions source
+* heat snapshot source
+* news source
+* alert source
+* agent ledger source
+
+Data Lineage Trust should drop if:
+
+* source missing
+* source stale
+* source unknown
+* source conflicts with another source
+* source is not production-ready
+* source is simulated/demo in live mode
+
+Regular users should not see raw source details.
+Admin can see detailed data lineage.
+
+==================================================
+SELF-LEARNING INTEGRITY
+
+Protect AACI from bad learning.
+
+Include:
+
+* learning permission level
+* bad-learning prevention
+* luck filter
+* confidence quarantine
+* minimum evidence rule
+* regime reset
+* cross-agent contamination control
+* learning audit log
+* rollback/version control
+
+SelfLearningIntegrity score measures whether learning updates are safe.
+
+==================================================
+LEARNING PERMISSION LEVELS
+
+Support learning levels:
+
+Level 1: Observe only
+Level 2: Recommend adjustments
+Level 3: Auto-adjust small weights
+Level 4: Auto-adjust agent behavior within limits
+Level 5: Major changes require admin approval
+
+AACI may automatically lower trust in weak signals if allowed.
+AACI may not automatically make major risk changes unless admin-approved.
+
+Major changes requiring admin approval:
+
+* increase agent allocation
+* increase max lot
+* enable news trading
+* enable more symbols
+* raise daily max trades
+* change daily/weekly loss limits
+* promote agent to full autonomy
+* disable safety cooldowns
+* remove kill switch constraints
+
+==================================================
+BAD-LEARNING PREVENTION
+
+Separate outcome from decision quality.
+
+Classify every trade:
+
+* Good outcome / Good decision
+* Bad outcome / Good decision
+* Good outcome / Bad decision
+* Bad outcome / Bad decision
+
+A good outcome from a bad decision should not be heavily rewarded.
+
+Example:
+A news chase won randomly but violated dirty heat rules.
+Outcome good, decision bad.
+Do not increase trust strongly.
+
+==================================================
+LUCK FILTER
+
+Every closed trade should ask:
+
+* Did the trade follow thesis?
+* Was entry on time?
+* Was risk controlled?
+* Was broad flow supportive?
+* Was exit planned?
+* Did it win because of plan or random volatility?
+
+If likely luck:
+Limit learning reward.
+
+==================================================
+CONFIDENCE QUARANTINE
+
+If a module becomes unreliable, quarantine it.
+
+Examples:
+
+* Heat Map confidence unreliable today
+* Volatility Matrix stale
+* News feed disconnected
+* Scanner signals late
+* Agent Blaze miscalibrated
+
+Quarantine means:
+Do not use this signal for execution decisions until repaired/recalibrated.
+
+Still allow display as informational if clearly labeled, unless data is dangerous.
+
+==================================================
+MINIMUM EVIDENCE RULE
+
+Do not change major behavior from small samples.
+
+Suggested rules:
+
+* minimum 20 similar decisions before changing strategy weight
+* minimum 5 trading days before promoting an agent
+* minimum 10 news events before changing news playbook behavior
+* minimum 30 heat alerts before changing heat alert scoring
+* minimum 15 closed trades before trusting a new agent strategy
+
+If insufficient evidence:
+Recommendation only, no auto-change.
+
+==================================================
+REGIME RESET
+
+If market regime changes sharply:
+
+* reduce reliance on old learned weights
+* lower confidence
+* require new evidence
+* alert admin if severe
+* use safer defaults
+
+Example:
+Market regime changed.
+Old V75 flame scalp performance may not apply.
+Ruby reduces risk until new evidence forms.
+
+==================================================
+CROSS-AGENT CONTAMINATION CONTROL
+
+Agents may learn from each other only through validated patterns.
+
+No agent may copy another agent’s strategy into full live mode without validation.
+
+If Agent Blaze finds a winning pattern:
+Titan can test in shadow/low-risk mode first before full live use.
+
+==================================================
+LEARNING AUDIT LOG
+
+Every learning change must be logged.
+
+Example:
+
+AACI adjusted Heat Map weight from 0.11 to 0.13.
+Reason: Heat timing improved outcomes over last 30 decisions.
+Confidence: Medium.
+Rollback available.
+
+Track:
+
+* old value
+* new value
+* reason
+* evidence count
+* confidence
+* approved by admin if required
+* rollback ID
+
+==================================================
+VERSIONING AND ROLLBACK
+
+Every AACI, Ruby, agent, heat scoring, self-trade, and weighting update should have a version.
+
+Example:
+
+AACI v1.4
+Change: increased late-entry penalty
+Reason: losses from chasing exhausted heat
+Monitor period: 5 trading days
+Rollback available: yes
+
+If performance worsens:
+Admin can rollback.
+
+==================================================
+STRESS-TEST MODE
+
+Before applying major new rules live, simulate on historical decisions if data exists.
+
+Example:
+
+If this new heat penalty existed last week:
+
+* 8 trades would still pass
+* 4 late trades would be blocked
+* expected drawdown reduced
+* profit impact uncertain
+
+Do not present stress test as guarantee.
+Use it as internal safety analysis.
+
+==================================================
+PROFIT LEARNING VS SAFETY LEARNING
+
+Separate:
+
+Profit Learning:
+What makes money.
+
+Safety Learning:
+What protects the account.
+
+Safety learning always outranks profit learning.
+
+A risky pattern that made money twice should not become trusted if it violates drawdown, slippage, news, exposure, or execution rules.
+
+==================================================
+CONFIDENCE CEILINGS
+
+Cap confidence when key data is missing.
+
+Examples:
+
+* Economic calendar unavailable → max confidence 75
+* Spread data unavailable → max confidence 70 for scalps
+* Heat Map unavailable → max confidence 80 for timing-sensitive trades
+* Open Trades mismatch → autonomous management paused
+* MT5 heartbeat stale → max confidence 0 for live execution
+* Audit unavailable → max confidence 0 for autonomous execution
+
+Implement confidence caps as configurable constants.
+
+==================================================
+ADVERSARIAL MARKET SHOCK MODE
+
+Detect shock conditions:
+
+* flash crash
+* extreme spread
+* broker lag
+* geopolitical headline
+* major news surprise
+* abnormal volatility spike
+* data feed mismatch
+* bridge instability
+* liquidity vacuum
+* market halt/closed state if applicable
+
+Shock Mode behavior:
+
+* no new autonomous entries
+* protect open positions
+* reduce exposure if existing permissioned flow allows
+* refresh data
+* alert admin
+* wait until systems stabilize
+* log shock event
+
+==================================================
+PERFORMANCE ATTRIBUTION
+
+After trades close, determine why outcome happened.
+
+Attribution labels:
+
+* good direction
+* good timing
+* bad timing
+* good execution
+* bad execution
+* slippage
+* spread issue
+* news surprise
+* heat trap
+* late entry
+* wrong agent
+* wrong timeframe
+* poor risk/reward
+* bridge delay
+* manual override
+* broad flow conflict
+* volatility relationship conflict
+* lucky win
+* good loss
+
+Use this to update learning safely.
+
+==================================================
+SELF-REPAIR ACTIONS
+
+AACI should not only detect issues; it should recommend or trigger repair when safe.
+
+Repair map:
+
+If bridge stale:
+
+* refresh bridge status
+* pause live automation
+* alert admin
+
+If Open Trades mismatch:
+
+* force position sync
+* pause autonomous management until reconciled
+
+If alerts missing:
+
+* rebuild alert event if safe
+* flag alert pipeline
+
+If scanner stale:
+
+* refresh scanner universe
+
+If Ruby read stale:
+
+* request/recompute Ruby read
+
+If heat stale:
+
+* recalculate heat snapshot
+
+If agent ledger mismatch:
+
+* pause agent
+* reconcile allocation
+* alert admin
+
+If account snapshot stale:
+
+* refresh account data
+
+If selected symbol mismatch:
+
+* normalize selected symbol state
+* log UI consistency warning
+
+Regular users see clean message:
+ARX is refreshing market data.
+
+Admin sees detailed repair reason.
+
+==================================================
+PRE-EXECUTION COHESION GATE
+
+Before any live trade execution, run AACI.
+
+Applies to:
+
+* manual trade
+* one-click trade
+* scanner-to-trade
+* Ruby-assisted trade
+* self-trade agent trade
+* modify SL/TP
+* close position
+* partial close if wired
+* protect trade
+
+Self-trade live execution requires:
+
+* HARD_GATE = 1
+* AACI score >= agent threshold
+* Risk Governor = PASS
+* Supervisor = APPROVED
+* Execution Readiness >= 80
+* Audit Readiness >= 90
+* Speed Validity acceptable
+* no critical conflict
+* no quarantined required signal
+
+For manual user trades:
+AACI can warn or block only according to existing app/risk rules.
+Do not create new manual trade hard blocks unless current Risk Governor/permission system supports them.
+
+For autonomous trades:
+AACI can block based on cohesion, speed, audit, or data health.
+
+==================================================
+POST-EXECUTION RECONCILIATION
+
+After order execution, verify:
+
+* order submitted
+* MT5 response received
+* fill/reject recorded
+* Open Trades updated
+* account balance/equity refreshed
+* My Alerts updated
+* Audit Log updated
+* Ruby explanation saved
+* agent ledger updated if self-trade
+* Account Analytics updated
+* Wins/Losses ready after close
+* position owner tags attached
+
+If fill received but Open Trades not updated:
+
+* force refresh
+* alert admin
+* mark reconciliation warning
+
+If reject received:
+
+* record reject reason
+* update alerts
+* update audit
+* do not show as open position
+
+If command lost:
+
+* mark unknown state
+* pause relevant autonomous action
+* reconcile bridge
+
+==================================================
+LIVE POSITION COHESION
+
+For open trades, AACI should check:
+
+* MT5 position exists
+* app position exists
+* owner tag exists
+* open P/L fresh
+* SL/TP state fresh
+* Risk Governor exposure state current
+* Heat/News/Open Trade manager aligned
+* Ruby management read current
+* alerts created if needed
+
+If position is exposed before critical news:
+
+* alert
+* recommend protect
+* no add-ons
+
+If Open Trades and MT5 mismatch:
+
+* reconcile
+
+==================================================
+ALERT COHESION
+
+AACI should verify alerts are created for:
+
+* bridge disconnected
+* risk lock active
+* open trade unprotected
+* high-impact news near open trade
+* heat danger window
+* volatility opposite-run
+* self-trade quota pressure
+* agent loss limit hit
+* order rejected
+* open position sync mismatch
+* data stale
+* audit failure
+* learning quarantine
+* shock mode
+
+If alert missing:
+
+* create missing alert if safe
+* or flag alert pipeline failure
+* log event
+
+==================================================
+SELF-TRADE AGENT COHESION
+
+For Self-Trade AI, verify:
+
+* agent has funds
+* agent ledger matches allocation
+* agent active state correct
+* autonomy level allows action
+* daily 3-trade minimum tracker correct
+* base max 5 respected
+* extension rules respected
+* agent owner tags attached
+* supervisor approved final action
+* Risk Governor approved
+* MT5 route used
+* audit log recorded decision
+* competition score updated after close
+* learning update recorded
+* quota pressure tracked
+
+If any critical piece missing:
+Pause agent until reconciled.
+
+==================================================
+AACI ACTION SELECTION
+
+AACI should output one action:
+
+* ALLOW
+* ALLOW_REDUCED_SIZE
+* PREPARE_ONLY
+* WAIT_FOR_CONFIRMATION
+* WATCH_ONLY
+* PROTECT_OPEN_TRADE
+* EXIT_OR_REDUCE
+* RECONCILE_SYSTEM
+* BLOCK
+* ALERT_ADMIN
+
+Action selection formula:
+
+action* = argmax_a [
+ExpectedUtility(a | state)
+
+* ExplorationBonus(a)
+
+* RiskCost(a)
+* CohesionPenalty(a)
+    ]
+
+Hard rule:
+
+If HARD_GATE = 0:
+action = BLOCK or RECONCILE_SYSTEM or ALERT_ADMIN depending on failure.
+
+Do not allow action selection to override hard gates.
+
+==================================================
+SCORE THRESHOLDS
+
+Use initial thresholds:
+
+95–100:
+Fully synced / excellent
+
+85–94:
+Healthy
+
+75–84:
+Watch / acceptable with caution
+
+70–79:
+Prepare / wait / reduced risk
+
+60–69:
+Watch only
+
+Below 60:
+Block / reconcile / alert
+
+For autonomous self-trade:
+
+AACI >= 85 for normal autonomous execution
+AACI 75–84 may allow reduced risk only if agent settings allow
+AACI below 75 = no autonomous entry
+
+For scalps:
+Require Speed Validity strong and signal not decayed.
+
+For news:
+Require News Mode permission and post-news confirmation unless admin specifically allows aggressive news mode.
+
+For position protection:
+Allow protective actions at lower score if execution route and permissions are healthy.
+
+==================================================
+ADMIN SYSTEM COHESION PAGE
+
+Create or upgrade admin-only page:
+
+/system-cohesion
+
+or follow existing admin route convention.
+
+Page title:
+System Cohesion
+
+Subtitle:
+Monitor ARX system alignment, data freshness, speed, risk, handshakes, reconciliation, and learning health.
+
+Tabs:
+
+1. Overview
+2. Live Handshakes
+3. Conflicts
+4. Data Freshness
+5. Speed / Latency
+6. Trade Reconciliation
+7. Agent Cohesion
+8. Alerts Pipeline
+9. Learning Health
+10. Audit Log
+11. Repairs
+
+Overview cards:
+
+* Overall AACI Score
+* Data Freshness
+* System Agreement
+* Risk Alignment
+* Market Truth
+* Speed
+* Execution Readiness
+* Audit Readiness
+* Learning Trust
+* Self-Learning Integrity
+* Active Conflicts
+* Open Repairs
+* Shock Mode status
+
+Live Handshakes:
+Show current handshake records.
+
+Conflicts:
+Show system disagreements.
+
+Data Freshness:
+Show last update ages.
+
+Speed / Latency:
+Show latency metrics and missed benchmarks.
+
+Trade Reconciliation:
+Show order/fill/Open Trades/account sync states.
+
+Agent Cohesion:
+Show agent funding, ledger, quota, risk, execution, and audit health.
+
+Alerts Pipeline:
+Show whether alerts are firing and grouped.
+
+Learning Health:
+Show trust scores, drift, quarantine, learning changes, evidence counts.
+
+Repairs:
+Show self-repair actions and results.
+
+Regular users must not see admin diagnostic details.
+
+Regular-user simplified status:
+ARX systems are synced.
+Market data is refreshing.
+Trading intelligence is updating.
+Some systems are reconnecting.
+
+==================================================
+INTEGRATION POINTS
+
+Integrate AACI into these areas.
+
+Cockpit:
+
+* show simplified system sync status
+* admin can click into System Cohesion
+* user sees clean status only
+
+Trade Command Room:
+
+* pre-trade AACI check
+* speed/status warning
+* tradeability/cohesion explanation
+* do not break existing Buy/Sell route
+
+Scanner:
+
+* show AACI cohesion badge on candidates
+* reduce confidence when Scanner/Chart/Ruby conflict
+* speed decay on stale signals
+
+Smart Chart:
+
+* show data freshness/heat/conflict badges if useful
+* do not break chart
+
+Ruby:
+
+* Ruby should be able to explain AACI decision:
+    “Why did ARX block this?”
+    “Why is this watch only?”
+    “What system disagrees?”
+    “What data is stale?”
+* Do not expose raw backend names to user.
+
+Self-Trade AI:
+
+* AACI becomes required pre-execution gate
+* AACI logs every autonomous decision
+* AACI can pause agent on ledger mismatch or stale data
+
+Risk Governor:
+
+* AACI uses Risk Governor hard pass
+* AACI does not replace Risk Governor
+* AACI can recommend reduced risk/watch based on cohesion
+
+Open Trades:
+
+* show sync/cohesion status
+* detect MT5/app mismatch
+* show heat/news/position cohesion
+
+My Alerts:
+
+* AACI creates alerts for conflicts, stale data, missing handshakes, shocks, reconciliation failures, quota issues
+
+Account Analytics:
+
+* show account/allocation/ledger coherence
+* show AACI daily system health if appropriate
+
+Wins & Losses:
+
+* show AACI context at entry/exit
+* show if trade was late, stale, conflicted, or cohesive
+* use attribution for learning
+
+Admin Dashboard:
+
+* add System Cohesion entry
+* add kill switch / repair visibility if already permissioned
+
+==================================================
+REGULAR USER VISIBILITY
+
+Regular users should see simple, clean messages.
+
+Allowed:
+
+* ARX systems are synced.
+* Market data is refreshing.
+* Ruby is updating the trade read.
+* Bridge unavailable.
+* Trading paused by risk controls.
+* This setup is watch only.
+* Entry is late. Ruby is waiting for a new setup.
+* Open position data is syncing.
+* ARX is checking account safety.
+
+Do not show regular users:
+
+* backend
+* API
+* raw function names
+* internal enums
+* raw queue IDs
+* raw command IDs
+* LLM call
+* system prompt
+* debug
+* raw MT5 payload
+* raw bridge logs
+* canPlaceTrades
+* LIVE_LOCKED
+* database errors
+* hidden formulas
+* other users’ data
+* admin logs
+
+Admin can see detailed diagnostics only through role-protected pages.
+
+==================================================
+EMPTY STATES
+
+Use clean empty states:
+
+* AACI decisions will appear after system activity begins.
+* No active system conflicts.
+* No stale critical data.
+* No reconciliation issues.
+* No learning changes yet.
+* No quarantined modules.
+* No self-repair actions required.
+* Speed metrics will appear after actions are measured.
+* Agent cohesion will appear once agents are active.
+
+Do not fake AACI scores if data does not exist.
+If using basic estimates, label them:
+Basic estimate.
+
+==================================================
+SUGGESTED FILES / STRUCTURE
+
+Adapt to existing architecture.
+
+Suggested services/helpers:
+
+aaciService
+aaciScoringEngine
+aaciSharedTruthService
+aaciHandshakeRegistry
+aaciConflictDetector
+aaciFreshnessMonitor
+aaciSpeedMonitor
+aaciExecutionGate
+aaciReconciliationService
+aaciLearningService
+aaciTrustStore
+aaciDriftDetector
+aaciSelfRepairService
+aaciAuditLogger
+aaciAlertBridge
+
+Suggested components:
+
+SystemCohesionPage
+AaciOverviewCards
+AaciScoreCard
+AaciHandshakeTable
+AaciConflictPanel
+AaciFreshnessPanel
+AaciSpeedPanel
+AaciReconciliationPanel
+AaciAgentCohesionPanel
+AaciLearningHealthPanel
+AaciAuditTimeline
+AaciRepairPanel
+AaciStatusChip
+AaciDecisionDrawer
+AaciUserStatusBanner
+
+Suggested types:
+
+AaciSharedTruthSnapshot
+AaciDecision
+AaciHandshake
+AaciScoreBreakdown
+AaciConflict
+AaciFreshnessRecord
+AaciLatencyRecord
+AaciLearningChange
+AaciRepairAction
+AaciTrustScore
+
+Use TypeScript types if the app is TypeScript.
+
+==================================================
+QA REQUIRED AFTER EACH PHASE
+
+After each phase, run build/typecheck/lint if available and verify:
+
+1. App loads.
+2. No runtime errors.
+3. Existing routes still work.
+4. Global header still works.
+5. Bottom nav still works.
+6. Ruby floating button still works.
+7. Selected symbol remains synced.
+8. Trade execution path not changed.
+9. Risk Governor not bypassed.
+10. MT5/shared bridge route preserved.
+11. Regular users cannot see admin diagnostics.
+12. Admin can see System Cohesion page.
+13. No fake data appears.
+14. No backend/debug wording appears to regular users.
+15. Mobile layout has no horizontal overflow.
+16. Existing Scanner/Ruby/Trade/Open Trades/Alerts/Analytics pages still work.
+
+==================================================
+FINAL QA
+
+Final verification:
+
+1. AACI Shared Truth Snapshot created.
+2. Handshake Registry created.
+3. AACI score calculates.
+4. Hard gates block correctly.
+5. Speed/latency score included.
+6. Edge decay included.
+7. Uncertainty confidence included.
+8. Data lineage trust included.
+9. Self-learning integrity included.
+10. Drift detection included.
+11. Learning trust included.
+12. Bad-learning prevention included.
+13. Confidence ceilings included.
+14. Quarantine logic included.
+15. Admin governance layer included.
+16. Versioning/rollback future-ready.
+17. Pre-execution gate wired.
+18. Post-execution reconciliation wired.
+19. Alert cohesion wired.
+20. Agent cohesion wired.
+21. System Cohesion admin page created.
+22. Regular-user messaging clean.
+23. No execution path bypass.
+24. No fake data.
+25. TypeScript/build/lint/runtime errors fixed.
+
+==================================================
+COMPLETION REPORT REQUIRED
+
+Return a structured report:
+
+* files changed
+* routes added/updated
+* components created/updated
+* services/helpers created/updated
+* types/models added
+* Shared Truth Snapshot implemented
+* Handshake Registry implemented
+* AACI formula implemented
+* hard gates implemented
+* speed/latency included
+* edge decay included
+* uncertainty included
+* data lineage included
+* self-learning integrity included
+* conflict detector implemented
+* freshness monitor implemented
+* pre-execution gate implemented
+* post-execution reconciliation implemented
+* self-repair implemented/future-ready
+* learning/trust implemented/future-ready
+* System Cohesion page completed
+* integrations completed
+* admin/user visibility confirmed
+* existing trade execution path preserved
+* Risk Governor preserved
+* MT5 bridge preserved
+* mobile QA passed
+* remaining follow-up needed
+
+IMPORTANT:
+Build AACI as the adaptive nervous system of ARX AI. It should grow with the system, but it must remain inside hard safety guardrails. It must improve speed, cohesion, auditability, explainability, and trust without breaking live execution wiring or exposing internal system details to regular users.

@@ -1,0 +1,596 @@
+Run the final Build JJ verification lock-test.
+
+Do not start Build KK.
+Do not add new features unless a Build JJ test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not recommend live trading.
+Do not change Build AA, BB, CC, DD, EE, FF, GG, HH, or II logic except to fix Build JJ replay/strategy-lab integration issues.
+
+Build JJ goal:
+Create a Replay Simulator + Strategy Lab where the system can replay synthetic, recorded, or imported candle scenarios, run Build AA in replay mode, apply sniper filters, simulate replay-only trades, generate replay reports, and test Build II playbook entries without touching live money or real paper trades.
+
+Verify Build JJ only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Replay Simulator service proof
+
+Confirm the Replay Simulator service exists.
+
+Show exact files/functions for:
+- replaySimulatorService
+- replayScenarioService
+- candleReplayEngine
+- replayTradeEngine
+- replayReportGenerator
+- replayRoutes
+- replayLogs
+- strategyLabService
+- strategyLabRoutes
+- frontend Replay Simulator page
+- frontend Strategy Lab page
+- frontend Replay Run Detail page
+
+Confirm the replay service returns this structure:
+
+{
+  replay_run_id,
+  scenario_id,
+  mode: "REPLAY_ONLY",
+  status: "COMPLETED" | "FAILED" | "STOPPED",
+  symbol,
+  timeframe,
+  started_at,
+  finished_at,
+  candles_processed,
+  decisions_created,
+  simulated_trades_opened,
+  simulated_trades_closed,
+  wins,
+  losses,
+  break_even,
+  net_pnl,
+  max_drawdown,
+  win_rate,
+  profit_factor,
+  best_trade,
+  worst_trade,
+  replay_summary,
+  warnings,
+  errors
+}
+
+3. Database verification
+
+Confirm these tables exist:
+
+replay_scenarios
+replay_runs
+replay_trades
+strategy_lab_experiments
+replay_reports
+replay_logs
+
+Confirm replay_scenarios includes:
+id,
+scenario_id,
+title,
+symbol,
+timeframe,
+source,
+market_condition,
+candles,
+notes,
+created_at,
+updated_at.
+
+Confirm replay_runs includes:
+id,
+replay_run_id,
+scenario_id,
+mode,
+status,
+symbol,
+timeframe,
+candles_processed,
+decisions_created,
+simulated_trades_opened,
+simulated_trades_closed,
+wins,
+losses,
+break_even,
+net_pnl,
+max_drawdown,
+win_rate,
+profit_factor,
+replay_summary,
+warnings,
+errors,
+started_at,
+finished_at,
+created_at.
+
+Confirm replay_trades includes:
+id,
+replay_trade_id,
+replay_run_id,
+decision_id,
+playbook_entry_id,
+symbol,
+action,
+status,
+entry_price,
+exit_price,
+stop_loss,
+take_profit,
+position_size,
+pnl,
+pnl_percent,
+result,
+opened_at_replay_time,
+closed_at_replay_time,
+candle_opened_index,
+candle_closed_index,
+close_reason,
+decision_snapshot,
+market_snapshot,
+sniper_snapshot,
+created_at,
+updated_at.
+
+Confirm strategy_lab_experiments includes:
+id,
+experiment_id,
+title,
+symbol,
+timeframe,
+playbook_entry_id,
+scenario_ids,
+settings,
+result_summary,
+status,
+created_at,
+updated_at.
+
+Confirm replay_reports includes:
+id,
+replay_report_id,
+replay_run_id,
+scenario_id,
+symbol,
+timeframe,
+total_trades,
+wins,
+losses,
+break_even,
+win_rate,
+net_pnl,
+max_drawdown,
+profit_factor,
+avg_win,
+avg_loss,
+best_setup,
+weakest_setup,
+mistake_patterns,
+playbook_recommendations,
+coach_notes,
+safety_notes,
+should_promote_to_playbook,
+should_mark_for_review,
+created_at.
+
+Confirm replay_logs includes:
+id,
+replay_run_id,
+event_type,
+severity,
+message,
+details,
+created_at.
+
+4. Endpoint verification
+
+Run and show raw output for:
+
+POST /api/replay/demo
+
+GET /api/replay/scenarios
+
+POST /api/replay/scenarios
+
+GET /api/replay/scenarios/:id
+
+POST /api/replay/run
+
+GET /api/replay/runs?limit=20
+
+GET /api/replay/runs/:id
+
+GET /api/replay/runs/:id/trades
+
+GET /api/replay/runs/:id/report
+
+POST /api/replay/stop/:id
+
+GET /api/replay/logs?limit=50
+
+POST /api/strategy-lab/demo
+
+POST /api/strategy-lab/experiments
+
+GET /api/strategy-lab/experiments?limit=20
+
+GET /api/strategy-lab/experiments/:id
+
+POST /api/strategy-lab/experiments/:id/run
+
+GET /api/strategy-lab/compare
+
+5. Demo scenario proof
+
+Run POST /api/replay/demo.
+
+Confirm it creates at least one synthetic candle scenario with:
+- scenario_id
+- title
+- symbol
+- timeframe
+- source: SYNTHETIC
+- marketCondition
+- valid candles array
+- notes
+
+Show raw JSON output.
+
+6. Candle-by-candle replay proof
+
+Run a replay scenario.
+
+Confirm:
+- candles are processed in order
+- each replay step creates a simulated market snapshot
+- replay timestamp is used instead of live timestamp
+- decisions are counted
+- simulated trades are opened/closed only inside replay system
+- final run summary is stored
+
+Show raw JSON output.
+
+7. Build AA replay mode proof
+
+Show exactly where JJ calls Build AA in replay mode.
+
+Confirm AA receives input like:
+
+{
+  mode: "REPLAY",
+  symbol,
+  timeframe,
+  replayMarketData,
+  replayTimestamp,
+  playbookEntryId,
+  strategyLabSettings
+}
+
+Run a replay and confirm AA output includes:
+
+replayContext: {
+  mode: "REPLAY",
+  scenario_id,
+  replay_run_id,
+  candle_index,
+  replay_timestamp
+}
+
+Show raw JSON output.
+
+8. Sniper filter proof
+
+Show exactly where JJ uses the Build FF sniper-entry filter.
+
+Run replay scenarios where sniper result is:
+- PASS
+- WAIT
+- REJECT
+
+Confirm:
+- PASS can open a replay simulated trade
+- WAIT does not open a replay trade
+- REJECT does not open a replay trade
+- reasons/blockers are stored in sniper_snapshot
+
+Show raw JSON output.
+
+9. Replay trade separation proof
+
+Confirm replay trades are stored only in replay_trades.
+
+Confirm JJ does NOT create records in:
+- paper_trades
+- live trade tables
+- broker order tables
+
+Show raw replay_trades record.
+
+10. TP close proof
+
+Create or run a scenario where take profit is hit.
+
+Confirm:
+- replay trade closes as WIN or REPLAY_CLOSED_WIN
+- close_reason mentions TP hit
+- pnl and pnl_percent are calculated
+- candle_closed_index is set
+- replay report includes the win
+
+Show raw JSON output.
+
+11. SL close proof
+
+Create or run a scenario where stop loss is hit.
+
+Confirm:
+- replay trade closes as LOSS or REPLAY_CLOSED_LOSS
+- close_reason mentions SL hit
+- pnl and pnl_percent are calculated
+- candle_closed_index is set
+- replay report includes the loss
+
+Show raw JSON output.
+
+12. Replay report proof
+
+Run replay report endpoint.
+
+Confirm report includes:
+
+{
+  replay_report_id,
+  replay_run_id,
+  scenario_id,
+  symbol,
+  timeframe,
+  total_trades,
+  wins,
+  losses,
+  break_even,
+  win_rate,
+  net_pnl,
+  max_drawdown,
+  profit_factor,
+  avg_win,
+  avg_loss,
+  best_setup,
+  weakest_setup,
+  mistake_patterns,
+  playbook_recommendations,
+  coach_notes,
+  safety_notes,
+  should_promote_to_playbook,
+  should_mark_for_review
+}
+
+Confirm report clearly labels results as simulation/replay-based and does not claim guaranteed profitability.
+
+Show raw JSON output.
+
+13. Strategy Lab proof
+
+Run Strategy Lab demo and one experiment.
+
+Confirm experiment includes:
+- experiment_id
+- title
+- symbol
+- timeframe
+- playbook_entry_id
+- scenario_ids
+- settings
+- result_summary
+- status
+
+Confirm Strategy Lab can test one Build II playbook entry across multiple scenarios.
+
+Show raw JSON output.
+
+14. Strategy comparison proof
+
+Run GET /api/strategy-lab/compare.
+
+Confirm it can compare:
+- playbook entries
+- sniper score thresholds
+- risk settings
+- scenario performance
+- best/worst setup
+- win rate
+- net P&L
+- max drawdown
+- mistake patterns
+
+Show raw JSON output.
+
+15. Build II playbook integration proof
+
+Show exactly where JJ reads Build II playbook entries.
+
+Confirm:
+- playbook entries can be selected for Strategy Lab
+- replay reports can produce playbook recommendations
+- JJ does not overwrite II playbook entries automatically unless explicitly requested
+- all recommendations are marked simulation-based
+
+Show raw output.
+
+16. Empty scenario proof
+
+Run replay with missing or empty scenario.
+
+Confirm:
+- safe error is returned
+- no crash
+- no trades created
+- no live execution
+- clear validation message
+
+Show raw JSON output.
+
+17. Bad candle data proof
+
+Run replay with invalid candle data.
+
+Confirm validation catches:
+- missing open/high/low/close
+- invalid timestamps
+- high lower than low
+- non-numeric price
+- empty candle array
+
+Confirm:
+- replay run fails safely
+- no trades are created
+- error is logged
+
+Show raw JSON output.
+
+18. Replay stop proof
+
+Start or simulate a replay run that can be stopped.
+
+Run POST /api/replay/stop/:id.
+
+Confirm:
+- status becomes STOPPED
+- partial stats are preserved
+- no uncontrolled loop continues
+- logs record stop reason
+
+Show raw JSON output.
+
+19. Frontend route proof
+
+Confirm frontend pages/routes are accessible for:
+- Replay Simulator page
+- Strategy Lab page
+- Replay Run Detail page
+
+Confirm UI:
+- shows live trading disabled badge
+- labels results as replay/simulation only
+- does not include live execution buttons
+- does not create real paper trades from replay
+- is mobile friendly enough to read
+
+20. Logs proof
+
+Show replay logs proving each run records:
+- replay started
+- scenario loaded
+- candle processed
+- AA decision made
+- sniper result
+- replay trade opened
+- replay trade updated
+- replay trade closed
+- report generated
+- replay completed/stopped/failed
+- warnings/errors
+
+Show sample replay_logs records.
+
+21. Live-trade isolation proof
+
+Search Build JJ files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5,
+MT5,
+livePosition,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+real order placement,
+or anything that can place real trades.
+
+Confirm Build JJ does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+- Build HH liveTradingAllowed rules
+
+Confirm Build JJ always runs in:
+mode: "REPLAY_ONLY"
+
+22. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- Build GG trading calendar and command center
+- Build HH risk governor
+- Build II trader coach and playbook
+- manual debrief
+- manual paper close
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- autopilot logs
+- performance endpoints
+- risk governor endpoints
+- coach endpoints
+- existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Replay Simulator service proof
+7. Strategy Lab service proof
+8. Raw replay demo output
+9. Raw scenarios output
+10. Raw replay run output
+11. Raw replay run detail output
+12. Raw replay trades output
+13. Raw replay report output
+14. AA replayContext proof
+15. Sniper PASS/WAIT/REJECT proof
+16. Replay trade separation proof
+17. TP close proof
+18. SL close proof
+19. Strategy Lab experiment proof
+20. Strategy comparison proof
+21. Build II playbook integration proof
+22. Empty scenario proof
+23. Bad candle data proof
+24. Replay stop proof
+25. Frontend route proof
+26. Logs proof
+27. Live-trade isolation proof
+28. Any fixes made during verification
+29. Final Build JJ score out of 10
+30. Whether it is safe to proceed to Build KK

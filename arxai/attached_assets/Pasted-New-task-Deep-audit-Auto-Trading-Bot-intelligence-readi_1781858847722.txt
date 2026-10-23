@@ -1,0 +1,183 @@
+New task: Deep audit Auto Trading Bot intelligence, readiness, and performance safety.
+
+Goal:
+Verify whether the ARX auto trading bot is actually intelligent enough to perform safely and whether it can make high-quality trading decisions without blindly following weak scanner/scalp signals.
+
+This is an audit-first task. Do not enable, expand, or loosen auto trading until the findings prove it is safe.
+
+Systems to inspect:
+1. Auto trading bot / AI auto mode
+2. Ruby trade decision engine
+3. Scanner signal intake
+4. Scalp Builder / Flare system intake
+5. Trade Health / Eligibility contract
+6. Live execution gate stack
+7. Risk governance
+8. MT5 bridge dispatch
+9. Position monitoring
+10. Post-trade review / learning loop
+11. Emergency stop / kill switch
+12. Account exposure controls
+
+Core question:
+Can the bot independently decide:
+- when NOT to trade
+- when scanner signals are weak
+- when scalp signals conflict with chart read
+- when feed data is stale or unconfirmed
+- when risk is already stacked
+- when news/calendar data is unavailable
+- when open positions make a new trade dangerous
+- when a trade should be skipped even if a setup looks attractive
+
+Audit requirements:
+1. Decision intelligence:
+   - Verify what inputs the bot uses before proposing or placing a trade.
+   - Confirm it reads chart structure, trend, momentum, support/resistance, HTF context, spread, slippage, news risk, existing exposure, and trade health.
+   - Confirm it does not trade from one signal alone.
+   - Confirm it can say "NO TRADE" even when Scanner/Scalp Builder says Ready now.
+
+2. Feed truth:
+   - Auto bot must not trade when data is:
+     - historical-only
+     - feed-limited
+     - stale
+     - not AI-usable
+     - not broker-live
+     - synthetic/composite without broker confirmation
+   - Confirm bot uses the same feed verdict as Scanner/Ruby/chart.
+   - Confirm feed confidence can only downgrade, never grant execution permission.
+
+3. Scanner/Scalp reconciliation:
+   - If Chart Read says low confidence/wait, but Scalp Builder says Valid now, bot must downgrade to conditional or skip.
+   - If price is near support/resistance and scalp has limited room, bot must reduce confidence.
+   - If scalp signal depends on unconfirmed continuation, bot must wait.
+   - Bot must not treat “Ready now” wording as enough to execute.
+
+4. Risk intelligence:
+   - Bot must account for:
+     - daily loss
+     - weekly loss
+     - max open trades
+     - max exposure per symbol
+     - stacked same-direction positions
+     - no-stop-loss positions
+     - margin/free margin
+     - floating drawdown
+     - correlated exposure
+   - If the user already has stacked risk, bot should reduce or block new exposure.
+   - If open positions are weakening, bot should not add blindly.
+
+5. Execution gating:
+   - Confirm every auto trade still passes all live execution gates.
+   - Bot intelligence must never bypass:
+     - kill switch
+     - per-user arming
+     - bridge health
+     - broker connection
+     - allowed symbols
+     - lot limits
+     - margin checks
+     - stop-loss policy where applicable
+     - owner/admin live path rules
+   - Display confidence must never directly execute.
+
+6. Trade planning:
+   For every proposed auto trade, bot must produce:
+   - direction
+   - entry logic
+   - stop-loss
+   - take-profit
+   - risk amount
+   - expected reward
+   - reward:risk
+   - invalidation
+   - reason for trade
+   - reason not to trade
+   - data/feed status
+   - confidence
+   - expiration time
+
+7. Post-trade intelligence:
+   After every trade closes, bot must explain:
+   - why it entered
+   - what happened
+   - whether the thesis was right or wrong
+   - whether the loss/win was due to setup quality, timing, spread, news, volatility, or risk
+   - what it learned
+   - whether this strategy should be promoted, demoted, or paused
+
+8. Performance testing:
+   Run deterministic backtests/simulations against:
+   - trending market
+   - ranging market
+   - news spike
+   - low-liquidity session
+   - high spread
+   - stale feed
+   - synthetic market feed-limited state
+   - conflicting scanner/scalp/chart reads
+   - stacked open exposure
+   - drawdown day
+   - bridge disconnected
+
+9. Pass/fail scoring:
+   Grade the bot in these categories:
+   - Market read intelligence: /100
+   - Feed-truth honesty: /100
+   - Risk control: /100
+   - Execution safety: /100
+   - Explanation quality: /100
+   - Performance consistency: /100
+   - Stop/skip discipline: /100
+   - Overall readiness: /100
+
+10. Readiness levels:
+   Classify the bot as one of:
+   - Not ready for auto trading
+   - Ready for demo only
+   - Ready for supervised micro-live only
+   - Ready for limited live automation
+   - Ready for full auto under governance
+
+Important:
+Do not just check if the bot can place trades.
+Check whether it SHOULD place trades.
+
+Required evidence:
+- list of files/modules inspected
+- full decision flow diagram
+- every input the bot uses
+- every gate before execution
+- every place the bot can be stopped
+- every place weak data is downgraded
+- examples of trades it would take
+- examples of trades it correctly skips
+- failure modes
+- missing tests
+- recommended fixes
+
+Tests to add or verify:
+1. Bot skips when feed is historical-only.
+2. Bot skips when Ruby Chart Read confidence is low and Scalp Builder is only conditional.
+3. Bot skips when economic/news provider is missing and event risk is unknown.
+4. Bot skips or reduces risk when existing exposure is stacked.
+5. Bot skips when bridge heartbeat is stale.
+6. Bot skips when margin/free margin is unsafe.
+7. Bot cannot execute from display-only “Ready now” wording.
+8. Bot cannot bypass live execution gates.
+9. Bot generates a complete trade plan before execution.
+10. Bot writes post-trade review after close.
+11. Bot handles losing streak by reducing aggression or stopping.
+12. Bot handles spread/slippage widening.
+13. Bot handles no stop-loss policy correctly.
+14. Bot handles owner/admin live path without bypassing broker truth.
+15. Bot produces deterministic audit logs for every decision.
+
+Hard boundary:
+Do not enable full auto trading.
+Do not loosen risk gates.
+Do not bypass broker dispatch checks.
+Do not place live trades during audit unless explicitly approved as a supervised micro-lot test.
+Do not change owner/admin permissions unless a bug is found and approved.
+This task is audit, scoring, test coverage, and safety-readiness only.

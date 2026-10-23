@@ -1,0 +1,76 @@
+Update the ARX AI project workflow now: from this point forward, all bridge execution testing must be LIVE-only.
+
+The app should no longer describe the next bridge test as “demo/live.” Replace that wording everywhere in developer notes, QA reports, checklist text, Replit task summaries, and internal testing instructions with “LIVE bridge test” or “LIVE execution test.”
+
+Important scope:
+We are not doing Paper Trading.
+We are not doing simulated trading.
+We are not doing demo bridge testing moving forward.
+We are only testing the real LIVE bridge path.
+
+Do not remove the DEMO product mode from the app if it is still needed as a user-facing mode, but do not use DEMO for the next execution tests. The active test path going forward is LIVE only.
+
+Current live-test rule:
+1. Use the real live bridge.
+2. Use the real live MT5/EA connection.
+3. Use the real live account heartbeat.
+4. Use real live order queue logic.
+5. Use real live admin/user permission logic.
+6. Use real live ledger, allocation, account balance, risk, audit, and order lifecycle logic.
+7. Do not silently fall back to demo, paper, fake data, mock execution, or simulated order status.
+
+Admin account:
+Confirm that Andraie.co@gmail.com is recognized as the owner/admin account for live testing.
+Confirm that this account can access LIVE bridge tools, live order queue tools, admin controls, allocation controls, freeze/unfreeze controls, live permission controls, and live execution visibility according to the current app rules.
+
+Live bridge validation:
+Run a full LIVE-only bridge readiness pass and confirm:
+
+1. LIVE bridge heartbeat is active.
+2. LIVE account connection is visible.
+3. LIVE balance/equity/margin data loads correctly.
+4. LIVE symbols are discoverable.
+5. LIVE scanner can select a symbol.
+6. Ruby can explain a selected live market in plain English and technical analysis without exposing backend/internal function names.
+7. A live trade can be prepared from the scanner.
+8. A live trade can be queued.
+9. The queue reaches the EA/bridge correctly.
+10. The EA/bridge returns a real live response.
+11. The app records the live order request.
+12. The app records the live order status.
+13. The admin dashboard can see the live order.
+14. The user-facing dashboard can see the correct live order state.
+15. Open trade, close trade, failed trade, rejected trade, and pending trade states all display correctly.
+16. Any live trade error must show a clean user-facing explanation, not raw backend logs.
+17. The system must log all live actions clearly for audit.
+
+Do not add new blocks that stop LIVE testing.
+Do not reintroduce Paper Trading.
+Do not force the workflow back to demo testing.
+Do not hide live functionality behind outdated Phase B wording if the system has already passed the current gates.
+Do not say “ready for demo/live test” anymore. The correct wording is “ready for LIVE bridge test.”
+
+Safety and confirmation behavior:
+Keep normal live confirmation, audit logging, kill switch visibility, and admin visibility intact.
+Do not remove live safety infrastructure.
+If a live trade is blocked, identify the exact blocker, whether it is UI, backend, permission, environment, bridge, EA, symbol, broker, balance, margin, lot sizing, stop loss, or connection related.
+Then fix the blocker if it is incorrectly preventing Andraie.co@gmail.com from performing the approved live test.
+
+Testing requirement:
+Perform a complete LIVE-only QA pass now.
+Check frontend, backend, API, database, environment variables, MT5 bridge, EA communication, scanner, Ruby, admin dashboard, user dashboard, trade queue, and order lifecycle.
+
+At the end, report clearly:
+
+1. LIVE bridge status
+2. LIVE account status
+3. Whether Andraie.co@gmail.com is fully live-enabled
+4. Whether live order queue works
+5. Whether the EA/bridge receives live orders
+6. Whether live order status returns correctly
+7. Whether admin audit logs record live actions
+8. Whether Ruby explains live market selections correctly
+9. Whether any demo/paper/simulation fallback remains
+10. Whether the app is ready for the first controlled LIVE execution test
+
+If anything fails, fix it and retest. Do not skip a failure because it is difficult. Find the safest working implementation path and validate again.

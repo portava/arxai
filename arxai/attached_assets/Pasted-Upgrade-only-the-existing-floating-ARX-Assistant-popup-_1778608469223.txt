@@ -1,0 +1,90 @@
+Upgrade only the existing floating ARX Assistant popup icon.
+
+Do not create a new assistant.
+Do not create a new popup.
+Do not create a new route.
+Do not change assistant logic, MT5 logic, trading logic, risk logic, or live execution.
+
+Goal:
+Replace the current static ARX Assistant floating button/icon with a premium animated icon where an AI-core symbol smoothly transforms into a chat bubble containing the ARX logo/mark.
+
+Use the attached/reference concept:
+AI Core → Morph & Flow → Forming Connection → Chat Ready
+
+Implementation requirements:
+
+1. Find the actual floating ARX Assistant trigger button currently rendering in the live app.
+   - Search for ARX Assistant, assistant floating button, Help widget, chat widget, support widget, assistant trigger, floating assistant.
+   - Modify the real component only.
+
+2. Create a reusable animated icon component:
+   Suggested name:
+   - AnimatedArxAssistantIcon.tsx
+
+3. The icon should have these animation states:
+   - idle: glowing AI-core orb
+   - hover/tap: subtle pulse and particle glow
+   - opening: AI orb morphs into chat bubble
+   - open: final chat bubble with ARX mark/logo
+   - closing: chat bubble morphs back into AI orb
+
+4. Use CSS/SVG animation first.
+   Avoid heavy animation libraries unless already installed.
+   If Framer Motion or Lottie already exists in the project, it may be reused, but do not add unnecessary dependencies.
+
+5. Visual style:
+   - dark glassy AI orb
+   - cyan/blue glow
+   - subtle particle trail
+   - rounded chat bubble outline
+   - ARX logo/wordmark inside final bubble
+   - premium trading/AI fortress feel
+   - matches existing ARX dark UI
+
+6. Mobile behavior:
+   - icon remains above bottom nav
+   - does not block More button
+   - does not block Emergency Stop
+   - remains tappable
+   - animation does not cause layout shift
+
+7. Desktop behavior:
+   - floats bottom-right
+   - does not overlap sidebar/menu
+   - hover animation works
+   - opening animation feels smooth
+
+8. Accessibility:
+   - button must keep aria-label like “Open ARX Assistant”
+   - respect prefers-reduced-motion
+   - if reduced motion is enabled, show a static final icon or simple fade
+   - keep keyboard focus styles
+
+9. Performance:
+   - animation should be lightweight
+   - no constant expensive re-renders
+   - no large video files
+   - no blocking network calls
+   - no impact on assistant response performance
+
+10. Add fallback:
+   - If the animated SVG fails for any reason, show the existing ARX assistant icon.
+
+11. Verify:
+   - assistant still opens/closes correctly
+   - animation plays when opening/closing
+   - no duplicate assistant icon appears
+   - popup AI still answers normally
+   - no route changes
+   - no live trading/MT5/risk logic changes
+   - mobile bottom nav remains clickable
+   - desktop menu remains clickable
+
+12. Report back:
+   - actual assistant icon component found
+   - files changed
+   - animation method used: CSS/SVG, Framer, or Lottie
+   - whether reduced-motion fallback was added
+   - mobile test result
+   - desktop test result
+   - confirmation that only the assistant icon/UI was changed

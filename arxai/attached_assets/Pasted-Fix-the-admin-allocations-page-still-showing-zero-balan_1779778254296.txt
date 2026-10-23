@@ -1,0 +1,170 @@
+Fix the /admin/allocations page still showing zero balance and no user allocations even though the live bridge is armed and the searched user appears to already be attached.
+
+Current screenshot issue:
+- Header shows Live Trading Active.
+- Header shows Live Execution Armed.
+- /admin/allocations still shows:
+  - Total Allocated: $0.00
+  - Users: 0
+  - User Allocations (0)
+  - “No allocations yet”
+- Attach user search says:
+  “No eligible users for andraie.co@gmail.com. Everyone matching is already attached.”
+- Attach is disabled until a master bridge is connected with a fresh heartbeat.
+- This is contradictory. If the user is already attached, the user should appear in the allocation list with Attached/Synced status and allocation controls. If the master bridge is live/armed, allocations should not be reading a stale “no master bridge” state.
+
+Do not give lot-size recommendations.
+Do not place trades.
+Do not insert live commands.
+Do not type operator phrases.
+Do not fake balance/allocation values.
+Do not bypass safety gates.
+Do not expose master balance to normal users.
+Do not create duplicate allocation systems.
+
+Create checkpoint first:
+checkpoint: fix-admin-allocations-zero-balance-attached-user-contradiction
+
+Task 1 — Fix contradictory attached-user state:
+Trace why /users-eligible says the user is already attached while /admin/allocations shows User Allocations (0).
+
+Check:
+- shared_master_accounts
+- virtual_trading_accounts
+- user_slot_allocation
+- admin allocation list query
+- eligible users query
+- attach-shared-master route
+- refresh-shell route
+- admin allocation summary route
+- frontend allocations table/card filter logic
+
+Required behavior:
+1. If a user is attached to SHARED_MASTER_MT5, they must appear in /admin/allocations even if their allocation is currently 0.
+2. Attached users with 0 allocation should show:
+   - Attached
+   - Shell synced or needs refresh
+   - Allocation: $0.00
+   - Add/Set allocation action
+   - Refresh shell action
+3. The eligible-user search should only hide already-attached users from the Attach panel, but already-attached users must still appear in the allocation list.
+4. Do not require “first allocation” before the user appears. Attached users must be visible immediately after attach.
+
+Task 2 — Fix master bridge freshness mismatch:
+The page says attach is disabled until a master bridge is connected with a fresh heartbeat, but the app header says Live Execution Armed.
+
+Make /admin/allocations use the same active master bridge/heartbeat source as:
+- live readiness header
+- master bridge summary
+- MT5 bridge health
+- live execution armed state
+
+Required behavior:
+1. If live bridge is active/fresh in the header, /admin/allocations must see the same bridge.
+2. If bridge is active but not pinned, show the “Pin this master bridge” action.
+3. If bridge is pinned and fresh, enable attach/allocation controls.
+4. If bridge is stale, show exact last heartbeat age and a refresh action.
+5. Do not show false “no master bridge” when a live bridge is active.
+
+Task 3 — Fix master balance display:
+Admin allocations page must display the real live master bridge account values when available:
+- masked account
+- broker/server
+- account type
+- balance
+- equity
+- free margin
+- currency
+- headroom
+- last sync time
+- heartbeat age
+
+Do not show Total Allocated $0.00 as the main balance. That is only user allocation total.
+Add a separate Master Bridge Balance / Headroom panel so admin can see the live account balance available to distribute.
+
+Correct panels:
+- Master bridge balance: real MT5 balance/equity/free margin/headroom
+- Total allocated: sum of user allocations
+- Frozen allocation
+- Users attached
+- Frozen users
+
+Task 4 — Fix account shell sync:
+If the user is already attached but not showing balance/equity:
+1. Refresh or rebuild that user’s account shell from user_slot_allocation.
+2. Ensure account mode is SHARED_MASTER_MT5.
+3. Ensure virtualBalance / virtualEquity reflect the assigned allocation.
+4. If allocation is 0, show attached with $0 capacity, not missing.
+5. After admin adds allocation, user shell must update from 0 to assigned capacity on next poll/refresh.
+
+Task 5 — Fix frontend cache/state:
+Check if /admin/allocations is showing stale cached values.
+
+Fix:
+1. Refresh after attach.
+2. Refresh after pin.
+3. Refresh after add/set/remove/transfer allocation.
+4. Refresh after shell sync.
+5. Do not keep old User Allocations (0) after backend changes.
+6. Add a manual Refresh button that refetches master summary, allocation list, eligible users, and shell status.
+
+Task 6 — Allocation controls:
+For an attached user, admin must be able to:
+- Add allocation
+- Set allocation
+- Remove allocation if unused
+- Transfer allocation
+- Refresh shell
+- Freeze/unfreeze
+- Update risk caps
+- Enable/disable AI sleeve if available
+
+The user row/card must not disappear because allocation is 0.
+
+Task 7 — Privacy:
+Admin can see master bridge balance and all allocation controls.
+Normal users can only see their own allocation/account shell.
+
+Normal users must not see:
+- master balance
+- other users
+- admin controls
+- backend constants
+- table names
+- route names
+- credentials
+- debug data
+
+Task 8 — QA:
+Run safe QA without placing trades.
+
+Verify:
+1. /admin/allocations shows master bridge balance/equity/free margin/headroom when live bridge is active.
+2. Total Allocated remains separate from master bridge balance.
+3. If searched user is already attached, they appear in User Allocations even with 0 allocation.
+4. User Allocations count is not 0 when attached users exist.
+5. Attach panel does not hide the user from the allocation list.
+6. Attach is enabled when bridge is pinned/fresh.
+7. Pin button appears if bridge active but not pinned.
+8. Refresh button updates the page from backend, not stale cache.
+9. Admin can add/set allocation for attached user.
+10. User shell changes from zero to assigned allocation/capacity after allocation.
+11. /api/me/allocation shows only the logged-in user’s safe values.
+12. Normal user cannot see master balance.
+13. No live trades are placed.
+14. arx_live_commands count remains 0.
+15. No operator phrases are typed.
+16. Typecheck passes.
+17. CI guards pass.
+18. Phase B / 16-gate tests pass.
+19. Allocation runtime QA passes.
+20. Mobile/desktop allocation page both work.
+
+Final report only:
+- source of contradiction found
+- whether already-attached users now appear
+- whether master bridge balance now displays separately from total allocated
+- whether allocation controls work
+- whether user shell updates from zero after allocation
+- files/routes changed
+- QA results

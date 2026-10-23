@@ -1,0 +1,10 @@
+<svg width="320" height="64" viewBox="0 0 320 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>ARX AI Wordmark</title>
+  <style>
+    .w { font: 900 36px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; letter-spacing: 6px; }
+  </style>
+  <text x="0" y="44" class="w" fill="#F8FAFC">ARX</text>
+  <text x="120" y="44" class="w" fill="#F8FAFC"> AI</text>
+  <text x="74" y="44" class="w" fill="#1E7BFF" filter="url(#g)">X</text>
+  <defs><filter id="g"><feGaussianBlur stdDeviation="0.4"/></filter></defs>
+</svg>

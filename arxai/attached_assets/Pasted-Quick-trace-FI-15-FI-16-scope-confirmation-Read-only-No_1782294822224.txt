@@ -1,0 +1,79 @@
+Quick trace — FI-15/FI-16 scope confirmation. Read-only. No edits, no tasks, no migrations, no workflow changes.
+
+Goal:
+Resolve the two remaining Class 5 items before task creation so Cluster D — role / investor boundary hardening — is scoped correctly.
+
+Scope:
+FI-15 — revoked approval close block
+FI-16 — admin emergency-close dispatch path
+
+Important:
+This is not a full new audit pass. Only trace these two items, with exact file:line proof. Use grep/rg for file locations only if token mangling appears, then read files directly.
+
+FI-15 — revoked approval close block
+
+Prove whether a trader whose live approval / live activation / approved-trader status has been revoked is blocked from POST /api/me/trades/close on the very next request.
+
+Trace:
+- where live approval / live activation / approved trader status is stored
+- how revocation is written
+- whether revocation immediately changes DB truth
+- whether /api/me/trades/close reads fresh DB truth or stale session/cache
+- whether /api/me/trades/close checks approved/live entitlement before queuing CLOSE
+- whether close is intentionally allowed as reduce-risk even after revocation
+- whether emergency/kill switch behavior differs from approval revocation
+- whether an already-open live position can still be closed after revocation, and if yes whether that is intentional and safe
+- whether audit/logging records close-after-revocation distinctly
+
+Classify:
+- Class 1: proven safe / intentionally reduce-risk
+- Class 2: active bypass
+- Class 3: integrity/defense gap
+- Class 5: still unresolved
+
+FI-16 — admin emergency-close dispatch path
+
+Trace every admin emergency close / force close / close all / liquidate / emergency unwind path.
+
+Prove:
+- route + middleware
+- role requirements
+- whether admin acts on behalf of a user
+- where target userId/account/mt5ConnectionId/ticket comes from
+- whether it calls dispatchLiveCommand / executeInstant / approved pipeline
+- whether it inserts mt5_commands directly
+- whether it bypasses orderGuard / live gate evaluator
+- whether it honors global emergency stop
+- whether it honors kill switch
+- whether it is intentionally allowed during emergency stop as reduce-risk
+- whether it verifies ticket ownership / account ownership
+- whether it creates audit rows
+- whether it can close another user’s trade by client-supplied ticket
+- whether it can run while bridge is stale/offline
+- whether it produces honest pending/broker-confirmed status
+
+Classify:
+- Class 1: proven safe / intentionally reduce-risk with audit
+- Class 2: active bypass
+- Class 3: integrity/defense gap
+- Class 5: still unresolved
+
+Required output format:
+
+FI-15/FI-16 QUICK TRACE — REPORT
+
+Sections:
+1. Executive verdict
+2. FI-15 revoked approval close-block truth
+3. FI-16 admin emergency-close dispatch truth
+4. Exact findings added or cleared
+5. Impact on Cluster D task scope
+6. Recommendation before task creation
+
+Important:
+- Read-only only.
+- Do not edit files.
+- Do not create tasks.
+- Give exact file:line proof for every claim.
+- If a claim cannot be proven, mark it Class 5.
+- Do not call the assistant Ruby in user-facing recommendations; use Eleanor.

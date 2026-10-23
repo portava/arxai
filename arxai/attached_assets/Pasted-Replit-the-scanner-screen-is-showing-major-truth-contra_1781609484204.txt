@@ -1,0 +1,133 @@
+Replit, the scanner screen is showing major truth-contract contradictions. Do not treat this as a design-only issue. This is a scanner/feed/chart/Ruby wiring and status-normalization problem.
+
+The current scanner screen shows contradictory states at the same time:
+
+1. Header says:
+- Data: Live
+- Live, confirmed candles
+- Trading: Enabled
+- Ruby: Full read
+- Live bars are coming from broker feed
+
+But Ruby Chart Read says:
+- MT5 broker
+- Unconfirmed
+- No AI
+- Feed not confirmed
+- Chart intelligence unavailable
+- Chart data is syncing
+
+These cannot both be true. The scanner header, chart, Ruby read, trade ticket, and scanner results must consume one shared truth contract.
+
+2. Scanner cards say “Ready now” while the explanation says “Wait for confirmation.”
+A card cannot be both act-ready and wait-for-confirmation. Create one final action verdict and make all badges/copy/buttons obey it.
+
+3. The page says:
+- “16 scanned · 16 on live data”
+but also says:
+- “No scan run yet for Core Markets”
+while results are already displayed.
+This is a broken empty state. It must only show when no scan exists.
+
+4. The scan universe lists 23 symbols, but opportunity map says 16 scanned.
+If 7 were skipped, show exactly which 7 and why: missing feed, limited history, stale data, unsupported symbol, provider error, or excluded by filter.
+
+5. Trade Health says “No open positions on this symbol,” then immediately shows 3 open positions from V25 and V75 while EURUSD is selected.
+Separate symbol-specific trade health from account-wide exposure:
+- This symbol: no open EURUSD positions
+- Account exposure: 3 open positions across other symbols
+Do not make it look like non-EURUSD positions belong to EURUSD.
+
+6. Many scanner opportunities show repeated generic scoring:
+- Edge 78
+- Entry 75
+- Exec 80
+- same guidance copy
+across many different symbols.
+Verify whether these are real per-symbol computed scores or placeholder/default values. If placeholder/default, mark the scanner as not decision-ready and fix the scoring truth.
+
+Task: Fix scanner truth normalization and UI contradictions.
+
+Implement a shared ScannerTruth contract consumed by:
+- Scanner header
+- chart feed/status panel
+- Ruby Chart Read
+- scanner opportunity cards
+- trade ticket / Plan Buy / Plan Sell
+- trade health panel
+- Broad Scan summary
+- empty states
+
+The contract should include at minimum:
+- selectedSymbol
+- selectedTimeframe
+- quoteStatus: LIVE / STALE / UNAVAILABLE / FROZEN / MARKET_CLOSED
+- candleStatus: CONFIRMED / SYNCING / STALE / UNCONFIRMED / UNAVAILABLE / LIMITED_HISTORY
+- chartIntelligenceStatus: FULL / LIMITED / UNAVAILABLE
+- rubyReadStatus: FULL_READ / LIMITED_READ / NO_READ
+- tradingStatus: ENABLED / DISABLED / BLOCKED / REVIEW_REQUIRED
+- scannerActionability: READY_NOW / WAIT_FOR_CONFIRMATION / TOO_LATE / NO_CLEAN_SETUP / MARKET_CLOSED / FEED_LIMITED / ANALYSIS_ONLY
+- feedSource
+- candleSource
+- oldestCandleTime
+- newestCandleTime
+- candleCount
+- skippedSymbols with reason
+- userMessage
+- internalReasonCode
+
+Rules:
+- If candleStatus is UNCONFIRMED, SYNCING, STALE, UNAVAILABLE, or LIMITED_HISTORY, Ruby cannot show FULL_READ.
+- If Ruby Chart Read says No AI / chart intelligence unavailable, scanner header cannot say Ruby Full read.
+- If chart data is syncing, header cannot say live confirmed candles.
+- If scannerActionability is WAIT_FOR_CONFIRMATION, card cannot say Ready now.
+- If scannerActionability is READY_NOW, explanation cannot say Wait for confirmation.
+- If no scan has run, show the empty state. If results exist, never show “No scan run yet.”
+- If 16 of 23 symbols scanned, show 16 scanned and 7 skipped with reasons.
+- If trade health is account-wide, label it account-wide. If symbol-specific, only show selected-symbol positions.
+- Scanner scores must be per-symbol and based on real inputs. Do not reuse generic Edge/Entry/Exec values unless the calculation actually produces them with evidence.
+
+UI copy changes:
+Replace conflicting status clusters with one clear status strip:
+
+Example when verified:
+Data: Live confirmed
+Ruby: Full read
+Trading: Enabled
+Action: Wait for confirmation / Ready now / No trade
+
+Example when unconfirmed:
+Data: Syncing / unconfirmed
+Ruby: Limited read
+Trading: Enabled with caution
+Action: Analysis only / wait for confirmation
+
+Example when market closed/frozen:
+Data: Feed connected, market closed
+Ruby: Limited read
+Trading: Review required
+Action: Wait
+
+Add a single “Why?” expandable explanation that tells the user exactly why the scanner is allowing, limiting, or blocking action.
+
+Tests required:
+1. Header and Ruby Chart Read cannot disagree.
+2. Header and chart candle status cannot disagree.
+3. Ready now card cannot contain wait-for-confirmation text.
+4. No-scan empty state cannot appear when results exist.
+5. 16 scanned out of 23 shows skipped symbol reasons.
+6. Non-selected-symbol positions do not appear as selected-symbol trade health.
+7. Account-wide exposure is clearly labeled if shown.
+8. Scanner scores are not placeholders/defaults.
+9. Changing symbol updates header/chart/Ruby/trade ticket/card truth together.
+10. Changing timeframe updates header/chart/Ruby/trade ticket/card truth together.
+
+Acceptance criteria:
+- The scanner screen has no contradictory truth states.
+- Scanner/header/chart/Ruby/trade ticket all agree on selected symbol, timeframe, feed status, candle status, Ruby visibility, and actionability.
+- Scanner cards use one final action verdict.
+- Empty states only appear when truly empty.
+- Skipped symbols are explained.
+- Account-wide exposure and symbol-specific trade health are separated.
+- No generic/placeholder scanner scoring remains in decision-ready output.
+- Do not fake pass. Add a scanner truth regression test so these contradictions cannot return.

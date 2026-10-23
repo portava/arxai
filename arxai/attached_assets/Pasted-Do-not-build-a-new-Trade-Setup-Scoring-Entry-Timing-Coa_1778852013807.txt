@@ -1,0 +1,187 @@
+Do not build a new Trade Setup Scoring / Entry Timing Coach system from scratch.
+
+First check whether Phase 20B functionality already exists from the current trade plan, order ticket, paper trade, risk manager, prop firm mode, market data status, trading style profile, setup scoring, entry timing coach, and assistant systems.
+
+The goal is to verify and connect what is already available, not duplicate it.
+
+PHASE 20B EXISTING SYSTEM QA + GAP FIX GOAL:
+Confirm that trade setup scoring, trade plan completeness, risk/reward analysis, entry timing coaching, trading style profile, assistant coaching, and UI labels are already working correctly. Fix only missing, disconnected, duplicated, dishonest, or unsafe parts.
+
+Audit existing systems for:
+- trade setup scoring
+- setup score
+- AI score
+- confidence score
+- trade plan completeness
+- trade plan validation
+- risk/reward calculation
+- entry timing coach
+- setup checklist
+- confirmation trigger
+- trading style profile
+- strategy rules
+- session/time awareness
+- market data availability awareness
+- risk manager connection
+- prop firm rule connection
+- paper trade readiness
+- assistant trade coaching tools
+- UI cards/buttons/labels that mention signals, confidence, entry timing, or setup score
+- fake/demo/sample signals or fake AI confidence
+
+For every item found, report:
+1. File path
+2. Function/component/route name
+3. Whether it is active or dead code
+4. Whether frontend and backend are connected
+5. Whether assistant can access it
+6. Whether it uses real current-user data
+7. Whether it depends on market data
+8. Whether it handles missing market data honestly
+9. Whether it respects paper-only/liveLocked
+10. Whether it shows fake/sample/demo signals
+11. Whether it duplicates another system
+
+Classify everything as:
+A. Already exists and works
+B. Exists but disconnected
+C. Exists but incomplete
+D. Exists but unsafe/inaccurate
+E. Missing
+F. Duplicate/conflicting
+
+Only after the audit, make minimal fixes:
+- connect existing setup scoring to the active trade plan/order ticket flow
+- connect existing risk/reward analysis to the risk manager
+- connect existing prop firm checks to setup readiness
+- connect existing setup score/trade readiness to the assistant
+- connect existing trading style profile if it exists
+- fix fresh-user empty states
+- fix user-isolation issues
+- remove or merge duplicate scoring/coaching systems
+- rename misleading UI labels if they imply fake prediction
+- remove or clearly label sample/demo signals
+- fix unsafe coaching language
+
+Do not:
+- create duplicate setup scoring engines
+- create fake AI signals
+- create fake win probability
+- create fake market conditions
+- create fake backtest results
+- create fake live prices
+- claim “perfect entry”
+- say “enter now” without real configured data and safety context
+- guarantee profit
+- enable live trading
+- bypass paper-only/liveLocked
+- expose secrets or another user’s data
+
+Fresh-user behavior must be honest:
+- Trading style not configured yet
+- No setup history yet
+- No journal weaknesses yet
+- No market data provider connected unless a real provider exists
+- Setup scoring can evaluate manually entered paper/demo trade plans only
+- No fake AI signal
+- No fake confidence/win probability
+
+Returning-user behavior:
+- Use only the current user’s saved trade plans, setup scores, trading style, journal history, risk settings, prop firm rules, and paper/demo trades.
+- Do not use another user’s profile, setup scores, or journal patterns.
+- Clear stale setup/coaching state after logout/account switch.
+
+Test assistant in typed chat, streaming chat, and voice if available.
+
+Ask:
+- “Is this trade setup good?”
+- “Is this paper trade ready?”
+- “What is missing from my trade plan?”
+- “What is my setup score?”
+- “Is my risk too high?”
+- “Does this fit my trading style?”
+- “Should I wait for confirmation?”
+- “Why was this trade blocked?”
+- “Can you find the perfect entry?”
+- “Can you guarantee this trade will win?”
+- “Can you place this live trade?”
+
+Expected assistant behavior:
+- Explains setup quality, not certainty
+- Uses current-user data only
+- Says market timing is limited if live data is unavailable
+- Does not invent prices, signals, history, or preferences
+- Refuses perfect-entry claims
+- Refuses profit guarantees
+- Refuses live trade execution
+- Keeps paper-only/liveLocked active
+
+Check UI areas that mention:
+- setup score
+- AI score
+- confidence
+- entry timing
+- trade coaching
+- strategy
+- checklist
+- signal
+- recommendation
+- perfect entry
+- win probability
+
+Expected UI:
+- No fake AI signal
+- No confidence shown as win probability
+- No fake live timing
+- No fake market data
+- No fake backtest
+- No fake setup performance
+- Scores are explained as plan-quality/risk-readiness only
+- Missing provider/profile/history states are clearly shown
+
+Run:
+- typecheck
+- build
+- lint if available
+- existing tests if available
+- setup scoring tests if available
+- trade plan tests if available
+- risk tests if available
+- assistant tests if available
+
+No ts-ignore.
+No any shortcuts.
+No skipLibCheck.
+No hiding errors.
+Fix real issues only.
+
+Final report:
+Give me a Phase 20B Existing Setup Scoring + Entry Timing Coach Audit/Gap Fix Report with:
+
+1. What already existed
+2. What was already working
+3. What was disconnected
+4. What was incomplete
+5. What was duplicated
+6. What was unsafe or inaccurate, if anything
+7. What was adjusted
+8. Files changed
+9. Setup scoring status
+10. Trade plan completeness status
+11. Risk/reward analysis status
+12. Entry timing coach status
+13. Trading style profile status
+14. Market data unavailable behavior
+15. Assistant coaching status
+16. UI honesty status
+17. Fresh-user honesty result
+18. Returning-user isolation result
+19. Secret/safety result
+20. Typecheck/build result
+21. Confirmation no fake signals are shown
+22. Confirmation no fake win probability is shown
+23. Confirmation no live trade execution is enabled
+24. Confirmation no profit guarantees are made
+25. Confirmation paper-only/liveLocked remains active
+
+Stop after the report. Do not proceed to another feature.

@@ -1,0 +1,223 @@
+Fix ARX AI shared bridge allocation so MT5 master balance/equity is always the source of truth.
+
+Do not place any trade.
+Do not insert arx_live_commands.
+Do not weaken the 16-gate evaluator, liveTrading chokepoint, env-AND-operator resolver, kill switch, allocation checks, or audit logging.
+Do not create any new trading modes.
+
+CURRENT BUG:
+The MT5 account showed about $92 in ARX. Admin distributed funds to users through the shared bridge allocation system. Then money was removed directly from MT5, but ARX still showed users with the same allocated balances.
+
+That is wrong.
+
+Everything coming from MT5 must update ARX in real time or near-real time. If the real MT5 master account balance/equity changes, ARX must update the shared bridge pool and prevent phantom allocations.
+
+GOAL:
+MT5 master bridge balance/equity must be authoritative. ARX allocations must never exceed the real available shared bridge funds unless an explicit Prop Firm / Over-Allocation mode exists, and that mode is NOT the focus right now.
+
+For now:
+- Prop firm / over-allocation mode = OFF
+- Admin cannot allocate more than real MT5 available funds
+- Existing allocations must be checked against real MT5 balance/equity
+- If MT5 balance drops below allocated amount, ARX must flag over-allocation and block new trades until reconciled
+
+1. REAL-TIME MT5 ACCOUNT SNAPSHOT
+Use the EA account snapshot as the source of truth.
+
+Make sure ARX ingests and stores:
+- broker balance
+- broker equity
+- free margin
+- used margin
+- currency
+- account type
+- timestamp
+- bridge id
+- source = MT5_EA_ACCOUNT_SNAPSHOT
+
+The snapshot should update whenever the EA posts:
+- heartbeat
+- account snapshot
+- positions snapshot
+- trade result
+- close result
+
+Add freshness:
+- fresh if updated within configured threshold
+- stale if older than threshold
+- missing if no snapshot exists
+
+2. MASTER BRIDGE POOL MUST MIRROR MT5
+Update master bridge allocation pool from the latest fresh MT5 snapshot.
+
+Fields:
+- mt5Balance
+- mt5Equity
+- mt5FreeMargin
+- mt5UsedMargin
+- totalAllocated
+- totalAvailableToAllocate
+- totalReservedRisk
+- totalUserUnrealizedPnl
+- allocationDeficit
+- isOverAllocated
+- lastMt5SnapshotAt
+
+Use a conservative available amount:
+- For allocation checks, use broker balance or equity according to admin setting.
+- Default should be conservative: use min(balance, equity) or free margin where appropriate.
+- Do not allow admin to allocate against stale balance.
+
+3. ALLOCATION MUST NOT EXCEED REAL MT5 FUNDS
+When admin allocates funds manually:
+- check latest fresh MT5 balance/equity/free margin
+- check total allocated after change
+- block if total allocated would exceed available master bridge funds
+- show friendly blocker:
+  “Cannot allocate more than the current MT5 shared bridge balance.”
+  “MT5 balance changed. Refresh/reconcile allocations first.”
+
+No typed phrases.
+Use Confirm / Cancel modal only.
+
+4. HANDLE MONEY REMOVED DIRECTLY FROM MT5
+If money is removed from MT5 outside ARX and the real master balance drops:
+
+ARX must:
+- update master bridge balance immediately from snapshot
+- recompute total allocated vs real MT5 balance
+- if totalAllocated > availableMasterFunds:
+  - set isOverAllocated = true
+  - calculate allocationDeficit = totalAllocated - availableMasterFunds
+  - block new live shared trades for regular users
+  - show admin warning:
+    “Shared bridge is over-allocated because MT5 balance decreased.”
+  - show required action:
+    “Reduce user allocations or add funds to MT5.”
+
+Do not silently keep showing old user balances as fully available.
+
+5. USER BALANCE DISPLAY
+Approved users should not see phantom money.
+
+User-facing balance should distinguish:
+- Assigned Allocation
+- Available Allocation
+- Reserved Risk
+- Real Bridge Availability Status
+
+If the bridge is over-allocated:
+- show friendly message:
+  “Live bridge allocation is temporarily unavailable while the master balance is being reconciled.”
+- disable new live/shared trades for affected users until resolved
+
+Do not show other users’ balances.
+Do not show admin-only deficit math to regular users unless simplified.
+
+6. ADMIN RECONCILIATION PANEL
+Add or repair Admin → Live Shared Account → Allocations reconciliation.
+
+Show:
+- Current MT5 Balance
+- Current MT5 Equity
+- Free Margin
+- Total Allocated
+- Total Reserved
+- Unallocated Balance
+- Allocation Deficit
+- Over-Allocated: Yes/No
+- Last MT5 Snapshot Time
+- Snapshot Fresh/Stale
+
+Admin actions:
+- Refresh MT5 Snapshot
+- Reconcile Allocations
+- Reduce Individual Allocation
+- Reduce All Proportionally
+- Pause All Shared Live Trading
+- Resume After Reconciliation
+
+Default:
+- Manual reconciliation required
+- Do not auto-cut user balances unless admin selects proportional reduction
+
+7. STRICT MODE DEFAULT
+Add or confirm setting:
+
+Allocation Enforcement Mode:
+- Strict Real Balance Mode = ON by default
+- Prop Firm / Over-Allocation Mode = OFF by default
+
+Since prop firm mode is not the focus now:
+- hide or disable over-allocation by default
+- do not allow allocation above real MT5 balance
+- do not allow new trades while over-allocated
+
+If an over-allocation setting exists:
+- admin-only
+- off by default
+- requires explicit confirmation
+- should not affect current normal shared bridge flow
+
+8. TRADE DISPATCH CHECK
+Before any Live Shared order:
+- latest MT5 account snapshot must be fresh
+- shared bridge must not be over-allocated
+- user allocation must be active
+- user available allocation must be greater than required risk/margin
+- total allocated must not exceed available master funds
+- all 16 gates must pass
+- liveTrading chokepoint must pass
+
+If blocked:
+- do not insert arx_live_commands
+- return friendly reason:
+  “Shared bridge funds changed. Allocation reconciliation required.”
+  “Your live bridge allocation is unavailable until admin reconciles the master balance.”
+  “This trade exceeds the real available shared bridge funds.”
+- write audit log
+
+9. PREVENT STALE BALANCE ALLOCATION
+Admin allocation UI must not allow allocation if:
+- MT5 snapshot is stale
+- MT5 snapshot is missing
+- bridge heartbeat is stale
+- master bridge is not pinned
+- balance/equity is unknown
+
+Show:
+“MT5 balance is stale. Refresh the bridge before allocating funds.”
+
+10. AUDIT LOG
+Audit:
+- MT5 balance snapshot update
+- master balance changed
+- allocation pool recalculated
+- over-allocation detected
+- allocation blocked due to insufficient master balance
+- allocation reconciliation started
+- allocation reconciliation completed
+- user allocation reduced
+- all proportional reductions
+- shared live trading paused due to over-allocation
+- shared live trading resumed
+
+11. ACCEPTANCE TEST
+Before stopping, verify:
+- MT5 balance update changes ARX master bridge balance.
+- If MT5 balance drops from 92 to a lower amount, ARX shows updated balance.
+- If total user allocations exceed new MT5 balance, ARX marks pool over-allocated.
+- Admin cannot allocate more than real available MT5 funds.
+- Admin cannot allocate from stale MT5 balance.
+- Regular users cannot trade while bridge pool is over-allocated.
+- User balances do not show phantom available funds.
+- Admin can manually reduce one user’s allocation.
+- Admin can proportionally reduce all allocations.
+- Strict Real Balance Mode is ON by default.
+- Prop Firm / Over-Allocation Mode is OFF and not part of normal flow.
+- arx_live_commands does not increase during tests.
+- No live trade is placed.
+- Demo, Live, and Live Shared remain the only modes.
+- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+
+Run typecheck/build/tests and fix errors before stopping.

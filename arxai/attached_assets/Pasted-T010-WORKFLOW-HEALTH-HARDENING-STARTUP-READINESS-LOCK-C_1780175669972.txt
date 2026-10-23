@@ -1,0 +1,122 @@
+T010 — WORKFLOW HEALTH HARDENING + STARTUP READINESS LOCK
+
+Continue from T009.
+
+T009 confirmed the real 7-second slowdown was caused by dead/orphaned api-server and frontend workflows not listening, not by normal frontend render speed. After workflows were restarted, real interactive timing passed: Scanner tab ~714ms, Plan Buy modal ~619ms, backend calls fast, Ruby spinner instant, live MT5 path untouched, and no live trade was placed.
+
+Now prevent this from happening again.
+
+This is not a rebuild.
+Do not redesign the app.
+Do not change trading logic.
+Do not place a live trade.
+Do not reset live broker execution config.
+Do not weaken permissions, ownership checks, kill switch, allocation checks, account freeze, or MT5 confirmation rules.
+Do not disturb the live MT5 path.
+
+Goal:
+Add safe workflow/process health hardening so ARX AI cannot silently run in a broken/stale/orphaned state again.
+
+Required work:
+
+1. Inspect current Replit workflows/process startup.
+2. Identify the expected running services:
+    * frontend/app preview
+    * api-server
+    * MT5 bridge/service if separate
+    * any required websocket/quote service if separate
+3. Confirm which ports each service should listen on.
+4. Confirm which health endpoint proves each service is alive.
+5. Detect stale/orphaned processes.
+6. Detect workflows that claim running but are not listening.
+7. Detect frontend preview serving stale assets.
+8. Detect api-server not responding.
+9. Detect bridge health unavailable without crashing the UI.
+
+Add a startup health check:
+
+1. On startup, verify frontend is listening.
+2. Verify api-server is listening.
+3. Verify /api/healthz or equivalent returns 200.
+4. Verify Scanner critical endpoints respond or fail cleanly.
+5. Verify route shell can load.
+6. Verify no stale orphaned process is occupying the expected port.
+7. If a required process is dead, fail loudly in dev/admin logs instead of silently serving a broken app.
+
+Add an admin/dev-only health panel or status report:
+
+1. frontend status
+2. api-server status
+3. bridge status
+4. MT5 connection status if available
+5. EA heartbeat if available
+6. last health check time
+7. last restart time if available
+8. stale process warning
+9. preview asset/build hash if available
+10. clear explanation if a workflow is not listening
+
+Normal users should not see raw internal process details.
+Normal users should only see a clean message if a service is unavailable.
+
+Add a lightweight watchdog/dev command:
+Create or update a command/script that checks:
+
+1. frontend port listening
+2. api-server port listening
+3. health endpoint 200
+4. scanner candles endpoint reachable with auth behavior expected
+5. no orphaned/stale duplicate process on the same port
+6. current frontend build/hash served
+
+Name it something clear, such as:
+
+* pnpm run health:workflows
+* or pnpm run verify:runtime
+
+Do not add a heavy always-on poller that slows the app.
+Do not create a process loop that restarts services repeatedly without operator visibility.
+Keep it lightweight and safe.
+
+Add a preflight note to documentation:
+Document:
+
+1. what services must be running
+2. how to verify them
+3. how to detect dead/orphaned workflow state
+4. how to restart safely
+5. that live MT5 path should not be restarted casually during frontend/api workflow repair unless required
+6. that no live trade should be placed during workflow health checks
+
+Regression tests:
+
+1. typecheck
+2. ci:guards
+3. health workflow script
+4. frontend reachable
+5. api-server reachable
+6. /api/healthz returns 200
+7. Scanner still loads
+8. Scanner timing still under target
+9. Buy/Sell modal opens quickly
+10. Ruby spinner appears immediately
+11. normal users still blocked from paper/admin/dev/dormant routes
+12. admin/owner access still works
+13. no live MT5 path changed
+14. no live trade placed
+
+Final report must include:
+
+1. expected services
+2. expected ports
+3. health endpoints checked
+4. stale/orphaned process detection result
+5. workflow health script added/updated
+6. admin/dev health visibility added/updated
+7. frontend timing after health hardening
+8. Scanner timing after health hardening
+9. trade modal timing after health hardening
+10. tests passed
+11. confirmation live MT5 path untouched
+12. confirmation no live trade placed
+13. remaining risk

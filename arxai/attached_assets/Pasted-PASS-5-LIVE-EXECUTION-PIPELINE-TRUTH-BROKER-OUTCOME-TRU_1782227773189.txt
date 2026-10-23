@@ -1,0 +1,217 @@
+PASS 5 — LIVE EXECUTION PIPELINE TRUTH / BROKER OUTCOME TRUTH
+
+Mode: READ-ONLY AUDIT ONLY.
+
+Do not create tasks.
+Do not change code.
+Do not run migrations.
+Do not restart workflows.
+Do not “fix” anything yet.
+Do not mark anything complete.
+Do not rely on explorer claims without direct file/line verification.
+
+Goal:
+Determine whether every live execution path in ARX AI is protected, unified, broker-truthful, and failure-honest — or whether any path can show fake success, stale trades, bypass risk, leak admin/master control, or misrepresent MT5 outcome.
+
+Context from prior passes:
+- Pass 1 found dispatchLiveCommand as the likely single live chokepoint.
+- Demo path should remain separate and legitimate.
+- Scanner/chart trading appears real and live-actionable.
+- Chart controls are wired or honestly hidden.
+- PAPER mode intentionally renders no broker action buttons.
+- Broker outcome truth matters more than UI optimism.
+- Known pre-existing safety-integration red/dev-DB pollution should not be treated as a new regression unless directly proven in this pass.
+- Fix-ledger is held only; do not implement it.
+
+Held fix-ledger so far:
+1. Preserve allocation foundations.
+2. Display-freshness unification.
+3. Refresh truth/wording.
+4. Eleanor rename debt:
+   - rubyContext.ts should become Eleanor-facing/centralized naming later.
+   - Scanner/chart Ruby surfaces also have rename debt: RubyChartRead, RubyMarketReadCard, scannerTruth ruby* fields.
+   - Naming debt only; behavior currently correct unless proven otherwise.
+5. P4-1: deep-history lazy load makes first load look truncated because initial chart loads 200 bars; consider eager deeper initial fetch or clearer “scroll for history” affordance later.
+
+Audit scope:
+
+A) Inventory every live order entry point.
+Find and map all paths that can initiate, close, modify, reverse, or manage real/live trades, including but not limited to:
+- Scanner chart trade controls.
+- Trade page/manual ticket.
+- One-click trade.
+- Shared/live trader ticket.
+- Admin/master allocation trade paths.
+- Emergency close paths.
+- Live test cycle paths.
+- Ruby/Eleanor-assisted trade suggestion paths, if any can execute or prefill executable tickets.
+- Any route under /api/trades/*, /api/me/live/*, /api/me/one-click/*, /api/live/*, /api/admin/*, or similar.
+- Any direct MT5/bridge call path.
+
+For each entry point, identify:
+- Frontend component/hook/service.
+- API route.
+- Backend service.
+- Final live dispatch function.
+- Whether it can reach real broker execution.
+- Whether it is live, demo, paper, or shared-live scoped.
+
+B) Prove the execution chokepoint.
+Directly verify whether all real live execution converges through the same protected live dispatch path, especially dispatchLiveCommand if that remains the true chokepoint.
+
+Confirm whether every live path enforces or calls into the same protection stack before any real broker command:
+- Emergency stop.
+- Account mode checks.
+- Live/demo/paper/shared-live routing.
+- Bridge connected/heartbeat freshness.
+- Trader approval.
+- Full activation toggle/approval state.
+- Broker account attachment.
+- Risk sizing.
+- Max loss / daily loss.
+- Margin/equity/balance checks.
+- Symbol permission/session restrictions.
+- News/volatility restrictions if implemented.
+- Duplicate command/idempotency controls if implemented.
+- Any kill-switch or circuit breaker.
+
+If any path bypasses the chokepoint or calls the bridge/MT5 directly, classify risk clearly.
+
+C) Broker outcome truth.
+Prove how the app decides that a live order succeeded, failed, is pending, partially completed, or timed out.
+
+Verify for:
+- OPEN / BUY / SELL.
+- CLOSE.
+- CLOSE_ALL.
+- Partial close.
+- MODIFY_SL_TP.
+- Break-even.
+- Reverse, including both legs.
+- Pending order cancel.
+- Live-shared trade execution.
+
+Confirm:
+- UI success only appears after a real MT5/bridge result.
+- A real broker ticket or confirmed broker close is required for terminal success.
+- Rejections show real retcode/message where available.
+- Timeouts do not become fake fills.
+- Pending commands stay visibly pending or resolve honestly.
+- Partial failures are not collapsed into fake success.
+- Reverse action does not claim full success if close succeeds but reopen fails.
+- The system does not permanently persist an optimistic fill without broker proof.
+- Any optimistic UI state rolls back or remains pending honestly.
+
+D) Trade history and open-position truth.
+Trace the truth source for:
+- Open positions.
+- Closed trades.
+- Trade history.
+- Floating P/L.
+- Balance.
+- Equity.
+- Margin/free margin.
+- Investor allocation views affected by open trades.
+- Admin/master/manual exposure views.
+
+Confirm:
+- Open trades come from real bridge/MT5/live position state or are clearly labeled if locally derived.
+- Closed trades disappear promptly from open positions.
+- History is reconciled after reconnect.
+- Duplicate trade rows are prevented or flagged.
+- Externally closed trades are detected.
+- Auto-refresh/manual refresh uses honest wording and does not claim a broker sync if it only refreshes local state.
+- Investor and admin views do not mix finalized withdrawable values with indicative/open P/L unless explicitly labeled.
+
+E) Failure and reconnect behavior.
+Inspect code paths for:
+- MT5 disconnect mid-order.
+- Stale heartbeat before order.
+- Broker timeout.
+- Delayed fill after timeout.
+- Duplicate click / duplicate command retry.
+- Network error after command dispatch.
+- Pending command stuck.
+- Bridge reconnect after a trade closed externally.
+- User refresh while command pending.
+- Auto-refresh while bridge stale.
+- CLOSE_ALL partial failures.
+- Emergency stop triggered while commands are pending.
+
+For each, state whether behavior is:
+- Safe and truthful.
+- Safe but confusing.
+- Unsafe.
+- Unknown / insufficient proof.
+
+F) Admin/live-shared truth.
+Verify:
+- Admin/master/live-shared actions are scoped separately from normal users.
+- Normal users cannot access admin/master-only trade controls.
+- Live-shared/manual/master rows do not leak into normal user charts or position lists.
+- Live-shared trades do not create false ownership.
+- User-facing balances, payable values, and withdrawable values do not falsely include master/manual exposure unless intentionally and clearly labeled.
+- Admin allocation screens separate finalized truth from indicative open-trade estimates.
+
+G) Privacy and permissions.
+For all live execution and position/history routes, verify:
+- Auth is required.
+- User ID scoping is enforced on reads and writes.
+- Role-gated routes are protected.
+- Admin routes are actually admin-only.
+- Shared-live visibility is intentionally mode-gated.
+- Users cannot submit another user’s ID/account ID to trade or view positions unless explicitly authorized and role-gated.
+
+H) Direct proof rules.
+Use direct reads of files for every important claim.
+Do not trust grep snippets if they are mangled.
+If explorer output conflicts, re-prove directly.
+For each finding, include exact files and line references.
+When line numbers are uncertain, cite the function/component name and surrounding code location clearly.
+Do not include speculation as fact.
+Mark unknowns honestly.
+
+I) Required output format.
+
+Return:
+
+PASS 5 — Live Execution Pipeline Truth / Broker Outcome Truth
+
+1. Scope question.
+2. Method.
+3. Findings by focus point:
+   - Entry point inventory.
+   - Chokepoint convergence.
+   - Safety/risk gate enforcement.
+   - Broker outcome truth.
+   - Open positions/history truth.
+   - Failure/reconnect truth.
+   - Admin/live-shared truth.
+   - Privacy/permission truth.
+4. A table with:
+   - Area
+   - Result
+   - Risk rating
+   - Proof
+5. Corrections to any explorer claims after direct re-proof.
+6. Final verdict:
+   “Are all live execution paths protected, unified, broker-truthful, and failure-honest?”
+7. Additions to held fix-ledger only if directly proven.
+8. Explicitly state:
+   - No code changed.
+   - No tasks created.
+   - No workflows restarted.
+
+Risk rating guide:
+- Risk 1: Good / verified / no action needed.
+- Risk 2: Broken, unsafe, or user-trust issue.
+- Risk 3: Incomplete or confusing UX, but not unsafe.
+- Risk 4: Architectural debt / maintainability.
+- Risk 5: Unknown because proof is insufficient.
+- Risk 6: Requires code fix before live readiness.
+
+Important:
+Do not start implementation after the audit.
+Do not propose a task list yet.
+Do not say “fixed.”
+Only update the held fix-ledger with confirmed findings.

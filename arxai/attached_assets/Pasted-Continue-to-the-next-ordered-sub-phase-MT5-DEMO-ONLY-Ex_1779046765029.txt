@@ -1,0 +1,265 @@
+Continue to the next ordered sub-phase: MT5 DEMO-ONLY Execution Paths.
+
+Do NOT unlock live trading.
+Do NOT enable real/live execution.
+Do NOT enable shared MT5 routing.
+Do NOT enable live auto-close.
+Do NOT allow AI autonomous execution.
+Do NOT expose bridge tokens, broker passwords, account passwords, session secrets, or private values.
+Do NOT fake broker status, account type, balance, P&L, market data, candles, TP targets, fills, or execution results.
+
+Preconditions:
+1. Read the latest VERIFIED_DEMO foundation report.
+2. Confirm:
+   - account_type_explicit_demo = PASS
+   - Verdict = VERIFIED_DEMO
+   - 0 blockers
+   - live trading = BLOCKED
+   - auto-close = ALERT_ONLY
+   - shared MT5 routing = BLOCKED
+   - execution paths are currently NOT BUILT
+   - EA v1.25 reports accountType=demo
+3. If VERIFIED_DEMO is not true, stop and return NOT READY.
+
+Goal:
+Build demo-only MT5 execution so ARX can place, modify, cancel, and close DEMO trades only, while live execution remains impossible.
+
+A. Demo Execution Mode
+Add/verify execution modes:
+- PAPER
+- MT5_DEMO_READ_ONLY
+- MT5_DEMO_EXECUTION
+- LIVE_LOCKED
+
+Rules:
+- Default remains PAPER / MT5_DEMO_READ_ONLY.
+- User must explicitly arm MT5_DEMO_EXECUTION.
+- LIVE_LOCKED remains locked.
+- If accountType is not explicit demo, execution remains blocked.
+- If accountType is live/real/unknown, execution is rejected.
+
+B. Demo Arming Gate
+Before any demo command can be sent, require:
+- authenticated user
+- user owns bridge connection
+- bridgeConnected=true
+- heartbeatFresh=true
+- EA version current
+- accountType=demo explicitly reported by EA
+- readOnlyMode=false only after demo execution is armed
+- AllowOrderExecution=true only for demo mode
+- AllowModification=true only for demo mode
+- AllowClose=true only for demo mode
+- commandExecutionAllowed=true only for demo mode
+- risk checks passed
+- prop firm checks passed if enabled
+- duplicate command clear
+- user confirmation received
+
+If any gate fails:
+- BLOCK or REJECT
+- do not send to MT5
+- show reason
+- audit the failure
+
+C. Backend Command Queue
+Implement demo command lifecycle:
+- DRAFT
+- USER_CONFIRMATION_REQUIRED
+- DEMO_APPROVED
+- SENT_TO_MT5_DEMO
+- FILLED_DEMO
+- REJECTED
+- BLOCKED
+- FAILED
+
+Supported demo commands:
+- PLACE_MARKET_ORDER
+- PLACE_PENDING_ORDER
+- MODIFY_SLTP
+- CLOSE_POSITION
+- CANCEL_PENDING_ORDER
+- SYNC_REQUEST
+- RECONCILE_REQUEST
+
+Every command must include:
+- userId
+- bridgeConnectionId
+- accountLogin
+- commandId
+- auditId
+- tradeId/orderId if relevant
+- commandType
+- payload
+- safetyGateSnapshot
+- status
+- reason if blocked/failed
+- timestamp
+
+D. EA v1.26 Demo Execution
+Update/export ReplitMT5BridgeEA.mq5 as v1.26.
+
+Rules:
+- Default still READ_ONLY.
+- ExecutionMode must default to READ_ONLY.
+- Demo execution code paths may exist only behind:
+  - ExecutionMode == DEMO_EXECUTION
+  - accountType == demo
+  - ReadOnlyMode == false
+  - AllowOrderExecution == true for orders
+  - AllowModification == true for SL/TP modify
+  - AllowClose == true for close/cancel
+- If account is live/real/unknown, EA refuses.
+- EA must never print token values.
+- EA must return clear result codes:
+  - SUCCESS
+  - REJECTED_DEMO_ONLY
+  - REJECTED_READ_ONLY
+  - REJECTED_LIVE_ACCOUNT
+  - REJECTED_INVALID_COMMAND
+  - REJECTED_RISK_GATE
+  - FAILED_BROKER_ERROR
+
+Export:
+mt5-bridge-export/ReplitMT5BridgeEA.mq5
+
+E. UI: Demo Execution Control Panel
+Add/upgrade UI showing:
+- Current mode
+- Demo account verified
+- Bridge connected
+- EA version
+- AllowOrderExecution
+- AllowModification
+- AllowClose
+- Demo execution arm toggle
+- Emergency demo kill switch
+- Clear warning: “DEMO ONLY — live trading remains locked.”
+
+F. Order Ticket Demo Execution
+Allow demo order submission only when MT5_DEMO_EXECUTION is armed:
+- Buy Market
+- Sell Market
+- Buy Limit
+- Sell Limit
+- Buy Stop
+- Sell Stop
+- Buy Stop Limit
+- Sell Stop Limit
+
+Require:
+- symbol
+- volume
+- order type
+- entry/stop/limit price when needed
+- SL/TP validation
+- risk/prop checks
+- final confirmation modal
+
+G. SL/TP, Cancel, Close Demo Controls
+Allow demo-only:
+- edit Stop Loss
+- edit Take Profit
+- cancel pending order
+- close open demo position
+
+Every action must:
+- require confirmation
+- show old vs new values
+- show gate result
+- audit event
+- reconcile after command
+- block if account is not demo
+
+H. AI Demo Control
+AI may prepare actions but must require confirmation.
+
+AI may say:
+- “I can prepare a demo order for your review.”
+- “This is demo only.”
+- “Live execution remains locked.”
+- “Please confirm before I send the demo command.”
+
+AI must not:
+- execute without confirmation
+- claim live execution is enabled
+- invent prices, fills, P&L, candles, news, TP/SL, or broker results
+
+I. Broker Reconciliation
+After each demo command:
+- poll broker snapshot
+- reconcile MT5 broker state
+- update trade/order card
+- update journal
+- update performance if enough data exists
+- create notification
+- audit lifecycle
+
+If broker confirmation is missing:
+- show pending/unknown
+- do not fake fill
+- create reconciliation warning
+
+J. Emergency Demo Kill Switch
+Add/verify:
+- disables MT5_DEMO_EXECUTION
+- returns bridge to READ_ONLY
+- blocks new commands
+- does not auto-close trades
+- audit logged
+
+K. Preserve Live Safety
+Confirm:
+- Live trading = BLOCKED
+- Live execution = impossible
+- Shared MT5 routing = BLOCKED
+- Live auto-close = ALERT_ONLY
+- No live broker placement path enabled
+- No command can execute unless verified demo
+- Per-user isolation intact
+- No secrets exposed
+
+Run:
+1. Typecheck
+2. Full CI guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Demo execution gate tests
+7. Unknown/live account rejection tests
+8. Demo arm/disarm tests
+9. Command queue demo lifecycle tests
+10. Demo market order tests
+11. Demo pending order tests
+12. Demo SL/TP modify tests
+13. Demo close position tests
+14. Demo cancel pending order tests
+15. User confirmation required tests
+16. Duplicate command suppression tests
+17. Emergency kill switch tests
+18. AI demo confirmation/honesty tests
+19. Broker reconciliation tests
+20. Journal/performance integration tests
+21. Notification/audit tests
+22. Secret leakage tests
+23. Per-user isolation regression
+24. Safety-envelope regression
+25. Live trading locked regression
+26. Shared MT5 routing blocked regression
+27. Mandatory code review / architect review
+
+End with:
+- Files inspected
+- Files changed
+- EA export path
+- Demo execution mode result
+- Demo arm gate result
+- Command queue result
+- UI result
+- AI result
+- Tests run/pass/fail
+- Any blockers
+- Confirmation LIVE trading remains BLOCKED
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation live auto-close remains ALERT_ONLY
+- Final answer: READY FOR DEMO EXECUTION TEST or NOT READY, with reasons.

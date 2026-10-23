@@ -1,0 +1,292 @@
+Continue ARX AI by building the Full Ecosystem Integration, End-to-End QA, and Private Beta Launch Control system.
+
+Do not rebuild blindly. Inspect the full current app first:
+- admin trading controls
+- platform mode: Trading Off / Demo / Live
+- account routing: USER_OWNED_MT5 / SHARED_MASTER_MT5
+- MT5 bridge
+- EA command polling
+- EA execution result callback
+- user onboarding/readiness
+- compliance/disclosures
+- Risk Governor
+- Broker Symbol Specs Engine
+- Account Rules / Prop Firm Engine
+- Shared Master Allocation Engine
+- Trade Action Center
+- Open Trades
+- Trade History
+- Journal/Performance Coach
+- Live Trade Intelligence
+- Smart Exit Plan
+- Market Context Engine
+- Trading Tool Orchestrator
+- Opportunity Radar / Scanner Brain
+- Portfolio Exposure Engine
+- Unified Alerts
+- AI assistant context
+- mobile/iPhone Safari layout
+
+Goal:
+Prove the entire ARX AI trading ecosystem works end-to-end for a private beta.
+
+This phase is not mainly about adding new features.
+This phase is about connecting, testing, fixing, and validating every major system together.
+
+PART 1 — Ecosystem Health Dashboard
+
+Create an Admin Ecosystem Health page showing:
+
+- platform trading mode
+- account routing mode
+- emergency stop status
+- MT5 heartbeat status
+- command polling status
+- execution callback status
+- symbol specs sync status
+- risk governor status
+- onboarding/readiness status
+- compliance status
+- shared master status
+- AI assistant status
+- scanner/opportunity radar status
+- alert system status
+- journal/performance sync status
+- database migration status
+- failing tests
+- stale data warnings
+- blocker summary
+
+Status labels:
+- Healthy
+- Warning
+- Failing
+- Not configured
+- Data stale
+
+PART 2 — End-to-End Test Scenarios
+
+Create a test runner or checklist for these private beta personas:
+
+1. Owner/Admin
+- can access admin controls
+- can switch Trading Off / Demo / Live
+- can switch routing mode
+- can enable emergency stop
+- can view audits
+- can view ecosystem health
+
+2. User-owned MT5 demo user
+- completes onboarding
+- connects own demo MT5
+- receives heartbeat
+- syncs account
+- syncs positions
+- syncs symbol specs
+- can review demo trade
+- can place confirmed demo trade
+- execution reconciles
+- open trade appears
+- P&L updates
+- AI can analyze trade
+- close review works
+- journal updates after close
+
+3. Shared master demo user
+- completes onboarding
+- receives virtual allocation
+- sees only own allocation
+- places shared demo trade after confirmation
+- attribution row is created
+- virtual P&L updates
+- AI can explain shared routing
+- user cannot see master credentials or other users’ trades
+
+4. Fresh user
+- sees clean dashboard
+- no fake trades
+- no fake P&L
+- no fake MT5 data
+- readiness card shows missing setup steps
+- cannot trade until gates pass
+
+5. Live-eligible but not approved user
+- cannot place live trades
+- AI explains blockers
+- trade ticket shows required disclosure/admin approval/account verification
+
+6. Suspended / close-only user
+- cannot open new trades
+- can reduce risk if close-only
+- AI explains status
+- audit log records blocks
+
+PART 3 — Full Trade Lifecycle Validation
+
+Validate this full lifecycle:
+
+User asks AI or opens scanner →
+AI/opportunity radar analyzes real data →
+trade ticket opens →
+Risk Governor checks →
+Broker Symbol Specs validate →
+Account Rules check →
+Compliance/readiness check →
+user confirms →
+Trade Action Center creates action →
+command queues →
+MT5 EA polls →
+EA executes/rejects →
+execution result callback updates backend →
+Open Trades updates →
+alerts/AI intelligence monitor trade →
+user reviews close →
+close command queues →
+execution result closes trade →
+Trade History updates →
+Journal updates →
+Calendar updates →
+Performance Coach updates →
+Audit timeline records everything
+
+No step should rely on fake data.
+
+PART 4 — Data Isolation Validation
+
+Verify:
+- users only see their own trades
+- users only see their own alerts
+- users only see their own journal
+- users only see their own AI history
+- shared users only see their own virtual allocation
+- shared users never see master credentials
+- admin-only data stays admin-only
+- support role cannot perform owner-only actions
+
+PART 5 — AI Ecosystem Validation
+
+Test AI prompts:
+
+- Am I ready to trade?
+- What mode is the platform in?
+- Am I using my own MT5 or shared account?
+- What is my MT5 status?
+- Can I place a trade?
+- Why am I blocked?
+- What is the best market to watch?
+- What tools did you use?
+- What trades are open?
+- Which trade needs attention?
+- Should I review a close?
+- Did my order execute?
+- Why was my trade rejected?
+- How did I trade today?
+- Am I close to violating account rules?
+- How healthy is my account?
+
+AI must:
+- use real app state
+- disclose missing data
+- avoid guarantees
+- avoid fake market data
+- not expose secrets
+- not bypass trading guards
+
+PART 6 — Mobile/iPhone Safari QA
+
+Check:
+- login/logout
+- dashboard
+- sidebar collapse
+- bottom nav fixed
+- AI widget usable
+- voice mode if available
+- trade ticket modal
+- close review modal
+- alert modals
+- onboarding wizard
+- scanner cards
+- open trades
+- trade detail page
+- admin pages if accessible
+- no button hidden behind bottom menu
+
+PART 7 — Private Beta Launch Control
+
+Add or improve a Private Beta Control page.
+
+Admin should be able to:
+- see all beta users
+- assign tester role
+- enable/disable demo access
+- approve/revoke live access
+- assign routing mode
+- assign shared allocation
+- view readiness status
+- view last login
+- view MT5 connection status
+- view recent errors
+- send setup reminder
+- suspend user
+- put user close-only
+
+PART 8 — Blocker Report
+
+Create a clear blocker report with categories:
+
+- Critical blocker
+- High priority
+- Medium priority
+- Low priority
+- Manual verification needed
+- Not configured
+- Future enhancement
+
+Every blocker should include:
+- affected system
+- user impact
+- fix status
+- exact next action
+
+PART 9 — Tests
+
+Add or update tests for:
+1. Full user-owned demo trade lifecycle.
+2. Full shared-master demo trade lifecycle.
+3. Trading Off blocks all new orders.
+4. Emergency Stop blocks all new orders.
+5. Live trade requires approval/disclosure/live account/confirmation.
+6. Risk Governor blocks unsafe trades.
+7. Broker Symbol Specs block invalid orders.
+8. Account Rules block violations.
+9. Shared users cannot see other users’ data.
+10. Admin permissions are enforced.
+11. AI uses real ecosystem state.
+12. AI does not invent missing data.
+13. Execution reconciliation updates action/open trade/history.
+14. Journal/calendar update after close.
+15. Alerts are user-scoped.
+16. Mobile layout passes.
+17. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- private beta readiness score out of 10
+- ecosystem health status
+- user-owned MT5 demo status
+- shared-master demo status
+- live trading gate status
+- AI ecosystem status
+- Risk Governor status
+- symbol specs status
+- account rules status
+- execution reconciliation status
+- alert system status
+- journal/performance status
+- mobile status
+- data isolation status
+- tests passed
+- critical blockers
+- manual verification needed
+- whether I can invite private beta users

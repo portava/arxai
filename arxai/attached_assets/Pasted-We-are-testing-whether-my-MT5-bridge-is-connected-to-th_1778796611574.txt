@@ -1,0 +1,166 @@
+We are testing whether my MT5 bridge is connected to the ARX AI trading app.
+
+IMPORTANT:
+- Do NOT place live trades.
+- Do NOT create real market orders.
+- Do NOT reset the database.
+- Do NOT rebuild unrelated UI.
+- This is a connection/heartbeat/status test only.
+
+My Replit app/base URL is:
+https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev
+
+Objective:
+Confirm whether MT5 is connected to the app through the bridge EA by checking heartbeat, bridge routes, backend storage, frontend status display, and logs.
+
+Step 1 — Inspect bridge backend routes:
+Find all MT5/bridge-related routes in the backend. Look for endpoints similar to:
+- /api/mt5/health
+- /api/mt5/heartbeat
+- /api/mt5/status
+- /api/mt5/poll
+- /api/bridge/health
+- /api/bridge/heartbeat
+- /api/bridge/status
+- /health
+
+Report exactly which MT5 bridge routes exist and what each one does.
+
+Step 2 — Test health endpoints:
+Run internal tests against the available health/status routes.
+Confirm if each route returns HTTP 200, JSON, and a clear bridge status response.
+
+Expected safe response examples:
+{
+  "ok": true,
+  "bridge": "online"
+}
+
+or
+
+{
+  "connected": true,
+  "lastHeartbeat": "...",
+  "account": "...",
+  "broker": "..."
+}
+
+If routes are missing, do not guess. Add a safe diagnostic route only if needed:
+GET /api/mt5/diagnostics
+
+The diagnostic route should return:
+- bridge backend online/offline
+- latest MT5 heartbeat timestamp
+- seconds since last heartbeat
+- connected true/false
+- last known account number if available
+- last known broker if available
+- last known balance/equity if available
+- polling enabled true/false
+- trading execution enabled true/false
+- safe mode true/false
+
+Step 3 — Check heartbeat storage:
+Inspect the database/schema/storage for MT5 heartbeat data.
+Find where the app stores:
+- accountId
+- broker
+- balance
+- equity
+- margin
+- freeMargin
+- server time
+- lastHeartbeat
+- connection status
+- bridge status
+- EA version if available
+
+If the EA has not sent a heartbeat yet, the app should clearly show:
+"MT5 not connected yet — waiting for heartbeat"
+
+If heartbeat exists but is old, show:
+"MT5 disconnected — last heartbeat X minutes ago"
+
+If heartbeat is recent, show:
+"MT5 connected"
+
+Use a heartbeat freshness threshold of 30 seconds for connected, 31–120 seconds for stale, and over 120 seconds for disconnected unless the project already has a better setting.
+
+Step 4 — Check frontend app display:
+Find where the MT5/bridge status is displayed in the app dashboard.
+Make sure the UI pulls real backend status instead of hardcoded/fake status.
+
+The app should display:
+- MT5 Connected / Waiting / Disconnected
+- Last heartbeat time
+- Broker
+- Account number
+- Balance/equity if available
+- Safe mode status
+- Trade execution status
+- Last error if any
+
+If the UI currently shows a forced/fake connected status, remove the fake state and wire it to the real backend response.
+
+Step 5 — Add a safe “Test Connection” button if missing:
+If the app does not already have one, add a safe button on the trading/bridge dashboard:
+
+Button label:
+Test MT5 Connection
+
+When clicked, it should:
+- call the real MT5 diagnostics/status endpoint
+- refresh connection status
+- show success if recent heartbeat exists
+- show waiting/disconnected if no heartbeat exists
+- never place a trade
+
+Step 6 — Check logs:
+Inspect server logs for incoming heartbeat requests from MT5.
+Report whether the bridge has received any request from the EA.
+
+Look for:
+- POST heartbeat received
+- HTTP 200 heartbeat response
+- invalid API key
+- missing secret
+- wrong endpoint
+- CORS issue
+- JSON parse error
+- 404 route not found
+- 500 server error
+
+Step 7 — Verify API key/secret validation:
+Check whether the backend requires an API key or bridge secret.
+Confirm what header or field the EA must send.
+
+Report the exact required format, for example:
+Authorization: Bearer <key>
+or
+x-bridge-secret: <key>
+or
+apiKey in JSON body
+
+Do not expose real secrets in the response. Just tell me what field/header is required.
+
+Step 8 — Run QA/fix gate:
+After testing and any safe fixes, run a QA gate.
+
+Confirm:
+- backend starts without errors
+- bridge health endpoint works
+- diagnostics endpoint works
+- frontend status loads without crashing
+- no fake connected status remains
+- no trade execution was triggered
+- no unrelated pages were changed
+
+Final report format:
+1. MT5 bridge backend status: connected / waiting / disconnected / error
+2. Last heartbeat found: yes/no and timestamp if available
+3. Endpoint MT5 EA should call for heartbeat
+4. Endpoint app uses to display status
+5. API key/header required
+6. Any errors found
+7. Fixes made
+8. Next step for me inside MT5

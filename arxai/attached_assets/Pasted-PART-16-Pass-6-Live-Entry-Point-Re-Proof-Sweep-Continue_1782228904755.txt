@@ -1,0 +1,130 @@
+PART 16 — Pass 6: Live Entry-Point Re-Proof Sweep
+
+Continue the audit in READ-ONLY mode.
+
+Do not edit files.
+Do not create tasks.
+Do not restart workflows.
+Do not run migrations.
+Do not treat the known safety-integration/shared-dev-DB red as a new regression unless this pass directly proves a new cause.
+
+Context:
+Pass 5 verified the core live execution chokepoint:
+
+executeInstant → createLiveDraft → confirmLiveCommand → dispatchLiveCommand
+
+It proved that:
+- dispatchLiveCommand is the live broker-send chokepoint.
+- The 18-gate Phase B evaluator is actually called.
+- All gates fail closed before broker send.
+- LIVE_FILLED requires a real broker ticket.
+- Broker results are CAS/exactly-once.
+- Cross-user scoping is session-user based.
+- MOCK bridge cannot satisfy live execution.
+- Reverse remains non-atomic and is already in the held fix ledger.
+- Cosmetic “16-gate” vs “18-gate” naming drift is already in the held fix ledger.
+
+Late explorer carryover:
+After Pass 5 was delivered, another explorer reported additional entry points that appear to converge to dispatchLiveCommand, but several were not independently re-proven line-by-line. This pass must directly re-read those entry points.
+
+Goal:
+Prove whether every live-capable action path, including legacy/self-service/assistant/test/emergency paths, converges into the same live dispatch chokepoint with no alternate broker-send path.
+
+Files / entry points to directly inspect:
+
+1. routes/instantTrade.ts
+   - /api/trades/instant/execute
+   - /api/trades/instant/close
+   - /api/trades/instant/close-all
+   - /api/trades/instant/validate
+
+2. routes/meTradeActions.ts
+   - /api/me/trade-actions
+   - Confirm whether it uses createLiveDraft → confirmLiveCommand → dispatchLiveCommand.
+   - Confirm auth/session userId scoping.
+   - Confirm it cannot accept body userId/accountMode to bypass scoping.
+
+3. routes/meOneClick.ts
+   - /api/me/one-click/submit-live
+   - Confirm whether it routes through executeInstant or directly into the live pipeline.
+   - Confirm no direct MT5/bridge send exists.
+
+4. routes/meLive.ts
+   - close / modify / close-all / emergency-related live actions.
+   - Confirm every action uses executeInstant or dispatchLiveCommand.
+   - Confirm close/modify cannot fabricate success without broker confirmation.
+
+5. routes/meAssistant.ts
+   - /api/me/assistant/instant-trade-command
+   - Confirm assistant/Ruby command path routes through executeInstant/live pipeline.
+   - Confirm assistant cannot bypass user confirmation, account activation, gates, or broker outcome truth.
+
+6. routes/liveTestCycle.ts
+   - Confirm live test-cycle path.
+   - Determine whether it can dispatch real broker commands.
+   - If yes, prove it uses dispatchLiveCommand and all gates.
+   - If no, prove it is simulation/test-only and cannot touch broker send.
+
+7. routes/emergencyClose.ts
+   - Confirm emergency close / kill-switch path.
+   - Determine whether it uses dispatchLiveCommand, executeInstant, or a special close path.
+   - If it bypasses the normal path, determine whether that is intentional and still broker-truthful.
+   - Confirm no fake close, no fabricated fill, no cross-user close.
+
+8. routes/adminAllocations.ts
+   - Confirm it only influences allocation/routing state.
+   - Confirm it does not directly send broker orders.
+   - Confirm any admin-triggered live action, if present, still routes through dispatchLiveCommand.
+
+9. Search broadly for any direct broker/MT5 send outside the chokepoint:
+   - enqueueBridgedMt5Command
+   - mt5_commands insert
+   - SENT_TO_MT5_LIVE
+   - LIVE_FILLED
+   - brokerTicket
+   - dispatchLiveCommand
+   - createLiveDraft
+   - confirmLiveCommand
+   - executeInstant
+   - bridge send
+   - live order
+   - place order
+   - close position
+
+Required proof standard:
+- Do not rely on explorer summaries alone.
+- Use grep only for discovery.
+- Directly read every relevant function.
+- For each entry point, classify as:
+  A. Directly proven converges to dispatchLiveCommand.
+  B. Proven not live-capable.
+  C. Proven direct-send bypass but safe/intentional.
+  D. Unsafe or unexplained bypass.
+  E. Inconclusive.
+
+Questions this pass must answer:
+1. Are there any live broker-send paths outside dispatchLiveCommand?
+2. Are there any live close/modify/emergency paths outside dispatchLiveCommand?
+3. Are assistant/Ruby live commands forced through the same gates?
+4. Are one-click/self-trade paths forced through the same gates?
+5. Are live test-cycle routes capable of touching real broker accounts?
+6. Does admin allocation routing ever become direct execution?
+7. Does every live-capable route derive userId from session/auth rather than request body?
+8. Are broker outcomes still truthful on every path?
+
+Deliverables:
+- A table of all entry points inspected.
+- For each: route/file/function, live-capable yes/no, convergence path, auth/user scoping, broker outcome truth, risk class.
+- A separate “direct broker-send inventory” showing every location that writes/enqueues to mt5_commands or equivalent.
+- Any fix-ledger additions, held only, no tasks created.
+
+Expected final verdict options:
+- “Pass 6 verified: no alternate live execution path.”
+- Or: “Pass 6 found bypasses,” with exact file/line proof and risk classification.
+
+Remember:
+No edits.
+No tasks.
+No restarts.
+No workflow changes.
+Read-only audit only.

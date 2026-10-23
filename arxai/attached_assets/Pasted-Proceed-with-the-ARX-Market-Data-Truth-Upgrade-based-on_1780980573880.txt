@@ -1,0 +1,413 @@
+Proceed with the ARX Market Data Truth Upgrade based on the completed Market-Data / API Inventory Audit.
+
+The audit found that the execution boundary is safe: live execution, fills, positions, balance, equity, margin, open trades, and allocation are broker-truth only through the MT5 bridge and arx_live_* tables.
+
+Do not change live execution routing.
+Do not create a new execution path.
+Do not let external feeds affect fills, balance, equity, or broker execution price.
+Do not weaken the 16-gate live command pipeline.
+Do not bypass Risk Governor, AACI, or Security Handshake.
+
+The problem is analysis/chart truth:
+- MT5 broker quote/candle slot exists but is inactive.
+- EA currently heartbeats but does not push real candles/quotes.
+- Forex charts can fall through to TwelveData/Polygon.
+- Polygon free-tier intraday can be delayed/stale.
+- Scanner still has simulator fallback for technicals.
+- Legacy /api/data/candles still exists as a bare endpoint.
+- Stale/freshness thresholds live in multiple places.
+- Ruby and scanner must stay honest when feed is delayed or not AI-usable.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Make ARX market-data truth stronger and cleaner without disturbing the safe broker execution boundary.
+
+Target architecture:
+
+Execution/account truth:
+MT5 bridge only → arx_live_commands / arx_live_positions / mt5_connection
+
+Analysis/chart truth:
+mt5_broker candles/quotes first → Deriv for synthetics → assistant_real fallback only when clearly labeled
+
+No simulator or delayed fallback should look like live broker truth.
+
+==================================================
+PHASE 1 — ACTIVATE MT5 QUOTE + CANDLE PUSH FOUNDATION
+==================================================
+
+Build or verify the server-side endpoints required for EA-pushed broker market data.
+
+Required endpoints or existing equivalents:
+
+1. POST /api/mt5/sync-quotes
+
+Expected body:
+
+{
+  "symbol": "XAUUSD",
+  "brokerSymbol": "XAUUSD",
+  "bid": 2321.25,
+  "ask": 2321.50,
+  "last": 2321.30,
+  "spread": 25,
+  "timestamp": 1717776060000,
+  "eaVersion": "1.50"
+}
+
+2. POST /api/mt5/sync-candles
+
+Expected body:
+
+{
+  "symbol": "XAUUSD",
+  "brokerSymbol": "XAUUSD",
+  "timeframe": "M5",
+  "priceBasis": "bid",
+  "bars": [
+    {
+      "time": 1717776000,
+      "open": 2320.12,
+      "high": 2322.45,
+      "low": 2319.88,
+      "close": 2321.30,
+      "tickVolume": 184,
+      "spread": 25
+    }
+  ],
+  "lastBarIsFinal": false,
+  "eaVersion": "1.50",
+  "sentAt": 1717776060000
+}
+
+Rules:
+- Use existing per-user bridge auth pattern.
+- Reject server-wide MT5_BRIDGE_TOKEN.
+- Require bridge/user ownership.
+- Reject malformed OHLC.
+- Reject stale timestamps.
+- Normalize symbol and timeframe.
+- Key candle storage by symbol + timeframe, not symbol only.
+- Preserve source as mt5_broker.
+- Stamp freshness per symbol/timeframe.
+- Return accepted/rejected counts and freshness.
+
+Do not fake candles.
+Do not generate broker candles from third-party data.
+Do not let third-party data overwrite mt5_broker series.
+
+==================================================
+PHASE 2 — FIX mt5Provider STORAGE AND ROUTER PRIORITY
+==================================================
+
+Inspect:
+
+- lib/data/mt5Provider.ts
+- lib/data/marketDataRouter.ts
+- chartDataService.ts
+- symbolDirectory.ts
+- symbolNormalizer.ts
+
+Fix mt5Provider so:
+
+- candles are stored by ${symbol}:${timeframe}
+- quotes are stored by normalized broker symbol
+- freshness is per symbol/timeframe
+- isConnected() reflects real pushed quote/candle availability separately from heartbeat
+- heartbeat-only bridge does not falsely mean candle/quote feed is live
+- missing MT5 candles return a clear reason:
+  MT5_BROKER_FEED_NOT_ACTIVE
+  MT5_CANDLES_NOT_PUSHED
+  MT5_QUOTES_NOT_PUSHED
+  MT5_TIMEFRAME_MISSING
+
+Router priority should remain:
+
+For forex/metals/stocks/crypto/indices:
+1. mt5_broker, if fresh and exact symbol/timeframe exists
+2. assistant_real fallback chain
+3. honest delayed/stale state
+
+For Deriv synthetics:
+1. Deriv
+2. mt5_broker only if user’s broker truly supports that symbol and has pushed data
+3. no simulator pretending to be live
+
+==================================================
+PHASE 3 — EA CONTRACT FOR QUOTE/CANDLE PUSH
+==================================================
+
+Do not silently modify the live EA without reporting.
+
+Create a precise EA contract for the next EA version.
+
+The EA must push:
+
+1. Quotes for symbols in Market Watch and symbols with open positions.
+2. Candles using CopyRates() for requested/active timeframes.
+3. Initial backfill of 300–1000 candles per active symbol/timeframe.
+4. Incremental candle updates on new bar or safe interval.
+5. Bid/ask/spread/timestamp for quote updates.
+6. EA version and terminal readiness telemetry.
+7. Last successful push time.
+8. Push errors.
+
+Document the EA requirements:
+
+- CopyRates(symbol, timeframe, count)
+- SymbolInfoDouble(symbol, SYMBOL_BID)
+- SymbolInfoDouble(symbol, SYMBOL_ASK)
+- SymbolInfoInteger(symbol, SYMBOL_SPREAD)
+- TimeCurrent()
+- safe WebRequest retry
+- no order execution changes in this phase
+- quote/candle push can run while ReadOnlyMode is true
+
+Important:
+This phase should enable data push without touching live order execution behavior.
+
+==================================================
+PHASE 4 — COLLAPSE CHART CONSUMERS ONTO /api/chart/candles
+==================================================
+
+The audit found two candle endpoints:
+
+- /api/chart/candles — rich, normalized, has feedStatus
+- /api/data/candles — legacy bare array, no status
+
+Standardize all chart/analysis consumers on /api/chart/candles.
+
+Inspect and update consumers:
+
+- ARXNativeChart
+- ScannerChartPanel
+- PositionMiniChart
+- Ruby chart read
+- scanner chart usage
+- any hooks using /api/data/candles
+- any legacy chart utilities
+
+Rules:
+- /api/chart/candles is the truth contract.
+- It must always return feedStatus.
+- It must include source, quality, freshness, aiUsable, lastCandleTime, missing timeframes, and reason.
+- Legacy /api/data/candles should either:
+  - become a compatibility wrapper over /api/chart/candles, or
+  - be marked deprecated and no longer used by active UI.
+- No active UI should rely on bare candle arrays without feed truth.
+
+==================================================
+PHASE 5 — CENTRALIZE FRESHNESS / STALE RULES
+==================================================
+
+The audit found stale thresholds scattered across:
+
+- chartDataService.STALE_TRAILING_INTERVALS
+- candleTruthEngine.TRUTH_STALE_TRAILING_INTERVALS
+- mt5Provider.CANDLE_TTL_MS
+- marketProvider.CANDLE_TTL_MS / STALE_AFTER_MS
+
+Create one shared market data freshness module.
+
+Suggested:
+
+lib/data/marketDataFreshness.ts
+
+It should define:
+
+- clean trailing interval threshold
+- delayed trailing interval threshold
+- stale trailing interval threshold
+- quote fresh TTL
+- quote stale TTL
+- MT5 candle TTL
+- assistant provider cache TTL
+- helper classifyCandleFreshness()
+- helper classifyQuoteFreshness()
+- helper buildFeedStatus()
+
+Rules:
+- Chart Truth, Candle Truth, Ruby, Scanner, and UI should use the same definitions.
+- If a provider uses a cache TTL, separate cache freshness from AI usability.
+- A cached response may be technically available but still not AI-usable.
+- On 1m charts, delayed/stale must be obvious.
+
+==================================================
+PHASE 6 — SCANNER SIMULATOR FALLBACK CLEANUP
+==================================================
+
+The scanner currently falls back to simulator technicals when real feed is missing.
+
+This must be made safer.
+
+Rules:
+- Simulator data must never appear as normal live scanner data.
+- Simulator rows must be clearly labeled:
+  ANALYSIS ONLY — SIMULATED DATA
+- Simulator rows must not show trade-ready buttons.
+- Simulator rows must not produce “TRADEABLE” status.
+- Simulator rows must not trigger self-trade.
+- Simulator rows must not be used as Ruby-confirmed trade evidence.
+- Simulator rows can only be used for placeholder education/testing/admin diagnostics.
+
+Preferred:
+- For regular users, if no real feed exists, show:
+  “Waiting for verified feed”
+  instead of technical indicator values from simulator data.
+- Keep simulator available only behind admin/dev diagnostics if still needed.
+
+Inspect and gate legacy simulator consumers:
+
+- marketScanner.ts
+- marketSimulator.ts
+- aiBrain.ts
+- marketDataLayer.ts
+- oms.ts
+- autopilot.ts
+- shadowMode.ts
+- legacy scanner.ts sub-routes
+
+Do not delete working code blindly.
+Mark legacy surfaces clearly and ensure they cannot influence live trade readiness.
+
+==================================================
+PHASE 7 — RUBY AND SCANNER DATA HONESTY
+==================================================
+
+Ruby and Scanner must explain feed truth simply.
+
+For regular users:
+
+If feed is stale:
+“Data is delayed. I can only give a limited read.”
+
+If MT5 broker feed is inactive:
+“Broker chart feed is not active yet. I’m using a fallback analysis feed.”
+
+If H1/H4 are missing:
+“H1/H4 confirmation is missing, so confidence is limited.”
+
+If simulator:
+“This is analysis-only simulated data, not live feed data.”
+
+Ruby must not say:
+- verified setup
+- strong buy
+- strong sell
+- final trade read
+- trade now
+
+when:
+- feed quality is stale
+- aiUsable is false
+- source is simulator
+- key timeframes are missing
+- mt5_broker feed is inactive and fallback is delayed
+
+Scanner must not show trade-ready status unless:
+- source is real
+- feed is fresh/clean enough
+- Chart Truth passes
+- Scanner Truth passes
+- Risk/AACI/Security allow execution
+- symbol is broker-tradable
+
+==================================================
+PHASE 8 — PROVIDER HEALTH ADMIN PANEL
+==================================================
+
+Add or update admin-only provider health visibility.
+
+Admin should see:
+
+- MT5 heartbeat status
+- MT5 quote push status
+- MT5 candle push status
+- Deriv WS status
+- TwelveData status
+- Polygon status
+- Finnhub key missing
+- Alpha Vantage key missing
+- NewsAPI key missing
+- economic calendar connected:false
+- latest provider used per asset class
+- latest stale reason
+- latest fallback reason
+- last successful candle time
+- last successful quote time
+- aiUsable state
+- active consumers
+
+Regular users must not see provider internals.
+
+Regular users only see:
+- Live
+- Fresh
+- Delayed
+- Stale
+- Waiting for verified feed
+- Broker feed not active yet
+- Fallback analysis feed
+
+==================================================
+PHASE 9 — TESTS
+==================================================
+
+Add/update tests:
+
+1. MT5 candles are stored by symbol+timeframe.
+2. MT5 quote push updates quote store.
+3. Invalid OHLC is rejected.
+4. Stale MT5 candle is not AI-usable.
+5. Router uses mt5_broker when fresh MT5 candles exist.
+6. Router falls to assistant_real when mt5_broker inactive.
+7. Polygon delayed feed is marked stale on 1m when trailing by 3 intervals.
+8. /api/chart/candles returns feedStatus.
+9. No active UI uses /api/data/candles without feedStatus.
+10. Scanner simulator rows cannot be trade-ready.
+11. Simulator rows cannot trigger self-trade.
+12. Ruby refuses verified trade read when aiUsable=false.
+13. Freshness module classifies clean/delayed/stale consistently.
+14. Deriv synthetics still work through Deriv provider.
+15. Broker execution still ignores third-party feed prices.
+16. Live command pipeline unchanged.
+17. Open Trades and Dashboard still use broker truth.
+18. Admin provider health does not leak to regular users.
+
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- market data router tests
+- chart feed tests
+- scanner tests
+- Ruby read tests
+- live command safety tests
+- full pnpm run ci if feasible
+
+==================================================
+COMPLETION REPORT
+==================================================
+
+Return:
+
+- files inspected
+- files changed
+- MT5 quote endpoint status
+- MT5 candle endpoint status
+- mt5Provider storage changes
+- router priority confirmation
+- EA quote/candle contract created
+- /api/chart/candles standardization status
+- /api/data/candles legacy status
+- freshness module status
+- simulator fallback cleanup
+- Ruby/Scanner honesty changes
+- provider health admin status
+- tests added/updated
+- typecheck/guard results
+- remaining blockers
+
+Final rule:
+Execution truth remains broker-only. Analysis truth becomes broker-first once MT5 candles/quotes are pushed. Third-party fallback must stay clearly labeled. Simulator must never look trade-ready.

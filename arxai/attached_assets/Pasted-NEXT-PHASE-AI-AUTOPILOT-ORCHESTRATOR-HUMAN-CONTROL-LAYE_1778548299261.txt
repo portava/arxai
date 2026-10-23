@@ -1,0 +1,520 @@
+NEXT PHASE: AI AUTOPILOT ORCHESTRATOR + HUMAN CONTROL LAYER
+
+Goal:
+Build the controlled AI autopilot brain that coordinates the full trading system.
+
+The app already has:
+- full tester access
+- live chart
+- simulated market engine
+- strategy lab
+- backtesting
+- trade grader
+- market scanner
+- command room
+- market data layer
+- OMS
+- position manager
+- P/L engine
+- Risk Governor 2.0
+- MT5 deferred
+
+Now build the AI Autopilot Orchestrator.
+
+Important:
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim real broker execution happened.
+- Do not remove full tester access.
+- Do not hide live workflows.
+- Do not bypass Risk Governor 2.0.
+- Autopilot can run in simulator/tester/live-intent mode now.
+- Real broker execution remains unavailable until MT5 is connected later.
+
+==================================================
+1. CREATE AI AUTOPILOT CONTROL CENTER
+==================================================
+
+Create page:
+
+/autopilot-control-center
+
+This page should control all AI automation.
+
+Modes:
+
+- OFF
+- OBSERVE_ONLY
+- AI_ASSIST
+- DEMO_AUTO_SIMULATOR
+- LIVE_INTENT_AUTO_TESTER
+- FUTURE_MT5_LIVE_AUTO_LOCKED
+
+Mode meanings:
+
+OFF:
+- AI does nothing.
+
+OBSERVE_ONLY:
+- AI scans markets and logs observations.
+- No trade cards.
+- No simulated orders.
+- No live intents.
+
+AI_ASSIST:
+- AI generates trade cards.
+- User must approve.
+- No auto execution.
+
+DEMO_AUTO_SIMULATOR:
+- AI can auto-create simulator trades after risk approval.
+- No real broker execution.
+
+LIVE_INTENT_AUTO_TESTER:
+- AI can generate live-style intents.
+- MT5 not connected means intents are saved as PENDING_MT5_CONNECTION.
+- No real broker execution.
+
+FUTURE_MT5_LIVE_AUTO_LOCKED:
+- visible but locked until MT5 is connected, verified, risk approved, and manually armed.
+
+==================================================
+2. CREATE AUTOPILOT STATE MACHINE
+==================================================
+
+Build an autopilot state machine.
+
+States:
+
+- IDLE
+- SCANNING
+- ANALYZING
+- CANDIDATE_FOUND
+- STRATEGY_MATCHING
+- RISK_CHECKING
+- WAITING_FOR_CONFIRMATION
+- APPROVED_FOR_SIMULATION
+- SUBMITTING_SIMULATOR_ORDER
+- POSITION_MONITORING
+- EXIT_MANAGEMENT
+- LEARNING_UPDATE
+- COOLDOWN
+- PAUSED
+- STOPPED
+- BLOCKED_BY_RISK
+- BLOCKED_BY_NEWS
+- BLOCKED_BY_SPREAD
+- BLOCKED_BY_DRAWDOWN
+- PENDING_MT5_CONNECTION
+
+Every state transition must be logged.
+
+==================================================
+3. CREATE AUTOPILOT RULE ENGINE
+==================================================
+
+Autopilot must obey:
+
+- selected risk profile
+- selected strategy
+- allowed symbols
+- allowed sessions
+- blocked news windows
+- max trades per session
+- max trades per day
+- max open positions
+- max loss per trade
+- max daily loss
+- max weekly loss
+- minimum confidence score
+- minimum opportunity score
+- minimum entry sniper score
+- minimum trade grade
+- minimum risk/reward
+- cooldown after win
+- cooldown after loss
+- stop after consecutive losses
+- no martingale
+- no averaging down
+- no revenge trading
+- no duplicate orders
+- no trade without stop loss
+- no trade without take profit or exit logic
+
+==================================================
+4. CREATE AUTOPILOT SESSION BUILDER
+==================================================
+
+Create page section:
+
+Start Autopilot Session
+
+Inputs:
+
+- session name
+- mode
+- strategy
+- symbols
+- timeframes
+- max trades
+- max duration
+- risk profile
+- auto-stop rules
+- require user approval yes/no
+- simulator balance
+- notes
+
+Default safe session:
+
+- mode: DEMO_AUTO_SIMULATOR
+- max trades: 3
+- max open positions: 1
+- max risk per trade: 0.25%
+- stop after 1 loss
+- cooldown: 15 minutes
+- require Risk Governor approval
+- MT5 execution disabled
+
+==================================================
+5. CREATE AUTOPILOT DECISION PIPELINE
+==================================================
+
+Every autopilot decision must follow this exact pipeline:
+
+1. Get current market data.
+2. Check data quality.
+3. Check session clock.
+4. Check news risk.
+5. Run market scanner.
+6. Rank opportunities.
+7. Match opportunity to selected strategy.
+8. Generate AI trade card.
+9. Calculate entry sniper score.
+10. Calculate opportunity score.
+11. Grade trade.
+12. Run Risk Governor 2.0.
+13. Check OMS duplicate/idempotency.
+14. Decide:
+   - WAIT
+   - REJECT
+   - ASK_USER_APPROVAL
+   - SUBMIT_SIMULATOR
+   - CREATE_LIVE_INTENT_PENDING_MT5
+15. Log decision.
+16. Update decision stream.
+17. Update journal/calendar if action taken.
+18. Feed outcome into learning loop.
+
+No shortcuts.
+
+==================================================
+6. CREATE AUTOPILOT DECISION EXPLAINER
+==================================================
+
+Every AI decision should show:
+
+- what symbol was analyzed
+- what timeframe was used
+- what strategy was used
+- why the AI considered the setup
+- why the AI accepted or rejected the setup
+- confidence score
+- opportunity score
+- entry sniper score
+- trade grade
+- risk score
+- rules passed
+- rules failed
+- market health result
+- news risk result
+- session result
+- final decision
+- what the AI will do next
+
+Add this to:
+
+- /autopilot-control-center
+- /trade-command-room
+- /ai-decisions
+- /decision-stream
+- /journal
+- /audit-vault
+
+==================================================
+7. CREATE AUTOPILOT LIVE MONITOR
+==================================================
+
+Add live monitor panel showing:
+
+- current autopilot mode
+- current state
+- selected strategy
+- active symbol
+- last scan time
+- last decision
+- next scan countdown
+- cooldown timer
+- current open simulated positions
+- daily risk remaining
+- daily trades remaining
+- active risk locks
+- MT5 connection status
+- kill switch status
+
+Buttons:
+
+- Start
+- Pause
+- Resume
+- Stop
+- Emergency Stop
+- Force Scan
+- Generate Report
+
+==================================================
+8. CREATE AUTOPILOT POSITION MANAGEMENT
+==================================================
+
+For simulator positions, autopilot can manage exits:
+
+- monitor stop loss
+- monitor take profit
+- move stop to break-even if rule allows
+- trail stop if rule allows
+- close position on invalidation
+- close position on session risk
+- close position on news risk
+- close position on daily loss limit
+- stop trading after loss
+
+Each management action must be logged.
+
+For live tester intents:
+
+- autopilot can create intent
+- autopilot cannot execute broker order
+- intent status remains PENDING_MT5_CONNECTION
+- future “send to broker” remains disabled until MT5 connects
+
+==================================================
+9. CREATE HUMAN OVERRIDE LAYER
+==================================================
+
+The user should be able to override autopilot safely:
+
+- approve AI trade
+- reject AI trade
+- pause autopilot
+- resume autopilot
+- cancel pending simulator order
+- close simulator position
+- stop all automation
+- activate kill switch
+- mark AI decision as good/bad
+- add note to decision
+
+All overrides must be logged and sent to learning loop.
+
+==================================================
+10. CREATE AUTOPILOT SAFETY LOCKS
+==================================================
+
+Autopilot must instantly stop if:
+
+- kill switch is active
+- risk governor returns BLOCK
+- daily loss limit is hit
+- weekly loss limit is hit
+- max drawdown is hit
+- MT5 status changes unexpectedly
+- data becomes stale
+- spread is too high
+- high-impact news window appears
+- too many consecutive losses
+- duplicate order detected
+- audit logger fails
+- OMS fails
+- position manager fails
+
+Show reason clearly:
+
+“Autopilot paused by safety system: [reason].”
+
+==================================================
+11. CREATE AUTOPILOT REPORTING
+==================================================
+
+Create page section:
+
+Autopilot Session Reports
+
+Each report includes:
+
+- session ID
+- mode
+- strategy
+- symbols
+- start/end time
+- total scans
+- trade candidates found
+- trades rejected
+- trades simulated
+- live intents created
+- win/loss result
+- net simulated P/L
+- average trade grade
+- average confidence
+- average opportunity score
+- mistakes detected
+- risk blocks triggered
+- best decision
+- worst decision
+- what AI learned
+- recommended next session
+
+==================================================
+12. CONNECT TO LEARNING LOOP
+==================================================
+
+Learning loop should store:
+
+- every autopilot scan
+- every accepted setup
+- every rejected setup
+- every risk block
+- every human override
+- every simulator result
+- every mistake category
+- confidence calibration
+- strategy performance
+- symbol performance
+- session performance
+
+AI should improve recommendations based on:
+
+- which setups won
+- which setups lost
+- which rejected setups would have won
+- which accepted setups should have been rejected
+- which strategies are strongest
+- which market conditions are weakest
+
+==================================================
+13. CREATE API ENDPOINTS
+==================================================
+
+Create or update:
+
+GET /api/autopilot/status
+POST /api/autopilot/start
+POST /api/autopilot/pause
+POST /api/autopilot/resume
+POST /api/autopilot/stop
+POST /api/autopilot/force-scan
+GET /api/autopilot/decisions
+GET /api/autopilot/session/:id
+GET /api/autopilot/reports
+POST /api/autopilot/human-override
+POST /api/autopilot/mark-decision
+GET /api/autopilot/state-machine
+GET /api/autopilot/safety-locks
+
+==================================================
+14. UPDATE DASHBOARD
+==================================================
+
+Add cards:
+
+- Autopilot Status
+- Current Autopilot State
+- Active Strategy
+- Last AI Decision
+- Next Scan
+- Trades Remaining
+- Daily Risk Remaining
+- Autopilot Safety Locks
+- Latest Autopilot Report
+- AI Discipline Score
+
+==================================================
+15. TESTING CONTROL CENTER UPDATE
+==================================================
+
+Add tests:
+
+- autopilot route test
+- start observe-only test
+- force scan test
+- AI assist decision test
+- demo auto simulator test
+- live intent auto tester test
+- risk block test
+- cooldown test
+- kill switch stop test
+- stale data stop test
+- human override test
+- report generation test
+- learning loop update test
+- environment separation test
+- MT5 deferred honesty test
+
+==================================================
+16. FINAL TEST
+==================================================
+
+Run:
+
+- route smoke test
+- autopilot control center test
+- state machine test
+- observe-only test
+- AI assist test
+- demo auto simulator test
+- live intent auto tester test
+- decision pipeline test
+- risk governor integration test
+- OMS integration test
+- position manager integration test
+- human override test
+- safety lock test
+- kill switch test
+- learning loop test
+- report generation test
+- audit log test
+- environment separation test
+- MT5 deferred honesty test
+
+Generate:
+
+AI AUTOPILOT ORCHESTRATOR REPORT
+
+Include:
+
+- Autopilot Control Center active yes/no
+- State Machine active yes/no
+- Rule Engine active yes/no
+- Session Builder active yes/no
+- Decision Pipeline active yes/no
+- Decision Explainer active yes/no
+- Live Monitor active yes/no
+- Position Management active yes/no
+- Human Override active yes/no
+- Safety Locks active yes/no
+- Reporting active yes/no
+- Learning Loop connected yes/no
+- Dashboard updated yes/no
+- Testing Control Center updated yes/no
+- Full tester access still active yes/no
+- MT5 still deferred yes/no
+- Real broker execution still not faked yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim real broker fills happened.
+- Do not hide live workflows.
+- Do not block tester access.
+- Do not bypass Risk Governor 2.0.
+- Do not bypass OMS.
+- Do not bypass audit logs.
+- Do not remove kill switch UI.

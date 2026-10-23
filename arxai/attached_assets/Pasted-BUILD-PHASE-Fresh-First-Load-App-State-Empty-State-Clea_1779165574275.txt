@@ -1,0 +1,199 @@
+BUILD PHASE — Fresh First-Load App State + Empty-State Cleanup
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Make ARX AI feel clean and fresh when a new user logs in for the first time. New users should not see fake trades, fake balances, leftover demo data, old scanner selections, mock notifications, fake P/L, or confusing system placeholders. The app should only show real user-specific data or clean empty states.
+
+1. Inspect existing seed/mock/demo data first
+- Search the codebase for mock data, seeded trades, fake balances, fake P/L, fake positions, fake notifications, sample scanner results, placeholder users, hardcoded account values, and localStorage/sessionStorage demo leftovers.
+- Do not delete useful test fixtures used only in tests.
+- Remove or quarantine fake user-facing data from production/runtime UI.
+- If sample data is needed for development, make it clearly dev-only and never shown to real users.
+
+2. First-load clean state
+For a brand-new user, the app should show:
+- no open trades
+- no closed trades
+- no pending orders
+- no fake profit/loss
+- no fake account balance unless demo balance was assigned during onboarding
+- no old chart positions
+- no old scanner selections
+- no fake bridge connection
+- no fake Ruby trade memory
+- no fake notifications
+- no leftover admin/master bridge details
+
+Show clean empty states instead.
+
+3. Empty-state UI copy
+Add polished empty states for:
+- My Dashboard
+- My Trades
+- My Open Positions
+- My Pending Orders
+- My Trade History
+- My P/L Calendar
+- My Watchlist
+- My Scanner
+- My Notifications
+- My Ruby Chat
+- My Account
+- My Risk Profile
+
+Use simple user-facing language like:
+- “No trades yet.”
+- “Your trade history will appear here.”
+- “Choose a market to start scanning.”
+- “Your watchlist is empty.”
+- “Ruby is ready when you are.”
+- “Finish account setup to unlock trading.”
+- “Waiting for admin approval.”
+- “No notifications yet.”
+
+Avoid code-heavy wording.
+
+4. User-specific state reset
+Make sure each user’s first-load state is private and clean:
+- clear stale unauthenticated localStorage/sessionStorage values after login
+- do not reuse previous user’s selected symbol
+- do not reuse previous user’s chart position
+- do not reuse previous user’s account mode UI
+- do not reuse previous user’s Ruby context
+- do not reuse previous user’s notifications
+- do not reuse previous user’s risk panel
+- do not show cached data until it is confirmed for the authenticated user
+
+Never trust frontend userId. Use backend authenticated session userId.
+
+5. Demo mode handling
+Demo mode may assign a virtual demo balance only after the user chooses Demo Trading during onboarding.
+
+Rules:
+- Label demo balance clearly as demo.
+- Demo trades must be private to the user.
+- Demo mode must not create live commands.
+- Do not show fake winning trades or fake P/L.
+- If demo has no trades yet, show clean empty states.
+
+6. Live/shared master handling
+For Personal MT5 and Shared Master MT5 users:
+- Do not show live balance until a real connection/allocation exists.
+- Do not show fake bridge status.
+- Do not show fake account equity.
+- Do not show full shared master balance to normal users.
+- If waiting for approval, show waiting state.
+- If allocation is missing, show allocation-needed state.
+- If bridge is disconnected, show connection-needed state.
+- If ready, show only the user’s private account shell data.
+
+7. Ruby clean first-load behavior
+Ruby should not pretend to know trades or account data that does not exist.
+
+For new users, Ruby should say things like:
+- “I’m ready to help you set up your trading workspace.”
+- “Choose Demo, Personal MT5, or Request Shared Master Access to begin.”
+- “Once you place trades, I’ll help track your risk, performance, and market context.”
+
+Ruby must not:
+- reference fake trades
+- reference other users
+- reference shared master totals
+- claim a live trade exists when none exists
+- show old chat context from another user
+- expose admin-only data
+
+8. Scanner clean state
+Scanner should:
+- open with no forced fake recommendation
+- allow direct symbol search
+- show clean prompt: “Choose a symbol to scan.”
+- only show Ruby market explanation after a symbol is selected
+- not show fake buy/sell signals as if they are live
+- label unavailable data clearly
+
+9. Chart clean state
+Chart/trade window should:
+- show no position lines unless the user has an actual mapped position
+- show clean message if no trade is selected
+- clear previous user chart markers on login/logout/account switch
+- never show another user’s chart position
+
+10. Notification clean state
+Notifications should:
+- show only current user notifications
+- show “No notifications yet” for new users
+- not show fake alerts
+- not show global admin alerts to normal users
+- not show previous user notifications after logout/login switch
+
+11. Cache and session safety
+Harden cache behavior:
+- key cached scanner/account/Ruby/trade data by authenticated userId
+- clear sensitive UI cache on logout
+- invalidate cached data after account mode switch
+- invalidate cached data after onboarding reset
+- do not hydrate user UI from stale global cache
+- never expose bridge tokens, API keys, session secrets, token hashes, or account credentials
+
+12. Admin/dev sample data separation
+If sample data is needed:
+- keep it behind dev/test mode only
+- clearly mark sample data as sample
+- never show sample data in production user routes
+- admin should be able to identify real vs test data if applicable
+
+13. UI polish
+Make the app feel premium on first load:
+- clean cards
+- calm empty states
+- clear next steps
+- no scary backend labels
+- no raw errors
+- no fake-looking dashboard clutter
+- mobile layout clean and readable
+
+14. Audit logs
+Add safe audit logs for:
+- first dashboard load
+- empty state rendered
+- account setup incomplete
+- account mode state loaded
+- stale cache cleared
+- account mode switched
+- user-specific cache invalidated
+- blocked access to another user’s data
+
+Do not log secrets.
+
+15. Tests
+Add or update tests for:
+- new user sees no fake trades
+- new user sees no fake P/L
+- new user sees no fake live balance
+- new user sees clean empty dashboard
+- demo user sees demo balance only after demo onboarding
+- personal MT5 user sees connection-needed state until connected
+- shared master user sees waiting/approval/allocation state correctly
+- scanner has no fake recommendation on first load
+- chart has no fake position lines
+- Ruby does not reference fake trades
+- notifications are empty for new user
+- logout/login switch clears previous user state
+- cached data is keyed by authenticated user
+- User A never sees User B cached data
+- sample data does not appear in production runtime
+- no secrets exposed
+- no live command created during tests
+
+Return:
+- what was built
+- files changed
+- mock/sample data removed or quarantined
+- empty states added
+- cache/session fixes
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired during this build

@@ -1,0 +1,96 @@
+Begin Phase 9 only: Portfolio Manager + Dynamic Capital Ecosystem.
+
+Do not build Evolution or unrestricted live auto-execution yet.
+
+Goal:
+Allocate risk, authority, capital, and attention intelligently across strategies, symbols, sessions, and agents based on validation quality, survival quality, execution quality, decision quality, market conditions, and ecosystem health.
+
+Build:
+
+/src/domain/portfolio-manager/
+  portfolioManager.types.ts
+  portfolioManager.engine.ts
+  riskBudget.engine.ts
+  strategyAllocation.engine.ts
+  capitalRotation.engine.ts
+  exposureBalancer.engine.ts
+  reserveCapital.engine.ts
+  performanceWeightedAllocation.engine.ts
+  symbolPriority.engine.ts
+  sessionPriority.engine.ts
+  agentAuthorityAllocation.engine.ts
+  convictionWeightedAllocation.engine.ts
+  survivalWeightedAllocation.engine.ts
+
+/src/domain/portfolio-manager/climate/
+  capitalClimate.engine.ts
+  aggressionClimate.engine.ts
+  preservationClimate.engine.ts
+  reserveExpansion.engine.ts
+
+/src/domain/portfolio-manager/efficiency/
+  capitalEfficiency.engine.ts
+  riskAdjustedEfficiency.engine.ts
+  executionAdjustedAllocation.engine.ts
+  survivabilityAdjustedAllocation.engine.ts
+
+/src/domain/portfolio-manager/fatigue/
+  capitalFatigue.engine.ts
+  overdeployment.engine.ts
+  concentrationRisk.engine.ts
+
+/src/domain/portfolio-manager/competition/
+  strategyCompetition.engine.ts
+  allocationTrust.engine.ts
+  authorityCompetition.engine.ts
+
+/src/domain/portfolio-manager/health/
+  portfolioHealth.engine.ts
+  fragilityScore.engine.ts
+  diversification.engine.ts
+  liquidityAwareDeployment.engine.ts
+
+Rules:
+- Approved strategies do not automatically receive equal allocation.
+- Allocation must consider validation quality, edge durability, execution quality, decision quality, survival score, market regime fit, trader behavior risk, confidence health, and strategy trust score.
+- Portfolio allocation must adapt to ecosystem health.
+- High disagreement, poor execution quality, weak confidence health, elevated cognitive risk, or market danger can reduce global aggression.
+- Reserve allocation must dynamically expand during dangerous conditions.
+- Allocation must prioritize survivability-adjusted efficiency, not raw return.
+- Strategies compete dynamically for allocation.
+- Capital fatigue and overdeployment must reduce participation.
+- Exposure Balancer must reduce correlated risk.
+- Portfolio Health Engine must continuously monitor concentration, fragility, diversification, execution vulnerability, behavioral vulnerability, and regime concentration.
+- Liquidity-aware deployment must reduce sizing during poor liquidity conditions.
+- Portfolio Manager cannot bypass Risk Governor or Control Tower.
+- All allocation changes, capital climate changes, reserve shifts, and portfolio health changes must be logged into the Black Box Vault.
+- Keep all previous phase tests passing.
+- No unrestricted live auto-execution yet.
+
+Required outputs:
+- portfolioRiskBudget
+- strategyAllocationMap
+- reserveAllocation
+- convictionAllocation
+- survivalAllocation
+- capitalClimate
+- portfolioHealthScore
+- fragilityScore
+- exposureRiskScore
+- correlatedExposureScore
+- capitalFatigueScore
+- liquidityDeploymentScore
+- recommendedRestrictions
+- recommendedAggressionLevel
+- plainEnglishExplanation
+
+After Phase 9, stop and report:
+1. Files created
+2. Allocation systems implemented
+3. Capital climate system implemented
+4. Portfolio health system implemented
+5. Exposure balancing implemented
+6. Survival and efficiency weighting implemented
+7. Risk Governor and Control Tower integration completed
+8. Tests passed/failed
+9. Whether Phase 10 is safe to begin

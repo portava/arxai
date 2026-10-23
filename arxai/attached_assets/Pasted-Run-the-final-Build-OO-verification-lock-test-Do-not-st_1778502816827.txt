@@ -1,0 +1,739 @@
+Run the final Build OO verification lock-test.
+
+Do not start Build PP.
+Do not add new features unless a Build OO test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not modify canPlaceTrades.
+Do not expose API secrets.
+Do not recommend live trading.
+Do not change Build AA through NN logic except to fix Build OO readiness/integration issues.
+
+Build OO goal:
+Create and verify the Final Integration Test Suite + Production Readiness Gate that validates the entire trading app from Build AA through Build NN.
+
+Build OO must prove:
+- every subsystem exists
+- every major endpoint works or reports safe failure
+- the full paper-only loop works
+- replay/import workflow works
+- security permissions work
+- secrets are protected
+- notifications fire
+- admin controls reject unsafe actions
+- Risk Governor sees hard failures
+- live trading remains disabled
+- the app is safe to continue PAPER TESTING only
+
+Verify Build OO only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+- test command if available
+
+Show exact commands run and whether each passed.
+
+2. Readiness Gate service proof
+
+Confirm the Master Readiness Gate service exists.
+
+Show exact files/functions for:
+- readinessGateService
+- readinessScoringService
+- readinessChecklistService
+- readinessRoutes
+- readinessReportStorage
+- productionGateLogs
+- frontend Production Readiness page
+- frontend Readiness Checklist page
+
+Confirm the readiness service returns:
+
+{
+  readiness_report_id,
+  generated_at,
+  appMode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  overallStatus,
+  readinessScore,
+  readinessGrade,
+  canProceedToPaperTesting,
+  canProceedToLiveTrading: false,
+  criticalFailures,
+  warnings,
+  subsystemResults,
+  workflowResults,
+  safetyResults,
+  securityResults,
+  dataProtectionResults,
+  frontendResults,
+  databaseResults,
+  endpointResults,
+  recommendedFixes,
+  generatedBy: "SYSTEM_READINESS_GATE"
+}
+
+3. Integration Test Runner proof
+
+Confirm the test runner exists.
+
+Show exact files/functions for:
+- integrationTestRunner
+- integrationTestGroups
+- integrationTestRoutes
+- testResultStorage
+- fullPaperLoopTest
+- replayImportWorkflowTest
+- safetyRegressionTests
+- securityRegressionTests
+- frontendSmokeTests
+- frontend Integration Test Results page
+
+Confirm test results return:
+
+{
+  test_id,
+  group,
+  name,
+  status: "PASS" | "WARN" | "FAIL" | "SKIPPED",
+  severity,
+  duration_ms,
+  details,
+  errors,
+  created_at
+}
+
+4. Database verification
+
+Confirm these tables exist:
+
+readiness_reports
+integration_test_runs
+integration_test_results
+readiness_gate_status
+production_gate_logs
+
+Confirm readiness_reports includes:
+id,
+readiness_report_id,
+overall_status,
+readiness_score,
+readiness_grade,
+app_mode,
+live_trading_status,
+can_proceed_to_paper_testing,
+can_proceed_to_live_trading,
+critical_failures,
+warnings,
+subsystem_results,
+workflow_results,
+safety_results,
+security_results,
+data_protection_results,
+frontend_results,
+database_results,
+endpoint_results,
+recommended_fixes,
+generated_by,
+created_at.
+
+Confirm integration_test_runs includes:
+id,
+test_run_id,
+status,
+groups_run,
+total_tests,
+passed,
+warnings,
+failed,
+skipped,
+duration_ms,
+started_at,
+finished_at,
+created_at.
+
+Confirm integration_test_results includes:
+id,
+test_run_id,
+test_id,
+test_group,
+test_name,
+status,
+severity,
+duration_ms,
+details,
+errors,
+created_at.
+
+Confirm readiness_gate_status includes:
+id,
+current_status,
+readiness_score,
+readiness_grade,
+app_mode,
+live_trading_status,
+paper_testing_allowed,
+live_trading_allowed,
+last_report_id,
+critical_failure_count,
+warning_count,
+last_checked_at,
+created_at,
+updated_at.
+
+Confirm production_gate_logs includes:
+id,
+readiness_report_id,
+event_type,
+severity,
+message,
+details,
+created_at.
+
+5. Endpoint verification
+
+Run and show raw output for:
+
+GET /api/readiness/status
+
+POST /api/readiness/run
+
+GET /api/readiness/reports?limit=20
+
+GET /api/readiness/reports/:id
+
+GET /api/readiness/checklist
+
+POST /api/readiness/demo
+
+POST /api/readiness/export
+
+POST /api/integration-tests/run
+
+GET /api/integration-tests/runs?limit=20
+
+GET /api/integration-tests/runs/:id
+
+GET /api/integration-tests/runs/:id/results
+
+GET /api/integration-tests/groups
+
+POST /api/integration-tests/demo
+
+6. Test group verification
+
+Confirm these named test groups exist and can run:
+
+- safety
+- security
+- data_protection
+- database
+- endpoints
+- aa_decision
+- bb_debrief
+- cc_learning
+- dd_market_data
+- ee_paper_execution
+- ff_autopilot
+- gg_performance
+- hh_risk_governor
+- ii_trader_coach
+- jj_replay
+- kk_data_import_broker_readonly
+- ll_notifications
+- mm_system_health_admin
+- nn_security
+- full_paper_loop
+- replay_import_workflow
+- frontend_smoke
+- production_gate
+
+Show raw JSON output.
+
+7. AA through NN subsystem proof
+
+Run the full readiness gate.
+
+Confirm subsystemResults includes:
+
+AA:
+- decision orchestrator exists
+- decision endpoint reachable
+- decision_id supported
+- safety output present
+- no live execution
+
+BB:
+- auto-debrief exists
+- debrief table accessible
+- idempotency supported
+
+CC:
+- learning processor exists
+- learning_events accessible
+- strategy_edges accessible
+- mistake_patterns accessible
+- idempotency supported
+
+DD:
+- market data service exists
+- read-only/fallback mode works
+- degraded data is handled safely
+
+EE:
+- paper execution exists
+- paper-only execution enforced
+- duplicate decision_id blocked
+- no live broker call
+
+FF:
+- paper autopilot exists
+- mode PAPER_ONLY
+- start/stop/status safe
+- no uncontrolled loop
+
+GG:
+- performance calendar exists
+- AI command center exists
+- empty state safe
+
+HH:
+- risk governor exists
+- liveTradingStatus DISABLED
+- canPlaceLiveTrade false
+- unsafe states block properly
+
+II:
+- trader coach exists
+- playbook exists
+- no live trading recommendation
+
+JJ:
+- replay simulator exists
+- strategy lab exists
+- replay trades separate from paper trades
+- mode REPLAY_ONLY
+
+KK:
+- data import exists
+- broker read-only exists
+- broker mode READ_ONLY
+- secrets redacted
+
+LL:
+- notification center exists
+- critical alerts work
+- digest works
+
+MM:
+- system health exists
+- audit logs exist
+- admin controls reject forbidden actions
+
+NN:
+- security service exists
+- roles/permissions exist
+- forbidden permissions reject
+- data redaction works
+
+Show raw JSON output.
+
+8. Database readiness proof
+
+Confirm databaseResults checks:
+- all AA through OO tables exist
+- required columns exist
+- migration warnings are reported
+- read/write check works
+- missing tables are reported clearly
+- row counts are included where safe
+
+Simulate or check missing-table behavior if supported.
+
+Confirm:
+- missing table does not crash readiness gate
+- readiness becomes DEGRADED, FAIL, or BLOCKED as appropriate
+- recommendedFixes explain what to fix
+
+Show raw JSON output.
+
+9. Endpoint readiness proof
+
+Confirm endpointResults checks:
+- major AA through OO endpoints are reachable
+- protected endpoints reject unauthorized access
+- demo endpoints return safe output
+- forbidden action endpoints reject correctly
+- failed endpoints are captured without crashing
+- response status and duration are recorded if available
+
+Show raw JSON output.
+
+10. Safety readiness proof
+
+Confirm safetyResults includes:
+- liveTradingStatus: DISABLED
+- appMode: PAPER_ONLY
+- brokerMode: READ_ONLY
+- marketDataMode: read_only
+- canPlaceTrades: false
+- canPlaceLiveTrade: false
+- paperOnly: true
+- no reachable live execution path
+- no live trade recommendation
+
+Show raw JSON output.
+
+11. Security readiness proof
+
+Confirm securityResults includes:
+- NN roles exist
+- permissions exist
+- sensitive endpoints protected
+- forbidden permissions reject
+- security events logged
+- MM admin actions protected
+- unauthorized route access denied
+
+Show raw JSON output.
+
+12. Data protection proof
+
+Confirm dataProtectionResults includes:
+- secret redaction works
+- account masking works
+- exports are redacted
+- frontend-visible responses do not contain secrets
+- logs do not contain raw secrets
+
+Test fake secret strings and confirm they are redacted.
+
+Show raw output.
+
+13. Full paper workflow proof
+
+Run full safe paper workflow test:
+
+AA decision →
+EE paper execution only if valid →
+FF paper monitor/autopilot step →
+paper trade close or simulated close →
+BB auto-debrief →
+CC learning →
+GG performance update →
+HH governor evaluation →
+II coach report →
+LL notification →
+MM audit/health →
+NN permission protection
+
+Confirm:
+- each step runs or safely reports why skipped
+- no live trade is placed
+- decision_id is preserved
+- paper trade id is preserved if created
+- debrief links to paper trade
+- learning payload processes once
+- performance updates
+- governor status remains safe
+- coach stays paper-only
+- notification is created
+- audit log is created
+- security permission is respected
+
+Show raw JSON output.
+
+14. Replay/import workflow proof
+
+Run replay/import workflow test:
+
+KK data import →
+import validation →
+create JJ replay scenario →
+run JJ replay →
+generate replay report →
+Strategy Lab result if available →
+II can reference replay guidance safely
+
+Confirm:
+- imported data labeled IMPORTED
+- replay labeled REPLAY/SIMULATION
+- no real paper trade is created by replay
+- no live trade is created
+- replay report is stored
+- coach guidance does not recommend live trading
+
+Show raw JSON output.
+
+15. Notification/admin/security workflow proof
+
+Run workflow:
+
+HH risk event or simulated hard block →
+LL critical notification →
+MM admin action →
+NN security validation →
+audit log created
+
+Confirm:
+- critical notification is created
+- MM safe action is allowed only if safe
+- MM forbidden action is rejected
+- NN validates permission
+- audit record is created
+- live trading remains disabled
+
+Show raw JSON output.
+
+16. Hard fail BLOCKED proof
+
+Simulate each hard fail and prove readiness gate blocks:
+
+A. live trading enabled  
+B. canPlaceTrades true  
+C. broker mode not read_only  
+D. market data mode not read_only  
+E. forbidden admin action succeeds or attempts to succeed  
+F. secret exposure detected  
+G. paper execution calls live broker code  
+H. critical security middleware missing or disabled  
+I. readiness gate cannot run required checks  
+
+Confirm:
+- overallStatus becomes FAIL or BLOCKED
+- criticalFailures include exact reason
+- canProceedToPaperTesting is false if severity requires it
+- canProceedToLiveTrading remains false always
+- LL critical notification is created
+- MM audit log is created
+- HH can see/read the hard failure
+
+Show raw JSON output.
+
+17. Readiness scoring proof
+
+Confirm score categories:
+
+- Safety and live-trade lock: 25 points
+- Security/data protection: 20 points
+- Core paper workflow AA-CC-EE: 20 points
+- Market data/replay/import reliability DD-JJ-KK: 10 points
+- Performance/coach/notifications/admin GG-II-LL-MM: 15 points
+- Frontend/accessibility/smoke checks: 10 points
+
+Confirm grade mapping:
+- A = 90–100
+- B = 80–89
+- C = 70–79
+- D = 60–69
+- F = below 60
+
+Show raw JSON with score breakdown.
+
+18. Readiness checklist proof
+
+Run checklist endpoint.
+
+Confirm it returns sections:
+- Safety
+- Security
+- Data protection
+- Database
+- Endpoints
+- Frontend
+- Paper trading loop
+- Replay/data import
+- Notifications/admin
+- Known warnings
+- Next recommended fixes
+
+Confirm each item has:
+- item
+- status
+- evidence
+- recommendedFix
+
+Show raw JSON output.
+
+19. Export proof
+
+Run readiness export.
+
+Confirm:
+- report exports safely
+- secrets are redacted
+- account IDs are masked
+- export is audited through MM
+- security event is logged through NN if applicable
+- live trading remains disabled
+
+Show raw output.
+
+20. Frontend proof
+
+Confirm frontend pages/routes are accessible for:
+- Production Readiness page
+- Integration Test Results page
+- Readiness Checklist page
+
+Confirm UI:
+- shows overall status
+- shows readiness score and grade
+- shows paper testing allowed status
+- shows live trading disabled badge
+- shows critical failures
+- shows warnings
+- shows subsystem cards AA through NN
+- shows recommended fixes
+- has run readiness check button
+- has no live trading button
+- has no live execution controls
+- is readable on mobile
+
+21. LL/MM/NN/HH integration proof
+
+Confirm:
+
+LL:
+- readiness PASS/FAIL/BLOCKED creates notification
+- hard fail creates CRITICAL notification
+
+MM:
+- system health reads latest readiness gate status
+- admin control can run readiness check safely
+- audit logs include readiness run
+
+NN:
+- readiness/admin endpoints are protected
+- forbidden actions remain blocked
+
+HH:
+- Risk Governor reads readiness hard failures
+- hard readiness failure causes WATCH_ONLY or LOCKED if appropriate
+
+Show raw JSON output.
+
+22. Logs proof
+
+Show production_gate_logs proving:
+- readiness run started
+- test groups selected
+- subsystem checks started/completed
+- workflow checks started/completed
+- safety checks completed
+- security checks completed
+- data protection checks completed
+- database checks completed
+- endpoint checks completed
+- frontend checks completed
+- report stored
+- gate status updated
+- notifications/audits created if critical
+- readiness run completed
+
+Show sample records.
+
+23. Live-trade isolation proof
+
+Search Build OO files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5 order placement,
+MT5 order placement,
+livePosition modification,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+orderSend,
+positionClose,
+modifyOrder,
+real order placement,
+or anything that can place, close, or modify real trades.
+
+Confirm Build OO does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF paper-only autopilot rules
+- Build HH liveTradingAllowed rules
+- Build KK broker read-only rules
+- Build LL critical alert rules
+- Build MM forbidden admin action rules
+- Build NN forbidden permission rules
+
+Confirm Build OO:
+- runs checks only
+- stores reports only
+- never executes trades
+- never enables live trading
+- never recommends live trading
+- never exposes secrets
+- always returns canProceedToLiveTrading: false
+
+24. Existing behavior compatibility
+
+Confirm these still work:
+- AA decision orchestrator
+- BB auto-debrief
+- CC learning engine
+- DD market data
+- EE paper execution
+- FF paper autopilot
+- GG calendar and command center
+- HH risk governor
+- II trader coach and playbook
+- JJ replay and strategy lab
+- KK data import and broker read-only
+- LL notifications
+- MM system health/admin/audit
+- NN security/roles/permissions
+- manual debrief
+- manual paper close
+- analytics
+- frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Readiness Gate service proof
+7. Integration Test Runner proof
+8. Raw readiness status output
+9. Raw readiness run output
+10. Raw readiness checklist output
+11. Raw integration test run output
+12. Raw test groups output
+13. AA through NN subsystem proof
+14. Database readiness proof
+15. Endpoint readiness proof
+16. Safety readiness proof
+17. Security readiness proof
+18. Data protection proof
+19. Full paper workflow proof
+20. Replay/import workflow proof
+21. Notification/admin/security workflow proof
+22. Hard fail BLOCKED proof
+23. Readiness scoring proof
+24. Readiness report proof
+25. Export proof
+26. Frontend proof
+27. LL/MM/NN/HH integration proof
+28. Logs proof
+29. Live-trade isolation proof
+30. Any fixes made during verification
+31. Final Build OO score out of 10
+32. Whether the system is safe to continue PAPER TESTING
+33. Whether live trading remains fully disabled

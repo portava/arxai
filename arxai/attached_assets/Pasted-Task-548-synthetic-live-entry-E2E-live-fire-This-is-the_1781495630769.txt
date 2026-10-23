@@ -1,0 +1,50 @@
+Task #548 — synthetic live-entry E2E live-fire. This is the end-to-end proof the read-only #542 verification could not reach (owner preflight short-circuits on USER_ALLOCATION_EXHAUSTED before the synthetic floor). Goal: drive the synthetic live-confirmation gate through the FULL live-draft route and prove both outcomes for real, with screenshots — WITHOUT placing a real broker order.
+
+HARD CONSTRAINTS:
+- Do NOT dispatch a real order to the broker. Stop at the confirm boundary. The point is to prove the gate fires at preflight/confirm and that the human confirm step is present — not to execute. If any step would send to the broker, stop and report instead.
+- Do NOT weaken, bypass, or remove any gate (allocation, 16-gate evaluator, SL policy, kill switch, synthetic floor). The only state change permitted is provisioning TEST allocation for the owner so preflight can REACH the synthetic floor — and revert it after. Nothing else.
+- Read-only verification already PASSED items 1/2/4. This task adds only the runtime live-fire of item 3.
+
+SETUP (minimal, reversible):
+1. Mint an ephemeral owner session (established recipe). Owner is the armed, approved-for-master-live user; master broker is Deriv, live, fresh heartbeat — confirm all still true before proceeding.
+2. The blocker is USER_ALLOCATION_EXHAUSTED (available allocation = 0), which runs BEFORE the synthetic floor. Provision the SMALLEST allocation that lets preflight pass the allocation gate and reach the synthetic-confirmation branch. Record the exact before/after value so you can revert. This is a test-scoped write; revert it at the end.
+
+PROVE BOTH OUTCOMES THROUGH THE FULL ROUTE (POST the live-draft/commands route, create-draft only — never confirm/dispatch):
+
+A. LIVE-CONFIRMED SYNTHETIC PASSES TO CONFIRM:
+   - Pick a synthetic that is genuinely per-symbol live right now (e.g. V75 → R_75, subscribed + ticking; verify via /chart/feed-status that isLive:true / LIVE_FEED before the attempt).
+   - Create a live draft WITH a valid stop-loss. Confirm preflight passes the synthetic floor (no SYNTHETIC_FEED_NOT_LIVE_CONFIRMED) and the flow reaches the human confirm step. Screenshot the confirm step / draft-ready state. Do NOT confirm.
+   - Then create the SAME draft with NO stop-loss. Confirm it is REJECTED with MISSING_STOP_LOSS — proving SL policy applies to synthetics through the real route (this is the synthetic-specific SL proof that was missing as a test).
+
+B. NON-LIVE SYNTHETIC IS BLOCKED:
+   - Pick a synthetic that is genuinely NOT per-symbol live (e.g. V100 → R_100, not subscribed; verify isLive:false / lastTickTime:null first).
+   - Attempt the same live draft. Confirm preflight returns SYNTHETIC_FEED_NOT_LIVE_CONFIRMED:<symbol> — screenshot/paste the exact reason.
+
+C. (If feasible without dispatching) STALE-BETWEEN-STAGES: demonstrate or argue from the dispatch re-check (L1238) that a draft live-confirmed at preflight would be re-blocked at dispatch if its per-symbol tick went stale. If you can simulate the dispatch-stage check in isolation (unit/integration, no broker send), do so and paste the result. If not, state that the dispatch re-check is covered by code + the existing lockstep and leave it.
+
+ADD THE MISSING TEST (the one structural gap from #542):
+- Add a deterministic test that pushes a SYNTHETIC symbol with no stop-loss through the gate and asserts MISSING_STOP_LOSS (the synthetic-specific SL coverage that doesn't exist yet). Follow the existing gate-test harness. This closes the "protection is structural but unasserted" flag.
+
+CLEANUP (mandatory):
+- Revert the test allocation to its exact prior value.
+- Delete the ephemeral session.
+- Confirm ZERO arx_live_commands rows persisted from create-draft attempts (preflight should block before insert; verify and report the count).
+- No real broker order was sent (confirm).
+
+VERIFY:
+- Run the new test + existing gate tests + ci:guards; paste outputs.
+- api-server typecheck (scoped per the OOM workaround if needed).
+
+FINAL REPORT:
+- Screenshots/JSON for A (confirm reached + MISSING_STOP_LOSS on no-SL) and B (SYNTHETIC_FEED_NOT_LIVE_CONFIRMED).
+- The new synthetic-SL test name + result.
+- Before/after allocation values + confirmation it was reverted.
+- arx_live_commands row count (must be 0 from these attempts) + confirmation no broker order was sent + ephemeral session deleted.
+- Explicit confirmation that no gate was weakened and nothing was dispatched.
+
+COMPLETION STANDARD — all true:
+- A live-confirmed synthetic reaches the human confirm step through the full route WITH a stop-loss; the same draft WITHOUT a stop-loss is rejected MISSING_STOP_LOSS — both proven through the real route, not just unit gates.
+- A non-live synthetic is blocked with SYNTHETIC_FEED_NOT_LIVE_CONFIRMED through the real route.
+- The new synthetic-specific SL test exists and passes.
+- Test allocation reverted; ephemeral session deleted; 0 live-command rows persisted; no broker order sent; no gate weakened.
+- New test + gate tests + ci:guards green; outputs pasted.

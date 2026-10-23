@@ -1,0 +1,24 @@
+Choose Option 2 — phased sequence.
+
+Package this as a phased hardening mission because much of the Chart Truth foundation already exists. Do not rebuild from scratch. Reuse and deepen the existing L1 candle-truth contract #151, Chart Brain v2 #173, ChartDiagnosticsPanel, ChartModes, ChartSlowBrain, chartAgentConsensus, FeedConfidenceBadge, candleNormalization, symbol bus, and Ruby deterministic read wiring.
+
+Phase 1 — Candle data truth engine
+Audit and harden the existing candle truth pipeline. Verify real OHLC source, source mode, OHLC mapping, timestamp ordering, duplicate detection, bad tick/outlier detection, price precision, symbol profile, timeframe bucket accuracy, historical/live merge, current forming candle behavior, and no mock/sample candles in live mode. Audit every timeframe separately: 1m, 5m, 15m, 1h, 4h, and 1D. Compare the 5m pipeline, which appears closer to correct, against the broken-looking 15m/1h/4h/1D pipelines.
+
+Phase 2 — Rendering, scale, and safe mode
+Fix candlestick display only after data truth is verified. Repair y-axis visible-range scaling, candle width, wick visibility, candle spacing, latest price marker, right price scale, mobile chart height, and reset-scale behavior. Add/strengthen Chart Safe Mode so if chart truth fails, users see clean messages like “Chart data is syncing” and Ruby read is paused instead of showing misleading candles.
+
+Phase 3 — Chart Truth + Chart Read scores and gating
+Separate Chart Truth Score from Chart Read Score. Chart Truth means the data is real, fresh, synced, correctly mapped, correctly timed, correctly mirrored, and correctly rendered. Chart Read means the setup is actually readable/tradable. Gate Ruby, Scanner chart confirmation, Self-Trade chart confirmation, Trade Planning confidence, and AACI chart handshake through Chart Truth. If Chart Truth fails, Ruby may explain the data issue but must not give buy/sell confidence.
+
+Phase 4 — Ruby/Self-Trade/AACI/Scanner integration
+Ensure Ruby reads a verified RubyChartContext object, not stale visual/component state. Ensure Scanner cannot mark “chart confirmed” unless Chart Truth passes. Ensure Self-Trade AI cannot use chart confirmation unless Chart Truth, Mirror, Freshness, broker price alignment, AACI, Risk Governor, and Security Handshake pass. Ensure AACI receives ChartSource, OHLCIntegrity, TimeframeAccuracy, MirrorSync, FeedFreshness, HistoricalLiveMerge, BrokerPriceAlignment, RenderHealth, RubyReadAllowed, and SelfTradeChartAllowed handshakes.
+
+Phase 5 — QA and fixture tests
+Add or strengthen fixture tests for bullish candle, bearish candle, doji, long upper wick, long lower wick, gap candle, forming candle update, invalid OHLC rejection, duplicate timestamp rejection, symbol switch clearing old candles, timeframe switch clearing old candles, mock candle blocked in live mode, and outlier flagged. Return a timeframe QA table for 1m, 5m, 15m, 1h, 4h, and 1D with candle count, source, OHLC pass, aggregation pass, forming candle pass, merge pass, outlier pass, mirror pass, price alignment pass, scale pass, and Ruby allowed.
+
+Important:
+Do not move on to smart overlays, extra chart design, Ruby panels, or new intelligence layers until chart truth passes. Preserve current chart wiring, selected symbol/timeframe state, Scanner, Ruby, Plan Buy/Sell, Trade Ticket, MT5/shared bridge, Risk Governor, AACI, Security Handshake, Open Trades, My Alerts, bottom nav, and Ruby floating button.
+
+Final rule:
+ARX Smart Chart must prove candle truth before candle beauty, and chart truth before Ruby confidence, Scanner confirmation, or Self-Trade action.

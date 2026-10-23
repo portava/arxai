@@ -1,0 +1,99 @@
+Proceed with the Minimal / Hybrid position chart fix.
+
+Do not replace the main TradingView chart.
+Do not swap the full chart engine.
+Do not auto-place live trades.
+Do not touch live command dispatch.
+Do not bypass master bridge/user approval gates.
+Do not expose secrets.
+
+Fix the issues found in QA:
+
+1. Mount the existing PositionDetailPanel beside the /live-chart TradingView chart.
+   The /live-chart page should show:
+   - main TradingView chart
+   - selected existing position detail side panel
+
+2. Add a separate mini “Position Chart Preview” inside the side panel.
+   Use lightweight-charts or the existing lightweight chart component if available.
+
+   The mini chart must show:
+   - entry price line
+   - current price line
+   - stop loss line
+   - take profit line
+   - buy/sell marker
+   - symbol
+   - direction
+   - lot size
+   - broker ticket
+   - entry price
+   - current price
+   - floating P/L
+   - open time
+   - account mode
+   - source
+
+3. Do not claim these are TradingView overlay lines.
+   Label it clearly:
+   “Position Chart Preview”
+
+4. Fix /live-chart so it shows the selected existing position detail, not only the new-order ticket.
+
+5. Add missing labelled fields to trade detail:
+   - order type
+   - open time
+   - risk amount
+   - R:R
+
+6. Add explicit AI-response cache for trade analysis path.
+   Use the existing cache adapter if available.
+   Cache key should include:
+   - user id
+   - position id / ticket
+   - symbol
+   - timeframe
+   - last price timestamp if available
+
+7. Standardize the 6 audit/status codes:
+   - POSITION_SELECTED
+   - TRADE_DETAIL_OPENED
+   - RUBY_TRADE_ANALYSIS_REFRESHED
+   - CLOSE_TRADE_REQUESTED
+   - SLTP_EDIT_REQUESTED
+   - SAFETY_GATE_BLOCKED
+
+8. Add buttons in the position side panel:
+   - Ask Ruby
+   - Refresh analysis
+   - View full chart
+   - Modify SL/TP if permission allows
+   - Close position if permission allows
+
+9. Permission safety:
+   - User cannot view another user’s position
+   - User cannot close another user’s position
+   - User cannot modify another user’s SL/TP
+   - Admin/debug can inspect with proper admin permissions only
+
+10. Add the missing tests:
+   - selected position opens beside chart
+   - mini Position Chart Preview renders entry/current/SL/TP markers
+   - trade detail shows orderType/openTime/riskAmount/R:R
+   - Ask Ruby uses cache
+   - audit codes are emitted
+   - permission gates block cross-user access
+   - no live trade auto-fires
+
+Acceptance proof:
+- /live-chart still shows the TradingView chart
+- position detail side panel appears beside it
+- mini Position Chart Preview shows entry/current/SL/TP lines
+- selected existing position details render correctly
+- missing fields are present
+- audit codes are standardized
+- Ask Ruby + Refresh analysis work
+- cross-user access is blocked
+- all safety matrix tests still pass
+- arx_live_commands count remains unchanged
+- no live trade auto-fires

@@ -1,0 +1,28 @@
+Run a full post-update QA pass on the entire ARX AI app after the latest environment update.
+
+Do not start new feature work yet. First verify that the latest changes actually work.
+
+Scope:
+1. Confirm the app starts cleanly with no frontend, backend, build, or runtime errors.
+2. Confirm the environment update completed successfully and did not break any existing routes, APIs, auth, dashboard pages, scanner pages, Ruby chat, MT5 bridge pages, admin tools, user tools, or trading-mode logic.
+3. Check console logs, backend logs, network errors, database errors, and failed API calls.
+4. Verify DEMO and LIVE are the only active production-facing trading modes.
+5. Confirm Paper Trading is fully removed from user-facing UI and inactive backend mode logic, without removing live-trade safety controls.
+6. Verify Ruby still works, does not expose backend/internal function names to users, and explains market information in plain English plus useful technical analysis.
+7. Verify scanner speed, scanner results, market selection, Ruby explanation window, and direct trade actions still function.
+8. Verify admin controls still work for user approval, allocation, freeze/unfreeze, live/demo permission, and shared bridge visibility.
+9. Verify Andraie.co@gmail.com admin access is recognized correctly according to current app rules.
+10. Verify bottom navigation, page spacing, mobile layout, scrolling, menus, and collapsed sections are not broken.
+11. Verify no old dormant UI, dead tabs, repeated alerts, or outdated Paper Trading labels remain.
+12. Verify any risky backend change has a frontend confirmation step and clear admin visibility.
+13. Run available tests, lint, type checks, build checks, and manual route checks.
+14. Fix anything broken, but do not ignore a broken area because fixing it is hard. If a fix causes another failure, find a safer implementation path and retest.
+15. After fixes, rerun validation and give me a clear report of:
+- what passed
+- what failed
+- what was fixed
+- what still needs attention
+- whether the app is ready for the next live/demo bridge test
+
+Important:
+Do not add the suggested “hide operator IP addresses from admins” task yet unless it is already part of required compliance/privacy work. This QA pass should focus on stabilizing the current ARX AI app update first.

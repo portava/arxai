@@ -1,0 +1,217 @@
+QA and complete the ARX AI controlled live activation work that just shipped.
+
+Do not place any live trade.
+Do not open live access to all users.
+This pass is only to verify and wire the live readiness gates, owner-only live access, bridge pinning, First Live Test Mode, broker execution status, and audit trail.
+
+CURRENT STATUS FROM LAST PASS:
+Completed:
+- Mobile tab fix for /admin/live-shared and /admin/live-shared/activation
+- Friendly labels moved raw backend names into advanced technical details
+- Typed confirmation phrases removed from server and UI
+- Switch-based activation flow added
+- Pin Master Bridge button gated on EA heartbeat <=15s
+- Owner-only First Live Test Mode added
+- First Live Test Mode caps owner to:
+  - maxOpenPositions=1
+  - maxLot=0.01
+  - allowedSymbols=["EURUSD"]
+  - requiresStopLoss=true
+  - scannerLiveEnabled=false
+  - dailyLossLimitUsd=10
+- Every action should write to admin_action_audit_log
+
+Still untouched / needs completion:
+- 16-gate evaluator in livePhaseBDispatchGate.ts
+- Build TT chokepoint in lib/liveTrading
+- ARX_LIVE_BROKER_EXECUTION_ENABLED env behavior in phaseBConfig.ts
+- Verify the new switches actually feed into the true live readiness evaluator
+- Verify the UI status matches the backend truth
+
+GOAL:
+Make the live readiness status honest, complete, and safe before any live test.
+
+1. WIRE NEW SWITCHES INTO THE 16-GATE LIVE READINESS EVALUATOR
+Audit the existing 16-gate evaluator and wire in the new switch-based states.
+
+The evaluator must check:
+- OWNER/admin/operator is signed in
+- Target user is OWNER account only for first live test
+- OWNER has live trading approved
+- OWNER has shared/master bridge approved if shared mode is used
+- Master bridge is pinned
+- MT5/EA heartbeat is fresh
+- Broker execution is enabled by app state
+- Server env allows broker execution if required
+- Platform mode is LIVE
+- Routing is Shared Master MT5 when using shared bridge
+- Shared live trading is ON
+- Master bridge live is ON
+- Kill switch is released
+- First Live Test Mode is ON for first test
+- Max open live trades = 1
+- Max lot size is capped to safe value
+- Daily loss limit is capped
+- Stop loss is required
+- Take profit is required or warned clearly if not supported
+- One-click trading is OFF
+- AI auto-trading is OFF
+- AI auto-close is alert-only
+- Audit logging works
+- Order preview/confirmation works
+- No unauthorized regular users have live/shared access
+
+If any gate fails, show the failed gate in friendly language.
+
+2. RECONCILE BROKER EXECUTION ENV BEHAVIOR
+The last report says:
+ARX_LIVE_BROKER_EXECUTION_ENABLED is currently set to True in this environment.
+
+Audit how this env flag is read.
+
+Make sure the app does not show conflicting states like:
+- env says enabled
+- UI says Broker Execution Disabled
+- evaluator says fail for unclear reason
+
+Create one clear truth model:
+- Server env permission: Allowed / Not Allowed
+- Operator switch: On / Off
+- Effective broker execution: Enabled only if env permission AND operator switch are both true
+
+Main UI should show friendly labels:
+- Broker Execution Permission: Allowed/Blocked
+- Operator Broker Execution: On/Off
+- Effective Broker Execution: Enabled/Disabled
+
+Do not show raw env names in the main UI. Keep raw env names only inside collapsed admin-only Advanced Technical Details.
+
+3. VERIFY FIRST LIVE TEST MODE ACTUALLY ENFORCES LIMITS
+Check backend and frontend.
+
+When First Live Test Mode is ON:
+- max open positions must be 1
+- max lot must be 0.01 or smallest safe broker-supported lot
+- daily loss limit must be 10 USD or lower if configured
+- stop loss required must be ON
+- one-click trading must be OFF
+- AI auto-trading must be OFF
+- AI auto-close must be alert-only
+- allowed symbols should be EURUSD unless admin changes it intentionally
+- live scanner direct execution should be disabled
+- manual confirmation must be required before any live order
+
+These limits must be enforced server-side, not only UI-side.
+
+4. VERIFY PIN MASTER BRIDGE FLOW
+Check:
+- Pin Current Master Bridge button is disabled when heartbeat is stale/missing
+- Button only enables when EA heartbeat is fresh
+- Pin action requires confirmation modal, no typing
+- Pinned bridge persists after refresh
+- Pinned bridge displays friendly info:
+  - Connected / Not Connected
+  - Last heartbeat
+  - Broker name if available
+  - Account login masked
+  - Balance/equity if available
+- No broker password or secret is exposed
+
+5. VERIFY OWNER-ONLY LIVE ACCESS
+Only andraie.co@gmail.com / OWNER should be live-enabled for this first test.
+
+Check:
+- No test users get live access
+- No regular users get live access
+- No bulk approval happened
+- Shared bridge approval is only on for OWNER if manually enabled
+- All other users remain paper/demo unless explicitly approved later
+
+6. VERIFY ORDER CHOKEPOINT
+Audit the final order dispatch path.
+
+Before any live order can be sent, the backend must check:
+- 16-gate evaluator passes
+- user is approved for live
+- bridge is connected and pinned
+- broker execution effective state is enabled
+- kill switch is released
+- First Live Test Mode limits are obeyed
+- stop loss is present
+- lot size is within cap
+- max open trades not exceeded
+- daily loss limit not exceeded
+- manual confirmation was accepted
+- audit log entry is created
+
+If any check fails, block the order with friendly reason.
+
+Do not allow frontend-only controls to bypass this.
+
+7. CLEAN UI STATUS
+On Live Shared Account / Activation Wizard, show a clean readiness panel:
+
+- Overall Live Readiness: PASS / BLOCKED
+- Broker Execution: Enabled / Disabled
+- Master Bridge: Connected / Not Connected
+- Heartbeat: Fresh / Stale
+- Platform Mode: Demo / Live
+- Routing: User-Owned / Shared Master
+- Shared Live Trading: On / Off
+- First Live Test Mode: On / Off
+- Kill Switch: Released / Engaged
+- Owner Live Access: Approved / Not Approved
+
+If blocked, show:
+“Live is blocked because:” followed by friendly reasons.
+
+8. AUDIT LOG
+Verify every action logs:
+- operator/admin
+- action
+- previous value
+- new value
+- timestamp
+- confirmation accepted
+- result
+- target user when applicable
+
+Actions to verify:
+- Broker execution switch
+- Platform live mode switch
+- Shared master routing switch
+- Shared live trading switch
+- Master bridge live switch
+- Kill switch release/engage
+- Pin master bridge
+- First Live Test Mode
+- Owner live approval
+
+9. SECURITY
+Regular users must not see:
+- Live activation wizard
+- Broker execution controls
+- Master bridge controls
+- Kill switches
+- Advanced technical details
+- audit log
+- env names
+- API routes
+- other users
+
+10. ACCEPTANCE TEST
+Before stopping, verify:
+- 16-gate evaluator reflects the new switch states
+- UI readiness matches backend readiness
+- Env + operator broker execution logic is clear
+- First Live Test Mode limits are enforced server-side
+- Pin Master Bridge only works with fresh heartbeat
+- Owner is the only live-approved user
+- No live trade is placed automatically
+- Order chokepoint blocks live orders unless all gates pass
+- Friendly labels are shown in main UI
+- Raw env/backend names are only inside admin advanced details
+- Audit log records every live setup action
+- Login, scanner, Ruby voice/chat, trade modal, user controls, and bridge status still work
+
+Run typecheck/build and fix all errors before stopping.

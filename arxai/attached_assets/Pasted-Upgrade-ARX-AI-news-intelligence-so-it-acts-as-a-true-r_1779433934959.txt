@@ -1,0 +1,87 @@
+Upgrade ARX AI news intelligence so it acts as a true risk filter, including WAIT / AVOID / NO TRADE decisions.
+
+SCOPE LOCK:
+Only work on:
+1. News-risk scoring.
+2. Scanner ranking adjustment.
+3. Ruby trading decision context.
+4. Trade ticket news-risk warning.
+5. Alerts/watch mode.
+
+Do not:
+- Enable live trading.
+- Place trades.
+- Change execution permissions.
+- Change kill switches.
+- Change admin approvals.
+- Rewrite scanner logic from scratch.
+- Rewrite Ruby brain architecture.
+
+GOAL:
+ARX AI should not always try to find a trade. Sometimes the correct decision is WAIT, WATCH, or AVOID because news risk is too high.
+
+Add these decision states across scanner, Ruby, and trade ticket:
+
+Decision states:
+- TRADE WATCH
+- WAIT FOR CONFIRMATION
+- AVOID FOR NOW
+- NO TRADE
+- NEWS RISK HIGH
+- EVENT RISK ACTIVE
+- TECHNICAL SETUP CONFLICTS WITH NEWS
+
+Scanner behavior:
+If technicals look good but news risk is high, scanner should downgrade the result.
+
+Examples:
+- Strong buy setup + high-impact USD news in 15 minutes = WAIT FOR CONFIRMATION
+- Strong sell setup + world leader statement causing sudden volatility = AVOID FOR NOW
+- Clean setup + no major news = TRADE WATCH
+- Conflicting news/technical direction = NO TRADE or WAIT
+
+Scanner cards should show:
+- Technical Score
+- Historical/Backtest Score
+- News Risk
+- Final Trade Read:
+  - Watch
+  - Wait
+  - Avoid
+  - No Trade
+
+Ruby behavior:
+Ruby must be allowed to say:
+- “I would not trade this right now.”
+- “The setup is technically clean, but the news risk is too high.”
+- “Wait until after the event volatility settles.”
+- “This is a watchlist candidate, not an entry yet.”
+- “News and technicals conflict, so confidence is low.”
+
+Ruby must not force a buy/sell answer when the safer answer is no trade.
+
+Trade ticket behavior:
+Before final confirmation, show a News Risk Gate:
+- If news risk is medium: show caution.
+- If news risk is high/critical: show strong warning.
+- If news risk is critical: require extra confirmation if existing risk rules allow.
+- Do not block trades unless existing risk rules already support blocking. If no risk-block rule exists, show a strong warning only.
+
+User-facing wording:
+Use clean language:
+- “News risk is high. Waiting may be safer.”
+- “Major event nearby. Volatility may spike.”
+- “Technicals and news are conflicting.”
+- “No clean trade right now.”
+
+Do not use raw provider names, route names, function names, or debug labels.
+
+Acceptance checklist:
+1. Scanner can return WAIT / AVOID / NO TRADE, not only BUY/SELL.
+2. Ruby can recommend no trade when appropriate.
+3. Trade ticket shows a news-risk gate before confirmation.
+4. News risk downgrades scanner ranking when appropriate.
+5. News risk does not fake certainty.
+6. News unavailable state is clean.
+7. No live trades are placed.
+8. No execution permissions, kill switches, or admin approvals are changed.

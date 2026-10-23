@@ -1,0 +1,267 @@
+Continue ARX AI Live Trade Intelligence with a real-time monitoring worker and live alert stream.
+
+Do not rebuild blindly. Inspect the current:
+- Live Trade Intelligence snapshots
+- Sniper Exit Watchlist
+- Open Trades UI
+- Trade Detail page
+- trade_exit_alerts
+- trade_alert_preferences
+- MT5 sync-position flow
+- shared master attribution ledger
+- user-owned MT5 routing
+- command queue
+- notification system
+- AI assistant context builder
+- close review modal
+- admin trading controls
+
+Goal:
+Make ARX AI actively monitor open trades in real time, update trade intelligence continuously, and alert users when a trade needs attention.
+
+Important:
+Do not enable auto-close.
+Do not silently close trades.
+Do not bypass backend guards.
+Do not place live trades without explicit confirmation.
+Do not expose secrets or shared master credentials.
+
+PART 1 — Real-Time Trade Monitor Worker
+
+Create a backend monitoring worker/service that watches all active open trades.
+
+The worker should:
+1. Poll or subscribe to latest MT5 position sync data.
+2. Find all open trades/positions per user.
+3. Respect routing mode:
+   - USER_OWNED_MT5: use only that user’s own MT5 positions.
+   - SHARED_MASTER_MT5: use only attributed shared ledger positions for that user.
+4. Calculate live trade intelligence snapshots.
+5. Update P&L, pips/points, MFE, MAE, peak profit, drawdown, profit giveback, close urgency, continuation/pullback/reversal/fakeout scores.
+6. Create alerts only when thresholds are crossed.
+7. Avoid duplicate alert spam using cooldown logic.
+8. Record alert lifecycle.
+
+Worker safety:
+- If MT5 data is stale, mark data_quality as stale.
+- If scanner/candle data is missing, mark it unavailable.
+- Never invent market data.
+- Never make execution decisions automatically.
+- Only recommend review actions.
+
+PART 2 — Live UI Updates
+
+Make Open Trades, Trade Detail, and Sniper Exit Watchlist update without full page reload.
+
+Use the best existing method in the app:
+- SSE if already used
+- WebSocket if already used
+- safe polling fallback if neither exists
+
+Live update payload should include:
+- trade id
+- current price
+- current P&L
+- pips/points
+- MFE
+- MAE
+- peak profit
+- profit giveback
+- AI label
+- close urgency
+- recommended action
+- latest alert
+- data quality
+
+UI should clearly show:
+- Live updating
+- Last updated time
+- Waiting for MT5 sync
+- Stale data warning
+- No scanner/candle data available
+
+PART 3 — Alert Dispatcher
+
+Connect trade alerts to:
+1. In-app notification center
+2. Trade card badge
+3. Assistant bubble / AI alert feed
+4. Push notifications if existing push system is available
+
+If push notification system is not fully built, create a clean stub that says push delivery unavailable but in-app alerts are active.
+
+Alert cooldown:
+- Do not repeat same alert type for same trade unless severity increases.
+- Allow urgent alerts if closeUrgencyScore crosses a higher threshold.
+- Store last sent timestamp and reason.
+
+Alert severity:
+- Info
+- Watch
+- Warning
+- Urgent
+
+PART 4 — Sniper Close Review Integration
+
+When a close alert fires:
+1. Show Review Close button.
+2. Open close review modal.
+3. Show:
+   - symbol
+   - side
+   - lot size
+   - current P&L
+   - peak P&L
+   - profit giveback
+   - close urgency score
+   - reason for alert
+   - account type demo/live
+   - routing mode
+   - data quality
+4. User must confirm.
+5. Backend re-validates full guard chain.
+6. Queue CLOSE_POSITION only after confirmation.
+7. Audit log captures the full lifecycle.
+
+For live trades:
+- Strong warning:
+  “This will close a LIVE trade and may realize profit or loss.”
+- Require explicit confirmation.
+- Never instant-close.
+
+PART 5 — Partial Close / Move Stop Review
+
+Add review actions, not instant execution:
+
+Buttons:
+- Review Close
+- Review Partial Close
+- Review Move Stop
+- Review Trail Stop
+
+Each must open a modal first.
+
+For Partial Close modal:
+- show current lot size
+- user selects partial lot size or percentage
+- validate broker minimum lot and step if available
+- validate risk/guard chain
+- queue PARTIAL_CLOSE command only after confirmation
+
+For Move Stop modal:
+- show current SL
+- suggested breakeven/trailing stop if available
+- user confirms
+- queue MODIFY_SL_TP command only after confirmation
+
+If the EA/backend does not yet support partial close or modify SL/TP safely, keep buttons as “Coming soon” or “Review unavailable” and explain what is missing. Do not fake execution.
+
+PART 6 — AI Assistant Live Trade Awareness
+
+Update AI so it can answer in real time:
+
+- Which trades need attention right now?
+- Which trade is giving back the most profit?
+- Which trade has the highest close urgency?
+- Which trade looks like continuation?
+- Which trade looks like a fakeout?
+- Which trade is just pulling back?
+- Which trade should I review for close?
+- Did any close alerts fire?
+- Is MT5 data fresh or stale?
+- Are you using candle/scanner data or only MT5 P&L?
+
+AI response must include:
+- data freshness
+- what data it used
+- confidence level
+- recommended review action
+- warning that user must confirm before execution
+
+AI must not:
+- guarantee profit
+- claim certainty
+- invent candles/news/data
+- close trades by itself
+- bypass guards
+- expose another user’s data
+
+PART 7 — Admin Monitoring Controls
+
+Add admin controls for the monitoring system:
+
+Admin Trading Control should show:
+- trade monitor status: running/stopped
+- last monitor cycle time
+- number of open trades monitored
+- number of alerts created today
+- number of stale MT5 connections
+- alert worker errors
+- push notification status
+- ability to pause trade alerts globally
+- ability to pause alerts per user
+
+Emergency Stop:
+- should block open/close trade commands
+- but monitoring and alerts can continue unless admin disables alerts
+
+PART 8 — Audit and Timeline
+
+Every trade should have a timeline:
+- trade opened
+- snapshot created
+- alert fired
+- AI asked
+- close reviewed
+- close confirmed/rejected
+- partial close reviewed
+- stop move reviewed
+- trade closed
+- exit review created
+
+Add timeline entries for:
+- AI recommendations
+- alerts
+- user actions
+- backend guard rejections
+- MT5 execution result
+
+PART 9 — Tests
+
+Add or update tests for:
+1. Worker finds only user’s own trades in USER_OWNED_MT5 mode.
+2. Worker finds only attributed trades in SHARED_MASTER_MT5 mode.
+3. P&L updates from MT5 sync.
+4. Stale MT5 data is labeled stale.
+5. Missing scanner/candle data is disclosed.
+6. MFE/MAE/profit giveback calculate correctly.
+7. Sniper Exit Watchlist updates when urgency changes.
+8. Alert fires when profit giveback threshold is crossed.
+9. Duplicate alerts are suppressed by cooldown.
+10. Higher severity alert overrides cooldown.
+11. Review Close opens modal, not instant execution.
+12. Live close requires explicit confirmation.
+13. Emergency Stop blocks close command.
+14. Suspended user cannot close.
+15. AI can identify highest urgency trade.
+16. AI cannot access another user’s trade.
+17. Shared master credentials never appear.
+18. Alert preferences affect alert behavior.
+19. Admin can pause alerts globally.
+20. Audit timeline records alerts and close review.
+21. Mobile UI remains usable.
+
+Final report:
+Return:
+- PASS or FAIL
+- monitor worker status
+- live UI update status
+- alert dispatcher status
+- sniper close review status
+- partial close / move stop review status
+- AI live trade awareness status
+- admin monitoring controls status
+- audit timeline status
+- mobile status
+- tests passed
+- remaining blockers

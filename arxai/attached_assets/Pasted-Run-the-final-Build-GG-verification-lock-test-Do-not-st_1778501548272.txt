@@ -1,0 +1,509 @@
+Run the final Build GG verification lock-test.
+
+Do not start Build HH.
+Do not add new features unless a Build GG test fails and must be fixed.
+Do not enable live trading.
+Do not modify MT5 live execution.
+Do not change Build AA, BB, CC, DD, EE, or FF logic except to fix GG read-only integration issues.
+
+Build GG goal:
+Create a trading calendar and AI Performance Command Center that reads from existing decision logs, paper trades, debriefs, learning events, strategy edges, mistake patterns, market data logs, and autopilot cycles. GG is reporting, analytics, calendar, and command-center only.
+
+Verify Build GG only.
+
+1. Typecheck/build health
+
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- frontend build validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Performance service verification
+
+Confirm the performance aggregation service exists.
+
+Show exact files/functions for:
+- performanceAggregationService
+- tradingCalendarService
+- dayDetailService
+- equityCurveService
+- symbolPerformanceService
+- mistakePerformanceService
+- decisionQualityService
+- aiCommandCenterService
+- performanceRoutes
+- performanceSnapshotRebuild
+- frontend calendar page
+- frontend command center page
+
+3. Database verification
+
+Confirm these tables exist or existing analytics storage was safely extended:
+
+performance_daily_snapshots
+performance_symbol_snapshots
+ai_performance_snapshots
+
+Confirm performance_daily_snapshots includes:
+id,
+date,
+total_trades,
+wins,
+losses,
+break_even,
+manual_closes,
+cancelled,
+win_rate,
+gross_profit,
+gross_loss,
+net_pnl,
+avg_win,
+avg_loss,
+profit_factor,
+best_trade_id,
+worst_trade_id,
+symbols_traded,
+mistake_tags,
+top_lesson,
+day_rating,
+day_status,
+created_at,
+updated_at.
+
+Confirm performance_symbol_snapshots includes:
+id,
+symbol,
+range_key,
+total_trades,
+wins,
+losses,
+win_rate,
+net_pnl,
+avg_pnl,
+best_trade_id,
+worst_trade_id,
+mistake_tags,
+edge_score,
+learning_confidence,
+created_at,
+updated_at.
+
+Confirm ai_performance_snapshots includes:
+id,
+range_key,
+decisions_created,
+should_trade_count,
+hold_count,
+paper_trades_created,
+blocked_trades,
+debriefs_created,
+learning_events_created,
+avg_confidence,
+avg_risk_score,
+avg_edge_score,
+decision_to_win_rate,
+most_common_blocker,
+most_common_mistake,
+learning_summary,
+improvement_score,
+created_at,
+updated_at.
+
+4. Data source proof
+
+Show exactly where GG reads from:
+
+- paper_trades
+- paper_execution_logs
+- trade_decision_logs
+- auto-debrief / post-trade debrief tables
+- learning_events
+- strategy_edges
+- mistake_patterns
+- market data logs if available
+- autopilot_cycles
+- autopilot_cycle_logs
+
+Confirm missing data sources return safe empty states instead of crashing.
+
+5. Endpoint verification
+
+Run and show raw output for:
+
+GET /api/performance/calendar?month=YYYY-MM
+
+GET /api/performance/day?date=YYYY-MM-DD
+
+GET /api/performance/summary?range=7d
+
+GET /api/performance/summary?range=30d
+
+GET /api/performance/summary?range=all
+
+GET /api/performance/equity-curve?range=30d
+
+GET /api/performance/symbols?range=30d
+
+GET /api/performance/mistakes?range=30d
+
+GET /api/performance/lessons?range=30d
+
+GET /api/performance/decision-quality?range=30d
+
+GET /api/performance/ai-command-center
+
+POST /api/performance/rebuild
+
+POST /api/performance/demo
+
+6. Trading calendar proof
+
+Run calendar endpoint for the current month.
+
+Confirm each calendar day object can show:
+
+{
+  date,
+  total_trades,
+  wins,
+  losses,
+  break_even,
+  win_rate,
+  net_pnl,
+  day_rating,
+  day_status,
+  debriefs_created,
+  learning_events_created,
+  mistake_tags,
+  top_lesson
+}
+
+Confirm day_status supports:
+- WINNING_DAY
+- LOSING_DAY
+- BREAK_EVEN_DAY
+- NO_TRADE_DAY
+
+Confirm the calendar can distinguish:
+- profitable day
+- losing day
+- no-trade day
+- break-even/caution day
+
+7. Day detail proof
+
+Run day detail endpoint.
+
+Confirm it returns:
+- all trades for that day
+- symbol
+- action
+- result
+- entry price
+- exit price
+- P&L
+- decision_id
+- linked Build AA decision
+- linked Build BB debrief
+- Build CC learning result
+- mistake tags
+- lesson
+- whether the trade followed the original AI decision
+- what the AI learned
+
+Show raw JSON output.
+
+8. Summary proof
+
+Run 7d, 30d, and all-time summaries.
+
+Confirm each summary includes:
+- total trades
+- wins
+- losses
+- break-even trades
+- win rate
+- net P&L
+- average daily P&L
+- best day
+- worst day
+- best symbol
+- worst symbol
+- most repeated mistake
+- most profitable setup if available
+- most blocked reason
+- AI decision quality trend
+- learning improvement trend
+
+9. Equity curve proof
+
+Run equity curve endpoint.
+
+Confirm it returns:
+- date
+- daily P&L
+- cumulative P&L
+- trade count
+- running win rate if available
+
+Show raw JSON output.
+
+10. Symbol performance proof
+
+Run symbol performance endpoint.
+
+Confirm symbols are ranked by:
+- total trades
+- win rate
+- net P&L
+- average P&L
+- best trade
+- worst trade
+- mistake tags
+- edge score
+- learning confidence
+
+Show raw JSON output.
+
+11. Mistakes and lessons proof
+
+Run mistakes and lessons endpoints.
+
+Confirm mistakes endpoint ranks:
+- repeated mistake tags
+- count
+- symbol/action context
+- severity
+- recommended guardrail
+
+Confirm lessons endpoint returns:
+- recent lessons
+- trade/debrief link
+- symbol
+- result
+- learning relevance
+
+Show raw JSON outputs.
+
+12. Decision quality proof
+
+Run decision-quality endpoint.
+
+Confirm it measures:
+- total AA decisions
+- BUY count
+- SELL count
+- HOLD count
+- blocked count
+- shouldTrade count
+- paper trades created from decisions
+- decision-to-trade rate
+- decision-to-win rate
+- average confidence
+- average risk score
+- most common blocker
+- whether AA decisions improved after CC learning
+
+Show raw JSON output.
+
+13. AI Command Center proof
+
+Run AI Command Center endpoint.
+
+Confirm it returns:
+
+{
+  overallStatus,
+  paperModeStatus,
+  liveTradingStatus: "DISABLED",
+  totalPaperTrades,
+  totalClosedTrades,
+  winRate,
+  netPnl,
+  bestSymbol,
+  worstSymbol,
+  bestSetup,
+  weakestSetup,
+  mostRepeatedMistake,
+  strongestEdge,
+  weakestEdge,
+  aiDecisionStats,
+  learningStats,
+  riskStats,
+  nextBestActions,
+  warnings,
+  generatedAt
+}
+
+Confirm:
+- liveTradingStatus is DISABLED
+- it does not recommend live trading
+- it gives practical next best actions
+- it explains if sample size is too small
+- it shows whether AI is IMPROVING, STABLE, DECLINING, or INSUFFICIENT_DATA
+
+14. Frontend route proof
+
+Confirm frontend pages/routes are accessible.
+
+Show routes for:
+- Trading Calendar page
+- Day Detail panel/page
+- AI Performance Command Center
+- Autopilot read-only summary section
+
+Confirm UI:
+- is mobile friendly
+- uses expandable details
+- does not overload the screen
+- shows live trading disabled badge
+- does not include live execution buttons
+- does not auto-enable autopilot
+
+15. Rebuild idempotency proof
+
+Run POST /api/performance/rebuild twice.
+
+Confirm:
+- daily snapshots are updated, not duplicated
+- symbol snapshots are updated, not duplicated
+- AI performance snapshots are updated, not duplicated
+- rebuild logs show created/updated counts
+- second rebuild does not create duplicates
+
+Show raw output from both runs.
+
+16. Empty-state proof
+
+Test with empty or missing performance data.
+
+Confirm:
+- calendar returns no-trade days safely
+- command center returns INSUFFICIENT_DATA
+- no endpoint crashes
+- frontend shows clean empty states
+- warnings explain missing data
+
+Show raw output.
+
+17. Demo data proof
+
+Run POST /api/performance/demo.
+
+Confirm demo data can populate:
+- calendar
+- day detail
+- summary
+- equity curve
+- symbol performance
+- mistakes
+- lessons
+- decision quality
+- AI Command Center
+
+Show raw output.
+
+18. Insight generation proof
+
+Show sample AI insights such as:
+- best performing symbol
+- weakest symbol/setup
+- repeated mistake
+- whether learning confidence is low/medium/high
+- whether AI decision quality is improving
+- next best actions
+
+Confirm insights do not guarantee profits and do not recommend live trading.
+
+19. Logs proof
+
+Show logs proving performance rebuild records:
+- rebuild started
+- date range calculated
+- trades counted
+- decisions counted
+- debriefs counted
+- learning events counted
+- snapshots created/updated
+- warnings
+- rebuild completed
+
+Show logs proving command center request records:
+- data sources read
+- missing sources if any
+- generated insight count
+- warnings
+
+20. Live-trade isolation proof
+
+Search Build GG files and confirm they do NOT call:
+
+executeTrade,
+execute-trade,
+mt5,
+MT5,
+livePosition,
+live order,
+setCanPlaceTrades,
+live broker execution,
+broker.placeOrder,
+real order placement,
+or anything that can place real trades.
+
+Confirm Build GG does NOT modify:
+- safetyCore.canPlaceTrades
+- live broker permissions
+- MT5 live execution
+- Build AA safety rules
+- Build EE paper-only execution rules
+- Build FF autopilot settings
+
+21. Existing behavior compatibility
+
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- Build DD market data layer
+- Build EE paper execution engine
+- Build FF paper autopilot loop
+- manual debrief
+- analytics
+- decision logs
+- learning logs
+- market data logs
+- paper execution logs
+- existing frontend routes
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. Performance service proof
+7. Data source proof
+8. Raw calendar output
+9. Raw day detail output
+10. Raw summary output
+11. Raw equity curve output
+12. Raw symbol performance output
+13. Raw mistakes output
+14. Raw lessons output
+15. Raw decision quality output
+16. Raw AI Command Center output
+17. Raw rebuild idempotency output
+18. Raw demo output
+19. Empty-state proof
+20. Frontend route proof
+21. Sample AI insight output
+22. Logs proof
+23. Live-trade isolation proof
+24. Any fixes made during verification
+25. Final Build GG score out of 10
+26. Whether it is safe to proceed to Build HH

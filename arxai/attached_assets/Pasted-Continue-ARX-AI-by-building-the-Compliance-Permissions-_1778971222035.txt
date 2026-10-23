@@ -1,0 +1,436 @@
+Continue ARX AI by building the Compliance, Permissions, and Production Safety Control Center.
+
+Do not rebuild blindly. Inspect the current:
+- onboarding/readiness wizard
+- admin trading controls
+- user permissions
+- live trading disclosures
+- risk governor
+- account routing modes
+- shared-master routing
+- MT5 bridge
+- trade action center
+- audit logs
+- alert system
+- user roles/admin roles
+- auth/session system
+- AI assistant safety behavior
+- execution reconciliation
+- notification center
+
+Goal:
+Create a central safety, compliance, permissions, and audit control layer so ARX AI can safely support approved private users in demo/live trading.
+
+Important:
+This is not legal advice and should not claim to make the app legally compliant by itself.
+Do not enable live trading automatically.
+Do not bypass Risk Governor.
+Do not bypass readiness checks.
+Do not expose secrets.
+Do not weaken trade confirmation.
+Do not allow users to access another user’s trading data.
+Live trading must still require approval, disclosure, verified routing/account, and explicit confirmation.
+
+PART 1 — Role-Based Access Control
+
+Create or improve roles:
+
+- Owner
+- Admin
+- Risk Manager
+- Support
+- Tester
+- Trader/User
+
+Permissions should control:
+- view admin dashboard
+- change platform trading mode
+- enable demo trading
+- enable live trading
+- approve live users
+- suspend users
+- change risk limits
+- assign shared-master allocation
+- view audit logs
+- view user readiness
+- view trade actions
+- send system alerts
+- export reports
+
+Owner-only actions:
+- enable/disable Live Trading globally
+- select shared live master account
+- disable emergency stop
+- change admin roles
+- export full audit logs
+- delete/disable users
+- change production safety settings
+
+Support users should never see secrets, bridge tokens, raw credentials, or full account credentials.
+
+PART 2 — Permission Guards
+
+Add backend permission guards to every admin-sensitive endpoint:
+
+- /api/admin/trading/*
+- /api/admin/risk/*
+- /api/admin/onboarding/*
+- /api/admin/broker-symbols/*
+- /api/admin/alerts/*
+- /api/admin/event-risk/*
+- /api/admin/users/*
+- /api/admin/audit/*
+- /api/admin/shared-master/*
+- /api/admin/execution/*
+- /api/admin/system-health/*
+
+Every admin action must check:
+1. authenticated user
+2. admin role
+3. required permission
+4. owner-only restriction if needed
+5. audit log write
+
+If permission fails:
+- return clear 403
+- do not reveal hidden system data
+- write security audit log
+
+PART 3 — User Agreement Center
+
+Create a User Agreement Center.
+
+Agreements:
+- Terms of Use
+- Privacy Notice
+- Trading Risk Disclosure
+- Live Trading Disclosure
+- AI Decision Support Disclaimer
+- Shared Master Account Disclosure if shared mode is used
+- No Guaranteed Profit Disclosure
+- Demo vs Live Trading Explanation
+- Data/Alert Reliability Disclosure
+
+Each agreement should track:
+- version
+- user accepted yes/no
+- accepted_at
+- IP address
+- user agent
+- text hash
+- agreement type
+
+Users must accept required agreements before trading.
+
+Live trading requires:
+- Trading Risk Disclosure accepted
+- Live Trading Disclosure accepted
+- AI Decision Support Disclaimer accepted
+- current version accepted
+
+Shared-master mode requires:
+- Shared Master Account Disclosure accepted
+
+PART 4 — Compliance Status Engine
+
+Create a compliance status engine per user.
+
+Statuses:
+- COMPLETE
+- TERMS_REQUIRED
+- RISK_DISCLOSURE_REQUIRED
+- LIVE_DISCLOSURE_REQUIRED
+- SHARED_MASTER_DISCLOSURE_REQUIRED
+- OUTDATED_AGREEMENT_VERSION
+- ADMIN_APPROVAL_REQUIRED
+- SUSPENDED
+- TRADING_DISABLED
+- MANUAL_REVIEW_REQUIRED
+
+Compliance status should feed into:
+- onboarding readiness
+- Risk Governor
+- admin user readiness dashboard
+- AI assistant answers
+- trade ticket confirmation
+
+PART 5 — Admin Compliance Dashboard
+
+Add Admin Compliance page.
+
+Show:
+- users missing required disclosures
+- users live-approved
+- users demo-only
+- users suspended
+- users in shared-master routing
+- users with outdated agreement versions
+- users blocked from trading
+- recent compliance events
+- recent permission failures
+- users requiring manual review
+
+Admin actions:
+- resend agreement request
+- mark manual review required
+- suspend trading
+- revoke live approval
+- approve live after requirements pass
+- export user compliance record
+- view acceptance history
+
+PART 6 — Full Audit Log System
+
+Create or improve centralized audit logs.
+
+Track:
+- login/logout if available
+- admin role changes
+- platform mode changes
+- live enable/disable
+- demo enable/disable
+- emergency stop changes
+- risk limit changes
+- user suspension/reinstatement
+- routing mode changes
+- shared master changes
+- agreement acceptances
+- live approval/revocation
+- trade action creation
+- trade confirmation
+- command queued
+- MT5 execution result
+- broker rejection
+- AI recommendation tied to trade
+- alert sent/acknowledged
+- permission denied events
+
+Audit logs must include:
+- actor_user_id
+- target_user_id if any
+- action_type
+- entity_type
+- entity_id
+- old_value
+- new_value
+- IP address if available
+- user agent if available
+- created_at
+
+Do not log secrets or raw tokens.
+
+PART 7 — Data Export / Evidence Pack
+
+Add owner/admin export tools.
+
+Exports:
+- user compliance record
+- trade audit report
+- admin action report
+- risk rejection report
+- execution lifecycle report
+- agreement acceptance report
+- user readiness report
+
+Export format:
+- CSV and JSON if easy
+- PDF optional only if already supported
+
+Export must redact:
+- bridge tokens
+- API keys
+- session secrets
+- raw MT5 credentials
+- shared master credentials
+
+PART 8 — Live Trading Final Gate
+
+Before any live order can queue, require:
+
+1. platform mode = Live Trading
+2. emergency stop = false
+3. user live enabled
+4. user not suspended
+5. account/routing live verified
+6. readiness status = READY_FOR_LIVE
+7. compliance status = COMPLETE
+8. current Live Trading Disclosure accepted
+9. current AI Disclaimer accepted
+10. Risk Governor pass
+11. broker symbol rules pass
+12. explicit live confirmation
+13. audit log write
+
+If any gate fails:
+- reject action
+- show exact blocker
+- write audit/risk log
+- do not queue command
+
+PART 9 — AI Compliance Awareness
+
+Update AI so users can ask:
+
+- Can I trade live?
+- Why am I blocked from live trading?
+- What disclosures do I need to accept?
+- Am I approved for demo?
+- Am I approved for live?
+- Why did admin suspend trading?
+- Am I using shared-master routing?
+- What does this live warning mean?
+- What agreements have I accepted?
+
+AI must answer from real readiness/compliance/permission data only.
+AI must not give legal advice.
+AI must not imply approval if gates are missing.
+AI must not expose secret tokens or admin-only data.
+
+PART 10 — Security Hardening
+
+Add checks for:
+- no secrets in client bundle
+- no secrets in logs
+- no raw bridge tokens displayed after generation
+- admin routes protected
+- user routes scoped by user_id
+- shared-master credentials never shown to normal users
+- CORS/session settings reviewed
+- rate limiting on sensitive endpoints if available
+- failed permission attempts logged
+- suspicious repeated failures flagged
+
+PART 11 — Mobile UI
+
+Make these pages usable on iPhone Safari:
+- Agreement Center
+- Compliance status card
+- Admin Compliance page
+- audit log viewer
+- readiness/compliance checklist
+- live disclosure modal
+
+No buttons hidden behind bottom nav.
+Modals must fit screen.
+Text must be readable.
+
+PART 12 — Backend/API
+
+Add or update endpoints:
+
+- GET /api/compliance/status
+- GET /api/compliance/agreements
+- POST /api/compliance/agreements/:id/accept
+- GET /api/admin/compliance/overview
+- GET /api/admin/compliance/users/:id
+- POST /api/admin/compliance/users/:id/resend
+- POST /api/admin/compliance/users/:id/manual-review
+- GET /api/admin/audit/logs
+- GET /api/admin/audit/export
+- GET /api/admin/permissions
+- PATCH /api/admin/users/:id/role
+- PATCH /api/admin/users/:id/permissions
+
+Add tables if missing:
+
+user_roles:
+- id
+- user_id
+- role
+- created_by_admin_id
+- created_at
+- updated_at
+
+role_permissions:
+- id
+- role
+- permission_key
+- enabled
+- created_at
+- updated_at
+
+user_agreements:
+- id
+- agreement_type
+- version
+- title
+- content_hash
+- active
+- created_at
+- updated_at
+
+user_agreement_acceptances:
+- id
+- user_id
+- agreement_id
+- agreement_type
+- version
+- accepted_at
+- ip_address
+- user_agent
+- content_hash
+- created_at
+
+compliance_status_checks:
+- id
+- user_id
+- status
+- blockers
+- warnings
+- checked_at
+- created_at
+
+security_audit_logs:
+- id
+- actor_user_id
+- target_user_id
+- action_type
+- entity_type
+- entity_id
+- old_value
+- new_value
+- ip_address
+- user_agent
+- result
+- created_at
+
+PART 13 — Tests
+
+Add or update tests for:
+1. Normal user cannot access admin routes.
+2. Support role cannot enable live trading.
+3. Only owner can globally enable Live Trading.
+4. Admin action requires permission.
+5. Permission failure returns 403 and logs security event.
+6. User must accept required agreements before demo trading if configured.
+7. User must accept live disclosure before live trading.
+8. Shared-master disclosure required for shared routing.
+9. Outdated agreement version blocks trading until reaccepted.
+10. Compliance status feeds readiness engine.
+11. Live order blocked if compliance incomplete.
+12. Live order blocked if readiness incomplete.
+13. Live order blocked without explicit confirmation.
+14. Audit logs record admin mode changes.
+15. Audit logs do not expose secrets.
+16. User cannot see another user’s compliance record.
+17. Admin can export redacted audit data.
+18. AI explains compliance blockers using real data.
+19. AI does not expose admin-only data.
+20. Mobile agreement/compliance UI works.
+
+Final report:
+Return:
+- PASS or FAIL
+- RBAC status
+- permission guard status
+- User Agreement Center status
+- Compliance Status Engine status
+- Admin Compliance Dashboard status
+- audit log status
+- export/redaction status
+- live final gate status
+- AI compliance awareness status
+- security hardening status
+- mobile status
+- tests passed
+- remaining blockers

@@ -1,0 +1,144 @@
+Fix Ruby voice so she automatically speaks every response without requiring the user to press play each time.
+
+CURRENT STATUS:
+- Ruby voice now works.
+- ElevenLabs/OpenAI/browser fallback can generate and play audio.
+- Problem: Ruby does not auto-talk. User has to press play after Ruby responds.
+- Desired behavior: Ruby should speak automatically by default.
+- Bella should be the preset/default voice for all users.
+
+MAIN GOAL:
+Ruby should automatically speak her responses for all users whenever Ruby voice is enabled. Pressing play should only be needed if the browser blocks autoplay before the user has interacted with the page.
+
+1. MAKE RUBY AUTO-SPEAK BY DEFAULT
+Set these defaults globally:
+- Ruby Voice Enabled = ON
+- Speak Ruby Responses = ON
+- Auto-play Ruby Speech = ON
+- Browser Fallback Enabled = ON
+- Preferred Provider = ElevenLabs first if configured, then OpenAI, then browser fallback
+- Auto-listen after Ruby speaks = ON only if the user has voice conversation mode enabled
+
+When Ruby finishes generating a text response:
+- Immediately generate TTS
+- Automatically play Ruby’s voice
+- Do not require the user to press replay/play after every answer
+- Keep replay button available as optional, not required
+
+2. HANDLE MOBILE SAFARI AUTOPLAY PROPERLY
+Mobile browsers may block audio until the user interacts once.
+
+Implement an audio unlock flow:
+- When user opens Ruby chat, taps mic, toggles Ruby voice, or sends a message, treat that as the audio unlock interaction.
+- After that first interaction, Ruby should auto-speak every response.
+- If browser blocks autoplay, show “Tap to hear Ruby” only for that blocked response.
+- After the user taps “Tap to hear Ruby,” future Ruby responses should auto-play without needing play every time.
+
+Do not make the user press play after every Ruby response.
+
+3. SET BELLA AS DEFAULT VOICE FOR ALL USERS
+Set ElevenLabs Bella as the default Ruby voice.
+
+Requirements:
+- Add Bella as the default preset voice in Ruby Voice Settings.
+- Set Bella as the default for all new users.
+- Backfill/migrate existing users to Bella unless they already have a manually selected voice and admin specifically wants to preserve it.
+- Add an admin option: “Reset all users to Bella.”
+- Add a user-safe label: “Ruby Voice: Bella.”
+
+Implementation detail:
+- If a Bella voice ID already exists in current config, use that.
+- If not, call/list ElevenLabs voices server-side and match voice name “Bella.”
+- If Bella cannot be found, show an admin-only warning: “Bella voice not found. Check ElevenLabs voice library or voice ID.”
+- Do not expose voice IDs to regular users.
+
+Suggested default config:
+- RUBY_TTS_PROVIDER=elevenlabs
+- RUBY_ELEVENLABS_VOICE_NAME=Bella
+- RUBY_ELEVENLABS_VOICE_ID should be resolved server-side or stored from admin settings
+- Keep OpenAI/browser fallback enabled if ElevenLabs fails
+
+4. FORCE SETTINGS SYNC FOR ALL USERS
+Update backend/database settings so these values persist:
+- rubyVoiceEnabled = true
+- speakRubyResponses = true
+- autoPlayRubySpeech = true
+- browserFallbackEnabled = true
+- preferredTTSProvider = elevenlabs or auto
+- rubyVoiceName = Bella
+- rubyVoiceId = Bella’s valid ElevenLabs voice ID if available
+
+Make sure after refresh/login:
+- Ruby voice remains ON
+- Speak responses remains ON
+- Auto-play remains ON
+- Bella remains selected
+
+5. FIX FRONTEND AUTOPLAY LOGIC
+Audit the Ruby chat frontend TTS flow.
+
+Fix any logic where:
+- TTS is generated but only stored for replay
+- audio requires manual play every time
+- autoplayBlocked state stays stuck true
+- speakResponses toggle is ignored
+- mobile audio unlock is never set
+- replay button is treated as the main playback path
+- audio object is created but not played automatically
+
+Expected flow:
+User sends voice/text message → Ruby thinks → Ruby text response appears → TTS generates → Ruby automatically speaks → replay remains available.
+
+6. FIX ADMIN RUBY VOICE SETTINGS
+Admin → Ruby Voice Settings should show:
+- Ruby Voice Enabled: ON
+- Speak Responses: ON
+- Auto-play Responses: ON
+- Provider: ElevenLabs / Auto
+- Default Voice: Bella
+- Browser Fallback: ON
+- Test Bella Voice button
+- Reset All Users to Bella button
+
+Admin diagnostics should show:
+- Provider requested
+- Provider used
+- Voice name used
+- Whether Bella resolved correctly
+- Whether autoplay succeeded
+- Whether autoplay was blocked
+
+7. REGULAR USER UI
+Regular users should see simple controls only:
+- Ruby Voice: ON/OFF
+- Speak Responses: ON/OFF
+- Auto-Listen: ON/OFF
+- Replay
+- Stop Speaking
+
+They should not see:
+- ElevenLabs voice ID
+- API keys
+- provider stack traces
+- backend route names
+- admin diagnostics
+
+8. ACCEPTANCE TEST
+Before stopping, verify:
+- Ruby automatically speaks after text responses.
+- User does not have to press play every time.
+- Replay is optional and still works.
+- Stop Speaking works.
+- Bella is the default Ruby voice.
+- New users default to Bella.
+- Existing users are migrated to Bella.
+- Ruby voice settings persist after refresh.
+- Mobile Safari only asks for tap-to-hear if autoplay is blocked before audio unlock.
+- After first tap/audio unlock, Ruby auto-speaks future responses.
+- ElevenLabs Bella is used when configured.
+- If Bella/ElevenLabs fails, OpenAI/browser fallback works.
+- No API keys or voice IDs leak to regular users.
+- Ruby does not overlap audio.
+- Login, scanner, trade modal, bridge status, admin controls, and Ruby chat still work.
+
+Run typecheck/build and fix all errors before stopping.

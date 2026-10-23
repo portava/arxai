@@ -1,0 +1,86 @@
+Improve Ruby/Scanner read quality by reconciling Chart Read vs Scalp Builder.
+
+Problem observed:
+EURUSD 15m chart read correctly says:
+- Bias: Mixed
+- Confidence: Low
+- HTF bias: No clear edge
+- Action: Wait for confirmation
+- Support: 1.1454–1.1459
+- Resistance: 1.1524–1.1528
+
+But Scalp Builder says:
+- EURUSD SELL
+- Ready to review
+- Valid now
+- Strong
+- Quality 76
+- Entry 1.14626–1.14637
+- SL 1.14709
+- TP 1.14554 / 1.14477 / 1.14384
+
+This creates a tone mismatch:
+The chart read says “wait / low confidence / near support,” while the scalp read sounds more actionable and confident.
+
+Goal:
+Make Scalp Builder respect the broader Ruby Chart Read context before labeling a scalp as “Valid now,” “Strong,” or high-quality.
+
+Scope:
+Audit and improve the read-layer handoff between:
+1. Ruby Chart Read
+2. Scalp Builder
+3. Broad Scan Opportunity Map
+4. Flare/Scalp scoring engine
+5. Trade readiness wording
+
+Rules to implement:
+1. If chart read confidence is LOW, Scalp Builder cannot label the setup as “Strong” unless there is a clear lower-timeframe confirmation.
+2. If HTF bias is “No clear edge,” Scalp Builder must downgrade language from “Valid now” to “Needs confirmation” or “Conditional scalp.”
+3. If price is within or directly above a major support zone, a SELL scalp must disclose “selling into support risk.”
+4. If the quick TP is inside/near the listed support zone, the scalp must say the trade has limited room and requires fast management.
+5. If main chart action is “Wait for confirmation,” Scalp Builder must not say “Valid now” unless it explains the exact confirmation it sees.
+6. Quality score must be capped when chart confidence is low:
+   - Low chart confidence: scalp quality max 69 unless lower-timeframe confirmation is explicit.
+   - Mixed chart bias: scalp cannot be marked “Strong”; use “Moderate” or “Conditional.”
+   - Near support/resistance conflict: reduce quality and add risk note.
+7. Entry/SL/TP may still be shown, but wording must separate:
+   - “possible scalp idea”
+   - “confirmed scalp”
+   - “ready to execute”
+8. “Ready now” should only appear when:
+   - feed is live-confirmed
+   - chart read is not low-confidence
+   - setup has room before support/resistance
+   - lower-timeframe trigger is confirmed
+   - risk/reward is valid after spread/slippage
+9. “Valid now” must be replaced with “Conditional” when the scalp depends on a support break, resistance rejection, or momentum continuation that has not happened yet.
+
+Expected behavior for this EURUSD case:
+Scalp Builder should say something closer to:
+
+“Conditional SELL scalp — bearish pressure is present, but chart confidence is low and price is near support. Entry only makes sense if price stays below 1.14709 and sellers keep pressure toward 1.1454. Quick TP is near support, so manage fast. Main/stretch TP require a clean support break.”
+
+Not:
+“Strong / Valid now” without explaining the support-risk conflict.
+
+Add tests:
+1. Chart read LOW + HTF no edge + sell scalp near support:
+   - must not render “Strong”
+   - must not render “Valid now”
+   - must render “Conditional” or “Needs confirmation”
+   - must mention support-risk / limited room
+
+2. Chart action “Wait for confirmation” + scalp says sell:
+   - scalp must include the exact confirmation required
+   - cannot imply immediate execution
+
+3. Quick TP inside/near support band:
+   - must add “limited room before support” risk note
+   - quality score must be capped
+
+4. Live feed confirmed but structure low-confidence:
+   - feed status alone cannot upgrade scalp to “Ready now”
+
+Hard boundary:
+Do not touch live execution gates, broker dispatch, ticket execution, or owner/admin permissions.
+This is a display/read-quality and scoring-calibration task only.

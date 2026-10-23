@@ -1,0 +1,118 @@
+Update the Backtesting + Forward Testing task.
+
+UI correction:
+Backtesting and Forward Testing should live on the same main page, not separate pages.
+
+Page name:
+Testing Lab
+
+Route suggestion:
+- /testing-lab
+or
+- /strategy-testing
+
+Main page layout:
+Testing Lab
+Subtitle:
+Test strategies against historical data and live market conditions before trusting them.
+
+Tabs:
+1. Backtesting
+2. Forward Testing
+3. Comparison
+4. Strategy Results / History
+
+Tab 1 — Backtesting:
+Purpose:
+Test a strategy against historical candles.
+
+Shows:
+- strategy selector
+- symbol selector
+- timeframe selector
+- date range
+- risk settings
+- spread/slippage model
+- run backtest button
+- historical chart replay
+- simulated trades
+- equity curve
+- drawdown
+- metrics
+- Eleanor review
+
+Tab 2 — Forward Testing:
+Purpose:
+Test a strategy from now forward in live/paper/demo conditions.
+
+Shows:
+- active forward tests
+- start new forward test
+- strategy selector
+- symbol/timeframe
+- paper/demo mode
+- live signals
+- simulated/paper trades
+- open estimated P/L
+- closed finalized P/L
+- pause/resume/stop controls
+- Eleanor live review
+
+Tab 3 — Comparison:
+Purpose:
+Compare backtest results vs forward-test results.
+
+Shows:
+- backtest win rate vs forward-test win rate
+- profit factor comparison
+- drawdown comparison
+- sample size
+- strategy drift warning
+- best/worst sessions
+- Eleanor recommendation
+
+Tab 4 — Strategy Results / History:
+Purpose:
+View saved test runs and strategy readiness.
+
+Shows:
+- all backtest runs
+- all forward test runs
+- readiness level
+- passed/failed status
+- strategy notes
+- export/report option
+
+Important UX:
+Do not split Backtesting and Forward Testing into separate main pages.
+They should be separate tabs inside one Testing Lab page so users can compare them easily.
+
+Navigation:
+Add one sidebar/nav item:
+Testing Lab
+
+Do not add two separate nav items:
+- Backtesting
+- Forward Testing
+
+Data/engine architecture:
+The engines can stay separate internally:
+- Backtest Engine
+- Forward Test Engine
+
+But the UI should be unified:
+- one page
+- tabbed interface
+- shared strategy selector
+- shared result comparison
+
+Tests:
+1. Testing Lab route renders.
+2. Backtesting tab renders by default.
+3. Forward Testing tab is available.
+4. Comparison tab is available.
+5. History/Results tab is available.
+6. Nav/sidebar shows one Testing Lab item only.
+7. There are not separate sidebar items for Backtesting and Forward Testing.
+8. Switching tabs preserves selected strategy where appropriate.
+9. Backtest and forward-test results can be compared from the Comparison tab.

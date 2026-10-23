@@ -1,0 +1,246 @@
+Proceed with Build DD now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build DD = Real Market Data Read Layer.
+
+Goal:
+Replace or supplement synthetic fallback data with a safe, read-only real market data layer that Build AA can use for better trade decisions.
+
+Important:
+Build DD must NOT place live trades.
+Build DD must NOT modify live broker execution.
+Build DD must NOT enable canPlaceTrades.
+Build DD must NOT bypass Build AA, BB, or CC safety rules.
+Build DD only gives the system better real-time market awareness.
+
+Current system:
+- Build AA = central trade decision orchestrator.
+- Build BB = closed-trade auto-debrief.
+- Build CC = learning feedback engine.
+- Build DD must now provide reliable market data into Build AA.
+
+Core requirement:
+Create one unified market data adapter that can return real or fallback market data in one consistent format.
+
+Build DD tasks:
+
+1. Inspect existing market data flow
+Find where the app currently uses:
+- mock market data
+- synthetic fallback candles
+- quote data
+- symbol prices
+- volatility data
+- spread data
+- session data
+- existing MT5/Deriv/read-only API code if present
+
+Do not duplicate existing market data logic if usable.
+Refactor cleanly into one unified read-only market data service.
+
+2. Create unified Market Data Service
+
+Create a service that returns:
+
+{
+  symbol,
+  source: "REAL" | "FALLBACK" | "MOCK",
+  provider: string,
+  bid,
+  ask,
+  mid,
+  spread,
+  timestamp,
+  timeframe,
+  candles: [
+    {
+      time,
+      open,
+      high,
+      low,
+      close,
+      volume
+    }
+  ],
+  sessionContext: {
+    sessionName,
+    isMarketOpen,
+    liquidityLevel: "LOW" | "NORMAL" | "HIGH",
+    volatilityLevel: "LOW" | "NORMAL" | "HIGH" | "EXTREME"
+  },
+  dataQuality: {
+    status: "GOOD" | "DEGRADED" | "MISSING",
+    latencyMs,
+    candlesAvailable,
+    warnings: []
+  }
+}
+
+3. Provider adapter system
+
+Create provider adapters so the app can support multiple data sources without rewriting AA.
+
+Required structure:
+- marketDataService
+- marketDataProviders
+- fallbackMarketDataProvider
+- realMarketDataProvider placeholder or adapter
+- marketDataTypes
+- marketDataHealthCheck
+
+If real API credentials are missing, the system must automatically use fallback data and clearly label it as FALLBACK.
+
+4. Environment settings
+
+Add safe environment variables if needed:
+
+MARKET_DATA_PROVIDER=
+MARKET_DATA_API_KEY=
+MARKET_DATA_API_SECRET=
+MARKET_DATA_BASE_URL=
+MARKET_DATA_MODE=read_only
+
+Rules:
+- If MARKET_DATA_MODE is not read_only, reject the provider.
+- Never allow this service to place orders.
+- Never store API secrets in frontend code.
+- Never expose API secrets through endpoints or logs.
+
+5. Build AA integration
+
+Modify Build AA so it reads market data from the new Market Data Service.
+
+Build AA decision output should now include:
+
+marketDataSummary: {
+  source,
+  provider,
+  symbol,
+  mid,
+  spread,
+  timestamp,
+  timeframe,
+  dataQualityStatus,
+  candlesAvailable,
+  volatilityLevel,
+  liquidityLevel,
+  warnings
+}
+
+AA should use real/fallback market data for:
+- trade window evaluation
+- spread safety
+- volatility safety
+- session safety
+- entry quality
+- confidence scoring
+- risk scoring
+
+But:
+- AA safety rules still dominate.
+- Missing or degraded market data should return HOLD.
+- Bad spread should return HOLD.
+- extreme volatility should return HOLD unless strategy explicitly allows it.
+- fallback data must be clearly labeled.
+
+6. Add market data safety blockers
+
+Create safety checks for:
+- missing bid/ask
+- stale quote
+- missing candles
+- spread too wide
+- latency too high
+- volatility extreme
+- market closed
+- provider degraded
+- symbol unsupported
+
+Each blocker should return:
+{
+  blocked: boolean,
+  reason,
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+}
+
+7. Add market data logs
+
+Every market data request should log:
+- symbol requested
+- provider used
+- real vs fallback
+- latency
+- candles returned
+- data quality status
+- warnings
+- whether AA used or rejected the data
+
+8. Add endpoints for testing
+
+Create these endpoints or equivalent scripts:
+
+GET /api/market-data/quote?symbol=Volatility%2075%20Index
+GET /api/market-data/candles?symbol=Volatility%2075%20Index&timeframe=M5&limit=100
+GET /api/market-data/health
+POST /api/market-data/demo
+POST /api/trade-decision/evaluate
+
+9. Required test scenarios
+
+A. Market data service returns fallback data when real provider is missing.
+B. Market data service labels fallback data clearly.
+C. Build AA uses marketDataSummary in its decision output.
+D. Missing market data causes AA to HOLD.
+E. Wide spread causes AA to HOLD.
+F. Stale data causes AA to HOLD.
+G. Good data allows AA to continue evaluation, while safety still controls final decision.
+H. No live trades are placed.
+
+10. Preserve existing behavior
+
+Do not break:
+- Build AA decision orchestrator
+- Build BB auto-debrief
+- Build CC learning engine
+- paper trading
+- manual debrief
+- analytics
+- decision logs
+- learning logs
+- existing frontend routes
+
+Additive changes only unless a small integration fix is required.
+
+Acceptance criteria:
+- One unified market data service exists.
+- It supports real provider adapter structure.
+- It safely falls back to synthetic data if real data is unavailable.
+- Build AA reads from the market data service.
+- Build AA decision output includes marketDataSummary.
+- Market data quality can block bad trades.
+- API secrets are not exposed.
+- Live trading remains disabled.
+- App typechecks/builds.
+- Raw endpoint outputs prove the system works.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes, if any
+4. Environment variables added
+5. Where AA reads market data
+6. Raw output from /api/market-data/quote
+7. Raw output from /api/market-data/candles
+8. Raw output from /api/market-data/health
+9. Raw output from /api/market-data/demo
+10. Sample AA decision showing marketDataSummary
+11. Proof fallback mode works
+12. Proof missing/stale/wide-spread data causes HOLD
+13. Live-trade isolation proof
+14. Any errors or warnings
+15. Whether Build DD is fully complete or partially complete
+16. Final Build DD score out of 10

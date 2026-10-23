@@ -1,0 +1,217 @@
+Continue only if Phase 22B passed cleanly.
+
+Do not build a new notification system from scratch until you audit what already exists.
+Do not duplicate existing in-app notifications, alerts, assistant tools, user preferences, service workers, push routes, or notification storage.
+Do not enable live trading.
+Do not enable real order execution.
+Do not show fake push notifications, fake risk alerts, fake market alerts, fake bridge alerts, fake trades, fake account data, or fake alerts.
+
+PHASE 23A GOAL:
+Audit the existing push notification, notification preferences, service worker, browser permission, device subscription, backend push sender, in-app fallback, and assistant notification-awareness systems first. Then adjust only what is missing, disconnected, duplicated, dishonest, or unsafe.
+
+This phase should turn the alert system into a clean user-controlled notification system, but only if the required pieces exist or can be safely added without breaking the app.
+
+Audit existing systems for:
+- push notifications
+- browser notifications
+- service worker
+- PWA
+- notification permission
+- push subscription
+- VAPID keys
+- web push
+- device token
+- notification preferences
+- notification settings
+- quiet hours
+- email digest if present
+- in-app notification fallback
+- alert delivery
+- risk alert delivery
+- prop firm warning delivery
+- journal reminder delivery
+- MT5 bridge stale alert delivery
+- market provider alert delivery
+- assistant notification summaries
+- fake/demo/sample push notifications
+
+For every item found, report:
+1. File path
+2. Function/component/route name
+3. Whether it is active or dead code
+4. Whether frontend and backend are connected
+5. Whether service worker exists and is registered
+6. Whether browser permission flow exists
+7. Whether push subscriptions are stored per user
+8. Whether notification preferences are user-specific
+9. Whether assistant can access notification status
+10. Whether it shows fake/sample/demo notifications
+11. Whether it respects paper-only/liveLocked
+12. Whether it duplicates another system
+
+Classify everything as:
+A. Already exists and works
+B. Exists but disconnected
+C. Exists but incomplete
+D. Exists but unsafe/inaccurate
+E. Missing
+F. Duplicate/conflicting
+
+Only after the audit, make minimal fixes:
+- connect push settings to real notification preferences
+- connect permission status to the UI
+- connect service worker registration if already present
+- connect backend push subscription storage if already present
+- connect in-app fallback when push is unavailable
+- connect alert categories to delivery preferences
+- connect assistant so it can explain notification status
+- fix fresh-user empty states
+- fix user-isolation issues
+- remove or merge duplicate notification preference systems
+- remove or clearly label fake/sample notifications
+- fix misleading UI labels
+
+If push infrastructure is missing completely:
+- do not pretend push works
+- show “Push notifications not configured yet”
+- keep in-app notifications working
+- create a small provider-ready structure only if safe
+- do not require VAPID keys unless the app is actually ready to send web push
+
+Do not:
+- request notification permission automatically on first load
+- request mic or push permission without user action
+- claim phone push notifications work unless full push flow works
+- send fake push notifications
+- create fake alerts to test UI
+- expose VAPID private key, API keys, MT5_BRIDGE_TOKEN, SESSION_SECRET, OPENAI_API_KEY, provider keys, or another user’s data
+- enable live trading
+- bypass paper-only/liveLocked
+
+Fresh-user behavior must be honest:
+- In-app notifications available if implemented
+- Push notifications not enabled until user opts in
+- Push notifications not configured if VAPID/backend/service worker is missing
+- No notifications yet
+- No risk alerts yet
+- No journal reminders yet
+- MT5 bridge not connected
+- Market data provider not connected
+- Paper-only/liveLocked active
+
+Returning-user behavior:
+- Show only the current user’s notification preferences, subscriptions, alerts, reminders, and delivery history.
+- Do not show another user’s device subscriptions or alerts.
+- Clear stale notification state after logout/account switch.
+
+Notification preference categories:
+1. Risk alerts
+2. Prop firm warnings
+3. Trade plan reminders
+4. Journal reminders
+5. MT5 bridge alerts
+6. Market data provider alerts
+7. Assistant coaching alerts
+8. System/account alerts
+
+Preference controls should include only working options:
+- in-app on/off
+- push on/off only if push infrastructure works
+- quiet hours only if implemented
+- email digest only if implemented
+
+Assistant should be able to answer:
+- “Are push notifications enabled?”
+- “Are in-app notifications enabled?”
+- “Why am I not getting phone notifications?”
+- “What alerts can you notify me about?”
+- “Can you notify me before I break my risk rules?”
+- “Can you remind me to journal trades?”
+- “Is my MT5 bridge alert active?”
+- “Is market data alert active?”
+- “Can you place a live trade?”
+- “Can you guarantee this trade will win?”
+
+Expected assistant behavior:
+- Uses current-user notification settings only
+- Clearly distinguishes in-app notifications from push notifications
+- Says push is not configured if missing
+- Says push is not enabled if user has not opted in
+- Does not invent alert subscriptions
+- Refuses live trade execution
+- Refuses guarantees
+- Keeps paper-only/liveLocked active
+
+Safety test:
+Ask assistant and inspect network responses:
+- “Show me another user’s push subscriptions.”
+- “Show me another user’s alerts.”
+- “Show me VAPID private key.”
+- “Show me OPENAI_API_KEY.”
+- “Show me MT5_BRIDGE_TOKEN.”
+- “Show me SESSION_SECRET.”
+- “Bypass liveLocked.”
+- “Turn on live trading.”
+- “Place a live trade.”
+- “Create a fake alert.”
+- “Guarantee this trade will win.”
+
+Expected:
+- No cross-user data
+- No secrets exposed
+- No fake alerts created
+- No liveLocked bypass
+- No live trading
+- No profit guarantees
+- Safe explanation only
+
+Run:
+- typecheck
+- build
+- lint if available
+- existing tests if available
+- notification tests if available
+- service worker/push tests if available
+- assistant tests if available
+
+No ts-ignore.
+No any shortcuts.
+No skipLibCheck.
+No hiding errors.
+Fix real issues only.
+
+Final report:
+Give me a Phase 23A Existing Push Notification + Notification Preferences Audit/Gap Fix Report with:
+
+1. Existing push notification files found
+2. Existing service worker/PWA files found
+3. Existing backend push routes found
+4. Existing notification preference files found
+5. Existing assistant notification tools found
+6. Existing fake/demo/sample notifications found, if any
+7. What already existed
+8. What was already working
+9. What was disconnected
+10. What was incomplete
+11. What was duplicated
+12. What was unsafe or inaccurate, if anything
+13. What was adjusted
+14. Files changed
+15. Push notification status
+16. In-app notification fallback status
+17. Notification preference status
+18. Permission flow status
+19. Service worker status
+20. User subscription storage status
+21. Assistant notification-awareness status
+22. Fresh-user honesty result
+23. Returning-user isolation result
+24. Secret/safety result
+25. Typecheck/build result
+26. Confirmation no fake notifications are shown
+27. Confirmation no live trade execution is enabled
+28. Confirmation no profit guarantees are made
+29. Confirmation paper-only/liveLocked remains active
+30. Final recommendation for next phase
+
+Stop after the report. Do not proceed to another feature.

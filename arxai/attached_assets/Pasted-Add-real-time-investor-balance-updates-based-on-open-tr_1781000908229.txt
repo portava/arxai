@@ -1,0 +1,202 @@
+Add real-time investor balance updates based on open trades.
+
+Goal:
+Investor balances must update live based on open trades, not only after trades close. Every investor/user allocation should reflect floating profit/loss in real time from MT5/open positions.
+
+Core requirement:
+For every approved investor/user connected to the shared/master bridge ledger, calculate:
+
+Investor Live Equity =
+Allocated Balance
++ Realized P/L
++ Floating Open Trade P/L assigned to that investor
+- Fees/commissions/swaps if available
+
+Do not show investor balance as a static allocated amount while trades are open.
+
+Implementation requirements:
+
+1. Find the current investor/user balance source
+- Locate where investor balances, allocated balance, available balance, account equity, dashboard balance, admin investor table, user wallet, and live account snapshot are calculated.
+- Do not create a second fake balance system.
+- Reuse the current ledger/account snapshot/trade visibility logic already used by Dashboard, Open Trades, Scanner, Ruby, and Admin.
+
+2. Add mark-to-market investor balance calculation
+For each investor/user:
+- Pull all currently open positions assigned to that user.
+- Sum open floating P/L from those positions.
+- Combine that with the user’s allocated/ledger balance.
+- Output:
+  - allocatedBalance
+  - realizedPnL
+  - floatingPnL
+  - liveEquity
+  - availableBalance
+  - marginUsed
+  - freeMargin
+  - openTradeCount
+  - lastUpdatedAt
+  - dataFreshnessStatus
+
+3. Shared/master bridge support
+Because ARX AI supports centralized/master MT5 bridge mode:
+- Investor balances must be calculated from the per-user internal ledger, not only the master MT5 account balance.
+- If multiple users share one master MT5 account, do not show everyone the full master account equity.
+- Each investor/user should only see the portion assigned to their own trades/allocation.
+- Admin can see both:
+  - Master bridge total equity/balance
+  - Per-investor live equity breakdown
+
+4. Real-time update behavior
+Investor balances should update whenever:
+- MT5 heartbeat/account snapshot updates
+- Open trade P/L changes
+- A trade opens
+- A trade closes
+- A trade is partially closed
+- Swap/commission updates
+- Admin changes allocation
+- Risk engine recalculates available exposure
+
+Use the existing live/SSE/WebSocket/polling system if one already exists.
+If no live channel exists for investor balances, add one cleanly without breaking the current live trade stream.
+
+Preferred update cadence:
+- Use live bridge events if available.
+- Otherwise refresh investor balance snapshots every 1–3 seconds while markets are active.
+- Do not label stale data as live.
+
+5. UI updates
+Update every place investor balance appears:
+- Investor dashboard
+- Admin investor table
+- User account summary
+- Live trading dashboard
+- Open trades page
+- Risk panel
+- Ruby account context
+- Any wallet/allocation screen
+
+Display clearly:
+- Balance / Allocation
+- Floating P/L
+- Live Equity
+- Available to Trade
+- Margin Used
+- Open Trades
+
+Example display:
+Allocated: $1,000.00
+Floating P/L: +$14.72
+Live Equity: $1,014.72
+Available: $928.10
+Open Trades: 3
+
+If floating P/L is negative:
+Allocated: $1,000.00
+Floating P/L: -$22.40
+Live Equity: $977.60
+
+6. Ruby integration
+Ruby must use live investor equity when answering anything about:
+- user balance
+- investor balance
+- account health
+- available funds
+- risk
+- whether user can enter another trade
+- current exposure
+- open trade status
+
+Ruby must not answer from stale allocated balance if open trades exist.
+
+7. Risk engine integration
+Risk checks must use liveEquity, not static balance.
+Before placing a trade, risk engine should calculate:
+- current live equity
+- current floating loss/profit
+- current margin usage
+- remaining available risk
+- exposure from open trades
+- whether this new trade would violate user allocation/risk settings
+
+8. Prevent false numbers
+Add truth rules:
+- If open trade P/L is unavailable, show balance as “allocation only” and mark floating P/L as unavailable.
+- If MT5 heartbeat is stale, show stale warning/admin badge.
+- If trade ownership mapping is missing, do not assign that trade randomly.
+- If a trade cannot be mapped to a user/investor, place it in an admin-only “Unmapped Open Trades” bucket.
+
+9. Admin view
+Admin investor table should include:
+- Investor/User
+- Approved Live Access status
+- Allocated Balance
+- Realized P/L
+- Floating P/L
+- Live Equity
+- Margin Used
+- Free Margin
+- Open Trades
+- Last MT5 Update
+- Fresh/Stale status
+- Unmapped trade warning if applicable
+
+10. Backend truth contract
+Create or update a single backend function such as:
+
+buildInvestorLiveBalanceSnapshot(userId)
+
+It should be the one source of truth for all investor balance displays.
+
+Expected output shape:
+
+{
+  userId,
+  allocatedBalance,
+  realizedPnL,
+  floatingPnL,
+  liveEquity,
+  marginUsed,
+  freeMargin,
+  availableBalance,
+  openTradeCount,
+  positions: [],
+  source: "mt5_master_bridge",
+  freshness: {
+    status: "fresh" | "stale" | "unavailable",
+    lastUpdatedAt,
+    ageMs
+  }
+}
+
+Do not duplicate this calculation differently across pages.
+
+11. Testing requirements
+Run tests proving:
+- Investor balance updates when open trade P/L moves.
+- Investor balance increases when floating P/L is positive.
+- Investor balance decreases when floating P/L is negative.
+- Closing a trade moves floating P/L into realized P/L.
+- Admin master bridge balance does not get incorrectly shown as every investor’s balance.
+- Each investor only sees their own assigned trades.
+- Unmapped trades are flagged and not assigned incorrectly.
+- Ruby uses live equity in account/risk answers.
+- Risk engine blocks/allows based on live equity, not static allocation.
+- UI refreshes without manual page reload.
+- Stale MT5 data is clearly marked stale.
+
+12. Do not break existing wiring
+Preserve:
+- Existing MT5 bridge command path
+- Existing live trade visibility rules
+- Existing admin approval toggles
+- Existing user mode/admin mode behavior
+- Existing dashboard/open trades snapshot logic
+- Existing scanner/Ruby trade flow
+- Existing live P/L display
+
+Do not remove any current live trading functionality.
+
+Final acceptance:
+The feature passes only when investor balances visibly move in real time while open trades are moving, and all dashboards/admin views/Ruby/risk checks agree on the same live equity number.

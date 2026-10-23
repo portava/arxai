@@ -1,0 +1,278 @@
+Use this as the next Replit command:
+
+ARX AI CLEANUP PASS — DUPLICATE / REDUNDANT / DORMANT CODE AUDIT + SAFE FIX
+Run a full duplicate, redundant, dormant, and unused-code audit across the ARX AI trading app.
+IMPORTANT:
+Do NOT rebuild the app.
+Do NOT redesign the app.
+Do NOT delete anything that is part of the app ecosystem.
+Do NOT remove code just because it looks unused at first glance.
+If code is broken but belongs to the ecosystem, FIX IT — do not delete it.
+Only remove or archive code that is proven to be dead, duplicated, abandoned, unreachable, obsolete, or disconnected from the working app.
+The goal is to clean the app without damaging ARX AI’s ecosystem.
+ARX AI ecosystem includes:
+- Auth / user accounts
+- User sessions
+- MT5 bridge
+- Shared MT5 account architecture
+- Dashboard
+- Live/demo trade data
+- Open trades
+- Trade history
+- Trade journal
+- Trade calendar
+- AI assistant
+- Voice assistant
+- Market scanner
+- Risk engine
+- Trade actions
+- Notifications / alerts
+- App context memory
+- Backend routes
+- Frontend pages/components
+- Mobile layout
+- Environment/config handling
+- Database models/schemas/migrations
+- Any current UI page the user can reach
+==================================================
+PHASE 1 — SAFETY SNAPSHOT
+==================================================
+Before touching anything:
+1. Create a backup/restore checkpoint.
+2. Record current git status.
+3. Record all current files/folders.
+4. Record active app entry points:
+   - Frontend routes/pages
+   - Backend routes
+   - API handlers
+   - Database models
+   - Shared utilities
+   - AI files
+   - MT5 bridge files
+   - Scanner files
+   - Risk files
+   - Auth files
+Do not edit yet.
+Output a short “cleanup baseline” showing:
+- Total files scanned
+- Main app folders
+- Active frontend routes
+- Active backend/API routes
+- Active ecosystem modules
+==================================================
+PHASE 2 — FIND DUPLICATES
+==================================================
+Scan for duplicate or near-duplicate code.
+Look for:
+1. Duplicate components
+   - Multiple dashboard components doing the same thing
+   - Multiple AI widgets
+   - Multiple chat popups
+   - Multiple trade cards
+   - Multiple scanner cards
+   - Multiple nav/sidebar/menu components
+   - Multiple bottom nav implementations
+   - Multiple modals/toasts/confirm prompts
+2. Duplicate backend routes
+   - Repeated MT5 status routes
+   - Repeated account routes
+   - Repeated open-trades routes
+   - Repeated AI chat routes
+   - Repeated scanner routes
+   - Repeated risk routes
+   - Repeated journal/history routes
+3. Duplicate services/utilities
+   - Multiple MT5 clients
+   - Multiple OpenAI clients
+   - Multiple market-data clients
+   - Multiple scanner services
+   - Multiple risk calculators
+   - Multiple user/session helpers
+   - Multiple fetch/api wrapper functions
+   - Multiple polling systems
+4. Duplicate mock/demo data
+   - Old fake dashboards
+   - Old forced trade cards
+   - Old scanner samples
+   - Old account samples
+   - Old placeholder AI responses
+   - Any mock data leaking into live mode
+For every duplicate found:
+- Identify which one is active.
+- Identify which one is inactive.
+- Identify which one is better/current.
+- Merge only if safe.
+- Remove only if proven unused.
+- If both are needed, explain why and keep both.
+- If one is broken but belongs to the current app, fix it instead of deleting.
+==================================================
+PHASE 3 — FIND DORMANT / DEAD CODE
+==================================================
+Find code that is dormant, abandoned, unreachable, or disconnected.
+Check for:
+1. Unused files
+2. Unused exports
+3. Unused imports
+4. Dead routes
+5. Dead pages
+6. Dead components
+7. Old UI versions no longer routed
+8. Old backend routes no frontend uses
+9. Old frontend calls to removed backend routes
+10. Old mock/test-only systems accidentally left in production
+11. Old constants/config files no longer referenced
+12. Old bridge files not connected to current MT5 flow
+13. Old AI files not connected to current assistant
+14. Old scanner files not connected to current scanner
+15. Old risk files not connected to current trade flow
+Use static analysis where available:
+- TypeScript compiler
+- ESLint
+- Vite/Next/React build output
+- import graph checks
+- grep/search
+- dependency graph
+- package dependency checks
+If tools like depcheck, ts-prune, knip, eslint, or dependency-cruiser are available, use them.
+If they are not installed, do not permanently alter the project just to add heavy tooling unless necessary. Prefer npx one-time checks if safe.
+IMPORTANT:
+Some code may be dynamically loaded or referenced through routes/config.
+Do not delete anything that may be used dynamically unless confirmed.
+==================================================
+PHASE 4 — CLASSIFY EVERYTHING BEFORE CLEANUP
+==================================================
+Create these categories:
+A. KEEP
+Code is active and part of the ecosystem.
+B. FIX
+Code is broken, disconnected, or incomplete but belongs to the ecosystem.
+C. MERGE
+Duplicate code where one clean shared version should replace multiple repeated versions.
+D. ARCHIVE
+Code appears obsolete or dormant but may still have historical value.
+E. DELETE
+Code is proven unused, broken, duplicated, obsolete, and has no role in the app.
+Rules:
+- Prefer FIX over DELETE if the feature belongs to ARX AI.
+- Prefer ARCHIVE over DELETE if there is any uncertainty.
+- Only DELETE when 100% proven safe.
+- If removal breaks build/tests, restore immediately and fix instead.
+- Do not delete MT5, AI, scanner, risk, auth, dashboard, journal, notification, or user-session code unless it is proven duplicate/dead and replaced by active working code.
+==================================================
+PHASE 5 — CLEANUP ACTIONS
+==================================================
+Perform safe cleanup only.
+Allowed actions:
+1. Remove unused imports.
+2. Remove unused variables only if safe.
+3. Remove unreachable code blocks.
+4. Remove duplicate files only when active replacement exists.
+5. Consolidate duplicate helpers/services into one shared helper if low risk.
+6. Archive obsolete components/routes in an archive/deprecated folder if unsure.
+7. Remove old mock data leaking into live app.
+8. Rename nothing unless necessary.
+9. Update imports after safe consolidation.
+10. Fix broken references caused by cleanup.
+Not allowed:
+1. No full rebuild.
+2. No UI redesign.
+3. No feature removal.
+4. No deleting current app pages.
+5. No deleting ecosystem systems.
+6. No changing brand direction.
+7. No changing database schema unless required to fix breakage.
+8. No changing auth/session behavior unless broken.
+9. No replacing working services with new ones.
+10. No hiding errors with placeholders.
+==================================================
+PHASE 6 — SPECIAL PROTECTION AREAS
+==================================================
+Treat these as protected unless proven duplicated/dead:
+1. MT5 bridge files
+   - If old bridge code exists, compare it to the active bridge.
+   - Keep the active bridge.
+   - Archive old versions if not used.
+   - Do not remove safety/read-only protections.
+2. AI assistant files
+   - Do not delete AI context, chat, memory, voice, or trading-intelligence code if it contributes to the assistant.
+   - If multiple AI services exist, identify active flow and merge only safe duplicated wrappers.
+3. Market scanner
+   - Do not delete scanner logic just because API key is missing.
+   - Missing API key is not dead code.
+   - Fix graceful missing-key handling.
+4. Risk engine
+   - Do not delete risk rules.
+   - If disconnected, wire it back into trade flow.
+5. User sessions
+   - Do not remove user-specific data handling.
+   - Fix duplicate/demo leakage if found.
+6. Demo/mock mode
+   - Demo mode is allowed only if clearly separated from live mode.
+   - Remove fake live data.
+   - Keep labeled demo tools if intentionally used.
+==================================================
+PHASE 7 — VERIFY AFTER EVERY CLEANUP GROUP
+==================================================
+After each cleanup group, run the relevant checks.
+At minimum:
+1. npm run lint if available
+2. npm run typecheck if available
+3. npm test if available
+4. npm run build
+5. Start the app if possible
+6. Check key routes do not crash
+If any cleanup breaks the app:
+- Stop.
+- Restore that specific change.
+- Fix the app.
+- Do not continue deleting similar code blindly.
+==================================================
+PHASE 8 — ECOSYSTEM INTEGRITY TEST
+==================================================
+After cleanup, verify that the ARX AI ecosystem still works:
+1. Login/signup/session flow
+2. Dashboard loads
+3. MT5 status loads
+4. Account/trade state loads or shows clean disconnected state
+5. Scanner loads or shows clean missing-key state
+6. AI assistant opens
+7. AI assistant can answer app/trading questions
+8. Voice assistant does not crash
+9. Risk system still exists and connects to trade actions
+10. Trade journal/history/calendar still loads
+11. Notifications/alerts still work or show clean state
+12. Navigation/buttons still route correctly
+13. Mobile layout still works
+14. No fake live data appears
+15. No old UI routes override current UI
+==================================================
+PHASE 9 — FINAL CLEANUP REPORT
+==================================================
+Create a cleanup report in the project, for example:
+CLEANUP_REPORT.md
+Include:
+1. Files scanned
+2. Duplicates found
+3. Dormant code found
+4. Files kept and why
+5. Files fixed and why
+6. Files merged and why
+7. Files archived and why
+8. Files deleted and why
+9. Imports cleaned
+10. Mock/demo data cleaned
+11. Routes confirmed active
+12. Routes confirmed inactive
+13. Tests/checks run
+14. Build result
+15. Remaining cleanup risks
+16. Anything that needs my future review
+Also show me a final summary in chat with:
+- What was cleaned
+- What was not touched
+- What was fixed instead of deleted
+- What was archived instead of deleted
+- Whether the app still builds
+- Whether ARX AI still works as one ecosystem
+FINAL RULE:
+Cleanup is successful only if the app still runs, builds, and keeps every active ARX AI feature connected.

@@ -1,0 +1,69 @@
+Fix the ARX AI Mission Planner truth and UX issues shown in the attached screenshot.
+
+Screen context:
+The planner currently assesses a mission like $50 starting amount → $100 target over 1 day with aggressive risk. The UI correctly marks it as Unreasonable/Unrealistic, but several labels and actions are misleading.
+
+Required fixes:
+
+1. Feed truth gate
+- If live feed is not confirmed, mission may only be saved as a draft.
+- Do not allow "start mission" or any live execution path when feed status is FEED_NOT_CONFIRMED.
+- Show a clear status banner:
+  "Live feed not confirmed. You can save this mission as a draft, but it cannot start until broker feed is confirmed."
+
+2. Button states
+- Before assessment: "Assess mission"
+- After assessment + feed confirmed + mission feasible: "Save & start mission"
+- After assessment + feed not confirmed: "Save draft only"
+- After assessment + unrealistic mission: "Save unrealistic draft"
+- Never imply the mission is startable if feed is not confirmed or mission is unrealistic.
+
+3. Probability/risk honesty
+- If historical sample size is 0, do not present target-hit, drawdown, best, expected, or worst as historical estimates.
+- Label them as "planning projection only."
+- Add copy:
+  "No historical sample is available yet. These values are mathematical planning projections based on your inputs, not backtested probabilities."
+- Confidence should remain Low when sample size is 0.
+
+4. Risk profile explanation
+- If user selects "aggressive" but required profile is "Extreme", show:
+  "Your selected risk profile is Aggressive, but this target requires Extreme risk assumptions. This mission exceeds normal aggressive planning limits."
+- Keep mission type as "Unrealistic" when the required daily compounded return is outside supported limits.
+
+5. Feasibility logic
+- $50 to $100 in 1 day = 100% required return.
+- The UI should explicitly show:
+  Required return: 100%
+  Required daily pace: 100% per day
+- Keep feasibility score 0/100 and risk score 100/100 for this case.
+
+6. Small account warning
+- Keep the warning that starting amount under $100 increases spread/cost impact.
+- Add:
+  "Small balances have less room for drawdown and may be more affected by minimum lot sizing."
+
+7. Copy cleanup
+- Replace vague language like "estimated" when there is no sample.
+- Use:
+  "Projected"
+  "Planning-only"
+  "Not backtested"
+  "Not a promise of profit"
+- Make sure the UI never suggests profit is likely.
+
+8. Tests
+Add tests for:
+- FEED_NOT_CONFIRMED blocks mission start.
+- FEED_NOT_CONFIRMED still allows draft save.
+- sampleSize = 0 forces confidence Low.
+- sampleSize = 0 changes probability labels to planning projections.
+- $50 → $100 over 1 day is classified Unrealistic.
+- selected risk aggressive + required risk Extreme shows mismatch explanation.
+- mission start button is disabled unless feed confirmed and mission is feasible.
+
+Acceptance criteria:
+- The screen is honest about feed status, sample size, and probability.
+- Unrealistic missions can be saved only as drafts.
+- Live mission start is impossible without confirmed feed.
+- The UI clearly explains why the mission is unrealistic.
+- No live execution wiring is weakened or bypassed.

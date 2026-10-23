@@ -1,0 +1,1073 @@
+Audit the full ARX AI codebase first before building anything new.
+
+I want you to upgrade Ruby and the ARX AI trading ecosystem with the complete Trading Intelligence Learning System we discussed, but you must first inspect what already exists in the current app.
+
+Before adding new code, search the full project for any existing features related to:
+- MT5 bridge
+- MT5 trade history
+- trading history uploads
+- Ruby chat memory
+- Ruby scanner explanations
+- market scanner
+- historical candles
+- backtesting
+- shadow mode
+- trade replay
+- risk engine
+- stop loss / take profit logic
+- market structure logic
+- economic calendar
+- news feeds
+- TradingView webhooks
+- Deriv synthetic indices
+- user trading profiles
+- admin live/demo approval
+- kill switches
+- app health monitoring
+- permission toggles
+- user behavior tracking
+- global learning
+- model/version tracking
+- source trust scoring
+- data quality scoring
+
+If any part already exists, do not duplicate it. Repair it, upgrade it, connect it properly, and reuse the current structure. If something is partially built, complete it. If something is missing, add it. Do not remove existing working features. Do not break current live/demo controls, admin approvals, MT5 bridge logic, Ruby chat, scanner, login system, or permission system.
+
+The goal is to make Ruby a full trading intelligence system that can learn from trade history, market behavior, user behavior, execution quality, outside platforms, and anonymous platform-wide learning.
+
+Build this in safe phases and keep all live trade execution protected by existing admin approval, user confirmation, permission toggles, risk controls, kill switches, and live/demo mode separation. Uploaded history, global learning, Ruby recommendations, scanner signals, or AI learning must not automatically place live trades without the existing approval and confirmation process.
+
+Core mission:
+Upgrade ARX AI so Ruby can learn from each trader privately, learn from all platform users anonymously, improve the main ARX intelligence engine over time, and use multiple trading platforms/data sources to make better trading decisions, risk warnings, scanner scoring, trade explanations, and app health decisions.
+
+1. Trading History Intelligence
+
+Add or upgrade a Trading History Intelligence system.
+
+Support manual imports from:
+- MT5 CSV
+- Excel
+- MT5 HTML reports
+- MT5 PDF reports
+- screenshots/notes as secondary context only
+
+Also support direct MT5 bridge/EA sync when available.
+
+Parse and store:
+- account source
+- user ID
+- broker/account identifier if available
+- symbol
+- order/deal ID
+- buy/sell/order type
+- lot size
+- entry price
+- exit price
+- stop loss
+- take profit
+- open time
+- close time
+- duration
+- profit/loss
+- commission
+- swap
+- balance
+- equity
+- margin if available
+- comment/magic number
+- manual close/SL hit/TP hit if detectable
+- live/demo label
+- verified/imported label
+
+Trading history should be used for analysis, coaching, scanner improvement, and risk intelligence. It should not be treated as magic AI training and must not automatically trigger live trades.
+
+2. Trade Replay and Market Context
+
+For every imported or synced trade, reconstruct market context before, during, at exit, and after exit.
+
+Store or calculate:
+- historical candles across multiple timeframes
+- 1M, 5M, 15M, 1H, 4H, Daily context where available
+- trend direction
+- market structure
+- support/resistance
+- session high/low
+- previous day high/low
+- volatility
+- ATR
+- spread if available
+- candle size
+- wick behavior
+- volume/tick volume
+- news/events near the trade time
+- whether price reached TP after early close
+- whether SL was too tight
+- whether entry was early, late, or reasonable
+- whether exit was early, late, or reasonable
+- what happened after the user exited
+
+Ruby should be able to explain why a trade won or lost, not just show the P/L.
+
+3. Trader Intent Learning
+
+Ruby should learn trader intent, not just trade results.
+
+Add or upgrade fields and prompts so Ruby can capture:
+- reason for entry
+- planned setup
+- planned entry
+- planned SL
+- planned TP
+- actual entry
+- actual SL
+- actual TP
+- actual close
+- whether the trade was planned or impulsive
+- whether the user followed the plan
+- whether the user moved SL
+- whether the user removed TP
+- whether the user closed early
+- whether the trade was emotional/revenge trading
+- user notes
+- Ruby notes
+
+Ruby should ask short active-learning questions only when the answer improves the learning profile. Do not make this annoying. Use important trades, unusual trades, large losses, early closes, ignored warnings, and repeated mistakes as triggers.
+
+4. Setup Tagging
+
+Add setup tagging for:
+- breakout
+- pullback
+- reversal
+- continuation
+- sniper entry
+- news trade
+- liquidity sweep
+- fakeout
+- support/resistance bounce
+- supply/demand reaction
+- trendline break
+- consolidation breakout
+- overtrade
+- revenge trade
+- no-confirmation entry
+- late breakout chase
+- early entry
+- emotional trade
+
+Allow Ruby and the user to tag trades. Ruby should improve tagging over time.
+
+5. Strategy DNA Profile
+
+Create or upgrade a private Strategy DNA profile for each user.
+
+Ruby should learn:
+- best symbols
+- worst symbols
+- best sessions
+- worst sessions
+- best timeframes
+- worst timeframes
+- best setup types
+- worst setup types
+- average win
+- average loss
+- win rate
+- expectancy
+- profit factor
+- R-multiple
+- max drawdown
+- normal drawdown before winning
+- normal time before trade works
+- common early exits
+- common late exits
+- common stop-loss mistakes
+- common take-profit mistakes
+- overtrading patterns
+- revenge trading patterns
+- lot-size behavior
+- risk-per-trade behavior
+- news-event weaknesses
+- user discipline score if appropriate
+- personal strengths
+- personal weaknesses
+
+Ruby should personalize scanner results and coaching based on this profile.
+
+Example behavior:
+“Your personal history performs better on NAS100 pullbacks during New York session after confirmation.”
+“This setup matches your repeated late-breakout-chase mistake pattern.”
+“You usually lose when trading gold within 15 minutes of high-impact USD news.”
+
+6. Similar Trade Memory
+
+Add similar-trade memory.
+
+Ruby should compare a current setup to previous trades with similar:
+- symbol
+- session
+- timeframe
+- setup type
+- market structure
+- trend condition
+- volatility
+- spread condition
+- news condition
+- SL placement
+- TP placement
+- user behavior
+- trade duration
+- entry style
+
+Ruby should be able to say:
+“This setup resembles 43 previous trades. You won 28 of them, but only when you waited for confirmation and placed SL below structure.”
+“Similar trades failed when entered before the retest.”
+
+7. Ruby Self-Learning and Self-Grading
+
+Track every Ruby recommendation, scanner opinion, market explanation, confidence score, suggested entry, suggested stop loss, suggested take profit, invalidation level, and warning.
+
+For every Ruby prediction, later compare against actual market movement.
+
+Track accuracy by:
+- symbol
+- timeframe
+- setup type
+- session
+- market condition
+- news condition
+- volatility
+- user type
+- confidence score
+
+Ruby should learn when her confidence was too high, too low, correct, or wrong.
+
+If Ruby says 80% confidence but similar signals only work 48% of the time, reduce future confidence in similar conditions.
+
+Add confidence calibration so Ruby cannot keep giving high-confidence signals when similar past signals failed.
+
+8. Shadow Mode
+
+Add or upgrade shadow mode.
+
+Ruby and the scanner should be able to make background predictions without executing trades.
+
+Track:
+- predicted direction
+- confidence
+- suggested entry
+- suggested SL
+- suggested TP
+- actual price movement after 5 minutes, 15 minutes, 1 hour, 4 hours, and daily if relevant
+- whether TP would have hit
+- whether SL would have hit
+- max favorable excursion
+- max adverse excursion
+- final outcome
+
+Use shadow mode to validate Ruby before allowing any learning changes to influence live recommendations.
+
+9. Walk-Forward Testing and Backtesting
+
+Add or upgrade walk-forward testing.
+
+Do not train and test on the same data. Prevent lookahead bias.
+
+Use older data for learning and newer unseen data for testing.
+
+Suggested flow:
+- older data = training
+- newer data = validation
+- most recent data = final test/shadow validation
+
+Add backtesting and replay tools to test Ruby/scanner logic across historical data.
+
+10. Data Quality Scoring
+
+Add data quality scoring for every uploaded or synced dataset.
+
+Flag:
+- missing SL
+- missing TP
+- missing timestamps
+- missing close price
+- duplicate trades
+- bad timestamps
+- messy imported reports
+- too few trades
+- demo-only history
+- unrealistic results
+- manipulated/incomplete records
+- broken symbol mapping
+- broker timezone issues
+- deposits/withdrawals mixed into trade performance
+
+Verified direct MT5/bridge/broker-synced data should have higher trust than manual uploads. CSV/Excel should usually be easier to trust than PDF. User notes are useful but subjective.
+
+11. Source Trust Scoring
+
+Create a source trust scoring system.
+
+Every data source should have a trust level.
+
+Examples:
+- verified MT5 live data = high trust
+- broker-synced account history = high trust
+- direct exchange API data = high trust
+- uploaded CSV/Excel = medium trust
+- uploaded PDF/HTML = medium/lower depending quality
+- screenshots = low/secondary trust
+- user notes = subjective context
+- social media = low until confirmed
+- news = score by source/confirmation
+- TradingView alert = useful but must be scored
+- global platform patterns = trusted only after sample size and validation
+- Ruby predictions = trusted only after accuracy tracking
+
+Ruby should not learn from all data equally. Bad data should not poison the system.
+
+12. Global Learning Layer
+
+Build or upgrade a Global Learning Layer.
+
+ARX should learn from each trader individually while also improving the main ARX system from anonymized platform-wide learning.
+
+Use three layers:
+
+A. Private User Learning
+Each user has a private Ruby trading profile based on their own trades, risk habits, scanner behavior, best/worst symbols, preferred sessions, setup types, SL/TP behavior, and repeated mistakes. This must stay private to that user.
+
+B. Anonymous Group Learning
+ARX studies anonymized patterns across users without exposing private account history, balances, broker data, account numbers, or personal strategies.
+
+C. Main System Learning
+Verified lessons from anonymous group learning improve Ruby’s reasoning, scanner scoring, risk warnings, setup detection, confidence scoring, trade replay, market behavior models, and global intelligence.
+
+Do not expose one trader’s raw data to another trader. Do not copy a private strategy directly into another user’s recommendations.
+
+Use minimum sample sizes before showing global insights so one trader cannot be identified.
+
+Allow users/admin to control whether user data contributes to global learning.
+
+Global learning should answer:
+- Which setups work best across many users?
+- Which setups fail most often?
+- Which symbols are most dangerous during certain sessions?
+- Which SL styles fail because they are too tight?
+- Which TP styles leave money on the table?
+- Which scanner signals actually worked after being shown?
+- Which Ruby recommendations were correct/wrong?
+- What separates winning traders from losing traders?
+- Which market conditions create common mistakes?
+- Which similar traders succeeded or failed in this condition?
+
+Ruby can say:
+“Across anonymous platform history, this setup performs poorly during high-impact USD news.”
+“Users with similar trading profiles usually perform better waiting for confirmation here.”
+“Your personal history is better than the global average on this setup.”
+
+13. Data Weighting
+
+Weight learning by data quality.
+
+Higher-quality data should matter more.
+
+Separate and label:
+- live trades
+- demo trades
+- paper trades
+- uploaded history
+- verified synced broker data
+- scanner-only behavior
+- Ruby-only predictions
+- manual strategy notes
+
+Profitable long-term histories should be weighted differently from short lucky histories. Losing trader data is still useful for warning detection, but should not be treated as winning strategy data. Recent data should be weighted based on current market regime.
+
+Filter or reduce the weight of outliers, fake records, bad timestamps, duplicates, and unreliable uploads.
+
+14. Market Tools Ruby Should Use
+
+Add or upgrade Ruby’s technical-analysis toolbox.
+
+Ruby should calculate/use:
+- Fibonacci retracement
+- Fibonacci extension
+- trendlines
+- horizontal support/resistance
+- supply/demand zones
+- moving averages/EMA
+- RSI
+- MACD
+- ATR
+- Bollinger Bands
+- Ichimoku
+- Stochastic
+- CCI
+- ADX
+- Fractals
+- Momentum
+- Money Flow Index
+- volume/tick volume
+- spread
+- candle patterns
+- previous highs/lows
+- session highs/lows
+- previous day/week highs/lows
+- fair value gaps/imbalance zones if existing system supports it
+- liquidity sweeps
+- breakout/retest zones
+- fakeout detection
+- market structure
+
+Ruby should not just say one indicator is bullish or bearish. Ruby should combine multiple tools and explain the reason clearly.
+
+Example:
+“Price is pulling back into the 61.8 Fibonacci zone, which also matches previous support, New York session structure, and higher-timeframe bullish trend. However, spread is elevated and USD news is nearby, so confidence is reduced.”
+
+15. MT5 Chart Object Integration
+
+If the current MT5 bridge/EA supports it or can safely support it, add Ruby’s ability to read or draw MT5 chart objects.
+
+Ruby should be able to read/draw:
+- Fibonacci objects
+- trendlines
+- support/resistance lines
+- rectangles/zones
+- SL/TP zones
+- entry zones
+- Ruby confidence zones
+- market notes
+
+If full MT5 chart-object control is too risky or not currently connected, implement the internal ARX calculation layer first and leave MT5 drawing behind a safe bridge capability flag.
+
+16. Market Structure Engine
+
+Add or upgrade a custom market structure engine.
+
+Detect:
+- higher highs
+- higher lows
+- lower highs
+- lower lows
+- break of structure
+- change of character
+- trend continuation
+- consolidation
+- range
+- breakout
+- retest
+- reversal zone
+- liquidity sweep
+- fake breakout
+- support/resistance flip
+- supply/demand reaction
+- manipulation/fakeout zones if detectable
+
+Ruby should use this in scanner explanations, trade planning, trade review, and risk warnings.
+
+17. Volatility, Spread, and Stop-Loss Intelligence
+
+Add stop-loss intelligence using:
+- ATR
+- average candle range
+- recent wick size
+- spread
+- volatility expansion/contraction
+- support/resistance
+- structure invalidation
+- broker stop-level rules if available
+- normal noise range
+
+Ruby should warn:
+“Your SL is inside normal candle noise.”
+“This stop is too close for current spread.”
+“Similar trades were stopped out before moving in the correct direction.”
+“Place SL beyond structure/invalidation, not directly at entry.”
+
+Add TP intelligence:
+- TP1
+- TP2
+- runner target
+- risk-to-reward
+- nearby liquidity
+- previous highs/lows
+- ATR-based target
+- structure-based target
+- probability of continuation
+
+18. Execution Quality Monitor
+
+Add or upgrade execution quality tracking.
+
+Track:
+- spread at entry
+- spread at exit
+- slippage
+- fill price vs requested price
+- broker execution delay
+- rejected orders
+- requotes
+- partial fills if applicable
+- stop loss hit by spread/wick
+- margin level before entry
+- free margin after entry
+- symbol trading conditions
+- broker session restrictions
+
+Ruby should distinguish bad strategy from bad execution.
+
+Example:
+“The trade idea was valid, but execution quality was poor because spread widened before fill.”
+“The SL was hit by spread/wick noise, not a full structure break.”
+
+19. Depth of Market / Liquidity
+
+Where available, add Depth of Market / order book awareness.
+
+Use only when supported by the broker/platform/source.
+
+Ruby should detect:
+- thin liquidity
+- bid/ask imbalance
+- liquidity gaps
+- order book shifts
+- dangerous spread conditions
+- poor entry timing
+- possible fake breakout conditions
+
+If unavailable, Ruby should clearly know that DOM data is not available instead of pretending.
+
+20. Economic Calendar, News, Macro, and Shock Monitoring
+
+Add or upgrade economic/news intelligence.
+
+Ruby should use:
+- economic calendar events
+- high-impact news
+- central bank decisions
+- CPI
+- NFP
+- FOMC
+- interest rates
+- inflation
+- unemployment
+- treasury yields
+- oil prices
+- dollar strength
+- consumer sentiment
+- global market shocks
+- war/conflict news
+- world leader statements
+- major political/economic announcements
+- crypto exchange failures if crypto enabled
+- central bank speeches
+
+Ruby should label news as:
+- confirmed
+- developing
+- rumor
+- low-confidence
+- high-impact
+- medium-impact
+- low-impact
+
+Ruby should understand which symbols are exposed to which news.
+
+Example:
+“High-impact USD news is in 18 minutes. Avoid gold/NAS100 entries unless this is a planned news strategy.”
+“Historically, this user gets stopped out in the first 10 minutes after CPI.”
+
+21. Platform and Data Source Integrations Beyond MT5
+
+Add a connector architecture for future/non-MT5 data sources. Do not hardcode everything. Use clean service modules, feature flags, environment variables, and disabled-by-default connectors when API keys are missing.
+
+Ruby/ARX should be designed to support:
+
+Trading/chart platforms:
+- TradingView webhooks for alerts, Pine Script strategies, trendline/breakout alerts, custom indicators
+- cTrader Open API for broker/trade data
+- OANDA API for forex market/account data
+- Interactive Brokers for stocks, options, futures, forex, ETFs, portfolio/margin data
+- NinjaTrader / Tradovate for futures workflows
+- Alpaca for stocks/options/crypto/paper trading
+- Tradier for stocks/options/market data
+- Bookmap-style order flow/liquidity data
+- Sierra Chart / DTC style market data/trading connection if useful later
+- QuantConnect/LEAN style backtesting/research engine support
+
+Crypto/exchange sources:
+- Binance
+- Coinbase
+- Kraken
+- other exchange APIs if needed
+
+Synthetic index sources:
+- Deriv API for active symbols, ticks, tick history, profit table, statement, transaction, portfolio, balance, and synthetic index behavior
+
+Market data/research sources:
+- market data providers for real-time/historical candles, tick data, options data, forex, crypto, indices
+- macroeconomic data sources
+- SEC/company filings if stocks/equities supported
+- CFTC Commitment of Traders data if futures/commodities/forex positioning is supported
+- global news sources
+- social/news shock monitoring with credibility scoring
+
+Important:
+Do not build fake integrations that pretend to be live. If API keys or accounts are missing, create the connector interface, config, status indicator, and safe disabled state. Ruby should say the source is disconnected/unavailable instead of fabricating data.
+
+22. TradingView Alerts
+
+Add or upgrade TradingView webhook support if missing.
+
+Ruby should receive alerts from:
+- user indicators
+- Pine Script strategies
+- breakout alerts
+- trendline alerts
+- support/resistance alerts
+- custom strategy signals
+
+Ruby must score TradingView alerts against:
+- ARX scanner
+- user history
+- market structure
+- spread/volatility
+- news risk
+- Ruby confidence
+- global learning
+
+Ruby should not blindly execute TradingView alerts.
+
+23. Deriv Synthetic Index Intelligence
+
+Add or upgrade Deriv/synthetic index support.
+
+Important symbols may include Volatility 75, Volatility 25 1s, and other synthetic markets.
+
+Ruby should learn synthetic index behavior separately from forex/gold/indices because synthetic indices do not behave like normal news-driven markets.
+
+Support:
+- tick history
+- synthetic volatility behavior
+- symbol-specific fakeouts
+- best/worst time windows
+- user performance by synthetic symbol
+- synthetic scanner scoring
+- tick replay if possible
+- Deriv profit table/statement analysis when connected
+
+24. Crypto Intelligence
+
+If crypto sources are added, Ruby should learn from:
+- 24/7 market behavior
+- exchange order books
+- spread
+- slippage
+- funding rates if available
+- liquidation pressure if data source supports it
+- BTC/ETH market regime
+- user exchange history
+- crypto news shocks
+
+25. Risk Engine
+
+Add or upgrade a full risk engine.
+
+Ruby should calculate and enforce/warn on:
+- position size
+- risk per trade
+- daily loss limit
+- max drawdown
+- max open trades
+- max exposure per symbol
+- correlated exposure
+- margin danger
+- lot-size sanity check
+- account protection level
+- user risk profile
+- admin/user limits
+- one-click emergency close if already supported
+- kill switch status
+
+Ruby should warn:
+“This lot size is 3.4x higher than your normal risk.”
+“You are opening multiple trades that depend on the same USD direction.”
+“You have hit your daily risk threshold.”
+“This trade should require extra confirmation.”
+
+26. Correlation Map
+
+Ruby should understand correlation and hidden overexposure.
+
+Detect when trades are connected by:
+- USD exposure
+- JPY exposure
+- gold/USD relationship
+- indices moving together
+- crypto market-wide movement
+- commodities/oil relationship
+- same account/same directional exposure
+- same news event exposure
+
+Ruby should warn:
+“You are not opening one independent trade. These positions all depend on the same macro direction.”
+
+27. Session Intelligence
+
+Add session intelligence.
+
+Track:
+- Asian session
+- London session
+- New York session
+- London/New York overlap
+- pre-news
+- post-news
+- market open
+- market close
+- low liquidity periods
+- user local time if needed
+
+Ruby should learn performance by session and symbol.
+
+28. Pattern Scanner
+
+Add or upgrade pattern detection.
+
+Detect:
+- double top/bottom
+- head and shoulders
+- wedges
+- flags
+- triangles
+- engulfing candles
+- pin bars
+- inside bars
+- breakout candles
+- exhaustion candles
+- rejection wicks
+
+Patterns should never be used alone. Combine them with structure, volatility, spread, news, user history, and global learning.
+
+29. User Behavior Learning
+
+Ruby should learn from user behavior inside ARX.
+
+Track:
+- markets clicked
+- symbols searched
+- scanner signals viewed
+- alerts followed
+- warnings ignored
+- trades almost placed but canceled
+- trades placed after warnings
+- lot size changes after wins/losses
+- time spent before entry
+- user asks about a trade
+- user closes early
+- user removes/moves SL
+- user removes/moves TP
+- user chases after missed moves
+- user trades more after losses
+- user trades during emotional check-in states if provided
+
+This should feed the private Strategy DNA profile and risk warnings.
+
+30. Mood / Discipline Check-In
+
+Add optional quick check-ins before live trading or after major losses.
+
+Options may include:
+- calm
+- focused
+- frustrated
+- rushed
+- revenge trading
+- confident
+- tired
+- just observing
+
+Ruby should learn whether emotional state affects performance. Do not make this annoying. Use it as a protective layer.
+
+31. Trade Plan Builder
+
+Add or upgrade a trade plan builder.
+
+Before placing a trade, Ruby should help create or review:
+- entry
+- SL
+- TP1
+- TP2
+- runner target
+- invalidation level
+- risk amount
+- reason for entry
+- market structure reason
+- news risk
+- similar-trade history
+- confidence score
+- risk-to-reward
+- what would cancel the setup
+
+After the trade, compare plan vs actual.
+
+32. App Health Monitor
+
+Ruby should help the whole ecosystem function.
+
+Monitor:
+- MT5 bridge heartbeat
+- EA connected/disconnected
+- live/demo mode status
+- user permission status
+- admin approval toggles
+- kill switch status
+- failed trade attempts
+- rejected orders
+- stale market data
+- broken scanner feeds
+- API errors
+- slow API responses
+- missing data source keys
+- disconnected integrations
+- sync errors
+- backend failures
+- frontend errors if available
+
+Ruby should warn:
+“Live trading should be blocked because the MT5 bridge heartbeat is stale.”
+“Scanner data is stale. Do not use this signal for live decision-making.”
+“This connector is configured but missing API credentials.”
+
+33. Admin Intelligence
+
+Ruby should help admins operate ARX safely.
+
+Track:
+- who is approved for live
+- who is demo only
+- who requested live access
+- why someone was approved/denied
+- user risk limits
+- account mode
+- kill switch history
+- manual overrides
+- admin notes
+- invite source
+- user trust level
+- users ignoring warnings
+- users overleveraging
+- users hitting loss limits
+- users needing education before live access
+
+Ruby can recommend:
+“This user should remain demo-only because they ignored multiple risk warnings and increased lot size after losses.”
+
+Do not auto-approve users for live trading.
+
+34. Education Progress
+
+Ruby should know what each user understands.
+
+Track:
+- beginner lessons completed
+- risk module completion
+- quiz results
+- SL/TP understanding
+- margin understanding
+- lot-size understanding
+- news-risk understanding
+- live-readiness education status
+
+Ruby can recommend feature limits based on education progress.
+
+35. Support Tickets and User Complaints
+
+Use support issues to improve the ecosystem.
+
+Track:
+- user bug reports
+- confusing screens
+- failed actions
+- repeated support questions
+- where users get stuck
+- admin complaints
+- trading flow confusion
+- permission confusion
+- repeated UI issues
+
+Ruby should summarize product issues:
+“Many users are confused by this page. Simplify the permission controls.”
+“Multiple users cannot find live approval status.”
+“Scanner explanations are too technical for beginners.”
+
+36. Community Signal Performance
+
+If the app has or later adds user/admin/community signals, track:
+- signal creator
+- signal time
+- entry
+- SL
+- TP
+- market condition
+- who followed
+- late-entry outcome
+- signal drawdown
+- final result
+- risk taken
+- complaints/reports
+- verified performance
+
+Rank signal quality by actual results, not hype.
+
+37. Strategy Marketplace Readiness
+
+If ARX later supports strategy providers, prepare architecture to track:
+- strategy history
+- live vs backtest
+- drawdown
+- losing streak
+- profit factor
+- risk per trade
+- copy-trade outcome
+- user complaints
+- refund/dispute rate
+- verified performance
+
+Do not build a full marketplace unless already present or explicitly required. Prepare clean extensible structure only if it fits current app.
+
+38. Device and Session Risk Signals
+
+Add risk checks for:
+- new device
+- unusual trading hour
+- rapid clicking
+- repeated failed trade attempts
+- unstable connection
+- stale market data
+- risky behavior after losses
+
+Ruby should protect users from system and behavior risk.
+
+39. Model Governance and Version Tracking
+
+Add model/logic version tracking.
+
+Every global learning update or Ruby logic update should store:
+- version name/number
+- data sources used
+- validation score
+- shadow mode result
+- walk-forward test result
+- performance improvement/decline
+- what changed
+- rollback option
+- whether allowed in live recommendation mode
+
+Do not push global learning into live recommendations until it passes validation, walk-forward testing, shadow mode, and safety checks.
+
+40. Dashboard / UI
+
+Add or upgrade a Trading Intelligence dashboard without cluttering the app.
+
+Use clean tabs/collapsible sections instead of long messy pages.
+
+Dashboard sections should include:
+- Upload/sync status
+- MT5/connector status
+- parsed trade table
+- data quality score
+- source trust score
+- trade replay view
+- Ruby trade breakdown
+- setup tags
+- Strategy DNA profile
+- best/worst symbols
+- best/worst sessions
+- risk behavior profile
+- news-event impact
+- similar trade memory
+- shadow mode accuracy
+- Ruby self-grade accuracy
+- scanner personalization
+- global anonymous insights
+- app health warnings
+- admin safety notes where admin-only
+
+Keep admin-only information hidden from regular users.
+
+Regular users should not see backend/internal function names, raw system errors, private admin tools, or other users’ data.
+
+41. Privacy and Consent
+
+Add privacy controls.
+
+Rules:
+- Raw user trade data stays private.
+- No user can see another user’s trades, balance, broker, account number, or performance unless explicitly shared.
+- Global learning must be anonymized and aggregated.
+- Use minimum sample sizes before showing global insights.
+- Allow users/admin to control whether data contributes to global learning.
+- Keep private user learning separate from global system learning.
+- Do not copy a private strategy directly into another user’s recommendations.
+- Do not expose private broker/account data.
+- Do not leak internal backend fields into user UI.
+
+42. Implementation Rules
+
+Important build rules:
+- Check existing code first.
+- Reuse existing services, DB models, routes, components, auth, and permissions where possible.
+- Do not duplicate features.
+- Do not create fake users or fake production data.
+- Do not hardcode API keys.
+- Use environment variables and feature flags.
+- If a connector has no credentials, show disconnected/unconfigured status.
+- Do not pretend a disconnected integration is live.
+- Do not break current MT5 bridge or live/demo trading workflow.
+- Do not break Ruby chat.
+- Do not break scanner.
+- Do not break admin permission toggles.
+- Do not break kill switches.
+- Do not expose internal function names to users.
+- Keep user-facing language clean and simple.
+- Keep admin controls easy, switch-based where possible, and not dependent on typing commands to enable basic access.
+- Add tests or QA checks for critical services.
+- Add migration safely if database changes are needed.
+- After building, run a QA/fix pass and repair anything broken by the changes.
+
+43. Final QA Requirements
+
+After implementation, run a full QA check for:
+- app loads correctly
+- login/auth still works
+- admin/user permissions still work
+- live/demo separation still works
+- kill switches still work
+- MT5 bridge status still works
+- Ruby chat still works
+- scanner still works
+- trade history upload works
+- direct sync does not run unless configured
+- dashboard does not expose private/admin data to regular users
+- no fake data appears as real
+- disconnected connectors show safe status
+- errors are user-friendly
+- no backend/internal names appear in user UI
+- no duplicate routes/components/services were created unnecessarily
+- existing features were not removed
+- build compiles successfully
+
+If the scope is too large for one pass, implement the safe foundation first:
+1. audit existing features
+2. data models/services
+3. trade history import/sync architecture
+4. Ruby learning profile
+5. source/data quality scoring
+6. dashboard skeleton
+7. shadow mode/self-grade tracking
+8. connector architecture with safe disabled states
+9. QA/fix pass
+
+Then leave clear TODO markers for advanced connectors that require API keys or broker credentials.

@@ -1,0 +1,208 @@
+Continue to T007: build the final Live Shared Account activation readiness flow.
+
+Do not rebuild from scratch. Inspect the current Phase A/B/C/T006 system first and reuse what already exists.
+
+Goal:
+Create the final admin/operator activation page that shows whether the shared live-account system is ready to go hot, what is blocking it, and how to activate or roll back safely.
+
+Build route:
+- /admin/live-shared/activation
+
+Link it from:
+- Admin Live Shared Account panel
+- Bridge Health tab
+- Kill Switches tab
+- Commands tab
+- Admin sidebar
+
+Activation page tabs:
+- Readiness
+- Activation Wizard
+- Bridge / EA
+- Users
+- Commands
+- Smoke Tests
+- Micro Test
+- Rollback
+- Audit Logs
+
+Readiness cards should show:
+- Platform mode
+- Shared routing mode
+- Master bridge pinned
+- Bridge heartbeat
+- EA version detected
+- EA live execution input
+- ReadOnlyMode
+- MaxLiveLot
+- Kill switch state
+- ARX_LIVE_BROKER_EXECUTION_ENABLED state
+- Approved users count
+- Open live commands count
+- Last EA poll time
+- Last EA response
+- Last command status
+
+Activation checklist must verify:
+- Admin/operator authenticated
+- Master bridge pinned
+- Bridge heartbeat fresh
+- EA v1.27 or higher detected
+- EA attached to live master MT5 chart
+- EA reports EnableLiveExecution=true
+- EA reports ReadOnlyMode=false
+- EA MaxLiveLot is within cap
+- Platform routing is shared live
+- Master bridge mode is live
+- Platform mode is live
+- Kill switch released
+- ARX_LIVE_BROKER_EXECUTION_ENABLED=true
+- At least one user approved
+- Approved user has symbol/order/lot/risk limits
+- Audit logging active
+- Command queue reachable
+- shared_trade_attribution reachable
+- Demo/paper path still works
+
+Build guarded activation wizard:
+1. Confirm operator identity
+2. Pin or refresh master bridge snapshot
+3. Verify EA heartbeat and version
+4. Verify EA live inputs
+5. Set routing to shared live
+6. Set master bridge mode to live
+7. Set platform mode to live
+8. Confirm user approval limits
+9. Release kill switch
+10. Confirm ARX_LIVE_BROKER_EXECUTION_ENABLED state
+11. Run dry validation
+12. Run command queue smoke test
+13. Confirm activation summary
+
+Wizard rules:
+- Do not allow step skipping.
+- Show exact blockers.
+- Require typed confirmation:
+ACTIVATE SHARED LIVE TRADING
+
+Add operator controls:
+- Refresh readiness
+- Refresh bridge snapshot
+- Pin master bridge
+- Set routing to shared live
+- Set master bridge mode to live
+- Set platform mode to live
+- Release kill switch
+- Engage kill switch
+- Disable all live user access
+- Pause scanner live entries
+- Pause Ruby live assists
+- Pause manual live entries
+- Cancel queued commands before pickup
+- View command queue
+- View audit log
+
+Hard kill state:
+Show ARX_LIVE_BROKER_EXECUTION_ENABLED as true / false / missing.
+If false or missing, execution remains blocked but validation can still run.
+
+Command queue monitor:
+Show queued, picked_up, accepted, rejected, filled, failed, closed, stale commands.
+Include filters for status, user, symbol, source, date range, command age, and error state.
+
+Stale command protection:
+Verify stale queued commands cannot execute.
+Allow admin to cancel stale queued commands.
+Audit every stale/cancel event.
+
+Create admin smoke test:
+POST /api/admin/live-shared/activation-smoke-test
+
+It should test:
+- readiness endpoint
+- bridge snapshot
+- heartbeat freshness
+- user approval lookup
+- validate endpoint with safe test payload
+- execute blocked when gates are not active
+- command queue insert only when all gates are active and confirmation exists
+- attribution insert before dispatch
+- user isolation read
+- admin all-records read
+- audit log write
+
+Create guarded micro live test panel:
+- Admin/operator only
+- Requires all gates active
+- Requires selected approved test user
+- Requires symbol
+- Requires lot size at or below MaxLiveLot
+- Defaults to smallest allowed lot if bridge data provides it
+- Requires SL and TP
+- Requires validation preview
+- Requires typed confirmation:
+QUEUE MICRO LIVE TEST
+
+Do not bypass validation, execute re-validation, hard kill, kill switch, bridge heartbeat, user approval, attribution, audit logs, or idempotency.
+
+Emergency rollback:
+Add rollback control requiring typed confirmation:
+ROLL BACK LIVE SHARED TRADING
+
+Rollback must:
+- Engage kill switch
+- Disable global shared live trading
+- Pause scanner live entries
+- Pause Ruby live assists
+- Pause manual live entries
+- Cancel queued commands not picked up
+- Keep audit logs
+- Keep trade history
+- Keep demo/paper mode working
+
+Ruby knowledge:
+Update Ruby so she can answer:
+- Are we ready to go live?
+- What is blocking live activation?
+- Is the bridge pinned?
+- Is the EA fresh?
+- Is the hard kill released?
+- Is the kill switch active?
+- Which users are approved?
+- Why was my trade blocked?
+- What should I check before a micro live test?
+- How do I roll back live trading?
+
+Security:
+- Keep EA-pull architecture.
+- Do not add MT5 login/password/server secrets to Replit.
+- Do not expose credentials anywhere.
+- Frontend must never directly queue commands.
+- Validation never executes.
+- Execution always re-validates.
+
+Acceptance checks:
+- /admin/live-shared/activation exists.
+- Admin sidebar link exists.
+- Activation checklist works.
+- Wizard works and cannot skip steps.
+- Bridge/EA status visible.
+- Hard kill env visible.
+- Command queue monitor works.
+- Stale command protection works.
+- Smoke test action works.
+- Micro live test panel exists and is guarded.
+- Rollback exists and is guarded.
+- Ruby can explain activation readiness.
+- Demo/paper still works.
+- Manual/scanner/Ruby live shared flows still work.
+- Kill switch still blocks execution.
+- Hard kill still blocks execution when false/missing.
+- User isolation still works.
+- Admin visibility still works.
+- Typecheck passes.
+- Tests pass.
+- CI guards pass.
+- No console errors.
+- No broken routes.
+- No blank pages.

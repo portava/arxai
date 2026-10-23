@@ -1,0 +1,227 @@
+Proceed with the separate scoped task: Admin Surface Consolidation into one clean tabbed Admin hub.
+
+Stage 1 menu consolidation and Stage 2 tabbed-page restructure are complete and green. Continue from the current merged state. Do not rebuild the app. Do not delete active routes. Do not change live broker execution settings.
+
+MAIN GOAL
+
+The Admin surface currently exists across multiple separate routes and hub pages such as Operator Command Center, User Control Center, live controls, bridge status, logs, QA, governance traces, and user/invite tools.
+
+Consolidate these admin/OWNER tools into one clean Admin hub with tabs, while preserving every active feature and route.
+
+This is a scoped admin organization task only.
+
+ADMIN HUB REQUIREMENTS
+
+Create or upgrade the Admin hub so OWNER/admin can access admin functions from one organized place using tabs.
+
+Recommended Admin tabs:
+
+1. Overview
+
+* admin summary
+* system status summary
+* live safety status summary
+* recent admin activity
+* important warnings
+* quick links to critical controls
+
+2. Users
+
+* user management
+* account roles
+* trader accounts
+* investor/view-only accounts
+* account status
+* user profile split/role separation if present
+
+3. Invites
+
+* invite codes
+* invitation-only signup controls
+* invite status
+* approved/blocked users
+
+4. Permissions
+
+* role permissions
+* live trading permissions
+* user-level approval toggles
+* admin/OWNER access rules
+* investor restrictions
+* trader restrictions
+
+5. Live Controls
+
+* owner live test cycle
+* live broker execution status
+* kill switches
+* live trading approval toggles
+* user-level live enablement
+* safety status
+* do not change live broker execution settings unless explicitly instructed elsewhere
+
+6. Bridge / MT5 / Deriv
+
+* MT5 bridge status
+* Deriv account/bridge status
+* EA connection status
+* bridge health
+* command queue status
+* result mapping status
+* connection errors
+
+7. EA Download
+
+* MT5 EA download link
+* EA setup/status instructions if already present
+* version info if available
+* keep this admin/OWNER gated unless intentionally user-safe
+
+8. Execution Logs
+
+* order queue logs
+* broker response logs
+* fill/close-fill logs
+* P/L mapping logs
+* rejected/blocked trade reasons
+* no fake success states
+
+9. AI Intelligence
+
+* agent scoring
+* lifecycle
+* Learning Camp
+* governance court
+* Agent Factory
+* Traffic Controller
+* Household Report
+* governance trace
+
+10. QA / Health
+
+* system health
+* validation checks
+* CI guard status
+* route/role check status
+* admin diagnostics
+* recent QA results
+
+IMPORTANT RULES
+
+* Do not delete existing admin routes.
+* If old admin routes exist, preserve them and either redirect/deep-link to the correct Admin tab or keep them reachable by direct URL.
+* Do not break existing command palette access.
+* Do not expose admin tabs to normal trader users.
+* Do not expose admin tabs to investor/view-only users.
+* Logged-out users must not access admin pages by direct route.
+* Keep all admin/OWNER controls available to OWNER/admin.
+* Do not expose backend names, raw env variable names, raw route names, schema names, function names, secrets, or developer-only wording to normal users.
+* Admin-only technical wording is acceptable only where necessary for diagnostics, but prefer clear labels.
+
+ROLE-GATING REQUIREMENTS
+
+Verify access as:
+
+OWNER/admin:
+
+* sees Admin hub
+* sees all admin tabs
+* can access existing admin tools from correct tabs
+* can still access direct routes if preserved
+
+Trader:
+
+* cannot see Admin hub
+* cannot access admin tabs
+* cannot access admin direct routes
+* still sees trader-safe Dashboard, Markets, Trade, Ruby, Risk, Settings
+
+Investor/view-only:
+
+* cannot see Admin hub
+* cannot access admin tabs
+* cannot access admin direct routes
+* cannot access trade/scanner/risk/Ruby trading tools
+* still sees investor-safe Profile/Funds/Allocation/Reports/Settings where applicable
+
+Logged-out:
+
+* cannot access Admin hub
+* cannot bypass login by direct URL
+
+FEATURE PRESERVATION
+
+Confirm these admin functions remain reachable and working:
+
+* user management
+* invite code controls
+* role/permission management
+* live trading approval toggles
+* owner live test cycle
+* kill switches
+* MT5/Deriv bridge status
+* EA download link
+* execution logs
+* P/L and close-fill review if present
+* agent scoring/lifecycle
+* governance trace
+* Learning Camp
+* Agent Factory
+* Traffic Controller
+* QA/system health
+
+Do not mark complete if any admin function becomes unreachable.
+
+ADMIN UI STRUCTURE
+
+Use tabs or grouped sections to reduce scrolling and clutter.
+
+The Admin hub should feel like one organized command center, not scattered pages.
+
+Avoid showing every block at once. Use tabs and collapsible sections where appropriate.
+
+QA REQUIREMENTS
+
+Run validation and role-based QA:
+
+* OWNER/admin Admin hub loads
+* every Admin tab loads
+* all preserved admin routes still work or redirect/deep-link properly
+* trader cannot access Admin
+* investor cannot access Admin
+* logged-out user cannot access Admin
+* command palette does not expose admin tools to non-admin users
+* bottom nav/sidebar does not expose admin tools to non-admin users
+* no active admin feature is deleted
+* no broken links
+* no broken tabs
+* no backend/internal wording leaks to normal users
+* typecheck passes
+* CI guards pass
+* architect review passes if available
+
+FINAL REPORT
+
+When complete, report:
+
+* which admin routes were consolidated
+* what tabs were created
+* what features live under each tab
+* what old routes were preserved or redirected
+* what role gates were verified
+* what admin leaks were fixed if any
+* what QA passed
+* any remaining admin cleanup recommended later
+
+COMPLETION STANDARD
+
+Do not mark complete until:
+
+* Admin is consolidated into a cleaner tabbed hub
+* all admin/OWNER tools remain reachable
+* normal users cannot see admin tools
+* investors cannot see admin tools
+* direct-route access is protected
+* validation passes
+* no live execution setting was changed accidentally
+* the app remains ready for the next manual UI polish phase

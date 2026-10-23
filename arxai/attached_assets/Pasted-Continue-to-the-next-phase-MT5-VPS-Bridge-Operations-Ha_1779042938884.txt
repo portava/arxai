@@ -1,0 +1,208 @@
+Continue to the next phase: MT5 VPS Bridge Operations Hardening + Paper Beta Readiness Gate.
+
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, journal, prop-firm, first-run readiness, audit, or security gates.
+Do NOT expose MT5_BRIDGE_TOKEN, per-user bridge tokens, broker passwords, session secrets, or any private value.
+Do NOT fake live trades, live P&L, broker balance, market data, candles, news, current events, TP targets, bridge status, or performance stats.
+
+Before coding:
+1. Read the latest paper-mode bridge-connected test report.
+2. Confirm final answer says PAPER MODE TEST PASSED.
+3. Confirm MT5 bridge held read-only stability for the full watch.
+4. Confirm paper-trade lifecycle worked without touching MT5 or command queue.
+5. Confirm live execution / close / modify routes returned 403.
+6. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+
+Goal:
+Harden the connected MT5 VPS bridge for ongoing paper beta testing so the system can detect stale bridge, EA stopped, VPS disconnect, WebRequest failure, broker snapshot unavailable, and duplicate EA/token problems without enabling execution.
+
+A. Bridge Operations Monitor
+Add or verify backend monitoring for:
+- bridgeConnected
+- eaConnected
+- heartbeatFresh
+- heartbeatAgeSeconds
+- acceptedHeartbeatCount trend
+- rejectedHeartbeatCount trend
+- lastAcceptedRemoteIp
+- lastAcceptedAccount
+- lastError
+- readOnlyMode
+- allowOrderExecution
+- allowModification
+- allowClose
+- commandExecutionAllowed
+- brokerSnapshotStatus
+- lastBrokerSnapshotAt
+- bridgeMode
+
+Rules:
+- Connected requires fresh heartbeat.
+- Stale heartbeat must mark bridge disconnected.
+- Any rejected heartbeat increase should be visible.
+- Any duplicate/old-token pattern should show a clear warning.
+- No secrets are exposed.
+
+B. VPS / EA Reliability Checklist
+Add or verify an operator checklist showing:
+- VPS online
+- MT5 terminal open
+- MT5 connected to demo broker
+- AutoTrading ON
+- Exactly one EA attached
+- EA version is v1.24 or latest
+- Timer heartbeat active
+- WebRequest URL allowed
+- Per-user bridge token valid
+- ReadOnlyMode=true
+- AllowOrderExecution=false
+- Broker snapshot read-only if available
+
+C. Bridge Staleness Alerts
+Create or verify alerts/notifications for:
+- bridge heartbeat stale
+- bridge disconnected
+- EA stopped sending
+- rejected heartbeat/token mismatch detected
+- duplicate/old EA suspected
+- broker snapshot unavailable
+- WebRequest failure suspected
+- read-only bridge restored
+- bridge connected read-only
+
+Alert language must say:
+- “Read-only bridge alert — no trade was executed.”
+- “Live execution remains locked.”
+- “MT5 commands remain blocked.”
+
+D. Frontend Bridge Status UI
+Update only the MT5/Bridge/Readiness areas as needed to show:
+- CONNECTED READ-ONLY
+- Waiting for heartbeat
+- Heartbeat stale
+- EA not sending
+- Duplicate/old token suspected
+- Broker snapshot read-only/unavailable
+- Last heartbeat time
+- Heartbeat age
+- ReadOnlyMode
+- AllowOrderExecution=false
+- Command execution disabled
+
+No fake connected status.
+
+E. AI Bridge Operations Awareness
+AI should answer:
+- Is my MT5 connected?
+- Is the VPS bridge stable?
+- Why did the bridge disconnect?
+- Is the EA still running?
+- Is my broker snapshot available?
+- Is this safe for paper testing?
+- Why can’t this execute live?
+
+AI must:
+- Use real bridge diagnostics only.
+- Explain stale/missing data honestly.
+- Never claim live execution is enabled.
+- Never execute or queue MT5 commands.
+
+F. Paper Beta Gate
+Create a final paper beta readiness gate that confirms:
+- bridge read-only stable
+- paper order flow passed
+- journal/performance linked
+- notifications working
+- AI answers safely
+- per-user isolation intact
+- no secrets leaked
+- live execution blocked
+- MT5 commands force-blocked
+
+Result should be:
+- PAPER BETA READY
+or
+- NOT PAPER BETA READY, with blockers
+
+G. Audit Trail
+Audit:
+- bridge operations monitor viewed
+- bridge connected read-only
+- bridge heartbeat stale
+- bridge disconnected
+- bridge restored
+- rejected heartbeat detected
+- duplicate EA suspected
+- broker snapshot unavailable
+- paper beta gate run
+- paper beta gate passed/failed
+
+Each audit entry must include:
+- userId if applicable
+- action
+- bridge status
+- reason if blocked/unavailable
+- timestamp
+
+H. Safety Regression
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = DISABLED
+- Broker placement layer remains locked
+- Backend per-user isolation intact
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No fake live trades, live P&L, market data, candles, news, current events, TP targets, broker balance, or bridge status
+
+Run:
+1. Typecheck
+2. Full CI guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Bridge operations monitor tests
+7. Heartbeat stale/disconnect tests
+8. Bridge restored tests
+9. Duplicate/old-token warning tests
+10. Broker snapshot unavailable tests
+11. Bridge alert/notification tests
+12. AI bridge operations honesty tests
+13. Paper beta gate tests
+14. Secret leakage tests
+15. Per-user isolation regression
+16. Safety-envelope regression
+17. Broker-placement locked regression
+18. MT5 no-execution regression
+19. Mandatory code review / architect review
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages unless required for the blocker.
+- Rerun all checks.
+
+End with a report showing:
+- Files inspected
+- Files changed
+- Bridge operations monitor result
+- VPS/EA checklist result
+- Bridge alert result
+- Frontend bridge UI result
+- AI bridge operations result
+- Paper beta gate result
+- Tests run/pass/fail
+- Current bridge status
+- Current paper beta status
+- Remaining P0/P1 blockers, if any
+- Remaining P2/P3 polish, if any
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: PAPER BETA READY or NOT PAPER BETA READY, with reasons.

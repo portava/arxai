@@ -1,0 +1,155 @@
+The phase is marked ready, but I’d close the Audit Trail PARTIAL item before bigger features.
+
+Paste this:
+
+Continue with a focused cleanup phase: Complete the pre-existing partial Audit Trail coverage from the Phase 28 QA report.
+Do NOT build unrelated features.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+Do NOT weaken safety envelope, per-user isolation, command queue, risk, attribution, activityStatus, paper-only, MT5 bridge, ALERT_ONLY, notification, market-data, journal, prop-firm, first-run readiness, or audit gates.
+Do NOT fake live trades, live P&L, market data, candles, news, current events, TP targets, broker balance, bridge status, performance stats, or audit records.
+Do NOT redesign unrelated pages.
+Before coding:
+1. Read the latest Phase 28 QA section in docs/FULL_TRADING_INTELLIGENCE_ENGINE_QA_REPORT.md.
+2. Confirm final answer says READY FOR NEXT PHASE.
+3. Confirm the only visible incomplete item is Audit Trail = PARTIAL, marked pre-existing and not a Phase 28 regression.
+4. Confirm all 26 verification checks passed.
+5. If any P0/P1 issue exists, stop and fix that first.
+Goal:
+Close the pre-existing Audit Trail partial coverage so the end-to-end paper trading flow has complete traceability.
+A. Audit Coverage Inventory
+Inspect all existing audit services, vault/audit tables, and route-level logging.
+Verify audit coverage exists for:
+- first-run checklist viewed
+- paper order draft created
+- paper order created
+- paper trade opened
+- pending paper order created
+- pending paper order cancelled
+- blocked paper order
+- SL edited
+- TP edited
+- manual paper close requested
+- manual paper close confirmed
+- manual paper close blocked
+- paper trade closed
+- duplicate action suppressed
+- journal entry created
+- journal entry updated
+- trade history viewed
+- performance viewed
+- AI paper-trade analysis requested
+- AI journal/performance analysis requested
+- alert created
+- notification created
+- notification read
+- prop rule evaluated
+- prop rule warning
+- prop rule block
+- market data stale/unavailable fallback
+- command execution disabled event
+- MT5 command blocked event
+- safety envelope snapshot created
+B. Standardize Audit Entry Shape
+Every relevant audit entry must include:
+- userId
+- action
+- source
+- severity if relevant
+- tradeId/orderId if relevant
+- journalId if relevant
+- notificationId if relevant
+- propFirmProfileId if relevant
+- commandId if relevant
+- previous value if relevant
+- new value if relevant
+- safetyGateSnapshot if relevant
+- reason if blocked/unavailable
+- timestamp
+Rules:
+- No audit entry may leak another user’s data.
+- No audit entry may include secrets, API keys, MT5 bridge token, private push keys, or raw credentials.
+- Missing optional IDs are okay only when not relevant.
+- User-owned audit reads must filter by authenticated userId.
+C. Add Missing Audit Hooks Only
+Add only missing hooks needed to make coverage complete.
+Do not duplicate existing audit calls.
+Use idempotency keys or duplicate suppression where needed for:
+- duplicate action suppression
+- repeated alert events
+- repeated journal lifecycle hooks
+- repeated blocked commands
+D. Audit Read Access
+Verify audit/history endpoints:
+- require auth
+- return 401 unauthenticated
+- return 403/404 wrong-owner
+- filter by authenticated userId
+- do not trust frontend-supplied userId
+- redact secrets and sensitive backend-only values
+E. Frontend Audit Visibility
+If an audit trail UI already exists, ensure it can show:
+- trade lifecycle audit summary
+- journal/audit summary per trade
+- blocked action reason
+- safety gate state
+- timestamp
+If no UI exists, do not build a large new page. Add only the minimum backend/API completeness and document the UI as a future enhancement.
+F. Safety Regression
+Confirm:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = DISABLED
+- Broker placement layer remains locked
+- Backend per-user isolation intact
+- Safety envelope allows read-only AI Q&A only
+- UNKNOWN activity hard-blocks auto-close
+- No fake live trades, live P&L, market data, candles, news, current events, TP targets, broker balance, or bridge status
+Run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Audit coverage tests
+7. Audit entry shape tests
+8. Audit secret-redaction tests
+9. Audit ownership tests
+10. Wrong-owner audit read tests
+11. Unauthenticated audit 401 tests
+12. Paper trade lifecycle audit tests
+13. Journal/performance audit tests
+14. Alert/notification audit tests
+15. Prop firm audit tests
+16. Command blocked audit tests
+17. Duplicate audit suppression tests
+18. Per-user isolation regression
+19. Safety-envelope regression
+20. Broker-placement locked regression
+21. Mandatory code review / architect review
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks.
+End with a report showing:
+- Files inspected
+- Files changed
+- Audit coverage before/after
+- Missing hooks added
+- Audit entry shape result
+- Secret redaction result
+- Ownership/isolation result
+- Tests run/pass/fail
+- Code review result
+- Whether Audit Trail is now FULL or still PARTIAL
+- Remaining gated/deferred items
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

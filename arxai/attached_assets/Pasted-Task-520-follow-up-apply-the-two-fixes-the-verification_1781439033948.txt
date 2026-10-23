@@ -1,0 +1,31 @@
+Task #520 follow-up — apply the two fixes the verification pass found. Build mode. Read-side/resilience only: no execution, gate, brain, EA, bridge, permission, schema, or DB change. ci:guards must stay 43/43. Do NOT mark complete until the COMPLETION STANDARD passes with pasted evidence.
+
+Apply FIX 1 before FIX 2.
+
+── FIX 1 — degraded banner is tab-trapped (the honesty bug) ──
+Problem (confirmed in source): load() sets setErr(SCANNER_DEGRADED_MESSAGE) on a failed scanner read (market-scanner.tsx ~L247-251), but `err` renders in exactly ONE place — ~L442, inside resultsBlock — which is rendered at ~L675 inside the Broad Scan tab. The default landing tab is Focus (defaultTab="focus" ~L730). So during a real scanner outage a user on the Focus tab sees stale "DATA Stale" cards and NO honest "temporarily unavailable" banner. Proven via authenticated forced-502 e2e; unit tests missed it because they mount components in isolation, not the tab wiring.
+
+Fix: hoist the degraded alert to PAGE scope so it shows regardless of active tab. Render `{err && <CompactAlert tone="danger" description={err} testId="scanner-error" />}` ONCE near the top of the page — just after <ScannerHeaderSummary> (~L718) and ABOVE <PageTabs>. Remove the tab-trapped copy at ~L442 so the banner isn't duplicated when the user is on Broad Scan (or make L442 conditional so it never double-renders). Keep raw error detail in console.debug (already correct — do not surface raw SyntaxError / "HTTP nnn" to the user).
+
+── FIX 2 — scan enrichment decorators are unbounded ──
+Problem (confirmed in source): scanOnce() is sequential (fine), but GET /market-scanner/opportunities (scanner.ts ~L35-61) and POST /market-scanner/scan each run three decorators — decorateOpportunitiesWithHistory (~L39), …WithNewsRisk (~L40), …WithTimingContext (~L41) — each an UNBOUNDED Promise.all over uniqueSymbols. On the "full" universe (~250 symbols) that opens up to ~250 simultaneous outbound news/historical/router calls per request — the likely true cause of the body-less 502s (worker spike → platform kill → empty response).
+
+Fix: bound the concurrency of each decorator's fan-out. Use a small limiter (p-limit at 5-8, or chunked batches of ~8) so no single scan request opens more than ~8 concurrent outbound calls regardless of universe size. Apply to all three decorators (and any sibling decorator with the same Promise.all-over-symbols shape — grep to confirm you got them all). Preserve behavior and ordering of results; this is a throughput cap, not a logic change. Do not add a new heavy dependency if a limiter already exists in the repo — grep first; only add p-limit if nothing equivalent is present.
+
+── TESTS ──
+- FIX 1: extend the authenticated e2e (the cookie-injected USER session + forced body-less 502 on /status and /opportunities, the recipe you already used) to assert the honest degraded copy ("temporarily unavailable") IS visible on the DEFAULT Focus tab — not only on Broad Scan. Screenshot the Focus tab during the forced outage showing the banner. Also add/extend a page-level render-state test if the harness supports it.
+- FIX 2: add a unit test proving each decorator never exceeds the concurrency cap — e.g. inject a fake per-symbol async fn that records max simultaneous in-flight count over a large symbol list (~250) and assert peak ≤ cap. No live external calls in the test.
+- Keep the existing 19 resilience tests + crash-hardening section green.
+
+── VERIFY ──
+Run for real and paste outputs: typecheck:libs, trading-dashboard typecheck, api-server typecheck (manage memory per the known OOM workaround — free the IDE tsserver, run serially), ci:guards (must be 43/43), all new + existing tests. Then the authenticated forced-502 QA: screenshot the Focus tab showing the honest banner (this is the acceptance proof for FIX 1), and confirm the surrounding chart/cards stay intact and recover on retry.
+
+── FINAL REPORT ──
+The exact diff for both fixes (file/line); confirmation the banner renders page-scope and isn't duplicated; which decorators were bounded and the cap used; the concurrency-cap test peak number; the Focus-tab degraded screenshot; typecheck/guards/test outputs; and confirmation no execution/gate/brain/permission/schema change.
+
+── COMPLETION STANDARD — all true ──
+- The honest "temporarily unavailable" banner is visible on the DEFAULT (Focus) tab during a scanner outage, proven by an authenticated forced-502 screenshot — not just by isolated unit tests.
+- The banner is not duplicated across tabs.
+- Every scan-enrichment decorator's per-symbol fan-out is bounded (≤ ~8 concurrent), proven by a peak-concurrency test over a ~250-symbol list.
+- typecheck (libs + both packages) green; ci:guards 43/43; all new + existing tests pass — outputs pasted.
+- No execution/gate/brain/EA/bridge/permission/schema/DB change.

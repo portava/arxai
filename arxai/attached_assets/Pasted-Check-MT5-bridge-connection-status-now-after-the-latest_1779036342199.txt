@@ -1,0 +1,67 @@
+Check MT5 bridge connection status now after the latest EA/token changes.
+
+Do NOT expose MT5_BRIDGE_TOKEN, per-user bridge token, session secrets, broker password, or any private value.
+Do NOT unlock live trading.
+Do NOT enable auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send MT5 execution, modification, cancel, or close commands.
+
+Run a read-only MT5 bridge diagnostic and report:
+
+1. Is the MT5 bridge endpoint mounted?
+2. Is the per-user bridge token model active?
+3. Is the system MT5_BRIDGE_TOKEN present? Show true/false only.
+4. Has a heartbeat been received from the EA?
+5. What is lastHeartbeatAt?
+6. Is heartbeatFresh true or false?
+7. What is bridgeConnected?
+8. What is bridgeMode?
+9. What is readOnlyMode?
+10. Is allowOrderExecution false?
+11. Is allowModification false?
+12. Is allowClose false?
+13. Is commandExecutionAllowed false?
+14. Are MT5 commands still force-BLOCKED?
+15. Is broker snapshot available?
+16. What is lastError?
+17. Are EA command polls returning HTTP 200, 401, 403, or another code?
+18. Check recent API logs for:
+   - heartbeat accepted
+   - heartbeat rejected
+   - TOKEN_NO_USER_MATCH
+   - SYSTEM_TOKEN_ON_PERSONAL_ENDPOINT
+   - invalid token
+   - stale heartbeat
+   - WebRequest errors
+   - command poll errors
+
+If connected, report exactly:
+CONNECTED READ-ONLY
+
+If not connected, report exactly:
+NOT CONNECTED
+
+Then give the most likely fix:
+- wrong per-user BridgeToken in EA inputs
+- old/revoked token still in EA
+- EA using system MT5_BRIDGE_TOKEN instead of per-user token
+- EA not restarted after token change
+- EA not attached to chart
+- Algo Trading off
+- WebRequest URL missing
+- wrong BridgeBaseUrl
+- Replit server sleeping
+- heartbeat stale
+
+End with:
+- Bridge status
+- Last heartbeat time
+- Last error
+- Read-only status
+- Token configured true/false only
+- Poll status
+- Next exact fix
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED

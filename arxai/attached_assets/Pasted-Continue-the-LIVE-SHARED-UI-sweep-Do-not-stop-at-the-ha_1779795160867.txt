@@ -1,0 +1,234 @@
+Continue the LIVE_SHARED UI sweep. Do not stop at the harness limitation. Fix the harness/session issue, fix the admin preview-as-user diagnostics leak, then rerun all LIVE_SHARED batches.
+
+Current status:
+- Seeded E2E harness exists.
+- DEMO-mode sweep passed.
+- LIVE_SHARED seeded user resolves correctly at the API/source level.
+- Batch A found and fixed a global “Paper mode active / Live trading locked” leak from AppLayout.
+- Batches B–E did not reliably run because the runTest harness could not consistently inject the session cookie in parallel browser contexts.
+- One real bug remains flagged: X-Arx-View-Mode: user-preview is honored in some paths, but raw /api/me/account-mode with the header on an admin still returns isAdmin:true and full adminDiagnostics.
+- Remaining screenshot bugs still need real page verification in LIVE_SHARED mode, not only API/source verification.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake balances, allocations, positions, alerts, orders, P/L, mode status, or readiness.
+Do not expose admin diagnostics to normal users.
+Do not skip the sweep because the first harness approach struggled with cookies.
+
+Create checkpoint first:
+checkpoint: fix-live-shared-e2e-auth-and-preview-downgrade
+
+Task 1 — Fix admin preview-as-user downgrade bug:
+Repair /api/me/account-mode so when an admin request includes:
+X-Arx-View-Mode: user-preview
+
+the response behaves like a normal user-facing view:
+1. isAdmin must be false or user-safe in the returned envelope.
+2. adminDiagnostics must be omitted.
+3. rawEnvelope must be omitted.
+4. brokerExecutionStatus internals must be omitted.
+5. liveBridge.maxLiveLot and other admin-only bridge details must be omitted.
+6. No master balance, master free margin, other users, backend constants, gate internals, env values, or provider diagnostics may be returned.
+7. User-safe live/account-mode fields must still return correctly.
+8. Normal admin mode should still show diagnostics when not previewing as user.
+
+Add regression tests proving:
+- admin normal request gets diagnostics
+- admin with X-Arx-View-Mode:user-preview does not get diagnostics
+- normal user never gets diagnostics
+- user-preview still resolves currentAccountMode correctly
+
+Task 2 — Fix the E2E cookie/session injection:
+The harness cannot stop because parallel browser contexts miss cookies.
+
+Implement a reliable approach:
+1. Use one shared browser context per batch.
+2. Inject cookies before navigation.
+3. Verify authenticated state before running page assertions.
+4. If auth fails, retry once after reloading cookies.
+5. Do not run against production/replit.app.
+6. Do not require manual cookie pasting.
+7. If test auth fixture is needed, keep it local/test-only and production-blocked.
+
+Each batch should:
+- seed
+- confirm /api/me/account-mode returns LIVE_SHARED for the normal user
+- run pages
+- check arx_live_commands count
+- cleanup only seeded rows by session token
+
+Task 3 — Rerun LIVE_SHARED E2E batches:
+Run the segmented LIVE_SHARED browser sweep again with reliable auth.
+
+Batch A — account/status:
+- my account/profile actual route
+- settings actual route
+- notifications/alerts actual route
+- help/system status actual route
+- action center actual route
+
+Batch B — trading:
+- trade/command room actual route
+- live shared actual route
+- live AI assist actual route
+- live chart actual route
+- open trades/my trades/positions actual route
+
+Batch C — data/history:
+- market scanner actual route
+- trading calendar actual route
+- live intent queue actual route
+- trade history actual route if registered
+- watchlist/scanner trades route if relevant
+
+Batch D — admin:
+- admin allocations actual route
+- broker reconciliation actual route
+- live trading control actual route
+- audit vault actual route
+- safety logs actual route
+
+Batch E — admin preview-as-user:
+- my account
+- trade
+- live shared
+- live AI assist
+- notifications
+- help
+
+If a batch exceeds the step budget, split it smaller. Do not stop. Run smaller groups until every page is tested.
+
+Task 4 — LIVE_SHARED page assertions:
+For every normal-user LIVE_SHARED page:
+1. No runtime/Vite overlay.
+2. No uncaught console errors.
+3. Page agrees with the global LIVE_SHARED resolver.
+4. No admin diagnostics.
+5. No raw booleans like canExecuteRealBrokerOrder, canSubmitLiveIntent, mt5Connected.
+6. No raw backend constants, route names, table names, provider errors, gate codes, JSON dumps, or env names.
+7. No stale demo/paper/test data.
+8. No demo/paper/simulator/mock/live-disabled wording except inside Settings mode switch options.
+9. No typed-phrase wording.
+10. Empty states are clean and live-mode aware.
+
+Task 5 — Verify and fix original screenshot bugs in LIVE_SHARED:
+Fix any page that still fails:
+
+1. /my-account:
+- Shows SHARED_MASTER_MT5 or clean shared-master wording.
+- Shows assigned allocation if allocated.
+- Shows AI sleeve allocation if configured.
+- Shows balance/equity/capacity from user account shell.
+- Does not show own MT5 bridge as active for shared-master user.
+- Does not show $0 when allocation exists.
+
+2. /settings:
+- Does not show MT5 Bridge Not Configured while shared master live bridge is active.
+- Personal MT5 bridge setup is only optional bridge/mode preference.
+
+3. /notifications:
+- Does not say ALERTS_ONLY or LIVE TRADING DISABLED while live is armed.
+- Trade alerts are live-aware.
+- Push config is separate from live trading mode.
+
+4. /alerts:
+- Does not crash on missing alert type/status/severity.
+- Alerts can be dismissed.
+- Repeated stale MT5 disconnected alerts are deduped and hidden when current heartbeat is fresh.
+
+5. /broker-reconciliation:
+- Does not crash when brokerOrders, brokerPositions, or mismatches are undefined.
+- Shows clean empty state.
+
+6. /live-trading-control:
+- Does not crash on invalid/missing createdAt.
+- Uses safe date formatter.
+- Does not leak typed phrases or raw constants.
+
+7. /trading-calendar:
+- Live mode shows only live P/L/trades.
+- If no live trades exist, show empty/zero live state.
+- No paper/demo P/L in live mode.
+
+8. /live-intent-queue:
+- Shows only LIVE_SHARED intents for current user/account.
+- Hides demo/paper/test rows.
+
+9. /open-trades and live chart position panel:
+- Shows only true current live positions for current user/account shell.
+- If none open, shows none.
+- No stale/ghost demo/test positions.
+
+10. /market-scanner:
+- Synthetic/volatility scanner uses real Market Data Router feed when connected.
+- No “symbol not available in simulator” when real feed exists.
+- No simulator pipeline wording in live mode.
+
+11. /trade and command room:
+- No “Simulator only” in live mode.
+- No typed phrase wording.
+- Button-based review/confirm language only.
+
+12. /live-shared:
+- No typed phrase language.
+- Button-based confirmation copy only.
+
+13. /live-ai-assist:
+- No raw booleans.
+- No “Tester” wording in live mode.
+- Clean readiness labels only.
+
+14. /action-center:
+- User mode does not show admin/operator review wording.
+- If no pending user actions, says “No pending trade actions.”
+
+15. /help:
+- Does not say MT5 mode Mock or MT5 connected no when resolver says live bridge active.
+- No backend env text to normal users.
+
+16. /safety-logs and /audit-vault:
+- Either distinct pages or one clear tabbed page.
+- No duplicate/confusing menu behavior.
+
+Task 6 — Fix as failures appear:
+For every failure:
+1. Identify if it is route mapping, auth fixture, mode resolver, stale query, stale copy, missing guard, or unsafe render.
+2. Fix directly.
+3. Retest the exact page.
+4. Retest the batch.
+5. Confirm arx_live_commands remains 0.
+6. Create checkpoint after meaningful fixes.
+
+Task 7 — Final QA:
+Run:
+- pnpm run typecheck
+- pnpm run build if available
+- pnpm run ci:guards
+- test:account-mode
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- test:live-broker-resolver
+- attached-active-case
+- allocation runtime QA
+- seeded LIVE_SHARED E2E DOM batches A–E
+- arx_live_commands baseline checks across seed, every batch, and cleanup
+
+Final report only:
+- admin preview-as-user leak fix result
+- E2E auth/cookie fix result
+- confirmation sweep ran in LIVE_SHARED mode
+- batches run
+- pages tested
+- failures found
+- fixes made
+- checkpoints created
+- QA results
+- arx_live_commands baseline before/after
+- confirmation no live trades placed
+- confirmation no operator phrases typed
+- confirmation no safety gates weakened
+- remaining issues only if they require human credentials or manual browser action

@@ -1,0 +1,200 @@
+Pause the one tiny live trade test and fix the Live Shared Activation readiness page.
+
+SCOPE LOCK:
+Only work on:
+1. Live Shared Activation readiness page.
+2. Activation Wizard loading state.
+3. Bridge / EA tab loading state.
+4. Users tab loading state.
+5. Backend readiness endpoint/API contract for this page.
+6. Status chip consistency for global broker execution vs user/account trading permission.
+
+Do not:
+- Place any trade.
+- Retry any live order.
+- Enable live access for more users.
+- Disable kill switches.
+- Bypass admin approvals.
+- Change MT5 execution logic.
+- Change scanner, Ruby, dashboard, auth, or open-trades logic unless a tiny read-only status contract fix is required.
+
+CURRENT BUGS FROM SCREENSHOT:
+- Live Shared — Activation page shows: readiness error: INTERNAL_ERROR.
+- Activation checklist shows 0/0.
+- Readiness / Activation Wizard / Bridge EA / Users tabs keep loading.
+- Top UI shows conflicting states:
+  “Broker Execution Enabled”
+  and
+  “Broker Execution Disabled”
+  at the same time.
+- Trading Off says trading not enabled for this account.
+
+IMPORTANT SAFETY RULE:
+Until the readiness page is green, do not allow the live test order to proceed.
+If needed, temporarily keep dispatch blocked while fixing readiness display.
+No live orders should be submitted during this repair.
+
+PHASE 1 — Inspect first
+Check:
+- frontend Live Shared Activation page/component
+- readiness query/hook
+- activation wizard query/hook
+- Bridge / EA tab query/hook
+- Users tab query/hook
+- backend readiness route
+- backend route registration
+- server logs for INTERNAL_ERROR
+- response shape expected by frontend
+- response shape returned by backend
+- admin auth guard
+- admin mode guard
+- userId=4 / Andraie master-live access lookup
+- ARX_LIVE_BROKER_EXECUTION_ENABLED env read
+- EA bridge status read
+- kill switch status read
+- approval row read
+- Phase B gate status read
+
+PHASE 2 — Fix INTERNAL_ERROR
+Find the exact backend exception causing readiness error.
+
+Fix cleanly:
+- Missing database row should not throw INTERNAL_ERROR.
+- Missing EA status should return “not ready” or “not configured.”
+- Missing approval should return “blocked / approval required.”
+- Missing env var should return “disabled / unset.”
+- Missing bridge heartbeat should return “bridge disconnected.”
+- Any null/undefined value should be handled safely.
+
+The readiness endpoint should always return a clean structured response, even when not ready.
+
+Example safe response shape:
+{
+  status: "blocked" | "ready" | "warning" | "not_configured",
+  checks: [
+    {
+      key: "master_switch",
+      label: "Broker execution master switch",
+      status: "pass" | "fail" | "warning",
+      message: "Enabled" | "Disabled" | "Not configured"
+    }
+  ],
+  brokerExecutionMasterEnabled: boolean,
+  userTradingEnabled: boolean,
+  adminApprovalGranted: boolean,
+  eaLiveExecutionEnabled: boolean,
+  eaReadOnlyMode: boolean,
+  killSwitchClear: boolean,
+  bridgeConnected: boolean,
+  canAttemptLiveTest: boolean,
+  lastUpdated: timestamp
+}
+
+Do not expose stack traces, route names, function names, database errors, secrets, or raw MT5 errors to users.
+
+PHASE 3 — Fix conflicting status chips
+Separate these concepts clearly:
+
+Global broker master switch:
+- “Broker Master Enabled”
+- “Broker Master Disabled”
+
+Current user/account trading permission:
+- “Trading Off”
+- “Trading Access Locked”
+- “Trading Enabled”
+
+Actual dispatch readiness:
+- “Live Test Ready”
+- “Live Test Blocked”
+- “Bridge Not Ready”
+- “Approval Required”
+
+Do not show “Broker Execution Enabled” beside “Broker Execution Disabled” without context.
+
+If ARX_LIVE_BROKER_EXECUTION_ENABLED=true but Andraie/account trading is still blocked, show:
+- “Broker Master Enabled”
+- “Trading Access Locked”
+- “Live Test Blocked”
+
+If master switch is false/unset, show:
+- “Broker Master Disabled”
+- “Live Test Blocked”
+
+PHASE 4 — Fix tabs
+Readiness tab:
+- Show checklist with real checks, not 0/0.
+- Each check should show pass/fail/warning.
+
+Activation Wizard:
+- Load steps cleanly.
+- If blocked, show exact clean blocker:
+  approval missing, EA read-only, bridge disconnected, kill switch active, master switch disabled, etc.
+
+Bridge / EA:
+- Show bridge heartbeat, EA read-only mode, EA live execution input, account info read status.
+- No secrets or raw MT5 debug.
+
+Users:
+- Show Andraie/userId=4 approval state.
+- Show no other users approved unless actually approved.
+- Regular users must not access this page.
+
+PHASE 5 — Live test gate
+The page should only allow the next live test step if all are true:
+- Admin Mode active.
+- Andraie/userId=4 only.
+- ARX_LIVE_BROKER_EXECUTION_ENABLED=true.
+- Andraie master-live approval row exists.
+- EA connected.
+- EA EnableLiveExecution=true.
+- EA ReadOnlyMode=false.
+- Kill switch clear.
+- Symbol tradable.
+- Account info readable.
+- Risk gates pass.
+- Stop loss required.
+- Minimum lot confirmed.
+- Final typed confirmation still required.
+
+If any check fails:
+- block the live test
+- show clean reason
+- do not place trade
+
+PHASE 6 — QA
+Run:
+- typecheck
+- build
+- backend health check
+- readiness endpoint smoke test
+- admin mode route test
+- regular mode blocked test
+- mobile page test
+
+Verify:
+1. Live Shared Activation page loads without INTERNAL_ERROR.
+2. Readiness checklist shows real checks.
+3. Activation Wizard loads or shows clean blocker.
+4. Bridge / EA tab loads or shows clean unavailable state.
+5. Users tab loads or shows clean unavailable state.
+6. Status chips no longer conflict.
+7. If broker master is enabled but user trading is off, UI explains that clearly.
+8. Regular users cannot access the page.
+9. Andraie Regular Mode cannot access admin activation controls.
+10. Admin Mode can access the page.
+11. No raw errors, stack traces, route names, function names, secrets, or broker credentials appear.
+12. No live trades are placed.
+13. No execution permissions, kill switches, or admin approvals are changed except reading existing state.
+
+FINAL OUTPUT:
+Return:
+- root cause of INTERNAL_ERROR
+- files changed
+- readiness checks now displayed
+- current blocker if live test is still blocked
+- whether Andraie/userId=4 approval exists
+- EA live/read-only state
+- broker master switch state
+- final canAttemptLiveTest true/false
+- confirmation no live trades were placed

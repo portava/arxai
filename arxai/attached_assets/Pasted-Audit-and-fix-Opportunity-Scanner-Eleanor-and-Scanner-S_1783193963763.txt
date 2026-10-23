@@ -1,0 +1,150 @@
+Audit and fix Opportunity Scanner, Eleanor, and Scanner Smart Chart action tab so they use one shared market-truth system.
+
+Problem:
+Opportunity Scanner, Eleanor, and the Scanner Smart Chart action tab are producing different trade decisions for the same symbol/timeframe. This means they are using different truth sources, stale data, different scoring logic, or separate decision engines.
+
+Goal:
+For the same symbol and timeframe, all three surfaces must agree on the core market truth:
+- final decision
+- bias
+- confidence
+- entry zone
+- invalidation / stop loss
+- take profit zones
+- support/resistance
+- trend/momentum read
+- timestamp / candle time
+- feed freshness
+- reason for wait/conditional trade
+
+Surfaces to audit:
+1. Opportunity Scanner
+2. Eleanor chat/trade reasoning
+3. Scanner Smart Chart action tab
+4. Any quick action button connected to scanner decisions
+5. Any “BUY / SELL / WAIT / CONDITIONAL BUY / CONDITIONAL SELL” label shown from scanner data
+
+Required audit:
+For one test symbol/timeframe, especially BTCUSD 15m or the symbol currently showing mismatch:
+- Log the exact input candles/data each surface receives.
+- Log the timestamp of the latest candle each surface uses.
+- Log the feed/provider used.
+- Log the normalized indicators/features used by each surface.
+- Log the raw decision output from each engine.
+- Log the final UI label shown.
+- Compare all three side by side.
+
+Find whether mismatch comes from:
+- stale candles
+- different timeframe
+- different symbol normalization
+- different feed provider
+- different scanner scoring function
+- Eleanor re-interpreting instead of reading scanner truth
+- chart action tab using older cached scanner result
+- action button simplifying Conditional BUY into BUY
+- different confidence thresholds
+- different support/resistance calculations
+- frontend fallback/mock data
+- database/cached opportunity row behind live chart truth
+
+Architecture requirement:
+Create or standardize one shared MarketTruth / TradeTruth object.
+
+Example shape:
+{
+  symbol,
+  timeframe,
+  provider,
+  latestCandleTime,
+  generatedAt,
+  freshnessStatus,
+  decision,
+  bias,
+  confidence,
+  confidenceScore,
+  entryZone,
+  stopLoss,
+  takeProfitZones,
+  supportZones,
+  resistanceZones,
+  trendRead,
+  momentumRead,
+  patternRead,
+  invalidation,
+  confirmation,
+  riskNotes,
+  noTradeReason,
+  sourceEngineVersion
+}
+
+Rules:
+1. Opportunity Scanner should generate or fetch the shared MarketTruth.
+2. Eleanor should explain the shared MarketTruth, not create a separate conflicting decision.
+3. Scanner Smart Chart action tab should display the same shared MarketTruth.
+4. Action buttons must not simplify the truth incorrectly.
+   - Conditional BUY must display Conditional BUY, not BUY.
+   - Conditional SELL must display Conditional SELL, not SELL.
+   - WAIT must not show a trade button as if it is executable.
+5. If data is stale, all three surfaces must show stale/limited confidence.
+6. If confidence is low, all three surfaces must show low confidence.
+7. If Eleanor adds extra reasoning, it must be labeled as explanation, not a different truth.
+8. No mock/fallback scanner truth in live mode.
+9. No separate frontend-only decision logic.
+10. No hidden second scanner engine.
+
+Comparison deliverable:
+Produce a table comparing Opportunity Scanner vs Eleanor vs Smart Chart action tab:
+
+- symbol
+- timeframe
+- latest candle time
+- feed/provider
+- decision
+- confidence
+- support
+- resistance
+- entry zone
+- stop loss
+- take profit zones
+- final UI label
+- source function/file
+- whether it matches shared truth
+
+Then answer:
+- Which one is currently most realistic?
+- Which one is stale or wrong?
+- Which one should become the source of truth?
+- What code was changed so all three agree?
+
+Fix requirement:
+After identifying the best/most realistic truth source, make all three surfaces consume that same source.
+
+Preferred source of truth:
+Use the backend scanner/analyzer result that is closest to live candles and has the newest candle timestamp. Do not choose Eleanor’s generated text as the source of truth unless it is directly backed by the same MarketTruth object.
+
+Tests:
+Add tests for:
+- Opportunity Scanner, Eleanor, and Smart Chart action tab receive the same MarketTruth.
+- Conditional BUY is not displayed as plain BUY.
+- Conditional SELL is not displayed as plain SELL.
+- WAIT does not expose an immediate trade action.
+- stale scanner data is labeled stale across all three surfaces.
+- same symbol/timeframe produces same decision across all three surfaces.
+- Eleanor explanation cannot override the shared decision.
+
+Validation:
+Run the app against live/prod-like data and test at least:
+- BTCUSD 15m
+- V75 5m
+- XAUUSD 15m
+- EURUSD 15m
+
+Deliverables:
+1. Root cause of mismatch.
+2. Side-by-side truth comparison.
+3. Which source was most realistic and why.
+4. Files changed.
+5. Confirmation all three surfaces now agree.
+6. Screenshots or logs showing matched output.
+7. Tests/typecheck results.

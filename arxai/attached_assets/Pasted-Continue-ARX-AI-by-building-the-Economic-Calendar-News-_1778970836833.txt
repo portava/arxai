@@ -1,0 +1,353 @@
+Continue ARX AI by building the Economic Calendar, News Risk, and Session Context Engine.
+
+Do not rebuild blindly. Inspect the current:
+- Market Context Engine
+- Risk Governor
+- Broker Symbol Specs Engine
+- Live Trade Intelligence
+- Smart Exit Plan Engine
+- Trade Decision Orchestrator
+- Sniper Exit Alerts
+- Trade Action Center
+- AI assistant context builder
+- scanner / market data integrations
+- Finnhub or existing market data provider setup
+- notification system
+- admin trading controls
+- user alert preferences
+
+Goal:
+Give ARX AI event-risk awareness so it can warn users before, during, and after high-impact events, and explain when a trade may be moving because of news, session volatility, liquidity, spread, or market timing.
+
+Important:
+Do not fake news or calendar data.
+Do not invent event times, impact levels, or headlines.
+If no provider is connected, return “economic/news data unavailable.”
+Do not auto-close trades.
+Do not auto-open trades.
+Do not bypass backend guards.
+Do not expose API keys, bridge tokens, secrets, or MT5 credentials.
+Live trade actions still require explicit confirmation.
+
+PART 1 — Economic Calendar Service
+
+Create an economic calendar service that can ingest calendar events from available providers.
+
+Use existing configured providers first.
+If no provider is available, build a provider interface/stub and mark status as unavailable.
+
+For each event, store:
+- event id
+- title
+- country/currency
+- impact level: low / medium / high / unknown
+- event time
+- actual value if available
+- forecast value if available
+- previous value if available
+- source
+- data freshness
+- created_at
+- updated_at
+
+Map events to trade symbols:
+- EURUSD should care about EUR and USD events.
+- GBPUSD should care about GBP and USD events.
+- USDJPY should care about USD and JPY events.
+- XAUUSD / gold should care heavily about USD events.
+- US indices should care about USD / US events.
+- Crypto should show news risk only if provider data exists.
+
+PART 2 — News Risk Service
+
+Create a news risk layer.
+
+It should:
+- collect relevant market/news items from available provider if configured
+- map news to symbols where possible
+- detect high-risk language only if real news text exists
+- mark news data unavailable when no provider exists
+- avoid making up headlines or catalysts
+
+News risk labels:
+- No news data
+- Low news risk
+- Medium news risk
+- High news risk
+- Unknown news risk
+
+PART 3 — Session Context Engine
+
+Add trading session awareness.
+
+Detect:
+- Asian session
+- London session
+- New York session
+- London/New York overlap
+- market close window
+- weekend/closed market if known
+- low-liquidity period
+- high-volatility session window
+
+Use this to label trade context:
+- Normal session behavior
+- Low-liquidity risk
+- High-volatility session
+- Spread widening risk
+- News window risk
+- Session transition risk
+
+PART 4 — Trade-Level Event Risk
+
+For each open trade, calculate event risk.
+
+Use:
+- symbol
+- currencies involved
+- account type demo/live
+- routing mode
+- open time
+- current time
+- upcoming events
+- recent events
+- current spread if available
+- volatility if available
+- trade P&L
+- stop loss distance
+- take profit distance
+
+Create scores:
+- upcomingEventRiskScore
+- activeNewsRiskScore
+- sessionVolatilityScore
+- spreadRiskScore
+- liquidityRiskScore
+- eventCloseUrgencyScore
+
+Create labels:
+- No event risk detected
+- Upcoming high-impact event
+- Active news window
+- Post-news volatility
+- Spread risk rising
+- Liquidity risk
+- Avoid new entries
+- Manage open trade carefully
+- Close review recommended
+
+PART 5 — Alerts
+
+Create event-risk alerts:
+
+Examples:
+- “High-impact USD news in 15 minutes. Review open USD trades.”
+- “EURUSD is open during a news-risk window. Spread/volatility may increase.”
+- “Gold trade is exposed to upcoming USD event risk.”
+- “Market is entering low-liquidity conditions. Protect profit if needed.”
+- “News window active. Avoid opening new trades unless you accept the risk.”
+
+Alert actions:
+- Ask AI
+- Review Close
+- Move Stop Review
+- Hold and Monitor
+- Disable new entries until event passes if risk rules require it
+
+No instant execution.
+
+PART 6 — Risk Governor Integration
+
+Update Risk Governor so event/session risk can affect trade validation.
+
+Admin/user configurable options:
+- block new trades before high-impact events
+- warn only before high-impact events
+- allow closes during news
+- allow risk-reducing actions during news
+- block opening trades during low-liquidity windows
+- block opening trades when spread risk is high
+- require extra live confirmation during high-impact news
+
+Important:
+Even if new trades are blocked, users should still be able to close or reduce risk unless emergency stop blocks all execution.
+
+PART 7 — AI Assistant Awareness
+
+Update AI so users can ask:
+
+- Is there news affecting my trade?
+- Why is price moving fast?
+- Is this move because of news?
+- Should I hold through news?
+- Is this a risky time to open a trade?
+- What session are we in?
+- Is spread or volatility dangerous right now?
+- Are any of my open trades exposed to news?
+- Should I close before news?
+- Why did the system block my trade?
+
+AI must answer from real event/news/session data only.
+
+If data is missing, AI must say:
+“I do not currently have reliable economic calendar/news data connected for this symbol.”
+
+AI must not invent:
+- news headlines
+- event times
+- economic releases
+- actual/forecast values
+- market catalysts
+
+PART 8 — UI Updates
+
+Update:
+
+Dashboard:
+- show current session
+- show upcoming high-impact events if available
+- show event-risk warning if any open trade is exposed
+
+Open Trades:
+- show event risk badge
+- show session risk badge
+- show “News window active” when applicable
+
+Trade Detail:
+Add “Event & Session Risk” section:
+- current session
+- upcoming events
+- recent events
+- news risk
+- spread/liquidity risk
+- effect on trade decision
+- data quality
+
+Trade Ticket:
+Before confirmation show:
+- upcoming event risk
+- session risk
+- spread risk
+- whether new entry is blocked or warning-only
+
+PART 9 — Admin Controls
+
+Add Admin Event Risk controls:
+
+- economic calendar provider status
+- news provider status
+- event sync status
+- last sync time
+- high-impact event rules
+- block new trades before high-impact events
+- event block window in minutes
+- warning window in minutes
+- allow closes during event blocks
+- require extra confirmation for live trades during event risk
+- pause event alerts globally
+
+PART 10 — Database/API
+
+Add tables if missing:
+
+economic_calendar_events:
+- id
+- provider_event_id
+- title
+- country
+- currency
+- impact
+- event_time
+- actual_value
+- forecast_value
+- previous_value
+- source
+- data_quality
+- created_at
+- updated_at
+
+market_news_items:
+- id
+- provider_news_id
+- title
+- summary
+- related_symbols
+- related_currencies
+- source
+- published_at
+- risk_level
+- data_quality
+- created_at
+
+trade_event_risk_snapshots:
+- id
+- user_id
+- trade_id
+- symbol
+- account_type
+- routing_mode
+- upcoming_event_risk_score
+- active_news_risk_score
+- session_volatility_score
+- spread_risk_score
+- liquidity_risk_score
+- event_close_urgency_score
+- label
+- explanation
+- data_quality
+- created_at
+
+event_risk_settings:
+- id
+- block_new_trades_before_high_impact
+- warning_window_minutes
+- block_window_minutes
+- allow_closes_during_event_block
+- require_extra_live_confirmation
+- pause_event_alerts
+- updated_by_admin_id
+- updated_at
+
+Add endpoints:
+- GET /api/market/events
+- GET /api/market/news
+- GET /api/market/session
+- GET /api/trades/:id/event-risk
+- POST /api/trades/:id/event-risk/recalculate
+- GET /api/admin/event-risk
+- PATCH /api/admin/event-risk/settings
+
+PART 11 — Tests
+
+Add or update tests for:
+1. Calendar service does not invent events when provider unavailable.
+2. News service does not invent headlines when provider unavailable.
+3. Event risk maps EURUSD to EUR/USD events.
+4. XAUUSD maps to USD event risk.
+5. Upcoming high-impact event creates trade event risk snapshot.
+6. Event alert fires before configured warning window.
+7. Duplicate event alerts are suppressed.
+8. Risk Governor blocks new trades when admin rule requires it.
+9. Risk Governor still allows risk-reducing close action if configured.
+10. Trade ticket shows event risk warning.
+11. AI explains event risk using real data only.
+12. AI clearly says data unavailable when no provider exists.
+13. User sees only their own trade event risk.
+14. Shared-master users only see attributed trade event risk.
+15. Admin can update event-risk settings.
+16. No secrets exposed.
+17. Mobile event-risk UI works.
+
+Final report:
+Return:
+- PASS or FAIL
+- Economic Calendar status
+- News Risk status
+- Session Context status
+- Trade Event Risk status
+- Risk Governor integration status
+- AI event-risk awareness status
+- UI status
+- Admin controls status
+- tests passed
+- remaining blockers

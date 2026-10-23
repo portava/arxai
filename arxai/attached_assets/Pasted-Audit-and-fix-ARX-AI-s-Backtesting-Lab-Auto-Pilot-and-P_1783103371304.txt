@@ -1,0 +1,125 @@
+Audit and fix ARX AI’s Backtesting Lab, Auto Pilot, and Profit Mission so each one is fully live, reachable, wired to real data, and doing its intended job. Do not rebuild the app or replace working systems. First inspect what already exists, then patch only confirmed gaps.
+
+Core rule:
+ARX AI is live-first. No fake simulator, no paper mode, no placeholder UI pretending to work. However, Backtesting Lab must not execute live trades. It should test strategies against real historical market data and clearly label results as historical/backtest results. Auto Pilot and Profit Mission may interact with live execution only through the existing approved live queue, user approval, one-click/autopilot consent, kill switch, entitlement, bridge freshness, and audit systems.
+
+Scope:
+1. Backtesting Lab
+2. Auto Pilot
+3. Profit Mission
+
+For each feature, verify:
+- The route/page is reachable from the correct navigation.
+- The UI is not a dead placeholder.
+- All buttons have real handlers.
+- Loading, empty, success, and error states are honest.
+- It uses real backend/API/data paths.
+- It does not rely on mock data unless explicitly marked as fixture/test-only.
+- It has tests proving the intended behavior.
+- It shows clear user-facing status when data is missing, stale, blocked, or unavailable.
+
+Backtesting Lab intended job:
+- Let the user select symbol/market, timeframe, date range, strategy or setup, risk assumptions, and starting balance/equity assumptions.
+- Pull real historical candle data from the app’s real market-data source, preferably MT5 CopyRates/bridge-fed bars or the existing historical data provider.
+- Run deterministic backtests on historical bars only.
+- Display results such as total trades, wins/losses, win rate, net P/L, max drawdown, profit factor if available, average R/R, best/worst trade, and equity curve.
+- Show trade-by-trade breakdown with entry, exit, reason, timestamp, direction, SL/TP if applicable, and result.
+- Clearly label results as “Historical backtest — not live execution.”
+- Never send orders, drafts, live ops, or queue commands from Backtesting Lab.
+- Add guards/tests proving Backtesting Lab cannot call live execution endpoints.
+- Handle missing history honestly: “Not enough historical data for this range/timeframe,” not fake results.
+- Make sure limited-market config is respected, but allow direct symbol search if the app already supports it.
+
+Auto Pilot intended job:
+- Confirm Auto Pilot is a real live-trading control surface, not just a visual toggle.
+- It should show whether Auto Pilot is OFF, ARMED, RUNNING, BLOCKED, or PAUSED.
+- It must respect existing live approval/entitlement, bridge freshness, kill switch, account/market availability, user consent, and risk/governance settings.
+- It must not silently place trades unless the user/admin has the required live approval and Auto Pilot consent/state is active.
+- It should connect to the existing AI decision engine or trading planner, not an isolated mock.
+- It should explain what it is watching, what conditions it needs, and why it did or did not act.
+- It should publish honest status/events into the UI: waiting for setup, blocked by stale bridge, blocked by kill switch, no approved live bridge, trade submitted, trade rejected, trade filled, trade failed, etc.
+- It must log decisions and live actions to the existing audit/event system.
+- It must not bypass the live queue, safety gates, or bridge-command pipeline.
+- If Auto Pilot is expected to place trades, prove the path ends at the same live execution pipeline used by manual trades.
+
+Profit Mission intended job:
+- Confirm Profit Mission is not just a static goal screen.
+- User/admin should be able to define a mission: profit target, max loss/drawdown limit, market scope, trading style/mode, timeframe, session window, and whether Auto Pilot can participate.
+- It should track real progress using live account/position/order data, not fake numbers.
+- It should show mission status: NOT_STARTED, ACTIVE, PAUSED, COMPLETED, FAILED, BLOCKED.
+- It should update based on realized/unrealized P/L according to the existing app conventions.
+- It should stop/pause/flag itself when the profit target is hit, max loss is hit, bridge is stale, kill switch is active, approval is missing, or market data is unavailable.
+- It should integrate with Auto Pilot where intended, but not duplicate Auto Pilot logic.
+- It should show a mission timeline/log: created, started, trade opened, trade closed, profit updated, target hit, failed, paused, resumed.
+- It should not fake completed missions or invented P/L.
+- It should not allow Profit Mission to bypass live execution gates.
+
+Important integration checks:
+- Verify all three features use shared source-of-truth stores/services where possible.
+- Make sure dashboard/header/status cards reflect the same state as the chart, scanner, bridge, and live execution panels.
+- If a button says Start, Stop, Pause, Run Backtest, Enable Auto Pilot, Launch Mission, or Close Mission, the visible state must immediately and honestly reflect what happened.
+- No stale “success” UI after backend rejection.
+- No green/live-looking state when the feature is blocked.
+- No orphan local-only state that disagrees with backend truth.
+- Make sure mobile and desktop layouts remain usable.
+
+Specific audit actions:
+- Search for Backtesting Lab, Backtest, Auto Pilot, Autopilot, Profit Mission, Mission, Goal, AI trading, strategy tester, and related route/component/service names.
+- Map frontend routes/components to backend endpoints/services/stores.
+- Identify dead buttons, placeholder handlers, mock data, TODOs, unused stores, unreachable routes, and components that render but do not connect to real systems.
+- Check whether existing tests already cover these features before adding new tests.
+- Patch only confirmed problems.
+- Preserve existing working behavior.
+
+Testing requirements:
+Add or update focused tests proving:
+
+Backtesting Lab:
+- Can run a backtest with mocked historical candles and returns calculated results.
+- Shows honest error when candles/history are unavailable.
+- Does not call live order/live queue/live ops endpoints.
+- Run Backtest button updates UI state correctly.
+
+Auto Pilot:
+- Enable/Start reflects backend truth.
+- Blocked approval/bridge/kill-switch states show honest reason.
+- When allowed, Auto Pilot submits through the existing live pipeline only.
+- Rejected live action does not leave UI in running/success state.
+- Decision/status events render correctly.
+
+Profit Mission:
+- Creating/starting a mission persists and renders active status.
+- Mission progress updates from real account/position/P/L source.
+- Mission completes at target and fails/pauses at max loss or blocked conditions.
+- Profit Mission cannot place trades except through Auto Pilot/live pipeline where explicitly intended.
+- UI buttons reflect actual backend state.
+
+Validation:
+Run the relevant tests and typechecks. At minimum:
+- dashboard/app typecheck
+- affected frontend tests
+- affected backend/API tests
+- any existing scanner/chart/live execution regression tests that could be impacted
+
+Do not stop at “implemented.” Provide a final report with:
+
+1. What already worked
+2. What was broken or incomplete
+3. What files were changed
+4. Exact behavior now for Backtesting Lab
+5. Exact behavior now for Auto Pilot
+6. Exact behavior now for Profit Mission
+7. Safety/live-execution proof
+8. Tests added/updated
+9. Validation commands and pass/fail results
+10. Remaining follow-up tasks only if they are genuinely out of scope or blocked by missing external data/API credentials
+
+Acceptance criteria:
+- Backtesting Lab runs real historical-data backtests and cannot execute live trades.
+- Auto Pilot is a real stateful live feature connected to approval, bridge, market data, audit logs, and live queue.
+- Profit Mission is a real goal-tracking system connected to live P/L/account state and mission lifecycle.
+- No fake success states.
+- No placeholder controls.
+- No duplicated execution bypass.
+- No paper/demo/simulator mode exposed as live.
+- All three features are cohesive with the rest of ARX AI.

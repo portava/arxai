@@ -1,0 +1,155 @@
+Finish the remaining Shared Master Mode cleanup items from the last report.
+
+Do not rebuild the app.
+Do not redesign the UI.
+Do not enable live trading.
+Do not bypass PAPER_ONLY.
+Do not expose secrets, MT5 credentials, broker credentials, master account credentials, env values, tokens, or internal routing data.
+Keep every route scoped to the authenticated user or admin permission where required.
+
+The prior report said these remain:
+
+1. Frontend for the user virtual-balance card and admin unattributed-review panel — API ready, UI not wired.
+2. /api/mt5/sync-positions is not yet calling recordUnattributedMasterTrade for purely manual master trades with zero ARX command.
+3. OpenAPI spec entries + generated React Query hooks for the new endpoints.
+
+Fix these in this order:
+
+PHASE 1 — Wire /api/mt5/sync-positions to unattributed master trade recorder
+
+Inspect the current sync-positions route and shared-master recorder first.
+
+When sync-positions receives broker/master positions or closed results that cannot be attributed to an ARX command/actionRequestId/user allocation, it must call:
+
+recordUnattributedMasterTrade
+
+Use source:
+"sync_positions"
+
+Requirements:
+- Only record unmatched/manual master trades.
+- Do not duplicate records if the same master trade is reported repeatedly.
+- Preserve idempotency.
+- Do not open, close, modify, or place trades from this code path.
+- Recorder only logs broker-reported results.
+- Scope by master/shared route where applicable.
+- Create or trigger HIGH severity admin alert if an unattributed master trade appears.
+- Do not leak master credentials or broker secrets.
+
+Add/verify tests for:
+- unmatched sync position creates unattributed_master_trades record
+- repeated sync does not duplicate it
+- attributed ARX trade does not become unattributed
+- wrong actionRequestId is handled safely
+- no live execution path is added
+- PAPER_ONLY still intact
+- no secrets returned
+
+PHASE 2 — Wire user Shared Account frontend UI
+
+Use the existing APIs:
+- /api/me/shared-account/summary
+- /api/me/shared-account/attributions
+- /api/me/shared-account/positions
+
+Create or wire a user-facing shared account / virtual account card.
+
+It should show real backend-backed data only:
+- shared-master mode status
+- virtual balance
+- realized P&L
+- unrealized P&L if available
+- open virtual positions
+- recent attributions
+- last updated time
+- empty state if no shared account is assigned
+- error state if API fails
+- loading state while fetching
+
+Do not show fake balances or placeholder trades.
+
+Add this card in the most appropriate existing trading/dashboard location without disrupting the rest of the app.
+
+Mobile requirements:
+- card fits iPhone Safari width
+- no horizontal overflow
+- no content hidden behind bottom nav
+- buttons/tabs are tappable
+
+PHASE 3 — Wire admin Shared Master review UI
+
+Use existing admin endpoints under:
+
+/api/admin/shared-master/*
+
+Wire an admin panel for:
+- overview
+- virtual accounts
+- attributions
+- unattributed queue
+- link unattributed trade
+- dismiss unattributed trade
+
+Admin UI requirements:
+- admin permission required
+- list unattributed master trades
+- show severity
+- show source, including sync_positions
+- allow admin to link an unattributed trade to the correct user/allocation if safe
+- allow admin to dismiss with reason
+- show audit-safe details only
+- no secrets or master credentials displayed
+- loading, empty, and error states
+- mobile-friendly table/card fallback
+
+PHASE 4 — OpenAPI + React Query hooks
+
+Add OpenAPI spec entries for all new shared-account and shared-master endpoints.
+
+Then generate or add typed React Query hooks for:
+- user shared account summary
+- user shared account attributions
+- user shared account positions
+- admin shared master overview
+- admin virtual accounts
+- admin attributions
+- admin unattributed queue
+- link unattributed trade
+- dismiss unattributed trade
+
+Replace raw fetches in the new UI with the generated/typed hooks if that is the repo pattern.
+
+PHASE 5 — QA
+
+Run all available checks:
+
+- pnpm --filter @workspace/db run push
+- pnpm run typecheck
+- pnpm run ci:guards
+- shared-master tests
+- sync-positions / reconciler tests
+- OpenAPI validation if available
+- frontend build
+- mobile/iPhone Safari viewport check if available
+
+Do not claim pass unless the command actually ran.
+
+Final report must include:
+1. Files changed
+2. sync-positions call site added
+3. how unattributed sync_positions trades are recorded
+4. user UI added/wired
+5. admin UI added/wired
+6. OpenAPI entries added
+7. React Query hooks added
+8. tests added/updated
+9. commands run
+10. what passed
+11. what failed
+12. remaining blockers
+13. confirmation no live execution was enabled
+14. confirmation PAPER_ONLY still passes
+15. confirmation no secrets are exposed
+16. confirmation shared-master mode is now backend + frontend ecosystem-connected
+
+After these 3 cleanup items are green, stop and report. Do not move into scanner, UX9, or new features. Next planned order after this is still Readiness/Onboarding, then Compliance Control Center.

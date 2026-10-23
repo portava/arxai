@@ -1,0 +1,280 @@
+Add Claude as a backend AI fix agent for ARX AI.
+
+Goal:
+Integrate Claude into the backend as an internal engineering/fix assistant that can inspect logs, diagnose broken flows, explain root causes, and propose safe patches for admin review.
+
+Claude must not bypass live trading safety gates, risk rules, bridge rules, or admin permissions.
+
+Core name:
+Backend Fix Agent
+Internal AI provider: Claude
+Display label in admin/Ruby if needed: Claude Fix Agent
+
+Primary responsibilities:
+1. Diagnose backend errors
+2. Read structured logs and health checks
+3. Explain broken API routes
+4. Identify stale feed / bridge / candle / trade sync problems
+5. Suggest patches
+6. Generate repair plans
+7. Summarize failed jobs
+8. Help Ruby explain technical problems to the user
+9. Compare expected state vs actual state
+10. Create admin-reviewable fix tickets
+
+Claude should be used for:
+- bridge heartbeat diagnosis
+- candle feed failures
+- scanner feed truth issues
+- open trade sync mismatches
+- unsynced / incomplete broker rows
+- mission planner safety verdict problems
+- API response inconsistencies
+- backend test failure explanations
+- schema mismatch explanations
+- OpenAPI/codegen mismatch explanations
+- Ruby backend safety explanation support
+
+Claude should NOT:
+- place trades
+- approve trades
+- bypass risk engine
+- override kill switch
+- mark unsynced rows as real trades
+- change balances
+- modify live bridge commands directly
+- change owner/admin permissions without explicit admin approval
+- auto-deploy code without review
+- invent broker-confirmed state
+
+Architecture:
+
+Add an AI provider abstraction:
+
+server/ai/providers/types.ts
+- AIProvider
+- AIMessage
+- AICompletionRequest
+- AICompletionResponse
+
+server/ai/providers/claudeProvider.ts
+- calls Anthropic Claude API
+- reads ANTHROPIC_API_KEY from env
+- supports timeout
+- supports retry
+- returns structured JSON when requested
+- never logs full secret keys
+
+server/ai/backendFixAgent.ts
+- main service that sends backend diagnostic context to Claude
+- redacts secrets
+- redacts API keys
+- redacts auth tokens
+- redacts private user data unless needed
+- limits context size
+- requests structured output
+
+Environment:
+Add:
+ANTHROPIC_API_KEY=
+CLAUDE_MODEL=claude-3-5-sonnet-latest or current configured model
+CLAUDE_FIX_AGENT_ENABLED=true
+CLAUDE_FIX_AGENT_DRY_RUN=true
+
+Important:
+Default must be dry-run true.
+
+Backend Fix Agent modes:
+
+1. Diagnose-only mode
+- Claude receives logs/status/context
+- Claude returns:
+  - likely root cause
+  - affected services
+  - severity
+  - suggested next checks
+  - safe repair recommendation
+
+2. Patch proposal mode
+- Claude can propose code changes as text/diff
+- Claude cannot apply the patch directly unless admin explicitly approves
+
+3. Admin-approved apply mode
+- Only available later
+- Requires admin role
+- Requires explicit approval
+- Requires git diff preview
+- Requires test command
+- Requires rollback plan
+- Do not enable by default
+
+API routes:
+
+POST /api/admin/ai/fix-agent/diagnose
+Admin-only.
+Input:
+- issueTitle
+- issueDescription
+- relatedService
+- optional log snippets
+- optional route name
+- optional symbol/bridge/user id if relevant
+
+Output:
+- diagnosis
+- likelyRootCause
+- affectedFiles
+- recommendedFix
+- safetyImpact
+- liveTradingImpact
+- testsToRun
+- confidence
+- nextActions
+
+POST /api/admin/ai/fix-agent/propose-patch
+Admin-only.
+Dry-run only by default.
+Input:
+- issueTitle
+- issueDescription
+- files/context
+- failing tests/logs
+
+Output:
+- patchSummary
+- proposedDiff
+- filesTouched
+- risks
+- rollbackPlan
+- testsToRun
+- requiresHumanApproval: true
+
+GET /api/admin/ai/fix-agent/health
+Admin-only.
+Returns:
+- enabled
+- provider
+- model
+- dryRun
+- lastRequestAt
+- lastError
+- status
+
+Security:
+- Admin-only routes.
+- Never expose Claude endpoints to normal users.
+- Never send secrets to Claude.
+- Redact:
+  - API keys
+  - tokens
+  - passwords
+  - connection strings
+  - private emails where not needed
+  - phone numbers
+  - full broker credentials
+- Add audit log entries for every Claude call:
+  - adminUserId
+  - timestamp
+  - action
+  - issueTitle
+  - provider
+  - model
+  - mode
+  - dryRun
+  - result summary
+
+Live trading safety:
+Claude is advisory only.
+
+Add hard rules:
+- Claude cannot call trade execution endpoints.
+- Claude cannot approve mission starts.
+- Claude cannot override feed status.
+- Claude cannot override Ruby safety verdict.
+- Claude cannot mark a trade as broker-confirmed.
+- Claude cannot mutate bridge command state.
+- Claude cannot change risk limits.
+- Claude cannot bypass kill switch.
+
+Ruby integration:
+Ruby can use Claude Fix Agent summaries only for backend issue explanations.
+
+Example:
+Ruby may say:
+“Claude Fix Agent found that V75 1s rows are unsynced because broker confirmation was not received. They are visible for transparency but excluded from live totals.”
+
+Ruby must not present Claude’s diagnosis as broker truth unless backend confirms it.
+
+Admin UI:
+Add a simple Admin → AI Fix Agent screen.
+
+Fields:
+- Issue title
+- Related area:
+  - Bridge
+  - Candles
+  - Scanner
+  - Open Trades
+  - Mission Planner
+  - Ruby
+  - Risk Engine
+  - API
+  - Database
+- Description
+- Attach logs / paste logs
+- Button: Diagnose
+- Button: Propose Patch
+
+Results panel:
+- Diagnosis
+- Root cause
+- Suggested fix
+- Affected files
+- Safety impact
+- Live trading impact
+- Tests to run
+- Proposed patch/diff if requested
+- Copy command for Claude/Replit
+
+Data model:
+Add table if needed:
+
+ai_fix_agent_runs
+- id
+- admin_user_id
+- provider
+- model
+- mode
+- issue_title
+- issue_description
+- related_area
+- redacted_input
+- result_summary
+- full_result_json
+- dry_run
+- created_at
+- status
+- error_message
+
+Testing:
+Add tests for:
+- non-admin cannot access fix agent routes
+- admin can run diagnose
+- dry-run mode blocks patch apply
+- secrets are redacted before provider call
+- Claude cannot call trade execution services
+- Claude cannot mutate bridge command state
+- Claude cannot change risk gates
+- health endpoint returns provider status
+- failed Claude API call returns safe error
+- audit log is created for each run
+
+Acceptance criteria:
+- Claude backend provider is added behind a clean AI provider abstraction.
+- Claude Fix Agent can diagnose backend issues from admin-provided context.
+- Claude can propose patches in dry-run mode.
+- No patch is auto-applied by default.
+- Claude cannot touch live execution, bridge commands, broker truth, or risk gates.
+- Admin audit logs are created.
+- Secrets are redacted.
+- Ruby can summarize Claude diagnostics without treating them as trade truth.

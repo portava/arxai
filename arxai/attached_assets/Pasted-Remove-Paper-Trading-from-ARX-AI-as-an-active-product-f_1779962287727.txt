@@ -1,0 +1,195 @@
+Remove Paper Trading from ARX AI as an active product feature.
+
+Do not place any trade.
+Do not insert arx_live_commands.
+Do not weaken the 16-gate evaluator, env-AND-operator resolver, liveTrading chokepoint, kill switch, allocation checks, or audit logging.
+
+GOAL:
+ARX AI should only have two active user-facing trading modes:
+
+1. DEMO
+2. LIVE
+
+Paper Trading should not exist as a user-facing mode, badge, tab, route, account mode, scanner mode, Ruby mode, dashboard mode, permission mode, auth mode, allocation mode, or active database state.
+
+IMPORTANT:
+Do not blindly delete code in a way that breaks existing stored data. First audit all “paper” references, classify them, then remove active product usage safely.
+
+1. AUDIT ALL PAPER REFERENCES
+Search the full codebase for:
+- paper
+- PAPER
+- Paper
+- paperTrading
+- PAPER_ONLY
+- paper-trading
+- /paper-trading
+- tradingMode="paper"
+- accountMode="paper"
+- defaultTradingMode="PAPER"
+
+Classify every reference as:
+A) user-facing product/UI
+B) backend active state
+C) database enum/stored value
+D) test fixture
+E) legacy compatibility
+F) dead code
+
+2. REMOVE PAPER FROM USER-FACING UI
+Remove all public/user-facing Paper wording.
+
+Remove or replace:
+- “Paper Trading”
+- “Paper Only”
+- “PAPER ONLY”
+- paper badges
+- paper tabs
+- paper buttons
+- paper walkthrough copy
+- paper route links
+- paper scanner mode
+- paper Ruby wording
+- paper dashboard status
+- paper admin permission labels
+
+User should only see:
+- Demo
+- Live
+- Live Shared / Shared Bridge where applicable
+
+If a user is not live-approved, show:
+- Demo Only
+- Request Live Bridge Access
+- Live Access Pending
+- Live Access Approved
+- Live Access Blocked
+
+3. REMOVE PAPER AS ACTIVE MODE
+Paper should not be selectable or assignable as an active trading mode.
+
+Remove Paper from:
+- user trading mode selector
+- admin mode selector
+- permissions panel
+- push settings
+- risk templates
+- scanner mode
+- trade ticket mode
+- Ruby mode
+- account status badges
+- allocation mode
+- onboarding/auth mode
+
+Allowed active modes should be:
+- DEMO
+- LIVE
+
+If using shared bridge:
+- LIVE_SHARED_BRIDGE can be an execution route/context, not a separate fake/paper mode.
+
+4. MIGRATE EXISTING PAPER DATA TO DEMO
+If database has existing users/settings with paper values, migrate them safely:
+
+- tradingMode: paper → demo
+- accountMode: paper → demo
+- defaultTradingMode: PAPER → DEMO
+- scannerMode: paper → demo
+- allocationMode: paper → demo if applicable
+- permissionMode: paper → demo
+
+Do not lose user accounts or trade history.
+
+Write migration/audit note:
+“Legacy paper mode migrated to demo.”
+
+5. KEEP LEGACY COMPATIBILITY ONLY IF REQUIRED
+If old code or old records still send paper values:
+- Accept paper only as a legacy input.
+- Immediately normalize it to DEMO server-side.
+- Do not expose paper back to frontend.
+- Do not create new paper records.
+- Do not allow paper to be selected from UI.
+
+Example:
+incoming tradingMode="paper" → normalize to "demo"
+
+6. ROUTE CLEANUP
+If /paper-trading route exists:
+- remove it from nav
+- remove user-facing links
+- redirect safely to /demo or /trade with demo mode
+- do not expose paper route to users
+
+7. RUBY CLEANUP
+Ruby should never say:
+- paper trading
+- paper mode
+- paper only
+
+Ruby should say:
+- demo trading
+- demo mode
+- live trading
+- live shared bridge
+
+If a user is blocked from live, Ruby should say:
+“You can use demo mode until live access is approved.”
+
+8. ADMIN CLEANUP
+Admin should not see Paper as an active mode.
+
+Admin should see:
+- Demo Access ON/OFF
+- Live Access ON/OFF
+- Shared Bridge Access ON/OFF
+- Request Live Bridge Access status
+- Risk Template
+- Allocation
+- Freeze controls
+
+No Paper toggle unless hidden legacy diagnostics show old migrated state.
+
+9. TESTS / GUARDS
+Add or update guards:
+- No user-facing “Paper Trading”
+- No user-facing “Paper Only”
+- No public /paper-trading links
+- No active trading mode can be set to paper
+- Any legacy paper input normalizes to demo
+- Existing paper records migrate to demo
+- Demo flow still works
+- Live flow still works
+- Live shared bridge flow still works
+
+10. SAFETY
+Removing Paper must not weaken live safety.
+
+Verify:
+- Demo does not send live commands
+- Live still requires approval
+- Shared bridge still requires approval
+- Broker execution still requires env AND operator switch
+- 16-gate evaluator still required
+- liveTrading chokepoint still required
+- allocation checks still required
+- kill switch still blocks
+- arx_live_commands remains unchanged during QA
+
+11. ACCEPTANCE TEST
+Before stopping, verify:
+- User-facing app only shows DEMO and LIVE.
+- No Paper/Paper Only/Paper Trading labels remain in user UI.
+- Admin cannot assign Paper as a mode.
+- Ruby does not mention Paper.
+- Scanner does not show Paper.
+- Trade ticket does not show Paper.
+- Existing legacy paper values are migrated or normalized to demo.
+- /paper-trading route is removed or safely redirected.
+- Demo trading still works.
+- Live shared bridge approval still works.
+- arx_live_commands count does not increase during QA.
+- No live trade is placed.
+- Login, Ruby, scanner, trade modal, bridge status, allocations, admin queue, and bottom nav still work.
+
+Run typecheck/build/tests and fix errors before stopping.

@@ -1,0 +1,367 @@
+Approve Phase 10 if it passed, then begin Phase 11: Reporting Center, export system, session summaries, trade reports, AI review reports, calendar reports, and downloadable CSV/PDF-ready outputs for the ARX AI trading app.
+
+IMPORTANT SCOPE:
+- Do NOT place live trades.
+- Do NOT enable live execution.
+- Keep liveLocked = true.
+- Keep READ_ONLY / PAPER_ONLY active.
+- Keep AllowOrderExecution = false.
+- Do NOT touch MT5 EA .mq5 files.
+- Do NOT weaken MT5 bridge token security.
+- Do NOT reset or wipe the database.
+- Do NOT change unrelated UI.
+- Do NOT move to Phase 12 until Phase 11 QA passes.
+- Do NOT expose raw bridge tokens, secrets, or another user's data in any export.
+
+Current status:
+- Phase 1 identity foundation: PASS.
+- Phase 2 per-user data scoping: PASS.
+- Phase 3 per-user MT5 connections/trading sessions: PASS.
+- Phase 4 per-user MT5 command routing: PASS.
+- Phase 5 paper trade lifecycle, journal, calendar: expected PASS.
+- Phase 6 AI trade review/coaching: expected PASS.
+- Phase 7 playbook/checklist: expected PASS.
+- Phase 8 Risk Governor: expected PASS.
+- Phase 9 dashboard intelligence: expected PASS.
+- Phase 10 notifications/activity timeline: expected PASS.
+- Now build Phase 11: reports and exports.
+
+Main goal:
+ARX AI should let each logged-in user generate clean, downloadable, user-scoped reports from their own trading activity. Reports should summarize paper trades, sessions, calendar performance, AI reviews, risk events, journal entries, playbooks, and coaching insights without leaking global/demo/other-user data.
+
+Phase 11A — Report/export data model:
+Create or finalize user-owned report_exports table.
+
+Required fields:
+- id
+- userId
+- reportType:
+  account_summary
+  trading_session_summary
+  paper_trades
+  performance_calendar
+  trade_journal
+  ai_trade_reviews
+  risk_governor
+  playbook_performance
+  coaching_summary
+  full_trading_archive
+- format: json/csv/pdf/html
+- status: pending/processing/completed/failed/expired
+- title
+- dateRangeStart nullable
+- dateRangeEnd nullable
+- filters json/text nullable
+- fileName nullable
+- filePath nullable
+- fileSize nullable
+- downloadUrl nullable
+- errorMessage nullable
+- createdAt
+- completedAt nullable
+- expiresAt nullable
+- updatedAt
+
+Rules:
+- Every report/export must belong to userId.
+- Never accept userId from the frontend.
+- Every report query must be scoped by req.authUser.id.
+- Never include raw bridge token, token hash, secrets, passwords, API keys, or private server values.
+- Do not show global/demo data as if it belongs to the user.
+
+Phase 11B — Backend report routes:
+Add or verify scoped routes:
+
+- GET /api/me/reports
+- POST /api/me/reports/generate
+- GET /api/me/reports/:id
+- GET /api/me/reports/:id/download
+- DELETE /api/me/reports/:id or POST /api/me/reports/:id/delete
+- GET /api/me/reports/options
+- GET /api/me/reports/preview
+
+Report generation request should support:
+- reportType
+- format
+- dateRangeStart
+- dateRangeEnd
+- tradingSessionId optional
+- symbol optional
+- strategyTag optional
+- status optional
+- includeJournal boolean
+- includeAIReviews boolean
+- includeRiskEvents boolean
+- includePlaybooks boolean
+- includeCalendar boolean
+- includeNotifications boolean false by default
+- timezone optional
+
+Requirements:
+- requireUser on every route.
+- Verify tradingSessionId belongs to req.authUser.id if provided.
+- Validate date ranges.
+- Limit extremely large exports or paginate.
+- Return clean errors for invalid report types.
+- Store generated report metadata user-scoped.
+- Download route must verify report belongs to req.authUser.id.
+
+Phase 11C — Report builders:
+Create centralized report builder services.
+
+Build these report types:
+
+1. Account Summary Report
+Include:
+- user-safe profile summary
+- MT5 connection status summary without secrets
+- current risk settings summary
+- overall paper trading stats
+- active playbooks count
+- current coaching focus
+
+2. Trading Session Summary Report
+Include:
+- session name
+- session start/end
+- trades taken
+- P/L
+- win/loss count
+- risk events
+- journal completion
+- AI summary
+- lessons learned
+
+3. Paper Trades Report
+Include:
+- trade list
+- symbol
+- side
+- entry/exit
+- stop loss/take profit
+- risk/reward
+- P/L
+- strategy tag
+- status
+- reason for entry/exit
+- AI grade if available
+
+4. Performance Calendar Report
+Include:
+- daily P/L
+- trades per day
+- wins/losses
+- best/worst day
+- monthly summary
+- streaks
+- no fake calendar data
+
+5. Trade Journal Report
+Include:
+- journal entries
+- linked trade/session
+- discipline score
+- execution score
+- mistake tags
+- lesson learned
+
+6. AI Trade Review Report
+Include:
+- review grades
+- strengths
+- weaknesses
+- mistake tags
+- improvement plan
+- next trade focus
+
+7. Risk Governor Report
+Include:
+- risk settings
+- blocked trades
+- warnings
+- cooldowns
+- daily loss events
+- live execution blocked events
+- risk compliance summary
+
+8. Playbook Performance Report
+Include:
+- playbooks
+- rules
+- checklist pass rate
+- trades linked to playbook
+- win/loss by playbook
+- AI improvement suggestions
+
+9. Coaching Summary Report
+Include:
+- top strengths
+- top weaknesses
+- most common mistakes
+- weekly goal
+- recommended focus
+- risk rule suggestion
+- journaling prompt
+
+10. Full Trading Archive
+Include:
+- user’s own sessions
+- paper trades
+- journal entries
+- AI reviews
+- risk events
+- playbooks
+- pre-trade checks
+- performance calendar summaries
+- activity timeline summary if selected
+
+Phase 11D — Export formats:
+Support at least JSON and CSV reliably.
+
+CSV exports:
+- Paper trades CSV
+- Journal CSV
+- Calendar CSV
+- Risk events CSV
+- AI reviews CSV
+
+PDF/HTML:
+If the project already supports PDF generation, create downloadable PDF reports.
+If PDF support is not already available, generate clean HTML reports first and clearly report that PDF rendering can be added with a lightweight server-side library later.
+Do not install heavy dependencies unless needed and safe.
+
+All exports should:
+- include ARX AI branding text
+- include generated date/time
+- include selected date range
+- include “Paper/read-only report — not financial advice”
+- exclude secrets
+- exclude raw bridge tokens
+- exclude other users’ data
+
+Phase 11E — Frontend Reporting Center:
+Only update the reporting/export areas.
+
+Add a Reporting Center page or panel with:
+- Report type selector
+- Date range selector
+- Format selector: CSV / JSON / PDF or HTML if PDF unavailable
+- Optional filters:
+  - session
+  - symbol
+  - strategy
+  - status
+  - include journal
+  - include AI reviews
+  - include risk events
+  - include playbooks
+- Generate report button
+- Report history list
+- Download button
+- Delete report button
+- Preview summary
+
+First-time state:
+- “No reports yet”
+- “Close paper trades and journal your sessions to generate useful reports”
+- “Your reports will appear here”
+
+Do not show fake reports or demo exports.
+
+Phase 11F — Dashboard and notification integration:
+Integrate lightly with Phase 9 and Phase 10.
+
+When a report completes:
+- create notification: report_ready
+- create activity event: report_generated
+
+Dashboard can show:
+- latest generated report
+- quick action: Generate Session Report
+- quick action: Export Trades CSV
+
+Do not clutter dashboard or redesign unrelated areas.
+
+Phase 11G — Security and privacy:
+Hard requirements:
+- User A cannot view/download/delete User B reports.
+- User A report cannot include User B data.
+- Reports cannot include raw bridge tokens.
+- Reports cannot include token hashes.
+- Reports cannot include secrets.
+- Download URLs must not bypass auth.
+- If files are stored locally/server-side, ensure file paths cannot be guessed to access another user’s report.
+- Sanitize file names.
+
+Phase 11H — Safety:
+Hard rules:
+- Reports cannot place trades.
+- Reports cannot queue commands.
+- Reports cannot enable live execution.
+- Reports cannot modify MT5 connection tokens.
+- Reports cannot bypass Risk Governor.
+- No live trade commands.
+- No OrderSend path.
+- No MT5 EA changes.
+
+Phase 11I — Tests:
+Add/extend tests:
+
+1. User A generates paper trades report.
+2. User B cannot see User A report.
+3. User B cannot download User A report.
+4. User A report only includes User A paper trades.
+5. Session report only includes that user’s session data.
+6. Calendar report only includes that user’s closed trades.
+7. AI review report only includes that user’s AI reviews.
+8. Risk report only includes that user’s risk events.
+9. Export does not include raw bridge token.
+10. Export does not include token hash.
+11. Invalid report type is rejected.
+12. Invalid date range is rejected.
+13. First-time user sees empty report state.
+14. Report completion creates user-scoped notification/activity event.
+15. No live trade command is created.
+16. MT5 EA files remain untouched.
+
+Phase 11J — QA/fix gate:
+After implementation, run QA and fix every issue before stopping.
+
+QA must confirm:
+- App starts.
+- Login/register/logout/me still work.
+- Phase 2 user scoping still passes.
+- Phase 3 MT5 connection isolation still passes.
+- Phase 4 command isolation still passes.
+- Phase 5 paper trade/journal/calendar still pass.
+- Phase 6 AI review/coaching still pass.
+- Phase 7 playbook/checklist still pass.
+- Phase 8 Risk Governor still passes.
+- Phase 9 dashboard intelligence still passes.
+- Phase 10 notifications/activity timeline still passes.
+- Report generation works.
+- CSV/JSON exports work.
+- PDF or HTML report output works depending on available support.
+- Report download is user-scoped.
+- No secrets or bridge tokens appear in reports.
+- First-time report state works.
+- User A/User B isolation passes.
+- No live trades executed.
+- No MT5 EA files changed.
+- Safety contract still passes.
+- Existing unrelated paperIntelligence.ts:123 typecheck issue is reported separately if still present.
+
+Final report format:
+1. Files changed
+2. Tables added/changed
+3. Routes added/changed
+4. Report types implemented
+5. Export formats implemented
+6. Reporting Center UI result
+7. Notification/activity integration result
+8. User A/User B isolation result
+9. Security/privacy verification
+10. Safety verification
+11. Remaining errors
+12. Phase 11 PASS or FAIL
+13. Stop and wait for my approval before Phase 12

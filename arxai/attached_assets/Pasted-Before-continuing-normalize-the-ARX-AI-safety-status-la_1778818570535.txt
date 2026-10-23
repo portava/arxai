@@ -1,0 +1,56 @@
+Before continuing, normalize the ARX AI safety-status language so there is no confusing liveLocked=false state.
+
+Do not modify the MT5 EA.
+Do not modify MT5_BRIDGE_TOKEN.
+Do not modify bridge auth.
+Do not enable live execution.
+Do not add broker execution.
+Do not change placementLayer away from BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
+
+Problem:
+The final report showed liveLocked=false, then said it is irrelevant because all live routes refuse. That wording is confusing and dangerous for future code, QA, and UI. We need the canonical status to clearly show live execution is disabled.
+
+Update the backend status model, API responses, and frontend display so the safety state is unambiguous:
+
+Required canonical flags:
+- executionMode: "READ_ONLY"
+- placementLayer: "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"
+- liveExecutionEnabled: false
+- liveBrokerExecutionAvailable: false
+- readOnlyGuardActive: true
+- paperTradingEnabled: true
+- brokerPlacementImplemented: false
+
+If liveLocked already exists:
+- Do not use liveLocked=false to represent safety.
+- Either remove it from dashboard-facing responses or make it derived as liveLocked:true when executionMode is READ_ONLY.
+- No UI should display liveLocked=false.
+
+Frontend dashboard should show:
+- Mode: READ_ONLY
+- Live Execution: Disabled
+- Broker Placement: Not Implemented
+- Paper Trading: Enabled
+- Read-Only Guard: Active
+
+Backend safety behavior:
+- Any attempted live/broker execution must still return:
+  status: "BLOCKED_READ_ONLY_MODE"
+  reason: "Live broker execution is disabled. ARX AI is currently paper-only."
+- No command should be sent to MT5 for broker placement.
+- No live route should execute.
+
+After changes, run tests confirming:
+1. MT5 bridge remains connected and healthy.
+2. Paper idea creation still works.
+3. Dashboard still shows MT5 connected.
+4. No live execution path exists.
+5. No response or UI surface says liveLocked=false.
+6. Safety flags are consistent everywhere.
+
+Return:
+- Files changed
+- Old confusing flag behavior found
+- New canonical safety status
+- Test results
+- Final PASS/FAIL

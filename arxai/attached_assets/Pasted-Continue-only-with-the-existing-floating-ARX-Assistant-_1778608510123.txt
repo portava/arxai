@@ -1,0 +1,178 @@
+Continue only with the existing floating ARX Assistant popup icon.
+
+Do not create a new assistant.
+Do not create a new popup.
+Do not create new pages.
+Do not change assistant answer logic unless required to expose icon state.
+Do not change trading logic, MT5 logic, broker execution, risk controls, or live trading.
+
+Goal:
+Upgrade the animated ARX Assistant icon so it visually communicates the assistant’s current state:
+- idle
+- hover
+- opening
+- open
+- closing
+- listening/typing
+- thinking/loading
+- answer ready
+- warning/blocker detected
+- error/unavailable
+- reduced-motion fallback
+
+Phase 1 — Find the real component
+Find the actual floating ARX Assistant trigger currently rendering in the live app.
+
+Confirm:
+- component file
+- where open/close state is managed
+- whether assistant loading/thinking state already exists
+- whether error state already exists
+- whether app blocker/safety state is already available
+
+Modify only the real floating assistant trigger.
+
+Phase 2 — Add icon state model
+Create a clean icon state model.
+
+Suggested states:
+- idle: AI-core orb glow
+- hover: stronger glow/pulse
+- opening: AI orb morphs into chat bubble
+- open: chat bubble with ARX logo/mark
+- closing: chat bubble morphs back into AI orb
+- thinking: orbit/spinner particles around icon
+- typing: subtle wave/three-dot glow
+- ready: soft confirmation pulse
+- warning: amber ring when blockers/safety issues are active
+- error: red ring if assistant/system failed
+- disabled: muted icon if assistant unavailable
+
+Do not use the warning/error state to suggest live trading readiness. It should only communicate assistant/app status.
+
+Phase 3 — Connect icon to assistant state
+The icon should react to:
+- assistant panel open/closed
+- assistant is generating/thinking
+- assistant has an answer ready
+- assistant error
+- current active blockers if already available
+- current app mode: paper/simulator/live-disabled
+- missing knowledge fallback if already logged
+
+Examples:
+- When user taps icon: orb morphs into chat bubble.
+- While assistant is thinking: small rotating cyan particles.
+- When answer is ready: one soft cyan pulse.
+- When blockers are active: subtle amber outer ring.
+- If assistant fails: subtle red outer ring with accessible label.
+
+Phase 4 — Add status tooltip / mini label
+On desktop hover, show a small tooltip:
+- “ARX Assistant”
+- “Ask anything about this app”
+- If blockers active: “Blockers detected — ask why”
+- If thinking: “Thinking…”
+
+On mobile long-press or tap-and-hold is optional. Do not make mobile cluttered.
+
+Phase 5 — Keep it premium and lightweight
+Use:
+- SVG
+- CSS transitions/keyframes
+- React state/classes
+
+Avoid:
+- heavy animation dependencies
+- video files
+- GIFs
+- constant expensive re-renders
+- layout-shifting animations
+
+If Framer Motion is already installed, it may be used lightly. Do not install it just for this.
+
+Phase 6 — Respect accessibility
+Add:
+- aria-label changes by state:
+  - “Open ARX Assistant”
+  - “Close ARX Assistant”
+  - “ARX Assistant is thinking”
+  - “ARX Assistant warning: blockers detected”
+- keyboard focus ring
+- Enter/Space opens assistant
+- prefers-reduced-motion support
+
+Reduced motion behavior:
+- no morphing animation
+- simple fade/scale only
+- no particle trails
+- static AI/chat icon state
+
+Phase 7 — Mobile layout safety
+Confirm the animated icon:
+- stays above bottom nav
+- does not block More tab
+- does not block Emergency Stop
+- does not block Help Center chips
+- does not cause screen overflow
+- remains tappable
+- panel opens upward
+
+Use safe mobile offset:
+bottom: calc(env(safe-area-inset-bottom) + 96px)
+
+Phase 8 — Desktop layout safety
+Confirm:
+- floats bottom-right
+- does not overlap sidebar
+- does not block menu items
+- hover tooltip works
+- animation does not shift page layout
+
+Phase 9 — Add tests/checks
+Add or update tests for:
+- assistant icon renders
+- open/close toggles still work
+- state changes apply correct classes
+- reduced-motion fallback works
+- no duplicate assistant trigger appears
+- icon does not trigger route changes
+- icon does not call trading/MT5/broker functions
+- forbidden execution logic remains untouched
+
+Phase 10 — Runtime QA
+Manually verify:
+
+Mobile:
+1. Open app.
+2. Confirm animated assistant icon floats above bottom nav.
+3. Tap icon.
+4. Confirm AI orb morphs into chat bubble.
+5. Ask a question.
+6. Confirm thinking animation appears.
+7. Confirm answer-ready pulse appears.
+8. Close assistant.
+9. Confirm chat bubble morphs back to AI orb.
+10. Confirm bottom nav and More tab remain clickable.
+
+Desktop:
+1. Confirm bottom-right floating position.
+2. Hover icon.
+3. Confirm tooltip appears.
+4. Open assistant.
+5. Ask a question.
+6. Confirm thinking/ready states.
+7. Confirm no sidebar/menu overlap.
+
+Phase 11 — Report back
+Return:
+- actual floating assistant trigger file found
+- files changed
+- icon states added
+- animation method used
+- assistant states connected
+- accessibility updates
+- reduced-motion behavior
+- mobile QA result
+- desktop QA result
+- confirmation that no trading, MT5, broker execution, risk, or live trading logic was changed

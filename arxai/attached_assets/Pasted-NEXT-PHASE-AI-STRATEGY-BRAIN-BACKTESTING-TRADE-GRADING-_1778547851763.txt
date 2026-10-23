@@ -1,0 +1,506 @@
+NEXT PHASE: AI STRATEGY BRAIN + BACKTESTING + TRADE GRADING SYSTEM
+
+Goal:
+Build the intelligence layer that makes the trading app feel like a real AI trading command center.
+
+The app already has:
+- full tester access
+- live chart embed
+- simulated market engine
+- demo/manual simulator
+- demo AI simulator
+- live tester workflows
+- live intent queue
+- journal/calendar/audit logs
+- MT5 deferred until later
+
+Now build:
+- AI Strategy Brain
+- Strategy Lab
+- Backtesting Engine
+- Market Replay
+- Trade Grader
+- AI Coaching System
+- Performance Scorecard
+- Entry Quality Scoring
+- Mistake Detection
+- Learning Loop Improvements
+
+Important:
+Do not require MT5 for this phase.
+Do not fake MT5 connection.
+Do not claim real broker execution.
+Do not place real orders.
+Everything in this phase should work in SIMULATOR / PAPER / DEMO_SIM / LIVE_INTENT modes.
+
+==================================================
+1. CREATE STRATEGY LAB
+==================================================
+
+Create a new page:
+
+/strategy-lab
+
+The Strategy Lab should allow the tester to create, edit, and test trading strategies.
+
+Strategy fields:
+
+- strategyName
+- tradingStyle:
+  - Scalping
+  - Intraday
+  - Swing
+  - News Avoidance
+  - Breakout
+  - Pullback
+  - Trend Continuation
+  - Reversal
+  - Liquidity Sweep
+  - Custom
+- preferredSymbols
+- preferredTimeframes
+- entryRules
+- exitRules
+- invalidationRules
+- maxRiskPerTrade
+- minimumRiskReward
+- minimumConfidenceScore
+- sessionPreference
+- avoidConditions
+- notes
+
+Add default strategy templates:
+
+1. Conservative Pullback Strategy
+2. Trend Continuation Strategy
+3. Breakout Confirmation Strategy
+4. Liquidity Sweep Reversal Strategy
+5. Gold Scalping Test Strategy
+6. Custom Blank Strategy
+
+==================================================
+2. CREATE AI MARKET ANALYST
+==================================================
+
+Create an AI Market Analyst module that can review a symbol and produce a structured analysis.
+
+It should analyze:
+
+- trend direction
+- market structure
+- support/resistance zones
+- volatility
+- spread condition
+- recent candle behavior
+- higher-timeframe bias
+- lower-timeframe entry condition
+- risk/reward quality
+- setup quality
+- invalidation level
+- whether to trade now or wait
+
+Output format:
+
+{
+  "symbol": "XAUUSD",
+  "timeframe": "M15",
+  "marketBias": "bullish | bearish | neutral | choppy",
+  "trendStrength": 0-100,
+  "setupQualityScore": 0-100,
+  "entryQualityScore": 0-100,
+  "riskScore": 0-100,
+  "confidenceScore": 0-100,
+  "recommendedAction": "BUY | SELL | WAIT | REJECT",
+  "entryZone": {},
+  "stopLoss": number,
+  "takeProfit": number,
+  "riskRewardRatio": number,
+  "reasonForTrade": "...",
+  "reasonToAvoid": "...",
+  "invalidationReason": "...",
+  "rulesPassed": [],
+  "rulesFailed": []
+}
+
+Important:
+If the data source is simulator/tester data, clearly mark:
+
+dataSource = SIMULATOR
+
+Do not pretend it is broker data.
+
+==================================================
+3. CREATE BACKTESTING ENGINE
+==================================================
+
+Create a new page:
+
+/backtesting
+
+The tester should be able to run a strategy against historical/simulated candle data.
+
+Backtest inputs:
+
+- strategy
+- symbol
+- timeframe
+- start date
+- end date
+- starting balance
+- risk per trade
+- max trades per day
+- spread assumption
+- slippage assumption
+- session filter
+
+Backtest results:
+
+- total trades
+- wins
+- losses
+- win rate
+- average risk/reward
+- net simulated P/L
+- max drawdown
+- profit factor
+- expectancy
+- best trade
+- worst trade
+- average hold time
+- rejected setups
+- rule violations
+- AI confidence accuracy
+
+Add endpoint:
+
+POST /api/backtesting/run
+
+Also add:
+
+GET /api/backtesting/results
+GET /api/backtesting/result/:id
+
+==================================================
+4. CREATE MARKET REPLAY MODE
+==================================================
+
+Create page:
+
+/market-replay
+
+Market replay should allow the user to replay candles step by step.
+
+Features:
+
+- choose symbol
+- choose timeframe
+- choose strategy
+- play/pause
+- step forward one candle
+- speed control
+- AI decision at each candle
+- show why AI would enter, wait, or reject
+- allow tester to compare human decision vs AI decision
+
+Store every replay decision as:
+
+- replayId
+- candleIndex
+- symbol
+- timeframe
+- aiAction
+- humanAction optional
+- entry
+- stopLoss
+- takeProfit
+- confidenceScore
+- riskScore
+- reason
+- outcome
+
+==================================================
+5. CREATE TRADE GRADER
+==================================================
+
+Create page:
+
+/trade-grader
+
+Every trade or live-intent should receive a grade.
+
+Grades:
+
+- A+ = elite setup
+- A = strong setup
+- B = acceptable setup
+- C = weak setup
+- D = poor setup
+- F = should not trade
+
+Score trade on:
+
+- trend alignment
+- entry timing
+- stop loss placement
+- take profit logic
+- risk/reward
+- position size
+- confidence quality
+- spread condition
+- rule compliance
+- emotional discipline
+- overtrade risk
+
+Output:
+
+{
+  "tradeGrade": "A | B | C | D | F",
+  "overallScore": 0-100,
+  "strengths": [],
+  "weaknesses": [],
+  "mistakesDetected": [],
+  "improvementSuggestion": "...",
+  "shouldHaveTakenTrade": true/false
+}
+
+==================================================
+6. CREATE ENTRY SNIPER SCORE
+==================================================
+
+Add an Entry Sniper Score to AI trade cards.
+
+Score:
+
+0-100
+
+Factors:
+
+- how close entry is to ideal zone
+- stop loss efficiency
+- risk/reward quality
+- candle confirmation
+- trend alignment
+- volatility condition
+- spread condition
+- patience score
+- whether trade was chased
+
+Labels:
+
+- PERFECT_ENTRY_ZONE
+- GOOD_ENTRY
+- ACCEPTABLE_ENTRY
+- LATE_ENTRY
+- CHASED_ENTRY
+- DO_NOT_ENTER
+
+This should appear on:
+
+- AI trade cards
+- manual trade ticket
+- live intent queue
+- journal
+- trade grader
+
+==================================================
+7. IMPROVE LEARNING LOOP
+==================================================
+
+The learning loop should now store:
+
+- strategy used
+- setup type
+- AI confidence before trade
+- trade grade before trade
+- entry sniper score
+- actual/simulated outcome
+- whether confidence was justified
+- mistake category
+- what AI should improve next
+
+Mistake categories:
+
+- entered too early
+- entered too late
+- bad stop loss
+- bad take profit
+- low risk/reward
+- traded against trend
+- traded during chop
+- overtrading
+- ignored volatility
+- ignored spread
+- low confidence trade
+- no mistake detected
+
+Create:
+
+GET /api/learning/performance
+GET /api/learning/mistakes
+GET /api/learning/recommendations
+
+==================================================
+8. CREATE AI COACH PAGE
+==================================================
+
+Create page:
+
+/ai-coach
+
+This page should explain how the trader and AI are performing.
+
+Sections:
+
+- What the AI is doing well
+- What the AI is doing poorly
+- Best strategy so far
+- Worst strategy so far
+- Best symbol so far
+- Weakest symbol so far
+- Most common mistake
+- Recommended focus for next session
+- Suggested rule changes
+- Confidence calibration
+
+Example output:
+
+“The AI is generating better results during trend continuation setups, but it is still weak during choppy market conditions. Reduce trades during neutral bias and require higher confidence before entry.”
+
+==================================================
+9. CREATE PERFORMANCE SCORECARD
+==================================================
+
+Create page:
+
+/performance-scorecard
+
+Show:
+
+- win rate
+- simulated P/L
+- average R:R
+- expectancy
+- max drawdown
+- best setup
+- worst setup
+- best symbol
+- worst symbol
+- AI approval accuracy
+- AI rejection accuracy
+- manual vs AI performance
+- strategy ranking
+- grade distribution
+- mistake distribution
+
+Separate results by environment:
+
+- Paper
+- Demo Simulator
+- Live Tester Intent
+- Real Broker, future only
+
+Do not mix these environments.
+
+==================================================
+10. CONNECT TO EXISTING APP
+==================================================
+
+Add navigation links:
+
+- Strategy Lab
+- Backtesting
+- Market Replay
+- Trade Grader
+- AI Coach
+- Performance Scorecard
+
+Add dashboard cards:
+
+- Best Strategy
+- Latest Trade Grade
+- Entry Sniper Score
+- AI Confidence Accuracy
+- Most Common Mistake
+- Recommended Next Test
+
+==================================================
+11. API ENDPOINTS
+==================================================
+
+Create or update:
+
+GET /api/strategies
+POST /api/strategies
+GET /api/strategies/:id
+PATCH /api/strategies/:id
+DELETE /api/strategies/:id
+
+POST /api/ai/market-analysis
+POST /api/ai/generate-trade-card
+POST /api/ai/grade-trade
+POST /api/ai/entry-sniper-score
+
+POST /api/backtesting/run
+GET /api/backtesting/results
+GET /api/backtesting/result/:id
+
+POST /api/market-replay/start
+POST /api/market-replay/step
+POST /api/market-replay/stop
+GET /api/market-replay/:id
+
+GET /api/performance/scorecard
+GET /api/learning/performance
+GET /api/learning/mistakes
+GET /api/learning/recommendations
+
+==================================================
+12. FINAL TEST
+==================================================
+
+Run:
+
+- route smoke test
+- Strategy Lab test
+- strategy creation test
+- AI market analysis test
+- trade card generation test
+- entry sniper score test
+- trade grader test
+- backtesting test
+- market replay test
+- learning loop test
+- AI coach test
+- performance scorecard test
+- environment separation test
+- journal/calendar/audit integration test
+
+Generate:
+
+AI STRATEGY BRAIN REPORT
+
+Include:
+
+- Strategy Lab active yes/no
+- default strategies created yes/no
+- AI Market Analyst active yes/no
+- Backtesting active yes/no
+- Market Replay active yes/no
+- Trade Grader active yes/no
+- Entry Sniper Score active yes/no
+- Learning Loop upgraded yes/no
+- AI Coach active yes/no
+- Performance Scorecard active yes/no
+- dashboard updated yes/no
+- routes pass yes/no
+- MT5 still deferred yes/no
+- real broker execution still not faked yes/no
+
+Hard rules:
+- Do not fake live trading.
+- Do not fake MT5 connection.
+- Do not claim guaranteed profits.
+- Do not mix simulator, paper, tester intent, and real broker data.
+- Do not allow AI auto-live execution without MT5 and guarded order routing.
+- Do not remove risk governor.
+- Do not remove kill switch UI.

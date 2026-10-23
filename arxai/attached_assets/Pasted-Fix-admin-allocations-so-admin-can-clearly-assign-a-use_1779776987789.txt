@@ -1,0 +1,183 @@
+Fix /admin/allocations so admin can clearly assign a user to the shared master MT5 account/allocation and the user account shell updates from zero balance/equity.
+
+Current issue:
+The app now sees the live bridge/master account balance, but the admin page helper does not expose the exact controls needed to attach a user to the shared-master allocation. A user can be approved/active but still show 0 balance and 0 equity because they are not actually attached to SHARED_MASTER_MT5 allocation.
+
+Do not place trades.
+Do not insert live commands.
+Do not type operator phrases.
+Do not bypass safety gates.
+Do not fake balances.
+Do not recommend lot size.
+Do not expose master balance to normal users.
+Do not create duplicate allocation systems.
+
+Create checkpoint first:
+checkpoint: fix-shared-master-user-assignment-ui
+
+Task 1 — Add explicit shared account assignment controls:
+On /admin/allocations, admin must be able to:
+
+1. See the pinned live master bridge account.
+2. See the live master bridge balance/equity/free margin/headroom.
+3. Search/select a user.
+4. Attach that user to SHARED_MASTER_MT5.
+5. Assign that user a shared-master allocation.
+6. Save the assignment.
+7. Confirm the user is linked to the shared master account.
+8. See assignment status in the user row/card.
+
+The UI must clearly distinguish:
+- user approved
+- user assigned to shared master
+- user allocated funds
+- user risk caps complete
+- user frozen/unfrozen
+- user account shell showing balance/equity
+
+Approval alone is not enough. The app must require and display actual shared-master assignment/allocation.
+
+Task 2 — Backend wiring:
+Repair or add admin-only endpoints for:
+
+1. List users eligible for shared master allocation.
+2. Attach selected user to SHARED_MASTER_MT5.
+3. Save user allocation amount.
+4. Save account mode/account shell as SHARED_MASTER_MT5.
+5. Refresh/recalculate user account shell after assignment.
+6. Return assignment status to admin UI.
+7. Return safe user-facing account shell through /api/me/account and/or /api/me/allocation.
+
+Use the existing allocation source of truth:
+- user_slot_allocation or the current active allocation table/service.
+
+Do not restore duplicate old allocation systems unless absolutely required.
+
+Task 3 — User account shell:
+After admin saves assignment/allocation, the user-facing account shell must update from zero to the correct safe values.
+
+Normal user should see:
+- account mode: SHARED_MASTER_MT5
+- assigned allocation
+- available capacity
+- equity/capacity value based on assigned allocation
+- open P/L if available
+- approval status
+- frozen/locked reason if applicable
+- risk caps
+
+Normal user must NOT see:
+- full master account balance
+- other users’ allocations
+- admin controls
+- master credentials
+- backend constants
+- raw route names
+- table names
+- debug values
+
+Task 4 — Admin UI states:
+In /admin/allocations, show clear statuses:
+
+- Master bridge pinned
+- Master balance synced
+- User approved
+- User assigned to SHARED_MASTER_MT5
+- Allocation attached
+- Risk caps complete/incomplete
+- User account shell synced
+- User frozen/unfrozen
+
+If something is missing, show the exact missing step with a button/action to fix it.
+
+Examples:
+- “User approved but not assigned to shared master.”
+- “Assign shared master account”
+- “Allocation missing”
+- “Add allocation”
+- “Risk caps missing”
+- “Complete risk caps”
+- “User account shell not synced”
+- “Refresh user account shell”
+
+Task 5 — Audit logs:
+Every shared account assignment and allocation change must create an audit entry:
+- admin user ID
+- target user ID
+- action
+- before value
+- after value
+- timestamp
+- reason/comment if available
+
+Actions to audit:
+- assign shared master account
+- remove shared master assignment
+- add allocation
+- remove allocation
+- set allocation
+- freeze/unfreeze
+- update risk caps
+- refresh account shell
+
+Task 6 — Live readiness integration:
+Update live readiness so it checks:
+
+1. User is approved.
+2. User is assigned to SHARED_MASTER_MT5.
+3. User has allocation > 0.
+4. User account shell is synced.
+5. Risk caps complete.
+6. User is not frozen.
+7. Master bridge is pinned.
+8. Master account snapshot is fresh.
+
+If user is approved but not assigned, show:
+“Shared master account assignment required.”
+
+If user is assigned but allocation is missing, show:
+“Allocation required.”
+
+If account shell still shows zero after assignment, show:
+“User account shell needs refresh.”
+
+Task 7 — QA:
+Run safe QA with no live trades.
+
+Verify:
+1. /admin/allocations shows live master bridge balance/headroom.
+2. Admin can select a user.
+3. Admin can assign selected user to SHARED_MASTER_MT5.
+4. Admin can allocate funds to selected user.
+5. Admin can save assignment/allocation.
+6. Admin sees user assignment status as attached.
+7. Admin sees allocation attached.
+8. /api/me/allocation for that user shows assigned allocation only.
+9. User-facing account shell changes from zero to assigned allocation/capacity.
+10. Normal user does not see full master account balance.
+11. Normal user does not see other users.
+12. Approval without assignment still shows blocked.
+13. Assignment without allocation still shows blocked.
+14. Allocation without risk caps still shows blocked.
+15. Frozen user still shows blocked.
+16. arx_live_commands count remains 0.
+17. No live trade is placed.
+18. No operator phrases are typed.
+19. Typecheck passes.
+20. CI guards pass.
+21. Phase B / 16-gate tests pass.
+22. Allocation runtime QA passes.
+23. Mobile admin allocation UI works.
+
+After fixing:
+Create checkpoint:
+fix: shared master user assignment and account shell sync
+
+Final report only:
+- files/routes changed
+- exact assignment flow added
+- whether user can now be attached to SHARED_MASTER_MT5
+- whether user account shell updates from zero
+- whether admin can allocate from live bridge headroom
+- QA results
+- remaining operator-only action, if any

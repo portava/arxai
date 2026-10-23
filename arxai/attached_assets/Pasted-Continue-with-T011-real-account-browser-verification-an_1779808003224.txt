@@ -1,0 +1,167 @@
+Continue with T011: real-account browser verification and final screenshot-bug sweep.
+
+Current completed state:
+- T003 complete: unified live/account-mode resolver.
+- T004 complete: /my-account allocation shell fixed.
+- T005 complete: alerts/notifications fixed.
+- T006 complete: mode-scope filters fixed.
+- T007 complete: crash hardening fixed.
+- T008 complete: admin/operator unrestricted trade ticket limits fixed.
+- T009 complete: scanner real-feed routing fixed.
+- T010 complete: final live-mode UI polish pass.
+- Typecheck PASS.
+- CI guards 23/23 PASS.
+- Safety tests PASS.
+- arx_live_commands count remains 0.
+- No live trades placed.
+- No operator phrases typed.
+- No safety gates weakened.
+
+Now verify the real running app with the real user/admin account, not only seeded tests.
+
+Do not place trades.
+Do not insert arx_live_commands.
+Do not type operator phrases.
+Do not recommend lot size.
+Do not broaden the narrow env parser.
+Do not weaken safety gates.
+Do not fake data.
+Do not expose admin diagnostics to normal users.
+
+Create checkpoint first:
+checkpoint: t011-real-account-browser-verification
+
+Task 1 — Verify real account mode:
+Using the real logged-in account, verify:
+- Global header says live/shared state correctly.
+- All pages agree with /api/me/account-mode.
+- No page still computes mode from stale local flags.
+- No page says demo/paper/simulator/live-disabled while the account-mode resolver says LIVE_SHARED.
+
+Task 2 — Verify real /my-account:
+Open /my-account and confirm:
+- Account mode shows shared master / SHARED_MASTER_MT5.
+- My Balance reflects assigned user allocation.
+- My Equity reflects assigned user allocation plus/minus user P/L.
+- Assigned Allocation is not stale zero when allocation exists.
+- Manual allocation and AI sleeve allocation display separately.
+- Bridge Preference does not show “Use my own MT5 bridge” as active when shared-master attached.
+- Risk caps display from actual saved caps.
+- Normal user view does not expose master bridge balance.
+
+Task 3 — Verify real admin allocations:
+Open /admin/allocations and confirm:
+- Master bridge balance/equity/free margin/headroom display for admin.
+- User 4 / Andraie appears if attached.
+- User allocation shows correctly.
+- AI sleeve allocation shows correctly.
+- Refresh shell works.
+- Add/Set/Transfer/Freeze/Unfreeze controls display correctly.
+- Audit history displays correctly.
+- No stale zero state after refresh.
+
+Task 4 — Verify real live pages:
+Open these pages in the actual browser and confirm no stale demo/paper/test language or data:
+- /dashboard or home
+- /settings
+- /notifications
+- /alerts
+- /help
+- /market-scanner
+- /trade
+- /live-shared
+- /live-ai-assist
+- /live-chart
+- /my-trades or actual open trades route
+- /trading-calendar
+- /action-center
+- /broker-reconciliation
+- /live-trading-control
+- /audit-vault
+- /safety-logs
+
+For each page:
+- no red runtime overlay
+- no raw backend constants
+- no raw booleans
+- no demo/paper/test rows in live mode
+- no repeated inner live-money warning banners
+- no typed-phrase wording
+- no stale “MT5 disconnected” alerts when heartbeat is fresh
+- no “simulator only” in live mode
+- no “live trading disabled” when live is armed
+- clean empty state if no live trades/positions/actions exist
+
+Task 5 — Verify position/trade data:
+Check live positions, trade history, calendar, scanner recent actions, and live intent queue.
+
+Required:
+- If no live positions exist, show no open positions.
+- If no live trades exist, calendar and P/L show empty/zero live state.
+- Live Intent Queue shows only LIVE_SHARED intents.
+- Demo/paper/test records stay hidden from live pages.
+- No stale ghost positions appear.
+
+Task 6 — Verify scanner real feed:
+Open Market Scanner and test:
+- V25 1s
+- V75
+- EURUSD
+
+Confirm:
+- synthetic symbols do not say simulator pipeline when live feed/router is active
+- no “symbol not available in simulator” when real feed exists
+- scanner modal does not show DEMO badge in live shared mode
+- Buy/Sell opens live review/ticket path without creating demo/paper commands
+- recent scanner actions are mode-aware
+
+Task 7 — Verify trade ticket behavior:
+Open trade ticket/review screens without submitting a live order.
+
+Confirm:
+- no typed phrase fields
+- button-based review/confirm copy only
+- admin/operator unrestricted profile does not show starter/default caps
+- normal users still show real assigned caps
+- no live order is placed during verification
+- arx_live_commands stays 0
+
+Task 8 — Verify Audit Vault / Safety Logs:
+Confirm menu behavior is clear:
+- Audit Vault and Safety Logs are either separate pages, or one page with clear tabs.
+- They do not look like accidental duplicate links.
+- Normal users cannot see admin-only audit/safety diagnostics.
+
+Task 9 — Fix anything visible:
+If a real browser page still shows stale/demo/paper/internal text, fix that page directly.
+If a page still crashes, apply safe formatter/normalizer.
+If a page still reads stale data, rewire to useTradingMode/account-mode resolver and mode-scoped endpoints.
+Retest after each fix.
+
+Task 10 — Final QA:
+Run:
+- pnpm run typecheck
+- pnpm run build if available
+- pnpm run ci:guards
+- test:account-mode
+- test:mode-scope
+- test:alert-notification-contract
+- test:crash-hardening
+- test:admin-unrestricted-risk
+- test:scanner-real-feed
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- allocation runtime QA
+- arx_live_commands count before/after
+
+Final report only:
+- real pages checked
+- real-account issues found
+- fixes made
+- screenshots bugs verified fixed
+- pages still needing manual review, if any
+- arx_live_commands count
+- confirmation no live trades placed
+- confirmation no operator phrases typed
+- confirmation no safety gates weakened

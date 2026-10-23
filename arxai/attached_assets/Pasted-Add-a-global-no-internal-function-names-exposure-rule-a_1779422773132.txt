@@ -1,0 +1,224 @@
+Add a global no-internal-function-names exposure rule across the ARX AI app.
+
+Goal:
+Normal users should never see raw internal function names, tool names, API route names, backend method names, database field names, camelCase labels, stack traces, or developer/debug identifiers in the UI.
+
+Current example:
+Ruby chat showed getMyPerformanceSummary.
+That should never appear to users. It should show a friendly status like:
+“Ruby is reviewing your performance…”
+
+Scope:
+Apply this across the whole app, not only Ruby chat.
+
+Audit and sanitize user-facing text in:
+- Ruby chat
+- Ruby voice mode
+- quick suggestions
+- market scanner
+- trade panel
+- one-click trade flow
+- live trade blockers
+- status badges
+- error messages
+- toast notifications
+- loading states
+- empty states
+- admin approval messages shown to regular users
+- scanner cards
+- risk page
+- dashboard/cockpit
+- live chart page
+- settings
+- More page
+- mobile overlays/modals
+
+Do not expose names like:
+- getMyPerformanceSummary
+- getMarketRead
+- executeTradeIntent
+- validateLiveTrade
+- fetchScannerData
+- serverLiveExecutionEnabled
+- oneClickLiveTradingEnabled
+- aiInstantTradeCommandsEnabled
+- liveSharedApproved
+- brokerServerConfirm
+- confirmedAccountNumber
+- confirmedBrokerName
+- confirmedServerName
+- /api/trades/instant/execute
+- /api/mt5/live-commands-poll
+- raw endpoint names
+- raw database column names
+- stack traces
+- JSON payloads
+- camelCase function labels
+
+Replace them with friendly user-facing copy.
+
+Examples:
+- getMyPerformanceSummary → Ruby is reviewing your performance…
+- getMarketRead → Ruby is checking this market…
+- executeTradeIntent → Sending trade…
+- validateLiveTrade → Checking trade readiness…
+- serverLiveExecutionEnabled=false → Live trading is not armed yet.
+- liveSharedApproved=false → Account not approved for live shared trading.
+- killSwitchActive=true → Kill switch active — new trades blocked.
+- confirmedAccountNumber missing → Account confirmation is missing.
+- API failed → Ruby could not complete that request. Try again.
+
+Admin/dev exception:
+Internal names may appear only inside an admin/dev-only collapsed debug drawer.
+They must not appear for regular users, tester users, or public accounts.
+Debug drawer must be clearly labeled:
+“Developer details”
+and collapsed by default.
+
+Tasks:
+
+1. Search the entire repo for user-facing internal names
+Find any JSX/text/toast/error/status copy that renders:
+- camelCase function names
+- raw route names
+- API endpoint strings
+- DB field names
+- internal tool names
+- stack traces
+- raw JSON
+- raw exception messages
+
+2. Build a shared user-facing label mapper
+
+Create a helper like:
+getFriendlySystemLabel(internalKey)
+
+Examples:
+- getMyPerformanceSummary → Reviewing performance
+- getMarketRead → Checking market
+- executeTradeIntent → Sending trade
+- validateLiveTrade → Checking readiness
+- fetchScannerData → Loading scanner data
+- serverLiveExecutionEnabled → Live dispatch
+- oneClickLiveTradingEnabled → One-click trading
+- aiInstantTradeCommandsEnabled → Ruby trade commands
+- liveSharedApproved → Live trading approval
+
+Use this helper anywhere internal system states are shown.
+
+3. Sanitize Ruby chat/tool UI
+
+Ruby chat must never show raw function chips to normal users.
+
+Instead:
+- Ruby is thinking…
+- Ruby is typing…
+- Ruby is checking your performance…
+- Ruby is reading the scanner…
+- Ruby is reviewing your open trades…
+- Ruby is sending your trade…
+- Ruby is checking trade readiness…
+
+Hide raw tool calls from the normal chat timeline.
+
+4. Sanitize errors and blockers
+
+Normal users should see simple explanations.
+
+Examples:
+Instead of:
+serverLiveExecutionEnabled false
+
+Show:
+Live trading is not armed yet.
+
+Instead of:
+liveSharedApproved false
+
+Show:
+Your account is not approved for live shared trading.
+
+Instead of:
+POST /api/trades/instant/execute failed
+
+Show:
+Trade could not be sent.
+
+Instead of:
+confirmedBrokerName mismatch
+
+Show:
+Broker confirmation does not match.
+
+5. Sanitize loading states
+
+No raw operation names should appear while loading.
+
+Use:
+- Loading market data…
+- Checking account status…
+- Reviewing performance…
+- Sending trade…
+- Updating positions…
+- Checking scanner…
+- Syncing chart…
+- Ruby is thinking…
+
+6. Sanitize mobile overlays
+
+On iPhone Safari, make sure:
+- no internal function chip appears
+- no raw API error appears
+- no debug JSON appears
+- no camelCase state name appears
+- no route name appears
+- no stack trace appears
+
+7. Add production guard
+
+Add a test or utility that scans normal user UI strings for forbidden patterns:
+- get[A-Z]
+- execute[A-Z]
+- validate[A-Z]
+- fetch[A-Z]
+- serverLiveExecutionEnabled
+- oneClickLiveTradingEnabled
+- aiInstantTradeCommandsEnabled
+- /api/
+- stack trace markers
+- raw JSON object rendering
+- common internal route/tool names
+
+This guard should fail if those strings appear in normal user-rendered UI snapshots.
+
+8. Keep admin/debug available safely
+
+For admin/operator/dev users only:
+- allow internal details inside a collapsed “Developer details” drawer
+- never show by default
+- never show to regular users
+- never show in Ruby’s normal chat bubble
+
+9. Tests
+
+Run:
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm --filter @workspace/scripts run test:live-phaseB
+
+Add/update tests proving:
+- Ruby performance summary does not expose getMyPerformanceSummary.
+- Ruby market read does not expose getMarketRead.
+- Trade execution does not expose executeTradeIntent.
+- Readiness checks do not expose validateLiveTrade.
+- Normal users never see /api/ route names in UI.
+- Normal users never see raw camelCase backend fields.
+- Normal users never see stack traces or raw JSON.
+- Admin/dev can see internal details only inside collapsed Developer details.
+- Mobile UI shows friendly labels only.
+
+Do not remove features.
+Do not remove debug capability for admin/dev.
+Do not change backend trading behavior.
+Do not create duplicate Ruby/chat/scanner/trade components.
+Only sanitize and polish what users see.

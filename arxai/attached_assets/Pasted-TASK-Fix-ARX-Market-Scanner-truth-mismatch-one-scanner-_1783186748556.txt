@@ -1,0 +1,80 @@
+TASK: Fix ARX Market Scanner truth mismatch — one scanner truth system only.
+
+Problem:
+The Market Scanner page currently shows contradictory trade states at the same time:
+- Header/action status says "Conditional Buy"
+- Chart badge says "F - Wait for Entry"
+- Eleanor Chart Read says "WAIT — no confirmed direction"
+- Opportunity Scanner cards show separate BUY / Too late / No clean setup / No live data states
+
+This proves the Market Scanner, chart action button, Eleanor read panel, and Opportunity Scanner are not using the same canonical verdict source.
+
+Goal:
+There must be ONE canonical scanner truth object per symbol/timeframe/read cycle, and every visible scanner UI must render from it.
+
+Required behavior:
+1. Create or identify the single canonical scanner verdict object.
+   It must include at minimum:
+   - symbol
+   - timeframe
+   - verdict/action: BUY | SELL | WAIT | CONDITIONAL_BUY | CONDITIONAL_SELL | NO_TRADE | NO_LIVE_DATA | TOO_LATE
+   - confidence
+   - bias
+   - htfBias
+   - reason/why
+   - confirmation
+   - invalidation
+   - support/resistance
+   - liveDataStatus
+   - feedStatus
+   - timestamp/readId
+
+2. The following UI areas must consume that exact same object:
+   - Top scanner summary/action card
+   - Chart badge/action button
+   - Eleanor Chart Read panel
+   - Opportunity Scanner result card for the selected/current symbol
+   - Prepare Trade button state
+   - Ask Eleanor context payload
+
+3. Remove independent verdict calculations from UI components.
+   Components must not independently decide BUY, WAIT, Conditional Buy, Too Late, or No Live Data.
+   They should only map the canonical verdict to display labels.
+
+4. Add a verdict normalizer:
+   Example mapping:
+   - WAIT / NO_TRADE => button says "Wait" or disabled "No Trade"
+   - CONDITIONAL_BUY => action card says "Conditional Buy", button says "Prepare Conditional Buy"
+   - BUY => action card says "Buy", button says "Prepare Buy" or "Buy" if one-click is armed
+   - TOO_LATE => disabled "Too Late"
+   - NO_LIVE_DATA => disabled "No Live Data"
+   - LOW confidence + mixed/no HTF edge should not show direct BUY
+
+5. Fix the selected-symbol card in Opportunity Scanner.
+   If the selected symbol is Volatility 75 (1s) Index, its opportunity card must match the same verdict shown in Eleanor and the top action area.
+   It must not be allowed to show BUY while Eleanor says WAIT.
+
+6. Add regression tests.
+   Tests must prove:
+   - When canonical verdict is WAIT, header, Eleanor panel, chart badge, button, and opportunity card all say WAIT/no trade.
+   - When canonical verdict is CONDITIONAL_BUY, all components show conditional buy consistently.
+   - When canonical verdict is BUY, all components show buy consistently.
+   - When liveDataStatus is NO_LIVE_DATA, no component shows BUY/SELL.
+   - When confidence is LOW and HTF bias is "No clear edge", no direct BUY/SELL is shown.
+
+7. Add a development guard.
+   Prevent UI components from importing or calling separate scanner decision functions directly.
+   Only scanner service/store may compute verdicts.
+   UI components may only consume canonicalScannerVerdict or selectedScannerVerdict.
+
+8. Add debug visibility in dev only.
+   Show the canonical readId/timestamp somewhere hidden/dev-only so mismatches can be traced.
+   Every component should receive the same readId for the same selected symbol/timeframe.
+
+Acceptance criteria:
+- The screenshots' mismatch can no longer happen.
+- One symbol/timeframe has one truth.
+- If Eleanor says WAIT, the action button and scanner card cannot say Buy.
+- If scanner says Conditional Buy, Eleanor cannot say WAIT unless the canonical object itself says conditional and explains it.
+- Opportunity Scanner cannot override the selected chart verdict with its own independent truth.
+- All tests pass.

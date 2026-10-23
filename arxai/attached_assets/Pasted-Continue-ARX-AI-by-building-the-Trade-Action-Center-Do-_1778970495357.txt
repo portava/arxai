@@ -1,0 +1,306 @@
+Continue ARX AI by building the Trade Action Center.
+
+Do not rebuild blindly. Inspect the current:
+- Trade Decision Orchestrator
+- Open Trades decision UI
+- Trade Detail Decision Panel
+- Sniper Exit Watchlist
+- Smart Exit Plan Engine
+- Market Context Engine
+- close review modal
+- partial close review modal
+- move stop review modal
+- MT5 command queue
+- EA execution path
+- user-owned MT5 routing
+- shared-master routing
+- trade audit logs
+- admin trading controls
+- emergency stop
+- AI assistant trade tools
+
+Goal:
+Create one central Trade Action Center where users can review, confirm, track, and audit every AI-suggested or user-requested trading action.
+
+This should make the app feel like:
+AI detects the issue → AI recommends the action → user reviews → user confirms → backend validates → command queues → MT5 executes → app tracks result.
+
+Important:
+Do not auto-close trades.
+Do not auto-open trades.
+Do not silently modify stops.
+Do not bypass backend guards.
+Do not guarantee profit.
+Do not expose secrets.
+All demo/live execution actions require confirmation.
+All live actions require explicit confirmation.
+
+PART 1 — Trade Action Center Page
+
+Create a Trade Action Center page.
+
+It should show all pending and recent trade actions:
+
+Action types:
+- Open trade review
+- Close trade review
+- Partial close review
+- Move stop loss review
+- Trail stop review
+- Cancel order review
+- Modify TP/SL review
+
+Statuses:
+- AI suggested
+- User reviewing
+- Awaiting confirmation
+- Confirmed
+- Guard checking
+- Queued
+- Sent to MT5
+- Executed
+- Rejected
+- Failed
+- Expired
+- Cancelled
+
+Each action card should show:
+- trade/symbol
+- action type
+- account type: demo/live
+- routing mode: user-owned/shared-master
+- reason for action
+- AI decision label
+- current P&L if tied to open trade
+- risk warning
+- status
+- created time
+- last updated time
+- Review button
+- Cancel button if still pending
+
+PART 2 — Unified Review Modal
+
+Create one reusable Trade Action Review modal that supports:
+
+1. Open trade
+2. Full close
+3. Partial close
+4. Move stop loss
+5. Trail stop
+6. Modify TP/SL
+7. Cancel pending order
+
+The modal must show:
+- action type
+- symbol
+- buy/sell
+- lot size
+- current price
+- entry price if applicable
+- current P&L if applicable
+- account type
+- routing mode
+- AI reason
+- risk warning
+- estimated result if available
+- data quality
+- confirmation requirement
+
+For live actions, show:
+“LIVE TRADING ACTIVE — this action can realize profit or loss using real money.”
+
+Live actions require explicit confirmation.
+
+If typed confirmation is already required, keep it.
+If not, require the user to check a confirmation box and tap Confirm.
+
+PART 3 — Action Lifecycle Tracking
+
+Create or update a trade_action_requests table.
+
+Fields:
+- id
+- user_id
+- trade_id nullable
+- trade_command_id nullable
+- action_type
+- requested_mode
+- account_type
+- routing_mode
+- symbol
+- side
+- lot_size
+- requested_price
+- stop_loss
+- take_profit
+- reason
+- ai_decision_id nullable
+- status
+- confirmation_required
+- confirmed_by_user
+- confirmed_at
+- guard_result
+- rejection_reason
+- mt5_ticket nullable
+- created_at
+- updated_at
+
+Every action should move through lifecycle states:
+- created
+- reviewed
+- confirmed
+- guard_checked
+- queued
+- sent_to_mt5
+- executed
+- rejected
+- failed
+- expired
+- cancelled
+
+PART 4 — Backend Action Router
+
+Build a backend Trade Action Router that turns confirmed actions into command queue items only after full guard validation.
+
+Guard chain:
+1. authenticated user
+2. user owns or is attributed to the trade
+3. platform trading mode allows action
+4. emergency stop is false
+5. user not suspended
+6. routing mode resolved correctly
+7. account type matches platform mode
+8. risk limits pass
+9. command is not duplicate
+10. command is not expired
+11. live disclosure accepted for live mode
+12. explicit confirmation exists for live
+13. audit log written
+14. command queued only to resolved MT5 connection
+
+If any guard fails:
+- do not queue command
+- mark action rejected
+- show human-readable reason
+- write audit log
+
+PART 5 — AI Integration
+
+Update AI so it can create trade action drafts, not execute directly.
+
+AI can say:
+- “I recommend reviewing a close.”
+- “I prepared a close review ticket.”
+- “Your trade is still valid, so I recommend holding.”
+- “A stop move review may protect profit.”
+- “A partial close review may reduce risk.”
+
+AI cannot:
+- execute without user confirmation
+- bypass Trade Action Router
+- hide live risk
+- access another user’s trade
+- expose shared master account credentials
+- guarantee results
+
+AI should answer:
+- What action are you recommending?
+- Why should I close?
+- Why should I move my stop?
+- What happens if I ignore this alert?
+- What actions are pending?
+- Did my close request execute?
+- Why was my action rejected?
+
+PART 6 — Notifications
+
+Notify users when:
+- AI creates a suggested action
+- action is awaiting confirmation
+- action was queued
+- action was executed
+- action was rejected
+- action failed
+- action expired
+- live confirmation is missing
+
+Do not spam notifications.
+Use cooldowns for repeated AI-suggested actions on the same trade.
+
+PART 7 — UI Entry Points
+
+Add links/buttons to Trade Action Center from:
+- Dashboard
+- Open Trades
+- Trade Detail page
+- Sniper Exit Watchlist
+- AI assistant suggested actions
+- notification center
+
+Buttons:
+- Review Action
+- Confirm Action
+- Cancel Action
+- Ask AI Why
+- View Audit Trail
+
+PART 8 — Audit Timeline
+
+Add timeline entries:
+- action suggested by AI
+- action opened by user
+- user confirmed action
+- backend guard passed
+- backend guard rejected
+- command queued
+- MT5 execution success
+- MT5 execution failed
+- action cancelled
+- action expired
+
+PART 9 — Mobile UI
+
+Make sure the Trade Action Center and review modals work on iPhone Safari:
+- modal fits screen
+- confirm button visible
+- live warning visible
+- no overlap with bottom menu
+- action cards easy to scan
+- collapsed sidebar stays clean
+
+PART 10 — Tests
+
+Add tests for:
+1. User sees only their own trade actions.
+2. Shared-master user sees only attributed trade actions.
+3. AI can create action draft but cannot execute it.
+4. Close review does not queue command before confirmation.
+5. Partial close review does not queue command before confirmation.
+6. Move stop review does not queue command before confirmation.
+7. Live action requires explicit confirmation.
+8. Emergency stop blocks confirmed actions.
+9. Suspended user cannot confirm actions.
+10. Wrong routing mode is rejected.
+11. Wrong account type is rejected.
+12. Duplicate command is rejected.
+13. Expired action is rejected.
+14. Action lifecycle updates correctly.
+15. Notifications fire for queued/executed/rejected.
+16. Audit timeline records every step.
+17. Mobile modal is usable.
+18. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Trade Action Center status
+- unified review modal status
+- action lifecycle status
+- backend action router status
+- AI action draft status
+- notification status
+- audit timeline status
+- mobile status
+- tests passed
+- remaining blockers

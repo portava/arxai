@@ -1,0 +1,258 @@
+Claude’s algorithm audit verdict is accepted.
+
+Do not rewrite the existing Flame Scalp, Risk, Governance, Scanner, Ruby, or Agent Lifecycle engines blindly. The audit shows the core algorithm already implements the discipline, honesty, stale-data handling, governance, flame stages, multi-add-on controls, and shadow/advisory safety structure we requested.
+
+This task is now a preservation, verification, documentation, and surgical-gap task — not a broad algorithm rewrite.
+
+MAIN GOAL
+
+Protect the current tuned algorithm from accidental regression, document how it works, verify the important behavior with tests, and only improve genuine weak spots that are evidence-based.
+
+Do not rebuild the app. Do not change live broker execution settings. Do not place trades. Do not fake market data. Do not change tuned thresholds unless a failing test or real evidence proves they are wrong.
+
+PHASE 1 — LOCK CURRENT ALGORITHM BEHAVIOR
+
+Create regression coverage for the existing algorithm behavior so future changes cannot accidentally weaken it.
+
+Cover:
+
+1. Flame Scalp engine
+- NONE
+- ACTIVE
+- RUN_ON
+- EXHAUSTED
+- FAILED
+- REVERSAL_RISK
+- BLIND when candles are too few
+- opposing-wick rejection
+- chase-risk
+- late-fraction logic
+- entry timing such as CLEAN / NO_ENTRY
+- exhaustion and reversal warnings
+
+2. Multi-trade scalp add-ons
+- add-on tiers 0–3
+- add-ons forced to zero for EXHAUSTED / FAILED / REVERSAL_RISK
+- usedAddOns respects the cap
+- no stacking into exhaustion
+- no blind add-ons when data is too thin
+
+3. Scanner truth caps
+- non-live source can never become HIGH confidence
+- caps only lower confidence
+- stale or lower-quality source downgrades confidence
+- third-party composite is treated honestly
+- unavailable data does not get promoted
+
+4. News/history honesty
+- unavailable news must say feeds unavailable / technicals-only
+- unavailable history must reduce confidence or show limited-data status
+- no fake news confirmation
+- no fake historical backtest claim
+
+5. Governance
+- approved
+- approved_with_caution
+- downgraded
+- rejected
+- escalated
+- needs_more_data
+- delayed_speed
+- governance remains advisory/shadow
+- governance can affect ranking/wording but must not execute trades
+
+6. Ruby explanation discipline
+- Ruby explains in plain English
+- Ruby admits missing/stale data
+- Ruby does not expose backend function names, route names, schema names, env names, or developer-only wording to normal users
+- Ruby does not invent balances, candles, news, or historical data
+
+PHASE 2 — BUILD THE ALGORITHM MAP DOCUMENT
+
+Create a full component-by-component algorithm map for ARX AI.
+
+The document should explain:
+
+1. Scanner
+- Focus Scan
+- Broad Scan
+- Flame Scalp
+- how scores are built
+- how confidence is capped
+- how stale data changes confidence
+- how risk/governance changes ranking
+- what data sources each scan depends on
+
+2. Flame Scalp
+- flame stages
+- candle requirements
+- entry timing
+- chase-risk
+- wick rejection
+- exhaustion detection
+- reversal risk
+- add-on logic
+- exit/stop-add rules
+- what causes BLIND/no-entry
+
+3. Risk Engine
+- risk score inputs
+- reward-to-risk logic
+- stop loss reasoning
+- take profit reasoning
+- spread/slippage cautions
+- exposure/account context
+- downgrade behavior
+
+4. Governance
+- agent challenge system
+- advisory/shadow limits
+- allowed outcomes
+- how outcomes affect scanner/ruby/risk wording
+- what governance is not allowed to do
+
+5. Ruby
+- how Ruby receives context
+- how Ruby explains decisions
+- how Ruby handles missing data
+- how Ruby avoids internal wording
+- how Ruby surfaces agent/governance influence
+
+6. Data quality layer
+- MT5 candle contribution status
+- third-party composite status
+- freshness rules
+- stale-data penalty rules
+- missing-data behavior
+- broker snapshot behavior
+
+7. Known ceilings
+- MT5 candle push is still required for broker-native candle confidence
+- news feed coverage is feed-dependent
+- historical context/backtest depth is still shallow
+- scoring can only be as good as the data feeding it
+
+This document should be plain-English enough for the owner/operator to understand, but detailed enough for developers to maintain the system.
+
+PHASE 3 — DO NOT RETUNE THRESHOLDS WITHOUT EVIDENCE
+
+Do not change tuned flame stretch multipliers, add-on tiers, confidence bands, governance thresholds, risk bands, or scanner truth caps unless:
+
+- there is a failing test
+- there is a real live-observed bad behavior
+- the change is backed by evidence
+- the before/after result is documented
+- regression tests are updated
+
+The current algorithm is considered protected unless proven wrong.
+
+PHASE 4 — SURGICAL GAP CHECK
+
+Search for genuine gaps only. Focus on:
+
+1. Historical context
+- Is historicalContext shallow?
+- Where is it used?
+- Does it reduce confidence when missing?
+- Does it claim more than it knows?
+- Is there a clear future hook for deeper backtesting/history?
+- Add honest admin/user visibility if historical depth is limited.
+
+2. News/current events
+- Is newsRiskScorer wired?
+- Does it clearly say feeds unavailable when unavailable?
+- Does it avoid fake news claims?
+- Is there a future feed contract?
+- Add honest unavailable states if missing.
+
+3. Stale-data confidence penalty
+- Confirm every scoring path has stale-data degradation.
+- If any scoring path does not degrade stale data, add a small tested penalty.
+- Make the stale-data penalty admin-traceable.
+- Do not double-penalize paths that already degrade correctly.
+
+4. MT5 candle contribution
+- Confirm MT5 remains non-contributing until real EA candle push is verified.
+- Do not fake MT5 candles.
+- Confirm third-party composite is labeled/tracked honestly.
+- Confirm chart/scanner confidence reflects provider quality.
+
+PHASE 5 — IMPLEMENT ONLY SAFE, EVIDENCE-BASED PATCHES
+
+Only implement small patches if the audit finds a real gap.
+
+Allowed examples:
+- missing stale-data penalty in a specific scoring path
+- missing admin trace explaining confidence cap
+- missing plain-English data-depth warning
+- missing test around existing flame stage behavior
+- missing test around add-on cap
+- missing test around governance advisory limits
+- missing test around news unavailable state
+
+Do not make broad scoring rewrites.
+
+PHASE 6 — TESTING
+
+Run or add tests for:
+
+- flame stage classification
+- multi-add-on caps
+- dead-stage add-on prevention
+- scanner truth caps
+- stale-data confidence downgrade
+- news unavailable honesty
+- historical unavailable honesty
+- governance advisory/shadow limits
+- Ruby plain-English explanation
+- no internal wording leak
+- investor/trader/admin role gates
+- no fake balances
+- no fake candles
+- no live execution setting changes
+
+Run:
+- typecheck
+- scanner tests
+- flame scalp tests
+- risk tests
+- governance tests
+- Ruby explanation tests
+- stale-data tests
+- role-gating tests
+- CI guards
+- architect review if available
+
+PHASE 7 — FINAL REPORT
+
+Provide a final report with:
+
+1. Confirmation that the core algorithm was not blindly rewritten.
+2. Algorithm map location.
+3. Existing strengths confirmed.
+4. Regression tests added.
+5. Any genuine gaps found.
+6. Any surgical patches made.
+7. Any scoring paths left unchanged and why.
+8. Data-feed limits still blocking better decisions.
+9. Priority list for future improvement:
+   - EA CopyRates candle push
+   - reconciler dry-run/write enablement
+   - deeper historical/backtest context
+   - live news feed coverage
+   - stale-data trace visibility
+10. Test results.
+11. Confirmation that live broker execution settings were untouched.
+
+COMPLETION STANDARD
+
+Do not mark complete until:
+
+- current tuned algorithm behavior is protected by tests
+- algorithm map is written
+- genuine data/trace gaps are identified
+- only evidence-based surgical patches are made
+- no broad blind retuning is done
+- no fake data is introduced
+- no live execution setting is changed
+- all validation passes

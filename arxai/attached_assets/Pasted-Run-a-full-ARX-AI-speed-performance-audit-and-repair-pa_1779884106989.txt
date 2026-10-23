@@ -1,0 +1,483 @@
+Run a full ARX AI speed/performance audit and repair pass. The app feels slow across features, and quickness is now a launch-critical requirement.
+
+Do not ask me any questions during this command. Audit, fix, retest, and keep going until the app feels fast.
+
+Main goal:
+ARX AI must feel instant. Trading pages, scanner, live chart, Ruby, alerts, account pages, admin pages, modals, dropdowns, buttons, tabs, toggles, search, filters, trade validation, and symbol switching should not lag.
+
+Do not place trades during QA.
+Do not insert arx_live_commands during QA.
+Do not type operator phrases.
+Do not weaken safety gates.
+Do not fake data.
+Do not remove active features just to make the app faster.
+Do not hide errors behind loading spinners.
+Do not expose secrets or diagnostics to normal users.
+
+Create checkpoint first:
+checkpoint: before-arx-speed-performance-overhaul
+
+Then create checkpoints after each major group:
+- perf-api-query-cleanup
+- perf-frontend-render-cleanup
+- perf-scanner-chart-feed-cleanup
+- perf-ruby-voice-cleanup
+- perf-final-fast-launch-state
+
+Performance target:
+- App shell loads quickly.
+- Page navigation should feel immediate.
+- Clicking tabs/buttons should respond immediately.
+- Opening trade ticket should feel instant.
+- Changing symbols should not freeze the UI.
+- Scanner should not lock the app.
+- Ruby should answer text first, then voice asynchronously.
+- TTS/audio must never delay chat response.
+- Live chart should not slow the whole page.
+- Alerts/notifications should not spam requests.
+- No feature should feel stuck unless a real backend action is loading, and then it must show a clean loading state.
+
+PART A — Measure first, then fix
+
+Instrument and measure:
+1. frontend bundle size
+2. initial page load time
+3. route navigation time
+4. React render hotspots
+5. repeated rerenders
+6. slow API endpoints
+7. duplicate API calls
+8. polling intervals
+9. websocket subscriptions
+10. scanner scan duration
+11. chart load duration
+12. Ruby response latency
+13. TTS start/cancel latency
+14. trade ticket open time
+15. trade validation latency
+16. account-mode resolver latency
+17. alerts unread-count latency
+18. my-account load latency
+19. admin allocations load latency
+20. DB slow queries / N+1 queries
+
+Add temporary admin-only performance logs or diagnostics if needed, but do not expose them to normal users.
+
+PART B — Frontend rendering cleanup
+
+Audit every page for unnecessary rerenders.
+
+Fix:
+- massive parent rerenders
+- unstable props
+- inline objects/functions causing rerenders
+- expensive calculations inside render
+- large arrays rendered without virtualization
+- repeated formatter work
+- repeated symbol normalization
+- repeated account-mode parsing
+- heavy components mounted when hidden
+- modals rendering all content while closed
+- charts rendering while offscreen
+- Ruby/TTS components rerendering whole app
+- scanner cards rerendering every tick unnecessarily
+
+Use:
+- memo
+- useMemo
+- useCallback
+- selector-based state reads
+- component splitting
+- lazy loading
+- virtualization for long lists/cards/tables
+- suspense/loading skeletons where appropriate
+- debounced search/filter inputs
+- abort controllers for stale requests
+
+Do not over-memoize blindly. Fix real hotspots.
+
+PART C — React Query / data fetching cleanup
+
+Audit all queries and mutations.
+
+Fix:
+- duplicate account-mode requests
+- duplicate provider-health requests
+- duplicate alerts requests
+- duplicate scanner requests
+- repeated user allocation requests
+- polling while tab/page is hidden
+- polling while modal is closed
+- refetching every route change unnecessarily
+- stale queries not invalidated after mutation
+- queries with no staleTime causing repeated reloads
+- multiple components fetching the same data separately
+- huge payloads fetched when only counts are needed
+
+Set sensible:
+- staleTime
+- gcTime
+- refetchInterval
+- refetchOnWindowFocus
+- enabled conditions
+- query keys
+- request cancellation
+- query deduping
+- optimistic UI where safe
+
+Critical:
+- /api/me/account-mode should be cached and shared.
+- /api/me/allocation should be cached and invalidated only after allocation changes.
+- alerts unread count should be lightweight.
+- scanner should not refetch entire world every render.
+- trade validation should only run when user clicks Validate, not on every keystroke unless explicitly needed.
+- symbol change should cancel old quote/candle/card requests.
+
+PART D — Backend/API speed cleanup
+
+Audit backend endpoints used by:
+- dashboard
+- market scanner
+- live chart
+- live AI assist
+- live shared ticket
+- trade command room
+- my account
+- admin allocations
+- alerts
+- notifications
+- calendar
+- positions
+- trade history
+- Ruby
+
+Fix:
+- N+1 queries
+- repeated DB reads for the same user/mode/account
+- missing indexes
+- heavy joins when only summary needed
+- endpoints returning huge payloads
+- endpoints returning admin diagnostics to normal paths
+- slow account-mode resolver calls
+- repeated resolver work within one request
+- scanner recomputing static symbol maps every request
+- provider health doing expensive checks every call
+- unnecessary serialization of large objects
+- logging too much on hot paths
+
+Add or verify indexes for hot tables:
+- userId
+- accountMode/sourceMode
+- connectionId
+- accountShellId/sharedMasterAccountId
+- createdAt
+- status
+- symbol
+- alert dismissed/resolved/read fields
+- live intent mode/user/status
+- positions mode/user/connection
+- trades mode/user/account/date
+
+PART E — Scanner speed
+
+Scanner must feel fast.
+
+Fix:
+- scan button response
+- broad scan load
+- focus tab load
+- symbols tab load
+- scanner card rendering
+- scanner modal opening
+- scanner validation
+- feed status updates
+- historical check
+- Ruby setup reason rendering
+- recent scanner trades panel
+
+Rules:
+- scanner should scan in batches, not freeze UI
+- show progressive results as they arrive
+- do not block UI waiting for all symbols/timeframes
+- virtualize scanner cards
+- cache symbol metadata
+- cache active_symbols/alias mapping
+- reuse Market Data Router results
+- cancel stale scans when user changes universe/symbol
+- prevent overlapping scan jobs unless explicitly intended
+- use one scan controller/job state
+- no duplicate timers/intervals
+- no simulator fallback for live synthetic symbols
+- no fake data
+
+PART F — Live chart speed and symbol propagation
+
+Fix chart lag and mismatch.
+
+Requirements:
+- one selectedSymbol source of truth
+- chart, trade panel, ticket, scanner, AI Assist, Ruby all follow it
+- symbol change updates fast
+- old requests cancelled
+- old chart/ticket/card data cleared
+- chart does not remount unnecessarily
+- TradingView/embed only reloads when symbol or interval truly changes
+- chart side panel does not poll excessively
+- positions panel does not query stale/ghost data repeatedly
+
+PART G — Trade ticket speed
+
+Trade entry should feel instant.
+
+Fix:
+- opening scanner ticket
+- opening chart ticket
+- opening Live AI Assist ticket
+- Validate trade click
+- final review display
+- input lag in volume/SL/TP fields
+- risk/reward calculation lag
+- symbol tradability check
+
+Rules:
+- local input changes should never lag
+- validation runs only on button click or debounced lightweight checks
+- no second modal
+- no hidden modal behind modal
+- no stale validation result after symbol/side/volume changes
+- owner/admin unrestricted path must not wait on unnecessary allocation/risk prerequisites
+- normal users still enforce caps
+- no live order placed during QA
+
+PART H — Ruby speed and voice
+
+Ruby must respond quickly.
+
+Fix:
+- text response should appear first
+- TTS should run after text, async
+- stale TTS cancels when new message arrives
+- voice queue should not pile up
+- no minutes-late audio
+- no blocking UI while voice loads
+- no huge research dumps
+- no raw backend/tool JSON
+- Ruby market explanation should summarize useful bits first
+- optional “want more detail?” after concise answer
+- Ruby should use same cached feed/router data as scanner/chart where possible
+- voice preview must not change active voice
+- selected voice must persist correctly
+- Bella default if none selected
+
+PART I — Alerts and notification speed
+
+Fix:
+- alert badge update lag
+- repeated alert polling
+- duplicate stale MT5 alerts
+- dismiss button lag
+- mark all read lag
+- clear resolved lag
+- notification page load speed
+
+Use lightweight count endpoint for badge.
+Deduplicate and scope by user/mode/connection.
+Do not poll heavy alert lists for badge count.
+
+PART J — Admin pages speed
+
+Fix:
+- /admin/allocations slow load
+- user search debounce
+- allocation refresh
+- shell refresh
+- audit history load
+- admin diagnostics pages
+- provider health page
+
+Use pagination, debounced search, lightweight summaries, and lazy-loaded detail drawers.
+
+PART K — Mobile speed
+
+The app is being used on phone too.
+
+Fix mobile-specific lag:
+- heavy pages should not render all desktop sections at once
+- bottom nav should stay responsive
+- modals should not freeze scroll
+- scanner cards should virtualize or paginate
+- chart should not block the whole page
+- menus should open instantly
+- touch interactions should not wait for heavy requests
+- no layout thrashing
+
+PART L — Remove dead/dormant code safely
+
+Audit for dormant code that slows build/runtime:
+- unused old demo components mounted accidentally
+- duplicate scanner systems
+- duplicate trade modals
+- old simulator/live split code still mounted on live pages
+- hidden tabs rendering full content
+- old polling intervals
+- orphan listeners
+- duplicate websocket subscriptions
+- duplicate account mode hooks
+- duplicate alert systems
+- duplicate position systems
+
+Remove only if truly unused and verified by route/import graph.
+If uncertain, lazy-load or gate it instead of deleting.
+
+PART M — Empty handler / broken wiring audit
+
+Go through every launch-critical action and verify it is wired:
+
+Pages:
+- dashboard/home
+- my-account
+- settings
+- notifications
+- alerts
+- help
+- market-scanner
+- trade-command-room
+- live-shared
+- live-ai-assist
+- live-chart
+- my-trades
+- positions
+- live-trades
+- trading-calendar
+- live-intent-queue
+- broker-reconciliation
+- live-trading-control
+- action-center
+- audit-vault
+- safety-logs
+- mt5-setup
+- testing-control-center
+- admin/allocations
+- admin/reconciliation-center
+- admin/trading-control
+- admin/audit-center
+
+Actions:
+- all buttons
+- all tabs
+- all toggles
+- all dropdowns
+- all search bars
+- all filters
+- all modal close/confirm/cancel buttons
+- all refresh buttons
+- all scanner buttons
+- all chart buttons
+- all Ruby buttons
+- all alert actions
+- all allocation actions
+- all admin actions
+
+Fix:
+- no-op handlers
+- stale handlers
+- wrong endpoints
+- missing loading state
+- missing error state
+- missing success state
+- missing query invalidation
+- disabled button without reason
+- action hidden by wrong role/mode
+- action shown but nonfunctional
+
+PART N — Performance regression tests
+
+Add tests/checks for:
+1. no duplicate account-mode queries on one page load beyond expected count
+2. scanner modal opens without mounting second modal
+3. symbol change cancels stale requests
+4. Live AI Assist card cannot be overwritten by stale old-symbol response
+5. alert badge uses unread-count endpoint, not full alert list
+6. no launch-critical button has empty handler
+7. all sidebar routes registered
+8. no duplicate scanner polling intervals
+9. hidden tabs do not render heavy content
+10. arx_live_commands remains 0 during QA
+
+PART O — Required QA after fixes
+
+Run:
+- pnpm run typecheck
+- pnpm run build if available
+- pnpm run ci:guards
+- test:account-mode
+- test:admin-unrestricted-risk
+- test:mode-scope
+- test:live-shared-reason-copy
+- test:chart-symbol-propagation
+- test:scanner-real-feed
+- test:deriv-warmup
+- test:deriv-scanner-feed
+- test:alert-notification-contract
+- test:crash-hardening
+- test:operator-diag-gating
+- test:live-phaseB
+- test:live-pass-path
+- test:demo-arming
+- test:demo-verify
+- test:auth-login-roles
+- route map test
+- UI wiring test
+- new performance tests
+- arx_live_commands count before/after
+
+PART P — Real browser performance verification
+
+Open real app and verify:
+1. initial load feels fast
+2. route navigation feels fast
+3. scanner page loads fast
+4. scan button responds immediately
+5. scanner cards render without freezing
+6. scanner ticket opens instantly
+7. Validate trade responds quickly
+8. chart symbol changes quickly
+9. chart Buy/Sell opens ticket quickly
+10. Live AI Assist symbol dropdown updates quickly
+11. Ruby text response is fast
+12. Ruby voice does not delay text
+13. alerts dismiss instantly
+14. admin allocations search/refresh is fast
+15. no console errors
+16. no repeated request storms
+17. no runaway polling
+18. no memory leak from intervals/subscriptions
+19. arx_live_commands remains 0
+
+PART Q — Final acceptance
+
+Do not mark done until:
+- app feels materially faster
+- major lag sources are identified and fixed
+- route/action wiring is verified
+- no unnecessary duplicate polling
+- no stale hidden components rendering heavy work
+- no repeated scanner/chart/account-mode requests
+- no trade surfaces lag from unnecessary prerequisites
+- owner live trade flow still works
+- normal-user safety still works
+- all tests pass or any remaining failure is clearly documented as requiring manual external service action only
+
+Final report only:
+- top lag sources found
+- exact fixes made
+- files/routes changed
+- performance improvements made
+- wiring issues fixed
+- tests added
+- QA results
+- browser performance verification result
+- arx_live_commands before/after
+- confirmation no trades placed during QA
+- confirmation no safety gates weakened
+- remaining issues only if caused by external broker/provider latency

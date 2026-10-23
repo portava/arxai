@@ -1,0 +1,85 @@
+Proceed with Build AA now.
+
+This is NOT another audit, explanation, or planning response. Implement the code changes for Build AA.
+
+Build AA = the single AI decision point / trade decision orchestrator.
+
+Goal:
+Create one central decision engine that reads from every available signal source and produces one structured trade decision object. Every future loop depends on this.
+
+Requirements:
+
+1. Create a central Trade Decision Orchestrator
+- It should collect all available inputs:
+  - strategy signal
+  - market/session context
+  - risk settings
+  - account status if available
+  - recent trade history if available
+  - AI confidence score if available
+  - current open positions if available
+  - news/event filter if available
+  - synthetic fallback data if live data is not connected
+
+2. The orchestrator must output one consistent decision object:
+{
+  shouldTrade: boolean,
+  action: "BUY" | "SELL" | "HOLD",
+  symbol: string,
+  confidence: number,
+  riskScore: number,
+  entryReason: string,
+  invalidationReason: string,
+  stopLoss: number | null,
+  takeProfit: number | null,
+  positionSize: number | null,
+  tradeWindow: {
+    status: "GOOD" | "WAIT" | "AVOID",
+    reason: string
+  },
+  signalsUsed: [],
+  warnings: [],
+  timestamp: string
+}
+
+3. Add decision safety rules
+- No trade should be allowed if confidence is too low.
+- No trade should be allowed if risk score is too high.
+- No trade should be allowed if required data is missing.
+- No trade should be allowed during blocked sessions or dangerous market conditions.
+- If unsure, return HOLD.
+- Default to paper/simulation mode unless live trading is explicitly enabled in environment settings.
+
+4. Add clear logs
+Every decision should log:
+- what signals were read
+- what score each signal gave
+- why the final decision was BUY, SELL, or HOLD
+- why the trade was blocked if blocked
+
+5. Do not break existing app behavior
+- Preserve all existing routes, pages, components, and database structure unless needed.
+- If files already exist for signals, AI, trades, risk, or strategy, integrate with them instead of duplicating.
+- If something is missing, create a clean fallback module.
+
+6. Add tests or validation
+Create a test/demo endpoint or script that proves Build AA works with synthetic data.
+
+Acceptance criteria:
+- The app has one central trade decision function.
+- The decision function can be called from the backend.
+- It returns the structured decision object every time.
+- It can run even without live market data by using synthetic fallback data.
+- It blocks bad or incomplete trades safely.
+- It logs the decision rationale clearly.
+- It does not place live trades yet.
+- It prepares the system for Build BB auto-debrief.
+
+After implementation:
+Show me:
+1. Files changed
+2. New files created
+3. How to test it
+4. The sample decision output
+5. Any errors or warnings
+6. Whether Build AA is fully complete or partially complete

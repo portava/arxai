@@ -1,0 +1,339 @@
+Continue ARX AI by building the Market Context Engine for Live Trade Intelligence.
+
+Do not rebuild blindly. Inspect the current:
+- scanner / market data system
+- MT5 tick/candle data availability
+- Finnhub/market data integration
+- Live Trade Intelligence snapshots
+- Smart Exit Plan Engine
+- Sniper Exit Watchlist
+- Trade Detail page
+- AI assistant context builder
+- open trades system
+- trade monitor worker
+- alert engine
+- command queue and close confirmation flow
+
+Goal:
+Give the AI real market context so it can better explain whether an open trade looks like:
+- continuation
+- healthy pullback
+- deeper retracement
+- reversal
+- fakeout
+- liquidity sweep
+- chop/range
+- breakout
+- failed breakout
+
+Important:
+Do not fake candle, scanner, news, spread, or volatility data.
+If data is unavailable, say unavailable.
+Do not auto-close trades.
+Do not auto-open trades.
+Do not bypass backend guards.
+Do not expose secrets.
+Live actions still require explicit user confirmation.
+
+PART 1 — Market Data Context Layer
+
+Create a Market Context service that can build context for any symbol tied to an open trade.
+
+Use available data sources:
+1. MT5 candles if available.
+2. MT5 ticks/current bid/ask if available.
+3. Existing scanner data.
+4. Existing market data provider if available.
+5. Economic/news calendar only if already available.
+6. If none exists, return data_quality: insufficient.
+
+For each symbol, gather:
+- current price
+- bid/ask
+- spread
+- recent candles
+- volume/tick volume if available
+- volatility
+- ATR if available
+- session context
+- trend by timeframe
+- key highs/lows
+- support/resistance zones
+- breakout levels
+- recent swing high/swing low
+- current range
+- distance to stop loss
+- distance to take profit
+- distance to entry
+- data freshness timestamp
+
+Timeframes:
+- M1
+- M5
+- M15
+- M30
+- H1
+- H4
+- D1 if available
+
+If not all timeframes are available, use what exists and clearly label missing data.
+
+PART 2 — Price Action Classification
+
+Create a classification engine that scores:
+
+- continuationScore
+- pullbackScore
+- retracementScore
+- reversalRiskScore
+- fakeoutRiskScore
+- liquiditySweepScore
+- chopRiskScore
+- breakoutStrengthScore
+- trendStrengthScore
+- momentumStrengthScore
+- volatilityRiskScore
+
+Labels:
+- Strong continuation
+- Weak continuation
+- Healthy pullback
+- Deep retracement
+- Reversal risk rising
+- Possible fakeout
+- Liquidity sweep possible
+- Breakout holding
+- Failed breakout
+- Choppy / no clear edge
+- Data insufficient
+
+The system must explain why it gave the label using real available data.
+
+Examples:
+- “Price is still above the M15 structure low, so this looks like a pullback unless that level breaks.”
+- “The breakout is weakening because price failed to hold above the previous swing high.”
+- “This may be a fakeout because price swept the high and returned back inside the range.”
+
+PART 3 — Trade-Specific Market Context
+
+For every open trade, compare the trade direction against the market context.
+
+For BUY trades, check:
+- Is price holding above entry?
+- Is higher-timeframe trend aligned?
+- Are pullbacks respecting higher lows?
+- Is price rejecting resistance?
+- Is profit fading after a failed push?
+- Has price broken bullish structure?
+
+For SELL trades, check:
+- Is price holding below entry?
+- Is higher-timeframe trend aligned?
+- Are pullbacks respecting lower highs?
+- Is price rejecting support?
+- Is profit fading after a failed drop?
+- Has price broken bearish structure?
+
+Add trade labels:
+- Trade aligned with trend
+- Trade fighting trend
+- Trade still valid
+- Trade weakening
+- Trade invalidation near
+- Trade at decision level
+- Profit protection needed
+- Exit review recommended
+
+PART 4 — Key Level Engine
+
+Generate key levels from available data:
+- entry level
+- current price
+- stop loss
+- take profit
+- nearest support
+- nearest resistance
+- recent swing high
+- recent swing low
+- breakout level
+- invalidation level
+- continuation confirmation level
+- protect-profit level
+
+Do not invent levels. If data is missing, show:
+“Key levels unavailable because candle data is missing.”
+
+PART 5 — AI Explanation Upgrade
+
+Update AI so users can ask:
+
+- Is this a pullback or reversal?
+- Is this a retracement or fakeout?
+- Is this trade still valid?
+- Why is price moving against me?
+- Why is my profit fading?
+- Is this a liquidity sweep?
+- Is this continuation?
+- What level should I watch?
+- What would invalidate the trade?
+- What would confirm continuation?
+- Is the market choppy right now?
+- Is this a good time to close?
+- Should I hold or review close?
+
+AI response format:
+1. Trade status
+2. Market context
+3. Price action classification
+4. Key level to watch
+5. Bullish scenario
+6. Bearish scenario
+7. Exit/hold review
+8. Data quality warning if needed
+
+AI must use cautious language:
+- “Based on available data”
+- “This appears to be”
+- “The risk is”
+- “This level matters because”
+- “I need more data to judge accurately”
+
+AI must not:
+- guarantee direction
+- guarantee profit
+- claim certainty
+- invent data
+- close trades without confirmation
+- bypass backend guards
+
+PART 6 — UI Updates
+
+Update Trade Detail page with a “Market Context” section.
+
+Show:
+- current classification
+- trend alignment
+- key support/resistance
+- invalidation level
+- continuation level
+- fakeout risk
+- reversal risk
+- liquidity sweep risk
+- timeframe summary
+- data freshness
+- data quality
+
+Update Open Trade cards with a compact market label:
+- Pullback
+- Continuation
+- Fakeout risk
+- Reversal risk
+- Choppy
+- Data insufficient
+
+PART 7 — Alerts
+
+Create alerts when:
+- trade moves from continuation to reversal risk
+- fakeout risk rises above threshold
+- price breaks invalidation level
+- price returns inside breakout range
+- profit fades near resistance/support
+- market becomes choppy
+- spread or volatility becomes dangerous if available
+- higher-timeframe trend flips against trade
+
+Alert should open:
+- Ask AI
+- Review Close
+- Set Alert
+- Hold and Monitor
+
+No instant execution.
+
+PART 8 — Database/API
+
+Add or update tables if needed:
+
+market_context_snapshots:
+- id
+- symbol
+- timeframe
+- current_price
+- bid
+- ask
+- spread
+- trend_direction
+- trend_strength_score
+- support_levels
+- resistance_levels
+- swing_high
+- swing_low
+- atr
+- volatility_score
+- breakout_level
+- data_quality
+- source
+- created_at
+
+trade_market_context:
+- id
+- user_id
+- trade_id
+- symbol
+- side
+- classification_label
+- continuation_score
+- pullback_score
+- retracement_score
+- reversal_risk_score
+- fakeout_risk_score
+- liquidity_sweep_score
+- chop_risk_score
+- trend_alignment
+- key_level_to_watch
+- invalidation_level
+- continuation_level
+- explanation
+- data_quality
+- created_at
+
+Add endpoints:
+- GET /api/market-context/:symbol
+- GET /api/trades/:id/market-context
+- POST /api/trades/:id/market-context/recalculate
+- POST /api/trades/:id/ask-market-ai
+
+PART 9 — Tests
+
+Add tests for:
+1. Market context uses real available data only.
+2. Missing candle data is labeled unavailable.
+3. User can only access market context for their own trade.
+4. Shared-master user can only access attributed trade context.
+5. Pullback classification works from candle structure.
+6. Fakeout classification works when breakout fails.
+7. Reversal risk rises when invalidation level breaks.
+8. Choppy market is labeled when no clear structure exists.
+9. AI explains data quality.
+10. AI does not invent candle/news data.
+11. Alert fires when fakeout risk rises.
+12. Alert fires when invalidation breaks.
+13. Review Close still requires confirmation.
+14. Live close still requires explicit confirmation.
+15. Emergency Stop still blocks execution.
+16. No secrets are exposed.
+17. Mobile Market Context section is usable.
+
+Final report:
+Return:
+- PASS or FAIL
+- Market Context service status
+- price action classification status
+- key level engine status
+- AI explanation upgrade status
+- Trade Detail UI status
+- alert integration status
+- data source status
+- tests passed
+- remaining blockers

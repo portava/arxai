@@ -1,0 +1,191 @@
+Build the live Open Trades money + account metrics upgrade.
+
+SCOPE LOCK:
+Only work on:
+1. The open trades window / active trades panel.
+2. The MT5 bridge/account-info read endpoints needed for this feature.
+3. The backend calculations needed to show each user’s live trade P/L and slotted-fund account metrics.
+
+Do not redesign or refactor unrelated pages.
+Do not touch login page, scanner, Ruby chat, admin dashboard, live execution logic, MT5 order placement logic, invite system, or global layout unless absolutely required to display this data correctly.
+
+GOAL:
+The open trades window should show each open trade’s live real-time money value and the user’s current account/slot metrics.
+
+Required open trade display:
+For every open trade, show:
+- Symbol
+- Buy/Sell direction
+- Lot size / volume
+- Entry price
+- Current price
+- Stop loss
+- Take profit
+- Live floating P/L in money
+- Floating P/L percentage based on the user’s allocated/slotted funds
+- Swap/commission if available
+- Net P/L if swap/commission exists
+- Last updated timestamp
+- MT5 ticket/order id internally only, not as ugly debug text
+
+The most important part:
+Show a live active current amount for the trade in money.
+Example:
+BTCUSD Buy
+Current P/L: +$42.18
+or
+Current P/L: -$18.73
+
+MT5 account metrics to pull:
+Use real MT5 bridge account data where available:
+- Account balance
+- Equity
+- Margin
+- Free margin
+- Margin level %
+- Account currency
+- Open positions
+- Current prices
+- Position floating profit
+- Swap
+- Commission
+
+Shared/master account logic:
+Because ARX AI can use shared/live master MT5 bridge mode, do not blindly show the full master account balance to every user unless they are admin.
+
+For regular users:
+Show their user-level slotted fund metrics.
+
+Calculate user slot metrics like this:
+- userSlotBalance = user allocated/slotted funds + realized closed P/L assigned to that user
+- userOpenPnL = sum of live open P/L for positions assigned to that user
+- userSlotEquity = userSlotBalance + userOpenPnL
+- userUsedMargin = sum of margin assigned to that user’s open positions if MT5/per-position margin is available
+- if per-position margin is not available, calculate/estimate allocated margin from the bridge using position volume/notional and clearly keep it backend-side
+- userFreeMargin = userSlotEquity - userUsedMargin
+- userMarginLevelPercent = userUsedMargin > 0 ? (userSlotEquity / userUsedMargin) * 100 : null/∞
+- userFloatingPnLPercent = userOpenPnL / userSlotBalance * 100
+
+For admin users:
+Allow admin to see:
+- Master MT5 account metrics
+- User slot metrics
+- Per-user open P/L
+- Per-user margin usage
+- Per-user equity
+- Per-user free margin
+But keep regular users limited to their own slot and their own trades.
+
+Trade ownership:
+Map MT5 positions back to the correct user using existing trade ledger records, ticket/order id, magic number, comment, userId, slotId, or whatever the current app already uses.
+Do not invent fake ownership.
+If a position cannot be matched to a user:
+- show it only to admin
+- label it “Unassigned MT5 Position”
+- do not show it to regular users
+
+Real-time behavior:
+- Use existing WebSocket/SSE/live polling if available.
+- If no live stream exists, add safe polling every 1–3 seconds for open trades/account info.
+- Do not spam MT5 or overload the bridge.
+- Add backend throttling/caching if needed.
+- Show “Live” when data is fresh.
+- Show “Stale” or “MT5 disconnected” when data is old or bridge heartbeat is missing.
+- Never show fake or placeholder balances as real values.
+
+UI requirements:
+In the open trades window, add a compact account summary area above or beside open trades:
+
+For regular users show:
+- Slot Balance
+- Slot Equity
+- Open P/L
+- Used Margin
+- Free Margin
+- Margin Level %
+
+For admin users optionally show toggle tabs:
+- My Slot
+- Master MT5 Account
+- Users
+
+Open trades card/table should clearly show:
+- Green positive money P/L
+- Red negative money P/L
+- Neutral zero P/L
+- Smooth updating without flicker
+- Mobile-friendly layout
+- Clear loading state
+- Clear disconnected/stale state
+
+Backend/API requirements:
+Inspect current MT5 bridge endpoints first.
+Reuse existing code.
+Add only missing read-only endpoints if needed, such as:
+- GET /api/mt5/account-info
+- GET /api/mt5/open-positions
+- GET /api/trading/live-account-summary
+- GET /api/trading/user-slot-summary
+
+Do not change order execution endpoints unless absolutely necessary.
+Do not enable new live trading permissions.
+Do not change kill switches.
+Do not change admin approval logic.
+
+Data contract should return clean values:
+{
+  accountCurrency,
+  balance,
+  equity,
+  margin,
+  freeMargin,
+  marginLevelPercent,
+  openPnL,
+  positions: [
+    {
+      symbol,
+      direction,
+      volume,
+      entryPrice,
+      currentPrice,
+      stopLoss,
+      takeProfit,
+      grossProfit,
+      swap,
+      commission,
+      netProfit,
+      profitPercentOfSlot,
+      userId,
+      slotId,
+      status,
+      lastUpdated
+    }
+  ],
+  isLive,
+  isStale,
+  lastUpdated
+}
+
+Security:
+- Users can only see their own trades and their own slot metrics.
+- Admin can see master and user summaries.
+- Do not expose full master balance to regular users if using shared bridge mode.
+- Do not expose raw MT5 credentials, bridge secrets, API keys, debug logs, stack traces, or internal route names.
+- Backend must enforce permissions, not just frontend hiding.
+
+Accuracy:
+- Use MT5-reported position profit when available.
+- Net P/L should include swap and commission when MT5 provides them.
+- Display account currency correctly.
+- If currency conversion is needed and not available, show the MT5 account currency and do not fake conversion.
+- If margin data is unavailable per position, use the best backend allocation method and mark the source internally, not as ugly user text.
+
+Do not finish until:
+1. Open trades show live money P/L.
+2. User account/slot summary shows balance, equity, margin, free margin, margin level %, and open P/L.
+3. Data comes from MT5 bridge/account info where available.
+4. Shared/master account users only see their own slotted-fund metrics.
+5. Admin can see master metrics without exposing them to users.
+6. MT5 disconnected/stale state is handled cleanly.
+7. No unrelated app sections were changed.
+8. The UI works on mobile and desktop.

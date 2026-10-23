@@ -1,0 +1,123 @@
+Start T005 — ScannerTradeModal upgrade.
+
+SCOPE LOCK:
+Only work on:
+1. ScannerTradeModal / scanner-to-trade-ticket flow.
+2. Scanner BUY/SELL action wiring.
+3. Trade ticket prefill from scanner result.
+4. Historical Check + News Risk Check display inside the scanner trade flow.
+5. UI/mobile polish directly needed for this modal.
+
+Do not change:
+- MT5 execution logic
+- live/demo permissions
+- kill switches
+- admin approvals
+- Ruby brain architecture
+- scanner scoring logic
+- historical/backtest scoring logic
+- news-risk scoring logic
+- auth/session logic
+- backend routes unless a tiny read-only contract fix is required
+- slot allocation math
+- open-trade P/L calculations
+
+GOAL:
+When a user taps BUY or SELL from a scanner result, open a clean trade ticket modal that is prefilled with that scanner setup.
+
+The scanner trade flow should feel professional, safe, and simple.
+
+Required behavior:
+1. Scanner BUY button says only BUY and is green.
+2. Scanner SELL button says only SELL and is red.
+3. Tapping BUY opens trade ticket modal with direction = BUY.
+4. Tapping SELL opens trade ticket modal with direction = SELL.
+5. Modal should prefill:
+   - symbol
+   - direction
+   - timeframe
+   - scanner confidence
+   - entry zone if available
+   - suggested stop loss if available
+   - suggested take profit if available
+   - risk/reward if available
+   - news-risk state
+   - historical/backtest summary
+6. User must still manually confirm any trade.
+7. No trade should be placed by merely opening the modal.
+
+Modal sections:
+- Trade Setup
+- Position Size / Lot Size
+- Stop Loss
+- Take Profit
+- Risk / Reward
+- Historical Check
+- News Risk Check
+- Ruby Summary
+- Final Confirmation
+
+Historical Check should show:
+- historical bias
+- similar setups found
+- win rate if available
+- average drawdown
+- average time to target
+- confidence/sample size
+- history unavailable state if missing
+
+News Risk Check should show:
+- news risk: none / low / medium / high / critical
+- related event/headline if available
+- bias: bullish / bearish / mixed / unclear
+- recommendation: Watch / Wait / Avoid / No Trade
+- news unavailable state if missing
+
+Risk behavior:
+- If news risk is high or critical, show strong warning.
+- If technical setup conflicts with news, show warning.
+- If historical sample is weak, show lower confidence warning.
+- Do not block trades unless existing risk rules already block them.
+- If existing risk rules block it, show clean blocked reason.
+
+Safety:
+- Opening scanner trade modal must not execute orders.
+- Confirm button must still pass through existing trade ticket safety gates.
+- Existing live/demo permission checks remain unchanged.
+- Existing kill switch remains unchanged.
+- Existing admin approval gates remain unchanged.
+- Existing broker execution disabled state remains respected.
+
+User permissions:
+- Regular users only see their own account/slot context.
+- Admin-only controls must not appear in the modal for regular users.
+- Andraie Regular Mode must behave like regular user mode.
+
+Mobile UI:
+- Modal must fit iPhone screen.
+- Modal body should scroll internally if needed.
+- BUY/SELL/Cancel/Confirm buttons must remain tappable.
+- No horizontal overflow.
+- Bottom nav must not cover modal buttons.
+- Ruby floating bubble must not block modal actions.
+
+Cleanup:
+- If an old demo-only ScannerTradeModal exists, upgrade it instead of creating a duplicate.
+- Remove fake/demo-only labels from scanner trade modal.
+- Do not show mock values as real.
+- If scanner result does not include a value, show clean “Not available” or leave optional field empty.
+
+Acceptance checklist:
+1. Scanner BUY opens prefilled BUY trade ticket modal.
+2. Scanner SELL opens prefilled SELL trade ticket modal.
+3. Opening modal does not place a trade.
+4. Confirm still uses existing safety gates.
+5. Historical Check appears.
+6. News Risk Check appears.
+7. Ruby Summary appears.
+8. High news risk can warn Wait/Avoid/No Trade.
+9. Mobile modal has no overflow or blocked buttons.
+10. No normal UI says “real money” or “live money.”
+11. No backend execution permissions changed.
+12. No live trades placed.
+13. App builds.

@@ -1,0 +1,114 @@
+Continue to the next phase using the Trading Intelligence QA report and implementation report you just created.
+
+Do NOT unlock live trading.
+Do NOT enable real auto-close execution.
+Do NOT remove paper-only, live-trading, MT5 bridge, or ALERT_ONLY safety gates.
+
+This phase is only to finish the documented P2 deferrals and make the frontend clearly reflect the backend safety system.
+
+Before coding:
+1. Locate and read the latest Trading Intelligence QA report and implementation report.
+2. Confirm the P0/P1 status is still “None.”
+3. Confirm typecheck, guard checks, and stop-limit QA were green before continuing.
+4. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+
+Implement only these documented P2/frontend additions:
+
+A. Protective Auto-Close Settings UI
+- Add a clear user-facing safety settings area for Protective Auto-Close.
+- Default must be OFF.
+- User opt-in must be required.
+- Show that current status is ALERT_ONLY unless every required gate passes.
+- Display the missing gate reasons clearly:
+  - bridgeConnected=false
+  - activityStatus="UNKNOWN"
+  - user opt-in missing
+  - inactivity not confirmed
+  - high-confidence multi-signal confirmation missing
+  - paper/live unlock missing
+  - duplicate-action protection
+- Users may save preferences, but saving preferences must NOT unlock execution by itself.
+- If bridge/live gates are not passed, the UI must show “Alert Only — AI can warn you, but cannot close this trade.”
+
+B. Activity Ping / User Presence
+- Add frontend activity tracking for the logged-in user/session.
+- Track ACTIVE, IDLE, AWAY, and UNKNOWN.
+- Default/fallback must be UNKNOWN.
+- If the app is closed, backgrounded, stale, or activity cannot be verified, status must return to UNKNOWN.
+- Send activity status to backend safely per user/session.
+- Do not leak one user’s activity to another user.
+- Backend must continue treating UNKNOWN as a hard block for auto-close execution.
+
+C. Trade Card Safety Badges
+Add visible badges/status labels on live trade cards showing:
+- Paper Only
+- Live Trading Blocked
+- Bridge Offline
+- ALERT_ONLY
+- Auto-Close OFF
+- Auto-Close Opt-In Required
+- Activity Unknown
+- Data Insufficient
+- News Unavailable
+- TP Targets Available / TP Targets Unavailable
+- SL/TP Editable if supported
+- Manual Close Available if supported
+
+Badges must reflect real backend state, not fake UI state.
+
+D. Separate Current Events / Real-World News Channel
+- Add a separate current-events / real-world-news data path instead of silently using only financial news.
+- If no provider/API key exists, return connected:false, events:[], and a clear unavailable reason.
+- AI must say current events / real-world news are unavailable instead of inventing.
+- Current events should be used as a context/risk modifier, not a fake trading signal.
+- Do not substitute simulator data.
+
+E. Decision Status Enum Cleanup
+- Add/centralize a literal decisionStatus enum while preserving backward compatibility.
+- Suggested enum values:
+  - STRONG_SETUP
+  - WAIT
+  - AVOID
+  - REVIEW
+  - HOLD
+  - NEWS_RISK_HIGH
+  - DATA_INSUFFICIENT
+  - SCANNER_OFFLINE
+  - BRIDGE_OFFLINE
+  - ALERT_ONLY
+- Map old strings like bestOpportunities, watchClosely, and dataInsufficient to the new enum without breaking existing UI.
+
+F. Preserve all existing safety rules
+- Auto-close remains ALERT_ONLY unless all gates pass.
+- Live trading remains BLOCKED unless explicitly unlocked and all required gates pass.
+- MT5 commands must remain blocked while bridge/token/live gates are missing.
+- No AI open/add/widen tools.
+- No fake candles, fake news, fake scanner opportunities, fake TP targets, or fake bridge status.
+- Keep per-user SQL/session filters intact.
+
+After implementation, run:
+1. Typecheck
+2. Existing guard suite
+3. Stop-limit/order-type QA
+4. Trading intelligence regression
+5. Scanner/news/data fallback tests
+6. Auto-close gate tests
+7. Activity UNKNOWN hard-block test
+8. Per-user isolation test
+9. Frontend smoke test for trade cards and safety settings
+
+If any test fails:
+- Fix only confirmed P0/P1 issues.
+- Rerun the full checks.
+- Do not continue until green.
+
+End with a report showing:
+- Files changed
+- UI areas added
+- Backend endpoints/types touched
+- Tests run
+- Passed/failed results
+- Auto-close status
+- MT5/live trading status
+- Anything still gated or deferred
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

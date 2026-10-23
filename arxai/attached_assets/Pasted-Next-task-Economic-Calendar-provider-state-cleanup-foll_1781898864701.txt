@@ -1,0 +1,78 @@
+Next task: Economic Calendar provider-state cleanup follow-ups.
+
+Context:
+The Trading Economics provider-state task is complete and approved. EconomicCalendarSnapshot now carries providerState:
+- not_configured
+- fetch_error
+- connected
+
+Now clean up the 3 non-blocking reviewer comments in a focused follow-up.
+
+Scope:
+1. Add strict ISO-date validation on economic calendar from/to params.
+2. Make UTC vs local event time labels explicit anywhere event time is rendered.
+3. Improve the sync response for provider:"none" so it clearly returns not_configured instead of a vague success/failure state.
+
+Requirements:
+
+A. Strict date validation
+- Validate from/to query params before calling provider.
+- Accept only valid ISO date or ISO datetime strings.
+- Reject invalid dates with 400.
+- Do not silently coerce malformed dates.
+- Do not call Trading Economics if params are invalid.
+- Add tests:
+  - valid ISO date accepted
+  - valid ISO datetime accepted
+  - invalid date rejected
+  - from > to rejected if applicable
+  - provider is not called on invalid input
+
+B. UTC/local labeling
+Anywhere calendar event times appear, labels must clearly say:
+- UTC time
+- Local time
+- user/trip timezone if available
+
+Do not render ambiguous labels like just “Time” if both UTC and local exist.
+
+Surfaces to verify:
+- Economic Calendar page
+- Chart Impact Radar
+- News Risk
+- Ruby explanation
+- Global Market Heat upcoming events
+- provider diagnostics/sync response if event times appear
+
+C. provider:"none" sync response
+When the configured provider is none/missing:
+- response should clearly say providerState: "not_configured"
+- configured: false
+- connected: false
+- eventsSynced: 0
+- message: "Economic calendar provider is not configured"
+- no fake success wording
+- no provider fetch attempted
+
+Tests:
+1. provider none returns providerState not_configured.
+2. provider none does not attempt external fetch.
+3. invalid from/to returns 400.
+4. valid from/to reaches provider.
+5. UTC/local labels are rendered distinctly.
+6. Ruby/calendar copy does not collapse not_configured and fetch_error.
+7. Diagnostics never expose API keys.
+
+Validation:
+- api-server typecheck
+- trading-dashboard typecheck if UI touched
+- api-spec codegen if OpenAPI changes
+- ci-guards
+- targeted-tests
+- safety-integration alone
+- new calendar cleanup tests
+- architect code review
+
+Hard boundary:
+Do not touch live execution gates, MT5 bridge execution, broker dispatch, kill switches, owner/admin permissions, or trade permission logic.
+This is economic-calendar validation and display honesty only.

@@ -1,0 +1,241 @@
+We are adding three user experience upgrades to ARX AI:
+
+1. Show users whether each open trade is in profit or negative.
+2. Add one-click Open / Close actions, but always prompt the user before submitting.
+3. Group sidebar menu options into collapsible sections so the app feels less overwhelming.
+
+Do not rebuild blindly. Inspect the current dashboard, MT5 positions sync, trade command queue, account routing mode, shared master routing, user-owned routing, assistant tools, admin trading controls, sidebar/navigation components, mobile layout, and existing route guards first.
+
+Important:
+Do not expose MT5 credentials, bridge tokens, API keys, SESSION_SECRET, apiKeyHash, or any secrets.
+Do not bypass the existing trade guard chain.
+Do not let AI or UI submit live orders without confirmation.
+Do not break existing MT5 heartbeat, sync-account, sync-positions, or command polling.
+
+PART 1 — Open trade profit/loss visibility
+
+Add an “Open Trades” / “Active Positions” section that shows each user their own active trades.
+
+For each open trade, display:
+- symbol
+- side: buy/sell
+- lot size
+- entry price
+- current price
+- stop loss
+- take profit
+- current unrealized P&L
+- P&L percent if available
+- pips/points if available
+- account type: demo/live
+- routing mode: user-owned MT5 or shared master MT5
+- opened time
+- status
+- source: MT5 synced position or ARX trade command
+
+P&L display:
+- positive trades should clearly show profit
+- negative trades should clearly show loss
+- break-even should show neutral
+- if P&L is unavailable, show “Waiting for MT5 sync” instead of fake data
+
+Data rules:
+1. In USER_OWNED_MT5 mode, positions must come only from that user’s own MT5 connection.
+2. In SHARED_MASTER_MT5 mode, users must only see their own virtual/attributed positions from the shared_trade_attribution ledger.
+3. Users must never see other users’ positions, tickets, P&L, or virtual accounts.
+4. Users must never see shared master MT5 credentials.
+5. If shared master account is netting and per-user attribution is estimated, label it clearly as “allocated estimate” instead of exact.
+6. Prefer MT5-synced profit fields when available. Do not invent P&L.
+
+Add backend/API support if missing:
+- GET /api/trades/open
+- GET /api/trades/history
+- GET /api/trades/summary
+
+These endpoints must be authenticated and user-scoped.
+
+PART 2 — One-click Close action with prompt
+
+For each open trade, add a “Close” button.
+
+Behavior:
+1. User taps Close.
+2. Show confirmation modal before submitting.
+3. Modal must show:
+   - symbol
+   - side
+   - lot size
+   - current P&L
+   - account type demo/live
+   - routing mode
+   - warning if live
+4. User must confirm.
+5. Backend validates again through the full trade guard chain.
+6. If approved, queue CLOSE_POSITION command.
+7. Audit log records the close request, approval/rejection, and final result.
+8. UI shows pending close until MT5 confirms.
+
+For live mode:
+- Do not close immediately from a single tap.
+- Require explicit confirmation.
+- Strong modal text:
+  “This will close a LIVE trade and may realize profit or loss.”
+- Require confirmedByUser:true.
+- If the system currently requires typed confirmation for live, keep that requirement.
+
+PART 3 — One-click Open / Quick Trade action with prompt
+
+Add a clean “Open Trade” or “Quick Trade” button from:
+- dashboard
+- scanner result card
+- watchlist symbol card
+- assistant-prepared trade ticket
+
+Behavior:
+1. User taps Open Trade.
+2. Show trade ticket modal.
+3. User selects or confirms:
+   - symbol
+   - buy/sell
+   - lot size
+   - order type
+   - stop loss
+   - take profit
+   - demo/live mode
+   - routing mode
+4. Show estimated risk if possible.
+5. User confirms.
+6. Backend validates through the full guard chain.
+7. If approved, queue command.
+8. Audit log records the request.
+
+Button labels:
+- Trading Off: disabled button “Trading Off”
+- Demo mode: “Open Demo Trade”
+- Live mode: “Review Live Trade”
+
+Live mode:
+- Never allow instant live order from one tap.
+- Always show the confirmation modal.
+- Require explicit confirmation before command submission.
+
+PART 4 — Trade state updates
+
+Open trade cards should update after:
+- MT5 sync-position response
+- command polling result
+- order executed
+- order rejected
+- position closed
+
+Add clear statuses:
+- Pending
+- Queued
+- Sent to MT5
+- Open
+- Closing
+- Closed
+- Rejected
+- Failed
+- Waiting for sync
+
+No blank cards. No fake trades.
+
+PART 5 — Sidebar grouping and collapsible menu
+
+The current sidebar/menu is becoming too overwhelming. Group the sidebar into collapsible sections.
+
+Suggested groups:
+
+1. Main
+- Dashboard
+- Assistant
+- Scanner
+- Watchlist
+
+2. Trading
+- Open Trades
+- Trade History
+- Journal
+- Calendar
+- Risk Center
+
+3. Broker / MT5
+- MT5 Bridge
+- Connections
+- Account Routing
+- Demo/Live Status
+
+4. Admin
+- Trading Control
+- Users
+- Audit Logs
+- System Health
+Only show Admin group to admin users.
+
+5. Settings
+- Profile
+- Notifications
+- App Settings
+- Security
+
+Requirements:
+- Sections should collapse and expand.
+- Remember collapsed/expanded state per user if easy; otherwise default to collapsed for secondary groups.
+- Keep Dashboard and Assistant easy to access.
+- On mobile, sidebar should not cover the bottom menu or page content.
+- Current page should be highlighted.
+- Do not remove routes; only organize them.
+- Do not break existing links.
+
+PART 6 — AI assistant awareness
+
+Update AI assistant context so it can answer:
+- Am I currently in profit?
+- Which open trades are negative?
+- Which open trades are positive?
+- Can I close this trade?
+- Why can’t I close this trade?
+- What routing mode is this trade using?
+- Is this trade demo or live?
+- What happens if I close this trade?
+
+AI can prepare close/open trade tickets, but it cannot bypass backend guards.
+
+PART 7 — Tests
+
+Add or update tests for:
+1. User sees only their own open trades.
+2. Shared master users see only their attributed trades.
+3. User-owned mode does not show another user’s MT5 positions.
+4. P&L displays from MT5 sync when available.
+5. Missing P&L shows waiting/unavailable state.
+6. Close button opens confirmation modal.
+7. Close command is not submitted until confirmation.
+8. Live close requires explicit confirmation.
+9. Demo close routes only to demo account.
+10. Live close routes only to live account.
+11. Open Trade button opens trade ticket modal.
+12. Open trade command is blocked when Trading Off.
+13. Emergency stop blocks open and close.
+14. Suspended user cannot open or close.
+15. Risk limits block bad open orders.
+16. Audit log records open and close attempts.
+17. Sidebar groups collapse/expand.
+18. Admin menu only appears for admin users.
+19. Mobile sidebar/menu does not block bottom navigation.
+20. No secrets appear in logs or UI.
+
+Final report:
+Return:
+- PASS or FAIL
+- open trade P&L status
+- one-click close status
+- one-click open status
+- confirmation modal status
+- live confirmation protection status
+- sidebar grouping status
+- mobile layout status
+- assistant awareness status
+- tests passed
+- remaining blockers

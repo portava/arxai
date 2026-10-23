@@ -1,0 +1,226 @@
+Complete Phase 22V Part 3 for ARX AI.
+
+Do not place any live trade.
+Do not insert arx_live_commands.
+Do not approve all users automatically.
+Do not weaken the 16-gate evaluator or final dispatch chokepoint.
+
+CURRENT STATUS FROM LAST PASS:
+Completed:
+- User can request live bridge access.
+- Request requires risk disclosure acknowledgment.
+- Admin can approve, deny, revoke.
+- First approval applies safe defaults.
+- Approved user receives defaultExecutionRoute=SHARED_MASTER_MT5.
+- arx_live_commands stayed 0.
+- Broker resolver still uses env AND operator.
+- 16-gate evaluator, dispatch chokepoint, and safety surfaces remained intact.
+
+DEFERRED ITEMS THAT MUST NOW BE COMPLETED:
+1. risk-template id column wiring
+2. per-user requireTakeProfit enforcement inside the 16-gate evaluator
+3. fully automatic landing-page LIVE default UX for approved live bridge users
+
+GOAL:
+When a user requests live bridge access and I approve them, they should automatically default to LIVE Shared Master Bridge mode in the app, with a real risk template assigned and enforced by the backend. They should not have to manually switch from paper/demo every time. Unapproved users should still stay paper/demo/request-only.
+
+1. RISK TEMPLATE ID COLUMN WIRING
+Add or complete risk template wiring.
+
+If missing, add a safe column/field:
+- assignedRiskTemplateId
+or
+- riskTemplateId
+
+Apply it to the correct user live settings table/model, likely arx_live_user_settings or equivalent.
+
+When admin approves a live bridge request:
+- assign Approved Shared Bridge Default risk template
+- save assignedRiskTemplateId/riskTemplateId on the user’s live settings
+- preserve existing tuned risk template if admin already assigned one manually
+- write audit log:
+  - previous risk template
+  - new risk template
+  - admin/operator
+  - timestamp
+  - approval id/request id if available
+
+Create or verify default template:
+
+Template name:
+Approved Shared Bridge Default
+
+Default values:
+- maxOpenPositions = 1
+- maxLot = 0.01 or smallest safe broker-supported lot
+- dailyLossLimitUsd = 10
+- allowedSymbols = ["EURUSD"]
+- requireStopLoss = true
+- requireTakeProfit = true
+- oneClickTrading = false
+- aiAutoTrading = false
+- aiAutoClose = ALERT_ONLY
+- scannerLiveEnabled = false
+- manualConfirmationRequired = true
+- defaultExecutionRoute = SHARED_MASTER_MT5
+
+Admin should be able to change the assigned template later from Manage Access.
+
+2. ENFORCE requireTakeProfit INSIDE 16-GATE EVALUATOR
+The previous pass said per-user requireTakeProfit enforcement was deferred.
+
+Fix that now.
+
+The backend 16-gate evaluator and final dispatch chokepoint must enforce:
+- if requireTakeProfit=true for the user/template, any live order without TP is blocked
+- blocked reason should be friendly:
+  “Take profit is required for live bridge trading.”
+- do not insert arx_live_commands when TP is missing
+- write audit log for blocked attempt
+
+Also verify:
+- requireStopLoss already enforced
+- requireTakeProfit is enforced the same way
+- both requirements are read from the backend user settings/risk template, not frontend-only state
+
+3. FULLY AUTOMATIC LIVE DEFAULT UX FOR APPROVED USERS
+For users approved for live bridge:
+- app should default to LIVE Shared Bridge mode after login/refresh
+- trade page should open in LIVE Shared Bridge context by default
+- scanner/live bridge status should show approved live mode by default
+- user should not need to manually switch from paper/demo to live every session
+- user should still see readiness blockers if bridge is not connected or gates fail
+
+Approved user should see friendly labels:
+- Live Bridge Access: Approved
+- Default Mode: Live Shared Bridge
+- Execution Route: Shared Master Bridge
+- Live Readiness: Ready / Blocked
+
+If blocked, show friendly reasons:
+- Bridge not connected
+- Heartbeat stale
+- Broker execution disabled
+- Kill switch engaged
+- Risk limit missing
+- Stop loss required
+- Take profit required
+
+For unapproved users:
+- do not default them to live
+- show Request Live Bridge Access card
+- show status Not Requested / Pending / Denied / Revoked
+- keep paper/demo access only if allowed
+
+4. ADMIN APPROVAL SHOULD TRIGGER DEFAULT LIVE MODE
+When admin approves a user’s live bridge request, set:
+- liveBridgeRequestStatus = approved
+- liveTradingApproved = true
+- sharedBridgeApproved = true
+- defaultTradingMode = LIVE
+- defaultExecutionRoute = SHARED_MASTER_MT5
+- sharedLiveBridgeDefault = true
+- assignedRiskTemplateId = Approved Shared Bridge Default template id
+- requireStopLoss = true
+- requireTakeProfit = true
+- scannerLiveEnabled = false
+- oneClickTrading = false
+- aiAutoTrading = false
+- aiAutoClose = ALERT_ONLY
+- manualConfirmationRequired = true
+
+Do not place a trade.
+Do not create arx_live_commands.
+Do not approve unrelated users.
+
+5. USER LANDING / DEFAULT ROUTE LOGIC
+Audit the app’s landing/default state logic.
+
+If an approved live bridge user signs in:
+- default their trade context to LIVE Shared Bridge
+- do not show Demo as the primary selected state
+- do not require them to select live every time
+- still show Paper/Demo as available only if allowed, but Live Shared Bridge should be the selected default
+
+If an unapproved user signs in:
+- do not select Live
+- show Request Live Bridge Access card
+- keep default paper/demo behavior
+
+6. BACKEND ENFORCEMENT
+Do not rely on UI defaults.
+
+The backend dispatch chokepoint must enforce:
+- user live approved
+- shared bridge approved
+- assigned risk template exists
+- requireStopLoss enforced
+- requireTakeProfit enforced
+- max lot enforced
+- max open trades enforced
+- allowed symbols enforced
+- daily loss limit enforced
+- manual confirmation required
+- all 16 gates pass
+- env AND operator broker execution pass
+- bridge pinned and heartbeat fresh
+- kill switch released
+
+7. AUDIT LOG
+Write audit logs for:
+- risk template created/updated
+- risk template assigned
+- request approved
+- user default mode changed to live shared bridge
+- requireTakeProfit blocked dispatch
+- missing risk template blocked dispatch
+- any live readiness dry-run blocked reason
+
+8. ADMIN UI
+Update Admin / User Control Center / Manage Access:
+- show assigned risk template
+- allow changing risk template
+- show Require Take Profit switch
+- show Require Stop Loss switch
+- show Default Execution Route
+- show Live Bridge Default ON/OFF
+- keep controls switch-based
+- no typed confirmations
+
+9. USER UI
+Regular approved users should not see backend details.
+
+Approved users should see:
+- Live Bridge Access: Approved
+- Default Mode: Live Shared Bridge
+- Risk Template: Approved Shared Bridge Default
+- Live Readiness: Ready / Blocked
+- friendly blocker list
+
+Regular users should not see:
+- env names
+- API routes
+- admin controls
+- kill switches
+- other users
+- audit log
+- raw schema/field names
+
+10. ACCEPTANCE TEST
+Before stopping, verify:
+- Approved user defaults to LIVE Shared Bridge after refresh/login.
+- Unapproved user does not default to live.
+- Approved user has assigned risk template id.
+- Approved Shared Bridge Default template exists.
+- requireTakeProfit=true blocks live dispatch without TP.
+- requireStopLoss=true still blocks live dispatch without SL.
+- Missing risk template blocks live dispatch.
+- Admin approval applies default route, mode, and risk template.
+- arx_live_commands remains 0 unless a manually confirmed order passes every gate.
+- No live trade is placed automatically.
+- Final dispatch chokepoint still calls 16-gate evaluator.
+- Broker execution still requires env AND operator switch.
+- Regular users cannot see admin/operator controls.
+- Login, Ruby voice/chat, scanner, trade modal, bridge status, user request flow, admin queue, and bottom nav still work.
+
+Run typecheck/build/tests and fix all errors before stopping.

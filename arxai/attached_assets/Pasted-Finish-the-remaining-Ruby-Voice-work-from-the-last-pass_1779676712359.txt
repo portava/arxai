@@ -1,0 +1,164 @@
+Finish the remaining Ruby Voice work from the last pass.
+
+DO NOT rebuild unrelated sections.
+DO NOT break the current working Ruby mic/listen flow.
+DO NOT break the new server-side TTS routes, replay, stop speaking, or provider diagnostics.
+
+CURRENT STATUS:
+The last pass fixed:
+- Server TTS routes mounted and reachable
+- Admin Ruby Voice page at /admin/ruby-voice
+- ElevenLabs/OpenAI server-side test routes
+- Replay + Stop speaking
+- Provider diagnostics
+- API keys stay server-side
+
+NOT DONE YET:
+- Mobile “Tap to hear Ruby” autoplay-blocked banner
+- Persisting per-user “browser fallback enabled” and “auto-listen” toggles to the database
+- OpenAI style/instructions field for Ruby’s tone
+- Switching OpenAI TTS default from older tts model to the newer model that supports instructions, if supported by current SDK/API
+
+GOAL:
+Complete these missing Ruby voice items cleanly and safely.
+
+1. ADD MOBILE “TAP TO HEAR RUBY” BANNER
+When Ruby generates speech but mobile Safari/browser blocks autoplay:
+- Show a clean banner or button: “Tap to hear Ruby”
+- Tapping it should play the queued Ruby audio
+- Do not lose the audio if autoplay is blocked
+- Do not show this banner if audio played successfully
+- Make it work in Ruby chat and admin Ruby voice test area
+- Keep it mobile-friendly
+- Make sure bottom nav and Ruby bubble do not cover it
+
+Behavior:
+- Ruby answers in text first
+- TTS audio is generated
+- If autoplay works, Ruby speaks
+- If autoplay is blocked, show “Tap to hear Ruby”
+- User taps once and hears Ruby
+- Replay button should still work after that
+
+2. PERSIST USER RUBY VOICE TOGGLES TO DATABASE
+Right now some Ruby voice settings are localStorage-only. Move/sync them to backend/database per user.
+
+Persist these per-user settings:
+- Ruby voice enabled
+- Speak Ruby responses
+- Auto-listen after Ruby speaks
+- Browser fallback enabled
+- Preferred TTS provider: auto / elevenlabs / openai / browser
+- Preferred voice if user-level voice selection is allowed
+
+Requirements:
+- On login/page load, load saved user voice settings from backend
+- When user changes a toggle, save it to backend
+- If backend save fails, rollback UI and show a friendly error
+- Keep localStorage only as a temporary fallback/cache, not the source of truth
+- Existing localStorage values may be migrated once into the backend if no backend value exists
+- Admin should be able to see and update these settings for a user if needed
+- Regular users should only see simple voice controls, not provider diagnostics
+
+3. ADD OPENAI RUBY TONE / STYLE FIELD
+Add an admin-only field for Ruby voice tone/instructions.
+
+Location:
+Admin → Ruby Voice Settings
+
+Field:
+- Ruby Voice Style / Instructions
+
+Example default:
+“Sound calm, confident, warm, and concise. Speak like Ruby, the ARX AI trading assistant. Keep responses natural and supportive.”
+
+Requirements:
+- Save this setting in backend/admin settings
+- Use it only for OpenAI TTS if the selected OpenAI TTS model supports instructions
+- If the selected model does not support instructions, do not break TTS
+- Show admin-only note:
+  “This style field is used only when the selected OpenAI voice model supports instructions.”
+- Do not show this field to regular users
+
+4. OPENAI TTS MODEL HANDLING
+Audit current OpenAI TTS model usage.
+
+Requirements:
+- Allow admin to choose the OpenAI TTS model from settings
+- Default to the best current configured model already supported by the codebase/env
+- If switching to gpt-4o-mini-tts is supported by the current SDK/API, set it as the default for OpenAI TTS
+- If the current SDK/API does not support it yet, keep the working model and show admin-only warning
+- Do not hard-break OpenAI TTS because of an unsupported model
+- Add graceful fallback from OpenAI to ElevenLabs/browser if the model errors
+
+5. SETTINGS SYNC CLEANUP
+Audit all Ruby TTS setting names.
+
+Make sure these are synchronized:
+- frontend state
+- backend route names
+- database fields
+- admin settings
+- user settings
+- localStorage fallback keys
+
+Avoid duplicate conflicting keys like:
+- tts.enabled in one place
+- rubyVoiceEnabled somewhere else
+- speakResponses somewhere else
+
+Create a compatibility mapping if needed, but make one clear source of truth.
+
+6. ADMIN DIAGNOSTICS UPDATE
+Update Admin → Ruby Voice Settings diagnostics to show:
+- User settings loaded from backend: yes/no
+- Local fallback used: yes/no
+- Last autoplay blocked: yes/no
+- Last “Tap to hear Ruby” used: yes/no
+- OpenAI style field applied: yes/no
+- OpenAI model used
+- Provider actually used
+- Fallback reason if any
+
+Keep diagnostics admin-only.
+
+7. SECURITY
+Do not expose:
+- API keys
+- raw provider errors
+- stack traces
+- backend route names
+- internal config names
+- provider secret data
+
+Regular users should only see:
+- Ruby Voice ON/OFF
+- Speak Responses ON/OFF
+- Auto-Listen ON/OFF
+- Replay
+- Stop Speaking
+- Tap to hear Ruby if autoplay is blocked
+
+8. ACCEPTANCE TEST
+Before stopping, verify:
+- Ruby still listens to voice input
+- Ruby still answers in text
+- Ruby still speaks through ElevenLabs when selected and configured
+- Ruby still speaks through OpenAI when selected and configured
+- Browser fallback still works
+- Mobile autoplay block shows “Tap to hear Ruby”
+- Tapping “Tap to hear Ruby” plays the queued Ruby audio
+- Replay works after autoplay block
+- Stop Speaking works
+- Ruby does not overlap audio
+- User Ruby voice toggles persist after refresh/login
+- Auto-listen setting persists after refresh/login
+- Browser fallback enabled setting persists after refresh/login
+- Admin can set Ruby OpenAI voice style/instructions
+- OpenAI style/instructions does not break unsupported models
+- Admin diagnostics show provider used and fallback reason
+- Regular users do not see admin diagnostics
+- No API keys or raw errors leak client-side
+- Login, scanner, trade modal, bridge status, admin controls, and Ruby chat still work
+
+Run typecheck/build and fix all errors before stopping.

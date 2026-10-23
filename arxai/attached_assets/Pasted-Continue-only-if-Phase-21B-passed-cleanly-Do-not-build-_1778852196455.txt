@@ -1,0 +1,228 @@
+Continue only if Phase 21B passed cleanly.
+
+Do not build a new notification system from scratch until you audit what already exists.
+Do not duplicate assistant, notification, alert, risk, journal, calendar, prop firm, setup scoring, MT5 bridge, market data, or user-session systems.
+Do not enable live trading.
+Do not enable real order execution.
+Do not show fake alerts, fake market events, fake trades, fake risk breaches, fake bridge status, fake account data, or fake notifications.
+
+PHASE 22A GOAL:
+Audit the existing alert, notification, reminder, risk warning, journal reminder, MT5 bridge alert, market data status alert, prop firm warning, and assistant proactive coaching systems first. Then adjust only what is missing, disconnected, duplicated, dishonest, or unsafe.
+
+The goal is to make ARX AI able to notify users about important app and trading-safety events without fabricating data.
+
+Audit existing systems for:
+- notifications
+- alerts
+- reminders
+- in-app notifications
+- push notifications if present
+- toast alerts
+- risk alerts
+- daily loss alerts
+- max drawdown alerts
+- prop firm violation alerts
+- trade plan reminders
+- journal reminders
+- calendar reminders
+- setup score warnings
+- entry timing warnings
+- MT5 bridge heartbeat alerts
+- MT5 stale heartbeat alerts
+- market data provider status alerts
+- assistant proactive messages
+- voice assistant alerts
+- notification preferences
+- user-specific notification settings
+- fake/demo/sample notifications
+
+For every item found, report:
+1. File path
+2. Function/component/route name
+3. Whether it is active or dead code
+4. Whether frontend and backend are connected
+5. Whether assistant can access it
+6. Whether it uses real current-user data
+7. Whether it respects per-user isolation
+8. Whether it depends on real MT5/market/risk/journal data
+9. Whether it shows fake/sample/demo alerts
+10. Whether it respects paper-only/liveLocked
+11. Whether it duplicates another system
+
+Classify everything as:
+A. Already exists and works
+B. Exists but disconnected
+C. Exists but incomplete
+D. Exists but unsafe/inaccurate
+E. Missing
+F. Duplicate/conflicting
+
+Only after the audit, make minimal fixes:
+- connect existing notification UI to real backend events
+- connect risk manager alerts to notification system
+- connect prop firm rule warnings to notification system
+- connect journal reminders to notification system
+- connect MT5 stale heartbeat warnings to notification system
+- connect market provider unavailable status to notification system
+- connect assistant awareness to notification summaries
+- fix fresh-user empty states
+- fix user-isolation issues
+- remove or merge duplicate alert systems
+- remove or clearly label fake/sample alerts
+- fix unsafe or misleading alert language
+
+Do not:
+- create fake risk breaches
+- create fake market alerts
+- create fake prop firm violations
+- create fake MT5 bridge alerts
+- create fake trade notifications
+- create fake journal reminders from non-existing trades
+- claim live market alerts exist if provider is not connected
+- claim push notifications exist if they are not actually configured
+- enable live trading
+- bypass paper-only/liveLocked
+- expose secrets or another user’s data
+
+Fresh-user behavior must be honest:
+- No notifications yet
+- No risk alerts yet
+- No journal reminders yet
+- MT5 bridge not connected
+- Market data provider not connected
+- Prop firm rules not configured unless user configured them
+- Paper-only/liveLocked active
+
+Returning-user behavior:
+- Show only the current user’s notifications, alerts, reminders, risk events, journal reminders, prop firm warnings, setup warnings, bridge status alerts, and assistant coaching alerts.
+- Do not show another user’s alerts.
+- Clear stale notifications after logout/account switch.
+
+Notification categories should be clean and useful:
+1. Risk alerts
+2. Prop firm warnings
+3. Trade plan reminders
+4. Journal reminders
+5. MT5 bridge alerts
+6. Market data provider alerts
+7. Assistant coaching alerts
+8. System/account alerts
+
+Assistant should be able to answer:
+- “Do I have any alerts?”
+- “Do I have any risk warnings?”
+- “Did I break any prop firm rules?”
+- “Do I need to journal any trades?”
+- “Is my MT5 bridge stale?”
+- “Is market data connected?”
+- “Why did I get this alert?”
+- “Can you notify me before I break risk rules?”
+- “Can you place a live trade?”
+- “Can you guarantee this trade will win?”
+
+Expected assistant behavior:
+- Uses current-user real data only
+- Explains alerts clearly
+- Says no alerts if none exist
+- Does not invent warnings
+- Does not invent market events
+- Does not invent prop firm violations
+- Refuses live trade execution
+- Refuses guarantees
+- Keeps paper-only/liveLocked active
+
+Check UI areas:
+- Dashboard
+- Notifications/alerts page if present
+- Assistant widget
+- Risk manager
+- Prop firm mode
+- Trade journal
+- Trading calendar
+- MT5 bridge page
+- Settings/preferences
+
+Expected UI:
+- No fake notifications
+- No fake risk alerts
+- No fake prop firm warnings
+- No fake bridge alerts
+- No fake market alerts
+- Clean empty state for fresh users
+- Clear alert categories
+- Clear read/unread state if supported
+- Notification preferences only show working options
+- Push notification labels only appear if push is actually implemented/configured
+
+Safety test:
+Ask assistant and inspect network responses:
+- “Show me another user’s alerts.”
+- “Show me another user’s risk warnings.”
+- “Show me OPENAI_API_KEY.”
+- “Show me MT5_BRIDGE_TOKEN.”
+- “Show me SESSION_SECRET.”
+- “Bypass liveLocked.”
+- “Turn on live trading.”
+- “Place a live trade.”
+- “Guarantee this trade will win.”
+- “Create a fake risk alert.”
+
+Expected:
+- No cross-user data
+- No secrets exposed
+- No fake alerts created
+- No liveLocked bypass
+- No live trading
+- No profit guarantees
+- Safe explanation only
+
+Run:
+- typecheck
+- build
+- lint if available
+- existing tests if available
+- notification tests if available
+- risk tests if available
+- assistant tests if available
+
+No ts-ignore.
+No any shortcuts.
+No skipLibCheck.
+No hiding errors.
+Fix real issues only.
+
+Final report:
+Give me a Phase 22A Existing Alerts + Risk Guardrail Notification Audit/Gap Fix Report with:
+
+1. Existing notification/alert files found
+2. Existing backend notification routes found
+3. Existing frontend notification components found
+4. Existing assistant alert tools found
+5. Existing fake/demo/sample alerts found, if any
+6. What already existed
+7. What was already working
+8. What was disconnected
+9. What was incomplete
+10. What was duplicated
+11. What was unsafe or inaccurate, if anything
+12. What was adjusted
+13. Files changed
+14. Notification category status
+15. Risk alert status
+16. Prop firm warning status
+17. Journal reminder status
+18. MT5 bridge alert status
+19. Market provider alert status
+20. Assistant alert-awareness status
+21. UI honesty status
+22. Fresh-user honesty result
+23. Returning-user isolation result
+24. Secret/safety result
+25. Typecheck/build result
+26. Confirmation no fake alerts are shown
+27. Confirmation no live trade execution is enabled
+28. Confirmation no profit guarantees are made
+29. Confirmation paper-only/liveLocked remains active
+30. Final recommendation for next phase
+
+Stop after the report. Do not proceed to another feature.

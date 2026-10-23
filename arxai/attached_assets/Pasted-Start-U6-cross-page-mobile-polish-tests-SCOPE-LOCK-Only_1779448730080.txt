@@ -1,0 +1,144 @@
+Start U6 — cross-page mobile polish + tests.
+
+SCOPE LOCK:
+Only work on mobile/responsive UI polish, spacing, safe-area behavior, navigation visibility, overflow fixes, and tests.
+
+Do not change:
+- MT5 bridge logic
+- trade execution logic
+- live/demo permissions
+- kill switches
+- admin approvals
+- Ruby intelligence
+- scanner calculations
+- historical/news scoring logic
+- auth/session logic
+- backend routes unless a tiny display-contract bug is required to fix mobile UI
+- slot allocation math
+- open-trade P/L calculations
+
+GOAL:
+Make the whole ARX AI app feel clean, usable, and stable on mobile, especially iPhone Safari/Replit preview.
+
+PAGES TO CHECK:
+1. Login/access page
+2. Cockpit/Dashboard
+3. Trade page
+4. Open Trades / Positions
+5. Market Scanner
+6. AI / Ruby command center
+7. Risk Command Center
+8. Alerts / Watchlist / Calendar
+9. Side menu / More menu
+10. Admin-only pages, but only for admin mode
+11. Regular-user mode views
+
+MOBILE ISSUES TO FIX:
+- No horizontal overflow
+- No overlapping topbar chips
+- No clipped buttons
+- No bottom nav covering page content
+- Proper safe-area padding at bottom
+- Topbar remains usable
+- Symbol selector fits
+- Status chips horizontally scroll when needed
+- Market category chips scroll horizontally
+- AI tabs scroll horizontally
+- Cards stack cleanly
+- Tables become cards or scroll safely
+- Ruby floating button does not block key controls
+- Search button/input fit on one row where possible
+- Modals fit screen height and scroll internally
+- Trade ticket buttons stay visible and tappable
+- BUY button green, says only BUY
+- SELL button red, says only SELL
+- No “real money” or “live money” wording in normal UI
+- Admin controls hidden in regular mode
+
+SPECIFIC MOBILE NAV CHECKS:
+- Bottom nav should be:
+  Cockpit / Trade / Scanner / AI / More
+- Scanner must remain primary, not hidden
+- AI bottom-nav link must open the correct AI/Ruby main page
+- Side menu must not hide behind bottom nav
+- Active states must be clear
+- Regular users must not see admin menu items
+- Andraie in Regular Mode must not see admin controls
+
+SPECIFIC PAGE POLISH:
+
+Login:
+- Full screen works on mobile
+- Form is easy to reach
+- Bottom nav hidden only on login
+
+Dashboard:
+- Simple-first layout remains intact
+- Today/Open P&L, Open Positions, Scanner, Ruby, Risk appear first
+- Power cards remain behind tabs/collapsibles
+
+Scanner:
+- Search row fits
+- Horizontal market category chips work
+- Expanded symbols display compactly
+- Scanner cards do not overflow
+- News-risk / historical / no-trade states display cleanly
+
+AI/Ruby:
+- Top AI tabs scroll horizontally
+- Ruby panel fits
+- Typing/thinking animation still works
+- Symbol context remains synced
+- Historical/news context does not create giant unreadable blocks
+
+Trade:
+- BUY/SELL buttons clean and tappable
+- Trade ticket modal fits mobile
+- Historical Check and News Risk Check fit without clutter
+
+Risk:
+- Risk summary cards stack cleanly
+- Tabs do not overflow
+- No status chip overlap
+
+Open Trades:
+- Live P/L money values fit
+- Account/slot metrics fit
+- Empty/disconnected/stale states look clean
+- Regular users see only their own data
+
+Admin Mode:
+- Admin-only pages can be mobile usable
+- Regular Mode hides all admin tools
+- Direct admin URL in Regular Mode remains blocked
+
+TESTS / VERIFICATION:
+Run available safe checks:
+- typecheck
+- build
+- route smoke test
+- mobile viewport inspection if available
+- auth guard check
+- admin/regular mode check
+- scanner route check
+- AI route check
+- dashboard route check
+
+Do not place trades.
+Do not enable live trading.
+
+ACCEPTANCE CHECKLIST:
+1. App builds.
+2. Mobile layout has no horizontal overflow.
+3. Bottom nav does not cover content.
+4. Topbar/status chips do not overlap.
+5. Scanner is primary and accessible.
+6. AI tabs work on mobile.
+7. Market chips work on mobile.
+8. BUY/SELL buttons are correct.
+9. Regular users do not see admin controls.
+10. Andraie Regular Mode has no admin access.
+11. No “real money” or “live money” wording appears in normal UI.
+12. No raw errors, route names, function names, or debug labels show to users.
+13. No backend trading logic changed.
+14. No live trades placed.

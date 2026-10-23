@@ -1,0 +1,295 @@
+NEXT PHASE: OWNER TEST SESSION REPORT REVIEW + FINAL REPAIR SPRINT
+
+Goal:
+Review the Owner Test Session #1 results, fix all real blockers, rerun QA, and determine whether the app is ready for hands-on owner testing.
+
+Do not add new trading features.
+Do not fake MT5 connection.
+Do not place real broker orders.
+Do not claim broker fills.
+Do not expose secrets.
+Do not block owner tester access.
+Do not hide tester workflows.
+Keep MT5 deferred until desktop/VPS MT5 bridge is connected later.
+
+==================================================
+1. LOAD LATEST OWNER TEST SESSION REPORT
+==================================================
+
+Find and review the latest:
+
+OWNER TEST SESSION #1 REPORT
+
+Also review:
+
+- /api/release/readiness
+- /api/system/full-health
+- /api/admin/issues
+- /api/auth/permissions
+- /api/broker/status
+- npm run test:system
+
+Identify:
+
+- failed routes
+- failed workflows
+- failed API endpoints
+- failed mobile pages
+- broken simulator flows
+- broken AI flows
+- broken live tester intent flows
+- broken journal/calendar/audit updates
+- state mismatches
+- MT5 honesty issues
+- security issues
+
+==================================================
+2. FIX ALL P0 ISSUES FIRST
+==================================================
+
+P0 issues include:
+
+- app does not load
+- owner locked out
+- full tester access broken
+- MT5 falsely shown as connected
+- real broker execution falsely available
+- secrets exposed
+- risk governor missing
+- kill switch UI missing
+- app crashes on main dashboard
+- demo simulator completely broken
+- live tester workflows completely inaccessible
+
+Fix all P0 issues before moving forward.
+
+Do not continue if any P0 remains.
+
+==================================================
+3. FIX ALL P1 ISSUES NEXT
+==================================================
+
+P1 issues include:
+
+- broken route
+- broken API endpoint
+- live chart not rendering
+- trade command room broken
+- demo manual simulator broken
+- demo AI simulator broken
+- live manual tester intent broken
+- live AI assist tester intent broken
+- OMS not recording
+- positions not updating
+- P/L not calculating
+- journal not updating
+- calendar not updating
+- audit logs missing
+- risk events missing
+- mobile nav broken
+- owner permissions inconsistent
+
+Fix all P1 issues before moving forward.
+
+Do not continue if any P1 remains.
+
+==================================================
+4. FIX QUICK P2 ISSUES
+==================================================
+
+Fix P2 issues if quick and safe:
+
+- confusing labels
+- bad empty states
+- missing retry buttons
+- slow loading
+- unclear MT5 deferred message
+- layout overflow
+- missing tooltip
+- inconsistent badge color
+- duplicate navigation link
+- table not mobile-friendly
+
+Leave P3 cosmetic polish in known issues.
+
+==================================================
+5. VERIFY CORE OWNER TESTER STATE
+==================================================
+
+Final truth must be:
+
+- owner role active
+- full tester access active
+- all tester routes visible
+- simulator active
+- live chart active
+- live tester workflows open
+- MT5 connected = false
+- MT5 deferred = true
+- real broker execution available = false
+- risk governor active
+- kill switch UI active
+- audit logging active
+- secrets hidden
+
+If any page disagrees with this state, fix it.
+
+==================================================
+6. RERUN CORE WORKFLOWS
+==================================================
+
+Rerun:
+
+1. Dashboard loads
+2. Live chart renders
+3. Symbol sync works
+4. Trade command room loads
+5. Demo manual simulator trade works
+6. Bad demo trade is rejected
+7. Demo AI assist trade card works
+8. Demo AI auto simulator works
+9. Live manual tester intent saves as PENDING_MT5_CONNECTION
+10. Live AI assist tester intent saves as PENDING_MT5_CONNECTION
+11. Live AI auto tester intent saves as PENDING_MT5_CONNECTION
+12. OMS records orders
+13. Position manager updates
+14. P/L engine updates
+15. Journal updates
+16. Calendar updates
+17. Audit logs update
+18. Risk events update
+19. Autopilot observe-only works
+20. Shadow mode works
+21. Forward testing works
+22. AI readiness score updates
+23. Diagnostics export excludes secrets
+24. Mobile layout works
+
+==================================================
+7. RERUN SYSTEM TESTS
+==================================================
+
+Run:
+
+- npm run test:system
+- GET /api/system/full-health
+- GET /api/release/readiness
+- GET /api/auth/permissions
+- GET /api/broker/status
+- GET /api/data-quality
+- GET /api/risk/budget
+- GET /api/orders
+- GET /api/positions
+
+Fix any non-MT5 failure.
+
+MT5-dependent items should be marked:
+
+“Deferred until MT5 bridge is connected.”
+
+They should not count as app failures.
+
+==================================================
+8. UPDATE ISSUE TRACKER
+==================================================
+
+Update /admin/issues:
+
+- mark fixed P0 issues as FIXED
+- mark fixed P1 issues as FIXED
+- move fixed items to NEEDS_RETEST if needed
+- leave P2/P3 cosmetic items as known issues
+- close issues that pass retest
+
+No issue should remain P0 or P1 before owner testing.
+
+==================================================
+9. UPDATE RELEASE READINESS
+==================================================
+
+Update /release-status with:
+
+- latest readiness score
+- last repair sprint timestamp
+- P0 remaining count
+- P1 remaining count
+- P2 remaining count
+- P3 remaining count
+- known issues
+- ready for owner testing yes/no
+
+Keep release stage:
+
+BETA_TESTER
+
+Do not move to production.
+
+==================================================
+10. GENERATE FINAL REPORT
+==================================================
+
+Generate:
+
+OWNER TEST REPAIR SPRINT REPORT
+
+Include:
+
+1. Starting status:
+- readiness score before fixes
+- P0 count before fixes
+- P1 count before fixes
+
+2. Fixes completed:
+- P0 fixed
+- P1 fixed
+- P2 fixed
+- remaining known issues
+
+3. Core workflows:
+- dashboard pass/fail
+- live chart pass/fail
+- symbol sync pass/fail
+- demo manual simulator pass/fail
+- demo AI simulator pass/fail
+- live manual tester intent pass/fail
+- live AI assist tester intent pass/fail
+- live AI auto tester intent pass/fail
+- OMS pass/fail
+- P/L pass/fail
+- journal/calendar pass/fail
+- audit pass/fail
+
+4. Safety:
+- risk governor pass/fail
+- kill switch UI pass/fail
+- bad trade rejection pass/fail
+- secrets hidden yes/no
+
+5. MT5 truth:
+- MT5 connected yes/no
+- MT5 deferred yes/no
+- real broker execution available yes/no
+- no fake broker execution yes/no
+
+6. Final readiness:
+- readiness score after fixes
+- P0 remaining
+- P1 remaining
+- ready for owner testing yes/no
+
+Final decision must be one of:
+
+- READY FOR OWNER HANDS-ON TESTING
+- NEEDS ANOTHER REPAIR SPRINT
+- BLOCKED BY P0/P1
+- WAITING ON MT5 SETUP
+
+Hard rules:
+- Do not fake pass results.
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills.
+- Do not expose secrets.
+- Do not block owner tester access.
+- Do not hide live tester workflows.
+- Fix broken systems before adding features.

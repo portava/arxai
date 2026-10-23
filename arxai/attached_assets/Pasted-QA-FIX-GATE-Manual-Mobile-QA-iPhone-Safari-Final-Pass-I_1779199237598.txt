@@ -1,0 +1,53 @@
+QA/FIX GATE — Manual Mobile QA + iPhone Safari Final Pass
+
+Inspect the mobile/iPhone Safari fixes from the previous pass.
+
+Do not rebuild unrelated systems. Only repair missing or broken mobile-critical pieces.
+
+Verify:
+
+1. iPhone Safari loads the app cleanly.
+2. Login works on mobile.
+3. Logout clears user-specific UI state.
+4. First-time onboarding works on mobile.
+5. Returning users land on their private dashboard.
+6. No fake first-load data appears.
+7. Bottom nav/header/sidebar do not block content.
+8. Ruby widget is visible but does not block important controls.
+9. Ruby chat input works with iOS keyboard.
+10. Ruby voice shows tap-to-start when iOS requires it.
+11. Microphone permission denied state is clean.
+12. Ruby voice auto-listen works after permission where supported.
+13. Ruby speech response does not feed into mic.
+14. Voice trade commands require confirmation.
+15. Scanner direct symbol search works on mobile.
+16. Ruby market explanation panel fits on mobile.
+17. Trade ticket fields are usable on mobile.
+18. Confirmation modal fits on mobile.
+19. One-click defaults OFF on mobile.
+20. Chart position markers do not overflow/break mobile layout.
+21. Trade detail window is usable on mobile.
+22. Close trade confirmation works on mobile.
+23. SL/TP edit confirmation works on mobile.
+24. Mobile safety gates match desktop safety gates.
+25. User A cannot see User B cached data after logout/login switch.
+26. Normal users cannot access admin mobile routes.
+27. Admin mobile screens are usable enough for operator checks.
+28. Kill switch controls remain admin-only.
+29. Reconciliation/audit/readiness screens do not expose secrets.
+30. Production/mobile errors do not show stack traces or raw backend data.
+31. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+32. No live trade is fired during QA.
+33. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- mobile screens manually checked
+- iPhone Safari issues found
+- fixes applied
+- remaining mobile blockers
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

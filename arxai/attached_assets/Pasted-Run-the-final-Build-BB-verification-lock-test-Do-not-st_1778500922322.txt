@@ -1,0 +1,151 @@
+Run the final Build BB verification lock-test.
+
+Do not start Build CC.
+Do not change Build AA.
+Do not add new features unless a Build BB test fails and must be fixed.
+
+Verify Build BB only.
+
+Build BB goal:
+When a paper trade closes, the system automatically creates a post-trade debrief, attaches it to the original decision_id from Build AA when available, updates analytics, and prepares a learning payload for Build CC without changing future scoring yet.
+
+Verification checklist:
+
+1. Typecheck/build health
+Run all relevant project commands:
+- typecheck
+- build
+- API server validation
+- database/schema validation if available
+
+Show exact commands run and whether they passed.
+
+2. Close-trigger verification
+Show exactly where the paper trade close/update hook was added.
+
+Confirm the trigger only fires when a paper trade transitions from open/non-closed to one of:
+- CLOSED_WIN
+- CLOSED_LOSS
+- CLOSED_BREAK_EVEN
+- CLOSED_MANUAL
+- CANCELLED, only if cancellation is treated as a completed trade event
+
+3. Auto-debrief verification
+Prove that closing a paper trade automatically creates a debrief with:
+
+{
+  trade_id,
+  decision_id,
+  symbol,
+  action,
+  result,
+  pnl,
+  pnl_percent,
+  entry_price,
+  exit_price,
+  opened_at,
+  closed_at,
+  hold_time,
+  original_decision_summary,
+  did_follow_decision,
+  decision_confidence,
+  decision_risk_score,
+  what_worked,
+  what_failed,
+  mistake_tags,
+  lesson,
+  improvement_note,
+  created_by: "SYSTEM_AUTO_DEBRIEF"
+}
+
+4. Decision ID linking
+Run one test where the closed paper trade has a valid Build AA decision_id.
+
+Confirm:
+- the decision_id is found
+- the original decision is loaded
+- the debrief references the decision
+- the output explains whether the trade followed the original decision
+
+5. Missing decision_id safety
+Run one test where the closed paper trade has no decision_id.
+
+Confirm:
+- the auto-debrief still gets created
+- a warning is logged
+- the system does not crash
+- the learning payload marks the decision context as missing
+
+6. Idempotency test
+Process the same closed paper trade twice.
+
+Confirm:
+- only one debrief exists
+- the second run returns “already processed” or equivalent
+- no duplicate analytics update is created
+- no duplicate learning payload is created
+
+7. Analytics update proof
+After auto-debrief, confirm analytics update for:
+- total closed trades
+- wins
+- losses
+- break-even trades
+- win rate
+- average win
+- average loss
+- net P&L
+- daily P&L
+- symbol performance
+- decision/strategy performance if decision_id exists
+
+8. Build CC learning payload proof
+Show a sample learning payload:
+
+{
+  trade_id,
+  decision_id,
+  result,
+  pnl,
+  mistake_tags,
+  lesson,
+  confidence_before_trade,
+  risk_score_before_trade,
+  signals_used,
+  debrief_id,
+  ready_for_learning: true
+}
+
+Confirm this payload is created/stored/prepared, but future scoring is NOT changed yet.
+
+9. Live-trade isolation proof
+Search Build BB files and confirm they do NOT call:
+executeTrade,
+execute-trade,
+mt5,
+livePosition,
+live order,
+setCanPlaceTrades,
+live broker execution,
+or anything that can place real trades.
+
+10. Existing manual debrief compatibility
+Confirm the old/manual debrief flow still works and was not broken.
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database changes
+6. Close-trigger hook location
+7. Raw output for valid decision_id test
+8. Raw output for missing decision_id test
+9. Raw output for idempotency test
+10. Analytics proof
+11. Learning payload proof
+12. Live-trade isolation proof
+13. Any fixes made during verification
+14. Final Build BB score out of 10
+15. Whether it is safe to proceed to Build CC

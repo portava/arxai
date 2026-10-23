@@ -1,0 +1,50 @@
+Audit and fix the ARX AI Market Scanner page shown in my uploaded screenshot.
+
+Do not redesign the whole app. Only fix the Market Scanner behavior, mobile layout issues, and scanner data consistency.
+
+Current screenshot issues:
+1. The selected market dropdown says “Volatility 75 Index,” but the scanner result shows TSLA M1.
+2. The status badge also says FX: EURUSD, which does not match Volatility 75 Index.
+3. The scanner appears to be mixing asset classes instead of respecting the selected scanner universe.
+4. The app still shows MT5 DEFERRED / SIMULATOR MODE. Keep this visible if live MT5 is not actually connected, but make the wording accurate.
+5. The floating AI orb overlaps the scanner card content on mobile.
+6. Make sure “Start auto,” “Scan,” and scanner status states actually trigger real scanner logic, not just fake UI updates.
+
+Required fixes:
+- Add a clear scanner universe controller.
+- When the user selects Volatility 75 Index, only scan Volatility 75-related symbols/timeframes.
+- When the user selects Forex, only scan forex pairs.
+- When the user selects Stocks, only scan stocks.
+- When the user selects Crypto, only scan crypto.
+- Do not show TSLA when Volatility 75 is selected.
+- Do not show EURUSD status when Volatility 75 is selected.
+- The scanner result cards must come from the currently selected universe only.
+- The “Last scan” count must reflect the real number of opportunities scanned for that selected universe.
+- Add a safe fallback if no live MT5 feed exists:
+  - show “Simulator data active”
+  - do not pretend it is live broker data
+  - keep execution disabled unless real broker connection is verified
+
+Mobile UI fixes:
+- Keep scanner cards fully visible above the bottom navigation.
+- Add enough bottom padding so content is not hidden behind the fixed nav.
+- Reposition the floating AI orb so it does not cover important scanner text.
+- Make scanner cards responsive on iPhone Safari.
+
+Functional test requirements:
+- Test Volatility 75 selection and confirm no TSLA/EURUSD cards appear.
+- Test Forex selection and confirm only forex pairs appear.
+- Test Stocks selection and confirm stock symbols like TSLA only appear there.
+- Test Crypto selection and confirm only crypto symbols appear there.
+- Test Scan button.
+- Test Start auto button.
+- Test idle/running states.
+- Test mobile viewport height on iPhone Safari.
+- Confirm every status chip matches the actual backend/scanner mode.
+
+After fixing, give me a report showing:
+1. What files were changed.
+2. What scanner logic was corrected.
+3. Whether MT5 is live, deferred, or simulator.
+4. What each market universe now scans.
+5. What mobile layout fixes were applied.

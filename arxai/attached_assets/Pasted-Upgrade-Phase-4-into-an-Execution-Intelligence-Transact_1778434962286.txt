@@ -1,0 +1,67 @@
+Upgrade Phase 4 into an Execution Intelligence + Transaction Cost Analysis system.
+
+Goal:
+Do not only check spread, slippage, and latency before a trade. Build a full execution intelligence layer that predicts, measures, learns from, and improves execution quality over time.
+
+Add:
+
+/src/domain/execution-intelligence/
+  executionIntelligence.types.ts
+  preTradeCostEstimator.engine.ts
+  implementationShortfall.engine.ts
+  effectiveSpread.engine.ts
+  realizedSpread.engine.ts
+  marketImpact.engine.ts
+  timingRisk.engine.ts
+  opportunityCost.engine.ts
+  executionBenchmark.engine.ts
+  executionQualityGrade.engine.ts
+  brokerScorecard.engine.ts
+  executionLearning.engine.ts
+  orderTacticSelector.engine.ts
+
+Core concepts:
+- Pre-trade expected cost
+- Post-trade actual cost
+- Implementation shortfall
+- Effective spread
+- Realized spread
+- Market impact
+- Timing risk
+- Opportunity cost
+- Broker execution score
+- Fill quality score
+- Execution quality grade
+
+Rules:
+- Execution Intelligence cannot place trades directly.
+- It can recommend EXECUTE, WAIT, REDUCE_SIZE, LIMIT_ONLY, CANCEL, or HARD_BLOCK.
+- Every proposed trade must receive a preTradeCostEstimate before approval.
+- Every filled trade must receive a postTradeExecutionReport.
+- Compare expected fill vs actual fill.
+- Compare decision price vs execution price.
+- Compare spread at signal vs spread at fill.
+- Compare latency at decision vs latency at fill.
+- Track broker reliability over time.
+- Track which symbols, sessions, and strategies suffer the worst execution damage.
+- If estimated execution cost destroys the trade’s expected edge, block the trade.
+- If execution quality is poor, reduce size or require limit orders.
+- If broker reliability is degraded, force WAIT, REDUCE_SIZE, or LOCKDOWN depending on severity.
+- Store all execution intelligence records in the Black Box Vault.
+- Keep all previous phase tests passing.
+
+Add execution verdicts:
+- EXECUTION_CLEAN
+- EXECUTION_ACCEPTABLE
+- EXECUTION_COSTLY
+- EXECUTION_UNSTABLE
+- EXECUTION_BLOCKED
+
+Acceptance criteria:
+- The system can estimate expected execution cost before a trade.
+- The system can measure actual execution cost after a trade.
+- The system can explain whether execution helped or hurt the trade.
+- The system can detect when live execution is degrading strategy performance.
+- The system can create a broker scorecard.
+- The system can block trades when execution cost removes the edge.
+- No live auto-execution is enabled yet.

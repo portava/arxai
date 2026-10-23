@@ -1,0 +1,106 @@
+Check what is currently implemented first, then adjust.
+
+We are fixing two issues found in the iPhone Safari test:
+
+Issue 1:
+ARX AI popup still shows “Mic off” and “Auto-listen: off” after opening. The requirement is:
+- When ARX AI popup opens, it should automatically request/use microphone permission if available.
+- Auto-listen should start automatically.
+- The user should not need to manually press the mic button every time.
+- Once the user stops speaking, ARX AI should auto-send exactly one message.
+- After ARX AI responds, it should return to Listening automatically.
+- Closing the popup should immediately stop mic capture and remove the iOS mic indicator.
+
+Issue 2:
+When user asks a broad market question like “What are today’s market conditions?” ARX AI only calls provider status and says the data looks stale. That is not enough.
+For broad market-condition questions, ARX AI should route to a real market-intelligence flow.
+
+Before changing anything:
+1. Inspect the current ARX AI popup voice state logic.
+2. Inspect auto-listen default setting.
+3. Inspect mic permission handling.
+4. Inspect the silence detection / auto-send flow.
+5. Inspect the market tool/router logic.
+6. Inspect getMarketDataProviderStatus and how stale state is calculated.
+7. Inspect available tools for scanner, quotes, candles, snapshots, news, watchlist, and market overview.
+
+Fix requirements:
+
+A. Voice / auto-listen behavior
+- When the ARX AI popup opens, auto-listen should become active by default unless the user explicitly turned it off in settings.
+- The pill should not show “Auto-listen: off” by default.
+- If permission is granted, it should show Listening automatically.
+- If permission is blocked, show a clear actionable message:
+  “Microphone permission is blocked. Enable it in Safari site settings.”
+- Do not fake mic data.
+- Do not fake speech recognition.
+- Do not keep listening while the popup is closed.
+- Make sure Speak mode still works.
+- Make sure after Speaking finishes, it returns to Listening.
+
+B. Market-condition question routing
+When the user asks questions like:
+- “What are today’s market conditions?”
+- “What’s the market looking like?”
+- “What should I trade right now?”
+- “What’s moving today?”
+- “What’s the best scanner candidate?”
+
+ARX AI should not only call provider status.
+
+It should run a full market snapshot flow:
+1. Check provider status.
+2. If provider status is stale, attempt a fresh pull using the available scanner/quote/candle/news endpoints.
+3. Pull scanner candidates if available.
+4. Pull quotes/snapshots for major market symbols or configured watchlist.
+5. Pull fresh news from Finnhub if available.
+6. Pull candle context from TwelveData where applicable.
+7. Summarize:
+   - market bias
+   - volatility
+   - strongest symbols/candidates
+   - weakest symbols/candidates
+   - whether data is fresh or stale
+   - whether the recommendation is safe to act on
+   - paper-only/live-trading lock status
+8. If data is still stale, say exactly what is stale and what endpoint failed, but still provide whatever fresh data is available.
+9. Never invent market data.
+10. Never present stale data as fresh.
+11. Keep TwelveData as the primary candle source.
+12. Keep Finnhub as quote/news provider.
+13. Do not touch live-trading safety rails.
+
+C. UI feedback
+- In the ARX AI response, show which tools/data sources were used.
+- If status is stale but quote/news/scanner data refreshed successfully, explain that clearly.
+- The user should not get stuck with only “provider connected but stale.”
+- Add a small freshness label if one does not exist:
+  Fresh / Delayed / Stale / Unavailable.
+
+D. Tests
+Add or update tests proving:
+- ARX AI popup opens with auto-listen enabled by default.
+- Mic state changes correctly: Listening → Thinking/Responding → Speaking → Listening.
+- Popup close stops mic.
+- Broad market-condition prompt routes to the market snapshot flow, not only provider status.
+- Stale provider status triggers refresh attempt.
+- No fake data is introduced.
+- Scanner/provider logic remains untouched.
+- TwelveData remains primary candle source.
+- Finnhub remains quote/news source.
+- Live-trading rails remain untouched.
+
+Run:
+- pnpm --filter @workspace/trading-dashboard run typecheck --clean
+- pnpm run ci:guards
+- all relevant AI/voice/market tests
+
+QA gate:
+After fixes, restart the frontend workflow and report:
+1. Files changed.
+2. What was already implemented.
+3. What was fixed.
+4. Test results.
+5. Whether auto-listen now defaults on.
+6. Whether market-condition prompts now pull real scanner/quote/news/candle context.
+7. What still needs manual iPhone Safari testing.

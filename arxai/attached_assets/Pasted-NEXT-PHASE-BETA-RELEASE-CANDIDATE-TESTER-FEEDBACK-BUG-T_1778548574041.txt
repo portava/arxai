@@ -1,0 +1,490 @@
+NEXT PHASE: BETA RELEASE CANDIDATE + TESTER FEEDBACK + BUG TRIAGE SYSTEM
+
+Goal:
+Turn the trading app into a true tester-ready beta release.
+
+The app now has:
+- full tester access
+- live chart
+- clean app shell
+- mobile navigation
+- simulator trading
+- live tester workflows
+- AI scanner
+- autopilot
+- shadow mode
+- risk governor
+- OMS
+- positions
+- P/L
+- journal
+- calendar
+- MT5 deferred
+
+Now build the beta testing layer:
+- release versioning
+- tester feedback
+- bug reporting
+- QA checklist
+- test session recorder
+- diagnostics export
+- issue tracker
+- acceptance gates
+- release readiness report
+
+Important:
+Do not add random trading features.
+Do not fake MT5 connection.
+Do not place real broker orders.
+Do not claim broker fills.
+Keep full tester access open.
+Keep MT5 deferred until the user connects MT5 desktop/VPS bridge later.
+
+==================================================
+1. CREATE BETA RELEASE STATUS
+==================================================
+
+Create page:
+
+/release-status
+
+Show:
+
+- current app version
+- release stage: ALPHA / BETA_TESTER / RELEASE_CANDIDATE / PRODUCTION_LOCKED
+- full tester access status
+- MT5 connection status
+- simulator status
+- risk governor status
+- OMS status
+- autopilot status
+- shadow mode status
+- known issues
+- last full system test
+- release readiness score
+
+Current stage should be:
+
+BETA_TESTER
+
+Show:
+
+“Beta Tester Mode Active — all tester workflows are open. Real broker execution requires MT5 bridge connection.”
+
+==================================================
+2. ADD VERSION + BUILD BADGE
+==================================================
+
+Add a small version badge to the global header/footer:
+
+Example:
+
+v0.9.0-beta
+Tester Build
+MT5 Deferred
+
+Also expose:
+
+GET /api/release/version
+
+Return:
+
+{
+  "version": "0.9.0-beta",
+  "stage": "BETA_TESTER",
+  "fullTesterAccess": true,
+  "mt5Deferred": true,
+  "realBrokerExecutionAvailable": false,
+  "lastUpdated": "timestamp"
+}
+
+==================================================
+3. CREATE TESTER FEEDBACK CENTER
+==================================================
+
+Create page:
+
+/feedback-center
+
+Allow tester to submit:
+
+- bug report
+- feature feedback
+- UI issue
+- trading workflow issue
+- chart issue
+- AI issue
+- risk governor issue
+- journal/calendar issue
+- mobile issue
+- MT5 setup issue
+
+Feedback fields:
+
+- title
+- category
+- severity: low / medium / high / critical
+- page/route
+- what happened
+- what was expected
+- steps to reproduce
+- screenshot optional
+- console/system info if available
+- user role
+- current mode
+- MT5 status
+- timestamp
+
+==================================================
+4. ADD BUG REPORT BUTTON EVERYWHERE
+==================================================
+
+Add a global button:
+
+“Report Issue”
+
+It should capture:
+
+- current route
+- current user role
+- current trading mode
+- selected symbol
+- MT5 status
+- simulator status
+- risk governor status
+- last API error if any
+- browser/device info
+- timestamp
+
+Do not capture secrets.
+Do not expose MT5 token.
+Do not expose API keys.
+
+==================================================
+5. CREATE ISSUE TRACKER
+==================================================
+
+Create page:
+
+/admin/issues
+
+Show all submitted feedback and bugs.
+
+Issue statuses:
+
+- NEW
+- TRIAGED
+- IN_PROGRESS
+- FIXED
+- NEEDS_RETEST
+- CLOSED
+- WONT_FIX
+
+Issue priority:
+
+- P0 critical blocker
+- P1 major
+- P2 normal
+- P3 minor
+
+Allow owner/admin to:
+
+- assign status
+- set priority
+- add notes
+- link issue to route
+- link issue to system
+- mark fixed
+- mark needs retest
+- close issue
+
+==================================================
+6. CREATE QA CHECKLIST WIZARD
+==================================================
+
+Create page:
+
+/qa-checklist
+
+Checklist sections:
+
+A. App Access
+- dashboard loads
+- navigation works
+- mobile bottom nav works
+- global header works
+- owner tester access active
+
+B. Chart
+- live chart loads
+- symbol change works
+- chart does not crash mobile
+
+C. Simulator Trading
+- demo manual trade works
+- demo AI trade works
+- OMS records order
+- position manager works
+- P/L updates
+
+D. Live Tester Workflows
+- live manual intent works
+- live AI assist intent works
+- live AI auto tester intent works
+- live intent queue updates
+- no real broker execution claimed
+
+E. Risk + Safety
+- risk governor rejects bad orders
+- kill switch UI works
+- risk events log
+- audit logs record actions
+
+F. AI Systems
+- market scanner works
+- autopilot observe works
+- shadow mode works
+- forward testing works
+- AI readiness score updates
+
+G. Records
+- journal updates
+- calendar updates
+- orders page updates
+- positions page updates
+- performance scorecard updates
+
+H. MT5 Deferred Honesty
+- MT5 shown as deferred
+- broker execution unavailable
+- MT5 setup page available
+- no fake broker connection
+
+Each item should have:
+
+- Not Tested
+- Pass
+- Fail
+- Needs Review
+- notes
+- timestamp
+
+==================================================
+7. CREATE TEST SESSION RECORDER
+==================================================
+
+Create page:
+
+/test-session-recorder
+
+Allow tester to start a test session.
+
+Record:
+
+- sessionId
+- start time
+- end time
+- routes visited
+- actions taken
+- errors encountered
+- feedback submitted
+- trades simulated
+- live intents created
+- AI decisions generated
+- risk blocks triggered
+- audit events created
+- QA checklist results
+
+Buttons:
+
+- Start Test Session
+- Pause
+- End Session
+- Generate Test Report
+
+Do not record secrets.
+
+==================================================
+8. CREATE DIAGNOSTICS EXPORT
+==================================================
+
+Create:
+
+/admin/diagnostics
+
+Allow owner/admin to export a diagnostic package.
+
+Include:
+
+- app version
+- route health
+- API health
+- current permissions
+- current role
+- MT5 deferred status
+- simulator status
+- risk governor status
+- OMS status
+- latest frontend errors
+- latest backend errors
+- last 100 audit events
+- last 100 risk events
+- last 100 AI decisions
+- recent issues
+
+Do not include:
+
+- secret values
+- MT5 token
+- API keys
+- private credentials
+
+Create endpoint:
+
+GET /api/export/diagnostics
+
+==================================================
+9. ADD RELEASE ACCEPTANCE GATES
+==================================================
+
+Create release gates:
+
+- route health pass
+- API health pass
+- mobile navigation pass
+- live chart pass
+- simulator trade pass
+- AI simulator pass
+- live intent pass
+- risk governor pass
+- OMS pass
+- P/L pass
+- journal/calendar pass
+- audit pass
+- MT5 deferred honesty pass
+- no critical open bugs
+
+Create endpoint:
+
+GET /api/release/readiness
+
+Return:
+
+{
+  "releaseReady": true/false,
+  "readinessScore": 0-100,
+  "stage": "BETA_TESTER",
+  "passedGates": [],
+  "failedGates": [],
+  "criticalIssues": [],
+  "warnings": [],
+  "mt5Deferred": true,
+  "realBrokerExecutionAvailable": false
+}
+
+==================================================
+10. CREATE RELEASE NOTES PAGE
+==================================================
+
+Create page:
+
+/release-notes
+
+Show:
+
+- what was added
+- what works now
+- what is deferred
+- known issues
+- testing instructions
+- next milestone
+
+Current release notes should say:
+
+Works now:
+- full tester access
+- simulator trading
+- AI scanner
+- AI autopilot simulator
+- live tester intents
+- shadow testing
+- strategy testing
+- risk governor
+- OMS
+- journal/calendar
+- live chart
+
+Deferred:
+- real MT5 broker execution
+- real MT5 account sync
+- real MT5 live positions
+- real broker fills
+
+==================================================
+11. UPDATE TESTING CONTROL CENTER
+==================================================
+
+Add:
+
+- Run Release Readiness Check
+- Open QA Checklist
+- Start Test Session
+- Report Issue
+- Export Diagnostics
+- View Release Status
+- View Open Issues
+- View Release Notes
+
+==================================================
+12. FINAL TEST
+==================================================
+
+Run:
+
+- release status route test
+- version endpoint test
+- feedback center test
+- global issue report button test
+- issue tracker test
+- QA checklist test
+- test session recorder test
+- diagnostics export test
+- release readiness gate test
+- release notes test
+- testing control center update test
+- security check for secrets
+- MT5 deferred honesty check
+
+Generate:
+
+BETA RELEASE CANDIDATE REPORT
+
+Include:
+
+- Release Status active yes/no
+- Version badge active yes/no
+- Feedback Center active yes/no
+- Global Report Issue button active yes/no
+- Issue Tracker active yes/no
+- QA Checklist active yes/no
+- Test Session Recorder active yes/no
+- Diagnostics Export active yes/no
+- Release Readiness Gates active yes/no
+- Release Notes active yes/no
+- Testing Control Center updated yes/no
+- Full tester access still active yes/no
+- MT5 still deferred yes/no
+- Real broker execution still not faked yes/no
+- Current readiness score
+- Critical open issues
+- Exact next recommended fix
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not place real broker orders.
+- Do not claim broker fills.
+- Do not expose secrets.
+- Do not hide tester workflows.
+- Do not remove risk governor.
+- Do not remove kill switch UI.
+- Do not block owner tester access.

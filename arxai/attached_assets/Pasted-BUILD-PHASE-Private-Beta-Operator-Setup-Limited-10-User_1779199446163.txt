@@ -1,0 +1,276 @@
+BUILD PHASE — Private Beta Operator Setup + Limited 10-User Test Plan
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Prepare ARX AI for a controlled private beta with exactly 10 invited users. The beta should test onboarding, demo mode, Ruby, scanner, trade ticket flow, privacy isolation, mobile usability, admin controls, safety gates, and optional operator-approved shared master readiness without turning on public live trading.
+
+Important:
+Do not open public registration.
+Do not enable public live trading.
+Do not create real live bridge commands.
+Do not bypass safety gates.
+Private beta should default to demo/testing unless the operator explicitly approves a user, allocation, disclosure, compliance flag, bridge mapping, and full live safety stack.
+
+1. Inspect existing beta/admin/user systems first
+Check what already exists for:
+- user accounts
+- invite codes
+- roles
+- admin approval
+- account modes
+- onboarding
+- demo balances
+- shared master approval
+- allocations/risk profiles
+- feature flags
+- audit logs
+- user feedback/support
+- rate limits
+- production readiness
+- no-live-command evidence
+
+Only build missing pieces.
+
+2. 10-user beta cohort
+Create an admin-only beta cohort system:
+
+- beta cohort name: ARX_PRIVATE_BETA_10
+- max users: 10
+- invite-only access
+- registration closed after 10 accepted users
+- waitlist state after limit is reached
+- admin can invite, revoke, pause, or remove a beta user
+- every beta user is tied to authenticated userId
+- no duplicate accounts from the same invite
+- audit every invite and acceptance
+
+3. Beta user modes
+Each beta user should be assigned one of these safe modes:
+
+A. Demo Tester
+- default for all beta users
+- private demo balance
+- no live commands
+- test scanner, Ruby, trade tickets, chart, P/L calendar
+
+B. Personal MT5 Setup Tester
+- only if selected by admin
+- tests connection/setup/read-only status
+- live disabled unless all safety/disclosure gates pass
+
+C. Shared Master Review Tester
+- only if selected by admin
+- can request access
+- cannot trade live unless admin approval, allocation, risk profile, disclosure, compliance approval, bridge mapping, and all live safety gates pass
+
+4. 10-user capacity and isolation test
+Add a beta QA routine that creates or simulates 10 users:
+
+- User 1 through User 10
+- each has private onboarding
+- each has private dashboard
+- each has private Ruby memory
+- each has private scanner state
+- each has private trades/history/P/L
+- each has private notifications
+- each cannot see any other user’s data
+
+Also test:
+- all 10 users logging in
+- multiple users scanning same symbol
+- multiple users opening demo tickets
+- two users trading same symbol in demo
+- one user double-clicking submit
+- one user logging out and another logging in on same browser
+
+5. Beta safety limits
+Add or verify beta-wide defaults:
+
+- live execution OFF by default
+- one-click live OFF by default
+- shared master live OFF unless all approvals pass
+- demo mode enabled
+- max beta users = 10
+- beta user risk profile required
+- default max lot size conservative
+- daily loss limit required
+- allowed symbols configurable
+- close-only and kill switch available
+- force-review available
+- admin can pause all beta users instantly
+
+6. Admin beta dashboard
+Create or improve admin-only dashboard:
+
+Beta Control Center
+
+Show:
+- beta cohort count: accepted / 10
+- invited users
+- pending invites
+- active users
+- paused users
+- account mode per user
+- onboarding status
+- demo activity
+- shared master request status
+- allocation/risk profile status
+- disclosure status
+- last activity
+- last Ruby use
+- last trade ticket opened
+- last safety block
+- feedback submitted
+- issue reports
+- no-live-command evidence
+
+Admin actions:
+- invite user
+- revoke invite
+- pause user
+- resume user
+- assign account mode
+- assign demo balance
+- assign risk profile
+- approve/revoke shared master request
+- view user audit/activity
+- export beta evidence
+- disable all beta trading actions
+
+7. Beta user feedback system
+Add a lightweight feedback/report tool:
+
+Users can submit:
+- bug report
+- confusing screen
+- Ruby issue
+- voice issue
+- scanner issue
+- trade ticket issue
+- mobile issue
+- account/setup issue
+- safety concern
+- general feedback
+
+Capture:
+- current route
+- userId
+- account mode
+- device/browser if safely available
+- timestamp
+- screenshot attachment only if existing upload system supports it
+- user message
+- severity selected by user
+
+Do not capture secrets or raw sensitive bridge data.
+
+8. Beta onboarding copy
+Add private beta messaging:
+
+- “You’re in the ARX AI private beta.”
+- “Beta access is limited to 10 invited users.”
+- “Start in demo mode first.”
+- “Live trading is disabled unless explicitly approved by the operator.”
+- “Ruby’s analysis is informational and does not guarantee results.”
+- “Please report bugs, confusing screens, or anything that feels unsafe.”
+
+9. Beta launch checklist
+Create:
+
+PRIVATE_BETA_10_CHECKLIST.md
+
+Include:
+- 10-user invite checklist
+- admin setup checklist
+- demo tester checklist
+- personal MT5 tester checklist
+- shared master review checklist
+- mobile tester checklist
+- Ruby tester checklist
+- safety gate checklist
+- feedback checklist
+- no-live-command checklist
+- daily operator review checklist
+
+10. Beta operator runbook
+Create:
+
+PRIVATE_BETA_10_OPERATOR_RUNBOOK.md
+
+Include:
+- how to invite 10 users
+- how to pause a beta user
+- how to pause all beta access
+- how to keep live trading disabled
+- how to verify no-live-command evidence
+- how to review feedback
+- how to check audit logs
+- how to handle user support
+- how to respond to bridge issues
+- how to revoke access
+- how to end the beta safely
+
+11. Beta test schedule
+Create:
+
+PRIVATE_BETA_10_TEST_PLAN.md
+
+Suggested schedule:
+- Day 1: onboarding + demo only
+- Day 2: scanner + Ruby market explanation
+- Day 3: trade ticket + SL/TP + chart window
+- Day 4: Ruby voice + voice guardrails
+- Day 5: mobile/iPhone Safari pass
+- Day 6: admin controls + safety blocks
+- Day 7: feedback review + fix sprint
+
+12. Audit logs
+Add audit logs for:
+- beta invite created
+- invite accepted
+- invite revoked
+- beta user paused/resumed
+- beta mode assigned
+- beta feedback submitted
+- beta user limit reached
+- beta user attempted blocked live action
+- admin viewed beta dashboard
+- admin exported beta evidence
+- non-admin beta admin access attempt
+
+Do not log secrets.
+
+13. Tests
+Add or update tests for:
+- only invited users can enter beta
+- beta caps at 10 accepted users
+- 11th user goes to waitlist/blocked state
+- revoked invite cannot register
+- paused beta user cannot trade
+- beta users default to demo mode
+- beta users cannot create live commands by default
+- User 1 cannot see User 2 data
+- all 10 users have isolated Ruby memory
+- all 10 users have isolated scanner/trade/cache state
+- admin can pause/resume beta user
+- admin can export beta evidence
+- feedback submission works
+- feedback does not expose secrets
+- non-admin cannot access beta dashboard
+- no live command created during beta tests
+- arx_live_commands count stays unchanged
+
+Return:
+- what was built
+- files changed
+- beta dashboard route
+- beta API routes
+- invite/cohort behavior
+- feedback behavior
+- test plan docs created
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

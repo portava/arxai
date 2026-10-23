@@ -1,0 +1,367 @@
+NEXT PHASE: FULL TESTER EXPERIENCE POLISH + SIMULATED LIVE MARKET ENGINE
+
+Goal:
+Now that the app is open for full tester access, improve the testing experience so every workflow feels complete even while MT5 is deferred.
+
+The user should be able to test the app like a real trading platform:
+- live chart visible
+- trade ticket connected to selected chart symbol
+- demo simulator feels live
+- AI generates explainable trade ideas
+- journal/calendar/audit logs update
+- live tester workflows are open
+- MT5-required broker execution remains deferred until MT5 bridge is connected
+
+Do not fake real MT5 execution.
+Do not claim real broker orders were placed.
+Do not hide live pages.
+Do not block tester workflows.
+
+==================================================
+1. CREATE SIMULATED LIVE MARKET ENGINE
+==================================================
+
+Create an internal simulated market engine for tester/demo mode.
+
+It should support:
+
+- synthetic price updates
+- bid/ask spread
+- candles
+- current price
+- session volatility
+- mock fills
+- simulated P/L
+- stop loss hits
+- take profit hits
+- trailing position updates
+
+Default symbols:
+
+- EURUSD
+- GBPUSD
+- USDJPY
+- XAUUSD
+- BTCUSDT
+- ETHUSDT
+- AAPL
+- TSLA
+
+Create endpoints:
+
+GET /api/market/symbols
+GET /api/market/quote/:symbol
+GET /api/market/candles/:symbol
+GET /api/market/session-status
+POST /api/market/simulator/start
+POST /api/market/simulator/stop
+POST /api/market/simulator/reset
+
+The simulator should clearly show:
+
+executionEnvironment = SIMULATOR
+
+==================================================
+2. CONNECT CHART SYMBOL TO TRADE TICKET
+==================================================
+
+When user changes symbol on the chart, update:
+
+- manual trade ticket
+- AI trading panel
+- demo trading panel
+- live manual tester panel
+- live AI assist tester panel
+
+Example:
+If chart symbol is XAUUSD, trade ticket should default to XAUUSD.
+
+Add shared state:
+
+selectedTradingSymbol
+
+Use it across:
+
+- /live-chart
+- /trading-command-center
+- /manual-trade-ticket
+- /demo-trading
+- /live-manual
+- /live-ai-assist
+- /ai-trading
+
+==================================================
+3. IMPROVE TRADE TICKET UX
+==================================================
+
+Trade ticket should show:
+
+- selected symbol
+- current simulated/live quote
+- bid
+- ask
+- spread
+- buy button
+- sell button
+- lot size
+- stop loss
+- take profit
+- estimated max loss
+- estimated gain
+- risk/reward ratio
+- account mode
+- execution environment
+- risk governor result
+- submit button
+
+For MT5 deferred state, live tester submit should say:
+
+“Submit Live Intent”
+
+Not:
+
+“Place Live Order”
+
+When clicked, it should save the intent and show:
+
+“Live intent captured. MT5 bridge required for broker execution.”
+
+==================================================
+4. ADD AI TRADE EXPLANATION PANEL
+==================================================
+
+For every AI idea, show an explanation panel:
+
+- Why AI likes the trade
+- Why AI may be wrong
+- Entry logic
+- Stop loss logic
+- Take profit logic
+- Market condition
+- Confidence score
+- Risk score
+- Risk/reward ratio
+- What would invalidate the setup
+- Which rules passed
+- Which rules failed
+
+Add status labels:
+
+- APPROVED_SIMULATION
+- REJECTED_BY_RISK
+- LOW_CONFIDENCE
+- PENDING_MT5_CONNECTION
+- NEEDS_USER_APPROVAL
+- TESTER_INTENT_CAPTURED
+
+==================================================
+5. ADD GUIDED TEST PLAYBOOK
+==================================================
+
+Create a page:
+
+/tester-playbook
+
+This page should guide the tester through:
+
+1. Open dashboard
+2. Confirm live chart loads
+3. Change symbol
+4. Run demo manual trade
+5. Run demo AI assist
+6. Run demo AI auto
+7. Submit live manual intent
+8. Generate live AI assist intent
+9. Start live AI auto tester
+10. Check live intent queue
+11. Check journal
+12. Check calendar
+13. Check audit vault
+14. Check risk governor
+15. Check kill switch UI
+
+Each step should have:
+
+- Start button
+- expected result
+- pass/fail status
+- timestamp
+- link to related logs
+
+==================================================
+6. ADD SEEDED TEST DATA
+==================================================
+
+Add a button in /testing-control-center:
+
+“Seed Demo Test Data”
+
+It should create:
+
+- sample demo trades
+- sample AI decisions
+- sample rejected trades
+- sample journal entries
+- sample calendar wins/losses
+- sample audit logs
+- sample live intents pending MT5
+- sample risk governor blocks
+
+Add reset button:
+
+“Clear Demo Test Data”
+
+Do not affect real broker data.
+Do not affect MT5 data.
+Do not affect live execution tables.
+
+==================================================
+7. IMPROVE JOURNAL + CALENDAR
+==================================================
+
+Journal should separate:
+
+- Paper
+- Demo Simulator
+- Live Tester Intent
+- Real Live Broker, future only
+
+Calendar should show:
+
+- daily simulated P/L
+- winning days
+- losing days
+- number of trades
+- AI vs manual breakdown
+- tester intent count
+
+If MT5 is deferred, show:
+
+“Real broker P/L unavailable until MT5 bridge is connected.”
+
+==================================================
+8. IMPROVE LIVE INTENT QUEUE
+==================================================
+
+/live-intent-queue should allow filtering by:
+
+- Manual
+- AI Assist
+- AI Auto
+- Pending MT5
+- Rejected by Risk
+- Ready When Connected
+
+Each intent card should show:
+
+- symbol
+- direction
+- lot size
+- stop loss
+- take profit
+- risk estimate
+- source
+- status
+- created time
+- audit link
+
+Add button:
+
+“Convert to Broker Order Later”
+
+Keep disabled until MT5 is connected and readiness passes.
+
+Tooltip:
+
+“Connect MT5 bridge to enable broker execution.”
+
+==================================================
+9. ADD TESTER MODE SETTINGS
+==================================================
+
+Create settings section:
+
+Tester Mode Settings
+
+Controls:
+
+- Full Tester Access on/off
+- Simulated market volatility: low/medium/high
+- Simulated account balance
+- Max simulated lot size
+- Max simulated daily loss
+- Show onboarding again
+- Reset feature popups
+- Seed demo data
+- Clear demo data
+
+==================================================
+10. UPDATE GLOBAL HEADER
+==================================================
+
+Global header should show:
+
+- selected symbol
+- current mode
+- execution environment
+- MT5 status
+- live chart status
+- simulated market status
+- risk governor status
+- kill switch status
+- daily simulated P/L
+- live intent count
+
+If MT5 not connected:
+
+“Tester Mode: Full Access | Broker Execution: Deferred”
+
+==================================================
+11. FINAL TEST
+==================================================
+
+Run:
+
+- route smoke test
+- live chart test
+- simulated market engine test
+- trade ticket symbol sync test
+- demo manual simulator test
+- demo AI assist simulator test
+- demo AI auto simulator test
+- live manual intent test
+- live AI assist intent test
+- live AI auto tester intent test
+- live intent queue test
+- journal/calendar test
+- audit log test
+- seed/clear demo data test
+- onboarding replay test
+- tester playbook test
+
+Generate:
+
+FULL TESTER EXPERIENCE POLISH REPORT
+
+Include:
+
+- simulated market engine active yes/no
+- chart-to-ticket sync active yes/no
+- trade ticket improved yes/no
+- AI explanation panel active yes/no
+- tester playbook active yes/no
+- seeded demo data active yes/no
+- journal/calendar separated by environment yes/no
+- live intent queue improved yes/no
+- tester settings active yes/no
+- global header updated yes/no
+- MT5 still deferred yes/no
+- real broker execution still not faked yes/no
+
+Hard rules:
+- Do not fake MT5 connection.
+- Do not claim real broker execution happened.
+- Do not hide live tester workflows.
+- Do not remove risk governor.
+- Do not remove kill switch UI.
+- Do not mix simulator, tester intent, and real broker records.

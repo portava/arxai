@@ -1,0 +1,550 @@
+Run a full ARX AI function-by-function speed instrumentation and performance repair pass.
+
+Speed is now the highest launch priority. The app must feel instant. Do not do a broad vague “performance cleanup.” I want every major function tested individually, timed, repaired, and retested. Measure how long every action takes from user click/input to visible UI response and backend completion.
+
+Do not ask me questions during this command.
+Do not skip slow areas.
+Do not say “out of scope.”
+Do not place live trades during automated QA.
+Do not insert arx_live_commands during automated QA.
+Do not type operator phrases.
+Do not weaken safety gates.
+Do not fake data.
+Do not remove features just to make the app faster.
+Do not hide slow failures behind loading spinners.
+Do not expose diagnostics to normal users.
+
+Create checkpoint first:
+checkpoint: before-function-by-function-speed-audit
+
+Create checkpoints after each major repair group:
+- speed-instrumentation-installed
+- speed-scanner-repaired
+- speed-trade-ticket-repaired
+- speed-ruby-response-repaired
+- speed-chart-symbol-repaired
+- speed-alerts-account-admin-repaired
+- final-speed-optimized-launch-state
+
+Main goal:
+For every important action, record:
+1. action name
+2. page/component
+3. click/input time
+4. first UI feedback time
+5. frontend render completion time
+6. backend request start time
+7. backend response time
+8. DB query time if any
+9. network duration
+10. React Query cache hit/miss
+11. websocket/feed latency if relevant
+12. total user-perceived latency
+13. bottleneck cause
+14. fix applied
+15. retest result
+
+Add a developer-only/admin-only Performance Diagnostics panel or report file. Normal users must not see raw diagnostics.
+
+Performance targets:
+- Button click visual response: under 100ms
+- Modal open: under 250ms
+- Tab switch: under 150ms
+- Dropdown selection update: under 150ms
+- Route navigation shell response: under 300ms
+- Account-mode resolver response: under 150ms
+- My account load after cached session: under 500ms
+- Scanner first visible results: under 1 second
+- Scanner full broad scan: progressive, never blocks UI
+- Trade ticket validation: under 750ms unless broker/feed call is genuinely slower
+- Chart symbol switch UI response: under 250ms
+- Live chart data refresh: as fast as provider allows, no UI freeze
+- Ruby first text response: under 1.5 seconds target
+- Ruby TTS must never block text response
+- Alert dismiss: under 300ms optimistic UI
+- Admin allocation search response: under 500ms with debounce
+- Any action over 1 second must show an honest loading state and exact slow segment in diagnostics
+
+PART A — Install speed instrumentation
+
+Add performance timing utilities:
+- markActionStart(actionName, context)
+- markUiFeedback(actionId)
+- markApiStart(actionId, endpoint)
+- markApiEnd(actionId, endpoint, status)
+- markRenderComplete(actionId)
+- markDbTiming(actionId, queryName, duration)
+- markFeedTiming(actionId, provider, symbol, duration)
+- markActionEnd(actionId)
+- reportSlowAction(actionId)
+
+Use browser Performance API where possible.
+Use backend high-resolution timing for API routes.
+Use React Profiler or lightweight custom render counters for hot components.
+Do not spam logs in production. Gate diagnostics behind admin/dev mode.
+
+Create a performance report table with:
+- action
+- page
+- totalMs
+- uiFeedbackMs
+- frontendRenderMs
+- apiMs
+- dbMs
+- feedMs
+- cacheHit
+- status
+- bottleneck
+- fixed yes/no
+
+PART B — Build full function inventory
+
+Audit and list every launch-critical action.
+
+Pages to inspect:
+- dashboard/home
+- my-account
+- settings
+- notifications
+- alerts
+- help
+- market-scanner
+- trade-command-room
+- live-shared
+- live-ai-assist
+- live-chart
+- my-trades
+- positions
+- live-trades
+- trading-calendar
+- live-intent-queue
+- broker-reconciliation
+- live-trading-control
+- action-center
+- audit-vault
+- safety-logs
+- mt5-setup
+- testing-control-center
+- admin/allocations
+- admin/reconciliation-center
+- admin/trading-control
+- admin/audit-center
+
+Actions to time individually:
+- route load
+- tab switch
+- dropdown open
+- dropdown select
+- search typing
+- filter change
+- refresh
+- modal open
+- modal close
+- form input typing
+- toggle switch
+- submit/validate
+- cancel
+- confirm
+- alert dismiss
+- mark all read
+- clear resolved
+- account refresh
+- allocation refresh
+- add allocation
+- set allocation
+- transfer allocation
+- freeze/unfreeze
+- scanner scan
+- scanner start auto
+- scanner stop auto
+- scanner universe change
+- scanner card render
+- scanner Buy/Sell
+- scanner Validate trade
+- scanner Confirm Trade rendering only, not execution during QA
+- chart symbol change
+- chart Buy/Sell
+- live AI Assist symbol change
+- live AI Assist generate card
+- live AI Assist validate/confirm rendering
+- Ruby send text message
+- Ruby voice input start/stop
+- Ruby response first text
+- Ruby TTS start
+- Ruby TTS cancel
+- open positions refresh
+- close position button rendering and validation only
+- trade history load
+- calendar load
+- provider health load
+- Deriv feed status load
+- MT5 bridge status load
+
+Every action must be either:
+- wired and timed
+- fixed if broken
+- hidden if not launch-ready
+- or clearly disabled with a user-safe reason
+
+PART C — Scanner speed deep test
+
+Scanner is critical. Measure every scanner function separately:
+
+1. Load /market-scanner
+2. Switch Focus / Broad Scan / Symbols tabs
+3. Change scan universe
+4. Click Scan
+5. Click Start Auto
+6. Stop Auto
+7. Expand scan universe symbols
+8. Load feed status
+9. Render each scanner card
+10. Update card quote/candles
+11. Open scanner trade modal
+12. Change side
+13. Change volume
+14. Enter SL/TP
+15. Validate trade
+16. Show Confirm Trade step
+17. Close modal
+18. Recent scanner actions load
+19. Watchlist button
+20. Replay button
+21. Backtest button
+22. Live Intent button
+
+For each, record timing.
+
+Fix:
+- scan freezing UI
+- repeated full rescans
+- duplicate scan jobs
+- overlapping intervals
+- scanner card rerenders
+- heavy hidden panels rendering
+- slow universe selector
+- stale React Query keys
+- repeated account-mode calls
+- repeated provider health calls
+- repeated Market Data Router calls
+- slow trade modal opening
+- validation blocked by unnecessary prerequisites for OWNER
+- slow Ruby summary rendering
+- slow historical check rendering
+
+Scanner must:
+- show immediate click feedback
+- stream/progressively render results
+- never block the whole UI
+- cancel stale scans
+- prevent duplicate scan jobs unless intentionally concurrent
+- use cached symbol metadata
+- use cached Deriv active symbols
+- use recent quote/candle cache
+- virtualize large card lists
+- avoid rendering offscreen cards
+
+PART D — Trade open/close speed measurement
+
+Opening and closing trades are speed-critical.
+
+Do not place live trades during automated QA.
+
+Implement timing for:
+1. Buy/Sell click from scanner
+2. Buy/Sell click from live chart
+3. Buy/Sell click from trade command room
+4. Buy/Sell click from Live AI Assist
+5. Manual Ticket open
+6. Live Shared ticket open
+7. Validate trade
+8. Final Confirm Trade button becomes available
+9. Final submit request start
+10. broker dispatch request start
+11. broker response received
+12. UI order status update
+13. open position appears
+14. close position button click
+15. close validation
+16. close request start
+17. broker close response
+18. position removed/closed in UI
+
+For automated QA:
+- stop before final live dispatch
+- or use dry-run/no-dispatch timing harness
+- arx_live_commands must remain 0
+
+For manual live testing:
+- add an owner-only Live Trade Latency Recorder that records real open/close timings when I manually choose to execute
+- it must not auto-place trades
+- it should show:
+  - preflightMs
+  - dispatchMs
+  - brokerAckMs
+  - positionSyncMs
+  - totalOpenMs
+  - closeDispatchMs
+  - closeBrokerAckMs
+  - closeSyncMs
+  - totalCloseMs
+
+Fix:
+- slow trade modal open
+- slow Validate
+- stale validation cache
+- slow risk/reward calculation
+- input lag
+- slow account/profile fetch
+- redundant requests before validation
+- multiple modals
+- hidden disabled buttons
+- old demo/paper/test validators
+- slow position sync after open/close
+- slow close position UI refresh
+
+Owner account must have one-click or one-confirm flow from every trade surface. Normal users still restricted.
+
+PART E — Live chart speed
+
+Measure:
+- chart page load
+- chart library/embed load
+- symbol dropdown response
+- interval change response
+- chart symbol update
+- candle fetch
+- quote update
+- indicators toggle
+- Trade from chart panel update
+- Buy/Sell ticket open
+- positions side panel load
+- chart resize/mobile load
+
+Fix:
+- chart remounting unnecessarily
+- old symbol requests completing after new symbol
+- ticket/chart mismatch
+- repeated TradingView reload
+- chart blocking page interaction
+- positions panel pulling too often
+- heavy side widgets rendering while offscreen
+
+PART F — Live AI Assist speed and correctness
+
+Measure:
+- page load
+- symbol dropdown open/select
+- feed fetch
+- AI card generation
+- Ruby explanation generation
+- chart update
+- Validate/Confirm rendering
+- TTS/voice if used
+
+Fix:
+- Math.random or fabricated values
+- slow generate card
+- stale old-symbol card overwrite
+- repeated chart reload
+- repeated feed calls
+- huge Ruby response
+- raw backend dump
+- TTS blocking text
+- delayed stale audio
+- voice queue pileup
+- unresponsive confirm buttons
+
+Ruby response system timing:
+- user sends message timestamp
+- request sent timestamp
+- first token/text visible timestamp
+- final text visible timestamp
+- TTS request start
+- TTS audio start
+- TTS cancelled if new message
+- TTS finished
+
+Ruby target:
+- show “Ruby is thinking/typing…” immediately
+- first text fast
+- voice async
+- no minutes-late speech
+- stale audio canceled
+- concise answer first
+- optional more-detail follow-up
+
+PART G — Account/admin/alerts speed
+
+Measure:
+- /my-account load
+- allocation shell fetch
+- risk caps fetch
+- admin allocations load
+- user search
+- add/set/transfer/freeze/unfreeze UI update
+- alerts unread count
+- alerts list load
+- dismiss alert
+- mark all read
+- clear resolved
+- notification page load
+
+Fix:
+- heavy payloads
+- polling full lists for counts
+- repeated account-mode/allocation calls
+- non-debounced user search
+- slow mutation refetches
+- missing optimistic UI for alerts
+- stale alert duplicate queries
+- admin pages loading everything at once
+
+PART H — Backend endpoint timing
+
+Wrap and time hot endpoints:
+- /api/me/account-mode
+- /api/me/allocation
+- /api/me/live/profile
+- /api/me/alerts/unread-count
+- /api/me/alerts
+- /api/me/positions/all
+- /api/me/performance-calendar
+- scanner endpoints
+- market data quote/candles endpoints
+- live shared validate/submit endpoints
+- live AI Assist endpoints
+- Ruby chat/voice endpoints
+- admin allocations endpoints
+- provider health endpoints
+- Deriv status endpoints
+- MT5 bridge heartbeat/sync endpoints
+
+For each endpoint:
+- log duration
+- log DB query duration
+- identify repeated DB reads
+- add caching or query consolidation
+- shrink payloads
+- remove duplicate work
+- add indexes if missing
+- make admin diagnostics opt-in
+
+PART I — Polling/websocket cleanup
+
+Audit all timers, intervals, subscriptions, and websockets.
+
+Fix:
+- duplicate polling intervals
+- polling while page hidden
+- polling while tab hidden
+- polling while modal closed
+- Deriv duplicate subscriptions
+- MT5 bridge duplicate sync loops
+- Ruby voice duplicate listeners
+- alert duplicate polling
+- scanner auto duplicate jobs
+- memory leaks from uncleaned intervals
+
+Every interval/subscription must:
+- have one owner
+- clean up on unmount
+- pause when hidden if safe
+- not duplicate on route changes
+- not rerender whole app every tick
+
+PART J — Mobile speed
+
+Test on mobile viewport:
+- scanner
+- live shared modal
+- chart
+- Live AI Assist
+- bottom nav
+- account
+- alerts
+
+Fix:
+- huge mobile DOM
+- offscreen panels rendering
+- modal scroll lag
+- chart freezing mobile
+- bottom nav lag
+- card list lag
+- oversized images/icons
+- layout thrashing
+- touch delay
+
+PART K — Performance tests and budgets
+
+Add performance regression checks:
+1. account-mode endpoint under target
+2. scanner modal open under target
+3. scanner scan starts rendering quickly
+4. trade ticket input does not lag
+5. Validate trade does not make duplicate calls
+6. chart symbol change cancels stale old-symbol requests
+7. Live AI Assist symbol selection updates without stale overwrite
+8. Ruby first text response timing logged
+9. alert badge uses lightweight endpoint
+10. no duplicate intervals after route navigation
+11. no launch-critical button has empty handler
+12. arx_live_commands remains 0 during QA
+
+Do not make flaky tests that fail due to normal external network variance. Separate:
+- local UI timing budgets
+- backend DB timing budgets
+- external broker/provider timing observations
+
+PART L — Final QA
+
+Run:
+- pnpm run typecheck
+- pnpm run build if available
+- pnpm run ci:guards
+- test:account-mode
+- test:admin-unrestricted-risk
+- test:mode-scope
+- test:live-shared-reason-copy
+- test:chart-symbol-propagation
+- test:scanner-real-feed
+- test:deriv-warmup
+- test:deriv-scanner-feed
+- test:alert-notification-contract
+- test:crash-hardening
+- test:operator-diag-gating
+- test:live-phaseB
+- test:live-pass-path
+- test:demo-arming
+- test:demo-verify
+- test:auth-login-roles
+- route map test
+- UI wiring test
+- performance regression tests
+- arx_live_commands count before/after
+
+PART M — Final performance report
+
+Final report must include a timing table.
+
+Report these exact sections:
+1. top slowest actions before
+2. top slowest actions after
+3. scanner timing table
+4. trade ticket timing table
+5. open/close trade timing instrumentation status
+6. chart timing table
+7. Live AI Assist timing table
+8. Ruby timing table
+9. alerts timing table
+10. account/admin timing table
+11. backend endpoint timing table
+12. polling/websocket cleanup
+13. UI wiring issues fixed
+14. files/routes changed
+15. tests added
+16. QA results
+17. arx_live_commands before/after
+18. confirmation no live trades placed during QA
+19. confirmation no safety gates weakened
+20. remaining slow areas only if caused by external broker/provider latency

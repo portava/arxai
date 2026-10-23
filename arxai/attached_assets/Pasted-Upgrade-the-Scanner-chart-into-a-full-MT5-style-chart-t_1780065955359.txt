@@ -1,0 +1,387 @@
+Upgrade the Scanner chart into a full MT5-style chart trading workstation inside ARX AI.
+
+Goal:
+The chart at the top of the Scanner page should not only display trades or allow SL/TP movement. Users should be able to trade from the chart the same way they expect to trade inside MT5: open trades, close trades, modify trades, place pending orders, cancel pending orders, move entry/SL/TP lines, manage risk, and see live trade status directly on the chart.
+
+Important Architecture Rule:
+Use TradingView or the existing chart library as the visual chart layer only.
+Use MT5 bridge as the real execution engine and source of truth.
+Use ARX backend as the permission, ownership, risk, and user-filtering layer.
+
+Do not mirror the full MT5 account screen.
+Do not expose the master MT5 account.
+Do not send all master-account trades to the frontend.
+Do not hide other users’ trades only with frontend filtering.
+The backend must send only the logged-in user’s authorized trades, pending orders, and chart-trading controls.
+
+Core Chart Placement:
+1. Put the live chart at the very top of the Scanner page.
+2. Scanner results, Broad Scan, Focus Scan, filters, and Ruby explanations should remain below or beside the chart depending on screen size.
+3. The chart must load immediately when Scanner opens.
+4. Do not wait for Ruby to finish before loading the chart.
+5. Do not wait for full scanner results before loading the chart.
+6. Use skeleton loading inside the chart panel only.
+
+Chart Must Show:
+1. Live candles or live price feed.
+2. Current bid and ask.
+3. Spread.
+4. Selected symbol.
+5. Timeframe selector.
+6. Account mode label: DEMO or LIVE only.
+7. User’s available allocated balance.
+8. User’s margin/risk info if available.
+9. User’s open positions on that symbol.
+10. User’s pending orders on that symbol.
+11. Entry line.
+12. Stop Loss line.
+13. Take Profit line.
+14. Pending order line.
+15. Current price line.
+16. Floating P/L.
+17. Lot size.
+18. BUY/SELL direction.
+19. Ticket/order ID shortened for display.
+20. Trade status: Open, Pending, Updating, Closing, Closed, Rejected.
+
+Full Chart Trading Features:
+Add a chart trading toolbar directly on or near the chart with these actions:
+
+1. Buy Market
+2. Sell Market
+3. Place Buy Limit
+4. Place Sell Limit
+5. Place Buy Stop
+6. Place Sell Stop
+7. Modify Stop Loss
+8. Modify Take Profit
+9. Move pending entry price
+10. Cancel pending order
+11. Close full position
+12. Partial close
+13. Reverse position
+14. Break-even button
+15. Move SL to break-even
+16. Trail stop manually from chart
+17. Scale in / add to position
+18. Reduce position size
+19. Close all positions for this symbol
+20. Cancel all pending orders for this symbol
+
+Do not add fake functionality. If a feature is shown, it must either work or be clearly disabled with a clean explanation.
+
+Chart Line Behavior:
+1. Entry, SL, TP, and pending order lines must be draggable.
+2. Dragging a pending order line should modify the pending order entry price.
+3. Dragging SL should modify Stop Loss.
+4. Dragging TP should modify Take Profit.
+5. Dragging should show live price, pip distance, estimated dollar risk, and estimated reward while moving.
+6. After drag release, show a compact action bar:
+   - Confirm
+   - Cancel
+7. The button should say only “Confirm.”
+8. Confirm is the final action before the trade update is sent.
+9. Cancel should snap the line back to the last confirmed broker value.
+10. If backend or MT5 rejects the change, snap the line back to the last confirmed broker value.
+
+One-Click / Fast Trading UX:
+1. Add a clean chart trading panel with lot size input.
+2. Add quick lot buttons:
+   - 0.01
+   - 0.02
+   - 0.05
+   - 0.10
+   - Custom
+3. Add optional default SL/TP distance presets:
+   - by pips
+   - by price
+   - by risk percent
+   - by dollar risk
+4. If user has one-click trading enabled and admin permission allows it, Buy/Sell should fire with one final Confirm only.
+5. If one-click trading is disabled, use a compact confirmation drawer, not a full modal.
+6. Do not show repeated warnings every time unless required by system rules.
+7. This is a high-speed trading environment. Reduce unnecessary clicks without removing real backend safety validation.
+
+Order Ticket From Chart:
+When the user right-clicks, long-presses, or taps a price level on the chart, show a compact trade menu:
+1. Buy Limit at this price
+2. Sell Limit at this price
+3. Buy Stop at this price
+4. Sell Stop at this price
+5. Set SL here for selected trade
+6. Set TP here for selected trade
+7. Alert/Ruby watch level
+8. Cancel
+
+For mobile:
+Use tap-and-hold instead of right-click.
+Make all handles large enough for touch.
+
+Position Management:
+For each open position shown on the chart, allow:
+1. Close position.
+2. Partial close.
+3. Move SL.
+4. Move TP.
+5. Move SL to break-even.
+6. Reverse position.
+7. Add to position.
+8. View Ruby explanation.
+9. View risk/reward.
+10. View current P/L.
+11. View entry, current price, SL, TP, and distance in pips.
+
+Pending Order Management:
+For each pending order shown on the chart, allow:
+1. Move pending order entry price by dragging.
+2. Add or adjust SL.
+3. Add or adjust TP.
+4. Cancel pending order.
+5. Convert pending setup into market order if user confirms.
+6. Show order type clearly: Buy Limit, Sell Limit, Buy Stop, Sell Stop.
+7. Validate correct pending order side based on current price and broker rules.
+
+Backend Requirements:
+Create or upgrade backend endpoints for full chart trading.
+
+Required backend actions:
+1. openMarketOrder
+2. placePendingOrder
+3. modifyPosition
+4. modifyPendingOrder
+5. cancelPendingOrder
+6. closePosition
+7. partialClosePosition
+8. reversePosition
+9. moveStopToBreakEven
+10. symbolCloseAll
+11. symbolCancelAllPending
+12. getUserChartTrades
+13. getUserOpenPositions
+14. getUserPendingOrders
+15. getSymbolTradeRules
+16. getLiveQuote
+17. getCandles
+
+Every backend trade action must validate:
+1. logged-in user identity
+2. user permission
+3. DEMO or LIVE account mode only
+4. no Paper Trading mode
+5. trade belongs to this user or user is admin
+6. symbol is allowed for this user
+7. requested lot size is valid
+8. account allocation is sufficient
+9. margin rules are respected
+10. broker minimum stop distance is respected
+11. price precision is correct
+12. BUY/SELL logic is valid
+13. pending order type is valid for current price
+14. SL/TP are valid for direction
+15. trade is still open before modification
+16. pending order still exists before modification/cancel
+17. MT5 bridge is connected
+18. bridge response is confirmed before UI marks success
+
+User Privacy / Shared Master Bridge:
+Because ARX may use a centralized/master MT5 bridge, every trade must be mapped to an ARX user ledger.
+
+Required trade ledger fields:
+1. userId
+2. accountMode: DEMO or LIVE
+3. mt5Ticket
+4. mt5PositionId if available
+5. mt5OrderId if available
+6. symbol
+7. direction
+8. lotSize
+9. entryPrice
+10. stopLoss
+11. takeProfit
+12. status
+13. openedBy: user / Ruby / admin
+14. allocationId
+15. createdAt
+16. updatedAt
+17. closedAt if closed
+18. source: scanner-chart / scanner-result / Ruby / admin
+
+The frontend must never receive trades that do not belong to the logged-in user unless the logged-in user is an admin viewing an admin-only mode.
+
+Chart Overlay Data:
+The backend should return only clean chart overlay objects:
+1. positions[]
+2. pendingOrders[]
+3. executions[]
+4. userRiskSummary
+5. selectedSymbol
+6. quote
+7. symbolRules
+
+Do not return raw master account data.
+Do not return unrelated users’ tickets.
+Do not return internal bridge logs to normal users.
+
+MT5 Bridge / EA:
+Upgrade the bridge if necessary to support:
+1. market buy
+2. market sell
+3. pending buy limit
+4. pending sell limit
+5. pending buy stop
+6. pending sell stop
+7. modify SL/TP
+8. modify pending order price
+9. delete pending order
+10. close position
+11. partial close
+12. reverse position
+13. fetch open positions
+14. fetch pending orders
+15. fetch symbol trade settings
+16. fetch latest quote
+17. fetch candle data if currently routed through MT5
+
+If any operation is not supported by the current bridge, add it cleanly instead of faking it.
+
+Ruby Integration:
+Ruby should become a chart trading assistant, not a blocker.
+
+Ruby should be able to explain:
+1. why the selected market may be buy/sell biased
+2. what the open trade is doing
+3. current risk
+4. reward target
+5. distance to SL
+6. distance to TP
+7. spread condition
+8. volatility warning
+9. news warning if available
+10. whether SL/TP placement looks too tight or too wide
+11. what happens if user moves SL/TP to the selected level
+
+Ruby should not:
+1. expose backend route names
+2. expose function names
+3. expose stack traces
+4. expose bridge internals
+5. block urgent chart actions
+6. overload the user with raw data
+
+Ruby note should be plain English and compact.
+
+Mobile Requirements:
+1. Chart trading must work on mobile.
+2. Drag handles must be large enough for fingers.
+3. Prevent page scrolling while dragging chart lines.
+4. Use bottom-sheet controls for trade actions.
+5. Keep Buy/Sell buttons visible but not easy to accidentally press.
+6. Use haptic-style visual feedback if supported.
+7. Keep chart height around 300–360px on mobile.
+8. Allow fullscreen chart mode.
+9. In fullscreen chart mode, keep trade controls available.
+10. Exiting fullscreen should not lose selected trade or chart state.
+
+Desktop Requirements:
+1. Chart height around 420–520px.
+2. Trade toolbar may sit on chart side.
+3. Scanner results can sit below or beside chart depending on layout.
+4. Keyboard shortcuts may be added only if they are safe and documented.
+
+Error Handling:
+Normal users should see clean messages:
+1. “Trade placed.”
+2. “Trade updated.”
+3. “Trade closed.”
+4. “Order cancelled.”
+5. “Trade update failed. Please try again.”
+6. “This price is too close to the current market.”
+7. “This order type is not valid at that price.”
+8. “Insufficient available allocation.”
+9. “Bridge connection unavailable.”
+
+Admin logs should capture the detailed technical reason.
+Do not show raw backend errors to users.
+
+Acceptance Criteria:
+1. Scanner chart opens at top of page.
+2. User can trade from chart without leaving Scanner.
+3. User can Buy Market from chart.
+4. User can Sell Market from chart.
+5. User can place Buy Limit from chart.
+6. User can place Sell Limit from chart.
+7. User can place Buy Stop from chart.
+8. User can place Sell Stop from chart.
+9. User can move pending entry price from chart.
+10. User can move SL from chart.
+11. User can move TP from chart.
+12. User can close a full position from chart.
+13. User can partial close from chart.
+14. User can reverse position from chart.
+15. User can move SL to break-even from chart.
+16. User can cancel pending orders from chart.
+17. User can close all positions for selected symbol if permitted.
+18. User can cancel all pending orders for selected symbol if permitted.
+19. Only the logged-in user’s trades appear on the chart.
+20. Other users’ trades never reach the frontend.
+21. Admin can see broader trade data only in admin-approved views.
+22. DEMO and LIVE work.
+23. Paper Trading does not exist anywhere in this flow.
+24. All trade actions go through MT5 bridge.
+25. TradingView/chart library is not treated as the source of truth.
+26. UI updates only after MT5 confirms success.
+27. Failed actions roll back visually.
+28. Ruby explanations remain clean and user-facing.
+29. No backend/internal function names appear to users.
+30. Scanner results still work.
+31. Broad Scan and Focus Scan still work.
+32. Existing trade placement outside the chart still works.
+33. Mobile chart trading works.
+34. Desktop chart trading works.
+35. Full QA is completed after implementation.
+
+QA / Test Plan:
+After implementation, test the following in DEMO first, then LIVE only if the admin-approved live test account is enabled:
+
+1. Load Scanner.
+2. Verify chart appears first.
+3. Search symbol and chart updates.
+4. Select scanner result and chart updates.
+5. Place Buy Market.
+6. Place Sell Market.
+7. Place Buy Limit.
+8. Place Sell Limit.
+9. Place Buy Stop.
+10. Place Sell Stop.
+11. Modify SL by dragging.
+12. Modify TP by dragging.
+13. Modify pending order by dragging entry line.
+14. Cancel pending order.
+15. Close full position.
+16. Partial close position.
+17. Reverse position.
+18. Move SL to break-even.
+19. Close all for selected symbol.
+20. Cancel all pending for selected symbol.
+21. Try invalid SL and confirm rejection.
+22. Try invalid TP and confirm rejection.
+23. Try invalid pending order side and confirm rejection.
+24. Confirm broker minimum distance validation.
+25. Confirm price precision validation.
+26. Confirm floating P/L updates.
+27. Confirm chart line updates after MT5 success.
+28. Confirm chart line rollback after MT5 rejection.
+29. Confirm no other users’ trades appear.
+30. Confirm no master account data leaks.
+31. Confirm no Paper Trading terminology appears.
+32. Confirm mobile dragging works.
+33. Confirm fullscreen chart mode works if added.
+34. Confirm Ruby does not block trading.
+35. Confirm admin logs capture technical failures.
+36. Confirm user-facing errors are clean.
+
+Important:
+Do not only build SL/TP dragging.
+The chart must become a complete MT5-style chart trading interface for ARX AI.
+If an existing feature or endpoint is missing, build it properly.
+If something breaks, do not ignore it. Find a clean fix, retest, and preserve the existing Scanner, Ruby, DEMO/LIVE, user-permission, and MT5 bridge systems.

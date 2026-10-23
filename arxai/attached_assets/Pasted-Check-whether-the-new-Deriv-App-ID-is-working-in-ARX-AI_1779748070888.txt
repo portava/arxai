@@ -1,0 +1,62 @@
+Check whether the new Deriv App ID is working in ARX AI.
+
+Do not place any trade.
+Do not insert arx_live_commands.
+Do not touch live execution safety, the 16-gate evaluator, env-AND-operator resolver, or liveTrading chokepoint.
+
+GOAL:
+Verify that DERIV_APP_ID is now valid and Deriv market data is healthy.
+
+CHECKS:
+1. Confirm server can read DERIV_APP_ID from environment.
+   - Do not print the full value.
+   - Only show masked value like first 4 characters + last 4 characters.
+   - If missing, show “DERIV_APP_ID missing from Replit Secrets.”
+
+2. Restart/reload any provider clients that cache env values.
+
+3. Test Deriv WebSocket connection using:
+   - wss://ws.derivws.com/websockets/v3?app_id=<DERIV_APP_ID>
+
+4. Verify:
+   - WebSocket connects
+   - authorize attempt behavior is sane if DERIV_API_TOKEN exists
+   - active_symbols returns data
+   - V75 candles return data
+   - V75_1s candles return data
+   - V75 tick stream returns data if available
+
+5. Update /admin/provider-health:
+   - Deriv status should be Healthy if App ID works
+   - If failed, show friendly reason:
+     - Missing App ID
+     - Invalid App ID
+     - Unauthorized App ID
+     - Token issue
+     - Network issue
+   - Do not expose secrets.
+
+6. Verify scanner:
+   - V75 / V75_1s data loads if Deriv is healthy
+   - V75 / V75_1s remain labeled “Data-only via Deriv” unless MT5 tradability exists
+   - Live submit remains blocked for data-only markets
+   - arx_live_commands remains 0
+
+7. Verify no secret leaks:
+   - DERIV_APP_ID full value is not shown to regular users
+   - DERIV_API_TOKEN is never shown
+   - No token appears in frontend bundle, console, network response, or UI
+
+FINAL REPORT:
+Return:
+- Deriv provider status: Healthy / Degraded / Failed
+- App ID present: yes/no, masked only
+- active_symbols result: pass/fail
+- V75 candles: pass/fail
+- V75_1s candles: pass/fail
+- V75 tick: pass/fail
+- Scanner data: pass/fail
+- arx_live_commands count
+- Any next action needed
+
+Run typecheck/build only if code changes are made. Fix any errors before stopping.

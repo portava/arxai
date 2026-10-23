@@ -1,0 +1,53 @@
+QA/FIX GATE — Operator-Funded 10-User Live Pilot
+
+Inspect the operator-funded 10-user live pilot setup.
+
+Do not rebuild unrelated systems.
+Only repair missing live-pilot-critical pieces.
+Do not fire live trades.
+Do not create real live bridge commands during QA.
+
+Verify:
+
+1. Operator-funded live pilot mode exists.
+2. Max approved live users is 10.
+3. Only accepted beta users can be live candidates.
+4. 11th user cannot be live approved.
+5. Users cannot deposit or withdraw.
+6. UI does not describe allocation as deposit, custody, investor funds, or user-owned master balance.
+7. Each live user must be individually approved.
+8. Each live user must accept operator-funded live disclosure.
+9. Each live user must have assigned allocation.
+10. Each live user must have risk profile.
+11. Shared master mapping is required.
+12. Bridge health is required.
+13. EA live enabled and not read-only is required.
+14. Global live flag is required.
+15. Compliance/legal review flag is required.
+16. Kill switch blocks all pilot users.
+17. Per-user pause blocks selected user.
+18. Close-only blocks new opens.
+19. Force-review marks live actions NEEDS_REVIEW.
+20. One-click live defaults OFF.
+21. One-click cannot bypass gates.
+22. Ruby explains operator-funded live pilot safely.
+23. Ruby does not call ARX AI a broker or promise profits.
+24. User 1 cannot see User 2 data.
+25. Non-admin cannot approve live users.
+26. Audit logs are created for approvals, revokes, allocation changes, disclosure acceptance, and blocked live attempts.
+27. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, private prompts, or sensitive bridge payloads are exposed.
+28. No live trade is fired during QA.
+29. arx_live_commands count remains unchanged during QA.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- approved live user count
+- route/admin screen checked
+- issues found
+- fixes applied
+- remaining blockers
+- remaining risks
+- confirmation no live trade was fired during QA
+- confirmation arx_live_commands count stayed unchanged

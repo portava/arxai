@@ -1,0 +1,2282 @@
+Build ARX Fund Book Phase 1: investor ledger, strategy pool NAV, unit accounting, live broker mirror overlay, real-time investor P/L, drawdown, 30-day deposit lock, deposit/withdrawal fee logic, weekly investor account explanations, investor dashboard reporting, internal ARX profit waterfall, and discrepancy controls.
+
+This is the foundation for managing investor funds while using a shared live broker bridge.
+
+This is NOT a trading execution change.
+Do not change the live bridge execution path.
+Do not place any live trade for this build.
+Do not add Paper Trading, simulator, mock, fake, sandbox, or test-trading language.
+Do not expose backend table names, route names, raw JSON, stack traces, or developer wording to investors.
+
+Main principle:
+The broker account is shared.
+Investor accounting is separate.
+Every investor must only see their own ledger, NAV/unit value, allocation amount, P/L, drawdown, locked funds, withdrawable funds, fees charged to them, deposit/withdrawal activity, weekly explanation, and statements.
+
+Investor balances must start from the investor’s own approved ledger balance, not from the master broker balance.
+
+The broker mirror is only used to apply that investor’s verified proportional share of live pool P/L, drawdown, and exposure.
+
+No bleed-over.
+No cross-investor visibility.
+No guessing.
+No direct splitting of the full broker balance unless investor units prove the exact share.
+
+Investors do not need to see ARX internal capital gain, ARX operating allocation, trader compensation, company reserves, backend formulas, AI routing, or internal business logic.
+
+Investors only need to see:
+
+* how much they invested
+* what amount/value their NAV buy supports
+* current value
+* gain/loss
+* allocation amount by strategy
+* locked amount
+* withdrawable amount
+* fees charged to them
+* why they gained or lost
+* data freshness/status
+
+Admin-only sees:
+
+* full internal ARX waterfall
+* ARX 60% share
+* trader compensation split
+* company operating split
+* technology reserve
+* legal/compliance reserve
+* risk reserve
+* full fund/pool/broker reconciliation
+* audit logs
+* discrepancy center
+
+====================================================
+PART 1 — INSPECT CURRENT SYSTEM FIRST
+
+Before building, inspect the current codebase for:
+
+1. Existing investor portal work
+
+* investor role
+* investor login routing
+* investor dashboard
+* allocation pages
+* statements/documents
+* activity feed
+* admin investor management
+
+2. Existing auth/roles
+
+* admin
+* trader/user
+* investor
+* current role enforcement
+* backend permission checks
+* frontend route guards
+* Andraie.co@gmail.com role split work
+* separate admin login/config
+
+3. Existing broker bridge mirror
+
+* MT5/EA balance sync
+* equity sync
+* margin/free margin
+* open position sync
+* closed trade/deal sync
+* command result/retcode storage
+* position visibility source
+* freshness status
+
+4. Existing ledger/audit tables
+
+* investor ledger
+* audit log
+* statements
+* deposit/withdrawal records
+* fee records
+* allocation requests
+
+5. Existing strategy/risk profile logic
+
+* Conservative
+* Balanced
+* Aggressive
+* Custom
+* Cash Reserve
+
+Reuse what exists.
+Do not duplicate systems.
+Extend what is missing.
+
+Deliver a build summary showing:
+
+* what already existed
+* what was reused
+* what was missing
+* what was added
+* what files changed
+
+====================================================
+PART 2 — CORE ARCHITECTURE
+
+Create/upgrade the ARX Fund Book architecture:
+
+1. Broker Mirror Layer
+    Mirrors real broker account state exactly as received from the bridge.
+2. Master Fund Book
+    Tracks total internal fund accounting across all investors and pools.
+3. Strategy Pool Ledger
+    Tracks Conservative, Balanced, Aggressive, and Cash Reserve pools.
+4. Unit-Based NAV Engine
+    Calculates pool NAV and investor unit value.
+5. Investor Ledger
+    Tracks each investor’s deposits, withdrawals, fees, P/L, adjustments, locked funds, withdrawable funds, and current value.
+6. Investor Pool Holdings
+    Tracks how many units each investor owns in each pool.
+7. Trade-to-Pool Allocation
+    Maps live broker positions/trades to strategy pools.
+8. Real-Time P/L Allocator
+    Applies pool P/L to investor values based on units.
+9. Drawdown Engine
+    Tracks master, pool, investor, broker, and trade drawdown.
+10. Discrepancy/Reconciliation Center
+    Compares broker mirror, pool NAV, investor ledger, and displayed values.
+11. Capital Movement System
+    Handles deposit requests, withdrawal requests, speed-based fees, 30-day deposit lock, settlement status, and admin approvals.
+12. Weekly Investor Explanation Engine
+    Creates weekly dashboard explanations showing why the investor gained or lost money.
+13. Admin Internal Profit Waterfall
+    Calculates ARX internal 60% share and investor 40% distributable share, with ARX details visible only to admin.
+14. Audit + Statement System
+    Tracks every financial change and produces transparent investor records.
+
+====================================================
+PART 3 — SOURCE OF TRUTH RULES
+
+Broker/bridge is source of truth for:
+
+* broker balance
+* broker equity
+* margin
+* free margin
+* open positions
+* closed broker trades/deals
+* tickets/orders
+* floating P/L
+* broker execution result
+* retcodes
+* account currency
+* broker freshness
+
+ARX Fund Book is source of truth for:
+
+* investor deposits
+* investor withdrawals
+* investor ledger entries
+* investor units
+* pool ownership
+* strategy allocations
+* fees
+* statements
+* weekly reports
+* admin adjustments
+* disclosure acknowledgments
+* capital movement requests
+* audit history
+* internal ARX waterfall
+
+Investor displayed value must be calculated from:
+
+* investor ledger
+* investor pool units
+* current pool NAV
+* live broker mirror P/L allocated to the pool
+* approved fees/adjustments
+* locked/unlocked status
+
+Never calculate investor value by directly showing or splitting the master broker balance.
+
+====================================================
+PART 4 — INVESTOR NAV PROOF CHAIN
+
+Every investor calculation must support their NAV buy.
+
+Investor value must trace as:
+
+Investor Deposit
+→ Deposit Fee if any
+→ Net Invested Amount
+→ Allocation Selected
+→ Pool NAV at Entry
+→ Units Issued
+→ Current Pool NAV
+→ Current Investor Value
+→ Gain/Loss
+→ Locked/Unlocked Status
+→ Withdrawable Amount
+
+Example:
+Investor deposits: $10,000
+Deposit fee: $0
+Net invested: $10,000
+Balanced NAV at purchase: $1.25
+Units bought: $10,000 / $1.25 = 8,000 units
+Current Balanced NAV: $1.32
+Current value: 8,000 × $1.32 = $10,560
+Gain/Loss: +$560 / +5.6%
+
+Investor-facing dashboard can show:
+
+* Net Invested: $10,000
+* Current Value: $10,560
+* Gain/Loss: +$560
+* Return: +5.6%
+* Allocation Amount: Balanced Strategy $10,560 or appropriate split
+
+Investor-facing UI should not expose every internal formula, but the backend must be able to prove every displayed number.
+
+====================================================
+PART 5 — DATA MODEL
+
+Inspect existing tables/models first. Reuse and extend when possible.
+
+If missing, add safe migrations for these concepts.
+
+A. BrokerAccountMirror
+Fields:
+
+* id
+* brokerName
+* brokerAccountId
+* bridgeId
+* platformType: MT5 / API / manual / future
+* accountCurrency
+* balance
+* equity
+* margin
+* freeMargin
+* floatingPL
+* realizedPL if available
+* openPositionCount
+* lastSyncedAt
+* freshnessStatus: FRESH / STALE / MISSING / DISCONNECTED / ERROR
+* rawSnapshotAdminOnly
+* createdAt
+* updatedAt
+
+B. BrokerPositionMirror
+Fields:
+
+* id
+* brokerAccountMirrorId
+* brokerTicketId
+* brokerOrderId
+* brokerDealId if available
+* symbol
+* canonicalSymbol if available
+* direction: BUY / SELL
+* lotSize
+* entryPrice
+* currentPrice
+* stopLoss
+* takeProfit
+* floatingPL
+* openTime
+* status: OPEN / CLOSED / UNKNOWN
+* lastSyncedAt
+* freshnessStatus
+* rawPositionAdminOnly
+* createdAt
+* updatedAt
+
+C. StrategyPool
+Fields:
+
+* id
+* name: Conservative / Balanced / Aggressive / Cash Reserve
+* description
+* riskLevel
+* baseCurrency
+* status: ACTIVE / PAUSED / CLOSED
+* maxPoolCapital
+* maxDrawdownPercent
+* warningDrawdownPercent
+* liquidityReservePercent
+* maxBrokerExposurePercent
+* maxSymbolExposurePercent
+* createdAt
+* updatedAt
+
+D. StrategyPoolNAV
+Fields:
+
+* id
+* strategyPoolId
+* navPerUnit
+* totalPoolValue
+* totalUnitsOutstanding
+* realizedPL
+* unrealizedPL
+* feesAccrued
+* depositsAllocated
+* withdrawalsRedeemed
+* approvedAdjustments
+* highWaterValue
+* currentDrawdownPercent
+* calculatedAt
+* sourceSnapshotId if applicable
+* status: CURRENT / HISTORICAL / CORRECTED / UNDER_REVIEW
+* createdAt
+
+E. InvestorProfile
+Fields:
+
+* id
+* userId
+* investorDisplayName
+* status: ACTIVE / PAUSED / CLOSED / UNDER_REVIEW
+* baseCurrency
+* totalDeposited
+* totalWithdrawn
+* netInvestedCapital
+* currentGrossValue
+* currentNetValue
+* availableToWithdraw
+* lockedValue
+* allocatedFunds
+* unallocatedFunds
+* pendingSettlement
+* tiedToOpenPositions
+* reservedFees
+* realizedPL
+* unrealizedPL
+* currentDrawdownPercent
+* highWaterValue
+* activeAllocationJson
+* activeRiskProfile
+* lastCalculatedAt
+* freshnessStatus
+* createdAt
+* updatedAt
+
+F. InvestorPoolHolding
+Fields:
+
+* id
+* investorId
+* strategyPoolId
+* unitsOwned
+* lockedUnits
+* unlockedUnits
+* averageNAV
+* purchaseNAV
+* currentNAV
+* currentValue
+* realizedPL
+* unrealizedPL
+* currentDrawdownPercent
+* highWaterValue
+* status: ACTIVE / PENDING_REDEMPTION / CLOSED
+* createdAt
+* updatedAt
+
+G. InvestorLedgerEntry
+Fields:
+
+* id
+* investorId
+* entryType:
+    * deposit
+    * withdrawal
+    * allocation
+    * unit_issue
+    * unit_redemption
+    * realized_pl
+    * unrealized_pl_snapshot
+    * management_fee
+    * performance_fee
+    * deposit_fee
+    * withdrawal_fee
+    * liquidity_fee
+    * arx_profit_allocation_admin_only
+    * investor_distributable_profit
+    * adjustment
+    * statement_correction
+    * weekly_report
+* amount
+* grossAmount
+* feeAmount
+* netAmount
+* currency
+* description
+* relatedPoolId
+* relatedHoldingId
+* relatedCapitalMovementId
+* relatedTradeId
+* relatedStatementId
+* visibility: INVESTOR / ADMIN_ONLY
+* createdBy
+* status: PENDING / POSTED / REVERSED / CORRECTED
+* createdAt
+
+H. CapitalMovementRequest
+Fields:
+
+* id
+* investorId
+* type: DEPOSIT / WITHDRAWAL
+* requestedGrossAmount
+* calculatedFeeAmount
+* calculatedNetAmount
+* currency
+* speedTierId
+* status:
+    * DRAFT
+    * SUBMITTED
+    * PENDING_REVIEW
+    * APPROVED
+    * PROCESSING
+    * SETTLED
+    * COMPLETED
+    * REJECTED
+    * CANCELLED
+    * FAILED
+* requestedAt
+* approvedAt
+* approvedBy
+* rejectedAt
+* rejectionReason
+* settledAt
+* completedAt
+* adminNote
+* createdAt
+* updatedAt
+
+I. CapitalMovementFeeTier
+Fields:
+
+* id
+* type: DEPOSIT / WITHDRAWAL
+* name: Standard / Priority / Rush / Full Immediate Exit / Emergency
+* processingTimeText
+* feeType: FLAT / PERCENTAGE / BOTH
+* percentageFee
+* flatFee
+* minimumFee
+* maximumFee
+* requiresAdminApproval
+* requiresRiskAcknowledgment
+* isActive
+* investorFacingDescription
+* createdAt
+* updatedAt
+
+J. DepositLockRecord
+Fields:
+
+* id
+* investorId
+* depositRequestId
+* grossDeposit
+* depositFee
+* netInvestedAmount
+* unitsIssuedAt
+* lockStartDate
+* lockEndDate
+* lockedAmount
+* lockedUnitsByPoolJson
+* status: LOCKED / PARTIALLY_UNLOCKED / UNLOCKED / CORRECTED
+* createdAt
+* updatedAt
+
+K. TradePoolAllocation
+Fields:
+
+* id
+* brokerPositionMirrorId or tradeId
+* brokerTicketId
+* strategyPoolId
+* allocationPercent
+* allocatedFloatingPL
+* allocatedRealizedPL
+* status: ACTIVE / CLOSED / UNASSIGNED / UNDER_REVIEW
+* assignedBy
+* assignedAt
+* createdAt
+* updatedAt
+
+L. DiscrepancyRecord
+Fields:
+
+* id
+* severity: LOW / MEDIUM / HIGH / CRITICAL
+* sourceType: BROKER / LEDGER / POOL / INVESTOR / STATEMENT / POSITION / NAV / WEEKLY_REPORT / PROFIT_WATERFALL
+* status: OPEN / INVESTIGATING / RESOLVED / DISMISSED
+* title
+* description
+* expectedValue
+* actualValue
+* differenceAmount
+* differencePercent
+* firstDetectedAt
+* lastCheckedAt
+* resolvedAt
+* resolvedBy
+* resolutionNote
+* affectedInvestorId
+* affectedPoolId
+* affectedBrokerAccountId
+* affectedPositionId
+* createdAt
+* updatedAt
+
+M. WeeklyInvestorReport
+Fields:
+
+* id
+* investorId
+* weekStartDate
+* weekEndDate
+* startingValue
+* endingValue
+* grossPL
+* netPL
+* weeklyReturnPercent
+* realizedPL
+* unrealizedPL
+* totalFees
+* depositFees
+* withdrawalFees
+* managementFees
+* performanceFees
+* currentDrawdownPercent
+* maxDrawdownDuringWeek
+* highWaterMark
+* allocationBreakdownJson
+* poolPerformanceJson
+* topPositiveContributorsJson
+* topNegativeContributorsJson
+* economicImpactJson
+* marketImpactJson
+* rubyExplanation
+* nextWeekWatchlistJson
+* freshnessStatus
+* reconciliationStatus
+* status: DRAFT / ACTIVE / CORRECTED / REPLACED / REMOVED / SUPERSEDED / UNDER_REVIEW
+* generatedAt
+* createdAt
+* updatedAt
+
+N. ProfitWaterfallRecord
+Fields:
+
+* id
+* strategyPoolId
+* periodStart
+* periodEnd
+* verifiedPoolValue
+* poolHighWaterMark
+* netNewDeposits
+* eligibleNetNewProfit
+* arxShareAmount
+* investorDistributableAmount
+* investorDistributionJson
+* internalArxSplitJsonAdminOnly
+* status: PENDING_VERIFICATION / VERIFIED / DISTRIBUTED / UNDER_REVIEW / CORRECTED
+* approvedBy
+* approvedAt
+* createdAt
+* updatedAt
+
+O. AuditLog
+If not already sufficient, ensure it records:
+
+* actorUserId
+* targetUserId
+* entityType
+* entityId
+* action
+* beforeJson
+* afterJson
+* reason
+* visibility: ADMIN_ONLY / INVESTOR_VISIBLE
+* ipAddress/device if available
+* createdAt
+
+====================================================
+PART 6 — UNIT-BASED NAV ACCOUNTING
+
+Implement unit-based NAV accounting.
+
+Core rule:
+Units are not fixed-limited supply.
+Units are variable-supply internal accounting shares.
+
+Units are only created when:
+
+* deposit is approved/settled
+* allocation is approved
+* NAV is confirmed
+* audit log is created
+
+Units are redeemed when:
+
+* withdrawal is approved
+* pool redemption is processed
+* NAV is confirmed
+* audit log is created
+
+Pool NAV formula:
+Pool NAV = Pool Net Value / Total Pool Units
+
+Pool Net Value =
+Starting Pool Capital
+
+* Realized P/L
+* Unrealized P/L
+* Deposits allocated to the pool
+
+* Withdrawals redeemed from the pool
+* Fees
+    +/- Approved Adjustments
+
+Investor Pool Value =
+Investor Pool Units × Current Pool NAV
+
+Investor Ownership % =
+Investor Pool Units / Total Pool Units
+
+Investor Gain Share =
+Pool Gain × Investor Ownership %
+
+Investor Unrealized P/L =
+Pool Open P/L × Investor Ownership %
+
+Investor Total Value =
+Cash Reserve
+
+* Conservative Units × Conservative NAV
+* Balanced Units × Balanced NAV
+* Aggressive Units × Aggressive NAV
+
+* Fees charged to investor
+    +/- Approved Adjustments
+
+Important:
+Deposits increase pool value and total units.
+Deposits must not artificially increase NAV.
+
+Withdrawals reduce pool value and redeem units.
+Withdrawals must not artificially decrease NAV.
+
+Trading performance changes NAV.
+Fees and approved adjustments affect net investor value.
+
+====================================================
+PART 7 — STARTING NAV AND UNIT ISSUANCE
+
+Each strategy pool starts at:
+
+Starting NAV = $1.00 per unit
+
+New Units Issued =
+Net Deposit Allocated to Pool / Current Pool NAV
+
+Units Redeemed =
+Gross Withdrawal From Pool / Current Pool NAV
+
+Investor Pool Value =
+Investor Units × Current Pool NAV
+
+Do not create arbitrary units.
+Do not issue units without approved ledger entry.
+Do not redeem units without approved withdrawal/capital movement entry.
+Every unit issuance/redemption must be auditable.
+
+====================================================
+PART 8 — 60/40 PROFIT WATERFALL
+
+Implement internal 60/40 profit waterfall.
+
+Rule:
+When a strategy pool produces eligible net new profit, ARX receives 60% for operations, trader management, technology, risk reserve, compliance/legal, infrastructure, and business spending. Investors receive 40% as the investor distributable profit.
+
+Investor 40% is distributed by NAV/unit ownership.
+
+Formula:
+
+Eligible Net New Profit =
+max(0, Verified Pool Value - Pool High-Water Mark - Net New Deposits)
+
+ARX Share =
+Eligible Net New Profit × 60%
+
+Investor Distributable Profit =
+Eligible Net New Profit × 40%
+
+Investor Profit Share =
+Investor Distributable Profit × (Investor Units / Total Pool Units)
+
+Important:
+Do not apply 60/40 split to losses.
+Losses reduce pool NAV and investor value by units.
+
+Do not pay ARX 60% while pool/investor is still below high-water mark.
+ARX 60% only applies to eligible net new profit above high-water mark.
+
+If pool is below high-water mark:
+
+* ARX Share = $0
+* Investor value recovers through NAV movement
+* no ARX performance allocation applies until recovery above high-water mark
+
+Investor-facing:
+Investors should not see ARX internal share, trader compensation, or reserve breakdown.
+
+Investor-facing should show only:
+
+* their current value
+* their gain/loss
+* their investor distributable gain/loss
+* allocation amount by strategy
+* locked amount
+* withdrawable amount
+* fees charged to them
+* weekly explanation of why they gained or lost
+
+Investor-facing wording example:
+“Your account gained $400 this week based on your active pool units and the investor distributable portion of verified weekly performance.”
+
+Do not show:
+
+* “ARX made $6,000”
+* “Trader compensation was $1,200”
+* “Company reserve received $800”
+* “ARX internal split”
+
+Admin-only:
+Show full waterfall:
+
+* gross pool profit
+* eligible net new profit
+* ARX 60% share
+* investor 40% distributable
+* investor-by-investor distribution
+* company operations share
+* trader compensation share
+* technology/data reserve
+* legal/compliance reserve
+* risk reserve
+* approval status
+* reconciliation status
+
+====================================================
+PART 9 — INTERNAL ARX SPLIT
+
+ARX 60% share should be internally split in admin-only view.
+
+Make this configurable by admin.
+
+Default internal split example:
+
+* Company operations: 40% of ARX share
+* Trader compensation pool: 35% of ARX share
+* Technology/AI/data/infrastructure: 15% of ARX share
+* Risk/legal/compliance reserve: 10% of ARX share
+
+Trader compensation should be risk-adjusted.
+
+Trader Compensation =
+Trader Compensation Pool × Trader Performance Weight × Risk Quality Multiplier
+
+Risk Quality Multiplier:
+
+* 1.00 = profitable, clean risk, within drawdown limits
+* 0.75 = profitable, but elevated drawdown
+* 0.50 = profitable, but risk warnings occurred
+* 0.00 = loss period, below high-water mark, or rule violation
+
+No trader performance bonus should be paid when:
+
+* pool is below high-water mark
+* investor distributable profit is $0
+* drawdown limits were breached without approval
+* trader violated risk rules
+* trades were not assigned/reconciled
+
+This entire section is admin-only.
+Investors must not see trader payroll or ARX internal allocation.
+
+====================================================
+PART 10 — INVESTOR MIRROR LOGIC
+
+Build investor mirror logic as:
+
+Investor Ledger Balance
+→ Investor Allocation
+→ Investor Pool Units
+→ Pool Ownership %
+→ Broker Live Mirror P/L
+→ Investor Real-Time Value
+
+Investor balance must begin from:
+
+* approved deposits
+* minus withdrawals
+* minus fees charged to investor
+* plus/minus approved adjustments
+* plus/minus pool performance from owned units
+
+Investor balance must not begin from:
+
+* master broker balance
+* full broker equity
+* another investor’s value
+* unscoped pool total
+
+Investor dashboard must only show:
+
+* their current value
+* their invested capital
+* their realized P/L
+* their unrealized P/L
+* their allocation amount
+* their drawdown
+* their exposure share
+* their fees
+* their deposits/withdrawals
+* their statement/activity history
+* their weekly account explanation
+* their locked funds
+* their withdrawable amount
+* their freshness status
+
+Investor must not see:
+
+* other investors
+* other investor balances
+* other investor allocations
+* full master broker account balance unless admin explicitly enables a summarized percentage view
+* raw broker bridge data
+* ARX internal share
+* trader compensation
+* company reserves
+* admin notes
+* internal route/table names
+
+====================================================
+PART 11 — REAL-TIME BROKER MIRROR OVERLAY
+
+Use the existing live bridge/broker data.
+
+Do not replace it.
+Mirror it app-side.
+
+The broker mirror should update:
+
+* broker account balance
+* broker equity
+* margin
+* free margin
+* floating P/L
+* open positions
+* closed positions/deals if available
+* tickets/orders
+* last synced timestamp
+
+Then ARX Fund Book applies it to pools:
+
+Example:
+Broker position EURUSD Buy has floating P/L +$100.
+That position is assigned to Balanced Pool.
+Balanced Pool total units = 100,000.
+Investor A owns 10,000 Balanced units.
+Investor A owns 10%.
+Investor A unrealized P/L share = $100 × 10% = +$10.
+
+If a trade has no pool assignment:
+
+* create a HIGH or CRITICAL discrepancy
+* do not blindly allocate P/L to investors
+* show admin “Unassigned broker position”
+* investor display should not falsely claim that P/L until assignment is verified
+
+====================================================
+PART 12 — TRADE-TO-POOL ASSIGNMENT
+
+Every broker position/trade must be assigned to a strategy pool.
+
+At first, keep it simple:
+One trade belongs to one strategy pool.
+
+Later, allow split assignment:
+
+* Balanced 70%
+* Aggressive 30%
+
+For Phase 1:
+Implement one-position-to-one-pool assignment.
+
+Admin UI should allow:
+
+* view unassigned broker positions
+* assign a position/trade to Conservative/Balanced/Aggressive/Cash if appropriate
+* add note/reason
+* audit the assignment
+
+If trade was opened by Ruby/Scanner with a strategy context, auto-assign it to that pool if available.
+
+If no strategy context exists, status = UNASSIGNED and discrepancy created.
+
+Investor P/L should only be calculated from positions assigned to pools they own.
+
+====================================================
+PART 13 — 30-DAY DEPOSIT LOCK RULE
+
+Add mandatory 30-day lock for every new deposit.
+
+Rule:
+Every deposit is locked for 30 calendar days from the date the deposit is marked Settled/Completed and units are issued.
+
+During the lock:
+
+* investor can see the funds
+* investor can see performance
+* investor can gain or lose based on pool allocation
+* investor can see the unlock date
+* investor cannot withdraw those locked funds
+* investor cannot include those locked units in available withdrawal amount
+
+Investor-facing wording:
+“This deposit is locked for 30 days to protect pool stability. Unlock date: ___.”
+
+Do not hide the money.
+
+Show it clearly as:
+
+* Current Value
+* Locked Value
+* Unlock Date
+* Days Remaining
+
+Lock starts when funds are actually settled/approved and units are issued, not merely when the investor clicks submit.
+
+Formula:
+lockEndDate = unitsIssuedAt + 30 calendar days
+
+Available to Withdraw must exclude locked value.
+
+Investor available balance formula:
+Available to Withdraw =
+Unlocked Cash Reserve
+
+* Unlocked Pool Units Redeemable Value
+
+* Pending Withdrawals
+* Reserved Fees
+* Any active freeze/hold
+
+Locked funds must still be included in:
+
+* Current Value
+* Allocation
+* P/L
+* Drawdown
+* Performance reports
+* Weekly reports
+
+Locked funds must not be included in:
+
+* Available to Withdraw
+* Rush withdrawal availability
+* Full withdrawal availability unless admin override is legally/policy allowed
+
+Default:
+30-day lock cannot be bypassed by investor.
+
+Optional admin override:
+Only admin can override if policy allows.
+Override requires:
+
+* admin reason
+* audit log
+* compliance flag
+* investor acknowledgment if possible
+* higher emergency fee if configured
+
+====================================================
+PART 14 — DEPOSIT SYSTEM
+
+Build/upgrade deposit request flow.
+
+Deposit statuses:
+
+* Draft
+* Submitted
+* Pending Review
+* Approved
+* Processing
+* Settled
+* Allocated
+* Units Issued
+* Completed
+* Rejected
+* Failed
+* Cancelled
+
+Deposit fee calculation:
+Gross Deposit
+
+* Deposit Fee
+    = Net Invested Amount
+
+New Units =
+Net Invested Amount Allocated to Pool / Current Pool NAV
+
+Deposit speed tiers:
+
+* Standard Deposit
+    * Processing: 1–3 business days
+    * Fee: admin-configurable, usually low or $0
+* Fast Deposit
+    * Processing: same day / next business day
+    * Fee: admin-configurable
+* Instant Credit / Pending Credit
+    * Optional, admin approval required
+    * Must be marked pending
+    * Funds should not become active unless policy permits
+    * If enabled, add reconciliation lock until funds clear
+
+Recommended default:
+Funds become active only after deposit is confirmed/settled.
+
+Investor must see before confirmation:
+
+* gross deposit
+* fee
+* net invested amount
+* selected speed
+* estimated processing time
+* allocation target
+* risk disclosure
+* 30-day lock disclosure
+* expected unlock date after settlement/units issued
+
+Admin can:
+
+* approve deposit
+* reject deposit
+* mark received
+* mark settled
+* issue units
+* add note
+* audit every action
+
+====================================================
+PART 15 — WITHDRAWAL SYSTEM
+
+Build/upgrade withdrawal request flow.
+
+Withdrawal statuses:
+
+* Draft
+* Submitted
+* Pending Review
+* Approved
+* Processing
+* Units Reserved
+* Units Redeemed
+* Paid
+* Completed
+* Rejected
+* Failed
+* Cancelled
+
+Withdrawal calculation:
+Gross Withdrawal Requested
+
+* Withdrawal Fee
+* Liquidity Fee if applicable
+* Unpaid Approved Fees
+    = Net Amount Sent to Investor
+
+Units Redeemed =
+Gross Withdrawal From Pool / Current Pool NAV
+
+Withdrawal speed tiers:
+
+* Standard Withdrawal
+    * 5–7 business days
+    * lower fee
+* Priority Withdrawal
+    * 2–3 business days
+    * medium fee
+* Rush Withdrawal
+    * same day / next business day
+    * higher fee
+* Full Immediate Exit
+    * fastest available
+    * highest fee / liquidity adjustment
+    * admin approval required
+    * may be limited if funds tied to open positions
+* Emergency Withdrawal
+    * admin approval required
+    * special fee/rules
+
+Important:
+Do not secretly sell NAV cheaper.
+Official NAV remains honest.
+Apply transparent withdrawal/redemption/liquidity fees.
+
+Full withdrawal:
+
+* redeem all unlocked active units
+* locked funds remain unavailable until unlock unless admin override is allowed
+* calculate fees
+* generate final statement path if all funds are redeemed
+* mark investor as closing or closed after payment
+* require admin approval
+* lock future allocation if account closing
+* log everything
+
+Investor must see before confirmation:
+
+* current value
+* available to withdraw now
+* locked funds
+* tied to open positions
+* pending settlement
+* requested gross amount
+* fee
+* net payout
+* speed tier
+* estimated processing time
+* risk/settlement acknowledgment
+
+If investor tries to withdraw locked funds:
+“These funds are still inside the 30-day deposit lock. They become withdrawable on ___.”
+
+====================================================
+PART 16 — AVAILABLE BALANCE BREAKDOWN
+
+Do not show only one balance.
+
+For each investor show:
+
+Current Value
+
+* full portfolio value including live floating P/L
+
+Available to Withdraw
+
+* amount that can be requested now
+
+Locked Funds
+
+* deposited funds still inside 30-day lock period, including NAV movement
+
+Allocated Funds
+
+* money assigned to active pools
+
+Cash Reserve
+
+* untraded/withdrawable cash if policy allows
+
+Tied to Open Positions
+
+* value tied to active exposure
+
+Pending Settlement
+
+* funds not fully settled
+
+Reserved Fees
+
+* fees owed or held
+
+Pending Withdrawal
+
+* amount reserved for withdrawal
+
+Example:
+Current Value: $10,420
+Available Now: $6,800
+Locked Funds: $3,200
+Tied to Open Positions: $300
+Pending Settlement: $0
+Reserved Fees: $120
+
+====================================================
+PART 17 — WEEKLY INVESTOR PERFORMANCE EXPLANATION
+
+Investors must know why they gained or lost money at the end of every week.
+
+This must appear in their dashboard, not only as a plain text report.
+
+Create Weekly Account Story / Weekly Investor Performance Report.
+
+Investor-facing goal:
+At the end of every week, each investor should see a simple but informative dashboard breakdown of:
+
+* how much they started the week with
+* how much they ended the week with
+* total weekly gain or loss
+* weekly return percentage
+* realized P/L
+* unrealized P/L
+* fees charged to them
+* deposits or withdrawals affecting the week
+* allocation breakdown
+* strategy pools that helped or hurt performance
+* markets/trades that contributed to gains or losses
+* economic/news conditions that affected their account
+* current drawdown
+* whether their risk profile performed within expected range
+* what Ruby/ARX is watching next week
+* locked deposit status if relevant
+
+The explanation must connect the chain:
+their allocation
+→ the strategy pools they owned
+→ the markets those pools were exposed to
+→ economic/news conditions
+→ their NAV movement
+→ their gain/loss
+
+Example gain explanation:
+“Your account gained $560 this week because the Balanced Strategy NAV increased from $1.25 to $1.32. The move was mainly caused by profitable Gold and EURUSD positions during a week where dollar movement and inflation expectations created strong market direction. Your Conservative allocation stayed stable and helped reduce drawdown.”
+
+Example loss explanation:
+“Your account lost $280 this week because the Aggressive Strategy NAV declined from $1.25 to $1.215. The decline was mainly caused by volatility in Gold and V75 after economic news created sharp reversals. Your Conservative allocation helped reduce the total loss.”
+
+Economic impact section example:
+“Economic conditions affected your account this week because stronger-than-expected inflation data increased dollar strength and volatility. That influenced Gold and forex positions connected to your Balanced and Aggressive allocations.”
+
+Dashboard sections:
+
+* Weekly Account Story
+* Why Your Account Moved
+* Economic Impact
+* Strategy Breakdown
+* Top Positive Contributors
+* Top Negative Contributors
+* Risk & Drawdown Status
+* Deposit Lock Status
+* What Ruby Is Watching Next Week
+
+Do not invent reasons.
+Use available market, trade, scanner, news, economic, pool, NAV, and broker data.
+If exact trade attribution is not available, use pool-level explanation and say it clearly.
+
+If data is stale or unreconciled:
+“Your weekly report is being verified because live broker data is still reconciling.”
+
+====================================================
+PART 18 — WEEKLY REPORT DATA REQUIREMENTS
+
+Each weekly report should include:
+
+* investor id
+* week start date
+* week end date
+* starting value
+* ending value
+* gross P/L
+* net P/L
+* weekly return %
+* realized P/L
+* unrealized P/L
+* deposit fees
+* withdrawal fees
+* management fees if any
+* performance fees if any
+* total fees
+* current drawdown
+* max drawdown during week
+* high-water mark
+* allocation breakdown
+* pool-level performance:
+    * Conservative P/L
+    * Balanced P/L
+    * Aggressive P/L
+    * Cash Reserve
+* top positive contributors
+* top negative contributors
+* economic/news impact
+* open exposure summary
+* freshness/reconciliation status
+* plain-English explanation
+* generatedAt
+* status: Draft / Active / Corrected / Replaced / Removed / Superseded
+
+Use only the investor’s own data.
+Do not include other investors’ balances, units, trades, or private information.
+Do not expose ARX internal profit waterfall to investors.
+
+====================================================
+PART 19 — WEEKLY REPORT GENERATION RULES
+
+Weekly reports should be generated after weekly NAV close.
+
+Default weekly close:
+Sunday 5:00 PM New York time, or use the existing NAV cutoff configuration if already built.
+
+If broker sync is stale or discrepancy exists:
+
+* generate report as Draft or Under Review
+* do not publish as Active until values are verified
+* investor-facing message:
+    “Your weekly report is being verified because live broker data is still reconciling.”
+
+Do not create fake explanations.
+Do not invent trade reasons.
+Use available trade, pool, NAV, allocation, fee, drawdown, news, and economic data.
+
+====================================================
+PART 20 — WITHDRAWAL PRIORITY RULES
+
+Implement configurable withdrawal source order.
+
+Default withdrawal source priority:
+
+1. Cash Reserve
+2. Unallocated Funds
+3. Conservative Pool
+4. Balanced Pool
+5. Aggressive Pool
+
+For full withdrawal:
+redeem all unlocked pools proportionally or by admin-configured order.
+Locked deposits remain locked.
+
+Admin should be able to configure:
+
+* withdrawal priority order
+* whether to redeem proportionally
+* whether specific pools are locked
+* whether rush withdrawals can pull from active pools
+* minimum remaining balance
+* max withdrawal per cycle
+
+====================================================
+PART 21 — UNIT LOCK DURING WITHDRAWAL
+
+When a withdrawal is submitted/approved, reserve the units needed.
+
+Reserved units should:
+
+* no longer be available for new allocation
+* be marked pending redemption
+* be included in pending withdrawal
+* not be double-counted as free capital
+
+If market NAV changes before redemption, use policy:
+
+* redeem at NAV at approval time
+    or
+* redeem at NAV at processing cutoff
+    or
+* redeem at next NAV cycle
+
+Default recommendation:
+Use NAV at processing cutoff and show estimated payout until final.
+
+Investor-facing:
+“Final payout may change slightly based on NAV at processing time and applicable fees.”
+
+====================================================
+PART 22 — NAV CUTOFF TIMES
+
+Add configurable NAV cutoff policy.
+
+Default:
+Daily NAV cut at 5:00 PM New York time.
+
+Rules:
+
+* deposits approved before cutoff receive current NAV cycle
+* deposits after cutoff receive next NAV cycle
+* withdrawals before cutoff processed at current NAV cycle if approved
+* withdrawals after cutoff processed next NAV cycle
+* investor display shows estimated until final NAV locks
+
+Admin configurable:
+
+* cutoff timezone
+* cutoff time
+* daily/weekly NAV cycle
+* whether weekend/holiday processing is allowed
+
+====================================================
+PART 23 — REAL-TIME DRAWDOWN ENGINE
+
+Track drawdown at these levels:
+
+1. Master Fund Drawdown
+2. Strategy Pool Drawdown
+3. Investor Personal Drawdown
+4. Broker Account Drawdown
+5. Open Trade Drawdown
+
+Formula:
+Drawdown =
+(Current Value - High-Water Mark) / High-Water Mark
+
+Show both:
+
+* dollar drawdown
+* percentage drawdown
+
+Investor view:
+
+* current drawdown
+* worst today
+* worst this week
+* worst this month
+* all-time max drawdown
+* risk profile limit
+* remaining cushion
+
+Pool view:
+
+* current drawdown
+* high-water value
+* warning threshold
+* hard limit threshold
+* status
+
+Admin alerts:
+
+* 50% of drawdown limit reached
+* 75% of drawdown limit reached
+* drawdown limit breached
+* investor personal drawdown exceeded selected limit
+* pool entered hard review zone
+
+====================================================
+PART 24 — HIGH-WATER MARKS
+
+Track high-water marks for:
+
+* investor account
+* investor pool holding
+* strategy pool
+* master fund
+* broker account if useful
+
+High-water mark updates only when net value reaches a new high.
+
+Use high-water mark for:
+
+* drawdown tracking
+* 60/40 eligible net new profit calculation
+* performance fee calculations if any
+* investor reporting
+* statements
+
+====================================================
+PART 25 — FEE ENGINE
+
+Build a configurable fee engine.
+
+Fee types:
+
+* Deposit fee
+* Withdrawal fee
+* Liquidity fee
+* Rush processing fee
+* Full exit fee
+* Management fee if enabled
+* Performance fee if enabled separately from 60/40 model
+* Admin adjustment fee if applicable
+
+Withdrawal fee formula:
+Withdrawal Fee =
+Gross Withdrawal × Fee Rate + Flat Fee, subject to min/max
+
+Deposit fee formula:
+Deposit Fee =
+Gross Deposit × Fee Rate + Flat Fee, subject to min/max
+
+Management fee formula if enabled:
+Management Fee =
+Gross Investor Value × Annual Management Fee Rate × Days In Period / 365
+
+Performance fee formula if enabled separately:
+Performance Fee =
+max(0, Gross Investor Value - Investor High-Water Mark - New Deposits During Period) × Performance Fee Rate
+
+Do not double-charge performance fee if the 60/40 eligible net profit waterfall is the selected compensation model unless admin intentionally enables both and the agreement supports it.
+
+Investor dashboard must show:
+
+* gross P/L
+* fees charged to them
+* net P/L
+
+No hidden investor fees.
+Every investor-facing fee must have a ledger entry.
+
+ARX internal 60% allocation is admin-only and should not appear as trader payroll/company reserve on investor dashboards.
+
+====================================================
+PART 26 — PROFIT HANDLING OPTIONS
+
+Add investor profit handling preferences:
+
+* Reinvest profits
+* Move profits to cash reserve weekly
+* Withdraw profits monthly
+* Split profits: percentage reinvest / percentage cash reserve
+
+Default:
+Reinvest profits.
+
+These preferences should require admin approval if they affect actual allocation behavior.
+
+Investor-facing:
+“Profit handling preferences control how future profits are treated after approval. They do not guarantee profits.”
+
+====================================================
+PART 27 — LOSS CONTROL OPTIONS
+
+Add investor protection preferences:
+
+* Pause my allocation if my value drops by X%
+* Move profits to cash reserve after target reached
+* Reduce aggressive allocation after X% drawdown
+* Notify me when drawdown reaches X%
+* Require admin review after loss threshold
+
+These are preference/guardrails first.
+Do not auto-change live trading unless allocator supports it.
+
+If allocator is not built yet:
+Store the preference and show admin.
+
+====================================================
+PART 28 — DISCREPANCY / RECONCILIATION CENTER
+
+Build admin discrepancy center.
+
+The system should compare:
+
+* total broker equity
+* total broker balance
+* open floating P/L
+* closed broker P/L
+* strategy pool total value
+* total investor current value
+* total investor units × NAV
+* pending deposits
+* pending withdrawals
+* locked funds
+* fees owed
+* ARX/internal waterfall records
+* unassigned trades
+* stale broker sync
+* statements changed/removed
+* weekly reports changed/removed
+
+Create discrepancy when:
+
+* broker equity does not match assigned fund value beyond tolerance
+* broker position exists but no pool assignment
+* trade closed but not reflected in realized P/L
+* deposit settled but units not issued
+* 30-day lock missing from settled deposit
+* withdrawal approved but units not reserved/redeemed
+* locked funds included in withdrawable balance
+* investor ledger total differs from holdings value
+* pool NAV cannot be calculated
+* stale position sync affects investor values
+* fee applied without ledger entry
+* statement changed without audit note
+* weekly report changed without audit note
+* profit waterfall calculated but not reconciled
+* investor portal displayed value is older than latest broker sync
+
+Tolerance defaults:
+
+* Low mismatch: over $1 or 0.01%
+* Critical mismatch: over $100 or 0.25%
+    Make configurable.
+
+Critical discrepancies should trigger:
+
+* pause new unit issuance
+* pause withdrawals
+* pause statement generation
+* pause weekly report publishing
+* alert admin
+* show investor clean “values under verification” message if needed
+
+====================================================
+PART 29 — FRESHNESS INDICATORS
+
+Every investor value should show freshness.
+
+Freshness statuses:
+
+* Fresh
+* Delayed
+* Stale
+* Under Review
+* Missing
+
+Investor-facing:
+“Portfolio Status: Fresh”
+“Last updated: 8 seconds ago”
+
+If stale:
+“Portfolio Update Delayed. Some live position data is still syncing. Values may change when broker sync completes.”
+
+Admin-facing:
+Show exact stale source:
+
+* Broker mirror stale
+* Position sync stale
+* NAV stale
+* Pool assignment missing
+* Investor ledger mismatch
+* Weekly report under review
+* Profit waterfall under review
+
+Do not expose backend internals to investors.
+
+====================================================
+PART 30 — EMERGENCY FREEZE / CAPITAL LOCK
+
+Admin needs freeze controls.
+
+Can freeze:
+
+* all withdrawals
+* all deposits
+* one investor account
+* one strategy pool
+* one broker account
+* allocation changes
+* unit issuance
+* statement generation
+* weekly report publishing
+* internal profit distribution
+
+Freeze reasons:
+
+* broker sync stale
+* major discrepancy
+* market emergency
+* legal/compliance review
+* payment issue
+* security concern
+* investor dispute
+
+Investor-facing:
+“Withdrawals are temporarily paused while portfolio values are being verified.”
+
+Admin must provide reason.
+Audit log required.
+Unfreeze also requires note.
+
+====================================================
+PART 31 — POOL CAPACITY AND LIQUIDITY
+
+Do not accept unlimited capital into every pool.
+
+Add configurable limits:
+
+* max total fund capital
+* max capital per investor
+* max capital per pool
+* max aggressive allocation per investor
+* max broker exposure per pool
+* max symbol exposure per pool
+* max open risk per pool
+* liquidity reserve percent per pool
+
+Pool statuses:
+
+* Open
+* Near Capacity
+* Full
+* Paused
+* Closed
+
+Liquidity score:
+
+* High Liquidity
+* Moderate Liquidity
+* Low Liquidity
+* Temporarily Restricted
+
+====================================================
+PART 32 — INVESTOR PRIVACY AND PERMISSIONS
+
+Backend must enforce strict scoping.
+
+Investor can only access:
+
+* their own investor profile
+* their own ledger
+* their own holdings
+* their own allocation requests
+* their own deposits/withdrawals
+* their own statements
+* their own weekly reports
+* their own exposure share
+* their own freshness status
+* their own locked/withdrawable breakdown
+
+Investor cannot:
+
+* access another investor’s data
+* access master broker data
+* access admin fund control
+* access pool totals beyond their own relevant slice unless summarized
+* access trade execution endpoints
+* close trades
+* place trades
+* access scanner trade buttons
+* access bridge/EA controls
+* access raw broker mirror records
+* access ARX internal waterfall records
+* access trader compensation records
+
+Admin can access all through Admin Fund Control Center.
+
+Add backend tests for every permission boundary.
+
+====================================================
+PART 33 — INVESTOR PORTAL UI
+
+Investor portal should include:
+
+Overview:
+
+* Current Value
+* Net Invested Capital
+* Realized P/L
+* Unrealized P/L
+* Net P/L
+* Current Drawdown
+* Available to Withdraw
+* Locked Funds
+* Allocated Funds
+* Pending Settlement
+* Portfolio Status/Freshness
+* Last Updated
+
+Allocation:
+
+* Conservative amount
+* Balanced amount
+* Aggressive amount
+* Cash Reserve amount
+* Current active allocation
+* Pending allocation requests
+* pool capacity status if relevant
+* risk disclosures
+
+Performance:
+
+* weekly return
+* monthly return
+* all-time return
+* gross P/L
+* net P/L
+* fees charged to investor
+* high-water mark
+* drawdown chart if available
+* Weekly Account Story dashboard section
+
+Exposure:
+
+* strategy pool exposure
+* market group exposure
+* symbol exposure if allowed
+* investor’s share of floating P/L
+* no trade buttons
+
+Deposits/Withdrawals:
+
+* submit deposit request
+* submit withdrawal request
+* select speed tier
+* see fee preview
+* see net amount
+* see status
+* see settlement timeline
+* see 30-day lock information
+* see unlock dates
+
+Activity:
+
+* ledger entries
+* allocation changes
+* deposits
+* withdrawals
+* fees
+* statement corrections
+* weekly report corrections
+* admin approvals
+
+Documents/Statements:
+
+* monthly statements
+* weekly reports
+* corrected/replaced/removed notes
+* risk disclosures
+* fee disclosures
+
+Keep mobile clean:
+
+* cards
+* tabs
+* collapsible detail sections
+* no horizontal overflow
+* no trading controls
+* no admin controls
+* no ARX internal waterfall
+
+====================================================
+PART 34 — ADMIN FUND CONTROL CENTER
+
+Admin dashboard should include Fund Control Center.
+
+Sections:
+
+1. Master Overview
+
+* total broker equity
+* total investor value
+* total pool value
+* discrepancy status
+* broker freshness
+* open exposure
+* pending deposits
+* pending withdrawals
+* locked funds total
+* fees accrued
+* ARX/internal waterfall status
+
+2. Investor Management
+
+* investor list
+* current value
+* status
+* deposits/withdrawals
+* allocation
+* locked funds
+* drawdown
+* flags
+* view ledger
+* view statements
+* view weekly reports
+
+3. Strategy Pools
+
+* pool NAV
+* total units
+* total value
+* realized/unrealized P/L
+* drawdown
+* capacity
+* liquidity
+* open positions assigned
+
+4. Broker Mirrors
+
+* broker account snapshots
+* balance/equity
+* open positions
+* sync freshness
+* unassigned positions
+
+5. Capital Movements
+
+* deposit requests
+* withdrawal requests
+* speed tier fees
+* 30-day lock status
+* approval queue
+* payment status
+
+6. Discrepancy Center
+
+* all open discrepancies
+* severity
+* affected account/pool/broker
+* suggested fix
+* resolution tools
+
+7. Profit Waterfall Center
+
+* eligible net new profit
+* high-water mark
+* ARX 60% share
+* investor 40% distributable
+* investor-by-investor distribution
+* internal ARX split
+* trader compensation pool
+* company operations
+* tech/data reserve
+* legal/compliance reserve
+* risk reserve
+* approval status
+* audit trail
+
+8. Weekly Reports Center
+
+* generated reports
+* reports under review
+* stale/reconciliation-blocked reports
+* regenerate/correct reports with reason
+* report source data
+
+9. Fee Settings
+
+* deposit fee tiers
+* withdrawal fee tiers
+* management fee if enabled
+* performance fee if enabled
+* high-water mark settings
+* 60/40 waterfall settings
+
+10. Audit Logs
+
+* all financial changes
+* admin adjustments
+* statement changes
+* weekly report changes
+* waterfall approvals
+* freeze/unfreeze actions
+
+====================================================
+PART 35 — STATEMENTS
+
+Monthly investor statements should include:
+
+* investor name/id
+* statement period
+* starting value
+* ending value
+* deposits
+* withdrawals
+* gross trading P/L
+* realized P/L
+* unrealized P/L
+* management fees if charged
+* performance fees if charged
+* deposit fees
+* withdrawal fees
+* liquidity fees
+* approved adjustments
+* high-water mark
+* drawdown
+* allocation breakdown
+* pool units owned
+* NAV per pool
+* locked funds
+* unlock dates if applicable
+* statement status
+* correction/replacement notes
+* generated timestamp
+
+Do not show ARX internal waterfall on investor statements.
+
+Statements must be versioned.
+Do not overwrite silently.
+
+Statuses:
+
+* Draft
+* Active
+* Corrected
+* Replaced
+* Removed
+* Superseded
+* Pending Review
+
+Any correction/removal requires admin reason and audit log.
+
+====================================================
+PART 36 — LEGAL / DISCLOSURE RECORDS
+
+Add disclosure acknowledgment records.
+
+Track:
+
+* investor id
+* disclosure type
+* disclosure version
+* text/version hash if possible
+* acknowledgedAt
+* ip/device if available
+* related action:
+    * aggressive allocation
+    * custom allocation
+    * 60/40 investor distributable model
+    * deposit lock
+    * rush withdrawal
+    * full exit
+    * performance fee agreement if applicable
+    * general investment risk
+    * deposit/withdrawal fee agreement
+
+Investor-facing disclosure:
+“Trading involves risk, including possible loss of capital. Strategy profiles represent target risk preferences and do not guarantee returns. Past performance does not guarantee future results.”
+
+Before accepting allocation/fund terms:
+“I understand investor returns are calculated from the investor distributable portion of verified eligible strategy performance, based on my active pool units.”
+
+Before deposit:
+“I understand deposits are locked for 30 days after settlement and unit issuance. Locked funds can gain or lose value with my allocation but cannot be withdrawn until the unlock date.”
+
+Before aggressive/custom allocation:
+“You are selecting a higher-risk allocation. This may increase gains but can also increase losses and drawdown.”
+
+Before rush/full withdrawal:
+“You selected faster processing. Higher processing or liquidity fees may apply. Final payout may depend on settlement, open exposure, unlocked funds, and approval.”
+
+====================================================
+PART 37 — MULTI-BROKER READY DESIGN
+
+Even if only one broker is active now, design for multiple brokers later.
+
+Broker registry must support:
+
+* multiple broker accounts
+* multiple platforms
+* broker account currency
+* sync status
+* broker-specific symbols
+* future canonical symbol mapping
+
+Do not hardcode one MT5 account as the only possible source.
+
+Every broker position/trade must include:
+
+* broker account id
+* bridge id
+* platform type
+* broker ticket/order id
+* symbol
+* strategy pool assignment
+
+Prepare for future:
+
+* currency conversion service
+* canonical symbol map
+* broker exposure limits
+* per-broker reconciliation
+
+Do not build full multi-broker execution now unless already supported.
+Just make the fund accounting model ready for it.
+
+====================================================
+PART 38 — QA / TESTING
+
+Run full tests before passing.
+
+Do not mark complete just because code compiles.
+Do not pass incomplete financial logic.
+
+Required backend tests:
+
+1. Unit accounting
+
+* deposit creates units at current NAV
+* deposit does not inflate NAV
+* withdrawal redeems units at NAV
+* withdrawal does not distort NAV
+* investor value = units × NAV
+* ownership % = investor units / total units
+
+2. P/L allocation
+
+* pool gain distributes pro-rata by units
+* pool loss distributes pro-rata by units
+* open floating P/L calculates investor unrealized share
+* closed P/L calculates realized share
+
+3. 60/40 waterfall
+
+* eligible net new profit calculates correctly
+* ARX 60% calculates correctly
+* investor 40% distributable calculates correctly
+* investor distribution by units calculates correctly
+* waterfall does not apply to losses
+* waterfall does not apply below high-water mark
+* investor cannot see ARX internal waterfall
+* admin can see ARX internal waterfall
+
+4. Fees
+
+* deposit fee calculates correctly
+* withdrawal speed fee calculates correctly
+* full exit fee calculates correctly
+* management fee calculates by days in period if enabled
+* performance fee applies only above high-water mark if enabled
+* no double-charge between 60/40 and performance fee unless intentionally enabled
+
+5. 30-day deposit lock
+
+* deposit creates 30-day lock after units issued
+* locked funds excluded from available withdrawal
+* locked funds included in current value
+* locked funds gain/lose with NAV
+* multiple deposits have separate unlock dates
+* full withdrawal cannot bypass lock
+* locked withdrawal attempt is blocked
+
+6. Weekly reports
+
+* weekly report calculates starting value
+* weekly report calculates ending value
+* weekly P/L correct
+* realized/unrealized P/L separated
+* fees included
+* pool contributor breakdown works
+* economic impact section works when data available
+* drawdown included
+* investor only sees own report
+* corrected report requires reason/audit
+* stale/discrepancy blocks active publishing
+
+7. Drawdown
+
+* high-water mark updates on new highs
+* drawdown calculates correctly
+* pool drawdown alert triggers
+* investor drawdown alert triggers
+
+8. Discrepancy detection
+
+* broker equity vs pool value mismatch creates alert
+* unassigned broker position creates alert
+* stale broker sync creates warning
+* settled deposit without units creates alert
+* approved withdrawal without reserved units creates alert
+* locked funds incorrectly included in withdrawable creates alert
+* waterfall mismatch creates alert
+
+9. Permissions
+
+* investor cannot see another investor
+* investor cannot see master broker data
+* investor cannot access admin fund control
+* investor cannot access ARX internal waterfall
+* investor cannot access trader compensation
+* investor cannot trade
+* trader cannot access investor ledger
+* admin can access fund control
+
+10. Capital movements
+
+* deposit request flow works
+* withdrawal request flow works
+* speed tier fee preview works
+* full withdrawal creates final statement path
+* invalid withdrawal blocked if amount exceeds available unlocked balance
+* unit reservation works
+
+Required frontend tests:
+
+* Investor Overview loads
+* Allocation tab loads
+* Performance tab loads
+* Exposure tab loads
+* Deposits/Withdrawals tab loads
+* Activity tab loads
+* Statements tab loads
+* Weekly Account Story appears
+* Economic Impact appears when data available
+* fee preview displays correctly
+* 30-day lock and unlock date display correctly
+* available vs locked balance displays correctly
+* freshness indicator displays correctly
+* mobile layout clean
+* no trade buttons visible to investors
+* no admin controls visible to investors
+* no ARX internal waterfall visible to investors
+
+Required regression tests:
+
+* admin login still works
+* trader login still works
+* Andraie.co@gmail.com remains trader/user only if already split
+* separate admin account still accesses admin controls
+* scanner still works
+* Ruby still works
+* live bridge status still works
+* open position visibility still works
+* retcode display still works
+* no live execution path changed
+
+====================================================
+PART 39 — FINAL DELIVERY PROOF REQUIRED
+
+Report back with:
+
+1. Files changed
+2. Tables/models added or reused
+3. Broker mirror source used
+4. Investor ledger implementation
+5. Strategy pool implementation
+6. NAV engine implementation
+7. Unit issuance/redemption proof
+8. Investor NAV buy proof
+9. 60/40 waterfall proof
+10. Proof investors cannot see ARX internal waterfall
+11. Proof admin can see ARX internal waterfall
+12. Deposit/withdrawal fee tier proof
+13. 30-day deposit lock proof
+14. Locked vs available balance proof
+15. Withdrawal blocked before unlock proof
+16. Investor value calculation proof
+17. Real-time broker mirror overlay proof
+18. P/L allocation proof
+19. Weekly Account Story proof
+20. Economic Impact explanation proof
+21. Drawdown engine proof
+22. High-water mark proof
+23. Discrepancy center proof
+24. Freeze/capital lock proof if implemented
+25. Investor privacy permission proof
+26. Admin Fund Control Center proof
+27. Investor Portal UI proof
+28. Mobile UI proof
+29. Confirmation no live execution path was changed
+30. Confirmation no investor can see another investor’s funds
+31. Confirmation no investor can see ARX internal profit/trader compensation/company reserves
+32. Confirmation no Paper Trading/simulator/mock/fake fallback was added
+33. Known limitations or items deferred
+
+Final rule:
+Do not report complete unless the accounting logic works.
+
+If any part cannot be completed in one pass, finish the core in this order:
+
+1. Investor ledger
+2. Strategy pools
+3. NAV/unit accounting
+4. Investor NAV buy proof chain
+5. 30-day deposit lock
+6. Broker mirror overlay
+7. Real-time investor value
+8. Deposit/withdrawal fee engine
+9. 60/40 waterfall with admin-only internal view
+10. Weekly investor dashboard explanation
+11. Discrepancy center
+12. Investor portal display
+13. Admin fund control center
+
+Financial accuracy is the priority.
+No bleed-over.
+No hidden investor math.
+No silent edits.
+No fake balances.
+No investor access to ARX internal waterfall.
+Investor dashboard must focus on their money, their NAV-supported value, their gain/loss, their lock status, their withdrawable amount, and why their account moved.

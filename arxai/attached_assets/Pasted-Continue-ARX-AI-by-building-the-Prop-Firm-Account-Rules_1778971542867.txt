@@ -1,0 +1,374 @@
+Continue ARX AI by building the Prop Firm / Account Rules Protection Engine.
+
+Do not rebuild blindly. Inspect the current:
+- Portfolio Exposure Engine
+- Risk Governor
+- Account Health Engine
+- MT5 account sync
+- MT5 position sync
+- Trade Action Center
+- Trade Decision Orchestrator
+- Economic Calendar/Event Risk Engine
+- Broker Symbol Specs Engine
+- Compliance/Permissions system
+- User Onboarding/Readiness Wizard
+- Admin Trading Control
+- AI assistant context builder
+- user-owned MT5 routing
+- shared-master routing
+- alerts/notifications
+
+Goal:
+Allow users/admins to define prop-firm or account-specific trading rules so ARX AI can warn, block, or switch users to close-only before they violate account rules.
+
+Important:
+Do not auto-place trades.
+Do not auto-close trades.
+Do not bypass Risk Governor.
+Do not invent account rules.
+Do not expose credentials or secrets.
+Live/demo actions still require user confirmation.
+Admin/user-entered rules must be clearly labeled as user/admin configured, not guaranteed broker/firm enforcement.
+
+PART 1 — Account Rules Profiles
+
+Create account rules profiles that can be attached to:
+- user-owned MT5 account
+- shared-master virtual account
+- demo account
+- live account
+- prop firm account
+- personal brokerage account
+
+Rule profile fields:
+- profile name
+- account type
+- firm/broker name optional
+- account size
+- starting balance
+- profit target
+- max daily loss
+- max overall loss
+- trailing drawdown enabled
+- trailing drawdown type: balance / equity / end-of-day
+- daily drawdown reset time/timezone
+- max open trades
+- max lot size
+- max total lots
+- max trades per day
+- max risk per trade
+- max total open risk
+- minimum trading days
+- maximum trading days if relevant
+- consistency rule percent if relevant
+- news trading allowed yes/no
+- news blackout minutes before/after
+- weekend holding allowed yes/no
+- overnight holding allowed yes/no
+- stop loss required yes/no
+- copy trading allowed yes/no
+- EA/automation allowed yes/no
+- close-only threshold percent
+- violation action: warn / block new trades / close-only / suspend
+
+PART 2 — Rule Compliance Engine
+
+Create a Rule Compliance Engine that evaluates account state before every trade action.
+
+Check:
+- daily loss used
+- overall loss used
+- trailing drawdown distance
+- profit target progress
+- trade count today
+- open trade count
+- open risk
+- lot exposure
+- news blackout window
+- weekend/overnight restriction
+- stop loss required
+- max symbol exposure
+- consistency risk
+- minimum trading days progress
+- account health
+- stale MT5 data
+
+Output:
+- compliance status: compliant / warning / breach-risk / violated / data-insufficient
+- rule violations
+- warnings
+- remaining daily loss
+- remaining max loss
+- distance to trailing drawdown
+- profit target remaining
+- recommended action
+- close-only recommended true/false
+- block reason if blocked
+
+PART 3 — Risk Governor Integration
+
+Risk Governor must check the Account Rules Engine before queueing any:
+- open trade
+- partial close
+- full close
+- move stop
+- modify TP/SL
+- cancel order
+
+Rules:
+- Opening new trades can be blocked by account rules.
+- Risk-reducing actions should remain allowed unless emergency stop blocks all.
+- If close-only is triggered, new trades are blocked but closing/reducing risk is allowed.
+- If stop loss is required, trade ticket must require SL before confirmation.
+- If news trading is blocked, new trades during blackout are blocked.
+- If max daily loss is near breach, warn or block based on profile settings.
+
+PART 4 — Prop Firm Dashboard
+
+Create a Prop Firm / Account Rules page.
+
+Show:
+- rule profile name
+- account size
+- profit target progress
+- daily loss remaining
+- max loss remaining
+- trailing drawdown level
+- open risk
+- trade count today
+- minimum trading days progress
+- consistency status
+- news blackout status
+- weekend/overnight holding status
+- current compliance status
+- close-only status
+- rule warnings
+- violation history
+
+Visual states:
+- Safe
+- Caution
+- Breach Risk
+- Violated
+- Close Only
+- Data Insufficient
+
+PART 5 — Trade Ticket Rule Preview
+
+Before confirmation, every trade ticket should show:
+
+- account rule status
+- daily loss remaining
+- max loss remaining
+- trailing drawdown distance
+- risk if trade hits SL
+- whether stop loss is required
+- whether news blackout is active
+- whether trade violates max lot/trade count/open risk
+- pass/fail result
+
+Examples:
+- “Blocked: Stop loss is required for this account profile.”
+- “Warning: This trade would use 72% of your remaining daily loss.”
+- “Blocked: High-impact news blackout is active.”
+- “Close-only active: new trades are blocked, but you may reduce risk.”
+
+PART 6 — Alerts
+
+Create alerts when:
+- user is near daily loss limit
+- user is near max loss limit
+- trailing drawdown risk is high
+- profit target is near
+- consistency rule risk is high
+- minimum trading days progress changes
+- news blackout is starting
+- weekend close window is approaching
+- account switches to close-only
+- rule violation detected
+
+Alert actions:
+- View Rules
+- Ask AI
+- Review Open Trades
+- Reduce Risk
+- View Portfolio
+
+No instant execution from alerts.
+
+PART 7 — Admin Controls
+
+Admin Trading Control should include account rules management:
+
+Admin can:
+- create default rule templates
+- assign rule profile to user
+- assign rule profile to shared-master virtual allocation
+- edit rule limits
+- force close-only
+- clear close-only only if rules allow
+- view users near violation
+- view violated users
+- export compliance/rule report
+- block live trading for users without rule profile if strict mode is enabled
+
+Owner-only:
+- override breached profile
+- disable rule engine globally
+- edit live account rule templates
+- approve user after violation
+
+PART 8 — AI Prop Firm Awareness
+
+Update AI so users can ask:
+
+- Am I close to violating my account?
+- How much daily loss do I have left?
+- What is my max loss remaining?
+- Am I close to trailing drawdown?
+- Can I open another trade?
+- Why was my trade blocked?
+- Am I in close-only mode?
+- What rules am I close to breaking?
+- Should I stop trading today?
+- How close am I to passing my challenge?
+- What is my profit target progress?
+- Am I allowed to hold this over the weekend?
+- Is news trading allowed right now?
+
+AI must answer from real configured rule profile and real account/trade data only.
+If no rule profile exists, AI must say:
+“No account rule profile is configured yet.”
+
+AI must not invent prop firm rules.
+
+PART 9 — Shared-Master Support
+
+In SHARED_MASTER_MT5 mode:
+- apply account rules to each user’s virtual account/allocation
+- admin can also apply master-level rules to the shared master account
+- users only see their own virtual rule status
+- admin sees master-level rule exposure
+- normal users never see other users’ rule status or allocations
+
+PART 10 — Backend/API
+
+Add endpoints:
+
+- GET /api/account-rules/profile
+- POST /api/account-rules/profile
+- PATCH /api/account-rules/profile/:id
+- GET /api/account-rules/status
+- POST /api/account-rules/recalculate
+- GET /api/account-rules/violations
+- GET /api/admin/account-rules/templates
+- POST /api/admin/account-rules/templates
+- PATCH /api/admin/account-rules/users/:id
+- POST /api/admin/account-rules/users/:id/close-only
+- GET /api/admin/account-rules/overview
+
+Add tables if missing:
+
+account_rule_profiles:
+- id
+- user_id nullable
+- shared_master_account_id nullable
+- profile_name
+- account_type
+- firm_name
+- account_size
+- starting_balance
+- profit_target
+- max_daily_loss
+- max_overall_loss
+- trailing_drawdown_enabled
+- trailing_drawdown_type
+- daily_reset_time
+- timezone
+- max_open_trades
+- max_lot_size
+- max_total_lots
+- max_trades_per_day
+- max_risk_per_trade
+- max_total_open_risk
+- minimum_trading_days
+- consistency_rule_percent
+- news_trading_allowed
+- news_blackout_minutes_before
+- news_blackout_minutes_after
+- weekend_holding_allowed
+- overnight_holding_allowed
+- stop_loss_required
+- violation_action
+- active
+- created_at
+- updated_at
+
+account_rule_status_snapshots:
+- id
+- user_id
+- rule_profile_id
+- compliance_status
+- daily_loss_used
+- daily_loss_remaining
+- max_loss_remaining
+- trailing_drawdown_level
+- distance_to_drawdown
+- profit_target_progress
+- open_risk
+- trade_count_today
+- warning_flags
+- violation_flags
+- recommended_action
+- close_only
+- data_quality
+- created_at
+
+account_rule_violations:
+- id
+- user_id
+- rule_profile_id
+- violation_type
+- severity
+- message
+- related_trade_id
+- related_action_id
+- resolved_at
+- created_at
+
+PART 11 — Tests
+
+Add or update tests for:
+1. User can create account rule profile.
+2. User can only see their own rule profile.
+3. Shared-master user only sees own virtual rule status.
+4. Admin can assign rule profile to user.
+5. Daily loss remaining calculates from real P&L.
+6. Max loss remaining calculates from real account data.
+7. Trailing drawdown warning triggers.
+8. Stop-loss-required rule blocks new trade without SL.
+9. News blackout blocks new trade if configured.
+10. Close-only blocks new trades but allows risk reduction.
+11. Risk Governor uses account rule status before queueing.
+12. Alerts fire near account rule breach.
+13. AI explains account rule blockers from real data.
+14. AI does not invent prop firm rules.
+15. Rule violation is audit logged.
+16. Mobile Prop Firm / Account Rules page works.
+17. No secrets are exposed.
+
+Final report:
+Return:
+- PASS or FAIL
+- Account Rules Profile status
+- Rule Compliance Engine status
+- Risk Governor integration status
+- Prop Firm Dashboard status
+- Trade Ticket Rule Preview status
+- Alerts status
+- Admin controls status
+- AI Prop Firm awareness status
+- Shared-Master support status
+- mobile status
+- tests passed
+- remaining blockers

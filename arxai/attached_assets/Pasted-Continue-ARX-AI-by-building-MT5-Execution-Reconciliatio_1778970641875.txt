@@ -1,0 +1,283 @@
+Continue ARX AI by building MT5 Execution Reconciliation and Trade Lifecycle Sync.
+
+Do not rebuild blindly. Inspect the current:
+- Trade Action Center
+- trade_action_requests table
+- trade command queue
+- MT5 EA command polling
+- EA execution result reporting
+- open trades system
+- trade history system
+- journal/calendar performance pages
+- Live Trade Intelligence snapshots
+- Smart Exit Plan
+- Trade Decision Orchestrator
+- user-owned MT5 routing
+- shared-master routing
+- shared trade attribution ledger
+- admin audit logs
+- trade audit logs
+- notification system
+- dashboard trading mode cards
+
+Goal:
+Make every broker execution result flow back into ARX AI accurately so users and admins can see what actually happened after a trade action was confirmed.
+
+Important:
+Do not auto-open trades.
+Do not auto-close trades.
+Do not bypass backend guards.
+Do not expose secrets.
+Do not fake execution results.
+Live actions must still require explicit confirmation before they are queued.
+
+PART 1 — Execution Result API
+
+Add or verify an EA callback endpoint:
+
+POST /api/mt5/execution-result
+
+It should accept execution result updates from the EA, including:
+- command_id
+- action_request_id if available
+- connection_id
+- user_id if safely included or resolved backend-side
+- status: executed | rejected | failed | partial | pending
+- mt5_order_ticket
+- mt5_position_ticket
+- symbol
+- side
+- lot_size_requested
+- lot_size_filled
+- requested_price
+- fill_price
+- slippage
+- stop_loss
+- take_profit
+- broker_message
+- error_code
+- error_message
+- executed_at
+
+Security:
+- Validate bridge token.
+- Validate command belongs to that connection.
+- Validate user/connection/routing relationship.
+- Reject unknown command_id.
+- Reject duplicated final results unless idempotent.
+- Never expose full token or secrets in logs.
+
+PART 2 — Command/Action Status Reconciliation
+
+When execution result arrives, update:
+
+1. trade_action_requests
+- status
+- mt5_ticket
+- rejection_reason
+- guard_result
+- updated_at
+
+2. trade_command_audit_log
+- status
+- mt5 ticket
+- broker result
+- rejection/failure reason
+- timestamps
+
+3. open trades / positions
+- create or update open position if executed
+- mark closed if close executed
+- update partial close if partial executed
+- update SL/TP if modify executed
+
+4. shared_trade_attribution
+For shared-master routing:
+- attach mt5_order_ticket
+- attach mt5_position_ticket
+- update fill price
+- update filled lot size
+- update status
+- update P&L attribution if available
+
+5. trade timeline
+Add timeline events:
+- command sent to MT5
+- execution accepted
+- execution rejected
+- execution failed
+- order filled
+- partial close filled
+- stop modified
+- position closed
+
+PART 3 — Broker Rejection Handling
+
+If MT5/broker rejects the command, show a clear user-friendly reason.
+
+Examples:
+- invalid volume
+- market closed
+- symbol not available
+- insufficient margin
+- trade disabled
+- off quotes
+- invalid stops
+- price changed
+- requote
+- account type mismatch
+- auto trading disabled
+- EA execution disabled
+
+User UI should show:
+- “Rejected by broker”
+- reason
+- what user can fix if known
+
+Do not leave actions stuck as queued forever.
+
+PART 4 — Stuck Command Watchdog
+
+Create a watchdog that finds commands stuck too long in:
+- queued
+- sent_to_mt5
+- pending execution
+- awaiting result
+
+If stuck past timeout:
+- mark as stale or failed
+- notify user
+- write audit log
+- keep MT5 sync active
+- do not resend automatically unless idempotency is proven safe
+
+PART 5 — UI Updates
+
+Update Trade Action Center cards to show real execution lifecycle:
+
+Statuses:
+- Awaiting confirmation
+- Confirmed
+- Guard checking
+- Queued
+- Sent to MT5
+- Executed
+- Rejected by broker
+- Failed
+- Stale / needs review
+- Cancelled
+
+Each card should show:
+- broker result
+- MT5 ticket if safe to show
+- fill price
+- requested price
+- slippage
+- filled lot size
+- rejection reason
+- execution time
+
+Update Open Trades and Trade History:
+- executed open orders appear as active positions
+- closed positions move to history
+- partial closes update remaining lot
+- moved stops update SL/TP display
+
+PART 6 — Journal and Calendar Sync
+
+When a trade closes, update:
+- trade journal
+- trade history
+- calendar day P&L
+- win/loss day
+- realized P&L
+- exit reason
+- AI decision attached to exit if any
+- whether user followed/ignored AI exit alert
+
+If full journal/calendar sync is not currently wired, create a clear follow-up task and show “pending journal sync” instead of fake data.
+
+PART 7 — Notifications
+
+Notify user when:
+- order executed
+- order rejected
+- close executed
+- partial close executed
+- stop moved
+- action failed
+- command became stale
+- broker rejected due to fixable issue
+
+For live trades, notification should clearly say LIVE.
+
+PART 8 — Admin Monitoring
+
+Admin Trading Control should show:
+- recent execution results
+- rejected commands
+- stale commands
+- failed EA callbacks
+- broker rejection reasons
+- command queue health
+- EA result callback health
+
+PART 9 — AI Assistant Awareness
+
+Update AI so users can ask:
+
+- Did my order execute?
+- Why was my trade rejected?
+- Did my close go through?
+- What was my fill price?
+- Was there slippage?
+- Is my close still pending?
+- Why is my action stuck?
+- Did the broker reject it?
+- Did my journal update?
+
+AI must answer from real execution status only.
+If result is pending, say pending.
+If data is missing, say missing.
+Do not invent fill prices, tickets, or rejection reasons.
+
+PART 10 — Tests
+
+Add or update tests for:
+1. Valid execution result updates action status.
+2. Invalid token rejected.
+3. Unknown command_id rejected.
+4. Duplicate final result handled safely.
+5. Broker rejection updates user-visible status.
+6. Failed execution does not create fake open trade.
+7. Executed open trade creates/updates open position.
+8. Executed close moves trade to history.
+9. Partial close updates remaining size.
+10. Move stop result updates SL/TP.
+11. Shared-master execution updates attribution ledger.
+12. User-owned execution updates only that user.
+13. User cannot see another user’s execution result.
+14. Stuck command watchdog marks stale commands.
+15. Notifications fire for executed/rejected/failed.
+16. Audit timeline records execution lifecycle.
+17. Journal/calendar update after close if wired.
+18. AI can explain execution status.
+19. No secrets exposed.
+20. Mobile Trade Action Center remains usable.
+
+Final report:
+Return:
+- PASS or FAIL
+- execution result API status
+- command/action reconciliation status
+- broker rejection handling status
+- stuck command watchdog status
+- Open Trades sync status
+- Trade History sync status
+- shared-master attribution sync status
+- journal/calendar sync status
+- notification status
+- AI execution awareness status
+- admin monitoring status
+- tests passed
+- remaining blockers

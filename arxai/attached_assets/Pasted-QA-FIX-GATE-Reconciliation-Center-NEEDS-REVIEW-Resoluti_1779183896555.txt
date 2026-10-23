@@ -1,0 +1,50 @@
+QA/FIX GATE — Reconciliation Center + NEEDS_REVIEW Resolution Workflow
+
+Inspect the Reconciliation Center and NEEDS_REVIEW Resolution Workflow from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Reconciliation center is admin-only.
+2. Non-admin users cannot access reconciliation pages.
+3. Non-admin users cannot call reconciliation APIs.
+4. Reconciliation uses existing command, reservation, ledger, queue, and bridge systems.
+5. NEEDS_REVIEW items are grouped clearly.
+6. Stuck RESERVED reservations are detected.
+7. SENT_TO_BRIDGE commands with no callback are detected.
+8. ACKNOWLEDGED commands with no fill are detected.
+9. Duplicate callbacks are ignored safely.
+10. Rejected commands release reservations safely.
+11. Failed commands do not retry blindly.
+12. Stale close commands become EXPIRED or NEEDS_REVIEW.
+13. Unmapped shared master executions become NEEDS_REVIEW.
+14. Uncertain netted shared master exposure is not guessed.
+15. User allocations remain separate when multiple users trade the same symbol.
+16. Normal users cannot see unmapped master executions.
+17. Normal users only see their own needs-review status.
+18. Admin can resolve a verified item with confirmation, reason, and evidence.
+19. Admin cannot resolve without a reason.
+20. Admin cannot force unsafe live dispatch.
+21. Admin cannot retry uncertain commands blindly.
+22. Stuck reservations can only be released when safe.
+23. Ledger updates require verified evidence.
+24. Personal MT5 reconciliation stays separate from shared master reconciliation.
+25. Demo reconciliation never creates live commands.
+26. Ruby explains NEEDS_REVIEW safely for normal users.
+27. Ruby admin reconciliation explanations only work for authenticated admins.
+28. Audit logs are created for scans, NEEDS_REVIEW markings, resolutions, unresolved items, stale expirations, reservation releases, and unsafe retry blocks.
+29. Bridge evidence is masked through the existing masking chokepoint.
+30. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, or sensitive bridge payloads are exposed in UI, logs, routes, prompts, or responses.
+31. No live trade is fired during QA.
+32. arx_live_commands count remains unchanged.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

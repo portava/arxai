@@ -1,0 +1,362 @@
+Plan the ARX v2 Kernel Multi-Symbol Market Watch Streaming Upgrade.
+
+The latest diagnostic confirms the v2 kernel is genuinely connected and broker candles are arriving. Real CANDLE events are accepted, judged LIVE-fresh, and fed into mt5Provider for USDCHF M5. So the bridge is not dead.
+
+The real limitation is operational/design-based:
+- The kernel only streams the symbol/timeframe of the chart it is attached to: _Symbol + chart period.
+- Right now that means USDCHF M5 only.
+- Other forex/metals/indices still fall through to assistant/third-party fallback because the kernel is not pushing their broker candles/quotes.
+- Volatility works separately through Deriv WebSocket, not because MT5 is feeding all markets.
+- Heartbeat/account/positions can stream every ~10s while candles only push when the attached symbol gets ticks/new bars.
+
+We need to evolve the v2 kernel from single-chart streaming into controlled multi-symbol Market Watch streaming.
+
+Do not rebuild live execution.
+Do not change order execution behavior.
+Do not weaken Risk Governor, AACI, Security Handshake, or trade command gates.
+Do not fake candles.
+Do not use simulator candles.
+Do not let third-party feeds become execution truth.
+Do not silently scan all possible broker symbols without limits.
+Do not overload MT5, the backend, or provider quotas.
+
+==================================================
+PRIMARY GOAL
+==================================================
+
+Make the v2 kernel push broker-native quotes and candles for multiple approved ARX markets, not only the chart it is attached to.
+
+Target behavior:
+- MT5 broker feed becomes available for approved forex/metals/indices/crypto/stocks/commodities if broker supports them.
+- Kernel uses Market Watch / approved symbol list / active app demand to decide what to push.
+- Backend stores candles by symbol + timeframe.
+- Router prefers mt5_broker when fresh broker data exists.
+- Fallback providers remain backup only.
+- User UI shows only approved Top 250 markets, and only selectable when real data exists.
+
+==================================================
+STEP 1 — CONFIRM CURRENT SINGLE-CHART LIMITATION
+==================================================
+
+Document the current kernel behavior:
+
+- which file implements the v2 EA/kernel
+- where it uses _Symbol
+- where it uses Period() / chart timeframe
+- where it calls CopyRates or candle export
+- whether it only pushes on OnTick for attached chart
+- whether it has any loop over Market Watch symbols
+- whether it has any configured symbol allowlist
+- whether it pushes quotes independent of chart tick
+- whether it can push candles on OnTimer
+
+Return exact files/functions.
+
+==================================================
+STEP 2 — DESIGN A CONTROLLED SYMBOL UNIVERSE FOR THE KERNEL
+==================================================
+
+Do not stream every broker symbol blindly.
+
+The kernel should use a controlled list:
+
+Priority A — open-position symbols:
+Always push quotes and candles for symbols with open positions.
+
+Priority B — active UI symbols:
+Symbols currently selected by users in chart/scanner/Ruby/watchlist.
+
+Priority C — approved Top 250 core:
+Only approved ARX Top 250 symbols that are broker-supported and enabled.
+
+Priority D — admin-configured watchlist:
+Admin may choose a subset for continuous streaming.
+
+The kernel should not push markets outside approved ARX Top 250 unless admin diagnostics explicitly allow it.
+
+==================================================
+STEP 3 — REMOTE CONFIG / MANIFEST
+==================================================
+
+Add or complete remote config support so backend tells the kernel what to stream.
+
+Remote config should include:
+
+{
+  "enabled": true,
+  "marketDataPushEnabled": true,
+  "quotePushEnabled": true,
+  "candlePushEnabled": true,
+  "symbols": [
+    {
+      "standardSymbol": "EURUSD",
+      "brokerSymbol": "EURUSD",
+      "timeframes": ["M1", "M5", "M15", "H1", "H4", "D1"],
+      "priority": "core"
+    },
+    {
+      "standardSymbol": "XAUUSD",
+      "brokerSymbol": "XAUUSD",
+      "timeframes": ["M1", "M5", "M15", "H1", "H4", "D1"],
+      "priority": "core"
+    }
+  ],
+  "quoteIntervalMs": 1000,
+  "candlePollIntervalMs": 5000,
+  "maxSymbolsPerCycle": 25,
+  "maxCandlesPerPush": 500,
+  "backfillCandles": 500,
+  "staleCommandRejectMs": 60000
+}
+
+Rules:
+- Backend owns the approved list.
+- Kernel obeys remote config.
+- If config is missing, kernel can still stream attached-chart symbol only as safe fallback.
+- Admin can throttle max symbols and timeframes.
+- Regular users cannot directly edit kernel stream config.
+
+==================================================
+STEP 4 — KERNEL MARKET WATCH LOOP
+==================================================
+
+Modify the kernel design so it can iterate configured symbols.
+
+For each configured broker symbol:
+- verify SymbolSelect(symbol, true)
+- verify symbol exists in Market Watch
+- read bid/ask/spread with SymbolInfoDouble / SymbolInfoInteger
+- push quote snapshot
+- for each configured timeframe, call CopyRates
+- push initial backfill
+- push incremental candles when a new bar appears
+- avoid pushing duplicate unchanged bars excessively
+- track last pushed candle time per symbol/timeframe
+- track push errors per symbol/timeframe
+
+Important:
+Do not rely only on OnTick for the attached chart.
+Use OnTimer for multi-symbol scanning so quiet attached chart does not stop all market data.
+
+Suggested:
+- OnTimer every 1–5 seconds for quote snapshots
+- candle check every 5–15 seconds depending timeframe
+- new-bar detection per symbol/timeframe
+- throttle by maxSymbolsPerCycle
+
+==================================================
+STEP 5 — BACKEND INGEST / STORAGE REQUIREMENTS
+==================================================
+
+Verify backend supports:
+
+- quote push per symbol
+- candle push per symbol/timeframe
+- accepted/rejected counts
+- sequence tracking
+- gap detection
+- event audit
+- source mt5_broker
+- per-symbol/timeframe freshness
+- separate heartbeat freshness from market-data freshness
+
+Storage rule:
+Candles must be keyed by:
+- normalized standardSymbol
+- brokerSymbol
+- timeframe
+- source
+- account/bridge if needed
+
+Never key MT5 candles by symbol only.
+
+Quotes must be keyed by:
+- normalized standardSymbol
+- brokerSymbol
+- bridge/account if needed
+
+==================================================
+STEP 6 — BACKEND DEMAND BUILDER
+==================================================
+
+Create or verify a backend market-data demand builder.
+
+This service decides which symbols/timeframes the kernel should stream.
+
+Inputs:
+- ARX Top 250 approved list
+- broker-supported symbols
+- open positions
+- active chart sessions
+- scanner universe
+- Ruby requested symbols
+- watchlists
+- admin core market list
+- recent user activity
+- system load limits
+
+Output:
+remote config stream manifest.
+
+Do not stream all 250 symbols × 6 timeframes continuously if that overloads MT5/backend.
+Start with a controlled core set.
+
+Suggested first core set:
+- EURUSD
+- GBPUSD
+- USDJPY
+- XAUUSD
+- US30
+- US100
+- US500
+- BTCUSD
+- ETHUSD
+- USDCHF
+- Volatility 75 only if broker supports it through MT5; otherwise Deriv handles synthetics
+
+Then expand.
+
+==================================================
+STEP 7 — ROUTER / CHART BEHAVIOR
+==================================================
+
+Once broker data exists:
+
+/api/chart/candles should select mt5_broker as winning provider when:
+- symbol is approved
+- broker mapping exists
+- MT5 candles exist for symbol/timeframe
+- freshness passes
+- OHLC validation passes
+
+If MT5 broker data is missing:
+- use fallback provider if real data exists
+- label it fallback/delayed if needed
+- Ruby gives limited read if not clean
+
+If no real data:
+- market is not selectable for regular users
+- show Data not available yet
+
+==================================================
+STEP 8 — ADMIN VISIBILITY
+==================================================
+
+Admin panel should show:
+
+- kernel connected
+- EA version
+- terminal readiness
+- Market Watch streaming enabled
+- remote config version
+- symbols configured
+- symbols selected successfully
+- symbols failed SymbolSelect
+- quote push active/inactive per symbol
+- candle push active/inactive per symbol/timeframe
+- last quote time
+- last candle time
+- last pushed candle age
+- accepted/rejected events
+- sequence gaps
+- maxSymbolsPerCycle
+- current cycle duration
+- backend ingest latency
+- top errors
+
+Regular users should not see technical details.
+
+==================================================
+STEP 9 — USER-FACING BEHAVIOR
+==================================================
+
+Users should only see approved ARX Top 250 markets.
+
+A market should be:
+- selectable if it has real data
+- tradeable only if broker mapping and all trade gates pass
+- disabled if approved but no data exists
+- not shown at all if not approved
+
+User-safe labels:
+- Live broker feed
+- Fallback analysis feed
+- Delayed
+- Waiting for broker feed
+- Data not available yet
+- Broker not confirmed
+
+Do not show:
+- mt5Provider
+- _Symbol
+- CopyRates
+- stream_key
+- assistant_real
+- feedStatus
+- aiUsable
+- internal event names
+
+==================================================
+STEP 10 — TESTS
+==================================================
+
+Add/update tests:
+
+1. Kernel config can contain multiple symbols/timeframes.
+2. Attached-chart fallback still works if config missing.
+3. Remote config controls stream list.
+4. Market Watch symbols are approved Top 250 only.
+5. Open-position symbols always included.
+6. Active chart symbol is included.
+7. CopyRates output is pushed with correct timeframe.
+8. Candles stored by symbol+timeframe.
+9. Quote freshness separate from heartbeat freshness.
+10. Router chooses mt5_broker when broker candles are fresh.
+11. Router falls back when broker candles missing.
+12. Heartbeat alone does not mark market-data live.
+13. No-data markets remain unselectable.
+14. Simulator data does not make markets selectable.
+15. Admin panel shows symbol/timeframe push status.
+16. Regular users do not see internal details.
+17. Existing live execution path unchanged.
+18. Trade command gates unchanged.
+19. Sequence gaps are recorded but do not fabricate missing bars.
+20. Quiet symbols show stale/idle honestly.
+
+==================================================
+STEP 11 — PHASED ROLLOUT
+==================================================
+
+Plan rollout in phases:
+
+Phase A — Backend remote config + demand manifest.
+Phase B — Kernel Market Watch loop for quotes only.
+Phase C — Kernel CopyRates candle push for core 10 symbols.
+Phase D — Backend admin visibility.
+Phase E — Router confirms mt5_broker wins for core symbols.
+Phase F — Expand to approved Top 250 gradually with throttles.
+Phase G — Runtime QA and performance tuning.
+
+Do not jump directly to all 250 × 6 timeframes without throttling.
+
+==================================================
+COMPLETION REPORT
+==================================================
+
+Return:
+
+- current single-chart behavior confirmed
+- files inspected
+- proposed architecture
+- backend changes needed
+- kernel changes needed
+- remote config design
+- demand builder design
+- admin visibility design
+- rollout phases
+- risks/performance limits
+- tests required
+- first recommended build slice
+
+Final rule:
+The v2 kernel is working, but only for the attached chart symbol/timeframe. The next task is not “fix the feed”; it is “upgrade the kernel to controlled multi-symbol Market Watch streaming so MT5 broker data can feed ARX charts across approved markets.”

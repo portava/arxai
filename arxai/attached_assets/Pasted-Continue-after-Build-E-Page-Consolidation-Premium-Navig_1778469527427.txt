@@ -1,0 +1,118 @@
+Continue after Build E — Page Consolidation & Premium Navigation.
+
+Now begin Build F — Live Execution Safety Layer.
+
+Goal:
+Before the app can place real trades, create a strict safety gate between AI recommendations and live broker/MT5 execution.
+
+Tasks:
+
+1. Audit current execution flow
+Find:
+- live trade execution files
+- MT5/broker service files
+- order placement functions
+- manual trade buttons
+- AI trade recommendation logic
+- any route that can trigger real orders
+
+2. Create Execution Confirmation System
+
+Before any live order is placed, require:
+
+- trading permission status = CLEAR
+- broker/MT5 connected
+- user confirmation
+- valid symbol
+- valid lot size
+- valid stop loss
+- valid take profit
+- risk per trade within user limit
+- spread acceptable
+- market risk not NO TRADE
+- practice/replay mode inactive
+
+3. Add Pre-Trade Checklist
+
+Show user:
+
+- Symbol
+- Direction
+- Entry type
+- Lot size
+- Estimated risk
+- Stop loss
+- Take profit
+- Reward-to-risk ratio
+- Current market condition
+- Trading permission status
+- AI confidence/fit score
+- Warning messages
+
+4. Add database table:
+
+execution_confirmations:
+- id
+- user_id
+- symbol
+- direction
+- lot_size
+- entry_type
+- entry_price
+- stop_loss
+- take_profit
+- estimated_risk
+- reward_to_risk
+- market_condition
+- permission_status
+- user_confirmed
+- executed
+- execution_result
+- created_at
+
+5. Add API routes:
+
+- POST create execution confirmation
+- GET execution confirmation
+- POST confirm execution
+- POST cancel execution
+- GET execution history
+
+6. Add frontend components:
+
+- Pre-Trade Checklist Modal
+- Confirm Execution Button
+- Cancel Trade Button
+- Execution Warning Panel
+- Live Execution History
+
+7. Hard safety rules:
+
+- AI can recommend, but cannot silently execute live trades.
+- No live order can execute without explicit user confirmation.
+- No order can execute when trading permission is LOCKED.
+- No order can execute when market risk is NO TRADE.
+- No order can execute if MT5/broker is disconnected.
+- No replay/practice trade can hit live broker routes.
+- Log every confirmation attempt.
+
+8. Testing:
+
+Test:
+- approved trade flow
+- rejected trade flow
+- locked permission flow
+- broker disconnected flow
+- invalid lot size flow
+- practice mode isolation
+- execution history logging
+
+Final output required:
+
+1. Files changed
+2. Execution safety rules added
+3. API routes added
+4. Frontend components added
+5. How live execution is protected
+6. Any risky areas still found
+7. Recommended next build

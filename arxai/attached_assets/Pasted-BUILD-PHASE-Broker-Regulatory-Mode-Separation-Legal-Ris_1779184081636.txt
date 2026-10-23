@@ -1,0 +1,265 @@
+BUILD PHASE — Broker/Regulatory Mode Separation + Legal Risk Warnings
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Clearly separate Demo Trading, Personal MT5 tooling, and Operator-Approved Shared Master access so users understand what mode they are in, what risks apply, and what the app does or does not provide. Add legal/risk warning surfaces, acceptance records, mode-specific restrictions, and compliance-review flags without claiming the app is legally approved, licensed, or compliant.
+
+Important:
+This build is not a substitute for attorney, broker-dealer, RIA/CTA/CPO, NFA/CFTC/SEC, or financial compliance review. Do not make legal conclusions in the UI. Use careful language such as “may require licensed review,” “operator approval required,” and “not available until compliance review is complete.”
+
+1. Inspect existing mode/risk/legal surfaces first
+Inspect:
+- onboarding account mode setup
+- demo mode
+- personal MT5 mode
+- shared master mode
+- admin approval console
+- risk profiles
+- capital allocation wording
+- one-click trading
+- live safety gates
+- Ruby explanations
+- user terms/consent screens if any
+- disclaimers/warnings
+- audit logs
+- account status cards
+- trade ticket confirmations
+- voice confirmation flows
+- admin dashboard
+
+Only build missing pieces.
+
+2. Mode separation framework
+Create a clear backend and frontend mode separation system for:
+
+A. Demo Trading
+- simulated/private demo workspace
+- demo balance clearly labeled demo
+- no live commands
+- no real-money language
+- no shared master routing
+- no deposit/withdrawal language
+
+B. Personal MT5 Tooling
+- user connects their own MT5 bridge/account
+- user remains responsible for their own broker account
+- ARX AI provides tooling/analysis/execution interface only
+- live execution requires explicit setup and safety approval
+- do not call ARX AI the broker or custodian
+
+C. Operator-Approved Shared Master Access
+- admin/operator approval required
+- user allocation/risk profile required
+- shared master account mapping required
+- legal/compliance review flag required before production live availability
+- do not describe this as user deposits unless a real regulated payment/custody/brokerage system exists
+- use safer wording: “assigned trading allocation,” “operator-approved access,” “private account view,” “allocated performance,” “internal ledger”
+
+3. Regulatory/compliance review flags
+Add admin-only compliance readiness flags such as:
+- legalReviewRequired
+- legalReviewCompleted
+- liveSharedMasterComplianceApproved
+- termsAcceptedRequired
+- riskDisclosureAcceptedRequired
+- jurisdictionReviewRequired
+- paymentsCustodyDisabled
+- investmentAdviceDisclaimerEnabled
+- copyTradingDisclosureEnabled if relevant
+- brokerDealerReviewRequired
+- futuresForexCFDReviewRequired if relevant
+- noPublicLiveLaunchUntilApproved
+
+If legal/compliance review is not approved, block production shared-master live access with clean reason:
+“Shared live access is disabled until operator compliance review is complete.”
+
+4. User-facing risk/legal warnings
+Add mode-specific warnings in clean language.
+
+Demo:
+- “Demo trading uses simulated funds.”
+- “Demo results do not guarantee live results.”
+
+Personal MT5:
+- “You are responsible for your connected broker account.”
+- “Live orders may affect your real account.”
+- “Review every order before confirming.”
+
+Shared Master:
+- “Operator approval is required.”
+- “Your app view shows your assigned allocation, not the full master account.”
+- “Trading access may be paused, restricted, or placed in review.”
+- “This feature may require legal/compliance review before public live use.”
+
+General trading:
+- “Trading involves risk.”
+- “You can lose money.”
+- “Ruby’s analysis is informational and does not guarantee results.”
+- “Market conditions can change quickly.”
+
+Avoid specific legal claims unless they are reviewed and configured by the operator.
+
+5. Terms/disclosure acceptance records
+Add or strengthen acceptance tracking:
+- userId
+- disclosure version
+- mode accepted for
+- acceptedAt
+- IP/device/session metadata if already safely available
+- accepted text version hash
+- accepted by authenticated session user
+- revoked/reaccept required if disclosure version changes
+
+Acceptance required before:
+- live personal MT5 execution
+- shared master access request
+- one-click live enablement
+- voice trading confirmation
+- high-risk order types if configured
+
+Do not allow frontend-only acceptance to bypass backend enforcement.
+
+6. Trade ticket and confirmation warnings
+Add risk/legal reminders to:
+- trade ticket
+- live confirmation modal
+- one-click enable flow
+- voice confirmation readback
+- close-only emergency flows
+- SL/TP edit confirmation
+- pending order confirmation
+
+Warnings should be short and not cluttered:
+- “Live order. Review before confirming.”
+- “This may affect your real account.”
+- “Risk controls do not guarantee protection.”
+- “Confirm only if you understand the risk.”
+
+7. Ruby legal/risk boundaries
+Ruby should be able to explain:
+- what mode the user is in
+- whether the user is using demo, personal MT5, or shared master
+- why live/shared access is blocked
+- why legal/compliance review is required
+- why risk disclosures must be accepted
+- that Ruby’s market analysis is informational
+- that trading involves risk
+
+Ruby must not:
+- claim guaranteed profits
+- claim legal approval
+- claim licensed broker status
+- tell users the app is compliant
+- reveal admin-only compliance settings to normal users beyond clean status
+- bypass disclosure acceptance or safety gates
+
+8. Admin compliance control panel
+Add an admin-only section in the operator dashboard:
+- current legal/compliance review status
+- disclosure versions
+- acceptance counts
+- users missing acceptance
+- shared master production availability flag
+- payments/custody disabled status
+- public launch blocker status
+- mode availability toggles
+- audit trail of compliance flag changes
+
+Every compliance flag change requires:
+- admin confirmation
+- reason
+- timestamp
+- admin userId
+- before/after state
+
+9. Hard blocks
+Enforce backend blocks when:
+- user has not accepted required disclosure
+- disclosure version changed and reacceptance is required
+- shared master compliance approval flag is false
+- jurisdiction review flag blocks that user/region if configured
+- payments/custody feature is disabled but UI tries to show deposit/withdrawal
+- user tries to self-approve shared master access
+- voice trading tries to bypass disclosure confirmation
+- one-click live tries to enable without required acceptance
+
+10. Remove risky wording
+Search UI/copy for wording that may create legal risk:
+- “broker”
+- “deposit”
+- “withdraw”
+- “guaranteed”
+- “profit guaranteed”
+- “we manage your money”
+- “licensed”
+- “regulated”
+- “custody”
+- “investment advice”
+- “copy trade guaranteed”
+- “risk free”
+- “safe profits”
+
+Replace with safer language unless intentionally behind admin-reviewed legal copy.
+
+11. User status UI
+Normal users should see clean mode/legal status:
+- Demo Mode Active
+- Personal MT5 Setup Required
+- Live Disclosures Required
+- Waiting for Admin Approval
+- Allocation Needed
+- Shared Live Access Disabled Pending Review
+- Ready for Live Review
+- Live Trading Enabled
+
+Do not show legal/admin internals to normal users.
+
+12. Audit logs
+Add audit logs for:
+- disclosure viewed
+- disclosure accepted
+- disclosure reaccept required
+- live action blocked by missing disclosure
+- shared master blocked by compliance review flag
+- compliance flag changed
+- mode availability changed
+- risky copy detected/replaced if scripted
+- admin viewed compliance panel
+- non-admin compliance access attempt
+
+Do not log secrets.
+
+13. Tests
+Add or update tests for:
+- demo mode shows demo warning and cannot create live command
+- personal MT5 live requires disclosure acceptance
+- shared master request requires disclosure acceptance
+- shared master live blocks if compliance approval flag is false
+- one-click live cannot enable without required disclosures
+- voice trade cannot bypass disclosure requirement
+- changed disclosure version requires reacceptance
+- normal user cannot access compliance admin panel
+- non-admin cannot change compliance flags
+- admin can change compliance flags with reason
+- user cannot self-approve shared master access
+- risky wording is not present in main production UI
+- Ruby does not claim legal approval or guaranteed profits
+- Ruby explains mode/risk boundaries safely
+- no secrets exposed
+- no live command created during tests unless all safety, disclosure, approval, and compliance flags pass
+
+Return:
+- what was built
+- files changed
+- mode separation behavior
+- disclosure/acceptance model changes
+- compliance admin route/API names
+- user-facing warning locations
+- Ruby boundary behavior
+- hard blocks added
+- tests added/run
+- manual test steps
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

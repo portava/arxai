@@ -1,0 +1,285 @@
+T013 — LIVE CONFIRMATION REVIEW + REAL MOBILE TIMING + CONTROLLED LIVE MICRO-TRADE QA
+
+Continue from T012.
+
+Important product direction:
+ARX AI is LIVE-first for owner/admin operation.
+Do not use Demo as the QA path.
+Do not use Paper Trading.
+Do not use fake execution.
+Do not use simulated trade data.
+
+This is not a rebuild.
+Do not redesign the app.
+Do not duplicate trade systems.
+Do not reset live broker execution config.
+Do not weaken backend permissions, ownership checks, kill switch, allocation checks, freeze checks, live approval, or MT5 confirmation rules.
+
+Primary goals:
+
+1. Review and resolve the live-confirmation files flagged by the previous validation review.
+2. Capture real mobile browser timing with exact frontend markers.
+3. Verify Scanner, trade modal, Ruby, and bottom navigation on the actual running preview.
+4. Run one controlled owner/admin LIVE micro-trade only if all live-readiness gates pass.
+5. Confirm the trade appears in ARX, appears on the chart/ledger, then closes cleanly.
+6. Keep every action truthful and backed by the live MT5 path.
+
+PART 1 — Review previously flagged live-confirmation files
+
+The prior validation review flagged files that were not part of T012, including:
+
+1. LiveSharedTradeTicket
+2. LiveTradeTicket
+3. ControlledLiveTestButton
+4. liveSingleConfirmTest.ts
+5. qaSection25Acceptance.ts
+6. live-broker-env-flag.md
+
+Do not dismiss these just because they were from prior commits.
+Inspect them as a dedicated T013 live-confirmation review.
+
+For each file:
+
+1. Identify its purpose.
+2. Confirm whether it is active in the current LIVE flow.
+3. Confirm whether it can place, queue, confirm, close, or modify a live trade.
+4. Confirm whether it uses the current single Confirm flow correctly.
+5. Confirm whether it requires owner/admin/live-approved access where needed.
+6. Confirm whether it respects kill switch, freeze, allocation, ownership, bridge readiness, and MT5 confirmation.
+7. Confirm whether it exposes internal route names, stack traces, bridge internals, or raw backend errors to normal users.
+8. Confirm whether it uses Demo/Paper language anywhere in the active product flow.
+9. Fix only real issues.
+10. Do not rewrite working live-trade logic unnecessarily.
+
+Acceptance:
+
+1. No unsafe live-confirmation path remains.
+2. No duplicate final-confirm modal exists where the app requires single Confirm.
+3. No fake success state exists.
+4. No live trade success is shown before MT5 confirms.
+5. No normal user can access owner/admin-only live tools.
+6. Any changed file has a clear reason.
+
+PART 2 — Add real mobile/browser timing markers
+
+T012 said mobile timing was qualitative and exact milliseconds were not extractable.
+
+Fix that gap.
+
+Add or verify lightweight browser performance markers that capture exact timings for:
+
+1. bottom nav tap
+2. Cockpit shell render
+3. Scanner nav tap
+4. Scanner shell render
+5. chart skeleton render
+6. symbol search input ready
+7. market selection feedback
+8. Plan Buy modal open
+9. Plan Sell modal open
+10. lot input ready
+11. Confirm pending-state render
+12. Ruby open
+13. Ruby thinking dots render
+14. Ruby first response token/render
+15. More/Settings shell render
+
+Expose timing only in admin/dev mode through:
+
+1. console table, or
+2. admin-only performance panel, or
+3. downloadable/admin-only timing report.
+
+Normal users must not see debug timing.
+
+Targets:
+
+1. Bottom nav feedback: under 100ms.
+2. Page shell visible: under 1 second.
+3. Scanner shell visible: under 1 second.
+4. Chart skeleton visible: under 1 second.
+5. Search input usable: under 1 second.
+6. Market selection feedback: under 300ms.
+7. Buy/Sell modal open: under 1 second.
+8. Lot input response: under 100ms.
+9. Confirm pending state: under 100ms.
+10. Ruby thinking dots: under 100ms.
+
+If any timing exceeds target:
+
+1. Identify the exact blocker.
+2. Fix the smallest safe frontend issue.
+3. Retest.
+4. Do not change live execution logic unless the issue is clearly unrelated to trade safety.
+
+PART 3 — Real LIVE owner/admin browser QA
+
+Use the approved owner/admin LIVE session.
+
+Run:
+
+1. pnpm run health:workflows
+2. Confirm frontend serving.
+3. Confirm api-server serving.
+4. Confirm /api/healthz 200.
+5. Confirm Scanner candles endpoint has correct authenticated behavior.
+6. Confirm runtime health panel is healthy or clearly degraded with reason.
+7. Confirm MT5 bridge heartbeat is healthy.
+8. Confirm live broker execution env is unchanged.
+9. Confirm no stale/orphaned workflow issue.
+
+Then test the actual running preview:
+
+1. Login as owner/admin.
+2. Open Cockpit.
+3. Tap Scanner.
+4. Confirm Scanner shell timing.
+5. Confirm chart skeleton timing.
+6. Search a symbol.
+7. Select/change symbol.
+8. Open Plan Buy modal.
+9. Open Plan Sell modal.
+10. Test lot input responsiveness.
+11. Open Ruby.
+12. Confirm Ruby thinking dots timing.
+13. Confirm More/Settings timing.
+14. Confirm normal users remain blocked from admin/dev/dormant/Paper routes.
+15. Confirm admin/owner routes remain accessible.
+
+PART 4 — Controlled owner/admin LIVE micro-trade test
+
+Run one controlled LIVE micro-trade only after all readiness checks pass.
+
+Do not let Ruby choose the trade.
+Do not select a strategy-based trade.
+This is a wiring test, not a signal.
+
+Required readiness gates:
+
+1. Owner/admin session confirmed.
+2. Account is LIVE-enabled.
+3. LIVE broker execution remains enabled.
+4. MT5 bridge is connected.
+5. EA/bridge heartbeat healthy.
+6. Kill switch inactive.
+7. Account not frozen.
+8. Allocation available.
+9. Symbol allowed.
+10. Market open.
+11. Spread acceptable if a spread rule exists.
+12. Lot size equals broker minimum or configured micro-test size.
+13. Trade ownership ledger ready.
+14. Chart/Scanner ready to display the position.
+15. Backend confirms user is authorized.
+16. arx_live_commands baseline count recorded before test.
+
+Execution:
+
+1. Use the owner/admin approved live-test symbol.
+2. Use the smallest allowed lot size.
+3. Use the configured live-test direction if present.
+4. If no live-test direction is configured, pause and require owner/admin selection in the UI.
+5. Press the real Confirm button once.
+6. Confirm pending state appears immediately.
+7. Confirm backend request fires.
+8. Confirm MT5 ticket/order is returned.
+9. Confirm ARX ledger records the trade.
+10. Confirm Scanner/chart shows the trade only for the authorized owner/admin.
+11. Confirm Ruby can explain the opened position in plain English without exposing internals.
+12. Close the trade immediately.
+13. Confirm MT5 close result.
+14. Confirm ARX ledger marks the trade closed.
+15. Confirm Scanner/chart removes or marks the trade closed.
+16. Record ticket/order ID, symbol, lot, open time, close time, and P/L.
+17. Confirm arx_live_commands changed only by expected open/close commands.
+18. Do not run a second trade.
+
+If any readiness gate fails:
+
+1. Do not place the live trade.
+2. Report the exact failed gate.
+3. Do not fake success.
+4. Do not switch to Demo.
+5. Do not use Paper.
+6. Leave the app unchanged except for safe reporting.
+
+PART 5 — Safety and privacy verification
+
+Verify:
+
+1. No normal user can access owner/admin live-confirmation tools.
+2. No Paper Trading route appears.
+3. No Demo fallback is used for this test.
+4. No fake trade data is generated.
+5. No master-account trade data is exposed.
+6. Trade overlay data is server-filtered.
+7. Raw MT5 internals are not shown to normal users.
+8. Stack traces, route names, and bridge internals are not shown to normal users.
+9. Admin logs keep detailed technical information.
+10. Ruby does not bypass backend permissions.
+
+PART 6 — Tests and review
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. live-confirmation focused tests
+5. route containment tests
+6. Scanner smoke test
+7. browser timing harness
+8. code review scoped to T013 changed files and live-confirmation files reviewed in this task
+
+Important:
+The review must clearly separate:
+
+1. files changed in T013
+2. files only inspected in T013
+3. prior-commit files not changed
+
+If the review flags prior-commit files, either:
+
+1. fix them if they are truly unsafe in the current live flow, or
+2. document them as inspected and safe, or
+3. create a clearly named follow-up if they are real but not blocking this task.
+
+Do not ignore live-confirmation safety findings.
+
+PART 7 — Final report required
+
+Final report must include:
+
+1. health:workflows result
+2. files inspected
+3. files changed
+4. live-confirmation review result
+5. mobile browser timing table with exact milliseconds
+6. desktop browser timing table with exact milliseconds
+7. bottom nav timing
+8. Scanner shell timing
+9. chart skeleton timing
+10. search usable timing
+11. Plan Buy modal timing
+12. Plan Sell modal timing
+13. Confirm pending-state timing
+14. Ruby thinking timing
+15. Ruby response timing
+16. live-readiness gate result
+17. whether controlled LIVE micro-trade ran
+18. if trade ran: ticket/order ID, symbol, lot, open time, close time, P/L
+19. ARX ledger verification
+20. Scanner/chart verification
+21. Ruby explanation verification
+22. arx_live_commands before/after count
+23. confirmation no extra live trade was placed
+24. confirmation no Demo/Paper fallback was used
+25. confirmation live MT5 path remained intact
+26. typecheck result
+27. ci:guards result
+28. code review result
+29. remaining risks
+30. exact next fix if anything remains
+
+Completion standard:
+T013 is complete only when the live-confirmation files are reviewed, real mobile timing is captured with exact numbers, and the controlled owner/admin LIVE micro-trade either completes and closes cleanly or is blocked by a clearly documented readiness gate.

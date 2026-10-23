@@ -1,0 +1,221 @@
+BUILD PHASE — Manual Mobile QA + iPhone Safari Final Pass
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Make ARX AI clean, stable, and usable on iPhone Safari before launch candidate approval. Fix only mobile/iPhone Safari blockers, layout issues, tap issues, keyboard issues, Ruby voice issues, chart/scanner issues, and critical user-flow bugs.
+
+Important:
+Do not add new major features.
+Do not fire live trades.
+Do not create real live bridge commands.
+Do not turn on public live trading.
+Do not bypass safety gates to make mobile flows work.
+
+1. Inspect current mobile state first
+Review the current launch candidate on iPhone Safari or mobile viewport.
+
+Check:
+- login
+- onboarding
+- dashboard
+- My Account
+- My Scanner
+- Ruby chat
+- Ruby voice
+- trade ticket
+- chart position window
+- My Trades
+- P/L calendar
+- notifications
+- admin dashboard
+- readiness dashboard
+- kill switches
+- close-only
+- reconciliation center
+- audit center
+- disclosure screens
+
+Only fix broken or launch-critical mobile issues.
+
+2. iPhone Safari layout fixes
+Check and fix:
+
+- viewport height issues
+- safe-area padding for iPhone notch/dynamic island
+- bottom navigation spacing
+- fixed headers/footers overlapping content
+- keyboard covering inputs
+- scroll locking issues
+- modal overflow
+- drawers/sidebar blocking buttons
+- chart panels being too wide
+- trade ticket buttons off-screen
+- Ruby widget blocking menu/trade buttons
+- admin tables overflowing without horizontal scroll
+- touch targets too small
+- inputs zooming unexpectedly on iOS
+- long text wrapping badly
+- dark/light contrast issues if applicable
+
+3. Ruby mobile behavior
+Ruby must be usable on mobile:
+
+- visible but not blocking core controls
+- opens/closes smoothly
+- closes when tapping outside if expected
+- chat input stays above keyboard
+- messages scroll correctly
+- voice button is reachable
+- transcript preview fits
+- speaking/listening state is clear
+- mute/pause/stop controls fit
+- Ruby does not cover confirm/cancel buttons
+- Ruby state clears on logout/account switch
+
+4. iPhone Safari voice/audio constraints
+Check Ruby Voice specifically for iOS/Safari:
+
+- requires tap-to-start when needed
+- microphone permission prompt works
+- audio playback starts only after allowed user gesture
+- auto-listen works after permission
+- silence detection submits once
+- Ruby speech does not feed back into mic
+- mic pauses while Ruby speaks
+- mic resumes after Ruby speaks
+- permission denied shows clean fallback
+- voice mode stops when Ruby closes
+- voice cannot bypass trade confirmation
+
+5. Mobile trading flow
+Verify and fix mobile usability for:
+
+- scanner direct symbol search
+- Ruby market explanation panel
+- trade ticket from scanner
+- lot size input
+- stop loss input
+- take profit input
+- order type picker
+- confirmation modal
+- one-click toggle default OFF
+- pending order setup
+- close trade confirmation
+- SL/TP edit confirmation
+- chart position markers
+- trade detail window
+- Ruby trade explanation
+- blocked trade reason display
+
+No live command should be created.
+
+6. Mobile safety checks
+Confirm mobile does not bypass:
+
+- admin approval
+- allocation/risk profile
+- disclosure acceptance
+- compliance approval flag
+- bridge health
+- shared master mapping
+- global live flag
+- kill switch
+- close-only mode
+- force-review mode
+- exposure reservation
+- cooldown
+- one-click rules
+- confirmation flow
+- user ownership checks
+
+7. Mobile privacy/cache checks
+Verify:
+
+- logout clears previous user state
+- account switch clears scanner/chart/Ruby cache
+- User A cannot see User B data after login switch
+- old chart markers do not remain
+- old Ruby chat does not appear
+- notifications are private
+- no shared master global totals appear for normal users
+- frontend does not expose secrets
+
+8. Admin mobile pass
+Admin screens should be usable enough on iPhone:
+
+- admin login
+- user approval console
+- shared master mapping
+- live readiness dashboard
+- kill switch controls
+- close-only controls
+- queue controls
+- reconciliation center
+- audit center
+- evidence export screen
+- production readiness checklist
+
+Use responsive cards or horizontal scroll where tables are too wide.
+
+9. Mobile error handling
+Check:
+
+- no raw stack traces
+- no raw SQL errors
+- no raw bridge payloads
+- no code-heavy backend messages
+- clean empty states
+- clean blocked-trade reasons
+- clean permission-denied messages
+- clean network failure messages
+
+10. Manual QA checklist
+Create or update a mobile QA checklist with:
+
+- device/browser tested
+- screen sizes tested
+- routes tested
+- login/logout tested
+- onboarding tested
+- demo flow tested
+- scanner tested
+- Ruby text tested
+- Ruby voice tested
+- trade ticket tested
+- chart tested
+- admin screens tested
+- safety gates tested
+- cache/privacy tested
+- known mobile issues
+- fixes applied
+- remaining blockers
+
+11. Tests
+Add or update mobile-focused tests where practical:
+
+- viewport/mobile route smoke tests
+- Ruby widget does not block main controls
+- mobile trade ticket confirmation visible
+- mobile modal scroll works
+- logout clears mobile cache
+- User A cannot see User B cached state
+- voice permission fallback renders
+- tap-to-start voice prompt renders
+- one-click remains OFF on mobile
+- no live command created during mobile tests
+- no secrets exposed
+
+Return:
+- what was fixed
+- files changed
+- mobile routes/screens tested
+- iPhone Safari issues found
+- iPhone Safari fixes applied
+- Ruby mobile/voice status
+- admin mobile status
+- tests added/run
+- manual QA checklist location
+- remaining mobile blockers
+- confirmation that no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

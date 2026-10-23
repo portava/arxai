@@ -1,0 +1,185 @@
+Fix Ruby Scanner chart-read behavior so it does not get trapped in a “not enough data / waiting for candle close” loop.
+
+Current problem:
+On V75 1H, the chart visibly has enough candles and structure for Ruby to analyze:
+- prior selloff
+- basing zone
+- recovery leg
+- support/resistance
+- trendlines/zones
+- current price near 40k–41k resistance
+- active live buy markers
+- historical context across many candles
+
+But Ruby Scanner still says variants of:
+- not enough data
+- chart data syncing
+- feed not confirmed
+- chart intelligence unavailable
+- I’ll read the market once candles are verified
+
+This is too strict and creates a loop response, especially if the logic is waiting for the current candle/stick to close.
+
+Required conceptual fix:
+Separate Ruby’s chart intelligence into three independent layers:
+
+1. STRUCTURAL_CHART_READ
+Ruby can read the whole chart using historical/closed candles and visible market structure when enough historical candles exist.
+
+Allowed output:
+- trend direction
+- market phase
+- support/resistance
+- breakout/retest areas
+- momentum read
+- buyer/seller control
+- invalidation zones as general structure
+- “bullish continuation attempt,” “range,” “reversal risk,” etc.
+
+This layer must NOT require the current candle to be closed.
+This layer must NOT require the live feed to be execution-confirmed.
+This layer only requires enough historical candles for the selected timeframe.
+
+2. CURRENT_CANDLE_CONFIRMATION
+This controls whether the latest active candle confirms an entry.
+
+Allowed output:
+- “Current 1H candle is still open.”
+- “Entry confirmation is pending.”
+- “Wait for candle close or follow-through.”
+- “The structure is bullish, but the entry trigger is not confirmed yet.”
+
+This layer may depend on the current candle being closed/confirmed.
+
+3. LIVE_SETUP_PERMISSION
+This controls whether Ruby may emit exact trade setup levels:
+- entry
+- stop loss
+- TP1/TP2/TP3
+- risk/reward
+- actionable live-entry language
+
+This layer must remain gated by the shared market/chart sufficiency verdict.
+If feed is historical-only, analysis-only, stale, unconfirmed, syncing, no-AI, or blocked, Ruby must withhold exact live setup levels.
+
+Important:
+Do not loosen live execution gates.
+Do not allow live setup levels when sufficiency says withhold.
+Do not let display/readability verdicts enter execution modules.
+This is a read-layer fix, not an execution-path fix.
+
+Required behavior on V75 1H historical-only / analysis-only:
+Ruby Scanner should say something like:
+
+“I can read the chart structurally, but I cannot call this a live-confirmed entry. V75 1H is showing a bullish recovery/continuation attempt after basing and breaking back above mid-range resistance. Price is pressing into the 40k–41k resistance area. Your existing buys are in profit. The current candle/feed is not confirmed enough for a live setup, so entry/SL/TP levels are withheld.”
+
+Ruby should NOT say:
+“I can’t read the market.”
+“Not enough data.”
+“I’ll read it only after candles are verified.”
+
+unless there truly are not enough historical candles.
+
+Implementation requirements:
+
+A. Find the current Ruby Scanner chart-read gate.
+Trace where these messages are produced:
+- “not enough data”
+- “chart data syncing”
+- “I’ll read the market once candles are verified”
+- “Chart intelligence unavailable”
+- “not valid for a live entry”
+
+Identify whether the gate is using:
+- latest candle closed
+- feed confirmed
+- live broker feed
+- historical candle count
+- sufficiency verdict
+- AI usable flag
+- scanner actionability verdict
+
+B. Split the verdict model.
+Add or reuse separate booleans/verdict fields:
+
+- canReadStructure
+- canUseCurrentCandleForEntry
+- canShowLiveTradeSetup
+
+or equivalent names.
+
+Rules:
+- canReadStructure = true when enough historical candles exist for selected symbol/timeframe.
+- canUseCurrentCandleForEntry = true only when the active candle/feed confirmation rules pass.
+- canShowLiveTradeSetup = true only when the shared sufficiency verdict allows exact setup levels.
+
+C. Fix Ruby Scanner response assembly.
+If canReadStructure is true but canShowLiveTradeSetup is false:
+- Ruby must provide a structural market read.
+- Ruby must clearly say exact live setup levels are withheld.
+- Ruby must not claim “no read.”
+- Ruby must not loop on waiting for the current stick to close.
+- Ruby must not provide entry/SL/TP/R:R.
+
+If canReadStructure is false:
+- Ruby may say not enough chart history/data.
+
+D. Fix the UI labels if needed.
+The current UI says:
+- Historical only
+- Ruby limited read
+- Chart intelligence unavailable
+- No AI
+- Live feed unavailable · Analysis only
+
+This is too broad if historical chart structure is readable.
+
+Change wording to be more precise:
+- Data: Historical / analysis only
+- Ruby: Structural read available
+- Action: Feed limited
+- Chart: Historical context — no live entry
+- Ruby Chart Read: Structure readable; live setup withheld
+
+Avoid saying “Chart intelligence unavailable” when the chart can be structurally analyzed.
+
+Better wording:
+“Ruby can read historical structure, but cannot verify a live entry from this feed.”
+
+E. Add tests.
+Add regression coverage for these cases:
+
+1. Enough historical candles, live feed unconfirmed:
+- canReadStructure = true
+- canShowLiveTradeSetup = false
+- Ruby returns structural read
+- Ruby withholds entry/SL/TP/R:R
+- Ruby does NOT say “not enough data”
+
+2. Latest candle still open:
+- historical chart has enough closed candles
+- Ruby still gives structure read
+- Ruby says current candle confirmation is pending
+- Ruby does not loop/wait-only
+
+3. Truly insufficient candles:
+- canReadStructure = false
+- Ruby may say not enough chart history
+
+4. Confirmed feed:
+- canReadStructure = true
+- canShowLiveTradeSetup = true
+- Ruby may provide setup levels if the setup engine produces them
+
+5. UI wording:
+- historical-only with enough candles does not render “Chart intelligence unavailable”
+- it renders “Structural read available” or equivalent
+- it still renders “Live setup withheld” or equivalent
+
+Acceptance criteria:
+- Ruby Scanner can analyze the whole chart without relying on the newest stick alone.
+- Waiting for candle close only affects entry timing, not the entire market read.
+- Historical-only data can still produce structural analysis.
+- Exact live setup levels remain withheld unless the shared sufficiency verdict allows them.
+- V75 1H should get a useful Ruby structural read, not a looped “not enough data” response.
+- No live execution gate is changed.

@@ -1,0 +1,139 @@
+The LIVE-only cleanup is not complete. The current screenshots prove the scanner/trade modal is still mixing DEMO, LIVE, Sim Engine, and old demo bridge readiness logic.
+
+Fix this now without faking readiness and without disabling safety.
+
+Observed issues from current UI:
+1. Scanner Trade modal still shows a DEMO badge.
+2. Modal displays: “Demo trading enabled. Live broker execution disabled.”
+3. Bridge readiness panel says “Active demo bridge NOT ready.”
+4. Bridge readiness blockers include:
+   - ACCOUNT_TYPE_NOT_DEMO(live)
+   - EA_DEMO_EXECUTION_DISABLED
+   - NOT_VERIFIED_DEMO
+   - ACCOUNT_TYPE_NOT_EXPLICIT_DEMO
+   - USER_NOT_CONFIRMED
+5. This is wrong for LIVE-only testing because the account is live and the validator is still expecting demo.
+6. Scanner page still shows “Sim Engine.”
+7. Recent scanner trades section says “Demo commands the scanner pushed to the MT5 bridge,” while the table title says “Live Shared.”
+8. Scanner trade modal shows BUY while Ruby’s explanation says the setup may favor sellers / Bias: SELL.
+9. Live broker execution appears disabled in the UI even though the owner/admin approved live-only testing.
+10. The scanner page has a “Start auto” button that is unclear and dangerous in live mode unless it means auto-scan only.
+
+Required fix:
+Rebuild the scanner, scanner trade modal, bridge readiness logic, and live execution labels so the app has a clean, consistent LIVE-only execution path.
+
+Do not re-enable Paper Trading.
+Do not route this through demo.
+Do not use mock execution.
+Do not hide the problem with labels only.
+Fix the actual state, validator, UI text, and order routing logic.
+
+LIVE-only rules:
+1. For this approved owner/admin testing path, the scanner trade modal must use LIVE bridge readiness checks, not demo readiness checks.
+2. A live account must pass live account validation. It must not fail because it is not demo.
+3. Replace demo-specific blockers with live-specific blockers.
+4. If live broker execution is disabled, identify the exact source:
+   - environment variable
+   - server config
+   - database setting
+   - admin permission
+   - bridge state
+   - EA input
+   - user confirmation state
+   - account type mismatch
+   - stale frontend state
+5. Fix the source instead of telling the user to open Demo Execution Control.
+6. The correct state should say LIVE bridge ready or LIVE bridge not ready.
+7. The app must never say “Active demo bridge NOT ready” when the active account is a live account and the user is running a live-only test.
+8. The app must never show “Demo trading enabled” inside a live scanner trade modal.
+9. The app must never show “Live broker execution disabled” if the approved live master switch is actually enabled.
+10. If the live master switch is not enabled, show the exact missing live switch and where it is controlled.
+
+Scanner trade modal requirements:
+1. Replace the DEMO badge with LIVE when the selected execution path is live.
+2. The top status should clearly show:
+   - Symbol
+   - timeframe
+   - intended side
+   - LIVE mode
+   - bridge status
+   - execution enabled/disabled status
+3. If Ruby’s setup bias is SELL, the default order side must not silently show BUY.
+4. Either default the order side to Ruby’s actual bias or display a clear warning:
+   “Ruby’s current setup bias is SELL, but this ticket is set to BUY.”
+5. The user must be able to manually override, but the mismatch must be obvious.
+6. Review button must remain blocked until required fields are valid.
+7. For BUY orders, take profit must be above entry.
+8. For SELL orders, take profit must be below entry.
+9. Stop loss validation must match side.
+10. Do not allow a live order review if the modal is still in mixed demo/live state.
+
+Bridge readiness requirements:
+Create or fix a dedicated LIVE readiness validator. It should check:
+1. ARX_LIVE_BROKER_EXECUTION_ENABLED=true
+2. Owner/admin approval for Andraie.co@gmail.com
+3. Live bridge heartbeat active
+4. Live EA heartbeat active
+5. Account type is LIVE
+6. Account number matches the approved live account
+7. EA execution input is enabled for LIVE execution, not demo execution
+8. Symbol is tradable
+9. Lot size is valid
+10. Margin/balance is sufficient
+11. User confirmation exists for the controlled manual live test
+12. Kill switch is not active
+13. Account is not frozen
+14. Allocation permits the test
+15. Audit logging is active
+
+If any live readiness check fails, show a clean LIVE-specific error such as:
+“LIVE bridge not ready: EA live execution input is off.”
+Do not show demo blockers for live mode.
+
+Scanner page cleanup:
+1. Remove or hide “Sim Engine” from the active live trading scanner surface unless it is only a clearly separated research/simulation tool.
+2. If simulation still exists internally for analysis, it must not look like the active execution engine.
+3. Replace “Demo commands the scanner pushed to the MT5 bridge” with accurate text:
+   “Live orders routed through the shared master MT5 bridge.”
+4. If the table shows filled live trades, label it consistently as LIVE.
+5. Add a test that fails if the live scanner page contains visible demo wording in the active live execution area.
+6. Add a test that fails if the live trade modal contains demo readiness blockers.
+
+Start auto button:
+1. Clarify what “Start auto” does.
+2. If it only starts automatic scanning, rename it to “Start Auto Scan.”
+3. If it can place trades, block that in live mode unless there is a separate explicit admin-only confirmation flow.
+4. For now, live testing should remain controlled/manual from the live trade panel or scanner review flow.
+5. Do not allow “Start auto” to place live trades silently.
+
+Testing required:
+After fixing, run a full test pass:
+1. Start app cleanly.
+2. Confirm LIVE-only scanner path has no demo labels.
+3. Confirm scanner modal opens in LIVE mode.
+4. Confirm live readiness validator no longer expects demo.
+5. Confirm live account passes account type validation.
+6. Confirm EA heartbeat is shown.
+7. Confirm EXEC_ON/OFF reflects the true live EA execution input.
+8. Confirm the owner/admin account Andraie.co@gmail.com is live-enabled.
+9. Confirm Ruby does not expose backend/internal names.
+10. Confirm Ruby’s bias matches the default order side or shows a mismatch warning.
+11. Confirm Review is blocked when TP/SL are invalid.
+12. Confirm Review works only when live readiness and trade validation pass.
+13. Confirm order queue uses real live bridge only.
+14. Confirm there is no demo, paper, mock, or sim fallback on the active live execution path.
+15. Confirm all live order attempts are audit logged.
+16. Confirm mobile layout still works.
+
+Important:
+Do not mark this complete until the screenshots would no longer show DEMO, demo bridge warnings, demo command wording, or simulation labels in the active LIVE execution path.
+
+Final report must include:
+1. What caused the demo/live mismatch
+2. Whether ARX_LIVE_BROKER_EXECUTION_ENABLED is active
+3. Whether the EA live execution input is on or off
+4. Whether live bridge readiness passes
+5. Whether scanner trade modal is now LIVE-only
+6. Whether Start Auto is scan-only or trade-capable
+7. Whether any visible demo/paper/sim wording remains on the active live execution path
+8. Whether the first controlled manual LIVE order can now be reviewed safely

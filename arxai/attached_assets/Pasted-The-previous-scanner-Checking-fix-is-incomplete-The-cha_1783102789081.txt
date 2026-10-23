@@ -1,0 +1,58 @@
+The previous scanner “Checking…” fix is incomplete. The chart already resolves a verdict, but the top ACTION card still says “Checking…”.
+
+Evidence:
+In the Market Scanner, Volatility 75 Index / 15m shows:
+- Chart badge: “F · WAIT FOR ENTRY”
+- Header market state: “Bearish · Developing”
+- ACTION card: still “Checking…”
+
+This means live candles and scanner verdict generation are working. Do not rebuild the chart. Fix the state wiring so the ACTION card reflects the same resolved verdict as the chart.
+
+Required fix:
+1. Audit the scanner data flow from the chart verdict/badge into the header ACTION card.
+2. Find why the chart can display “WAIT FOR ENTRY” while ScannerHeaderSummary still receives/keeps PENDING.
+3. Make the ACTION card consume the canonical scanner verdict, not a separate stale/pending scalp-read bus.
+4. The ACTION card must reflect the chart state immediately:
+   - Chart “WAIT FOR ENTRY” → ACTION “Wait for entry” / “Wait for confirmation”
+   - Chart “NO TRADE” → ACTION “No trade”
+   - Chart “BUY” → ACTION “Buy setup ready”
+   - Chart “SELL” → ACTION “Sell setup ready”
+   - Chart “TOO LATE” → ACTION “Too late”
+   - Chart “FEED LIMITED” → ACTION “Feed limited”
+   - Chart “MARKET CLOSED” → ACTION “Market closed”
+   - Chart “CHECK FAILED” → ACTION “Check failed”
+5. Remove or demote any separate header-only pending logic that can override an already-resolved chart verdict.
+6. If there are multiple scanner verdict sources, create one canonical normalized scanner action object shared by:
+   - chart badge
+   - top ACTION card
+   - trade plan buttons
+   - Eleanor read summary where applicable
+7. The ACTION card must never say “Checking…” when the chart badge already has a terminal or actionable state.
+8. Symbol/timeframe changes must reset correctly, but once the chart resolves, the ACTION card must update from that same result.
+9. Keep all live-trade safety gates unchanged.
+
+Important:
+The fix must not be “just timeout after 10 seconds.” The ACTION card needs to show the actual scanner result that is already visible on the chart.
+
+Testing:
+Add tests proving:
+1. When chart scanner verdict is WAIT_FOR_ENTRY, ACTION card renders wait/entry text, not Checking.
+2. When chart scanner verdict is NO_TRADE, ACTION card renders No trade.
+3. When chart scanner verdict is BUY_READY or SELL_READY, ACTION card renders the correct buy/sell action.
+4. A stale PENDING scalp-read state cannot override a resolved chart verdict.
+5. Symbol/timeframe switching clears old verdicts, then syncs once the new chart verdict resolves.
+6. Existing timeout behavior still works only when no canonical chart verdict exists.
+
+Validation:
+Run:
+- scanner header/action tests
+- scanner chart verdict tests
+- affected render tests
+- frontend typecheck
+
+Report:
+- exact root cause of chart badge and ACTION card desync
+- files changed
+- final canonical verdict source
+- proof that ACTION mirrors chart verdict
+- test results

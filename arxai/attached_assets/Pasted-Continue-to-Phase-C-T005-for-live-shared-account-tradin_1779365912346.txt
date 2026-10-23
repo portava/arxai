@@ -1,0 +1,294 @@
+Continue to Phase C / T005 for live shared-account trading.
+
+Goal:
+Wire the user-facing trading UI, scanner trade buttons, and Ruby live-mode flow into the Phase B live shared-account endpoints.
+
+Do not rebuild from scratch. First inspect and reuse the existing Phase A and Phase B work:
+- /api/trades/live-shared/validate
+- /api/trades/live-shared/execute
+- Any modify / close / cancel endpoints
+- user_master_live_access approval fields
+- arx_live_commands queue
+- shared_trade_attribution table
+- master bridge snapshot
+- live shared readiness system
+- admin /admin/live-shared panel
+- kill switch logic
+- ARX_LIVE_BROKER_EXECUTION_ENABLED hard kill
+- existing manual trade page
+- existing scanner page
+- existing Ruby assistant UI
+- existing demo/paper trading flow
+- existing risk/reward and SL/TP logic
+
+Important architecture:
+This is EA-pull, not server-push. Do not add MT5 login/password/server secrets to Replit. The frontend should never talk directly to MT5. The frontend must call the backend validation endpoint first, then execution only after explicit user confirmation.
+
+Build or update the user trading page with clean tabs:
+
+User Trading tabs:
+- Place Trade
+- Open Positions
+- Pending Orders
+- SL / TP Manager
+- Risk / Reward
+- Trade History
+- Ruby Review
+
+The page should clearly show the current mode:
+- Demo / Paper
+- User-owned MT5
+- Shared Live Account
+- Live Access Pending
+- Live Blocked
+- Kill Switch Active
+- Bridge Disconnected
+
+For approved users:
+Show live shared-account controls only when their user_master_live_access approval allows it.
+
+For unapproved users:
+Do not show executable live trade buttons. Show demo/paper options and a “Live access pending” or “Request live access” state.
+
+Manual trade UI wiring:
+Update the existing manual trade form so the flow is:
+
+1. User enters:
+   - symbol
+   - side
+   - order type
+   - lot size
+   - entry price if pending
+   - stop loss
+   - take profit
+   - source = manual
+
+2. Frontend calls:
+   POST /api/trades/live-shared/validate
+
+3. Show a validation preview card with:
+   - approved / blocked status
+   - primaryReason
+   - errors
+   - warnings
+   - final order preview
+   - risk/reward ratio
+   - estimated risk
+   - estimated reward
+   - adjusted SL/TP if returned
+   - gate status snapshot
+   - user limit snapshot
+   - bridge snapshot
+   - required confirmation text
+
+4. If validation is approved, require second confirmation:
+   - Show symbol
+   - direction
+   - order type
+   - lot size
+   - SL
+   - TP
+   - risk amount
+   - reward ratio
+   - live shared-account mode
+   - confirmation checkbox or typed confirmation phrase
+
+5. Only after confirmation, call:
+   POST /api/trades/live-shared/execute
+
+6. Show result:
+   - queued
+   - commandId
+   - internalTradeId
+   - queuedAt
+   - status
+   - any warning/error
+
+Scanner trade button wiring:
+Update scanner cards so approved users can start a trade from scanner results.
+
+Scanner card should show compact:
+- Market / symbol
+- Buy or sell bias
+- Confidence
+- Entry idea
+- Recommended stop loss
+- Take profit target(s)
+- Risk/reward ratio
+- Spread warning
+- Volatility warning
+- News/current-event warning
+- Ruby explanation summary
+- “Validate Trade” button
+
+When clicked:
+- Pre-fill the live shared trade ticket from scanner data
+- Call /api/trades/live-shared/validate
+- Show validation preview
+- Require second confirmation
+- Then call /api/trades/live-shared/execute
+
+Scanner must not directly execute without validation and confirmation.
+
+Ruby live-mode hookup:
+Update Ruby so she understands and can use the Phase B endpoint contract.
+
+Ruby should be able to answer:
+- Am I approved for live shared trading?
+- Is shared live trading active?
+- Is the master bridge pinned?
+- Is the bridge heartbeat fresh?
+- Is the kill switch active?
+- Why is my trade blocked?
+- What gates are stopping execution?
+- What is my current risk?
+- What is my current open exposure?
+- What trades are open?
+- What pending orders are active?
+- What is my P/L?
+- Where should stop loss and take profit be?
+- Is this setup worth validating?
+- Is this a pullback, retracement, continuation, or fakeout?
+
+Ruby trade flow:
+- Ruby may suggest a trade setup.
+- Ruby may call validation or prepare a validation request.
+- Ruby must show a trade preview.
+- Ruby must require explicit user confirmation before execution.
+- Ruby must never silently execute.
+- Ruby must explain blocked reasons clearly if validation fails.
+- Ruby must keep live shared-account mode separate from demo/paper mode.
+
+Ruby UI tabs or sections:
+- Live Chat
+- Voice Mode
+- Trade Questions
+- Market Research
+- Saved Chats
+- App Help
+- Live Shared Account Status
+
+Open Positions UI:
+Connect user-facing open positions to shared trade attribution where available.
+
+Regular users should only see:
+- their own open trades
+- their own pending orders
+- their own queued commands
+- their own P/L
+- their own trade history
+
+Admin users can see all shared-account commands/trades from the admin panel.
+
+Open position actions:
+- Manage
+- Modify SL
+- Modify TP
+- Close trade
+- Cancel pending order if pending
+
+Every action must:
+- validate first
+- require confirmation
+- call the appropriate backend endpoint
+- write audit logs through existing backend flow
+
+Pending Orders UI:
+Show:
+- symbol
+- side
+- order type
+- entry
+- SL
+- TP
+- lot size
+- status
+- created time
+- source
+- cancel button
+
+SL / TP Manager:
+Show all user trades where SL/TP can be edited.
+Require validation and confirmation before modify.
+
+Risk / Reward tab:
+Show:
+- account mode
+- user max lot
+- user max open trades
+- user daily loss limit
+- current daily P/L
+- current exposure
+- risk/reward preview
+- warnings from validation endpoint
+
+Trade History tab:
+Show:
+- completed trades
+- queued commands
+- blocked attempts if available
+- source: manual / scanner / Ruby
+- P/L
+- timestamps
+- status
+
+UI cleanup:
+- Keep pages tabbed and compact.
+- Do not create another long scrolling page.
+- Move bulky filters into filter drawers.
+- Collapse long explanations under “View details.”
+- Replace repeated alerts with compact status chips.
+- Do not let Ruby, floating menus, or bottom navigation block buttons/tabs.
+- Mobile tabs should horizontally scroll or swipe cleanly.
+- No duplicate warnings on the same screen.
+
+Backend/frontend connection:
+Create or update frontend API helpers/hooks:
+- validateLiveSharedTrade()
+- executeLiveSharedTrade()
+- modifyLiveSharedTrade()
+- closeLiveSharedTrade()
+- cancelLiveSharedPendingOrder()
+- getMyLiveSharedCommands()
+- getMyLiveSharedTrades()
+- getMyLiveSharedAccessStatus()
+
+Make sure these helpers:
+- include auth/session credentials
+- never include secrets
+- handle blocked responses cleanly
+- handle 401/403/409/500 states
+- do not retry execution automatically
+- do not double-submit
+
+Idempotency:
+Frontend should generate or pass an idempotency key for validate/execute where supported.
+Disable submit buttons while pending.
+Prevent double taps on mobile.
+
+Acceptance checks:
+- Manual trade UI calls validate first.
+- Manual trade UI requires second confirmation before execute.
+- Scanner trade button calls validate first.
+- Scanner trade button requires confirmation before execute.
+- Ruby can explain live shared-account status.
+- Ruby can prepare validation but cannot execute without confirmation.
+- Approved users can access live shared trade controls.
+- Unapproved users cannot access executable live trade buttons.
+- Demo/paper trading still works.
+- User isolation works.
+- Admin visibility works.
+- Open positions show manage/close/modify actions.
+- Pending orders show cancel actions.
+- SL/TP manager works through validation/confirmation.
+- Risk/reward tab shows returned validation data.
+- No direct frontend MT5 calls.
+- No MT5 credentials added.
+- No secrets in frontend, logs, or responses.
+- Kill switch blocks UI execution attempts.
+- Bridge stale state blocks UI execution attempts.
+- ARX_LIVE_BROKER_EXECUTION_ENABLED hard kill still blocks execution.
+- No broken tabs.
+- No blank pages.
+- No console errors.
+- Typecheck passes.

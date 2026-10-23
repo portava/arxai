@@ -1,0 +1,120 @@
+Confirmed — execute the S1 + S2 build now as a multi-turn implementation.
+
+Build from the existing 60% scaffold and finish the missing 40% wiring/UI/exposure guard. Do not restart from scratch.
+
+Primary root cause to fix:
+The modern demo dispatch path:
+lib/mt5/demoDispatchGate.ts → mt5_demo_commands queue → EA poll
+does not currently call resolveRouting(), so master bridge mode is scaffolded but not actually routing through the shared/master bridge.
+
+Fix that root cause first.
+
+Scope:
+- Complete Slice 1 + Slice 2
+- Do not touch Slice 3
+- Do not enable master live trading
+- Do not place any live trade
+- Do not create live commands
+- arx_live_commands must remain unchanged / 0 unless it already had rows before this task
+- MASTER_BRIDGE_LIVE_LOCKED must continue blocking live commands
+- No EA code changes unless the order-comment acceptance check absolutely requires it
+- No secrets exposed in UI, logs, Ruby memory, or test output
+
+Implementation tasks:
+
+1. Wire resolveRouting() into lib/mt5/demoDispatchGate.ts.
+   The actual modern demo command queue that the EA polls must respect:
+   - PER_USER_BRIDGE
+   - MASTER_BRIDGE_DEMO
+   - MASTER_BRIDGE_LIVE_LOCKED
+   - MASTER_BRIDGE_LIVE_ENABLED locked/compliance blocked
+
+2. On master-routed demo dispatches, insert shared_trade_attribution / master attribution records.
+   Must include:
+   - user_id
+   - command_id
+   - bridge_connection_id
+   - broker_ticket once available
+   - source_page
+   - source_signal_id if present
+   - symbol
+   - side
+   - requested_volume
+   - executed_volume
+   - fill_price
+   - status
+   - timestamps
+
+3. Add sourcePage and sourceSignalId columns to mt5_demo_commands if missing.
+   Preserve compatibility with existing demo rows.
+
+4. Add EA order comment mapping if supported:
+   ARX|user:{userId}|cmd:{commandId}|src:{source}
+
+   If broker/EA truncates comments, still keep server-side mapping by command id and broker ticket.
+
+5. Add MASTER_ACCOUNT_EXPOSURE guard.
+   It must block new master demo commands when master exposure exceeds configured limits.
+   Show reason:
+   MASTER_ACCOUNT_EXPOSURE_LIMIT_REACHED
+
+6. Add admin UI mode-switch toggle.
+   Endpoint already exists, but UI must allow admin to switch:
+   - PER_USER_BRIDGE
+   - MASTER_BRIDGE_DEMO
+   - MASTER_BRIDGE_LIVE_LOCKED
+
+   MASTER_BRIDGE_LIVE_ENABLED must stay disabled/compliance locked.
+
+7. Update mt5-setup.tsx.
+   When routing is shared/master demo, show:
+   “Platform Master Bridge Active”
+
+   Users should not be told to install their own EA when MASTER_BRIDGE_DEMO is active.
+
+8. Make ScannerTradeModal.tsx and LiveTradeTicket.tsx routing-aware.
+   In MASTER_BRIDGE_DEMO:
+   - demo scanner trades route through master demo bridge
+   - user does not need personal MT5 bridge
+   - trade ticket shows execution route clearly
+
+9. Add Ruby master-bridge explanation copy:
+   “This trade is routed through the ARX master demo bridge and tracked under your ARX account.”
+
+10. Build admin Master Bridge Dashboard page.
+    Show:
+    - active master bridge
+    - EA version
+    - account number
+    - broker/server
+    - heartbeat freshness
+    - account balance/equity
+    - open broker positions
+    - user allocations
+    - recent master commands
+    - rejected/failed commands
+    - orphan broker positions
+    - reconciliation warnings
+
+11. Make My Trades user-safe.
+    Users should only see their own master-routed demo trades and allocations.
+    User A must not see User B trades.
+
+12. Write qaMasterBridge.ts acceptance suite and add 3 CI guards:
+    - modern demo dispatch must call resolveRouting()
+    - MASTER_BRIDGE_LIVE_LOCKED must block live commands
+    - secrets must not appear in UI/logs/Ruby memory
+
+13. Re-run full QA.
+
+Required final result:
+- 18/18 master bridge acceptance tests PASS
+- 0 regressions to existing demo bridge
+- 0 regressions to live safety gates
+- PER_USER_BRIDGE still works
+- MASTER_BRIDGE_DEMO works end-to-end
+- No live trade placed
+- arx_live_commands unchanged
+- No secret leakage
+
+Do not mark complete until all 18 tests pass.

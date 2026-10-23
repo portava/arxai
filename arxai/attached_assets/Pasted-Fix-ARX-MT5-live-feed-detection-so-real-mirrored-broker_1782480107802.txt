@@ -1,0 +1,202 @@
+Fix ARX MT5 live-feed detection so real mirrored broker candles are not mislabeled as historical/limited.
+
+Problem:
+ARX is showing scanner/chart data for BOOM1000 and other symbols, but labels the feed as “historical only,” “live feed unavailable,” “analysis only,” or “feed limited.” The user reports this is mirroring what is visible on MT5. If the candles are truly coming from the MT5 bridge/broker in real time, ARX must classify them as broker-confirmed live feed, not historical-only. The current state breaks the app by blocking entries and making scanner/chart output look unusable.
+
+Scope:
+This task is to audit and fix feed-source/freshness classification only. Do not weaken live execution gates. Do not allow trades from stale, synthetic, fallback, or historical-only data. Do not bypass the 18 live dispatch gates. Instead, make the feed classifier accurately distinguish real MT5 live candles from fallback/historical candles.
+
+Core rule:
+Check first. Reuse existing bridge, heartbeat, candle, scanner, and chart-feed systems. Do not create a duplicate market-data system.
+
+1. Trace current feed path
+Audit the full path for BOOM1000 and other affected symbols:
+
+- MT5 EA / bridge candle sender
+- CopyRates/bar payload if available
+- bridge heartbeat
+- backend candle ingestion
+- symbol normalization/mapping
+- chart candles API
+- scanner feed source
+- feed freshness resolver
+- chart feed-state UI
+- scanner feed-state UI
+- Eleanor chart-read feed-state input
+- live dispatch feed/freshness gate
+
+Report exactly:
+- where chart candles are coming from
+- whether they are MT5 broker candles or fallback/historical candles
+- what timestamp is used for freshness
+- what symbol key is used at each layer
+- why the UI currently labels BOOM1000 as historical/limited
+- whether this affects only BOOM1000 or multiple MT5 symbols
+
+2. Fix symbol mapping
+Check for mismatches between:
+- UI symbol: BOOM1000
+- broker symbol name from MT5
+- normalized ARX symbol key
+- scanner symbol key
+- chart API symbol key
+- live position symbol key
+- bridge heartbeat symbol key
+
+If the broker sends a different symbol string, add or fix a canonical symbol normalization layer so all systems resolve to the same ARX symbol.
+
+Do not hardcode only BOOM1000 if the bug affects all synthetic symbols.
+
+3. Fix candle-source classification
+If candles are coming from MT5/broker, classify them as:
+- source: MT5
+- sourceQuality: broker_confirmed
+- usage: live_eligible only if freshness also passes
+- fallback: false
+
+If candles are from historical/synthetic fallback, classify them as:
+- source: historical/fallback
+- sourceQuality: analysis_only
+- usage: not_live_eligible
+- fallback: true
+
+Do not label MT5 broker candles as historical-only.
+
+4. Fix freshness logic
+Audit and repair the freshness check:
+- Use the latest MT5 candle timestamp or latest tick timestamp where appropriate.
+- Compare against server time safely.
+- Handle timezone correctly.
+- Use symbol-specific freshness, not only global bridge heartbeat.
+- Distinguish:
+  - bridge online
+  - account connected
+  - symbol feed fresh
+  - symbol feed stale
+  - fallback/historical only
+
+A global bridge heartbeat alone is not enough. A symbol should be live-entry eligible only when its own price/candle feed is fresh.
+
+5. Add feed-state model
+If not already present, standardize feed state into clear fields:
+
+- accountConnected: true/false
+- bridgeHeartbeatFresh: true/false
+- symbolFeedFresh: true/false
+- source: mt5 / polygon / fallback / historical / unknown
+- sourceQuality: broker_confirmed / delayed / fallback / synthetic / unknown
+- lastCandleAt
+- lastTickAt
+- serverCheckedAt
+- normalizedSymbol
+- brokerSymbol
+- liveEntryEligible: true/false
+- reason
+
+Use this same feed-state object for:
+- scanner
+- chart
+- Eleanor chart read
+- trade ticket
+- live-entry gate
+- UI labels
+
+6. UI label rules
+Update chart/scanner copy so it reflects the real feed state:
+
+If MT5 broker feed is fresh:
+- Feed: Broker live
+- Entry: Eligible, pending other safety gates
+- Eleanor: Full/confirmed read if AI context is available
+
+If bridge is online but symbol feed is stale:
+- Feed: Stale
+- Entry: Blocked — symbol feed stale
+
+If candles are fallback/historical:
+- Feed: Historical only
+- Entry: Blocked — live broker feed required
+
+If source is unknown:
+- Feed: Unconfirmed
+- Entry: Blocked — source not verified
+
+7. Scanner behavior
+The scanner should not mark one symbol as “feed limited” if that same symbol has fresh MT5 broker candles.
+
+For each scanned symbol, show:
+- broker feed confirmed/fresh
+- stale
+- skipped/no feed
+- historical fallback only
+- unsupported
+
+If 14 of 23 symbols are live and 7 are skipped, show exactly which are which and why.
+
+8. Eleanor alignment
+Eleanor should not say “limited read” only because a feed-state field is wrong.
+
+If MT5 feed is fresh and broker-confirmed:
+- Eleanor can read chart normally, subject to AI/context availability.
+- If AI model/context is unavailable, say that specifically.
+- Do not blame live feed if feed is actually fresh.
+
+If feed is stale or fallback:
+- Eleanor should say WAIT and explain feed reason.
+
+9. Trade action behavior
+Do not blindly enable live entry just because candles appear on screen.
+
+Enable live-entry CTAs only when:
+- account is live-approved/armed
+- bridge heartbeat is fresh
+- symbol feed is fresh
+- source is broker-confirmed MT5 or other approved live broker source
+- all normal live dispatch gates still pass
+
+If those pass, do not block merely because the chart once loaded historical candles.
+
+10. Debug panel
+Add a small developer/support feed diagnostic panel or tooltip for the scanner/chart:
+
+Show:
+- UI symbol
+- normalized symbol
+- broker symbol
+- source
+- last candle time
+- last tick time
+- bridge heartbeat age
+- symbol feed age
+- liveEntryEligible
+- reason
+
+This makes future “why is feed limited?” issues traceable.
+
+11. Tests
+Add/update tests proving:
+- fresh MT5 broker candle feed is not labeled historical-only
+- stale MT5 feed is labeled stale and entry-blocked
+- historical fallback is labeled analysis-only and entry-blocked
+- symbol mapping resolves BOOM1000 correctly
+- scanner uses symbol-specific feed freshness
+- chart and scanner show same feed state for the same symbol
+- Eleanor WAIT only appears when feed is actually stale/unconfirmed
+- live-entry CTA remains blocked for fallback/historical data
+- live-entry CTA is eligible only when broker feed is fresh and all safety prerequisites pass
+
+12. Verification
+Run:
+- scanner feed-state tests
+- chart candle API/feed-state tests
+- symbol normalization tests
+- Eleanor chart-read feed-state tests if touched
+- live-entry route tests if feed gate touched
+- frontend typecheck
+- backend typecheck
+- ci guards
+
+Report exact pass/fail counts.
+
+Acceptance:
+If BOOM1000 or any other symbol is receiving fresh MT5 broker candle/tick data, ARX must classify it as broker-confirmed/fresh, not historical-only or feed-limited. If the data is stale/fallback/historical, ARX must keep blocking entries and explain why. The result should accurately reflect MT5 live feed status without weakening any live-trading safety gates.

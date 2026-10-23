@@ -1,0 +1,366 @@
+T023 — UPGRADE RUBY FROM STATIC CHATBOT TO CONTEXT-AWARE AI TRADING ASSISTANT
+
+Current issue:
+Ruby is repeating the same generic assistant message and stale guidance instead of behaving like a real AI assistant.
+
+Screenshot shows Ruby saying generic/repetitive text such as:
+“Hi there — I’m Ruby, your AI trading assistant… Good morning! How are you feeling today?”
+
+Ruby also repeats old setup guidance like:
+“open MT5 Setup and scroll to ARX Single Confirm…”
+
+This is not acceptable for the active product experience. Ruby should not feel like a static chatbot. Ruby should act like a real trading assistant that understands the user, their location, current time, live account state, market context, news, weather, and current risks.
+
+Product direction:
+ARX AI is LIVE-first.
+Do not use Demo.
+Do not use Paper Trading.
+Do not fake market data.
+Do not fake news.
+Do not fake weather.
+Do not expose backend routes, stack traces, bridge internals, raw env names, or internal flags to normal users.
+Do not block live trading actions with Ruby.
+Ruby assists, explains, warns, and summarizes — she does not become an execution gate unless Governance explicitly requires it.
+
+Primary goal:
+Upgrade Ruby’s greeting, proactive context, market awareness, and response behavior so Ruby feels intelligent, current, and useful every time the user opens the AI panel.
+
+PART 1 — Stop repetitive static greetings
+
+Audit Ruby’s current greeting and opening message system.
+
+Find where Ruby generates:
+
+1. static welcome text
+2. repeated “Hi there — I’m Ruby…” message
+3. repeated setup instructions
+4. old one-click / MT5 setup guidance
+5. repeated “Good morning! How are you feeling today?”
+6. repeated suggestions that do not match current user/app state
+
+Fix behavior:
+
+1. Ruby should not show the exact same greeting every session.
+2. Ruby should not repeat onboarding text after the user has already used the app.
+3. Ruby should not repeat solved setup steps unless the current app state truly requires it.
+4. Ruby should greet based on context: time of day, location, market session, account state, and current page.
+5. Ruby should keep the greeting compact and useful.
+
+Examples of better Ruby openers:
+
+“Good morning. You’re live-connected through Shared Master MT5. Forex is open, EURUSD spread is normal, and no positions are currently open. Want me to scan for high-probability setups?”
+
+“Bangkok morning check-in: USD news is light right now, but London session volatility may pick up later. Your account is synced and Ruby is watching EURUSD and V75.”
+
+“Live account is connected. I see no open positions. Before you enter, I can check spread, recent volatility, and news risk for the symbol.”
+
+PART 2 — Add context-aware Ruby briefing
+
+When Ruby opens, she should prepare a compact “current briefing” using available safe data.
+
+Ruby briefing should consider:
+
+1. user location if permission/location is available
+2. local time
+3. weather near user if available
+4. market session status
+5. selected symbol
+6. live MT5 connection state
+7. account balance/equity/open P/L
+8. open positions
+9. active scanner signals
+10. recent user trades
+11. recent P/L if available
+12. major market news if available
+13. economic calendar events if available
+14. market volatility
+15. spread condition
+16. whether current symbol is tradable
+17. whether the bridge/EA is connected
+18. whether the user has unresolved warnings
+
+Ruby should not dump raw data. She should summarize the useful part in plain English.
+
+PART 3 — Weather awareness based on location
+
+Ruby should be able to use the user’s location to mention local weather naturally when useful.
+
+Requirements:
+
+1. If user location is available, Ruby may include a short weather note.
+2. Weather should not dominate the trading assistant.
+3. If location is unavailable, Ruby should not guess.
+4. If weather provider fails, Ruby should ignore weather quietly or say “weather unavailable” only if the user asks.
+5. Weather should be cached briefly to avoid unnecessary calls.
+6. Normal users must not see raw location data.
+7. Respect user privacy and permissions.
+
+Example:
+“Bangkok is warm and rainy today, so if you’re trading from mobile, keep an eye on connection stability.”
+
+PART 4 — Market news awareness
+
+Ruby should proactively mention important recent news that could affect markets.
+
+Requirements:
+
+1. Pull relevant market-moving news from the app’s approved news/current-events source.
+2. Prioritize news that affects:
+    * USD
+    * forex majors
+    * gold/metals
+    * indices
+    * crypto
+    * synthetic/index trading if relevant
+    * selected symbol
+3. Mention only the most useful headline-level information.
+4. Do not overload the user with raw article lists.
+5. Do not make unsupported claims.
+6. Do not present stale news as fresh.
+7. Always include “latest available” or timestamp if freshness is uncertain.
+8. If news is unavailable, Ruby should say nothing unless asked.
+
+Example:
+“Before you trade EURUSD: the latest USD-related headlines could increase volatility around the London/New York overlap. Want me to check the setup against news risk?”
+
+PART 5 — Economic calendar awareness
+
+Ruby should know when important calendar events are near.
+
+Add/verify:
+
+1. upcoming high-impact events
+2. currency affected
+3. event time
+4. expected volatility window
+5. selected symbol impact
+6. compact warning
+
+Example:
+“USD news is due in about 40 minutes. EURUSD entries may be noisy until after the release.”
+
+PART 6 — Market/session awareness
+
+Ruby should understand the current session and symbol tradability.
+
+Ruby should know:
+
+1. Asia session
+2. London session
+3. New York session
+4. market open/closed state
+5. forex weekend closure
+6. synthetic 24/7 behavior if actually tradable
+7. selected symbol status
+8. spread condition
+9. volatility condition
+
+Ruby should say:
+“EURUSD is tradable now.”
+or
+“Forex is closed right now, but this synthetic symbol may still trade if the MT5 terminal supports it.”
+
+Do not say a symbol is executable unless MT5/bridge confirms it.
+
+PART 7 — Personalization and memory
+
+Ruby should remember useful non-sensitive app context:
+
+1. user prefers LIVE-first operation
+2. user does not want Paper Trading in active flow
+3. user wants fast execution
+4. user wants fewer unnecessary restrictions
+5. user wants plain-English explanations
+6. user wants Ruby to be practical, not generic
+7. user is currently focused on Scanner, V75, EURUSD, MT5 bridge, and live execution
+
+Ruby should not repeat old advice after it has been resolved.
+
+Add a “do not repeat solved setup guidance” mechanism:
+
+1. track solved guidance topics
+2. expire old reminders
+3. only re-surface if the same issue returns
+4. avoid repeating identical wording
+
+PART 8 — Ruby response modes
+
+Ruby should adapt by context.
+
+Modes:
+
+1. Greeting / briefing mode
+2. Chart-read mode
+3. Trade-risk mode
+4. Account-status mode
+5. News-risk mode
+6. Performance-review mode
+7. Troubleshooting mode
+8. Voice mode
+
+Each mode should have different behavior and avoid repeating the same message.
+
+When user opens Ruby from Scanner:
+
+1. mention selected symbol
+2. mention current market condition
+3. mention tradability/bridge status
+4. mention one useful risk/news/session point
+5. ask one useful next question
+
+When user opens Ruby from Cockpit:
+
+1. mention account state
+2. mention open positions/P&L
+3. mention recent performance
+4. mention one useful market note
+
+When user opens Ruby from Trade page:
+
+1. mention open trades
+2. mention risk
+3. mention whether anything needs attention
+
+PART 9 — Ruby should not expose internal system details
+
+Ruby should not tell normal users:
+
+1. backend route names
+2. internal function names
+3. stack traces
+4. database fields
+5. env names
+6. raw bridge internals
+7. raw gate IDs unless admin diagnostics mode is on
+
+Ruby can say clean user-facing things:
+
+1. “MT5 bridge is connected.”
+2. “MT5 has not confirmed this order yet.”
+3. “Broker rejected the order.”
+4. “This symbol is not executable through the current bridge.”
+5. “Your live account is ready.”
+
+Admin-only mode may show deeper diagnostics.
+
+PART 10 — Voice behavior
+
+Ruby voice should feel alive but not annoying.
+
+Requirements:
+
+1. If voice output is ON, Ruby may speak short briefings.
+2. If auto-listen is OFF, Ruby should not pretend she is listening.
+3. If mic is OFF, Ruby should not say she can hear the user.
+4. If Ruby cannot understand voice input, she should ask the user to repeat.
+5. Ruby should not speak long blocks by default.
+6. Voice responses should be concise.
+
+PART 11 — Implementation approach
+
+Add/repair a Ruby context builder:
+
+buildRubyContext(userId, page, selectedSymbol)
+
+It should gather:
+
+1. user role
+2. account mode
+3. live bridge status
+4. MT5 account snapshot
+5. selected symbol
+6. symbol tradability
+7. scanner state
+8. open positions
+9. recent trades
+10. governance summary
+11. local time
+12. location/weather if available
+13. market session
+14. news summary
+15. economic calendar summary
+16. recent repeated guidance topics
+
+Then Ruby should generate:
+
+1. compact briefing
+2. suggested next action
+3. optional deeper analysis
+4. no repeated stale setup instructions
+
+PART 12 — UI behavior
+
+In Ruby panel:
+
+1. replace static greeting with dynamic briefing
+2. show “Updated [time]”
+3. allow “Refresh briefing”
+4. allow “Why this matters”
+5. keep quick suggestions relevant to current page
+6. avoid giant blocks of text on mobile
+7. use collapsible sections if needed:
+    * Market
+    * Account
+    * News
+    * Weather
+    * Risk
+
+Quick suggestions should rotate based on context:
+
+1. “Check news risk”
+2. “Read this chart”
+3. “Scan live setups”
+4. “Check my open trades”
+5. “Review today’s performance”
+6. “Is this symbol tradable?”
+7. “What changed in the market?”
+
+Do not show the same static suggestions forever.
+
+PART 13 — Tests
+
+Run:
+
+1. pnpm run health:workflows
+2. typecheck
+3. ci:guards
+4. Ruby greeting variation test
+5. Ruby no-repeat test
+6. Ruby context builder test
+7. Ruby Scanner context test
+8. Ruby Cockpit context test
+9. Ruby Trade page context test
+10. news unavailable fallback test
+11. weather unavailable fallback test
+12. location unavailable fallback test
+13. voice state test
+14. no internal details exposed test
+15. mobile Ruby panel smoke test
+
+Do not place a live trade for this task.
+
+PART 14 — Final report required
+
+Final report must include:
+
+1. old greeting source
+2. new context builder files
+3. data sources Ruby now uses
+4. how weather is handled
+5. how location is handled
+6. how news is handled
+7. how economic calendar is handled
+8. how market session is handled
+9. how repeated guidance is prevented
+10. examples of 3 different Ruby opening briefings
+11. confirmation Ruby no longer repeats solved MT5 setup guidance unnecessarily
+12. confirmation Ruby does not expose backend internals
+13. confirmation Ruby does not block live trading
+14. health:workflows result
+15. typecheck result
+16. ci:guards result
+17. files changed
+18. remaining risks
+
+Completion standard:
+This task is complete only when Ruby opens with a useful, current, context-aware briefing instead of a static repeated greeting, and Ruby can proactively summarize location/time/weather, market news, session context, selected symbol, account state, and live trading readiness without exposing internals or blocking execution.

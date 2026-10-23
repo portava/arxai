@@ -1,0 +1,111 @@
+Begin User Acquisition + Data Flywheel Strategy phase.
+
+Goal:
+Design the long-term growth system, trust flywheel, retention mechanics, data compounding strategy, and ecosystem network effects for the AI Trading Governance & Intelligence Infrastructure platform.
+
+Define:
+
+1. Core Growth Flywheel
+
+Map:
+- user acquisition
+- replay data growth
+- validation improvement
+- Trader DNA improvement
+- execution intelligence improvement
+- trust growth
+- retention growth
+- enterprise credibility growth
+
+2. Early User Strategy
+
+Define:
+- first target users
+- low-risk onboarding
+- paper-first adoption
+- trust-first onboarding
+- replay-first education
+
+3. Data Flywheel
+
+Define how:
+- replay data
+- validation memory
+- execution intelligence
+- Trader DNA
+- confidence calibration
+- adversarial validation
+improve over time with scale.
+
+4. Retention Strategy
+
+Focus on:
+- trust
+- improvement
+- discipline
+- learning
+- replay insights
+- behavioral improvement
+- survivability
+
+Not:
+- gambling dopamine loops
+- overtrading incentives
+
+5. Enterprise Flywheel
+
+Define:
+- prop firm adoption path
+- broker partnership path
+- API adoption path
+- institutional trust path
+
+6. Platform Effects
+
+Define future network effects from:
+- replay intelligence
+- validation memory
+- execution intelligence
+- behavioral intelligence
+- ecosystem governance
+
+7. Community Strategy
+
+Define:
+- educational positioning
+- trust-building content
+- replay-driven learning
+- validation-driven transparency
+
+Avoid:
+- hype trading culture
+- unrealistic claims
+- casino-style engagement
+
+8. KPI Framework
+
+Define key metrics for:
+- trust
+- replay engagement
+- validation quality
+- user discipline improvement
+- retention
+- execution quality
+- survival quality
+
+9. Long-Term Flywheel Vision
+
+Explain how the platform compounds:
+- intelligence
+- trust
+- validation quality
+- enterprise value
+- infrastructure defensibility
+
+Deliver:
+- growth flywheel map
+- retention strategy
+- data flywheel strategy
+- enterprise flywheel strategy
+- KPI framework
+- long-term compounding strategy

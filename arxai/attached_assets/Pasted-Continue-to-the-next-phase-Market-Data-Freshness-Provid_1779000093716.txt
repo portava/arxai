@@ -1,0 +1,219 @@
+Continue to the next phase: Market Data Freshness + Provider Health + Scanner Reliability.
+
+Do NOT unlock live trading.
+Do NOT enable real auto-close execution.
+Do NOT enable shared MT5 routing.
+Do NOT send real MT5 execution, modification, cancel, or close commands.
+Do NOT weaken paper-only, live-trading, MT5 bridge, ALERT_ONLY, safety-envelope, per-user isolation, command queue, risk, attribution, or activityStatus gates.
+Do NOT fake market data.
+Do NOT substitute simulator candles, fake prices, fake news, fake scanner opportunities, or fake TP targets.
+Check what already exists first, then adjust only what is needed.
+
+Before coding:
+1. Read the latest per-user backend isolation QA report.
+2. Confirm final status is READY FOR NEXT PHASE.
+3. Confirm typecheck, 11/11 guards, 8/8 stop-limit QA, auth probes, two-user isolation tests, AI isolation tests, and runtime smoke tests were green.
+4. If anything is not green, stop and fix only confirmed P0/P1 issues first.
+
+Problem to fix:
+The app currently says market data provider is connected as `twelve_data`, but market data is stale. This must be handled as a real data-health system, not a cosmetic label.
+
+Goal:
+Build reliable market data freshness, provider health, scanner fallback behavior, and AI honesty around stale/unavailable data.
+
+A. Market Data Provider Health Model
+Create or verify a provider-health model that tracks:
+- providerName
+- connected
+- configured
+- lastSuccessfulFetchAt
+- lastAttemptedFetchAt
+- staleAfterMs
+- isStale
+- symbolsCovered
+- rateLimitStatus if available
+- lastError
+- unavailableReason
+- updatedAt
+
+Rules:
+- If API key/provider is missing, return connected:false with a clear reason.
+- If data is older than freshness threshold, return isStale:true.
+- If provider says connected but no fresh prices/candles exist, UI must show stale/unavailable.
+- Do not mark provider healthy from config alone.
+- Provider health must reflect real fetch results.
+
+B. Fresh Market Snapshot Layer
+Create or verify a server-side market snapshot service for:
+- symbol
+- bid/ask if available
+- last price
+- spread if available
+- candle data if available
+- timestamp
+- provider
+- freshness status
+- stale/unavailable reason
+
+Rules:
+- No fake candles.
+- No fake current prices.
+- No fake spreads.
+- If data is stale or unavailable, return a structured unavailable response.
+- Scanner, AI, P&L, TP, and risk calculations must consume this shared freshness layer.
+
+C. Twelve Data / Provider Adapter Hardening
+Inspect the existing `twelve_data` adapter and any other provider adapters.
+
+Fix/verify:
+- Env key detection
+- Symbol formatting
+- Request failure handling
+- Rate limit handling
+- Timeout handling
+- Empty response handling
+- Stale cache handling
+- Clean unavailable reasons
+- No silent fallback to fake data
+
+If live provider calls cannot be made in tests, mock them honestly and mark tests as mocked.
+
+D. Scanner Reliability
+Update scanner behavior:
+- Scanner can only produce opportunities when fresh price/candle data exists.
+- If market data is stale, scanner returns opportunities:[] and reason `market_data_stale`.
+- If provider unavailable, scanner returns opportunities:[] and reason `market_data_unavailable`.
+- If candles unavailable, scanner returns opportunities:[] and reason `candles_unavailable`.
+- Scanner must not use simulator data as a replacement for live/fresh data.
+- Scanner UI must show why no opportunities are available.
+
+E. AI Market Data Honesty
+AI assistant must understand:
+- provider connected but stale
+- provider unavailable
+- candles unavailable
+- scanner offline
+- news unavailable
+- current events unavailable
+- TP targets unavailable due to missing data
+
+AI must:
+- Say market data is stale when stale.
+- Avoid trade recommendations that require fresh data.
+- Avoid TP/SL suggestions when price/candle data is insufficient.
+- Explain exactly what data is missing.
+- Never claim certainty.
+- Never invent market conditions.
+
+F. Frontend Market Data Status
+Update the frontend to show real backend state:
+- Provider name
+- Connected/configured status
+- Fresh vs stale
+- Last successful fetch time
+- Last attempted fetch time
+- Unavailable reason
+- Scanner availability
+- Candle availability
+- News/current-events availability if relevant
+
+Add clear UI states:
+- Market Data Fresh
+- Market Data Stale
+- Market Data Unavailable
+- Scanner Offline
+- Candles Unavailable
+- Provider Rate Limited
+
+Do not display stale provider as healthy.
+
+G. Refresh / Recheck Flow
+Add or verify a safe “Refresh market data” or “Recheck provider” action:
+- It must call backend provider-health/snapshot refresh safely.
+- It must not execute trades.
+- It must not bypass rate limits.
+- It must update provider status honestly.
+- If refresh fails, show clear reason.
+- Audit log the refresh attempt.
+
+H. Audit Trail
+Add or verify audit logs for:
+- Provider health checked
+- Market snapshot requested
+- Market snapshot fresh
+- Market snapshot stale
+- Market snapshot unavailable
+- Scanner blocked due to stale data
+- Scanner blocked due to unavailable candles
+- AI market-data question answered with stale/unavailable data
+- Refresh requested
+- Refresh failed
+- Refresh succeeded
+
+Each audit entry should include:
+- userId if user-initiated
+- action
+- providerName
+- symbol if relevant
+- previous status if relevant
+- new status if relevant
+- reason if blocked/unavailable
+- timestamp
+
+I. Preserve Existing Safety Rules
+Confirm all remain true:
+- Live trading = BLOCKED
+- Auto-close = ALERT_ONLY
+- Shared MT5 routing = BLOCKED
+- MT5 commands = force-BLOCKED
+- Command execution = disabled
+- Safety envelope still allows read-only AI Q&A
+- UNKNOWN activity hard-blocks auto-close
+- Per-user isolation remains backend-enforced
+- No fake balance, P&L, bridge status, scanner data, news, current events, candles, prices, or TP targets
+
+After implementation, run:
+1. Typecheck
+2. Full guard suite
+3. Stop-limit/order-type QA
+4. Frontend build/runtime load check
+5. Browser smoke test
+6. Provider-health configured/unconfigured tests
+7. Fresh snapshot tests with mocked provider success
+8. Stale snapshot fallback tests
+9. Provider unavailable fallback tests
+10. Rate-limit/timeout fallback tests
+11. Scanner stale-data block tests
+12. Scanner unavailable-data block tests
+13. AI market-data honesty tests
+14. TP unavailable due to stale/missing data tests
+15. Refresh/recheck provider tests
+16. Audit trail tests
+17. Per-user isolation regression tests
+18. Safety-envelope regression tests
+19. Frontend smoke test for cockpit, scanner, AI assistant, trade cards, and market data status UI
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not redesign unrelated UI.
+- Do not touch unrelated pages.
+- Rerun all checks after fixes.
+
+End with a report showing:
+- Files inspected
+- Files changed
+- Provider health behavior confirmed
+- Market snapshot behavior confirmed
+- Scanner behavior confirmed
+- AI honesty behavior confirmed
+- Frontend market-status UI confirmed
+- Refresh/recheck behavior confirmed
+- Tests run and pass/fail results
+- Current provider status
+- Current market data freshness status
+- Remaining gated/deferred items
+- Confirmation live trading remains BLOCKED
+- Confirmation auto-close remains ALERT_ONLY
+- Confirmation shared MT5 routing remains BLOCKED
+- Confirmation MT5 commands remain force-BLOCKED
+- Final answer: READY FOR NEXT PHASE or NOT READY, with reasons.

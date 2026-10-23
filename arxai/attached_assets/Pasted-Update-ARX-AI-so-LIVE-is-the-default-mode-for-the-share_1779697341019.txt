@@ -1,0 +1,242 @@
+Update ARX AI so LIVE is the default mode for the shared/master bridge, but ONLY for users I approve after they request to join.
+
+Do not approve all users automatically.
+Do not place any live trade automatically.
+Do not bypass the 16-gate evaluator.
+Do not bypass the final live dispatch chokepoint.
+Do not remove risk controls.
+
+GOAL:
+The shared/master MT5 bridge should operate as the main LIVE bridge by default. Users should be able to request access to the live shared bridge. Once I approve a user, that approved user should default into live shared-bridge mode automatically.
+
+UNAPPROVED USERS:
+Regular users who are not approved should NOT have live trading.
+They can only see:
+- Paper/demo trading if allowed
+- A simple “Request Live Bridge Access” button
+- Their request status: Not Requested / Pending / Approved / Denied / Revoked
+
+They must not see:
+- broker execution controls
+- bridge controls
+- kill switches
+- admin controls
+- audit logs
+- other users
+- backend/API/env labels
+
+REQUEST TO JOIN LIVE BRIDGE:
+Add or repair a user-facing flow:
+- Button: “Request Live Bridge Access”
+- User submits request
+- Optional note field: “Why do you want access?”
+- Require user to acknowledge risk disclosure
+- Request status becomes Pending
+- User cannot submit duplicate pending requests
+- User sees friendly status:
+  - Pending review
+  - Approved
+  - Denied
+  - Revoked
+
+ADMIN APPROVAL FLOW:
+Add the request queue to Admin / User Control Center and/or Live Shared Account:
+
+Admin should see:
+- Pending Live Bridge Requests
+- User email/name
+- Current role
+- Current trading mode
+- Account status
+- Risk template
+- Notes
+- Approve Live Bridge
+- Deny
+- Revoke Access
+- Manage Access
+
+Approval must be easy:
+- Admin taps “Approve Live Bridge”
+- Confirmation modal appears
+- Admin taps Confirm
+- No typed phrase
+
+When approved, set for that user:
+- liveTradingApproved = true
+- sharedBridgeApproved = true
+- defaultTradingMode = LIVE
+- defaultExecutionRoute = SHARED_MASTER_MT5
+- sharedLiveBridgeDefault = true
+- account enabled = true
+- assigned risk template = approved shared bridge default template
+- require stop loss = true
+- require take profit = true
+- one-click trading = OFF by default unless admin enables later
+- AI auto-trading = OFF by default
+- AI auto-close = ALERT_ONLY by default
+- scanner direct live execution = OFF by default unless admin enables later
+- manual confirmation required before any live order
+
+DEFAULT LIVE BRIDGE BEHAVIOR:
+Set the platform/shared bridge defaults to:
+- Platform Mode = LIVE
+- Shared Bridge Mode = LIVE
+- Default route for approved users = SHARED_MASTER_MT5
+- Broker execution effective state = env permission AND operator switch
+- Shared live trading = ON for approved users only
+- Master bridge live = ON only when pinned bridge and fresh heartbeat exist
+- Kill switch must be released
+- Live readiness must still depend on all backend gates
+
+Important:
+If the master bridge is not pinned or heartbeat is stale, approved users should still be BLOCKED from live execution with a friendly reason:
+“Live bridge is not connected yet.”
+
+APPROVED USER EXPERIENCE:
+For approved users:
+- Their app should default to LIVE Shared Bridge mode.
+- They should see friendly status:
+  “Live Bridge Access: Approved”
+  “Execution Route: Shared Master Bridge”
+  “Live Readiness: Ready / Blocked”
+- If blocked, show friendly blocker:
+  - Bridge not connected
+  - Heartbeat stale
+  - Broker execution disabled
+  - Kill switch engaged
+  - Stop loss required
+  - Risk limit exceeded
+
+They should not have to manually switch from paper/demo to live every time once approved.
+
+ADMIN CONTROLS:
+Admin should have global switches:
+- Shared Bridge Live Default: ON/OFF
+- Require Approval to Join Bridge: ON/OFF, default ON and locked ON for now
+- Auto-set Approved Users to Live Shared Bridge: ON/OFF, default ON
+- Operator Broker Execution: ON/OFF
+- Kill Switch: Released/Engaged
+- First Live Test Mode: ON/OFF
+
+Admin should have per-user switches:
+- Live Bridge Approved: ON/OFF
+- Shared Bridge Access: ON/OFF
+- Live Trading: ON/OFF
+- Trade From Scanner: ON/OFF
+- One-Click Trading: ON/OFF
+- AI Auto-Trading: ON/OFF
+- AI Auto-Close: Alert Only / Allowed if later supported
+- Require Stop Loss: ON/OFF
+- Require Take Profit: ON/OFF
+- Max Lot
+- Max Daily Loss
+- Max Open Trades
+- Allowed Symbols
+
+No typed confirmations anywhere. Use Confirm / Cancel modals only.
+
+RISK TEMPLATE FOR APPROVED SHARED BRIDGE USERS:
+Create or repair a default risk template:
+
+Template name:
+Approved Shared Bridge Default
+
+Default limits:
+- max open live trades = 1
+- max lot = 0.01 or smallest broker-supported safe value
+- daily loss limit = 10 USD unless admin changes it
+- require stop loss = ON
+- require take profit = ON
+- allowed symbols = EURUSD by default unless admin changes it
+- one-click trading = OFF
+- AI auto-trading = OFF
+- AI auto-close = ALERT_ONLY
+- manual confirmation required
+
+Approved users should receive this template automatically unless admin selects a different template.
+
+BACKEND ENFORCEMENT:
+Do not rely on UI only.
+
+The backend final dispatch chokepoint must check:
+- user is approved for live
+- user is approved for shared bridge
+- shared bridge live default is ON
+- user’s default route is SHARED_MASTER_MT5
+- master bridge is pinned
+- heartbeat is fresh
+- broker execution effective state is true using env AND operator switch
+- kill switch is released
+- risk template exists
+- max lot not exceeded
+- max open trades not exceeded
+- daily loss not exceeded
+- stop loss exists
+- take profit exists if required
+- manual confirmation accepted
+- no unauthorized user is attempting live dispatch
+
+If any check fails:
+- block the order
+- do not insert arx_live_commands
+- return friendly reason
+- write audit log
+
+REQUEST / APPROVAL DATABASE:
+Add or repair fields/table as needed:
+- liveBridgeRequestStatus: none / pending / approved / denied / revoked
+- liveBridgeRequestedAt
+- liveBridgeRequestNote
+- liveBridgeApprovedBy
+- liveBridgeApprovedAt
+- liveBridgeDeniedReason
+- sharedBridgeApproved
+- liveTradingApproved
+- defaultExecutionRoute
+- defaultTradingMode
+- assignedRiskTemplateId
+
+AUDIT LOG:
+Log:
+- user requested live bridge access
+- admin approved request
+- admin denied request
+- admin revoked access
+- user default mode changed to live shared bridge
+- shared bridge default changed
+- risk template assigned
+- every blocked live dispatch attempt
+- every allowed live dispatch attempt
+
+SECURITY:
+Regular users must never see:
+- admin approval queue
+- other users
+- audit log
+- broker execution controls
+- master bridge controls
+- kill switches
+- env names
+- API routes
+- backend/internal names
+
+ACCEPTANCE TEST:
+Before stopping, verify:
+- Platform/shared bridge defaults to LIVE.
+- Unapproved users are NOT live by default.
+- Unapproved users can request live bridge access.
+- Request appears in admin queue.
+- Admin can approve user with one Confirm modal.
+- After approval, that user defaults to LIVE Shared Master Bridge.
+- Approved user does not need to manually switch to live each time.
+- Approved user is still blocked if bridge is not pinned/fresh.
+- Regular users without approval cannot place live orders.
+- Test/system users are not approved.
+- Broker execution still requires env AND operator switch.
+- Final dispatch chokepoint still blocks invalid orders.
+- arx_live_commands stays 0 unless a manually confirmed approved live order passes every gate.
+- No live trade is placed automatically.
+- Audit log records request, approval, and access changes.
+- Login, Ruby voice/chat, scanner, trade modal, bridge status, user control center, and bottom nav still work.
+
+Run typecheck/build/tests and fix all errors before stopping.

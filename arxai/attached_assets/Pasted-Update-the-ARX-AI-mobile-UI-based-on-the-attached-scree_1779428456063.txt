@@ -1,0 +1,150 @@
+Update the ARX AI mobile UI based on the attached screenshots.
+
+SCOPE LOCK:
+Only work on:
+1. Top trading status banners/text.
+2. Buy/Sell trade action buttons.
+3. Market symbol filter/category UI inside the AI / Ruby market picker and Symbols tab.
+4. Small layout fixes required for those areas only.
+
+Do not change login, MT5 bridge execution logic, Ruby intelligence, scanner logic, risk calculations, admin permissions, live/demo approval logic, open-trade calculations, or backend trading safety systems.
+
+Main fixes:
+
+1. Remove “live money trading” wording
+Find and remove all user-facing wording that says or implies:
+- “LIVE MODE — REAL MONEY”
+- “live money”
+- “real money”
+- “live money trading”
+
+Replace with safer neutral trading-state wording:
+- If broker execution is disabled: “Broker Execution Disabled”
+- If trading is off: “Trading Off”
+- If permissions are pending: “Trading Access Locked”
+- If demo/simulator mode: “Simulator”
+- If live execution is actually enabled by permission: “Broker Execution Enabled”
+
+Important:
+Do not hide real risk warnings. Just remove scary/confusing “real money” language from the UI.
+Do not change backend execution permissions. This is a label/UI cleanup only.
+
+2. Clean up top banner stacking
+The top status area is cluttered on mobile.
+Make status chips compact and organized:
+- First row: symbol selector + key action icons
+- Second row: trading state chips if needed
+- Do not overlap chips
+- Do not allow red warning pills to cover or collide with other badges
+- On mobile, chips should horizontally scroll if there are too many
+- Keep text short
+
+Example:
+[Trading Off] [Broker Execution Disabled] [FX: EURUSD]
+
+Do not show:
+[LIVE MODE — REAL MONEY]
+
+3. Rename trade action buttons
+Every button that places or opens a trade ticket should say only:
+
+BUY
+
+or
+
+SELL
+
+Do not use:
+- “Open trade ticket — BUY”
+- “Open trade ticket — SELL”
+- “Open ticket”
+- “Open trade”
+
+Button style:
+- BUY button: green
+- SELL button: red
+- Both should be same height, clean, bold, easy to tap
+- On mobile they should stack or sit side-by-side depending on available width
+- Button text should be centered and readable
+
+The trade ticket/modal itself can still be called “Trade Ticket” after the user taps BUY or SELL.
+
+4. Rebuild collapsible market category UI horizontally
+The current symbol categories are stacked vertically and take too much space:
+Favorites & recent
+Forex
+Metals
+Indices
+Crypto
+Stocks
+Synthetic Indices
+
+Change this to a cleaner horizontal category selector.
+
+Design:
+- Categories should appear as horizontal scrollable chips/tabs with count badges.
+- Example:
+  [Favorites 1] [Forex 10] [Metals 2] [Indices 6] [Crypto 4] [Stocks 7] [Synthetic 17]
+- User can swipe horizontally on mobile.
+- Active category is highlighted.
+- Counts stay visible.
+- Do not stack these as tall vertical accordion rows.
+
+Behavior:
+- Tapping a category expands/shows its symbols in a compact horizontal symbol strip or clean grid below.
+- Only one category should be expanded/active at a time.
+- Symbols inside the active category should be clickable.
+- Clicking a symbol updates:
+  - current market focus
+  - chart symbol
+  - Ruby market explanation
+  - trade ticket symbol
+  - top symbol selector
+- Keep search bar above the category chips.
+- Search should still allow searching any symbol directly.
+- Keep Favorites & Recent.
+- Synthetic Indices should stay present, but if Deriv feed is not configured, show a small clean status like “Deriv feed not configured” inside the expanded Synthetic area, not as a large awkward pill beside the category row.
+
+Mobile layout:
+- Search bar and Load button should fit cleanly.
+- Category chips should scroll horizontally.
+- Expanded symbols should not push the page into a huge empty vertical section.
+- Avoid giant blank boxes under each category.
+- The page should feel compact and organized.
+
+Desktop layout:
+- Horizontal category chips can remain at top.
+- Expanded symbols may show as a clean grid if there is room.
+
+5. Preserve all existing features
+Do not remove:
+- Search any market
+- Favorites/recent
+- Forex, metals, indices, crypto, stocks, synthetic indices
+- Ruby explanation
+- Chart focus updates
+- Trade ticket connection
+- Risk controls
+- MT5/deferred/disabled status handling
+
+6. User-facing polish
+- No internal function names
+- No backend route names
+- No debug labels
+- No raw errors
+- No stack traces
+- No confusing “live money” wording
+- Keep labels short and clear
+
+Acceptance checklist:
+- “LIVE MODE — REAL MONEY” no longer appears anywhere.
+- No UI text says “live money” or “real money”.
+- “LIVE BROKER EXECUTION DISABLED” is replaced or shortened to clean wording like “Broker Execution Disabled.”
+- BUY button says only “BUY” and is green.
+- SELL button says only “SELL” and is red.
+- Market categories collapse/organize horizontally instead of vertically.
+- Category chips are swipeable on mobile.
+- One active category shows symbols cleanly.
+- Search still works for any symbol.
+- Clicking symbols updates Ruby/chart/trade ticket focus.
+- No unrelated app areas were changed.

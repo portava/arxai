@@ -1,0 +1,167 @@
+Fix ARX AI MT5 live balance sync. Money is in MT5, but the app is not reflecting the real account balance.
+
+Important:
+Do NOT fake the balance.
+Do NOT hardcode a balance.
+Do NOT show paper/demo balance as live balance.
+Do NOT mix paper trading ledger, demo account balance, and live MT5 broker balance.
+Do NOT expose raw backend/debug fields to normal users.
+
+Current problem:
+- MT5 has money in the account.
+- ARX app still does not show the correct balance.
+- The bridge may be connected, but account balance/equity/free margin is not being pulled, stored, refreshed, or displayed correctly.
+
+Before changing code:
+Search the whole app for:
+- MT5 account info
+- account_info
+- balance
+- equity
+- margin
+- freeMargin
+- free_margin
+- currency
+- leverage
+- accountNumber
+- login
+- broker account
+- master bridge
+- shared account
+- paper balance
+- demo balance
+- live balance
+- wallet
+- dashboard balance
+- trade ticket balance
+- user ledger
+- account snapshot
+- heartbeat payload
+- EA heartbeat
+- bridge status
+- account sync
+- balance sync
+
+Find the full data path:
+MT5 EA/account → bridge/backend → database/account snapshot → API endpoint → frontend dashboard/trade ticket/admin cockpit.
+
+Required fix:
+1. The EA/bridge must send or expose current MT5 account data:
+   - account number/login
+   - server/broker name if available
+   - balance
+   - equity
+   - margin
+   - free margin
+   - margin level
+   - currency
+   - leverage if available
+   - timestamp
+   - demo/live account type if available
+
+2. Backend must save a fresh broker account snapshot for the connected MT5 account.
+
+3. Frontend must read the live MT5 broker snapshot when the app is in LIVE_SHARED / live broker mode.
+
+4. Paper balance must only appear in Paper Mode.
+
+5. Demo balance must only appear in Demo Mode.
+
+6. Live balance must come from the connected MT5 broker account snapshot, not from:
+   - paper ledger
+   - demo ledger
+   - old cached database value
+   - default zero
+   - frontend placeholder
+   - disconnected mock provider
+   - TwelveData/Deriv market data provider
+   - user wallet balance unless intentionally showing user allocation
+
+Shared/master bridge rule:
+Because ARX uses a master/shared MT5 bridge:
+1. Admin cockpit should show the real master MT5 broker balance/equity/free margin.
+2. Normal users should not necessarily see the full master account balance unless approved by design.
+3. Normal users should see their assigned live allocation, available trading capacity, used margin/risk, open P/L, and approval status.
+4. If the UI currently labels user allocation as “MT5 balance,” fix the wording.
+5. If the user is the operator/admin, show full master broker balance in admin/live bridge panels.
+
+Live UI requirements:
+1. Dashboard should show accurate live balance/equity for the correct account/mode.
+2. Trade ticket should show available live buying/trading capacity based on:
+   - broker free margin
+   - user maxLot
+   - allowedSymbols
+   - maxOpenPositions
+   - dailyLossLimitUsd
+   - current open positions
+3. Admin bridge page should show:
+   - MT5 account connected
+   - account number masked except last 3–4 digits
+   - balance
+   - equity
+   - free margin
+   - currency
+   - last account sync time
+   - heartbeat status
+4. If account sync is stale, show:
+   “Account balance needs refresh”
+   not a false zero.
+
+Balance refresh:
+1. Refresh balance/account snapshot on heartbeat or a separate account-info polling interval.
+2. Refresh after:
+   - app load
+   - login
+   - bridge reconnect
+   - order placed
+   - order closed
+   - trade update received
+   - manual admin refresh
+3. Add a “Refresh account” button in admin diagnostics if missing.
+4. Use stale protection:
+   - If balance snapshot is old, show last known value with “last updated” time.
+   - Do not replace real balance with zero because of a failed refresh.
+
+Backend safety:
+1. Do not let balance display affect execution gates unless the snapshot is fresh.
+2. Live trade validation should use fresh broker free margin/equity where required.
+3. If fresh account data is missing, block live dispatch with a clean reason:
+   “Live account balance could not be verified.”
+
+User-facing messages:
+Use clean messages:
+- “Live account connected”
+- “Balance updated”
+- “Account balance needs refresh”
+- “Waiting for MT5 account sync”
+- “Live allocation available”
+- “Insufficient free margin”
+
+Do not show:
+- raw JSON
+- backend constants
+- account_info errors
+- internal endpoint names
+- fake zero balance
+- paper balance inside live mode
+
+Acceptance tests:
+1. Confirm MT5 account has money.
+2. Confirm EA/bridge returns account balance/equity/free margin.
+3. Confirm backend stores the latest account snapshot.
+4. Confirm dashboard displays the correct live balance or correct user allocation depending on role.
+5. Confirm admin cockpit shows the real master MT5 balance.
+6. Confirm paper mode balance does not affect live balance.
+7. Confirm demo mode balance does not affect live balance.
+8. Confirm app does not show zero unless MT5 balance is truly zero.
+9. Confirm stale account sync shows a warning instead of overwriting balance.
+10. Confirm balance updates after reconnect.
+11. Confirm balance updates after order open/close.
+12. Confirm live validation blocks if fresh account balance cannot be verified.
+13. Confirm no secrets, raw backend errors, or internal constants appear to normal users.
+14. Confirm mobile UI shows balance cleanly without crowding.
+15. Confirm Ruby, scanner, trade ticket, and live bridge status still work.
+
+After fixing:
+Run full QA on MT5 account sync, balance display, live shared mode, admin cockpit, user live allocation, trade ticket, paper mode, demo mode, order open/close refresh, and mobile UI.
+Repair anything broken before stopping.

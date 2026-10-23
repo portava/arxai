@@ -1,0 +1,54 @@
+Go to the next PART 16 audit pass.
+
+Pass 2 is accepted as a read-only money-truth audit, but lock these findings into the final fix ledger:
+
+1. Withdraw display/settlement mismatch is a real money-truth issue:
+   - UI can show available-to-withdraw using estimated NAV with unrealized P/L.
+   - Settlement uses finalized NAV excluding unrealized P/L.
+   - This must be fixed or clearly labeled before live investor use.
+   - Preferred direction: show withdrawable/payable on finalized settled basis, and show estimated real-time value separately as indicative only.
+
+2. Trader performance-pool payable is incomplete:
+   - Trader can see Floating P/L and Realized P/L.
+   - Trader cannot see their own 24.5% performance-pool payable.
+   - Add this to the future fix plan as a trader-facing earnings/payable view, permission-scoped.
+
+3. Waterfall manual-only is a governance decision:
+   - Do not treat it as a bug yet.
+   - Add a decision item: manual admin crystallization vs scheduled crystallization cadence.
+   - Until decided, UI/Eleanor must explain that waterfall payouts are admin-run/manual, not automatic.
+
+4. Preserve the good money-truth foundations:
+   - Do not weaken waterfallEngine split math.
+   - Do not crystallize floating P/L into balance.
+   - Do not compute balances client-side.
+   - Do not weaken role-gated money views.
+   - Do not weaken realized-only virtual balance sync.
+
+Now continue with the next PART 16 priority pass.
+
+Recommended next pass: Deriv/MT5 balance sync and admin allocation truth.
+
+Audit only. No code changes. No tasks yet.
+
+Focus on:
+
+1. MT5 account snapshot source.
+2. EA heartbeat/account snapshot frequency.
+3. mt5_connection fields and freshness timestamps.
+4. Shared Master Account balance/equity/free margin/open P/L display.
+5. Admin Allocation source of truth.
+6. Whether allocation uses real MT5 balance, equity, free margin, or ARX virtual values.
+7. Whether manual MT5 trades update allocation in near real time.
+8. Whether stale MT5 snapshots can appear current.
+9. Whether manual refresh actually asks MT5/EA for a fresh snapshot or just rereads DB.
+10. Whether normal users can see master account data.
+11. Whether owner/admin can see Manual MT5 / Unassigned exposure.
+12. Whether phantom/orphan positions can affect allocation.
+13. Whether Eleanor can explain balance/allocation differences accurately.
+
+The output should answer:
+
+“Does Admin Allocation and Shared Master Account reflect real MT5/Deriv balance, equity, free margin, margin, open P/L, and open positions in near real time, without stale/fake/phantom values?”
+
+Include file-level proof, endpoints, tables, timestamp/freshness logic, UI surfaces, and exact risk classification.

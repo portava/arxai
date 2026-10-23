@@ -1,0 +1,212 @@
+We confirmed the MT5 EA is reaching the Replit server. Server logs show POST requests arriving to /api/mt5/heartbeat every ~2 seconds, but the backend rejects them before token validation because the EA payload is malformed JSON.
+
+IMPORTANT SCOPE:
+- Do NOT change unrelated UI.
+- Do NOT change dashboard design.
+- Do NOT reset the database.
+- Do NOT place trades.
+- Do NOT loosen backend security.
+- Do NOT remove the MT5 bridge token requirement.
+- Focus only on fixing the MQL5 EA JSON serialization and updating the bridge package files.
+
+Root cause from diagnostics:
+- lastHeartbeatAt = null
+- acceptedHeartbeatCount = 0
+- POSTs are arriving
+- Express JSON parser rejects body with:
+  SyntaxError: Expected ',' or '}' after property value in JSON at position 170
+- This means the EA is reaching the server, but the EA is sending invalid JSON.
+
+Files to inspect/fix:
+- ReplitMT5BridgeEA.mq5
+- ARXWebRequestTest.mq5
+- Any EA helper/bridge source files that build JSON manually
+- Update README_SETUP and TROUBLESHOOTING only if needed
+
+Backend requirements already confirmed:
+Heartbeat endpoint:
+POST /api/mt5/heartbeat
+
+Required headers:
+Content-Type: application/json
+X-MT5-Bridge-Token: <value of MT5_BRIDGE_TOKEN secret>
+
+Required heartbeat body shape:
+{
+  "account": "12345678",
+  "broker": "Deriv (BVI) Ltd",
+  "server": "DerivBVI-Demo",
+  "balance": 10000.00,
+  "equity": 10000.00,
+  "liveAllowed": false
+}
+
+Task 1 — Replace unsafe manual JSON building:
+Find every place in the EA where JSON strings are manually concatenated for:
+- /api/mt5/heartbeat
+- /api/mt5/sync-account
+- /api/mt5/sync-positions
+- /api/mt5/command-result
+- any other MT5 bridge POST body
+
+Replace fragile JSON construction with centralized helper functions.
+
+Add safe helper functions similar to this MQL5 approach:
+
+string JsonEscape(string value)
+{
+   StringReplace(value, "\\", "\\\\");
+   StringReplace(value, "\"", "\\\"");
+   StringReplace(value, "\r", "\\r");
+   StringReplace(value, "\n", "\\n");
+   StringReplace(value, "\t", "\\t");
+   return value;
+}
+
+string JString(string value)
+{
+   return "\"" + JsonEscape(value) + "\"";
+}
+
+string JBool(bool value)
+{
+   return value ? "true" : "false";
+}
+
+string JNumber(double value, int digits = 2)
+{
+   if(!MathIsValidNumber(value))
+      return "0.0";
+
+   string output = DoubleToString(value, digits);
+   return output;
+}
+
+Then build JSON only through helpers, never by raw unescaped string insertion.
+
+Task 2 — Fix heartbeat JSON exactly:
+Build heartbeat JSON like this structure with no trailing commas:
+
+string BuildHeartbeatJson()
+{
+   string account = IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN));
+   string broker = AccountInfoString(ACCOUNT_COMPANY);
+   string server = AccountInfoString(ACCOUNT_SERVER);
+
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+
+   bool liveAllowed =
+      (TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) == 1 &&
+       MQLInfoInteger(MQL_TRADE_ALLOWED) == 1);
+
+   string json = "{";
+   json += "\"account\":" + JString(account) + ",";
+   json += "\"broker\":" + JString(broker) + ",";
+   json += "\"server\":" + JString(server) + ",";
+   json += "\"balance\":" + JNumber(balance, 2) + ",";
+   json += "\"equity\":" + JNumber(equity, 2) + ",";
+   json += "\"liveAllowed\":" + JBool(liveAllowed);
+   json += "}";
+
+   return json;
+}
+
+Make sure:
+- account is a string
+- broker is a string
+- server is a string
+- balance is a number
+- equity is a number
+- liveAllowed is lowercase true/false
+- no trailing comma before }
+- no NaN
+- no inf
+- no unescaped quote/backslash/newline
+
+Task 3 — Fix WebRequest POST format:
+Confirm the EA sends:
+
+string headers = "Content-Type: application/json\r\n";
+headers += "X-MT5-Bridge-Token: " + BridgeToken + "\r\n";
+
+char post[];
+StringToCharArray(payload, post, 0, StringLen(payload), CP_UTF8);
+
+int code = WebRequest(
+   "POST",
+   url,
+   headers,
+   5000,
+   post,
+   result,
+   result_headers
+);
+
+If the EA currently includes a null terminator in the POST body, remove it by using StringLen(payload), not -1.
+
+Task 4 — Confirm URL handling:
+If the EA input is named BridgeBaseUrl, it should store:
+https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev
+
+Then the EA should append:
+/api/mt5/heartbeat
+
+If the EA input is named HeartbeatUrl or FullHeartbeatUrl, it should use the full endpoint:
+https://89b8800b-d6e7-44ea-9123-824bc19fe4c7-00-1jrbr4pis1x4p.kirk.replit.dev/api/mt5/heartbeat
+
+Do not accidentally double-append /api/mt5/heartbeat.
+
+Task 5 — Add debug logging safely:
+Before every WebRequest, log the payload length and sanitized payload preview.
+
+Example:
+Print("Heartbeat JSON payload: ", payload);
+Print("Heartbeat URL: ", url);
+
+Do not print the bridge token.
+
+Task 6 — Validate payloads:
+Add a small local validation note or script that confirms the generated example JSON parses with JSON.parse.
+
+At minimum, confirm the final expected heartbeat payload is valid JSON:
+{
+  "account": "12345678",
+  "broker": "Deriv (BVI) Ltd",
+  "server": "DerivBVI-Demo",
+  "balance": 10000.00,
+  "equity": 10000.00,
+  "liveAllowed": false
+}
+
+Task 7 — Update ARXWebRequestTest.mq5:
+Make the test EA use the same safe JSON helper functions, same Content-Type, same X-MT5-Bridge-Token header, and same UTF-8 body conversion.
+
+Task 8 — Package output:
+After fixing, provide me with:
+1. Updated ReplitMT5BridgeEA.mq5
+2. Updated ARXWebRequestTest.mq5
+3. Exact MT5 install steps
+4. Exact EA input values needed
+5. Expected Experts log success message
+6. Expected app diagnostic result
+
+Task 9 — QA gate:
+Before finishing, verify:
+- No backend security was weakened
+- No live trade command was triggered
+- No unrelated UI was changed
+- Typecheck still passes if applicable
+- Bridge endpoints still return 200
+- The EA now builds valid JSON strings
+- The required header remains X-MT5-Bridge-Token
+- Content-Type remains application/json
+
+Final report format:
+1. Files changed
+2. JSON issue fixed
+3. Header confirmed
+4. URL format confirmed
+5. What I need to copy into MT5
+6. What I should see in MT5 Experts log
+7. What I should see on /mt5-bridge after reconnecting

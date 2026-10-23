@@ -1,0 +1,93 @@
+Update the MASTER BRIDGE LIVE build command with this requirement:
+
+Use the CURRENT CONNECTED BRIDGE as the main/platform master bridge.
+
+Do not create a brand-new bridge record unless no connected bridge exists.
+Do not require users to connect their own MT5 bridge.
+Do not route to stale bridge records.
+Do not route to mock bridge records.
+Do not guess the bridge id manually.
+
+Before building master live routing, detect the current connected bridge from the real active MT5 heartbeat.
+
+The main bridge should be selected by:
+
+1. freshest real heartbeat
+2. EA version v1.27 or newer
+3. terminalConnected=true
+4. algoTradingAllowed=true
+5. token accepted
+6. broker/server present
+7. MT5 account number present
+8. not MOCK
+9. not stale
+10. matching current operator/admin account
+
+Set this bridge as the platform master bridge:
+
+platform_master_bridge_connection_id = current connected bridge id
+
+Use this same current connected bridge for:
+- MASTER_BRIDGE_DEMO if the connected bridge account type is DEMO
+- MASTER_BRIDGE_LIVE_ENABLED if the connected bridge account type is REAL/LIVE and all live gates pass
+
+If the current bridge is REAL/LIVE:
+- mark it as the active master live bridge
+- show it in Master Bridge Dashboard
+- show it in Live Trading page
+- use it for approved master live commands only after all gates pass
+
+If the current bridge is DEMO:
+- mark it as the active master demo bridge
+- block master live with:
+  MASTER_LIVE_REQUIRES_REAL_BRIDGE
+
+If more than one bridge is connected:
+- choose the freshest real heartbeat
+- prefer the bridge currently shown as connected in MT5 Setup / Live Trading
+- never choose an old/stale/read-only bridge over the current active one
+
+Add UI confirmation:
+
+Master Bridge Dashboard should show:
+- Main Bridge: Current Connected Bridge
+- bridge id
+- MT5 account number
+- broker/server
+- account type DEMO / REAL
+- EA version
+- heartbeat age
+- ReadOnlyMode
+- EnableDemoExecution
+- EnableLiveExecution
+- MaxLiveLot
+- connected status
+
+MT5 Setup should show:
+“Current connected bridge is being used as the ARX Master Bridge.”
+
+Live Trading should show:
+“Master Live Bridge: Current Connected Bridge”
+
+Server rules:
+- All master bridge routing must use platform_master_bridge_connection_id.
+- All master demo/live commands must store the selected bridge id.
+- If the current connected bridge disconnects or heartbeat goes stale, block new master commands with:
+  MASTER_BRIDGE_HEARTBEAT_STALE
+- If a command result comes back from a different bridge id, reject it with:
+  BRIDGE_BINDING_MISMATCH
+
+Do not enable live trades automatically.
+Do not place live trades automatically.
+Do not expose bridge tokens.
+Do not remove per-user bridge mode.
+Keep PER_USER_BRIDGE available as fallback.
+
+Acceptance proof:
+- Current connected bridge is detected.
+- Current connected bridge is saved/used as platform master bridge.
+- Master Bridge Dashboard shows the current connected bridge.
+- MASTER_BRIDGE_DEMO routes through that bridge when account type is DEMO.
+- MASTER_BRIDGE_LIVE_ENABLED routes through that bridge only when account type is REAL/LIVE and all live gates pass.
+- Stale/mock bridges are ignored.
+- No live trade auto-fires.

@@ -1,0 +1,162 @@
+Before continuing Bridge v2 #399 live micro-test, stop and perform a focused audited reconcile of user 4 / owner live positions.
+
+Problem found from the last allocation test:
+- All test allocations were reverted to zero.
+- Re-running #399 needs a small allocation re-added to owner/user 4.
+- But user 4 appears to have approximately 59 open arx_live_positions that look stale/phantom.
+- Their floating P/L does not reconcile to real MT5 equity.
+- This can corrupt Open Trades, allocation headroom, live P/L, dashboard totals, scanner/live trade visibility, and Bridge v2 proof.
+
+Goal:
+Prove exactly which live positions are real, which are stale/phantom, and repair the app state without fabricating a pass and without placing/modifying/closing any live trade.
+
+Hard rules:
+1. Do NOT place, modify, or close any live trade.
+2. Do NOT mark #399 complete.
+3. Do NOT wipe data blindly.
+4. Do NOT delete rows without an audit trail.
+5. Do NOT change the 16 Phase B gates.
+6. Do NOT touch users with genuinely open live positions unless the real MT5 source confirms the position is closed/missing.
+7. Every correction must write an audit row explaining exactly why the row was changed.
+
+Scope:
+- arx_live_positions for user 4 / owner account.
+- Live Open Trades panel.
+- Dashboard balance/equity/free margin/margin/open P/L/open trade count.
+- Bridge v2 allocation headroom calculation.
+- Any services/hooks/selectors that read arx_live_positions.
+- Any stale position visibility rules.
+- Any MT5 command/result mapping that creates, updates, or closes arx_live_positions.
+
+Tasks:
+
+1. Build a read-only truth report first.
+Create a script/test/report that compares:
+- app DB arx_live_positions where status/open state says open
+- real MT5 bridge/account open positions from the current live source
+- latest MT5 heartbeat/account snapshot
+- current balance, equity, margin, free margin, margin level
+- per-position ticket/order/deal id
+- symbol
+- side
+- volume
+- entry price
+- current price if available
+- floating P/L if available
+- opened_at
+- updated_at
+- last_seen_at / heartbeat age if available
+
+Output a table with:
+- DB position id
+- user id
+- MT5 ticket/order/deal id
+- symbol
+- side
+- volume
+- DB status
+- MT5 status
+- DB floating P/L
+- MT5 floating P/L
+- difference
+- last app update
+- last MT5 seen
+- classification:
+  REAL_OPEN
+  CLOSED_BUT_NOT_MARKED_CLOSED
+  MISSING_FROM_MT5_PHANTOM
+  DUPLICATE_DB_ROW
+  INVALID_MAPPING
+  STALE_UNCONFIRMED
+  NEEDS_MANUAL_REVIEW
+
+2. Identify root cause.
+Trace how those ~59 rows were created and why they remained open.
+Check:
+- Bridge v1/v2 result ingestion
+- /mt5/commands result mapping
+- EA event ingestion
+- trade lifecycle updater
+- order fill confirmation handling
+- partial close handling
+- rejected/failed command handling
+- reconnect/heartbeat resync behavior
+- whether scanner or Ruby created duplicate optimistic rows
+- whether open positions are keyed incorrectly by symbol instead of ticket/deal/order
+- whether closed positions are not receiving close events
+- whether stale rows are included in open P/L calculations
+
+Produce a concise root-cause section:
+- exact files/functions involved
+- exact bug class
+- exact fix needed
+- whether any rows are safe to reconcile automatically
+
+3. Add a safe reconcile service.
+Create an audited reconciliation function that:
+- pulls real live MT5 open positions from the trusted bridge source
+- compares them to DB open positions
+- marks DB rows closed/stale only when MT5 truth proves they are not open
+- never alters real MT5 trades
+- never creates fake fills
+- never changes historical closed trades
+- writes a SYSTEM audit row for every mutation
+- preserves original row data
+- records reconcile_reason, reconcile_source, reconcile_timestamp, previous_status, new_status
+- is idempotent: running it multiple times cannot keep changing the same rows
+
+4. Add stale protection to all UI totals.
+Open Trades, Dashboard, allocation headroom, scanner live trade count, Ruby live summaries, and admin user exposure must not count stale/phantom rows as real open live positions.
+
+Use one shared truth function, not duplicated frontend math.
+
+Required behavior:
+- REAL_OPEN rows count as open.
+- CLOSED_BUT_NOT_MARKED_CLOSED and MISSING_FROM_MT5_PHANTOM do not count as open after reconcile.
+- STALE_UNCONFIRMED must show as “Needs Reconcile / stale” and must not be used for live P/L unless verified fresh.
+- UI should never show fake open P/L from stale app rows as if it is live MT5 P/L.
+
+5. Add tests.
+Create tests that prove:
+- real MT5 open rows remain untouched
+- phantom rows are not counted as open
+- closed-but-not-updated rows are marked closed with audit trail
+- duplicate DB rows do not double-count P/L or margin
+- allocation headroom ignores phantom rows after reconcile
+- dashboard open P/L matches MT5 truth
+- Open Trades count matches MT5 truth
+- reconcile is idempotent
+- no trade command is placed by reconcile
+- #399 remains blocked until reconcile passes
+
+6. Run a dry run first.
+Before applying any mutation, run:
+- DRY RUN reconcile for user 4
+- print exact rows that would change
+- print exact reason for each
+- print before/after dashboard totals
+- print before/after allocation headroom
+- print whether user 4 is safe to receive a small allocation for #399 afterward
+
+7. Apply only safe automatic fixes.
+Only after dry-run report is clear, apply fixes for rows that are proven phantom/closed by MT5 truth.
+Anything ambiguous must remain unchanged and be labeled NEEDS_MANUAL_REVIEW.
+
+8. Final report required.
+Return:
+- number of DB open rows before
+- number of real MT5 open positions
+- number of phantom/stale rows found
+- number of rows safely reconciled
+- number requiring manual review
+- before/after open P/L
+- before/after open trade count
+- before/after allocation headroom
+- audit row count
+- exact tests run and pass/fail
+- exact files changed
+- whether #399 is now unblocked or still blocked
+- if unblocked, state the precise minimum owner allocation needed for the next controlled live micro-test
+
+Acceptance standard:
+Do not pass unless the app’s live open positions, dashboard, allocation headroom, and real MT5 open positions agree by shared truth.

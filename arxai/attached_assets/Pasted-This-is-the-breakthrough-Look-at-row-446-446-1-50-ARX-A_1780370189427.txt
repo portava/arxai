@@ -1,0 +1,31 @@
+This is the breakthrough. Look at row 446:
+446 | 1.50 | ARX_AI_Universal_Agent | 2026-06-02 03:09:00
+The v1.50 EA is beating successfully — version 1.50, correct name, fresh heartbeat. The inf/nan fix worked, the heartbeat is 200, the EA↔backend handshake is finally healthy. That's the wall we'd been stuck behind for the last several rounds, cleared.
+(The old v1.29 row 287 is still there but stale at 00:31 — it's not beating anymore, just a leftover row. You can ignore it, or remove that old EA from its chart if it's still attached.)
+But — symbol_count is still 0, and that's expected
+The symbol query returns 0 rows because the heartbeat beating is not the same as ENUMERATE_SYMBOLS having run. The heartbeat just reports status/capabilities. The symbol directory only fills when you send the ENUMERATE_SYMBOLS command to the EA, which makes it walk the Market Watch and POST the symbol list back.
+So this is the final step, and it's the one that finally answers the V75 question.
+Run ENUMERATE_SYMBOLS now
+This goes through however you dispatch EA commands (your command-queue UI / admin trade surface — the same mechanism you'd use for GET_HEALTH etc.). Queue an ENUMERATE_SYMBOLS command to connection 446.
+While you're at it, the natural sequence from the brief is:
+
+GET_HEALTH — confirm EA responds
+GET_CAPABILITIES — confirm the v1.50 cap set
+ENUMERATE_SYMBOLS — the one that fills the directory
+
+But if you just want the symbols, ENUMERATE_SYMBOLS alone does it.
+Then verify it landed
+Give it a few seconds (the EA polls for commands, runs the enumeration, POSTs back), then re-run:
+bashpsql $DATABASE_URL -c "SELECT count(*) FROM arx_symbol_specs WHERE user_id = 4;"
+That should jump from 0 to however many symbols Deriv exposes (likely dozens — your Market Watch showed 15 visible, but enumeration can include more). Then the payoff query:
+bashpsql $DATABASE_URL -c "SELECT symbol, broker_symbol, trade_mode, trade_allowed FROM arx_symbol_specs WHERE user_id = 4 ORDER BY symbol;"
+This is where we finally see the real V75/V25 names — the exact strings Deriv reports, which is the entire reason you chose Path 2. From your Market Watch I'd expect to see things like Volatility 75 Index, Volatility 75 (1s) Index, Volatility 25 (1s) Index, Volatility 10 (1s) Index, Volatility 100 (1s) Index, EURUSD, GBPUSD, USDCHF — but the query will show the exact broker_symbol strings, which is what matters for execution.
+One watch-point
+When you run ENUMERATE_SYMBOLS, keep an eye on the Experts log. If the enumeration POST to /api/mt5/command-result comes back 200, it ingested. If it 400s, there's still an inf/nan or JSON issue in the per-symbol data for some specific symbol (the synthetics have unusual tick values) — and I'd want to see which symbol and fix that builder. But I guarded those fields with SafeF too, so it should be clean.
+Run ENUMERATE_SYMBOLS, then paste:
+
+The count query result
+The symbol / broker_symbol query result (the real names!)
+If anything 400'd, the Experts log line
+
+If the count jumps and the V75 names show up — that's the live confirmation that's been missing this whole time, and the feature is genuinely done end-to-end. Press q to get out of the pager when you're in it.

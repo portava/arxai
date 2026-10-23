@@ -1,0 +1,295 @@
+BUILD PHASE — End-to-End Staging Dry Run + Full System QA Script
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Create and run a full end-to-end staging dry run that tests ARX AI from first user login through onboarding, Ruby, scanner, demo trading, personal MT5 setup, shared master request, admin approval, risk limits, safety gates, trade queue, kill switches, close-only mode, reconciliation, audit logs, exports, production locks, and no-live-command evidence.
+
+Important:
+This is a staging/dry-run QA phase.
+Do not fire real live trades.
+Do not create real live bridge commands.
+Do not turn on public live trading.
+Use mock/sandbox/staging-safe bridge behavior only unless explicitly approved by the full safety stack.
+
+1. Inspect existing tests and scripts first
+Check what already exists for:
+- unit tests
+- integration tests
+- Playwright/Cypress/browser tests
+- API tests
+- Replit scripts
+- no-live-command probes
+- secret leak probes
+- bridge mock tests
+- admin route tests
+- Ruby tests
+- voice tests
+- queue/concurrency tests
+- audit export tests
+- production readiness tests
+
+Reuse current scripts where possible.
+Do not create duplicate QA systems.
+
+2. Add one full staging dry-run script
+Create or improve a single command/script that can run the full staging dry run.
+
+Suggested name:
+- npm run qa:staging:full
+or
+- npm run arx:staging-dry-run
+
+The script should:
+- verify APP_ENV/NODE_ENV is staging/test-safe
+- confirm live execution flags are OFF or sandbox-only
+- snapshot arx_live_commands count before test
+- run full QA sequence
+- snapshot arx_live_commands count after test
+- fail if live command count changes unexpectedly
+- fail if secrets appear in output
+- produce a final PASS/FAIL report
+
+3. Test user journeys
+Create dry-run coverage for these personas:
+
+A. Brand-new user
+- first login
+- onboarding redirect
+- chooses demo mode
+- sees clean first-load state
+- no fake trades/P/L
+- Ruby explains setup
+- demo dashboard loads privately
+
+B. Demo trader
+- scanner opens clean
+- selects direct symbol
+- Ruby market explanation appears
+- opens demo trade ticket
+- enters lot, SL, TP
+- confirms demo trade
+- sees demo position
+- chart shows entry/SL/TP
+- closes demo trade
+- P/L calendar updates
+- no live command created
+
+C. Personal MT5 user
+- chooses personal MT5 setup
+- sees connection-needed state
+- bridge heartbeat mock works
+- read-only state shows correctly
+- live execution blocked until disclosures/safety pass
+- personal MT5 does not route through shared master logic
+
+D. Shared master requester
+- requests shared master access
+- sees waiting approval
+- cannot trade before approval
+- cannot trade before allocation/risk profile
+- cannot see shared master global balance
+- Ruby explains next step
+
+E. Admin/operator
+- logs into admin area
+- views pending shared master request
+- approves user
+- assigns allocation
+- assigns risk profile
+- maps shared master account in staging-safe mock
+- views readiness dashboard
+- tests kill switches
+- views audit logs
+- views reconciliation center
+- exports masked evidence
+
+4. Trading safety dry run
+Test that live/shared-master trading is blocked unless every gate passes:
+
+- missing disclosure blocks
+- compliance approval false blocks
+- admin approval missing blocks
+- allocation missing blocks
+- risk profile missing blocks
+- shared master mapping missing blocks
+- bridge unhealthy blocks
+- EA read-only blocks
+- global live flag false blocks
+- queue paused blocks
+- kill switch active blocks
+- force-review marks NEEDS_REVIEW
+- close-only blocks new opens
+- one-click global disable blocks one-click
+- max lot size blocks
+- max open trades blocks
+- daily loss limit blocks
+- symbol restriction blocks
+- cooldown blocks
+- exposure reservation blocks
+
+Every block should return clean user-facing language.
+
+5. Queue and concurrency dry run
+Simulate:
+- two users submitting same symbol at same time
+- one user double-clicking submit
+- duplicate transcript from Ruby voice
+- duplicate EA callback
+- stale reservation
+- sent command with no callback
+- acknowledged command with no fill
+- rejected command
+- failed command
+- command stuck in DISPATCHING
+
+Expected:
+- no duplicate commands
+- no cross-user state leak
+- stale/uncertain items become EXPIRED or NEEDS_REVIEW
+- reservations release only when safe
+- no blind retry
+- no live command fired
+
+6. User privacy isolation dry run
+Verify:
+- User A cannot see User B dashboard
+- User A cannot see User B trades
+- User A cannot see User B P/L
+- User A cannot see User B notifications
+- User A cannot ask Ruby about User B
+- User A cannot close/edit User B trade
+- User A cached state clears on logout
+- switching accounts does not leak Ruby memory, scanner symbol, chart markers, or notifications
+
+7. Ruby full brain dry run
+Test Ruby can explain:
+- app features
+- onboarding status
+- account mode
+- live trading blocked reason
+- scanner analysis
+- selected trade context
+- queue status
+- kill switch status
+- close-only mode
+- NEEDS_REVIEW state
+- audit/activity status within permission level
+- production readiness for admin only
+
+Ruby must not:
+- claim guaranteed profits
+- claim legal approval
+- expose admin-only data to normal users
+- expose other users
+- expose secrets
+- claim a live trade fired unless confirmed
+
+8. Ruby voice dry run
+Test:
+- auto-listen opens after permission
+- silence detection submits once
+- empty/duplicate transcripts ignored
+- Ruby responds with text and speech
+- mic pauses while Ruby speaks
+- mic resumes after Ruby speaks
+- voice trade command prepares ticket only
+- voice close requires confirmation
+- voice cannot bypass live safety
+- voice clears on logout/account switch
+
+9. Admin/operator dry run
+Test:
+- non-admin blocked from admin routes
+- admin dashboard loads
+- readiness dashboard shows blockers
+- global kill switch blocks live
+- per-user pause blocks only selected user
+- per-symbol pause blocks only selected symbol
+- per-bridge pause blocks bridge route
+- shared master dispatch pause blocks dispatch
+- close-only blocks opens but allows safe verified close path
+- force-review sends live actions to NEEDS_REVIEW
+- admin cannot force unsafe dispatch outside safety gates
+
+10. Reconciliation dry run
+Test:
+- stuck reservation detected
+- unmapped master execution becomes NEEDS_REVIEW
+- duplicate callback ignored
+- failed command does not retry blindly
+- admin resolves verified item with reason/evidence
+- admin cannot resolve without reason
+- normal users only see their own clean needs-review message
+- no raw bridge evidence exposed
+
+11. Audit/export dry run
+Test:
+- trade lifecycle audit events created
+- safety block audit events created
+- admin action audit events created
+- Ruby/voice audit events created
+- reconciliation audit events created
+- audit center protected
+- user activity only shows current user events
+- evidence export works
+- export masks secrets
+- no-live-command evidence exported
+- export files protected
+
+12. Production lockdown dry run
+Verify:
+- production defaults live OFF
+- feature flags fail closed
+- mock data hidden in production mode
+- startup guard catches unsafe config
+- env checklist masks secret values
+- public health route safe
+- admin readiness protected
+- errors do not expose stack traces or raw SQL
+- secret leak probes pass
+
+13. Final report
+The staging dry-run command should return:
+
+- overall PASS/FAIL
+- environment mode
+- test suites run
+- routes tested
+- users/personas tested
+- admin routes tested
+- trade safety gates tested
+- Ruby tests run
+- voice tests run
+- queue/concurrency tests run
+- reconciliation tests run
+- audit/export tests run
+- production lockdown tests run
+- secret leak probe result
+- arx_live_commands count before
+- arx_live_commands count after
+- confirmation no live trade was fired
+- blockers found
+- files changed
+- scripts added
+- manual test steps
+
+14. Fix only missing pieces
+If the dry run finds broken or missing pieces:
+- fix only the smallest necessary issue
+- do not rewrite unrelated systems
+- do not bypass safety gates to make tests pass
+- do not hide failures
+- keep failed items visible in the final report
+
+Return:
+- what was built
+- files changed
+- full QA script name
+- test personas covered
+- test suites added/run
+- blockers found
+- fixes applied
+- remaining risks
+- confirmation no live trade was fired
+- confirmation arx_live_commands count stayed unchanged

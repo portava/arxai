@@ -1,0 +1,172 @@
+INSPECTION PHASE — Check Existing Live Execution Readiness + Operator Kill Switches
+
+Use the current connected codebase.
+
+Do not rebuild unrelated systems.
+Do not create a new live execution system.
+Do not change production code in this pass unless a tiny read-only inspection helper is absolutely required.
+Do not fire any demo or live trade.
+Do not create any live command.
+
+Goal:
+Check what already exists for live execution readiness, operator controls, kill switches, queue pause/resume, bridge status, admin safety controls, and live trade blocking before we build anything new.
+
+Inspect these areas:
+
+1. Existing live execution safety
+Check what already exists for:
+- ARX_LIVE_BROKER_EXECUTION_ENABLED
+- EA ReadOnlyMode
+- EA EnableLiveExecution
+- backend live flag
+- demo/live separation
+- personal MT5 live mode
+- shared master MT5 live mode
+- one-click live approval
+- confirmation flow
+- user admin approval
+- allocation/risk profile checks
+- shared master account mapping
+- bridge health/heartbeat
+- exposure reservations
+- cooldown checks
+- queue pause state
+- idempotency
+- duplicate command prevention
+
+2. Existing admin/operator controls
+Check if there is already an admin page or API for:
+- bridge status
+- shared master mapping
+- approving/revoking users
+- enabling/disabling one-click live permission
+- viewing active live commands
+- viewing queued/blocked/failed commands
+- pausing shared master dispatch
+- resuming shared master dispatch
+- cancelling queued commands
+- forcing NEEDS_REVIEW
+- emergency live shutdown
+- disabling all live execution
+- disabling one specific user
+- disabling one symbol
+- disabling one bridge
+- viewing audit logs
+
+3. Existing kill switch coverage
+Check whether the system already supports:
+- global live trading kill switch
+- shared master dispatch pause
+- per-user trading pause
+- per-symbol trading pause
+- per-bridge trading pause
+- one-click global disable
+- demo-only fallback
+- force read-only mode
+- block new trades while still allowing safe close-only mode
+- block all close/edit actions if MT5 state is uncertain
+- emergency queue drain / stop dispatch
+- admin reason logging for every kill switch action
+
+4. Existing readiness dashboard
+Check whether an admin readiness dashboard already shows:
+- global live flag
+- bridge connected status
+- last heartbeat
+- EA read-only/live flags
+- master account mapped/unmapped
+- admin-approved users
+- pending approvals
+- allocation/risk profile status
+- queue health
+- blocked commands
+- failed commands
+- NEEDS_REVIEW items
+- stale reservations
+- exposure usage
+- cooldown/rate limit state
+- recent audit events
+- secrets masking status
+- no-live-command QA counter
+
+5. Existing user-facing live status
+Check whether normal users already see clean status such as:
+- Ready to trade
+- Waiting for admin approval
+- Allocation needed
+- Bridge disconnected
+- Market/symbol not enabled
+- Risk limit reached
+- Daily loss limit reached
+- Live trading disabled
+- Queue paused
+- Needs review
+
+Make sure normal users do not see admin-only data, other users, shared master totals, secrets, raw bridge data, or code-heavy errors.
+
+6. Existing Ruby awareness
+Check whether Ruby can already explain:
+- why live trading is blocked
+- whether user is waiting for approval
+- whether allocation is missing
+- whether bridge is disconnected
+- whether master account is unmapped
+- whether queue is paused
+- whether a kill switch is active
+- whether a trade needs admin review
+- what the user should do next
+
+Ruby must only use authenticated current-user data.
+
+7. Existing tests/probes
+Find tests or scripts already covering:
+- no live command fired during QA
+- global live disabled blocks live trades
+- unapproved user blocked
+- unmapped master account blocked
+- unhealthy bridge blocked
+- queue paused blocks dispatch
+- one-click cannot bypass safety
+- demo cannot create live command
+- non-admin cannot access operator controls
+- secrets are masked
+- duplicate submits do not duplicate commands
+- stuck reservations are handled
+- NEEDS_REVIEW behavior
+
+8. Secret and production hardening check
+Verify:
+- no bridge token/API key/session secret/account credential/token hash is exposed in UI, logs, routes, prompts, or admin responses
+- requireAdmin does not expose unnecessary role detail in production
+- bridge evidence masking is centralized and guarded by CI
+- audit logs do not include secrets
+- frontend does not receive raw backend safety internals
+
+9. Return an existing-vs-missing matrix
+Return a table with:
+
+- Feature
+- Existing / Missing / Partial
+- Current file(s)
+- Current route/API if any
+- Risk level
+- Recommended next action
+- Whether build work is needed
+
+10. Return a build recommendation
+After inspection, recommend the smallest safe build plan for:
+
+LIVE EXECUTION READINESS DASHBOARD + OPERATOR KILL SWITCHES
+
+But do not build it yet.
+
+Return:
+- existing systems found
+- files inspected
+- routes/APIs inspected
+- tests/probes found
+- gaps found
+- safety risks
+- exact minimal build plan
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

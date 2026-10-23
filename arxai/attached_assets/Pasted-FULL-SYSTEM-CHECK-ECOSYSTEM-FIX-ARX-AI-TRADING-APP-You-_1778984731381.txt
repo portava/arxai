@@ -1,0 +1,459 @@
+FULL SYSTEM CHECK + ECOSYSTEM FIX — ARX AI TRADING APP
+
+You have full approval to fix anything that is broken, incomplete, disconnected, duplicated, ignored, half-built, or not properly wired — but DO NOT rebuild the app, redesign the app, replace the stack, change the main UI direction, rename systems, remove working features, or make large changes unless absolutely necessary to make the app function correctly.
+
+The goal is simple:
+
+ARX AI must operate as one complete ecosystem.
+
+Everything should be up, connected, tested, and fully working afterward.
+
+Before making fixes, inspect the current app carefully. Do not assume. Do not overwrite working systems. Do not create new duplicate systems if one already exists. Check what is already built first, then adjust only what needs adjustment.
+
+APP IDENTITY:
+Brand: ARX AI
+Meaning: Analyze. Risk. eXecute.
+Purpose: AI trading fortress for disciplined decisions.
+Core function: Trading intelligence, MT5 bridge awareness, live/demo trade monitoring, user sessions, AI market assistant, scanner, risk controls, account/trade dashboard, and clean mobile-first user experience.
+
+==================================================
+PHASE 1 — CREATE A SAFETY SNAPSHOT FIRST
+==================================================
+
+Before changing anything:
+
+1. Create a restore checkpoint / backup commit.
+2. Record current branch/status.
+3. List changed files before edits.
+4. Do not delete any file unless it is proven unused and safe.
+5. If deleting is needed, move to an archive/deprecated folder first unless impossible.
+
+Output:
+- Snapshot created
+- Current app structure summary
+- Main frontend folders
+- Main backend folders
+- Main API routes
+- Main trading/MT5 files
+- Main AI files
+- Main database/auth files
+
+==================================================
+PHASE 2 — FULL FEATURE INVENTORY
+==================================================
+
+Audit every major feature currently in the app. Do not skip anything.
+
+Check these areas:
+
+1. Authentication / user accounts
+   - Signup
+   - Login
+   - Logout
+   - Session persistence
+   - User-specific dashboard data
+   - New-user clean first-load state
+   - No fake user data unless clearly labeled demo/mock
+   - Ability to track individual users
+   - User sessions stay personal
+
+2. MT5 bridge
+   - Bridge heartbeat
+   - MT5 connection status
+   - Account info endpoint
+   - Open positions endpoint
+   - Closed trades/history endpoint
+   - Symbol/market data endpoint
+   - Demo/live mode separation
+   - Shared MT5-account architecture support
+   - Safe command handling
+   - Read-only mode respected where required
+   - Trade execution only where explicitly enabled
+   - Clear errors when bridge is disconnected
+
+3. Trading dashboard
+   - Balance/equity/margin/free margin
+   - Open trades
+   - Floating profit/loss
+   - Trade direction
+   - Entry price
+   - Current price
+   - Stop loss / take profit
+   - Lot size
+   - One-click close/open flow
+   - Confirmation prompt before trade action
+   - Clear success/failure messages
+   - Data refresh without breaking UI
+   - No stale fake values
+
+4. AI assistant
+   - Visible on every intended page
+   - Opens correctly
+   - Closes when clicking outside
+   - Does not block menu/navigation
+   - Can answer app questions
+   - Can answer trading questions
+   - Can access current app context
+   - Can access live trade/account context where available
+   - Can explain market conditions
+   - Can answer follow-up questions without stopping
+   - Maintains conversation context per user/session
+   - Does not hallucinate unavailable trade data
+   - Gives safe trading guidance with risk warnings
+   - Does not promise guaranteed profits
+   - Can explain:
+     - Is this a pullback?
+     - Is this a retracement?
+     - Is this continuation?
+     - Is this fakeout?
+     - When should I close?
+     - Why is price moving?
+     - What market looks best right now?
+     - What is my live trade doing?
+
+5. Voice assistant / live chat
+   - Auto-listen starts when AI chat opens if enabled
+   - Voice stops when user stops talking
+   - Sends completed speech to AI automatically
+   - AI responds by text
+   - AI responds by speech if voice output is enabled
+   - After response, AI listens again when appropriate
+   - Manual mode still works
+   - Microphone permissions handled cleanly
+   - Mobile Safari compatibility checked
+   - No infinite listening loop
+   - No duplicated responses
+   - No crash if browser does not support speech APIs
+
+6. Market scanner
+   - Scanner page loads
+   - Scanner data connects to backend/provider
+   - No dead/fake forced UI
+   - Real market data provider connection checked
+   - Finhub/OpenAI/API keys handled through environment variables only
+   - Clear missing-key warnings
+   - Scanner can recommend markets based on available data
+   - Scanner results are explainable by AI
+
+7. Trading intelligence / ARX Brain
+   - AI has access to current trade context
+   - AI has access to scanner context
+   - AI has access to account/risk context
+   - AI knows available tools/features
+   - AI can reason across the ecosystem instead of isolated pages
+   - AI avoids unsafe automatic trade execution unless explicitly enabled
+   - AI uses risk settings before suggesting trade actions
+   - AI can explain confidence, invalidation, risk, and reason
+
+8. Risk system
+   - Risk profile/settings
+   - Lot size logic
+   - Stop-loss requirements if applicable
+   - Max risk per trade
+   - Daily loss guard
+   - Drawdown guard
+   - Overtrading warnings
+   - Prop firm mode if present
+   - Confirmation before risky actions
+   - Clear blocked-trade messages when risk rules fail
+
+9. Trade journal / history
+   - Trade log works
+   - Winning/losing days tracked
+   - Calendar view works
+   - Daily P/L calculated correctly
+   - Trade sessions tied to users
+   - Open/closed trade distinction
+   - No duplicate trade records
+   - Manual/demo records labeled correctly
+
+10. Notifications / alerts
+   - Trade alerts
+   - AI close alerts
+   - Sniper close alerts if present
+   - Risk warnings
+   - Scanner alerts
+   - Connection alerts
+   - Toasts/modals do not block UI
+   - Mobile behavior works
+   - Alerts connect to real app events, not static UI
+
+11. Navigation / UI
+   - Bottom menu fixed correctly to viewport
+   - No space under menu while scrolling
+   - Sidebar menu grouped and collapsible
+   - Menu does not overwhelm user
+   - All buttons route correctly
+   - No dead buttons
+   - No buttons going to unrelated screens
+   - Mobile-first layout
+   - iPhone Safari checked
+   - AI widget does not hide behind plus button
+   - Help bar does not block menus
+   - Pages share a consistent fresh ARX AI design
+   - Do not redesign unless fixing broken layout
+
+12. Backend/frontend wiring
+   - Every frontend page uses the correct backend endpoint
+   - Backend is not wired to old UI
+   - New UI pages are connected to current backend
+   - No old dead route being used by active UI
+   - No duplicate APIs doing the same thing
+   - Error states shown clearly
+   - Loading states shown clearly
+   - Empty states shown clearly
+   - Auth-protected endpoints protected
+   - User-specific data filtered by user ID
+
+13. Database / persistence
+   - Schema matches active app features
+   - Migrations are valid
+   - No missing tables
+   - No broken foreign keys
+   - User IDs attached to user data
+   - Trade sessions persist
+   - AI conversations persist if built
+   - Settings persist
+   - First-time users do not inherit sample data
+
+14. Environment/config
+   - Check .env.example
+   - Confirm required env variables are documented
+   - Do not expose secrets
+   - Missing keys show helpful errors
+   - App can boot without crashing if optional keys are missing
+   - API routes fail gracefully
+
+15. Performance
+   - No excessive polling
+   - No duplicate intervals
+   - No memory leaks from voice listener
+   - No repeated API calls on every render
+   - No slow infinite loops
+   - Market refresh interval reasonable
+   - MT5 bridge polling reasonable
+   - App stays fast enough for live trading awareness
+
+==================================================
+PHASE 3 — RUN AUTOMATED CHECKS
+==================================================
+
+Run all relevant checks available in this project.
+
+At minimum, run what exists:
+
+- npm install if dependencies are missing
+- npm run lint if available
+- npm run typecheck if available
+- npm test if available
+- npm run build
+- backend/server tests if available
+- API route tests if available
+- database migration check if available
+
+If a script does not exist, do not fail. Report that it does not exist.
+
+Fix all real errors. Do not ignore build/type/runtime errors.
+
+==================================================
+PHASE 4 — ENDPOINT HEALTH CHECK
+==================================================
+
+Find and test all active API routes.
+
+Create or update a lightweight health-check script if needed.
+
+Test:
+
+- Auth/session route
+- User profile route
+- Dashboard route
+- MT5 heartbeat route
+- MT5 account route
+- MT5 open trades route
+- MT5 trade history route
+- Trade action route
+- Scanner route
+- AI chat route
+- AI voice-related route if backend exists
+- Risk settings route
+- Journal route
+- Notification/alert route
+- Any route active UI depends on
+
+For every broken route:
+1. Identify frontend page/component using it.
+2. Identify backend handler.
+3. Fix mismatch.
+4. Retest.
+5. Confirm with response shape.
+
+==================================================
+PHASE 5 — ECOSYSTEM WIRING TEST
+==================================================
+
+The app must behave like a connected system, not separated pages.
+
+Verify this complete flow:
+
+1. User logs in.
+2. User sees clean dashboard.
+3. App checks MT5 bridge status.
+4. If bridge connected:
+   - show account data
+   - show open trades
+   - show live P/L
+   - show connection status
+5. If bridge disconnected:
+   - show clear disconnected state
+   - no fake live data
+   - user sees how to connect
+6. Market scanner loads available market data.
+7. AI assistant can answer:
+   - What is my account status?
+   - Is my MT5 connected?
+   - What trades are open?
+   - Am I in profit or negative?
+   - What market looks best right now?
+   - Why is this trade moving?
+   - Should I close or hold?
+8. AI references real available data only.
+9. Trade action buttons require confirmation.
+10. Trade records update journal/history.
+11. Notifications trigger for relevant events.
+12. UI updates without refresh where appropriate.
+
+==================================================
+PHASE 6 — FIX RULES
+==================================================
+
+When fixing:
+
+- Prefer small patches.
+- Keep existing UI and architecture.
+- Reuse current components.
+- Reuse current APIs.
+- Remove duplicated dead logic only if safe.
+- Do not replace working systems.
+- Do not add fake data to make UI look alive.
+- If demo data is needed, label it clearly as demo mode.
+- If a feature cannot work because an external key/MT5/secret is missing, make it fail gracefully with a clear message.
+- Any fake/mock system should be separated from live mode.
+- Do not silently bypass errors.
+- Do not hide problems behind placeholders.
+- Fix root causes, not surface-only UI.
+
+==================================================
+PHASE 7 — AI SYSTEM REQUIREMENTS
+==================================================
+
+Make sure ARX AI knows the app and can explain it.
+
+The AI assistant should have a system/app context layer that includes:
+
+- ARX AI brand meaning
+- Main app features
+- Current user session
+- Current MT5 connection status
+- Current account snapshot if available
+- Current open trades if available
+- Scanner results if available
+- Risk settings if available
+- Trade journal summary if available
+- Current page/context if available
+
+AI must answer clearly and safely.
+
+For trading advice, AI should always include:
+- What it sees
+- Why it may be happening
+- Key level or invalidation if available
+- Risk warning
+- Suggested action as guidance, not guarantee
+- Whether data is live, delayed, demo, or unavailable
+
+Do not let AI claim live market data if data is unavailable.
+
+==================================================
+PHASE 8 — USER EXPERIENCE CLEANUP
+==================================================
+
+Fix only necessary UI issues:
+
+- Remove broken fake-looking content
+- Use empty states for new users
+- Use disconnected states for unavailable MT5
+- Use loading states while fetching
+- Use error states when backend fails
+- Keep pages clean and not overwhelming
+- Group/collapse large menus
+- Make AI accessible without blocking app
+- Keep mobile layout clean
+- Make dashboard feel fresh on first load
+
+Do not redesign the app from scratch.
+
+==================================================
+PHASE 9 — FINAL QA GATE
+==================================================
+
+After fixes, run:
+
+1. Full build
+2. Full type/lint/test checks available
+3. Manual route/page review
+4. API health check
+5. Mobile layout check
+6. MT5 connected-state check if bridge data available
+7. MT5 disconnected-state check
+8. AI assistant test
+9. Scanner test
+10. Trade/journal/risk test
+11. Navigation/button test
+
+Do not stop after only code changes. Confirm the app actually works.
+
+==================================================
+PHASE 10 — FINAL REPORT
+==================================================
+
+When finished, give me a full report with:
+
+1. Overall status:
+   - Ready
+   - Partially ready
+   - Not ready
+
+2. What was checked
+
+3. What was broken
+
+4. What was fixed
+
+5. What was not changed and why
+
+6. What still requires external setup, such as:
+   - MT5 EA attached
+   - WebRequest URL
+   - OpenAI key
+   - Finhub key
+   - Broker/demo account
+   - Environment variable
+   - Deployment setting
+
+7. Any remaining risks
+
+8. Exact files changed
+
+9. Exact commands/tests run
+
+10. Confirmation that:
+   - No unnecessary rebuild was done
+   - No working system was replaced
+   - No fake live data was added
+   - User-specific sessions are respected
+   - Frontend and backend are wired together
+   - ARX AI works as one ecosystem
+
+IMPORTANT:
+Do not continue to the next phase unless the prior phase passes QA or you fix the issue found in that phase. Every fix must be verified before moving on.

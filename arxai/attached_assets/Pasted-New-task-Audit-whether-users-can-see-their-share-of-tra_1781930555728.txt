@@ -1,0 +1,196 @@
+New task: Audit whether users can see their share of trades they are in.
+
+Goal:
+Verify whether every user/investor/trader can clearly see their personal share of any trade they are participating in, without seeing private data they should not access.
+
+Definition:
+“Share of the trade” means the user’s allocated portion of:
+- trade exposure
+- open P/L
+- closed P/L
+- risk amount
+- margin usage if applicable
+- pool ownership impact
+- trader payout impact if applicable
+
+Surfaces to inspect:
+- Investor dashboard
+- User dashboard
+- Open Trades
+- Positions
+- Trade History
+- Investor pool dashboard
+- Trader earnings dashboard
+- Account analytics
+- Trade detail drawer/card
+- Mobile views
+- Admin dashboard
+
+Audit questions:
+1. Can a user see which trades they are participating in?
+2. Can a user see their allocated percentage/share of each trade?
+3. Can a user see their dollar exposure in each trade?
+4. Can a user see their live open P/L share per trade?
+5. Can a user see their closed realized P/L share after trade close?
+6. Can a user distinguish estimated live value from finalized payable value?
+7. Can an investor see only their own allocation and not other investors’ balances?
+8. Can a trader see only their own earnings/attribution unless admin?
+9. Can admin see all users’ trade shares?
+10. Does the dashboard update the user’s share in real time when open P/L changes?
+
+Required display:
+For each trade a user is involved in, show:
+
+Trade Share Card:
+- symbol
+- direction
+- entry
+- current price
+- lot size / total position size
+- user allocation %
+- user allocated capital
+- user share of exposure
+- user open P/L
+- user realized P/L if closed
+- user risk amount
+- stop loss / take profit if available
+- trade status: open / closed / pending / failed
+- pool name if investor pool
+- trader/agent source if allowed
+- reason for trade
+- last updated time
+- estimated vs finalized label
+
+Investor-specific:
+Investors should see:
+- their share of the pool
+- their share of each pool trade
+- their live open P/L from each trade
+- their realized P/L after close
+- their current account value
+- estimated value from open trades
+- finalized value from closed trades only
+- lock/payout status
+
+They should NOT see:
+- other investors’ names
+- other investors’ balances
+- other investors’ share counts
+- admin-only broker account details
+- full master account if not allowed
+
+Trader-specific:
+Traders should see:
+- trades attributed to them
+- their contribution %
+- their estimated earnings from open trades
+- finalized payable earnings from closed trades
+- payout period
+- win/loss contribution
+
+They should NOT see:
+- other traders’ private earnings unless admin
+- investor private balances
+- master account secrets
+
+Admin-specific:
+Admin should see:
+- total trade
+- user allocations
+- investor shares
+- trader attribution
+- pool impact
+- reconciliation status
+- broker ticket
+- audit trail
+
+Backend checks:
+Find or create a shared allocation/trade-share service:
+
+buildUserTradeShareSnapshot(userId)
+
+It should calculate:
+- user_id
+- trade_id
+- broker_ticket
+- pool_id nullable
+- position_id
+- user_role: investor / trader / owner / admin
+- allocation_percent
+- allocated_notional
+- allocated_margin
+- open_pnl_share
+- realized_pnl_share
+- risk_share
+- fees_share
+- swap_share
+- net_pnl_share
+- estimated_value
+- finalized_value
+- last_price
+- last_updated_at
+- source
+
+Important calculation rules:
+- Open trades = estimated/live only
+- Closed trades = finalized realized P/L
+- Investor share should follow pool ownership/share ledger
+- Trader payout should follow trader attribution rules
+- Admin/owner can see full totals
+- Normal user can only see their own slice
+
+Realtime:
+If open P/L updates through broker/MT5/SSE:
+- user share of P/L should update too
+- investor dashboard should update estimated value
+- finalized value should not change until trade closes
+- stale feed should show stale/last updated label
+
+Tests:
+1. Investor sees their own share of an open trade.
+2. Investor open P/L share updates when trade P/L changes.
+3. Investor does not see another investor’s allocation.
+4. Investor finalized P/L updates only after trade close.
+5. Trader sees estimated earnings from attributed open trade.
+6. Trader finalized payout updates only after close/period lock.
+7. Admin sees all allocations.
+8. Non-admin cannot access another user’s trade-share endpoint.
+9. User share % matches pool share ledger.
+10. Total allocated user shares reconcile to total trade P/L.
+11. Open P/L is labeled estimated.
+12. Closed P/L is labeled finalized.
+13. Stale broker data shows stale status.
+14. Mobile view shows share %, open P/L, and status clearly.
+15. No service-role/admin data leaks to frontend.
+
+Suggested endpoints:
+- GET /api/me/trade-shares
+- GET /api/me/trade-shares/open
+- GET /api/me/trade-shares/history
+- GET /api/trades/:tradeId/my-share
+- GET /api/admin/trades/:tradeId/shares
+
+Suggested UI:
+Add “My Share” section to:
+- Open Trades
+- Investor Dashboard
+- Trade Detail drawer
+- Pool Dashboard
+
+Example copy:
+My Share
+Allocation: 8.5%
+Exposure: $850.00
+Open P/L: +$23.18 estimated
+Risk: $40.00
+Status: Open · Live
+Last updated: 3 seconds ago
+
+Hard boundary:
+Do not change live execution gates.
+Do not change broker dispatch.
+Do not change MT5 bridge execution.
+Do not change kill switches.
+Do not expose master broker secrets.
+Do not expose other users’ private allocations.
+This task is audit, visibility, allocation calculation, privacy, and display accuracy only.

@@ -1,0 +1,411 @@
+Phase 22H — Real AI Provider + App Knowledge Brain
+
+Before making changes, inspect Phase 22F and 22G results. Do not continue if:
+- assistant tool routing is not working
+- Live Mode/voice bypasses the backend assistant route
+- assistant can still fabricate market, bridge, notification, journal, risk, or prop firm data
+- frontend chat is still relying on fake/static assistant replies
+
+Goal:
+Make the ARX AI assistant truly powered by the backend AI provider, real app tools, and a canonical app knowledge system. The assistant should be able to answer questions about the app, current page, buttons, features, user setup status, and trading systems without guessing.
+
+This phase is not for redesigning UI.
+This phase is not for building live trade execution.
+This phase is not for fake demo intelligence.
+
+Core goals:
+- Verify real OpenAI/provider wiring.
+- Keep API keys backend-only.
+- Remove/disable mock assistant behavior unless explicitly marked dev-only.
+- Preserve Phase 22F tool routing.
+- Preserve Phase 22G live chat and voice behavior.
+- Add a canonical app feature registry.
+- Add assistant tools for app knowledge and page help.
+- Make fresh users get honest first-time guidance.
+- Make returning users get personalized, scoped guidance.
+
+Tasks:
+
+1. Full pre-check
+
+Inspect and report before editing:
+
+- assistant frontend chat component
+- assistant live mode/voice files
+- assistant backend route
+- assistant provider/client files
+- assistant tool registry
+- OpenAI/provider env handling
+- streaming route if one exists
+- mock/static assistant responses
+- app navigation/routes
+- main pages/components
+- feature flags
+- onboarding/fresh-user logic
+- settings/account logic
+- current page context handling if any
+
+Return a short file map before implementation:
+- file path
+- purpose
+- current status
+- whether it is real, mock, stale, or unknown
+
+2. Real AI provider configuration check
+
+Create or strengthen backend-only AI provider setup.
+
+Support environment variables if not already supported:
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL` or existing project model env if already used
+
+Rules:
+- Never expose `OPENAI_API_KEY` to frontend.
+- Never log full API keys.
+- Never hardcode real keys.
+- If no provider key exists, assistant status must say AI provider is not configured.
+- If provider is configured, assistant status may show provider name and model name only if safe.
+- Do not break existing provider setup if it already exists.
+- Do not replace working code unnecessarily.
+
+3. Assistant provider status endpoint
+
+Add or update an authenticated endpoint:
+
+`GET /api/me/assistant/provider-status`
+
+Expected safe response:
+{
+  provider: "openai" | "none" | "unknown",
+  configured: boolean,
+  connected: boolean,
+  model: string | null,
+  streamingEnabled: boolean,
+  toolCallingEnabled: boolean,
+  keysExposed: false,
+  lastCheckedAt: string,
+  notes: string
+}
+
+Rules:
+- Requires authenticated user.
+- Does not expose secrets.
+- Does not claim connected if the provider cannot be verified.
+- Does not claim streaming is enabled unless the current assistant route actually supports it.
+
+4. Remove or quarantine mock assistant behavior
+
+Search for fake/static/mock/demo assistant replies.
+
+Examples to search:
+- mock assistant
+- demo reply
+- fake AI
+- sample response
+- placeholder assistant
+- dummy assistant
+- hardcoded response
+- static response
+
+Rules:
+- If mock behavior is needed for local dev, gate it behind explicit development mode only.
+- Production/user-facing assistant must use the real backend provider route or return a truthful unavailable state.
+- The assistant must never silently fall back to fake intelligence.
+
+5. Preserve Phase 22F tool routing
+
+Confirm typed and voice messages still go through the same backend assistant pipeline.
+
+Assistant must still call tools first for:
+- MT5 bridge status
+- MT5 heartbeat
+- risk checks
+- market provider status
+- market snapshot
+- recent market news
+- notifications
+- push status
+- prop firm mode
+- journal/performance/coaching
+- assistant live-awareness status
+
+Do not allow the AI model to answer live system questions from memory.
+
+6. Create canonical app feature registry
+
+Create a backend/shared app feature registry.
+
+Preferred structure:
+- featureId
+- featureName
+- shortDescription
+- fullDescription
+- route/page
+- frontendComponent if known
+- backendEndpoints if known
+- requiredAuth
+- requiredSetup
+- status:
+  - live
+  - partial
+  - disabled
+  - planned
+  - needsQA
+- userFacingName
+- whereToFindIt
+- relatedFeatures
+- safetyNotes
+- emptyStateBehavior
+- lastVerifiedAt
+
+Include at minimum:
+- AI Assistant
+- Live AI Chat
+- Voice Input
+- Speech Output
+- MT5 Bridge
+- MT5 Heartbeat
+- Paper/Demo Mode
+- Read-Only Mode
+- Order Execution Lock
+- Risk Guard
+- Pre-Trade Risk Check
+- Prop Firm Mode
+- Trade Journal
+- Performance Calendar
+- Adaptive Coaching
+- Notifications
+- Push Notifications
+- Market Data Provider
+- Market Snapshot
+- Market News
+- Scanner
+- Account/Login
+- User Sessions
+- Settings
+- Onboarding/Fresh User State
+
+Important:
+- Do not mark a feature “live” unless it is actually connected.
+- If frontend exists but backend is missing, status should be partial or needsQA.
+- If backend exists but UI is not wired, status should be partial or needsQA.
+- If feature is planned only, status should be planned.
+
+7. Add assistant app-knowledge tools
+
+Add/register these assistant tools if missing:
+
+`getAppFeatureRegistry`
+- Returns safe feature list and status.
+- Requires auth if user-specific statuses are included.
+- Does not expose secrets or raw code.
+
+`getFeatureHelp`
+- Accepts featureId or featureName.
+- Returns what the feature does, where to find it, setup requirements, and current status.
+
+`getCurrentPageHelp`
+- Accepts current route/page context from frontend.
+- Explains what the current page is for, what actions are available, and what setup is missing.
+
+`getAssistantCapabilityStatus`
+- Returns what the assistant can currently do:
+  - app help
+  - market awareness
+  - bridge awareness
+  - risk checks
+  - journal analysis
+  - notifications
+  - voice input
+  - speech output
+  - live mode
+  - unavailable capabilities
+
+8. Frontend current-page context
+
+Update the assistant frontend so each chat request safely includes page context:
+
+- current route
+- page name if known
+- selected tab if known
+- selected symbol/pair if user has one selected
+- visible feature area if known
+- device/browser support flags for voice/speech if available
+
+Rules:
+- Do not send secrets.
+- Do not send API keys.
+- Do not send raw debug logs.
+- Do not send another user’s data.
+- Use this only to help the assistant answer app-navigation and page-help questions.
+
+9. App-specific assistant routing
+
+Update assistant routing rules.
+
+Questions like:
+- “What does this page do?”
+- “What does this button do?”
+- “Where is prop firm mode?”
+- “How do I connect MT5?”
+- “What do I need to set up next?”
+- “Why is this feature empty?”
+- “What can the assistant do?”
+- “Is this feature live?”
+- “What is missing from my setup?”
+
+Must call:
+- `getCurrentPageHelp`
+- `getFeatureHelp`
+- `getAppFeatureRegistry`
+- `getAssistantLiveAwarenessStatus`
+- `getAssistantCapabilityStatus`
+
+The assistant must answer from registry + live status, not guesses.
+
+10. Fresh-user onboarding intelligence
+
+For brand-new users, assistant should truthfully guide setup.
+
+Fresh user should be told:
+- no trades yet
+- no notifications yet
+- no journal data yet
+- risk settings may need setup
+- MT5 bridge may need connection
+- market provider may not be connected
+- push may not be configured/enabled
+- paper/demo mode status
+- next recommended setup steps
+
+Do not show fake trade history, fake alerts, fake market data, or fake performance.
+
+11. Returning-user personalization
+
+For returning users, assistant should use only their scoped data.
+
+It may explain:
+- current setup status
+- unread notifications
+- bridge status
+- market provider status
+- risk configuration
+- journal/performance availability
+- prop firm mode status
+- coaching readiness
+
+Cross-user data must never appear.
+
+12. Trading education safety
+
+For general trading questions:
+- assistant may provide educational explanations
+- assistant must not give guaranteed-profit claims
+- assistant must not claim perfect entries
+- assistant must not claim live market conditions without market tools
+- assistant must say when market provider is disconnected/stale
+- assistant must run risk tools before saying a specific trade is ready
+- assistant must separate paper/demo from live trading
+
+13. Tests required
+
+Add/update tests for:
+
+Provider:
+- no AI key returns configured false
+- provider key is never exposed
+- provider status is authenticated
+- production does not use fake assistant replies
+- mock assistant behavior is dev-only if retained
+
+Assistant app knowledge:
+- `getAppFeatureRegistry` returns safe feature list
+- `getFeatureHelp` returns correct feature explanation
+- `getCurrentPageHelp` uses current route context
+- assistant answers “what does this page do?” using app knowledge tools
+- assistant answers “where is MT5 bridge?” using app knowledge tools
+- assistant answers “what should I set up next?” using live status
+
+Routing:
+- app questions call app knowledge tools
+- bridge questions call bridge tools
+- market questions call market tools
+- risk questions call risk tools
+- notification questions call notification tools
+- journal questions call journal/performance tools
+
+Honesty:
+- fresh user gets empty states
+- disconnected provider is reported honestly
+- disconnected bridge is reported honestly
+- disabled push is reported honestly
+- no fake trades, alerts, prices, news, performance, or setup completion
+- no guaranteed win/profit/perfect entry claims
+
+Frontend:
+- chat sends safe page context
+- chat does not expose secrets
+- voice requests still use same backend route
+- current-page questions work from the assistant UI
+- no production UI displays debug envelopes
+
+14. QA gate
+
+After implementation, run:
+- typecheck
+- lint if available
+- all tests
+- backend route tests
+- assistant tool tests
+- assistant routing scenario tests
+- frontend smoke test
+- voice/live mode smoke test
+- cross-user isolation tests
+- forbidden fake/mock scan
+- secret exposure scan
+
+Search for:
+- `OPENAI_API_KEY` in frontend/client code
+- `fake`
+- `sample`
+- `placeholder`
+- `dummy`
+- `mock assistant`
+- `hardcoded response`
+- `guaranteed`
+- `100% win`
+- `perfect entry guaranteed`
+- raw API key patterns
+- exposed debug envelope in production UI
+
+15. Final report required
+
+Return a Phase 22H report with:
+- files inspected
+- files changed
+- AI provider status
+- provider status endpoint result
+- mock/static behavior found
+- mock/static behavior removed or gated
+- feature registry status
+- app knowledge tools added/updated
+- current-page context status
+- assistant routing result
+- fresh-user guidance result
+- returning-user personalization result
+- voice/live mode compatibility result
+- trading safety result
+- secret exposure result
+- tests passed/failed
+- remaining Phase 22I work
+
+Important constraints:
+- Do not redesign the app.
+- Do not build live trade execution.
+- Do not expose API keys.
+- Do not fake AI responses.
+- Do not fake app knowledge.
+- Do not mark incomplete features as live.
+- Do not bypass Phase 22F tool routing.
+- Do not bypass Phase 22G live chat safety.
+- Do not move to Phase 22I unless QA passes.

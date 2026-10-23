@@ -1,0 +1,224 @@
+Run the final Build CC verification lock-test.
+
+Do not start Build DD.
+Do not add new features unless a Build CC test fails and must be fixed.
+Do not change Build AA safety logic.
+Do not change Build BB auto-debrief logic except to fix CC handoff issues.
+
+Verify Build CC only.
+
+Build CC goal:
+Use Build BB learning payloads to update internal learning memory, strategy edge scoring, mistake patterns, and future Build AA decision context — without placing trades and without changing live-trade permission.
+
+Verification checklist:
+
+1. Typecheck/build health
+Run all relevant commands:
+- typecheck
+- build
+- API server validation
+- database/schema validation if available
+
+Show exact commands run and whether each passed.
+
+2. Database verification
+Confirm these tables exist:
+
+learning_events
+strategy_edges
+mistake_patterns
+
+Confirm learning_events includes:
+id,
+trade_id,
+decision_id,
+debrief_id,
+symbol,
+action,
+result,
+pnl,
+pnl_percent,
+confidence_before_trade,
+risk_score_before_trade,
+signals_used,
+mistake_tags,
+lesson,
+learning_summary,
+processed_at,
+created_at.
+
+Confirm strategy_edges includes:
+id,
+symbol,
+strategy_name,
+signal_name,
+action,
+sample_count,
+win_count,
+loss_count,
+break_even_count,
+net_pnl,
+avg_pnl,
+confidence_adjustment,
+risk_adjustment,
+edge_score,
+last_result,
+last_trade_id,
+updated_at,
+created_at.
+
+Confirm mistake_patterns includes:
+id,
+tag,
+symbol,
+action,
+count,
+last_trade_id,
+severity_score,
+recommended_guardrail,
+updated_at,
+created_at.
+
+3. Idempotency verification
+Prove the same trade_id / debrief_id / decision_id cannot update learning twice.
+
+Run the same learning payload twice.
+
+Confirm:
+- one learning event is created
+- second run returns already_processed or equivalent
+- strategy_edges are not updated twice
+- mistake_patterns are not updated twice
+
+4. WIN learning scenario
+Process a WIN payload.
+
+Show raw JSON output.
+
+Confirm:
+- sample_count increases
+- win_count increases
+- edge_score improves safely
+- confidence_adjustment improves modestly
+- risk_adjustment does not become unsafe
+- learningConfidence is calculated based on sample size
+
+5. LOSS learning scenario
+Process a LOSS payload.
+
+Show raw JSON output.
+
+Confirm:
+- sample_count increases
+- loss_count increases
+- edge_score decreases safely
+- confidence_adjustment is reduced if confidence was high but trade lost
+- risk_adjustment increases if risk was elevated
+- mistake_patterns update
+- recommended_guardrail is created or updated
+
+6. BREAK_EVEN learning scenario
+Process a BREAK_EVEN payload.
+
+Show raw JSON output.
+
+Confirm:
+- sample_count increases
+- break_even_count increases
+- edge_score changes only slightly or neutrally
+- confidence/risk adjustments remain bounded
+
+7. Build BB → Build CC handoff
+Confirm where Build BB calls Build CC after auto-debrief creation.
+
+Show the exact file/function.
+
+Confirm:
+- BB calls CC only after debrief succeeds
+- BB sends ready_for_learning: true
+- if CC fails, BB preserves the debrief and logs a warning
+- CC failure does not crash paper trade close flow
+
+8. Build AA reads CC memory
+Run a Build AA decision after CC learning data exists.
+
+Show raw JSON output from:
+POST /api/trade-decision/evaluate
+
+Confirm the AA decision includes:
+learningEdgeSummary,
+edgeScoreUsed,
+confidenceAdjustmentApplied,
+riskAdjustmentApplied,
+knownMistakeWarnings,
+learningSampleSize,
+learningConfidence.
+
+Confirm learning affects scoring but does not override safety.
+
+9. Safety override proof
+Create a scenario where learning data looks favorable but a safety rule should block the trade.
+
+Confirm final action is HOLD.
+
+The output should explain:
+- learning favored the trade
+- safety blocker rejected it
+- safety rules dominate learning
+
+10. Endpoint verification
+Run and show raw output for:
+
+POST /api/learning/demo
+POST /api/learning/process
+GET /api/learning/events?limit=10
+GET /api/learning/edges?symbol=Volatility%2075%20Index
+GET /api/learning/mistakes?symbol=Volatility%2075%20Index
+POST /api/trade-decision/evaluate
+
+11. Live-trade isolation proof
+Search Build CC files and confirm they do NOT call:
+executeTrade,
+execute-trade,
+mt5,
+livePosition,
+live order,
+setCanPlaceTrades,
+live broker execution,
+or anything that can place real trades.
+
+Confirm Build CC does NOT modify:
+safetyCore.canPlaceTrades
+live broker execution permissions
+MT5 live trade logic.
+
+12. Existing behavior compatibility
+Confirm these still work:
+- Build AA trade decision orchestrator
+- Build BB auto-debrief
+- existing manual debrief
+- paper trading
+- analytics
+- previous decision logs
+
+Required final response format:
+
+1. Verification passed or failed
+2. Commands/tests run
+3. Files changed
+4. New files created
+5. Database proof
+6. BB → CC handoff proof
+7. AA reading CC memory proof
+8. Raw WIN learning output
+9. Raw LOSS learning output
+10. Raw BREAK_EVEN learning output
+11. Raw idempotency proof
+12. Sample strategy_edges record
+13. Sample mistake_patterns record
+14. Sample AA decision showing learningEdgeSummary
+15. Safety override proof
+16. Live-trade isolation proof
+17. Any fixes made during verification
+18. Final Build CC score out of 10
+19. Whether it is safe to proceed to Build DD

@@ -1,0 +1,195 @@
+Update the ARX investor NAV/share system with lower launch tiers and automatic growth pricing.
+
+Goal:
+Lower the share-tier thresholds so early growth is rewarded sooner, then make share prices adjust automatically as the pool scales.
+
+Current profit split remains:
+- Investors: 30% of total net realized profit
+- Traders: 24.5% of total net realized profit
+- ARX/company/platform: 45.5% of total net realized profit
+
+Formula:
+investor_pool = total_net_profit × 0.30
+trader_pool = total_net_profit × 0.245
+arx_company_share = total_net_profit × 0.455
+
+Investor ownership:
+investor_shares = deposit_amount ÷ active_share_price
+investor_ownership_percent = investor_shares ÷ total_outstanding_shares
+investor_profit_payout = investor_profit_pool × investor_ownership_percent
+
+New 10-tier launch ladder:
+Tier 1:
+- NAV: $0 to $25,000
+- Share price: $1.00
+- Label: Founder Tier
+
+Tier 2:
+- NAV: $25,000.01 to $50,000
+- Share price: $1.10
+- Label: Early Believer Tier
+
+Tier 3:
+- NAV: $50,000.01 to $100,000
+- Share price: $1.25
+- Label: Early Growth Tier
+
+Tier 4:
+- NAV: $100,000.01 to $200,000
+- Share price: $1.50
+- Label: Proof Tier
+
+Tier 5:
+- NAV: $200,000.01 to $350,000
+- Share price: $2.00
+- Label: Momentum Tier
+
+Tier 6:
+- NAV: $350,000.01 to $500,000
+- Share price: $2.75
+- Label: Scale Tier
+
+Tier 7:
+- NAV: $500,000.01 to $750,000
+- Share price: $3.50
+- Label: Growth Plus Tier
+
+Tier 8:
+- NAV: $750,000.01 to $1,000,000
+- Share price: $5.00
+- Label: Premium Tier
+
+Tier 9:
+- NAV: $1,000,000.01 to $1,500,000
+- Share price: $7.50
+- Label: Elite Tier
+
+Tier 10:
+- NAV: $1,500,000.01 and above
+- Share price: dynamic
+- Label: Legacy Dynamic Tier
+
+Automatic dynamic pricing after Tier 10:
+- Once finalized NAV exceeds $1,500,000, calculate share price dynamically.
+- Use $7.50 as the base Tier 10 price.
+- For every additional $500,000 of finalized NAV above $1,500,000, increase the share price by a growth multiplier.
+- Default growth multiplier: 20%.
+- Admin may configure growth multiplier between 10% and 30%.
+- Use finalized NAV only for official share issuance.
+- Estimated NAV may show "estimated next price" but cannot activate it.
+
+Dynamic formula:
+extra_nav = max(0, finalized_nav - 1500000)
+growth_steps = floor(extra_nav / 500000)
+dynamic_share_price = 7.50 × (1 + growth_multiplier) ^ growth_steps
+
+Default:
+growth_multiplier = 0.20
+
+Examples:
+- $1,500,000 NAV: $7.50/share
+- $2,000,000 NAV: $9.00/share
+- $2,500,000 NAV: $10.80/share
+- $3,000,000 NAV: $12.96/share
+- $3,500,000 NAV: $15.55/share
+- $4,000,000 NAV: $18.66/share
+
+Rules:
+1. Active share tier is based on finalized NAV, not floating NAV.
+2. New deposits use the active finalized share price at approval/settlement.
+3. Existing investors keep their shares.
+4. Existing shares are never reduced when price increases.
+5. Estimated NAV may show upcoming tier/price but must be labeled estimated.
+6. Tier changes must write a ledger/audit record.
+7. Share price should not decrease automatically after a loss unless admin enables downgrade mode.
+8. Default behavior is stair-step upward pricing.
+9. Withdrawals redeem shares at finalized NAV/share value, not estimated floating value.
+10. Investors only see their own position; admin sees all.
+
+Data model updates:
+investment_pools:
+- active_share_tier
+- active_tier_label
+- active_share_price
+- finalized_nav
+- estimated_nav
+- dynamic_pricing_enabled
+- dynamic_growth_multiplier
+- dynamic_growth_step_size
+- next_tier_estimated_price
+- next_tier_threshold
+- tier_pricing_mode: fixed / dynamic
+- tier_downgrade_mode_enabled
+
+share_price_tiers:
+- tier_number
+- label
+- nav_min
+- nav_max
+- share_price
+- pricing_mode: fixed / dynamic
+- growth_multiplier
+- growth_step_size
+- is_active
+
+investor_deposits:
+- share_tier_at_deposit
+- tier_label_at_deposit
+- share_price_at_deposit
+- shares_issued
+- finalized_nav_at_deposit
+- pricing_mode_at_deposit
+
+investor_share_ledger:
+- transaction_type: deposit / withdrawal / profit_distribution / adjustment / fee / correction / tier_change / dynamic_price_change
+- share_price
+- share_tier
+- nav_before
+- nav_after
+- reason
+
+Admin UI:
+Show:
+- current finalized NAV
+- estimated NAV
+- active tier
+- active share price
+- next tier threshold
+- estimated next share price
+- progress to next tier
+- dynamic pricing multiplier
+- dynamic growth step size
+- tier history
+- price change history
+
+Investor UI:
+Show:
+- shares owned
+- average buy-in price
+- current share price
+- current tier
+- estimated account value
+- finalized account value
+- next tier progress
+- what price they joined at
+- how many shares they received
+- explanation: "Later investors may receive fewer shares as ARX grows."
+
+Tests:
+1. NAV $0–$25,000 uses Tier 1 at $1.00.
+2. NAV $25,000.01 activates Tier 2 at $1.10.
+3. NAV $50,000.01 activates Tier 3 at $1.25.
+4. NAV $100,000.01 activates Tier 4 at $1.50.
+5. NAV $1,500,000 activates Tier 10 dynamic base at $7.50.
+6. NAV $2,000,000 with 20% multiplier gives $9.00/share.
+7. NAV $2,500,000 with 20% multiplier gives $10.80/share.
+8. Estimated NAV crossing threshold does not activate official tier.
+9. Finalized NAV crossing threshold activates tier and creates ledger entry.
+10. New investor receives fewer shares after tier increase.
+11. Existing investor shares are not reduced after price increase.
+12. Withdrawal uses finalized share value.
+13. Loss does not auto-downgrade tier unless admin enables downgrade mode.
+
+Hard boundary:
+Do not change live execution gates, broker dispatch, MT5 bridge logic, trade safety rules, or trader payout attribution.
+This task is investor share pricing, tier automation, NAV accounting, and dashboard visibility only.

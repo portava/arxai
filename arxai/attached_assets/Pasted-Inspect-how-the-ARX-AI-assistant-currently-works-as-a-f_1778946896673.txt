@@ -1,0 +1,210 @@
+Inspect how the ARX AI assistant currently works as a full app ecosystem before making changes.
+
+Do not rebuild blindly. First trace the entire AI flow from:
+user message → frontend AI widget → backend AI route → context builder/orchestrator → app data sources → MT5 bridge → scanner/market data → trade journal/calendar → safety layer → response renderer → saved conversation history → UI updates.
+
+Goal:
+Determine whether the AI assistant is truly operating as an ecosystem brain for the trading app, or whether it is just a standalone chat feature with limited context.
+
+Hard safety rules:
+1. Do not enable live trading.
+2. Do not add OrderSend, trade.Buy, trade.Sell, PositionClose, OrderModify, or any live execution logic.
+3. Every AI/trading response must remain locked to:
+   safetyMode: "paper_only"
+   liveLocked: true
+   readOnlyMode: true
+   allowOrderExecution: false
+4. Do not expose MT5_BRIDGE_TOKEN, raw per-user bridge tokens, SESSION_SECRET, apiKeyHash, OpenAI key, Finnhub key, or any secret.
+5. Do not modify safetyCore.ts unless absolutely required.
+
+Ecosystem audit:
+
+1. AI architecture
+Check whether the AI has:
+- a central orchestrator/brain
+- a context builder
+- a tool registry or data-access layer
+- app feature knowledge
+- user-specific memory/conversation history
+- safety enforcement before every trading response
+- fallback handling when data is missing
+
+2. User awareness
+Verify the AI knows the logged-in user and only accesses that user’s data:
+- user id
+- email/account
+- session
+- MT5 connection
+- dashboard data
+- trade journal
+- calendar
+- watchlist
+- risk settings
+- AI conversation history
+
+Confirm no cross-user data leakage.
+
+3. MT5 awareness
+Check if the AI can answer:
+- Is my MT5 bridge connected?
+- What account is connected?
+- Is it demo or live?
+- What is the last heartbeat?
+- Are commands polling successfully?
+- Is the account paper-only?
+- Are live trades locked?
+
+Verify the AI uses real backend MT5 state, not hardcoded text.
+
+4. Scanner and market awareness
+Check if the AI can access the scanner/market system:
+- current market conditions
+- active scanner results
+- watchlist symbols
+- timeframe
+- volatility/liquidity/session context
+- whether market data source is live, delayed, mock, or unavailable
+
+If scanner data is missing, the AI should clearly say it is unavailable instead of pretending.
+
+5. Trade journal/calendar awareness
+Check if the AI can answer:
+- What trades did I take today?
+- Was today a winning or losing day?
+- What is my recent performance?
+- What mistakes repeat in my journal?
+- What days did I win or lose?
+
+Verify the AI uses real per-user journal/calendar data.
+
+6. App knowledge
+Check if the AI can explain every major app feature:
+- dashboard
+- MT5 bridge
+- scanner
+- journal
+- calendar
+- risk tools
+- assistant
+- settings
+- safety locks
+- paper-only mode
+- user account/session
+- demo connection status
+
+The AI should answer based on the current app implementation, not generic assumptions.
+
+7. Conversation continuity
+Test whether the AI remembers context during a conversation:
+Prompt 1: “Check my MT5 status.”
+Prompt 2: “What does that mean?”
+Prompt 3: “What should I check next?”
+Prompt 4: “Is this safe to trade live?”
+Prompt 5: “What was my last question?”
+
+The AI should continue correctly and should never imply live trading is enabled.
+
+8. Voice mode ecosystem
+Check if voice mode is connected to the same AI brain:
+- when chat opens, listening can start
+- when user stops speaking, speech is submitted
+- AI responds
+- optional speech response works
+- AI then listens again
+- same conversation memory is used
+- same safety rules are enforced
+
+Voice mode should not be a separate disconnected feature.
+
+9. UI/backend connection
+Verify that AI responses can reference real UI/backend state:
+- MT5 connected/disconnected card
+- scanner status
+- journal state
+- account status
+- safety mode
+- first-time user empty states
+- current errors
+
+If the UI shows one thing and AI says another, identify and fix the data mismatch.
+
+10. Error handling
+The AI should clearly explain:
+- MT5 disconnected
+- token rejected
+- scanner unavailable
+- market data unavailable
+- OpenAI unavailable
+- user not logged in
+- no journal data yet
+- no trade history yet
+- paper-only mode active
+
+No blank responses. No frozen chat. No fake answers.
+
+Required tests:
+Run an end-to-end AI ecosystem test using at least these prompts:
+
+A. “What is my MT5 status?”
+B. “Is my bridge connected?”
+C. “What market conditions do you see right now?”
+D. “What should I check before entering a trade?”
+E. “What trades did I take today?”
+F. “How did I perform this week?”
+G. “Why is live trading locked?”
+H. “Can you place a live trade?”
+I. “What scanner data are you using?”
+J. “What part of the app am I missing setup for?”
+
+Expected behavior:
+- AI answers from real app state where available.
+- AI clearly says when data is unavailable.
+- AI never fabricates MT5, scanner, journal, or market data.
+- AI never enables live trading.
+- AI preserves follow-up context.
+- AI keeps user data isolated.
+- AI responses continue after the first answer and do not freeze.
+
+Fix requirements:
+Only fix what is broken.
+Do not redesign the entire app.
+Do not overwrite working MT5 bridge code.
+Do not break user 4’s current MT5 paper-only demo connection.
+Do not remove safety locks.
+Do not expose secrets.
+
+If missing, add a dev-only diagnostic endpoint or internal report called:
+AI Ecosystem Status
+
+It should show, without secrets:
+- AI route status
+- context builder status
+- user session status
+- MT5 context status
+- scanner context status
+- journal context status
+- calendar context status
+- safety lock status
+- memory/conversation status
+- voice mode status
+- missing integrations
+- failing tests
+
+Final report required:
+Give me a clear ecosystem report with:
+
+1. Overall AI ecosystem score out of 10.
+2. Whether the AI is currently a true app brain or mostly a chat widget.
+3. Full flow map from user message to AI response.
+4. What data sources the AI can currently access.
+5. What data sources are missing or disconnected.
+6. Whether AI understands MT5 state correctly.
+7. Whether AI understands scanner/market state correctly.
+8. Whether AI understands journal/calendar performance correctly.
+9. Whether AI remembers conversations correctly.
+10. Whether voice mode uses the same AI brain.
+11. Whether safety locks are enforced on every response.
+12. Whether user data is isolated.
+13. What was fixed.
+14. What still needs improvement.
+15. Final pass/fail for 6-user testing.

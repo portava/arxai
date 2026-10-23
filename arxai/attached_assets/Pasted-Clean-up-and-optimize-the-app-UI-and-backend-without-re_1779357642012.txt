@@ -1,0 +1,291 @@
+Clean up and optimize the app UI and backend without rebuilding from scratch or breaking existing functionality.
+
+First inspect the current app structure, routes, components, pages, API calls, backend services, hooks, state stores, alerts, notifications, and trading safety systems.
+
+Goal:
+Make the app cleaner, faster, easier to navigate, and less cluttered by replacing long scrolling pages with labeled tabs, collapsible sections, filter menus, compact cards, and reduced repetitive wording.
+
+Do not delete working features blindly. Check what exists first, then reorganize, collapse, reduce, flag, or optimize.
+
+Core rules:
+1. Check the current implementation first.
+2. Reuse existing components, routes, APIs, data, permissions, styling, and trading logic.
+3. Do not remove trading safety controls.
+4. Do not remove admin/operator controls.
+5. Do not create a separate admin login.
+6. Preserve role-based access.
+7. Keep Ruby visible and usable across pages.
+8. Keep demo/live/paper trading protections intact.
+9. Keep stop loss, take profit, risk/reward, scanner, bridge, alerts, and trade logs working.
+10. Do not break mobile layout.
+
+Page cleanup:
+Identify pages that are too long, repetitive, cluttered, or hard to scan. Replace long stacked layouts with properly labeled tabs.
+
+Use tabs where appropriate for:
+
+Dashboard:
+- Overview
+- Active Trades
+- Market Conditions
+- Ruby Insights
+- Alerts
+- Account Health
+
+Scanner:
+- Best Setups
+- Watchlist
+- Volatility Markets
+- Forex
+- Synthetic Indices
+- News Impact
+- Scanner History
+
+Trade / Execution:
+- Place Trade
+- Pending Orders
+- Open Positions
+- SL / TP Manager
+- Risk / Reward
+- Trade History
+- Ruby Trade Review
+
+Risk Center:
+- Account Risk
+- Position Risk
+- Stop Loss Logic
+- Daily Limits
+- Drawdown Protection
+- Broker / Spread Safety
+
+Ruby AI:
+- Live Chat
+- Voice Mode
+- Trade Questions
+- Market Research
+- Saved Chats
+- App Help
+
+Calendar / Alerts:
+- Economic Calendar
+- Trade Alerts
+- Watch Alerts
+- Sniper Alerts
+- Close Warnings
+- Alert History
+
+Admin / Operator:
+- Users
+- Live Trading Approval
+- Invite Codes
+- Master Bridge
+- Kill Switches
+- Trade Logs
+- System Health
+- Audit Logs
+
+Settings / Connections:
+- Profile
+- Trading Mode
+- MT5 Bridge
+- API Keys
+- Notifications
+- Security
+- Ruby Memory
+
+Create or improve reusable UI components:
+- PageTabs
+- TabGroup
+- SectionTabs
+- TabPanel
+- CollapsibleSection
+- FilterDrawer
+- CompactAlert
+- DormantSystemFlag
+
+Tabs should support:
+- Clear labels
+- Optional icons
+- Optional badge counts
+- Mobile horizontal scroll
+- Active tab styling
+- URL/query state where useful
+- Smooth switching without full page reload
+- Keyboard/accessibility support
+
+Reduce repetitive wording:
+Search the app for repeated phrases, duplicate warning text, repeated helper text, repeated Ruby explanations, repeated alerts, repeated safety notices, and repeated page descriptions.
+
+Fix by:
+- Creating reusable short copy constants.
+- Replacing long repeated paragraphs with short labels and “More details” expandable sections.
+- Keeping legal/safety warnings visible only where needed.
+- Combining duplicate alerts into one clear alert.
+- Avoiding repeated “live trading is risky” style warnings on the same screen.
+- Avoiding repeated descriptions under every card if the tab or section already explains it.
+- Making Ruby explanations concise unless the user expands them.
+
+Alert cleanup:
+Audit all alerts, banners, toast messages, warning boxes, badges, and status cards.
+
+Fix:
+- Remove duplicate alerts.
+- Combine similar warnings.
+- Downgrade low-priority alerts into status chips.
+- Move old/non-urgent alerts into Alert History.
+- Make high-priority trade/risk alerts stand out.
+- Keep emergency alerts, kill switch alerts, bridge failure alerts, margin risk alerts, and live-trading warnings visible.
+- Do not spam users with the same alert repeatedly.
+
+Collapse text-heavy areas:
+Find areas that take up too much space because of long text, descriptions, instructions, explanations, or filters.
+
+Fix by moving them into:
+- Collapsible sections
+- Info drawers
+- Filter menus
+- Tooltips
+- “Advanced filters”
+- “More details”
+- “View explanation”
+- Ruby expandable explanation cards
+
+Examples:
+- Scanner filters should live in a filter drawer/menu instead of taking up the whole page.
+- Long risk explanations should collapse under “Why this matters.”
+- Ruby market explanations should show a short summary first, then expandable details.
+- Large backend/system status descriptions should become compact status cards.
+- Repeated trade warnings should become compact risk badges with expandable text.
+- Large settings sections should collapse into grouped cards.
+
+Filter menu cleanup:
+For scanner, alerts, trade history, logs, and admin pages, move bulky controls into labeled filter menus.
+
+Filter menus should include only relevant controls, such as:
+- Market type
+- Symbol/pair
+- Trading mode
+- Risk level
+- Date range
+- Alert type
+- Trade status
+- User status
+- Approval status
+- Bridge status
+- Setup quality
+- Volatility level
+- News impact
+
+Dormant UI/backend audit:
+Inspect for UI or backend areas that appear unused, duplicated, abandoned, hidden, disconnected, or not actively connected to the current app flow.
+
+Flag dormant areas before removing anything.
+
+Check for:
+- Unused components
+- Dead routes
+- Duplicate pages
+- Old mock pages
+- Unused backend endpoints
+- Duplicate API handlers
+- Old scanner logic not connected to current scanner
+- Old Ruby panels not connected to current Ruby assistant
+- Old bridge status code not connected to the current MT5 bridge
+- Unused admin screens
+- Unused notification systems
+- Unused state stores
+- Duplicate hooks
+- Unused imports
+- Old test/demo-only UI showing in production screens
+- Dead buttons that do nothing
+- Backend services that run but are not used
+- Polling or intervals that keep running unnecessarily
+
+Create a Dormant Systems Report inside the codebase, such as:
+- docs/dormant-systems-audit.md
+
+The report should list:
+- File/component/service name
+- Where it appears
+- Whether it is active, duplicate, unused, outdated, or unsafe to remove
+- Recommended action: keep, collapse, lazy-load, hide, merge, remove unused import, or investigate
+- Risk level before removal
+
+Optimization actions allowed:
+- Remove unused imports.
+- Remove duplicate UI blocks.
+- Remove duplicate alert rendering.
+- Consolidate repeated components.
+- Lazy-load heavy dormant panels.
+- Stop unnecessary polling.
+- Reduce duplicate API calls.
+- Hide inactive admin/dev-only panels from regular users.
+- Move rarely used controls into advanced menus.
+- Collapse backend/system diagnostics unless admin opens them.
+- Reduce excessive logs in frontend console.
+- Keep backend audit logs where required for safety.
+
+Optimization actions not allowed unless confirmed safe by code inspection:
+- Do not delete trade execution logic.
+- Do not delete bridge connection logic.
+- Do not delete live/paper/demo mode safety gates.
+- Do not delete user approval toggles.
+- Do not delete kill switches.
+- Do not delete trade logs.
+- Do not delete risk management logic.
+- Do not delete Ruby memory/chat history logic.
+- Do not delete scanner logic that may still be used.
+
+Performance cleanup:
+Improve speed by:
+- Reducing unnecessary renders.
+- Memoizing heavy tab content where appropriate.
+- Lazy-loading non-active tabs.
+- Preventing all tabs from fetching data at once if not needed.
+- Avoiding duplicate fetch calls.
+- Stopping unused intervals/listeners on unmount.
+- Reducing large text blocks in the DOM when collapsed.
+- Keeping scanner/feed updates efficient.
+- Making admin/system logs paginated or filtered instead of loading everything at once.
+
+Design requirements:
+- Keep the app clean, modern, and professional.
+- Reduce scrolling.
+- Make important trading actions easier to find.
+- Use compact cards.
+- Use clear headings.
+- Use simple user-friendly labels.
+- Keep admin/system labels more technical only where necessary.
+- Keep mobile screens clean.
+- Make tabs swipe-friendly or horizontally scrollable on mobile.
+- Ensure Ruby, floating menus, help bars, and bottom navigation do not block tabs or buttons.
+
+Acceptance checks:
+- App still loads to the correct login/auth flow.
+- Regular users only see user features.
+- Admin users see admin/operator controls through role permissions.
+- Ruby still works on every page.
+- Ruby voice/chat areas still work.
+- Scanner still works.
+- Volatility market feed still works if already connected.
+- Trade placement still works.
+- Pending orders still work.
+- Stop loss and take profit entry/editing still work.
+- Risk/reward still shows reasonable stop loss and take profit logic.
+- Open trade management still works.
+- MT5 bridge status still works.
+- Master bridge controls still work.
+- Live trading approval toggles still work.
+- Invite code system still works.
+- Kill switches still work.
+- Alerts still work but are not repetitive.
+- Long pages are now tabbed or collapsed.
+- Bulky filters are moved into filter menus.
+- Dormant UI/backend areas are flagged.
+- Unused imports and duplicate UI are cleaned safely.
+- No broken tabs.
+- No hidden buttons.
+- No mobile overflow.
+- No console errors.
+- No duplicate alerts.
+- No repeated warning text cluttering the same screen.

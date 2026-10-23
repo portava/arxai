@@ -1,0 +1,156 @@
+Fix the LIVE_SHARED scanner trade ticket still blocking with a vague pre-flight message.
+
+Current screenshot issue:
+
+* Page: /market-scanner
+* Modal: LIVE SHARED-ACCOUNT TRADE
+* Real live shared ticket opens correctly.
+* Preview mode is not shown.
+* Lot is 0.01.
+* Stop loss is labeled optional.
+* User clicks Validate trade.
+* Result: BLOCKED.
+* Message only says: “Pre-flight checks didn’t pass. Adjust the trade or contact your operator.”
+* Developer details are hidden behind an admin-only drawer.
+* This is not usable. The user/admin needs a clean, specific blocked reason or a pass-to-confirm state.
+
+Do not place trades.
+Do not insert arx_live_commands during QA.
+Do not type operator phrases.
+Do not weaken safety gates.
+Do not fake validation.
+Do not bypass real blockers.
+Do not expose raw gate constants to normal users.
+
+Create checkpoint first:
+checkpoint: fix-live-shared-preflight-specific-blocker
+
+Task 1 — Trace exact validation failure:
+Trace the scanner LIVE_SHARED Validate trade request end-to-end:
+
+scanner modal → validate button → frontend payload → backend validation route → account-mode resolver → user allocation shell → risk profile → live shared validation → returned response.
+
+Log/admin-diagnose the exact blocker internally, then map it to clean user-facing copy.
+
+Find whether the blocker is:
+
+* missing stop loss despite UI saying optional
+* symbol not allowed
+* symbol not tradable
+* no allocation
+* account shell missing
+* bridge not connected
+* master switch off
+* kill switch active
+* daily loss/max open/max lot
+* preview mode
+* stale account-mode resolver
+* wrong validation route
+* demo/test validator still being used
+* missing required field in payload
+* backend default-deny mismatch
+* any other validation gate
+
+Task 2 — Fix mismatch between UI labels and backend rules:
+If Stop Loss is labeled optional, backend must not block for missing SL unless requireStopLoss=true.
+
+If requireStopLoss=true:
+
+* label should say “Stop loss required”
+* the missing SL message should say “Stop loss required for this account.”
+
+If admin/operator unrestricted profile is active:
+
+* do not require SL unless explicitly enabled
+* do not apply starter/default caps
+* do not show generic pre-flight failure
+
+Task 3 — Replace generic blocker copy:
+Do not show only:
+“Pre-flight checks didn’t pass.”
+
+Show one clean specific reason:
+
+* “Stop loss required for this account.”
+* “Symbol is not allowed for this account.”
+* “Symbol is not tradable right now.”
+* “Live bridge is not connected.”
+* “Account allocation required.”
+* “Risk settings required.”
+* “Trade size exceeds your account limit.”
+* “Account is frozen.”
+* “Preview mode only — exit user preview to validate trades.”
+* “Trade blocked by safety checks.”
+
+Admin-only developer details can still show raw diagnostics inside the drawer, but normal visible UI must show the clean blocker.
+
+Task 4 — Ensure correct LIVE_SHARED validation path:
+The scanner ticket must use the same live shared validator as the main live shared ticket.
+
+It must not use:
+
+* demo validator
+* paper validator
+* simulator path
+* tester path
+* stale scanner validator
+* old default-deny wrapper
+
+Task 5 — One-modal pass flow:
+If validation passes:
+
+* show “All safety checks passed.”
+* show final Confirm Trade button in the same modal
+* do not open another popup
+* do not show “Use LIVE SHARED above”
+* do not insert arx_live_commands until the real final confirm flow is intentionally executed
+
+During QA, do not click final confirm in a way that places a trade.
+
+Task 6 — Regression tests:
+Add/extend tests proving:
+
+1. Missing SL is not blocked when requireStopLoss=false.
+2. Missing SL is blocked with clean copy when requireStopLoss=true.
+3. Admin/operator unrestricted user with lot 0.01 and optional SL can pass validation if no real blockers exist.
+4. Scanner ticket uses LIVE_SHARED validator, not demo/tester validator.
+5. Generic “Pre-flight checks didn’t pass” is not the only visible reason.
+6. Raw gate constants stay inside admin-only developer details.
+7. arx_live_commands remains 0 during validation tests.
+
+Task 7 — QA:
+Run:
+
+* typecheck
+* ci:guards
+* test:admin-unrestricted-risk
+* test:live-shared-reason-copy
+* test:scanner-real-feed
+* test:account-mode
+* test:mode-scope
+* test:live-phaseB
+* test:demo-arming
+* test:demo-verify
+* new scanner-preflight-specific-blocker tests
+* arx_live_commands count before/after
+
+Verify in real UI:
+
+1. Validate trade no longer shows only a vague pre-flight message.
+2. The exact clean blocker appears if blocked.
+3. If no blocker exists, validation advances to final Confirm Trade in the same modal.
+4. No second popup appears.
+5. No raw fields show in the normal modal body.
+6. No live trade is placed during QA.
+7. arx_live_commands remains 0.
+8. No safety gates are weakened.
+
+Final report only:
+
+* exact root blocker found
+* files/routes changed
+* UI copy fixed
+* whether validation now passes or shows a specific blocker
+* tests added
+* QA results
+* arx_live_commands count

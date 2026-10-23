@@ -1,0 +1,119 @@
+Inspect Sub-phase 3A before starting 3B.
+
+Do NOT build 3B yet.
+Do NOT modify the EA yet.
+Do NOT export EA v1.26 yet.
+Do NOT add OrderSend, OrderModify, OrderClose, PositionClose, or broker execution code yet.
+Do NOT send any MT5 command.
+Do NOT unlock live trading.
+Do NOT enable shared MT5 routing.
+Do NOT enable auto-close execution.
+Do NOT expose bridge tokens, broker credentials, hashes, passwords, session secrets, or private values.
+
+Goal:
+Verify Sub-phase 3A server-only dispatch foundation is safe, complete, and ready before we build EA v1.26 demo-only execution.
+
+Verify:
+
+1. 3A completion status
+- Final answer says READY FOR 3B.
+- Server dispatch gate exists.
+- Command queue consumer skeleton exists.
+- Reconciliation skeleton exists.
+- Duplicate dispatch suppression exists.
+- Audit events exist.
+- Safety gate snapshots exist.
+
+2. No MT5 dispatch possible yet
+Confirm:
+- BROKER_DISPATCH_BUILT=false
+- canDispatchToMT5() refuses with BROKER_DISPATCH_NOT_BUILT
+- canDispatchToMt5Allowed=false
+- commandExecutionAllowed=false
+- no code path writes SENT_TO_MT5_DEMO
+- DB count where status='SENT_TO_MT5_DEMO' equals 0
+- EA remains v1.25
+- EA has no OrderSend / OrderModify / OrderClose / PositionClose code
+
+3. Command queue safety
+Confirm command queue records require:
+- userId
+- bridgeConnectionId
+- accountLogin
+- commandId
+- auditId
+- commandType
+- payload
+- safetyGateSnapshot
+- status
+- reason if blocked/failed
+
+Confirm:
+- cross-user consume returns COMMAND_NOT_FOUND or 403/404
+- duplicate command dispatch is suppressed
+- DEMO_APPROVED does not send to MT5
+- SENT_TO_MT5_DEMO cannot be reached in this build
+
+4. Demo gate safety
+Confirm:
+- VERIFIED_DEMO required
+- account_type_explicit_demo required
+- user_owns_bridge required
+- heartbeatFresh required
+- bridgeConnected required
+- safety_envelope_intact required
+- user confirmation required
+- risk/prop gates required
+- duplicate command clear required
+
+5. Live safety regression
+Confirm:
+- liveLocked=true
+- allowOrderExecution=false
+- allowModification=false
+- allowClose=false
+- brokerPlacementImplemented=false
+- sharedMt5RoutingBlocked=true
+- autoCloseMode=ALERT_ONLY
+- live endpoints return 403 NOT_ARMED_FOR_LIVE
+- legacy MT5_BRIDGE_TOKEN rejected on EA endpoints
+- per-user isolation intact
+
+Run:
+1. Typecheck
+2. Full CI guard suite
+3. Stop-limit/order-type QA
+4. Sub-phase 3A dispatch gate tests
+5. Command queue skeleton tests
+6. Reconciliation skeleton tests
+7. Duplicate dispatch suppression tests
+8. DB invariant test: SENT_TO_MT5_DEMO count = 0
+9. Cross-user command consume tests
+10. Forbidden live endpoint tests
+11. Secret leakage scan
+12. Per-user isolation regression
+13. Safety-envelope regression
+14. Live trading locked regression
+15. Shared MT5 routing blocked regression
+16. Mandatory architect/code review
+
+If anything fails:
+- Fix only confirmed P0/P1 issues.
+- Do not start 3B.
+- Do not modify EA.
+- Rerun all checks.
+
+End with:
+- Files inspected
+- Files changed, if any
+- 3A dispatch gate result
+- command queue skeleton result
+- reconciliation skeleton result
+- duplicate suppression result
+- DB invariant result
+- tests run/pass/fail
+- whether any command can reach MT5
+- confirmation live trading remains BLOCKED
+- confirmation demo execution is still NOT sending
+- confirmation EA remains v1.25
+- final answer: READY FOR 3B or NOT READY, with reasons.

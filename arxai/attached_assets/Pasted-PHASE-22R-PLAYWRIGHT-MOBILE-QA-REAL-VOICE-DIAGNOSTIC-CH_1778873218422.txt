@@ -1,0 +1,153 @@
+PHASE 22R — PLAYWRIGHT MOBILE QA + REAL VOICE DIAGNOSTIC CHECK
+
+Do NOT rebuild the app.
+Do NOT rebuild scanner/provider.
+Do NOT change Twelve Data/Finnhub routing.
+Do NOT touch live-trading safety rails.
+Do NOT fake mic, voice, scanner, or market data.
+
+CURRENT VERIFIED STATE:
+- Twelve Data scanner path is working.
+- Finnhub remains quotes/news.
+- Follow-up memory works.
+- Provider errors are clean.
+- User isolation passed.
+- Rate-limit cache passed.
+- CI passed 11/11.
+- The only unverified items are real voice flow and mobile Safari layout.
+
+MAIN GOAL:
+Run automated UI QA for the mobile app, then inspect/fix only voice and mobile issues that fail.
+
+STEP 1 — RUN PLAYWRIGHT MOBILE UI QA
+
+Run Playwright against the live dashboard using a mobile viewport similar to iPhone Safari.
+
+Test:
+1. App loads without horizontal overflow.
+2. Bottom nav stays fixed.
+3. ARX AI popup opens.
+4. AI panel fits mobile viewport.
+5. Quick suggestions render correctly.
+6. “Check scanner” quick suggestion works.
+7. ARX returns Twelve Data scanner candidates.
+8. Follow-up “?” references scanner result.
+9. “How do I use this?” triggers page help.
+10. “?” after scanner does not trigger page help.
+11. Market status shows Twelve Data when connected.
+12. Simulator dashboard labels remain simulator/demo only.
+13. No raw backend errors appear.
+14. No API keys appear in frontend/network payloads.
+15. Closing AI popup works.
+16. AI popup does not block bottom nav incorrectly.
+
+Take screenshots of:
+- dashboard initial load
+- ARX popup open
+- scanner response
+- follow-up “?” response
+- mobile bottom nav area
+
+Patch only failures.
+
+STEP 2 — ADD / RUN VOICE DIAGNOSTIC CHECK
+
+Because real mic permissions are hard to verify headlessly, inspect the actual voice state logic directly.
+
+Verify these conditions in code and browser logs:
+
+A. Popup open behavior
+If ARX popup is open AND mic permission is granted AND voice mode is fallback_ready or realtime_ready:
+- mic should turn on automatically
+- auto-listen should turn on automatically
+- UI should show Listening / Mic on
+- UI should NOT stay Mic off
+- UI should NOT stay Auto-listen off
+
+B. Fallback voice mode
+If realtime voice fails but fallback is ready:
+- fallback voice should still auto-listen
+- the red realtime error banner should not block use
+- text chat should still work
+- quick suggestions should still work
+
+C. Voice send behavior
+When user speaks:
+- VAD detects voice
+- recording starts
+- silence stops recording
+- one request is sent
+- request goes through same AI route as text
+- response appears in text
+- Speak on triggers audio output
+
+D. Speakback behavior
+If Speak is on:
+- final assistant response should be sent to TTS or browser speech fallback
+- audio should play
+- status should show Speaking only while audio is actually playing
+- after audio ends, listening should resume
+
+E. Cleanup
+When popup closes:
+- stop MediaRecorder
+- stop VAD loop
+- release all MediaStream tracks
+- stop audio playback
+- no background listening
+
+STEP 3 — PATCH ONLY VOICE FAILURES
+
+Based on the screenshots, specifically check and patch this likely bug:
+
+Current bad state:
+- Microphone access allowed
+- Voice fallback ready
+- but UI still says Mic off / Auto-listen off
+
+Correct state:
+- Microphone access allowed
+- Voice fallback ready
+- AI popup open
+- UI should show Mic on / Listening
+- auto-listen should be on automatically unless user manually muted it
+
+Patch the state machine so manual mute is separate from default auto-listen.
+
+Rules:
+- First popup open after permission granted = auto-listen ON.
+- User manually taps mic off = muted for that popup session.
+- Closing/reopening can restore user setting if already supported.
+- No background listening when closed.
+
+STEP 4 — QA / FIX GATE
+
+Run QA after patching.
+
+Must pass:
+1. Mobile layout stable.
+2. AI popup does not overflow.
+3. Bottom nav remains usable.
+4. Scanner returns Twelve Data candidates.
+5. Follow-up memory works.
+6. Voice state does not show Mic off when mic permission is allowed and popup is open.
+7. Auto-listen starts automatically while popup is open.
+8. User speech auto-sends after silence.
+9. Speakback works when Speak is on.
+10. Mic pauses while AI speaks.
+11. Mic resumes after AI speaks.
+12. Closing popup stops mic completely.
+13. No raw errors appear.
+14. No provider/API secrets leak.
+15. CI still passes.
+
+FINAL REPORT REQUIRED:
+Report:
+- Playwright screenshots taken
+- mobile UI QA results
+- voice state findings
+- whether Mic off / Auto-listen off bug was found
+- files changed, if any
+- whether speakback works
+- whether auto-listen works in fallback mode
+- remaining manual iPhone Safari steps for me to test

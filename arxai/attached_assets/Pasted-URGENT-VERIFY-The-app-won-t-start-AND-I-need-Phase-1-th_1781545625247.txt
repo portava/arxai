@@ -1,0 +1,25 @@
+URGENT + VERIFY. The app won't start, AND I need Phase 1 (the shared data-sufficiency verdict) verified. Do these together: diagnose the boot failure FIRST (it may be caused by Phase 1), report before fixing, then prove the Phase 1 wiring. Read-only until the boot cause is identified.
+
+PART A — WHY THE APP WON'T START (do this first):
+1. Start the api-server and the dashboard and capture the ACTUAL error. Paste the real stderr/stack — not a summary. Is it: a build/compile error, a failed import, a circular dependency, a missing export, a runtime throw on boot, a port conflict, or a failed post-merge migration?
+2. Is this caused by Phase 1? The sufficiency engine added a NEW required field to RubyChartContext and new imports across marketScanner / chartIntelligence / rubyChartContext / meAssistant. Check: does the failure trace through any of those files or @workspace/domain/market? Run `git log --oneline -5 main` and `git rev-parse HEAD` — is HEAD on the Phase 1 commit, and did the app start BEFORE it? If the error is an import/type/circular issue in the Phase 1 surface, that's almost certainly the cause.
+3. Run `typecheck:ci` and `pnpm run ci:guards` — do they pass on the current checkout? (The agent reported them green at merge; confirm they're still green now, because a green typecheck + a boot failure points at runtime/env, while a red one points at the merge.)
+4. REPORT the exact cause before fixing. Then: if it's a Phase 1 defect (bad import, circular dep, broken constructor, missing field at a call site), fix THAT minimally and get the app booting. If it's environmental (port, DB, post-merge migration, stale process), fix/restart accordingly. State which it was. Do not rewrite Phase 1 logic to "fix" a boot issue that's actually environmental.
+
+PART B — VERIFY PHASE 1 (once the app boots; much of this is reading the same files Part A touched):
+5. Locate the shared engine (marketDataSufficiency.ts). Paste the imports proving scanner, Ruby (chartIntelligence/rubyChartContext/read-chart), AND chart/header each CALL it — not their own copy. Show the actual import + call lines for each of the three.
+6. Confirm MIN_FLAG_BARS is a true ALIAS of the engine's MIN_SUFFICIENT_CLOSED_BARS (one constant), not a second hardcoded 5.
+7. Confirm no scanner-only and no Ruby-only confidence/sufficiency rule can OVERRIDE the shared verdict — show that the scanner's old `candles.length===0`-only path and Ruby's standalone bar gate now both flow from the engine.
+8. Confirm the field naming: the data-quality field is canShowTradeSetup (or tradeSetupAllowed), and NO field named tradeSignalAllowed/tradeExecutionAllowed is emitted by the engine (the verdict cannot read as execution permission). Paste the type.
+9. AGREEMENT PROOF — run these 5 cases and for EACH show the scanner verdict, the Ruby verdict, AND the chart verdict for the same symbol+timeframe; they MUST match:
+   (a) fresh + sufficient (≥5 closed bars, clean LIVE)
+   (b) fresh but too few candles (<5 closed bars) — the reported bug
+   (c) stale candles
+   (d) missing quote/tick (AWAITING)
+   (e) unapproved market (blocked)
+   For (b): confirm scanner shows NO confident BUY/SELL and Ruby refuses with the SAME humanReason, and chart badges the same state. If any case the three disagree, FIX Phase 1 before proceeding.
+10. LIVE PATH UNTOUCHED: confirm Phase 1 changed no trade-ticket execution, one-click, MT5 path, the 16/18-gate evaluator, synthetic floor, SL policy, or backtest — and that the synthetic-floor + SL tests still pass. Paste results.
+
+REPORT: the exact boot-failure cause and whether it was Phase 1 or environmental; the fix applied to make it start; the files changed; the imports proving shared usage; the 5-case agreement table (scanner/Ruby/chart columns matching); the naming proof; and confirmation the live path is untouched.
+
+PASS CONDITION: the app boots, AND scanner+Ruby+chart provably consume the one shared verdict and cannot contradict for the same symbol+timeframe. If the 5-case table shows any disagreement, Phase 1 is not done — fix it.

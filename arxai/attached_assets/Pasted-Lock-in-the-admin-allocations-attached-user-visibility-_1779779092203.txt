@@ -1,0 +1,83 @@
+Lock in the /admin/allocations attached-user visibility fix and verify it in the actual running UI.
+
+Current result from the last fix:
+- Case-sensitive ACTIVE/active filtering was hiding attached users.
+- user 4 showed attached=true but has_alloc=false.
+- GET /admin/allocations was updated to include orphan-attached users with synthetic zero-allocation rows.
+- This means attached users must appear in User Allocations even when allocation is still $0.
+- A regression test for ACTIVE-cased VTA rows was flagged as not implemented.
+
+Do not place trades.
+Do not insert live commands.
+Do not type operator phrases.
+Do not recommend lot size.
+Do not fake balances or allocations.
+Do not bypass safety gates.
+
+Create checkpoint first:
+checkpoint: lock-attached-active-vta-allocation-visibility
+
+Task 1 — Add the missing regression test:
+Add a focused regression test proving:
+1. A virtual_trading_accounts row with status='ACTIVE' is treated as active.
+2. A virtual_trading_accounts row with status='active' is treated as active.
+3. Attached users appear in GET /admin/allocations even when user_slot_allocation is missing or allocation is $0.
+4. The response marks them as attached.
+5. The response shows hasAllocation=false or equivalent clean state.
+6. The frontend can render them with Add/Set allocation controls.
+
+Task 2 — Verify real UI behavior:
+Open /admin/allocations in the running app and confirm:
+1. User 4 / andraie.co@gmail.com appears under User Allocations.
+2. The user row/card shows Attached.
+3. The user row/card shows allocation $0.00 if no allocation exists yet.
+4. The user row/card shows Add/Set allocation controls.
+5. The Attach search no longer creates confusion when the user is already attached.
+6. The page does not show User Allocations (0) when attached users exist.
+7. The page does not require a user to have a nonzero allocation before appearing.
+
+Task 3 — Fix frontend cache if needed:
+If the backend returns the user but UI still shows User Allocations (0):
+1. Fix frontend state mapping.
+2. Fix filters hiding zero-allocation attached users.
+3. Fix stale cache/refetch logic.
+4. Make Refresh reload:
+   - master summary
+   - allocation list
+   - eligible users
+   - shell status
+5. Do not require hard refresh for correct data.
+
+Task 4 — Confirm allocation action:
+For an attached zero-allocation user:
+1. Add/Set allocation modal opens.
+2. Save path works.
+3. Audit log records the change.
+4. The user shell updates on refresh/poll.
+5. User-facing account changes from zero only after real allocation is saved.
+
+Task 5 — QA:
+Run:
+- typecheck
+- ci:guards
+- test:live-phaseB
+- test:demo-arming
+- test:demo-verify
+- allocation runtime QA
+- the new ACTIVE-cased VTA regression test
+
+Verify:
+1. arx_live_commands count remains 0.
+2. No live trade is placed.
+3. No operator phrases are typed.
+4. No safety gates are weakened.
+5. Normal users do not see master balance or other users.
+6. Admin can see attached zero-allocation users and allocate from the admin page.
+
+Final report only:
+- whether user 4 now appears in User Allocations
+- whether zero-allocation attached users render correctly
+- whether Add/Set controls appear
+- whether the new regression test was added
+- files/routes changed
+- QA results

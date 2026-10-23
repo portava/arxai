@@ -1,0 +1,382 @@
+ARX AI TRADE RECOMMENDATION UPGRADE — ADD TAKE PROFIT TARGETS TO EVERY TRADE/SNIPER SETUP
+
+Update ARX AI so whenever the system recommends a trade, especially a Sniper setup, it also recommends clear Take Profit positions.
+
+Do NOT rebuild.
+Do NOT redesign.
+Do NOT bypass risk controls.
+Do NOT auto-place TP without user confirmation.
+Do NOT fake live market data.
+Do NOT claim guaranteed profit.
+Do NOT create duplicate AI/scanner systems.
+
+Patch the existing AI trade recommendation, scanner/radar, sniper, and trade ticket flow only where needed.
+
+Goal:
+When ARX AI recommends a trade, the output should include:
+
+1. Suggested entry
+2. Suggested Stop Loss / invalidation
+3. Suggested Take Profit levels
+4. Risk/reward ratio
+5. Reason for each Take Profit level
+6. Confidence/status
+7. Data source status:
+   - live
+   - demo
+   - preview
+   - delayed
+   - incomplete
+   - bridge disconnected
+8. Clear warning that the user must confirm before placing or applying anything
+
+==================================================
+PHASE 1 — INSPECT CURRENT RECOMMENDATION FLOW
+==================================================
+
+Inspect first, then patch.
+
+Find every place where the app recommends trades:
+
+1. AI assistant trade recommendation responses
+2. Sniper trade recommendation logic
+3. Market scanner/radar recommendations
+4. Opportunity radar ranked opportunities
+5. Trade preview responses
+6. Trade ticket prefill logic
+7. Any “best market right now” logic
+8. Any close/hold/sniper-close logic
+
+Report the files first.
+
+Do not create a new recommendation system if one already exists.
+
+==================================================
+PHASE 2 — ADD TAKE PROFIT OUTPUT MODEL
+==================================================
+
+Add a consistent Take Profit target model.
+
+Each recommendation should support:
+
+takeProfitTargets: [
+  {
+    label: "TP1",
+    price: number,
+    reason: string,
+    rr: number,
+    distancePoints: number,
+    distancePips: number,
+    suggestedAction: "partial" | "full" | "runner",
+    confidence: "low" | "medium" | "high"
+  }
+]
+
+Recommended structure:
+
+TP1:
+- Conservative target
+- Nearest liquidity, structure level, support/resistance, VWAP/EMA reaction, or 1R area
+- Usually suggested for partial profit or risk reduction
+
+TP2:
+- Main target
+- Stronger structure/liquidity zone or 2R area
+- Usually suggested as primary take-profit target
+
+TP3:
+- Extended/runner target
+- Higher-risk target based on continuation, trend extension, ATR projection, or liquidity sweep
+- Should be optional and clearly marked as lower certainty if appropriate
+
+If only one reliable target exists, return only one.
+If no reliable target exists, return:
+“Take Profit unavailable — insufficient market structure/data.”
+
+Do not invent prices.
+
+==================================================
+PHASE 3 — SNIPER SETUP RULES
+==================================================
+
+For Sniper trade recommendations, always include:
+
+1. Entry zone
+2. Tight invalidation / Stop Loss
+3. TP1, TP2, and optional TP3
+4. Time sensitivity
+5. “Sniper risk” warning
+6. What would invalidate the setup
+7. Whether the move is:
+   - pullback
+   - retracement
+   - continuation
+   - fakeout risk
+   - liquidity sweep
+   - breakout retest
+8. Suggested management:
+   - Take partial at TP1
+   - Move SL to breakeven only if user strategy allows
+   - Hold runner toward TP2/TP3 only if momentum confirms
+
+Sniper recommendations should not just say “buy” or “sell.”
+They must include exact reasoning.
+
+Example structure:
+
+“Sniper Buy Setup”
+Entry zone:
+Stop Loss:
+TP1:
+TP2:
+TP3:
+Risk/reward:
+Why:
+Invalidation:
+Data status:
+User confirmation required:
+
+==================================================
+PHASE 4 — TAKE PROFIT CALCULATION LOGIC
+==================================================
+
+Use available data only.
+
+Take Profit targets may be calculated from:
+
+1. Support/resistance
+2. Recent swing high / swing low
+3. Liquidity zones
+4. ATR projection
+5. Risk multiples:
+   - 1R
+   - 1.5R
+   - 2R
+   - 3R
+6. Fibonacci levels if already available
+7. Session high/low if already available
+8. Previous day high/low if already available
+9. Scanner/radar levels if already available
+10. Order book/liquidity data only if actually available
+
+If live data is missing:
+- Do not fake levels.
+- Use preview-only estimates only if clearly labeled.
+- Otherwise return “insufficient data.”
+
+For BUY:
+- TP levels must be above entry.
+- SL must be below entry.
+
+For SELL:
+- TP levels must be below entry.
+- SL must be above entry.
+
+Backend must validate TP direction before showing/applying recommendation.
+
+==================================================
+PHASE 5 — RISK / REWARD INTEGRATION
+==================================================
+
+Every recommended TP should include risk/reward.
+
+Calculate:
+
+- Risk per unit = abs(entry - stopLoss)
+- Reward per target = abs(takeProfit - entry)
+- RR = reward / risk
+
+If SL is missing, do not calculate RR.
+Instead return:
+“Risk/reward unavailable because Stop Loss/invalidation is missing.”
+
+If RR is below the user’s minimum risk/reward setting:
+- Warn clearly.
+- Do not label it as a strong setup.
+
+Risk governor should remain the authority before any trade is placed.
+
+==================================================
+PHASE 6 — AI ASSISTANT RESPONSE UPDATE
+==================================================
+
+Update ARX AI assistant behavior.
+
+When user asks:
+
+- “What should I trade?”
+- “What market looks good?”
+- “Give me a sniper entry”
+- “Where should I take profit?”
+- “Where do I close?”
+- “Should I hold?”
+- “Is this a continuation?”
+- “Is this a fakeout?”
+- “Where should TP be?”
+- “Where should I place take profit?”
+
+AI should answer with:
+
+1. Setup type
+2. Direction
+3. Entry/entry zone
+4. Stop Loss/invalidation
+5. TP1 / TP2 / TP3 if available
+6. Why each TP exists
+7. Risk/reward
+8. Data status
+9. Confirmation warning
+
+AI must not:
+- Promise profit
+- Claim certainty
+- Claim live data when unavailable
+- Auto-place order
+- Auto-edit TP
+- Bypass confirmation
+- Bypass risk governor
+
+==================================================
+PHASE 7 — TRADE TICKET PREFILL
+==================================================
+
+If user chooses to use an AI recommendation:
+
+1. Allow the user to prefill Take Profit in the trade ticket.
+2. Default to TP1 or the safest/main TP depending on existing UX.
+3. Let user manually choose TP1, TP2, or TP3.
+4. Show all TP options before submit.
+5. Require user confirmation before placing trade.
+6. Backend must revalidate TP before any trade action.
+
+Do not auto-apply TP to live trades without explicit confirmation.
+
+For open trades:
+- AI may suggest moving TP.
+- User must confirm before modification.
+- Risk/trade guards must run again.
+
+==================================================
+PHASE 8 — SCANNER / RADAR UPDATE
+==================================================
+
+Update scanner/radar/opportunity output to include TP targets when enough data exists.
+
+Ranked opportunities should include:
+
+- entry
+- stopLoss
+- takeProfitTargets
+- bestTarget
+- riskReward
+- targetReason
+- dataCompleteness
+- warning if targets are estimated
+
+If scanner data is incomplete:
+- Keep opportunity visible if useful
+- Mark TP as unavailable or preview-only
+- Do not pretend it is a confirmed target
+
+==================================================
+PHASE 9 — UI DISPLAY
+==================================================
+
+Keep UI clean.
+
+On trade recommendation cards, show:
+
+- Direction
+- Entry
+- SL
+- TP1
+- TP2
+- TP3
+- RR
+- Data status
+- “Use this setup” button if already supported
+
+Use compact labels:
+
+TP1 — Conservative
+TP2 — Main
+TP3 — Runner
+
+For mobile:
+- Keep TP details collapsible if space is tight.
+- Do not overcrowd the card.
+
+==================================================
+PHASE 10 — JOURNAL / AUDIT
+==================================================
+
+If a user places a trade from a recommendation, record:
+
+- AI recommended entry
+- AI recommended SL
+- AI recommended TP targets
+- User-selected TP
+- Whether user changed TP manually
+- Recommendation timestamp
+- Data status at recommendation time
+- Trade result later if available
+
+This helps users review whether ARX AI recommendations were useful.
+
+Do not alter closed trade history incorrectly.
+
+==================================================
+PHASE 11 — TESTING
+==================================================
+
+Run:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm test if available
+- pnpm run build if available
+- scanner/radar tests if available
+- AI tool tests if available
+- trade-ticket validation tests if available
+
+Manual tests:
+
+1. Ask AI for a regular trade idea.
+2. Confirm response includes TP targets.
+3. Ask AI for a Sniper setup.
+4. Confirm response includes TP1/TP2/TP3.
+5. Confirm BUY TP levels are above entry.
+6. Confirm SELL TP levels are below entry.
+7. Confirm RR is calculated correctly.
+8. Confirm missing data does not create fake TP levels.
+9. Confirm user can prefill TP into trade ticket.
+10. Confirm user must confirm before placing trade.
+11. Confirm backend revalidates TP.
+12. Confirm AI does not claim guaranteed profit.
+13. Confirm scanner/radar output includes TP targets only when data supports it.
+14. Confirm no fake live data was added.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Create or update:
+
+TRADE_RECOMMENDATION_TP_TARGETS_REPORT.md
+
+Include:
+
+1. Recommendation files inspected
+2. Files changed
+3. AI behavior changed
+4. Scanner/radar behavior changed
+5. Trade ticket prefill behavior
+6. TP target model added
+7. Risk/reward calculation status
+8. Tests run
+9. Any limitations
+10. Confirmation that no auto-trade/auto-TP action happens without confirmation
+11. Confirmation that no fake live data was added
+12. Confirmation that risk governor and confirmation guards remain enforced
+
+Stop after this slice and report.

@@ -1,0 +1,70 @@
+Upgrade Phase 5 into a Personal Edge + Behavior Risk Intelligence System.
+
+Goal:
+Do not let the system “guess” trader emotions. It must infer behavior risk only from observable evidence: trade frequency, loss streaks, overrides, rule violations, session performance, sizing changes, hold-time changes, and ignored warnings.
+
+Add:
+
+/src/domain/trader-dna/
+  personalBaseline.engine.ts
+  behaviorEvidence.engine.ts
+  edgeFingerprint.engine.ts
+  traderStateClassifier.engine.ts
+  overrideForensics.engine.ts
+  postLossBehavior.engine.ts
+  disciplineScore.engine.ts
+  personalDrawdownProfile.engine.ts
+  bestConditions.engine.ts
+  worstConditions.engine.ts
+
+/src/domain/cognitive/
+  behavioralRiskEvidence.engine.ts
+  cooldownPolicy.engine.ts
+  permissionThrottle.engine.ts
+  cognitiveRecoveryScore.engine.ts
+
+Rules:
+- Do not label the trader emotionally without evidence.
+- Use behavior-based language like “elevated risk pattern detected,” not “you are emotional.”
+- Build a personal baseline before making strong judgments.
+- Compare current behavior against the trader’s normal behavior.
+- Track performance before and after:
+  - losses
+  - wins
+  - overrides
+  - missed trades
+  - rule violations
+  - high-frequency trading periods
+  - late-session trading
+- Create a Personal Edge Fingerprint showing where the trader performs best.
+- Create a Personal Danger Fingerprint showing where the trader performs worst.
+- Manual overrides must be reviewed:
+  - Did the override improve outcome?
+  - Did it increase risk?
+  - Did it violate rules?
+  - Was it after a loss?
+- Cooldowns must be adjustable based on severity.
+- Permission throttles can reduce size, require confirmation, limit trades, or force paper mode.
+- Risk Governor consumes traderRiskScore.
+- Control Tower consumes recommendedPermissionLevel.
+- All behavior evidence must be logged into the Black Box Vault.
+- No live auto-execution is enabled yet.
+
+Required outputs:
+- personalEdgeFingerprint
+- personalDangerFingerprint
+- behaviorEvidenceScore
+- disciplineScore
+- overrideQualityScore
+- postLossRiskScore
+- cooldownRecommendation
+- permissionThrottleLevel
+- cognitiveRecoveryScore
+
+Acceptance criteria:
+- System builds a baseline before making strong behavior decisions.
+- System explains risk using evidence, not assumptions.
+- System identifies the trader’s best and worst trading conditions.
+- System can reduce permissions when behavior risk rises.
+- System can restore permissions after recovery conditions improve.
+- UI language is respectful, neutral, and non-shaming.

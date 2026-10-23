@@ -1,0 +1,139 @@
+P2 SECURITY HARDENING — REMOVE DEV HEADER ROLE FROM ADMIN/SECURITY CONSOLE
+
+Fix the pre-existing P2 security-hardening item reported in the final beta readiness report.
+
+Issue:
+The admin/security console routes under /api/security/* currently read role from x-security-role header as DEV ONLY back-compat in lib/security/session.ts. These routes require login, but role authority should come from the authenticated session/user role before broader beta/admin release.
+
+Do NOT rebuild.
+Do NOT redesign.
+Do NOT touch paper trading flow.
+Do NOT unlock live trading.
+Do NOT weaken paper_only_isolation.
+Do NOT weaken live_trading_locked.
+Do NOT change MT5 command locks.
+Do NOT enable auto-close execution.
+Do NOT delete active ecosystem code.
+
+Goal:
+Admin/security role authorization must come from trusted server-side session/user data, not a client-controlled header.
+
+==================================================
+PHASE 1 — INSPECT FIRST
+==================================================
+
+Inspect:
+
+1. lib/security/session.ts
+2. All /api/security/* routes
+3. Any admin/security middleware
+4. Current session/user table schema
+5. Existing user role field, if present
+6. Any dev-only back-compat logic
+7. Tests/guards touching security/admin routes
+
+Report current role flow before changing code.
+
+==================================================
+PHASE 2 — FIX ROLE SOURCE
+==================================================
+
+Replace client-controlled role authority with server-side authority.
+
+Required behavior:
+
+1. Authenticated session is required.
+2. User role is derived from session/user record.
+3. Admin/security routes require proper admin/security role.
+4. x-security-role must not grant access in production.
+5. If a dev fallback is kept, it must be:
+   - development/test only
+   - clearly gated by NODE_ENV or explicit dev flag
+   - impossible in production
+   - documented as temporary
+6. Missing role should return 403.
+7. Missing login should return 401.
+8. Normal user should not access admin/security routes.
+9. Admin user should access only if role exists in trusted server-side data.
+
+Do not break normal user sessions.
+
+==================================================
+PHASE 3 — UPDATE ROUTE TESTS
+==================================================
+
+Add or update tests/smoke checks:
+
+1. Unauthenticated request to /api/security/* returns 401.
+2. Authenticated normal user returns 403.
+3. Authenticated admin/security user returns allowed.
+4. x-security-role header alone does not grant access.
+5. Production mode ignores x-security-role completely.
+6. Dev fallback only works if explicitly allowed and safe.
+
+==================================================
+PHASE 4 — VERIFY NO ECOSYSTEM REGRESSION
+==================================================
+
+Confirm this change does not affect:
+
+1. Paper trading
+2. Paper data
+3. User isolation
+4. AI Q&A
+5. Scanner/radar
+6. Trade recommendations
+7. Protective auto-close alert-only behavior
+8. MT5 command force-block
+9. Live trading lock
+10. Shared MT5 routing block
+
+==================================================
+PHASE 5 — RUN CHECKS
+==================================================
+
+Run:
+
+- pnpm run typecheck
+- pnpm run ci:guards
+- pnpm test if available
+- pnpm run build if available
+- security/admin route smoke tests
+- route auth tests if available
+
+Required:
+- typecheck green
+- CI guards green
+- paper_only_isolation still passes
+- live_trading_locked still passes
+- no live trading unlocked
+- no MT5 command queue unlocked
+
+==================================================
+FINAL REPORT
+==================================================
+
+Create or update:
+
+SECURITY_ROLE_HARDENING_REPORT.md
+
+Include:
+
+1. What was inspected
+2. What was changed
+3. Files changed
+4. How role is now derived
+5. Whether x-security-role is fully removed or dev-only gated
+6. Route behavior:
+   - 401 unauthenticated
+   - 403 normal user
+   - allowed admin/security user
+7. Tests run
+8. Typecheck result
+9. CI guard result
+10. Confirmation that paper beta remains ready
+11. Confirmation that live trading remains blocked
+12. Confirmation that MT5 commands remain force-blocked
+13. Confirmation that no active app feature was deleted
+
+Stop after this hardening pass and report.

@@ -1,0 +1,119 @@
+Continue after Build Q — Paper Trading Sandbox.
+
+Now begin Build R — Prop Firm Challenge Mode.
+
+Goal:
+Create a simulated prop firm challenge system where traders can practice passing funded account rules without risking real evaluation fees.
+
+Tasks:
+
+1. Audit existing systems:
+- paper trading sandbox
+- trader scoring system
+- risk lock system
+- portfolio risk engine
+- trade journal
+- AI coach
+- weekly performance review
+
+2. Add prop challenge models:
+
+prop_challenges:
+- id
+- user_id
+- challenge_name
+- starting_balance
+- profit_target
+- max_daily_loss
+- max_total_drawdown
+- min_trading_days
+- max_trading_days
+- consistency_rule_percent
+- status
+- started_at
+- completed_at
+- created_at
+- updated_at
+
+prop_challenge_days:
+- id
+- challenge_id
+- user_id
+- trade_date
+- starting_balance
+- ending_balance
+- daily_profit_loss
+- daily_loss_percent
+- trades_taken
+- rules_violated
+- created_at
+
+prop_challenge_violations:
+- id
+- challenge_id
+- user_id
+- violation_type
+- message
+- severity
+- created_at
+
+3. Challenge statuses:
+- ACTIVE
+- PASSED
+- FAILED
+- PAUSED
+- CANCELED
+
+4. Add rules:
+- Track profit target
+- Track daily loss limit
+- Track max drawdown
+- Track minimum trading days
+- Track consistency rule
+- Track overtrading
+- Track rule violations
+- Fail challenge if hard rule is violated
+- Warn user before approaching failure conditions
+
+5. API routes:
+- POST create prop challenge
+- GET prop challenges
+- GET active prop challenge
+- GET prop challenge by id
+- POST evaluate prop challenge
+- PATCH pause/cancel challenge
+- GET prop challenge violations
+- GET prop challenge daily stats
+
+6. Frontend components:
+- Prop Challenge Page
+- Challenge Progress Card
+- Profit Target Meter
+- Drawdown Meter
+- Daily Loss Limit Card
+- Rule Violation Feed
+- Challenge Calendar
+- Pass/Fail Status Banner
+
+7. Connect to:
+- Paper Trading Sandbox
+- Risk Lock System
+- AI Coach
+- Weekly Review
+- Trade Journal
+
+Important:
+- Prop Challenge Mode is simulated only.
+- Do not connect it to live trading.
+- Clearly label it as practice/training.
+- Do not promise funded account approval.
+- Do not claim guaranteed profits.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How Prop Challenge Mode connects to paper trading
+6. Errors or limitations
+7. Recommended next build

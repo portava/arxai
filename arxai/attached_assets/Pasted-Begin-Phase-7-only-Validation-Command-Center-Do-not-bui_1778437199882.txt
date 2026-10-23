@@ -1,0 +1,126 @@
+Begin Phase 7 only: Validation Command Center.
+
+Do not build Portfolio Manager, Evolution, or unrestricted live auto-execution yet.
+
+Goal:
+Create an institutional-grade validation system that proves strategies, agents, rules, and AI behaviors are statistically reliable, execution-realistic, behavior-aware, regime-specific, continuously monitored, and safe before they earn authority.
+
+Build:
+
+/src/domain/validation-command-center/
+  validation.types.ts
+  validationCommandCenter.engine.ts
+  validationPipeline.engine.ts
+  validationScorecard.engine.ts
+  statisticalSignificance.engine.ts
+  outOfSampleValidator.engine.ts
+  backtestValidator.engine.ts
+  walkForwardValidator.engine.ts
+  monteCarloValidator.engine.ts
+  regimeSpecificValidator.engine.ts
+  stressValidation.engine.ts
+  executionRealityValidator.engine.ts
+  traderBehaviorValidator.engine.ts
+  edgeDurability.engine.ts
+  validationConfidence.engine.ts
+  validationAuditReport.engine.ts
+  promotionCriteria.engine.ts
+  demotionCriteria.engine.ts
+  liveReadinessScore.engine.ts
+
+/src/domain/adversarial-validation/
+  adversarialValidation.engine.ts
+  strategyAttack.engine.ts
+  edgeFragility.engine.ts
+  overfitExposure.engine.ts
+  regimeCollapse.engine.ts
+  executionSabotage.engine.ts
+  behavioralStress.engine.ts
+  contradictionTest.engine.ts
+  assumptionAudit.engine.ts
+
+/src/domain/continuous-validation/
+  continuousValidation.engine.ts
+  confidenceHealth.engine.ts
+  strategyTrust.engine.ts
+  liveSanityCheck.engine.ts
+  evidenceDecay.engine.ts
+  strategyQuarantine.engine.ts
+  validationMemory.engine.ts
+  systemHealth.engine.ts
+  metaValidation.engine.ts
+
+Validation stages:
+- BACKTEST
+- OUT_OF_SAMPLE_TEST
+- WALK_FORWARD
+- MONTE_CARLO_STRESS_TEST
+- REGIME_SPECIFIC_TEST
+- EXECUTION_REALITY_TEST
+- ADVERSARIAL_TEST
+- SHADOW_MODE
+- PAPER_TRADING
+- MICRO_LOT_LIVE
+- LIMITED_LIVE
+- FULL_GOVERNED_LIVE
+
+Validation must grade:
+- edge quality
+- risk survival
+- statistical reliability
+- market regime fit
+- execution reality
+- trader behavior impact
+- edge durability
+- adversarial robustness
+- confidence health
+- system health
+
+Rules:
+- A strategy cannot pass validation based on profit alone.
+- Strong profit with dangerous drawdown must fail or be restricted.
+- Good backtest with poor out-of-sample performance must fail.
+- Good signal quality with poor execution quality must be restricted.
+- Regime-specific strategies must be labeled and limited to approved regimes.
+- Edge decay triggers demotion, quarantine, or review.
+- Monte Carlo tests must randomize trade order, slippage, spread, and execution delay.
+- Adversarial validation must actively try to break strategies.
+- Continuous validation must keep monitoring approved strategies after promotion.
+- Evidence decay must reduce reliance on old results.
+- Live sanity checks can cancel execution before entry.
+- Risk Governor can freeze promotion.
+- Control Tower controls rollout authority.
+- All validation reports, trust changes, quarantines, failures, and promotions must be logged into the Black Box Vault.
+- Keep all previous phase tests passing.
+- No unrestricted live auto-execution yet.
+
+Required outputs:
+- validationScorecard
+- liveReadinessScore
+- edgeDurabilityScore
+- survivalScore
+- executionRealityScore
+- statisticalConfidenceScore
+- regimeFitScore
+- traderBehaviorSafetyScore
+- adversarialRobustnessScore
+- overfittingRiskScore
+- confidenceHealthScore
+- strategyTrustScore
+- systemHealthScore
+- recommendedStage
+- restrictions
+- promotionDecision
+- demotionDecision
+- quarantineDecision
+- plainEnglishExplanation
+
+After Phase 7, stop and report:
+1. Files created
+2. Validation stages implemented
+3. Adversarial validation implemented
+4. Continuous validation implemented
+5. Promotion/demotion/quarantine rules added
+6. Live readiness scoring added
+7. Tests passed/failed
+8. Whether Phase 8 is safe to begin

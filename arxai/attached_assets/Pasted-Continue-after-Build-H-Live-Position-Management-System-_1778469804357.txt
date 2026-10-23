@@ -1,0 +1,171 @@
+Continue after Build H — Live Position Management System.
+
+Now begin Build I — Trade Journal & Review Center.
+
+Goal:
+Create a professional trade journal that turns every trade into a learning record with screenshots, notes, AI review, tags, and improvement tracking.
+
+Tasks:
+
+1. Audit current trade history
+Find:
+- trade history models
+- feedback report models
+- scoring models
+- AI coach notes
+- live position history
+- replay session history
+- dashboard recent trades
+
+2. Create journal data models
+
+Add safe migrations for:
+
+trade_journal_entries:
+- id
+- user_id
+- trade_id
+- symbol
+- direction
+- strategy_used
+- setup_type
+- emotional_state_before
+- emotional_state_after
+- confidence_level
+- mistake_tags
+- strength_tags
+- screenshots
+- user_notes
+- ai_review
+- lesson_learned
+- follow_up_goal
+- created_at
+- updated_at
+
+trade_review_sessions:
+- id
+- user_id
+- review_type
+- date_range_start
+- date_range_end
+- total_trades_reviewed
+- biggest_strength
+- biggest_weakness
+- ai_summary
+- action_plan
+- created_at
+
+3. Add journal features
+
+Users should be able to:
+- review every trade
+- add notes
+- tag mistakes
+- tag strengths
+- upload screenshots
+- record emotional state
+- rate confidence before trade
+- write lesson learned
+- set follow-up goal
+- view AI review
+
+4. Add mistake tags
+
+Examples:
+- Early Entry
+- Late Entry
+- Revenge Trade
+- FOMO Entry
+- Oversized Position
+- Poor Stop Loss
+- Moved Stop Loss
+- Exited Too Early
+- Held Too Long
+- Ignored Market Condition
+- Strategy Mismatch
+- Overtrading
+
+5. Add strength tags
+
+Examples:
+- Waited for Confirmation
+- Good Risk Control
+- Followed Plan
+- Strong Entry
+- Strong Exit
+- Avoided Bad Trade
+- Managed Emotions
+- Respected Stop Loss
+- Took Valid Setup
+- Practiced Patience
+
+6. API routes
+
+Create:
+- GET trade journal entries
+- GET trade journal entry by id
+- POST create journal entry
+- PATCH update journal entry
+- POST generate AI journal review
+- GET review sessions
+- POST create weekly review
+- POST create monthly review
+- GET journal tags summary
+
+7. Frontend components
+
+Create:
+- Trade Journal Page
+- Journal Entry Detail Page
+- Trade Notes Editor
+- Mistake Tags Selector
+- Strength Tags Selector
+- Emotional State Tracker
+- Screenshot Upload Section
+- AI Trade Review Card
+- Weekly Review Summary
+- Monthly Review Summary
+
+8. Connect to scoring
+
+Journal tags should influence trader scores.
+
+Examples:
+- Repeated Early Entry lowers execution score.
+- Repeated Revenge Trade lowers emotional control score.
+- Good Risk Control improves discipline score.
+- Avoided Bad Trade improves discipline score.
+- Followed Plan improves consistency score.
+
+9. Connect to AI Coach
+
+AI Coach should reference journal behavior.
+
+Examples:
+- “Early Entry has appeared in 6 of your last 12 trades.”
+- “Your journal shows your confidence is highest before trades that follow your plan.”
+- “This week’s main improvement goal should be: wait for confirmation.”
+
+10. Testing
+
+Test:
+- journal entry creation
+- journal editing
+- tag saving
+- screenshot upload if supported
+- AI review generation
+- weekly review generation
+- score influence
+- dashboard links
+- mobile responsiveness
+
+Final output required:
+
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. Journal-to-scoring connections added
+6. Journal-to-AI coach connections added
+7. Errors or limitations
+8. Recommended next build

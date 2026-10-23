@@ -1,0 +1,130 @@
+BUILD PHASE — Scanner Direct Symbol Selection + Ruby Market Explanation Window
+
+Use the current codebase. Do not rebuild unrelated systems.
+
+Goal:
+Upgrade the market scanner so users can select a direct pair/symbol, see Ruby’s live explanation for that market, view important highlights, and optionally open a trade ticket from the scanner with full risk controls.
+
+Build this in a safe, staged way.
+
+1. Scanner direct symbol selection
+- Add a direct symbol / pair selector to the scanner page.
+- Users should be able to search or type a symbol directly, such as EURUSD, GBPUSD, XAUUSD, US30, NAS100, BTCUSD, etc.
+- Do not force users to only browse grouped scanner categories.
+- Keep grouped scanner views available, but add direct symbol access.
+- Normalize symbol names safely so broker-specific symbols can still work later, such as EURUSDm, XAUUSD.r, US30.cash, etc.
+- If a symbol is unavailable, show a clean user-facing message instead of code language.
+
+2. Ruby market explanation window
+- Add a small Ruby explanation panel/window beside or inside the selected market scanner detail area.
+- The window should explain why the selected market currently looks like a buy, sell, neutral, wait, risky, or high-impact setup.
+- Ruby should use all available trading context:
+  - chart/history
+  - market structure
+  - trend direction
+  - support/resistance
+  - volume if available
+  - indicators already in the system
+  - scanner signals
+  - user’s selected trading style
+  - current open trade context if applicable
+  - market news
+  - current events
+  - real-world news
+  - economic calendar
+  - impact calendar
+  - surprise/high-impact events that may alter the market
+
+3. Market highlights
+- When a user selects a market, show clear highlights such as:
+  - current bias: Buy / Sell / Neutral / Wait
+  - confidence level
+  - volatility level
+  - trend state
+  - important support/resistance zones
+  - possible entry zone
+  - suggested stop-loss zone
+  - suggested take-profit zones
+  - upcoming high-impact events
+  - current risk warnings
+  - “why this matters” explanation from Ruby
+- Keep this readable for normal users. Avoid code-heavy labels.
+
+4. Constant daytime explanation updates
+- Ruby’s selected-market explanation should refresh throughout the day without making the app slow.
+- Use efficient refresh logic:
+  - cache the latest explanation snapshot
+  - only recompute when price, scanner state, news/calendar impact, or selected symbol meaningfully changes
+  - throttle expensive analysis
+  - avoid repeated duplicate AI calls
+  - show “last updated” time
+  - allow manual refresh
+- Do not spam the backend or AI service.
+
+5. Scanner-to-trade flow
+- Allow the user to open a trade ticket from the selected scanner market.
+- The trade ticket must include:
+  - symbol
+  - buy/sell
+  - lot size
+  - stop loss
+  - take profit
+  - order type options:
+    - market buy
+    - market sell
+    - buy limit
+    - sell limit
+    - buy stop
+    - sell stop
+    - buy stop limit
+    - sell stop limit
+  - risk estimate
+  - confirmation step
+- Do not bypass the existing one-click safety layer.
+- If one-click is OFF, route through normal confirmation.
+- If one-click is ON, still obey all master-live approval, account mapping, bridge, exposure, cooldown, and reservation safety checks.
+- Never create a live command unless the full live safety flow passes.
+
+6. Economic calendar / impact calendar check
+- Inspect what already exists for the economic calendar and impact calendar.
+- Do not duplicate it.
+- Connect existing calendar/event data into the selected-market Ruby explanation.
+- If calendar coverage is incomplete, add only the missing adapter or UI connection needed for scanner explanations.
+- Show major upcoming events and surprise/randomly announced events that may affect the selected symbol.
+- Label event impact clearly: Low / Medium / High / Critical.
+
+7. UI cleanup
+- Clean up scanner and explanation UI language.
+- Replace developer/code labels with simple user-facing trading language.
+- Keep advanced details available in expandable sections, not forced on the main view.
+- Mobile layout must be clean and readable.
+
+8. Safety and logging
+- Add audit logs for:
+  - selected symbol
+  - Ruby explanation refresh
+  - scanner-to-trade ticket opened
+  - scanner-to-trade submitted
+  - trade blocked by safety gate
+- Do not log secrets.
+- Do not expose bridge tokens, API keys, session secrets, account credentials, or token hashes.
+
+9. Tests
+- Add tests for:
+  - direct symbol selection
+  - unavailable symbol handling
+  - Ruby explanation panel rendering
+  - explanation refresh throttling
+  - calendar/impact event integration
+  - scanner-to-trade ticket opening
+  - scanner-to-trade blocked when live approval is missing
+  - scanner-to-trade blocked when master account mapping is missing
+  - no live command created without full approval
+
+Return:
+- what was built
+- files changed
+- existing calendar/impact calendar status
+- tests added/run
+- screenshots or route names to test manually
+- confirmation that no live trade was fired during this build

@@ -1,0 +1,31 @@
+cd /home/runner/workspace && pnpm run typecheck 2>&1 | tail -30
+artifacts/trading-dashboard typecheck:   Type 'LazyExoticComponent<({ defaultTab }: { defaultTab?: TabKey | undefined; }) => Element>' is not assignable to type '(props: RouteComponentProps<{ [param: number]: string | undefined; }>) => ReactNode | Promise<ReactNode>'.
+artifacts/trading-dashboard typecheck:     Types of parameters 'props' and 'props' are incompatible.
+artifacts/trading-dashboard typecheck:       Type 'RouteComponentProps<{ [param: number]: string | undefined; }>' has no properties in common with type '{ defaultTab?: TabKey | undefined; }'.
+artifacts/trading-dashboard typecheck: src/App.tsx(297,38): error TS2322: Type 'LazyExoticComponent<({ defaultTab }: { defaultTab?: TabKey | undefined; }) => Element>' is not assignable to type 'JSXElementConstructor<RouteComponentProps<{ [param: number]: string | undefined; }>> | undefined'.
+artifacts/trading-dashboard typecheck:   Type 'LazyExoticComponent<({ defaultTab }: { defaultTab?: TabKey | undefined; }) => Element>' is not assignable to type '(props: RouteComponentProps<{ [param: number]: string | undefined; }>) => ReactNode | Promise<ReactNode>'.
+artifacts/trading-dashboard typecheck:     Types of parameters 'props' and 'props' are incompatible.
+artifacts/trading-dashboard typecheck:       Type 'RouteComponentProps<{ [param: number]: string | undefined; }>' has no properties in common with type '{ defaultTab?: TabKey | undefined; }'.
+artifacts/trading-dashboard typecheck: src/App.tsx(298,38): error TS2322: Type 'LazyExoticComponent<({ defaultTab }: { defaultTab?: TabKey | undefined; }) => Element>' is not assignable to type 'JSXElementConstructor<RouteComponentProps<{ [param: number]: string | undefined; }>> | undefined'.
+artifacts/trading-dashboard typecheck:   Type 'LazyExoticComponent<({ defaultTab }: { defaultTab?: TabKey | undefined; }) => Element>' is not assignable to type '(props: RouteComponentProps<{ [param: number]: string | undefined; }>) => ReactNode | Promise<ReactNode>'.
+artifacts/trading-dashboard typecheck:     Types of parameters 'props' and 'props' are incompatible.
+artifacts/trading-dashboard typecheck:       Type 'RouteComponentProps<{ [param: number]: string | undefined; }>' has no properties in common with type '{ defaultTab?: TabKey | undefined; }'.
+artifacts/trading-dashboard typecheck: src/components/help/useSpeakResponses.ts(307,33): error TS2345: Argument of type 'Dispatch<SetStateAction<SpeakState>>' is not assignable to parameter of type '(s: string) => void'.
+artifacts/trading-dashboard typecheck:   Types of parameters 'value' and 's' are incompatible.
+artifacts/trading-dashboard typecheck:     Type 'string' is not assignable to type 'SetStateAction<SpeakState>'.
+artifacts/trading-dashboard typecheck: src/components/help/useSpeakResponses.ts(313,27): error TS2345: Argument of type 'Dispatch<SetStateAction<SpeakState>>' is not assignable to parameter of type '(s: string) => void'.
+artifacts/trading-dashboard typecheck:   Types of parameters 'value' and 's' are incompatible.
+artifacts/trading-dashboard typecheck:     Type 'string' is not assignable to type 'SetStateAction<SpeakState>'.
+artifacts/trading-dashboard typecheck: src/components/help/useSpeakResponses.ts(316,79): error TS2345: Argument of type 'Dispatch<SetStateAction<SpeakState>>' is not assignable to parameter of type '(s: string) => void'.
+artifacts/trading-dashboard typecheck:   Types of parameters 'value' and 's' are incompatible.
+artifacts/trading-dashboard typecheck:     Type 'string' is not assignable to type 'SetStateAction<SpeakState>'.
+artifacts/trading-dashboard typecheck: src/components/live/LiveSharedTradeTicket.tsx(62,7): error TS2304: Cannot find name 'setPhrase'.
+artifacts/trading-dashboard typecheck: src/pages/trading-calendar.tsx(39,9): error TS2322: Type '{ date: any; net_pnl: number; total_trades: number; wins: number; losses: number; win_rate: number; day_rating: string; day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY"; debriefs_created: number; learning_events_created: number; symbols_traded: never[]; }[]' is not assignable to type 'CalendarDay[]'.
+artifacts/trading-dashboard typecheck:   Type '{ date: any; net_pnl: number; total_trades: number; wins: number; losses: number; win_rate: number; day_rating: string; day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY"; debriefs_created: number; learning_events_created: number; symbols_traded: never[]; }' is not assignable to type 'CalendarDay'.
+artifacts/trading-dashboard typecheck:     Types of property 'day_rating' are incompatible.
+artifacts/trading-dashboard typecheck:       Type 'string' is not assignable to type '"A" | "B" | "C" | "D" | "F"'.
+artifacts/trading-dashboard typecheck: Failed
+/home/runner/workspace/artifacts/trading-dashboard:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/trading-dashboard@0.0.0 typecheck: `tsc -p tsconfig.json --noEmit`
+Exit status 2
+ ELIFECYCLE  Command failed with exit code 2.

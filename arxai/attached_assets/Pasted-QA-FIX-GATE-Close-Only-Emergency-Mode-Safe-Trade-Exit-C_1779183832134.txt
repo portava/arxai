@@ -1,0 +1,47 @@
+QA/FIX GATE — Close-Only Emergency Mode + Safe Trade Exit Controls
+
+Inspect the Close-Only Emergency Mode and Safe Trade Exit Controls work from the previous pass.
+
+Do not rebuild unrelated systems. Reuse current code and only repair missing or broken pieces.
+
+Verify:
+
+1. Close-only mode uses existing trade pipeline, not a duplicate execution path.
+2. Admin-only close-only controls are protected.
+3. Non-admin users cannot enable/disable close-only mode.
+4. Close-only blocks new market buy/sell orders.
+5. Close-only blocks new pending orders.
+6. Close-only blocks one-click opening.
+7. Close-only blocks scanner-to-open trade.
+8. Close-only blocks Ruby voice open-trade execution.
+9. Close-only allows safe close requests only for verified user-owned positions.
+10. Close-only allows partial close only if partial close is supported and safe.
+11. Close requests require confirmation.
+12. Voice close requests require confirmation.
+13. User A cannot close, edit, cancel, or affect User B’s trade.
+14. Two users in the same symbol cannot cross-close each other.
+15. Shared master close requests map to the correct user ledger entry.
+16. Uncertain shared master/netted exposure is marked NEEDS_REVIEW instead of guessed.
+17. Personal MT5 close requests stay within that user’s personal bridge/account.
+18. Demo close never creates live commands.
+19. Duplicate close requests do not send duplicate bridge commands.
+20. Stale close commands expire or become NEEDS_REVIEW.
+21. Admin can cancel queued open commands before dispatch.
+22. Admin cannot force unsafe close/dispatch outside safety gates.
+23. Normal users see clean close-only messages and not backend code labels.
+24. Ruby explains close-only, blocked close, pending close, and needs-review states accurately.
+25. Ruby does not claim a trade closed unless system status confirms it.
+26. Audit logs are created for close-only changes, blocked opens, close requests, duplicate close ignores, and NEEDS_REVIEW exits.
+27. No bridge tokens, API keys, account credentials, session secrets, token hashes, raw audio, or sensitive bridge payloads are exposed in UI, logs, routes, prompts, or responses.
+28. No live trade is fired during QA.
+29. arx_live_commands count remains unchanged unless a fully approved mock-safe test path intentionally records a non-live test command.
+
+Return:
+- PASS/FAIL table
+- files inspected
+- tests run
+- issues found
+- fixes applied
+- remaining risks
+- confirmation that no live trade was fired
+- confirmation that arx_live_commands count stayed unchanged

@@ -1,0 +1,103 @@
+Continue after Build O — Portfolio & Exposure Risk Engine.
+
+Now begin Build P — Backtesting & Strategy Validation Engine.
+
+Goal:
+Create a system that allows traders to test strategies against historical data before using them live.
+
+Tasks:
+
+1. Audit existing systems:
+- Adaptive Strategy Engine
+- Market Intelligence Engine
+- Replay Simulator
+- Trade Journal
+- AI Coach
+- market data/candle storage
+- strategy profiles
+
+2. Add database models:
+
+backtest_runs:
+- id
+- user_id
+- strategy_id
+- symbol
+- timeframe
+- start_time
+- end_time
+- initial_balance
+- total_trades
+- winning_trades
+- losing_trades
+- net_profit_loss
+- max_drawdown
+- win_rate
+- average_rr
+- expectancy
+- profit_factor
+- status
+- ai_summary
+- created_at
+
+backtest_trades:
+- id
+- backtest_run_id
+- symbol
+- direction
+- entry_time
+- exit_time
+- entry_price
+- exit_price
+- stop_loss
+- take_profit
+- profit_loss
+- reward_to_risk
+- result
+- created_at
+
+3. Backtest engine should:
+- load historical candles
+- apply strategy rules
+- simulate entries
+- simulate exits
+- calculate P/L
+- calculate drawdown
+- calculate expectancy
+- calculate profit factor
+- compare strategy performance across market conditions
+
+4. API routes:
+- POST create backtest run
+- GET backtest runs
+- GET backtest run by id
+- GET backtest trades
+- POST generate backtest AI review
+
+5. Frontend components:
+- Backtesting Page
+- Strategy Backtest Form
+- Backtest Results Dashboard
+- Backtest Trade List
+- AI Backtest Review Card
+
+6. Connect to:
+- Adaptive Strategy Engine
+- Strategy Fit Score
+- AI Coach
+- Replay Simulator
+
+Important:
+- Backtesting results are historical simulations only.
+- Do not claim future profits.
+- Clearly display: “Past performance does not guarantee future results.”
+- Do not allow untested strategies to be marked “verified” without enough data.
+
+Final output required:
+1. Files changed
+2. Tables/models added
+3. API routes added
+4. Frontend components added
+5. How backtesting connects to strategy scoring
+6. Errors or limitations
+7. Recommended next build

@@ -1,0 +1,259 @@
+PHASE 22K — AUDIT FIRST, THEN MAKE ARX AI MEMORY USABLE, SEARCHABLE, AND USER-CONTROLLED
+
+Do NOT rebuild the app. Do NOT redesign the full UI. Do NOT duplicate the memory system created in the prior phase.
+
+FIRST inspect what already exists, then only patch what is missing or broken.
+
+WHY THIS PHASE MATTERS:
+The prior phase focused on per-user memory storage and account isolation. This phase makes that memory useful. ARX should be able to remember prior user conversations, recall unresolved questions, use the user’s trading style/risk settings, and let the user clear or start a new conversation when needed.
+
+MAIN GOAL:
+ARX AI should not only save chat history. It should:
+- remember the user’s prior ARX conversations
+- recall relevant previous context when asked
+- remember unresolved tasks like scanner questions
+- remember user trading preferences
+- use recent messages + long-term summaries correctly
+- let users start new chats or clear AI memory
+- never mix one user’s memory with another user’s memory
+
+STRICT RULES:
+1. Audit first before patching.
+2. Do not duplicate the existing memory tables/routes if already created.
+3. Do not expose another user’s memory.
+4. Do not store raw voice audio unless already required and clearly justified.
+5. Do not fake scanner data or market data.
+6. Do not let memory override live market reality.
+7. Do not recommend live execution while paper-only/live execution is locked.
+8. Do not show raw backend errors.
+9. Do not break voice, text chat, quick suggestions, or auto-listen.
+10. Do not rebuild the popup UI.
+
+STEP 1 — AUDIT CURRENT MEMORY IMPLEMENTATION FIRST
+
+Inspect and report current status for:
+
+A. Conversation storage
+- conversations table/model
+- conversation_messages table/model
+- userId/sessionId scoping
+- conversationId usage
+- message roles
+- channel metadata: text, voice, quick suggestion, tool
+- persistence after refresh
+
+B. Memory summary
+- ai_memory_summaries table/model
+- rolling summary generation
+- unresolvedActions storage
+- user preferences storage
+- trading style storage
+- risk preference storage
+- scanner history storage
+
+C. Retrieval
+- whether ARX retrieves recent 10–20 messages
+- whether ARX retrieves older memory summary
+- whether ARX can answer “what did I ask earlier?”
+- whether ARX can answer “continue from before”
+- whether ARX can answer “what do you remember about my trading style?”
+- whether ARX can answer “what did the scanner say last time?”
+
+D. User controls
+- start new conversation
+- clear current conversation
+- clear all ARX memory
+- export memory later, if available
+- privacy warning/confirmation before deleting memory
+
+E. Tool memory
+- scanner pendingAction memory
+- MT5 bridge status memory
+- risk analysis memory
+- trade analysis memory
+- quick suggestion memory
+- voice transcript memory
+
+Before patching, output:
+- files inspected
+- what is already done
+- what is partial
+- what is missing
+- what is unsafe
+- exact minimal patch plan
+
+STEP 2 — MAKE MEMORY RETRIEVAL ACTUALLY WORK
+
+Patch ARX context builder so every AI request receives:
+
+- current userId or anonymousSessionId
+- current conversationId
+- recent 10–20 messages
+- compact long-term memory summary
+- unresolved pendingAction
+- known user trading style
+- known risk settings
+- known app setup status
+- MT5 bridge status for this user/session
+- market data status
+- scanner status for this user/session
+- last tool result if relevant
+
+ARX should be able to answer:
+- “What did I ask you earlier?”
+- “Continue from before.”
+- “What were we doing?”
+- “What did you find?”
+- “What did the scanner say?”
+- “Remember my trading style?”
+- “What risk settings did I choose?”
+
+If the answer is not in memory, ARX should say it does not have that specific detail saved, not pretend.
+
+STEP 3 — ADD MEMORY SUMMARY UPDATER
+
+Create or fix a rolling memory summarizer.
+
+It should update after meaningful conversations, not every tiny message.
+
+Store useful long-term facts such as:
+- user’s preferred trading style
+- markets user watches
+- risk limits
+- account mode: paper/demo/live locked
+- MT5 setup status
+- scanner setup status
+- recurring questions
+- unresolved tasks
+- app onboarding progress
+- user preferences for AI voice/speakback
+
+Do NOT store:
+- raw voice audio by default
+- sensitive secrets
+- API keys
+- passwords
+- private account credentials
+- another user’s data
+- huge full chat history inside the summary
+
+STEP 4 — FIX UNRESOLVED ACTION MEMORY
+
+If ARX says:
+- “Let me check the scanner”
+- “I’ll check your MT5 bridge”
+- “I’ll analyze your trades”
+- “I’ll explain your risk”
+
+Then the system must create or update pendingAction.
+
+pendingAction should include:
+- type
+- status
+- userIntent
+- createdAt
+- updatedAt
+- lastAssistantPromise
+- requiredData
+- blockingIssue
+- toolResult if completed
+- failureReason if failed
+
+Short follow-ups like:
+- “?”
+- “and?”
+- “what happened?”
+- “did you check?”
+- “what did you find?”
+- “I asked you earlier”
+
+must resolve against pendingAction before page help.
+
+STEP 5 — ADD USER MEMORY CONTROLS
+
+Add simple memory controls without redesigning the full popup.
+
+If a settings/menu area already exists, add:
+- Start new ARX chat
+- Clear current ARX chat
+- Clear all ARX memory
+
+Behavior:
+- Start new ARX chat creates a new conversationId but keeps long-term memory.
+- Clear current ARX chat deletes or archives only that conversation.
+- Clear all ARX memory removes conversation history, memory summary, preferences, and unresolved actions for that user/session only.
+
+Use confirmation for destructive actions:
+“Clear all ARX memory? This removes saved AI conversation history for this account.”
+
+Do not clear another user’s memory.
+
+STEP 6 — MAKE VOICE MEMORY IDENTICAL TO TEXT MEMORY
+
+Voice transcripts must:
+- be stored as user messages
+- use the same conversationId
+- update pendingAction
+- update memory summary when meaningful
+- support follow-up questions
+
+Example:
+User speaks: “Check scanner and tell me what market is good right now.”
+ARX replies.
+User speaks: “What did you find?”
+ARX should understand the scanner follow-up.
+
+STEP 7 — MEMORY SAFETY FOR TRADING ANSWERS
+
+When using memory for trading:
+- memory can recall user style and preferences
+- live scanner/market data must still come from real current source
+- do not use old scanner results as if they are current
+- label old results as historical
+- if market data is disconnected, say so
+- do not fake current trade opportunities
+
+Example:
+“I remember you were looking for scanner candidates, but I do not have live market data connected right now. Last time we discussed the scanner setup, it was blocked by market data not connected.”
+
+STEP 8 — QA / FIX GATE
+
+Run QA after patching and fix failures before stopping.
+
+QA must verify:
+
+1. User asks a normal text question; ARX stores it.
+2. User refreshes; ARX can recall recent conversation.
+3. User asks “what did I ask earlier?” and ARX answers from current user memory.
+4. User asks scanner question, then “?”; ARX follows scanner context.
+5. Voice transcript is saved in same conversation.
+6. Quick suggestion is saved in same conversation.
+7. Start new ARX chat creates a fresh conversation but keeps long-term memory.
+8. Clear current chat removes only current conversation.
+9. Clear all ARX memory removes only that user/session’s AI memory.
+10. User A cannot see User B memory.
+11. Anonymous session memory does not leak into another anonymous session.
+12. Logged-in user memory persists after refresh.
+13. Market data disconnected prevents fake live trade recommendations.
+14. Old scanner results are not treated as current.
+15. Text chat works if voice fails.
+16. Voice works if text memory exists.
+17. Auto-listen still works when popup is open.
+18. AI speakback still works when Speak is on.
+19. No raw backend errors appear in UI.
+20. Mobile Safari layout remains stable.
+
+Only continue if QA passes. If anything fails, fix it and rerun QA.
+
+FINAL REPORT REQUIRED:
+After completion, report:
+- files inspected
+- files changed
+- memory tables/routes found or created
+- how ARX retrieves recent memory
+- how ARX retrieves long-term memory summary
+- how pendingAction memory works
+- how voice/text/quick suggestions share memory
+- how user memory controls work
+- proof that user memory is isolated
+- remaining recommended improvements

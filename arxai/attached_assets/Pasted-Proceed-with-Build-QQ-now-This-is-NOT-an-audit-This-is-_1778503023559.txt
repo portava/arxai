@@ -1,0 +1,468 @@
+Proceed with Build QQ now.
+
+This is NOT an audit.
+This is NOT a planning report.
+Implement the code changes.
+
+Build QQ = Unified Trading Cockpit + UX Simplification.
+
+Goal:
+Create one clean, user-facing Trading Cockpit that brings the most important AA–PP systems into a simple workflow.
+
+The app should feel easy to use:
+Open app →
+See safety status →
+Start paper session →
+Monitor paper trades →
+Review alerts →
+See today’s P&L →
+Read coach guidance →
+End session →
+Review report.
+
+Important:
+Build QQ must NOT place live trades.
+Build QQ must NOT enable live trading.
+Build QQ must NOT call MT5 live execution.
+Build QQ must NOT modify canPlaceTrades.
+Build QQ must NOT expose API secrets.
+Build QQ must NOT recommend live trading.
+Build QQ is frontend workflow polish, navigation cleanup, dashboard simplification, and user experience improvement only.
+
+Current system:
+- AA = trade decision orchestrator
+- BB = auto-debrief
+- CC = learning feedback engine
+- DD = read-only market data
+- EE = paper execution engine
+- FF = paper autopilot
+- GG = trading calendar + AI command center
+- HH = risk governor
+- II = trader coach + playbook
+- JJ = replay simulator + strategy lab
+- KK = data import + broker read-only connector
+- LL = notification center
+- MM = system health/admin/audit
+- NN = security/roles/permissions
+- OO = readiness gate
+- PP = paper session manager
+- QQ = unified cockpit and UX simplification
+
+Core requirement:
+Create a central Trading Cockpit page that reads existing endpoints and gives the trader one clean place to operate the paper-only system.
+
+Build QQ tasks:
+
+1. Inspect current frontend navigation
+
+Review existing:
+- routes
+- sidebar/menu items
+- dashboard pages
+- command center pages
+- paper session pages
+- notification UI
+- performance pages
+- coach/playbook pages
+- replay/strategy lab pages
+- admin/security pages
+
+Clean up repetitive menu items.
+Group routes into simple sections.
+
+Suggested navigation:
+
+Main:
+- Trading Cockpit
+- Paper Sessions
+- Calendar
+- Coach
+- Playbook
+
+Practice:
+- Replay Simulator
+- Strategy Lab
+- Data Import
+
+System:
+- Notifications
+- Risk Governor
+- Readiness Gate
+- System Health
+- Security
+- Broker Read-Only
+
+2. Create Trading Cockpit page
+
+Create one page that shows:
+
+A. Safety header
+- PAPER ONLY badge
+- LIVE TRADING DISABLED badge
+- OO readiness status
+- HH Risk Governor status
+- NN security status
+- unread critical alerts
+- current PP paper session status
+
+B. Primary action card
+Shows one clear next action:
+- Run preflight
+- Start paper session
+- Resume session
+- Pause session
+- End session
+- Review blocked reason
+- Read coach report
+- Acknowledge critical alert
+
+C. Active paper session panel
+If session is active:
+- session timer
+- symbols/timeframes
+- trades opened
+- trades closed
+- current P&L
+- win rate
+- warnings
+- session rules
+- pause/end buttons
+
+D. Paper trade monitor panel
+Show:
+- open paper trades
+- symbol
+- action
+- entry
+- current price
+- SL/TP
+- unrealized P&L
+- status
+- link to trade detail
+
+E. Today performance panel
+Read from GG:
+- today net P&L
+- trades
+- wins/losses
+- day rating
+- most repeated mistake
+- top lesson
+
+F. Coach panel
+Read from II:
+- current focus
+- mistake to avoid
+- setups to watch
+- setups to avoid
+- next best actions
+
+G. Alerts panel
+Read from LL:
+- critical alerts
+- high alerts
+- unread count
+- quick acknowledge link
+
+H. Autopilot panel
+Read from FF and PP:
+- status
+- paper-only mode
+- last cycle
+- cooldowns
+- whether autopilot is allowed in the current session
+
+I. System health mini panel
+Read from MM/OO:
+- overall health
+- readiness score
+- major warnings
+- last readiness check time
+
+3. Add cockpit summary endpoint if needed
+
+If the frontend needs one clean endpoint, create:
+
+GET /api/trading-cockpit/summary
+
+It should aggregate existing safe read-only data:
+
+{
+  cockpit_id,
+  generated_at,
+  mode: "PAPER_ONLY",
+  liveTradingStatus: "DISABLED",
+  readiness: {},
+  riskGovernor: {},
+  security: {},
+  activeSession: {},
+  todayPerformance: {},
+  openPaperTrades: [],
+  coachSummary: {},
+  notifications: {},
+  autopilot: {},
+  systemHealth: {},
+  nextBestAction: {},
+  warnings: []
+}
+
+This endpoint must only read data.
+No execution.
+No live broker calls.
+No secret exposure.
+
+4. Simplify menu and page naming
+
+Replace confusing or duplicate labels with clear names.
+
+Examples:
+- “AI Command Center” can remain inside Calendar/Performance or Cockpit.
+- “Risk Governor” should be under System.
+- “Readiness Gate” should be under System.
+- “Admin Control” should be under System.
+- “Broker Read-Only” should clearly say READ ONLY.
+- “Paper Execution” should not appear as a confusing user-facing main page unless needed.
+
+5. Create route guard visual states
+
+For blocked systems, show friendly explanations:
+
+- “Paper session blocked because readiness gate failed.”
+- “Autopilot paused by Risk Governor.”
+- “Paper execution requires an active paper session.”
+- “Critical safety alert must be acknowledged.”
+- “Broker is read-only. Live trading is disabled.”
+
+Do not show scary developer errors unless user opens details.
+
+6. Mobile-first cleanup
+
+Make cockpit usable on phone:
+
+- sticky safety header
+- large readable cards
+- collapsible detail panels
+- minimal tables on mobile
+- quick action buttons
+- no crowded sidebar on mobile
+- no repeated menu items
+
+7. Create clear status language
+
+Use consistent language:
+
+- PAPER_ONLY
+- LIVE DISABLED
+- READ_ONLY
+- REPLAY_ONLY
+- ACTIVE SESSION
+- PAUSED SESSION
+- BLOCKED
+- WATCH_ONLY
+- SAFE TO PAPER TEST
+- ACTION REQUIRED
+
+8. Add quick action buttons
+
+Only safe actions:
+
+- Run Preflight
+- Start Paper Session
+- Pause Session
+- Resume Session
+- End Session
+- Run Readiness Check
+- Generate Coach Report
+- View Notifications
+- View Session Report
+- Run Replay Demo
+
+Forbidden:
+- no live trade button
+- no enable live trading button
+- no broker execution button
+- no canPlaceTrades button
+
+9. Add onboarding/helper copy
+
+Create short helper copy for the cockpit:
+
+- “This system is currently paper-only.”
+- “Live trading is disabled.”
+- “Use preflight before starting a paper session.”
+- “The Risk Governor can pause trading if risk gets too high.”
+- “The Coach turns your paper results into improvement steps.”
+- “Replay and Strategy Lab are simulation tools only.”
+
+10. Add frontend empty states
+
+If no data exists, show:
+- no active paper session
+- no paper trades yet
+- no performance data yet
+- no coach report yet
+- no replay reports yet
+- no critical alerts
+
+Each empty state should tell the user the next safe step.
+
+11. Integrate with PP session manager
+
+The cockpit must make PP feel like the main workflow:
+
+- Run preflight from cockpit
+- Start paper session from cockpit
+- Pause/resume/end from cockpit
+- Show session report link after ending
+- Show blocked preflight reasons clearly
+
+12. Integrate with LL critical alerts
+
+If any unread CRITICAL alert exists:
+- show persistent top safety banner
+- disable start session button
+- show recommended action
+- allow acknowledge if permitted
+- keep live trading disabled
+
+13. Integrate with OO readiness
+
+If readiness gate is FAIL/BLOCKED:
+- show status
+- disable start paper session
+- show recommended fixes
+- link to Readiness page
+
+14. Integrate with HH Risk Governor
+
+If Risk Governor is WATCH_ONLY/LOCKED/PAPER_PAUSED:
+- show status
+- disable new paper trades/session start as appropriate
+- show next best action
+- link to Risk Governor page
+
+15. Integrate with II Coach
+
+Show:
+- daily focus
+- mistake to avoid
+- top setup to watch
+- next best action
+- link to full coach report
+
+16. Add database only if necessary
+
+Prefer no new database tables unless needed.
+
+If needed, create:
+
+cockpit_user_preferences:
+- id
+- user_id
+- default_view
+- collapsed_panels jsonb
+- show_advanced_metrics
+- created_at
+- updated_at
+
+Do not store secrets.
+
+17. Add endpoints or scripts
+
+Create if needed:
+
+GET /api/trading-cockpit/summary
+GET /api/trading-cockpit/layout
+POST /api/trading-cockpit/layout
+POST /api/trading-cockpit/demo
+
+18. Required test scenarios
+
+A. Cockpit loads with empty database.
+B. Cockpit loads with active paper session.
+C. Cockpit shows PAPER_ONLY and LIVE DISABLED badges.
+D. Cockpit shows readiness PASS.
+E. Cockpit shows readiness BLOCKED and disables session start.
+F. Cockpit shows Risk Governor PAPER_PAUSED and disables new paper trades.
+G. Cockpit shows unread CRITICAL alert and disables start.
+H. Cockpit start session action calls PP safely.
+I. Cockpit pause/resume/end calls PP safely.
+J. Cockpit shows open paper trades from EE.
+K. Cockpit shows today performance from GG.
+L. Cockpit shows coach summary from II.
+M. Cockpit shows autopilot status from FF.
+N. Cockpit shows system health from MM.
+O. Navigation is simplified and not repetitive.
+P. Mobile layout is readable.
+Q. No secrets are exposed.
+R. No live trading controls exist.
+S. Existing AA-PP systems still work.
+
+19. Safety rules
+
+Hard rules:
+- QQ cannot place trades.
+- QQ cannot enable live trading.
+- QQ cannot set canPlaceTrades true.
+- QQ cannot call broker order functions.
+- QQ cannot call MT5 live execution.
+- QQ cannot expose secrets.
+- QQ cannot recommend live trading.
+- QQ must always show live trading disabled.
+- QQ can only call safe existing endpoints.
+
+20. Preserve existing behavior
+
+Do not break:
+- AA through PP services
+- PP paper session manager
+- EE paper execution
+- FF paper autopilot
+- LL notifications
+- NN security
+- MM audit/admin
+- OO readiness
+- all existing backend safety rules
+
+Acceptance criteria:
+- Trading Cockpit page exists.
+- Navigation is cleaner and less repetitive.
+- Cockpit shows safety, session, trades, performance, coach, alerts, autopilot, and system health.
+- Cockpit can start/pause/resume/end paper sessions through PP only.
+- Critical alerts/readiness/risk blocks disable unsafe actions.
+- Mobile layout is readable.
+- No live trading controls are visible.
+- No secrets are exposed.
+- App typechecks/builds.
+- Raw outputs and screenshots prove it works.
+
+After implementation, show:
+
+1. Files changed
+2. New files created
+3. Database changes, if any
+4. Frontend routes/pages added
+5. Navigation/menu cleanup summary
+6. Where QQ reads PP session data
+7. Where QQ reads OO readiness
+8. Where QQ reads HH governor
+9. Where QQ reads LL alerts
+10. Where QQ reads GG performance
+11. Where QQ reads II coach
+12. Where QQ reads EE paper trades
+13. Where QQ reads FF autopilot
+14. Where QQ reads MM health
+15. Raw output from /api/trading-cockpit/summary if created
+16. Empty-state proof
+17. Active-session proof
+18. Critical-alert blocked-start proof
+19. Readiness blocked proof
+20. Risk Governor paused proof
+21. PP action proof from cockpit
+22. Mobile layout proof
+23. Frontend route proof
+24. Secret redaction proof
+25. Live-trade isolation proof
+26. Any errors or warnings
+27. Whether Build QQ is fully complete or partially complete
+28. Final Build QQ score out of 10

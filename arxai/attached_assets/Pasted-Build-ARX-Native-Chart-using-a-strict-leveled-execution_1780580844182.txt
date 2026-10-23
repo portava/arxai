@@ -1,0 +1,594 @@
+Build ARX Native Chart using a strict leveled execution plan.
+
+This is not a rebuild.
+This is not a TradingView removal task.
+This is not permission to break live execution.
+This is not permission to rewrite Ruby, scanner, MT5 bridge, admin, investor view, auth, or existing trading pages.
+
+This is a phased add-on. Each level must be completed, tested, and proven before moving to the next level.
+
+TradingView must remain available as fallback/reference until ARX Native Chart is proven stable, accurate, fast, and fully wired.
+
+The final goal is to create ARX Native Chart as an AI execution surface that connects candles, Ruby, scanner, Risk AI, Scalp AI, Agent Court, live positions, trade planning, trade review, and Learning Camp.
+
+But do not try to build everything at once.
+
+============================================================
+GLOBAL NON-NEGOTIABLE RULES
+
+1. Preserve existing live trade execution path.
+2. Preserve existing MT5/live bridge wiring.
+3. Preserve existing Ruby behavior.
+4. Preserve existing scanner behavior.
+5. Preserve existing admin/user/investor role separation.
+6. Preserve existing TradingView integration as fallback/reference.
+7. Do not introduce paper trading.
+8. Do not introduce simulation mode as a product feature.
+9. Do not fake live candle data.
+10. Do not show placeholder AI signals as real.
+11. Do not let chart rendering block live trade actions.
+12. Do not let AI overlays block candle rendering.
+13. Do not let chart buttons bypass backend live checks.
+14. Do not remove working features to make the chart easier.
+15. Do not redesign the whole app.
+16. Do not make visual-only pages with no backend wiring.
+17. Do not create dead buttons.
+18. Do not load all historical data at once.
+19. Do not run all agents on every candle update.
+20. Do not mark complete until each level has evidence and QA results.
+
+Core execution principle:
+
+Candles render first.
+Feed quality validates second.
+Trade overlays come third.
+AI overlays come fourth.
+Execution always stays protected.
+Deep learning/review happens in background only.
+
+============================================================
+LEVEL 0 — FULL EXISTING SYSTEM AUDIT
+
+Objective:
+Understand exactly what exists before building anything.
+
+Do not write new chart code yet.
+
+Audit the current app and produce a report covering:
+
+A. Current chart system
+
+* Find all chart components.
+* Find all TradingView widget/component usage.
+* Find where the current chart is mounted.
+* Find if there are multiple chart screens.
+* Identify if any chart already uses custom candles.
+* Identify if any chart has overlays.
+* Identify current timeframe controls.
+* Identify current symbol controls.
+* Identify current chart theme/styling.
+* Identify mobile behavior issues.
+
+B. Current data system
+
+* Find current price feed source.
+* Find current candle source.
+* Find whether the app uses MT5 candles, Deriv candles, broker candles, TwelveData, cached candles, or no true candles.
+* Find whether current data is polling or WebSocket.
+* Find current symbol mappings.
+* Find Deriv volatility index mappings.
+* Find MT5 symbol mappings.
+* Find where current open price/current price comes from.
+* Find whether there is historical candle storage.
+* Find whether there is tick storage.
+* Find whether the app can build candles from ticks.
+
+C. Current trading system
+
+* Find the exact live execution path.
+* Find the exact live trade submit function.
+* Find the exact close trade function.
+* Find the MT5 bridge route.
+* Find result mapping back to UI.
+* Find current live position source.
+* Find order/history source.
+* Find any risk/admin/live permission checks.
+* Confirm nothing in chart work should bypass this.
+
+D. Current Ruby/scanner/agent system
+
+* Find where Ruby analyzes market data.
+* Find where scanner generates signals.
+* Find where agent governance outputs exist.
+* Find Risk AI/scalp/entry/exit outputs if present.
+* Find prediction journal or governance trace outputs if present.
+* Find how Ruby explanations are shown.
+
+E. Current frontend structure
+
+* Identify framework.
+* Identify routing.
+* Identify state management.
+* Identify API client pattern.
+* Identify existing reusable UI components.
+* Identify chart page layout.
+* Identify mobile layout rules.
+
+F. Current backend structure
+
+* Identify API route pattern.
+* Identify auth middleware.
+* Identify database ORM.
+* Identify migrations.
+* Identify service layer.
+* Identify WebSocket capability if any.
+* Identify background runner capability if any.
+
+Deliver Level 0 report:
+
+1. Current chart files.
+2. Current chart data source.
+3. Current TradingView dependency.
+4. Current live execution path.
+5. Current scanner/Ruby integration points.
+6. Existing WebSocket/polling status.
+7. Existing candle/history status.
+8. Risks before building.
+9. Safest insertion point for ARX Native Chart.
+10. What should not be touched.
+
+Acceptance for Level 0:
+
+* No major code changes yet.
+* Clear report exists.
+* Safe build location identified.
+* Live execution path identified and protected.
+* TradingView fallback path identified.
+
+QA gate:
+Do not proceed to Level 1 until Level 0 report is complete.
+
+============================================================
+LEVEL 1 — DATA TRUTH FOUNDATION
+
+Objective:
+Build or verify the candle data contract before building the visual chart.
+
+The chart must never depend on unclear, fake, stale, or unverified data.
+
+Create a normalized candle contract.
+
+Candle object:
+
+{
+symbol: string,
+displaySymbol: string,
+timeframe: “M1” | “M5” | “M15” | “M30” | “H1” | “H4” | “D1”,
+time: number,
+open: number,
+high: number,
+low: number,
+close: number,
+volume: number | null,
+tickVolume: number | null,
+source: “MT5” | “Deriv” | “Internal” | “TradingViewReference” | “Unknown”,
+isComplete: boolean,
+latencyMs: number | null,
+quality: “clean” | “delayed” | “stale” | “missing” | “partial” | “unknown”,
+createdAt: string,
+updatedAt: string
+}
+
+Create normalized feed status object:
+
+{
+symbol: string,
+displaySymbol: string,
+source: “MT5” | “Deriv” | “Internal” | “Unknown”,
+isLive: boolean,
+lastTickAt: string | null,
+lastCandleAt: string | null,
+latencyMs: number | null,
+missingCandles: number,
+stale: boolean,
+quality: “clean” | “delayed” | “stale” | “missing” | “partial” | “unknown”,
+warning: string | null,
+aiUsable: boolean
+}
+
+Create or verify services:
+
+1. normalizeSymbol(symbol)
+
+* Converts UI symbol to backend symbol.
+* Handles V75 / Volatility 75 / Deriv symbol aliases.
+* Handles MT5 broker-specific names if needed.
+* Does not break existing symbol mapping.
+
+2. normalizeTimeframe(timeframe)
+
+* Converts UI timeframe to backend format.
+* Validates allowed timeframe list.
+
+3. getHistoricalCandles(symbol, timeframe, limit)
+
+* Returns candles in normalized format.
+* Does not fake data.
+* If data unavailable, returns empty with feed warning.
+
+4. validateCandleSequence(candles, timeframe)
+
+* Detects missing candles.
+* Detects duplicate candles.
+* Detects out-of-order candles.
+* Detects invalid OHLC values.
+
+5. detectStaleFeed(lastTickAt)
+
+* Marks feed stale if last update is too old.
+
+6. getFeedStatus(symbol)
+
+* Returns source, latency, missing candles, quality, aiUsable.
+
+7. subscribeToLiveCandles(symbol, timeframe)
+
+* Use existing WebSocket if already present.
+* If WebSocket is not safe/available yet, use controlled polling first.
+
+8. buildCurrentCandleFromTick(tick, timeframe)
+
+* Only if tick feed exists.
+* Do not invent ticks.
+
+Backend endpoint requirements:
+
+GET /api/chart/candles?symbol=SYMBOL&timeframe=M15&limit=500
+
+Response:
+{
+success: true,
+symbol,
+displaySymbol,
+timeframe,
+source,
+quality,
+aiUsable,
+warning,
+lastUpdated,
+candles: […]
+}
+
+GET /api/chart/feed-status?symbol=SYMBOL
+
+Response:
+{
+success: true,
+symbol,
+displaySymbol,
+source,
+isLive,
+lastTickAt,
+lastCandleAt,
+latencyMs,
+missingCandles,
+stale,
+quality,
+warning,
+aiUsable
+}
+
+Optional later:
+WS /api/chart/stream?symbol=SYMBOL&timeframe=M15
+
+If WebSocket is not currently reliable, do not force it in Level 1. Use safe polling and document WebSocket as Level 1B/Level 2 upgrade.
+
+Important AI rule:
+If aiUsable=false, Ruby/agents must not treat native chart data as clean live confirmation.
+
+Acceptance for Level 1:
+
+* Candle endpoint works.
+* Feed status endpoint works.
+* Candles are normalized.
+* Missing/stale data is detected.
+* No fake candles are presented as live.
+* Symbol/timeframe validation works.
+* Existing scanner/live/Ruby flows still work.
+
+QA gate:
+Test with:
+
+* V75 if data exists.
+* Another known working symbol.
+* Missing/invalid symbol.
+* Missing timeframe.
+* Empty candle response.
+* Stale feed case.
+* 500 candle request.
+* 2,000 candle request if supported.
+
+Do not proceed to Level 2 unless the data contract is stable.
+
+============================================================
+LEVEL 2 — ARX NATIVE CHART SHELL
+
+Objective:
+Render clean candles using the normalized data contract.
+
+Use TradingView Lightweight Charts unless the project already has a better financial chart library installed.
+
+Important:
+Lightweight Charts is not the full TradingView widget.
+This native chart uses ARX data, not TradingView-hosted data.
+Preserve license/attribution/notice requirements.
+
+Build reusable component:
+
+ARXNativeChart
+
+Props:
+
+{
+symbol: string,
+timeframe: string,
+mode?: “clean” | “ai” | “scalp” | “risk” | “review” | “learning”,
+height?: number | string,
+showFeedStatus?: boolean,
+showFallbackToggle?: boolean,
+overlays?: ChartOverlay[],
+onSymbolChange?: function,
+onTimeframeChange?: function
+}
+
+Required component behavior:
+
+1. Loading state
+
+* Show clean skeleton/loading message.
+* Do not crash.
+
+2. Empty state
+
+* “No native candles available for this symbol/timeframe.”
+* Offer TradingView fallback.
+
+3. Error state
+
+* Show clear error.
+* Keep page usable.
+
+4. Chart render
+
+* Candlesticks.
+* Price scale.
+* Time scale.
+* Crosshair.
+* Pan.
+* Zoom.
+* Responsive resize.
+* Latest price line.
+* Current candle update if polling/streaming exists.
+
+5. Symbol/timeframe controls
+
+* Use existing controls if available.
+* Do not create conflicting selectors.
+* Timeframes: M1, M5, M15, M30, H1, H4, D1.
+* Disable or warning-label unavailable timeframes instead of failing.
+
+6. Mobile behavior
+
+* Chart must fit screen.
+* No horizontal page breaking.
+* Crosshair/long press should not break scrolling.
+* Controls should be usable with thumb.
+* No crowded labels.
+
+7. Performance
+
+* Do not rerender entire app on every candle.
+* Clean up subscriptions/timers on unmount.
+* Limit initial candles.
+* Avoid memory leaks.
+
+Add chart to safest location:
+
+* Add as tab/toggle beside current TradingView chart.
+* Do not replace existing chart yet.
+* Label:
+    “ARX Native”
+    “TradingView Reference”
+
+Default:
+
+* Keep current chart default if native data is not proven.
+* Or allow admin/user toggle to test ARX Native.
+
+Acceptance for Level 2:
+
+* ARX Native Chart renders candles.
+* TradingView Reference still works.
+* Symbol/timeframe switch works.
+* Empty feed does not crash.
+* Mobile usable.
+* Existing app still works.
+
+QA gate:
+
+* Load dashboard/trading page.
+* Switch to ARX Native.
+* Switch back to TradingView Reference.
+* Test V75.
+* Test invalid symbol.
+* Test M15/H1/H4.
+* Resize/mobile test.
+* Check console errors.
+* Check server errors.
+
+============================================================
+LEVEL 3 — FEED QUALITY AND DATA CONFIDENCE BADGE
+
+Objective:
+Make the chart honest about whether its data can be trusted.
+
+Add a visible feed badge on ARX Native Chart.
+
+Badge examples:
+
+Clean:
+
+* Feed: Live
+* Source: MT5 or Deriv
+* Latency: 120ms
+* History: Complete
+* AI usable: Yes
+
+Warning:
+
+* Feed delayed
+* Candles missing
+* Feed stale
+* Source unknown
+* Native chart reconnecting
+* AI usable: No
+
+Badge should show:
+
+* source
+* live/stale
+* latency
+* last tick/candle time
+* missing candle count
+* AI usable yes/no
+* warning if any
+
+Rules:
+
+* If data quality is clean, badge can be small.
+* If data quality is poor, badge must be visible.
+* If native chart feed is stale, show TradingView fallback option.
+* If aiUsable=false, future Ruby/agent overlays must not present the chart as confirmed.
+
+Create frontend utility:
+
+getChartDataConfidence(feedStatus)
+
+Return:
+
+* statusLabel
+* severity: clean / caution / danger / unknown
+* aiUsable
+* message
+
+Acceptance for Level 3:
+
+* Badge reflects backend feed status.
+* Stale/missing data shows warning.
+* Feed failure does not crash chart.
+* TradingView fallback remains available.
+
+QA gate:
+
+* Clean data.
+* Empty data.
+* Stale data.
+* Invalid symbol.
+* Delayed response.
+* Mobile badge display.
+
+============================================================
+LEVEL 4 — TRADE OVERLAY FOUNDATION
+
+Objective:
+Prepare ARX Native Chart to show live positions and trade plan overlays without changing execution.
+
+Do not add direct live execution yet unless safely reusing existing backend trade intent flow.
+
+Create ChartOverlay contract:
+
+{
+id: string,
+type:
+“position_line” |
+“entry_line” |
+“current_price_line” |
+“tp_line” |
+“sl_line” |
+“invalidation_line” |
+“partial_tp_line” |
+“risk_zone” |
+“no_trade_zone” |
+“ruby_note” |
+“scanner_signal” |
+“scalp_marker” |
+“agent_conflict” |
+“review_marker” |
+“learning_marker”,
+symbol: string,
+timeframe?: string,
+price?: number,
+priceMin?: number,
+priceMax?: number,
+startTime?: number,
+endTime?: number,
+label?: string,
+severity?: “info” | “caution” | “danger” | “success”,
+source?: string,
+sourceAgent?: string,
+confidence?: number,
+metadata?: object
+}
+
+Start only with trade overlays:
+
+1. Current price line
+2. Open position entry line
+3. TP line
+4. SL/invalidation line
+5. P/L bubble if existing position data is available
+6. Position direction marker
+7. Close button placeholder only if existing close flow can be safely called
+
+Backend/frontend data:
+
+* Use existing live position source.
+* Do not create duplicate position service unless needed.
+* Do not make fake positions.
+* If no position source exists, show no overlays.
+
+Trade overlay rules:
+
+* Chart overlays should not execute trades.
+* Buy/Sell from chart comes later.
+* If any button exists, it must call existing safe trade intent path.
+* Emergency close must remain available outside chart if chart fails.
+
+Acceptance for Level 4:
+
+* Open positions display on chart if position data exists.
+* TP/SL/invalidation lines display if data exists.
+* No position state is handled cleanly.
+* Chart failure does not break position UI.
+* Existing live execution untouched.
+
+QA gate:
+
+* No open position.
+* One open buy position.
+* One open sell position.
+* TP/SL present.
+* TP/SL missing.
+* Position updates.
+* Close flow remains accessible outside chart.
+
+============================================================
+LEVEL 5 — RUBY / SCANNER / AGENT OVERLAY FOUNDATION
+
+Objective:
+Connect ARX Native Chart to real intelligence outputs without fake markers.
+
+Do not build all overlays at once.
+Build the data contract and one or two real overlays first.
+
+Overlay source services:
