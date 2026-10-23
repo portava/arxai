@@ -315,3 +315,49 @@ test("an AI or automation origin gets no relaxation: identical facts, identical 
     assert.deepEqual(d.blockedBy, manual.blockedBy, origin);
   }
 });
+
+// ── Position Guardian: stop modifications ─────────────────────────────────
+// Open BUY 0.1 EURUSD at 1.1000, stop 1.0951 ($49 at risk; per-trade cap $100).
+const OPEN_POS = { entryPrice: 1.1, stopLoss: 1.0951 };
+function modify(over: Partial<TradeIntent> = {}): TradeIntent {
+  return baseIntent({ action: "MODIFY", takeProfit: null, position: OPEN_POS, ...over });
+}
+
+test("guardian: automation may tighten a stop", () => {
+  for (const origin of ["automation", "ruby", "strategy"] as const) {
+    const d = evaluatePreTradeRisk(modify({ origin, stopLoss: 1.098 }), baseCtx());
+    assert.equal(d.decision, "ALLOW", `${origin}: ${d.primaryReason ?? ""}`);
+  }
+});
+
+test("guardian: automation or Ruby cannot widen a stop, even within the per-trade limit", () => {
+  for (const origin of ["automation", "ruby", "strategy", "api"] as const) {
+    const r = blockedOnly(modify({ origin, stopLoss: 1.095 }), baseCtx(), "stop_loss_required");
+    assert.match(r.reason!, /only tighten/);
+    assert.equal(r.measured?.["currentStopLoss"], 1.0951);
+    assert.equal(r.measured?.["newStopLoss"], 1.095);
+  }
+});
+
+test("guardian: automation cannot remove a stop, and cannot modify a position it cannot identify", () => {
+  const removed = evaluatePreTradeRisk(modify({ origin: "automation", stopLoss: null }), baseCtx());
+  assert.deepEqual(removed.blockedBy, ["stop_loss_required"]);
+  const unknown = evaluatePreTradeRisk(modify({ origin: "ruby", stopLoss: 1.098, position: null }), baseCtx());
+  assert.deepEqual(unknown.blockedBy, ["stop_loss_required"]);
+  assert.match(unknown.primaryReason!, /could not be found/);
+});
+
+test("guardian: a trader may widen a stop by hand only within the per-trade loss limit", () => {
+  const within = evaluatePreTradeRisk(modify({ stopLoss: 1.095 }), baseCtx());
+  assert.equal(within.decision, "ALLOW", within.primaryReason ?? "");
+  // 1.0850 puts 0.015 × 0.1 × 100,000 = $150 at risk against a $100 cap.
+  const r = blockedOnly(modify({ stopLoss: 1.085 }), baseCtx(), "per_trade_loss_limit");
+  assert.equal(r.measured?.["lossAtStop"], 150);
+  assert.equal(r.measured?.["cap"], 100);
+});
+
+test("guardian: a widened stop whose size cannot be measured is refused", () => {
+  const ctx = baseCtx({ account: null });
+  const d = evaluatePreTradeRisk(modify({ stopLoss: 1.095 }), ctx);
+  assert.ok(d.blockedBy.includes("per_trade_loss_limit"));
+});

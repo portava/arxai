@@ -55,6 +55,8 @@ export interface RiskEnforcementInput {
   takeProfit?: number | null;
   /** Who originated the draft (user, Ruby, decision engine). */
   origin?: IntentOrigin;
+  /** The trade a modify acts on, so the Position Guardian can tell a widened stop from a tightened one. */
+  position?: { side: "BUY" | "SELL"; entryPrice: number | null; stopLoss: number | null; lotSize: number } | null;
   routingMode: string | null;      // "USER_OWNED_MT5" | "SHARED_MASTER_MT5"
   /** Bridge the action routes to (routingResolver); null = the user's own. */
   connectionId?: number | null;
@@ -159,19 +161,22 @@ export async function enforceRiskGovernor(input: RiskEnforcementInput): Promise<
   //    preview with no lot size yet cannot be sized, so it is checked when
   //    the real draft is confirmed instead.
   const intentAction = toIntentAction(actionType);
-  if (intentAction && !(input.previewMode && lotSize == null)) {
+  // A modify that leaves a level out keeps the trade's current one.
+  const pos = intentAction === "MODIFY" ? input.position ?? null : null;
+  if (intentAction && !(input.previewMode && lotSize == null && !pos)) {
     const pre = await enforcePreTradeRisk({
       userId,
       venue: requestedMode === "SIMULATED" ? "PAPER" : requestedMode,
       origin: input.origin ?? "manual",
       action: intentAction,
       symbol,
-      side: side === "BUY" || side === "SELL" ? side : null,
-      lots: lotSize,
+      side: side === "BUY" || side === "SELL" ? side : pos?.side ?? null,
+      lots: lotSize ?? pos?.lotSize ?? null,
       entryPrice: input.requestedPrice ?? null,
-      stopLoss: input.stopLoss ?? null,
+      stopLoss: input.stopLoss ?? pos?.stopLoss ?? null,
       takeProfit: input.takeProfit ?? null,
       intentRef: `trade_action:${input.actionId}`,
+      position: pos && pos.entryPrice != null ? { entryPrice: pos.entryPrice, stopLoss: pos.stopLoss } : null,
     }, {
       preview: input.previewMode,
       connectionId: input.connectionId ?? null,

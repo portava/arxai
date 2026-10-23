@@ -3286,6 +3286,18 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     }
     const isPendingEntry = row.commandType === "PLACE_LIVE_PENDING_ORDER";
     const pendingPriceRaw = (row.payload as Record<string, unknown> | null)?.["price"];
+    // A modify names the position it changes; a null new stop means "leave
+    // the stop as it is", so the resulting stop is the position's current one.
+    let rgPosition: { entryPrice: number; stopLoss: number | null } | null = null;
+    if (rgAction === "MODIFY") {
+      const ticket = (row.payload as Record<string, unknown> | null)?.["brokerTicket"];
+      if (typeof ticket === "string" && ticket) {
+        const [p] = await db.select({ entryPrice: arxLivePositionsTable.entryPrice, stopLoss: arxLivePositionsTable.stopLoss })
+          .from(arxLivePositionsTable)
+          .where(and(eq(arxLivePositionsTable.userId, args.userId), eq(arxLivePositionsTable.brokerTicket, ticket))).limit(1);
+        rgPosition = p ? { entryPrice: Number(p.entryPrice), stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null } : null;
+      }
+    }
     const risk = await enforcePreTradeRisk({
       userId: args.userId,
       venue: "LIVE",
@@ -3296,9 +3308,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       side: row.side === "BUY" || row.side === "SELL" ? row.side : null,
       lots: Number(row.requestedVolume),
       entryPrice: isPendingEntry && typeof pendingPriceRaw === "number" ? pendingPriceRaw : null,
-      stopLoss: row.stopLoss ?? null,
+      stopLoss: row.stopLoss ?? (rgAction === "MODIFY" ? rgPosition?.stopLoss ?? null : null),
       takeProfit: row.takeProfit ?? null,
       intentRef: `live_command:${args.commandId}`,
+      position: rgPosition,
     }, {
       connectionId: bridge?.id ?? null,
       virtualAccountId: rgVirtualAccountId,

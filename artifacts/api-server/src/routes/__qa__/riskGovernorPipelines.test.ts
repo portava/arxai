@@ -237,6 +237,52 @@ test("A demo manual: today's realized loss at the cap blocks new risk (daily los
 
 // ── B. Demo, Ruby ──────────────────────────────────────────────────────────
 
+test("Position Guardian (paper): a stop tightens freely; widening past the per-trade limit is refused, audited, and leaves the stop", async () => {
+  const acct = await resetPaper(u.a);
+  // Per-trade limit 0.1% of $10k = $10. Paper ledger: loss = |entry - stop| × lots × 100.
+  await db.insert(userRiskSettingsTable).values({ userId: u.a, maxRiskPerTradePercent: 0.1 })
+    .onConflictDoUpdate({ target: userRiskSettingsTable.userId, set: { maxRiskPerTradePercent: 0.1 } });
+  try {
+    const px = paperPrice();
+    const placed = await request("POST", "/paper/orders", c.a, {
+      paperAccountId: acct, symbol: SYMBOL, direction: "BUY", lotSize: 1, stopLoss: px * 0.95, takeProfit: px * 1.1,
+    });
+    assert.equal(placed.status, 200, await placed.clone().text());
+    const { order } = await placed.json() as { order: { id: number; entryPrice: number } };
+    const entry = order.entryPrice;
+
+    const tighten = await request("PATCH", `/paper/orders/${order.id}`, c.a, { stopLoss: entry * 0.97 });
+    assert.equal(tighten.status, 200, await tighten.clone().text());
+
+    // entry × 0.15 × 100 ≈ $15 at risk, above the $10 limit.
+    const widen = await request("PATCH", `/paper/orders/${order.id}`, c.a, { stopLoss: entry * 0.85 });
+    assert.equal(widen.status, 422);
+    const body = await widen.json() as { code: string; blockedBy: string[]; auditEventId: number };
+    assert.equal(body.code, "RISK_GOVERNOR_BLOCK");
+    assert.deepEqual(body.blockedBy, ["per_trade_loss_limit"]);
+    const ev = await latestEvent(u.a);
+    assert.equal(ev.row.id, body.auditEventId);
+    assert.equal(ev.row.decision, "block");
+    assert.equal(ev.intent["action"], "MODIFY");
+    const [row] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, order.id));
+    assert.ok(Math.abs(row!.stopLoss - entry * 0.97) < 1e-5, "the refused widening left the stop where it was");
+
+    // A smaller widening that stays inside the limit (~$7) goes through.
+    const widenOk = await request("PATCH", `/paper/orders/${order.id}`, c.a, { stopLoss: entry * 0.93 });
+    assert.equal(widenOk.status, 200, await widenOk.clone().text());
+  } finally {
+    await db.delete(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, u.a));
+  }
+});
+
+test("Position Guardian: live, demo and trade-action modifies hand the governor the position being changed", () => {
+  const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+  assert.match(read("../../lib/live/liveCommandPipeline.ts"), /position: rgPosition/);
+  assert.match(read("../../lib/mt5/demoCommandConsumer.ts"), /intentRef: `demo_command:\$\{row\.commandId\}`,\s*position,/);
+  assert.match(read("../../lib/tradeAction/guards.ts"), /position: trade\s*\?/);
+  assert.match(read("../paperTrading.ts"), /action: "MODIFY"/);
+});
+
 test("B demo Ruby: a Ruby-suggested draft with no stop is rejected at confirm and audited as origin ruby", async () => {
   await resetPaper(u.a);
   await seedBridge(u.a); // gives the quote source for the paper venue

@@ -48,7 +48,7 @@ import {
   weeklyPerformanceReviewsTable,
 } from "@workspace/db";
 import { createUserSession } from "../../lib/auth/userSessions.js";
-import paperTradingRouter from "../paperTrading.js";
+import paperTradingRouter, { getMockPrice } from "../paperTrading.js";
 import postTradeDebriefsRouter from "../postTradeDebriefs.js";
 import autoDebriefRouter from "../autoDebrief.js";
 import propChallengesRouter from "../propChallenges.js";
@@ -320,15 +320,20 @@ test("paper orders: user B cannot place on, list, edit or close user A's orders"
 });
 
 test("paper orders: the owner can still edit their own order and new orders are stamped", async () => {
-  const patch = await send("PATCH", `/paper/orders/${openOrderAId}`, cookieA, { stopLoss: 0.001 });
-  assert.equal(patch.status, 200);
-  assert.equal((await json<{ order: { stopLoss: number } }>(patch)).order.stopLoss, 0.001);
+  // Prices come off the simulator's own mark: the Risk Governor refuses stops
+  // more than 50% from market, which the far-off seed geometry would be.
+  const px = getMockPrice("QAOWN.A", Date.now());
+  // Tightening the seeded far stop is always allowed by the Position Guardian.
+  const tightened = Number((px * 0.99).toFixed(5));
+  const patch = await send("PATCH", `/paper/orders/${openOrderAId}`, cookieA, { stopLoss: tightened });
+  assert.equal(patch.status, 200, await patch.clone().text());
+  assert.equal((await json<{ order: { stopLoss: number } }>(patch)).order.stopLoss, tightened);
 
   const place = await send("POST", "/paper/orders", cookieA, {
-    paperAccountId: accountAId, symbol: "QAOWN.A", direction: "BUY",
-    entryPrice: ENTRY, stopLoss: FAR_SL, takeProfit: FAR_TP,
+    paperAccountId: accountAId, symbol: "QAOWN.A", direction: "BUY", lotSize: 0.02, // not a duplicate of the seeded 0.01
+    stopLoss: px * 0.99, takeProfit: px * 1.02,
   });
-  assert.equal(place.status, 200);
+  assert.equal(place.status, 200, await place.clone().text());
   const { order } = await json<{ order: { id: number; userId: number } }>(place);
   assert.equal(order.userId, userAId);
   const events = await db.select().from(paperTradeEventsTable).where(eq(paperTradeEventsTable.paperOrderId, order.id));

@@ -101,8 +101,9 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
   pass("auth", "authenticated user");
 
   // 2. Ownership — re-check trade belongs to user (skip for OPEN with no tradeKey).
+  let trade: Awaited<ReturnType<typeof resolveUserTrade>> = null;
   if (input.tradeKey) {
-    const trade = await resolveUserTrade(input.userId, input.tradeKey);
+    trade = await resolveUserTrade(input.userId, input.tradeKey);
     if (!trade) return fail("ownership", "user owns or is attributed to the trade", "Trade not found or not attributed to you.");
     pass("ownership", "user owns or is attributed to the trade");
   } else {
@@ -177,6 +178,9 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
     stopLoss: input.stopLoss ?? null,
     takeProfit: input.takeProfit ?? null,
     origin: input.origin,
+    position: trade
+      ? { side: trade.side, entryPrice: trade.entryPrice, stopLoss: trade.stopLoss, lotSize: trade.lotSize }
+      : null,
     routingMode: routing.effectiveRoutingMode,
     connectionId: routing.connectionId ?? null,
     virtualAccountId: routing.virtualAccountId,

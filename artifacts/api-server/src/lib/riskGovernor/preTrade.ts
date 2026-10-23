@@ -36,6 +36,11 @@ export interface TradeIntent {
   takeProfit?: number | null;
   /** Caller's own row for this intent ("trade_action:12"), excluded from the duplicate scan. */
   intentRef?: string | null;
+  /**
+   * MODIFY only: the position being changed (its entry and current stop), so
+   * a tightened stop can be told apart from a widened or removed one.
+   */
+  position?: { entryPrice: number; stopLoss: number | null } | null;
 }
 
 export const RISK_RULE_IDS = [
@@ -377,6 +382,42 @@ export function evaluatePreTradeRisk(intent: TradeIntent, ctx: RiskContext): Ris
   } else set("stop_loss_required", "PASS", null, { requireStopLoss: false });
 
   if (intent.action === "MODIFY") {
+    // Position Guardian invariant: an automated action (Ruby, a strategy,
+    // automation) may only tighten a stop. A trader may widen it by hand, but
+    // never past their per-trade loss limit.
+    const pos = intent.position ?? null;
+    if (!pos && intent.origin !== "manual" && results.get("stop_loss_required")?.outcome !== "BLOCK") {
+      set("stop_loss_required", "BLOCK",
+        `The position ${intent.origin} is modifying could not be found, so the change cannot be proven to only tighten the stop.`,
+        { origin: intent.origin });
+    }
+    if (pos && pos.stopLoss != null && pos.stopLoss > 0 && intent.side) {
+      const widened = sl == null
+        || (intent.side === "BUY" ? sl < pos.stopLoss - 1e-12 : sl > pos.stopLoss + 1e-12);
+      if (widened) {
+        const measured = { currentStopLoss: pos.stopLoss, newStopLoss: sl, origin: intent.origin };
+        if (intent.origin !== "manual" && results.get("stop_loss_required")?.outcome !== "BLOCK") {
+          set("stop_loss_required", "BLOCK",
+            `Automated actions may only tighten a stop: ${intent.origin} tried to move it from ${pos.stopLoss} to ${sl ?? "none"}.`,
+            measured);
+        }
+        if (sl != null) {
+          const perUnit = lots != null && lots > 0 ? moneyPerPriceUnit(lots, ctx.instruments[intent.symbol]) : null;
+          const equity = ctx.account?.equity != null && ctx.account.equity > 0 ? ctx.account.equity : null;
+          const pctCap = equity != null ? (equity * L.maxRiskPerTradePercent) / 100 : null;
+          const cap = [pctCap, L.maxRiskPerTradeAmount].filter((v): v is number => v != null)
+            .reduce((a, b) => Math.min(a, b), Number.POSITIVE_INFINITY);
+          const loss = perUnit != null ? Math.abs(pos.entryPrice - sl) * perUnit : null;
+          if (loss == null || !Number.isFinite(cap)) {
+            set("per_trade_loss_limit", "BLOCK", "A widened stop cannot be checked against your per-trade limit (position size or equity unknown).", measured);
+          } else if (loss > cap + 1e-9) {
+            set("per_trade_loss_limit", "BLOCK",
+              `Moving the stop to ${sl} puts ${round(loss)} at risk, above your per-trade limit of ${round(cap)}.`,
+              { ...measured, lossAtStop: round(loss), cap: round(cap) });
+          } else set("per_trade_loss_limit", "PASS", null, { ...measured, lossAtStop: round(loss), cap: round(cap) });
+        }
+      }
+    }
     for (const r of RISK_RULE_IDS) if (!results.has(r)) na(r, "modify does not add exposure");
     return finish(results, ctx);
   }
@@ -421,7 +462,7 @@ export function evaluatePreTradeRisk(intent: TradeIntent, ctx: RiskContext): Ris
     const conflictOrder = others.find((f) => f.symbol === sym && f.side === opposite && f.kind === "pending");
     if (dup) {
       set("duplicate_or_conflicting", "BLOCK",
-        `An identical ${intent.side} ${lots} ${sym} order (${dup.ref}) is ${dup.kind === "pending" ? "already in flight" : "just filled"}.`,
+        `An identical ${intent.side} ${lots} ${sym} order (${dup.ref}) ${dup.kind === "pending" ? "is already in flight" : "was just filled"}.`,
         { duplicateOf: dup.ref });
     } else if (conflictPos || conflictOrder) {
       set("duplicate_or_conflicting", "BLOCK",
