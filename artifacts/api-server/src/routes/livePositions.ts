@@ -34,6 +34,7 @@ import {
 import { queueMt5CommandWithGate } from "./mt5";
 import { PNL_DATA_QUALITY_MISSING_CLOSE_FILL } from "../lib/live/realizedPnl.js";
 import { requireUser } from "../lib/auth/middleware.js";
+import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
 import { canSeeLegacyRows, ownerScope } from "../lib/auth/ownerScope.js";
 
 const router = Router();
@@ -332,6 +333,25 @@ router.patch("/positions/:id/stop-loss", requireUser, async (req, res): Promise<
         aiExplanation: "Removing your stop loss is one of the most account-damaging actions you can take. Confirm explicitly if this is truly intentional.",
       });
       return;
+    }
+
+    // Position Guardian: removing or widening a stop is checked against the
+    // trader's stop-loss requirement and per-trade loss limit. The legacy
+    // server-wide feed rows (user_id NULL, operator only) have no trader limits.
+    if (row.userId === req.authUser!.id && (row.direction === "BUY" || row.direction === "SELL")) {
+      const risk = await enforcePreTradeRisk({
+        userId: req.authUser!.id, venue: "DEMO", origin: "manual", action: "MODIFY",
+        symbol: row.symbol, side: row.direction, lots: row.lotSize,
+        stopLoss: body.stopLoss ?? null, takeProfit: row.takeProfit ?? null,
+        position: { entryPrice: row.entryPrice, stopLoss: row.stopLoss ?? null },
+      }, { auditContext: { caller: "PATCH /positions/:id/stop-loss", livePositionId: id } });
+      if (!risk.allowed) {
+        res.status(422).json({
+          error: risk.primaryReason ?? "Blocked by Risk Governor", code: "RISK_GOVERNOR_BLOCK",
+          blockedBy: risk.blockedBy, auditEventId: risk.auditEventId,
+        });
+        return;
+      }
     }
 
     // Queue MODIFY through the shared MT5 gate so mode/live-lock semantics apply.
