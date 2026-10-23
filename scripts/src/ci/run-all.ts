@@ -9,6 +9,7 @@ import { checkDomainCircular } from "./check-domain-circular.js";
 import { checkPaperAutopilotIsolation } from "./check-paper-autopilot-isolation.js";
 import { checkLiveTradingReadinessLock } from "./check-live-trading-readiness-lock.js";
 import { checkEmergencyKillSwitch } from "./check-emergency-kill-switch.js";
+import { checkAdminGateSingleSource } from "./check-admin-gate-single-source.js";
 import { checkLiveOrderRiskLimits } from "./check-live-order-risk-limits.js";
 import { checkSecurityRoleHeader } from "./check-security-role-header.js";
 import { checkNoCommittedPepper } from "./check-no-committed-pepper.js";
@@ -84,6 +85,7 @@ const checks: Array<() => CheckResult> = [
   checkPaperAutopilotIsolation,
   checkLiveTradingReadinessLock,
   checkEmergencyKillSwitch,
+  checkAdminGateSingleSource,
   checkLiveOrderRiskLimits,
   checkSecurityRoleHeader,
   checkNoCommittedPepper,

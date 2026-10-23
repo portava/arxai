@@ -49,6 +49,7 @@ import {
 } from "./adminAllocations.js";
 import { buildApprovedTraderLiveState } from "../lib/live/approvedTraderLiveState.js";
 import { adminForceArmLiveForUser, LIVE_CONFIRMATION_PHRASE } from "../lib/live/liveArming.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 // Phase 22V Part 3 — name of the seed shared-bridge default risk template
 // applied automatically when an admin first approves a user. Idempotent
@@ -94,8 +95,8 @@ function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" 
     res.status(401).json({ ok: false, error: "AUTH_REQUIRED" });
     return null;
   }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }

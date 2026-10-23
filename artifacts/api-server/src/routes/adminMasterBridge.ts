@@ -21,18 +21,19 @@ import {
 } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
 import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
 
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const sess = (req as Request & { authUser?: { id: number; role?: string } }).authUser;
-  const role = sess?.role ?? null;
+  const role = operatorRoleFromSession(sess?.role);
   if (!sess) {
     res.status(401).json({ ok: false, error: "AUTH_REQUIRED" });
     return null;
   }
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }

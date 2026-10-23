@@ -3,7 +3,7 @@
 // SAFETY: All mutating endpoints require ADMIN. No broker calls.
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod/v4";
-import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { requireAdmin } from "../lib/security/middleware.js";
 import {
   getProfile, setProfile, applyPreset,
   riskBudget, exposure, drawdown, overtrading,
@@ -14,15 +14,6 @@ import {
 } from "../lib/riskGovernor2.js";
 
 const router = Router();
-
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") {
-    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
-    return;
-  }
-  next();
-}
 
 // Profile
 router.get("/risk-profile", (_req, res) => res.json(getProfile()));

@@ -29,14 +29,15 @@ import {
   assertNoProtectedFields,
   sanitiseRemoteConfig,
 } from "@workspace/domain/safety-contracts";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
 // ── admin gating + audit helpers (mirror adminBridgeControl) ────────────────
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
-  const role = String(u?.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u?.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_OR_OWNER_REQUIRED" });
     return null;
   }

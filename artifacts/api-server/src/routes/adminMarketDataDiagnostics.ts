@@ -23,6 +23,7 @@ import { getBrokerCandleCoverage } from "../lib/data/brokerCandleStore.js";
 import { getIngestRejections } from "../lib/data/ingestRejectionCounter.js";
 import { getEconomicCalendarDiagnostics } from "../lib/news/calendar/economicCalendarService.js";
 import { getAllApprovedArxMarkets } from "@workspace/domain/market";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: Router = Router();
 
@@ -32,8 +33,8 @@ function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" 
   // case-insensitively, matching the canonical admin gate.
   const u = (req as unknown as { authUser?: { id: number; role?: string } }).authUser;
   if (!u) { res.status(401).json({ error: "AUTH_REQUIRED" }); return null; }
-  const role = String(u.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ error: "FORBIDDEN", message: "Admin or Owner role required." });
     return null;
   }

@@ -26,6 +26,7 @@ import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { ingestBridgeV2Message } from "../lib/bridgeV2/ingest.js";
 import { loadBridgeV2ConfigForEa, listBridgeV2CommandsForEa } from "../lib/bridgeV2/egress.js";
 import { buildBridgeV2AdminStatus } from "../lib/bridgeV2/status.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -128,8 +129,8 @@ router.get("/bridge/v2/commands", bridgeAuthPerUserOnly, async (req: ConnReq, re
 // ─── Admin gating helper (mirrors adminEaHealth) ────────────────────────────
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
-  const role = String(u?.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u?.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_OR_OWNER_REQUIRED" });
     return null;
   }

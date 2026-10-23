@@ -9,6 +9,7 @@ import { runHealthCheck, runSubsystemCheck, listHealthChecks, exportHealthReport
 import { listAudit, getAuditById, exportAudit, seedAuditDemo, auditEvent } from "../lib/systemHealth/audit.js";
 import { getConfig } from "../lib/systemHealth/config.js";
 import { performAdminAction, listAdminActions, ALLOWED_ADMIN_ACTIONS, FORBIDDEN_ADMIN_ACTIONS, seedAdminDemo } from "../lib/systemHealth/admin.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: Router = Router();
 const TAG = "Build MM — System Health, Audit, and Admin Control Center. Diagnostics + safe admin only. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets.";
@@ -28,8 +29,8 @@ function envelope(body: Record<string, unknown>) {
 // by requireAuthOrPublic. Never reads x-security-role directly.
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { role?: string } }).authUser;
-  const role = String(u?.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u?.role);
+  if (!role) {
     res.status(403).json(envelope({ error: "ADMIN_OR_OWNER_REQUIRED" }));
     return null;
   }

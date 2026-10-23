@@ -264,7 +264,18 @@ export interface RiskContext {
   inFlight: RiskInFlight[];
   broker: { status: BrokerStatus; lastSeenAt: Date | null; detail: string };
   daily: { realizedPnl: number | null; floatingPnl: number | null };
+  /** Stop switches (lib/safety/tradingHalt). Engaged halts new risk; closes stay open. */
+  halt?: RiskHalt | null;
 }
+
+export interface RiskHalt {
+  engaged: boolean;
+  sources: string[];
+  reason: string | null;
+}
+
+/** Not one of the 12 rules: an engaged stop switch, reported ahead of them. */
+export const TRADING_HALT = "trading_halt" as const;
 
 export type RuleOutcome = "PASS" | "BLOCK" | "NOT_APPLICABLE";
 
@@ -277,10 +288,12 @@ export interface RiskRuleResult {
 
 export interface RiskDecision {
   decision: "ALLOW" | "BLOCK";
-  blockedBy: RiskRuleId[];
+  blockedBy: Array<RiskRuleId | typeof TRADING_HALT>;
   primaryReason: string | null;
   rules: RiskRuleResult[];
   evaluatedAt: string;
+  /** The stop-switch state the decision saw. */
+  halt?: RiskHalt | null;
 }
 
 const round = (n: number, dp = 2) => Number(n.toFixed(dp));
@@ -291,6 +304,22 @@ function moneyPerPriceUnit(lots: number, inst: InstrumentModel | undefined): num
 }
 
 export function evaluatePreTradeRisk(intent: TradeIntent, ctx: RiskContext): RiskDecision {
+  const d = evaluateRules(intent, ctx);
+  const halt = ctx.halt ?? null;
+  // A kill switch halts new risk and stop changes; closing stays possible so a
+  // trader can always get flat. Paths with stricter close rules keep them.
+  const reduces = intent.action === "CLOSE" || intent.action === "PARTIAL_CLOSE";
+  if (!halt?.engaged || reduces) return { ...d, halt };
+  return {
+    ...d,
+    decision: "BLOCK",
+    blockedBy: [TRADING_HALT, ...d.blockedBy],
+    primaryReason: `Trading is halted: ${halt.reason ?? halt.sources.join(", ")}`,
+    halt,
+  };
+}
+
+function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   const L = ctx.limits;
   const results = new Map<RiskRuleId, RiskRuleResult>();
   const set = (rule: RiskRuleId, outcome: RuleOutcome, reason: string | null, measured?: RiskRuleResult["measured"]) => {
