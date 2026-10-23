@@ -492,6 +492,58 @@ test("isolation: another trader's losses, positions and bridge never decide this
   assert.equal(bEvents.length, 0, "A's checks never write to B's audit trail");
 });
 
+// ── The remaining rules against real stored facts ───────────────────────────
+
+test("A demo manual: an off-step quantity is refused by the route, never written, and audited (invalid price/quantity)", async () => {
+  const acct = await resetPaper(u.a);
+  const px = paperPrice();
+  const res = await request("POST", "/paper/orders", c.a, {
+    paperAccountId: acct, symbol: SYMBOL, direction: "BUY", lotSize: 0.015, stopLoss: px * 0.98, takeProfit: px * 1.04,
+  });
+  assert.equal(res.status, 422);
+  const body = await res.json() as { blockedBy: string[]; auditEventId: number };
+  assert.ok(body.blockedBy.includes("invalid_price_quantity"));
+  assert.equal((await latestEvent(u.a)).row.id, body.auditEventId);
+  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, acct))).length, 0);
+});
+
+test("D live sandbox: buying power, leverage and concentration block on the trader's stored account and positions", async () => {
+  const conn = await seedBridge(u.a);
+  await db.delete(arxLivePositionsTable).where(eq(arxLivePositionsTable.userId, u.a));
+  const open = (lots: number, stopLoss: number) => enforcePreTradeRisk({
+    userId: u.a, venue: "LIVE", origin: "manual", action: "OPEN",
+    symbol: SYMBOL, side: "BUY", lots, stopLoss, takeProfit: 1.11,
+  }, RELEASED);
+  try {
+    // Buying power: 0.1 lot needs 11,000 / 100 = $110 of margin; the account has $50 free.
+    await db.update(mt5ConnectionTable).set({ freeMargin: 50 }).where(eq(mt5ConnectionTable.id, conn));
+    const bp = await open(0.1, 1.0951);
+    assert.deepEqual(bp.blockedBy, ["buying_power"]);
+    await db.update(mt5ConnectionTable).set({ freeMargin: 9_000 }).where(eq(mt5ConnectionTable.id, conn));
+
+    // Leverage: 3 lots is 330,000 of notional on $10,000 equity (33x, above 30x). A tight
+    // stop keeps the loss at stop inside the per-trade limit.
+    const lev = await open(3, 1.0998);
+    assert.ok(lev.blockedBy.includes("leverage"), lev.blockedBy.join(","));
+    assert.ok(!lev.blockedBy.includes("per_trade_loss_limit"));
+
+    // Concentration: two open EURUSD positions already, a third is refused.
+    for (const t of ["QA-RG-C1", "QA-RG-C2"]) {
+      await db.insert(arxLivePositionsTable).values({
+        userId: u.a, bridgeConnectionId: conn, brokerTicket: t, symbol: SYMBOL, side: "BUY",
+        volume: 0.01, entryPrice: 1.1, stopLoss: 1.099, openedAt: new Date(Date.now() - 3 * 3_600_000),
+      });
+    }
+    const conc = await open(0.01, 1.099);
+    assert.deepEqual(conc.blockedBy, ["concentration"]);
+    const ev = await latestEvent(u.a);
+    assert.equal(ev.row.id, conc.auditEventId);
+    assert.deepEqual(ev.blockedBy, ["concentration"]);
+  } finally {
+    await db.delete(arxLivePositionsTable).where(eq(arxLivePositionsTable.userId, u.a));
+  }
+});
+
 // ── Stop switches (lib/safety/tradingHalt) ────────────────────────────────
 
 async function soundOpen(userId: number, venue: "PAPER" | "DEMO" | "LIVE") {
