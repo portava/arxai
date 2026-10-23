@@ -19,7 +19,7 @@ import { db,
   postTradeDebriefsTable,
   learningEventsTable,
 } from "@workspace/db";
-import { and, desc, eq, gt, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, isNull, sql } from "drizzle-orm";
 import { logger } from "../logger.js";
 import { loadSettings, assertSafe } from "./settings.js";
 import { runSniperFilter } from "./sniperFilter.js";
@@ -74,7 +74,12 @@ async function applyCooldown(symbol: string, action: string, reason: string, min
   });
 }
 
-async function dailyPaperPnl(): Promise<number> {
+// Daily loss and open-trade caps count the autopilot owner's own book only.
+function ownedBy(ownerUserId: number | null) {
+  return ownerUserId == null ? isNull(paperOrdersTable.userId) : eq(paperOrdersTable.userId, ownerUserId);
+}
+
+async function dailyPaperPnl(ownerUserId: number | null): Promise<number> {
   // Sum of profit_loss on EE-owned closed paper_orders since UTC midnight.
   const since = new Date(); since.setUTCHours(0, 0, 0, 0);
   const rows = await db.select({
@@ -83,15 +88,16 @@ async function dailyPaperPnl(): Promise<number> {
     .where(and(
       eq(paperOrdersTable.strategyId, "build_ee_paper_execution"),
       gte(paperOrdersTable.closedAt, since),
+      ownedBy(ownerUserId),
     ));
   return Number(rows[0]?.pnl ?? 0);
 }
 
-async function countOpen(): Promise<{ total: number; bySymbolDir: Map<string, number> }> {
+async function countOpen(ownerUserId: number | null): Promise<{ total: number; bySymbolDir: Map<string, number> }> {
   const rows = await db.select({
     symbol: paperOrdersTable.symbol, direction: paperOrdersTable.direction,
   }).from(paperOrdersTable)
-    .where(and(eq(paperOrdersTable.strategyId, "build_ee_paper_execution"), eq(paperOrdersTable.status, "OPEN")));
+    .where(and(eq(paperOrdersTable.strategyId, "build_ee_paper_execution"), eq(paperOrdersTable.status, "OPEN"), ownedBy(ownerUserId)));
   const map = new Map<string, number>();
   for (const r of rows) {
     const k = `${r.symbol}|${r.direction}`;
@@ -184,7 +190,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
 
   try {
     // 3. Daily-loss safety check.
-    const dpnl = await dailyPaperPnl();
+    const dpnl = await dailyPaperPnl(ownerUserId);
     if (dpnl <= -Math.abs(settings.maxDailyPaperLoss)) {
       summary.warnings.push(`Daily paper loss limit hit (${dpnl.toFixed(2)} ≤ -${settings.maxDailyPaperLoss}) — no new trades`);
       await logCycle({ cycleId, step: "SAFETY_SHUTDOWN", status: "WARN",
@@ -242,7 +248,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
 
           // 4c. Cooldown + open caps.
           const cooldown = await getActiveCooldown(symbol);
-          const openInfo = await countOpen();
+          const openInfo = await countOpen(ownerUserId);
           const sameSymDirOpen = openInfo.bySymbolDir.get(`${symbol}|${decision.action}`) ?? 0;
 
           // 4d. Sniper filter.
@@ -268,7 +274,7 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
           // 4e. EE paper execute.
           await logCycle({ cycleId, symbol, timeframe, step: "EE_EXEC", status: "INFO",
             message: `Calling Build EE paper execution for decisionId=${decisionId}` });
-          const eeResult = await executePaperFromDecision(decision, decisionId, { allowConflicts: false });
+          const eeResult = await executePaperFromDecision(decision, decisionId, { allowConflicts: false, ownerUserId });
           perSym.eePaperResult = eeResult.status;
           perSym.paperTradeId = eeResult.trade_id;
 

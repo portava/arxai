@@ -17,20 +17,23 @@ import {
   paperOrdersTable as _paperOrdersTable,
   tradeDecisionLogsTable, learningEventsTable, postTradeDebriefsTable,
 } from "@workspace/db";
-import { and, gte, lte } from "drizzle-orm";
+import { and, eq, gte, lte } from "drizzle-orm";
 
 interface RebuildLogger {
   info: (m: string, meta?: Record<string, unknown>) => void;
   warn: (m: string, meta?: Record<string, unknown>) => void;
 }
 
-export async function rebuildSnapshots(log: RebuildLogger) {
+// Daily snapshots are per user (unique on date + user_id). The symbol and AI
+// snapshot tables have no owner column, so they are only (re)written from an
+// operator's own book (writeShared); nothing per-user reads them any more.
+export async function rebuildSnapshots(userId: number, writeShared: boolean, log: RebuildLogger) {
   const startedAt = new Date();
   log.info("GG rebuild started");
 
   // Determine date range from paper_orders.
   const minMax = await db.execute(
-    sql`SELECT MIN(opened_at)::date AS min_d, MAX(COALESCE(closed_at, opened_at))::date AS max_d FROM paper_orders`,
+    sql`SELECT MIN(opened_at)::date AS min_d, MAX(COALESCE(closed_at, opened_at))::date AS max_d FROM paper_orders WHERE user_id = ${userId}`,
   );
   const row = (minMax.rows?.[0] ?? {}) as { min_d?: string | Date | null; max_d?: string | Date | null };
   const dailySnapshots: Array<{ date: string; net_pnl: number }> = [];
@@ -42,9 +45,10 @@ export async function rebuildSnapshots(log: RebuildLogger) {
 
     for (let d = new Date(minDate); d <= maxDate; d.setUTCDate(d.getUTCDate() + 1)) {
       const dateStr = d.toISOString().slice(0, 10);
-      const stats = await computeDailyStats(dateStr);
+      const stats = await computeDailyStats(userId, dateStr);
       // Upsert.
       await db.insert(performanceDailySnapshotsTable).values({
+        userId,
         date: stats.date,
         totalTrades: stats.total_trades,
         wins: stats.wins,
@@ -72,7 +76,7 @@ export async function rebuildSnapshots(log: RebuildLogger) {
         debriefsCreated: stats.debriefs_created,
         learningEventsCreated: stats.learning_events_created,
       }).onConflictDoUpdate({
-        target: performanceDailySnapshotsTable.date,
+        target: [performanceDailySnapshotsTable.date, performanceDailySnapshotsTable.userId],
         set: {
           totalTrades: stats.total_trades, wins: stats.wins, losses: stats.losses,
           breakEven: stats.break_even, manualCloses: stats.manual_closes, cancelled: stats.cancelled,
@@ -100,8 +104,8 @@ export async function rebuildSnapshots(log: RebuildLogger) {
   // Symbol snapshots × ranges.
   const ranges: RangeKey[] = ["7d", "30d", "90d", "all"];
   let symbolSnapsWritten = 0;
-  for (const range of ranges) {
-    const stats = await computeSymbolStats(range);
+  for (const range of writeShared ? ranges : []) {
+    const stats = await computeSymbolStats(userId, range);
     for (const s of stats) {
       await db.insert(performanceSymbolSnapshotsTable).values({
         symbol: s.symbol, rangeKey: s.range_key,
@@ -126,24 +130,27 @@ export async function rebuildSnapshots(log: RebuildLogger) {
   log.info("GG rebuild symbol snapshots written", { count: symbolSnapsWritten });
 
   // AI performance snapshots × ranges — each row is range-scoped.
-  const cc = await buildCommandCenter();
+  const cc = await buildCommandCenter(userId);
   let aiSnapsWritten = 0;
-  for (const range of ranges) {
+  for (const range of writeShared ? ranges : []) {
     const { from, to } = rangeToWindow(range);
-    const r = await computeRangeSummary(range);
-    const dq = await computeDecisionQuality(range);
+    const r = await computeRangeSummary(userId, range);
+    const dq = await computeDecisionQuality(userId, range);
     const decisionsInRange = await db.select().from(tradeDecisionLogsTable)
       .where(and(
+        eq(tradeDecisionLogsTable.userId, userId),
         gte(tradeDecisionLogsTable.createdAt, from),
         lte(tradeDecisionLogsTable.createdAt, to),
       ));
     const debriefsInRange = await db.select().from(postTradeDebriefsTable)
       .where(and(
+        eq(postTradeDebriefsTable.userId, userId),
         gte(postTradeDebriefsTable.createdAt, from),
         lte(postTradeDebriefsTable.createdAt, to),
       ));
     const learningsInRange = await db.select().from(learningEventsTable)
       .where(and(
+        eq(learningEventsTable.userId, userId),
         gte(learningEventsTable.createdAt, from),
         lte(learningEventsTable.createdAt, to),
       ));

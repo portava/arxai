@@ -1,9 +1,10 @@
 import { Router, type Request, type Response } from "express";
 import { db, tradesTable, mt5StateTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { evaluateTrade } from "../lib/tradeManagement/tradeManager.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
+import { ownerScope } from "../lib/auth/ownerScope.js";
 
 const router = Router();
 
@@ -21,21 +22,25 @@ function parseId(req: Request, res: Response): number | null {
   return r.data.id;
 }
 
-async function getTrade(id: number) {
-  const rows = await db.select().from(tradesTable).where(eq(tradesTable.id, id)).limit(1);
+// Only the trade's owner (or an operator, for legacy ownerless trades) may read
+// or manage it; anyone else gets the same 404 as a missing id.
+async function getTrade(id: number, req: Request) {
+  const rows = await db.select().from(tradesTable)
+    .where(and(eq(tradesTable.id, id), ownerScope(tradesTable.userId, req.authUser)))
+    .limit(1);
   return rows[0] ?? null;
 }
 
 router.get("/trade-management/:id/snapshot", async (req, res) => {
   const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
+  const trade = await getTrade(id, req);
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
   res.json(await evaluateTrade(trade));
 });
 
 router.post("/trade-management/:id/breakeven", async (req, res) => {
   const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
+  const trade = await getTrade(id, req);
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
   const updated = await db.update(tradesTable).set({ stopLoss: trade.entryPrice }).where(eq(tradesTable.id, id)).returning();
   res.json({
@@ -47,7 +52,7 @@ router.post("/trade-management/:id/breakeven", async (req, res) => {
 
 router.post("/trade-management/:id/trail", async (req, res) => {
   const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
+  const trade = await getTrade(id, req);
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
   const snap = await evaluateTrade(trade);
   const newStop = snap.suggestions.trail.newStop ?? trade.stopLoss;
@@ -61,7 +66,7 @@ router.post("/trade-management/:id/trail", async (req, res) => {
 
 router.post("/trade-management/:id/partial-close", async (req, res) => {
   const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
+  const trade = await getTrade(id, req);
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
   const parsed = PartialCloseBodySchema.safeParse(req.body ?? {});
   if (!parsed.success) { res.status(400).json({ error: "closePct must be between 1 and 99" }); return; }
@@ -77,11 +82,12 @@ router.post("/trade-management/:id/partial-close", async (req, res) => {
 
 router.post("/trade-management/:id/close", async (req, res) => {
   const id = parseId(req, res); if (id == null) return;
-  const trade = await getTrade(id);
+  const trade = await getTrade(id, req);
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
 
   // If MT5 connected, queue a CLOSE_ALL command (in real bridge we'd send ticket)
-  const stateRows = await db.select().from(mt5StateTable).limit(1);
+  const stateRows = await db.select().from(mt5StateTable)
+    .where(ownerScope(mt5StateTable.userId, req.authUser)).limit(1);
   const liveAllowed = !!stateRows[0]?.liveAllowed;
   void liveAllowed;
 
@@ -92,6 +98,7 @@ router.post("/trade-management/:id/close", async (req, res) => {
   }).where(eq(tradesTable.id, id)).returning();
 
   await createAlert({
+    userId: trade.userId,
     type: "TRADE_CLOSED",
     severity: status === "CLOSED_WIN" ? "success" : "warning",
     title: `Trade closed (${status === "CLOSED_WIN" ? "win" : "loss"})`,

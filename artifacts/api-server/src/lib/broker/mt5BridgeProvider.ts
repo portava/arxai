@@ -6,9 +6,10 @@
 // still rejects with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
 
 import { db, mt5StateTable, livePositionsTable, mt5CommandsTable } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { asc, desc, eq, isNull, or, type SQL } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 import type {
-  BrokerProvider, BrokerStatus, BrokerAccount, BrokerSymbol, BrokerPosition, BrokerOrder,
+  BrokerOwner, BrokerProvider, BrokerStatus, BrokerAccount, BrokerSymbol, BrokerPosition, BrokerOrder,
 } from "./types.js";
 import { describeRequiredSecrets, missingRequiredSecrets } from "./secrets.js";
 
@@ -18,6 +19,11 @@ function maskAccount(id: string | null | undefined): string {
   if (!id) return "•••";
   if (id.length <= 4) return "•".repeat(id.length);
   return `${id.slice(0, 2)}${"•".repeat(Math.max(3, id.length - 4))}${id.slice(-2)}`;
+}
+
+function ownedBy(col: PgColumn, owner: BrokerOwner): SQL {
+  const own = eq(col, owner.userId);
+  return owner.includeLegacy ? (or(own, isNull(col)) as SQL) : own;
 }
 
 export class MT5BridgeProvider implements BrokerProvider {
@@ -75,8 +81,11 @@ export class MT5BridgeProvider implements BrokerProvider {
     };
   }
 
-  async account(): Promise<BrokerAccount | null> {
-    const state = await this.loadState();
+  async account(owner: BrokerOwner): Promise<BrokerAccount | null> {
+    const rows = await db.select().from(mt5StateTable)
+      .where(ownedBy(mt5StateTable.userId, owner))
+      .orderBy(asc(mt5StateTable.id)).limit(1);
+    const state = rows[0] ?? null;
     if (!state) return null;
     const env = (state.liveAllowed ?? 0) === 1 ? "LIVE" as const : "DEMO" as const;
     return {
@@ -106,10 +115,9 @@ export class MT5BridgeProvider implements BrokerProvider {
     ];
   }
 
-  async positions(): Promise<BrokerPosition[]> {
-    const rows = await db.select().from(livePositionsTable).where(undefined as never).limit(200).catch(() => [] as Array<typeof livePositionsTable.$inferSelect>);
-    // Drizzle .where(undefined) doesn't filter; safer:
-    const all = rows.length ? rows : await db.select().from(livePositionsTable).limit(200);
+  async positions(owner: BrokerOwner): Promise<BrokerPosition[]> {
+    const all = await db.select().from(livePositionsTable)
+      .where(ownedBy(livePositionsTable.userId, owner)).limit(200);
     return all
       .filter(r => r.status !== "CLOSED")
       .map(r => ({
@@ -126,8 +134,9 @@ export class MT5BridgeProvider implements BrokerProvider {
       }));
   }
 
-  async orders(limit = 50): Promise<BrokerOrder[]> {
-    const rows = await db.select().from(mt5CommandsTable).orderBy(desc(mt5CommandsTable.createdAt)).limit(limit);
+  async orders(owner: BrokerOwner, limit = 50): Promise<BrokerOrder[]> {
+    const rows = await db.select().from(mt5CommandsTable)
+      .where(ownedBy(mt5CommandsTable.userId, owner)).orderBy(desc(mt5CommandsTable.createdAt)).limit(limit);
     return rows.map(r => ({
       id: String(r.id),
       status: r.status,

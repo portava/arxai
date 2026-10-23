@@ -7,7 +7,8 @@
 
 import { Router, type IRouter } from "express";
 import { db, paperOrdersTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
+import { requireUser } from "../lib/auth/middleware.js";
 import { preflight, getActiveSession } from "../lib/paperSession/manager.js";
 import { evaluateGovernor } from "../lib/riskGovernor/governor.js";
 import { getGateStatus } from "../lib/readiness/gate.js";
@@ -54,17 +55,19 @@ function pickNextBestAction(args: {
   return { code: "START", label: "Safe to start a new paper session", cta: "Start Paper Session", severity: "INFO" };
 }
 
-router.get("/trading-cockpit/summary", async (_req, res) => {
+// The cockpit shows the signed-in trader's own session and paper book.
+router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
+  const userId = req.authUser!.id;
   const generatedAt = new Date().toISOString();
 
   const preFallback = { paperTestingAllowed: false, hardBlocks: [{ source: "QQ", code: "PREFLIGHT_ERROR", message: "preflight unavailable" }], warnings: [] as { source: string; code: string; message: string }[], generatedAt } as unknown as Awaited<ReturnType<typeof preflight>>;
   const [pre, active, gov, gate, criticalUnread, unreadAll] = await Promise.all([
     safeCall("preflight", () => preflight(), preFallback),
-    safeCall("activeSession", () => getActiveSession(), null),
+    safeCall("activeSession", () => getActiveSession(userId), null),
     safeCall("governor", () => evaluateGovernor(), null),
     safeCall("readinessGate", () => getGateStatus(), null as Awaited<ReturnType<typeof getGateStatus>> | null),
-    safeCall("criticalUnread", () => getCriticalUnread(), [] as Awaited<ReturnType<typeof getCriticalUnread>>),
-    safeCall("unreadAll", () => getUnreadCount(), 0),
+    safeCall("criticalUnread", () => getCriticalUnread(userId), [] as Awaited<ReturnType<typeof getCriticalUnread>>),
+    safeCall("unreadAll", () => getUnreadCount(userId), 0),
   ]);
 
   // Open paper trades from EE (read-only).
@@ -80,14 +83,14 @@ router.get("/trading-cockpit/summary", async (_req, res) => {
       status: paperOrdersTable.status,
       openedAt: paperOrdersTable.openedAt,
       profitLoss: paperOrdersTable.profitLoss,
-    }).from(paperOrdersTable).where(eq(paperOrdersTable.status, "OPEN")).orderBy(desc(paperOrdersTable.openedAt)).limit(20);
+    }).from(paperOrdersTable).where(and(eq(paperOrdersTable.userId, userId), eq(paperOrdersTable.status, "OPEN"))).orderBy(desc(paperOrdersTable.openedAt)).limit(20);
   }, []);
 
   // Today's performance (light aggregate from paper orders closed today).
   const todayPerformance = await safeCall("todayPerformance", async () => {
     const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
-    const rows = await db.select().from(paperOrdersTable);
-    const closedToday = rows.filter(r => r.closedAt && new Date(r.closedAt) >= todayStart);
+    const closedToday = await db.select().from(paperOrdersTable)
+      .where(and(eq(paperOrdersTable.userId, userId), gte(paperOrdersTable.closedAt, todayStart)));
     const wins = closedToday.filter(r => (r.profitLoss ?? 0) > 0).length;
     const losses = closedToday.filter(r => (r.profitLoss ?? 0) < 0).length;
     const breakEven = closedToday.filter(r => (r.profitLoss ?? 0) === 0).length;

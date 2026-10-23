@@ -33,6 +33,8 @@ import {
 } from "@workspace/domain/live-position";
 import { queueMt5CommandWithGate } from "./mt5";
 import { PNL_DATA_QUALITY_MISSING_CLOSE_FILL } from "../lib/live/realizedPnl.js";
+import { requireUser } from "../lib/auth/middleware.js";
+import { canSeeLegacyRows, ownerScope } from "../lib/auth/ownerScope.js";
 
 const router = Router();
 
@@ -46,6 +48,17 @@ async function loadMt5Positions(): Promise<Array<Record<string, unknown>>> {
 async function loadAccountEquity(): Promise<number | null> {
   const rows = await db.select().from(mt5StateTable).orderBy(asc(mt5StateTable.id)).limit(1);
   return rows[0]?.equity ?? null;
+}
+
+// Ownership: a trader sees and acts on their own rows only. The central
+// /positions/sync feed writes user_id=NULL rows for the server-wide MT5
+// connection; those are operator rows (ADMIN/OWNER only). Anything else is 404.
+async function ownPosition(id: number, authUser: Parameters<typeof ownerScope>[1]) {
+  if (!Number.isFinite(id)) return null;
+  const rows = await db.select().from(livePositionsTable)
+    .where(and(eq(livePositionsTable.id, id), ownerScope(livePositionsTable.userId, authUser)))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 function toNum(v: unknown): number | null {
@@ -117,7 +130,7 @@ function serializeLivePosition(row: typeof livePositionsTable.$inferSelect) {
  * - Marks rows CLOSED if they vanish from the feed and were previously OPEN.
  * Returns the post-sync rows + accumulated warnings for the caller.
  */
-async function syncFromBroker() {
+async function syncFromBroker(visible: ReturnType<typeof ownerScope>) {
   const [feed, equity] = await Promise.all([loadMt5Positions(), loadAccountEquity()]);
   // UX9 hardening — this central /positions/sync feed currently inserts rows
   // with user_id=NULL (the single legacy MT5 connection on the server). With
@@ -246,16 +259,19 @@ async function syncFromBroker() {
     await appendVault("POSITION_MANUAL_CLOSE", "WARN", row.id, { tradeId: row.tradeId });
   }
 
-  const after = await db.select().from(livePositionsTable).orderBy(desc(livePositionsTable.updatedAt));
+  const after = await db.select().from(livePositionsTable).where(visible)
+    .orderBy(desc(livePositionsTable.updatedAt));
   return after;
 }
 
 // ── routes ─────────────────────────────────────────────────────────────────
 
 // GET /positions — current open positions (non-terminal statuses)
-router.get("/positions", async (req, res) => {
+router.get("/positions", requireUser, async (req, res) => {
   try {
-    const all = await db.select().from(livePositionsTable).orderBy(desc(livePositionsTable.updatedAt));
+    const all = await db.select().from(livePositionsTable)
+      .where(ownerScope(livePositionsTable.userId, req.authUser))
+      .orderBy(desc(livePositionsTable.updatedAt));
     const open = all.filter((r) => !POSITION_STATUS_TERMINAL[r.status as LivePositionStatus]);
     res.json({ positions: open.map(serializeLivePosition) });
   } catch (err) {
@@ -265,12 +281,11 @@ router.get("/positions", async (req, res) => {
 });
 
 // GET /positions/:id
-router.get("/positions/:id", async (req, res): Promise<void> => {
+router.get("/positions/:id", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
+    const row = await ownPosition(id, req.authUser);
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
     res.json(serializeLivePosition(row));
   } catch (err) {
@@ -280,9 +295,15 @@ router.get("/positions/:id", async (req, res): Promise<void> => {
 });
 
 // POST /positions/sync — pull from mt5_state, update live_positions
-router.post("/positions/sync", async (req, res) => {
+// The feed is the single server-wide MT5 connection, so only an operator may
+// reconcile it; per-user positions arrive through the per-user bridge.
+router.post("/positions/sync", requireUser, async (req, res): Promise<void> => {
   try {
-    const after = await syncFromBroker();
+    if (!canSeeLegacyRows(req.authUser)) {
+      res.status(403).json({ error: "FORBIDDEN", message: "Only an operator can sync the shared broker feed." });
+      return;
+    }
+    const after = await syncFromBroker(ownerScope(livePositionsTable.userId, req.authUser));
     res.json({ syncedAt: new Date().toISOString(), positions: after.map(serializeLivePosition) });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /positions/sync failed");
@@ -296,12 +317,11 @@ const SLBody = z.object({
   removeConfirmed: z.boolean().optional(),
   reason: z.string().max(500).optional(),
 });
-router.patch("/positions/:id/stop-loss", async (req, res): Promise<void> => {
+router.patch("/positions/:id/stop-loss", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params.id);
     const body = SLBody.parse(req.body ?? {});
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
+    const row = await ownPosition(id, req.authUser);
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
 
     // Inviolable rule: removing SL requires explicit confirmation.
@@ -344,12 +364,11 @@ router.patch("/positions/:id/stop-loss", async (req, res): Promise<void> => {
 
 // PATCH /positions/:id/take-profit
 const TPBody = z.object({ takeProfit: z.number().nullable(), reason: z.string().max(500).optional() });
-router.patch("/positions/:id/take-profit", async (req, res): Promise<void> => {
+router.patch("/positions/:id/take-profit", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params.id);
     const body = TPBody.parse(req.body ?? {});
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
+    const row = await ownPosition(id, req.authUser);
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
 
     if (row.brokerPositionId) {
@@ -375,11 +394,10 @@ router.patch("/positions/:id/take-profit", async (req, res): Promise<void> => {
 });
 
 // POST /positions/:id/close-confirmation — returns a verdict the UI must echo back to /close
-router.post("/positions/:id/close-confirmation", async (req, res): Promise<void> => {
+router.post("/positions/:id/close-confirmation", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params.id);
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
+    const row = await ownPosition(id, req.authUser);
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
     if (POSITION_STATUS_TERMINAL[row.status as LivePositionStatus]) {
       res.status(409).json({ error: "Position already terminal", status: row.status });
@@ -399,12 +417,11 @@ router.post("/positions/:id/close-confirmation", async (req, res): Promise<void>
 
 // POST /positions/:id/close — requires confirm:true
 const CloseBody = z.object({ confirm: z.literal(true), reason: z.string().max(500).optional() });
-router.post("/positions/:id/close", async (req, res): Promise<void> => {
+router.post("/positions/:id/close", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params.id);
     const body = CloseBody.parse(req.body ?? {});
-    const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    const row = rows[0];
+    const row = await ownPosition(id, req.authUser);
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
     if (POSITION_STATUS_TERMINAL[row.status as LivePositionStatus]) {
       res.status(409).json({ error: "Position already terminal", status: row.status });
@@ -460,10 +477,11 @@ router.post("/positions/:id/close", async (req, res): Promise<void> => {
 });
 
 // GET /positions/:id/events — append-only timeline
-router.get("/positions/:id/events", async (req, res): Promise<void> => {
+router.get("/positions/:id/events", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    if (!(await ownPosition(id, req.authUser))) { res.status(404).json({ error: "Not found" }); return; }
     const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
     const rows = await db.select().from(positionEventsTable)
       .where(eq(positionEventsTable.livePositionId, id))
@@ -489,4 +507,4 @@ router.get("/positions/:id/events", async (req, res): Promise<void> => {
 
 export default router;
 // Suppress unused-import warnings.
-void and; void inArray; void sql;
+void inArray; void sql;

@@ -32,7 +32,7 @@ const LIVE_LINKS = [{ label: "Trading Cockpit", href: "/trading-cockpit" }];
 function rank(s: Severity): number { return ({ INFO: 0, WARN: 1, BLOCK: 2, CRITICAL: 3 } as const)[s]; }
 function highest(a: Severity, b: Severity): Severity { return rank(b) > rank(a) ? b : a; }
 
-export async function explainBlockedAction(action: BlockedAction): Promise<BlockedActionExplanation> {
+export async function explainBlockedAction(action: BlockedAction, userId: number): Promise<BlockedActionExplanation> {
   // Live trading + broker execution are PERMANENTLY disabled. Short-circuit.
   if (action === "ENABLE_LIVE_TRADING" || action === "USE_BROKER_EXECUTION") {
     return persist({
@@ -55,10 +55,10 @@ export async function explainBlockedAction(action: BlockedAction): Promise<Block
 
   const [pre, active, gov, gate, critical] = await Promise.all([
     preflight().catch(() => null),
-    getActiveSession().catch(() => null),
+    getActiveSession(userId).catch(() => null),
     evaluateGovernor().catch(() => null),
     getGateStatus().catch(() => null),
-    getCriticalUnread().catch(() => []),
+    getCriticalUnread(userId).catch(() => []),
   ]);
 
   // AA — safety core / decision orchestrator. canPlaceTrades is permanently
@@ -199,20 +199,20 @@ async function persist(e: BlockedActionExplanation): Promise<BlockedActionExplan
   return e;
 }
 
-export async function explainTopic(topic: string): Promise<{ help_id: string; topic: string; status: string; plainEnglishExplanation: string; reasonCodes: string[]; recommendedNextActions: string[]; relatedPages: string[]; safetyReminder: string; generatedAt: string }> {
+export async function explainTopic(topic: string, userId: number): Promise<{ help_id: string; topic: string; status: string; plainEnglishExplanation: string; reasonCodes: string[]; recommendedNextActions: string[]; relatedPages: string[]; safetyReminder: string; generatedAt: string }> {
   const t = (topic || "").toLowerCase();
   const SAFETY = "Live trading is disabled. Acknowledgements do not enable live trading.";
 
   if (t.includes("can't start") || t.includes("cannot start") || t.includes("paper session")) {
-    const exp = await explainBlockedAction("START_PAPER_SESSION");
+    const exp = await explainBlockedAction("START_PAPER_SESSION", userId);
     return { help_id: `help_${randomUUID()}`, topic, status: exp.highestSeverity, plainEnglishExplanation: exp.plainEnglishReasons.join(" "), reasonCodes: exp.technicalReasons, recommendedNextActions: exp.recommendedFixes, relatedPages: exp.links.map(l => l.href), safetyReminder: SAFETY, generatedAt: new Date().toISOString() };
   }
   if (t.includes("autopilot")) {
-    const exp = await explainBlockedAction("START_AUTOPILOT");
+    const exp = await explainBlockedAction("START_AUTOPILOT", userId);
     return { help_id: `help_${randomUUID()}`, topic, status: exp.highestSeverity, plainEnglishExplanation: exp.plainEnglishReasons.join(" "), reasonCodes: exp.technicalReasons, recommendedNextActions: exp.recommendedFixes, relatedPages: exp.links.map(l => l.href), safetyReminder: SAFETY, generatedAt: new Date().toISOString() };
   }
   if (t.includes("paper execution") || t.includes("rejected")) {
-    const exp = await explainBlockedAction("OPEN_PAPER_TRADE");
+    const exp = await explainBlockedAction("OPEN_PAPER_TRADE", userId);
     return { help_id: `help_${randomUUID()}`, topic, status: exp.highestSeverity, plainEnglishExplanation: exp.plainEnglishReasons.join(" "), reasonCodes: exp.technicalReasons, recommendedNextActions: exp.recommendedFixes, relatedPages: exp.links.map(l => l.href), safetyReminder: SAFETY, generatedAt: new Date().toISOString() };
   }
   if (t.includes("hold") || t.includes("aa")) {

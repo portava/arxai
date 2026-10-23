@@ -69,13 +69,19 @@ export interface MonitorSummary {
 export async function runPaperMonitor(opts?: {
   forcePrice?: number; // test-only: override DD price to force TP/SL
   forceSymbol?: string;
+  // Set when a user triggers the scan: only their own orders are touched.
+  // Left undefined by the server-side autopilot, which scans every account.
+  userId?: number;
 }): Promise<MonitorSummary> {
   const log = logger.child({ system: "paperExecutionMonitor" });
   const summary: MonitorSummary = { scanned: 0, closed: 0, stillOpen: 0, closures: [], updates: [], warnings: [] };
 
-  // Pull all open paper orders (across accounts).
+  // Open paper orders: the caller's own, or every account for the server scan.
   const openOrders = await db.select().from(paperOrdersTable)
-    .where(eq(paperOrdersTable.status, "OPEN"));
+    .where(and(
+      eq(paperOrdersTable.status, "OPEN"),
+      opts?.userId != null ? eq(paperOrdersTable.userId, opts.userId) : undefined,
+    ));
 
   for (const order of openOrders) {
     summary.scanned++;
@@ -118,6 +124,7 @@ export async function runPaperMonitor(opts?: {
     }).where(eq(paperOrdersTable.id, order.id));
 
     await db.insert(paperTradeEventsTable).values({
+      userId: order.userId,
       paperOrderId: order.id, eventType: status,
       message: `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${realized.toFixed(2)}`,
     }).catch(() => {});
@@ -162,10 +169,10 @@ export async function runPaperMonitor(opts?: {
   return summary;
 }
 
-export async function closePaperManually(orderId: number, opts?: { exitPrice?: number }) {
+export async function closePaperManually(orderId: number, userId: number, opts?: { exitPrice?: number }) {
   const log = logger.child({ system: "paperExecutionMonitor", orderId });
   const order = (await db.select().from(paperOrdersTable)
-    .where(eq(paperOrdersTable.id, orderId)).limit(1))[0];
+    .where(and(eq(paperOrdersTable.id, orderId), eq(paperOrdersTable.userId, userId))).limit(1))[0];
   if (!order) return { ok: false, error: "Paper order not found" };
   if (order.status !== "OPEN") return { ok: false, error: `Order not open (status=${order.status})` };
 
@@ -180,6 +187,7 @@ export async function closePaperManually(orderId: number, opts?: { exitPrice?: n
     status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice, profitLoss: pnl, updatedAt: new Date(),
   }).where(eq(paperOrdersTable.id, orderId));
   await db.insert(paperTradeEventsTable).values({
+    userId: order.userId,
     paperOrderId: orderId, eventType: "CLOSED_MANUAL",
     message: `${SIMULATED_TAG} EE manual close @ ${exitPrice.toFixed(5)}, P&L ${pnl.toFixed(2)}`,
   }).catch(() => {});

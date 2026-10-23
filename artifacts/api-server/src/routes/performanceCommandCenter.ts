@@ -13,13 +13,12 @@ import {
 import { buildCommandCenter } from "../lib/performanceCC/commandCenter.js";
 import { rebuildSnapshots } from "../lib/performanceCC/rebuild.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
+import { requireUser } from "../lib/auth/middleware.js";
+import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
 
-// T006 — mode-scope helper. The legacy performance aggregator is a
-// global reporting pipeline (no per-user filtering yet — see roadmap),
-// so to stop LIVE_SHARED users from seeing paper P&L on the calendar
-// we short-circuit at the route layer: armed-live sessions get an
-// empty, mode-tagged response. Demo/Paper get the existing global
-// aggregate (legacy behaviour preserved).
+// T006 — mode-scope helper. Every aggregate below is computed from the
+// signed-in user's own paper book. LIVE_SHARED sessions still get an empty,
+// mode-tagged calendar so paper P&L never shows on a live view.
 async function isLiveSharedSession(req: Request): Promise<boolean> {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
   if (!u || typeof u.id !== "number") return false;
@@ -30,6 +29,7 @@ async function isLiveSharedSession(req: Request): Promise<boolean> {
 }
 
 const router = Router();
+router.use("/performance", requireUser);
 
 const SAFETY = {
   system: "performanceCommandCenter",
@@ -71,7 +71,7 @@ router.get("/performance/calendar", async (req: Request, res: Response) => {
         modeNote: "Live calendar — no live trades recorded yet.",
       });
     }
-    const data = await computeCalendarMonth(month);
+    const data = await computeCalendarMonth(req.authUser!.id, month);
     return ok(res, { calendar: data, modeScopeApplied: true });
   } catch (err) {
     req.log.error({ err }, "performance/calendar failed");
@@ -96,7 +96,7 @@ router.get("/performance/day", async (req: Request, res: Response) => {
         modeNote: "Live day detail — no live trades recorded yet.",
       });
     }
-    const data = await computeDayDetail(date);
+    const data = await computeDayDetail(req.authUser!.id, date);
     return ok(res, { day: data, modeScopeApplied: true });
   } catch (err) {
     req.log.error({ err }, "performance/day failed");
@@ -111,7 +111,7 @@ router.get("/performance/day", async (req: Request, res: Response) => {
 router.get("/performance/range-summary", async (req: Request, res: Response) => {
   try {
     const range = parseRange(req.query.range);
-    const data = await computeRangeSummary(range);
+    const data = await computeRangeSummary(req.authUser!.id, range);
     return ok(res, { summary: data });
   } catch (err) {
     req.log.error({ err }, "performance/range-summary failed");
@@ -123,7 +123,7 @@ router.get("/performance/range-summary", async (req: Request, res: Response) => 
 router.get("/performance/equity-curve", async (req: Request, res: Response) => {
   try {
     const range = parseRange(req.query.range);
-    const data = await computeEquityCurve(range);
+    const data = await computeEquityCurve(req.authUser!.id, range);
     return ok(res, { equityCurve: data, range });
   } catch (err) {
     req.log.error({ err }, "performance/equity-curve failed");
@@ -135,7 +135,7 @@ router.get("/performance/equity-curve", async (req: Request, res: Response) => {
 router.get("/performance/symbols", async (req: Request, res: Response) => {
   try {
     const range = parseRange(req.query.range);
-    const data = await computeSymbolStats(range);
+    const data = await computeSymbolStats(req.authUser!.id, range);
     return ok(res, { symbols: data, range });
   } catch (err) {
     req.log.error({ err }, "performance/symbols failed");
@@ -147,7 +147,7 @@ router.get("/performance/symbols", async (req: Request, res: Response) => {
 router.get("/performance/mistakes", async (req: Request, res: Response) => {
   try {
     const range = parseRange(req.query.range);
-    const data = await computeMistakes(range);
+    const data = await computeMistakes(req.authUser!.id, range);
     return ok(res, { mistakes: data, range });
   } catch (err) {
     req.log.error({ err }, "performance/mistakes failed");
@@ -159,7 +159,7 @@ router.get("/performance/mistakes", async (req: Request, res: Response) => {
 router.get("/performance/lessons", async (req: Request, res: Response) => {
   try {
     const range = parseRange(req.query.range);
-    const data = await computeLessons(range);
+    const data = await computeLessons(req.authUser!.id, range);
     return ok(res, { lessons: data, range });
   } catch (err) {
     req.log.error({ err }, "performance/lessons failed");
@@ -171,7 +171,7 @@ router.get("/performance/lessons", async (req: Request, res: Response) => {
 router.get("/performance/decision-quality", async (req: Request, res: Response) => {
   try {
     const range = parseRange(req.query.range);
-    const data = await computeDecisionQuality(range);
+    const data = await computeDecisionQuality(req.authUser!.id, range);
     return ok(res, { decisionQuality: data });
   } catch (err) {
     req.log.error({ err }, "performance/decision-quality failed");
@@ -183,8 +183,8 @@ router.get("/performance/decision-quality", async (req: Request, res: Response) 
 router.get("/performance/ai-command-center", async (req: Request, res: Response) => {
   try {
     req.log.info("GG command-center: building from sources [paper_orders, trade_decision_logs, post_trade_debriefs, learning_events, strategy_edges, mistake_patterns, autopilot_cycles]");
-    const cc = await buildCommandCenter();
-    const autopilot = await computeAutopilotSummary();
+    const cc = await buildCommandCenter(req.authUser!.id);
+    const autopilot = await computeAutopilotSummary(req.authUser!.id);
     req.log.info({ insights: cc.insights.length, warnings: cc.warnings.length }, "GG command-center: insights generated");
     return ok(res, { commandCenter: cc, autopilot });
   } catch (err) {
@@ -196,7 +196,7 @@ router.get("/performance/ai-command-center", async (req: Request, res: Response)
 // 10. POST /api/performance/rebuild
 router.post("/performance/rebuild", async (req: Request, res: Response) => {
   try {
-    const summary = await rebuildSnapshots({
+    const summary = await rebuildSnapshots(req.authUser!.id, canSeeLegacyRows(req.authUser), {
       info: (m, meta) => req.log.info(meta ?? {}, m),
       warn: (m, meta) => req.log.warn(meta ?? {}, m),
     });
@@ -210,15 +210,15 @@ router.post("/performance/rebuild", async (req: Request, res: Response) => {
 // 11. POST /api/performance/demo — rebuild + return calendar(current month) + cc.
 router.post("/performance/demo", async (req: Request, res: Response) => {
   try {
-    const rebuild = await rebuildSnapshots({
+    const rebuild = await rebuildSnapshots(req.authUser!.id, canSeeLegacyRows(req.authUser), {
       info: (m, meta) => req.log.info(meta ?? {}, m),
       warn: (m, meta) => req.log.warn(meta ?? {}, m),
     });
     const month = new Date().toISOString().slice(0, 7);
-    const calendar = await computeCalendarMonth(month);
-    const summary = await computeRangeSummary("30d");
-    const cc = await buildCommandCenter();
-    const autopilot = await computeAutopilotSummary();
+    const calendar = await computeCalendarMonth(req.authUser!.id, month);
+    const summary = await computeRangeSummary(req.authUser!.id, "30d");
+    const cc = await buildCommandCenter(req.authUser!.id);
+    const autopilot = await computeAutopilotSummary(req.authUser!.id);
     return ok(res, {
       demo: true, rebuild, month,
       calendar, summary, commandCenter: cc, autopilot,

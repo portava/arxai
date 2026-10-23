@@ -107,6 +107,7 @@ async function marketNoTradeRule() {
   let any = false;
   for (const p of plans) {
     const r = await createAlert({
+      userId: p.userId,
       type: "MARKET_CONDITION",
       priority: "MEDIUM",
       severity: "warning",
@@ -139,6 +140,7 @@ async function positionNearStopLossRule() {
     const pctOfSlRemaining = remaining / slDist;
     if (pctOfSlRemaining <= 0.25) {
       const r = await createAlert({
+        userId: p.userId,
         type: "POSITION_WARNING",
         priority: pctOfSlRemaining <= 0.05 ? "CRITICAL" : "HIGH",
         severity: pctOfSlRemaining <= 0.05 ? "danger" : "warning",
@@ -169,6 +171,7 @@ async function tradePlanInvalidRule() {
   let any = false;
   for (const p of plans) {
     const r = await createAlert({
+      userId: p.userId,
       type: "TRADE_PLAN_INVALIDATED",
       priority: "MEDIUM",
       severity: "warning",
@@ -216,6 +219,7 @@ async function weeklyReviewReadyRule() {
   const r = rows[0];
   if (!r) return { fired: false };
   const out = await createAlert({
+    userId: r.userId,
     type: "WEEKLY_REVIEW",
     priority: "LOW",
     severity: "info",

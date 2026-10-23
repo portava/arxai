@@ -73,7 +73,7 @@ const UserOverrideBody = z.object({
 // remains gated by placeLiveOrderGuarded() and the safety core invariants
 // (canPlaceTrades=false, kill switch, etc.) — those are not touched here.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get("/system/mt5-deferred-status", async (_req, res) => {
+router.get("/system/mt5-deferred-status", async (req, res) => {
   try {
     const brokerKind = selectBrokerKind();
     const missing = missingRequiredSecrets(describeRequiredSecrets(brokerKind))
@@ -86,7 +86,9 @@ router.get("/system/mt5-deferred-status", async (_req, res) => {
       const status = await provider.status();
       bridgeConnected = !!status.connected;
       if (status.connected) {
-        try { const acct = await provider.account(); accountReadable = !!acct; } catch { /* not readable */ }
+        // System-level readability of the shared bridge; only a boolean leaves here.
+        const owner = { userId: req.authUser?.id ?? 0, includeLegacy: true };
+        try { const acct = await provider.account(owner); accountReadable = !!acct; } catch { /* not readable */ }
       }
     } catch { /* fail closed: deferred */ }
 

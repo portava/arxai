@@ -10,7 +10,7 @@ import {
   mistakePatternsTable,
   strategyEdgesTable,
 } from "@workspace/db";
-import { eq, gte } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
 
 export interface WeeklyPlan {
@@ -48,7 +48,10 @@ function startOfWeek(d: Date): Date {
   return x;
 }
 
-export async function generateWeeklyPlan(opts: { persist?: boolean } = {}): Promise<WeeklyPlan> {
+// userId: the plan is built from this trader's own week. persist writes the
+// shared weekly_improvement_plans row (one per week, no owner column), so the
+// route only allows it for an operator.
+export async function generateWeeklyPlan(opts: { userId: number; persist?: boolean }): Promise<WeeklyPlan> {
   const persist = opts.persist ?? false;
   const today = new Date();
   const weekStartDate = startOfWeek(today);
@@ -61,7 +64,8 @@ export async function generateWeeklyPlan(opts: { persist?: boolean } = {}): Prom
   const sevenAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   let lastWeekTrades: { id: number; status: string; pnl: number | null }[] = [];
   try {
-    const rows = await db.select().from(paperOrdersTable).where(gte(paperOrdersTable.createdAt, sevenAgo));
+    const rows = await db.select().from(paperOrdersTable)
+      .where(and(eq(paperOrdersTable.userId, opts.userId), gte(paperOrdersTable.createdAt, sevenAgo)));
     lastWeekTrades = rows.map(r => ({ id: r.id, status: r.status, pnl: r.profitLoss ?? null }));
   } catch { /* empty */ }
 

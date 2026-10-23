@@ -83,13 +83,14 @@ export interface DailyStats {
 }
 
 /** Compute the daily stats payload for one calendar date (YYYY-MM-DD, UTC). */
-export async function computeDailyStats(date: string): Promise<DailyStats> {
+export async function computeDailyStats(userId: number, date: string): Promise<DailyStats> {
   const dayStart = new Date(`${date}T00:00:00.000Z`);
   const dayEnd = new Date(`${date}T23:59:59.999Z`);
 
   // Paper trades closed THIS DAY (drives PnL).
   const closedToday = await db.select().from(paperOrdersTable)
     .where(and(
+      eq(paperOrdersTable.userId, userId),
       gte(paperOrdersTable.closedAt, dayStart),
       lte(paperOrdersTable.closedAt, dayEnd),
     ));
@@ -97,6 +98,7 @@ export async function computeDailyStats(date: string): Promise<DailyStats> {
   // Paper trades opened THIS DAY.
   const openedToday = await db.select().from(paperOrdersTable)
     .where(and(
+      eq(paperOrdersTable.userId, userId),
       gte(paperOrdersTable.openedAt, dayStart),
       lte(paperOrdersTable.openedAt, dayEnd),
     ));
@@ -127,6 +129,7 @@ export async function computeDailyStats(date: string): Promise<DailyStats> {
   // AI decisions THIS DAY.
   const decisions = await db.select().from(tradeDecisionLogsTable)
     .where(and(
+      eq(tradeDecisionLogsTable.userId, userId),
       gte(tradeDecisionLogsTable.createdAt, dayStart),
       lte(tradeDecisionLogsTable.createdAt, dayEnd),
     ));
@@ -134,6 +137,7 @@ export async function computeDailyStats(date: string): Promise<DailyStats> {
   // Debriefs THIS DAY.
   const debriefs = await db.select().from(postTradeDebriefsTable)
     .where(and(
+      eq(postTradeDebriefsTable.userId, userId),
       gte(postTradeDebriefsTable.createdAt, dayStart),
       lte(postTradeDebriefsTable.createdAt, dayEnd),
     ));
@@ -141,6 +145,7 @@ export async function computeDailyStats(date: string): Promise<DailyStats> {
   // Learning events THIS DAY.
   const learnings = await db.select().from(learningEventsTable)
     .where(and(
+      eq(learningEventsTable.userId, userId),
       gte(learningEventsTable.createdAt, dayStart),
       lte(learningEventsTable.createdAt, dayEnd),
     ));
@@ -189,10 +194,11 @@ export async function computeDailyStats(date: string): Promise<DailyStats> {
 }
 
 /** Compute per-symbol stats over a range. */
-export async function computeSymbolStats(range: RangeKey) {
+export async function computeSymbolStats(userId: number, range: RangeKey) {
   const { from, to } = rangeToWindow(range);
   const closed = await db.select().from(paperOrdersTable)
     .where(and(
+      eq(paperOrdersTable.userId, userId),
       gte(paperOrdersTable.closedAt, from),
       lte(paperOrdersTable.closedAt, to),
     ));
@@ -231,10 +237,11 @@ export async function computeSymbolStats(range: RangeKey) {
 }
 
 /** Equity curve for a range — cumulative paper PnL by closed_at order. */
-export async function computeEquityCurve(range: RangeKey) {
+export async function computeEquityCurve(userId: number, range: RangeKey) {
   const { from, to } = rangeToWindow(range);
   const closed = await db.select().from(paperOrdersTable)
     .where(and(
+      eq(paperOrdersTable.userId, userId),
       gte(paperOrdersTable.closedAt, from),
       lte(paperOrdersTable.closedAt, to),
     ))
@@ -254,10 +261,11 @@ export async function computeEquityCurve(range: RangeKey) {
 }
 
 /** Mistake-pattern ranking over a range (joined with learning events). */
-export async function computeMistakes(range: RangeKey) {
+export async function computeMistakes(userId: number, range: RangeKey) {
   const { from, to } = rangeToWindow(range);
   const learnings = await db.select().from(learningEventsTable)
     .where(and(
+      eq(learningEventsTable.userId, userId),
       gte(learningEventsTable.createdAt, from),
       lte(learningEventsTable.createdAt, to),
     ));
@@ -284,10 +292,11 @@ export async function computeMistakes(range: RangeKey) {
 }
 
 /** Recent lessons over a range. */
-export async function computeLessons(range: RangeKey, limit = 25) {
+export async function computeLessons(userId: number, range: RangeKey, limit = 25) {
   const { from, to } = rangeToWindow(range);
   const debriefs = await db.select().from(postTradeDebriefsTable)
     .where(and(
+      eq(postTradeDebriefsTable.userId, userId),
       gte(postTradeDebriefsTable.createdAt, from),
       lte(postTradeDebriefsTable.createdAt, to),
     ))
@@ -305,15 +314,17 @@ export async function computeLessons(range: RangeKey, limit = 25) {
 }
 
 /** Decision quality: ratio of AA decisions that became wins vs losses. */
-export async function computeDecisionQuality(range: RangeKey) {
+export async function computeDecisionQuality(userId: number, range: RangeKey) {
   const { from, to } = rangeToWindow(range);
   const decisions = await db.select().from(tradeDecisionLogsTable)
     .where(and(
+      eq(tradeDecisionLogsTable.userId, userId),
       gte(tradeDecisionLogsTable.createdAt, from),
       lte(tradeDecisionLogsTable.createdAt, to),
     ));
   const closed = await db.select().from(paperOrdersTable)
     .where(and(
+      eq(paperOrdersTable.userId, userId),
       gte(paperOrdersTable.closedAt, from),
       lte(paperOrdersTable.closedAt, to),
     ));
@@ -351,7 +362,7 @@ export async function computeDecisionQuality(range: RangeKey) {
 }
 
 /** Build calendar grid for a month YYYY-MM. */
-export async function computeCalendarMonth(month: string) {
+export async function computeCalendarMonth(userId: number, month: string) {
   // month = "2026-05"
   const [yearStr, monthStr] = month.split("-");
   const year = parseInt(yearStr ?? "0", 10);
@@ -369,7 +380,7 @@ export async function computeCalendarMonth(month: string) {
   let noTradeDays = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    const stats = await computeDailyStats(dateStr);
+    const stats = await computeDailyStats(userId, dateStr);
     totalPnl += stats.net_pnl;
     totalTrades += stats.total_trades;
     if (stats.day_status === "WINNING_DAY") winningDays += 1;
@@ -403,20 +414,22 @@ export async function computeCalendarMonth(month: string) {
 }
 
 /** Per-day detail: trades + debriefs + decisions + learning events. */
-export async function computeDayDetail(date: string) {
+export async function computeDayDetail(userId: number, date: string) {
   const dayStart = new Date(`${date}T00:00:00.000Z`);
   const dayEnd = new Date(`${date}T23:59:59.999Z`);
-  const stats = await computeDailyStats(date);
+  const stats = await computeDailyStats(userId, date);
 
   // Detail = trades that touched this day (either opened OR closed today),
   // so PnL stats from `closed today` and detail rows are consistent.
   const openedToday = await db.select().from(paperOrdersTable)
     .where(and(
+      eq(paperOrdersTable.userId, userId),
       gte(paperOrdersTable.openedAt, dayStart),
       lte(paperOrdersTable.openedAt, dayEnd),
     ));
   const closedToday = await db.select().from(paperOrdersTable)
     .where(and(
+      eq(paperOrdersTable.userId, userId),
       gte(paperOrdersTable.closedAt, dayStart),
       lte(paperOrdersTable.closedAt, dayEnd),
     ));
@@ -428,17 +441,17 @@ export async function computeDayDetail(date: string) {
   const decisionIds = trades.map(t => t.decisionId).filter((x): x is number => x !== null);
   const decisions = decisionIds.length
     ? await db.select().from(tradeDecisionLogsTable)
-        .where(inArray(tradeDecisionLogsTable.id, decisionIds))
+        .where(and(eq(tradeDecisionLogsTable.userId, userId), inArray(tradeDecisionLogsTable.id, decisionIds)))
     : [];
 
   const tradeIds = trades.map(t => t.id);
   const debriefs = tradeIds.length
     ? await db.select().from(postTradeDebriefsTable)
-        .where(inArray(postTradeDebriefsTable.tradeId, tradeIds))
+        .where(and(eq(postTradeDebriefsTable.userId, userId), inArray(postTradeDebriefsTable.tradeId, tradeIds)))
     : [];
   const learnings = tradeIds.length
     ? await db.select().from(learningEventsTable)
-        .where(inArray(learningEventsTable.tradeId, tradeIds))
+        .where(and(eq(learningEventsTable.userId, userId), inArray(learningEventsTable.tradeId, tradeIds)))
     : [];
 
   const decisionsById = new Map(decisions.map(d => [d.id, d]));
@@ -485,10 +498,11 @@ export async function computeDayDetail(date: string) {
 }
 
 /** Range summary (7d/30d/90d/all). */
-export async function computeRangeSummary(range: RangeKey) {
+export async function computeRangeSummary(userId: number, range: RangeKey) {
   const { from, to } = rangeToWindow(range);
   const closed = await db.select().from(paperOrdersTable)
     .where(and(
+      eq(paperOrdersTable.userId, userId),
       gte(paperOrdersTable.closedAt, from),
       lte(paperOrdersTable.closedAt, to),
     ));
@@ -522,6 +536,7 @@ export async function computeRangeSummary(range: RangeKey) {
   // Mistake / lesson aggregation.
   const learnings = await db.select().from(learningEventsTable)
     .where(and(
+      eq(learningEventsTable.userId, userId),
       gte(learningEventsTable.createdAt, from),
       lte(learningEventsTable.createdAt, to),
     ));
@@ -555,8 +570,9 @@ export async function computeRangeSummary(range: RangeKey) {
 }
 
 /** Read-only Build FF autopilot summary (last cycle, today's cycles). */
-export async function computeAutopilotSummary() {
+export async function computeAutopilotSummary(userId: number) {
   const recent = await db.select().from(autopilotCyclesTable)
+    .where(eq(autopilotCyclesTable.userId, userId))
     .orderBy(desc(autopilotCyclesTable.id)).limit(50);
   const today = new Date().toISOString().slice(0, 10);
   const todayCycles = recent.filter(c => ymd(c.startedAt) === today);

@@ -44,7 +44,7 @@ const ExplainBody = z.object({ topic: z.string().min(1).max(200) });
 router.post("/help/explain", async (req, res) => {
   const p = ExplainBody.safeParse(req.body);
   if (!p.success) { res.status(400).json(envelope({ error: "INVALID_BODY" })); return; }
-  const result = await explainTopic(p.data.topic);
+  const result = await explainTopic(p.data.topic, req.authUser!.id);
   res.json(envelope({ result: result as unknown as Record<string, unknown> }));
 });
 
@@ -53,7 +53,7 @@ const WhyBody = z.object({ blockedAction: z.enum(BLOCKED_ACTIONS as unknown as [
 router.post("/help/why-blocked", async (req, res) => {
   const p = WhyBody.safeParse(req.body);
   if (!p.success) { res.status(400).json(envelope({ error: "INVALID_BLOCKED_ACTION", allowed: BLOCKED_ACTIONS })); return; }
-  const explanation = await explainBlockedAction(p.data.blockedAction);
+  const explanation = await explainBlockedAction(p.data.blockedAction, req.authUser!.id);
   res.json(envelope({ explanation: explanation as unknown as Record<string, unknown> }));
 });
 
