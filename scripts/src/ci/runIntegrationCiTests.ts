@@ -216,6 +216,13 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // close or aggregation, per-user "single active" invariants, and that new
   // rows are stamped with the caller's id.
   { pkg: "@workspace/api-server", script: "test:behavior-ownership-route" },
+  // Per-user isolation step 1b — boots the real live-positions, trade
+  // management, portfolio risk, broker, paper execution, autopilot,
+  // performance, coach, paper session, cockpit, playbook, ideas and backtest
+  // routers with two traders, an operator and legacy ownerless rows, and
+  // proves no cross-user read, mutation or aggregation, operator-only
+  // singletons, and per-user alerts/notifications.
+  { pkg: "@workspace/api-server", script: "test:account-ownership-route" },
   // Task #660 — Profit Mission Phase 1 route per-user isolation + no-secret-leak
   // proof. Boots the REAL profitMissions router on loopback, seeds two real users
   // with genuine sessions, and proves anonymous 401s, a feed-gated estimate-

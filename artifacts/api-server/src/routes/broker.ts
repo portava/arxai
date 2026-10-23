@@ -7,10 +7,12 @@
 //  - /api/orders/demo writes to a paper-execution lane (NOT live tables).
 //  - All endpoints scrub secrets and never echo broker tokens.
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { z } from "zod/v4";
 import { getBrokerProvider } from "../lib/broker/registry.js";
+import type { BrokerOwner } from "../lib/broker/types.js";
+import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
 import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets, anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
 import { placeLiveOrderGuarded } from "../lib/liveTrading/guard.js";
 import { randomUUID } from "node:crypto";
@@ -142,7 +144,7 @@ router.get("/broker/secrets-status", async (_req, res) => {
 
 // GET /broker/connection-check — pings the provider and returns a flat
 // summary suitable for the frontend Broker Connection Center.
-router.get("/broker/connection-check", async (_req, res) => {
+router.get("/broker/connection-check", async (req, res) => {
   const startedAt = Date.now();
   try {
     const provider = getBrokerProvider();
@@ -169,7 +171,7 @@ router.get("/broker/connection-check", async (_req, res) => {
 
     if (status.connected) {
       try {
-        const acct = await provider.account();
+        const acct = await provider.account(brokerOwnerOf(req));
         accountReadable = !!acct;
         equityReadable = typeof acct?.equity === "number";
         balanceReadable = typeof acct?.balance === "number";
@@ -178,9 +180,9 @@ router.get("/broker/connection-check", async (_req, res) => {
     }
     try { const s = await provider.symbols(); symbolsReadable = true; symbolCount = s.length; }
     catch (e) { errors.push(`symbols: ${String((e as Error).message)}`); }
-    try { const p = await provider.positions(); positionsReadable = true; positionCount = p.length; }
+    try { const p = await provider.positions(brokerOwnerOf(req)); positionsReadable = true; positionCount = p.length; }
     catch (e) { errors.push(`positions: ${String((e as Error).message)}`); }
-    try { const o = await provider.orders(10); ordersReadable = true; orderCount = o.length; }
+    try { const o = await provider.orders(brokerOwnerOf(req), 10); ordersReadable = true; orderCount = o.length; }
     catch (e) { errors.push(`orders: ${String((e as Error).message)}`); }
 
     res.json(envelope({
@@ -208,6 +210,12 @@ router.get("/broker/connection-check", async (_req, res) => {
   }
 });
 
+// Account, positions and orders are per-user. The global auth gate guarantees a
+// session on these paths; an operator also sees the shared MT5 connection.
+function brokerOwnerOf(req: Request): BrokerOwner {
+  return { userId: req.authUser!.id, includeLegacy: canSeeLegacyRows(req.authUser) };
+}
+
 router.get("/broker/status", async (_req, res) => {
   try {
     const status = await getBrokerProvider().status();
@@ -217,7 +225,7 @@ router.get("/broker/status", async (_req, res) => {
   }
 });
 
-router.get("/broker/account", async (_req, res) => {
+router.get("/broker/account", async (req, res) => {
   try {
     const provider = getBrokerProvider();
     const status = await provider.status();
@@ -225,7 +233,7 @@ router.get("/broker/account", async (_req, res) => {
       res.status(200).json(envelope({ account: null, status, note: "Broker not connected. Account snapshot unavailable." }));
       return;
     }
-    const account = await provider.account();
+    const account = await provider.account(brokerOwnerOf(req));
     res.json(envelope({ account }));
   } catch (e) {
     res.status(500).json(envelope({ error: String((e as Error).message) }));
@@ -241,9 +249,9 @@ router.get("/broker/symbols", async (_req, res) => {
   }
 });
 
-router.get("/positions/live", async (_req, res) => {
+router.get("/positions/live", async (req, res) => {
   try {
-    const positions = await getBrokerProvider().positions();
+    const positions = await getBrokerProvider().positions(brokerOwnerOf(req));
     res.json(envelope({ positions, count: positions.length }));
   } catch (e) {
     res.status(500).json(envelope({ error: String((e as Error).message) }));
@@ -255,7 +263,7 @@ router.get("/orders/live", async (req, res) => {
   const q = OrdersQuery.safeParse(req.query);
   const limit = q.success && q.data.limit ? q.data.limit : 50;
   try {
-    const orders = await getBrokerProvider().orders(limit);
+    const orders = await getBrokerProvider().orders(brokerOwnerOf(req), limit);
     res.json(envelope({ orders, count: orders.length }));
   } catch (e) {
     res.status(500).json(envelope({ error: String((e as Error).message) }));

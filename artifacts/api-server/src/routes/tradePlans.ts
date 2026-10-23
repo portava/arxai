@@ -224,7 +224,7 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     // Blocks ONLY when overall portfolio risk is CRITICAL (rule per spec).
     // HIGH/MODERATE warnings flow through to the user but do not block.
     try {
-      const port = await getLatestPortfolioRiskOrCompute();
+      const port = await getLatestPortfolioRiskOrCompute(req.authUser);
       if (port.portfolioRiskLevel === "CRITICAL") {
         await vaultBehavior("TRADE_PLAN_VALIDATE_BLOCKED_PORTFOLIO", {
           id, level: port.portfolioRiskLevel, blockers: port.blockers,
@@ -316,6 +316,7 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
     const revision = createHashShort(`${result.nextStatus}|${itemSig}`);
     if (result.nextStatus === "READY") {
       void createAlert({
+        userId: plan.userId,
         type: "TRADE_PLAN_READY", priority: "MEDIUM", severity: "success",
         title: `Trade plan ready: ${plan.symbol ?? `#${plan.id}`}`,
         message: `Plan #${plan.id} passed all readiness checks. Final execution remains gated by the live-execution safety layer.`,
@@ -324,6 +325,7 @@ router.post("/trade-plans/:id/validate", requireUser, async (req, res): Promise<
       });
     } else {
       void createAlert({
+        userId: plan.userId,
         type: "TRADE_PLAN_INVALIDATED", priority: "MEDIUM", severity: "warning",
         title: `Trade plan invalidated: ${plan.symbol ?? `#${plan.id}`}`,
         message: `Plan #${plan.id} did not pass the readiness checklist (${checklist.failCount} fail, ${checklist.warnCount} warn).`,

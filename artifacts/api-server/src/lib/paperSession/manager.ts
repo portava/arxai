@@ -225,9 +225,10 @@ async function emit(paperSessionId: string, eventType: string, message: string, 
   } catch { /* never block on event log */ }
 }
 
-async function notify(paperSessionId: string, severity: "INFO"|"WARNING"|"HIGH"|"CRITICAL", title: string, message: string) {
+async function notify(userId: number, paperSessionId: string, severity: "INFO"|"WARNING"|"HIGH"|"CRITICAL", title: string, message: string) {
   try {
     await db.insert(notificationsTable).values({
+      userId,
       notificationId: `ntf_${randomUUID()}`,
       type: "SYSTEM",
       severity,
@@ -270,23 +271,26 @@ function rowToEnvelope(row: typeof paperSessionsTable.$inferSelect): SessionEnve
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
-export async function getActiveSession(): Promise<SessionEnvelope | null> {
+// Sessions belong to one trader: "the active session" is the caller's, and
+// the single-ACTIVE invariant holds per user, not across the install.
+export async function getActiveSession(userId: number): Promise<SessionEnvelope | null> {
   const rows = await db.select().from(paperSessionsTable)
-    .where(eq(paperSessionsTable.status, "ACTIVE"))
+    .where(and(eq(paperSessionsTable.userId, userId), eq(paperSessionsTable.status, "ACTIVE")))
     .orderBy(desc(paperSessionsTable.startedAt))
     .limit(1);
   return rows[0] ? rowToEnvelope(rows[0]) : null;
 }
 
-export async function getSessionById(paperSessionId: string): Promise<SessionEnvelope | null> {
+export async function getSessionById(paperSessionId: string, userId: number): Promise<SessionEnvelope | null> {
   const rows = await db.select().from(paperSessionsTable)
-    .where(eq(paperSessionsTable.paperSessionId, paperSessionId))
+    .where(and(eq(paperSessionsTable.paperSessionId, paperSessionId), eq(paperSessionsTable.userId, userId)))
     .limit(1);
   return rows[0] ? rowToEnvelope(rows[0]) : null;
 }
 
-export async function listSessions(limit = 20) {
+export async function listSessions(userId: number, limit = 20) {
   const rows = await db.select().from(paperSessionsTable)
+    .where(eq(paperSessionsTable.userId, userId))
     .orderBy(desc(paperSessionsTable.createdAt))
     .limit(Math.min(limit, 100));
   return rows.map(rowToEnvelope);
@@ -299,9 +303,9 @@ export interface StartArgs {
   sessionRules?: Partial<SessionRules>;
 }
 
-export async function startSession(args: StartArgs = {}): Promise<{ status: "ACTIVE" | "BLOCKED"; session: SessionEnvelope; reason?: string }> {
+export async function startSession(userId: number, args: StartArgs = {}): Promise<{ status: "ACTIVE" | "BLOCKED"; session: SessionEnvelope; reason?: string }> {
   // Reject if another ACTIVE session exists.
-  const active = await getActiveSession();
+  const active = await getActiveSession(userId);
   if (active) {
     await emit(active.paper_session_id, "START_REJECTED", "Cannot start a second session while one is ACTIVE", "WARNING");
     return { status: "BLOCKED", session: active, reason: "Another paper session is already ACTIVE" };
@@ -316,7 +320,7 @@ export async function startSession(args: StartArgs = {}): Promise<{ status: "ACT
 
   if (!pre.paperTestingAllowed) {
     const [row] = await db.insert(paperSessionsTable).values({
-      paperSessionId, status: "BLOCKED",
+      userId, paperSessionId, status: "BLOCKED",
       symbols, timeframes,
       sessionGoals: goals, sessionRules: rules, preflightStatus: pre,
       readinessGateStatus: pre.oo, riskGovernorStatus: pre.hh, securityStatus: pre.nn,
@@ -325,12 +329,12 @@ export async function startSession(args: StartArgs = {}): Promise<{ status: "ACT
       mistakesDetected: [], lessonsGenerated: [], nextBestActions: [],
     }).returning();
     await emit(paperSessionId, "BLOCKED", `Preflight failed: ${pre.hardBlocks.map(b => b.code).join(", ")}`, "HIGH", { hardBlocks: pre.hardBlocks });
-    await notify(paperSessionId, "HIGH", "Paper session BLOCKED", `Preflight blocked: ${pre.hardBlocks.map(b => b.message).join("; ")}`);
+    await notify(userId, paperSessionId, "HIGH", "Paper session BLOCKED", `Preflight blocked: ${pre.hardBlocks.map(b => b.message).join("; ")}`);
     return { status: "BLOCKED", session: rowToEnvelope(row), reason: pre.hardBlocks.map(b => b.message).join("; ") };
   }
 
   const [row] = await db.insert(paperSessionsTable).values({
-    paperSessionId, status: "ACTIVE",
+    userId, paperSessionId, status: "ACTIVE",
     startedAt: new Date(),
     symbols, timeframes,
     sessionGoals: goals, sessionRules: rules, preflightStatus: pre,
@@ -342,26 +346,26 @@ export async function startSession(args: StartArgs = {}): Promise<{ status: "ACT
   }).returning();
 
   await emit(paperSessionId, "STARTED", "Paper session started (PAPER_ONLY, live trading DISABLED)", "INFO", { symbols, timeframes });
-  await notify(paperSessionId, "INFO", "Paper session started", `Session ${paperSessionId} ACTIVE on ${symbols.join(", ")}.`);
+  await notify(userId, paperSessionId, "INFO", "Paper session started", `Session ${paperSessionId} ACTIVE on ${symbols.join(", ")}.`);
   return { status: "ACTIVE", session: rowToEnvelope(row) };
 }
 
-export async function pauseSession(paperSessionId: string, reason = "manual pause"): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
-  const cur = await getSessionById(paperSessionId);
+export async function pauseSession(userId: number, paperSessionId: string, reason = "manual pause"): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
+  const cur = await getSessionById(paperSessionId, userId);
   if (!cur) return { ok: false, session: null, reason: "session not found" };
   if (cur.status !== "ACTIVE") return { ok: false, session: cur, reason: `cannot pause ${cur.status} session` };
   await db.update(paperSessionsTable).set({ status: "PAUSED", updatedAt: new Date() }).where(eq(paperSessionsTable.paperSessionId, paperSessionId));
   await emit(paperSessionId, "PAUSED", `Session paused: ${reason}`, "INFO");
-  await notify(paperSessionId, "INFO", "Paper session paused", reason);
-  return { ok: true, session: await getSessionById(paperSessionId) };
+  await notify(userId, paperSessionId, "INFO", "Paper session paused", reason);
+  return { ok: true, session: await getSessionById(paperSessionId, userId) };
 }
 
-export async function resumeSession(paperSessionId: string): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
-  const cur = await getSessionById(paperSessionId);
+export async function resumeSession(userId: number, paperSessionId: string): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
+  const cur = await getSessionById(paperSessionId, userId);
   if (!cur) return { ok: false, session: null, reason: "session not found" };
   if (cur.status !== "PAUSED") return { ok: false, session: cur, reason: `cannot resume ${cur.status} session` };
   // Single-ACTIVE invariant: refuse if some other session is already ACTIVE.
-  const otherActive = await getActiveSession();
+  const otherActive = await getActiveSession(userId);
   if (otherActive && otherActive.paper_session_id !== paperSessionId) {
     await emit(paperSessionId, "RESUME_REJECTED", `Another ACTIVE session exists (${otherActive.paper_session_id})`, "WARNING");
     return { ok: false, session: cur, reason: `Another paper session ${otherActive.paper_session_id} is already ACTIVE` };
@@ -374,18 +378,18 @@ export async function resumeSession(paperSessionId: string): Promise<{ ok: boole
   }
   await db.update(paperSessionsTable).set({ status: "ACTIVE", preflightStatus: pre, updatedAt: new Date() }).where(eq(paperSessionsTable.paperSessionId, paperSessionId));
   await emit(paperSessionId, "RESUMED", "Session resumed after preflight re-check passed", "INFO");
-  await notify(paperSessionId, "INFO", "Paper session resumed", "Safety checks passed.");
-  return { ok: true, session: await getSessionById(paperSessionId) };
+  await notify(userId, paperSessionId, "INFO", "Paper session resumed", "Safety checks passed.");
+  return { ok: true, session: await getSessionById(paperSessionId, userId) };
 }
 
-export async function endSession(paperSessionId: string, reason = "manual end"): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
-  const cur = await getSessionById(paperSessionId);
+export async function endSession(userId: number, paperSessionId: string, reason = "manual end"): Promise<{ ok: boolean; session: SessionEnvelope | null; reason?: string }> {
+  const cur = await getSessionById(paperSessionId, userId);
   if (!cur) return { ok: false, session: null, reason: "session not found" };
   if (cur.status === "ENDED") return { ok: true, session: cur };
   await db.update(paperSessionsTable).set({ status: "ENDED", endedAt: new Date(), updatedAt: new Date() }).where(eq(paperSessionsTable.paperSessionId, paperSessionId));
   await emit(paperSessionId, "ENDED", `Session ended: ${reason}`, "INFO");
-  await notify(paperSessionId, "INFO", "Paper session ended", `Session ${paperSessionId} ended. Generate report.`);
-  return { ok: true, session: await getSessionById(paperSessionId) };
+  await notify(userId, paperSessionId, "INFO", "Paper session ended", `Session ${paperSessionId} ended. Generate report.`);
+  return { ok: true, session: await getSessionById(paperSessionId, userId) };
 }
 
 // ── EE / FF enforcement contract (read-only — does NOT modify EE/FF) ─────────
@@ -397,8 +401,8 @@ export interface EnforcementResult {
   sessionStatus: SessionStatus | "NONE";
 }
 
-export async function checkSessionAllowsPaperTrade(opts: { symbol?: string } = {}): Promise<EnforcementResult> {
-  const cur = await getActiveSession();
+export async function checkSessionAllowsPaperTrade(userId: number, opts: { symbol?: string } = {}): Promise<EnforcementResult> {
+  const cur = await getActiveSession(userId);
   if (!cur) return { allowed: false, reason: "no ACTIVE session", sessionId: null, sessionStatus: "NONE" };
   if (cur.status !== "ACTIVE") return { allowed: false, reason: `session ${cur.status}`, sessionId: cur.paper_session_id, sessionStatus: cur.status };
   if (!cur.sessionRules.allowManualPaperTrades) return { allowed: false, reason: "session rules disallow manual paper trades", sessionId: cur.paper_session_id, sessionStatus: cur.status };
@@ -428,8 +432,8 @@ export async function checkSessionAllowsPaperTrade(opts: { symbol?: string } = {
   return { allowed: true, reason: "session allows paper trade", sessionId: cur.paper_session_id, sessionStatus: cur.status };
 }
 
-export async function checkSessionAllowsAutopilot(): Promise<EnforcementResult> {
-  const cur = await getActiveSession();
+export async function checkSessionAllowsAutopilot(userId: number): Promise<EnforcementResult> {
+  const cur = await getActiveSession(userId);
   if (!cur) return { allowed: false, reason: "no ACTIVE session — autopilot must not open trades", sessionId: null, sessionStatus: "NONE" };
   if (cur.status !== "ACTIVE") return { allowed: false, reason: `session ${cur.status}`, sessionId: cur.paper_session_id, sessionStatus: cur.status };
   if (!cur.sessionRules.allowPaperAutopilot) return { allowed: false, reason: "session rules disallow autopilot", sessionId: cur.paper_session_id, sessionStatus: cur.status };
@@ -451,9 +455,9 @@ export interface LinkArgs {
   pnl?: number;
 }
 
-export async function linkTradeToActiveSession(args: LinkArgs) {
+export async function linkTradeToActiveSession(userId: number, args: LinkArgs) {
   try {
-    const cur = await getActiveSession();
+    const cur = await getActiveSession(userId);
     if (!cur) return { linked: false, reason: "no ACTIVE session" };
     await db.insert(paperSessionTradeLinksTable).values({
       paperSessionId: cur.paper_session_id,
@@ -523,8 +527,8 @@ export interface SessionReport {
   generatedAt: string;
 }
 
-export async function generateSessionReport(paperSessionId: string): Promise<SessionReport | null> {
-  const cur = await getSessionById(paperSessionId);
+export async function generateSessionReport(userId: number, paperSessionId: string): Promise<SessionReport | null> {
+  const cur = await getSessionById(paperSessionId, userId);
   if (!cur) return null;
   const trades = await listSessionTrades(paperSessionId);
   const closed = trades.filter(t => t.action === "CLOSE");

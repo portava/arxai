@@ -60,11 +60,14 @@ export async function loadSettings(): Promise<AutopilotSettings> {
   });
 }
 
-export async function saveSettings(patch: Partial<AutopilotSettings>): Promise<AutopilotSettings> {
+// ownerUserId: the operator saving the settings becomes the autopilot's owner;
+// its decisions, paper account and trades are stamped with that user.
+export async function saveSettings(patch: Partial<AutopilotSettings>, ownerUserId: number): Promise<AutopilotSettings> {
   const current = await loadSettings();
   const merged = forceSafe({ ...current, ...patch });
   // Always insert a new row (audit trail). loadSettings reads latest.
   await db.insert(autopilotSettingsTable).values({
+    userId: ownerUserId,
     enabled: merged.enabled,
     mode: "PAPER_ONLY",
     symbols: merged.symbols,

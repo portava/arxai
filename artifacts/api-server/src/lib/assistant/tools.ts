@@ -3346,7 +3346,7 @@ export async function evaluateTradeAgainstPlaybookTool(userId: number, preTradeC
         message: "No pre-trade check with that id exists for you. Run a pre-trade check first from the Playbook page.",};
     }
     const [pb] = await db.select({ id: userPlaybooksTable.id, title: userPlaybooksTable.title })
-      .from(userPlaybooksTable).where(eq(userPlaybooksTable.id, check.playbookId)).limit(1);
+      .from(userPlaybooksTable).where(and(eq(userPlaybooksTable.id, check.playbookId), eq(userPlaybooksTable.userId, userId))).limit(1);
     const score = Number(check.score ?? 0);
     let label: string;
     if (score >= 90) label = "A+";
@@ -3418,7 +3418,7 @@ export async function getBestAndWorstPlaybooksTool(userId: number, minTrades: nu
     }
     const pbIds = candidates.map((c) => c.playbookId);
     const pbs = await db.select({ id: userPlaybooksTable.id, title: userPlaybooksTable.title })
-      .from(userPlaybooksTable).where(sql`${userPlaybooksTable.id} = ANY(${pbIds})`);
+      .from(userPlaybooksTable).where(and(sql`${userPlaybooksTable.id} = ANY(${pbIds})`, eq(userPlaybooksTable.userId, userId)));
     const titleById = new Map(pbs.map((p) => [p.id, p.title]));
     const enriched = candidates.map((c) => ({
       playbookId: c.playbookId, title: titleById.get(c.playbookId) ?? `Playbook ${c.playbookId}`,

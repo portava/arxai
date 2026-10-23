@@ -22,6 +22,8 @@ import {
 } from "@workspace/db";
 import { and, countDistinct, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod/v4";
+import { ownerScope } from "../lib/auth/ownerScope.js";
+import { requireUser } from "../lib/auth/middleware.js";
 import {
   simulateBacktest, computeMetrics, summarizeBacktest, isVerificationEligible,
   type BacktestCandle, type BacktestSignal,
@@ -43,6 +45,9 @@ import {
 } from "../lib/backtest/backtestChartSeries.js";
 
 const router = Router();
+// Runs belong to the trader who started them (legacy ownerless runs to the
+// operator); every /backtest-runs path needs a session.
+router.use("/backtest-runs", requireUser);
 
 async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
   await db.insert(vaultEventsTable).values({
@@ -248,6 +253,7 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
         `${brokerCandles.length} closed bars available, ${MIN_BROKER_BARS} required. ` +
         `No simulation was run — synthetic data is never substituted for an explicit history range.`;
       const insertedInsufficient = await db.insert(backtestRunsTable).values({
+        userId: req.authUser!.id,
         strategyId,
         symbol: body.symbol,
         timeframe: body.timeframe,
@@ -327,6 +333,7 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
     });
 
     const inserted = await db.insert(backtestRunsTable).values({
+      userId: req.authUser!.id,
       strategyId,
       symbol: body.symbol,
       timeframe: body.timeframe,
@@ -417,6 +424,7 @@ router.get("/backtest-runs", async (req, res): Promise<void> => {
   try {
     const limit = Math.min(200, Math.max(1, Number(req.query["limit"]) || 50));
     const allRows = await db.select().from(backtestRunsTable)
+      .where(ownerScope(backtestRunsTable.userId, req.authUser))
       .orderBy(desc(backtestRunsTable.createdAt)).limit(limit);
     // Hide saved runs whose symbol is no longer in the approved universe. The
     // rows stay in the DB (never deleted) — they are simply not surfaced in the
@@ -443,7 +451,7 @@ router.get("/backtest-runs/:id", async (req, res): Promise<void> => {
   try {
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const rows = await db.select().from(backtestRunsTable).where(eq(backtestRunsTable.id, id)).limit(1);
+    const rows = await db.select().from(backtestRunsTable).where(and(eq(backtestRunsTable.id, id), ownerScope(backtestRunsTable.userId, req.authUser))).limit(1);
     if (!rows[0]) { res.status(404).json({ error: "Not found" }); return; }
     const r = rows[0];
     // Focus-Lock (Task #570): a run on a now-unapproved symbol is hidden from
@@ -476,8 +484,9 @@ router.get("/backtest-runs/:id/trades", async (req, res): Promise<void> => {
     // Focus-Lock (Task #570): never surface trades for a run whose symbol is
     // outside the approved universe — return the shared blocked envelope. Rows
     // stay in the DB.
-    const parentRun = await db.select().from(backtestRunsTable).where(eq(backtestRunsTable.id, id)).limit(1);
-    if (parentRun[0] && !isApprovedArxMarket(parentRun[0].symbol)) {
+    const parentRun = await db.select().from(backtestRunsTable).where(and(eq(backtestRunsTable.id, id), ownerScope(backtestRunsTable.userId, req.authUser))).limit(1);
+    if (!parentRun[0]) { res.status(404).json({ error: "Not found" }); return; }
+    if (!isApprovedArxMarket(parentRun[0].symbol)) {
       res.status(200).json(arxFocusBlockedEnvelope(parentRun[0].symbol));
       return;
     }
@@ -505,7 +514,7 @@ router.get("/backtest-runs/:id/chart-series", async (req, res): Promise<void> =>
   try {
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const runs = await db.select().from(backtestRunsTable).where(eq(backtestRunsTable.id, id)).limit(1);
+    const runs = await db.select().from(backtestRunsTable).where(and(eq(backtestRunsTable.id, id), ownerScope(backtestRunsTable.userId, req.authUser))).limit(1);
     const run = runs[0];
     if (!run) { res.status(404).json({ error: "Not found" }); return; }
     const focusMarket = resolveArxMarket(run.symbol);
@@ -546,7 +555,7 @@ router.post("/backtest-runs/:id/ai-review", async (req, res): Promise<void> => {
   try {
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-    const runs = await db.select().from(backtestRunsTable).where(eq(backtestRunsTable.id, id)).limit(1);
+    const runs = await db.select().from(backtestRunsTable).where(and(eq(backtestRunsTable.id, id), ownerScope(backtestRunsTable.userId, req.authUser))).limit(1);
     const run = runs[0];
     if (!run) { res.status(404).json({ error: "Not found" }); return; }
     // Focus-Lock (Task #570): never run an AI review on a now-unapproved symbol;
@@ -588,6 +597,8 @@ router.post("/backtest-runs/:id/ai-review", async (req, res): Promise<void> => {
   }
 });
 
+// Strategy-level evidence: the latest VERIFIED run for a strategy, whoever ran
+// it (runs hold strategy results on shared candles, no account data).
 // Export latest VERIFIED run summary per strategy for the strategy-fit
 // scoring engine to consume (read-only). Future build can pull from this.
 export async function getLatestVerifiedRunForStrategy(strategyId: string): Promise<typeof backtestRunsTable.$inferSelect | null> {

@@ -8,6 +8,7 @@
 //   - writes/reads `paper_trade_ideas` (paper-only table),
 //   - exercises the central read-only guard for blocked-execution tests.
 
+import { requireUser } from "../lib/auth/middleware.js";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod/v4";
 import { and, desc, eq } from "drizzle-orm";
@@ -16,6 +17,7 @@ import { analyzeSymbolForPaper } from "../lib/paperIntelligence.js";
 import { blockBrokerExecution } from "../lib/readOnlyGuard.js";
 
 const router = Router();
+router.use("/ideas", requireUser);
 const DISCLAIMER = "Paper-only intelligence. Does not place real trades.";
 
 const analyzeBody = z.object({
@@ -62,6 +64,7 @@ router.post("/ideas", async (req: Request, res: Response) => {
   }
   const v = parsed.data;
   const inserted = await db.insert(paperTradeIdeasTable).values({
+    userId: req.authUser!.id,
     symbol: v.symbol,
     direction: v.direction,
     entryIdea: v.entryIdea,
@@ -91,7 +94,9 @@ router.get("/ideas", async (req: Request, res: Response) => {
     return res.status(400).json({ error: "Invalid query", details: parsed.error.issues, paperOnly: true, disclaimer: DISCLAIMER });
   }
   const { status, symbol, limit } = parsed.data;
+  // Ideas are the caller's own watchlist.
   const filters = [
+    eq(paperTradeIdeasTable.userId, req.authUser!.id),
     status ? eq(paperTradeIdeasTable.status, status) : undefined,
     symbol ? eq(paperTradeIdeasTable.symbol, symbol) : undefined,
   ].filter(Boolean) as ReturnType<typeof eq>[];
@@ -128,7 +133,8 @@ router.patch("/ideas/:id", async (req: Request, res: Response) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid patch body", details: parsed.error.issues, paperOnly: true, disclaimer: DISCLAIMER });
   }
-  const existing = (await db.select().from(paperTradeIdeasTable).where(eq(paperTradeIdeasTable.id, id)).limit(1))[0];
+  const existing = (await db.select().from(paperTradeIdeasTable)
+    .where(and(eq(paperTradeIdeasTable.id, id), eq(paperTradeIdeasTable.userId, req.authUser!.id))).limit(1))[0];
   if (!existing) {
     return res.status(404).json({ error: "Not found", paperOnly: true, disclaimer: DISCLAIMER });
   }
@@ -148,7 +154,7 @@ router.patch("/ideas/:id", async (req: Request, res: Response) => {
     ...(parsed.data.outcomePnl          !== undefined ? { outcomePnl: parsed.data.outcomePnl } : {}),
     ...(parsed.data.outcomeNote         !== undefined ? { outcomeNote: parsed.data.outcomeNote } : {}),
     updatedAt: new Date(),
-  }).where(eq(paperTradeIdeasTable.id, id)).returning();
+  }).where(and(eq(paperTradeIdeasTable.id, id), eq(paperTradeIdeasTable.userId, req.authUser!.id))).returning();
   return res.json({ idea: updated[0], paperOnly: true, disclaimer: DISCLAIMER });
 });
 

@@ -17,12 +17,11 @@ import {
   mistakePatternsTable,
   autopilotCyclesTable,
   performanceDailySnapshotsTable,
-  performanceSymbolSnapshotsTable,
-  aiPerformanceSnapshotsTable,
   traderCoachReportsTable,
   traderCoachLogsTable,
 } from "@workspace/db";
-import { desc, gte } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
+import { computeSymbolStats } from "../performanceCC/aggregator.js";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
 import { generatePlaybook, type PlaybookUpdateSummary } from "./playbook.js";
 
@@ -110,13 +109,18 @@ const SAFE_DEFAULT_REVIEW_QUESTIONS = [
 ];
 
 export interface GenerateCoachOptions {
+  // The trader being coached: every trade, decision, debrief, learning event,
+  // autopilot run and snapshot read is theirs. strategy_edges /
+  // mistake_patterns are the shared cohort learning tables.
+  userId: number;
   reportType?: CoachReportType;
   persist?: boolean;
   log?: Logger;
   generatePlaybookEntries?: boolean;
 }
 
-export async function generateCoachReport(opts: GenerateCoachOptions = {}): Promise<CoachReport> {
+export async function generateCoachReport(opts: GenerateCoachOptions): Promise<CoachReport> {
+  const { userId } = opts;
   const reportType: CoachReportType = opts.reportType ?? "DAILY";
   const persist = opts.persist ?? false;
   const log = opts.log ?? NOOP_LOG;
@@ -156,26 +160,26 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   let cyclesRecent: { id: number; status: string; createdAt: Date }[] = [];
 
   try {
-    const rows = await db.select().from(paperOrdersTable);
+    const rows = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId));
     trades = rows.map(r => ({ id: r.id, symbol: r.symbol, status: r.status, pnl: r.profitLoss ?? null, decisionId: r.decisionId ?? null, createdAt: r.createdAt }));
     closed = trades.filter(t => t.status !== "OPEN");
     dataSourcesRead.push("paper_orders");
   } catch { missingDataSources.push("paper_orders"); }
 
   try {
-    const rows = await db.select().from(tradeDecisionLogsTable).where(gte(tradeDecisionLogsTable.createdAt, thirtyAgo));
+    const rows = await db.select().from(tradeDecisionLogsTable).where(and(eq(tradeDecisionLogsTable.userId, userId), gte(tradeDecisionLogsTable.createdAt, thirtyAgo)));
     decisions = rows.map(r => ({ id: r.id, symbol: r.symbol, action: r.action, confidence: r.confidence, riskScore: r.riskScore }));
     dataSourcesRead.push("trade_decision_logs");
   } catch { missingDataSources.push("trade_decision_logs"); }
 
   try {
-    const rows = await db.select().from(postTradeDebriefsTable).where(gte(postTradeDebriefsTable.createdAt, thirtyAgo));
+    const rows = await db.select().from(postTradeDebriefsTable).where(and(eq(postTradeDebriefsTable.userId, userId), gte(postTradeDebriefsTable.createdAt, thirtyAgo)));
     debriefs = rows.map(r => ({ id: r.id, tradeId: r.tradeId, result: r.result, biggestMistake: r.biggestMistake ?? null }));
     dataSourcesRead.push("post_trade_debriefs");
   } catch { missingDataSources.push("post_trade_debriefs"); }
 
   try {
-    const rows = await db.select().from(learningEventsTable).where(gte(learningEventsTable.createdAt, thirtyAgo));
+    const rows = await db.select().from(learningEventsTable).where(and(eq(learningEventsTable.userId, userId), gte(learningEventsTable.createdAt, thirtyAgo)));
     learnings = rows.map(r => ({ id: r.id, symbol: r.symbol, result: r.result }));
     dataSourcesRead.push("learning_events");
   } catch { missingDataSources.push("learning_events"); }
@@ -191,7 +195,7 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   } catch { missingDataSources.push("mistake_patterns"); }
 
   try {
-    const rows = await db.select().from(autopilotCyclesTable).orderBy(desc(autopilotCyclesTable.createdAt)).limit(50);
+    const rows = await db.select().from(autopilotCyclesTable).where(eq(autopilotCyclesTable.userId, userId)).orderBy(desc(autopilotCyclesTable.createdAt)).limit(50);
     cyclesRecent = rows.map(r => ({ id: r.id, status: r.status, createdAt: r.createdAt }));
     dataSourcesRead.push("autopilot_cycles");
   } catch { missingDataSources.push("autopilot_cycles"); }
@@ -201,20 +205,26 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   let symbolSnaps: { symbol: string; rangeKey: string; netPnl: number; winRate: number; edgeScore: number; learningConfidence: number }[] = [];
   let aiSnaps: { rangeKey: string; avgConfidence: number; avgRiskScore: number; avgEdgeScore: number }[] = [];
   try {
-    const rows = await db.select().from(performanceDailySnapshotsTable).orderBy(desc(performanceDailySnapshotsTable.date)).limit(14);
+    const rows = await db.select().from(performanceDailySnapshotsTable).where(eq(performanceDailySnapshotsTable.userId, userId)).orderBy(desc(performanceDailySnapshotsTable.date)).limit(14);
     dailySnaps = rows.map(r => ({ date: r.date, netPnl: r.netPnl, winRate: r.winRate, dayRating: r.dayRating, dayStatus: r.dayStatus }));
     dataSourcesRead.push("performance_daily_snapshots");
   } catch { missingDataSources.push("performance_daily_snapshots"); }
+  // Symbol and AI snapshots are computed live from the trader's own book: the
+  // stored performance_symbol / ai_performance snapshot tables have no owner.
   try {
-    const rows = await db.select().from(performanceSymbolSnapshotsTable);
-    symbolSnaps = rows.map(r => ({ symbol: r.symbol, rangeKey: r.rangeKey, netPnl: r.netPnl, winRate: r.winRate, edgeScore: r.edgeScore, learningConfidence: r.learningConfidence }));
-    dataSourcesRead.push("performance_symbol_snapshots");
-  } catch { missingDataSources.push("performance_symbol_snapshots"); }
-  try {
-    const rows = await db.select().from(aiPerformanceSnapshotsTable);
-    aiSnaps = rows.map(r => ({ rangeKey: r.rangeKey, avgConfidence: r.avgConfidence, avgRiskScore: r.avgRiskScore, avgEdgeScore: r.avgEdgeScore }));
-    dataSourcesRead.push("ai_performance_snapshots");
-  } catch { missingDataSources.push("ai_performance_snapshots"); }
+    const rows = await computeSymbolStats(userId, "30d");
+    symbolSnaps = rows.map(r => ({ symbol: r.symbol, rangeKey: r.range_key, netPnl: r.net_pnl, winRate: r.win_rate, edgeScore: r.edge_score, learningConfidence: r.learning_confidence }));
+    dataSourcesRead.push("performance_symbol_stats");
+  } catch { missingDataSources.push("performance_symbol_stats"); }
+  if (decisions.length > 0) {
+    const avg = (xs: number[]) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+    aiSnaps = [{
+      rangeKey: "30d",
+      avgConfidence: avg(decisions.map(d => d.confidence ?? 0)),
+      avgRiskScore: avg(decisions.map(d => d.riskScore ?? 0)),
+      avgEdgeScore: 0,
+    }];
+  }
 
   log.info("Build II: data sources read", { dataSourcesRead, missingDataSources });
   log.info("Build II: performance data read", { dailySnaps: dailySnaps.length, symbolSnaps: symbolSnaps.length, aiSnaps: aiSnaps.length });
@@ -421,6 +431,7 @@ export async function generateCoachReport(opts: GenerateCoachOptions = {}): Prom
   if (persist) {
     try {
       await db.insert(traderCoachReportsTable).values({
+        userId,
         coachReportId,
         reportType,
         readinessScore: report.traderStatus.readinessScore,

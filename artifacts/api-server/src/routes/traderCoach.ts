@@ -11,12 +11,19 @@ import {
   traderCoachLogsTable,
   tradingPlaybookEntriesTable,
 } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { requireUser } from "../lib/auth/middleware.js";
+import { canSeeLegacyRows, requireOperator } from "../lib/auth/ownerScope.js";
 import { generateCoachReport } from "../lib/traderCoach/coach.js";
 import { generatePlaybook, listPlaybookEntries, getPlaybookEntry } from "../lib/traderCoach/playbook.js";
 import { generateWeeklyPlan } from "../lib/traderCoach/weekly.js";
 
 const router = Router();
+// Coaching reads the signed-in trader's own book. The playbook is the shared
+// cohort playbook (built from strategy_edges / mistake_patterns), so anyone may
+// read it but only an operator regenerates it; coach logs span every user.
+router.use("/trader-coach", requireUser);
+router.use(["/trader-coach/playbook/generate", "/trader-coach/logs"], requireOperator);
 const TAG = "Build II — Trader Coach + Playbook Generator. Coaching/review/playbook only. Never places trades, never calls MT5, never enables canPlaceTrades, never recommends live trading.";
 
 function envelope(body: Record<string, unknown>) {
@@ -40,7 +47,7 @@ function buildLog(req: { log?: { info?: (...a: unknown[]) => void; warn?: (...a:
 // GET /api/trader-coach/status — fast non-persisted summary.
 router.get("/trader-coach/status", async (req, res) => {
   try {
-    const r = await generateCoachReport({ reportType: "DAILY", persist: false, log: buildLog(req) });
+    const r = await generateCoachReport({ userId: req.authUser!.id, reportType: "DAILY", persist: false, log: buildLog(req) });
     res.json(envelope({ coach: r }));
   } catch (err) {
     res.status(500).json(envelope({ error: "Failed to generate coach status", detail: String(err).slice(0, 200) }));
@@ -50,9 +57,10 @@ router.get("/trader-coach/status", async (req, res) => {
 // POST /api/trader-coach/generate — persisted coach report.
 router.post("/trader-coach/generate", async (req, res) => {
   const reportType = (req.body?.reportType as "DAILY" | "WEEKLY" | "SESSION" | "PLAYBOOK") ?? "DAILY";
-  const generatePlaybookEntries = !!req.body?.generatePlaybookEntries;
+  // Playbook entries are shared rows, so only an operator's report refreshes them.
+  const generatePlaybookEntries = !!req.body?.generatePlaybookEntries && canSeeLegacyRows(req.authUser);
   try {
-    const r = await generateCoachReport({ reportType, persist: true, log: buildLog(req), generatePlaybookEntries });
+    const r = await generateCoachReport({ userId: req.authUser!.id, reportType, persist: true, log: buildLog(req), generatePlaybookEntries });
     res.json(envelope({ coach: r, persisted: true }));
   } catch (err) {
     res.status(500).json(envelope({ error: "Failed to generate coach report", detail: String(err).slice(0, 200) }));
@@ -62,7 +70,7 @@ router.post("/trader-coach/generate", async (req, res) => {
 // GET /api/trader-coach/daily — daily coach view.
 router.get("/trader-coach/daily", async (req, res) => {
   try {
-    const r = await generateCoachReport({ reportType: "DAILY", persist: false, log: buildLog(req) });
+    const r = await generateCoachReport({ userId: req.authUser!.id, reportType: "DAILY", persist: false, log: buildLog(req) });
     const daily = {
       readiness: r.traderStatus,
       paperModeOnly: true,
@@ -87,8 +95,8 @@ router.get("/trader-coach/daily", async (req, res) => {
 // GET /api/trader-coach/weekly — weekly improvement plan.
 router.get("/trader-coach/weekly", async (req, res) => {
   try {
-    const persist = req.query.persist === "1" || req.query.persist === "true";
-    const plan = await generateWeeklyPlan({ persist });
+    const persist = (req.query.persist === "1" || req.query.persist === "true") && canSeeLegacyRows(req.authUser);
+    const plan = await generateWeeklyPlan({ userId: req.authUser!.id, persist });
     res.json(envelope({ weekly: plan, persisted: persist }));
   } catch (err) {
     res.status(500).json(envelope({ error: "Weekly failed", detail: String(err).slice(0, 200) }));
@@ -98,7 +106,7 @@ router.get("/trader-coach/weekly", async (req, res) => {
 // GET /api/trader-coach/session-prep — pre-session checklist + governor.
 router.get("/trader-coach/session-prep", async (req, res) => {
   try {
-    const r = await generateCoachReport({ reportType: "SESSION", persist: false, log: buildLog(req) });
+    const r = await generateCoachReport({ userId: req.authUser!.id, reportType: "SESSION", persist: false, log: buildLog(req) });
     res.json(envelope({
       sessionPrep: {
         traderStatus: r.traderStatus,
@@ -117,7 +125,7 @@ router.get("/trader-coach/session-prep", async (req, res) => {
 // GET /api/trader-coach/post-session-review — post-session review questions.
 router.get("/trader-coach/post-session-review", async (req, res) => {
   try {
-    const r = await generateCoachReport({ reportType: "SESSION", persist: false, log: buildLog(req) });
+    const r = await generateCoachReport({ userId: req.authUser!.id, reportType: "SESSION", persist: false, log: buildLog(req) });
     res.json(envelope({
       postSessionReview: {
         traderStatus: r.traderStatus,
@@ -175,10 +183,11 @@ router.get("/trader-coach/playbook/:id", async (req, res) => {
 router.post("/trader-coach/demo", async (req, res) => {
   try {
     const log = buildLog(req);
-    const coach = await generateCoachReport({ reportType: "DAILY", persist: true, log, generatePlaybookEntries: true });
-    const weekly = await generateWeeklyPlan({ persist: true });
+    const coach = await generateCoachReport({ userId: req.authUser!.id, reportType: "DAILY", persist: true, log, generatePlaybookEntries: canSeeLegacyRows(req.authUser) });
+    const weekly = await generateWeeklyPlan({ userId: req.authUser!.id, persist: canSeeLegacyRows(req.authUser) });
     const [recentReports, recentLogs, playbookCount] = await Promise.all([
-      db.select().from(traderCoachReportsTable).orderBy(desc(traderCoachReportsTable.createdAt)).limit(3),
+      db.select().from(traderCoachReportsTable).where(eq(traderCoachReportsTable.userId, req.authUser!.id))
+        .orderBy(desc(traderCoachReportsTable.createdAt)).limit(3),
       db.select().from(traderCoachLogsTable).orderBy(desc(traderCoachLogsTable.createdAt)).limit(5),
       db.select().from(tradingPlaybookEntriesTable),
     ]);
@@ -214,6 +223,7 @@ router.get("/trader-coach/reports", async (req, res) => {
   const limit = Math.max(1, Math.min(200, Number(req.query.limit ?? 20)));
   try {
     const rows = await db.select().from(traderCoachReportsTable)
+      .where(eq(traderCoachReportsTable.userId, req.authUser!.id))
       .orderBy(desc(traderCoachReportsTable.createdAt)).limit(limit);
     res.json(envelope({ reports: rows, count: rows.length }));
   } catch (err) {

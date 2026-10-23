@@ -13,21 +13,25 @@ import {
   autopilotCyclesTable,
   autopilotSettingsTable,
 } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { generateInsights } from "./insights.js";
 import { evaluateGovernor } from "../riskGovernor/governor.js";
 
-export async function buildCommandCenter() {
+// The caller's own trades, decisions, debriefs, learnings and autopilot runs.
+// strategy_edges / mistake_patterns are the shared cohort learning tables.
+export async function buildCommandCenter(userId: number) {
   // Pull source data.
-  const trades = await db.select().from(paperOrdersTable);
-  const decisions = await db.select().from(tradeDecisionLogsTable);
-  const debriefs = await db.select().from(postTradeDebriefsTable);
-  const learnings = await db.select().from(learningEventsTable);
+  const trades = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId));
+  const decisions = await db.select().from(tradeDecisionLogsTable).where(eq(tradeDecisionLogsTable.userId, userId));
+  const debriefs = await db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId));
+  const learnings = await db.select().from(learningEventsTable).where(eq(learningEventsTable.userId, userId));
   const edges = await db.select().from(strategyEdgesTable);
   const mistakes = await db.select().from(mistakePatternsTable);
   const recentCycles = await db.select().from(autopilotCyclesTable)
+    .where(eq(autopilotCyclesTable.userId, userId))
     .orderBy(desc(autopilotCyclesTable.id)).limit(20);
   const settingsRows = await db.select().from(autopilotSettingsTable)
+    .where(eq(autopilotSettingsTable.userId, userId))
     .orderBy(desc(autopilotSettingsTable.id)).limit(1);
   const settings = settingsRows[0];
 

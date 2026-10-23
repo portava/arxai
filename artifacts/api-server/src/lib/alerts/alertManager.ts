@@ -6,7 +6,7 @@ import {
   type Alert,
   type AlertPreferences,
 } from "@workspace/db";
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { scrubString } from "../security/redact.js";
 import { logger } from "../logger.js";
@@ -65,6 +65,10 @@ const CATEGORY_KEYS: Partial<Record<AlertType, keyof AlertPreferences>> = {
 function isCritical(p: AlertPriority): boolean { return p === "CRITICAL"; }
 
 export interface CreateAlertInput {
+  // Owner of the alert. Alerts about a user's trade, position, plan or
+  // portfolio carry their id; install-wide alerts (bridge health, onboarding,
+  // feed staleness) leave it null and are visible to every user.
+  userId?: number | null;
   type: AlertType;
   priority?: AlertPriority;
   severity?: AlertSeverity;
@@ -142,6 +146,7 @@ export async function createAlert(input: CreateAlertInput): Promise<Alert> {
     .from(alertsTable)
     .where(and(
       eq(alertsTable.dedupeKey, dedupeKey),
+      input.userId != null ? eq(alertsTable.userId, input.userId) : isNull(alertsTable.userId),
       eq(alertsTable.read, 0),
       gt(alertsTable.createdAt, cutoff),
     )).limit(1);
@@ -150,6 +155,7 @@ export async function createAlert(input: CreateAlertInput): Promise<Alert> {
   // 4. Persist. Redact-before-write: user-visible free text never carries a
   //    raw secret even if a caller accidentally interpolates one.
   const inserted = await db.insert(alertsTable).values({
+    userId: input.userId ?? null,
     type: input.type,
     priority,
     severity: input.severity ?? defaultSeverity(priority),
@@ -176,7 +182,7 @@ function defaultSeverity(p: AlertPriority): AlertSeverity {
 // hours / dedupe). Marked read=1 so it never appears in unread queries.
 function suppressed(input: CreateAlertInput, priority: AlertPriority, dedupeKey: string): Alert {
   return {
-    id: 0, userId: null, type: input.type, priority, severity: input.severity ?? defaultSeverity(priority),
+    id: 0, userId: input.userId ?? null, type: input.type, priority, severity: input.severity ?? defaultSeverity(priority),
     title: input.title, message: input.message, symbol: input.symbol ?? null,
     relatedTradeId: input.relatedTradeId ?? null, relatedPositionId: input.relatedPositionId ?? null,
     relatedTradePlanId: input.relatedTradePlanId ?? null, actionRequired: input.actionRequired ?? false,
@@ -184,28 +190,34 @@ function suppressed(input: CreateAlertInput, priority: AlertPriority, dedupeKey:
   };
 }
 
-export async function getAlerts(limit = 50): Promise<Alert[]> {
-  return db.select().from(alertsTable).orderBy(desc(alertsTable.createdAt)).limit(limit);
+// What a user may see: their own alerts plus install-wide ones.
+function visibleTo(userId: number) {
+  return or(eq(alertsTable.userId, userId), isNull(alertsTable.userId));
 }
 
-export async function getUnreadCount(): Promise<number> {
-  const r = await db.select({ c: sql<number>`count(*)::int` }).from(alertsTable).where(eq(alertsTable.read, 0));
+export async function getAlerts(userId: number, limit = 50): Promise<Alert[]> {
+  return db.select().from(alertsTable).where(visibleTo(userId)).orderBy(desc(alertsTable.createdAt)).limit(limit);
+}
+
+export async function getUnreadCount(userId: number): Promise<number> {
+  const r = await db.select({ c: sql<number>`count(*)::int` }).from(alertsTable)
+    .where(and(visibleTo(userId), eq(alertsTable.read, 0)));
   return r[0]?.c ?? 0;
 }
 
-export async function getCriticalUnread(): Promise<Alert[]> {
+export async function getCriticalUnread(userId: number): Promise<Alert[]> {
   return db.select().from(alertsTable)
-    .where(and(eq(alertsTable.read, 0), eq(alertsTable.priority, "CRITICAL")))
+    .where(and(visibleTo(userId), eq(alertsTable.read, 0), eq(alertsTable.priority, "CRITICAL")))
     .orderBy(desc(alertsTable.createdAt))
     .limit(10);
 }
 
 // (L) True COUNT (not list length) so the badge stays accurate when there
 // are more than 10 unread CRITICAL alerts.
-export async function getCriticalUnreadCount(): Promise<number> {
+export async function getCriticalUnreadCount(userId: number): Promise<number> {
   const r = await db.select({ c: sql<number>`count(*)::int` })
     .from(alertsTable)
-    .where(and(eq(alertsTable.read, 0), eq(alertsTable.priority, "CRITICAL")));
+    .where(and(visibleTo(userId), eq(alertsTable.read, 0), eq(alertsTable.priority, "CRITICAL")));
   return r[0]?.c ?? 0;
 }
 
@@ -224,7 +236,6 @@ export async function clearAlerts(): Promise<number> {
   return r.length;
 }
 
-void isNull;
 
 // Delivery hooks. NO email / SMS / push provider is wired — each hook must say
 // so (warn + delivered:false) instead of resolving silently as if the alert

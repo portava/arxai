@@ -212,7 +212,7 @@ export async function buildAaciSnapshot(
 
   // ── Alerts pipeline (A) ───────────────────────────────────────────────────
   try {
-    const unread = await getUnreadCount();
+    const unread = await getUnreadCount(userId);
     snapshot.alerts = { pipelineReady: true, unreadCount: unread, lastUpdated: snapshot.timestamp };
   } catch (err) {
     logger.warn({ err }, "aaci: alerts read failed");

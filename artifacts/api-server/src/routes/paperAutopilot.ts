@@ -19,8 +19,20 @@ import { loadSettings, saveSettings, DEFAULT_SETTINGS, assertSafe } from "../lib
 import { runSniperFilter } from "../lib/paperAutopilot/sniperFilter.js";
 import { orchestrate, persistDecision } from "./tradeDecision.js";
 import { requireUser } from "../lib/auth/middleware.js";
+import { requireOperator } from "../lib/auth/ownerScope.js";
 
 const router = Router();
+
+// The autopilot is one server-wide loop with one settings row; its trades go to
+// the operator who last saved the settings. Driving or reading it is an
+// operator action (the UI already lists it as admin-only). sniper-check is a
+// per-user dry run and stays open to every trader.
+const OPERATOR_PATHS = [
+  "/paper-autopilot/run-once", "/paper-autopilot/demo", "/paper-autopilot/start",
+  "/paper-autopilot/stop", "/paper-autopilot/status", "/paper-autopilot/settings",
+  "/paper-autopilot/cycles", "/paper-autopilot/logs", "/paper-autopilot/cooldowns",
+];
+router.use(OPERATOR_PATHS, requireOperator);
 const FF_TAG = "Safe Paper Autopilot — PAPER_ONLY. Build FF never places live trades, never calls MT5, never enables canPlaceTrades.";
 
 function ok(res: Response, body: Record<string, unknown>) {
@@ -151,7 +163,7 @@ router.post("/paper-autopilot/settings", async (req, res): Promise<void> => {
   const parse = SettingsBody.safeParse(req.body ?? {});
   if (!parse.success) { fail(res, 400, "Invalid body", { issues: parse.error.issues }); return; }
   try {
-    const merged = await saveSettings(parse.data);
+    const merged = await saveSettings(parse.data, req.authUser!.id);
     assertSafe(merged);
     ok(res, { settings: merged });
   } catch (err) {

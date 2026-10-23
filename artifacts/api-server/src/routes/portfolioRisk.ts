@@ -22,11 +22,12 @@
 import { Router } from "express";
 import {
   db,
-  livePositionsTable, riskSettingsTable, mt5ConnectionTable,
+  livePositionsTable, userRiskSettingsTable, mt5ConnectionTable,
   portfolioRiskSnapshotsTable, correlationRiskReportsTable, vaultEventsTable,
 } from "@workspace/db";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+import { ownerScope } from "../lib/auth/ownerScope.js";
 import crypto from "node:crypto";
 
 // (O-fix) Stable rank for sorting correlation reports CRITICAL → LOW at the
@@ -53,11 +54,18 @@ async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
 
 const POSITION_TERMINAL = new Set(["CLOSED", "CANCELED", "REJECTED"]);
 
-async function loadInputs() {
+// Everything here is the caller's own book: their positions, their broker
+// account and their Risk Governor limits (user_risk_settings). An operator's
+// book also includes the shared MT5 connection's ownerless rows.
+type PortfolioOwner = Parameters<typeof ownerScope>[1];
+async function loadInputs(authUser: PortfolioOwner) {
   const [positions, settingsRows, mt5Rows] = await Promise.all([
-    db.select().from(livePositionsTable),
-    db.select().from(riskSettingsTable).limit(1),
-    db.select().from(mt5ConnectionTable).orderBy(desc(mt5ConnectionTable.updatedAt)).limit(1),
+    db.select().from(livePositionsTable).where(ownerScope(livePositionsTable.userId, authUser)),
+    authUser
+      ? db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, authUser.id)).limit(1)
+      : Promise.resolve([]),
+    db.select().from(mt5ConnectionTable).where(ownerScope(mt5ConnectionTable.userId, authUser))
+      .orderBy(desc(mt5ConnectionTable.updatedAt)).limit(1),
   ]);
 
   // (O) Per-position risk approximation. The trades schema doesn't carry an
@@ -86,19 +94,17 @@ async function loadInputs() {
     positionsInput,
     accountBalance: mt5?.accountBalance ?? 0,
     accountEquity:  mt5?.accountEquity  ?? 0,
-    maxOpenTrades:    settings?.maxOpenTrades    ?? 2,
-    maxDailyLossPct:  settings?.maxDailyLossPct  ?? 2,
-    riskPerTradePct:  settings?.riskPerTradePct  ?? 0.5,
+    maxOpenTrades:    settings?.maxOpenTrades           ?? 2,
+    maxDailyLossPct:  settings?.maxDailyLossPercent     ?? 2,
+    riskPerTradePct:  settings?.maxRiskPerTradePercent  ?? 0.5,
   };
 }
 
 // ── POST /portfolio-risk/snapshot ─────────────────────────────────────────
-// Portfolio QA P1: snapshots are now persisted with userId so latest/history
-// reads can scope per-tenant. loadInputs() still pulls global account/risk
-// settings (out of scope for this QA fix — flagged as remaining blocker).
+// Snapshots are persisted with userId and computed from the caller's own book.
 router.post("/portfolio-risk/snapshot", requireUser, async (req, res): Promise<void> => {
   try {
-    const inputs = await loadInputs();
+    const inputs = await loadInputs(req.authUser);
     const result = computePortfolioRisk({
       accountBalance: inputs.accountBalance,
       accountEquity: inputs.accountEquity,
@@ -129,11 +135,12 @@ router.post("/portfolio-risk/snapshot", requireUser, async (req, res): Promise<v
       const priority = result.portfolioRiskLevel === "CRITICAL" ? "CRITICAL" : "HIGH";
       const severity = result.portfolioRiskLevel === "CRITICAL" ? "danger" : "warning";
       void createAlert({
+        userId: req.authUser!.id,
         type: "RISK_LIMIT_HIT", priority, severity,
         title: `Portfolio risk: ${result.portfolioRiskLevel}`,
         message: result.aiSummary,
         actionRequired: result.portfolioRiskLevel === "CRITICAL",
-        dedupeKey: `portfolio-risk:${result.portfolioRiskLevel}:${result.openPositionsCount}:${Math.round(result.totalRiskPercent * 10)}`,
+        dedupeKey: `portfolio-risk:${req.authUser!.id}:${result.portfolioRiskLevel}:${result.openPositionsCount}:${Math.round(result.totalRiskPercent * 10)}`,
       });
     }
 
@@ -187,7 +194,7 @@ router.get("/portfolio-risk/history", requireUser, async (req, res): Promise<voi
 // ── POST /correlation-risk/generate ───────────────────────────────────────
 router.post("/correlation-risk/generate", requireUser, async (req, res): Promise<void> => {
   try {
-    const inputs = await loadInputs();
+    const inputs = await loadInputs(req.authUser);
     const reports = buildCorrelationReports(inputs.positionsInput);
     const batchId = crypto.randomUUID();
     const inserted = [];
@@ -246,8 +253,8 @@ router.get("/correlation-risk/latest", requireUser, async (req, res): Promise<vo
 });
 
 // ── helper for trade-plan validate hook ───────────────────────────────────
-export async function getLatestPortfolioRiskOrCompute() {
-  const inputs = await loadInputs();
+export async function getLatestPortfolioRiskOrCompute(authUser: PortfolioOwner) {
+  const inputs = await loadInputs(authUser);
   const result = computePortfolioRisk({
     accountBalance: inputs.accountBalance,
     accountEquity: inputs.accountEquity,

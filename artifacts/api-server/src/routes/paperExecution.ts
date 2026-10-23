@@ -11,6 +11,7 @@ import {
   db, paperExecutionsTable, paperExecutionLogsTable, paperOrdersTable,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
+import { requireUser } from "../lib/auth/middleware.js";
 import {
   executePaperFromDecision,
   loadDecisionFromLog,
@@ -24,6 +25,9 @@ import {
 import type { TradeDecision } from "./tradeDecision.js";
 
 const router = Router();
+// Every paper execution belongs to the signed-in user: their decisions, their
+// paper account, their orders. Another user's rows answer 404.
+router.use("/paper-execution", requireUser);
 const PAPER_TAG = "Simulated paper execution — Build EE never places live trades, never touches MT5/canPlaceTrades.";
 
 function ok(res: import("express").Response, body: Record<string, unknown>) {
@@ -44,9 +48,11 @@ router.post("/paper-execution/from-decision", async (req, res): Promise<void> =>
   if (!parse.success) { fail(res, 400, "Invalid body", { issues: parse.error.issues }); return; }
   const { decisionId, allowConflicts, paperAccountId } = parse.data;
   try {
-    const decision = await loadDecisionFromLog(decisionId);
+    const decision = await loadDecisionFromLog(decisionId, req.authUser!.id);
     if (!decision) { fail(res, 404, `Decision ${decisionId} not found in trade_decision_logs`); return; }
-    const result = await executePaperFromDecision(decision, decisionId, { allowConflicts, paperAccountId });
+    const result = await executePaperFromDecision(decision, decisionId, {
+      allowConflicts, paperAccountId, ownerUserId: req.authUser!.id,
+    });
     ok(res, { execution: result });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /paper-execution/from-decision failed");
@@ -106,10 +112,17 @@ router.post("/paper-execution/demo", async (req, res): Promise<void> => {
       },
     };
 
+    // A caller-supplied decisionId is the idempotency key, so it must be one of
+    // the caller's own decisions.
+    if (parse.data.decisionId != null && !(await loadDecisionFromLog(parse.data.decisionId, req.authUser!.id))) {
+      fail(res, 404, `Decision ${parse.data.decisionId} not found in trade_decision_logs`); return;
+    }
     const decisionId = parse.data.decisionId
-      ?? await persistSyntheticDecisionLog(decision, req.authUser?.id ?? null);
+      ?? await persistSyntheticDecisionLog(decision, req.authUser!.id);
 
-    const result = await executePaperFromDecision(decision, decisionId, { allowConflicts: false });
+    const result = await executePaperFromDecision(decision, decisionId, {
+      allowConflicts: false, ownerUserId: req.authUser!.id,
+    });
     ok(res, { decisionIdUsed: decisionId, execution: result, marketData: md.snapshot });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /paper-execution/demo failed");
@@ -132,15 +145,15 @@ async function persistSyntheticDecisionLog(d: TradeDecision, userId: number | nu
 }
 
 // ── GET /paper-execution/open ─────────────────────────────────────────────
-router.get("/paper-execution/open", async (_req, res): Promise<void> => {
-  const rows = await listOpenPaperExecutions(50);
+router.get("/paper-execution/open", async (req, res): Promise<void> => {
+  const rows = await listOpenPaperExecutions(req.authUser!.id, 50);
   ok(res, { open: rows, count: rows.length });
 });
 
 // ── GET /paper-execution/trades?limit=20 ──────────────────────────────────
 router.get("/paper-execution/trades", async (req, res): Promise<void> => {
   const limit = Math.min(200, Math.max(1, Number(req.query["limit"] ?? 20) || 20));
-  const rows = await listPaperExecutions(limit);
+  const rows = await listPaperExecutions(req.authUser!.id, limit);
   ok(res, { trades: rows, count: rows.length });
 });
 
@@ -149,7 +162,7 @@ router.get("/paper-execution/trade/:id", async (req, res): Promise<void> => {
   const id = Number(req.params["id"]);
   if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
   const exec = (await db.select().from(paperExecutionsTable)
-    .where(eq(paperExecutionsTable.id, id)).limit(1))[0];
+    .where(and(eq(paperExecutionsTable.id, id), eq(paperExecutionsTable.userId, req.authUser!.id))).limit(1))[0];
   if (!exec) { fail(res, 404, "Paper execution not found"); return; }
   const order = exec.orderId
     ? (await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, exec.orderId)).limit(1))[0]
@@ -169,7 +182,7 @@ router.post("/paper-execution/monitor", async (req, res): Promise<void> => {
   const parse = MonitorBody.safeParse(req.body ?? {});
   if (!parse.success) { fail(res, 400, "Invalid body", { issues: parse.error.issues }); return; }
   try {
-    const summary = await runPaperMonitor(parse.data);
+    const summary = await runPaperMonitor({ ...parse.data, userId: req.authUser!.id });
     ok(res, { monitor: summary });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /paper-execution/monitor failed");
@@ -183,7 +196,7 @@ router.post("/paper-execution/close/:id", async (req, res): Promise<void> => {
   if (!Number.isFinite(orderId)) { fail(res, 400, "Invalid id"); return; }
   const exitPrice = typeof req.body?.exitPrice === "number" ? req.body.exitPrice : undefined;
   try {
-    const r = await closePaperManually(orderId, exitPrice != null ? { exitPrice } : undefined);
+    const r = await closePaperManually(orderId, req.authUser!.id, exitPrice != null ? { exitPrice } : undefined);
     if (!r.ok) { fail(res, 409, r.error ?? "close failed"); return; }
     ok(res, { close: r });
   } catch (err) {
