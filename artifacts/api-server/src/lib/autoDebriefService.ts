@@ -5,6 +5,9 @@
 // paper_orders + trade_decision_logs and WRITES post_trade_debriefs +
 // analytics_snapshots + vault_events. Build BB does not change Build AA
 // scoring logic; that is reserved for Build CC.
+//
+// OWNERSHIP: the debrief and analytics snapshot inherit the paper order's
+// user_id, and only a decision owned by the same user is linked.
 
 import {
   db,
@@ -15,7 +18,7 @@ import {
   vaultEventsTable,
   heatSnapshots,
 } from "@workspace/db";
-import { asc, eq, gte, lte, and } from "drizzle-orm";
+import { asc, eq, gte, lte, and, isNull } from "drizzle-orm";
 import { computeSnapshot } from "../routes/analytics.js";
 import { logger } from "./logger.js";
 
@@ -246,7 +249,10 @@ export async function runAutoDebrief(
   let decision: DecisionRow | null = null;
   if (trade.decisionId != null) {
     const row = (await db.select().from(tradeDecisionLogsTable)
-      .where(eq(tradeDecisionLogsTable.id, trade.decisionId)).limit(1))[0];
+      .where(and(
+        eq(tradeDecisionLogsTable.id, trade.decisionId),
+        trade.userId == null ? isNull(tradeDecisionLogsTable.userId) : eq(tradeDecisionLogsTable.userId, trade.userId),
+      )).limit(1))[0];
     if (row) {
       decision = row as DecisionRow;
       log.info({ decisionId: row.id, action: row.action }, "decision linked");
@@ -348,6 +354,7 @@ export async function runAutoDebrief(
   let inserted: typeof postTradeDebriefsTable.$inferSelect;
   try {
     const insRows = await db.insert(postTradeDebriefsTable).values({
+      userId: trade.userId ?? null,
       tradeId: trade.id,
       decisionId: trade.decisionId ?? null,
       // Map BREAKEVEN/CANCELLED into result column (text, no enum constraint).
@@ -414,10 +421,15 @@ export async function runAutoDebrief(
   // 10. Trigger analytics snapshot (best-effort, non-fatal).
   let snapshotId: number | null = null;
   try {
-    const computed = await computeSnapshot();
-    const snapIns = await db.insert(analyticsSnapshotsTable).values(computed).returning({ id: analyticsSnapshotsTable.id });
-    snapshotId = snapIns[0]?.id ?? null;
-    log.info({ snapshotId, totalTrades: computed.totalTrades }, "analytics snapshot generated");
+    if (trade.userId == null) {
+      warnings.push("Paper order has no owner — analytics snapshot skipped");
+    } else {
+      const computed = await computeSnapshot(trade.userId);
+      const snapIns = await db.insert(analyticsSnapshotsTable).values({ ...computed, userId: trade.userId })
+        .returning({ id: analyticsSnapshotsTable.id });
+      snapshotId = snapIns[0]?.id ?? null;
+      log.info({ snapshotId, totalTrades: computed.totalTrades }, "analytics snapshot generated");
+    }
   } catch (err) {
     const msg = `Analytics snapshot failed (non-fatal): ${String(err).slice(0, 200)}`;
     warnings.push(msg);

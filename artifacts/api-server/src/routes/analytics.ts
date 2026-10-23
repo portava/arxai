@@ -4,6 +4,9 @@
 // reviews, edge reports. Writes only own 2 tables + vault audit. Never references
 // trade execution / mt5_* / safetyCore / canPlaceTrades / risk mutation.
 //
+// OWNERSHIP: every aggregate is computed only from req.authUser's own rows,
+// and snapshots / heatmaps are stamped with and read by that user.
+//
 // Honesty: no projections, no "expected return," no "guaranteed" anywhere.
 // Every response carries a disclaimer that past data does not predict future P&L.
 
@@ -15,6 +18,7 @@ import {
   edgeDiscoveryReportsTable, vaultEventsTable,
 } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
 const ANALYTICS_DISCLAIMER =
@@ -66,13 +70,16 @@ function sessionOf(d: Date): "ASIA"|"LONDON"|"NEWYORK" {
 // ── Compute snapshot from current data ──────────────────────────────────────
 // EXPORTED so Build BB's auto-debrief service can recompute analytics
 // in-process after a closed-trade event without an internal HTTP hop.
-export async function computeSnapshot() {
+export async function computeSnapshot(userId: number) {
   const [orders, skill, debriefs, edges] = await Promise.all([
     // Chronological order — required for correct peak-to-trough drawdown math.
-    db.select().from(paperOrdersTable).orderBy(paperOrdersTable.openedAt).limit(1000),
-    db.select().from(traderSkillProfilesTable).orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
-    db.select().from(postTradeDebriefsTable).orderBy(desc(postTradeDebriefsTable.id)).limit(200),
-    db.select().from(edgeDiscoveryReportsTable).limit(200),
+    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId))
+      .orderBy(paperOrdersTable.openedAt).limit(1000),
+    db.select().from(traderSkillProfilesTable).where(eq(traderSkillProfilesTable.userId, userId))
+      .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
+    db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId))
+      .orderBy(desc(postTradeDebriefsTable.id)).limit(200),
+    db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.userId, userId)).limit(200),
   ]);
   const closed = orders.filter((o) => isClosed(o));
   const pnls = closed.map((o) => pnlOf(o));
@@ -132,10 +139,11 @@ export async function computeSnapshot() {
 }
 
 // ── POST /analytics/snapshot — generate ─────────────────────────────────────
-router.post("/analytics/snapshot", async (_req, res): Promise<void> => {
+router.post("/analytics/snapshot", requireUser, async (req, res): Promise<void> => {
   try {
-    const computed = await computeSnapshot();
-    const ins = await db.insert(analyticsSnapshotsTable).values(computed).returning();
+    const userId = req.authUser!.id;
+    const computed = await computeSnapshot(userId);
+    const ins = await db.insert(analyticsSnapshotsTable).values({ ...computed, userId }).returning();
     await vaultAnalytics("ANALYTICS_SNAPSHOT_GENERATED",
       { snapshotId: ins[0]!.id, totalTrades: computed.totalTrades });
     ok(res, { snapshot: ins[0] });
@@ -146,9 +154,10 @@ router.post("/analytics/snapshot", async (_req, res): Promise<void> => {
 });
 
 // ── GET /analytics/snapshot — latest ────────────────────────────────────────
-router.get("/analytics/snapshot", async (req, res): Promise<void> => {
+router.get("/analytics/snapshot", requireUser, async (req, res): Promise<void> => {
   try {
     const row = (await db.select().from(analyticsSnapshotsTable)
+      .where(eq(analyticsSnapshotsTable.userId, req.authUser!.id))
       .orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1))[0] ?? null;
     ok(res, { snapshot: row });
   } catch (err) {
@@ -158,10 +167,10 @@ router.get("/analytics/snapshot", async (req, res): Promise<void> => {
 });
 
 // ── GET /analytics/heatmaps?type= ───────────────────────────────────────────
-router.get("/analytics/heatmaps", async (req, res): Promise<void> => {
+router.get("/analytics/heatmaps", requireUser, async (req, res): Promise<void> => {
   try {
     const type = typeof req.query["type"] === "string" ? req.query["type"] : null;
-    const heatmaps = await buildAllHeatmaps();
+    const heatmaps = await buildAllHeatmaps(req.authUser!.id);
     if (type) ok(res, { heatmap: heatmaps.find((h) => h.heatmapType === type) ?? null });
     else      ok(res, { heatmaps });
   } catch (err) {
@@ -170,10 +179,12 @@ router.get("/analytics/heatmaps", async (req, res): Promise<void> => {
   }
 });
 
-async function buildAllHeatmaps(): Promise<Array<{ heatmapType: string; dataset: unknown }>> {
+async function buildAllHeatmaps(userId: number): Promise<Array<{ heatmapType: string; dataset: unknown }>> {
   const [orders, debriefs] = await Promise.all([
-    db.select().from(paperOrdersTable).orderBy(desc(paperOrdersTable.id)).limit(1000),
-    db.select().from(postTradeDebriefsTable).orderBy(desc(postTradeDebriefsTable.id)).limit(500),
+    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId))
+      .orderBy(desc(paperOrdersTable.id)).limit(1000),
+    db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId))
+      .orderBy(desc(postTradeDebriefsTable.id)).limit(500),
   ]);
   const closed = orders.filter((o) => isClosed(o));
 
@@ -220,9 +231,10 @@ async function buildAllHeatmaps(): Promise<Array<{ heatmapType: string; dataset:
 }
 
 // ── GET /analytics/strategy ─────────────────────────────────────────────────
-router.get("/analytics/strategy", async (req, res): Promise<void> => {
+router.get("/analytics/strategy", requireUser, async (req, res): Promise<void> => {
   try {
-  const orders = await db.select().from(paperOrdersTable).limit(1000);
+  const orders = await db.select().from(paperOrdersTable)
+    .where(eq(paperOrdersTable.userId, req.authUser!.id)).limit(1000);
   const closed = orders.filter((o) => isClosed(o));
   const groups = new Map<string, { trades: number; wins: number; pnl: number; rrSum: number; rrN: number }>();
   for (const o of closed) {
@@ -251,9 +263,9 @@ router.get("/analytics/strategy", async (req, res): Promise<void> => {
 });
 
 // ── GET /analytics/session ──────────────────────────────────────────────────
-router.get("/analytics/session", async (req, res): Promise<void> => {
+router.get("/analytics/session", requireUser, async (req, res): Promise<void> => {
   try {
-    const all = await buildAllHeatmaps();
+    const all = await buildAllHeatmaps(req.authUser!.id);
     ok(res, { session: all.find((h) => h.heatmapType === "SESSION_PNL")?.dataset ?? {} });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /analytics/session failed");
@@ -262,9 +274,10 @@ router.get("/analytics/session", async (req, res): Promise<void> => {
 });
 
 // ── GET /analytics/emotional ────────────────────────────────────────────────
-router.get("/analytics/emotional", async (req, res): Promise<void> => {
+router.get("/analytics/emotional", requireUser, async (req, res): Promise<void> => {
   try {
     const debriefs = await db.select().from(postTradeDebriefsTable)
+      .where(eq(postTradeDebriefsTable.userId, req.authUser!.id))
       .orderBy(desc(postTradeDebriefsTable.id)).limit(200);
     const trend = debriefs.slice().reverse().map((d, idx) => ({
       idx, emotion: d.traderEmotionAfter ?? "UNREPORTED",
@@ -279,9 +292,11 @@ router.get("/analytics/emotional", async (req, res): Promise<void> => {
 });
 
 // ── GET /analytics/drawdown ─────────────────────────────────────────────────
-router.get("/analytics/drawdown", async (req, res): Promise<void> => {
+router.get("/analytics/drawdown", requireUser, async (req, res): Promise<void> => {
   try {
-    const orders = await db.select().from(paperOrdersTable).orderBy(paperOrdersTable.openedAt).limit(1000);
+    const orders = await db.select().from(paperOrdersTable)
+      .where(eq(paperOrdersTable.userId, req.authUser!.id))
+      .orderBy(paperOrdersTable.openedAt).limit(1000);
     const closed = orders.filter((o) => isClosed(o));
     let peak = 0, cum = 0;
     const curve = closed.map((o) => {
@@ -298,12 +313,14 @@ router.get("/analytics/drawdown", async (req, res): Promise<void> => {
 });
 
 // ── Heatmap snapshot persistence (called on first GET if none today) ────────
-router.post("/analytics/heatmaps", async (_req, res): Promise<void> => {
+router.post("/analytics/heatmaps", requireUser, async (req, res): Promise<void> => {
   try {
-    const built = await buildAllHeatmaps();
+    const userId = req.authUser!.id;
+    const built = await buildAllHeatmaps(userId);
     const inserted: typeof analyticsHeatmapsTable.$inferSelect[] = [];
     for (const h of built) {
       const r = await db.insert(analyticsHeatmapsTable).values({
+        userId,
         heatmapType: h.heatmapType, dataset: h.dataset as object,
       }).returning();
       inserted.push(r[0]!);
@@ -317,6 +334,6 @@ router.post("/analytics/heatmaps", async (_req, res): Promise<void> => {
 });
 
 // (avoid unused-import warnings) — these tables are referenced by snapshot/heatmap composers above.
-void [tradeJournalEntriesTable, weeklyPerformanceReviewsTable, eq];
+void [tradeJournalEntriesTable, weeklyPerformanceReviewsTable];
 
 export default router;

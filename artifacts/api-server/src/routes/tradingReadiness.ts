@@ -6,6 +6,9 @@
 // safety layer. This router only summarizes signals + the trader's self-
 // reported state into a single readiness signal for the UI and AI Coach.
 //
+// OWNERSHIP: checks are stamped with and read by req.authUser, and the rule
+// contract / weekly review signals come from that user's rows only.
+//
 // No guaranteed-profit claims. Disclaimer surfaced on every response.
 
 import { Router } from "express";
@@ -17,6 +20,7 @@ import {
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod/v4";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
 
@@ -55,7 +59,7 @@ interface ChecklistItem {
   detail: string;
 }
 
-async function gatherSignals() {
+async function gatherSignals(userId: number) {
   const safety = (await db.select().from(safetyCoreTable).orderBy(asc(safetyCoreTable.id)).limit(1))[0] ?? null;
   const activeLocks = await db.select().from(riskLocksTable).where(eq(riskLocksTable.isActive, true)).limit(10);
   const brokerLog = (await db.select().from(brokerHealthLogsTable)
@@ -66,10 +70,11 @@ async function gatherSignals() {
     .where(and(gte(economicEventsTable.eventTime, now), lte(economicEventsTable.eventTime, in2h)))
     .orderBy(asc(economicEventsTable.eventTime)).limit(20);
   const activeContract = (await db.select().from(tradingRuleContractsTable)
-    .where(eq(tradingRuleContractsTable.isActive, 1)).limit(1))[0] ?? null;
+    .where(and(eq(tradingRuleContractsTable.userId, userId), eq(tradingRuleContractsTable.isActive, 1)))
+    .orderBy(desc(tradingRuleContractsTable.createdAt)).limit(1))[0] ?? null;
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
   const recentReview = (await db.select().from(weeklyPerformanceReviewsTable)
-    .where(gte(weeklyPerformanceReviewsTable.weekStart, fourteenDaysAgo))
+    .where(and(eq(weeklyPerformanceReviewsTable.userId, userId), gte(weeklyPerformanceReviewsTable.weekStart, fourteenDaysAgo)))
     .orderBy(desc(weeklyPerformanceReviewsTable.weekStart)).limit(1))[0] ?? null;
   return { safety, activeLocks, brokerLog, upcomingNews, activeContract, recentReview };
 }
@@ -241,10 +246,11 @@ function buildSummary(
 // ── Routes ─────────────────────────────────────────────────────────────────
 
 // POST /readiness/checks — submit a self-report; immediately evaluate + persist.
-router.post("/readiness/checks", async (req, res): Promise<void> => {
+router.post("/readiness/checks", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const b = SelfReport.parse(req.body ?? {});
-    const signals = await gatherSignals();
+    const signals = await gatherSignals(userId);
     const evald = evaluateReadiness(signals, {
       mentalState: b.mentalState ?? null,
       sleepQuality: b.sleepQuality ?? null,
@@ -254,6 +260,7 @@ router.post("/readiness/checks", async (req, res): Promise<void> => {
       riskRulesConfirmed: b.riskRulesConfirmed,
     });
     const ins = await db.insert(tradingReadinessChecksTable).values({
+      userId,
       sessionName: b.sessionName,
       readinessScore: evald.score,
       mentalState: b.mentalState ?? null,
@@ -289,28 +296,30 @@ router.post("/readiness/checks", async (req, res): Promise<void> => {
 });
 
 // GET /readiness/checks/latest
-router.get("/readiness/checks/latest", async (_req, res): Promise<void> => {
+router.get("/readiness/checks/latest", requireUser, async (req, res): Promise<void> => {
   const r = (await db.select().from(tradingReadinessChecksTable)
+    .where(eq(tradingReadinessChecksTable.userId, req.authUser!.id))
     .orderBy(desc(tradingReadinessChecksTable.createdAt)).limit(1))[0];
   if (!r) { fail(res, 404, "No readiness check yet"); return; }
   ok(res, { check: r });
 });
 
 // GET /readiness/checks — history
-router.get("/readiness/checks", async (req, res): Promise<void> => {
+router.get("/readiness/checks", requireUser, async (req, res): Promise<void> => {
   // Architect fix: NaN-guard + clamp on limit to prevent invalid query 500s.
   const raw = Number(req.query["limit"]);
   const limit = Number.isFinite(raw) ? Math.max(1, Math.min(raw, 200)) : 50;
   const rows = await db.select().from(tradingReadinessChecksTable)
+    .where(eq(tradingReadinessChecksTable.userId, req.authUser!.id))
     .orderBy(desc(tradingReadinessChecksTable.createdAt)).limit(limit);
   ok(res, { checks: rows });
 });
 
 // POST /readiness/evaluate — preview evaluation without persisting (dry-run)
-router.post("/readiness/evaluate", async (req, res): Promise<void> => {
+router.post("/readiness/evaluate", requireUser, async (req, res): Promise<void> => {
   try {
     const b = SelfReport.parse(req.body ?? {});
-    const signals = await gatherSignals();
+    const signals = await gatherSignals(req.authUser!.id);
     const evald = evaluateReadiness(signals, {
       mentalState: b.mentalState ?? null,
       sleepQuality: b.sleepQuality ?? null,

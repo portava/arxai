@@ -17,6 +17,11 @@
 //   - Writes only own table + vault audit. Reads everywhere else.
 //   - Defaults to PAPER_TRADING mode unless safetyCore says otherwise.
 //
+// OWNERSHIP:
+//   - Account, open-trade, history, skill, mentor, readiness and edge context
+//     come only from the evaluating user's rows. Decision logs are stamped
+//     with and read by that user.
+//
 // HONESTY:
 //   - No "expected return," no "guaranteed profit." Every response carries
 //     a disclaimer that this is decision support, not a profit promise.
@@ -286,8 +291,11 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
 
   // 5) Account + open-position context (paper account is always available).
   const [paperAccts, openTrades] = await Promise.all([
-    db.select().from(paperAccountsTable).where(eq(paperAccountsTable.isActive, 1)).limit(1),
-    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.status, "OPEN")),
+    db.select().from(paperAccountsTable)
+      .where(and(eq(paperAccountsTable.userId, userId), eq(paperAccountsTable.isActive, 1)))
+      .orderBy(desc(paperAccountsTable.createdAt)).limit(1),
+    db.select().from(paperOrdersTable)
+      .where(and(eq(paperOrdersTable.userId, userId), eq(paperOrdersTable.status, "OPEN"))),
   ]);
   const paperAcct = paperAccts[0] ?? null;
   const openCount = openTrades.length;
@@ -299,7 +307,8 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   }
 
   // 6) Recent trade history — overtrading + revenge guard.
-  const recent = await db.select().from(paperOrdersTable).orderBy(desc(paperOrdersTable.id)).limit(20);
+  const recent = await db.select().from(paperOrdersTable)
+    .where(eq(paperOrdersTable.userId, userId)).orderBy(desc(paperOrdersTable.id)).limit(20);
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   const todays = recent.filter((o) => o.openedAt && o.openedAt >= today);
   const losingStreak = (() => {
@@ -330,11 +339,16 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
 
   // 7) AI confidence score from latest analytics snapshot + skill profile.
   const [snapRows, skillRows, mentorRows, readinessRows, edgeRows] = await Promise.all([
-    db.select().from(analyticsSnapshotsTable).orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1),
-    db.select().from(traderSkillProfilesTable).orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
-    db.select().from(aiMentorSessionsTable).orderBy(desc(aiMentorSessionsTable.createdAt)).limit(1),
-    db.select().from(tradingReadinessChecksTable).orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
-    db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.symbol, symbol)).limit(5),
+    db.select().from(analyticsSnapshotsTable).where(eq(analyticsSnapshotsTable.userId, userId))
+      .orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1),
+    db.select().from(traderSkillProfilesTable).where(eq(traderSkillProfilesTable.userId, userId))
+      .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
+    db.select().from(aiMentorSessionsTable).where(eq(aiMentorSessionsTable.userId, userId))
+      .orderBy(desc(aiMentorSessionsTable.createdAt)).limit(1),
+    db.select().from(tradingReadinessChecksTable).where(eq(tradingReadinessChecksTable.userId, userId))
+      .orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
+    db.select().from(edgeDiscoveryReportsTable)
+      .where(and(eq(edgeDiscoveryReportsTable.userId, userId), eq(edgeDiscoveryReportsTable.symbol, symbol))).limit(5),
   ]);
   const snap = snapRows[0] ?? null;
   const skill = skillRows[0] ?? null;
@@ -543,8 +557,9 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   return decision;
 }
 
-export async function persistDecision(d: TradeDecision): Promise<number> {
+export async function persistDecision(d: TradeDecision, userId: number | null): Promise<number> {
   const ins = await db.insert(tradeDecisionLogsTable).values({
+    userId,
     symbol: d.symbol, action: d.action, shouldTrade: d.shouldTrade,
     confidence: d.confidence, riskScore: d.riskScore,
     entryReason: d.entryReason, invalidationReason: d.invalidationReason,
@@ -568,7 +583,7 @@ router.post("/trade-decision/evaluate", requireUser, async (req, res): Promise<v
     const parsed = EvaluateBody.safeParse(req.body ?? {});
     if (!parsed.success) { fail(res, 400, "Invalid input: " + parsed.error.message); return; }
     const decision = await orchestrate(parsed.data, req.authUser!.id);
-    const id = await persistDecision(decision);
+    const id = await persistDecision(decision, req.authUser!.id);
     ok(res, { decisionId: id, decision });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /trade-decision/evaluate failed");
@@ -582,7 +597,7 @@ router.post("/trade-decision/demo", requireUser, async (req, res): Promise<void>
   try {
     const symbol = typeof req.body?.symbol === "string" ? req.body.symbol : "Volatility 75 Index";
     const decision = await orchestrate({ symbol, proposedAction: "AUTO", injectMarketIssue: "NONE" }, req.authUser!.id);
-    const id = await persistDecision(decision);
+    const id = await persistDecision(decision, req.authUser!.id);
     ok(res, { decisionId: id, decision, demo: true });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /trade-decision/demo failed");
@@ -591,10 +606,11 @@ router.post("/trade-decision/demo", requireUser, async (req, res): Promise<void>
 });
 
 // ── GET /trade-decision/logs ───────────────────────────────────────────────
-router.get("/trade-decision/logs", async (req, res): Promise<void> => {
+router.get("/trade-decision/logs", requireUser, async (req, res): Promise<void> => {
   try {
     const limit = Math.min(200, Math.max(1, Number(req.query["limit"] ?? 50)));
     const rows = await db.select().from(tradeDecisionLogsTable)
+      .where(eq(tradeDecisionLogsTable.userId, req.authUser!.id))
       .orderBy(desc(tradeDecisionLogsTable.id)).limit(limit);
     ok(res, { logs: rows, count: rows.length });
   } catch (err) {
@@ -604,15 +620,13 @@ router.get("/trade-decision/logs", async (req, res): Promise<void> => {
 });
 
 // ── GET /trade-decision/latest?symbol= ─────────────────────────────────────
-router.get("/trade-decision/latest", async (req, res): Promise<void> => {
+router.get("/trade-decision/latest", requireUser, async (req, res): Promise<void> => {
   try {
     const symbol = typeof req.query["symbol"] === "string" ? req.query["symbol"] : null;
-    const q = symbol
-      ? db.select().from(tradeDecisionLogsTable)
-          .where(and(eq(tradeDecisionLogsTable.symbol, symbol)))
-          .orderBy(desc(tradeDecisionLogsTable.id)).limit(1)
-      : db.select().from(tradeDecisionLogsTable)
-          .orderBy(desc(tradeDecisionLogsTable.id)).limit(1);
+    const mine = eq(tradeDecisionLogsTable.userId, req.authUser!.id);
+    const q = db.select().from(tradeDecisionLogsTable)
+      .where(symbol ? and(mine, eq(tradeDecisionLogsTable.symbol, symbol)) : mine)
+      .orderBy(desc(tradeDecisionLogsTable.id)).limit(1);
     const row = (await q)[0] ?? null;
     ok(res, { latest: row });
   } catch (err) {

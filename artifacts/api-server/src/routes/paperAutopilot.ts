@@ -208,7 +208,7 @@ router.post("/paper-autopilot/sniper-check", requireUser, async (req, res): Prom
     assertSafe(settings);
     const decision = await orchestrate({ symbol: parse.data.symbol, proposedAction: "AUTO", injectMarketIssue: "NONE" }, req.authUser!.id);
     let decisionId: number | null = null;
-    if (parse.data.persistDecision) decisionId = await persistDecision(decision);
+    if (parse.data.persistDecision) decisionId = await persistDecision(decision, req.authUser!.id);
 
     const sniper = runSniperFilter({
       decision,

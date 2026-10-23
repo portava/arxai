@@ -209,6 +209,13 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // sessions, seeds owner A/B plus legacy ownerless rows, and proves list/status/
   // create isolation together with account/provider-error redaction.
   { pkg: "@workspace/api-server", script: "test:broker-readonly-route" },
+  // Paper sandbox + behaviour-coaching ownership boundary. Boots the real paper,
+  // debrief, auto-debrief, prop, mentor, skill, analytics, edge, rule-contract,
+  // weekly-review, trade-decision and readiness routers with two genuine
+  // sessions plus legacy ownerless rows, and proves no cross-user read, edit,
+  // close or aggregation, per-user "single active" invariants, and that new
+  // rows are stamped with the caller's id.
+  { pkg: "@workspace/api-server", script: "test:behavior-ownership-route" },
   // Task #660 — Profit Mission Phase 1 route per-user isolation + no-secret-leak
   // proof. Boots the REAL profitMissions router on loopback, seeds two real users
   // with genuine sessions, and proves anonymous 401s, a feed-gated estimate-

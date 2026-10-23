@@ -376,14 +376,12 @@ router.post("/prop-challenges", async (req, res): Promise<void> => {
   try {
     const userId = req.authUser!.id;
     const b = CreateChallengeBody.parse(req.body ?? {});
+    // Only the caller's own paper account can back a challenge. Another user's
+    // account and legacy ownerless accounts both answer 404, matching the
+    // owner-scoped paper sandbox.
     const acct = (await db.select().from(paperAccountsTable)
-      .where(eq(paperAccountsTable.id, b.paperAccountId)).limit(1))[0];
+      .where(and(eq(paperAccountsTable.id, b.paperAccountId), eq(paperAccountsTable.userId, userId))).limit(1))[0];
     if (!acct) { fail(res, 404, "Paper account not found"); return; }
-    // Phase 18A: block IDOR — if the account is owned by another user, reject.
-    // Legacy/orphan accounts (userId = null) are allowed for backward compat;
-    // evaluateChallenge applies a defense-in-depth ch.userId filter on orders
-    // so cross-user data can never aggregate even on shared orphan accounts.
-    if (acct.userId != null && acct.userId !== userId) { fail(res, 404, "Paper account not found"); return; }
     const ins = await db.insert(propChallengesTable).values({
       userId,
       paperAccountId: b.paperAccountId,

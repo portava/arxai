@@ -9,6 +9,9 @@
 //
 // Idempotency: POST /weekly-reviews/generate upserts on (user_id, week_start)
 // — re-running for the same week refreshes metrics + goals; never duplicates.
+//
+// OWNERSHIP: reviews and goals are built from, stamped with, and read by
+// req.authUser only.
 
 import { Router } from "express";
 import {
@@ -19,8 +22,9 @@ import {
   weeklyImprovementGoalsTable,
   vaultEventsTable,
 } from "@workspace/db";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod/v4";
+import { requireUser } from "../lib/auth/middleware.js";
 import {
   calculateWeeklyMetrics, summarizeWeek, proposeWeeklyGoals,
   type ClosedTrade, type JournalEntryLite,
@@ -95,10 +99,11 @@ async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
 // ── routes ─────────────────────────────────────────────────────────────────
 
 // GET /weekly-reviews — list latest 12 weeks
-router.get("/weekly-reviews", async (req, res) => {
+router.get("/weekly-reviews", requireUser, async (req, res) => {
   try {
     const limit = Math.min(52, Math.max(1, Number(req.query.limit) || 12));
     const rows = await db.select().from(weeklyPerformanceReviewsTable)
+      .where(eq(weeklyPerformanceReviewsTable.userId, req.authUser!.id))
       .orderBy(desc(weeklyPerformanceReviewsTable.weekStart))
       .limit(limit);
     res.json({ reviews: rows.map(serializeReview) });
@@ -109,14 +114,16 @@ router.get("/weekly-reviews", async (req, res) => {
 });
 
 // GET /weekly-reviews/latest — latest single review (for dashboard card)
-router.get("/weekly-reviews/latest", async (req, res): Promise<void> => {
+router.get("/weekly-reviews/latest", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const rows = await db.select().from(weeklyPerformanceReviewsTable)
+      .where(eq(weeklyPerformanceReviewsTable.userId, userId))
       .orderBy(desc(weeklyPerformanceReviewsTable.weekStart)).limit(1);
     const row = rows[0];
     if (!row) { res.json({ review: null, goals: [] }); return; }
     const goals = await db.select().from(weeklyImprovementGoalsTable)
-      .where(eq(weeklyImprovementGoalsTable.weeklyReviewId, row.id))
+      .where(and(eq(weeklyImprovementGoalsTable.weeklyReviewId, row.id), eq(weeklyImprovementGoalsTable.userId, userId)))
       .orderBy(weeklyImprovementGoalsTable.id);
     res.json({ review: serializeReview(row), goals: goals.map(serializeGoal) });
   } catch (err) {
@@ -131,8 +138,9 @@ const GenerateBody = z.object({
   weekStart: z.string().datetime().optional(),
 }).optional();
 
-router.post("/weekly-reviews/generate", async (req, res): Promise<void> => {
+router.post("/weekly-reviews/generate", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const body = GenerateBody.parse(req.body ?? {});
     const start = body?.weekStart ? weekStartUTC(new Date(body.weekStart)) : weekStartUTC(new Date());
     const end = weekEndUTC(start);
@@ -141,12 +149,14 @@ router.post("/weekly-reviews/generate", async (req, res): Promise<void> => {
     const [tradeRows, journalRows] = await Promise.all([
       db.select().from(tradesTable).where(
         and(
+          eq(tradesTable.userId, userId),
           gte(tradesTable.createdAt, start),
           lte(tradesTable.createdAt, end),
         ),
       ),
       db.select().from(tradeJournalEntriesTable).where(
         and(
+          eq(tradeJournalEntriesTable.userId, userId),
           gte(tradeJournalEntriesTable.createdAt, start),
           lte(tradeJournalEntriesTable.createdAt, end),
         ),
@@ -176,6 +186,7 @@ router.post("/weekly-reviews/generate", async (req, res): Promise<void> => {
     const proposed = proposeWeeklyGoals(metrics);
 
     const reviewValues = {
+      userId,
       weekStart: start, weekEnd: end,
       totalTrades: metrics.totalTrades,
       winningTrades: metrics.winningTrades,
@@ -200,16 +211,14 @@ router.post("/weekly-reviews/generate", async (req, res): Promise<void> => {
 
     // Atomic upsert + goal refresh in one transaction — fixes a race where
     // two concurrent generate calls could otherwise both insert. We rely on
-    // the partial unique index `weekly_perf_reviews_week_singletenant_uq`
-    // (week_start WHERE user_id IS NULL) so PostgreSQL itself enforces the
-    // single-tenant invariant; the same `target + targetWhere` is passed to
-    // ON CONFLICT below.
+    // the composite unique index `weekly_perf_reviews_user_week_uq`
+    // (user_id, week_start) so PostgreSQL itself enforces one review per
+    // user per week.
     const { reviewRow, goalRows } = await db.transaction(async (tx) => {
       const inserted = await tx.insert(weeklyPerformanceReviewsTable)
         .values(reviewValues)
         .onConflictDoUpdate({
-          target: weeklyPerformanceReviewsTable.weekStart,
-          targetWhere: sql`user_id IS NULL`,
+          target: [weeklyPerformanceReviewsTable.userId, weeklyPerformanceReviewsTable.weekStart],
           set: reviewValues,
         })
         .returning();
@@ -224,6 +233,7 @@ router.post("/weekly-reviews/generate", async (req, res): Promise<void> => {
 
       const newGoals = proposed.length === 0 ? [] : await tx.insert(weeklyImprovementGoalsTable).values(
         proposed.map((g) => ({
+          userId,
           weeklyReviewId: review.id,
           goalTitle: g.goalTitle,
           goalDescription: g.goalDescription,
@@ -260,10 +270,11 @@ router.post("/weekly-reviews/generate", async (req, res): Promise<void> => {
 });
 
 // GET /weekly-goals — by review id
-router.get("/weekly-goals", async (req, res) => {
+router.get("/weekly-goals", requireUser, async (req, res) => {
   try {
     const reviewId = req.query.reviewId ? Number(req.query.reviewId) : null;
-    const where = reviewId ? eq(weeklyImprovementGoalsTable.weeklyReviewId, reviewId) : undefined;
+    const mine = eq(weeklyImprovementGoalsTable.userId, req.authUser!.id);
+    const where = reviewId ? and(mine, eq(weeklyImprovementGoalsTable.weeklyReviewId, reviewId)) : mine;
     const rows = await db.select().from(weeklyImprovementGoalsTable)
       .where(where)
       .orderBy(desc(weeklyImprovementGoalsTable.id))
@@ -279,14 +290,14 @@ router.get("/weekly-goals", async (req, res) => {
 const PatchGoal = z.object({
   status: z.enum(["ACTIVE", "COMPLETED", "MISSED", "DROPPED"]),
 });
-router.patch("/weekly-goals/:id", async (req, res): Promise<void> => {
+router.patch("/weekly-goals/:id", requireUser, async (req, res): Promise<void> => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
     const body = PatchGoal.parse(req.body ?? {});
     const updated = await db.update(weeklyImprovementGoalsTable)
       .set({ status: body.status, updatedAt: new Date() })
-      .where(eq(weeklyImprovementGoalsTable.id, id))
+      .where(and(eq(weeklyImprovementGoalsTable.id, id), eq(weeklyImprovementGoalsTable.userId, req.authUser!.id)))
       .returning();
     if (!updated[0]) { res.status(404).json({ error: "Not found" }); return; }
     await vaultBehavior("WEEKLY_GOAL_STATUS_CHANGED", {
@@ -301,10 +312,11 @@ router.patch("/weekly-goals/:id", async (req, res): Promise<void> => {
 });
 
 // GET /weekly-reviews/score-trends — last N weeks of score trends, for chart
-router.get("/weekly-reviews/score-trends", async (req, res) => {
+router.get("/weekly-reviews/score-trends", requireUser, async (req, res) => {
   try {
     const limit = Math.min(26, Math.max(1, Number(req.query.weeks) || 8));
     const rows = await db.select().from(weeklyPerformanceReviewsTable)
+      .where(eq(weeklyPerformanceReviewsTable.userId, req.authUser!.id))
       .orderBy(desc(weeklyPerformanceReviewsTable.weekStart))
       .limit(limit);
     res.json({

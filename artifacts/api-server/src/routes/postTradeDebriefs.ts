@@ -4,13 +4,17 @@
 // never references trades/livePositions/mt5_*/safetyCore/canPlaceTrades.
 // AI feedback is deterministic + heuristic from stored fields — no external
 // LLM call. No guaranteed-profit claims; coaching tone, not punitive.
+//
+// OWNERSHIP: a user can only debrief, read or edit debriefs on their own
+// paper orders. Another user's trade or debrief answers 404.
 
 import { Router } from "express";
 import {
   db, postTradeDebriefsTable, paperOrdersTable, vaultEventsTable,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
 const DEBRIEF_DISCLAIMER =
@@ -128,12 +132,19 @@ function generateAiFeedback(
   return { feedback: lines.join(" "), drill };
 }
 
+async function ownDebrief(id: number, userId: number) {
+  return (await db.select().from(postTradeDebriefsTable)
+    .where(and(eq(postTradeDebriefsTable.id, id), eq(postTradeDebriefsTable.userId, userId)))
+    .limit(1))[0] ?? null;
+}
+
 // ── POST /post-trade-debriefs ──────────────────────────────────────────────
-router.post("/post-trade-debriefs", async (req, res): Promise<void> => {
+router.post("/post-trade-debriefs", requireUser, async (req, res): Promise<void> => {
   try {
     const b = CreateBody.parse(req.body ?? {});
+    const userId = req.authUser!.id;
     const trade = (await db.select().from(paperOrdersTable)
-      .where(eq(paperOrdersTable.id, b.tradeId)).limit(1))[0];
+      .where(and(eq(paperOrdersTable.id, b.tradeId), eq(paperOrdersTable.userId, userId))).limit(1))[0];
     if (!trade) { fail(res, 404, "Trade not found"); return; }
     if (trade.status === "OPEN") { fail(res, 409, "Trade is still open — debrief after close"); return; }
     const existing = (await db.select().from(postTradeDebriefsTable)
@@ -149,6 +160,7 @@ router.post("/post-trade-debriefs", async (req, res): Promise<void> => {
     );
 
     const ins = await db.insert(postTradeDebriefsTable).values({
+      userId,
       tradeId: b.tradeId,
       result,
       checklist: b.checklist,
@@ -174,32 +186,33 @@ router.post("/post-trade-debriefs", async (req, res): Promise<void> => {
 });
 
 // ── GET /post-trade-debriefs ───────────────────────────────────────────────
-router.get("/post-trade-debriefs", async (req, res): Promise<void> => {
+router.get("/post-trade-debriefs", requireUser, async (req, res): Promise<void> => {
   const raw = Number(req.query["limit"]);
   const limit = Number.isFinite(raw) ? Math.max(1, Math.min(raw, 200)) : 50;
   const rows = await db.select().from(postTradeDebriefsTable)
+    .where(eq(postTradeDebriefsTable.userId, req.authUser!.id))
     .orderBy(desc(postTradeDebriefsTable.createdAt)).limit(limit);
   ok(res, { debriefs: rows, questions: DEBRIEF_QUESTIONS });
 });
 
 // ── GET /post-trade-debriefs/by-trade/:tradeId ─────────────────────────────
-router.get("/post-trade-debriefs/by-trade/:tradeId", async (req, res): Promise<void> => {
+router.get("/post-trade-debriefs/by-trade/:tradeId", requireUser, async (req, res): Promise<void> => {
   const tid = Number(req.params["tradeId"]);
   if (!Number.isFinite(tid)) { fail(res, 400, "Invalid tradeId"); return; }
   const r = (await db.select().from(postTradeDebriefsTable)
-    .where(eq(postTradeDebriefsTable.tradeId, tid)).limit(1))[0];
+    .where(and(eq(postTradeDebriefsTable.tradeId, tid), eq(postTradeDebriefsTable.userId, req.authUser!.id))).limit(1))[0];
   if (!r) { fail(res, 404, "No debrief for this trade"); return; }
   ok(res, { debrief: r });
 });
 
 // ── PATCH /post-trade-debriefs/:id ─────────────────────────────────────────
-router.patch("/post-trade-debriefs/:id", async (req, res): Promise<void> => {
+router.patch("/post-trade-debriefs/:id", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
     const b = UpdateBody.parse(req.body ?? {});
-    const cur = (await db.select().from(postTradeDebriefsTable)
-      .where(eq(postTradeDebriefsTable.id, id)).limit(1))[0];
+    const cur = await ownDebrief(id, userId);
     if (!cur) { fail(res, 404, "Not found"); return; }
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (b.checklist !== undefined) {
@@ -210,10 +223,9 @@ router.patch("/post-trade-debriefs/:id", async (req, res): Promise<void> => {
     if (b.biggestMistake !== undefined)     patch["biggestMistake"]     = b.biggestMistake;
     if (b.biggestStrength !== undefined)    patch["biggestStrength"]    = b.biggestStrength;
     if (b.lessonLearned !== undefined)      patch["lessonLearned"]      = b.lessonLearned;
-    await db.update(postTradeDebriefsTable).set(patch).where(eq(postTradeDebriefsTable.id, id));
-    const r = (await db.select().from(postTradeDebriefsTable)
-      .where(eq(postTradeDebriefsTable.id, id)).limit(1))[0];
-    ok(res, { debrief: r });
+    await db.update(postTradeDebriefsTable).set(patch)
+      .where(and(eq(postTradeDebriefsTable.id, id), eq(postTradeDebriefsTable.userId, userId)));
+    ok(res, { debrief: await ownDebrief(id, userId) });
   } catch (err) {
     if (err instanceof z.ZodError) { fail(res, 400, "Invalid", { issues: err.issues }); return; }
     req.log.error({ err: String(err) }, "PATCH /post-trade-debriefs/:id failed");
@@ -223,15 +235,15 @@ router.patch("/post-trade-debriefs/:id", async (req, res): Promise<void> => {
 
 // ── POST /post-trade-debriefs/:id/regenerate ───────────────────────────────
 // Regenerate AI feedback + drill from current debrief state (after a PATCH).
-router.post("/post-trade-debriefs/:id/regenerate", async (req, res): Promise<void> => {
+router.post("/post-trade-debriefs/:id/regenerate", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
-    const cur = (await db.select().from(postTradeDebriefsTable)
-      .where(eq(postTradeDebriefsTable.id, id)).limit(1))[0];
+    const cur = await ownDebrief(id, userId);
     if (!cur) { fail(res, 404, "Not found"); return; }
     const trade = (await db.select().from(paperOrdersTable)
-      .where(eq(paperOrdersTable.id, cur.tradeId)).limit(1))[0];
+      .where(and(eq(paperOrdersTable.id, cur.tradeId), eq(paperOrdersTable.userId, userId))).limit(1))[0];
     if (!trade) { fail(res, 404, "Underlying trade not found"); return; }
     const ai = generateAiFeedback(
       { symbol: trade.symbol, direction: trade.direction, profitLoss: trade.profitLoss,
@@ -243,10 +255,8 @@ router.post("/post-trade-debriefs/:id/regenerate", async (req, res): Promise<voi
     );
     await db.update(postTradeDebriefsTable)
       .set({ aiFeedback: ai.feedback, recommendedDrill: ai.drill, updatedAt: new Date() })
-      .where(eq(postTradeDebriefsTable.id, id));
-    const r = (await db.select().from(postTradeDebriefsTable)
-      .where(eq(postTradeDebriefsTable.id, id)).limit(1))[0];
-    ok(res, { debrief: r });
+      .where(and(eq(postTradeDebriefsTable.id, id), eq(postTradeDebriefsTable.userId, userId)));
+    ok(res, { debrief: await ownDebrief(id, userId) });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /post-trade-debriefs/:id/regenerate failed");
     fail(res, 500, "Failed to regenerate feedback");
