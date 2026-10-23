@@ -40,6 +40,10 @@ before(() => {
     blockedAttempts += 1;
     return Promise.reject(new Error("network blocked by scannerNoFeedHonesty test"));
   }) as typeof fetch;
+  // This file runs in its own node:test child. Enable a real provider branch
+  // with a DUMMY key only AFTER installing the network guard, so the guard
+  // assertion is meaningful even in an otherwise credential-free CI process.
+  process.env.TWELVEDATA_API_KEY = "offline-scanner-test-placeholder";
 });
 
 after(() => {

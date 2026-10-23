@@ -1,3 +1,4 @@
 - [Imported baseline provenance](imported-baseline-provenance.md) — keep Replit checkpoint history separate from upstream source history; never push the prefixed workspace as upstream main.
 - [Package firewall baseline](package-firewall-baseline.md) — blocked historical packages required narrow parent upgrades; do not claim byte-identical dependencies or bypass the firewall.
 - [Nested import routing](nested-import-routing.md) — a nested artifact can have a healthy managed workflow yet remain unreachable through the shared preview router.
+- [Financial test isolation](financial-test-isolation.md) — use dedicated financial fixtures, not canonical pools or assumed user IDs; preserve risk and no-live-command assertions.

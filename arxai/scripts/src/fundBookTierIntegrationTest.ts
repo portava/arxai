@@ -31,7 +31,8 @@
 //     pool's tier state and never mutates the BALANCED pool's tier state.
 //
 // SAFETY / ISOLATION:
-//   - Operates on the shared BALANCED (+ a second) seed pool. The pool NAV
+//   - Operates on two dedicated, zero-capital QA pools, never shared seed pools.
+//     Both pools and their NAV/tier rows are removed in finally. The pool NAV
 //     snapshot(s) AND the pool-scoped tier_state / price-ladder rows are captured
 //     and restored EXACTLY as found.
 //   - Deterministic isolation: the tier_state rows are RESET to clean at the
@@ -49,6 +50,7 @@
 // Run: pnpm --filter @workspace/scripts run test:fundbook-tier
 
 import { eq, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import {
   pool,
   db,
@@ -63,9 +65,9 @@ import {
   getPoolTierState,
 } from "../../artifacts/api-server/src/lib/fundbook/tierEngine.js";
 
-const BALANCED_KEY = "BALANCED";
+const BALANCED_KEY = `QA_TIER_BALANCED_${randomUUID()}`;
 // A second, distinct pool used only to prove per-pool isolation.
-const OTHER_KEY = "CONSERVATIVE";
+const OTHER_KEY = `QA_TIER_CONSERVATIVE_${randomUUID()}`;
 
 let passes = 0;
 let failures = 0;
@@ -167,7 +169,7 @@ async function loadSharePriceTiers(poolId: number): Promise<SharePriceTierRow[]>
     .where(eq(fundBookSharePriceTiersTable.strategyPoolId, poolId));
 }
 
-async function main(): Promise<void> {
+async function checkTiers(balancedId: number, otherId: number): Promise<void> {
   // eslint-disable-next-line no-console
   console.log("fundBookTierIntegrationTest");
   // eslint-disable-next-line no-console
@@ -175,24 +177,8 @@ async function main(): Promise<void> {
 
   const startLive = await liveCommandsCount();
 
-  // Resolve the pools and capture restore baselines BEFORE any mutation.
-  const balancedRow = (
-    await db.select().from(strategyPoolsTable).where(eq(strategyPoolsTable.poolKey, BALANCED_KEY)).limit(1)
-  )[0];
-  const otherRow = (
-    await db.select().from(strategyPoolsTable).where(eq(strategyPoolsTable.poolKey, OTHER_KEY)).limit(1)
-  )[0];
-  assert(balancedRow != null, "BALANCED seed pool exists");
-  assert(otherRow != null, `${OTHER_KEY} seed pool exists (per-pool isolation)`);
-  if (!balancedRow || !otherRow) {
-    // eslint-disable-next-line no-console
-    console.error("required seed pools missing — aborting");
-    await pool.end().catch(() => {});
-    process.exit(1);
-    return;
-  }
-  const balancedId = balancedRow.id;
-  const otherId = otherRow.id;
+  assert(Number.isInteger(balancedId), "dedicated BALANCED fixture exists");
+  assert(Number.isInteger(otherId) && otherId !== balancedId, "distinct CONSERVATIVE fixture exists (per-pool isolation)");
 
   const navBaseline = await loadNav(balancedId);
   // Tier_event ledger baseline: only rows appended beyond these ids are deleted.
@@ -390,13 +376,35 @@ async function main(): Promise<void> {
 
   // eslint-disable-next-line no-console
   console.log(`\nResult: ${passes} passed, ${failures} failed`);
-  await pool.end().catch(() => {});
-  process.exit(failures === 0 ? 0 : 1);
+}
+
+async function main(): Promise<void> {
+  // Provision only test-owned rows. No assumption about global Fundbook seeding,
+  // and no mutation of real pools' NAV, starting capital, or append-only events.
+  const ids = await db.transaction(async (tx) => {
+    const rows = await tx.insert(strategyPoolsTable).values([
+      { poolKey: BALANCED_KEY, name: "QA Tier Balanced", riskLevel: "MEDIUM", startingCapital: 0, status: "PAUSED" },
+      { poolKey: OTHER_KEY, name: "QA Tier Conservative", riskLevel: "LOW", startingCapital: 0, status: "PAUSED" },
+    ]).returning({ id: strategyPoolsTable.id });
+    await tx.insert(strategyPoolNavTable).values(rows.map((r) => ({ strategyPoolId: r.id })));
+    return rows.map((r) => r.id);
+  });
+  try {
+    await checkTiers(ids[0]!, ids[1]!);
+  } finally {
+    await db.transaction(async (tx) => {
+      await tx.delete(fundBookPoolTierEventsTable).where(inArray(fundBookPoolTierEventsTable.strategyPoolId, ids));
+      await tx.delete(fundBookPoolTierStateTable).where(inArray(fundBookPoolTierStateTable.strategyPoolId, ids));
+      await tx.delete(fundBookSharePriceTiersTable).where(inArray(fundBookSharePriceTiersTable.strategyPoolId, ids));
+      await tx.delete(strategyPoolNavTable).where(inArray(strategyPoolNavTable.strategyPoolId, ids));
+      await tx.delete(strategyPoolsTable).where(inArray(strategyPoolsTable.id, ids));
+    });
+  }
+  process.exitCode = failures === 0 ? 0 : 1;
 }
 
 main().catch(async (e) => {
   // eslint-disable-next-line no-console
   console.error("[fundBookTierIntegrationTest] FAILED:", e);
-  await pool.end().catch(() => {});
-  process.exit(1);
-});
+  process.exitCode = 1;
+}).finally(() => pool.end());

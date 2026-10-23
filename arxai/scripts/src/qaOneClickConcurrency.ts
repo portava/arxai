@@ -12,6 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "@workspace/db";
+import { randomUUID } from "node:crypto";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 function readFile(p: string): string { return readFileSync(join(ROOT, p), "utf-8"); }
@@ -68,16 +69,23 @@ async function cleanupTestMaster(): Promise<void> {
         (SELECT id FROM shared_master_accounts
           WHERE connection_id = $1 AND broker_name = $2)`,
     [QA_MASTER_CONNECTION_ID, QA_MASTER_MARKER],
-  ).catch(() => {});
+  );
   await pool.query(
     `DELETE FROM shared_master_accounts
       WHERE connection_id = $1 AND broker_name = $2`,
     [QA_MASTER_CONNECTION_ID, QA_MASTER_MARKER],
-  ).catch(() => {});
+  );
 }
 
 async function main() {
   const beforeLiveCount = await preLiveCount();
+  const user = await pool.query<{ id: number }>(
+    `INSERT INTO users (email, name, role, is_system_user)
+     VALUES ($1, 'QA One Click Concurrency', 'USER', true) RETURNING id`,
+    [`qa-one-click-${randomUUID()}@test.local`],
+  );
+  const userId = user.rows[0]!.id;
+  try {
 
   // Dynamically pull in the api-server concurrency primitives via tsx's
   // ts-relative resolution. This avoids making `@workspace/scripts`
@@ -173,11 +181,11 @@ async function main() {
 
   const rA = await reserveExposureAtomic({
     sharedMasterAccountId: masterId, addingLot: 0.03,
-    userId: 1, commandId: `qa_cmd_A_${Date.now()}`, symbol: "EURUSD",
+    userId, commandId: `qa_cmd_A_${Date.now()}`, symbol: "EURUSD",
   });
   const rB = await reserveExposureAtomic({
     sharedMasterAccountId: masterId, addingLot: 0.03,
-    userId: 1, commandId: `qa_cmd_B_${Date.now()}`, symbol: "EURUSD",
+    userId, commandId: `qa_cmd_B_${Date.now()}`, symbol: "EURUSD",
   });
   record(16, "Atomic exposure: A (0.03) succeeds under cap 0.05",
     rA.ok === true, JSON.stringify(rA));
@@ -192,7 +200,7 @@ async function main() {
     Array.from({ length: 10 }, (_, i) =>
       reserveExposureAtomic({
         sharedMasterAccountId: masterId, addingLot: 0.01,
-        userId: 1, commandId: `qa_cmd_P${i}_${Date.now()}`, symbol: "EURUSD",
+        userId, commandId: `qa_cmd_P${i}_${Date.now()}`, symbol: "EURUSD",
       })),
   );
   const passes = parallel.filter((r) => r.ok).length;
@@ -237,12 +245,16 @@ async function main() {
 
   // Always remove the dedicated fixture (and its reservations) so the lane
   // DB is left exactly as we found it.
-  await cleanupTestMaster();
-  process.exit(pass === results.length ? 0 : 1);
+  process.exitCode = pass === results.length ? 0 : 1;
+  } finally {
+    // Reservations must be gone before deleting their user FK, even on a throw.
+    await cleanupTestMaster();
+    await pool.query("DELETE FROM users WHERE id = $1", [userId]);
+  }
 }
 
 main().catch((e) => {
   // eslint-disable-next-line no-console
   console.error("QA crashed:", e);
-  process.exit(1);
-});
+  process.exitCode = 1;
+}).finally(() => pool.end());

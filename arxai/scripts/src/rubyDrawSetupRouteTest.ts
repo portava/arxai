@@ -58,6 +58,8 @@ import {
   arxSymbolSpecsTable,
 } from "@workspace/db";
 import { updateCandlesFromMT5 } from "../../artifacts/api-server/src/lib/data/providers/mt5Provider.js";
+import { seedCoreAgents } from "../../artifacts/api-server/src/lib/agentEcosystem/seedCoreAgents.js";
+import { invalidateAgentRegistrySnapshot } from "../../artifacts/api-server/src/lib/agentEcosystem/advisoryInfluence.js";
 import {
   _setMarketProviderForTests,
   _resetMarketProviderForTests,
@@ -281,6 +283,11 @@ export async function run(): Promise<CiTestResultLike> {
 
   await cleanupByEmail();
 
+  // app.ts is not index.ts: the shared harness deliberately skips production
+  // startup. Ensure its real advisory prerequisites on a fresh development DB.
+  // This idempotent seed never promotes agents or overwrites earned authority.
+  await seedCoreAgents();
+  invalidateAgentRegistrySnapshot();
   const baseUrl = await getSharedBaseUrl();
 
   // ── Seed isolated user + session ─────────────────────────────────────────
