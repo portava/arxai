@@ -1,0 +1,2 @@
+- [Imported baseline provenance](imported-baseline-provenance.md) — keep Replit checkpoint history separate from upstream source history; never push the prefixed workspace as upstream main.
+- [Package firewall baseline](package-firewall-baseline.md) — blocked historical packages required narrow parent upgrades; do not claim byte-identical dependencies or bypass the firewall.

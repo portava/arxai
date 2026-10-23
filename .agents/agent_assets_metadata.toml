@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "JaJ5JUFhVvLG93_9ROwmP"
+uri = "file://ARX_BASELINE.md"
+type = "text"
+title = "ARX AI baseline audit"
+description = "Source provenance, installation changes, build and test results, safety restrictions, and unresolved preview forwarding."
+logical_id = "6249a9f8-5288-4b1f-9af0-5c522cc4864e"
+content_hash = "sha256:2812e42e1a07470ef86694b7a2c4568b7e0c7afc959997de937f22a5ea153829"
+size = 12108
+mtime_ms = 1792767140451
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:fabb7c9c-fa80-41cb-8714-1e5066b998e6/6249a9f8-5288-4b1f-9af0-5c522cc4864e/21eedee9-7231-49df-8026-81faeeb62386"
+storage_version_token = "1792767185277588"
+content_type = "text/markdown"
