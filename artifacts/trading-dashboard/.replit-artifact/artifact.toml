@@ -1,3 +1,4 @@
+# Read-only smoke check: bash scripts/run-arx-web.sh --preview-smoke (shared router only).
 kind = "web"
 previewPath = "/"
 title = "ARX AI"
