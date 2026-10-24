@@ -57,7 +57,7 @@ import {
 import { isApprovedArxMarket } from "@workspace/domain/market";
 import { annotateScanProposals, exposureBudgetFrom } from "./missionExecutionQuality.js";
 import { scanSymbolTimeframe, type ScannerOpportunity } from "./marketScanner.js";
-import { calculatePositionSize } from "./positionSizing.js";
+import { calculatePositionSize } from "./riskGovernor/positionSizer.js";
 
 // Default discovery universe when a mission carries no explicit symbol list.
 // Small, mixed-asset tier-1 set so each proposer has something in its focus.

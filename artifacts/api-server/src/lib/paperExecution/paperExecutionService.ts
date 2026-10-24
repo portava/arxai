@@ -27,7 +27,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
-import { calculatePositionSize, PAPER_DEFAULTS } from "./positionSizing.js";
+import { calculatePaperPositionSize, PAPER_DEFAULTS } from "../riskGovernor/positionSizer.js";
 import { checkEligibility } from "./eligibility.js";
 import { enforcePreTradeRisk, loadEffectiveLimits } from "../riskGovernor/enforce.js";
 import type {
@@ -211,7 +211,7 @@ export async function executePaperFromDecision(
     });
   }
   const limits = await loadEffectiveLimits(acct.userId);
-  const sizing = calculatePositionSize({
+  const sizing = calculatePaperPositionSize({
     accountEquity: acct.equity,
     entryPrice: fillPrice,
     stopLoss,

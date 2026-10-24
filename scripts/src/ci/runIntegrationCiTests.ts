@@ -247,6 +247,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:learning-scopes" },
   { pkg: "@workspace/api-server", script: "test:single-role-model" },
   { pkg: "@workspace/api-server", script: "test:limit-layers" },
+  { pkg: "@workspace/api-server", script: "test:position-sizer" },
   { pkg: "@workspace/api-server", script: "test:production-readiness-check" },
   { pkg: "@workspace/api-server", script: "test:broker-validation-suite" },
   { pkg: "@workspace/api-server", script: "test:snapshot-ownership" },

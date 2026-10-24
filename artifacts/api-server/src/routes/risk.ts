@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { GetRiskSettingsResponse, UpdateRiskSettingsBody } from "@workspace/api-zod";
 import { z } from "zod/v4";
 import { computeRiskAudit } from "../lib/riskAudit.js";
-import { calculatePositionSize } from "../lib/positionSizing.js";
+import { calculatePositionSize } from "../lib/riskGovernor/positionSizer.js";
 import {
   evaluateDrawdownGuard, evaluateExposureGuard, evaluateMaxLossGuard,
   evaluateHardBlockRules,

@@ -34,7 +34,7 @@ import {
   type EdgeScore,
   type MissionImpact,
 } from "@workspace/domain/profit-mission";
-import { calculatePositionSize } from "./positionSizing.js";
+import { calculatePositionSize } from "./riskGovernor/positionSizer.js";
 import {
   resolveMissionRealisedStats,
   resolveMissionCompounding,

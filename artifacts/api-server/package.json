@@ -51,6 +51,7 @@
     "test:edge-promotion": "node --import tsx --test --test-force-exit src/lib/learning/__qa__/edgePromotion.test.ts",
     "test:single-role-model": "node --import tsx --test --test-force-exit src/lib/security/__qa__/singleRoleModel.test.ts",
     "test:limit-layers": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/limitLayers.test.ts",
+    "test:position-sizer": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/positionSizer.test.ts",
     "test:production-readiness-check": "node --import tsx --test --test-force-exit src/scripts/__qa__/productionReadinessCheck.test.ts",
     "test:broker-validation-suite": "node --import tsx --test --test-force-exit src/scripts/__qa__/brokerValidationSuite.test.ts",
     "test:learning-scopes": "node --import tsx --test --test-force-exit src/lib/learning/__qa__/scopedMemory.test.ts",
