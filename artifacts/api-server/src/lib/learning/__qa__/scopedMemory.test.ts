@@ -67,10 +67,13 @@ async function cleanup(): Promise<void> {
     await db.delete(usersTable).where(inArray(usersTable.id, ids));
   }
   await db.delete(learningEventsTable).where(like(learningEventsTable.symbol, `${PREFIX}%`));
+  if (debriefIds.length) await db.delete(postTradeDebriefsTable).where(inArray(postTradeDebriefsTable.id, debriefIds.splice(0)));
 }
 
 async function debrief(userId: number | null): Promise<number> {
-  const [row] = await db.insert(postTradeDebriefsTable).values({ userId, tradeId: 800_000 + (++n) }).returning({ id: postTradeDebriefsTable.id });
+  // Unique per run: trade_id is unique and a null-owner debrief is not found by owner.
+  const [row] = await db.insert(postTradeDebriefsTable).values({ userId, tradeId: 1_500_000_000 + (stamp % 400_000_000) + (++n) })
+    .returning({ id: postTradeDebriefsTable.id });
   debriefIds.push(row!.id);
   return row!.id;
 }
