@@ -17,6 +17,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { adminActionAuditLogTable } from "@workspace/db/schema";
 import { requireUser } from "../lib/auth/middleware.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 
@@ -35,7 +36,7 @@ router.post("/me/view-mode", requireUser, async (req, res) => {
   // Use the stashed `realRole` for the gate; fall back to role when not set.
   const stashed = (u as { realRole?: string }).realRole;
   const realRole = String(stashed ?? u.role ?? "").toUpperCase();
-  const isAdminCapable = realRole === "ADMIN" || realRole === "OWNER";
+  const isAdminCapable = operatorRoleFromSession(realRole) != null;
   if (!isAdminCapable) {
     res.status(403).json({ error: "NOT_ADMIN_CAPABLE", message: "This account has no admin mode." });
     return;

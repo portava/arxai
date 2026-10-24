@@ -34,10 +34,11 @@ import { getCachedOpportunityMap } from "../lib/signalIntelligence/opportunityMa
 import { explainMarketRead } from "@workspace/domain/signal-intelligence";
 import type { UniverseId } from "../lib/marketScanner.js";
 import { getAssistantDisplayName } from "../lib/assistant/assistantName.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 function isAdminSession(req: import("express").Request): boolean {
   const role = (req.authUser as { role?: string } | undefined)?.role;
-  return role === "ADMIN" || role === "OWNER";
+  return operatorRoleFromSession(role) != null;
 }
 
 /**

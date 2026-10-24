@@ -50,6 +50,7 @@ import {
   computeAccountModePrecedence,
   type CurrentAccountMode as PrecedenceMode,
 } from "../lib/computeAccountModePrecedence.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -155,8 +156,8 @@ function resolveRole(authUser: { role?: string; realRole?: string } | undefined)
 } {
   const effective = String(authUser?.role ?? "").toUpperCase();
   const real = String(authUser?.realRole ?? "").toUpperCase();
-  const realIsAdmin = real === "ADMIN" || real === "OWNER";
-  const effectiveIsAdmin = effective === "ADMIN" || effective === "OWNER";
+  const realIsAdmin = operatorRoleFromSession(real) != null;
+  const effectiveIsAdmin = operatorRoleFromSession(effective) != null;
 
   if (effectiveIsAdmin) {
     return {

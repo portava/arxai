@@ -47,6 +47,7 @@ import {
 import {
   arxMasterBridgePoolTable,
 } from "@workspace/db";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -100,11 +101,12 @@ const ADMIN_STALE_BUDGET_MS = 60_000;
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
   if (!u?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  if (u.role !== "ADMIN" && u.role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }
-  return { id: u.id, role: u.role };
+  return { id: u.id, role };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

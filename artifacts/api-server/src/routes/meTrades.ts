@@ -35,6 +35,7 @@ import {
   confirmLiveCommand,
   dispatchLiveCommand,
 } from "../lib/live/liveCommandPipeline.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 
@@ -70,7 +71,7 @@ router.get("/me/trades/open", async (req, res) => {
   if (!userId) { res.status(401).json({ ok: false, error: "NOT_AUTHENTICATED" }); return; }
   const env = await getEnvelope(userId);
   const role = String((req as Request & { authUser?: { role?: string } }).authUser?.role ?? "").toUpperCase();
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(userId, { isAdmin });
   const cards: OpenCard[] = [];
 
@@ -214,7 +215,7 @@ router.get("/me/trades/history", async (req, res) => {
   if (!userId) { res.status(401).json({ ok: false, error: "NOT_AUTHENTICATED" }); return; }
   const env = await getEnvelope(userId);
   const role = String((req as Request & { authUser?: { role?: string } }).authUser?.role ?? "").toUpperCase();
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(userId, { isAdmin });
   const limit = Math.min(200, Number(req.query["limit"] ?? 50));
 
@@ -249,7 +250,7 @@ router.get("/me/trades/summary", async (req, res) => {
   if (!userId) { res.status(401).json({ ok: false, error: "NOT_AUTHENTICATED" }); return; }
   const env = await getEnvelope(userId);
   const role = String((req as Request & { authUser?: { role?: string } }).authUser?.role ?? "").toUpperCase();
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(userId, { isAdmin });
 
   // T006 — paper user gets zero-state summary (no live tables read).

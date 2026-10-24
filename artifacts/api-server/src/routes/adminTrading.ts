@@ -479,7 +479,7 @@ router.post("/admin/trading/shared-master", async (req, res) => {
   // The owning user of the master connection must be ADMIN or OWNER.
   const [owner] = await db.select({ id: usersTable.id, role: usersTable.role })
     .from(usersTable).where(eq(usersTable.id, connOwnerId)).limit(1);
-  if (!owner || (owner.role !== "ADMIN" && owner.role !== "OWNER")) {
+  if (!owner || (!operatorRoleFromSession(owner.role))) {
     res.status(400).json({ ok: false, error: "MASTER_CONNECTION_MUST_BE_OWNED_BY_ADMIN_OR_OWNER" });
     return;
   }
@@ -560,7 +560,7 @@ router.get("/admin/shared-masters", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const admins = await db.select({ id: usersTable.id, role: usersTable.role, email: usersTable.email })
     .from(usersTable);
-  const adminIds = admins.filter((u) => u.role === "ADMIN" || u.role === "OWNER").map((u) => u.id);
+  const adminIds = admins.filter((u) => operatorRoleFromSession(u.role) != null).map((u) => u.id);
 
   const conns = adminIds.length === 0 ? [] : await db.select().from(mt5ConnectionTable);
   const candidates = conns

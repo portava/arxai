@@ -24,13 +24,14 @@ import {
   recordPerf,
   summariseByAction,
 } from "../lib/perf/perfRecorder.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
 
 function requireAdmin(req: Request, res: Response): boolean {
   const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (!operatorRoleFromSession(role)) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return false;
   }

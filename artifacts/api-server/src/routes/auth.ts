@@ -29,6 +29,7 @@ import { sendPasswordResetEmail } from "../lib/email/passwordResetEmail.js";
 import { isEmailNotConfiguredError } from "../lib/email/resend.js";
 import { enforceSensitiveAction } from "../lib/security/handshake.js";
 import { consumeRateLimit, hashScope } from "../lib/security/cooldowns.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -51,7 +52,7 @@ router.get("/auth/session", (req, res) => {
   const s = getSessionFromReq(req);
   res.json({
     role: s.role, sessionId: s.sid, ts: s.ts,
-    fullTesterAccess: s.role === "OWNER" || s.role === "ADMIN" || s.role === "TESTER",
+    fullTesterAccess: operatorRoleFromSession(s.role) != null || s.role === "TESTER",
     mt5Connected: false, mt5Deferred: true, realBrokerExecutionAvailable: false,
   });
 });
