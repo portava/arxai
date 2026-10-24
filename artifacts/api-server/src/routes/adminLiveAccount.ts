@@ -8,6 +8,7 @@
 // - Unassigned positions = open arx_live_positions whose userId does not
 //   match any active allocation. Surfaced only to admins for triage.
 
+import { LIVE_ACCOUNT_HEARTBEAT_LIVE_MS } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
 import { listConnections } from "../lib/brokerHub/connections.js";
@@ -33,7 +34,7 @@ function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" 
   return { id: u.id, role };
 }
 
-const HEARTBEAT_LIVE_MS = 20_000;
+const HEARTBEAT_LIVE_MS = LIVE_ACCOUNT_HEARTBEAT_LIVE_MS;
 
 router.get("/admin/live/master-summary", requireUser, async (req, res) => {
   const admin = requireAdmin(req, res);

@@ -16,6 +16,7 @@
 //   rejects), the cycle locks in CLOSE_FAILED_MANUAL_REQUIRED — we never
 //   retry. An operator must use /resolve to acknowledge.
 
+import { EA_HEARTBEAT_FRESH_MS } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getUserActiveConnection } from "../brokerHub/connections.js";
@@ -45,7 +46,7 @@ import { logger } from "../logger.js";
 
 const PINNED_SYMBOL = "EURUSD" as const;
 const PINNED_VOLUME = 0.01 as const;
-const HEARTBEAT_FRESH_MS = 15_000;
+const HEARTBEAT_FRESH_MS = EA_HEARTBEAT_FRESH_MS;
 
 export interface LiveTestCycleInput {
   userId: number;

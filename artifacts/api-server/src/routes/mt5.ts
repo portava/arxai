@@ -1,3 +1,4 @@
+import { BROKER_HEARTBEAT_FRESH_MS, MT5_ACCOUNT_SNAPSHOT_FRESH_MS, EA_HEARTBEAT_FRESH_MS } from "../lib/brokerHub/freshness.js";
 import { findConnectionByBridgeTokenHash, getUserActiveConnection, updateConnection, type BrokerConnectionPatch, type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
 import { applyOwnPositionSnapshot } from "../lib/mt5/executionReconciler.js";
 import { noteBridgeHeartbeat, scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
@@ -394,7 +395,7 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
       serverReceivedMs: heartbeatReceivedAt.getTime(),
     });
     const state = await loadOrCreateState();
-    const wasOffline = !state.lastHeartbeatAt || (Date.now() - new Date(state.lastHeartbeatAt).getTime() > 30_000);
+    const wasOffline = !state.lastHeartbeatAt || (Date.now() - new Date(state.lastHeartbeatAt).getTime() > BROKER_HEARTBEAT_FRESH_MS);
     await db.update(mt5StateTable).set({
       account: body.account,
       broker: body.broker ?? state.broker,
@@ -605,7 +606,7 @@ router.get("/mt5/bridge-diagnostics", async (req, res) => {
   const snapshotAgeMs = bridgeDiag.lastBrokerSnapshotAt
     ? Date.now() - bridgeDiag.lastBrokerSnapshotAt.getTime()
     : null;
-  const brokerSnapshotFresh = snapshotAgeMs !== null && snapshotAgeMs < 60_000;
+  const brokerSnapshotFresh = snapshotAgeMs !== null && snapshotAgeMs < MT5_ACCOUNT_SNAPSHOT_FRESH_MS;
   const now = new Date().toISOString();
   res.json({
     // Phase 28-MT5-VPS spec-named fields (canonical, never breaking).
@@ -704,7 +705,7 @@ export async function buildBridgeOpsRollup(requesterRole: "admin" | "user") {
   const snapshotAgeMs = bridgeDiag.lastBrokerSnapshotAt
     ? Date.now() - bridgeDiag.lastBrokerSnapshotAt.getTime()
     : null;
-  const brokerSnapshotFresh = snapshotAgeMs !== null && snapshotAgeMs < 60_000;
+  const brokerSnapshotFresh = snapshotAgeMs !== null && snapshotAgeMs < MT5_ACCOUNT_SNAPSHOT_FRESH_MS;
   // Operator-only identifiers (server-wide). Non-admin users see "REDACTED".
   const isAdmin = requesterRole === "admin";
   return {
@@ -1296,7 +1297,7 @@ router.post("/mt5/sync-positions", bridgeAuthPerUserOnly, async (req, res) => {
 
 // ── Phase 7 additions ──────────────────────────────────────────────────────
 
-const HEARTBEAT_THRESHOLD_MS = 15_000;
+const HEARTBEAT_THRESHOLD_MS = EA_HEARTBEAT_FRESH_MS;
 
 // Phase 12 hardening: ARX AI is paper-only by construction. Broker placement
 // is not implemented; no live execution path is reachable. `liveLocked` is
@@ -1740,7 +1741,7 @@ router.post("/mt5/execution-result", bridgeAuthPerUserOnly, async (req, res): Pr
 
 router.get("/mt5/state", async (_req, res) => {
   const state = await loadOrCreateState();
-  const connected = !!state.lastHeartbeatAt && Date.now() - new Date(state.lastHeartbeatAt).getTime() < 30_000;
+  const connected = !!state.lastHeartbeatAt && Date.now() - new Date(state.lastHeartbeatAt).getTime() < BROKER_HEARTBEAT_FRESH_MS;
   res.json({
     connected,
     account: state.account,

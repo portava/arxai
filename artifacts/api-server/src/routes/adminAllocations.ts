@@ -15,6 +15,7 @@
 //   MASTER_BRIDGE_STALE so admins never over-allocate against a stale
 //   snapshot.
 
+import { LIVE_ACCOUNT_HEARTBEAT_LIVE_MS, EA_HEARTBEAT_STALE_MS } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import {
   countOpenPositions,
@@ -102,8 +103,8 @@ async function precheckMasterPoolForAllocation(): Promise<
   return { ok: true, pool };
 }
 
-const HEARTBEAT_LIVE_MS = 20_000;
-const ADMIN_STALE_BUDGET_MS = 60_000;
+const HEARTBEAT_LIVE_MS = LIVE_ACCOUNT_HEARTBEAT_LIVE_MS;
+const ADMIN_STALE_BUDGET_MS = EA_HEARTBEAT_STALE_MS;
 
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;

@@ -1,3 +1,4 @@
+import { EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_STALE_MS } from "./brokerHub/freshness.js";
 import { db, safetyCoreTable, vaultEventsTable, stateTransitionsTable } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte, type SQL } from "drizzle-orm";
 import {
@@ -34,8 +35,8 @@ export const ALL_OPERATIONAL_MODES: ReadonlyArray<OperationalMode> = [
   "OBSERVE_ONLY", "SUGGEST_ONLY", "PAPER_TRADING", "LIVE_TRADING",
 ];
 
-const HEARTBEAT_DEGRADED_MS = 15_000;
-const HEARTBEAT_LOCKDOWN_MS = 60_000;
+const HEARTBEAT_DEGRADED_MS = EA_HEARTBEAT_FRESH_MS;
+const HEARTBEAT_LOCKDOWN_MS = EA_HEARTBEAT_STALE_MS;
 
 // ── Internal helpers ──────────────────────────────────────────────────────
 

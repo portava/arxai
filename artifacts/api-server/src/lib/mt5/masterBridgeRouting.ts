@@ -22,6 +22,7 @@
 //     `bridgeReadinessAtDraft` snapshot. It is masked when surfaced to
 //     end users in UI/Ruby copy (mt5-setup / scanner / assistant).
 
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
 import { getConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
 import { db, sharedTradeAttributionTable, sharedMasterAccountsTable } from "@workspace/db";
@@ -40,7 +41,7 @@ import {
 } from "./demoDispatchGate.js";
 import { and, sql } from "drizzle-orm";
 
-const HEARTBEAT_FRESH_SECONDS = 15;
+const HEARTBEAT_FRESH_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
 
 export interface RoutedDemoDispatchEvaluation {
   eligibility: PerUserDispatchEvaluation["eligibility"];

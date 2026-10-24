@@ -13,6 +13,7 @@
 //     Also disables platform oneClick + autoTrade by force on the OWNER.
 //     Returns { ok, applied: { … } }. Audit row written.
 
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import {
@@ -31,7 +32,7 @@ const router: IRouter = Router();
 router.use(express.json());
 
 const OWNER_USER_ID = 4 as const;
-const HEARTBEAT_MAX_AGE_SEC = 15 as const;
+const HEARTBEAT_MAX_AGE_SEC = EA_HEARTBEAT_FRESH_SECONDS;
 
 function requireAdmin(
   req: Request,

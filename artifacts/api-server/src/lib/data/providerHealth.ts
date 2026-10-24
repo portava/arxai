@@ -24,6 +24,7 @@
 //   - NEVER fabricates candles. Empty results stay empty.
 //   - NEVER touches MT5 dispatch, live order pipeline, or any safety state.
 
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
 import {
   classifySymbol,
   getRouterDiagnostics,
@@ -439,7 +440,7 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
   const bridgeEv = bridge ? (bridge.ok ? bridge.bridge : bridge.latestHint) : null;
   const hbAgeSec = bridgeEv?.heartbeatAgeSec ?? null;
   const hbStatus: FeedsHealth["mt5"]["heartbeat"]["status"] =
-    !bridgeEv ? "none" : hbAgeSec == null ? "offline" : hbAgeSec <= 15 ? "live" : "stale";
+    !bridgeEv ? "none" : hbAgeSec == null ? "offline" : hbAgeSec <= EA_HEARTBEAT_FRESH_SECONDS ? "live" : "stale";
 
   // MT5 quote push — honest count of probe symbols with a fresh usable quote.
   // EA v1.27/1.50 is heartbeat-only, so this stays 0/false until a quote-push

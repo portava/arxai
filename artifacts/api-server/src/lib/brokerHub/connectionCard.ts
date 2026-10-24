@@ -11,6 +11,8 @@
 //
 // PURE: no DB, no clock beyond an injected `now`. The route supplies rows.
 
+import { EA_HEARTBEAT_STALE_SECONDS } from "./freshness.js";
+
 /** Spec §3.1 connection states, plus the states this system actually has. */
 export type ConnectionCardState =
   | "DISCONNECTED" | "CONNECTED" | "DEGRADED" | "REAUTH_REQUIRED"
@@ -47,7 +49,7 @@ export interface ConnectionCardInput {
 }
 
 /** Heartbeat age past which a connection is no longer considered live. */
-export const HEARTBEAT_STALE_SECONDS = 60;
+export const HEARTBEAT_STALE_SECONDS = EA_HEARTBEAT_STALE_SECONDS;
 
 /** Mask all but the last 4 characters. Mirrors meMt5Connections. */
 export function maskAccountIdentifier(acct: string | null): string | null {

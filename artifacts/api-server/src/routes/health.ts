@@ -9,6 +9,7 @@
 //   notification unread count, and report counts. No tokens, no hashes,
 //   no other users' data.
 
+import { EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_STALE_MS, classifyAge } from "../lib/brokerHub/freshness.js";
 import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
@@ -62,8 +63,9 @@ router.get("/me/system-health", requireUser, async (req, res): Promise<void> => 
     const now = Date.now();
     const personalMt5 = mt5Rows.map((r) => {
       const age = r.lastHeartbeatAt ? now - new Date(r.lastHeartbeatAt).getTime() : null;
+      const band = classifyAge(age, EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_STALE_MS, "exclusive");
       const heartbeatHealth: "ok" | "stale" | "down" =
-        age == null ? "down" : age < 15_000 ? "ok" : age < 60_000 ? "stale" : "down";
+        band === "fresh" ? "ok" : band === "stale" ? "stale" : "down";
       return { id: r.id, status: r.status, heartbeatHealth };
     });
 

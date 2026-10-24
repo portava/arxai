@@ -1,3 +1,4 @@
+import { EA_HEARTBEAT_STALE_MS, MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from "./freshness.js";
 import type {
   BrokerAccountSnapshot,
   BrokerCapabilitySnapshot,
@@ -10,8 +11,7 @@ import type {
   ReadOnlyBrokerAdapter,
 } from "@workspace/domain/broker-hub";
 
-const MT5_HEARTBEAT_FRESH_MS = 60_000;
-const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;
+const MT5_HEARTBEAT_FRESH_MS = EA_HEARTBEAT_STALE_MS;
 const MT5_DISCOVERY_FRESH_MS = 5 * 60_000;
 const MT5_MARKET_DATA_FRESH_MS = 60_000;
 

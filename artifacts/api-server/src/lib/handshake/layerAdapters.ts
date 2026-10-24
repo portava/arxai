@@ -12,6 +12,7 @@
 //   rows and exposes readiness booleans/counts only — never balances, the ARX
 //   60/40 waterfall, trader comp, or another tenant's data.
 
+import { BROKER_HEALTH_VERDICT_STALE_MS } from "../brokerHub/freshness.js";
 import { db } from "@workspace/db";
 import {
   fundDiscrepanciesTable,
@@ -44,7 +45,7 @@ export type LayerAdapter = (ctx?: HandshakeContext) => Promise<LayerReadiness>;
 
 // Freshness windows (coarse, advisory). Distinct from the authoritative 15s
 // dispatch heartbeat gate — these only colour the handshake monitor.
-const BROKER_STALE_MS = 120_000;
+const BROKER_STALE_MS = BROKER_HEALTH_VERDICT_STALE_MS;
 const SCANNER_STALE_MS = 120_000;
 
 function notAvailable(detail: string): LayerReadiness {

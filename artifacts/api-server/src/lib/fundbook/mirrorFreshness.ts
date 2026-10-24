@@ -9,12 +9,14 @@
 // - MISSING means we have never received the signal (null age); it is NOT the
 //   same as a flat broker — never fabricate freshness when we have no timestamp.
 
+import { EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_STALE_MS } from "../brokerHub/freshness.js";
+
 export type BrokerFreshness = "FRESH" | "DELAYED" | "STALE" | "MISSING";
 
 // A broker sync inside FRESH_WINDOW_MS is live; up to DELAYED_WINDOW_MS is a
 // lagging-but-recent mirror; older is stale; no timestamp at all is missing.
-export const FRESH_WINDOW_MS = 15_000;
-export const DELAYED_WINDOW_MS = 60_000;
+export const FRESH_WINDOW_MS = EA_HEARTBEAT_FRESH_MS;
+export const DELAYED_WINDOW_MS = EA_HEARTBEAT_STALE_MS;
 
 /**
  * Classify a broker-mirror age (ms since the heartbeat / snapshot) into a

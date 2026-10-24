@@ -105,6 +105,87 @@ defaults or upgrades a state to CONNECTED.
   missing row is now `null` instead of `undefined`, and it is only tested for
   truthiness.
 
+### Round 4: heartbeat and snapshot freshness thresholds
+
+Survey finding (Platform Safety round 3): heartbeat freshness thresholds
+were repeated. The full survey found far more than three copies: 48
+api-server files typed a bridge/EA heartbeat or MT5 snapshot threshold
+inline: 15 s, 20 s, 30 s, 60 s, 90 s, 120 s and 5 min, in both ms and seconds.
+These were named constants in 33 places and raw literals in comparisons in 33 more (the
+guard's first run listed 66 hits).
+
+- `lib/brokerHub/freshness.ts` now names every threshold by concept, and it
+  exports `classifyAge(age, fresh, stale, "inclusive" | "exclusive")`. The
+  module is pure and has no imports. Every moved site imports its number from
+  there. Some files keep a local alias (for example
+  `const HEARTBEAT_FRESH_SECONDS = EA_HEARTBEAT_FRESH_SECONDS`) so that their
+  code below stays unchanged. The exported names that other code imports
+  (`WATCHDOG_*_SECONDS`, `HEARTBEAT_STALE_SECONDS`,
+  `BROKER_HEARTBEAT_*_MS` from `riskGovernor/enforce.ts`, `DEFAULT_*_MS` from
+  `liveAccountSnapshot.ts`, and `FRESH_WINDOW_MS`/`DELAYED_WINDOW_MS` from
+  `fundbook/mirrorFreshness.ts`) are kept as aliases or re-exports.
+- **No value changed.** Each site keeps its own unit, rounding and `<` vs `<=`.
+  `classifyAge` replaced three hand-written ladders with the same bounds:
+  the bridge watchdog (inclusive, never seen means offline), `/me/system-health`
+  and the admin runtime-health bridge counts (exclusive). The
+  `fundControls` broker-freshness ladder now calls the fund book's own
+  `classifyBrokerFreshness`, which has identical bands (≤15 s FRESH, ≤60 s
+  DELAYED, null MISSING).
+- Moved: `safetyCore`, `paperIntelligence`, `brokerHub/mt5ReadOnlyAdapter`,
+  `brokerHub/connectionCard`, `live/bridgeWatchdog`, `riskGovernor/enforce`,
+  `bridgeV2/status`, `live/liveAccountSnapshot`, `broker/mt5BridgeProvider`,
+  `live/liveTestCycle`, `live/approvedTraderLiveState`, `live/liveArming`,
+  `live/masterBridgePool`, `mt5/demoVerificationGate`,
+  `mt5/masterBridgeRouting`, `mt5/demoDispatchGate`, `mt5/demoArmingService`,
+  `userReadiness/engine`, `handshake/layerAdapters`, `scalp/flameRead`,
+  `scalp/scalpServiceInputs`, `assistant/tools`, `data/providerHealth`,
+  `fundbook/mirrorFreshness`, `fundbook/fundControls`,
+  `reconciliation/detect`, and the routes `mt5`, `mt5RemoteOps`, `meLive`,
+  `meLiveAccount`, `adminLiveAccount`, `adminAllocations`,
+  `meMt5Connections`, `meUnifiedMode`, `meDashboard`, `meDemoBridgeDebug`,
+  `meOneClick`, `mePaperBetaReadiness`, `meRoutingStatus`, `demoExecution`,
+  `executionConfirmations`, `health`, `adminRuntimeHealth`,
+  `adminBridgeControl`, `adminLiveGatesDiagnostic`,
+  `adminLiveSharedActivation`, `adminLiveFirstTestMode` and
+  `pendingOrderDraft`.
+
+**Inconsistencies kept as separate names (owner decision, not unified).**
+Some thresholds use different numbers for what reads like the same idea:
+
+| Idea | Named thresholds (value) | Used by |
+|---|---|---|
+| Heartbeat "fresh" / "live" | `EA_HEARTBEAT_FRESH_*` (15 s) | dispatch and demo gates, EA update gate, safety core (beyond = DEGRADED), watchdog, readiness views, paper-intelligence stale gate, fund-book mirror |
+| | `LIVE_ACCOUNT_HEARTBEAT_LIVE_MS` (20 s) | live-account pages (`meLiveAccount`, `adminLiveAccount`, `adminAllocations`) |
+| | `BROKER_HEARTBEAT_FRESH_*` (30 s) | Risk Governor broker status, platform EA `connected` in `routes/mt5.ts`, trader dashboard heartbeat card |
+| Bridge "connected" / not stale | `EA_HEARTBEAT_STALE_*` (60 s) | watchdog OFFLINE, safety-core LOCKDOWN, connection card, read-only adapter heartbeat, broker provider, Ruby bridge status, execution-confirmation broker check, demo bridge debug |
+| | `ADVISORY_BRIDGE_CONNECTED_MS` (90 s) | pending-order draft, Ruby pending-submit probe, reconciliation STALE_HEARTBEAT |
+| Degraded becomes offline / disconnected | `EA_HEARTBEAT_STALE_*` (60 s) | watchdog, safety core |
+| | `BROKER_HEARTBEAT_DEGRADED_*` (120 s) | Risk Governor, trader dashboard |
+| | `BRIDGE_V2_HEARTBEAT_STALE_MS` (120 s) | Bridge v2 status (observability) |
+| | `EA_HEARTBEAT_DEAD_*` (5 min) | user readiness, Ruby heartbeat tool "unhealthy" |
+| Account snapshot "fresh" | `MT5_ACCOUNT_SNAPSHOT_FRESH_MS` (60 s) | read-only adapter account snapshot, `/mt5` bridge diagnostics, shared-master pool |
+| | `ACCOUNT_SNAPSHOT_FRESH_MS` (30 s; live 5 s, delayed 2 min) | `liveAccountSnapshot` display bands (tunable per call) |
+| Cached broker verdict stale | `BROKER_HEALTH_VERDICT_STALE_MS` (120 s) | handshake monitor (advisory) |
+
+Choosing one number per idea would change what a surface reports, and some
+of these surfaces are gates. That needs an owner decision.
+
+**EA update preview fix (admin honesty, Platform Safety survey finding).**
+`routes/adminEaHealth.ts` previewed `evaluateEaUpdateGate` with
+`killSwitchEngaged: false`, `maintenanceMode: false` and
+`hasOpenLiveTrade: false` hardcoded. It took the pending command from the
+latest command only and used the watchdog's liveness for heartbeat
+stability. Because of this it could say "update allowed" where the EA's own
+check would block. `lib/mt5/eaUpdateGateInputs.ts` now reads the gate's
+safety inputs once. It is used by both `GET /mt5/update-check` (the same
+reads in the same order as before, so the gate is unchanged) and the admin
+preview. The maintenance flag is the one the real gate reads: the per-trader
+`ea_remote_config.maintenance_mode`, not `broker_health_state.maintenanceMode`.
+Install-wide stops are still not gate inputs (owner decision). A connection
+with no user cannot call the per-user check, so its preview evaluates only the
+heartbeat window. Test: `test:ea-update-gate-inputs` (in `ci:integration`,
+because it imports `@workspace/db`; its reads are injected).
+
 ### Behaviour changes (round 2)
 
 1. The alert rules `BROKER_HEALTH` (disconnected and feed-delay), the
@@ -160,6 +241,42 @@ versions of `lib/alerts/ruleEngine.ts` and `routes/brokerHealth.ts`, and it
 reports their raw reads. Wiring: `test:single-broker-state-source`
 (scripts), `check-test-scripts-wired.ts`, `run-all.ts`.
 
+`single-bridge-freshness-source`
+(`scripts/src/ci/check-single-bridge-freshness-source.ts`, round 4) also runs in
+`ci:guards` (86 guards as of round 4). It parses each file with the TypeScript
+AST and fails, outside `lib/brokerHub/freshness.ts`, on two patterns:
+
+- `threshold_const`: a const or object property whose name marks it as a
+  heartbeat or bridge/account-snapshot freshness threshold, set to a numeric
+  literal (including literal arithmetic). Examples: `HEARTBEAT_FRESH_MS`,
+  `heartbeatStaleThresholdSec`, `POOL_SNAPSHOT_FRESH_BUDGET_MS`.
+- `threshold_compare`: a `<`/`<=`/`>`/`>=` between a numeric literal ≥ 2 and
+  an expression that names a heartbeat age. That means an identifier with the
+  word heartbeat or hb, `brokerAgeMs`/`snapshotAgeMs`, or a local variable
+  computed from one (scope-aware, so `const age = now - r.lastHeartbeat…` counts
+  and a different `age` in another function does not).
+
+There is one allowlist entry, and it records an exact hit count and a reason:
+`lib/positionGuardian/assess.ts`. Its `GUARDIAN_DEFAULTS.maxSnapshotAgeMs` is
+the Position Guardian's own tunable. A file with more hits than allowed fails.
+A file with fewer hits than allowed, or a missing file, counts as stale and
+also fails. The guard also checks that the authority still exports
+`EA_HEARTBEAT_FRESH_MS`, `EA_HEARTBEAT_STALE_MS`,
+`MT5_ACCOUNT_SNAPSHOT_FRESH_MS` and `classifyAge`. Before the move, the guard
+reported 66 hits across the tree. After the move it reports 0. Fixtures
+(`check-single-bridge-freshness-source.test.ts`) cover these cases:
+
+- each pre-change declaration form and comparison form fails;
+- imports and aliases pass;
+- cadences, counters and unrelated TTLs pass;
+- a same-named local in another scope, a property named like a tainted
+  local, comments and strings all pass;
+- the allowlist count is exact and staleness is detected;
+- the authority shape is checked.
+
+Wiring: `test:single-bridge-freshness-source` (scripts),
+`check-test-scripts-wired.ts`, `run-all.ts`.
+
 DB test: `test:broker-hub-state-sources`
 (`lib/brokerHub/__qa__/brokerStateSources.test.ts`) is wired into
 `ci:integration`. It shows the following on real PostgreSQL:
@@ -202,5 +319,33 @@ DB test: `test:broker-hub-state-sources`
 6. `validate:broker` against a real demo bridge is an owner action and was not
    run.
 7. Obtain the scorecard rubric before measuring and publishing a new score.
+8. **Freshness values are named, not unified (round 4).** The 15/20/30/60 s
+   "fresh", the 60/90 s "connected", the 60/120 s / 5 min "offline" and the
+   30/60 s snapshot "fresh" splits (table above) are separate names. Choosing
+   one value per idea is an owner decision because it changes gates and
+   reports.
+9. **Freshness thresholds outside the api-server are not guarded.**
+   `lib/domain/src/broker-health/evaluator.ts` (degraded > 30 s, disconnected
+   > 60 s) and `lib/domain/src/signal-intelligence/scoring.ts` (15 s / 30 s
+   heartbeat penalties) keep their own literals. `@workspace/domain` cannot
+   import the api-server module, so the authority would have to move into
+   `lib/domain` first. Dashboard literals are also not guarded: admin
+   `LiveSharedAccountPanel` and cockpit `OverviewSection` (≤ 15 s) and
+   `MT5StatusIndicator` (8 s). The guard scans
+   `artifacts/api-server/src` only.
+10. **Freshness guard detection is name-based.** It recognises a threshold by
+    a heartbeat/snapshot word in a declaration name, or by a heartbeat-age
+    identifier in a comparison (including locals computed from one). A
+    threshold in a generically named variable, or a cutoff computed apart from
+    its comparison (`const cutoff = Date.now() - 90_000; … < cutoff`), is not
+    detected. The survey found and moved every such case
+    (`meMt5Connections` `STALE_MS`, `adminAllocations` `ADMIN_STALE_BUDGET_MS`,
+    `mt5BridgeProvider` `STALE_AFTER_SECONDS`, `liveAccountSnapshot` defaults,
+    the handshake verdict window, the reconciliation cutoff and the fund-book
+    mirror bands), but a new one like these would pass the guard.
+    Position-row sync windows (`positionTruthAdapter`, `tradeHealthService`,
+    `scalpManageService`: 90 s) and the MT5 market-data feed window
+    (`data/freshness.ts` `MT5_FEED_FRESH_MS`) belong to the open-position view
+    and market-data domains. They were not moved.
 
 **TIER 1 NOT COMPLETE**

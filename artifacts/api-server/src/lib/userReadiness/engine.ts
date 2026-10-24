@@ -10,6 +10,7 @@
 //   lifted. By design, this function CANNOT enable live trading. It only
 //   reports state.
 
+import { EA_HEARTBEAT_DEAD_MS } from "../brokerHub/freshness.js";
 import { listUserConnections } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
@@ -65,7 +66,7 @@ const SAFETY_ENVELOPE = {
   allowOrderExecution: false as const,
 };
 
-const HEARTBEAT_STALE_MS = 5 * 60 * 1000; // 5 minutes
+const HEARTBEAT_STALE_MS = EA_HEARTBEAT_DEAD_MS; // 5 minutes
 
 export async function evaluateUserReadiness(userId: number): Promise<ReadinessReport> {
   const now = new Date();

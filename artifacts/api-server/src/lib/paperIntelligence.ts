@@ -6,6 +6,7 @@
 // `decision: "MT5_DATA_STALE"` so callers can show a clear banner and
 // withhold any new paper-trade decision rather than acting on stale data.
 
+import { EA_HEARTBEAT_FRESH_MS } from "./brokerHub/freshness.js";
 import { runStrategyScan, type SignalOutput, type Candle } from "./strategyEngine.js";
 import { calculatePositionSize } from "./riskGovernor/positionSizer.js";
 import { getMarketDataWithProvenance } from "./data/dataManager.js";
@@ -16,7 +17,7 @@ import { readPlatformMt5State } from "./brokerHub/mt5StateReader.js";
 // safetyCore.ts HEARTBEAT_DEGRADED_MS) so the UI's "fresh" green light
 // and this service's stale-gate flip together. Compared at millisecond
 // precision so the two gates are byte-for-byte aligned.
-const MT5_FRESHNESS_THRESHOLD_MS = 15_000;
+const MT5_FRESHNESS_THRESHOLD_MS = EA_HEARTBEAT_FRESH_MS;
 const MT5_FRESHNESS_THRESHOLD_SECONDS = MT5_FRESHNESS_THRESHOLD_MS / 1000;
 
 export interface PaperIntelligenceInput {

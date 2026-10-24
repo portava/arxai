@@ -25,6 +25,7 @@
 //   are responsible for deciding whether to *block* on the deficit.
 //   This separation keeps the projection truthful regardless of mode.
 
+import { MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from "../brokerHub/freshness.js";
 import { livePositionColumns } from "../positions/ledger.js";
 import { selectLiveOpenPositions, selectLiveOpenPositionsForAllUsers } from "../positions/openPositions.js";
 import { getConnection } from "../brokerHub/connections.js";
@@ -40,7 +41,7 @@ import {
   type ArxMasterBridgePool,
 } from "@workspace/db";
 
-const POOL_SNAPSHOT_FRESH_BUDGET_MS = 60_000;
+const POOL_SNAPSHOT_FRESH_BUDGET_MS = MT5_ACCOUNT_SNAPSHOT_FRESH_MS;
 
 export type PoolSnapshotStatus = "FRESH" | "STALE" | "MISSING";
 

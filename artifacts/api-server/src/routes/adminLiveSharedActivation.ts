@@ -19,6 +19,7 @@
 //
 //   GET  /api/admin/live-shared/command-queue
 //     Paginated, filterable read of arx_live_commands. Admin-only.
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
 import { listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
@@ -103,7 +104,7 @@ router.post("/admin/live-shared/activation-smoke-test", async (req, res) => {
     ? Math.floor((Date.now() - new Date(pinned.lastHeartbeat).getTime()) / 1000) : null;
   checks.push({
     id: "C3_heartbeat", label: "Bridge heartbeat fresh (≤15s)",
-    pass: hbAge != null && hbAge <= 15,
+    pass: hbAge != null && hbAge <= EA_HEARTBEAT_FRESH_SECONDS,
     detail: hbAge == null ? "no heartbeat recorded" : `${hbAge}s old`,
   });
 

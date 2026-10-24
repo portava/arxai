@@ -35,6 +35,7 @@
 //
 // SECURITY: requireUser on every handler. No endpoint reveals another
 // user's settings or any bridge/master state.
+import { EA_HEARTBEAT_FRESH_MS } from "../lib/brokerHub/freshness.js";
 import { getUserPrimaryConnection, listUserConnections } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -622,7 +623,7 @@ router.get("/me/one-click/status", requireUser, async (req: Request, res: Respon
   // The 16-gate evaluator always runs server-side on every actual dispatch.
   let executionReadinessState: "READY" | "BLOCKED" | "STALE" | "UNAVAILABLE";
   let executionBlockReason: string | null = null;
-  const HEARTBEAT_STALE_MS = 15_000; // mirrors Phase B gate #7
+  const HEARTBEAT_STALE_MS = EA_HEARTBEAT_FRESH_MS; // mirrors Phase B gate #7
   if (bridgeType === "NONE") {
     executionReadinessState = "UNAVAILABLE";
     executionBlockReason = "NO_BRIDGE_CONFIGURED";

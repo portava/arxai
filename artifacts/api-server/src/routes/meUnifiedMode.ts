@@ -32,6 +32,7 @@
 //   * Never returns: master broker credentials, bridge tokens, raw
 //     account numbers, IP addresses, or any other user's data.
 
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
 import { Router, type Request } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
 import { computeAccountShell, type AccountShellResponse } from "./meAccountShell.js";
@@ -285,7 +286,7 @@ router.get("/me/account-mode", requireUser, async (req: Request, res) => {
         heartbeatFresh:
           bridgeOk &&
           liveBridge.bridge.heartbeatAgeSec != null &&
-          liveBridge.bridge.heartbeatAgeSec <= 15,
+          liveBridge.bridge.heartbeatAgeSec <= EA_HEARTBEAT_FRESH_SECONDS,
         rawEnvelope: envelope,
         rawAccountShell: accountShell,
       };

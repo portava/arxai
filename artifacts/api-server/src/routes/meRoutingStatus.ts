@@ -9,6 +9,7 @@
 //    effective routing decision (override or inherit). No other user's
 //    data is read.
 
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
 import { getConnection, listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request } from "express";
 import { eq } from "drizzle-orm";
@@ -18,7 +19,7 @@ import { resolveRouting } from "../lib/adminTrading/routingResolver.js";
 
 const router = Router();
 
-const HEARTBEAT_FRESH_SECONDS = 15;
+const HEARTBEAT_FRESH_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
 
 router.get("/me/routing-status", requireUser, async (req: Request, res) => {
   const userId = (req as Request & { authUser?: { id?: number } }).authUser?.id;

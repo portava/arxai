@@ -25,6 +25,7 @@
 //   - No tokens, no apiKeyHash, no broker passwords are read or returned.
 //   - No mutation of any table. Read-only.
 
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
 import { listUserConnections } from "../brokerHub/connections.js";
 import { and, eq } from "drizzle-orm";
 import { db } from "@workspace/db";
@@ -38,7 +39,7 @@ import {
   type SafetyGateSnapshot,
 } from "@workspace/domain/safety-contracts/executionMode";
 
-const HEARTBEAT_FRESH_SECONDS = 15;
+const HEARTBEAT_FRESH_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
 
 export type GateCheckStatus = "PASS" | "FAIL" | "INFO" | "WARN";
 
