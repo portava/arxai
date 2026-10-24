@@ -15,14 +15,15 @@
 //    append-only trail of when each user viewed their open positions.
 
 import { Router, type Request } from "express";
-import { desc, eq, sql } from "drizzle-orm";
-import { db, mt5StateTable, mt5DemoCommandsTable } from "@workspace/db";
+import { desc, eq } from "drizzle-orm";
+import { db, mt5DemoCommandsTable } from "@workspace/db";
 import { arxLivePositionsTable } from "@workspace/db";
 import { requireUser } from "../lib/auth/middleware.js";
 import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
 import { getUserModeScope, modeScopeEnvelope } from "../lib/modeScope/getUserModeScope.js";
 import { resolveLivePositionVisibility } from "../lib/modeScope/livePositionVisibility.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readLatestUserMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -115,12 +116,8 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   // DEMO — pull latest mt5_state row for this user, then map positions.
   // Skipped entirely when mode is not DEMO so a LIVE_SHARED user never
   // sees their old demo positions bleed into the unified feed.
-  const stateRows = includeDemo
-    ? await db.select().from(mt5StateTable)
-        .where(eq(mt5StateTable.userId, userId))
-        .orderBy(sql`${mt5StateTable.lastSyncAt} DESC NULLS LAST`)
-        .limit(1)
-    : [];
+  const demoState = includeDemo ? await readLatestUserMt5State(userId) : null;
+  const stateRows = demoState ? [demoState] : [];
   const positionsRaw: DemoRaw[] = Array.isArray(stateRows[0]?.positions)
     ? (stateRows[0]!.positions as DemoRaw[]) : [];
 

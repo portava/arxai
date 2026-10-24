@@ -35,7 +35,7 @@ probe("[1] mePositionsUnified route file exists", exists(ROUTE));
 const routeSrc = exists(ROUTE) ? read(ROUTE) : "";
 probe("[1a] route uses requireUser middleware", /requireUser/.test(routeSrc));
 probe("[1b] live query filtered by userId", /arxLivePositionsTable.*\.where\(eq\(arxLivePositionsTable\.userId, userId\)\)/s.test(routeSrc));
-probe("[1c] demo query filtered by userId", /mt5StateTable[\s\S]*\.where\(eq\(mt5StateTable\.userId, userId\)\)/.test(routeSrc));
+probe("[1c] demo snapshot read per user through the Broker Hub", /readLatestUserMt5State\(userId\)/.test(routeSrc));
 probe("[1d] demo commands query filtered by userId", /mt5DemoCommandsTable[\s\S]*\.where\(eq\(mt5DemoCommandsTable\.userId, userId\)\)/.test(routeSrc));
 
 // ── 2. Cross-user isolation: no select uses a userId from req body / params.

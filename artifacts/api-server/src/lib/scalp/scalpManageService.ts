@@ -20,7 +20,6 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import {
   db,
   arxLivePositionsTable,
-  mt5StateTable,
   scalpFlameLockoutsTable,
 } from "@workspace/db";
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
@@ -58,6 +57,7 @@ import type {
   ScalpFlameRead,
   ScalpSpecInput,
 } from "./scalpTypes.js";
+import { readLatestUserMt5State } from "../brokerHub/mt5StateReader.js";
 
 function num(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
@@ -134,12 +134,9 @@ async function loadOpenPositions(
   }
 
   if (includeDemo) {
-    const stateRows = await db.select().from(mt5StateTable)
-      .where(eq(mt5StateTable.userId, userId))
-      .orderBy(sql`${mt5StateTable.lastSyncAt} DESC NULLS LAST`)
-      .limit(1);
-    const raw: DemoRaw[] = Array.isArray(stateRows[0]?.positions)
-      ? (stateRows[0]!.positions as DemoRaw[]) : [];
+    const state = await readLatestUserMt5State(userId);
+    const raw: DemoRaw[] = Array.isArray(state?.positions)
+      ? (state!.positions as DemoRaw[]) : [];
     for (const p of raw) {
       const symbol = p.symbol ?? null;
       if (!symbol) continue;

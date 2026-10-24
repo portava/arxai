@@ -5,13 +5,14 @@
 // tables. Order placement is centralized in placeLiveOrderGuarded(), which
 // still rejects with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
 
-import { db, mt5StateTable, livePositionsTable, mt5CommandsTable } from "@workspace/db";
-import { asc, desc, eq, isNull, or, type SQL } from "drizzle-orm";
+import { db, livePositionsTable, mt5CommandsTable } from "@workspace/db";
+import { desc, eq, isNull, or, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type {
   BrokerOwner, BrokerProvider, BrokerStatus, BrokerAccount, BrokerSymbol, BrokerPosition, BrokerOrder,
 } from "./types.js";
 import { describeRequiredSecrets, missingRequiredSecrets } from "./secrets.js";
+import { readPlatformMt5State, readScopedMt5State } from "../brokerHub/mt5StateReader.js";
 
 const STALE_AFTER_SECONDS = 60;
 
@@ -30,8 +31,7 @@ export class MT5BridgeProvider implements BrokerProvider {
   readonly kind = "mt5" as const;
 
   private async loadState() {
-    const rows = await db.select().from(mt5StateTable).limit(1);
-    return rows[0] ?? null;
+    return readPlatformMt5State();
   }
 
   async status(): Promise<BrokerStatus> {
@@ -82,10 +82,7 @@ export class MT5BridgeProvider implements BrokerProvider {
   }
 
   async account(owner: BrokerOwner): Promise<BrokerAccount | null> {
-    const rows = await db.select().from(mt5StateTable)
-      .where(ownedBy(mt5StateTable.userId, owner))
-      .orderBy(asc(mt5StateTable.id)).limit(1);
-    const state = rows[0] ?? null;
+    const state = await readScopedMt5State((col) => ownedBy(col, owner));
     if (!state) return null;
     const env = (state.liveAllowed ?? 0) === 1 ? "LIVE" as const : "DEMO" as const;
     return {

@@ -1,11 +1,12 @@
 import { Router, type Request, type Response } from "express";
-import { db, tradesTable, mt5StateTable } from "@workspace/db";
+import { db, tradesTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { evaluateTrade } from "../lib/tradeManagement/tradeManager.js";
 import { createAlert } from "../lib/alerts/alertManager.js";
 import { ownerScope } from "../lib/auth/ownerScope.js";
 import { isStopWidened } from "../lib/riskGovernor/preTrade.js";
+import { readScopedMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -101,9 +102,8 @@ router.post("/trade-management/:id/close", async (req, res) => {
   if (!trade) { res.status(404).json({ error: "Trade not found" }); return; }
 
   // If MT5 connected, queue a CLOSE_ALL command (in real bridge we'd send ticket)
-  const stateRows = await db.select().from(mt5StateTable)
-    .where(ownerScope(mt5StateTable.userId, req.authUser)).limit(1);
-  const liveAllowed = !!stateRows[0]?.liveAllowed;
+  const state = await readScopedMt5State((col) => ownerScope(col, req.authUser));
+  const liveAllowed = !!state?.liveAllowed;
   void liveAllowed;
 
   const snap = await evaluateTrade(trade);

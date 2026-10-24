@@ -19,7 +19,6 @@ import {
   arxLiveCommandsTable,
   arxLivePositionsTable,
   mt5DemoCommandsTable,
-  mt5StateTable,
   tradesTable,
 } from "@workspace/db";
 import {
@@ -33,6 +32,7 @@ import {
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { getEconomicCalendar } from "../news/economicCalendarProvider.js";
+import { readLatestUserMt5State } from "../brokerHub/mt5StateReader.js";
 
 export interface TradeHealthServiceArgs {
   userId: number;
@@ -160,13 +160,7 @@ async function readOpenPositions(
 
   // DEMO — latest mt5_state row for the user, then map its positions JSON.
   if (includeDemo) {
-    const stateRows = await db
-      .select()
-      .from(mt5StateTable)
-      .where(eq(mt5StateTable.userId, userId))
-      .orderBy(sql`${mt5StateTable.lastSyncAt} DESC NULLS LAST`)
-      .limit(1);
-    const stateRow = stateRows[0];
+    const stateRow = await readLatestUserMt5State(userId);
     const syncedMs = toMs(stateRow?.lastSyncAt);
     const positionsRaw: DemoRaw[] = Array.isArray(stateRow?.positions)
       ? (stateRow!.positions as DemoRaw[])
