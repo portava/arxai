@@ -66,6 +66,7 @@ import { checkCapitalConstitution } from "./check-capital-constitution.js";
 import { checkProvenanceNoCollapse } from "./check-provenance-no-collapse.js";
 import { checkBrokerHubNoExecution } from "./check-broker-hub-no-execution.js";
 import { checkExecutionSingleEntry } from "./check-execution-single-entry.js";
+import { checkInstrumentMappingSingleSource } from "./check-instrument-mapping-single-source.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -140,6 +141,7 @@ const checks: Array<() => CheckResult> = [
   checkProvenanceNoCollapse,
   checkBrokerHubNoExecution,
   checkExecutionSingleEntry,
+  checkInstrumentMappingSingleSource,
 ];
 
 let failed = 0;

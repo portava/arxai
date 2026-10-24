@@ -11,7 +11,7 @@
 import type { Candle } from "../lib/strategyEngine.js";
 import { getMarketTypeForSymbol } from "../lib/strategyEngine.js";
 import { getMarketDataWithProvenance } from "../lib/data/dataManager.js";
-import { getSymbolInfo } from "./symbols/symbolRegistry.js";
+import { getSymbolInfo } from "../lib/instruments/index.js";
 import { analyzeTechnical } from "./technical/technicalEngine.js";
 import { analyzeMacro } from "./macro/macroEngine.js";
 import { analyzeSession } from "./sessions/sessionEngine.js";

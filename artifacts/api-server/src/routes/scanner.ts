@@ -34,7 +34,7 @@ import {
 } from "../lib/devScannerOutage.js";
 import { analyzeMarket, generateTradeCard } from "../lib/aiBrain.js";
 import { getSelectedMarketSnapshot } from "../lib/scannerSelected/selectedMarket.js";
-import { ALL_SUPPORTED_SYMBOLS, normalizeSymbol } from "../lib/scannerSelected/symbolNormalize.js";
+import { ALL_SUPPORTED_SYMBOLS, normalizeSymbol } from "../lib/instruments/index.js";
 
 const router = Router();
 

@@ -12,7 +12,7 @@ import { db, arxSymbolSpecsTable, mt5ConnectionTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { routeQuote, routeCandles } from "../data/marketDataRouter.js";
 import { getUserAllocationView } from "../live/masterBridgePool.js";
-import { getSymbolInfo } from "../../brain/symbols/symbolRegistry.js";
+import { getSymbolInfo } from "../instruments/index.js";
 import type {
   ScalpAccountInput,
   ScalpCandle,

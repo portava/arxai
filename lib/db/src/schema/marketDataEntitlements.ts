@@ -39,7 +39,7 @@ import {
 //     for the same symbol. Writers MUST set it via `entitlementScopeKey()`;
 //     it is a keying artifact, never a display value.
 //   - `canonicalSymbol`    — the resolver's canonicalKey
-//     (api/lib/data/symbolResolution.ts): the @workspace/markets universe id
+//     (api/lib/instruments/canonicalSymbol.ts): the @workspace/markets universe id
 //     (slug, e.g. "volatility_75_index", "eurusd") for approved markets, or
 //     the normalized uppercase token for symbols outside the universe. NEVER
 //     a broker-native string — broker symbols live on broker_candles rows.

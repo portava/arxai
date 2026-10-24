@@ -11,6 +11,7 @@
 //   - Never returns execution-capable objects.
 //   - All prices are stored as floats, never used to place orders.
 
+import { normalizeSymbol as normalizeInstrumentSymbol } from "../instruments/index.js";
 export interface ParsedTrade {
   brokerDealId:    string | null;
   brokerOrderId:   string | null;
@@ -72,8 +73,11 @@ function normalizeSide(v: unknown): "BUY" | "SELL" | null {
   return null;
 }
 
+// Imported broker statements carry broker-decorated names ("EURUSDm",
+// "XAUUSD.r"); store the same undecorated symbol the rest of ARX uses.
 function normalizeSymbol(v: unknown): string {
-  return String(v ?? "").replace(/\s/g, "").toUpperCase().trim();
+  const raw = String(v ?? "").trim();
+  return normalizeInstrumentSymbol(raw) || raw.replace(/\s/g, "").toUpperCase();
 }
 
 function detectCloseType(
