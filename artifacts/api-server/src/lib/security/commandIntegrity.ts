@@ -63,6 +63,9 @@ const ALLOWED_SOURCE_PREFIXES: readonly string[] = [
   "ONE_CLICK", // One-click live submit (meOneClick.ts default)
   "ADMIN_EMERGENCY_CLOSE", // Operator emergency close (runEmergencyClose → createLiveOpsDraft)
   "ADMIN_ORPHAN_CLOSE", // Operator orphan close (runEmergencyClose → createLiveOpsDraft)
+  "POSITION_GUARDIAN", // Position Guardian stop restore (governedOps.submitGovernedModify)
+  "POSITIONS_PAGE", // Positions page stop / target / close (governedOps)
+  "BROKER_VALIDATION", // validate:broker demo runner (refuses LIVE)
 ] as const;
 
 export function isRouteAllowed(sourcePage: string | null | undefined): boolean {

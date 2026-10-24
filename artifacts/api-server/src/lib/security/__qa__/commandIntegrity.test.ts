@@ -279,3 +279,13 @@ test("every stamped sourcePage literal is in the route allowlist", () => {
 });
 
 export {};
+
+test("governed position ops stamp sources the integrity check allows", async () => {
+  // Stamped through constants, so the literal scan above cannot see them; a
+  // refused route would block every Guardian stop restore and page edit at dispatch.
+  const { GUARDIAN_SOURCE } = await import("../../positionGuardian/reconcile.js");
+  const page = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../routes/livePositions.ts"), "utf8")
+    .match(/POSITIONS_PAGE_SOURCE\s*=\s*"([^"]+)"/)?.[1];
+  assert.ok(page, "livePositions.ts names POSITIONS_PAGE_SOURCE");
+  for (const s of [GUARDIAN_SOURCE, page!]) assert.equal(isRouteAllowed(s), true, s);
+});
