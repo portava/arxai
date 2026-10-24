@@ -12,8 +12,9 @@
 //     by the consumer/route after this gate returns.
 //   - No tokens, no apiKeyHash, no broker passwords ever returned.
 
+import { listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
-import { db, mt5ConnectionTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import {
   evaluatePerUserDispatchEligibility,
   eaVersionAtLeast,
@@ -68,7 +69,7 @@ function extractEaInputs(
 }
 
 /** Score a bridge row for demo-execution eligibility. Higher is better. */
-function scoreBridge(row: typeof mt5ConnectionTable.$inferSelect): {
+function scoreBridge(row: BrokerConnection): {
   score: number;
   blockers: string[];
 } {
@@ -117,10 +118,7 @@ export async function evaluatePerUserDispatchGate(args: {
   //   2. inside each tier, fewer blockers wins
   //   3. tie-break by freshest heartbeat
   // Revoked rows are excluded entirely.
-  const allRows = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, args.userId));
+  const allRows = await listUserConnections(args.userId);
   const nonRevoked = allRows.filter((r) => !r.tokenRevokedAt);
   const ranked = nonRevoked
     .map((r) => ({ row: r, ...scoreBridge(r) }))

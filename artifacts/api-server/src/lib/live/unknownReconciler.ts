@@ -46,12 +46,12 @@
 // the wave-5 dispatch freshness pre-gate — this module does NOT touch
 // liveCommandPipeline.ts.
 
+import { getConnection } from "../brokerHub/connections.js";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   arxLiveCommandsTable,
   arxLivePositionsTable,
-  mt5ConnectionTable,
   type ArxLiveCommand,
   type ArxLiveCommandStatus,
 } from "@workspace/db";
@@ -422,11 +422,7 @@ async function gatherEvidence(cmd: ArxLiveCommand): Promise<UnknownCommandEviden
   let lastCompleteSnapshotAt: Date | null = null;
   if (cmd.bridgeConnectionId != null) {
     try {
-      const [conn] = await db.select({
-        lastPositionsSnapshotAt: mt5ConnectionTable.lastPositionsSnapshotAt,
-      }).from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.id, cmd.bridgeConnectionId))
-        .limit(1);
+      const conn = await getConnection(cmd.bridgeConnectionId);
       lastCompleteSnapshotAt = conn?.lastPositionsSnapshotAt ?? null;
     } catch (e) {
       evidenceComplete = false;

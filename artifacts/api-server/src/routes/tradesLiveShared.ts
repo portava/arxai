@@ -55,7 +55,6 @@ import type {
   ExecutionPreviewSide,
   ExecutionOrderType,
 } from "@workspace/domain/execution-preview";
-import { mt5ConnectionTable } from "@workspace/db/schema";
 
 const router = Router();
 

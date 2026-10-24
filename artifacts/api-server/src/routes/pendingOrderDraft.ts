@@ -16,9 +16,10 @@
 //     only ever written by the /mt5/command-result write-back path AFTER
 //     MT5 returns a real ticket.
 
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
-import { tradeActionRequestsTable, userRiskSettingsTable, mt5ConnectionTable } from "@workspace/db/schema";
+import { tradeActionRequestsTable, userRiskSettingsTable } from "@workspace/db/schema";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { ORDER_TYPES, isMarketOrder, directionOf, type OrderType } from "../lib/tradeAction/orderTypes.js";
@@ -295,8 +296,7 @@ router.get("/me/bridge-capabilities", async (req, res): Promise<void> => {
   if (!userId) { res.status(401).json({ ok: false, error: "unauthorized", ...SAFETY }); return; }
 
   try {
-    const rows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+    const rows = await listUserConnections(userId, { order: "oldest", limit: 1 });
     const conn = rows[0] ?? null;
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
@@ -372,8 +372,7 @@ router.post("/me/pending-order-draft/:id/submit", async (req, res): Promise<void
       return;
     }
 
-    const connRows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+    const connRows = await listUserConnections(userId, { order: "oldest", limit: 1 });
     const conn = connRows[0] ?? null;
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;

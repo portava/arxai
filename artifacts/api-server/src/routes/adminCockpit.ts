@@ -19,13 +19,13 @@
 //   trade; it is a self-contained structural comparator over real candles
 //   (honest-empty on insufficient history).
 
+import { listConnections } from "../lib/brokerHub/connections.js";
 import express, { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
-  mt5ConnectionTable,
   userMasterLiveAccessTable,
   investorProfilesTable,
   arxLivePositionsTable,
@@ -363,10 +363,7 @@ router.get("/admin/cockpit/overview", async (req, res) => {
   const [traderRows, investorRows, connections, openAgg, g, liveEnabled, alertAgg] = await Promise.all([
     computeTraderRows(),
     db.select({ status: investorProfilesTable.status }).from(investorProfilesTable),
-    db.select({
-      accountType: mt5ConnectionTable.accountType,
-      lastHeartbeat: mt5ConnectionTable.lastHeartbeat,
-    }).from(mt5ConnectionTable),
+    listConnections({ order: "oldest" }),
     db.select({
       cnt: sql<number>`cast(count(*) as int)`,
       floating: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)`,
@@ -582,7 +579,7 @@ router.get("/admin/cockpit/bridge", async (req, res) => {
   const isOwner = op.role === "OWNER";
 
   const [connections, users, providerHealth] = await Promise.all([
-    db.select().from(mt5ConnectionTable),
+    listConnections({ order: "oldest" }),
     db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable),
     getProviderHealthSnapshot().catch(() => ({ providers: [] as unknown[] })),
   ]);

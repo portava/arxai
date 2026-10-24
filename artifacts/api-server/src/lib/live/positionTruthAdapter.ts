@@ -10,10 +10,10 @@
 // one mapping. It is read-only and block-only: it never mutates rows and never
 // grants execution.
 
+import { getUserLiveSnapshotMarkerMs } from "../brokerHub/connections.js";
 import { and, eq, ne, isNull, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
-  mt5ConnectionTable,
   livePositionsTable,
   sharedTradeAttributionTable,
 } from "@workspace/db/schema";
@@ -43,15 +43,7 @@ const TERMINAL_ATTRIBUTION_STATUS = new Set(["closed", "rejected", "failed", "ca
  * non-revoked, non-demo bridges. Returns false when no bridge has ever synced.
  */
 export async function getUserSnapshotReliable(userId: number, now = Date.now()): Promise<boolean> {
-  const rows = await db
-    .select({ t: sql<string | null>`max(${mt5ConnectionTable.lastPositionsSnapshotAt})` })
-    .from(mt5ConnectionTable)
-    .where(and(
-      eq(mt5ConnectionTable.userId, userId),
-      ne(mt5ConnectionTable.status, "revoked"),
-      or(isNull(mt5ConnectionTable.accountType), ne(mt5ConnectionTable.accountType, "demo")),
-    ));
-  const snapshotAtMs = rows[0]?.t ? new Date(rows[0].t).getTime() : null;
+  const snapshotAtMs = await getUserLiveSnapshotMarkerMs(userId);
   return isSnapshotReliable(snapshotAtMs, STALE_MS, now);
 }
 

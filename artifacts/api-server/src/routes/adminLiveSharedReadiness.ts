@@ -16,6 +16,7 @@
 //     that remains a server-side operator-only env toggle.
 //   - Account numbers are masked to the last 4 chars on every response.
 //   - Raw bridge tokens / broker passwords / server URLs are never returned.
+import { getConnection, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
@@ -23,7 +24,6 @@ import {
   usersTable,
   globalTradingSettingsTable,
   adminActionAuditLogTable,
-  mt5ConnectionTable,
   arxLiveCommandsTable,
   arxLivePositionsTable,
   arxLiveArmingTable,
@@ -148,16 +148,9 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
   // Master live bridge — detector + gate
   const detector = await detectCurrentConnectedBridge();
   const bridgeGate = await loadAndEvaluateMasterLiveBridgeGate();
-  let pinnedBridge: typeof mt5ConnectionTable.$inferSelect | null = null;
+  let pinnedBridge: BrokerConnectionFacts | null = null;
   if (settingsRow?.platformMasterBridgeConnectionId != null) {
-    pinnedBridge =
-      (
-        await db
-          .select()
-          .from(mt5ConnectionTable)
-          .where(eq(mt5ConnectionTable.id, settingsRow.platformMasterBridgeConnectionId))
-          .limit(1)
-      )[0] ?? null;
+    pinnedBridge = await getConnection(settingsRow.platformMasterBridgeConnectionId);
   }
   const bridgeForUi = pinnedBridge
     ? {

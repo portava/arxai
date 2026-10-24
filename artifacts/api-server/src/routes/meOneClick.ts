@@ -35,13 +35,13 @@
 //
 // SECURITY: requireUser on every handler. No endpoint reveals another
 // user's settings or any bridge/master state.
+import { getUserPrimaryConnection, listUserConnections } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
 import { normalizeProductRole, type ProductRole } from "../lib/auth/productRole.js";
 import {
   db, userOneClickSettingsTable, oneClickAuditTable,
-  userMasterLiveAccessTable, globalTradingSettingsTable, mt5ConnectionTable,
-} from "@workspace/db";
+  userMasterLiveAccessTable, globalTradingSettingsTable, } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { loadAndEvaluateUserMasterLiveAccessGate } from "../lib/mt5/userMasterLiveAccessGate.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock } from "../lib/concurrency/advisoryLock.js";
@@ -534,10 +534,7 @@ router.post("/me/one-click/submit-live", requireUser, async (req: Request, res: 
  *   NONE   — no bridge configured for this user
  */
 async function resolveBridgeType(userId: number): Promise<"SHARED" | "OWN" | "NONE"> {
-  const [conn] = await db.select({ id: mt5ConnectionTable.id })
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId))
-    .limit(1);
+  const conn = await getUserPrimaryConnection(userId);
   if (conn) return "OWN";
   const [g] = await db.select({ mode: globalTradingSettingsTable.accountRoutingMode })
     .from(globalTradingSettingsTable)
@@ -647,11 +644,7 @@ router.get("/me/one-click/status", requireUser, async (req: Request, res: Respon
     // For own-bridge users, check whether their bridge heartbeat is fresh.
     // A stale/absent heartbeat means the EA is disconnected; dispatching
     // live commands will fail gate #7 on the 16-gate evaluator.
-    const [conn] = await db.select({
-      lastHeartbeat: mt5ConnectionTable.lastHeartbeat,
-    }).from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId))
-      .limit(1);
+    const conn = await getUserPrimaryConnection(userId);
     const heartbeatMs = conn?.lastHeartbeat ? conn.lastHeartbeat.getTime() : null;
     const ageMs = heartbeatMs !== null ? Date.now() - heartbeatMs : Infinity;
     if (ageMs > HEARTBEAT_STALE_MS) {

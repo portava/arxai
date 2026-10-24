@@ -25,8 +25,9 @@
 //   - No tokens, no apiKeyHash, no broker passwords are read or returned.
 //   - No mutation of any table. Read-only.
 
+import { listUserConnections } from "../brokerHub/connections.js";
 import { and, eq } from "drizzle-orm";
-import { db, mt5ConnectionTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import {
   BROKER_DISPATCH_BUILT,
   DEMO_ARMING_BUILT,
@@ -119,10 +120,7 @@ export async function runDemoVerificationGate(args: {
   // Pick the FRESHEST non-revoked row for this user. Older revoked or stale
   // rows must not block a current active EA. We order by lastHeartbeat DESC
   // NULLS LAST so a freshly-attached EA always wins over historical rows.
-  const allRows = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, args.userId));
+  const allRows = await listUserConnections(args.userId);
   const sortedRows = [...allRows].sort((a, b) => {
     const aRev = a.tokenRevokedAt ? 1 : 0;
     const bRev = b.tokenRevokedAt ? 1 : 0;

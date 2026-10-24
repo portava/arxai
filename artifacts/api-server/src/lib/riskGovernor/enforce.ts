@@ -27,7 +27,6 @@ import {
   paperOrdersTable,
   livePositionsTable,
   arxLivePositionsTable,
-  mt5ConnectionTable,
   tradesTable,
   tradeActionRequestsTable,
   arxLiveCommandsTable,
@@ -38,6 +37,7 @@ import {
   sharedTradeAttributionTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, gte, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
+import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { logRiskEvent } from "./riskEvents.js";
 import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
 import { loadTradingHalt } from "../safety/tradingHalt.js";
@@ -280,11 +280,9 @@ export function classifyBrokerHeartbeat(
 
 async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: Date, quote: RiskQuote | null): Promise<Omit<RiskContext, "limits" | "now">> {
   const userId = intent.userId;
-  const connRows = opts.connectionId != null
-    ? await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, opts.connectionId)).limit(1)
-    : await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, userId))
-        .orderBy(desc(mt5ConnectionTable.lastHeartbeat)).limit(1);
-  const conn = connRows[0] ?? null;
+  const conn = opts.connectionId != null
+    ? await getConnection(opts.connectionId)
+    : (await listUserConnections(userId, { order: "heartbeat", limit: 1 }))[0] ?? null;
   const currency = (conn?.accountCurrency ?? "").trim().toUpperCase();
 
   let account: RiskAccount | null = null;

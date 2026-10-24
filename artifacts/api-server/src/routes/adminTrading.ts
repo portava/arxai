@@ -9,6 +9,7 @@
 // - Default state is fail-closed; this router never relaxes that without an
 //   explicit, authenticated admin action with a reason.
 
+import { listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import {
@@ -18,7 +19,6 @@ import {
   adminActionAuditLogTable,
   tradeCommandAuditLogTable,
   usersTable,
-  mt5ConnectionTable,
   sharedMasterAccountsTable,
   virtualTradingAccountsTable,
   sharedTradeAttributionTable,
@@ -480,8 +480,7 @@ router.post("/admin/trading/shared-master", async (req, res) => {
   const parsed = sharedMasterSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ ok: false, error: "INVALID_BODY", details: parsed.error.message }); return; }
 
-  const [conn] = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, parsed.data.connectionId)).limit(1);
+  const [conn] = await listConnections({ connectionIds: [parsed.data.connectionId], limit: 1 });
   if (!conn || conn.userId == null) {
     res.status(404).json({ ok: false, error: "CONNECTION_NOT_FOUND" }); return;
   }
@@ -573,7 +572,7 @@ router.get("/admin/shared-masters", async (req, res) => {
     .from(usersTable);
   const adminIds = admins.filter((u) => operatorRoleFromSession(u.role) != null).map((u) => u.id);
 
-  const conns = adminIds.length === 0 ? [] : await db.select().from(mt5ConnectionTable);
+  const conns = adminIds.length === 0 ? [] : await listConnections({ userIds: adminIds, order: "oldest" });
   const candidates = conns
     .filter((c) => c.userId != null && adminIds.includes(c.userId))
     .map((c) => ({

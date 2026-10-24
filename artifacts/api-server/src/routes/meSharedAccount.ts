@@ -15,6 +15,7 @@
 //     NOT return entire rows from mt5_connection.
 //   * No execution. No order placement. No live-trade flags toggled.
 
+import { getConnection, listConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import type { Request } from "express";
 import { db } from "@workspace/db";
@@ -22,7 +23,6 @@ import {
   virtualTradingAccountsTable,
   sharedTradeAttributionTable,
   sharedMasterAccountsTable,
-  mt5ConnectionTable,
   arxLivePositionsTable,
   unattributedMasterTradesTable,
 } from "@workspace/db/schema";
@@ -67,14 +67,7 @@ async function buildMasterMt5Snapshot(userId: number) {
   let accountNumberMasked: string | null = null;
   let masterOwnerUserId: number | null = null;
   if (masterConnId != null) {
-    const connRows = await db.select({
-      userId: mt5ConnectionTable.userId,
-      brokerName: mt5ConnectionTable.brokerName,
-      serverName: mt5ConnectionTable.serverName,
-      accountType: mt5ConnectionTable.accountType,
-      accountNumber: mt5ConnectionTable.accountNumber,
-    }).from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
-    const c = connRows[0];
+    const c = await getConnection(masterConnId);
     if (c) {
       masterOwnerUserId = c.userId ?? null;
       brokerName = c.brokerName ?? null;
@@ -386,9 +379,7 @@ router.get("/me/shared-account/positions", requireUser, async (req, res) => {
         res.json({ ok: true, userId, scope: "MASTER", masterConnectionId: null, count: 0, lastMt5SyncAt: null, reconciledOrphanCount: 0, rows: [], note: "MASTER_BRIDGE_NOT_PINNED" });
         return;
       }
-      const connRows = await db.select({ ownerId: mt5ConnectionTable.userId })
-        .from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
-      const masterOwnerUserId = connRows[0]?.ownerId ?? null;
+      const masterOwnerUserId = (await getConnection(masterConnId))?.userId ?? null;
       if (masterOwnerUserId == null) {
         res.json({ ok: true, userId, scope: "MASTER", masterConnectionId: masterConnId, count: 0, lastMt5SyncAt: null, reconciledOrphanCount: 0, rows: [], note: "MASTER_CONNECTION_MISSING" });
         return;

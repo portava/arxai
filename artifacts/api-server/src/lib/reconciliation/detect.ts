@@ -4,6 +4,7 @@
 // returns [] (never throws). Issue IDs are deterministic SHA-256(type|naturalKey)
 // so admin actions can target them without persisting issues to a new table.
 
+import { listConnections } from "../brokerHub/connections.js";
 import { createHash } from "node:crypto";
 import { pool } from "@workspace/db";
 
@@ -73,30 +74,21 @@ function iso(v: unknown): string | null { return v instanceof Date ? v.toISOStri
 // 1. BRIDGE_MISMATCH — mt5_connection where reported mode/account_type disagrees.
 async function detectBridgeMismatch(): Promise<ReconciliationIssue[]> {
   return safe("bridge_mismatch", async () => {
-    const r = await pool.query<RawRow>(
-      `SELECT id, user_id, status, mode, account_number, last_heartbeat, updated_at
-         FROM mt5_connection
-        WHERE status = 'ACTIVE'
-          AND mode IN ('LIVE','REAL')
-          AND (account_number IS NULL OR account_number = '')
-        LIMIT 50`,
-    );
-    return r.rows.map((row) => {
-      const cid = n(row.id);
-      return {
-        id: issueId("BRIDGE_MISMATCH", `conn:${cid}`),
-        type: "BRIDGE_MISMATCH" as const,
-        severity: "high" as IssueSeverity,
-        userId: n(row.user_id),
-        bridgeConnectionId: cid,
-        commandId: null, brokerTicket: null, symbol: null,
-        status: s(row.status) ?? "UNKNOWN",
-        reason: "Bridge in LIVE/REAL mode without an account number.",
-        recommendedAction: "Confirm broker account binding or rotate the EA bridge token.",
-        createdAt: null, updatedAt: iso(row.updated_at),
-        metadata: { mode: s(row.mode) },
-      };
-    });
+    const rows = (await listConnections({ statuses: ["ACTIVE"], modes: ["LIVE", "REAL"], order: "oldest" }))
+      .filter((c) => !c.accountNumber).slice(0, 50);
+    return rows.map((c) => ({
+      id: issueId("BRIDGE_MISMATCH", `conn:${c.id}`),
+      type: "BRIDGE_MISMATCH" as const,
+      severity: "high" as IssueSeverity,
+      userId: c.userId,
+      bridgeConnectionId: c.id,
+      commandId: null, brokerTicket: null, symbol: null,
+      status: c.status ?? "UNKNOWN",
+      reason: "Bridge in LIVE/REAL mode without an account number.",
+      recommendedAction: "Confirm broker account binding or rotate the EA bridge token.",
+      createdAt: null, updatedAt: iso(c.updatedAt),
+      metadata: { mode: c.mode },
+    }));
   });
 }
 
@@ -229,25 +221,21 @@ async function detectUserAllocationMismatch(): Promise<ReconciliationIssue[]> {
 // 6. STALE_HEARTBEAT — active connections without a recent heartbeat.
 async function detectStaleHeartbeat(): Promise<ReconciliationIssue[]> {
   return safe("stale_heartbeat", async () => {
-    const r = await pool.query<RawRow>(
-      `SELECT id, user_id, status, mode, last_heartbeat, account_number
-         FROM mt5_connection
-        WHERE status = 'ACTIVE'
-          AND (last_heartbeat IS NULL OR last_heartbeat < NOW() - INTERVAL '90 seconds')
-        LIMIT 50`,
-    );
-    return r.rows.map((row) => ({
-      id: issueId("STALE_HEARTBEAT", `conn:${n(row.id)}`),
+    const cutoff = Date.now() - 90_000;
+    const rows = (await listConnections({ statuses: ["ACTIVE"], order: "oldest" }))
+      .filter((c) => !c.lastHeartbeat || c.lastHeartbeat.getTime() < cutoff).slice(0, 50);
+    return rows.map((c) => ({
+      id: issueId("STALE_HEARTBEAT", `conn:${c.id}`),
       type: "STALE_HEARTBEAT" as const,
       severity: "medium" as IssueSeverity,
-      userId: n(row.user_id),
-      bridgeConnectionId: n(row.id),
+      userId: c.userId,
+      bridgeConnectionId: c.id,
       commandId: null, brokerTicket: null, symbol: null,
-      status: s(row.status) ?? "ACTIVE",
+      status: c.status ?? "ACTIVE",
       reason: "Bridge marked ACTIVE but heartbeat is stale (>90s).",
       recommendedAction: "Have user restart EA or mark bridge offline.",
-      createdAt: null, updatedAt: iso(row.last_heartbeat),
-      metadata: { mode: s(row.mode) },
+      createdAt: null, updatedAt: iso(c.lastHeartbeat),
+      metadata: { mode: c.mode },
     }));
   });
 }
@@ -342,16 +330,19 @@ async function detectMasterBridgeExposure(): Promise<ReconciliationIssue[]> {
 async function detectLiveDemoModeMismatch(): Promise<ReconciliationIssue[]> {
   return safe("mode_mismatch", async () => {
     const r = await pool.query<RawRow>(
-      `SELECT c.id, c.command_id, c.user_id, c.bridge_connection_id, c.symbol, c.status,
-              c.created_at, m.mode AS bridge_mode
+      `SELECT c.id, c.command_id, c.user_id, c.bridge_connection_id, c.symbol, c.status, c.created_at
          FROM arx_live_commands c
-         JOIN mt5_connection m ON m.id = c.bridge_connection_id
-        WHERE c.status NOT IN ('LIVE_DRAFT','REJECTED','BLOCKED','LIVE_BLOCKED')
-          AND m.mode IN ('MOCK','DEMO','PAPER')
-          AND c.created_at > NOW() - INTERVAL '7 days'
-        LIMIT 50`,
+        WHERE c.bridge_connection_id IS NOT NULL
+          AND c.status NOT IN ('LIVE_DRAFT','REJECTED','BLOCKED','LIVE_BLOCKED')
+          AND c.created_at > NOW() - INTERVAL '7 days'`,
     );
-    return r.rows.map((row) => ({
+    const ids = [...new Set(r.rows.map((row) => n(row.bridge_connection_id)).filter((x): x is number => x != null))];
+    const nonLive = new Map((await listConnections({ connectionIds: ids, modes: ["MOCK", "DEMO", "PAPER"] })).map((c) => [c.id, c.mode]));
+    const flagged = r.rows
+      .filter((row) => nonLive.has(n(row.bridge_connection_id)!))
+      .map((row): RawRow => ({ ...row, bridge_mode: nonLive.get(n(row.bridge_connection_id)!) }))
+      .slice(0, 50);
+    return flagged.map((row) => ({
       id: issueId("LIVE_DEMO_MODE_MISMATCH", `cmd:${s(row.command_id)}`),
       type: "LIVE_DEMO_MODE_MISMATCH" as const,
       severity: "critical" as IssueSeverity,

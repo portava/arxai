@@ -10,12 +10,12 @@
 //   lifted. By design, this function CANNOT enable live trading. It only
 //   reports state.
 
+import { listUserConnections } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
   usersTable,
   userReadinessStateTable,
   userOnboardingProgressTable,
-  mt5ConnectionTable,
   virtualTradingAccountsTable,
   liveTradingStateTable,
 } from "@workspace/db/schema";
@@ -76,9 +76,7 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
     .where(eq(userReadinessStateTable.userId, userId)).limit(1);
   const [onb] = await db.select().from(userOnboardingProgressTable)
     .where(eq(userOnboardingProgressTable.userId, userId)).limit(1);
-  const [conn] = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId))
-    .orderBy(desc(mt5ConnectionTable.id)).limit(1);
+  const [conn] = await listUserConnections(userId, { order: "newest", limit: 1 });
   const [vta] = await db.select().from(virtualTradingAccountsTable)
     .where(eq(virtualTradingAccountsTable.userId, userId))
     .orderBy(desc(virtualTradingAccountsTable.id)).limit(1);

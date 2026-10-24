@@ -16,6 +16,7 @@
 //  audit row is written for the GET and `LIVE_TEST_PREFLIGHT_EVALUATED`
 //  is written for the POST so operators can prove the panel was opened
 //  without anyone dispatching a trade.
+import { listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
@@ -24,7 +25,6 @@ import {
   arxLiveArmingTable,
   arxLiveCommandsTable,
   arxLivePositionsTable,
-  mt5ConnectionTable,
   userMasterLiveAccessTable,
   globalTradingSettingsTable,
   adminActionAuditLogTable,
@@ -98,16 +98,14 @@ type BridgeFacts = {
 async function loadPlatformMasterBridge(): Promise<BridgeFacts> {
   const settings = (await db.select().from(globalTradingSettingsTable).limit(1))[0];
   const pinnedId = settings?.platformMasterBridgeConnectionId ?? null;
-  let picked: typeof mt5ConnectionTable.$inferSelect | null = null;
+  let picked: BrokerConnectionFacts | null = null;
   if (pinnedId != null) {
-    const r = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, pinnedId)).limit(1);
+    const r = await listConnections({ connectionIds: [pinnedId], limit: 1 });
     picked = r[0] ?? null;
   }
   if (!picked) {
     // Fall back to freshest non-revoked LIVE bridge across all users.
-    const rows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.mode, "LIVE"));
+    const rows = await listConnections({ modes: ["LIVE"], order: "oldest" });
     const nonRevoked = rows.filter((r) => !r.tokenRevokedAt);
     picked = nonRevoked.slice().sort((a, b) => {
       const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;

@@ -9,10 +9,10 @@
 // Executable paper orders go through POST /paper/orders (paper ledger) or the
 // simulator OMS, both governed. omsGovernance.test.ts holds the line: this is
 // the only writer of paper_trades and it imports no execution path.
+import { getUserConnection } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import {
-  db, paperTradesTable, tradingSessionsTable, mt5ConnectionTable,
-} from "@workspace/db";
+  db, paperTradesTable, tradingSessionsTable, } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -92,10 +92,7 @@ async function verifySession(userId: number, sessionId: number | null | undefine
 }
 async function verifyConnection(userId: number, connId: number | null | undefined) {
   if (connId == null) return true;
-  const r = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-    .where(and(eq(mt5ConnectionTable.id, connId), eq(mt5ConnectionTable.userId, userId)))
-    .limit(1);
-  return !!r[0];
+  return !!(await getUserConnection(userId, connId));
 }
 
 function serialize(t: typeof paperTradesTable.$inferSelect) {

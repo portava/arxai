@@ -14,9 +14,9 @@
 //   never a raw position, ticket, or account number.
 
 import { and, eq, isNull } from "drizzle-orm";
+import { listConnections } from "../brokerHub/connections.js";
 import {
   db,
-  mt5ConnectionTable,
   arxLivePositionsTable,
   tradePoolAllocationsTable,
   type ArxLivePosition,
@@ -113,12 +113,11 @@ export async function getOverlayFreshness(now: number = Date.now()): Promise<{
   freshness: BrokerFreshness;
   asOf: Date | null;
 }> {
-  const connections = await db
-    .select({ snapshotAt: mt5ConnectionTable.lastPositionsSnapshotAt })
-    .from(mt5ConnectionTable);
+  const connections = await listConnections();
   let newest: Date | null = null;
   for (const c of connections) {
-    if (c.snapshotAt && (newest == null || c.snapshotAt > newest)) newest = c.snapshotAt;
+    const at = c.lastPositionsSnapshotAt;
+    if (at && (newest == null || at > newest)) newest = at;
   }
   return { freshness: classifyBrokerFreshness(ageMsOf(newest, now), { now }), asOf: newest };
 }
@@ -153,7 +152,7 @@ export async function getBrokerMirror(now: number = Date.now()): Promise<{
   positions: OpenPositionWithPool[];
 }> {
   const [connections, { positions }] = await Promise.all([
-    db.select().from(mt5ConnectionTable),
+    listConnections(),
     getPoolFloatingPl(),
   ]);
 

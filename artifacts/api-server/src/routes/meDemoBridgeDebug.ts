@@ -13,11 +13,11 @@
 // SAFETY: never returns tokens, hashes, IPs, raw account numbers, or
 // safetyGateSnapshot blobs. Account login is masked.
 
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
-  mt5ConnectionTable,
   mt5DemoCommandsTable,
   securityEventsTable,
 } from "@workspace/db";
@@ -76,10 +76,7 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
   // which bridge is "active". Falls back to the legacy freshest-non-revoked
   // rule only if the gate evidence is missing (defensive — should not
   // happen in practice).
-  const bridgeRows = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
+  const bridgeRows = await listUserConnections(userId, { order: "oldest" });
   let activeBridgeIdFromGate: number | null = null;
   let gateEvidence: Awaited<ReturnType<typeof evaluatePerUserDispatchGate>>["evidence"] | null = null;
   let gateBlockers: string[] = [];

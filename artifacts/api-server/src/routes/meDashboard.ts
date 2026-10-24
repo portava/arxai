@@ -1,9 +1,10 @@
 // Phase 9A/9B/9F/9G — Per-user dashboard intelligence aggregator.
 // SAFETY: requireUser; every query scoped by req.authUser.id; no live execution.
 // Never returns raw bridge tokens. First-time users get clean empty state.
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import {
-  db, mt5ConnectionTable, tradingSessionsTable, paperTradesTable,
+  db, tradingSessionsTable, paperTradesTable,
   tradeJournalEntriesTable, aiTradeReviewsTable, userPlaybooksTable,
   preTradeChecksTable, userRiskSettingsTable, userRiskEventsTable, userAlertsTable,
 } from "@workspace/db";
@@ -38,7 +39,7 @@ function strip<T extends Record<string, unknown>>(row: T) {
 
 async function loadAll(userId: number) {
   const [conns, sessions, trades, journal, reviews, playbooks, checks, riskSettings, riskEvents, alerts] = await Promise.all([
-    db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, userId)),
+    listUserConnections(userId, { order: "oldest" }),
     db.select().from(tradingSessionsTable).where(eq(tradingSessionsTable.userId, userId)).orderBy(desc(tradingSessionsTable.createdAt)),
     db.select().from(paperTradesTable).where(eq(paperTradesTable.userId, userId)),
     db.select().from(tradeJournalEntriesTable).where(eq(tradeJournalEntriesTable.userId, userId)).orderBy(desc(tradeJournalEntriesTable.createdAt)).limit(50),

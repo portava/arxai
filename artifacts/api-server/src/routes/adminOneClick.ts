@@ -16,6 +16,7 @@
 //   - Admin previewing-as-user lands in the 403 branch (effective role check).
 //   - Every mutation writes a master_live_access_audit + one_click_audit row.
 //   - No endpoint reveals bridge tokens, apiKeyHash, or raw account numbers.
+import { getUserPrimaryConnection, listConnections, listUserConnections } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { desc, eq, sql } from "drizzle-orm";
 import {
@@ -26,8 +27,7 @@ import {
   userOneClickSettingsTable,
   oneClickAuditTable,
   globalTradingSettingsTable,
-  mt5ConnectionTable,
-} from "@workspace/db";
+  } from "@workspace/db";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
@@ -93,8 +93,7 @@ router.get("/admin/one-click/shared-bridge-users", async (req: Request, res: Res
   const isSharedMode = globalSettings?.accountRoutingMode === "SHARED_MASTER_MT5";
 
   // Fetch all own-bridge user IDs so we can exclude them.
-  const ownBridgeRows = await db.select({ userId: mt5ConnectionTable.userId })
-    .from(mt5ConnectionTable);
+  const ownBridgeRows = await listConnections();
   const ownBridgeUserIds = new Set(ownBridgeRows.map((r) => r.userId));
 
   const rows = await db
@@ -212,8 +211,7 @@ router.post("/admin/one-click/users/:userId/grant", async (req: Request, res: Re
     return res.status(400).json({ ok: false, error: "NOT_SHARED_BRIDGE_MODE",
       message: "System is not in SHARED_MASTER_MT5 routing mode. Shared-bridge permission is not applicable." });
   }
-  const [ownConnGrant] = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, targetId)).limit(1);
+  const ownConnGrant = await getUserPrimaryConnection(targetId);
   if (ownConnGrant) {
     return res.status(400).json({ ok: false, error: "USER_HAS_OWN_BRIDGE",
       message: "Target user has their own MT5 bridge. One-click permission for own-bridge users is self-managed, not admin-granted." });
@@ -293,8 +291,7 @@ router.post("/admin/one-click/users/:userId/revoke", async (req: Request, res: R
     return res.status(400).json({ ok: false, error: "NOT_SHARED_BRIDGE_MODE",
       message: "System is not in SHARED_MASTER_MT5 routing mode. Shared-bridge permission is not applicable." });
   }
-  const [ownConnRevoke] = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, targetId)).limit(1);
+  const ownConnRevoke = await getUserPrimaryConnection(targetId);
   if (ownConnRevoke) {
     return res.status(400).json({ ok: false, error: "USER_HAS_OWN_BRIDGE",
       message: "Target user has their own MT5 bridge. One-click permission for own-bridge users is self-managed." });

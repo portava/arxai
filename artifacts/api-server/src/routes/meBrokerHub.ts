@@ -4,6 +4,7 @@
 // already reported by the caller's EA. It does not read credentials and must
 // never import an execution or mailbox writer.
 
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
@@ -16,7 +17,6 @@ import { buildConnectionCard } from "../lib/brokerHub/connectionCard.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
-  mt5ConnectionTable,
   userSlotAllocationTable,
   userMasterLiveAccessTable,
 } from "@workspace/db";
@@ -90,8 +90,7 @@ router.get("/me/broker-hub/connections", requireUser, async (req, res) => {
   try {
     const now = new Date();
 
-    const connections = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId));
+    const connections = await listUserConnections(userId);
 
     // Allocation and approval are per-USER (not per-connection), so they are
     // read once and applied to every card.

@@ -6,12 +6,13 @@
 //  - PDF is not implemented; HTML is the safe fallback.
 import {
   db,
-  mt5ConnectionTable, paperTradesTable, paperSessionsTable, tradingSessionsTable,
+  paperTradesTable, paperSessionsTable, tradingSessionsTable,
   tradeJournalEntriesTable, aiTradeReviewsTable, userPlaybooksTable, playbookRulesV2Table,
   preTradeChecksTable, userRiskSettingsTable, userRiskEventsTable, userNotificationsTable,
   userActivityTimelineTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { listUserConnections } from "./brokerHub/connections.js";
 
 export const REPORT_TYPES = [
   "account_summary", "trading_session_summary", "paper_trades", "performance_calendar",
@@ -169,7 +170,7 @@ async function loadPreTradeChecks(userId: number) {
   return db.select().from(preTradeChecksTable).where(eq(preTradeChecksTable.userId, userId)).orderBy(desc(preTradeChecksTable.createdAt)).limit(5000);
 }
 async function loadConnections(userId: number) {
-  return db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, userId));
+  return listUserConnections(userId);
 }
 async function loadRiskSettings(userId: number) {
   return (await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1))[0] ?? null;

@@ -138,7 +138,8 @@ test("every card query is scoped to the authenticated user", () => {
   // Three per-user reads plus the reconciliation lookup must all filter by
   // the session user — a card set leaking another user's connection would be
   // a per-user isolation breach, not just a display bug.
-  assert.match(block, /eq\(mt5ConnectionTable\.userId, userId\)/);
+  // The connection read goes through the Broker Hub's per-user store.
+  assert.match(block, /listUserConnections\(userId\)/);
   assert.match(block, /eq\(userSlotAllocationTable\.userId, userId\)/);
   assert.match(block, /eq\(userMasterLiveAccessTable\.userId, userId\)/);
   assert.match(block, /user_id = \$\{userId\}/);

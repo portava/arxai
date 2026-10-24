@@ -18,7 +18,6 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
-  mt5ConnectionTable,
   globalTradingSettingsTable,
   userMasterLiveAccessTable,
   arxLiveCommandsTable,

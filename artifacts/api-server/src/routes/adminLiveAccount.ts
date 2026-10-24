@@ -8,6 +8,7 @@
 // - Unassigned positions = open arx_live_positions whose userId does not
 //   match any active allocation. Surfaced only to admins for triage.
 
+import { listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -15,7 +16,6 @@ import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
 import {
   db,
   arxLivePositionsTable,
-  mt5ConnectionTable,
   userSlotAllocationTable,
   arxMasterAccountConfigTable,
 } from "@workspace/db";
@@ -55,8 +55,7 @@ router.get("/admin/live/master-summary", requireUser, async (req, res) => {
     return;
   }
 
-  const connRows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, config.masterConnectionId)).limit(1);
+  const connRows = await listConnections({ connectionIds: [config.masterConnectionId], limit: 1 });
   const conn = connRows[0];
   if (!conn) {
     res.json({

@@ -15,6 +15,7 @@
 //   MASTER_BRIDGE_STALE so admins never over-allocate against a stale
 //   snapshot.
 
+import { getConnection, listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { and, desc, eq, ilike, inArray, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod/v4";
@@ -25,7 +26,6 @@ import {
   arxMasterAccountConfigTable,
   arxLivePositionsTable,
   adminActionAuditLogTable,
-  mt5ConnectionTable,
   sharedMasterAccountsTable,
   virtualTradingAccountsTable,
   userMasterLiveAccessTable,
@@ -139,7 +139,7 @@ function mask(num: string | null | undefined): string | null {
   return num.length > 2 ? `••••${num.slice(-2)}` : num;
 }
 
-function summarizeConn(conn: typeof mt5ConnectionTable.$inferSelect, source: "pinned" | "auto-detected"): MasterContext {
+function summarizeConn(conn: BrokerConnectionFacts, source: "pinned" | "auto-detected"): MasterContext {
   const ageMs = conn.lastHeartbeat ? Date.now() - new Date(conn.lastHeartbeat).getTime() : null;
   const balance = Number(conn.accountBalance ?? 0);
   const equity = Number(conn.accountEquity ?? 0);
@@ -178,16 +178,14 @@ async function getMasterContext(): Promise<MasterContext> {
     .where(eq(arxMasterAccountConfigTable.isActive, true)).limit(1);
   const config = configs[0];
   if (config) {
-    const conns = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, config.masterConnectionId)).limit(1);
+    const conns = await listConnections({ connectionIds: [config.masterConnectionId], limit: 1 });
     const conn = conns[0];
     if (conn) return summarizeConn(conn, "pinned");
     // Pinned row points at a deleted connection — fall through to detector.
   }
   const det = await detectCurrentConnectedBridge();
   if (det.ok) {
-    const conns = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, det.bridge.bridgeId)).limit(1);
+    const conns = await listConnections({ connectionIds: [det.bridge.bridgeId], limit: 1 });
     const conn = conns[0];
     if (conn) return summarizeConn(conn, "auto-detected");
   }
@@ -683,8 +681,7 @@ router.post("/admin/allocations/pin-master", requireUser, async (req, res) => {
   const targetConnectionId = det.bridge.bridgeId;
 
   const result = await db.transaction(async (tx) => {
-    const conns = await tx.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, targetConnectionId)).limit(1);
+    const conns = await listConnections({ connectionIds: [targetConnectionId], limit: 1 }, tx);
     const conn = conns[0];
     if (!conn) return fail(409, { ok: false, error: "DETECTED_CONNECTION_MISSING" });
 
@@ -784,7 +781,7 @@ async function loadMasterContextInTxForUpdate(tx: Tx): Promise<{
   const config = configs[0];
 
   const summarize = (
-    conn: typeof mt5ConnectionTable.$inferSelect,
+    conn: BrokerConnectionFacts,
     source: "pinned" | "auto-detected",
   ) => {
     const ageMs = conn.lastHeartbeat ? Date.now() - new Date(conn.lastHeartbeat).getTime() : null;
@@ -804,8 +801,7 @@ async function loadMasterContextInTxForUpdate(tx: Tx): Promise<{
   };
 
   if (config) {
-    const conns = await tx.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, config.masterConnectionId)).limit(1);
+    const conns = await listConnections({ connectionIds: [config.masterConnectionId], limit: 1 }, tx);
     const conn = conns[0];
     if (conn) return summarize(conn, "pinned");
     // Pinned row dangles — fall through to detector.
@@ -815,8 +811,7 @@ async function loadMasterContextInTxForUpdate(tx: Tx): Promise<{
   // capacity check below is against the real broker-reported balance.
   const det = await detectCurrentConnectedBridge();
   if (det.ok) {
-    const conns = await tx.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, det.bridge.bridgeId)).limit(1);
+    const conns = await listConnections({ connectionIds: [det.bridge.bridgeId], limit: 1 }, tx);
     const conn = conns[0];
     if (conn) return summarize(conn, "auto-detected");
   }
@@ -902,12 +897,9 @@ async function ensureSharedMasterAccountInTx(
     .where(eq(sharedMasterAccountsTable.connectionId, masterConnectionId))
     .limit(1);
   if (existing[0]) return existing[0].id;
-  const conn = await tx.select({
-    accountNumber: mt5ConnectionTable.accountNumber,
-    brokerName: mt5ConnectionTable.brokerName,
-  }).from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnectionId)).limit(1);
-  const masked = conn[0]?.accountNumber
-    ? (conn[0].accountNumber.length > 2 ? `••••${conn[0].accountNumber.slice(-2)}` : conn[0].accountNumber)
+  const conn = await getConnection(masterConnectionId, tx);
+  const masked = conn?.accountNumber
+    ? (conn.accountNumber.length > 2 ? `••••${conn.accountNumber.slice(-2)}` : conn.accountNumber)
     : null;
   // ON CONFLICT DO NOTHING + re-read. The unique index on connectionId
   // (`shared_master_accounts_connection_uidx`) means two concurrent
@@ -917,7 +909,7 @@ async function ensureSharedMasterAccountInTx(
   const inserted = await tx.insert(sharedMasterAccountsTable).values({
     connectionId: masterConnectionId,
     accountType,
-    brokerName: conn[0]?.brokerName ?? null,
+    brokerName: conn?.brokerName ?? null,
     accountNumberMasked: masked,
     status: "active",
     isActive: true,

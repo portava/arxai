@@ -14,11 +14,11 @@
 //   supported. Unsupported features come back with featureStatus = the admin
 //   warning, and the actionable payload is withheld.
 
+import { type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq, desc, isNull, inArray } from "drizzle-orm";
 import {
   db,
-  mt5ConnectionTable,
   eaRemoteConfigTable,
   eaUpdateManifestTable,
   eaUpdateReportTable,
@@ -48,7 +48,7 @@ const HEARTBEAT_STABLE_MS = 15_000;
 const DEFAULT_ALLOWED_CHANNELS = ["stable", "emergency"] as const;
 
 interface AugReq extends Request {
-  mt5Connection?: typeof mt5ConnectionTable.$inferSelect;
+  mt5Connection?: BrokerConnectionFacts;
 }
 
 // Shape of an approved manifest as needed for the update-check response.
@@ -109,7 +109,7 @@ export function buildUpdateCheckResponse(
 function requireBridge(
   req: AugReq,
   res: Response,
-): typeof mt5ConnectionTable.$inferSelect | null {
+): BrokerConnectionFacts | null {
   const conn = req.mt5Connection;
   if (!conn) {
     res.status(401).json({ error: "BRIDGE_AUTH_REQUIRED" });

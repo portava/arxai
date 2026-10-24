@@ -18,7 +18,6 @@ import {
   strategyPoolsTable,
   strategyPoolNavTable,
   investorPoolHoldingsTable,
-  mt5ConnectionTable,
   fundBookHighWaterMarksTable,
   type HwmScopeType,
 } from "@workspace/db";
@@ -27,6 +26,7 @@ import { advanceHighWater, computeDrawdown } from "./drawdown.js";
 import { computeInvestorFloatingShare, isFloatingPlIngestible } from "./plAllocator.js";
 import { getPoolFloatingPl } from "./brokerMirror.js";
 import type { Tx } from "./navEngine.js";
+import { listConnections } from "../brokerHub/connections.js";
 
 interface ScopeComputation {
   scopeType: HwmScopeType;
@@ -56,7 +56,7 @@ export async function runDrawdownEngine(tx: Tx, now: Date = new Date()): Promise
     tx.select().from(strategyPoolsTable),
     tx.select().from(strategyPoolNavTable),
     tx.select().from(investorPoolHoldingsTable).where(eq(investorPoolHoldingsTable.status, "ACTIVE")),
-    tx.select().from(mt5ConnectionTable),
+    listConnections({}, tx),
     // Read the floating overlay through the SAME tx so every input belongs to
     // one consistent snapshot (no mixed-time reads under concurrent updates).
     getPoolFloatingPl(tx),

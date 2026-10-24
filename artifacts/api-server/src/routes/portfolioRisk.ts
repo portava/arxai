@@ -19,11 +19,11 @@
 // SAFETY: never closes positions. Never writes to safetyCore. Trade-plan
 // validate consumes the latest snapshot and blocks ONLY when CRITICAL.
 
+import { listScopedConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import {
   db,
-  livePositionsTable, userRiskSettingsTable, mt5ConnectionTable,
-  portfolioRiskSnapshotsTable, correlationRiskReportsTable, vaultEventsTable,
+  livePositionsTable, userRiskSettingsTable, portfolioRiskSnapshotsTable, correlationRiskReportsTable, vaultEventsTable,
 } from "@workspace/db";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -64,8 +64,7 @@ async function loadInputs(authUser: PortfolioOwner) {
     authUser
       ? db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, authUser.id)).limit(1)
       : Promise.resolve([]),
-    db.select().from(mt5ConnectionTable).where(ownerScope(mt5ConnectionTable.userId, authUser))
-      .orderBy(desc(mt5ConnectionTable.updatedAt)).limit(1),
+    listScopedConnections((col) => ownerScope(col, authUser), { order: "updated", limit: 1 }),
   ]);
 
   // (O) Per-position risk approximation. The trades schema doesn't carry an

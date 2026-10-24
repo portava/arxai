@@ -9,11 +9,11 @@
 // trade-mode aware response. It does NOT itself authorize anything — the
 // order guard chain (./orderGuard.ts) is the only thing that may APPROVE.
 
+import { getConnection, getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
   globalTradingSettingsTable,
   userTradingPermissionsTable,
-  mt5ConnectionTable,
   sharedMasterAccountsTable,
 } from "@workspace/db/schema";
 import { eq, asc, and } from "drizzle-orm";
@@ -121,9 +121,7 @@ export async function getUserPermissions(userId: number) {
 
 async function getUserAccountType(userId: number): Promise<AccountType> {
   try {
-    const rows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
-    const c = rows[0];
+    const c = await getUserPrimaryConnection(userId);
     if (!c) return "unknown";
     const t = String((c as { accountType?: string | null }).accountType ?? "").toLowerCase();
     if (t === "demo") return "demo";
@@ -174,13 +172,11 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
           smActive: sharedMasterAccountsTable.isActive,
           smStatus: sharedMasterAccountsTable.status,
           smType: sharedMasterAccountsTable.accountType,
-          connType: mt5ConnectionTable.accountType,
         }).from(sharedMasterAccountsTable)
-          .innerJoin(mt5ConnectionTable,
-            eq(mt5ConnectionTable.id, sharedMasterAccountsTable.connectionId))
           .where(eq(sharedMasterAccountsTable.connectionId, candidateConnId))
           .limit(1);
-        const m = masterRows[0];
+        const masterConn = masterRows[0] ? await getConnection(candidateConnId) : null;
+        const m = masterRows[0] && masterConn ? { ...masterRows[0], connType: masterConn.accountType } : undefined;
         const connT = String(m?.connType ?? "").toLowerCase();
         const smT = String(m?.smType ?? "").toLowerCase();
         const validForLive = wantedType === "live"
