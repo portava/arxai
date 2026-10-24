@@ -30,7 +30,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
 
-const TABLES = [
+export const TABLES = [
   "paper_accounts",
   "paper_orders",
   "paper_trade_events",
@@ -119,7 +119,9 @@ async function main(): Promise<void> {
   console.log("Done.");
 }
 
-main().then(() => process.exit(0)).catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().then(() => process.exit(0)).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

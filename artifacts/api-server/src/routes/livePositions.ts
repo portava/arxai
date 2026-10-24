@@ -2,7 +2,6 @@
 //
 // COMPOSES:
 //   - mt5_state.positions JSONB (broker truth feed, synced via /mt5/sync-positions)
-//   - tradesTable           (system-of-record order rows)
 //   - mt5_commands          (queues CLOSE / MODIFY for the EA)
 //   - vault_events          (truthDomain="POSITION" — emits scoring signals)
 //
@@ -13,14 +12,15 @@
 // SAFETY RULES (enforced here, not in the evaluator):
 //   - REMOVE_STOP_LOSS requires explicit `confirm: true` body field.
 //   - MANUAL_CLOSE     requires explicit `confirm: true` body field.
-//   - We never auto-modify SL/TP; routes only act when the operator calls.
+//   - Stop / target edits and closes go to the broker through the venue's
+//     governed queue (lib/positions/governedOps.ts); these routes never edit
+//     the ledger to pretend the broker already did it.
 
 import { Router } from "express";
 import {
   db,
   livePositionsTable,
   positionEventsTable,
-  tradesTable,
   vaultEventsTable,
 } from "@workspace/db";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -30,10 +30,8 @@ import {
   POSITION_STATUS_TERMINAL,
   type LivePositionStatus,
 } from "@workspace/domain/live-position";
-import { queueMt5CommandWithGate } from "./mt5";
-import { PNL_DATA_QUALITY_MISSING_CLOSE_FILL } from "../lib/live/realizedPnl.js";
 import { requireUser } from "../lib/auth/middleware.js";
-import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
+import { findGovernedPosition, submitGovernedClose, submitGovernedModify, type GovernedOpResult, type GovernedPosition } from "../lib/positions/governedOps.js";
 import { canSeeLegacyRows, ownerScope } from "../lib/auth/ownerScope.js";
 import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
@@ -58,6 +56,30 @@ async function ownPosition(id: number, authUser: Parameters<typeof ownerScope>[1
     .where(and(eq(livePositionsTable.id, id), ownerScope(livePositionsTable.userId, authUser)))
     .limit(1);
   return rows[0] ?? null;
+}
+
+// Stop edits, target edits and closes go through the one governed path
+// (lib/positions/governedOps.ts). Only the trader's own ARX-governed positions
+// can be changed from here; the server-wide feed rows (user_id NULL) and
+// positions opened outside ARX are changed in the trading terminal.
+const POSITIONS_PAGE_SOURCE = "POSITIONS_PAGE";
+
+async function governedPositionFor(row: typeof livePositionsTable.$inferSelect, userId: number): Promise<GovernedPosition | null> {
+  if (row.userId !== userId || !row.brokerPositionId) return null;
+  return findGovernedPosition(userId, row.brokerPositionId, row.lotSize);
+}
+
+function notGoverned(res: import("express").Response, row: typeof livePositionsTable.$inferSelect): void {
+  res.status(409).json({
+    error: "NOT_AN_ARX_GOVERNED_POSITION",
+    message: row.userId == null
+      ? "This row mirrors the shared broker feed; change it in the trading terminal."
+      : "ARX did not open this position, so it cannot change it; use your trading terminal.",
+  });
+}
+
+function refused(res: import("express").Response, op: GovernedOpResult): void {
+  res.status(422).json({ error: op.reason ?? "Refused", code: "GOVERNED_QUEUE_REFUSED", commandId: op.commandId });
 }
 
 function toNum(v: unknown): number | null {
@@ -333,46 +355,23 @@ router.patch("/positions/:id/stop-loss", requireUser, async (req, res): Promise<
       return;
     }
 
-    // Position Guardian: removing or widening a stop is checked against the
-    // trader's stop-loss requirement and per-trade loss limit. The legacy
-    // server-wide feed rows (user_id NULL, operator only) have no trader limits.
-    if (row.userId === req.authUser!.id && (row.direction === "BUY" || row.direction === "SELL")) {
-      const risk = await enforcePreTradeRisk({
-        userId: req.authUser!.id, venue: "DEMO", origin: "manual", action: "MODIFY",
-        symbol: row.symbol, side: row.direction, lots: row.lotSize,
-        stopLoss: body.stopLoss ?? null, takeProfit: row.takeProfit ?? null,
-        position: { entryPrice: row.entryPrice, stopLoss: row.stopLoss ?? null },
-      }, { auditContext: { caller: "PATCH /positions/:id/stop-loss", livePositionId: id } });
-      if (!risk.allowed) {
-        res.status(422).json({
-          error: risk.primaryReason ?? "Blocked by Risk Governor", code: "RISK_GOVERNOR_BLOCK",
-          blockedBy: risk.blockedBy, auditEventId: risk.auditEventId,
-        });
-        return;
-      }
-    }
-
-    // Queue MODIFY through the shared MT5 gate so mode/live-lock semantics apply.
-    if (row.brokerPositionId) {
-      await queueMt5CommandWithGate("MODIFY", {
-        ticket: Number(row.brokerPositionId) || null,
-        sl: body.stopLoss ?? null,
-        tp: row.takeProfit ?? null,
-      });
-    }
-    await db.update(livePositionsTable).set({ stopLoss: body.stopLoss, updatedAt: new Date() })
-      .where(eq(livePositionsTable.id, id));
+    // One governed path: the venue's own queue (arming, kill switch, Risk
+    // Governor — removing or widening is checked against the trader's
+    // stop-loss requirement and per-trade loss limit). The ledger row is NOT
+    // edited here; the broker result and the next snapshot move it.
+    const pos = await governedPositionFor(row, req.authUser!.id);
+    if (!pos) { notGoverned(res, row); return; }
+    const op = await submitGovernedModify(req.authUser!.id, pos, body.stopLoss ?? null, row.takeProfit ?? null, POSITIONS_PAGE_SOURCE);
+    if (!op.ok) { refused(res, op); return; }
     await appendEvent({ livePositionId: id,
-      eventType: body.stopLoss == null ? "SL_REMOVED" : "SL_MOVED",
+      eventType: body.stopLoss == null ? "SL_REMOVE_REQUESTED" : "SL_MOVE_REQUESTED",
       severity: body.stopLoss == null ? "DANGER" : "INFO",
-      message: body.stopLoss == null ? "Operator removed stop loss" : `Operator moved SL ${row.stopLoss} → ${body.stopLoss}`,
-      oldValue: { stopLoss: row.stopLoss }, newValue: { stopLoss: body.stopLoss } });
-    await appendVault(body.stopLoss == null ? "POSITION_SL_REMOVED_BY_USER" : "POSITION_SL_MOVED_BY_USER",
+      message: body.stopLoss == null ? "Trader asked the broker to remove the stop loss" : `Trader asked the broker to move SL ${row.stopLoss} → ${body.stopLoss}`,
+      oldValue: { stopLoss: row.stopLoss }, newValue: { stopLoss: body.stopLoss, commandId: op.commandId } });
+    await appendVault(body.stopLoss == null ? "POSITION_SL_REMOVE_REQUESTED_BY_USER" : "POSITION_SL_MOVE_REQUESTED_BY_USER",
       body.stopLoss == null ? "DANGER" : "INFO", id,
-      { tradeId: row.tradeId, oldStopLoss: row.stopLoss, newStopLoss: body.stopLoss, reason: body.reason ?? null });
-
-    const after = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    res.json(serializeLivePosition(after[0]!));
+      { tradeId: row.tradeId, oldStopLoss: row.stopLoss, newStopLoss: body.stopLoss, reason: body.reason ?? null, commandId: op.commandId, venue: pos.venue });
+    res.json({ ...serializeLivePosition(row), pending: { commandId: op.commandId, venue: pos.venue, stopLoss: body.stopLoss } });
   } catch (err) {
     if (err instanceof z.ZodError) { res.status(400).json({ error: "Invalid body", details: err.issues }); return; }
     req.log.error({ err: String(err) }, "PATCH /positions/:id/stop-loss failed");
@@ -389,21 +388,14 @@ router.patch("/positions/:id/take-profit", requireUser, async (req, res): Promis
     const row = await ownPosition(id, req.authUser);
     if (!row) { res.status(404).json({ error: "Not found" }); return; }
 
-    if (row.brokerPositionId) {
-      await queueMt5CommandWithGate("MODIFY", {
-        ticket: Number(row.brokerPositionId) || null,
-        sl: row.stopLoss ?? null,
-        tp: body.takeProfit ?? null,
-      });
-    }
-    await db.update(livePositionsTable).set({ takeProfit: body.takeProfit, updatedAt: new Date() })
-      .where(eq(livePositionsTable.id, id));
-    await appendEvent({ livePositionId: id, eventType: "TP_MOVED", severity: "INFO",
-      message: `Operator moved TP ${row.takeProfit} → ${body.takeProfit}`,
-      oldValue: { takeProfit: row.takeProfit }, newValue: { takeProfit: body.takeProfit } });
-
-    const after = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    res.json(serializeLivePosition(after[0]!));
+    const pos = await governedPositionFor(row, req.authUser!.id);
+    if (!pos) { notGoverned(res, row); return; }
+    const op = await submitGovernedModify(req.authUser!.id, pos, row.stopLoss ?? null, body.takeProfit ?? null, POSITIONS_PAGE_SOURCE);
+    if (!op.ok) { refused(res, op); return; }
+    await appendEvent({ livePositionId: id, eventType: "TP_MOVE_REQUESTED", severity: "INFO",
+      message: `Trader asked the broker to move TP ${row.takeProfit} → ${body.takeProfit}`,
+      oldValue: { takeProfit: row.takeProfit }, newValue: { takeProfit: body.takeProfit, commandId: op.commandId } });
+    res.json({ ...serializeLivePosition(row), pending: { commandId: op.commandId, venue: pos.venue, takeProfit: body.takeProfit } });
   } catch (err) {
     if (err instanceof z.ZodError) { res.status(400).json({ error: "Invalid body", details: err.issues }); return; }
     req.log.error({ err: String(err) }, "PATCH /positions/:id/take-profit failed");
@@ -446,47 +438,19 @@ router.post("/positions/:id/close", requireUser, async (req, res): Promise<void>
       return;
     }
 
-    if (row.brokerPositionId) {
-      await queueMt5CommandWithGate("CLOSE", {
-        ticket: Number(row.brokerPositionId) || null,
-      });
-    }
-    await db.update(livePositionsTable).set({
-      status: "MANUALLY_CLOSED", closedAt: new Date(), updatedAt: new Date(),
-    }).where(eq(livePositionsTable.id, id));
-    if (row.tradeId) {
-      // Derive close result from realized/unrealized PnL — never hardcode loss.
-      // If the broker never reported either value, we refuse to invent one:
-      // mark pnlStatus="UNKNOWN" + a data-quality flag so Trade Logs renders
-      // "P/L unavailable" and analytics aggregates exclude the row.
-      const rawPnl = row.realizedProfitLoss ?? row.unrealizedProfitLoss;
-      const hasTrustedPnl = typeof rawPnl === "number" && Number.isFinite(rawPnl);
-      if (hasTrustedPnl) {
-        const tradeStatus = rawPnl >= 0 ? "CLOSED_WIN" : "CLOSED_LOSS";
-        await db.update(tradesTable).set({
-          status: tradeStatus, pnl: rawPnl, closedAt: new Date(),
-          pnlStatus: "COMPUTED", dataQualityFlag: null,
-        }).where(eq(tradesTable.id, row.tradeId));
-      } else {
-        await db.update(tradesTable).set({
-          status: "CLOSED_LOSS", // status retained as terminal; pnl is null+UNKNOWN
-          pnl: null, closedAt: new Date(),
-          pnlStatus: "UNKNOWN",
-          // Canonical constant from lib/live/realizedPnl — same flag the
-          // live-test-cycle uses when the broker close-result didn't carry
-          // a usable fill price.
-          dataQualityFlag: PNL_DATA_QUALITY_MISSING_CLOSE_FILL,
-        }).where(eq(tradesTable.id, row.tradeId));
-      }
-    }
-    await appendEvent({ livePositionId: id, eventType: "MANUAL_CLOSE", severity: "WARN",
-      message: `Operator closed position: ${body.reason ?? "no reason given"}`,
-      oldValue: { status: row.status }, newValue: { status: "MANUALLY_CLOSED" } });
-    await appendVault("POSITION_MANUAL_CLOSE_BY_USER", "WARN", id,
-      { tradeId: row.tradeId, reason: body.reason ?? null });
-
-    const after = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, id)).limit(1);
-    res.json(serializeLivePosition(after[0]!));
+    // The close goes to the broker through the venue's governed queue. The
+    // position stays open in the ledger (and protected by the Position
+    // Guardian) until the broker confirms the close; P/L comes from the fill.
+    const pos = await governedPositionFor(row, req.authUser!.id);
+    if (!pos) { notGoverned(res, row); return; }
+    const op = await submitGovernedClose(req.authUser!.id, pos, POSITIONS_PAGE_SOURCE);
+    if (!op.ok) { refused(res, op); return; }
+    await appendEvent({ livePositionId: id, eventType: "CLOSE_REQUESTED", severity: "WARN",
+      message: `Trader asked the broker to close the position: ${body.reason ?? "no reason given"}`,
+      oldValue: { status: row.status }, newValue: { commandId: op.commandId } });
+    await appendVault("POSITION_CLOSE_REQUESTED_BY_USER", "WARN", id,
+      { tradeId: row.tradeId, reason: body.reason ?? null, commandId: op.commandId, venue: pos.venue });
+    res.json({ ...serializeLivePosition(row), pending: { commandId: op.commandId, venue: pos.venue, close: true } });
   } catch (err) {
     if (err instanceof z.ZodError) { res.status(400).json({ error: "Confirmation required", details: err.issues }); return; }
     req.log.error({ err: String(err) }, "POST /positions/:id/close failed");

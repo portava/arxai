@@ -4688,7 +4688,24 @@ export async function recordLiveCommandResult(args: {
       : (args.brokerTicket ?? null);
     if (closeTicket) {
       try {
-        const closedRows = await db.update(arxLivePositionsTable).set({
+        // A partial close (closed volume below what the position holds) only
+        // shrinks the position: it stays open, in the ledger and under the
+        // Position Guardian. Only a close of the whole volume stamps closedAt.
+        const [openRow] = await db.select({ id: arxLivePositionsTable.id, volume: arxLivePositionsTable.volume })
+          .from(arxLivePositionsTable).where(and(
+            eq(arxLivePositionsTable.userId, args.userId),
+            eq(arxLivePositionsTable.brokerTicket, closeTicket),
+            isNull(arxLivePositionsTable.closedAt),
+          )).limit(1);
+        const closedVolume = Number(args.executedVolume ?? row.requestedVolume);
+        const partial = openRow != null && Number.isFinite(closedVolume) && closedVolume > 0
+          && Number(openRow.volume) - closedVolume > LIVE_VOLUME_EPSILON;
+        if (partial) {
+          await db.update(arxLivePositionsTable).set({
+            volume: Math.round((Number(openRow.volume) - closedVolume) * 1e8) / 1e8, lastSyncedAt: now,
+          }).where(eq(arxLivePositionsTable.id, openRow.id));
+        }
+        const closedRows = partial ? [] : await db.update(arxLivePositionsTable).set({
           closedAt: now,
           lastSyncedAt: now,
         }).where(and(

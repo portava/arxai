@@ -325,3 +325,30 @@ test("demo: a governed demo fill reported by the bridge starts being tracked; a 
   assert.deepEqual(runs[0]!.assessment.findings, ["STOP_MISSING"]);
   assert.equal(calls[0]!.stopLoss, 1.31);
 });
+
+test("live: a filled partial close shrinks the position and keeps it guarded; a full close closes it", async () => {
+  await seedLive({ brokerStop: 1.095 });
+  const { recordLiveCommandResult } = await import("../../live/liveCommandPipeline.js");
+  const close = async (id: string, volume: number) => {
+    await db.insert(arxLiveCommandsTable).values({
+      commandId: id, userId, commandType: "CLOSE_LIVE_POSITION", status: "SENT_TO_MT5_LIVE", bridgeConnectionId: 1,
+      symbol: "EURUSD", side: "BUY", orderType: "CLOSE", requestedVolume: volume,
+      payload: { brokerTicket: TICKET }, filledAt: null,
+    });
+    return recordLiveCommandResult({ userId, commandId: id, outcome: "LIVE_FILLED", reportingBridgeConnectionId: 1,
+      brokerTicket: TICKET, executedVolume: volume, fillPrice: 1.1 });
+  };
+  const first = await close("qa_close_part", 0.04);
+  assert.equal(first.ok, true, JSON.stringify(first));
+  const [pos] = await db.select().from(arxLivePositionsTable).where(eq(arxLivePositionsTable.userId, userId));
+  assert.equal(pos!.closedAt, null, "a partial close does not close the position");
+  assert.equal(pos!.volume, 0.06);
+  const r = await reconcilePosition("LIVE", userId, TICKET, { trigger: "fill", submit: accept });
+  assert.ok(r, "the remainder is still guarded");
+  assert.equal(r.assessment.action, "NONE");
+
+  await close("qa_close_rest", 0.06);
+  const [after] = await db.select().from(arxLivePositionsTable).where(eq(arxLivePositionsTable.userId, userId));
+  assert.ok(after!.closedAt, "the close of the whole remainder closes it");
+  assert.equal(await reconcilePosition("LIVE", userId, TICKET, { trigger: "fill", submit: accept }), null);
+});

@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { DisclaimerBanner } from "@/components/compliance/DisclaimerBanner";
 import { useLiveAccountSnapshot } from "@/hooks/useLiveAccountSnapshot";
 import { CanonicalBalancePanel } from "@/components/account/CanonicalBalancePanel";
+import { RiskLimitLayersPanel, RISK_LIMIT_LAYERS_QUERY_KEY } from "@/components/risk/RiskLimitLayersPanel";
 
 // ── Risk mode config ─────────────────────────────────────────────────────────
 
@@ -350,6 +351,7 @@ export default function RiskSettings() {
         onSuccess: (res) => {
           queryClient.setQueryData(getGetRiskSettingsQueryKey(), res);
           queryClient.invalidateQueries({ queryKey: getGetRiskAuditQueryKey() });
+          queryClient.invalidateQueries({ queryKey: RISK_LIMIT_LAYERS_QUERY_KEY });
           toast({ title: "Custom limits saved", description: "Risk parameters updated." });
         },
         onError: () => toast({ title: "Save failed", variant: "destructive" }),
@@ -624,6 +626,7 @@ export default function RiskSettings() {
             TAB 2 — LIMITS
         ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="limits">
+          <RiskLimitLayersPanel />
           {currentMode !== "Custom" && (
             <Alert className="mb-4 border-blue-500/30 bg-blue-500/5">
               <ShieldAlert className="h-4 w-4 text-blue-400" />

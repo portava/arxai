@@ -57,6 +57,7 @@ import {
   type RiskInFlight,
   type RiskPosition,
   type RiskQuote,
+  type StoredLimitRows,
   type TradeIntent,
   type BrokerStatus,
   type TradingActivity,
@@ -162,11 +163,16 @@ function startOfTodayUtc(now: Date): Date {
   return d;
 }
 
-export async function loadEffectiveLimits(userId: number): Promise<EffectiveLimits> {
+/** The trader's stored limit rows: own settings, older settings page, operator limits. */
+export async function loadStoredLimitRows(userId: number): Promise<StoredLimitRows> {
   const [u] = await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1);
   const [l] = await db.select().from(riskSettingsTable).where(eq(riskSettingsTable.userId, userId)).limit(1);
   const [a] = await db.select().from(userRiskLimitsTable).where(eq(userRiskLimitsTable.userId, userId)).limit(1);
-  return resolveEffectiveLimits({ userSettings: u ?? null, legacySettings: l ?? null, adminLimits: a ?? null });
+  return { userSettings: u ?? null, legacySettings: l ?? null, adminLimits: a ?? null };
+}
+
+export async function loadEffectiveLimits(userId: number): Promise<EffectiveLimits> {
+  return resolveEffectiveLimits(await loadStoredLimitRows(userId));
 }
 
 /**
