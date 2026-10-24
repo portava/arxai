@@ -170,7 +170,9 @@ async function http(path: string, init: RequestInit = {}): Promise<{ status: num
 
   // ── 16. Emergency stop still blocks (kill switch) ───────────────────────
   record("16. Kill switch short-circuits guard chain",
-    /killSwitchEngaged/.test(guards) && /Emergency stop/.test(guards));
+    // The guard reads both install-wide stops through the one platform-stop
+    // authority (lib/safety/platformSwitches.platformStop).
+    /await platformStop\(\)/.test(guards) && /preCheckStopRefusal\(/.test(guards) && /Emergency stop/.test(guards));
 
   // ── 17. Risk audit logs written (user_risk_events) on every block ───────
   {

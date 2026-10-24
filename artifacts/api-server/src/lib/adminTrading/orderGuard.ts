@@ -14,6 +14,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { getEnvelope } from "./safetyEnvelope.js";
+import { platformStop, preCheckStopRefusal } from "../safety/platformSwitches.js";
 import { resolveRouting, type RoutingDecision } from "./routingResolver.js";
 import { logger } from "../logger.js";
 import { enforcePreTradeRisk } from "../riskGovernor/enforce.js";
@@ -67,6 +68,15 @@ export function liveConfirmationGate(
 
 export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResult> {
   const env = await getEnvelope(req.userId);
+  // Both install-wide stops, one read through the switch authority. Gate 4
+  // always enforced the platform emergency stop (on every mode); an order
+  // opens new risk, so the safety-core kill switch refuses it too — the
+  // pre-trade Risk Governor (gate 9b, tradingHalt) refuses it anyway.
+  const stop = preCheckStopRefusal(await platformStop(), {
+    own: "platform_emergency_stop",
+    opensNewRisk: true,
+    venue: req.mode === "SIMULATED" ? "PAPER" : req.mode,
+  });
   // Routing resolution runs early — its result feeds gate 5 (account_type)
   // and gates 8b/8c. The resolver itself is non-mutating except for the
   // virtual-account get-or-create in shared mode.
@@ -102,9 +112,11 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
         return null;
       } },
 
-    // 4. Emergency kill switch check.
+    // 4. Platform stop check (emergency stop OR safety-core kill switch).
+    // The refusal code is unchanged for either source; the audit row's
+    // details carry which source refused (platformStopSources).
     { name: "kill_switch", test: () =>
-        env.emergencyKillSwitch ? "EMERGENCY_KILL_SWITCH_ACTIVE" : null },
+        stop.engaged ? "EMERGENCY_KILL_SWITCH_ACTIVE" : null },
 
     // 5. Account routing + type verification.
     //
@@ -246,6 +258,7 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
       envelope: env,
       routing,
       gateResults: gates.map((g) => g.name),
+      platformStopSources: stop.sources,
       brokerPlacementLayerEnabled: BROKER_PLACEMENT_LAYER_ENABLED,
     },
     accountRoutingMode: routing.effectiveRoutingMode,

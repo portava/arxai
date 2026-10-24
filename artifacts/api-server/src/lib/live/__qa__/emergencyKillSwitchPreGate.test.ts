@@ -155,3 +155,44 @@ test("dispatchLiveCommand consults the pre-gate BEFORE the 18-gate evaluator", (
     "the emergency-kill-switch pre-gate must run BEFORE the 18-gate evaluator",
   );
 });
+
+// ── The other install-wide stop (one platform-stop read) ──────────────────
+// dispatchLiveCommand reads both stops through platformStop() and passes the
+// safety-core kill switch as an additional reason. It refuses ENTRY commands
+// only (the pre-trade Risk Governor refuses them anyway); closes and modifies
+// are left to the governor. The emergency-stop rule above is unchanged.
+
+test("safety-core kill switch refuses entries only; never loosens the emergency rule", () => {
+  const ENTRIES = new Set(["PLACE_LIVE_MARKET_ORDER", "PLACE_LIVE_PENDING_ORDER"]);
+  for (const commandType of COMMAND_TYPES) {
+    for (const hasKillSwitchCloseBypassMarker of [false, true]) {
+      for (const emergencyKillSwitch of [false, true]) {
+        for (const safetyCoreKillSwitch of [false, true, null]) {
+          const got = emergencyKillSwitchBlocksDispatch({
+            emergencyKillSwitch, safetyCoreKillSwitch, commandType, hasKillSwitchCloseBypassMarker,
+          });
+          const emergencyOnly = emergencyKillSwitchBlocksDispatch({
+            emergencyKillSwitch, commandType, hasKillSwitchCloseBypassMarker,
+          });
+          const coreEngaged = safetyCoreKillSwitch !== false; // unknown → engaged (fail closed)
+          const label = `${commandType} marker=${hasKillSwitchCloseBypassMarker} emergency=${emergencyKillSwitch} core=${safetyCoreKillSwitch}`;
+          assert.equal(got, emergencyOnly || (coreEngaged && ENTRIES.has(commandType)), label);
+          if (emergencyOnly) assert.equal(got, true, `never looser: ${label}`);
+        }
+      }
+    }
+  }
+});
+
+test("dispatchLiveCommand reads both stops through platformStop()", () => {
+  const source = readFileSync(
+    fileURLToPath(new URL("../liveCommandPipeline.ts", import.meta.url)),
+    "utf8",
+  );
+  const dispatchStart = source.indexOf("export async function dispatchLiveCommand");
+  const preGateAt = source.indexOf("emergencyKillSwitchBlocksDispatch({", dispatchStart);
+  const stopAt = source.indexOf("await platformStop()", dispatchStart);
+  assert.ok(stopAt > 0 && stopAt < preGateAt, "the pre-gate's inputs come from platformStop()");
+  assert.ok(source.slice(preGateAt, preGateAt + 400).includes("safetyCoreKillSwitch"), "the safety-core source is passed in");
+  assert.ok(!/emergencyKillSwitch:\s*env\.emergencyKillSwitch/.test(source), "no longer reads the envelope's single stop");
+});

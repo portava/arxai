@@ -32,6 +32,7 @@ import type { GuardChainResult } from "../tradeAction/types.js";
 import { getStatus as getSafetyStatus } from "../safetyCore.js";
 import { resolveRouting } from "../adminTrading/routingResolver.js";
 import { getEnvelope } from "../adminTrading/safetyEnvelope.js";
+import { platformStop } from "../safety/platformSwitches.js";
 
 export type RadarLabel =
   | "Strong opportunity"
@@ -423,9 +424,12 @@ async function buildScanContext(userId: number, dataSource: string | null): Prom
     // (undefined). Guards treat `undefined` as "not prefetched → live re-read",
     // and `null` as "confirmed no row". Coalescing errors to `null` would mask
     // transient failures as hard guard rejections.
-    const [envelope, safety, user, liveDisclosureAcceptedAt] = await Promise.all([
+    const [envelope, safety, stop, user, liveDisclosureAcceptedAt] = await Promise.all([
       getEnvelope(userId),
       getSafetyStatus(),
+      // Both install-wide stops (emergency stop + safety-core kill switch),
+      // one read through the switch authority; forwarded to the guards.
+      platformStop(),
       db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1)
         .then(r => (r[0] ?? null) as { id: number; suspendedAt?: Date | null } | null)
         .catch(() => undefined),
@@ -442,15 +446,15 @@ async function buildScanContext(userId: number, dataSource: string | null): Prom
       && envelope.globalLiveEnabled === true
       && envelope.userLiveApproved === true
       && envelope.liveLocked === false
-      && envelope.emergencyKillSwitch === false
+      && stop.engaged === false
       && allowed.includes("LIVE_TRADING")
       && !!liveDisclosureAck;
     const demoOk =
-      !envelope.emergencyKillSwitch
+      !stop.engaged
       && (allowed.includes("PAPER_TRADING") || allowed.includes("LIVE_TRADING"))
       && envelope.tradingMode !== "DISABLED";
 
-    const tradingDisabled = envelope.tradingMode === "DISABLED" || envelope.emergencyKillSwitch;
+    const tradingDisabled = envelope.tradingMode === "DISABLED" || stop.engaged;
     const isSharedMaster = envelope.accountRoutingMode === "SHARED_MASTER_MT5";
 
     // Determine effective preview mode.
@@ -495,14 +499,14 @@ async function buildScanContext(userId: number, dataSource: string | null): Prom
         accountRoutingMode: envelope.accountRoutingMode,
         userLiveApproved: envelope.userLiveApproved,
         liveLocked: envelope.liveLocked,
-        emergencyKillSwitch: envelope.emergencyKillSwitch,
+        emergencyKillSwitch: stop.engaged,
         canSuggestLive: liveOk,
         canSuggestDemo: demoOk,
         closeOnlyMode,
       },
       softWarnings,
       prefetched: {
-        safety,
+        platformStop: stop,
         routing: routing && routing.ok ? routing : undefined,
         // `user` / `liveDisclosureAcceptedAt` are passed through preserving the
         // null-vs-undefined distinction. `undefined` ⇒ guards live-fallback;

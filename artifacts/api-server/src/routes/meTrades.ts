@@ -26,6 +26,7 @@ import {
 import { and, eq, desc, isNotNull, ne } from "drizzle-orm";
 import { z } from "zod/v4";
 import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
+import { platformStop, preCheckStopRefusal } from "../lib/safety/platformSwitches.js";
 import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
 import { resolveClosePolicy } from "../lib/live/closePolicy.js";
 import { placeOrder } from "../lib/adminTrading/placeOrder.js";
@@ -360,9 +361,18 @@ router.post("/me/trades/close", async (req, res) => {
     res.status(409).json({ ok: false, error: "TRADING_DISABLED", bannerReason: env.bannerReason });
     return;
   }
-  if (env.emergencyKillSwitch) {
-    res.status(409).json({ ok: false, error: "EMERGENCY_KILL_SWITCH_ACTIVE" });
-    return;
+  // The platform emergency stop refuses this close, as it always did. Read
+  // through the one platform-stop authority: a close opens no new risk, so
+  // the safety-core kill switch is left to the governor (which keeps closes
+  // open) and this check refuses exactly what it refused before.
+  {
+    const stop = preCheckStopRefusal(await platformStop(), {
+      own: "platform_emergency_stop", opensNewRisk: false, venue: "LIVE",
+    });
+    if (stop.engaged) {
+      res.status(409).json({ ok: false, error: "EMERGENCY_KILL_SWITCH_ACTIVE" });
+      return;
+    }
   }
   // Look up the card and verify the user owns it (no cross-user leakage).
   const m = /^(lp|att)_(\d+)$/.exec(parsed.data.cardId);
