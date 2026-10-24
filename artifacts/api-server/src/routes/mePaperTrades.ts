@@ -1,6 +1,14 @@
 // Phase 5B — User-safe paper trade lifecycle routes.
 // SAFETY: paper-only. No broker order is ever placed from this file.
 // Every route requires login; every query is scoped by req.authUser.id.
+//
+// JOURNAL-ONLY (Tier 1 step 5): a paper_trades row is the trader's own record
+// of a trade they planned or took, with prices they type in. Nothing here
+// fills, books exposure in a venue, or moves a stop anywhere; the rows are
+// not read by any execution path or by the pre-trade Risk Governor's book.
+// Executable paper orders go through POST /paper/orders (paper ledger) or the
+// simulator OMS, both governed. omsGovernance.test.ts holds the line: this is
+// the only writer of paper_trades and it imports no execution path.
 import { Router } from "express";
 import {
   db, paperTradesTable, tradingSessionsTable, mt5ConnectionTable,
@@ -99,6 +107,8 @@ function serialize(t: typeof paperTradesTable.$inferSelect) {
     updatedAt: t.updatedAt?.toISOString() ?? null,
     tradeKind: "paper" as const,
     safetyMode: "paper_only" as const,
+    recordKind: "journal" as const,
+    executionCapable: false as const,
   };
 }
 

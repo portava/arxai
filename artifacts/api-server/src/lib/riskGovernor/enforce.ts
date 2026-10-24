@@ -90,6 +90,12 @@ export interface RiskFacts {
   positions?: RiskPosition[];
   /** Added to the in-flight rows the loader finds. */
   extraInFlight?: RiskInFlight[];
+  /**
+   * Replaces the loaded in-flight rows entirely. For a book ARX keeps outside
+   * the paper/broker tables (the simulator OMS), whose own orders are the only
+   * ones that can duplicate or conflict.
+   */
+  inFlight?: RiskInFlight[];
   broker?: RiskContext["broker"];
   daily?: RiskContext["daily"];
   halt?: RiskContext["halt"];
@@ -396,7 +402,7 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
     instruments: { ...loaded.instruments, ...(f.instruments ?? {}) },
     quote,
     positions: f.positions ?? loaded.positions,
-    inFlight: [...loaded.inFlight, ...(f.extraInFlight ?? [])],
+    inFlight: [...(f.inFlight ?? loaded.inFlight), ...(f.extraInFlight ?? [])],
     broker: f.broker ?? loaded.broker,
     daily: f.daily ?? loaded.daily,
     halt: f.halt !== undefined

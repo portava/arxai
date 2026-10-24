@@ -239,6 +239,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // queue, escalation, stale data, audit throttling, demo origin mapping.
   { pkg: "@workspace/api-server", script: "test:position-guardian-assess" },
   { pkg: "@workspace/api-server", script: "test:position-guardian-reconcile" },
+  { pkg: "@workspace/api-server", script: "test:oms-governance" },
   // Task #660 — Profit Mission Phase 1 route per-user isolation + no-secret-leak
   // proof. Boots the REAL profitMissions router on loopback, seeds two real users
   // with genuine sessions, and proves anonymous 401s, a feed-gated estimate-
