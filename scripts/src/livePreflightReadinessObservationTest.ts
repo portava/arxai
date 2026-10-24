@@ -55,7 +55,7 @@ function readyInput(): UnifiedLiveReadinessInput {
     armed: true,
     serverLiveExecutionOn: true,
     killSwitchEngaged: false,
-    emergencyKillSwitch: false,
+    platformStopSources: [],
     riskProfileReady: true,
     bridgeMode: "MASTER_LIVE_SHARED",
     bridgeHeartbeatFresh: true,

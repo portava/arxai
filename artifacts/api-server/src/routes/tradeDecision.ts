@@ -54,6 +54,7 @@ import {
   getMarketTypeForSymbol,
 } from "../lib/strategyEngine";
 import { getStatus as getSafetyStatus } from "../lib/safetyCore";
+import { platformStop, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { getMarketData, summarizeForAA, computeBlockers as computeMdBlockers } from "../lib/marketData/marketDataService.js";
 import type { MarketDataSnapshot, MarketDataBlocker } from "../lib/marketData/types.js";
 
@@ -173,10 +174,17 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   const blockers: string[] = [];
 
   // 1) Safety core — terminal authority. Never bypassable.
-  const safety = await getSafetyStatus().catch(() => null);
+  // The kill switches come from platformStop() (both install-wide stops, fail
+  // closed); getStatus() still gives the operational mode and allowed modes.
+  const [safety, stop] = await Promise.all([getSafetyStatus().catch(() => null), platformStop()]);
   const operationalMode = safety?.operationalMode ?? "PAPER_TRADING";
-  if (safety?.killSwitchEngaged) {
-    blockers.push(`Kill switch engaged: ${safety.killSwitchReason ?? "no reason"}`);
+  if (stopSourceEngaged(stop, "platform_emergency_stop")) {
+    // Reported, not a blocker: the emergency stop halts broker (DEMO/LIVE)
+    // entries but not the paper simulator this orchestrator defaults to.
+    warnings.push(`Platform emergency stop engaged: ${stop.detail.platform_emergency_stop ?? "no reason"} — broker (demo/live) entries are refused`);
+  }
+  if (stopSourceEngaged(stop, "safety_core_kill_switch")) {
+    blockers.push(`Kill switch engaged: ${stop.detail.safety_core_kill_switch ?? "no reason"}`);
     signalsUsed.push({ source: "safetyCore", status: "FAIL", score: 0, detail: "Kill switch ENGAGED — only OBSERVE_ONLY allowed" });
   } else if (!safety) {
     warnings.push("Safety core unreachable — defaulting to PAPER_TRADING posture");

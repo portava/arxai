@@ -53,7 +53,7 @@ import {
 } from "../lib/live/liveArming.js";
 import { runEmergencyClose } from "../lib/live/emergencyClose.js";
 import { buildApprovedTraderLiveState } from "../lib/live/approvedTraderLiveState.js";
-import { readPlatformSwitches } from "../lib/safety/platformSwitches.js";
+import { platformStopReport, platformStopWith, readPlatformSwitches, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { getProviderHealthSnapshot } from "../lib/data/providerHealth.js";
 import { getPoolNav } from "../lib/fundbook/navEngine.js";
 import { routeCandles } from "../lib/data/marketDataRouter.js";
@@ -388,6 +388,8 @@ router.get("/admin/cockpit/overview", async (req, res) => {
 
   const open = openAgg[0];
   const alerts = alertAgg[0];
+  // Both install-wide stops (platformStop()), the emergency stop from the switches read above.
+  const stop = await platformStopWith(sw);
 
   return res.json({
     ok: true,
@@ -420,7 +422,10 @@ router.get("/admin/cockpit/overview", async (req, res) => {
     },
     safety: {
       liveExecutionEnabled: sw.liveBrokerExecution.enabled,
-      killSwitchActive: sw.emergencyStop.engaged,
+      // killSwitchActive keeps naming the platform emergency stop; the
+      // platformStop* fields say whether either install-wide stop is engaged.
+      killSwitchActive: stopSourceEngaged(stop, "platform_emergency_stop"),
+      ...platformStopReport(stop),
       platformMode: sw.platformMode,
     },
     alerts: {

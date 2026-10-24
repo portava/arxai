@@ -56,6 +56,8 @@ const ACTIVATION_BLOCK_COPY: Record<string, string> = {
     "The emergency kill switch is on. New live trades are blocked.",
   EMERGENCY_STOP_ACTIVE:
     "Live trading is paused platform-wide. Trades will resume once your operator re-enables it.",
+  SAFETY_CORE_KILL_SWITCH_ENGAGED:
+    "Live trading is paused platform-wide by the safety kill switch. Trades will resume once your operator releases it.",
   LIVE_CONFIRMATION_REQUIRED:
     "Your account is approved, but Full Live Activation isn't complete yet. Complete live confirmation, or ask your operator to enable it on your behalf.",
   LIVE_ARMING_PENDING:

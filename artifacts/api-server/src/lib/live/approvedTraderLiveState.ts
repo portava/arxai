@@ -42,7 +42,7 @@ import {
 } from "@workspace/db";
 import { getMyArming } from "./liveArming.js";
 import { resolveRouting } from "../adminTrading/routingResolver.js";
-import { loadPlatformSettings } from "../safety/platformSwitches.js";
+import { loadPlatformSettings, platformStopWith, stopSourceEngaged, type PlatformStopSource } from "../safety/platformSwitches.js";
 import { normalizeProductRole, type ProductRole } from "../auth/productRole.js";
 import { logger } from "../logger.js";
 
@@ -78,7 +78,12 @@ export interface ApprovedTraderLiveState {
   // ---- Platform live posture ------------------------------------------
   serverLiveExecutionOn: boolean;
   operatorLiveArmed: boolean;
+  /** The platform emergency stop on its own (labelled per-source field; kept for clients that parse it). */
   emergencyKillSwitch: boolean;
+  /** Either install-wide stop (the emergency stop or the safety-core kill switch), from platformStop(). */
+  platformStopEngaged: boolean;
+  /** The engaged install-wide stops, emergency stop first. */
+  platformStopSources: PlatformStopSource[];
   sharedLiveTradingEnabled: boolean;
 
   // ---- Risk profile ---------------------------------------------------
@@ -127,6 +132,7 @@ const USER_SAFE_BLOCK_COPY: Record<string, string> = {
     "Your live shared-bridge allocation is still being set up. Contact your operator to finish onboarding.",
   KILL_SWITCH_ENGAGED: "Live trading is halted by the kill switch. Reset it before arming again.",
   EMERGENCY_STOP_ACTIVE: "Live trading is paused platform-wide. Trades will resume once your operator re-enables it.",
+  SAFETY_CORE_KILL_SWITCH_ENGAGED: "Live trading is paused platform-wide by the safety kill switch. Trades will resume once your operator releases it.",
   LIVE_CONFIRMATION_REQUIRED:
     "Complete live confirmation to start placing live orders. Your operator can enable Full Live Activation on your behalf.",
   LIVE_ARMING_PENDING:
@@ -157,6 +163,8 @@ function failClosedState(userId: number): ApprovedTraderLiveState {
     serverLiveExecutionOn: false,
     operatorLiveArmed: false,
     emergencyKillSwitch: true,
+    platformStopEngaged: true,
+    platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
     sharedLiveTradingEnabled: false,
     riskProfileReady: false,
     approvedSymbols: [],
@@ -244,7 +252,12 @@ export async function buildApprovedTraderLiveState(
     // ---- Platform posture ---------------------------------------------
     const serverLiveOn = platform.switches.liveBrokerExecution.enabled;
     const operatorLiveArmed = platform.switches.liveBrokerExecution.operatorArmed;
-    const emergencyKillSwitch = platform.switches.emergencyStop.engaged; // missing/unreadable → engaged (fail-closed)
+    // Both install-wide stops through platformStop(). The emergency stop comes
+    // from the switches read above (missing/unreadable → engaged, fail-closed),
+    // so emergencyKillSwitch keeps its meaning; the safety-core kill switch is
+    // read alongside (unreadable → engaged).
+    const stop = await platformStopWith(platform.switches);
+    const emergencyKillSwitch = stopSourceEngaged(stop, "platform_emergency_stop");
     const sharedLiveTradingEnabled = platform.config?.sharedLiveTradingEnabled === true;
 
     // ---- Risk profile -------------------------------------------------
@@ -298,6 +311,7 @@ export async function buildApprovedTraderLiveState(
     else if (!liveBridgeAssigned) blockingReasonCode = "LIVE_BRIDGE_ASSIGNMENT_PENDING";
     else if (killSwitchEngaged) blockingReasonCode = "KILL_SWITCH_ENGAGED";
     else if (emergencyKillSwitch) blockingReasonCode = "EMERGENCY_STOP_ACTIVE";
+    else if (stop.engaged) blockingReasonCode = "SAFETY_CORE_KILL_SWITCH_ENGAGED";
     else if (!executionActivated) blockingReasonCode = "LIVE_CONFIRMATION_REQUIRED";
     else if (!armed) blockingReasonCode = "LIVE_ARMING_PENDING";
     else if (!serverLiveOn) blockingReasonCode = "SERVER_LIVE_EXECUTION_OFF";
@@ -328,6 +342,8 @@ export async function buildApprovedTraderLiveState(
       serverLiveExecutionOn: serverLiveOn,
       operatorLiveArmed,
       emergencyKillSwitch,
+      platformStopEngaged: stop.engaged,
+      platformStopSources: [...stop.sources],
       sharedLiveTradingEnabled,
       riskProfileReady,
       approvedSymbols,

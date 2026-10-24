@@ -32,6 +32,7 @@ import {
   adminActionAuditLogTable,
   } from "@workspace/db";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
+import { engagePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { detectCurrentConnectedBridge } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
@@ -249,10 +250,13 @@ router.post("/admin/live-shared/rollback", async (req, res) => {
   //   - cancel every queued/draft/approved command NOT yet picked by EA
   //   - keep audit, trade history, demo path untouched
   const result = await db.transaction(async (tx) => {
+    // The one engage writer (every settings row, reason/time/actor), inside
+    // this transaction; the shared posture below is this handler's own write.
+    await engagePlatformStop(
+      { reason: `[ROLLBACK by admin ${admin.id}] ${reason}`, actorUserId: admin.id, source: "admin_live_shared_rollback" },
+      tx,
+    );
     await tx.update(globalTradingSettingsTable).set({
-      emergencyKillSwitch: true,
-      killSwitchEngagedAt: new Date(),
-      killSwitchReason: `[ROLLBACK by admin ${admin.id}] ${reason}`,
       sharedLiveTradingEnabled: false,
       masterBridgeLiveEnabled: false,
       accountRoutingMode: "USER_OWNED_MT5",

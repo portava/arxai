@@ -6,7 +6,7 @@
 // writes a row to admin_action_audit_log on every fetch.
 
 import { Router, type Request, type Response } from "express";
-import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
+import { loadPlatformSettings, platformStopReport, platformStopWith, stopSourceEngaged, type PlatformStopReport } from "../lib/safety/platformSwitches.js";
 import { db } from "@workspace/db";
 import {
   adminActionAuditLogTable,
@@ -40,7 +40,7 @@ interface Blocker { code: string; severity: "INFO" | "WARN" | "CRITICAL"; messag
 async function computeReadiness(): Promise<{
   env: ReturnType<typeof computeEnvChecklist>;
   envSummary: ReturnType<typeof summarizeEnvChecklist>;
-  safety: { platformMode: string; emergencyKillSwitch: boolean; sharedLiveTradingEnabled: boolean; accountRoutingMode: string; demoEnabled: boolean; liveEnabled: boolean; };
+  safety: { platformMode: string; emergencyKillSwitch: boolean; sharedLiveTradingEnabled: boolean; accountRoutingMode: string; demoEnabled: boolean; liveEnabled: boolean; } & PlatformStopReport;
   counts: { arxLiveCommandsTotal: number; arxLiveCommandsLast24h: number; mt5CommandsTotal: number; openNeedsReviewMasterTrades: number; recentAdminActions24h: number; };
   modeContext: { nodeEnv: string; isProduction: boolean; isDevelopment: boolean; isTest: boolean; };
   launchBlockers: Blocker[];
@@ -52,9 +52,15 @@ async function computeReadiness(): Promise<{
 
   // Switches from the one switch authority (missing/unreadable → OFF, stop engaged).
   const { switches: sw, config: s } = await loadPlatformSettings();
+  // Both install-wide stops through platformStop(). emergencyKillSwitch keeps
+  // naming the platform emergency stop (the PLATFORM_LIVE_WITHOUT_KILL_SWITCH
+  // blocker below asks for that stop); platformStop* say either stop.
+  const stop = await platformStopWith(sw);
+  const emergencyOn = stopSourceEngaged(stop, "platform_emergency_stop");
   const safety = {
     platformMode: sw.platformMode as string,
-    emergencyKillSwitch: sw.emergencyStop.engaged,
+    emergencyKillSwitch: emergencyOn,
+    ...platformStopReport(stop),
     sharedLiveTradingEnabled: !!s?.sharedLiveTradingEnabled,
     accountRoutingMode: String(s?.accountRoutingMode ?? "USER_OWNED_MT5"),
     demoEnabled: sw.venueEnabled.DEMO,
@@ -95,10 +101,10 @@ async function computeReadiness(): Promise<{
   if (envSummary.liveMasterSwitchEnabled) {
     launchBlockers.push({ code: "LIVE_MASTER_SWITCH_ENABLED", severity: "WARN", message: "ARX_LIVE_BROKER_EXECUTION_ENABLED is TRUE. Phase B 16-gate evaluator is active — every gate still must individually PASS, but this is no longer the default-deny posture." });
   }
-  if (envSummary.liveMasterSwitchEnabled && !safety.emergencyKillSwitch && safety.platformMode !== "LIVE") {
+  if (envSummary.liveMasterSwitchEnabled && !emergencyOn && safety.platformMode !== "LIVE") {
     // Informational only — operator may be staging
   }
-  if (!safety.emergencyKillSwitch && safety.platformMode === "LIVE") {
+  if (!emergencyOn && safety.platformMode === "LIVE") {
     launchBlockers.push({ code: "PLATFORM_LIVE_WITHOUT_KILL_SWITCH", severity: "CRITICAL", message: "platformMode=LIVE with emergencyKillSwitch=FALSE. Engage the kill switch before any controlled live test." });
   }
   if (counts.openNeedsReviewMasterTrades > 0) {

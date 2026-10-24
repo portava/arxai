@@ -2507,7 +2507,7 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
       return { ok: false, error: "ADMIN_REQUIRED",};
     }
     const [{ detectCurrentConnectedBridge }, { aggregateReconciliationIssues },
-           { loadPlatformSettings }, schema] = await Promise.all([
+           { loadPlatformSettings, platformStopWith, stopSourceEngaged, platformStopReport }, schema] = await Promise.all([
       import("../mt5/currentConnectedBridgeDetector.js"),
       import("../reconciliation/detect.js"),
       import("../safety/platformSwitches.js"),
@@ -2520,7 +2520,10 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
     const masterSwitch = switches.liveBrokerExecution.envEnabled;
     const sharedLive = !!config?.sharedLiveTradingEnabled;
     const platformMode = switches.platformMode;
-    const killEngaged = switches.emergencyStop.engaged;
+    // Both install-wide stops through platformStop(); killSwitchEngaged keeps
+    // naming the platform emergency stop, the combined fields say either.
+    const stop = await platformStopWith(switches);
+    const killEngaged = stopSourceEngaged(stop, "platform_emergency_stop");
 
     const [queueRows, openLiveRows, recon, approvalRows] = await Promise.all([
       db.select({ n: sql<number>`COUNT(*)::int` }).from(schema.mt5CommandsTable)
@@ -2545,6 +2548,7 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
     const blockers: string[] = [];
     if (!masterSwitch) blockers.push("ARX_LIVE_BROKER_EXECUTION_ENABLED=false (server master switch off)");
     if (killEngaged) blockers.push("GLOBAL_KILL_SWITCH_ENGAGED");
+    if (stopSourceEngaged(stop, "safety_core_kill_switch")) blockers.push("SAFETY_CORE_KILL_SWITCH_ENGAGED");
     if (!det.ok) blockers.push(`NO_CURRENT_LIVE_BRIDGE:${det.primaryReason}`);
     if ((openLiveRows[0]?.n ?? 0) > 0) blockers.push(`OPEN_LIVE_COMMANDS_NONTERMINAL=${openLiveRows[0]?.n}`);
     if ((recon.countsBySeverity?.critical ?? 0) > 0) blockers.push(`RECONCILIATION_CRITICAL=${recon.countsBySeverity?.critical}`);
@@ -2562,7 +2566,7 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
       blockers,
       needsAction,
       safeToManuallyTest,
-      systemStatus: { platformMode, killSwitchEngaged: killEngaged, latestQaStatus: "ARX_AUDIT_FIX_BUILD_READY" },
+      systemStatus: { platformMode, killSwitchEngaged: killEngaged, ...platformStopReport(stop), latestQaStatus: "ARX_AUDIT_FIX_BUILD_READY" },
       tradingMode: { liveBrokerExecutionEnabled: masterSwitch, sharedLiveTradingEnabled: sharedLive, currentBridgeDetected: !!det.ok },
       counts: {
         queueDepth: queueRows[0]?.n ?? 0,

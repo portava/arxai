@@ -18,7 +18,7 @@
 import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { db, userOneClickSettingsTable } from "@workspace/db";
-import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
+import { loadPlatformSettings, platformStopWith, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { eq } from "drizzle-orm";
 import {
   derivePlatformBridgeMode,
@@ -185,14 +185,34 @@ router.get("/admin/live-gates/diagnostic", async (req, res) => {
     rawCode: switchOn ? "LIVE_BROKER_EXECUTION_ENABLED" : "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED",
   });
 
+  // Both install-wide stops through platformStop(): the operator emergency
+  // stop row as before, plus the safety-core kill switch, which also refuses
+  // every new live order at the Risk Governor.
+  const stop = await platformStopWith(sw);
+  const emergencyOn = stopSourceEngaged(stop, "platform_emergency_stop");
+  const emergencyAt = stop.engagedAt?.platform_emergency_stop ?? null;
+  const emergencyWhy = stop.detail.platform_emergency_stop ?? null;
   rows.push({
     id: "kill_switch",
     label: "Operator kill switch",
-    status: sw.emergencyStop.engaged ? "fail" : "pass",
-    detail: sw.emergencyStop.engaged
-      ? `Kill switch engaged${sw.emergencyStop.engagedAt ? ` at ${new Date(sw.emergencyStop.engagedAt).toISOString()}` : ""}${sw.emergencyStop.reason ? ` — ${sw.emergencyStop.reason}` : ""}.`
+    status: emergencyOn ? "fail" : "pass",
+    detail: emergencyOn
+      ? `Kill switch engaged${emergencyAt ? ` at ${new Date(emergencyAt).toISOString()}` : ""}${emergencyWhy ? ` — ${emergencyWhy}` : ""}.`
       : "Kill switch is not engaged.",
-    rawCode: sw.emergencyStop.engaged ? "KILL_SWITCH_ENGAGED" : "KILL_SWITCH_CLEAR",
+    rawCode: emergencyOn ? "KILL_SWITCH_ENGAGED" : "KILL_SWITCH_CLEAR",
+  });
+
+  const coreOn = stopSourceEngaged(stop, "safety_core_kill_switch");
+  const coreAt = stop.engagedAt?.safety_core_kill_switch ?? null;
+  const coreWhy = stop.detail.safety_core_kill_switch ?? null;
+  rows.push({
+    id: "safety_core_kill_switch",
+    label: "Safety-core kill switch",
+    status: coreOn ? "fail" : "pass",
+    detail: coreOn
+      ? `Safety-core kill switch engaged${coreAt ? ` at ${new Date(coreAt).toISOString()}` : ""}${coreWhy ? ` — ${coreWhy}` : ""}. New live orders are refused.`
+      : "Safety-core kill switch is not engaged.",
+    rawCode: coreOn ? "SAFETY_CORE_KILL_SWITCH_ENGAGED" : "SAFETY_CORE_KILL_SWITCH_CLEAR",
   });
 
   rows.push({

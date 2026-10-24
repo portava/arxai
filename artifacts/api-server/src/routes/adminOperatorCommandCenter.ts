@@ -26,7 +26,7 @@ import {
 import { detectCurrentConnectedBridge, maskBridgeEvidenceForUser }
   from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { aggregateReconciliationIssues } from "../lib/reconciliation/detect.js";
-import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
+import { loadPlatformSettings, platformStopReport, platformStopWith, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { getMyArming } from "../lib/live/liveArming.js";
 import { adminActionAuditLogTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
@@ -83,11 +83,16 @@ router.get("/admin/operator-command-center", async (req, res) => {
     else tradingModeLabel = "PER_USER_BRIDGE";
 
     // D. Safety controls (read-only summary).
-    const killSwitchEngaged = switches.emergencyStop.engaged;
+    // Both install-wide stops through platformStop(); killSwitchEngaged /
+    // killSwitchReason keep naming the platform emergency stop, platformStop*
+    // say either.
+    const stop = await platformStopWith(switches);
+    const killSwitchEngaged = stopSourceEngaged(stop, "platform_emergency_stop");
     const safetyControls = {
       platformMode: switches.platformMode,
       killSwitchEngaged,
-      killSwitchReason: switches.emergencyStop.reason,
+      killSwitchReason: stop.detail.platform_emergency_stop ?? null,
+      ...platformStopReport(stop),
       liveBrokerExecutionEnabled: masterSwitch,
       // Phase 10 canonical name + deprecated alias for back-compat.
       liveExecutionHardLockActive: !masterSwitch,

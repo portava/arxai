@@ -25,7 +25,7 @@ import type {
   HandshakeLayerStatus,
 } from "@workspace/domain/handshake";
 import { getProviderHealthSnapshot } from "../data/providerHealth.js";
-import { readPlatformSwitches } from "../safety/platformSwitches.js";
+import { platformStopWith, readPlatformSwitches, type PlatformStopSource } from "../safety/platformSwitches.js";
 import { getNewsIntelligence } from "../news/newsIntelligenceService.js";
 import { scannerStatus } from "../marketScanner.js";
 import { getMarketStatus } from "../assistant/marketProvider.js";
@@ -179,15 +179,23 @@ const adminControlAdapter: LayerAdapter = async () => {
   return { status: "PASS", detail: `platformMode=${sw.platformMode}`, ageMs: null };
 };
 
-// ── KILL_SWITCH — emergency stop state (advisory awareness only) ─────────────
-// The real kill switch remains authoritative and independent; this only colours
-// the handshake verdict so the monitor reflects the engaged state.
+// ── KILL_SWITCH — install-wide stop state (advisory awareness only) ──────────
+// The real stops remain authoritative and independent; this only colours the
+// handshake verdict so the monitor reflects the engaged state. Both install-
+// wide stops (the platform emergency stop and the safety-core kill switch)
+// are read through platformStop(), so the layer fails while either is engaged.
+const STOP_LAYER_DETAIL: Record<PlatformStopSource, string> = {
+  platform_emergency_stop: "emergency kill switch engaged",
+  safety_core_kill_switch: "safety-core kill switch engaged",
+};
 const killSwitchAdapter: LayerAdapter = async () => {
   const sw = await readPlatformSwitches();
   if (sw.unreadableReason === "missing") return notAvailable("global settings singleton missing");
   if (!sw.readable) return notAvailable("kill switch read failed");
-  if (sw.emergencyStop.engaged) {
-    return { status: "FAIL", detail: "emergency kill switch engaged", ageMs: null };
+  const stop = await platformStopWith(sw);
+  if (!stop.readable) return notAvailable("kill switch read failed");
+  if (stop.engaged) {
+    return { status: "FAIL", detail: stop.sources.map((s) => STOP_LAYER_DETAIL[s]).join("; "), ageMs: null };
   }
   return { status: "PASS", detail: "kill switch clear", ageMs: null };
 };
