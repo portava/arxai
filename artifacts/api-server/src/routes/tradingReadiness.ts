@@ -14,13 +14,14 @@
 import { Router } from "express";
 import {
   db, tradingReadinessChecksTable,
-  safetyCoreTable, riskLocksTable, brokerHealthLogsTable,
+  safetyCoreTable, riskLocksTable,
   economicEventsTable, tradingRuleContractsTable,
   weeklyPerformanceReviewsTable, vaultEventsTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
+import { readLatestBrokerHealthLog } from "../lib/brokerHub/brokerHealthState.js";
 
 const router = Router();
 
@@ -62,8 +63,7 @@ interface ChecklistItem {
 async function gatherSignals(userId: number) {
   const safety = (await db.select().from(safetyCoreTable).orderBy(asc(safetyCoreTable.id)).limit(1))[0] ?? null;
   const activeLocks = await db.select().from(riskLocksTable).where(eq(riskLocksTable.isActive, true)).limit(10);
-  const brokerLog = (await db.select().from(brokerHealthLogsTable)
-    .orderBy(desc(brokerHealthLogsTable.createdAt)).limit(1))[0] ?? null;
+  const brokerLog = await readLatestBrokerHealthLog();
   const now = new Date();
   const in2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
   const upcomingNews = await db.select().from(economicEventsTable)

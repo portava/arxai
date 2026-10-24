@@ -17,7 +17,6 @@ import {
   fundDiscrepanciesTable,
   fundControlFreezesTable,
   globalTradingSettingsTable,
-  brokerHealthStateTable,
 } from "@workspace/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import type {
@@ -31,6 +30,7 @@ import { scannerStatus } from "../marketScanner.js";
 import { getMarketStatus } from "../assistant/marketProvider.js";
 import { buildChartIntelligenceState } from "../data/chart/chartIntelligence.js";
 import { listSymbolsForUser } from "../mt5/symbolDirectory.js";
+import { readBrokerHealthState } from "../brokerHub/brokerHealthState.js";
 
 export interface LayerReadiness {
   status: HandshakeLayerStatus;
@@ -68,10 +68,10 @@ const marketDataAdapter: LayerAdapter = async () => {
   }
 };
 
-// ── BROKER_BRIDGE — broker_health_state singleton (read-only) ────────────────
+// ── BROKER_BRIDGE — broker_health_state singleton via the Broker Hub (read-only)
 const brokerBridgeAdapter: LayerAdapter = async () => {
   try {
-    const [row] = await db.select().from(brokerHealthStateTable).limit(1);
+    const row = await readBrokerHealthState();
     if (!row) return notAvailable("no broker health state");
     if (row.maintenanceMode) {
       return { status: "WARN", detail: "maintenance mode", ageMs: null };

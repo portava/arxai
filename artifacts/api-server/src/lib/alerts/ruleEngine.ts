@@ -20,7 +20,6 @@ import {
   db,
   tradePlansTable,
   riskLocksTable,
-  brokerHealthStateTable,
   weeklyPerformanceReviewsTable,
   tradesTable,
   performanceDailyTable,
@@ -28,6 +27,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { createAlert } from "./alertManager.js";
+import { readBrokerHealthState } from "../brokerHub/brokerHealthState.js";
 
 export interface RuleResult {
   evaluated: number;
@@ -63,8 +63,7 @@ export async function evaluateAndGenerate(): Promise<RuleResult> {
 // ── Broker / market rules ────────────────────────────────────────────────
 
 async function brokerDisconnectedRule() {
-  const rows = await db.select().from(brokerHealthStateTable).limit(1);
-  const s = rows[0];
+  const s = await readBrokerHealthState();
   if (!s) return { fired: false, reason: "no broker_health_state row" };
   const status = s.lastStatus ?? "UNKNOWN";
   if (status === "DISCONNECTED" || status === "DOWN" || s.executionEnabled === false) {
@@ -84,8 +83,7 @@ async function brokerDisconnectedRule() {
 
 async function priceFeedDelayedRule() {
   // Delay signal lives in broker_health_logs.priceFeedDelayMs — read latest log.
-  const rows = await db.select().from(brokerHealthStateTable).limit(1);
-  const s = rows[0];
+  const s = await readBrokerHealthState();
   if (!s) return { fired: false, reason: "no state" };
   // We treat reconnectAttempts > 0 with a degraded status as a feed delay proxy.
   const status = s.lastStatus ?? "UNKNOWN";
