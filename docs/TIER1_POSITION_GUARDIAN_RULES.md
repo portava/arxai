@@ -96,5 +96,6 @@ Validation on an isolated local PostgreSQL database (UTC):
    owner user ID as an explicit deploy parameter, and `validate:broker` against
    a real demo bridge.
 5. A physical merge of the two position tables, planned separately and last.
+   The plan (not applied) is `docs/TIER1_POSITION_TABLE_MERGE_PLAN.md`.
 
 **TIER 1 NOT COMPLETE**
