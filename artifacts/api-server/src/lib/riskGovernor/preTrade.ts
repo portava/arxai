@@ -253,6 +253,12 @@ export interface RiskInFlight {
 
 export type BrokerStatus = "CONNECTED" | "DEGRADED" | "DISCONNECTED";
 
+export interface AccountSnapshotFacts {
+  status: "FRESH" | "STALE" | "MISSING";
+  observedAt: Date | null;
+  source: string;
+}
+
 export interface RiskContext {
   now: Date;
   limits: EffectiveLimits;
@@ -263,6 +269,12 @@ export interface RiskContext {
   positions: RiskPosition[];
   inFlight: RiskInFlight[];
   broker: { status: BrokerStatus; lastSeenAt: Date | null; detail: string };
+  /**
+   * Freshness of the broker account snapshot (Broker Hub) behind `account`.
+   * Set when the order books against a broker account the trader owns; absent
+   * for paper and shared-master virtual ledgers, which ARX keeps itself.
+   */
+  accountSnapshot?: AccountSnapshotFacts | null;
   daily: { realizedPnl: number | null; floatingPnl: number | null };
   /** Stop switches (lib/safety/tradingHalt). Engaged halts new risk; closes stay open. */
   halt?: RiskHalt | null;
@@ -400,11 +412,21 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
   // ── 12. Disconnected / degraded broker ─────────────────────────────────
   {
     const b = ctx.broker;
+    const snap = ctx.accountSnapshot ?? null;
     const measured = { status: b.status, lastSeenAt: b.lastSeenAt?.toISOString() ?? null, detail: b.detail };
     if (b.status === "DISCONNECTED") {
       set("broker_unavailable", "BLOCK", `Broker is disconnected (${b.detail}). No order can be sent.`, measured);
     } else if (b.status === "DEGRADED" && !reduces) {
       set("broker_unavailable", "BLOCK", `Broker connection is degraded (${b.detail}). New risk is paused; closing is still allowed.`, measured);
+    } else if (snap && snap.status !== "FRESH" && !reduces && !tightensKnownStop(intent)) {
+      // Equity, margin and leverage size this order. Stale or missing account
+      // facts refuse risk on this account only; closing stays allowed.
+      const why = snap.status === "MISSING"
+        ? "the broker has not reported this account's balance yet"
+        : `the broker last reported this account at ${snap.observedAt?.toISOString() ?? "an unknown time"}`;
+      set("broker_unavailable", "BLOCK",
+        `Account data is ${snap.status.toLowerCase()}: ${why}. New risk on this account is refused until it refreshes; closing is still allowed.`,
+        { ...measured, accountSnapshot: snap.status, accountObservedAt: snap.observedAt?.toISOString() ?? null, accountSource: snap.source });
     } else {
       set("broker_unavailable", "PASS", null, measured);
     }

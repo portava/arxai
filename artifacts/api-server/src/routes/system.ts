@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { requireOperator } from "../lib/auth/ownerScope.js";
 import { z } from "zod/v4";
 import {
   getStatus, setOperationalMode,
@@ -163,7 +164,7 @@ router.get("/system/status", async (_req, res) => {
   }
 });
 
-router.post("/system/mode", async (req, res) => {
+router.post("/system/mode", requireOperator, async (req, res) => {
   try {
     const body = SetModeBody.parse(req.body);
     const result = await setOperationalMode(body);
@@ -174,7 +175,7 @@ router.post("/system/mode", async (req, res) => {
   }
 });
 
-router.post("/system/kill-switch/engage", async (req, res) => {
+router.post("/system/kill-switch/engage", requireOperator, async (req, res) => {
   try {
     const body = EngageKillBody.parse(req.body);
     await engageKillSwitch(body);
@@ -186,7 +187,7 @@ router.post("/system/kill-switch/engage", async (req, res) => {
   }
 });
 
-router.post("/system/kill-switch/reset", async (req, res) => {
+router.post("/system/kill-switch/reset", requireOperator, async (req, res) => {
   try {
     const body = ResetKillBody.parse(req.body);
     const result = await resetKillSwitch(body);

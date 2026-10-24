@@ -40,6 +40,7 @@ import {
   evaluatePreTradeRisk,
   resolveEffectiveLimits,
   RISK_RULE_IDS,
+  type AccountSnapshotFacts,
   type EffectiveLimits,
   type InstrumentModel,
   type RiskAccount,
@@ -82,6 +83,8 @@ function isLiveQueueRow(status: string, createdAt: Date, now: Date): boolean {
 export interface RiskFacts {
   now?: Date;
   account?: RiskAccount | null;
+  /** Defaults to the loaded snapshot, or none when `account` is supplied. */
+  accountSnapshot?: AccountSnapshotFacts | null;
   instruments?: Record<string, InstrumentModel>;
   quote?: RiskQuote | null;
   positions?: RiskPosition[];
@@ -227,6 +230,7 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
   const currency = (conn?.accountCurrency ?? "").trim().toUpperCase();
 
   let account: RiskAccount | null = null;
+  let accountSnapshot: AccountSnapshotFacts | null = null;
   if (opts.virtualAccountId != null) {
     const [v] = await db.select().from(virtualTradingAccountsTable).where(and(
       eq(virtualTradingAccountsTable.id, opts.virtualAccountId),
@@ -240,6 +244,11 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
     // The Broker Hub owns account snapshots. It only reads a connection the
     // trader owns, so another account's equity can never size this order.
     const snap = await new Mt5ReadOnlyAdapter(mt5ProjectionReader, userId, conn.id).readAccount();
+    accountSnapshot = {
+      status: snap?.snapshotStatus ?? "MISSING",
+      observedAt: snap?.observedAt ? new Date(snap.observedAt) : null,
+      source: `broker_hub:mt5:${conn.id}`,
+    };
     if (snap && snap.snapshotStatus !== "MISSING" && snap.equity != null) {
       account = { equity: snap.equity, freeMargin: snap.freeMargin, leverage: snap.leverage,
         currency: (snap.currency ?? "").trim().toUpperCase(),
@@ -331,6 +340,7 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
 
   return {
     account,
+    accountSnapshot,
     instruments,
     quote,
     positions,
@@ -381,6 +391,8 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
     now,
     limits,
     account: f.account !== undefined ? f.account : loaded.account,
+    accountSnapshot: f.accountSnapshot !== undefined ? f.accountSnapshot
+      : f.account !== undefined ? null : loaded.accountSnapshot ?? null,
     instruments: { ...loaded.instruments, ...(f.instruments ?? {}) },
     quote,
     positions: f.positions ?? loaded.positions,
@@ -425,6 +437,9 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
           limits,
           facts: ctx ? {
             account: ctx.account,
+            accountSnapshot: ctx.accountSnapshot
+              ? { ...ctx.accountSnapshot, observedAt: ctx.accountSnapshot.observedAt?.toISOString() ?? null }
+              : null,
             quote: ctx.quote ? { ...ctx.quote, at: ctx.quote.at?.toISOString() ?? null } : null,
             broker: { ...ctx.broker, lastSeenAt: ctx.broker.lastSeenAt?.toISOString() ?? null },
             openPositions: ctx.positions.length,
