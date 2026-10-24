@@ -22,7 +22,7 @@ import {
   recordLiveCommandResult,
   findGhostClosedPositionIds,
 } from "../lib/live/liveCommandPipeline.js";
-import { resolveBrokerSymbolName } from "../lib/mt5/brokerSymbolName.js";
+import { resolveBrokerSymbolName } from "../lib/instruments/index.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
 

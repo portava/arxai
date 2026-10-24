@@ -25,7 +25,7 @@ import {
 } from "@workspace/db";
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { readFlame, finalizeScalpVerdict } from "./flameRead.js";
-import { getSymbolInfo } from "../../brain/symbols/symbolRegistry.js";
+import { getSymbolInfo } from "../instruments/index.js";
 import {
   assembleBasket,
   evaluateAddOn,

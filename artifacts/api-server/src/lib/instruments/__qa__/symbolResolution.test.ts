@@ -29,7 +29,7 @@
 // query and no network I/O is ever issued — resolution is pure data.
 //
 // Run: node --import tsx --test --test-force-exit \
-//   src/lib/data/__qa__/symbolResolution.test.ts
+//   src/lib/instruments/__qa__/symbolResolution.test.ts
 
 process.env.DATABASE_URL ??= "postgres://qa:qa@127.0.0.1:1/qa_offline_never_connects";
 delete process.env.TWELVEDATA_API_KEY;
@@ -47,10 +47,10 @@ import { ARX_TOP_250 } from "@workspace/markets";
 // Dynamic imports so the env setup above runs before any module init
 // (static imports hoist; @workspace/db throws without DATABASE_URL).
 const { resolveCanonicalSymbol, ROUTER_CLASS_BY_FAMILY } =
-  await import("../symbolResolution.js");
-const { classifySymbol } = await import("../marketDataRouter.js");
-const { DERIV_SYNTHETIC_SYMBOLS } = await import("../providers/derivProvider.js");
-const { getMarketType } = await import("../types.js");
+  await import("../index.js");
+const { classifySymbol } = await import("../../data/marketDataRouter.js");
+const { DERIV_SYNTHETIC_SYMBOLS } = await import("../../data/providers/derivProvider.js");
+const { getMarketType } = await import("../../data/types.js");
 
 // ── 1. Universe sweep ────────────────────────────────────────────────────────
 

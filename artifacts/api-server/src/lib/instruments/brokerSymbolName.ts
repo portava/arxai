@@ -24,8 +24,8 @@
 // - Aliases resolve ONLY through the registry, so an alias can never produce a
 //   broker symbol that is not actually registered.
 
-import { db, symbolsTable } from "@workspace/db";
-import { logger } from "../logger.js";
+// The registry is loaded lazily so lib/instruments stays importable without a
+// database (pure callers: scanner, chart, offline tests).
 
 // Short-code aliases → canonical `symbols.symbol` value (compact form). These
 // are resolved THROUGH the registry map below, so a listed alias only ever
@@ -110,6 +110,8 @@ const TTL_MS = 5 * 60 * 1000;
 async function getMap(): Promise<Map<string, string>> {
   const now = Date.now();
   if (cache && now - cachedAtMs < TTL_MS) return cache;
+  const { db, symbolsTable } = await import("@workspace/db");
+  const { logger } = await import("../logger.js");
   const rows = await db
     .select({ symbol: symbolsTable.symbol, brokerSymbol: symbolsTable.brokerSymbol })
     .from(symbolsTable);

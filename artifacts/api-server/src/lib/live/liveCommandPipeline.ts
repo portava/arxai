@@ -4250,7 +4250,7 @@ async function enqueueBridgedMt5Command(opts: {
   if (!action) throw new Error(`UNMAPPED_LIVE_COMMAND_TYPE:${opts.liveRow.commandType}`);
 
   const { mt5CommandsTable } = await import("@workspace/db");
-  const { resolveBrokerSymbolName } = await import("../mt5/brokerSymbolName.js");
+  const { resolveBrokerSymbolName } = await import("../instruments/index.js");
   // Resolve to the broker's exact (case-sensitive) Market Watch symbol, same
   // as the live-poll path does, so the EA preflight resolves it cleanly.
   const brokerSymbol = await resolveBrokerSymbolName(opts.liveRow.symbol);

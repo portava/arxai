@@ -28,7 +28,7 @@ import {
   getScalpAfterActionReviews,
   getSymbolPersonalities,
 } from "../lib/scalp/scalpJournalService.js";
-import { normalizeSymbol } from "../lib/scannerSelected/symbolNormalize.js";
+import { normalizeSymbol } from "../lib/instruments/index.js";
 import { buildRubyMarketEdgeForUser } from "../lib/signalIntelligence/signalIntelligenceService.js";
 import { getCachedOpportunityMap } from "../lib/signalIntelligence/opportunityMapReadCache.js";
 import { explainMarketRead } from "@workspace/domain/signal-intelligence";

@@ -10,7 +10,7 @@ import {
   resolveFromMap,
   compactSymbolKey,
   findCompactKeyCollisions,
-} from "../../artifacts/api-server/src/lib/mt5/brokerSymbolName.js";
+} from "../../artifacts/api-server/src/lib/instruments/index.js";
 
 type Result = { name: string; pass: boolean; detail: string };
 const results: Result[] = [];

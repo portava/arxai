@@ -22,13 +22,13 @@ export function checkScannerSelectedMarket(): CheckResult {
   const violations: string[] = [];
 
   let norm = "";
-  try { norm = read("artifacts/api-server/src/lib/scannerSelected/symbolNormalize.ts"); }
-  catch { violations.push("lib/scannerSelected/symbolNormalize.ts missing"); }
+  try { norm = read("artifacts/api-server/src/lib/instruments/brokerDecoration.ts"); }
+  catch { violations.push("lib/instruments/brokerDecoration.ts missing"); }
   if (norm && !/export function normalizeSymbol/.test(norm)) {
-    violations.push("symbolNormalize.ts must export normalizeSymbol");
+    violations.push("brokerDecoration.ts must export normalizeSymbol");
   }
   if (norm && !/SUPPORTED_SYMBOLS/.test(norm)) {
-    violations.push("symbolNormalize.ts must export SUPPORTED_SYMBOLS");
+    violations.push("brokerDecoration.ts must export SUPPORTED_SYMBOLS");
   }
 
   let svc = "";
