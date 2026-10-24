@@ -157,6 +157,14 @@ export const userRiskLimitsTable = pgTable("user_risk_limits", {
   allowedAccountType: text("allowed_account_type").notNull().default("demo"), // demo | live | both
   allowedDirection: text("allowed_direction").notNull().default("both"),       // buy | sell | both
   requireLiveConfirmation: boolean("require_live_confirmation").notNull().default(true),
+  // Admin hard limits on exposure, leverage, concentration and drawdown
+  // (Tier 1 step 8). null = no admin limit; the trader's own setting and the
+  // platform ceiling still apply. Strictest wins.
+  maxLeverage: doublePrecision("max_leverage"),
+  maxSymbolLeverage: doublePrecision("max_symbol_leverage"),
+  maxPositionsPerSymbol: integer("max_positions_per_symbol"),
+  maxPortfolioRiskPercent: doublePrecision("max_portfolio_risk_percent"),
+  maxDrawdownPercent: doublePrecision("max_drawdown_percent"),
   updatedByAdminId: integer("updated_by_admin_id"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({

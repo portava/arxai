@@ -29,6 +29,7 @@ import {
   mt5DemoCommandsTable,
   arxSymbolSpecsTable,
   virtualTradingAccountsTable,
+  userEquityPeaksTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, gte, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { logRiskEvent } from "../../routes/meRiskGovernor.js";
@@ -99,6 +100,7 @@ export interface RiskFacts {
   broker?: RiskContext["broker"];
   daily?: RiskContext["daily"];
   halt?: RiskContext["halt"];
+  equityPeak?: RiskContext["equityPeak"];
 }
 
 export interface EnforceOptions {
@@ -377,6 +379,30 @@ export async function loadQuote(userId: number, symbol: string): Promise<RiskQuo
   }
 }
 
+async function loadEquityPeak(intent: TradeIntent, account: RiskAccount): Promise<RiskContext["equityPeak"]> {
+  const [row] = await db.select().from(userEquityPeaksTable).where(and(
+    eq(userEquityPeaksTable.userId, intent.userId),
+    eq(userEquityPeaksTable.venue, intent.venue),
+    eq(userEquityPeaksTable.accountKey, account.source),
+  )).limit(1);
+  return row ? { peakEquity: row.peakEquity, since: row.firstSeenAt, source: `user_equity_peaks:${row.id}` } : null;
+}
+
+/** Raise the account's recorded equity high-water mark; it never falls. */
+async function recordEquityPeak(intent: TradeIntent, account: RiskAccount | null): Promise<void> {
+  if (!account || account.equity == null || !Number.isFinite(account.equity) || account.equity <= 0) return;
+  await db.insert(userEquityPeaksTable).values({
+    userId: intent.userId, venue: intent.venue, accountKey: account.source, peakEquity: account.equity,
+  }).onConflictDoUpdate({
+    target: [userEquityPeaksTable.userId, userEquityPeaksTable.venue, userEquityPeaksTable.accountKey],
+    set: {
+      peakAt: sql`CASE WHEN excluded.peak_equity > ${userEquityPeaksTable.peakEquity} THEN now() ELSE ${userEquityPeaksTable.peakAt} END`,
+      peakEquity: sql`GREATEST(${userEquityPeaksTable.peakEquity}, excluded.peak_equity)`,
+      updatedAt: sql`now()`,
+    },
+  });
+}
+
 function contextFailure(intent: TradeIntent, now: Date, message: string): RiskDecision {
   const reason = `Risk context could not be loaded (${message}). Trade blocked for safety.`;
   const rules = RISK_RULE_IDS.map((rule) => ({ rule, outcome: "BLOCK" as const, reason }));
@@ -393,10 +419,15 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
   const loaded = intent.venue === "PAPER"
     ? await loadPaperFacts(intent, opts, now)
     : await loadBrokerFacts(intent, opts, now, quote);
+  const account = f.account !== undefined ? f.account : loaded.account;
+  const equityPeak = f.equityPeak !== undefined
+    ? f.equityPeak
+    : limits.maxDrawdownPercent != null && account ? await loadEquityPeak(intent, account) : null;
   return {
     now,
     limits,
-    account: f.account !== undefined ? f.account : loaded.account,
+    equityPeak,
+    account,
     accountSnapshot: f.accountSnapshot !== undefined ? f.accountSnapshot
       : f.account !== undefined ? null : loaded.accountSnapshot ?? null,
     instruments: { ...loaded.instruments, ...(f.instruments ?? {}) },
@@ -443,6 +474,9 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
           limits,
           facts: ctx ? {
             account: ctx.account,
+            equityPeak: ctx.equityPeak
+              ? { ...ctx.equityPeak, since: ctx.equityPeak.since?.toISOString() ?? null }
+              : null,
             accountSnapshot: ctx.accountSnapshot
               ? { ...ctx.accountSnapshot, observedAt: ctx.accountSnapshot.observedAt?.toISOString() ?? null }
               : null,
@@ -467,6 +501,11 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
         primaryReason: "The risk decision could not be written to the audit trail. Trade blocked for safety.",
       };
     }
+  }
+
+  if (!opts.preview && ctx) {
+    // Best effort: a missed update only leaves the previous (lower) peak.
+    try { await recordEquityPeak(intent, ctx.account); } catch { /* non-fatal */ }
   }
 
   return { ...decision, allowed: decision.decision === "ALLOW", auditEventId, limits };
