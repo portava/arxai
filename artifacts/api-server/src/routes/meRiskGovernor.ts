@@ -1,6 +1,7 @@
-// Phase 8D — Per-user Risk Governor routes.
+// Phase 8D — Per-user Risk Governor routes: the trader's settings, status and
+// audit trail. Every verdict comes from the one pre-trade Risk Governor
+// (lib/riskGovernor); these routes only read, configure and explain it.
 // SAFETY: requireUser, scope by req.authUser.id, never accept userId from client.
-// Live execution is never overridable; live contract enforced in engine.
 import { Router } from "express";
 import {
   db, paperTradesTable,
@@ -9,69 +10,16 @@ import {
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
-import { evaluateRiskCheck, aggregateHistory, DEFAULT_USER_RISK_SETTINGS, type RiskCheckInput, type RiskCheckResult } from "../lib/riskGovernorEngine.js";
+import { aggregateHistory, DEFAULT_USER_RISK_SETTINGS } from "../lib/riskGovernor/journalActivity.js";
 import { parseSymbolLimits } from "../lib/riskGovernor/preTrade.js";
+import { previewJournalTicket } from "../lib/riskGovernor/journal.js";
 
 const router = Router();
 
 const SAFE_LIVE_CONTRACT = { liveLocked: true as const, readOnlyMode: true as const, allowOrderExecution: false as const };
 
-export async function getOrCreateRiskSettings(userId: number) {
-  const existing = await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1);
-  if (existing[0]) return existing[0];
-  const ins = await db.insert(userRiskSettingsTable).values({ userId, ...DEFAULT_USER_RISK_SETTINGS }).returning();
-  return ins[0]!;
-}
-
-export async function logRiskEvent(args: {
-  userId: number; eventType: string; severity: "info" | "warning" | "critical"; decision: "pass" | "warning" | "block";
-  reason: string; details?: Record<string, unknown>;
-  paperTradeId?: number | null; tradingSessionId?: number | null; mt5ConnectionId?: number | null;
-}) {
-  // Defensive: never persist anything resembling a bridge token
-  const safeDetails = scrubSecrets(args.details ?? {});
-  const ins = await db.insert(userRiskEventsTable).values({
-    userId: args.userId, eventType: args.eventType, severity: args.severity, decision: args.decision,
-    reason: args.reason, details: safeDetails,
-    paperTradeId: args.paperTradeId ?? null,
-    tradingSessionId: args.tradingSessionId ?? null,
-    mt5ConnectionId: args.mt5ConnectionId ?? null,
-  }).returning();
-  // Phase 10F — emit notification + activity for warning/block events.
-  if (args.decision !== "pass") {
-    try {
-      const { fireNotify } = await import("../lib/notificationService.js");
-      const sev = args.decision === "block" ? "critical" : "warning";
-      const notifType = args.decision === "block" ? "risk_block" : "risk_warning";
-      fireNotify(args.userId,
-        { notificationType: notifType, severity: sev, title: args.decision === "block" ? "Risk Governor blocked a trade" : "Risk warning", message: args.reason, source: "risk", entityType: "paper_trade", entityId: args.paperTradeId ?? null, actionLabel: "View risk events", actionTarget: "/risk-settings" },
-        { eventType: args.decision === "block" ? "risk_trade_blocked" : "risk_check_completed", title: args.decision === "block" ? "Risk Governor blocked a trade" : "Risk warning issued", description: args.reason, source: "risk", entityType: "paper_trade", entityId: args.paperTradeId ?? null }
-      );
-    } catch { /* never break risk path */ }
-  }
-  return ins;
-}
-
-const SECRET_KEY_RE = /token|secret|password|bridge|api[_-]?key|authorization|cookie|x-mt5/i;
-const SECRET_VAL_RE = /MT5_BRIDGE_TOKEN|X-MT5-Bridge-Token/i;
-function scrubValue(v: unknown, depth = 0): unknown {
-  if (v == null) return v;
-  if (depth > 8) return "[REDACTED_DEPTH_LIMIT]"; // fail-closed beyond depth bound
-  if (typeof v === "string") return SECRET_VAL_RE.test(v) ? "[REDACTED]" : v;
-  if (Array.isArray(v)) return v.map((x) => scrubValue(x, depth + 1));
-  if (typeof v === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-      if (SECRET_KEY_RE.test(k)) out[k] = "[REDACTED]";
-      else out[k] = scrubValue(val, depth + 1);
-    }
-    return out;
-  }
-  return v;
-}
-function scrubSecrets(obj: Record<string, unknown>): Record<string, unknown> {
-  return scrubValue(obj) as Record<string, unknown>;
-}
+export { getOrCreateRiskSettings, logRiskEvent } from "../lib/riskGovernor/riskEvents.js";
+import { getOrCreateRiskSettings, logRiskEvent } from "../lib/riskGovernor/riskEvents.js";
 
 // Apply live-contract overrides on every read so it can never be bypassed via DB drift.
 function withSafetyContract<T extends Record<string, unknown>>(s: T) {
@@ -141,32 +89,41 @@ function sanitizeBody(b: Record<string, unknown>): Record<string, unknown> {
 }
 
 // ── Risk check (used by frontend pre-flight) ─────────────────────────────
+// A preview of the Risk Governor for a paper ticket: the same 13 rules the
+// open will face. Logged as a risk_check event, as it always has been.
 router.post("/me/risk/check-paper-trade", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
-  const settings = await getOrCreateRiskSettings(userId);
-  const trades = await db.select().from(paperTradesTable).where(eq(paperTradesTable.userId, userId));
-  const history = aggregateHistory(trades);
   const b = req.body ?? {};
-  const input: RiskCheckInput = {
-    symbol: String(b.symbol ?? ""), side: b.side ?? null,
+  if (b.liveExecutionIntent === true) {
+    const reason = "This check is for paper tickets. Live orders are checked by the Risk Governor when you send them from the live ticket.";
+    await logRiskEvent({ userId, eventType: "live_execution_blocked", severity: "critical", decision: "block", reason,
+      details: { source: "pre_trade_risk_governor", preflight: true } });
+    res.json({ decision: "block", reason, failedRules: [{ rule: "live_execution_intent", severity: "critical" }], requiredActions: [reason],
+      overrideAllowed: false, liveExecutionAttempted: true, rules: [] });
+    return;
+  }
+  const check = await previewJournalTicket(userId, {
+    symbol: String(b.symbol ?? ""), side: typeof b.side === "string" ? b.side : null,
+    lots: nullableNum(b.lotSize), entryPrice: nullableNum(b.entryPrice),
     stopLoss: nullableNum(b.stopLoss), takeProfit: nullableNum(b.takeProfit),
-    entryPrice: nullableNum(b.entryPrice), lotSize: nullableNum(b.lotSize),
-    riskAmount: nullableNum(b.riskAmount), riskPercent: nullableNum(b.riskPercent),
-    rewardRiskRatio: nullableNum(b.rewardRiskRatio), reasonForEntry: b.reasonForEntry ?? null,
-    playbookId: nullableNum(b.playbookId),
-    preTradeCheckPassed: typeof b.preTradeCheckPassed === "boolean" ? b.preTradeCheckPassed : null,
-    preTradeCheckDecision: b.preTradeCheckDecision ?? null,
-    liveExecutionIntent: b.liveExecutionIntent === true,
-  };
-  const result = evaluateRiskCheck(settings, history, input, { accountBalance: nullableNum(b.accountBalance) });
-  const sev: "info" | "warning" | "critical" = result.decision === "block" ? "critical" : result.decision === "warning" ? "warning" : "info";
+    mt5ConnectionId: nullableNum(b.mt5ConnectionId),
+    process: {
+      playbookId: nullableNum(b.playbookId),
+      preTradeCheckPassed: typeof b.preTradeCheckPassed === "boolean" ? b.preTradeCheckPassed : null,
+      preTradeCheckDecision: typeof b.preTradeCheckDecision === "string" ? b.preTradeCheckDecision : null,
+      reasonForEntry: typeof b.reasonForEntry === "string" ? b.reasonForEntry : null,
+    },
+  });
   await logRiskEvent({
-    userId, eventType: result.liveExecutionAttempted ? "live_execution_blocked" : (result.decision === "block" ? "blocked_trade" : "risk_check"),
-    severity: sev, decision: result.decision, reason: result.reason,
-    details: { input: { ...input }, score: result.riskScore, failedRules: result.failedRules },
+    userId, eventType: check.decision === "block" ? "blocked_trade" : "risk_check",
+    severity: check.decision === "block" ? "critical" : "info", decision: check.decision, reason: check.reason,
+    details: { source: "pre_trade_risk_governor", preflight: true, blockedBy: check.risk.blockedBy, rules: check.risk.rules },
     paperTradeId: nullableNum(b.paperTradeId), tradingSessionId: nullableNum(b.tradingSessionId),
   });
-  res.json({ ...result, ...SAFE_LIVE_CONTRACT, safetyMode: "paper_only", educationalOnly: true });
+  res.json({
+    decision: check.decision, reason: check.reason, failedRules: check.failedRules, requiredActions: check.requiredActions,
+    overrideAllowed: check.overrideAllowed, liveExecutionAttempted: false, rules: check.risk.rules, blockedBy: check.risk.blockedBy,
+  });
 });
 
 router.get("/me/risk/events", requireUser, async (req, res) => {
@@ -269,54 +226,6 @@ function nullableNum(x: unknown): number | null {
   if (x == null || x === "") return null;
   const n = typeof x === "number" ? x : Number(x);
   return Number.isFinite(n) ? n : null;
-}
-
-// Helper: run risk check for paper trade open path. Throws Error on block (no override).
-export async function evaluateForPaperOpen(userId: number, opts: {
-  trade: typeof paperTradesTable.$inferSelect; override?: { reason: string } | null;
-}) {
-  const settings = await getOrCreateRiskSettings(userId);
-  const trades = await db.select().from(paperTradesTable).where(eq(paperTradesTable.userId, userId));
-  const history = aggregateHistory(trades.filter((t) => t.id !== opts.trade.id));
-  const t = opts.trade;
-  // Resolve account balance from MT5 connection so maxDailyLossPercent enforces in the open path.
-  // Falls back to a paper-account default so percentage-based caps never silently no-op.
-  let accountBalance: number | null = null;
-  if (t.mt5ConnectionId != null) {
-    const { mt5ConnectionTable } = await import("@workspace/db");
-    const conn = (await db.select().from(mt5ConnectionTable)
-      .where(and(eq(mt5ConnectionTable.id, t.mt5ConnectionId), eq(mt5ConnectionTable.userId, userId))).limit(1))[0];
-    if (conn?.accountBalance != null) accountBalance = Number(conn.accountBalance);
-  }
-  if (accountBalance == null || !Number.isFinite(accountBalance) || accountBalance <= 0) accountBalance = 10_000;
-  const result = evaluateRiskCheck(settings, history, {
-    symbol: t.symbol, side: t.side,
-    stopLoss: t.stopLoss, takeProfit: t.takeProfit, entryPrice: t.entryPrice ?? t.plannedEntryPrice,
-    lotSize: t.lotSize, riskAmount: t.riskAmount, riskPercent: t.riskPercent,
-    rewardRiskRatio: t.rewardRiskRatio, reasonForEntry: t.reasonForEntry,
-    playbookId: null, preTradeCheckPassed: null, preTradeCheckDecision: null,
-    liveExecutionIntent: false,
-  }, { accountBalance });
-  const sev: "info" | "warning" | "critical" = result.decision === "block" ? "critical" : result.decision === "warning" ? "warning" : "info";
-  const overrideAttempted = !!opts.override;
-  const overrideValid = overrideAttempted && result.overrideAllowed && (opts.override!.reason.trim().length >= 5);
-  await logRiskEvent({
-    userId,
-    eventType: result.decision === "block" ? "blocked_trade" : "risk_check",
-    severity: sev, decision: result.decision,
-    reason: result.reason,
-    details: { score: result.riskScore, failedRules: result.failedRules, overrideAttempted, overrideValid, overrideReason: opts.override?.reason ?? null },
-    paperTradeId: t.id, tradingSessionId: t.tradingSessionId,
-  });
-  if (overrideValid && result.decision === "block") {
-    await logRiskEvent({
-      userId, eventType: "override", severity: "warning", decision: "warning",
-      reason: `Paper override on open: ${opts.override!.reason}`,
-      details: { tradeId: t.id, originalReason: result.reason },
-      paperTradeId: t.id, tradingSessionId: t.tradingSessionId,
-    });
-  }
-  return { result, allow: result.decision !== "block" || overrideValid };
 }
 
 export async function postPaperCloseRiskHooks(userId: number, closedTrade: typeof paperTradesTable.$inferSelect) {

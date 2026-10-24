@@ -45,7 +45,7 @@
 //   - artifacts/api-server/src/lib/governance/  (account governance)
 //   - artifacts/api-server/src/lib/risk/, riskGovernor/      (risk settings + governor)
 //   - artifacts/api-server/src/lib/paperExecution/           (paper execution path / eligibility / sizing)
-//   - positionSizing.ts, riskAudit.ts, riskGovernor2.ts, riskGovernorEngine.ts (position-mgmt / risk helpers)
+//   - positionSizing.ts, riskAudit.ts (position-mgmt / risk helpers)
 //
 // All checks are fast static scans — no runtime, no DB, no network.
 
@@ -522,8 +522,6 @@ export const FENCED_DIRS = [
 const FENCED_FILES = [
   "artifacts/api-server/src/lib/positionSizing.ts",
   "artifacts/api-server/src/lib/riskAudit.ts",
-  "artifacts/api-server/src/lib/riskGovernor2.ts",
-  "artifacts/api-server/src/lib/riskGovernorEngine.ts",
   // Fence-completeness audit additions — lib-root files on the order-decision
   // path (safety core, order-management, autopilot executor, live allocation
   // authorization).

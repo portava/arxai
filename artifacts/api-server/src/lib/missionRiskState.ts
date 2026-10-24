@@ -1,11 +1,13 @@
-// ── Profit Mission Phase 6 — Mission risk service (state + persistence + journal) ─
+// ── Profit Mission Phase 6 — Mission risk STATE (facts + persistence + journal) ─
 //
 // SAFETY / SCOPE:
-//   - ADDITIVE + STRICTER-ONLY. This service COMPOSES the per-user Risk Governor
-//     history (`aggregateHistory`, never re-derived) with the pure mission-risk
-//     and blow-up engines (`@workspace/domain/profit-mission`). It can only make a
-//     mission stricter (reduce risk / cooldown / pause / stop); it never relaxes a
-//     gate and never places a trade. Execution lives in `missionExecution.ts`.
+//   - FACTS ONLY. This service computes a mission's protective state (mode,
+//     loss ladder, blow-up risk, behavioural cooldown, emergency stop, budget
+//     use) from the per-user journal history (`aggregateHistory`, shared with
+//     the Risk Governor) and the pure mission engines. It decides nothing: the
+//     mission-scope verdict over this state is a Risk Governor rule set
+//     (lib/riskGovernor/missionScope.ts), and every order still faces the
+//     pre-trade Risk Governor inside the live pipeline.
 //   - PERSISTENCE + JOURNALING ONLY. It writes the computed risk read to
 //     `profit_missions.riskJson` and appends an append-only `mission_events` row
 //     when the mission's protective mode ESCALATES (stricter-only) — both inside
@@ -35,7 +37,7 @@ import {
   type BlowupRiskResult,
   type EmergencyStopResult,
 } from "@workspace/domain/profit-mission";
-import { aggregateHistory, type AggregatedHistory } from "./riskGovernorEngine.js";
+import { aggregateHistory, type AggregatedHistory } from "./riskGovernor/journalActivity.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
 

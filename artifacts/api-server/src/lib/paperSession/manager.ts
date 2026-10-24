@@ -17,7 +17,7 @@ import {
 import { sql, desc, eq, and, gte } from "drizzle-orm";
 
 import { getGateStatus } from "../readiness/gate.js";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { evaluateReadiness } from "../readiness/traderReadiness.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -157,7 +157,7 @@ export async function preflight(): Promise<PreflightResult> {
   // HH Risk Governor
   let hh = { status: "UNKNOWN", paperTradingAllowed: false, liveTradingAllowed: false as const, canPlaceLiveTrade: false as const };
   try {
-    const e = await evaluateGovernor({ persist: false });
+    const e = await evaluateReadiness({ persist: false });
     hh = {
       status: e.overallStatus,
       paperTradingAllowed: e.paperTradingAllowed,

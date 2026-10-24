@@ -11,7 +11,7 @@ import {
   strategyEdgesTable,
 } from "@workspace/db";
 import { and, eq, gte } from "drizzle-orm";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { evaluateReadiness } from "../readiness/traderReadiness.js";
 
 export interface WeeklyPlan {
   week_start: string;
@@ -74,8 +74,8 @@ export async function generateWeeklyPlan(opts: { userId: number; persist?: boole
   let edges: { symbol: string; signalName: string; action: string; sampleCount: number; edgeScore: number; winCount: number }[] = [];
   try { edges = await db.select().from(strategyEdgesTable); } catch { /* empty */ }
 
-  let governor: Awaited<ReturnType<typeof evaluateGovernor>> | null = null;
-  try { governor = await evaluateGovernor({ persist: false }); } catch { /* empty */ }
+  let governor: Awaited<ReturnType<typeof evaluateReadiness>> | null = null;
+  try { governor = await evaluateReadiness({ persist: false, userId: opts.userId }); } catch { /* empty */ }
 
   const closedLastWeek = lastWeekTrades.filter(t => t.status !== "OPEN");
   const wins = closedLastWeek.filter(t => (t.pnl ?? 0) > 0).length;

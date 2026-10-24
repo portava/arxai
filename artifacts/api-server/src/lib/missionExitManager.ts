@@ -53,7 +53,7 @@ import {
   refreshMissionRisk,
   type MissionLiveSignals,
   type MissionRiskState,
-} from "./missionRiskService.js";
+} from "./missionRiskState.js";
 import { getRunning } from "./intelligence/mfeTracker.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;

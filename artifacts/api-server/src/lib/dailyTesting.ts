@@ -11,7 +11,7 @@
 // (sessions/ratings/trend) — no destructive ops.
 
 import { listOrders, listPositions, pnlSummary } from "./oms.js";
-import { listEvents as listRiskEvents, riskBudget } from "./riskGovernor2.js";
+import { listRiskEventsView } from "./riskGovernor/riskProfile.js";
 import { listSessions as autoSessions, listDecisions as autoDecisions } from "./autopilot.js";
 import { shadowStatus, listDecisions as shadowDecisions, forwardStatus } from "./shadowMode.js";
 import { readinessReport } from "./release.js";
@@ -161,7 +161,7 @@ export async function completeSession(
   s.completedAt = nowIso();
   s.notes = notes;
   s.status = deriveStatus(s);
-  s.improvementNotes = generateImprovementNotes(s);
+  s.improvementNotes = await generateImprovementNotes(s);
   // Snapshot readiness for trend.
   try {
     const r = await readinessReport();
@@ -188,7 +188,7 @@ export function recordRating(sessionId: string, rating: Omit<OwnerRating, "rated
 // ────────────────────────────────────────────────────────────────────────
 // AI improvement note generator — honest, evidence-based.
 // ────────────────────────────────────────────────────────────────────────
-function generateImprovementNotes(s: DailySession): string[] {
+async function generateImprovementNotes(s: DailySession): Promise<string[]> {
   const out: string[] = [];
   const today = s.date;
   const orders = listOrders({ limit: 500 }).filter((o) => o.createdAt.startsWith(today));
@@ -198,7 +198,7 @@ function generateImprovementNotes(s: DailySession): string[] {
   const decisionsToday = autoDecisions(200).filter((d) => d.ts.startsWith(today));
   const wait = decisionsToday.filter((d) => d.action === "WAIT").length;
   const submit = decisionsToday.filter((d) => d.action !== "WAIT").length;
-  const riskEvts = listRiskEvents(200).filter((e) => e.ts.startsWith(today));
+  const riskEvts = (await listRiskEventsView({ limit: 200 })).filter((e) => e.ts.startsWith(today));
   const reasonCounts = new Map<string, number>();
   for (const o of aiRejected) {
     const reason = (o.rejectionReason ?? "unspecified").split(",")[0]!.trim();
@@ -273,7 +273,7 @@ export async function dailyPerformanceReview(date: string = ymd()) {
     .orderBy(desc(liveIntentsTable.createdAt))
     .limit(500).catch(() => [] as Array<{ status: string | null }>);
 
-  const riskEvtsToday = listRiskEvents(500).filter((e) => e.ts.startsWith(date));
+  const riskEvtsToday = (await listRiskEventsView({ limit: 500 })).filter((e) => e.ts.startsWith(date));
   const blocks = riskEvtsToday.filter((e) => e.severity === "BLOCK" || /BLOCK|REJECT|DENY/i.test(e.rule ?? "")).length;
 
   const todaySessions = listSessionsAll(50).filter((s) => s.date === date);
@@ -352,7 +352,7 @@ export async function weeklySummary() {
   const weekStart = new Date(`${days[0]}T00:00:00Z`);
   const weekOrders = listOrders({ limit: 2000 }).filter((o) => Date.parse(o.createdAt) >= weekStart.getTime());
   const weekDecisions = autoDecisions(2000).filter((d) => Date.parse(d.ts) >= weekStart.getTime());
-  const weekRisk = listRiskEvents(2000).filter((e) => Date.parse(e.ts) >= weekStart.getTime());
+  const weekRisk = (await listRiskEventsView({ limit: 2000, since: weekStart })).filter((e) => Date.parse(e.ts) >= weekStart.getTime());
   const weekIntents: Array<{ status: string | null }> = await db.select().from(liveIntentsTable)
     .where(gte(liveIntentsTable.createdAt, weekStart)).limit(2000).catch(() => [] as Array<{ status: string | null }>);
 

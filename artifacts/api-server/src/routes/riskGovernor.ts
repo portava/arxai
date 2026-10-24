@@ -1,4 +1,6 @@
-// Build HH — Risk Governor routes.
+// Trader readiness routes (formerly "Build HH — Risk Governor"). Readiness is
+// a read model: it scores and explains, it never authorises an order. The one
+// pre-trade Risk Governor is lib/riskGovernor/enforce.ts.
 //
 // SAFETY: All endpoints are READ-ONLY/governance. They NEVER place trades,
 // NEVER call MT5, NEVER modify canPlaceTrades. liveTradingStatus is hardcoded
@@ -8,7 +10,12 @@ import { Router } from "express";
 import { z } from "zod/v4";
 import { db, riskGovernorEvaluationsTable, riskGovernorEventsTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
-import { evaluateGovernor, type SimulateOverrides } from "../lib/riskGovernor/governor.js";
+import { evaluateReadiness, type SimulateOverrides } from "../lib/readiness/traderReadiness.js";
+import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
+import type { Request } from "express";
+
+// A trader sees their own readiness; operators see the whole install.
+const scopeOf = (req: Request): number | null => (canSeeLegacyRows(req.authUser) ? null : req.authUser?.id ?? -1);
 
 const router = Router();
 const TAG = "Build HH — Risk Governor + Trader Readiness. Reporting/governance only. Never places trades, never calls MT5, never enables canPlaceTrades.";
@@ -32,7 +39,7 @@ router.get("/risk-governor/status", async (req, res) => {
       error: (m: string, x?: Record<string, unknown>) => req.log?.error?.(x ?? {}, `HH governor: ${m}`),
     };
     const sym = typeof req.query.symbol === "string" && req.query.symbol.trim() ? req.query.symbol.trim() : undefined;
-    const e = await evaluateGovernor({ persist: false, log, symbol: sym });
+    const e = await evaluateReadiness({ persist: false, log, symbol: sym, userId: scopeOf(req) });
     res.json(envelope({ governor: e }));
   } catch (err) {
     res.status(500).json(envelope({ error: "Failed to evaluate governor", detail: String(err).slice(0, 200) }));
@@ -47,7 +54,7 @@ router.post("/risk-governor/evaluate", async (req, res) => {
       warn: (m: string, x?: Record<string, unknown>) => req.log?.warn?.(x ?? {}, `HH governor: ${m}`),
       error: (m: string, x?: Record<string, unknown>) => req.log?.error?.(x ?? {}, `HH governor: ${m}`),
     };
-    const e = await evaluateGovernor({ persist: true, log });
+    const e = await evaluateReadiness({ persist: true, log, userId: scopeOf(req) });
     res.json(envelope({ governor: e, persisted: true }));
   } catch (err) {
     res.status(500).json(envelope({ error: "Failed to evaluate governor", detail: String(err).slice(0, 200) }));
@@ -86,7 +93,7 @@ router.post("/risk-governor/demo", async (req, res) => {
       warn: (m: string, x?: Record<string, unknown>) => req.log?.warn?.(x ?? {}, `HH governor: ${m}`),
       error: (m: string, x?: Record<string, unknown>) => req.log?.error?.(x ?? {}, `HH governor: ${m}`),
     };
-    const e = await evaluateGovernor({ persist: true, log });
+    const e = await evaluateReadiness({ persist: true, log, userId: scopeOf(req) });
     const recent = await db.select().from(riskGovernorEvaluationsTable)
       .orderBy(desc(riskGovernorEvaluationsTable.createdAt)).limit(5);
     const recentEvents = await db.select().from(riskGovernorEventsTable)
@@ -123,7 +130,7 @@ router.post("/risk-governor/simulate", async (req, res) => {
       warn: (m: string, x?: Record<string, unknown>) => req.log?.warn?.(x ?? {}, `HH governor[sim]: ${m}`),
       error: (m: string, x?: Record<string, unknown>) => req.log?.error?.(x ?? {}, `HH governor[sim]: ${m}`),
     };
-    const e = await evaluateGovernor({ persist, log, simulate: simulate as SimulateOverrides });
+    const e = await evaluateReadiness({ persist, log, simulate: simulate as SimulateOverrides, userId: scopeOf(req) });
     res.json(envelope({ simulate: simulate as Record<string, unknown>, governor: e, persisted: !!persist }));
   } catch (err) {
     res.status(500).json(envelope({ error: "Simulate failed", detail: String(err).slice(0, 200) }));

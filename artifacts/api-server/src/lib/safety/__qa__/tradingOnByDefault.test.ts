@@ -41,7 +41,7 @@ test("a fresh install (no settings row) is not halted by the platform stop", asy
 });
 
 test("the seeded singleton is LIVE, demo and live enabled, stop released", async () => {
-  const g = await getGlobalSettings();
+  const g = (await getGlobalSettings())!;
   assert.equal(g.platformMode, "LIVE");
   assert.equal(g.demoEnabled, true);
   assert.equal(g.liveEnabled, true);
@@ -50,7 +50,7 @@ test("the seeded singleton is LIVE, demo and live enabled, stop released", async
 });
 
 test("an engaged stop halts DEMO and LIVE, never paper", async () => {
-  const g = await getGlobalSettings();
+  const g = (await getGlobalSettings())!;
   await db.update(globalTradingSettingsTable).set({ emergencyKillSwitch: true }).where(eq(globalTradingSettingsTable.id, g.id));
   assert.equal(await platformStop("DEMO"), true);
   assert.equal(await platformStop("LIVE"), true);

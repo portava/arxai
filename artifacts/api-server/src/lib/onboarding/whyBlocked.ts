@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { db, blockedActionExplanationsTable } from "@workspace/db";
 import { preflight, getActiveSession } from "../paperSession/manager.js";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { evaluateReadiness } from "../readiness/traderReadiness.js";
 import { getGateStatus } from "../readiness/gate.js";
 import { getCriticalUnread } from "../alerts/alertManager.js";
 import { auditEvent } from "../systemHealth/audit.js";
@@ -56,7 +56,7 @@ export async function explainBlockedAction(action: BlockedAction, userId: number
   const [pre, active, gov, gate, critical] = await Promise.all([
     preflight().catch(() => null),
     getActiveSession(userId).catch(() => null),
-    evaluateGovernor().catch(() => null),
+    evaluateReadiness({ persist: false, userId }).catch(() => null),
     getGateStatus().catch(() => null),
     getCriticalUnread(userId).catch(() => []),
   ]);

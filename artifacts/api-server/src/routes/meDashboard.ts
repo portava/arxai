@@ -9,7 +9,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
-import { aggregateHistory, evaluateRiskCheck, DEFAULT_USER_RISK_SETTINGS } from "../lib/riskGovernorEngine.js";
+import { aggregateHistory, DEFAULT_USER_RISK_SETTINGS } from "../lib/riskGovernor/journalActivity.js";
 import { getOrCreateRiskSettings } from "./meRiskGovernor.js";
 import { upsertAlertOnce, dismissAlertsByType } from "./meAlerts.js";
 
@@ -333,7 +333,6 @@ router.get("/me/session-health", requireUser, async (req, res) => {
     recommendation, isEmpty: false,
     ...SAFETY_ENVELOPE,
   });
-  void evaluateRiskCheck;
 });
 
 export default router;

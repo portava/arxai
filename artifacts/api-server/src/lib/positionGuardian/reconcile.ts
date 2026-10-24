@@ -27,7 +27,7 @@ import {
   mt5DemoCommandsTable,
   userRiskEventsTable,
 } from "@workspace/db";
-import { logRiskEvent } from "../../routes/meRiskGovernor.js";
+import { logRiskEvent } from "../riskGovernor/riskEvents.js";
 import { logger } from "../logger.js";
 import {
   assessProtection,

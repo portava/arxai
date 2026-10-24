@@ -10,7 +10,8 @@
 //   - Per-draft user approval (Level 2) is still required: a draft must already
 //     be `approved` (or `waiting_confirmation`→approved) before it can dispatch.
 //     This hook never approves; it only dispatches an already-approved draft.
-//   - The additive, STRICTER-ONLY mission gate (`composeMissionGate`) runs FIRST.
+//   - The additive, STRICTER-ONLY mission-scope rules of the Risk Governor
+//     (`enforceMissionScope`) run FIRST.
 //     If it blocks, no order is attempted and the draft stays `approved`. The
 //     real per-user governor + 18-gate live dispatch still run unconditionally
 //     inside `executeInstant` — the mission gate can only ADD strictness.
@@ -29,16 +30,14 @@ import {
   oneClickAuditTable,
   type MissionTradeDraftRow,
 } from "@workspace/db";
-import {
-  composeMissionGate,
-  type MissionGateResult,
-} from "@workspace/domain/profit-mission";
+import type { MissionGateResult } from "@workspace/domain/profit-mission";
+import { enforceMissionScope } from "./riskGovernor/missionScope.js";
 import {
   executeInstant,
   type InstantTradeIntent,
   type InstantTradeResult,
 } from "./live/instantTrade.js";
-import { refreshMissionRisk, type MissionLiveSignals } from "./missionRiskService.js";
+import { refreshMissionRisk, type MissionLiveSignals } from "./missionRiskState.js";
 import {
   evaluatePhase7PreChecks,
   exposureBudgetFrom,
@@ -196,18 +195,9 @@ export async function dispatchApprovedDraft(
   if (!risk.ok) return { ok: false, kind: "mission_not_found" };
   const state = risk.state;
 
-  const gate = composeMissionGate({
-    // The real per-user governor + 18-gate run inside executeInstant; this seam
-    // starts from "pass" and the mission layer can only escalate strictness.
-    governorDecision: "pass",
-    mode: state.mode,
-    ladderAction: state.ladderAction,
-    blowupAction: state.blowup.action,
-    budgetExceeded: state.budgetUsedPct >= 100,
-    cooldownActive: state.behavioral.cooldownTriggered,
-    emergencyTriggered: state.emergency.triggered,
-    hasStopLoss: draft.stopLoss != null,
-    edgeTier: draft.edgeTier,
+  const gate = await enforceMissionScope({
+    userId: args.userId, missionId: args.missionId, draftId: draft.draftId, symbol: draft.symbol,
+    state, hasStopLoss: draft.stopLoss != null, edgeTier: draft.edgeTier,
   });
 
   if (!gate.allow) {

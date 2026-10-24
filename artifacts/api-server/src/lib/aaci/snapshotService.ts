@@ -14,7 +14,7 @@ import {
 } from "@workspace/domain/aaci";
 import { randomUUID } from "node:crypto";
 import { logger } from "../logger.js";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { evaluateReadiness } from "../readiness/traderReadiness.js";
 import { scanSymbolTimeframe } from "../marketScanner.js";
 import { getNewsIntelligence } from "../news/newsIntelligenceService.js";
 import { getUnreadCount } from "../alerts/alertManager.js";
@@ -92,7 +92,7 @@ export async function buildAaciSnapshot(
 
   // ── Risk Governor (R + risk gate inputs) ──────────────────────────────────
   try {
-    const gov = await evaluateGovernor();
+    const gov = await evaluateReadiness({ persist: false, userId });
     const dailyLossHit =
       gov.metrics.dailyLossLimit > 0
         ? gov.metrics.dailyPnl <= -Math.abs(gov.metrics.dailyLossLimit)

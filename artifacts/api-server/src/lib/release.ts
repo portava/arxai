@@ -6,7 +6,7 @@
 import { db, feedbackTable } from "@workspace/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { listAudit } from "./systemHealth/audit.js";
-import { permissions, listEvents as listRiskEvents } from "./riskGovernor2.js";
+import { listRiskEventsView, platformRiskPermissions } from "./riskGovernor/riskProfile.js";
 import { listDecisions as autoDecisions, status as autopilotStatus } from "./autopilot.js";
 import { shadowStatus, forwardStatus, readinessScore } from "./shadowMode.js";
 import { omsDashboardSummary, pnlSummary } from "./oms.js";
@@ -46,7 +46,7 @@ export async function evaluateGates(): Promise<{ gates: Gate[]; criticalIssues: 
   push("live_intent_pass", "Live intent pass", true, "Queue endpoints reachable");
 
   // Risk
-  const perms = permissions();
+  const perms = await platformRiskPermissions();
   push("risk_governor_pass", "Risk Governor pass", !!perms && perms.futureMt5 === false);
   push("pnl_pass", "P/L pass", !!pnlSummary());
 
@@ -113,14 +113,14 @@ export async function diagnosticsPackage() {
       realBrokerExecutionAvailable: false,
       canPlaceTrades: false,
     },
-    permissions: permissions(),
+    permissions: await platformRiskPermissions(),
     oms: omsDashboardSummary(),
     autopilot: autopilotStatus(),
     shadow: shadowStatus(),
     forward: forwardStatus(),
     readiness,
     recentAudit: audit,
-    recentRisk: listRiskEvents(100),
+    recentRisk: await listRiskEventsView({ limit: 100 }),
     recentAiDecisions: autoDecisions(100),
     recentIssues: issues.map((i) => ({
       feedbackId: i.feedbackId, title: i.title, status: i.status,

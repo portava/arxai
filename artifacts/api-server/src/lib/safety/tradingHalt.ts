@@ -20,7 +20,6 @@
 //
 // Not read here, on purpose:
 //   live_trading_state.kill_switch_active  legacy placeLiveOrderGuarded path, permanently locked
-//   riskGovernor2 tradingPaused            in-memory simulator OMS only
 //   self_trade_kill_switches               scoped per agent/strategy; the self-trade executor reads it
 //   protective_auto_close_settings         turns auto-close off; it does not halt trading
 //
@@ -68,6 +67,27 @@ export function haltFrom(sources: HaltSource[], detail: Partial<Record<HaltSourc
 
 async function read<T>(fn: () => Promise<T>): Promise<T | "unreadable"> {
   try { return await fn(); } catch { return "unreadable"; }
+}
+
+/** The install-wide switches only (emergency stop, safety core), for fleet-level views. */
+export async function loadPlatformHalt(): Promise<TradingHalt> {
+  const sources: HaltSource[] = [];
+  const detail: Partial<Record<HaltSource, string | null>> = {};
+  const g = await read(async () => (await db.select({
+    on: globalTradingSettingsTable.emergencyKillSwitch, why: globalTradingSettingsTable.killSwitchReason,
+  }).from(globalTradingSettingsTable).orderBy(asc(globalTradingSettingsTable.id)).limit(1))[0]);
+  if (g === "unreadable" || g?.on) {
+    sources.push("platform_emergency_stop");
+    detail.platform_emergency_stop = g === "unreadable" ? "state unreadable" : g?.why ?? null;
+  }
+  const sc = await read(async () => (await db.select({
+    on: safetyCoreTable.killSwitchEngaged, why: safetyCoreTable.killSwitchReason,
+  }).from(safetyCoreTable).orderBy(asc(safetyCoreTable.id)).limit(1))[0]);
+  if (sc === "unreadable" || sc?.on) {
+    sources.push("safety_core_kill_switch");
+    detail.safety_core_kill_switch = sc === "unreadable" ? "state unreadable" : sc?.why ?? null;
+  }
+  return haltFrom(sources, detail);
 }
 
 export async function loadTradingHalt(args: {
