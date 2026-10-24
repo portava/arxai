@@ -6,3 +6,5 @@ export * from "./mt5StateReader.js";
 export * from "./connections.js";
 export * from "./brokerHealthState.js";
 export * from "./readOnlySnapshots.js";
+export * from "./masterBridgePoolReader.js";
+export * from "./bridgeV2StreamState.js";

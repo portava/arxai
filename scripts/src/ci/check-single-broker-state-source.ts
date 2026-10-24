@@ -10,8 +10,11 @@
 // This guard fails when a file outside lib/brokerHub/ names one of those
 // tables (drizzle identifier) or queries it in raw SQL, unless the file is on
 // the allowlist below with a reason. A "write" entry may insert/update the
-// table but never select from it (it reads back through the hub). An
-// allowlist entry that no longer touches its tables (or no longer exists) is
+// table but never select from it (it reads back through the hub); the only
+// exception is an entry marked lockingReads, whose reads must take a row lock
+// in the same statement (SELECT ... FOR UPDATE inside the writer's own
+// transaction). Every entry is a writer: no file outside the hub may read a
+// guarded table for status. An allowlist entry that no longer touches its tables (or no longer exists) is
 // stale and fails too, so the list only shrinks honestly.
 //
 // mt5_connection and mt5_state are guarded by broker-connection-single-owner
@@ -40,10 +43,10 @@ export const STATE_TABLES: readonly StateTable[] = [
   { sql: "broker_health_logs", drizzle: "brokerHealthLogsTable", owner: "lib/brokerHub/brokerHealthState.ts" },
   { sql: "broker_readonly_snapshots", drizzle: "brokerReadonlySnapshotsTable", owner: "lib/brokerHub/readOnlySnapshots.ts" },
   { sql: "broker_readonly_logs", drizzle: "brokerReadonlyLogsTable", owner: "lib/brokerHub/readOnlySnapshots.ts" },
-  // Allowlisted owners outside the hub today (see ALLOWLIST); listed so a new
-  // reader anywhere else still fails.
-  { sql: "arx_master_bridge_pool", drizzle: "arxMasterBridgePoolTable", owner: "lib/live/masterBridgePool.ts" },
-  { sql: "bridge_v2_stream_state", drizzle: "bridgeV2StreamStateTable", owner: "lib/bridgeV2/status.ts" },
+  // Written outside the hub (LIVE pool projection; Bridge v2 ingest), read
+  // only through these hub readers.
+  { sql: "arx_master_bridge_pool", drizzle: "arxMasterBridgePoolTable", owner: "lib/brokerHub/masterBridgePoolReader.ts" },
+  { sql: "bridge_v2_stream_state", drizzle: "bridgeV2StreamStateTable", owner: "lib/brokerHub/bridgeV2StreamState.ts" },
 ];
 
 /** Tables guarded by their own Broker Hub guard. */
@@ -54,8 +57,14 @@ export const DELEGATED: ReadonlyArray<{ sql: string; guard: string }> = [
 
 export interface AllowEntry {
   tables: readonly string[];
-  /** "write": insert/update only, reads go through the owner. "readwrite": not yet behind the hub. */
-  access: "write" | "readwrite";
+  /** "write": insert/update only, reads go through the owner (the only access level; there are no read exceptions). */
+  access: "write";
+  /**
+   * "write" entries only: a read is allowed when the same statement takes a
+   * row lock (`.for("update")`), i.e. the read is the write's own
+   * read-modify-write lock inside a transaction, not a status read.
+   */
+  lockingReads?: true;
   reason: string;
 }
 
@@ -73,28 +82,19 @@ export const ALLOWLIST: Readonly<Record<string, AllowEntry>> = {
   },
   "lib/live/masterBridgePool.ts": {
     tables: ["arx_master_bridge_pool"],
-    access: "readwrite",
-    reason: "writer: recomputes the shared-master pool projection from mt5_connection on every heartbeat; live dispatch reads it here (LIVE execution domain)",
+    access: "write",
+    reason: "writer/owner (LIVE execution domain): recomputes and upserts the shared-master pool projection from mt5_connection on every heartbeat; reads the row back through the hub reader",
   },
   "routes/adminAllocations.ts": {
     tables: ["arx_master_bridge_pool"],
-    access: "readwrite",
-    reason: "admin writer: shared-live pause/resume flag and over-allocation count on the pool row",
+    access: "write",
+    reason: "admin writer: shared-live pause/resume flag on the pool row; reads the row and the over-allocation flag through the hub reader",
   },
   "lib/bridgeV2/ingest.ts": {
     tables: ["bridge_v2_stream_state"],
-    access: "readwrite",
-    reason: "writer: Bridge v2 ingest advances per-stream sequence and integrity counters",
-  },
-  "lib/bridgeV2/status.ts": {
-    tables: ["bridge_v2_stream_state"],
-    access: "readwrite",
-    reason: "Bridge v2 status derivation: the one reader that turns stream rows into freshness",
-  },
-  "routes/bridgeV2.ts": {
-    tables: ["bridge_v2_stream_state"],
-    access: "readwrite",
-    reason: "admin integrity trace lists raw stream counters (operator only)",
+    access: "write",
+    lockingReads: true,
+    reason: "writer: Bridge v2 ingest seeds, row-locks (SELECT ... FOR UPDATE in its transaction) and advances per-stream sequence and integrity counters; status reads go through the hub",
   },
 };
 
@@ -119,17 +119,32 @@ export function scanForBrokerStateTables(src: string, tables: readonly StateTabl
   return out;
 }
 
+/** True when the statement starting at 1-based `line` takes a row lock before it ends. */
+export function statementLocksRow(lines: readonly string[], line: number): boolean {
+  let stmt = "";
+  for (let i = line - 1; i < Math.min(lines.length, line + 7); i++) {
+    const l = lines[i]!;
+    const end = l.indexOf(";");
+    stmt += end >= 0 ? l.slice(0, end) : l;
+    if (end >= 0) break;
+  }
+  return /\.\s*for\(\s*["'`]update["'`]\s*\)/.test(stmt);
+}
+
 /** Violations for one file (key relative to api-server/src), and whether its allowlist entry was used. */
 export function scanFile(key: string, src: string): { violations: string[]; allowUsed: boolean } {
   if (key.startsWith(HUB_DIR)) return { violations: [], allowUsed: false };
   const allow = ALLOWLIST[key];
   const violations: string[] = [];
   let allowUsed = false;
+  const lines = stripComments(src).split("\n");
   for (const hit of scanForBrokerStateTables(src)) {
     const owner = STATE_TABLES.find((t) => t.sql === hit.table)!.owner;
     if (allow?.tables.includes(hit.table)) {
       allowUsed = true;
-      if (allow.access === "write" && hit.reads) violations.push(`${hit.line}: ${hit.table} writer reads the table directly; read it back through ${owner}`);
+      if (allow.access === "write" && hit.reads && !(allow.lockingReads && statementLocksRow(lines, hit.line))) {
+        violations.push(`${hit.line}: ${hit.table} writer reads the table directly; read it back through ${owner}`);
+      }
       continue;
     }
     violations.push(`${hit.line}: direct ${hit.table} access; read it through ${owner}`);

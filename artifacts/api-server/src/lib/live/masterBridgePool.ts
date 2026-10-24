@@ -27,6 +27,7 @@
 
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { getConnection } from "../brokerHub/connections.js";
+import { readMasterBridgePoolByMaster } from "../brokerHub/masterBridgePoolReader.js";
 import { eq, inArray } from "drizzle-orm";
 import { openLiveExposureCondition } from "./livePositionExposure.js";
 import { computeAvailableBalance } from "./investorLiveBalance.js";
@@ -150,9 +151,7 @@ export async function recomputeMasterPool(args?: {
   // Upsert. Preserve sharedLivePaused / pausedReason / pausedAt /
   // pausedByUserId from any existing row — only the admin pause/resume
   // endpoints may flip them.
-  const existingRows = await db.select().from(arxMasterBridgePoolTable)
-    .where(eq(arxMasterBridgePoolTable.masterConnectionId, resolvedId)).limit(1);
-  const existing = existingRows[0];
+  const existing = await readMasterBridgePoolByMaster(resolvedId);
 
   const baseValues = {
     masterConnectionId: resolvedId,
@@ -200,9 +199,7 @@ export async function recomputeMasterPool(args?: {
 export async function loadMasterPool(): Promise<ArxMasterBridgePool | null> {
   const id = await resolveActiveMasterConnectionId();
   if (id == null) return null;
-  const rows = await db.select().from(arxMasterBridgePoolTable)
-    .where(eq(arxMasterBridgePoolTable.masterConnectionId, id)).limit(1);
-  return rows[0] ?? null;
+  return readMasterBridgePoolByMaster(id);
 }
 
 /**

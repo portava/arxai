@@ -1,5 +1,6 @@
-// Broker Hub state sources — broker_health_state / broker_health_logs and
-// broker_readonly_snapshots / broker_readonly_logs, on a real database.
+// Broker Hub state sources — broker_health_state / broker_health_logs,
+// broker_readonly_snapshots / broker_readonly_logs, arx_master_bridge_pool and
+// bridge_v2_stream_state, on a real database.
 //
 // Proves:
 //   - the health singleton read is the lowest-id row, deterministically, also
@@ -10,7 +11,11 @@
 //   - read-only snapshot/log reads are scoped to one owner: another user's rows
 //     and legacy ownerless rows are never returned, owner 0 matches nothing;
 //   - "id" and "createdAt" orderings keep the two callers' semantics;
-//   - no snapshot means null status (callers report not connected).
+//   - no snapshot means null status (callers report not connected);
+//   - the shared-master pool reader returns the one row for a master (null when
+//     none) and sees an over-allocated flag;
+//   - Bridge v2 stream reads are user-scoped (null = all users) and the admin
+//     trace read is newest-updated first and capped.
 //
 // Run: pnpm --filter @workspace/api-server run test:broker-hub-state-sources
 
@@ -23,6 +28,8 @@ import {
   brokerHealthStateTable,
   brokerReadonlyLogsTable,
   brokerReadonlySnapshotsTable,
+  arxMasterBridgePoolTable,
+  bridgeV2StreamStateTable,
   usersTable,
   type User,
 } from "@workspace/db";
@@ -36,12 +43,17 @@ import {
   listOwnerReadOnlySnapshots,
   readOwnerLatestReadOnlyStatus,
 } from "../readOnlySnapshots.js";
+import { anyMasterBridgePoolOverAllocated, readMasterBridgePoolByMaster } from "../masterBridgePoolReader.js";
+import { listBridgeV2StreamStates, listRecentBridgeV2StreamStates } from "../bridgeV2StreamState.js";
 
 const EMAILS = ["qa+broker-state-src-a@arx.test", "qa+broker-state-src-b@arx.test"];
 const TAG = "qa-broker-state-src";
 let a: User;
 let b: User;
 const stateIds: number[] = [];
+// Synthetic master connection ids (no FK on the pool table); negative so they
+// can never collide with a real mt5_connection id.
+const POOL_MASTERS = [-424201, -424202];
 
 async function cleanup(): Promise<void> {
   if (stateIds.length) await db.delete(brokerHealthStateTable).where(inArray(brokerHealthStateTable.id, stateIds));
@@ -51,7 +63,9 @@ async function cleanup(): Promise<void> {
   if (ids.length) {
     await db.delete(brokerReadonlySnapshotsTable).where(inArray(brokerReadonlySnapshotsTable.userId, ids));
     await db.delete(brokerReadonlyLogsTable).where(inArray(brokerReadonlyLogsTable.userId, ids));
+    await db.delete(bridgeV2StreamStateTable).where(inArray(bridgeV2StreamStateTable.userId, ids));
   }
+  await db.delete(arxMasterBridgePoolTable).where(inArray(arxMasterBridgePoolTable.masterConnectionId, POOL_MASTERS));
   await db.delete(brokerReadonlySnapshotsTable).where(inArray(brokerReadonlySnapshotsTable.provider, [TAG]));
   await db.delete(brokerReadonlyLogsTable).where(inArray(brokerReadonlyLogsTable.connectorId, [TAG]));
   await db.delete(usersTable).where(inArray(usersTable.email, EMAILS));
@@ -131,4 +145,36 @@ test("read-only snapshots and logs are scoped to one owner", async () => {
   assert.equal(status?.provider, TAG);
   assert.ok(status?.createdAt instanceof Date, "the report time travels with the status");
   assert.equal(await readOwnerLatestReadOnlyStatus(0), null, "no snapshot is null, never connected");
+});
+
+test("the shared-master pool reader returns the one row per master, null when none", async () => {
+  const [m1, m2] = POOL_MASTERS as [number, number];
+  assert.equal(await readMasterBridgePoolByMaster(m1), null, "no pool row is null, never a fabricated pool");
+  // Same upsert shape the LIVE projection writer (lib/live/masterBridgePool.ts) uses.
+  await db.insert(arxMasterBridgePoolTable).values({ masterConnectionId: m1, mt5Balance: 1000, mt5Equity: 990, snapshotStatus: "FRESH" });
+  await db.insert(arxMasterBridgePoolTable).values({ masterConnectionId: m2, mt5Balance: 50, isOverAllocated: true, allocationDeficit: 25, snapshotStatus: "STALE" });
+  const p1 = await readMasterBridgePoolByMaster(m1);
+  assert.equal(p1?.masterConnectionId, m1);
+  assert.equal(p1?.mt5Balance, 1000);
+  assert.equal(p1?.snapshotStatus, "FRESH", "the stored freshness label travels with the row");
+  assert.equal((await readMasterBridgePoolByMaster(m2))?.isOverAllocated, true);
+  assert.equal(await anyMasterBridgePoolOverAllocated(), true, "an over-allocated row is seen by the pre-check");
+});
+
+test("Bridge v2 stream reads are user-scoped; the trace read is newest-updated first and capped", async () => {
+  // Same seed shape Bridge v2 ingest writes.
+  const base = Date.now();
+  for (const [i, key] of ["s1", "s2", "s3"].entries()) {
+    await db.insert(bridgeV2StreamStateTable).values({ userId: a.id, messageType: "HEARTBEAT", streamKey: `${TAG}-${key}`, updatedAt: new Date(base + i * 1000) });
+  }
+  await db.insert(bridgeV2StreamStateTable).values({ userId: b.id, messageType: "HEARTBEAT", streamKey: `${TAG}-b`, updatedAt: new Date(base + 10_000) });
+
+  const mine = await listBridgeV2StreamStates(a.id);
+  assert.deepEqual(mine.map((r) => r.streamKey).sort(), [`${TAG}-s1`, `${TAG}-s2`, `${TAG}-s3`], "another user's streams are never returned");
+  const all = await listBridgeV2StreamStates(null);
+  assert.ok(all.some((r) => r.userId === b.id) && all.some((r) => r.userId === a.id), "null scope reads every user (admin monitor)");
+  assert.equal((await listBridgeV2StreamStates(0)).length, 0, "user 0 matches nothing");
+
+  const recent = await listRecentBridgeV2StreamStates(a.id, 2);
+  assert.deepEqual(recent.map((r) => r.streamKey), [`${TAG}-s3`, `${TAG}-s2`]);
 });

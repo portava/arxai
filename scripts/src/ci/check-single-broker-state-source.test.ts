@@ -1,6 +1,6 @@
 // Negative fixtures for check-single-broker-state-source. Pure, no IO.
 import assert from "node:assert/strict";
-import { ALLOWLIST, STATE_TABLES, scanFile, scanForBrokerStateTables } from "./check-single-broker-state-source.js";
+import { ALLOWLIST, STATE_TABLES, scanFile, scanForBrokerStateTables, statementLocksRow } from "./check-single-broker-state-source.js";
 
 export {};
 
@@ -52,11 +52,58 @@ assert.equal(scanFile("lib/brokerReadOnly/service.ts", `await db.insert(brokerHe
 // A new pool reader outside the allowlist fails.
 assert.equal(scanFile("routes/meSharedAccount.ts", `db.select().from(arxMasterBridgePoolTable)`).violations.length, 1);
 
+// ── arx_master_bridge_pool: one hub reader; the LIVE projection owner and the admin pause route only write ──
+const poolOwner = STATE_TABLES.find((t) => t.sql === "arx_master_bridge_pool")!.owner;
+assert.equal(poolOwner, "lib/brokerHub/masterBridgePoolReader.ts");
+assert.deepEqual(scanFile(poolOwner, `await db.select().from(arxMasterBridgePoolTable).where(eq(arxMasterBridgePoolTable.masterConnectionId, id)).limit(1);`).violations, []);
+// The projection owner may upsert but not read the row directly (whole row or columns).
+assert.deepEqual(scanFile("lib/live/masterBridgePool.ts", `const [u] = await db.update(arxMasterBridgePoolTable).set(v).where(eq(arxMasterBridgePoolTable.id, e.id)).returning();`).violations, []);
+assert.deepEqual(scanFile("lib/live/masterBridgePool.ts", `const [i] = await db.insert(arxMasterBridgePoolTable).values(v).returning();`).violations, []);
+const ownerRead = scanFile("lib/live/masterBridgePool.ts", `const rows = await db.select().from(arxMasterBridgePoolTable)\n  .where(eq(arxMasterBridgePoolTable.masterConnectionId, id)).limit(1);`);
+assert.equal(ownerRead.violations.length, 1);
+assert.match(ownerRead.violations[0]!, /writer reads the table directly; read it back through lib\/brokerHub\/masterBridgePoolReader\.ts/);
+// The admin route: column-select read and raw SQL read both fail; pause/resume updates pass.
+assert.equal(scanFile("routes/adminAllocations.ts", `const o = await db.select({ id: arxMasterBridgePoolTable.id })\n  .from(arxMasterBridgePoolTable)\n  .where(eq(arxMasterBridgePoolTable.isOverAllocated, true));`).violations.length, 1);
+assert.equal(scanFile("routes/adminAllocations.ts", "await db.execute(sql`SELECT id FROM arx_master_bridge_pool WHERE is_over_allocated`)").violations.length, 1);
+assert.deepEqual(scanFile("routes/adminAllocations.ts", `await db.update(arxMasterBridgePoolTable).set({ sharedLivePaused: true }).where(eq(arxMasterBridgePoolTable.id, pool.id)).returning();`).violations, []);
+// A row lock does not excuse a pool read: only lockingReads entries get that.
+assert.equal(scanFile("routes/adminAllocations.ts", `await tx.select().from(arxMasterBridgePoolTable).for("update");`).violations.length, 1);
+// Raw SQL and type-only use elsewhere fail.
+assert.equal(scanFile("routes/x.ts", "await db.execute(sql`select * from \"arx_master_bridge_pool\"`)").violations.length, 1);
+assert.equal(scanFile("routes/x.ts", `type P = typeof arxMasterBridgePoolTable.$inferSelect;`).violations.length, 1);
+assert.deepEqual(scanFile("routes/x.ts", `const p = await readMasterBridgePoolByMaster(id);`).violations, []);
+
+// ── bridge_v2_stream_state: one hub reader; ingest writes (locking read-modify-write only) ──
+const streamOwner = STATE_TABLES.find((t) => t.sql === "bridge_v2_stream_state")!.owner;
+assert.equal(streamOwner, "lib/brokerHub/bridgeV2StreamState.ts");
+assert.deepEqual(scanFile(streamOwner, `return db.select().from(bridgeV2StreamStateTable).where(scope(userId));`).violations, []);
+// Status derivation and the admin trace no longer read the table.
+const statusRead = scanFile("lib/bridgeV2/status.ts", `const rows = await db\n  .select()\n  .from(bridgeV2StreamStateTable)\n  .where(eq(bridgeV2StreamStateTable.userId, userId));`);
+assert.equal(statusRead.violations.length >= 1, true);
+assert.match(statusRead.violations[0]!, /bridge_v2_stream_state.*lib\/brokerHub\/bridgeV2StreamState\.ts/);
+assert.equal(scanFile("routes/bridgeV2.ts", `.from(bridgeV2StreamStateTable).orderBy(desc(bridgeV2StreamStateTable.updatedAt))`).violations.length, 1);
+assert.equal(scanFile("lib/bridgeV2/status.ts", `type StreamRow = typeof bridgeV2StreamStateTable.$inferSelect;`).violations.length, 1);
+assert.equal(scanFile("routes/x.ts", "await db.execute(sql`SELECT count(*) FROM bridge_v2_stream_state`)").violations.length, 1);
+assert.deepEqual(scanFile("lib/bridgeV2/status.ts", `const rows = await listBridgeV2StreamStates(userId);`).violations, []);
+// Ingest: seed insert, counter update and the locked read pass...
+assert.deepEqual(scanFile("lib/bridgeV2/ingest.ts", `await tx.insert(bridgeV2StreamStateTable).values(v).onConflictDoNothing();`).violations, []);
+assert.deepEqual(scanFile("lib/bridgeV2/ingest.ts", `await tx.update(bridgeV2StreamStateTable).set(v);`).violations, []);
+assert.deepEqual(scanFile("lib/bridgeV2/ingest.ts", `const [state] = await tx\n  .select()\n  .from(bridgeV2StreamStateTable)\n  .where(streamWhere)\n  .for("update")\n  .limit(1);`).violations, []);
+// ...but an unlocked status read in ingest fails, and a lock in a LATER statement does not count.
+assert.equal(scanFile("lib/bridgeV2/ingest.ts", `const rows = await db.select().from(bridgeV2StreamStateTable).limit(5);`).violations.length, 1);
+assert.equal(scanFile("lib/bridgeV2/ingest.ts", `const a = await db.select().from(bridgeV2StreamStateTable);\nconst b = await tx.select().from(other).for("update");`).violations.length, 1);
+assert.equal(scanFile("lib/bridgeV2/ingest.ts", "await db.execute(sql`SELECT * FROM bridge_v2_stream_state`)").violations.length, 1);
+assert.equal(statementLocksRow(["x.from(t)", '.for("update");'], 1), true);
+assert.equal(statementLocksRow(["x.from(t);", '.for("update");'], 1), false);
+
 // Every allowlisted table is a guarded table, and every entry gives a reason.
 const known = new Set(STATE_TABLES.map((t) => t.sql));
+// The pool and stream status readers are off the allowlist.
+for (const gone of ["lib/bridgeV2/status.ts", "routes/bridgeV2.ts"]) assert.equal(ALLOWLIST[gone], undefined, `${gone} must read through the hub`);
 for (const [file, e] of Object.entries(ALLOWLIST)) {
   assert.ok(e.reason.length > 10, `${file} needs a reason`);
-  assert.ok(e.access === "write" || e.access === "readwrite", `${file}: access must be write or readwrite`);
+  assert.equal(e.access, "write", `${file}: every allowlist entry is a writer; reads go through the hub`);
+  if (e.lockingReads) assert.ok(/FOR UPDATE/.test(e.reason), `${file}: lockingReads must be explained in the reason`);
   for (const t of e.tables) assert.ok(known.has(t), `${file}: ${t} is not a guarded table`);
 }
 
