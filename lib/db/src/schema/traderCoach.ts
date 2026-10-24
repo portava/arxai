@@ -5,6 +5,7 @@
 // canPlaceTrades, NEVER recommends live trading.
 
 import { pgTable, serial, text, integer, real, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 export const traderCoachReportsTable = pgTable("trader_coach_reports", {
   id: serial("id").primaryKey(),
@@ -70,6 +71,9 @@ export const tradingPlaybookEntriesTable = pgTable("trading_playbook_entries", {
 
 export const weeklyImprovementPlansTable = pgTable("weekly_improvement_plans", {
   id: serial("id").primaryKey(),
+  // Owner (Tier 1 step 10). NULL only on legacy single-tenant rows, which no
+  // reader returns; claimLegacyBehaviorRows hands them to a named user.
+  userId: integer("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
   weekStart: text("week_start").notNull(),
   weekEnd: text("week_end").notNull(),
   mainGoal: text("main_goal").notNull().default(""),
@@ -86,7 +90,7 @@ export const weeklyImprovementPlansTable = pgTable("weekly_improvement_plans", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  weekIdx: uniqueIndex("weekly_improvement_plans_week_uq").on(t.weekStart),
+  userWeekIdx: uniqueIndex("weekly_improvement_plans_user_week_uq").on(t.userId, t.weekStart),
   createdIdx: index("weekly_improvement_plans_created_idx").on(t.createdAt),
 }));
 

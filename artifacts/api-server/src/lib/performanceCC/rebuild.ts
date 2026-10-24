@@ -24,10 +24,9 @@ interface RebuildLogger {
   warn: (m: string, meta?: Record<string, unknown>) => void;
 }
 
-// Daily snapshots are per user (unique on date + user_id). The symbol and AI
-// snapshot tables have no owner column, so they are only (re)written from an
-// operator's own book (writeShared); nothing per-user reads them any more.
-export async function rebuildSnapshots(userId: number, writeShared: boolean, log: RebuildLogger) {
+// Every snapshot is per user: daily (date + user_id), symbol (user_id +
+// symbol + range) and AI (user_id + range). Each trader rebuilds only their own.
+export async function rebuildSnapshots(userId: number, log: RebuildLogger) {
   const startedAt = new Date();
   log.info("GG rebuild started");
 
@@ -104,18 +103,18 @@ export async function rebuildSnapshots(userId: number, writeShared: boolean, log
   // Symbol snapshots × ranges.
   const ranges: RangeKey[] = ["7d", "30d", "90d", "all"];
   let symbolSnapsWritten = 0;
-  for (const range of writeShared ? ranges : []) {
+  for (const range of ranges) {
     const stats = await computeSymbolStats(userId, range);
     for (const s of stats) {
       await db.insert(performanceSymbolSnapshotsTable).values({
-        symbol: s.symbol, rangeKey: s.range_key,
+        userId, symbol: s.symbol, rangeKey: s.range_key,
         totalTrades: s.total_trades, wins: s.wins, losses: s.losses, winRate: s.win_rate,
         netPnl: s.net_pnl, avgPnl: s.avg_pnl,
         bestTradeId: s.best_trade_id, worstTradeId: s.worst_trade_id,
         mistakeTags: s.mistake_tags, edgeScore: s.edge_score,
         learningConfidence: s.learning_confidence,
       }).onConflictDoUpdate({
-        target: [performanceSymbolSnapshotsTable.symbol, performanceSymbolSnapshotsTable.rangeKey],
+        target: [performanceSymbolSnapshotsTable.userId, performanceSymbolSnapshotsTable.symbol, performanceSymbolSnapshotsTable.rangeKey],
         set: {
           totalTrades: s.total_trades, wins: s.wins, losses: s.losses, winRate: s.win_rate,
           netPnl: s.net_pnl, avgPnl: s.avg_pnl, bestTradeId: s.best_trade_id,
@@ -132,7 +131,7 @@ export async function rebuildSnapshots(userId: number, writeShared: boolean, log
   // AI performance snapshots × ranges — each row is range-scoped.
   const cc = await buildCommandCenter(userId);
   let aiSnapsWritten = 0;
-  for (const range of writeShared ? ranges : []) {
+  for (const range of ranges) {
     const { from, to } = rangeToWindow(range);
     const r = await computeRangeSummary(userId, range);
     const dq = await computeDecisionQuality(userId, range);
@@ -161,6 +160,7 @@ export async function rebuildSnapshots(userId: number, writeShared: boolean, log
     const avgRisk = decisionsInRange.length ? decisionsInRange.reduce((a, d) => a + d.riskScore, 0) / decisionsInRange.length : 0;
 
     const values = {
+      userId,
       rangeKey: range,
       decisionsCreated: decisionsInRange.length,
       shouldTradeCount: buy + sell,
@@ -179,7 +179,7 @@ export async function rebuildSnapshots(userId: number, writeShared: boolean, log
       improvementScore: cc.learningStats.improvementScore,
     };
     await db.insert(aiPerformanceSnapshotsTable).values(values).onConflictDoUpdate({
-      target: aiPerformanceSnapshotsTable.rangeKey,
+      target: [aiPerformanceSnapshotsTable.userId, aiPerformanceSnapshotsTable.rangeKey],
       set: { ...values, updatedAt: new Date() },
     });
     aiSnapsWritten += 1;

@@ -48,9 +48,8 @@ function startOfWeek(d: Date): Date {
   return x;
 }
 
-// userId: the plan is built from this trader's own week. persist writes the
-// shared weekly_improvement_plans row (one per week, no owner column), so the
-// route only allows it for an operator.
+// userId: the plan is built from this trader's own week. persist writes this
+// trader's own weekly_improvement_plans row (one per user per week).
 export async function generateWeeklyPlan(opts: { userId: number; persist?: boolean }): Promise<WeeklyPlan> {
   const persist = opts.persist ?? false;
   const today = new Date();
@@ -193,7 +192,7 @@ export async function generateWeeklyPlan(opts: { userId: number; persist?: boole
   if (persist) {
     try {
       const existing = await db.select().from(weeklyImprovementPlansTable)
-        .where(eq(weeklyImprovementPlansTable.weekStart, weekStart)).limit(1);
+        .where(and(eq(weeklyImprovementPlansTable.userId, opts.userId), eq(weeklyImprovementPlansTable.weekStart, weekStart))).limit(1);
       if (existing[0]) {
         await db.update(weeklyImprovementPlansTable).set({
           weekEnd, mainGoal, focusAreas, rulesToPractice,
@@ -201,10 +200,10 @@ export async function generateWeeklyPlan(opts: { userId: number; persist?: boole
           paperTradingTargets: paperTradingTargets as unknown as Record<string, unknown>,
           progressMetrics, reviewQuestions, successCriteria, warnings,
           updatedAt: new Date(),
-        }).where(eq(weeklyImprovementPlansTable.id, existing[0].id));
+        }).where(and(eq(weeklyImprovementPlansTable.id, existing[0].id), eq(weeklyImprovementPlansTable.userId, opts.userId)));
       } else {
         await db.insert(weeklyImprovementPlansTable).values({
-          weekStart, weekEnd, mainGoal, focusAreas, rulesToPractice,
+          userId: opts.userId, weekStart, weekEnd, mainGoal, focusAreas, rulesToPractice,
           mistakesToReduce, setupsToStudy, setupsToAvoid,
           paperTradingTargets: paperTradingTargets as unknown as Record<string, unknown>,
           progressMetrics, reviewQuestions, successCriteria, warnings,

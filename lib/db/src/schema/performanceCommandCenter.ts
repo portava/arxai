@@ -1,6 +1,7 @@
 import {
   pgTable, serial, integer, text, real, timestamp, jsonb, index, uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 // Build GG — Trading Calendar + AI Performance Command Center.
 //
@@ -47,6 +48,9 @@ export const performanceDailySnapshotsTable = pgTable("performance_daily_snapsho
 
 export const performanceSymbolSnapshotsTable = pgTable("performance_symbol_snapshots", {
   id: serial("id").primaryKey(),
+  // Owner (Tier 1 step 10). NULL only on legacy single-tenant rows, which no
+  // reader returns; claimLegacyBehaviorRows hands them to a named user.
+  userId: integer("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
   symbol: text("symbol").notNull(),
   rangeKey: text("range_key").notNull(),                       // 7d | 30d | 90d | all
   totalTrades: integer("total_trades").notNull().default(0),
@@ -63,11 +67,13 @@ export const performanceSymbolSnapshotsTable = pgTable("performance_symbol_snaps
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  symbolRangeUq: uniqueIndex("perf_sym_snap_uq").on(t.symbol, t.rangeKey),
+  userSymbolRangeUq: uniqueIndex("perf_sym_snap_user_uq").on(t.userId, t.symbol, t.rangeKey),
 }));
 
 export const aiPerformanceSnapshotsTable = pgTable("ai_performance_snapshots", {
   id: serial("id").primaryKey(),
+  // Owner (Tier 1 step 10); NULL only on legacy rows.
+  userId: integer("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
   rangeKey: text("range_key").notNull(),                       // 7d | 30d | 90d | all
   decisionsCreated: integer("decisions_created").notNull().default(0),
   shouldTradeCount: integer("should_trade_count").notNull().default(0),
@@ -87,7 +93,7 @@ export const aiPerformanceSnapshotsTable = pgTable("ai_performance_snapshots", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => ({
-  rangeUq: uniqueIndex("ai_perf_snap_range_uq").on(t.rangeKey),
+  userRangeUq: uniqueIndex("ai_perf_snap_user_range_uq").on(t.userId, t.rangeKey),
 }));
 
 export type PerformanceDailySnapshot = typeof performanceDailySnapshotsTable.$inferSelect;
