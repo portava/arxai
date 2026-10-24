@@ -5,6 +5,7 @@
 // tables. Order placement is centralized in placeLiveOrderGuarded(), which
 // still rejects with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
 
+import { EA_HEARTBEAT_STALE_SECONDS } from "../brokerHub/freshness.js";
 import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { db, mt5CommandsTable } from "@workspace/db";
 import { desc, eq, isNull, or, type SQL } from "drizzle-orm";
@@ -15,7 +16,7 @@ import type {
 import { describeRequiredSecrets, missingRequiredSecrets } from "./secrets.js";
 import { readPlatformMt5State, readScopedMt5State } from "../brokerHub/mt5StateReader.js";
 
-const STALE_AFTER_SECONDS = 60;
+const STALE_AFTER_SECONDS = EA_HEARTBEAT_STALE_SECONDS;
 
 function maskAccount(id: string | null | undefined): string {
   if (!id) return "•••";

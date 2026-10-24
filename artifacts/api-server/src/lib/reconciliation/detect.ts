@@ -4,6 +4,7 @@
 // returns [] (never throws). Issue IDs are deterministic SHA-256(type|naturalKey)
 // so admin actions can target them without persisting issues to a new table.
 
+import { ADVISORY_BRIDGE_CONNECTED_MS } from "../brokerHub/freshness.js";
 import { readOrphanLivePositions } from "../positions/ledger.js";
 import { listConnections } from "../brokerHub/connections.js";
 import { createHash } from "node:crypto";
@@ -210,7 +211,7 @@ async function detectUserAllocationMismatch(): Promise<ReconciliationIssue[]> {
 // 6. STALE_HEARTBEAT — active connections without a recent heartbeat.
 async function detectStaleHeartbeat(): Promise<ReconciliationIssue[]> {
   return safe("stale_heartbeat", async () => {
-    const cutoff = Date.now() - 90_000;
+    const cutoff = Date.now() - ADVISORY_BRIDGE_CONNECTED_MS;
     const rows = (await listConnections({ statuses: ["ACTIVE"], order: "oldest" }))
       .filter((c) => !c.lastHeartbeat || c.lastHeartbeat.getTime() < cutoff).slice(0, 50);
     return rows.map((c) => ({

@@ -13,6 +13,7 @@
 // SAFETY: never returns tokens, hashes, IPs, raw account numbers, or
 // safetyGateSnapshot blobs. Account login is masked.
 
+import { EA_HEARTBEAT_STALE_MS, EA_HEARTBEAT_STALE_SECONDS } from "../lib/brokerHub/freshness.js";
 import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -28,7 +29,7 @@ import { evaluatePerUserDispatchGate } from "../lib/mt5/demoDispatchGate.js";
 const router = Router();
 
 const POLL_FRESH_WINDOW_MS = 60_000;
-const HEARTBEAT_FRESH_WINDOW_MS = 60_000;
+const HEARTBEAT_FRESH_WINDOW_MS = EA_HEARTBEAT_STALE_MS;
 
 function getUserId(req: Request): number | null {
   const authUser = (req as Request & { authUser?: { id: number } }).authUser;
@@ -281,7 +282,7 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
       isActive: r.id === (conn?.id ?? -1),
     }));
   const staleBridges = allBridges.filter(
-    (b) => !b.isActive && (b.heartbeatAgeSeconds == null || b.heartbeatAgeSeconds > 60),
+    (b) => !b.isActive && (b.heartbeatAgeSeconds == null || b.heartbeatAgeSeconds > EA_HEARTBEAT_STALE_SECONDS),
   );
   // Group by UNMASKED accountNumber server-side — masked logins (`***last4`)
   // can collide for distinct accounts and produce false positives. The

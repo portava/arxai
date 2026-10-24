@@ -18,6 +18,7 @@
 // sole rule that blocked and the trader's settings allow overrides. The 12
 // exposure rules and the stop switches can never be overridden.
 
+import { BROKER_HEARTBEAT_FRESH_MS, BROKER_HEARTBEAT_DEGRADED_MS } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { readOpenPositions } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
@@ -71,8 +72,7 @@ export const PAPER_ACCOUNT_LEVERAGE = 100;
 
 // EA heartbeat budget. Fresh within 30s; up to 2 min the bridge is degraded
 // (closing still allowed); beyond that it is treated as disconnected.
-export const BROKER_HEARTBEAT_FRESH_MS = 30_000;
-export const BROKER_HEARTBEAT_DEGRADED_MS = 120_000;
+export { BROKER_HEARTBEAT_FRESH_MS, BROKER_HEARTBEAT_DEGRADED_MS };
 
 const IN_FLIGHT_ACTION_STATUSES = ["confirmed", "guard_checking", "queued", "sent_to_mt5"];
 const LIVE_TERMINAL = ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_BLOCKED", "LIVE_CANCELLED", "LIVE_CLOSED", "LIVE_EXPIRED"];

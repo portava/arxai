@@ -13,6 +13,7 @@
 //    looser, but it can never weaken a safety/economic gate in the engine.
 //  - All copy is plain English — no internal names, codes, or jargon.
 
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
 import type {
   ChaseRisk,
   EntryTiming,
@@ -37,7 +38,7 @@ const MIN_FLAME_CANDLES = 5;
 /** Window we read momentum over (most recent N). */
 const FLAME_WINDOW = 14;
 /** Heartbeat freshness mirrors the live gate (15s) for execution-quality bands. */
-const HEARTBEAT_FRESH_S = 15;
+const HEARTBEAT_FRESH_S = EA_HEARTBEAT_FRESH_SECONDS;
 const HEARTBEAT_EXCELLENT_S = 4;
 const HEARTBEAT_GOOD_S = 8;
 

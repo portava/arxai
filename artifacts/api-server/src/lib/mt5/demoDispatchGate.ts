@@ -12,6 +12,7 @@
 //     by the consumer/route after this gate returns.
 //   - No tokens, no apiKeyHash, no broker passwords ever returned.
 
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
 import { listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
@@ -25,7 +26,7 @@ import { runDemoVerificationGate } from "./demoVerificationGate.js";
 import { getDuplicateEaProbe } from "../../routes/mt5.js";
 import { isArmedForDemo } from "./demoArmingService.js";
 
-const HEARTBEAT_FRESH_SECONDS = 15;
+const HEARTBEAT_FRESH_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
 
 export interface PerUserDispatchEvaluation {
   eligibility: PerUserDispatchEligibility;

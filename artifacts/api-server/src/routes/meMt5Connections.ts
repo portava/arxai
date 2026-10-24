@@ -5,6 +5,7 @@
 //   - Only the SHA-256 hash of the token is stored in apiKeyHash.
 //   - All routes require auth; queries scoped by req.authUser.id.
 //   - Client-supplied userId is ignored for ownership.
+import { EA_HEARTBEAT_STALE_MS, EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
 import { createConnection, getUserConnection, listUserConnections, updateUserConnection, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import { db } from "@workspace/db";
@@ -15,7 +16,7 @@ import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
 
-const STALE_MS = 60_000;
+const STALE_MS = EA_HEARTBEAT_STALE_MS;
 
 export function hashBridgeToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
@@ -42,7 +43,7 @@ function deriveStatus(row: BrokerConnectionFacts): string {
   if (row.tokenRevokedAt) return "revoked";
   if (!row.lastHeartbeat) return "waiting";
   const age = Date.now() - new Date(row.lastHeartbeat).getTime();
-  if (age < 15_000) return "connected";
+  if (age < EA_HEARTBEAT_FRESH_MS) return "connected";
   if (age < STALE_MS) return "stale";
   return "disconnected";
 }
@@ -62,7 +63,7 @@ function serialize(row: BrokerConnectionFacts, opts: { rawToken?: string } = {})
   // Account snapshot freshness — heartbeat is the canonical liveness
   // signal (EA POSTs both heartbeat and sync-account every 5s). 15s
   // matches the Phase B `heartbeat age ≤ 15s` gate.
-  const accountSnapshotFresh = heartbeatAgeSeconds != null && heartbeatAgeSeconds <= 15;
+  const accountSnapshotFresh = heartbeatAgeSeconds != null && heartbeatAgeSeconds <= EA_HEARTBEAT_FRESH_SECONDS;
   return {
     id: row.id,
     connectionName: row.connectionName,

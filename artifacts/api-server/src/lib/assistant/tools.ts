@@ -5,6 +5,7 @@
 //
 // Pre-trade risk check is purely advisory; live order execution is system-locked.
 
+import { EA_HEARTBEAT_STALE_SECONDS, EA_HEARTBEAT_DEAD_SECONDS, ADVISORY_BRIDGE_CONNECTED_MS } from "../brokerHub/freshness.js";
 import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { readOpenPositions } from "../positions/openPositions.js";
 import { getUserPrimaryConnection, listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
@@ -308,7 +309,7 @@ export async function getMT5Heartbeat(userId: number) {
     return {
       connectionId: r.id, status: r.status, lastHeartbeat: r.lastHeartbeat,
       ageSeconds: ageSec,
-      health: ageSec == null ? "unknown" : ageSec <= 60 ? "healthy" : ageSec <= 300 ? "stale" : "unhealthy",
+      health: ageSec == null ? "unknown" : ageSec <= EA_HEARTBEAT_STALE_SECONDS ? "healthy" : ageSec <= EA_HEARTBEAT_DEAD_SECONDS ? "stale" : "unhealthy",
     };
   });
   return { items,};
@@ -697,7 +698,7 @@ export async function getReconciliationStatus(userId: number) {
   const heartbeatAgeSec = lastHeartbeatAt
     ? Math.floor((Date.now() - new Date(lastHeartbeatAt).getTime()) / 1000)
     : null;
-  const bridgeConnected = !!conn && heartbeatAgeSec !== null && heartbeatAgeSec < 60;
+  const bridgeConnected = !!conn && heartbeatAgeSec !== null && heartbeatAgeSec < EA_HEARTBEAT_STALE_SECONDS;
   const bridgeMode: "OFFLINE" | "READ_ONLY" | "PAPER_ONLY" | "LIVE_LOCKED" =
     !bridgeConnected ? "OFFLINE" : (conn?.liveLocked ? "LIVE_LOCKED" : "READ_ONLY");
 
@@ -761,7 +762,7 @@ export async function getReconciliationStatus(userId: number) {
   // `reconciliationStatus` and `bridge.mode` unchanged; new fields
   // consume the shared contract enums at lib/domain/safety-contracts.
   const canonicalReconciliationStatus = mapLegacyReconciliationStatus(reconciliationStatus);
-  const heartbeatStale = !bridgeConnected || (heartbeatAgeSec != null && heartbeatAgeSec > 60);
+  const heartbeatStale = !bridgeConnected || (heartbeatAgeSec != null && heartbeatAgeSec > EA_HEARTBEAT_STALE_SECONDS);
   const canonicalBridgeMode = applyHeartbeatStaleness(
     mapLegacyBridgeMode(bridgeConnected ? "connected" : "disconnected"),
     heartbeatStale,
@@ -775,7 +776,7 @@ export async function getReconciliationStatus(userId: number) {
       canonicalMode: canonicalBridgeMode,
       lastHeartbeatAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
       heartbeatAgeSec,
-      heartbeatStaleThresholdSec: 60,
+      heartbeatStaleThresholdSec: EA_HEARTBEAT_STALE_SECONDS,
       accountNumber: conn?.accountNumber ?? null,
       serverName: conn?.serverName ?? null,
       readOnlyMode: conn?.readOnlyMode ?? true,
@@ -3796,7 +3797,7 @@ export async function getBridgeCapabilitiesTool(userId: number, env: SafetyEnvel
     const conn = await getUserPrimaryConnection(userId);
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    const bridgeConnected = !!lastHb && (Date.now() - lastHb.getTime() < 90_000);
+    const bridgeConnected = !!lastHb && (Date.now() - lastHb.getTime() < ADVISORY_BRIDGE_CONNECTED_MS);
     const probe = resolvePendingSubmitStatus({
       capabilities: caps,
       bridgeConnected,

@@ -17,6 +17,8 @@
 // pass — the 16-gate evaluator is the only authority for that and is never
 // bypassed or weakened here.
 
+import { EA_HEARTBEAT_FRESH_SECONDS, EA_HEARTBEAT_STALE_SECONDS, classifyAge } from "../brokerHub/freshness.js";
+
 export type BridgeLiveness = "fresh" | "stale" | "offline" | "revoked";
 
 export type BridgeCondition =
@@ -63,8 +65,8 @@ export interface BridgeWatchdogVerdict {
   summary: string;
 }
 
-export const WATCHDOG_FRESH_MAX_SECONDS = 15;
-export const WATCHDOG_STALE_MAX_SECONDS = 60;
+export const WATCHDOG_FRESH_MAX_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
+export const WATCHDOG_STALE_MAX_SECONDS = EA_HEARTBEAT_STALE_SECONDS;
 
 export function classifyBridge(input: BridgeWatchdogInput): BridgeWatchdogVerdict {
   const now = input.now ?? new Date();
@@ -91,14 +93,9 @@ export function classifyBridge(input: BridgeWatchdogInput): BridgeWatchdogVerdic
     ? Math.max(0, Math.floor((now.getTime() - input.lastHeartbeat.getTime()) / 1000))
     : null;
 
-  let liveness: BridgeLiveness;
-  if (ageSeconds == null || ageSeconds > WATCHDOG_STALE_MAX_SECONDS) {
-    liveness = "offline";
-  } else if (ageSeconds > WATCHDOG_FRESH_MAX_SECONDS) {
-    liveness = "stale";
-  } else {
-    liveness = "fresh";
-  }
+  // ≤ fresh → fresh, ≤ stale → stale, beyond (or never) → offline.
+  const band = classifyAge(ageSeconds, WATCHDOG_FRESH_MAX_SECONDS, WATCHDOG_STALE_MAX_SECONDS);
+  const liveness: BridgeLiveness = band === "unknown" ? "offline" : band;
 
   // EA-reported conditions only carry meaning when the EA is actually
   // reporting (not offline). An offline bridge's last-known flags are stale,

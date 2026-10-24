@@ -14,6 +14,7 @@
 //   - Read-only. No mutation, no audit row, no trade path.
 //   - Counts only — never account numbers, IP addresses, tokens, or hashes.
 
+import { EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_STALE_MS, classifyAge } from "../lib/brokerHub/freshness.js";
 import { listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
@@ -84,8 +85,9 @@ router.get("/admin/runtime-health", async (req: Request, res: Response): Promise
     let latest: number | null = null;
     for (const r of rows) {
       const age = r.lastHeartbeat ? now - new Date(r.lastHeartbeat).getTime() : null;
+      const band = classifyAge(age, EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_STALE_MS, "exclusive");
       const health: "healthy" | "stale" | "down" =
-        age == null ? "down" : age < 15_000 ? "healthy" : age < 60_000 ? "stale" : "down";
+        band === "fresh" ? "healthy" : band === "stale" ? "stale" : "down";
       bridge.total += 1;
       bridge[health] += 1;
       if (age != null && (latest == null || age < latest)) latest = age;

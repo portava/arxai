@@ -16,6 +16,7 @@
 //
 // Mount path: /api/me/live/*
 
+import { EA_HEARTBEAT_FRESH_SECONDS, EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_STALE_MS } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserLiveSnapshotMarkerMs, listUserConnections } from "../lib/brokerHub/connections.js";
@@ -800,7 +801,7 @@ router.get("/me/live/bridge-debug", requireUser, async (req, res) => {
       bridgeVersion: caps.bridgeVersion ?? null,
       lastHeartbeatAt: picked.lastHeartbeat?.toISOString() ?? null,
       heartbeatAgeSeconds: hbAgeSec,
-      heartbeatFresh: hbAgeSec !== null && hbAgeSec <= 15,
+      heartbeatFresh: hbAgeSec !== null && hbAgeSec <= EA_HEARTBEAT_FRESH_SECONDS,
       readOnlyMode: picked.readOnlyMode,
       // EA v1.27 reported runtime fields (null = EA build pre-dates the
       // heartbeat extension or did not include the field on this poll)
@@ -932,9 +933,9 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
     let stateReason: string | null = null;
     if (ageMs == null) {
       state = "stale"; stateReason = "Bridge has never sent a heartbeat";
-    } else if (ageMs <= 15_000) {
+    } else if (ageMs <= EA_HEARTBEAT_FRESH_MS) {
       state = "live";
-    } else if (ageMs <= 60_000) {
+    } else if (ageMs <= EA_HEARTBEAT_STALE_MS) {
       state = "delayed"; stateReason = `Last heartbeat ${Math.round(ageMs / 1000)}s ago`;
     } else {
       state = "stale"; stateReason = `Last heartbeat ${Math.round(ageMs / 1000)}s ago`;

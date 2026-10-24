@@ -42,12 +42,9 @@ import {
   compareEaVersions,
 } from "@workspace/domain/safety-contracts";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { previewEaUpdateGateSafety } from "../lib/mt5/eaUpdateGateInputs.js";
 
 const router = Router();
-
-// Statuses that mean a live command is still in flight (used for command-poll
-// freshness + the update gate's "pending command" block).
-const PENDING_LIVE_STATUSES = ["SENT_TO_MT5_LIVE", "LIVE_APPROVED"];
 
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
@@ -172,7 +169,6 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
         createdAt: string | null;
       } | null = null;
       let commandPollAgeSeconds: number | null = null;
-      let hasPendingCommand = false;
       if (c.userId != null) {
         const [lc] = await db
           .select()
@@ -194,7 +190,6 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
             createdAt: lc.createdAt ? new Date(lc.createdAt).toISOString() : null,
           };
           commandPollAgeSeconds = ageSeconds(lc.pickedByEaAt, now);
-          hasPendingCommand = PENDING_LIVE_STATUSES.includes(lc.status);
         }
       }
 
@@ -231,6 +226,10 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
       // Update status vs the latest approved stable manifest.
       const manifest = latestApprovedByChannel.get("stable") ?? null;
       const selfUpdateSupported = isFeatureSupported(caps, "supportsSelfUpdate");
+      // Preview the EA's real update check: the same safety inputs (trader
+      // kill switch, remote-config maintenance, open LIVE trade, in-flight
+      // command, 15 s heartbeat window) read by the same loader.
+      const gateSafety = await previewEaUpdateGateSafety(c.userId, c.lastHeartbeat, now);
       const updateGate = evaluateEaUpdateGate({
         manifest: manifest
           ? {
@@ -244,11 +243,7 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
         currentVersion: c.eaVersion,
         allowedChannels: ["stable"],
         eaSupportsSelfUpdate: selfUpdateSupported,
-        hasOpenLiveTrade: false,
-        hasPendingCommand,
-        heartbeatStable: liveness.liveness === "fresh",
-        killSwitchEngaged: false,
-        maintenanceMode: false,
+        ...gateSafety,
       });
       const updateAvailable =
         manifest != null &&

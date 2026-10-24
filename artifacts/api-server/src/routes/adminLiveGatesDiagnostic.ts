@@ -15,6 +15,7 @@
 //     digits; broker name and server name ARE returned (admins need
 //     them to identify the bridge), but only to admin sessions.
 //   - No write side-effects. Pure read.
+import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { db, userOneClickSettingsTable } from "@workspace/db";
 import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
@@ -271,11 +272,11 @@ router.get("/admin/live-gates/diagnostic", async (req, res) => {
     rows.push({
       id: "ea_heartbeat",
       label: "EA heartbeat age",
-      status: ev.heartbeatAgeSec != null && ev.heartbeatAgeSec <= 15 ? "pass" : "fail",
+      status: ev.heartbeatAgeSec != null && ev.heartbeatAgeSec <= EA_HEARTBEAT_FRESH_SECONDS ? "pass" : "fail",
       detail: ev.heartbeatAgeSec == null
         ? "No heartbeat received yet."
         : `Last heartbeat ${ev.heartbeatAgeSec}s ago (must be ≤15s for live).`,
-      rawCode: ev.heartbeatAgeSec != null && ev.heartbeatAgeSec <= 15 ? "EA_HEARTBEAT_FRESH" : "MASTER_BRIDGE_HEARTBEAT_STALE",
+      rawCode: ev.heartbeatAgeSec != null && ev.heartbeatAgeSec <= EA_HEARTBEAT_FRESH_SECONDS ? "EA_HEARTBEAT_FRESH" : "MASTER_BRIDGE_HEARTBEAT_STALE",
     });
     const readOnlyRead = readEaBool(ev.eaInputs.readOnlyMode, {
       passWhen: false,
