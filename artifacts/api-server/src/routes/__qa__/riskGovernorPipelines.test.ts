@@ -569,7 +569,10 @@ test("D live dispatch and the demo MT5 queue call the governor before their send
   const closeGate = meTrades.indexOf('action: "CLOSE",\n      symbol, side, lots: lotSize');
   assert.ok(closeGate > 0 && closeGate < meTrades.indexOf("// Queue the CLOSE command."), "the demo My Trades close is checked before it is queued");
 
-  for (const rel of ["../paperTrading.ts", "../demoExecution.ts", "../../lib/adminTrading/orderGuard.ts",
+  assert.match(read("../demoExecution.ts"), /routeConfirmedAction\(\{[\s\S]{0,120}requestedMode: "DEMO"/, "the demo panel queues through the governed demo pipeline");
+  assert.doesNotMatch(read("../demoExecution.ts"), /mt5CommandsTable/, "the demo panel no longer writes the legacy mailbox");
+  assert.doesNotMatch(read("../../lib/adminTrading/brokerPlacement.ts"), /mt5CommandsTable/, "placement keeps no dormant mailbox writer");
+  for (const rel of ["../paperTrading.ts", "../../lib/adminTrading/orderGuard.ts",
     "../../lib/paperExecution/paperExecutionService.ts", "../../lib/tradeAction/riskGovernorEnforcement.ts"]) {
     assert.match(read(rel), /enforcePreTradeRisk\(/, `${rel} calls the governor`);
   }
