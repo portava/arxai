@@ -18,7 +18,7 @@ type DemoStatus = {
 };
 
 type QueueResponse =
-  | { queued: true; commandId: number; action: string; demoOnly: boolean; maxDemoLot: number; disclaimer: string }
+  | { queued: true; commandId: string | number; action: string; demoOnly: boolean; maxDemoLot: number; disclaimer: string }
   | { status: "BLOCKED_DEMO_SAFETY_GUARD" | "BLOCKED_READ_ONLY_MODE"; reason: string };
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {

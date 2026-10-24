@@ -43,12 +43,10 @@ export const WRITERS: Record<string, Entry> = {
   "lib/live/liveCommandPipeline.ts": { role: "GOVERNED", proof: GOVERNOR, why: "live drafts; dispatchLiveCommand pre-gate, then the EA bridge mirror" },
   "lib/mt5/demoCommandQueue.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/mt5/demoCommandConsumer.ts", why: "demo drafts; governed when consumed" },
   "lib/mt5/demoCommandConsumer.ts": { role: "GOVERNED", proof: GOVERNOR, why: "demo consumer: governor before dispatch" },
-  "lib/adminTrading/brokerPlacement.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/adminTrading/orderGuard.ts", why: "admin placement behind orderGuard gate 9b" },
   "lib/paperExecution/paperExecutionService.ts": { role: "GOVERNED", proof: GOVERNOR, why: "paper execution open" },
   "lib/paperExecution/paperExecutionMonitor.ts": { role: "GOVERNED", proof: GOVERNOR, why: "manual close governed; SL/TP hits are venue fills" },
   "routes/paperTrading.ts": { role: "GOVERNED", proof: GOVERNOR, why: "paper ledger open/modify/close; SL/TP hits are venue fills" },
   "routes/autoDebrief.ts": { role: "GOVERNED", proof: GOVERNOR, why: "operator QA fixture order" },
-  "routes/demoExecution.ts": { role: "GOVERNED", proof: GOVERNOR, why: "legacy demo market order" },
   "routes/meTrades.ts": { role: "GOVERNED", proof: GOVERNOR, why: "demo close" },
   "routes/mePaperTrades.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/riskGovernor/journal.ts", why: "paper journal open and stop/target edits; drafts, closes and cancels carry no new risk" },
   // LIFECYCLE
@@ -71,6 +69,15 @@ export const WRITERS: Record<string, Entry> = {
   "scripts/phase3-demo-dryrun.ts": { role: "QA_SCRIPT", why: "QA dry run" },
   "scripts/phase35-routing-test.ts": { role: "QA_SCRIPT", why: "QA cleanup" },
 };
+
+/**
+ * The legacy mt5_commands mailbox is a transport, not an order entry: only
+ * the live pipeline's EA bridge mirror and the risk-reducing My Trades demo
+ * close may insert trade rows into it. Everything else is NON_TRADE (forced
+ * BLOCKED, read-only EA requests, reconnect) or a QA script. A new entry
+ * point must use demoCommandQueue / liveCommandPipeline / governedOps.
+ */
+export const MAILBOX_TRADE_INSERTERS = new Set(["lib/live/liveCommandPipeline.ts", "routes/meTrades.ts"]);
 
 /** Exposure-defining columns a lifecycle update may never set. */
 const EXPOSURE_KEYS = ["sl", "tp", "lot", "side", "symbol", "stopLoss", "takeProfit", "requestedVolume", "lotSize", "direction", "entryPrice"];
@@ -151,6 +158,10 @@ export function checkExecutionSingleEntry(): CheckResult {
       continue;
     }
     counts[entry.role]++;
+    if (entry.role === "GOVERNED" && !MAILBOX_TRADE_INSERTERS.has(key)
+      && writes.some((w) => w.op === "insert" && w.table === "mt5CommandsTable")) {
+      violations.push(`${rel(file)}: inserts into the legacy mt5_commands mailbox — queue through demoCommandQueue, liveCommandPipeline or governedOps`);
+    }
     if (entry.proof) {
       const proofPath = entry.proofFile ? join(API_SRC, entry.proofFile) : file;
       const proofSrc = existsSync(proofPath) ? stripComments(readFileSync(proofPath, "utf8")) : "";

@@ -36,6 +36,8 @@ export interface RoutableAction {
   stopLoss: number | null;
   takeProfit: number | null;
   source: string | null;
+  /** Overrides the venue command's source (a caller other than the Trade Action Center). */
+  sourcePage?: string;
 }
 
 export type RouteResult =
@@ -43,7 +45,8 @@ export type RouteResult =
   | { ok: false; venue: "DEMO" | "LIVE" | null; commandId: string | null; reason: string };
 
 /** The source stamped on the venue command; Ruby-suggested actions keep the ruby origin. */
-export function sourceFor(a: Pick<RoutableAction, "source">): string {
+export function sourceFor(a: Pick<RoutableAction, "source" | "sourcePage">): string {
+  if (a.sourcePage) return a.sourcePage;
   return a.source === "ai_suggested" ? TRADE_ACTION_RUBY_SOURCE : TRADE_ACTION_SOURCE;
 }
 
@@ -105,6 +108,11 @@ async function routeOpen(a: RoutableAction, venue: "DEMO" | "LIVE"): Promise<Rou
       : { ok: false, venue, commandId, reason: sent.reason ?? sent.command?.status ?? "DISPATCH_REFUSED" };
   }
 
+  // A shared-master live entry needs its virtual-account attribution written
+  // before dispatch; only the shared live ticket (tradesLiveShared) does that.
+  if (await sharedMasterRouting()) {
+    return { ok: false, venue, commandId: null, reason: "SHARED_LIVE_ORDERS_USE_THE_SHARED_LIVE_TICKET" };
+  }
   const pipe = await import("../live/liveCommandPipeline.js");
   const draft = await pipe.createLiveDraft({
     userId: a.userId,
@@ -125,6 +133,12 @@ async function routeOpen(a: RoutableAction, venue: "DEMO" | "LIVE"): Promise<Rou
   return sent.ok && status !== "LIVE_BLOCKED"
     ? { ok: true, venue, commandId, sent: true }
     : { ok: false, venue, commandId, reason: (sent as { reason?: string }).reason ?? status ?? "DISPATCH_REFUSED" };
+}
+
+async function sharedMasterRouting(): Promise<boolean> {
+  const { getGlobalSettings } = await import("../adminTrading/safetyEnvelope.js");
+  const g = await getGlobalSettings();
+  return g?.accountRoutingMode === "SHARED_MASTER_MT5";
 }
 
 async function routePositionOp(a: RoutableAction, venue: "DEMO" | "LIVE"): Promise<RouteResult> {

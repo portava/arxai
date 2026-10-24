@@ -59,9 +59,8 @@
 //     allowlisted writer from being *edited* into a deliverable LIVE path (e.g.
 //     flipping a forced-BLOCKED status to PENDING, adding `mode:"LIVE"` /
 //     `requiredAccountType:"live"`, or loosening an action constraint to open a
-//     trade). So every allowlisted writer EXCEPT the two sanctioned live
-//     pipelines (Phase B `liveCommandPipeline.ts` + the gated adminTrading
-//     `brokerPlacement.ts`) must keep its documented non-LIVE shape: each of its
+//     trade). So every allowlisted writer EXCEPT the sanctioned live pipeline
+//     (Phase B `liveCommandPipeline.ts`) must keep its documented non-LIVE shape: each of its
 //     `mt5_commands` insert `.values({…})` blocks must NOT carry a live-delivery
 //     token (`mode:"LIVE"` / `requiredAccountType:"live"`) and must NOT open a
 //     trade (`action:"OPEN"`), plus the per-writer markers that make it provably
@@ -70,12 +69,11 @@
 //     read-only short-circuit). A non-live writer with no semantic spec also
 //     fails — a new allowlist entry must be classified.
 //
-//   INVARIANT 5 — deliverable-LIVE semantics are confined to the two pipelines.
+//   INVARIANT 5 — deliverable-LIVE semantics are confined to the Phase B pipeline.
 //     Positive net: ANY non-test file whose `mt5_commands` insert `.values({…})`
-//     carries a live-delivery token must be one of the two sanctioned
-//     LIVE_SEMANTICS_WRITER_ALLOWLIST files. Only Phase B (post-18-gate) and the
-//     gated adminTrading path (locked by invariants 2 & 3) may ever emit a
-//     deliverable LIVE command; anything else fails the build.
+//     carries a live-delivery token must be in LIVE_SEMANTICS_WRITER_ALLOWLIST.
+//     Only Phase B (post-18-gate) may ever emit a deliverable LIVE command;
+//     anything else fails the build.
 //
 // Out of scope (documented, deferred to human review, per the import-boundary
 // escape-ladder doctrine shared with the assistant/chart guards): reflection /
@@ -96,10 +94,9 @@ const MAILBOX_WRITER_ALLOWLIST: Record<string, string> = {
   // Mirrors arx_live_commands into mt5_commands only after the 18-gate PASS.
   "artifacts/api-server/src/lib/live/liveCommandPipeline.ts":
     "Phase B canonical pipeline (post-18-gate mirror) — the sanctioned live writer",
-  // adminTrading broker placement — LIVE-capable but gated; locked by
-  // INVARIANT 2 (runOrderGuards bridge_token gate) + INVARIANT 3 (import-confined).
-  "artifacts/api-server/src/lib/adminTrading/brokerPlacement.ts":
-    "adminTrading dispatchToBroker — gated by runOrderGuards; locked by invariants 2 & 3",
+  // adminTrading brokerPlacement and the demo-execution panel are no longer
+  // mailbox writers (Tier 1 Trade Engine): placement is SIMULATED-only and the
+  // panel queues through demoCommandQueue. Re-adding either is a review point.
   // Forced-BLOCKED — queueCommand() always writes status='BLOCKED'; the EA poll
   // filters status='PENDING' so these are never deliverable.
   "artifacts/api-server/src/routes/mt5.ts":
@@ -112,23 +109,18 @@ const MAILBOX_WRITER_ALLOWLIST: Record<string, string> = {
   // FORBIDDEN_ACTIONS before this insert is reached.
   "artifacts/api-server/src/routes/meMt5Commands.ts":
     "createSafeCommand() paper_only insert; trade actions rejected by FORBIDDEN_ACTIONS",
-  // Demo-only — action='DEMO_MARKET_ORDER'; the EA enforces ACCOUNT_TRADE_MODE==DEMO.
-  "artifacts/api-server/src/routes/demoExecution.ts":
-    "DEMO_MARKET_ORDER insert — demo-only, EA enforces demo account",
   // Operator reconnect — action='RECONNECT', not a trade; PENDING only when the
   // broker is armed for live and never carries symbol/side/lot.
   "artifacts/api-server/src/routes/brokerHealth.ts":
     "RECONNECT operator command — not a trade order",
 };
 
-// The two — and only two — pipelines permitted to emit a DELIVERABLE LIVE
-// mt5_commands row. Phase B is post-18-gate; adminTrading brokerPlacement is
-// LIVE-capable but locked by invariants 2 & 3. Every OTHER allowlisted writer
+// The one pipeline permitted to emit a DELIVERABLE LIVE mt5_commands row:
+// Phase B, post-18-gate. Every OTHER allowlisted writer
 // must keep a provably non-LIVE shape (invariant 4) and no other file anywhere
 // may emit live-delivery semantics into mt5_commands (invariant 5).
 const LIVE_PIPELINE_WRITERS = new Set<string>([
   "artifacts/api-server/src/lib/live/liveCommandPipeline.ts",
-  "artifacts/api-server/src/lib/adminTrading/brokerPlacement.ts",
 ]);
 const LIVE_SEMANTICS_WRITER_ALLOWLIST = LIVE_PIPELINE_WRITERS;
 
@@ -204,21 +196,6 @@ const NON_LIVE_WRITER_SEMANTICS: Record<string, WriterSemantics> = {
       {
         rx: /\bsafetyMode\s*:\s*["']paper_only["']/,
         why: "createSafeCommand() must stay safetyMode='paper_only'",
-      },
-    ],
-    blockForbid: [],
-  },
-  "artifacts/api-server/src/routes/demoExecution.ts": {
-    fileRequire: [
-      {
-        rx: /BLOCKED_READ_ONLY_MODE/,
-        why: "demo execution must short-circuit a live/read-only request before inserting",
-      },
-    ],
-    blockRequire: [
-      {
-        rx: /\baction\s*:\s*["']DEMO_MARKET_ORDER["']/,
-        why: "the insert is demo-only (action='DEMO_MARKET_ORDER'); the EA enforces ACCOUNT_TRADE_MODE==DEMO",
       },
     ],
     blockForbid: [],
