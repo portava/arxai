@@ -40,6 +40,7 @@ import {
 } from "../lib/mt5/demoCommandReconciler.js";
 import { recordSecurityEvent } from "../lib/security/events.js";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
+import { scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
 
 const router = Router();
 
@@ -246,6 +247,11 @@ router.post("/mt5/demo-command-result", bridgeAuthPerUserOnly, async (req, res) 
       reason: result.reason,
     });
     return;
+  }
+  // Position Guardian — a confirmed entry fill starts protection checks on its ticket.
+  if (parsed.data.status === "FILLED_DEMO" && result.command?.brokerTicket
+      && /^PLACE_/.test(result.command.commandType)) {
+    scheduleGuardian("DEMO", userId, result.command.brokerTicket, "fill");
   }
   // Return only safe fields.
   res.json({

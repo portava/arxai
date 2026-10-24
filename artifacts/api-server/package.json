@@ -94,6 +94,8 @@
     "test:assistant-settings-route": "node --import tsx --test --test-force-exit src/routes/__qa__/assistantSettingsRoute.test.ts",
     "test:broker-readonly-route": "node --import tsx --test --test-force-exit src/routes/__qa__/brokerReadOnlyRoute.test.ts",
     "test:behavior-ownership-route": "node --import tsx --test --test-force-exit src/routes/__qa__/behaviorOwnershipRoute.test.ts",
+    "test:position-guardian-assess": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/assess.test.ts",
+    "test:position-guardian-reconcile": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/reconcile.test.ts",
     "test:platform-controls-route": "node --import tsx --test --test-force-exit src/routes/__qa__/platformControlsRoute.test.ts",
     "test:account-ownership-route":"node --import tsx --test --test-force-exit src/routes/__qa__/accountOwnershipRoute.test.ts",
     "test:risk-governor-rules": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/preTradeRules.test.ts",

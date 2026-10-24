@@ -49,6 +49,16 @@ const DEMO_INTENT_ACTION: Record<string, IntentAction> = {
   CLOSE_POSITION: "CLOSE",
 };
 
+// The page or agent that produced a demo command decides its governor origin.
+// Automated producers (autopilot, missions, self-trade, the Position Guardian)
+// may only tighten a stop, exactly as on the live path.
+export function demoIntentOrigin(sourcePage: unknown): "manual" | "ruby" | "automation" {
+  const s = typeof sourcePage === "string" ? sourcePage : "";
+  if (/ruby|assistant/i.test(s)) return "ruby";
+  if (/self_trade|mission|autopilot|automation|position_guardian/i.test(s)) return "automation";
+  return "manual";
+}
+
 function num(v: unknown): number | null {
   if (v == null || v === "") return null;
   const n = Number(v);
@@ -279,7 +289,7 @@ export async function consumeApprovedCommand(args: ConsumeArgs): Promise<Consume
     const risk = await enforcePreTradeRisk({
       userId: args.userId,
       venue: "DEMO",
-      origin: typeof p["sourcePage"] === "string" && /ruby|assistant/i.test(String(p["sourcePage"])) ? "ruby" : "manual",
+      origin: demoIntentOrigin(p["sourcePage"] ?? row.sourcePage),
       action: intentAction,
       symbol: String(p["symbol"] ?? ""),
       side: sideRaw === "BUY" || sideRaw === "SELL" ? sideRaw : null,

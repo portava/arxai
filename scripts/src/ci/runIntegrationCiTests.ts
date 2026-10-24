@@ -234,6 +234,11 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:risk-governor-rules" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-pipelines" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-automation" },
+  // Position Guardian: the post-fill protection check case by case, then on a
+  // real DB — governed stop vs broker stop, restore through the governed
+  // queue, escalation, stale data, audit throttling, demo origin mapping.
+  { pkg: "@workspace/api-server", script: "test:position-guardian-assess" },
+  { pkg: "@workspace/api-server", script: "test:position-guardian-reconcile" },
   // Task #660 — Profit Mission Phase 1 route per-user isolation + no-secret-leak
   // proof. Boots the REAL profitMissions router on loopback, seeds two real users
   // with genuine sessions, and proves anonymous 401s, a feed-gated estimate-

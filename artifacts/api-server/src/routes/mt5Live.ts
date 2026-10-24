@@ -24,6 +24,7 @@ import {
 } from "../lib/live/liveCommandPipeline.js";
 import { resolveBrokerSymbolName } from "../lib/mt5/brokerSymbolName.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
+import { scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
 
 const router = Router();
 
@@ -183,6 +184,12 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     // Capture it so the row surfaces the real cause instead of EA_REJECTED_NO_DETAIL.
     eaReason: typeof b["reason"] === "string" ? String(b["reason"]) : null,
   });
+  // Position Guardian — a confirmed fill starts protection checks on its ticket.
+  const filled = result.ok && outcome === "LIVE_FILLED"
+    ? (result as { command?: { brokerTicket?: string | null; commandType?: string } }).command : null;
+  if (filled?.brokerTicket && /^PLACE_LIVE_/.test(filled.commandType ?? "")) {
+    scheduleGuardian("LIVE", conn.userId!, filled.brokerTicket, "fill");
+  }
   // Task #1 — fill/reject changes user reservedRisk + positions; refresh pool.
   void (async () => {
     try {
@@ -461,6 +468,10 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
   // floating P/L), so signal this user's stream to rebuild now instead of
   // waiting on its 3s fallback tick. Best-effort; never blocks the EA ACK.
   emitLiveAccountChanged(conn.userId ?? null);
+  // Position Guardian — compare every governed open position against what
+  // the broker just reported, restore a missing or widened stop through the
+  // governed queue, escalate what it cannot fix. Never blocks the EA ACK.
+  scheduleGuardian("LIVE", conn.userId!, null, "snapshot");
   res.json({ ok: true, upserts, received: positions.length, reconciledClosed, ...LIVE_SAFETY_ENVELOPE });
 }
 
