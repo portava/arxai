@@ -16,7 +16,7 @@ import { getUserLiveBridge } from "../lib/brokerHub/connections.js";
 import { Router, type Request } from "express";
 import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
-import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
+import { readOpenPositions } from "../lib/positions/openPositions.js";
 import { isForexPair } from "../lib/mt5/contractSize.js";
 import { db, userSlotAllocationTable } from "@workspace/db";
 import {
@@ -98,7 +98,7 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   // 2. Open positions for this user only.
   // Open exposure only (shared truth predicate) — reconciled/closed ghosts
   // excluded from the user's account totals.
-  const openPositions = await livePositionLedger.read({ where: openLiveExposureCondition(userId) });
+  const openPositions = (await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE" })).map((p) => p.row);
 
   // 3. Realised P/L = sum of floatingPl on positions the broker CONFIRMED
   //    closed (a real CLOSE fill stamped closed_at). Reconciled ghosts

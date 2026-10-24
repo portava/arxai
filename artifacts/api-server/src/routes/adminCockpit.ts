@@ -20,6 +20,7 @@
 //   (honest-empty on insufficient history).
 
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { readOpenPositions } from "../lib/positions/openPositions.js";
 import { listConnections } from "../lib/brokerHub/connections.js";
 import express, { Router, type Request, type Response } from "express";
 import { z } from "zod";
@@ -451,10 +452,8 @@ router.get("/admin/cockpit/traders/:userId", async (req, res) => {
 
   const [liveState, openPositions, notes, recentAudit] = await Promise.all([
     buildApprovedTraderLiveState(userId).catch(() => null),
-    livePositionLedger.read({
-      where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
-      orderBy: [desc(livePositionColumns.openedAt)],
-    }),
+    readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", order: "openedAtDesc" })
+      .then((rows) => rows.map((p) => p.row)),
     loadNotes("trader", userId),
     loadAuditEntries(25, userId),
   ]);

@@ -16,10 +16,10 @@
 //     demo position open and the heat state is adversarial.
 //   - Runs fire-and-forget (caller awaits void, no throw propagation).
 
-import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { countOpenPositions } from "../positions/openPositions.js";
 import type { MarketTimingRead } from "@workspace/domain/timing-brain";
 import { db, userNotificationsTable } from "@workspace/db";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { fireNotify } from "../notificationService.js";
 import { logger } from "../logger.js";
 
@@ -316,18 +316,8 @@ function buildDescriptors(
 
 async function hasOpenLivePosition(userId: number, symbol: string): Promise<boolean> {
   const sym = symbol.toUpperCase();
-  const rows = await livePositionLedger.select(
-    { id: livePositionColumns.id },
-    {
-      where: and(
-        eq(livePositionColumns.userId, userId),
-        eq(livePositionColumns.symbol, sym),
-        isNull(livePositionColumns.closedAt),
-      ),
-      limit: 1,
-    },
-  );
-  return rows.length > 0;
+  const count = await countOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: sym });
+  return count > 0;
 }
 
 // ── Resolve-on-clear: which alert types are stale for this read ───────────────

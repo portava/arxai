@@ -16,6 +16,7 @@
 //   snapshot.
 
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { countOpenPositions, readOpenPositions } from "../lib/positions/openPositions.js";
 import { getConnection, listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { and, desc, eq, ilike, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
@@ -202,10 +203,8 @@ async function getMasterContext(): Promise<MasterContext> {
 
 // Pull realised + open P/L for one user from arx_live_positions.
 async function getUserPnl(userId: number): Promise<{ realisedPnl: number; openPnL: number; openCount: number }> {
-  const open = await livePositionLedger.select(
-    { pl: livePositionColumns.floatingPl },
-    { where: openLiveExposureCondition(userId) },
-  );
+  const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE" }))
+    .map((p) => ({ pl: p.floatingPnl }));
   const closed = await livePositionLedger.select(
     { pl: livePositionColumns.floatingPl },
     { where: and(eq(livePositionColumns.userId, userId), isNotNull(livePositionColumns.closedAt)) },
@@ -1859,12 +1858,8 @@ router.post("/admin/allocations/:userId/detach-shared-master", requireUser, asyn
     // orphaning the ledger between EA fills and the virtual account. The
     // user-row FOR UPDATE above serialises this against any other admin
     // mutation that could insert a position via Phase B dispatch.
-    const openCount = await livePositionLedger.select(
-      { id: livePositionColumns.id },
-      { where: openLiveExposureCondition(userId) },
-      tx,
-    );
-    if (openCount.length > 0) {
+    const openCount = await countOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE", executor: tx });
+    if (openCount > 0) {
       return fail(409, { ok: false, error: "OPEN_POSITIONS_BLOCK_DETACH",
         message: "User has open live positions. Close them before detaching." });
     }
@@ -2224,21 +2219,12 @@ router.get("/admin/live-positions/:userId/reconcile-detail", requireUser, async 
 
   // Genuine open exposure (reconcile_state IS NULL) — surfaced alongside so the
   // operator sees the real-exposure context next to the ghosts.
-  const [genuine] = await livePositionLedger.select(
-    { count: sql<number>`count(*)::int` },
-    {
-      where: and(
-        eq(livePositionColumns.userId, userId),
-        isNull(livePositionColumns.closedAt),
-        isNull(livePositionColumns.reconcileState),
-      ),
-    },
-  );
+  const genuineOpen = await countOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE" });
 
   res.json({
     ok: true,
     userId,
-    genuineOpen: Number(genuine?.count ?? 0),
+    genuineOpen,
     rows: rows.map((r) => ({
       id: r.id,
       symbol: r.symbol,

@@ -9,6 +9,7 @@
 //     user must still POST /api/me/trades/close with confirmedByUser:true.
 
 import { demoPositionLedger, demoPositionColumns } from "../lib/positions/ledger.js";
+import { readOpenPositions } from "../lib/positions/openPositions.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import {
@@ -485,10 +486,7 @@ router.get("/me/sniper-watchlist", async (req, res) => {
     // Gather open trade keys depending on routing mode (user-scoped reads).
     const keys: string[] = [];
     if (env.accountRoutingMode === "USER_OWNED_MT5") {
-      const rows = await demoPositionLedger.select(
-        { id: demoPositionColumns.id },
-        { where: and(eq(demoPositionColumns.userId, userId), eq(demoPositionColumns.status, "OPEN")) },
-      );
+      const rows = await readOpenPositions({ userId, venue: "DEMO", basis: "CONFIRMED_OPEN" });
       for (const r of rows) keys.push(`lp_${r.id}`);
     } else {
       const rows = await db.select({ id: sharedTradeAttributionTable.id })

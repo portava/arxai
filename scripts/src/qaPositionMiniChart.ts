@@ -34,7 +34,10 @@ const ROUTE = "artifacts/api-server/src/routes/mePositionsUnified.ts";
 probe("[1] mePositionsUnified route file exists", exists(ROUTE));
 const routeSrc = exists(ROUTE) ? read(ROUTE) : "";
 probe("[1a] route uses requireUser middleware", /requireUser/.test(routeSrc));
-probe("[1b] live query filtered by userId", /livePositionLedger\.read\(\{\s*where:\s*openLiveExposureCondition\(userId\)/s.test(routeSrc)
+// The route reads through the canonical open-position read model, whose LIVE
+// EXPOSURE basis is openLiveExposureCondition(userId).
+probe("[1b] live query filtered by userId", /readOpenPositions\(\{\s*userId,\s*venue:\s*"LIVE",\s*basis:\s*"EXPOSURE"/s.test(routeSrc)
+  && /:\s*openLiveExposureCondition\(userId\)/.test(read("artifacts/api-server/src/lib/positions/openPositions.ts"))
   && /eq\(livePositionColumns\.userId, userId\)/.test(read("artifacts/api-server/src/lib/live/livePositionExposure.ts")));
 probe("[1c] demo snapshot read per user through the Broker Hub", /readLatestUserMt5State\(userId\)/.test(routeSrc));
 probe("[1d] demo commands query filtered by userId", /mt5DemoCommandsTable[\s\S]*\.where\(eq\(mt5DemoCommandsTable\.userId, userId\)\)/.test(routeSrc));

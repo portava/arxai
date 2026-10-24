@@ -88,7 +88,7 @@ export function scanSource(key: string, source: string): ScanFacts {
   const line = (n: ts.Node) => file.getLineAndCharacterOfPosition(n.getStart(file)).line + 1;
   const spec = (s: string) => {
     if (/positionGuardian\/manage(?:\.js)?$/.test(s) || (key.startsWith("lib/positionGuardian/") && /^\.\/manage(?:\.js)?$/.test(s))) facts.importsManage = true;
-    if (/positions\/ledger(?:\.js)?$/.test(s)) facts.readsPositions = true;
+    if (/positions\/(?:ledger|openPositions)(?:\.js)?$/.test(s)) facts.readsPositions = true;
   };
   function visit(node: ts.Node): void {
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {

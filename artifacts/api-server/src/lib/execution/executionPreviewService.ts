@@ -9,9 +9,9 @@
 //
 // Advisory / read-only: nothing here places, modifies, or gates a trade.
 
-import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { readOpenPositions } from "../positions/openPositions.js";
 import { getUserPrimaryConnection } from "../brokerHub/connections.js";
-import { and, eq, desc, isNull } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { virtualTradingAccountsTable } from "@workspace/db/schema";
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
@@ -111,19 +111,8 @@ export async function buildExecutionPreviewForUser(
   // Existing open exposure on this symbol for this user (multi-entry awareness).
   let openExposure: Parameters<typeof estimateExecutionPreview>[0]["openExposure"] = null;
   try {
-    const prows = await livePositionLedger.select(
-      {
-        volume: livePositionColumns.volume,
-        side: livePositionColumns.side,
-      },
-      {
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          eq(livePositionColumns.symbol, symbol),
-          isNull(livePositionColumns.closedAt),
-        ),
-      },
-    );
+    const prows = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol }))
+      .map((p) => ({ volume: p.lots, side: p.side }));
     if (prows.length > 0) {
       let openLots = 0;
       const sides = new Set<string>();

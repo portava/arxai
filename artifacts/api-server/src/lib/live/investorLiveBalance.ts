@@ -29,7 +29,7 @@
 //   • Freshness is derived from real timestamps and mapped from the adapter's
 //     5-level scale; stale data is reported stale, never relabelled fresh.
 
-import { livePositionLedger } from "../positions/ledger.js";
+import { readOpenPositions } from "../positions/openPositions.js";
 import { listUserConnections } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import { userSlotAllocationTable, virtualTradingAccountsTable, sharedTradeAttributionTable } from "@workspace/db/schema";
@@ -42,7 +42,6 @@ import {
   type AccountMode,
   type Freshness,
 } from "./liveAccountSnapshot.js";
-import { openLiveExposureCondition } from "./livePositionExposure.js";
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { resolveLivePositionVisibility } from "../modeScope/livePositionVisibility.js";
 
@@ -385,25 +384,25 @@ export async function buildInvestorLiveBalanceSnapshot(
   // Live floating P/L — only when the user is genuinely in LIVE_SHARED mode.
   let liveSnapshot: LiveAccountSnapshot | null = null;
   if (includeLive) {
-    const rows = await livePositionLedger.read({ where: openLiveExposureCondition(userId) });
+    const rows = await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE", modeScope: scope });
     const conn = (await listUserConnections(userId, { order: "oldest", limit: 1 }))[0];
     liveSnapshot = buildLiveAccountSnapshot({
       userId,
       accountMode: "LIVE_SHARED",
       rows: rows.map((r) => ({
         id: r.id,
-        brokerTicket: r.brokerTicket,
+        brokerTicket: r.ticket,
         symbol: r.symbol,
         side: r.side,
-        volume: r.volume,
+        volume: r.lots,
         entryPrice: r.entryPrice,
         currentPrice: r.currentPrice,
-        floatingPl: r.floatingPl,
+        floatingPl: r.floatingPnl,
         stopLoss: r.stopLoss,
         takeProfit: r.takeProfit,
-        closedAt: r.closedAt,
-        reconcileState: r.reconcileState,
-        lastSyncedAtMs: r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : null,
+        closedAt: r.row.closedAt,
+        reconcileState: r.row.reconcileState,
+        lastSyncedAtMs: r.observedAt ? new Date(r.observedAt).getTime() : null,
       })),
       quotes: undefined,
       account: {

@@ -154,6 +154,7 @@ const MANUAL_ONLY = new Set<string>([
   "@workspace/scripts::test:single-limit-store",
   "@workspace/scripts::test:single-position-ledger",
   "@workspace/scripts::test:single-position-guardian",
+  "@workspace/scripts::test:single-open-position-view",
   "@workspace/scripts::test:trade-engine-single-pipeline",
   "@workspace/scripts::test:single-paper-book",
   "@workspace/scripts::test:legacy-live-state-confined",

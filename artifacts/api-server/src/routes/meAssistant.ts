@@ -13,7 +13,7 @@
 //   GET  /api/me/assistant/tools                    list tool definitions
 //   GET  /api/me/assistant/market-status            market provider status
 
-import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { readOpenPositions } from "../lib/positions/openPositions.js";
 import express, { Router } from "express";
 import multer from "multer";
 
@@ -36,7 +36,7 @@ import {
   rubyWatchInstructionsTable,
   type RubyCommandKind,
 } from "@workspace/db";
-import { and, asc, desc, eq, isNull, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { parseTradeCommand } from "../lib/assistant/parseTradeCommand.js";
 import { executeInstant, type InstantTradeIntent, type InstantTradeResult } from "../lib/live/instantTrade.js";
@@ -2026,13 +2026,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which open position should I watch?" });
         return;
       }
-      const open = await livePositionLedger.read({
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          eq(livePositionColumns.symbol, symbol),
-          isNull(livePositionColumns.closedAt),
-        ),
-      });
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol })).map((p) => p.row);
       if (open.length === 0) {
         res.json({ ok: false, classification: "NO_OPEN_POSITION", message: `No open ${symbol} position to watch.` });
         return;
@@ -2110,13 +2104,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     case "CLOSE_ONE": {
       // Resolve a single open position for that symbol; if multiple,
       // refuse and let the user disambiguate. NEVER pick one silently.
-      const open = await livePositionLedger.read({
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          eq(livePositionColumns.symbol, parsed.symbol),
-          isNull(livePositionColumns.closedAt),
-        ),
-      });
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: parsed.symbol })).map((p) => p.row);
       if (open.length === 0) {
         await db.insert(oneClickAuditTable).values({
           userId, action: "INSTANT_CLOSE_REJECTED", ip, userAgent: ua,
@@ -2149,13 +2137,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       // Reduce-risk: close part of a single open position. Resolves the same
       // way as CLOSE_ONE (no silent pick) but carries closeVolume so only that
       // many lots are closed via the EXISTING close primitive.
-      const open = await livePositionLedger.read({
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          eq(livePositionColumns.symbol, parsed.symbol),
-          isNull(livePositionColumns.closedAt),
-        ),
-      });
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: parsed.symbol })).map((p) => p.row);
       if (open.length === 0) {
         await db.insert(oneClickAuditTable).values({
           userId, action: "INSTANT_CLOSE_REJECTED", ip, userAgent: ua,
@@ -2247,13 +2229,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which market should I modify?" });
         return;
       }
-      const open = await livePositionLedger.read({
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          eq(livePositionColumns.symbol, sym),
-          isNull(livePositionColumns.closedAt),
-        ),
-      });
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: sym })).map((p) => p.row);
       if (open.length === 0) {
         await db.insert(oneClickAuditTable).values({
           userId, action: "INSTANT_EXECUTE_REJECTED", ip, userAgent: ua,
@@ -2293,13 +2269,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which market should I move to break-even?" });
         return;
       }
-      const open = await livePositionLedger.read({
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          eq(livePositionColumns.symbol, sym),
-          isNull(livePositionColumns.closedAt),
-        ),
-      });
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: sym })).map((p) => p.row);
       if (open.length === 0) {
         res.json({ ok: false, classification: "NO_OPEN_POSITION", message: `No open ${sym} position to move to break-even.` });
         return;
@@ -2442,13 +2412,7 @@ router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) =
     // user's own stop. Permission + authority are re-checked at fire-time below.
     if (w.kind === "MONITOR_TRADE") {
       if (!w.symbol) continue;
-      const openRows = await livePositionLedger.read({
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          eq(livePositionColumns.symbol, w.symbol),
-          isNull(livePositionColumns.closedAt),
-        ),
-      });
+      const openRows = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: w.symbol })).map((p) => p.row);
       const row = w.positionTicket
         ? openRows.find((o) => o.brokerTicket === w.positionTicket)
         : (openRows.length === 1 ? openRows[0] : undefined);
@@ -2595,13 +2559,7 @@ router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) =
       commandKind = "OPEN_TRADE";
     } else {
       // WATCH_AND_CLOSE — confirm the position still exists.
-      const open = await livePositionLedger.read({
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          eq(livePositionColumns.symbol, w.symbol),
-          isNull(livePositionColumns.closedAt),
-        ),
-      });
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: w.symbol })).map((p) => p.row);
       const row = w.positionTicket
         ? open.find((o) => o.brokerTicket === w.positionTicket)
         : (open.length === 1 ? open[0] : undefined);
