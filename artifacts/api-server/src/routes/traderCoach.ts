@@ -20,7 +20,7 @@ import { generateWeeklyPlan } from "../lib/traderCoach/weekly.js";
 
 const router = Router();
 // Coaching reads the signed-in trader's own book. The playbook is the shared
-// cohort playbook (built from strategy_edges / mistake_patterns), so anyone may
+// cohort playbook (built from anonymized platform learning cohorts), so anyone may
 // read it but only an operator regenerates it; coach logs span every user.
 router.use("/trader-coach", requireUser);
 router.use(["/trader-coach/playbook/generate", "/trader-coach/logs"], requireOperator);

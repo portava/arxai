@@ -435,13 +435,13 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
       const { getSymbolLearningView } = await import("../lib/learningEngine.js");
       const probeAction = chosenStrategySignal?.direction === "BUY" ? "BUY"
                        : chosenStrategySignal?.direction === "SELL" ? "SELL" : "HOLD";
-      let v = await getSymbolLearningView(symbol, probeAction);
+      let v = await getSymbolLearningView(userId, symbol, probeAction);
       // Fallback: if HOLD probe found nothing, sample BUY/SELL to surface
       // historical bias for this symbol so the user can still see the data.
       if (v.totalSampleSize === 0 && probeAction === "HOLD") {
         const [buyV, sellV] = await Promise.all([
-          getSymbolLearningView(symbol, "BUY"),
-          getSymbolLearningView(symbol, "SELL"),
+          getSymbolLearningView(userId, symbol, "BUY"),
+          getSymbolLearningView(userId, symbol, "SELL"),
         ]);
         v = buyV.totalSampleSize >= sellV.totalSampleSize ? buyV : sellV;
       }

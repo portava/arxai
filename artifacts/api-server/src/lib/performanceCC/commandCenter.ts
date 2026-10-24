@@ -3,13 +3,12 @@
 // SAFETY: liveTradingStatus is hardcoded to "DISABLED". Reading-only.
 
 import { db } from "@workspace/db";
+import { listOwnEdges, listOwnMistakes } from "../learning/scopedMemory.js";
 import {
   paperOrdersTable,
   tradeDecisionLogsTable,
   postTradeDebriefsTable,
   learningEventsTable,
-  strategyEdgesTable,
-  mistakePatternsTable,
   autopilotCyclesTable,
   autopilotSettingsTable,
 } from "@workspace/db";
@@ -18,15 +17,15 @@ import { generateInsights } from "./insights.js";
 import { evaluateReadiness } from "../readiness/traderReadiness.js";
 
 // The caller's own trades, decisions, debriefs, learnings and autopilot runs.
-// strategy_edges / mistake_patterns are the shared cohort learning tables.
+// Learning memory (edges / mistake patterns) is the caller's own too.
 export async function buildCommandCenter(userId: number) {
   // Pull source data.
   const trades = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId));
   const decisions = await db.select().from(tradeDecisionLogsTable).where(eq(tradeDecisionLogsTable.userId, userId));
   const debriefs = await db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId));
   const learnings = await db.select().from(learningEventsTable).where(eq(learningEventsTable.userId, userId));
-  const edges = await db.select().from(strategyEdgesTable);
-  const mistakes = await db.select().from(mistakePatternsTable);
+  const edges = await listOwnEdges(userId);
+  const mistakes = await listOwnMistakes(userId);
   const recentCycles = await db.select().from(autopilotCyclesTable)
     .where(eq(autopilotCyclesTable.userId, userId))
     .orderBy(desc(autopilotCyclesTable.id)).limit(20);

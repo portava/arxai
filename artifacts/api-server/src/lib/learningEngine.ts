@@ -12,29 +12,24 @@
 //     the same debrief can never be processed twice.
 //   • All errors are non-fatal: BB's debrief survives even if CC throws.
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   db,
   learningEventsTable,
-  strategyEdgesTable,
-  mistakePatternsTable,
+  paperOrdersTable,
   postTradeDebriefsTable,
   vaultEventsTable,
 } from "@workspace/db";
+import {
+  clamp, CONF_ADJ_MAX, CONF_ADJ_MIN, RISK_ADJ_MAX, RISK_ADJ_MIN,
+  listOwnEdges, listOwnMistakes, listPlatformEdges, recordEdgeOutcome, recordMistakeOutcome,
+  type OwnedScope,
+} from "./learning/scopedMemory.js";
 import { logger } from "./logger.js";
 
 const log = logger.child({ component: "learningEngine" });
 
-// ── Bounds (per design contract) ───────────────────────────────────────────
-const EDGE_MIN = -100;
-const EDGE_MAX =  100;
-const CONF_ADJ_MIN = -15;
-const CONF_ADJ_MAX =  15;
-const RISK_ADJ_MIN = -15;
-const RISK_ADJ_MAX =  15;
-const SEVERITY_MAX = 100;
-
-// Per-trade deltas (small — one trade cannot dominate a cohort).
+// ── Per-event deltas (bounds live in learning/scopedMemory.ts) ─────────────
 const D_EDGE_WIN  =  4;
 const D_EDGE_LOSS = -4;
 const D_EDGE_BE   =  0.5;
@@ -47,7 +42,6 @@ const D_RISK_LOSS =  2;
 const SAMPLE_LOW    = 5;
 const SAMPLE_MEDIUM = 20;
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 // ── Types ──────────────────────────────────────────────────────────────────
 export interface LearningPayload {
@@ -100,7 +94,23 @@ export interface SymbolLearningView {
 }
 
 // ── Idempotent processor ───────────────────────────────────────────────────
-export async function processLearningPayload(payload: LearningPayload): Promise<LearningResult> {
+export interface LearningOptions {
+  /** The authenticated caller; must match the debrief's owner when the debrief names one. */
+  ownerUserId?: number | null;
+  /** Additional private scopes (strategy / account / broker / instrument / portfolio). */
+  scopes?: OwnedScope[];
+}
+
+/** Account scope for a paper trade: the paper account it was placed on. */
+async function derivedScopes(ownerUserId: number, tradeId: number): Promise<OwnedScope[]> {
+  try {
+    const [o] = await db.select({ acct: paperOrdersTable.paperAccountId }).from(paperOrdersTable)
+      .where(and(eq(paperOrdersTable.id, tradeId), eq(paperOrdersTable.userId, ownerUserId))).limit(1);
+    return o?.acct != null ? [{ type: "account", key: `paper:${o.acct}` }] : [];
+  } catch { return []; }
+}
+
+export async function processLearningPayload(payload: LearningPayload, opts: LearningOptions = {}): Promise<LearningResult> {
   const debriefId = payload.debrief_id;
   const baseRes: LearningResult = {
     status: "processed", eventId: null, debriefId,
@@ -122,10 +132,25 @@ export async function processLearningPayload(payload: LearningPayload): Promise<
     return { ...baseRes, status: "skipped_already_processed", eventId: existing[0].id, warnings: [`Learning event already exists (id=${existing[0].id})`] };
   }
 
-  // 3. Hydrate from debrief row if any field is missing AND verify debrief exists
-  // (provenance gate — prevents external callers from poisoning learning memory
-  // with debrief_ids that do not correspond to a real debrief row).
+  // 3. Hydrate from the debrief row if any field is missing; the row also
+  // decides ownership and provenance (below).
   const dbRow = (await db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.id, debriefId)).limit(1))[0];
+  // Learning memory is per trader: the debrief's owner is the owner; a caller
+  // may not teach another trader's memory, and an ownerless payload teaches nothing.
+  const callerId = opts.ownerUserId ?? null;
+  if (dbRow?.userId != null && callerId != null && dbRow.userId !== callerId) {
+    return { ...baseRes, status: "skipped_invalid_payload", warnings: ["Debrief belongs to another trader"] };
+  }
+  const ownerUserId = dbRow?.userId ?? callerId;
+  if (ownerUserId == null) {
+    return { ...baseRes, status: "skipped_invalid_payload", warnings: ["No owner: learning memory is per trader"] };
+  }
+  const scopes = [...(opts.scopes ?? []), ...(await derivedScopes(ownerUserId, payload.trade_id))];
+  // Provenance gate: only an outcome backed by the owner's own debrief row is
+  // shared beyond their private memory (scoped kinds and the platform cohort).
+  // A synthesized payload (demo, or a debrief id that does not exist) teaches
+  // the caller's private memory only.
+  const verified = dbRow?.userId === ownerUserId;
   const meta = (dbRow?.autoMeta as Record<string, unknown> | undefined) ?? {};
   let symbol = payload.symbol ?? "";
   let action = payload.action ?? "";
@@ -168,6 +193,7 @@ export async function processLearningPayload(payload: LearningPayload): Promise<
   let eventId: number | null = null;
   try {
     const ins = await db.insert(learningEventsTable).values({
+      userId: ownerUserId,
       tradeId: payload.trade_id,
       decisionId: payload.decision_id,
       debriefId,
@@ -204,20 +230,23 @@ export async function processLearningPayload(payload: LearningPayload): Promise<
   for (const sig of supportingSignals) {
     if (seen.has(sig.source)) continue;
     seen.add(sig.source);
-    const adj = await upsertEdge({
+    const row = await recordEdgeOutcome(ownerUserId, {
       symbol, signalName: sig.source, action, result, pnl, tradeId: payload.trade_id,
       deltaEdge: deltaEdgePerSig, deltaConf: deltaConfPerSig, deltaRisk: deltaRiskPerSig,
+    }, scopes, verified);
+    edgeAdjustments.push({
+      signalName: sig.source, action, deltaEdge: deltaEdgePerSig, deltaConf: deltaConfPerSig, deltaRisk: deltaRiskPerSig,
+      newEdgeScore: row.edgeScore, sampleCount: row.sampleCount,
     });
-    edgeAdjustments.push(adj);
   }
 
   // 7. Update mistake_patterns per tag (LOSS amplifies; WIN does not erase).
   if (mistakeTags.length > 0) {
     for (const tag of mistakeTags) {
-      const adj = await upsertMistake({
-        tag: String(tag), symbol, action, isLoss, tradeId: payload.trade_id,
-      });
-      mistakeAdjustments.push(adj);
+      const row = await recordMistakeOutcome(ownerUserId, {
+        tag: String(tag), symbol, action, isLoss, tradeId: payload.trade_id, guardrail: recommendedGuardrailFor(String(tag)),
+      }, scopes, verified);
+      mistakeAdjustments.push({ tag: row.tag, symbol, action, count: row.count, severityScore: row.severityScore });
     }
   }
 
@@ -242,7 +271,7 @@ export async function processLearningPayload(payload: LearningPayload): Promise<
       eventId, debriefId, tradeId: payload.trade_id, decisionId: payload.decision_id,
       symbol, action, result, pnl,
       edgesUpdated: edgeAdjustments.length, mistakesUpdated: mistakeAdjustments.length,
-      sampleBucket,
+      sampleBucket, sharedBeyondPrivate: verified,
     },
     reasons: [],
     blockers: [],
@@ -256,99 +285,13 @@ export async function processLearningPayload(payload: LearningPayload): Promise<
     edgesUpdated: edgeAdjustments.length, mistakesUpdated: mistakeAdjustments.length, sampleBucket,
   }, "learning event processed");
 
-  return { ...baseRes, status: "processed", eventId, result, edgeAdjustments, mistakeAdjustments };
+  const warnings = verified ? [] : ["No debrief of yours backs this outcome: it taught your private memory only, not shared scopes or the platform cohort"];
+  return { ...baseRes, status: "processed", eventId, result, edgeAdjustments, mistakeAdjustments, warnings };
 }
 
 function totalSamples(adjs: LearningResult["edgeAdjustments"]): number {
   if (adjs.length === 0) return 0;
   return Math.max(...adjs.map((a) => a.sampleCount));
-}
-
-// ── Edge upsert ────────────────────────────────────────────────────────────
-async function upsertEdge(args: {
-  symbol: string; signalName: string; action: string; result: string; pnl: number; tradeId: number;
-  deltaEdge: number; deltaConf: number; deltaRisk: number;
-}): Promise<LearningResult["edgeAdjustments"][number]> {
-  const { symbol, signalName, action, result, pnl, tradeId, deltaEdge, deltaConf, deltaRisk } = args;
-  const existing = (await db.select().from(strategyEdgesTable)
-    .where(and(eq(strategyEdgesTable.symbol, symbol), eq(strategyEdgesTable.signalName, signalName), eq(strategyEdgesTable.action, action)))
-    .limit(1))[0];
-
-  const isWin  = result === "WIN";
-  const isLoss = result === "LOSS";
-  const isBE   = result === "BREAKEVEN" || result === "BREAK_EVEN";
-
-  if (!existing) {
-    const sampleCount = 1;
-    const winCount = isWin ? 1 : 0;
-    const lossCount = isLoss ? 1 : 0;
-    const beCount = isBE ? 1 : 0;
-    const newEdge = clamp(deltaEdge, EDGE_MIN, EDGE_MAX);
-    const newConf = clamp(deltaConf, CONF_ADJ_MIN, CONF_ADJ_MAX);
-    const newRisk = clamp(deltaRisk, RISK_ADJ_MIN, RISK_ADJ_MAX);
-    const ins = await db.insert(strategyEdgesTable).values({
-      symbol, strategyName: signalName, signalName, action,
-      sampleCount, winCount, lossCount, breakEvenCount: beCount,
-      netPnl: pnl, avgPnl: pnl,
-      confidenceAdjustment: newConf, riskAdjustment: newRisk, edgeScore: newEdge,
-      lastResult: result, lastTradeId: tradeId,
-    }).returning();
-    const row = ins[0]!;
-    return { signalName, action, deltaEdge, deltaConf, deltaRisk, newEdgeScore: row.edgeScore, sampleCount: row.sampleCount };
-  }
-
-  const sampleCount = existing.sampleCount + 1;
-  const winCount  = existing.winCount  + (isWin ? 1 : 0);
-  const lossCount = existing.lossCount + (isLoss ? 1 : 0);
-  const beCount   = existing.breakEvenCount + (isBE ? 1 : 0);
-  const netPnl = existing.netPnl + pnl;
-  const avgPnl = netPnl / sampleCount;
-  const newEdge = clamp(existing.edgeScore + deltaEdge, EDGE_MIN, EDGE_MAX);
-  const newConf = clamp(existing.confidenceAdjustment + deltaConf, CONF_ADJ_MIN, CONF_ADJ_MAX);
-  const newRisk = clamp(existing.riskAdjustment + deltaRisk, RISK_ADJ_MIN, RISK_ADJ_MAX);
-
-  await db.update(strategyEdgesTable).set({
-    sampleCount, winCount, lossCount, breakEvenCount: beCount,
-    netPnl, avgPnl,
-    confidenceAdjustment: newConf, riskAdjustment: newRisk, edgeScore: newEdge,
-    lastResult: result, lastTradeId: tradeId, updatedAt: new Date(),
-  }).where(eq(strategyEdgesTable.id, existing.id));
-
-  return { signalName, action, deltaEdge, deltaConf, deltaRisk, newEdgeScore: newEdge, sampleCount };
-}
-
-// ── Mistake-pattern upsert ─────────────────────────────────────────────────
-async function upsertMistake(args: {
-  tag: string; symbol: string; action: string; isLoss: boolean; tradeId: number;
-}): Promise<LearningResult["mistakeAdjustments"][number]> {
-  const { tag, symbol, action, isLoss, tradeId } = args;
-  const existing = (await db.select().from(mistakePatternsTable)
-    .where(and(eq(mistakePatternsTable.tag, tag), eq(mistakePatternsTable.symbol, symbol), eq(mistakePatternsTable.action, action)))
-    .limit(1))[0];
-
-  const sevDelta = isLoss ? 8 : 2;
-  const guardrail = recommendedGuardrailFor(tag);
-
-  if (!existing) {
-    const ins = await db.insert(mistakePatternsTable).values({
-      tag, symbol, action,
-      count: 1, lastTradeId: tradeId,
-      severityScore: clamp(sevDelta, 0, SEVERITY_MAX),
-      recommendedGuardrail: guardrail,
-    }).returning();
-    const row = ins[0]!;
-    return { tag, symbol, action, count: row.count, severityScore: row.severityScore };
-  }
-
-  const count = existing.count + 1;
-  const severityScore = clamp(existing.severityScore + sevDelta, 0, SEVERITY_MAX);
-  await db.update(mistakePatternsTable).set({
-    count, severityScore, lastTradeId: tradeId,
-    recommendedGuardrail: guardrail || existing.recommendedGuardrail,
-    updatedAt: new Date(),
-  }).where(eq(mistakePatternsTable.id, existing.id));
-
-  return { tag, symbol, action, count, severityScore };
 }
 
 function recommendedGuardrailFor(tag: string): string {
@@ -362,20 +305,28 @@ function recommendedGuardrailFor(tag: string): string {
 }
 
 // ── Read API for Build AA ──────────────────────────────────────────────────
-export async function getSymbolLearningView(symbol: string, action: "BUY" | "SELL" | "HOLD"): Promise<SymbolLearningView> {
-  const [edges, mistakes] = await Promise.all([
-    db.select().from(strategyEdgesTable)
-      .where(and(eq(strategyEdgesTable.symbol, symbol), eq(strategyEdgesTable.action, action))),
-    db.select().from(mistakePatternsTable)
-      .where(and(eq(mistakePatternsTable.symbol, symbol), eq(mistakePatternsTable.action, action))),
+/**
+ * What the decision engine sees for this trader on symbol+action: their own
+ * edges, or the anonymized platform cohorts while their own sample is still
+ * LOW. Mistake warnings are always the trader's own.
+ */
+export async function getSymbolLearningView(userId: number, symbol: string, action: "BUY" | "SELL" | "HOLD"): Promise<SymbolLearningView & { source: "own" | "platform" | "none" }> {
+  const [ownEdges, mistakes] = await Promise.all([
+    listOwnEdges(userId, { symbol, action }),
+    listOwnMistakes(userId, { symbol, action }),
   ]);
+  const ownSamples = ownEdges.reduce((n, e) => n + e.sampleCount, 0);
+  const platformEdges = ownSamples < SAMPLE_LOW ? await listPlatformEdges({ symbol, action }) : [];
+  const usePlatform = ownSamples < SAMPLE_LOW && platformEdges.reduce((n, e) => n + e.sampleCount, 0) > ownSamples;
+  const edges = usePlatform ? platformEdges : ownEdges;
+  const source = edges.length === 0 ? "none" as const : usePlatform ? "platform" as const : "own" as const;
 
   if (edges.length === 0 && mistakes.length === 0) {
     return {
       symbol, totalSampleSize: 0, learningConfidence: "LOW",
       edgeScoreUsed: 0, confidenceAdjustmentApplied: 0, riskAdjustmentApplied: 0,
       knownMistakeWarnings: [], edgeSummary: "No prior learning data for this symbol+action.",
-      cohortCount: 0,
+      cohortCount: 0, source,
     };
   }
 
@@ -414,7 +365,7 @@ export async function getSymbolLearningView(symbol: string, action: "BUY" | "SEL
   const totalLosses = edges.reduce((s, e) => s + e.lossCount, 0);
   const totalBE     = edges.reduce((s, e) => s + e.breakEvenCount, 0);
   const summary =
-    `Learning(${learningConfidence}, n=${totalSamples}, ${edges.length} edge cohort(s)): ` +
+    `Learning(${learningConfidence}, ${source === "platform" ? "anonymized platform" : "your trades"}, n=${totalSamples}, ${edges.length} edge cohort(s)): ` +
     `${totalWins}W/${totalLosses}L/${totalBE}BE, edge=${aggEdge.toFixed(1)}, ` +
     `confΔ=${confAdj.toFixed(1)}, riskΔ=${riskAdj.toFixed(1)}` +
     (topMistakes.length > 0 ? `, ${topMistakes.length} mistake pattern(s)` : "");
@@ -422,32 +373,12 @@ export async function getSymbolLearningView(symbol: string, action: "BUY" | "SEL
   return {
     symbol, totalSampleSize: totalSamples, learningConfidence,
     edgeScoreUsed: aggEdge, confidenceAdjustmentApplied: confAdj, riskAdjustmentApplied: riskAdj,
-    knownMistakeWarnings: topMistakes, edgeSummary: summary, cohortCount: edges.length,
+    knownMistakeWarnings: topMistakes, edgeSummary: summary, cohortCount: edges.length, source,
   };
 }
 
 // ── List/read helpers for routes ───────────────────────────────────────────
-export async function listLearningEvents(limit = 10) {
-  return db.select().from(learningEventsTable).orderBy(desc(learningEventsTable.id)).limit(limit);
+export async function listLearningEvents(userId: number, limit = 10) {
+  return db.select().from(learningEventsTable).where(eq(learningEventsTable.userId, userId))
+    .orderBy(desc(learningEventsTable.id)).limit(limit);
 }
-
-export async function listEdges(symbol?: string) {
-  if (symbol) {
-    return db.select().from(strategyEdgesTable)
-      .where(eq(strategyEdgesTable.symbol, symbol))
-      .orderBy(desc(strategyEdgesTable.updatedAt));
-  }
-  return db.select().from(strategyEdgesTable).orderBy(desc(strategyEdgesTable.updatedAt)).limit(100);
-}
-
-export async function listMistakes(symbol?: string) {
-  if (symbol) {
-    return db.select().from(mistakePatternsTable)
-      .where(eq(mistakePatternsTable.symbol, symbol))
-      .orderBy(desc(mistakePatternsTable.severityScore));
-  }
-  return db.select().from(mistakePatternsTable).orderBy(desc(mistakePatternsTable.severityScore)).limit(100);
-}
-
-// Touch sql import to avoid lint complaint when not used by branch above.
-void sql;

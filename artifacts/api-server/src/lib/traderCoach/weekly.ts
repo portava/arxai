@@ -7,9 +7,8 @@ import {
   db,
   weeklyImprovementPlansTable,
   paperOrdersTable,
-  mistakePatternsTable,
-  strategyEdgesTable,
 } from "@workspace/db";
+import { listOwnEdges, listOwnMistakes } from "../learning/scopedMemory.js";
 import { and, eq, gte } from "drizzle-orm";
 import { evaluateReadiness } from "../readiness/traderReadiness.js";
 
@@ -69,10 +68,11 @@ export async function generateWeeklyPlan(opts: { userId: number; persist?: boole
   } catch { /* empty */ }
 
   let mistakes: { tag: string; symbol: string; action: string; count: number; severityScore: number }[] = [];
-  try { mistakes = await db.select().from(mistakePatternsTable); } catch { /* empty */ }
+  // The trader's own learning memory only (item 8).
+  try { mistakes = await listOwnMistakes(opts.userId); } catch { /* empty */ }
 
   let edges: { symbol: string; signalName: string; action: string; sampleCount: number; edgeScore: number; winCount: number }[] = [];
-  try { edges = await db.select().from(strategyEdgesTable); } catch { /* empty */ }
+  try { edges = await listOwnEdges(opts.userId); } catch { /* empty */ }
 
   let governor: Awaited<ReturnType<typeof evaluateReadiness>> | null = null;
   try { governor = await evaluateReadiness({ persist: false, userId: opts.userId }); } catch { /* empty */ }

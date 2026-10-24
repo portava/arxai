@@ -13,13 +13,12 @@ import {
   tradeDecisionLogsTable,
   postTradeDebriefsTable,
   learningEventsTable,
-  strategyEdgesTable,
-  mistakePatternsTable,
   autopilotCyclesTable,
   performanceDailySnapshotsTable,
   traderCoachReportsTable,
   traderCoachLogsTable,
 } from "@workspace/db";
+import { listOwnEdges, listOwnMistakes } from "../learning/scopedMemory.js";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { computeSymbolStats } from "../performanceCC/aggregator.js";
 import { evaluateReadiness } from "../readiness/traderReadiness.js";
@@ -110,8 +109,7 @@ const SAFE_DEFAULT_REVIEW_QUESTIONS = [
 
 export interface GenerateCoachOptions {
   // The trader being coached: every trade, decision, debrief, learning event,
-  // autopilot run and snapshot read is theirs. strategy_edges /
-  // mistake_patterns are the shared cohort learning tables.
+  // autopilot run, snapshot and learning-memory row read is theirs.
   userId: number;
   reportType?: CoachReportType;
   persist?: boolean;
@@ -185,12 +183,13 @@ export async function generateCoachReport(opts: GenerateCoachOptions): Promise<C
   } catch { missingDataSources.push("learning_events"); }
 
   try {
-    edges = await db.select().from(strategyEdgesTable);
+    // The trader's own learning memory only (item 8).
+    edges = await listOwnEdges(userId);
     dataSourcesRead.push("strategy_edges");
   } catch { missingDataSources.push("strategy_edges"); }
 
   try {
-    mistakes = await db.select().from(mistakePatternsTable);
+    mistakes = await listOwnMistakes(userId);
     dataSourcesRead.push("mistake_patterns");
   } catch { missingDataSources.push("mistake_patterns"); }
 

@@ -22,8 +22,6 @@ import {
   tradeDecisionLogsTable,
   postTradeDebriefsTable,
   learningEventsTable,
-  strategyEdgesTable,
-  mistakePatternsTable,
   autopilotCyclesTable,
   autopilotCycleLogsTable,
   autopilotSymbolCooldownsTable,
@@ -31,6 +29,7 @@ import {
   riskGovernorEvaluationsTable,
   riskGovernorEventsTable,
 } from "@workspace/db";
+import { listOwnEdges, listOwnMistakes, listPlatformEdges, listPlatformMistakes } from "../learning/scopedMemory.js";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { logger } from "../logger.js";
@@ -219,7 +218,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
     dataSourcesRead.push("learning_events");
   } catch { missingDataSources.push("learning_events"); }
   try {
-    const edges = await db.select().from(strategyEdgesTable);
+    // Learning memory is per trader (item 8): the trader's own edges, or the
+    // anonymized platform cohorts for a platform-level evaluation.
+    const edges = userId == null ? await listPlatformEdges() : await listOwnEdges(userId);
     if (edges.length > 0) {
       const confidences = edges.map(e => Number((e as { confidence?: number | null }).confidence ?? 0));
       learningConfidence = Math.round((confidences.reduce((a, b) => a + b, 0) / edges.length) * 100) / 100;
@@ -227,7 +228,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
     dataSourcesRead.push("strategy_edges");
   } catch { missingDataSources.push("strategy_edges"); }
   try {
-    const patterns = await db.select().from(mistakePatternsTable);
+    const patterns = userId == null ? await listPlatformMistakes() : await listOwnMistakes(userId);
     repeatedMistakeCount = patterns.filter(p => Number((p as { occurrences?: number | null }).occurrences ?? 0) >= 3).length;
     dataSourcesRead.push("mistake_patterns");
   } catch { missingDataSources.push("mistake_patterns"); }
