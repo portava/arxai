@@ -25,7 +25,7 @@ import {
   autopilotCyclesTable,
   autopilotCycleLogsTable,
   autopilotSymbolCooldownsTable,
-  riskSettingsTable,
+  userRiskSettingsTable,
   riskGovernorEvaluationsTable,
   riskGovernorEventsTable,
 } from "@workspace/db";
@@ -267,16 +267,19 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
   let dailyLossLimit = 100;
   let maxOpenPaperTrades = 2;
   try {
+    // The trader's own limits (user_risk_settings, the one limit store). An
+    // anonymous read has no trader, so it keeps the defaults above rather than
+    // borrowing another trader's row.
     const rs = userId == null
-      ? await db.select().from(riskSettingsTable).orderBy(desc(riskSettingsTable.id)).limit(1)
-      : await db.select().from(riskSettingsTable).where(eq(riskSettingsTable.userId, userId)).limit(1);
+      ? []
+      : await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1);
     if (rs[0]) {
       maxOpenPaperTrades = rs[0].maxOpenTrades ?? 2;
-      const pct = rs[0].maxDailyLossPct ?? 2;
+      const pct = rs[0].maxDailyLossPercent ?? 2;
       dailyLossLimit = Math.max(10, Math.round(pct * 50)); // simple proxy: $50 per 1%
     }
-    dataSourcesRead.push("risk_settings");
-  } catch { missingDataSources.push("risk_settings"); }
+    dataSourcesRead.push("user_risk_settings");
+  } catch { missingDataSources.push("user_risk_settings"); }
 
   // --- Apply simulate overrides ---
   if (overrides?.forceDailyPnl !== undefined) dailyPnl = overrides.forceDailyPnl;

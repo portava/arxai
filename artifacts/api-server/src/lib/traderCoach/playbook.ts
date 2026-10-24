@@ -129,7 +129,7 @@ export async function generatePlaybook(opts: GeneratePlaybookOpts = {}): Promise
       "Stop loss is mandatory",
       "Take profit is mandatory",
       "Risk score must be below your configured maximum",
-      "Position size must respect risk_settings.maxOpenTrades",
+      "Position size must respect your max open trades (Risk Governor settings)",
     ];
     const invalidationRules = [
       "Edge score drops below 0 over the next 10 paper trades",

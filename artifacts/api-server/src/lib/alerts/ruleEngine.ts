@@ -22,7 +22,6 @@ import {
   brokerHealthStateTable,
   livePositionsTable,
   weeklyPerformanceReviewsTable,
-  riskSettingsTable,
   tradesTable,
   performanceDailyTable,
   userRiskSettingsTable,
@@ -242,9 +241,10 @@ async function weeklyReviewReadyRule() {
 }
 
 async function nearDailyLossLimitRule() {
-  // Per trader: today's performance_daily row against the stricter of the
-  // trader's own daily-loss percent and the platform's; alert at >= 80%.
-  const platform = (await db.select().from(riskSettingsTable).limit(1))[0];
+  // Per trader: today's performance_daily row against the trader's own
+  // daily-loss percent (user_risk_settings); alert at >= 80%. It used to also
+  // take the first risk_settings row as a "platform" figure, which was
+  // whichever trader's row came back first.
 
   const today = new Date();
   const dayKey = today.toISOString().slice(0, 10);
@@ -261,7 +261,7 @@ async function nearDailyLossLimitRule() {
 
   let any = false;
   for (const day of losing) {
-    const pcts = [ownPct.get(day.userId!), platform?.maxDailyLossPct].filter((p): p is number => typeof p === "number" && p > 0);
+    const pcts = [ownPct.get(day.userId!)].filter((p): p is number => typeof p === "number" && p > 0);
     if (pcts.length === 0) continue;
     // Equity baseline for the max-loss budget. We use the recorded endBalance
     // as the basis; we never fabricate a placeholder capital figure. Without a

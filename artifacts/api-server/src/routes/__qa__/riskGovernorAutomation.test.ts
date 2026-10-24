@@ -41,7 +41,7 @@ mock.module("../../lib/marketData/marketDataService.js", {
 
 const {
   authUserSessionsTable, db, notificationsTable, paperAccountsTable, paperExecutionsTable,
-  paperOrdersTable, paperTradeEventsTable, riskSettingsTable, userRiskEventsTable, usersTable,
+  paperOrdersTable, paperTradeEventsTable, riskSettingsTable, userRiskEventsTable, userRiskSettingsTable, usersTable,
 } = await import("@workspace/db");
 const { executePaperFromDecision } = await import("../../lib/paperExecution/paperExecutionService.js");
 
@@ -55,6 +55,7 @@ async function deleteFixtures(): Promise<void> {
   if (!ids.length) return;
   await db.delete(userRiskEventsTable).where(inArray(userRiskEventsTable.userId, ids));
   await db.delete(riskSettingsTable).where(inArray(riskSettingsTable.userId, ids));
+  await db.delete(userRiskSettingsTable).where(inArray(userRiskSettingsTable.userId, ids));
   await db.delete(notificationsTable).where(inArray(notificationsTable.userId, ids));
   await db.delete(paperExecutionsTable).where(inArray(paperExecutionsTable.userId, ids));
   await db.delete(paperTradeEventsTable).where(inArray(paperTradeEventsTable.userId, ids));
@@ -112,8 +113,8 @@ after(async () => {
 
 test("C demo automated: automation is sized to the trader's lot cap, opens, and the pass is audited as automation", async (t) => {
   const acct = await resetPaper();
-  await db.insert(riskSettingsTable).values({ userId, maxLotSize: 0.2 })
-    .onConflictDoUpdate({ target: riskSettingsTable.userId, set: { maxLotSize: 0.2 } });
+  await db.insert(userRiskSettingsTable).values({ userId, maxPositionSize: 0.2 })
+    .onConflictDoUpdate({ target: userRiskSettingsTable.userId, set: { maxPositionSize: 0.2 } });
   const res = await executePaperFromDecision(decision(), nextDecisionId(), { ownerUserId: userId, paperAccountId: acct, origin: "automation" });
   if (res.status !== "PAPER_OPENED" && /RISK_GOVERNOR_BLOCK\[/.test(res.rejection_reason ?? "") === false) {
     // The account-level paper governor (Build HH) or eligibility refused before sizing.

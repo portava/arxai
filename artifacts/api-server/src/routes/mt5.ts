@@ -3,7 +3,7 @@ import { applyOwnPositionSnapshot } from "../lib/mt5/executionReconciler.js";
 import { noteBridgeHeartbeat, scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod/v4";
-import { db, mt5CommandsTable, mt5StateTable, riskSettingsTable, sharedMasterAccountsTable, sharedTradeAttributionTable, arxSymbolSpecsTable } from "@workspace/db";
+import { db, mt5CommandsTable, mt5StateTable, sharedMasterAccountsTable, sharedTradeAttributionTable, arxSymbolSpecsTable } from "@workspace/db";
 import { recordUnattributedMasterTrade } from "../lib/mt5/unattributedMasterTrades.js";
 import { mapV150Enumeration, type V150EnumEntry } from "../lib/mt5/symbolDirectory.js";
 import { ingestEaCapabilities } from "../lib/mt5/eaCapabilityMapping.js";

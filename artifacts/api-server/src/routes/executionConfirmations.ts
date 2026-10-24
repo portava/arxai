@@ -8,7 +8,7 @@
 // event for full audit trail.
 
 import { Router } from "express";
-import { db, executionConfirmationsTable, riskSettingsTable, vaultEventsTable } from "@workspace/db";
+import { db, executionConfirmationsTable, vaultEventsTable } from "@workspace/db";
 import { and, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, riskSettingsTable, riskLocksTable, tradesTable, vaultEventsTable } from "@workspace/db";
+import { db, riskLocksTable, tradesTable, vaultEventsTable } from "@workspace/db";
 import { and, desc, eq, gte, isNull, or } from "drizzle-orm";
 import {
   CreateRiskLockBody,

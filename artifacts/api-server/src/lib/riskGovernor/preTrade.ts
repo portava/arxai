@@ -172,14 +172,6 @@ export interface StoredLimitRows {
     blockAfterDailyLossHit: boolean;
     requireStopLoss: boolean;
   } & OptionalExposureLimits & StoredDisciplineSettings & { symbolLimits?: unknown } | null;
-  /** risk_settings (legacy per-user limits page). */
-  legacySettings?: {
-    maxDailyLossPct: number;
-    maxLotSize: number;
-    riskPerTradePct: number;
-    maxOpenTrades: number;
-    maxTradesPerDay?: number | null;
-  } | null;
   /** user_risk_limits (admin-set hard limits). */
   adminLimits?: {
     maxLotSize: number;
@@ -237,8 +229,6 @@ const USER_DEFAULTS = {
 
 function resolveDiscipline(
   u: StoredLimitRows["userSettings"],
-  legacyMaxOpen: number | null | undefined,
-  legacyMaxTradesPerDay: number | null | undefined,
   adminMaxTradesPerDay: number | null | undefined,
   sources: Record<string, string>,
 ): DisciplineLimits {
@@ -247,12 +237,10 @@ function resolveDiscipline(
   const positive = (v: number | null | undefined) => (v != null && Number.isFinite(v) && v > 0 ? v : null);
   const open = strictest([
     [u ? "user_risk_settings.max_open_trades" : "default:user_risk_settings.max_open_trades", u ? u.maxOpenTrades : USER_DEFAULTS.maxOpenTrades],
-    ["risk_settings.max_open_trades", legacyMaxOpen],
   ]);
   sources["maxOpenTrades"] = open.source;
   const perDay = strictest([
     [u ? "user_risk_settings.max_trades_per_day" : "default:user_risk_settings.max_trades_per_day", pick("maxTradesPerDay", u?.maxTradesPerDay)],
-    ["risk_settings.max_trades_per_day", legacyMaxTradesPerDay],
     ["user_risk_limits.max_trades_per_day", adminMaxTradesPerDay],
   ]);
   sources["maxTradesPerDay"] = perDay.source;
@@ -288,21 +276,18 @@ function strictest(
 /** Strictest of every stored limit wins; platform ceilings bound all of them. */
 export function resolveEffectiveLimits(rows: StoredLimitRows): EffectiveLimits {
   const u = rows.userSettings ?? null;
-  const l = rows.legacySettings ?? null;
   const a = rows.adminLimits ?? null;
   const sources: Record<string, string> = {};
 
   const lot = strictest([
     ["platform", PLATFORM_RISK_CEILINGS.maxLotSize],
     ["user_risk_settings.max_position_size", u?.maxPositionSize],
-    ["risk_settings.max_lot_size", l?.maxLotSize],
     ["user_risk_limits.max_lot_size", a?.maxLotSize],
   ]);
   sources["maxLotSize"] = lot.source;
 
   const perTradePct = strictest([
     ["user_risk_settings.max_risk_per_trade_percent", u ? u.maxRiskPerTradePercent : USER_DEFAULTS.maxRiskPerTradePercent],
-    ["risk_settings.risk_per_trade_pct", l?.riskPerTradePct],
   ]);
   sources["maxRiskPerTradePercent"] = u ? perTradePct.source : `default:${perTradePct.source}`;
 
@@ -315,7 +300,6 @@ export function resolveEffectiveLimits(rows: StoredLimitRows): EffectiveLimits {
   const dailyPct = userDailyOn
     ? strictest([
         ["user_risk_settings.max_daily_loss_percent", u ? u.maxDailyLossPercent : USER_DEFAULTS.maxDailyLossPercent],
-        ["risk_settings.max_daily_loss_pct", l?.maxDailyLossPct],
       ])
     : { value: null, source: "disabled_by_user" };
   sources["maxDailyLossPercent"] = dailyPct.source;
@@ -327,10 +311,7 @@ export function resolveEffectiveLimits(rows: StoredLimitRows): EffectiveLimits {
 
   // Portfolio heat derives from the trader's own settings: per-trade risk
   // times the number of trades they allow open at once.
-  const maxOpen = Math.min(
-    u ? u.maxOpenTrades : USER_DEFAULTS.maxOpenTrades,
-    l?.maxOpenTrades && l.maxOpenTrades > 0 ? l.maxOpenTrades : Number.POSITIVE_INFINITY,
-  );
+  const maxOpen = u ? u.maxOpenTrades : USER_DEFAULTS.maxOpenTrades;
   const perTrade = perTradePct.value ?? USER_DEFAULTS.maxRiskPerTradePercent;
   const portfolio = strictest([
     ["platform", PLATFORM_RISK_CEILINGS.maxPortfolioRiskPercent],
@@ -379,7 +360,7 @@ export function resolveEffectiveLimits(rows: StoredLimitRows): EffectiveLimits {
     // Same reading as the Trade Action guard: an admin row set to "demo" keeps
     // the trader off live accounts. No admin row = no restriction here.
     liveAllowed: a ? String(a.allowedAccountType ?? "demo").toLowerCase() !== "demo" : true,
-    discipline: resolveDiscipline(u, l?.maxOpenTrades, l?.maxTradesPerDay, a?.maxTradesPerDay, sources),
+    discipline: resolveDiscipline(u, a?.maxTradesPerDay, sources),
     sources,
   };
 }

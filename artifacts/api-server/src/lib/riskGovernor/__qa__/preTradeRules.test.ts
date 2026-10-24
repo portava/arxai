@@ -69,11 +69,14 @@ test("baseline intent passes all 13 rules and reports every rule", () => {
 });
 
 test("rule 1 max_position_size: lot above the strictest stored cap blocks", () => {
-  const ctx = baseCtx({ limits: resolveEffectiveLimits({ legacySettings: { maxDailyLossPct: 50, maxLotSize: 0.05, riskPerTradePct: 5, maxOpenTrades: 5 } }) });
+  const ctx = baseCtx({ limits: resolveEffectiveLimits({ userSettings: {
+    maxRiskPerTradePercent: 5, maxRiskPerTradeAmount: null, maxDailyLossPercent: 50, maxDailyLossAmount: null,
+    maxOpenTrades: 5, maxPositionSize: 0.05, blockAfterDailyLossHit: true, requireStopLoss: true,
+  } }) });
   // Raise per-trade risk room so only the lot cap is in play.
   const r = blockedOnly(baseIntent({ lots: 0.08, stopLoss: 1.0991 }), ctx, "max_position_size");
   assert.equal(r.measured?.["maxLotSize"], 0.05);
-  assert.equal(r.measured?.["source"], "risk_settings.max_lot_size");
+  assert.equal(r.measured?.["source"], "user_risk_settings.max_position_size");
 });
 
 test("rule 2 max_portfolio_exposure: open risk at stop plus the new trade above the cap blocks", () => {
@@ -292,8 +295,7 @@ test("combination: a CLOSE with an invalid quantity or a disconnected bridge is 
 
 test("limits: the strictest stored value wins and the platform ceiling bounds them all", () => {
   const l = resolveEffectiveLimits({
-    userSettings: { maxRiskPerTradePercent: 2, maxRiskPerTradeAmount: 80, maxDailyLossPercent: 4, maxDailyLossAmount: 500, maxOpenTrades: 4, maxPositionSize: 3, blockAfterDailyLossHit: true, requireStopLoss: false },
-    legacySettings: { maxDailyLossPct: 2, maxLotSize: 10, riskPerTradePct: 0.5, maxOpenTrades: 2 },
+    userSettings: { maxRiskPerTradePercent: 0.5, maxRiskPerTradeAmount: 80, maxDailyLossPercent: 2, maxDailyLossAmount: 500, maxOpenTrades: 2, maxPositionSize: 3, blockAfterDailyLossHit: true, requireStopLoss: false },
     adminLimits: { maxLotSize: 0.5, maxDailyLossUsd: 300 },
   });
   assert.equal(l.maxLotSize, 0.5);
@@ -303,8 +305,8 @@ test("limits: the strictest stored value wins and the platform ceiling bounds th
   assert.equal(l.maxDailyLossPercent, 2);
   assert.equal(l.maxDailyLossAmount, 300);
   assert.equal(l.requireStopLoss, false);
-  assert.equal(l.maxPortfolioRiskPercent, 1); // 0.5% × min(4, 2) open trades
-  const none = resolveEffectiveLimits({ legacySettings: { maxDailyLossPct: 2, maxLotSize: 99, riskPerTradePct: 1, maxOpenTrades: 3 } });
+  assert.equal(l.maxPortfolioRiskPercent, 1); // 0.5% × 2 open trades
+  const none = resolveEffectiveLimits({ userSettings: { maxRiskPerTradePercent: 1, maxRiskPerTradeAmount: null, maxDailyLossPercent: 2, maxDailyLossAmount: null, maxOpenTrades: 3, maxPositionSize: 99, blockAfterDailyLossHit: true, requireStopLoss: true } });
   assert.equal(none.maxLotSize, PLATFORM_RISK_CEILINGS.maxLotSize);
 });
 

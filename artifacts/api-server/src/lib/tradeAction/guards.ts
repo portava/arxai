@@ -11,10 +11,11 @@
 //   5.  user is not suspended         (users.suspendedAt is null)
 //   6.  routing mode resolves         (resolveRouting)
 //   7.  account type matches mode     (LIVE→live, DEMO→demo/unknown)
-//   8.  risk limits pass              (lot vs max lot)
+//   8.  risk limits pass              (platform hard lot cap; the trader's own
+//                                      lot cap is enforced by the Risk Governor, 8b)
 //   9.  command is not a duplicate    (5-min window same user+trade+type)
 //  10.  action has not expired        (expiresAt)
-//  11.  live disclosure accepted      (riskSettings.liveDisclosureAcknowledgedAt)
+//  11.  live disclosure accepted      (user_readiness_state.live_disclosure_accepted_at)
 //  12.  explicit confirmation         (confirmedByUser=true for LIVE)
 //  13.  audit log written             (recorded after pass)
 //  14.  command queueable to a resolved MT5 connection (only for real
@@ -24,7 +25,7 @@ import { db } from "@workspace/db";
 import {
   usersTable,
   tradeActionRequestsTable,
-  riskSettingsTable,
+  userReadinessStateTable,
 } from "@workspace/db/schema";
 import { and, eq, gte, ne } from "drizzle-orm";
 import { getStatus as getSafetyStatus } from "../safetyCore.js";
@@ -80,8 +81,8 @@ export interface ActionGuardPrefetched {
   routing?: Awaited<ReturnType<typeof resolveRouting>>;
   /** users row for this userId. */
   user?: { id: number; suspendedAt?: Date | null } | null;
-  /** risk_settings row (used for max lot + live disclosure). */
-  riskSettings?: { maxLotSize?: number | null; liveDisclosureAcknowledgedAt?: Date | null } | null;
+  /** When the trader accepted the live trading disclosure (user_readiness_state); null = never. */
+  liveDisclosureAcceptedAt?: Date | null;
   /** ISO timestamp the cache was filled — for "stale data" callouts upstream. */
   cachedAt?: string;
   /** Where the cached data came from ('radar-scan' | 'action-center' | etc.). */
@@ -154,15 +155,8 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
   if (input.lotSize !== null && input.lotSize > MAX_LOT_HARD_CAP) {
     return fail("risk_limits", "risk limits pass", `Lot size ${input.lotSize} exceeds hard cap ${MAX_LOT_HARD_CAP}.`);
   }
-  try {
-    const rs = input.prefetched?.riskSettings !== undefined
-      ? input.prefetched.riskSettings
-      : (await db.select().from(riskSettingsTable).where(eq(riskSettingsTable.userId, input.userId)).limit(1))[0];
-    const maxLot = (rs as { maxLotSize?: number | null } | undefined)?.maxLotSize ?? null;
-    if (rs && maxLot && input.lotSize !== null && input.lotSize > maxLot) {
-      return fail("risk_limits", "risk limits pass", `Lot size ${input.lotSize} exceeds your max ${maxLot}.`);
-    }
-  } catch { /* risk settings table optional */ }
+  // The trader's own lot cap lives in user_risk_settings and is enforced, with
+  // the operator's and the platform's, by the Risk Governor below (8b).
   pass("risk_limits", "risk limits pass");
 
   // 8b. Central Risk Governor enforcement — max open trades, max trades/day,
@@ -189,9 +183,6 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
     connectionId: routing.connectionId ?? null,
     virtualAccountId: routing.virtualAccountId,
     previewMode: input.previewMode,
-    prefetched: input.prefetched ? {
-      riskSettings: input.prefetched.riskSettings,
-    } : undefined,
   });
   if (!rg.passed) {
     return fail("risk_governor", "risk governor allows this action", rg.reason ?? "Blocked by Risk Governor.");
@@ -228,10 +219,11 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
   // 11. Live disclosure accepted.
   if (input.requestedMode === "LIVE") {
     try {
-      const rs = input.prefetched?.riskSettings !== undefined
-        ? input.prefetched.riskSettings
-        : (await db.select().from(riskSettingsTable).where(eq(riskSettingsTable.userId, input.userId)).limit(1))[0];
-      const ack = (rs as { liveDisclosureAcknowledgedAt?: Date | null } | undefined)?.liveDisclosureAcknowledgedAt ?? null;
+      // The disclosure is accepted on the readiness page (routes/userReadiness.ts).
+      const ack = input.prefetched?.liveDisclosureAcceptedAt !== undefined
+        ? input.prefetched.liveDisclosureAcceptedAt
+        : (await db.select({ at: userReadinessStateTable.liveDisclosureAcceptedAt }).from(userReadinessStateTable)
+          .where(eq(userReadinessStateTable.userId, input.userId)).limit(1))[0]?.at ?? null;
       if (!ack) return fail("live_disclosure", "live disclosure accepted", "Live disclosure must be acknowledged before live actions.");
     } catch {
       return fail("live_disclosure", "live disclosure accepted", "Live disclosure status unavailable; cannot confirm live action.");
