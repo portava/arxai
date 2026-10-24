@@ -18,14 +18,13 @@
 // sole rule that blocked and the trader's settings allow overrides. The 12
 // exposure rules and the stop switches can never be overridden.
 
+import { livePositionLedger, demoPositionLedger, livePositionColumns, demoPositionColumns } from "../positions/ledger.js";
 import { db } from "@workspace/db";
 import {
   userRiskSettingsTable,
   userRiskLimitsTable,
   paperAccountsTable,
   paperOrdersTable,
-  livePositionsTable,
-  arxLivePositionsTable,
   tradesTable,
   tradeActionRequestsTable,
   arxLiveCommandsTable,
@@ -331,12 +330,14 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
   // (arx_live_positions); DEMO reads the EA-synced live_positions.
   type OpenRow = { id: number; symbol: string; side: string; lots: number; entryPrice: number; stopLoss: number | null; floating: number | null; at: Date };
   const posRows: OpenRow[] = intent.venue === "LIVE"
-    ? (await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt))))
+    ? (await livePositionLedger.read({
+      where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
+    }))
         .map((p) => ({ id: p.id, symbol: p.symbol, side: p.side, lots: p.volume, entryPrice: p.entryPrice,
           stopLoss: p.stopLoss, floating: p.floatingPl, at: p.openedAt }))
-    : (await db.select().from(livePositionsTable).where(and(
-        eq(livePositionsTable.userId, userId), ne(livePositionsTable.status, "CLOSED"))))
+    : (await demoPositionLedger.read({
+      where: and(eq(demoPositionColumns.userId, userId), ne(demoPositionColumns.status, "CLOSED")),
+    }))
         .map((p) => ({ id: p.id, symbol: p.symbol, side: p.direction, lots: p.lotSize, entryPrice: p.entryPrice,
           stopLoss: p.stopLoss, floating: p.unrealizedProfitLoss, at: p.openedAt ?? p.createdAt }));
   const sided = posRows.filter((p): p is OpenRow & { side: "BUY" | "SELL" } => p.side === "BUY" || p.side === "SELL");
@@ -381,9 +382,15 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
   // Realized today: LIVE uses the live ledger's closing P/L (the same bucket
   // the dispatch daily-loss gate reads); DEMO uses the trades journal.
   const [r] = intent.venue === "LIVE"
-    ? await db.select({ s: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)::float8` })
-        .from(arxLivePositionsTable).where(and(eq(arxLivePositionsTable.userId, userId),
-          gte(arxLivePositionsTable.closedAt, startOfTodayUtc(now))))
+    ? await livePositionLedger.select(
+      { s: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)::float8` },
+      {
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          gte(livePositionColumns.closedAt, startOfTodayUtc(now)),
+        ),
+      },
+    )
     : await db.select({ s: sql<number>`coalesce(sum(${tradesTable.pnl}), 0)::float8` })
         .from(tradesTable).where(and(eq(tradesTable.userId, userId), gte(tradesTable.closedAt, startOfTodayUtc(now))));
 
@@ -392,9 +399,14 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
   try {
     const day = startOfTodayUtc(now);
     const closes = intent.venue === "LIVE"
-      ? (await db.select({ closedAt: arxLivePositionsTable.closedAt, pnl: arxLivePositionsTable.floatingPl })
-          .from(arxLivePositionsTable).where(and(eq(arxLivePositionsTable.userId, userId), sql`${arxLivePositionsTable.closedAt} is not null`))
-          .orderBy(desc(arxLivePositionsTable.closedAt)).limit(ACTIVITY_CLOSES))
+      ? (await livePositionLedger.select(
+        { closedAt: livePositionColumns.closedAt, pnl: livePositionColumns.floatingPl },
+        {
+          where: and(eq(livePositionColumns.userId, userId), sql`${livePositionColumns.closedAt} is not null`),
+          orderBy: [desc(livePositionColumns.closedAt)],
+          limit: ACTIVITY_CLOSES,
+        },
+      ))
       : (await db.select({ closedAt: tradesTable.closedAt, pnl: tradesTable.pnl })
           .from(tradesTable).where(and(eq(tradesTable.userId, userId), sql`${tradesTable.closedAt} is not null`))
           .orderBy(desc(tradesTable.closedAt)).limit(ACTIVITY_CLOSES));

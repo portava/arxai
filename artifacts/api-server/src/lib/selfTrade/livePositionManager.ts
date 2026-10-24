@@ -16,14 +16,9 @@
 // - We only manage a position when the REAL broker row (arx_live_positions)
 //   exists; if it is absent we skip (never act on a phantom).
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { and, eq } from "drizzle-orm";
-import {
-  db,
-  selfTradeAgentExecutionsTable,
-  selfTradeDecisionsTable,
-  arxLivePositionsTable,
-  type SelfTradeAgent,
-} from "@workspace/db";
+import { db, selfTradeAgentExecutionsTable, selfTradeDecisionsTable, type SelfTradeAgent } from "@workspace/db";
 import {
   evaluateManagementAction,
   type TradeThesis,
@@ -73,16 +68,13 @@ export async function manageAgentPositions(
     if (!e.brokerTicket || e.executingUserId == null) continue;
 
     // The real broker position must exist — never manage a phantom.
-    const [pos] = await db
-      .select()
-      .from(arxLivePositionsTable)
-      .where(
-        and(
-          eq(arxLivePositionsTable.userId, e.executingUserId),
-          eq(arxLivePositionsTable.brokerTicket, e.brokerTicket),
-        ),
-      )
-      .limit(1);
+    const [pos] = await livePositionLedger.read({
+      where: and(
+        eq(livePositionColumns.userId, e.executingUserId),
+        eq(livePositionColumns.brokerTicket, e.brokerTicket),
+      ),
+      limit: 1,
+    });
     if (!pos || pos.closedAt != null) continue;
 
     const decision =

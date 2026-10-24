@@ -25,6 +25,7 @@
 //   are responsible for deciding whether to *block* on the deficit.
 //   This separation keeps the projection truthful regardless of mode.
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { getConnection } from "../brokerHub/connections.js";
 import { eq, inArray } from "drizzle-orm";
 import { openLiveExposureCondition } from "./livePositionExposure.js";
@@ -34,7 +35,6 @@ import {
   arxLiveCommandsTable,
   arxMasterAccountConfigTable,
   arxMasterBridgePoolTable,
-  arxLivePositionsTable,
   userSlotAllocationTable,
   type ArxMasterBridgePool,
 } from "@workspace/db";
@@ -124,10 +124,13 @@ export async function recomputeMasterPool(args?: {
     // Open exposure only — closed AND reconciled ghosts excluded via the shared
     // truth predicate so they can never inflate unrealized P/L or flip
     // is_over_allocated.
-    const openPositions = await db.select({
-      userId: arxLivePositionsTable.userId,
-      floatingPl: arxLivePositionsTable.floatingPl,
-    }).from(arxLivePositionsTable).where(openLiveExposureCondition());
+    const openPositions = await livePositionLedger.select(
+      {
+        userId: livePositionColumns.userId,
+        floatingPl: livePositionColumns.floatingPl,
+      },
+      { where: openLiveExposureCondition() },
+    );
     for (const p of openPositions) {
       if (allocUserIds.has(p.userId)) {
         totalUserUnrealizedPnl += Number(p.floatingPl ?? 0);
@@ -238,9 +241,12 @@ export async function getUserAllocationView(userId: number): Promise<{
   // shrinks the "available to trade" figure the user sees.
   // Open exposure only (shared truth predicate) — reconciled / orphan-resolved
   // rows must never shrink the user's available allocation.
-  const openRows = await db.select({
-    floatingPl: arxLivePositionsTable.floatingPl,
-  }).from(arxLivePositionsTable).where(openLiveExposureCondition(userId));
+  const openRows = await livePositionLedger.select(
+    {
+      floatingPl: livePositionColumns.floatingPl,
+    },
+    { where: openLiveExposureCondition(userId) },
+  );
   const openFloatingLoss = openRows.reduce(
     (s, r) => s + Math.min(0, Number(r.floatingPl ?? 0)),
     0,

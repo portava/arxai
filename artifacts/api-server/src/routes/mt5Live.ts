@@ -11,10 +11,11 @@
 //   from `mt5_demo_commands`; this file reads only from `arx_live_commands`.
 // - Per-user isolation: every query is scoped by `req.mt5Connection.userId`.
 
+import { livePositionWriter, livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { updateConnection, type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq, isNull, inArray, sql } from "drizzle-orm";
-import { db, arxLiveCommandsTable, arxLivePositionsTable } from "@workspace/db";
+import { db, arxLiveCommandsTable } from "@workspace/db";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { brokerAbsenceAutoReconcilePolicy } from "../lib/live/brokerAbsencePolicy.js";
 import { runBrokerAbsenceReconcile } from "../lib/live/brokerAbsenceReconcileRunner.js";
@@ -286,11 +287,10 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
     const openedAt = parseMt5Time(p["openedAt"] ?? p["openTime"]) ?? new Date();
     presentTickets.add(ticket);
 
-    const existing = await db.select().from(arxLivePositionsTable)
-      .where(and(
-        eq(arxLivePositionsTable.userId, conn.userId!),
-        eq(arxLivePositionsTable.brokerTicket, ticket),
-      )).limit(1);
+    const existing = await livePositionLedger.read({
+      where: and(eq(livePositionColumns.userId, conn.userId!), eq(livePositionColumns.brokerTicket, ticket)),
+      limit: 1,
+    });
 
     const common = {
       symbol,
@@ -322,8 +322,10 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
         const linkId = await findFillCommandId(conn.userId!, ticket);
         if (linkId) backfill = { sourceCommandId: linkId };
       }
-      await db.update(arxLivePositionsTable).set({ ...common, ...backfill })
-        .where(eq(arxLivePositionsTable.id, existing[0].id));
+      await livePositionWriter.update(
+        { ...common, ...backfill },
+        eq(livePositionColumns.id, existing[0].id),
+      );
     } else {
       // Link this snapshot position back to the ARX live command that opened it
       // (the broker ticket matches a LIVE_FILLED command for this user). When a
@@ -331,7 +333,7 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
       // is honestly flagged as a broker-detected position opened outside ARX. We
       // NEVER fabricate a link — only an exact broker-ticket match counts.
       const linkId = await findFillCommandId(conn.userId!, ticket);
-      await db.insert(arxLivePositionsTable).values({
+      await livePositionWriter.insert({
         userId: conn.userId!,
         brokerTicket: ticket,
         openedAt,
@@ -350,13 +352,13 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
   // initiate a close, only record one the broker already executed.
   let reconciledClosed = 0;
   try {
-    const openRows = await db.select({
-      id: arxLivePositionsTable.id,
-      brokerTicket: arxLivePositionsTable.brokerTicket,
-    }).from(arxLivePositionsTable).where(and(
-      eq(arxLivePositionsTable.userId, conn.userId!),
-      isNull(arxLivePositionsTable.closedAt),
-    ));
+    const openRows = await livePositionLedger.select(
+      {
+        id: livePositionColumns.id,
+        brokerTicket: livePositionColumns.brokerTicket,
+      },
+      { where: and(eq(livePositionColumns.userId, conn.userId!), isNull(livePositionColumns.closedAt)) },
+    );
     if (openRows.length > 0) {
       const filledCloses = await db.select({
         payload: arxLiveCommandsTable.payload,
@@ -374,14 +376,17 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
         })),
       );
       if (ghostIds.length > 0) {
-        await db.update(arxLivePositionsTable).set({
-          closedAt: new Date(),
-          lastSyncedAt: new Date(),
-        }).where(and(
-          eq(arxLivePositionsTable.userId, conn.userId!),
-          inArray(arxLivePositionsTable.id, ghostIds),
-          isNull(arxLivePositionsTable.closedAt),
-        ));
+        await livePositionWriter.update(
+          {
+            closedAt: new Date(),
+            lastSyncedAt: new Date(),
+          },
+          and(
+            eq(livePositionColumns.userId, conn.userId!),
+            inArray(livePositionColumns.id, ghostIds),
+            isNull(livePositionColumns.closedAt),
+          ),
+        );
         reconciledClosed = ghostIds.length;
       }
     }
@@ -397,31 +402,39 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
   // rows were already reset above (common). This only ACCUMULATES evidence —
   // it never stamps closed_at here. Best-effort; a failure must not fail ingest.
   try {
-    const absentOpen = await db.select({
-      id: arxLivePositionsTable.id,
-      brokerTicket: arxLivePositionsTable.brokerTicket,
-    }).from(arxLivePositionsTable).where(and(
-      eq(arxLivePositionsTable.userId, conn.userId!),
-      eq(arxLivePositionsTable.bridgeConnectionId, conn.id),
-      isNull(arxLivePositionsTable.closedAt),
-      isNull(arxLivePositionsTable.reconcileState),
-    ));
+    const absentOpen = await livePositionLedger.select(
+      {
+        id: livePositionColumns.id,
+        brokerTicket: livePositionColumns.brokerTicket,
+      },
+      {
+        where: and(
+          eq(livePositionColumns.userId, conn.userId!),
+          eq(livePositionColumns.bridgeConnectionId, conn.id),
+          isNull(livePositionColumns.closedAt),
+          isNull(livePositionColumns.reconcileState),
+        ),
+      },
+    );
     const absentIds = absentOpen
       .filter((r) => typeof r.brokerTicket === "string" && r.brokerTicket.length > 0 && !presentTickets.has(r.brokerTicket))
       .map((r) => r.id);
     if (absentIds.length > 0) {
-      await db.update(arxLivePositionsTable).set({
-        brokerAbsentSnapshotCount: sql`${arxLivePositionsTable.brokerAbsentSnapshotCount} + 1`,
-        lastBrokerAbsentAt: snapshotNow,
-        lastReliableSnapshotAt: snapshotNow,
-        firstBrokerAbsentAt: sql`coalesce(${arxLivePositionsTable.firstBrokerAbsentAt}, ${snapshotNow})`,
-      }).where(and(
-        eq(arxLivePositionsTable.userId, conn.userId!),
-        eq(arxLivePositionsTable.bridgeConnectionId, conn.id),
-        isNull(arxLivePositionsTable.closedAt),
-        isNull(arxLivePositionsTable.reconcileState),
-        inArray(arxLivePositionsTable.id, absentIds),
-      ));
+      await livePositionWriter.update(
+        {
+          brokerAbsentSnapshotCount: sql`${livePositionColumns.brokerAbsentSnapshotCount} + 1`,
+          lastBrokerAbsentAt: snapshotNow,
+          lastReliableSnapshotAt: snapshotNow,
+          firstBrokerAbsentAt: sql`coalesce(${livePositionColumns.firstBrokerAbsentAt}, ${snapshotNow})`,
+        },
+        and(
+          eq(livePositionColumns.userId, conn.userId!),
+          eq(livePositionColumns.bridgeConnectionId, conn.id),
+          isNull(livePositionColumns.closedAt),
+          isNull(livePositionColumns.reconcileState),
+          inArray(livePositionColumns.id, absentIds),
+        ),
+      );
     }
   } catch (err) {
     req.log.warn({ err }, "sync-live-positions broker-absence evidence tracking failed");

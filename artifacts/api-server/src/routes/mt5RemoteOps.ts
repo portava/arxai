@@ -14,6 +14,7 @@
 //   supported. Unsupported features come back with featureStatus = the admin
 //   warning, and the actionable payload is withheld.
 
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq, desc, isNull, inArray } from "drizzle-orm";
@@ -22,7 +23,6 @@ import {
   eaRemoteConfigTable,
   eaUpdateManifestTable,
   eaUpdateReportTable,
-  arxLivePositionsTable,
   arxLiveCommandsTable,
   arxLiveArmingTable,
   EA_UPDATE_REPORT_PHASES,
@@ -232,16 +232,10 @@ router.get("/mt5/update-check", bridgeAuthPerUserOnly, async (req: AugReq, res) 
     .where(eq(arxLiveArmingTable.userId, userId))
     .limit(1);
 
-  const openPositions = await db
-    .select({ id: arxLivePositionsTable.id })
-    .from(arxLivePositionsTable)
-    .where(
-      and(
-        eq(arxLivePositionsTable.userId, userId),
-        isNull(arxLivePositionsTable.closedAt),
-      ),
-    )
-    .limit(1);
+  const openPositions = await livePositionLedger.select(
+    { id: livePositionColumns.id },
+    { where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)), limit: 1 },
+  );
 
   const pendingCommands = await db
     .select({ id: arxLiveCommandsTable.id })

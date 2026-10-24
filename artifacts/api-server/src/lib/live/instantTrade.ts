@@ -24,7 +24,8 @@
 // unchanged. Phase 5: `"paper"` was removed from the production mode
 // union; the route layer rejects `accountMode=paper` with the canonical
 // "Paper Trading has been removed" 400 before this helper runs.
-import { db, userOneClickSettingsTable, oneClickAuditTable, arxLivePositionsTable, rubyCommandsTable } from "@workspace/db";
+import { livePositionLedger, livePositionColumns, type LivePositionRow } from "../positions/ledger.js";
+import { db, userOneClickSettingsTable, oneClickAuditTable, rubyCommandsTable } from "@workspace/db";
 import { and, eq, isNull, gte, inArray } from "drizzle-orm";
 import { getSymbolProfile } from "../data/chart/symbolProfile.js";
 import { loadAndEvaluateUserMasterLiveAccessGate } from "../mt5/userMasterLiveAccessGate.js";
@@ -258,8 +259,10 @@ async function rubyCapsCheck(
   if (intent.action !== "BUY" && intent.action !== "SELL") return { ok: true };
 
   if (settings.maxRubyOpenPositions != null) {
-    const open = await db.select({ c: arxLivePositionsTable.id }).from(arxLivePositionsTable)
-      .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)));
+    const open = await livePositionLedger.select(
+      { c: livePositionColumns.id },
+      { where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)) },
+    );
     if (open.length >= settings.maxRubyOpenPositions) {
       return { ok: false, reason: "RUBY_MAX_OPEN_POSITIONS_REACHED" };
     }
@@ -523,11 +526,10 @@ async function executeClose(args: {
     await writeAudit({ userId, action: "INSTANT_CLOSE_REJECTED", ip, ua, metadata: { intent, blockReason: "MISSING_POSITION_ID" } });
     return { ok: false, httpStatus: 400, error: "MISSING_POSITION_ID" };
   }
-  const pos = await db.select().from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      eq(arxLivePositionsTable.brokerTicket, intent.positionId),
-    )).limit(1);
+  const pos = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, intent.positionId)),
+    limit: 1,
+  });
   const row = pos[0];
   if (!row) {
     await writeAudit({ userId, action: "INSTANT_CLOSE_REJECTED", ip, ua, metadata: { intent, blockReason: "POSITION_NOT_FOUND" } });
@@ -560,11 +562,9 @@ async function executeCloseAll(args: {
   userId: number; ip?: string | null; ua?: string | null;
 }): Promise<InstantTradeResult> {
   const { userId, ip, ua } = args;
-  const positions = await db.select().from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      isNull(arxLivePositionsTable.closedAt),
-    ));
+  const positions = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
+  });
   let closed = 0;
   const failures: Array<{ positionId: string | null; reason: string }> = [];
   for (const p of positions) {
@@ -590,11 +590,10 @@ async function executeModify(args: {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "MISSING_POSITION_ID" } });
     return { ok: false, httpStatus: 400, error: "MISSING_POSITION_ID" };
   }
-  const pos = await db.select().from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      eq(arxLivePositionsTable.brokerTicket, intent.positionId),
-    )).limit(1);
+  const pos = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, intent.positionId)),
+    limit: 1,
+  });
   const row = pos[0];
   if (!row) {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "POSITION_NOT_FOUND" } });
@@ -643,7 +642,7 @@ async function executeModify(args: {
 // reduce-only, the SL gate doesn't apply).
 async function closeOnePosition(args: {
   userId: number;
-  position: typeof arxLivePositionsTable.$inferSelect;
+  position: LivePositionRow;
   // When set (PARTIAL_CLOSE), reduce only this many lots via the SAME
   // CLOSE_LIVE_POSITION draft. Must already be validated as > 0 and < full.
   closeVolume?: number;

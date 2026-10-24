@@ -8,15 +8,18 @@
 //   * No endpoint executes a trade. Close review is a preview only — the
 //     user must still POST /api/me/trades/close with confirmedByUser:true.
 
+import { demoPositionLedger, demoPositionColumns } from "../lib/positions/ledger.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import {
-  livePositionsTable, sharedTradeAttributionTable,
-  tradeIntelligenceSnapshotsTable, tradeExitAlertsTable,
-  tradeAlertPreferencesTable, sharedMasterAccountsTable,
-  tradeDecisionTimelineTable, tradeExitReviewsTable,
+  sharedTradeAttributionTable,
+  tradeIntelligenceSnapshotsTable,
+  tradeExitAlertsTable,
+  tradeAlertPreferencesTable,
+  sharedMasterAccountsTable,
+  tradeDecisionTimelineTable,
+  tradeExitReviewsTable,
   tradeExitPlansTable,
-  userNotificationsTable,
 } from "@workspace/db/schema";
 import { computeExitPlan } from "../lib/intelligence/exitPlan.js";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
@@ -60,8 +63,10 @@ async function resolveTrade(userId: number, tradeKey: string): Promise<ResolvedT
   if (tradeKey.startsWith("lp_")) {
     const id = Number(tradeKey.slice(3));
     if (!Number.isFinite(id) || id <= 0) return null;
-    const [r] = await db.select().from(livePositionsTable)
-      .where(and(eq(livePositionsTable.id, id), eq(livePositionsTable.userId, userId))).limit(1);
+    const [r] = await demoPositionLedger.read({
+      where: and(eq(demoPositionColumns.id, id), eq(demoPositionColumns.userId, userId)),
+      limit: 1,
+    });
     if (!r) return null;
     return {
       tradeKey, routingMode: "USER_OWNED_MT5",
@@ -480,9 +485,10 @@ router.get("/me/sniper-watchlist", async (req, res) => {
     // Gather open trade keys depending on routing mode (user-scoped reads).
     const keys: string[] = [];
     if (env.accountRoutingMode === "USER_OWNED_MT5") {
-      const rows = await db.select({ id: livePositionsTable.id })
-        .from(livePositionsTable)
-        .where(and(eq(livePositionsTable.userId, userId), eq(livePositionsTable.status, "OPEN")));
+      const rows = await demoPositionLedger.select(
+        { id: demoPositionColumns.id },
+        { where: and(eq(demoPositionColumns.userId, userId), eq(demoPositionColumns.status, "OPEN")) },
+      );
       for (const r of rows) keys.push(`lp_${r.id}`);
     } else {
       const rows = await db.select({ id: sharedTradeAttributionTable.id })

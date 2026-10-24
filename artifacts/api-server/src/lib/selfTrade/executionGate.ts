@@ -13,12 +13,12 @@
 // - Daily P/L, open-position counts, and trades-taken are derived from REAL
 //   execution rows / broker positions only — never from intents.
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { and, eq, inArray } from "drizzle-orm";
 import { openLiveExposureCondition } from "../live/livePositionExposure.js";
 import {
   db,
   selfTradeAgentExecutionsTable,
-  arxLivePositionsTable,
   type SelfTradeAgent,
   type SelfTradeAgentSettings,
   type SelfTradeAgentLedger,
@@ -111,7 +111,7 @@ export async function computeAgentDailyPnlUsd(
 
   const filled = execs.filter((e) => e.status === "FILLED" && e.brokerTicket != null);
 
-  // openPositionsCount is derived from the filtered arxLivePositionsTable query
+  // openPositionsCount is derived from the filtered livePositionColumns query
   // below, NOT from filled.length. A FILLED agent execution whose broker ticket
   // matches a reconciled (IGNORED/EXTERNAL/IMPORTED) live position must NOT
   // count as an open concurrent position — it carries no live exposure. Using
@@ -122,19 +122,9 @@ export async function computeAgentDailyPnlUsd(
   let floating = 0;
   if (executingUserId != null && filled.length > 0) {
     const tickets = filled.map((e) => e.brokerTicket as string);
-    const positions = await db
-      .select()
-      .from(arxLivePositionsTable)
-      .where(
-        // Shared open-exposure predicate (scoped to this user) AND the agent's
-        // filled tickets. Reconciled ghosts are broker-confirmed gone, so they
-        // never contribute floating P/L to the daily-P/L gate or inflate
-        // openPositionsCount.
-        and(
-          openLiveExposureCondition(executingUserId),
-          inArray(arxLivePositionsTable.brokerTicket, tickets),
-        ),
-      );
+    const positions = await livePositionLedger.read({
+      where: and(openLiveExposureCondition(executingUserId), inArray(livePositionColumns.brokerTicket, tickets)),
+    });
     // Derive from filtered live-positions truth — not agent-execution records —
     // so reconciled ghosts cannot inflate the concurrent-position gate.
     openPositionsCount = positions.length;

@@ -14,10 +14,11 @@
 //  - Emits POSITION_SELECTED on every read (via req.log) so we have an
 //    append-only trail of when each user viewed their open positions.
 
+import { livePositionLedger } from "../lib/positions/ledger.js";
 import { Router, type Request } from "express";
 import { desc, eq } from "drizzle-orm";
 import { db, mt5DemoCommandsTable } from "@workspace/db";
-import { arxLivePositionsTable } from "@workspace/db";
+
 import { requireUser } from "../lib/auth/middleware.js";
 import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
 import { getUserModeScope, modeScopeEnvelope } from "../lib/modeScope/getUserModeScope.js";
@@ -82,8 +83,7 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   // remaining reconciled rows passed it. Ghost reconcile (stale-floor) below
   // stays as defense-in-depth for not-yet-reconciled stale rows.
   const liveRowsAll = includeLive
-    ? await db.select().from(arxLivePositionsTable)
-        .where(openLiveExposureCondition(userId))
+    ? await livePositionLedger.read({ where: openLiveExposureCondition(userId) })
     : [];
   const LIVE_STALE_MS = 90_000;
   const newestLiveSync = liveRowsAll.reduce((max, r) => {

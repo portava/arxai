@@ -22,16 +22,11 @@
 //   otherwise an audit-warn row is logged and the dispatch result is still
 //   returned to the caller (the EA can still poll + execute).
 
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { Router, type Request } from "express";
 import { and, eq, desc } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
-import {
-  db,
-  arxLiveCommandsTable,
-  arxLivePositionsTable,
-  sharedTradeAttributionTable,
-  liveTradingAuditTable,
-} from "@workspace/db";
+import { db, arxLiveCommandsTable, sharedTradeAttributionTable, liveTradingAuditTable } from "@workspace/db";
 import {
   createLiveDraft,
   createLiveOpsDraft,
@@ -41,14 +36,14 @@ import {
   listMyLiveCommands,
   getMyLiveCommand,
 } from "../lib/live/liveCommandPipeline.js";
-import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabledAsync } from "../lib/live/phaseBConfig.js";
+import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
 import { resolveRouting } from "../lib/adminTrading/routingResolver.js";
 import { getUserRiskProfile, isOwnerRole } from "../lib/live/userRiskProfile.js";
 import { resolveBrokerSymbol } from "../lib/mt5/symbolDirectory.js";
 import { getBrokerSymbolSpec } from "../lib/mt5/brokerSymbolSpec.js";
 import { sharedMasterAccountsTable, virtualTradingAccountsTable, globalTradingSettingsTable } from "@workspace/db/schema";
 import { randomUUID } from "node:crypto";
-import { routeCandles, routeQuote } from "../lib/data/marketDataRouter.js";
+import { routeCandles } from "../lib/data/marketDataRouter.js";
 import { computeATR, classifyVolatility, type Candle } from "@workspace/domain/market";
 import { buildExecutionPreviewForUser } from "../lib/execution/executionPreviewService.js";
 import type {
@@ -594,11 +589,10 @@ router.post("/trades/live-shared/positions/:ticket/close", requireUser, async (r
   const sharedC = await requireSharedRouting(userId);
   if (!sharedC.ok) { res.status(sharedC.status).json(sharedC.body); return; }
   const ticket = String(req.params.ticket);
-  const rows = await db.select().from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      eq(arxLivePositionsTable.brokerTicket, ticket),
-    )).limit(1);
+  const rows = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, ticket)),
+    limit: 1,
+  });
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND", ...envelope() }); return; }
   const draft = await createLiveOpsDraft({
@@ -631,11 +625,10 @@ router.post("/trades/live-shared/positions/:ticket/modify", requireUser, async (
     res.status(400).json({ error: "NO_FIELDS_TO_MODIFY", detail: "Provide stopLoss and/or takeProfit", ...envelope() });
     return;
   }
-  const rows = await db.select().from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      eq(arxLivePositionsTable.brokerTicket, ticket),
-    )).limit(1);
+  const rows = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, ticket)),
+    limit: 1,
+  });
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND", ...envelope() }); return; }
   const draft = await createLiveOpsDraft({

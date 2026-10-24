@@ -13,14 +13,9 @@
 //    input degrades to an honest "unknown" in the engine, never a fabricated
 //    value, and never sim/mock/paper data treated as real.
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { and, desc, eq, gte, isNotNull, inArray, sql } from "drizzle-orm";
-import {
-  db,
-  arxLiveCommandsTable,
-  arxLivePositionsTable,
-  mt5DemoCommandsTable,
-  tradesTable,
-} from "@workspace/db";
+import { db, arxLiveCommandsTable, mt5DemoCommandsTable, tradesTable } from "@workspace/db";
 import {
   buildTradeHealthReport,
   type OpenPositionInput,
@@ -100,10 +95,7 @@ async function readOpenPositions(
   // reports as open). fillRecorded comes from the source command's real fill
   // price — never fabricated.
   if (includeLive) {
-    const liveRowsAll = await db
-      .select()
-      .from(arxLivePositionsTable)
-      .where(eq(arxLivePositionsTable.userId, userId));
+    const liveRowsAll = await livePositionLedger.read({ where: eq(livePositionColumns.userId, userId) });
     const newestSync = liveRowsAll.reduce((max, r) => {
       const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
       return t > max ? t : max;

@@ -16,13 +16,9 @@
 //     governed queue (lib/positions/governedOps.ts); these routes never edit
 //     the ledger to pretend the broker already did it.
 
+import { demoPositionWriter, demoPositionLedger, demoPositionColumns, type DemoPositionRow } from "../lib/positions/ledger.js";
 import { Router } from "express";
-import {
-  db,
-  livePositionsTable,
-  positionEventsTable,
-  vaultEventsTable,
-} from "@workspace/db";
+import { db, positionEventsTable, vaultEventsTable } from "@workspace/db";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
@@ -31,7 +27,13 @@ import {
   type LivePositionStatus,
 } from "@workspace/domain/live-position";
 import { requireUser } from "../lib/auth/middleware.js";
-import { findGovernedPosition, submitGovernedClose, submitGovernedModify, type GovernedOpResult, type GovernedPosition } from "../lib/positions/governedOps.js";
+import {
+  findGovernedPosition,
+  submitGovernedClose,
+  submitGovernedModify,
+  type GovernedOpResult,
+  type GovernedPosition,
+} from "../lib/positions/governedOps.js";
 import { canSeeLegacyRows, ownerScope } from "../lib/auth/ownerScope.js";
 import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
@@ -52,9 +54,10 @@ async function loadAccountEquity(): Promise<number | null> {
 // connection; those are operator rows (ADMIN/OWNER only). Anything else is 404.
 async function ownPosition(id: number, authUser: Parameters<typeof ownerScope>[1]) {
   if (!Number.isFinite(id)) return null;
-  const rows = await db.select().from(livePositionsTable)
-    .where(and(eq(livePositionsTable.id, id), ownerScope(livePositionsTable.userId, authUser)))
-    .limit(1);
+  const rows = await demoPositionLedger.read({
+    where: and(eq(demoPositionColumns.id, id), ownerScope(demoPositionColumns.userId, authUser)),
+    limit: 1,
+  });
   return rows[0] ?? null;
 }
 
@@ -64,12 +67,12 @@ async function ownPosition(id: number, authUser: Parameters<typeof ownerScope>[1
 // positions opened outside ARX are changed in the trading terminal.
 const POSITIONS_PAGE_SOURCE = "POSITIONS_PAGE";
 
-async function governedPositionFor(row: typeof livePositionsTable.$inferSelect, userId: number): Promise<GovernedPosition | null> {
+async function governedPositionFor(row: DemoPositionRow, userId: number): Promise<GovernedPosition | null> {
   if (row.userId !== userId || !row.brokerPositionId) return null;
   return findGovernedPosition(userId, row.brokerPositionId, row.lotSize);
 }
 
-function notGoverned(res: import("express").Response, row: typeof livePositionsTable.$inferSelect): void {
+function notGoverned(res: import("express").Response, row: DemoPositionRow): void {
   res.status(409).json({
     error: "NOT_AN_ARX_GOVERNED_POSITION",
     message: row.userId == null
@@ -120,7 +123,7 @@ async function appendVault(kind: string, severity: "INFO" | "WARN" | "DANGER", l
   });
 }
 
-function serializeLivePosition(row: typeof livePositionsTable.$inferSelect) {
+function serializeLivePosition(row: DemoPositionRow) {
   return {
     id: row.id,
     tradeId: row.tradeId,
@@ -159,8 +162,7 @@ async function syncFromBroker(visible: ReturnType<typeof ownerScope>) {
   // per-user rows can legitimately share a broker_position_id with these
   // NULL-user rows. Scope the existing-row read to user_id IS NULL so we
   // never read or update a tenant's row by ticket alone.
-  const existing = await db.select().from(livePositionsTable)
-    .where(isNull(livePositionsTable.userId));
+  const existing = await demoPositionLedger.read({ where: isNull(demoPositionColumns.userId) });
   const byBrokerId = new Map(existing.filter((r) => r.brokerPositionId).map((r) => [r.brokerPositionId!, r]));
 
   const seenBrokerIds = new Set<string>();
@@ -203,16 +205,25 @@ async function syncFromBroker(visible: ReturnType<typeof ownerScope>) {
       // concurrent /positions/sync calls from inserting duplicate rows.
       // ON CONFLICT DO NOTHING — if another sync raced us, returning is empty
       // and we'll pick up the row on the next cycle.
-      const inserted = await db.insert(livePositionsTable).values({
-        brokerPositionId: ticket,
-        symbol, direction, lotSize, entryPrice,
-        currentPrice, stopLoss, takeProfit,
-        unrealizedProfitLoss: verdict.unrealizedPnL,
-        rewardToRisk: verdict.rewardToRisk,
-        status: verdict.status,
-        openedAt: new Date(),
-        lastSyncedAt: new Date(),
-      }).onConflictDoNothing({ target: [livePositionsTable.userId, livePositionsTable.brokerPositionId] }).returning();
+      const inserted = await demoPositionWriter.insertReturning(
+        {
+          brokerPositionId: ticket,
+          symbol,
+          direction,
+          lotSize,
+          entryPrice,
+          currentPrice,
+          stopLoss,
+          takeProfit,
+          unrealizedProfitLoss: verdict.unrealizedPnL,
+          rewardToRisk: verdict.rewardToRisk,
+          status: verdict.status,
+          openedAt: new Date(),
+          lastSyncedAt: new Date(),
+        },
+        demoPositionColumns,
+        true,
+      );
       const row = inserted[0];
       if (row) {
         await appendEvent({ livePositionId: row.id, eventType: "OPENED",
@@ -251,15 +262,20 @@ async function syncFromBroker(visible: ReturnType<typeof ownerScope>) {
       }
     }
 
-    await db.update(livePositionsTable).set({
-      currentPrice, stopLoss, takeProfit,
-      unrealizedProfitLoss: verdict.unrealizedPnL,
-      rewardToRisk: verdict.rewardToRisk,
-      status: verdict.status,
-      lastSyncedAt: new Date(),
-      updatedAt: new Date(),
-      ...(POSITION_STATUS_TERMINAL[verdict.status] && !prev.closedAt ? { closedAt: new Date() } : {}),
-    }).where(eq(livePositionsTable.id, prev.id));
+    await demoPositionWriter.update(
+      {
+        currentPrice,
+        stopLoss,
+        takeProfit,
+        unrealizedProfitLoss: verdict.unrealizedPnL,
+        rewardToRisk: verdict.rewardToRisk,
+        status: verdict.status,
+        lastSyncedAt: new Date(),
+        updatedAt: new Date(),
+        ...(POSITION_STATUS_TERMINAL[verdict.status] && !prev.closedAt ? { closedAt: new Date() } : {}),
+      },
+      eq(demoPositionColumns.id, prev.id),
+    );
   }
 
   // Anything OPEN-ish that vanished from the feed → MANUALLY_CLOSED.
@@ -269,19 +285,21 @@ async function syncFromBroker(visible: ReturnType<typeof ownerScope>) {
     !POSITION_STATUS_TERMINAL[r.status as LivePositionStatus],
   );
   for (const row of openish) {
-    await db.update(livePositionsTable).set({
-      status: "MANUALLY_CLOSED",
-      closedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(livePositionsTable.id, row.id));
+    await demoPositionWriter.update(
+      {
+        status: "MANUALLY_CLOSED",
+        closedAt: new Date(),
+        updatedAt: new Date(),
+      },
+      eq(demoPositionColumns.id, row.id),
+    );
     await appendEvent({ livePositionId: row.id, eventType: "MANUAL_CLOSE",
       severity: "WARN", message: "Position vanished from broker feed — treated as manual close",
       oldValue: { status: row.status }, newValue: { status: "MANUALLY_CLOSED" } });
     await appendVault("POSITION_MANUAL_CLOSE", "WARN", row.id, { tradeId: row.tradeId });
   }
 
-  const after = await db.select().from(livePositionsTable).where(visible)
-    .orderBy(desc(livePositionsTable.updatedAt));
+  const after = await demoPositionLedger.read({ where: visible, orderBy: [desc(demoPositionColumns.updatedAt)] });
   return after;
 }
 
@@ -290,9 +308,10 @@ async function syncFromBroker(visible: ReturnType<typeof ownerScope>) {
 // GET /positions — current open positions (non-terminal statuses)
 router.get("/positions", requireUser, async (req, res) => {
   try {
-    const all = await db.select().from(livePositionsTable)
-      .where(ownerScope(livePositionsTable.userId, req.authUser))
-      .orderBy(desc(livePositionsTable.updatedAt));
+    const all = await demoPositionLedger.read({
+      where: ownerScope(demoPositionColumns.userId, req.authUser),
+      orderBy: [desc(demoPositionColumns.updatedAt)],
+    });
     const open = all.filter((r) => !POSITION_STATUS_TERMINAL[r.status as LivePositionStatus]);
     res.json({ positions: open.map(serializeLivePosition) });
   } catch (err) {
@@ -324,7 +343,7 @@ router.post("/positions/sync", requireUser, async (req, res): Promise<void> => {
       res.status(403).json({ error: "FORBIDDEN", message: "Only an operator can sync the shared broker feed." });
       return;
     }
-    const after = await syncFromBroker(ownerScope(livePositionsTable.userId, req.authUser));
+    const after = await syncFromBroker(ownerScope(demoPositionColumns.userId, req.authUser));
     res.json({ syncedAt: new Date().toISOString(), positions: after.map(serializeLivePosition) });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /positions/sync failed");

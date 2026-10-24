@@ -14,11 +14,11 @@
 //   * No secrets are read or written here. The route handler validates
 //     X-MT5-Bridge-Token before we ever run.
 
+import { demoPositionWriter, demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { db } from "@workspace/db";
 import {
   mt5CommandsTable,
   tradeActionRequestsTable,
-  livePositionsTable,
   sharedTradeAttributionTable,
   tradeCommandAuditLogTable,
   arxLiveCommandsTable,
@@ -333,12 +333,13 @@ export async function reconcileExecutionResult(input: {
         // EVERY live_positions read/write keyed on brokerPositionId MUST also
         // scope by userId to prevent cross-tenant corruption when tickets
         // collide across accounts.
-        const [lp] = await db.select().from(livePositionsTable)
-          .where(and(
-            eq(livePositionsTable.brokerPositionId, result.mt5PositionTicket),
-            eq(livePositionsTable.userId, command.userId),
-          ))
-          .limit(1);
+        const [lp] = await demoPositionLedger.read({
+          where: and(
+            eq(demoPositionColumns.brokerPositionId, result.mt5PositionTicket),
+            eq(demoPositionColumns.userId, command.userId),
+          ),
+          limit: 1,
+        });
         const closedLot = result.lotSizeFilled ?? command.lot ?? null;
         const openLot = lp?.lotSize ?? null;
         const isPartial = closedLot != null && openLot != null && closedLot > 0 && closedLot < openLot;
@@ -381,40 +382,51 @@ export async function reconcileExecutionResult(input: {
           }
         }
         if (isPartial && lp) {
-          await db.update(livePositionsTable).set({
-            lotSize: remaining!,
-            realizedProfitLoss: lp.realizedProfitLoss != null && realized != null
-              ? Number((lp.realizedProfitLoss + realized).toFixed(8))
-              : (realized ?? lp.realizedProfitLoss),
-            lastSyncedAt: now,
-            updatedAt: now,
-          }).where(eq(livePositionsTable.id, lp.id));
+          await demoPositionWriter.update(
+            {
+              lotSize: remaining!,
+              realizedProfitLoss:
+                lp.realizedProfitLoss != null && realized != null
+                  ? Number((lp.realizedProfitLoss + realized).toFixed(8))
+                  : (realized ?? lp.realizedProfitLoss),
+              lastSyncedAt: now,
+              updatedAt: now,
+            },
+            eq(demoPositionColumns.id, lp.id),
+          );
         } else {
-          await db.update(livePositionsTable).set({
-            status: "CLOSED",
-            closedAt: result.executedAt ?? now,
-            realizedProfitLoss: realized != null && lp?.realizedProfitLoss != null
-              ? Number((lp.realizedProfitLoss + realized).toFixed(8))
-              : (realized ?? lp?.realizedProfitLoss ?? null),
-            lastSyncedAt: now,
-            updatedAt: now,
-          }).where(and(
-            eq(livePositionsTable.brokerPositionId, result.mt5PositionTicket),
-            eq(livePositionsTable.userId, command.userId),
-          ));
+          await demoPositionWriter.update(
+            {
+              status: "CLOSED",
+              closedAt: result.executedAt ?? now,
+              realizedProfitLoss:
+                realized != null && lp?.realizedProfitLoss != null
+                  ? Number((lp.realizedProfitLoss + realized).toFixed(8))
+                  : (realized ?? lp?.realizedProfitLoss ?? null),
+              lastSyncedAt: now,
+              updatedAt: now,
+            },
+            and(
+              eq(demoPositionColumns.brokerPositionId, result.mt5PositionTicket),
+              eq(demoPositionColumns.userId, command.userId),
+            ),
+          );
         }
       }
     } else if (command.action === "MODIFY") {
       if (result.mt5PositionTicket && command.userId != null && (result.stopLoss != null || result.takeProfit != null)) {
-        await db.update(livePositionsTable).set({
-          stopLoss: result.stopLoss ?? undefined,
-          takeProfit: result.takeProfit ?? undefined,
-          lastSyncedAt: now,
-          updatedAt: now,
-        }).where(and(
-          eq(livePositionsTable.brokerPositionId, result.mt5PositionTicket),
-          eq(livePositionsTable.userId, command.userId),
-        ));
+        await demoPositionWriter.update(
+          {
+            stopLoss: result.stopLoss ?? undefined,
+            takeProfit: result.takeProfit ?? undefined,
+            lastSyncedAt: now,
+            updatedAt: now,
+          },
+          and(
+            eq(demoPositionColumns.brokerPositionId, result.mt5PositionTicket),
+            eq(demoPositionColumns.userId, command.userId),
+          ),
+        );
       }
     }
 
@@ -609,8 +621,14 @@ async function recordPartialFillEvidence(
 export async function applyOwnPositionSnapshot(userId: number,
   positions: Array<{ ticket: number | string; lot: number; sl?: number | null; tp?: number | null; side?: string; symbol?: string; entry?: number }>,
   now = new Date()): Promise<number> {
-  const rows = await db.select({ id: livePositionsTable.id, ticket: livePositionsTable.brokerPositionId, status: livePositionsTable.status })
-    .from(livePositionsTable).where(eq(livePositionsTable.userId, userId));
+  const rows = await demoPositionLedger.select(
+    {
+      id: demoPositionColumns.id,
+      ticket: demoPositionColumns.brokerPositionId,
+      status: demoPositionColumns.status,
+    },
+    { where: eq(demoPositionColumns.userId, userId) },
+  );
   const open = new Map(rows.filter((r) => r.ticket && r.status !== "CLOSED").map((r) => [r.ticket!, r.id]));
   const known = new Set(rows.map((r) => r.ticket).filter((t): t is string => !!t));
   const untracked = positions.map((p) => String(p.ticket)).filter((t) => !known.has(t));
@@ -625,19 +643,37 @@ export async function applyOwnPositionSnapshot(userId: number,
     const ticket = String(p.ticket);
     const side = String(p.side ?? "").toUpperCase();
     if (governed.has(ticket) && p.symbol && (side === "BUY" || side === "SELL")) {
-      await db.insert(livePositionsTable).values({
-        userId, brokerPositionId: ticket, symbol: p.symbol, direction: side, lotSize: p.lot,
-        entryPrice: p.entry ?? 0, stopLoss: p.sl ?? null, takeProfit: p.tp ?? null,
-        status: "OPEN", openedAt: now, lastSyncedAt: now,
-      }).onConflictDoNothing({ target: [livePositionsTable.userId, livePositionsTable.brokerPositionId] });
+      await demoPositionWriter.insert(
+        {
+          userId,
+          brokerPositionId: ticket,
+          symbol: p.symbol,
+          direction: side,
+          lotSize: p.lot,
+          entryPrice: p.entry ?? 0,
+          stopLoss: p.sl ?? null,
+          takeProfit: p.tp ?? null,
+          status: "OPEN",
+          openedAt: now,
+          lastSyncedAt: now,
+        },
+        true,
+      );
       refreshed++;
       continue;
     }
     const id = open.get(ticket);
     if (id == null) continue;
-    await db.update(livePositionsTable).set({
-      lotSize: p.lot, stopLoss: p.sl ?? null, takeProfit: p.tp ?? null, lastSyncedAt: now, updatedAt: now,
-    }).where(and(eq(livePositionsTable.id, id), eq(livePositionsTable.userId, userId)));
+    await demoPositionWriter.update(
+      {
+        lotSize: p.lot,
+        stopLoss: p.sl ?? null,
+        takeProfit: p.tp ?? null,
+        lastSyncedAt: now,
+        updatedAt: now,
+      },
+      and(eq(demoPositionColumns.id, id), eq(demoPositionColumns.userId, userId)),
+    );
     refreshed++;
   }
   return refreshed;
@@ -656,39 +692,48 @@ async function upsertLivePositionOpen(args: {
 }): Promise<number> {
   // UX9 P1: scope upsert lookup by userId. brokerPositionId alone is not
   // globally unique across MT5 accounts; cross-tenant overwrite was possible.
-  const [existing] = await db.select({ id: livePositionsTable.id })
-    .from(livePositionsTable)
-    .where(and(
-      eq(livePositionsTable.brokerPositionId, args.brokerPositionId),
-      eq(livePositionsTable.userId, args.userId),
-    ))
-    .limit(1);
+  const [existing] = await demoPositionLedger.select(
+    { id: demoPositionColumns.id },
+    {
+      where: and(
+        eq(demoPositionColumns.brokerPositionId, args.brokerPositionId),
+        eq(demoPositionColumns.userId, args.userId),
+      ),
+      limit: 1,
+    },
+  );
   if (existing) {
-    await db.update(livePositionsTable).set({
-      status: "OPEN",
-      lotSize: args.lotSize,
-      entryPrice: args.entryPrice,
-      stopLoss: args.stopLoss ?? undefined,
-      takeProfit: args.takeProfit ?? undefined,
-      openedAt: args.openedAt,
-      lastSyncedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(livePositionsTable.id, existing.id));
+    await demoPositionWriter.update(
+      {
+        status: "OPEN",
+        lotSize: args.lotSize,
+        entryPrice: args.entryPrice,
+        stopLoss: args.stopLoss ?? undefined,
+        takeProfit: args.takeProfit ?? undefined,
+        openedAt: args.openedAt,
+        lastSyncedAt: new Date(),
+        updatedAt: new Date(),
+      },
+      eq(demoPositionColumns.id, existing.id),
+    );
     return existing.id;
   }
-  const [inserted] = await db.insert(livePositionsTable).values({
-    userId: args.userId,
-    brokerPositionId: args.brokerPositionId,
-    symbol: args.symbol,
-    direction: args.direction,
-    lotSize: args.lotSize,
-    entryPrice: args.entryPrice,
-    stopLoss: args.stopLoss,
-    takeProfit: args.takeProfit,
-    status: "OPEN",
-    openedAt: args.openedAt,
-    lastSyncedAt: new Date(),
-  }).returning({ id: livePositionsTable.id });
+  const [inserted] = await demoPositionWriter.insertReturning(
+    {
+      userId: args.userId,
+      brokerPositionId: args.brokerPositionId,
+      symbol: args.symbol,
+      direction: args.direction,
+      lotSize: args.lotSize,
+      entryPrice: args.entryPrice,
+      stopLoss: args.stopLoss,
+      takeProfit: args.takeProfit,
+      status: "OPEN",
+      openedAt: args.openedAt,
+      lastSyncedAt: new Date(),
+    },
+    { id: demoPositionColumns.id },
+  );
   return inserted!.id;
 }
 
@@ -727,5 +772,5 @@ export function brokerRejectionHint(code: string | null | undefined, message: st
 export const COMMAND_TABLE_REF = mt5CommandsTable;
 export const ACTION_REQUEST_REF = tradeActionRequestsTable;
 export const SHARED_ATTR_REF = sharedTradeAttributionTable;
-export const LIVE_POSITION_REF = livePositionsTable;
+export const LIVE_POSITION_REF = demoPositionColumns;
 export const IS_NOT_NULL_HELPER = isNotNull;

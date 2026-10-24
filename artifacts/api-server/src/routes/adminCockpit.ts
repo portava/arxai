@@ -19,6 +19,7 @@
 //   trade; it is a self-contained structural comparator over real candles
 //   (honest-empty on insufficient history).
 
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { listConnections } from "../lib/brokerHub/connections.js";
 import express, { Router, type Request, type Response } from "express";
 import { z } from "zod";
@@ -28,10 +29,8 @@ import {
   usersTable,
   userMasterLiveAccessTable,
   investorProfilesTable,
-  arxLivePositionsTable,
   arxLiveArmingTable,
   strategyPoolsTable,
-  strategyPoolNavTable,
   investorPoolHoldingsTable,
   adminCockpitAuditLogTable,
   adminCockpitAlertsTable,
@@ -61,7 +60,6 @@ import { routeCandles } from "../lib/data/marketDataRouter.js";
 import {
   runPatternSyncEngine,
   patternMatchScore,
-  PATTERN_SYNC_MIN_CANDLES,
   type PatternSyncCandle,
   type PatternSyncEngineResult,
 } from "../lib/patternSync/patternSyncEngine.js";
@@ -205,13 +203,14 @@ async function computeTraderRows(): Promise<TraderRow[]> {
       userId: arxLiveArmingTable.userId,
       isArmed: arxLiveArmingTable.isArmed,
     }).from(arxLiveArmingTable),
-    db.select({
-      userId: arxLivePositionsTable.userId,
-      cnt: sql<number>`cast(count(*) as int)`,
-      floating: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)`,
-    }).from(arxLivePositionsTable)
-      .where(isNull(arxLivePositionsTable.closedAt))
-      .groupBy(arxLivePositionsTable.userId),
+    livePositionLedger.select(
+      {
+        userId: livePositionColumns.userId,
+        cnt: sql<number>`cast(count(*) as int)`,
+        floating: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
+      },
+      { where: isNull(livePositionColumns.closedAt), groupBy: [livePositionColumns.userId] },
+    ),
     db.select({
       userId: investorProfilesTable.userId,
       displayName: investorProfilesTable.displayName,
@@ -364,10 +363,13 @@ router.get("/admin/cockpit/overview", async (req, res) => {
     computeTraderRows(),
     db.select({ status: investorProfilesTable.status }).from(investorProfilesTable),
     listConnections({ order: "oldest" }),
-    db.select({
-      cnt: sql<number>`cast(count(*) as int)`,
-      floating: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)`,
-    }).from(arxLivePositionsTable).where(isNull(arxLivePositionsTable.closedAt)),
+    livePositionLedger.select(
+      {
+        cnt: sql<number>`cast(count(*) as int)`,
+        floating: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
+      },
+      { where: isNull(livePositionColumns.closedAt) },
+    ),
     getGlobalSettings(),
     resolveLiveBrokerExecutionEnabledAsync().catch(() => false),
     db.select({
@@ -449,9 +451,10 @@ router.get("/admin/cockpit/traders/:userId", async (req, res) => {
 
   const [liveState, openPositions, notes, recentAudit] = await Promise.all([
     buildApprovedTraderLiveState(userId).catch(() => null),
-    db.select().from(arxLivePositionsTable)
-      .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)))
-      .orderBy(desc(arxLivePositionsTable.openedAt)),
+    livePositionLedger.read({
+      where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
+      orderBy: [desc(livePositionColumns.openedAt)],
+    }),
     loadNotes("trader", userId),
     loadAuditEntries(25, userId),
   ]);
@@ -615,8 +618,10 @@ router.get("/admin/cockpit/open-trades", async (req, res) => {
   const isOwner = op.role === "OWNER";
 
   const [positions, users] = await Promise.all([
-    db.select().from(arxLivePositionsTable).where(isNull(arxLivePositionsTable.closedAt))
-      .orderBy(desc(arxLivePositionsTable.openedAt)),
+    livePositionLedger.read({
+      where: isNull(livePositionColumns.closedAt),
+      orderBy: [desc(livePositionColumns.openedAt)],
+    }),
     db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable),
   ]);
   const emailMap = new Map(users.map((u) => [u.id, u.email]));
@@ -663,9 +668,12 @@ router.get("/admin/cockpit/capital", async (req, res) => {
 
   const [poolRows, openAgg] = await Promise.all([
     db.select().from(strategyPoolsTable).orderBy(strategyPoolsTable.id).limit(1),
-    db.select({
-      floating: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)`,
-    }).from(arxLivePositionsTable).where(isNull(arxLivePositionsTable.closedAt)),
+    livePositionLedger.select(
+      {
+        floating: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
+      },
+      { where: isNull(livePositionColumns.closedAt) },
+    ),
   ]);
   const pool = poolRows[0];
   const nav = pool ? await getPoolNav(pool.id) : null;

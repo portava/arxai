@@ -16,6 +16,7 @@
 //     that remains a server-side operator-only env toggle.
 //   - Account numbers are masked to the last 4 chars on every response.
 //   - Raw bridge tokens / broker passwords / server URLs are never returned.
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { getConnection, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -25,7 +26,6 @@ import {
   globalTradingSettingsTable,
   adminActionAuditLogTable,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
   arxLiveArmingTable,
   userMasterLiveAccessTable,
   liveRiskDisclosureAcceptancesTable,
@@ -204,14 +204,14 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
 
   // Open exposure across all users
   const openExposure = (
-    await db
-      .select({
-        lots: sql<number>`COALESCE(SUM(${arxLivePositionsTable.volume}), 0)`,
-        floatingPl: sql<number>`COALESCE(SUM(${arxLivePositionsTable.floatingPl}), 0)`,
+    await livePositionLedger.select(
+      {
+        lots: sql<number>`COALESCE(SUM(${livePositionColumns.volume}), 0)`,
+        floatingPl: sql<number>`COALESCE(SUM(${livePositionColumns.floatingPl}), 0)`,
         n: sql<number>`COUNT(*)::int`,
-      })
-      .from(arxLivePositionsTable)
-      .where(sql`${arxLivePositionsTable.closedAt} IS NULL`)
+      },
+      { where: sql`${livePositionColumns.closedAt} IS NULL` },
+    )
   )[0] ?? { lots: 0, floatingPl: 0, n: 0 };
 
   // Recent commands (last 25)
@@ -466,17 +466,17 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
           .where(eq(liveRiskDisclosureAcceptancesTable.userId, admin.id))
           .limit(1)
       ).length > 0;
-    const realisedToday = await db
-      .select({
-        pnl: sql<number>`COALESCE(SUM(${arxLivePositionsTable.floatingPl}), 0)`,
-      })
-      .from(arxLivePositionsTable)
-      .where(
-        and(
-          eq(arxLivePositionsTable.userId, admin.id),
-          sql`${arxLivePositionsTable.closedAt} >= NOW() - INTERVAL '24 hours'`,
+    const realisedToday = await livePositionLedger.select(
+      {
+        pnl: sql<number>`COALESCE(SUM(${livePositionColumns.floatingPl}), 0)`,
+      },
+      {
+        where: and(
+          eq(livePositionColumns.userId, admin.id),
+          sql`${livePositionColumns.closedAt} >= NOW() - INTERVAL '24 hours'`,
         ),
-      );
+      },
+    );
     const realisedDailyLossUsd = Math.max(0, -Number(realisedToday[0]?.pnl ?? 0));
     const input: LivePhaseBGateInput = {
       liveBrokerExecutionEnabled: masterSwitch,

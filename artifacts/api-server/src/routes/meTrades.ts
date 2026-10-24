@@ -11,11 +11,11 @@
 //     an mt5_commands row, writes trade_command_audit_log, and (in shared
 //     mode) writes a shared_trade_attribution row tagging the close.
 
-import { getUserPrimaryConnection, listUserConnections } from "../lib/brokerHub/connections.js";
+import { demoPositionLedger, demoPositionColumns } from "../lib/positions/ledger.js";
+import { getUserPrimaryConnection } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import {
-  livePositionsTable,
   sharedTradeAttributionTable,
   tradeCommandAuditLogTable,
   mt5CommandsTable,
@@ -99,14 +99,15 @@ router.get("/me/trades/open", async (req, res) => {
       // real position (broker_position_id present). A row with status='OPEN'
       // but no broker id is an unconfirmed/phantom open and must never render
       // as a position the user believes is live at the broker.
-      const rows = await db.select().from(livePositionsTable)
-        .where(and(
-          eq(livePositionsTable.userId, userId),
-          eq(livePositionsTable.status, "OPEN"),
-          isNotNull(livePositionsTable.brokerPositionId),
-          ne(livePositionsTable.brokerPositionId, ""),
-        ))
-        .orderBy(desc(livePositionsTable.openedAt));
+      const rows = await demoPositionLedger.read({
+        where: and(
+          eq(demoPositionColumns.userId, userId),
+          eq(demoPositionColumns.status, "OPEN"),
+          isNotNull(demoPositionColumns.brokerPositionId),
+          ne(demoPositionColumns.brokerPositionId, ""),
+        ),
+        orderBy: [desc(demoPositionColumns.openedAt)],
+      });
       for (const r of rows) {
         const entry = r.entryPrice ?? null;
         const cur = r.currentPrice ?? null;
@@ -227,10 +228,11 @@ router.get("/me/trades/history", async (req, res) => {
 
   try {
     if (env.accountRoutingMode === "USER_OWNED_MT5") {
-      const rows = await db.select().from(livePositionsTable)
-        .where(eq(livePositionsTable.userId, userId))
-        .orderBy(desc(livePositionsTable.createdAt))
-        .limit(limit);
+      const rows = await demoPositionLedger.read({
+        where: eq(demoPositionColumns.userId, userId),
+        orderBy: [desc(demoPositionColumns.createdAt)],
+        limit: limit,
+      });
       res.json({ ok: true, routingMode: env.accountRoutingMode, rows, currentAccountMode: scope.currentAccountMode, modeScopeApplied: true });
     } else {
       const rows = await db.select().from(sharedTradeAttributionTable)
@@ -266,8 +268,7 @@ router.get("/me/trades/summary", async (req, res) => {
   try {
     let openCount = 0, openPnl = 0, closedCount = 0, closedPnl = 0;
     if (env.accountRoutingMode === "USER_OWNED_MT5") {
-      const rows = await db.select().from(livePositionsTable)
-        .where(eq(livePositionsTable.userId, userId));
+      const rows = await demoPositionLedger.read({ where: eq(demoPositionColumns.userId, userId) });
       for (const r of rows) {
         // CONFIRMED-ONLY: an unconfirmed open (no broker_position_id) is not a
         // real open position and must not inflate openCount/openPnl.
@@ -382,8 +383,10 @@ router.post("/me/trades/close", async (req, res) => {
   let masterConnectionId: number | null = null;
 
   if (kind === "lp") {
-    const [lp] = await db.select().from(livePositionsTable)
-      .where(and(eq(livePositionsTable.id, rowId), eq(livePositionsTable.userId, userId))).limit(1);
+    const [lp] = await demoPositionLedger.read({
+      where: and(eq(demoPositionColumns.id, rowId), eq(demoPositionColumns.userId, userId)),
+      limit: 1,
+    });
     if (!lp || lp.status !== "OPEN") { res.status(404).json({ ok: false, error: "POSITION_NOT_FOUND" }); return; }
     symbol = lp.symbol; side = lp.direction as "BUY" | "SELL"; lotSize = lp.lotSize;
     ticket = lp.brokerPositionId ? Number(lp.brokerPositionId) : null;

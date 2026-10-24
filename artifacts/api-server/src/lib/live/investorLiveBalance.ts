@@ -29,14 +29,10 @@
 //   • Freshness is derived from real timestamps and mapped from the adapter's
 //     5-level scale; stale data is reported stale, never relabelled fresh.
 
+import { livePositionLedger } from "../positions/ledger.js";
 import { listUserConnections } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
-import {
-  arxLivePositionsTable,
-  userSlotAllocationTable,
-  virtualTradingAccountsTable,
-  sharedTradeAttributionTable,
-} from "@workspace/db/schema";
+import { userSlotAllocationTable, virtualTradingAccountsTable, sharedTradeAttributionTable } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   buildLiveAccountSnapshot,
@@ -389,10 +385,7 @@ export async function buildInvestorLiveBalanceSnapshot(
   // Live floating P/L — only when the user is genuinely in LIVE_SHARED mode.
   let liveSnapshot: LiveAccountSnapshot | null = null;
   if (includeLive) {
-    const rows = await db
-      .select()
-      .from(arxLivePositionsTable)
-      .where(openLiveExposureCondition(userId));
+    const rows = await livePositionLedger.read({ where: openLiveExposureCondition(userId) });
     const conn = (await listUserConnections(userId, { order: "oldest", limit: 1 }))[0];
     liveSnapshot = buildLiveAccountSnapshot({
       userId,

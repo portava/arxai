@@ -26,8 +26,9 @@
 //     pre-check additive (it never relaxes a gate) without falsely blocking an
 //     already-approved, fully-gated draft on un-observable cost data.
 //   - Capital efficiency is advisory/ranking ONLY and never blocks.
+import { livePositionLedger, livePositionColumns } from "./positions/ledger.js";
 import { and, eq, isNull } from "drizzle-orm";
-import { db, arxLivePositionsTable } from "@workspace/db";
+
 import {
   composeExecutionHealthGate,
   computeExecutionQuality,
@@ -241,10 +242,9 @@ function spreadFrom(signals: MissionLiveSignals): ExecHealthSpread {
 
 /** Load this user's OPEN live positions as honest exposure rows (per-user only). */
 async function loadOpenExposure(userId: number): Promise<ExposurePosition[]> {
-  const rows = await db
-    .select()
-    .from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)));
+  const rows = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
+  });
   return rows.map((r) => {
     const direction: "BUY" | "SELL" = String(r.side).toUpperCase() === "SELL" ? "SELL" : "BUY";
     // Risk amount on an open broker position is not always known; a negative

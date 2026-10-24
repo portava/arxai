@@ -19,3 +19,7 @@ assert.deepEqual(scanFile("routes/adminBridgeControl.ts", meta), [], "metadata o
 assert.ok(scanFile("routes/adminBridgeControl.ts", meta.replace("if (x)", "set.stopLoss = 0;\nif (x)")).length > 0, "metadata writer moving the stop");
 
 process.stdout.write("check-stop-modification-authority fixtures: ok\n");
+
+assert.equal(scanFile("lib/strategy.ts", "livePositionWriter.update({ stopLoss: 1 }, scope)").length, 1);
+assert.equal(scanFile("lib/positionGuardian/reconcile.ts", "demoPositionWriter.updateReturning({ closedAt: now }, scope, cols)").length, 1);
+assert.ok(scanFile("routes/adminBridgeControl.ts", "const set = { stopLoss: 1 }; reconcileLivePositionMetadata(id, set, tx)").length > 0);

@@ -19,13 +19,11 @@
 // SAFETY: never closes positions. Never writes to safetyCore. Trade-plan
 // validate consumes the latest snapshot and blocks ONLY when CRITICAL.
 
+import { demoPositionLedger, demoPositionColumns } from "../lib/positions/ledger.js";
 import { listScopedConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
-import {
-  db,
-  livePositionsTable, userRiskSettingsTable, portfolioRiskSnapshotsTable, correlationRiskReportsTable, vaultEventsTable,
-} from "@workspace/db";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { db, userRiskSettingsTable, portfolioRiskSnapshotsTable, correlationRiskReportsTable, vaultEventsTable } from "@workspace/db";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { ownerScope } from "../lib/auth/ownerScope.js";
 import crypto from "node:crypto";
@@ -40,7 +38,7 @@ import {
   type OpenPositionInput,
 } from "@workspace/domain/portfolio-risk";
 import { createAlert } from "../lib/alerts/alertManager.js";
-import { z } from "zod/v4";
+
 
 const router = Router();
 
@@ -60,7 +58,7 @@ const POSITION_TERMINAL = new Set(["CLOSED", "CANCELED", "REJECTED"]);
 type PortfolioOwner = Parameters<typeof ownerScope>[1];
 async function loadInputs(authUser: PortfolioOwner) {
   const [positions, settingsRows, mt5Rows] = await Promise.all([
-    db.select().from(livePositionsTable).where(ownerScope(livePositionsTable.userId, authUser)),
+    demoPositionLedger.read({ where: ownerScope(demoPositionColumns.userId, authUser) }),
     authUser
       ? db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, authUser.id)).limit(1)
       : Promise.resolve([]),

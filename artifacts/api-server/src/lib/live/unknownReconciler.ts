@@ -46,15 +46,10 @@
 // the wave-5 dispatch freshness pre-gate — this module does NOT touch
 // liveCommandPipeline.ts.
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { getConnection } from "../brokerHub/connections.js";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import {
-  db,
-  arxLiveCommandsTable,
-  arxLivePositionsTable,
-  type ArxLiveCommand,
-  type ArxLiveCommandStatus,
-} from "@workspace/db";
+import { db, arxLiveCommandsTable, type ArxLiveCommand, type ArxLiveCommandStatus } from "@workspace/db";
 import {
   buildExecutionEventRow,
   isAllowedLiveTransition,
@@ -361,16 +356,18 @@ async function gatherEvidence(cmd: ArxLiveCommand): Promise<UnknownCommandEviden
 
   let positions: PositionEvidenceRow[] = [];
   try {
-    const rows = await db.select({
-      brokerTicket: arxLivePositionsTable.brokerTicket,
-      sourceCommandId: arxLivePositionsTable.sourceCommandId,
-      symbol: arxLivePositionsTable.symbol,
-      side: arxLivePositionsTable.side,
-      volume: arxLivePositionsTable.volume,
-      openedAt: arxLivePositionsTable.openedAt,
-      closedAt: arxLivePositionsTable.closedAt,
-    }).from(arxLivePositionsTable)
-      .where(eq(arxLivePositionsTable.userId, cmd.userId));
+    const rows = await livePositionLedger.select(
+      {
+        brokerTicket: livePositionColumns.brokerTicket,
+        sourceCommandId: livePositionColumns.sourceCommandId,
+        symbol: livePositionColumns.symbol,
+        side: livePositionColumns.side,
+        volume: livePositionColumns.volume,
+        openedAt: livePositionColumns.openedAt,
+        closedAt: livePositionColumns.closedAt,
+      },
+      { where: eq(livePositionColumns.userId, cmd.userId) },
+    );
     positions = rows.map((r) => ({
       brokerTicket: r.brokerTicket,
       sourceCommandId: r.sourceCommandId ?? null,

@@ -15,8 +15,9 @@
 //   * AI cannot open / add / widen. It can only emit CLOSE / PARTIAL_CLOSE
 //     against an already-open user-owned position.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { db } from "@workspace/db";
-import { livePositionsTable, sharedTradeAttributionTable } from "@workspace/db/schema";
+import { sharedTradeAttributionTable } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 import { logger } from "../logger.js";
 import { getEffectiveSettings } from "./settings.js";
@@ -48,10 +49,10 @@ function parsePositionId(tradeKey: string): number | null {
 async function isAttributionClear(userId: number, tradeKey: string): Promise<boolean> {
   const positionId = parsePositionId(tradeKey);
   if (positionId == null) return false; // att_* or unrecognized
-  const [row] = await db.select({ id: livePositionsTable.id })
-    .from(livePositionsTable)
-    .where(and(eq(livePositionsTable.id, positionId), eq(livePositionsTable.userId, userId)))
-    .limit(1);
+  const [row] = await demoPositionLedger.select(
+    { id: demoPositionColumns.id },
+    { where: and(eq(demoPositionColumns.id, positionId), eq(demoPositionColumns.userId, userId)), limit: 1 },
+  );
   if (row) return true;
   // Belt-and-braces: confirm this user is NOT in the shared-attribution
   // table for the same broker ticket — if shared, attribution is unclear.

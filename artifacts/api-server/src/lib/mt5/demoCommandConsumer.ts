@@ -20,14 +20,9 @@
 //   5. NEVER reads/returns tokens, hashes, or broker passwords.
 //   6. EVERY outcome (admitted / refused) writes a SecurityEvent.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { and, eq } from "drizzle-orm";
-import {
-  db,
-  livePositionsTable,
-  mt5DemoCommandsTable,
-  sharedTradeAttributionTable,
-  type Mt5DemoCommand,
-} from "@workspace/db";
+import { db, mt5DemoCommandsTable, sharedTradeAttributionTable, type Mt5DemoCommand } from "@workspace/db";
 import {
   buildSafetyGateSnapshot,
   canDispatchToMt5,
@@ -280,10 +275,16 @@ export async function consumeApprovedCommand(args: ConsumeArgs): Promise<Consume
     let position: { entryPrice: number; stopLoss: number | null } | null = null;
     const ticket = p["ticket"] ?? p["positionTicket"] ?? p["brokerPositionId"];
     if (intentAction === "MODIFY" && ticket != null) {
-      const [pos] = await db.select({ entryPrice: livePositionsTable.entryPrice, stopLoss: livePositionsTable.stopLoss })
-        .from(livePositionsTable)
-        .where(and(eq(livePositionsTable.userId, args.userId), eq(livePositionsTable.brokerPositionId, String(ticket))))
-        .limit(1);
+      const [pos] = await demoPositionLedger.select(
+        { entryPrice: demoPositionColumns.entryPrice, stopLoss: demoPositionColumns.stopLoss },
+        {
+          where: and(
+            eq(demoPositionColumns.userId, args.userId),
+            eq(demoPositionColumns.brokerPositionId, String(ticket)),
+          ),
+          limit: 1,
+        },
+      );
       if (pos?.entryPrice != null) position = { entryPrice: pos.entryPrice, stopLoss: pos.stopLoss ?? null };
     }
     const risk = await enforcePreTradeRisk({

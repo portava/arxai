@@ -19,6 +19,7 @@
 //     and (missionId); open positions are read ONLY from rows owned by the user.
 //   - Honest degradation: unknown inputs never fabricate an exit, a milestone, or
 //     a compounding boost — they fail toward LESS risk / MORE protection.
+import { livePositionLedger, livePositionColumns } from "./positions/ledger.js";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   db,
@@ -26,7 +27,6 @@ import {
   missionTradeDraftsTable,
   missionEventsTable,
   oneClickAuditTable,
-  arxLivePositionsTable,
   type MissionTradeDraftRow,
 } from "@workspace/db";
 import {
@@ -49,11 +49,7 @@ import {
   type InstantTradeResult,
 } from "./live/instantTrade.js";
 import type { MissionExecutor } from "./missionExecution.js";
-import {
-  refreshMissionRisk,
-  type MissionLiveSignals,
-  type MissionRiskState,
-} from "./missionRiskState.js";
+import { type MissionRiskState } from "./missionRiskState.js";
 import { getRunning } from "./intelligence/mfeTracker.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
@@ -688,10 +684,9 @@ export async function manageMissionTradeExit(
   // The draft links to its live command via `commandId`; the position carries
   // `source_command_id` back to that command. A still-open position has no
   // `closedAt`. Read ONLY rows owned by this user.
-  const posRows = await db
-    .select()
-    .from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, args.userId), isNull(arxLivePositionsTable.closedAt)));
+  const posRows = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, args.userId), isNull(livePositionColumns.closedAt)),
+  });
   const match = posRows.find((r) => {
     if (draft.brokerTicket != null && r.brokerTicket === draft.brokerTicket) return true;
     if (draft.commandId != null && r.sourceCommandId === draft.commandId) return true;

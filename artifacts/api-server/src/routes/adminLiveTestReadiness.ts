@@ -16,6 +16,7 @@
 //  audit row is written for the GET and `LIVE_TEST_PREFLIGHT_EVALUATED`
 //  is written for the POST so operators can prove the panel was opened
 //  without anyone dispatching a trade.
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -24,7 +25,6 @@ import {
   usersTable,
   arxLiveArmingTable,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
   userMasterLiveAccessTable,
   globalTradingSettingsTable,
   adminActionAuditLogTable,
@@ -160,10 +160,12 @@ async function loadMasterGates() {
   const queueDepth = await db.select({ n: sql<number>`COUNT(*)::int` })
     .from(arxLiveCommandsTable)
     .where(sql`${arxLiveCommandsTable.status} IN ('LIVE_DRAFT','SENT_TO_MT5_LIVE','LIVE_CONFIRMED')`);
-  const openExposure = await db.select({
-    lots: sql<number>`COALESCE(SUM(${arxLivePositionsTable.volume}), 0)`,
-  }).from(arxLivePositionsTable)
-    .where(sql`${arxLivePositionsTable.closedAt} IS NULL`);
+  const openExposure = await livePositionLedger.select(
+    {
+      lots: sql<number>`COALESCE(SUM(${livePositionColumns.volume}), 0)`,
+    },
+    { where: sql`${livePositionColumns.closedAt} IS NULL` },
+  );
   return {
     masterSwitchEnabled: liveBrokerExecutionEnabled(),
     platformMode: s?.platformMode ?? "OFF",
@@ -273,12 +275,17 @@ async function runControlledDryRun(
   // in the last 24h (arx_live_positions has no realized_pl column; floatingPl
   // is the last-synced P/L snapshot, which equals realised P/L at close time
   // for closed positions). Used only as input to the daily-loss gate.
-  const realisedToday = await db.select({
-    pnl: sql<number>`COALESCE(SUM(${arxLivePositionsTable.floatingPl}), 0)`,
-  }).from(arxLivePositionsTable).where(and(
-    eq(arxLivePositionsTable.userId, adminId),
-    sql`${arxLivePositionsTable.closedAt} >= NOW() - INTERVAL '24 hours'`,
-  ));
+  const realisedToday = await livePositionLedger.select(
+    {
+      pnl: sql<number>`COALESCE(SUM(${livePositionColumns.floatingPl}), 0)`,
+    },
+    {
+      where: and(
+        eq(livePositionColumns.userId, adminId),
+        sql`${livePositionColumns.closedAt} >= NOW() - INTERVAL '24 hours'`,
+      ),
+    },
+  );
   const realisedDailyLossUsd = Math.max(0, -Number(realisedToday[0]?.pnl ?? 0));
 
   const input: LivePhaseBGateInput = {

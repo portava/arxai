@@ -11,17 +11,14 @@
 // - When no allocation exists, we return zeros + an explicit honest note
 //   instead of fabricating a balance.
 
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { getUserLiveBridge } from "../lib/brokerHub/connections.js";
-import { Router, type Request, type Response } from "express";
-import { and, eq, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
+import { Router, type Request } from "express";
+import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
 import { isForexPair } from "../lib/mt5/contractSize.js";
-import {
-  db,
-  arxLivePositionsTable,
-  userSlotAllocationTable,
-} from "@workspace/db";
+import { db, userSlotAllocationTable } from "@workspace/db";
 import {
   isSnapshotReliable,
   classifyRow,
@@ -101,8 +98,7 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   // 2. Open positions for this user only.
   // Open exposure only (shared truth predicate) — reconciled/closed ghosts
   // excluded from the user's account totals.
-  const openPositions = await db.select().from(arxLivePositionsTable)
-    .where(openLiveExposureCondition(userId));
+  const openPositions = await livePositionLedger.read({ where: openLiveExposureCondition(userId) });
 
   // 3. Realised P/L = sum of floatingPl on positions the broker CONFIRMED
   //    closed (a real CLOSE fill stamped closed_at). Reconciled ghosts
@@ -111,14 +107,18 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   //    realised close P/L (the EA never sent a close event), so summing it would
   //    fabricate realised P/L. Mirrors openLiveExposureCondition's reconcile
   //    filter on the closed side.
-  const closedRows = await db.select({
-    realised: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)`,
-  }).from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      isNotNull(arxLivePositionsTable.closedAt),
-      isNull(arxLivePositionsTable.reconcileState),
-    ));
+  const closedRows = await livePositionLedger.select(
+    {
+      realised: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
+    },
+    {
+      where: and(
+        eq(livePositionColumns.userId, userId),
+        isNotNull(livePositionColumns.closedAt),
+        isNull(livePositionColumns.reconcileState),
+      ),
+    },
+  );
   const realisedPnl = Number(closedRows[0]?.realised ?? 0);
 
   // 4. The user's own bridge connection (used for leverage + heartbeat

@@ -12,12 +12,9 @@
 // - Worker status is exposed via getMonitorStatus() for the admin panel;
 //   no credentials, no other-user data, no master MT5 secrets exposed.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { db } from "@workspace/db";
-import {
-  livePositionsTable,
-  sharedTradeAttributionTable,
-  tradeAlertPreferencesTable,
-} from "@workspace/db/schema";
+import { sharedTradeAttributionTable, tradeAlertPreferencesTable } from "@workspace/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { logger } from "../logger.js";
 
@@ -84,10 +81,10 @@ export function isGloballyPaused(): boolean {
 // Scan all userIds that have at least one OPEN user-owned position OR one
 // 'open' shared-attribution row. Returns deduped userIds.
 async function listUsersWithOpenTrades(): Promise<number[]> {
-  const owned = await db
-    .selectDistinct({ userId: livePositionsTable.userId })
-    .from(livePositionsTable)
-    .where(eq(livePositionsTable.status, "OPEN"));
+  const owned = await demoPositionLedger.select(
+    { userId: demoPositionColumns.userId },
+    { where: eq(demoPositionColumns.status, "OPEN"), distinct: true },
+  );
   const shared = await db
     .selectDistinct({ userId: sharedTradeAttributionTable.userId })
     .from(sharedTradeAttributionTable)
@@ -99,10 +96,10 @@ async function listUsersWithOpenTrades(): Promise<number[]> {
 }
 
 async function listOpenTradeKeysForUser(userId: number): Promise<string[]> {
-  const owned = await db
-    .select({ id: livePositionsTable.id })
-    .from(livePositionsTable)
-    .where(and(eq(livePositionsTable.userId, userId), eq(livePositionsTable.status, "OPEN")));
+  const owned = await demoPositionLedger.select(
+    { id: demoPositionColumns.id },
+    { where: and(eq(demoPositionColumns.userId, userId), eq(demoPositionColumns.status, "OPEN")) },
+  );
   const shared = await db
     .select({ id: sharedTradeAttributionTable.id })
     .from(sharedTradeAttributionTable)

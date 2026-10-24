@@ -32,6 +32,7 @@
 //     names the affected user (so a single bulk confirm cannot silently
 //     grant bridge access to a different person).
 //   - Audit row written for every mutation, one per affected user.
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod/v4";
@@ -44,7 +45,6 @@ import {
   userAdvancedPermissionsTable,
   adminActionAuditLogTable,
   riskTemplatesTable,
-  arxLivePositionsTable,
   arxLiveCommandsTable,
   type RiskTemplatePayload,
   type UserAccountStatus,
@@ -153,14 +153,14 @@ router.get("/admin/user-control/users", async (req, res) => {
   const exposureByUser = new Map<number, { openLots: number; floatingPlUsd: number; openCount: number }>();
   const lastTradeByUser = new Map<number, Date | null>();
   await Promise.all(userIds.map(async (uid) => {
-    const ex = await db.select({
-      lots: sql<number>`COALESCE(SUM(${arxLivePositionsTable.volume}), 0)`,
-      pnl: sql<number>`COALESCE(SUM(${arxLivePositionsTable.floatingPl}), 0)`,
-      cnt: sql<number>`COUNT(*)::int`,
-    }).from(arxLivePositionsTable).where(and(
-      eq(arxLivePositionsTable.userId, uid),
-      sql`${arxLivePositionsTable.closedAt} IS NULL`,
-    ));
+    const ex = await livePositionLedger.select(
+      {
+        lots: sql<number>`COALESCE(SUM(${livePositionColumns.volume}), 0)`,
+        pnl: sql<number>`COALESCE(SUM(${livePositionColumns.floatingPl}), 0)`,
+        cnt: sql<number>`COUNT(*)::int`,
+      },
+      { where: and(eq(livePositionColumns.userId, uid), sql`${livePositionColumns.closedAt} IS NULL`) },
+    );
     exposureByUser.set(uid, {
       openLots: Number(ex[0]?.lots ?? 0),
       floatingPlUsd: Number(ex[0]?.pnl ?? 0),

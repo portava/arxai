@@ -15,16 +15,16 @@
 //   MASTER_BRIDGE_STALE so admins never over-allocate against a stale
 //   snapshot.
 
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { getConnection, listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { and, desc, eq, ilike, inArray, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
   usersTable,
   userSlotAllocationTable,
   arxMasterAccountConfigTable,
-  arxLivePositionsTable,
   adminActionAuditLogTable,
   sharedMasterAccountsTable,
   virtualTradingAccountsTable,
@@ -202,12 +202,14 @@ async function getMasterContext(): Promise<MasterContext> {
 
 // Pull realised + open P/L for one user from arx_live_positions.
 async function getUserPnl(userId: number): Promise<{ realisedPnl: number; openPnL: number; openCount: number }> {
-  const open = await db.select({ pl: arxLivePositionsTable.floatingPl })
-    .from(arxLivePositionsTable)
-    .where(openLiveExposureCondition(userId));
-  const closed = await db.select({ pl: arxLivePositionsTable.floatingPl })
-    .from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), isNotNull(arxLivePositionsTable.closedAt)));
+  const open = await livePositionLedger.select(
+    { pl: livePositionColumns.floatingPl },
+    { where: openLiveExposureCondition(userId) },
+  );
+  const closed = await livePositionLedger.select(
+    { pl: livePositionColumns.floatingPl },
+    { where: and(eq(livePositionColumns.userId, userId), isNotNull(livePositionColumns.closedAt)) },
+  );
   const openPnL = open.reduce((s, r) => s + Number(r.pl ?? 0), 0);
   const realisedPnl = closed.reduce((s, r) => s + Number(r.pl ?? 0), 0);
   return { realisedPnl, openPnL, openCount: open.length };
@@ -1085,15 +1087,14 @@ export async function autoReconcileSettledAllocations(): Promise<AutoReconcileRe
 
     // Users with OPEN live exposure are protected and never reduced. Single
     // grouped read inside the tx for a snapshot consistent with the locked rows.
-    const openRows = await tx.select({
-      userId: arxLivePositionsTable.userId,
-      cnt: sql<number>`count(*)::int`,
-    }).from(arxLivePositionsTable)
-      // Shared open-exposure truth — a reconciled/closed ghost must NOT keep a
-      // user flagged as having open exposure (it would wrongly protect them
-      // from allocation reduction).
-      .where(openLiveExposureCondition())
-      .groupBy(arxLivePositionsTable.userId);
+    const openRows = await livePositionLedger.select(
+      {
+        userId: livePositionColumns.userId,
+        cnt: sql<number>`count(*)::int`,
+      },
+      { where: openLiveExposureCondition(), groupBy: [livePositionColumns.userId] },
+      tx,
+    );
     const openUserIds = new Set(openRows.map((r) => r.userId));
 
     // Settled = positive allocation AND no open positions.
@@ -1858,10 +1859,11 @@ router.post("/admin/allocations/:userId/detach-shared-master", requireUser, asyn
     // orphaning the ledger between EA fills and the virtual account. The
     // user-row FOR UPDATE above serialises this against any other admin
     // mutation that could insert a position via Phase B dispatch.
-    const openCount = await tx.select({ id: arxLivePositionsTable.id })
-      .from(arxLivePositionsTable)
-      // Shared open-exposure truth — a reconciled ghost must not block detach.
-      .where(openLiveExposureCondition(userId));
+    const openCount = await livePositionLedger.select(
+      { id: livePositionColumns.id },
+      { where: openLiveExposureCondition(userId) },
+      tx,
+    );
     if (openCount.length > 0) {
       return fail(409, { ok: false, error: "OPEN_POSITIONS_BLOCK_DETACH",
         message: "User has open live positions. Close them before detaching." });
@@ -2112,13 +2114,17 @@ router.get("/admin/live-positions/reconcile-summary", requireUser, async (req, r
 
   // One grouped pass over every OPEN row. reconcile_state NULL = genuinely
   // live exposure; any non-null value is a reconciled/orphan-resolved ghost.
-  const grouped = await db.select({
-    userId: arxLivePositionsTable.userId,
-    reconcileState: arxLivePositionsTable.reconcileState,
-    count: sql<number>`count(*)::int`,
-  }).from(arxLivePositionsTable)
-    .where(isNull(arxLivePositionsTable.closedAt))
-    .groupBy(arxLivePositionsTable.userId, arxLivePositionsTable.reconcileState);
+  const grouped = await livePositionLedger.select(
+    {
+      userId: livePositionColumns.userId,
+      reconcileState: livePositionColumns.reconcileState,
+      count: sql<number>`count(*)::int`,
+    },
+    {
+      where: isNull(livePositionColumns.closedAt),
+      groupBy: [livePositionColumns.userId, livePositionColumns.reconcileState],
+    },
+  );
 
   type PerUser = {
     userId: number;
@@ -2192,35 +2198,42 @@ router.get("/admin/live-positions/:userId/reconcile-detail", requireUser, async 
 
   // Open reconciled rows = the exact rows behind the badge's reconciledCount
   // (open = closed_at IS NULL; reconciled = reconcile_state IS NOT NULL).
-  const rows = await db.select({
-    id: arxLivePositionsTable.id,
-    symbol: arxLivePositionsTable.symbol,
-    side: arxLivePositionsTable.side,
-    volume: arxLivePositionsTable.volume,
-    brokerTicket: arxLivePositionsTable.brokerTicket,
-    reconcileState: arxLivePositionsTable.reconcileState,
-    reconcileNote: arxLivePositionsTable.reconcileNote,
-    reconcileReason: arxLivePositionsTable.reconcileReason,
-    reconciledByAdminId: arxLivePositionsTable.reconciledByAdminId,
-    reconciledAt: arxLivePositionsTable.reconciledAt,
-    openedAt: arxLivePositionsTable.openedAt,
-  }).from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      isNull(arxLivePositionsTable.closedAt),
-      isNotNull(arxLivePositionsTable.reconcileState),
-    ))
-    .orderBy(desc(arxLivePositionsTable.reconciledAt));
+  const rows = await livePositionLedger.select(
+    {
+      id: livePositionColumns.id,
+      symbol: livePositionColumns.symbol,
+      side: livePositionColumns.side,
+      volume: livePositionColumns.volume,
+      brokerTicket: livePositionColumns.brokerTicket,
+      reconcileState: livePositionColumns.reconcileState,
+      reconcileNote: livePositionColumns.reconcileNote,
+      reconcileReason: livePositionColumns.reconcileReason,
+      reconciledByAdminId: livePositionColumns.reconciledByAdminId,
+      reconciledAt: livePositionColumns.reconciledAt,
+      openedAt: livePositionColumns.openedAt,
+    },
+    {
+      where: and(
+        eq(livePositionColumns.userId, userId),
+        isNull(livePositionColumns.closedAt),
+        isNotNull(livePositionColumns.reconcileState),
+      ),
+      orderBy: [desc(livePositionColumns.reconciledAt)],
+    },
+  );
 
   // Genuine open exposure (reconcile_state IS NULL) — surfaced alongside so the
   // operator sees the real-exposure context next to the ghosts.
-  const [genuine] = await db.select({ count: sql<number>`count(*)::int` })
-    .from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      isNull(arxLivePositionsTable.closedAt),
-      isNull(arxLivePositionsTable.reconcileState),
-    ));
+  const [genuine] = await livePositionLedger.select(
+    { count: sql<number>`count(*)::int` },
+    {
+      where: and(
+        eq(livePositionColumns.userId, userId),
+        isNull(livePositionColumns.closedAt),
+        isNull(livePositionColumns.reconcileState),
+      ),
+    },
+  );
 
   res.json({
     ok: true,

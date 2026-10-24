@@ -16,14 +16,14 @@
 //   rejects), the cycle locks in CLOSE_FAILED_MANUAL_REQUIRED — we never
 //   retry. An operator must use /resolve to acknowledge.
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { getUserActiveConnection } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   db,
   arxLiveTestCyclesTable,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
   liveTradingAuditTable,
   userMasterLiveAccessTable,
   ARX_LIVE_TEST_CYCLE_TERMINAL,
@@ -219,12 +219,17 @@ export async function runPrecheck(userId: number): Promise<{
   });
 
   // 7. no existing open arx_live_positions for EURUSD
-  const openPos = await db.select({ id: arxLivePositionsTable.id }).from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      eq(arxLivePositionsTable.symbol, PINNED_SYMBOL),
-      isNull(arxLivePositionsTable.closedAt),
-    )).limit(1);
+  const openPos = await livePositionLedger.select(
+    { id: livePositionColumns.id },
+    {
+      where: and(
+        eq(livePositionColumns.userId, userId),
+        eq(livePositionColumns.symbol, PINNED_SYMBOL),
+        isNull(livePositionColumns.closedAt),
+      ),
+      limit: 1,
+    },
+  );
   checks.push({
     key: "no_existing_eurusd_position",
     ok: openPos.length === 0,
@@ -486,10 +491,10 @@ export async function advanceCycle(args: { userId: number; cycleId: string }): P
     const openTicket = update.openBrokerTicket ?? row.openBrokerTicket;
     if (openTicket) {
       // position detected?
-      const [pos] = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, args.userId),
-        eq(arxLivePositionsTable.brokerTicket, openTicket),
-      )).limit(1);
+      const [pos] = await livePositionLedger.read({
+        where: and(eq(livePositionColumns.userId, args.userId), eq(livePositionColumns.brokerTicket, openTicket)),
+        limit: 1,
+      });
       if (pos && !row.positionDetectedAt) {
         update.positionDetectedAt = pos.lastSyncedAt ?? now;
         changed = true;
@@ -569,11 +574,13 @@ export async function advanceCycle(args: { userId: number; cycleId: string }): P
       // mark the cycle COMPLETED / surface to the user as "executed".
       const openTicket = update.openBrokerTicket ?? row.openBrokerTicket;
       const closePosRows = openTicket
-        ? await db.select({ closedAt: arxLivePositionsTable.closedAt })
-            .from(arxLivePositionsTable).where(and(
-              eq(arxLivePositionsTable.userId, args.userId),
-              eq(arxLivePositionsTable.brokerTicket, openTicket),
-            )).limit(1)
+        ? await livePositionLedger.select(
+          { closedAt: livePositionColumns.closedAt },
+          {
+            where: and(eq(livePositionColumns.userId, args.userId), eq(livePositionColumns.brokerTicket, openTicket)),
+            limit: 1,
+          },
+        )
         : [];
       const closePos = closePosRows[0];
       const closeEvidence = resolveLiveCloseConfirmation({

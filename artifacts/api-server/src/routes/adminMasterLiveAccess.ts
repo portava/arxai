@@ -19,6 +19,7 @@
 //   - No raw token, apiKeyHash, password hash, or session secret is ever
 //     surfaced. Email is shown to operators (they need to identify the
 //     user); on the user-facing /me endpoint email is NOT exposed.
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
@@ -35,7 +36,6 @@ import {
   userMasterLiveAccessTable,
   masterLiveAccessAuditTable,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
   riskTemplatesTable,
   globalTradingSettingsTable,
   MASTER_LIVE_ACCESS_ACTIONS,
@@ -185,13 +185,13 @@ router.get("/admin/master-live/users", async (req, res) => {
 
   const result = await Promise.all(users.map(async (u) => {
     const a = accessByUser.get(u.id);
-    const exposureRows = await db.select({
-      open: sql<number>`COALESCE(SUM(${arxLivePositionsTable.volume}), 0)`,
-      pnl: sql<number>`COALESCE(SUM(${arxLivePositionsTable.floatingPl}), 0)`,
-    }).from(arxLivePositionsTable).where(and(
-      eq(arxLivePositionsTable.userId, u.id),
-      sql`${arxLivePositionsTable.closedAt} IS NULL`,
-    ));
+    const exposureRows = await livePositionLedger.select(
+      {
+        open: sql<number>`COALESCE(SUM(${livePositionColumns.volume}), 0)`,
+        pnl: sql<number>`COALESCE(SUM(${livePositionColumns.floatingPl}), 0)`,
+      },
+      { where: and(eq(livePositionColumns.userId, u.id), sql`${livePositionColumns.closedAt} IS NULL`) },
+    );
     const lastTradeRows = await db.select({ at: arxLiveCommandsTable.createdAt })
       .from(arxLiveCommandsTable).where(eq(arxLiveCommandsTable.userId, u.id))
       .orderBy(desc(arxLiveCommandsTable.createdAt)).limit(1);

@@ -16,9 +16,10 @@
 //
 // Mount path: /api/me/live/*
 
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { getUserLiveSnapshotMarkerMs, listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
   evaluateLiveArmingGate,
@@ -58,7 +59,7 @@ import {
   resolveLivePositionVisibility,
   ACCOUNT_NOT_IN_LIVE_MODE,
 } from "../lib/modeScope/livePositionVisibility.js";
-import { db, arxLiveCommandsTable, arxLivePositionsTable } from "@workspace/db";
+import { db, arxLiveCommandsTable } from "@workspace/db";
 import {
   composeInvestorBalance,
   fetchInvestorBalanceParts,
@@ -336,8 +337,7 @@ router.get("/me/live/positions", requireUser, async (req, res) => {
 
   // Admin diagnostics may request stale rows too via ?includeStale=1.
   const includeStale = req.query.includeStale === "1" || req.query.includeStale === "true";
-  const allRows = await db.select().from(arxLivePositionsTable)
-    .where(eq(arxLivePositionsTable.userId, userId));
+  const allRows = await livePositionLedger.read({ where: eq(livePositionColumns.userId, userId) });
 
   // Position visibility rule (see positionFreshness.ts). A stale lastSyncedAt
   // NEVER hides a real open position on its own. A stale/missing row is only
@@ -419,9 +419,10 @@ router.post("/me/live/positions/:ticket/close", requireUser, async (req, res) =>
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const ticket = String(req.params.ticket ?? "");
   req.log.info({ action: "CLOSE_TRADE_REQUESTED", userId, ticket, scope: "live" }, "trade.close.requested");
-  const rows = await db.select().from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), eq(arxLivePositionsTable.brokerTicket, ticket)))
-    .limit(1);
+  const rows = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, ticket)),
+    limit: 1,
+  });
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND" }); return; }
 
@@ -471,11 +472,9 @@ router.post("/me/live/positions/:ticket/close", requireUser, async (req, res) =>
 router.post("/me/live/positions/close-all", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const open = await db.select().from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      isNull(arxLivePositionsTable.closedAt),
-    ));
+  const open = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
+  });
   req.log.info({ action: "CLOSE_ALL_REQUESTED", userId, openCount: open.length }, "trade.close-all.requested");
   // P0-1 — the WHOLE sweep runs in one per-user lock scope. Locking each
   // iteration instead would let a concurrent single-ticket close slot in
@@ -526,9 +525,10 @@ router.post("/me/live/positions/:ticket/modify", requireUser, async (req, res) =
   if (newSL == null && newTP == null) {
     res.status(400).json({ error: "NO_CHANGES", detail: "Provide newStopLoss or newTakeProfit" }); return;
   }
-  const rows = await db.select().from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), eq(arxLivePositionsTable.brokerTicket, ticket)))
-    .limit(1);
+  const rows = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, ticket)),
+    limit: 1,
+  });
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND" }); return; }
 
@@ -658,13 +658,13 @@ router.get("/me/live/command-status/:commandId", requireUser, async (req, res) =
       (typeof payload?.["brokerTicket"] === "string" ? String(payload["brokerTicket"]) : null);
     let positionClosedAt: Date | string | null = null;
     if (targetTicket) {
-      const posRows = await db.select({ closedAt: arxLivePositionsTable.closedAt })
-        .from(arxLivePositionsTable)
-        .where(and(
-          eq(arxLivePositionsTable.userId, userId),
-          eq(arxLivePositionsTable.brokerTicket, targetTicket),
-        ))
-        .limit(1);
+      const posRows = await livePositionLedger.select(
+        { closedAt: livePositionColumns.closedAt },
+        {
+          where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, targetTicket)),
+          limit: 1,
+        },
+      );
       positionClosedAt = posRows[0]?.closedAt ?? null;
     }
     const verdict = resolveLiveCloseConfirmation({
@@ -981,8 +981,9 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
   }
 
   // Fetch open positions for this user — same query as account-stream.
-  const posRows = await db.select().from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)));
+  const posRows = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
+  });
 
   // Freshest account-synced connection for equity/balance.
   const equityRows = await listUserConnections(userId, { order: "accountSynced", limit: 1 });
@@ -1128,8 +1129,9 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
         });
         return;
       }
-      const rows = await db.select().from(arxLivePositionsTable)
-        .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)));
+      const rows = await livePositionLedger.read({
+        where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
+      });
       // Deterministically pick the user's most-recently account-synced
       // connection (NULLS LAST) so a multi-connection user never reads a stale
       // row's figures over a freshly-synced one.

@@ -69,7 +69,7 @@ record("positions/all exposes currentAccountMode + modeScopeApplied",
   (posSrc.includes("currentAccountMode: scope.currentAccountMode") || posSrc.includes("modeScopeEnvelope(scope)"))
   && (posSrc.includes("modeScopeApplied: true") || posSrc.includes("modeScopeEnvelope(scope)")));
 record("positions/all conditionally reads arx_live_positions via includeLive",
-  posSrc.includes("includeLive") && posSrc.includes("? await db.select().from(arxLivePositionsTable)"));
+  posSrc.includes("includeLive") && posSrc.includes("? await livePositionLedger.read("));
 record("positions/all conditionally reads mt5_state via includeDemo",
   posSrc.includes("includeDemo"));
 
