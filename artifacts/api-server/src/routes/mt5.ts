@@ -28,6 +28,7 @@ import { anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -134,8 +135,8 @@ async function auditBridge(
 }
 
 async function loadOrCreateState() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  if (rows[0]) return rows[0];
+  const existing = await readPlatformMt5State();
+  if (existing) return existing;
   const inserted = await db.insert(mt5StateTable).values({}).returning();
   return inserted[0];
 }

@@ -19,9 +19,10 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod/v4";
 import { db } from "@workspace/db";
-import { mt5StateTable, mt5CommandsTable } from "@workspace/db";
+import { mt5CommandsTable } from "@workspace/db";
 import { denyInvestorExecution } from "../lib/auth/productRole.js";
 import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
+import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 // Task #71 — investor accounts cannot reach demo execution either.
@@ -44,8 +45,7 @@ function isDemoExecutionAllowedOnServer(): boolean {
 }
 
 async function loadAccountTypeAndState() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  const s = rows[0] ?? null;
+  const s = await readPlatformMt5State();
   // mt5_state.liveAllowed is set by the EA heartbeat: 1 when ACCOUNT_TRADE_MODE
   // == ACCOUNT_TRADE_MODE_REAL. Anything else (0/null) is treated as DEMO/UNKNOWN.
   let accountType: "DEMO" | "REAL" | "UNKNOWN";

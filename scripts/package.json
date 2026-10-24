@@ -297,6 +297,7 @@
     "test:economic-calendar": "tsx ./src/tests/economicCalendar.test.ts",
     "test:broker-hub-no-execution": "tsx ./src/ci/check-broker-hub-no-execution.ts",
     "test:instrument-mapping-single-source": "tsx ./src/ci/check-instrument-mapping-single-source.ts && tsx ./src/ci/check-instrument-mapping-single-source.test.ts",
+    "test:broker-state-single-reader": "tsx ./src/ci/check-broker-state-single-reader.ts && tsx ./src/ci/check-broker-state-single-reader.test.ts",
     "test:execution-single-entry": "tsx ./src/ci/check-execution-single-entry.ts && tsx ./src/ci/check-execution-single-entry.test.ts",
     "test:broker-hub-contracts": "tsx ./src/brokerHubContractsTest.ts && tsx ./src/ci/check-broker-hub-no-execution.test.ts",
     "test:broker-hub-metadata-db": "tsx ./src/brokerHubMetadataIntegrationTest.ts",

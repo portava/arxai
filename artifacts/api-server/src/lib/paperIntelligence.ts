@@ -6,11 +6,11 @@
 // `decision: "MT5_DATA_STALE"` so callers can show a clear banner and
 // withhold any new paper-trade decision rather than acting on stale data.
 
-import { db, mt5StateTable } from "@workspace/db";
 import { runStrategyScan, type SignalOutput, type Candle } from "./strategyEngine.js";
 import { calculatePositionSize } from "./positionSizing.js";
 import { getMarketDataWithProvenance } from "./data/dataManager.js";
 import { getStatus as getSafetyStatus } from "./safetyCore.js";
+import { readPlatformMt5State } from "./brokerHub/mt5StateReader.js";
 
 // 15s matches the bridge's heartbeat freshness threshold (mt5.ts /
 // safetyCore.ts HEARTBEAT_DEGRADED_MS) so the UI's "fresh" green light
@@ -111,8 +111,7 @@ export interface PaperIntelligenceResult {
 }
 
 async function loadMt5Snapshot(): Promise<MT5SnapshotView> {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  const row = rows[0] ?? null;
+  const row = await readPlatformMt5State();
   const lastHb = row?.lastHeartbeatAt ?? null;
   const ageMs = lastHb ? Date.now() - new Date(lastHb).getTime() : null;
   const ageSec = ageMs === null ? null : Math.floor(ageMs / 1000);

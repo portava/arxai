@@ -15,7 +15,6 @@ import {
   db,
   brokerHealthLogsTable,
   brokerHealthStateTable,
-  mt5StateTable,
   mt5CommandsTable,
   vaultEventsTable,
 } from "@workspace/db";
@@ -24,6 +23,7 @@ import { z } from "zod/v4";
 import { evaluateBrokerHealth, type BrokerHealthVerdict } from "@workspace/domain/broker-health";
 import { getStatus } from "../lib/safetyCore.js";
 import { canSeeLegacyRows, requireOperator } from "../lib/auth/ownerScope.js";
+import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -43,8 +43,7 @@ async function loadOrCreateBrokerState() {
 }
 
 async function loadMt5State() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  return rows[0] ?? null;
+  return readPlatformMt5State();
 }
 
 async function appendVault(
@@ -322,9 +321,7 @@ router.post("/broker/enable-execution", requireOperator, async (req, res): Promi
       const bh = bhRows[0];
       if (!bh) throw new Error("broker_health_state singleton missing");
 
-      const mt5Rows = await tx.select().from(mt5StateTable)
-        .orderBy(asc(mt5StateTable.id)).limit(1);
-      const mt5 = mt5Rows[0] ?? null;
+      const mt5 = await readPlatformMt5State(tx);
 
       const sc = await getStatus();
 

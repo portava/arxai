@@ -8,7 +8,7 @@
 // event for full audit trail.
 
 import { Router } from "express";
-import { db, executionConfirmationsTable, riskSettingsTable, mt5StateTable, vaultEventsTable } from "@workspace/db";
+import { db, executionConfirmationsTable, riskSettingsTable, vaultEventsTable } from "@workspace/db";
 import { and, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
@@ -21,6 +21,7 @@ import {
 import { evaluateChecklist, type ChecklistMarketCondition } from "@workspace/domain/execution-safety";
 import { getStatus } from "../lib/safetyCore.js";
 import { getOrCreateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
+import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -31,8 +32,7 @@ const CONFIRMATION_TTL_SECONDS = 120;
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 async function loadMt5State() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  return rows[0] ?? null;
+  return readPlatformMt5State();
 }
 
 async function loadCurrentPermission(userId: number) {

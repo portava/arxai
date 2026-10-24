@@ -21,10 +21,9 @@ import {
   livePositionsTable,
   positionEventsTable,
   tradesTable,
-  mt5StateTable,
   vaultEventsTable,
 } from "@workspace/db";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   evaluateLivePosition,
@@ -36,19 +35,18 @@ import { PNL_DATA_QUALITY_MISSING_CLOSE_FILL } from "../lib/live/realizedPnl.js"
 import { requireUser } from "../lib/auth/middleware.js";
 import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
 import { canSeeLegacyRows, ownerScope } from "../lib/auth/ownerScope.js";
+import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
 async function loadMt5Positions(): Promise<Array<Record<string, unknown>>> {
-  const rows = await db.select().from(mt5StateTable).orderBy(asc(mt5StateTable.id)).limit(1);
-  const positions = rows[0]?.positions;
+  const positions = (await readPlatformMt5State())?.positions;
   return Array.isArray(positions) ? (positions as Array<Record<string, unknown>>) : [];
 }
 async function loadAccountEquity(): Promise<number | null> {
-  const rows = await db.select().from(mt5StateTable).orderBy(asc(mt5StateTable.id)).limit(1);
-  return rows[0]?.equity ?? null;
+  return (await readPlatformMt5State())?.equity ?? null;
 }
 
 // Ownership: a trader sees and acts on their own rows only. The central

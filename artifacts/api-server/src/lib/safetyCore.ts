@@ -1,4 +1,4 @@
-import { db, safetyCoreTable, vaultEventsTable, stateTransitionsTable, mt5StateTable } from "@workspace/db";
+import { db, safetyCoreTable, vaultEventsTable, stateTransitionsTable } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte, type SQL } from "drizzle-orm";
 import {
   globalState as gs,
@@ -6,6 +6,7 @@ import {
 } from "@workspace/domain";
 import { shadowCapture, isVaultDegraded } from "./auditVault.js";
 import { logger } from "./logger.js";
+import { readPlatformMt5State } from "./brokerHub/mt5StateReader.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 1 — Safety Core service (server side)
@@ -55,8 +56,7 @@ export async function ensureSafetyCoreInitialized(): Promise<void> {
 }
 
 async function loadMt5State() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  return rows[0] ?? null;
+  return readPlatformMt5State();
 }
 
 function ageMs(d: Date | null | undefined): number | null {
