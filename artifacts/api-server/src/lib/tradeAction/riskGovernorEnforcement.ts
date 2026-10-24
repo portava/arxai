@@ -57,10 +57,7 @@ export interface RiskEnforcementInput {
    * so radar can label the opportunity BLOCKED_BY_RULE.
    */
   previewMode?: boolean;
-  /** OR2 P1 #2 — per-scan cache forwarded from runActionGuards. */
-  prefetched?: {
-    riskSettings?: { maxLotSize?: number | null; liveDisclosureAcknowledgedAt?: Date | null } | null;
-  };
+
 }
 
 export interface RiskEnforcementResult {

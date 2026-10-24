@@ -16,7 +16,7 @@ import {
   watchlistsTable,
   watchlistItemsTable,
   usersTable,
-  riskSettingsTable,
+  userReadinessStateTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { type LiveCandidate } from "../assistant/liveScanner.js";
@@ -423,20 +423,20 @@ async function buildScanContext(userId: number, dataSource: string | null): Prom
     // (undefined). Guards treat `undefined` as "not prefetched → live re-read",
     // and `null` as "confirmed no row". Coalescing errors to `null` would mask
     // transient failures as hard guard rejections.
-    const [envelope, safety, user, riskSettingsRow] = await Promise.all([
+    const [envelope, safety, user, liveDisclosureAcceptedAt] = await Promise.all([
       getEnvelope(userId),
       getSafetyStatus(),
       db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1)
         .then(r => (r[0] ?? null) as { id: number; suspendedAt?: Date | null } | null)
         .catch(() => undefined),
-      db.select().from(riskSettingsTable)
-        .where(eq(riskSettingsTable.userId, userId)).limit(1)
-        .then(r => r[0] ?? null)
+      db.select({ at: userReadinessStateTable.liveDisclosureAcceptedAt }).from(userReadinessStateTable)
+        .where(eq(userReadinessStateTable.userId, userId)).limit(1)
+        .then(r => r[0]?.at ?? null)
         .catch(() => undefined),
     ]);
 
     const allowed = safety.allowedModes ?? [];
-    const liveDisclosureAck = (riskSettingsRow as { liveDisclosureAcknowledgedAt?: Date | null } | null)?.liveDisclosureAcknowledgedAt ?? null;
+    const liveDisclosureAck = liveDisclosureAcceptedAt ?? null;
     const liveOk =
       envelope.tradingMode === "LIVE"
       && envelope.globalLiveEnabled === true
@@ -504,7 +504,7 @@ async function buildScanContext(userId: number, dataSource: string | null): Prom
       prefetched: {
         safety,
         routing: routing && routing.ok ? routing : undefined,
-        // `user` / `riskSettings` are passed through preserving the
+        // `user` / `liveDisclosureAcceptedAt` are passed through preserving the
         // null-vs-undefined distinction. `undefined` ⇒ guards live-fallback;
         // `null` ⇒ guards treat as "no row" (fails user_active for users).
         user: user === undefined
@@ -512,7 +512,7 @@ async function buildScanContext(userId: number, dataSource: string | null): Prom
           : user === null
             ? null
             : { id: user.id, suspendedAt: user.suspendedAt ?? null },
-        riskSettings: riskSettingsRow as ActionGuardPrefetched["riskSettings"],
+        liveDisclosureAcceptedAt,
         cachedAt,
         cacheSource: "radar-scan",
       },

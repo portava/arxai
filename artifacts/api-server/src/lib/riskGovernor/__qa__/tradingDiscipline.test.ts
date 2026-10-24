@@ -81,9 +81,9 @@ test("hard: the daily trade count blocks on its own", () => {
   assert.match(d.primaryReason!, /5 trades for today/);
 });
 
-test("hard: the strictest trades-per-day cap wins across trader, legacy and admin rows", () => {
+test("hard: the strictest trades-per-day cap wins across trader and admin rows", () => {
   const L = resolveEffectiveLimits({
-    legacySettings: { maxDailyLossPct: 3, maxLotSize: 1, riskPerTradePct: 1, maxOpenTrades: 3, maxTradesPerDay: 4 },
+    userSettings: { ...baseUser(), maxTradesPerDay: 4 },
     adminLimits: { maxLotSize: 1, maxDailyLossUsd: 1_000, maxTradesPerDay: 2 },
   });
   assert.equal(L.discipline.maxTradesPerDay, 2);

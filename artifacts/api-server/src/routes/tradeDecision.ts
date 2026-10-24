@@ -36,7 +36,6 @@ import {
   tradeDecisionLogsTable,
   signalsTable,
   botSettingsTable,
-  riskSettingsTable,
   riskLocksTable,
   paperOrdersTable,
   paperAccountsTable,

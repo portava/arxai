@@ -53,6 +53,8 @@ export const userRiskSettingsTable = pgTable("user_risk_settings", {
   liveLocked: boolean("live_locked").notNull().default(true),
   readOnlyMode: boolean("read_only_mode").notNull().default(true),
   allowOrderExecution: boolean("allow_order_execution").notNull().default(false),
+  /** When this trader's legacy risk_settings limits were folded in (one limit store, Tier 1). */
+  legacyMergedAt: timestamp("legacy_merged_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({

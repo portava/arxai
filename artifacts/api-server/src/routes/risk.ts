@@ -1,7 +1,4 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { riskSettingsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 import { GetRiskSettingsResponse, UpdateRiskSettingsBody } from "@workspace/api-zod";
 import { z } from "zod/v4";
 import { computeRiskAudit } from "../lib/riskAudit.js";
@@ -11,8 +8,8 @@ import {
   evaluateHardBlockRules,
 } from "@workspace/domain/risk-governor";
 import { shadowCapture } from "../lib/auditVault.js";
-import { and } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+import { getOrCreateUserRiskSettings, updateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
 
 const router = Router();
 
@@ -57,22 +54,16 @@ const RISK_PRESETS = {
   },
 } as const;
 
-// ── Helper ─────────────────────────────────────────────────────────────────
-
-// Phase-2: every risk settings row is per-user. New users get a Balanced default.
-async function getOrCreateRiskSettings(userId: number) {
-  const rows = await db.select().from(riskSettingsTable)
-    .where(eq(riskSettingsTable.userId, userId)).limit(1);
-  if (rows[0]) return rows[0];
-  const inserted = await db.insert(riskSettingsTable).values({ userId }).returning();
-  return inserted[0];
-}
+// ── Store ──────────────────────────────────────────────────────────────────
+// Limits read and write user_risk_settings (the Risk Governor's one limit
+// store); risk mode, confidence floor, symbol rules and the live lock stay
+// in risk_settings. lib/risk/userRiskSettings.ts does the split.
 
 // ── GET /risk/settings ─────────────────────────────────────────────────────
 
 router.get("/risk/settings", requireUser, async (req, res) => {
   try {
-    const settings = await getOrCreateRiskSettings(req.authUser!.id);
+    const settings = await getOrCreateUserRiskSettings(req.authUser!.id);
     const data = GetRiskSettingsResponse.parse(settings);
     return res.json(data);
   } catch (err) {
@@ -86,13 +77,8 @@ router.get("/risk/settings", requireUser, async (req, res) => {
 router.patch("/risk/settings", requireUser, async (req, res) => {
   try {
     const body = UpdateRiskSettingsBody.parse(req.body);
-    const settings = await getOrCreateRiskSettings(req.authUser!.id);
-    const updated = await db
-      .update(riskSettingsTable)
-      .set({ ...body, riskMode: "Custom", updatedAt: new Date() })
-      .where(and(eq(riskSettingsTable.id, settings.id), eq(riskSettingsTable.userId, req.authUser!.id)))
-      .returning();
-    const data = GetRiskSettingsResponse.parse(updated[0]);
+    const updated = await updateUserRiskSettings(req.authUser!.id, { ...body, riskMode: "Custom" }, { riskPreset: null });
+    const data = GetRiskSettingsResponse.parse(updated);
     return res.json(data);
   } catch (err) {
     req.log.error(err);
@@ -110,13 +96,8 @@ router.post("/risk/mode", requireUser, async (req, res) => {
   try {
     const { mode } = RiskModeBody.parse(req.body);
     const preset = RISK_PRESETS[mode];
-    const settings = await getOrCreateRiskSettings(req.authUser!.id);
-    const updated = await db
-      .update(riskSettingsTable)
-      .set({ ...preset, updatedAt: new Date() })
-      .where(and(eq(riskSettingsTable.id, settings.id), eq(riskSettingsTable.userId, req.authUser!.id)))
-      .returning();
-    const data = GetRiskSettingsResponse.parse(updated[0]);
+    const updated = await updateUserRiskSettings(req.authUser!.id, { ...preset }, { riskPreset: null });
+    const data = GetRiskSettingsResponse.parse(updated);
     return res.json(data);
   } catch (err) {
     req.log.error(err);
@@ -131,11 +112,7 @@ const RiskLockBody = z.object({ locked: z.boolean() });
 router.post("/risk/lock-live", requireUser, async (req, res) => {
   try {
     const { locked } = RiskLockBody.parse(req.body);
-    const settings = await getOrCreateRiskSettings(req.authUser!.id);
-    await db
-      .update(riskSettingsTable)
-      .set({ liveLocked: locked, updatedAt: new Date() })
-      .where(and(eq(riskSettingsTable.id, settings.id), eq(riskSettingsTable.userId, req.authUser!.id)));
+    await updateUserRiskSettings(req.authUser!.id, { liveLocked: locked });
     return res.json({
       locked,
       message: locked
@@ -159,7 +136,7 @@ const RiskAuditQuery = z.object({
 router.get("/risk/audit", requireUser, async (req, res) => {
   try {
     const query = RiskAuditQuery.parse(req.query);
-    const settings = await getOrCreateRiskSettings(req.authUser!.id);
+    const settings = await getOrCreateUserRiskSettings(req.authUser!.id);
     // Placeholder account balance (1000 USD) — no MT5 sync feeds this yet.
     // balanceSource below marks the figure so no consumer can mistake it for
     // a real account balance.
@@ -200,7 +177,7 @@ const PositionSizeQuery = z.object({
 router.get("/risk/position-size", requireUser, async (req, res) => {
   try {
     const query = PositionSizeQuery.parse(req.query);
-    const settings = await getOrCreateRiskSettings(req.authUser!.id);
+    const settings = await getOrCreateUserRiskSettings(req.authUser!.id);
     const result = calculatePositionSize({
       ...query,
       maxLotSize: settings.maxLotSize,

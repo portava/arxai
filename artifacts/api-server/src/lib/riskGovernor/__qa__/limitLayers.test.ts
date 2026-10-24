@@ -72,7 +72,7 @@ test("source → layer", () => {
   assert.equal(layerOf("platform"), "platform");
   assert.equal(layerOf("user_risk_limits.max_lot_size"), "account");
   assert.equal(layerOf("user_risk_settings.max_position_size"), "user");
-  assert.equal(layerOf("risk_settings.max_lot_size"), "user");
+  assert.equal(layerOf("risk_settings.max_lot_size"), "derived", "the older page's table is no longer a limit layer");
   assert.equal(layerOf("default:user_risk_settings.max_open_trades"), "default");
   assert.equal(layerOf("per_trade_percent x max_open_trades"), "derived");
 });
