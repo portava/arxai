@@ -17,10 +17,11 @@ import {
   userReadinessStateTable,
   userOnboardingProgressTable,
   virtualTradingAccountsTable,
-  liveTradingStateTable,
 } from "@workspace/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { getMyArming } from "../live/liveArming.js";
+import { loadTradingHalt } from "../safety/tradingHalt.js";
+import { getGlobalSettings } from "../adminTrading/safetyEnvelope.js";
 
 export type ReadinessStatusValue = "pass" | "fail" | "warning" | "blocked" | "not_required";
 export type AccountRoutingMode = "USER_OWNED_MT5" | "SHARED_MASTER_MT5";
@@ -80,8 +81,6 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
   const [vta] = await db.select().from(virtualTradingAccountsTable)
     .where(eq(virtualTradingAccountsTable.userId, userId))
     .orderBy(desc(virtualTradingAccountsTable.id)).limit(1);
-  const [liveState] = await db.select().from(liveTradingStateTable)
-    .orderBy(desc(liveTradingStateTable.id)).limit(1);
   // Per-user live arming (canonical resolver, fail-closed to false on any error).
   const arming = await getMyArming(userId).catch(() => null);
   const liveArmed = arming?.isArmed === true;
@@ -90,28 +89,25 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
   const isUserOwned = accountMode === "USER_OWNED_MT5";
   const isSharedMaster = accountMode === "SHARED_MASTER_MT5";
 
-  // System-wide live-execution posture. This engine is read-only against safety
-  // surfaces and is REPORTING ONLY — it never grants execution authority.
+  // System-wide live-execution posture, read from the same authorities the
+  // order path enforces: the stop switches (lib/safety/tradingHalt — platform
+  // emergency stop, safety-core kill switch, the trader's own kill switch) and
+  // the admin's live venue (global_trading_settings: platform_mode LIVE and
+  // live_enabled). It used to read the legacy live_trading_state row, which no
+  // order path honours and whose absence read as a hard stop. This engine is
+  // REPORTING ONLY — it never grants execution authority.
   //
-  // `systemLiveHardStop` = genuine hard stops that block live for EVERYONE,
-  // including an approved + armed trader: a missing live-state row (fail-closed),
-  // an explicit operator maintenance lock (LIVE_LOCKED), the kill switch, or an
-  // emergency stop.
-  const systemLiveHardStop =
-    !liveState
-    || liveState.mode === "LIVE_LOCKED"
-    || liveState.killSwitchActive === true
-    || liveState.emergencyStopActive === true;
-  // `systemPaperOnlyMode` = the legacy blanket "this build is paper-only" modes.
-  // Task #750: these no longer permanently block an approved + armed trader's
-  // REPORTED readiness, but remain a hard block for everyone else. They never
-  // grant execution authority — every live order still runs the full 18-gate
-  // Phase B dispatch + the per-user activation gate, neither of which this
-  // reporting engine can short-circuit.
-  const systemPaperOnlyMode =
-    liveState?.mode === "READ_ONLY" || liveState?.mode === "PAPER_ONLY";
-  // System-wide hard-lock (drives the `paper_only_guard_active` status item).
-  // Semantically identical to the previous always-on lock.
+  // `systemLiveHardStop` = blocks live for EVERYONE, including an approved +
+  // armed trader. An unreadable switch or settings row counts as a stop.
+  const [liveHalt, globalSettings] = await Promise.all([
+    loadTradingHalt({ userId, venue: "LIVE" }).catch(() => ({ engaged: true })),
+    getGlobalSettings(),
+  ]);
+  const liveVenueOpen = !!globalSettings?.liveEnabled && String(globalSettings?.platformMode ?? "").toUpperCase() === "LIVE";
+  const systemLiveHardStop = liveHalt.engaged || !liveVenueOpen;
+  // The legacy blanket "this build is paper-only" mode no longer exists; per-
+  // trader gates (approval, arming, verified live account, disclosure) decide.
+  const systemPaperOnlyMode = false;
   const liveExecutionHardLock = systemLiveHardStop || systemPaperOnlyMode;
   const paperOnlyHardLock = liveExecutionHardLock;
 
@@ -186,16 +182,18 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
   );
 
   // 5. paper_only_guard_active (system invariant — should be PASS here)
+  // Informational: which platform-wide stop (if any) holds live trading. It
+  // is never a trader blocker; ready_for_live reads systemLiveHardStop below.
   pushStatus(
     "paper_only_guard_active",
-    "PAPER_ONLY safety guard active",
-    paperOnlyHardLock ? "pass" : "warning",
+    "Platform live stop",
+    "pass",
     ["paper", "demo", "live"],
     paperOnlyHardLock
-      ? "System-wide live-execution hard-lock is active. No real trades will execute."
-      : "Live-execution hard-lock is not currently active.",
+      ? `Live trading is stopped platform-wide: ${(liveHalt as { reason?: string | null }).reason ?? (liveVenueOpen ? "a stop switch is engaged" : "the live venue is switched off by the admin")}.`
+      : "No platform-wide stop is engaged. Live still needs your approval, arming, a verified live account and the live disclosure.",
     null,
-    paperOnlyHardLock ? null : null,
+    null,
   );
 
   // 6. paper_session_available
