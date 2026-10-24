@@ -159,6 +159,7 @@ const MANUAL_ONLY = new Set<string>([
   "@workspace/scripts::test:single-paper-book",
   "@workspace/scripts::test:legacy-live-state-confined",
   "@workspace/scripts::test:single-llm-gateway",
+  "@workspace/scripts::test:single-safety-switch-source",
   "@workspace/scripts::test:broker-read-adapter-single-factory",
   "@workspace/scripts::test:single-broker-state-source",
   // MT5 projection boundary test uses an injected reader and performs no DB IO.

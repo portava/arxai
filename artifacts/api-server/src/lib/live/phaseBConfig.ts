@@ -12,8 +12,8 @@
 //   in flight or filled.
 
 import { createHash } from "node:crypto";
-import { db, globalTradingSettingsTable } from "@workspace/db";
 import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
+import { readPlatformSwitches } from "../safety/platformSwitches.js";
 
 /**
  * Env-only master switch (legacy). Defaults to FALSE. Read once per call
@@ -60,15 +60,14 @@ export function resolveLiveBrokerExecutionEnabled(
 }
 
 /**
- * Async variant for callers that don't already have the settings row. Reads
- * the singleton row and returns the effective value (env AND db). Defaults
- * to FALSE if the row is missing.
+ * Async variant for callers that don't already have the settings row: the
+ * effective value (env AND db) from the one switch authority
+ * (lib/safety/platformSwitches). FALSE when the row is missing or unreadable,
+ * or when any settings row is not armed (the stricter row wins).
  */
 export async function resolveLiveBrokerExecutionEnabledAsync(): Promise<boolean> {
-  const envOk = isLiveBrokerExecutionEnabledEnv();
-  if (!envOk) return false;
-  const row = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
-  return row?.liveBrokerExecutionArmed === true;
+  if (!isLiveBrokerExecutionEnabledEnv()) return false;
+  return (await readPlatformSwitches()).liveBrokerExecution.enabled;
 }
 
 export function buildLiveIdempotencyKey(args: {

@@ -16,7 +16,6 @@ import { db } from "@workspace/db";
 import {
   fundDiscrepanciesTable,
   fundControlFreezesTable,
-  globalTradingSettingsTable,
 } from "@workspace/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import type {
@@ -25,6 +24,7 @@ import type {
   HandshakeLayerStatus,
 } from "@workspace/domain/handshake";
 import { getProviderHealthSnapshot } from "../data/providerHealth.js";
+import { readPlatformSwitches } from "../safety/platformSwitches.js";
 import { getNewsIntelligence } from "../news/newsIntelligenceService.js";
 import { scannerStatus } from "../marketScanner.js";
 import { getMarketStatus } from "../assistant/marketProvider.js";
@@ -170,36 +170,25 @@ const investorFundBookAdapter: LayerAdapter = async (ctx) => {
 };
 
 // ── ADMIN_CONTROL — global settings singleton present + platform mode ────────
+// Read through the one switch authority (lib/safety/platformSwitches).
 const adminControlAdapter: LayerAdapter = async () => {
-  try {
-    const [row] = await db
-      .select({ platformMode: globalTradingSettingsTable.platformMode })
-      .from(globalTradingSettingsTable)
-      .where(eq(globalTradingSettingsTable.id, 1));
-    if (!row) return notAvailable("global settings singleton missing");
-    return { status: "PASS", detail: `platformMode=${row.platformMode}`, ageMs: null };
-  } catch {
-    return notAvailable("admin control read failed");
-  }
+  const sw = await readPlatformSwitches();
+  if (sw.unreadableReason === "missing") return notAvailable("global settings singleton missing");
+  if (!sw.readable) return notAvailable("admin control read failed");
+  return { status: "PASS", detail: `platformMode=${sw.platformMode}`, ageMs: null };
 };
 
 // ── KILL_SWITCH — emergency stop state (advisory awareness only) ─────────────
 // The real kill switch remains authoritative and independent; this only colours
 // the handshake verdict so the monitor reflects the engaged state.
 const killSwitchAdapter: LayerAdapter = async () => {
-  try {
-    const [row] = await db
-      .select({ engaged: globalTradingSettingsTable.emergencyKillSwitch })
-      .from(globalTradingSettingsTable)
-      .where(eq(globalTradingSettingsTable.id, 1));
-    if (!row) return notAvailable("global settings singleton missing");
-    if (row.engaged) {
-      return { status: "FAIL", detail: "emergency kill switch engaged", ageMs: null };
-    }
-    return { status: "PASS", detail: "kill switch clear", ageMs: null };
-  } catch {
-    return notAvailable("kill switch read failed");
+  const sw = await readPlatformSwitches();
+  if (sw.unreadableReason === "missing") return notAvailable("global settings singleton missing");
+  if (!sw.readable) return notAvailable("kill switch read failed");
+  if (sw.emergencyStop.engaged) {
+    return { status: "FAIL", detail: "emergency kill switch engaged", ageMs: null };
   }
+  return { status: "PASS", detail: "kill switch clear", ageMs: null };
 };
 
 // Per-user layers report SKIPPED (not NOT_AVAILABLE) when there is no user

@@ -11,8 +11,7 @@
 
 import { Router } from "express";
 import { z } from "zod/v4";
-import { eq } from "drizzle-orm";
-import { arxLiveArmingTable, db } from "@workspace/db";
+import { engageKillSwitchForUser, releaseKillSwitchForUser } from "../lib/live/liveArming.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
   RISK_PRESETS, applyRiskPreset, configurePropFirm, listRiskEventsView, propFirmStatus, riskOverview, type RiskPreset,
@@ -91,19 +90,17 @@ router.post("/risk/pre-trade-check", requireUser, async (req, res) => {
   res.json({ approved: check.decision === "pass", reason: check.reason, hardBlocks: check.risk.blockedBy, rules: check.risk.rules });
 });
 
-// Pause / resume: the trader's own kill switch (halts their orders on every venue).
+// Pause / resume: the trader's own kill switch (halts their orders on every
+// venue). Written by its one owner, lib/live/liveArming.ts: engaging also
+// disarms live (re-arm required after resume) and both are audited.
 router.post("/risk/pause", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   const reason = String(req.body?.reason ?? "Paused from the risk command center").slice(0, 300);
-  const now = new Date();
-  const set = { killSwitchEngaged: true, killSwitchReason: reason, killSwitchEngagedAt: now, killSwitchEngagedByUserId: userId, updatedAt: now };
-  await db.insert(arxLiveArmingTable).values({ userId, ...set })
-    .onConflictDoUpdate({ target: arxLiveArmingTable.userId, set });
+  await engageKillSwitchForUser({ userId, reason });
   res.json({ paused: true, reason, scope: "your account" });
 });
 router.post("/risk/resume", requireUser, async (req, res) => {
-  await db.update(arxLiveArmingTable).set({ killSwitchEngaged: false, killSwitchReason: null, updatedAt: new Date() })
-    .where(eq(arxLiveArmingTable.userId, req.authUser!.id));
+  await releaseKillSwitchForUser({ userId: req.authUser!.id });
   res.json({ paused: false, scope: "your account" });
 });
 

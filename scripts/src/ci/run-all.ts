@@ -83,6 +83,7 @@ import { checkSinglePaperBook } from "./check-single-paper-book.js";
 import { checkSingleLimitStore } from "./check-single-limit-store.js";
 import { checkLegacyLiveStateConfined } from "./check-legacy-live-state-confined.js";
 import { checkSingleLlmGateway } from "./check-single-llm-gateway.js";
+import { checkSingleSafetySwitchSource } from "./check-single-safety-switch-source.js";
 import { checkBrokerReadAdapterSingleFactory } from "./check-broker-read-adapter-single-factory.js";
 import { checkSingleBrokerStateSource } from "./check-single-broker-state-source.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
@@ -176,6 +177,7 @@ const checks: Array<() => CheckResult> = [
   checkSingleLimitStore,
   checkLegacyLiveStateConfined,
   checkSingleLlmGateway,
+  checkSingleSafetySwitchSource,
   checkBrokerReadAdapterSingleFactory,
   checkSingleBrokerStateSource,
 ];

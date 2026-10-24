@@ -30,7 +30,6 @@ import {
   usersTable,
   userMasterLiveAccessTable,
   investorProfilesTable,
-  arxLiveArmingTable,
   strategyPoolsTable,
   investorPoolHoldingsTable,
   adminCockpitAuditLogTable,
@@ -50,11 +49,11 @@ import {
 import {
   adminForceArmLiveForUser,
   disarmLiveForUser,
+  listArmingFlags,
 } from "../lib/live/liveArming.js";
 import { runEmergencyClose } from "../lib/live/emergencyClose.js";
 import { buildApprovedTraderLiveState } from "../lib/live/approvedTraderLiveState.js";
-import { getGlobalSettings } from "../lib/adminTrading/safetyEnvelope.js";
-import { resolveLiveBrokerExecutionEnabledAsync } from "../lib/live/phaseBConfig.js";
+import { readPlatformSwitches } from "../lib/safety/platformSwitches.js";
 import { getProviderHealthSnapshot } from "../lib/data/providerHealth.js";
 import { getPoolNav } from "../lib/fundbook/navEngine.js";
 import { routeCandles } from "../lib/data/marketDataRouter.js";
@@ -200,10 +199,7 @@ async function computeTraderRows(): Promise<TraderRow[]> {
       status: userMasterLiveAccessTable.masterLiveStatus,
       approved: userMasterLiveAccessTable.approvedForMasterLive,
     }).from(userMasterLiveAccessTable),
-    db.select({
-      userId: arxLiveArmingTable.userId,
-      isArmed: arxLiveArmingTable.isArmed,
-    }).from(arxLiveArmingTable),
+    listArmingFlags(),
     livePositionLedger.select(
       {
         userId: livePositionColumns.userId,
@@ -360,7 +356,7 @@ async function loadNotes(targetType: string, targetUserId?: number): Promise<Coc
 router.get("/admin/cockpit/overview", async (req, res) => {
   const op = requireOperator(req, res); if (!op) return;
 
-  const [traderRows, investorRows, connections, openAgg, g, liveEnabled, alertAgg] = await Promise.all([
+  const [traderRows, investorRows, connections, openAgg, sw, alertAgg] = await Promise.all([
     computeTraderRows(),
     db.select({ status: investorProfilesTable.status }).from(investorProfilesTable),
     listConnections({ order: "oldest" }),
@@ -371,8 +367,7 @@ router.get("/admin/cockpit/overview", async (req, res) => {
       },
       { where: isNull(livePositionColumns.closedAt) },
     ),
-    getGlobalSettings(),
-    resolveLiveBrokerExecutionEnabledAsync().catch(() => false),
+    readPlatformSwitches({ ifMissing: "seed" }),
     db.select({
       open: sql<number>`cast(count(*) filter (where ${adminCockpitAlertsTable.status} = 'ACTIVE') as int)`,
       critical: sql<number>`cast(count(*) filter (where ${adminCockpitAlertsTable.status} = 'ACTIVE' and ${adminCockpitAlertsTable.alertLevel} = 'CRITICAL') as int)`,
@@ -424,9 +419,9 @@ router.get("/admin/cockpit/overview", async (req, res) => {
       availableAllocation: null,
     },
     safety: {
-      liveExecutionEnabled: !!liveEnabled,
-      killSwitchActive: !!g?.emergencyKillSwitch,
-      platformMode: g?.platformMode ?? "OFF",
+      liveExecutionEnabled: sw.liveBrokerExecution.enabled,
+      killSwitchActive: sw.emergencyStop.engaged,
+      platformMode: sw.platformMode,
     },
     alerts: {
       open: alerts?.open ?? 0,

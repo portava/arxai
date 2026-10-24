@@ -14,12 +14,13 @@
 import { Router } from "express";
 import {
   db, tradingReadinessChecksTable,
-  safetyCoreTable, riskLocksTable,
+  riskLocksTable,
   economicEventsTable, tradingRuleContractsTable,
   weeklyPerformanceReviewsTable, vaultEventsTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod/v4";
+import { readSafetyCoreSwitch } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { readLatestBrokerHealthLog } from "../lib/brokerHub/brokerHealthState.js";
 
@@ -61,7 +62,11 @@ interface ChecklistItem {
 }
 
 async function gatherSignals(userId: number) {
-  const safety = (await db.select().from(safetyCoreTable).orderBy(asc(safetyCoreTable.id)).limit(1))[0] ?? null;
+  // Safety-core kill switch through the switch authority; unreadable → engaged.
+  const sc = await readSafetyCoreSwitch();
+  const safety = sc.present || !sc.readable
+    ? { killSwitchEngaged: sc.engaged, operationalMode: sc.operationalMode ?? "OBSERVE_ONLY" }
+    : null;
   const activeLocks = await db.select().from(riskLocksTable).where(eq(riskLocksTable.isActive, true)).limit(10);
   const brokerLog = await readLatestBrokerHealthLog();
   const now = new Date();

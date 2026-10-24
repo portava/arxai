@@ -6,9 +6,9 @@
 // writes a row to admin_action_audit_log on every fetch.
 
 import { Router, type Request, type Response } from "express";
+import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { db } from "@workspace/db";
 import {
-  globalTradingSettingsTable,
   adminActionAuditLogTable,
   arxLiveCommandsTable,
   mt5CommandsTable,
@@ -50,15 +50,15 @@ async function computeReadiness(): Promise<{
   const envItems = computeEnvChecklist();
   const envSummary = summarizeEnvChecklist(envItems);
 
-  const settingsRows = await db.select().from(globalTradingSettingsTable).limit(1);
-  const s = settingsRows[0];
+  // Switches from the one switch authority (missing/unreadable → OFF, stop engaged).
+  const { switches: sw, config: s } = await loadPlatformSettings();
   const safety = {
-    platformMode: String(s?.platformMode ?? "OFF"),
-    emergencyKillSwitch: !!s?.emergencyKillSwitch,
+    platformMode: sw.platformMode as string,
+    emergencyKillSwitch: sw.emergencyStop.engaged,
     sharedLiveTradingEnabled: !!s?.sharedLiveTradingEnabled,
     accountRoutingMode: String(s?.accountRoutingMode ?? "USER_OWNED_MT5"),
-    demoEnabled: !!s?.demoEnabled,
-    liveEnabled: !!s?.liveEnabled,
+    demoEnabled: sw.venueEnabled.DEMO,
+    liveEnabled: sw.venueEnabled.LIVE,
   };
 
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);

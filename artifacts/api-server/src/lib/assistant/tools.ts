@@ -49,7 +49,6 @@ import { evaluatePaperTradePlan, getTradingStyleProfile } from "./coachTools.js"
 import { getVoiceModeStatus } from "./realtimeSession.js";
 import { mapLegacyReconciliationStatus } from "@workspace/domain/safety-contracts/reconciliation";
 import { mapLegacyBridgeMode, applyHeartbeatStaleness } from "@workspace/domain/safety-contracts/bridgeMode";
-import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
 import { computeAccountShell } from "../../routes/meAccountShell.js";
 import { aggregateReconciliationIssues } from "../reconciliation/detect.js";
 import { resolveAssistantMarket } from "../markets/assistantMarketResolver.js";
@@ -2510,19 +2509,20 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
       return { ok: false, error: "ADMIN_REQUIRED",};
     }
     const [{ detectCurrentConnectedBridge }, { aggregateReconciliationIssues },
-           { getGlobalSettings }, schema] = await Promise.all([
+           { loadPlatformSettings }, schema] = await Promise.all([
       import("../mt5/currentConnectedBridgeDetector.js"),
       import("../reconciliation/detect.js"),
-      import("../adminTrading/safetyEnvelope.js"),
+      import("../safety/platformSwitches.js"),
       import("@workspace/db"),
     ]);
-    const masterSwitch = isLiveBrokerExecutionEnabledEnv();
     const det = await detectCurrentConnectedBridge();
-    const settings = await getGlobalSettings();
-    const sharedLive = !!(settings as { sharedLiveTradingEnabled?: boolean }).sharedLiveTradingEnabled;
-    const platformMode = (settings as { platformMode?: string }).platformMode ?? "OFF";
-    // schema field is `emergencyKillSwitch` (default TRUE = engaged).
-    const killEngaged = !!(settings as { emergencyKillSwitch?: boolean }).emergencyKillSwitch;
+    // The switches come from the one switch authority; an unreadable row
+    // reads as engaged / OFF.
+    const { switches, config } = await loadPlatformSettings({ ifMissing: "seed" });
+    const masterSwitch = switches.liveBrokerExecution.envEnabled;
+    const sharedLive = !!config?.sharedLiveTradingEnabled;
+    const platformMode = switches.platformMode;
+    const killEngaged = switches.emergencyStop.engaged;
 
     const [queueRows, openLiveRows, recon, approvalRows] = await Promise.all([
       db.select({ n: sql<number>`COUNT(*)::int` }).from(schema.mt5CommandsTable)

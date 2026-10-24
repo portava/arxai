@@ -133,7 +133,14 @@ export function evaluateMasterLiveBridgeGate(
  * as fail-closed (returns MASTER_BRIDGE_LIVE_NOT_ENABLED).
  */
 export async function loadAndEvaluateMasterLiveBridgeGate(): Promise<MasterLiveGateResult> {
-  const settings = await db.select().from(globalTradingSettingsTable).limit(1);
+  // Master-bridge config only; the safety switches are read through
+  // lib/safety/platformSwitches.ts.
+  const settings = await db.select({
+    accountRoutingMode: globalTradingSettingsTable.accountRoutingMode,
+    masterBridgeLiveEnabled: globalTradingSettingsTable.masterBridgeLiveEnabled,
+    platformMasterBridgeConnectionId: globalTradingSettingsTable.platformMasterBridgeConnectionId,
+    sharedLiveTradingEnabled: globalTradingSettingsTable.sharedLiveTradingEnabled,
+  }).from(globalTradingSettingsTable).limit(1);
   const s = settings[0];
   if (!s) {
     return {

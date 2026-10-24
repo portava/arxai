@@ -16,7 +16,8 @@
 //     them to identify the bridge), but only to admin sessions.
 //   - No write side-effects. Pure read.
 import express, { type IRouter, Router, type Request, type Response } from "express";
-import { db, globalTradingSettingsTable, userOneClickSettingsTable } from "@workspace/db";
+import { db, userOneClickSettingsTable } from "@workspace/db";
+import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { eq } from "drizzle-orm";
 import {
   derivePlatformBridgeMode,
@@ -113,11 +114,11 @@ function fmtArm(v: boolean | null | undefined): string {
 router.get("/admin/live-gates/diagnostic", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
-  const settingsRows = await db.select().from(globalTradingSettingsTable).limit(1);
-  const s = settingsRows[0];
+  // Switches from the one switch authority (missing/unreadable → OFF, stop engaged).
+  const { switches: sw, config: s } = await loadPlatformSettings();
   const switchOn = liveBrokerExecutionEnabled();
   const platform = derivePlatformBridgeMode({
-    platformMode: s?.platformMode,
+    platformMode: sw.platformMode,
     accountRoutingMode: s?.accountRoutingMode,
     masterBridgeLiveEnabled: !!s?.masterBridgeLiveEnabled,
     sharedLiveTradingEnabled: !!s?.sharedLiveTradingEnabled,
@@ -186,19 +187,19 @@ router.get("/admin/live-gates/diagnostic", async (req, res) => {
   rows.push({
     id: "kill_switch",
     label: "Operator kill switch",
-    status: s?.killSwitchEngagedAt ? "fail" : "pass",
-    detail: s?.killSwitchEngagedAt
-      ? `Kill switch engaged at ${new Date(s.killSwitchEngagedAt).toISOString()}${s.killSwitchReason ? ` — ${s.killSwitchReason}` : ""}.`
+    status: sw.emergencyStop.engaged ? "fail" : "pass",
+    detail: sw.emergencyStop.engaged
+      ? `Kill switch engaged${sw.emergencyStop.engagedAt ? ` at ${new Date(sw.emergencyStop.engagedAt).toISOString()}` : ""}${sw.emergencyStop.reason ? ` — ${sw.emergencyStop.reason}` : ""}.`
       : "Kill switch is not engaged.",
-    rawCode: s?.killSwitchEngagedAt ? "KILL_SWITCH_ENGAGED" : "KILL_SWITCH_CLEAR",
+    rawCode: sw.emergencyStop.engaged ? "KILL_SWITCH_ENGAGED" : "KILL_SWITCH_CLEAR",
   });
 
   rows.push({
     id: "trading_mode",
     label: "Global trading mode",
-    status: (s?.platformMode ?? "OFF").toUpperCase() === "LIVE" ? "pass" : "info",
-    detail: `Currently ${(s?.platformMode ?? "OFF").toUpperCase()}.`,
-    rawCode: s?.platformMode ?? "OFF",
+    status: sw.platformMode === "LIVE" ? "pass" : "info",
+    detail: `Currently ${sw.platformMode}.`,
+    rawCode: sw.platformMode,
   });
 
   rows.push({

@@ -23,7 +23,6 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
-  arxLiveArmingTable,
   arxLiveCommandsTable,
   userMasterLiveAccessTable,
   globalTradingSettingsTable,
@@ -41,7 +40,9 @@ import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
 import {
   ARX_LIVE_DEFAULT_ALLOWED_SYMBOLS,
   ARX_LIVE_DEFAULT_MAX_LOT_PER_MARKET,
+  getMyArming,
 } from "../lib/live/liveArming.js";
+import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { getUserAllocationView } from "../lib/live/masterBridgePool.js";
 import {
   T015_MANUAL_LIVE_PHASE,
@@ -96,7 +97,9 @@ type BridgeFacts = {
 };
 
 async function loadPlatformMasterBridge(): Promise<BridgeFacts> {
-  const settings = (await db.select().from(globalTradingSettingsTable).limit(1))[0];
+  const settings = (await db.select({
+    platformMasterBridgeConnectionId: globalTradingSettingsTable.platformMasterBridgeConnectionId,
+  }).from(globalTradingSettingsTable).limit(1))[0];
   const pinnedId = settings?.platformMasterBridgeConnectionId ?? null;
   let picked: BrokerConnectionFacts | null = null;
   if (pinnedId != null) {
@@ -150,13 +153,13 @@ async function loadPlatformMasterBridge(): Promise<BridgeFacts> {
 async function loadOperatorAccess(adminId: number) {
   const access = (await db.select().from(userMasterLiveAccessTable)
     .where(eq(userMasterLiveAccessTable.userId, adminId)).limit(1))[0] ?? null;
-  const arming = (await db.select().from(arxLiveArmingTable)
-    .where(eq(arxLiveArmingTable.userId, adminId)).limit(1))[0] ?? null;
+  const arming = await getMyArming(adminId);
   return { access, arming };
 }
 
 async function loadMasterGates() {
-  const s = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
+  // Switches from the one switch authority (missing/unreadable → OFF, stop engaged).
+  const { switches: sw, config: s } = await loadPlatformSettings();
   const queueDepth = await db.select({ n: sql<number>`COUNT(*)::int` })
     .from(arxLiveCommandsTable)
     .where(sql`${arxLiveCommandsTable.status} IN ('LIVE_DRAFT','SENT_TO_MT5_LIVE','LIVE_CONFIRMED')`);
@@ -168,14 +171,14 @@ async function loadMasterGates() {
   );
   return {
     masterSwitchEnabled: liveBrokerExecutionEnabled(),
-    platformMode: s?.platformMode ?? "OFF",
-    liveEnabled: s?.liveEnabled ?? false,
+    platformMode: sw.platformMode as string,
+    liveEnabled: sw.venueEnabled.LIVE,
     sharedLiveTradingEnabled: s?.sharedLiveTradingEnabled ?? false,
     masterBridgeLiveEnabled: s?.masterBridgeLiveEnabled ?? false,
     accountRoutingMode: s?.accountRoutingMode ?? "USER_OWNED_MT5",
-    emergencyKillSwitch: s?.emergencyKillSwitch ?? true,
-    killSwitchEngagedAt: s?.killSwitchEngagedAt ?? null,
-    killSwitchReason: s?.killSwitchReason ?? null,
+    emergencyKillSwitch: sw.emergencyStop.engaged,
+    killSwitchEngagedAt: sw.emergencyStop.engagedAt,
+    killSwitchReason: sw.emergencyStop.reason,
     queueDepth: Number(queueDepth[0]?.n ?? 0),
     currentOpenExposureLots: Number(openExposure[0]?.lots ?? 0),
   };

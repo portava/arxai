@@ -71,7 +71,8 @@ export async function evaluateOperatorFundedPilotGate(args: {
   }
 
   // 3. Compliance/legal review approved on the global singleton
-  const gtsRows = await db.select().from(globalTradingSettingsTable).limit(1);
+  const gtsRows = await db.select({ complianceReviewFlag: globalTradingSettingsTable.complianceReviewFlag })
+    .from(globalTradingSettingsTable).limit(1);
   const gts = gtsRows[0] ?? null;
   if (!gts || gts.complianceReviewFlag !== true) {
     blockReasons.push(PILOT_BLOCK_REASONS.COMPLIANCE_NOT_APPROVED);
