@@ -66,13 +66,13 @@ router.post("/autopilot/start", requireAdmin, (req, res) => {
 router.post("/autopilot/pause", requireAdmin, (_req, res) => { const r = pauseSession(); return res.json(r); });
 router.post("/autopilot/resume", requireAdmin, (_req, res) => { const r = resumeSession(); return res.json(r); });
 router.post("/autopilot/stop", requireAdmin, (_req, res) => { const r = stopSession(); return res.json(r); });
-router.post("/autopilot/force-scan", requireAdmin, (req, res) => {
+router.post("/autopilot/force-scan", requireAdmin, async (req, res) => {
   const symbol = req.query.symbol ? String(req.query.symbol) : undefined;
-  const r = runDecisionPipeline({ force: true, symbol });
+  const r = await runDecisionPipeline({ force: true, symbol, actorUserId: req.authUser!.id });
   return res.json(r);
 });
 
-router.post("/autopilot/human-override", requireAdmin, (req, res) => {
+router.post("/autopilot/human-override", requireAdmin, async (req, res) => {
   const Body = z.object({
     kind: z.enum(["APPROVE", "REJECT", "PAUSE", "RESUME", "STOP", "EMERGENCY_STOP", "FORCE_SCAN"]),
     decisionId: z.string().optional(),
@@ -80,7 +80,7 @@ router.post("/autopilot/human-override", requireAdmin, (req, res) => {
   });
   const p = Body.safeParse(req.body ?? {});
   if (!p.success) return res.status(400).json({ error: "invalid", issues: p.error.issues });
-  const r = humanOverride(p.data);
+  const r = await humanOverride({ ...p.data, actorUserId: req.authUser!.id });
   return res.json(r);
 });
 

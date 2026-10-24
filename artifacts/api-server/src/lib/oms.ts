@@ -13,6 +13,7 @@ import { marketSimulator } from "./marketSimulator.js";
 import { evaluateRisk } from "./marketDataLayer.js";
 import { preTradeCheck, logOrderOutcome } from "./riskGovernor2.js";
 import { pushDecision } from "./marketScanner.js";
+import type { InstrumentModel, IntentAction, IntentOrigin, RiskInFlight, RiskPosition, TradeIntent } from "./riskGovernor/preTrade.js";
 
 export type Environment =
   | "PAPER" | "DEMO_SIMULATOR" | "LIVE_TESTER_INTENT"
@@ -138,7 +139,7 @@ export interface CreateOrderInput {
   idempotencyKey?: string;
 }
 
-export function createOrder(input: CreateOrderInput): Order {
+function createOrder(input: CreateOrderInput): Order {
   if (input.idempotencyKey) {
     const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey);
     if (existing) return existing;
@@ -210,14 +211,14 @@ export function listOrders(filter?: { environment?: Environment; status?: OrderS
 }
 export function getOrder(id: string) { return orders.get(id) ?? null; }
 
-export function patchOrder(id: string, patch: Partial<Order>) {
+function patchOrder(id: string, patch: Partial<Order>) {
   const o = orders.get(id); if (!o) return null;
   Object.assign(o, patch, { orderId: o.orderId, updatedAt: nowIso() });
   audit("ORDER_PATCHED", `Order ${id} patched`, { patch });
   return o;
 }
 
-export function cancelOrder(id: string) {
+function cancelOrder(id: string) {
   const o = orders.get(id); if (!o) return null;
   if (o.status === "FILLED_SIMULATOR" || o.status === "CLOSED") return o;
   o.status = "CANCELLED"; o.updatedAt = nowIso();
@@ -226,7 +227,7 @@ export function cancelOrder(id: string) {
 }
 
 // ── Simulator execution ────────────────────────────────────────────────────
-export function submitToSimulator(orderId: string): { order: Order; position?: Position; error?: string } {
+function submitToSimulator(orderId: string): { order: Order; position?: Position; error?: string } {
   const o = orders.get(orderId);
   if (!o) return { order: o!, error: "not_found" };
   if (o.environment === "LIVE_TESTER_INTENT" || o.environment.startsWith("FUTURE_MT5")) {
@@ -315,7 +316,7 @@ export function listPositions(filter?: { environment?: Environment; status?: Pos
 }
 export function getPosition(id: string) { return positions.get(id) ?? null; }
 
-export function closePosition(id: string, reason: PositionStatus = "MANUALLY_CLOSED", overridePrice?: number) {
+function closePosition(id: string, reason: PositionStatus = "MANUALLY_CLOSED", overridePrice?: number) {
   const p = positions.get(id); if (!p) return null;
   if (p.status !== "OPEN") return p;
   if (overridePrice != null) p.currentPrice = overridePrice;
@@ -330,7 +331,7 @@ export function closePosition(id: string, reason: PositionStatus = "MANUALLY_CLO
   return p;
 }
 
-export function partialClose(id: string, fraction: number) {
+function partialClose(id: string, fraction: number) {
   const p = positions.get(id); if (!p || p.status !== "OPEN") return null;
   const f = Math.max(0.01, Math.min(0.99, fraction));
   const closedLots = Number((p.lotSize * f).toFixed(2));
@@ -344,25 +345,25 @@ export function partialClose(id: string, fraction: number) {
   return p;
 }
 
-export function moveStop(id: string, newStop: number) {
+function moveStop(id: string, newStop: number) {
   const p = positions.get(id); if (!p || p.status !== "OPEN") return null;
   p.stopLoss = newStop;
   audit("POSITION_MOVE_STOP", `Move stop ${id} → ${newStop}`, {});
   return p;
 }
-export function moveTakeProfit(id: string, newTp: number) {
+function moveTakeProfit(id: string, newTp: number) {
   const p = positions.get(id); if (!p || p.status !== "OPEN") return null;
   p.takeProfit = newTp;
   audit("POSITION_MOVE_TP", `Move TP ${id} → ${newTp}`, {});
   return p;
 }
-export function moveStopToBreakEven(id: string) {
+function moveStopToBreakEven(id: string) {
   const p = positions.get(id); if (!p || p.status !== "OPEN") return null;
   p.stopLoss = p.entryPrice;
   audit("POSITION_BREAKEVEN", `Stop → BE ${id}`, {});
   return p;
 }
-export function applyTrailingStop(id: string, distance: number) {
+function applyTrailingStop(id: string, distance: number) {
   const p = positions.get(id); if (!p || p.status !== "OPEN") return null;
   p.trailingDistance = distance;
   audit("POSITION_TRAILING", `Trailing stop ${id} dist=${distance}`, {});
@@ -479,4 +480,235 @@ export function omsDashboardSummary() {
     orderSystemStatus: "RUNNING",
     dataSource: "SIMULATOR",
   };
+}
+
+// ── Governed entry points (the only exported way to change the book) ───────
+//
+// Every order the simulator OMS creates, amends or fills, and every stop,
+// target or close on its positions, is evaluated by the pre-trade Risk
+// Governor (lib/riskGovernor) for the operator or agent driving it — the same
+// 12 rules and stop switches as paper, demo and live, written to that user's
+// user_risk_events trail. The OMS supplies its own book as the facts: its
+// simulated account, open positions, quotes and today's P/L. Risk Governor
+// 2.0 (preTradeCheck) still runs inside createOrder; the stricter refusal wins.
+
+export interface OmsActor {
+  /** The operator, or the owner of the agent, on whose behalf the OMS acts. */
+  userId: number;
+  /** Who decided this action; defaults from the order source, else manual. */
+  origin?: IntentOrigin;
+}
+
+export interface OmsGovernance {
+  allowed: boolean;
+  blockedBy: string[];
+  reason: string | null;
+  auditEventId: number | null;
+}
+
+export type OmsActionResult<T> =
+  | { ok: true; value: T; governance: OmsGovernance }
+  | { ok: false; error: "not_found" | "not_open" | "risk_blocked" | "would_widen"; governance?: OmsGovernance; message: string };
+
+const SOURCE_ORIGIN: Record<OrderSource, IntentOrigin> = {
+  MANUAL: "manual", AI_ASSIST: "ruby", AI_AUTO: "automation", SCANNER: "automation", BACKTEST: "system", REPLAY: "system",
+};
+
+function simulatorInstrument(symbol: string): InstrumentModel {
+  return {
+    // Money per 1.0 price move per lot, from the same heuristic the OMS P/L uses.
+    contractSize: priceMoveToUsd(symbol, 1, 1), quoteToAccountFx: 1,
+    volumeStep: 0.01, minVolume: 0.01, maxVolume: null, source: "simulator_oms",
+  };
+}
+
+async function governOms(args: {
+  actor: OmsActor; origin: IntentOrigin; action: IntentAction; environment: Environment;
+  symbol: string; side: Direction; lots: number; entryPrice?: number | null;
+  stopLoss?: number | null; takeProfit?: number | null; ref: string;
+  position?: { entryPrice: number; stopLoss: number | null } | null;
+}): Promise<OmsGovernance> {
+  const { enforcePreTradeRisk } = await import("./riskGovernor/enforce.js");
+  const { getProfile } = await import("./riskGovernor2.js");
+  const open = Array.from(positions.values()).filter((p) => p.status === "OPEN" && p.environment === args.environment);
+  const book: RiskPosition[] = open.map((p) => ({
+    symbol: p.symbol, side: p.direction, lots: p.lotSize, entryPrice: p.entryPrice, stopLoss: p.stopLoss ?? null,
+  }));
+  const instruments: Record<string, InstrumentModel> = {};
+  for (const s of new Set([args.symbol, ...open.map((p) => p.symbol)])) instruments[s] = simulatorInstrument(s);
+  const now = new Date();
+  const inFlight: RiskInFlight[] = Array.from(orders.values())
+    .filter((o) => `oms:${o.orderId}` !== args.ref && o.environment === args.environment
+      && (o.status === "APPROVED_FOR_SIMULATION" || o.status === "PENDING_MT5_CONNECTION"
+        || (o.status === "FILLED_SIMULATOR" && now.getTime() - Date.parse(o.updatedAt) < 60_000)))
+    .map((o) => ({ ref: `oms:${o.orderId}`, symbol: o.symbol, side: o.direction, lots: o.lotSize, at: new Date(o.updatedAt),
+      kind: o.status === "FILLED_SIMULATOR" ? "filled" as const : "pending" as const }));
+  const q = marketSimulator.quote(args.symbol);
+  const floating = open.reduce((a, p) => a + p.unrealizedPnL, 0);
+  const today = now.toISOString().slice(0, 10);
+  const realized = Array.from(positions.values())
+    .filter((p) => p.status !== "OPEN" && p.environment === args.environment && (p.closedAt ?? "").slice(0, 10) === today)
+    .reduce((a, p) => a + p.realizedPnL, 0);
+  const balance = getProfile().currentBalance;
+  const equity = balance + floating;
+  const usedMargin = open.reduce((a, p) => a + (simulatorInstrument(p.symbol).contractSize ?? 0) * p.entryPrice * p.lotSize / 100, 0);
+
+  const intent: TradeIntent = {
+    userId: args.actor.userId, venue: "PAPER", origin: args.origin, action: args.action,
+    symbol: args.symbol, side: args.side, lots: args.lots,
+    entryPrice: args.entryPrice ?? null, stopLoss: args.stopLoss ?? null, takeProfit: args.takeProfit ?? null,
+    intentRef: args.ref, position: args.position ?? null,
+  };
+  const r = await enforcePreTradeRisk(intent, {
+    facts: {
+      now,
+      account: { equity, freeMargin: equity - usedMargin, leverage: 100, currency: "USD", source: "simulator_oms" },
+      instruments, positions: book, inFlight,
+      quote: q ? { bid: q.bid, ask: q.ask, at: now, source: "simulator_oms" } : null,
+      broker: { status: "CONNECTED", lastSeenAt: now, detail: "internal simulator OMS" },
+      daily: { realizedPnl: realized, floatingPnl: floating },
+    },
+    auditContext: { caller: "simulator_oms", environment: args.environment, ref: args.ref },
+  });
+  return { allowed: r.allowed, blockedBy: r.blockedBy, reason: r.primaryReason, auditEventId: r.auditEventId };
+}
+
+function blocked<T>(g: OmsGovernance): OmsActionResult<T> {
+  return { ok: false, error: "risk_blocked", governance: g, message: g.reason ?? "Blocked by Risk Governor." };
+}
+
+/** Create an order. A governor refusal is recorded on the order as RISK_REJECTED. */
+export async function placeOrder(input: CreateOrderInput, actor: OmsActor): Promise<{ order: Order; governance: OmsGovernance }> {
+  if (input.idempotencyKey) {
+    const existing = Array.from(orders.values()).find((o) => o.idempotencyKey === input.idempotencyKey);
+    if (existing) return { order: existing, governance: { allowed: existing.status !== "RISK_REJECTED", blockedBy: [], reason: null, auditEventId: null } };
+  }
+  const pendingId = newId("ord");
+  const g = await governOms({
+    actor, origin: actor.origin ?? SOURCE_ORIGIN[input.source], action: "OPEN", environment: input.environment,
+    symbol: input.symbol, side: input.direction, lots: input.lotSize,
+    entryPrice: input.orderType && input.orderType !== "MARKET" ? input.entryPrice ?? null : null,
+    stopLoss: input.stopLoss ?? null, takeProfit: input.takeProfit ?? null, ref: `oms:${pendingId}`,
+  });
+  const order = createOrder(input);
+  if (!g.allowed && order.status !== "RISK_REJECTED") {
+    order.status = "RISK_REJECTED";
+    order.rejectionReason = `RISK_GOVERNOR_BLOCK[${g.blockedBy.join(",")}]: ${g.reason ?? ""}`.trim();
+    order.updatedAt = nowIso();
+    audit("ORDER_RISK_GOVERNOR_BLOCK", `Order ${order.orderId} refused by the pre-trade Risk Governor`, { blockedBy: g.blockedBy });
+  }
+  return { order, governance: g };
+}
+
+/** Fill an approved order in the simulator, re-checked at fill time. */
+export async function fillOrder(orderId: string, actor: OmsActor): Promise<OmsActionResult<{ order: Order; position?: Position; error?: string }>> {
+  const o = orders.get(orderId);
+  if (!o) return { ok: false, error: "not_found", message: "not found" };
+  const g = await governOms({
+    actor, origin: actor.origin ?? SOURCE_ORIGIN[o.source], action: "OPEN", environment: o.environment,
+    symbol: o.symbol, side: o.direction, lots: o.lotSize,
+    entryPrice: o.orderType !== "MARKET" ? o.entryPrice ?? null : null,
+    stopLoss: o.stopLoss ?? null, takeProfit: o.takeProfit ?? null, ref: `oms:${o.orderId}`,
+  });
+  if (!g.allowed) {
+    if (o.status === "APPROVED_FOR_SIMULATION" || o.status === "DRAFT" || o.status === "RISK_CHECK_PENDING") {
+      o.status = "RISK_REJECTED";
+      o.rejectionReason = `RISK_GOVERNOR_BLOCK[${g.blockedBy.join(",")}]: ${g.reason ?? ""}`.trim();
+      o.updatedAt = nowIso();
+    }
+    return blocked(g);
+  }
+  return { ok: true, value: submitToSimulator(orderId), governance: g };
+}
+
+/** Change an unfilled order's size, stop or target; the changed order is re-checked. */
+export async function amendOrder(id: string, patch: Pick<Partial<Order>, "stopLoss" | "takeProfit" | "lotSize" | "rejectionReason">,
+  actor: OmsActor): Promise<OmsActionResult<Order>> {
+  const o = orders.get(id);
+  if (!o) return { ok: false, error: "not_found", message: "not found" };
+  const next = { ...o, ...patch };
+  const g = await governOms({
+    actor, origin: actor.origin ?? SOURCE_ORIGIN[o.source], action: "OPEN", environment: o.environment,
+    symbol: o.symbol, side: o.direction, lots: next.lotSize,
+    entryPrice: o.orderType !== "MARKET" ? o.entryPrice ?? null : null,
+    stopLoss: next.stopLoss ?? null, takeProfit: next.takeProfit ?? null, ref: `oms:${o.orderId}`,
+  });
+  if (!g.allowed) return blocked(g);
+  return { ok: true, value: patchOrder(id, patch)!, governance: g };
+}
+
+/** Cancel an unfilled order. Removes pending exposure, so it is never refused. */
+export function withdrawOrder(id: string): Order | null {
+  return cancelOrder(id);
+}
+
+function openPosition(id: string): Position | OmsActionResult<never> {
+  const p = positions.get(id);
+  if (!p) return { ok: false, error: "not_found", message: "not found" };
+  if (p.status !== "OPEN") return { ok: false, error: "not_open", message: `position is ${p.status}` };
+  return p;
+}
+const isResult = (v: unknown): v is OmsActionResult<never> => typeof v === "object" && v != null && "ok" in v;
+
+export async function closeOmsPosition(id: string, actor: OmsActor): Promise<OmsActionResult<Position>> {
+  const p = openPosition(id); if (isResult(p)) return p;
+  const g = await governOms({ actor, origin: actor.origin ?? "manual", action: "CLOSE", environment: p.environment,
+    symbol: p.symbol, side: p.direction, lots: p.lotSize, ref: `oms:${p.positionId}` });
+  if (!g.allowed) return blocked(g);
+  return { ok: true, value: closePosition(id, "MANUALLY_CLOSED")!, governance: g };
+}
+
+export async function partialCloseOmsPosition(id: string, fraction: number, actor: OmsActor): Promise<OmsActionResult<Position>> {
+  const p = openPosition(id); if (isResult(p)) return p;
+  const lots = Number((p.lotSize * Math.max(0.01, Math.min(0.99, fraction))).toFixed(2));
+  const g = await governOms({ actor, origin: actor.origin ?? "manual", action: "PARTIAL_CLOSE", environment: p.environment,
+    symbol: p.symbol, side: p.direction, lots, ref: `oms:${p.positionId}` });
+  if (!g.allowed) return blocked(g);
+  return { ok: true, value: partialClose(id, fraction)!, governance: g };
+}
+
+async function governStop(p: Position, stopLoss: number, takeProfit: number | null, actor: OmsActor): Promise<OmsGovernance> {
+  return governOms({ actor, origin: actor.origin ?? "manual", action: "MODIFY", environment: p.environment,
+    symbol: p.symbol, side: p.direction, lots: p.lotSize, stopLoss, takeProfit, ref: `oms:${p.positionId}`,
+    position: { entryPrice: p.entryPrice, stopLoss: p.stopLoss ?? null } });
+}
+
+export async function moveOmsStop(id: string, stopLoss: number, actor: OmsActor): Promise<OmsActionResult<Position>> {
+  const p = openPosition(id); if (isResult(p)) return p;
+  const g = await governStop(p, stopLoss, p.takeProfit ?? null, actor);
+  if (!g.allowed) return blocked(g);
+  return { ok: true, value: moveStop(id, stopLoss)!, governance: g };
+}
+
+export async function moveOmsTakeProfit(id: string, takeProfit: number, actor: OmsActor): Promise<OmsActionResult<Position>> {
+  const p = openPosition(id); if (isResult(p)) return p;
+  const g = await governOms({ actor, origin: actor.origin ?? "manual", action: "MODIFY", environment: p.environment,
+    symbol: p.symbol, side: p.direction, lots: p.lotSize, stopLoss: p.stopLoss ?? null, takeProfit,
+    ref: `oms:${p.positionId}`, position: { entryPrice: p.entryPrice, stopLoss: p.stopLoss ?? null } });
+  if (!g.allowed) return blocked(g);
+  return { ok: true, value: moveTakeProfit(id, takeProfit)!, governance: g };
+}
+
+/** Break-even only ever tightens: refused when the stop is already past entry. */
+export async function moveOmsStopToBreakEven(id: string, actor: OmsActor): Promise<OmsActionResult<Position>> {
+  const p = openPosition(id); if (isResult(p)) return p;
+  const widens = p.stopLoss != null && (p.direction === "BUY" ? p.entryPrice < p.stopLoss : p.entryPrice > p.stopLoss);
+  if (widens) return { ok: false, error: "would_widen", message: `The stop ${p.stopLoss} is already past entry ${p.entryPrice}; break-even would widen it.` };
+  const g = await governStop(p, p.entryPrice, p.takeProfit ?? null, actor);
+  if (!g.allowed) return blocked(g);
+  return { ok: true, value: moveStopToBreakEven(id)!, governance: g };
+}
+
+/**
+ * Trailing distance: the tick loop only ever moves the stop toward price, so
+ * setting it adds no risk. It is still checked as a modify at the stop the
+ * trail would set now, when that is tighter than the current stop.
+ */
+export async function setOmsTrailingStop(id: string, distance: number, actor: OmsActor): Promise<OmsActionResult<Position>> {
+  const p = openPosition(id); if (isResult(p)) return p;
+  const proposed = Number((p.direction === "BUY" ? p.currentPrice - distance : p.currentPrice + distance).toFixed(5));
+  const tighter = p.stopLoss == null || (p.direction === "BUY" ? proposed > p.stopLoss : proposed < p.stopLoss);
+  const g = await governStop(p, tighter ? proposed : p.stopLoss!, p.takeProfit ?? null, actor);
+  if (!g.allowed) return blocked(g);
+  return { ok: true, value: applyTrailingStop(id, distance)!, governance: g };
 }

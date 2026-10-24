@@ -9,12 +9,26 @@ import { requireAdmin } from "../lib/security/middleware.js";
 
 import { z } from "zod/v4";
 import {
-  createOrder, listOrders, getOrder, patchOrder, cancelOrder,
-  submitToSimulator, listPositions, getPosition,
-  closePosition, partialClose, moveStop, moveTakeProfit, moveStopToBreakEven, applyTrailingStop,
+  placeOrder, listOrders, getOrder, amendOrder, withdrawOrder,
+  fillOrder, listPositions, getPosition,
+  closeOmsPosition, partialCloseOmsPosition, moveOmsStop, moveOmsTakeProfit, moveOmsStopToBreakEven, setOmsTrailingStop,
   pnlSummary, pnlBy, pnlDaily, brokerReconStatus, omsDashboardSummary,
-  tickAll,
+  tickAll, type OmsActionResult, type OmsActor,
 } from "../lib/oms.js";
+
+// Every change to the simulator book is evaluated by the pre-trade Risk
+// Governor for the operator making it (lib/oms.ts, governed entry points).
+const actorOf = (req: Request): OmsActor => ({ userId: req.authUser!.id });
+
+function sendResult<T>(res: Response, r: OmsActionResult<T>) {
+  if (r.ok) return res.json(r.value);
+  if (r.error === "not_found") return res.status(404).json({ error: "not found" });
+  if (r.error === "risk_blocked") {
+    return res.status(422).json({ error: "RISK_GOVERNOR_BLOCK", message: r.message, blockedBy: r.governance?.blockedBy ?? [],
+      auditEventId: r.governance?.auditEventId ?? null });
+  }
+  return res.status(409).json({ error: r.error === "would_widen" ? "STOP_WOULD_WIDEN" : "POSITION_NOT_OPEN", message: r.message });
+}
 
 const router = Router();
 
@@ -42,7 +56,7 @@ router.get("/orders/:id", (req, res) => {
   return res.json(o);
 });
 
-router.post("/orders/create", requireAdmin, (req, res) => {
+router.post("/orders/create", requireAdmin, async (req, res) => {
   const Body = z.object({
     environment: Env, source: Source,
     symbol: z.string(), direction: z.enum(["BUY", "SELL"]),
@@ -61,19 +75,21 @@ router.post("/orders/create", requireAdmin, (req, res) => {
   });
   const p = Body.safeParse(req.body ?? {});
   if (!p.success) return res.status(400).json({ error: "invalid", issues: p.error.issues });
-  return res.status(201).json(createOrder(p.data));
+  const { order, governance } = await placeOrder(p.data, actorOf(req));
+  return res.status(201).json({ ...order, governance });
 });
 
-router.post("/orders/:id/submit-simulator", requireAdmin, (req, res) => {
-  const r = submitToSimulator(String(req.params.id));
-  if (r.error) return res.status(400).json(r);
-  return res.json(r);
+router.post("/orders/:id/submit-simulator", requireAdmin, async (req, res) => {
+  const g = await fillOrder(String(req.params.id), actorOf(req));
+  if (!g.ok) return sendResult(res, g);
+  if (g.value.error) return res.status(400).json(g.value);
+  return res.json(g.value);
 });
 router.post("/orders/:id/cancel", requireAdmin, (req, res) => {
-  const o = cancelOrder(String(req.params.id)); if (!o) return res.status(404).json({ error: "not found" });
+  const o = withdrawOrder(String(req.params.id)); if (!o) return res.status(404).json({ error: "not found" });
   return res.json(o);
 });
-router.patch("/orders/:id", requireAdmin, (req, res) => {
+router.patch("/orders/:id", requireAdmin, async (req, res) => {
   const Body = z.object({
     stopLoss: z.number().optional(), takeProfit: z.number().optional(),
     lotSize: z.number().positive().optional(),
@@ -81,8 +97,7 @@ router.patch("/orders/:id", requireAdmin, (req, res) => {
   });
   const p = Body.safeParse(req.body ?? {});
   if (!p.success) return res.status(400).json({ error: "invalid", issues: p.error.issues });
-  const o = patchOrder(String(req.params.id), p.data); if (!o) return res.status(404).json({ error: "not found" });
-  return res.json(o);
+  return sendResult(res, await amendOrder(String(req.params.id), p.data, actorOf(req)));
 });
 
 // ── Positions ──────────────────────────────────────────────────────────────
@@ -100,47 +115,41 @@ router.get("/oms/positions/:id", (req, res) => {
   return res.json(p);
 });
 
-router.post("/oms/positions/:id/close", requireAdmin, (req, res) => {
-  const p = closePosition(String(req.params.id), "MANUALLY_CLOSED");
-  if (!p) return res.status(404).json({ error: "not found" });
-  return res.json(p);
+router.post("/oms/positions/:id/close", requireAdmin, async (req, res) => {
+  return sendResult(res, await closeOmsPosition(String(req.params.id), actorOf(req)));
 });
-router.post("/oms/positions/:id/partial-close", requireAdmin, (req, res) => {
+router.post("/oms/positions/:id/partial-close", requireAdmin, async (req, res) => {
   const Body = z.object({ fraction: z.number().min(0.01).max(0.99) });
   const p = Body.safeParse(req.body ?? {}); if (!p.success) return res.status(400).json({ error: "invalid" });
-  const pos = partialClose(String(req.params.id), p.data.fraction); if (!pos) return res.status(404).json({ error: "not found" });
-  return res.json(pos);
+  return sendResult(res, await partialCloseOmsPosition(String(req.params.id), p.data.fraction, actorOf(req)));
 });
-router.post("/oms/positions/:id/move-stop", requireAdmin, (req, res) => {
+router.post("/oms/positions/:id/move-stop", requireAdmin, async (req, res) => {
   const Body = z.object({ stopLoss: z.number() });
   const p = Body.safeParse(req.body ?? {}); if (!p.success) return res.status(400).json({ error: "invalid" });
-  const pos = moveStop(String(req.params.id), p.data.stopLoss); if (!pos) return res.status(404).json({ error: "not found" });
-  return res.json(pos);
+  return sendResult(res, await moveOmsStop(String(req.params.id), p.data.stopLoss, actorOf(req)));
 });
-router.post("/oms/positions/:id/move-take-profit", requireAdmin, (req, res) => {
+router.post("/oms/positions/:id/move-take-profit", requireAdmin, async (req, res) => {
   const Body = z.object({ takeProfit: z.number() });
   const p = Body.safeParse(req.body ?? {}); if (!p.success) return res.status(400).json({ error: "invalid" });
-  const pos = moveTakeProfit(String(req.params.id), p.data.takeProfit); if (!pos) return res.status(404).json({ error: "not found" });
-  return res.json(pos);
+  return sendResult(res, await moveOmsTakeProfit(String(req.params.id), p.data.takeProfit, actorOf(req)));
 });
-router.post("/oms/positions/:id/breakeven", requireAdmin, (req, res) => {
-  const pos = moveStopToBreakEven(String(req.params.id)); if (!pos) return res.status(404).json({ error: "not found" });
-  return res.json(pos);
+router.post("/oms/positions/:id/breakeven", requireAdmin, async (req, res) => {
+  return sendResult(res, await moveOmsStopToBreakEven(String(req.params.id), actorOf(req)));
 });
-router.post("/oms/positions/:id/trailing-stop", requireAdmin, (req, res) => {
+router.post("/oms/positions/:id/trailing-stop", requireAdmin, async (req, res) => {
   const Body = z.object({ distance: z.number().positive() });
   const p = Body.safeParse(req.body ?? {}); if (!p.success) return res.status(400).json({ error: "invalid" });
-  const pos = applyTrailingStop(String(req.params.id), p.data.distance); if (!pos) return res.status(404).json({ error: "not found" });
-  return res.json(pos);
+  return sendResult(res, await setOmsTrailingStop(String(req.params.id), p.data.distance, actorOf(req)));
 });
 
 // ── Execution helpers ──────────────────────────────────────────────────────
-router.post("/execution/simulator/fill", requireAdmin, (req, res) => {
+router.post("/execution/simulator/fill", requireAdmin, async (req, res) => {
   const Body = z.object({ orderId: z.string() });
   const p = Body.safeParse(req.body ?? {}); if (!p.success) return res.status(400).json({ error: "invalid" });
-  const r = submitToSimulator(p.data.orderId);
-  if (r.error) return res.status(400).json(r);
-  return res.json(r);
+  const g = await fillOrder(p.data.orderId, actorOf(req));
+  if (!g.ok) return sendResult(res, g);
+  if (g.value.error) return res.status(400).json(g.value);
+  return res.json(g.value);
 });
 router.post("/execution/simulator/tick", requireAdmin, (_req, res) => { tickAll(); return res.json({ ticked: true }); });
 

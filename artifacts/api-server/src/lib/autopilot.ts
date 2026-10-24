@@ -14,7 +14,7 @@ import {
   evaluateRisk, dataQuality, sessionClock, currentNewsRisk, marketHealth,
 } from "./marketDataLayer.js";
 import { pushDecision } from "./marketScanner.js";
-import { createOrder, submitToSimulator, listOrders, listPositions, pnlSummary } from "./oms.js";
+import { placeOrder, fillOrder, listOrders, listPositions, pnlSummary } from "./oms.js";
 
 export type AutopilotMode =
   | "OFF" | "OBSERVE_ONLY" | "AI_ASSIST"
@@ -264,9 +264,18 @@ function scoreSetup(symbol: string) {
 }
 
 // ── Decision pipeline ──────────────────────────────────────────────────────
-export interface RunPipelineOptions { force?: boolean; symbol?: string; }
+export interface RunPipelineOptions {
+  force?: boolean;
+  symbol?: string;
+  /**
+   * The operator driving this run. Simulator orders are evaluated by the
+   * pre-trade Risk Governor against this user's limits and stop switches; a
+   * run with no accountable user decides but never places an order.
+   */
+  actorUserId?: number;
+}
 
-export function runDecisionPipeline(opts: RunPipelineOptions = {}): AutopilotDecision | { error: string } {
+export async function runDecisionPipeline(opts: RunPipelineOptions = {}): Promise<AutopilotDecision | { error: string }> {
   if (!activeSessionId) return { error: "No active session." };
   const session = sessions.get(activeSessionId)!;
   if (session.status === "STOPPED") return { error: "Session stopped." };
@@ -358,27 +367,34 @@ export function runDecisionPipeline(opts: RunPipelineOptions = {}): AutopilotDec
     if (recent) { rulesFailed.push("DUPLICATE_ORDER"); action = "REJECT"; }
   }
 
+  if ((action === "SUBMIT_SIMULATOR" || action === "CREATE_LIVE_INTENT_PENDING_MT5") && opts.actorUserId == null) {
+    rulesFailed.push("NO_ACCOUNTABLE_OPERATOR");
+    action = "REJECT";
+  }
+  const actor = { userId: opts.actorUserId ?? 0 };
+
   let orderId: string | undefined;
   if (action === "SUBMIT_SIMULATOR") {
     transition("SUBMITTING_SIMULATOR_ORDER", "Submit simulator");
-    const o = createOrder({
+    const { order: o } = await placeOrder({
       environment: "DEMO_SIMULATOR", source: "AI_AUTO",
       symbol: setup.symbol, direction: setup.direction, lotSize: 0.05,
       entryPrice: setup.entryPrice, stopLoss: setup.stopLoss, takeProfit: setup.takeProfit,
       riskAmount: 15, confidenceScore: setup.confidence, opportunityScore: setup.opportunity,
       entrySniperScore: setup.sniper, strategyId: session.strategy,
-    });
-    if (o.status === "APPROVED_FOR_SIMULATION") { submitToSimulator(o.orderId); }
+    }, actor);
+    if (o.status === "APPROVED_FOR_SIMULATION") { await fillOrder(o.orderId, actor); }
+    if (o.status === "RISK_REJECTED") rulesFailed.push(`OMS:${o.rejectionReason ?? o.status}`);
     orderId = o.orderId;
     transition("POSITION_MONITORING", "Order submitted");
   } else if (action === "CREATE_LIVE_INTENT_PENDING_MT5") {
-    const o = createOrder({
+    const { order: o } = await placeOrder({
       environment: "LIVE_TESTER_INTENT", source: "AI_AUTO",
       symbol: setup.symbol, direction: setup.direction, lotSize: 0.01,
       entryPrice: setup.entryPrice, stopLoss: setup.stopLoss, takeProfit: setup.takeProfit,
       riskAmount: 15, confidenceScore: setup.confidence, opportunityScore: setup.opportunity,
       entrySniperScore: setup.sniper, strategyId: session.strategy,
-    });
+    }, actor);
     orderId = o.orderId;
     transition("PENDING_MT5_CONNECTION", "Live intent parked");
   } else if (action === "ASK_USER_APPROVAL") {
@@ -444,30 +460,32 @@ function finalize(a: FinalizeArgs): AutopilotDecision {
 }
 
 // ── Human override ─────────────────────────────────────────────────────────
-export function humanOverride(input: { kind: "APPROVE" | "REJECT" | "PAUSE" | "RESUME" | "STOP" | "EMERGENCY_STOP" | "FORCE_SCAN"; decisionId?: string; note?: string }) {
+export async function humanOverride(input: { kind: "APPROVE" | "REJECT" | "PAUSE" | "RESUME" | "STOP" | "EMERGENCY_STOP" | "FORCE_SCAN"; decisionId?: string; note?: string; actorUserId?: number }) {
   pushDecision({ type: "HUMAN_OVERRIDE", summary: `Override ${input.kind}${input.decisionId ? " on " + input.decisionId : ""}`, payload: input });
   switch (input.kind) {
     case "PAUSE": return pauseSession();
     case "RESUME": return resumeSession();
     case "STOP": return stopSession();
     case "EMERGENCY_STOP": setKillSwitch(true); return stopSession();
-    case "FORCE_SCAN": return runDecisionPipeline({ force: true });
+    case "FORCE_SCAN": return runDecisionPipeline({ force: true, actorUserId: input.actorUserId });
     case "APPROVE": case "REJECT": {
       if (!input.decisionId) return { error: "decisionId required" };
       const d = decisions.find((x) => x.decisionId === input.decisionId);
       if (!d) return { error: "decision not found" };
       if (input.kind === "APPROVE" && d.action === "ASK_USER_APPROVAL") {
-        const o = createOrder({
+        if (input.actorUserId == null) return { error: "An operator must approve the order." };
+        const actor = { userId: input.actorUserId, origin: "manual" as const };
+        const { order: o } = await placeOrder({
           environment: "DEMO_SIMULATOR", source: "AI_ASSIST",
           symbol: d.symbol, direction: d.direction, lotSize: d.lotSize || 0.05,
           entryPrice: d.entryPrice, stopLoss: d.stopLoss, takeProfit: d.takeProfit,
           riskAmount: 15, confidenceScore: d.confidenceScore,
           opportunityScore: d.opportunityScore, entrySniperScore: d.entrySniperScore,
           strategyId: d.strategy,
-        });
+        }, actor);
         d.orderId = o.orderId;
         if (o.status === "APPROVED_FOR_SIMULATION") {
-          submitToSimulator(o.orderId);
+          await fillOrder(o.orderId, actor);
           d.action = "SUBMIT_SIMULATOR";
           d.finalDecision = "SUBMIT_SIMULATOR";
           d.nextAction = "Monitor simulator position";
