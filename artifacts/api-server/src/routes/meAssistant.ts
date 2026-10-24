@@ -42,7 +42,7 @@ import {
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { isUniqueViolation } from "../lib/pgError.js";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { chatProviderConfigured, streamToolChat, voiceAudio, type ToolChatStreamChunk } from "../lib/ai/llmGateway.js";
 import {
   TOOL_DEFINITIONS, dispatchTool, classifyIntent,
   setRequestPageContext,
@@ -218,9 +218,8 @@ router.get("/me/assistant/voice-status", requireUser, async (req, res) => {
 // request (avoids unnecessary token spend), so we only claim connectivity
 // when the key is present and the in-process openai client was constructed.
 router.get("/me/assistant/provider-status", requireUser, async (req, res) => {
-  const proxyKey = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
   const directKey = process.env["OPENAI_API_KEY"];
-  const configured = Boolean(proxyKey && proxyKey.trim().length > 0);
+  const configured = chatProviderConfigured();
   res.json({
     provider: configured ? "openai" : "none",
     configured,
@@ -1242,19 +1241,15 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
 
   for (let turn = 0; turn < MAX_TURNS_PER_REQUEST; turn++) {
     if (aborted) break;
-    let stream: AsyncIterable<{ choices: Array<{ delta: { content?: string | null; tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }> }; finish_reason?: string | null }> }>;
+    let stream: AsyncIterable<ToolChatStreamChunk>;
     try {
-      stream = await openai.chat.completions.create({
+      stream = await streamToolChat({
         model: MODEL,
-        max_completion_tokens: 8192,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        messages: messages as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tools: tools as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tool_choice: resolveAssistantToolChoice(turn, forceStructuralRead) as any,
-        stream: true,
-      }) as unknown as AsyncIterable<{ choices: Array<{ delta: { content?: string | null; tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }> }; finish_reason?: string | null }> }>;
+        maxTokens: 8192,
+        messages,
+        tools,
+        toolChoice: resolveAssistantToolChoice(turn, forceStructuralRead),
+      });
     } catch (e) {
       try { (req as { log?: { error: (...a: unknown[]) => void } }).log?.error({ err: (e as Error)?.message }, "assistant_openai_failed"); } catch { /* noop */ }
       send({ type: "error", message: "AI provider unavailable. Please try again in a moment." });
@@ -1550,7 +1545,7 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
   let userTranscript = "";
   let assistantTranscript = "";
   try {
-    const audio = await import("@workspace/integrations-openai-ai-server/audio");
+    const audio = await voiceAudio();
     const { buffer, format } = await audio.ensureCompatibleFormat(audioBuffer);
     const stream = await audio.voiceChatStream(buffer, "alloy", format, voicePriorMessages);
     for await (const event of stream) {

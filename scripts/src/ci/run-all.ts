@@ -77,6 +77,7 @@ import { checkStopModificationAuthority } from "./check-stop-modification-author
 import { checkSinglePositionSizer } from "./check-single-position-sizer.js";
 import { checkSingleLimitStore } from "./check-single-limit-store.js";
 import { checkLegacyLiveStateConfined } from "./check-legacy-live-state-confined.js";
+import { checkSingleLlmGateway } from "./check-single-llm-gateway.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -162,6 +163,7 @@ const checks: Array<() => CheckResult> = [
   checkSinglePositionSizer,
   checkSingleLimitStore,
   checkLegacyLiveStateConfined,
+  checkSingleLlmGateway,
 ];
 
 let failed = 0;

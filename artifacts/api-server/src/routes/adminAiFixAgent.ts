@@ -30,7 +30,7 @@ import express, { type IRouter, Router, type Request, type Response } from "expr
 import { desc } from "drizzle-orm";
 import { db, aiFixAgentRunsTable, adminActionAuditLogTable } from "@workspace/db";
 import { getFixAgentConfig } from "../lib/ai/fixAgentConfig.js";
-import { getAIProvider } from "../lib/ai/providers/factory.js";
+import { fixAgentProvider as getAIProvider } from "../lib/ai/llmGateway.js";
 import {
   diagnose,
   proposePatch,

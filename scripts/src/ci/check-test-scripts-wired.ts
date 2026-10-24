@@ -153,6 +153,7 @@ const MANUAL_ONLY = new Set<string>([
   "@workspace/scripts::test:single-position-sizer",
   "@workspace/scripts::test:single-limit-store",
   "@workspace/scripts::test:legacy-live-state-confined",
+  "@workspace/scripts::test:single-llm-gateway",
   // MT5 projection boundary test uses an injected reader and performs no DB IO.
   // It stays targeted because broker-hub has its own required phase-entry lane.
   "@workspace/api-server::test:broker-hub-mt5-projection",

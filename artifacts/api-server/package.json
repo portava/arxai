@@ -54,6 +54,7 @@
     "test:position-sizer": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/positionSizer.test.ts",
     "test:one-limit-store": "node --import tsx --test --test-force-exit --test-concurrency=1 src/lib/risk/__qa__/oneLimitStore.test.ts",
     "test:readiness-stop-switches": "node --import tsx --test --test-force-exit --test-concurrency=1 src/lib/userReadiness/__qa__/readinessStopSwitches.test.ts",
+    "test:llm-gateway": "node --import tsx --test --test-force-exit src/lib/ai/__qa__/llmGateway.test.ts",
     "test:production-readiness-check": "node --import tsx --test --test-force-exit src/scripts/__qa__/productionReadinessCheck.test.ts",
     "test:broker-validation-suite": "node --import tsx --test --test-force-exit src/scripts/__qa__/brokerValidationSuite.test.ts",
     "test:learning-scopes": "node --import tsx --test --test-force-exit src/lib/learning/__qa__/scopedMemory.test.ts",
