@@ -13,14 +13,10 @@
 //   floating signal an investor ever sees (as their own pro-rata share),
 //   never a raw position, ticket, or account number.
 
-import { and, eq, isNull } from "drizzle-orm";
+import { readOpenLivePositionsWithPools } from "../positions/ledger.js";
+
 import { listConnections } from "../brokerHub/connections.js";
-import {
-  db,
-  arxLivePositionsTable,
-  tradePoolAllocationsTable,
-  type ArxLivePosition,
-} from "@workspace/db";
+import { db, type ArxLivePosition } from "@workspace/db";
 import {
   aggregatePoolFloatingPl,
   isFloatingPlIngestible,
@@ -52,24 +48,7 @@ export interface OpenPositionWithPool extends ArxLivePosition {
 export async function getOpenPositionsWithPools(
   dbh: DbReader = db,
 ): Promise<OpenPositionWithPool[]> {
-  const rows = await dbh
-    .select({
-      pos: arxLivePositionsTable,
-      allocPoolId: tradePoolAllocationsTable.strategyPoolId,
-      allocStatus: tradePoolAllocationsTable.status,
-    })
-    .from(arxLivePositionsTable)
-    .leftJoin(
-      tradePoolAllocationsTable,
-      // Ticket uniqueness is per-user, so the join MUST be scoped by BOTH the
-      // user id and the ticket — joining on ticket alone over-matches across
-      // accounts and could attribute one user's position to another's pool.
-      and(
-        eq(arxLivePositionsTable.userId, tradePoolAllocationsTable.userId),
-        eq(arxLivePositionsTable.brokerTicket, tradePoolAllocationsTable.brokerTicket),
-      ),
-    )
-    .where(isNull(arxLivePositionsTable.closedAt));
+  const rows = await readOpenLivePositionsWithPools(dbh);
 
   return rows.map((r) => {
     const assigned =

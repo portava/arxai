@@ -5,6 +5,7 @@
 //
 // Pre-trade risk check is purely advisory; live order execution is system-locked.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { getUserPrimaryConnection, listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
 import {
   db,
@@ -22,7 +23,13 @@ import {
   adminActionAuditLogTable,
 } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { ARX_FEATURES, getAppFeatureMap, explainFeature as featureExplain, getAppFeatureRegistry as featureRegistry, getFeatureHelp as featureHelpLookup, getCurrentPageHelp as pageHelpLookup } from "./featureMap.js";
+import {
+  getAppFeatureMap,
+  explainFeature as featureExplain,
+  getAppFeatureRegistry as featureRegistry,
+  getFeatureHelp as featureHelpLookup,
+  getCurrentPageHelp as pageHelpLookup,
+} from "./featureMap.js";
 import { scannerStatus, effectiveOpportunityScore, DEFAULT_SYMBOLS } from "../marketScanner.js";
 import { getMarketProvider, getMarketStatus, getCurrentEventsFromProvider } from "./marketProvider.js";
 import { sanitizeExternalText } from "../security/promptInjectionGuard.js";
@@ -1741,7 +1748,7 @@ export type ToolName = typeof TOOL_DEFINITIONS[number]["name"];
 export async function getMyLiveOpenTrades(userId: number) {
   const { getEnvelope } = await import("../adminTrading/safetyEnvelope.js");
   const env = await getEnvelope(userId);
-  const { livePositionsTable, sharedTradeAttributionTable } = await import("@workspace/db/schema");
+  const { sharedTradeAttributionTable } = await import("@workspace/db/schema");
   const now = Date.now();
 
   type VerifiedTrade = {
@@ -1759,8 +1766,9 @@ export async function getMyLiveOpenTrades(userId: number) {
 
   if (env.accountRoutingMode === "USER_OWNED_MT5") {
     const snapshotReliable = await getUserSnapshotReliable(userId, now);
-    const rows = await db.select().from(livePositionsTable)
-      .where(and(eq(livePositionsTable.userId, userId), eq(livePositionsTable.status, "OPEN")));
+    const rows = await demoPositionLedger.read({
+      where: and(eq(demoPositionColumns.userId, userId), eq(demoPositionColumns.status, "OPEN")),
+    });
     for (const r of rows) {
       const verdict = classifyLivePosition(r, { snapshotReliable, now });
       if (verdict.isVerifiedLive) {
@@ -1866,7 +1874,7 @@ async function resolveAndComputeForUser(userId: number, tradeKey: string) {
   const { resolveRouting: _r } = await import("../adminTrading/routingResolver.js");
   void _r;
   const { db } = await import("@workspace/db");
-  const { livePositionsTable, sharedTradeAttributionTable, sharedMasterAccountsTable } = await import("@workspace/db/schema");
+  const { sharedTradeAttributionTable, sharedMasterAccountsTable } = await import("@workspace/db/schema");
   const { and: a2, eq: e2 } = await import("drizzle-orm");
   let trade: {
     tradeKey: string; routingMode: "USER_OWNED_MT5" | "SHARED_MASTER_MT5";
@@ -1884,8 +1892,10 @@ async function resolveAndComputeForUser(userId: number, tradeKey: string) {
   if (tradeKey.startsWith("lp_")) {
     const id = Number(tradeKey.slice(3));
     if (Number.isFinite(id) && id > 0) {
-      const [r] = await db.select().from(livePositionsTable)
-        .where(a2(e2(livePositionsTable.id, id), e2(livePositionsTable.userId, userId))).limit(1);
+      const [r] = await demoPositionLedger.read({
+        where: a2(e2(demoPositionColumns.id, id), e2(demoPositionColumns.userId, userId)),
+        limit: 1,
+      });
       if (r) {
         const snapshotReliable = await getUserSnapshotReliable(userId, nowMs);
         truth = classifyLivePosition(r, { snapshotReliable, now: nowMs });
@@ -2096,14 +2106,16 @@ export async function getExitPlanTool(userId: number, tradeKey: string) {
 
 // ── Phase UX3 — Sniper watchlist + timeline + exit-review tools ──────────
 export async function getSniperWatchlistTool(userId: number) {
-  const { livePositionsTable, sharedTradeAttributionTable } = await import("@workspace/db/schema");
+  const { sharedTradeAttributionTable } = await import("@workspace/db/schema");
   const { getEnvelope } = await import("../adminTrading/safetyEnvelope.js");
   const env = await getEnvelope(userId);
   // Re-build keys here (cannot call the route handler directly).
   const keys: string[] = [];
   if (env.accountRoutingMode === "USER_OWNED_MT5") {
-    const rows = await db.select({ id: livePositionsTable.id }).from(livePositionsTable)
-      .where(and(eq(livePositionsTable.userId, userId), eq(livePositionsTable.status, "OPEN")));
+    const rows = await demoPositionLedger.select(
+      { id: demoPositionColumns.id },
+      { where: and(eq(demoPositionColumns.userId, userId), eq(demoPositionColumns.status, "OPEN")) },
+    );
     for (const r of rows) keys.push(`lp_${r.id}`);
   } else {
     const rows = await db.select({ id: sharedTradeAttributionTable.id }).from(sharedTradeAttributionTable)
@@ -3534,7 +3546,11 @@ export async function explainOpportunityRankingTool(userId: number, limit: numbe
 }
 
 // ── Phase TT — Trade ticket assistant tools ────────────────────────────────
-import { ORDER_TYPES as TT_ORDER_TYPES, isOrderType as ttIsOrderType, isMarketOrder as ttIsMarketOrder } from "../tradeAction/orderTypes.js";
+import {
+  ORDER_TYPES as TT_ORDER_TYPES,
+  isOrderType as ttIsOrderType,
+  isMarketOrder as ttIsMarketOrder,
+} from "../tradeAction/orderTypes.js";
 import { validateOrderTicket as ttValidate } from "../tradeAction/orderTicketValidation.js";
 import { tradeActionRequestsTable } from "@workspace/db/schema";
 import { isNotNull } from "drizzle-orm";

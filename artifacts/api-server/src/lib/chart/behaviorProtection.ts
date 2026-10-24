@@ -12,7 +12,8 @@
 //   • It fails open: any error returns an empty, non-alarming result.
 //   • Investors (view-only, no trade controls) get { applicable: false }.
 
-import { db, scalpJournalEntriesTable, tradesTable, arxLivePositionsTable } from "@workspace/db";
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { db, scalpJournalEntriesTable, tradesTable } from "@workspace/db";
 import { and, desc, eq, gte, isNull } from "drizzle-orm";
 import { logger } from "../logger.js";
 
@@ -123,12 +124,9 @@ export async function getBehaviorProtection(
       .orderBy(desc(tradesTable.createdAt));
 
     // ── Open live positions (per-user) for holding-too-long ──
-    const openLive = await db
-      .select()
-      .from(arxLivePositionsTable)
-      .where(
-        and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)),
-      );
+    const openLive = await livePositionLedger.read({
+      where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
+    });
 
     // 1) Overtrading — count of distinct entries in the window.
     const tradeCount = recentTrades.length + closedBaskets.length;

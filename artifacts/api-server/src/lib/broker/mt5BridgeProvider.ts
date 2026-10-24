@@ -5,7 +5,8 @@
 // tables. Order placement is centralized in placeLiveOrderGuarded(), which
 // still rejects with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
 
-import { db, livePositionsTable, mt5CommandsTable } from "@workspace/db";
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
+import { db, mt5CommandsTable } from "@workspace/db";
 import { desc, eq, isNull, or, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type {
@@ -113,8 +114,7 @@ export class MT5BridgeProvider implements BrokerProvider {
   }
 
   async positions(owner: BrokerOwner): Promise<BrokerPosition[]> {
-    const all = await db.select().from(livePositionsTable)
-      .where(ownedBy(livePositionsTable.userId, owner)).limit(200);
+    const all = await demoPositionLedger.read({ where: ownedBy(demoPositionColumns.userId, owner), limit: 200 });
     return all
       .filter(r => r.status !== "CLOSED")
       .map(r => ({

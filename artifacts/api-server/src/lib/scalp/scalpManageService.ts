@@ -16,12 +16,9 @@
 //  - The lockout only ever TIGHTENS advice (downgrades an actionable read); it
 //    never loosens a gate, and is purely per-user + per-symbol + per-direction.
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { and, eq, gt, sql } from "drizzle-orm";
-import {
-  db,
-  arxLivePositionsTable,
-  scalpFlameLockoutsTable,
-} from "@workspace/db";
+import { db, scalpFlameLockoutsTable } from "@workspace/db";
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { readFlame, finalizeScalpVerdict } from "./flameRead.js";
 import { getSymbolInfo } from "../instruments/index.js";
@@ -104,8 +101,7 @@ async function loadOpenPositions(
   const positions: OpenPositionInput[] = [];
 
   if (includeLive) {
-    const liveRowsAll = await db.select().from(arxLivePositionsTable)
-      .where(eq(arxLivePositionsTable.userId, userId));
+    const liveRowsAll = await livePositionLedger.read({ where: eq(livePositionColumns.userId, userId) });
     const LIVE_STALE_MS = 90_000;
     const newestLiveSync = liveRowsAll.reduce((max, r) => {
       const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;

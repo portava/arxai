@@ -7,8 +7,9 @@
 //   * Returns the SAME shape regardless of bridge/live status so the
 //     decision engine can apply its own data-status policy.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { db } from "@workspace/db";
-import { livePositionsTable, tradeExitPlansTable } from "@workspace/db/schema";
+import { tradeExitPlansTable } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 
 export interface ReversalSignal {
@@ -45,9 +46,10 @@ export async function analyzeReversal(userId: number, tradeKey: string): Promise
     return emptyAnalysis("INSUFFICIENT", "non-owned position key (attribution); engine will alert-only");
   }
 
-  const [position] = await db.select().from(livePositionsTable)
-    .where(and(eq(livePositionsTable.id, positionId), eq(livePositionsTable.userId, userId)))
-    .limit(1);
+  const [position] = await demoPositionLedger.read({
+    where: and(eq(demoPositionColumns.id, positionId), eq(demoPositionColumns.userId, userId)),
+    limit: 1,
+  });
   if (!position) return emptyAnalysis("INSUFFICIENT", "position not found or not owned by this user");
   if (position.status !== "OPEN") return emptyAnalysis("INSUFFICIENT", `position status=${position.status}; not open`);
 

@@ -75,6 +75,7 @@ import { checkPositionGuardianWired } from "./check-position-guardian-wired.js";
 import { checkSingleRoleModel } from "./check-single-role-model.js";
 import { checkStopModificationAuthority } from "./check-stop-modification-authority.js";
 import { checkSinglePositionSizer } from "./check-single-position-sizer.js";
+import { checkSinglePositionLedger } from "./check-single-position-ledger.js";
 import { checkSingleLimitStore } from "./check-single-limit-store.js";
 import { checkLegacyLiveStateConfined } from "./check-legacy-live-state-confined.js";
 import { checkSingleLlmGateway } from "./check-single-llm-gateway.js";
@@ -162,6 +163,7 @@ const checks: Array<() => CheckResult> = [
   checkSingleRoleModel,
   checkStopModificationAuthority,
   checkSinglePositionSizer,
+  checkSinglePositionLedger,
   checkSingleLimitStore,
   checkLegacyLiveStateConfined,
   checkSingleLlmGateway,

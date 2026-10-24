@@ -10,13 +10,13 @@
 // (`mt5DemoCommandsTable`). A demo command can never accidentally route as
 // live and vice versa.
 
+import { livePositionWriter, livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
   arxLiveUserSettingsTable,
   liveTradingAuditTable,
   userMasterLiveAccessTable,
@@ -90,7 +90,12 @@ import {
   ARX_LIVE_HARD_MAX_CLUSTER_RISK_USD,
   ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS,
 } from "./liveArming.js";
-import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabledAsync, buildLiveIdempotencyKey, PHASE_B_LIVE_LOG_PREFIX } from "./phaseBConfig.js";
+import {
+  liveBrokerExecutionEnabled,
+  resolveLiveBrokerExecutionEnabledAsync,
+  buildLiveIdempotencyKey,
+  PHASE_B_LIVE_LOG_PREFIX,
+} from "./phaseBConfig.js";
 import { getEnvelope } from "../adminTrading/safetyEnvelope.js";
 import { logger } from "../logger.js";
 import { globalTradingSettingsTable, liveRiskDisclosureAcceptancesTable } from "@workspace/db";
@@ -122,7 +127,7 @@ import { getUserRiskProfile } from "./userRiskProfile.js";
 import { persistLiveBypassTrace } from "../agentEcosystem/governance.js";
 import { getEffectiveTradingGovernance } from "../governance/effectiveGovernance.js";
 import { getSymbolTradability } from "../data/symbolTradability.js";
-import { recomputeMasterPool, loadMasterPool, getUserAllocationView, resolveActiveMasterConnectionId } from "./masterBridgePool.js";
+import { recomputeMasterPool, getUserAllocationView, resolveActiveMasterConnectionId } from "./masterBridgePool.js";
 import { resolveAllocationGate } from "./allocationGate.js";
 import { enforcePreTradeRisk, type IntentAction } from "../riskGovernor/enforce.js";
 import {
@@ -2468,14 +2473,14 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // refusals (a corrupt row must never silently create capacity).
   if (isWave4EntryCommand
     && (settings.maxClusterRiskUsd != null || settings.maxClusterPositions != null)) {
-    const clusterOpenPositions = await db.select({
-      symbol: arxLivePositionsTable.symbol,
-      side: arxLivePositionsTable.side,
-      volume: arxLivePositionsTable.volume,
-    }).from(arxLivePositionsTable).where(and(
-      eq(arxLivePositionsTable.userId, args.userId),
-      isNull(arxLivePositionsTable.closedAt),
-    ));
+    const clusterOpenPositions = await livePositionLedger.select(
+      {
+        symbol: livePositionColumns.symbol,
+        side: livePositionColumns.side,
+        volume: livePositionColumns.volume,
+      },
+      { where: and(eq(livePositionColumns.userId, args.userId), isNull(livePositionColumns.closedAt)) },
+    );
     const clusterInFlight = await db.select({
       symbol: arxLiveCommandsTable.symbol,
       side: arxLiveCommandsTable.side,
@@ -3049,19 +3054,24 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // position closes its floatingPl no longer counts as open, but its
   // realised loss still counts against today's limit.
   const startOfDayUtc = new Date(); startOfDayUtc.setUTCHours(0, 0, 0, 0);
-  const openLossRows = await db.select({
-    totalNegFloat: sql<number>`COALESCE(SUM(CASE WHEN ${arxLivePositionsTable.floatingPl} < 0 THEN ${arxLivePositionsTable.floatingPl} ELSE 0 END), 0)`,
-  }).from(arxLivePositionsTable).where(and(
-    eq(arxLivePositionsTable.userId, args.userId),
-    isNull(arxLivePositionsTable.closedAt),
-  ));
-  const closedTodayLossRows = await db.select({
-    totalNegRealised: sql<number>`COALESCE(SUM(CASE WHEN ${arxLivePositionsTable.floatingPl} < 0 THEN ${arxLivePositionsTable.floatingPl} ELSE 0 END), 0)`,
-  }).from(arxLivePositionsTable).where(and(
-    eq(arxLivePositionsTable.userId, args.userId),
-    sql`${arxLivePositionsTable.closedAt} IS NOT NULL`,
-    sql`${arxLivePositionsTable.closedAt} >= ${startOfDayUtc.toISOString()}`,
-  ));
+  const openLossRows = await livePositionLedger.select(
+    {
+      totalNegFloat: sql<number>`COALESCE(SUM(CASE WHEN ${livePositionColumns.floatingPl} < 0 THEN ${livePositionColumns.floatingPl} ELSE 0 END), 0)`,
+    },
+    { where: and(eq(livePositionColumns.userId, args.userId), isNull(livePositionColumns.closedAt)) },
+  );
+  const closedTodayLossRows = await livePositionLedger.select(
+    {
+      totalNegRealised: sql<number>`COALESCE(SUM(CASE WHEN ${livePositionColumns.floatingPl} < 0 THEN ${livePositionColumns.floatingPl} ELSE 0 END), 0)`,
+    },
+    {
+      where: and(
+        eq(livePositionColumns.userId, args.userId),
+        sql`${livePositionColumns.closedAt} IS NOT NULL`,
+        sql`${livePositionColumns.closedAt} >= ${startOfDayUtc.toISOString()}`,
+      ),
+    },
+  );
   const realisedDailyLossUsd =
     Math.abs(Number(openLossRows[0]?.totalNegFloat ?? 0)) +
     Math.abs(Number(closedTodayLossRows[0]?.totalNegRealised ?? 0));
@@ -3090,13 +3100,18 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       : Number(settings.weeklyDrawdownCeilingPct ?? 0);
     if (isEntryRow && weeklyCeilingPct !== 0) {
       const weekWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const closedWeekLossRows = await db.select({
-        totalNegRealised: sql<number>`COALESCE(SUM(CASE WHEN ${arxLivePositionsTable.floatingPl} < 0 THEN ${arxLivePositionsTable.floatingPl} ELSE 0 END), 0)`,
-      }).from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, args.userId),
-        sql`${arxLivePositionsTable.closedAt} IS NOT NULL`,
-        sql`${arxLivePositionsTable.closedAt} >= ${weekWindowStart.toISOString()}`,
-      ));
+      const closedWeekLossRows = await livePositionLedger.select(
+        {
+          totalNegRealised: sql<number>`COALESCE(SUM(CASE WHEN ${livePositionColumns.floatingPl} < 0 THEN ${livePositionColumns.floatingPl} ELSE 0 END), 0)`,
+        },
+        {
+          where: and(
+            eq(livePositionColumns.userId, args.userId),
+            sql`${livePositionColumns.closedAt} IS NOT NULL`,
+            sql`${livePositionColumns.closedAt} >= ${weekWindowStart.toISOString()}`,
+          ),
+        },
+      );
       const realisedWeeklyLossUsd =
         Math.abs(Number(openLossRows[0]?.totalNegFloat ?? 0)) +
         Math.abs(Number(closedWeekLossRows[0]?.totalNegRealised ?? 0));
@@ -3178,13 +3193,13 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       // This closes the TOCTOU window between this check and the
       // SENT_TO_MT5_LIVE write below; the minute-bucket idempotency key on
       // arx_live_commands already prevents identical duplicates.
-      const openPositions = await db.select({
-        symbol: arxLivePositionsTable.symbol,
-        volume: arxLivePositionsTable.volume,
-      }).from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, args.userId),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const openPositions = await livePositionLedger.select(
+        {
+          symbol: livePositionColumns.symbol,
+          volume: livePositionColumns.volume,
+        },
+        { where: and(eq(livePositionColumns.userId, args.userId), isNull(livePositionColumns.closedAt)) },
+      );
       const inFlight = await db.select({
         symbol: arxLiveCommandsTable.symbol,
         volume: arxLiveCommandsTable.requestedVolume,
@@ -3288,9 +3303,13 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     if (rgAction === "MODIFY") {
       const ticket = (row.payload as Record<string, unknown> | null)?.["brokerTicket"];
       if (typeof ticket === "string" && ticket) {
-        const [p] = await db.select({ entryPrice: arxLivePositionsTable.entryPrice, stopLoss: arxLivePositionsTable.stopLoss })
-          .from(arxLivePositionsTable)
-          .where(and(eq(arxLivePositionsTable.userId, args.userId), eq(arxLivePositionsTable.brokerTicket, ticket))).limit(1);
+        const [p] = await livePositionLedger.select(
+          { entryPrice: livePositionColumns.entryPrice, stopLoss: livePositionColumns.stopLoss },
+          {
+            where: and(eq(livePositionColumns.userId, args.userId), eq(livePositionColumns.brokerTicket, ticket)),
+            limit: 1,
+          },
+        );
         rgPosition = p ? { entryPrice: Number(p.entryPrice), stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null } : null;
       }
     }
@@ -4691,28 +4710,41 @@ export async function recordLiveCommandResult(args: {
         // A partial close (closed volume below what the position holds) only
         // shrinks the position: it stays open, in the ledger and under the
         // Position Guardian. Only a close of the whole volume stamps closedAt.
-        const [openRow] = await db.select({ id: arxLivePositionsTable.id, volume: arxLivePositionsTable.volume })
-          .from(arxLivePositionsTable).where(and(
-            eq(arxLivePositionsTable.userId, args.userId),
-            eq(arxLivePositionsTable.brokerTicket, closeTicket),
-            isNull(arxLivePositionsTable.closedAt),
-          )).limit(1);
+        const [openRow] = await livePositionLedger.select(
+          { id: livePositionColumns.id, volume: livePositionColumns.volume },
+          {
+            where: and(
+              eq(livePositionColumns.userId, args.userId),
+              eq(livePositionColumns.brokerTicket, closeTicket),
+              isNull(livePositionColumns.closedAt),
+            ),
+            limit: 1,
+          },
+        );
         const closedVolume = Number(args.executedVolume ?? row.requestedVolume);
         const partial = openRow != null && Number.isFinite(closedVolume) && closedVolume > 0
           && Number(openRow.volume) - closedVolume > LIVE_VOLUME_EPSILON;
         if (partial) {
-          await db.update(arxLivePositionsTable).set({
-            volume: Math.round((Number(openRow.volume) - closedVolume) * 1e8) / 1e8, lastSyncedAt: now,
-          }).where(eq(arxLivePositionsTable.id, openRow.id));
+          await livePositionWriter.update(
+            {
+              volume: Math.round((Number(openRow.volume) - closedVolume) * 1e8) / 1e8,
+              lastSyncedAt: now,
+            },
+            eq(livePositionColumns.id, openRow.id),
+          );
         }
-        const closedRows = partial ? [] : await db.update(arxLivePositionsTable).set({
-          closedAt: now,
-          lastSyncedAt: now,
-        }).where(and(
-          eq(arxLivePositionsTable.userId, args.userId),
-          eq(arxLivePositionsTable.brokerTicket, closeTicket),
-          isNull(arxLivePositionsTable.closedAt),
-        )).returning();
+        const closedRows = partial ? [] : await livePositionWriter.updateReturning(
+          {
+            closedAt: now,
+            lastSyncedAt: now,
+          },
+          and(
+            eq(livePositionColumns.userId, args.userId),
+            eq(livePositionColumns.brokerTicket, closeTicket),
+            isNull(livePositionColumns.closedAt),
+          ),
+          livePositionColumns,
+        );
         if (closedRows.length > 0) {
           await audit({
             eventType: "LIVE_POSITION_CLOSED_RECONCILED", severity: "INFO",

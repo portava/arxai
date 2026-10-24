@@ -10,13 +10,11 @@
 // one mapping. It is read-only and block-only: it never mutates rows and never
 // grants execution.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { getUserLiveSnapshotMarkerMs } from "../brokerHub/connections.js";
-import { and, eq, ne, isNull, or, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@workspace/db";
-import {
-  livePositionsTable,
-  sharedTradeAttributionTable,
-} from "@workspace/db/schema";
+import { sharedTradeAttributionTable } from "@workspace/db/schema";
 import {
   resolvePositionTruth,
   type PositionTruthInput,
@@ -173,8 +171,10 @@ export async function classifyTradeKey(
   if (k.startsWith("lp_")) {
     const id = Number(k.slice(3));
     if (!Number.isFinite(id) || id <= 0) return null;
-    const [r] = await db.select().from(livePositionsTable)
-      .where(and(eq(livePositionsTable.id, id), eq(livePositionsTable.userId, userId))).limit(1);
+    const [r] = await demoPositionLedger.read({
+      where: and(eq(demoPositionColumns.id, id), eq(demoPositionColumns.userId, userId)),
+      limit: 1,
+    });
     if (!r) return null;
     const snapshotReliable = await getUserSnapshotReliable(userId, now);
     return classifyLivePosition(r, { snapshotReliable, now });

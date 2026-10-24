@@ -4,6 +4,7 @@
 // returns [] (never throws). Issue IDs are deterministic SHA-256(type|naturalKey)
 // so admin actions can target them without persisting issues to a new table.
 
+import { readOrphanLivePositions } from "../positions/ledger.js";
 import { listConnections } from "../brokerHub/connections.js";
 import { createHash } from "node:crypto";
 import { pool } from "@workspace/db";
@@ -95,19 +96,7 @@ async function detectBridgeMismatch(): Promise<ReconciliationIssue[]> {
 // 2. ORPHAN_BROKER_POSITION — arx_live_positions open with no matching command.
 async function detectOrphanBrokerPositions(): Promise<ReconciliationIssue[]> {
   return safe("orphan_broker", async () => {
-    const r = await pool.query<RawRow>(
-      `SELECT p.id, p.user_id, p.bridge_connection_id, p.broker_ticket, p.symbol,
-              p.source_command_id, p.opened_at,
-              p.broker_absent_snapshot_count, p.first_broker_absent_at,
-              p.last_broker_absent_at, p.last_reliable_snapshot_at
-         FROM arx_live_positions p
-        WHERE p.closed_at IS NULL
-          AND p.reconcile_state IS NULL
-          AND (p.source_command_id IS NULL
-               OR NOT EXISTS (SELECT 1 FROM arx_live_commands c
-                               WHERE c.command_id = p.source_command_id))
-        LIMIT 50`,
-    );
+    const r = await readOrphanLivePositions();
     return r.rows.map((row) => ({
       id: issueId("ORPHAN_BROKER_POSITION", `pos:${n(row.id)}`),
       type: "ORPHAN_BROKER_POSITION" as const,

@@ -14,8 +14,9 @@
 //   broker balance is never split across investors.
 // - NO guaranteed / fixed / risk-free return wording anywhere.
 
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { Router, type Request, type Response } from "express";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -24,7 +25,6 @@ import {
   strategyPoolNavTable,
   investorPoolHoldingsTable,
   tradePoolAllocationsTable,
-  arxLivePositionsTable,
   fundBookHighWaterMarksTable,
   usersTable,
 } from "@workspace/db";
@@ -150,10 +150,7 @@ router.get("/admin/fundbook/trade-allocations", requireUser, async (req, res) =>
   await ensurePools();
 
   // Mirror open broker positions that have no allocation row yet.
-  const openPositions = await db
-    .select()
-    .from(arxLivePositionsTable)
-    .where(isNull(arxLivePositionsTable.closedAt));
+  const openPositions = await livePositionLedger.read({ where: isNull(livePositionColumns.closedAt) });
   if (openPositions.length > 0) {
     const existing = await db
       .select({

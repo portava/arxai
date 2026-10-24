@@ -16,8 +16,9 @@
 //     demo position open and the heat state is adversarial.
 //   - Runs fire-and-forget (caller awaits void, no throw propagation).
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import type { MarketTimingRead } from "@workspace/domain/timing-brain";
-import { db, arxLivePositionsTable, userNotificationsTable } from "@workspace/db";
+import { db, userNotificationsTable } from "@workspace/db";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { fireNotify } from "../notificationService.js";
 import { logger } from "../logger.js";
@@ -315,17 +316,17 @@ function buildDescriptors(
 
 async function hasOpenLivePosition(userId: number, symbol: string): Promise<boolean> {
   const sym = symbol.toUpperCase();
-  const rows = await db
-    .select({ id: arxLivePositionsTable.id })
-    .from(arxLivePositionsTable)
-    .where(
-      and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, sym),
-        isNull(arxLivePositionsTable.closedAt),
+  const rows = await livePositionLedger.select(
+    { id: livePositionColumns.id },
+    {
+      where: and(
+        eq(livePositionColumns.userId, userId),
+        eq(livePositionColumns.symbol, sym),
+        isNull(livePositionColumns.closedAt),
       ),
-    )
-    .limit(1);
+      limit: 1,
+    },
+  );
   return rows.length > 0;
 }
 

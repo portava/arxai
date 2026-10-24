@@ -28,10 +28,7 @@ import {
 import { getTradeHistorySummary } from "../tradeHistory/service.js";
 import { getMarketProvider } from "./marketProvider.js";
 import { sanitizeExternalText } from "../security/promptInjectionGuard.js";
-import { buildLiveAccountSnapshot } from "../live/liveAccountSnapshot.js";
-import { db, arxLivePositionsTable } from "@workspace/db";
-import { eq, isNull, and } from "drizzle-orm";
-import { getUserModeScope } from "../modeScope/getUserModeScope.js";
+
 import { getEconomicCalendar } from "../news/economicCalendarProvider.js";
 
 export type RubyRole = "USER" | "ADMIN" | "OWNER";

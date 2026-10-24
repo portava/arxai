@@ -15,8 +15,9 @@
 // Owner decision 2026-10-24: Trade Action DEMO and LIVE go through the
 // pipeline. Nothing here relaxes a gate; every refusal is returned as-is.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { and, eq } from "drizzle-orm";
-import { db, livePositionsTable, sharedTradeAttributionTable } from "@workspace/db";
+import { db, sharedTradeAttributionTable } from "@workspace/db";
 import { isOrderType, isPendingOrder, directionOf } from "./orderTypes.js";
 import type { ActionType } from "./types.js";
 
@@ -58,8 +59,14 @@ export async function tradeRefFor(userId: number, tradeKey: string | null): Prom
   const id = Number(tradeKey.replace(/^(lp|att)_/, ""));
   if (!Number.isInteger(id) || id <= 0) return null;
   if (tradeKey.startsWith("lp_")) {
-    const [r] = await db.select({ t: livePositionsTable.brokerPositionId, sl: livePositionsTable.stopLoss, tp: livePositionsTable.takeProfit })
-      .from(livePositionsTable).where(and(eq(livePositionsTable.id, id), eq(livePositionsTable.userId, userId))).limit(1);
+    const [r] = await demoPositionLedger.select(
+      {
+        t: demoPositionColumns.brokerPositionId,
+        sl: demoPositionColumns.stopLoss,
+        tp: demoPositionColumns.takeProfit,
+      },
+      { where: and(eq(demoPositionColumns.id, id), eq(demoPositionColumns.userId, userId)), limit: 1 },
+    );
     return r?.t ? { ticket: r.t, stopLoss: r.sl ?? null, takeProfit: r.tp ?? null } : null;
   }
   if (tradeKey.startsWith("att_")) {

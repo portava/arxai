@@ -5,14 +5,19 @@
 // trading. liveTradingStatus is always reported as DISABLED. mode is always
 // PAPER_ONLY.
 
+import { countDemoPositions } from "../positions/ledger.js";
+import { demoPositionColumns } from "../positions/ledger.js";
 import {
-  db, systemHealthChecksTable,
-  notificationsTable, notificationLogsTable,
-  autopilotSettingsTable, autopilotCyclesTable,
+  db,
+  systemHealthChecksTable,
+  notificationsTable,
+  notificationLogsTable,
+  autopilotSettingsTable,
+  autopilotCyclesTable,
   paperOrdersTable,
   riskGovernorEvaluationsTable,
   brokerHealthStateTable,
-  livePositionsTable, mt5CommandsTable,
+  mt5CommandsTable,
   safetyCoreTable,
 } from "@workspace/db";
 import { desc, sql } from "drizzle-orm";
@@ -263,13 +268,16 @@ async function probeDatabase(): Promise<DatabaseStatus> {
     status.connected = true;
     status.missingTables = EXPECTED_TABLES.filter((t) => !present.has(t));
     // sample row counts
-    const counted = ["notifications", "system_health_checks", "system_audit_logs", "admin_action_logs", "paper_orders", "live_positions", "mt5_commands"];
+    const counted = ["notifications", "system_health_checks", "system_audit_logs", "admin_action_logs", "paper_orders", "mt5_commands"];
     for (const t of counted) {
       if (!present.has(t)) continue;
       try {
         const r = await db.execute(sql`select count(*)::int as c from ${sql.identifier(t)}`);
         status.rowCounts[t] = (r.rows[0] as { c: number } | undefined)?.c ?? 0;
       } catch { /* ignore */ }
+    }
+    if (present.has("live_positions")) {
+      try { status.rowCounts["live_positions"] = await countDemoPositions(); } catch { /* ignore */ }
     }
     // write-check (uses safe audit insert/rollback would require transaction — we just time a SELECT 1)
     const t0 = Date.now();
@@ -459,4 +467,4 @@ export async function exportHealthReport(): Promise<{ exportId: string; generate
 }
 
 // ── Touch unused imports so type-check confirms them as live deps ──────────
-export const _wiring = { brokerHealthStateTable, livePositionsTable, mt5CommandsTable, notificationLogsTable };
+export const _wiring = { brokerHealthStateTable, demoPositionColumns, mt5CommandsTable, notificationLogsTable };

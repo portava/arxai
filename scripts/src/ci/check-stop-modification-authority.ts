@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { ROOT, walk, rel, reportResult, type CheckResult } from "./_lib.js";
 
 const API_SRC = join(ROOT, "artifacts/api-server/src");
-const LEDGER_UPDATE = /\.\s*update\(\s*(livePositionsTable|arxLivePositionsTable)\s*\)/;
+const LEDGER_UPDATE = /\b(?:live|demo)PositionWriter\s*\.\s*update(?:Returning)?\s*\(|\breconcileLivePositionMetadata\s*\(|\.\s*update\(\s*(livePositionsTable|arxLivePositionsTable)\s*\)/;
 const LEDGER_SQL = /\bupdate\s+(arx_)?live_positions\b/i;
 const PROTECTIVE = /\b(stopLoss|takeProfit|closedAt|volume|lotSize)\b/;
 
@@ -40,7 +40,8 @@ function stripComments(src: string): string {
 }
 
 export function scanFile(key: string, src: string): string[] {
-  if (BROKER_TRUTH_WRITERS[key]) return [];
+  // The ledger implements persistence; single-position-ledger restricts its writer consumers.
+  if (key === "lib/positions/ledger.ts" || BROKER_TRUTH_WRITERS[key]) return [];
   const code = stripComments(src);
   const out: string[] = [];
   const lines = code.split("\n");

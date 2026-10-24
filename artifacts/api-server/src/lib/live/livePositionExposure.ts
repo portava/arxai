@@ -18,8 +18,9 @@
 // Used by recomputeMasterPool, getUserAllocationView, the self-trade execution
 // gate, and the admin/user account totals — one predicate, no duplicated math.
 
+import { livePositionColumns } from "../positions/ledger.js";
 import { and, eq, isNull, type SQL } from "drizzle-orm";
-import { arxLivePositionsTable } from "@workspace/db";
+
 
 /**
  * Drizzle condition matching arx_live_positions rows that are genuine live
@@ -27,8 +28,8 @@ import { arxLivePositionsTable } from "@workspace/db";
  */
 export function openLiveExposureCondition(userId?: number): SQL {
   const conds: SQL[] = [];
-  if (userId != null) conds.push(eq(arxLivePositionsTable.userId, userId));
-  conds.push(isNull(arxLivePositionsTable.closedAt));
-  conds.push(isNull(arxLivePositionsTable.reconcileState));
+  if (userId != null) conds.push(eq(livePositionColumns.userId, userId));
+  conds.push(isNull(livePositionColumns.closedAt));
+  conds.push(isNull(livePositionColumns.reconcileState));
   return and(...conds)!;
 }

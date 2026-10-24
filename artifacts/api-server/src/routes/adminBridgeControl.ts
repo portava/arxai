@@ -19,12 +19,25 @@
 //   - Every mutating action requires a trimmed reason (≥3 chars) and writes an
 //     admin_action_audit_log row before responding (fail-CLOSED).
 
-import { getConnection, listConnections, revokeBridgeToken, rotateBridgeToken, type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
+import {
+  reconcileLivePositionMetadata,
+  type LivePositionReconciliationMetadata,
+  livePositionLedger,
+  livePositionColumns,
+  type LivePositionRow,
+} from "../lib/positions/ledger.js";
+import {
+  getConnection,
+  listConnections,
+  revokeBridgeToken,
+  rotateBridgeToken,
+  type BrokerConnectionRecord,
+} from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { randomBytes, createHash } from "node:crypto";
 import { db } from "@workspace/db";
-import { arxLivePositionsTable, adminActionAuditLogTable } from "@workspace/db/schema";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { adminActionAuditLogTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   runEmergencyClose,
@@ -352,7 +365,7 @@ const OrphanActionBody = z.object({
 });
 
 async function loadPosition(id: number) {
-  const rows = await db.select().from(arxLivePositionsTable).where(eq(arxLivePositionsTable.id, id)).limit(1);
+  const rows = await livePositionLedger.read({ where: eq(livePositionColumns.id, id), limit: 1 });
   return rows[0] ?? null;
 }
 
@@ -375,7 +388,7 @@ async function handleOrphanAction(
   }
 
   const now = new Date();
-  const set: Record<string, unknown> = {
+  const set: LivePositionReconciliationMetadata = {
     reconcileState,
     reconcileNote: body.note ?? body.reason,
     reconciledByAdminId: getAdminId(req),
@@ -386,11 +399,10 @@ async function handleOrphanAction(
   if (reconcileState === "IMPORTED") set.sourceCommandId = body.sourceCommandId;
 
   // Fail-CLOSED: reconcile mutation + audit are atomic.
-  let updated: (typeof arxLivePositionsTable.$inferSelect)[];
+  let updated: (LivePositionRow)[];
   try {
     updated = await db.transaction(async (tx) => {
-      const rows = await tx.update(arxLivePositionsTable).set(set)
-        .where(eq(arxLivePositionsTable.id, id)).returning();
+      const rows = await reconcileLivePositionMetadata(id, set, tx);
       await writeAudit({
         adminId: getAdminId(req), role,
         action,

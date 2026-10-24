@@ -15,12 +15,12 @@
 // to that row's owner and skips ownerless legacy rows, which would otherwise
 // be broadcast.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import {
   db,
   tradePlansTable,
   riskLocksTable,
   brokerHealthStateTable,
-  livePositionsTable,
   weeklyPerformanceReviewsTable,
   tradesTable,
   performanceDailyTable,
@@ -132,9 +132,14 @@ async function marketNoTradeRule() {
 
 async function positionNearStopLossRule() {
   // Open positions whose current price is within 25% of the SL distance.
-  const open = await db.select().from(livePositionsTable)
-    .where(and(eq(livePositionsTable.status, "OPEN"), isNull(livePositionsTable.closedAt), isNotNull(livePositionsTable.userId)))
-    .limit(50);
+  const open = await demoPositionLedger.read({
+    where: and(
+      eq(demoPositionColumns.status, "OPEN"),
+      isNull(demoPositionColumns.closedAt),
+      isNotNull(demoPositionColumns.userId),
+    ),
+    limit: 50,
+  });
   let any = false;
   for (const p of open) {
     if (p.stopLoss == null || p.currentPrice == null) continue;

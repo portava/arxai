@@ -18,15 +18,9 @@
 // bridge's position snapshots). DEMO reads mt5_demo_commands against the
 // trader's live_positions rows.
 
+import { livePositionLedger, demoPositionLedger, livePositionColumns, demoPositionColumns } from "../positions/ledger.js";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
-import {
-  arxLiveCommandsTable,
-  arxLivePositionsTable,
-  db,
-  livePositionsTable,
-  mt5DemoCommandsTable,
-  userRiskEventsTable,
-} from "@workspace/db";
+import { arxLiveCommandsTable, db, mt5DemoCommandsTable, userRiskEventsTable } from "@workspace/db";
 import { logRiskEvent } from "../riskGovernor/riskEvents.js";
 import { logger } from "../logger.js";
 import {
@@ -117,10 +111,11 @@ async function loadLiveFacts(userId: number, ticket: string): Promise<GuardianFa
   const lastTp = modifies.find((m) => m.status === "LIVE_FILLED" && m.takeProfit != null);
   const pending = modifies.some((m) => m.sourcePage === GUARDIAN_SOURCE && LIVE_NON_TERMINAL.includes(m.status));
 
-  const [pos] = await db.select().from(arxLivePositionsTable).where(and(
-    eq(arxLivePositionsTable.userId, userId),
-    eq(arxLivePositionsTable.brokerTicket, ticket),
-  )).orderBy(desc(arxLivePositionsTable.id)).limit(1);
+  const [pos] = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, ticket)),
+    orderBy: [desc(livePositionColumns.id)],
+    limit: 1,
+  });
   // A closed position needs no protection.
   if (pos?.closedAt != null || pos?.reconcileState != null) return null;
   // Approved closes take volume off: a full close ends protection, a partial
@@ -179,10 +174,11 @@ async function loadDemoFacts(userId: number, ticket: string): Promise<GuardianFa
   const lastTp = modifies.find((m) => m.status === "FILLED_DEMO" && num(pl(m)["takeProfit"]) != null);
   const pending = modifies.some((m) => pl(m)["sourcePage"] === GUARDIAN_SOURCE && DEMO_NON_TERMINAL.includes(m.status));
 
-  const [pos] = await db.select().from(livePositionsTable).where(and(
-    eq(livePositionsTable.userId, userId),
-    eq(livePositionsTable.brokerPositionId, ticket),
-  )).orderBy(desc(livePositionsTable.id)).limit(1);
+  const [pos] = await demoPositionLedger.read({
+    where: and(eq(demoPositionColumns.userId, userId), eq(demoPositionColumns.brokerPositionId, ticket)),
+    orderBy: [desc(demoPositionColumns.id)],
+    limit: 1,
+  });
   if (pos?.status === "CLOSED") return null;
   const closes = await db.select({ fill: mt5DemoCommandsTable.fillVolume, payload: mt5DemoCommandsTable.payload,
     at: mt5DemoCommandsTable.filledAt })
@@ -321,11 +317,20 @@ export async function reconcilePosition(venue: GuardianVenue, userId: number, ti
 export async function reconcileOpenPositions(venue: GuardianVenue, userId: number,
   opts: ReconcileOptions): Promise<GuardianRunResult[]> {
   const tickets = venue === "LIVE"
-    ? (await db.select({ t: arxLivePositionsTable.brokerTicket }).from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt),
-        isNull(arxLivePositionsTable.reconcileState)))).map((r) => r.t)
-    : (await db.select({ t: livePositionsTable.brokerPositionId }).from(livePositionsTable).where(and(
-        eq(livePositionsTable.userId, userId), ne(livePositionsTable.status, "CLOSED")))).map((r) => r.t);
+    ? (await livePositionLedger.select(
+      { t: livePositionColumns.brokerTicket },
+      {
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          isNull(livePositionColumns.closedAt),
+          isNull(livePositionColumns.reconcileState),
+        ),
+      },
+    )).map((r) => r.t)
+    : (await demoPositionLedger.select(
+      { t: demoPositionColumns.brokerPositionId },
+      { where: and(eq(demoPositionColumns.userId, userId), ne(demoPositionColumns.status, "CLOSED")) },
+    )).map((r) => r.t);
   const out: GuardianRunResult[] = [];
   for (const t of new Set(tickets.filter((x): x is string => typeof x === "string" && x.length > 0))) {
     const r = await reconcilePosition(venue, userId, t, opts);

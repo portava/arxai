@@ -239,6 +239,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // queue, escalation, stale data, audit throttling, demo origin mapping.
   { pkg: "@workspace/api-server", script: "test:position-guardian-assess" },
   { pkg: "@workspace/api-server", script: "test:position-guardian-reconcile" },
+  { pkg: "@workspace/api-server", script: "test:position-ledger" },
   { pkg: "@workspace/api-server", script: "test:oms-governance" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-per-user-limits" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-discipline" },

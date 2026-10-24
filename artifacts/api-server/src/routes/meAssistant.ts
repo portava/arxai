@@ -13,6 +13,7 @@
 //   GET  /api/me/assistant/tools                    list tool definitions
 //   GET  /api/me/assistant/market-status            market provider status
 
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import express, { Router } from "express";
 import multer from "multer";
 
@@ -25,9 +26,15 @@ const voiceUpload = multer({
 });
 import type { Request } from "express";
 import {
-  db, arxAssistantConversationsTable, arxAssistantMessagesTable, arxAssistantToolCallsTable,
-  oneClickAuditTable, userOneClickSettingsTable, arxLivePositionsTable,
-  rubyCommandsTable, rubyWatchInstructionsTable, type RubyCommandKind,
+  db,
+  arxAssistantConversationsTable,
+  arxAssistantMessagesTable,
+  arxAssistantToolCallsTable,
+  oneClickAuditTable,
+  userOneClickSettingsTable,
+  rubyCommandsTable,
+  rubyWatchInstructionsTable,
+  type RubyCommandKind,
 } from "@workspace/db";
 import { and, asc, desc, eq, isNull, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -36,9 +43,7 @@ import { executeInstant, type InstantTradeIntent, type InstantTradeResult } from
 import { runHandshake } from "../lib/handshake/coordinator.js";
 import { classifyTradeHealth, computeSlDistance, type OpenPositionInput } from "@workspace/domain/trade-health";
 import { getMarketData } from "../lib/data/dataManager.js";
-import {
-  analyzeChartStructure, quickTrend, higherTimeframeOf, type StructureBias,
-} from "../lib/assistant/chartStructure.js";
+import { analyzeChartStructure, quickTrend, type StructureBias } from "../lib/assistant/chartStructure.js";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { isUniqueViolation } from "../lib/pgError.js";
@@ -59,10 +64,7 @@ import { getAssistantDisplayName } from "../lib/assistant/assistantName.js";
 import { getMarketStatus } from "../lib/assistant/marketProvider.js";
 import { buildRubyContext, composeRubyBriefing, type RubyRole } from "../lib/assistant/rubyContext.js";
 import { resolveAssistantMarket } from "../lib/markets/assistantMarketResolver.js";
-import {
-  buildChartIntelligenceState,
-  getCachedIntelligenceContext,
-} from "../lib/data/chart/chartIntelligence.js";
+import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { type ChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { buildRubyChartContext, buildGatedTrustLine } from "../lib/data/chart/rubyChartContext.js";
 import { buildRubyStructuralRead } from "../lib/assistant/rubyStructuralReadService.js";
@@ -2024,11 +2026,13 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which open position should I watch?" });
         return;
       }
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = await livePositionLedger.read({
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          eq(livePositionColumns.symbol, symbol),
+          isNull(livePositionColumns.closedAt),
+        ),
+      });
       if (open.length === 0) {
         res.json({ ok: false, classification: "NO_OPEN_POSITION", message: `No open ${symbol} position to watch.` });
         return;
@@ -2106,11 +2110,13 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     case "CLOSE_ONE": {
       // Resolve a single open position for that symbol; if multiple,
       // refuse and let the user disambiguate. NEVER pick one silently.
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, parsed.symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = await livePositionLedger.read({
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          eq(livePositionColumns.symbol, parsed.symbol),
+          isNull(livePositionColumns.closedAt),
+        ),
+      });
       if (open.length === 0) {
         await db.insert(oneClickAuditTable).values({
           userId, action: "INSTANT_CLOSE_REJECTED", ip, userAgent: ua,
@@ -2143,11 +2149,13 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       // Reduce-risk: close part of a single open position. Resolves the same
       // way as CLOSE_ONE (no silent pick) but carries closeVolume so only that
       // many lots are closed via the EXISTING close primitive.
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, parsed.symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = await livePositionLedger.read({
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          eq(livePositionColumns.symbol, parsed.symbol),
+          isNull(livePositionColumns.closedAt),
+        ),
+      });
       if (open.length === 0) {
         await db.insert(oneClickAuditTable).values({
           userId, action: "INSTANT_CLOSE_REJECTED", ip, userAgent: ua,
@@ -2239,11 +2247,13 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which market should I modify?" });
         return;
       }
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, sym),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = await livePositionLedger.read({
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          eq(livePositionColumns.symbol, sym),
+          isNull(livePositionColumns.closedAt),
+        ),
+      });
       if (open.length === 0) {
         await db.insert(oneClickAuditTable).values({
           userId, action: "INSTANT_EXECUTE_REJECTED", ip, userAgent: ua,
@@ -2283,11 +2293,13 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which market should I move to break-even?" });
         return;
       }
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, sym),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = await livePositionLedger.read({
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          eq(livePositionColumns.symbol, sym),
+          isNull(livePositionColumns.closedAt),
+        ),
+      });
       if (open.length === 0) {
         res.json({ ok: false, classification: "NO_OPEN_POSITION", message: `No open ${sym} position to move to break-even.` });
         return;
@@ -2430,11 +2442,13 @@ router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) =
     // user's own stop. Permission + authority are re-checked at fire-time below.
     if (w.kind === "MONITOR_TRADE") {
       if (!w.symbol) continue;
-      const openRows = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, w.symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const openRows = await livePositionLedger.read({
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          eq(livePositionColumns.symbol, w.symbol),
+          isNull(livePositionColumns.closedAt),
+        ),
+      });
       const row = w.positionTicket
         ? openRows.find((o) => o.brokerTicket === w.positionTicket)
         : (openRows.length === 1 ? openRows[0] : undefined);
@@ -2581,11 +2595,13 @@ router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) =
       commandKind = "OPEN_TRADE";
     } else {
       // WATCH_AND_CLOSE — confirm the position still exists.
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, w.symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = await livePositionLedger.read({
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          eq(livePositionColumns.symbol, w.symbol),
+          isNull(livePositionColumns.closedAt),
+        ),
+      });
       const row = w.positionTicket
         ? open.find((o) => o.brokerTicket === w.positionTicket)
         : (open.length === 1 ? open[0] : undefined);

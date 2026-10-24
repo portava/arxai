@@ -16,8 +16,9 @@
 //   confirmation phrase, reason capture and the per-batch audit row. This
 //   module returns a structured per-ticket outcome the caller audits.
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { db } from "@workspace/db";
-import { arxLivePositionsTable, userSlotAllocationTable } from "@workspace/db/schema";
+import { userSlotAllocationTable } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   createLiveOpsDraft,
@@ -64,22 +65,28 @@ interface OpenPositionRow {
 // userId in arx_live_positions.
 async function resolveOpenPositions(scope: EmergencyCloseScope): Promise<OpenPositionRow[]> {
   const baseCols = {
-    userId: arxLivePositionsTable.userId,
-    brokerTicket: arxLivePositionsTable.brokerTicket,
-    symbol: arxLivePositionsTable.symbol,
-    side: arxLivePositionsTable.side,
-    volume: arxLivePositionsTable.volume,
+    userId: livePositionColumns.userId,
+    brokerTicket: livePositionColumns.brokerTicket,
+    symbol: livePositionColumns.symbol,
+    side: livePositionColumns.side,
+    volume: livePositionColumns.volume,
   };
-  const open = isNull(arxLivePositionsTable.closedAt);
+  const open = isNull(livePositionColumns.closedAt);
 
   if (scope.kind === "ticket") {
-    const rows = await db.select(baseCols).from(arxLivePositionsTable)
-      .where(and(open, eq(arxLivePositionsTable.userId, scope.userId), eq(arxLivePositionsTable.brokerTicket, scope.brokerTicket)));
+    const rows = await livePositionLedger.select(baseCols, {
+      where: and(
+        open,
+        eq(livePositionColumns.userId, scope.userId),
+        eq(livePositionColumns.brokerTicket, scope.brokerTicket),
+      ),
+    });
     return rows;
   }
   if (scope.kind === "user") {
-    const rows = await db.select(baseCols).from(arxLivePositionsTable)
-      .where(and(open, eq(arxLivePositionsTable.userId, scope.userId)));
+    const rows = await livePositionLedger.select(baseCols, {
+      where: and(open, eq(livePositionColumns.userId, scope.userId)),
+    });
     return rows;
   }
   if (scope.kind === "allocation") {
@@ -90,8 +97,9 @@ async function resolveOpenPositions(scope: EmergencyCloseScope): Promise<OpenPos
       .where(eq(userSlotAllocationTable.id, scope.allocationId)).limit(1);
     const ownerId = alloc[0]?.userId;
     if (ownerId == null) return [];
-    const rows = await db.select(baseCols).from(arxLivePositionsTable)
-      .where(and(open, eq(arxLivePositionsTable.userId, ownerId)));
+    const rows = await livePositionLedger.select(baseCols, {
+      where: and(open, eq(livePositionColumns.userId, ownerId)),
+    });
     return rows;
   }
   if (scope.kind === "all_shared") {
@@ -102,12 +110,12 @@ async function resolveOpenPositions(scope: EmergencyCloseScope): Promise<OpenPos
       .from(userSlotAllocationTable);
     const ids = new Set(allocUsers.map((a) => a.userId));
     if (ids.size === 0) return [];
-    const rows = await db.select(baseCols).from(arxLivePositionsTable).where(open);
+    const rows = await livePositionLedger.select(baseCols, { where: open });
     return rows.filter((r) => ids.has(r.userId));
   }
   // kind === "all" — every open live position at the broker, regardless of
   // routing. This is the hardest stop and is gated hardest at the caller.
-  const rows = await db.select(baseCols).from(arxLivePositionsTable).where(open);
+  const rows = await livePositionLedger.select(baseCols, { where: open });
   return rows;
 }
 

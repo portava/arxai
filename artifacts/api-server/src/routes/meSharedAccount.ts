@@ -15,7 +15,8 @@
 //     NOT return entire rows from mt5_connection.
 //   * No execution. No order placement. No live-trade flags toggled.
 
-import { getConnection, listConnections } from "../lib/brokerHub/connections.js";
+import { livePositionLedger, livePositionColumns, readAttributedLivePositions } from "../lib/positions/ledger.js";
+import { getConnection } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import type { Request } from "express";
 import { db } from "@workspace/db";
@@ -23,7 +24,6 @@ import {
   virtualTradingAccountsTable,
   sharedTradeAttributionTable,
   sharedMasterAccountsTable,
-  arxLivePositionsTable,
   unattributedMasterTradesTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, gte, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
@@ -84,14 +84,17 @@ async function buildMasterMt5Snapshot(userId: number) {
   // only (not closed). Falls back to 0 when the master is unknown.
   let openPositions = 0;
   if (masterOwnerUserId != null && masterConnId != null) {
-    const openRows = await db.select({ count: sql<number>`count(*)::int` })
-      .from(arxLivePositionsTable)
-      .where(and(
-        eq(arxLivePositionsTable.userId, masterOwnerUserId),
-        eq(arxLivePositionsTable.bridgeConnectionId, masterConnId),
-        isNull(arxLivePositionsTable.closedAt),
-        isNull(arxLivePositionsTable.reconcileState),
-      ));
+    const openRows = await livePositionLedger.select(
+      { count: sql<number>`count(*)::int` },
+      {
+        where: and(
+          eq(livePositionColumns.userId, masterOwnerUserId),
+          eq(livePositionColumns.bridgeConnectionId, masterConnId),
+          isNull(livePositionColumns.closedAt),
+          isNull(livePositionColumns.reconcileState),
+        ),
+      },
+    );
     openPositions = Number(openRows[0]?.count ?? 0);
   }
 
@@ -386,28 +389,31 @@ router.get("/me/shared-account/positions", requireUser, async (req, res) => {
       }
 
       // All real OPEN master positions — not closed, not operator-reconciled.
-      const masterRows = await db.select({
-        id: arxLivePositionsTable.id,
-        brokerTicket: arxLivePositionsTable.brokerTicket,
-        symbol: arxLivePositionsTable.symbol,
-        side: arxLivePositionsTable.side,
-        volume: arxLivePositionsTable.volume,
-        entryPrice: arxLivePositionsTable.entryPrice,
-        currentPrice: arxLivePositionsTable.currentPrice,
-        pnl: arxLivePositionsTable.floatingPl,
-        stopLoss: arxLivePositionsTable.stopLoss,
-        takeProfit: arxLivePositionsTable.takeProfit,
-        openedAt: arxLivePositionsTable.openedAt,
-        lastSyncedAt: arxLivePositionsTable.lastSyncedAt,
-      })
-        .from(arxLivePositionsTable)
-        .where(and(
-          eq(arxLivePositionsTable.userId, masterOwnerUserId),
-          eq(arxLivePositionsTable.bridgeConnectionId, masterConnId),
-          isNull(arxLivePositionsTable.closedAt),
-          isNull(arxLivePositionsTable.reconcileState),
-        ))
-        .orderBy(desc(arxLivePositionsTable.openedAt));
+      const masterRows = await livePositionLedger.select(
+        {
+          id: livePositionColumns.id,
+          brokerTicket: livePositionColumns.brokerTicket,
+          symbol: livePositionColumns.symbol,
+          side: livePositionColumns.side,
+          volume: livePositionColumns.volume,
+          entryPrice: livePositionColumns.entryPrice,
+          currentPrice: livePositionColumns.currentPrice,
+          pnl: livePositionColumns.floatingPl,
+          stopLoss: livePositionColumns.stopLoss,
+          takeProfit: livePositionColumns.takeProfit,
+          openedAt: livePositionColumns.openedAt,
+          lastSyncedAt: livePositionColumns.lastSyncedAt,
+        },
+        {
+          where: and(
+            eq(livePositionColumns.userId, masterOwnerUserId),
+            eq(livePositionColumns.bridgeConnectionId, masterConnId),
+            isNull(livePositionColumns.closedAt),
+            isNull(livePositionColumns.reconcileState),
+          ),
+          orderBy: [desc(livePositionColumns.openedAt)],
+        },
+      );
 
       // Label by ARX attribution WITHOUT widening any user's visibility. This is
       // the owner/admin operator view; we look up attributions for the pinned
@@ -465,14 +471,17 @@ router.get("/me/shared-account/positions", requireUser, async (req, res) => {
 
       // Recently operator-reconciled master positions (honest "N reconciled" note).
       const dayAgo = new Date(now - 24 * 60 * 60 * 1000);
-      const recRows = await db.select({ count: sql<number>`count(*)::int` })
-        .from(arxLivePositionsTable)
-        .where(and(
-          eq(arxLivePositionsTable.userId, masterOwnerUserId),
-          eq(arxLivePositionsTable.bridgeConnectionId, masterConnId),
-          isNotNull(arxLivePositionsTable.reconcileState),
-          gte(arxLivePositionsTable.reconciledAt, dayAgo),
-        ));
+      const recRows = await livePositionLedger.select(
+        { count: sql<number>`count(*)::int` },
+        {
+          where: and(
+            eq(livePositionColumns.userId, masterOwnerUserId),
+            eq(livePositionColumns.bridgeConnectionId, masterConnId),
+            isNotNull(livePositionColumns.reconcileState),
+            gte(livePositionColumns.reconciledAt, dayAgo),
+          ),
+        },
+      );
       const reconciledOrphanCount = Number(recRows[0]?.count ?? 0);
 
       res.json({
@@ -484,40 +493,7 @@ router.get("/me/shared-account/positions", requireUser, async (req, res) => {
       return;
     }
 
-    const raw = await db.select({
-      id: sharedTradeAttributionTable.id,
-      virtualAccountId: sharedTradeAttributionTable.virtualAccountId,
-      sharedMasterAccountId: sharedTradeAttributionTable.sharedMasterAccountId,
-      symbol: sharedTradeAttributionTable.symbol,
-      side: sharedTradeAttributionTable.side,
-      lotSize: sharedTradeAttributionTable.lotSize,
-      stopLoss: sharedTradeAttributionTable.stopLoss,
-      takeProfit: sharedTradeAttributionTable.takeProfit,
-      slippage: sharedTradeAttributionTable.slippage,
-      brokerTicket: arxLivePositionsTable.brokerTicket,
-      entryPrice: arxLivePositionsTable.entryPrice,
-      currentPrice: arxLivePositionsTable.currentPrice,
-      pnl: arxLivePositionsTable.floatingPl,
-      openedAt: arxLivePositionsTable.openedAt,
-      lastSyncedAt: arxLivePositionsTable.lastSyncedAt,
-    })
-      .from(sharedTradeAttributionTable)
-      .innerJoin(arxLivePositionsTable, and(
-        // Per-user isolation: arx_live_positions uniqueness is (user_id,
-        // broker_ticket), NOT global — so the join MUST be scoped by user or a
-        // shared ticket string could cross-join another user's live position.
-        eq(arxLivePositionsTable.userId, sharedTradeAttributionTable.userId),
-        eq(arxLivePositionsTable.brokerTicket, sharedTradeAttributionTable.mt5PositionTicket),
-        isNull(arxLivePositionsTable.closedAt),
-        isNull(arxLivePositionsTable.reconcileState),
-      ))
-      .where(and(
-        eq(sharedTradeAttributionTable.userId, userId),
-        eq(sharedTradeAttributionTable.status, "open"),
-        isNotNull(sharedTradeAttributionTable.mt5PositionTicket),
-        ne(sharedTradeAttributionTable.mt5PositionTicket, ""),
-      ))
-      .orderBy(desc(arxLivePositionsTable.openedAt));
+    const raw = await readAttributedLivePositions(userId);
 
     const now = Date.now();
     let lastMt5SyncAt: Date | null = null;

@@ -1,5 +1,6 @@
 // Build OO — Integration test runner. NEVER places trades, NEVER enables live trading,
 // NEVER calls MT5 live execution, NEVER modifies canPlaceTrades, NEVER exposes secrets.
+import { countDemoPositions } from "../positions/ledger.js";
 import { randomUUID } from "node:crypto";
 import { db } from "@workspace/db";
 import {
@@ -103,7 +104,7 @@ async function runSafety(): Promise<TestResult[]> {
   out.push(mkResult("safety", "PAPER_ONLY + DISABLED + canPlaceLiveTrade=false", safe ? "PASS" : "FAIL", safe ? "INFO" : "CRITICAL", t0, { mode: sec.mode, liveTradingStatus: sec.liveTradingStatus, canPlaceLiveTrade: sec.canPlaceLiveTrade }, safe ? [] : ["Safety invariant broken"]));
 
   t0 = Date.now();
-  const baseline = { paper_orders: await tableCount("paper_orders"), live_positions: await tableCount("live_positions"), mt5_commands: await tableCount("mt5_commands") };
+  const baseline = { paper_orders: await tableCount("paper_orders"), live_positions: await countDemoPositions().catch(() => -1), mt5_commands: await tableCount("mt5_commands") };
   out.push(mkResult("safety", "Baseline counts captured", "PASS", "INFO", t0, baseline));
 
   t0 = Date.now();

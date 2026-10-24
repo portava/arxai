@@ -25,8 +25,8 @@ import { type CheckResult, ROOT, read } from "./_lib.js";
 
 const NAME = "reconciled-ghost-exposure";
 
-const RECONCILE_LITERAL = "isNull(arxLivePositionsTable.reconcileState)";
-const CLOSED_LITERAL = "isNull(arxLivePositionsTable.closedAt)";
+const RECONCILE_LITERAL = "isNull(livePositionColumns.reconcileState)";
+const CLOSED_LITERAL = "isNull(livePositionColumns.closedAt)";
 const HELPER = "openLiveExposureCondition";
 
 /** A read is safe if it delegates to the canonical helper OR still carries both
@@ -51,8 +51,8 @@ export function checkReconciledGhostExposure(): CheckResult {
   if (!helperEnforcesBoth) {
     violations.push(
       "openLiveExposureCondition (livePositionExposure.ts) must enforce BOTH " +
-        "isNull(arxLivePositionsTable.closedAt) AND " +
-        "isNull(arxLivePositionsTable.reconcileState) — it is the single source " +
+        "isNull(livePositionColumns.closedAt) AND " +
+        "isNull(livePositionColumns.reconcileState) — it is the single source " +
         "of truth that every exposure read delegates to",
     );
   } else {
@@ -85,12 +85,12 @@ export function checkReconciledGhostExposure(): CheckResult {
   if (!enforcesExposure(gate)) {
     violations.push(
       "executionGate.computeAgentDailyPnlUsd must exclude reconciled ghosts — " +
-        "delegate the arxLivePositionsTable query to openLiveExposureCondition() " +
+        "delegate the livePositionColumns query to openLiveExposureCondition() " +
         "(or carry both closedAt/reconcileState isNull filters) so ghosts cannot " +
         "inflate dailyPnlUsd or the open-position count",
     );
   } else {
-    notes.push("executionGate arxLivePositionsTable query delegates to openLiveExposureCondition");
+    notes.push("executionGate livePositionColumns query delegates to openLiveExposureCondition");
   }
 
   // openPositionsCount must be derived from the filtered positions result
@@ -102,7 +102,7 @@ export function checkReconciledGhostExposure(): CheckResult {
   if (!gate.includes("openPositionsCount = positions.length")) {
     violations.push(
       "executionGate.computeAgentDailyPnlUsd: openPositionsCount must be derived from " +
-        "positions.length (filtered arxLivePositionsTable result), not filled.length — " +
+        "positions.length (filtered livePositionColumns result), not filled.length — " +
         "otherwise reconciled ghosts inflate the concurrent-position count and can " +
         "trip MAX_CONCURRENT_POSITIONS incorrectly",
     );
