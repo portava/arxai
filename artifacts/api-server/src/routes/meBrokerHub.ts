@@ -7,11 +7,8 @@
 import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
-import {
-  Mt5ReadOnlyAdapter,
-  type Mt5ProjectionReader,
-} from "../lib/brokerHub/mt5ReadOnlyAdapter.js";
-import { mt5ProjectionReader } from "../lib/brokerHub/mt5ProjectionReader.js";
+import type { ReadOnlyBrokerAdapter } from "@workspace/domain/broker-hub";
+import { brokerReadAdapter } from "../lib/brokerHub/readAdapters.js";
 import { isBrokerHubReadOnlyEnabled } from "../lib/brokerHub/featureFlag.js";
 import { buildConnectionCard } from "../lib/brokerHub/connectionCard.js";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -46,9 +43,9 @@ function notFound(res: Response): void {
   res.status(404).json({ error: "NOT_FOUND" });
 }
 
-function base(adapter: Mt5ReadOnlyAdapter) {
+function base(adapter: ReadOnlyBrokerAdapter) {
   return {
-    venue: "MT5" as const,
+    venue: adapter.identity.venue,
     connectionId: Number(adapter.identity.nativeConnectionRef),
     ...NO_TRADE_FLAGS,
   };
@@ -64,18 +61,14 @@ router.use("/me/broker-hub", (req, res, next) => {
   next();
 });
 
-function withAdapter(
-  req: Request,
-  res: Response,
-  reader: Mt5ProjectionReader,
-): Mt5ReadOnlyAdapter | null {
+function withAdapter(req: Request, res: Response): ReadOnlyBrokerAdapter | null {
   const userId = ownerId(req);
   const id = connectionId(req);
   if (!userId || id === null) {
     notFound(res);
     return null;
   }
-  return new Mt5ReadOnlyAdapter(reader, userId, id);
+  return brokerReadAdapter({ venue: "MT5", userId, connectionId: id });
 }
 
 // Spec §3.1 — the Broker Connections card set for THIS user.
@@ -167,7 +160,7 @@ router.get("/me/broker-hub/connections", requireUser, async (req, res) => {
 });
 
 router.get("/me/broker-hub/connections/:connectionId", requireUser, async (req, res) => {
-  const adapter = withAdapter(req, res, mt5ProjectionReader);
+  const adapter = withAdapter(req, res);
   if (!adapter) return;
   try {
     const health = await adapter.readHealth();
@@ -186,7 +179,7 @@ router.get("/me/broker-hub/connections/:connectionId", requireUser, async (req, 
 });
 
 router.get("/me/broker-hub/connections/:connectionId/account", requireUser, async (req, res) => {
-  const adapter = withAdapter(req, res, mt5ProjectionReader);
+  const adapter = withAdapter(req, res);
   if (!adapter) return;
   try {
     const account = await adapter.readAccount();
@@ -215,7 +208,7 @@ router.get("/me/broker-hub/connections/:connectionId/account", requireUser, asyn
 });
 
 router.get("/me/broker-hub/connections/:connectionId/capabilities", requireUser, async (req, res) => {
-  const adapter = withAdapter(req, res, mt5ProjectionReader);
+  const adapter = withAdapter(req, res);
   if (!adapter) return;
   try {
     const snapshot = await adapter.readCapabilities();
@@ -234,7 +227,7 @@ router.get("/me/broker-hub/connections/:connectionId/capabilities", requireUser,
 });
 
 router.get("/me/broker-hub/connections/:connectionId/instruments", requireUser, async (req, res) => {
-  const adapter = withAdapter(req, res, mt5ProjectionReader);
+  const adapter = withAdapter(req, res);
   if (!adapter) return;
   try {
     const instruments = await adapter.readInstruments();
@@ -260,6 +253,40 @@ router.get("/me/broker-hub/connections/:connectionId/instruments", requireUser, 
         maxVolume: instrument.maxVolume,
         volumeStep: instrument.volumeStep,
         evidence: instrument.evidence,
+      })),
+    });
+  } catch {
+    res.status(500).json({ error: "BROKER_METADATA_UNAVAILABLE" });
+  }
+});
+
+// The platform Deriv feed through the same read contract: health, capabilities
+// and the synthetic catalog. Deriv is a market-data venue here; there is no
+// Deriv account and no Deriv order path behind it.
+router.get("/me/broker-hub/deriv", requireUser, async (req, res) => {
+  const userId = ownerId(req);
+  if (!userId) { notFound(res); return; }
+  try {
+    const adapter = brokerReadAdapter({ venue: "DERIV", userId });
+    const [health, snapshot, instruments] = await Promise.all([
+      adapter.readHealth(), adapter.readCapabilities(), adapter.readInstruments(),
+    ]);
+    res.json({
+      venue: "DERIV" as const,
+      ...NO_TRADE_FLAGS,
+      status: health.status,
+      connected: health.connected,
+      nativeStatus: health.nativeStatus,
+      observedAt: health.observedAt,
+      staleSeconds: health.staleSeconds,
+      reason: health.reason,
+      capabilities: snapshot.capabilities,
+      instruments: instruments.map((i) => ({
+        symbol: i.symbol,
+        displayName: i.displayName,
+        exactBrokerSymbol: i.exactBrokerSymbol,
+        brokerReportsTradeAllowed: i.brokerReportsTradeAllowed,
+        discoveryStatus: i.discoveryStatus,
       })),
     });
   } catch {
