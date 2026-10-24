@@ -12,7 +12,7 @@ import { Router, type IRouter, type Request } from "express";
 import { z } from "zod/v4";
 import { db, tradesTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { completeChat } from "../lib/ai/llmGateway.js";
 
 const router: IRouter = Router();
 
@@ -78,17 +78,19 @@ router.post("/me/trade-coach/ask", async (req, res): Promise<void> => {
   let answer = "Sorry, the trade coach could not generate an answer right now.";
   let aiOk = false;
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await completeChat({
+      purpose: "trade_coach",
       model: "gpt-4o-mini",
       temperature: 0.3,
-      max_tokens: 350,
+      maxTokens: 350,
+      tokenParam: "max_tokens",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "system", content: `Trade context: ${tradeContext}\nNote: live candles / news may be unavailable; if so, say so honestly.` },
         { role: "user", content: question },
       ],
     });
-    const text = completion.choices?.[0]?.message?.content?.trim();
+    const text = completion.trim();
     if (text && text.length > 0) {
       answer = text;
       aiOk = true;
