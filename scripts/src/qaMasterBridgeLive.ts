@@ -242,8 +242,8 @@ async function main(): Promise<void> {
   record(
     "18_pipeline_binds_master_bound_bridge_id",
     /masterBoundBridgeId/.test(pipeline) &&
-      /eq\(mt5ConnectionTable\.id,\s*masterBoundBridgeId\)/.test(pipeline),
-    "bridge pool overridden by mt5_connection.id = masterBoundBridgeId in SHARED_MASTER_MT5",
+      /getConnection\(masterBoundBridgeId\)/.test(pipeline),
+    "bridge pool overridden by the Broker Hub connection masterBoundBridgeId in SHARED_MASTER_MT5",
   );
 
   // ── 19 — BRIDGE_BINDING_MISMATCH still enforced on result write-back

@@ -31,6 +31,7 @@
 // never weakens any existing auth/trading gate — it only further restricts who
 // may be live-activated.
 
+import { getConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -38,7 +39,6 @@ import {
   userMasterLiveAccessTable,
   virtualTradingAccountsTable,
   globalTradingSettingsTable,
-  mt5ConnectionTable,
 } from "@workspace/db";
 import { getMyArming } from "./liveArming.js";
 import { resolveRouting } from "../adminTrading/routingResolver.js";
@@ -266,11 +266,7 @@ export async function buildApprovedTraderLiveState(
         const routing = await resolveRouting({ userId, mode: "LIVE" });
         if (routing.ok && routing.connectionId) {
           bridgeConnectionId = routing.connectionId;
-          const [conn] = await db
-            .select({ lastHeartbeat: mt5ConnectionTable.lastHeartbeat })
-            .from(mt5ConnectionTable)
-            .where(eq(mt5ConnectionTable.id, routing.connectionId))
-            .limit(1);
+          const conn = await getConnection(routing.connectionId);
           bridgeHeartbeatAgeSeconds = conn?.lastHeartbeat
             ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)
             : null;

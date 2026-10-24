@@ -10,6 +10,7 @@
 // (`mt5DemoCommandsTable`). A demo command can never accidentally route as
 // live and vice versa.
 
+import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -18,7 +19,6 @@ import {
   arxLivePositionsTable,
   arxLiveUserSettingsTable,
   liveTradingAuditTable,
-  mt5ConnectionTable,
   userMasterLiveAccessTable,
   type ArxLiveCommand,
   type ArxLiveCommandStatus,
@@ -1347,9 +1347,8 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
       if (isOwnerUnrestricted) {
         const masterConnId = await resolveActiveMasterConnectionId();
         if (masterConnId != null) {
-          const mc = await db.select({ brokerName: mt5ConnectionTable.brokerName })
-            .from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
-          brokerIsDeriv = /deriv/i.test(mc[0]?.brokerName ?? "");
+          const mc = await getConnection(masterConnId);
+          brokerIsDeriv = /deriv/i.test(mc?.brokerName ?? "");
         }
         const spec = await getBrokerSymbolSpec(input.userId, input.symbol);
         brokerTruthBlocks = spec.hasBrokerTruth && (
@@ -1668,8 +1667,7 @@ export async function createLiveOpsDraft(input: {
     return { ok: false, reason: "KILL_SWITCH_ENGAGED" };
   }
 
-  const bridge = (await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, input.userId))).find((b) => !b.tokenRevokedAt) ?? null;
+  const bridge = (await listUserConnections(input.userId, { activeTokenOnly: true, order: "oldest", limit: 1 }))[0] ?? null;
 
   const ownership = await resolveOwnershipFields({
     userId: input.userId,
@@ -1823,8 +1821,7 @@ export async function createLiveDraft(
 
   const arming = (await getMyArming(input.userId))!;
   const bridge = arming
-    ? (await db.select().from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.userId, input.userId))).find((b) => !b.tokenRevokedAt) ?? null
+    ? (await listUserConnections(input.userId, { activeTokenOnly: true, order: "oldest", limit: 1 }))[0] ?? null
     : null;
 
   // Task #28 — derive the cycle link from the payload the caller passed
@@ -2825,9 +2822,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       if (isOwnerUnrestrictedDispatch) {
         const masterConnId = await resolveActiveMasterConnectionId();
         if (masterConnId != null) {
-          const mc = await db.select({ brokerName: mt5ConnectionTable.brokerName })
-            .from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
-          brokerIsDeriv = /deriv/i.test(mc[0]?.brokerName ?? "");
+          const mc = await getConnection(masterConnId);
+          brokerIsDeriv = /deriv/i.test(mc?.brokerName ?? "");
         }
         const spec = await getBrokerSymbolSpec(args.userId, row.symbol);
         brokerTruthBlocks = spec.hasBrokerTruth && (
@@ -2958,8 +2954,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // The explicit MOCK short-circuit below refuses dispatch before the
   // evaluator runs, so a MOCK row cannot ever satisfy live readiness.
   const bridgePool = masterBoundBridgeId != null
-    ? await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterBoundBridgeId))
-    : await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, args.userId));
+    ? [await getConnection(masterBoundBridgeId)].filter((c) => c != null)
+    : await listUserConnections(args.userId);
   const nonRevoked = bridgePool.filter((b) => !b.tokenRevokedAt);
   const byFreshness = (a: typeof nonRevoked[number], b: typeof nonRevoked[number]) => {
     const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;

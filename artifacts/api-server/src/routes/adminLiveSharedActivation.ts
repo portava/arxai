@@ -19,6 +19,7 @@
 //
 //   GET  /api/admin/live-shared/command-queue
 //     Paginated, filterable read of arx_live_commands. Admin-only.
+import { listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
@@ -28,8 +29,7 @@ import {
   userMasterLiveAccessTable,
   sharedTradeAttributionTable,
   adminActionAuditLogTable,
-  mt5ConnectionTable,
-} from "@workspace/db";
+  } from "@workspace/db";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
 import { detectCurrentConnectedBridge } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
@@ -88,10 +88,9 @@ router.post("/admin/live-shared/activation-smoke-test", async (req, res) => {
 
   // C2 — pinned bridge snapshot present
   const pinnedId = settings?.platformMasterBridgeConnectionId ?? null;
-  let pinned: typeof mt5ConnectionTable.$inferSelect | null = null;
+  let pinned: BrokerConnectionFacts | null = null;
   if (pinnedId != null) {
-    pinned = (await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, pinnedId)).limit(1))[0] ?? null;
+    pinned = (await listConnections({ connectionIds: [pinnedId], limit: 1 }))[0] ?? null;
   }
   checks.push({
     id: "C2_pinned_bridge", label: "Master bridge pinned",

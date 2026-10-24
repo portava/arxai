@@ -22,8 +22,9 @@
 //     `bridgeReadinessAtDraft` snapshot. It is masked when surfaced to
 //     end users in UI/Ruby copy (mt5-setup / scanner / assistant).
 
+import { getConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
-import { db, mt5ConnectionTable, sharedTradeAttributionTable, sharedMasterAccountsTable } from "@workspace/db";
+import { db, sharedTradeAttributionTable, sharedMasterAccountsTable } from "@workspace/db";
 import {
   evaluatePerUserDispatchEligibility,
   eaVersionAtLeast,
@@ -165,11 +166,7 @@ export async function evaluateRoutedDemoDispatchGate(args: {
   }
 
   // Master conn present — evaluate master bridge readiness.
-  const [conn] = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, routing.connectionId))
-    .limit(1);
+  const conn = await getConnection(routing.connectionId);
 
   const hbAge = conn?.lastHeartbeat
     ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)

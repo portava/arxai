@@ -5,6 +5,7 @@
 //
 // Pre-trade risk check is purely advisory; live order execution is system-locked.
 
+import { getUserPrimaryConnection, listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
 import {
   db,
   paperTradesTable,
@@ -13,7 +14,6 @@ import {
   userNotificationsTable,
   userActivityTimelineTable,
   userRiskSettingsTable,
-  mt5ConnectionTable,
   usersTable,
   propChallengesTable,
   paperOrdersTable,
@@ -117,7 +117,7 @@ function dayKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function publicConn(c: typeof mt5ConnectionTable.$inferSelect) {
+function publicConn(c: BrokerConnection) {
   return {
     id: c.id,
     connectionName: c.connectionName,
@@ -210,8 +210,7 @@ export async function getRoutingContext(userId: number) {
     let brokerLabel: string | null = null;
     let sharedMasterLabel: string | null = null;
     if (env.connectionType === "user_owned") {
-      const [c] = await db.select().from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+      const c = await getUserPrimaryConnection(userId);
       brokerLabel = c
         ? `${c.brokerName ?? "MT5"} ${c.accountNumber ? `(•••• ${String(c.accountNumber).slice(-4)})` : ""}`.trim()
         : null;
@@ -278,7 +277,7 @@ export function getAppFeatureMapTool() {
 
 // ── 3. getMT5BridgeStatus ───────────────────────────────────────────────
 export async function getMT5BridgeStatus(userId: number) {
-  const rows = await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, userId));
+  const rows = await listUserConnections(userId, { order: "oldest" });
   const connections = rows.map(publicConn);
   const anyConnected = connections.some((c) => c.status === "connected");
   const env = await deriveAssistantEnvelope(userId);
@@ -296,10 +295,7 @@ export async function getMT5BridgeStatus(userId: number) {
 
 // ── 4. getMT5Heartbeat ──────────────────────────────────────────────────
 export async function getMT5Heartbeat(userId: number) {
-  const rows = await db.select({
-    id: mt5ConnectionTable.id, status: mt5ConnectionTable.status,
-    lastHeartbeat: mt5ConnectionTable.lastHeartbeat,
-  }).from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, userId));
+  const rows = await listUserConnections(userId, { order: "oldest" });
   const now = Date.now();
   const items = rows.map((r) => {
     const ageSec = r.lastHeartbeat ? Math.floor((now - new Date(r.lastHeartbeat).getTime()) / 1000) : null;
@@ -692,8 +688,7 @@ export async function getRiskUtilization(userId: number) {
  */
 export async function getReconciliationStatus(userId: number) {
   // 1. Bridge health
-  const [conn] = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+  const conn = await getUserPrimaryConnection(userId);
   const lastHeartbeatAt = conn?.lastHeartbeat ?? null;
   const heartbeatAgeSec = lastHeartbeatAt
     ? Math.floor((Date.now() - new Date(lastHeartbeatAt).getTime()) / 1000)
@@ -3783,15 +3778,12 @@ export async function getProtectiveCloseStatusTool(
 
 export async function getBridgeCapabilitiesTool(userId: number, env: SafetyEnvelope) {
   try {
-    const { mt5ConnectionTable } = await import("@workspace/db/schema");
     const {
       normaliseCapabilities,
       resolvePendingSubmitStatus,
       explainStatus,
     } = await import("../mt5/bridgeCapabilities.js");
-    const rows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
-    const conn = rows[0] ?? null;
+    const conn = await getUserPrimaryConnection(userId);
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
     const bridgeConnected = !!lastHb && (Date.now() - lastHb.getTime() < 90_000);

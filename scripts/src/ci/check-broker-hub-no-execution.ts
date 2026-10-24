@@ -121,10 +121,15 @@ const EXEC_PIPELINE: Forbidden[] = [
  * For the other three tables (mt5DemoCommandsTable, arxLiveCommandsTable,
  * arxLivePositionsTable) we also forbid mutation forms only.
  */
+const MUTATION_WHY = "broker-hub is a read-only boundary and must not perform any database mutation";
+/** The Broker Hub connection store: the only hub file that writes, and only mt5_connection. */
+export const CONNECTION_STORE = "artifacts/api-server/src/lib/brokerHub/connections.ts";
+const CONNECTION_WRITE = /\.(?:insert|update|delete)\(\s*mt5ConnectionTable\s*\)/;
+
 const EXEC_TABLE_MUTATIONS: Forbidden[] = [
   {
     rx: /\.\s*(?:insert|update|delete)\b|\[\s*["'](?:insert|update|delete)["']\s*\]/,
-    why: "broker-hub is a read-only boundary and must not perform any database mutation",
+    why: MUTATION_WHY,
   },
   {
     rx: /\.\s*(?:execute|executeRaw|unsafe|query)\s*\(|\[\s*["'](?:execute|executeRaw|unsafe|query)["']\s*\]/,
@@ -441,7 +446,12 @@ export function checkBrokerHubNoExecution(): CheckResult {
         );
       }
 
+      const lines = src.split("\n");
+      const isConnectionStore = file === join(ROOT, CONNECTION_STORE);
       for (const { line, col, token, why } of scanBrokerHubSourceForViolations(src)) {
+        // The connection store owns mt5_connection (Tier 1 finalization,
+        // item 1): it may write that one table and nothing else.
+        if (isConnectionStore && why === MUTATION_WHY && CONNECTION_WRITE.test(lines[line - 1] ?? "")) continue;
         violations.push(`${rel(file)}:${line}:${col} [${why}] — \`${token}\``);
       }
     }

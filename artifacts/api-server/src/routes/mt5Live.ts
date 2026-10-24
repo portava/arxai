@@ -11,9 +11,10 @@
 //   from `mt5_demo_commands`; this file reads only from `arx_live_commands`.
 // - Per-user isolation: every query is scoped by `req.mt5Connection.userId`.
 
+import { updateConnection, type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq, isNull, inArray, sql } from "drizzle-orm";
-import { db, arxLiveCommandsTable, arxLivePositionsTable, mt5ConnectionTable } from "@workspace/db";
+import { db, arxLiveCommandsTable, arxLivePositionsTable } from "@workspace/db";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { brokerAbsenceAutoReconcilePolicy } from "../lib/live/brokerAbsencePolicy.js";
 import { runBrokerAbsenceReconcile } from "../lib/live/brokerAbsenceReconcileRunner.js";
@@ -29,10 +30,10 @@ import { scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
 const router = Router();
 
 interface AugReq extends Request {
-  mt5Connection?: typeof mt5ConnectionTable.$inferSelect;
+  mt5Connection?: BrokerConnectionRecord;
 }
 
-function requireLiveBridge(req: AugReq, res: Response): typeof mt5ConnectionTable.$inferSelect | null {
+function requireLiveBridge(req: AugReq, res: Response): BrokerConnectionRecord | null {
   const conn = req.mt5Connection;
   if (!conn) {
     res.status(401).json({ error: "BRIDGE_AUTH_REQUIRED" });
@@ -431,9 +432,7 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
   // visible pending confirmation. Best-effort: a failed stamp must not fail the
   // ingest (the upserts above already landed).
   try {
-    await db.update(mt5ConnectionTable)
-      .set({ lastPositionsSnapshotAt: new Date() })
-      .where(eq(mt5ConnectionTable.id, conn.id));
+    await updateConnection(conn.id, { lastPositionsSnapshotAt: new Date() });
   } catch (err) {
     req.log.warn({ err }, "sync-live-positions snapshot-marker stamp failed");
   }

@@ -17,9 +17,10 @@
 // Audit: every placement attempt updates the corresponding row in
 // trade_command_audit_log with the queued command id.
 
+import { getConnection, getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
-  mt5CommandsTable, mt5ConnectionTable, tradeCommandAuditLogTable,
+  mt5CommandsTable, tradeCommandAuditLogTable,
   sharedTradeAttributionTable,
 } from "@workspace/db/schema";
 import { and, eq, gte, sql } from "drizzle-orm";
@@ -92,16 +93,9 @@ export async function dispatchToBroker(args: BrokerPlacementArgs): Promise<Broke
   // only fall back to the user's own connection if no routing was supplied
   // (legacy callers). This is the SOLE place that picks the queued
   // mt5_connection_id, so attribution is consistent.
-  let conn: typeof mt5ConnectionTable.$inferSelect | undefined;
-  if (args.routing?.connectionId) {
-    const r = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, args.routing.connectionId)).limit(1);
-    conn = r[0];
-  } else {
-    const r = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, args.userId)).limit(1);
-    conn = r[0];
-  }
+  const conn = args.routing?.connectionId
+    ? await getConnection(args.routing.connectionId)
+    : await getUserPrimaryConnection(args.userId);
   if (!conn) {
     return { ok: false, mode: args.mode, commandId: null, status: "NO_CONNECTION", idempotencyKey, expiresAt: null,
       detail: "No MT5 connection on file." };

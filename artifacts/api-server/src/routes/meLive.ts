@@ -16,6 +16,7 @@
 //
 // Mount path: /api/me/live/*
 
+import { getUserLiveSnapshotMarkerMs, listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -57,7 +58,7 @@ import {
   resolveLivePositionVisibility,
   ACCOUNT_NOT_IN_LIVE_MODE,
 } from "../lib/modeScope/livePositionVisibility.js";
-import { db, arxLiveCommandsTable, arxLivePositionsTable, mt5ConnectionTable } from "@workspace/db";
+import { db, arxLiveCommandsTable, arxLivePositionsTable } from "@workspace/db";
 import {
   composeInvestorBalance,
   fetchInvestorBalanceParts,
@@ -354,15 +355,7 @@ router.get("/me/live/positions", requireUser, async (req, res) => {
   // book — NOT by the newest row timestamp (which would decay to unreliable on
   // a flat broker and pin closed rows on screen). Max across the user's
   // non-revoked, non-demo bridges so any live bridge counts.
-  const snapMarkerRows = await db
-    .select({ t: sql<string | null>`max(${mt5ConnectionTable.lastPositionsSnapshotAt})` })
-    .from(mt5ConnectionTable)
-    .where(and(
-      eq(mt5ConnectionTable.userId, userId),
-      ne(mt5ConnectionTable.status, "revoked"),
-      or(isNull(mt5ConnectionTable.accountType), ne(mt5ConnectionTable.accountType, "demo")),
-    ));
-  const snapshotAtMs = snapMarkerRows[0]?.t ? new Date(snapMarkerRows[0].t).getTime() : null;
+  const snapshotAtMs = await getUserLiveSnapshotMarkerMs(userId);
   const snapshotReliable = isSnapshotReliable(snapshotAtMs, STALE_MS, now);
   const classifyOf = (r: (typeof allRows)[number]) =>
     classifyRow(r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : null, { windowMs: STALE_MS, now, snapshotReliable });
@@ -756,8 +749,7 @@ router.put("/me/live/settings", requireUser, async (req, res) => {
 router.get("/me/live/bridge-debug", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
+  const rows = await listUserConnections(userId);
   const nonRevoked = rows.filter((r) => !r.tokenRevokedAt);
   const byFreshness = (a: typeof nonRevoked[number], b: typeof nonRevoked[number]) => {
     const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;
@@ -859,8 +851,7 @@ router.get("/me/live/bridge-debug", requireUser, async (req, res) => {
 router.get("/me/live/ea-inputs", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
+  const rows = await listUserConnections(userId);
   const nonRevoked = rows.filter((r) => !r.tokenRevokedAt);
   const fresh = nonRevoked
     .slice()
@@ -916,8 +907,7 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
   const { buildLiveAccountSnapshot } = await import("../lib/live/liveAccountSnapshot.js");
 
   // Bridge state — classify from the freshest non-revoked connection's heartbeat.
-  const connRows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
+  const connRows = await listUserConnections(userId);
   const nonRevoked = connRows.filter((r) => !r.tokenRevokedAt);
   const freshestConn = nonRevoked
     .slice()
@@ -995,10 +985,7 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
     .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)));
 
   // Freshest account-synced connection for equity/balance.
-  const equityRows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId))
-    .orderBy(sql`${mt5ConnectionTable.accountSyncedAt} DESC NULLS LAST`)
-    .limit(1);
+  const equityRows = await listUserConnections(userId, { order: "accountSynced", limit: 1 });
   const conn = equityRows[0];
   const acctSynced = conn?.accountSyncedAt ?? null;
 
@@ -1146,10 +1133,7 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
       // Deterministically pick the user's most-recently account-synced
       // connection (NULLS LAST) so a multi-connection user never reads a stale
       // row's figures over a freshly-synced one.
-      const equityRows = await db.select().from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.userId, userId))
-        .orderBy(sql`${mt5ConnectionTable.accountSyncedAt} DESC NULLS LAST`)
-        .limit(1);
+      const equityRows = await listUserConnections(userId, { order: "accountSynced", limit: 1 });
       const conn = equityRows[0];
       // Honesty: accountBalance/equity/margin/freeMargin default to 0 in the DB,
       // so an existing-but-never-synced connection would emit fabricated zeros.

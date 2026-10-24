@@ -15,6 +15,7 @@
 // Every handler requireAdmin. The endpoint MUST NOT return raw bridge
 // tokens, API key hashes, or session secrets — only IDs, account
 // numbers (operator visibility), and aggregate metrics.
+import { listConnections } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { pool } from "@workspace/db";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
@@ -67,16 +68,9 @@ router.get("/admin/performance", async (req, res) => {
           AND sent_to_mt5_at IS NOT NULL
           AND filled_at > NOW() - INTERVAL '24 hours'`,
     );
-    const bridges = await c.query<{
-      id: number; user_id: number; account_number: string | null;
-      mode: string; last_heartbeat: Date | null;
-    }>(
-      `SELECT id, user_id, account_number, mode, last_heartbeat
-         FROM mt5_connection
-        WHERE token_revoked_at IS NULL
-        ORDER BY last_heartbeat DESC NULLS LAST
-        LIMIT 50`,
-    );
+    const bridges = { rows: (await listConnections({ activeTokenOnly: true, order: "heartbeat", limit: 50 })).map((b) => ({
+      id: b.id, user_id: b.userId, account_number: b.accountNumber, mode: b.mode, last_heartbeat: b.lastHeartbeat,
+    })) };
     const activeUsers = await c.query<{ n: string }>(
       `SELECT COUNT(DISTINCT user_id)::text AS n
          FROM arx_live_commands

@@ -14,8 +14,9 @@
 //   - Read-only. No mutation, no audit row, no trade path.
 //   - Counts only — never account numbers, IP addresses, tokens, or hashes.
 
+import { listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, mt5ConnectionTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { enforceSensitiveAction } from "../lib/security/handshake.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
@@ -79,9 +80,7 @@ router.get("/admin/runtime-health", async (req: Request, res: Response): Promise
     latestHeartbeatAgeSeconds: null as number | null,
   };
   try {
-    const rows = await db
-      .select({ lastHeartbeat: mt5ConnectionTable.lastHeartbeat })
-      .from(mt5ConnectionTable);
+    const rows = await listConnections({ order: "oldest" });
     let latest: number | null = null;
     for (const r of rows) {
       const age = r.lastHeartbeat ? now - new Date(r.lastHeartbeat).getTime() : null;

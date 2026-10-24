@@ -11,7 +11,6 @@ import { db } from "@workspace/db";
 import {
   tradeCommandAuditLogTable,
   userRiskLimitsTable,
-  mt5ConnectionTable,
 } from "@workspace/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { getEnvelope } from "./safetyEnvelope.js";

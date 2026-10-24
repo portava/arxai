@@ -17,10 +17,10 @@
 //     gate result + safety-gate snapshot into the row.
 //   - No tokens, no apiKeyHash, no broker passwords are read or written.
 
+import { listUserConnections } from "../brokerHub/connections.js";
 import { and, eq } from "drizzle-orm";
 import {
   db,
-  mt5ConnectionTable,
   mt5UserExecutionModeTable,
   type Mt5UserExecutionMode,
 } from "@workspace/db";
@@ -82,11 +82,7 @@ export async function getCurrentArmState(userId: number): Promise<{
 
 /** Arm MT5_DEMO_EXECUTION for the user. Refuses unless VERIFIED_DEMO. */
 async function lookupBridgeConnectionId(userId: number): Promise<number | null> {
-  const rows = await db
-    .select({ id: mt5ConnectionTable.id })
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId))
-    .limit(1);
+  const rows = await listUserConnections(userId, { order: "oldest", limit: 1 });
   return rows[0]?.id ?? null;
 }
 

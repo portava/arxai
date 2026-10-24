@@ -15,10 +15,10 @@
 //   - These are GETs that read existing state — no mutation, so no audit row is
 //     written (audit is reserved for mutations on the existing admin routers).
 
+import { listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import {
-  mt5ConnectionTable,
   arxLiveCommandsTable,
   arxSymbolSpecsTable,
   eaUpdateManifestTable,
@@ -73,10 +73,7 @@ router.get("/admin/ea/health", async (req, res): Promise<void> => {
   if (!role) return;
   const now = new Date();
 
-  const connections = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(isNull(mt5ConnectionTable.tokenRevokedAt));
+  const connections = await listConnections({ activeTokenOnly: true, order: "oldest" });
 
   // Latest approved manifest per channel (stable is the default channel an EA
   // takes). Used only to compute the update status badge — not to serve a build.

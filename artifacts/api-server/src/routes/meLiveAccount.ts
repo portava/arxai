@@ -11,6 +11,7 @@
 // - When no allocation exists, we return zeros + an explicit honest note
 //   instead of fabricating a balance.
 
+import { getUserLiveBridge } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -19,7 +20,6 @@ import { isForexPair } from "../lib/mt5/contractSize.js";
 import {
   db,
   arxLivePositionsTable,
-  mt5ConnectionTable,
   userSlotAllocationTable,
 } from "@workspace/db";
 import {
@@ -129,20 +129,10 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   // connection rows over time (old demo/live bridges, rotated tokens); reading
   // the lowest id would surface a long-dead bridge's heartbeat/leverage and
   // wrongly mark a live, actively-syncing account as stale.
-  const connRows = await db.select().from(mt5ConnectionTable)
-    .where(and(
-      eq(mt5ConnectionTable.userId, userId),
-      ne(mt5ConnectionTable.status, "revoked"),
-      // Live slot summary must reflect a LIVE/REAL bridge. Exclude demo bridges
-      // so a fresh demo connection can't masquerade as the live account's
-      // heartbeat/leverage. Keep unknown/null (not-yet-classified live bridge):
-      // a bare ne() would drop NULL rows under SQL three-valued logic, so OR in
-      // the null case explicitly even though the column is currently NOT NULL.
-      or(isNull(mt5ConnectionTable.accountType), ne(mt5ConnectionTable.accountType, "demo")),
-    ))
-    .orderBy(sql`${mt5ConnectionTable.lastHeartbeat} desc nulls last`)
-    .limit(1);
-  const conn = connRows[0];
+  // Live slot summary must reflect a LIVE/REAL bridge: demo bridges are
+  // excluded so a fresh demo connection can't masquerade as the live
+  // account's heartbeat/leverage; unclassified bridges still count.
+  const conn = await getUserLiveBridge(userId);
   const leverage = conn?.leverage ?? 100;
   const lastHeartbeat = conn?.lastHeartbeat ?? null;
   const heartbeatAgeMs = lastHeartbeat ? Date.now() - new Date(lastHeartbeat).getTime() : null;

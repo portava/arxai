@@ -4,13 +4,13 @@
 // Even when all 15 pass, the live command pipeline still blocks at
 // `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` (see liveDispatchGate.ts).
 
+import { getUserActiveConnection } from "../brokerHub/connections.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import {
   db,
   arxLiveArmingTable,
   liveTradingAuditTable,
-  mt5ConnectionTable,
   userMasterLiveAccessTable,
 } from "@workspace/db";
 import { resolveLiveBrokerExecutionEnabledAsync } from "./phaseBConfig.js";
@@ -159,18 +159,7 @@ export async function evaluateLiveArmingGate(
     input.isAdmin ? null : "Only an admin/operator account may arm live trading.");
 
   // 2-8: derive from the user's active MT5 bridge.
-  const bridges = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, input.userId));
-  const nonRevoked = bridges.filter((b) => !b.tokenRevokedAt);
-  const bridge = nonRevoked
-    .slice()
-    .sort((a, b) => {
-      const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;
-      const bh = b.lastHeartbeat ? new Date(b.lastHeartbeat).getTime() : 0;
-      return bh - ah;
-    })[0] ?? null;
+  const bridge = await getUserActiveConnection(input.userId);
 
   const hbAge = bridge?.lastHeartbeat
     ? Math.max(0, Math.floor((Date.now() - new Date(bridge.lastHeartbeat).getTime()) / 1000))

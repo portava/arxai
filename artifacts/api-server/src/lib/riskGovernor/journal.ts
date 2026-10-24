@@ -10,8 +10,9 @@
 // A trader override (paper only) can pass a block raised by rule 13 alone —
 // their own discipline settings — never one of the 12 exposure rules.
 
-import { and, eq } from "drizzle-orm";
-import { db, mt5ConnectionTable, paperTradesTable, type PaperTrade } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { db, paperTradesTable, type PaperTrade } from "@workspace/db";
+import { getUserConnection } from "../brokerHub/connections.js";
 import { enforcePreTradeRisk, PAPER_ACCOUNT_LEVERAGE, type EnforceResult, type RiskFacts } from "./enforce.js";
 import type { InstrumentModel, ProcessFacts, RiskAccount, RiskPosition, TradeIntent } from "./preTrade.js";
 import { journalActivity } from "./journalActivity.js";
@@ -33,9 +34,8 @@ async function journalAccount(userId: number, trade: Pick<PaperTrade, "mt5Connec
   let equity: number | null = null;
   let source = "paper_journal_model";
   if (trade.mt5ConnectionId != null) {
-    const [conn] = await db.select({ bal: mt5ConnectionTable.accountBalance, id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-      .where(and(eq(mt5ConnectionTable.id, trade.mt5ConnectionId), eq(mt5ConnectionTable.userId, userId))).limit(1);
-    if (conn?.bal != null && Number(conn.bal) > 0) { equity = Number(conn.bal); source = `paper_journal:mt5_balance:${conn.id}`; }
+    const conn = await getUserConnection(userId, trade.mt5ConnectionId);
+    if (conn?.accountBalance != null && Number(conn.accountBalance) > 0) { equity = Number(conn.accountBalance); source = `paper_journal:mt5_balance:${conn.id}`; }
   }
   if (equity == null) equity = PAPER_JOURNAL_MODEL_EQUITY;
   const margin = open.reduce((s, p) => s + (p.lots * p.entryPrice) / PAPER_ACCOUNT_LEVERAGE, 0);

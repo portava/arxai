@@ -29,12 +29,12 @@
 //   • Freshness is derived from real timestamps and mapped from the adapter's
 //     5-level scale; stale data is reported stale, never relabelled fresh.
 
+import { listUserConnections } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
   arxLivePositionsTable,
   userSlotAllocationTable,
   virtualTradingAccountsTable,
-  mt5ConnectionTable,
   sharedTradeAttributionTable,
 } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -393,12 +393,7 @@ export async function buildInvestorLiveBalanceSnapshot(
       .select()
       .from(arxLivePositionsTable)
       .where(openLiveExposureCondition(userId));
-    const connRows = await db
-      .select()
-      .from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId))
-      .limit(1);
-    const conn = connRows[0];
+    const conn = (await listUserConnections(userId, { order: "oldest", limit: 1 }))[0];
     liveSnapshot = buildLiveAccountSnapshot({
       userId,
       accountMode: "LIVE_SHARED",

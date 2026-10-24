@@ -7,13 +7,13 @@
 // reconcileState=RECONCILED_BROKER_ABSENT on safe candidates with a CAS guard
 // and a system audit row. NEVER sends a broker command.
 
+import { getUserConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, gte, inArray, isNull } from "drizzle-orm";
 import {
   db,
   arxLiveCommandsTable,
   arxLivePositionsTable,
-  mt5ConnectionTable,
   liveTradingAuditTable,
 } from "@workspace/db";
 import { logger } from "../logger.js";
@@ -72,14 +72,9 @@ export async function runBrokerAbsenceReconcile(args: {
   // bridge is in scope use its marker; otherwise use the freshest marker the
   // user has. A stale/missing marker => we have no reliable current broker
   // truth, so nothing is stampable (the helper blocks every row).
-  const connRows = await db.select({
-    id: mt5ConnectionTable.id,
-    lastPositionsSnapshotAt: mt5ConnectionTable.lastPositionsSnapshotAt,
-  }).from(mt5ConnectionTable).where(
-    bridgeConnectionId != null
-      ? and(eq(mt5ConnectionTable.userId, args.userId), eq(mt5ConnectionTable.id, bridgeConnectionId))
-      : eq(mt5ConnectionTable.userId, args.userId),
-  );
+  const connRows = bridgeConnectionId != null
+    ? [await getUserConnection(args.userId, bridgeConnectionId)].filter((c) => c != null)
+    : await listUserConnections(args.userId);
   let markerMs: number | null = null;
   for (const c of connRows) {
     const t = c.lastPositionsSnapshotAt ? c.lastPositionsSnapshotAt.getTime() : null;

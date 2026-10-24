@@ -25,6 +25,7 @@
 //   are responsible for deciding whether to *block* on the deficit.
 //   This separation keeps the projection truthful regardless of mode.
 
+import { getConnection } from "../brokerHub/connections.js";
 import { eq, inArray } from "drizzle-orm";
 import { openLiveExposureCondition } from "./livePositionExposure.js";
 import { computeAvailableBalance } from "./investorLiveBalance.js";
@@ -34,7 +35,6 @@ import {
   arxMasterAccountConfigTable,
   arxMasterBridgePoolTable,
   arxLivePositionsTable,
-  mt5ConnectionTable,
   userSlotAllocationTable,
   type ArxMasterBridgePool,
 } from "@workspace/db";
@@ -86,9 +86,7 @@ export async function recomputeMasterPool(args?: {
     return { ok: false, masterConnectionId: null, pool: null, reason: "MASTER_BRIDGE_NOT_PINNED" };
   }
 
-  const connRows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, resolvedId)).limit(1);
-  const conn = connRows[0];
+  const conn = await getConnection(resolvedId);
   if (!conn) {
     return { ok: false, masterConnectionId: resolvedId, pool: null, reason: "MASTER_CONNECTION_MISSING" };
   }

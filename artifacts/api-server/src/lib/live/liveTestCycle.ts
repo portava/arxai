@@ -16,6 +16,7 @@
 //   rejects), the cycle locks in CLOSE_FAILED_MANUAL_REQUIRED — we never
 //   retry. An operator must use /resolve to acknowledge.
 
+import { getUserActiveConnection } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import {
@@ -23,7 +24,6 @@ import {
   arxLiveTestCyclesTable,
   arxLiveCommandsTable,
   arxLivePositionsTable,
-  mt5ConnectionTable,
   liveTradingAuditTable,
   userMasterLiveAccessTable,
   ARX_LIVE_TEST_CYCLE_TERMINAL,
@@ -79,16 +79,7 @@ async function audit(args: {
 }
 
 async function loadBridgeFacts(userId: number) {
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
-  const fresh = rows
-    .filter((b) => !b.tokenRevokedAt)
-    .sort((a, b) => {
-      const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;
-      const bh = b.lastHeartbeat ? new Date(b.lastHeartbeat).getTime() : 0;
-      return bh - ah;
-    })[0] ?? null;
-  return fresh;
+  return getUserActiveConnection(userId);
 }
 
 export async function runPrecheck(userId: number): Promise<{

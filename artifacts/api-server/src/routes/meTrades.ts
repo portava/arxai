@@ -11,6 +11,7 @@
 //     an mt5_commands row, writes trade_command_audit_log, and (in shared
 //     mode) writes a shared_trade_attribution row tagging the close.
 
+import { getUserPrimaryConnection, listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import {
@@ -20,7 +21,6 @@ import {
   mt5CommandsTable,
   globalTradingSettingsTable,
   sharedMasterAccountsTable,
-  mt5ConnectionTable,
   virtualTradingAccountsTable,
 } from "@workspace/db/schema";
 import { and, eq, desc, isNotNull, ne } from "drizzle-orm";
@@ -388,8 +388,7 @@ router.post("/me/trades/close", async (req, res) => {
     symbol = lp.symbol; side = lp.direction as "BUY" | "SELL"; lotSize = lp.lotSize;
     ticket = lp.brokerPositionId ? Number(lp.brokerPositionId) : null;
     // Resolve user's own MT5 connection.
-    const [conn] = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+    const conn = await getUserPrimaryConnection(userId);
     if (!conn) { res.status(409).json({ ok: false, error: "NO_USER_BROKER_CONNECTION" }); return; }
     mt5ConnectionId = conn.id;
   } else {

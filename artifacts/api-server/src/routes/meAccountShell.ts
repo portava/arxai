@@ -14,6 +14,7 @@
 //     They see ONLY their own assigned allocation slice + personal P/L.
 //   * Pure read. No execution. No queue inserts. No live broker call.
 
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import {
@@ -25,7 +26,6 @@ import {
   paperTradesTable,
   globalTradingSettingsTable,
   userTradingPermissionsTable,
-  mt5ConnectionTable,
   userSlotAllocationTable,
 } from "@workspace/db/schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
@@ -150,10 +150,7 @@ export async function computeAccountShell(
         .from(userTradingPermissionsTable)
         .where(eq(userTradingPermissionsTable.userId, userId))
         .limit(1),
-      db.select({ accountType: mt5ConnectionTable.accountType })
-        .from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.userId, userId))
-        .limit(1),
+      listUserConnections(userId, { order: "oldest", limit: 1 }),
       // T004: user_slot_allocation is the authoritative source for the
       // admin-allocated amount (total / manual / AI sleeve). Read-only;
       // never returned to other users; freeze reason is sanitized below.

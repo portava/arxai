@@ -19,8 +19,9 @@
 // - Per-user isolation: ingest attributes every row to the authenticated
 //   connection's userId; admin trace can scope by userId.
 
+import { type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { db, bridgeV2EventsTable, bridgeV2StreamStateTable, mt5ConnectionTable } from "@workspace/db";
+import { db, bridgeV2EventsTable, bridgeV2StreamStateTable } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { ingestBridgeV2Message } from "../lib/bridgeV2/ingest.js";
@@ -31,7 +32,7 @@ import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 const router = Router();
 
 type ConnReq = Request & {
-  mt5Connection?: typeof mt5ConnectionTable.$inferSelect;
+  mt5Connection?: BrokerConnectionRecord;
 };
 
 // ─── POST /api/bridge/v2/ingest ─────────────────────────────────────────────

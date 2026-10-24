@@ -9,11 +9,11 @@
 //
 // Advisory / read-only: nothing here places, modifies, or gates a trade.
 
+import { getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { and, eq, desc, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   virtualTradingAccountsTable,
-  mt5ConnectionTable,
   arxLivePositionsTable,
 } from "@workspace/db/schema";
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
@@ -106,11 +106,8 @@ export async function buildExecutionPreviewForUser(
 
   let leverage: number | null = null;
   try {
-    const crows = await db.select({ lev: mt5ConnectionTable.leverage })
-      .from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId))
-      .limit(1);
-    if (crows[0]?.lev != null && crows[0].lev > 0) leverage = crows[0].lev;
+    const lev = (await getUserPrimaryConnection(userId))?.leverage;
+    if (lev != null && lev > 0) leverage = lev;
   } catch { /* null leverage — margin omitted honestly */ }
 
   // Existing open exposure on this symbol for this user (multi-entry awareness).

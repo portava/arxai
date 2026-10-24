@@ -9,11 +9,11 @@
 //   notification unread count, and report counts. No tokens, no hashes,
 //   no other users' data.
 
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
 import {
   db,
-  mt5ConnectionTable,
   tradingSessionsTable,
   userNotificationsTable,
   userReportsTable,
@@ -56,14 +56,8 @@ router.get("/me/system-health", requireUser, async (req, res): Promise<void> => 
   const userId = req.authUser!.id;
   try {
     // Personal MT5 connection count (active only; never exposes apiKeyHash/tokens).
-    const mt5Rows = await db
-      .select({
-        id: mt5ConnectionTable.id,
-        status: mt5ConnectionTable.status,
-        lastHeartbeatAt: mt5ConnectionTable.lastHeartbeat,
-      })
-      .from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId));
+    const mt5Rows = (await listUserConnections(userId, { order: "oldest" }))
+      .map((c) => ({ id: c.id, status: c.status, lastHeartbeatAt: c.lastHeartbeat }));
 
     const now = Date.now();
     const personalMt5 = mt5Rows.map((r) => {
