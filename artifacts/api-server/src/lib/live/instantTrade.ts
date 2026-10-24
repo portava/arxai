@@ -27,8 +27,9 @@
 // union; the route layer rejects `accountMode=paper` with the canonical
 // "Paper Trading has been removed" 400 before this helper runs.
 import { livePositionLedger, livePositionColumns, type LivePositionRow } from "../positions/ledger.js";
+import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { db, userOneClickSettingsTable, oneClickAuditTable, rubyCommandsTable } from "@workspace/db";
-import { and, eq, isNull, gte, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import { getSymbolProfile } from "../data/chart/symbolProfile.js";
 import { loadAndEvaluateUserMasterLiveAccessGate } from "../mt5/userMasterLiveAccessGate.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock } from "../concurrency/advisoryLock.js";
@@ -258,9 +259,9 @@ async function rubyCapsCheck(
   if (intent.action !== "BUY" && intent.action !== "SELL") return { ok: true };
 
   if (settings.maxRubyOpenPositions != null) {
-    const open = await livePositionLedger.select(
+    const open = await selectLiveOpenPositions(
       { c: livePositionColumns.id },
-      { where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)) },
+      { userId, basis: "UNCLOSED" },
     );
     if (open.length >= settings.maxRubyOpenPositions) {
       return { ok: false, reason: "RUBY_MAX_OPEN_POSITIONS_REACHED" };
@@ -561,9 +562,7 @@ async function executeCloseAll(args: {
   userId: number; ip?: string | null; ua?: string | null;
 }): Promise<InstantTradeResult> {
   const { userId, ip, ua } = args;
-  const positions = await livePositionLedger.read({
-    where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
-  });
+  const positions = await selectLiveOpenPositions(livePositionColumns, { userId, basis: "UNCLOSED" });
   let closed = 0;
   const failures: Array<{ positionId: string | null; reason: string }> = [];
   for (const p of positions) {

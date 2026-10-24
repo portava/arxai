@@ -12,8 +12,9 @@
 // - Pre-critical-news exposure is surfaced ONLY when a REAL news calendar is
 //   wired (mock provider → no fabricated alert).
 
-import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositionsForAllUsers } from "../positions/openPositions.js";
+import { and, eq, inArray } from "drizzle-orm";
 import { db, selfTradeAgentExecutionsTable, arxLiveCommandsTable, type SelfTradeAgentExecution } from "@workspace/db";
 import { createAlert } from "../alerts/alertManager.js";
 import { writeSelfTradeAudit } from "../selfTrade/audit.js";
@@ -165,8 +166,9 @@ export async function reconcileAaciChain(
     const openByUserTicket = new Set<string>();
     const brokerOpenTickets: string[] = [];
     if (userIds.length) {
-      const positions = await livePositionLedger.read({
-        where: and(inArray(livePositionColumns.userId, userIds), isNull(livePositionColumns.closedAt)),
+      const positions = await selectLiveOpenPositionsForAllUsers(livePositionColumns, {
+        basis: "UNCLOSED",
+        userIds,
       });
       for (const p of positions) {
         openByUserTicket.add(`${p.userId}:${p.brokerTicket}`);

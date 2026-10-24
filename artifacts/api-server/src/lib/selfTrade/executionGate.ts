@@ -13,9 +13,9 @@
 // - Daily P/L, open-position counts, and trades-taken are derived from REAL
 //   execution rows / broker positions only — never from intents.
 
-import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
-import { and, eq, inArray } from "drizzle-orm";
-import { openLiveExposureCondition } from "../live/livePositionExposure.js";
+import { livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions } from "../positions/openPositions.js";
+import { eq } from "drizzle-orm";
 import {
   db,
   selfTradeAgentExecutionsTable,
@@ -122,8 +122,10 @@ export async function computeAgentDailyPnlUsd(
   let floating = 0;
   if (executingUserId != null && filled.length > 0) {
     const tickets = filled.map((e) => e.brokerTicket as string);
-    const positions = await livePositionLedger.read({
-      where: and(openLiveExposureCondition(executingUserId), inArray(livePositionColumns.brokerTicket, tickets)),
+    const positions = await selectLiveOpenPositions(livePositionColumns, {
+      userId: executingUserId,
+      basis: "EXPOSURE",
+      tickets,
     });
     // Derive from filtered live-positions truth — not agent-execution records —
     // so reconciled ghosts cannot inflate the concurrent-position gate.

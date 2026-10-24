@@ -16,10 +16,15 @@
 //   snapshot.
 
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
-import { countOpenPositions, readOpenPositions } from "../lib/positions/openPositions.js";
+import {
+  countOpenPositions,
+  readOpenPositions,
+  selectLiveOpenPositions,
+  selectLiveOpenPositionsForAllUsers,
+} from "../lib/positions/openPositions.js";
 import { getConnection, listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { and, desc, eq, ilike, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -37,7 +42,6 @@ import {
 } from "@workspace/db";
 import { requireUser } from "../lib/auth/middleware.js";
 import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
-import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
 import { mirrorCriticalEvent } from "../lib/security/events.js";
 import { detectCurrentConnectedBridge } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import {
@@ -1084,13 +1088,12 @@ export async function autoReconcileSettledAllocations(): Promise<AutoReconcileRe
 
     // Users with OPEN live exposure are protected and never reduced. Single
     // grouped read inside the tx for a snapshot consistent with the locked rows.
-    const openRows = await livePositionLedger.select(
+    const openRows = await selectLiveOpenPositionsForAllUsers(
       {
         userId: livePositionColumns.userId,
         cnt: sql<number>`count(*)::int`,
       },
-      { where: openLiveExposureCondition(), groupBy: [livePositionColumns.userId] },
-      tx,
+      { basis: "EXPOSURE", groupBy: [livePositionColumns.userId], executor: tx },
     );
     const openUserIds = new Set(openRows.map((r) => r.userId));
 
@@ -2107,14 +2110,14 @@ router.get("/admin/live-positions/reconcile-summary", requireUser, async (req, r
 
   // One grouped pass over every OPEN row. reconcile_state NULL = genuinely
   // live exposure; any non-null value is a reconciled/orphan-resolved ghost.
-  const grouped = await livePositionLedger.select(
+  const grouped = await selectLiveOpenPositionsForAllUsers(
     {
       userId: livePositionColumns.userId,
       reconcileState: livePositionColumns.reconcileState,
       count: sql<number>`count(*)::int`,
     },
     {
-      where: isNull(livePositionColumns.closedAt),
+      basis: "UNCLOSED",
       groupBy: [livePositionColumns.userId, livePositionColumns.reconcileState],
     },
   );
@@ -2191,7 +2194,7 @@ router.get("/admin/live-positions/:userId/reconcile-detail", requireUser, async 
 
   // Open reconciled rows = the exact rows behind the badge's reconciledCount
   // (open = closed_at IS NULL; reconciled = reconcile_state IS NOT NULL).
-  const rows = await livePositionLedger.select(
+  const rows = await selectLiveOpenPositions(
     {
       id: livePositionColumns.id,
       symbol: livePositionColumns.symbol,
@@ -2205,14 +2208,7 @@ router.get("/admin/live-positions/:userId/reconcile-detail", requireUser, async 
       reconciledAt: livePositionColumns.reconciledAt,
       openedAt: livePositionColumns.openedAt,
     },
-    {
-      where: and(
-        eq(livePositionColumns.userId, userId),
-        isNull(livePositionColumns.closedAt),
-        isNotNull(livePositionColumns.reconcileState),
-      ),
-      orderBy: [desc(livePositionColumns.reconciledAt)],
-    },
+    { userId, basis: "UNCLOSED_RECONCILED", orderBy: [desc(livePositionColumns.reconciledAt)] },
   );
 
   // Genuine open exposure (reconcile_state IS NULL) — surfaced alongside so the

@@ -4,9 +4,9 @@
 // and write an admin_action_audit_log row before responding (fail-CLOSED).
 // No route ever writes to arx_live_commands or to any live execution table.
 
-import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { livePositionColumns } from "../lib/positions/ledger.js";
+import { selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
 import { Router, type Request, type Response } from "express";
-import { and, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { adminActionAuditLogTable } from "@workspace/db/schema";
 import {
@@ -176,12 +176,9 @@ async function handleAction(
 // manual call with dryRun=false cannot stamp closed_at while the flag is OFF.
 
 async function enumerateUsersWithOpenLivePositions(): Promise<number[]> {
-  const rows = await livePositionLedger.select(
+  const rows = await selectLiveOpenPositionsForAllUsers(
     { userId: livePositionColumns.userId },
-    {
-      where: and(isNull(livePositionColumns.closedAt), isNull(livePositionColumns.reconcileState)),
-      distinct: true,
-    },
+    { basis: "EXPOSURE", distinct: true },
   );
   return rows.map((r) => r.userId).filter((n): n is number => typeof n === "number");
 }

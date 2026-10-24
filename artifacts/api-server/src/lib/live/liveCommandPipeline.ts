@@ -11,6 +11,7 @@
 // live and vice versa.
 
 import { livePositionWriter, livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -2501,13 +2502,13 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // refusals (a corrupt row must never silently create capacity).
   if (isWave4EntryCommand
     && (settings.maxClusterRiskUsd != null || settings.maxClusterPositions != null)) {
-    const clusterOpenPositions = await livePositionLedger.select(
+    const clusterOpenPositions = await selectLiveOpenPositions(
       {
         symbol: livePositionColumns.symbol,
         side: livePositionColumns.side,
         volume: livePositionColumns.volume,
       },
-      { where: and(eq(livePositionColumns.userId, args.userId), isNull(livePositionColumns.closedAt)) },
+      { userId: args.userId, basis: "UNCLOSED" },
     );
     const clusterInFlight = await db.select({
       symbol: arxLiveCommandsTable.symbol,
@@ -3082,11 +3083,11 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // position closes its floatingPl no longer counts as open, but its
   // realised loss still counts against today's limit.
   const startOfDayUtc = new Date(); startOfDayUtc.setUTCHours(0, 0, 0, 0);
-  const openLossRows = await livePositionLedger.select(
+  const openLossRows = await selectLiveOpenPositions(
     {
       totalNegFloat: sql<number>`COALESCE(SUM(CASE WHEN ${livePositionColumns.floatingPl} < 0 THEN ${livePositionColumns.floatingPl} ELSE 0 END), 0)`,
     },
-    { where: and(eq(livePositionColumns.userId, args.userId), isNull(livePositionColumns.closedAt)) },
+    { userId: args.userId, basis: "UNCLOSED" },
   );
   const closedTodayLossRows = await livePositionLedger.select(
     {
@@ -3221,12 +3222,12 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       // This closes the TOCTOU window between this check and the
       // SENT_TO_MT5_LIVE write below; the minute-bucket idempotency key on
       // arx_live_commands already prevents identical duplicates.
-      const openPositions = await livePositionLedger.select(
+      const openPositions = await selectLiveOpenPositions(
         {
           symbol: livePositionColumns.symbol,
           volume: livePositionColumns.volume,
         },
-        { where: and(eq(livePositionColumns.userId, args.userId), isNull(livePositionColumns.closedAt)) },
+        { userId: args.userId, basis: "UNCLOSED" },
       );
       const inFlight = await db.select({
         symbol: arxLiveCommandsTable.symbol,

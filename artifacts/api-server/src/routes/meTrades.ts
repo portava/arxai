@@ -12,6 +12,7 @@
 //     mode) writes a shared_trade_attribution row tagging the close.
 
 import { demoPositionLedger, demoPositionColumns } from "../lib/positions/ledger.js";
+import { selectDemoOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserPrimaryConnection } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
@@ -96,13 +97,10 @@ router.get("/me/trades/open", async (req, res) => {
       // real position (broker_position_id present). A row with status='OPEN'
       // but no broker id is an unconfirmed/phantom open and must never render
       // as a position the user believes is live at the broker.
-      const rows = await demoPositionLedger.read({
-        where: and(
-          eq(demoPositionColumns.userId, userId),
-          eq(demoPositionColumns.status, "OPEN"),
-          isNotNull(demoPositionColumns.brokerPositionId),
-          ne(demoPositionColumns.brokerPositionId, ""),
-        ),
+      const rows = await selectDemoOpenPositions(demoPositionColumns, {
+        userId,
+        basis: "CONFIRMED_OPEN",
+        confirmedTicket: true,
         orderBy: [desc(demoPositionColumns.openedAt)],
       });
       for (const r of rows) {

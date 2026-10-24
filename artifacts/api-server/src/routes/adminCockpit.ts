@@ -19,12 +19,12 @@
 //   trade; it is a self-contained structural comparator over real candles
 //   (honest-empty on insufficient history).
 
-import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
-import { readOpenPositions } from "../lib/positions/openPositions.js";
+import { livePositionColumns } from "../lib/positions/ledger.js";
+import { readOpenPositions, selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
 import { listConnections } from "../lib/brokerHub/connections.js";
 import express, { Router, type Request, type Response } from "express";
 import { z } from "zod";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
@@ -200,13 +200,13 @@ async function computeTraderRows(): Promise<TraderRow[]> {
       approved: userMasterLiveAccessTable.approvedForMasterLive,
     }).from(userMasterLiveAccessTable),
     listArmingFlags(),
-    livePositionLedger.select(
+    selectLiveOpenPositionsForAllUsers(
       {
         userId: livePositionColumns.userId,
         cnt: sql<number>`cast(count(*) as int)`,
         floating: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
       },
-      { where: isNull(livePositionColumns.closedAt), groupBy: [livePositionColumns.userId] },
+      { basis: "UNCLOSED", groupBy: [livePositionColumns.userId] },
     ),
     db.select({
       userId: investorProfilesTable.userId,
@@ -360,12 +360,12 @@ router.get("/admin/cockpit/overview", async (req, res) => {
     computeTraderRows(),
     db.select({ status: investorProfilesTable.status }).from(investorProfilesTable),
     listConnections({ order: "oldest" }),
-    livePositionLedger.select(
+    selectLiveOpenPositionsForAllUsers(
       {
         cnt: sql<number>`cast(count(*) as int)`,
         floating: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
       },
-      { where: isNull(livePositionColumns.closedAt) },
+      { basis: "UNCLOSED" },
     ),
     readPlatformSwitches({ ifMissing: "seed" }),
     db.select({
@@ -612,8 +612,8 @@ router.get("/admin/cockpit/open-trades", async (req, res) => {
   const isOwner = op.role === "OWNER";
 
   const [positions, users] = await Promise.all([
-    livePositionLedger.read({
-      where: isNull(livePositionColumns.closedAt),
+    selectLiveOpenPositionsForAllUsers(livePositionColumns, {
+      basis: "UNCLOSED",
       orderBy: [desc(livePositionColumns.openedAt)],
     }),
     db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable),
@@ -662,11 +662,11 @@ router.get("/admin/cockpit/capital", async (req, res) => {
 
   const [poolRows, openAgg] = await Promise.all([
     db.select().from(strategyPoolsTable).orderBy(strategyPoolsTable.id).limit(1),
-    livePositionLedger.select(
+    selectLiveOpenPositionsForAllUsers(
       {
         floating: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
       },
-      { where: isNull(livePositionColumns.closedAt) },
+      { basis: "UNCLOSED" },
     ),
   ]);
   const pool = poolRows[0];
