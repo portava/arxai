@@ -17,7 +17,8 @@ export type GuardianFinding =
   | "STOP_MISSING"           // broker position has no stop
   | "STOP_WIDENED"           // broker stop is further from price than governed
   | "TAKE_PROFIT_ALTERED"    // target differs; adds no risk, reported only
-  | "SIZE_REDUCED"           // broker holds less than governed (partial close)
+  | "PARTIAL_FILL"           // the entry filled for less than was requested (governed = filled)
+  | "SIZE_REDUCED"           // broker holds less than governed (closed outside ARX)
   | "SIZE_EXCEEDED"          // broker holds more than governed
   | "SIDE_MISMATCH"          // broker holds the opposite side
   | "POSITION_NOT_FOUND"     // fill confirmed but the broker does not list it
@@ -32,13 +33,19 @@ export interface GovernedProtection {
   ticket: string;
   symbol: string;
   side: "BUY" | "SELL";
+  /** Lots ARX governs now: the filled entry volume less approved partial closes. */
   lots: number;
+  /** Lots the entry asked for, and the lots it filled (before any close). */
+  requestedLots?: number | null;
+  filledLots?: number | null;
   stopLoss: number | null;
   takeProfit: number | null;
   /** The command that last set the governed stop (entry or approved modify). */
   sourceCommandId: string;
   /** When the governed state took effect (fill or modify time). */
   governedAt: Date | null;
+  /** When an approved partial close last changed the governed size. */
+  sizeChangedAt?: Date | null;
 }
 
 export interface BrokerProtection {
@@ -118,6 +125,8 @@ export function assessProtection(g: GovernedProtection, b: BrokerProtection, opt
     return done("ESCALATE", `Ticket ${g.ticket} is ${b.side.toUpperCase()} at the broker but ARX governed a ${g.side}.`);
   }
 
+  // Governed size follows the fill, never the request; a partial fill is reported.
+  if (g.requestedLots != null && g.requestedLots > (g.filledLots ?? g.lots) + 1e-6) findings.push("PARTIAL_FILL");
   if (b.lots != null) {
     if (b.lots > g.lots + 1e-6) findings.push("SIZE_EXCEEDED");
     else if (b.lots < g.lots - 1e-6) findings.push("SIZE_REDUCED");
@@ -154,6 +163,10 @@ export function assessProtection(g: GovernedProtection, b: BrokerProtection, opt
         : `The stop on ticket ${g.ticket} was moved to ${b.stopLoss}, wider than the governed ${g.stopLoss}; restoring it.`) + oversize,
       g.stopLoss, oversize !== "");
   }
-  if (oversize) return done("ESCALATE", `Ticket ${g.ticket} is protected by its stop.${oversize}`);
+  if (oversize) {
+    const sizeGrace = g.sizeChangedAt != null && opts.now.getTime() - g.sizeChangedAt.getTime() <= opts.fillGraceMs;
+    if (sizeGrace) return done("WAIT", `A partial close on ticket ${g.ticket} was just filled; waiting for the broker to report the reduced size.`);
+    return done("ESCALATE", `Ticket ${g.ticket} is protected by its stop.${oversize}`);
+  }
   return done("NONE", `Ticket ${g.ticket} is protected (broker stop ${b.stopLoss}, governed ${g.stopLoss}).`);
 }

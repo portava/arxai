@@ -1,4 +1,6 @@
 import { findConnectionByBridgeTokenHash, getUserActiveConnection, updateConnection, type BrokerConnectionPatch, type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
+import { applyOwnPositionSnapshot } from "../lib/mt5/executionReconciler.js";
+import { noteBridgeHeartbeat, scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod/v4";
 import { db, mt5CommandsTable, mt5StateTable, riskSettingsTable, sharedMasterAccountsTable, sharedTradeAttributionTable, arxSymbolSpecsTable } from "@workspace/db";
@@ -403,6 +405,11 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
       lastHeartbeatAt: new Date(),
     }).where(eq(mt5StateTable.id, state.id));
     if (userConn) {
+      // Position Guardian — a heartbeat after a gap is a reconnect: the next
+      // full position snapshot reconciles every governed position.
+      if (userConn.userId != null) {
+        noteBridgeHeartbeat(userConn.accountType === "demo" ? "DEMO" : "LIVE", userConn.userId, userConn.lastHeartbeat ?? null, heartbeatReceivedAt);
+      }
       // Phase 3C — also write to the per-user connection record.
       // Phase TU — also persist capability disclosure.
       await updateConnection(userConn.id, {
@@ -1800,10 +1807,21 @@ router.post("/mt5/sync-positions-per-user", bridgeAuthPerUserOnly, async (req, r
     })();
 
     if (!isMaster) {
-      // User-owned MT5 — nothing to detect. Just acknowledge so the EA can
-      // continue. We deliberately do NOT touch mt5_state here either, since
-      // that table is the legacy global singleton owned by the system bridge.
-      res.json({ received: true, isMaster: false, unattributedRecorded: 0, unattributedSkipped: 0 });
+      // User-owned MT5 — no attribution to detect. We deliberately do NOT
+      // touch mt5_state here, since that table is the legacy global singleton
+      // owned by the system bridge. The snapshot is broker truth for this
+      // trader's own tracked positions: refresh them, then let the Position
+      // Guardian verify every governed stop against it.
+      let refreshed = 0;
+      if (conn.userId != null) {
+        try {
+          refreshed = await applyOwnPositionSnapshot(conn.userId, body.positions);
+          scheduleGuardian("DEMO", conn.userId, null, "snapshot");
+        } catch (e) {
+          req.log.warn({ err: e }, "sync_positions_per_user_own_snapshot_failed");
+        }
+      }
+      res.json({ received: true, isMaster: false, unattributedRecorded: 0, unattributedSkipped: 0, positionsRefreshed: refreshed });
       return;
     }
 

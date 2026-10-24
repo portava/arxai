@@ -185,11 +185,16 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     // Capture it so the row surfaces the real cause instead of EA_REJECTED_NO_DETAIL.
     eaReason: typeof b["reason"] === "string" ? String(b["reason"]) : null,
   });
-  // Position Guardian — a confirmed fill starts protection checks on its ticket.
-  const filled = result.ok && outcome === "LIVE_FILLED"
-    ? (result as { command?: { brokerTicket?: string | null; commandType?: string } }).command : null;
+  // Position Guardian — a confirmed entry fill (full or partial) starts
+  // protection checks on its ticket; a filled close re-checks the remainder.
+  const resulting = result.ok
+    ? (result as { command?: { brokerTicket?: string | null; commandType?: string; payload?: unknown; status?: string } }).command : null;
+  const filled = resulting && (resulting.status === "LIVE_FILLED" || resulting.status === "LIVE_PARTIALLY_FILLED") ? resulting : null;
   if (filled?.brokerTicket && /^PLACE_LIVE_/.test(filled.commandType ?? "")) {
     scheduleGuardian("LIVE", conn.userId!, filled.brokerTicket, "fill");
+  } else if (filled?.commandType === "CLOSE_LIVE_POSITION") {
+    const t = (filled.payload as Record<string, unknown> | null)?.["brokerTicket"];
+    if (typeof t === "string" && t) scheduleGuardian("LIVE", conn.userId!, t, "fill");
   }
   // Task #1 — fill/reject changes user reservedRisk + positions; refresh pool.
   void (async () => {

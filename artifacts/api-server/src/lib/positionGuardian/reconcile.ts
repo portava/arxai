@@ -45,6 +45,11 @@ export const GUARDIAN_EVENT = "position_guardian";
 const UNCHANGED_AUDIT_INTERVAL_MS = 15 * 60_000;
 
 const LIVE_OPEN_TYPES = ["PLACE_LIVE_MARKET_ORDER", "PLACE_LIVE_PENDING_ORDER"];
+/** Entry states that leave real exposure at the broker (a cancelled remainder keeps the filled part). */
+const LIVE_EXPOSED = ["LIVE_FILLED", "LIVE_PARTIALLY_FILLED", "LIVE_CANCELLED"];
+/** Close states that took volume off the position. */
+const LIVE_CLOSED_VOLUME = ["LIVE_FILLED", "LIVE_PARTIALLY_FILLED", "LIVE_CLOSED"];
+const LOT_EPS = 1e-6;
 const LIVE_NON_TERMINAL = ["LIVE_DRAFT", "LIVE_CONFIRMATION_REQUIRED", "LIVE_APPROVED", "SENT_TO_MT5_LIVE"];
 const DEMO_OPEN_TYPES = ["PLACE_MARKET_ORDER", "PLACE_PENDING_ORDER"];
 const DEMO_NON_TERMINAL = ["DRAFT", "USER_CONFIRMATION_REQUIRED", "DEMO_APPROVED", "SENT_TO_MT5_DEMO"];
@@ -75,15 +80,33 @@ const sideOf = (v: unknown): "BUY" | "SELL" | null => {
 
 // ── Fact loaders ────────────────────────────────────────────────────────────
 
+/**
+ * Lots still governed after approved closes. A close that reports no volume
+ * is a full close (the old behaviour), never a guess at a partial.
+ */
+const latest = (ds: Array<Date | null>): Date | null =>
+  ds.reduce<Date | null>((m, d) => (d != null && (m == null || d > m) ? d : m), null);
+
+export function remainingLots(filled: number, closed: Array<number | null | undefined>): number {
+  let left = filled;
+  for (const v of closed) {
+    if (v == null || !Number.isFinite(v)) return 0;
+    left -= v;
+  }
+  return Math.max(0, Math.round(left * 1e8) / 1e8);
+}
+
 async function loadLiveFacts(userId: number, ticket: string): Promise<GuardianFacts | null> {
   const [open] = await db.select().from(arxLiveCommandsTable).where(and(
     eq(arxLiveCommandsTable.userId, userId),
     eq(arxLiveCommandsTable.brokerTicket, ticket),
-    eq(arxLiveCommandsTable.status, "LIVE_FILLED"),
+    inArray(arxLiveCommandsTable.status, LIVE_EXPOSED),
     inArray(arxLiveCommandsTable.commandType, LIVE_OPEN_TYPES),
   )).orderBy(desc(arxLiveCommandsTable.id)).limit(1);
   const side = sideOf(open?.side);
   if (!open || !side) return null; // not an ARX-governed position
+  // A cancelled entry is exposure only if part of it filled.
+  if (open.status === "LIVE_CANCELLED" && !((open.executedVolume ?? 0) > 0)) return null;
 
   const modifies = await db.select().from(arxLiveCommandsTable).where(and(
     eq(arxLiveCommandsTable.userId, userId),
@@ -100,18 +123,25 @@ async function loadLiveFacts(userId: number, ticket: string): Promise<GuardianFa
   )).orderBy(desc(arxLivePositionsTable.id)).limit(1);
   // A closed position needs no protection.
   if (pos?.closedAt != null || pos?.reconcileState != null) return null;
-  const [closed] = await db.select({ id: arxLiveCommandsTable.id }).from(arxLiveCommandsTable).where(and(
-    eq(arxLiveCommandsTable.userId, userId),
-    eq(arxLiveCommandsTable.commandType, "CLOSE_LIVE_POSITION"),
-    eq(arxLiveCommandsTable.status, "LIVE_FILLED"),
-    sql`${arxLiveCommandsTable.payload}->>'brokerTicket' = ${ticket}`,
-  )).limit(1);
-  if (closed) return null;
+  // Approved closes take volume off: a full close ends protection, a partial
+  // close leaves the remainder governed (and still protected by its stop).
+  const closes = await db.select({ executed: arxLiveCommandsTable.executedVolume, requested: arxLiveCommandsTable.requestedVolume,
+    at: arxLiveCommandsTable.filledAt })
+    .from(arxLiveCommandsTable).where(and(
+      eq(arxLiveCommandsTable.userId, userId),
+      eq(arxLiveCommandsTable.commandType, "CLOSE_LIVE_POSITION"),
+      inArray(arxLiveCommandsTable.status, LIVE_CLOSED_VOLUME),
+      sql`${arxLiveCommandsTable.payload}->>'brokerTicket' = ${ticket}`,
+    ));
+  const filledLots = Number(open.executedVolume ?? open.requestedVolume);
+  const lots = remainingLots(filledLots, closes.map((c) => c.executed ?? c.requested));
+  if (lots <= LOT_EPS) return null;
 
   return {
     governed: {
-      ticket, symbol: open.symbol, side,
-      lots: Number(open.executedVolume ?? open.requestedVolume),
+      ticket, symbol: open.symbol, side, lots,
+      requestedLots: open.requestedVolume, filledLots,
+      sizeChangedAt: latest(closes.map((c) => c.at)),
       stopLoss: lastStop?.stopLoss ?? open.stopLoss ?? null,
       takeProfit: lastTp?.takeProfit ?? open.takeProfit ?? null,
       sourceCommandId: lastStop?.commandId ?? open.commandId,
@@ -154,18 +184,23 @@ async function loadDemoFacts(userId: number, ticket: string): Promise<GuardianFa
     eq(livePositionsTable.brokerPositionId, ticket),
   )).orderBy(desc(livePositionsTable.id)).limit(1);
   if (pos?.status === "CLOSED") return null;
-  const [closed] = await db.select({ id: mt5DemoCommandsTable.id }).from(mt5DemoCommandsTable).where(and(
-    eq(mt5DemoCommandsTable.userId, userId),
-    eq(mt5DemoCommandsTable.commandType, "CLOSE_POSITION"),
-    eq(mt5DemoCommandsTable.status, "FILLED_DEMO"),
-    sql`coalesce(${mt5DemoCommandsTable.payload}->>'ticket', ${mt5DemoCommandsTable.payload}->>'positionTicket') = ${ticket}`,
-  )).limit(1);
-  if (closed) return null;
+  const closes = await db.select({ fill: mt5DemoCommandsTable.fillVolume, payload: mt5DemoCommandsTable.payload,
+    at: mt5DemoCommandsTable.filledAt })
+    .from(mt5DemoCommandsTable).where(and(
+      eq(mt5DemoCommandsTable.userId, userId),
+      eq(mt5DemoCommandsTable.commandType, "CLOSE_POSITION"),
+      eq(mt5DemoCommandsTable.status, "FILLED_DEMO"),
+      sql`coalesce(${mt5DemoCommandsTable.payload}->>'ticket', ${mt5DemoCommandsTable.payload}->>'positionTicket') = ${ticket}`,
+    ));
+  const filledLots = open.fillVolume ?? num(p["lotSize"]) ?? 0;
+  const lots = remainingLots(filledLots, closes.map((c) => c.fill ?? num(((c.payload ?? {}) as Record<string, unknown>)["lotSize"])));
+  if (lots <= LOT_EPS) return null;
 
   return {
     governed: {
-      ticket, symbol: String(p["symbol"] ?? ""), side,
-      lots: open.fillVolume ?? num(p["lotSize"]) ?? 0,
+      ticket, symbol: String(p["symbol"] ?? ""), side, lots,
+      requestedLots: num(p["lotSize"]), filledLots,
+      sizeChangedAt: latest(closes.map((c) => c.at)),
       stopLoss: (lastStop ? num(pl(lastStop)["stopLoss"]) : null) ?? num(p["stopLoss"]),
       takeProfit: (lastTp ? num(pl(lastTp)["takeProfit"]) : null) ?? num(p["takeProfit"]),
       sourceCommandId: lastStop?.commandId ?? open.commandId,
@@ -243,7 +278,7 @@ const stateKey = (a: GuardianAssessment) => `${a.action}:${a.findings.join(",")}
 
 export interface ReconcileOptions {
   now?: Date;
-  trigger: "fill" | "snapshot" | "sweep";
+  trigger: "fill" | "snapshot" | "sweep" | "reconnect";
   /** Injected in tests; defaults to the venue's governed queue. */
   submit?: CorrectionSubmitter;
 }
@@ -280,7 +315,8 @@ export async function reconcilePosition(venue: GuardianVenue, userId: number, ti
   let auditEventId: number | null = null;
   const prev = await lastGuardianEvent(userId, venue, ticket);
   const prevKey = (prev?.details as Record<string, unknown> | null)?.["state"];
-  const quiet = !escalate && !correction.attempted && prev != null && prevKey === stateKey(assessment)
+  // After a bridge reconnect every governed position is re-recorded once.
+  const quiet = opts.trigger !== "reconnect" && !escalate && !correction.attempted && prev != null && prevKey === stateKey(assessment)
     && now.getTime() - new Date(prev.createdAt).getTime() < UNCHANGED_AUDIT_INTERVAL_MS;
   if (!quiet) {
     try {
@@ -323,13 +359,35 @@ export async function reconcileOpenPositions(venue: GuardianVenue, userId: numbe
   return out;
 }
 
+// ── Reconnect reconciliation ────────────────────────────────────────────────
+//
+// A bridge that comes back after a gap may have missed fills, closes and stop
+// changes. The heartbeat marks the trader; the first full position snapshot
+// after it reconciles every governed position (trigger "reconnect") and
+// records each one in the audit trail, whatever its state.
+
+/** A heartbeat gap longer than this is a reconnect. */
+export const RECONNECT_GAP_MS = 60_000;
+const pendingReconnect = new Set<string>();
+
+export function noteBridgeHeartbeat(venue: GuardianVenue, userId: number, previousHeartbeat: Date | null, now = new Date()): boolean {
+  const reconnect = previousHeartbeat == null || now.getTime() - previousHeartbeat.getTime() > RECONNECT_GAP_MS;
+  if (reconnect) pendingReconnect.add(`${venue}:${userId}`);
+  return reconnect;
+}
+
+/** True once per reconnect: the snapshot sweep that should run as "reconnect". */
+export function takeReconnect(venue: GuardianVenue, userId: number): boolean {
+  return pendingReconnect.delete(`${venue}:${userId}`);
+}
+
 /** Fire-and-forget hook for fill and snapshot handlers; never throws. */
 export function scheduleGuardian(venue: GuardianVenue, userId: number, ticket: string | null,
   trigger: ReconcileOptions["trigger"]): void {
   void (async () => {
     try {
       if (ticket) await reconcilePosition(venue, userId, ticket, { trigger });
-      else await reconcileOpenPositions(venue, userId, { trigger });
+      else await reconcileOpenPositions(venue, userId, { trigger: trigger === "snapshot" && takeReconnect(venue, userId) ? "reconnect" : trigger });
     } catch (err) {
       logger.warn({ err, venue, userId, ticket, trigger }, "position guardian run failed");
     }
