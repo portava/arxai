@@ -139,6 +139,9 @@ const MANUAL_ONLY = new Set<string>([
   // (test:broker-hub-contracts) is a pure offline test available standalone.
   "@workspace/scripts::test:broker-hub-no-execution",
   "@workspace/scripts::test:broker-hub-contracts",
+  // execution-single-entry runs inside ci:guards; the standalone script adds
+  // its pure negative-fixture test.
+  "@workspace/scripts::test:execution-single-entry",
   // MT5 projection boundary test uses an injected reader and performs no DB IO.
   // It stays targeted because broker-hub has its own required phase-entry lane.
   "@workspace/api-server::test:broker-hub-mt5-projection",

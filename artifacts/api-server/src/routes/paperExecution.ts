@@ -12,6 +12,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
 import {
   executePaperFromDecision,
   loadDecisionFromLog,
@@ -194,7 +195,9 @@ router.post("/paper-execution/monitor", async (req, res): Promise<void> => {
 router.post("/paper-execution/close/:id", async (req, res): Promise<void> => {
   const orderId = Number(req.params["id"]);
   if (!Number.isFinite(orderId)) { fail(res, 400, "Invalid id"); return; }
-  const exitPrice = typeof req.body?.exitPrice === "number" ? req.body.exitPrice : undefined;
+  // Only an operator may name the exit price (QA replays); a trader closes at
+  // the market, so nobody can write a made-up result into their own account.
+  const exitPrice = typeof req.body?.exitPrice === "number" && canSeeLegacyRows(req.authUser) ? req.body.exitPrice : undefined;
   try {
     const r = await closePaperManually(orderId, req.authUser!.id, exitPrice != null ? { exitPrice } : undefined);
     if (!r.ok) { fail(res, 409, r.error ?? "close failed"); return; }
