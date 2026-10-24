@@ -94,6 +94,9 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // cleans up every seeded row in finally. Imports @workspace/db, so it lives
   // in the integration lane.
   { pkg: "@workspace/scripts", script: "test:registration-key-rolegrant" },
+  // Real-browser standard-user session journey: seeds and removes only a
+  // throwaway USER, starts the API + Vite in-process, and never enables brokers.
+  { pkg: "@workspace/scripts", script: "test:auth-session-browser" },
   { pkg: "@workspace/scripts", script: "test:candle-depth-diagnostics", inProcess: true },
   // Promoted from MANUAL_ONLY (Task — manual→auto safety-lane widening). Each was
   // verified to pass self-contained with only DATABASE_URL set: pure / pure-DB

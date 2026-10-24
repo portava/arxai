@@ -15,6 +15,7 @@
     "test:shared-feed-verdict": "tsx ./src/sharedFeedVerdictContractTest.ts",
     "test:live-preflight-readiness-observation": "tsx ./src/livePreflightReadinessObservationTest.ts",
     "test:deriv-contracts": "tsx ./src/derivContractsTest.ts",
+    "test:auth-session-browser": "tsx ./src/qaAuthSessionBrowser.ts",
     "test:expectancy-engine": "tsx ./src/expectancyEngineTest.ts",
     "test:compliance-gate": "tsx ./src/complianceGateTest.ts",
     "test:provenance-no-collapse": "tsx ./src/ci/check-provenance-no-collapse.test.ts",
@@ -302,7 +303,9 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "tsx": "catalog:"
+    "playwright": "^1.64.1",
+    "tsx": "catalog:",
+    "vite": "catalog:"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",
