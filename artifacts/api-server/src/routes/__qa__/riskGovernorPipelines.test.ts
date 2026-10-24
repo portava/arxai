@@ -411,6 +411,36 @@ test("D live sandbox: a stale broker quote blocks the entry", async () => {
   assert.deepEqual(d.blockedBy, ["stale_market_data"]);
 });
 
+test("D live sandbox: a stale or missing broker account snapshot refuses new risk on that account only; closing still works", async () => {
+  const intent = {
+    userId: u.a, venue: "LIVE" as const, origin: "manual" as const, action: "OPEN" as const,
+    symbol: SYMBOL, side: "BUY" as const, lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
+  };
+  await seedBridge(u.a);
+  await seedBridge(u.b);
+  await db.delete(arxLivePositionsTable).where(inArray(arxLivePositionsTable.userId, [u.a, u.b]));
+  await db.update(mt5ConnectionTable).set({ accountSyncedAt: new Date(Date.now() - 10 * 60_000) })
+    .where(eq(mt5ConnectionTable.userId, u.a));
+  const stale = await enforcePreTradeRisk(intent, RELEASED);
+  assert.deepEqual(stale.blockedBy, ["broker_unavailable"]);
+  assert.match(stale.primaryReason ?? "", /^Account data is stale/);
+  const ev = await latestEvent(u.a);
+  assert.equal(ev.row.id, stale.auditEventId, "the refusal is audited");
+  const facts = ev.details["facts"] as { accountSnapshot: { status: string; source: string } | null };
+  assert.equal(facts.accountSnapshot?.status, "STALE");
+  assert.match(facts.accountSnapshot?.source ?? "", /^broker_hub:mt5:\d+$/);
+  assert.equal((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).decision, "ALLOW", "closing is still allowed");
+  assert.equal((await enforcePreTradeRisk({ ...intent, userId: u.b }, { ...RELEASED, preview: true })).decision, "ALLOW",
+    "another trader's account is unaffected");
+
+  await db.update(mt5ConnectionTable).set({ accountSyncedAt: null }).where(eq(mt5ConnectionTable.userId, u.a));
+  const missing = await enforcePreTradeRisk(intent, RELEASED);
+  assert.ok(missing.blockedBy.includes("broker_unavailable"));
+  assert.match(missing.primaryReason ?? "", /^Account data is missing/);
+  await seedBridge(u.a);
+  assert.equal((await enforcePreTradeRisk(intent, RELEASED)).decision, "ALLOW", "a fresh snapshot trades again");
+});
+
 test("D live dispatch and the demo MT5 queue call the governor before their send step", () => {
   const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
   const pipeline = read("../../lib/live/liveCommandPipeline.ts");

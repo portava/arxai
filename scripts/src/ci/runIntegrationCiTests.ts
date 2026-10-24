@@ -223,6 +223,9 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // proves no cross-user read, mutation or aggregation, operator-only
   // singletons, and per-user alerts/notifications.
   { pkg: "@workspace/api-server", script: "test:account-ownership-route" },
+  // Global stop controls: a trader's emergency stop halts only that trader;
+  // only an owner/operator can engage, reset or re-mode the safety core.
+  { pkg: "@workspace/api-server", script: "test:platform-controls-route" },
   // Pre-trade Risk Governor: the 12 mandatory rules one by one and in
   // combination (pure), then end to end on a real DB through the manual paper
   // route, Ruby Trade Action drafts, paper automation and the live venue

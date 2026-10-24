@@ -397,3 +397,32 @@ test("isStopWidened: further from price or removed is wider; closer or equal is 
   assert.equal(isStopWidened("SELL", 1.105, 1.1), false);
   assert.equal(isStopWidened("BUY", 1.095, null), true);
 });
+
+// ── Broker account snapshot freshness ───────────────────────────────────────
+const SNAP = (status: "FRESH" | "STALE" | "MISSING") => ({
+  status, observedAt: status === "MISSING" ? null : new Date(NOW.getTime() - 5 * 60_000), source: "broker_hub:mt5:7",
+});
+
+test("rule 12 account snapshot: STALE and MISSING refuse new risk on that account; FRESH evaluates normally", () => {
+  assert.equal(evaluatePreTradeRisk(baseIntent(), baseCtx({ accountSnapshot: SNAP("FRESH") })).decision, "ALLOW");
+  for (const status of ["STALE", "MISSING"] as const) {
+    const r = blockedOnly(baseIntent(), baseCtx({ accountSnapshot: SNAP(status) }), "broker_unavailable");
+    assert.match(r.reason!, new RegExp(`^Account data is ${status.toLowerCase()}`));
+    assert.match(r.reason!, /closing is still allowed/);
+    assert.equal(r.measured?.["accountSnapshot"], status);
+    assert.equal(r.measured?.["accountSource"], "broker_hub:mt5:7");
+  }
+});
+
+test("rule 12 account snapshot: closing, partial closing and tightening stay possible; widening does not", () => {
+  const stale = baseCtx({ accountSnapshot: SNAP("STALE") });
+  for (const action of ["CLOSE", "PARTIAL_CLOSE"] as const) {
+    assert.equal(evaluatePreTradeRisk(baseIntent({ action }), stale).decision, "ALLOW", action);
+  }
+  const tighten = baseIntent({ action: "MODIFY", stopLoss: 1.098, takeProfit: null, position: { entryPrice: 1.1, stopLoss: 1.0951 } });
+  assert.equal(evaluatePreTradeRisk(tighten, stale).decision, "ALLOW");
+  const widen = baseIntent({ action: "MODIFY", stopLoss: 1.095, takeProfit: null, position: { entryPrice: 1.1, stopLoss: 1.0951 } });
+  assert.ok(evaluatePreTradeRisk(widen, stale).blockedBy.includes("broker_unavailable"));
+  assert.equal(evaluatePreTradeRisk(baseIntent(), baseCtx({ accountSnapshot: null })).decision, "ALLOW",
+    "no broker account behind the order (paper, shared ledger) is not a stale snapshot");
+});
