@@ -5,7 +5,141 @@ Base: `c1b3b98` (PR #34). This change carries out the Trade Engine step of the
 instead of separate execution paths. Tier 1 is not complete after it, and the
 published scorecard is unchanged.
 
-## What changed
+A second round (base `516f13e`, PR #35) added a staged contract to the
+pipeline and moved the staged producers and `executeInstant` onto it. It is
+described in [Round 2](#round-2-staged-contract) below. Sections marked
+"round 1" describe PR #35.
+
+## Round 2: staged contract
+
+### What changed in this round
+
+The pipeline now has a staged contract for flows that draft now and confirm or
+dispatch later (often in a separate request), or that must hold a lock or
+write attribution between the steps:
+
+```ts
+draftTrade({ mode: "LIVE", kind: "ENTRY" }, input)  // → createLiveDraft
+draftTrade({ mode: "LIVE", kind: "OPS" }, input)    // → createLiveOpsDraft (close / modify a ticket)
+draftTrade({ mode: "DEMO" }, input)                 // → createDraftCommand
+confirmTrade({ mode: "LIVE" | "DEMO" }, args)       // → confirmLiveCommand | confirmCommand
+dispatchTrade({ mode: "LIVE" | "DEMO" }, args)      // → dispatchLiveCommand | dispatchApprovedCommand
+```
+
+Each call passes the caller's input object to the venue queue unchanged and
+returns the queue's own result unchanged. The TypeScript overloads keep the
+queue's exact input and result types, so the refusal reasons, HTTP status
+codes and response bodies built from them stay the same. The contract adds no
+gate and removes none, and it writes nothing itself.
+
+Producers moved onto the staged contract. Each one makes the same calls, in
+the same order, with the same arguments, inside the same locks:
+
+| File | Steps it uses |
+|---|---|
+| `routes/meLive.ts` (staged live API, close, close-all, modify, controlled test) | LIVE ENTRY / OPS draft, confirm, dispatch |
+| `routes/meOneClick.ts` (one-click submit-live) | LIVE ENTRY draft, confirm, dispatch |
+| `routes/tradesLiveShared.ts` (shared-master ticket, close, modify) | LIVE ENTRY / OPS draft, confirm, dispatch |
+| `routes/meTrades.ts` (My Trades LIVE close) | LIVE OPS draft, confirm, dispatch |
+| `routes/meDemoCommands.ts` (staged demo API) | DEMO draft, confirm (dispatch stays on its per-user demo endpoint) |
+| `lib/live/emergencyClose.ts` (platform safety) | LIVE OPS draft, confirm, dispatch |
+| `lib/live/liveTestCycle.ts` (platform safety) | LIVE ENTRY / OPS draft, confirm, dispatch (the dry-run preview still cancels its draft directly) |
+| `lib/live/instantTrade.ts` (`executeInstant`) | LIVE ENTRY / OPS draft, confirm, dispatch |
+
+`emergencyClose` and `liveTestCycle` were moved because the change is a
+straight rename of three calls with the same arguments. The emergency close
+still passes its CLOSE-only kill-switch bypass to `createLiveOpsDraft`
+untouched.
+
+**`executeInstant` is now a caller of the pipeline.** Its own gates still run
+first and are unchanged: Ruby authorization, one-click settings, the
+master-live access check, rate limit, symbol cooldown, the per-user submit
+lock, the `prepareOnly` stop and its `one_click_audit` rows. It no longer
+calls the live queue itself. Its callers (missions, self-trade, the
+assistant, the instant-trade route and the Position Guardian exit door) still
+call `executeInstant`. Its result shape and status codes are unchanged.
+
+Guards tightened in this round:
+
+- `trade-engine-single-pipeline`:
+  - The 8 producers above were removed from the allowlist, which drops from
+    16 to 8 entries. Any of them calling a queue directly now fails.
+  - The guard checks that the pipeline exports `draftTrade`, `confirmTrade`
+    and `dispatchTrade`, and that it delegates to all seven queue steps.
+  - It checks, from the AST and in code only, that `executeInstant` drafts,
+    confirms and dispatches through the staged LIVE contract.
+  - 64 fixtures, up from 46.
+- `single-position-guardian`: `submitTrade`, `draftTrade`, `confirmTrade` and
+  `dispatchTrade` now count as execution calls. A guardian rule module, or an
+  unregistered module that reads positions, cannot reach execution through
+  the Trade Engine under a new name.
+- `live-dispatch-cas`: counts the `dispatchTrade({ mode: "LIVE" })` sites in
+  `meLive.ts` against its per-user lock scopes. It also requires the staged
+  LIVE dispatch to delegate to `dispatchLiveCommand`.
+- `one-click-arm-routes-through-gate`, `one-click-concurrency` and
+  `qaOneClickConcurrency`: each requires a real staged LIVE dispatch call in
+  code and requires it to delegate to `dispatchLiveCommand`. The old
+  `one-click-concurrency` check also passed on a comment that only mentioned
+  the name.
+- `master-live-bridge-binding`, `master-live-user-access`,
+  `unified-readiness-no-dispatch`, `fix-agent-import-boundary`,
+  `scanner-selected-market`, `broker-hub-no-execution` and
+  `backtest-no-live-execution`: their forbidden lists now also include the
+  Trade Engine (`/tradeEngine/` imports, `submitTrade` and `dispatchTrade`).
+  Before this change, these surfaces could have reached dispatch through
+  `submitTrade` without these guards noticing.
+- `modeScopeContractTest`: My Trades may use only the staged OPS draft and the
+  LIVE dispatch. It may not use an ENTRY draft or `submitTrade`.
+
+New database test `test:trade-engine-staged` (6 cases, wired into
+`ci:integration`). It sends each staged step for LIVE ENTRY, LIVE OPS and
+DEMO twice: once through the pipeline and once straight to the venue queue.
+It checks that both return the same draft, confirm and dispatch results and
+refusals and write the same rows. It also checks that an unknown stage is
+refused. The trader is armed for neither venue, so nothing is dispatched and
+the EA mailbox stays empty.
+
+### Behaviour changes in this round
+
+- None for any valid request: same gates, same audit rows, same results,
+  status codes and response shapes.
+- Load order only: `meOneClick`, `meTrades`, `emergencyClose` and
+  `instantTrade` no longer import the live queue statically. The pipeline
+  loads it on first use (`await import`, cached after that). Other modules
+  load the queue at server start anyway.
+- If the staged contract is called with an unknown `mode` or `kind`, it
+  returns `{ ok: false, reason: "UNKNOWN_TRADE_MODE" }`. That matches
+  `submitTrade`. No typed caller can reach this case.
+
+### What remains after this round
+
+1. **Remaining allowlist (8 entries):**
+   - The pipeline and its `governedOps` leg.
+   - The five `executeInstant` callers: missions entry and protective exit,
+     the self-trade agent, the instant-trade route and the assistant route.
+   - The Position Guardian exit door.
+
+   The `executeInstant` callers are still listed because `executeInstant` is
+   a one-click front door with gates of its own, and it is not yet a mode of
+   `submitTrade`. Folding it in (for example `submitTrade({ mode: "LIVE",
+   oneClick })`) would move its gates and audit rows into the pipeline. That
+   is a larger change and needs its own review.
+2. **The staged contract is public, like `submitTrade`.** Any runtime file may
+   call it, as it may call `submitTrade`, and all the venue gates still apply.
+   The guard does not keep a list of staged callers. Surfaces that must never
+   dispatch are fenced by the guards listed above.
+3. **Calls that are not tracked entry points still go to the queues
+   directly:** cancel, list and read (`cancelLiveCommand`, `cancelCommand`,
+   `listMyLiveCommands`, and so on), and the demo consumer
+   (`consumeApprovedCommand`). Cancel only reduces exposure. None of these
+   creates exposure.
+4. **The My Trades DEMO close mailbox exception stays,** unchanged and still
+   pinned by the guard.
+5. Items 3 to 5 of the round 1 list below (paper books, SIMULATED paths, no
+   published score) are unchanged. The other engineers are working on the
+   paper books and the position read models.
+
+## What changed (round 1)
 
 `artifacts/api-server/src/lib/tradeEngine/pipeline.ts` is the single entry:
 
@@ -48,7 +182,7 @@ moved code.
 No tables, columns, migrations, RLS policies, Risk Governor rules or dispatch
 gates were changed.
 
-## What is enforced
+## What is enforced (round 1; see Round 2 for this round's changes)
 
 `trade-engine-single-pipeline` runs in `ci:guards` (81 guards in total). It
 uses the TypeScript AST, so it catches aliases, dynamic imports,
@@ -78,7 +212,9 @@ mailbox. It only reduces risk, the Risk Governor checks it first, and LIVE
 closes return earlier through Phase B. It is the only trade insert into the
 mailbox outside Phase B's bridge mirror.
 
-Listed producers are reviewed paths that existed before the pipeline:
+Listed producers are reviewed paths that existed before the pipeline. Round 2
+moved every staged producer onto the pipeline and cut the list to 8 entries
+(see Round 2). Round 1 listed:
 
 - **LIVE (16 venue producers in total):** `instantTrade` (the `executeInstant`
   one-click entry, used by missions, self-trade, the assistant and the
@@ -112,7 +248,11 @@ Verification on an isolated local PostgreSQL database (UTC):
 - Guard fixtures: `execution-single-entry`, `single-risk-authority`,
   `single-position-guardian` and `position-guardian-wired` pass.
 
-## What remains
+## What remains (round 1)
+
+Items 1 and 2 were addressed in Round 2: the staged producers are migrated,
+and `executeInstant` reaches Phase B through the pipeline. Its callers are
+still listed.
 
 1. **Staged producers are listed, not migrated.** Callers that draft, confirm
    and dispatch in separate requests still call the venue queues directly:

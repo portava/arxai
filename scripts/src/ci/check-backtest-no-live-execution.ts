@@ -76,6 +76,10 @@ const FORBIDDEN: Array<{ rx: RegExp; why: string }> = [
     why: "liveCommandPipeline module path must never be imported from the backtest surface",
   },
   {
+    rx: /\/tradeEngine\//,
+    why: "the Trade Engine pipeline (submitTrade and its staged contract) must never be imported from the backtest surface",
+  },
+  {
     rx: /\/adminTrading\//,
     why: "adminTrading module path must never be imported from the backtest surface",
   },

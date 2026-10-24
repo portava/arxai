@@ -15,15 +15,31 @@
 //   MODIFY              → lib/tradeEngine/paperVenue (paper simulator book,
 //                         the Risk Governor with venue PAPER)
 //
+// Staged contract (LIVE / DEMO): for flows that draft now and confirm or
+// dispatch later (often from a separate request), or that must hold a lock
+// or write attribution between the steps:
+//
+//   draftTrade({ mode: "LIVE", kind: "ENTRY" }, input) → createLiveDraft
+//   draftTrade({ mode: "LIVE", kind: "OPS" }, input)   → createLiveOpsDraft
+//                                                         (close / modify a ticket)
+//   draftTrade({ mode: "DEMO" }, input)                → createDraftCommand
+//   confirmTrade({ mode }, args)   → confirmLiveCommand | confirmCommand
+//   dispatchTrade({ mode }, args)  → dispatchLiveCommand | dispatchApprovedCommand
+//
+// Each staged call passes the caller's input object to the venue queue
+// unchanged and returns the queue's own result unchanged (same type, same
+// refusal reasons), so a producer moved onto it behaves exactly as before.
+//
 // This module adds no gate and removes none: each mode delegates to the
 // governed path that already existed, and every refusal is returned as-is.
-// It never writes a table itself. A caller that needs a staged flow (draft
-// now, confirm later from a separate request) still uses the venue queue's
-// own staged API; scripts/src/ci/check-trade-engine-single-pipeline.ts lists
-// those producers and fails on any new one.
+// It never writes a table itself. scripts/src/ci/check-trade-engine-single-
+// pipeline.ts fails on any runtime file that calls a venue queue directly
+// without being a listed producer.
 
 import type { GovernedPosition } from "../positions/governedOps.js";
 import type { PaperOrderRow } from "./paperVenue.js";
+import type * as LiveQueue from "../live/liveCommandPipeline.js";
+import type * as DemoQueue from "../mt5/demoCommandQueue.js";
 
 export const TRADE_MODES = ["LIVE", "DEMO", "PAPER"] as const;
 export type TradeMode = (typeof TRADE_MODES)[number];
@@ -89,6 +105,74 @@ export async function submitTrade(req: TradeRequest): Promise<TradeResult> {
     case "CLOSE":
     case "MODIFY": return submitPositionOp(req);
   }
+}
+
+// ── Staged contract (LIVE / DEMO) ─────────────────────────────────────────
+type LiveEntryDraftInput = Parameters<typeof LiveQueue.createLiveDraft>[0];
+type LiveOpsDraftInput = Parameters<typeof LiveQueue.createLiveOpsDraft>[0];
+type DemoDraftInput = Parameters<typeof DemoQueue.createDraftCommand>[0];
+type LiveStepArgs = Parameters<typeof LiveQueue.confirmLiveCommand>[0];
+type DemoConfirmArgs = Parameters<typeof DemoQueue.confirmCommand>[0];
+type DemoDispatchArgs = Parameters<typeof DemoQueue.dispatchApprovedCommand>[0];
+
+/** Which staged venue step a request is for. */
+export type StagedDraftStage = { mode: "LIVE"; kind: "ENTRY" | "OPS" } | { mode: "DEMO" };
+export type StagedStepStage = { mode: BrokerMode };
+
+const unknownStage = () => ({ ok: false as const, reason: "UNKNOWN_TRADE_MODE" });
+
+/**
+ * Staged draft: LIVE ENTRY → createLiveDraft, LIVE OPS → createLiveOpsDraft,
+ * DEMO → createDraftCommand. Input and result pass through unchanged.
+ */
+export function draftTrade(stage: { mode: "LIVE"; kind: "ENTRY" }, input: LiveEntryDraftInput): ReturnType<typeof LiveQueue.createLiveDraft>;
+export function draftTrade(stage: { mode: "LIVE"; kind: "OPS" }, input: LiveOpsDraftInput): ReturnType<typeof LiveQueue.createLiveOpsDraft>;
+export function draftTrade(stage: { mode: "DEMO" }, input: DemoDraftInput): ReturnType<typeof DemoQueue.createDraftCommand>;
+export async function draftTrade(stage: StagedDraftStage, input: unknown): Promise<unknown> {
+  if (stage.mode === "LIVE") {
+    const live = await import("../live/liveCommandPipeline.js");
+    if (stage.kind === "ENTRY") return live.createLiveDraft(input as LiveEntryDraftInput);
+    if (stage.kind === "OPS") return live.createLiveOpsDraft(input as LiveOpsDraftInput);
+    return unknownStage();
+  }
+  if (stage.mode === "DEMO") {
+    const queue = await import("../mt5/demoCommandQueue.js");
+    return queue.createDraftCommand(input as DemoDraftInput);
+  }
+  return unknownStage();
+}
+
+/** Staged confirm: LIVE → confirmLiveCommand, DEMO → confirmCommand. */
+export function confirmTrade(stage: { mode: "LIVE" }, args: LiveStepArgs): ReturnType<typeof LiveQueue.confirmLiveCommand>;
+export function confirmTrade(stage: { mode: "DEMO" }, args: DemoConfirmArgs): ReturnType<typeof DemoQueue.confirmCommand>;
+export async function confirmTrade(stage: StagedStepStage, args: LiveStepArgs | DemoConfirmArgs): Promise<unknown> {
+  if (stage.mode === "LIVE") {
+    const live = await import("../live/liveCommandPipeline.js");
+    return live.confirmLiveCommand(args as LiveStepArgs);
+  }
+  if (stage.mode === "DEMO") {
+    const queue = await import("../mt5/demoCommandQueue.js");
+    return queue.confirmCommand(args as DemoConfirmArgs);
+  }
+  return unknownStage();
+}
+
+/**
+ * Staged dispatch: LIVE → dispatchLiveCommand (every Phase B gate),
+ * DEMO → dispatchApprovedCommand (per-user demo gate, Risk Governor at consume).
+ */
+export function dispatchTrade(stage: { mode: "LIVE" }, args: LiveStepArgs): ReturnType<typeof LiveQueue.dispatchLiveCommand>;
+export function dispatchTrade(stage: { mode: "DEMO" }, args: DemoDispatchArgs): ReturnType<typeof DemoQueue.dispatchApprovedCommand>;
+export async function dispatchTrade(stage: StagedStepStage, args: LiveStepArgs | DemoDispatchArgs): Promise<unknown> {
+  if (stage.mode === "LIVE") {
+    const live = await import("../live/liveCommandPipeline.js");
+    return live.dispatchLiveCommand(args as LiveStepArgs);
+  }
+  if (stage.mode === "DEMO") {
+    const queue = await import("../mt5/demoCommandQueue.js");
+    return queue.dispatchApprovedCommand(args as DemoDispatchArgs);
+  }
+  return unknownStage();
 }
 
 // ── DEMO ──────────────────────────────────────────────────────────────────

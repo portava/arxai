@@ -30,11 +30,7 @@ import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
 import { resolveClosePolicy } from "../lib/live/closePolicy.js";
 import { placeOrder } from "../lib/adminTrading/placeOrder.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
-import {
-  createLiveOpsDraft,
-  confirmLiveCommand,
-  dispatchLiveCommand,
-} from "../lib/live/liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipeline.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
@@ -440,7 +436,7 @@ router.post("/me/trades/close", async (req, res) => {
       res.status(409).json({ ok: false, error: "POSITION_MISSING_BROKER_TICKET" });
       return;
     }
-    const draft = await createLiveOpsDraft({
+    const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
       userId,
       commandType: "CLOSE_LIVE_POSITION",
       brokerTicket: String(ticket),
@@ -454,12 +450,12 @@ router.post("/me/trades/close", async (req, res) => {
       return;
     }
     const commandId = draft.command.commandId;
-    const confirmed = await confirmLiveCommand({ userId, commandId });
+    const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId });
     if (!confirmed.ok) {
       res.status(409).json({ ok: false, error: confirmed.reason, commandId });
       return;
     }
-    const dispatched = await dispatchLiveCommand({ userId, commandId });
+    const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId });
     const dispatchOk = dispatched.ok === true;
     const dispatchReason = dispatchOk
       ? null

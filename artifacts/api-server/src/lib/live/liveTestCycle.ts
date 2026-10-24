@@ -31,12 +31,9 @@ import {
   type ArxLiveTestCycleStatus,
 } from "@workspace/db";
 import {
-  createLiveDraft,
-  createLiveOpsDraft,
-  confirmLiveCommand,
-  dispatchLiveCommand,
   cancelLiveCommand,
 } from "./liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../tradeEngine/pipeline.js";
 import { getMyArming } from "./liveArming.js";
 import { computeRealizedPnlUsd } from "./realizedPnl.js";
 import { resolveContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
@@ -263,7 +260,7 @@ export async function previewCycle(input: LiveTestCycleInput) {
   let cancelledDraftId: string | null = null;
 
   if (precheck.ok) {
-    const d = await createLiveDraft({
+    const d = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
       userId: input.userId,
       commandType: "PLACE_LIVE_MARKET_ORDER",
       symbol: PINNED_SYMBOL,
@@ -369,7 +366,7 @@ export async function startCycle(input: LiveTestCycleInput): Promise<{
   });
 
   // OPEN leg — standard pipeline (preflight + draft + confirm + dispatch).
-  const draft = await createLiveDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId: input.userId,
     commandType: "PLACE_LIVE_MARKET_ORDER",
     symbol: PINNED_SYMBOL,
@@ -398,7 +395,7 @@ export async function startCycle(input: LiveTestCycleInput): Promise<{
     return { ok: false, cycle: updated!, reason: draft.reason, detail: draft.detail };
   }
   const openCommandId = draft.command.commandId;
-  const conf = await confirmLiveCommand({ userId: input.userId, commandId: openCommandId });
+  const conf = await confirmTrade({ mode: "LIVE" }, { userId: input.userId, commandId: openCommandId });
   if (!conf.ok) {
     const [updated] = await db.update(arxLiveTestCyclesTable).set({
       status: "OPEN_REJECTED",
@@ -409,7 +406,7 @@ export async function startCycle(input: LiveTestCycleInput): Promise<{
     }).where(eq(arxLiveTestCyclesTable.cycleId, cycleId)).returning();
     return { ok: false, cycle: updated!, reason: conf.reason };
   }
-  const disp = await dispatchLiveCommand({ userId: input.userId, commandId: openCommandId });
+  const disp = await dispatchTrade({ mode: "LIVE" }, { userId: input.userId, commandId: openCommandId });
   const dispOk = (disp as { ok?: boolean }).ok === true;
   if (!dispOk) {
     const primary = (disp as { primaryReason?: string }).primaryReason ?? "DISPATCH_BLOCKED";
@@ -500,7 +497,7 @@ export async function advanceCycle(args: { userId: number; cycleId: string }): P
         changed = true;
       }
       // queue the close (only once)
-      const closeDraft = await createLiveOpsDraft({
+      const closeDraft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
         userId: args.userId, commandType: "CLOSE_LIVE_POSITION",
         brokerTicket: openTicket, symbol: row.symbol,
         side: row.side as "BUY" | "SELL", volume: Number(row.requestedVolume),
@@ -512,14 +509,14 @@ export async function advanceCycle(args: { userId: number; cycleId: string }): P
         changed = true;
       } else {
         const closeCommandId = closeDraft.command.commandId;
-        const closeConf = await confirmLiveCommand({ userId: args.userId, commandId: closeCommandId });
+        const closeConf = await confirmTrade({ mode: "LIVE" }, { userId: args.userId, commandId: closeCommandId });
         if (!closeConf.ok) {
           update.status = "CLOSE_FAILED_MANUAL_REQUIRED";
           update.closeCommandId = closeCommandId;
           update.closeRejectionReason = `confirm_failed:${closeConf.reason}`;
           changed = true;
         } else {
-          const closeDisp = await dispatchLiveCommand({ userId: args.userId, commandId: closeCommandId });
+          const closeDisp = await dispatchTrade({ mode: "LIVE" }, { userId: args.userId, commandId: closeCommandId });
           const closeOk = (closeDisp as { ok?: boolean }).ok === true;
           if (!closeOk) {
             const primary = (closeDisp as { primaryReason?: string }).primaryReason ?? "CLOSE_DISPATCH_BLOCKED";

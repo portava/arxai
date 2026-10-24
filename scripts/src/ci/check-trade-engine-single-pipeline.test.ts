@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
-  MAILBOX_EXCEPTION, PAPER_VENUE, PIPELINE, checkPipelineShape, checkTradeEngineSinglePipeline, scanFile,
+  INSTANT_ENTRY, MAILBOX_EXCEPTION, PAPER_VENUE, PIPELINE, checkPipelineShape, checkTradeEngineSinglePipeline, scanFile,
+  stagedCalls,
 } from "./check-trade-engine-single-pipeline.js";
 
 let n = 0;
@@ -21,7 +22,17 @@ fails('await pipe["dispatchLiveCommand"]({ userId, commandId })');
 fails("await ops.submitGovernedClose(userId, pos, 'PAGE')");
 fails("await venue.openPaperOrder(args)");
 fails("await executeInstant({ userId, intent })");
-fails("await createLiveOpsDraft(x)", "routes/meDemoCommands.ts"); // a DEMO producer is not a LIVE producer
+fails("await createLiveOpsDraft(x)", "routes/meDemoCommands.ts");
+// Producers moved onto the staged contract this round may no longer call the queues directly.
+fails("await createDraftCommand(a)", "routes/meDemoCommands.ts");
+fails("await confirmCommand(a)", "routes/meDemoCommands.ts");
+fails("await createLiveOpsDraft(x)", "routes/meTrades.ts");
+fails("await createLiveDraft(x)", "routes/meLive.ts");
+fails("await dispatchLiveCommand({ userId, commandId })", "routes/meOneClick.ts");
+fails("await confirmLiveCommand({ userId, commandId })", "routes/tradesLiveShared.ts");
+fails("await createLiveOpsDraft(x)", "lib/live/emergencyClose.ts");
+fails("await createLiveDraft(x)", "lib/live/liveTestCycle.ts");
+fails('import { dispatchLiveCommand as send } from "./liveCommandPipeline.js"; await send(a)', "lib/live/instantTrade.ts");
 fails("await submitGovernedModify(u, p, 1, 2, 'X')", "lib/positionGuardian/assess.ts");
 // Paper / legacy trade books.
 fails('import { paperOrdersTable } from "@workspace/db"; await db.insert(paperOrdersTable).values(row)');
@@ -42,8 +53,11 @@ fails("await db.insert(arxLiveCommandsTable).values(row)", "lib/live/instantTrad
 passes("await submitTrade({ mode: 'DEMO', intent: 'OPEN' })");
 passes("await queue.createDraftCommand(a); await queue.confirmCommand(b)", PIPELINE);
 passes("await openPaperOrder(a)", PIPELINE);
-passes("await createDraftCommand(a)", "routes/meDemoCommands.ts");
-passes("await createLiveOpsDraft(x)", "routes/meTrades.ts");
+// The staged contract is the pipeline's public API, like submitTrade.
+passes('await draftTrade({ mode: "DEMO" }, a); await confirmTrade({ mode: "DEMO" }, b)', "routes/meDemoCommands.ts");
+passes('await draftTrade({ mode: "LIVE", kind: "OPS" }, x); await dispatchTrade({ mode: "LIVE" }, y)', "routes/meTrades.ts");
+passes('await draftTrade({ mode: "LIVE", kind: "ENTRY" }, x); await confirmTrade({ mode: "LIVE" }, y)', INSTANT_ENTRY);
+passes("await createLiveOpsDraft(x)", "lib/positions/governedOps.ts");
 passes("await submitGovernedModify(u, p, 1, 2, 'X')", "lib/positionGuardian/manage.ts");
 fails("await submitGovernedModify(u, p, 1, 2, 'X')", "lib/positionGuardian/reconcile.ts"); // corrections go through the exit door
 passes("await executeInstant(args)", "lib/selfTrade/agentExecutor.ts");
@@ -57,16 +71,41 @@ passes("db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u))
 passes("// await createDraftCommand(x)\n/* db.insert(paperOrdersTable) */");
 passes('const label = "update trades list"; const note = "createLiveDraft";');
 
+// Staged-call signatures come from the literal stage object, in code only.
+assert.deepEqual([...stagedCalls(`await draftTrade({ mode: "LIVE", kind: "OPS" }, x);
+  await confirmTrade({ mode: "DEMO" }, y); // dispatchTrade({ mode: "LIVE" }, z)
+  await dispatchTrade(stage, z); await other.draftTrade({ mode: "LIVE" }, w);`)].sort(),
+["confirmTrade:DEMO", "draftTrade:LIVE:OPS"]);
+n++;
+
 // Structural proofs.
 const shape = (files: Record<string, string>) => checkPipelineShape((k) => files[k] ?? null);
 const goodPipe = `export async function submitTrade(r) {}
-  "LIVE" "DEMO" "PAPER" createDraftCommand( createLiveDraft( confirmLiveCommand( dispatchLiveCommand(
+  export async function draftTrade(s, i) {} export async function confirmTrade(s, a) {} export async function dispatchTrade(s, a) {}
+  "LIVE" "DEMO" "PAPER" createDraftCommand( confirmCommand( dispatchApprovedCommand(
+  createLiveDraft( createLiveOpsDraft( confirmLiveCommand( dispatchLiveCommand(
   submitGovernedClose( submitGovernedModify( openPaperOrder( modifyPaperOrder( closePaperOrder(`;
+const goodInstant = `await draftTrade({ mode: "LIVE", kind: "ENTRY" }, a); await draftTrade({ mode: "LIVE", kind: "OPS" }, b);
+  await confirmTrade({ mode: "LIVE" }, c); await dispatchTrade({ mode: "LIVE" }, d);`;
 const goodPaper = ["OPEN", "MODIFY", "CLOSE"].map((a) =>
   `enforcePreTradeRisk({ userId, venue: "PAPER", origin: "manual", action: "${a}" })`).join("\n");
 const goodMe = `enforcePreTradeRisk({ userId, venue: "DEMO", origin: "manual", action: "CLOSE" });
   await db.insert(mt5CommandsTable).values({ action: "CLOSE", payload: { a: 1 } }).returning();`;
-assert.deepEqual(shape({ [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper, [MAILBOX_EXCEPTION]: goodMe }), []);
+assert.deepEqual(shape({ [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper, [MAILBOX_EXCEPTION]: goodMe, [INSTANT_ENTRY]: goodInstant }), []);
+const base = { [PAPER_VENUE]: goodPaper, [MAILBOX_EXCEPTION]: goodMe, [INSTANT_ENTRY]: goodInstant };
+assert.ok(shape({ ...base, [PIPELINE]: goodPipe.replace("export async function confirmTrade", "async function confirmTrade") })
+  .some((v) => v.includes("staged confirmTrade")), "the staged confirm must be exported");
+assert.ok(shape({ ...base, [PIPELINE]: goodPipe.replace("createLiveOpsDraft(", "") })
+  .some((v) => v.includes("createLiveOpsDraft")), "the staged LIVE ops draft must delegate to createLiveOpsDraft");
+assert.ok(shape({ ...base, [PIPELINE]: goodPipe.replace("dispatchApprovedCommand(", "") })
+  .some((v) => v.includes("dispatchApprovedCommand")), "the staged DEMO dispatch must delegate to dispatchApprovedCommand");
+assert.ok(shape({ ...base, [PIPELINE]: goodPipe, [INSTANT_ENTRY]: goodInstant.replace('dispatchTrade({ mode: "LIVE" }, d)', "send(d)") })
+  .some((v) => v.includes("dispatchTrade:LIVE")), "executeInstant must dispatch through the pipeline");
+assert.ok(shape({ ...base, [PIPELINE]: goodPipe, [INSTANT_ENTRY]: `// ${goodInstant}` })
+  .some((v) => v.includes("executeInstant")), "a commented-out staged call is not proof");
+assert.ok(shape({ [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper, [MAILBOX_EXCEPTION]: goodMe })
+  .some((v) => v.includes(`${INSTANT_ENTRY} missing`)), "a missing instant entry fails");
+n += 6;
 assert.ok(shape({ [PAPER_VENUE]: goodPaper }).some((v) => v.includes("missing")), "a missing pipeline fails");
 assert.ok(shape({ [PIPELINE]: goodPipe.replace('"PAPER"', ""), [PAPER_VENUE]: goodPaper }).some((v) => v.includes("PAPER")));
 assert.ok(shape({ [PIPELINE]: goodPipe + "\nawait db.insert(paperOrdersTable)", [PAPER_VENUE]: goodPaper })

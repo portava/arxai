@@ -14,7 +14,8 @@
 //     flag is never used to early-return success or to branch around dispatch.
 //  2. The armed flag never appears next to a successful `return { ok: true`
 //     (it must not be a stand-alone "armed ⇒ proceed/skip" path).
-//  3. The live OPEN path in instantTrade.ts dispatches through
+//  3. The live OPEN path in instantTrade.ts dispatches (via the Trade
+//     Engine's staged dispatchTrade({ mode: "LIVE" })) through
 //     `dispatchLiveCommand` (the only routine that runs the Phase B gates).
 //  4. `dispatchLiveCommand` (in liveCommandPipeline.ts) calls
 //     `evaluateLivePhaseBDispatchGate` and refuses on a non-PASS decision —
@@ -73,11 +74,20 @@ export function checkOneClickArmRoutesThroughGate(): CheckResult {
     );
   }
 
-  // The live OPEN path must dispatch through dispatchLiveCommand.
-  if (!/dispatchLiveCommand\(/.test(instant)) {
+  // The live OPEN path must dispatch through dispatchLiveCommand, reached via
+  // the Trade Engine's staged LIVE dispatch (code, not comments).
+  const instantCode = instant.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  if (!/\bdispatchTrade\(\s*\{\s*mode:\s*"LIVE"\s*\}/.test(instantCode)) {
     violations.push(
-      "instantTrade.ts — must call dispatchLiveCommand() so every live OPEN " +
+      "instantTrade.ts — must call dispatchTrade({ mode: \"LIVE\" }, ...) so every live OPEN " +
         "(armed or not) routes through the Phase B pipeline.",
+    );
+  }
+  const tradeEngine = read("artifacts/api-server/src/lib/tradeEngine/pipeline.ts");
+  if (!/export\s+async\s+function\s+dispatchTrade[\s\S]*?\bdispatchLiveCommand\s*\(/.test(tradeEngine)) {
+    violations.push(
+      "tradeEngine/pipeline.ts — the staged LIVE dispatch (dispatchTrade) must delegate to " +
+        "dispatchLiveCommand (the Phase B pipeline).",
     );
   }
 

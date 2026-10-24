@@ -111,6 +111,10 @@ const EXEC_PIPELINE: Forbidden[] = [
     rx: /\/live\/liveCommandPipeline/,
     why: "liveCommandPipeline module path must never be imported from broker-hub",
   },
+  {
+    rx: /\/tradeEngine\//,
+    why: "the Trade Engine pipeline (submitTrade and its staged contract) must never be imported from broker-hub",
+  },
 ];
 
 /**

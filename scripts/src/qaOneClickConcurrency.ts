@@ -115,8 +115,10 @@ async function main() {
   record(6, "Enabling LIVE re-checks master-live user-access gate",
     /loadAndEvaluateUserMasterLiveAccessGate/.test(route),
     "routes/meOneClick.ts");
-  record(7, "submit-live calls dispatchLiveCommand (all live gates run)",
-    /dispatchLiveCommand/.test(route),
+  record(7, "submit-live calls dispatchTrade({ mode: LIVE }) → dispatchLiveCommand (all live gates run)",
+    /\bdispatchTrade\(\s*\{\s*mode:\s*"LIVE"\s*\}/.test(route.replace(/\/\/[^\n]*/g, ""))
+      && /export\s+async\s+function\s+dispatchTrade[\s\S]*?\bdispatchLiveCommand\s*\(/.test(
+        readFile("artifacts/api-server/src/lib/tradeEngine/pipeline.ts")),
     "routes/meOneClick.ts");
   record(8, "submit-live runs under per-user advisory lock",
     /withTxAdvisoryLock\(\s*ARX_LOCK_NS\.USER_SUBMIT/.test(route),

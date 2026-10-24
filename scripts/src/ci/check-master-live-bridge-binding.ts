@@ -81,8 +81,8 @@ export function checkMasterLiveBridgeBinding(): CheckResult {
   for (const f of forbidden) {
     let src: string;
     try { src = read(f); } catch { continue; }
-    if (/\bdispatchLiveCommand\s*\(/.test(src)) {
-      failures.push(`forbidden caller invokes dispatchLiveCommand(): ${f}`);
+    if (/\b(?:dispatchLiveCommand|dispatchTrade|submitTrade)\s*\(/.test(src)) {
+      failures.push(`forbidden caller invokes dispatchLiveCommand() or the Trade Engine: ${f}`);
     }
   }
 
@@ -91,7 +91,7 @@ export function checkMasterLiveBridgeBinding(): CheckResult {
   const det = stripComments(read("artifacts/api-server/src/lib/mt5/currentConnectedBridgeDetector.ts"));
   const gate = stripComments(read("artifacts/api-server/src/lib/mt5/masterLiveBridgeGate.ts"));
   for (const [name, src] of [["currentConnectedBridgeDetector", det], ["masterLiveBridgeGate", gate]] as const) {
-    if (/dispatchLiveCommand|liveCommandPipeline|placeLiveOrderGuarded/.test(src)) {
+    if (/dispatchLiveCommand|liveCommandPipeline|placeLiveOrderGuarded|tradeEngine\/pipeline/.test(src)) {
       failures.push(`${name} imports a code path that can place a trade`);
     }
   }

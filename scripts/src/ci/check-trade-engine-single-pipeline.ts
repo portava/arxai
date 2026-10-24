@@ -1,7 +1,9 @@
 // ── Trade Engine: one pipeline, LIVE / DEMO / PAPER are modes of it ──────
 //
 // lib/tradeEngine/pipeline.ts (submitTrade) is the one entry for opening,
-// closing and modifying a trade in any mode. It delegates to the governed
+// closing and modifying a trade in any mode; its staged contract
+// (draftTrade / confirmTrade / dispatchTrade) serves LIVE/DEMO flows that
+// draft now and confirm or dispatch later. It delegates to the governed
 // path that already exists for each mode and adds/removes no gate:
 //
 //   LIVE  → liveCommandPipeline (Phase B, the only live writer)
@@ -23,8 +25,10 @@
 // nothing itself, and that the PAPER venue still runs the Risk Governor.
 //
 // A listed producer is a known, reviewed path that predates the pipeline
-// (staged draft/confirm APIs, autopilots, legacy books). A new one fails
-// until it either goes through submitTrade or is reviewed into this list.
+// (callers of the executeInstant one-click entry, autopilots, legacy books).
+// A new one fails until it either goes through submitTrade / the staged
+// contract or is reviewed into this list. executeInstant itself reaches the
+// live queue only through the pipeline's staged contract (checked below).
 // Operator scripts under src/scripts, __qa__ and *.test.ts are not runtime.
 //
 // Pure source analysis (TypeScript AST): no network, no DB.
@@ -56,29 +60,26 @@ const ENTRY_OF = new Map<string, Entry>(
 export const ENTRY_PRODUCERS: Record<string, { entries: Entry[]; why: string }> = {
   [PIPELINE]: { entries: ["DEMO_QUEUE", "LIVE_PIPELINE", "GOVERNED_OPS", "PAPER_VENUE"], why: "the one pipeline" },
   "lib/positions/governedOps.ts": { entries: ["DEMO_QUEUE", "LIVE_PIPELINE"], why: "the LIVE/DEMO position-op leg of the pipeline" },
-  // Staged LIVE producers: draft, confirm and dispatch are separate steps
-  // (often separate requests) inside the Phase B pipeline's own gates.
-  "lib/live/instantTrade.ts": { entries: ["LIVE_PIPELINE"], why: "executeInstant: one-click live entry for missions, self-trade and the assistant" },
-  "lib/live/liveTestCycle.ts": { entries: ["LIVE_PIPELINE"], why: "operator live test cycle (dry-run preview cancels its draft)" },
-  "lib/live/emergencyClose.ts": { entries: ["LIVE_PIPELINE"], why: "risk-reducing emergency close" },
-  "routes/tradesLiveShared.ts": { entries: ["LIVE_PIPELINE"], why: "shared-master live ticket (writes attribution before dispatch)" },
-  "routes/meLive.ts": { entries: ["LIVE_PIPELINE"], why: "staged live draft / confirm / dispatch API" },
-  "routes/meOneClick.ts": { entries: ["LIVE_PIPELINE"], why: "one-click live API" },
-  "routes/meTrades.ts": { entries: ["LIVE_PIPELINE"], why: "My Trades LIVE close (risk-reducing)" },
-  // executeInstant callers: the one-click live entry (itself a Phase B
-  // producer above) for automation and the assistant.
+  // executeInstant callers. executeInstant (lib/live/instantTrade.ts) is the
+  // one-click live entry: its own gates (Ruby authorization, one-click
+  // settings, rate limit, cooldown, per-user lock, audit rows) run first, and
+  // it reaches Phase B only through the pipeline's staged contract.
   "lib/missionExecution.ts": { entries: ["LIVE_INSTANT"], why: "mission entry (mission gate only adds strictness)" },
   "lib/missionExitManager.ts": { entries: ["LIVE_INSTANT"], why: "mission protective exit (Position Guardian work)" },
   "lib/selfTrade/agentExecutor.ts": { entries: ["LIVE_INSTANT"], why: "self-trade agent entry" },
   "routes/instantTrade.ts": { entries: ["LIVE_INSTANT"], why: "one-click instant trade API" },
   "routes/meAssistant.ts": { entries: ["LIVE_INSTANT"], why: "assistant-confirmed trade (idempotency + evidence wrapper)" },
-  // Staged DEMO producer.
-  "routes/meDemoCommands.ts": { entries: ["DEMO_QUEUE"], why: "staged demo draft / confirm / dispatch API" },
   // The Position Guardian exit door: every acting guardian rule reaches
   // execution only through it, after its registry checks (never widens a
   // stop, never opens, never adds size). Guarded by check-single-position-guardian.
   "lib/positionGuardian/manage.ts": { entries: ["GOVERNED_OPS", "LIVE_INSTANT"], why: "Position Guardian exit door (stop restore, governed management)" },
 };
+
+/** The one-click live entry: it reaches Phase B only through the staged contract. */
+export const INSTANT_ENTRY = "lib/live/instantTrade.ts";
+/** Staged steps executeInstant must take (open, close and modify), as "fn:MODE[:KIND]". */
+export const INSTANT_STAGED_CALLS = ["draftTrade:LIVE:ENTRY", "draftTrade:LIVE:OPS", "confirmTrade:LIVE", "dispatchTrade:LIVE"];
+const STAGED_FNS = ["draftTrade", "confirmTrade", "dispatchTrade"];
 
 /** Paper / legacy trade books. */
 export const PAPER_TABLES = ["paperOrdersTable", "paperTradesTable", "tradesTable"] as const;
@@ -205,7 +206,11 @@ export function checkPipelineShape(read: (key: string) => string | null): string
   for (const m of ["LIVE", "DEMO", "PAPER"]) {
     if (!new RegExp(`["']${m}["']`).test(pipe)) v.push(`${PIPELINE}: mode ${m} is not dispatched`);
   }
-  for (const call of ["createDraftCommand", "createLiveDraft", "confirmLiveCommand", "dispatchLiveCommand",
+  for (const fn of ["draftTrade", "confirmTrade", "dispatchTrade"]) {
+    if (!new RegExp(`export\\s+async\\s+function\\s+${fn}\\s*\\(`).test(pipe)) v.push(`${PIPELINE}: staged ${fn} export missing`);
+  }
+  for (const call of ["createDraftCommand", "confirmCommand", "dispatchApprovedCommand",
+    "createLiveDraft", "createLiveOpsDraft", "confirmLiveCommand", "dispatchLiveCommand",
     "submitGovernedClose", "submitGovernedModify", "openPaperOrder", "modifyPaperOrder", "closePaperOrder"]) {
     if (!new RegExp(`\\b${call}\\s*\\(`).test(pipe)) v.push(`${PIPELINE}: no longer delegates to ${call}`);
   }
@@ -235,7 +240,45 @@ export function checkPipelineShape(read: (key: string) => string | null): string
       v.push(`artifacts/api-server/src/${MAILBOX_EXCEPTION}: the DEMO close must be Risk Governor-checked before the mailbox insert`);
     }
   }
+  const instant = read(INSTANT_ENTRY);
+  if (instant == null) v.push(`artifacts/api-server/src/${INSTANT_ENTRY} missing`);
+  else {
+    const calls = stagedCalls(instant);
+    for (const c of INSTANT_STAGED_CALLS) {
+      if (!calls.has(c)) v.push(`artifacts/api-server/src/${INSTANT_ENTRY}: executeInstant must reach Phase B through the pipeline (${c} not found)`);
+    }
+  }
   return v;
+}
+
+/**
+ * Staged pipeline calls in a source file, as "fn:MODE" or "fn:MODE:KIND"
+ * (e.g. "draftTrade:LIVE:OPS"), read from the call's literal stage object.
+ */
+export function stagedCalls(source: string): Set<string> {
+  const file = ts.createSourceFile("x.ts", source, ts.ScriptTarget.Latest, true);
+  const out = new Set<string>();
+  const lit = (o: ts.ObjectLiteralExpression, name: string): string | null => {
+    for (const p of o.properties) {
+      if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === name && ts.isStringLiteralLike(p.initializer)) {
+        return p.initializer.text;
+      }
+    }
+    return null;
+  };
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && STAGED_FNS.includes(n.expression.text)) {
+      const stage = n.arguments[0];
+      const mode = stage && ts.isObjectLiteralExpression(stage) ? lit(stage, "mode") : null;
+      if (stage && mode && ts.isObjectLiteralExpression(stage)) {
+        const kind = lit(stage, "kind");
+        out.add([n.expression.text, mode, ...(kind ? [kind] : [])].join(":"));
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(file);
+  return out;
 }
 
 export function checkTradeEngineSinglePipeline(): CheckResult {

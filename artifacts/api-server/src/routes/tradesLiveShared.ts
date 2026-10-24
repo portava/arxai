@@ -28,14 +28,11 @@ import { and, eq, desc } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { db, arxLiveCommandsTable, sharedTradeAttributionTable, liveTradingAuditTable } from "@workspace/db";
 import {
-  createLiveDraft,
-  createLiveOpsDraft,
-  confirmLiveCommand,
-  dispatchLiveCommand,
   cancelLiveCommand,
   listMyLiveCommands,
   getMyLiveCommand,
 } from "../lib/live/liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipeline.js";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
 import { resolveRouting } from "../lib/adminTrading/routingResolver.js";
 import { getUserRiskProfile, isOwnerRole } from "../lib/live/userRiskProfile.js";
@@ -319,7 +316,7 @@ router.post("/trades/live-shared/validate", requireUser, async (req, res) => {
   const stopLoss = b.stopLoss != null ? Number(b.stopLoss) : null;
   const takeProfit = b.takeProfit != null ? Number(b.takeProfit) : null;
 
-  const draft = await createLiveDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId,
     commandType: "PLACE_LIVE_MARKET_ORDER",
     symbol, side,
@@ -437,7 +434,7 @@ router.post("/trades/live-shared/execute", requireUser, async (req, res) => {
       : null,
     capturedAt: new Date().toISOString(),
   };
-  const draft = await createLiveDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId,
     commandType: "PLACE_LIVE_MARKET_ORDER",
     symbol, side,
@@ -462,7 +459,7 @@ router.post("/trades/live-shared/execute", requireUser, async (req, res) => {
     res.status(409).json({ stage: "preflight", ...draft, ...envelope() });
     return;
   }
-  const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+  const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   if (!conf.ok) {
     res.status(409).json({ stage: "confirm", ...conf, commandId: draft.command.commandId, ...envelope() });
     return;
@@ -545,7 +542,7 @@ router.post("/trades/live-shared/execute", requireUser, async (req, res) => {
     return;
   }
 
-  const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+  const disp = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
 
   // Reflect dispatch outcome into the attribution row.
   try {
@@ -595,7 +592,7 @@ router.post("/trades/live-shared/positions/:ticket/close", requireUser, async (r
   });
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND", ...envelope() }); return; }
-  const draft = await createLiveOpsDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId,
     commandType: "CLOSE_LIVE_POSITION",
     brokerTicket: ticket,
@@ -605,9 +602,9 @@ router.post("/trades/live-shared/positions/:ticket/close", requireUser, async (r
     sourcePage: "TRADES_LIVE_SHARED_CLOSE",
   });
   if (!draft.ok) { res.status(409).json({ ...draft, ...envelope() }); return; }
-  const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+  const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   if (!conf.ok) { res.status(409).json({ ...conf, commandId: draft.command.commandId, ...envelope() }); return; }
-  const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+  const disp = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   res.status(disp.ok ? 200 : 409).json({ ...disp, commandId: draft.command.commandId, ...envelope() });
 });
 
@@ -631,7 +628,7 @@ router.post("/trades/live-shared/positions/:ticket/modify", requireUser, async (
   });
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND", ...envelope() }); return; }
-  const draft = await createLiveOpsDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId,
     commandType: "MODIFY_LIVE_SLTP",
     brokerTicket: ticket,
@@ -642,9 +639,9 @@ router.post("/trades/live-shared/positions/:ticket/modify", requireUser, async (
     sourcePage: "TRADES_LIVE_SHARED_MODIFY",
   });
   if (!draft.ok) { res.status(409).json({ ...draft, ...envelope() }); return; }
-  const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+  const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   if (!conf.ok) { res.status(409).json({ ...conf, commandId: draft.command.commandId, ...envelope() }); return; }
-  const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+  const disp = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   res.status(disp.ok ? 200 : 409).json({ ...disp, commandId: draft.command.commandId, ...envelope() });
 });
 

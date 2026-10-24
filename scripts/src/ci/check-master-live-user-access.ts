@@ -87,7 +87,7 @@ export function checkMasterLiveUserApprovalRequired(): CheckResult {
 
   // 5. Gate library is import-clean (no trade-placing import).
   const gateCode = stripComments(gate);
-  if (/dispatchLiveCommand|placeLiveOrderGuarded|liveCommandPipeline/.test(gateCode)) {
+  if (/dispatchLiveCommand|placeLiveOrderGuarded|liveCommandPipeline|tradeEngine\/pipeline/.test(gateCode)) {
     failures.push("userMasterLiveAccessGate.ts imports a code path that can place a trade");
   }
 
@@ -98,8 +98,8 @@ export function checkMasterLiveUserApprovalRequired(): CheckResult {
     "artifacts/api-server/src/routes/meMasterLiveAccess.ts",
   ]) {
     const src = read(f);
-    if (/\bdispatchLiveCommand\s*\(/.test(src)) {
-      failures.push(`forbidden caller invokes dispatchLiveCommand(): ${f}`);
+    if (/\b(?:dispatchLiveCommand|dispatchTrade|submitTrade)\s*\(/.test(src)) {
+      failures.push(`forbidden caller invokes dispatchLiveCommand() or the Trade Engine: ${f}`);
     }
   }
 

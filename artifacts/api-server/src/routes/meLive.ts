@@ -36,16 +36,13 @@ import {
   ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS,
 } from "../lib/live/liveArming.js";
 import {
-  createLiveDraft,
-  createLiveOpsDraft,
-  confirmLiveCommand,
-  dispatchLiveCommand,
   cancelLiveCommand,
   listMyLiveCommands,
   getMyLiveCommand,
   getOrCreateUserSettings,
   updateUserSettings,
 } from "../lib/live/liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipeline.js";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock } from "../lib/concurrency/advisoryLock.js";
 import {
@@ -234,7 +231,7 @@ router.post("/me/live/commands", requireUser, async (req, res) => {
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const b = req.body ?? {};
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.ip;
-  const result = await createLiveDraft({
+  const result = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId,
     commandType: b.commandType,
     symbol: String(b.symbol ?? ""),
@@ -254,7 +251,7 @@ router.post("/me/live/commands", requireUser, async (req, res) => {
 router.post("/me/live/commands/:commandId/confirm", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const result = await confirmLiveCommand({ userId, commandId: String(req.params.commandId ?? "") });
+  const result = await confirmTrade({ mode: "LIVE" }, { userId, commandId: String(req.params.commandId ?? "") });
   res.status(result.ok ? 200 : 409).json({ ...result, ...envelope() });
 });
 
@@ -262,7 +259,7 @@ router.post("/me/live/commands/:commandId/dispatch", requireUser, async (req, re
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const locked = await withUserSubmitLock(userId, res, () =>
-    dispatchLiveCommand({ userId, commandId: String(req.params.commandId ?? "") }));
+    dispatchTrade({ mode: "LIVE" }, { userId, commandId: String(req.params.commandId ?? "") }));
   if (!locked.ran) return;
   // Phase B: result.ok may be true (PASS path → SENT_TO_MT5_LIVE) or false
   // (BLOCKED with the exact failing gate reason). Surface 200 either way so
@@ -426,7 +423,7 @@ router.post("/me/live/positions/:ticket/close", requireUser, async (req, res) =>
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND" }); return; }
 
-  const draft = await createLiveOpsDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId, commandType: "CLOSE_LIVE_POSITION",
     brokerTicket: ticket, symbol: pos.symbol, side: pos.side as "BUY" | "SELL",
     volume: Number(pos.volume), sourcePage: "LIVE_POSITIONS_CLOSE",
@@ -438,9 +435,9 @@ router.post("/me/live/positions/:ticket/close", requireUser, async (req, res) =>
   // P0-1 — confirm + dispatch run inside ONE per-user lock scope so a second
   // close request for the same ticket cannot interleave between them.
   const locked = await withUserSubmitLock(userId, res, async () => {
-    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     if (!conf.ok) return { stage: "confirm" as const, result: conf };
-    const d = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const d = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     return { stage: "dispatch" as const, result: d };
   });
   if (!locked.ran) return;
@@ -487,7 +484,7 @@ router.post("/me/live/positions/close-all", requireUser, async (req, res) => {
         results.push({ ticket: String(pos.id), ok: false, reason: "NO_BROKER_TICKET" });
         continue;
       }
-      const draft = await createLiveOpsDraft({
+      const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
         userId, commandType: "CLOSE_LIVE_POSITION",
         brokerTicket: ticket, symbol: pos.symbol, side: pos.side as "BUY" | "SELL",
         volume: Number(pos.volume), sourcePage: "LIVE_POSITIONS_CLOSE_ALL",
@@ -496,12 +493,12 @@ router.post("/me/live/positions/close-all", requireUser, async (req, res) => {
         results.push({ ticket, ok: false, reason: (draft as { reason?: string }).reason });
         continue;
       }
-      const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+      const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
       if (!conf.ok) {
         results.push({ ticket, ok: false, reason: (conf as { reason?: string }).reason });
         continue;
       }
-      const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+      const disp = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
       const ok = (disp as { ok?: boolean }).ok === true;
       results.push({ ticket, ok, reason: ok ? undefined : ((disp as { primaryReason?: string; reason?: string }).primaryReason ?? (disp as { reason?: string }).reason) });
     }
@@ -532,7 +529,7 @@ router.post("/me/live/positions/:ticket/modify", requireUser, async (req, res) =
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND" }); return; }
 
-  const draft = await createLiveOpsDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId, commandType: "MODIFY_LIVE_SLTP",
     brokerTicket: ticket, symbol: pos.symbol, side: pos.side as "BUY" | "SELL",
     volume: Number(pos.volume), newStopLoss: newSL, newTakeProfit: newTP,
@@ -544,9 +541,9 @@ router.post("/me/live/positions/:ticket/modify", requireUser, async (req, res) =
   }
   // P0-1 — confirm + dispatch share ONE per-user lock scope.
   const locked = await withUserSubmitLock(userId, res, async () => {
-    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     if (!conf.ok) return { stage: "confirm" as const, result: conf };
-    const d = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const d = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     return { stage: "dispatch" as const, result: d };
   });
   if (!locked.ran) return;
@@ -590,7 +587,7 @@ router.post("/me/live/controlled-test-trigger", requireUser, async (req, res) =>
     return;
   }
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.ip;
-  const draft = await createLiveDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId,
     commandType: "PLACE_LIVE_MARKET_ORDER",
     symbol: "EURUSD",          // pinned
@@ -608,9 +605,9 @@ router.post("/me/live/controlled-test-trigger", requireUser, async (req, res) =>
   // sends real live money; a double-submitted controlled test must not be able
   // to interleave two dispatches of the same command.
   const locked = await withUserSubmitLock(userId, res, async () => {
-    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     if (!conf.ok) return { stage: "confirm" as const, result: conf };
-    const d = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const d = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     return { stage: "dispatch" as const, result: d };
   });
   if (!locked.ran) return;

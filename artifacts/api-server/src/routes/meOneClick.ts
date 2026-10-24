@@ -46,9 +46,7 @@ import { eq } from "drizzle-orm";
 import { loadAndEvaluateUserMasterLiveAccessGate } from "../lib/mt5/userMasterLiveAccessGate.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock } from "../lib/concurrency/advisoryLock.js";
 import { tryConsumeToken, checkSymbolCooldown, clampPerMinute } from "../lib/concurrency/rateLimit.js";
-import {
-  createLiveDraft, confirmLiveCommand, dispatchLiveCommand,
-} from "../lib/live/liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipeline.js";
 
 export const REQUIRED_TYPED_PHRASE = "ENABLE ONE CLICK TRADING";
 
@@ -476,7 +474,7 @@ router.post("/me/one-click/submit-live", requireUser, async (req: Request, res: 
 
   // Per-user advisory lock — blocks double-tap from the same user.
   const lock = await withTxAdvisoryLock(ARX_LOCK_NS.USER_SUBMIT, userId, async () => {
-    const draft = await createLiveDraft({
+    const draft = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
       userId,
       commandType: resolvedCommandType,
       symbol: body.symbol!,
@@ -491,9 +489,9 @@ router.post("/me/one-click/submit-live", requireUser, async (req: Request, res: 
       allowNoStopLossThisDraft: noSlOverride,
     });
     if (!("ok" in draft) || draft.ok !== true) return { stage: "draft" as const, result: draft };
-    const confirmed = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     if (!confirmed.ok) return { stage: "confirm" as const, result: confirmed };
-    const dispatched = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     return { stage: "dispatch" as const, result: dispatched, commandId: draft.command.commandId };
   });
   if (!lock.acquired) {

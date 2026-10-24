@@ -20,11 +20,7 @@ import { livePositionLedger, livePositionColumns } from "../positions/ledger.js"
 import { db } from "@workspace/db";
 import { userSlotAllocationTable } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
-import {
-  createLiveOpsDraft,
-  confirmLiveCommand,
-  dispatchLiveCommand,
-} from "./liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../tradeEngine/pipeline.js";
 import type { KillSwitchCloseBypass } from "./killSwitchBypass.js";
 
 export type EmergencyCloseScope =
@@ -138,7 +134,7 @@ async function closeOne(
     commandId: null,
   };
   try {
-    const draft = await createLiveOpsDraft({
+    const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
       userId: pos.userId,
       commandType: "CLOSE_LIVE_POSITION",
       brokerTicket: pos.brokerTicket,
@@ -153,10 +149,10 @@ async function closeOne(
     if (!draft.ok) return { ...base, outcome: "BLOCKED", reason: draft.reason };
     const commandId = draft.command.commandId;
 
-    const confirmed = await confirmLiveCommand({ userId: pos.userId, commandId });
+    const confirmed = await confirmTrade({ mode: "LIVE" }, { userId: pos.userId, commandId });
     if (!confirmed.ok) return { ...base, commandId, outcome: "BLOCKED", reason: confirmed.reason };
 
-    const dispatched = await dispatchLiveCommand({ userId: pos.userId, commandId });
+    const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId: pos.userId, commandId });
     if (!dispatched.ok) {
       return { ...base, commandId, outcome: "BLOCKED", reason: dispatched.reason };
     }
