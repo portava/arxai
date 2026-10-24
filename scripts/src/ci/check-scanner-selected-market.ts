@@ -89,7 +89,7 @@ export function checkScannerSelectedMarket(): CheckResult {
   // LiveTradeTicket on the client.
   // Strip comments before scanning so historical safety notes don't trip the guard.
   const routeCode = route.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
-  if (routeCode && /dispatchLiveCommand\(|dispatchTrade\(|submitTrade\(|placeLiveOrderGuarded\(|arx_live_commands/.test(routeCode)) {
+  if (routeCode && /dispatchLiveCommand\(|dispatchTrade\(|submitTrade\(|submitInstantTrade\(|placeLiveOrderGuarded\(|arx_live_commands/.test(routeCode)) {
     violations.push("scanner.ts must not dispatch or insert live commands");
   }
   for (const sec of FORBIDDEN_SECRETS) {

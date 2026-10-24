@@ -10,6 +10,162 @@ pipeline and moved the staged producers and `executeInstant` onto it. It is
 described in [Round 2](#round-2-staged-contract) below. Sections marked
 "round 1" describe PR #35.
 
+A third round (base `18b1e01`, PR #40) made the pipeline the one entry every
+producer calls: the one-click router and the caller-priced PAPER fills are
+now reached only through it. It is described in
+[Round 3](#round-3-one-entry-for-every-producer).
+
+## Round 3: one entry for every producer
+
+### What changed in this round
+
+The pipeline gained two channels next to `submitTrade` and the staged
+contract:
+
+```ts
+submitInstantTrade(args)                                  // → lib/live/instantTrade.ts executeInstant
+fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, args)   // → paperVenue.openPaperFill
+fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, args)  // → paperVenue.closePaperFill
+settlePaperTrade(args)                                    // → paperVenue.settlePaperOrder
+voidPaperTrade(orderId)                                   // → paperVenue.voidPaperOrder
+```
+
+Like the staged contract, each one passes the caller's arguments through
+unchanged and returns the delegate's result unchanged (the TypeScript types
+are taken from the delegate). They add no gate and remove none.
+
+- **One-click LIVE.** `executeInstant` keeps all of its own gates (Ruby
+  authorization, one-click settings, master-live access, rate limit, symbol
+  cooldown, the per-user lock, `prepareOnly`, its `one_click_audit` rows) and
+  still reaches Phase B through the staged contract. The import cycle
+  (`instantTrade` imports the staged contract from the pipeline) is broken by
+  loading `instantTrade` lazily inside `submitInstantTrade`, the same way the
+  pipeline already loads every venue queue.
+- **Caller-priced PAPER fills.** The venue still runs the Risk Governor
+  (venue PAPER, OPEN / CLOSE) before it books, and a refusal still returns
+  the governor's full decision (`risk.primaryReason`, `blockedBy`,
+  `auditEventId`). Build EE writes that detail into its rejection rows, so
+  it had to survive the move exactly.
+- **The guardian's stop restore** (`guardianRestoreStop` in the exit door) is
+  now a `submitTrade({ mode: position.venue, intent: "MODIFY", target:
+  { position } })`. With the position already resolved and the mode set to
+  its own venue, the pipeline goes straight to
+  `governedOps.submitGovernedModify` with the same arguments, so the
+  semantics are identical. The pipeline's result is mapped back to the
+  `GovernedOpResult` shape (`{ ok, commandId, reason }`) that `reconcile.ts`
+  reads.
+
+Producers moved onto the pipeline:
+
+| File | Before | Now |
+|---|---|---|
+| `lib/missionExecution.ts` | `executeInstant` (default executor) | `submitInstantTrade` (default executor) |
+| `lib/missionExitManager.ts` | `executeInstant` (default executor handed to the exit door) | no default of its own: the exit door's default (`submitInstantTrade`) applies. A guardian rule module may not import `tradeEngine/` |
+| `lib/selfTrade/agentExecutor.ts` | `executeInstant` | `submitInstantTrade` |
+| `routes/instantTrade.ts` | `executeInstant` (execute, close, close-all) | `submitInstantTrade` |
+| `routes/meAssistant.ts` | `executeInstant` | `submitInstantTrade` |
+| `lib/positionGuardian/manage.ts` | `executeInstant` (default executor), `submitGovernedModify` | `submitInstantTrade` (default executor), `submitTrade` MODIFY |
+| `lib/paperExecution/paperExecutionService.ts` | `openPaperFill`, `voidPaperOrder` | `fillPaperTrade` OPEN, `voidPaperTrade` |
+| `lib/paperExecution/paperExecutionMonitor.ts` | `closePaperFill`, `settlePaperOrder` | `fillPaperTrade` CLOSE, `settlePaperTrade` |
+| `routes/autoDebrief.ts` | `openPaperFill`, `settlePaperOrder` | `fillPaperTrade` OPEN, `settlePaperTrade` |
+
+Tests that inject an `executor` (the exit door's `guardianInstantManage`,
+`dispatchApprovedDraft`, `manageMissionTradeExit`) work as before; only the
+default changed.
+
+Guards tightened in this round:
+
+- `trade-engine-single-pipeline`:
+  - `ENTRY_PRODUCERS` drops from 11 entries to 2: the pipeline and its
+    `governedOps` leg. (`instantTrade.ts` owns `executeInstant` and calls only
+    the staged contract, so it needs no entry.)
+  - `LIVE_INSTANT` (`executeInstant`) and `PAPER_FILL` (the four venue fill
+    functions) are now **pipeline-only**: any other runtime file that names
+    them fails, including as a default executor value or through a dynamic
+    import, and the message names the pipeline channel to use. A separate
+    check refuses any `ENTRY_PRODUCERS` entry that grants a pipeline-only
+    entry to another file, so the allowlist cannot be widened back.
+  - The shape check requires the pipeline to export `submitInstantTrade`,
+    `fillPaperTrade`, `settlePaperTrade` and `voidPaperTrade` and to delegate
+    to `executeInstant`, `openPaperFill`, `closePaperFill`,
+    `settlePaperOrder` and `voidPaperOrder`.
+  - Stale-entry detection is unchanged. 113 fixtures, including failing
+    fixtures for a new direct `executeInstant` caller and a direct
+    `openPaperFill` caller, for each of the nine moved files.
+- `single-paper-book`: the four fill functions' caller lists are now the
+  pipeline only (60 fixtures).
+- `single-position-guardian`:
+  - `submitInstantTrade`, `fillPaperTrade`, `settlePaperTrade` and
+    `voidPaperTrade` count as execution calls.
+  - **Bug fixed:** the `EXECUTION_MODULES` pattern only matched a specifier
+    that *ended* in `tradeEngine/`, so a rule module importing
+    `../tradeEngine/pipeline.js` was not caught. It now matches any module
+    under `tradeEngine/`. The tree was already clean under the stricter rule
+    (29 fixtures).
+- `position-guardian-wired`: `guardianRestoreStop` must submit a Trade
+  Engine MODIFY on the governed position, checked inside that function's
+  body only (the old pattern could be satisfied by a call later in the
+  file), and the pipeline must still delegate MODIFY to
+  `submitGovernedModify`. New fixtures cover both.
+- `assistant-no-direct-execution`, `chart-trade-no-direct-execution`,
+  `mission-no-direct-execution`: the required router anchor is now
+  `submitInstantTrade` (a bare `executeInstant` call no longer satisfies it).
+  The mission exit's anchor is the guardian exit door
+  (`guardianInstantManage`). The mission planning/backtest isolation list
+  also forbids `submitInstantTrade`, `submitTrade`, `guardianInstantManage`
+  and `/tradeEngine/` imports. The chart-trade test now imports the guard's
+  own required list instead of keeping a copy.
+- `broker-hub-no-execution`, `backtest-no-live-execution`,
+  `master-live-bridge-binding`, `master-live-user-access`,
+  `scanner-selected-market`, `unified-readiness-no-dispatch`,
+  `fix-agent-import-boundary`: their forbidden lists now also name
+  `submitInstantTrade` (the last two also `fillPaperTrade`).
+
+New database cases:
+
+- `test:trade-engine-staged`: `submitInstantTrade` returns exactly
+  `executeInstant`'s result and writes the same `one_click_audit` rows, for a
+  demo-mode refusal and a refused live order (7 cases).
+- `test:paper-book`: `fillPaperTrade` OPEN books the same row and event as
+  `openPaperFill`; a governor refusal carries the same `blockedBy` and
+  `primaryReason` and its own audit id; CLOSE is owner-scoped and returns the
+  same P/L; settle and void are not re-governed; an unknown stage books
+  nothing (7 cases).
+
+### Behaviour changes in this round
+
+- None for any valid request: same gates, same audit rows, same results,
+  status codes and response shapes.
+- Load order only: `missionExitManager`, `meAssistant` and the paper
+  producers no longer import `instantTrade` / `paperVenue` statically. The
+  pipeline loads them on first use (`await import`, cached after that).
+- `guardianRestoreStop` now goes through two more in-process checks that it
+  always passes: the mode is in `TRADE_MODES` and equals the position's venue
+  (both by construction). A refusal from `submitGovernedModify` whose reason
+  was `null` would now read `"REFUSED"`; every refusal path in
+  `governedOps` returns a string reason, so this cannot happen today.
+- `fillPaperTrade` with an unknown stage returns
+  `{ ok: false, reason: "UNKNOWN_TRADE_MODE" }`, like the staged contract. No
+  typed caller can reach it.
+
+### What remains after this round
+
+1. **Remaining allowlist (2 entries):** the pipeline and its `governedOps`
+   leg. Both are internal to the Trade Engine.
+2. **`submitInstantTrade` and the fill channel are siblings of
+   `submitTrade`, not `submitTrade` intents.** `executeInstant` returns its
+   own `InstantTradeResult` (HTTP status, Ruby refusals, `detail`), and the
+   fills return the governor's `EnforceResult`. Folding them into
+   `submitTrade`'s `TradeResult` would change the shapes their callers read,
+   so they stay separate entries on the one module. The one-click gates still
+   live in `instantTrade.ts`, not in the pipeline.
+3. **The pipeline's own LIVE OPEN** (`submitTrade` mode LIVE) still uses the
+   staged steps directly, without the one-click gates, as the Trade Action
+   Center did before. Which entry a surface uses is unchanged.
+4. Items 2 to 5 of the round 2 list (the public staged contract, untracked
+   cancel/list/read calls, the My Trades DEMO close mailbox exception, paper
+   books / SIMULATED paths / no published score) are unchanged.
+
 ## Round 2: staged contract
 
 ### What changed in this round
@@ -112,6 +268,10 @@ the EA mailbox stays empty.
   `submitTrade`. No typed caller can reach this case.
 
 ### What remains after this round
+
+Item 1 was addressed in Round 3: every `executeInstant` caller and the
+guardian exit door now go through the pipeline, and the allowlist is down to
+2 entries.
 
 1. **Remaining allowlist (8 entries):**
    - The pipeline and its `governedOps` leg.

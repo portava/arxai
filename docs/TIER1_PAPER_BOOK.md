@@ -43,6 +43,12 @@ new:
 | `settlePaperOrder` (new) | `markToMarket` (inside the venue), the Build EE monitor (SL/TP hit), the auto-debrief fixture (forced result) | none. It is a venue fill of an order the governor already allowed, which is the rule `markToMarket` already followed |
 | `voidPaperOrder` (new) | Build EE, when it loses the `paper_executions` idempotency race | none. It rolls back a row the same request booked moment earlier (status `CANCELLED`) |
 
+Since Trade Engine round 3 (see `TIER1_TRADE_ENGINE_MODES.md`), the four
+fill functions are called only by `lib/tradeEngine/pipeline.ts`
+(`fillPaperTrade`, `settlePaperTrade`, `voidPaperTrade`). Build EE and the
+auto-debrief fixture call those pipeline functions; the caller column above
+names who reaches each function through them.
+
 `lib/paperExecution/*` and `routes/autoDebrief.ts` still keep their own
 eligibility, sizing, market-data pricing, `paper_executions` rows,
 `paper_execution_logs` and auto-debrief triggers. They no longer write
@@ -135,7 +141,8 @@ Related guards were updated:
 
 - `trade-engine-single-pipeline`: `PAPER_WRITERS` is down from 8 to 3. A
   `PAPER_FILL` entry group lists the Build EE service, the Build EE monitor
-  and the auto-debrief fixture as producers.
+  and the auto-debrief fixture as producers. (Trade Engine round 3 removed
+  those three: `PAPER_FILL` is now pipeline-only.)
 - `execution-single-entry`: the paper venue is the one GOVERNED
   `paper_orders` writer.
 - The source pins in `riskGovernorPipelines` and `postTradeDebriefSource`
@@ -180,10 +187,22 @@ Verification on an isolated local PostgreSQL database (UTC):
 1. **Owner decision on SIMULATED opens.** Should Trade Action Center and My
    Trades `SIMULATED` opens book into the PAPER venue (through `submitTrade`
    mode PAPER)?
-2. **Build EE is a direct venue producer, not a `submitTrade` caller.** It
-   prices its own fill from market data and needs the governor's rule detail
-   for its rejection rows. The pipeline's PAPER contract would need a
-   caller-priced fill intent to absorb it.
+2. **Done (Trade Engine round 3): Build EE and the QA fixture call the
+   pipeline.** The pipeline now has a caller-priced PAPER fill channel:
+   `fillPaperTrade({ mode: "PAPER", intent: "OPEN" | "CLOSE" }, args)`,
+   `settlePaperTrade(args)` and `voidPaperTrade(orderId)` in
+   `lib/tradeEngine/pipeline.ts`. They pass the caller's arguments to
+   `openPaperFill` / `closePaperFill` / `settlePaperOrder` / `voidPaperOrder`
+   unchanged and return the venue's result unchanged, including the governor's
+   full decision (`risk.primaryReason`, `blockedBy`, `auditEventId`) that
+   Build EE writes into its rejection rows. The Build EE service and monitor
+   and `routes/autoDebrief.ts` call them, and `check-single-paper-book` now
+   lists only the pipeline as a caller of the four venue fill functions.
+   What remains: this is a sibling channel of `submitTrade`, not a
+   `submitTrade` intent. `submitTrade`'s `TradeResult` does not carry the
+   governor's `EnforceResult`, and folding the fills into it would change the
+   shape Build EE reads. The fills still run their own eligibility, sizing
+   and pricing before they call the pipeline.
 3. **Two P/L sources for paper.** The Risk Governor's non-LIVE realized P/L
    reads `trades`, while the paper account balance reads `paper_orders`.
    Unifying them changes governor decisions and needs its own change.

@@ -577,8 +577,9 @@ test("D live dispatch and the demo MT5 queue call the governor before their send
     "../../lib/tradeAction/riskGovernorEnforcement.ts"]) {
     assert.match(read(rel), /enforcePreTradeRisk\(/, `${rel} calls the governor`);
   }
-  // Build EE books through the PAPER venue, whose openPaperFill runs the governor before the write.
-  assert.match(read("../../lib/paperExecution/paperExecutionService.ts"), /await openPaperFill\(\{/, "paper execution books through the governed PAPER venue");
+  // Build EE books through the Trade Engine into the PAPER venue, whose openPaperFill runs the governor before the write.
+  assert.match(read("../../lib/paperExecution/paperExecutionService.ts"), /await fillPaperTrade\(\{ mode: "PAPER", intent: "OPEN" \}, \{/, "paper execution books through the Trade Engine's PAPER fill");
+  assert.match(read("../../lib/tradeEngine/pipeline.ts"), /venue\.openPaperFill\(/, "the pipeline's PAPER fill delegates to the governed venue fill");
   const venue = read("../../lib/tradeEngine/paperVenue.ts");
   const fill = venue.slice(venue.indexOf("export async function openPaperFill"));
   assert.ok(fill.indexOf("enforcePreTradeRisk(") > 0 && fill.indexOf("enforcePreTradeRisk(") < fill.indexOf(".insert(paperOrdersTable)"),

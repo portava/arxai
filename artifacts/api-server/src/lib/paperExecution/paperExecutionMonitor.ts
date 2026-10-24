@@ -11,7 +11,9 @@
 // Live execution surfaces are NEVER touched. paper_orders and its events are
 // written only by the PAPER venue (lib/tradeEngine/paperVenue.ts): an SL/TP
 // hit is settled there (settlePaperOrder, a venue fill) and a manual close is
-// governed and booked there (closePaperFill). This file keeps paper_executions.
+// governed and booked there (closePaperFill), both reached through the Trade
+// Engine (pipeline.ts settlePaperTrade / fillPaperTrade CLOSE). This file keeps
+// paper_executions.
 
 import {
   db,
@@ -22,7 +24,7 @@ import { and, eq } from "drizzle-orm";
 import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
-import { closePaperFill, settlePaperOrder } from "../tradeEngine/paperVenue.js";
+import { fillPaperTrade, settlePaperTrade } from "../tradeEngine/pipeline.js";
 
 const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
 
@@ -122,7 +124,7 @@ export async function runPaperMonitor(opts?: {
     const status = hit === "SL" ? "CLOSED_SL" : "CLOSED_TP";
 
     // Settle the paper order in the PAPER venue (a stop/target fill).
-    await settlePaperOrder({
+    await settlePaperTrade({
       order, status, exitPrice, pnl: realized,
       eventMessage: `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${realized.toFixed(2)}`,
     });
@@ -180,7 +182,7 @@ export async function closePaperManually(orderId: number, userId: number, opts?:
     exitPrice = snapshot.mid;
   }
   // Governed (Risk Governor CLOSE, venue PAPER) and booked in the PAPER venue.
-  const closed = await closePaperFill({
+  const closed = await fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, {
     userId, order, exitPrice,
     intentRef: `paper_execution_close:${orderId}`,
     auditContext: { caller: "POST /paper-execution/close/:id", orderId, exitPriceOverride: opts?.exitPrice ?? null },

@@ -44,6 +44,10 @@ const FORBIDDEN: Array<{ rx: RegExp; why: string }> = [
     why: "executeInstant (instant-trade router) must never be called from the backtest surface",
   },
   {
+    rx: /\bsubmitInstantTrade\b/,
+    why: "submitInstantTrade (the Trade Engine's one-click channel) must never be called from the backtest surface",
+  },
+  {
     rx: /\bliveCommandPipeline\b/,
     why: "liveCommandPipeline (Phase B live dispatch) must never be imported from the backtest surface",
   },

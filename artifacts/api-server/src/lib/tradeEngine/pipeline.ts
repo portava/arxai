@@ -30,6 +30,29 @@
 // unchanged and returns the queue's own result unchanged (same type, same
 // refusal reasons), so a producer moved onto it behaves exactly as before.
 //
+// One-click LIVE channel (the instant-trade router):
+//
+//   submitInstantTrade(args) → lib/live/instantTrade.ts executeInstant
+//
+// executeInstant keeps all of its own gates (Ruby authorization, one-click
+// settings, rate limit, symbol cooldown, per-user lock, audit rows) and
+// reaches Phase B through the staged contract above. Arguments and result
+// pass through unchanged. Every producer (missions, self-trade agents, the
+// one-click route, the assistant, the Position Guardian exit door) calls
+// this, never executeInstant.
+//
+// Caller-priced PAPER fills (Build EE autopilot and monitor, operator QA
+// fixture) and venue settlement:
+//
+//   fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, args)  → openPaperFill
+//   fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, args) → closePaperFill
+//   settlePaperTrade(args)  → settlePaperOrder (stop / target hit, forced result)
+//   voidPaperTrade(orderId) → voidPaperOrder (idempotency-race rollback)
+//
+// These pass through unchanged as well: the Risk Governor runs inside the
+// venue (venue PAPER, OPEN / CLOSE) and its full decision (rule detail,
+// audit id) is returned as-is, which Build EE writes into its rejection rows.
+//
 // This module adds no gate and removes none: each mode delegates to the
 // governed path that already existed, and every refusal is returned as-is.
 // It never writes a table itself. scripts/src/ci/check-trade-engine-single-
@@ -40,6 +63,8 @@ import type { GovernedPosition } from "../positions/governedOps.js";
 import type { PaperOrderRow } from "./paperVenue.js";
 import type * as LiveQueue from "../live/liveCommandPipeline.js";
 import type * as DemoQueue from "../mt5/demoCommandQueue.js";
+import type * as Instant from "../live/instantTrade.js";
+import type * as PaperVenue from "./paperVenue.js";
 
 export const TRADE_MODES = ["LIVE", "DEMO", "PAPER"] as const;
 export type TradeMode = (typeof TRADE_MODES)[number];
@@ -173,6 +198,51 @@ export async function dispatchTrade(stage: StagedStepStage, args: LiveStepArgs |
     return queue.dispatchApprovedCommand(args as DemoDispatchArgs);
   }
   return unknownStage();
+}
+
+// ── LIVE one-click channel (instant-trade router) ─────────────────────────
+type InstantArgs = Parameters<typeof Instant.executeInstant>[0];
+
+/**
+ * One-click LIVE: delegates to executeInstant with the same arguments and
+ * returns its result unchanged. Loaded lazily: instantTrade imports this
+ * module's staged contract, so a static import here would be a cycle.
+ */
+export async function submitInstantTrade(args: InstantArgs): ReturnType<typeof Instant.executeInstant> {
+  const instant = await import("../live/instantTrade.js");
+  return instant.executeInstant(args);
+}
+
+// ── PAPER caller-priced fills and venue settlement ────────────────────────
+type PaperFillCloseArgs = Parameters<typeof PaperVenue.closePaperFill>[0];
+export type PaperFillStage = { mode: "PAPER"; intent: "OPEN" | "CLOSE" };
+
+/**
+ * Caller-priced PAPER fill: OPEN → openPaperFill, CLOSE → closePaperFill.
+ * The venue runs the Risk Governor (venue PAPER) before it books; input and
+ * result (including the governor's decision on a refusal) pass through unchanged.
+ */
+export function fillPaperTrade(stage: { mode: "PAPER"; intent: "OPEN" }, args: PaperVenue.PaperFillOpenArgs): ReturnType<typeof PaperVenue.openPaperFill>;
+export function fillPaperTrade(stage: { mode: "PAPER"; intent: "CLOSE" }, args: PaperFillCloseArgs): ReturnType<typeof PaperVenue.closePaperFill>;
+export async function fillPaperTrade(stage: PaperFillStage, args: PaperVenue.PaperFillOpenArgs | PaperFillCloseArgs): Promise<unknown> {
+  if (stage.mode === "PAPER") {
+    const venue = await import("./paperVenue.js");
+    if (stage.intent === "OPEN") return venue.openPaperFill(args as PaperVenue.PaperFillOpenArgs);
+    if (stage.intent === "CLOSE") return venue.closePaperFill(args as PaperFillCloseArgs);
+  }
+  return unknownStage();
+}
+
+/** The venue's own exit fill of an order the governor already allowed (settlePaperOrder). */
+export async function settlePaperTrade(args: Parameters<typeof PaperVenue.settlePaperOrder>[0]): Promise<void> {
+  const venue = await import("./paperVenue.js");
+  return venue.settlePaperOrder(args);
+}
+
+/** Roll back an order booked a moment ago that lost an idempotency race (voidPaperOrder). */
+export async function voidPaperTrade(orderId: number): Promise<void> {
+  const venue = await import("./paperVenue.js");
+  return venue.voidPaperOrder(orderId);
 }
 
 // ── DEMO ──────────────────────────────────────────────────────────────────

@@ -12,7 +12,8 @@
 //   3. lib/positionGuardian/ writes any table other than through
 //      logRiskEvent (no direct order, command or position writes), or submits
 //      a correction other than through the guardian's exit door and
-//      lib/positions/governedOps.ts (guardianRestoreStop → submitGovernedModify
+//      lib/positions/governedOps.ts (guardianRestoreStop → Trade Engine
+//      submitTrade MODIFY → submitGovernedModify
 //      → createLiveOpsDraft / createDraftCommand).
 // QA fixtures (__qa__, *.test.ts) and src/scripts are exempt.
 //
@@ -58,6 +59,20 @@ export function scanGuardianSource(src: string): string[] {
   return out;
 }
 
+/**
+ * guardianRestoreStop (lib/positionGuardian/manage.ts) must restore the stop
+ * as a Trade Engine MODIFY on the already-resolved governed position, which
+ * the pipeline sends to governedOps.submitGovernedModify.
+ */
+export function scanRestoreStop(manageSrc: string): string[] {
+  const src = stripComments(manageSrc);
+  // The function, up to its closing brace on a line of its own.
+  const body = /async function guardianRestoreStop\b[\s\S]*?\n\}\n/.exec(src + "\n")?.[0] ?? "";
+  return /\bsubmitTrade\(\s*\{[\s\S]*?intent:\s*"MODIFY"[\s\S]*?target:\s*\{\s*position\b/.test(body)
+    ? []
+    : ["lib/positionGuardian/manage.ts: guardianRestoreStop must submit a Trade Engine MODIFY on the governed position (submitTrade → lib/positions/governedOps.ts submitGovernedModify)"];
+}
+
 export function checkPositionGuardianWired(): CheckResult {
   const violations: string[] = [];
   for (const [file, re, what] of REQUIRED_HOOKS) {
@@ -84,11 +99,12 @@ export function checkPositionGuardianWired(): CheckResult {
   } else violations.push("lib/positionGuardian/reconcile.ts missing");
   const manage = join(API_SRC, GUARDIAN_DIR, "manage.ts");
   if (existsSync(manage)) {
-    const src = stripComments(readFileSync(manage, "utf8"));
-    if (!/async function guardianRestoreStop[\s\S]*?submitGovernedModify\(/.test(src)) {
-      violations.push("lib/positionGuardian/manage.ts: guardianRestoreStop must submit through submitGovernedModify (lib/positions/governedOps.ts)");
-    }
+    violations.push(...scanRestoreStop(readFileSync(manage, "utf8")));
   } else violations.push("lib/positionGuardian/manage.ts missing");
+  const pipeline = join(API_SRC, "lib/tradeEngine/pipeline.ts");
+  if (!existsSync(pipeline) || !/submitGovernedModify\(/.test(stripComments(readFileSync(pipeline, "utf8")))) {
+    violations.push("lib/tradeEngine/pipeline.ts: the MODIFY intent must reach governedOps.submitGovernedModify");
+  }
   const ops = join(API_SRC, "lib/positions/governedOps.ts");
   if (existsSync(ops)) {
     const src = stripComments(readFileSync(ops, "utf8"));

@@ -7,7 +7,8 @@
 //   2. Reads Build DD market data for the simulated fill (READ-ONLY)
 //   3. Validates eligibility (15+ rules)
 //   4. Books the order in the one paper book (`paper_orders`) through
-//      lib/tradeEngine/paperVenue.ts (openPaperFill: Risk Governor, then the
+//      the Trade Engine (lib/tradeEngine/pipeline.ts fillPaperTrade OPEN →
+//      lib/tradeEngine/paperVenue.ts openPaperFill: Risk Governor, then the
 //      write) — this file never writes paper_orders itself
 //   5. Records a paper_executions row keyed by decision_id (idempotent)
 //   6. Logs every step to paper_execution_logs
@@ -31,7 +32,7 @@ import { getMarketData } from "../marketData/marketDataService.js";
 import { calculatePaperPositionSize, PAPER_DEFAULTS } from "../riskGovernor/positionSizer.js";
 import { checkEligibility } from "./eligibility.js";
 import { loadEffectiveLimits } from "../riskGovernor/enforce.js";
-import { openPaperFill, voidPaperOrder } from "../tradeEngine/paperVenue.js";
+import { fillPaperTrade, voidPaperTrade } from "../tradeEngine/pipeline.js";
 import type {
   ExecuteFromDecisionOpts,
   PaperExecutionResult,
@@ -236,7 +237,7 @@ export async function executePaperFromDecision(
   //    paper_orders row — both inside the PAPER venue. Orders inherit the
   //    account owner so the owner-scoped paper sandbox, analytics and
   //    debriefs see them.
-  const booked = await openPaperFill({
+  const booked = await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, {
     userId: acct.userId, paperAccountId: acct.id,
     symbol, side: dir, lots: positionSize, fillPrice,
     stopLoss, takeProfit,
@@ -309,7 +310,7 @@ export async function executePaperFromDecision(
       .where(eq(paperExecutionsTable.decisionId, decisionId!)).limit(1))[0];
     if (racy) {
       // Roll back our just-created paper_orders row to keep the system clean.
-      await voidPaperOrder(order.id);
+      await voidPaperTrade(order.id);
       return materializeResult(racy, true);
     }
     throw err;

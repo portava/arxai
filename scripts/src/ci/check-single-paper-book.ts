@@ -60,11 +60,13 @@ export const BOOK_API: Record<string, { module: string; callers: string[] }> = {
   openPaperOrder: { module: PAPER_VENUE, callers: [PIPELINE] },
   modifyPaperOrder: { module: PAPER_VENUE, callers: [PIPELINE] },
   closePaperOrder: { module: PAPER_VENUE, callers: [PIPELINE] },
-  // Caller-priced fills and venue settlement.
-  openPaperFill: { module: PAPER_VENUE, callers: ["lib/paperExecution/paperExecutionService.ts", "routes/autoDebrief.ts"] },
-  closePaperFill: { module: PAPER_VENUE, callers: ["lib/paperExecution/paperExecutionMonitor.ts"] },
-  settlePaperOrder: { module: PAPER_VENUE, callers: ["lib/paperExecution/paperExecutionMonitor.ts", "routes/autoDebrief.ts"] },
-  voidPaperOrder: { module: PAPER_VENUE, callers: ["lib/paperExecution/paperExecutionService.ts"] },
+  // Caller-priced fills and venue settlement: also only through the pipeline
+  // (fillPaperTrade / settlePaperTrade / voidPaperTrade), which Build EE's
+  // autopilot and monitor and the operator QA fixture call.
+  openPaperFill: { module: PAPER_VENUE, callers: [PIPELINE] },
+  closePaperFill: { module: PAPER_VENUE, callers: [PIPELINE] },
+  settlePaperOrder: { module: PAPER_VENUE, callers: [PIPELINE] },
+  voidPaperOrder: { module: PAPER_VENUE, callers: [PIPELINE] },
   // Legacy simulated-trade book.
   applyPaperManagement: { module: LEGACY_BOOK, callers: [GUARDIAN_EXIT_DOOR] },
   recordLegacyExecuteTrade: { module: LEGACY_BOOK, callers: ["routes/trades.ts"] },

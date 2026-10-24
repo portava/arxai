@@ -13,10 +13,13 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { eq, inArray } from "drizzle-orm";
-import { arxLiveCommandsTable, db, mt5CommandsTable, mt5DemoCommandsTable, usersTable } from "@workspace/db";
+import {
+  arxLiveCommandsTable, db, mt5CommandsTable, mt5DemoCommandsTable, oneClickAuditTable, userOneClickSettingsTable, usersTable,
+} from "@workspace/db";
+import { executeInstant, type InstantTradeIntent } from "../../live/instantTrade.js";
 import * as liveQueue from "../../live/liveCommandPipeline.js";
 import * as demoQueue from "../../mt5/demoCommandQueue.js";
-import { confirmTrade, dispatchTrade, draftTrade } from "../pipeline.js";
+import { confirmTrade, dispatchTrade, draftTrade, submitInstantTrade } from "../pipeline.js";
 
 const EMAIL = "qa+trade-engine-staged@arx.test";
 let userId = 0;
@@ -27,6 +30,8 @@ async function deleteFixtures(): Promise<void> {
   await db.delete(mt5DemoCommandsTable).where(inArray(mt5DemoCommandsTable.userId, ids));
   await db.delete(arxLiveCommandsTable).where(inArray(arxLiveCommandsTable.userId, ids));
   await db.delete(mt5CommandsTable).where(inArray(mt5CommandsTable.userId, ids));
+  await db.delete(oneClickAuditTable).where(inArray(oneClickAuditTable.userId, ids));
+  await db.delete(userOneClickSettingsTable).where(inArray(userOneClickSettingsTable.userId, ids));
   await db.delete(usersTable).where(inArray(usersTable.id, ids));
 }
 
@@ -109,6 +114,30 @@ test("DEMO confirm / dispatch: the staged calls return exactly the queue's resul
   assert.equal(staged.command?.status, direct.command?.status);
   const rows = await demoRows();
   assert.deepEqual(rows.map((r) => r.status).sort(), [direct.command?.status, direct.command?.status].sort());
+  assert.equal((await mailboxRows()).length, 0, "nothing reaches the EA mailbox");
+});
+
+test("LIVE one-click: submitInstantTrade returns exactly executeInstant's result and writes the same audit rows", async () => {
+  const audit = async () => (await db.select().from(oneClickAuditTable).where(eq(oneClickAuditTable.userId, userId)))
+    .map((r) => [r.action, r.ip, r.userAgent, r.metadata]);
+  const run = async (intent: InstantTradeIntent) => {
+    const before = (await audit()).length;
+    const viaPipe = await submitInstantTrade({ userId, intent, ip: "203.0.113.7", ua: "qa-staged" });
+    const pipeRows = (await audit()).slice(before);
+    const direct = await executeInstant({ userId, intent, ip: "203.0.113.7", ua: "qa-staged" });
+    const directRows = (await audit()).slice(before + pipeRows.length);
+    assert.deepEqual(viaPipe, direct);
+    assert.deepEqual(pipeRows, directRows, "the same one-click audit rows, in the same order");
+    return viaPipe;
+  };
+  // Demo account mode is refused by executeInstant's own first gate (and audited).
+  const demo = await run({ source: "trade_panel", action: "BUY", accountMode: "demo", symbol: "EURUSD", volume: 0.01, stopLoss: 1.05 });
+  assert.equal(demo.ok, false);
+  assert.equal(!demo.ok && demo.error, "UNSUPPORTED_ACCOUNT_MODE_FOR_INSTANT_LIVE");
+  // A live order for a trader with one-click off and no live arming is refused by its gates.
+  const live = await run({ source: "trade_panel", action: "BUY", accountMode: "live", symbol: "EURUSD", volume: 0.01, stopLoss: 1.05 });
+  assert.equal(live.ok, false);
+  assert.equal((await liveRows()).filter((r) => r.status !== "LIVE_BLOCKED" && r.status !== "BLOCKED").length, 0, "no command is live");
   assert.equal((await mailboxRows()).length, 0, "nothing reaches the EA mailbox");
 });
 

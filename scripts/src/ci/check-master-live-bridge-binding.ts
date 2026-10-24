@@ -81,7 +81,7 @@ export function checkMasterLiveBridgeBinding(): CheckResult {
   for (const f of forbidden) {
     let src: string;
     try { src = read(f); } catch { continue; }
-    if (/\b(?:dispatchLiveCommand|dispatchTrade|submitTrade)\s*\(/.test(src)) {
+    if (/\b(?:dispatchLiveCommand|dispatchTrade|submitTrade|submitInstantTrade)\s*\(/.test(src)) {
       failures.push(`forbidden caller invokes dispatchLiveCommand() or the Trade Engine: ${f}`);
     }
   }

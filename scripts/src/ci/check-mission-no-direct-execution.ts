@@ -19,7 +19,9 @@
 //
 //   2. The two mission surfaces that DO dispatch/manage live trades
 //      (`missionExecution.ts`, `missionExitManager.ts`) must ADDITIONALLY keep
-//      the sanctioned anchors present: `executeInstant`, `source: "mission"`,
+//      the sanctioned anchors present: the router entry (`submitInstantTrade`,
+//      the Trade Engine one-click channel, for the dispatch; the guardian exit
+//      door `guardianInstantManage` for the exit), `source: "mission"`,
 //      and the originating `missionId` ownership tag (the #804 additive tag).
 //      Their loss would mean the mission path stopped routing through the
 //      router or stopped stamping its ownership.
@@ -79,11 +81,10 @@ const MISSION_DISPATCH_FILES = new Set<string>([
 
 // Sanctioned anchors the dispatch/exit surfaces MUST contain: the router entry,
 // the mission source tag, and the originating missionId ownership tag (#804).
-export const MISSION_DISPATCH_REQUIRED: Needle[] = [
-  {
-    rx: /\bexecuteInstant\b/,
-    why: "mission dispatch/exit must route through the Global Instant Trade Router (executeInstant), never a second execution path",
-  },
+// The router is reached through the Trade Engine's one-click channel
+// (lib/tradeEngine/pipeline.ts submitInstantTrade → executeInstant); calling
+// executeInstant directly is refused by check-trade-engine-single-pipeline.
+const MISSION_TAG_REQUIRED: Needle[] = [
   {
     rx: /source:\s*["']mission["']/,
     why: 'mission trade intents must be tagged source "mission" so the router routes + audits them as mission trades',
@@ -93,6 +94,26 @@ export const MISSION_DISPATCH_REQUIRED: Needle[] = [
     why: "mission trade intents must carry the originating missionId ownership tag (#804 additive tag)",
   },
 ];
+export const MISSION_DISPATCH_REQUIRED: Needle[] = [
+  {
+    rx: /\bsubmitInstantTrade\b/,
+    why: "mission dispatch must route through the Global Instant Trade Router via the Trade Engine (submitInstantTrade → executeInstant), never a second execution path",
+  },
+  ...MISSION_TAG_REQUIRED,
+];
+// The protective exit is Position Guardian work: it reaches the router only
+// through the guardian exit door (guardianInstantManage → submitInstantTrade).
+export const MISSION_EXIT_REQUIRED: Needle[] = [
+  {
+    rx: /\bguardianInstantManage\b/,
+    why: "mission exits must route through the Position Guardian exit door (guardianInstantManage → Trade Engine → executeInstant), never a second execution path",
+  },
+  ...MISSION_TAG_REQUIRED,
+];
+const REQUIRED_BY_FILE: Record<string, Needle[]> = {
+  "artifacts/api-server/src/lib/missionExecution.ts": MISSION_DISPATCH_REQUIRED,
+  "artifacts/api-server/src/lib/missionExitManager.ts": MISSION_EXIT_REQUIRED,
+};
 
 // The pure planning/feasibility/backtest surfaces that must NEVER reach the
 // live dispatch seam. `missionTestingLabService` (the api-server backtest
@@ -109,6 +130,14 @@ export const DISPATCH_SEAM_FORBIDDEN: Needle[] = [
   {
     rx: /\bexecuteInstant\b/,
     why: "planning/backtest surface must never reach the live dispatch router (executeInstant)",
+  },
+  {
+    rx: /\b(?:submitInstantTrade|submitTrade|guardianInstantManage)\b/,
+    why: "planning/backtest surface must never reach the Trade Engine or the guardian exit door",
+  },
+  {
+    rx: /["'][^"']*\/tradeEngine\/[^"']*["']/,
+    why: "planning/backtest surface must never import the Trade Engine",
   },
   {
     rx: /\bliveCommandPipeline\b/,
@@ -194,7 +223,7 @@ export function checkMissionNoDirectExecution(): CheckResult {
     }
     backendScanned++;
     const required = MISSION_DISPATCH_FILES.has(relPath)
-      ? MISSION_DISPATCH_REQUIRED
+      ? REQUIRED_BY_FILE[relPath] ?? MISSION_DISPATCH_REQUIRED
       : [];
     for (const v of scanForViolations(src, aliases, required)) {
       violations.push(`${relPath}${v}`);
@@ -262,7 +291,7 @@ export function checkMissionNoDirectExecution(): CheckResult {
     violations,
     notes: [
       `mission backend surfaces scanned: ${backendScanned}/${MISSION_BACKEND_FILES.length}`,
-      `dispatch surfaces anchored (executeInstant + source "mission" + missionId): ${MISSION_DISPATCH_FILES.size}`,
+      `dispatch surfaces anchored (submitInstantTrade / guardianInstantManage + source "mission" + missionId): ${MISSION_DISPATCH_FILES.size}`,
       `isolated planning/backtest surfaces scanned: ${isolatedScanned}`,
       `Math.random-scanned surfaces: ${randomScanned}`,
       `provenance-resolved re-export alias bindings: ${aliases.length}`,

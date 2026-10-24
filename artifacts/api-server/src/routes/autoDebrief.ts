@@ -16,7 +16,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { requireOperator } from "../lib/auth/ownerScope.js";
-import { openPaperFill, settlePaperOrder } from "../lib/tradeEngine/paperVenue.js";
+import { fillPaperTrade, settlePaperTrade } from "../lib/tradeEngine/pipeline.js";
 import { runAutoDebrief, isClosedStatus } from "../lib/autoDebriefService.js";
 
 const router = Router();
@@ -146,9 +146,10 @@ router.post("/auto-debrief/test", requireUser, requireOperator, async (req, res)
     const ENTRY = 100;
     const slBuy = b.direction === "BUY" ? ENTRY - 5 : ENTRY + 5;
     const tpBuy = b.direction === "BUY" ? ENTRY + 10 : ENTRY - 10;
-    // Booked through the PAPER venue: pre-trade Risk Governor (venue PAPER,
+    // Booked through the Trade Engine into the PAPER venue (fillPaperTrade OPEN
+    // → openPaperFill): pre-trade Risk Governor (venue PAPER,
     // origin "system", fixture quote), then the paper_orders row.
-    const booked = await openPaperFill({
+    const booked = await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, {
       userId, paperAccountId: b.paperAccountId,
       symbol: b.symbol, side: b.direction, lots: 0.01, fillPrice: ENTRY,
       stopLoss: slBuy, takeProfit: tpBuy,
@@ -175,7 +176,7 @@ router.post("/auto-debrief/test", requireUser, requireOperator, async (req, res)
     else if (b.forceResult === "LOSS")  { exitPx = ENTRY - 4 * dir;  status = "CLOSED_SL"; pnl = dir * (exitPx - ENTRY) * 0.01 * 100; }
     else if (b.forceResult === "BREAKEVEN") { exitPx = ENTRY;        status = "CLOSED_MANUAL"; pnl = 0; }
     else { status = "CANCELLED"; pnl = 0; exitPx = ENTRY; }
-    await settlePaperOrder({ order, status, exitPrice: exitPx, pnl, eventMessage: null });
+    await settlePaperTrade({ order, status, exitPrice: exitPx, pnl, eventMessage: null });
 
     // Trigger auto-debrief.
     const result = await runAutoDebrief(order.id, { triggeredBy: "test_endpoint" });

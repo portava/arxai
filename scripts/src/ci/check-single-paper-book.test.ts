@@ -53,9 +53,17 @@ passes("await db.insert(paperOrdersTable).values(row); await db.insert(paperTrad
 passes("await db.update(paperTradesTable).set({ status: 'closed' })", PAPER_JOURNAL);
 passes("await db.update(tradesTable).set({ lot: 1 })", LEGACY_BOOK);
 passes("await venue.openPaperOrder(a); await venue.closePaperOrder(b)", PIPELINE);
-passes("await openPaperFill(a); await voidPaperOrder(id)", "lib/paperExecution/paperExecutionService.ts");
-passes("await settlePaperOrder(a); await closePaperFill(b)", "lib/paperExecution/paperExecutionMonitor.ts");
-passes("await openPaperFill(a); await settlePaperOrder(b)", "routes/autoDebrief.ts");
+passes("await venue.openPaperFill(a); await venue.closePaperFill(b); await venue.settlePaperOrder(c); await venue.voidPaperOrder(d)", PIPELINE);
+// Build EE and the QA fixture reach the venue's fills only through the pipeline.
+fails("await openPaperFill(a)", "lib/paperExecution/paperExecutionService.ts");
+fails("await voidPaperOrder(id)", "lib/paperExecution/paperExecutionService.ts");
+fails("await closePaperFill(b)", "lib/paperExecution/paperExecutionMonitor.ts");
+fails("await settlePaperOrder(a)", "lib/paperExecution/paperExecutionMonitor.ts");
+fails("await openPaperFill(a)", "routes/autoDebrief.ts");
+fails("await settlePaperOrder(b)", "routes/autoDebrief.ts");
+passes('await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, a); await voidPaperTrade(id)', "lib/paperExecution/paperExecutionService.ts");
+passes('await settlePaperTrade(a); await fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, b)', "lib/paperExecution/paperExecutionMonitor.ts");
+passes('await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, a); await settlePaperTrade(b)', "routes/autoDebrief.ts");
 passes("await applyPaperManagement(id, step)", "lib/positionGuardian/manage.ts");
 passes("await recordLegacyExecuteTrade(row)", "routes/trades.ts");
 passes("await cancelOpenLegacyTrades(userId)", "routes/bot.ts");

@@ -98,7 +98,7 @@ export function checkMasterLiveUserApprovalRequired(): CheckResult {
     "artifacts/api-server/src/routes/meMasterLiveAccess.ts",
   ]) {
     const src = read(f);
-    if (/\b(?:dispatchLiveCommand|dispatchTrade|submitTrade)\s*\(/.test(src)) {
+    if (/\b(?:dispatchLiveCommand|dispatchTrade|submitTrade|submitInstantTrade)\s*\(/.test(src)) {
       failures.push(`forbidden caller invokes dispatchLiveCommand() or the Trade Engine: ${f}`);
     }
   }

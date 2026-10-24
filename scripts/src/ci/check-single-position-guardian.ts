@@ -33,9 +33,14 @@ const RULES = GUARDIAN_RULES as readonly GuardianRule[];
 /** Defines applyPaperManagement; only the exit door calls it. */
 const PAPER_BOOK = "lib/trades/paperBook.ts";
 
-/** Module specifiers a rule module may not import (value imports). */
+/**
+ * Module specifiers a rule module may not import (value imports). Any module
+ * under tradeEngine/ (the pipeline and its PAPER venue) counts: the alternative
+ * used to require the specifier to END in "tradeEngine/", so
+ * "../tradeEngine/pipeline.js" slipped through.
+ */
 const EXECUTION_MODULES =
-  /(?:tradeAction\/(?:create|confirm|route)|trades\/paperBook|positions\/governedOps|live\/liveCommandPipeline|mt5\/demoCommandQueue|mt5\/mt5CommandQueue|tradeEngine\/)(?:\.js)?$/;
+  /(?:(?:tradeAction\/(?:create|confirm|route)|trades\/paperBook|positions\/governedOps|live\/liveCommandPipeline|mt5\/demoCommandQueue|mt5\/mt5CommandQueue)(?:\.js)?$|(?:^|\/)tradeEngine\/)/;
 /** Calls that execute or persist a trade change. */
 const EXECUTION_CALLS = new Set([
   "createActionDraft", "confirmAction", "routeConfirmedAction",
@@ -43,8 +48,10 @@ const EXECUTION_CALLS = new Set([
   "createLiveOpsDraft", "createLiveDraft", "confirmLiveCommand", "dispatchLiveCommand",
   "createDraftCommand", "confirmCommand", "dispatchApprovedCommand", "queueMt5CommandWithGate",
   "applyPaperManagement",
-  // The Trade Engine (lib/tradeEngine/pipeline.ts): submitTrade and its staged contract.
+  // The Trade Engine (lib/tradeEngine/pipeline.ts): submitTrade, its staged
+  // contract, its one-click LIVE channel and its caller-priced PAPER fills.
   "submitTrade", "draftTrade", "confirmTrade", "dispatchTrade",
+  "submitInstantTrade", "fillPaperTrade", "settlePaperTrade", "voidPaperTrade",
 ]);
 const GUARDIAN_CALLS = new Set(["guardianRestoreStop", "guardianTradeActionClose", "guardianInstantManage", "guardianPaperManage"]);
 const WRITE_TABLES = new Set(["tradesTable", "arxLiveCommandsTable", "mt5DemoCommandsTable", "mt5CommandsTable"]);

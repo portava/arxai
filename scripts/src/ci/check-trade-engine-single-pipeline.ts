@@ -3,13 +3,18 @@
 // lib/tradeEngine/pipeline.ts (submitTrade) is the one entry for opening,
 // closing and modifying a trade in any mode; its staged contract
 // (draftTrade / confirmTrade / dispatchTrade) serves LIVE/DEMO flows that
-// draft now and confirm or dispatch later. It delegates to the governed
+// draft now and confirm or dispatch later; submitInstantTrade is its
+// one-click LIVE channel and fillPaperTrade / settlePaperTrade /
+// voidPaperTrade its caller-priced PAPER fills. It delegates to the governed
 // path that already exists for each mode and adds/removes no gate:
 //
 //   LIVE  → liveCommandPipeline (Phase B, the only live writer)
+//   LIVE one-click → lib/live/instantTrade executeInstant (its own gates,
+//           then Phase B through the staged contract)
 //   DEMO  → demoCommandQueue (draft → confirm → dispatch)
 //   LIVE/DEMO close & modify → lib/positions/governedOps
-//   PAPER → lib/tradeEngine/paperVenue (paper simulator book)
+//   PAPER → lib/tradeEngine/paperVenue (paper simulator book, including the
+//           caller-priced fills and venue settlement)
 //
 // This guard fails when a runtime file outside that pipeline:
 //   1. calls a venue entry point (demo queue draft/confirm/dispatch, live
@@ -24,11 +29,13 @@
 // It also checks that the pipeline still dispatches every mode, writes
 // nothing itself, and that the PAPER venue still runs the Risk Governor.
 //
-// A listed producer is a known, reviewed path that predates the pipeline
-// (callers of the executeInstant one-click entry, autopilots, legacy books).
-// A new one fails until it either goes through submitTrade / the staged
-// contract or is reviewed into this list. executeInstant itself reaches the
-// live queue only through the pipeline's staged contract (checked below).
+// The listed producers are the pipeline and its own internal legs. The
+// one-click router (executeInstant) and the caller-priced PAPER fills are
+// PIPELINE_ONLY: no file but the pipeline may call them, and no allowlist
+// entry may grant them to another file. A new direct caller fails until it
+// goes through submitTrade / the staged contract / submitInstantTrade /
+// fillPaperTrade. executeInstant itself reaches the live queue only through
+// the pipeline's staged contract (checked below).
 // Operator scripts under src/scripts, __qa__ and *.test.ts are not runtime.
 //
 // Pure source analysis (TypeScript AST): no network, no DB.
@@ -60,27 +67,44 @@ const ENTRY_OF = new Map<string, Entry>(
 
 /** Files allowed to call venue entry points directly, and why. */
 export const ENTRY_PRODUCERS: Record<string, { entries: Entry[]; why: string }> = {
-  [PIPELINE]: { entries: ["DEMO_QUEUE", "LIVE_PIPELINE", "GOVERNED_OPS", "PAPER_VENUE"], why: "the one pipeline" },
+  [PIPELINE]: {
+    entries: ["DEMO_QUEUE", "LIVE_PIPELINE", "LIVE_INSTANT", "GOVERNED_OPS", "PAPER_VENUE", "PAPER_FILL"],
+    why: "the one pipeline (submitTrade, the staged contract, submitInstantTrade, fillPaperTrade / settlePaperTrade / voidPaperTrade)",
+  },
   "lib/positions/governedOps.ts": { entries: ["DEMO_QUEUE", "LIVE_PIPELINE"], why: "the LIVE/DEMO position-op leg of the pipeline" },
-  // executeInstant callers. executeInstant (lib/live/instantTrade.ts) is the
-  // one-click live entry: its own gates (Ruby authorization, one-click
-  // settings, rate limit, cooldown, per-user lock, audit rows) run first, and
-  // it reaches Phase B only through the pipeline's staged contract.
-  "lib/missionExecution.ts": { entries: ["LIVE_INSTANT"], why: "mission entry (mission gate only adds strictness)" },
-  "lib/missionExitManager.ts": { entries: ["LIVE_INSTANT"], why: "mission protective exit (Position Guardian work)" },
-  "lib/selfTrade/agentExecutor.ts": { entries: ["LIVE_INSTANT"], why: "self-trade agent entry" },
-  "routes/instantTrade.ts": { entries: ["LIVE_INSTANT"], why: "one-click instant trade API" },
-  "routes/meAssistant.ts": { entries: ["LIVE_INSTANT"], why: "assistant-confirmed trade (idempotency + evidence wrapper)" },
-  // The Position Guardian exit door: every acting guardian rule reaches
-  // execution only through it, after its registry checks (never widens a
-  // stop, never opens, never adds size). Guarded by check-single-position-guardian.
-  "lib/positionGuardian/manage.ts": { entries: ["GOVERNED_OPS", "LIVE_INSTANT"], why: "Position Guardian exit door (stop restore, governed management)" },
-  // Paper producers that price their own fill: they book through the PAPER
-  // venue (Risk Governor on open and close; SL/TP hits are venue fills).
-  "lib/paperExecution/paperExecutionService.ts": { entries: ["PAPER_FILL"], why: "Build EE decision-driven paper autopilot open (market-data fill)" },
-  "lib/paperExecution/paperExecutionMonitor.ts": { entries: ["PAPER_FILL"], why: "Build EE monitor: SL/TP settlement and governed manual close" },
-  "routes/autoDebrief.ts": { entries: ["PAPER_FILL"], why: "operator QA fixture order (governed open, forced settlement)" },
+  // lib/live/instantTrade.ts, the one-click leg, owns LIVE_INSTANT and reaches
+  // Phase B only through the staged contract (checked below), so it needs no
+  // entry here. Missions, self-trade agents, the one-click route, the
+  // assistant and the Position Guardian exit door call submitInstantTrade;
+  // Build EE and the QA fixture call fillPaperTrade / settlePaperTrade /
+  // voidPaperTrade; the exit door's stop restore is a submitTrade MODIFY.
 };
+
+/**
+ * Entries only the pipeline may call: the one-click router (executeInstant,
+ * reached through submitInstantTrade) and the caller-priced PAPER fills
+ * (reached through fillPaperTrade / settlePaperTrade / voidPaperTrade).
+ */
+export const PIPELINE_ONLY_ENTRIES: readonly Entry[] = ["LIVE_INSTANT", "PAPER_FILL"];
+/** The pipeline's public channel for each pipeline-only venue call: export name → venue calls it delegates to. */
+export const PIPELINE_CHANNELS: Record<string, string[]> = {
+  submitInstantTrade: ["executeInstant"],
+  fillPaperTrade: ["openPaperFill", "closePaperFill"],
+  settlePaperTrade: ["settlePaperOrder"],
+  voidPaperTrade: ["voidPaperOrder"],
+};
+
+/** Allowlist sanity: no file but the pipeline may be granted a pipeline-only entry. */
+export function checkProducerList(list: Record<string, { entries: Entry[] }> = ENTRY_PRODUCERS): string[] {
+  const out: string[] = [];
+  for (const [key, p] of Object.entries(list)) {
+    if (key === PIPELINE) continue;
+    for (const e of p.entries) {
+      if (PIPELINE_ONLY_ENTRIES.includes(e)) out.push(`ENTRY_PRODUCERS: ${key} lists ${e}, which only ${PIPELINE} may call`);
+    }
+  }
+  return out;
+}
 
 /** The one-click live entry: it reaches Phase B only through the staged contract. */
 export const INSTANT_ENTRY = "lib/live/instantTrade.ts";
@@ -151,6 +175,11 @@ export function scanFile(key: string, source: string): string[] {
     const entry = ENTRY_OF.get(name);
     if (!entry) return;
     if (ENTRY_POINTS[entry].owner === key) return;
+    if (PIPELINE_ONLY_ENTRIES.includes(entry) && key !== PIPELINE) {
+      const via = Object.entries(PIPELINE_CHANNELS).find(([, calls]) => calls.includes(name))?.[0] ?? "submitTrade";
+      fail(node, `calls ${name} (${entry}) directly — only ${PIPELINE} may; use its ${via}`);
+      return;
+    }
     if (producer?.entries.includes(entry)) return;
     fail(node, `calls ${name} (${entry}) directly — submit through ${PIPELINE} (submitTrade), or review it into ENTRY_PRODUCERS`);
   }
@@ -211,9 +240,13 @@ export function checkPipelineShape(read: (key: string) => string | null): string
   for (const fn of ["draftTrade", "confirmTrade", "dispatchTrade"]) {
     if (!new RegExp(`export\\s+async\\s+function\\s+${fn}\\s*\\(`).test(pipe)) v.push(`${PIPELINE}: staged ${fn} export missing`);
   }
+  for (const fn of Object.keys(PIPELINE_CHANNELS)) {
+    if (!new RegExp(`export\\s+(?:async\\s+)?function\\s+${fn}\\s*\\(`).test(pipe)) v.push(`${PIPELINE}: ${fn} export missing`);
+  }
   for (const call of ["createDraftCommand", "confirmCommand", "dispatchApprovedCommand",
     "createLiveDraft", "createLiveOpsDraft", "confirmLiveCommand", "dispatchLiveCommand",
-    "submitGovernedClose", "submitGovernedModify", "openPaperOrder", "modifyPaperOrder", "closePaperOrder"]) {
+    "submitGovernedClose", "submitGovernedModify", "openPaperOrder", "modifyPaperOrder", "closePaperOrder",
+    ...Object.values(PIPELINE_CHANNELS).flat()]) {
     if (!new RegExp(`\\b${call}\\s*\\(`).test(pipe)) v.push(`${PIPELINE}: no longer delegates to ${call}`);
   }
   if (/\.(insert|update|delete)\s*\(\s*\w+Table\b/.test(pipe) || /@workspace\/db/.test(pipe.replace(/import\s+type[^;]*;/g, ""))) {
@@ -301,6 +334,7 @@ export function checkTradeEngineSinglePipeline(): CheckResult {
     if (ENTRY_PRODUCERS[key] && [...ids].some((i) => ENTRY_OF.has(i))) seenEntry.add(key);
     if (PAPER_WRITERS[key] && PAPER_TABLES.some((t) => ids.has(t))) seenPaper.add(key);
   }
+  violations.push(...checkProducerList());
   for (const key of Object.keys(ENTRY_PRODUCERS)) {
     if (!seenEntry.has(key)) violations.push(`stale ENTRY_PRODUCERS entry: ${key} no longer calls a venue entry point — remove it`);
   }

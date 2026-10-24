@@ -27,6 +27,13 @@ ruleFails(advisory, 'import { guardianPaperManage } from "../positionGuardian/ma
 rulePasses(acting, 'import { guardianInstantManage } from "./positionGuardian/manage.js"; await guardianInstantManage({ ruleId: "mission-exit", userId, intent, position, executor });');
 rulePasses(acting, 'import { executeInstant, type InstantTradeIntent } from "./live/instantTrade.js"; const executor = opts.executor ?? executeInstant;');
 rulePasses(acting, 'import type { GovernedPosition } from "../positions/governedOps.js";');
+// The Trade Engine's one-click channel is an execution path too: a rule leaves
+// the default executor to the exit door (which calls the pipeline).
+ruleFails(acting, 'import { submitInstantTrade } from "./tradeEngine/pipeline.js"; const executor = opts.executor ?? submitInstantTrade;');
+ruleFails(acting, "await submitInstantTrade({ userId, intent });");
+ruleFails(acting, 'const p = await import("../tradeEngine/pipeline.js"); await p.submitTrade({ mode: "LIVE", intent: "CLOSE" });');
+rulePasses(acting, 'const executor = opts.executor; await guardianInstantManage({ ruleId: "mission-exit", userId, intent, position, executor });');
+freeFails('import { livePositionLedger } from "./positions/ledger.js"; await submitInstantTrade({ userId, intent });');
 rulePasses(advisory, 'import { livePositionLedger } from "../positions/ledger.js"; await livePositionLedger.read({});');
 
 // A new management engine must be registered.

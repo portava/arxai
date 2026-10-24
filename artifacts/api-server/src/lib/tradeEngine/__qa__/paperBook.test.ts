@@ -32,6 +32,7 @@ import {
 import {
   SIMULATED_TAG, closePaperFill, openPaperFill, settlePaperOrder, voidPaperOrder, type PaperFillOpenArgs,
 } from "../paperVenue.js";
+import { fillPaperTrade, settlePaperTrade, voidPaperTrade } from "../pipeline.js";
 import { closePaperManually, runPaperMonitor } from "../../paperExecution/paperExecutionMonitor.js";
 import { cancelOpenLegacyTrades, recordLegacyExecuteTrade } from "../../trades/paperBook.js";
 
@@ -135,6 +136,73 @@ test("openPaperFill: a Risk Governor refusal books nothing and returns the decis
   assert.ok(!r.ok && r.risk.blockedBy.includes("max_position_size"), JSON.stringify(!r.ok && r.risk.blockedBy));
   assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, acct))).length, 0);
   assert.equal((await db.select().from(paperTradeEventsTable).where(eq(paperTradeEventsTable.userId, u.a))).length, 0);
+});
+
+test("Trade Engine PAPER fills: fillPaperTrade / settlePaperTrade / voidPaperTrade pass through to the venue unchanged", async () => {
+  const acct = await freshAccount(u.a);
+  const args = (over: Partial<PaperFillOpenArgs> = {}): PaperFillOpenArgs => ({
+    userId: u.a, paperAccountId: acct, symbol: SYMBOL, side: "BUY", lots: 0.1, fillPrice: PX,
+    stopLoss: 1.09, takeProfit: 1.12, decisionId: null, strategyId: "build_ee_paper_execution",
+    origin: "automation", governedEntryPrice: null,
+    quote: { bid: PX, ask: PX, at: new Date(), source: "qa_paper_book" },
+    auditContext: { caller: "QA paper book" }, placedMessage: `${SIMULATED_TAG} QA placed`, ...over,
+  });
+  // OPEN: same row and event as the venue's own fill.
+  const viaPipe = await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, args());
+  const direct = await openPaperFill(args({ symbol: SYMBOL_2 }));
+  assert.ok(viaPipe.ok && direct.ok, JSON.stringify([viaPipe, direct]));
+  const strip = (o: Record<string, unknown>) => {
+    const { id: _i, symbol: _s, createdAt: _c, updatedAt: _u, openedAt: _o, ...rest } = o;
+    return rest;
+  };
+  assert.deepEqual(strip(viaPipe.order), strip(direct.order));
+  assert.equal(viaPipe.risk.allowed, true);
+  assert.deepEqual((await events(viaPipe.order.id)).map((e) => [e.eventType, e.message]), [["PLACED", `${SIMULATED_TAG} QA placed`]]);
+
+  // A Risk Governor refusal keeps its full rule detail (Build EE's rejection rows read it).
+  const refusedPipe = await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, args({ symbol: "QAPDUSD", lots: 6 }));
+  const refusedDirect = await openPaperFill(args({ symbol: "QAPEUSD", lots: 6 }));
+  assert.ok(!refusedPipe.ok && !refusedDirect.ok);
+  assert.equal(refusedPipe.reason, "RISK_GOVERNOR_BLOCK");
+  assert.deepEqual(refusedPipe.risk.blockedBy, refusedDirect.risk.blockedBy);
+  assert.equal(refusedPipe.risk.primaryReason, refusedDirect.risk.primaryReason);
+  assert.ok(refusedPipe.risk.blockedBy.includes("max_position_size"));
+  assert.equal(typeof refusedPipe.risk.auditEventId, "number", "the refusal carries its own audit row");
+
+  // CLOSE: owner-scoped and governed exactly like closePaperFill.
+  const foreign = await fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, {
+    userId: u.b, order: viaPipe.order, exitPrice: 1.11, intentRef: "qa", auditContext: {}, eventLabel: "QA close",
+  });
+  assert.deepEqual(foreign, { ok: false, reason: "PAPER_ORDER_NOT_FOUND" });
+  const closedPipe = await fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, {
+    userId: u.a, order: viaPipe.order, exitPrice: 1.11, intentRef: `qa_close:${viaPipe.order.id}`, auditContext: { caller: "QA" }, eventLabel: "QA close",
+  });
+  const closedDirect = await closePaperFill({
+    userId: u.a, order: direct.order, exitPrice: 1.11, intentRef: `qa_close:${direct.order.id}`, auditContext: { caller: "QA" }, eventLabel: "QA close",
+  });
+  assert.deepEqual(closedPipe, closedDirect);
+  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, viaPipe.order.id)))[0]!.status, "CLOSED_MANUAL");
+
+  // Settlement and rollback: not re-governed, same columns move.
+  const s = await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, args({ symbol: "QAPFUSD" }));
+  const v = await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, args({ symbol: "QAPGUSD" }));
+  assert.ok(s.ok && v.ok);
+  const before = (await riskRows(u.a)).length;
+  await settlePaperTrade({ order: s.order, status: "CLOSED_TP", exitPrice: 1.12, pnl: 2, eventMessage: "QA tp" });
+  await voidPaperTrade(v.order.id);
+  assert.equal((await riskRows(u.a)).length, before, "no governor call for a venue fill or a rollback");
+  const [rs] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, s.order.id));
+  assert.equal(rs!.status, "CLOSED_TP");
+  assert.equal(rs!.profitLoss, 2);
+  const [rv] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, v.order.id));
+  assert.equal(rv!.status, "CANCELLED");
+  assert.equal(rv!.closedAt, null);
+
+  // An unknown stage is refused and books nothing.
+  const count = (await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, acct))).length;
+  const bad = await (fillPaperTrade as (s: unknown, a: unknown) => Promise<unknown>)({ mode: "LIVE", intent: "OPEN" }, args({ symbol: "QAPHUSD" }));
+  assert.deepEqual(bad, { ok: false, reason: "UNKNOWN_TRADE_MODE" });
+  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.paperAccountId, acct))).length, count);
 });
 
 test("closePaperFill: governed CLOSE, owner-scoped, CLOSED_MANUAL with P&L and its event", async () => {
