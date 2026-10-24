@@ -153,6 +153,7 @@ const MANUAL_ONLY = new Set<string>([
   "@workspace/scripts::test:single-position-sizer",
   "@workspace/scripts::test:single-limit-store",
   "@workspace/scripts::test:single-position-ledger",
+  "@workspace/scripts::test:single-position-guardian",
   "@workspace/scripts::test:legacy-live-state-confined",
   "@workspace/scripts::test:single-llm-gateway",
   "@workspace/scripts::test:broker-read-adapter-single-factory",

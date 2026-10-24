@@ -224,11 +224,15 @@ export type CorrectionSubmitter = (venue: GuardianVenue, userId: number, g: Gove
   takeProfit: number | null) => Promise<CorrectionResult>;
 
 export const submitGovernedStop: CorrectionSubmitter = async (venue, userId, g, stopLoss, takeProfit) => {
-  // The one governed modify path (lib/positions/governedOps.ts); the Guardian
-  // source makes the origin automation, so the Risk Governor only lets it tighten.
-  const { submitGovernedModify } = await import("../positions/governedOps.js");
-  return submitGovernedModify(userId, { venue, ticket: g.ticket, symbol: g.symbol, side: g.side, lots: g.lots },
-    stopLoss, takeProfit, GUARDIAN_SOURCE);
+  // Through the guardian's exit door to the one governed modify path
+  // (lib/positions/governedOps.ts); the Guardian source makes the origin
+  // automation, so the Risk Governor only lets it tighten.
+  const { guardianRestoreStop } = await import("./manage.js");
+  return guardianRestoreStop({
+    ruleId: "position-protection", userId,
+    position: { venue, ticket: g.ticket, symbol: g.symbol, side: g.side, lots: g.lots },
+    stopLoss, takeProfit, sourcePage: GUARDIAN_SOURCE,
+  });
 };
 
 // ── Audit ───────────────────────────────────────────────────────────────────

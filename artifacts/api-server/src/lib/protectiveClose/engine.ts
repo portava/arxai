@@ -25,9 +25,7 @@ import { getActivityStatus } from "./inactivity.js";
 import { analyzeReversal } from "./reversalSignals.js";
 import { decideProtectiveAction, type DecisionOutput } from "./decide.js";
 import { recordDecision, hasRecentAttempt } from "./journal.js";
-import { createActionDraft } from "../tradeAction/create.js";
-import { confirmAction } from "../tradeAction/confirm.js";
-import type { ActionType } from "../tradeAction/types.js";
+import { guardianTradeActionClose } from "../positionGuardian/manage.js";
 
 /** Today these are server-wide invariants and cannot be lifted at runtime. */
 const PAPER_ONLY_LOCK = true;
@@ -106,24 +104,24 @@ export async function evaluateTrade(userId: number, tradeKey: string, symbolHint
     // liveLocked above force BLOCKED. Defensive code path retained so the
     // future lock-lift is a single deliberate change, not a rewrite.
     try {
-      const actionType: ActionType = (decision.suggestedClosePercent ?? 100) >= 100 ? "CLOSE" : "PARTIAL_CLOSE";
-      const created = await createActionDraft({
+      // Position Guardian rule "protective-close": the guardian checks the
+      // request against its registry, then drafts and confirms it through the
+      // Trade Action Center.
+      const r = await guardianTradeActionClose({
+        ruleId: "protective-close",
         userId,
-        actionType,
         tradeKey,
-        requestedMode: "SIMULATED",
+        closePercent: decision.suggestedClosePercent ?? 100,
         reason: `Protective Auto-Close (policy-authorized): ${decision.reason}`,
-        source: "decision_engine",
       });
-      if (created.ok) {
-        actionId = created.action.id;
-        const confirmed = await confirmAction({ userId, actionId, liveConfirmPhrase: null });
-        attemptedClose = true;
-        if (!confirmed.ok) {
-          logger.warn({ userId, tradeKey, actionId, err: confirmed.error }, "[protective-close] confirm rejected (expected under paper-only lock)");
-        }
-      } else {
-        logger.warn({ userId, tradeKey, err: created.error }, "[protective-close] draft creation failed");
+      actionId = r.actionId;
+      attemptedClose = r.attempted;
+      if (r.attempted && r.confirmed && !r.confirmed.ok) {
+        logger.warn({ userId, tradeKey, actionId, err: r.error }, "[protective-close] confirm rejected (expected under paper-only lock)");
+      } else if (!r.authorized) {
+        logger.warn({ userId, tradeKey, refusal: r.refusal }, "[protective-close] refused by Position Guardian");
+      } else if (!r.attempted) {
+        logger.warn({ userId, tradeKey, err: r.error }, "[protective-close] draft creation failed");
       }
     } catch (e) {
       logger.error({ userId, tradeKey, err: String(e).slice(0, 200) }, "[protective-close] eligible-action attempt failed");

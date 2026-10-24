@@ -109,6 +109,7 @@
     "test:behavior-ownership-route": "node --import tsx --test --test-force-exit src/routes/__qa__/behaviorOwnershipRoute.test.ts",
     "test:position-guardian-assess": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/assess.test.ts",
     "test:position-ledger": "node --import tsx --test --test-force-exit src/lib/positions/__qa__/ledger.test.ts",
+    "test:position-guardian-manage": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/manage.test.ts",
     "test:position-guardian-reconcile": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/reconcile.test.ts",
     "test:oms-governance": "node --import tsx --test --test-force-exit src/lib/__qa__/omsGovernance.test.ts",
     "test:snapshot-ownership": "node --import tsx --test --test-force-exit src/lib/performanceCC/__qa__/snapshotOwnership.test.ts",

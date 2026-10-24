@@ -11,8 +11,9 @@
 //      bridge heartbeat's reconnect marker,
 //   3. lib/positionGuardian/ writes any table other than through
 //      logRiskEvent (no direct order, command or position writes), or submits
-//      a correction other than through lib/positions/governedOps.ts
-//      (submitGovernedModify → createLiveOpsDraft / createDraftCommand).
+//      a correction other than through the guardian's exit door and
+//      lib/positions/governedOps.ts (guardianRestoreStop → submitGovernedModify
+//      → createLiveOpsDraft / createDraftCommand).
 // QA fixtures (__qa__, *.test.ts) and src/scripts are exempt.
 //
 // Pure source analysis: no network, no DB.
@@ -77,10 +78,17 @@ export function checkPositionGuardianWired(): CheckResult {
   }
   const reconcile = join(API_SRC, GUARDIAN_DIR, "reconcile.ts");
   if (existsSync(reconcile)) {
-    if (!/submitGovernedModify\(/.test(stripComments(readFileSync(reconcile, "utf8")))) {
-      violations.push("lib/positionGuardian/reconcile.ts: corrections must go through submitGovernedModify (lib/positions/governedOps.ts)");
+    if (!/guardianRestoreStop\(/.test(stripComments(readFileSync(reconcile, "utf8")))) {
+      violations.push("lib/positionGuardian/reconcile.ts: corrections must go through guardianRestoreStop (lib/positionGuardian/manage.ts)");
     }
   } else violations.push("lib/positionGuardian/reconcile.ts missing");
+  const manage = join(API_SRC, GUARDIAN_DIR, "manage.ts");
+  if (existsSync(manage)) {
+    const src = stripComments(readFileSync(manage, "utf8"));
+    if (!/async function guardianRestoreStop[\s\S]*?submitGovernedModify\(/.test(src)) {
+      violations.push("lib/positionGuardian/manage.ts: guardianRestoreStop must submit through submitGovernedModify (lib/positions/governedOps.ts)");
+    }
+  } else violations.push("lib/positionGuardian/manage.ts missing");
   const ops = join(API_SRC, "lib/positions/governedOps.ts");
   if (existsSync(ops)) {
     const src = stripComments(readFileSync(ops, "utf8"));
