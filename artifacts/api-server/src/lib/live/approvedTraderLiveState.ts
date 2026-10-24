@@ -38,11 +38,10 @@ import {
   usersTable,
   userMasterLiveAccessTable,
   virtualTradingAccountsTable,
-  globalTradingSettingsTable,
 } from "@workspace/db";
 import { getMyArming } from "./liveArming.js";
 import { resolveRouting } from "../adminTrading/routingResolver.js";
-import { resolveLiveBrokerExecutionEnabledAsync } from "./phaseBConfig.js";
+import { loadPlatformSettings } from "../safety/platformSwitches.js";
 import { normalizeProductRole, type ProductRole } from "../auth/productRole.js";
 import { logger } from "../logger.js";
 
@@ -186,7 +185,7 @@ export async function buildApprovedTraderLiveState(
   const includeBridgeHeartbeat = opts.includeBridgeHeartbeat !== false;
 
   try {
-    const [userRow, accessRow, vAccounts, arming, settingsRow, serverLiveOn] =
+    const [userRow, accessRow, vAccounts, arming, platform] =
       await Promise.all([
         db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1).then((r) => r[0] ?? null),
         db
@@ -203,8 +202,9 @@ export async function buildApprovedTraderLiveState(
           .from(virtualTradingAccountsTable)
           .where(eq(virtualTradingAccountsTable.userId, userId)),
         getMyArming(userId),
-        db.select().from(globalTradingSettingsTable).limit(1).then((r) => r[0] ?? null),
-        resolveLiveBrokerExecutionEnabledAsync(),
+        // One read of the platform switches (lib/safety/platformSwitches):
+        // missing or unreadable settings fail closed.
+        loadPlatformSettings(),
       ]);
 
     // ---- Classification ------------------------------------------------
@@ -241,9 +241,10 @@ export async function buildApprovedTraderLiveState(
     const killSwitchEngaged = arming?.killSwitchEngaged === true;
 
     // ---- Platform posture ---------------------------------------------
-    const operatorLiveArmed = settingsRow?.liveBrokerExecutionArmed === true;
-    const emergencyKillSwitch = settingsRow?.emergencyKillSwitch !== false; // default true (fail-closed)
-    const sharedLiveTradingEnabled = settingsRow?.sharedLiveTradingEnabled === true;
+    const serverLiveOn = platform.switches.liveBrokerExecution.enabled;
+    const operatorLiveArmed = platform.switches.liveBrokerExecution.operatorArmed;
+    const emergencyKillSwitch = platform.switches.emergencyStop.engaged; // missing/unreadable → engaged (fail-closed)
+    const sharedLiveTradingEnabled = platform.config?.sharedLiveTradingEnabled === true;
 
     // ---- Risk profile -------------------------------------------------
     const approvedSymbols = Array.isArray(accessRow?.allowedSymbols)

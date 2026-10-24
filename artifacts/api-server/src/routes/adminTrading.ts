@@ -28,7 +28,8 @@ import {
 import { eq, desc, asc, and, gte, sql } from "drizzle-orm";
 import { tradingModeGate } from "@workspace/db/repositories";
 import { z } from "zod/v4";
-import { getEnvelope, getGlobalSettings } from "../lib/adminTrading/safetyEnvelope.js";
+import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
+import { loadGlobalTradingSettingsRow } from "../lib/safety/platformSwitches.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
@@ -73,7 +74,7 @@ async function writeAdminAudit(args: {
 
 router.get("/admin/trading/settings", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const settings = await getGlobalSettings();
+  const settings = await loadGlobalTradingSettingsRow();
   res.json({ ok: true, settings });
 });
 
@@ -89,7 +90,7 @@ router.post("/admin/trading/mode", async (req, res) => {
     res.status(400).json({ ok: false, error: "INVALID_BODY", details: parsed.error.message });
     return;
   }
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
 
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
@@ -117,7 +118,7 @@ router.post("/admin/trading/mode", async (req, res) => {
 
 router.post("/admin/trading/emergency-kill", async (req, res) => {
   const role = requireAdmin(req, res); if (!role) return;
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
   const reason = String((req.body as { reason?: string })?.reason ?? "").trim();
@@ -144,7 +145,7 @@ router.post("/admin/trading/emergency-kill", async (req, res) => {
 
 router.post("/admin/trading/reset-kill", async (req, res) => {
   const role = requireAdmin(req, res); if (!role) return;
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
   const reason = String((req.body as { reason?: string })?.reason ?? "").trim();
@@ -404,7 +405,7 @@ router.post("/admin/trading/routing-mode", async (req, res) => {
   const role = requireAdmin(req, res); if (!role) return;
   const parsed = routingModeSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ ok: false, error: "INVALID_BODY", details: parsed.error.message }); return; }
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
   const updated = await db.update(globalTradingSettingsTable)
@@ -432,7 +433,7 @@ router.post("/admin/trading/shared-live-enabled", async (req, res) => {
   if (role !== "OWNER") { res.status(403).json({ ok: false, error: "OWNER_REQUIRED_FOR_SHARED_LIVE" }); return; }
   const parsed = sharedLiveEnabledSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ ok: false, error: "INVALID_BODY" }); return; }
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   if (parsed.data.enabled && !before.sharedLiveConnectionId) {
     res.status(400).json({ ok: false, error: "SHARED_LIVE_MASTER_NOT_CONFIGURED" });
@@ -527,7 +528,7 @@ router.post("/admin/trading/shared-master", async (req, res) => {
   }
 
   // Wire it as the active demo or live master on the global settings.
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   const patch = wantedType === "demo"
     ? { sharedDemoConnectionId: parsed.data.isActive ? parsed.data.connectionId : null }
@@ -578,7 +579,7 @@ router.get("/admin/shared-masters", async (req, res) => {
     }));
 
   const registered = await db.select().from(sharedMasterAccountsTable);
-  const settings = await getGlobalSettings();
+  const settings = await loadGlobalTradingSettingsRow();
   res.json({
     ok: true,
     activeDemoConnectionId: settings?.sharedDemoConnectionId ?? null,

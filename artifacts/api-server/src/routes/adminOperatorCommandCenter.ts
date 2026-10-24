@@ -5,7 +5,7 @@
 //  - Admin/owner only. Same gate pattern as adminLiveTestReadiness.
 //  - Composes existing helpers (no new query logic, no schema):
 //      detectCurrentConnectedBridge, aggregateReconciliationIssues,
-//      getGlobalSettings, evaluateLivePhaseBDispatchGate inputs already
+//      loadPlatformSettings, evaluateLivePhaseBDispatchGate inputs already
 //      loaded by live-test-readiness (we reuse loadOperatorAccess shape).
 //  - Never returns: raw bridge tokens, apiKeyHash, SESSION_SECRET,
 //    MT5_BRIDGE_TOKEN, IP addresses or account numbers to non-admin
@@ -18,20 +18,18 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
-  globalTradingSettingsTable,
   userMasterLiveAccessTable,
   arxLiveCommandsTable,
-  arxLiveArmingTable,
   liveRiskDisclosureAcceptancesTable,
   mt5CommandsTable,
 } from "@workspace/db";
 import { detectCurrentConnectedBridge, maskBridgeEvidenceForUser }
   from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { aggregateReconciliationIssues } from "../lib/reconciliation/detect.js";
-import { getGlobalSettings } from "../lib/adminTrading/safetyEnvelope.js";
+import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
+import { getMyArming } from "../lib/live/liveArming.js";
 import { adminActionAuditLogTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
-import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
@@ -48,11 +46,6 @@ function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" 
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" }); return null;
   }
   return { id: sess.id, role };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function liveBrokerExecutionEnabled(): boolean {
-  return isLiveBrokerExecutionEnabledEnv();
 }
 
 router.get("/admin/operator-command-center", async (req, res) => {
@@ -77,11 +70,11 @@ router.get("/admin/operator-command-center", async (req, res) => {
       : det.latestHint ? maskBridgeEvidenceForUser(det.latestHint) : null;
 
     // C. Trading mode + master live wiring.
-    const settings = await getGlobalSettings();
-    const masterSwitch = liveBrokerExecutionEnabled();
-    const platformBridgeId = (settings as { platformMasterBridgeConnectionId?: number | null })
-      .platformMasterBridgeConnectionId ?? null;
-    const sharedLiveEnabled = !!(settings as { sharedLiveTradingEnabled?: boolean }).sharedLiveTradingEnabled;
+    // Switches from the one switch authority (unreadable → engaged / OFF).
+    const { switches, config: settings } = await loadPlatformSettings({ ifMissing: "seed" });
+    const masterSwitch = switches.liveBrokerExecution.envEnabled;
+    const platformBridgeId = settings?.platformMasterBridgeConnectionId ?? null;
+    const sharedLiveEnabled = !!settings?.sharedLiveTradingEnabled;
 
     let tradingModeLabel: string;
     if (masterSwitch && sharedLiveEnabled) tradingModeLabel = "MASTER_BRIDGE_LIVE_ENABLED";
@@ -90,12 +83,11 @@ router.get("/admin/operator-command-center", async (req, res) => {
     else tradingModeLabel = "PER_USER_BRIDGE";
 
     // D. Safety controls (read-only summary).
-    // NOTE: schema field is `emergencyKillSwitch` (default TRUE = engaged).
-    const killSwitchEngaged = !!(settings as { emergencyKillSwitch?: boolean }).emergencyKillSwitch;
+    const killSwitchEngaged = switches.emergencyStop.engaged;
     const safetyControls = {
-      platformMode: (settings as { platformMode?: string }).platformMode ?? "OFF",
+      platformMode: switches.platformMode,
       killSwitchEngaged,
-      killSwitchReason: (settings as { killSwitchReason?: string | null }).killSwitchReason ?? null,
+      killSwitchReason: switches.emergencyStop.reason,
       liveBrokerExecutionEnabled: masterSwitch,
       // Phase 10 canonical name + deprecated alias for back-compat.
       liveExecutionHardLockActive: !masterSwitch,
@@ -143,15 +135,14 @@ router.get("/admin/operator-command-center", async (req, res) => {
       db.select({ id: liveRiskDisclosureAcceptancesTable.id })
         .from(liveRiskDisclosureAcceptancesTable)
         .where(eq(liveRiskDisclosureAcceptancesTable.userId, admin.id)).limit(1),
-      db.select().from(arxLiveArmingTable)
-        .where(eq(arxLiveArmingTable.userId, admin.id)).limit(1),
+      getMyArming(admin.id),
     ]);
     const liveTestReadiness = {
       currentLiveBridgeDetected: !!det.ok,
       currentLiveBridgePrimaryReason: det.ok ? null : det.primaryReason,
       operatorDisclosureAccepted: adminDisclosure.length > 0,
-      operatorArmed: !!adminArming[0]?.isArmed,
-      operatorKillSwitchEngaged: !!adminArming[0]?.killSwitchEngaged,
+      operatorArmed: !!adminArming?.isArmed,
+      operatorKillSwitchEngaged: !!adminArming?.killSwitchEngaged,
       preflightOnly: true,
       autoFireDisabled: true,
       preflightEndpoint: "/api/admin/live-test-readiness/preflight",

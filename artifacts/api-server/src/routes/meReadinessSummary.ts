@@ -15,7 +15,7 @@
 //   - No token/secret/account-number ever in the payload
 import express, { type IRouter, Router } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
-import { db, globalTradingSettingsTable } from "@workspace/db";
+import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import {
   derivePlatformBridgeMode,
   type PlatformBridgeMode,
@@ -55,10 +55,9 @@ const PLATFORM_BLOCK_HEADLINES: Record<PlatformBridgeMode, string> = {
 router.get("/me/readiness/summary", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
 
-  const settingsRows = await db.select().from(globalTradingSettingsTable).limit(1);
-  const s = settingsRows[0];
+  const { switches, config: s } = await loadPlatformSettings();
   const platform = derivePlatformBridgeMode({
-    platformMode: s?.platformMode,
+    platformMode: switches.platformMode,
     accountRoutingMode: s?.accountRoutingMode,
     masterBridgeLiveEnabled: !!s?.masterBridgeLiveEnabled,
     sharedLiveTradingEnabled: !!s?.sharedLiveTradingEnabled,

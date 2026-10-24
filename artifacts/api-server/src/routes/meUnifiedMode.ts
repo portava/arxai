@@ -36,16 +36,12 @@ import { Router, type Request } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
 import { computeAccountShell, type AccountShellResponse } from "./meAccountShell.js";
 import { getMyArming } from "../lib/live/liveArming.js";
-import {
-  resolveLiveBrokerExecutionEnabledAsync,
-} from "../lib/live/phaseBConfig.js";
-import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
+import { readPlatformSwitches } from "../lib/safety/platformSwitches.js";
 import {
   detectCurrentConnectedBridge,
   maskBridgeEvidenceForUser,
 } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { getEnvelope, type SafetyEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
-import { db, globalTradingSettingsTable } from "@workspace/db";
 import {
   computeAccountModePrecedence,
   type CurrentAccountMode as PrecedenceMode,
@@ -190,20 +186,19 @@ router.get("/me/account-mode", requireUser, async (req: Request, res) => {
     const [
       accountShell,
       arming,
-      serverEnvOn,
-      effectiveOn,
-      globalRow,
+      switches,
     ] = await Promise.all([
       computeAccountShell(userId),
       getMyArming(userId),
-      Promise.resolve(isLiveBrokerExecutionEnabledEnv()),
-      resolveLiveBrokerExecutionEnabledAsync(),
-      db.select().from(globalTradingSettingsTable).limit(1).then((r) => r[0] ?? null),
+      readPlatformSwitches(),
     ]);
 
-    // Operator arm = effective requires env AND db arm. The pure
-    // operator-controllable bit is just the DB flag.
-    const operatorOn = globalRow?.liveBrokerExecutionArmed === true;
+    // One read of the Phase B master switch (lib/safety/platformSwitches):
+    // effective = env AND the operator's DB arm. The pure operator-
+    // controllable bit is just the DB flag.
+    const serverEnvOn = switches.liveBrokerExecution.envEnabled;
+    const effectiveOn = switches.liveBrokerExecution.enabled;
+    const operatorOn = switches.liveBrokerExecution.operatorArmed;
 
     const liveExecutionArmed = arming?.isArmed === true;
     const sharedMasterAttached = accountShell.notes.sharedMasterAccountAssigned === true;

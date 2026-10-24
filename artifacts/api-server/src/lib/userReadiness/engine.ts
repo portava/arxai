@@ -20,8 +20,7 @@ import {
 } from "@workspace/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { getMyArming } from "../live/liveArming.js";
-import { loadTradingHalt } from "../safety/tradingHalt.js";
-import { getGlobalSettings } from "../adminTrading/safetyEnvelope.js";
+import { venueTradingVerdict } from "../safety/tradingHalt.js";
 
 export type ReadinessStatusValue = "pass" | "fail" | "warning" | "blocked" | "not_required";
 export type AccountRoutingMode = "USER_OWNED_MT5" | "SHARED_MASTER_MT5";
@@ -99,12 +98,12 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
   //
   // `systemLiveHardStop` = blocks live for EVERYONE, including an approved +
   // armed trader. An unreadable switch or settings row counts as a stop.
-  const [liveHalt, globalSettings] = await Promise.all([
-    loadTradingHalt({ userId, venue: "LIVE" }).catch(() => ({ engaged: true })),
-    getGlobalSettings(),
-  ]);
-  const liveVenueOpen = !!globalSettings?.liveEnabled && String(globalSettings?.platformMode ?? "").toUpperCase() === "LIVE";
-  const systemLiveHardStop = liveHalt.engaged || !liveVenueOpen;
+  // One read: lib/safety/tradingHalt venueTradingVerdict (venue switch AND
+  // every stop switch).
+  const liveVerdict = await venueTradingVerdict({ userId, venue: "LIVE" });
+  const liveHalt = liveVerdict.halt;
+  const liveVenueOpen = liveVerdict.venueOpen;
+  const systemLiveHardStop = !liveVerdict.allowed;
   // The legacy blanket "this build is paper-only" mode no longer exists; per-
   // trader gates (approval, arming, verified live account, disclosure) decide.
   const systemPaperOnlyMode = false;
@@ -190,7 +189,7 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
     "pass",
     ["paper", "demo", "live"],
     paperOnlyHardLock
-      ? `Live trading is stopped platform-wide: ${(liveHalt as { reason?: string | null }).reason ?? (liveVenueOpen ? "a stop switch is engaged" : "the live venue is switched off by the admin")}.`
+      ? `Live trading is stopped platform-wide: ${liveHalt.reason ?? (liveVenueOpen ? "a stop switch is engaged" : "the live venue is switched off by the admin")}.`
       : "No platform-wide stop is engaged. Live still needs your approval, arming, a verified live account and the live disclosure.",
     null,
     null,

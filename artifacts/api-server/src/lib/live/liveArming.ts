@@ -383,6 +383,11 @@ export async function getMyArming(userId: number) {
   return rows[0] ?? null;
 }
 
+/** Every trader's arming flag, for fleet views (operator cockpit). Read-only. */
+export async function listArmingFlags(): Promise<Array<{ userId: number; isArmed: boolean }>> {
+  return db.select({ userId: arxLiveArmingTable.userId, isArmed: arxLiveArmingTable.isArmed }).from(arxLiveArmingTable);
+}
+
 export async function armLiveForUser(input: LiveArmingInput & { ip?: string }) {
   const gate = await evaluateLiveArmingGate(input);
   if (!gate.allPassed) {

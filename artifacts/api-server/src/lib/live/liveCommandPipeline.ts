@@ -2878,7 +2878,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // bridge-binding rule. When PASS, we override the bridge selection
   // below with the bound bridge so pickupNextLiveCommand and
   // recordLiveCommandResult both validate against the same row.
-  const gtsRows = await db.select().from(globalTradingSettingsTable).limit(1);
+  const gtsRows = await db.select({ accountRoutingMode: globalTradingSettingsTable.accountRoutingMode }).from(globalTradingSettingsTable).limit(1);
   const gts = gtsRows[0] ?? null;
   const routingMode = (gts?.accountRoutingMode as "USER_OWNED_MT5" | "SHARED_MASTER_MT5") ?? "USER_OWNED_MT5";
   let masterBoundBridgeId: number | null = null;

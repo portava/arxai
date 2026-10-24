@@ -24,11 +24,11 @@ import {
   userMasterLiveAccessTable,
   performanceDailyTable,
   paperTradesTable,
-  globalTradingSettingsTable,
   userTradingPermissionsTable,
   userSlotAllocationTable,
 } from "@workspace/db/schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEffectiveTradingGovernance } from "../lib/governance/effectiveGovernance.js";
 import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
@@ -133,14 +133,10 @@ export async function computeAccountShell(
     //    seeds a fail-closed row on first read (a write-on-read side effect).
     //    A user-facing GET must never mutate state, so we SELECT both
     //    singletons directly. Missing rows fall back to safe defaults.
-    const [globalRows, permRows, mt5Rows, allocRows] = await Promise.all([
-      db.select({
-        platformMode: globalTradingSettingsTable.platformMode,
-        accountRoutingMode: globalTradingSettingsTable.accountRoutingMode,
-      })
-        .from(globalTradingSettingsTable)
-        .orderBy(asc(globalTradingSettingsTable.id))
-        .limit(1),
+    //    The platform mode comes from the one switch authority, which never
+    //    seeds (ifMissing defaults to fail_closed → OFF).
+    const [platform, permRows, mt5Rows, allocRows] = await Promise.all([
+      loadPlatformSettings(),
       db.select({
         accountRoutingOverride: userTradingPermissionsTable.accountRoutingOverride,
         tradingMode: userTradingPermissionsTable.tradingMode,
@@ -169,15 +165,14 @@ export async function computeAccountShell(
         .where(eq(userSlotAllocationTable.userId, userId))
         .limit(1),
     ]);
-    const globalRow = globalRows[0];
     const globalRoutingMode: "USER_OWNED_MT5" | "SHARED_MASTER_MT5" =
-      globalRow?.accountRoutingMode === "SHARED_MASTER_MT5" ? "SHARED_MASTER_MT5" : "USER_OWNED_MT5";
+      platform.config?.accountRoutingMode === "SHARED_MASTER_MT5" ? "SHARED_MASTER_MT5" : "USER_OWNED_MT5";
     const override = String(permRows[0]?.accountRoutingOverride ?? "inherit").toLowerCase();
     const routingMode: "USER_OWNED_MT5" | "SHARED_MASTER_MT5" =
       override === "user_owned_mt5" ? "USER_OWNED_MT5"
         : override === "shared_master_mt5" ? "SHARED_MASTER_MT5"
         : globalRoutingMode;
-    const platformMode = String(globalRow?.platformMode ?? "OFF").toUpperCase();
+    const platformMode = platform.switches.platformMode;
     const mt5AccountType = String(mt5Rows[0]?.accountType ?? "").toLowerCase();
     const tradingMode: "DISABLED" | "SIMULATED" | "DEMO" | "LIVE" =
       platformMode === "LIVE" ? "LIVE"

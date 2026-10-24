@@ -108,7 +108,10 @@ router.post("/admin/live/pin-master-bridge", async (req, res) => {
     });
     return;
   }
-  const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0];
+  const settingsRow = (await db.select({
+    id: globalTradingSettingsTable.id,
+    platformMasterBridgeConnectionId: globalTradingSettingsTable.platformMasterBridgeConnectionId,
+  }).from(globalTradingSettingsTable).limit(1))[0];
   if (!settingsRow) { res.status(500).json({ ok: false, error: "SETTINGS_ROW_MISSING" }); return; }
   const before = { platformMasterBridgeConnectionId: settingsRow.platformMasterBridgeConnectionId };
   await db.transaction(async (tx) => {

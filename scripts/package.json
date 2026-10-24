@@ -313,6 +313,7 @@
     "test:single-limit-store": "tsx ./src/ci/check-single-limit-store.ts && tsx ./src/ci/check-single-limit-store.test.ts",
     "test:legacy-live-state-confined": "tsx ./src/ci/check-legacy-live-state-confined.ts && tsx ./src/ci/check-legacy-live-state-confined.test.ts",
     "test:single-llm-gateway": "tsx ./src/ci/check-single-llm-gateway.ts && tsx ./src/ci/check-single-llm-gateway.test.ts",
+    "test:single-safety-switch-source": "tsx ./src/ci/check-single-safety-switch-source.ts && tsx ./src/ci/check-single-safety-switch-source.test.ts",
     "test:broker-read-adapter-single-factory": "tsx ./src/ci/check-broker-read-adapter-single-factory.ts && tsx ./src/ci/check-broker-read-adapter-single-factory.test.ts",
     "test:single-broker-state-source": "tsx ./src/ci/check-single-broker-state-source.ts && tsx ./src/ci/check-single-broker-state-source.test.ts",
     "test:execution-single-entry": "tsx ./src/ci/check-execution-single-entry.ts && tsx ./src/ci/check-execution-single-entry.test.ts",

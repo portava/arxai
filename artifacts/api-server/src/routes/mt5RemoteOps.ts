@@ -24,12 +24,12 @@ import {
   eaUpdateManifestTable,
   eaUpdateReportTable,
   arxLiveCommandsTable,
-  arxLiveArmingTable,
   EA_UPDATE_REPORT_PHASES,
   EA_UPDATE_REPORT_OUTCOMES,
 } from "@workspace/db";
 import { z } from "zod/v4";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
+import { getMyArming } from "../lib/live/liveArming.js";
 import {
   normaliseCapabilities,
   isFeatureSupported,
@@ -226,11 +226,7 @@ router.get("/mt5/update-check", bridgeAuthPerUserOnly, async (req: AugReq, res) 
     .limit(1);
 
   // Gate inputs — read the REAL safety state.
-  const [arming] = await db
-    .select()
-    .from(arxLiveArmingTable)
-    .where(eq(arxLiveArmingTable.userId, userId))
-    .limit(1);
+  const arming = await getMyArming(userId);
 
   const openPositions = await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", limit: 1 });
 

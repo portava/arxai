@@ -12,12 +12,12 @@
 import { getConnection, getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
-  globalTradingSettingsTable,
   userTradingPermissionsTable,
   sharedMasterAccountsTable,
 } from "@workspace/db/schema";
-import { eq, asc, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { logger } from "../logger.js";
+import { getGlobalTradingConfig, loadPlatformSettings, type GlobalTradingConfig } from "../safety/platformSwitches.js";
 
 export type PlatformMode = "OFF" | "SIMULATED" | "DEMO" | "LIVE";
 export type UserTradingMode = "DISABLED" | "SIMULATED" | "DEMO" | "LIVE";
@@ -93,19 +93,14 @@ const FAIL_CLOSED: SafetyEnvelope = {
 // engaging the kill switch instantly reverts to fail-closed.
 import { BROKER_PLACEMENT_LAYER_ENABLED } from "./brokerPlacement.js";
 
-export async function getGlobalSettings() {
-  try {
-    const rows = await db.select().from(globalTradingSettingsTable)
-      .orderBy(asc(globalTradingSettingsTable.id)).limit(1);
-    if (rows[0]) return rows[0];
-    // Seed the singleton from the schema defaults if missing: trading
-    // available, emergency stop released (owner decision 2026-10-24).
-    const inserted = await db.insert(globalTradingSettingsTable).values({}).returning();
-    return inserted[0]!;
-  } catch (err) {
-    logger.warn({ err: String(err) }, "global_trading_settings read failed; using fail-closed default");
-    return null;
-  }
+/**
+ * The global settings WITHOUT the safety switches (routing, shared master,
+ * policy flags). Seeds the singleton when missing; null when unreadable.
+ * The switches (platform mode, venue enables, emergency stop, live arm) are
+ * read only through lib/safety/platformSwitches.ts.
+ */
+export async function getGlobalSettings(): Promise<GlobalTradingConfig | null> {
+  return getGlobalTradingConfig();
 }
 
 export async function getUserPermissions(userId: number) {
@@ -135,13 +130,15 @@ async function getUserAccountType(userId: number): Promise<AccountType> {
 export async function getEnvelope(userId: number | null | undefined): Promise<SafetyEnvelope> {
   if (!userId || userId <= 0) return FAIL_CLOSED;
 
-  const [g, p, userOwnedAccountType] = await Promise.all([
-    getGlobalSettings(),
+  const [settings, p, userOwnedAccountType] = await Promise.all([
+    loadPlatformSettings({ ifMissing: "seed" }),
     getUserPermissions(userId),
     getUserAccountType(userId),
   ]);
 
-  if (!g) return FAIL_CLOSED;
+  const g = settings.config;
+  const sw = settings.switches;
+  if (!g || !sw.readable) return FAIL_CLOSED;
 
   // Phase 3.5 — when this user is routed through a shared master, the
   // effective broker is the master, not their personal MT5 connection. The
@@ -162,7 +159,7 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
     // actually approve it. The order guard remains authoritative for
     // execution; this is defence-in-depth so the assistant/UI banner does
     // not overstate eligibility.
-    const pm = (g.platformMode as PlatformMode) ?? "OFF";
+    const pm: PlatformMode = sw.platformMode;
     const canBeLive = pm === "LIVE" && !!g.sharedLiveTradingEnabled && !!g.sharedLiveConnectionId;
     const candidateConnId = canBeLive ? g.sharedLiveConnectionId : g.sharedDemoConnectionId;
     const wantedType: AccountType | null = canBeLive ? "live" : g.sharedDemoConnectionId ? "demo" : null;
@@ -194,10 +191,10 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
     }
   }
 
-  const emergencyKillSwitch = !!g.emergencyKillSwitch;
-  const platformMode = (g.platformMode as PlatformMode) ?? "OFF";
-  const globalLiveEnabled = !!g.liveEnabled && platformMode === "LIVE";
-  const globalDemoEnabled = !!g.demoEnabled && (platformMode === "DEMO" || platformMode === "LIVE");
+  const emergencyKillSwitch = sw.emergencyStop.engaged;
+  const platformMode: PlatformMode = sw.platformMode;
+  const globalLiveEnabled = sw.venueOpen.LIVE;
+  const globalDemoEnabled = sw.venueOpen.DEMO;
 
   // Phase 3.5 routing shared across early-return paths.
   const globalRoutingEarly: AccountRoutingMode =

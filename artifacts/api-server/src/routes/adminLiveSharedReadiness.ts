@@ -26,7 +26,6 @@ import {
   globalTradingSettingsTable,
   adminActionAuditLogTable,
   arxLiveCommandsTable,
-  arxLiveArmingTable,
   userMasterLiveAccessTable,
   liveRiskDisclosureAcceptancesTable,
 } from "@workspace/db";
@@ -36,7 +35,9 @@ import {
   MIN_LIVE_EA_VERSION,
   LIVE_HEARTBEAT_MAX_AGE_SEC,
 } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
-import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
+import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
+import { loadPlatformSettings, readPlatformSwitches } from "../lib/safety/platformSwitches.js";
+import { getMyArming } from "../lib/live/liveArming.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
 import {
   detectCurrentConnectedBridge,
@@ -138,12 +139,14 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
   if (!admin) return;
 
   try {
-  const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
+  // Switches from the one switch authority (lib/safety/platformSwitches);
+  // missing/unreadable settings read as OFF, stop engaged, not armed.
+  const { switches: sw, config: settingsRow } = await loadPlatformSettings();
   const masterSwitchEnvOnly = liveBrokerExecutionEnabled();
-  // Effective master switch = env OR DB-armed. The DB flag is the admin-
+  // Effective master switch = env AND DB-armed. The DB flag is the admin-
   // controllable arm switch; the env var remains a hard kill override.
-  const masterSwitch = resolveLiveBrokerExecutionEnabled(settingsRow);
-  const liveBrokerExecutionArmedDb = settingsRow?.liveBrokerExecutionArmed === true;
+  const masterSwitch = sw.liveBrokerExecution.enabled;
+  const liveBrokerExecutionArmedDb = sw.liveBrokerExecution.operatorArmed;
 
   // Master live bridge — detector + gate
   const detector = await detectCurrentConnectedBridge();
@@ -254,7 +257,7 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
     after: {
       arxLiveCommandsCount: Number(liveCount[0]?.n ?? 0),
       masterSwitch,
-      platformMode: settingsRow?.platformMode ?? "OFF",
+      platformMode: sw.platformMode,
       accountRoutingMode: settingsRow?.accountRoutingMode ?? "USER_OWNED_MT5",
     },
   });
@@ -275,18 +278,18 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
       // from "set via Replit Secret env var" (env is a hard-kill override).
       serverMasterSwitchEnvOnly: masterSwitchEnvOnly,
       liveBrokerExecutionArmedDb,
-      liveBrokerExecutionArmedAt: settingsRow?.liveBrokerExecutionArmedAt ?? null,
-      liveBrokerExecutionArmedBy: settingsRow?.liveBrokerExecutionArmedBy ?? null,
-      liveBrokerExecutionArmedBridgeId: settingsRow?.liveBrokerExecutionArmedBridgeId ?? null,
-      platformMode: settingsRow?.platformMode ?? "OFF",
-      liveEnabled: settingsRow?.liveEnabled ?? false,
+      liveBrokerExecutionArmedAt: sw.liveBrokerExecution.armedAt,
+      liveBrokerExecutionArmedBy: sw.liveBrokerExecution.armedBy,
+      liveBrokerExecutionArmedBridgeId: sw.liveBrokerExecution.armedBridgeId,
+      platformMode: sw.platformMode,
+      liveEnabled: sw.venueEnabled.LIVE,
       accountRoutingMode: settingsRow?.accountRoutingMode ?? "USER_OWNED_MT5",
       sharedLiveTradingEnabled: settingsRow?.sharedLiveTradingEnabled ?? false,
       masterBridgeLiveEnabled: settingsRow?.masterBridgeLiveEnabled ?? false,
       complianceReviewFlag: settingsRow?.complianceReviewFlag ?? false,
-      emergencyKillSwitch: settingsRow?.emergencyKillSwitch ?? true,
-      killSwitchEngagedAt: settingsRow?.killSwitchEngagedAt ?? null,
-      killSwitchReason: settingsRow?.killSwitchReason ?? null,
+      emergencyKillSwitch: sw.emergencyStop.engaged,
+      killSwitchEngagedAt: sw.emergencyStop.engagedAt,
+      killSwitchReason: sw.emergencyStop.reason,
     },
     liveAccount: {
       pinnedBridge: bridgeForUi,
@@ -436,8 +439,9 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
   const detector = await detectCurrentConnectedBridge();
   const bridgeGate = await loadAndEvaluateMasterLiveBridgeGate();
 
-  const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
-  const masterSwitch = resolveLiveBrokerExecutionEnabled(settingsRow);
+  // Switches from the one switch authority (missing/unreadable → strict).
+  const sw = await readPlatformSwitches();
+  const masterSwitch = sw.liveBrokerExecution.enabled;
 
   // Run the 16-gate Phase B evaluator from the operator's own perspective so
   // the response shows exactly which gates would block a real dispatch right
@@ -451,13 +455,7 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
         .where(eq(userMasterLiveAccessTable.userId, admin.id))
         .limit(1)
     )[0] ?? null;
-    const arming = (
-      await db
-        .select()
-        .from(arxLiveArmingTable)
-        .where(eq(arxLiveArmingTable.userId, admin.id))
-        .limit(1)
-    )[0] ?? null;
+    const arming = await getMyArming(admin.id);
     const disclosure =
       (
         await db
@@ -480,11 +478,11 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
     const realisedDailyLossUsd = Math.max(0, -Number(realisedToday[0]?.pnl ?? 0));
     const input: LivePhaseBGateInput = {
       liveBrokerExecutionEnabled: masterSwitch,
-      globalLiveEnabled: settingsRow?.liveEnabled ?? false,
+      globalLiveEnabled: sw.venueEnabled.LIVE,
       userLiveApproved: access?.approvedForMasterLive ?? false,
       userArmed: arming?.isArmed ?? false,
       killSwitchEngaged:
-        (arming?.killSwitchEngaged ?? false) || (settingsRow?.emergencyKillSwitch ?? true) === true,
+        (arming?.killSwitchEngaged ?? false) || sw.emergencyStop.engaged,
       bridgeAccountType: detector.bridge.accountType ?? null,
       bridgeHeartbeatAgeSec: detector.bridge.heartbeatAgeSec,
       bridgeEaVersion: detector.bridge.eaVersion,
@@ -807,9 +805,12 @@ router.post("/admin/live-shared/arm-live-execution", async (req, res) => {
 
   const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
   if (!settingsRow) { res.status(500).json({ ok: false, error: "SETTINGS_ROW_MISSING" }); return; }
+  // The switch preconditions come from the one switch authority (strictest
+  // row wins); the raw row above is only the write target and audit snapshot.
+  const sw = await readPlatformSwitches();
 
   // Kill switch trumps everything.
-  if (settingsRow.emergencyKillSwitch === true) {
+  if (sw.emergencyStop.engaged) {
     res.status(409).json({
       ok: false, error: "KILL_SWITCH_ACTIVE",
       detail: "Emergency kill switch is engaged. Release it before arming live execution.",
@@ -891,9 +892,9 @@ router.post("/admin/live-shared/arm-live-execution", async (req, res) => {
     { id: "routing_shared", ok: settingsRow.accountRoutingMode === "SHARED_MASTER_MT5" },
     { id: "master_bridge_mode_live", ok: settingsRow.masterBridgeLiveEnabled === true },
     { id: "shared_live_enabled", ok: settingsRow.sharedLiveTradingEnabled === true },
-    { id: "platform_mode_live", ok: settingsRow.platformMode === "LIVE" },
-    { id: "live_enabled", ok: settingsRow.liveEnabled === true },
-    { id: "kill_released", ok: settingsRow.emergencyKillSwitch === false },
+    { id: "platform_mode_live", ok: sw.platformMode === "LIVE" },
+    { id: "live_enabled", ok: sw.venueEnabled.LIVE },
+    { id: "kill_released", ok: sw.readable && !sw.emergencyStop.engaged },
     { id: "approved_users", ok: approvedCount > 0 },
     { id: "user_limits", ok: approvedWithCaps > 0 && approvedWithCaps === approvedCount },
   ];

@@ -30,7 +30,7 @@ import {
 import { and, eq, gte, ne } from "drizzle-orm";
 import { getStatus as getSafetyStatus } from "../safetyCore.js";
 import { resolveRouting } from "../adminTrading/routingResolver.js";
-import { getGlobalSettings } from "../adminTrading/safetyEnvelope.js";
+import { readPlatformSwitches } from "../safety/platformSwitches.js";
 import { resolveUserTrade } from "../trades/resolveTrade.js";
 import { enforceRiskGovernor } from "./riskGovernorEnforcement.js";
 import type { GuardChainResult, GuardCheckResult } from "./types.js";
@@ -117,13 +117,13 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
   if (safety.killSwitchEngaged) return fail("kill_switch", "emergency stop is disengaged", "Emergency stop is engaged. No trade actions can be confirmed.");
   pass("kill_switch", "emergency stop is disengaged");
 
-  // The platform mode is the admin's global_trading_settings row, the same
-  // reading the venue queues use (safetyEnvelope). Unreadable → fail closed.
-  const g = input.requestedMode === "SIMULATED" ? null : await getGlobalSettings();
-  const platformMode = String(g?.platformMode ?? "").toUpperCase();
+  // The platform venue switch, read through the one switch authority
+  // (lib/safety/platformSwitches), the same reading the venue queues use
+  // (safetyEnvelope). Unreadable → fail closed.
+  const sw = input.requestedMode === "SIMULATED" ? null : await readPlatformSwitches({ ifMissing: "seed" });
   const modeOk = input.requestedMode === "SIMULATED"
-    || (input.requestedMode === "DEMO" && !!g?.demoEnabled && (platformMode === "DEMO" || platformMode === "LIVE"))
-    || (input.requestedMode === "LIVE" && !!g?.liveEnabled && platformMode === "LIVE");
+    || (input.requestedMode === "DEMO" && !!sw?.venueOpen.DEMO)
+    || (input.requestedMode === "LIVE" && !!sw?.venueOpen.LIVE);
   if (!modeOk) return fail("platform_mode", "platform trading mode allows this action", `Platform mode does not allow ${input.requestedMode} actions right now.`);
   pass("platform_mode", "platform trading mode allows this action");
 

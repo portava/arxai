@@ -84,7 +84,15 @@ export async function resolveRouting(args: ResolveRoutingArgs): Promise<RoutingD
   }
 
   try {
-    const [g] = await db.select().from(globalTradingSettingsTable).limit(1);
+    // Routing config only; the safety switches are read through
+    // lib/safety/platformSwitches.ts by the envelope and guard chain.
+    const [g] = await db.select({
+      accountRoutingMode: globalTradingSettingsTable.accountRoutingMode,
+      sharedLiveConnectionId: globalTradingSettingsTable.sharedLiveConnectionId,
+      sharedDemoConnectionId: globalTradingSettingsTable.sharedDemoConnectionId,
+      sharedLiveTradingEnabled: globalTradingSettingsTable.sharedLiveTradingEnabled,
+      sharedMasterNettingMode: globalTradingSettingsTable.sharedMasterNettingMode,
+    }).from(globalTradingSettingsTable).limit(1);
     if (!g) {
       return { ...FAIL, effectiveRoutingMode: "USER_OWNED_MT5", blockReason: "NO_GLOBAL_SETTINGS" };
     }

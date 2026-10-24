@@ -17,11 +17,11 @@ import {
   paperOrdersTable,
   riskGovernorEvaluationsTable,
   mt5CommandsTable,
-  safetyCoreTable,
 } from "@workspace/db";
 import { desc, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { auditEvent } from "./audit.js";
+import { readSafetyCoreSwitch } from "../safety/platformSwitches.js";
 import { patchConfig, getConfig } from "./config.js";
 import { marketDataHealthCheck } from "../marketData/marketDataService.js";
 
@@ -302,12 +302,12 @@ async function probeEndpoints(): Promise<EndpointStatus> {
 async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promise<SafetyStatus> {
   const warnings: string[] = [];
   const hardBlocks: Array<{ code: string; severity: string; message: string }> = [];
-  // Read safetyCore (informational only — MM never writes here)
-  const sc = await db.select().from(safetyCoreTable).limit(1).catch(() => []);
-  const row = sc[0] as (typeof safetyCoreTable.$inferSelect | undefined);
-  if (row?.killSwitchEngaged) hardBlocks.push({ code: "KILL_SWITCH", severity: "CRITICAL", message: row.killSwitchReason ?? "engaged" });
-  if (row?.operationalMode && !["OBSERVE_ONLY", "PAPER_ONLY", "RECOVERY_MODE"].includes(row.operationalMode))
-    warnings.push(`safetyCore.operationalMode=${row.operationalMode}`);
+  // Read safetyCore through the switch authority (informational only — MM
+  // never writes here). An unreadable switch reports as engaged.
+  const sc = await readSafetyCoreSwitch();
+  if (sc.engaged) hardBlocks.push({ code: "KILL_SWITCH", severity: "CRITICAL", message: sc.reason ?? "engaged" });
+  if (sc.operationalMode && !["OBSERVE_ONLY", "PAPER_ONLY", "RECOVERY_MODE"].includes(sc.operationalMode))
+    warnings.push(`safetyCore.operationalMode=${sc.operationalMode}`);
   // Detect FF/HH/KK reporting unsafe
   for (const b of ["FF", "HH", "KK"] as SubsystemBuild[]) {
     if (subs[b]?.status === "UNSAFE") hardBlocks.push({ code: `${b}_UNSAFE`, severity: "CRITICAL", message: subs[b].notes.join("; ") });

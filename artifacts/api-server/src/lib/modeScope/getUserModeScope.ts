@@ -19,11 +19,9 @@
 //     `adminOverrideMode` parameter — caller decides if/when to allow
 //     it (e.g. an admin diagnostic endpoint).
 
-import { db, globalTradingSettingsTable } from "@workspace/db";
 import { computeAccountShell } from "../../routes/meAccountShell.js";
 import { getMyArming } from "../live/liveArming.js";
-import { resolveLiveBrokerExecutionEnabledAsync } from "../live/phaseBConfig.js";
-import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
+import { readPlatformSwitches } from "../safety/platformSwitches.js";
 import {
   computeAccountModePrecedence,
   type CurrentAccountMode,
@@ -78,23 +76,24 @@ export async function getUserModeScope(
   const isAdmin = opts.isAdmin === true;
 
   try {
-    const [accountShell, arming, serverEnvOn, effectiveOn, globalRow, traderState] =
+    const [accountShell, arming, switches, traderState] =
       await Promise.all([
         // skipInvestorSnapshot breaks the otherwise-infinite mutual recursion
         // (computeAccountShell → buildInvestorLiveBalanceSnapshot → getUserModeScope).
         // This resolver only reads tradingMode/tradingStatus/notes below.
         computeAccountShell(userId, { skipInvestorSnapshot: true }),
         getMyArming(userId),
-        Promise.resolve(isLiveBrokerExecutionEnabledEnv()),
-        resolveLiveBrokerExecutionEnabledAsync(),
-        db.select().from(globalTradingSettingsTable).limit(1).then((r) => r[0] ?? null),
+        // One read of the Phase B master switch (env AND operator arm).
+        readPlatformSwitches(),
         // Task #737 — display pin for admin-approved human traders attached to
         // the shared live bridge. Heartbeat read skipped: the display pin does
         // not depend on it, keeping this hot path cheap.
         buildApprovedTraderLiveState(userId, { includeBridgeHeartbeat: false }),
       ]);
 
-    const operatorOn = globalRow?.liveBrokerExecutionArmed === true;
+    const serverEnvOn = switches.liveBrokerExecution.envEnabled;
+    const effectiveOn = switches.liveBrokerExecution.enabled;
+    const operatorOn = switches.liveBrokerExecution.operatorArmed;
     const liveExecutionArmed = arming?.isArmed === true;
     const sharedMasterAttached = accountShell.notes.sharedMasterAccountAssigned === true;
 
