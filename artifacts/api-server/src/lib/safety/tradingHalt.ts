@@ -11,8 +11,12 @@
 //   allocation_frozen        user_slot_allocation (per user, shared master) DEMO, LIVE when routed via a virtual account
 //
 // The paper simulator never reaches a broker, so the platform emergency stop
-// (which defaults to engaged on a fresh install) does not halt it; the
-// safety-core switch already halted paper through the Trade Action guards.
+// does not halt it; the safety-core switch already halted paper through the
+// Trade Action guards.
+//
+// Every switch defaults to released: a fresh install, restart or redeploy
+// does not halt trading (owner decision 2026-10-24). Only an engaged switch
+// halts.
 //
 // Not read here, on purpose:
 //   live_trading_state.kill_switch_active  legacy placeLiveOrderGuarded path, permanently locked
@@ -80,8 +84,8 @@ export async function loadTradingHalt(args: {
     const g = await read(async () => (await db.select({
       on: globalTradingSettingsTable.emergencyKillSwitch, why: globalTradingSettingsTable.killSwitchReason,
     }).from(globalTradingSettingsTable).orderBy(asc(globalTradingSettingsTable.id)).limit(1))[0]);
-    // No row: a fresh install, which is engaged by design.
-    if (g === "unreadable" || !g || g.on) {
+    // No row: a fresh install, which starts released.
+    if (g === "unreadable" || g?.on) {
       sources.push("platform_emergency_stop");
       detail.platform_emergency_stop = g === "unreadable" ? "state unreadable" : g?.why ?? null;
     }

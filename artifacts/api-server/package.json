@@ -132,6 +132,7 @@
     "test:broker-hub-metadata": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/mt5MetadataProjection.test.ts",
     "test:broker-hub-mt5-state": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/mt5StateReader.test.ts",
     "test:alert-rule-ownership": "node --import tsx --test --test-force-exit src/lib/alerts/__qa__/ruleEngineOwnership.test.ts",
+    "test:trading-on-by-default": "node --import tsx --test --test-force-exit src/lib/safety/__qa__/tradingOnByDefault.test.ts",
     "test:fix-agent-route": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/routes/__qa__/adminFixAgentRoute.test.ts",
     "test:cluster-d-route": "node --import tsx --test --test-force-exit src/routes/__qa__/clusterDRoute.test.ts",
     "test:trader-tier-route": "node --import tsx --test --test-force-exit src/routes/__qa__/traderTierRoute.test.ts",

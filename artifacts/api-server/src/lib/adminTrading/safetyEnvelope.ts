@@ -98,14 +98,9 @@ export async function getGlobalSettings() {
     const rows = await db.select().from(globalTradingSettingsTable)
       .orderBy(asc(globalTradingSettingsTable.id)).limit(1);
     if (rows[0]) return rows[0];
-    // Seed singleton fail-closed if missing.
-    const inserted = await db.insert(globalTradingSettingsTable).values({
-      platformMode: "OFF",
-      simulatedEnabled: true,
-      demoEnabled: false,
-      liveEnabled: false,
-      emergencyKillSwitch: true,
-    }).returning();
+    // Seed the singleton from the schema defaults if missing: trading
+    // available, emergency stop released (owner decision 2026-10-24).
+    const inserted = await db.insert(globalTradingSettingsTable).values({}).returning();
     return inserted[0]!;
   } catch (err) {
     logger.warn({ err: String(err) }, "global_trading_settings read failed; using fail-closed default");
