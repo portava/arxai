@@ -6,12 +6,17 @@
 //   2. loads the facts for the venue (paper ledger, or the user's MT5 bridge),
 //      letting the caller supply facts it already holds (the quote it will
 //      fill at, its own in-flight rows) so the check and the fill agree,
-//   3. evaluates all 12 rules (./preTrade.ts, pure),
+//   3. evaluates all 13 rules (./preTrade.ts, pure),
 //   4. writes one user_risk_events row per evaluation (pass or block) so
 //      every decision has an audit trail, unless `preview` is set.
 //
 // Any failure while loading facts BLOCKS the intent (fail-closed). The
 // function never places, queues or modifies an order itself.
+//
+// The one exception to a block is a written trader override on a PAPER
+// venue, and only when rule 13 (the trader's own discipline settings) is the
+// sole rule that blocked and the trader's settings allow overrides. The 12
+// exposure rules and the stop switches can never be overridden.
 
 import { db } from "@workspace/db";
 import {
@@ -30,13 +35,15 @@ import {
   arxSymbolSpecsTable,
   virtualTradingAccountsTable,
   userEquityPeaksTable,
+  sharedTradeAttributionTable,
 } from "@workspace/db/schema";
 import { and, desc, eq, gte, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
-import { logRiskEvent } from "../../routes/meRiskGovernor.js";
+import { logRiskEvent } from "./riskEvents.js";
 import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
 import { loadTradingHalt } from "../safety/tradingHalt.js";
 import { Mt5ReadOnlyAdapter } from "../brokerHub/mt5ReadOnlyAdapter.js";
 import { mt5ProjectionReader } from "../brokerHub/mt5ProjectionReader.js";
+import { isAllocationBlown } from "../live/allocationBlown.js";
 import {
   evaluatePreTradeRisk,
   resolveEffectiveLimits,
@@ -52,6 +59,8 @@ import {
   type RiskQuote,
   type TradeIntent,
   type BrokerStatus,
+  type TradingActivity,
+  summarizeActivity,
 } from "./preTrade.js";
 
 export * from "./preTrade.js";
@@ -101,6 +110,10 @@ export interface RiskFacts {
   daily?: RiskContext["daily"];
   halt?: RiskContext["halt"];
   equityPeak?: RiskContext["equityPeak"];
+  activity?: TradingActivity | null;
+  market?: RiskContext["market"];
+  venueRules?: RiskContext["venueRules"];
+  allocation?: RiskContext["allocation"];
 }
 
 export interface EnforceOptions {
@@ -115,13 +128,33 @@ export interface EnforceOptions {
   virtualAccountId?: number | null;
   /** Free-form context copied into the audit row (route, command id …). */
   auditContext?: Record<string, unknown>;
+  /** PAPER only: the trader's written override of a block raised by rule 13 alone. */
+  override?: { reason: string } | null;
 }
 
 export interface EnforceResult extends RiskDecision {
   allowed: boolean;
   auditEventId: number | null;
   limits: EffectiveLimits | null;
+  /** Set when a trader override let a discipline-only block through. */
+  override?: { reason: string; rule: "trading_discipline" } | null;
 }
+
+/** True when `override` may pass this decision (see the header). */
+export function overrideApplies(
+  intent: TradeIntent,
+  decision: RiskDecision,
+  limits: EffectiveLimits | null,
+  override: { reason: string } | null | undefined,
+): boolean {
+  return !!override && override.reason.trim().length >= 5
+    && intent.venue === "PAPER"
+    && decision.decision === "BLOCK"
+    && !!limits?.discipline.allowOverrideInPaperMode
+    && decision.blockedBy.length === 1 && decision.blockedBy[0] === "trading_discipline";
+}
+
+const ACTIVITY_CLOSES = 50;
 
 function startOfTodayUtc(now: Date): Date {
   const d = new Date(now);
@@ -195,6 +228,22 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
   }
   inFlight.push(...await loadActionInFlight(intent.userId, "PAPER", now));
 
+  let activity: TradingActivity | null = null;
+  if (acct) {
+    try {
+      const closes = await db.select({ closedAt: paperOrdersTable.closedAt, pnl: paperOrdersTable.profitLoss })
+        .from(paperOrdersTable).where(and(eq(paperOrdersTable.paperAccountId, acct.id), ne(paperOrdersTable.status, "OPEN"),
+          sql`${paperOrdersTable.closedAt} is not null`))
+        .orderBy(desc(paperOrdersTable.closedAt)).limit(ACTIVITY_CLOSES);
+      const day = startOfTodayUtc(now);
+      activity = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt!, pnl: Number(c.pnl ?? 0) })),
+        positions.length ? (await db.select({ id: paperOrdersTable.id }).from(paperOrdersTable).where(and(
+          eq(paperOrdersTable.paperAccountId, acct.id), eq(paperOrdersTable.status, "OPEN"),
+          gte(paperOrdersTable.openedAt, day)))).length : 0,
+        now, `paper_orders:account:${acct.id}`);
+    } catch { activity = null; }
+  }
+
   const instruments: Record<string, InstrumentModel> = {};
   for (const s of new Set([intent.symbol, ...positions.map((p) => p.symbol)])) instruments[s] = PAPER_LEDGER_INSTRUMENT;
 
@@ -208,6 +257,7 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
       ? { status: "CONNECTED", lastSeenAt: now, detail: "internal paper simulator" }
       : { status: "DISCONNECTED", lastSeenAt: null, detail: "no active paper account" },
     daily: { realizedPnl: realized, floatingPnl: acct ? acct.equity - acct.currentBalance : null },
+    activity,
   };
 }
 
@@ -239,6 +289,7 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
 
   let account: RiskAccount | null = null;
   let accountSnapshot: AccountSnapshotFacts | null = null;
+  let allocation: RiskContext["allocation"] = null;
   if (opts.virtualAccountId != null) {
     const [v] = await db.select().from(virtualTradingAccountsTable).where(and(
       eq(virtualTradingAccountsTable.id, opts.virtualAccountId),
@@ -247,6 +298,17 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
       const eq0 = v.virtualBalance + v.virtualPnl;
       account = { equity: eq0, freeMargin: eq0 - v.virtualMarginUsed, leverage: conn?.leverage ?? null,
         currency: currency || "USD", source: `virtual_account:${v.id}` };
+      // A closed attribution whose P/L could not be sized leaves the true
+      // allocation unknown, so new risk waits for it.
+      const pending = await db.select({ id: sharedTradeAttributionTable.id }).from(sharedTradeAttributionTable).where(and(
+        eq(sharedTradeAttributionTable.userId, userId),
+        eq(sharedTradeAttributionTable.virtualAccountId, v.id),
+        eq(sharedTradeAttributionTable.status, "closed"),
+        isNull(sharedTradeAttributionTable.realizedAppliedAt))).limit(1);
+      allocation = {
+        status: v.status, blown: isAllocationBlown({ virtualBalance: v.virtualBalance, virtualPnl: v.virtualPnl }),
+        pendingSizing: pending.length > 0, source: `virtual_account:${v.id}`,
+      };
     }
   } else if (conn && conn.userId === userId) {
     // The Broker Hub owns account snapshots. It only reads a connection the
@@ -324,6 +386,22 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
     : await db.select({ s: sql<number>`coalesce(sum(${tradesTable.pnl}), 0)::float8` })
         .from(tradesTable).where(and(eq(tradesTable.userId, userId), gte(tradesTable.closedAt, startOfTodayUtc(now))));
 
+  // Trading activity for rule 13, from the same ledgers as realized P/L.
+  let activity: TradingActivity | null = null;
+  try {
+    const day = startOfTodayUtc(now);
+    const closes = intent.venue === "LIVE"
+      ? (await db.select({ closedAt: arxLivePositionsTable.closedAt, pnl: arxLivePositionsTable.floatingPl })
+          .from(arxLivePositionsTable).where(and(eq(arxLivePositionsTable.userId, userId), sql`${arxLivePositionsTable.closedAt} is not null`))
+          .orderBy(desc(arxLivePositionsTable.closedAt)).limit(ACTIVITY_CLOSES))
+      : (await db.select({ closedAt: tradesTable.closedAt, pnl: tradesTable.pnl })
+          .from(tradesTable).where(and(eq(tradesTable.userId, userId), sql`${tradesTable.closedAt} is not null`))
+          .orderBy(desc(tradesTable.closedAt)).limit(ACTIVITY_CLOSES));
+    activity = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt!, pnl: Number(c.pnl ?? 0) })),
+      sided.filter((p) => p.at >= day).length, now,
+      intent.venue === "LIVE" ? "arx_live_positions" : "trades");
+  } catch { activity = null; }
+
   // Instrument model per symbol: broker spec first, else the strict FX lot;
   // the quote→account rate needs the account currency.
   const symbols = [...new Set([intent.symbol, ...positions.map((p) => p.symbol)])];
@@ -355,6 +433,8 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
     inFlight,
     broker: classifyBrokerHeartbeat(conn ? { status: conn.status, lastHeartbeat: conn.lastHeartbeat } : null, now),
     daily: { realizedPnl: Number(r?.s ?? 0), floatingPnl: posRows.length ? floating : 0 },
+    activity,
+    allocation,
   };
 }
 
@@ -439,6 +519,10 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
     halt: f.halt !== undefined
       ? f.halt
       : await loadTradingHalt({ userId: intent.userId, venue: intent.venue, virtualAccountId: opts.virtualAccountId ?? null }),
+    activity: f.activity !== undefined ? f.activity : loaded.activity ?? null,
+    market: f.market ?? null,
+    venueRules: f.venueRules ?? null,
+    allocation: f.allocation !== undefined ? f.allocation : loaded.allocation ?? null,
   };
 }
 
@@ -455,19 +539,27 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
     decision = contextFailure(intent, now, (e as Error).message.slice(0, 160));
   }
 
+  let override: EnforceResult["override"] = null;
+  if (overrideApplies(intent, decision, limits, opts.override)) {
+    override = { reason: opts.override!.reason.trim(), rule: "trading_discipline" };
+  }
+
   let auditEventId: number | null = null;
   if (!opts.preview) {
-    const blocked = decision.decision === "BLOCK";
+    const blocked = decision.decision === "BLOCK" && !override;
     try {
       const [row] = await logRiskEvent({
         userId: intent.userId,
-        eventType: blocked ? "blocked_trade" : "risk_check",
-        severity: blocked ? "critical" : "info",
-        decision: blocked ? "block" : "pass",
-        reason: blocked ? decision.primaryReason ?? "Blocked by Risk Governor." : `Pre-trade risk passed (${intent.venue} ${intent.action} ${intent.symbol}).`,
+        eventType: override ? "override" : blocked ? "blocked_trade" : "risk_check",
+        severity: override ? "warning" : blocked ? "critical" : "info",
+        decision: override ? "warning" : blocked ? "block" : "pass",
+        reason: override
+          ? `Trader override of their own trading rules: ${override.reason} (${decision.primaryReason ?? "discipline block"})`
+          : blocked ? decision.primaryReason ?? "Blocked by Risk Governor." : `Pre-trade risk passed (${intent.venue} ${intent.action} ${intent.symbol}).`,
         details: {
           source: "pre_trade_risk_governor",
           intent,
+          override,
           blockedBy: decision.blockedBy,
           halt: decision.halt ?? null,
           rules: decision.rules,
@@ -485,6 +577,9 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
             openPositions: ctx.positions.length,
             inFlight: ctx.inFlight.length,
             daily: ctx.daily,
+            activity: ctx.activity
+              ? { ...ctx.activity, lastClosedAt: ctx.activity.lastClosedAt?.toISOString() ?? null }
+              : ctx.activity ?? null,
           } : null,
           ...(opts.auditContext ?? {}),
         },
@@ -494,7 +589,8 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
       auditEventId = null;
     }
     // No audit row, no trade: an ALLOW that cannot be recorded is refused.
-    if (auditEventId == null && decision.decision === "ALLOW") {
+    if (auditEventId == null && (decision.decision === "ALLOW" || override)) {
+      override = null;
       decision = {
         ...decision,
         decision: "BLOCK",
@@ -508,5 +604,5 @@ export async function enforcePreTradeRisk(intent: TradeIntent, opts: EnforceOpti
     try { await recordEquityPeak(intent, ctx.account); } catch { /* non-fatal */ }
   }
 
-  return { ...decision, allowed: decision.decision === "ALLOW", auditEventId, limits };
+  return { ...decision, allowed: decision.decision === "ALLOW" || !!override, auditEventId, limits, override };
 }

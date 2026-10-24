@@ -30,7 +30,7 @@ import { ROOT, walk, rel, reportResult, type CheckResult } from "./_lib.js";
 const API_SRC = join(ROOT, "artifacts/api-server/src");
 
 export const EXECUTION_TABLES = [
-  "arxLiveCommandsTable", "mt5DemoCommandsTable", "mt5CommandsTable", "paperOrdersTable",
+  "arxLiveCommandsTable", "mt5DemoCommandsTable", "mt5CommandsTable", "paperOrdersTable", "paperTradesTable",
 ] as const;
 
 type Role = "GOVERNED" | "LIFECYCLE" | "NON_TRADE" | "QA_SCRIPT";
@@ -50,6 +50,7 @@ export const WRITERS: Record<string, Entry> = {
   "routes/autoDebrief.ts": { role: "GOVERNED", proof: GOVERNOR, why: "operator QA fixture order" },
   "routes/demoExecution.ts": { role: "GOVERNED", proof: GOVERNOR, why: "legacy demo market order" },
   "routes/meTrades.ts": { role: "GOVERNED", proof: GOVERNOR, why: "demo close" },
+  "routes/mePaperTrades.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/riskGovernor/journal.ts", why: "paper journal open and stop/target edits; drafts, closes and cancels carry no new risk" },
   // LIFECYCLE
   "lib/live/liveCommandCas.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/live/liveCommandPipeline.ts", why: "compare-and-set claims used only inside the governed live pipeline" },
   "lib/live/unknownReconciler.ts": { role: "LIFECYCLE", why: "resolves UNKNOWN live outcomes" },

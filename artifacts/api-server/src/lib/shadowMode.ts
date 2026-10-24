@@ -8,12 +8,12 @@
 //   so they cannot mix with simulator/intent/future broker records.
 // - Promotion levels max out at LIVE_INTENT_APPROVED. FUTURE_MT5_LIVE_LOCKED
 //   is visible-only; never reachable until the bridge is wired.
-// - Risk Governor 2.0 is invoked for every shadow decision (advisory) — it
-//   cannot be bypassed because we call preTradeCheck() with the same payload
-//   the OMS would.
+// - Every shadow decision is checked by the one Risk Governor at platform
+//   default limits (previewSimulatorEntry, pure) with the same facts the
+//   simulator OMS would supply. Shadow mode never books an order.
 
 import { marketSimulator } from "./marketSimulator.js";
-import { preTradeCheck } from "./riskGovernor2.js";
+import { previewSimulatorEntry } from "./oms.js";
 import { runStrategyScan, type Candle as EngineCandle } from "./strategyEngine.js";
 import { DEFAULT_SYMBOLS } from "./marketScanner.js";
 import { buildForwardChartSeries, type ForwardChartSeries } from "./shadow/forwardChartSeries.js";
@@ -90,13 +90,16 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
   const tp = scan.takeProfit || (scan.direction === "BUY" ? entry * 1.005 : entry * 0.995);
   const action = scan.direction === "WAIT" ? "WAIT" : (scan.direction as "BUY" | "SELL");
 
-  const rg = preTradeCheck({
-    environment: "DEMO_SIMULATOR", source: "AI_AUTO",
-    symbol, direction: action === "WAIT" ? "BUY" : action,
-    lotSize: 0.01, entryPrice: entry, stopLoss: sl, takeProfit: tp,
-    riskAmount: 5, confidenceScore: scan.confidence,
-    entrySniperScore: scan.confidence, opportunityScore: scan.confidence,
+  const verdict = previewSimulatorEntry({
+    symbol, side: action === "WAIT" ? "BUY" : action, lots: 0.01,
+    stopLoss: sl, takeProfit: tp, aiConfidence: scan.confidence, origin: "automation",
   });
+  const rg = {
+    approved: verdict.decision === "ALLOW",
+    riskLevel: verdict.decision === "ALLOW" ? "LOW" : "BLOCK",
+    hardBlocks: verdict.blockedBy.map(String),
+    warnings: verdict.rules.map((r) => r.measured?.["warnings"]).filter((w): w is string => typeof w === "string"),
+  };
 
   let status: ShadowStatus =
     action === "WAIT" ? "SHADOW_WAIT"

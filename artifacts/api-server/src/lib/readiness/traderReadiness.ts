@@ -1,9 +1,18 @@
-// Build HH — Risk Governor + Trader Readiness Service.
+// Trader readiness — a read model, not a risk authority.
 //
-// SAFETY (strict freeze): READS ONLY across AA/BB/CC/DD/EE/FF/GG. Never places
-// trades, never calls MT5, never enables canPlaceTrades, never recommends live
-// trading. liveTradingStatus is hardcoded "DISABLED". liveTradingAllowed is
-// hardcoded false. canPlaceLiveTrade is hardcoded false.
+// Scores how ready a trader's paper practice is (discipline, edge maturity,
+// AI decision quality, system reliability, learning) and explains it for the
+// coach, the cockpit and the readiness screens. It decides nothing: no order
+// path reads it, and every order is authorised only by the pre-trade Risk
+// Governor (lib/riskGovernor/enforce.ts). ci guard single-risk-authority keeps
+// order paths from importing it. `authoritative` is always false.
+//
+// Pass `userId` to read only that trader's rows; without it the view is the
+// operator's whole-install picture.
+//
+// READS ONLY. Never places trades or calls MT5. The legacy field names
+// (paperTradingAllowed, allowedActions …) are kept for the screens that show
+// them; they are advisory labels.
 
 import { randomUUID } from "node:crypto";
 import { computeTimingRead } from "../../brain/timing/marketTimingBrainService.js";
@@ -23,6 +32,7 @@ import {
   riskGovernorEventsTable,
 } from "@workspace/db";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 import { logger } from "../logger.js";
 import { checkBrokerSafety } from "../brokerReadOnly/service.js";
 
@@ -66,6 +76,10 @@ export interface AllowedActions {
 }
 
 export interface GovernorEvaluation {
+  /** Always false: readiness never authorises or refuses an order. */
+  authoritative: false;
+  /** The trader whose rows were read; null = whole install (operator view). */
+  scopeUserId: number | null;
   governor_id: string;
   evaluated_at: string;
   mode: "PAPER_ONLY";
@@ -115,14 +129,14 @@ interface EvalLog {
 
 function defaultLog(): EvalLog {
   return {
-    info: (m, x) => logger.info(x ?? {}, `HH governor: ${m}`),
-    warn: (m, x) => logger.warn(x ?? {}, `HH governor: ${m}`),
-    error: (m, x) => logger.error(x ?? {}, `HH governor: ${m}`),
+    info: (m, x) => logger.info(x ?? {}, `readiness: ${m}`),
+    warn: (m, x) => logger.warn(x ?? {}, `readiness: ${m}`),
+    error: (m, x) => logger.error(x ?? {}, `readiness: ${m}`),
   };
 }
 
 // ── Metric collection (READ-ONLY against AA/BB/CC/DD/EE/FF/GG) ────────────
-async function collectMetrics(overrides: SimulateOverrides | undefined): Promise<{
+async function collectMetrics(overrides: SimulateOverrides | undefined, userId: number | null): Promise<{
   metrics: GovernorMetrics;
   cooldowns: Cooldown[];
   dataSourcesRead: string[];
@@ -130,6 +144,8 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
 }> {
   const dataSourcesRead: string[] = [];
   const missingDataSources: string[] = [];
+  // Per-trader scope for every table that carries an owner.
+  const own = (col: PgColumn) => (userId == null ? undefined : eq(col, userId));
 
   const utcMidnight = new Date(); utcMidnight.setUTCHours(0, 0, 0, 0);
   const weekAgo = new Date(Date.now() - 7 * 86_400_000);
@@ -141,20 +157,20 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   try {
     const dRows = await db.select({ pnl: sql<number>`COALESCE(SUM(${paperOrdersTable.profitLoss}),0)` })
       .from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, utcMidnight)));
+      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, utcMidnight), own(paperOrdersTable.userId)));
     dailyPnl = Number(dRows[0]?.pnl ?? 0);
 
     const wRows = await db.select({ pnl: sql<number>`COALESCE(SUM(${paperOrdersTable.profitLoss}),0)` })
       .from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, weekAgo)));
+      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, weekAgo), own(paperOrdersTable.userId)));
     weeklyPnl = Number(wRows[0]?.pnl ?? 0);
 
-    const open = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.status, "OPEN"));
+    const open = await db.select().from(paperOrdersTable).where(and(eq(paperOrdersTable.status, "OPEN"), own(paperOrdersTable.userId)));
     openCount = open.length;
     for (const o of open) sameSymbolExposure[o.symbol] = (sameSymbolExposure[o.symbol] ?? 0) + 1;
 
     const closed30 = await db.select().from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, thirtyAgo)));
+      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, thirtyAgo), own(paperOrdersTable.userId)));
     sampleSize = closed30.length;
     if (sampleSize > 0) {
       const wins = closed30.filter(t => Number(t.profitLoss ?? 0) > 0).length;
@@ -171,7 +187,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   let avgConfidence = 0, avgRiskScore = 0, decisionToWinRate = 0, decisionsTotal = 0;
   try {
     const decisions = await db.select().from(tradeDecisionLogsTable)
-      .where(gte(tradeDecisionLogsTable.createdAt, thirtyAgo));
+      .where(and(gte(tradeDecisionLogsTable.createdAt, thirtyAgo), own(tradeDecisionLogsTable.userId)));
     decisionsTotal = decisions.length;
     if (decisionsTotal > 0) {
       avgConfidence = Math.round((decisions.reduce((a, d) => a + (d.confidence ?? 0), 0) / decisionsTotal) * 100) / 100;
@@ -179,7 +195,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
     }
     const shouldTradeIds = decisions.filter(d => d.shouldTrade).map(d => d.id);
     if (shouldTradeIds.length > 0) {
-      const placed = await db.select().from(paperOrdersTable);
+      const placed = await db.select().from(paperOrdersTable).where(own(paperOrdersTable.userId));
       const winFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && Number(p.profitLoss ?? 0) > 0).length;
       const closedFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && p.status === "CLOSED").length;
       decisionToWinRate = closedFromDecision > 0 ? Math.round((winFromDecision / closedFromDecision) * 10000) / 100 : 0;
@@ -190,7 +206,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   // --- BB: post_trade_debriefs (presence check + count) ---
   let debriefsCreated = 0;
   try {
-    const debriefs = await db.select().from(postTradeDebriefsTable).where(gte(postTradeDebriefsTable.createdAt, thirtyAgo));
+    const debriefs = await db.select().from(postTradeDebriefsTable).where(and(gte(postTradeDebriefsTable.createdAt, thirtyAgo), own(postTradeDebriefsTable.userId)));
     debriefsCreated = debriefs.length;
     dataSourcesRead.push("post_trade_debriefs");
   } catch { missingDataSources.push("post_trade_debriefs"); }
@@ -198,7 +214,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   // --- CC: learning_events / strategy_edges / mistake_patterns ---
   let learningConfidence = 0, repeatedMistakeCount = 0, learningEventsCount = 0;
   try {
-    const events = await db.select().from(learningEventsTable).where(gte(learningEventsTable.createdAt, thirtyAgo));
+    const events = await db.select().from(learningEventsTable).where(and(gte(learningEventsTable.createdAt, thirtyAgo), own(learningEventsTable.userId)));
     learningEventsCount = events.length;
     dataSourcesRead.push("learning_events");
   } catch { missingDataSources.push("learning_events"); }
@@ -231,7 +247,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   const cooldowns: Cooldown[] = [];
   try {
     const cycles = await db.select().from(autopilotCyclesTable)
-      .where(gte(autopilotCyclesTable.startedAt, weekAgo))
+      .where(and(gte(autopilotCyclesTable.startedAt, weekAgo), own(autopilotCyclesTable.userId)))
       .orderBy(desc(autopilotCyclesTable.startedAt)).limit(50);
     if (cycles.length > 0) {
       const errored = cycles.filter(c => (c.status ?? "").toUpperCase() === "ERROR" || (c.status ?? "").toUpperCase() === "FAILED").length;
@@ -250,7 +266,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined): Promise
   let dailyLossLimit = 100;
   let maxOpenPaperTrades = 2;
   try {
-    const rs = await db.select().from(riskSettingsTable).orderBy(desc(riskSettingsTable.id)).limit(1);
+    const rs = userId == null
+      ? await db.select().from(riskSettingsTable).orderBy(desc(riskSettingsTable.id)).limit(1)
+      : await db.select().from(riskSettingsTable).where(eq(riskSettingsTable.userId, userId)).limit(1);
     if (rs[0]) {
       maxOpenPaperTrades = rs[0].maxOpenTrades ?? 2;
       const pct = rs[0].maxDailyLossPct ?? 2;
@@ -523,15 +541,17 @@ export interface EvaluateOpts {
   log?: EvalLog;
   simulate?: SimulateOverrides;
   symbol?: string;
+  /** Read only this trader's rows. */
+  userId?: number | null;
 }
 
-export async function evaluateGovernor(opts: EvaluateOpts = {}): Promise<GovernorEvaluation> {
+export async function evaluateReadiness(opts: EvaluateOpts = {}): Promise<GovernorEvaluation> {
   const log = opts.log ?? defaultLog();
   const governorId = opts.governorId ?? `gov_${randomUUID()}`;
   const startedAt = new Date();
   log.info("evaluation started", { governorId });
 
-  const { metrics, cooldowns, dataSourcesRead, missingDataSources } = await collectMetrics(opts.simulate);
+  const { metrics, cooldowns, dataSourcesRead, missingDataSources } = await collectMetrics(opts.simulate, opts.userId ?? null);
   log.info("data sources read", { count: dataSourcesRead.length, sources: dataSourcesRead });
   if (missingDataSources.length > 0) log.warn("missing data sources", { missing: missingDataSources });
   log.info("metrics calculated", { metrics });
@@ -550,6 +570,8 @@ export async function evaluateGovernor(opts: EvaluateOpts = {}): Promise<Governo
   const explanation = buildExplanation(status, score, grade, level, hardBlocks, softWarnings);
 
   const evaluation: GovernorEvaluation = {
+    authoritative: false,
+    scopeUserId: opts.userId ?? null,
     governor_id: governorId,
     evaluated_at: startedAt.toISOString(),
     mode: "PAPER_ONLY",
@@ -637,32 +659,4 @@ export async function evaluateGovernor(opts: EvaluateOpts = {}): Promise<Governo
   }
   log.info("evaluation completed", { governorId, status, score });
   return evaluation;
-}
-
-/** Lightweight governor check for EE / FF gates. Reads from a recent persisted
- *  evaluation if one exists in the last 60s; otherwise runs a fresh eval. */
-export interface GovernorGateResult {
-  allowed: boolean;
-  status: OverallStatus;
-  reasons: string[];
-  governorId: string;
-}
-
-export async function gateForPaperTrade(): Promise<GovernorGateResult> {
-  const e = await evaluateGovernor({ persist: false });
-  return {
-    allowed: e.allowedActions.canOpenPaperTrade,
-    status: e.overallStatus,
-    reasons: [...e.hardBlocks.map(b => `${b.code}: ${b.message}`), ...e.softWarnings.map(s => `${s.code}: ${s.message}`)],
-    governorId: e.governor_id,
-  };
-}
-export async function gateForAutopilot(): Promise<GovernorGateResult> {
-  const e = await evaluateGovernor({ persist: false });
-  return {
-    allowed: e.allowedActions.canRunPaperAutopilot,
-    status: e.overallStatus,
-    reasons: [...e.hardBlocks.map(b => `${b.code}: ${b.message}`), ...e.softWarnings.map(s => `${s.code}: ${s.message}`)],
-    governorId: e.governor_id,
-  };
 }

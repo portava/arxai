@@ -10,10 +10,9 @@
 // - Tick loop is unref()'d so it can never block process exit.
 
 import { marketSimulator } from "./marketSimulator.js";
-import { evaluateRisk } from "./marketDataLayer.js";
-import { preTradeCheck, logOrderOutcome } from "./riskGovernor2.js";
+import { currentNewsRisk, marketHealth } from "./marketDataLayer.js";
 import { pushDecision } from "./marketScanner.js";
-import type { InstrumentModel, IntentAction, IntentOrigin, RiskInFlight, RiskPosition, TradeIntent } from "./riskGovernor/preTrade.js";
+import { evaluatePreTradeRisk, resolveEffectiveLimits, summarizeActivity, type InstrumentModel, type IntentAction, type IntentOrigin, type RiskDecision, type RiskInFlight, type RiskPosition, type TradeIntent } from "./riskGovernor/preTrade.js";
 
 export type Environment =
   | "PAPER" | "DEMO_SIMULATOR" | "LIVE_TESTER_INTENT"
@@ -167,37 +166,24 @@ function createOrder(input: CreateOrderInput): Order {
     dataSource: "SIMULATOR",
   };
 
-  // Risk + market-health check (advisory).
-  const guard = evaluateRisk({
-    symbol: o.symbol, direction: o.direction, lotSize: o.lotSize,
-    stopLoss: o.stopLoss, takeProfit: o.takeProfit, entryPrice: o.entryPrice,
-    confidenceScore: o.confidenceScore, maxLossUsd: o.riskAmount,
-  });
-  o.riskRewardRatio = guard.riskRewardRatio;
+  if (o.entryPrice != null && o.stopLoss != null && o.takeProfit != null) {
+    const risk = Math.abs(o.entryPrice - o.stopLoss);
+    o.riskRewardRatio = risk > 0 ? Number((Math.abs(o.takeProfit - o.entryPrice) / risk).toFixed(2)) : 0;
+  }
 
-  // Risk Governor 2.0 — account protection layer (cannot bypass).
-  const acct = preTradeCheck({
-    environment: o.environment, source: o.source, symbol: o.symbol, direction: o.direction,
-    lotSize: o.lotSize, entryPrice: o.entryPrice, stopLoss: o.stopLoss, takeProfit: o.takeProfit,
-    riskAmount: o.riskAmount, confidenceScore: o.confidenceScore,
-    entrySniperScore: o.entrySniperScore, opportunityScore: o.opportunityScore,
-    idempotencyKey: o.idempotencyKey,
-  });
-
-  if (!guard.approved) {
+  // Risk is decided only by the pre-trade Risk Governor (governOms, before
+  // this runs). Here the venue only routes: future MT5 environments are not
+  // available, the live-tester intent parks until a bridge exists.
+  if (o.environment.startsWith("FUTURE_MT5")) {
     o.status = "RISK_REJECTED";
-    o.rejectionReason = guard.reasons.join("; ");
-  } else if (!acct.approved) {
-    o.status = "RISK_REJECTED";
-    o.rejectionReason = `ACCOUNT_PROTECTION:${acct.hardBlocks.join(",")}`;
-  } else if (o.environment === "LIVE_TESTER_INTENT" || o.environment.startsWith("FUTURE_MT5")) {
+    o.rejectionReason = "FUTURE_MT5_NOT_PERMITTED";
+  } else if (o.environment === "LIVE_TESTER_INTENT") {
     o.status = "PENDING_MT5_CONNECTION";
   } else {
     o.status = "APPROVED_FOR_SIMULATION";
   }
-  o.auditLogId = audit("ORDER_CREATED", `Order ${o.orderId} ${o.symbol} ${o.direction} ${o.environment} → ${o.status}`, { o, guard: guard.reasons, account: acct.hardBlocks });
+  o.auditLogId = audit("ORDER_CREATED", `Order ${o.orderId} ${o.symbol} ${o.direction} ${o.environment} → ${o.status}`, { o });
   orders.set(o.orderId, o);
-  logOrderOutcome({ orderId: o.orderId, symbol: o.symbol, environment: o.environment, source: o.source, status: o.status, reason: o.rejectionReason, auditLogId: o.auditLogId });
   return o;
 }
 
@@ -487,10 +473,11 @@ export function omsDashboardSummary() {
 // Every order the simulator OMS creates, amends or fills, and every stop,
 // target or close on its positions, is evaluated by the pre-trade Risk
 // Governor (lib/riskGovernor) for the operator or agent driving it — the same
-// 12 rules and stop switches as paper, demo and live, written to that user's
+// 13 rules and stop switches as paper, demo and live, written to that user's
 // user_risk_events trail. The OMS supplies its own book as the facts: its
-// simulated account, open positions, quotes and today's P/L. Risk Governor
-// 2.0 (preTradeCheck) still runs inside createOrder; the stricter refusal wins.
+// simulated account, open positions, quotes, spread and news window, today's
+// P/L, and the simulator's venue rules (take profit required, an R:R floor,
+// a model-confidence floor for AI orders). It decides nothing itself.
 
 export interface OmsActor {
   /** The operator, or the owner of the agent, on whose behalf the OMS acts. */
@@ -514,6 +501,14 @@ const SOURCE_ORIGIN: Record<OrderSource, IntentOrigin> = {
   MANUAL: "manual", AI_ASSIST: "ruby", AI_AUTO: "automation", SCANNER: "automation", BACKTEST: "system", REPLAY: "system",
 };
 
+/** Simulated account balance the OMS book is sized on. */
+export const SIMULATOR_STARTING_BALANCE = 10_000;
+
+/** Hard rules the simulator venue adds to every entry it books (rule 13). */
+export const SIMULATOR_VENUE_RULES = {
+  source: "simulator_oms", requireTakeProfit: true, minRewardRiskRatio: 1.2, minAiConfidence: 70,
+} as const;
+
 function simulatorInstrument(symbol: string): InstrumentModel {
   return {
     // Money per 1.0 price move per lot, from the same heuristic the OMS P/L uses.
@@ -527,9 +522,9 @@ async function governOms(args: {
   symbol: string; side: Direction; lots: number; entryPrice?: number | null;
   stopLoss?: number | null; takeProfit?: number | null; ref: string;
   position?: { entryPrice: number; stopLoss: number | null } | null;
+  aiConfidence?: number | null;
 }): Promise<OmsGovernance> {
   const { enforcePreTradeRisk } = await import("./riskGovernor/enforce.js");
-  const { getProfile } = await import("./riskGovernor2.js");
   const open = Array.from(positions.values()).filter((p) => p.status === "OPEN" && p.environment === args.environment);
   const book: RiskPosition[] = open.map((p) => ({
     symbol: p.symbol, side: p.direction, lots: p.lotSize, entryPrice: p.entryPrice, stopLoss: p.stopLoss ?? null,
@@ -549,7 +544,16 @@ async function governOms(args: {
   const realized = Array.from(positions.values())
     .filter((p) => p.status !== "OPEN" && p.environment === args.environment && (p.closedAt ?? "").slice(0, 10) === today)
     .reduce((a, p) => a + p.realizedPnL, 0);
-  const balance = getProfile().currentBalance;
+  // Rule 13 counts trades on the simulator's own book, like its P/L.
+  const dayStart = `${today}T00:00:00.000Z`;
+  const activity = summarizeActivity(
+    Array.from(positions.values())
+      .filter((p) => p.status !== "OPEN" && p.environment === args.environment && p.closedAt)
+      .map((p) => ({ closedAt: new Date(p.closedAt!), pnl: p.realizedPnL })),
+    open.filter((p) => p.openedAt >= dayStart).length,
+    now, `simulator_oms:${args.environment}`,
+  );
+  const balance = SIMULATOR_STARTING_BALANCE;
   const equity = balance + floating;
   const usedMargin = open.reduce((a, p) => a + (simulatorInstrument(p.symbol).contractSize ?? 0) * p.entryPrice * p.lotSize / 100, 0);
 
@@ -557,8 +561,10 @@ async function governOms(args: {
     userId: args.actor.userId, venue: "PAPER", origin: args.origin, action: args.action,
     symbol: args.symbol, side: args.side, lots: args.lots,
     entryPrice: args.entryPrice ?? null, stopLoss: args.stopLoss ?? null, takeProfit: args.takeProfit ?? null,
-    intentRef: args.ref, position: args.position ?? null,
+    intentRef: args.ref, position: args.position ?? null, aiConfidence: args.aiConfidence ?? null,
   };
+  const health = marketHealth(args.symbol);
+  const news = currentNewsRisk(args.symbol);
   const r = await enforcePreTradeRisk(intent, {
     facts: {
       now,
@@ -567,10 +573,46 @@ async function governOms(args: {
       quote: q ? { bid: q.bid, ask: q.ask, at: now, source: "simulator_oms" } : null,
       broker: { status: "CONNECTED", lastSeenAt: now, detail: "internal simulator OMS" },
       daily: { realizedPnl: realized, floatingPnl: floating },
+      activity,
+      market: {
+        spreadTooWide: health.spread.label === "SPREAD_TOO_HIGH",
+        newsBlock: news.blocking ? news.blockReason || "high-impact news" : null,
+        source: "simulator_market_data",
+      },
+      venueRules: SIMULATOR_VENUE_RULES,
     },
     auditContext: { caller: "simulator_oms", environment: args.environment, ref: args.ref },
   });
   return { allowed: r.allowed, blockedBy: r.blockedBy, reason: r.primaryReason, auditEventId: r.auditEventId };
+}
+
+/**
+ * What the Risk Governor would say, at platform-default limits, about a
+ * hypothetical simulator entry on an empty book. Pure (no audit row, no
+ * user): for shadow mode, which tracks ideas and never books an order.
+ */
+export function previewSimulatorEntry(t: {
+  symbol: string; side: Direction; lots: number; stopLoss: number | null; takeProfit: number | null;
+  aiConfidence: number | null; origin: IntentOrigin;
+}): RiskDecision {
+  const now = new Date();
+  const q = marketSimulator.quote(t.symbol);
+  const health = marketHealth(t.symbol);
+  const news = currentNewsRisk(t.symbol);
+  return evaluatePreTradeRisk({
+    userId: 0, venue: "PAPER", origin: t.origin, action: "OPEN", symbol: t.symbol, side: t.side, lots: t.lots,
+    stopLoss: t.stopLoss, takeProfit: t.takeProfit, aiConfidence: t.aiConfidence,
+  }, {
+    now, limits: resolveEffectiveLimits({}),
+    account: { equity: SIMULATOR_STARTING_BALANCE, freeMargin: SIMULATOR_STARTING_BALANCE, leverage: 100, currency: "USD", source: "simulator_oms" },
+    instruments: { [t.symbol]: simulatorInstrument(t.symbol) },
+    quote: q ? { bid: q.bid, ask: q.ask, at: now, source: "simulator_oms" } : null,
+    positions: [], inFlight: [],
+    broker: { status: "CONNECTED", lastSeenAt: now, detail: "internal simulator OMS" },
+    daily: { realizedPnl: 0, floatingPnl: 0 },
+    market: { spreadTooWide: health.spread.label === "SPREAD_TOO_HIGH", newsBlock: news.blocking ? news.blockReason || "high-impact news" : null, source: "simulator_market_data" },
+    venueRules: SIMULATOR_VENUE_RULES,
+  });
 }
 
 function blocked<T>(g: OmsGovernance): OmsActionResult<T> {
@@ -589,6 +631,7 @@ export async function placeOrder(input: CreateOrderInput, actor: OmsActor): Prom
     symbol: input.symbol, side: input.direction, lots: input.lotSize,
     entryPrice: input.orderType && input.orderType !== "MARKET" ? input.entryPrice ?? null : null,
     stopLoss: input.stopLoss ?? null, takeProfit: input.takeProfit ?? null, ref: `oms:${pendingId}`,
+    aiConfidence: input.confidenceScore ?? null,
   });
   const order = createOrder(input);
   if (!g.allowed && order.status !== "RISK_REJECTED") {
@@ -609,6 +652,7 @@ export async function fillOrder(orderId: string, actor: OmsActor): Promise<OmsAc
     symbol: o.symbol, side: o.direction, lots: o.lotSize,
     entryPrice: o.orderType !== "MARKET" ? o.entryPrice ?? null : null,
     stopLoss: o.stopLoss ?? null, takeProfit: o.takeProfit ?? null, ref: `oms:${o.orderId}`,
+    aiConfidence: o.confidenceScore ?? null,
   });
   if (!g.allowed) {
     if (o.status === "APPROVED_FOR_SIMULATION" || o.status === "DRAFT" || o.status === "RISK_CHECK_PENDING") {
@@ -632,6 +676,7 @@ export async function amendOrder(id: string, patch: Pick<Partial<Order>, "stopLo
     symbol: o.symbol, side: o.direction, lots: next.lotSize,
     entryPrice: o.orderType !== "MARKET" ? o.entryPrice ?? null : null,
     stopLoss: next.stopLoss ?? null, takeProfit: next.takeProfit ?? null, ref: `oms:${o.orderId}`,
+    aiConfidence: o.confidenceScore ?? null,
   });
   if (!g.allowed) return blocked(g);
   return { ok: true, value: patchOrder(id, patch)!, governance: g };

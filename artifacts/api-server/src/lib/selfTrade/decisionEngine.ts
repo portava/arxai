@@ -46,7 +46,7 @@ import type {
 import { logger } from "../logger.js";
 import { getCachedIntelligenceContext } from "../data/chart/chartIntelligence.js";
 import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { loadPlatformHalt, type TradingHalt } from "../safety/tradingHalt.js";
 import { runAllHandshakes } from "../handshake/coordinator.js";
 import { routeQuote } from "../data/marketDataRouter.js";
 import { computeQuotaFromSettings } from "./agentQuotaEngine.js";
@@ -90,16 +90,12 @@ function scopeKey(scope?: AgentScope): string {
   return `${scope.ownerType ?? "ANY"}:${scope.ownerId ?? "ANY"}`;
 }
 
-// Governor overall status → the coarse status the pure pipeline understands.
-function mapGovernorStatus(overall: string): GovernorContext["status"] {
-  switch (overall) {
-    case "LOCKED": return "LOCKED";
-    case "WATCH_ONLY": return "WATCH_ONLY";
-    case "PAPER_PAUSED": return "PAPER_PAUSED";
-    case "PAPER_CAUTION": return "PAPER_ALLOWED"; // caution is still tradeable
-    case "PAPER_ALLOWED": return "PAPER_ALLOWED";
-    default: return "UNKNOWN";
-  }
+// Fleet-level governor context: the platform stop switches (the same ones the
+// pre-trade Risk Governor honours). Per-order risk is decided by the Risk
+// Governor inside executeInstant for each agent's own user, never here.
+function governorFromHalt(halt: TradingHalt | null): GovernorContext {
+  if (!halt) return { status: "UNKNOWN", hardBlocks: [] };
+  return halt.engaged ? { status: "LOCKED", hardBlocks: [...halt.sources] } : { status: "PAPER_ALLOWED", hardBlocks: [] };
 }
 
 // Advisory handshake verdicts → readiness context. BLOCK → blocked, WARN/UNKNOWN
@@ -392,8 +388,8 @@ export async function buildFleetSafetyContext(): Promise<{
   handshake: HandshakeReadinessContext;
 }> {
   const [governorEval, handshakeResults] = await Promise.all([
-    evaluateGovernor().catch((err) => {
-      logger.warn({ err }, "self-trade: governor eval failed (degrading to UNKNOWN)");
+    loadPlatformHalt().catch((err) => {
+      logger.warn({ err }, "self-trade: platform halt read failed (degrading to UNKNOWN)");
       return null;
     }),
     runAllHandshakes().catch((err) => {
@@ -401,10 +397,7 @@ export async function buildFleetSafetyContext(): Promise<{
       return null;
     }),
   ]);
-  const governor: GovernorContext = {
-    status: governorEval ? mapGovernorStatus(governorEval.overallStatus) : "UNKNOWN",
-    hardBlocks: governorEval ? governorEval.hardBlocks.map((b) => b.code) : [],
-  };
+  const governor = governorFromHalt(governorEval);
   return { governor, handshake: mapHandshakes(handshakeResults) };
 }
 
@@ -480,8 +473,8 @@ export async function runDecisionCycle(
 
   // Cycle-global context (read once, shared across all candidates).
   const [governorEval, handshakeResults, killEngaged] = await Promise.all([
-    evaluateGovernor().catch((err) => {
-      logger.warn({ err }, "self-trade: governor eval failed (degrading to UNKNOWN)");
+    loadPlatformHalt().catch((err) => {
+      logger.warn({ err }, "self-trade: platform halt read failed (degrading to UNKNOWN)");
       return null;
     }),
     runAllHandshakes().catch((err) => {
@@ -491,10 +484,7 @@ export async function runDecisionCycle(
     globalKillEngaged().catch(() => false),
   ]);
 
-  const governor: GovernorContext = {
-    status: governorEval ? mapGovernorStatus(governorEval.overallStatus) : "UNKNOWN",
-    hardBlocks: governorEval ? governorEval.hardBlocks.map((b) => b.code) : [],
-  };
+  const governor = governorFromHalt(governorEval);
   const handshake = mapHandshakes(handshakeResults);
   if (killEngaged) notes.push("Global Self-Trade kill switch engaged — all decisions blocked.");
   if (governor.status === "UNKNOWN") notes.push("Risk Governor state unavailable — decisions degraded.");

@@ -11,7 +11,7 @@ import {
 } from "@workspace/db/schema";
 import { sql, and, eq, gt, isNotNull, desc } from "drizzle-orm";
 import { preflight } from "../paperSession/manager.js";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { evaluateReadiness } from "../readiness/traderReadiness.js";
 import { brokerStatusForGovernance } from "../brokerReadOnly/service.js";
 import { getStatus as getSafetyStatus } from "../safetyCore.js";
 import { getState as getLiveState } from "./state.js";
@@ -68,7 +68,7 @@ export async function computeReadiness(actorRole = "system"): Promise<ReadinessR
   }
 
   // 3. Risk governor
-  const governor = await safe<Record<string, unknown>>(async () => evaluateGovernor() as unknown as Record<string, unknown>, {
+  const governor = await safe<Record<string, unknown>>(async () => evaluateReadiness() as unknown as Record<string, unknown>, {
     governor: { liveTradingAllowed: false, allowedActions: { canPlaceLiveTrade: false }, score: 0, level: "BLOCK" },
   } as Record<string, unknown>);
   const govPayload = (governor as { governor?: { liveTradingAllowed?: boolean } }).governor ?? (governor as { liveTradingAllowed?: boolean });

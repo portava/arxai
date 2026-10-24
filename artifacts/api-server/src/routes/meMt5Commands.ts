@@ -105,7 +105,7 @@ router.post("/me/mt5-connections/:id/commands", requireUser, async (req, res): P
     const action = body.action.toUpperCase();
     if (FORBIDDEN_ACTIONS.has(action)) {
       try {
-        const { logRiskEvent } = await import("./meRiskGovernor.js");
+        const { logRiskEvent } = await import("../lib/riskGovernor/riskEvents.js");
         await logRiskEvent({
           userId, eventType: "live_execution_blocked", severity: "critical", decision: "block",
           reason: `Blocked live action "${action}" — live trading is locked.`,

@@ -1,6 +1,6 @@
 // Pre-trade Risk Governor — rule-by-rule proof of the pure evaluator.
 //
-// For each of the 12 mandatory rules: a baseline intent that passes every
+// For each of the 13 mandatory rules: a baseline intent that passes every
 // rule, then one fact changed so that rule (and only that rule) blocks. The
 // decision, the blocking rule id and the measured values are asserted, so a
 // rule that silently stops evaluating fails here. Combination cases prove
@@ -60,11 +60,11 @@ function blockedOnly(intent: TradeIntent, ctx: RiskContext, rule: RiskRuleId) {
   return r;
 }
 
-test("baseline intent passes all 12 rules and reports every rule", () => {
+test("baseline intent passes all 13 rules and reports every rule", () => {
   const d = evaluatePreTradeRisk(baseIntent(), baseCtx());
   assert.equal(d.decision, "ALLOW", d.primaryReason ?? "");
   assert.deepEqual(d.rules.map((r) => r.rule), [...RISK_RULE_IDS]);
-  assert.equal(d.rules.length, 12);
+  assert.equal(d.rules.length, 13);
   assert.ok(d.rules.every((r) => r.outcome === "PASS"));
 });
 
@@ -281,7 +281,7 @@ test("combination: in close-only conditions a CLOSE is allowed while the OPEN is
   assert.equal(evaluatePreTradeRisk(baseIntent(), ctx).decision, "BLOCK");
   const close = evaluatePreTradeRisk(baseIntent({ action: "CLOSE", stopLoss: null }), ctx);
   assert.equal(close.decision, "ALLOW");
-  assert.ok(close.rules.filter((r) => r.outcome === "NOT_APPLICABLE").length === 10);
+  assert.ok(close.rules.filter((r) => r.outcome === "NOT_APPLICABLE").length === 11);
 });
 
 test("combination: a CLOSE with an invalid quantity or a disconnected bridge is still refused", () => {
@@ -308,13 +308,17 @@ test("limits: the strictest stored value wins and the platform ceiling bounds th
   assert.equal(none.maxLotSize, PLATFORM_RISK_CEILINGS.maxLotSize);
 });
 
-test("an AI or automation origin gets no relaxation: identical facts, identical decision", () => {
+test("an AI or automation origin gets no relaxation: every manual block applies to it too", () => {
   const ctx = baseCtx({ daily: { realizedPnl: -400, floatingPnl: 0 } });
   const manual = evaluatePreTradeRisk(baseIntent({ origin: "manual" }), ctx);
+  assert.deepEqual(manual.blockedBy, ["daily_loss_limit"]);
   for (const origin of ["ruby", "automation", "strategy", "api"] as const) {
     const d = evaluatePreTradeRisk(baseIntent({ origin }), ctx);
-    assert.deepEqual(d.blockedBy, manual.blockedBy, origin);
+    for (const r of manual.blockedBy) assert.ok(d.blockedBy.includes(r), `${origin}: ${r}`);
   }
+  // Automated origins are stricter, never looser: they pause once 70% of the day's loss budget is used.
+  assert.ok(evaluatePreTradeRisk(baseIntent({ origin: "automation" }), ctx).blockedBy.includes("trading_discipline"));
+  assert.ok(!evaluatePreTradeRisk(baseIntent({ origin: "api" }), ctx).blockedBy.includes("trading_discipline"));
 });
 
 // ── Position Guardian: stop modifications ─────────────────────────────────
@@ -371,7 +375,7 @@ test("halt: an engaged stop switch blocks an otherwise clean open and is reporte
   assert.equal(d.decision, "BLOCK");
   assert.deepEqual(d.blockedBy, ["trading_halt"]);
   assert.match(d.primaryReason!, /^Trading is halted: Your kill switch/);
-  assert.equal(d.rules.length, 12, "the 12 rules are still evaluated and recorded");
+  assert.equal(d.rules.length, 13, "the 13 rules are still evaluated and recorded");
   const both = evaluatePreTradeRisk(baseIntent({ stopLoss: null }), baseCtx({ halt: HALTED }));
   assert.equal(both.blockedBy[0], "trading_halt");
   assert.ok(both.blockedBy.includes("stop_loss_required"), "rule breaches are still listed after the halt");

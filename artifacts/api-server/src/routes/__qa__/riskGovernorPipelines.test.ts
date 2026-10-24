@@ -218,7 +218,7 @@ test("A demo manual: a sized order passes, is written, and its pass is audited; 
   const ok = await latestEvent(u.a);
   assert.equal(ok.row.decision, "pass");
   assert.equal(ok.row.eventType, "risk_check");
-  assert.equal((ok.details["rules"] as unknown[]).length, 12);
+  assert.equal((ok.details["rules"] as unknown[]).length, 13);
 
   const dup = await request("POST", "/paper/orders", c.a, order);
   assert.equal(dup.status, 422);

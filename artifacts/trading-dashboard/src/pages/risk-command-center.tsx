@@ -3,14 +3,19 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Shield, Pause, Play, RotateCcw, Gauge, SlidersHorizontal, ClipboardList, ScrollText } from "lucide-react";
+import { Shield, Pause, Play, Gauge, SlidersHorizontal, ClipboardList, ScrollText } from "lucide-react";
 import { PageTabs } from "@/components/ui/PageTabs";
 import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { CompactAlert } from "@/components/ui/CompactAlert";
 
-type Profile = Record<string, unknown> & { profileName: string; preset: string; maxRiskPerTradeUsd: number; maxDailyLossUsd: number; maxLotSize: number; minRiskReward: number };
-type Budget = { dailyRiskLimit: number; dailyRiskUsed: number; dailyRiskRemaining: number; weeklyRiskLimit: number; weeklyRiskUsed: number; openRisk: number; currentDrawdownUsd: number; maxDrawdownAllowed: number; riskStatus: string };
-type Cards = { riskStatus: string; dailyRiskRemaining: number; openRisk: number; drawdownStatus: string; exposureStatus: string; overtradingRisk: string; activeRiskLocks: string[]; aiRiskDiscipline: number; permissions: { aiTrading: boolean; manualTrading: boolean; simulator: boolean; liveTesterIntent: boolean; futureMt5: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
+type Settings = { maxRiskPerTradeAmount: number | null; maxDailyLossAmount: number | null; maxPositionSize: number | null; minRewardRiskRatio: number; maxTradesPerDay: number; maxOpenTrades: number };
+type Limits = { maxLotSize: number; maxDailyLossPercent: number | null; maxDailyLossAmount: number | null; maxRiskPerTradePercent: number; maxRiskPerTradeAmount: number | null; discipline: { maxTradesPerDay: number | null; maxOpenTrades: number | null } };
+type Profile = { preset: string; settings: Settings; effectiveLimits: Limits };
+type Money = number | null;
+type Budget = { venue: string; dailyRiskLimit: Money; dailyRiskUsed: number; dailyRiskRemaining: Money; weeklyRiskLimit: Money; weeklyRiskUsed: number; openRisk: number; openPositions: number; equity: Money; riskStatus: string };
+type Cards = { venue: string; riskStatus: string; dailyRiskRemaining: Money; weeklyRiskRemaining: Money; openRisk: number; openPositions: number; tradesToday: number | null; consecutiveLosses: number | null; overtrading: string; activeHalts: string[]; permissions: { trading: boolean; pauseReason: string | null }; propFirm: { status: string; profitTargetProgress: number } | null };
+
+const usd = (v: Money) => (v == null ? "none set" : `$${v}`);
 
 const STATUS_COLOR: Record<string, string> = {
   OK: "bg-success/20 text-success",
@@ -23,7 +28,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 async function api(path: string, init?: RequestInit) {
-  const r = await fetch(path, { headers: { "x-security-role": "ADMIN", "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });
+  const r = await fetch(path, { credentials: "include", headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });
   return r.json();
 }
 
@@ -34,8 +39,10 @@ async function api(path: string, init?: RequestInit) {
  *   Rules   — permission booleans + active risk locks.
  *   Audit   — pause/resume/reset controls, risk-event log, profile editor.
  *
- * Account protection logic is unchanged — only the surface is reorganised.
- * MT5 broker permission stays OFF regardless of what tab is open.
+ * Everything here is YOUR account: presets write into your own risk
+ * settings, which the Risk Governor enforces on every order (an admin or
+ * platform limit always wins if it is stricter). Pause engages your own kill
+ * switch; it never halts other traders.
  */
 export default function RiskCommandCenter() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -45,9 +52,9 @@ export default function RiskCommandCenter() {
 
   async function load() {
     const [p, b, c] = await Promise.all([
-      fetch("/api/risk-profile").then((r) => r.json()),
-      fetch("/api/risk/budget").then((r) => r.json()),
-      fetch("/api/risk/dashboard-cards").then((r) => r.json()),
+      api("/api/risk-profile"),
+      api("/api/risk/budget"),
+      api("/api/risk/dashboard-cards"),
     ]);
     setProfile(p); setBudget(b); setCards(c);
   }
@@ -56,7 +63,6 @@ export default function RiskCommandCenter() {
   async function applyPreset(preset: string) { await api(`/api/risk-profile/preset/${preset}`, { method: "POST" }); load(); }
   async function pause() { await api("/api/risk/pause", { method: "POST", body: JSON.stringify({ reason: pauseReason }) }); load(); }
   async function resume() { await api("/api/risk/resume", { method: "POST" }); load(); }
-  async function resetDay() { await api("/api/risk/reset-simulator-day", { method: "POST" }); load(); }
 
   // ---- Tab contents -----------------------------------------------------
 
@@ -65,31 +71,31 @@ export default function RiskCommandCenter() {
       {cards?.permissions.pauseReason && (
         <CompactAlert
           tone="danger"
-          title="Trading paused by account protection"
+          title="New trades are halted on your account"
           description={cards.permissions.pauseReason}
-          details={<p>Resume from the Audit tab once the reason is resolved. Live broker dispatch stays OFF.</p>}
+          details={<p>If this is your own pause, resume it from the Audit tab. Closing positions stays available.</p>}
           testId="risk-paused-alert"
         />
       )}
 
       {cards && (
         <div className="grid gap-2 grid-cols-2 md:grid-cols-4">
-          <Stat label="Daily risk left" value={`$${cards.dailyRiskRemaining}`} />
+          <Stat label="Daily risk left" value={usd(cards.dailyRiskRemaining)} />
+          <Stat label="Weekly risk left" value={usd(cards.weeklyRiskRemaining)} />
           <Stat label="Open risk" value={`$${cards.openRisk}`} />
-          <Stat label="Drawdown" value={cards.drawdownStatus} />
-          <Stat label="Exposure" value={cards.exposureStatus} />
-          <Stat label="Overtrading" value={cards.overtradingRisk} />
-          <Stat label="AI discipline" value={`${cards.aiRiskDiscipline}/100`} />
-          <Stat label="MT5" value={cards.permissions.futureMt5 ? "ON" : "DEFERRED"} />
-          <Stat label="Active locks" value={cards.activeRiskLocks.length === 0 ? "none" : String(cards.activeRiskLocks.length)} />
+          <Stat label="Open positions" value={String(cards.openPositions)} />
+          <Stat label="Trades today" value={cards.tradesToday == null ? "—" : String(cards.tradesToday)} />
+          <Stat label="Losses in a row" value={cards.consecutiveLosses == null ? "—" : String(cards.consecutiveLosses)} />
+          <Stat label="Overtrading" value={cards.overtrading} />
+          <Stat label="Active halts" value={cards.activeHalts.length === 0 ? "none" : String(cards.activeHalts.length)} />
         </div>
       )}
 
-      {cards && cards.activeRiskLocks.length > 0 && (
+      {cards && cards.activeHalts.length > 0 && (
         <CompactAlert
           tone="warning"
-          title={`${cards.activeRiskLocks.length} active risk lock${cards.activeRiskLocks.length === 1 ? "" : "s"}`}
-          description={cards.activeRiskLocks.join(", ")}
+          title={`${cards.activeHalts.length} active stop switch${cards.activeHalts.length === 1 ? "" : "es"}`}
+          description={cards.activeHalts.join(", ")}
           testId="risk-active-locks"
         />
       )}
@@ -100,9 +106,9 @@ export default function RiskCommandCenter() {
     <div className="space-y-3" data-testid="risk-limits-tab">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Risk Profile · {profile?.preset}</CardTitle>
+          <CardTitle className="text-base">Your risk profile · {profile?.preset}</CardTitle>
           <CardDescription>
-            {profile?.profileName} · max risk/trade ${profile?.maxRiskPerTradeUsd} · max daily loss ${profile?.maxDailyLossUsd} · max lot {profile?.maxLotSize} · min R:R {profile?.minRiskReward}
+            In force (strictest of yours, admin and platform): max lot {profile?.effectiveLimits.maxLotSize} · risk/trade {profile?.effectiveLimits.maxRiskPerTradePercent}%{profile?.effectiveLimits.maxRiskPerTradeAmount != null ? ` or $${profile.effectiveLimits.maxRiskPerTradeAmount}` : ""} · daily loss {profile?.effectiveLimits.maxDailyLossPercent ?? "—"}%{profile?.effectiveLimits.maxDailyLossAmount != null ? ` or $${profile.effectiveLimits.maxDailyLossAmount}` : ""} · trades/day {profile?.effectiveLimits.discipline.maxTradesPerDay ?? "—"} · open trades {profile?.effectiveLimits.discipline.maxOpenTrades ?? "—"} · min R:R {profile?.settings.minRewardRiskRatio}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
@@ -122,13 +128,13 @@ export default function RiskCommandCenter() {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-base">Risk Budget</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-            <Stat label="Daily limit" value={`$${budget.dailyRiskLimit}`} />
+            <Stat label="Daily limit" value={usd(budget.dailyRiskLimit)} />
             <Stat label="Daily used" value={`$${budget.dailyRiskUsed}`} />
-            <Stat label="Weekly limit" value={`$${budget.weeklyRiskLimit}`} />
+            <Stat label="Weekly limit" value={usd(budget.weeklyRiskLimit)} />
             <Stat label="Weekly used" value={`$${budget.weeklyRiskUsed}`} />
             <Stat label="Open risk" value={`$${budget.openRisk}`} />
-            <Stat label="Drawdown" value={`$${budget.currentDrawdownUsd}`} />
-            <Stat label="Max DD allowed" value={`$${budget.maxDrawdownAllowed}`} />
+            <Stat label="Equity" value={usd(budget.equity)} />
+            <Stat label="Venue" value={budget.venue} />
             <Stat label="Status" value={budget.riskStatus} />
           </CardContent>
         </Card>
@@ -140,7 +146,7 @@ export default function RiskCommandCenter() {
     <div className="space-y-3" data-testid="risk-rules-tab">
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Permissions</CardTitle>
-          <CardDescription>Each rule below maps directly to a safety gate in the dispatch pipeline.</CardDescription>
+          <CardDescription>Whether your account can open new trades right now. Every order is still checked by the Risk Governor.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-1">
           {cards && Object.entries(cards.permissions).filter(([k]) => k !== "pauseReason").map(([k, v]) => (
@@ -174,7 +180,7 @@ export default function RiskCommandCenter() {
     <div className="space-y-3" data-testid="risk-audit-tab">
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Controls</CardTitle>
-          <CardDescription className="text-xs">Pause/resume halts every dispatch surface. Reset is simulator-only.</CardDescription>
+          <CardDescription className="text-xs">Pause engages your own kill switch: new trades on your account stop on every venue, closing stays open. It never affects other traders.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           <Input
@@ -184,9 +190,8 @@ export default function RiskCommandCenter() {
             data-testid="risk-pause-reason"
           />
           <div className="flex flex-wrap gap-2">
-            <Button onClick={pause} variant="destructive" size="sm" data-testid="risk-btn-pause"><Pause className="h-4 w-4 mr-1" />Pause all trading</Button>
+            <Button onClick={pause} variant="destructive" size="sm" data-testid="risk-btn-pause"><Pause className="h-4 w-4 mr-1" />Pause my trading</Button>
             <Button onClick={resume} variant="outline" size="sm" data-testid="risk-btn-resume"><Play className="h-4 w-4 mr-1" />Resume</Button>
-            <Button onClick={resetDay} variant="outline" size="sm" data-testid="risk-btn-reset"><RotateCcw className="h-4 w-4 mr-1" />Reset simulator day</Button>
           </div>
         </CardContent>
       </Card>
@@ -209,9 +214,9 @@ export default function RiskCommandCenter() {
         <Shield className="h-6 w-6 text-primary" />
         <div className="flex-1 min-w-0">
           <h1 className="text-xl md:text-2xl font-bold">Risk Command Center</h1>
-          <p className="text-xs md:text-sm text-muted-foreground">Account protection layer — controls execution decisions, never navigation. MT5 broker permission stays OFF.</p>
+          <p className="text-xs md:text-sm text-muted-foreground">Your limits and budget as the Risk Governor enforces them.</p>
         </div>
-        <Badge variant="outline" className="text-[11px]">SIMULATOR</Badge>
+        {cards && <Badge variant="outline" className="text-[11px]">{cards.venue}</Badge>}
         {cards && <Badge className={`text-[11px] ${STATUS_COLOR[cards.riskStatus] ?? ""}`} data-testid="risk-status-badge">{cards.riskStatus}</Badge>}
       </div>
 

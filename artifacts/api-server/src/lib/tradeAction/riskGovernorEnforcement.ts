@@ -1,18 +1,18 @@
-// Phase RG — Central Risk Governor enforcement for the Trade Action chokepoint.
+// Trade Action → pre-trade Risk Governor adapter.
 //
-// This module is the ONE place that enforces:
-//   * max open trades             (user_risk_settings.maxOpenTrades)
-//   * max trades per day          (user_risk_settings.maxTradesPerDay; also user_risk_limits.maxTradesPerDay if admin-set)
-//   * daily loss limit            (user_risk_settings.maxDailyLossPercent / maxDailyLossAmount; also user_risk_limits.maxDailyLossUsd)
-//   * close-only mode             (daily loss hit OR user_risk_limits.requireLiveConfirmation-style admin pause)
-//   * shared-master allocation    (virtual_trading_accounts.virtualBalance / virtualPnl caps)
-//   * allowed symbols             (user_risk_limits.allowedSymbols)
-//   * allowed direction           (user_risk_limits.allowedDirection)
+// Maps a Trade Action Center request onto a TradeIntent and hands it to the
+// one Risk Governor (lib/riskGovernor/enforce.ts), which decides every limit:
+//   * the 12 exposure rules and the stop switches,
+//   * rule 13: max open trades, max trades per day (trader, legacy and admin
+//     caps, strictest wins) and the trader's discipline settings,
+//   * admin account type, instrument allow-list and direction,
+//   * daily loss / drawdown (close-only: closes and tightening stay allowed),
+//   * shared-master allocation (suspended, exhausted, unsized P/L, margin).
 //
 // It is invoked from `runActionGuards` AFTER the lot-cap check and BEFORE
-// the duplicate / queueable checks. Every BLOCK is logged to
-// `user_risk_events` via the existing `logRiskEvent` helper. Reads are
-// strictly scoped to the requesting user — no cross-user state ever.
+// the duplicate / queueable checks. The governor writes the user_risk_events
+// row; this adapter only adds a routing precondition (shared-master routing
+// must name a virtual allocation).
 //
 // HARD RULES:
 //   * Fail-closed: any DB error in a hard-check path returns "block".
@@ -22,18 +22,7 @@
 //   * Never bypasses an existing guard — only ADDS checks.
 //   * Never queues or modifies an MT5 command.
 
-import { db } from "@workspace/db";
-import {
-  userRiskSettingsTable,
-  userRiskLimitsTable,
-  livePositionsTable,
-  tradesTable,
-  virtualTradingAccountsTable,
-  sharedTradeAttributionTable,
-} from "@workspace/db/schema";
-import { and, desc, eq, gte, isNull, ne, sql } from "drizzle-orm";
-import { logRiskEvent } from "../../routes/meRiskGovernor.js";
-import { isAllocationBlown } from "../live/allocationBlown.js";
+import { logRiskEvent } from "../riskGovernor/riskEvents.js";
 import { enforcePreTradeRisk, type IntentAction, type IntentOrigin } from "../riskGovernor/enforce.js";
 
 // ── Action classification ───────────────────────────────────────────────────
@@ -115,47 +104,11 @@ async function blockAndLog(
   return { passed: false, checkId, reason, details };
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function startOfTodayUtc(now = new Date()): Date {
-  const d = new Date(now);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-async function countTodayOpenedTrades(userId: number): Promise<number> {
-  const since = startOfTodayUtc();
-  const [row] = await db
-    .select({ c: sql<number>`count(*)::int` })
-    .from(tradesTable)
-    .where(and(eq(tradesTable.userId, userId), gte(tradesTable.createdAt, since)));
-  return Number(row?.c ?? 0);
-}
-
-async function countOpenLivePositions(userId: number): Promise<number> {
-  const [row] = await db
-    .select({ c: sql<number>`count(*)::int` })
-    .from(livePositionsTable)
-    .where(and(eq(livePositionsTable.userId, userId), ne(livePositionsTable.status, "CLOSED")));
-  return Number(row?.c ?? 0);
-}
-
-async function sumTodayRealizedPnl(userId: number): Promise<number> {
-  const since = startOfTodayUtc();
-  const [row] = await db
-    .select({ s: sql<number>`coalesce(sum(pnl), 0)::float8` })
-    .from(tradesTable)
-    .where(and(
-      eq(tradesTable.userId, userId),
-      gte(tradesTable.closedAt, since),
-    ));
-  return Number(row?.s ?? 0);
-}
-
 // ── Main enforcement entrypoint ────────────────────────────────────────────
 export async function enforceRiskGovernor(input: RiskEnforcementInput): Promise<RiskEnforcementResult> {
   const { userId, actionType, requestedMode, symbol, side, lotSize, routingMode, virtualAccountId } = input;
 
-  // 0. The 12 mandatory pre-trade rules (lib/riskGovernor) run for EVERY
+  // 0. The 13 mandatory pre-trade rules (lib/riskGovernor) run for EVERY
   //    mode, SIMULATED included: demo exercises the same rules as live.
   //    enforcePreTradeRisk writes its own user_risk_events row. A radar
   //    preview with no lot size yet cannot be sized, so it is checked when
@@ -193,271 +146,18 @@ export async function enforceRiskGovernor(input: RiskEnforcementInput): Promise<
     }
   }
 
-  // 1. Load per-user risk settings (advisory caps) and admin-set hard limits.
-  //    Both are optional rows — if absent we fall back to engine defaults.
-  let settingsRow: typeof userRiskSettingsTable.$inferSelect | undefined;
-  let limitsRow: typeof userRiskLimitsTable.$inferSelect | undefined;
-  try {
-    const [s] = await db.select().from(userRiskSettingsTable)
-      .where(eq(userRiskSettingsTable.userId, userId)).limit(1);
-    settingsRow = s;
-    const [l] = await db.select().from(userRiskLimitsTable)
-      .where(eq(userRiskLimitsTable.userId, userId)).limit(1);
-    limitsRow = l;
-  } catch (e) {
-    return blockAndLog(userId, "rg_settings_load_failed",
-      "Risk settings could not be loaded. Trade blocked for safety.",
-      { error: (e as Error).message }, input.actionId, input.previewMode);
+  // Routing precondition: shared-master routing must name the trader's
+  // virtual allocation, or the governor would size against the wrong account.
+  if (routingMode === "SHARED_MASTER_MT5" && OPENS_NEW_RISK.has(actionType) && virtualAccountId == null) {
+    return blockAndLog(userId, "rg_shared_no_virtual_account",
+      "Shared-master routing requires a virtual allocation. Contact admin.",
+      { routingMode }, input.actionId, input.previewMode);
   }
 
-  const maxOpenTrades = settingsRow?.maxOpenTrades ?? 3;
-  const maxTradesPerDaySettings = settingsRow?.maxTradesPerDay ?? 5;
-  const maxTradesPerDayAdmin = limitsRow?.maxTradesPerDay ?? 0; // 0 = unlimited
-  const maxDailyLossPercent = settingsRow?.maxDailyLossPercent ?? 3;
-  const maxDailyLossAmountSettings = settingsRow?.maxDailyLossAmount ?? null;
-  const maxDailyLossAdminUsd = limitsRow?.maxDailyLossUsd ?? 0; // 0 = unlimited
-  const blockAfterDailyLossHit = settingsRow?.blockAfterDailyLossHit ?? true;
-  const allowedSymbols = Array.isArray(limitsRow?.allowedSymbols) ? (limitsRow.allowedSymbols as string[]) : [];
-  const allowedDirection = (limitsRow?.allowedDirection ?? "both") as string;
-  const allowedAccountType = (limitsRow?.allowedAccountType ?? "demo") as string;
-
-  // 2. Admin allowedAccountType gate.
-  if (requestedMode === "LIVE" && allowedAccountType === "demo") {
-    return blockAndLog(userId, "rg_admin_account_type",
-      "Your account is restricted to DEMO trading by admin policy.",
-      { allowedAccountType }, input.actionId, input.previewMode);
-  }
-
-  // 3. Allowed symbols / direction (admin policy). Empty list = unrestricted.
-  if (OPENS_NEW_RISK.has(actionType)) {
-    if (allowedSymbols.length > 0 && !allowedSymbols.includes(symbol)) {
-      return blockAndLog(userId, "rg_symbol_blocked",
-        `Symbol ${symbol} is not on your allowed symbol list.`,
-        { allowedSymbols }, input.actionId, input.previewMode);
-    }
-    if (side && allowedDirection !== "both") {
-      const wantDir = side === "BUY" ? "buy" : "sell";
-      if (wantDir !== allowedDirection) {
-        return blockAndLog(userId, "rg_direction_blocked",
-          `Your account is restricted to ${allowedDirection.toUpperCase()} trades only.`,
-          { allowedDirection, requestedSide: side }, input.actionId, input.previewMode);
-      }
-    }
-  }
-
-  // SIMULATED actions never reach a broker account: the account-level caps
-  // below read live positions and shared-master allocations, which do not
-  // apply to the paper ledger. The 12 pre-trade rules above already ran.
-  if (requestedMode === "SIMULATED") {
-    return ok("rg_passed_simulated");
-  }
-
-  // 4. Daily loss limit (drives close-only mode).
-  //    We only block NEW risk (OPEN). CLOSE / PARTIAL_CLOSE / MODIFIES are
-  //    always allowed if they reduce or manage existing risk.
-  let inCloseOnlyMode = false;
-  let closeOnlyReason = "";
-  if (blockAfterDailyLossHit) {
-    let dailyPnl = 0;
-    try { dailyPnl = await sumTodayRealizedPnl(userId); }
-    catch (e) {
-      return blockAndLog(userId, "rg_daily_pnl_unavailable",
-        "Daily P&L could not be computed. Trade blocked for safety.",
-        { error: (e as Error).message }, input.actionId, input.previewMode);
-    }
-
-    // 4a. Admin hard USD cap (most restrictive — applies even without balance).
-    if (maxDailyLossAdminUsd > 0 && dailyPnl <= -maxDailyLossAdminUsd) {
-      inCloseOnlyMode = true;
-      closeOnlyReason = `Admin daily-loss cap hit ($${maxDailyLossAdminUsd}). Account is in CLOSE-ONLY mode.`;
-    }
-    // 4b. Engine USD cap (user-set absolute amount).
-    if (!inCloseOnlyMode && maxDailyLossAmountSettings != null && dailyPnl <= -maxDailyLossAmountSettings) {
-      inCloseOnlyMode = true;
-      closeOnlyReason = `Daily loss cap hit ($${maxDailyLossAmountSettings}). CLOSE-ONLY mode until midnight UTC.`;
-    }
-    // 4c. Percent cap — needs an account balance. Task #430: source the equity
-    //     base AND floating P/L from the canonical mark-to-market snapshot so
-    //     the percent cap is measured against the SAME live equity the user
-    //     sees everywhere, and so a current floating drawdown also counts toward
-    //     the daily-loss percentage (stricter — never looser). Falls back to the
-    //     virtual-balance row when the canonical snapshot is unavailable; never
-    //     fabricates a balance (skip rather than invent one).
-    if (!inCloseOnlyMode && routingMode === "SHARED_MASTER_MT5" && virtualAccountId != null) {
-      let equityBase: number | null = null;
-      let floatingLoss = 0;
-      try {
-        const { buildInvestorLiveBalanceSnapshot } = await import("../live/investorLiveBalance.js");
-        const inv = await buildInvestorLiveBalanceSnapshot(userId);
-        if (inv.allocatedBalance > 0) equityBase = inv.allocatedBalance;
-        // floatingPnL null = unavailable → realized-only (never 0-faked).
-        if (inv.floatingPnL != null && inv.floatingPnL < 0) floatingLoss = inv.floatingPnL;
-      } catch {
-        // canonical snapshot unavailable — fall back to the virtual-balance row.
-      }
-      if (equityBase == null) {
-        try {
-          const [v] = await db.select().from(virtualTradingAccountsTable)
-            .where(eq(virtualTradingAccountsTable.id, virtualAccountId)).limit(1);
-          if (v && v.virtualBalance > 0) equityBase = v.virtualBalance;
-        } catch {
-          // virtual account read is non-critical for this branch
-        }
-      }
-      if (equityBase != null && equityBase > 0) {
-        const combinedDailyPnl = dailyPnl + floatingLoss;
-        const lossPct = combinedDailyPnl < 0 ? (Math.abs(combinedDailyPnl) / equityBase) * 100 : 0;
-        if (lossPct >= maxDailyLossPercent) {
-          inCloseOnlyMode = true;
-          closeOnlyReason = `Daily loss ${lossPct.toFixed(2)}% ≥ cap ${maxDailyLossPercent}%. CLOSE-ONLY mode.`;
-        }
-      }
-    }
-  }
-
-  if (inCloseOnlyMode && OPENS_NEW_RISK.has(actionType)) {
-    return blockAndLog(userId, "rg_close_only_mode", closeOnlyReason,
-      { dailyLossHit: true, action: actionType }, input.actionId, input.previewMode);
-  }
-  // CLOSE / PARTIAL_CLOSE / MODIFY pass through in close-only mode.
-
-  // 5. Max open trades — only applies to new-risk actions.
-  if (OPENS_NEW_RISK.has(actionType)) {
-    let openCount = 0;
-    try { openCount = await countOpenLivePositions(userId); }
-    catch (e) {
-      return blockAndLog(userId, "rg_open_count_unavailable",
-        "Open position count unavailable. Trade blocked for safety.",
-        { error: (e as Error).message }, input.actionId, input.previewMode);
-    }
-    if (openCount >= maxOpenTrades) {
-      return blockAndLog(userId, "rg_max_open_trades",
-        `You already have ${openCount} open trade${openCount === 1 ? "" : "s"} (limit ${maxOpenTrades}). Close one to open another.`,
-        { openCount, maxOpenTrades }, input.actionId, input.previewMode);
-    }
-  }
-
-  // 6. Max trades per day — only applies to new-risk actions.
-  //    Admin cap (if > 0) is the floor; engine setting is the ceiling.
-  if (OPENS_NEW_RISK.has(actionType)) {
-    let tradesToday = 0;
-    try { tradesToday = await countTodayOpenedTrades(userId); }
-    catch (e) {
-      return blockAndLog(userId, "rg_trade_count_unavailable",
-        "Daily trade count unavailable. Trade blocked for safety.",
-        { error: (e as Error).message }, input.actionId, input.previewMode);
-    }
-    const effectiveDailyCap = maxTradesPerDayAdmin > 0
-      ? Math.min(maxTradesPerDayAdmin, maxTradesPerDaySettings)
-      : maxTradesPerDaySettings;
-    if (tradesToday >= effectiveDailyCap) {
-      return blockAndLog(userId, "rg_max_trades_per_day",
-        `Daily trade cap reached (${tradesToday}/${effectiveDailyCap}). Resume tomorrow.`,
-        { tradesToday, effectiveDailyCap, adminCap: maxTradesPerDayAdmin, settingsCap: maxTradesPerDaySettings }, input.actionId, input.previewMode);
-    }
-  }
-
-  // 7. Shared-master virtual allocation cap.
-  if (routingMode === "SHARED_MASTER_MT5" && OPENS_NEW_RISK.has(actionType)) {
-    if (virtualAccountId == null) {
-      return blockAndLog(userId, "rg_shared_no_virtual_account",
-        "Shared-master routing requires a virtual allocation. Contact admin.",
-        { routingMode }, input.actionId, input.previewMode);
-    }
-    try {
-      const [v] = await db.select().from(virtualTradingAccountsTable)
-        .where(and(
-          eq(virtualTradingAccountsTable.id, virtualAccountId),
-          eq(virtualTradingAccountsTable.userId, userId), // scope: user must own this virtual account
-        )).limit(1);
-      if (!v) {
-        return blockAndLog(userId, "rg_shared_virtual_not_owned",
-          "Your virtual allocation could not be verified. Trade blocked.",
-          { virtualAccountId }, input.actionId, input.previewMode);
-      }
-      if (v.status !== "active") {
-        return blockAndLog(userId, "rg_shared_virtual_suspended",
-          `Your shared-master allocation is ${v.status}. New trades are blocked.`,
-          { status: v.status }, input.actionId, input.previewMode);
-      }
-      // Allocation cap: if virtualBalance is set and virtualPnl already
-      // exceeds the negative of it (i.e. blown the allocation), block.
-      //
-      // P0-2 — this predicate was never wrong; its INPUT was. Realized P/L was
-      // booked without contract size, so a EURUSD loss that really cost $1,000
-      // was recorded as $0.01 and this check was asked `-0.01 <= -1000`. It
-      // could not trip for FX no matter how much the trader actually lost.
-      // See lib/mt5/contractSize.ts.
-      if (isAllocationBlown({ virtualBalance: v.virtualBalance, virtualPnl: v.virtualPnl })) {
-        return blockAndLog(userId, "rg_shared_allocation_blown",
-          "Your virtual allocation has been exhausted. CLOSE-ONLY until reset.",
-          { virtualBalance: v.virtualBalance, virtualPnl: v.virtualPnl }, input.actionId, input.previewMode);
-      }
-      // P0-2 fail-safe — the cap is only meaningful if virtualPnl reflects
-      // EVERY closed trade. `applyRealizedPnlToVirtualAccount` deliberately
-      // leaves a closed attribution unapplied when the instrument's contract
-      // size or FX conversion cannot be established, rather than booking a
-      // mis-scaled figure. While any such row is outstanding the true realized
-      // loss is UNKNOWN and could already exceed the allocation, so we fail
-      // the cap CLOSED for new risk. This branch is already scoped to
-      // OPENS_NEW_RISK, so closing out stays available.
-      try {
-        const pending = await db.select({ id: sharedTradeAttributionTable.id })
-          .from(sharedTradeAttributionTable)
-          .where(and(
-            eq(sharedTradeAttributionTable.userId, userId),
-            eq(sharedTradeAttributionTable.virtualAccountId, virtualAccountId),
-            eq(sharedTradeAttributionTable.status, "closed"),
-            isNull(sharedTradeAttributionTable.realizedAppliedAt),
-          )).limit(1);
-        if (pending.length > 0) {
-          return blockAndLog(userId, "rg_realized_pnl_pending_sizing",
-            "Some closed trades are still awaiting correct P/L sizing, so your remaining allocation " +
-            "cannot be verified. New trades are paused; you can still close positions.",
-            { virtualAccountId }, input.actionId, input.previewMode);
-        }
-      } catch (e) {
-        return blockAndLog(userId, "rg_realized_pnl_check_unavailable",
-          "Your realized P/L could not be verified. Trade blocked for safety.",
-          { error: (e as Error).message }, input.actionId, input.previewMode);
-      }
-      // Soft check: per-trade lot vs virtualBalance proxy. Reject if a
-      // single new trade would put margin used > virtualBalance (uses
-      // 100:1 leverage proxy when broker margin specs unavailable — flag
-      // as approximate, never as authoritative).
-      if (lotSize != null && lotSize > 0 && v.virtualBalance > 0) {
-        const approxNotional = lotSize * 100_000; // 1 std lot ≈ 100k base ccy notional
-        const approxMarginAt100x = approxNotional / 100;
-        const projectedMarginUsed = v.virtualMarginUsed + approxMarginAt100x;
-        if (projectedMarginUsed > v.virtualBalance) {
-          return blockAndLog(userId, "rg_shared_margin_would_exceed",
-            "This trade would exceed your virtual allocation (margin estimate). Reduce lot size.",
-            {
-              virtualBalance: v.virtualBalance,
-              virtualMarginUsed: v.virtualMarginUsed,
-              approxMarginAt100x,
-              note: "approx_margin_no_broker_specs",
-            }, input.actionId, input.previewMode);
-        }
-      }
-    } catch (e) {
-      return blockAndLog(userId, "rg_shared_lookup_failed",
-        "Virtual allocation check failed. Trade blocked for safety.",
-        { error: (e as Error).message }, input.actionId, input.previewMode);
-    }
-  }
-
-  // All checks passed — record an advisory ledger entry (info only).
-  return ok("rg_passed", {
-    actionType,
-    requestedMode,
-    routingMode,
-    inCloseOnlyMode,
-    maxOpenTrades,
-    maxTradesPerDay: maxTradesPerDayAdmin > 0
-      ? Math.min(maxTradesPerDayAdmin, maxTradesPerDaySettings)
-      : maxTradesPerDaySettings,
-  });
+  // Every limit (account type, instruments, direction, daily loss and
+  // close-only, open-trade and trades-per-day caps, shared allocation) is
+  // decided by the Risk Governor above. Nothing else here can refuse.
+  return ok("rg_passed", { actionType, requestedMode, routingMode });
 }
 
 function toIntentAction(actionType: string): IntentAction | null {

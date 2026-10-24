@@ -15,7 +15,7 @@ import {
 } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { generateInsights } from "./insights.js";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { evaluateReadiness } from "../readiness/traderReadiness.js";
 
 // The caller's own trades, decisions, debriefs, learnings and autopilot runs.
 // strategy_edges / mistake_patterns are the shared cohort learning tables.
@@ -118,8 +118,8 @@ export async function buildCommandCenter(userId: number) {
     settings?.enabled ? "ACTIVE" : (recentCycles.some(c => c.status === "RUNNING") ? "ACTIVE" : "IDLE");
 
   // Build HH governor snapshot (read-only).
-  let governor: Awaited<ReturnType<typeof evaluateGovernor>> | null = null;
-  try { governor = await evaluateGovernor({ persist: false }); } catch { governor = null; }
+  let governor: Awaited<ReturnType<typeof evaluateReadiness>> | null = null;
+  try { governor = await evaluateReadiness({ persist: false, userId }); } catch { governor = null; }
 
   // Insights.
   const insightOut = generateInsights({

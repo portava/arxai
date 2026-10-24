@@ -63,7 +63,7 @@ const MISSION_BACKEND_FILES = [
   "artifacts/api-server/src/lib/missionExecution.ts",
   "artifacts/api-server/src/lib/missionExitManager.ts",
   "artifacts/api-server/src/lib/missionPromotionService.ts",
-  "artifacts/api-server/src/lib/missionRiskService.ts",
+  "artifacts/api-server/src/lib/missionRiskState.ts",
   "artifacts/api-server/src/lib/missionTestingLabService.ts",
   "artifacts/api-server/src/lib/profitMissionJournal.ts",
   "artifacts/api-server/src/lib/profitMissionSerialize.ts",

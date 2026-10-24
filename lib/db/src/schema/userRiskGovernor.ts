@@ -30,6 +30,10 @@ export const userRiskSettingsTable = pgTable("user_risk_settings", {
   maxDrawdownPercent: real("max_drawdown_percent"),
   /** Per-instrument limits: { "EURUSD": { "maxLots": 0.5 }, "XAUUSD": { "blocked": true } }. */
   symbolLimits: jsonb("symbol_limits").notNull().default({}),
+  /** Last preset the trader applied (lib/riskGovernor/riskProfile); null = custom. */
+  riskPreset: text("risk_preset"),
+  /** Prop-firm challenge the trader configured; its caps are written into the limit columns. */
+  propFirm: jsonb("prop_firm"),
   // Quality + cooldowns
   minRewardRiskRatio: real("min_reward_risk_ratio").notNull().default(1.5),
   cooldownAfterLossMinutes: integer("cooldown_after_loss_minutes").notNull().default(30),

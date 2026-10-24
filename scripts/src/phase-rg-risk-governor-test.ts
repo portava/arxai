@@ -57,7 +57,10 @@ async function http(path: string, init: RequestInit = {}): Promise<{ status: num
   const meRisk        = readRepo("artifacts/api-server/src/routes/meRiskGovernor.ts");
   const adminTrading  = readRepo("artifacts/api-server/src/routes/adminTrading.ts");
   const positionSize  = readRepo("artifacts/api-server/src/lib/positionSizing.ts");
-  const engine        = readRepo("artifacts/api-server/src/lib/riskGovernorEngine.ts");
+  // The one pre-trade Risk Governor: pure rules + context loader/audit.
+  const preTrade      = readRepo("artifacts/api-server/src/lib/riskGovernor/preTrade.ts");
+  const governor      = readRepo("artifacts/api-server/src/lib/riskGovernor/enforce.ts");
+  const riskEvents    = readRepo("artifacts/api-server/src/lib/riskGovernor/riskEvents.ts");
   const safetyCore    = readRepo("artifacts/api-server/src/lib/safetyCore.ts");
   const tools         = readRepo("artifacts/api-server/src/lib/assistant/tools.ts");
   const systemPrompt  = readRepo("artifacts/api-server/src/lib/assistant/systemPrompt.ts");
@@ -79,27 +82,30 @@ async function http(path: string, init: RequestInit = {}): Promise<{ status: num
     /MAX_LOT_HARD_CAP/.test(guards) && /maxLotSize/.test(guards));
 
   // ── 3. Daily loss limit enforced and logs to user_risk_events ───────────
+  // The Trade Action adapter hands every action to the one Risk Governor;
+  // the limits below are proven in its sources (preTrade.ts / enforce.ts).
+  const adapterCallsGovernor = /enforcePreTradeRisk\(/.test(enforcement);
   {
-    const hasDailyLoss = /maxDailyLossAmount|maxDailyLossPercent|maxDailyLossUsd/.test(enforcement);
-    const logsBlocks   = /logRiskEvent/.test(enforcement) && /eventType:\s*["']blocked_trade["']/.test(enforcement);
+    const hasDailyLoss = /maxDailyLossAmount/.test(preTrade) && /maxDailyLossPercent/.test(preTrade) && /max_daily_loss_usd/.test(preTrade);
+    const logsBlocks   = /logRiskEvent/.test(governor) && /["']blocked_trade["']/.test(governor);
     record("3. Daily loss enforcement + audit log",
-      hasDailyLoss && logsBlocks);
+      adapterCallsGovernor && hasDailyLoss && logsBlocks);
   }
 
   // ── 4. Max trades per day enforced ──────────────────────────────────────
-  record("4. Max trades per day enforced (engine + admin floor)",
-    /maxTradesPerDay/.test(enforcement) && /countTodayOpenedTrades/.test(enforcement));
+  record("4. Max trades per day enforced (trader + admin cap, strictest wins)",
+    /maxTradesPerDay/.test(preTrade) && /user_risk_limits\.max_trades_per_day/.test(preTrade) && /tradesToday/.test(preTrade));
 
   // ── 5. Max open trades enforced ─────────────────────────────────────────
-  record("5. Max open trades enforced via live_positions count",
-    /countOpenLivePositions/.test(enforcement) && /maxOpenTrades/.test(enforcement));
+  record("5. Max open trades enforced from the venue's open positions",
+    /maxOpenTrades/.test(preTrade) && /ctx\.positions\.length/.test(preTrade));
 
   // ── 6. Shared-master allocation limits ──────────────────────────────────
   {
     const hasRouting = /SHARED_MASTER_MT5/.test(enforcement);
-    const hasVAcct   = /virtualTradingAccountsTable/.test(enforcement);
-    const hasBlown   = /rg_shared_allocation_blown|rg_shared_margin_would_exceed/.test(enforcement);
-    const hasOwnership = /eq\(virtualTradingAccountsTable\.userId,\s*userId\)/.test(enforcement);
+    const hasVAcct   = /virtualTradingAccountsTable/.test(governor);
+    const hasBlown   = /isAllocationBlown/.test(governor) && /allocation is exhausted/.test(preTrade);
+    const hasOwnership = /eq\(virtualTradingAccountsTable\.userId,\s*userId\)/.test(governor);
     record("6. Shared-master allocation + ownership scoping",
       hasRouting && hasVAcct && hasBlown && hasOwnership);
   }
@@ -119,10 +125,10 @@ async function http(path: string, init: RequestInit = {}): Promise<{ status: num
 
   // ── 9. Close-only mode blocks OPEN, allows risk-reducing actions ────────
   {
-    const opensSet = /OPENS_NEW_RISK\s*=\s*new Set\(\[\s*["']OPEN["']\s*\]\)/.test(enforcement);
-    const blocksOpenOnly = /inCloseOnlyMode\s*&&\s*OPENS_NEW_RISK\.has\(actionType\)/.test(enforcement);
+    const reducesExempt = /if \(reduces\) \{[\s\S]{0,120}risk-reducing action/.test(preTrade);
+    const closingAllowed = /closing is allowed/.test(preTrade);
     record("9. Close-only blocks OPEN, lets CLOSE/PARTIAL_CLOSE/MODIFY through",
-      opensSet && blocksOpenOnly);
+      reducesExempt && closingAllowed);
   }
 
   // ── 10. Position sizing works when data exists ──────────────────────────
@@ -168,9 +174,11 @@ async function http(path: string, init: RequestInit = {}): Promise<{ status: num
 
   // ── 17. Risk audit logs written (user_risk_events) on every block ───────
   {
-    const blocksCount = (enforcement.match(/return blockAndLog\(/g) ?? []).length;
-    record(`17. Every block path calls blockAndLog (${blocksCount} call sites)`,
-      blocksCount >= 8 && /userRiskEventsTable/.test(meRisk));
+    // One audit row per governor decision (pass or block); an ALLOW that
+    // cannot be written is refused.
+    const auditsEvery = /No audit row, no trade/.test(governor) && /logRiskEvent\(/.test(governor);
+    record("17. Every governor decision writes a user_risk_events row",
+      auditsEvery && /userRiskEventsTable/.test(riskEvents));
   }
 
   // ── 18. No secrets exposed in any risk surface ──────────────────────────
@@ -179,7 +187,7 @@ async function http(path: string, init: RequestInit = {}): Promise<{ status: num
     const secretRef = /MT5_BRIDGE_TOKEN|SESSION_SECRET|api[_-]?key_hash|apiKeyHash|tokenHash/i;
     const safe = !env.test(enforcement) && !env.test(meRisk) && !env.test(adminTrading)
       && !secretRef.test(enforcement);
-    const scrubber = /scrubSecrets|SECRET_KEY_RE|REDACTED/.test(meRisk);
+    const scrubber = /scrubSecrets|SECRET_KEY_RE|REDACTED/.test(riskEvents);
     record("18. No secrets read or returned by risk surfaces; meRiskGovernor uses scrubSecrets",
       safe && scrubber);
   }

@@ -10,7 +10,7 @@ import { db, paperOrdersTable } from "@workspace/db";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { preflight, getActiveSession } from "../lib/paperSession/manager.js";
-import { evaluateGovernor } from "../lib/riskGovernor/governor.js";
+import { evaluateReadiness } from "../lib/readiness/traderReadiness.js";
 import { getGateStatus } from "../lib/readiness/gate.js";
 import { getCriticalUnread, getUnreadCount } from "../lib/alerts/alertManager.js";
 import { scrub } from "../lib/security/redact.js";
@@ -64,7 +64,7 @@ router.get("/trading-cockpit/summary", requireUser, async (req, res) => {
   const [pre, active, gov, gate, criticalUnread, unreadAll] = await Promise.all([
     safeCall("preflight", () => preflight(), preFallback),
     safeCall("activeSession", () => getActiveSession(userId), null),
-    safeCall("governor", () => evaluateGovernor(), null),
+    safeCall("governor", () => evaluateReadiness({ persist: false, userId }), null),
     safeCall("readinessGate", () => getGateStatus(), null as Awaited<ReturnType<typeof getGateStatus>> | null),
     safeCall("criticalUnread", () => getCriticalUnread(userId), [] as Awaited<ReturnType<typeof getCriticalUnread>>),
     safeCall("unreadAll", () => getUnreadCount(userId), 0),

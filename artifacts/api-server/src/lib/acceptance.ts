@@ -10,7 +10,7 @@
 
 import { eq, desc } from "drizzle-orm";
 import { db, liveIntentsTable } from "@workspace/db";
-import { permissions, listEvents as listRiskEvents, isPaused, riskBudget } from "./riskGovernor2.js";
+import { listRiskEventsView, platformRiskPermissions } from "./riskGovernor/riskProfile.js";
 import { status as autopilotStatus, listDecisions as autoDecisions } from "./autopilot.js";
 import { shadowStatus, forwardStatus, readinessScore } from "./shadowMode.js";
 import { omsDashboardSummary, listOrders, listPositions, pnlSummary } from "./oms.js";
@@ -42,7 +42,7 @@ function build(id: string, name: string, objective: string, steps: string[], exp
 }
 
 async function s1FirstTimeUser(): Promise<ScenarioResult> {
-  const perms = permissions();
+  const perms = await platformRiskPermissions();
   // Honest pass: permissions object returned + MT5 capability gated as future-only.
   const v = (perms && perms.futureMt5 === false)
     ? PASS("Owner permissions reachable; MT5 capability locked (futureMt5=false); tester surfaces visible.", { perms })
@@ -82,7 +82,7 @@ async function s3DemoManualTrade(): Promise<ScenarioResult> {
 }
 
 async function s4BadTradeRejection(): Promise<ScenarioResult> {
-  const events = listRiskEvents(100);
+  const events = await listRiskEventsView({ limit: 100 });
   const rejections = events.filter((e) => {
     const r = e as unknown as Record<string, unknown>;
     return /REJECT|BLOCK|DENY/i.test(String(r["type"] ?? r["eventType"] ?? ""));
@@ -203,9 +203,9 @@ async function s11Mobile(): Promise<ScenarioResult> {
 
 async function s12FullSystemHealth(): Promise<ScenarioResult> {
   try {
-    const perms = permissions();
-    const paused = isPaused();
-    const budget = riskBudget();
+    const perms = await platformRiskPermissions();
+    const paused = { paused: !perms.manualTrading };
+    const budget = perms;
     const broker = await getBrokerProvider().status();
     const dq = dataQuality("EURUSD", "M15");
     // Final-state honesty contract:

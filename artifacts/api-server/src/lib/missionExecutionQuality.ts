@@ -55,7 +55,7 @@ import type { BrokerHealthStatus } from "@workspace/domain/broker-health";
 import type { SymbolFeedVerdict } from "@workspace/domain/safety-contracts/syntheticLiveFloor";
 import { getBrokerHealthVerdict } from "../routes/brokerHealth.js";
 import { evaluateEntryDataSufficiency } from "./live/entryDataSufficiency.js";
-import type { MissionLiveSignals } from "./missionRiskService.js";
+import type { MissionLiveSignals } from "./missionRiskState.js";
 
 // Net-profit blockers that are fail-closed "we could not verify" states rather
 // than positively-evidenced rejections. These are surfaced as warnings at the

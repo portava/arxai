@@ -29,7 +29,6 @@ import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
 import { calculatePositionSize, PAPER_DEFAULTS } from "./positionSizing.js";
 import { checkEligibility } from "./eligibility.js";
-import { gateForPaperTrade } from "../riskGovernor/governor.js";
 import { enforcePreTradeRisk, loadEffectiveLimits } from "../riskGovernor/enforce.js";
 import type {
   ExecuteFromDecisionOpts,
@@ -117,27 +116,6 @@ export async function executePaperFromDecision(
 
   log.info({ shouldTrade: decision.shouldTrade, confidence: decision.confidence, riskScore: decision.riskScore },
     "Build EE: decision received");
-
-  // ── Build HH gate: Risk Governor must allow paper trading ──
-  try {
-    const gate = await gateForPaperTrade();
-    if (!gate.allowed) {
-      log.warn({ governorStatus: gate.status, governorId: gate.governorId, reasons: gate.reasons },
-        "Build EE: paper trade BLOCKED by Risk Governor");
-      return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
-        executionId, decisionId, symbol, action, decision,
-        reason: `RISK_GOVERNOR_BLOCK[${gate.status}]: ${gate.reasons[0] ?? "blocked"}`,
-        warnings: gate.reasons,
-      });
-    }
-  } catch (e) {
-    log.error({ err: String(e).slice(0, 200) }, "Build EE: governor gate threw — failing CLOSED (paper trade rejected)");
-    return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
-      executionId, decisionId, symbol, action, decision,
-      reason: `RISK_GOVERNOR_GATE_ERROR: ${String(e).slice(0, 160)}`,
-      warnings: ["RISK_GOVERNOR_GATE_ERROR: governor evaluation failed; defaulting to fail-closed"],
-    });
-  }
 
   // ── Idempotency: short-circuit if a paper execution already exists for this decision ──
   if (decisionId != null) {

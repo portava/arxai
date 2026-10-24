@@ -26,7 +26,6 @@ import { runSniperFilter } from "./sniperFilter.js";
 import { orchestrate, persistDecision } from "../../routes/tradeDecision.js";
 import { executePaperFromDecision, getPaperExecutionByDecisionId } from "../paperExecution/paperExecutionService.js";
 import { runPaperMonitor } from "../paperExecution/paperExecutionMonitor.js";
-import { gateForAutopilot } from "../riskGovernor/governor.js";
 import type { AutopilotSettings, AutopilotCycleSummary, SniperResult } from "./types.js";
 import type { TradeDecision } from "../../routes/tradeDecision.js";
 
@@ -106,6 +105,23 @@ async function countOpen(ownerUserId: number | null): Promise<{ total: number; b
   return { total: rows.length, bySymbolDir: map };
 }
 
+interface AutomationHealth { paused: boolean; reason: string; errorRate: number | null; cycles: number }
+
+/** Share of this owner's cycles in the last week that failed; above 20% the autopilot pauses. */
+export const AUTOMATION_ERROR_PAUSE_PCT = 20;
+export async function automationHealth(ownerUserId: number, currentCycleRowId: number): Promise<AutomationHealth> {
+  const rows = await db.select({ id: autopilotCyclesTable.id, status: autopilotCyclesTable.status }).from(autopilotCyclesTable)
+    .where(and(eq(autopilotCyclesTable.userId, ownerUserId), gte(autopilotCyclesTable.startedAt, new Date(Date.now() - 7 * 86_400_000))))
+    .orderBy(desc(autopilotCyclesTable.startedAt)).limit(51);
+  const past = rows.filter((r) => r.id !== currentCycleRowId).slice(0, 50);
+  if (!past.length) return { paused: false, reason: "no recent cycles", errorRate: 0, cycles: 0 };
+  const failed = past.filter((r) => ["ERROR", "FAILED"].includes((r.status ?? "").toUpperCase())).length;
+  const errorRate = Math.round((failed / past.length) * 10000) / 100;
+  return errorRate > AUTOMATION_ERROR_PAUSE_PCT
+    ? { paused: true, reason: `${errorRate}% of the last ${past.length} cycles failed (pause above ${AUTOMATION_ERROR_PAUSE_PCT}%)`, errorRate, cycles: past.length }
+    : { paused: false, reason: "healthy", errorRate, cycles: past.length };
+}
+
 export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotSettings>; cycleIdOverride?: string }): Promise<AutopilotCycleSummary> {
   const cycleId = opts?.cycleIdOverride ?? `ffcyc_${randomUUID()}`;
   const startedAt = new Date();
@@ -145,35 +161,25 @@ export async function runOneCycle(opts?: { settingsOverride?: Partial<AutopilotS
   // 2. Insert cycle row.
   const cyc = await db.insert(autopilotCyclesTable).values({
     autopilotCycleId: cycleId, mode: "PAPER_ONLY", status: "RUNNING",
-    startedAt,
+    startedAt, userId: ownerUserId,
   }).returning({ id: autopilotCyclesTable.id });
   const cycRowId = cyc[0]?.id ?? 0;
 
-  // 2b. Build HH gate: Risk Governor must allow autopilot to run this cycle.
+  // 2b. Automation health: a run of failed cycles pauses this owner's
+  // autopilot. Trade risk is not decided here: every order a cycle proposes
+  // faces the pre-trade Risk Governor in executePaperFromDecision.
+  let health: AutomationHealth;
   try {
-    const gate = await gateForAutopilot();
-    if (!gate.allowed) {
-      summary.warnings.push(`RISK_GOVERNOR_PAUSE[${gate.status}]: ${gate.reasons[0] ?? "blocked"}`);
-      summary.status = "STOPPED";
-      summary.finished_at = new Date().toISOString();
-      await logCycle({ cycleId, step: "GOVERNOR_PAUSE", status: "WARN",
-        message: `FF cycle paused by Risk Governor: ${gate.status}`,
-        details: { governorId: gate.governorId, reasons: gate.reasons } });
-      try {
-        await db.update(autopilotCyclesTable)
-          .set({ status: "STOPPED", finishedAt: new Date() })
-          .where(eq(autopilotCyclesTable.id, cycRowId));
-      } catch { /* non-fatal */ }
-      return summary;
-    }
+    health = await automationHealth(ownerUserId, cycRowId);
   } catch (e) {
-    logger.error({ err: String(e).slice(0, 200) }, "FF: governor gate threw — failing CLOSED (cycle stopped)");
-    summary.warnings.push(`RISK_GOVERNOR_GATE_ERROR: ${String(e).slice(0, 160)}`);
+    health = { paused: true, reason: `automation health could not be read: ${String(e).slice(0, 160)}`, errorRate: null, cycles: 0 };
+  }
+  if (health.paused) {
+    summary.warnings.push(`AUTOMATION_HEALTH_PAUSE: ${health.reason}`);
     summary.status = "STOPPED";
     summary.finished_at = new Date().toISOString();
-    await logCycle({ cycleId, step: "GOVERNOR_PAUSE", status: "ERROR",
-      message: `FF cycle stopped: governor gate threw (fail-closed)`,
-      details: { error: String(e).slice(0, 200) } });
+    await logCycle({ cycleId, step: "AUTOMATION_HEALTH_PAUSE", status: health.errorRate == null ? "ERROR" : "WARN",
+      message: `FF cycle paused: ${health.reason}`, details: { ...health } });
     try {
       await db.update(autopilotCyclesTable)
         .set({ status: "STOPPED", finishedAt: new Date() })

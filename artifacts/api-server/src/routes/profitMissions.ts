@@ -59,7 +59,7 @@ import {
   projectDraft,
   type DraftServiceResult,
 } from "../lib/missionDrafts.js";
-import { refreshMissionRisk, type MissionLiveSignals } from "../lib/missionRiskService.js";
+import { refreshMissionRisk, type MissionLiveSignals } from "../lib/missionRiskState.js";
 import { dispatchApprovedDraft } from "../lib/missionExecution.js";
 import { resolveMissionPulsePhase7 } from "../lib/missionExecutionQuality.js";
 import {

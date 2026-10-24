@@ -22,7 +22,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { computeSymbolStats } from "../performanceCC/aggregator.js";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { evaluateReadiness } from "../readiness/traderReadiness.js";
 import { generatePlaybook, type PlaybookUpdateSummary } from "./playbook.js";
 
 export type CoachReportType = "DAILY" | "WEEKLY" | "SESSION" | "PLAYBOOK";
@@ -133,9 +133,9 @@ export async function generateCoachReport(opts: GenerateCoachOptions): Promise<C
   const warnings: string[] = [];
 
   // ── Build HH governor (read-only) ───────────────────────────────────────
-  let governor: Awaited<ReturnType<typeof evaluateGovernor>> | null = null;
+  let governor: Awaited<ReturnType<typeof evaluateReadiness>> | null = null;
   try {
-    governor = await evaluateGovernor({ persist: false });
+    governor = await evaluateReadiness({ persist: false, userId });
     dataSourcesRead.push("risk_governor_evaluations");
     log.info("Build II: governor status read", {
       governor_id: governor.governor_id,
