@@ -21,7 +21,8 @@
 
 import { type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { db, bridgeV2EventsTable, bridgeV2StreamStateTable } from "@workspace/db";
+import { db, bridgeV2EventsTable } from "@workspace/db";
+import { listRecentBridgeV2StreamStates } from "../lib/brokerHub/bridgeV2StreamState.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { ingestBridgeV2Message } from "../lib/bridgeV2/ingest.js";
@@ -146,12 +147,7 @@ router.get("/admin/bridge-v2/streams", async (req: Request, res: Response): Prom
   const userIdRaw = req.query.userId;
   const userId = typeof userIdRaw === "string" && userIdRaw.length > 0 ? Number(userIdRaw) : null;
 
-  const rows = await db
-    .select()
-    .from(bridgeV2StreamStateTable)
-    .where(userId != null && Number.isFinite(userId) ? eq(bridgeV2StreamStateTable.userId, userId) : sql`true`)
-    .orderBy(desc(bridgeV2StreamStateTable.updatedAt))
-    .limit(500);
+  const rows = await listRecentBridgeV2StreamStates(userId != null && Number.isFinite(userId) ? userId : null, 500);
 
   res.json({ ok: true, count: rows.length, streams: rows });
 });

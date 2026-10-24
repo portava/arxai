@@ -19,8 +19,8 @@
 import {
   db,
   bridgeV2EventsTable,
-  bridgeV2StreamStateTable,
 } from "@workspace/db";
+import { listBridgeV2StreamStates, type BridgeV2StreamStateRow } from "../brokerHub/bridgeV2StreamState.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { loadBridgeV2ConfigForEa, listBridgeV2CommandsForEa } from "./egress.js";
 
@@ -95,7 +95,7 @@ export interface BridgeV2UserStatus {
   lastCandleAt: string | null;
 }
 
-type StreamRow = typeof bridgeV2StreamStateTable.$inferSelect;
+type StreamRow = BridgeV2StreamStateRow;
 
 interface BridgeKey {
   userId: number;
@@ -183,10 +183,7 @@ function streamLastAt(streams: StreamRow[], messageType: string): string | null 
 export async function buildBridgeV2AdminStatus(
   userId: number | null,
 ): Promise<BridgeV2AdminStatus[]> {
-  const streamRows = await db
-    .select()
-    .from(bridgeV2StreamStateTable)
-    .where(userId != null ? eq(bridgeV2StreamStateTable.userId, userId) : sql`true`);
+  const streamRows = await listBridgeV2StreamStates(userId);
 
   // Group streams by bridge.
   const groups = new Map<string, { key: BridgeKey; streams: StreamRow[] }>();
@@ -300,10 +297,7 @@ export async function buildBridgeV2AdminStatus(
 
 // Redacted per-user freshness DTO. Honest empty when the user has no v2 bridge.
 export async function buildBridgeV2UserStatus(userId: number): Promise<BridgeV2UserStatus> {
-  const streams = await db
-    .select()
-    .from(bridgeV2StreamStateTable)
-    .where(eq(bridgeV2StreamStateTable.userId, userId));
+  const streams = await listBridgeV2StreamStates(userId);
 
   if (streams.length === 0) {
     return {

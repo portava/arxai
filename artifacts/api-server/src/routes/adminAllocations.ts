@@ -47,7 +47,9 @@ import {
 } from "../lib/live/masterBridgePool.js";
 import {
   arxMasterBridgePoolTable,
+  type ArxMasterBridgePool,
 } from "@workspace/db";
+import { anyMasterBridgePoolOverAllocated } from "../lib/brokerHub/masterBridgePoolReader.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
@@ -59,7 +61,7 @@ const router = Router();
 // allocate against. Pure read; does NOT mutate anything inside the
 // caller's transaction.
 async function precheckMasterPoolForAllocation(): Promise<
-  | { ok: true; pool: typeof arxMasterBridgePoolTable.$inferSelect }
+  | { ok: true; pool: ArxMasterBridgePool }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
   const recompute = await recomputeMasterPool();
@@ -1052,11 +1054,7 @@ export async function autoReconcileSettledAllocations(): Promise<AutoReconcileRe
   // locked check still re-verifies inside the tx below for the over-allocated
   // case, so this is a pure no-op optimization with no TOCTOU risk (a missed
   // edge re-evaluates on the next heartbeat).
-  const overFlagged = await db.select({ id: arxMasterBridgePoolTable.id })
-    .from(arxMasterBridgePoolTable)
-    .where(eq(arxMasterBridgePoolTable.isOverAllocated, true))
-    .limit(1);
-  if (overFlagged.length === 0) {
+  if (!(await anyMasterBridgePoolOverAllocated())) {
     return { adjusted: false, reason: "WITHIN_CAP" };
   }
 
