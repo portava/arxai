@@ -445,7 +445,12 @@ test("cockpit: open paper trades and today's performance are the caller's", asyn
 
 // ── paper sessions ─────────────────────────────────────────────────────────
 
-test("paper sessions: sessions, the active session and lifecycle actions are per trader", async () => {
+test("paper sessions: sessions, the active session and lifecycle actions are per trader", async (t) => {
+  // Paper sessions need paper_trade:create, which a plain USER (VIEWER) lacks
+  // in production and, with one role model, in dev too. Both traders are
+  // testers for this case only.
+  await db.update(usersTable).set({ role: "TESTER" }).where(inArray(usersTable.id, [u.a, u.b]));
+  t.after(async () => { await db.update(usersTable).set({ role: "USER" }).where(inArray(usersTable.id, [u.a, u.b])); });
   const start = await json<{ result: { session: { paper_session_id: string } } }>(
     await send("POST", "/paper-sessions/start", c.a, {}));
   const sid = start.result.session.paper_session_id;

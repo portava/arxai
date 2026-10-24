@@ -1,8 +1,10 @@
 // Auth + session endpoints.
 //
-// LAYER 1 — role cookie (`hr_session`) + dev `x-security-role` header. Drives
-// OWNER/ADMIN/TESTER permission checks. Endpoints: /auth/session,
-// /auth/permissions, /auth/roles, /auth/dev-owner-login, /auth/logout.
+// LAYER 1 — role view. The role is the signed-in user's users.role (see
+// lib/security/session.ts); the `hr_session` cookie is only a mirror, and the
+// dev-owner-login / `x-security-role` channels exist in dev/test only.
+// Endpoints: /auth/session, /auth/permissions, /auth/roles,
+// /auth/dev-owner-login, /auth/logout.
 //
 // LAYER 2 — per-user identity (`arx_user_session` cookie). Drives the new
 // userId-scoped data isolation. Endpoints: /auth/register, /auth/login,
@@ -70,13 +72,15 @@ router.get("/auth/roles", (_req, res) => {
 });
 
 router.post("/auth/dev-owner-login", async (req, res) => {
-  if (IS_PROD && !ALLOW_DEV_AUTH) {
+  if (IS_PROD) {
+    // Legacy authorization is gone from production: an operator signs in with
+    // their own account, whose users.role is the only role ARX honours.
     await auditEvent({
       eventType: "AUTH_LOGIN_BLOCKED", severity: "HIGH", actor: "USER",
       action: "dev-owner-login blocked in production", sourceService: "auth",
-      metadata: { reason: "ALLOW_DEV_AUTH not set" }, ipAddress: req.ip ?? null,
+      metadata: { reason: "legacy role login removed", allowDevAuthSet: ALLOW_DEV_AUTH }, ipAddress: req.ip ?? null,
     }).catch(() => {});
-    res.status(403).json({ allowed: false, reason: "dev-owner-login is disabled in production. Set ALLOW_DEV_AUTH=true to enable." });
+    res.status(403).json({ allowed: false, reason: "dev-owner-login is disabled in production. Sign in with your own account." });
     return;
   }
   const requested = String((req.body as { role?: string } | undefined)?.role ?? "OWNER").toUpperCase() as AuthRole;
