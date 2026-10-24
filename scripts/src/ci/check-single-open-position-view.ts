@@ -1,10 +1,13 @@
 // One read model for "what are this user's open positions?".
 //
-// lib/positions/openPositions.ts (readOpenPositions / countOpenPositions) owns
-// venue selection, the named "open" definitions, per-user scoping, optional
-// account-mode scoping and the normalised OpenPosition shape. The raw venue
-// ledgers (livePositionLedger / demoPositionLedger) remain for historical,
-// single-row, aggregate, producer and operator-wide reads.
+// lib/positions/openPositions.ts owns venue selection, the named "open"
+// definitions (bases), per-user scoping, optional account-mode scoping and the
+// normalised OpenPosition shape: readOpenPositions / countOpenPositions for the
+// normalised rows, selectLiveOpenPositions / selectDemoOpenPositions for
+// projections and aggregates, and select{Live,Demo}OpenPositionsForAllUsers for
+// operator-wide views and sweeps. The raw venue ledgers (livePositionLedger /
+// demoPositionLedger) remain for historical, closed, single-row and
+// broker-truth producer reads.
 //
 // This guard fails when a runtime module calls a raw venue ledger with an
 // open-position predicate (closed_at IS NULL, the canonical
@@ -16,6 +19,12 @@
 // be lowered or removed, so the allowlist can only shrink. Aliasing a raw venue
 // ledger (import renaming, destructuring, re-assignment) is rejected outright
 // because it would hide calls from the count.
+//
+// Cross-user reads: the ...ForAllUsers functions are the only reads in the
+// read model that are not scoped to one user. A runtime module that names one
+// must be listed in OPERATOR_WIDE_READERS with a reason; a listed module that no
+// longer uses them (or no longer exists) is a stale entry. Importing one under
+// an alias is rejected for the same reason as aliasing a raw ledger.
 //
 // Limitation (documented in docs/TIER1_OPEN_POSITION_VIEW.md): a module that
 // reads every row for a user and filters closed rows in memory is not detected.
@@ -29,18 +38,14 @@ export const READ_MODEL = "lib/positions/openPositions.ts";
 const LEDGER = "lib/positions/ledger.ts";
 const RAW_LEDGERS = new Set(["livePositionLedger", "demoPositionLedger"]);
 const READ_METHODS = new Set(["read", "select"]);
+/** The read model's cross-user (operator-wide) functions. */
+export const ALL_USERS_READ = /^select(?:Live|Demo)OpenPositionsForAllUsers$/;
 
 /** Text that makes a raw ledger read an open-position read. */
 export const OPEN_PREDICATE =
   /\bopenLiveExposureCondition\s*\(|\bisNull\(\s*[\w$]+\s*\.\s*closedAt\s*\)|\bne\(\s*[\w$]+\s*\.\s*status\s*,\s*["'`]CLOSED["'`]\s*\)|\beq\(\s*[\w$]+\s*\.\s*status\s*,\s*["'`]OPEN["'`]\s*\)|\bclosed_at\s+is\s+null\b/i;
 
-type Category =
-  | "OPERATOR_WIDE"
-  | "BROKER_TRUTH"
-  | "EXECUTION_WORKSTREAM"
-  | "AGGREGATE_GUARDED"
-  | "SINGLE_POSITION"
-  | "PLATFORM_SAFETY";
+type Category = "BROKER_TRUTH" | "NON_STANDARD_PREDICATE";
 
 export interface OpenReadAllowance {
   /** Exact number of raw-ledger open-position reads permitted in the file. */
@@ -51,95 +56,56 @@ export interface OpenReadAllowance {
 
 /**
  * Modules that still read open positions from a raw venue ledger, each with a
- * reason. Lower a count (or remove the entry) when a read moves to
- * readOpenPositions; the guard fails until you do.
+ * reason. Lower a count (or remove the entry) when a read moves to the read
+ * model; the guard fails until you do.
  */
 export const OPEN_READ_ALLOWLIST: Record<string, OpenReadAllowance> = {
-  // Operator-wide views: they read every user's rows (grouped by user or in a
-  // sweep). The read model is per-user by design and has no "all users" mode.
-  "routes/adminAllocations.ts": {
-    openReads: 3, category: "OPERATOR_WIDE",
-    reason: "settled-user detection and the reconcile summary group open rows across all users; reconcile-detail lists a user's reconciled (not exposure) rows",
-  },
-  "routes/adminCockpit.ts": {
-    openReads: 4, category: "OPERATOR_WIDE",
-    reason: "operator cockpit totals, open-trade board and per-user counts across all users",
-  },
-  "routes/adminFundBook.ts": {
-    openReads: 1, category: "OPERATOR_WIDE",
-    reason: "Fund Book mirrors every open broker position into UNASSIGNED allocation rows",
-  },
-  "routes/adminLiveAccount.ts": {
-    openReads: 2, category: "OPERATOR_WIDE",
-    reason: "operator live-account totals and unassigned-position list across all users",
-  },
-  "routes/adminReconciliationCenter.ts": {
-    openReads: 1, category: "OPERATOR_WIDE",
-    reason: "lists the users that hold open live exposure for the reconciliation center",
-  },
-  "lib/aaci/reconciliationAudit.ts": {
-    openReads: 1, category: "OPERATOR_WIDE",
-    reason: "audit compares open tickets for a batch of users in one query",
-  },
-  "lib/alerts/ruleEngine.ts": {
-    openReads: 1, category: "OPERATOR_WIDE",
-    reason: "alert sweep evaluates every user's open DEMO rows in one pass",
-  },
-  "lib/intelligence/monitorWorker.ts": {
-    openReads: 1, category: "OPERATOR_WIDE",
-    reason: "the monitor sweep finds the distinct users that hold open DEMO rows (per-user reads use readOpenPositions)",
-  },
-  // Broker-truth producers: they reconcile the snapshot they are ingesting,
-  // inside the producer, against open rows for the bridge being synced.
+  // Broker-truth producers: they reconcile the broker facts they are ingesting
+  // against the open rows they are about to write.
   "routes/mt5Live.ts": {
     openReads: 2, category: "BROKER_TRUTH",
     reason: "LIVE snapshot ingest compares the incoming broker snapshot with the connection's open rows",
   },
-  "lib/live/brokerAbsenceReconcileRunner.ts": {
-    openReads: 1, category: "BROKER_TRUTH",
-    reason: "broker-side close reconciliation reads absence-evidence columns on open rows it may stamp",
-  },
-  // Aggregates already pinned to openLiveExposureCondition by the
-  // reconciled-ghost-exposure guard, which reads these files literally.
-  "lib/live/masterBridgePool.ts": {
-    openReads: 2, category: "AGGREGATE_GUARDED",
-    reason: "pool recompute (all allocated users) and wallet view; pinned by reconciled-ghost-exposure",
-  },
-  "lib/selfTrade/executionGate.ts": {
-    openReads: 1, category: "AGGREGATE_GUARDED",
-    reason: "agent concurrent-position gate; pinned by reconciled-ghost-exposure",
-  },
-  // Platform safety: operator-initiated actions across users or tickets.
-  "lib/live/emergencyClose.ts": {
-    openReads: 5, category: "PLATFORM_SAFETY",
-    reason: "emergency close-all selects open rows by user, symbol, bridge or globally for the kill switch",
-  },
-  "lib/live/liveTestCycle.ts": {
-    openReads: 1, category: "PLATFORM_SAFETY",
-    reason: "operator live test cycle pre-checks the test account in its own audited flow",
-  },
-  // Owned by the parallel LIVE/DEMO execution workstream; migrate after it lands.
-  "lib/live/instantTrade.ts": {
-    openReads: 2, category: "EXECUTION_WORKSTREAM",
-    reason: "instant router position resolution; file owned by the execution workstream",
-  },
   "lib/live/liveCommandPipeline.ts": {
-    openReads: 4, category: "EXECUTION_WORKSTREAM",
-    reason: "dispatch pre-gates (cluster, floating loss, concurrent caps); file owned by the execution workstream",
+    openReads: 1, category: "BROKER_TRUTH",
+    reason: "a LIVE_FILLED CLOSE reads the open row's volume and immediately writes the partial-close volume or closed_at for that row (read-modify-write beside livePositionWriter)",
   },
-  "routes/meLive.ts": {
-    openReads: 3, category: "EXECUTION_WORKSTREAM",
-    reason: "/me/live position reads beside close paths; file owned by the execution workstream",
+  // A predicate none of the named bases expresses.
+  "lib/alerts/ruleEngine.ts": {
+    openReads: 1, category: "NON_STANDARD_PREDICATE",
+    reason: "near-stop-loss sweep requires DEMO status = 'OPEN' AND closed_at IS NULL AND user_id IS NOT NULL; CONFIRMED_OPEN is status = 'OPEN' only, so moving it would add rows with a stamped closed_at",
   },
-  "routes/meTrades.ts": {
-    openReads: 1, category: "EXECUTION_WORKSTREAM",
-    reason: "My Trades open list beside close paths; file owned by the execution workstream",
+};
+
+export interface OperatorReadAllowance {
+  reason: string;
+}
+
+/**
+ * Modules allowed to call the read model's cross-user functions
+ * (select{Live,Demo}OpenPositionsForAllUsers). Each one reads every user's open
+ * rows by design (grouped by user, summed, or swept); the per-user API cannot
+ * express it. Remove an entry when the module stops using them.
+ */
+export const OPERATOR_WIDE_READERS: Record<string, OperatorReadAllowance> = {
+  "routes/adminAllocations.ts": {
+    reason: "settled-user detection (inside the allocation lock tx) and the reconcile summary group every user's open rows",
   },
+  "routes/adminCockpit.ts": { reason: "operator cockpit totals, open-trade board and per-user counts across all users" },
+  "routes/adminFundBook.ts": { reason: "Fund Book mirrors every open broker position into UNASSIGNED allocation rows" },
+  "routes/adminLiveAccount.ts": { reason: "operator live-account totals and unassigned-position list across all users" },
+  "routes/adminReconciliationCenter.ts": { reason: "lists the users that hold open live exposure for the reconciliation center" },
+  "lib/aaci/reconciliationAudit.ts": { reason: "audit compares open tickets for a batch of users in one query" },
+  "lib/intelligence/monitorWorker.ts": { reason: "the monitor sweep finds the distinct users that hold open DEMO rows (per-user reads use readOpenPositions)" },
+  "lib/live/masterBridgePool.ts": { reason: "pool recompute sums floating P/L of every allocated user's open exposure" },
+  "lib/live/emergencyClose.ts": { reason: "kill-switch close-all (all / all_shared scopes) resolves every open live position" },
 };
 
 export interface FileScan {
   openReads: number;
   violations: string[];
+  /** Names a cross-user read-model function (select*OpenPositionsForAllUsers). */
+  allUsersReads?: boolean;
 }
 
 function argsMentionOpenVar(node: ts.Node, openVars: Set<string>): boolean {
@@ -173,8 +139,13 @@ export function scanFile(key: string, source: string): FileScan {
   };
   collect(file);
 
-  // Pass 2: raw ledger calls and aliasing.
+  // Pass 2: raw ledger calls, cross-user read-model use, and aliasing.
   const visit = (n: ts.Node) => {
+    if (ts.isIdentifier(n) && ALL_USERS_READ.test(n.text)) out.allUsersReads = true;
+    if (ts.isImportSpecifier(n) && n.propertyName && ALL_USERS_READ.test(n.propertyName.text) &&
+        n.propertyName.text !== n.name.text) {
+      out.violations.push(`${line(n)}: cross-user read-model function imported under an alias; import it by name`);
+    }
     if (ts.isImportSpecifier(n) && RAW_LEDGERS.has((n.propertyName ?? n.name).text) && n.propertyName &&
         n.propertyName.text !== n.name.text) {
       out.violations.push(`${line(n)}: raw venue ledger imported under an alias; import it by name or use readOpenPositions`);
@@ -215,10 +186,18 @@ export function evaluate(
   scans: Record<string, FileScan>,
   allowlist: Record<string, OpenReadAllowance>,
   exists: (key: string) => boolean,
+  operatorReaders: Record<string, OperatorReadAllowance> = {},
 ): string[] {
   const violations: string[] = [];
   for (const [key, scan] of Object.entries(scans)) {
     for (const v of scan.violations) violations.push(`${key}:${v}`);
+    if (scan.allUsersReads && !operatorReaders[key]) {
+      violations.push(
+        `${key}: calls a cross-user open-position read (select*OpenPositionsForAllUsers) but is not in OPERATOR_WIDE_READERS; read one user with readOpenPositions/selectLiveOpenPositions or add a justified entry`,
+      );
+    } else if (!scan.allUsersReads && operatorReaders[key]) {
+      violations.push(`${key}: stale OPERATOR_WIDE_READERS entry — the module no longer uses a cross-user read; remove the entry`);
+    }
     const allowed = allowlist[key];
     if (scan.openReads > 0 && !allowed) {
       violations.push(
@@ -241,6 +220,12 @@ export function evaluate(
     }
     if (!allowlist[key]!.reason.trim()) violations.push(`${key}: allowlist entry needs a reason`);
   }
+  for (const key of Object.keys(operatorReaders)) {
+    if (!(key in scans)) {
+      violations.push(`${key}: stale OPERATOR_WIDE_READERS entry — ${exists(key) ? "file is not a scanned runtime module" : "file no longer exists"}`);
+    }
+    if (!operatorReaders[key]!.reason.trim()) violations.push(`${key}: OPERATOR_WIDE_READERS entry needs a reason`);
+  }
   return violations;
 }
 
@@ -259,18 +244,24 @@ export function checkSingleOpenPositionView(): CheckResult {
     if (/\bdb\.(?:select|execute)\b|\bpool\.query\b/.test(src)) {
       violations.push(`${READ_MODEL} must not query the database except through the ledger`);
     }
+    // The cross-user EXPOSURE basis must also be the canonical predicate.
+    if (!/openLiveExposureCondition\(\)/.test(src)) {
+      violations.push(`${READ_MODEL} must build the cross-user LIVE EXPOSURE basis from openLiveExposureCondition()`);
+    }
   }
   const scans: Record<string, FileScan> = {};
   let rawOpenReads = 0;
+  let operatorReaders = 0;
   for (const file of walk(API_SRC, { skip: (p) => p.includes("/__qa__/") || p.endsWith(".test.ts") })) {
     const key = file.slice(API_SRC.length + 1);
     if (key.startsWith("scripts/")) continue;
     const scan = scanFile(key, readFileSync(file, "utf8"));
     rawOpenReads += scan.openReads;
+    if (scan.allUsersReads) operatorReaders++;
     scans[key] = scan;
   }
   violations.push(
-    ...evaluate(scans, OPEN_READ_ALLOWLIST, (key) => existsSync(join(API_SRC, key))).map((v) =>
+    ...evaluate(scans, OPEN_READ_ALLOWLIST, (key) => existsSync(join(API_SRC, key)), OPERATOR_WIDE_READERS).map((v) =>
       v.startsWith("lib/") || v.startsWith("routes/") ? `${rel(join(API_SRC, v.split(":")[0]!))}${v.slice(v.indexOf(":"))}` : v,
     ),
   );
@@ -279,7 +270,7 @@ export function checkSingleOpenPositionView(): CheckResult {
     ok: violations.length === 0,
     violations,
     notes: [
-      `${Object.keys(scans).length} runtime files scanned; ${rawOpenReads} justified raw open-position reads in ${Object.keys(OPEN_READ_ALLOWLIST).length} allowlisted modules; everything else reads ${READ_MODEL}`,
+      `${Object.keys(scans).length} runtime files scanned; ${rawOpenReads} justified raw open-position reads in ${Object.keys(OPEN_READ_ALLOWLIST).length} allowlisted modules; ${operatorReaders} operator-wide modules use the cross-user read-model functions; everything else reads ${READ_MODEL}`,
     ],
   };
 }

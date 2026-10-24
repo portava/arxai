@@ -13,14 +13,18 @@
  *
  * SAFETY:
  *   - Read-only. No writes, no broker commands, no trade authority.
- *   - Always scoped to exactly one user id; there is no "all users" mode.
+ *   - readOpenPositions / countOpenPositions / select*OpenPositions are always
+ *     scoped to exactly one user id. The only cross-user reads are the
+ *     separately named select*OpenPositionsForAllUsers functions, which exist
+ *     for operator views and sweeps; CI restricts their importers to an
+ *     allowlist (scripts/src/ci/check-single-open-position-view.ts).
  *   - Mode scope is optional and fail-closed: when a scope is supplied, a venue
  *     the mode does not show is never queried.
  *   - A supplied executor (transaction / advisory-lock connection) is used as
  *     given and never replaced by the global db.
  */
-import { and, asc, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from "drizzle-orm";
+import type { AnyPgColumn, SelectedFields } from "drizzle-orm/pg-core";
 import type { db } from "@workspace/db";
 import {
   demoPositionColumns,
@@ -55,6 +59,15 @@ export type OpenPositionVenueSelector = OpenPositionVenue | "ALL";
  * or carry a hit/terminal status; it is used where advice or a list is shown.
  */
 export type OpenPositionBasis = "EXPOSURE" | "UNCLOSED" | "CONFIRMED_OPEN";
+
+/**
+ * LIVE-only addition for the projected reads: UNCLOSED_RECONCILED is
+ * `closed_at IS NULL AND reconcile_state IS NOT NULL`, i.e. exactly the rows
+ * UNCLOSED adds on top of EXPOSURE (operator-reconciled IGNORED / EXTERNAL /
+ * IMPORTED ghosts). It carries no live exposure; it exists for the operator
+ * ghost drill-down. DEMO rows have no reconcile state, so it is LIVE-only.
+ */
+export type LiveOpenPositionBasis = OpenPositionBasis | "UNCLOSED_RECONCILED";
 
 interface OpenPositionCommon {
   /** Row id in the venue's own table (ids are NOT comparable across venues). */
@@ -158,8 +171,15 @@ function selectedVenues(opts: ReadOpenPositionsOptions): OpenPositionVenue[] {
 }
 
 /** The LIVE predicate for a basis; exported for SQL aggregates that must match. */
-export function liveOpenCondition(userId: number, basis: OpenPositionBasis = "EXPOSURE"): SQL {
+export function liveOpenCondition(userId: number, basis: LiveOpenPositionBasis = "EXPOSURE"): SQL {
   requireUserId(userId);
+  if (basis === "UNCLOSED_RECONCILED") {
+    return and(
+      eq(livePositionColumns.userId, userId),
+      isNull(livePositionColumns.closedAt),
+      isNotNull(livePositionColumns.reconcileState),
+    )!;
+  }
   return basis === "UNCLOSED"
     ? and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt))!
     : openLiveExposureCondition(userId);
@@ -302,4 +322,149 @@ export async function countOpenPositions(
     total += Number(row?.c ?? 0);
   }
   return total;
+}
+
+// ── Projected reads ─────────────────────────────────────────────────────────
+//
+// For callers that need a column projection, an aggregate, a caller-chosen
+// order or a lock/transaction handle rather than the normalised OpenPosition.
+// The read model still owns the "open" predicate (the basis) and the scope
+// filters; the caller only chooses columns, grouping and order. Unlike
+// readOpenPositions there is NO default order: when `orderBy` is omitted the
+// query has no ORDER BY, exactly like the raw ledger reads these replaced.
+
+type ProjectionList = Array<AnyPgColumn | SQL | SQL.Aliased>;
+
+interface OpenPositionProjection {
+  orderBy?: ProjectionList;
+  groupBy?: ProjectionList;
+  limit?: number;
+  distinct?: boolean;
+  executor?: Reader;
+}
+
+export interface SelectLiveOpenPositionsOptions extends OpenPositionProjection {
+  /** The one user whose positions are read. Required; never widened. */
+  userId: number;
+  basis?: LiveOpenPositionBasis;
+  symbol?: string;
+  /** Restrict to these broker tickets. An empty list matches nothing. */
+  tickets?: readonly string[];
+  bridgeConnectionId?: number;
+}
+
+export interface SelectDemoOpenPositionsOptions extends OpenPositionProjection {
+  /** The one user whose positions are read. Required; never widened. */
+  userId: number;
+  basis?: OpenPositionBasis;
+  symbol?: string;
+  /** Restrict to these broker position ids. An empty list matches nothing. */
+  tickets?: readonly string[];
+  /**
+   * Only rows the broker has confirmed with a position id
+   * (`broker_position_id IS NOT NULL AND broker_position_id <> ''`).
+   */
+  confirmedTicket?: boolean;
+}
+
+function liveSelectWhere(opts: SelectLiveOpenPositionsOptions): SQL {
+  const conds: SQL[] = [liveOpenCondition(opts.userId, opts.basis)];
+  if (opts.symbol !== undefined) conds.push(eq(livePositionColumns.symbol, opts.symbol));
+  // inArray([]) renders `false`, so an empty ticket list matches nothing.
+  if (opts.tickets !== undefined) conds.push(inArray(livePositionColumns.brokerTicket, [...opts.tickets]));
+  if (opts.bridgeConnectionId !== undefined) {
+    conds.push(eq(livePositionColumns.bridgeConnectionId, opts.bridgeConnectionId));
+  }
+  return and(...conds)!;
+}
+
+function demoSelectWhere(opts: SelectDemoOpenPositionsOptions): SQL {
+  const conds: SQL[] = [demoOpenCondition(opts.userId, opts.basis)];
+  if (opts.symbol !== undefined) conds.push(eq(demoPositionColumns.symbol, opts.symbol));
+  if (opts.tickets !== undefined) conds.push(inArray(demoPositionColumns.brokerPositionId, [...opts.tickets]));
+  if (opts.confirmedTicket) {
+    conds.push(isNotNull(demoPositionColumns.brokerPositionId), ne(demoPositionColumns.brokerPositionId, ""));
+  }
+  return and(...conds)!;
+}
+
+function projection(opts: OpenPositionProjection, where: SQL) {
+  return { where, orderBy: opts.orderBy, groupBy: opts.groupBy, limit: opts.limit, distinct: opts.distinct };
+}
+
+/**
+ * One user's open LIVE positions, projected. Pass `livePositionColumns` for
+ * whole rows. Same predicate as readOpenPositions for the same basis.
+ */
+export async function selectLiveOpenPositions<F extends SelectedFields>(
+  fields: F,
+  opts: SelectLiveOpenPositionsOptions,
+) {
+  return livePositionLedger.select(fields, projection(opts, liveSelectWhere(opts)), opts.executor);
+}
+
+/**
+ * One user's open DEMO positions, projected. Pass `demoPositionColumns` for
+ * whole rows. Same predicate as readOpenPositions for the same basis.
+ */
+export async function selectDemoOpenPositions<F extends SelectedFields>(
+  fields: F,
+  opts: SelectDemoOpenPositionsOptions,
+) {
+  return demoPositionLedger.select(fields, projection(opts, demoSelectWhere(opts)), opts.executor);
+}
+
+// ── Operator-wide reads ─────────────────────────────────────────────────────
+//
+// Every user's open rows, for operator views (cockpit, Fund Book, allocation
+// governance, reconciliation), platform sweeps (monitor worker, emergency
+// close-all) and pool aggregates. They carry the same named bases as the
+// per-user reads, so an operator total and a user's own view cannot use
+// different meanings of "open". They are deliberately named ...ForAllUsers and
+// CI allows only listed modules to import them.
+
+export interface OpenPositionsForAllUsersOptions<B> extends OpenPositionProjection {
+  basis?: B;
+  /** Restrict to these users. An empty list matches nothing. */
+  userIds?: readonly number[];
+}
+
+/** The cross-user LIVE predicate for a basis. */
+function liveBasisForAllUsers(basis: LiveOpenPositionBasis): SQL {
+  if (basis === "UNCLOSED") return isNull(livePositionColumns.closedAt);
+  if (basis === "UNCLOSED_RECONCILED") {
+    return and(isNull(livePositionColumns.closedAt), isNotNull(livePositionColumns.reconcileState))!;
+  }
+  return openLiveExposureCondition();
+}
+
+/** The cross-user DEMO predicate for a basis. */
+function demoBasisForAllUsers(basis: OpenPositionBasis): SQL {
+  return basis === "CONFIRMED_OPEN"
+    ? eq(demoPositionColumns.status, "OPEN")
+    : ne(demoPositionColumns.status, "CLOSED");
+}
+
+/** Every user's open LIVE positions, projected. Operator views and sweeps only. */
+export async function selectLiveOpenPositionsForAllUsers<F extends SelectedFields>(
+  fields: F,
+  opts: OpenPositionsForAllUsersOptions<LiveOpenPositionBasis> = {},
+) {
+  const basis = liveBasisForAllUsers(opts.basis ?? "EXPOSURE");
+  const where = opts.userIds !== undefined
+    ? and(inArray(livePositionColumns.userId, [...opts.userIds]), basis)!
+    : basis;
+  return livePositionLedger.select(fields, projection(opts, where), opts.executor);
+}
+
+/** Every user's open DEMO positions, projected. Operator views and sweeps only. */
+export async function selectDemoOpenPositionsForAllUsers<F extends SelectedFields>(
+  fields: F,
+  opts: OpenPositionsForAllUsersOptions<OpenPositionBasis> = {},
+) {
+  const basis = demoBasisForAllUsers(opts.basis ?? "EXPOSURE");
+  const where = opts.userIds !== undefined
+    ? and(inArray(demoPositionColumns.userId, [...opts.userIds]), basis)!
+    : basis;
+  return demoPositionLedger.select(fields, projection(opts, where), opts.executor);
 }

@@ -25,11 +25,11 @@
 //   are responsible for deciding whether to *block* on the deficit.
 //   This separation keeps the projection truthful regardless of mode.
 
-import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions, selectLiveOpenPositionsForAllUsers } from "../positions/openPositions.js";
 import { getConnection } from "../brokerHub/connections.js";
 import { readMasterBridgePoolByMaster } from "../brokerHub/masterBridgePoolReader.js";
 import { eq, inArray } from "drizzle-orm";
-import { openLiveExposureCondition } from "./livePositionExposure.js";
 import { computeAvailableBalance } from "./investorLiveBalance.js";
 import {
   db,
@@ -125,12 +125,12 @@ export async function recomputeMasterPool(args?: {
     // Open exposure only — closed AND reconciled ghosts excluded via the shared
     // truth predicate so they can never inflate unrealized P/L or flip
     // is_over_allocated.
-    const openPositions = await livePositionLedger.select(
+    const openPositions = await selectLiveOpenPositionsForAllUsers(
       {
         userId: livePositionColumns.userId,
         floatingPl: livePositionColumns.floatingPl,
       },
-      { where: openLiveExposureCondition() },
+      { basis: "EXPOSURE" },
     );
     for (const p of openPositions) {
       if (allocUserIds.has(p.userId)) {
@@ -238,11 +238,11 @@ export async function getUserAllocationView(userId: number): Promise<{
   // shrinks the "available to trade" figure the user sees.
   // Open exposure only (shared truth predicate) — reconciled / orphan-resolved
   // rows must never shrink the user's available allocation.
-  const openRows = await livePositionLedger.select(
+  const openRows = await selectLiveOpenPositions(
     {
       floatingPl: livePositionColumns.floatingPl,
     },
-    { where: openLiveExposureCondition(userId) },
+    { userId, basis: "EXPOSURE" },
   );
   const openFloatingLoss = openRows.reduce(
     (s, r) => s + Math.min(0, Number(r.floatingPl ?? 0)),

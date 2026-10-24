@@ -38,8 +38,22 @@ positions come from `shared_trade_attribution`.
   LIVE before DEMO. `countOpenPositions` uses the identical predicate.
 - It is built on the ledger (`livePositionLedger` / `demoPositionLedger`) and
   issues no other query. It is read-only and carries no trade authority.
-- `userId` is required and must be a positive integer. There is no "all users"
-  mode; operator-wide views stay on the ledger (see the allowlist).
+- `userId` is required and must be a positive integer for every per-user
+  read. Cross-user reads exist only as the separately named
+  `select{Live,Demo}OpenPositionsForAllUsers` functions (below), whose
+  importers CI restricts to `OPERATOR_WIDE_READERS`.
+- `selectLiveOpenPositions(fields, { userId, basis?, symbol?, tickets?, bridgeConnectionId?, orderBy?, groupBy?, limit?, distinct?, executor? })`
+  and `selectDemoOpenPositions(fields, { userId, basis?, symbol?, tickets?, confirmedTicket?, ... })`
+  are the projected per-user reads: the read model fixes the predicate (basis
+  plus scope filters) and the caller chooses columns, aggregates, grouping and
+  order. Pass `livePositionColumns` / `demoPositionColumns` for whole rows.
+  There is no default order: without `orderBy` the query has no `ORDER BY`,
+  exactly like the raw ledger reads they replaced. `confirmedTicket` (DEMO)
+  adds `broker_position_id IS NOT NULL AND broker_position_id <> ''`.
+- `selectLiveOpenPositionsForAllUsers(fields, { basis?, userIds?, ... })` and
+  `selectDemoOpenPositionsForAllUsers` read every user's rows with the same
+  named bases (LIVE `EXPOSURE` is `openLiveExposureCondition()`). `userIds`
+  narrows to a batch of users (`IN (...)`; an empty list matches nothing).
 - `modeScope` applies the unified feed's rule: LIVE only in `LIVE_SHARED`,
   DEMO only in `DEMO`, nothing in `PAPER`. A venue the mode hides is never
   queried. It is optional because some callers' venue is authoritative (the
@@ -53,6 +67,11 @@ The three existing definitions of "open" are named instead of re-typed:
 | `EXPOSURE` (default) | `closed_at IS NULL AND reconcile_state IS NULL` (`openLiveExposureCondition`) | `status <> 'CLOSED'` | exposure totals, unified feed, Guardian |
 | `UNCLOSED` | `closed_at IS NULL` | `status <> 'CLOSED'` | Risk Governor, assistant lookups |
 | `CONFIRMED_OPEN` | as `EXPOSURE` | `status = 'OPEN'` | advice and open-trade lists |
+| `UNCLOSED_RECONCILED` (LIVE projected reads only) | `closed_at IS NULL AND reconcile_state IS NOT NULL` | n/a | operator ghost drill-down (`reconcile-detail`) |
+
+`UNCLOSED_RECONCILED` is exactly the rows `UNCLOSED` adds on top of `EXPOSURE`.
+It carries no live exposure and is accepted only by the LIVE projected reads,
+not by `readOpenPositions` / `countOpenPositions`.
 
 `UNCLOSED` is kept deliberately: an operator-reconciled IGNORED or EXTERNAL row
 may still be standing at the broker, so the Risk Governor keeps counting it.
@@ -82,6 +101,75 @@ predicate, ownership scope and response shape:
 The Fund Book overlay and shared-position truth already read through the
 ledger's tenant-safe joins; they are unchanged.
 
+## Round 3: the remaining allowlisted reads
+
+Base: `18b1e01` (PR #40). The guard's allowlist held **36 raw reads in 18
+modules**. 32 reads in 16 modules now go through the read model; **4 reads in
+3 modules** remain. Each migrated read keeps its predicate, columns, grouping,
+ordering (including "no `ORDER BY`"), limit and transaction handle; only the
+place the predicate is written moved.
+
+| Module | Reads before → after | Now uses |
+|---|---|---|
+| `routes/adminAllocations.ts` | 3 → 0 | cross-user `EXPOSURE` grouped by user inside the allocation-lock transaction (`executor: tx`); cross-user `UNCLOSED` grouped by user and reconcile state; per-user `UNCLOSED_RECONCILED` ordered by `reconciled_at DESC` |
+| `routes/adminCockpit.ts` | 4 → 0 | cross-user `UNCLOSED`: per-user counts/P&L, overview totals, open-trade board (`opened_at DESC`), capital P&L |
+| `routes/adminFundBook.ts` | 1 → 0 | cross-user `UNCLOSED`, whole rows |
+| `routes/adminLiveAccount.ts` | 2 → 0 | cross-user `EXPOSURE` P&L; cross-user `UNCLOSED` whole rows |
+| `routes/adminReconciliationCenter.ts` | 1 → 0 | cross-user `EXPOSURE`, distinct user ids |
+| `lib/aaci/reconciliationAudit.ts` | 1 → 0 | cross-user `UNCLOSED` with `userIds` |
+| `lib/intelligence/monitorWorker.ts` | 1 → 0 | cross-user DEMO `CONFIRMED_OPEN`, distinct user ids |
+| `lib/live/brokerAbsenceReconcileRunner.ts` | 1 → 0 | per-user `EXPOSURE` with optional bridge, whole rows (the compare-and-set stamp is unchanged) |
+| `lib/live/masterBridgePool.ts` | 2 → 0 | cross-user `EXPOSURE` (pool recompute); per-user `EXPOSURE` (wallet view) |
+| `lib/selfTrade/executionGate.ts` | 1 → 0 | per-user `EXPOSURE` with `tickets` |
+| `lib/live/emergencyClose.ts` | 5 → 0 | per-user `UNCLOSED` (ticket / user / allocation scopes); cross-user `UNCLOSED` (`all_shared`, `all`) |
+| `lib/live/liveTestCycle.ts` | 1 → 0 | per-user `UNCLOSED`, symbol, limit 1 |
+| `lib/live/instantTrade.ts` | 2 → 0 | per-user `UNCLOSED` (Ruby open cap; close-all whole rows) |
+| `lib/live/liveCommandPipeline.ts` | 4 → 1 | per-user `UNCLOSED` for the cluster, daily-loss and concurrent-cap pre-gates |
+| `routes/meLive.ts` | 3 → 0 | per-user `UNCLOSED` whole rows (close-all, account snapshot, account stream) |
+| `routes/meTrades.ts` | 1 → 0 | per-user DEMO `CONFIRMED_OPEN` + `confirmedTicket`, `opened_at DESC` |
+
+What remains on the raw ledger, and why:
+
+- `routes/mt5Live.ts` (2, broker truth): LIVE snapshot ingest compares the
+  incoming broker snapshot with the connection's open rows it is about to write.
+- `lib/live/liveCommandPipeline.ts` (1, broker truth): a `LIVE_FILLED` CLOSE
+  reads the open row's volume and immediately writes either the reduced volume
+  or `closed_at` for that row. It is a read-modify-write beside
+  `livePositionWriter`, so it stays with the writer.
+- `lib/alerts/ruleEngine.ts` (1, non-standard predicate): the near-stop-loss
+  sweep requires DEMO `status = 'OPEN' AND closed_at IS NULL AND user_id IS NOT
+  NULL`. `CONFIRMED_OPEN` is `status = 'OPEN'` only, so moving it would add
+  any row with `status = 'OPEN'` and a stamped `closed_at`. Whether such rows
+  should be excluded from `CONFIRMED_OPEN` everywhere is a semantics decision,
+  not a refactor.
+
+Operator-wide views no longer write predicates, but they still read every
+user. They are listed in a second guard list, `OPERATOR_WIDE_READERS`
+(9 modules: the five admin routes, the AACI reconciliation audit, the monitor
+worker, the master-bridge pool and emergency close). That list has the same
+stale-entry rules as the raw-read allowlist.
+
+`reconciled-ghost-exposure` used to require the literal
+`openLiveExposureCondition(` in `masterBridgePool.ts` and `executionGate.ts`.
+It now also accepts a read-model call when the file imports the read model and
+every `basis:` it names is `"EXPOSURE"`, and it checks that the read model's
+per-user and cross-user `EXPOSURE` bases are `openLiveExposureCondition(userId)`
+/ `openLiveExposureCondition()`. A file that switched to `UNCLOSED` would fail.
+
+Round 3 behaviour: none intended, and none observed in the tests below.
+
+- The migrated reads produce the same SQL predicate (conjunct order differs in
+  some calls), the same columns (`select(livePositionColumns)` is the same
+  column list and row type as `select()`), the same grouping and the same
+  `ORDER BY`. Reads that had none still have none.
+- The read model throws on a non-positive or non-integer user id. Two callers
+  could receive one from loosely validated admin input (the emergency-close
+  scope body accepts any integer; the broker-absence candidates report passes
+  `Number(query.userId)`). Both now return no rows for such an id before
+  calling the read model, which is what the raw query returned, because no
+  position is owned by such an id. Every other migrated caller passes an
+  authenticated id, a database id, or an already validated route parameter.
+
 ## Behaviour changes
 
 No change to which rows are returned, to ownership, or to any response shape.
@@ -100,6 +188,9 @@ No change to which rows are returned, to ownership, or to any response shape.
   validated id.
 
 ## Enforcement and verification
+
+(Sections below describe PR #39; round 3 changes are summarised in
+"Round 3" above and in "Round 3 verification" at the end.)
 
 `single-open-position-view` runs in `ci:guards` (82 guards). It counts, per
 runtime module, calls to `livePositionLedger` / `demoPositionLedger` whose
@@ -202,5 +293,36 @@ Plan for the eventual physical merge, in order:
    change because they read through the ledger and the read model.
 6. Stop writing the old tables; keep them read-only for audit. Dropping them
    is a separate owner decision.
+
+## Round 3 verification
+
+On a local PostgreSQL 16 database (UTC), branch `r3/open-position-reads`:
+
+- Library, API and scripts typechecks: pass.
+- Architecture guards: 85/85 pass. `single-open-position-view` reports 4 raw
+  open-position reads in 3 allowlisted modules and 9 operator-wide modules.
+- `single-open-position-view` fixtures: 40 (27 before), covering the projected
+  reads, cross-user detection by import, call and namespace access, alias
+  rejection, and every `OPERATOR_WIDE_READERS` accounting case.
+- `test:open-position-view`: 10 real-DB tests (7 before). New: the projected
+  per-user reads against the raw predicates the migrated callers used
+  (`UNCLOSED`, `EXPOSURE`, `UNCLOSED_RECONCILED`, projection, tickets, empty
+  ticket list, symbol, bridge, limit, caller order, aggregates, invalid user);
+  DEMO `confirmedTicket` against the My Trades predicate (null and empty
+  broker ids, in a rolled-back transaction); cross-user reads for every basis
+  against the raw predicates, grouped counts, distinct users, an empty user
+  list (no rows; an aggregate still returns one zero row, as SQL does), DEMO
+  bases and transaction pass-through.
+- Targeted suites for the touched modules: see the branch report.
+
+## Limits after round 3
+
+- Operator-wide reads still exist by design; they are now named, use the same
+  bases and are listed, but they are not per-user.
+- The in-memory-filter readers listed under "Limits of this change" are
+  unchanged and still not detected by the guard.
+- The DEMO `closed_at` question (ruleEngine) and the `UNCLOSED` vs `EXPOSURE`
+  choice for the Risk Governor, dispatch pre-gates and emergency close remain
+  owner decisions.
 
 **TIER 1 NOT COMPLETE**

@@ -16,10 +16,11 @@
 //   confirmation phrase, reason capture and the per-batch audit row. This
 //   module returns a structured per-ticket outcome the caller audits.
 
-import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions, selectLiveOpenPositionsForAllUsers } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
 import { userSlotAllocationTable } from "@workspace/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { draftTrade, confirmTrade, dispatchTrade } from "../tradeEngine/pipeline.js";
 import type { KillSwitchCloseBypass } from "./killSwitchBypass.js";
 
@@ -67,22 +68,26 @@ async function resolveOpenPositions(scope: EmergencyCloseScope): Promise<OpenPos
     side: livePositionColumns.side,
     volume: livePositionColumns.volume,
   };
-  const open = isNull(livePositionColumns.closedAt);
+  // UNCLOSED (closed_at IS NULL): the kill switch also closes operator-
+  // reconciled rows that may still stand at the broker.
+  const basis = "UNCLOSED";
+  // The admin scope body only validates an integer. No position is owned by a
+  // non-positive id, so such a scope matches nothing (the read model would
+  // throw instead).
+  const ownerOf = (userId: number) => Number.isInteger(userId) && userId > 0;
 
   if (scope.kind === "ticket") {
-    const rows = await livePositionLedger.select(baseCols, {
-      where: and(
-        open,
-        eq(livePositionColumns.userId, scope.userId),
-        eq(livePositionColumns.brokerTicket, scope.brokerTicket),
-      ),
+    if (!ownerOf(scope.userId)) return [];
+    const rows = await selectLiveOpenPositions(baseCols, {
+      userId: scope.userId,
+      basis,
+      tickets: [scope.brokerTicket],
     });
     return rows;
   }
   if (scope.kind === "user") {
-    const rows = await livePositionLedger.select(baseCols, {
-      where: and(open, eq(livePositionColumns.userId, scope.userId)),
-    });
+    if (!ownerOf(scope.userId)) return [];
+    const rows = await selectLiveOpenPositions(baseCols, { userId: scope.userId, basis });
     return rows;
   }
   if (scope.kind === "allocation") {
@@ -92,10 +97,8 @@ async function resolveOpenPositions(scope: EmergencyCloseScope): Promise<OpenPos
       .from(userSlotAllocationTable)
       .where(eq(userSlotAllocationTable.id, scope.allocationId)).limit(1);
     const ownerId = alloc[0]?.userId;
-    if (ownerId == null) return [];
-    const rows = await livePositionLedger.select(baseCols, {
-      where: and(open, eq(livePositionColumns.userId, ownerId)),
-    });
+    if (ownerId == null || !ownerOf(ownerId)) return [];
+    const rows = await selectLiveOpenPositions(baseCols, { userId: ownerId, basis });
     return rows;
   }
   if (scope.kind === "all_shared") {
@@ -106,12 +109,12 @@ async function resolveOpenPositions(scope: EmergencyCloseScope): Promise<OpenPos
       .from(userSlotAllocationTable);
     const ids = new Set(allocUsers.map((a) => a.userId));
     if (ids.size === 0) return [];
-    const rows = await livePositionLedger.select(baseCols, { where: open });
+    const rows = await selectLiveOpenPositionsForAllUsers(baseCols, { basis });
     return rows.filter((r) => ids.has(r.userId));
   }
   // kind === "all" — every open live position at the broker, regardless of
   // routing. This is the hardest stop and is gated hardest at the caller.
-  const rows = await livePositionLedger.select(baseCols, { where: open });
+  const rows = await selectLiveOpenPositionsForAllUsers(baseCols, { basis });
   return rows;
 }
 

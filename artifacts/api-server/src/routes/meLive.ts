@@ -17,9 +17,10 @@
 // Mount path: /api/me/live/*
 
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserLiveSnapshotMarkerMs, listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
   evaluateLiveArmingGate,
@@ -469,9 +470,7 @@ router.post("/me/live/positions/:ticket/close", requireUser, async (req, res) =>
 router.post("/me/live/positions/close-all", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const open = await livePositionLedger.read({
-    where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
-  });
+  const open = await selectLiveOpenPositions(livePositionColumns, { userId, basis: "UNCLOSED" });
   req.log.info({ action: "CLOSE_ALL_REQUESTED", userId, openCount: open.length }, "trade.close-all.requested");
   // P0-1 — the WHOLE sweep runs in one per-user lock scope. Locking each
   // iteration instead would let a concurrent single-ticket close slot in
@@ -978,9 +977,7 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
   }
 
   // Fetch open positions for this user — same query as account-stream.
-  const posRows = await livePositionLedger.read({
-    where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
-  });
+  const posRows = await selectLiveOpenPositions(livePositionColumns, { userId, basis: "UNCLOSED" });
 
   // Freshest account-synced connection for equity/balance.
   const equityRows = await listUserConnections(userId, { order: "accountSynced", limit: 1 });
@@ -1126,9 +1123,7 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
         });
         return;
       }
-      const rows = await livePositionLedger.read({
-        where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
-      });
+      const rows = await selectLiveOpenPositions(livePositionColumns, { userId, basis: "UNCLOSED" });
       // Deterministically pick the user's most-recently account-synced
       // connection (NULLS LAST) so a multi-connection user never reads a stale
       // row's figures over a freshly-synced one.

@@ -2,10 +2,12 @@
 // venues, the three named "open" bases (and their equivalence with the legacy
 // inline predicates the migrated callers used), account-mode scoping, tenant
 // isolation with colliding broker tickets, closed/reconciled rows excluded,
-// filters, ordering and transaction pass-through.
+// filters, ordering and transaction pass-through; the projected per-user reads
+// and the cross-user (operator-wide) reads against the raw predicates the
+// migrated callers used.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { and, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { db, usersTable, arxLivePositionsTable, livePositionsTable } from "@workspace/db";
 import {
   livePositionLedger,
@@ -20,6 +22,10 @@ import {
   countOpenPositions,
   openPositionVenuesForMode,
   readOpenPositions,
+  selectDemoOpenPositions,
+  selectDemoOpenPositionsForAllUsers,
+  selectLiveOpenPositions,
+  selectLiveOpenPositionsForAllUsers,
 } from "../openPositions.js";
 
 let alice = 0,
@@ -208,4 +214,128 @@ test("a supplied transaction is used, not replaced by the global db", async () =
     /rollback/,
   );
   assert.equal(await countOpenPositions({ userId: alice, venue: "LIVE", tickets: [txTicket] }), 0);
+});
+
+const idsOf = (rows: Array<{ id: number }>) => rows.map((r) => r.id).sort((a, b) => a - b);
+
+test("projected per-user reads match the raw predicates the migrated callers used", async () => {
+  // LIVE UNCLOSED (meLive, instantTrade, dispatch pre-gates, emergency close by user).
+  assert.deepEqual(
+    idsOf(await selectLiveOpenPositions(live, { userId: alice, basis: "UNCLOSED" })),
+    idsOf(await livePositionLedger.read({ where: and(eq(live.userId, alice), isNull(live.closedAt)) })),
+  );
+  // LIVE EXPOSURE (wallet view, agent gate, broker-absence candidates).
+  assert.deepEqual(
+    idsOf(await selectLiveOpenPositions(live, { userId: alice, basis: "EXPOSURE" })),
+    idsOf(await livePositionLedger.read({ where: openLiveExposureCondition(alice) })),
+  );
+  // LIVE UNCLOSED_RECONCILED (reconcile-detail): exactly the ghost.
+  const ghosts = await selectLiveOpenPositions(
+    { id: live.id, ticket: live.brokerTicket, state: live.reconcileState },
+    { userId: alice, basis: "UNCLOSED_RECONCILED", orderBy: [desc(live.reconciledAt)] },
+  );
+  assert.deepEqual(ghosts.map((g) => [g.ticket, g.state]), [[tickets.ghost, "IGNORED"]]);
+  assert.deepEqual(
+    idsOf(ghosts),
+    idsOf(await livePositionLedger.read({
+      where: and(eq(live.userId, alice), isNull(live.closedAt), isNotNull(live.reconcileState)),
+    })),
+  );
+  // Projection, tickets (incl. empty), symbol, bridge, limit, caller order, aggregate.
+  const one = await selectLiveOpenPositions(
+    { id: live.id, symbol: live.symbol },
+    { userId: alice, basis: "UNCLOSED", tickets: [tickets.ghost] },
+  );
+  assert.deepEqual(Object.keys(one[0]!).sort(), ["id", "symbol"]);
+  assert.equal(one.length, 1);
+  assert.deepEqual(await selectLiveOpenPositions({ id: live.id }, { userId: alice, tickets: [] }), []);
+  assert.equal((await selectLiveOpenPositions({ id: live.id }, { userId: alice, basis: "UNCLOSED", symbol: "EURUSD", limit: 1 })).length, 1);
+  assert.deepEqual(
+    (await selectLiveOpenPositions({ t: live.brokerTicket }, { userId: alice, basis: "UNCLOSED", bridgeConnectionId: 900_002 })).map((r) => r.t),
+    [tickets.other],
+  );
+  const newest = await selectLiveOpenPositions({ t: live.brokerTicket }, { userId: alice, orderBy: [desc(live.openedAt)] });
+  assert.equal(newest[0]!.t, tickets.other);
+  const [agg] = await selectLiveOpenPositions({ n: sql<number>`count(*)::int`, pl: sql<number>`coalesce(sum(${live.floatingPl}), 0)` }, { userId: alice, basis: "UNCLOSED" });
+  assert.equal(agg!.n, 3);
+  assert.equal(Number(agg!.pl), 10 - 4 - 7);
+  await assert.rejects(() => selectLiveOpenPositions({ id: live.id }, { userId: 0 }), /positive integer userId/);
+});
+
+test("DEMO projected read: confirmedTicket drops rows without a broker position id", async () => {
+  await assert.rejects(
+    db.transaction(async (tx) => {
+      await demoPositionWriter.insert({ userId: alice, brokerPositionId: null, symbol: "EURUSD", direction: "BUY", lotSize: 0.1, entryPrice: 1.1, status: "OPEN" }, false, tx);
+      await demoPositionWriter.insert({ userId: alice, brokerPositionId: "", symbol: "EURUSD", direction: "BUY", lotSize: 0.1, entryPrice: 1.1, status: "OPEN" }, false, tx);
+      const legacy = await demoPositionLedger.read({
+        where: and(eq(demo.userId, alice), eq(demo.status, "OPEN"), isNotNull(demo.brokerPositionId), ne(demo.brokerPositionId, "")),
+        orderBy: [desc(demo.openedAt)],
+      }, tx);
+      const confirmed = await selectDemoOpenPositions(demo, {
+        userId: alice, basis: "CONFIRMED_OPEN", confirmedTicket: true, orderBy: [desc(demo.openedAt)], executor: tx,
+      });
+      assert.deepEqual(confirmed.map((r) => r.id), legacy.map((r) => r.id));
+      assert.deepEqual(confirmed.map((r) => r.brokerPositionId), [tickets.open]);
+      assert.equal((await selectDemoOpenPositions({ id: demo.id }, { userId: alice, basis: "CONFIRMED_OPEN", executor: tx })).length, 3);
+      assert.equal((await selectDemoOpenPositions({ id: demo.id }, { userId: alice, executor: tx })).length, 4);
+      throw new Error("rollback");
+    }),
+    /rollback/,
+  );
+});
+
+test("cross-user reads carry the same bases and respect a user filter", async () => {
+  const both = [alice, bob];
+  const scoped = (where: ReturnType<typeof and>) => and(inArray(live.userId, both), where);
+  for (const [basis, legacy] of [
+    ["UNCLOSED", isNull(live.closedAt)],
+    ["EXPOSURE", openLiveExposureCondition()],
+    ["UNCLOSED_RECONCILED", and(isNull(live.closedAt), isNotNull(live.reconcileState))],
+  ] as const) {
+    assert.deepEqual(
+      idsOf(await selectLiveOpenPositionsForAllUsers(live, { basis, userIds: both })),
+      idsOf(await livePositionLedger.read({ where: scoped(legacy) })),
+      basis,
+    );
+  }
+  // Grouped per-user counts (cockpit / allocation governance shape).
+  const grouped = await selectLiveOpenPositionsForAllUsers(
+    { userId: live.userId, n: sql<number>`count(*)::int` },
+    { basis: "UNCLOSED", userIds: both, groupBy: [live.userId] },
+  );
+  assert.deepEqual(grouped.map((g) => [g.userId, g.n]).sort((a, b) => a[0]! - b[0]!), [[alice, 3], [bob, 3]]);
+  // Distinct users (reconciliation center / monitor sweep shape).
+  const users = await selectLiveOpenPositionsForAllUsers({ userId: live.userId }, { basis: "EXPOSURE", userIds: both, distinct: true });
+  assert.deepEqual(users.map((u) => u.userId).sort((a, b) => a - b), [...both].sort((a, b) => a - b));
+  // Empty user list matches nothing; an aggregate still returns its single row.
+  assert.deepEqual(await selectLiveOpenPositionsForAllUsers(live, { basis: "UNCLOSED", userIds: [] }), []);
+  const [none] = await selectLiveOpenPositionsForAllUsers({ n: sql<number>`count(*)::int` }, { userIds: [] });
+  assert.equal(none!.n, 0);
+  // Unfiltered cross-user read includes both users' rows (operator view).
+  const everyone = new Set((await selectLiveOpenPositionsForAllUsers({ userId: live.userId }, { basis: "UNCLOSED" })).map((r) => r.userId));
+  assert.ok(everyone.has(alice) && everyone.has(bob));
+  // DEMO: CONFIRMED_OPEN = status 'OPEN'; EXPOSURE = status <> 'CLOSED'.
+  assert.deepEqual(
+    idsOf(await selectDemoOpenPositionsForAllUsers(demo, { basis: "CONFIRMED_OPEN", userIds: both })),
+    idsOf(await demoPositionLedger.read({ where: and(inArray(demo.userId, both), eq(demo.status, "OPEN")) })),
+  );
+  assert.deepEqual(
+    idsOf(await selectDemoOpenPositionsForAllUsers(demo, { userIds: both })),
+    idsOf(await demoPositionLedger.read({ where: and(inArray(demo.userId, both), ne(demo.status, "CLOSED")) })),
+  );
+  // A supplied transaction is used.
+  await assert.rejects(
+    db.transaction(async (tx) => {
+      await livePositionWriter.insert({
+        userId: bob, bridgeConnectionId: 900_101, brokerTicket: `${T}-tx2`, symbol: "EURUSD", side: "BUY",
+        volume: 0.1, entryPrice: 1.1, openedAt: new Date(),
+      }, false, tx);
+      const [row] = await selectLiveOpenPositionsForAllUsers({ n: sql<number>`count(*)::int` }, { userIds: [bob], executor: tx });
+      assert.equal(row!.n, 3);
+      throw new Error("rollback");
+    }),
+    /rollback/,
+  );
+  const [after] = await selectLiveOpenPositionsForAllUsers({ n: sql<number>`count(*)::int` }, { userIds: [bob] });
+  assert.equal(after!.n, 2);
 });

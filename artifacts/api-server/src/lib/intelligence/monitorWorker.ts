@@ -12,8 +12,8 @@
 // - Worker status is exposed via getMonitorStatus() for the admin panel;
 //   no credentials, no other-user data, no master MT5 secrets exposed.
 
-import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
-import { readOpenPositions } from "../positions/openPositions.js";
+import { demoPositionColumns } from "../positions/ledger.js";
+import { readOpenPositions, selectDemoOpenPositionsForAllUsers } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
 import { sharedTradeAttributionTable, tradeAlertPreferencesTable } from "@workspace/db/schema";
 import { and, eq, sql } from "drizzle-orm";
@@ -82,9 +82,9 @@ export function isGloballyPaused(): boolean {
 // Scan all userIds that have at least one OPEN user-owned position OR one
 // 'open' shared-attribution row. Returns deduped userIds.
 async function listUsersWithOpenTrades(): Promise<number[]> {
-  const owned = await demoPositionLedger.select(
+  const owned = await selectDemoOpenPositionsForAllUsers(
     { userId: demoPositionColumns.userId },
-    { where: eq(demoPositionColumns.status, "OPEN"), distinct: true },
+    { basis: "CONFIRMED_OPEN", distinct: true },
   );
   const shared = await db
     .selectDistinct({ userId: sharedTradeAttributionTable.userId })

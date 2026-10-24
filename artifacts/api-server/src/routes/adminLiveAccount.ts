@@ -9,11 +9,11 @@
 //   match any active allocation. Surfaced only to admins for triage.
 
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
 import { listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { eq, isNull, isNotNull } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
-import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
 import { db, userSlotAllocationTable, arxMasterAccountConfigTable } from "@workspace/db";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
@@ -98,12 +98,12 @@ router.get("/admin/live/user-slots", requireUser, async (req, res) => {
   // One pass over arx_live_positions, group by userId in-memory.
   // Open exposure only (shared truth predicate) — reconciled/closed ghosts
   // excluded from per-user open P/L totals.
-  const allOpen = await livePositionLedger.select(
+  const allOpen = await selectLiveOpenPositionsForAllUsers(
     {
       userId: livePositionColumns.userId,
       floatingPl: livePositionColumns.floatingPl,
     },
-    { where: openLiveExposureCondition() },
+    { basis: "EXPOSURE" },
   );
   const allClosed = await livePositionLedger.select(
     {
@@ -157,7 +157,7 @@ router.get("/admin/live/unassigned-positions", requireUser, async (req, res) => 
     .where(eq(userSlotAllocationTable.isActive, true));
   const allocatedIds = new Set(allocations.map((a) => a.userId));
 
-  const positions = await livePositionLedger.read({ where: isNull(livePositionColumns.closedAt) });
+  const positions = await selectLiveOpenPositionsForAllUsers(livePositionColumns, { basis: "UNCLOSED" });
 
   const unassigned = positions.filter((p) => !allocatedIds.has(p.userId)).map((p) => ({
     id: p.id,

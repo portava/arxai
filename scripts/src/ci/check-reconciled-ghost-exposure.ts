@@ -14,8 +14,11 @@
 //
 //   (a) the canonical predicate itself enforces BOTH closed_at IS NULL AND
 //       reconcile_state IS NULL (the protection lives at the source of truth), and
-//   (b) every consuming read delegates to it (via openLiveExposureCondition)
-//       — or, for resilience, still carries the equivalent inline filter.
+//   (b) every consuming read delegates to it — directly (openLiveExposureCondition),
+//       through the open-position read model with an explicit
+//       `basis: "EXPOSURE"` (and no other basis in the file; the read model's
+//       EXPOSURE basis is itself checked to be openLiveExposureCondition), or,
+//       for resilience, with the equivalent inline filter.
 //
 // This is strictly stronger than the previous literal-text scan: it verifies the
 // filter is actually applied at the canonical predicate, not merely that the
@@ -28,11 +31,22 @@ const NAME = "reconciled-ghost-exposure";
 const RECONCILE_LITERAL = "isNull(livePositionColumns.reconcileState)";
 const CLOSED_LITERAL = "isNull(livePositionColumns.closedAt)";
 const HELPER = "openLiveExposureCondition";
+const READ_MODEL_IMPORT = /from\s+["'][^"']*positions\/openPositions(?:\.js)?["']/;
+const BASIS = /\bbasis:\s*["'`](\w+)["'`]/g;
 
-/** A read is safe if it delegates to the canonical helper OR still carries both
- *  inline isNull filters (legacy-equivalent). */
+/** True when the file reads through the read model and every basis it names is EXPOSURE. */
+function readsExposureThroughReadModel(src: string): boolean {
+  if (!READ_MODEL_IMPORT.test(src)) return false;
+  const bases = [...src.matchAll(BASIS)].map((m) => m[1]);
+  return bases.length > 0 && bases.every((b) => b === "EXPOSURE");
+}
+
+/** A read is safe if it delegates to the canonical helper (directly or through
+ *  the read model's EXPOSURE basis) OR still carries both inline isNull filters
+ *  (legacy-equivalent). */
 function enforcesExposure(src: string): boolean {
   if (src.includes(`${HELPER}(`)) return true;
+  if (readsExposureThroughReadModel(src)) return true;
   return src.includes(RECONCILE_LITERAL) && src.includes(CLOSED_LITERAL);
 }
 
@@ -57,6 +71,17 @@ export function checkReconciledGhostExposure(): CheckResult {
     );
   } else {
     notes.push("openLiveExposureCondition enforces both closedAt IS NULL and reconcileState IS NULL");
+  }
+
+  // ── 0b. The read model's EXPOSURE basis must be that predicate ───────────
+  const readModel = read(join(ROOT, "artifacts/api-server/src/lib/positions/openPositions.ts"));
+  if (!/:\s*openLiveExposureCondition\(userId\)/.test(readModel) || !/openLiveExposureCondition\(\)/.test(readModel)) {
+    violations.push(
+      "lib/positions/openPositions.ts must build the per-user and cross-user LIVE EXPOSURE basis from " +
+        "openLiveExposureCondition(userId) / openLiveExposureCondition()",
+    );
+  } else {
+    notes.push("read model EXPOSURE basis (per-user and cross-user) is openLiveExposureCondition");
   }
 
   // ── 1. masterBridgePool: recomputeMasterPool + getUserAllocationView ─────

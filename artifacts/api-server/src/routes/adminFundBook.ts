@@ -14,9 +14,10 @@
 //   broker balance is never split across investors.
 // - NO guaranteed / fixed / risk-free return wording anywhere.
 
-import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { livePositionColumns } from "../lib/positions/ledger.js";
+import { selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
 import { Router, type Request, type Response } from "express";
-import { desc, eq, isNull, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -150,7 +151,7 @@ router.get("/admin/fundbook/trade-allocations", requireUser, async (req, res) =>
   await ensurePools();
 
   // Mirror open broker positions that have no allocation row yet.
-  const openPositions = await livePositionLedger.read({ where: isNull(livePositionColumns.closedAt) });
+  const openPositions = await selectLiveOpenPositionsForAllUsers(livePositionColumns, { basis: "UNCLOSED" });
   if (openPositions.length > 0) {
     const existing = await db
       .select({

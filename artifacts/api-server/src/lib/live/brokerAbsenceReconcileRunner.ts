@@ -7,7 +7,8 @@
 // reconcileState=RECONCILED_BROKER_ABSENT on safe candidates with a CAS guard
 // and a system audit row. NEVER sends a broker command.
 
-import { livePositionWriter, livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { livePositionWriter, livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getUserConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, gte, inArray, isNull } from "drizzle-orm";
@@ -79,14 +80,16 @@ export async function runBrokerAbsenceReconcile(args: {
   const snapshotReliable = isSnapshotReliable(markerMs, policy.snapshotReliabilityWindowMs, now.getTime());
 
   // Open, not-yet-reconciled rows for this user (+ bridge if scoped).
-  const openRows = await livePositionLedger.read({
-    where: and(
-      eq(livePositionColumns.userId, args.userId),
-      isNull(livePositionColumns.closedAt),
-      isNull(livePositionColumns.reconcileState),
-      ...(bridgeConnectionId != null ? [eq(livePositionColumns.bridgeConnectionId, bridgeConnectionId)] : []),
-    ),
-  });
+  // The admin candidates report passes a query-string id through Number(); no
+  // position is owned by a non-positive or fractional id, so such an id
+  // matches nothing (the read model would throw instead).
+  const openRows = Number.isInteger(args.userId) && args.userId > 0
+    ? await selectLiveOpenPositions(livePositionColumns, {
+      userId: args.userId,
+      basis: "EXPOSURE",
+      ...(bridgeConnectionId != null ? { bridgeConnectionId } : {}),
+    })
+    : [];
 
   // Pending ARX close tickets — never race the ARX-initiated close path.
   const pendingCloseTickets = new Set<string>();

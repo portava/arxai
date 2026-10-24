@@ -17,9 +17,10 @@
 //   retry. An operator must use /resolve to acknowledge.
 
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getUserActiveConnection } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   arxLiveTestCyclesTable,
@@ -216,16 +217,9 @@ export async function runPrecheck(userId: number): Promise<{
   });
 
   // 7. no existing open arx_live_positions for EURUSD
-  const openPos = await livePositionLedger.select(
+  const openPos = await selectLiveOpenPositions(
     { id: livePositionColumns.id },
-    {
-      where: and(
-        eq(livePositionColumns.userId, userId),
-        eq(livePositionColumns.symbol, PINNED_SYMBOL),
-        isNull(livePositionColumns.closedAt),
-      ),
-      limit: 1,
-    },
+    { userId, basis: "UNCLOSED", symbol: PINNED_SYMBOL, limit: 1 },
   );
   checks.push({
     key: "no_existing_eurusd_position",
