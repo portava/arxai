@@ -63,6 +63,7 @@ import {
   fetchInvestorBalanceParts,
   toInvestorLiveBalanceWire,
 } from "../lib/live/investorLiveBalance.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -74,7 +75,7 @@ function uid(req: Request): number | null {
 }
 function isAdmin(req: Request): boolean {
   const u = (req as Request & { authUser?: { role?: string } }).authUser;
-  return u?.role === "ADMIN" || u?.role === "OWNER";
+  return operatorRoleFromSession(u?.role) != null;
 }
 
 const SAFETY_ENVELOPE = {

@@ -22,6 +22,7 @@ import {
   type ConfigurablePatch,
 } from "../lib/selfTrade/service.js";
 import { fundAgent, defundAgent } from "../lib/selfTrade/agentLedger.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -34,11 +35,12 @@ type AdminRole = "ADMIN" | "OWNER";
 // Resolve a true ADMIN/OWNER session (admin-preview is already downgraded).
 function requireAdmin(req: Request, res: Response): Actor | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
-  if (u?.id == null || (u.role !== "ADMIN" && u.role !== "OWNER")) {
+  const role = operatorRoleFromSession(u?.role);
+  if (u?.id == null || !role) {
     err(res, 403, "ADMIN_REQUIRED", "Admin or owner access required.");
     return null;
   }
-  return { userId: u.id, role: u.role as AdminRole };
+  return { userId: u.id, role };
 }
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });

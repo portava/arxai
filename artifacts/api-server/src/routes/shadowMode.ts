@@ -9,11 +9,12 @@ import {
   confidenceCalibration, promotionStatus, promote, demote, demotionScan,
   readinessScore, shadowJournal, dashboardCards,
 } from "../lib/shadowMode.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") { res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" }); return; }
+  if (!operatorRoleFromSession(role)) { res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" }); return; }
   next();
 }
 

@@ -26,6 +26,7 @@ import {
   type SignalOutcomeStatus,
   type TimingClass,
 } from "@workspace/domain/ruby-quality";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -42,11 +43,12 @@ type AdminRole = "ADMIN" | "OWNER";
  */
 function requireAdmin(req: Request, res: Response): { id: number; role: AdminRole } | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
-  if (u?.id == null || (u.role !== "ADMIN" && u.role !== "OWNER")) {
+  const role = operatorRoleFromSession(u?.role);
+  if (u?.id == null || !role) {
     err(res, 403, "ADMIN_REQUIRED");
     return null;
   }
-  return { id: u.id, role: u.role };
+  return { id: u.id, role };
 }
 
 const metricsQuery = z.object({

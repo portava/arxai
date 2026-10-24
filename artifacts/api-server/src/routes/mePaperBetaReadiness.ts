@@ -18,6 +18,7 @@ import { requireUser } from "../lib/auth/middleware.js";
 import { recordSecurityEvent } from "../lib/security/events.js";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { buildBridgeOpsRollup } from "./mt5.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -67,7 +68,7 @@ router.get("/me/paper-beta-readiness", requireUser, async (req, res) => {
   // attacker-influenced Host/X-Forwarded-Host headers). Caller role is
   // forwarded so gate sees the same redacted view a normal user would.
   const role = readRoleFromRequest(req);
-  const bridge = await buildBridgeOpsRollup(role === "OWNER" || role === "ADMIN" ? "admin" : "user");
+  const bridge = await buildBridgeOpsRollup(operatorRoleFromSession(role) != null ? "admin" : "user");
 
   const checks: CheckResult[] = [];
 

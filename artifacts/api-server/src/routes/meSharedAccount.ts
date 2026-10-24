@@ -33,6 +33,7 @@ import {
   recomputeMasterPool,
   resolveActiveMasterConnectionId,
 } from "../lib/live/masterBridgePool.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -43,7 +44,7 @@ function isAdminOrOwner(req: Request): boolean {
   const role = String(
     (req as Request & { authUser?: { role?: string } }).authUser?.role ?? "",
   ).toUpperCase();
-  return role === "ADMIN" || role === "OWNER";
+  return operatorRoleFromSession(role) != null;
 }
 
 /**

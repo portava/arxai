@@ -37,6 +37,7 @@ import {
   type AdminActionResult,
 } from "../lib/aaci/learning/weightService.js";
 import { trustMean, effectiveLearnedTrust } from "@workspace/domain/aaci";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 // DTO shapes mirror the OpenAPI contract (AaciTrustScore, AaciLearningChange,
 // AaciLearningSummary, AaciLearningActionResult). Defined locally because the
@@ -135,7 +136,7 @@ function requireAdmin(
     return null;
   }
   const effectiveRole = normalizeProductRole(req.authUser?.role);
-  if (!isAdminProductRole(effectiveRole)) {
+  if (!operatorRoleFromSession(effectiveRole)) {
     res.status(403).json({ error: "Admin or owner access required" });
     return null;
   }

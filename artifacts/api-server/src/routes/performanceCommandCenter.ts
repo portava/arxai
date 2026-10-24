@@ -15,6 +15,7 @@ import { rebuildSnapshots } from "../lib/performanceCC/rebuild.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 // T006 — mode-scope helper. Every aggregate below is computed from the
 // signed-in user's own paper book. LIVE_SHARED sessions still get an empty,
@@ -23,7 +24,7 @@ async function isLiveSharedSession(req: Request): Promise<boolean> {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
   if (!u || typeof u.id !== "number") return false;
   const role = String(u.role ?? "").toUpperCase();
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(u.id, { isAdmin });
   return scope.currentAccountMode === "LIVE_SHARED";
 }

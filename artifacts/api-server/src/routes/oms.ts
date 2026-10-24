@@ -15,6 +15,7 @@ import {
   pnlSummary, pnlBy, pnlDaily, brokerReconStatus, omsDashboardSummary,
   tickAll, type OmsActionResult, type OmsActor,
 } from "../lib/oms.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 // Every change to the simulator book is evaluated by the pre-trade Risk
 // Governor for the operator making it (lib/oms.ts, governed entry points).
@@ -170,7 +171,7 @@ router.get("/pnl/by-environment", (_req, res) => res.json({ groups: pnlBy("envir
 router.get("/broker-reconciliation/status", (req, res) => {
   const u = (req as typeof req & { authUser?: { role?: string } }).authUser;
   const role = String(u?.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (!operatorRoleFromSession(role)) {
     return res.status(403).json({ ok: false, error: "ADMIN_OR_OWNER_REQUIRED", redirectTo: "/admin/reconciliation-center" });
   }
   return res.json(brokerReconStatus());

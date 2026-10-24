@@ -27,6 +27,7 @@ import { recordSecurityEvent } from "../lib/security/events.js";
 import { anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -760,7 +761,7 @@ export async function buildBridgeOpsRollup(requesterRole: "admin" | "user") {
 
 router.get("/mt5/bridge-ops-monitor", requireUser, async (req, res) => {
   const role = readRoleFromRequest(req);
-  const rollup = await buildBridgeOpsRollup(role === "OWNER" || role === "ADMIN" ? "admin" : "user");
+  const rollup = await buildBridgeOpsRollup(operatorRoleFromSession(role) != null ? "admin" : "user");
   void auditBridge("BRIDGE_OPS_MONITOR_VIEWED", "INFO", "ALLOWED", req, { requesterScope: rollup.requesterScope });
   if (rollup.lastHeartbeatAt && !rollup.heartbeatFresh) {
     void auditBridge("BRIDGE_HEARTBEAT_STALE", "WARNING", "TRIGGERED", req, {
@@ -1524,7 +1525,7 @@ router.get("/mt5/status", requireUser, async (req, res) => {
 // scoped to the requesting admin's user_id only.
 router.get("/mt5/bridge-info", requireUser, async (req, res) => {
   const role = req.authUser?.role;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (!operatorRoleFromSession(role)) {
     res.status(403).json({ error: "admin_required" });
     return;
   }

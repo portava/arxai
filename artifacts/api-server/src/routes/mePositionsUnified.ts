@@ -22,6 +22,7 @@ import { requireUser } from "../lib/auth/middleware.js";
 import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
 import { getUserModeScope, modeScopeEnvelope } from "../lib/modeScope/getUserModeScope.js";
 import { resolveLivePositionVisibility } from "../lib/modeScope/livePositionVisibility.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -61,7 +62,7 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   // unified positions feed (and vice versa). A PAPER user sees nothing
   // here at all — paper rows live on the paper trades feed.
   const role = (req as Request & { authUser?: { role?: string } }).authUser?.role;
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(userId, { isAdmin });
   // Canonical live-position visibility — shared verbatim with
   // /api/me/live/positions so one real broker position can never produce two
