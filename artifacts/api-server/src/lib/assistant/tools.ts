@@ -6,6 +6,7 @@
 // Pre-trade risk check is purely advisory; live order execution is system-locked.
 
 import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
+import { readOpenPositions } from "../positions/openPositions.js";
 import { getUserPrimaryConnection, listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
 import {
   db,
@@ -1766,9 +1767,7 @@ export async function getMyLiveOpenTrades(userId: number) {
 
   if (env.accountRoutingMode === "USER_OWNED_MT5") {
     const snapshotReliable = await getUserSnapshotReliable(userId, now);
-    const rows = await demoPositionLedger.read({
-      where: and(eq(demoPositionColumns.userId, userId), eq(demoPositionColumns.status, "OPEN")),
-    });
+    const rows = (await readOpenPositions({ userId, venue: "DEMO", basis: "CONFIRMED_OPEN" })).map((p) => p.row);
     for (const r of rows) {
       const verdict = classifyLivePosition(r, { snapshotReliable, now });
       if (verdict.isVerifiedLive) {
@@ -2112,10 +2111,7 @@ export async function getSniperWatchlistTool(userId: number) {
   // Re-build keys here (cannot call the route handler directly).
   const keys: string[] = [];
   if (env.accountRoutingMode === "USER_OWNED_MT5") {
-    const rows = await demoPositionLedger.select(
-      { id: demoPositionColumns.id },
-      { where: and(eq(demoPositionColumns.userId, userId), eq(demoPositionColumns.status, "OPEN")) },
-    );
+    const rows = await readOpenPositions({ userId, venue: "DEMO", basis: "CONFIRMED_OPEN" });
     for (const r of rows) keys.push(`lp_${r.id}`);
   } else {
     const rows = await db.select({ id: sharedTradeAttributionTable.id }).from(sharedTradeAttributionTable)

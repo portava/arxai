@@ -18,7 +18,8 @@
 // sole rule that blocked and the trader's settings allow overrides. The 12
 // exposure rules and the stop switches can never be overridden.
 
-import { livePositionLedger, demoPositionLedger, livePositionColumns, demoPositionColumns } from "../positions/ledger.js";
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { readOpenPositions } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
 import {
   userRiskSettingsTable,
@@ -329,17 +330,12 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
   // Open positions: LIVE reads the live pipeline's own ledger
   // (arx_live_positions); DEMO reads the EA-synced live_positions.
   type OpenRow = { id: number; symbol: string; side: string; lots: number; entryPrice: number; stopLoss: number | null; floating: number | null; at: Date };
-  const posRows: OpenRow[] = intent.venue === "LIVE"
-    ? (await livePositionLedger.read({
-      where: and(eq(livePositionColumns.userId, userId), isNull(livePositionColumns.closedAt)),
-    }))
-        .map((p) => ({ id: p.id, symbol: p.symbol, side: p.side, lots: p.volume, entryPrice: p.entryPrice,
-          stopLoss: p.stopLoss, floating: p.floatingPl, at: p.openedAt }))
-    : (await demoPositionLedger.read({
-      where: and(eq(demoPositionColumns.userId, userId), ne(demoPositionColumns.status, "CLOSED")),
-    }))
-        .map((p) => ({ id: p.id, symbol: p.symbol, side: p.direction, lots: p.lotSize, entryPrice: p.entryPrice,
-          stopLoss: p.stopLoss, floating: p.unrealizedProfitLoss, at: p.openedAt ?? p.createdAt }));
+  // UNCLOSED is the conservative basis: an operator-reconciled LIVE row that
+  // was never closed may still stand at the broker, so it keeps counting. The
+  // intent's venue is authoritative here, so no account-mode filter applies.
+  const posRows: OpenRow[] = (await readOpenPositions({ userId, venue: intent.venue === "LIVE" ? "LIVE" : "DEMO", basis: "UNCLOSED" }))
+    .map((p) => ({ id: p.id, symbol: p.symbol, side: p.side, lots: p.lots, entryPrice: p.entryPrice,
+      stopLoss: p.stopLoss, floating: p.floatingPnl, at: p.openedAt ?? p.recordedAt }));
   const sided = posRows.filter((p): p is OpenRow & { side: "BUY" | "SELL" } => p.side === "BUY" || p.side === "SELL");
   const positions: RiskPosition[] = sided.map((p) => ({
     symbol: p.symbol, side: p.side, lots: p.lots, entryPrice: p.entryPrice, stopLoss: p.stopLoss,

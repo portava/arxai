@@ -19,8 +19,8 @@
 //     and (missionId); open positions are read ONLY from rows owned by the user.
 //   - Honest degradation: unknown inputs never fabricate an exit, a milestone, or
 //     a compounding boost — they fail toward LESS risk / MORE protection.
-import { livePositionLedger, livePositionColumns } from "./positions/ledger.js";
-import { and, eq, isNull } from "drizzle-orm";
+import { readOpenPositions } from "./positions/openPositions.js";
+import { and, eq } from "drizzle-orm";
 import {
   db,
   profitMissionsTable,
@@ -685,9 +685,7 @@ export async function manageMissionTradeExit(
   // The draft links to its live command via `commandId`; the position carries
   // `source_command_id` back to that command. A still-open position has no
   // `closedAt`. Read ONLY rows owned by this user.
-  const posRows = await livePositionLedger.read({
-    where: and(eq(livePositionColumns.userId, args.userId), isNull(livePositionColumns.closedAt)),
-  });
+  const posRows = (await readOpenPositions({ userId: args.userId, venue: "LIVE", basis: "UNCLOSED" })).map((p) => p.row);
   const match = posRows.find((r) => {
     if (draft.brokerTicket != null && r.brokerTicket === draft.brokerTicket) return true;
     if (draft.commandId != null && r.sourceCommandId === draft.commandId) return true;

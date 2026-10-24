@@ -16,6 +16,7 @@
 //   * No execution. No order placement. No live-trade flags toggled.
 
 import { livePositionLedger, livePositionColumns, readAttributedLivePositions } from "../lib/positions/ledger.js";
+import { countOpenPositions, readOpenPositions } from "../lib/positions/openPositions.js";
 import { getConnection } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import type { Request } from "express";
@@ -26,7 +27,7 @@ import {
   sharedMasterAccountsTable,
   unattributedMasterTradesTable,
 } from "@workspace/db/schema";
-import { and, desc, eq, gte, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
   getUserAllocationView,
@@ -84,18 +85,12 @@ async function buildMasterMt5Snapshot(userId: number) {
   // only (not closed). Falls back to 0 when the master is unknown.
   let openPositions = 0;
   if (masterOwnerUserId != null && masterConnId != null) {
-    const openRows = await livePositionLedger.select(
-      { count: sql<number>`count(*)::int` },
-      {
-        where: and(
-          eq(livePositionColumns.userId, masterOwnerUserId),
-          eq(livePositionColumns.bridgeConnectionId, masterConnId),
-          isNull(livePositionColumns.closedAt),
-          isNull(livePositionColumns.reconcileState),
-        ),
-      },
-    );
-    openPositions = Number(openRows[0]?.count ?? 0);
+    openPositions = await countOpenPositions({
+      userId: masterOwnerUserId,
+      venue: "LIVE",
+      basis: "EXPOSURE",
+      bridgeConnectionId: masterConnId,
+    });
   }
 
   // Real broker floating P/L = equity − balance, straight from the EA
@@ -389,31 +384,26 @@ router.get("/me/shared-account/positions", requireUser, async (req, res) => {
       }
 
       // All real OPEN master positions — not closed, not operator-reconciled.
-      const masterRows = await livePositionLedger.select(
-        {
-          id: livePositionColumns.id,
-          brokerTicket: livePositionColumns.brokerTicket,
-          symbol: livePositionColumns.symbol,
-          side: livePositionColumns.side,
-          volume: livePositionColumns.volume,
-          entryPrice: livePositionColumns.entryPrice,
-          currentPrice: livePositionColumns.currentPrice,
-          pnl: livePositionColumns.floatingPl,
-          stopLoss: livePositionColumns.stopLoss,
-          takeProfit: livePositionColumns.takeProfit,
-          openedAt: livePositionColumns.openedAt,
-          lastSyncedAt: livePositionColumns.lastSyncedAt,
-        },
-        {
-          where: and(
-            eq(livePositionColumns.userId, masterOwnerUserId),
-            eq(livePositionColumns.bridgeConnectionId, masterConnId),
-            isNull(livePositionColumns.closedAt),
-            isNull(livePositionColumns.reconcileState),
-          ),
-          orderBy: [desc(livePositionColumns.openedAt)],
-        },
-      );
+      const masterRows = (await readOpenPositions({
+        userId: masterOwnerUserId,
+        venue: "LIVE",
+        basis: "EXPOSURE",
+        bridgeConnectionId: masterConnId,
+        order: "openedAtDesc",
+      })).map((p) => ({
+        id: p.id,
+        brokerTicket: p.ticket,
+        symbol: p.symbol,
+        side: p.side,
+        volume: p.lots,
+        entryPrice: p.entryPrice,
+        currentPrice: p.currentPrice,
+        pnl: p.floatingPnl,
+        stopLoss: p.stopLoss,
+        takeProfit: p.takeProfit,
+        openedAt: p.row.openedAt,
+        lastSyncedAt: p.row.lastSyncedAt,
+      }));
 
       // Label by ARX attribution WITHOUT widening any user's visibility. This is
       // the owner/admin operator view; we look up attributions for the pinned

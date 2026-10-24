@@ -33,6 +33,7 @@ rulePasses(advisory, 'import { livePositionLedger } from "../positions/ledger.js
 freeFails('import { livePositionLedger } from "./positions/ledger.js"; await executeInstant({ userId, intent });');
 freeFails('import { demoPositionLedger } from "../positions/ledger.js"; await createActionDraft({ userId });');
 freeFails('import { livePositionLedger } from "./positions/ledger.js"; await db.update(tradesTable).set({ lot: 1 });');
+freeFails('import { readOpenPositions } from "./positions/openPositions.js"; await executeInstant({ userId, intent });');
 freeFails('await applyPaperManagement(1, { kind: "MOVE_STOP", newStop: 1 })', "routes/paperTrades.ts");
 ruleFails(acting, 'const { applyPaperManagement } = await import("../trades/paperBook.js");');
 freeFails('import { guardianInstantManage } from "./positionGuardian/manage.js";');

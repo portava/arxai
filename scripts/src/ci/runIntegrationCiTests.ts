@@ -241,6 +241,8 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:position-guardian-reconcile" },
   { pkg: "@workspace/api-server", script: "test:position-guardian-manage" },
   { pkg: "@workspace/api-server", script: "test:position-ledger" },
+  // Canonical open-position read model (both venues, mode scope, tenant isolation).
+  { pkg: "@workspace/api-server", script: "test:open-position-view" },
   // Trade Engine: LIVE / DEMO / PAPER as modes of one pipeline (submitTrade).
   { pkg: "@workspace/api-server", script: "test:trade-engine-pipeline" },
   // Its staged contract (draftTrade / confirmTrade / dispatchTrade) passes

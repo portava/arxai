@@ -13,6 +13,7 @@
 //   no credentials, no other-user data, no master MT5 secrets exposed.
 
 import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
+import { readOpenPositions } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
 import { sharedTradeAttributionTable, tradeAlertPreferencesTable } from "@workspace/db/schema";
 import { and, eq, sql } from "drizzle-orm";
@@ -96,10 +97,7 @@ async function listUsersWithOpenTrades(): Promise<number[]> {
 }
 
 async function listOpenTradeKeysForUser(userId: number): Promise<string[]> {
-  const owned = await demoPositionLedger.select(
-    { id: demoPositionColumns.id },
-    { where: and(eq(demoPositionColumns.userId, userId), eq(demoPositionColumns.status, "OPEN")) },
-  );
+  const owned = await readOpenPositions({ userId, venue: "DEMO", basis: "CONFIRMED_OPEN" });
   const shared = await db
     .select({ id: sharedTradeAttributionTable.id })
     .from(sharedTradeAttributionTable)

@@ -307,6 +307,7 @@
     "test:single-position-sizer": "tsx ./src/ci/check-single-position-sizer.ts && tsx ./src/ci/check-single-position-sizer.test.ts",
     "test:single-position-ledger": "tsx ./src/ci/check-single-position-ledger.ts && tsx ./src/ci/check-single-position-ledger.test.ts",
     "test:single-position-guardian": "tsx ./src/ci/check-single-position-guardian.ts && tsx ./src/ci/check-single-position-guardian.test.ts",
+    "test:single-open-position-view": "tsx ./src/ci/check-single-open-position-view.ts && tsx ./src/ci/check-single-open-position-view.test.ts",
     "test:trade-engine-single-pipeline": "tsx ./src/ci/check-trade-engine-single-pipeline.ts && tsx ./src/ci/check-trade-engine-single-pipeline.test.ts",
     "test:single-paper-book": "tsx ./src/ci/check-single-paper-book.ts && tsx ./src/ci/check-single-paper-book.test.ts",
     "test:single-limit-store": "tsx ./src/ci/check-single-limit-store.ts && tsx ./src/ci/check-single-limit-store.test.ts",

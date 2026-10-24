@@ -19,7 +19,8 @@
 // trader's live_positions rows.
 
 import { livePositionLedger, demoPositionLedger, livePositionColumns, demoPositionColumns } from "../positions/ledger.js";
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { readOpenPositions } from "../positions/openPositions.js";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { arxLiveCommandsTable, db, mt5DemoCommandsTable, userRiskEventsTable } from "@workspace/db";
 import { logRiskEvent } from "../riskGovernor/riskEvents.js";
 import { logger } from "../logger.js";
@@ -320,21 +321,8 @@ export async function reconcilePosition(venue: GuardianVenue, userId: number, ti
 /** Check every open ARX-governed position the trader holds on this venue. */
 export async function reconcileOpenPositions(venue: GuardianVenue, userId: number,
   opts: ReconcileOptions): Promise<GuardianRunResult[]> {
-  const tickets = venue === "LIVE"
-    ? (await livePositionLedger.select(
-      { t: livePositionColumns.brokerTicket },
-      {
-        where: and(
-          eq(livePositionColumns.userId, userId),
-          isNull(livePositionColumns.closedAt),
-          isNull(livePositionColumns.reconcileState),
-        ),
-      },
-    )).map((r) => r.t)
-    : (await demoPositionLedger.select(
-      { t: demoPositionColumns.brokerPositionId },
-      { where: and(eq(demoPositionColumns.userId, userId), ne(demoPositionColumns.status, "CLOSED")) },
-    )).map((r) => r.t);
+  // EXPOSURE: LIVE excludes closed and operator-reconciled rows; DEMO excludes CLOSED.
+  const tickets = (await readOpenPositions({ userId, venue, basis: "EXPOSURE" })).map((p) => p.ticket);
   const out: GuardianRunResult[] = [];
   for (const t of new Set(tickets.filter((x): x is string => typeof x === "string" && x.length > 0))) {
     const r = await reconcilePosition(venue, userId, t, opts);
