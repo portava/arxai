@@ -49,6 +49,7 @@ import {
   type InstantTradeResult,
 } from "./live/instantTrade.js";
 import type { MissionExecutor } from "./missionExecution.js";
+import { guardianInstantManage } from "./positionGuardian/manage.js";
 import { type MissionRiskState } from "./missionRiskState.js";
 import { getRunning } from "./intelligence/mfeTracker.js";
 
@@ -769,9 +770,14 @@ export async function manageMissionTradeExit(
     },
   });
 
-  const exec: InstantTradeResult = await executor({
+  // Position Guardian rule "mission-exit": the guardian checks the intent
+  // against its registry (never a widened stop) before the router sees it.
+  const exec: InstantTradeResult = await guardianInstantManage({
+    ruleId: "mission-exit",
     userId: args.userId,
     intent,
+    position: { side: position.side, stopLoss: position.stopLoss, takeProfit: position.takeProfit },
+    executor,
     ip: args.ip,
     ua: args.ua,
   });

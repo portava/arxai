@@ -306,6 +306,7 @@
     "test:stop-modification-authority": "tsx ./src/ci/check-stop-modification-authority.ts && tsx ./src/ci/check-stop-modification-authority.test.ts",
     "test:single-position-sizer": "tsx ./src/ci/check-single-position-sizer.ts && tsx ./src/ci/check-single-position-sizer.test.ts",
     "test:single-position-ledger": "tsx ./src/ci/check-single-position-ledger.ts && tsx ./src/ci/check-single-position-ledger.test.ts",
+    "test:single-position-guardian": "tsx ./src/ci/check-single-position-guardian.ts && tsx ./src/ci/check-single-position-guardian.test.ts",
     "test:single-limit-store": "tsx ./src/ci/check-single-limit-store.ts && tsx ./src/ci/check-single-limit-store.test.ts",
     "test:legacy-live-state-confined": "tsx ./src/ci/check-legacy-live-state-confined.ts && tsx ./src/ci/check-legacy-live-state-confined.test.ts",
     "test:single-llm-gateway": "tsx ./src/ci/check-single-llm-gateway.ts && tsx ./src/ci/check-single-llm-gateway.test.ts",
