@@ -43,6 +43,8 @@ const EXECUTION_CALLS = new Set([
   "createLiveOpsDraft", "createLiveDraft", "confirmLiveCommand", "dispatchLiveCommand",
   "createDraftCommand", "confirmCommand", "dispatchApprovedCommand", "queueMt5CommandWithGate",
   "applyPaperManagement",
+  // The Trade Engine (lib/tradeEngine/pipeline.ts): submitTrade and its staged contract.
+  "submitTrade", "draftTrade", "confirmTrade", "dispatchTrade",
 ]);
 const GUARDIAN_CALLS = new Set(["guardianRestoreStop", "guardianTradeActionClose", "guardianInstantManage", "guardianPaperManage"]);
 const WRITE_TABLES = new Set(["tradesTable", "arxLiveCommandsTable", "mt5DemoCommandsTable", "mt5CommandsTable"]);

@@ -38,6 +38,7 @@ const FORBIDDEN_PATH_FRAGMENTS = [
   "/liveTrading/",
   "/emergencyClose",
   "/liveTestCycle",
+  "/tradeEngine/",
 ];
 
 // Bare identifiers whose mere presence in fenced CODE (strings/comments stripped)
@@ -46,6 +47,8 @@ const FORBIDDEN_IDENTIFIERS = [
   "executeInstantTrade",
   "placeLiveOrderGuarded",
   "dispatchLiveCommand",
+  "submitTrade",
+  "dispatchTrade",
   "require",
   "createRequire",
 ];

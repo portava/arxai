@@ -4,7 +4,9 @@
 //   - any future trade-capable widget
 //
 // SAFETY: this is a thin orchestrator. Every actual safety decision
-// remains in the existing pipeline:
+// remains in the existing pipeline, reached through the Trade Engine's staged
+// contract (lib/tradeEngine/pipeline.ts draftTrade / confirmTrade /
+// dispatchTrade, mode LIVE), which passes each step to Phase B unchanged:
 //   - createLiveDraft → preflight (master-live access, kill switch,
 //     server master switch, EA freshness, missing SL unless override)
 //   - confirmLiveCommand
@@ -31,10 +33,7 @@ import { getSymbolProfile } from "../data/chart/symbolProfile.js";
 import { loadAndEvaluateUserMasterLiveAccessGate } from "../mt5/userMasterLiveAccessGate.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock } from "../concurrency/advisoryLock.js";
 import { tryConsumeToken, checkSymbolCooldown } from "../concurrency/rateLimit.js";
-import {
-  createLiveDraft, confirmLiveCommand, dispatchLiveCommand,
-  createLiveOpsDraft,
-} from "./liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../tradeEngine/pipeline.js";
 import { liveBrokerExecutionEnabled } from "./phaseBConfig.js";
 import { resolveBrokerSymbol } from "../mt5/symbolDirectory.js";
 import { recordManualAaciAdvisory } from "../aaci/manualAdvisory.js";
@@ -453,7 +452,7 @@ async function executeOpen(args: {
 
   const prepareOnly = intent.prepareOnly === true;
   const lock = await withTxAdvisoryLock(ARX_LOCK_NS.USER_SUBMIT, userId, async () => {
-    const draft = await createLiveDraft({
+    const draft = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
       userId, commandType, symbol, side: intent.action as "BUY" | "SELL", orderType,
       requestedVolume: intent.volume!, stopLoss: intent.stopLoss ?? null, takeProfit: intent.takeProfit ?? null,
       sourcePage: `INSTANT_${intent.source.toUpperCase()}`,
@@ -471,9 +470,9 @@ async function executeOpen(args: {
     if (prepareOnly) {
       return { stage: "draft" as const, result: { ok: true as const, command: draft.command }, commandId: draft.command.commandId, preparedOnly: true as const };
     }
-    const confirmed = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     if (!confirmed.ok) return { stage: "confirm" as const, result: confirmed, commandId: draft.command.commandId };
-    const dispatched = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     return { stage: "dispatch" as const, result: dispatched, commandId: draft.command.commandId };
   });
   if (!lock.acquired) {
@@ -600,7 +599,7 @@ async function executeModify(args: {
     return { ok: false, httpStatus: 404, error: "POSITION_NOT_FOUND" };
   }
 
-  const draft = await createLiveOpsDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId,
     commandType: "MODIFY_LIVE_SLTP",
     brokerTicket: intent.positionId,
@@ -616,12 +615,12 @@ async function executeModify(args: {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, modify: true, blockReason: d.primaryReason ?? d.reason ?? "MODIFY_DRAFT_REJECTED" } });
     return { ok: false, httpStatus: 409, error: d.primaryReason ?? d.reason ?? "MODIFY_REJECTED", detail: d };
   }
-  const confirmed = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+  const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   if (!confirmed.ok) {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, modify: true, blockReason: confirmed.reason ?? "MODIFY_CONFIRM_FAILED", commandId: draft.command.commandId } });
     return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED" };
   }
-  const dispatched = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+  const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   const accepted = dispatched.ok === true;
   const dispatchBlockReason = accepted
     ? null
@@ -649,7 +648,7 @@ async function closeOnePosition(args: {
 }): Promise<InstantTradeResult> {
   const { userId, position, closeVolume } = args;
   if (!position.brokerTicket) return { ok: false, httpStatus: 400, error: "POSITION_MISSING_BROKER_TICKET" };
-  const draft = await createLiveOpsDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId,
     commandType: "CLOSE_LIVE_POSITION",
     brokerTicket: position.brokerTicket,
@@ -662,9 +661,9 @@ async function closeOnePosition(args: {
     const d = draft as { reason?: string; primaryReason?: string };
     return { ok: false, httpStatus: 409, error: d.primaryReason ?? d.reason ?? "CLOSE_REJECTED", detail: d };
   }
-  const confirmed = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+  const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   if (!confirmed.ok) return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED" };
-  const dispatched = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+  const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   return dispatched.ok === true
     ? { ok: true, action: "CLOSE", commandId: draft.command.commandId }
     : { ok: false, httpStatus: 409, error: dispatched.primaryReason ?? dispatched.reason ?? "CLOSE_DISPATCH_REJECTED", detail: dispatched };

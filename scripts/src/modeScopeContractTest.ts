@@ -117,14 +117,16 @@ record("helper does not write to arx_live_commands",
 // The read-only mode-scope routes must never reach the live dispatch pipeline.
 // meTrades is the ONE sanctioned exception: it gained a live-CLOSE / ops
 // dispatch path (a close always reduces risk and is routed through the SAME
-// 18-gate dispatchLiveCommand as any other live command). It is excluded from
+// 18-gate dispatchLiveCommand as any other live command, reached through the
+// Trade Engine's staged OPS draft + LIVE dispatch). It is excluded from
 // the blanket check here and pinned by the dedicated assertion below so the
 // exception stays narrow (close/ops only, never a generic open-draft creator).
 record("read-only mode-scope routes do not import the live dispatch pipeline",
   !liSrc.includes(PIPELINE) && !calSrc.includes(PIPELINE)
    && !pccSrc.includes(PIPELINE) && !posSrc.includes(PIPELINE));
 record("meTrades pipeline use is confined to the live-CLOSE / ops dispatch path",
-  !trSrc.includes("createLiveDraft(") && trSrc.includes("dispatchLiveCommand"));
+  !trSrc.includes("createLiveDraft(") && !/kind:\s*"ENTRY"/.test(trSrc) && !/submitTrade\(/.test(trSrc)
+   && /draftTrade\(\{ mode: "LIVE", kind: "OPS" \}/.test(trSrc) && /dispatchTrade\(\{ mode: "LIVE" \}/.test(trSrc));
 
 const total = pass + fail;
 console.log(`\nSummary: ${pass}/${total} PASS${fail ? ` · ${fail} FAIL` : ""}`);

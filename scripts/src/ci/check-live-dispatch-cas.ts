@@ -32,7 +32,9 @@
 //      longer writes either status with a bare commandId-only `.where`.
 //   5. The dispatch race-lost refusal returns BEFORE the EA mailbox mirror,
 //      so a loser cannot put a second order in front of the broker.
-//   6. Every `dispatchLiveCommand(` call site in `routes/meLive.ts` is wrapped
+//   6. Every live dispatch call site in `routes/meLive.ts` (the Trade Engine's
+//      staged `dispatchTrade({ mode: "LIVE" }, …)`, which delegates to
+//      `dispatchLiveCommand`, or a direct `dispatchLiveCommand(`) is wrapped
 //      in `withTxAdvisoryLock(ARX_LOCK_NS.USER_SUBMIT, ...)`, and a refused
 //      lock surfaces the precise USER_SUBMIT_LOCKED reason.
 //
@@ -47,6 +49,7 @@ function read(p: string): string { return readFileSync(join(ROOT, p), "utf-8"); 
 const CAS = "artifacts/api-server/src/lib/live/liveCommandCas.ts";
 const PIPELINE = "artifacts/api-server/src/lib/live/liveCommandPipeline.ts";
 const ME_LIVE = "artifacts/api-server/src/routes/meLive.ts";
+const TRADE_ENGINE = "artifacts/api-server/src/lib/tradeEngine/pipeline.ts";
 
 /** Strip line + block comments so policy prose cannot satisfy a code assertion. */
 function stripComments(src: string): string {
@@ -154,10 +157,16 @@ export function checkLiveDispatchCas(): CheckResult {
   // ── 6. meLive.ts dispatch sites are serialized per user. ──────────────────
   const meLiveRaw = read(ME_LIVE);
   const meLive = stripComments(meLiveRaw);
-  const dispatchCalls = (meLive.match(/\bdispatchLiveCommand\s*\(/g) ?? []).length;
+  // A live dispatch site is a direct dispatchLiveCommand( call or the Trade
+  // Engine's staged LIVE dispatch, which delegates to dispatchLiveCommand.
+  const dispatchCalls = (meLive.match(/\bdispatchLiveCommand\s*\(|\bdispatchTrade\s*\(\s*\{\s*mode:\s*"LIVE"/g) ?? []).length;
   const lockUses = (meLive.match(/\bwithUserSubmitLock\s*\(/g) ?? []).length;
   if (dispatchCalls === 0) {
-    violations.push(`${ME_LIVE}: expected at least one dispatchLiveCommand( call site.`);
+    violations.push(`${ME_LIVE}: expected at least one live dispatch call site (dispatchTrade({ mode: "LIVE" }, ...) or dispatchLiveCommand().`);
+  }
+  const tradeEngine = stripComments(read(TRADE_ENGINE));
+  if (!/export\s+async\s+function\s+dispatchTrade[\s\S]*?\bdispatchLiveCommand\s*\(/.test(tradeEngine)) {
+    violations.push(`${TRADE_ENGINE}: the staged LIVE dispatch (dispatchTrade) must delegate to dispatchLiveCommand.`);
   }
   if (!/withTxAdvisoryLock\(\s*ARX_LOCK_NS\.USER_SUBMIT/.test(meLive)) {
     violations.push(
@@ -167,7 +176,7 @@ export function checkLiveDispatchCas(): CheckResult {
   }
   if (lockUses < dispatchCalls) {
     violations.push(
-      `${ME_LIVE}: ${dispatchCalls} dispatchLiveCommand( call site(s) but only ${lockUses} ` +
+      `${ME_LIVE}: ${dispatchCalls} live dispatch call site(s) but only ${lockUses} ` +
       `withUserSubmitLock( scope(s) — every live dispatch route must serialize a single user's ` +
       `concurrent submissions.`,
     );

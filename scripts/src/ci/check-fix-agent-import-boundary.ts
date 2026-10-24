@@ -46,6 +46,7 @@ const FORBIDDEN_PATH_FRAGMENTS = [
   "/instantTrade",
   "/placeLiveOrder",
   "/emergencyClose",
+  "/tradeEngine/",
   "/killSwitch",
   "/marketDataRouter",
 ];
@@ -56,6 +57,8 @@ const FORBIDDEN_IDENTIFIERS = [
   "executeInstantTrade",
   "placeLiveOrderGuarded",
   "dispatchLiveCommand",
+  "submitTrade",
+  "dispatchTrade",
   "evaluateLivePhaseBDispatchGate",
   "require",
   "createRequire",
