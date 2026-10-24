@@ -20,7 +20,7 @@ import {
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod/v4";
-import { readSafetyCoreSwitch } from "../lib/safety/platformSwitches.js";
+import { platformStop, readSafetyCorePosture, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { readLatestBrokerHealthLog } from "../lib/brokerHub/brokerHealthState.js";
 
@@ -62,11 +62,18 @@ interface ChecklistItem {
 }
 
 async function gatherSignals(userId: number) {
-  // Safety-core kill switch through the switch authority; unreadable → engaged.
-  const sc = await readSafetyCoreSwitch();
-  const safety = sc.present || !sc.readable
-    ? { killSwitchEngaged: sc.engaged, operationalMode: sc.operationalMode ?? "OBSERVE_ONLY" }
+  // Both install-wide stops through platformStop() (unreadable → engaged):
+  // the safety-core kill switch as before, and the platform emergency stop,
+  // which halts the broker venues this readiness is about. The safety core's
+  // operational mode comes from the same authority.
+  const [stop, posture] = await Promise.all([platformStop(), readSafetyCorePosture()]);
+  const safety = posture.present || !posture.readable
+    ? {
+      killSwitchEngaged: stopSourceEngaged(stop, "safety_core_kill_switch"),
+      operationalMode: posture.operationalMode ?? "OBSERVE_ONLY",
+    }
     : null;
+  const emergencyStopEngaged = stopSourceEngaged(stop, "platform_emergency_stop");
   const activeLocks = await db.select().from(riskLocksTable).where(eq(riskLocksTable.isActive, true)).limit(10);
   const brokerLog = await readLatestBrokerHealthLog();
   const now = new Date();
@@ -81,7 +88,7 @@ async function gatherSignals(userId: number) {
   const recentReview = (await db.select().from(weeklyPerformanceReviewsTable)
     .where(and(eq(weeklyPerformanceReviewsTable.userId, userId), gte(weeklyPerformanceReviewsTable.weekStart, fourteenDaysAgo)))
     .orderBy(desc(weeklyPerformanceReviewsTable.weekStart)).limit(1))[0] ?? null;
-  return { safety, activeLocks, brokerLog, upcomingNews, activeContract, recentReview };
+  return { safety, emergencyStopEngaged, activeLocks, brokerLog, upcomingNews, activeContract, recentReview };
 }
 
 interface EvalInput {
@@ -190,17 +197,21 @@ function evaluateReadiness(
 
   // 9. No active risk lock + safety mode permits trading
   const lockCount = signals.activeLocks.length;
-  const ks = signals.safety?.killSwitchEngaged === true;
+  const coreKs = signals.safety?.killSwitchEngaged === true;
+  const emergency = signals.emergencyStopEngaged;
+  const ks = coreKs || emergency;
   const opMode = signals.safety?.operationalMode ?? "OBSERVE_ONLY";
   const modeBlocks = opMode === "OBSERVE_ONLY" || opMode === "SUGGEST_ONLY";
   const safetyBlocks = lockCount > 0 || ks || modeBlocks;
   checklist.push({ id: "safety", label: "No active risk lock",
     status: ks ? "FAIL" : lockCount > 0 ? "FAIL" : modeBlocks ? "WARN" : "PASS",
-    detail: ks ? "Kill switch engaged"
+    detail: coreKs ? "Kill switch engaged"
+      : emergency ? "Platform emergency stop engaged"
       : lockCount > 0 ? `${lockCount} active risk lock(s)`
       : modeBlocks ? `Operational mode: ${opMode}`
       : `Operational mode: ${opMode}` });
-  if (ks) { blockers.push("Kill switch engaged"); lockedByHard = true; }
+  if (coreKs) { blockers.push("Kill switch engaged"); lockedByHard = true; }
+  if (emergency) { blockers.push("Platform emergency stop engaged"); lockedByHard = true; }
   if (lockCount > 0) { blockers.push(`${lockCount} active risk lock(s)`); lockedByHard = true; }
   if (modeBlocks && !ks && lockCount === 0) warnings.push(`Operational mode '${opMode}' does not permit live execution`);
 
@@ -233,7 +244,7 @@ function buildSummary(
   inp: EvalInput,
 ): string {
   if (status === "LOCKED") {
-    return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${signals.safety?.killSwitchEngaged ? "Kill switch must be cleared by an operator." : "This is a safety hold, not a punishment."}`;
+    return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${signals.safety?.killSwitchEngaged || signals.emergencyStopEngaged ? "Kill switch must be cleared by an operator." : "This is a safety hold, not a punishment."}`;
   }
   if (status === "NOT_READY") {
     return `NOT_READY — readiness score ${score}/100. Complete the failed checklist items (mental check-in, broker, news) before starting.`;

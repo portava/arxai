@@ -43,7 +43,7 @@ function readyBase(): UnifiedLiveReadinessInput {
     armed: true,
     serverLiveExecutionOn: true,
     killSwitchEngaged: false,
-    emergencyKillSwitch: false,
+    platformStopSources: [],
     riskProfileReady: true,
     bridgeMode: "MASTER_LIVE_SHARED",
     bridgeHeartbeatFresh: true,
@@ -87,7 +87,8 @@ const singles: Array<{ label: string; mutate: (i: UnifiedLiveReadinessInput) => 
   { label: "not armed", mutate: (i) => (i.armed = false), code: "LIVE_ARMING_PENDING" },
   { label: "server off", mutate: (i) => (i.serverLiveExecutionOn = false), code: "SERVER_LIVE_EXECUTION_OFF" },
   { label: "kill switch", mutate: (i) => (i.killSwitchEngaged = true), code: "KILL_SWITCH_ENGAGED" },
-  { label: "emergency stop", mutate: (i) => (i.emergencyKillSwitch = true), code: "EMERGENCY_STOP_ACTIVE" },
+  { label: "emergency stop", mutate: (i) => (i.platformStopSources = ["platform_emergency_stop"]), code: "EMERGENCY_STOP_ACTIVE" },
+  { label: "safety-core kill switch", mutate: (i) => (i.platformStopSources = ["safety_core_kill_switch"]), code: "SAFETY_CORE_KILL_SWITCH_ENGAGED" },
   { label: "risk incomplete", mutate: (i) => (i.riskProfileReady = false), code: "RISK_PROFILE_INCOMPLETE" },
   { label: "no allocation", mutate: (i) => { i.hasAllocation = false; i.availableLiveAllocation = 0; }, code: "NO_LIVE_ALLOCATION" },
   { label: "heartbeat stale", mutate: (i) => (i.bridgeHeartbeatFresh = false), code: "BRIDGE_HEARTBEAT_STALE" },
@@ -99,6 +100,22 @@ for (const s of singles) {
   s.mutate(i);
   const r = decideUnifiedLiveReadiness(i);
   record(`${s.label} ⇒ ${s.code} + not eligible`, has(r.blockers, s.code) && r.liveEntryEligible === false, `blockers=${r.blockers.map((b) => b.code).join(",")}`);
+}
+
+// ── PART B2 — both install-wide stops (platformStop()) ─────────────────
+console.log("\nPART B2 — install-wide stops: per-source field + combined field");
+{
+  const both = readyBase();
+  both.platformStopSources = ["platform_emergency_stop", "safety_core_kill_switch"];
+  const r = decideUnifiedLiveReadiness(both);
+  record("both stops ⇒ both blockers", has(r.blockers, "EMERGENCY_STOP_ACTIVE") && has(r.blockers, "SAFETY_CORE_KILL_SWITCH_ENGAGED"));
+  record("both stops ⇒ emergencyKillSwitch + platformStopEngaged, kill not clear", r.emergencyKillSwitch === true && r.platformStopEngaged === true && r.killSwitchClear === false);
+  const core = readyBase();
+  core.platformStopSources = ["safety_core_kill_switch"];
+  const rc = decideUnifiedLiveReadiness(core);
+  record("safety core only ⇒ emergencyKillSwitch stays false (per-source), platformStopEngaged true", rc.emergencyKillSwitch === false && rc.platformStopEngaged === true && rc.liveExecutionActive === false);
+  const clear = decideUnifiedLiveReadiness(readyBase());
+  record("released ⇒ emergencyKillSwitch false, platformStopEngaged false", clear.emergencyKillSwitch === false && clear.platformStopEngaged === false);
 }
 
 // ── PART C — multi-blocker honesty ───────────────────────────────────

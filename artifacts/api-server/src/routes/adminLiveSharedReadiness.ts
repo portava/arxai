@@ -36,7 +36,8 @@ import {
   LIVE_HEARTBEAT_MAX_AGE_SEC,
 } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
-import { loadPlatformSettings, readPlatformSwitches } from "../lib/safety/platformSwitches.js";
+import { loadPlatformSettings, platformStopReport, platformStopWith, readPlatformSwitches } from "../lib/safety/platformSwitches.js";
+import { engagePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { getMyArming } from "../lib/live/liveArming.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
 import {
@@ -290,6 +291,9 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
       emergencyKillSwitch: sw.emergencyStop.engaged,
       killSwitchEngagedAt: sw.emergencyStop.engagedAt,
       killSwitchReason: sw.emergencyStop.reason,
+      // Either install-wide stop (platformStop()); the fields above name the
+      // platform emergency stop this handler writes.
+      ...platformStopReport(await platformStopWith(sw)),
     },
     liveAccount: {
       pinnedBridge: bridgeForUi,
@@ -393,6 +397,9 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
         emergencyKillSwitch: true,
         killSwitchEngagedAt: null,
         killSwitchReason: null,
+        platformStopEngaged: true,
+        platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
+        platformStopReason: null,
       },
       liveAccount: {
         pinnedBridge: null,
@@ -481,8 +488,10 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
       globalLiveEnabled: sw.venueEnabled.LIVE,
       userLiveApproved: access?.approvedForMasterLive ?? false,
       userArmed: arming?.isArmed ?? false,
+      // Dry run only: either install-wide stop (platformStop()) shows as the
+      // kill-switch gate failing, as the Risk Governor would refuse the order.
       killSwitchEngaged:
-        (arming?.killSwitchEngaged ?? false) || sw.emergencyStop.engaged,
+        (arming?.killSwitchEngaged ?? false) || (await platformStopWith(sw)).engaged,
       bridgeAccountType: detector.bridge.accountType ?? null,
       bridgeHeartbeatAgeSec: detector.bridge.heartbeatAgeSec,
       bridgeEaVersion: detector.bridge.eaVersion,
@@ -752,12 +761,12 @@ router.post("/admin/live-shared/kill-switch", async (req, res) => {
   }
   // ATOMIC: kill-switch flip + audit insert in a single transaction.
   await db.transaction(async (tx) => {
+    // The one engage writer (every settings row, reason/time/actor), inside
+    // this transaction; the shared posture below is this handler's own write.
+    await engagePlatformStop({ reason, actorUserId: admin.id, source: "admin_live_shared_kill_switch" }, tx);
     await tx
       .update(globalTradingSettingsTable)
       .set({
-        emergencyKillSwitch: true,
-        killSwitchEngagedAt: new Date(),
-        killSwitchReason: reason,
         sharedLiveTradingEnabled: false,
         masterBridgeLiveEnabled: false,
         updatedAt: new Date(),

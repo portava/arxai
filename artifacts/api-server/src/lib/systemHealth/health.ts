@@ -21,7 +21,7 @@ import {
 import { desc, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { auditEvent } from "./audit.js";
-import { readSafetyCoreSwitch } from "../safety/platformSwitches.js";
+import { platformStop, platformStopForVenue, readSafetyCorePosture } from "../safety/platformSwitches.js";
 import { patchConfig, getConfig } from "./config.js";
 import { marketDataHealthCheck } from "../marketData/marketDataService.js";
 
@@ -302,10 +302,16 @@ async function probeEndpoints(): Promise<EndpointStatus> {
 async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promise<SafetyStatus> {
   const warnings: string[] = [];
   const hardBlocks: Array<{ code: string; severity: string; message: string }> = [];
-  // Read safetyCore through the switch authority (informational only — MM
-  // never writes here). An unreadable switch reports as engaged.
-  const sc = await readSafetyCoreSwitch();
-  if (sc.engaged) hardBlocks.push({ code: "KILL_SWITCH", severity: "CRITICAL", message: sc.reason ?? "engaged" });
+  // Read the install-wide stops through platformStop() (informational only —
+  // MM never writes here). This report covers the paper (PAPER_ONLY) stack,
+  // which the platform emergency stop does not halt, so the stop is taken as
+  // it applies to PAPER: the safety-core kill switch. An unreadable switch
+  // reports as engaged.
+  const paperStop = platformStopForVenue(await platformStop(), "PAPER");
+  if (paperStop.engaged) {
+    hardBlocks.push({ code: "KILL_SWITCH", severity: "CRITICAL", message: paperStop.detail.safety_core_kill_switch ?? "engaged" });
+  }
+  const sc = await readSafetyCorePosture();
   if (sc.operationalMode && !["OBSERVE_ONLY", "PAPER_ONLY", "RECOVERY_MODE"].includes(sc.operationalMode))
     warnings.push(`safetyCore.operationalMode=${sc.operationalMode}`);
   // Detect FF/HH/KK reporting unsafe

@@ -37,6 +37,8 @@ function baseState(overrides: Partial<ApprovedTraderLiveState> = {}): ApprovedTr
     serverLiveExecutionOn: true,
     operatorLiveArmed: true,
     emergencyKillSwitch: false,
+    platformStopEngaged: false,
+    platformStopSources: [],
     sharedLiveTradingEnabled: true,
     riskProfileReady: true,
     approvedSymbols: ["EURUSD"],

@@ -42,7 +42,7 @@ import {
   ARX_LIVE_DEFAULT_MAX_LOT_PER_MARKET,
   getMyArming,
 } from "../lib/live/liveArming.js";
-import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
+import { loadPlatformSettings, platformStopReport, platformStopWith, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { getUserAllocationView } from "../lib/live/masterBridgePool.js";
 import {
   T015_MANUAL_LIVE_PHASE,
@@ -160,6 +160,9 @@ async function loadOperatorAccess(adminId: number) {
 async function loadMasterGates() {
   // Switches from the one switch authority (missing/unreadable → OFF, stop engaged).
   const { switches: sw, config: s } = await loadPlatformSettings();
+  // Both install-wide stops through platformStop(); the emergency-stop fields
+  // keep naming that stop, platformStop* say either.
+  const stop = await platformStopWith(sw);
   const queueDepth = await db.select({ n: sql<number>`COUNT(*)::int` })
     .from(arxLiveCommandsTable)
     .where(sql`${arxLiveCommandsTable.status} IN ('LIVE_DRAFT','SENT_TO_MT5_LIVE','LIVE_CONFIRMED')`);
@@ -176,9 +179,10 @@ async function loadMasterGates() {
     sharedLiveTradingEnabled: s?.sharedLiveTradingEnabled ?? false,
     masterBridgeLiveEnabled: s?.masterBridgeLiveEnabled ?? false,
     accountRoutingMode: s?.accountRoutingMode ?? "USER_OWNED_MT5",
-    emergencyKillSwitch: sw.emergencyStop.engaged,
-    killSwitchEngagedAt: sw.emergencyStop.engagedAt,
-    killSwitchReason: sw.emergencyStop.reason,
+    emergencyKillSwitch: stopSourceEngaged(stop, "platform_emergency_stop"),
+    killSwitchEngagedAt: stop.engagedAt?.platform_emergency_stop ?? null,
+    killSwitchReason: stop.detail.platform_emergency_stop ?? null,
+    ...platformStopReport(stop),
     queueDepth: Number(queueDepth[0]?.n ?? 0),
     currentOpenExposureLots: Number(openExposure[0]?.lots ?? 0),
   };
@@ -296,7 +300,9 @@ async function runControlledDryRun(
     globalLiveEnabled: master.liveEnabled,
     userLiveApproved: opAccess.access?.approvedForMasterLive ?? false,
     userArmed: opAccess.arming?.isArmed ?? false,
-    killSwitchEngaged: (opAccess.arming?.killSwitchEngaged ?? false) || (master.emergencyKillSwitch === true),
+    // Dry run only (nothing is submitted): either install-wide stop shows as
+    // the kill-switch gate failing, as the Risk Governor would refuse the order.
+    killSwitchEngaged: (opAccess.arming?.killSwitchEngaged ?? false) || master.platformStopEngaged,
     bridgeAccountType: bridge.accountType,
     bridgeHeartbeatAgeSec: bridge.heartbeatAgeSeconds,
     bridgeEaVersion: bridge.eaVersion,

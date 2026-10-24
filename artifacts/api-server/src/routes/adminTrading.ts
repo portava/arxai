@@ -30,6 +30,7 @@ import { tradingModeGate } from "@workspace/db/repositories";
 import { z } from "zod/v4";
 import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
 import { loadGlobalTradingSettingsRow } from "../lib/safety/platformSwitches.js";
+import { engagePlatformStop, engagedRow } from "../lib/safety/platformStopWriter.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readOperatorRiskLimits } from "../lib/riskGovernor/limitSettings.js";
 
@@ -125,16 +126,10 @@ router.post("/admin/trading/emergency-kill", async (req, res) => {
   const reason = String((req.body as { reason?: string })?.reason ?? "").trim();
   if (reason.length < 4) { res.status(400).json({ ok: false, error: "REASON_REQUIRED" }); return; }
 
-  const updated = await db.update(globalTradingSettingsTable)
-    .set({
-      emergencyKillSwitch: true,
-      killSwitchEngagedAt: new Date(),
-      killSwitchReason: reason,
-      updatedByAdminId: adminId,
-      updatedAt: new Date(),
-    })
-    .where(eq(globalTradingSettingsTable.id, before.id))
-    .returning();
+  // The one engage writer (every settings row, reason/time/actor); the audit
+  // event below is unchanged.
+  const engaged = await engagePlatformStop({ reason, actorUserId: adminId, source: "admin_trading_emergency_kill" });
+  const updated = [engagedRow(engaged, before.id)];
   await writeAdminAudit({
     adminId, adminRole: role, action: "ENGAGE_KILL_SWITCH",
     beforeState: { emergencyKillSwitch: before.emergencyKillSwitch },

@@ -34,9 +34,16 @@
 //     a venue or the operator arm is on only if EVERY row says so. With one
 //     row (every normal install) this is exactly that row.
 //
-// Writers are not here. The switches are written by their audited admin
-// handlers (routes/adminTrading.ts and the reviewed writers listed in the
-// guard) and the safety-core state machine (lib/safetyCore.ts).
+// "Is trading stopped" in a report or readiness view is platformStop() too
+// (platformStopWith() when the view already read the switches with its own
+// missing-row rule); a view keeps any labelled per-source field it exposes and
+// adds the combined platformStopReport() fields.
+//
+// Writers are not here. ENGAGING the emergency stop has one writer,
+// ./platformStopWriter.ts (engagePlatformStop(): every row, audited by its
+// caller). The other switches, and releasing the stop, are written by their
+// audited admin handlers (routes/adminTrading.ts and the reviewed writers
+// listed in the guard) and the safety-core state machine (lib/safetyCore.ts).
 
 import { asc } from "drizzle-orm";
 import { db, globalTradingSettingsTable, safetyCoreTable } from "@workspace/db";
@@ -333,45 +340,61 @@ export interface PlatformStop {
   detail: Partial<Record<PlatformStopSource, string | null>>;
   /** False when either source could not be read. */
   readable: boolean;
+  /** Per-source stored engage time, when the source records one (reports show it). */
+  engagedAt?: Partial<Record<PlatformStopSource, Date | null>>;
 }
 
 export const NO_PLATFORM_STOP: PlatformStop = { engaged: false, sources: [], reason: null, detail: {}, readable: true };
 
-function stopOf(sources: PlatformStopSource[], detail: Partial<Record<PlatformStopSource, string | null>>, readable: boolean): PlatformStop {
-  if (!sources.length) return { ...NO_PLATFORM_STOP, detail: {}, readable };
+type StopTimes = Partial<Record<PlatformStopSource, Date | null>>;
+
+function stopOf(
+  sources: PlatformStopSource[],
+  detail: Partial<Record<PlatformStopSource, string | null>>,
+  readable: boolean,
+  engagedAt: StopTimes = {},
+): PlatformStop {
+  if (!sources.length) return { ...NO_PLATFORM_STOP, detail: {}, readable, engagedAt: {} };
   const first = sources[0]!;
   const extra = detail[first];
+  const times: StopTimes = {};
+  for (const s of sources) times[s] = engagedAt[s] ?? null;
   return {
     engaged: true,
     sources,
     reason: extra ? `${PLATFORM_STOP_REASONS[first]} (${extra})` : PLATFORM_STOP_REASONS[first],
     detail,
     readable,
+    engagedAt: times,
   };
 }
 
 /** Pure: the platform stop as the two switch reads say it. */
 export function platformStopFrom(
   sw: Pick<PlatformSwitches, "readable" | "emergencyStop">,
-  sc: Pick<SafetyCoreSwitch, "readable" | "engaged" | "reason">,
+  sc: Pick<SafetyCoreSwitch, "readable" | "engaged" | "reason"> & { engagedAt?: Date | null },
 ): PlatformStop {
   const sources: PlatformStopSource[] = [];
   const detail: Partial<Record<PlatformStopSource, string | null>> = {};
+  const times: StopTimes = {};
   if (sw.emergencyStop.engaged) {
     sources.push("platform_emergency_stop");
-    detail.platform_emergency_stop = sw.readable ? sw.emergencyStop.reason : "state unreadable";
+    // Unreadable: the switches' own fail-closed reason ("settings missing" / "state unreadable").
+    detail.platform_emergency_stop = sw.readable ? sw.emergencyStop.reason : sw.emergencyStop.reason ?? "state unreadable";
+    times.platform_emergency_stop = sw.emergencyStop.engagedAt ?? null;
   }
   if (sc.engaged) {
     sources.push("safety_core_kill_switch");
     detail.safety_core_kill_switch = sc.readable ? sc.reason : "state unreadable";
+    times.safety_core_kill_switch = sc.engagedAt ?? null;
   }
-  return stopOf(sources, detail, sw.readable && sc.readable);
+  return stopOf(sources, detail, sw.readable && sc.readable, times);
 }
 
 /** Readers platformStop() uses; tests inject failing ones. */
 export interface PlatformStopReaders {
   readSwitches?: () => Promise<Pick<PlatformSwitches, "readable" | "emergencyStop">>;
-  readSafetyCore?: () => Promise<Pick<SafetyCoreSwitch, "readable" | "engaged" | "reason">>;
+  readSafetyCore?: () => Promise<Pick<SafetyCoreSwitch, "readable" | "engaged" | "reason"> & { engagedAt?: Date | null }>;
 }
 
 /**
@@ -409,7 +432,7 @@ export function platformStopForVenue(stop: PlatformStop, venue: StopVenue): Plat
   const sources = stop.sources.filter((s) => s !== "platform_emergency_stop");
   const detail = { ...stop.detail };
   delete detail.platform_emergency_stop;
-  return stopOf(sources, detail, stop.readable);
+  return stopOf(sources, detail, stop.readable, stop.engagedAt);
 }
 
 /**
@@ -434,5 +457,52 @@ export function preCheckStopRefusal(
   const sources = stop.sources.filter((s) => s === args.own || (args.opensNewRisk && forVenue.sources.includes(s)));
   const detail: Partial<Record<PlatformStopSource, string | null>> = {};
   for (const s of sources) detail[s] = stop.detail[s] ?? null;
-  return stopOf(sources, detail, stop.readable);
+  return stopOf(sources, detail, stop.readable, stop.engagedAt);
+}
+
+// ── Platform stop in reports and readiness views ────────────────────────────
+//
+// A report that says "is trading stopped" reads platformStop() too, so it names
+// both install-wide stops. A view that already loaded the switches (with its
+// own missing-row rule) passes them in, so its emergency-stop answer is exactly
+// what it was; the safety-core kill switch is read here.
+
+/** The platform stop for switches a caller already read (its own missing-row rule kept). Never throws. */
+export function platformStopWith(
+  switches: Pick<PlatformSwitches, "readable" | "emergencyStop">,
+  readers: Pick<PlatformStopReaders, "readSafetyCore"> = {},
+): Promise<PlatformStop> {
+  return platformStop({ readSwitches: async () => switches, readSafetyCore: readers.readSafetyCore });
+}
+
+/** True when this source is one of the engaged ones (for a view's labelled per-source field). */
+export function stopSourceEngaged(stop: Pick<PlatformStop, "sources">, source: PlatformStopSource): boolean {
+  return stop.sources.includes(source);
+}
+
+/** The combined fields a report adds next to any per-source field it already exposes. */
+export interface PlatformStopReport {
+  /** True when either install-wide stop is engaged (or unreadable). */
+  platformStopEngaged: boolean;
+  /** Engaged sources, emergency stop first. */
+  platformStopSources: PlatformStopSource[];
+  /** The first source's reason, null when released. */
+  platformStopReason: string | null;
+}
+
+export function platformStopReport(stop: PlatformStop): PlatformStopReport {
+  return { platformStopEngaged: stop.engaged, platformStopSources: [...stop.sources], platformStopReason: stop.reason };
+}
+
+/** The safety core's operational mode and global state, without its kill switch (read that through platformStop()). */
+export interface SafetyCorePosture {
+  readable: boolean;
+  present: boolean;
+  operationalMode: string | null;
+  globalState: string | null;
+}
+
+export async function readSafetyCorePosture(): Promise<SafetyCorePosture> {
+  const sc = await readSafetyCoreSwitch();
+  return { readable: sc.readable, present: sc.present, operationalMode: sc.operationalMode, globalState: sc.globalState };
 }

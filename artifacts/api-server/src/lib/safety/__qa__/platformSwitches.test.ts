@@ -18,7 +18,14 @@
 //     ever adds refusals: its own stop refuses as before, the other stop
 //     refuses only new risk on a venue it halts,
 //   - the trade-action guard refuses an OPEN on either stop and still lets a
-//     CLOSE past the emergency stop (left to the governor).
+//     CLOSE past the emergency stop (left to the governor),
+//   - (round 4) reports read platformStop() through platformStopWith(), which
+//     keeps the caller's own missing-row rule for the emergency stop and adds
+//     the safety-core kill switch; the approved-trader readiness view reports
+//     both stops (per-source field unchanged, combined field added),
+//   - (round 4) engagePlatformStop() engages EVERY settings row with the same
+//     reason, time and actor, and inside a caller's transaction rolls back
+//     with it.
 //
 // The original settings and safety_core rows are restored afterwards.
 //
@@ -35,11 +42,17 @@ import {
   loadGlobalTradingSettingsRow,
   platformStop,
   platformStopForVenue,
+  platformStopReport,
+  platformStopWith,
   preCheckStopRefusal,
   readPlatformSwitches,
+  readSafetyCorePosture,
   readSafetyCoreSwitch,
+  stopSourceEngaged,
   type PlatformStop,
 } from "../platformSwitches.js";
+import { engagePlatformStop } from "../platformStopWriter.js";
+import { buildApprovedTraderLiveState } from "../../live/approvedTraderLiveState.js";
 import { loadPlatformHalt, loadTradingHalt, venueTradingVerdict } from "../tradingHalt.js";
 import { runActionGuards } from "../../tradeAction/guards.js";
 import { getEnvelope, getGlobalSettings } from "../../adminTrading/safetyEnvelope.js";
@@ -356,4 +369,103 @@ test("the config view carries no switch", async () => {
     assert.equal(f in viaEnvelope, false, f);
   }
   assert.ok("accountRoutingMode" in cfg);
+});
+
+// ── Round 4: reports on platformStop(), one engage writer ──────────────────
+
+test("platformStopWith: the caller's switches decide the emergency stop; the safety core is added", async () => {
+  await ensureCore();
+  // A view that fails closed on a missing settings row keeps that answer.
+  const keep = await db.select().from(globalTradingSettingsTable).orderBy(asc(globalTradingSettingsTable.id));
+  await db.delete(globalTradingSettingsTable);
+  try {
+    await db.update(safetyCoreTable).set({ killSwitchEngaged: false, killSwitchReason: null });
+    const closed = await readPlatformSwitches();
+    const stop = await platformStopWith(closed);
+    assert.deepEqual(stop.sources, ["platform_emergency_stop"], "missing row, fail-closed view: engaged");
+    assert.equal(stop.detail.platform_emergency_stop, "settings missing", "the view's own fail-closed reason is kept");
+    const released = await platformStopWith(await readPlatformSwitches({ ifMissing: "defaults" }));
+    assert.equal(released.engaged, false, "missing row, defaults view: released (as platformStop())");
+  } finally {
+    await db.delete(globalTradingSettingsTable);
+    if (keep.length) await db.insert(globalTradingSettingsTable).values(keep);
+  }
+  if (!(await db.select().from(globalTradingSettingsTable).limit(1)).length) await loadGlobalTradingSettingsRow();
+
+  await setStops(false, true);
+  const sw = await readPlatformSwitches();
+  const stop = await platformStopWith(sw);
+  assert.deepEqual(stop.sources, ["safety_core_kill_switch"]);
+  assert.equal(stopSourceEngaged(stop, "platform_emergency_stop"), false, "per-source field: emergency stop released");
+  assert.deepEqual(platformStopReport(stop), {
+    platformStopEngaged: true,
+    platformStopSources: ["safety_core_kill_switch"],
+    platformStopReason: stop.reason,
+  });
+  const posture = await readSafetyCorePosture();
+  assert.equal(posture.readable, true);
+  assert.equal("engaged" in posture, false, "the posture read carries no kill switch");
+
+  await setStops(true, false);
+  const both = await platformStopWith(await readPlatformSwitches());
+  assert.equal(stopSourceEngaged(both, "platform_emergency_stop"), true);
+  assert.ok(both.engagedAt && "platform_emergency_stop" in both.engagedAt, "the emergency stop's time is carried");
+  await setStops(false, false);
+});
+
+test("approvedTraderLiveState: per-source emergencyKillSwitch kept, combined platformStop fields added", async () => {
+  await ensureCore();
+  if (!(await db.select().from(globalTradingSettingsTable).limit(1)).length) await loadGlobalTradingSettingsRow();
+  const cases: Array<[boolean, boolean]> = [[false, false], [true, false], [false, true], [true, true]];
+  for (const [emergency, core] of cases) {
+    await setStops(emergency, core);
+    const st = await buildApprovedTraderLiveState(userId, { includeBridgeHeartbeat: false });
+    const label = `emergency=${emergency} core=${core}`;
+    assert.equal(st.emergencyKillSwitch, emergency, `${label}: emergencyKillSwitch names the emergency stop only`);
+    assert.equal(st.platformStopEngaged, emergency || core, `${label}: combined`);
+    assert.deepEqual(st.platformStopSources, [
+      ...(emergency ? ["platform_emergency_stop"] : []),
+      ...(core ? ["safety_core_kill_switch"] : []),
+    ], label);
+    assert.equal(st.executionReady, false, `${label}: this QA user is a system user, never ready`);
+  }
+  await setStops(false, false);
+});
+
+test("engagePlatformStop: every row engaged with one reason, time and actor; rolls back with the caller's transaction", async () => {
+  await db.delete(globalTradingSettingsTable);
+  await db.insert(globalTradingSettingsTable).values([{}, {}]);
+  try {
+    // Inside a transaction that rolls back, nothing is engaged.
+    await assert.rejects(db.transaction(async (tx) => {
+      await engagePlatformStop({ reason: "qa rollback", actorUserId: userId, source: "admin_live_shared_rollback" }, tx);
+      throw new Error("abort");
+    }), /abort/);
+    assert.equal((await readPlatformSwitches()).emergencyStop.engaged, false, "rolled back with the caller");
+
+    const res = await engagePlatformStop({ reason: "qa engage", actorUserId: userId, source: "admin_trading_emergency_kill" });
+    assert.equal(res.rows.length, 2);
+    const rows = await db.select().from(globalTradingSettingsTable).orderBy(asc(globalTradingSettingsTable.id));
+    for (const r of rows) {
+      assert.equal(r.emergencyKillSwitch, true, `row ${r.id} engaged`);
+      assert.equal(r.killSwitchReason, "qa engage");
+      assert.equal(r.updatedByAdminId, userId, "actor recorded");
+      assert.equal(r.killSwitchEngagedAt?.getTime(), res.engagedAt.getTime(), "one engage time on every row");
+    }
+    assert.deepEqual(res.rows.map((r) => r.id), rows.map((r) => r.id), "returned in id order");
+    const sw = await readPlatformSwitches();
+    assert.equal(sw.emergencyStop.engaged, true);
+    assert.equal(sw.emergencyStop.reason, "qa engage");
+    const stop = await platformStop();
+    assert.ok(stop.sources.includes("platform_emergency_stop"));
+  } finally {
+    await db.delete(globalTradingSettingsTable);
+    await loadGlobalTradingSettingsRow();
+  }
+  await assert.rejects(
+    (async () => { await db.delete(globalTradingSettingsTable); await engagePlatformStop({ reason: "none", actorUserId: null, source: "admin_trading_emergency_kill" }); })(),
+    /no global_trading_settings row/,
+    "no row: nothing engaged, the write throws",
+  );
+  await loadGlobalTradingSettingsRow();
 });
