@@ -11,7 +11,11 @@
 //     externally opened position is left alone,
 //   - an unchanged healthy state is not re-audited on every snapshot,
 //   - the restore the guardian sends is one the Risk Governor allows for an
-//     automated origin, and the governor refuses the reverse (widening).
+//     automated origin, and the governor refuses the reverse (widening),
+//   - a partial fill is guarded at its filled size; an approved partial close
+//     leaves the remainder governed and protected, a full close ends it,
+//   - a reconnect re-reconciles and re-audits every governed position once,
+//   - the trader's own bridge snapshot is broker truth for their positions.
 //
 // Run: pnpm --filter @workspace/api-server run test:position-guardian-reconcile
 
@@ -27,7 +31,11 @@ import {
   userRiskEventsTable,
   usersTable,
 } from "@workspace/db";
-import { reconcileOpenPositions, reconcilePosition, type CorrectionSubmitter } from "../reconcile.js";
+import {
+  noteBridgeHeartbeat, reconcileOpenPositions, reconcilePosition, remainingLots, scheduleGuardian, takeReconnect,
+  type CorrectionSubmitter,
+} from "../reconcile.js";
+import { applyOwnPositionSnapshot } from "../../mt5/executionReconciler.js";
 import { evaluatePreTradeRisk, resolveEffectiveLimits } from "../../riskGovernor/preTrade.js";
 
 const EMAIL = "qa+position-guardian@arx.test";
@@ -206,4 +214,114 @@ test("the real correction path is the venue's governed queue: it refuses a trade
   const rows = await db.select().from(arxLiveCommandsTable).where(and(
     eq(arxLiveCommandsTable.userId, userId), eq(arxLiveCommandsTable.commandType, "MODIFY_LIVE_SLTP")));
   assert.equal(rows.length, 0, "nothing reaches the broker without the venue's own gates");
+});
+
+test("partial lots: closes subtract; a close with no volume is a full close", () => {
+  assert.equal(remainingLots(0.3, [0.1]), 0.2);
+  assert.equal(remainingLots(0.3, [0.1, 0.2]), 0);
+  assert.equal(remainingLots(0.3, [null]), 0);
+  assert.equal(remainingLots(0.3, []), 0.3);
+});
+
+test("live: a partial fill is guarded at the filled size and reported", async () => {
+  await seedLive({ brokerStop: null });
+  await db.update(arxLiveCommandsTable).set({ status: "LIVE_PARTIALLY_FILLED", requestedVolume: 0.3 })
+    .where(eq(arxLiveCommandsTable.commandId, "qa_open_1"));
+  const r = await reconcilePosition("LIVE", userId, TICKET, { trigger: "fill", submit: accept });
+  assert.ok(r, "a partially filled entry is real exposure and is guarded");
+  assert.deepEqual(r.assessment.findings, ["PARTIAL_FILL", "STOP_MISSING"]);
+  assert.equal(calls[0]!.stopLoss, 1.095);
+});
+
+test("live: after an approved partial close the remainder stays governed; a full close ends it", async () => {
+  await seedLive({ brokerStop: 1.095 });
+  const closedAt = new Date(Date.now() - 10 * 60_000);
+  await db.insert(arxLiveCommandsTable).values({
+    commandId: "qa_pclose_1", userId, commandType: "CLOSE_LIVE_POSITION", status: "LIVE_FILLED",
+    symbol: "EURUSD", side: "BUY", orderType: "CLOSE", requestedVolume: 0.04, executedVolume: 0.04,
+    payload: { brokerTicket: TICKET }, filledAt: closedAt,
+  });
+  await db.update(arxLivePositionsTable).set({ volume: 0.06 }).where(eq(arxLivePositionsTable.userId, userId));
+  const r = await reconcilePosition("LIVE", userId, TICKET, { trigger: "fill", submit: accept });
+  assert.ok(r);
+  assert.equal(r.assessment.action, "NONE");
+  assert.deepEqual(r.assessment.findings, ["PROTECTED"], "0.06 at the broker matches the governed remainder");
+
+  // The broker has not yet reported the reduced size right after the close: wait, do not escalate.
+  await db.update(arxLiveCommandsTable).set({ filledAt: new Date() }).where(eq(arxLiveCommandsTable.commandId, "qa_pclose_1"));
+  await db.update(arxLivePositionsTable).set({ volume: 0.1 }).where(eq(arxLivePositionsTable.userId, userId));
+  const pending = await reconcilePosition("LIVE", userId, TICKET, { trigger: "fill", submit: accept });
+  assert.equal(pending!.assessment.action, "WAIT");
+
+  await db.insert(arxLiveCommandsTable).values({
+    commandId: "qa_pclose_2", userId, commandType: "CLOSE_LIVE_POSITION", status: "LIVE_FILLED",
+    symbol: "EURUSD", side: "BUY", orderType: "CLOSE", requestedVolume: 0.06, executedVolume: 0.06,
+    payload: { brokerTicket: TICKET }, filledAt: closedAt,
+  });
+  assert.equal(await reconcilePosition("LIVE", userId, TICKET, { trigger: "fill", submit: accept }), null);
+  assert.equal(calls.length, 0);
+});
+
+test("reconnect: a heartbeat gap marks the trader; the next snapshot sweep re-audits every position once", async () => {
+  const now = new Date();
+  assert.equal(noteBridgeHeartbeat("LIVE", userId, new Date(now.getTime() - 5_000), now), false);
+  assert.equal(takeReconnect("LIVE", userId), false);
+  assert.equal(noteBridgeHeartbeat("LIVE", userId, new Date(now.getTime() - 5 * 60_000), now), true);
+  assert.equal(takeReconnect("LIVE", userId), true);
+  assert.equal(takeReconnect("LIVE", userId), false, "consumed once");
+
+  await seedLive({ brokerStop: 1.097 });
+  await reconcilePosition("LIVE", userId, TICKET, { trigger: "snapshot", submit: accept });
+  const r = await reconcilePosition("LIVE", userId, TICKET, { trigger: "reconnect", submit: accept });
+  assert.ok(r!.auditEventId, "an unchanged healthy state is still recorded after a reconnect");
+  assert.equal((r ? (await events())[0]!.details as Record<string, unknown> : {})["trigger"], "reconnect");
+
+  noteBridgeHeartbeat("LIVE", userId, null, now);
+  scheduleGuardian("LIVE", userId, null, "snapshot");
+  for (let i = 0; i < 50 && (await events()).length < 3; i++) await new Promise((res) => setTimeout(res, 50));
+  assert.equal(((await events())[0]!.details as Record<string, unknown>)["trigger"], "reconnect");
+});
+
+test("demo: the trader's own bridge snapshot is broker truth; a widened stop there is restored", async () => {
+  await db.delete(livePositionsTable).where(eq(livePositionsTable.userId, userId));
+  await db.delete(mt5DemoCommandsTable).where(eq(mt5DemoCommandsTable.userId, userId));
+  await db.insert(mt5DemoCommandsTable).values({
+    commandId: "qa_demo_open_2", userId, bridgeConnectionId: 1, commandType: "PLACE_MARKET_ORDER",
+    payload: { symbol: "GBPUSD", side: "SELL", lotSize: 0.2, stopLoss: 1.31, takeProfit: 1.28 },
+    status: "FILLED_DEMO", safetyGateSnapshot: {}, brokerTicket: DEMO_TICKET, fillVolume: 0.2,
+    filledAt: new Date(Date.now() - 10 * 60_000),
+  });
+  await db.insert(livePositionsTable).values({
+    userId, brokerPositionId: DEMO_TICKET, symbol: "GBPUSD", direction: "SELL", lotSize: 0.2, entryPrice: 1.3,
+    currentPrice: 1.3, stopLoss: 1.31, takeProfit: 1.28, status: "OPEN", lastSyncedAt: new Date(Date.now() - 10 * 60_000),
+  });
+  const refreshed = await applyOwnPositionSnapshot(userId, [
+    { ticket: Number(DEMO_TICKET), lot: 0.2, sl: 1.33, tp: 1.28 },
+    { ticket: 123, lot: 1, sl: null, tp: null },
+  ]);
+  assert.equal(refreshed, 1, "only rows ARX already tracks for this trader are touched");
+  const runs = await reconcileOpenPositions("DEMO", userId, { trigger: "snapshot", submit: accept });
+  assert.deepEqual(runs[0]!.assessment.findings, ["STOP_WIDENED"]);
+  assert.deepEqual(calls, [{ venue: "DEMO", ticket: DEMO_TICKET, stopLoss: 1.31, takeProfit: 1.28 }]);
+});
+
+test("demo: a governed demo fill reported by the bridge starts being tracked; a foreign ticket never is", async () => {
+  await db.delete(livePositionsTable).where(eq(livePositionsTable.userId, userId));
+  await db.delete(mt5DemoCommandsTable).where(eq(mt5DemoCommandsTable.userId, userId));
+  await db.insert(mt5DemoCommandsTable).values({
+    commandId: "qa_demo_open_3", userId, bridgeConnectionId: 1, commandType: "PLACE_MARKET_ORDER",
+    payload: { symbol: "GBPUSD", side: "SELL", lotSize: 0.2, stopLoss: 1.31, takeProfit: 1.28 },
+    status: "FILLED_DEMO", safetyGateSnapshot: {}, brokerTicket: DEMO_TICKET, fillVolume: 0.2,
+    filledAt: new Date(Date.now() - 10 * 60_000),
+  });
+  const started = await applyOwnPositionSnapshot(userId, [
+    { ticket: Number(DEMO_TICKET), symbol: "GBPUSD", side: "SELL", lot: 0.2, entry: 1.3, sl: null, tp: 1.28 },
+    { ticket: 777777, symbol: "EURUSD", side: "BUY", lot: 1, entry: 1.1, sl: null, tp: null },
+  ]);
+  assert.equal(started, 1);
+  const rows = await db.select().from(livePositionsTable).where(eq(livePositionsTable.userId, userId));
+  assert.deepEqual(rows.map((r) => r.brokerPositionId), [DEMO_TICKET], "a position ARX did not open is not tracked");
+  const runs = await reconcileOpenPositions("DEMO", userId, { trigger: "snapshot", submit: accept });
+  assert.deepEqual(runs[0]!.assessment.findings, ["STOP_MISSING"]);
+  assert.equal(calls[0]!.stopLoss, 1.31);
 });

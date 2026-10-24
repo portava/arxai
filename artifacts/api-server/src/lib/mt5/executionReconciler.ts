@@ -22,8 +22,9 @@ import {
   sharedTradeAttributionTable,
   tradeCommandAuditLogTable,
   arxLiveCommandsTable,
+  mt5DemoCommandsTable,
 } from "@workspace/db/schema";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { writeActionTimeline } from "../tradeAction/timeline.js";
 import { notifyAction } from "../tradeAction/notifications.js";
 import { humanize } from "../tradeAction/create.js";
@@ -593,6 +594,53 @@ async function recordPartialFillEvidence(
   } catch (e) {
     logger.warn({ err: e, commandId: command.id }, "partial_fill_event_write_failed");
   }
+}
+
+/**
+ * Broker truth for a trader's own positions, from their bridge's full position
+ * snapshot: the stop, target and size the broker holds now. Refreshes every
+ * open per-user row ARX already tracks, and starts tracking a reported ticket
+ * that is one of the trader's own governed demo fills (so the Position
+ * Guardian can verify it). Never closes a row and never tracks a position ARX
+ * did not open; a governed row missing from the snapshot keeps its old
+ * observation time, so the Guardian escalates it as unverifiable instead of
+ * guessing. Returns the rows refreshed or started.
+ */
+export async function applyOwnPositionSnapshot(userId: number,
+  positions: Array<{ ticket: number | string; lot: number; sl?: number | null; tp?: number | null; side?: string; symbol?: string; entry?: number }>,
+  now = new Date()): Promise<number> {
+  const rows = await db.select({ id: livePositionsTable.id, ticket: livePositionsTable.brokerPositionId, status: livePositionsTable.status })
+    .from(livePositionsTable).where(eq(livePositionsTable.userId, userId));
+  const open = new Map(rows.filter((r) => r.ticket && r.status !== "CLOSED").map((r) => [r.ticket!, r.id]));
+  const known = new Set(rows.map((r) => r.ticket).filter((t): t is string => !!t));
+  const untracked = positions.map((p) => String(p.ticket)).filter((t) => !known.has(t));
+  const governed = untracked.length === 0 ? new Set<string>() : new Set((await db.select({ t: mt5DemoCommandsTable.brokerTicket })
+    .from(mt5DemoCommandsTable).where(and(
+      eq(mt5DemoCommandsTable.userId, userId), eq(mt5DemoCommandsTable.status, "FILLED_DEMO"),
+      inArray(mt5DemoCommandsTable.commandType, ["PLACE_MARKET_ORDER", "PLACE_PENDING_ORDER"]),
+      inArray(mt5DemoCommandsTable.brokerTicket, untracked),
+    ))).map((r) => r.t).filter((t): t is string => !!t));
+  let refreshed = 0;
+  for (const p of positions) {
+    const ticket = String(p.ticket);
+    const side = String(p.side ?? "").toUpperCase();
+    if (governed.has(ticket) && p.symbol && (side === "BUY" || side === "SELL")) {
+      await db.insert(livePositionsTable).values({
+        userId, brokerPositionId: ticket, symbol: p.symbol, direction: side, lotSize: p.lot,
+        entryPrice: p.entry ?? 0, stopLoss: p.sl ?? null, takeProfit: p.tp ?? null,
+        status: "OPEN", openedAt: now, lastSyncedAt: now,
+      }).onConflictDoNothing({ target: [livePositionsTable.userId, livePositionsTable.brokerPositionId] });
+      refreshed++;
+      continue;
+    }
+    const id = open.get(ticket);
+    if (id == null) continue;
+    await db.update(livePositionsTable).set({
+      lotSize: p.lot, stopLoss: p.sl ?? null, takeProfit: p.tp ?? null, lastSyncedAt: now, updatedAt: now,
+    }).where(and(eq(livePositionsTable.id, id), eq(livePositionsTable.userId, userId)));
+    refreshed++;
+  }
+  return refreshed;
 }
 
 async function upsertLivePositionOpen(args: {

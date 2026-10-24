@@ -301,6 +301,7 @@
     "test:single-risk-authority": "tsx ./src/ci/check-single-risk-authority.ts && tsx ./src/ci/check-single-risk-authority.test.ts",
     "test:broker-connection-single-owner": "tsx ./src/ci/check-broker-connection-single-owner.ts && tsx ./src/ci/check-broker-connection-single-owner.test.ts",
     "test:learning-memory-single-owner": "tsx ./src/ci/check-learning-memory-single-owner.ts && tsx ./src/ci/check-learning-memory-single-owner.test.ts",
+    "test:position-guardian-wired": "tsx ./src/ci/check-position-guardian-wired.ts && tsx ./src/ci/check-position-guardian-wired.test.ts",
     "test:execution-single-entry": "tsx ./src/ci/check-execution-single-entry.ts && tsx ./src/ci/check-execution-single-entry.test.ts",
     "test:broker-hub-contracts": "tsx ./src/brokerHubContractsTest.ts && tsx ./src/ci/check-broker-hub-no-execution.test.ts",
     "test:broker-hub-metadata-db": "tsx ./src/brokerHubMetadataIntegrationTest.ts",
