@@ -84,6 +84,10 @@ const EXEC_PIPELINE: Forbidden[] = [
     why: "executeInstant (instant-trade router) must never be reachable from broker-hub",
   },
   {
+    rx: /\bsubmitInstantTrade\b/,
+    why: "submitInstantTrade (the Trade Engine's one-click channel) must never be reachable from broker-hub",
+  },
+  {
     rx: /\binstantTrade\b/,
     why: "instantTrade module must never be imported in broker-hub",
   },

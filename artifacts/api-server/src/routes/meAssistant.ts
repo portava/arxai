@@ -39,7 +39,8 @@ import {
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { parseTradeCommand } from "../lib/assistant/parseTradeCommand.js";
-import { executeInstant, type InstantTradeIntent, type InstantTradeResult } from "../lib/live/instantTrade.js";
+import type { InstantTradeIntent, InstantTradeResult } from "../lib/live/instantTrade.js";
+import { submitInstantTrade } from "../lib/tradeEngine/pipeline.js";
 import { runHandshake } from "../lib/handshake/coordinator.js";
 import { classifyTradeHealth, computeSlDistance, type OpenPositionInput } from "@workspace/domain/trade-health";
 import { getMarketData } from "../lib/data/dataManager.js";
@@ -1620,7 +1621,8 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
 // raw user utterance ("buy EURUSD 0.01", "close my XAUUSD", "close all"
 // "set TP on EURUSD to 1.0920"); this endpoint parses it, decides whether
 // it's a CLEAR direct command or a VAGUE analysis question, and — only
-// when clear — forwards through `executeInstant()` which then runs every
+// when clear — forwards through the Trade Engine one-click leg
+// (`submitInstantTrade()` → `executeInstant()`) which then runs every
 // existing live-trading gate (master-live access, server master switch,
 // 16-gate Phase B, kill switch, max lot, daily loss, missing-SL override,
 // per-user advisory lock, idempotency).
@@ -1668,7 +1670,7 @@ function rubyFingerprint(commandKind: string, intent: InstantTradeIntent): strin
 // Record a Ruby command in the ledger, run the advisory RUBY_EXECUTION
 // handshake, dispatch through the EXISTING instant-trade router, and link the
 // outcome back onto the ledger row. There is NO second execution path — this
-// only WRAPS executeInstant with idempotency + evidence + an advisory check.
+// only WRAPS submitInstantTrade (→ executeInstant) with idempotency + evidence + an advisory check.
 async function recordAndExecuteRuby(args: {
   userId: number;
   intent: InstantTradeIntent;
@@ -1726,7 +1728,7 @@ async function recordAndExecuteRuby(args: {
     .set({ status: "EXECUTING", handshakeStatus, updatedAt: new Date() })
     .where(eq(rubyCommandsTable.id, commandRowId));
 
-  const result = await executeInstant({ userId, intent, ip, ua });
+  const result = await submitInstantTrade({ userId, intent, ip, ua });
 
   if (result.ok) {
     await db.update(rubyCommandsTable).set({

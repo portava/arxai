@@ -48,6 +48,8 @@ const FORBIDDEN_IDENTIFIERS = [
   "placeLiveOrderGuarded",
   "dispatchLiveCommand",
   "submitTrade",
+  "submitInstantTrade",
+  "fillPaperTrade",
   "dispatchTrade",
   "require",
   "createRequire",

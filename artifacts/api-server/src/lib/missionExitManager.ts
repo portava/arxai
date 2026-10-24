@@ -7,7 +7,9 @@
 //     per-user open `arx_live_positions`, the executed mission drafts, the MFE
 //     tracker, the mission risk read). It is PROTECTIVE / SIZING / DISPLAY only.
 //   - EVERY exit action routes EXCLUSIVELY through the existing instant-trade
-//     router (`executeInstant`, source "mission") → live command pipeline →
+//     router via the Position Guardian exit door (guardianInstantManage →
+//     Trade Engine submitInstantTrade → `executeInstant`, source "mission") →
+//     live command pipeline →
 //     18-gate dispatch — exactly like a manual close/modify. There is NO new
 //     execution path; nothing here can place, add, or relax a gate. The executor
 //     is injectable ONLY so tests can substitute a spy.
@@ -43,10 +45,9 @@ import {
   type CompoundingMode,
   type MissionMode,
 } from "@workspace/domain/profit-mission";
-import {
-  executeInstant,
-  type InstantTradeIntent,
-  type InstantTradeResult,
+import type {
+  InstantTradeIntent,
+  InstantTradeResult,
 } from "./live/instantTrade.js";
 import type { MissionExecutor } from "./missionExecution.js";
 import { guardianInstantManage } from "./positionGuardian/manage.js";
@@ -511,7 +512,7 @@ export async function refreshMissionProtection(args: {
   });
 }
 
-// ── Exit management for an OPEN mission trade (routes via executeInstant) ──────
+// ── Exit management for an OPEN mission trade (routes via the exit door → executeInstant) ─
 
 export interface MissionExitOpenPosition {
   brokerTicket: string;
@@ -644,14 +645,17 @@ function intentForDecision(
  * Decide and (optionally) route the next protective exit action for an OPEN
  * mission trade. The decision comes from the pure Exit Manager Pro engine; the
  * chosen action is mapped onto the EXISTING instant-trade actions and routed
- * through `executeInstant` (source "mission"). NONE → nothing is dispatched.
+ * through the guardian exit door → pipeline.submitInstantTrade → `executeInstant`
+ * (source "mission"). NONE → nothing is dispatched.
  * Per-user / per-mission isolation throughout.
  */
 export async function manageMissionTradeExit(
   args: ManageMissionExitArgs,
   opts: ManageMissionExitOpts = {},
 ): Promise<ManageMissionExitResult> {
-  const executor = opts.executor ?? executeInstant;
+  // No override → the exit door uses its default, the Trade Engine one-click
+  // entry (pipeline.submitInstantTrade → executeInstant).
+  const executor = opts.executor;
   const nowMs = args.nowMs ?? Date.now();
   const signals = args.signals ?? {};
 

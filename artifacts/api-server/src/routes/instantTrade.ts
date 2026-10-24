@@ -10,7 +10,8 @@
 // enabled, master-live access, server master switch, 16-gate Phase B,
 // kill switch, max lot, daily loss, symbol allowlist, missing SL unless
 // override) is enforced inside `executeInstant()` in
-// `lib/live/instantTrade.ts`, which calls the existing
+// `lib/live/instantTrade.ts` (reached through the Trade Engine one-click
+// leg, `submitInstantTrade` in lib/tradeEngine/pipeline.ts), which calls the existing
 // `createLiveDraft → confirmLiveCommand → dispatchLiveCommand` pipeline.
 //
 // What this route file adds:
@@ -23,10 +24,11 @@ import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { denyInvestorExecution } from "../lib/auth/productRole.js";
 import {
-  executeInstant, validateInstant,
+  validateInstant,
   INSTANT_TRADE_SOURCES, INSTANT_TRADE_ACTIONS,
   type InstantTradeIntent,
 } from "../lib/live/instantTrade.js";
+import { submitInstantTrade } from "../lib/tradeEngine/pipeline.js";
 import { detectLegacyPaperModeRequest } from "../lib/safety/rejectLegacyPaperMode.js";
 import { categorizeLiveBlock } from "../lib/governance/effectiveGovernance.js";
 
@@ -107,7 +109,7 @@ router.post("/trades/instant/execute", denyInvestorExecution, requireUser, async
     res.status(400).json({ ok: false, error: "INVALID_INTENT", issues: parsed.error.issues });
     return;
   }
-  const result = await executeInstant({
+  const result = await submitInstantTrade({
     userId, intent: parsed.data, ip: ipOf(req), ua: uaOf(req),
   });
   if (result.ok) {
@@ -129,7 +131,7 @@ router.post("/trades/instant/close", denyInvestorExecution, requireUser, async (
     return;
   }
   const intent: InstantTradeIntent = { ...parsed.data, action: "CLOSE" };
-  const result = await executeInstant({ userId, intent, ip: ipOf(req), ua: uaOf(req) });
+  const result = await submitInstantTrade({ userId, intent, ip: ipOf(req), ua: uaOf(req) });
   if (result.ok) {
     res.json({ ok: true, action: "CLOSE", commandId: result.commandId, detail: result.detail });
     return;
@@ -146,7 +148,7 @@ router.post("/trades/instant/close-all", denyInvestorExecution, requireUser, asy
     return;
   }
   const intent: InstantTradeIntent = { ...parsed.data, action: "CLOSE_ALL" };
-  const result = await executeInstant({ userId, intent, ip: ipOf(req), ua: uaOf(req) });
+  const result = await submitInstantTrade({ userId, intent, ip: ipOf(req), ua: uaOf(req) });
   if (result.ok) {
     res.json({ ok: true, action: "CLOSE_ALL", detail: result.detail });
     return;

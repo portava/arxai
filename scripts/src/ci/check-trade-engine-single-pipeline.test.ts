@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {
-  INSTANT_ENTRY, MAILBOX_EXCEPTION, PAPER_VENUE, PIPELINE, checkPipelineShape, checkTradeEngineSinglePipeline, scanFile,
+  INSTANT_ENTRY, MAILBOX_EXCEPTION, PAPER_VENUE, PIPELINE, checkPipelineShape, checkProducerList, checkTradeEngineSinglePipeline, scanFile,
   stagedCalls,
 } from "./check-trade-engine-single-pipeline.js";
 
@@ -58,9 +58,20 @@ passes('await draftTrade({ mode: "DEMO" }, a); await confirmTrade({ mode: "DEMO"
 passes('await draftTrade({ mode: "LIVE", kind: "OPS" }, x); await dispatchTrade({ mode: "LIVE" }, y)', "routes/meTrades.ts");
 passes('await draftTrade({ mode: "LIVE", kind: "ENTRY" }, x); await confirmTrade({ mode: "LIVE" }, y)', INSTANT_ENTRY);
 passes("await createLiveOpsDraft(x)", "lib/positions/governedOps.ts");
-passes("await submitGovernedModify(u, p, 1, 2, 'X')", "lib/positionGuardian/manage.ts");
+// The exit door restores stops through the pipeline (submitTrade MODIFY), not governedOps.
+fails("await submitGovernedModify(u, p, 1, 2, 'X')", "lib/positionGuardian/manage.ts");
+passes('await submitTrade({ mode: pos.venue, intent: "MODIFY", target: { position: pos } })', "lib/positionGuardian/manage.ts");
 fails("await submitGovernedModify(u, p, 1, 2, 'X')", "lib/positionGuardian/reconcile.ts"); // corrections go through the exit door
-passes("await executeInstant(args)", "lib/selfTrade/agentExecutor.ts");
+// executeInstant is pipeline-only: every former caller goes through submitInstantTrade.
+for (const k of ["lib/selfTrade/agentExecutor.ts", "lib/missionExecution.ts", "lib/missionExitManager.ts", "routes/instantTrade.ts",
+  "routes/meAssistant.ts", "lib/positionGuardian/manage.ts", "routes/newSurface.ts"]) {
+  fails("await executeInstant({ userId, intent })", k);
+  fails('const { executeInstant } = await import("../live/instantTrade.js"); await executeInstant(a)', k);
+  passes("await submitInstantTrade({ userId, intent, ip, ua })", k);
+}
+fails("const executor = opts.executor ?? executeInstant;", "lib/missionExecution.ts"); // a default executor counts too
+passes("await executeInstant(args)", PIPELINE);
+passes("export async function executeInstant(args) {}", INSTANT_ENTRY);
 passes("await db.insert(paperOrdersTable).values(row)", PAPER_VENUE);
 fails("await db.update(tradesTable).set({ status: 'CANCELLED' })", "routes/bot.ts"); // the legacy book is written only by lib/trades/paperBook.ts
 passes("await cancelOpenLegacyTrades(userId)", "routes/bot.ts");
@@ -69,8 +80,25 @@ fails("await db.insert(tradesTable).values(row)", "routes/trades.ts"); // /execu
 fails("await db.insert(paperOrdersTable).values(row)", "lib/paperExecution/paperExecutionService.ts");
 fails("await db.update(paperOrdersTable).set({ status: 'CLOSED_TP' })", "lib/paperExecution/paperExecutionMonitor.ts");
 fails("await db.insert(paperOrdersTable).values(row)", "routes/autoDebrief.ts");
-passes("await openPaperFill(args); await voidPaperOrder(id)", "lib/paperExecution/paperExecutionService.ts");
-passes("await settlePaperOrder(a); await closePaperFill(b)", "lib/paperExecution/paperExecutionMonitor.ts");
+// Caller-priced PAPER fills are pipeline-only too.
+fails("await openPaperFill(args)", "lib/paperExecution/paperExecutionService.ts");
+fails("await voidPaperOrder(id)", "lib/paperExecution/paperExecutionService.ts");
+fails("await closePaperFill(b)", "lib/paperExecution/paperExecutionMonitor.ts");
+fails("await settlePaperOrder(a)", "lib/paperExecution/paperExecutionMonitor.ts");
+fails("await openPaperFill(args)", "routes/autoDebrief.ts");
+fails('await venue["settlePaperOrder"](a)', "routes/autoDebrief.ts");
+passes('await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, args); await voidPaperTrade(id)', "lib/paperExecution/paperExecutionService.ts");
+passes('await settlePaperTrade(a); await fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, b)', "lib/paperExecution/paperExecutionMonitor.ts");
+passes("await venue.openPaperFill(args); await venue.voidPaperOrder(id)", PIPELINE);
+passes("await db.update(paperOrdersTable).set({ status: 'CANCELLED' })", PAPER_VENUE);
+// No allowlist entry may grant a pipeline-only entry to another file.
+assert.deepEqual(checkProducerList(), []);
+assert.ok(checkProducerList({ [PIPELINE]: { entries: ["LIVE_INSTANT", "PAPER_FILL"] } }).length === 0);
+assert.ok(checkProducerList({ "routes/instantTrade.ts": { entries: ["LIVE_INSTANT"] } }).some((v) => v.includes("LIVE_INSTANT")),
+  "re-listing a direct executeInstant caller fails");
+assert.ok(checkProducerList({ "routes/autoDebrief.ts": { entries: ["PAPER_FILL"] } }).some((v) => v.includes("PAPER_FILL")),
+  "re-listing a direct paper-fill caller fails");
+n += 4;
 fails("await openPaperFill(args)"); // a new surface is not a listed paper producer
 fails("await settlePaperOrder(a)", "lib/paperAutopilot/autopilotService.ts");
 passes("await db.update(tradesTable).set({ lot: 1 })", "lib/trades/paperBook.ts");
@@ -94,7 +122,11 @@ const goodPipe = `export async function submitTrade(r) {}
   export async function draftTrade(s, i) {} export async function confirmTrade(s, a) {} export async function dispatchTrade(s, a) {}
   "LIVE" "DEMO" "PAPER" createDraftCommand( confirmCommand( dispatchApprovedCommand(
   createLiveDraft( createLiveOpsDraft( confirmLiveCommand( dispatchLiveCommand(
-  submitGovernedClose( submitGovernedModify( openPaperOrder( modifyPaperOrder( closePaperOrder(`;
+  submitGovernedClose( submitGovernedModify( openPaperOrder( modifyPaperOrder( closePaperOrder(
+  export async function submitInstantTrade(a) { return instant.executeInstant(a); }
+  export function fillPaperTrade(s, a) {} export async function fillPaperTrade(s, a) { venue.openPaperFill(a); venue.closePaperFill(a); }
+  export async function settlePaperTrade(a) { venue.settlePaperOrder(a); }
+  export async function voidPaperTrade(id) { venue.voidPaperOrder(id); }`;
 const goodInstant = `await draftTrade({ mode: "LIVE", kind: "ENTRY" }, a); await draftTrade({ mode: "LIVE", kind: "OPS" }, b);
   await confirmTrade({ mode: "LIVE" }, c); await dispatchTrade({ mode: "LIVE" }, d);`;
 const goodPaper = ["OPEN", "MODIFY", "CLOSE"].map((a) =>
@@ -109,6 +141,15 @@ assert.ok(shape({ ...base, [PIPELINE]: goodPipe.replace("createLiveOpsDraft(", "
   .some((v) => v.includes("createLiveOpsDraft")), "the staged LIVE ops draft must delegate to createLiveOpsDraft");
 assert.ok(shape({ ...base, [PIPELINE]: goodPipe.replace("dispatchApprovedCommand(", "") })
   .some((v) => v.includes("dispatchApprovedCommand")), "the staged DEMO dispatch must delegate to dispatchApprovedCommand");
+assert.ok(shape({ ...base, [PIPELINE]: goodPipe.replace("export async function submitInstantTrade", "async function submitInstantTrade") })
+  .some((v) => v.includes("submitInstantTrade export missing")), "the one-click channel must be exported");
+assert.ok(shape({ ...base, [PIPELINE]: goodPipe.replace("instant.executeInstant(a)", "null") })
+  .some((v) => v.includes("executeInstant")), "the one-click channel must delegate to executeInstant");
+assert.ok(shape({ ...base, [PIPELINE]: goodPipe.replace("venue.openPaperFill(a);", "") })
+  .some((v) => v.includes("openPaperFill")), "the PAPER fill channel must delegate to openPaperFill");
+assert.ok(shape({ ...base, [PIPELINE]: goodPipe.replace("export async function voidPaperTrade", "function voidPaperTrade") })
+  .some((v) => v.includes("voidPaperTrade export missing")), "the PAPER rollback channel must be exported");
+n += 4;
 assert.ok(shape({ ...base, [PIPELINE]: goodPipe, [INSTANT_ENTRY]: goodInstant.replace('dispatchTrade({ mode: "LIVE" }, d)', "send(d)") })
   .some((v) => v.includes("dispatchTrade:LIVE")), "executeInstant must dispatch through the pipeline");
 assert.ok(shape({ ...base, [PIPELINE]: goodPipe, [INSTANT_ENTRY]: `// ${goodInstant}` })

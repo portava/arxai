@@ -86,7 +86,7 @@ function refused(ruleId: string, userId: number | null, auth: Extract<GuardianAu
 
 // ── GOVERNED_OPS: the guardian's own stop restore ───────────────────────────
 
-/** Restore the governed stop through the venue's governed queue. */
+/** Restore the governed stop through the Trade Engine (MODIFY → governedOps → the venue queue). */
 export async function guardianRestoreStop(args: {
   ruleId: GuardianRuleId;
   userId: number;
@@ -100,8 +100,18 @@ export async function guardianRestoreStop(args: {
     refused(args.ruleId, args.userId, auth);
     return { ok: false, commandId: null, reason: auth.code };
   }
-  const { submitGovernedModify } = await import("../positions/governedOps.js");
-  return submitGovernedModify(args.userId, args.position, args.stopLoss, args.takeProfit, args.sourcePage);
+  // The Trade Engine's MODIFY intent on an already-resolved governed position:
+  // the mode is the position's own venue, so the pipeline goes straight to
+  // governedOps.submitGovernedModify with these arguments.
+  const { submitTrade } = await import("../tradeEngine/pipeline.js");
+  const res = await submitTrade({
+    mode: args.position.venue, intent: "MODIFY", userId: args.userId,
+    target: { position: args.position },
+    stopLoss: args.stopLoss, takeProfit: args.takeProfit, sourcePage: args.sourcePage,
+  });
+  return res.ok
+    ? { ok: true, commandId: res.commandId, reason: null }
+    : { ok: false, commandId: res.commandId, reason: res.reason };
 }
 
 // ── TRADE_ACTION_CENTER: draft → confirm (venue queues, #26/#27) ─────────────
@@ -154,7 +164,8 @@ export async function guardianTradeActionClose(args: {
   };
 }
 
-// ── INSTANT_ROUTER: executeInstant (18-gate Phase B dispatch) ───────────────
+// ── INSTANT_ROUTER: the Trade Engine one-click leg (submitInstantTrade →
+//    executeInstant, 18-gate Phase B dispatch) ─────────────────────────────
 
 export type GuardianInstantExecutor = (args: {
   userId: number;
@@ -177,7 +188,8 @@ export function instantIntentAction(
 
 /**
  * Route a management intent for an open position through the instant-trade
- * router. `executor` defaults to executeInstant; tests substitute a spy.
+ * router. `executor` defaults to the Trade Engine one-click entry
+ * (pipeline.submitInstantTrade → executeInstant); tests substitute a spy.
  */
 export async function guardianInstantManage(args: {
   ruleId: GuardianRuleId;
@@ -200,7 +212,7 @@ export async function guardianInstantManage(args: {
     refused(args.ruleId, args.userId, auth);
     return { ok: false, httpStatus: 409, error: auth.code, primaryReason: auth.reason };
   }
-  const executor = args.executor ?? (await import("../live/instantTrade.js")).executeInstant;
+  const executor = args.executor ?? (await import("../tradeEngine/pipeline.js")).submitInstantTrade;
   return executor({ userId: args.userId, intent: args.intent, ip: args.ip, ua: args.ua });
 }
 

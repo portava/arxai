@@ -3,10 +3,11 @@
 // SAFETY / SCOPE:
 //   - This is the FIRST time an approved Profit-Mission draft can become a real
 //     order, and it routes EXCLUSIVELY through the existing instant-trade router
-//     (`executeInstant`, source "mission") → live command pipeline → 18-gate
-//     dispatch. There is NO new execution path; nothing here can place an order
-//     by itself. `executeInstant` is injectable ONLY so tests can substitute a
-//     spy — production always uses the real router.
+//     (Trade Engine `submitInstantTrade` → `executeInstant`, source "mission")
+//     → live command pipeline → 18-gate dispatch. There is NO new execution
+//     path; nothing here can place an order by itself. The executor is
+//     injectable ONLY so tests can substitute a spy — production always uses
+//     the real router through the pipeline.
 //   - Per-draft user approval (Level 2) is still required: a draft must already
 //     be `approved` (or `waiting_confirmation`→approved) before it can dispatch.
 //     This hook never approves; it only dispatches an already-approved draft.
@@ -32,11 +33,8 @@ import {
 } from "@workspace/db";
 import type { MissionGateResult } from "@workspace/domain/profit-mission";
 import { enforceMissionScope } from "./riskGovernor/missionScope.js";
-import {
-  executeInstant,
-  type InstantTradeIntent,
-  type InstantTradeResult,
-} from "./live/instantTrade.js";
+import type { InstantTradeIntent, InstantTradeResult } from "./live/instantTrade.js";
+import { submitInstantTrade } from "./tradeEngine/pipeline.js";
 import { refreshMissionRisk, type MissionLiveSignals } from "./missionRiskState.js";
 import {
   evaluatePhase7PreChecks,
@@ -143,7 +141,7 @@ export async function dispatchApprovedDraft(
   args: DispatchApprovedDraftArgs,
   opts: DispatchApprovedDraftOpts = {},
 ): Promise<DispatchApprovedDraftResult> {
-  const executor = opts.executor ?? executeInstant;
+  const executor = opts.executor ?? submitInstantTrade;
   const nowMs = args.nowMs ?? Date.now();
 
   // ── Load mission + draft, both scoped by userId (per-user isolation) ────────

@@ -260,8 +260,11 @@ const BASE_FORBIDDEN: Needle[] = [
 //   • the chart/scanner instant-trade router calls `executeInstant` directly.
 // Both must dispatch through `executeInstant`; only the assistant carries the
 // extra ledger boundary.
+// The router is reached through the Trade Engine's one-click channel
+// (lib/tradeEngine/pipeline.ts submitInstantTrade → executeInstant); a direct
+// executeInstant call is refused by check-trade-engine-single-pipeline.
 export const ASSISTANT_REQUIRED: Needle[] = [
-  { rx: /\bexecuteInstant\b/, why: "the assistant must dispatch through the instant-trade router (executeInstant)" },
+  { rx: /\bsubmitInstantTrade\b/, why: "the assistant must dispatch through the instant-trade router via the Trade Engine (submitInstantTrade → executeInstant)" },
   { rx: /\brecordAndExecuteRuby\b/, why: "every Ruby trade action must flow through the append-only ledger boundary" },
 ];
 

@@ -48,10 +48,13 @@ const SCANNER_PANEL_FILE =
 // The sanctioned execution path the chart/scanner route MUST contain. Unlike
 // the assistant route there is no Ruby ledger boundary here — the router calls
 // the instant-trade dispatcher directly.
-const CHART_REQUIRED: Needle[] = [
+// The router is reached through the Trade Engine's one-click channel
+// (submitInstantTrade → executeInstant); a direct executeInstant call is
+// refused by check-trade-engine-single-pipeline.
+export const CHART_REQUIRED: Needle[] = [
   {
-    rx: /\bexecuteInstant\b/,
-    why: "chart/scanner trade actions must dispatch through the instant-trade router (executeInstant)",
+    rx: /\bsubmitInstantTrade\b/,
+    why: "chart/scanner trade actions must dispatch through the instant-trade router via the Trade Engine (submitInstantTrade → executeInstant)",
   },
 ];
 

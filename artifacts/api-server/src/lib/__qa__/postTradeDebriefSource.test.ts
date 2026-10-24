@@ -10,8 +10,8 @@
 //   note in routeKnowledge.ts). The paper-execution *backend* was not: three
 //   mounted routers still FEED paper_orders, all through its one writer,
 //   lib/tradeEngine/paperVenue.ts (docs/TIER1_PAPER_BOOK.md) —
-//       lib/paperExecution/paperExecutionService.ts (openPaperFill)
-//       routes/autoDebrief.ts (openPaperFill)
+//       lib/paperExecution/paperExecutionService.ts (pipeline fillPaperTrade → openPaperFill)
+//       routes/autoDebrief.ts (pipeline fillPaperTrade → openPaperFill)
 //       routes/paperTrading.ts (submitTrade, mode PAPER)
 //   all reachable through routes/index.ts.
 //
@@ -45,7 +45,8 @@ function read(rel: string): string {
 
 // One paper book (docs/TIER1_PAPER_BOOK.md): the PAPER venue is the only
 // module that inserts paper_orders; the Build EE service and the auto-debrief
-// fixture book through it (openPaperFill), the ticket through submitTrade.
+// fixture book through it (Trade Engine fillPaperTrade → openPaperFill), the
+// ticket through submitTrade.
 const WRITERS = [
   "artifacts/api-server/src/lib/tradeEngine/paperVenue.ts",
 ];
@@ -68,8 +69,11 @@ describe("G-FINISH — the debrief source is still fed", () => {
       "every known writer must still insert — losing them starves debriefs of input",
     );
     for (const rel of PRODUCERS) {
-      assert.ok(/\bopenPaperFill\(/.test(read(rel)), `${rel} must still book paper orders through the PAPER venue`);
+      assert.ok(/\bfillPaperTrade\(\{ mode: "PAPER", intent: "OPEN" \}/.test(read(rel)),
+        `${rel} must still book paper orders through the Trade Engine's PAPER fill`);
     }
+    assert.ok(/\bvenue\.openPaperFill\(/.test(read("artifacts/api-server/src/lib/tradeEngine/pipeline.ts")),
+      "the Trade Engine's PAPER fill must still book through the PAPER venue");
   });
 
   it("those writers are reachable (their routers are mounted)", () => {

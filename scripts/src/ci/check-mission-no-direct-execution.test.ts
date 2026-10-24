@@ -2,10 +2,12 @@
 //
 // Profit Mission is another live-trade entry point: its OPEN and its protective
 // exit management must route ONLY through the Global Instant Trade Router
-// (`executeInstant`, source "mission") → live command pipeline → 18-gate Phase B
+// (Trade Engine `submitInstantTrade` → `executeInstant`, source "mission") → live
+// command pipeline → 18-gate Phase B
 // dispatch — and must stamp the originating `missionId`. This suite exercises:
 //
-//   1. the DISPATCH-surface REQUIRED anchors (executeInstant + source "mission"
+//   1. the DISPATCH-surface REQUIRED anchors (submitInstantTrade, or the guardian
+//      exit door guardianInstantManage for exits, + source "mission"
 //      + missionId) and the shared import-aware forbidden scan
 //      (`scanForViolations`) against synthetic mission-dispatch snippets;
 //   2. the ISOLATION forbidden scan (`scanForbiddenStrings` +
@@ -22,6 +24,7 @@ import {
 } from "./check-assistant-no-direct-execution.js";
 import {
   MISSION_DISPATCH_REQUIRED,
+  MISSION_EXIT_REQUIRED,
   DISPATCH_SEAM_FORBIDDEN,
   MATH_RANDOM_FORBIDDEN,
   scanForbiddenStrings,
@@ -33,7 +36,7 @@ export {};
 // on a "stay clean" / "still flag the bypass" case is unambiguously about the
 // forbidden scan and not a MISSING sanctioned path.
 const SANCTIONED = `
-  const result = await executeInstant({
+  const result = await submitInstantTrade({
     userId,
     intent: { ...intent, source: "mission", missionId },
     ip,
@@ -60,7 +63,7 @@ type DispatchCase = {
 const dispatchCases: DispatchCase[] = [
   // Must stay CLEAN.
   {
-    name: "sanctioned mission dispatch (executeInstant + source mission + missionId)",
+    name: "sanctioned mission dispatch (submitInstantTrade + source mission + missionId)",
     shouldFlag: false,
     src: SANCTIONED,
   },
@@ -74,17 +77,22 @@ const dispatchCases: DispatchCase[] = [
   {
     name: "missing missionId ownership tag is flagged",
     shouldFlag: true,
-    src: `const result = await executeInstant({ userId, intent: { ...intent, source: "mission" }, ip, ua });`,
+    src: `const result = await submitInstantTrade({ userId, intent: { ...intent, source: "mission" }, ip, ua });`,
   },
   {
     name: 'missing source "mission" tag is flagged',
     shouldFlag: true,
-    src: `const result = await executeInstant({ userId, intent: { ...intent, missionId }, ip, ua });`,
+    src: `const result = await submitInstantTrade({ userId, intent: { ...intent, missionId }, ip, ua });`,
   },
   {
-    name: "missing executeInstant router call is flagged",
+    name: "missing router call (submitInstantTrade) is flagged",
     shouldFlag: true,
     src: `const noop = { source: "mission", missionId };`,
+  },
+  {
+    name: "a direct executeInstant call no longer satisfies the router anchor",
+    shouldFlag: true,
+    src: `const result = await executeInstant({ userId, intent: { ...intent, source: "mission", missionId }, ip, ua });`,
   },
 
   // Must be FLAGGED — direct-execution escapes even WITH the sanctioned tail.
@@ -143,6 +151,31 @@ for (const c of dispatchCases) {
   );
 }
 
+// ── 1b. EXIT surface: the guardian exit door is the router anchor ────────────
+const exitCases: DispatchCase[] = [
+  {
+    name: "sanctioned mission exit (guardianInstantManage + source mission + missionId)",
+    shouldFlag: false,
+    src: `const intent = { source: "mission", missionId };\nawait guardianInstantManage({ ruleId: "mission-exit", userId, intent, position, executor });`,
+  },
+  {
+    name: "an exit that skips the exit door is flagged",
+    shouldFlag: true,
+    src: `const intent = { source: "mission", missionId };\nawait submitInstantTrade({ userId, intent });`,
+  },
+  {
+    name: "an exit without the mission tag is flagged",
+    shouldFlag: true,
+    src: `await guardianInstantManage({ ruleId: "mission-exit", userId, intent: { missionId }, position });`,
+  },
+];
+for (const c of exitCases) {
+  const flags = scanForViolations(c.src, c.extra ?? [], MISSION_EXIT_REQUIRED);
+  const ok = (flags.length > 0) === c.shouldFlag;
+  record(`exit: ${c.name}`, ok, ok ? (c.shouldFlag ? `flagged (${flags.length})` : "clean")
+    : c.shouldFlag ? "expected a violation but got none" : `expected clean but got: ${flags[0]}`);
+}
+
 // ── 2. ISOLATION: planning/backtest surface must not reach the dispatch seam ──
 type StringCase = { name: string; src: string; shouldFlag: boolean };
 
@@ -166,6 +199,16 @@ const isolationCases: StringCase[] = [
     name: "reaching executeInstant is flagged",
     shouldFlag: true,
     src: `const r = await executeInstant({ intent });`,
+  },
+  {
+    name: "reaching the Trade Engine one-click channel is flagged",
+    shouldFlag: true,
+    src: `const r = await submitInstantTrade({ intent });`,
+  },
+  {
+    name: "importing the Trade Engine is flagged",
+    shouldFlag: true,
+    src: `const p = await import("../../tradeEngine/pipeline.js");`,
   },
   {
     name: "importing the mission dispatch service is flagged",
