@@ -15,6 +15,8 @@ import {
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
+import { requireOperator } from "../lib/auth/ownerScope.js";
+import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
 import { runAutoDebrief, isClosedStatus } from "../lib/autoDebriefService.js";
 
 const router = Router();
@@ -123,6 +125,10 @@ router.get("/auto-debrief/recent", requireUser, async (req, res): Promise<void> 
 // ── POST /auto-debrief/test ────────────────────────────────────────────────
 // Test endpoint: optionally creates a fresh paper order linked to a
 // supplied decision_id, then forces an immediate close + auto-debrief.
+// Operator-only: it books a synthetic order with a forced result, so a trader
+// could otherwise write made-up P/L into their own paper account. The open
+// still goes through the pre-trade Risk Governor and is audited like any
+// other paper order (fixture price, origin "system").
 const TestBody = z.object({
   paperAccountId: z.number().int().positive(),
   symbol: z.string().min(1).max(64),
@@ -130,7 +136,7 @@ const TestBody = z.object({
   decisionId: z.number().int().positive().nullable().optional(),
   forceResult: z.enum(["WIN", "LOSS", "BREAKEVEN", "CANCELLED"]).default("WIN"),
 });
-router.post("/auto-debrief/test", requireUser, async (req, res): Promise<void> => {
+router.post("/auto-debrief/test", requireUser, requireOperator, async (req, res): Promise<void> => {
   try {
     const userId = req.authUser!.id;
     const b = TestBody.parse(req.body ?? {});
@@ -140,6 +146,21 @@ router.post("/auto-debrief/test", requireUser, async (req, res): Promise<void> =
     const ENTRY = 100;
     const slBuy = b.direction === "BUY" ? ENTRY - 5 : ENTRY + 5;
     const tpBuy = b.direction === "BUY" ? ENTRY + 10 : ENTRY - 10;
+    const risk = await enforcePreTradeRisk({
+      userId, venue: "PAPER", origin: "system", action: "OPEN",
+      symbol: b.symbol, side: b.direction, lots: 0.01, stopLoss: slBuy, takeProfit: tpBuy,
+      intentRef: "auto_debrief_test",
+    }, {
+      paperAccountId: b.paperAccountId,
+      facts: { quote: { bid: ENTRY, ask: ENTRY, at: new Date(), source: "auto_debrief_test_fixture" } },
+      auditContext: { caller: "POST /auto-debrief/test" },
+    });
+    if (!risk.allowed) {
+      fail(res, 422, risk.primaryReason ?? "Blocked by Risk Governor", {
+        code: "RISK_GOVERNOR_BLOCK", blockedBy: risk.blockedBy, auditEventId: risk.auditEventId,
+      });
+      return;
+    }
     const ins = await db.insert(paperOrdersTable).values({
       userId,
       paperAccountId: b.paperAccountId,

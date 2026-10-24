@@ -339,6 +339,21 @@ router.post("/paper/orders/:id/close", requireUser, async (req, res): Promise<vo
     if (!cur) { fail(res, 404, "Not found"); return; }
     if (cur.status !== "OPEN") { fail(res, 409, "Order not open"); return; }
     const exitPx = getMockPrice(cur.symbol, Date.now());
+    const risk = await enforcePreTradeRisk({
+      userId, venue: "PAPER", origin: "manual", action: "CLOSE",
+      symbol: cur.symbol, side: cur.direction as "BUY" | "SELL", lots: cur.lotSize,
+      intentRef: `paper_close:${id}`,
+    }, {
+      paperAccountId: cur.paperAccountId,
+      facts: { quote: { bid: exitPx, ask: exitPx, at: new Date(), source: "paper_simulator_price" } },
+      auditContext: { caller: "POST /paper/orders/:id/close", orderId: id },
+    });
+    if (!risk.allowed) {
+      fail(res, 422, risk.primaryReason ?? "Blocked by Risk Governor", {
+        code: "RISK_GOVERNOR_BLOCK", blockedBy: risk.blockedBy, auditEventId: risk.auditEventId,
+      });
+      return;
+    }
     const pnl = pnlFor(cur.direction, cur.lotSize, cur.entryPrice, exitPx);
     await db.update(paperOrdersTable).set({
       status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: exitPx,

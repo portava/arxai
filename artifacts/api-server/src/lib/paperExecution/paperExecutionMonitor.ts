@@ -20,6 +20,7 @@ import { and, eq } from "drizzle-orm";
 import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
+import { enforcePreTradeRisk } from "../riskGovernor/enforce.js";
 
 const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
 
@@ -181,6 +182,17 @@ export async function closePaperManually(orderId: number, userId: number, opts?:
     const { snapshot } = await getMarketData({ symbol: order.symbol, timeframe: "M5", limit: 100 });
     exitPrice = snapshot.mid;
   }
+  // A close reduces risk, so the governor only refuses a bad quantity, but it
+  // is checked and audited like every other action on the paper account.
+  const risk = await enforcePreTradeRisk({
+    userId, venue: "PAPER", origin: "manual", action: "CLOSE",
+    symbol: order.symbol, side: order.direction as "BUY" | "SELL", lots: order.lotSize,
+    intentRef: `paper_execution_close:${orderId}`,
+  }, {
+    paperAccountId: order.paperAccountId,
+    auditContext: { caller: "POST /paper-execution/close/:id", orderId, exitPriceOverride: opts?.exitPrice ?? null },
+  });
+  if (!risk.allowed) return { ok: false, error: risk.primaryReason ?? "Blocked by Risk Governor", blockedBy: risk.blockedBy };
   const pnl = unrealizedPnl(order.direction, order.lotSize, order.entryPrice, exitPrice);
 
   await db.update(paperOrdersTable).set({

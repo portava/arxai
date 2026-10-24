@@ -20,7 +20,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import cookieParser from "cookie-parser";
-import { eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   aiMentorSessionsTable,
   analyticsHeatmapsTable,
@@ -43,6 +43,7 @@ import {
   tradingReadinessChecksTable,
   tradingRuleContractsTable,
   tradingRuleViolationsTable,
+  userRiskEventsTable,
   usersTable,
   weeklyImprovementGoalsTable,
   weeklyPerformanceReviewsTable,
@@ -522,4 +523,22 @@ test("readiness checks are stamped with and visible to the owner only", async ()
   assert.equal((await request("/readiness/checks/latest", cookieB)).status, 404);
   const listA = await json<{ checks: Array<{ sessionName: string }> }>(await request("/readiness/checks", cookieA));
   assert.deepEqual(listA.checks.map((c) => c.sessionName), ["London"]);
+});
+
+test("paper closes go through the Risk Governor; a trader cannot book a forced-result test order", async () => {
+  const forced = await send("POST", "/auto-debrief/test", cookieA, {
+    paperAccountId: accountAId, symbol: "QAOWN.A", direction: "BUY", forceResult: "WIN",
+  });
+  assert.equal(forced.status, 403, "made-up P/L must not reach a trader's own paper account");
+
+  const id = await seedOrder(userAId, accountAId, "QAOWN.A");
+  const close = await send("POST", `/paper/orders/${id}/close`, cookieA);
+  assert.equal(close.status, 200, await close.clone().text());
+  const [ev] = await db.select().from(userRiskEventsTable)
+    .where(and(eq(userRiskEventsTable.userId, userAId), eq(userRiskEventsTable.eventType, "risk_check")))
+    .orderBy(desc(userRiskEventsTable.id)).limit(1);
+  const d = ev!.details as { intent: { action: string; venue: string }; caller: string };
+  assert.equal(d.intent.action, "CLOSE");
+  assert.equal(d.intent.venue, "PAPER");
+  assert.equal(d.caller, "POST /paper/orders/:id/close");
 });
