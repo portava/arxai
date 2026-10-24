@@ -76,7 +76,7 @@ test("the daily-loss budget alerts the trader who lost, against their own limit"
   const mine = rows.filter((r) => r.userId === b);
   assert.equal(mine.length, 1, "B is alerted");
   assert.equal(mine[0]!.priority, "CRITICAL", "6% loss on a 5% limit is past the budget");
-  assert.equal(rows.filter((r) => r.userId == null && r.createdAt > new Date(Date.now() - 60_000)).length, 0,
+  assert.equal(rows.filter((r) => r.userId == null && r.createdAt != null && r.createdAt > new Date(Date.now() - 60_000)).length, 0,
     "no ownerless daily-loss alert was broadcast");
   assert.equal(rows.filter((r) => r.userId === a).length, 0, "A is not told about B's losses");
 });

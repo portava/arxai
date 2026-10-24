@@ -1,10 +1,11 @@
 // ── Admin-controlled trading mode + per-user permissions + audit ────────────
 //
 // SAFETY (inviolable, fail-closed):
-// - global_trading_settings is a singleton (id=1). Default is platform_mode='OFF'
-//   and emergency_kill_switch=true. ANY freshly seeded environment must refuse
-//   to accept orders until an admin explicitly switches mode and disengages
-//   the kill switch.
+// - global_trading_settings is a singleton (id=1). Owner decision (2026-10-24):
+//   trading is available by default — platform_mode='LIVE', demo and live
+//   enabled, emergency_kill_switch=false. Trading halts only when the owner or
+//   an operator engages a stop. Availability is not approval: every order
+//   still passes the guard chain and the pre-trade Risk Governor.
 // - user_trading_permissions defaults to suspended + no live approval. A new
 //   user cannot place a live trade even if global mode is LIVE.
 // - user_risk_limits is required for live trading. No row = REJECTED.
@@ -29,13 +30,20 @@ export const globalTradingSettingsTable = pgTable("global_trading_settings", {
   // SIMULATED = internal paper-trade simulator only.
   // DEMO = orders routed to broker demo accounts only.
   // LIVE = orders routed to verified live accounts, subject to per-user gates.
-  platformMode: text("platform_mode").notNull().default("OFF"),
+  // Owner decision (2026-10-24): the platform starts available — LIVE mode
+  // with paper, demo and live enabled. Per-user gates (permissions, live
+  // approval, risk disclosure, verified live account) still apply.
+  platformMode: text("platform_mode").notNull().default("LIVE"),
   simulatedEnabled: boolean("simulated_enabled").notNull().default(true),
-  demoEnabled: boolean("demo_enabled").notNull().default(false),
-  liveEnabled: boolean("live_enabled").notNull().default(false),
-  // Master emergency stop. Defaults TRUE (fail-closed). When true, no new
-  // orders of any mode are accepted; existing data sync / heartbeat continue.
-  emergencyKillSwitch: boolean("emergency_kill_switch").notNull().default(true),
+  demoEnabled: boolean("demo_enabled").notNull().default(true),
+  liveEnabled: boolean("live_enabled").notNull().default(true),
+  // Master emergency stop. Owner decision (2026-10-24): defaults FALSE, so a
+  // fresh install, restart or redeploy does not halt trading. Only the owner or
+  // an operator engages it. When engaged, no new DEMO/LIVE risk is accepted;
+  // closes, tightened stops, data sync and heartbeat continue. Releasing it
+  // does not approve anything: every order still passes the guard chain and
+  // the pre-trade Risk Governor.
+  emergencyKillSwitch: boolean("emergency_kill_switch").notNull().default(false),
   killSwitchEngagedAt: timestamp("kill_switch_engaged_at", { withTimezone: true }),
   killSwitchReason: text("kill_switch_reason"),
   // ── Phase 3.5 — Account Routing Mode ───────────────────────────────────
