@@ -3,7 +3,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { checkPermission, normalizeRole, isLiveTradingAction } from "./permissions.js";
 import { recordSecurityEvent, recordAccessLog, repeatedDeniedCount } from "./events.js";
-import { getSessionFromReq, dbRoleFor, IS_PROD, ALLOW_DEV_AUTH } from "./session.js";
+import { getSessionFromReq, dbRoleFor, IS_PROD, DEV_ROLE_CHANNELS } from "./session.js";
 import type { RoleKey } from "./seed.js";
 
 declare global {
@@ -14,22 +14,20 @@ declare global {
   }
 }
 
-// Phase 28-SEC — Trusted server-side role resolution.
+// Trusted server-side role resolution — one role model.
 //
-// SECURITY: role authority is derived from the HMAC-signed `hr_session`
-// cookie via getSessionFromReq(), then mapped onto the security-permission
-// RoleKey set via dbRoleFor().
+// SECURITY: the role is the signed-in user's users.role, read on every
+// request (getSessionFromReq), then mapped onto the security-permission
+// RoleKey set via dbRoleFor(). The `hr_session` cookie is only a mirror and
+// can never raise or outlive that role.
 //
-// Production behavior (NODE_ENV === "production" AND ALLOW_DEV_AUTH !==
-// "true"): the `x-security-role` request header is IGNORED. A normal logged-
-// in user (arx_user_session only, no hr_session) resolves to VIEWER and
-// cannot reach admin/security-write endpoints. Privilege escalation via
-// client header is impossible.
+// Production: nothing else is accepted — not the `x-security-role` header,
+// not a dev-owner-login cookie, not an implicit owner, whatever
+// ALLOW_DEV_AUTH says. No signed-in user = VIEWER.
 //
-// Dev/test behavior (NODE_ENV !== "production" OR ALLOW_DEV_AUTH === "true"):
-// getSessionFromReq() preserves the legacy `x-security-role` header fallback
-// so existing tester pages keep working. This is the *only* place the dev
-// fallback lives — auditable single-point gate.
+// Dev/test (NODE_ENV !== "production"): when no user is signed in, the QA
+// harness channels (header, dev-owner-login cookie, implicit owner) still
+// apply. This is the *only* place they live — auditable single-point gate.
 export function readRoleFromRequest(req: Request): RoleKey {
   const session = getSessionFromReq(req);
   return normalizeRole(dbRoleFor(session.role));
@@ -48,15 +46,15 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
 
 // Exposed for tests + report. Reflects the runtime authority surface.
 export function describeRoleAuthority(): {
-  source: "signed_session_cookie";
+  source: "signed_in_user_role";
   productionHeaderAccepted: false;
   devHeaderFallbackActive: boolean;
   isProduction: boolean;
 } {
   return {
-    source: "signed_session_cookie",
+    source: "signed_in_user_role",
     productionHeaderAccepted: false,
-    devHeaderFallbackActive: !IS_PROD || ALLOW_DEV_AUTH,
+    devHeaderFallbackActive: DEV_ROLE_CHANNELS,
     isProduction: IS_PROD,
   };
 }

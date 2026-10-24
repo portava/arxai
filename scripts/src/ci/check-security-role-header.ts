@@ -21,8 +21,6 @@ const FRONTEND_SCANNED_FILES = [
 const ALLOWED_FILES = new Set(
   [
     "artifacts/api-server/src/lib/security/session.ts",
-    "artifacts/api-server/src/lib/security/middleware.ts",
-    "artifacts/api-server/src/routes/adminTrading.ts",
     "scripts/src/ci/check-security-role-header.ts",
   ].map((p) => p.split("/").join(sep)),
 );
@@ -77,8 +75,6 @@ export function checkSecurityRoleHeader(): CheckResult {
       "Direct reads of the `x-security-role` header are forbidden outside the approved files.",
       "Approved (allowlisted) authority sources:",
       "  - artifacts/api-server/src/lib/security/session.ts (single auditable control point)",
-      "  - artifacts/api-server/src/lib/security/middleware.ts (server-derived resolver)",
-      "  - artifacts/api-server/src/routes/adminTrading.ts (header-hint-must-match-session pattern)",
       "All other server code MUST resolve role via `readRoleFromRequest(req)` from",
       "`lib/security/middleware.ts`. Never trust client-supplied role headers.",
       "User-facing frontend scanned (must NOT send a spoofed header):",

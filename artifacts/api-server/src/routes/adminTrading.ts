@@ -34,21 +34,12 @@ import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 const router: IRouter = Router();
 
 function getAdminRole(req: Request): "ADMIN" | "OWNER" | null {
-  // SECURITY: never trust the `x-security-role` header on its own — a logged-in
-  // non-admin user could forge it. Authority is the validated session role on
-  // `req.authUser` (set by attachAuthUser after verifying the session cookie).
-  // The header is still accepted by the existing admin UI, but only as a hint
-  // that must match the validated role (so the header can never elevate).
+  // SECURITY: authority is the signed-in user's role on `req.authUser` (set by
+  // attachAuthUser after verifying the session cookie), through the shared
+  // operator gate so INVESTOR/USER sessions are denied identically across all
+  // admin/live-control routes. No request header is consulted.
   const u = (req as Request & { authUser?: { role?: string } }).authUser;
-  // Task #743 Cluster D — operator gate via the shared helper so INVESTOR/USER
-  // sessions are denied identically across all admin/live-control routes.
-  const sessionRole = operatorRoleFromSession(u?.role);
-  if (!sessionRole) return null;
-  const headerRole = String(req.header("x-security-role") ?? "").toUpperCase();
-  if (headerRole && headerRole !== sessionRole && !(sessionRole === "OWNER" && headerRole === "ADMIN")) {
-    return null;
-  }
-  return sessionRole as "ADMIN" | "OWNER";
+  return operatorRoleFromSession(u?.role);
 }
 
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
