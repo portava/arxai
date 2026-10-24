@@ -62,7 +62,17 @@ passes("await submitGovernedModify(u, p, 1, 2, 'X')", "lib/positionGuardian/mana
 fails("await submitGovernedModify(u, p, 1, 2, 'X')", "lib/positionGuardian/reconcile.ts"); // corrections go through the exit door
 passes("await executeInstant(args)", "lib/selfTrade/agentExecutor.ts");
 passes("await db.insert(paperOrdersTable).values(row)", PAPER_VENUE);
-passes("await db.update(tradesTable).set({ status: 'CANCELLED' })", "routes/bot.ts");
+fails("await db.update(tradesTable).set({ status: 'CANCELLED' })", "routes/bot.ts"); // the legacy book is written only by lib/trades/paperBook.ts
+passes("await cancelOpenLegacyTrades(userId)", "routes/bot.ts");
+fails("await db.insert(tradesTable).values(row)", "routes/trades.ts"); // /execute-trade records through lib/trades/paperBook.ts
+// The one paper book: caller-priced fills go through the PAPER venue.
+fails("await db.insert(paperOrdersTable).values(row)", "lib/paperExecution/paperExecutionService.ts");
+fails("await db.update(paperOrdersTable).set({ status: 'CLOSED_TP' })", "lib/paperExecution/paperExecutionMonitor.ts");
+fails("await db.insert(paperOrdersTable).values(row)", "routes/autoDebrief.ts");
+passes("await openPaperFill(args); await voidPaperOrder(id)", "lib/paperExecution/paperExecutionService.ts");
+passes("await settlePaperOrder(a); await closePaperFill(b)", "lib/paperExecution/paperExecutionMonitor.ts");
+fails("await openPaperFill(args)"); // a new surface is not a listed paper producer
+fails("await settlePaperOrder(a)", "lib/paperAutopilot/autopilotService.ts");
 passes("await db.update(tradesTable).set({ lot: 1 })", "lib/trades/paperBook.ts");
 fails("await db.update(tradesTable).set({ stopLoss: 1 })", "routes/tradeManagement.ts"); // management goes through the Position Guardian
 passes("await db.insert(mt5CommandsTable).values({ action: 'CLOSE' })", MAILBOX_EXCEPTION);

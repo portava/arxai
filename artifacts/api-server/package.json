@@ -112,6 +112,7 @@
     "test:position-guardian-manage": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/manage.test.ts",
     "test:trade-engine-pipeline": "node --import tsx --test --test-force-exit src/lib/tradeEngine/__qa__/pipeline.test.ts",
     "test:trade-engine-staged": "node --import tsx --test --test-force-exit src/lib/tradeEngine/__qa__/stagedContract.test.ts",
+    "test:paper-book": "node --import tsx --test --test-force-exit src/lib/tradeEngine/__qa__/paperBook.test.ts",
     "test:position-guardian-reconcile": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/reconcile.test.ts",
     "test:oms-governance": "node --import tsx --test --test-force-exit src/lib/__qa__/omsGovernance.test.ts",
     "test:snapshot-ownership": "node --import tsx --test --test-force-exit src/lib/performanceCC/__qa__/snapshotOwnership.test.ts",

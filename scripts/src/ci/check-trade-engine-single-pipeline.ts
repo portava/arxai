@@ -42,7 +42,7 @@ const API_SRC = join(ROOT, "artifacts/api-server/src");
 export const PIPELINE = "lib/tradeEngine/pipeline.ts";
 export const PAPER_VENUE = "lib/tradeEngine/paperVenue.ts";
 
-type Entry = "DEMO_QUEUE" | "LIVE_PIPELINE" | "LIVE_INSTANT" | "GOVERNED_OPS" | "PAPER_VENUE";
+type Entry = "DEMO_QUEUE" | "LIVE_PIPELINE" | "LIVE_INSTANT" | "GOVERNED_OPS" | "PAPER_VENUE" | "PAPER_FILL";
 
 /** Venue entry points: calling one creates or changes exposure on that venue. */
 export const ENTRY_POINTS: Record<Entry, { names: string[]; owner: string }> = {
@@ -51,6 +51,8 @@ export const ENTRY_POINTS: Record<Entry, { names: string[]; owner: string }> = {
   LIVE_INSTANT: { names: ["executeInstant"], owner: "lib/live/instantTrade.ts" },
   GOVERNED_OPS: { names: ["submitGovernedClose", "submitGovernedModify"], owner: "lib/positions/governedOps.ts" },
   PAPER_VENUE: { names: ["openPaperOrder", "modifyPaperOrder", "closePaperOrder"], owner: PAPER_VENUE },
+  // Caller-priced paper fills and venue settlement (one paper book; see check-single-paper-book).
+  PAPER_FILL: { names: ["openPaperFill", "closePaperFill", "settlePaperOrder", "voidPaperOrder"], owner: PAPER_VENUE },
 };
 const ENTRY_OF = new Map<string, Entry>(
   (Object.entries(ENTRY_POINTS) as [Entry, { names: string[] }][]).flatMap(([k, v]) => v.names.map((n) => [n, k] as const)),
@@ -73,6 +75,11 @@ export const ENTRY_PRODUCERS: Record<string, { entries: Entry[]; why: string }> 
   // execution only through it, after its registry checks (never widens a
   // stop, never opens, never adds size). Guarded by check-single-position-guardian.
   "lib/positionGuardian/manage.ts": { entries: ["GOVERNED_OPS", "LIVE_INSTANT"], why: "Position Guardian exit door (stop restore, governed management)" },
+  // Paper producers that price their own fill: they book through the PAPER
+  // venue (Risk Governor on open and close; SL/TP hits are venue fills).
+  "lib/paperExecution/paperExecutionService.ts": { entries: ["PAPER_FILL"], why: "Build EE decision-driven paper autopilot open (market-data fill)" },
+  "lib/paperExecution/paperExecutionMonitor.ts": { entries: ["PAPER_FILL"], why: "Build EE monitor: SL/TP settlement and governed manual close" },
+  "routes/autoDebrief.ts": { entries: ["PAPER_FILL"], why: "operator QA fixture order (governed open, forced settlement)" },
 };
 
 /** The one-click live entry: it reaches Phase B only through the staged contract. */
@@ -112,14 +119,9 @@ export const MAILBOX_EXCEPTION = "routes/meTrades.ts";
 
 /** Files allowed to write paper / legacy trade books, and why. */
 export const PAPER_WRITERS: Record<string, { tables: (typeof PAPER_TABLES)[number][]; why: string }> = {
-  [PAPER_VENUE]: { tables: ["paperOrdersTable"], why: "PAPER mode of the pipeline (Risk Governor on open/modify/close; SL/TP hits are venue fills)" },
-  "lib/paperExecution/paperExecutionService.ts": { tables: ["paperOrdersTable"], why: "decision-driven paper autopilot open (Risk Governor)" },
-  "lib/paperExecution/paperExecutionMonitor.ts": { tables: ["paperOrdersTable"], why: "paper autopilot monitor: SL/TP fills and governed manual close" },
-  "routes/autoDebrief.ts": { tables: ["paperOrdersTable"], why: "operator QA fixture order (Risk Governor)" },
+  [PAPER_VENUE]: { tables: ["paperOrdersTable"], why: "the one paper book: PAPER mode of the pipeline and the Build EE / QA fixture fills (Risk Governor on open/modify/close; SL/TP hits are venue fills)" },
   "routes/mePaperTrades.ts": { tables: ["paperTradesTable"], why: "paper trade journal (governed open and stop/target edits)" },
-  "routes/trades.ts": { tables: ["tradesTable"], why: "legacy /execute-trade simulated record (Safety Core gate); no broker order" },
-  "routes/bot.ts": { tables: ["tradesTable"], why: "emergency stop cancels the trader's own legacy rows (risk-reducing)" },
-  "lib/trades/paperBook.ts": { tables: ["tradesTable"], why: "simulated-trade management (applyPaperManagement), called only by the Position Guardian exit door lib/positionGuardian/manage.ts" },
+  "lib/trades/paperBook.ts": { tables: ["tradesTable"], why: "legacy simulated-trade book: /execute-trade record, emergency-stop cancel, and Position Guardian management (applyPaperManagement, exit door only)" },
 };
 
 /** Violations in one runtime file, keyed by its path under artifacts/api-server/src. */

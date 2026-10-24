@@ -308,6 +308,7 @@
     "test:single-position-ledger": "tsx ./src/ci/check-single-position-ledger.ts && tsx ./src/ci/check-single-position-ledger.test.ts",
     "test:single-position-guardian": "tsx ./src/ci/check-single-position-guardian.ts && tsx ./src/ci/check-single-position-guardian.test.ts",
     "test:trade-engine-single-pipeline": "tsx ./src/ci/check-trade-engine-single-pipeline.ts && tsx ./src/ci/check-trade-engine-single-pipeline.test.ts",
+    "test:single-paper-book": "tsx ./src/ci/check-single-paper-book.ts && tsx ./src/ci/check-single-paper-book.test.ts",
     "test:single-limit-store": "tsx ./src/ci/check-single-limit-store.ts && tsx ./src/ci/check-single-limit-store.test.ts",
     "test:legacy-live-state-confined": "tsx ./src/ci/check-legacy-live-state-confined.ts && tsx ./src/ci/check-legacy-live-state-confined.test.ts",
     "test:single-llm-gateway": "tsx ./src/ci/check-single-llm-gateway.ts && tsx ./src/ci/check-single-llm-gateway.test.ts",

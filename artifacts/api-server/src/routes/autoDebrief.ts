@@ -16,7 +16,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { requireOperator } from "../lib/auth/ownerScope.js";
-import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
+import { openPaperFill, settlePaperOrder } from "../lib/tradeEngine/paperVenue.js";
 import { runAutoDebrief, isClosedStatus } from "../lib/autoDebriefService.js";
 
 const router = Router();
@@ -146,48 +146,36 @@ router.post("/auto-debrief/test", requireUser, requireOperator, async (req, res)
     const ENTRY = 100;
     const slBuy = b.direction === "BUY" ? ENTRY - 5 : ENTRY + 5;
     const tpBuy = b.direction === "BUY" ? ENTRY + 10 : ENTRY - 10;
-    const risk = await enforcePreTradeRisk({
-      userId, venue: "PAPER", origin: "system", action: "OPEN",
-      symbol: b.symbol, side: b.direction, lots: 0.01, stopLoss: slBuy, takeProfit: tpBuy,
-      intentRef: "auto_debrief_test",
-    }, {
-      paperAccountId: b.paperAccountId,
-      facts: { quote: { bid: ENTRY, ask: ENTRY, at: new Date(), source: "auto_debrief_test_fixture" } },
+    // Booked through the PAPER venue: pre-trade Risk Governor (venue PAPER,
+    // origin "system", fixture quote), then the paper_orders row.
+    const booked = await openPaperFill({
+      userId, paperAccountId: b.paperAccountId,
+      symbol: b.symbol, side: b.direction, lots: 0.01, fillPrice: ENTRY,
+      stopLoss: slBuy, takeProfit: tpBuy,
+      decisionId: b.decisionId ?? null, strategyId: null,
+      origin: "system", intentRef: "auto_debrief_test",
+      quote: { bid: ENTRY, ask: ENTRY, at: new Date(), source: "auto_debrief_test_fixture" },
       auditContext: { caller: "POST /auto-debrief/test" },
+      placedMessage: null,
     });
-    if (!risk.allowed) {
+    if (!booked.ok) {
+      const risk = booked.risk;
       fail(res, 422, risk.primaryReason ?? "Blocked by Risk Governor", {
         code: "RISK_GOVERNOR_BLOCK", blockedBy: risk.blockedBy, auditEventId: risk.auditEventId,
       });
       return;
     }
-    const ins = await db.insert(paperOrdersTable).values({
-      userId,
-      paperAccountId: b.paperAccountId,
-      symbol: b.symbol,
-      direction: b.direction,
-      orderType: "MARKET",
-      lotSize: 0.01,
-      entryPrice: ENTRY,
-      stopLoss: slBuy,
-      takeProfit: tpBuy,
-      status: "OPEN",
-      decisionId: b.decisionId ?? null,
-    }).returning();
-    const order = ins[0]!;
+    const order = booked.order;
     // Force the close with the requested result.
     let exitPx = ENTRY;
-    let status = "CLOSED_MANUAL";
+    let status: "CLOSED_TP" | "CLOSED_SL" | "CLOSED_MANUAL" | "CANCELLED" = "CLOSED_MANUAL";
     let pnl = 0;
     const dir = b.direction === "BUY" ? 1 : -1;
     if (b.forceResult === "WIN")        { exitPx = ENTRY + 8 * dir;  status = "CLOSED_TP"; pnl = dir * (exitPx - ENTRY) * 0.01 * 100; }
     else if (b.forceResult === "LOSS")  { exitPx = ENTRY - 4 * dir;  status = "CLOSED_SL"; pnl = dir * (exitPx - ENTRY) * 0.01 * 100; }
     else if (b.forceResult === "BREAKEVEN") { exitPx = ENTRY;        status = "CLOSED_MANUAL"; pnl = 0; }
     else { status = "CANCELLED"; pnl = 0; exitPx = ENTRY; }
-    await db.update(paperOrdersTable).set({
-      status, closedAt: new Date(),
-      exitPrice: exitPx, profitLoss: pnl, updatedAt: new Date(),
-    }).where(eq(paperOrdersTable.id, order.id));
+    await settlePaperOrder({ order, status, exitPrice: exitPx, pnl, eventMessage: null });
 
     // Trigger auto-debrief.
     const result = await runAutoDebrief(order.id, { triggeredBy: "test_endpoint" });
