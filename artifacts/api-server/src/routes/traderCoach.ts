@@ -95,7 +95,7 @@ router.get("/trader-coach/daily", async (req, res) => {
 // GET /api/trader-coach/weekly — weekly improvement plan.
 router.get("/trader-coach/weekly", async (req, res) => {
   try {
-    const persist = (req.query.persist === "1" || req.query.persist === "true") && canSeeLegacyRows(req.authUser);
+    const persist = req.query.persist === "1" || req.query.persist === "true";
     const plan = await generateWeeklyPlan({ userId: req.authUser!.id, persist });
     res.json(envelope({ weekly: plan, persisted: persist }));
   } catch (err) {
@@ -184,7 +184,7 @@ router.post("/trader-coach/demo", async (req, res) => {
   try {
     const log = buildLog(req);
     const coach = await generateCoachReport({ userId: req.authUser!.id, reportType: "DAILY", persist: true, log, generatePlaybookEntries: canSeeLegacyRows(req.authUser) });
-    const weekly = await generateWeeklyPlan({ userId: req.authUser!.id, persist: canSeeLegacyRows(req.authUser) });
+    const weekly = await generateWeeklyPlan({ userId: req.authUser!.id, persist: true });
     const [recentReports, recentLogs, playbookCount] = await Promise.all([
       db.select().from(traderCoachReportsTable).where(eq(traderCoachReportsTable.userId, req.authUser!.id))
         .orderBy(desc(traderCoachReportsTable.createdAt)).limit(3),

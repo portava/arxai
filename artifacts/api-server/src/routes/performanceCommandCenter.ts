@@ -14,7 +14,6 @@ import { buildCommandCenter } from "../lib/performanceCC/commandCenter.js";
 import { rebuildSnapshots } from "../lib/performanceCC/rebuild.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
 import { requireUser } from "../lib/auth/middleware.js";
-import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 // T006 — mode-scope helper. Every aggregate below is computed from the
@@ -197,7 +196,7 @@ router.get("/performance/ai-command-center", async (req: Request, res: Response)
 // 10. POST /api/performance/rebuild
 router.post("/performance/rebuild", async (req: Request, res: Response) => {
   try {
-    const summary = await rebuildSnapshots(req.authUser!.id, canSeeLegacyRows(req.authUser), {
+    const summary = await rebuildSnapshots(req.authUser!.id, {
       info: (m, meta) => req.log.info(meta ?? {}, m),
       warn: (m, meta) => req.log.warn(meta ?? {}, m),
     });
@@ -211,7 +210,7 @@ router.post("/performance/rebuild", async (req: Request, res: Response) => {
 // 11. POST /api/performance/demo — rebuild + return calendar(current month) + cc.
 router.post("/performance/demo", async (req: Request, res: Response) => {
   try {
-    const rebuild = await rebuildSnapshots(req.authUser!.id, canSeeLegacyRows(req.authUser), {
+    const rebuild = await rebuildSnapshots(req.authUser!.id, {
       info: (m, meta) => req.log.info(meta ?? {}, m),
       warn: (m, meta) => req.log.warn(meta ?? {}, m),
     });

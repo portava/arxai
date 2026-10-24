@@ -16,11 +16,16 @@
 //   - weekly_performance_reviews is unique on (user_id, week_start): a legacy
 //     review for a week the user already has is left ownerless (with its goals)
 //     rather than overwriting the user's own review.
+//   - weekly_improvement_plans (user_id, week_start), performance_symbol_snapshots
+//     (user_id, symbol, range_key) and ai_performance_snapshots (user_id,
+//     range_key) got owners in Tier 1 step 10. A legacy row that would collide
+//     with one the user already owns is left ownerless, never overwritten.
 //   - All updates run in one transaction.
 //
-// RUN:
+// RUN (the owner is a deploy parameter — flag or ARX_LEGACY_OWNER_USER_ID):
 //   pnpm --filter @workspace/api-server run claim:legacy-behavior-rows -- --user-id 340
 //   pnpm --filter @workspace/api-server run claim:legacy-behavior-rows -- --user-id 340 --apply
+//   ARX_LEGACY_OWNER_USER_ID=340 pnpm --filter @workspace/api-server run claim:legacy-behavior-rows -- --apply
 
 import { eq, sql } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
@@ -48,7 +53,15 @@ const TABLES = [
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
 const userIdArg = args[args.indexOf("--user-id") + 1];
-const userId = args.includes("--user-id") ? Number(userIdArg) : NaN;
+const envOwner = process.env["ARX_LEGACY_OWNER_USER_ID"];
+const userId = args.includes("--user-id") ? Number(userIdArg) : envOwner ? Number(envOwner) : NaN;
+
+/** Tables with a per-owner unique key: claim a legacy row only when it does not collide. */
+export const KEYED_TABLES: ReadonlyArray<{ table: string; key: readonly string[] }> = [
+  { table: "weekly_improvement_plans", key: ["week_start"] },
+  { table: "performance_symbol_snapshots", key: ["symbol", "range_key"] },
+  { table: "ai_performance_snapshots", key: ["range_key"] },
+];
 
 async function countNull(table: string): Promise<number> {
   const r = await db.execute(sql.raw(`SELECT count(*)::int AS c FROM ${table} WHERE user_id IS NULL`));
@@ -57,7 +70,7 @@ async function countNull(table: string): Promise<number> {
 
 async function main(): Promise<void> {
   if (!Number.isInteger(userId) || userId <= 0) {
-    console.error("Usage: claimLegacyBehaviorRows --user-id <id> [--apply]");
+    console.error("Usage: claimLegacyBehaviorRows --user-id <id> [--apply]  (or set ARX_LEGACY_OWNER_USER_ID)");
     process.exit(2);
   }
   const [user] = await db.select({ id: usersTable.id, email: usersTable.email })
@@ -68,7 +81,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`${APPLY ? "APPLY" : "DRY-RUN"}: claim ownerless rows for user ${user.id} (${user.email})`);
-  for (const t of [...TABLES, "weekly_performance_reviews", "weekly_improvement_goals"]) {
+  for (const t of [...TABLES, "weekly_performance_reviews", "weekly_improvement_goals", ...KEYED_TABLES.map((k) => k.table)]) {
     console.log(`  ${t.padEnd(28)} ${await countNull(t)} ownerless`);
   }
   if (!APPLY) {
@@ -94,6 +107,14 @@ async function main(): Promise<void> {
       FROM weekly_performance_reviews r
       WHERE g.user_id IS NULL AND g.weekly_review_id = r.id AND r.user_id = ${userId}`);
     console.log(`  ${"weekly_improvement_goals".padEnd(28)} claimed ${goals.rowCount ?? 0}`);
+    for (const { table, key } of KEYED_TABLES) {
+      const same = key.map((c) => `o.${c} = r.${c}`).join(" AND ");
+      const r = await tx.execute(sql.raw(
+        `UPDATE ${table} r SET user_id = ${userId} WHERE r.user_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM ${table} o WHERE o.user_id = ${userId} AND ${same})`,
+      ));
+      console.log(`  ${table.padEnd(28)} claimed ${r.rowCount ?? 0}`);
+    }
   });
   console.log("Done.");
 }
