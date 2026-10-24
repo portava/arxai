@@ -10,7 +10,7 @@
 //   5. Records a paper_executions row keyed by decision_id (idempotent)
 //   6. Logs every step to paper_execution_logs
 //
-// The existing markToMarket() in routes/paperTrading.ts will pick up the new
+// The existing markToMarket() in lib/tradeEngine/paperVenue.ts will pick up the new
 // open paper order and trigger Build BB auto-debrief on close. EE's monitor
 // also closes orders independently using DD market data and triggers BB.
 

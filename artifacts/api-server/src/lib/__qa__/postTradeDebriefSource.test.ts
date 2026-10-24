@@ -11,7 +11,8 @@
 //   mounted routers still WRITE paper_orders —
 //       lib/paperExecution/paperExecutionService.ts
 //       routes/autoDebrief.ts
-//       routes/paperTrading.ts
+//       lib/tradeEngine/paperVenue.ts (PAPER mode of the Trade Engine
+//         pipeline, called by routes/paperTrading.ts)
 //   all reachable through routes/index.ts.
 //
 //   So autoDebriefService reads a table that is still actively fed. Debriefs
@@ -45,7 +46,7 @@ function read(rel: string): string {
 const WRITERS = [
   "artifacts/api-server/src/lib/paperExecution/paperExecutionService.ts",
   "artifacts/api-server/src/routes/autoDebrief.ts",
-  "artifacts/api-server/src/routes/paperTrading.ts",
+  "artifacts/api-server/src/lib/tradeEngine/paperVenue.ts",
 ];
 
 describe("G-FINISH — the debrief source is still fed", () => {

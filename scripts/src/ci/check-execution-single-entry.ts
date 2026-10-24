@@ -45,7 +45,7 @@ export const WRITERS: Record<string, Entry> = {
   "lib/mt5/demoCommandConsumer.ts": { role: "GOVERNED", proof: GOVERNOR, why: "demo consumer: governor before dispatch" },
   "lib/paperExecution/paperExecutionService.ts": { role: "GOVERNED", proof: GOVERNOR, why: "paper execution open" },
   "lib/paperExecution/paperExecutionMonitor.ts": { role: "GOVERNED", proof: GOVERNOR, why: "manual close governed; SL/TP hits are venue fills" },
-  "routes/paperTrading.ts": { role: "GOVERNED", proof: GOVERNOR, why: "paper ledger open/modify/close; SL/TP hits are venue fills" },
+  "lib/tradeEngine/paperVenue.ts": { role: "GOVERNED", proof: GOVERNOR, why: "PAPER mode of the Trade Engine pipeline: paper ledger open/modify/close; SL/TP hits are venue fills" },
   "routes/autoDebrief.ts": { role: "GOVERNED", proof: GOVERNOR, why: "operator QA fixture order" },
   "routes/meTrades.ts": { role: "GOVERNED", proof: GOVERNOR, why: "demo close" },
   "routes/mePaperTrades.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/riskGovernor/journal.ts", why: "paper journal open and stop/target edits; drafts, closes and cancels carry no new risk" },

@@ -241,6 +241,8 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:position-guardian-reconcile" },
   { pkg: "@workspace/api-server", script: "test:position-guardian-manage" },
   { pkg: "@workspace/api-server", script: "test:position-ledger" },
+  // Trade Engine: LIVE / DEMO / PAPER as modes of one pipeline (submitTrade).
+  { pkg: "@workspace/api-server", script: "test:trade-engine-pipeline" },
   { pkg: "@workspace/api-server", script: "test:oms-governance" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-per-user-limits" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-discipline" },
