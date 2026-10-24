@@ -99,6 +99,23 @@ fetch_200() {
   [[ "$code" == "200" ]] || fail "$url returned HTTP $code"
 }
 
+fetch_missing_asset() {
+  local url="$1"
+  local name="$2"
+  local code
+  code="$(curl --silent --show-error --location --connect-timeout 2 --max-time 10 \
+    --output "$TMP_DIR/$name.body" --dump-header "$TMP_DIR/$name.headers" \
+    --write-out '%{http_code}' "$url")" ||
+    fail "could not fetch $url"
+  [[ "$code" == "404" ]] || fail "$url returned HTTP $code instead of 404"
+  if grep -Eiq '^content-type:.*(javascript|ecmascript|text/css)' "$TMP_DIR/$name.headers"; then
+    fail "$url returned an asset content type for a missing file"
+  fi
+  if grep -Fq '<title>ARX AI' "$TMP_DIR/$name.body"; then
+    fail "$url returned the dashboard HTML fallback instead of a missing-file response"
+  fi
+}
+
 WEB_URL="http://127.0.0.1:$WEB_PORT"
 API_URL="http://127.0.0.1:$API_PORT"
 wait_for_http "$WEB_URL/" "web-ready"
@@ -128,6 +145,9 @@ if [[ -n "$CSS_ASSET" ]]; then
   [[ -s "$TMP_DIR/style-asset.body" ]] || fail "built stylesheet asset was empty"
 fi
 
+fetch_missing_asset "$WEB_URL/assets/__arx_missing_asset__.js" "missing-js-asset"
+fetch_missing_asset "$WEB_URL/assets/__arx_missing_asset__.css" "missing-css-asset"
+
 fetch_200 "$API_URL/api/healthz" "healthz"
 grep -Eiq '^content-type:.*application/json' "$TMP_DIR/healthz.headers" ||
   fail "/api/healthz did not return JSON"
@@ -136,4 +156,4 @@ grep -Eq '"app"[[:space:]]*:[[:space:]]*"ARX AI"' "$TMP_DIR/healthz.body" ||
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' "$TMP_DIR/healthz.body" ||
   fail "/api/healthz did not report a healthy service"
 
-printf 'ARX production smoke check passed: /, /login, built assets, separate /api/healthz\n'
+printf 'ARX production smoke check passed: /, /login, built/missing assets, separate /api/healthz\n'
