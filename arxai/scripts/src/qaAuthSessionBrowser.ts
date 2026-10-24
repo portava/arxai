@@ -5,8 +5,9 @@
  * reloads, opens /settings, verifies that server-side session revocation sends
  * the browser back to /login and clears private query data before a new sign-in,
  * then signs out and switches to the second account to verify private cached data
- * is refreshed rather than carried across accounts. The test never creates a
- * privileged user, provisions a broker, or invokes a broker connection endpoint.
+ * is refreshed rather than carried across accounts, including saved watchlists.
+ * The test never creates a privileged user, provisions a broker, or invokes a
+ * broker connection endpoint.
  */
 import { randomBytes, scryptSync } from "node:crypto";
 import type { Server } from "node:http";
@@ -92,6 +93,8 @@ async function main(): Promise<void> {
   const passwordB = `Session-B-${randomBytes(12).toString("hex")}`;
   const privateNameA = `QA User A ${fixtureSuffix.slice(0, 5)}`;
   const privateNameB = `QA User B ${fixtureSuffix.slice(0, 5)}`;
+  const watchlistNameA = `QA Watchlist A ${fixtureSuffix.slice(0, 5)}`;
+  const watchlistNameB = `QA Watchlist B ${fixtureSuffix.slice(0, 5)}`;
   const inserted = await pool.query<{ id: number; email: string }>(
     `INSERT INTO users (email, name, password_hash, role)
      VALUES ($1, 'QA Session User A', $2, 'USER'),
@@ -107,6 +110,24 @@ async function main(): Promise<void> {
      VALUES ($1, $2), ($3, $4)`,
     [userAId, privateNameA, userBId, privateNameB],
   );
+  await pool.query(
+    `INSERT INTO watchlists (user_id, name, category)
+     VALUES ($1, $2, 'Custom'), ($3, $4, 'Custom')`,
+    [userAId, watchlistNameA, userBId, watchlistNameB],
+  );
+  // Watchlists are an approved-trader route. Keep both accounts as ordinary
+  // USER roles, but give the isolated fixtures the minimal approval signal
+  // required to render that route; neither account is armed for execution.
+  await pool.query(
+    `INSERT INTO user_trading_permissions (user_id, account_routing_override)
+     VALUES ($1, 'shared_master_mt5'), ($2, 'shared_master_mt5')`,
+    [userAId, userBId],
+  );
+  await pool.query(
+    `INSERT INTO user_master_live_access (user_id, master_live_status)
+     VALUES ($1, 'APPROVED'), ($2, 'APPROVED')`,
+    [userAId, userBId],
+  );
 
   const originalEnv = new Map<string, string | undefined>();
   let apiServer: Server | undefined;
@@ -114,6 +135,7 @@ async function main(): Promise<void> {
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   let browserContext: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   let privateAssistantSettingsRequestCount = 0;
+  let watchlistsRequestCount = 0;
 
   for (const name of DISABLED_BROKER_ENV) {
     originalEnv.set(name, process.env[name]);
@@ -178,11 +200,16 @@ async function main(): Promise<void> {
       if (requestUrl.pathname === "/api/me/assistant-settings" && method === "GET") {
         privateAssistantSettingsRequestCount += 1;
       }
+      if (requestUrl.pathname === "/api/watchlists" && method === "GET") {
+        watchlistsRequestCount += 1;
+      }
       const allowedSessionRequest =
         (requestUrl.pathname === "/api/me" && method === "GET") ||
         (requestUrl.pathname === "/api/auth/login" && method === "POST") ||
         (requestUrl.pathname === "/api/auth/user-logout" && method === "POST") ||
-        (requestUrl.pathname === "/api/me/assistant-settings" && method === "GET");
+        (requestUrl.pathname === "/api/me/assistant-settings" && method === "GET") ||
+        (requestUrl.pathname === "/api/me/account-mode" && method === "GET") ||
+        (requestUrl.pathname === "/api/watchlists" && method === "GET");
       if (requestUrl.pathname.startsWith("/api/") && !allowedSessionRequest) {
         await route.abort("blockedbyclient");
         return;
@@ -308,6 +335,30 @@ async function main(): Promise<void> {
     assert(me.status === 200 && me.body?.user?.role === "USER", "A full browser refresh did not preserve the USER session.");
     console.log("PASS  full refresh preserves the standard-user session");
 
+    const userAWatchlistsResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/watchlists" &&
+        response.request().method() === "GET" &&
+        response.status() === 200,
+      { timeout: 15_000 },
+    );
+    await page.goto(`${uiOrigin}/watchlists`, { waitUntil: "domcontentloaded" });
+    const userAWatchlistsResponse = await userAWatchlistsResponsePromise;
+    const userAWatchlists = await userAWatchlistsResponse.json() as { name: string }[];
+    assert(
+      userAWatchlists.some((watchlist) => watchlist.name === watchlistNameA) &&
+        !userAWatchlists.some((watchlist) => watchlist.name === watchlistNameB),
+      "User A's watchlist API response did not contain only User A's isolated saved list.",
+    );
+    await page.getByRole("heading", { level: 3, name: watchlistNameA, exact: true }).waitFor({ timeout: 15_000 });
+    assert(
+      await page.getByRole("heading", { level: 3, name: watchlistNameB, exact: true }).count() === 0,
+      "User A's watchlist page displayed User B's saved list.",
+    );
+    const watchlistsRequestsBeforeAccountSwitch = watchlistsRequestCount;
+    assert(watchlistsRequestsBeforeAccountSwitch > 0, "User A's watchlist page did not fetch its saved lists.");
+    console.log("PASS  User A sees only User A's saved watchlist in the page and API response");
+
     await page.getByTestId("button-logout").click();
     await page.waitForURL((url) => url.pathname === "/login", { timeout: 30_000 });
     const signedOut = await fetchMe();
@@ -350,6 +401,45 @@ async function main(): Promise<void> {
     );
     console.log("PASS  signing in as User B fetches and displays B's private settings, not User A's cached response");
 
+    const userBWatchlistsResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/watchlists" &&
+        response.request().method() === "GET" &&
+        response.status() === 200,
+      { timeout: 15_000 },
+    );
+    await page.goto(`${uiOrigin}/watchlists`, { waitUntil: "domcontentloaded" });
+    const userBWatchlistsResponse = await userBWatchlistsResponsePromise;
+    const userBWatchlists = await userBWatchlistsResponse.json() as { name: string }[];
+    assert(
+      userBWatchlists.some((watchlist) => watchlist.name === watchlistNameB) &&
+        !userBWatchlists.some((watchlist) => watchlist.name === watchlistNameA),
+      "User B's fresh watchlist API response did not contain only User B's isolated saved list.",
+    );
+    await page.getByRole("heading", { level: 3, name: watchlistNameB, exact: true }).waitFor({ timeout: 15_000 });
+    assert(
+      await page.getByRole("heading", { level: 3, name: watchlistNameA, exact: true }).count() === 0,
+      "User A's cached saved watchlist remained visible after User B signed in.",
+    );
+    assert(
+      watchlistsRequestCount > watchlistsRequestsBeforeAccountSwitch,
+      "User B did not trigger a fresh watchlist request after User A signed out.",
+    );
+    const freshUserBWatchlists = await page.evaluate(async () => {
+      const response = await fetch("/api/watchlists", { credentials: "include" });
+      return {
+        status: response.status,
+        body: await response.json().catch(() => null) as { name: string }[] | null,
+      };
+    });
+    assert(freshUserBWatchlists.status === 200, `Expected User B's fresh /api/watchlists request to return 200, got ${freshUserBWatchlists.status}.`);
+    assert(
+      freshUserBWatchlists.body?.some((watchlist) => watchlist.name === watchlistNameB) &&
+        !freshUserBWatchlists.body?.some((watchlist) => watchlist.name === watchlistNameA),
+      "A fresh /api/watchlists response after the account switch did not contain only User B's saved list.",
+    );
+    console.log("PASS  User B sees only User B's saved watchlist in the page and fresh API responses");
+
     assert(externalBrowserRequests.length === 0, "The test attempted an external browser connection.");
   } finally {
     await browserContext?.close().catch(() => {});
@@ -362,6 +452,13 @@ async function main(): Promise<void> {
     }
     for (const userId of [userAId, userBId]) {
       await pool.query(`DELETE FROM auth_user_sessions WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(
+        `DELETE FROM watchlist_items
+         WHERE watchlist_id IN (SELECT id FROM watchlists WHERE user_id = $1)`,
+        [userId],
+      ).catch(() => {});
+      await pool.query(`DELETE FROM watchlists WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM user_trading_permissions WHERE user_id = $1`, [userId]).catch(() => {});
       await pool.query(`DELETE FROM user_activity_events WHERE user_id = $1`, [userId]).catch(() => {});
       await pool.query(`DELETE FROM user_master_live_access WHERE user_id = $1`, [userId]).catch(() => {});
       await pool.query(`DELETE FROM user_one_click_settings WHERE user_id = $1`, [userId]).catch(() => {});

@@ -7,4 +7,4 @@ Financial tests should create dedicated users and pools and clean up only those 
 
 **Why:** A fresh development schema may have no canonical pools or low-numbered users. Reusing shared financial records also risks contaminating balances and append-only ledgers when a test crashes.
 
-**How to apply:** Give new database-backed financial checks explicit fixture ownership, zero-capital starting state, and cleanup in `finally`. Keep risk thresholds and no-live-command assertions intact; never seed live access just to satisfy a foreign key.
+**How to apply:** Give new database-backed financial checks explicit fixture ownership, zero-capital starting state, and cleanup in `finally`. Keep risk thresholds and no-live-command assertions intact; never seed live access just to satisfy a foreign key. For browser checks of approved-only routes, keep fixtures at role `USER`, seed only the route-approval signal they need, and leave execution disabled.
