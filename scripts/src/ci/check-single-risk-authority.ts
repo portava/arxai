@@ -41,7 +41,7 @@ const VERDICT_EXPORT = /export\s+(async\s+)?function\s+(\w*preTradeCheck\w*|\w*[
 /** Order-path files: they create, change or route orders, so only the governor may decide there. */
 export const ORDER_PATH_PREFIXES = [
   "lib/oms.ts", "lib/tradeAction/", "lib/live/", "lib/mt5/", "lib/paperExecution/", "lib/paperAutopilot/",
-  "lib/adminTrading/", "lib/selfTrade/", "lib/missionExecution.ts", "routes/paperTrading.ts", "routes/mePaperTrades.ts",
+  "lib/adminTrading/", "lib/selfTrade/", "lib/missionExecution.ts", "routes/paperTrading.ts", "routes/mePaperTrades.ts", "lib/tradeEngine/",
   "routes/demoExecution.ts", "routes/meTrades.ts", "routes/tradeAction.ts",
 ];
 

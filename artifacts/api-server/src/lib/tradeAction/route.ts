@@ -1,6 +1,8 @@
 // Trade Action Center → the one governed pipeline (Tier 1 Trade Engine).
 //
-// A confirmed action becomes a command in its venue's governed queue:
+// A confirmed action is submitted to lib/tradeEngine/pipeline.ts
+// (submitTrade, mode DEMO or LIVE), which hands it to its venue's governed
+// queue:
 //   DEMO OPEN   → demoCommandQueue draft → confirm → dispatch
 //   LIVE OPEN   → liveCommandPipeline createLiveDraft → confirm → dispatch
 //                 (per-user arming, kill switch, the Risk Governor, the
@@ -20,6 +22,7 @@ import { and, eq } from "drizzle-orm";
 import { db, sharedTradeAttributionTable } from "@workspace/db";
 import { isOrderType, isPendingOrder, directionOf } from "./orderTypes.js";
 import type { ActionType } from "./types.js";
+import { submitTrade } from "../tradeEngine/pipeline.js";
 
 export const TRADE_ACTION_SOURCE = "TRADE_ACTION_CENTER";
 export const TRADE_ACTION_RUBY_SOURCE = "TRADE_ACTION_RUBY";
@@ -95,51 +98,21 @@ async function routeOpen(a: RoutableAction, venue: "DEMO" | "LIVE"): Promise<Rou
   }
   const sourcePage = sourceFor(a);
 
-  if (venue === "DEMO") {
-    const queue = await import("../mt5/demoCommandQueue.js");
-    const draft = await queue.createDraftCommand({
-      userId: a.userId, commandType: pending ? "PLACE_PENDING_ORDER" : "PLACE_MARKET_ORDER",
-      payload: {
-        symbol: a.symbol, side, lotSize: a.lotSize, stopLoss: a.stopLoss, takeProfit: a.takeProfit, sourcePage,
-        ...(pending ? { orderType, price: a.requestedPrice } : {}),
-      },
-    });
-    if (!draft.ok || !draft.command) return { ok: false, venue, commandId: null, reason: draft.reason ?? "DRAFT_REFUSED" };
-    const commandId = draft.command.commandId;
-    const confirmed = await queue.confirmCommand({ userId: a.userId, commandId });
-    if (!confirmed.ok) return { ok: false, venue, commandId, reason: confirmed.reason ?? "CONFIRM_REFUSED" };
-    if (confirmed.command?.status === "SENT_TO_MT5_DEMO") return { ok: true, venue, commandId, sent: true };
-    const sent = await queue.dispatchApprovedCommand({ userId: a.userId, commandId });
-    return sent.ok && sent.command?.status === "SENT_TO_MT5_DEMO"
-      ? { ok: true, venue, commandId, sent: true }
-      : { ok: false, venue, commandId, reason: sent.reason ?? sent.command?.status ?? "DISPATCH_REFUSED" };
-  }
-
   // A shared-master live entry needs its virtual-account attribution written
   // before dispatch; only the shared live ticket (tradesLiveShared) does that.
-  if (await sharedMasterRouting()) {
+  if (venue === "LIVE" && await sharedMasterRouting()) {
     return { ok: false, venue, commandId: null, reason: "SHARED_LIVE_ORDERS_USE_THE_SHARED_LIVE_TICKET" };
   }
-  const pipe = await import("../live/liveCommandPipeline.js");
-  const draft = await pipe.createLiveDraft({
-    userId: a.userId,
-    commandType: pending ? "PLACE_LIVE_PENDING_ORDER" : "PLACE_LIVE_MARKET_ORDER",
-    symbol: a.symbol, side,
-    orderType: orderType ?? (side === "SELL" ? "MARKET_SELL" : "MARKET_BUY"),
-    requestedVolume: a.lotSize,
-    stopLoss: a.stopLoss, takeProfit: a.takeProfit,
-    sourcePage,
-    payload: pending ? { price: a.requestedPrice } : {},
+  const r = await submitTrade({
+    mode: venue, intent: "OPEN", userId: a.userId,
+    symbol: a.symbol, side, lots: a.lotSize,
+    pending: pending ? { orderType: orderType!, price: a.requestedPrice! } : null,
+    orderType,
+    stopLoss: a.stopLoss, takeProfit: a.takeProfit, sourcePage,
   });
-  if (!draft.ok) return { ok: false, venue, commandId: null, reason: draft.reason };
-  const commandId = draft.command.commandId;
-  const confirmed = await pipe.confirmLiveCommand({ userId: a.userId, commandId });
-  if (!confirmed.ok) return { ok: false, venue, commandId, reason: confirmed.reason };
-  const sent = await pipe.dispatchLiveCommand({ userId: a.userId, commandId });
-  const status = (sent as { command?: { status?: string } }).command?.status ?? null;
-  return sent.ok && status !== "LIVE_BLOCKED"
-    ? { ok: true, venue, commandId, sent: true }
-    : { ok: false, venue, commandId, reason: (sent as { reason?: string }).reason ?? status ?? "DISPATCH_REFUSED" };
+  return r.ok
+    ? { ok: true, venue, commandId: r.commandId, sent: r.sent }
+    : { ok: false, venue, commandId: r.commandId, reason: r.reason };
 }
 
 async function sharedMasterRouting(): Promise<boolean> {
@@ -151,19 +124,18 @@ async function sharedMasterRouting(): Promise<boolean> {
 async function routePositionOp(a: RoutableAction, venue: "DEMO" | "LIVE"): Promise<RouteResult> {
   const ref = await tradeRefFor(a.userId, a.tradeKey);
   if (!ref) return { ok: false, venue, commandId: null, reason: "TRADE_NOT_FOUND" };
-  const ticket = ref.ticket;
-  const ops = await import("../positions/governedOps.js");
   const partial = a.actionType === "PARTIAL_CLOSE" && a.lotSize != null && a.lotSize > 0 ? a.lotSize : null;
-  const pos = await ops.findGovernedPosition(a.userId, ticket, partial);
-  if (!pos) return { ok: false, venue, commandId: null, reason: "NOT_AN_ARX_GOVERNED_POSITION" };
-  if (pos.venue !== venue) return { ok: false, venue, commandId: null, reason: `POSITION_IS_${pos.venue}` };
+  const target = { ticket: ref.ticket, lots: partial };
   const sourcePage = sourceFor(a);
   const r = a.actionType === "CLOSE" || a.actionType === "PARTIAL_CLOSE"
-    ? await ops.submitGovernedClose(a.userId, pos, sourcePage)
+    ? await submitTrade({ mode: venue, intent: "CLOSE", userId: a.userId, target, sourcePage })
     // A field the action leaves empty keeps its current value (a stop move
     // never drops the target); the Risk Governor decides whether it may move.
-    : await ops.submitGovernedModify(a.userId, pos, a.stopLoss ?? ref.stopLoss,
-      a.actionType === "MODIFY_TP_SL" ? a.takeProfit ?? ref.takeProfit : ref.takeProfit, sourcePage);
+    : await submitTrade({
+      mode: venue, intent: "MODIFY", userId: a.userId, target, sourcePage,
+      stopLoss: a.stopLoss ?? ref.stopLoss,
+      takeProfit: a.actionType === "MODIFY_TP_SL" ? a.takeProfit ?? ref.takeProfit : ref.takeProfit,
+    });
   return r.ok
     ? { ok: true, venue, commandId: r.commandId, sent: true }
     : { ok: false, venue, commandId: r.commandId, reason: r.reason ?? "REFUSED" };

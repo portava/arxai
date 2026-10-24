@@ -13,7 +13,8 @@
 //   - REMOVE_STOP_LOSS requires explicit `confirm: true` body field.
 //   - MANUAL_CLOSE     requires explicit `confirm: true` body field.
 //   - Stop / target edits and closes go to the broker through the venue's
-//     governed queue (lib/positions/governedOps.ts); these routes never edit
+//     governed queue (lib/tradeEngine/pipeline.ts submitTrade → the venue's
+//     governedOps path); these routes never edit
 //     the ledger to pretend the broker already did it.
 
 import { demoPositionWriter, demoPositionLedger, demoPositionColumns, type DemoPositionRow } from "../lib/positions/ledger.js";
@@ -29,11 +30,9 @@ import {
 import { requireUser } from "../lib/auth/middleware.js";
 import {
   findGovernedPosition,
-  submitGovernedClose,
-  submitGovernedModify,
-  type GovernedOpResult,
   type GovernedPosition,
 } from "../lib/positions/governedOps.js";
+import { submitTrade, type TradeResult } from "../lib/tradeEngine/pipeline.js";
 import { canSeeLegacyRows, ownerScope } from "../lib/auth/ownerScope.js";
 import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
@@ -81,7 +80,7 @@ function notGoverned(res: import("express").Response, row: DemoPositionRow): voi
   });
 }
 
-function refused(res: import("express").Response, op: GovernedOpResult): void {
+function refused(res: import("express").Response, op: Extract<TradeResult, { ok: false }>): void {
   res.status(422).json({ error: op.reason ?? "Refused", code: "GOVERNED_QUEUE_REFUSED", commandId: op.commandId });
 }
 
@@ -380,7 +379,8 @@ router.patch("/positions/:id/stop-loss", requireUser, async (req, res): Promise<
     // edited here; the broker result and the next snapshot move it.
     const pos = await governedPositionFor(row, req.authUser!.id);
     if (!pos) { notGoverned(res, row); return; }
-    const op = await submitGovernedModify(req.authUser!.id, pos, body.stopLoss ?? null, row.takeProfit ?? null, POSITIONS_PAGE_SOURCE);
+    const op = await submitTrade({ mode: pos.venue, intent: "MODIFY", userId: req.authUser!.id, target: { position: pos },
+      stopLoss: body.stopLoss ?? null, takeProfit: row.takeProfit ?? null, sourcePage: POSITIONS_PAGE_SOURCE });
     if (!op.ok) { refused(res, op); return; }
     await appendEvent({ livePositionId: id,
       eventType: body.stopLoss == null ? "SL_REMOVE_REQUESTED" : "SL_MOVE_REQUESTED",
@@ -409,7 +409,8 @@ router.patch("/positions/:id/take-profit", requireUser, async (req, res): Promis
 
     const pos = await governedPositionFor(row, req.authUser!.id);
     if (!pos) { notGoverned(res, row); return; }
-    const op = await submitGovernedModify(req.authUser!.id, pos, row.stopLoss ?? null, body.takeProfit ?? null, POSITIONS_PAGE_SOURCE);
+    const op = await submitTrade({ mode: pos.venue, intent: "MODIFY", userId: req.authUser!.id, target: { position: pos },
+      stopLoss: row.stopLoss ?? null, takeProfit: body.takeProfit ?? null, sourcePage: POSITIONS_PAGE_SOURCE });
     if (!op.ok) { refused(res, op); return; }
     await appendEvent({ livePositionId: id, eventType: "TP_MOVE_REQUESTED", severity: "INFO",
       message: `Trader asked the broker to move TP ${row.takeProfit} → ${body.takeProfit}`,
@@ -462,7 +463,8 @@ router.post("/positions/:id/close", requireUser, async (req, res): Promise<void>
     // Guardian) until the broker confirms the close; P/L comes from the fill.
     const pos = await governedPositionFor(row, req.authUser!.id);
     if (!pos) { notGoverned(res, row); return; }
-    const op = await submitGovernedClose(req.authUser!.id, pos, POSITIONS_PAGE_SOURCE);
+    const op = await submitTrade({ mode: pos.venue, intent: "CLOSE", userId: req.authUser!.id, target: { position: pos },
+      sourcePage: POSITIONS_PAGE_SOURCE });
     if (!op.ok) { refused(res, op); return; }
     await appendEvent({ livePositionId: id, eventType: "CLOSE_REQUESTED", severity: "WARN",
       message: `Trader asked the broker to close the position: ${body.reason ?? "no reason given"}`,

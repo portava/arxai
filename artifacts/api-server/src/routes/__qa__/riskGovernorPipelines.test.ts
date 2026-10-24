@@ -326,8 +326,9 @@ test("Position Guardian: live, demo and trade-action modifies hand the governor 
   assert.match(read("../../lib/live/liveCommandPipeline.ts"), /position: rgPosition/);
   assert.match(read("../../lib/mt5/demoCommandConsumer.ts"), /intentRef: `demo_command:\$\{row\.commandId\}`,\s*position,/);
   assert.match(read("../../lib/tradeAction/guards.ts"), /position: trade\s*\?/);
-  assert.match(read("../paperTrading.ts"), /action: "MODIFY"/);
-  assert.match(read("../livePositions.ts"), /submitGovernedModify\(/);
+  assert.match(read("../../lib/tradeEngine/paperVenue.ts"), /action: "MODIFY"/);
+  assert.match(read("../livePositions.ts"), /submitTrade\(\{ mode: pos\.venue, intent: "MODIFY"/);
+  assert.match(read("../../lib/tradeEngine/pipeline.ts"), /submitGovernedModify\(/);
   assert.match(read("../../lib/positions/governedOps.ts"), /createLiveOpsDraft\(/);
 });
 
@@ -572,7 +573,7 @@ test("D live dispatch and the demo MT5 queue call the governor before their send
   assert.match(read("../demoExecution.ts"), /routeConfirmedAction\(\{[\s\S]{0,120}requestedMode: "DEMO"/, "the demo panel queues through the governed demo pipeline");
   assert.doesNotMatch(read("../demoExecution.ts"), /mt5CommandsTable/, "the demo panel no longer writes the legacy mailbox");
   assert.doesNotMatch(read("../../lib/adminTrading/brokerPlacement.ts"), /mt5CommandsTable/, "placement keeps no dormant mailbox writer");
-  for (const rel of ["../paperTrading.ts", "../../lib/adminTrading/orderGuard.ts",
+  for (const rel of ["../../lib/tradeEngine/paperVenue.ts", "../../lib/adminTrading/orderGuard.ts",
     "../../lib/paperExecution/paperExecutionService.ts", "../../lib/tradeAction/riskGovernorEnforcement.ts"]) {
     assert.match(read(rel), /enforcePreTradeRisk\(/, `${rel} calls the governor`);
   }
