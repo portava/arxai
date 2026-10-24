@@ -36,6 +36,7 @@ import {
   globalTradingSettingsTable,
   livePositionsTable,
   mt5CommandsTable,
+  mt5DemoCommandsTable,
   mt5ConnectionTable,
   notificationsTable,
   paperAccountsTable,
@@ -286,26 +287,35 @@ test("Position Guardian (paper): a stop tightens freely; widening past the per-t
   }
 });
 
-test("Position Guardian (demo positions): removing a stop or widening it past the limit is refused; tightening goes through", async () => {
+test("demo positions page: stop edits go to the governed queue; nothing edits the ledger directly", async () => {
   await seedBridge(u.a);
   const [pos] = await db.insert(livePositionsTable).values({
     userId: u.a, symbol: SYMBOL, direction: "BUY", lotSize: 0.1, entryPrice: 1.1, stopLoss: 1.0951, status: "OPEN",
+    brokerPositionId: "qa-rg-pos-1",
   }).returning({ id: livePositionsTable.id });
   try {
     await withSingleton("platform", false, async () => {
-      const removed = await request("PATCH", `/positions/${pos!.id}/stop-loss`, c.a, { stopLoss: null, removeConfirmed: true });
-      assert.equal(removed.status, 422);
-      assert.deepEqual((await removed.json() as { blockedBy: string[] }).blockedBy, ["stop_loss_required"]);
-      // 1.0850 puts $150 at risk against the $100 per-trade limit.
-      const widened = await request("PATCH", `/positions/${pos!.id}/stop-loss`, c.a, { stopLoss: 1.085 });
-      assert.equal(widened.status, 422);
-      assert.deepEqual((await widened.json() as { blockedBy: string[] }).blockedBy, ["per_trade_loss_limit"]);
+      // Not opened by ARX: refused, never "moved" in the ledger.
+      const foreign = await request("PATCH", `/positions/${pos!.id}/stop-loss`, c.a, { stopLoss: 1.098 });
+      assert.equal(foreign.status, 409);
+      assert.equal((await foreign.json() as { error: string }).error, "NOT_AN_ARX_GOVERNED_POSITION");
+
+      // Governed (ARX filled it): the edit is handed to the demo queue, whose
+      // own gates and Risk Governor decide; the ledger still is not edited.
+      await db.insert(mt5DemoCommandsTable).values({
+        commandId: "qa_rg_demo_open_1", userId: u.a, bridgeConnectionId: 1, commandType: "PLACE_MARKET_ORDER",
+        payload: { symbol: SYMBOL, side: "BUY", lotSize: 0.1, stopLoss: 1.0951 }, status: "FILLED_DEMO",
+        safetyGateSnapshot: {}, brokerTicket: "qa-rg-pos-1", fillVolume: 0.1, filledAt: new Date(),
+      });
+      const governed = await request("PATCH", `/positions/${pos!.id}/stop-loss`, c.a, { stopLoss: 1.085 });
+      const body = await governed.json() as { code?: string; pending?: { venue: string } };
+      assert.ok(governed.status === 422 ? body.code === "GOVERNED_QUEUE_REFUSED" : body.pending?.venue === "DEMO",
+        `handed to the governed demo queue: ${JSON.stringify(body)}`);
       const [still] = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, pos!.id));
-      assert.equal(still!.stopLoss, 1.0951, "refused changes leave the stop where it was");
-      const tightened = await request("PATCH", `/positions/${pos!.id}/stop-loss`, c.a, { stopLoss: 1.098 });
-      assert.equal(tightened.status, 200, await tightened.clone().text());
+      assert.equal(still!.stopLoss, 1.0951, "the route never edits the ledger to pretend the broker moved the stop");
     });
   } finally {
+    await db.delete(mt5DemoCommandsTable).where(eq(mt5DemoCommandsTable.userId, u.a));
     await db.delete(positionEventsTable).where(eq(positionEventsTable.livePositionId, pos!.id));
     await db.delete(livePositionsTable).where(eq(livePositionsTable.id, pos!.id));
   }
@@ -317,7 +327,8 @@ test("Position Guardian: live, demo and trade-action modifies hand the governor 
   assert.match(read("../../lib/mt5/demoCommandConsumer.ts"), /intentRef: `demo_command:\$\{row\.commandId\}`,\s*position,/);
   assert.match(read("../../lib/tradeAction/guards.ts"), /position: trade\s*\?/);
   assert.match(read("../paperTrading.ts"), /action: "MODIFY"/);
-  assert.match(read("../livePositions.ts"), /action: "MODIFY"/);
+  assert.match(read("../livePositions.ts"), /submitGovernedModify\(/);
+  assert.match(read("../../lib/positions/governedOps.ts"), /createLiveOpsDraft\(/);
 });
 
 test("B demo Ruby: a Ruby-suggested draft with no stop is rejected at confirm and audited as origin ruby", async () => {

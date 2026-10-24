@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:pnl-cell": "vitest run src/components/trade-logs/PnlCell.test.tsx",
+    "test:risk-limit-layers": "vitest run src/components/risk/RiskLimitLayersPanel.test.tsx",
     "test:approval-path": "vitest run src/lib/approvalPath.test.ts src/components/dashboard/cockpit/ApprovalPathCard.test.tsx",
     "test:allocation-view-card": "vitest run src/components/sharedAccount/SharedAccountCard.allocationView.test.tsx",
     "test:mission-warroom": "vitest run src/pages/profit-missions.warroom.test.tsx",

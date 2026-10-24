@@ -13,6 +13,8 @@ import { requireUser } from "../lib/auth/middleware.js";
 import { aggregateHistory, DEFAULT_USER_RISK_SETTINGS } from "../lib/riskGovernor/journalActivity.js";
 import { parseSymbolLimits } from "../lib/riskGovernor/preTrade.js";
 import { previewJournalTicket } from "../lib/riskGovernor/journal.js";
+import { loadStoredLimitRows } from "../lib/riskGovernor/enforce.js";
+import { explainLimitLayers } from "../lib/riskGovernor/limitLayers.js";
 
 const router = Router();
 
@@ -54,6 +56,23 @@ router.patch("/me/risk-settings", requireUser, async (req, res) => {
     .where(eq(userRiskSettingsTable.userId, userId)).returning();
   res.json(withSafetyContract(u[0]!));
 });
+// Limits in force, layer by layer: platform ceiling, the operator's account
+// limits for this trader, the trader's own settings, and the effective value
+// the Risk Governor uses (strictest wins). Read-only.
+router.get("/me/risk-limits/layers", requireUser, async (req, res) => {
+  const { rows, limits } = explainLimitLayers(await loadStoredLimitRows(req.authUser!.id));
+  res.json({
+    rule: "strictest_wins",
+    rows,
+    restrictions: {
+      requireStopLoss: limits.requireStopLoss,
+      liveAllowed: limits.liveAllowed,
+      allowedSymbols: limits.allowedSymbols,
+      allowedDirection: limits.allowedDirection,
+    },
+  });
+});
+
 router.post("/me/risk-settings/reset-defaults", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   await getOrCreateRiskSettings(userId);

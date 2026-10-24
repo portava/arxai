@@ -135,8 +135,10 @@ export async function createDraftCommand(args: DraftCommandArgs): Promise<QueueO
   }
 
   // MASTER_ACCOUNT_EXPOSURE guard (M06) — only relevant when routing
-  // through the shared master bridge.
-  if (routedViaMaster && probeGate.routing.sharedMasterAccountId) {
+  // through the shared master bridge, and only for an entry: a close or a
+  // stop/target change adds no exposure and must never be refused by the cap.
+  const addsExposure = args.commandType === "PLACE_MARKET_ORDER" || args.commandType === "PLACE_PENDING_ORDER";
+  if (addsExposure && routedViaMaster && probeGate.routing.sharedMasterAccountId) {
     const lotRaw = (args.payload as Record<string, unknown>)?.["lotSize"];
     const addingLot = typeof lotRaw === "number"
       ? lotRaw

@@ -228,36 +228,11 @@ export type CorrectionSubmitter = (venue: GuardianVenue, userId: number, g: Gove
   takeProfit: number | null) => Promise<CorrectionResult>;
 
 export const submitGovernedStop: CorrectionSubmitter = async (venue, userId, g, stopLoss, takeProfit) => {
-  if (venue === "LIVE") {
-    const pipe = await import("../live/liveCommandPipeline.js");
-    const draft = await pipe.createLiveOpsDraft({
-      userId, commandType: "MODIFY_LIVE_SLTP", brokerTicket: g.ticket, symbol: g.symbol, side: g.side,
-      volume: g.lots, newStopLoss: stopLoss, newTakeProfit: takeProfit, sourcePage: GUARDIAN_SOURCE,
-    });
-    if (!draft.ok) return { ok: false, commandId: null, reason: draft.reason };
-    const commandId = draft.command.commandId;
-    const confirmed = await pipe.confirmLiveCommand({ userId, commandId });
-    if (!confirmed.ok) return { ok: false, commandId, reason: confirmed.reason };
-    const sent = await pipe.dispatchLiveCommand({ userId, commandId });
-    const status = (sent as { command?: { status?: string } }).command?.status ?? null;
-    return sent.ok && status !== "LIVE_BLOCKED"
-      ? { ok: true, commandId, reason: null }
-      : { ok: false, commandId, reason: (sent as { reason?: string }).reason ?? status ?? "DISPATCH_REFUSED" };
-  }
-  const queue = await import("../mt5/demoCommandQueue.js");
-  const draft = await queue.createDraftCommand({
-    userId, commandType: "MODIFY_SLTP",
-    payload: { symbol: g.symbol, side: g.side, ticket: g.ticket, lotSize: g.lots, stopLoss, takeProfit, sourcePage: GUARDIAN_SOURCE },
-  });
-  if (!draft.ok || !draft.command) return { ok: false, commandId: null, reason: draft.reason ?? "DRAFT_REFUSED" };
-  const commandId = draft.command.commandId;
-  const confirmed = await queue.confirmCommand({ userId, commandId });
-  if (!confirmed.ok) return { ok: false, commandId, reason: confirmed.reason ?? "CONFIRM_REFUSED" };
-  if (confirmed.command?.status === "SENT_TO_MT5_DEMO") return { ok: true, commandId, reason: null };
-  const sent = await queue.dispatchApprovedCommand({ userId, commandId });
-  return sent.ok && sent.command?.status === "SENT_TO_MT5_DEMO"
-    ? { ok: true, commandId, reason: null }
-    : { ok: false, commandId, reason: sent.reason ?? sent.command?.status ?? "DISPATCH_REFUSED" };
+  // The one governed modify path (lib/positions/governedOps.ts); the Guardian
+  // source makes the origin automation, so the Risk Governor only lets it tighten.
+  const { submitGovernedModify } = await import("../positions/governedOps.js");
+  return submitGovernedModify(userId, { venue, ticket: g.ticket, symbol: g.symbol, side: g.side, lots: g.lots },
+    stopLoss, takeProfit, GUARDIAN_SOURCE);
 };
 
 // ── Audit ───────────────────────────────────────────────────────────────────
