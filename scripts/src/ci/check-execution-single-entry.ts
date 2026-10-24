@@ -43,10 +43,10 @@ export const WRITERS: Record<string, Entry> = {
   "lib/live/liveCommandPipeline.ts": { role: "GOVERNED", proof: GOVERNOR, why: "live drafts; dispatchLiveCommand pre-gate, then the EA bridge mirror" },
   "lib/mt5/demoCommandQueue.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/mt5/demoCommandConsumer.ts", why: "demo drafts; governed when consumed" },
   "lib/mt5/demoCommandConsumer.ts": { role: "GOVERNED", proof: GOVERNOR, why: "demo consumer: governor before dispatch" },
-  "lib/paperExecution/paperExecutionService.ts": { role: "GOVERNED", proof: GOVERNOR, why: "paper execution open" },
-  "lib/paperExecution/paperExecutionMonitor.ts": { role: "GOVERNED", proof: GOVERNOR, why: "manual close governed; SL/TP hits are venue fills" },
-  "lib/tradeEngine/paperVenue.ts": { role: "GOVERNED", proof: GOVERNOR, why: "PAPER mode of the Trade Engine pipeline: paper ledger open/modify/close; SL/TP hits are venue fills" },
-  "routes/autoDebrief.ts": { role: "GOVERNED", proof: GOVERNOR, why: "operator QA fixture order" },
+  // The one paper book: the trader's ticket (pipeline PAPER mode), the Build EE
+  // autopilot open/close, the monitor's SL/TP settlement and the operator QA
+  // fixture all book paper_orders here (check-single-paper-book).
+  "lib/tradeEngine/paperVenue.ts": { role: "GOVERNED", proof: GOVERNOR, why: "the one paper book: open/modify/close and caller-priced fills governed; SL/TP hits are venue fills" },
   "routes/meTrades.ts": { role: "GOVERNED", proof: GOVERNOR, why: "demo close" },
   "routes/mePaperTrades.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/riskGovernor/journal.ts", why: "paper journal open and stop/target edits; drafts, closes and cancels carry no new risk" },
   // LIFECYCLE

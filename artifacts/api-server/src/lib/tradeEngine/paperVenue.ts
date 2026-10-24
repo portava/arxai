@@ -9,6 +9,24 @@
 //
 // The logic is moved, not changed: the same geometry checks, the same
 // governor intents, the same writes, events, vault rows and auto-debrief.
+//
+// One paper book (docs/TIER1_PAPER_BOOK.md): this module is the ONLY writer
+// of paper_orders and paper_trade_events. The trader's ticket (via
+// submitTrade), the Build EE autopilot and monitor, and the operator
+// auto-debrief fixture all book through the functions below:
+//
+//   openPaperOrder / modifyPaperOrder / closePaperOrder — the trader's
+//     ticket, reached only through lib/tradeEngine/pipeline.ts.
+//   openPaperFill   — an order filled at a price the caller priced (Build EE
+//     market-data fill, the QA fixture). Risk Governor OPEN, venue PAPER.
+//   closePaperFill  — Build EE manual close at a caller-priced exit. Risk
+//     Governor CLOSE, venue PAPER.
+//   settlePaperOrder — the venue's own exit fill (stop or target hit, the QA
+//     fixture's forced result). Not a new order, so not re-governed — the
+//     same rule markToMarket has always applied.
+//   voidPaperOrder  — rolls back an order this venue booked a moment ago
+//     when its caller lost an idempotency race (status CANCELLED).
+// check-single-paper-book holds the line.
 
 import {
   db, paperAccountsTable, paperOrdersTable, paperTradeEventsTable, vaultEventsTable,
@@ -16,7 +34,8 @@ import {
 import { and, eq, isNull } from "drizzle-orm";
 import { generateDeterministicCandles } from "../backtestStrategyRegistry.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
-import { enforcePreTradeRisk } from "../riskGovernor/enforce.js";
+import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce.js";
+import type { IntentOrigin, RiskQuote } from "../riskGovernor/preTrade.js";
 
 export const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
 
@@ -55,7 +74,7 @@ async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
   }).catch(() => { /* non-fatal */ });
 }
 
-async function logEvent(userId: number, orderId: number, eventType: string, message: string) {
+async function logEvent(userId: number | null, orderId: number, eventType: string, message: string) {
   await db.insert(paperTradeEventsTable).values({
     userId, paperOrderId: orderId, eventType, message,
   }).catch(() => { /* non-fatal */ });
@@ -141,11 +160,10 @@ export async function markToMarket(accountId: number) {
       const exitPx = hit === "SL" ? o.stopLoss : o.takeProfit;
       const pnl = pnlFor(o.direction, o.lotSize, o.entryPrice, exitPx);
       const status = hit === "SL" ? "CLOSED_SL" : "CLOSED_TP";
-      await db.update(paperOrdersTable).set({
-        status, closedAt: new Date(), exitPrice: exitPx,
-        profitLoss: pnl, updatedAt: new Date(),
-      }).where(eq(paperOrdersTable.id, o.id));
-      if (o.userId != null) await logEvent(o.userId, o.id, status, `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
+      await settlePaperOrder({
+        order: o, status, exitPrice: exitPx, pnl,
+        eventMessage: o.userId != null ? `${SIMULATED_TAG} ${hit} hit at ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}` : null,
+      });
       // (BB) Closed-loop auto-debrief on SL/TP close. Best-effort, idempotent.
       runAutoDebrief(o.id, { triggeredBy: "mark_to_market" })
         .catch(() => { /* non-fatal: never break mark-to-market */ });
@@ -281,4 +299,131 @@ export async function closePaperOrder(a: { userId: number; orderId: number; call
   runAutoDebrief(a.orderId, { triggeredBy: "manual_close" })
     .catch(() => { /* non-fatal */ });
   return { ok: true, order: await ownPaperOrder(a.orderId, a.userId) };
+}
+
+// ── Caller-priced fills (Build EE autopilot and monitor, operator QA fixture) ──
+
+export type PaperFillBlocked = { ok: false; reason: "RISK_GOVERNOR_BLOCK"; risk: EnforceResult };
+export type PaperFillRefusal =
+  | { ok: false; reason: "PAPER_ORDER_NOT_FOUND" }
+  | { ok: false; reason: "PAPER_ORDER_NOT_OPEN" }
+  | PaperFillBlocked;
+
+export interface PaperFillOpenArgs {
+  userId: number;
+  paperAccountId: number;
+  symbol: string;
+  side: "BUY" | "SELL";
+  lots: number;
+  /** The price this order filled at (the caller priced it from its own quote). */
+  fillPrice: number;
+  stopLoss: number;
+  takeProfit: number;
+  decisionId: number | null;
+  strategyId: string | null;
+  /** Governor intent fields, passed through unchanged. */
+  origin: IntentOrigin;
+  /** Present only when the caller's intent carries one (null = market). */
+  governedEntryPrice?: number | null;
+  intentRef?: string;
+  quote: RiskQuote;
+  auditContext: Record<string, unknown>;
+  /** The PLACED event message; null writes no event (the QA fixture never did). */
+  placedMessage: string | null;
+}
+
+/**
+ * Book an order filled at a caller-priced quote. The caller owns its own
+ * eligibility, sizing and geometry rules; this function runs the pre-trade
+ * Risk Governor (venue PAPER, action OPEN) and books the order only when it
+ * allows. The governor's result is returned either way so callers keep
+ * their own refusal envelopes.
+ */
+export async function openPaperFill(a: PaperFillOpenArgs): Promise<{ ok: true; order: PaperOrderRow; risk: EnforceResult } | PaperFillBlocked> {
+  const risk = await enforcePreTradeRisk({
+    userId: a.userId, venue: "PAPER", origin: a.origin, action: "OPEN",
+    symbol: a.symbol, side: a.side, lots: a.lots,
+    ...("governedEntryPrice" in a ? { entryPrice: a.governedEntryPrice } : {}),
+    stopLoss: a.stopLoss, takeProfit: a.takeProfit,
+    ...(a.intentRef !== undefined ? { intentRef: a.intentRef } : {}),
+  }, {
+    paperAccountId: a.paperAccountId,
+    facts: { quote: a.quote },
+    auditContext: a.auditContext,
+  });
+  if (!risk.allowed) return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk };
+  const ins = await db.insert(paperOrdersTable).values({
+    userId: a.userId,
+    paperAccountId: a.paperAccountId,
+    symbol: a.symbol, direction: a.side, orderType: "MARKET",
+    lotSize: a.lots,
+    entryPrice: a.fillPrice,
+    stopLoss: a.stopLoss, takeProfit: a.takeProfit,
+    status: "OPEN",
+    decisionId: a.decisionId,
+    strategyId: a.strategyId,
+  }).returning();
+  const order = ins[0]!;
+  if (a.placedMessage != null) await logEvent(a.userId, order.id, "PLACED", a.placedMessage);
+  return { ok: true, order, risk };
+}
+
+/**
+ * Close an open order at a caller-priced exit (Build EE manual close). The
+ * caller has loaded the order scoped to its owner. Risk Governor CLOSE,
+ * venue PAPER, then the close and its event.
+ */
+export async function closePaperFill(a: {
+  userId: number; order: PaperOrderRow; exitPrice: number;
+  intentRef: string; auditContext: Record<string, unknown>; eventLabel: string;
+}): Promise<{ ok: true; pnl: number } | PaperFillRefusal> {
+  const o = a.order;
+  if (o.userId !== a.userId) return { ok: false, reason: "PAPER_ORDER_NOT_FOUND" };
+  if (o.status !== "OPEN") return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
+  // A close reduces risk, so the governor only refuses a bad quantity, but it
+  // is checked and audited like every other action on the paper account.
+  const risk = await enforcePreTradeRisk({
+    userId: a.userId, venue: "PAPER", origin: "manual", action: "CLOSE",
+    symbol: o.symbol, side: o.direction as "BUY" | "SELL", lots: o.lotSize,
+    intentRef: a.intentRef,
+  }, {
+    paperAccountId: o.paperAccountId,
+    auditContext: a.auditContext,
+  });
+  if (!risk.allowed) return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk };
+  const pnl = pnlFor(o.direction, o.lotSize, o.entryPrice, a.exitPrice);
+  await db.update(paperOrdersTable).set({
+    status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: a.exitPrice, profitLoss: pnl, updatedAt: new Date(),
+  }).where(and(eq(paperOrdersTable.id, o.id), eq(paperOrdersTable.userId, a.userId)));
+  await logEvent(o.userId, o.id, "CLOSED_MANUAL", `${SIMULATED_TAG} ${a.eventLabel} @ ${a.exitPrice.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
+  return { ok: true, pnl };
+}
+
+/**
+ * The venue's own exit fill: a stop or target hit (markToMarket, the Build
+ * EE monitor) or the operator QA fixture's forced result. It is a fill of an
+ * order the governor already allowed, not a new order, so it is not
+ * re-governed. eventMessage null writes no event.
+ */
+export async function settlePaperOrder(a: {
+  order: Pick<PaperOrderRow, "id" | "userId">;
+  status: "CLOSED_SL" | "CLOSED_TP" | "CLOSED_MANUAL" | "CANCELLED";
+  exitPrice: number; pnl: number; eventMessage: string | null;
+}): Promise<void> {
+  await db.update(paperOrdersTable).set({
+    status: a.status, closedAt: new Date(), exitPrice: a.exitPrice,
+    profitLoss: a.pnl, updatedAt: new Date(),
+  }).where(eq(paperOrdersTable.id, a.order.id));
+  if (a.eventMessage != null) await logEvent(a.order.userId, a.order.id, a.status, a.eventMessage);
+}
+
+/**
+ * Roll back an order booked a moment ago whose caller then lost an
+ * idempotency race (Build EE: another request recorded the same decision).
+ * Best-effort, like the inline rollback it replaces.
+ */
+export async function voidPaperOrder(orderId: number): Promise<void> {
+  await db.update(paperOrdersTable).set({ status: "CANCELLED", updatedAt: new Date() })
+    .where(eq(paperOrdersTable.id, orderId))
+    .catch(() => { /* non-fatal */ });
 }

@@ -574,9 +574,15 @@ test("D live dispatch and the demo MT5 queue call the governor before their send
   assert.doesNotMatch(read("../demoExecution.ts"), /mt5CommandsTable/, "the demo panel no longer writes the legacy mailbox");
   assert.doesNotMatch(read("../../lib/adminTrading/brokerPlacement.ts"), /mt5CommandsTable/, "placement keeps no dormant mailbox writer");
   for (const rel of ["../../lib/tradeEngine/paperVenue.ts", "../../lib/adminTrading/orderGuard.ts",
-    "../../lib/paperExecution/paperExecutionService.ts", "../../lib/tradeAction/riskGovernorEnforcement.ts"]) {
+    "../../lib/tradeAction/riskGovernorEnforcement.ts"]) {
     assert.match(read(rel), /enforcePreTradeRisk\(/, `${rel} calls the governor`);
   }
+  // Build EE books through the PAPER venue, whose openPaperFill runs the governor before the write.
+  assert.match(read("../../lib/paperExecution/paperExecutionService.ts"), /await openPaperFill\(\{/, "paper execution books through the governed PAPER venue");
+  const venue = read("../../lib/tradeEngine/paperVenue.ts");
+  const fill = venue.slice(venue.indexOf("export async function openPaperFill"));
+  assert.ok(fill.indexOf("enforcePreTradeRisk(") > 0 && fill.indexOf("enforcePreTradeRisk(") < fill.indexOf(".insert(paperOrdersTable)"),
+    "openPaperFill calls the governor before it books");
   assert.match(read("../../lib/riskGovernor/enforce.ts"), /halt: f\.halt !== undefined\s*\? f\.halt\s*: await loadTradingHalt\(/,
     "every governed order reads the stop switches unless a test supplies them");
   assert.doesNotMatch(read("../../lib/tradeAction/riskGovernorEnforcement.ts"), /rg_skipped_simulated/, "simulated actions no longer skip the governor");

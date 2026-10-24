@@ -6,7 +6,9 @@
 //   1. Reads a Build AA TradeDecision (in-memory or via decision_id from logs)
 //   2. Reads Build DD market data for the simulated fill (READ-ONLY)
 //   3. Validates eligibility (15+ rules)
-//   4. Inserts a row into the existing `paper_orders` table (Build Q)
+//   4. Books the order in the one paper book (`paper_orders`) through
+//      lib/tradeEngine/paperVenue.ts (openPaperFill: Risk Governor, then the
+//      write) — this file never writes paper_orders itself
 //   5. Records a paper_executions row keyed by decision_id (idempotent)
 //   6. Logs every step to paper_execution_logs
 //
@@ -20,7 +22,6 @@ import {
   paperOrdersTable,
   paperExecutionsTable,
   paperExecutionLogsTable,
-  paperTradeEventsTable,
   tradeDecisionLogsTable,
 } from "@workspace/db";
 import { and, desc, eq, isNull } from "drizzle-orm";
@@ -29,7 +30,8 @@ import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
 import { calculatePaperPositionSize, PAPER_DEFAULTS } from "../riskGovernor/positionSizer.js";
 import { checkEligibility } from "./eligibility.js";
-import { enforcePreTradeRisk, loadEffectiveLimits } from "../riskGovernor/enforce.js";
+import { loadEffectiveLimits } from "../riskGovernor/enforce.js";
+import { openPaperFill, voidPaperOrder } from "../tradeEngine/paperVenue.js";
 import type {
   ExecuteFromDecisionOpts,
   PaperExecutionResult,
@@ -229,21 +231,29 @@ export async function executePaperFromDecision(
     });
   }
 
-  // ── Pre-trade Risk Governor: the 12 mandatory rules, against the quote
-  //    this order fills at. Writes its own user_risk_events row.
-  const risk = await enforcePreTradeRisk({
-    userId: acct.userId, venue: "PAPER", origin: opts.origin ?? "manual", action: "OPEN",
-    symbol, side: dir, lots: positionSize, entryPrice: null, stopLoss, takeProfit,
-  }, {
-    paperAccountId: acct.id,
-    facts: { quote: {
+  // ── Pre-trade Risk Governor (the 12 mandatory rules, against the quote
+  //    this order fills at; it writes its own user_risk_events row), then the
+  //    paper_orders row — both inside the PAPER venue. Orders inherit the
+  //    account owner so the owner-scoped paper sandbox, analytics and
+  //    debriefs see them.
+  const booked = await openPaperFill({
+    userId: acct.userId, paperAccountId: acct.id,
+    symbol, side: dir, lots: positionSize, fillPrice,
+    stopLoss, takeProfit,
+    decisionId: decisionId ?? null,
+    strategyId: "build_ee_paper_execution",
+    origin: opts.origin ?? "manual",
+    governedEntryPrice: null,
+    quote: {
       bid: snapshot.bid, ask: snapshot.ask,
       at: snapshot.timestamp ? new Date(snapshot.timestamp) : null,
       source: `${snapshot.source}:${snapshot.provider}`,
-    } },
+    },
     auditContext: { caller: "paper_execution", executionId, decisionId },
+    placedMessage: `${SIMULATED_TAG} EE/${action} ${symbol} @ ${fillPrice} SL ${stopLoss} TP ${takeProfit} lot ${positionSize} (decision=${decisionId ?? "n/a"})`,
   });
-  if (!risk.allowed) {
+  if (!booked.ok) {
+    const risk = booked.risk;
     log.warn({ blockedBy: risk.blockedBy, auditEventId: risk.auditEventId }, "Build EE: paper trade BLOCKED by pre-trade Risk Governor");
     return persistRejection({ ownerUserId: opts.ownerUserId ?? null,
       executionId, decisionId, symbol, action, decision,
@@ -252,30 +262,7 @@ export async function executePaperFromDecision(
       mdSnapshot: snapshot,
     });
   }
-
-  // ── Insert paper_orders (Build Q table — single source of truth for open positions) ──
-  // Orders inherit the account owner so the owner-scoped paper sandbox,
-  // analytics and debriefs see them.
-  const orderIns = await db.insert(paperOrdersTable).values({
-    userId: acct.userId,
-    paperAccountId: acct.id,
-    symbol, direction: action, orderType: "MARKET",
-    lotSize: positionSize,
-    entryPrice: fillPrice,
-    stopLoss, takeProfit,
-    status: "OPEN",
-    decisionId: decisionId ?? null,
-    strategyId: "build_ee_paper_execution",
-  }).returning();
-  const order = orderIns[0]!;
-
-  // Order event
-  await db.insert(paperTradeEventsTable).values({
-    userId: acct.userId,
-    paperOrderId: order.id,
-    eventType: "PLACED",
-    message: `${SIMULATED_TAG} EE/${action} ${symbol} @ ${fillPrice} SL ${stopLoss} TP ${takeProfit} lot ${positionSize} (decision=${decisionId ?? "n/a"})`,
-  }).catch(() => { /* non-fatal */ });
+  const order = booked.order;
 
   // ── Insert paper_executions (idempotency mapping + audit) ──
   const decisionSnapshot = sanitizeDecisionForJson(decision);
@@ -322,9 +309,7 @@ export async function executePaperFromDecision(
       .where(eq(paperExecutionsTable.decisionId, decisionId!)).limit(1))[0];
     if (racy) {
       // Roll back our just-created paper_orders row to keep the system clean.
-      await db.update(paperOrdersTable).set({ status: "CANCELLED", updatedAt: new Date() })
-        .where(eq(paperOrdersTable.id, order.id))
-        .catch(() => {});
+      await voidPaperOrder(order.id);
       return materializeResult(racy, true);
     }
     throw err;

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { botSettingsTable, tradesTable } from "@workspace/db";
+import { botSettingsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import {
   GetBotStatusResponse,
@@ -13,6 +13,7 @@ import { engageKillSwitch } from "../lib/safetyCore.js";
 import { engageKillSwitchForUser } from "../lib/live/liveArming.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
+import { cancelOpenLegacyTrades } from "../lib/trades/paperBook.js";
 
 const router = Router();
 
@@ -125,16 +126,8 @@ router.post("/bot/emergency-stop", requireUser, async (req, res) => {
       .update(botSettingsTable)
       .set({ mode: "OFF", isRunning: false, isPaused: false, updatedAt: new Date() })
       .where(and(eq(botSettingsTable.id, settings.id), eq(botSettingsTable.userId, userId)));
-    const openTrades = await db
-      .select()
-      .from(tradesTable)
-      .where(and(eq(tradesTable.status, "OPEN"), eq(tradesTable.userId, userId)));
-    for (const trade of openTrades) {
-      await db
-        .update(tradesTable)
-        .set({ status: "CANCELLED", closedAt: new Date(), pnl: 0 })
-        .where(and(eq(tradesTable.id, trade.id), eq(tradesTable.userId, userId)));
-    }
+    // The legacy simulated-trade book (`trades`) is written only by lib/trades/paperBook.ts.
+    const openTrades = await cancelOpenLegacyTrades(userId);
     const data = EmergencyStopResponse.parse({
       success: true,
       message: operator

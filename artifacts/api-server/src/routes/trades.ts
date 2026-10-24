@@ -21,6 +21,7 @@ import {
 } from "./executionConfirmations.js";
 import { getBrokerHealthVerdict } from "./brokerHealth.js";
 import { requireUser } from "../lib/auth/middleware.js";
+import { recordLegacyExecuteTrade } from "../lib/trades/paperBook.js";
 
 const router = Router();
 
@@ -228,7 +229,7 @@ router.post("/execute-trade", requireUser, async (req, res) => {
     // Phase-2: stamp the trade with the authenticated user's id. We deliberately
     // do NOT accept a userId from the request body — the only authoritative
     // source of identity is the session cookie.
-    const inserted = await db.insert(tradesTable).values({
+    const trade = await recordLegacyExecuteTrade({
       userId,
       symbol: body.symbol,
       direction: body.direction,
@@ -240,9 +241,8 @@ router.post("/execute-trade", requireUser, async (req, res) => {
       confidence: body.confidence,
       status: "OPEN",
       mode: gate.decisionMode === "LIVE" ? "LIVE" : "DEMO",
-    }).returning();
+    });
 
-    const trade = inserted[0]!;
     const generatedAtIso = new Date().toISOString();
     if (gate.decisionMode === "PAPER") {
       await logPaperTrade({
