@@ -40,8 +40,7 @@ import { getConnection, listUserConnections } from "../brokerHub/connections.js"
 import { logRiskEvent } from "./riskEvents.js";
 import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
 import { loadTradingHalt } from "../safety/tradingHalt.js";
-import { Mt5ReadOnlyAdapter } from "../brokerHub/mt5ReadOnlyAdapter.js";
-import { mt5ProjectionReader } from "../brokerHub/mt5ProjectionReader.js";
+import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
 import {
   evaluatePreTradeRisk,
@@ -315,7 +314,7 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
   } else if (conn && conn.userId === userId) {
     // The Broker Hub owns account snapshots. It only reads a connection the
     // trader owns, so another account's equity can never size this order.
-    const snap = await new Mt5ReadOnlyAdapter(mt5ProjectionReader, userId, conn.id).readAccount();
+    const snap = await brokerReadAdapter({ venue: "MT5", userId, connectionId: conn.id }).readAccount();
     accountSnapshot = {
       status: snap?.snapshotStatus ?? "MISSING",
       observedAt: snap?.observedAt ? new Date(snap.observedAt) : null,
