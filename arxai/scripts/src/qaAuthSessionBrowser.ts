@@ -93,6 +93,7 @@ async function main(): Promise<void> {
   const passwordB = `Session-B-${randomBytes(12).toString("hex")}`;
   const privateNameA = `QA User A ${fixtureSuffix.slice(0, 5)}`;
   const privateNameB = `QA User B ${fixtureSuffix.slice(0, 5)}`;
+  const testClientIp = `2001:db8::${fixtureSuffix}`;
   const watchlistNameA = `QA Watchlist A ${fixtureSuffix.slice(0, 5)}`;
   const watchlistNameB = `QA Watchlist B ${fixtureSuffix.slice(0, 5)}`;
   const inserted = await pool.query<{ id: number; email: string }>(
@@ -136,6 +137,19 @@ async function main(): Promise<void> {
   let browserContext: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
   let privateAssistantSettingsRequestCount = 0;
   let watchlistsRequestCount = 0;
+  let holdNextAssistantSettingsResponse = false;
+  let markHeldResponseStarted: () => void = () => {};
+  let releaseHeldResponse: () => void = () => {};
+  let markHeldResponseHandled: () => void = () => {};
+  const heldResponseStarted = new Promise<void>((resolveStarted) => {
+    markHeldResponseStarted = resolveStarted;
+  });
+  const heldResponseRelease = new Promise<void>((resolveRelease) => {
+    releaseHeldResponse = resolveRelease;
+  });
+  const heldResponseHandled = new Promise<void>((resolveHandled) => {
+    markHeldResponseHandled = resolveHandled;
+  });
 
   for (const name of DISABLED_BROKER_ENV) {
     originalEnv.set(name, process.env[name]);
@@ -147,6 +161,9 @@ async function main(): Promise<void> {
 
   try {
     const apiApp = (await import("../../artifacts/api-server/src/app.js")).default;
+    // Give each run an isolated rate-limit scope. The API is only bound to
+    // loopback below, so trusting its single local proxy hop is test-only.
+    apiApp.set("trust proxy", 1);
     const runningApiServer = await new Promise<Server>((resolveServer, reject) => {
       const server = apiApp.listen(0, "127.0.0.1", () => resolveServer(server));
       server.once("error", reject);
@@ -170,6 +187,7 @@ async function main(): Promise<void> {
           "/api": {
             target: apiOrigin,
             changeOrigin: false,
+            headers: { "x-forwarded-for": testClientIp },
           },
         },
       },
@@ -199,6 +217,23 @@ async function main(): Promise<void> {
       const method = route.request().method();
       if (requestUrl.pathname === "/api/me/assistant-settings" && method === "GET") {
         privateAssistantSettingsRequestCount += 1;
+        if (holdNextAssistantSettingsResponse) {
+          holdNextAssistantSettingsResponse = false;
+          const response = await route.fetch();
+          assert(response.status() === 200, `Held private settings request returned ${response.status()}.`);
+          markHeldResponseStarted();
+          try {
+            await heldResponseRelease;
+            await route.fulfill({ response });
+          } catch {
+            // Sign-out may abort the browser fetch. The response is still
+            // released only after User B's settings are visible below.
+            await route.abort().catch(() => {});
+          } finally {
+            markHeldResponseHandled();
+          }
+          return;
+        }
       }
       if (requestUrl.pathname === "/api/watchlists" && method === "GET") {
         watchlistsRequestCount += 1;
@@ -359,6 +394,15 @@ async function main(): Promise<void> {
     assert(watchlistsRequestsBeforeAccountSwitch > 0, "User A's watchlist page did not fetch its saved lists.");
     console.log("PASS  User A sees only User A's saved watchlist in the page and API response");
 
+    await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
+    // Hold an already-fetched User A response at the browser boundary and
+    // release it only after User B has signed in and loaded their own data.
+    holdNextAssistantSettingsResponse = true;
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await heldResponseStarted;
+    console.log("PASS  held User A private settings response after the server returned it");
+
     await page.getByTestId("button-logout").click();
     await page.waitForURL((url) => url.pathname === "/login", { timeout: 30_000 });
     const signedOut = await fetchMe();
@@ -399,7 +443,16 @@ async function main(): Promise<void> {
       privateAssistantSettingsRequestCount > Number(privateSettingsRequestsBeforeRevocation) + 1,
       "User B did not trigger a fresh private assistant settings request after User A signed out.",
     );
-    console.log("PASS  signing in as User B fetches and displays B's private settings, not User A's cached response");
+    console.log("PASS  signing in as User B fetches and displays B's private settings");
+
+    releaseHeldResponse();
+    await heldResponseHandled;
+    await page.waitForTimeout(100);
+    assert(
+      (await page.getByTestId("input-assistant-name").inputValue()) === privateNameB,
+      "User A's delayed private settings response overwrote or displayed in User B's session.",
+    );
+    console.log("PASS  User A's delayed private settings response cannot overwrite User B's session");
 
     const userBWatchlistsResponsePromise = page.waitForResponse(
       (response) =>
@@ -442,6 +495,7 @@ async function main(): Promise<void> {
 
     assert(externalBrowserRequests.length === 0, "The test attempted an external browser connection.");
   } finally {
+    releaseHeldResponse();
     await browserContext?.close().catch(() => {});
     await browser?.close().catch(() => {});
     if (viteServer) await viteServer.close().catch(() => {});

@@ -147,7 +147,12 @@ export function useLogout() {
       });
     },
     onSuccess: () => {
+      // Notify active auth gates before removing their query observer.
       qc.setQueryData(ME_KEY, null);
+      // Initiate cancellation before removing private queries. TanStack Query
+      // marks the requests cancelled synchronously; don't wait for the network
+      // promise, or a slow/held response could block sign-out navigation.
+      void qc.cancelQueries();
       // Drop every cached query — they were scoped to the previous user.
       qc.clear();
       // Also drop every cross-user localStorage artifact (selected symbol,

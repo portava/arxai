@@ -6,4 +6,5 @@
 - [Validation workflow run button](validation-workflow-run-button.md) — inspect `.replit` after registering validation; the helper may redirect `Project` to the check.
 - [API test process lifecycle](api-test-process-lifecycle.md) — importing the API app starts long-lived workers; close listeners and exit the isolated test process explicitly.
 - [Browser QA dependencies](browser-qa-dependencies.md) — scripts declare Playwright/Vite, but a fresh nested workspace may need a filtered frozen install before browser tests run.
+- [Auth query cancellation](auth-query-cancellation.md) — notify auth observers, cancel pending private queries synchronously, then clear without awaiting network settlement.
 - [React Query browser focus checks](react-query-browser-focus-checks.md) — simulate `visibilitychange` on `window` to trigger TanStack Query's default focus revalidation in browser QA.
