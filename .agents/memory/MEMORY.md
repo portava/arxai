@@ -5,3 +5,4 @@
 - [API schema regeneration](api-schema-regeneration.md) — root OpenAPI codegen can rewrite unrelated generated React Query output; inspect its diff before accepting regeneration.
 - [Validation workflow run button](validation-workflow-run-button.md) — inspect `.replit` after registering validation; the helper may redirect `Project` to the check.
 - [API test process lifecycle](api-test-process-lifecycle.md) — importing the API app starts long-lived workers; close listeners and exit the isolated test process explicitly.
+- [Browser QA dependencies](browser-qa-dependencies.md) — scripts declare Playwright/Vite, but a fresh nested workspace may need a filtered frozen install before browser tests run.

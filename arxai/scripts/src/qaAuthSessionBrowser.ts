@@ -2,7 +2,8 @@
  * Real-browser regression check for a normal user's session lifecycle.
  *
  * Seeds one isolated USER account, signs in through the actual /login form,
- * reloads, opens /settings, signs out, and confirms /api/me is unauthorized
+ * reloads, opens /settings, verifies that server-side session revocation sends
+ * the browser back to /login, signs out, and confirms /api/me is unauthorized
  * before directly revisiting /settings. The test never creates a privileged
  * user, provisions a broker, or invokes a broker connection endpoint.
  */
@@ -207,6 +208,34 @@ async function main(): Promise<void> {
     }
     assert(new URL(page.url()).pathname === "/settings", "The standard user could not stay on /settings.");
     console.log("PASS  standard USER can open the allowed /settings route directly");
+
+    const revokedSessions = await pool.query(
+      `DELETE FROM auth_user_sessions WHERE user_id = $1`,
+      [userId],
+    );
+    assert((revokedSessions.rowCount ?? 0) > 0, "Could not revoke the isolated test user's session.");
+    const unauthorizedIdentity = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/api/me" && response.status() === 401,
+      { timeout: 15_000 },
+    );
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await unauthorizedIdentity;
+    await page.waitForURL((url) => url.pathname === "/login", { timeout: 15_000 });
+    await page.getByTestId("form-login").waitFor({ timeout: 10_000 });
+    assert(
+      !(await page.getByRole("heading", { name: "Settings", exact: true }).isVisible().catch(() => false)),
+      "Protected Settings content remained visible after the server revoked the session.",
+    );
+    me = await fetchMe();
+    assert(me.status === 401, `Expected revoked-session /api/me to return 401, got ${me.status}.`);
+    console.log("PASS  server-side session revocation returns an open dashboard to /login");
+
+    await page.getByTestId("input-email").fill(email);
+    await page.getByTestId("input-password").fill(password);
+    await page.getByTestId("button-submit-login").click();
+    await page.waitForURL((url) => url.pathname !== "/login", { timeout: 30_000 });
+    await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
 
     await page.getByTestId("button-logout").click();
     await page.waitForURL((url) => url.pathname === "/login", { timeout: 30_000 });

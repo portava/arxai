@@ -53,7 +53,11 @@ export function useCurrentUser() {
   const q = useQuery({
     queryKey: ME_KEY,
     queryFn: fetchMe,
-    staleTime: 30_000,
+    // Session identity should be revalidated when a user returns to the app.
+    // Keep this shorter than general dashboard data so server-side revocation
+    // does not leave a stale authenticated state for long.
+    staleTime: 5_000,
+    refetchOnWindowFocus: true,
     retry: false,
   });
   return {
