@@ -148,6 +148,8 @@ export function toSummary(row: typeof tradeActionRequestsTable.$inferSelect): Ac
     guardResult: (row.guardResult as ActionSummary["guardResult"]) ?? null,
     mt5Ticket: row.mt5Ticket,
     tradeCommandId: row.tradeCommandId,
+    executionVenue: row.executionVenue ?? null,
+    venueCommandId: row.venueCommandId ?? null,
     aiDecisionId: row.aiDecisionId,
     mt5OrderTicket: row.mt5OrderTicket ?? null,
     mt5PositionTicket: row.mt5PositionTicket ?? null,

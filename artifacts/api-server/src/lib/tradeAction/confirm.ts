@@ -8,7 +8,7 @@
 import { db } from "@workspace/db";
 import { tradeActionRequestsTable } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
-import { queueMt5CommandWithGate } from "../../routes/mt5.js";
+import { routeConfirmedAction, type RouteResult } from "./route.js";
 import { runActionGuards } from "./guards.js";
 import { writeActionTimeline } from "./timeline.js";
 import { notifyAction } from "./notifications.js";
@@ -122,50 +122,55 @@ export async function confirmAction(opts: { userId: number; actionId: number; li
     source: "system",
   });
 
-  // Queue to mt5_commands for trade-touching actions (paper-only lock will
-  // mark the row as BLOCKED inside queueMt5CommandWithGate; we still
-  // transition our action lifecycle to "queued" because the command row
-  // exists and is observable).
-  let tradeCommandId: number | null = null;
-  const mt5Action = mapToMt5Action(row.actionType as ActionType);
-  if (mt5Action) {
-    try {
-      const { command } = await queueMt5CommandWithGate(mt5Action, {
-        symbol: row.symbol, side: row.side, lot: row.lotSize ?? null,
-        sl: row.stopLoss ?? null, tp: row.takeProfit ?? null,
-        ticket: parseTicket(row.tradeKey),
-      }, row.userId);
-      tradeCommandId = command.id;
-    } catch {
-      await db.update(tradeActionRequestsTable).set({
-        status: "failed",
-        rejectionReason: "MT5 command queue failed.",
-        guardResult: guard,
-        updatedAt: new Date(),
-      }).where(eq(tradeActionRequestsTable.id, row.id));
-      await writeActionTimeline({
-        userId: row.userId, tradeKey: row.tradeKey, actionId: row.id,
-        actionType: row.actionType as ActionType,
-        eventType: "action_failed",
-        severity: "urgent",
-        title: "Queue failed",
-        message: "Command could not be queued.",
-        source: "system",
-      });
-      const [updated] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, row.id)).limit(1);
-      return { ok: false, error: "queue_failed", action: updated ? toSummary(updated) : undefined };
-    }
+  // Hand the action to its venue's governed queue (lib/tradeAction/route.ts):
+  // DEMO → demo command queue, LIVE → live pipeline, position ops →
+  // governedOps. Each runs its own gates and the Risk Governor again on the
+  // exact command; a refusal there rejects the action with that reason.
+  let routed: RouteResult;
+  try {
+    routed = await routeConfirmedAction({
+      userId: row.userId, actionType: row.actionType as ActionType, requestedMode: row.requestedMode,
+      tradeKey: row.tradeKey, symbol: row.symbol, side: row.side, orderType: row.orderType ?? null,
+      lotSize: row.lotSize ?? null, requestedPrice: row.requestedPrice ?? null,
+      stopLoss: row.stopLoss ?? null, takeProfit: row.takeProfit ?? null, source: row.source ?? null,
+    });
+  } catch {
+    routed = { ok: false, venue: null, commandId: null, reason: "VENUE_QUEUE_FAILED" };
   }
 
-  // Validate transition guard_checking → queued.
-  if (!canTransition("guard_checking", "queued")) {
-    // unreachable; guarded by statusMachine.
+  if (!routed.ok) {
+    const failed = routed.reason === "VENUE_QUEUE_FAILED";
+    await db.update(tradeActionRequestsTable).set({
+      status: failed ? "failed" : "rejected",
+      rejectionReason: `The ${routed.venue ?? "broker"} queue refused this action: ${routed.reason}.`,
+      guardResult: guard, executionVenue: routed.venue, venueCommandId: routed.commandId,
+      updatedAt: new Date(),
+    }).where(eq(tradeActionRequestsTable.id, row.id));
+    await writeActionTimeline({
+      userId: row.userId, tradeKey: row.tradeKey, actionId: row.id,
+      actionType: row.actionType as ActionType,
+      eventType: failed ? "action_failed" : "action_guard_rejected",
+      severity: failed ? "urgent" : "warning",
+      title: failed ? "Queue failed" : `Refused by the ${routed.venue} queue`,
+      message: routed.reason,
+      source: "system",
+      context: { venue: routed.venue, venueCommandId: routed.commandId },
+    });
+    await notifyAction({
+      userId: row.userId, actionId: row.id, actionType: row.actionType as ActionType,
+      tradeKey: row.tradeKey, symbol: row.symbol, status: failed ? "failed" : "rejected",
+      kind: "action_rejected",
+      title: `Action rejected: ${humanize(row.actionType as ActionType)}`,
+      message: `The ${routed.venue ?? "broker"} queue refused this action (${routed.reason}).`,
+    });
+    const [updated] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, row.id)).limit(1);
+    return { ok: false, error: failed ? "queue_failed" : "venue_rejected", action: updated ? toSummary(updated) : undefined };
   }
 
+  // guard_checking → queued → sent_to_mt5: a dispatched command passes both.
+  const nextStatus: ActionStatus = routed.sent && canTransition("queued", "sent_to_mt5") ? "sent_to_mt5" : "queued";
   await db.update(tradeActionRequestsTable).set({
-    status: "queued",
-    guardResult: guard,
-    tradeCommandId,
+    status: nextStatus, guardResult: guard, executionVenue: routed.venue, venueCommandId: routed.commandId,
     updatedAt: new Date(),
   }).where(eq(tradeActionRequestsTable.id, row.id));
 
@@ -174,40 +179,20 @@ export async function confirmAction(opts: { userId: number; actionId: number; li
     actionType: row.actionType as ActionType,
     eventType: "action_queued",
     severity: "info",
-    title: "Action queued",
-    message: tradeCommandId ? `MT5 command #${tradeCommandId}` : "No broker queue for this action.",
+    title: routed.sent ? `Sent to the ${routed.venue} broker` : "Action recorded",
+    message: routed.commandId ? `${routed.venue} command ${routed.commandId}` : "Simulated: no broker command.",
     source: "system",
-    context: { tradeCommandId },
+    context: { venue: routed.venue, venueCommandId: routed.commandId },
   });
 
   await notifyAction({
     userId: row.userId, actionId: row.id, actionType: row.actionType as ActionType,
-    tradeKey: row.tradeKey, symbol: row.symbol, status: "queued",
+    tradeKey: row.tradeKey, symbol: row.symbol, status: nextStatus,
     kind: "action_queued",
-    title: `Action queued: ${humanize(row.actionType as ActionType)}`,
-    message: "Awaiting MT5 execution.",
+    title: `Action ${routed.sent ? "sent" : "queued"}: ${humanize(row.actionType as ActionType)}`,
+    message: routed.sent ? `Awaiting the ${routed.venue} broker's fill.` : "Simulated action recorded.",
   });
 
   const [updated] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, row.id)).limit(1);
   return { ok: true, action: toSummary(updated!) };
-}
-
-function mapToMt5Action(t: ActionType): "OPEN" | "CLOSE" | "MODIFY" | null {
-  switch (t) {
-    case "OPEN": return "OPEN";
-    case "CLOSE": return "CLOSE";
-    case "PARTIAL_CLOSE": return "CLOSE";       // EA derives partial from lot < open lot
-    case "MOVE_STOP": return "MODIFY";
-    case "TRAIL_STOP": return "MODIFY";
-    case "MODIFY_TP_SL": return "MODIFY";
-    case "CANCEL_ORDER": return null;           // no broker queue path for cancel review yet
-  }
-}
-
-function parseTicket(tradeKey: string | null): number | null {
-  if (!tradeKey) return null;
-  const m = /^(?:lp|att)_(\d+)$/.exec(tradeKey);
-  if (!m) return null;
-  const n = Number(m[1]);
-  return Number.isFinite(n) ? n : null;
 }

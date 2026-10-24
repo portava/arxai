@@ -369,6 +369,104 @@ test("B demo Ruby: a sound Ruby draft passes the governor and moves on to the qu
   assert.equal(ev.intent["venue"], "PAPER");
 });
 
+// ── Trade Action Center → the governed venue queues (Tier 1 Trade Engine) ──
+
+async function confirmed(input: Parameters<typeof createActionDraft>[0], phrase?: string) {
+  const draft = await createActionDraft(input);
+  assert.ok(draft.ok, JSON.stringify(draft));
+  const result = await confirmAction({ userId: input.userId, actionId: draft.action.id, liveConfirmPhrase: phrase });
+  const [row] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, draft.action.id));
+  return { result, row: row! };
+}
+
+test("trade action: DEMO and LIVE entries become governed venue commands, never legacy mailbox rows", async () => {
+  await resetPaper(u.a);
+  await seedBridge(u.a);
+  // The platform open for demo and live (owner default), restored after.
+  const [g] = await db.select().from(globalTradingSettingsTable).orderBy(globalTradingSettingsTable.id).limit(1);
+  if (g) await db.update(globalTradingSettingsTable).set({ platformMode: "LIVE", demoEnabled: true, liveEnabled: true }).where(eq(globalTradingSettingsTable.id, g.id));
+  try { await withSingleton("platform", false, async () => {
+    for (const mode of ["DEMO", "LIVE"] as const) {
+      const { row } = await confirmed({
+        userId: u.a, actionType: "OPEN", tradeKey: null, requestedMode: mode,
+        symbol: SYMBOL, side: "BUY", lotSize: 0.01, stopLoss: 1.095, takeProfit: 1.11,
+      }, mode === "LIVE" ? "CONFIRM LIVE" : undefined);
+      if (mode === "LIVE" && row.rejectionReason === "USER_OWNED_LIVE_REQUIRES_VERIFIED_LIVE_ACCOUNT") {
+        // The routing guard refuses live for a trader with no verified live
+        // account before anything is queued. Drive the router directly so the
+        // live pipeline's own gates are exercised too.
+        const { routeConfirmedAction } = await import("../../lib/tradeAction/route.js");
+        const r = await routeConfirmedAction({
+          userId: u.a, actionType: "OPEN", requestedMode: "LIVE", tradeKey: null, symbol: SYMBOL, side: "BUY",
+          orderType: null, lotSize: 0.01, requestedPrice: null, stopLoss: 1.095, takeProfit: 1.11, source: "user_initiated",
+        });
+        assert.equal(r.venue, "LIVE");
+        if (!r.ok) assert.ok(r.reason.length > 0, "a live refusal is named");
+        continue;
+      }
+      if (row.status === "sent_to_mt5") {
+        assert.equal(row.executionVenue, mode);
+        assert.ok(row.venueCommandId, "the venue command is linked");
+      } else {
+        assert.equal(row.status, "rejected", `${mode}: ${row.status} ${row.rejectionReason}`);
+        // The trade-action guards passed; the venue's own queue refused it, by name.
+        assert.match(row.rejectionReason ?? "", new RegExp(`^The ${mode} queue refused this action: `), `${mode}: ${row.rejectionReason}`);
+      }
+    }
+  }); } finally {
+    if (g) await db.update(globalTradingSettingsTable).set({ platformMode: g.platformMode, demoEnabled: g.demoEnabled, liveEnabled: g.liveEnabled }).where(eq(globalTradingSettingsTable.id, g.id));
+  }
+  const legacy = await db.select().from(mt5CommandsTable).where(eq(mt5CommandsTable.userId, u.a));
+  assert.equal(legacy.length, 0, "nothing is written to the legacy mt5_commands mailbox");
+});
+
+test("trade action: a close on a position opened outside ARX is refused by governedOps; a governed one reaches the demo queue", async () => {
+  await seedBridge(u.a);
+  const [pos] = await db.insert(livePositionsTable).values({
+    userId: u.a, symbol: SYMBOL, direction: "BUY", lotSize: 0.1, entryPrice: 1.1, stopLoss: 1.0951, takeProfit: 1.11,
+    status: "OPEN", brokerPositionId: "qa-rg-ta-1",
+  }).returning({ id: livePositionsTable.id });
+  try {
+    const { routeConfirmedAction, tradeRefFor } = await import("../../lib/tradeAction/route.js");
+    const action = {
+      userId: u.a, actionType: "CLOSE" as const, requestedMode: "DEMO", tradeKey: `lp_${pos!.id}`, symbol: SYMBOL,
+      side: "BUY", orderType: null, lotSize: 0.1, requestedPrice: null, stopLoss: null, takeProfit: null, source: "user_initiated",
+    };
+    assert.deepEqual(await tradeRefFor(u.b, `lp_${pos!.id}`), null, "another trader's trade key resolves to nothing");
+    const foreign = await routeConfirmedAction(action);
+    assert.deepEqual(foreign.ok ? null : foreign.reason, "NOT_AN_ARX_GOVERNED_POSITION");
+
+    await db.insert(mt5DemoCommandsTable).values({
+      commandId: "qa_rg_ta_open_1", userId: u.a, bridgeConnectionId: 1, commandType: "PLACE_MARKET_ORDER",
+      payload: { symbol: SYMBOL, side: "BUY", lotSize: 0.1, stopLoss: 1.0951 }, status: "FILLED_DEMO",
+      safetyGateSnapshot: {}, brokerTicket: "qa-rg-ta-1", fillVolume: 0.1, filledAt: new Date(),
+    });
+    const governed = await routeConfirmedAction(action);
+    assert.equal(governed.venue, "DEMO");
+    assert.notEqual(governed.ok ? null : governed.reason, "NOT_AN_ARX_GOVERNED_POSITION", "handed to the demo queue");
+    const live = await routeConfirmedAction({ ...action, requestedMode: "LIVE" });
+    assert.equal(live.ok ? null : live.reason, "POSITION_IS_DEMO", "a DEMO position is never closed through the LIVE venue");
+    const [still] = await db.select().from(livePositionsTable).where(eq(livePositionsTable.id, pos!.id));
+    assert.equal(still!.closedAt, null, "routing never edits the ledger");
+  } finally {
+    await db.delete(mt5DemoCommandsTable).where(eq(mt5DemoCommandsTable.userId, u.a));
+    await db.delete(livePositionsTable).where(eq(livePositionsTable.id, pos!.id));
+  }
+});
+
+test("trade action: a SIMULATED action records no broker command", async () => {
+  await resetPaper(u.a);
+  await seedBridge(u.a);
+  const { result, row } = await confirmed({
+    userId: u.a, actionType: "OPEN", tradeKey: null, requestedMode: "SIMULATED",
+    symbol: SYMBOL, side: "BUY", lotSize: 0.1, stopLoss: 1.095, takeProfit: 1.11,
+  });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(row.status, "queued");
+  assert.equal(row.executionVenue, null);
+  assert.equal(row.tradeCommandId, null);
+});
+
 // ── C. Demo, automated: riskGovernorAutomation.test.ts (needs a stubbed
 //    market-data provider, so it runs in its own process). ─────────────────
 
