@@ -12,7 +12,8 @@
 // continues to gate.
 
 import { Router } from "express";
-import { db, tradePlansTable, executionConfirmationsTable, vaultEventsTable, brokerHealthStateTable } from "@workspace/db";
+import { db, tradePlansTable, executionConfirmationsTable, vaultEventsTable } from "@workspace/db";
+import { readBrokerHealthState } from "../lib/brokerHub/brokerHealthState.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
@@ -49,8 +50,7 @@ async function gatherPermissionContext(userId: number): Promise<{
 }
 
 async function gatherBrokerStatus(): Promise<"CONNECTED" | "DEGRADED" | "DOWN" | "DISABLED" | "UNKNOWN"> {
-  const rows = await db.select().from(brokerHealthStateTable).limit(1);
-  const row = rows[0];
+  const row = await readBrokerHealthState();
   if (!row) return "UNKNOWN";
   if (!row.executionEnabled) return "DISABLED";
   switch (row.lastStatus) {

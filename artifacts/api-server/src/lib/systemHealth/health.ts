@@ -16,7 +16,6 @@ import {
   autopilotCyclesTable,
   paperOrdersTable,
   riskGovernorEvaluationsTable,
-  brokerHealthStateTable,
   mt5CommandsTable,
   safetyCoreTable,
 } from "@workspace/db";
@@ -467,4 +466,6 @@ export async function exportHealthReport(): Promise<{ exportId: string; generate
 }
 
 // ── Touch unused imports so type-check confirms them as live deps ──────────
-export const _wiring = { brokerHealthStateTable, demoPositionColumns, mt5CommandsTable, notificationLogsTable };
+// broker_health_state is owned by lib/brokerHub/brokerHealthState.ts and is
+// not referenced here (ci guard single-broker-state-source).
+export const _wiring = { demoPositionColumns, mt5CommandsTable, notificationLogsTable };

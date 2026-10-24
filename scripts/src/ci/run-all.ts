@@ -82,6 +82,7 @@ import { checkSingleLimitStore } from "./check-single-limit-store.js";
 import { checkLegacyLiveStateConfined } from "./check-legacy-live-state-confined.js";
 import { checkSingleLlmGateway } from "./check-single-llm-gateway.js";
 import { checkBrokerReadAdapterSingleFactory } from "./check-broker-read-adapter-single-factory.js";
+import { checkSingleBrokerStateSource } from "./check-single-broker-state-source.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -172,6 +173,7 @@ const checks: Array<() => CheckResult> = [
   checkLegacyLiveStateConfined,
   checkSingleLlmGateway,
   checkBrokerReadAdapterSingleFactory,
+  checkSingleBrokerStateSource,
 ];
 
 let failed = 0;

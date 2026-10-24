@@ -12,14 +12,13 @@ import {
   riskGovernorEvaluationsTable,
   paperOrdersTable,
   autopilotCyclesTable,
-  brokerReadonlyLogsTable,
-  brokerReadonlySnapshotsTable,
   dataImportsTable,
   postTradeDebriefsTable,
   learningEventsTable,
   tradeDecisionLogsTable,
 } from "@workspace/db";
 import { listOwnMistakes } from "../learning/scopedMemory.js";
+import { listOwnerReadOnlyLogs, listOwnerReadOnlySnapshots } from "../brokerHub/readOnlySnapshots.js";
 import { desc, eq } from "drizzle-orm";
 import { notify, type NotifyResult } from "./service.js";
 import {
@@ -178,9 +177,7 @@ export async function ingest(opts: { limitPerSource?: number; userId: number }) 
     // Broker diagnostics are private per-user data. A missing owner scopes to
     // no real user (0), so background/legacy callers fail closed.
     const brokerOwnerId = opts.userId ?? 0;
-    const rows = await db.select().from(brokerReadonlyLogsTable)
-      .where(eq(brokerReadonlyLogsTable.userId, brokerOwnerId))
-      .orderBy(desc(brokerReadonlyLogsTable.createdAt)).limit(lim);
+    const rows = await listOwnerReadOnlyLogs(brokerOwnerId, lim, "createdAt");
     for (const r of rows) {
       if (r.eventType === "BROKER_MODE_UNSAFE" || (r.severity === "CRITICAL" && /BROKER_MODE/i.test(r.message))) {
         const det = (r.details as Record<string, unknown>) ?? {};
@@ -199,9 +196,7 @@ export async function ingest(opts: { limitPerSource?: number; userId: number }) 
   {
     const s: IngestStats = { source: "KK:broker_readonly_snapshots", scanned: 0, created: 0, updated: 0, skipped: 0 };
     const brokerOwnerId = opts.userId ?? 0;
-    const rows = await db.select().from(brokerReadonlySnapshotsTable)
-      .where(eq(brokerReadonlySnapshotsTable.userId, brokerOwnerId))
-      .orderBy(desc(brokerReadonlySnapshotsTable.createdAt)).limit(lim);
+    const rows = await listOwnerReadOnlySnapshots(brokerOwnerId, lim, "createdAt");
     for (const r of rows) {
       const inp = ruleBroker({ event: "SNAPSHOT_CREATED", snapshotId: r.snapshotId });
       if (inp) {

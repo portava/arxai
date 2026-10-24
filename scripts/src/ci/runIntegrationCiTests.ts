@@ -260,6 +260,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:broker-validation-suite" },
   { pkg: "@workspace/api-server", script: "test:snapshot-ownership" },
   { pkg: "@workspace/api-server", script: "test:broker-hub-mt5-state" },
+  { pkg: "@workspace/api-server", script: "test:broker-hub-state-sources" },
   { pkg: "@workspace/api-server", script: "test:alert-rule-ownership" },
   { pkg: "@workspace/api-server", script: "test:trading-on-by-default" },
   // Task #660 — Profit Mission Phase 1 route per-user isolation + no-secret-leak
