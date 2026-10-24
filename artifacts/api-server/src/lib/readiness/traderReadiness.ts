@@ -25,7 +25,6 @@ import {
   autopilotCyclesTable,
   autopilotCycleLogsTable,
   autopilotSymbolCooldownsTable,
-  userRiskSettingsTable,
   riskGovernorEvaluationsTable,
   riskGovernorEventsTable,
 } from "@workspace/db";
@@ -34,6 +33,7 @@ import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { logger } from "../logger.js";
 import { checkBrokerSafety } from "../brokerReadOnly/service.js";
+import { readTraderRiskSettings } from "../riskGovernor/limitSettings.js";
 
 export type OverallStatus = "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED";
 export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY";
@@ -270,12 +270,10 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
     // The trader's own limits (user_risk_settings, the one limit store). An
     // anonymous read has no trader, so it keeps the defaults above rather than
     // borrowing another trader's row.
-    const rs = userId == null
-      ? []
-      : await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1);
-    if (rs[0]) {
-      maxOpenPaperTrades = rs[0].maxOpenTrades ?? 2;
-      const pct = rs[0].maxDailyLossPercent ?? 2;
+    const rs = userId == null ? null : await readTraderRiskSettings(userId);
+    if (rs) {
+      maxOpenPaperTrades = rs.maxOpenTrades ?? 2;
+      const pct = rs.maxDailyLossPercent ?? 2;
       dailyLossLimit = Math.max(10, Math.round(pct * 50)); // simple proxy: $50 per 1%
     }
     dataSourcesRead.push("user_risk_settings");

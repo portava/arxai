@@ -10,7 +10,6 @@
 import { db } from "@workspace/db";
 import {
   tradeCommandAuditLogTable,
-  userRiskLimitsTable,
 } from "@workspace/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { getEnvelope } from "./safetyEnvelope.js";
@@ -47,6 +46,7 @@ export interface OrderGuardResult {
 // emergency_kill_switch=true). The guard chain below is the only path
 // that may emit status='APPROVED'.
 import { BROKER_PLACEMENT_LAYER_ENABLED } from "./brokerPlacement.js";
+import { readOperatorRiskLimits } from "../riskGovernor/limitSettings.js";
 const BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED =
   "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED" as const;
 
@@ -145,9 +145,7 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
 
     // 6. Risk limit check.
     { name: "risk_limits", test: async () => {
-        const rows = await db.select().from(userRiskLimitsTable)
-          .where(eq(userRiskLimitsTable.userId, req.userId)).limit(1);
-        const lim = rows[0];
+        const lim = await readOperatorRiskLimits(req.userId);
         if (!lim) return "NO_RISK_LIMITS_CONFIGURED";
         if (req.lotSize > lim.maxLotSize) return `LOT_EXCEEDS_LIMIT:${lim.maxLotSize}`;
         const symbols = Array.isArray(lim.allowedSymbols) ? lim.allowedSymbols as string[] : [];

@@ -8,11 +8,12 @@ import {
   db,
   paperTradesTable, paperSessionsTable, tradingSessionsTable,
   tradeJournalEntriesTable, aiTradeReviewsTable, userPlaybooksTable, playbookRulesV2Table,
-  preTradeChecksTable, userRiskSettingsTable, userRiskEventsTable, userNotificationsTable,
+  preTradeChecksTable, userRiskEventsTable, userNotificationsTable,
   userActivityTimelineTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { listUserConnections } from "./brokerHub/connections.js";
+import { readTraderRiskSettings } from "./riskGovernor/limitSettings.js";
 
 export const REPORT_TYPES = [
   "account_summary", "trading_session_summary", "paper_trades", "performance_calendar",
@@ -173,7 +174,7 @@ async function loadConnections(userId: number) {
   return listUserConnections(userId);
 }
 async function loadRiskSettings(userId: number) {
-  return (await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1))[0] ?? null;
+  return readTraderRiskSettings(userId);
 }
 async function loadSessions(userId: number, req: ReportRequest) {
   const where = [eq(tradingSessionsTable.userId, userId)];

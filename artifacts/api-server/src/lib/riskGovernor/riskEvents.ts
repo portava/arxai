@@ -4,12 +4,12 @@
 // written here, scoped to its trader. Secrets never reach the details column.
 
 import { db, userRiskSettingsTable, userRiskEventsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { readTraderRiskSettings } from "./limitSettings.js";
 import { DEFAULT_USER_RISK_SETTINGS } from "./journalActivity.js";
 
 export async function getOrCreateRiskSettings(userId: number) {
-  const existing = await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1);
-  if (existing[0]) return existing[0];
+  const existing = await readTraderRiskSettings(userId);
+  if (existing) return existing;
   const ins = await db.insert(userRiskSettingsTable).values({ userId, ...DEFAULT_USER_RISK_SETTINGS }).returning();
   return ins[0]!;
 }

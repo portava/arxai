@@ -36,8 +36,12 @@ import { platformStop, preCheckStopRefusal, readPlatformSwitches, type PlatformS
 import { resolveUserTrade } from "../trades/resolveTrade.js";
 import { enforceRiskGovernor, RG_CLASSIFY } from "./riskGovernorEnforcement.js";
 import type { GuardChainResult, GuardCheckResult } from "./types.js";
+import { PLATFORM_RISK_CEILINGS } from "../riskGovernor/preTrade.js";
 
-const MAX_LOT_HARD_CAP = 5.0; // hard ceiling regardless of user settings
+// Hard ceiling regardless of user settings: the Risk Governor's platform lot
+// ceiling, read from the governor so the early refusal and the governor's own
+// rule can never disagree.
+const MAX_LOT_HARD_CAP = PLATFORM_RISK_CEILINGS.maxLotSize;
 
 export interface ActionGuardInput {
   userId: number;

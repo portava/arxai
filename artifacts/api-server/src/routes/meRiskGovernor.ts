@@ -22,6 +22,7 @@ const SAFE_LIVE_CONTRACT = { liveLocked: true as const, readOnlyMode: true as co
 
 export { getOrCreateRiskSettings, logRiskEvent } from "../lib/riskGovernor/riskEvents.js";
 import { getOrCreateRiskSettings, logRiskEvent } from "../lib/riskGovernor/riskEvents.js";
+import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
 
 // Apply live-contract overrides on every read so it can never be bypassed via DB drift.
 function withSafetyContract<T extends Record<string, unknown>>(s: T) {
@@ -37,9 +38,9 @@ router.get("/me/risk-settings", requireUser, async (req, res) => {
 router.post("/me/risk-settings", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   // POST = upsert with provided fields, but enforce safe live contract.
-  const existing = await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1);
+  const existing = await readTraderRiskSettings(userId);
   const body = sanitizeBody(req.body ?? {});
-  if (existing[0]) {
+  if (existing) {
     const u = await db.update(userRiskSettingsTable).set({ ...body, ...SAFE_LIVE_CONTRACT, updatedAt: new Date() })
       .where(eq(userRiskSettingsTable.userId, userId)).returning();
     res.json(withSafetyContract(u[0]!));

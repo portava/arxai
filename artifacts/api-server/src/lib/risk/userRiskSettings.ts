@@ -10,6 +10,7 @@
 import { db, riskSettingsTable, userRiskSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { PLATFORM_RISK_CEILINGS } from "../riskGovernor/preTrade.js";
+import { readTraderRiskSettings } from "../riskGovernor/limitSettings.js";
 
 type Prefs = typeof riskSettingsTable.$inferSelect;
 type Limits = typeof userRiskSettingsTable.$inferSelect;
@@ -59,10 +60,10 @@ async function prefsRow(userId: number): Promise<Prefs> {
 }
 
 async function limitsRow(userId: number): Promise<Limits> {
-  const [row] = await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1);
+  const row = await readTraderRiskSettings(userId);
   if (row) return row;
   const [ins] = await db.insert(userRiskSettingsTable).values({ userId }).onConflictDoNothing().returning();
-  return ins ?? (await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1))[0]!;
+  return ins ?? (await readTraderRiskSettings(userId))!;
 }
 
 function compose(p: Prefs, l: Limits): TraderRiskSettings {
