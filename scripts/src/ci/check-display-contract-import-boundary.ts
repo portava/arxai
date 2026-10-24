@@ -520,7 +520,6 @@ export const FENCED_DIRS = [
 
 // Fenced individual files (position-mgmt / risk helpers that live at the lib root).
 const FENCED_FILES = [
-  "artifacts/api-server/src/lib/positionSizing.ts",
   "artifacts/api-server/src/lib/riskAudit.ts",
   // Fence-completeness audit additions — lib-root files on the order-decision
   // path (safety core, order-management, autopilot executor, live allocation

@@ -74,6 +74,7 @@ import { checkLearningMemorySingleOwner } from "./check-learning-memory-single-o
 import { checkPositionGuardianWired } from "./check-position-guardian-wired.js";
 import { checkSingleRoleModel } from "./check-single-role-model.js";
 import { checkStopModificationAuthority } from "./check-stop-modification-authority.js";
+import { checkSinglePositionSizer } from "./check-single-position-sizer.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -156,6 +157,7 @@ const checks: Array<() => CheckResult> = [
   checkPositionGuardianWired,
   checkSingleRoleModel,
   checkStopModificationAuthority,
+  checkSinglePositionSizer,
 ];
 
 let failed = 0;

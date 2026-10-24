@@ -56,7 +56,7 @@ async function http(path: string, init: RequestInit = {}): Promise<{ status: num
   const confirm       = readRepo("artifacts/api-server/src/lib/tradeAction/confirm.ts");
   const meRisk        = readRepo("artifacts/api-server/src/routes/meRiskGovernor.ts");
   const adminTrading  = readRepo("artifacts/api-server/src/routes/adminTrading.ts");
-  const positionSize  = readRepo("artifacts/api-server/src/lib/positionSizing.ts");
+  const positionSize  = readRepo("artifacts/api-server/src/lib/riskGovernor/positionSizer.ts");
   // The one pre-trade Risk Governor: pure rules + context loader/audit.
   const preTrade      = readRepo("artifacts/api-server/src/lib/riskGovernor/preTrade.ts");
   const governor      = readRepo("artifacts/api-server/src/lib/riskGovernor/enforce.ts");

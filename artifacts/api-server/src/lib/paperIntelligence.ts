@@ -7,7 +7,7 @@
 // withhold any new paper-trade decision rather than acting on stale data.
 
 import { runStrategyScan, type SignalOutput, type Candle } from "./strategyEngine.js";
-import { calculatePositionSize } from "./positionSizing.js";
+import { calculatePositionSize } from "./riskGovernor/positionSizer.js";
 import { getMarketDataWithProvenance } from "./data/dataManager.js";
 import { getStatus as getSafetyStatus } from "./safetyCore.js";
 import { readPlatformMt5State } from "./brokerHub/mt5StateReader.js";
