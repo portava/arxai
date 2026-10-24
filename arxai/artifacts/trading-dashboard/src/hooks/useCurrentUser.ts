@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 // Per-user identity client. Reads /api/me; null when logged out.
@@ -50,6 +51,8 @@ async function fetchMe(): Promise<CurrentUser | null> {
 }
 
 export function useCurrentUser() {
+  const qc = useQueryClient();
+  const wasAuthenticated = useRef(false);
   const q = useQuery({
     queryKey: ME_KEY,
     queryFn: fetchMe,
@@ -60,6 +63,26 @@ export function useCurrentUser() {
     refetchOnWindowFocus: true,
     retry: false,
   });
+
+  useEffect(() => {
+    if (q.data) {
+      wasAuthenticated.current = true;
+      return;
+    }
+    if (!wasAuthenticated.current) return;
+
+    // A server-side revocation can sign the user out without going through
+    // useLogout. Drop private query results just as we do for an explicit
+    // logout, but keep /api/me cached as signed out so public auth pages render.
+    wasAuthenticated.current = false;
+    void qc.cancelQueries();
+    qc.removeQueries({
+      predicate: (query) =>
+        query.queryKey.length !== ME_KEY.length || query.queryKey[0] !== ME_KEY[0],
+    });
+    clearCrossUserLocalStorage();
+  }, [q.data, qc]);
+
   return {
     user: q.data ?? null,
     isLoading: q.isLoading,

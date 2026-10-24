@@ -3,9 +3,10 @@
  *
  * Seeds one isolated USER account, signs in through the actual /login form,
  * reloads, opens /settings, verifies that server-side session revocation sends
- * the browser back to /login, signs out, and confirms /api/me is unauthorized
- * before directly revisiting /settings. The test never creates a privileged
- * user, provisions a broker, or invokes a broker connection endpoint.
+ * the browser back to /login and clears private query data before a new sign-in,
+ * signs out, and confirms /api/me is unauthorized before directly revisiting
+ * /settings. The test never creates a privileged user, provisions a broker, or
+ * invokes a broker connection endpoint.
  */
 import { randomBytes, scryptSync } from "node:crypto";
 import type { Server } from "node:http";
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
   let viteServer: Awaited<ReturnType<typeof createViteServer>> | undefined;
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   let browserContext: Awaited<ReturnType<typeof chromium.launchPersistentContext>> | undefined;
+  let privateAssistantSettingsRequestCount = 0;
 
   for (const name of DISABLED_BROKER_ENV) {
     originalEnv.set(name, process.env[name]);
@@ -161,10 +163,20 @@ async function main(): Promise<void> {
         return;
       }
       const method = route.request().method();
+      if (requestUrl.pathname === "/api/me/assistant-settings" && method === "GET") {
+        privateAssistantSettingsRequestCount += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ displayName: "QA Ruby", isDefault: false }),
+        });
+        return;
+      }
       const allowedSessionRequest =
         (requestUrl.pathname === "/api/me" && method === "GET") ||
         (requestUrl.pathname === "/api/auth/login" && method === "POST") ||
-        (requestUrl.pathname === "/api/auth/user-logout" && method === "POST");
+        (requestUrl.pathname === "/api/auth/user-logout" && method === "POST") ||
+        (requestUrl.pathname === "/api/me/assistant-settings" && method === "GET");
       if (requestUrl.pathname.startsWith("/api/") && !allowedSessionRequest) {
         await route.abort("blockedbyclient");
         return;
@@ -173,10 +185,19 @@ async function main(): Promise<void> {
     });
 
     await page.goto(`${uiOrigin}/login`, { waitUntil: "domcontentloaded" });
+    const initialPrivateSettings = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/api/me/assistant-settings" && response.status() === 200,
+      { timeout: 15_000 },
+    );
     await page.getByTestId("input-email").fill(email);
     await page.getByTestId("input-password").fill(password);
     await page.getByTestId("button-submit-login").click();
     await page.waitForURL((url) => url.pathname !== "/login", { timeout: 30_000 });
+    await initialPrivateSettings;
+    assert(
+      privateAssistantSettingsRequestCount === 1,
+      "The private assistant settings query did not load after sign-in.",
+    );
 
     const fetchMe = async () => page.evaluate(async () => {
       const response = await fetch("/api/me", { credentials: "include" });
@@ -191,11 +212,6 @@ async function main(): Promise<void> {
     assert(me.body?.user?.role === "USER", "The browser session did not use a standard USER account.");
     console.log("PASS  standard USER signs in through /login and /api/me identifies the session");
 
-    await page.reload({ waitUntil: "domcontentloaded" });
-    me = await fetchMe();
-    assert(me.status === 200 && me.body?.user?.role === "USER", "A full browser refresh did not preserve the USER session.");
-    console.log("PASS  full refresh preserves the standard-user session");
-
     await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
     try {
       await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
@@ -207,6 +223,11 @@ async function main(): Promise<void> {
       );
     }
     assert(new URL(page.url()).pathname === "/settings", "The standard user could not stay on /settings.");
+    const privateSettingsRequestsBeforeRevocation = privateAssistantSettingsRequestCount;
+    assert(
+      privateSettingsRequestsBeforeRevocation >= 1,
+      "The private assistant settings query was not cached before revocation.",
+    );
     console.log("PASS  standard USER can open the allowed /settings route directly");
 
     const revokedSessions = await pool.query(
@@ -218,7 +239,12 @@ async function main(): Promise<void> {
       (response) => new URL(response.url()).pathname === "/api/me" && response.status() === 401,
       { timeout: 15_000 },
     );
-    await page.reload({ waitUntil: "domcontentloaded" });
+    // useCurrentUser intentionally revalidates every five seconds, so wait for
+    // its cached identity to become stale before simulating a foreground return.
+    await page.waitForTimeout(5_100);
+    await page.bringToFront();
+    // TanStack Query listens for visibilitychange on window.
+    await page.evaluate("window.dispatchEvent(new Event('visibilitychange'))");
     await unauthorizedIdentity;
     await page.waitForURL((url) => url.pathname === "/login", { timeout: 15_000 });
     await page.getByTestId("form-login").waitFor({ timeout: 10_000 });
@@ -230,12 +256,35 @@ async function main(): Promise<void> {
     assert(me.status === 401, `Expected revoked-session /api/me to return 401, got ${me.status}.`);
     console.log("PASS  server-side session revocation returns an open dashboard to /login");
 
+    await page.goto(`${uiOrigin}/register`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("form-register").waitFor({ timeout: 10_000 });
+    await page.goto(`${uiOrigin}/reset-password`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("form-reset-password").waitFor({ timeout: 10_000 });
+    await page.goto(`${uiOrigin}/login`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("form-login").waitFor({ timeout: 10_000 });
+    console.log("PASS  register and password-reset pages remain public after revocation");
+
     await page.getByTestId("input-email").fill(email);
     await page.getByTestId("input-password").fill(password);
+    const refreshedPrivateSettings = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/api/me/assistant-settings" && response.status() === 200,
+      { timeout: 15_000 },
+    );
     await page.getByTestId("button-submit-login").click();
     await page.waitForURL((url) => url.pathname !== "/login", { timeout: 30_000 });
+    await refreshedPrivateSettings;
     await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
+    assert(
+      Number(privateAssistantSettingsRequestCount) > Number(privateSettingsRequestsBeforeRevocation),
+      `Expected private settings to be fetched again after re-sign-in. Requests before revocation: ${privateSettingsRequestsBeforeRevocation}; after: ${privateAssistantSettingsRequestCount}.`,
+    );
+    console.log("PASS  private cached settings are fetched again after revocation and subsequent sign-in");
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    me = await fetchMe();
+    assert(me.status === 200 && me.body?.user?.role === "USER", "A full browser refresh did not preserve the USER session.");
+    console.log("PASS  full refresh preserves the standard-user session");
 
     await page.getByTestId("button-logout").click();
     await page.waitForURL((url) => url.pathname === "/login", { timeout: 30_000 });
