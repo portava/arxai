@@ -3,9 +3,10 @@
 // SAFETY:
 //   * Every endpoint requires an authenticated user (req.authUser.id).
 //   * All reads/updates filter by userId — cross-user reads are impossible.
-//   * No endpoint executes a trade. POST /:id/confirm runs the 14-check
-//     guard chain and (only on full pass) queues an mt5_commands row via
-//     queueMt5CommandWithGate — which itself is paper-only locked.
+//   * POST /:id/confirm runs the 14-check guard chain and, only on a full
+//     pass, routes the action into its venue's governed queue (DEMO →
+//     demoCommandQueue, LIVE → liveCommandPipeline, position ops →
+//     governedOps) via lib/tradeAction/route.ts. SIMULATED sends nothing.
 //   * Safety envelope on every payload (success AND error).
 
 import { Router, type IRouter, type Request } from "express";

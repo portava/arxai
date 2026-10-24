@@ -59,6 +59,10 @@ export const tradeActionRequestsTable = pgTable("trade_action_requests", {
   // Linkage (nullable because OPEN has no trade yet).
   tradeKey: text("trade_key"),
   tradeCommandId: integer("trade_command_id"), // FK to mt5_commands.id once queued
+  // Tier 1 Trade Engine: the governed command a confirmed action became —
+  // DEMO → mt5_demo_commands.command_id, LIVE → arx_live_commands.command_id.
+  executionVenue: text("execution_venue"),          // DEMO | LIVE | null (SIMULATED: no broker)
+  venueCommandId: text("venue_command_id"),
   aiDecisionId: integer("ai_decision_id"),     // FK to trade_decisions.id (best-effort)
 
   actionType: text("action_type").notNull(),
