@@ -8,4 +8,5 @@ if [ "${1:-}" = "--preview-smoke" ]; then
 fi
 
 cd "$(dirname "$0")/../arxai"
+unset ARX_AUTH_TEST_PASSWORD
 exec pnpm --filter @workspace/trading-dashboard run dev
