@@ -19,7 +19,7 @@
 import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
-import { tradeActionRequestsTable, userRiskSettingsTable } from "@workspace/db/schema";
+import { tradeActionRequestsTable } from "@workspace/db/schema";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { ORDER_TYPES, isMarketOrder, directionOf, type OrderType } from "../lib/tradeAction/orderTypes.js";
@@ -35,6 +35,7 @@ import {
   type BridgeCapabilities,
   type PendingSubmitStatus,
 } from "../lib/mt5/bridgeCapabilities.js";
+import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
 
 const router: IRouter = Router();
 
@@ -92,8 +93,7 @@ router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
   // 1. Load user min-RR setting (best-effort).
   let minRr: number | null = null;
   try {
-    const [s] = await db.select().from(userRiskSettingsTable)
-      .where(eq(userRiskSettingsTable.userId, userId)).limit(1);
+    const s = (await readTraderRiskSettings(userId)) ?? undefined;
     // Future-proof: minRiskRewardRatio column does not exist yet; this is a
     // pre-wired hook so the value flows through once admin/risk settings expose it.
     const v = (s as unknown as { minRiskRewardRatio?: number | null } | undefined)?.minRiskRewardRatio;

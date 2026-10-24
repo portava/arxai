@@ -17,10 +17,10 @@ import {
   tradingSessionsTable,
   userNotificationsTable,
   userReportsTable,
-  userRiskSettingsTable,
 } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
 
 const router: IRouter = Router();
 
@@ -78,11 +78,7 @@ router.get("/me/system-health", requireUser, async (req, res): Promise<void> => 
       .limit(5);
 
     // Personal risk-governor row (defaults if none yet).
-    const rg = await db
-      .select()
-      .from(userRiskSettingsTable)
-      .where(eq(userRiskSettingsTable.userId, userId))
-      .limit(1);
+    const rg = await readTraderRiskSettings(userId);
 
     // Unread notifications.
     const unreadRows = await db
@@ -124,7 +120,7 @@ router.get("/me/system-health", requireUser, async (req, res): Promise<void> => 
         sessionIds: activeSessions.map((s) => s.id),
       },
       riskGovernor: {
-        configured: rg.length > 0,
+        configured: rg != null,
         active: true,
         liveBlocked: true,
       },

@@ -22,7 +22,7 @@
 import { demoPositionLedger, demoPositionColumns } from "../lib/positions/ledger.js";
 import { listScopedConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
-import { db, userRiskSettingsTable, portfolioRiskSnapshotsTable, correlationRiskReportsTable, vaultEventsTable } from "@workspace/db";
+import { db, portfolioRiskSnapshotsTable, correlationRiskReportsTable, vaultEventsTable } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { ownerScope } from "../lib/auth/ownerScope.js";
@@ -38,6 +38,7 @@ import {
   type OpenPositionInput,
 } from "@workspace/domain/portfolio-risk";
 import { createAlert } from "../lib/alerts/alertManager.js";
+import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
 
 
 const router = Router();
@@ -57,11 +58,11 @@ const POSITION_TERMINAL = new Set(["CLOSED", "CANCELED", "REJECTED"]);
 // book also includes the shared MT5 connection's ownerless rows.
 type PortfolioOwner = Parameters<typeof ownerScope>[1];
 async function loadInputs(authUser: PortfolioOwner) {
-  const [positions, settingsRows, mt5Rows] = await Promise.all([
+  const [positions, settingsRow, mt5Rows] = await Promise.all([
     demoPositionLedger.read({ where: ownerScope(demoPositionColumns.userId, authUser) }),
     authUser
-      ? db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, authUser.id)).limit(1)
-      : Promise.resolve([]),
+      ? readTraderRiskSettings(authUser.id)
+      : Promise.resolve(null),
     listScopedConnections((col) => ownerScope(col, authUser), { order: "updated", limit: 1 }),
   ]);
 
@@ -85,7 +86,7 @@ async function loadInputs(authUser: PortfolioOwner) {
     };
   });
 
-  const settings = settingsRows[0];
+  const settings = settingsRow;
   const mt5 = mt5Rows[0];
   return {
     positionsInput,

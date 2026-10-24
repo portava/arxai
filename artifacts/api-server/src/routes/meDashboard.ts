@@ -6,13 +6,14 @@ import { Router } from "express";
 import {
   db, tradingSessionsTable, paperTradesTable,
   tradeJournalEntriesTable, aiTradeReviewsTable, userPlaybooksTable,
-  preTradeChecksTable, userRiskSettingsTable, userRiskEventsTable, userAlertsTable,
+  preTradeChecksTable, userRiskEventsTable, userAlertsTable,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { aggregateHistory, DEFAULT_USER_RISK_SETTINGS } from "../lib/riskGovernor/journalActivity.js";
 import { getOrCreateRiskSettings } from "./meRiskGovernor.js";
 import { upsertAlertOnce, dismissAlertsByType } from "./meAlerts.js";
+import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
 
 const router = Router();
 
@@ -46,11 +47,11 @@ async function loadAll(userId: number) {
     db.select().from(aiTradeReviewsTable).where(eq(aiTradeReviewsTable.userId, userId)).orderBy(desc(aiTradeReviewsTable.createdAt)).limit(50),
     db.select().from(userPlaybooksTable).where(eq(userPlaybooksTable.userId, userId)),
     db.select().from(preTradeChecksTable).where(eq(preTradeChecksTable.userId, userId)).orderBy(desc(preTradeChecksTable.createdAt)).limit(50),
-    db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1),
+    readTraderRiskSettings(userId),
     db.select().from(userRiskEventsTable).where(eq(userRiskEventsTable.userId, userId)).orderBy(desc(userRiskEventsTable.createdAt)).limit(50),
     db.select().from(userAlertsTable).where(and(eq(userAlertsTable.userId, userId), eq(userAlertsTable.status, "unread"))).orderBy(desc(userAlertsTable.createdAt)).limit(50),
   ]);
-  return { conns, sessions, trades, journal, reviews, playbooks, checks, riskSettings: riskSettings[0] ?? null, riskEvents, alerts };
+  return { conns, sessions, trades, journal, reviews, playbooks, checks, riskSettings, riskEvents, alerts };
 }
 
 type Bundle = Awaited<ReturnType<typeof loadAll>>;

@@ -20,7 +20,6 @@ import { db } from "@workspace/db";
 import {
   virtualTradingAccountsTable,
   sharedTradeAttributionTable,
-  userRiskSettingsTable,
   userMasterLiveAccessTable,
   performanceDailyTable,
   paperTradesTable,
@@ -32,6 +31,7 @@ import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEffectiveTradingGovernance } from "../lib/governance/effectiveGovernance.js";
 import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
+import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
 
 const router = Router();
 
@@ -265,11 +265,7 @@ export async function computeAccountShell(
       .limit(1);
 
     // 4) Advisory risk settings.
-    const [rs] = await db
-      .select()
-      .from(userRiskSettingsTable)
-      .where(eq(userRiskSettingsTable.userId, userId))
-      .limit(1);
+    const rs = await readTraderRiskSettings(userId);
 
     // 5) Performance — closed P/L today / week / total + counts.
     const today = new Date().toISOString().slice(0, 10);

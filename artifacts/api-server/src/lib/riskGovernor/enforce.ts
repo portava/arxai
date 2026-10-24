@@ -22,8 +22,6 @@ import { livePositionLedger, livePositionColumns } from "../positions/ledger.js"
 import { readOpenPositions } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
 import {
-  userRiskSettingsTable,
-  userRiskLimitsTable,
   paperAccountsTable,
   paperOrdersTable,
   tradesTable,
@@ -38,13 +36,13 @@ import {
 import { and, desc, eq, gte, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { logRiskEvent } from "./riskEvents.js";
+import { loadEffectiveLimits } from "./limitSettings.js";
 import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
 import { loadTradingHalt } from "../safety/tradingHalt.js";
 import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
 import {
   evaluatePreTradeRisk,
-  resolveEffectiveLimits,
   RISK_RULE_IDS,
   type AccountSnapshotFacts,
   type EffectiveLimits,
@@ -55,7 +53,6 @@ import {
   type RiskInFlight,
   type RiskPosition,
   type RiskQuote,
-  type StoredLimitRows,
   type TradeIntent,
   type BrokerStatus,
   type TradingActivity,
@@ -161,16 +158,8 @@ function startOfTodayUtc(now: Date): Date {
   return d;
 }
 
-/** The trader's stored limit rows: own settings (the one trader-editable store) and operator limits. */
-export async function loadStoredLimitRows(userId: number): Promise<StoredLimitRows> {
-  const [u] = await db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1);
-  const [a] = await db.select().from(userRiskLimitsTable).where(eq(userRiskLimitsTable.userId, userId)).limit(1);
-  return { userSettings: u ?? null, adminLimits: a ?? null };
-}
-
-export async function loadEffectiveLimits(userId: number): Promise<EffectiveLimits> {
-  return resolveEffectiveLimits(await loadStoredLimitRows(userId));
-}
+// The limit-settings rows are read in ./limitSettings.ts (the one reader).
+export { loadStoredLimitRows, loadEffectiveLimits } from "./limitSettings.js";
 
 /**
  * Pending OPEN intents from the Trade Action Center, shared by every venue.

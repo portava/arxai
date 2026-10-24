@@ -31,6 +31,7 @@ import { z } from "zod/v4";
 import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
 import { loadGlobalTradingSettingsRow } from "../lib/safety/platformSwitches.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readOperatorRiskLimits } from "../lib/riskGovernor/limitSettings.js";
 
 const router: IRouter = Router();
 
@@ -290,8 +291,7 @@ router.post("/admin/users/:id/risk-limits", async (req, res) => {
   if (!parsed.success) { res.status(400).json({ ok: false, error: "INVALID_BODY", details: parsed.error.message }); return; }
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
 
-  const before = (await db.select().from(userRiskLimitsTable)
-    .where(eq(userRiskLimitsTable.userId, targetUserId)).limit(1))[0] ?? null;
+  const before = await readOperatorRiskLimits(targetUserId);
 
   const patch = {
     userId: targetUserId,

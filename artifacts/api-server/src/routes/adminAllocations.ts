@@ -35,7 +35,6 @@ import {
   sharedMasterAccountsTable,
   virtualTradingAccountsTable,
   userMasterLiveAccessTable,
-  userRiskLimitsTable,
   arxLiveUserSettingsTable,
   unattributedMasterTradesTable,
   type UserSlotAllocation,
@@ -55,6 +54,7 @@ import {
 } from "@workspace/db";
 import { anyMasterBridgePoolOverAllocated } from "../lib/brokerHub/masterBridgePoolReader.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readOperatorRiskLimitsMany } from "../lib/riskGovernor/limitSettings.js";
 
 const router = Router();
 
@@ -462,12 +462,7 @@ router.get("/admin/allocations", requireUser, async (req, res) => {
         dailyLossLimitUsd: arxLiveUserSettingsTable.dailyLossLimitUsd,
       }).from(arxLiveUserSettingsTable).where(inArray(arxLiveUserSettingsTable.userId, userIds))
     : [];
-  const riskLimitRows = userIds.length
-    ? await db.select({
-        userId: userRiskLimitsTable.userId,
-        maxDailyLossUsd: userRiskLimitsTable.maxDailyLossUsd,
-      }).from(userRiskLimitsTable).where(inArray(userRiskLimitsTable.userId, userIds))
-    : [];
+  const riskLimitRows = await readOperatorRiskLimitsMany(userIds);
   const liveSettingsByUser = new Map<number, number>();
   for (const s of liveSettingsRows) liveSettingsByUser.set(s.userId, Number(s.dailyLossLimitUsd ?? 0));
   const riskLimitByUser = new Map<number, number>();

@@ -15,7 +15,6 @@ import {
   paperSessionsTable,
   userNotificationsTable,
   userActivityTimelineTable,
-  userRiskSettingsTable,
   usersTable,
   propChallengesTable,
   paperOrdersTable,
@@ -410,9 +409,7 @@ export async function getDailyPnLCalendar(userId: number, days = 30) {
 
 // ── 9. getRiskLimits ────────────────────────────────────────────────────
 export async function getRiskLimits(userId: number) {
-  const rows = await db.select().from(userRiskSettingsTable)
-    .where(eq(userRiskSettingsTable.userId, userId)).limit(1);
-  const r = rows[0] ?? null;
+  const r = await readTraderRiskSettings(userId);
   if (!r) {
     return { hasRiskSettings: false, defaults: true, note: "No personal risk settings yet — defaults apply.",};
   }
@@ -3550,6 +3547,7 @@ import {
 import { validateOrderTicket as ttValidate } from "../tradeAction/orderTicketValidation.js";
 import { tradeActionRequestsTable } from "@workspace/db/schema";
 import { isNotNull } from "drizzle-orm";
+import { readTraderRiskSettings } from "../riskGovernor/limitSettings.js";
 
 const ORDER_TYPE_INFO: Record<string, { whatItIs: string; whenToUse: string; requiredFields: string[]; placementRule: string; typicalUseCase: string; slTpRule: string }> = {
   BUY_MARKET: {

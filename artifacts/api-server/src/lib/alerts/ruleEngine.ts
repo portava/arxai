@@ -23,11 +23,11 @@ import {
   weeklyPerformanceReviewsTable,
   tradesTable,
   performanceDailyTable,
-  userRiskSettingsTable,
 } from "@workspace/db";
 import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { createAlert } from "./alertManager.js";
 import { readBrokerHealthState } from "../brokerHub/brokerHealthState.js";
+import { readTraderRiskSettingsMany } from "../riskGovernor/limitSettings.js";
 
 export interface RuleResult {
   evaluated: number;
@@ -258,9 +258,8 @@ async function nearDailyLossLimitRule() {
   if (losing.length === 0) return { fired: false };
 
   const userIds = [...new Set(losing.map((d) => d.userId!))];
-  const own = await db.select({ userId: userRiskSettingsTable.userId, pct: userRiskSettingsTable.maxDailyLossPercent })
-    .from(userRiskSettingsTable).where(inArray(userRiskSettingsTable.userId, userIds));
-  const ownPct = new Map(own.map((r) => [r.userId, r.pct]));
+  const own = await readTraderRiskSettingsMany(userIds);
+  const ownPct = new Map(own.map((r) => [r.userId, r.maxDailyLossPercent]));
 
   let any = false;
   for (const day of losing) {
