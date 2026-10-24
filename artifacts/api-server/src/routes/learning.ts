@@ -19,10 +19,13 @@ import {
   processLearningPayload,
   getSymbolLearningView,
   listLearningEvents,
-  listEdges,
-  listMistakes,
   type LearningPayload,
 } from "../lib/learningEngine.js";
+import {
+  listEdgesForOperator, listMistakesForOperator, listOwnEdges, listOwnMistakes, listPlatformEdges, listPlatformMistakes,
+  PLATFORM_MIN_CONTRIBUTORS,
+} from "../lib/learning/scopedMemory.js";
+import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
 
 const router: Router = Router();
 
@@ -62,11 +65,11 @@ const PayloadSchema = z.object({
 });
 
 // POST /api/learning/process — accepts a Build BB learning payload.
-router.post("/learning/process", async (req, res): Promise<void> => {
+router.post("/learning/process", requireUser, async (req, res): Promise<void> => {
   try {
     const parsed = PayloadSchema.safeParse(req.body ?? {});
     if (!parsed.success) { fail(res, 400, "Invalid payload: " + parsed.error.message); return; }
-    const result = await processLearningPayload(parsed.data as unknown as LearningPayload);
+    const result = await processLearningPayload(parsed.data as unknown as LearningPayload, { ownerUserId: req.authUser!.id });
     ok(res, { result });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /learning/process failed");
@@ -75,10 +78,10 @@ router.post("/learning/process", async (req, res): Promise<void> => {
 });
 
 // GET /api/learning/events?limit=10
-router.get("/learning/events", async (req, res): Promise<void> => {
+router.get("/learning/events", requireUser, async (req, res): Promise<void> => {
   try {
     const limit = Math.max(1, Math.min(200, Number(req.query.limit ?? 10)));
-    const events = await listLearningEvents(limit);
+    const events = await listLearningEvents(req.authUser!.id, limit);
     ok(res, { count: events.length, events });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /learning/events failed");
@@ -87,11 +90,21 @@ router.get("/learning/events", async (req, res): Promise<void> => {
 });
 
 // GET /api/learning/edges?symbol=...
-router.get("/learning/edges", async (req, res): Promise<void> => {
+// Your own edges, plus anonymized platform cohorts with at least
+// PLATFORM_MIN_CONTRIBUTORS traders behind them. Operators may ask for scope=all.
+router.get("/learning/edges", requireUser, async (req, res): Promise<void> => {
   try {
     const symbol = typeof req.query.symbol === "string" && req.query.symbol.length > 0 ? req.query.symbol : undefined;
-    const edges = await listEdges(symbol);
-    ok(res, { count: edges.length, symbol: symbol ?? null, edges });
+    if (req.query.scope === "all" && canSeeLegacyRows(req.authUser)) {
+      const edges = await listEdgesForOperator({ symbol });
+      ok(res, { count: edges.length, symbol: symbol ?? null, scope: "all", edges });
+      return;
+    }
+    const [own, platform] = await Promise.all([
+      listOwnEdges(req.authUser!.id, { symbol, limit: symbol ? undefined : 100 }),
+      listPlatformEdges({ symbol, limit: symbol ? undefined : 100 }),
+    ]);
+    ok(res, { count: own.length, symbol: symbol ?? null, edges: own, platform: { minContributors: PLATFORM_MIN_CONTRIBUTORS, edges: platform } });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /learning/edges failed");
     fail(res, 500, "Failed to list strategy edges");
@@ -99,11 +112,19 @@ router.get("/learning/edges", async (req, res): Promise<void> => {
 });
 
 // GET /api/learning/mistakes?symbol=...
-router.get("/learning/mistakes", async (req, res): Promise<void> => {
+router.get("/learning/mistakes", requireUser, async (req, res): Promise<void> => {
   try {
     const symbol = typeof req.query.symbol === "string" && req.query.symbol.length > 0 ? req.query.symbol : undefined;
-    const mistakes = await listMistakes(symbol);
-    ok(res, { count: mistakes.length, symbol: symbol ?? null, mistakes });
+    if (req.query.scope === "all" && canSeeLegacyRows(req.authUser)) {
+      const mistakes = await listMistakesForOperator({ symbol });
+      ok(res, { count: mistakes.length, symbol: symbol ?? null, scope: "all", mistakes });
+      return;
+    }
+    const [own, platform] = await Promise.all([
+      listOwnMistakes(req.authUser!.id, { symbol, limit: symbol ? undefined : 100 }),
+      listPlatformMistakes({ symbol, limit: symbol ? undefined : 100 }),
+    ]);
+    ok(res, { count: own.length, symbol: symbol ?? null, mistakes: own, platform: { minContributors: PLATFORM_MIN_CONTRIBUTORS, mistakes: platform } });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /learning/mistakes failed");
     fail(res, 500, "Failed to list mistake patterns");
@@ -111,12 +132,12 @@ router.get("/learning/mistakes", async (req, res): Promise<void> => {
 });
 
 // GET /api/learning/view?symbol=...&action=BUY — what AA will see for the next decision.
-router.get("/learning/view", async (req, res): Promise<void> => {
+router.get("/learning/view", requireUser, async (req, res): Promise<void> => {
   try {
     const symbol = String(req.query.symbol ?? "Volatility 75 Index");
     const action = String(req.query.action ?? "BUY").toUpperCase() as "BUY" | "SELL" | "HOLD";
     if (!["BUY", "SELL", "HOLD"].includes(action)) { fail(res, 400, "action must be BUY|SELL|HOLD"); return; }
-    const view = await getSymbolLearningView(symbol, action);
+    const view = await getSymbolLearningView(req.authUser!.id, symbol, action);
     ok(res, { view });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /learning/view failed");
@@ -132,7 +153,7 @@ const DemoBody = z.object({
   pnl: z.number().optional(),
   mistakeTags: z.array(z.string()).optional().default([]),
 });
-router.post("/learning/demo", async (req, res): Promise<void> => {
+router.post("/learning/demo", requireUser, async (req, res): Promise<void> => {
   try {
     const parsed = DemoBody.safeParse(req.body ?? {});
     if (!parsed.success) { fail(res, 400, "Invalid demo body: " + parsed.error.message); return; }
@@ -154,8 +175,8 @@ router.post("/learning/demo", async (req, res): Promise<void> => {
       mistake_tags: result === "LOSS" ? (mistakeTags.length ? mistakeTags : ["EXITED_TOO_QUICKLY"]) : [],
       lesson: `Demo ${result}`, ready_for_learning: true,
     };
-    const learning = await processLearningPayload(payload);
-    const view = await getSymbolLearningView(symbol, action);
+    const learning = await processLearningPayload(payload, { ownerUserId: req.authUser!.id });
+    const view = await getSymbolLearningView(req.authUser!.id, symbol, action);
     ok(res, { demoPayload: payload, learning, viewAfter: view });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /learning/demo failed");

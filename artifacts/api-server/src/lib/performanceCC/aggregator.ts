@@ -5,13 +5,12 @@
 // logs + debriefs + learning events.
 
 import { db } from "@workspace/db";
+import { listOwnEdges, listOwnMistakes } from "../learning/scopedMemory.js";
 import {
   paperOrdersTable,
   tradeDecisionLogsTable,
   postTradeDebriefsTable,
   learningEventsTable,
-  strategyEdgesTable,
-  mistakePatternsTable,
   autopilotCyclesTable,
 } from "@workspace/db";
 import { and, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
@@ -207,7 +206,7 @@ export async function computeSymbolStats(userId: number, range: RangeKey) {
     if (!bySymbol[t.symbol]) bySymbol[t.symbol] = [];
     bySymbol[t.symbol]!.push(t);
   }
-  const edges = await db.select().from(strategyEdgesTable);
+  const edges = await listOwnEdges(userId);
   const edgeBySymbol: Record<string, number> = {};
   for (const e of edges) {
     edgeBySymbol[e.symbol] = Math.max(edgeBySymbol[e.symbol] ?? -Infinity, e.edgeScore);
@@ -279,7 +278,7 @@ export async function computeMistakes(userId: number, range: RangeKey) {
       bucket[t]!.lastTradeId = lev.tradeId;
     }
   }
-  const patterns = await db.select().from(mistakePatternsTable);
+  const patterns = await listOwnMistakes(userId);
   const severityBy: Record<string, number> = {};
   for (const p of patterns) severityBy[p.tag] = p.severityScore;
   return Object.entries(bucket).map(([tag, b]) => ({

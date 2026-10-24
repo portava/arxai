@@ -17,9 +17,9 @@ import {
   dataImportsTable,
   postTradeDebriefsTable,
   learningEventsTable,
-  mistakePatternsTable,
   tradeDecisionLogsTable,
 } from "@workspace/db";
+import { listOwnMistakes } from "../learning/scopedMemory.js";
 import { desc, eq } from "drizzle-orm";
 import { notify, type NotifyResult } from "./service.js";
 import {
@@ -42,8 +42,8 @@ function ts(d: Date | null | undefined): string {
 }
 
 // Ingest runs for one user: it reads that user's own source rows and files the
-// resulting notifications under them. mistake_patterns is the shared cohort
-// table, so those stay system-wide (user_id NULL, shown to nobody's feed).
+// resulting notifications under them, mistake patterns included (learning
+// memory is per trader).
 async function fireAs(
   s: IngestStats,
   inp: NotifyInput | null,
@@ -144,13 +144,14 @@ export async function ingest(opts: { limitPerSource?: number; userId: number }) 
   // CC mistake patterns rising
   {
     const s: IngestStats = { source: "CC:mistake_patterns", scanned: 0, created: 0, updated: 0, skipped: 0 };
-    const rows = await db.select().from(mistakePatternsTable).orderBy(desc(mistakePatternsTable.updatedAt)).limit(lim);
+    // Only this trader's own patterns: another trader's mistakes are not theirs to see.
+    const rows = await listOwnMistakes(uid, { limit: lim });
     for (const r of rows) {
       if ((r.count ?? 0) >= 3) {
         await fire(s,
           ruleLearning({ learningEventId: r.id, event: "REPEATED_MISTAKE_RISING",
             tag: r.tag ?? undefined, count: r.count ?? undefined, symbol: r.symbol ?? undefined }),
-          `CC:rising:${r.id}:${r.count ?? 0}:${ts(r.updatedAt)}`, null);
+          `CC:rising:${r.id}:${r.count ?? 0}:${ts(r.updatedAt)}`);
       }
     }
     stats.push(s);

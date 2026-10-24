@@ -70,6 +70,7 @@ import { checkInstrumentMappingSingleSource } from "./check-instrument-mapping-s
 import { checkBrokerStateSingleReader } from "./check-broker-state-single-reader.js";
 import { checkSingleRiskAuthority } from "./check-single-risk-authority.js";
 import { checkBrokerConnectionSingleOwner } from "./check-broker-connection-single-owner.js";
+import { checkLearningMemorySingleOwner } from "./check-learning-memory-single-owner.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -148,6 +149,7 @@ const checks: Array<() => CheckResult> = [
   checkBrokerStateSingleReader,
   checkSingleRiskAuthority,
   checkBrokerConnectionSingleOwner,
+  checkLearningMemorySingleOwner,
 ];
 
 let failed = 0;

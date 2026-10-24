@@ -404,6 +404,8 @@ export async function runAutoDebrief(
         const { processLearningPayload } = await import("./learningEngine.js");
         const ccResult = await processLearningPayload(
           finalLearningPayload as unknown as import("./learningEngine.js").LearningPayload,
+          // Learning memory is per trader: the debrief's owner owns the memory.
+          { ownerUserId: trade.userId ?? undefined },
         );
         log.info({
           debriefId: inserted.id,
