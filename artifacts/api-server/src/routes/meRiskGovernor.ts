@@ -10,6 +10,7 @@ import {
 import { and, desc, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { evaluateRiskCheck, aggregateHistory, DEFAULT_USER_RISK_SETTINGS, type RiskCheckInput, type RiskCheckResult } from "../lib/riskGovernorEngine.js";
+import { parseSymbolLimits } from "../lib/riskGovernor/preTrade.js";
 
 const router = Router();
 
@@ -122,6 +123,15 @@ function sanitizeBody(b: Record<string, unknown>): Record<string, unknown> {
     "requirePlaybook", "requirePreTradeChecklist", "requireJournalReason", "allowOverrideInPaperMode"];
   for (const k of numFields) if (typeof b[k] === "number" || b[k] === null) out[k] = b[k];
   for (const k of boolFields) if (typeof b[k] === "boolean") out[k] = b[k];
+  // Exposure limits (Tier 1 step 8). Positive numbers or null; the Risk
+  // Governor only ever uses them to tighten the platform ceilings.
+  for (const k of ["maxLeverage", "maxSymbolLeverage", "maxPortfolioRiskPercent", "maxDrawdownPercent"]) {
+    if (b[k] === null || (typeof b[k] === "number" && Number.isFinite(b[k]) && (b[k] as number) > 0)) out[k] = b[k];
+  }
+  if (b["maxPositionsPerSymbol"] === null || (Number.isInteger(b["maxPositionsPerSymbol"]) && (b["maxPositionsPerSymbol"] as number) > 0)) {
+    out["maxPositionsPerSymbol"] = b["maxPositionsPerSymbol"];
+  }
+  if (b["symbolLimits"] !== undefined) out["symbolLimits"] = parseSymbolLimits(b["symbolLimits"]);
   // Reject any client attempt to flip live contract or set userId
   delete (b as Record<string, unknown>).userId;
   delete (b as Record<string, unknown>).liveLocked;

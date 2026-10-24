@@ -19,6 +19,17 @@ export const userRiskSettingsTable = pgTable("user_risk_settings", {
   maxTradesPerDay: integer("max_trades_per_day").notNull().default(5),
   maxConsecutiveLosses: integer("max_consecutive_losses").notNull().default(3),
   maxPositionSize: real("max_position_size"),
+  // Exposure, leverage, concentration and drawdown (Tier 1 step 8). All
+  // optional: null = the platform ceiling applies. A stored value can only
+  // tighten the ceiling — the Risk Governor takes the strictest of this row,
+  // the admin's user_risk_limits row and the platform ceiling.
+  maxLeverage: real("max_leverage"),
+  maxSymbolLeverage: real("max_symbol_leverage"),
+  maxPositionsPerSymbol: integer("max_positions_per_symbol"),
+  maxPortfolioRiskPercent: real("max_portfolio_risk_percent"),
+  maxDrawdownPercent: real("max_drawdown_percent"),
+  /** Per-instrument limits: { "EURUSD": { "maxLots": 0.5 }, "XAUUSD": { "blocked": true } }. */
+  symbolLimits: jsonb("symbol_limits").notNull().default({}),
   // Quality + cooldowns
   minRewardRiskRatio: real("min_reward_risk_ratio").notNull().default(1.5),
   cooldownAfterLossMinutes: integer("cooldown_after_loss_minutes").notNull().default(30),
@@ -66,3 +77,22 @@ export const userRiskEventsTable = pgTable("user_risk_events", {
   sevIdx: index("user_risk_events_sev_idx").on(t.severity),
 }));
 export type UserRiskEvent = typeof userRiskEventsTable.$inferSelect;
+
+// ── Equity high-water mark per account (Tier 1 step 8) ──────────────────────
+// The Risk Governor records the highest equity it has seen for each account it
+// sizes an order against, and measures drawdown from it. The peak only rises;
+// it starts the first time the governor sees the account, so drawdown is
+// "since ARX began tracking", stated as such in the audit row.
+export const userEquityPeaksTable = pgTable("user_equity_peaks", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  venue: text("venue").notNull(),            // PAPER | DEMO | LIVE
+  accountKey: text("account_key").notNull(), // the account facts' source, e.g. paper_account:12
+  peakEquity: real("peak_equity").notNull(),
+  peakAt: timestamp("peak_at", { withTimezone: true }).notNull().defaultNow(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  accountUq: uniqueIndex("user_equity_peaks_account_uq").on(t.userId, t.venue, t.accountKey),
+}));
+export type UserEquityPeak = typeof userEquityPeaksTable.$inferSelect;

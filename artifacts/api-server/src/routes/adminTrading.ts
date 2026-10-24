@@ -281,6 +281,12 @@ const riskLimitsSchema = z.object({
   allowedAccountType: z.enum(["demo", "live", "both"]).default("demo"),
   allowedDirection: z.enum(["buy", "sell", "both"]).default("both"),
   requireLiveConfirmation: z.boolean().default(true),
+  // Exposure hard limits (Tier 1 step 8); null or absent = no admin limit.
+  maxLeverage: z.number().positive().max(1000).nullable().optional(),
+  maxSymbolLeverage: z.number().positive().max(1000).nullable().optional(),
+  maxPositionsPerSymbol: z.number().int().positive().max(100).nullable().optional(),
+  maxPortfolioRiskPercent: z.number().positive().max(100).nullable().optional(),
+  maxDrawdownPercent: z.number().positive().max(100).nullable().optional(),
   reason: z.string().min(3).optional(),
 });
 
@@ -304,6 +310,11 @@ router.post("/admin/users/:id/risk-limits", async (req, res) => {
     allowedAccountType: parsed.data.allowedAccountType,
     allowedDirection: parsed.data.allowedDirection,
     requireLiveConfirmation: parsed.data.requireLiveConfirmation,
+    maxLeverage: parsed.data.maxLeverage ?? null,
+    maxSymbolLeverage: parsed.data.maxSymbolLeverage ?? null,
+    maxPositionsPerSymbol: parsed.data.maxPositionsPerSymbol ?? null,
+    maxPortfolioRiskPercent: parsed.data.maxPortfolioRiskPercent ?? null,
+    maxDrawdownPercent: parsed.data.maxDrawdownPercent ?? null,
     updatedByAdminId: adminId,
     updatedAt: new Date(),
   };

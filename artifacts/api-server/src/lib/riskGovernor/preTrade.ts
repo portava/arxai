@@ -87,6 +87,16 @@ export interface EffectiveLimits {
   maxPositionsPerSymbol: number;
   maxQuoteAgeMs: number;
   duplicateWindowMs: number;
+  /** Peak-to-now equity drawdown cap in percent; null = none configured. */
+  maxDrawdownPercent: number | null;
+  /** Per-instrument limits by upper-case symbol (trader's symbol_limits). */
+  symbolLimits: Record<string, { maxLots: number | null; blocked: boolean }>;
+  /** Admin instrument allow-list; null = every instrument. */
+  allowedSymbols: string[] | null;
+  /** Admin direction restriction; null = both. */
+  allowedDirection: "BUY" | "SELL" | null;
+  /** False when the admin limited this trader to demo accounts. */
+  liveAllowed: boolean;
   /** Which stored value won for each limit, for the audit row. */
   sources: Record<string, string>;
 }
@@ -102,7 +112,7 @@ export interface StoredLimitRows {
     maxPositionSize: number | null;
     blockAfterDailyLossHit: boolean;
     requireStopLoss: boolean;
-  } | null;
+  } & OptionalExposureLimits & { symbolLimits?: unknown } | null;
   /** risk_settings (legacy per-user limits page). */
   legacySettings?: {
     maxDailyLossPct: number;
@@ -114,7 +124,33 @@ export interface StoredLimitRows {
   adminLimits?: {
     maxLotSize: number;
     maxDailyLossUsd: number;
-  } | null;
+    allowedSymbols?: unknown;
+    allowedAccountType?: string | null;
+    allowedDirection?: string | null;
+  } & OptionalExposureLimits | null;
+}
+
+/** Tighten-only exposure columns on user_risk_settings and user_risk_limits (null = not set). */
+export interface OptionalExposureLimits {
+  maxLeverage?: number | null;
+  maxSymbolLeverage?: number | null;
+  maxPositionsPerSymbol?: number | null;
+  maxPortfolioRiskPercent?: number | null;
+  maxDrawdownPercent?: number | null;
+}
+
+/** Parse a stored symbol_limits object, ignoring anything malformed. */
+export function parseSymbolLimits(raw: unknown): Record<string, { maxLots: number | null; blocked: boolean }> {
+  const out: Record<string, { maxLots: number | null; blocked: boolean }> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [sym, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!v || typeof v !== "object") continue;
+    const o = v as Record<string, unknown>;
+    const maxLots = typeof o["maxLots"] === "number" && Number.isFinite(o["maxLots"]) && o["maxLots"] >= 0 ? o["maxLots"] : null;
+    const blocked = o["blocked"] === true || maxLots === 0;
+    out[sym.trim().toUpperCase()] = { maxLots: maxLots === 0 ? null : maxLots, blocked };
+  }
+  return out;
 }
 
 // Defaults when the trader never saved a settings row — the same column
@@ -185,9 +221,32 @@ export function resolveEffectiveLimits(rows: StoredLimitRows): EffectiveLimits {
     l?.maxOpenTrades && l.maxOpenTrades > 0 ? l.maxOpenTrades : Number.POSITIVE_INFINITY,
   );
   const perTrade = perTradePct.value ?? USER_DEFAULTS.maxRiskPerTradePercent;
-  const portfolio = Math.min(PLATFORM_RISK_CEILINGS.maxPortfolioRiskPercent, perTrade * Math.max(1, maxOpen));
-  sources["maxPortfolioRiskPercent"] = portfolio === PLATFORM_RISK_CEILINGS.maxPortfolioRiskPercent
-    ? "platform" : "per_trade_percent x max_open_trades";
+  const portfolio = strictest([
+    ["platform", PLATFORM_RISK_CEILINGS.maxPortfolioRiskPercent],
+    ["per_trade_percent x max_open_trades", perTrade * Math.max(1, maxOpen)],
+    ["user_risk_settings.max_portfolio_risk_percent", u?.maxPortfolioRiskPercent],
+    ["user_risk_limits.max_portfolio_risk_percent", a?.maxPortfolioRiskPercent],
+  ]);
+  sources["maxPortfolioRiskPercent"] = portfolio.source;
+
+  const exposure = (key: keyof OptionalExposureLimits, column: string, ceiling: number | null) => {
+    const r = strictest([
+      ["platform", ceiling],
+      [`user_risk_settings.${column}`, u?.[key]],
+      [`user_risk_limits.${column}`, a?.[key]],
+    ]);
+    sources[key] = r.source;
+    return r.value;
+  };
+  const maxLeverage = exposure("maxLeverage", "max_leverage", PLATFORM_RISK_CEILINGS.maxLeverage)!;
+  const maxSymbolLeverage = exposure("maxSymbolLeverage", "max_symbol_leverage", PLATFORM_RISK_CEILINGS.maxSymbolLeverage)!;
+  const maxPositionsPerSymbol = exposure("maxPositionsPerSymbol", "max_positions_per_symbol", PLATFORM_RISK_CEILINGS.maxPositionsPerSymbol)!;
+  const maxDrawdownPercent = exposure("maxDrawdownPercent", "max_drawdown_percent", null);
+
+  const allowed = Array.isArray(a?.allowedSymbols)
+    ? (a!.allowedSymbols as unknown[]).filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim().toUpperCase())
+    : [];
+  const dir = String(a?.allowedDirection ?? "both").toLowerCase();
 
   return {
     maxLotSize: lot.value ?? PLATFORM_RISK_CEILINGS.maxLotSize,
@@ -196,12 +255,19 @@ export function resolveEffectiveLimits(rows: StoredLimitRows): EffectiveLimits {
     maxDailyLossPercent: dailyPct.value,
     maxDailyLossAmount: dailyAmt.value,
     requireStopLoss: u ? u.requireStopLoss : USER_DEFAULTS.requireStopLoss,
-    maxPortfolioRiskPercent: portfolio,
-    maxLeverage: PLATFORM_RISK_CEILINGS.maxLeverage,
-    maxSymbolLeverage: PLATFORM_RISK_CEILINGS.maxSymbolLeverage,
-    maxPositionsPerSymbol: PLATFORM_RISK_CEILINGS.maxPositionsPerSymbol,
+    maxPortfolioRiskPercent: portfolio.value ?? PLATFORM_RISK_CEILINGS.maxPortfolioRiskPercent,
+    maxLeverage,
+    maxSymbolLeverage,
+    maxPositionsPerSymbol,
     maxQuoteAgeMs: PLATFORM_RISK_CEILINGS.maxQuoteAgeMs,
     duplicateWindowMs: PLATFORM_RISK_CEILINGS.duplicateWindowMs,
+    maxDrawdownPercent,
+    symbolLimits: parseSymbolLimits(u?.symbolLimits),
+    allowedSymbols: allowed.length ? allowed : null,
+    allowedDirection: dir === "buy" ? "BUY" : dir === "sell" ? "SELL" : null,
+    // Same reading as the Trade Action guard: an admin row set to "demo" keeps
+    // the trader off live accounts. No admin row = no restriction here.
+    liveAllowed: a ? String(a.allowedAccountType ?? "demo").toLowerCase() !== "demo" : true,
     sources,
   };
 }
@@ -276,6 +342,11 @@ export interface RiskContext {
    */
   accountSnapshot?: AccountSnapshotFacts | null;
   daily: { realizedPnl: number | null; floatingPnl: number | null };
+  /**
+   * Highest equity the governor has recorded for this account (user_equity_peaks).
+   * Needed only when a drawdown limit is set; null = none recorded yet.
+   */
+  equityPeak?: { peakEquity: number; since: Date | null; source: string } | null;
   /** Stop switches (lib/safety/tradingHalt). Engaged halts new risk; closes stay open. */
   halt?: RiskHalt | null;
 }
@@ -505,13 +576,26 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
     }
   }
 
-  // ── 1. Maximum position size ───────────────────────────────────────────
+  // ── 1. Maximum position size, with instrument and account limits ───────
   {
     const inst = ctx.instruments[intent.symbol];
+    const sym = intent.symbol.trim().toUpperCase();
+    const symLimit = L.symbolLimits[sym] ?? null;
     const brokerMax = inst?.maxVolume != null && inst.maxVolume > 0 ? inst.maxVolume : null;
-    const cap = brokerMax != null ? Math.min(L.maxLotSize, brokerMax) : L.maxLotSize;
-    const measured = { lots, maxLotSize: cap, source: brokerMax != null && brokerMax < L.maxLotSize ? "broker_max_volume" : L.sources["maxLotSize"] ?? "platform" };
-    if (lots != null && lots > cap) set("max_position_size", "BLOCK", `Lot size ${lots} exceeds your maximum of ${cap}.`, measured);
+    const caps: Array<[string, number]> = [[L.sources["maxLotSize"] ?? "platform", L.maxLotSize]];
+    if (brokerMax != null) caps.push(["broker_max_volume", brokerMax]);
+    if (symLimit?.maxLots != null) caps.push([`user_risk_settings.symbol_limits.${sym}`, symLimit.maxLots]);
+    const [source, cap] = caps.reduce((a, b) => (b[1] < a[1] ? b : a));
+    const measured = { lots, maxLotSize: cap, source };
+    if (intent.venue === "LIVE" && !L.liveAllowed) {
+      set("max_position_size", "BLOCK", "Your account is limited to demo trading by an administrator.", { ...measured, limit: "user_risk_limits.allowed_account_type" });
+    } else if (L.allowedSymbols && !L.allowedSymbols.includes(sym)) {
+      set("max_position_size", "BLOCK", `${intent.symbol} is not on the instruments an administrator allowed for your account.`, { ...measured, limit: "user_risk_limits.allowed_symbols" });
+    } else if (L.allowedDirection && intent.side && intent.side !== L.allowedDirection) {
+      set("max_position_size", "BLOCK", `Your account is restricted to ${L.allowedDirection} trades only.`, { ...measured, limit: "user_risk_limits.allowed_direction" });
+    } else if (symLimit?.blocked) {
+      set("max_position_size", "BLOCK", `Trading ${intent.symbol} is switched off in your risk limits.`, { ...measured, limit: `user_risk_settings.symbol_limits.${sym}` });
+    } else if (lots != null && lots > cap) set("max_position_size", "BLOCK", `Lot size ${lots} exceeds your maximum of ${cap}${source.includes("symbol_limits") ? ` for ${intent.symbol}` : ""}.`, measured);
     else set("max_position_size", "PASS", null, measured);
   }
 
@@ -605,6 +689,25 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
         }
       }
       set("daily_loss_limit", reason ? "BLOCK" : "PASS", reason, measured);
+    }
+    // Drawdown from the account's recorded equity peak (when a cap is set).
+    if (L.maxDrawdownPercent != null && results.get("daily_loss_limit")?.outcome !== "BLOCK") {
+      const prior = results.get("daily_loss_limit")!;
+      const peakFact = ctx.equityPeak ?? null;
+      const m: RiskRuleResult["measured"] = { ...(prior.measured ?? {}), maxDrawdownPercent: L.maxDrawdownPercent,
+        peakEquity: peakFact?.peakEquity ?? null, peakSince: peakFact?.since?.toISOString() ?? null };
+      if (equity == null) {
+        set("daily_loss_limit", "BLOCK", "Account equity is unknown, so your drawdown limit cannot be checked.", m);
+      } else {
+        const peak = Math.max(equity, peakFact?.peakEquity ?? equity);
+        const dd = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
+        m["peakEquity"] = round(peak);
+        m["drawdownPercent"] = round(dd);
+        if (dd >= L.maxDrawdownPercent) {
+          set("daily_loss_limit", "BLOCK",
+            `Account is ${round(dd)}% below its peak equity of ${round(peak)} (drawdown limit ${L.maxDrawdownPercent}%). New trades are blocked; closing is allowed.`, m);
+        } else set("daily_loss_limit", "PASS", null, m);
+      }
     }
   }
 

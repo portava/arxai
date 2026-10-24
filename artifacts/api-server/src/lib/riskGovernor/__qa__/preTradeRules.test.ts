@@ -158,7 +158,7 @@ test("rule 7 daily_loss_limit: realized plus floating loss at the cap blocks new
 test("rule 7 daily_loss_limit: admin USD cap applies even when the trader switched their own off", () => {
   const limits = resolveEffectiveLimits({
     userSettings: { maxRiskPerTradePercent: 1, maxRiskPerTradeAmount: null, maxDailyLossPercent: 3, maxDailyLossAmount: null, maxOpenTrades: 3, maxPositionSize: null, blockAfterDailyLossHit: false, requireStopLoss: true },
-    adminLimits: { maxLotSize: 5, maxDailyLossUsd: 100 },
+    adminLimits: { maxLotSize: 5, maxDailyLossUsd: 100, allowedAccountType: "both" },
   });
   assert.equal(limits.maxDailyLossPercent, null);
   assert.equal(limits.maxDailyLossAmount, 100);
@@ -425,4 +425,83 @@ test("rule 12 account snapshot: closing, partial closing and tightening stay pos
   assert.ok(evaluatePreTradeRisk(widen, stale).blockedBy.includes("broker_unavailable"));
   assert.equal(evaluatePreTradeRisk(baseIntent(), baseCtx({ accountSnapshot: null })).decision, "ALLOW",
     "no broker account behind the order (paper, shared ledger) is not a stale snapshot");
+});
+
+// ── Per-user exposure limits (Tier 1 step 8) ─────────────────────────────
+
+const USER_ROW = {
+  maxRiskPerTradePercent: 1, maxRiskPerTradeAmount: null, maxDailyLossPercent: 3, maxDailyLossAmount: null,
+  maxOpenTrades: 3, maxPositionSize: null, blockAfterDailyLossHit: true, requireStopLoss: true,
+};
+const ADMIN_ROW = { maxLotSize: 5, maxDailyLossUsd: 0, allowedSymbols: [], allowedAccountType: "both", allowedDirection: "both" };
+
+test("per-user limits: leverage, concentration, positions per symbol and portfolio take the strictest of trader, admin and platform", () => {
+  const L = resolveEffectiveLimits({
+    userSettings: { ...USER_ROW, maxLeverage: 10, maxSymbolLeverage: 20, maxPositionsPerSymbol: 1, maxPortfolioRiskPercent: 2 },
+    adminLimits: { ...ADMIN_ROW, maxLeverage: 12, maxSymbolLeverage: 4, maxPositionsPerSymbol: 3, maxPortfolioRiskPercent: 50 },
+  });
+  assert.equal(L.maxLeverage, 10);
+  assert.equal(L.sources["maxLeverage"], "user_risk_settings.max_leverage");
+  assert.equal(L.maxSymbolLeverage, 4, "admin is stricter than the trader");
+  assert.equal(L.sources["maxSymbolLeverage"], "user_risk_limits.max_symbol_leverage");
+  assert.equal(L.maxPositionsPerSymbol, 1);
+  assert.equal(L.maxPortfolioRiskPercent, 2);
+  const loose = resolveEffectiveLimits({ userSettings: { ...USER_ROW, maxLeverage: 500, maxSymbolLeverage: 500, maxPositionsPerSymbol: 99 } });
+  assert.equal(loose.maxLeverage, PLATFORM_RISK_CEILINGS.maxLeverage, "a stored value can never loosen the ceiling");
+  assert.equal(loose.maxSymbolLeverage, PLATFORM_RISK_CEILINGS.maxSymbolLeverage);
+  assert.equal(loose.maxPositionsPerSymbol, PLATFORM_RISK_CEILINGS.maxPositionsPerSymbol);
+  const none = resolveEffectiveLimits({});
+  assert.equal(none.maxDrawdownPercent, null, "no drawdown cap unless one is set");
+  assert.equal(none.liveAllowed, true);
+});
+
+test("per-user limits: a trader's leverage cap blocks a trade the platform ceiling would allow", () => {
+  // 0.1 lot EURUSD ≈ $11k notional on $10k equity = 1.1x; cap 1x.
+  const ctx = baseCtx({ limits: resolveEffectiveLimits({ userSettings: { ...USER_ROW, maxLeverage: 1 } }) });
+  const r = blockedOnly(baseIntent(), ctx, "leverage");
+  assert.equal(r.measured?.["maxLeverage"], 1);
+});
+
+test("per-user limits: positions per symbol of 1 blocks a second EURUSD", () => {
+  const ctx = baseCtx({
+    limits: resolveEffectiveLimits({ userSettings: { ...USER_ROW, maxPositionsPerSymbol: 1 } }),
+    positions: [{ symbol: "EURUSD", side: "BUY", lots: 0.01, entryPrice: 1.1, stopLoss: 1.099 }],
+  });
+  const r = blockedOnly(baseIntent(), ctx, "concentration");
+  assert.equal(r.measured?.["maxPositionsPerSymbol"], 1);
+});
+
+test("instrument limits: a per-symbol lot cap and a switched-off symbol block on max_position_size", () => {
+  const capped = baseCtx({ limits: resolveEffectiveLimits({ userSettings: { ...USER_ROW, symbolLimits: { eurusd: { maxLots: 0.05 } } } }) });
+  const r = blockedOnly(baseIntent({ lots: 0.08, stopLoss: 1.0991 }), capped, "max_position_size");
+  assert.equal(r.measured?.["maxLotSize"], 0.05);
+  assert.equal(r.measured?.["source"], "user_risk_settings.symbol_limits.EURUSD");
+  const off = baseCtx({ limits: resolveEffectiveLimits({ userSettings: { ...USER_ROW, symbolLimits: { EURUSD: { blocked: true } } } }) });
+  assert.match(blockedOnly(baseIntent(), off, "max_position_size").reason!, /switched off/);
+  const other = evaluatePreTradeRisk(baseIntent({ symbol: "GBPUSD", stopLoss: 1.0951 }), off);
+  assert.ok(!other.blockedBy.includes("max_position_size"), "other symbols are unaffected");
+});
+
+test("account limits: admin allow-list, direction and demo-only apply to every venue path", () => {
+  const list = baseCtx({ limits: resolveEffectiveLimits({ adminLimits: { ...ADMIN_ROW, allowedSymbols: ["GBPUSD"] } }) });
+  assert.match(blockedOnly(baseIntent(), list, "max_position_size").reason!, /not on the instruments/);
+  const sellOnly = baseCtx({ limits: resolveEffectiveLimits({ adminLimits: { ...ADMIN_ROW, allowedDirection: "sell" } }) });
+  assert.match(blockedOnly(baseIntent(), sellOnly, "max_position_size").reason!, /SELL trades only/);
+  const demo = baseCtx({ limits: resolveEffectiveLimits({ adminLimits: { ...ADMIN_ROW, allowedAccountType: "demo" } }) });
+  assert.match(blockedOnly(baseIntent({ venue: "LIVE" }), demo, "max_position_size").reason!, /limited to demo/);
+  assert.equal(evaluatePreTradeRisk(baseIntent({ venue: "DEMO" }), demo).decision, "ALLOW");
+});
+
+test("drawdown: at or past the cap from the recorded peak blocks new risk; closing stays open", () => {
+  const limits = resolveEffectiveLimits({ userSettings: { ...USER_ROW, maxDrawdownPercent: 10 } });
+  const peak = { peakEquity: 11_200, since: new Date("2026-10-01T00:00:00Z"), source: "test" };
+  // $10k equity vs $11.2k peak = 10.7% down.
+  const r = blockedOnly(baseIntent(), baseCtx({ limits, equityPeak: peak }), "daily_loss_limit");
+  assert.equal(r.measured?.["drawdownPercent"], 10.71);
+  assert.match(r.reason!, /below its peak equity/);
+  assert.equal(evaluatePreTradeRisk(baseIntent({ action: "CLOSE", stopLoss: null }), baseCtx({ limits, equityPeak: peak })).decision, "ALLOW");
+  assert.equal(evaluatePreTradeRisk(baseIntent(), baseCtx({ limits, equityPeak: { ...peak, peakEquity: 10_500 } })).decision, "ALLOW");
+  assert.equal(evaluatePreTradeRisk(baseIntent(), baseCtx({ limits, equityPeak: null })).decision, "ALLOW", "no peak yet: today is the peak");
+  const unknown = baseCtx({ limits, account: { equity: null, freeMargin: 9_000, leverage: 100, currency: "USD", source: "test" } });
+  assert.ok(evaluatePreTradeRisk(baseIntent(), unknown).rules.find((x) => x.rule === "daily_loss_limit")!.reason!.includes("drawdown"));
 });
