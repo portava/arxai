@@ -1,12 +1,12 @@
 /**
  * Real-browser regression check for a normal user's session lifecycle.
  *
- * Seeds one isolated USER account, signs in through the actual /login form,
+ * Seeds two isolated USER accounts, signs in through the actual /login form,
  * reloads, opens /settings, verifies that server-side session revocation sends
  * the browser back to /login and clears private query data before a new sign-in,
- * signs out, and confirms /api/me is unauthorized before directly revisiting
- * /settings. The test never creates a privileged user, provisions a broker, or
- * invokes a broker connection endpoint.
+ * then signs out and switches to the second account to verify private cached data
+ * is refreshed rather than carried across accounts. The test never creates a
+ * privileged user, provisions a broker, or invokes a broker connection endpoint.
  */
 import { randomBytes, scryptSync } from "node:crypto";
 import type { Server } from "node:http";
@@ -85,16 +85,28 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 async function main(): Promise<void> {
-  const email = `qa-session-${randomBytes(8).toString("hex")}@arx.local`;
-  const password = `Session-${randomBytes(12).toString("hex")}`;
-  const inserted = await pool.query<{ id: number }>(
+  const fixtureSuffix = randomBytes(8).toString("hex");
+  const emailA = `qa-session-a-${fixtureSuffix}@arx.local`;
+  const emailB = `qa-session-b-${fixtureSuffix}@arx.local`;
+  const passwordA = `Session-A-${randomBytes(12).toString("hex")}`;
+  const passwordB = `Session-B-${randomBytes(12).toString("hex")}`;
+  const privateNameA = `QA User A ${fixtureSuffix.slice(0, 5)}`;
+  const privateNameB = `QA User B ${fixtureSuffix.slice(0, 5)}`;
+  const inserted = await pool.query<{ id: number; email: string }>(
     `INSERT INTO users (email, name, password_hash, role)
-     VALUES ($1, 'QA Session User', $2, 'USER')
-     RETURNING id`,
-    [email, hashPassword(password)],
+     VALUES ($1, 'QA Session User A', $2, 'USER'),
+            ($3, 'QA Session User B', $4, 'USER')
+     RETURNING id, email`,
+    [emailA, hashPassword(passwordA), emailB, hashPassword(passwordB)],
   );
-  const userId = inserted.rows[0]?.id;
-  assert(userId !== undefined, "Could not create the isolated standard-user fixture.");
+  const userAId = inserted.rows.find((user) => user.email === emailA)?.id;
+  const userBId = inserted.rows.find((user) => user.email === emailB)?.id;
+  assert(userAId !== undefined && userBId !== undefined, "Could not create both isolated standard-user fixtures.");
+  await pool.query(
+    `INSERT INTO user_settings (user_id, assistant_display_name)
+     VALUES ($1, $2), ($3, $4)`,
+    [userAId, privateNameA, userBId, privateNameB],
+  );
 
   const originalEnv = new Map<string, string | undefined>();
   let apiServer: Server | undefined;
@@ -165,12 +177,6 @@ async function main(): Promise<void> {
       const method = route.request().method();
       if (requestUrl.pathname === "/api/me/assistant-settings" && method === "GET") {
         privateAssistantSettingsRequestCount += 1;
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ displayName: "QA Ruby", isDefault: false }),
-        });
-        return;
       }
       const allowedSessionRequest =
         (requestUrl.pathname === "/api/me" && method === "GET") ||
@@ -189,14 +195,19 @@ async function main(): Promise<void> {
       (response) => new URL(response.url()).pathname === "/api/me/assistant-settings" && response.status() === 200,
       { timeout: 15_000 },
     );
-    await page.getByTestId("input-email").fill(email);
-    await page.getByTestId("input-password").fill(password);
+    await page.getByTestId("input-email").fill(emailA);
+    await page.getByTestId("input-password").fill(passwordA);
     await page.getByTestId("button-submit-login").click();
     await page.waitForURL((url) => url.pathname !== "/login", { timeout: 30_000 });
-    await initialPrivateSettings;
+    const initialSettingsResponse = await initialPrivateSettings;
+    const initialSettings = await initialSettingsResponse.json() as { displayName?: string };
     assert(
       privateAssistantSettingsRequestCount === 1,
       "The private assistant settings query did not load after sign-in.",
+    );
+    assert(
+      initialSettings.displayName === privateNameA,
+      "User A did not receive their isolated private assistant settings.",
     );
 
     const fetchMe = async () => page.evaluate(async () => {
@@ -208,7 +219,7 @@ async function main(): Promise<void> {
     });
     let me = await fetchMe();
     assert(me.status === 200, `Expected signed-in /api/me to return 200, got ${me.status}.`);
-    assert(me.body?.user?.email === email, "The signed-in session did not resolve to the standard test user.");
+    assert(me.body?.user?.email === emailA, "The signed-in session did not resolve to standard user A.");
     assert(me.body?.user?.role === "USER", "The browser session did not use a standard USER account.");
     console.log("PASS  standard USER signs in through /login and /api/me identifies the session");
 
@@ -223,6 +234,12 @@ async function main(): Promise<void> {
       );
     }
     assert(new URL(page.url()).pathname === "/settings", "The standard user could not stay on /settings.");
+    await page.getByTestId("input-assistant-name").waitFor({ state: "visible", timeout: 10_000 });
+    await page.waitForFunction(
+      '(name) => document.querySelector(\'[data-testid="input-assistant-name"]\')?.value === name',
+      privateNameA,
+      { timeout: 10_000 },
+    );
     const privateSettingsRequestsBeforeRevocation = privateAssistantSettingsRequestCount;
     assert(
       privateSettingsRequestsBeforeRevocation >= 1,
@@ -232,7 +249,7 @@ async function main(): Promise<void> {
 
     const revokedSessions = await pool.query(
       `DELETE FROM auth_user_sessions WHERE user_id = $1`,
-      [userId],
+      [userAId],
     );
     assert((revokedSessions.rowCount ?? 0) > 0, "Could not revoke the isolated test user's session.");
     const unauthorizedIdentity = page.waitForResponse(
@@ -264,8 +281,8 @@ async function main(): Promise<void> {
     await page.getByTestId("form-login").waitFor({ timeout: 10_000 });
     console.log("PASS  register and password-reset pages remain public after revocation");
 
-    await page.getByTestId("input-email").fill(email);
-    await page.getByTestId("input-password").fill(password);
+    await page.getByTestId("input-email").fill(emailA);
+    await page.getByTestId("input-password").fill(passwordA);
     const refreshedPrivateSettings = page.waitForResponse(
       (response) => new URL(response.url()).pathname === "/api/me/assistant-settings" && response.status() === 200,
       { timeout: 15_000 },
@@ -275,6 +292,11 @@ async function main(): Promise<void> {
     await refreshedPrivateSettings;
     await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
+    await page.waitForFunction(
+      '(name) => document.querySelector(\'[data-testid="input-assistant-name"]\')?.value === name',
+      privateNameA,
+      { timeout: 10_000 },
+    );
     assert(
       Number(privateAssistantSettingsRequestCount) > Number(privateSettingsRequestsBeforeRevocation),
       `Expected private settings to be fetched again after re-sign-in. Requests before revocation: ${privateSettingsRequestsBeforeRevocation}; after: ${privateAssistantSettingsRequestCount}.`,
@@ -297,6 +319,37 @@ async function main(): Promise<void> {
     await page.getByTestId("form-login").waitFor({ timeout: 10_000 });
     console.log("PASS  direct /settings visit after sign-out redirects to /login");
 
+    await page.getByTestId("input-email").fill(emailB);
+    await page.getByTestId("input-password").fill(passwordB);
+    const userBPrivateSettings = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/api/me/assistant-settings" && response.status() === 200,
+      { timeout: 15_000 },
+    );
+    await page.getByTestId("button-submit-login").click();
+    await page.waitForURL((url) => url.pathname !== "/login", { timeout: 30_000 });
+    const userBSettingsResponse = await userBPrivateSettings;
+    const userBSettings = await userBSettingsResponse.json() as { displayName?: string };
+    assert(
+      userBSettings.displayName === privateNameB,
+      `User B received the wrong private settings value; expected ${privateNameB}, got ${userBSettings.displayName ?? "none"}.`,
+    );
+    await page.goto(`${uiOrigin}/settings`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "Settings", exact: true }).waitFor({ timeout: 15_000 });
+    await page.waitForFunction(
+      '(name) => document.querySelector(\'[data-testid="input-assistant-name"]\')?.value === name',
+      privateNameB,
+      { timeout: 10_000 },
+    );
+    assert(
+      (await page.getByTestId("input-assistant-name").inputValue()) !== privateNameA,
+      "User A's cached private assistant settings remained visible after User B signed in.",
+    );
+    assert(
+      privateAssistantSettingsRequestCount > Number(privateSettingsRequestsBeforeRevocation) + 1,
+      "User B did not trigger a fresh private assistant settings request after User A signed out.",
+    );
+    console.log("PASS  signing in as User B fetches and displays B's private settings, not User A's cached response");
+
     assert(externalBrowserRequests.length === 0, "The test attempted an external browser connection.");
   } finally {
     await browserContext?.close().catch(() => {});
@@ -307,11 +360,14 @@ async function main(): Promise<void> {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
-    await pool.query(`DELETE FROM auth_user_sessions WHERE user_id = $1`, [userId]).catch(() => {});
-    await pool.query(`DELETE FROM user_activity_events WHERE user_id = $1`, [userId]).catch(() => {});
-    await pool.query(`DELETE FROM user_master_live_access WHERE user_id = $1`, [userId]).catch(() => {});
-    await pool.query(`DELETE FROM user_one_click_settings WHERE user_id = $1`, [userId]).catch(() => {});
-    await pool.query(`DELETE FROM users WHERE id = $1`, [userId]).catch(() => {});
+    for (const userId of [userAId, userBId]) {
+      await pool.query(`DELETE FROM auth_user_sessions WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM user_activity_events WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM user_master_live_access WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM user_one_click_settings WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM user_settings WHERE user_id = $1`, [userId]).catch(() => {});
+      await pool.query(`DELETE FROM users WHERE id = $1`, [userId]).catch(() => {});
+    }
   }
 }
 
