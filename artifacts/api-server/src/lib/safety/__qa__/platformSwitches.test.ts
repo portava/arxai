@@ -11,7 +11,14 @@
 //   - the venue verdict combines the venue switch and every stop switch,
 //   - the switch-free config view carries no switch, and the envelope reads
 //     the same answer as the authority,
-//   - the trader kill switch written by its owner (liveArming) halts.
+//   - the trader kill switch written by its owner (liveArming) halts,
+//   - platformStop() is one answer for both install-wide stops (every
+//     combination, fail closed when either read errors), the Risk Governor's
+//     tradingHalt reads it, and the pre-check rule (preCheckStopRefusal) only
+//     ever adds refusals: its own stop refuses as before, the other stop
+//     refuses only new risk on a venue it halts,
+//   - the trade-action guard refuses an OPEN on either stop and still lets a
+//     CLOSE past the emergency stop (left to the governor).
 //
 // The original settings and safety_core rows are restored afterwards.
 //
@@ -26,10 +33,15 @@ import {
   SWITCH_FIELDS,
   getGlobalTradingConfig,
   loadGlobalTradingSettingsRow,
+  platformStop,
+  platformStopForVenue,
+  preCheckStopRefusal,
   readPlatformSwitches,
   readSafetyCoreSwitch,
+  type PlatformStop,
 } from "../platformSwitches.js";
-import { venueTradingVerdict } from "../tradingHalt.js";
+import { loadPlatformHalt, loadTradingHalt, venueTradingVerdict } from "../tradingHalt.js";
+import { runActionGuards } from "../../tradeAction/guards.js";
 import { getEnvelope, getGlobalSettings } from "../../adminTrading/safetyEnvelope.js";
 import { engageKillSwitchForUser, releaseKillSwitchForUser } from "../../live/liveArming.js";
 
@@ -172,6 +184,168 @@ test("the safety-core kill switch is read without seeding and halts", async () =
   assert.equal(v.allowed, false);
   assert.ok(v.halt.sources.includes("safety_core_kill_switch"));
   await db.update(safetyCoreTable).set({ killSwitchEngaged: false, killSwitchReason: null });
+});
+
+// ── Platform stop: both install-wide stops, one answer ─────────────────────
+
+const ensureCore = async () => {
+  if (!(await db.select().from(safetyCoreTable).limit(1)).length) await db.insert(safetyCoreTable).values({});
+};
+const setStops = async (emergency: boolean, core: boolean) => {
+  await setAll({ emergencyKillSwitch: emergency, killSwitchReason: emergency ? "qa emergency" : null });
+  await db.update(safetyCoreTable).set({ killSwitchEngaged: core, killSwitchReason: core ? "qa core" : null });
+};
+
+test("platformStop: every combination of the two stops", async () => {
+  await ensureCore();
+  if (!(await db.select().from(globalTradingSettingsTable).limit(1)).length) await loadGlobalTradingSettingsRow();
+  const cases: Array<[boolean, boolean, string[]]> = [
+    [false, false, []],
+    [true, false, ["platform_emergency_stop"]],
+    [false, true, ["safety_core_kill_switch"]],
+    [true, true, ["platform_emergency_stop", "safety_core_kill_switch"]],
+  ];
+  for (const [emergency, core, sources] of cases) {
+    await setStops(emergency, core);
+    const stop = await platformStop();
+    const label = `emergency=${emergency} core=${core}`;
+    assert.equal(stop.engaged, sources.length > 0, label);
+    assert.deepEqual(stop.sources, sources, label);
+    assert.equal(stop.readable, true, label);
+    if (emergency) assert.match(stop.reason!, /emergency stop.*qa emergency/, label);
+    else if (core) assert.match(stop.reason!, /safety-core kill switch.*qa core/, label);
+    else assert.equal(stop.reason, null, label);
+    // The Risk Governor's halt reads the same answer.
+    const halt = await loadPlatformHalt();
+    assert.deepEqual(halt.sources, sources, `loadPlatformHalt ${label}`);
+    const paper = await loadTradingHalt({ userId, venue: "PAPER" });
+    assert.deepEqual(paper.sources, sources.filter((s) => s !== "platform_emergency_stop"), `paper halt ${label}`);
+  }
+  await setStops(false, false);
+});
+
+test("platformStop: no settings row reads released (schema defaults); never writes", async () => {
+  const keep = await db.select().from(globalTradingSettingsTable).orderBy(asc(globalTradingSettingsTable.id));
+  await db.delete(globalTradingSettingsTable);
+  try {
+    await db.update(safetyCoreTable).set({ killSwitchEngaged: false, killSwitchReason: null });
+    const stop = await platformStop();
+    assert.equal(stop.engaged, false);
+    assert.equal((await db.select().from(globalTradingSettingsTable)).length, 0, "a read never writes");
+  } finally {
+    await db.delete(globalTradingSettingsTable);
+    if (keep.length) await db.insert(globalTradingSettingsTable).values(keep);
+  }
+});
+
+test("platformStop: fail closed when either read errors or is unreadable", async () => {
+  const released = async () => ({ readable: true, emergencyStop: { engaged: false, reason: null, engagedAt: null } });
+  const coreReleased = async () => ({ readable: true, engaged: false, reason: null });
+  const boom = async (): Promise<never> => { throw new Error("db down"); };
+
+  const both = ["platform_emergency_stop", "safety_core_kill_switch"];
+  let stop = await platformStop({ readSwitches: boom, readSafetyCore: coreReleased });
+  assert.deepEqual([stop.engaged, stop.readable, stop.sources], [true, false, both], "settings read throws");
+  stop = await platformStop({ readSwitches: released, readSafetyCore: boom });
+  assert.deepEqual([stop.engaged, stop.readable, stop.sources], [true, false, both], "safety-core read throws");
+
+  // The real readers never throw; they report unreadable = engaged.
+  stop = await platformStop({
+    readSwitches: async () => ({ readable: false, emergencyStop: { engaged: true, reason: "state unreadable", engagedAt: null } }),
+    readSafetyCore: coreReleased,
+  });
+  assert.deepEqual(stop.sources, ["platform_emergency_stop"]);
+  assert.equal(stop.readable, false);
+  assert.equal(stop.detail.platform_emergency_stop, "state unreadable");
+  stop = await platformStop({
+    readSwitches: released,
+    readSafetyCore: async () => ({ readable: false, engaged: true, reason: "state unreadable" }),
+  });
+  assert.deepEqual(stop.sources, ["safety_core_kill_switch"]);
+  assert.equal(stop.readable, false);
+
+  stop = await platformStop({ readSwitches: released, readSafetyCore: coreReleased });
+  assert.deepEqual([stop.engaged, stop.readable], [false, true]);
+});
+
+test("preCheckStopRefusal: own stop refuses as before; the other only adds new-risk refusals", () => {
+  const mk = (sources: PlatformStop["sources"]): PlatformStop => ({
+    engaged: sources.length > 0, sources, reason: sources.length ? "x" : null,
+    detail: Object.fromEntries(sources.map((s) => [s, "why"])), readable: true,
+  });
+  const E = "platform_emergency_stop" as const;
+  const C = "safety_core_kill_switch" as const;
+  const combos = [mk([]), mk([E]), mk([C]), mk([E, C])];
+  for (const own of [E, C]) {
+    for (const stop of combos) {
+      for (const venue of ["PAPER", "DEMO", "LIVE"] as const) {
+        for (const opensNewRisk of [false, true]) {
+          const r = preCheckStopRefusal(stop, { own, opensNewRisk, venue });
+          const label = `own=${own} stop=${stop.sources.join("+") || "none"} venue=${venue} open=${opensNewRisk}`;
+          // Never looser than reading only the own stop.
+          if (stop.sources.includes(own)) assert.equal(r.engaged, true, label);
+          // The other stop: only new risk, and the emergency stop never on paper.
+          const other = own === E ? C : E;
+          const otherApplies = stop.sources.includes(other) && opensNewRisk && !(other === E && venue === "PAPER");
+          assert.equal(r.sources.includes(other), otherApplies, label);
+          assert.equal(r.engaged, stop.sources.includes(own) || otherApplies, label);
+        }
+      }
+    }
+  }
+  // Fail closed passes through: an unreadable stop (both sources) refuses an open everywhere.
+  const unreadable: PlatformStop = { ...mk([E, C]), readable: false };
+  assert.equal(preCheckStopRefusal(unreadable, { own: C, opensNewRisk: true, venue: "LIVE" }).engaged, true);
+  assert.equal(preCheckStopRefusal(unreadable, { own: E, opensNewRisk: false, venue: "PAPER" }).engaged, true);
+  // The paper simulator is not halted by the emergency stop.
+  assert.deepEqual(platformStopForVenue(mk([E, C]), "PAPER").sources, [C]);
+  assert.deepEqual(platformStopForVenue(mk([E]), "LIVE").sources, [E]);
+});
+
+test("trade-action guard: either stop refuses an OPEN; a CLOSE passes the emergency stop", async () => {
+  await ensureCore();
+  await setAll({ platformMode: "LIVE", demoEnabled: true, liveEnabled: true });
+  const base = {
+    userId, actionId: 0, symbol: "EURUSD", side: "BUY", lotSize: 0.01, tradeKey: null,
+    confirmedByUser: true, expiresAt: null, previewMode: true,
+  };
+  const killCheck = async (actionType: string, requestedMode: "SIMULATED" | "DEMO" | "LIVE") => {
+    const r = await runActionGuards({ ...base, actionType, requestedMode });
+    return r.checks.find((c) => c.id === "kill_switch");
+  };
+
+  await setStops(false, false);
+  assert.equal((await killCheck("OPEN", "DEMO"))?.passed, true, "released");
+
+  // The safety-core kill switch: refuses every action on every venue (as before).
+  await setStops(false, true);
+  for (const mode of ["SIMULATED", "DEMO", "LIVE"] as const) {
+    for (const action of ["OPEN", "CLOSE"]) {
+      const c = await killCheck(action, mode);
+      assert.equal(c?.passed, false, `core ${action} ${mode}`);
+      assert.equal(c?.detail, "Emergency stop is engaged. No trade actions can be confirmed.", "message unchanged");
+    }
+  }
+
+  // The platform emergency stop: now also refuses an OPEN on DEMO/LIVE here
+  // (the governor refuses it anyway); paper and closes are left as they were.
+  await setStops(true, false);
+  for (const mode of ["DEMO", "LIVE"] as const) {
+    const c = await killCheck("OPEN", mode);
+    assert.equal(c?.passed, false, `emergency OPEN ${mode}`);
+    assert.match(c!.detail!, /platform emergency stop.*qa emergency/);
+  }
+  assert.equal((await killCheck("OPEN", "SIMULATED"))?.passed, true, "the emergency stop never halts paper");
+  assert.equal((await killCheck("CLOSE", "LIVE"))?.passed, true, "a close is left to the governor");
+
+  // Unreadable safety core (prefetched answer) fails closed.
+  const r = await runActionGuards({
+    ...base, actionType: "CLOSE", requestedMode: "LIVE",
+    prefetched: { platformStop: await platformStop({ readSwitches: async () => { throw new Error("x"); } }) },
+  });
+  assert.equal(r.failedCheckId, "kill_switch");
+
+  await setStops(false, false);
 });
 
 test("the config view carries no switch", async () => {

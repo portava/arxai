@@ -15,6 +15,11 @@
 //   safety-core kill switch        safety_core.kill_switch_engaged                   readSafetyCoreSwitch, tradingHalt
 //   trader kill switch             arx_live_arming.kill_switch_engaged (per user)    tradingHalt (owner: lib/live/liveArming.ts)
 //
+// "Is the platform stopped" is platformStop(): the emergency stop AND the
+// safety-core kill switch as one answer (sources + reason, fail closed). Every
+// pre-check reads it (with preCheckStopRefusal) instead of one stop's raw
+// value; check-single-safety-switch-source enforces that.
+//
 // "May this venue trade now, and why not" is venueTradingVerdict(): the venue
 // must be open on the platform AND no stop switch may halt the trader there
 // (./tradingHalt.ts). It adds no gate of its own and approves nothing: every
@@ -293,4 +298,141 @@ export async function readSafetyCoreSwitch(): Promise<SafetyCoreSwitch> {
     logger.warn({ err: String(err) }, "safety_core unreadable; failing closed");
     return { readable: false, present: false, engaged: true, reason: "state unreadable", engagedAt: null, operationalMode: null, globalState: null };
   }
+}
+
+// ── Platform stop: the two install-wide stops as one answer ─────────────────
+//
+// The platform emergency stop (global_trading_settings.emergency_kill_switch)
+// and the safety-core kill switch (safety_core.kill_switch_engaged) are two
+// independent install-wide stops, written by different owners (the audited
+// admin handlers and lib/safetyCore.ts). The pre-trade Risk Governor honours
+// both through ./tradingHalt.ts. platformStop() is the one read of both, so a
+// pre-check never has to pick one: it reads platformStop() and asks
+// preCheckStopRefusal() which sources refuse its action.
+//
+// Fail closed: a stop that cannot be read counts as engaged, and if the read
+// itself throws, both count as engaged.
+
+export type PlatformStopSource = "platform_emergency_stop" | "safety_core_kill_switch";
+/** The venue an action trades on (the paper simulator reaches no broker). */
+export type StopVenue = "PAPER" | "DEMO" | "LIVE";
+
+export const PLATFORM_STOP_REASONS: Record<PlatformStopSource, string> = {
+  platform_emergency_stop: "The platform emergency stop is engaged by an operator.",
+  safety_core_kill_switch: "The safety-core kill switch is engaged.",
+};
+
+export interface PlatformStop {
+  /** True when at least one source is engaged (or unreadable). */
+  engaged: boolean;
+  /** Engaged sources, emergency stop first. */
+  sources: PlatformStopSource[];
+  /** The first source's reason (with its stored detail), null when released. */
+  reason: string | null;
+  /** Per-source stored reason ("state unreadable" when the source could not be read). */
+  detail: Partial<Record<PlatformStopSource, string | null>>;
+  /** False when either source could not be read. */
+  readable: boolean;
+}
+
+export const NO_PLATFORM_STOP: PlatformStop = { engaged: false, sources: [], reason: null, detail: {}, readable: true };
+
+function stopOf(sources: PlatformStopSource[], detail: Partial<Record<PlatformStopSource, string | null>>, readable: boolean): PlatformStop {
+  if (!sources.length) return { ...NO_PLATFORM_STOP, detail: {}, readable };
+  const first = sources[0]!;
+  const extra = detail[first];
+  return {
+    engaged: true,
+    sources,
+    reason: extra ? `${PLATFORM_STOP_REASONS[first]} (${extra})` : PLATFORM_STOP_REASONS[first],
+    detail,
+    readable,
+  };
+}
+
+/** Pure: the platform stop as the two switch reads say it. */
+export function platformStopFrom(
+  sw: Pick<PlatformSwitches, "readable" | "emergencyStop">,
+  sc: Pick<SafetyCoreSwitch, "readable" | "engaged" | "reason">,
+): PlatformStop {
+  const sources: PlatformStopSource[] = [];
+  const detail: Partial<Record<PlatformStopSource, string | null>> = {};
+  if (sw.emergencyStop.engaged) {
+    sources.push("platform_emergency_stop");
+    detail.platform_emergency_stop = sw.readable ? sw.emergencyStop.reason : "state unreadable";
+  }
+  if (sc.engaged) {
+    sources.push("safety_core_kill_switch");
+    detail.safety_core_kill_switch = sc.readable ? sc.reason : "state unreadable";
+  }
+  return stopOf(sources, detail, sw.readable && sc.readable);
+}
+
+/** Readers platformStop() uses; tests inject failing ones. */
+export interface PlatformStopReaders {
+  readSwitches?: () => Promise<Pick<PlatformSwitches, "readable" | "emergencyStop">>;
+  readSafetyCore?: () => Promise<Pick<SafetyCoreSwitch, "readable" | "engaged" | "reason">>;
+}
+
+/**
+ * Both install-wide stops, one answer. Never throws.
+ *
+ * A missing settings row reads as the schema defaults (stop released), as the
+ * Risk Governor's tradingHalt reads it: a fresh install starts released (owner
+ * decision 2026-10-24). A missing safety_core row is released (lib/safetyCore.ts
+ * seeds it at boot). An unreadable source is engaged; a read that throws
+ * engages both.
+ */
+export async function platformStop(readers: PlatformStopReaders = {}): Promise<PlatformStop> {
+  const readSwitches = readers.readSwitches ?? (() => readPlatformSwitches({ ifMissing: "defaults" }));
+  const readCore = readers.readSafetyCore ?? readSafetyCoreSwitch;
+  try {
+    const [sw, sc] = await Promise.all([readSwitches(), readCore()]);
+    return platformStopFrom(sw, sc);
+  } catch (err) {
+    logger.warn({ err: String(err) }, "platform stop unreadable; failing closed");
+    return stopOf(
+      ["platform_emergency_stop", "safety_core_kill_switch"],
+      { platform_emergency_stop: "state unreadable", safety_core_kill_switch: "state unreadable" },
+      false,
+    );
+  }
+}
+
+/**
+ * The stop as it applies to a venue. The paper simulator reaches no broker, so
+ * the platform emergency stop does not halt it (as in tradingHalt); the
+ * safety-core kill switch halts every venue.
+ */
+export function platformStopForVenue(stop: PlatformStop, venue: StopVenue): PlatformStop {
+  if (venue !== "PAPER" || !stop.sources.includes("platform_emergency_stop")) return stop;
+  const sources = stop.sources.filter((s) => s !== "platform_emergency_stop");
+  const detail = { ...stop.detail };
+  delete detail.platform_emergency_stop;
+  return stopOf(sources, detail, stop.readable);
+}
+
+/**
+ * Which stop sources refuse an action at a pre-check.
+ *
+ *   own   — the stop this pre-check always enforced. It keeps refusing exactly
+ *           what it refused before (every action, every venue), so moving a
+ *           pre-check here never loosens it.
+ *   other — the other install-wide stop. It refuses only what the pre-trade
+ *           Risk Governor refuses anyway: new risk (opensNewRisk) on a venue
+ *           the stop halts (the emergency stop does not halt PAPER). Closes,
+ *           partial closes and modifies are left to the governor, which keeps
+ *           closes open so a trader can always cut risk.
+ *
+ * The result is never less strict than reading `own` alone.
+ */
+export function preCheckStopRefusal(
+  stop: PlatformStop,
+  args: { own: PlatformStopSource; opensNewRisk: boolean; venue: StopVenue },
+): PlatformStop {
+  const forVenue = platformStopForVenue(stop, args.venue);
+  const sources = stop.sources.filter((s) => s === args.own || (args.opensNewRisk && forVenue.sources.includes(s)));
+  const detail: Partial<Record<PlatformStopSource, string | null>> = {};
+  for (const s of sources) detail[s] = stop.detail[s] ?? null;
+  return stopOf(sources, detail, stop.readable);
 }

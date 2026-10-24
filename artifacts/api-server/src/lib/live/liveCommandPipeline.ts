@@ -97,6 +97,7 @@ import {
   PHASE_B_LIVE_LOG_PREFIX,
 } from "./phaseBConfig.js";
 import { getEnvelope } from "../adminTrading/safetyEnvelope.js";
+import { platformStop, preCheckStopRefusal } from "../safety/platformSwitches.js";
 import { logger } from "../logger.js";
 import { globalTradingSettingsTable, liveRiskDisclosureAcceptancesTable } from "@workspace/db";
 import {
@@ -459,6 +460,9 @@ async function recordExecutionEvent(input: {
 // Global emergency-kill-switch pre-gate. POST /api/admin/trading/emergency-kill
 // engages global_trading_settings.emergency_kill_switch; dispatch consumes it
 // via this reason literal BEFORE the 18-gate evaluator, in BOTH routing modes.
+/** Live command types that open new risk (the rest close or modify). */
+const LIVE_ENTRY_COMMAND_TYPES: ReadonlySet<string> = new Set(["PLACE_LIVE_MARKET_ORDER", "PLACE_LIVE_PENDING_ORDER"]);
+
 export const EMERGENCY_KILL_SWITCH_BLOCK_REASON =
   "LIVE_BLOCKED:EMERGENCY_KILL_SWITCH_ENGAGED" as const;
 
@@ -478,9 +482,20 @@ export const EMERGENCY_KILL_SWITCH_BLOCK_REASON =
  */
 export function emergencyKillSwitchBlocksDispatch(args: {
   emergencyKillSwitch: boolean | null | undefined;
+  /**
+   * The other install-wide stop (safety_core.kill_switch_engaged), from the
+   * one platform-stop read (lib/safety/platformSwitches.platformStop). When
+   * given, an engaged (or unknown: `!== false`) safety-core kill switch also
+   * refuses ENTRY commands (PLACE_LIVE_*), which the pre-trade Risk Governor
+   * refuses anyway (tradingHalt). Closes and modifies are left to the
+   * governor. Omitted → only the emergency stop is consulted (as before).
+   */
+  safetyCoreKillSwitch?: boolean | null;
   commandType: string;
   hasKillSwitchCloseBypassMarker: boolean;
 }): boolean {
+  if ("safetyCoreKillSwitch" in args && args.safetyCoreKillSwitch !== false
+    && LIVE_ENTRY_COMMAND_TYPES.has(args.commandType)) return true;
   const engaged = args.emergencyKillSwitch !== false;
   if (!engaged) return false;
   return !killSwitchCloseBypassApplies({
@@ -2186,13 +2201,25 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // (already verified by the command-integrity pre-gate above), mirroring
   // the narrow gate-#5 relaxation so an operator can still flatten exposure
   // while the platform is halted.
+  //
+  // Both install-wide stops are read once through the platform-stop authority
+  // (lib/safety/platformSwitches.platformStop): the emergency stop keeps its
+  // rule above; the safety-core kill switch is an additional reason that
+  // refuses entries only (the Risk Governor refuses them anyway). Same block
+  // reason literal for either; the snapshot names the source(s).
   {
     const hasKillSwitchCloseBypassMarker =
       row.payload != null
       && typeof row.payload === "object"
       && (row.payload as { killSwitchCloseBypass?: unknown }).killSwitchCloseBypass != null;
+    const stop = preCheckStopRefusal(await platformStop(), {
+      own: "platform_emergency_stop",
+      opensNewRisk: LIVE_ENTRY_COMMAND_TYPES.has(row.commandType),
+      venue: "LIVE",
+    });
     if (emergencyKillSwitchBlocksDispatch({
-      emergencyKillSwitch: env.emergencyKillSwitch,
+      emergencyKillSwitch: stop.sources.includes("platform_emergency_stop"),
+      safetyCoreKillSwitch: stop.sources.includes("safety_core_kill_switch"),
       commandType: row.commandType,
       hasKillSwitchCloseBypassMarker,
     })) {
@@ -2206,6 +2233,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           primaryReason: reason,
           blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
           emergencyKillSwitchGate: true,
+          platformStopSources: stop.sources,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
       }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
@@ -2213,7 +2241,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         eventType: "EMERGENCY_KILL_SWITCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
         message: `Live dispatch BLOCKED by emergency kill switch: ${reason}`,
-        metadata: { commandId: args.commandId, commandType: row.commandType },
+        metadata: { commandId: args.commandId, commandType: row.commandType, platformStopSources: stop.sources },
       });
       logger.warn({
         [PHASE_B_LIVE_LOG_PREFIX]: true,

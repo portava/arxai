@@ -6,8 +6,11 @@
 //
 //   1.  authenticated user            (the route enforces this; guard recorded)
 //   2.  ownership of the trade        (resolveUserTrade)
-//   3.  platform trading mode allows  (safetyCore.getStatus.allowedModes)
-//   4.  emergency stop is false       (safetyCore.killSwitchEngaged)
+//   3.  platform stop is released     (lib/safety/platformSwitches.platformStop:
+//                                      the safety-core kill switch refuses every
+//                                      action; the platform emergency stop also
+//                                      refuses new risk on DEMO/LIVE)
+//   4.  platform venue switch allows  (readPlatformSwitches.venueOpen)
 //   5.  user is not suspended         (users.suspendedAt is null)
 //   6.  routing mode resolves         (resolveRouting)
 //   7.  account type matches mode     (LIVE→live, DEMO→demo/unknown)
@@ -28,11 +31,10 @@ import {
   userReadinessStateTable,
 } from "@workspace/db/schema";
 import { and, eq, gte, ne } from "drizzle-orm";
-import { getStatus as getSafetyStatus } from "../safetyCore.js";
 import { resolveRouting } from "../adminTrading/routingResolver.js";
-import { readPlatformSwitches } from "../safety/platformSwitches.js";
+import { platformStop, preCheckStopRefusal, readPlatformSwitches, type PlatformStop } from "../safety/platformSwitches.js";
 import { resolveUserTrade } from "../trades/resolveTrade.js";
-import { enforceRiskGovernor } from "./riskGovernorEnforcement.js";
+import { enforceRiskGovernor, RG_CLASSIFY } from "./riskGovernorEnforcement.js";
 import type { GuardChainResult, GuardCheckResult } from "./types.js";
 
 const MAX_LOT_HARD_CAP = 5.0; // hard ceiling regardless of user settings
@@ -75,8 +77,8 @@ export interface ActionGuardInput {
 }
 
 export interface ActionGuardPrefetched {
-  /** Result of safetyCore.getStatus() — covers kill switch + allowedModes. */
-  safety?: Awaited<ReturnType<typeof getSafetyStatus>>;
+  /** Result of platformStop() — both install-wide stops (emergency stop + safety-core kill switch). */
+  platformStop?: PlatformStop;
   /** Result of resolveRouting() for the requested mode. */
   routing?: Awaited<ReturnType<typeof resolveRouting>>;
   /** users row for this userId. */
@@ -112,9 +114,24 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
     pass("ownership", "user owns or is attributed to the trade", "no trade linked (OPEN draft)");
   }
 
-  // 3 + 4. Platform mode + kill switch.
-  const safety = input.prefetched?.safety ?? await getSafetyStatus();
-  if (safety.killSwitchEngaged) return fail("kill_switch", "emergency stop is disengaged", "Emergency stop is engaged. No trade actions can be confirmed.");
+  // 3. Platform stop, read once through the switch authority (platformStop).
+  // This step always enforced the safety-core kill switch for every action;
+  // it keeps doing so. The platform emergency stop is added for actions that
+  // open new risk on DEMO/LIVE, which the pre-trade Risk Governor refuses
+  // anyway (tradingHalt); closes and modifies are left to the governor.
+  // Unreadable → engaged (fail closed).
+  const stop = preCheckStopRefusal(input.prefetched?.platformStop ?? await platformStop(), {
+    own: "safety_core_kill_switch",
+    opensNewRisk: RG_CLASSIFY.OPENS_NEW_RISK.has(input.actionType),
+    venue: input.requestedMode === "SIMULATED" ? "PAPER" : input.requestedMode,
+  });
+  if (stop.engaged) {
+    // Same check id and (for the safety core) the same message as before; the
+    // emergency stop is an additional reason under the same id.
+    return fail("kill_switch", "emergency stop is disengaged", stop.sources.includes("safety_core_kill_switch")
+      ? "Emergency stop is engaged. No trade actions can be confirmed."
+      : `The platform emergency stop is engaged. No new positions can be opened.${stop.reason ? ` ${stop.reason}` : ""}`);
+  }
   pass("kill_switch", "emergency stop is disengaged");
 
   // The platform venue switch, read through the one switch authority

@@ -31,7 +31,13 @@
 import { and, eq } from "drizzle-orm";
 import { arxLiveArmingTable, db, userSlotAllocationTable } from "@workspace/db";
 import type { RiskHalt, RiskVenue } from "../riskGovernor/preTrade.js";
-import { readPlatformSwitches, readSafetyCoreSwitch, type PlatformMode } from "./platformSwitches.js";
+import {
+  PLATFORM_STOP_REASONS,
+  platformStop,
+  platformStopForVenue,
+  readPlatformSwitches,
+  type PlatformMode,
+} from "./platformSwitches.js";
 
 export type HaltSource =
   | "platform_emergency_stop"
@@ -46,8 +52,7 @@ export interface TradingHalt extends RiskHalt {
 export const NO_HALT: TradingHalt = { engaged: false, sources: [], reason: null };
 
 const REASONS: Record<HaltSource, string> = {
-  platform_emergency_stop: "The platform emergency stop is engaged by an operator.",
-  safety_core_kill_switch: "The safety-core kill switch is engaged.",
+  ...PLATFORM_STOP_REASONS,
   trader_kill_switch: "Your kill switch is engaged. Release it to trade again.",
   allocation_frozen: "Your shared-account allocation is frozen by an operator.",
 };
@@ -71,26 +76,23 @@ async function read<T>(fn: () => Promise<T>): Promise<T | "unreadable"> {
 export async function loadPlatformHalt(): Promise<TradingHalt> {
   const sources: HaltSource[] = [];
   const detail: Partial<Record<HaltSource, string | null>> = {};
-  await addPlatformStop(sources, detail);
-  await addSafetyCoreStop(sources, detail);
+  await addInstallWideStops(sources, detail, "LIVE");
   return haltFrom(sources, detail);
 }
 
+// Both install-wide stops through the one platform-stop read (platformStop).
 // No settings row: a fresh install, which starts released (schema defaults).
-async function addPlatformStop(sources: HaltSource[], detail: Partial<Record<HaltSource, string | null>>): Promise<void> {
-  const g = await readPlatformSwitches({ ifMissing: "defaults" });
-  if (g.emergencyStop.engaged) {
-    sources.push("platform_emergency_stop");
-    detail.platform_emergency_stop = g.readable ? g.emergencyStop.reason : "state unreadable";
-  }
-}
-
 // No safety_core row yet: released (lib/safetyCore.ts seeds it at boot).
-async function addSafetyCoreStop(sources: HaltSource[], detail: Partial<Record<HaltSource, string | null>>): Promise<void> {
-  const sc = await readSafetyCoreSwitch();
-  if (sc.engaged) {
-    sources.push("safety_core_kill_switch");
-    detail.safety_core_kill_switch = sc.readable ? sc.reason : "state unreadable";
+// The paper simulator is not halted by the emergency stop (platformStopForVenue).
+async function addInstallWideStops(
+  sources: HaltSource[],
+  detail: Partial<Record<HaltSource, string | null>>,
+  venue: RiskVenue,
+): Promise<void> {
+  const stop = platformStopForVenue(await platformStop(), venue);
+  for (const s of stop.sources) {
+    sources.push(s);
+    detail[s] = stop.detail[s] ?? null;
   }
 }
 
@@ -104,8 +106,7 @@ export async function loadTradingHalt(args: {
   const detail: Partial<Record<HaltSource, string | null>> = {};
   const broker = args.venue !== "PAPER";
 
-  if (broker) await addPlatformStop(sources, detail);
-  await addSafetyCoreStop(sources, detail);
+  await addInstallWideStops(sources, detail, args.venue);
 
   const arm = await read(async () => (await db.select({
     on: arxLiveArmingTable.killSwitchEngaged, why: arxLiveArmingTable.killSwitchReason,

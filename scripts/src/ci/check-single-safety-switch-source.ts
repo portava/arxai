@@ -20,7 +20,15 @@
 //      outside the reviewed writers;
 //   7. a direct read of the env master switch helper
 //      (isLiveBrokerExecutionEnabledEnv) outside its reviewed readers;
-//   8. raw SQL naming a switch column or the safety_core table.
+//   8. raw SQL naming a switch column or the safety_core table;
+//   9. one install-wide stop's raw value read on its own — the emergency
+//      stop (`.emergencyStop` of the switches, `.emergencyKillSwitch` of a
+//      derived view such as the envelope), the safety-core kill switch
+//      (readSafetyCoreSwitch(), or `.killSwitchEngaged` in a file that gets
+//      lib/safetyCore.ts getStatus()). A pre-check reads both through
+//      platformStop() + preCheckStopRefusal() instead; the reviewed readers
+//      left (reports, readiness views, the audited writers and legacy gates
+//      the Risk Governor does not run behind) are listed below with a reason.
 //
 // Every allowlist entry carries a reason. An entry whose file no longer
 // needs it (or no longer exists) is reported as stale, so the lists only
@@ -53,7 +61,10 @@ const RAW_SWITCH_SQL = /\b(emergency_kill_switch|kill_switch_engaged|live_broker
 const RAW_GTS_VENUE_SQL = /\bglobal_trading_settings\b[\s\S]*\b(platform_mode|live_enabled|demo_enabled|simulated_enabled|kill_switch_reason)\b|\b(platform_mode|live_enabled|demo_enabled|simulated_enabled|kill_switch_reason)\b[\s\S]*\bglobal_trading_settings\b/;
 const RAW_SAFETY_CORE_SQL = /\b(from|join|update|into)\s+"?safety_core"?\b/i;
 
-type Rule = "gts_column" | "gts_whole_row" | "gts_write" | "safety_core" | "arming" | "raw_row" | "env_flag" | "raw_sql";
+type Rule = "gts_column" | "gts_whole_row" | "gts_write" | "safety_core" | "arming" | "raw_row" | "env_flag" | "raw_sql" | "single_stop";
+
+/** A module specifier that names the safety-core owner (lib/safetyCore.ts). */
+const SAFETY_CORE_MODULE = /(^|\/)safetyCore(\.js|\.ts)?$/;
 
 /**
  * Reviewed exceptions: file → the rules it may break, and why. Writers are
@@ -62,12 +73,40 @@ type Rule = "gts_column" | "gts_whole_row" | "gts_write" | "safety_core" | "armi
  */
 export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   // ── Writers (audited admin handlers) ──────────────────────────────────────
-  "routes/adminTrading.ts": { rules: ["gts_write", "raw_row"], why: "audited admin writer: platform mode, emergency stop, routing, shared master (before/after audit snapshots need the raw row)" },
-  "routes/adminLiveSharedReadiness.ts": { rules: ["gts_whole_row", "gts_write"], why: "audited admin writer: activation, arm / disarm live execution (the raw row is the write target and before/after audit snapshot; its switch checks read the authority)" },
-  "routes/adminLiveSharedActivation.ts": { rules: ["gts_whole_row", "gts_write"], why: "audited admin writer: shared live activation (engages the stop on rollback)" },
+  "routes/adminTrading.ts": { rules: ["gts_write", "raw_row", "single_stop"], why: "audited admin writer: platform mode, emergency stop, routing, shared master (before/after audit snapshots need the raw row; single_stop: the emergency stop's own before/after audit snapshot)" },
+  "routes/adminLiveSharedReadiness.ts": { rules: ["gts_whole_row", "gts_write", "single_stop"], why: "audited admin writer: activation, arm / disarm live execution (the raw row is the write target and before/after audit snapshot; its switch checks read the authority; single_stop: the arm precondition kill_released and the readiness report name the emergency stop this handler writes; arming is not an order, and this handler's release path is owner decision 1)" },
+  "routes/adminLiveSharedActivation.ts": { rules: ["gts_whole_row", "gts_write", "single_stop"], why: "audited admin writer: shared live activation (engages the stop on rollback; single_stop: the emergency stop's before/after audit snapshot)" },
   "routes/adminMasterBridge.ts": { rules: ["gts_write"], why: "audited admin writer: master bridge snapshot / enable (no switch column)" },
   "routes/adminLiveFirstTestMode.ts": { rules: ["gts_write"], why: "audited admin writer: first-test-mode policy (no switch column)" },
   // ── Readers still to migrate ───────────────────────────────────────────────
+  // ── Reviewed single-stop readers (rule 9) ──────────────────────────────────
+  // Not pre-checks: these report or display one named stop. A pre-check that
+  // refuses an order reads platformStop() + preCheckStopRefusal().
+  "lib/adminTrading/safetyEnvelope.ts": { rules: ["single_stop"], why: "derives the envelope's emergencyKillSwitch / 'Emergency Trading Halt' banner from readPlatformSwitches (the field names the emergency stop); the order guard, the guarded close and the live dispatch pre-gate read platformStop() instead of this field" },
+  "lib/live/liveCommandPipeline.ts": { rules: ["single_stop"], why: "emergencyKillSwitchBlocksDispatch() is the pure dispatch pre-gate decision; its emergencyKillSwitch / safetyCoreKillSwitch inputs come from platformStop() + preCheckStopRefusal() at its one call site" },
+  "lib/live/approvedTraderLiveState.ts": { rules: ["single_stop"], why: "readiness view (executionReady / EMERGENCY_STOP_ACTIVE copy); the activation gate it also exports does not read the stop, and dispatch refuses through platformStop() and the Risk Governor" },
+  "lib/live/unifiedLiveReadiness.ts": { rules: ["single_stop"], why: "readiness view: forwards approvedTraderLiveState.emergencyKillSwitch into the readiness decision" },
+  "lib/live/unifiedLiveReadinessDecision.ts": { rules: ["single_stop"], why: "pure readiness decision: EMERGENCY_STOP_ACTIVE blocker copy (display, not an order gate)" },
+  "lib/handshake/layerAdapters.ts": { rules: ["single_stop"], why: "handshake report: the admin-control / kill-switch layer names the emergency stop" },
+  "lib/assistant/derivedEnvelope.ts": { rules: ["single_stop"], why: "Ruby's read-only copy of the envelope field (Ruby never executes)" },
+  "lib/assistant/tools.ts": { rules: ["single_stop"], why: "Ruby operator summary (read-only report)" },
+  "lib/systemHealth/health.ts": { rules: ["single_stop"], why: "system health report: the KILL_SWITCH hard block names the safety-core kill switch (the emergency stop is reported by the admin views)" },
+  "routes/tradingReadiness.ts": { rules: ["single_stop"], why: "advisory readiness label (never gates; its header says so)" },
+  "routes/adminCockpit.ts": { rules: ["single_stop"], why: "admin cockpit report" },
+  "routes/adminLaunchReadiness.ts": { rules: ["single_stop"], why: "admin launch-readiness report" },
+  "routes/adminLiveGatesDiagnostic.ts": { rules: ["single_stop"], why: "admin live-gates diagnostic report" },
+  "routes/adminLiveTestReadiness.ts": { rules: ["single_stop"], why: "admin live-test readiness report" },
+  "routes/adminMasterLiveAccess.ts": { rules: ["single_stop"], why: "admin master live-access report (approvedTraderLiveState fields)" },
+  "routes/adminOperatorCommandCenter.ts": { rules: ["single_stop"], why: "operator command-center report" },
+  "routes/portfolio.ts": { rules: ["single_stop"], why: "portfolio plan builder marks the plan frozen while the safety-core kill switch is engaged (a plan, not an order)" },
+  "routes/tradeDecision.ts": { rules: ["single_stop"], why: "advisory trade-decision orchestrator (adds a blocker line; places nothing)" },
+  // Legacy gates the pre-trade Risk Governor does not run behind. Folding the
+  // emergency stop in would add a refusal the governor never makes, which this
+  // change may not do, so they keep their safety-core-only rule.
+  "routes/mt5.ts": { rules: ["single_stop"], why: "legacy /mt5 command endpoints: safety-core LIVE_TRADING arm (mode + kill) middleware; every command is stored BLOCKED (paper-only lock) and no governor runs on this path" },
+  "routes/brokerHealth.ts": { rules: ["single_stop"], why: "RECONNECT command PENDING vs BLOCKED by the safety-core LIVE_TRADING arm; not an order, no governor on this path" },
+  "routes/trades.ts": { rules: ["single_stop"], why: "legacy /execute-trade TOCTOU re-check of the safety core's own tradeGate snapshot (kill + mode + state); the path records into the paper book without the governor" },
+  "routes/permission.ts": { rules: ["single_stop"], why: "paper permission verdict (evaluatePermission); the emergency stop does not halt paper (tradingHalt), so it must not be folded in" },
   // ── Reviewed env-flag readers ──────────────────────────────────────────────
   "lib/live/phaseBConfig.ts": { rules: ["env_flag"], why: "Phase B master switch helpers (liveBrokerExecutionEnabled); the DB arm comes from the authority" },
   "lib/startup/envChecklist.ts": { rules: ["env_flag"], why: "boot env inventory reports the variable's state; never gates" },
@@ -92,7 +131,30 @@ export function scanFile(key: string, source: string): string[] {
     return null;
   };
 
+  // Does this file get lib/safetyCore.ts (static or dynamic import)? Then a
+  // `.killSwitchEngaged` read is the safety-core kill switch (getStatus()).
+  let importsSafetyCore = false;
+  const singleStop = (node: ts.Node, what: string) =>
+    hit("single_stop", node, `reads one install-wide stop on its own (${what}); read both through platformStop() + preCheckStopRefusal() in lib/safety/platformSwitches.ts`);
+  const killReads: ts.Node[] = [];
+
   function visit(node: ts.Node): void {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && SAFETY_CORE_MODULE.test(node.moduleSpecifier.text)) {
+      importsSafetyCore = true;
+    }
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword
+      && node.arguments[0] && ts.isStringLiteralLike(node.arguments[0]) && SAFETY_CORE_MODULE.test(node.arguments[0].text)) {
+      importsSafetyCore = true;
+    }
+    if (ts.isPropertyAccessExpression(node)) {
+      const name = node.name.text;
+      if (name === "emergencyStop") singleStop(node, "the platform emergency stop, .emergencyStop");
+      if (name === "emergencyKillSwitch" && tableOf(node.expression) !== "globalTradingSettingsTable") singleStop(node, "the platform emergency stop, .emergencyKillSwitch");
+      if (name === "killSwitchEngaged" && key !== SAFETY_CORE_OWNER) killReads.push(node);
+    }
+    if (ts.isIdentifier(node) && node.text === "readSafetyCoreSwitch" && !ts.isImportSpecifier(node.parent)) {
+      singleStop(node, "the safety-core kill switch, readSafetyCoreSwitch()");
+    }
     if (ts.isImportSpecifier(node) && node.propertyName && alias.has(node.propertyName.text)) {
       alias.set(node.name.text, node.propertyName.text);
     }
@@ -148,6 +210,7 @@ export function scanFile(key: string, source: string): string[] {
     ts.forEachChild(node, visit);
   }
   visit(file);
+  if (importsSafetyCore && killReads[0]) singleStop(killReads[0], "the safety-core kill switch, getStatus().killSwitchEngaged");
 
   const allowed = ALLOW[key]?.rules ?? [];
   return [...out].filter(([rule]) => !allowed.includes(rule)).map(([, msg]) => msg);
@@ -179,6 +242,7 @@ const MESSAGE_RULE: [RegExp, Rule][] = [
   [/^\d+: loads the raw settings row/, "raw_row"],
   [/^\d+: reads the ARX_LIVE_BROKER_EXECUTION_ENABLED helper/, "env_flag"],
   [/^\d+: raw SQL names a safety switch/, "raw_sql"],
+  [/^\d+: reads one install-wide stop on its own/, "single_stop"],
 ];
 export function ruleOfMessage(msg: string): Rule | null {
   for (const [re, rule] of MESSAGE_RULE) if (re.test(msg)) return rule;
@@ -196,6 +260,10 @@ export function checkAuthorityShape(read: (key: string) => string | null): strin
   if (!/export function switchesFromRows\(/.test(sw)) out.push("platformSwitches.ts lost switchesFromRows() (the strict multi-row combine)");
   if (!/rows\.find\(\(r\) => r\.emergencyKillSwitch !== false\)/.test(sw)) out.push("platformSwitches.ts: the emergency stop must be engaged when ANY row says so (rows.find(... !== false))");
   if (!/function failClosed\(/.test(sw)) out.push("platformSwitches.ts lost its fail-closed answer");
+  if (!/export async function platformStop\(/.test(sw)) out.push("platformSwitches.ts lost platformStop() (both install-wide stops, one answer)");
+  if (!/export function preCheckStopRefusal\(/.test(sw)) out.push("platformSwitches.ts lost preCheckStopRefusal() (which stop sources refuse a pre-check's action)");
+  if (!/platformStopFrom\(sw, sc\)/.test(sw) || !/\["platform_emergency_stop", "safety_core_kill_switch"\]/.test(sw)) out.push("platformSwitches.ts: platformStop() must combine both reads and fail closed on both sources when a read throws");
+  if (!/await platformStop\(\)/.test(halt)) out.push("tradingHalt.ts must read the install-wide stops through platformStop()");
   if (!/export async function venueTradingVerdict\(/.test(halt)) out.push("tradingHalt.ts lost venueTradingVerdict() (may this venue trade now, and why not)");
   if (!/from "\.\/platformSwitches\.js"/.test(halt)) out.push("tradingHalt.ts must read the install-wide switches through ./platformSwitches.js");
   return out;
