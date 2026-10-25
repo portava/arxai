@@ -509,13 +509,16 @@ async function tryAssistantQuote(symbol: string): Promise<ProviderAttempt & { qu
     if (r.freshness === "UNAVAILABLE" || r.freshness === "ERROR" || (r.price == null && r.bid == null && r.ask == null)) {
       return { provider: `assistant_real:${p.name}`, ok: false, reason: r.freshness === "ERROR" ? "PROVIDER_FETCH_ERROR" : "NO_QUOTE_AVAILABLE", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
     }
+    if (r.asOf == null || !Number.isFinite(Date.parse(r.asOf))) {
+      return { provider: `assistant_real:${p.name}`, ok: false, reason: "QUOTE_TIMESTAMP_UNKNOWN", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
+    }
     const quote: MarketQuote = {
       symbol,
       bid: r.bid ?? undefined,
       ask: r.ask ?? undefined,
       last: r.price ?? undefined,
       spread: (r.bid != null && r.ask != null) ? r.ask - r.bid : undefined,
-      timestamp: r.asOf ?? new Date().toISOString(),
+      timestamp: r.asOf,
     };
     return {
       provider: `assistant_real:${r.source}`, ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote,
