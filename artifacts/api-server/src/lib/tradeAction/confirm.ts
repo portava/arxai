@@ -24,12 +24,13 @@ export type ConfirmResult =
 const CONFIRMABLE: ActionStatus[] = ["awaiting_confirmation", "ai_suggested", "user_reviewing"];
 
 type ActionRow = typeof tradeActionRequestsTable.$inferSelect;
-const routable = (row: ActionRow) => ({
+const routable = (row: ActionRow, sourcePage?: string) => ({
   userId: row.userId, actionType: row.actionType as ActionType, requestedMode: row.requestedMode,
   tradeKey: row.tradeKey, symbol: row.symbol, side: row.side, orderType: row.orderType ?? null,
   lotSize: row.lotSize ?? null, requestedPrice: row.requestedPrice ?? null,
   stopLoss: row.stopLoss ?? null, takeProfit: row.takeProfit ?? null, source: row.source ?? null,
   actionId: row.id,
+  ...(sourcePage ? { sourcePage } : {}),
   origin: (row.source === "ai_suggested" ? "ruby" : row.source === "decision_engine" ? "automation" : "manual") as "manual" | "ruby" | "automation",
 });
 const isSimulatedOpen = (row: ActionRow) => row.requestedMode === "SIMULATED" && row.actionType === "OPEN";
@@ -38,6 +39,8 @@ export async function confirmAction(opts: {
   userId: number; actionId: number; liveConfirmPhrase?: string | null;
   /** The mode the trader saw and confirmed; a SIMULATED open requires "SIMULATED" (owner decision 13). */
   confirmedMode?: string | null;
+  /** The surface stamped on the venue command when it is not the Trade Action Center (My Trades: owner decision 15). */
+  sourcePage?: string;
 }): Promise<ConfirmResult> {
   const [row] = await db.select().from(tradeActionRequestsTable)
     .where(and(eq(tradeActionRequestsTable.id, opts.actionId), eq(tradeActionRequestsTable.userId, opts.userId)))
@@ -165,7 +168,7 @@ export async function confirmAction(opts: {
   // exact command; a refusal there rejects the action with that reason.
   let routed: RouteResult;
   try {
-    routed = await routeConfirmedAction(routable(row));
+    routed = await routeConfirmedAction(routable(row, opts.sourcePage));
   } catch {
     routed = { ok: false, venue: null, commandId: null, reason: "VENUE_QUEUE_FAILED" };
   }

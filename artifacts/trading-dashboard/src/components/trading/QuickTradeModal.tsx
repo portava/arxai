@@ -230,7 +230,9 @@ export function QuickTradeModal({
       requestKeyRef.current = null;
       setResult(body.simulated
         ? `${body.simulated.label} Paper order #${body.simulated.paperOrderId} at ${body.simulated.fillPrice}.`
-        : `Market order ${body.result?.status ?? "QUEUED"}`);
+        : body.demo
+          ? `Demo order sent to your demo account (command ${body.demo.commandId ?? "pending"}).`
+          : `Market order ${body.result?.status ?? "QUEUED"}`);
       onOpened();
     } catch (e) {
       setErr(String((e as Error).message ?? e));
@@ -440,7 +442,7 @@ export function QuickTradeModal({
               <div className="rounded bg-danger/10 p-3 text-danger">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="mt-0.5 h-4 w-4" />
-                  <div>This is a <strong>LIVE</strong> market order. The full safety guard chain must approve before it reaches your broker.</div>
+                  <div>This is a <strong>LIVE</strong> market order. Live opens from My Trades are not enabled yet: they stay off until broker validation passes and the owner authorizes this surface, so the server will refuse it and send nothing.</div>
                 </div>
                 <label className="mt-2 flex items-start gap-2">
                   <Checkbox checked={ack} onCheckedChange={(v) => setAck(v === true)} />
