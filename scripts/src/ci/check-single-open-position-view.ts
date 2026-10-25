@@ -70,11 +70,6 @@ export const OPEN_READ_ALLOWLIST: Record<string, OpenReadAllowance> = {
     openReads: 1, category: "BROKER_TRUTH",
     reason: "a LIVE_FILLED CLOSE reads the open row's volume and immediately writes the partial-close volume or closed_at for that row (read-modify-write beside livePositionWriter)",
   },
-  // A predicate none of the named bases expresses.
-  "lib/alerts/ruleEngine.ts": {
-    openReads: 1, category: "NON_STANDARD_PREDICATE",
-    reason: "near-stop-loss sweep requires DEMO status = 'OPEN' AND closed_at IS NULL AND user_id IS NOT NULL; CONFIRMED_OPEN is status = 'OPEN' only, so moving it would add rows with a stamped closed_at",
-  },
 };
 
 export interface OperatorReadAllowance {
@@ -99,7 +94,36 @@ export const OPERATOR_WIDE_READERS: Record<string, OperatorReadAllowance> = {
   "lib/intelligence/monitorWorker.ts": { reason: "the monitor sweep finds the distinct users that hold open DEMO rows (per-user reads use readOpenPositions)" },
   "lib/live/masterBridgePool.ts": { reason: "pool recompute sums floating P/L of every allocated user's open exposure" },
   "lib/live/emergencyClose.ts": { reason: "kill-switch close-all (all / all_shared scopes) resolves every open live position" },
+  "lib/alerts/ruleEngine.ts": {
+    reason: "the near-stop-loss alert sweep scans every trader's DEMO rows under the ALERT_ELIGIBLE basis (owned, status OPEN, not closed) and attributes each alert to the row's owner",
+  },
 };
+
+/**
+ * Trader alerts (owner decision 11) keep the stricter ALERT_ELIGIBLE rule:
+ * every read-model call in an alert module must name the ALERT_ELIGIBLE basis,
+ * so an alert sweep cannot silently widen to ownerless or closed DEMO rows.
+ */
+export const ALERT_MODULE = /^lib\/alerts\//;
+const READ_MODEL_CALL = /^(?:readOpenPositions|countOpenPositions|select(?:Live|Demo)OpenPositions(?:ForAllUsers)?)$/;
+
+export function alertEligibilityViolations(key: string, source: string): string[] {
+  if (!ALERT_MODULE.test(key)) return [];
+  const file = ts.createSourceFile(key, source, ts.ScriptTarget.Latest, true);
+  const out: string[] = [];
+  const visit = (n: ts.Node) => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && READ_MODEL_CALL.test(n.expression.text)) {
+      const argsText = n.arguments.map((a) => a.getText(file)).join(",");
+      if (!/\bALERT_ELIGIBLE_BASIS\.(?:DEMO|LIVE)\b|["'`]ALERT_ELIGIBLE["'`]/.test(argsText)) {
+        const line = file.getLineAndCharacterOfPosition(n.getStart(file)).line + 1;
+        out.push(`${line}: alert module reads open positions without the ALERT_ELIGIBLE basis (owner decision 11); pass basis: ALERT_ELIGIBLE_BASIS.DEMO`);
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(file);
+  return out;
+}
 
 export interface FileScan {
   openReads: number;
@@ -249,13 +273,26 @@ export function checkSingleOpenPositionView(): CheckResult {
       violations.push(`${READ_MODEL} must build the cross-user LIVE EXPOSURE basis from openLiveExposureCondition()`);
     }
   }
+  if (existsSync(readModel)) {
+    const src = readFileSync(readModel, "utf8");
+    const rule = /function demoAlertEligibleCondition\(\)[^{]*\{([\s\S]*?)\n\}/.exec(src)?.[1] ?? "";
+    for (const [part, label] of [
+      [/eq\(demoPositionColumns\.status,\s*"OPEN"\)/, "status = 'OPEN'"],
+      [/isNull\(demoPositionColumns\.closedAt\)/, "closed_at IS NULL"],
+      [/isNotNull\(demoPositionColumns\.userId\)/, "user_id IS NOT NULL"],
+    ] as const) {
+      if (!part.test(rule)) violations.push(`${READ_MODEL}: the DEMO ALERT_ELIGIBLE rule (demoAlertEligibleCondition) must include ${label}`);
+    }
+  }
   const scans: Record<string, FileScan> = {};
   let rawOpenReads = 0;
   let operatorReaders = 0;
   for (const file of walk(API_SRC, { skip: (p) => p.includes("/__qa__/") || p.endsWith(".test.ts") })) {
     const key = file.slice(API_SRC.length + 1);
     if (key.startsWith("scripts/")) continue;
-    const scan = scanFile(key, readFileSync(file, "utf8"));
+    const source = readFileSync(file, "utf8");
+    const scan = scanFile(key, source);
+    scan.violations.push(...alertEligibilityViolations(key, source));
     rawOpenReads += scan.openReads;
     if (scan.allUsersReads) operatorReaders++;
     scans[key] = scan;

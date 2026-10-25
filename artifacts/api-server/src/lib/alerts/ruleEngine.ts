@@ -15,7 +15,8 @@
 // to that row's owner and skips ownerless legacy rows, which would otherwise
 // be broadcast.
 
-import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
+import { demoPositionColumns } from "../positions/ledger.js";
+import { ALERT_ELIGIBLE_BASIS, selectDemoOpenPositionsForAllUsers } from "../positions/openPositions.js";
 import {
   db,
   tradePlansTable,
@@ -24,7 +25,7 @@ import {
   tradesTable,
   performanceDailyTable,
 } from "@workspace/db";
-import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { createAlert } from "./alertManager.js";
 import { readBrokerHealthState } from "../brokerHub/brokerHealthState.js";
 import { readTraderRiskSettingsMany } from "../riskGovernor/limitSettings.js";
@@ -130,12 +131,10 @@ async function marketNoTradeRule() {
 
 async function positionNearStopLossRule() {
   // Open positions whose current price is within 25% of the SL distance.
-  const open = await demoPositionLedger.read({
-    where: and(
-      eq(demoPositionColumns.status, "OPEN"),
-      isNull(demoPositionColumns.closedAt),
-      isNotNull(demoPositionColumns.userId),
-    ),
+  // ALERT_ELIGIBLE (owner decision 11): status OPEN, closed_at not stamped and
+  // an owner on the row; ownerless and closed rows never raise a trader alert.
+  const open = await selectDemoOpenPositionsForAllUsers(demoPositionColumns, {
+    basis: ALERT_ELIGIBLE_BASIS.DEMO,
     limit: 50,
   });
   let any = false;

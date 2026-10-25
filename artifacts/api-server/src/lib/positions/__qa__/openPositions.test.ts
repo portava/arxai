@@ -339,3 +339,42 @@ test("cross-user reads carry the same bases and respect a user filter", async ()
   const [after] = await selectLiveOpenPositionsForAllUsers({ n: sql<number>`count(*)::int` }, { userIds: [bob] });
   assert.equal(after!.n, 2);
 });
+
+test("ALERT_ELIGIBLE (owner decision 11): owned, status OPEN, closed_at unset; never ownerless or closed rows", async () => {
+  const both = [alice, bob];
+  const legacy = and(eq(demo.status, "OPEN"), isNull(demo.closedAt), isNotNull(demo.userId));
+  // A row still labelled OPEN but with a stamped closed_at, and an ownerless OPEN row.
+  const [stamped] = await demoPositionWriter.insertReturning({
+    userId: alice, brokerPositionId: `${T}-stamped`, symbol: "EURUSD", direction: "BUY", lotSize: 0.1, entryPrice: 1.1,
+    status: "OPEN", closedAt: new Date(),
+  }, { id: demo.id });
+  const [orphan] = await demoPositionWriter.insertReturning({
+    userId: null, brokerPositionId: `${T}-orphan`, symbol: "EURUSD", direction: "BUY", lotSize: 0.1, entryPrice: 1.1,
+    stopLoss: 1.09, currentPrice: 1.091, status: "OPEN",
+  }, { id: demo.id });
+  try {
+    // Exactly the predicate the alert sweep used inline before it moved to the read model.
+    assert.deepEqual(
+      idsOf(await selectDemoOpenPositionsForAllUsers(demo, { basis: "ALERT_ELIGIBLE", userIds: both })),
+      idsOf(await demoPositionLedger.read({ where: and(inArray(demo.userId, both), legacy) })),
+    );
+    // Per-user form: only alice's own confirmed-open row (not SYNC_PENDING, CLOSED or the stamped row).
+    const mine = await selectDemoOpenPositions(demo, { userId: alice, basis: "ALERT_ELIGIBLE" });
+    assert.deepEqual(mine.map((r) => r.brokerPositionId), [tickets.open]);
+    assert.ok(mine.every((r) => r.userId === alice), "tenant-scoped: bob's colliding ticket is not alice's");
+    const bobs = await selectDemoOpenPositions(demo, { userId: bob, basis: "ALERT_ELIGIBLE" });
+    assert.ok(bobs.length === 1 && bobs[0]!.userId === bob && bobs[0]!.id !== mine[0]!.id);
+    // Stricter than CONFIRMED_OPEN by exactly the stamped closed_at row.
+    const confirmed = await selectDemoOpenPositions(demo, { userId: alice, basis: "CONFIRMED_OPEN" });
+    assert.deepEqual(sorted(confirmed.map((r) => r.brokerPositionId)), sorted([tickets.open, `${T}-stamped`]));
+    // The unfiltered cross-user sweep never returns an ownerless or closed row.
+    const sweep = await selectDemoOpenPositionsForAllUsers(demo, { basis: "ALERT_ELIGIBLE" });
+    assert.ok(!sweep.some((r) => r.id === orphan!.id || r.id === stamped!.id), "ownerless and stamped rows excluded");
+    assert.ok(sweep.every((r) => r.userId != null && r.closedAt == null && r.status === "OPEN"));
+    // The ownerless row exists (an operator-wide CONFIRMED_OPEN read sees it); alerts just never use it.
+    const ops = await selectDemoOpenPositionsForAllUsers({ id: demo.id }, { basis: "CONFIRMED_OPEN" });
+    assert.ok(ops.some((r) => r.id === orphan!.id));
+  } finally {
+    await db.delete(livePositionsTable).where(inArray(livePositionsTable.id, [orphan!.id, stamped!.id]));
+  }
+});

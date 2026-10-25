@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   READ_MODEL,
+  alertEligibilityViolations,
   checkSingleOpenPositionView,
   evaluate,
   scanFile,
@@ -83,6 +84,15 @@ n++; assert.match(evOp({ "lib/a.ts": scan(0) }, { "lib/a.ts": op() })[0]!, /stal
 n++; assert.match(evOp({}, { "lib/gone.ts": op() })[0]!, /stale OPERATOR_WIDE_READERS entry .*no longer exists/);
 n++; assert.match(evOp({ "lib/a.ts": all }, { "lib/a.ts": op(" ") })[0]!, /needs a reason/);
 n++; assert.deepEqual(evOp({ "lib/a.ts": all, "lib/b.ts": scan(0) }, { "lib/a.ts": op() }), []);
+
+// Alert modules must name the ALERT_ELIGIBLE basis on every read-model call (owner decision 11).
+const alertV = (source: string, key = "lib/alerts/ruleEngine.ts") => alertEligibilityViolations(key, source);
+n++; assert.deepEqual(alertV("await selectDemoOpenPositionsForAllUsers(demoPositionColumns, { basis: ALERT_ELIGIBLE_BASIS.DEMO, limit: 50 });"), []);
+n++; assert.deepEqual(alertV('await selectDemoOpenPositions(cols, { userId, basis: "ALERT_ELIGIBLE" });'), []);
+n++; assert.equal(alertV('await selectDemoOpenPositionsForAllUsers(demoPositionColumns, { basis: "CONFIRMED_OPEN", limit: 50 });').length, 1);
+n++; assert.equal(alertV("await selectDemoOpenPositionsForAllUsers(demoPositionColumns, { limit: 50 });").length, 1);
+n++; assert.equal(alertV('await readOpenPositions({ userId, venue: "DEMO" });').length, 1);
+n++; assert.deepEqual(alertV("await selectDemoOpenPositionsForAllUsers(demoPositionColumns, { limit: 50 });", "lib/live/x.ts"), [], "only alert modules");
 
 // The real tree passes.
 const real = checkSingleOpenPositionView();
