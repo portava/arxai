@@ -69,6 +69,40 @@ export type OpenPositionBasis = "EXPOSURE" | "UNCLOSED" | "CONFIRMED_OPEN";
  */
 export type LiveOpenPositionBasis = OpenPositionBasis | "UNCLOSED_RECONCILED";
 
+/**
+ * DEMO-only addition for the projected reads: ALERT_ELIGIBLE is the trader
+ * alert rule (owner decision 11). A DEMO row may raise a trader alert only when
+ *
+ *   status = 'OPEN' AND closed_at IS NULL AND user_id IS NOT NULL
+ *
+ * It is deliberately stricter than CONFIRMED_OPEN (status = 'OPEN' only): a row
+ * with a stamped closed_at is never alerted on, and an ownerless legacy row
+ * (user_id IS NULL) is never alerted on, because an alert with no owner is
+ * shown to every user and the read model never infers an owner. Ownerless rows
+ * belong in authorized operator diagnostics only. The per-user form adds
+ * `user_id = <id>`, which already implies an owner.
+ *
+ * LIVE needs no separate rule: arx_live_positions.user_id is NOT NULL, and no
+ * trader alert sweeps LIVE rows today. A LIVE alert must use EXPOSURE (see
+ * ALERT_ELIGIBLE_BASIS).
+ */
+export type DemoOpenPositionBasis = OpenPositionBasis | "ALERT_ELIGIBLE";
+
+/** The named alert-eligibility rule per venue (owner decision 11). */
+export const ALERT_ELIGIBLE_BASIS = { DEMO: "ALERT_ELIGIBLE", LIVE: "EXPOSURE" } as const satisfies {
+  DEMO: DemoOpenPositionBasis;
+  LIVE: LiveOpenPositionBasis;
+};
+
+/** DEMO alert eligibility without the user scope (status OPEN, not closed, owned). */
+function demoAlertEligibleCondition(): SQL {
+  return and(
+    eq(demoPositionColumns.status, "OPEN"),
+    isNull(demoPositionColumns.closedAt),
+    isNotNull(demoPositionColumns.userId),
+  )!;
+}
+
 interface OpenPositionCommon {
   /** Row id in the venue's own table (ids are NOT comparable across venues). */
   id: number;
@@ -186,8 +220,9 @@ export function liveOpenCondition(userId: number, basis: LiveOpenPositionBasis =
 }
 
 /** The DEMO predicate for a basis; exported for SQL aggregates that must match. */
-export function demoOpenCondition(userId: number, basis: OpenPositionBasis = "EXPOSURE"): SQL {
+export function demoOpenCondition(userId: number, basis: DemoOpenPositionBasis = "EXPOSURE"): SQL {
   requireUserId(userId);
+  if (basis === "ALERT_ELIGIBLE") return and(eq(demoPositionColumns.userId, userId), demoAlertEligibleCondition())!;
   return and(
     eq(demoPositionColumns.userId, userId),
     basis === "CONFIRMED_OPEN"
@@ -356,7 +391,7 @@ export interface SelectLiveOpenPositionsOptions extends OpenPositionProjection {
 export interface SelectDemoOpenPositionsOptions extends OpenPositionProjection {
   /** The one user whose positions are read. Required; never widened. */
   userId: number;
-  basis?: OpenPositionBasis;
+  basis?: DemoOpenPositionBasis;
   symbol?: string;
   /** Restrict to these broker position ids. An empty list matches nothing. */
   tickets?: readonly string[];
@@ -439,7 +474,8 @@ function liveBasisForAllUsers(basis: LiveOpenPositionBasis): SQL {
 }
 
 /** The cross-user DEMO predicate for a basis. */
-function demoBasisForAllUsers(basis: OpenPositionBasis): SQL {
+function demoBasisForAllUsers(basis: DemoOpenPositionBasis): SQL {
+  if (basis === "ALERT_ELIGIBLE") return demoAlertEligibleCondition();
   return basis === "CONFIRMED_OPEN"
     ? eq(demoPositionColumns.status, "OPEN")
     : ne(demoPositionColumns.status, "CLOSED");
@@ -460,7 +496,7 @@ export async function selectLiveOpenPositionsForAllUsers<F extends SelectedField
 /** Every user's open DEMO positions, projected. Operator views and sweeps only. */
 export async function selectDemoOpenPositionsForAllUsers<F extends SelectedFields>(
   fields: F,
-  opts: OpenPositionsForAllUsersOptions<OpenPositionBasis> = {},
+  opts: OpenPositionsForAllUsersOptions<DemoOpenPositionBasis> = {},
 ) {
   const basis = demoBasisForAllUsers(opts.basis ?? "EXPOSURE");
   const where = opts.userIds !== undefined

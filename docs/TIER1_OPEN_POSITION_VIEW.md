@@ -323,6 +323,73 @@ On a local PostgreSQL 16 database (UTC), branch `r3/open-position-reads`:
   unchanged and still not detected by the guard.
 - The DEMO `closed_at` question (ruleEngine) and the `UNCLOSED` vs `EXPOSURE`
   choice for the Risk Governor, dispatch pre-gates and emergency close remain
-  owner decisions.
+  owner decisions. (Round 5: the ruleEngine question is decided by owner
+  decision 11; see below.)
+
+## Round 5: alert eligibility is a named rule (owner decision 11)
+
+Owner decision 11: keep the alerts' stricter eligibility; never broaden trader
+alerts to ownerless or closed DEMO rows; express it through the read model as a
+named, tested rule; ownerless rows belong only in authorized operator
+diagnostics, never an inferred trader account.
+
+- `openPositions.ts` adds the DEMO-only basis `ALERT_ELIGIBLE` (type
+  `DemoOpenPositionBasis = OpenPositionBasis | "ALERT_ELIGIBLE"`), built by one
+  function, `demoAlertEligibleCondition()`:
+  `status = 'OPEN' AND closed_at IS NULL AND user_id IS NOT NULL`. This is
+  exactly the predicate the near-stop-loss sweep wrote inline. The per-user
+  form adds `user_id = <id>`. It is accepted by `selectDemoOpenPositions` and
+  `selectDemoOpenPositionsForAllUsers` only; `readOpenPositions` and the LIVE
+  reads are unchanged. `CONFIRMED_OPEN` is unchanged (`status = 'OPEN'` only);
+  `ALERT_ELIGIBLE` is stricter by the rows with a stamped `closed_at` and the
+  ownerless rows.
+- `ALERT_ELIGIBLE_BASIS = { DEMO: "ALERT_ELIGIBLE", LIVE: "EXPOSURE" }` names
+  the rule per venue. No trader alert sweeps LIVE rows today
+  (`arx_live_positions.user_id` is NOT NULL); the LIVE entry records that a
+  future LIVE alert uses the canonical exposure basis. No LIVE read changed.
+- `lib/alerts/ruleEngine.ts` (near-stop-loss sweep) now calls
+  `selectDemoOpenPositionsForAllUsers(demoPositionColumns, { basis: ALERT_ELIGIBLE_BASIS.DEMO, limit: 50 })`.
+  Same predicate, same `limit 50`, no `ORDER BY` (as before), same columns and
+  row type. Each alert is still attributed to the row's owner.
+- Guard: the `OPEN_READ_ALLOWLIST` entry for `lib/alerts/ruleEngine.ts`
+  (category `NON_STANDARD_PREDICATE`) is removed: raw open reads 4 → 3 in 3 → 2
+  modules. Because the sweep reads every trader's rows, the module is now
+  listed in `OPERATOR_WIDE_READERS` (9 → 10) with that reason. This is honest
+  accounting, not a blinder guard: the cross-user read is still named and
+  listed.
+- Guard addition: every read-model call in a `lib/alerts/` module must name
+  the `ALERT_ELIGIBLE` basis (`ALERT_ELIGIBLE_BASIS.DEMO|LIVE` or the literal),
+  and the read model's `demoAlertEligibleCondition()` must contain all three
+  conjuncts. A sweep switched to `CONFIRMED_OPEN`, `EXPOSURE` or no basis
+  fails CI. 6 new fixtures (46 total).
+
+Operator diagnostics for ownerless rows (existing, unchanged): the DEMO
+positions routes in `routes/livePositions.ts` (`GET /positions`,
+`GET /positions/:id`, `POST /positions/sync`) filter with
+`lib/auth/ownerScope.ts`, which shows `user_id IS NULL` rows only to
+ADMIN/OWNER sessions (`canSeeLegacyRows`) and never to a trader. That is the
+authorized operator view of ownerless DEMO position rows; the central EA sync
+there writes and reconciles `user_id IS NULL` rows by design. The read-only
+script `artifacts/api-server/src/scripts/productionReadinessCheck.ts`
+(`ownerlessRows`) counts ownerless rows in the claimable behaviour tables
+listed in `scripts/claimLegacyBehaviorRows.ts`; `live_positions` is not among
+them, so no script claims position rows. No inferred-owner path was added, and
+none should be: an owner is only ever set by an explicit, named claim.
+
+Behaviour change: none. The sweep returns the same rows as before.
+
+Verification (local PostgreSQL 16):
+
+- `test:open-position-view`: 11 tests (10 before). New: `ALERT_ELIGIBLE`
+  against the legacy inline predicate for a user batch; per-user form returns
+  only the owner's confirmed-open row (not SYNC_PENDING, CLOSED, or OPEN with a
+  stamped `closed_at`); tenant isolation with colliding tickets; stricter than
+  `CONFIRMED_OPEN` by exactly the stamped row; the unfiltered cross-user sweep
+  never returns an ownerless or closed row although the ownerless row exists.
+- `test:alert-rule-ownership`: 3 tests (2 before). New: the near-stop-loss
+  sweep alerts an owned OPEN row near its stop, to its owner only, and raises
+  nothing for an ownerless OPEN row, an OPEN row with a stamped `closed_at`, or
+  a CLOSED row. With the sweep temporarily switched to `CONFIRMED_OPEN` this
+  test fails, so it pins the stricter rule.
 
 **TIER 1 NOT COMPLETE**
