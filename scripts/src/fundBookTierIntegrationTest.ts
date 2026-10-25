@@ -31,7 +31,7 @@
 //     pool's tier state and never mutates the BALANCED pool's tier state.
 //
 // SAFETY / ISOLATION:
-//   - Operates on the shared BALANCED (+ a second) seed pool. The pool NAV
+//   - Creates two isolated test pools, including their NAV rows. The pool NAV
 //     snapshot(s) AND the pool-scoped tier_state / price-ladder rows are captured
 //     and restored EXACTLY as found.
 //   - Deterministic isolation: the tier_state rows are RESET to clean at the
@@ -63,9 +63,10 @@ import {
   getPoolTierState,
 } from "../../artifacts/api-server/src/lib/fundbook/tierEngine.js";
 
-const BALANCED_KEY = "BALANCED";
+const fixtureSuffix = `${process.pid}_${Date.now()}`;
+const BALANCED_KEY = `QA_TIER_BALANCED_${fixtureSuffix}`;
 // A second, distinct pool used only to prove per-pool isolation.
-const OTHER_KEY = "CONSERVATIVE";
+const OTHER_KEY = `QA_TIER_OTHER_${fixtureSuffix}`;
 
 let passes = 0;
 let failures = 0;
@@ -175,6 +176,13 @@ async function main(): Promise<void> {
 
   const startLive = await liveCommandsCount();
 
+  // Own both pools: this test must run on an empty database without relying
+  // on production boot seeding or resetting an existing investor pool.
+  const fixturePools = await db.insert(strategyPoolsTable).values([
+    { poolKey: BALANCED_KEY, name: "QA tier balanced", riskLevel: "MEDIUM" },
+    { poolKey: OTHER_KEY, name: "QA tier other", riskLevel: "LOW" },
+  ]).returning();
+  await db.insert(strategyPoolNavTable).values(fixturePools.map(p => ({ strategyPoolId: p.id })));
   // Resolve the pools and capture restore baselines BEFORE any mutation.
   const balancedRow = (
     await db.select().from(strategyPoolsTable).where(eq(strategyPoolsTable.poolKey, BALANCED_KEY)).limit(1)
@@ -380,6 +388,9 @@ async function main(): Promise<void> {
 
       // Restore the BALANCED NAV snapshot exactly as found.
       await restoreNav(navBaseline);
+      const fixtureIds = fixturePools.map(p => p.id);
+      await db.delete(strategyPoolNavTable).where(inArray(strategyPoolNavTable.strategyPoolId, fixtureIds));
+      await db.delete(strategyPoolsTable).where(inArray(strategyPoolsTable.id, fixtureIds));
     } catch (e) {
       assert(false, `cleanup failed: ${(e as Error).message}`);
     }

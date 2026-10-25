@@ -20,7 +20,7 @@
 
 import { randomUUID } from "node:crypto";
 import {
-  db,
+  db, usersTable,
   chartDecisionReceiptsTable,
   chartDecisionOutcomesTable,
   tradesTable,
@@ -37,11 +37,9 @@ import { findSimilarSetups } from "../../artifacts/api-server/src/lib/chart/simi
 import { getBehaviorProtection } from "../../artifacts/api-server/src/lib/chart/behaviorProtection.js";
 import type { ChartSetupFingerprint } from "../../artifacts/api-server/src/lib/chart/setupFingerprint.js";
 
-// Synthetic, isolated test identities (negative ids never collide with real users).
-const USER_A = -177_001;
-const USER_B = -177_002;
-const USER_INV = -177_003;
-const TEST_USERS = [USER_A, USER_B, USER_INV];
+// Real isolated positive identities: the canonical read model rejects synthetic negative owners.
+let USER_A = 0, USER_B = 0, USER_INV = 0;
+let TEST_USERS: number[] = [];
 
 type CaseResult = { name: string; ok: boolean; detail?: string };
 const results: CaseResult[] = [];
@@ -120,12 +118,17 @@ async function cleanup() {
     .delete(chartDecisionReceiptsTable)
     .where(inArray(chartDecisionReceiptsTable.userId, TEST_USERS));
   await db.delete(tradesTable).where(inArray(tradesTable.userId, TEST_USERS));
+  await db.delete(usersTable).where(inArray(usersTable.id, TEST_USERS));
 }
 
 async function run() {
   // eslint-disable-next-line no-console
   console.log("Chart Brain v2 — decision-memory suite\n");
-  await cleanup(); // start clean (defensive — prior aborted run)
+  const users = await db.insert(usersTable).values(["a", "b", "investor"].map(k => ({
+    email: `qa-receipts-${k}-${randomUUID()}@arx.test`, name: "Receipts QA", role: "USER", isSystemUser: true,
+  }))).returning({ id: usersTable.id });
+  [USER_A, USER_B, USER_INV] = users.map(u => u.id);
+  TEST_USERS = [USER_A, USER_B, USER_INV];
 
   // ── 1 + 2. Immutability + append (OUTCOME then REVIEW) ──
   const rid = await insertReceipt(USER_A, fp());
