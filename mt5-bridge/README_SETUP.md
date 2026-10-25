@@ -1,143 +1,66 @@
-# Replit MT5 Bridge — Setup Guide
+# ARX MT5 DEMO connection setup — v1.29
 
-This package lets MetaTrader 5 talk to the **High Roll Trading AI** Replit app.
+This kit is for **read-only connection checks on a DEMO account**. It contains
+`ReplitMT5BridgeEA_v129.mq5`, the credential-free `ARX_DEMO_READ_ONLY.set` profile,
+a WebRequest diagnostic script, and the three companion guides.
 
-> **v1 is READ-ONLY.** The EA sends heartbeat, account snapshot, and open
-> positions. It does **not** place, modify, or close any orders — even if you
-> flip the inputs. There is intentionally no execution code path in v1.
+The EA has execution code. Its local trading arms default off; the supplied
+profile keeps them off. Older source comments describing execution as impossible
+are historical and must not be used as a safety guarantee.
 
----
+## Current boundary
 
-## What's in the package
+Do not arm this kit for the seven-step broker validation. Its `CLOSE_POSITION`
+handler closes the whole position even when a smaller volume is requested. The
+validator refuses known incompatible versions before opening a position. The
+Universal Agent v1.50–1.54 uses a different command mailbox and is not a drop-in
+replacement for this DEMO path. Operator-managed v1.55 is not source-controlled
+here and is not certified by this package.
 
-| File | Purpose |
-|---|---|
-| `ReplitMT5BridgeEA.mq5` | The Expert Advisor source. Compile in MetaEditor. |
-| `README_SETUP.md` | This file. |
-| `BRIDGE_TESTING_CHECKLIST.md` | Step-by-step verification after install. |
+This download does not establish a compiled EA, a terminal connection, fresh
+quotes/candles, or a passed broker lifecycle. Each needs observed evidence.
 
----
+## Prepare the connection
 
-## 1. Set Replit Secrets
+1. Use a desktop MT5 terminal signed into the intended **DEMO** broker account.
+   Verify the account type in the terminal. Do not send credentials in chat.
+2. Choose the reviewed ARX HTTPS origin. A development preview can be used for
+   a supervised development connection check while its workspace is running;
+   it is not evidence of a published, persistent deployment.
+3. Sign into ARX under the intended owner of this connection. Open **MT5 Setup**
+   and create one named per-user connection token. The owner copies the token
+   directly into MT5; only its hash is stored by ARX. Do not export it in a
+   settings file, screenshot, log, repository or chat. Never use the retired
+   server-wide `MT5_BRIDGE_TOKEN`.
+4. Keep the platform halt engaged and LIVE disabled. Creating a connection
+   does not authorize order validation or releasing those controls.
 
-Open your Replit project → **Tools → Secrets** and add:
+## Install and verify
 
-| Key | Value | Required |
-|---|---|---|
-| `BROKER_PROVIDER` | `mt5` | ✅ |
-| _no shared token secret needed_ | per-user tokens are issued from the ARX MT5 Setup page | n/a |
-| `MT5_ENVIRONMENT` | `demo` (use `live` only after full paper testing) | optional |
-| `MT5_ACCOUNT_ID` | your MT5 login (e.g. `12345678`) | optional |
-| `LIVE_TRADING_ALLOWED` | leave unset, or set to `false` | optional |
+1. MT5 → File → Open Data Folder → `MQL5/Experts`. Copy
+   `ReplitMT5BridgeEA_v129.mq5` there.
+2. Open this exact file in MetaEditor and compile. Record the actual compiler
+   result; resolve errors before continuing. This kit contains source, not a
+   precompiled or certified `.ex5`.
+3. Tools → Options → Expert Advisors: add only the reviewed ARX HTTPS origin to
+   the WebRequest allowlist. Do not add `/api` or `/login` to the origin.
+4. Attach the compiled EA to one chart on the verified DEMO account. **Load
+   `ARX_DEMO_READ_ONLY.set` before entering private values**, because loading it
+   clears the URL and token fields. Do not run multiple copies with one token.
+5. Set `ServerBaseUrl` to the same reviewed origin and privately enter the
+   per-user `BridgeToken`. Leave `AccountId` blank so the terminal supplies it.
+6. Verify `ReadOnlyMode=true`; `AllowOrderExecution`, `EnableDemoExecution`,
+   `EnableLiveExecution`, `EnableSelfUpdate`, and `EnableRemoteConfig` are all
+   `false`. Keep automated trading disabled during this read-only setup.
+7. Follow `BRIDGE_TESTING_CHECKLIST.md`. Record masked status only. A successful
+   heartbeat is connectivity evidence, not permission to trade.
 
-**Generate your per-user bridge token** (do this in the ARX app, not on the server):
+The profile requests a five-second heartbeat and account/position snapshot.
+Confirm actual receive times; network delays can still cause stale status.
+Symbol rules are not a continuous market-data feed, so verify quote timestamps
+and candles separately while the chosen market is open.
 
-1. Sign in to ARX and open the **MT5 Setup** page.
-2. Click **Create per-user bridge token** (or **Regenerate & reveal new token**
-   if you already have one).
-3. The full token value is shown **exactly once**. Copy it now.
-
-**Critical token rules**
-- Paste the **per-user bridge token** from the ARX MT5 Setup page into the EA `BridgeToken` input.
-- The server-wide `MT5_BRIDGE_TOKEN` env value is **rejected** on every EA
-  endpoint — do not paste it into the EA.
-- **Never paste the token into chat, screenshots, or commits.**
-- The server stores only a SHA-256 hash of the token. It cannot show the full
-  value again — if you lose it, regenerate.
-- The EA never logs the value either.
-- Rotate it whenever you suspect it leaked: click **Regenerate & reveal new
-  token** in MT5 Setup, then paste the new value into the EA input and
-  restart the EA.
-
----
-
-## 2. Install the EA in MetaTrader 5
-
-1. Open **MetaTrader 5**.
-2. **File → Open Data Folder**.
-3. Navigate to `MQL5 → Experts`.
-4. Copy `ReplitMT5BridgeEA.mq5` into that folder.
-5. In MT5, refresh the Navigator (right-click → Refresh) or restart MT5.
-6. Right-click `ReplitMT5BridgeEA` in the Navigator → **Modify**. MetaEditor
-   opens.
-7. Click **Compile** (F7). You should see *"0 errors, 0 warnings"*.
-
-## 3. Allow the EA to call your Replit URL
-
-MT5 blocks WebRequest by default. You must allowlist the Replit domain.
-
-1. **Tools → Options → Expert Advisors** tab.
-2. Tick **Allow WebRequest for listed URL**.
-3. Add your Replit app URL, e.g. `https://your-repl.replit.app`
-   (use the actual deployed domain, not the dev preview).
-4. Click **OK**.
-
-> If you skip this, the EA prints `WebRequest POST … failed. err=4060` (or
-> similar) — that's the symptom.
-
-## 4. Attach the EA to a chart
-
-1. Open any chart (the EA is symbol-agnostic — V75 / EURUSD / whatever).
-2. Drag `ReplitMT5BridgeEA` onto the chart.
-3. Fill in the inputs:
-   - `ServerBaseUrl` = `https://your-repl.replit.app` (no trailing slash)
-   - `BridgeToken` = the **per-user bridge token** issued from the ARX MT5 Setup page (NOT the system `MT5_BRIDGE_TOKEN` env value — that is rejected on every EA endpoint)
-   - `Environment` = `demo`
-   - `AccountId` = your login (or leave blank — the EA reads it from MT5)
-   - `ReadOnlyMode` = **true** (keep this)
-   - `AllowOrderExecution` = **false** (keep this)
-4. **Common** tab → tick **Allow Algo Trading**.
-5. Click **OK**.
-6. Confirm the **Algo Trading** button at the top of MT5 is **green**.
-
-## 5. Verify it's connected
-
-In Replit, hit:
-
-```
-GET /api/broker/connection-check
-```
-
-Within a few seconds you should see:
-- `"connected": true`
-- `"environment": "DEMO"` (or `LIVE`)
-- `"accountReadable": true`, `"equityReadable": true`, `"balanceReadable": true`
-- `"liveOrderReady": false` (this stays false in v1 — that is intentional)
-
-The Replit dashboard `/mt5-bridge` page also shows real-time bridge status.
-
----
-
-## What the EA does NOT do (by design)
-
-- ❌ Never calls `OrderSend`, `OrderModify`, `OrderClose`, `PositionClose`, or
-      any `trade.*` function.
-- ❌ Never reads or stores credentials beyond the EA input box.
-- ❌ Never executes commands enqueued by the server. When the server sends
-      a command, the EA replies with `EA_READ_ONLY_MODE_ACTIVE` — the loop is
-      proven without any real-money risk.
-- ❌ Never logs the `BridgeToken`.
-
-## When you're ready for real trading (future v2)
-
-A future EA version will add a guarded execution path. **Do not** edit this v1
-file to try to enable execution — there is no execution code to enable, and
-even if there were, the server still rejects via `placeLiveOrderGuarded()`
-until a full broker placement layer ships. The order you must follow is:
-
-1. Run v1 read-only for as long as it takes to trust the bridge.
-2. Pass the full demo / paper test ladder.
-3. Wait for v2 EA + server placement layer + real risk caps.
-4. Only then attempt one tiny live trade.
-
----
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---|---|
-| `WebRequest … failed. err=4060` | Add the Replit URL in Tools → Options → Expert Advisors. |
-| `HTTP 401 Unauthorized` | Token mismatch. The EA `BridgeToken` must be an **active per-user token** issued from the ARX MT5 Setup page. The system `MT5_BRIDGE_TOKEN` env value is rejected on every EA endpoint. |
-| `HTTP 503` on `/api/mt5/heartbeat` | Server bridge endpoint disabled. Contact the operator. |
-| `connected: false` even after EA runs | Check the EA Experts log for failed requests. Confirm the URL has no trailing slash and uses `https://`. |
-| EA log shows `Acked command #X with status=EA_READ_ONLY_MODE_ACTIVE` | This is **correct behavior** — proves the command loop works without executing. |
+Official references: [MT5 EA setup](https://www.metatrader5.com/en/terminal/help/algotrading/trade_robots_indicators)
+and [WebRequest allowlisting and limitations](https://www.mql5.com/en/docs/network/webrequest).
+WebRequest does not run in the Strategy Tester; use the desktop terminal for
+this connectivity check.

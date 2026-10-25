@@ -94,6 +94,22 @@ export function wideningWasBlocked(reason: string | null): boolean {
     && reason.slice("RISK_GATE_FAILED:".length).split(",").includes("stop_loss_required");
 }
 
+/** Known source incompatibilities, checked BEFORE this suite can open a position.
+ * Passing this check is not certification; the normal gates and observed
+ * broker snapshots still decide every scenario. Never infer support from a
+ * higher version number across the separate EA protocol families.
+ */
+export function knownDemoBridgeIncompatibility(version: string | null | undefined): string | null {
+  const v = version?.trim().replace(/^v/i, "");
+  if (v && /^1\.(26|27|28|29)(\.0)?$/.test(v)) {
+    return "This EA closes the entire position for CLOSE_POSITION, including partial-close requests. Keep it read-only; install and verify a DEMO bridge that respects the requested close volume before validation.";
+  }
+  if (v && /^1\.(30|40|50|51|52|54)(\.0)?$/.test(v)) {
+    return "This EA source uses the generic command mailbox, not the DEMO validator mailbox. Verify DEMO protocol compatibility before validation.";
+  }
+  return null;
+}
+
 const TERMINAL = new Set(["FILLED_DEMO", "REJECTED", "BLOCKED", "FAILED", "CANCELLED", "EXPIRED"]);
 
 async function waitForCommand(userId: number, commandId: string, timeoutMs = 60_000) {
@@ -133,6 +149,11 @@ export async function runExternal(a: RunArgs): Promise<StepResult[]> {
   const blocks = brokerControlBlocks(await readBrokerOperatorControls(), { venue: "DEMO", opensNewRisk: true });
   if (!bridgeOK || blocks.length) {
     step("preflight", false, !bridgeOK ? "Requires exactly one registered connection: connected, token-active and explicitly DEMO." : blocks.join(", "));
+    return out;
+  }
+  const incompatible = knownDemoBridgeIncompatibility(connection!.eaVersion);
+  if (incompatible) {
+    step("preflight", false, incompatible);
     return out;
   }
   const route = await evaluateRoutedDemoDispatchGate({ userId: a.userId, userConfirmed: true, duplicateClear: true });

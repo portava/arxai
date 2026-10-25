@@ -8,7 +8,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { SCENARIOS, parseArgs, refuseRun, runExternal, demoSnapshotMatches, wideningWasBlocked, type DemoSnapshot } from "../brokerValidationSuite.js";
+import { SCENARIOS, parseArgs, refuseRun, runExternal, demoSnapshotMatches, wideningWasBlocked, knownDemoBridgeIncompatibility, type DemoSnapshot } from "../brokerValidationSuite.js";
+
+test("known EA protocol and partial-close incompatibilities stop the validation preflight", () => {
+  for (const version of ["1.26", "1.27", "1.28", "1.29", "v1.29", "1.29.0"]) {
+    assert.match(knownDemoBridgeIncompatibility(version)!, /entire position/);
+  }
+  for (const version of ["1.30", "1.40", "1.50", "1.51", "1.52", "1.54"]) {
+    assert.match(knownDemoBridgeIncompatibility(version)!, /mailbox/);
+  }
+  // Unknown versions still face the existing route/consent/snapshot checks;
+  // this source compatibility check makes no claims about their capabilities.
+  assert.equal(knownDemoBridgeIncompatibility(null), null);
+  assert.equal(knownDemoBridgeIncompatibility("custom-build"), null);
+});
 
 const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../../package.json", import.meta.url)), "utf8")) as { scripts: Record<string, string> };
 

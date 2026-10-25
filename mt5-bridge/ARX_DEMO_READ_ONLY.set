@@ -1,0 +1,19 @@
+; ARX v1.29 read-only connection profile. Load BEFORE entering private values.
+; Fill ServerBaseUrl and BridgeToken inside MT5; never commit an exported token.
+ServerBaseUrl=
+BridgeToken=
+Environment=demo
+AccountId=
+ReadOnlyMode=true
+AllowOrderExecution=false
+EnableDemoExecution=false
+EnableLiveExecution=false
+EnableSelfUpdate=false
+EnableRemoteConfig=false
+PollIntervalSeconds=2
+HeartbeatPeriodSeconds=5
+SnapshotPeriodSeconds=5
+SendHeartbeat=true
+SendAccountSnapshot=true
+SendPositionsSnapshot=true
+SendSymbolSpecs=true
