@@ -17,7 +17,7 @@
 // Usage:
 //   pnpm --filter @workspace/api-server run validate:broker               # print the plan
 //   pnpm --filter @workspace/api-server run validate:broker -- --run --user-id <id> \
-//     --symbol EURUSD --lots 0.01 --confirm-demo-orders [--json out.json]
+//     --symbol EURUSD --lots 0.02 --confirm-demo-orders [--json out.json]
 
 import { pool } from "@workspace/db";
 
@@ -56,7 +56,7 @@ export function parseArgs(argv: string[]): RunArgs & { run: boolean; json: strin
     run: argv.includes("--run"),
     userId: Number(val("--user-id") ?? NaN),
     symbol: String(val("--symbol") ?? "EURUSD").toUpperCase(),
-    lots: Number(val("--lots") ?? 0.01),
+    lots: Number(val("--lots") ?? 0.02),
     venue: String(val("--venue") ?? "DEMO").toUpperCase(),
     confirmed: argv.includes("--confirm-demo-orders"),
     json: val("--json"),
@@ -67,9 +67,31 @@ export function parseArgs(argv: string[]): RunArgs & { run: boolean; json: strin
 export function refuseRun(a: RunArgs): string | null {
   if (a.venue !== "DEMO") return "This suite only runs against DEMO. LIVE validation is an owner-run micro-lot cycle (live micro-test scripts).";
   if (!Number.isInteger(a.userId) || a.userId <= 0) return "Name the demo user explicitly with --user-id <id>.";
-  if (!(a.lots > 0 && a.lots <= 0.1)) return "--lots must be between 0 and 0.1 for validation.";
+  if (!(a.lots >= 0.02 && a.lots <= 0.1) || Math.abs(a.lots * 100 - Math.round(a.lots * 100)) > 1e-8) return "--lots must be 0.02–0.10 in 0.01 increments so a real partial close can be verified.";
   if (!a.confirmed) return "This places real orders on a DEMO broker account. Re-run with --confirm-demo-orders.";
   return null;
+}
+
+export interface DemoSnapshot {
+  demo: boolean;
+  snapshotAt: number | null;
+  ambiguous: boolean;
+  position: { status: string; lots: number; stop: number | null; at: number | null } | null;
+}
+
+/** A command acknowledgement alone is never position/snapshot evidence. */
+export function demoSnapshotMatches(s: DemoSnapshot, expected: { after: number; positionAfter?: number; lots: number; stop: number | null; now: number }): boolean {
+  const fresh = (at: number | null, after = expected.after) => at != null && Number.isFinite(at) && at >= after && at <= expected.now && expected.now - at < 60_000;
+  if (!s.demo || s.ambiguous || !fresh(s.snapshotAt)) return false;
+  if (expected.lots === 0) return s.position == null || s.position.status === "CLOSED" && fresh(s.position.at, expected.positionAfter);
+  const p = s.position;
+  return !!p && p.status === "OPEN" && fresh(p.at, expected.positionAfter) && Number.isFinite(p.lots) && Math.abs(p.lots - expected.lots) < 1e-6
+    && (expected.stop == null || p.stop != null && Number.isFinite(p.stop) && Math.abs(p.stop - expected.stop) < 1e-6);
+}
+
+export function wideningWasBlocked(reason: string | null): boolean {
+  return reason?.startsWith("RISK_GATE_FAILED:") === true
+    && reason.slice("RISK_GATE_FAILED:".length).split(",").includes("stop_loss_required");
 }
 
 const TERMINAL = new Set(["FILLED_DEMO", "REJECTED", "BLOCKED", "FAILED", "CANCELLED", "EXPIRED"]);
@@ -86,6 +108,8 @@ async function waitForCommand(userId: number, commandId: string, timeoutMs = 60_
 }
 
 export async function runExternal(a: RunArgs): Promise<StepResult[]> {
+  const refusal = refuseRun(a);
+  if (refusal) throw new Error(refusal); // exported entry point enforces consent too
   const out: StepResult[] = [];
   const step = (id: string, ok: boolean, detail: string) => { out.push({ id, ok, detail }); return ok; };
   const { loadPlatformHalt } = await import("../lib/safety/tradingHalt.js");
@@ -94,12 +118,57 @@ export async function runExternal(a: RunArgs): Promise<StepResult[]> {
   const ops = await import("../lib/positions/governedOps.js");
   const guardian = await import("../lib/positionGuardian/reconcile.js");
 
+  const { getUserConnection, listUserConnections } = await import("../lib/brokerHub/connections.js");
+  const { readBrokerOperatorControls, brokerControlBlocks } = await import("../lib/safety/tradingHalt.js");
+  const { evaluateRoutedDemoDispatchGate } = await import("../lib/mt5/masterBridgeRouting.js");
+  const { demoPositionLedger, demoPositionColumns } = await import("../lib/positions/ledger.js");
+  const { and, eq } = await import("drizzle-orm");
+  // The legacy DEMO mirror has no account key. Refuse ambiguous ownership,
+  // and never use the cross-venue ticket lookup (LIVE can reuse a DEMO ticket).
+  const connections = await listUserConnections(a.userId);
+  const connection = connections.length === 1 ? connections[0] : null;
+  const bridgeOK = connection?.accountType === "demo" && connection.mode === "DEMO"
+    && connection.status === "connected" && connection.hasBridgeToken
+    && connection.tokenRevokedAt == null;
+  const blocks = brokerControlBlocks(await readBrokerOperatorControls(), { venue: "DEMO", opensNewRisk: true });
+  if (!bridgeOK || blocks.length) {
+    step("preflight", false, !bridgeOK ? "Requires exactly one registered connection: connected, token-active and explicitly DEMO." : blocks.join(", "));
+    return out;
+  }
+  const route = await evaluateRoutedDemoDispatchGate({ userId: a.userId, userConfirmed: true, duplicateClear: true });
+  if (route.routing.routedViaMaster || route.evidence.bridgeConnectionId !== connection!.id
+    || !route.evidence.heartbeatFresh || !route.evidence.verifiedDemo || !route.eligibility.eligible) {
+    step("preflight", false, "Validation requires a verified, fresh, user-owned DEMO route to the selected connection.");
+    return out;
+  }
+  const readSnapshot = async (ticket: string): Promise<DemoSnapshot> => {
+    const [bridge, rows] = await Promise.all([
+      getUserConnection(a.userId, connection!.id),
+      demoPositionLedger.read({ where: and(eq(demoPositionColumns.userId, a.userId), eq(demoPositionColumns.brokerPositionId, ticket)), limit: 2 }),
+    ]);
+    return {
+      demo: bridge?.accountType === "demo" && bridge.mode === "DEMO" && bridge.status === "connected" && bridge.hasBridgeToken && bridge.tokenRevokedAt == null,
+      snapshotAt: bridge?.lastPositionsSnapshotAt?.getTime() ?? null,
+      ambiguous: rows.length > 1,
+      position: rows[0] ? { status: rows[0].status, lots: rows[0].lotSize, stop: rows[0].stopLoss, at: rows[0].lastSyncedAt?.getTime() ?? null } : null,
+    };
+  };
+  const waitSnapshot = async (ticket: string, after: number, lots: number, stop: number | null, positionAfter = after) => {
+    const until = Date.now() + 60_000;
+    do {
+      const snapshot = await readSnapshot(ticket);
+      if (demoSnapshotMatches(snapshot, { after, positionAfter, lots, stop, now: Date.now() })) return true;
+      await new Promise(r => setTimeout(r, 1000));
+    } while (Date.now() < until);
+    return false;
+  };
   const halt = await loadPlatformHalt();
   const quote = await loadQuote(a.userId, a.symbol);
   const ask = quote?.ask ?? quote?.bid ?? null;
   if (!step("preflight", !halt.engaged && ask != null,
     halt.engaged ? `halted: ${halt.reason}` : ask == null ? `no quote for ${a.symbol}` : `quote ${ask} (${quote!.source})`)) return out;
 
+  const entryStarted = Date.now();
   const stop = Number((ask! * 0.99).toFixed(5));
   const draft = await queue.createDraftCommand({ userId: a.userId, commandType: "PLACE_MARKET_ORDER",
     payload: { symbol: a.symbol, side: "BUY", lotSize: a.lots, stopLoss: stop, takeProfit: null, sourcePage: "BROKER_VALIDATION" } });
@@ -111,31 +180,53 @@ export async function runExternal(a: RunArgs): Promise<StepResult[]> {
   const ticket = filled?.brokerTicket ?? null;
   if (!step("entry_fill", filled?.status === "FILLED_DEMO" && !!ticket, `${filled?.status ?? "no answer"} ticket=${ticket ?? "-"} ${filled?.reason ?? ""}`.trim())) return out;
 
-  await new Promise((r) => setTimeout(r, 5000)); // one bridge snapshot
+  const filledLots = filled?.fillVolume;
+  if (filledLots == null || !Number.isFinite(filledLots) || Math.abs(filledLots - a.lots) > 1e-6 || filled?.bridgeConnectionId !== connection!.id) {
+    step("guardian_verifies", false, "Entry fill volume or bridge identity does not match this DEMO validation run; inspect the ticket before continuing.");
+    return out;
+  }
+  const entryObserved = await waitSnapshot(ticket!, Date.now(), filledLots, stop, entryStarted);
   const g = await guardian.reconcilePosition("DEMO", a.userId, ticket!, { trigger: "snapshot" });
-  step("guardian_verifies", g?.assessment.action === "NONE", `${g?.assessment.action ?? "no assessment"}: ${g?.assessment.reason ?? ""}`);
+  step("guardian_verifies", entryObserved && g?.assessment.action === "NONE", `${g?.assessment.action ?? "no assessment"}: ${g?.assessment.reason ?? ""}`);
 
-  const pos = await ops.findGovernedPosition(a.userId, ticket!);
-  if (!pos) { step("tighten_stop", false, "governed position not found"); return out; }
+  const pos = { venue: "DEMO" as const, ticket: ticket!, symbol: a.symbol, side: "BUY" as const, lots: filledLots };
+  const modifyStarted = Date.now();
   const tighter = Number((ask! * 0.995).toFixed(5));
   const mod = await ops.submitGovernedModify(a.userId, pos, tighter, null, "BROKER_VALIDATION");
   const modDone = mod.commandId ? await waitForCommand(a.userId, mod.commandId) : null;
-  step("tighten_stop", mod.ok && modDone?.status === "FILLED_DEMO", `${modDone?.status ?? mod.reason}`);
+  const tightened = mod.ok && modDone?.status === "FILLED_DEMO" && await waitSnapshot(ticket!, Date.now(), filledLots, tighter, modifyStarted);
+  step("tighten_stop", tightened, `${modDone?.status ?? mod.reason}; fresh snapshot matches=${tightened}`);
 
+  const widenStarted = Date.now();
   const widen = await ops.submitGovernedModify(a.userId, pos, Number((ask! * 0.98).toFixed(5)), null, guardian.GUARDIAN_SOURCE);
-  step("automation_cannot_widen", !widen.ok, widen.ok ? "WIDENING WAS ACCEPTED" : `refused: ${widen.reason}`);
+  const widenBlocked = !widen.ok && wideningWasBlocked(widen.reason)
+    && await waitSnapshot(ticket!, Date.now(), filledLots, tightened ? tighter : stop, widenStarted);
+  step("automation_cannot_widen", widenBlocked, widen.ok ? "WIDENING WAS ACCEPTED" : `refused: ${widen.reason}; snapshot unchanged=${widenBlocked}`);
 
-  const half = Number((a.lots / 2).toFixed(2));
-  if (half >= 0.01) {
-    const pc = await ops.submitGovernedClose(a.userId, { ...pos, lots: half }, "BROKER_VALIDATION");
-    const pcDone = pc.commandId ? await waitForCommand(a.userId, pc.commandId) : null;
-    step("partial_close", pc.ok && pcDone?.status === "FILLED_DEMO", `${pcDone?.status ?? pc.reason} (${half} of ${a.lots})`);
-  } else step("partial_close", true, `skipped: ${a.lots} lots cannot be halved (use --lots 0.02)`);
+  const half = Math.floor(filledLots * 100 / 2) / 100;
+  const partialStarted = Date.now();
+  const pc = await ops.submitGovernedClose(a.userId, { ...pos, lots: half }, "BROKER_VALIDATION");
+  const pcDone = pc.commandId ? await waitForCommand(a.userId, pc.commandId) : null;
+  const remaining = Number((filledLots - half).toFixed(2));
+  const partialObserved = pc.ok && pcDone?.status === "FILLED_DEMO"
+    && await waitSnapshot(ticket!, Date.now(), remaining, tightened ? tighter : stop, partialStarted);
+  const partialGuardian = partialObserved ? await guardian.reconcilePosition("DEMO", a.userId, ticket!, { trigger: "snapshot" }) : null;
+  step("partial_close", partialObserved && partialGuardian?.assessment.action === "NONE",
+    `${pcDone?.status ?? pc.reason}; ${remaining} lots remain in fresh snapshot=${partialObserved}; guardian=${partialGuardian?.assessment.action ?? "unverified"}`);
 
-  const rest = await ops.findGovernedPosition(a.userId, ticket!);
-  const fc = await ops.submitGovernedClose(a.userId, rest ?? pos, "BROKER_VALIDATION");
+  // The entry command still contains the original volume. Read the actual
+  // remainder; never submit that original volume after a partial close.
+  const rest = await readSnapshot(ticket!);
+  if (!rest.demo || rest.ambiguous || !rest.position || rest.position.status !== "OPEN" || !(rest.position.lots > 0)
+    || !demoSnapshotMatches(rest, { after: partialStarted, lots: rest.position.lots, stop: null, now: Date.now() })) {
+    step("full_close", false, "Fresh DEMO remainder unavailable; inspect and close the ticket through the governed close path.");
+    return out;
+  }
+  const closeStarted = Date.now();
+  const fc = await ops.submitGovernedClose(a.userId, { ...pos, lots: rest.position.lots }, "BROKER_VALIDATION");
   const fcDone = fc.commandId ? await waitForCommand(a.userId, fc.commandId) : null;
-  step("full_close", fc.ok && fcDone?.status === "FILLED_DEMO", `${fcDone?.status ?? fc.reason}`);
+  const closed = fc.ok && fcDone?.status === "FILLED_DEMO" && await waitSnapshot(ticket!, Date.now(), 0, null, closeStarted);
+  step("full_close", closed, `${fcDone?.status ?? fc.reason}; broker snapshot confirms closed=${closed}`);
   return out;
 }
 

@@ -49,6 +49,7 @@ import {
   SWITCH_FIELDS,
   getGlobalTradingConfig,
   loadGlobalTradingSettingsRow,
+  loadPlatformSettings,
   platformStop,
   platformStopForVenue,
   platformStopReport,
@@ -106,6 +107,32 @@ after(async () => {
 const setAll = async (patch: Partial<typeof globalTradingSettingsTable.$inferInsert>) => {
   await db.update(globalTradingSettingsTable).set(patch);
 };
+
+test("a seventeenth settings row cannot hide a stricter stop outside the read limit", async () => {
+  const keep = await db.select().from(globalTradingSettingsTable);
+  try {
+    await db.delete(globalTradingSettingsTable);
+    await db.insert(globalTradingSettingsTable).values(Array.from({ length: 16 }, () => ({
+      ...DEFAULT_SWITCH_ROW, liveBrokerExecutionArmed: true,
+    })));
+    assert.equal((await readPlatformSwitches()).readable, true, "the exact bound remains readable");
+    await db.insert(globalTradingSettingsTable).values({ emergencyKillSwitch: true });
+    for (const ifMissing of ["fail_closed", "defaults", "seed"] as const) {
+      const sw = await readPlatformSwitches({ ifMissing });
+      assert.equal(sw.readable, false);
+      assert.equal(sw.emergencyStop.engaged, true);
+      assert.deepEqual(sw.venueOpen, { DEMO: false, LIVE: false });
+      assert.equal(sw.liveBrokerExecution.enabled, false);
+      const settings = await loadPlatformSettings({ ifMissing });
+      assert.equal(settings.switches.readable, false);
+      assert.equal(settings.config, null);
+    }
+    assert.equal((await db.select().from(globalTradingSettingsTable)).length, 17, "overflow never seeds or deletes rows");
+  } finally {
+    await db.delete(globalTradingSettingsTable);
+    if (keep.length) await db.insert(globalTradingSettingsTable).values(keep);
+  }
+});
 
 test("no settings row: fail closed by default; defaults / seed only when asked", async () => {
   await db.delete(globalTradingSettingsTable);

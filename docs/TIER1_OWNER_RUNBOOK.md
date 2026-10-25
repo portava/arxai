@@ -1,6 +1,8 @@
 # Tier 1: owner runbook for production
 
-Base: `main` after round 5 (PRs #49–#65, owner decisions 1–19). This is
+Current scope: PR #68 plus the operational-readiness follow-up; approved Option A.
+The architecture is complete under Scorecard v2; operational readiness still requires
+the evidence below. Earlier rounds and owner decisions 1–19 remain recorded. This is
 a runbook for the owner. **Nothing in it has been run against production.** No
 agent deploys, applies a migration, alters a production row, arms live
 trading, runs a broker action or places a real-money trade. Every step marked
@@ -29,14 +31,14 @@ Contents:
 ### 1.1 Where they are and how many
 
 - Directory: `lib/db/migrations/`. Plain SQL files named
-  `YYYY-MM-DD_<name>.sql`. There are eight: seven added in PR #29 (`9efb744`)
-  and one added in round 5 by PR #64 (owner decision 13).
+  `YYYY-MM-DD_<name>.sql`. There are nine: seven added in PR #29 (`9efb744`),
+  one added by PR #64, and one added by PR #68.
 - The handoff's "seven production migrations" are referenced in
   `docs/TIER1_POSITION_LEDGER.md` (remaining work 4),
   `docs/TIER1_POSITION_GUARDIAN_RULES.md` (what remains 4),
   `docs/TIER1_POSITION_TABLE_MERGE_PLAN.md` (section 8) and
   `artifacts/api-server/src/scripts/productionReadinessCheck.ts` (header and
-  `migrationChecks()`, which detects all eight). The original
+  `migrationChecks()`, which checks schema indicators for all nine). The original
   handoff document itself is not in the repository; the list below comes from
   the directory and the readiness check, which agree.
 - The repository has **no migration runner** for these files and no record of
@@ -50,7 +52,7 @@ Contents:
 
 ### 1.2 Order
 
-The repository does not prescribe an apply order. Reading the eight files,
+The repository does not prescribe an apply order. Reading the nine files,
 each one references only tables that exist in the current Drizzle schema plus
 columns it creates itself; none depends on another file's changes. The order
 below is the order `productionReadinessCheck.ts` lists and checks them in;
@@ -66,6 +68,7 @@ use it unless the owner has a reason to differ.
 | 6 | `2026-10-24_trade_action_venue_command.sql` | additive columns | no |
 | 7 | `2026-10-24_one_limit_store.sql` | additive column, **data upsert** into `user_risk_settings` | no |
 | 8 | `2026-10-25_paper_order_request_key.sql` | additive nullable column, new unique index | no |
+| 9 | `2026-10-25_trade_action_request_key.sql` | nullable retry key/hash, new unique index | no |
 
 Every file is written to be idempotent (`IF NOT EXISTS`, `duplicate_object`
 handlers, `LEAST`/`COALESCE` upserts), per its own header.
@@ -79,7 +82,7 @@ round 5 change touched the schema. File 8 does not depend on files 1–7.
    must confirm the procedure). At minimum dump the tables the data-changing
    files touch: `pg_dump --data-only -t strategy_edges -t mistake_patterns -t user_risk_settings`.
 2. Run `check:production-readiness` (section 4) and save the output. Its
-   "Migrations" block shows which of the eight are already applied.
+   "Migrations" block shows which of the nine have their checked schema indicators present; keep separate apply/backfill receipts.
 3. Save the catalogue state the rollbacks below restore:
 
 ```sql
@@ -178,8 +181,17 @@ paper_orders_user_request_key_uq;` removes the duplicate guard (only safe with
 the pre-#64 code deployed); leave the column in place, since dropping it needs
 an owner decision.
 
+**9. `trade_action_request_key`** (PR #68) — adds nullable
+`client_request_key` and `client_request_hash` to `trade_action_requests` plus
+`trade_action_requests_user_request_key_uq`. Apply before deploying PR #68.
+Existing rows retain NULL. On rollback retain the additive schema and revert
+the application; do not drop columns or remove retry protection in use.
+
 After applying: re-run `check:production-readiness`; every migration line
-should read `ok` and the header `Migrations: APPLIED`.
+should read `ok`. The header is **SCHEMA INDICATORS PRESENT — APPLY HISTORY
+UNVERIFIED**. These catalog checks do not establish migration execution or
+completion of the data updates in files 5 and 7. Retain timestamped apply
+receipts and verify their backfills before closing `operations.migrations`.
 
 ---
 
@@ -190,11 +202,12 @@ should read `ok` and the header `Migrations: APPLIED`.
 - The table has no singleton constraint (`lib/db/src/schema/adminTrading.ts`;
   comment in `lib/safety/platformSwitches.ts`). The seed can race.
 - Safety switches (`lib/safety/platformSwitches.ts`, `switchesFromRows`) read
-  every row in id order, **at most 16** (`MAX_ROWS`), and the strictest answer
+  rows in id order, **up to 16 plus one overflow sentinel** (`MAX_ROWS`), and the strictest answer
   wins: the emergency stop is engaged if ANY row says so (its reason and time
   come from the first engaged row); `demo_enabled`, `live_enabled` and the
   operator live-execution arm are on only if EVERY row says so; the platform
-  mode is the strictest across rows (OFF < SIMULATED < DEMO < LIVE). The arm's
+  mode is the strictest across rows (OFF < SIMULATED < DEMO < LIVE). More than
+  16 rows now fails closed instead of ignoring later rows. The arm's
   `armedAt/By/BridgeId` come from the lowest-id row.
 - Non-switch configuration (routing mode, shared master ids, policy flags) is
   read from the lowest-id row only (`loadGlobalTradingSettingsRow`,
@@ -206,17 +219,17 @@ should read `ok` and the header `Migrations: APPLIED`.
   (`docs/TIER1_PLATFORM_SAFETY_SOURCE.md`, round 4 change 22). Since round 5
   (PR #54, owner decision 1) the audited release also clears the emergency
   stop on every row, in one transaction with its audit row.
-- `check:production-readiness` reads only the lowest-id row
-  (`tradingStatus()`, `ORDER BY id ASC LIMIT 1`). With duplicates it can print
-  `TRADING AVAILABLE` while the runtime reader says halted. Use the queries
-  below, not the readiness verdict, when duplicates exist.
+- `check:production-readiness` uses the canonical safety readers and broker
+  controls, counts all settings rows, and flags duplicates for inspection.
+  Missing or unreadable settings never pass. Live arming is informational;
+  do not arm real-money execution to make this preflight green.
 - No foreign key references `global_trading_settings.id` in
   `lib/db/src/schema` (searched).
 
 ### 2.2 Read-only inspection SQL [OWNER]
 
 ```sql
--- How many rows (more than 1 is the problem; more than 16 means the reader ignores some)
+-- How many rows (more than 1 is the problem; more than 16 makes the reader fail closed)
 SELECT count(*) AS rows, min(id) AS canonical_id FROM global_trading_settings;
 
 -- The safety switches of every row
@@ -311,9 +324,9 @@ DATABASE_URL=... pnpm --filter @workspace/api-server run check:production-readin
   the schema pushed):
 
 ```
-Migrations: APPLIED
+Migrations: SCHEMA INDICATORS PRESENT — APPLY HISTORY UNVERIFIED
   ok   2026-10-24_trading_on_by_default: global_trading_settings defaults: ...
-  ... (eight lines, all "ok")
+  ... (nine lines, all "ok")
 
 Trading: TRADING AVAILABLE
   ok   platform emergency stop: released
@@ -327,16 +340,21 @@ Legacy ownerless rows (never auto-assigned):
   ok   all claimable tables: no ownerless rows      (or one line per table with a count)
 ```
 
-- Exit code: 0 whenever the checks ran, even if migrations are pending or
-  trading is halted; 1 only if the script itself failed (for example no
-  database connection). Read the text, not the exit code.
+- Default exit code: 0 when the report was collected, 1 on script failure.
+  Add `--strict` to return 2 when schema indicators are missing, trading is
+  halted/unknown, control inventory is unexpected, or an owner column is
+  missing. The report is a database preflight, not a release certificate;
+  even strict exit 0 proves neither provider/broker behavior nor migration
+  apply history. An intentionally disabled venue can legitimately remain halted.
+- Save JSON with `--json --strict > readiness.json` in the selected environment.
+  Keep the environment identity, code revision and capture time alongside it;
+  a local/development report cannot substitute for production evidence.
 - On failure:
   - `Migrations: READY — PRODUCTION ACTION REQUIRED` with `TODO` lines: those
     migrations are not applied. Apply per section 1, then re-run.
   - `Trading: TRADING HALTED` with a `TODO` line: name the switch. A stop is
     released only by the owner/operator through the audited admin path. The
-    check never releases anything. With duplicate settings rows, use section 2
-    (this check reads only the lowest-id row).
+    check never releases anything. With duplicate settings rows, use section 2.
   - `Trading: UNKNOWN`: a switch table could not be read; fix connectivity or
     schema first.
   - `owner column missing (migration not applied)`: apply
@@ -367,10 +385,13 @@ DATABASE_URL=<environment the demo bridge reports to> \
 
 - It refuses to start (exit 2) unless: venue is DEMO (`--venue LIVE` is
   refused; LIVE is never touched), `--user-id` is a positive integer,
-  `0 < --lots <= 0.1`, and `--confirm-demo-orders` is given. It places real
+  `0.02 <= --lots <= 0.1` in 0.01 increments, and `--confirm-demo-orders` is given. It places real
   orders **on a DEMO broker account only** (no real money). `--lots 0.02` is
-  needed for the partial-close step; with 0.01 that step is skipped.
-- Prerequisites: the named user's MT5 demo bridge connected and reporting; no
+  the default/minimum; 0.01 is refused before placing any order. A skipped
+  partial close cannot pass.
+- Prerequisites: exactly one registered connection for the named user, with an active
+  token, explicit DEMO account/mode, a verified fresh user-owned route and
+  broker controls enabled outside maintenance; no
   install-wide stop engaged (preflight reads `loadPlatformHalt()`); a quote for
   the symbol (`loadQuote`); the user able to pass the normal DEMO pipeline
   (draft → confirm → dispatch through the Risk Governor). Which database and
@@ -381,6 +402,14 @@ DATABASE_URL=<environment the demo bridge reports to> \
   (Position Guardian action NONE), `tighten_stop` (MODIFY filled),
   `automation_cannot_widen` (refused), `partial_close`, `full_close`. Five
   further scenarios are proven in CI only and are listed as `[ci]`.
+- Entry, modify and partial-close evidence must match a fresh complete broker
+  sweep, the actual lot size and the expected stop. The partial remainder
+  must also pass Guardian. Full close needs both the command fill and a fresh
+  sweep showing the position closed/absent. An unrelated refusal cannot prove
+  the automation-widening rule; that step requires `stop_loss_required` from
+  the governor and an unchanged stop in a new snapshot. Full close uses the
+  observed remaining volume, never the original entry volume. Operations stay
+  explicitly in DEMO even if a LIVE ticket shares the same numeric ID.
 - Pass criteria: every line prints `PASS`, no `NOT RUN` line, exit code 0
   (`results.length` equals the seven external scenarios and all are ok).
   Keep the `--json` file as evidence. A failed `preflight` or `entry_fill`
@@ -486,7 +515,7 @@ same results.
 - **Broker controls in the venue verdict** (#55, decision 2): the readiness
   view reports new DEMO/LIVE risk as blocked when `broker_health_state`
   says execution is disabled, maintenance is on, or the row cannot be read.
-  **No order path enforces this yet.** On an install with no
+  **PR #68 now enforces this at final dispatch.** On an install with no
   `broker_health_state` row, or with `execution_enabled = false` (the schema
   default), readiness will show a platform-wide block. [OWNER] Before anyone
   wires this into the order path, inspect production (read-only):
@@ -549,10 +578,8 @@ same results.
 - **One heartbeat policy** (#51, decision 17): under 15 s fresh, 15 s to under
   60 s degraded, 60 s or more offline, missing or invalid unknown (never
   execution-ready). Execution gates need strictly under 15 s (was 15 s or
-  less). **[OWNER] confirm:** the Risk Governor now treats a bridge as
-  offline at 60 s instead of 120 s, so a **close is refused** while the
-  heartbeat is 60–120 s old. If closes should keep a longer allowance, that
-  needs a separate decision.
+  less). PR #68 preserves the separate inclusive 120 s close allowance for a
+  connection still marked connected; shared heartbeat labels remain unchanged.
 - **Bridge v2 status** (#52, decision 18): adds `heartbeatFreshness`,
   `streamHealth` and `streamImpliesExecutionReady: false`; old fields are
   unchanged.
@@ -566,7 +593,8 @@ same results.
   the named read-model rule `ALERT_ELIGIBLE`; no physical position-table merge
   (D1–D10 recorded).
 
-**TIER 1 NOT COMPLETE**
+**Architecture: TIER 1 COMPLETE — READY FOR BROKER VALIDATION. Operational
+readiness is unverified until the six v2 operation gates have evidence.**
 
 ## Tier 1 completion follow-up (Codex)
 
@@ -618,3 +646,26 @@ a fresh valuation. Paper P/L retains the simplified simulator model, not broker
 contract-size/commission accounting. Legacy `lp_` closes cannot infer an account
 when the owner has multiple registered connections; they refuse with
 `AMBIGUOUS_LEGACY_POSITION_ACCOUNT` and require explicit identity repair.
+
+
+## Operational evidence checklist (current follow-up)
+
+| Gate | Evidence needed to finish |
+|---|---|
+| Migrations | Environment and revision, backup confirmation, receipts for all nine reviewed SQL files, catalog checks and data-backfill verification. |
+| Controls | Saved read-only inventory, duplicate-row decision, both stop states and broker controls; intentionally disarmed LIVE is acceptable. |
+| Provider | Provider name and a fresh real quote with observation time and provenance in the deployed environment; never record credentials. |
+| Legacy owner | Counts from every claimable table, including weekly reviews/goals; explicit owner decision to retain unclaimed history or claim for a named existing user. |
+| DEMO validation | Explicit user/DEMO bridge selection and permission for the 0.02-lot rehearsal; seven actual PASS results and a confirmed closed ticket. |
+| Deployment | Owner-controlled release of the tested revision, health checks, rollback reference, and verification of alerting for `OPERATIONAL_RATE_CAP_REACHED`. |
+
+On 2026-10-25 the connected Replit service resolved the owner-confirmed `arxai`
+app (`711eeb58-448e-4566-a6e1-99cc0f3cebdc`) but reported no published deployment.
+Two read-only inspection requests returned empty responses. Its browser link
+required login/access. This does not establish whether production exists on
+another host. No production/database/broker evidence was inferred from those
+responses and no production actions were taken.
+
+The architecture breakdown and each domain's job remain in
+[Architecture map](ARCHITECTURE_MAP.md). The current reproducible evidence is
+linked from [Scorecard results](../scripts/arx-scorecard/results/README.md).
