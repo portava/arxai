@@ -369,13 +369,51 @@ The authority-shape check now requires all of the following:
   constant of its own.
 
 Against the pre-change (`2a0b3f6`) versions of the source files changed here,
-the guard reports 91 hits. The tree now passes with five reviewed entries:
+the guard reports 91 hits. After decision 17 the tree passed with five
+reviewed entries. After decision 18 (below) it passes with four:
 
 - `positionGuardian/assess.ts` 1 (unchanged);
 - `live/masterBridgePool.ts` 1 (account snapshot);
-- `bridgeV2/status.ts` 2 (stream health);
 - `scalp/flameRead.ts` 3 (stricter BLOCKED plus fresh sub-bands);
 - `lib/domain/src/signal-intelligence/scoring.ts` 1 (score-curve point).
+
+The `bridgeV2/status.ts` entry (2, stream health) was removed by decision 18:
+the stream bands now live in `lib/bridgeV2/liveness.ts` and compare against
+the named `BRIDGE_V2_STREAM_*` constants, so they need no exception.
+
+### Round 5: Bridge v2 shared heartbeat vocabulary (owner decision 18)
+
+Decision recorded: Bridge v2 uses the shared freshness vocabulary for
+comparable heartbeat facts. Stream-specific health stays separately
+identified. A healthy stream must not imply that an account is
+execution-ready. Old response compatibility is preserved.
+
+`lib/bridgeV2/liveness.ts` (pure) derives, from one Bridge v2 heartbeat age:
+
+| Field | Meaning | Values |
+|---|---|---|
+| `heartbeatFreshness` | the comparable MT5 heartbeat fact, from the shared policy | `fresh` < 15 s, `degraded` 15–60 s, `offline` ≥ 60 s, `unknown` (missing, invalid, negative) |
+| `streamHealth` | Bridge v2 stream-specific health (observability) | `LIVE` ≤ 15 s, `STALE` ≤ 120 s, `OFFLINE` beyond, `UNKNOWN` never seen |
+| `streamImpliesExecutionReady` | explicit statement for consumers | always `false` |
+
+`GET /bridge-v2/admin/status` (`BridgeV2AdminStatus`) and the user status
+(`BridgeV2UserStatus`) gain these three fields. The legacy fields keep their
+names and values: `connected` (stream LIVE, age ≤ 15 s), `freshness` /
+`feedFreshness` (same value as `streamHealth`). The OpenAPI spec declares the
+new fields as optional, and `lib/api-zod` / `lib/api-client-react` were
+regenerated with orval. Nothing reads Bridge v2 stream health as an execution
+gate. Execution readiness is still decided only by the dispatch gates (Phase B,
+demo dispatch, Risk Governor, Safety Core).
+
+Behaviour changes (decision 18): additive response fields only. No existing
+field changes value. No gate changes. No schema change.
+
+Tests: `test:bridge-v2-liveness`
+(`lib/bridgeV2/__qa__/liveness.test.ts`, root `ci`): policy boundaries at
+14 999 / 15 000 / 59 999 / 60 000 ms and unknown inputs, stream bands at
+15 000 / 15 001 / 120 000 / 120 001 ms, the two vocabularies differing (15 s
+LIVE + degraded, 90 s STALE + offline), legacy `connected` unchanged, and
+`streamImpliesExecutionReady` false for every input including the best case.
 
 ### Behaviour changes (round 2)
 
@@ -496,10 +534,12 @@ DB test: `test:broker-hub-state-sources`
    design. Whether the shared-live pause flag should move to the platform
    safety switch is a safety-switch owner question, not decided here.
 3. ~~`bridge_v2_stream_state` status reads~~ done in round 3 (hub reader). The
-   ingest's locked read-modify-write stays in ingest. Bridge v2's freshness
-   derivation (`lib/bridgeV2/status.ts`) is still a separate status vocabulary
-   (LIVE/STALE/OFFLINE/UNKNOWN) from the broker health verdict; unifying the
-   two would change what surfaces show and is not done.
+   ingest's locked read-modify-write stays in ingest. Round 5 (owner decision
+   18): Bridge v2 now also reports `heartbeatFreshness` in the shared
+   vocabulary, and its LIVE/STALE/OFFLINE/UNKNOWN bands are kept as the
+   separately named `streamHealth`. The dashboard Bridge v2 cards still show
+   the stream vocabulary; showing `heartbeatFreshness` there is optional
+   follow-up.
 4. The guard is line/regex based like its siblings, not a full AST pass. A read
    written through an alias of the table object (for example
    `const t = arxMasterBridgePoolTable; db.select().from(t)`) is caught only by
@@ -513,8 +553,8 @@ DB test: `test:broker-hub-state-sources`
 8. ~~Freshness values are named, not unified (round 4).~~ Done for MT5
    connection heartbeats in round 5 (owner decision 17): one shared policy.
    Account snapshots (30 s / 60 s), positions snapshots, the fund-book
-   mirror, Bridge v2 stream health and the cached verdict stay separately
-   named by decision. **Owner check:** the Risk Governor's DISCONNECTED (which
+   mirror, Bridge v2 stream health (decision 18) and the cached verdict stay
+   separately named by decision. **Owner check:** the Risk Governor's DISCONNECTED (which
    also refuses closes) now starts at 60 s instead of 120 s. Confirm or ask for
    a separately named close-path allowance.
 9. ~~Freshness thresholds outside the api-server are not guarded.~~ Round 5

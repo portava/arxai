@@ -41,6 +41,7 @@
     "test:deriv-execution-messages": "node --import tsx --test --test-force-exit src/lib/deriv/__qa__/executionMessages.test.ts",
     "test:connection-card": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/connectionCard.test.ts",
     "test:broker-hub-heartbeat-policy": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/heartbeatPolicy.test.ts",
+    "test:bridge-v2-liveness": "node --import tsx --test --test-force-exit src/lib/bridgeV2/__qa__/liveness.test.ts",
     "test:broker-hub-connections": "node --import tsx --test --test-force-exit src/lib/brokerHub/__qa__/connections.test.ts",
     "test:close-only-gate": "node --import tsx --test --test-force-exit src/lib/live/__qa__/closeOnlyGate.test.ts",
     "test:ack-partial-fill": "node --import tsx --test --test-force-exit src/lib/live/__qa__/ackPartialFill.test.ts",

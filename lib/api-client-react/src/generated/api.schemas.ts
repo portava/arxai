@@ -2094,6 +2094,32 @@ export const BridgeV2AdminStatusFreshness = {
 } as const;
 
 /**
+ * Shared MT5 heartbeat vocabulary (owner decision 17/18) — the comparable heartbeat fact.
+ */
+export type BridgeV2AdminStatusHeartbeatFreshness =
+  (typeof BridgeV2AdminStatusHeartbeatFreshness)[keyof typeof BridgeV2AdminStatusHeartbeatFreshness];
+
+export const BridgeV2AdminStatusHeartbeatFreshness = {
+  fresh: "fresh",
+  degraded: "degraded",
+  offline: "offline",
+  unknown: "unknown",
+} as const;
+
+/**
+ * Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only.
+ */
+export type BridgeV2AdminStatusStreamHealth =
+  (typeof BridgeV2AdminStatusStreamHealth)[keyof typeof BridgeV2AdminStatusStreamHealth];
+
+export const BridgeV2AdminStatusStreamHealth = {
+  LIVE: "LIVE",
+  STALE: "STALE",
+  OFFLINE: "OFFLINE",
+  UNKNOWN: "UNKNOWN",
+} as const;
+
+/**
  * Consolidated Bridge v2 readiness for one bridge (ADMIN/OWNER).
  */
 export interface BridgeV2AdminStatus {
@@ -2101,6 +2127,12 @@ export interface BridgeV2AdminStatus {
   bridgeConnectionId?: number | null;
   connected: boolean;
   freshness: BridgeV2AdminStatusFreshness;
+  /** Shared MT5 heartbeat vocabulary (owner decision 17/18) — the comparable heartbeat fact. */
+  heartbeatFreshness?: BridgeV2AdminStatusHeartbeatFreshness;
+  /** Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only. */
+  streamHealth?: BridgeV2AdminStatusStreamHealth;
+  /** Always false. A healthy stream never makes an account execution-ready. */
+  streamImpliesExecutionReady?: boolean;
   lastHeartbeatAt?: string | null;
   heartbeatAgeSeconds?: number | null;
   eaVersion?: string | null;
@@ -2143,6 +2175,32 @@ export const BridgeV2UserStatusFeedFreshness = {
 } as const;
 
 /**
+ * Shared MT5 heartbeat vocabulary (owner decision 17/18) — the comparable heartbeat fact.
+ */
+export type BridgeV2UserStatusHeartbeatFreshness =
+  (typeof BridgeV2UserStatusHeartbeatFreshness)[keyof typeof BridgeV2UserStatusHeartbeatFreshness];
+
+export const BridgeV2UserStatusHeartbeatFreshness = {
+  fresh: "fresh",
+  degraded: "degraded",
+  offline: "offline",
+  unknown: "unknown",
+} as const;
+
+/**
+ * Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only.
+ */
+export type BridgeV2UserStatusStreamHealth =
+  (typeof BridgeV2UserStatusStreamHealth)[keyof typeof BridgeV2UserStatusStreamHealth];
+
+export const BridgeV2UserStatusStreamHealth = {
+  LIVE: "LIVE",
+  STALE: "STALE",
+  OFFLINE: "OFFLINE",
+  UNKNOWN: "UNKNOWN",
+} as const;
+
+/**
  * Redacted per-user Bridge v2 connection + feed freshness.
  */
 export interface BridgeV2UserStatus {
@@ -2150,6 +2208,12 @@ export interface BridgeV2UserStatus {
   hasV2Bridge: boolean;
   connected: boolean;
   feedFreshness: BridgeV2UserStatusFeedFreshness;
+  /** Shared MT5 heartbeat vocabulary (owner decision 17/18) — the comparable heartbeat fact. */
+  heartbeatFreshness?: BridgeV2UserStatusHeartbeatFreshness;
+  /** Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only. */
+  streamHealth?: BridgeV2UserStatusStreamHealth;
+  /** Always false. A healthy stream never makes an account execution-ready. */
+  streamImpliesExecutionReady?: boolean;
   accountType?: string | null;
   lastHeartbeatAt?: string | null;
   lastAccountAt?: string | null;

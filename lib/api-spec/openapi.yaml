@@ -12607,6 +12607,18 @@ components:
         bridgeConnectionId: { type: integer, nullable: true }
         connected: { type: boolean }
         freshness: { type: string, enum: [LIVE, STALE, OFFLINE, UNKNOWN] }
+        heartbeatFreshness:
+          type: string
+          enum: [fresh, degraded, offline, unknown]
+          description: Shared MT5 heartbeat vocabulary (owner decision 17/18) — the comparable heartbeat fact.
+        streamHealth:
+          type: string
+          enum: [LIVE, STALE, OFFLINE, UNKNOWN]
+          description: Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only.
+        streamImpliesExecutionReady:
+          type: boolean
+          enum: [false]
+          description: Always false. A healthy stream never makes an account execution-ready.
         lastHeartbeatAt: { type: string, nullable: true }
         heartbeatAgeSeconds: { type: integer, nullable: true }
         eaVersion: { type: string, nullable: true }
@@ -12646,6 +12658,18 @@ components:
         hasV2Bridge: { type: boolean }
         connected: { type: boolean }
         feedFreshness: { type: string, enum: [LIVE, STALE, OFFLINE, UNKNOWN] }
+        heartbeatFreshness:
+          type: string
+          enum: [fresh, degraded, offline, unknown]
+          description: Shared MT5 heartbeat vocabulary (owner decision 17/18) — the comparable heartbeat fact.
+        streamHealth:
+          type: string
+          enum: [LIVE, STALE, OFFLINE, UNKNOWN]
+          description: Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only.
+        streamImpliesExecutionReady:
+          type: boolean
+          enum: [false]
+          description: Always false. A healthy stream never makes an account execution-ready.
         accountType: { type: string, nullable: true }
         lastHeartbeatAt: { type: string, nullable: true }
         lastAccountAt: { type: string, nullable: true }
