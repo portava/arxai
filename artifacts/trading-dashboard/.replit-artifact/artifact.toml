@@ -19,7 +19,7 @@ localPort = 24210
 run = "bash ../../scripts/run-arx-web.sh"
 
 [services.production]
-build = [ "pnpm", "--dir", "arxai", "--filter", "@workspace/trading-dashboard", "run", "build" ]
+build = ["bash", "scripts/build-arx-production.sh", "web"]
 publicDir = "arxai/artifacts/trading-dashboard/dist/public"
 serve = "static"
 
