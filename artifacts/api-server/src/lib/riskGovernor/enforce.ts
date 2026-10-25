@@ -18,7 +18,7 @@
 // sole rule that blocked and the trader's settings allow overrides. The 12
 // exposure rules and the stop switches can never be overridden.
 
-import { classifyHeartbeatAgeMs } from "../brokerHub/freshness.js";
+import { classifyHeartbeatAgeMs, MT5_CLOSE_HEARTBEAT_ALLOWANCE_MS, heartbeatAllowsRiskReducingClose } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { readOpenPositions, RISK_COUNT_BASIS } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
@@ -41,7 +41,7 @@ import {
   readPaperCloses, countPaperOpenedSinceStillOpen,
 } from "../tradeEngine/paperBookReader.js";
 import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
-import { loadTradingHalt } from "../safety/tradingHalt.js";
+import { loadTradingHalt, loadBrokerControlHalt } from "../safety/tradingHalt.js";
 import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
 import { isAllocationBlown } from "../live/allocationBlown.js";
 import {
@@ -75,7 +75,8 @@ export const PAPER_ACCOUNT_LEVERAGE = 100;
 
 // EA heartbeat budget: the shared heartbeat policy (owner decision 17).
 // Fresh below 15 s; 15–60 s the bridge is degraded (closing still allowed);
-// 60 s or older, or a future-dated heartbeat, is treated as disconnected.
+// 60 s or older is labelled disconnected. A separate close-only allowance
+// preserves the historical inclusive 120s boundary for connected transports.
 
 const IN_FLIGHT_ACTION_STATUSES = ["confirmed", "guard_checking", "queued", "sent_to_mt5"];
 const LIVE_TERMINAL = ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_BLOCKED", "LIVE_CANCELLED", "LIVE_CLOSED", "LIVE_EXPIRED"];
@@ -282,7 +283,9 @@ export function classifyBrokerHeartbeat(
     return { status: "DISCONNECTED", lastSeenAt: conn.lastHeartbeat, detail: "heartbeat time is invalid (in the future)" };
   }
   const status: BrokerStatus = band === "fresh" ? "CONNECTED" : band === "degraded" ? "DEGRADED" : "DISCONNECTED";
-  return { status, lastSeenAt: conn.lastHeartbeat, detail: `last heartbeat ${secs}s ago` };
+  return { status, lastSeenAt: conn.lastHeartbeat, detail: `last heartbeat ${secs}s ago`,
+    closeAllowedUntil: heartbeatAllowsRiskReducingClose(conn.status, age)
+      ? new Date(conn.lastHeartbeat.getTime() + MT5_CLOSE_HEARTBEAT_ALLOWANCE_MS) : null };
 }
 
 async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: Date, quote: RiskQuote | null): Promise<Omit<RiskContext, "limits" | "now">> {
@@ -517,6 +520,15 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
   const equityPeak = f.equityPeak !== undefined
     ? f.equityPeak
     : limits.maxDrawdownPercent != null && account ? await loadEquityPeak(intent, account) : null;
+  const halt = f.halt !== undefined ? f.halt
+    : await loadTradingHalt({ userId: intent.userId, venue: intent.venue, virtualAccountId: opts.virtualAccountId ?? null });
+  // Always load operator controls, even when a caller supplies other facts.
+  // This makes the actual DEMO consumer / LIVE dispatch enforce decision 2.
+  const controls = await loadBrokerControlHalt(intent.venue);
+  const combinedHalt = controls.engaged ? {
+    engaged: true, sources: [...(halt?.sources ?? []), ...controls.sources],
+    reason: halt?.engaged ? halt.reason : controls.reason,
+  } : halt;
   return {
     now,
     limits,
@@ -530,9 +542,7 @@ export async function buildRiskContext(intent: TradeIntent, opts: EnforceOptions
     inFlight: [...(f.inFlight ?? loaded.inFlight), ...(f.extraInFlight ?? [])],
     broker: f.broker ?? loaded.broker,
     daily: f.daily ?? loaded.daily,
-    halt: f.halt !== undefined
-      ? f.halt
-      : await loadTradingHalt({ userId: intent.userId, venue: intent.venue, virtualAccountId: opts.virtualAccountId ?? null }),
+    halt: combinedHalt,
     activity: f.activity !== undefined ? f.activity : loaded.activity ?? null,
     market: f.market ?? null,
     venueRules: f.venueRules ?? null,

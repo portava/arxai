@@ -53,7 +53,7 @@
 // venue (venue PAPER, OPEN / CLOSE) and its full decision (rule detail,
 // audit id) is returned as-is, which Build EE writes into its rejection rows.
 //
-// This module adds no gate and removes none: each mode delegates to the
+// Common routing is centralized here; internal transports enforce their gates: each mode delegates to the
 // governed path that already existed, and every refusal is returned as-is.
 // It never writes a table itself. scripts/src/ci/check-trade-engine-single-
 // pipeline.ts fails on any runtime file that calls a venue queue directly
@@ -350,4 +350,11 @@ async function submitPaper(r: PaperOpen | PaperClose | PaperModify): Promise<Tra
     ? { primaryReason: res.primaryReason, blockedBy: res.blockedBy, auditEventId: res.auditEventId }
     : res.reason === "INVALID_SLTP_GEOMETRY" && res.entryPrice !== undefined ? { entryPrice: res.entryPrice } : undefined;
   return { ok: false, mode: "PAPER", intent: r.intent, commandId: null, reason: res.reason, ...(detail ? { detail } : {}) };
+}
+
+
+/** Legacy mirrored DEMO positions close through the engine, never a route-owned mailbox writer. */
+export async function closeLegacyDemoTrade(args: { userId: number; cardId: string }) {
+  const venue = await import("./legacyDemoClose.js");
+  return venue.queueLegacyDemoClose(args);
 }

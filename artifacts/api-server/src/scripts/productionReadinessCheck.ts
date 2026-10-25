@@ -65,6 +65,10 @@ export async function migrationChecks(): Promise<Check[]> {
   await add("2026-10-25_paper_order_request_key", all([
     hasColumn("paper_orders", "client_request_key"), hasIndex("paper_orders_user_request_key_uq"),
   ]), "client_request_key + per-user unique index on paper_orders (owner decision 13)");
+  await add("2026-10-25_trade_action_request_key", all([
+    hasColumn("trade_action_requests", "client_request_key"), hasColumn("trade_action_requests", "client_request_hash"),
+    hasIndex("trade_action_requests_user_request_key_uq"),
+  ]), "user-scoped retry key and immutable request hash on trade actions");
   return out;
 }
 

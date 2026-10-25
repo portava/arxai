@@ -51,7 +51,7 @@ const EXECUTION_CALLS = new Set([
   // The Trade Engine (lib/tradeEngine/pipeline.ts): submitTrade, its staged
   // contract, its one-click LIVE channel and its caller-priced PAPER fills.
   "submitTrade", "draftTrade", "confirmTrade", "dispatchTrade",
-  "submitInstantTrade", "fillPaperTrade", "settlePaperTrade", "voidPaperTrade",
+  "submitInstantTrade", "fillPaperTrade", "settlePaperTrade", "voidPaperTrade", "closeLegacyDemoTrade", "queueLegacyDemoClose",
 ]);
 const GUARDIAN_CALLS = new Set(["guardianRestoreStop", "guardianTradeActionClose", "guardianInstantManage", "guardianPaperManage"]);
 const WRITE_TABLES = new Set(["tradesTable", "arxLiveCommandsTable", "mt5DemoCommandsTable", "mt5CommandsTable"]);
@@ -66,6 +66,7 @@ export const ORDER_ENTRY_SURFACES: Record<string, string> = {
   "lib/assistant/tools.ts": "assistant tools: trader-confirmed actions",
   "routes/meAssistant.ts": "assistant route: trader-confirmed actions",
   "lib/live/instantTrade.ts": "the instant-trade router itself",
+  "lib/tradeEngine/legacyDemoClose.ts": "internal Trade Engine transport for explicitly requested legacy DEMO closes; ownership checked, never an autonomous rule",
   "lib/live/liveCommandPipeline.ts": "the live command pipeline itself",
   "lib/live/emergencyClose.ts": "platform safety: emergency close-all",
   "lib/live/liveTestCycle.ts": "platform safety: operator live test cycle",

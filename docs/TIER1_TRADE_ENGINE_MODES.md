@@ -1,5 +1,10 @@
 # Tier 1: Trade Engine modes (LIVE / DEMO / PAPER)
 
+> Current follow-up: [Tier 1 completion](TIER1_COMPLETION.md) records the latest
+> implementation and verification. Sections below retain their named round's
+> history. Use [Scorecard v2](../scripts/arx-scorecard/README.md); the missing
+> original scorecard is retired and must not be requested again.
+
 Base: `c1b3b98` (PR #34). This change carries out the Trade Engine step of the
 2026-10-24 handoff: DEMO and PAPER become modes of one execution pipeline
 instead of separate execution paths. Tier 1 is not complete after it, and the

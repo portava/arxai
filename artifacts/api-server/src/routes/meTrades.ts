@@ -24,7 +24,6 @@ import { db } from "@workspace/db";
 import {
   sharedTradeAttributionTable,
   tradeCommandAuditLogTable,
-  mt5CommandsTable,
   globalTradingSettingsTable,
   sharedMasterAccountsTable,
   virtualTradingAccountsTable,
@@ -33,11 +32,10 @@ import { and, eq, desc, isNotNull, ne } from "drizzle-orm";
 import { z } from "zod/v4";
 import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
 import { platformStop, preCheckStopRefusal } from "../lib/safety/platformSwitches.js";
-import { enforcePreTradeRisk } from "../lib/riskGovernor/enforce.js";
 import { resolveClosePolicy } from "../lib/live/closePolicy.js";
 import { placeOrder } from "../lib/adminTrading/placeOrder.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
-import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade, closeLegacyDemoTrade } from "../lib/tradeEngine/pipeline.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { paperOrderByRequestKey } from "../lib/tradeEngine/paperVenue.js";
 import { SIMULATED_LABEL, simulatedRequestKey } from "../lib/tradeEngine/simulatedOpen.js";
@@ -347,6 +345,7 @@ router.post("/me/trades/open", async (req, res) => {
       userId, symbol: parsed.data.symbol, side: parsed.data.side, lotSize: parsed.data.lotSize,
       stopLoss: parsed.data.stopLoss ?? null, takeProfit: parsed.data.takeProfit ?? null,
       confirmedByUser: parsed.data.confirmedByUser,
+      requestKey: parsed.data.idempotencyKey ?? null,
     });
     res.json(demo.ok
       ? { ok: true, mode: "DEMO", venue: "DEMO", demo: demo.demo, action: demo.action }
@@ -580,64 +579,14 @@ router.post("/me/trades/close", async (req, res) => {
     return;
   }
 
-  // Singleton (DEMO/SIMULATED): refuse if any prior CLOSE for this ticket on
-  // this user's own connection is still pending. Scoped by userId +
-  // connection + ticket so another user's identically-numbered ticket can
-  // never false-dedupe (ticket numbers are per-connection, not global).
-  if (ticket !== null) {
-    const dupConds = [
-      eq(mt5CommandsTable.userId, userId),
-      eq(mt5CommandsTable.action, "CLOSE"),
-      eq(mt5CommandsTable.ticket, ticket),
-      eq(mt5CommandsTable.status, "PENDING"),
-    ];
-    if (mt5ConnectionId !== null) {
-      dupConds.push(eq(mt5CommandsTable.mt5ConnectionId, mt5ConnectionId));
-    }
-    const [dup] = await db.select({ id: mt5CommandsTable.id }).from(mt5CommandsTable)
-      .where(and(...dupConds)).limit(1);
-    if (dup) {
-      res.status(409).json({ ok: false, error: "CLOSE_ALREADY_QUEUED", commandId: dup.id });
-      return;
-    }
+  // The Trade Engine owns the legacy DEMO transport and repeats identity and
+  // risk checks. A SIMULATED request cannot enqueue any broker command.
+  const close = await closeLegacyDemoTrade({ userId, cardId: parsed.data.cardId });
+  if (!close.ok) {
+    res.status(409).json({ ok: false, error: close.reason, commandId: close.commandId ?? null });
+    return;
   }
-
-  // Pre-trade Risk Governor: a close is risk-reducing, so only the quantity
-  // and a disconnected bridge can refuse it, but it is checked and audited
-  // like every other order. SIMULATED closes never reach a bridge.
-  if (env.tradingMode === "DEMO") {
-    const risk = await enforcePreTradeRisk({
-      userId, venue: "DEMO", origin: "manual", action: "CLOSE",
-      symbol, side, lots: lotSize,
-      intentRef: `me_trades_close:${parsed.data.cardId}`,
-    }, {
-      connectionId: mt5ConnectionId,
-      virtualAccountId: isShared ? virtualAccountId : null,
-      auditContext: { caller: "POST /me/trades/close", cardId: parsed.data.cardId },
-    });
-    if (!risk.allowed) {
-      res.status(409).json({
-        ok: false, error: "RISK_GOVERNOR_BLOCK", reason: risk.primaryReason,
-        blockedBy: risk.blockedBy, auditEventId: risk.auditEventId,
-      });
-      return;
-    }
-  }
-
-  // Queue the CLOSE command.
-  const [cmd] = await db.insert(mt5CommandsTable).values({
-    userId,
-    mt5ConnectionId,
-    requestedByUserId: userId,
-    action: "CLOSE",
-    symbol, side, lot: lotSize,
-    ticket,
-    status: "PENDING",
-    // LIVE is handled above through the Phase-B pipeline and returns early, so
-    // this direct-insert path is DEMO/SIMULATED only — always paper-only.
-    safetyMode: "paper_only",
-    payload: { source: kind === "lp" ? "user_owned_mt5" : "shared_master_attribution", cardId: parsed.data.cardId },
-  }).returning();
+  const cmd = close.command;
 
   // Audit row — closures get their own row in trade_command_audit_log so
   // they show up in the same compliance queries as opens.
@@ -687,13 +636,9 @@ router.post("/me/trades/close", async (req, res) => {
       source: "user",
       context: { commandId: cmd?.id ?? null, ticket, auditLogId: audit?.id ?? null },
     } as never);
-    // Use latest snapshot peak/giveback so the exit-review carries honest
-    // "what AI saw at close" context. ARX AI is paper-only and there is no
-    // async broker-confirmed close (queueMt5CommandWithGate forces BLOCKED),
-    // so the user's confirmed close IS the terminal event. We finalize the
-    // review inline using the latest snapshot's unrealizedPnl as the proxy
-    // for final realized PnL and tag the source explicitly. Deterministic
-    // labels only — never fabricated.
+    // Keep snapshot context as advisory. Only reconciliation can finalize P/L.
+    // Preserve the last observed snapshot as context while the close is pending.
+    // It is not broker-confirmed realized P/L or an exit price.
     const [snap] = await db.select().from(tradeIntelligenceSnapshotsTable)
       .where(_and(
         _eq(tradeIntelligenceSnapshotsTable.userId, userId),
@@ -731,18 +676,18 @@ router.post("/me/trades/close", async (req, res) => {
       userId, tradeKey: parsed.data.cardId,
       symbol, side,
       entryPrice: snap?.entryPrice ?? null,
-      exitPrice: snap?.currentPrice ?? null,
+      exitPrice: null,
       peakUnrealizedPnl: peak,
-      finalRealizedPnl: finalPnl,
+      finalRealizedPnl: null,
       profitGivebackPercent: giveback,
       closeMethod: "manual",
-      closeMethodNote: `User-confirmed close in ${env.tradingMode}. finalRealizedPnl derived from latest intelligence snapshot (paper-only; no broker fill).`,
+      closeMethodNote: `Close requested in ${env.tradingMode}; awaiting broker-confirmed fill. Snapshot is advisory only.`,
       aiAlertsFiredCount: fired,
       aiAlertsActedCount: acted,
       labels,
       aiSnapshotAtClose: snap ?? null,
-      status: "finalized",
-      finalizedAt: new Date(),
+      status: "pending",
+      finalizedAt: null,
     } as never);
   } catch (e) {
     req.log.warn({ err: String(e) }, "UX3 close hook failed (non-fatal)");

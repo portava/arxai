@@ -427,7 +427,7 @@ export interface RiskContext {
   quote: RiskQuote | null;
   positions: RiskPosition[];
   inFlight: RiskInFlight[];
-  broker: { status: BrokerStatus; lastSeenAt: Date | null; detail: string };
+  broker: { status: BrokerStatus; lastSeenAt: Date | null; detail: string; closeAllowedUntil?: Date | null };
   /**
    * Freshness of the broker account snapshot (Broker Hub) behind `account`.
    * Set when the order books against a broker account the trader owns; absent
@@ -671,7 +671,9 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
     const b = ctx.broker;
     const snap = ctx.accountSnapshot ?? null;
     const measured = { status: b.status, lastSeenAt: b.lastSeenAt?.toISOString() ?? null, detail: b.detail };
-    if (b.status === "DISCONNECTED") {
+    const closeGrace = reduces && b.closeAllowedUntil != null
+      && Number.isFinite(b.closeAllowedUntil.getTime()) && ctx.now <= b.closeAllowedUntil;
+    if (b.status === "DISCONNECTED" && !closeGrace) {
       set("broker_unavailable", "BLOCK", `Broker is disconnected (${b.detail}). No order can be sent.`, measured);
     } else if (b.status === "DEGRADED" && !reduces) {
       set("broker_unavailable", "BLOCK", `Broker connection is degraded (${b.detail}). New risk is paused; closing is still allowed.`, measured);

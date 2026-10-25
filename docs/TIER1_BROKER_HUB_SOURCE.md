@@ -1,5 +1,10 @@
 # Tier 1: Broker Hub single source for broker state
 
+> Current follow-up: [Tier 1 completion](TIER1_COMPLETION.md) records the latest
+> implementation and verification. Sections below retain their named round's
+> history. Use [Scorecard v2](../scripts/arx-scorecard/README.md); the missing
+> original scorecard is retired and must not be requested again.
+
 Base: `516f13e` (PR #35). This change raises the Broker Hub "single source"
 dimension. PR #32 gave MT5 and Deriv one read contract. This change routes the
 remaining stored broker-state tables through readers in `lib/brokerHub/`. It

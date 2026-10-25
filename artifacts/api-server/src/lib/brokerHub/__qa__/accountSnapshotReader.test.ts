@@ -16,7 +16,7 @@ import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { inArray } from "drizzle-orm";
 import { db, mt5StateTable, usersTable } from "@workspace/db";
-import { createConnection, deleteFixtureConnections, listConnections } from "../connections.js";
+import { createConnection, deleteFixtureConnections, listConnections, getUserAccountConnection } from "../connections.js";
 import {
   readConnectionAccountReconciliation,
   readConnectionAccountSnapshot,
@@ -148,4 +148,20 @@ test("selection falls back to the user's legacy row only with identity evidence"
   assert.equal(matched.provenance.feed, "mt5_state");
   assert.equal(matched.provenance.authoritative, false);
   assert.equal(matched.balance, 4_000);
+});
+
+
+test("account summary selection is user-scoped, newest synced and never revoked; advice cannot use platform balance", async () => {
+  await conn(a, { accountSyncedAt: new Date(Date.now() - 30_000), accountBalance: 1_000 });
+  const newest = await conn(a, { accountSyncedAt: new Date(), accountBalance: 2_000, lastHeartbeat: new Date() });
+  await conn(a, { accountSyncedAt: new Date(Date.now() + 1_000), accountBalance: 999_999, status: "revoked" });
+  await conn(b, { accountSyncedAt: new Date(), accountBalance: 8_000 });
+  await state({ userId: null, balance: 9_999_999, equity: 9_999_999, lastHeartbeatAt: new Date() });
+  assert.equal((await getUserAccountConnection(a))?.id, newest.id);
+  const { loadPaperIntelligenceSnapshot } = await import("../../paperIntelligence.js");
+  assert.equal((await loadPaperIntelligenceSnapshot(a)).balance, 2_000);
+  assert.equal((await loadPaperIntelligenceSnapshot(b)).balance, 8_000);
+  const missing = await loadPaperIntelligenceSnapshot(-999999);
+  assert.equal(missing.balance, null);
+  assert.equal(missing.isFresh, false);
 });

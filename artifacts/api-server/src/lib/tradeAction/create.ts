@@ -5,6 +5,7 @@
 // the AI or decision engine) or "awaiting_confirmation" (when initiated
 // directly by the user via a review button).
 
+import { createHash } from "node:crypto";
 import { db } from "@workspace/db";
 import { tradeActionRequestsTable, tradeDecisionsTable } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -17,6 +18,7 @@ const DRAFT_TTL_MS = 30 * 60 * 1000;
 
 export interface CreateActionDraftInput {
   userId: number;
+  clientRequestKey?: string | null;
   actionType: ActionType;
   tradeKey: string | null;
   requestedMode?: RequestedMode;        // default: SIMULATED
@@ -31,7 +33,7 @@ export interface CreateActionDraftInput {
 }
 
 export type CreateResult =
-  | { ok: true; action: ActionSummary }
+  | { ok: true; action: ActionSummary; replayed?: boolean }
   | { ok: false; error: string };
 
 export async function createActionDraft(input: CreateActionDraftInput): Promise<CreateResult> {
@@ -70,7 +72,14 @@ export async function createActionDraft(input: CreateActionDraftInput): Promise<
   const initialStatus = source === "user_initiated" ? "awaiting_confirmation" : "ai_suggested";
   const expiresAt = new Date(Date.now() + DRAFT_TTL_MS);
 
+  const clientRequestKey = input.clientRequestKey ?? null;
+  const clientRequestHash = clientRequestKey ? createHash("sha256").update(JSON.stringify({
+    actionType: input.actionType, tradeKey: input.tradeKey, requestedMode, source,
+    symbol, side, lotSize, requestedPrice: input.requestedPrice ?? null,
+    stopLoss: input.stopLoss ?? null, takeProfit: input.takeProfit ?? null,
+  })).digest("hex") : null;
   const [inserted] = await db.insert(tradeActionRequestsTable).values({
+    clientRequestKey, clientRequestHash,
     userId: input.userId,
     tradeKey: input.tradeKey ?? null,
     actionType: input.actionType,
@@ -90,8 +99,16 @@ export async function createActionDraft(input: CreateActionDraftInput): Promise<
     confirmedByUser: false,
     aiDecisionId,
     expiresAt,
-  }).returning();
+  }).onConflictDoNothing({ target: [tradeActionRequestsTable.userId, tradeActionRequestsTable.clientRequestKey] }).returning();
 
+  if (!inserted && clientRequestKey) {
+    const [prior] = await db.select().from(tradeActionRequestsTable).where(and(
+      eq(tradeActionRequestsTable.userId, input.userId), eq(tradeActionRequestsTable.clientRequestKey, clientRequestKey),
+    )).limit(1);
+    if (prior) return prior.clientRequestHash === clientRequestHash
+      ? { ok: true, action: toSummary(prior), replayed: true }
+      : { ok: false, error: "IDEMPOTENCY_KEY_CONFLICT" };
+  }
   if (!inserted) return { ok: false, error: "insert_failed" };
 
   await writeActionTimeline({

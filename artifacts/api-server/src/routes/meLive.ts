@@ -19,7 +19,7 @@
 import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
-import { getUserLiveSnapshotMarkerMs, listUserConnections } from "../lib/brokerHub/connections.js";
+import { getUserLiveSnapshotMarkerMs, getUserAccountConnection, listUserConnections } from "../lib/brokerHub/connections.js";
 import { accountFiguresOf, connectionAccountSnapshot } from "../lib/brokerHub/accountSnapshot.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq } from "drizzle-orm";
@@ -987,8 +987,7 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
   const posRows = await selectLiveOpenPositions(livePositionColumns, { userId, basis: "UNCLOSED" });
 
   // Freshest account-synced connection for equity/balance.
-  const equityRows = await listUserConnections(userId, { order: "accountSynced", limit: 1 });
-  const conn = equityRows[0];
+  const conn = await getUserAccountConnection(userId);
   // Authoritative per-connection snapshot (owner decision 16): the figures the
   // EA delivered, all-null when never synced (never a default 0).
   const acct = accountFiguresOf(connectionAccountSnapshot(conn));
@@ -1130,8 +1129,7 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
       // Deterministically pick the user's most-recently account-synced
       // connection (NULLS LAST) so a multi-connection user never reads a stale
       // row's figures over a freshly-synced one.
-      const equityRows = await listUserConnections(userId, { order: "accountSynced", limit: 1 });
-      const conn = equityRows[0];
+      const conn = await getUserAccountConnection(userId);
       // Honesty: accountBalance/equity/margin/freeMargin default to 0 in the DB,
       // so an existing-but-never-synced connection would emit fabricated zeros.
       // Only surface figures the EA has actually delivered (accountSyncedAt

@@ -1,5 +1,10 @@
 # Tier 1: one read model for open exposure
 
+> Current follow-up: [Tier 1 completion](TIER1_COMPLETION.md) records the latest
+> implementation and verification. Sections below retain their named round's
+> history. Use [Scorecard v2](../scripts/arx-scorecard/README.md); the missing
+> original scorecard is retired and must not be requested again.
+
 Base: `516f13e` (PR #35). This change continues the Position Guardian "single
 source" work after the position persistence boundary (PR #33). It does not
 complete Tier 1 or change the published scorecard.

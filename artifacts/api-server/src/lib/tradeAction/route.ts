@@ -92,7 +92,7 @@ export async function tradeRefFor(userId: number, tradeKey: string | null): Prom
 export async function routeConfirmedAction(a: RoutableAction): Promise<RouteResult> {
   if (a.requestedMode === "SIMULATED" && a.actionType === "OPEN") return routeSimulatedOpen(a);
   const venue = a.requestedMode === "DEMO" || a.requestedMode === "LIVE" ? a.requestedMode : null;
-  if (!venue) return { ok: true, venue: null, commandId: null, sent: false };
+  if (!venue) return { ok: false, venue: null, commandId: null, reason: a.requestedMode === "SIMULATED" ? "SIMULATED_ACTION_NOT_SUPPORTED" : "UNKNOWN_TRADE_MODE" };
   if (a.actionType === "CANCEL_ORDER") return { ok: false, venue, commandId: null, reason: "CANCEL_NOT_ROUTED" };
   return a.actionType === "OPEN" ? routeOpen(a, venue) : routePositionOp(a, venue);
 }

@@ -120,3 +120,11 @@ export function isHeartbeatAgeMsOnline(ageMs: number | null | undefined): boolea
 export function isHeartbeatAgeSecondsOnline(ageSeconds: number | null | undefined): boolean {
   return heartbeatIsOnline(classifyHeartbeatAgeSeconds(ageSeconds));
 }
+
+/** Risk-reducing close eligibility only, inclusive historical boundary.
+ * Does not change the shared heartbeat label or establish transport readiness. */
+export const MT5_CLOSE_HEARTBEAT_ALLOWANCE_MS = 120_000;
+
+export function heartbeatAllowsRiskReducingClose(status: string, ageMs: number): boolean {
+  return status === "connected" && Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= MT5_CLOSE_HEARTBEAT_ALLOWANCE_MS;
+}

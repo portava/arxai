@@ -27,13 +27,13 @@ const analyzeBody = z.object({
   minConfidence: z.number().min(0).max(100).optional(),
 });
 
-router.post("/intelligence/analyze", async (req: Request, res: Response) => {
+router.post("/intelligence/analyze", requireUser, async (req: Request, res: Response) => {
   const parsed = analyzeBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid analyze body", details: parsed.error.issues, paperOnly: true, disclaimer: DISCLAIMER });
   }
   try {
-    const result = await analyzeSymbolForPaper(parsed.data);
+    const result = await analyzeSymbolForPaper({ ...parsed.data, userId: req.authUser!.id });
     return res.json({ ...result, disclaimer: DISCLAIMER });
   } catch (err) {
     req.log.error({ err: String(err) }, "paperIntelligence analyze failed");

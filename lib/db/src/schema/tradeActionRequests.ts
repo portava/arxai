@@ -1,6 +1,6 @@
 import {
   pgTable, serial, integer, text, real, boolean, timestamp, jsonb,
-  index,
+  index, uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // Phase UX8 — Trade Action Center.
@@ -55,6 +55,10 @@ import {
 export const tradeActionRequestsTable = pgTable("trade_action_requests", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
+
+  // Retry identity is user-scoped. Hash binds the key to immutable request details.
+  clientRequestKey: text("client_request_key"),
+  clientRequestHash: text("client_request_hash"),
 
   // Linkage (nullable because OPEN has no trade yet).
   tradeKey: text("trade_key"),
@@ -127,6 +131,7 @@ export const tradeActionRequestsTable = pgTable("trade_action_requests", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
+  requestKeyIdx: uniqueIndex("trade_action_requests_user_request_key_uq").on(t.userId, t.clientRequestKey),
   userListIdx: index("trade_action_requests_user_status_idx").on(t.userId, t.status, t.createdAt),
   userTradeIdx: index("trade_action_requests_user_trade_idx").on(t.userId, t.tradeKey),
 }));

@@ -1,5 +1,10 @@
 # Tier 1: plan for merging the two position tables
 
+> Current follow-up: [Tier 1 completion](TIER1_COMPLETION.md) records the latest
+> implementation and verification. Sections below retain their named round's
+> history. Use [Scorecard v2](../scripts/arx-scorecard/README.md); the missing
+> original scorecard is retired and must not be requested again.
+
 Base: `18b1e01` (PR #40). This is the last Position Guardian item in the
 2026-10-24 handoff: "a physical merge of the two position tables, planned
 separately and last". **This document is only a plan.** It adds no

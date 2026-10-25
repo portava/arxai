@@ -3,7 +3,7 @@
 // runs in ci:integration; it reads no rows.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyBrokerHeartbeat } from "../enforce.js";
+import { classifyBrokerHeartbeat, evaluatePreTradeRisk, resolveEffectiveLimits, type RiskContext } from "../enforce.js";
 
 const NOW = new Date("2026-10-25T12:00:00.000Z");
 const at = (ageMs: number) => classifyBrokerHeartbeat({ status: "connected", lastHeartbeat: new Date(NOW.getTime() - ageMs) }, NOW);
@@ -26,4 +26,23 @@ test("missing, revoked and future-dated heartbeats are DISCONNECTED", () => {
   assert.equal(future.status, "DISCONNECTED");
   assert.match(future.detail, /invalid/);
   assert.equal(classifyBrokerHeartbeat({ status: "connected", lastHeartbeat: new Date(Number.NaN) }, NOW).status, "DISCONNECTED");
+});
+
+
+test("close eligibility retains the historical inclusive 120s boundary without changing status or permitting new risk", () => {
+  const intent = { userId: 1, venue: "DEMO" as const, origin: "manual" as const, action: "CLOSE" as const,
+    symbol: "EURUSD", side: "BUY" as const, lots: 0.1 };
+  for (const age of [0, 14_999, 15_000, 59_999, 60_000, 119_999, 120_000, 120_001]) {
+    const ctx: RiskContext = { now: NOW, limits: resolveEffectiveLimits({}), account: null,
+      instruments: {}, positions: [], inFlight: [], quote: null, daily: { realizedPnl: 0, floatingPnl: 0 }, broker: at(age) };
+    const close = evaluatePreTradeRisk(intent, ctx);
+    assert.equal(close.blockedBy.includes("broker_unavailable"), age > 120_000, `age ${age}`);
+    if (age >= 15_000) assert.ok(evaluatePreTradeRisk({ ...intent, action: "OPEN" }, ctx).blockedBy.includes("broker_unavailable"));
+  }
+  for (const status of ["revoked", "disconnected", "unknown"]) {
+    const broker = classifyBrokerHeartbeat({ status, lastHeartbeat: new Date(NOW.getTime() - 90_000) }, NOW);
+    assert.equal(broker.closeAllowedUntil ?? null, null, status);
+  }
+  assert.equal(at(-1).closeAllowedUntil ?? null, null);
+  assert.equal(classifyBrokerHeartbeat(null, NOW).closeAllowedUntil ?? null, null);
 });

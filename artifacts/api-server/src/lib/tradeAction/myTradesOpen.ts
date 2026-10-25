@@ -42,6 +42,7 @@ export interface MyTradesDemoOpenInput {
   stopLoss: number | null;
   takeProfit: number | null;
   confirmedByUser: boolean;
+  requestKey?: string | null;
 }
 
 export interface MyTradesDemoReceipt {
@@ -65,6 +66,10 @@ export async function openMyTradesDemo(input: MyTradesDemoOpenInput): Promise<My
   if (!input.confirmedByUser) return refuse("CONFIRMATION_REQUIRED", "Confirm the demo order before it is sent.");
   if (!(input.userId > 0)) return refuse("NOT_AUTHENTICATED", "Sign in to place a demo order.");
 
+  if (!input.requestKey || !/^[A-Za-z0-9_.:-]{8,128}$/.test(input.requestKey)) {
+    return refuse("IDEMPOTENCY_KEY_REQUIRED", "A demo order needs a request key so retries cannot send a second command.");
+  }
+
   // The trader's own mode must permit DEMO (LIVE ⊇ DEMO ⊇ SIMULATED).
   const env = await getEnvelope(input.userId);
   if (env.tradingMode === "DISABLED") return refuse("USER_TRADING_DISABLED", "Trading is disabled for your account.");
@@ -73,12 +78,23 @@ export async function openMyTradesDemo(input: MyTradesDemoOpenInput): Promise<My
   }
 
   const draft = await createActionDraft({
+    clientRequestKey: `my_trades_demo:${input.requestKey}`,
     userId: input.userId, actionType: "OPEN", tradeKey: null, requestedMode: "DEMO",
     symbol: input.symbol, side: input.side, lotSize: input.lotSize,
     stopLoss: input.stopLoss, takeProfit: input.takeProfit,
     reason: "My Trades demo order", source: "user_initiated",
   });
   if (!draft.ok) return refuse(draft.error, `The demo order could not be recorded (${draft.error}).`);
+
+  if (draft.replayed && !["awaiting_confirmation", "ai_suggested", "user_reviewing"].includes(draft.action.status)) {
+    const a = draft.action;
+    if (["queued", "sent_to_mt5", "partially_filled", "executed"].includes(a.status)) {
+      return { ok: true, action: a, demo: { mode: "DEMO", venue: "DEMO", actionId: a.id,
+        status: a.status, commandId: a.venueCommandId, sent: a.status !== "queued" } };
+    }
+    return refuse(["confirmed", "guard_checking"].includes(a.status) ? "REQUEST_IN_PROGRESS" : "REQUEST_PREVIOUSLY_REFUSED",
+      a.rejectionReason ?? `The existing request is ${a.status}; no second command was sent.`, a);
+  }
 
   const r = await confirmAction({ userId: input.userId, actionId: draft.action.id, sourcePage: MY_TRADES_DEMO_SOURCE });
   if (!r.ok) {

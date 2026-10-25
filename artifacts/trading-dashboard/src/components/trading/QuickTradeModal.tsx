@@ -207,7 +207,7 @@ export function QuickTradeModal({
 
   async function submitMarket() {
     setBusy(true); setErr(null); setResult(null);
-    if (mode === "SIMULATED" && !requestKeyRef.current) {
+    if (mode !== "LIVE" && !requestKeyRef.current) {
       requestKeyRef.current = `qt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
     }
     try {
@@ -219,7 +219,7 @@ export function QuickTradeModal({
           symbol, side: direction, lotSize, mode,
           stopLoss: n(sl), takeProfit: n(tp),
           confirmedByUser: true,
-          ...(mode === "SIMULATED" ? { idempotencyKey: requestKeyRef.current } : {}),
+          ...(mode !== "LIVE" ? { idempotencyKey: requestKeyRef.current } : {}),
         }),
       });
       const body = await r.json();

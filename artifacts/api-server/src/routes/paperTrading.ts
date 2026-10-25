@@ -122,7 +122,11 @@ router.get("/paper/accounts", requireUser, async (req, res): Promise<void> => {
   const mine = eq(paperAccountsTable.userId, req.authUser!.id);
   const rows = await db.select().from(paperAccountsTable).where(mine).orderBy(desc(paperAccountsTable.createdAt));
   // Refresh every account so list state is consistent (architect fix #3).
-  for (const r of rows) await markToMarket(r.id);
+  for (const r of rows) {
+    if (!(await markToMarket(r.id))) {
+      fail(res, 503, "Paper account valuation unavailable: a current real quote is required"); return;
+    }
+  }
   const refreshed = await db.select().from(paperAccountsTable).where(mine).orderBy(desc(paperAccountsTable.createdAt));
   ok(res, { accounts: refreshed });
 });
@@ -134,7 +138,8 @@ router.get("/paper/accounts/active", requireUser, async (req, res): Promise<void
     .orderBy(desc(paperAccountsTable.createdAt)).limit(1);
   if (!rows[0]) { fail(res, 404, "No active paper account"); return; }
   const refreshed = await markToMarket(rows[0].id);
-  ok(res, { account: refreshed ?? rows[0] });
+  if (!refreshed) { fail(res, 503, "Paper account valuation unavailable: a current real quote is required"); return; }
+  ok(res, { account: refreshed });
 });
 
 // ── POST /paper/orders ─────────────────────────────────────────────────────

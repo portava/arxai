@@ -567,3 +567,54 @@ same results.
   (D1–D10 recorded).
 
 **TIER 1 NOT COMPLETE**
+
+## Tier 1 completion follow-up (Codex)
+
+The repository-owned [Scorecard v2](../scripts/arx-scorecard/README.md) replaces
+the unavailable original scorecard. Do not request the original scripts or
+dashboard again. The historical 68.7% is not comparable with v2.
+
+**Migration 9:** `lib/db/migrations/2026-10-25_trade_action_request_key.sql` must
+be applied after the preceding eight and before deploying the completion code.
+It adds nullable `trade_action_requests.client_request_key` and
+`client_request_hash` plus a unique `(user_id, client_request_key)` index.
+Existing rows remain unchanged. Roll back the application if needed; retain
+the additive schema. `check:production-readiness` checks all nine migrations.
+The test named `test:production-readiness-check` remains unsafe for production.
+
+Behavior changes requiring deployment preparation:
+
+- Broker execution disabled, maintenance enabled, missing controls or unreadable
+  controls now halt new DEMO/LIVE risk in the dispatch governor. Inspect and
+  deliberately configure the existing broker control row before deployment.
+  No auto-enable or permissive seed is included. Closing and tightening retain
+  their other safety checks.
+- Shared heartbeat status remains offline at 60s. The governor separately permits
+  risk-reducing closes up to the historical **inclusive 120s** boundary for a
+  connection still marked connected. Revoked/disconnected/missing/invalid states
+  get no grace. Transport and position checks may still refuse the action.
+- My Trades DEMO opens require `idempotencyKey`. The UI reuses it on retries.
+  Changed details with the same key return `IDEMPOTENCY_KEY_CONFLICT`; in-progress
+  requests return `REQUEST_IN_PROGRESS`. Retries never create a second action.
+- Legacy DEMO closes go through the engine and require a demo account and valid
+  ticket. SIMULATED cannot use this broker transport. Exit reviews remain pending
+  until broker evidence; a snapshot is not realized P/L.
+- Manual closes of market-priced PAPER orders require a current real quote.
+  Missing/stale/fallback prices return `NO_VALID_PRICE_SOURCE` without closing.
+- Unsupported non-OPEN SIMULATED Trade Actions refuse with
+  `SIMULATED_ACTION_NOT_SUPPORTED`, rather than reporting a no-op as queued.
+- Account summary selection is shared across JSON, SSE and investor views:
+  most recently account-synced non-revoked user connection. This is a display
+  policy, not execution routing. Paper intelligence requires authentication and
+  uses the caller's account snapshot, never the platform account balance.
+
+Local verification does not authorize deployment or LIVE trading. Keep broker
+validation, real provider configuration, production inspections and any explicit
+legacy-owner claim in the owner-controlled process.
+
+Market-priced paper account summaries now return unavailable (HTTP 503) when a
+current real quote cannot be obtained. Existing cached equity is not presented as
+a fresh valuation. Paper P/L retains the simplified simulator model, not broker
+contract-size/commission accounting. Legacy `lp_` closes cannot infer an account
+when the owner has multiple registered connections; they refuse with
+`AMBIGUOUS_LEGACY_POSITION_ACCOUNT` and require explicit identity repair.

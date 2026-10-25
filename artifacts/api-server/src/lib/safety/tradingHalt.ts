@@ -14,7 +14,7 @@
 // does not halt it; the safety-core switch already halted paper through the
 // Trade Action guards.
 //
-// Every switch defaults to released: a fresh install, restart or redeploy
+// Stop switches default to released (broker execution controls are separate): a fresh install, restart or redeploy
 // does not halt trading (owner decision 2026-10-24). Only an engaged switch
 // halts.
 //
@@ -44,7 +44,8 @@ export type HaltSource =
   | "platform_emergency_stop"
   | "safety_core_kill_switch"
   | "trader_kill_switch"
-  | "allocation_frozen";
+  | "allocation_frozen"
+  | BrokerControlBlock;
 
 export interface TradingHalt extends RiskHalt {
   sources: HaltSource[];
@@ -56,6 +57,9 @@ const REASONS: Record<HaltSource, string> = {
   ...PLATFORM_STOP_REASONS,
   trader_kill_switch: "Your kill switch is engaged. Release it to trade again.",
   allocation_frozen: "Your shared-account allocation is frozen by an operator.",
+  broker_execution_disabled: "Broker execution is disabled by the operator. No new positions can be opened on this venue.",
+  broker_maintenance_mode: "The broker is in maintenance mode. No new positions can be opened on this venue.",
+  broker_controls_unreadable: "The broker operator controls could not be read. No new positions can be opened on this venue.",
 };
 
 export function haltFrom(sources: HaltSource[], detail: Partial<Record<HaltSource, string | null>> = {}): TradingHalt {
@@ -190,6 +194,13 @@ export function brokerControlBlocks(
   if (!controls.executionEnabled) out.push("broker_execution_disabled");
   if (controls.maintenanceMode) out.push("broker_maintenance_mode");
   return out;
+}
+
+/** Execution and readiness use the same policy. The governor applies this halt
+ * only to new exposure / widening; closing and tightening retain their checks. */
+export async function loadBrokerControlHalt(venue: RiskVenue): Promise<TradingHalt> {
+  if (venue === "PAPER") return NO_HALT;
+  return haltFrom(brokerControlBlocks(await readBrokerOperatorControls(), { venue, opensNewRisk: true }));
 }
 
 export interface VenueTradingVerdict {
