@@ -68,7 +68,11 @@ class Fixture(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def ev(self, r, evidence=None, run_commands=True, db_url=None):
+    def ev(self, r, evidence=None, run_commands=True, db_url=None, reachable=True):
+        if reachable and db_url and "nonexistent" not in db_url:
+            with mock.patch.object(measure, "db_reachable", return_value=(True, "local database")):
+                return measure.Evaluator(self.repo, r, evidence or {"facts": {}}, run_commands=run_commands,
+                                         db_url=db_url, log=lambda *_: None)
         return measure.Evaluator(self.repo, r, evidence or {"facts": {}}, run_commands=run_commands,
                                  db_url=db_url, log=lambda *_: None)
 
@@ -142,6 +146,12 @@ class CommandTests(Fixture):
         code = "import os,sys; sys.exit(0 if os.environ.get('DATABASE_URL','').startswith('postgresql://postgres@localhost') else 1)"
         r = self.one(self.cmd(code, needs_db=True), db_url="postgresql://postgres@localhost:5432/arx?host=/var/tmp")
         self.assertEqual(r["status"], "PASS")
+
+    @unittest.skipIf(measure.shutil.which("psql") is None, "psql not installed")
+    def test_unreachable_local_database_is_unknown(self):
+        r = self.one(self.cmd("pass", needs_db=True), db_url="postgresql://p@localhost:1/none?host=/nonexistent-dir")
+        self.assertEqual(r["status"], "UNKNOWN")
+        self.assertIn("unreachable", r["detail"])
 
     def test_local_url_rules(self):
         self.assertTrue(measure.safe_local_db_url("postgresql://p@127.0.0.1/x")[0])

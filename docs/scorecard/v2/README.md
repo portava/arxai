@@ -162,3 +162,12 @@ each change below with the reason, and bump `version`.
     row for the user and filters in memory. Each file now must also have no
     whole-user ledger read. Effect: stricter; the criterion was and stays
     FAIL.
+
+### Tooling changelog
+
+- 2026-10-25: the first baseline attempt on rubric 2.0.1 ran while the local
+  PostgreSQL server was down. Every database-backed test failed to connect
+  and was reported FAIL. That run was discarded, not committed.
+  `measure.py` now checks that the local database answers (`psql ... select
+  1`) before any database-backed check; if it does not, those criteria are
+  UNKNOWN ("local database is unreachable"). Rubric unchanged.

@@ -117,6 +117,20 @@ def safe_local_db_url(url: str | None) -> tuple[bool, str]:
     return True, "local database"
 
 
+def db_reachable(url: str) -> tuple[bool, str]:
+    """A local database that is down gives UNKNOWN, not a wall of test failures."""
+    if shutil.which("psql") is None:
+        return True, "local database (reachability not checked: psql not installed)"
+    try:
+        p = subprocess.run(["psql", url, "-Atqc", "select 1"], capture_output=True, text=True, timeout=15,
+                           env={k: v for k, v in os.environ.items() if k not in STRIPPED_ENV})
+    except subprocess.TimeoutExpired:
+        return False, "local database did not answer within 15 s"
+    if p.returncode != 0 or p.stdout.strip() != "1":
+        return False, "local database is unreachable"
+    return True, "local database"
+
+
 def git(repo: Path, *args: str) -> str:
     try:
         return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True,
@@ -244,6 +258,8 @@ class Evaluator:
         self.evidence = evidence
         self.run_commands = run_commands
         self.db_ok, self.db_reason = safe_local_db_url(db_url)
+        if self.db_ok:
+            self.db_ok, self.db_reason = db_reachable(db_url)
         self.db_url = db_url if self.db_ok else None
         self.cmd_cache: dict[str, dict] = {}
         self.runs: list[dict] = []          # non-deterministic run facts
@@ -653,7 +669,7 @@ def main(argv: list[str] | None = None) -> int:
         "application_code_changed_vs_base_main": [p for p in changed_vs_base
                                                   if p.startswith(("artifacts/", "lib/", "scripts/src/"))],
         "working_tree_dirty": bool(status_before),
-        "database": "local" if ev.db_ok else f"none ({ev.db_reason})",
+        "database": ev.db_reason if ev.db_ok else f"none ({ev.db_reason})",
         "commands_run": not args.skip_commands,
         "summary": summarize(rubric, results),
         "criteria": results,
