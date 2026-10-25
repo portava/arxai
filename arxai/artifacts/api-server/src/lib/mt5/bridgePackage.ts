@@ -5,9 +5,10 @@ import { buildZip } from "../zipBuilder.js";
 
 // This is a read-only connection package, not a certification for DEMO orders.
 // The Universal Agent uses a different mailbox; never select it by version alone.
-export const BRIDGE_PACKAGE_VERSION = "1.29";
+export const BRIDGE_PACKAGE_VERSION = "1.31";
 export const BRIDGE_FILES = {
-  ea: { name: "ReplitMT5BridgeEA_v129.mq5", contentType: "text/x-mql5; charset=utf-8" },
+  ea: { name: "ReplitMT5BridgeEA_v131.mq5", contentType: "text/x-mql5; charset=utf-8" },
+  "demo-core": { name: "ArxDemoExecution.mqh", contentType: "text/x-mql5; charset=utf-8" },
   profile: { name: "ARX_DEMO_READ_ONLY.set", contentType: "text/plain; charset=utf-8" },
   "webreq-test": { name: "ARXWebRequestTest.mq5", contentType: "text/x-mql5; charset=utf-8" },
   readme: { name: "README_SETUP.md", contentType: "text/markdown; charset=utf-8" },
@@ -42,7 +43,7 @@ export async function bridgePackageManifest(dir = bridgeDir()) {
     demoLifecycleValidationReady: false,
     files,
     complete: files.every(file => file.present),
-    note: "Includes execution-capable EA source with every trading arm disabled. DEMO lifecycle validation is blocked: this EA fully closes CLOSE_POSITION requests and does not implement partial close. Compile in MetaEditor and verify read-only settings before attaching.",
+    note: "Includes execution-capable EA source with every trading arm disabled. DEMO lifecycle validation is blocked: offline-tested volume-bounded execution requires a DEMO hedging account; broker lifecycle evidence and separate order approval are still required. Compile in MetaEditor and verify read-only settings before attaching.",
   };
 }
 

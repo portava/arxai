@@ -29,6 +29,7 @@ import { requireUser } from "../lib/auth/middleware.js";
 import { recordUserActivity } from "../lib/auth/activity.js";
 import { sendPasswordResetEmail } from "../lib/email/passwordResetEmail.js";
 import { isEmailNotConfiguredError } from "../lib/email/resend.js";
+import { resolvePublicOrigin } from "../lib/auth/publicOrigin.js";
 import { enforceSensitiveAction } from "../lib/security/handshake.js";
 import { consumeRateLimit, hashScope } from "../lib/security/cooldowns.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
@@ -226,21 +227,6 @@ async function forgotThrottled(req: import("express").Request, key: string): Pro
     );
     return false;
   }
-}
-
-// Resolve the canonical public origin from TRUSTED config only. Request headers
-// (Host / X-Forwarded-Host) are deliberately NOT used: trusting them would allow
-// host-header poisoning — an attacker could forge a reset email pointing at their
-// own domain carrying a victim's token. Precedence: explicit APP_PUBLIC_ORIGIN,
-// then the platform-provided published/dev domains, then localhost for dev.
-function resolvePublicOrigin(): string {
-  const configured = process.env.APP_PUBLIC_ORIGIN?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-  const published = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
-  if (published) return `https://${published}`;
-  const dev = process.env.REPLIT_DEV_DOMAIN?.trim();
-  if (dev) return `https://${dev}`;
-  return "http://localhost";
 }
 
 function buildResetLink(rawToken: string): string {

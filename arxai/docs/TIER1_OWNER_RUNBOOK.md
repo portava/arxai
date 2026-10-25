@@ -669,3 +669,8 @@ responses and no production actions were taken.
 The architecture breakdown and each domain's job remain in
 [Architecture map](ARCHITECTURE_MAP.md). The current reproducible evidence is
 linked from [Scorecard results](../scripts/arx-scorecard/results/README.md).
+
+The [non-broker release readiness guide](TIER1_NON_BROKER_READINESS.md) covers
+password recovery, database readiness and portable production build/check/start
+commands. These features can be tested without DEMO orders; their development
+checks do not replace the operational evidence above.

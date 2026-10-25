@@ -1846,7 +1846,7 @@ export default function MT5SetupWizardPage() {
       <Card id="ea-v128-install" className="border-2 border-primary/30 bg-primary/5 scroll-mt-24" data-testid="card-ea-v128-install">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-primary">
-            <Download className="w-4 h-4" /> MT5 DEMO read-only kit · EA v1.29
+            <Download className="w-4 h-4" /> MT5 DEMO read-only kit · EA v1.31
           </CardTitle>
           <CardDescription>
             Includes the EA source, a settings profile with trading disabled, and setup instructions.
@@ -1857,8 +1857,8 @@ export default function MT5SetupWizardPage() {
           <p>Load <code>ARX_DEMO_READ_ONLY.set</code> before entering your private connection token.
             Keep automated trading disabled and every execution switch off.</p>
           <div className="rounded border border-warning/40 bg-warning/20 p-2.5 text-xs text-warning">
-            <strong>Connection checks only.</strong> This EA closes the whole position when asked for a partial close.
-            Broker order validation is blocked until a compatible execution bridge is corrected and verified.
+            <strong>Connection checks only.</strong> The updated bridge requires a DEMO hedging account for order validation.
+            Broker testing and separate order approval are still required.
             A connected heartbeat does not mean trading is ready.
           </div>
           <Button asChild variant="outline" size="sm" data-testid="button-v128-download-zip">
@@ -1950,9 +1950,9 @@ export default function MT5SetupWizardPage() {
             <li>Open MetaTrader 5.</li>
             <li>File → Open Data Folder.</li>
             <li>Open <code>MQL5</code> → <code>Experts</code>.</li>
-            <li>Copy <code>ReplitMT5BridgeEA_v129.mq5</code> from the ZIP into <code>Experts</code>.</li>
+            <li>Copy <code>ReplitMT5BridgeEA_v131.mq5</code> and <code>ArxDemoExecution.mqh</code> from the ZIP into the same <code>Experts</code> folder.</li>
             <li>Open MetaEditor (refresh the Navigator if needed).</li>
-            <li>Compile <code>ReplitMT5BridgeEA_v129.mq5</code> (F7) — expect 0 errors.</li>
+            <li>Compile <code>ReplitMT5BridgeEA_v131.mq5</code> (F7) — expect 0 errors.</li>
             <li>Return to MT5.</li>
             <li>Drag the EA onto any chart.</li>
             <li>Keep automated trading disabled for this connection check.</li>

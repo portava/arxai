@@ -56,7 +56,7 @@ router.get("/mt5/bridge-package/zip", async (_req, res) => {
   try {
     const zip = await bridgePackageZip();
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", 'attachment; filename="arx-mt5-demo-read-only-v129.zip"');
+    res.setHeader("Content-Disposition", 'attachment; filename="arx-mt5-demo-read-only-v131.zip"');
     res.setHeader("Content-Length", String(zip.length));
     res.send(zip);
   } catch (e) {
