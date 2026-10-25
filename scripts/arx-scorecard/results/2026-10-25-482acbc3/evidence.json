@@ -1,0 +1,312 @@
+{
+  "commit": "482acbc3f1b36a87f203bdcfb29382ffa3681f5a",
+  "reviewer": "Codex source review and executed checks; not an independent external audit",
+  "scope": "Five Tier 1 domains under approved Option A. Operational readiness is separate.",
+  "environment": {
+    "node": "24.16.0",
+    "postgresql": "17 (isolated local databases, UTC)",
+    "platform": "macOS arm64",
+    "api": "loopback only, invite gate enabled for security suite",
+    "native_test_binaries": "exact versions documented in scorecard README; no lockfile or workspace override changes"
+  },
+  "checks": {
+    "types": {
+      "commit": "482acbc3f1b36a87f203bdcfb29382ffa3681f5a",
+      "command": "TZ=UTC pnpm run typecheck",
+      "exit_code": 0,
+      "seconds": 14,
+      "log": "logs/types.log.gz",
+      "sha256": "ff64b5e66e81a2c4fb5ffbcf10c258f3439a8d59c296b66eae55f51779221699",
+      "raw_sha256": "f0aa5b1ad4956cee3062d573db07955c5138117c11d27e2ae99ea91beec57245"
+    },
+    "full-ci": {
+      "commit": "482acbc3f1b36a87f203bdcfb29382ffa3681f5a",
+      "command": "TZ=UTC DATABASE_URL=<isolated local PostgreSQL> BASE_URL=http://127.0.0.1:18868 pnpm run ci (loopback API: ARX_BETA_INVITE_REQUIRED=true)",
+      "exit_code": 0,
+      "seconds": 419,
+      "log": "logs/full-ci.log.gz",
+      "sha256": "87b482f39b757bc3b728481213b8dedf4543e389f4be14f6a3739b3c530aca1e",
+      "raw_sha256": "2ea75d59cd728830e213b1bffadf31ff495cd99aaf77aaae9d64814044a1f4db"
+    },
+    "integration": {
+      "commit": "482acbc3f1b36a87f203bdcfb29382ffa3681f5a",
+      "command": "TZ=UTC DATABASE_URL=<isolated local PostgreSQL> pnpm run ci:integration",
+      "exit_code": 0,
+      "seconds": 348,
+      "log": "logs/integration.log.gz",
+      "sha256": "67495ed2af6714ea851f68b2ed47dae44a395129081609ca730bdf518f75df63",
+      "raw_sha256": "003ac7ef1984eccc6beb829b17fcf33fb65e0723133b93d796ebaa9cea5d96ed"
+    },
+    "readonly-preflight": {
+      "commit": "482acbc3f1b36a87f203bdcfb29382ffa3681f5a",
+      "command": "read-only PostgreSQL connection; check:production-readiness --json --strict; assertions verify JSON and expected exit 2",
+      "exit_code": 0,
+      "observed_cli_exit_code": 2,
+      "seconds": 1,
+      "log": "logs/readonly-preflight.log.gz",
+      "sha256": "593258ec459d22d26f1f020284337662c7e21a10c5640a8d303c7a96a8081123",
+      "raw_sha256": "a3646af330485a7fdc1fa338ff8c4e2c4a4bb217636b1990f95e04410ecd97ff"
+    }
+  },
+  "criteria": {
+    "risk-governor.authority": {
+      "status": "PASS",
+      "review": "Reviewed enforce.ts and preTrade.ts plus the single-risk-authority guard: one evaluator decides action risk. Venue caps remain additional restrictions; advisory engines cannot authorize execution.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "risk-governor.source": {
+      "status": "PASS",
+      "review": "limitSettings.ts owns effective versus saved limits; positionSizer.ts delegates sizing to domain risk math; openPositions.ts supplies conservative counts; paperBookReader.ts supplies automated paper facts. Source guards and DB suites cover these boundaries.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "risk-governor.callers": {
+      "status": "PASS",
+      "review": "Reviewed LIVE final dispatch and DEMO consume enforcement, PAPER venue actions and the internal legacy DEMO close adapter. The governor always loads broker operator controls even when other facts are supplied by callers.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "risk-governor.contract": {
+      "status": "PASS",
+      "review": "Actions retain structured block reasons and audit ids. Close-only heartbeat allowance preserves the inclusive 120-second historical boundary independently of the 15/60-second display classifier. Additional venue checks may still refuse a close.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "risk-governor.proof": {
+      "status": "PASS",
+      "review": "Integration covers risk rules, effective views, daily/reward risk, paper facts, per-user limits, discipline, journal, automation and pipelines. Heartbeat tests cover exact boundaries, disconnected/revoked transports and permitted close versus blocked new risk.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.authority": {
+      "status": "PASS",
+      "review": "Reviewed pipeline.ts as the common mode/intent entry and its staged lifecycle, instant channel, PAPER fills and legacy close adapter. Venue transports keep their narrower enforcement; the pipeline guard fences direct producer access.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.source": {
+      "status": "PASS",
+      "review": "LIVE and governed DEMO queues own their command writes; paperVenue.ts owns automated paper_orders. Legacy manual DEMO mailbox writes now occur only in the engine adapter. Retired trades inserts stay forbidden; journal/history remain distinct.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.callers": {
+      "status": "PASS",
+      "review": "The route no longer imports or inserts mt5CommandsTable. closeLegacyDemoTrade is the only public entry for this adapter. Guard fixtures reject a route insert or direct adapter call; existing producers retain their governed staged or intent paths.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.contract": {
+      "status": "PASS",
+      "review": "DEMO request keys are unique per user and bind immutable request details; existing confirmation claims prevent duplicate dispatch. Unsupported SIMULATED management refuses explicitly, My Trades LIVE remains refused, and close reviews stay pending until broker fill evidence.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.proof": {
+      "status": "PASS",
+      "review": "DB tests prove concurrent DEMO retries, input conflicts, per-user keys, concurrent legacy closes, ambiguous-account refusal, paper ownership, real bid/ask closes, stale/fallback quote refusal, unavailable valuations and duplicate settlement protection. Paper profit calculation retains its documented simplified simulator model.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.authority": {
+      "status": "PASS",
+      "review": "Reviewed rules.ts and manage.ts: the registered acting/advisory families share one management authorization boundary. Unknown/advisory rules, unregistered actions/routes and widened stops cannot use the acting exit door.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.source": {
+      "status": "PASS",
+      "review": "ledger.ts remains the sole runtime access boundary for the two position stores. Approved Option A is logical consolidation, not a physical table merge. No ownerless row is claimed implicitly.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.callers": {
+      "status": "PASS",
+      "review": "Registered acting families submit through Guardian management and the Trade Engine; advisory families cannot execute. Ledger and Guardian guards fence other readers/writers and acting modules. Explicit manual transport boundaries do not grant autonomous rule access.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.contract": {
+      "status": "PASS",
+      "review": "Named UNCLOSED, EXPOSURE, CONFIRMED_OPEN and ALERT_ELIGIBLE views preserve their distinct purposes and scoped identity. Legacy mirrors without connection identity now refuse multi-account closes; queued close requests never finalize realized P/L.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.proof": {
+      "status": "PASS",
+      "review": "Integration covers Guardian assess/manage/reconcile, ledger isolation and position views, close evidence and ownership. Guard fixtures cover forbidden rule execution, stop widening and raw position persistence. Physical merge remains explicitly deferred.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.authority": {
+      "status": "PASS",
+      "review": "Reviewed the MT5/Deriv read-adapter factory and Broker Hub ownership guards. Hub supplies facts/capabilities; it does not grant permission or dispatch trades. Deriv read-only feed capability is not represented as unsupported account execution.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.source": {
+      "status": "PASS",
+      "review": "connections.ts owns connection facts and deterministic per-user account-summary selection; accountSnapshot.ts retains identity and provenance. JSON, SSE and investor balance use the same selection. Paper intelligence no longer borrows platform account balance.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.callers": {
+      "status": "PASS",
+      "review": "Broker connection/state/factory guards cover runtime consumers and narrow ingestion owners. Shared heartbeat labels come from the domain policy; account, position and quote freshness retain separate named contracts.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.contract": {
+      "status": "PASS",
+      "review": "Account facts are scoped, token-revoked rows are excluded from summary selection, missing facts stay unavailable, and account-snapshot freshness is distinct from transport freshness. Close grace is an action permission, not a false fresh heartbeat label.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.proof": {
+      "status": "PASS",
+      "review": "Integration includes connection/state/account snapshot DB tests and isolation; offline/domain checks cover adapter contracts and freshness. Added tests distinguish two accounts, revoked accounts and another user's/platform balance.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.authority": {
+      "status": "PASS",
+      "review": "platformSwitches.ts and tradingHalt.ts own switch and operator-control interpretation; the Broker Hub supplies control facts. The same brokerControlBlocks policy serves readiness and actual risk enforcement.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.source": {
+      "status": "PASS",
+      "review": "Reviewed canonical switch readers and audited stop writer. Duplicate global settings combine conservatively. Missing execution controls default disabled and unreadable controls block new risk; stop-default policy remains separately documented. Follow-up: both canonical bounded readers now fail closed on a seventeenth row; no stricter row can hide past the read limit.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.callers": {
+      "status": "PASS",
+      "review": "buildRiskContext always reads operator controls, so the existing LIVE dispatch and DEMO consume governor calls enforce them. PAPER is outside broker controls. Legacy DEMO closes repeat mode, account, ownership and risk checks inside the engine.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.contract": {
+      "status": "PASS",
+      "review": "Activation cannot release an emergency stop; pause disarms live and resume cannot silently re-arm. New-risk controls do not become blanket close permission: quantity, heartbeat and transport checks remain in force.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.proof": {
+      "status": "PASS",
+      "review": "Platform-switch and route DB suites cover both stops, duplicate rows, activation/release and scope. Added actual governor tests cover execution-disabled, maintenance and absent controls despite a supplied false halt; disconnected closes remain refused. Follow-up: database tests prove exact-16/overflow behavior and readiness uses both stops, modes and broker controls; the CLI also passed on PostgreSQL connections with writes disabled.",
+      "checks": [
+        "full-ci",
+        "integration",
+        "readonly-preflight"
+      ]
+    },
+    "verification.types": {
+      "status": "PASS",
+      "review": "Full repository typecheck includes libraries, API, dashboard and scripts at the measured implementation commit.",
+      "checks": [
+        "types"
+      ]
+    },
+    "verification.guards": {
+      "status": "PASS",
+      "review": "All 87 guards pass in the configured CI lane. The route mailbox exception was moved inside the engine and narrowed to DEMO/demo-account checks; direct route writes remain rejected. No boundary was widened to obtain a pass.",
+      "checks": [
+        "full-ci"
+      ]
+    },
+    "verification.regressions": {
+      "status": "PASS",
+      "review": "Full configured CI and all 132 integration entries pass on isolated local PostgreSQL databases. Tests use UTC. The repository excludes Mac native packages; exact-version local binaries were supplied without changing its lockfile. The no-URL CI import limitation and earlier fixture failures are recorded in the results notes. No live broker was exercised. Follow-up broker-validation tests reject skipped partials, stale/future or mismatched snapshot evidence, unrelated refusals, and direct LIVE/unconfirmed runner calls.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "operations.migrations": {
+      "status": "UNKNOWN",
+      "review": "Not performed or evidenced in this task. Follow docs/TIER1_OWNER_RUNBOOK.md: Owner evidence confirms all required migrations applied before deployment.",
+      "checks": []
+    },
+    "operations.controls": {
+      "status": "UNKNOWN",
+      "review": "Not performed or evidenced in this task. Follow docs/TIER1_OWNER_RUNBOOK.md: Owner inspection verifies broker controls and duplicate global settings.",
+      "checks": []
+    },
+    "operations.provider": {
+      "status": "UNKNOWN",
+      "review": "Not performed or evidenced in this task. Follow docs/TIER1_OWNER_RUNBOOK.md: A real market-data provider is configured and its provenance/freshness verified.",
+      "checks": []
+    },
+    "operations.legacy-owner": {
+      "status": "UNKNOWN",
+      "review": "Not performed or evidenced in this task. Follow docs/TIER1_OWNER_RUNBOOK.md: Legacy owner is explicit where ownerless rows must be claimed; no inferred ownership.",
+      "checks": []
+    },
+    "operations.demo-validation": {
+      "status": "UNKNOWN",
+      "review": "Not performed or evidenced in this task. Follow docs/TIER1_OWNER_RUNBOOK.md: All seven broker validation scenarios pass on a real demo bridge.",
+      "checks": []
+    },
+    "operations.deployment": {
+      "status": "FAIL",
+      "review": "Owner confirmed on 2026-10-25: ARX has not been deployed yet. The selected Replit connector app also reports no publication. A tested repository revision is not a deployment. Deployment health and alerting evidence remains required.",
+      "checks": []
+    }
+  },
+  "limitations": [
+    "No production configuration, migration, deployment or real broker order was tested.",
+    "Static guards cover known source shapes; behavioral tests do not constitute a proof of all possible executions.",
+    "Paper accounting retains its existing simplified simulator P/L model.",
+    "Physical position table merge is deferred under Option A."
+  ]
+}
