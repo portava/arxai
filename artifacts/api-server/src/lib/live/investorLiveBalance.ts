@@ -30,7 +30,7 @@
 //     5-level scale; stale data is reported stale, never relabelled fresh.
 
 import { readOpenPositions } from "../positions/openPositions.js";
-import { listUserConnections } from "../brokerHub/connections.js";
+import { getUserAccountConnection } from "../brokerHub/connections.js";
 import { accountFiguresOf, connectionAccountSnapshot } from "../brokerHub/accountSnapshot.js";
 import { db } from "@workspace/db";
 import { userSlotAllocationTable, virtualTradingAccountsTable, sharedTradeAttributionTable } from "@workspace/db/schema";
@@ -386,7 +386,7 @@ export async function buildInvestorLiveBalanceSnapshot(
   let liveSnapshot: LiveAccountSnapshot | null = null;
   if (includeLive) {
     const rows = await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE", modeScope: scope });
-    const conn = (await listUserConnections(userId, { order: "oldest", limit: 1 }))[0];
+    const conn = await getUserAccountConnection(userId);
     liveSnapshot = buildLiveAccountSnapshot({
       userId,
       accountMode: "LIVE_SHARED",

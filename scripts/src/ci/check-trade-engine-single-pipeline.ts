@@ -49,10 +49,11 @@ const API_SRC = join(ROOT, "artifacts/api-server/src");
 export const PIPELINE = "lib/tradeEngine/pipeline.ts";
 export const PAPER_VENUE = "lib/tradeEngine/paperVenue.ts";
 
-type Entry = "DEMO_QUEUE" | "LIVE_PIPELINE" | "LIVE_INSTANT" | "GOVERNED_OPS" | "PAPER_VENUE" | "PAPER_FILL";
+type Entry = "DEMO_QUEUE" | "LIVE_PIPELINE" | "LIVE_INSTANT" | "GOVERNED_OPS" | "PAPER_VENUE" | "PAPER_FILL" | "LEGACY_DEMO_CLOSE";
 
 /** Venue entry points: calling one creates or changes exposure on that venue. */
 export const ENTRY_POINTS: Record<Entry, { names: string[]; owner: string }> = {
+  LEGACY_DEMO_CLOSE: { names: ["queueLegacyDemoClose"], owner: "lib/tradeEngine/legacyDemoClose.ts" },
   DEMO_QUEUE: { names: ["createDraftCommand", "confirmCommand", "dispatchApprovedCommand"], owner: "lib/mt5/demoCommandQueue.ts" },
   LIVE_PIPELINE: { names: ["createLiveDraft", "createLiveOpsDraft", "confirmLiveCommand", "dispatchLiveCommand"], owner: "lib/live/liveCommandPipeline.ts" },
   LIVE_INSTANT: { names: ["executeInstant"], owner: "lib/live/instantTrade.ts" },
@@ -68,7 +69,7 @@ const ENTRY_OF = new Map<string, Entry>(
 /** Files allowed to call venue entry points directly, and why. */
 export const ENTRY_PRODUCERS: Record<string, { entries: Entry[]; why: string }> = {
   [PIPELINE]: {
-    entries: ["DEMO_QUEUE", "LIVE_PIPELINE", "LIVE_INSTANT", "GOVERNED_OPS", "PAPER_VENUE", "PAPER_FILL"],
+    entries: ["DEMO_QUEUE", "LIVE_PIPELINE", "LIVE_INSTANT", "GOVERNED_OPS", "PAPER_VENUE", "PAPER_FILL", "LEGACY_DEMO_CLOSE"],
     why: "the one pipeline (submitTrade, the staged contract, submitInstantTrade, fillPaperTrade / settlePaperTrade / voidPaperTrade)",
   },
   "lib/positions/governedOps.ts": { entries: ["DEMO_QUEUE", "LIVE_PIPELINE"], why: "the LIVE/DEMO position-op leg of the pipeline" },
@@ -85,13 +86,14 @@ export const ENTRY_PRODUCERS: Record<string, { entries: Entry[]; why: string }> 
  * reached through submitInstantTrade) and the caller-priced PAPER fills
  * (reached through fillPaperTrade / settlePaperTrade / voidPaperTrade).
  */
-export const PIPELINE_ONLY_ENTRIES: readonly Entry[] = ["LIVE_INSTANT", "PAPER_FILL"];
+export const PIPELINE_ONLY_ENTRIES: readonly Entry[] = ["LIVE_INSTANT", "PAPER_FILL", "LEGACY_DEMO_CLOSE"];
 /** The pipeline's public channel for each pipeline-only venue call: export name → venue calls it delegates to. */
 export const PIPELINE_CHANNELS: Record<string, string[]> = {
   submitInstantTrade: ["executeInstant"],
   fillPaperTrade: ["openPaperFill", "closePaperFill"],
   settlePaperTrade: ["settlePaperOrder"],
   voidPaperTrade: ["voidPaperOrder"],
+  closeLegacyDemoTrade: ["queueLegacyDemoClose"],
 };
 
 /** Allowlist sanity: no file but the pipeline may be granted a pipeline-only entry. */
@@ -120,7 +122,7 @@ export const COMMAND_TABLES: Record<string, string[]> = {
   mt5DemoCommandsTable: ["lib/mt5/demoCommandQueue.ts"],
   mt5CommandsTable: [
     "lib/live/liveCommandPipeline.ts", // Phase B's EA bridge mirror
-    "routes/meTrades.ts", // EXCEPTION: My Trades DEMO close (see MAILBOX_EXCEPTION)
+    "lib/tradeEngine/legacyDemoClose.ts", // internal legacy close transport
     "routes/mt5.ts", // legacy queue, forced BLOCKED
     "routes/brokerHealth.ts", // operator RECONNECT request
     "routes/meMt5Commands.ts", // allow-listed read-only EA requests
@@ -139,7 +141,7 @@ const RAW_WRITE = /\b(insert\s+into|update|delete\s+from)\s+(?:"?public"?\s*\.\s
  * Phase B. Kept deliberately (owner decision); documented in
  * docs/TIER1_TRADE_ENGINE_MODES.md.
  */
-export const MAILBOX_EXCEPTION = "routes/meTrades.ts";
+export const MAILBOX_EXCEPTION = "lib/tradeEngine/legacyDemoClose.ts";
 
 /** Files allowed to write paper / legacy trade books, and why. */
 export const PAPER_WRITERS: Record<string, { tables: (typeof PAPER_TABLES)[number][]; why: string }> = {
@@ -351,7 +353,7 @@ export function checkTradeEngineSinglePipeline(): CheckResult {
     notes: [
       `${scanned} runtime files scanned; one pipeline (${PIPELINE}) with modes LIVE/DEMO/PAPER; ` +
         `${Object.keys(ENTRY_PRODUCERS).length} listed venue producers, ${Object.keys(PAPER_WRITERS).length} listed paper writers, ` +
-        `1 mailbox trade exception (${MAILBOX_EXCEPTION} DEMO close)`,
+        `1 internal legacy DEMO close transport (${MAILBOX_EXCEPTION}); no route trade writer`,
     ],
   };
 }

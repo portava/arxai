@@ -529,10 +529,13 @@ test("notifications: the same event for two users creates two notifications, not
 // ── broker health (server-wide MT5 feed) ───────────────────────────────────
 
 test("broker health: a trader can read the status but not the operator's account number, and cannot flip operator toggles", async () => {
-  const before = await db.select().from(brokerHealthStateTable).limit(1);
   const read = await request("/broker/health", c.a);
   assert.equal(read.status, 200);
   assert.equal((await json<{ accountNumber: unknown }>(read)).accountNumber, null);
+  // The read initializes a missing singleton to disabled. Capture that real
+  // baseline after initialization, before any forbidden mutation attempt.
+  const before = await db.select().from(brokerHealthStateTable).limit(1);
+  assert.ok(before[0], "health read initialized its canonical state");
   for (const path of ["/broker/health-check", "/broker/reconnect", "/broker/disable-execution", "/broker/enable-execution"]) {
     const res = await send("POST", path, c.a, {});
     assert.equal(res.status, 403, `${path} is operator-only`);

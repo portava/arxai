@@ -6,12 +6,14 @@
 // `decision: "MT5_DATA_STALE"` so callers can show a clear banner and
 // withhold any new paper-trade decision rather than acting on stale data.
 
-import { MT5_HEARTBEAT_FRESH_BELOW_SECONDS, isHeartbeatAgeMsFresh } from "./brokerHub/freshness.js";
+import { MT5_HEARTBEAT_FRESH_BELOW_SECONDS, MT5_ACCOUNT_SNAPSHOT_FRESH_MS, isHeartbeatAgeMsFresh } from "./brokerHub/freshness.js";
 import { runStrategyScan, type SignalOutput, type Candle } from "./strategyEngine.js";
 import { calculatePositionSize } from "./riskGovernor/positionSizer.js";
 import { getMarketDataWithProvenance } from "./data/dataManager.js";
 import { getStatus as getSafetyStatus } from "./safetyCore.js";
-import { readPlatformMt5State } from "./brokerHub/mt5StateReader.js";
+import { getUserAccountConnection } from "./brokerHub/connections.js";
+import { connectionAccountSnapshot } from "./brokerHub/accountSnapshot.js";
+import { readOpenPositions } from "./positions/openPositions.js";
 
 // The stale gate uses the shared heartbeat policy's fresh band (age < 15 s),
 // the same classifier as mt5.ts and safetyCore.ts, so the UI's "fresh" green
@@ -19,6 +21,7 @@ import { readPlatformMt5State } from "./brokerHub/mt5StateReader.js";
 const MT5_FRESHNESS_THRESHOLD_SECONDS = MT5_HEARTBEAT_FRESH_BELOW_SECONDS;
 
 export interface PaperIntelligenceInput {
+  userId: number;
   symbol: string;
   riskPercent?: number;          // default 0.5%
   marketType?: "forex" | "indices" | "stocks" | "synthetic";
@@ -109,23 +112,26 @@ export interface PaperIntelligenceResult {
   generatedAt: string;
 }
 
-async function loadMt5Snapshot(): Promise<MT5SnapshotView> {
-  const row = await readPlatformMt5State();
-  const lastHb = row?.lastHeartbeatAt ?? null;
+export async function loadPaperIntelligenceSnapshot(userId: number): Promise<MT5SnapshotView> {
+  const row = await getUserAccountConnection(userId);
+  const snapshot = connectionAccountSnapshot(row);
+  const lastHb = row?.lastHeartbeat ?? null;
   const ageMs = lastHb ? Date.now() - new Date(lastHb).getTime() : null;
   const ageSec = ageMs === null ? null : Math.floor(ageMs / 1000);
-  const isFresh = isHeartbeatAgeMsFresh(ageMs);
-  const positions = (row?.positions as unknown as unknown[] | null) ?? [];
+  const accountAge = snapshot.observedAtMs == null ? null : Date.now() - snapshot.observedAtMs;
+  const isFresh = isHeartbeatAgeMsFresh(ageMs) && accountAge != null && accountAge >= 0
+    && accountAge <= MT5_ACCOUNT_SNAPSHOT_FRESH_MS && snapshot.balance != null && snapshot.balance > 0;
+  const positions = row ? await readOpenPositions({ userId, venue: row.accountType === "demo" ? "DEMO" : "LIVE", basis: "EXPOSURE" }) : [];
   return {
-    account: row?.account ?? null,
-    broker: row?.broker ?? null,
-    server: row?.server ?? null,
-    balance: row?.balance ?? null,
-    equity: row?.equity ?? null,
-    margin: row?.margin ?? null,
-    freeMargin: row?.freeMargin ?? null,
-    marginLevel: row?.marginLevel ?? null,
-    currency: row?.currency ?? null,
+    account: snapshot.identity.login,
+    broker: snapshot.identity.broker,
+    server: snapshot.identity.server,
+    balance: snapshot.balance,
+    equity: snapshot.equity,
+    margin: snapshot.margin,
+    freeMargin: snapshot.freeMargin,
+    marginLevel: snapshot.margin != null && snapshot.margin > 0 && snapshot.equity != null ? snapshot.equity / snapshot.margin * 100 : null,
+    currency: snapshot.currency,
     openPositionsCount: Array.isArray(positions) ? positions.length : 0,
     lastHeartbeatAt: lastHb ? new Date(lastHb).toISOString() : null,
     heartbeatAgeSeconds: ageSec,
@@ -159,14 +165,14 @@ export async function analyzeSymbolForPaper(
   const minConfidence = input.minConfidence ?? 65;
   const generatedAt = new Date().toISOString();
 
-  const mt5 = await loadMt5Snapshot();
+  const mt5 = await loadPaperIntelligenceSnapshot(input.userId);
   const safety = await getSafetyStatus().catch(() => null);
 
   // ── Stale-data gate: refuse to score when MT5 data is stale.
   if (!mt5.isFresh) {
     const reasonAge = mt5.heartbeatAgeSeconds === null
       ? "no MT5 heartbeat received yet"
-      : `MT5 heartbeat ${mt5.heartbeatAgeSeconds}s old (threshold ${MT5_FRESHNESS_THRESHOLD_SECONDS}s)`;
+      : `MT5 heartbeat ${mt5.heartbeatAgeSeconds}s old or account snapshot unavailable/stale (heartbeat threshold ${MT5_FRESHNESS_THRESHOLD_SECONDS}s)`;
     return {
       symbol,
       decision: "MT5_DATA_STALE",

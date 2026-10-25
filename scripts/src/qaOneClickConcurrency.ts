@@ -34,6 +34,7 @@ async function preLiveCount(): Promise<number> {
 // up deterministically. `shared_master_accounts.connection_id` has a
 // UNIQUE index, so we delete any prior fixture before inserting.
 const QA_MASTER_CONNECTION_ID = 2_000_000_777;
+let qaUserId: number | null = null;
 const QA_MASTER_MARKER = "QA_ONE_CLICK_TEST_MASTER";
 
 /**
@@ -74,6 +75,10 @@ async function cleanupTestMaster(): Promise<void> {
       WHERE connection_id = $1 AND broker_name = $2`,
     [QA_MASTER_CONNECTION_ID, QA_MASTER_MARKER],
   ).catch(() => {});
+  if (qaUserId != null) {
+    await pool.query("DELETE FROM users WHERE id = $1", [qaUserId]);
+    qaUserId = null;
+  }
 }
 
 async function main() {
@@ -171,15 +176,21 @@ async function main() {
   // reservations) so the "succeeds under cap" probe is independent of any
   // exposure earlier lane tests left behind.
   const masterId = await createDedicatedTestMaster();
+  const seededUser = await pool.query<{ id: number }>(
+    "INSERT INTO users (email, name, role, is_system_user) VALUES ($1, 'Concurrency QA', 'USER', true) RETURNING id",
+    [`qa-oneclick-${Date.now()}@arx.test`],
+  );
+  const fixtureUserId = seededUser.rows[0]!.id;
+  qaUserId = fixtureUserId;
   await __releaseAllReservationsForMasterTesting(masterId);
 
   const rA = await reserveExposureAtomic({
     sharedMasterAccountId: masterId, addingLot: 0.03,
-    userId: 1, commandId: `qa_cmd_A_${Date.now()}`, symbol: "EURUSD",
+    userId: fixtureUserId, commandId: `qa_cmd_A_${Date.now()}`, symbol: "EURUSD",
   });
   const rB = await reserveExposureAtomic({
     sharedMasterAccountId: masterId, addingLot: 0.03,
-    userId: 1, commandId: `qa_cmd_B_${Date.now()}`, symbol: "EURUSD",
+    userId: fixtureUserId, commandId: `qa_cmd_B_${Date.now()}`, symbol: "EURUSD",
   });
   record(16, "Atomic exposure: A (0.03) succeeds under cap 0.05",
     rA.ok === true, JSON.stringify(rA));
@@ -194,7 +205,7 @@ async function main() {
     Array.from({ length: 10 }, (_, i) =>
       reserveExposureAtomic({
         sharedMasterAccountId: masterId, addingLot: 0.01,
-        userId: 1, commandId: `qa_cmd_P${i}_${Date.now()}`, symbol: "EURUSD",
+        userId: fixtureUserId, commandId: `qa_cmd_P${i}_${Date.now()}`, symbol: "EURUSD",
       })),
   );
   const passes = parallel.filter((r) => r.ok).length;
@@ -243,8 +254,9 @@ async function main() {
   process.exit(pass === results.length ? 0 : 1);
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   // eslint-disable-next-line no-console
   console.error("QA crashed:", e);
+  await cleanupTestMaster();
   process.exit(1);
 });

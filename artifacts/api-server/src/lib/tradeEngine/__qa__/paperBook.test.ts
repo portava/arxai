@@ -308,3 +308,21 @@ test("legacy trades book: the emergency-stop cancel of existing rows stays owner
     .orderBy(desc(tradesTable.id));
   assert.equal(t!.status, "OPEN", "another trader's row is untouched");
 });
+
+
+test("competing caller-priced closes and duplicate venue settlements cannot overwrite a fill", async () => {
+  const acct = await freshAccount(u.a);
+  const opened = await fill(u.a, acct);
+  assert.ok(opened.ok);
+  const results = await Promise.all([1.11, 1.12].map(exitPrice => closePaperFill({
+    userId: u.a, order: opened.order, exitPrice, intentRef: "qa_race_close", auditContext: {}, eventLabel: "QA race",
+  })));
+  assert.equal(results.filter(r => r.ok).length, 1);
+  const [closed] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, opened.order.id));
+  await settlePaperOrder({ order: opened.order, status: "CLOSED_SL", exitPrice: 1, pnl: -999, eventMessage: "late duplicate" });
+  const [after] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, opened.order.id));
+  assert.equal(after!.status, closed!.status);
+  assert.equal(after!.exitPrice, closed!.exitPrice);
+  assert.equal(after!.profitLoss, closed!.profitLoss);
+  assert.equal((await events(opened.order.id)).filter(e => e.eventType.startsWith("CLOSED")).length, 1);
+});

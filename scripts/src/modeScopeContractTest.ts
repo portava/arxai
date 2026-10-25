@@ -56,7 +56,7 @@ record("live-intent/queue does NOT broaden by removing the gate (sanity)",
 const idRouteMatch = liSrc.match(/router\.get\("\/live-intent\/:id"[\s\S]*?\n\}\);/);
 record("/live-intent/:id route exists in source", !!idRouteMatch);
 record("/live-intent/:id admin-gates non-admin callers",
-  !!idRouteMatch && /role\s*===\s*"ADMIN"/.test(idRouteMatch![0]) && /if\s*\(\s*!isAdmin\s*\)/.test(idRouteMatch![0]));
+  !!idRouteMatch && /operatorRoleFromSession\(role\)\s*!=\s*null/.test(idRouteMatch![0]) && /if\s*\(\s*!isAdmin\s*\)/.test(idRouteMatch![0]));
 
 console.log("\nPART C — /me/positions/all mode scope");
 const posSrc = read("artifacts/api-server/src/routes/mePositionsUnified.ts");

@@ -47,7 +47,7 @@ export const WRITERS: Record<string, Entry> = {
   // autopilot open/close, the monitor's SL/TP settlement and the operator QA
   // fixture all book paper_orders here (check-single-paper-book).
   "lib/tradeEngine/paperVenue.ts": { role: "GOVERNED", proof: GOVERNOR, why: "the one paper book: open/modify/close and caller-priced fills governed; SL/TP hits are venue fills" },
-  "routes/meTrades.ts": { role: "GOVERNED", proof: GOVERNOR, why: "demo close" },
+  "lib/tradeEngine/legacyDemoClose.ts": { role: "GOVERNED", proof: GOVERNOR, why: "internal legacy DEMO close transport" },
   "routes/mePaperTrades.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/riskGovernor/journal.ts", why: "paper journal open and stop/target edits; drafts, closes and cancels carry no new risk" },
   // LIFECYCLE
   "lib/live/liveCommandCas.ts": { role: "GOVERNED", proof: GOVERNOR, proofFile: "lib/live/liveCommandPipeline.ts", why: "compare-and-set claims used only inside the governed live pipeline" },
@@ -77,7 +77,7 @@ export const WRITERS: Record<string, Entry> = {
  * BLOCKED, read-only EA requests, reconnect) or a QA script. A new entry
  * point must use demoCommandQueue / liveCommandPipeline / governedOps.
  */
-export const MAILBOX_TRADE_INSERTERS = new Set(["lib/live/liveCommandPipeline.ts", "routes/meTrades.ts"]);
+export const MAILBOX_TRADE_INSERTERS = new Set(["lib/live/liveCommandPipeline.ts", "lib/tradeEngine/legacyDemoClose.ts"]);
 
 /** Exposure-defining columns a lifecycle update may never set. */
 const EXPOSURE_KEYS = ["sl", "tp", "lot", "side", "symbol", "stopLoss", "takeProfit", "requestedVolume", "lotSize", "direction", "entryPrice"];

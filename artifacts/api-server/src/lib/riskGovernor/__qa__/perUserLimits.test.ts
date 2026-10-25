@@ -1,3 +1,5 @@
+import { enabledBrokerControlsFixture } from "../../safety/__qa__/brokerControlsFixture.js";
+enabledBrokerControlsFixture();
 // Per-user risk limits on a real database (Tier 1 step 8).
 //
 // Proves the stored columns reach the governor through enforcePreTradeRisk:

@@ -1,5 +1,10 @@
 # Tier 1: Platform Safety, one source for the safety switches
 
+> Current follow-up: [Tier 1 completion](TIER1_COMPLETION.md) records the latest
+> implementation and verification. Sections below retain their named round's
+> history. Use [Scorecard v2](../scripts/arx-scorecard/README.md); the missing
+> original scorecard is retired and must not be requested again.
+
 Base: `a4cea8b` (PR #39). This change covers the single-source and callers
 part of Platform Safety (kill switches and trading halt, live-venue enable,
 readiness, the Phase B master switch). Tier 1 is still not complete after

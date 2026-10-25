@@ -35,6 +35,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { generateDeterministicCandles } from "../backtestStrategyRegistry.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce.js";
+import { currentQuote } from "./marketQuote.js";
 import type { IntentOrigin, RiskQuote } from "../riskGovernor/preTrade.js";
 
 export const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
@@ -53,6 +54,7 @@ export interface PaperQuote { bid: number; ask: number; at: Date; source: string
 export type PaperOrderRow = typeof paperOrdersTable.$inferSelect;
 
 export type PaperRefusal =
+  | { ok: false; reason: "NO_VALID_PRICE_SOURCE" }
   | { ok: false; reason: "PAPER_ACCOUNT_NOT_FOUND" }
   | { ok: false; reason: "PAPER_ORDER_NOT_FOUND" }
   | { ok: false; reason: "PAPER_ORDER_NOT_OPEN" }
@@ -168,14 +170,24 @@ export async function markToMarket(accountId: number) {
     .where(and(eq(paperOrdersTable.paperAccountId, accountId), ownedBy,
                eq(paperOrdersTable.status, "OPEN")));
   const now = Date.now();
+  // Resolve every real-priced position before any settlement or account write.
+  // Without a current real quote the valuation is unavailable; never stamp
+  // simulator prices (or a partial valuation) onto a real-priced paper book.
+  const prices = new Map<number, number>();
+  for (const o of open) {
+    if (o.strategyId !== "build_ee_paper_execution" && o.strategyId !== MARKET_PRICED_SIMULATED_OPEN) continue;
+    const quote = await currentQuote(o.symbol);
+    if (!quote.ok) return null;
+    prices.set(o.id, o.direction === "BUY" ? quote.bid : quote.ask);
+  }
   let unrealized = 0;
   let margin = 0;
 
   for (const o of open) {
-    const px = getMockPrice(o.symbol, now);
+    const px = prices.get(o.id) ?? getMockPrice(o.symbol, now);
     // (Build EE) EE-managed orders are owned by the Build EE monitor (which
     // uses Build DD market data). Mark-to-market must NOT auto-close them
-    // with mock prices — only refresh unrealized P&L for equity display.
+    // with mock prices — refresh unrealized P&L only from a real quote.
     const eeOwned = o.strategyId === "build_ee_paper_execution" || o.strategyId === MARKET_PRICED_SIMULATED_OPEN;
     let hit: "TP" | "SL" | null = null;
     if (!eeOwned) {
@@ -320,28 +332,33 @@ export async function modifyPaperOrder(a: {
   return { ok: true, order: await ownPaperOrder(a.orderId, a.userId) };
 }
 
-/** Close an open paper order at the simulator price. */
+/** Close using the order's price model. Market-priced orders never fall back to simulation. */
 export async function closePaperOrder(a: { userId: number; orderId: number; caller: string }): Promise<PaperResult> {
   const cur = await ownPaperOrder(a.orderId, a.userId);
   if (!cur) return { ok: false, reason: "PAPER_ORDER_NOT_FOUND" };
   if (cur.status !== "OPEN") return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
-  const exitPx = getMockPrice(cur.symbol, Date.now());
+  const realPriced = cur.strategyId === MARKET_PRICED_SIMULATED_OPEN || cur.strategyId === "build_ee_paper_execution";
+  const quote = realPriced ? await currentQuote(cur.symbol) : null;
+  if (quote && !quote.ok) return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
+  const exitPx = quote?.ok ? (cur.direction === "BUY" ? quote.bid : quote.ask) : getMockPrice(cur.symbol, Date.now());
+  const priceSource = quote?.ok ? quote.source : "paper_simulator_price";
   const risk = await enforcePreTradeRisk({
     userId: a.userId, venue: "PAPER", origin: "manual", action: "CLOSE",
     symbol: cur.symbol, side: cur.direction as "BUY" | "SELL", lots: cur.lotSize,
     intentRef: `paper_close:${a.orderId}`,
   }, {
     paperAccountId: cur.paperAccountId,
-    facts: { quote: { bid: exitPx, ask: exitPx, at: new Date(), source: "paper_simulator_price" } },
-    auditContext: { caller: a.caller, orderId: a.orderId },
+    facts: { quote: { bid: exitPx, ask: exitPx, at: quote?.ok ? quote.at : new Date(), source: priceSource } },
+    auditContext: { caller: a.caller, orderId: a.orderId, priceSource, quoteAt: quote?.ok ? quote.at.toISOString() : null },
   });
   if (!risk.allowed) return governorRefusal(risk);
   const pnl = pnlFor(cur.direction, cur.lotSize, cur.entryPrice, exitPx);
-  await db.update(paperOrdersTable).set({
+  const closed = await db.update(paperOrdersTable).set({
     status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: exitPx,
     profitLoss: pnl, updatedAt: new Date(),
-  }).where(and(eq(paperOrdersTable.id, a.orderId), eq(paperOrdersTable.userId, a.userId)));
-  await logEvent(a.userId, a.orderId, "CLOSED_MANUAL", `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
+  }).where(and(eq(paperOrdersTable.id, a.orderId), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"))).returning({ id: paperOrdersTable.id });
+  if (!closed.length) return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
+  await logEvent(a.userId, a.orderId, "CLOSED_MANUAL", `${SIMULATED_TAG} closed @ ${exitPx.toFixed(5)}, P&L ${pnl.toFixed(2)} (${priceSource})`);
   await vaultBehavior("PAPER_ORDER_CLOSED", { orderId: a.orderId, exitPrice: exitPx, pnl, manual: true });
   // markToMarket recomputes balance from starting + Σ closed-order P&L, so
   // this manual close's P&L is reflected.
@@ -356,6 +373,7 @@ export async function closePaperOrder(a: { userId: number; orderId: number; call
 
 export type PaperFillBlocked = { ok: false; reason: "RISK_GOVERNOR_BLOCK"; risk: EnforceResult };
 export type PaperFillRefusal =
+  | { ok: false; reason: "NO_VALID_PRICE_SOURCE" }
   | { ok: false; reason: "PAPER_ORDER_NOT_FOUND" }
   | { ok: false; reason: "PAPER_ORDER_NOT_OPEN" }
   | PaperFillBlocked;
@@ -442,10 +460,12 @@ export async function closePaperFill(a: {
     auditContext: a.auditContext,
   });
   if (!risk.allowed) return { ok: false, reason: "RISK_GOVERNOR_BLOCK", risk };
+  if (!Number.isFinite(a.exitPrice) || a.exitPrice <= 0) return { ok: false, reason: "NO_VALID_PRICE_SOURCE" };
   const pnl = pnlFor(o.direction, o.lotSize, o.entryPrice, a.exitPrice);
-  await db.update(paperOrdersTable).set({
+  const closed = await db.update(paperOrdersTable).set({
     status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice: a.exitPrice, profitLoss: pnl, updatedAt: new Date(),
-  }).where(and(eq(paperOrdersTable.id, o.id), eq(paperOrdersTable.userId, a.userId)));
+  }).where(and(eq(paperOrdersTable.id, o.id), eq(paperOrdersTable.userId, a.userId), eq(paperOrdersTable.status, "OPEN"))).returning();
+  if (!closed.length) return { ok: false, reason: "PAPER_ORDER_NOT_OPEN" };
   await logEvent(o.userId, o.id, "CLOSED_MANUAL", `${SIMULATED_TAG} ${a.eventLabel} @ ${a.exitPrice.toFixed(5)}, P&L ${pnl.toFixed(2)}`);
   return { ok: true, pnl };
 }
@@ -461,11 +481,11 @@ export async function settlePaperOrder(a: {
   status: "CLOSED_SL" | "CLOSED_TP" | "CLOSED_MANUAL" | "CANCELLED";
   exitPrice: number; pnl: number; eventMessage: string | null;
 }): Promise<void> {
-  await db.update(paperOrdersTable).set({
+  const settled = await db.update(paperOrdersTable).set({
     status: a.status, closedAt: new Date(), exitPrice: a.exitPrice,
     profitLoss: a.pnl, updatedAt: new Date(),
-  }).where(eq(paperOrdersTable.id, a.order.id));
-  if (a.eventMessage != null) await logEvent(a.order.userId, a.order.id, a.status, a.eventMessage);
+  }).where(and(eq(paperOrdersTable.id, a.order.id), eq(paperOrdersTable.status, "OPEN"))).returning();
+  if (settled.length && a.eventMessage != null) await logEvent(a.order.userId, a.order.id, a.status, a.eventMessage);
 }
 
 /**

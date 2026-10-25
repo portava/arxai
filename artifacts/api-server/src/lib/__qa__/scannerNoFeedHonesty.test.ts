@@ -71,14 +71,13 @@ test("second asset class (metal) with NO feed is also AWAITING_FEED — unified 
   assert.equal(op.tradeable, false);
 });
 
-test("network guard actually engaged (proof the no-feed condition was real)", () => {
-  // If no provider ever attempted an external fetch, the block could be
-  // vacuous — but the mt5 seam was empty, so at least one HTTP provider in the
-  // composite chain must have tried (and been refused).
-  assert.ok(
-    blockedAttempts > 0,
-    "expected at least one blocked external fetch attempt during the no-feed scans",
-  );
+test("network guard rejects external access even when providers have no configured keys", async () => {
+  const before = blockedAttempts;
+  await assert.rejects(fetch("https://example.invalid/qa-no-feed"), /network blocked by scannerNoFeedHonesty test/);
+  assert.equal(blockedAttempts, before + 1, "the installed guard intercepted the request");
+  // The preceding scans must remain AWAITING_FEED whether the provider chain
+  // skips unconfigured providers or attempts an HTTP request. Neither path
+  // permits synthetic candles to become market truth.
 });
 
 test("static lock: marketScanner.ts contains no simulator analyzeMarket( call", () => {

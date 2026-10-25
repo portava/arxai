@@ -1,3 +1,5 @@
+import { enabledBrokerControlsFixture } from "../../lib/safety/__qa__/brokerControlsFixture.js";
+enabledBrokerControlsFixture();
 // Pre-trade Risk Governor — end-to-end proof on a real database.
 //
 // Every case drives a real entry point and checks the whole chain the
@@ -521,9 +523,9 @@ test("D live sandbox: degraded bridge blocks new risk but not a close; a dead br
   await seedBridge(u.a, 30_000);
   assert.deepEqual((await enforcePreTradeRisk(intent, RELEASED)).blockedBy, ["broker_unavailable"]);
   assert.equal((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).decision, "ALLOW");
-  // Intentional round 5 change: at exactly 60 s the bridge is offline, so a close is refused too (was 120 s).
+  // Status is offline at 60s; close permission has a separate inclusive 120s allowance.
   await seedBridge(u.a, 60_000);
-  assert.deepEqual((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).blockedBy, ["broker_unavailable"]);
+  assert.equal((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).decision, "ALLOW");
   await seedBridge(u.a, 10 * 60_000);
   assert.deepEqual((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).blockedBy, ["broker_unavailable"]);
 });
@@ -585,8 +587,10 @@ test("D live dispatch and the demo MT5 queue call the governor before their send
   assert.doesNotMatch(consumer, /riskGatePassed:\s*true/, "the demo chokepoint no longer hard-codes a passed risk gate");
 
   const meTrades = read("../meTrades.ts");
-  const closeGate = meTrades.indexOf('action: "CLOSE",\n      symbol, side, lots: lotSize');
-  assert.ok(closeGate > 0 && closeGate < meTrades.indexOf("// Queue the CLOSE command."), "the demo My Trades close is checked before it is queued");
+  assert.doesNotMatch(meTrades, /mt5CommandsTable/, "route has no execution mailbox writer");
+  assert.match(meTrades, /closeLegacyDemoTrade\(/);
+  const close = read("../../lib/tradeEngine/legacyDemoClose.ts");
+  assert.ok(close.indexOf("enforcePreTradeRisk(") < close.indexOf(".insert(mt5CommandsTable)"), "engine close is governed before queueing");
 
   assert.match(read("../demoExecution.ts"), /routeConfirmedAction\(\{[\s\S]{0,120}requestedMode: "DEMO"/, "the demo panel queues through the governed demo pipeline");
   assert.doesNotMatch(read("../demoExecution.ts"), /mt5CommandsTable/, "the demo panel no longer writes the legacy mailbox");
@@ -602,8 +606,9 @@ test("D live dispatch and the demo MT5 queue call the governor before their send
   const fill = venue.slice(venue.indexOf("export async function openPaperFill"));
   assert.ok(fill.indexOf("enforcePreTradeRisk(") > 0 && fill.indexOf("enforcePreTradeRisk(") < fill.indexOf(".insert(paperOrdersTable)"),
     "openPaperFill calls the governor before it books");
-  assert.match(read("../../lib/riskGovernor/enforce.ts"), /halt: f\.halt !== undefined\s*\? f\.halt\s*: await loadTradingHalt\(/,
+  assert.match(read("../../lib/riskGovernor/enforce.ts"), /const halt = f\.halt !== undefined \? f\.halt\s*: await loadTradingHalt\(/,
     "every governed order reads the stop switches unless a test supplies them");
+  assert.match(read("../../lib/riskGovernor/enforce.ts"), /await loadBrokerControlHalt\(intent.venue\)/, "operator controls are never overridden by supplied risk facts");
   assert.doesNotMatch(read("../../lib/tradeAction/riskGovernorEnforcement.ts"), /rg_skipped_simulated/, "simulated actions no longer skip the governor");
 });
 

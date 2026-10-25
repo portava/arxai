@@ -126,7 +126,8 @@ const goodPipe = `export async function submitTrade(r) {}
   export async function submitInstantTrade(a) { return instant.executeInstant(a); }
   export function fillPaperTrade(s, a) {} export async function fillPaperTrade(s, a) { venue.openPaperFill(a); venue.closePaperFill(a); }
   export async function settlePaperTrade(a) { venue.settlePaperOrder(a); }
-  export async function voidPaperTrade(id) { venue.voidPaperOrder(id); }`;
+  export async function voidPaperTrade(id) { venue.voidPaperOrder(id); }
+  export async function closeLegacyDemoTrade(a) { return venue.queueLegacyDemoClose(a); }`;
 const goodInstant = `await draftTrade({ mode: "LIVE", kind: "ENTRY" }, a); await draftTrade({ mode: "LIVE", kind: "OPS" }, b);
   await confirmTrade({ mode: "LIVE" }, c); await dispatchTrade({ mode: "LIVE" }, d);`;
 const goodPaper = ["OPEN", "MODIFY", "CLOSE"].map((a) =>
@@ -180,3 +181,6 @@ assert.ok(real.ok, real.violations.join("\n"));
 n++;
 
 console.log(`trade-engine-single-pipeline: ${n} fixtures passed`);
+
+fails("await queueLegacyDemoClose(args)", "routes/meTrades.ts");
+fails("await db.insert(mt5CommandsTable).values({ action: 'CLOSE' })", "routes/meTrades.ts");

@@ -20,7 +20,8 @@ after(async () => {
 
 test("every Tier 1 migration is detected on a migrated database", async () => {
   const m = await migrationChecks();
-  assert.equal(m.length, 8);
+  assert.equal(m.length, 9);
+  assert.ok(m.some(c => c.name === "2026-10-25_trade_action_request_key" && c.ok));
   assert.deepEqual(m.filter((c) => !c.ok).map((c) => c.name), []);
 });
 

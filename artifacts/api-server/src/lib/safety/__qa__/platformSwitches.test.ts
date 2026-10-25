@@ -588,3 +588,33 @@ test("venueTradingVerdict: broker execution disabled / maintenance / unreadable 
   // The pure rule: PAPER never.
   assert.deepEqual(brokerControlBlocks({ ...open, executionEnabled: false }, { venue: "PAPER", opensNewRisk: true }), []);
 });
+
+test("the dispatch governor enforces broker controls even when callers supply other risk facts", async () => {
+  const { enforcePreTradeRisk } = await import("../../riskGovernor/enforce.js");
+  const now = new Date();
+  const facts = { now, account: { equity: 10_000, freeMargin: 9_000, leverage: 100, currency: "USD", source: "qa" },
+    instruments: { EURUSD: { contractSize: 100_000, quoteToAccountFx: 1, volumeStep: 0.01, minVolume: 0.01, maxVolume: 100, source: "qa" } },
+    positions: [], inFlight: [], daily: { realizedPnl: 0, floatingPnl: 0 },
+    quote: { bid: 1.1, ask: 1.1001, at: now, source: "qa" },
+    broker: { status: "CONNECTED" as const, lastSeenAt: now, detail: "qa" },
+    halt: { engaged: false, sources: [], reason: null } };
+  for (const [enabled, maintenance] of [[false, false], [true, true], [true, false]]) {
+    await setBroker(enabled!, maintenance!);
+    for (const venue of ["DEMO", "LIVE"] as const) {
+      const intent = { userId, venue, origin: "manual" as const, action: "OPEN" as const,
+        symbol: "EURUSD", side: "BUY" as const, lots: 0.01, stopLoss: 1.095, takeProfit: 1.11 };
+      const open = await enforcePreTradeRisk(intent, { facts });
+      assert.equal(open.blockedBy.includes("trading_halt"), !enabled || maintenance, JSON.stringify(open));
+      const close = await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, { facts });
+      assert.equal(close.blockedBy.includes("trading_halt"), false, "controls cannot ban closing");
+      const disconnected = await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, {
+        facts: { ...facts, broker: { status: "DISCONNECTED", lastSeenAt: null, detail: "disconnected" } },
+      });
+      assert.ok(disconnected.blockedBy.includes("broker_unavailable"), "other close checks still run");
+    }
+  }
+  await db.delete(brokerHealthStateTable);
+  const missing = await enforcePreTradeRisk({ userId, venue: "DEMO", origin: "manual", action: "OPEN",
+    symbol: "EURUSD", side: "BUY", lots: 0.01, stopLoss: 1.095, takeProfit: 1.11 }, { facts });
+  assert.ok(missing.blockedBy.includes("trading_halt"), "missing row defaults to execution disabled");
+});

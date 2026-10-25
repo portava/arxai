@@ -54,6 +54,7 @@ import {
   db,
   pool,
   usersTable,
+  agentsTable,
   authUserSessionsTable,
   arxSymbolSpecsTable,
 } from "@workspace/db";
@@ -71,6 +72,9 @@ import {
   isEntrypoint,
   type CiTestResultLike,
 } from "./ci/inProcessAppHarness.js";
+
+import { invalidateAgentRegistrySnapshot } from "../../artifacts/api-server/src/lib/agentEcosystem/advisoryInfluence.js";
+const TEST_AGENT_KEY = "QA_RUBY_DRAW_RISK";
 
 const TEST_EMAIL = "qa+ruby-draw-setup-route@arx.test";
 
@@ -135,8 +139,8 @@ function buildCleanWindow(): Array<{ time: string; open: number; high: number; l
 }
 
 // ── Task #389: prove a live scanner signal actually CHANGES the drawn setup ──
-// No synthetic agents are seeded: the REAL production agents (seeded on boot by
-// seedCoreAgents) react to the live signal. The ACTIVE core RISK agent reads
+// An isolated RISK registry fixture drives the real advisory and Court engines.
+// The ACTIVE RISK participant reads
 // safety = (1 - riskScore/100); a populated riskScore in the [70, 85) downgrade
 // band makes it request a DOWNGRADE through the real advisory → Traffic → Court
 // flow, which flips the drawn setup's verdict tradeable → caution. Everything is
@@ -263,6 +267,8 @@ async function cleanupByEmail(): Promise<void> {
   // Restore the real market provider so no test state (the injected scanner
   // signal) leaks into the running process or subsequent suites (Task #389).
   _resetMarketProviderForTests();
+  await db.delete(agentsTable).where(eq(agentsTable.agentKey, TEST_AGENT_KEY));
+  invalidateAgentRegistrySnapshot();
   const rows = await db.select().from(usersTable).where(eq(usersTable.email, TEST_EMAIL));
   for (const u of rows) {
     await db.delete(arxSymbolSpecsTable).where(eq(arxSymbolSpecsTable.userId, u.id));
@@ -281,6 +287,14 @@ export async function run(): Promise<CiTestResultLike> {
 
   await cleanupByEmail();
 
+  // The in-process harness imports app.ts, not the boot seeder. Give the
+  // real advisory/governance path an isolated active RISK participant.
+  await db.insert(agentsTable).values({
+    agentKey: TEST_AGENT_KEY, name: "QA risk advisory", role: "Risk advisory",
+    department: "RISK", currentStatus: "ACTIVE", currentMode: "FULL",
+    authorityWeight: 0.2, trustScore: 50, liveInfluenceAllowed: false,
+  });
+  invalidateAgentRegistrySnapshot();
   const baseUrl = await getSharedBaseUrl();
 
   // ── Seed isolated user + session ─────────────────────────────────────────

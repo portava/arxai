@@ -24,7 +24,8 @@
 
 import { and, desc, eq } from "drizzle-orm";
 import { db, paperAccountsTable } from "@workspace/db";
-import { getMarketData } from "../marketData/marketDataService.js";
+import { currentQuote } from "./marketQuote.js";
+export { currentQuote } from "./marketQuote.js";
 import type { IntentOrigin } from "../riskGovernor/preTrade.js";
 import { submitTrade } from "./pipeline.js";
 import { MARKET_PRICED_SIMULATED_OPEN, paperOrderByRequestKey, type PaperOrderRow } from "./paperVenue.js";
@@ -103,26 +104,6 @@ async function activePaperAccount(userId: number): Promise<number | null> {
     .where(and(eq(paperAccountsTable.userId, userId), eq(paperAccountsTable.isActive, 1)))
     .orderBy(desc(paperAccountsTable.createdAt)).limit(1);
   return row?.id ?? null;
-}
-
-/** A current, real quote for the symbol, or the reasons there is none. */
-export async function currentQuote(symbol: string): Promise<
-  { ok: true; bid: number; ask: number; at: Date; source: string } | { ok: false; reasons: string[] }
-> {
-  let md: Awaited<ReturnType<typeof getMarketData>>;
-  try {
-    md = await getMarketData({ symbol, timeframe: "M5", limit: 100 });
-  } catch (err) {
-    return { ok: false, reasons: [`market data unavailable: ${String(err).slice(0, 120)}`] };
-  }
-  const { snapshot, blockers } = md;
-  const reasons = blockers.filter((b) => b.blocked && (b.severity === "CRITICAL" || b.severity === "HIGH")).map((b) => b.reason);
-  const at = new Date(snapshot.timestamp);
-  if (snapshot.source !== "REAL") reasons.push(`price source is ${snapshot.source}, not a real provider`);
-  if (!Number.isFinite(snapshot.bid) || !Number.isFinite(snapshot.ask) || snapshot.bid <= 0 || snapshot.ask <= 0) reasons.push("no valid bid/ask");
-  if (!Number.isFinite(at.getTime())) reasons.push("quote has no valid observation time");
-  if (reasons.length) return { ok: false, reasons: [...new Set(reasons)] };
-  return { ok: true, bid: snapshot.bid, ask: snapshot.ask, at, source: `${snapshot.source}:${snapshot.provider}` };
 }
 
 /** Book a confirmed SIMULATED open as one PAPER order through the pipeline. */

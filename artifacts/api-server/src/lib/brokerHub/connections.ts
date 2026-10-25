@@ -103,6 +103,14 @@ export async function getUserPrimaryConnection(userId: number, reader: Reader = 
   return rows[0] ?? null;
 }
 
+/** Account-summary selection, shared by JSON, SSE, investor views and advice.
+ * Most recently account-synced, then id; revoked connections never supply facts.
+ * Execution routing remains explicit and does not use this display selection. */
+export async function getUserAccountConnection(userId: number, reader: Reader = db): Promise<BrokerConnection | null> {
+  return (await listUserConnections(userId, { order: "accountSynced" }, reader))
+    .find(c => c.status !== "revoked" && c.tokenRevokedAt == null) ?? null;
+}
+
 /** The user's live bridge: most recent heartbeat among non-revoked connections. */
 export async function getUserActiveConnection(userId: number, reader: Reader = db): Promise<BrokerConnection | null> {
   const rows = await listUserConnections(userId, { activeTokenOnly: true, order: "heartbeat", limit: 1 }, reader);

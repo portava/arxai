@@ -65,6 +65,7 @@ const { confirmAction } = await import("../../tradeAction/confirm.js");
 const { runActionGuards } = await import("../../tradeAction/guards.js");
 const { openSimulatedPaperOrder } = await import("../simulatedOpen.js");
 const { MARKET_PRICED_SIMULATED_OPEN, markToMarket } = await import("../paperVenue.js");
+const { default: paperRouter } = await import("../../../routes/paperTrading.js");
 const { default: meTradesRouter } = await import("../../../routes/meTrades.js");
 
 const EMAIL_A = "qa+simulated-open-a@arx.test";
@@ -177,6 +178,7 @@ before(async () => {
   app.use(cookieParser());
   app.use(attachAuthUser);
   app.use(meTradesRouter);
+  app.use(paperRouter);
   server = app.listen(0);
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -258,7 +260,17 @@ test("Trade Action Center: a confirmed SIMULATED open books one governed PAPER o
   assert.equal((await riskRows(u.a)).length, before, "no second governor decision");
 
   // Never a fabricated exit: mark-to-market leaves a market-priced order to real market data.
-  await markToMarket(acct.a);
+  const valuation = await markToMarket(acct.a);
+  assert.ok(valuation);
+  assert.ok(Math.abs(valuation.equity - (valuation.currentBalance + (QUOTE.bid - order.entryPrice) * order.lotSize * 100)) < 0.01,
+    "equity uses the real liquidation bid, never the simulator model");
+  feed = "stale";
+  assert.equal(await markToMarket(acct.a), null, "stale real prices make valuation unavailable");
+  const unavailable = await fetch(`${base}/paper/accounts/active`, { headers: { cookie: c.a } });
+  assert.equal(unavailable.status, 503, "account API does not fall back to the cached valuation");
+  feed = "fallback";
+  assert.equal(await markToMarket(acct.a), null, "fallback prices cannot value real-priced paper orders");
+  feed = "fresh";
   const [still] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, order.id));
   assert.equal(still!.status, "OPEN");
   assert.equal(still!.exitPrice, null);
@@ -398,4 +410,39 @@ test("My Trades: without a valid current price the SIMULATED open is refused and
   assert.equal(audit!.status, "FAILED");
   feed = "fresh";
   void and; void desc;
+});
+
+
+test("market-priced paper closes require real quotes and competing closes cannot overwrite a fill", async () => {
+  feed = "fresh";
+  const opened = await openSimulatedPaperOrder({ userId: u.b, surface: "MY_TRADES", requestKey: "real-close-unique",
+    symbol: SYMBOL, side: "BUY", lots: 0.01, stopLoss: SL, takeProfit: TP, sourcePage: "QA_CLOSE" });
+  assert.ok(opened.ok, JSON.stringify(opened));
+  const { submitTrade } = await import("../pipeline.js");
+  const req = { mode: "PAPER" as const, intent: "CLOSE" as const, userId: u.b,
+    orderId: opened.receipt.paperOrderId, sourcePage: "QA_CLOSE" };
+  assert.equal((await submitTrade({ ...req, userId: u.a })).ok, false, "foreign user cannot close");
+  for (const invalid of ["fallback", "stale"] as const) {
+    feed = invalid;
+    const refusal = await submitTrade(req);
+    assert.equal(refusal.ok ? null : refusal.reason, "NO_VALID_PRICE_SOURCE");
+  }
+  feed = "fresh";
+  const results = await Promise.all([submitTrade(req), submitTrade(req)]);
+  assert.equal(results.filter(r => r.ok).length, 1, "one close wins");
+  const [row] = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.id, req.orderId));
+  assert.equal(row!.exitPrice, QUOTE.bid, "BUY exits at real bid, never a simulator price");
+  const events = await db.select().from(paperTradeEventsTable).where(eq(paperTradeEventsTable.paperOrderId, req.orderId));
+  assert.equal(events.filter(e => e.eventType === "CLOSED_MANUAL").length, 1);
+});
+
+
+test("unsupported SIMULATED management is refused instead of reported queued", async () => {
+  const { routeConfirmedAction } = await import("../../tradeAction/route.js");
+  for (const actionType of ["CLOSE", "PARTIAL_CLOSE", "MODIFY_TP_SL", "CANCEL_ORDER"] as const) {
+    const result = await routeConfirmedAction({ userId: u.a, actionType, requestedMode: "SIMULATED", tradeKey: null,
+      symbol: SYMBOL, side: "BUY", lotSize: 0.1, stopLoss: SL, takeProfit: TP, orderType: null, requestedPrice: null, source: "user_initiated" });
+    assert.equal(result.ok ? null : result.reason, "SIMULATED_ACTION_NOT_SUPPORTED");
+    assert.equal(result.commandId, null);
+  }
 });

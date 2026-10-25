@@ -102,9 +102,9 @@ const MAILBOX_WRITER_ALLOWLIST: Record<string, string> = {
   "artifacts/api-server/src/routes/mt5.ts":
     "queueCommand() forces status='BLOCKED' — never deliverable to the EA",
   // CLOSE only, paper_only — LIVE closes return early through the Phase B
-  // pipeline above; this direct insert is DEMO/SIMULATED close only.
-  "artifacts/api-server/src/routes/meTrades.ts":
-    "CLOSE-only paper_only insert (LIVE returns early to Phase B)",
+  // pipeline above; this internal transport is strictly DEMO close only.
+  "artifacts/api-server/src/lib/tradeEngine/legacyDemoClose.ts":
+    "CLOSE-only paper_only insert behind the engine; DEMO mode and demo account required",
   // Generic safe command, paper_only — trade/OPEN actions are rejected by
   // FORBIDDEN_ACTIONS before this insert is reached.
   "artifacts/api-server/src/routes/meMt5Commands.ts":
@@ -167,8 +167,11 @@ const NON_LIVE_WRITER_SEMANTICS: Record<string, WriterSemantics> = {
       },
     ],
   },
-  "artifacts/api-server/src/routes/meTrades.ts": {
-    fileRequire: [],
+  "artifacts/api-server/src/lib/tradeEngine/legacyDemoClose.ts": {
+    fileRequire: [
+      { rx: /env\.tradingMode !== "DEMO"/, why: "legacy transport must refuse non-DEMO modes" },
+      { rx: /accountType\?\.toLowerCase\(\) !== "demo"/, why: "legacy transport must refuse non-demo broker accounts" },
+    ],
     blockRequire: [
       {
         rx: /\baction\s*:\s*["']CLOSE["']/,

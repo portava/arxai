@@ -1,5 +1,10 @@
 # Tier 1: one paper book authority
 
+> Current follow-up: [Tier 1 completion](TIER1_COMPLETION.md) records the latest
+> implementation and verification. Sections below retain their named round's
+> history. Use [Scorecard v2](../scripts/arx-scorecard/README.md); the missing
+> original scorecard is retired and must not be requested again.
+
 Base: `516f13e` (PR #35). This change follows up item 3 of "What remains" in
 `docs/TIER1_TRADE_ENGINE_MODES.md` ("Paper has three books"). Tier 1 is not
 complete after it, and the published scorecard is unchanged.

@@ -1,3 +1,5 @@
+import { enabledBrokerControlsFixture } from "../../safety/__qa__/brokerControlsFixture.js";
+enabledBrokerControlsFixture();
 // Owner decision 15 (2026-10-25): My Trades DEMO opens go through the
 // governed DEMO pipeline; My Trades LIVE opens stay refused. Real database,
 // real routes, real Trade Action guard chain and Risk Governor.
@@ -55,7 +57,7 @@ const { default: cookieParser } = await import("cookie-parser");
 const { eq, inArray } = await import("drizzle-orm");
 const {
   arxSymbolSpecsTable, authUserSessionsTable, db, globalTradingSettingsTable, mt5CommandsTable, mt5ConnectionTable,
-  notificationsTable, safetyCoreTable, tradeActionRequestsTable, tradeCommandAuditLogTable, tradeDecisionTimelineTable,
+  livePositionsTable, notificationsTable, safetyCoreTable, tradeActionRequestsTable, tradeCommandAuditLogTable, tradeDecisionTimelineTable,
   userRiskEventsTable, userRiskLimitsTable, userTradingPermissionsTable, usersTable,
 } = await import("@workspace/db");
 const { attachAuthUser } = await import("../../auth/middleware.js");
@@ -86,6 +88,7 @@ async function deleteFixtures(): Promise<void> {
   await db.delete(tradeActionRequestsTable).where(inArray(tradeActionRequestsTable.userId, ids));
   await db.delete(tradeCommandAuditLogTable).where(inArray(tradeCommandAuditLogTable.userId, ids));
   await db.delete(mt5CommandsTable).where(inArray(mt5CommandsTable.userId, ids));
+  await db.delete(livePositionsTable).where(inArray(livePositionsTable.userId, ids));
   await db.delete(arxSymbolSpecsTable).where(inArray(arxSymbolSpecsTable.userId, ids));
   await db.delete(mt5ConnectionTable).where(inArray(mt5ConnectionTable.userId, ids));
   await db.delete(userRiskLimitsTable).where(inArray(userRiskLimitsTable.userId, ids));
@@ -150,7 +153,7 @@ function post(cookie: string | null, body: unknown): Promise<Response> {
   });
 }
 const demoBody = (over: Record<string, unknown> = {}) =>
-  ({ symbol: SYMBOL, side: "BUY", lotSize: 0.1, mode: "DEMO", stopLoss: SL, takeProfit: TP, confirmedByUser: true, ...over });
+  ({ symbol: SYMBOL, side: "BUY", lotSize: 0.1, mode: "DEMO", stopLoss: SL, takeProfit: TP, confirmedByUser: true, idempotencyKey: `demo-${crypto.randomUUID()}`, ...over });
 
 before(async () => {
   await deleteFixtures();
@@ -277,7 +280,7 @@ test("ownership: unauthenticated is refused; a trader's open uses only their own
 
   // An action created for trader A cannot be confirmed by trader B.
   queueMode = "refuse";
-  const mine = await openMyTradesDemo({ userId: u.a, symbol: SYMBOL, side: "SELL", lotSize: 0.1, stopLoss: 1.105, takeProfit: 1.09, confirmedByUser: true });
+  const mine = await openMyTradesDemo({ userId: u.a, symbol: SYMBOL, side: "SELL", lotSize: 0.1, stopLoss: 1.105, takeProfit: 1.09, confirmedByUser: true, requestKey: `demo-${crypto.randomUUID()}` });
   assert.equal(mine.ok, false);
   const actionId = (await actions(u.a))[0]!.id;
   const foreign = await confirmAction({ userId: u.b, actionId, sourcePage: MY_TRADES_DEMO_SOURCE });
@@ -331,4 +334,66 @@ test("the demo queue's own refusal is returned as-is, and a duplicate in flight 
   assert.match(sj.message, /already in flight/);
   assert.equal(drafts().length, 1, "only the first order reached the queue");
   void conn;
+});
+
+
+test("DEMO retries: concurrent identical keys create one action and at most one broker command; changed details conflict", async () => {
+  await fresh(u.a, u.b);
+  const body = demoBody({ idempotencyKey: "concurrent-demo-key" });
+  const responses = await Promise.all(Array.from({ length: 8 }, () => post(c.a, body).then(r => r.json())));
+  assert.equal((await actions(u.a)).length, 1);
+  assert.equal(drafts().length, 1, JSON.stringify(responses));
+  const retry = await (await post(c.a, body)).json() as { ok: boolean; demo: { actionId: number; commandId: string } };
+  assert.equal(retry.ok, true);
+  assert.equal(retry.demo.actionId, (await actions(u.a))[0]!.id);
+  assert.equal(drafts().length, 1, "retry never dispatches again");
+  const conflict = await (await post(c.a, { ...body, lotSize: 0.2 })).json() as { error: string };
+  assert.equal(conflict.error, "IDEMPOTENCY_KEY_CONFLICT");
+  assert.equal(drafts().length, 1);
+  // Same key for another user cannot return the first user's action.
+  const foreign = await (await post(c.b, body)).json() as { action?: { id: number; userId: number } };
+  assert.equal(foreign.action?.userId, u.b);
+  assert.notEqual(foreign.action?.id, retry.demo.actionId);
+  const missing = await (await post(c.a, { ...body, idempotencyKey: null })).json() as { error: string };
+  assert.equal(missing.error, "IDEMPOTENCY_KEY_REQUIRED");
+});
+
+
+test("legacy DEMO closes use the engine: ownership, mode isolation and concurrent dedup", async () => {
+  await fresh(u.a, u.b);
+  const { closeLegacyDemoTrade } = await import("../../tradeEngine/pipeline.js");
+  const [pos] = await db.insert(livePositionsTable).values({ userId: u.a, symbol: SYMBOL, direction: "BUY",
+    lotSize: 0.1, entryPrice: 1.1, currentPrice: 1.1, status: "OPEN", brokerPositionId: "912345" }).returning();
+  const cardId = `lp_${pos!.id}`;
+  assert.equal((await closeLegacyDemoTrade({ userId: u.b, cardId })).ok, false);
+  const results = await Promise.all(Array.from({ length: 5 }, () => closeLegacyDemoTrade({ userId: u.a, cardId })));
+  assert.equal(results.filter(r => r.ok).length, 1, JSON.stringify(results));
+  const rows = await db.select().from(mt5CommandsTable).where(eq(mt5CommandsTable.userId, u.a));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.action, "CLOSE");
+  assert.equal(rows[0]!.status, "PENDING", "queued is not filled");
+  await db.update(mt5ConnectionTable).set({ accountType: "live" }).where(eq(mt5ConnectionTable.id, conn.a));
+  try {
+    const live = await closeLegacyDemoTrade({ userId: u.a, cardId });
+    assert.ok(!live.ok && ["DEMO_ACCOUNT_REQUIRED", "DEMO_CLOSE_MODE_REQUIRED"].includes(live.reason));
+  } finally {
+    await db.update(mt5ConnectionTable).set({ accountType: "demo" }).where(eq(mt5ConnectionTable.id, conn.a));
+  }
+});
+
+
+test("legacy position without account identity refuses multiple registered connections", async () => {
+  await fresh(u.a);
+  const { closeLegacyDemoTrade } = await import("../../tradeEngine/pipeline.js");
+  const [position] = await db.insert(livePositionsTable).values({ userId: u.a, symbol: SYMBOL, direction: "BUY",
+    lotSize: 0.1, entryPrice: 1.1, status: "OPEN", brokerPositionId: "912346" }).returning();
+  const before = (await db.select().from(mt5CommandsTable).where(eq(mt5CommandsTable.userId, u.a))).length;
+  const [extra] = await db.insert(mt5ConnectionTable).values({ userId: u.a, connectionName: "QA second account", accountType: "demo" }).returning();
+  try {
+    const result = await closeLegacyDemoTrade({ userId: u.a, cardId: `lp_${position!.id}` });
+    assert.ok(!result.ok && result.reason === "AMBIGUOUS_LEGACY_POSITION_ACCOUNT", JSON.stringify(result));
+    assert.equal((await db.select().from(mt5CommandsTable).where(eq(mt5CommandsTable.userId, u.a))).length, before);
+  } finally {
+    await db.delete(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, extra!.id));
+  }
 });
