@@ -93,7 +93,17 @@ fixtures/contracts and are repaired without changing trading policy:
   HTTP. The test now proves its network blocker with an explicit rejected probe;
   both real scanner assertions still require honest no-feed, non-tradeable rows.
 
-All seven repaired entries passed individually. Final aggregate results are
+All seven repaired entries passed individually. A subsequent empty-database run
+also exposed an ownership-test baseline captured before the health reader seeded
+its missing default row. That test now captures the baseline after the read and
+before forbidden mutations, then proves they leave the state unchanged.
+
+The broader CI sweep found two more obsolete test assumptions: chart parity
+required an HTTP attempt despite unconfigured providers (now an explicit blocked
+probe, with the actual parity assertions preserved), and the reservation lock
+pin expected inline position SQL after its move into the ledger (now it pins the
+ledger call, the same transaction client, owner scope and open-exposure filter).
+No trading policy changed for these fixture repairs. Final aggregate results are
 recorded in the exact-commit scorecard evidence.
 
 Any remaining failures and final command results are recorded with the v2 evidence.

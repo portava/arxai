@@ -205,7 +205,9 @@ test("headroom read + reservation write run under the SAME user-keyed advisory l
   const allocReadAt = fnBody.indexOf("user_slot_allocation");
   const inFlightReadAt = fnBody.indexOf("arx_live_commands");
   const gapReadAt = fnBody.indexOf("arx_dispatch_exposure_reservations");
-  const lossReadAt = fnBody.indexOf("arx_live_positions");
+  // Position reads moved behind the ledger; the lock's own client must be
+  // forwarded so the canonical read still participates in this transaction.
+  const lossReadAt = fnBody.indexOf("readLiveFloatingLoss(client, args.userId)");
   const decisionAt = fnBody.indexOf("userHeadroomBlocksReservation(");
   const masterReserveAt = fnBody.indexOf("reserveExposureAtomic({");
   assert.ok(lockAt > -1 && nsAt > -1, "the user lock must be keyed in the USER_ALLOCATION namespace");
@@ -220,6 +222,14 @@ test("headroom read + reservation write run under the SAME user-keyed advisory l
     assert.ok(at > lockAt, `${label} must happen INSIDE the user advisory lock`);
   }
   assert.ok(decisionAt < masterReserveAt, "headroom must be decided BEFORE the reservation is written");
+  const ledgerSource = readFileSync(fileURLToPath(new URL("../../positions/ledger.ts", import.meta.url)), "utf8");
+  const helperStart = ledgerSource.indexOf("export async function readLiveFloatingLoss(");
+  const helperEnd = ledgerSource.indexOf("export async function", helperStart + 1);
+  const helper = ledgerSource.slice(helperStart, helperEnd);
+  assert.match(helper, /return client\.query</, "the ledger must use the supplied transaction client");
+  assert.match(helper, /FROM arx_live_positions[\s\S]*WHERE user_id = \$1/, "the canonical floating-loss read remains owner scoped");
+  assert.match(helper, /closed_at IS NULL[\s\S]*reconcile_state IS NULL/, "only unreconciled open exposure counts");
+
 });
 
 test("the master-exposure lock pattern is untouched (CI-guard parity pins)", () => {
