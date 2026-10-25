@@ -6,6 +6,14 @@ separately and last". **This document is only a plan.** It adds no
 migration, schema change or code change. Nothing here has been applied to any
 database. It does not complete Tier 1 or change the published scorecard.
 
+**Status (owner decision 12, 2026-10-25): no physical merge in this phase.**
+The owner chose option A: both physical tables stay, behind one ledger
+(`lib/positions/ledger.ts`) and one read model (`lib/positions/openPositions.ts`).
+Physical migration is not started, including solely to improve the score.
+Decisions D1 to D10 are recorded in section 7. Sections 3 to 6 (option B) are
+kept as the reference plan should a future merge be separately approved; they
+are not scheduled.
+
 Related docs: `TIER1_POSITION_LEDGER.md` (persistence boundary, PR #33),
 `TIER1_OPEN_POSITION_VIEW.md` (read model, PR #39),
 `TIER1_POSITION_GUARDIAN_RULES.md` (management rules).
@@ -269,8 +277,11 @@ projections from them. Section 3.4 deals with that.
 | B. New unified table, expand and contract (recommended *if* the owner wants a physical merge) | Additive `positions` table with a `venue` column. The ledger dual-writes, then backfill, verify and switch reads, and the legacy tables become read-only. | One physical store, and the legacy tables are kept for audit and rollback. | Several production steps and a long soak, and the hot ingest path takes an extra write. |
 | C. Fold DEMO into `arx_live_positions` | Add nullable DEMO columns plus `venue` to the LIVE table. | Fewer tables. | Changes the LIVE table's constraints (`user_id`, `bridge_connection_id` NOT NULL, unique key) in place and mixes DEMO NULL-owner rows into the table the Risk Governor reads. **Not recommended.** |
 
-Choosing between A and B is an owner decision (D1). The rest of this
-document describes B. Option A's view is step 1 of B either way.
+Choosing between A and B was owner decision D1: **option A, no physical merge
+in this phase** (section 7). The optional read-only `positions_unified` view
+is not created by this decision. The rest of this document describes B as a
+reference for a future, separately approved merge. Option A's view is step 1
+of B either way.
 
 ### 3.2 Proposed unified table `positions` (option B)
 
@@ -512,22 +523,41 @@ identical results with `POSITIONS_READ_FROM_UNIFIED` off and on.
   or change which rows any caller sees. Every step is parity-verified, and any
   semantic change is a separate owner risk decision.
 
-## 7. Owner decisions needed
+## 7. Owner decisions (recorded 2026-10-25, owner decision 12)
 
-| # | Decision |
-|---|---|
-| D1 | Physical merge at all (option B), or stop at option A (code-level single source plus an optional read-only view)? |
-| D2 | Single exposure semantics: whether the Risk Governor moves from `UNCLOSED` to `EXPOSURE`, and whether DEMO `STOP_LOSS_HIT` / `TAKE_PROFIT_HIT` count as open. Already open in `TIER1_OPEN_POSITION_VIEW.md`. **Not required for the merge**, which preserves all three bases. |
-| D3 | NULL-owner DEMO rows: carry them over as NULL-owner DEMO rows (default, matching today), claim them with an explicit owner user id (as done for other legacy rows with `ARX_LEGACY_OWNER_USER_ID`), or leave them out of `positions`. |
-| D4 | Shadow-write failure policy: savepoint-and-continue (recommended, so ingestion is never blocked), or fail the whole write. |
-| D5 | The zone legacy DEMO timestamps were written in (expected UTC, to be confirmed in P0), and acceptance of float widening. |
-| D6 | Production PostgreSQL version (≥15 needed for `NULLS NOT DISTINCT`), or an alternative uniqueness design for NULL-owner rows. |
-| D7 | Id strategy after step 8: keep the legacy sequences as the external id source, or migrate the loose references and URLs to the new id. |
-| D8 | Soak length and which bridges (at least one trading week on a real demo bridge and on LIVE). |
-| D9 | Whether to introduce RLS on positions at all. This is a separate project and not part of the merge. |
-| D10 | Retirement: keep the legacy tables read-only indefinitely, or archive them and then remove. Any column or table drop needs an explicit, written owner decision. This plan never drops anything. |
+The owner chose **option A**: retain both physical position tables behind one
+ledger and read model, and do not start a physical migration solely to improve
+the score. The questions below were open in the first version of this plan;
+the right-hand column is the owner's decision, recorded verbatim in substance.
+
+| # | Question (as originally posed) | Owner decision |
+|---|---|---|
+| D1 | Physical merge at all (option B), or stop at option A (code-level single source plus an optional read-only view)? | **No physical merge in this phase.** Option A. Sections 3 to 6 remain a reference only. |
+| D2 | Single exposure semantics: whether the Risk Governor moves from `UNCLOSED` to `EXPOSURE`, and whether DEMO `STOP_LOSS_HIT` / `TAKE_PROFIT_HIT` count as open. | **Preserve owner decision 6 and the explicitly named view semantics.** The Risk Governor keeps `UNCLOSED` as its conservative count basis (IGNORED / EXTERNAL is not broker-confirmed closure; DEMO stop/target-hit rows are not excluded by label while closure is unconfirmed). Display and advisory views keep their separately named bases (`EXPOSURE`, `CONFIRMED_OPEN`, and the alert rule `ALERT_ELIGIBLE` from owner decision 11). |
+| D3 | NULL-owner DEMO rows: carry over as NULL-owner, claim with an explicit owner id, or leave out? | **Preserve NULL ownership; never guess or auto-claim an owner.** Ownerless rows stay ownerless and are never shown to a trader or attributed to an inferred account. |
+| D4 | Shadow-write failure policy: savepoint-and-continue, or fail the whole write? | **If a future merge is separately approved:** savepoint-and-continue, with alerts and a cutover block until reconciled. Broker-truth ingestion is never blocked by the shadow; a shadow failure blocks cutover (steps 6 and later) until the difference is reconciled. |
+| D5 | The zone legacy DEMO timestamps were written in, and acceptance of float widening. | **Timestamp zone and conversion correctness require P0 evidence; do not assume UTC.** Float widening (`real` → `double precision`) must preserve represented values (compare at `::real`). |
+| D6 | Production PostgreSQL version (≥15 for `NULLS NOT DISTINCT`), or an alternative uniqueness design. | **Verify the production PostgreSQL version and uniqueness support; do not invent these facts.** Both are P0 inspection items; nothing in the repository establishes them. |
+| D7 | Id strategy after step 8: keep legacy sequences, or migrate references and URLs? | **Preserve legacy external IDs and references during any future transition** (`position_events.live_position_id`, `alerts.related_position_id`, `trade_pool_allocations.broker_position_id`, vault payloads, URLs, OpenAPI ids). |
+| D8 | Soak length and which bridges. | **A future cutover requires at least one full trading week of clean demo-bridge evidence and passive observation of existing LIVE activity. Never generate real-money trades for validation.** |
+| D9 | Whether to introduce RLS on positions. | **RLS changes require a separate tenant-security review; preserve current protections** (application-level user scoping in the ledger and read model, and user AND ticket joins). |
+| D10 | Retirement: keep the legacy tables read-only indefinitely, or archive and remove? | **Retain legacy data for audit. No table or column drops.** |
+
+Consequences for this phase:
+
+- No migration, table, view, flag or shadow write is added for positions.
+  Steps P0 to 10 in section 4 are not scheduled.
+- The "single source" property stays a code-level property (ledger + read
+  model + CI guards `single-position-ledger` and `single-open-position-view`).
+  It is not physically met, and this document makes no score claim about it.
+- Any future position-table work must start with the P0 inspection in
+  section 4 and the D5 / D6 evidence; the owner runbook
+  (`TIER1_OWNER_RUNBOOK.md`, section 6) lists the queries.
 
 ## 8. Production actions the owner must run
+
+Under option A (D1), none of the merge actions below is required in this
+phase. They apply only if a future merge is separately approved.
 
 P0 (catalogue inspection), 1 (optional view), 2 (create table), the flag flips
 in 3, 6 and 8, 4 (backfill), the soak job schedule in 5, 9 (revoke writes) and
@@ -541,7 +571,8 @@ are applied** and `validate:broker` has been run against a real demo bridge.
 - It writes no migration, schema change, flag or code.
 - It does not change which rows any caller sees, any "open" definition, any
   Risk Governor input, or any broker command path.
-- It does not decide the owner questions above.
+- It does not decide the owner questions above; it records the owner's
+  decisions (section 7).
 - It has not inspected the production database. Section 1 reflects the
   repository schema and a local database pushed from it.
 

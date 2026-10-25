@@ -86,5 +86,10 @@ passes with the test database configured to UTC.
    process; supply the legacy owner user ID explicitly and run production
    readiness plus validation against a real demo bridge.
 5. Plan any physical position-table merge separately, after the preceding work.
+   Decided (owner decision 12, 2026-10-25): **no physical merge in this
+   phase** (option A). The ledger remains the persistence boundary for both
+   tables; no migration, shadow table or column/table drop is planned. The
+   decisions D1 to D10 are recorded in `TIER1_POSITION_TABLE_MERGE_PLAN.md`
+   section 7.
 
 **TIER 1 NOT COMPLETE**
