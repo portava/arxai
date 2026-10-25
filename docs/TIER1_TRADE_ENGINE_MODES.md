@@ -290,10 +290,13 @@ flight refused.
    `routes/executionConfirmations.ts`, and the vault trade loggers it used
    now have no runtime caller. They are left in place (no behaviour); the
    Pre-Trade Checklist confirmations no longer back any execution.
-2. The Risk Governor still reads `trades` for non-LIVE realized P/L; owner
-   decision 7 (paper P/L from `paper_orders`) belongs to the Risk Governor
-   worker. Since nothing writes new `trades` rows, that source is now frozen
-   history.
+2. The Risk Governor reads `trades` for DEMO realized P/L and activity
+   (`lib/riskGovernor/enforce.ts`). PAPER no longer: since owner decision 7
+   (Risk Governor, round 5) PAPER facts come from `paper_orders` through the
+   paper book (scorecard v2 IMPL-RG-02). Nothing writes new `trades` rows, so
+   the governor's DEMO daily-loss and streak inputs are frozen history. Open
+   finding; not a criterion in scorecard v2 2.0.1 (listed in its README as a
+   candidate for the next rubric version).
 3. `docs/TIER1_PLATFORM_SAFETY_SOURCE.md` still lists the `/execute-trade`
    re-check among the legacy gates; that doc belongs to the Platform Safety
    worker.
@@ -742,8 +745,9 @@ still listed.
    Trade Action Center and My Trades book PAPER orders, and My Trades DEMO
    opens go through the governed DEMO pipeline; My Trades LIVE opens stay
    refused. See Round 5.
-5. **No published score.** The scorecard tools/rubric and dashboard
-   destination are still needed before a new score can be measured.
+5. ~~**No published score.** The scorecard tools/rubric and dashboard
+   destination are still needed before a new score can be measured.~~
+   Retired (owner, 2026-10-25): the original scorecard is unavailable and its 68.7% is a historical figure only. Use ARX Tier 1 Scorecard v2: `docs/scorecard/v2/README.md` (regenerate with `pnpm run scorecard`; baseline dashboard `docs/scorecard/v2/baseline/dashboard.html`). Do not ask the owner for the original scorecard.
 
 ## Honest limits
 

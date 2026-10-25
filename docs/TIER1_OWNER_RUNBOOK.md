@@ -21,6 +21,7 @@ Contents:
 6. P0 inspection before any future position-table work
 7. Behaviour to know before deploying
 8. Round 5 behaviour changes (owner decisions 1–19)
+9. ARX Tier 1 Scorecard v2 (regenerate, dashboard, recording owner evidence)
 
 ---
 
@@ -567,3 +568,32 @@ same results.
   (D1–D10 recorded).
 
 **TIER 1 NOT COMPLETE**
+
+---
+
+## 9. ARX Tier 1 Scorecard v2
+
+The original scorecard (its scripts, rubric, metrics and dashboard link) is
+**retired as unavailable** (owner, 2026-10-25). Its 68.7% is a historical
+figure only and is not comparable with v2. Agents must not ask the owner for
+it. Everything about v2 is in `docs/scorecard/v2/README.md`.
+
+- **Regenerate (one command):**
+  `SCORECARD_DATABASE_URL="postgresql://postgres@localhost:5432/arx?host=/var/tmp" pnpm run scorecard`
+  (a local database only; without one the database-backed criteria are
+  UNKNOWN). Output: `docs/scorecard/v2/latest/`.
+- **Dashboard path:** `docs/scorecard/v2/latest/dashboard.html` after a run;
+  the committed baseline is `docs/scorecard/v2/baseline/dashboard.html`.
+  Both open from disk with no external service.
+- **Baseline:** measured on `51d231b` (main `67d8a65` plus scorecard tooling
+  only; no application code changed), rubric 2.0.1, 2026-10-25. Verdict:
+  **TIER 1 NOT COMPLETE**, CODE NOT COMPLETE, NOT OPERATIONALLY READY.
+  IMPL 22 PASS / 9 FAIL / 1 UNKNOWN / 1 DEFERRED; VER 13 PASS / 7 FAIL;
+  OPS 9 UNKNOWN / 3 DEFERRED.
+- **[OWNER] Recording production facts.** The scorecard never queries
+  production. Each OPS criterion (sections 1–5 of this runbook and the
+  production facts listed there) stays UNKNOWN until the owner records it in
+  `docs/scorecard/v2/evidence.json` (`status`, `evidence`, `recorded_by`,
+  `recorded_on`). The keys are listed in that file's `_keys`. The heartbeat
+  close-policy confirmation (section 8, decision 17) is recorded the same
+  way (`owner_confirmed_heartbeat_close_policy`).

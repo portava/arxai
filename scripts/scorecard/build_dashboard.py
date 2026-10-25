@@ -115,7 +115,9 @@ def build(metrics: dict, measurement: dict | None) -> str:
     if metrics.get("rubric_uncommitted"):
         warn.append("The rubric had uncommitted changes when this was measured. These results do not belong to a committed rubric.")
     if metrics.get("working_tree_dirty"):
-        warn.append("The working tree had uncommitted changes when this was measured.")
+        paths = [ln[3:] for ln in m.get("git_status_before", [])]
+        warn.append("The working tree had uncommitted or untracked paths when this was measured: "
+                    + ", ".join(paths[:5]) + (" ..." if len(paths) > 5 else ""))
     if metrics.get("application_code_changed_vs_base_main"):
         warn.append("The measured commit changes application code relative to main: "
                     + ", ".join(metrics["application_code_changed_vs_base_main"][:10]))

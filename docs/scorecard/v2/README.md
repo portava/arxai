@@ -43,6 +43,54 @@ Other commands:
   static checks only (command criteria are UNKNOWN). Useful while editing
   code; not a baseline.
 
+## Baseline (2026-10-25)
+
+Measured commit `51d231b0adeec61a5b77f2547e853b1ba9d732bb`: main
+`67d8a6521b780ef7182a17d51bcf3c392b5a251e` plus the scorecard tooling only
+(no application code changed). Rubric 2.0.1, local database, measured
+2026-10-25 07:43 UTC. Files: `baseline/` (dashboard `baseline/dashboard.html`).
+
+**TIER 1 NOT COMPLETE** · CODE NOT COMPLETE · NOT OPERATIONALLY READY
+
+| Section | PASS | FAIL | UNKNOWN | DEFERRED |
+|---|---|---|---|---|
+| IMPL (33) | 22 | 9 | 1 | 1 |
+| VER (20) | 13 | 7 | 0 | 0 |
+| OPS (12) | 0 | 0 | 9 | 3 |
+
+Unmet gates (26):
+
+- IMPL FAIL: IMPL-PS-03 broker operator controls not enforced on the order
+  path; IMPL-RG-04 permission verdict, trade-decision advisor and risk audit
+  still on the saved limits; IMPL-RG-07 risk audit not scoped to the user;
+  IMPL-PL-03 six per-user open-position readers filter in memory outside the
+  read model; IMPL-PL-04 unified feed DEMO list from `mt5_state`; IMPL-TE-02
+  manual close of a real-quote paper order priced with the mock price;
+  IMPL-TE-05 My Trades DEMO open has no idempotency key; IMPL-BH-02
+  `/intelligence/analyze` sizes from the platform balance; IMPL-BH-03
+  multi-connection account figures use two different connections.
+- IMPL UNKNOWN: IMPL-BH-07 owner confirmation of the 60 s heartbeat close
+  policy.
+- VER FAIL: VER-CI-01 the per-commit `ci` aggregate stops at `ci:guards`,
+  which needs `DATABASE_URL` although the `ci` lane is documented as
+  offline (the later `ci` steps were not reached); VER-INT-1 to VER-INT-6,
+  the six tracked integration failures, all still fail. No other
+  integration suite fails (VER-INT-00 PASS, 132 tests).
+- OPS UNKNOWN: OPS-01 to OPS-09, no owner evidence recorded yet.
+
+Approved deferrals in force: IMPL-PG-02, OPS-10, OPS-11, OPS-12.
+
+### Candidates for the next rubric version (not scored in 2.0.1)
+
+Found while preparing the baseline. They are not criteria yet; adding one
+needs a new rubric version and a changelog entry.
+
+- The Risk Governor reads `trades` for DEMO realized P/L and activity
+  (`lib/riskGovernor/enforce.ts`), and nothing writes new `trades` rows since
+  decision 14, so DEMO daily-loss and streak inputs are frozen history.
+- The root `ci` aggregate is documented as needing no database, but its
+  `ci:guards` step imports `@workspace/db` (scored today through VER-CI-01).
+
 ## The original scorecard is retired
 
 The original scorecard (its `measure.py`, `build_csv.py`, rubric, metrics and

@@ -1,0 +1,408 @@
+{
+  "commit": "51d231b0adeec61a5b77f2547e853b1ba9d732bb",
+  "finished_at_utc": "2026-10-25T07:53:20Z",
+  "git_status_after": [
+    "?? .claude/worktrees/agent-a435ce2cbfa97761e/",
+    "?? .claude/worktrees/agent-a445f0cdd7b32b22d/",
+    "?? .claude/worktrees/agent-a47f4fa072e351793/",
+    "?? .claude/worktrees/agent-a928fff6dce13e7c5/",
+    "?? .claude/worktrees/agent-ab2857bf43ce5de65/"
+  ],
+  "git_status_before": [
+    "?? .claude/worktrees/agent-a435ce2cbfa97761e/",
+    "?? .claude/worktrees/agent-a445f0cdd7b32b22d/",
+    "?? .claude/worktrees/agent-a47f4fa072e351793/",
+    "?? .claude/worktrees/agent-a928fff6dce13e7c5/",
+    "?? .claude/worktrees/agent-ab2857bf43ce5de65/"
+  ],
+  "measured_at_utc": "2026-10-25T07:43:16Z",
+  "node": "v22.22.0",
+  "pnpm": "10.28.0",
+  "python": "3.13.17",
+  "repository_changed_by_measurement": [],
+  "runs": [
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "run",
+        "typecheck:libs"
+      ],
+      "cwd": ".",
+      "duration_s": 0.5,
+      "exit": 0,
+      "label": "pnpm -s run typecheck:libs",
+      "needs_db": false,
+      "state": "ran",
+      "tail": "\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "typecheck"
+      ],
+      "cwd": ".",
+      "duration_s": 6.3,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run typecheck",
+      "needs_db": false,
+      "state": "ran",
+      "tail": "\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/trading-dashboard",
+        "run",
+        "typecheck"
+      ],
+      "cwd": ".",
+      "duration_s": 3.8,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/trading-dashboard run typecheck",
+      "needs_db": false,
+      "state": "ran",
+      "tail": "\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/scripts",
+        "run",
+        "typecheck"
+      ],
+      "cwd": ".",
+      "duration_s": 5.8,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/scripts run typecheck",
+      "needs_db": false,
+      "state": "ran",
+      "tail": "\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "run",
+        "ci:guards"
+      ],
+      "cwd": ".",
+      "duration_s": 26.3,
+      "exit": 0,
+      "label": "pnpm -s run ci:guards",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "-harness-honesty\n  · The /live-ai-auto-test harness must stay admin/dev-only, audit-only, and honest:\n  ·   - no Math.random-driven displayed results, no hardcoded risk-governor state,\n  ·   - the audit-only banner and accepted=false explanation must remain,\n  ·   - its routes must never enter NORMAL_USER_EXACT,\n  ·   - investor.tsx must never import/call live execution surfaces.\n[PASS] backtest-no-live-execution\n[PASS] mission-no-direct-execution (Profit Mission trades route ONLY through executeInstant → 18-gate dispatch; planning/backtest never touches execution; no fabricated randomness)\n  · mission backend surfaces scanned: 14/14\n  · dispatch surfaces anchored (submitInstantTrade / guardianInstantManage + source \"mission\" + missionId): 2\n  · isolated planning/backtest surfaces scanned: 35\n  · Math.random-scanned surfaces: 51\n  · provenance-resolved re-export alias bindings: 0\n  · curated forbidden-origin integrity issues: 0\n[PASS] scanner-verdict-import-boundary\n  · All scanner verdict engine functions are used only by designated publishers.\n[PASS] no-fabrication\n  · Rule 1: 7/7 protected honest-data surfaces scanned for Math.random( and Date.now( (comments excluded — the P0-4 fix documents the formulas it deleted).\n  · Rule 2: swept 832 live file(s) under artifacts/api-server/src/lib, artifacts/api-server/src/routes; 5 file(s) quarantined with pinned counts.\n  · Allowed without quarantine: only base36 and hex IDENTIFIER shapes. Nothing that can yield a price, level, confidence, volatility or size.\n[PASS] capital-constitution\n  · 8 pinned article heading(s) + central-rule sentence verified in docs/CAPITAL_CONSTITUTION.md\n[PASS] provenance-no-collapse\n  · artifacts/api-server/src/lib/data/mt5FeedStalenessWatchdogCore.ts: 1 allowlisted display/diagnostic key(s), pin exact ✓\n  · artifacts/api-server/src/lib/data/providers/mt5Provider.ts: 1 partition-scoped key(s), pin exact ✓\n  · artifacts/api-server/src/lib/data/chart/chartIntelligence.ts: 2 allowlisted display/diagnostic key(s), pin exact ✓\n  · artifacts/api-server/src/lib/data/chart/formingBarComposer.ts: 1 allowlisted display/diagnostic key(s), pin exact ✓\n  · artifacts/api-server/src/lib/data/chart/sessionProfile.ts: 1 allowlisted display/diagnostic key(s), pin exact ✓\n  · Scanned 71 live file(s) under lib/data; 6 symbol|tf key(s) classified.\n[PASS] broker-hub-no-execution\n  · hub directories found: 2/2\n  · source files scanned: 21\n  · forbidden-pattern groups: 53\n[PASS] execution-single-entry\n  · writers: 7 governed, 7 lifecycle, 3 non-trade, 5 QA scripts\n[PASS] instrument-mapping-single-source\n  · 865 files scanned outside lib/instruments; 4 retired modules absent\n[PASS] broker-state-single-reader\n  · 869 files scanned; mt5_state read only via lib/brokerHub/mt5StateReader.ts, written only by routes/mt5.ts\n[PASS] single-risk-authority\n  · 870 files scanned; 4 retired risk modules absent; pre-trade verdicts only in lib/riskGovernor/\n[PASS] broker-connection-single-owner\n  · 853 files scanned; mt5_connection read and written only via lib/brokerHub/connections.ts\n[PASS] learning-memory-single-owner\n  · 869 files scanned; strategy_edges / mistake_patterns read and written only via lib/learning/scopedMemory.ts\n[PASS] position-guardian-wired\n  · 849 files scanned; 5 required Guardian hooks\n[PASS] single-role-model\n  · 849 files scanned; the role is users.role, read on every request\n[PASS] stop-modification-authority\n  · 849 files scanned; 5 broker-truth ledger writers\n[PASS] single-position-sizer\n  · one engine (lib/domain/src/risk/positionSizing.engine.ts); 2 value-model adapters\n[PASS] single-position-ledger\n  · 849 runtime files scanned; two physical tables, one ledger; broker-fact writer boundary preserved\n[PASS] single-position-guardian\n  · 8 guardian rules (5 acting, 3 advisory) over 22 modules; 849 runtime files scanned; one exit door lib/positionGuardian/manage.ts\n[PASS] single-open-position-view\n  · 849 runtime files scanned; 3 justified raw open-position reads in 2 allowlisted modules; 10 operator-wide modules use the cross-user read-model functions; everything else reads lib/positions/openPositions.ts\n[PASS] trade-engine-single-pipeline\n  · 849 runtime files scanned; one pipeline (lib/tradeEngine/pipeline.ts) with modes LIVE/DEMO/PAPER; 2 listed venue producers, 3 listed paper writers, 1 mailbox trade exception (routes/meTrades.ts DEMO close)\n[PASS] single-paper-book\n  · 849 runtime files scanned; paper_orders + paper_trade_events → lib/tradeEngine/paperVenue.ts; paper_trades (journal) → routes/mePaperTrades.ts; trades (legacy record) → lib/trades/paperBook.ts; 5 governed venue functions, 2 settlements\n[PASS] single-limit-store\n  · limits: user_risk_settings; risk_settings preferences only via lib/risk/userRiskSettings.ts\n[PASS] legacy-live-state-confined\n  · live_trading_state only under lib/liveTrading/\n[PASS] single-llm-gateway\n  · model SDKs only under lib/ai/\n[PASS] single-safety-switch-source\n  · safety switches read only through lib/safety/platformSwitches.ts + lib/safety/tradingHalt.ts; emergency stop engaged and stops released only through lib/safety/platformStopWriter.ts; shared-live pause read and written only through lib/safety/sharedLivePause.ts; 10 reviewed exceptions\n[PASS] single-risk-limit-source\n  · 849 files scanned; limit settings read only through lib/riskGovernor/limitSettings.ts; limits evaluated only in lib/riskGovernor/; 28 reviewed exceptions\n[PASS] broker-read-adapter-single-factory\n  · 2 venue adapters, constructed only in lib/brokerHub/readAdapters.ts\n[PASS] single-broker-state-source\n  · 870 files scanned; 6 broker state tables, 5 allowlisted files outside lib/brokerHub/\n  · delegated: mt5_connection, mt5_state\n[PASS] single-bridge-freshness-source\n  · 2574 files scanned (api-server, lib/domain, trading-dashboard); heartbeat bounds only in lib/domain/src/broker-health/heartbeatPolicy.ts, snapshot thresholds only in lib/brokerHub/freshness.ts; 4 reviewed exceptions\n\n87/87 guards passed in 22.66s\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "run",
+        "ci"
+      ],
+      "cwd": ".",
+      "duration_s": 22.3,
+      "exit": 1,
+      "label": "pnpm -s run ci",
+      "needs_db": false,
+      "state": "ran",
+      "tail": "\n──────── typecheck:ci → lib/* (composite, tsc --build) (heap 3072MB) ────────\n\n──────── typecheck:ci → @workspace/api-server (heap 2560MB) ────────\n\n──────── typecheck:ci → @workspace/scripts (heap 2560MB) ────────\n\n──────── typecheck:ci → @workspace/trading-dashboard (heap 2560MB) ────────\n\n════════════════ typecheck:ci summary ════════════════\n  PASS            lib/* (composite, tsc --build)  (0.7s)\n  PASS            @workspace/api-server  (6.7s)\n  PASS            @workspace/scripts  (6.2s)\n  PASS            @workspace/trading-dashboard  (3.9s)\n══════════════════════════════════════════════════════\ntypecheck:ci PASSED — all 4 unit(s) typecheck clean.\n\n/home/claude/arxai/lib/db/src/index.ts:8\n  throw new Error(\n        ^\n\nError: DATABASE_URL must be set. Did you forget to provision a database?\n    at <anonymous> (/home/claude/arxai/lib/db/src/index.ts:8:9)\n    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\n\nNode.js v22.22.0\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:broker-hub-account-snapshot-db"
+      ],
+      "cwd": ".",
+      "duration_s": 2.2,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:broker-hub-account-snapshot-db",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: a user reads only their own connection's snapshot\nok 1 - a user reads only their own connection's snapshot\n  ---\n  duration_ms: 52.731008\n  type: 'test'\n  ...\n# Subtest: a never-synced connection is unknown, not 0\nok 2 - a never-synced connection is unknown, not 0\n  ---\n  duration_ms: 7.990022\n  type: 'test'\n  ...\n# Subtest: reconciliation reads only the user's own legacy row, never another tenant's or the platform row\nok 3 - reconciliation reads only the user's own legacy row, never another tenant's or the platform row\n  ---\n  duration_ms: 22.721192\n  type: 'test'\n  ...\n# Subtest: reconciliation reports divergence and a different account on the user's own row\nok 4 - reconciliation reports divergence and a different account on the user's own row\n  ---\n  duration_ms: 16.260204\n  type: 'test'\n  ...\n# Subtest: another user's connection id gives an unknown reconciliation\nok 5 - another user's connection id gives an unknown reconciliation\n  ---\n  duration_ms: 9.263262\n  type: 'test'\n  ...\n# Subtest: selection falls back to the user's legacy row only with identity evidence\nok 6 - selection falls back to the user's legacy row only with identity evidence\n  ---\n  duration_ms: 14.098707\n  type: 'test'\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1882.975358\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:account-ownership-route"
+      ],
+      "cwd": ".",
+      "duration_s": 4.8,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:account-ownership-route",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "t_trade_debriefs\",\n#       \"learning_events\",\n#       \"strategy_edges\",\n#       \"mistake_patterns\",\n#       \"market_data_mode\",\n#       \"autopilot_cycles\",\n#       \"autopilot_symbol_cooldowns\",\n#       \"user_risk_settings\"\n#     ]\n# [07:44:27.718] INFO (8846): readiness: metrics calculated\n#     metrics: {\n#       \"dailyPnl\": 500,\n#       \"dailyLossLimit\": 300,\n#       \"weeklyPnl\": 500,\n#       \"maxDrawdown\": 0,\n#       \"openPaperTrades\": 0,\n#       \"maxOpenPaperTrades\": 3,\n#       \"sameSymbolExposure\": {},\n#       \"winRate30d\": 100,\n#       \"sampleSize\": 1,\n#       \"decisionToWinRate\": 0,\n#       \"avgRiskScore\": 0,\n#       \"avgConfidence\": 0,\n#       \"learningConfidence\": 0,\n#       \"marketDataQuality\": \"GOOD\",\n#       \"autopilotErrorRate\": 0,\n#       \"repeatedMistakeCount\": 0\n#     }\n# [07:44:27.718] INFO (8846): readiness: hard blocks found\n#     count: 0\n# [07:44:27.718] INFO (8846): readiness: soft warnings found\n#     count: 0\n# [07:44:27.718] USERLVL (8846): readiness: readiness score calculated\n#     score: 63\n#     grade: \"D\"\n# [07:44:27.718] INFO (8846): readiness: allowed actions returned\n#     canRunAADecision: true\n#     canOpenPaperTrade: true\n#     canRunPaperAutopilot: true\n#     canManualClosePaperTrade: true\n#     canRebuildPerformance: true\n#     canProcessLearning: true\n#     canPlaceLiveTrade: false\n# [07:44:27.718] INFO (8846): readiness: evaluation completed\n#     governorId: \"gov_e8d344f6-a9c8-436d-ad1d-8f48df823ade\"\n#     status: \"PAPER_CAUTION\"\n#     score: 63\n# [07:44:27.733] INFO (8846): readiness: evaluation started\n#     governorId: \"gov_a24b8d59-6455-4edf-9b6f-fb7cd3b430b2\"\n# [07:44:27.745] INFO (8846): readiness: data sources read\n#     count: 10\n#     sources: [\n#       \"paper_orders\",\n#       \"trade_decision_logs\",\n#       \"post_trade_debriefs\",\n#       \"learning_events\",\n#       \"strategy_edges\",\n#       \"mistake_patterns\",\n#       \"market_data_mode\",\n#       \"autopilot_cycles\",\n#       \"autopilot_symbol_cooldowns\",\n#       \"user_risk_settings\"\n#     ]\n# [07:44:27.745] INFO (8846): readiness: metrics calculated\n#     metrics: {\n#       \"dailyPnl\": 501,\n#       \"dailyLossLimit\": null,\n#       \"weeklyPnl\": 501,\n#       \"maxDrawdown\": 0,\n#       \"openPaperTrades\": 1,\n#       \"maxOpenPaperTrades\": 3,\n#       \"sameSymbolExposure\": {\n#         \"QAACCT.A\": 1\n#       },\n#       \"winRate30d\": 100,\n#       \"sampleSize\": 2,\n#       \"decisionToWinRate\": 0,\n#       \"avgRiskScore\": 0,\n#       \"avgConfidence\": 0,\n#       \"learningConfidence\": 0,\n#       \"marketDataQuality\": \"GOOD\",\n#       \"autopilotErrorRate\": 0,\n#       \"repeatedMistakeCount\": 0\n#     }\n# [07:44:27.745] INFO (8846): readiness: hard blocks found\n#     count: 0\n# [07:44:27.745] INFO (8846): readiness: soft warnings found\n#     count: 0\n# [07:44:27.745] USERLVL (8846): readiness: readiness score calculated\n#     score: 63\n#     grade: \"D\"\n# [07:44:27.745] INFO (8846): readiness: allowed actions returned\n#     canRunAADecision: true\n#     canOpenPaperTrade: true\n#     canRunPaperAutopilot: true\n#     canManualClosePaperTrade: true\n#     canRebuildPerformance: true\n#     canProcessLearning: true\n#     canPlaceLiveTrade: false\n# [07:44:27.745] INFO (8846): readiness: evaluation completed\n#     governorId: \"gov_a24b8d59-6455-4edf-9b6f-fb7cd3b430b2\"\n#     status: \"PAPER_CAUTION\"\n#     score: 63\n# Subtest: paper sessions: sessions, the active session and lifecycle actions are per trader\nok 14 - paper sessions: sessions, the active session and lifecycle actions are per trader\n  ---\n  duration_ms: 82.357091\n  type: 'test'\n  ...\n# Subtest: playbooks: a trader cannot list, edit, add entries to or mine another trader's playbook\nok 15 - playbooks: a trader cannot list, edit, add entries to or mine another trader's playbook\n  ---\n  duration_ms: 32.575626\n  type: 'test'\n  ...\n# Subtest: paper ideas: the watchlist is per trader\nok 16 - paper ideas: the watchlist is per trader\n  ---\n  duration_ms: 12.990178\n  type: 'test'\n  ...\n# Subtest: backtests: a trader sees their own runs; legacy runs belong to the operator\nok 17 - backtests: a trader sees their own runs; legacy runs belong to the operator\n  ---\n  duration_ms: 33.00727\n  type: 'test'\n  ...\n# Subtest: alerts: a user's alert is visible to them and never to another user\nok 18 - alerts: a user's alert is visible to them and never to another user\n  ---\n  duration_ms: 12.619432\n  type: 'test'\n  ...\n# Subtest: notifications: the same event for two users creates two notifications, not a merged one\nok 19 - notifications: the same event for two users creates two notifications, not a merged one\n  ---\n  duration_ms: 20.868974\n  type: 'test'\n  ...\n# Subtest: broker health: a trader can read the status but not the operator's account number, and cannot flip operator toggles\nok 20 - broker health: a trader can read the status but not the operator's account number, and cannot flip operator toggles\n  ---\n  duration_ms: 43.587848\n  type: 'test'\n  ...\n# [07:44:27.889] WARN (8846): alert delivery channel not configured — alert NOT sent\n#     channel: \"email\"\n#     alertId: 37\n#     alertType: \"TRADE_CLOSED\"\n# [07:44:27.889] WARN (8846): alert delivery channel not configured — alert NOT sent\n#     channel: \"sms\"\n#     alertId: 37\n#     alertType: \"TRADE_CLOSED\"\n# [07:44:27.889] WARN (8846): alert delivery channel not configured — alert NOT sent\n#     channel: \"push\"\n#     alertId: 37\n#     alertType: \"TRADE_CLOSED\"\n# [07:44:27.893] WARN (8846): alert delivery channel not configured — alert NOT sent\n#     channel: \"email\"\n#     alertId: 38\n#     alertType: \"TRADE_CLOSED\"\n# [07:44:27.893] WARN (8846): alert delivery channel not configured — alert NOT sent\n#     channel: \"sms\"\n#     alertId: 38\n#     alertType: \"TRADE_CLOSED\"\n# [07:44:27.893] WARN (8846): alert delivery channel not configured — alert NOT sent\n#     channel: \"push\"\n#     alertId: 38\n#     alertType: \"TRADE_CLOSED\"\n1..20\n# tests 20\n# suites 0\n# pass 20\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 4431.03183\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:risk-governor-paper-facts"
+      ],
+      "cwd": ".",
+      "duration_s": 3.7,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:risk-governor-paper-facts",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: no double count: the governor's PAPER P/L is paper_orders only (not the journal, not trades)\nok 1 - no double count: the governor's PAPER P/L is paper_orders only (not the journal, not trades)\n  ---\n  duration_ms: 90.989451\n  type: 'test'\n  ...\n# Subtest: read side: settled / open / realized, per scope\nok 2 - read side: settled / open / realized, per scope\n  ---\n  duration_ms: 5.713441\n  type: 'test'\n  ...\n# Subtest: trader readiness: daily P/L is the settled paper_orders P/L (was always 0 on status 'CLOSED')\nok 3 - trader readiness: daily P/L is the settled paper_orders P/L (was always 0 on status 'CLOSED')\n  ---\n  duration_ms: 20.190437\n  type: 'test'\n  ...\n# Subtest: missing coverage stays conservative: switching paper accounts does not reset the losing streak\nok 4 - missing coverage stays conservative: switching paper accounts does not reset the losing streak\n  ---\n  duration_ms: 9.757238\n  type: 'test'\n  ...\n# [07:44:31.636] INFO (8886): readiness: evaluation started\n#     governorId: \"gov_3d5897f4-b618-47be-b306-34662854baca\"\n# Subtest: tenant isolation: another trader's paper_orders never count\nok 5 - tenant isolation: another trader's paper_orders never count\n  ---\n  duration_ms: 22.773713\n  type: 'test'\n  ...\n# [07:44:31.654] INFO (8886): readiness: data sources read\n#     count: 10\n#     sources: [\n#       \"paper_orders\",\n#       \"trade_decision_logs\",\n#       \"post_trade_debriefs\",\n#       \"learning_events\",\n#       \"strategy_edges\",\n#       \"mistake_patterns\",\n#       \"market_data_mode\",\n#       \"autopilot_cycles\",\n#       \"autopilot_symbol_cooldowns\",\n#       \"user_risk_settings\"\n#     ]\n# [07:44:31.654] INFO (8886): readiness: metrics calculated\n#     metrics: {\n#       \"dailyPnl\": -50,\n#       \"dailyLossLimit\": 300,\n#       \"weeklyPnl\": -50,\n#       \"maxDrawdown\": 50,\n#       \"openPaperTrades\": 1,\n#       \"maxOpenPaperTrades\": 3,\n#       \"sameSymbolExposure\": {\n#         \"EURUSD\": 1\n#       },\n#       \"winRate30d\": 0,\n#       \"sampleSize\": 1,\n#       \"decisionToWinRate\": 0,\n#       \"avgRiskScore\": 0,\n#       \"avgConfidence\": 0,\n#       \"learningConfidence\": 0,\n#       \"marketDataQuality\": \"GOOD\",\n#       \"autopilotErrorRate\": 0,\n#       \"repeatedMistakeCount\": 0\n#     }\n# [07:44:31.655] INFO (8886): readiness: hard blocks found\n#     count: 0\n# [07:44:31.655] INFO (8886): readiness: soft warnings found\n#     count: 0\n# [07:44:31.655] USERLVL (8886): readiness: readiness score calculated\n#     score: 52\n#     grade: \"F\"\n# [07:44:31.655] INFO (8886): readiness: allowed actions returned\n#     canRunAADecision: true\n#     canOpenPaperTrade: true\n#     canRunPaperAutopilot: true\n#     canManualClosePaperTrade: true\n#     canRebuildPerformance: true\n#     canProcessLearning: true\n#     canPlaceLiveTrade: false\n# [07:44:31.655] INFO (8886): readiness: evaluation completed\n#     governorId: \"gov_3d5897f4-b618-47be-b306-34662854baca\"\n#     status: \"PAPER_CAUTION\"\n#     score: 52\n# [07:44:31.667] INFO (8886): readiness: evaluation started\n#     governorId: \"gov_90d9cddb-0c1f-44ad-8464-23f94c1be02f\"\n# [07:44:31.681] INFO (8886): readiness: data sources read\n#     count: 10\n#     sources: [\n#       \"paper_orders\",\n#       \"trade_decision_logs\",\n#       \"post_trade_debriefs\",\n#       \"learning_events\",\n#       \"strategy_edges\",\n#       \"mistake_patterns\",\n#       \"market_data_mode\",\n#       \"autopilot_cycles\",\n#       \"autopilot_symbol_cooldowns\",\n#       \"user_risk_settings\"\n#     ]\n# [07:44:31.681] INFO (8886): readiness: metrics calculated\n#     metrics: {\n#       \"dailyPnl\": -50,\n#       \"dailyLossLimit\": 300,\n#       \"weeklyPnl\": -50,\n#       \"maxDrawdown\": 50,\n#       \"openPaperTrades\": 1,\n#       \"maxOpenPaperTrades\": 3,\n#       \"sameSymbolExposure\": {\n#         \"EURUSD\": 1\n#       },\n#       \"winRate30d\": 0,\n#       \"sampleSize\": 1,\n#       \"decisionToWinRate\": 0,\n#       \"avgRiskScore\": 0,\n#       \"avgConfidence\": 0,\n#       \"learningConfidence\": 0,\n#       \"marketDataQuality\": \"GOOD\",\n#       \"autopilotErrorRate\": 0,\n#       \"repeatedMistakeCount\": 0\n#     }\n# [07:44:31.681] INFO (8886): readiness: hard blocks found\n#     count: 0\n# [07:44:31.681] INFO (8886): readiness: soft warnings found\n#     count: 0\n# [07:44:31.681] USERLVL (8886): readiness: readiness score calculated\n#     score: 52\n#     grade: \"F\"\n# [07:44:31.681] INFO (8886): readiness: allowed actions returned\n#     canRunAADecision: true\n#     canOpenPaperTrade: true\n#     canRunPaperAutopilot: true\n#     canManualClosePaperTrade: true\n#     canRebuildPerformance: true\n#     canProcessLearning: true\n#     canPlaceLiveTrade: false\n# [07:44:31.681] INFO (8886): readiness: evaluation completed\n#     governorId: \"gov_90d9cddb-0c1f-44ad-8464-23f94c1be02f\"\n#     status: \"PAPER_CAUTION\"\n#     score: 52\n# Subtest: DEMO unchanged: the DEMO governor still reads trades, untouched by paper_orders\nok 6 - DEMO unchanged: the DEMO governor still reads trades, untouched by paper_orders\n  ---\n  duration_ms: 28.194293\n  type: 'test'\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 3308.32511\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:platform-stop-release"
+      ],
+      "cwd": ".",
+      "duration_s": 3.7,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:platform-stop-release",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: duplicate settings rows: engage then release clears EVERY row, records the actor, audits with the old reason\nok 1 - duplicate settings rows: engage then release clears EVERY row, records the actor, audits with the old reason\n  ---\n  duration_ms: 82.140692\n  type: 'test'\n  ...\n# [07:44:35.100] WARN (8920): platform emergency stop engage written (commits with the caller's transaction)\n#     source: \"admin_trading_emergency_kill\"\n#     actorUserId: 708\n#     reason: \"qa incident\"\n#     engagedAt: \"2026-10-25T07:44:35.097Z\"\n#     rowCount: 2\n# [07:44:35.123] WARN (8920): platform emergency stop released on every settings row (audited)\n#     stop: \"platform_emergency_stop\"\n#     source: \"admin_trading_reset_kill\"\n#     actorUserId: 708\n#     wasEngaged: true\n#     rowCount: 2\n# [07:44:35.167] WARN (8920): platform emergency stop engage written (commits with the caller's transaction)\n#     source: \"admin_trading_emergency_kill\"\n#     actorUserId: 708\n#     reason: \"qa both\"\n#     engagedAt: \"2026-10-25T07:44:35.160Z\"\n#     rowCount: 2\n# [07:44:35.179] WARN (8920): platform emergency stop released on every settings row (audited)\n#     stop: \"platform_emergency_stop\"\n#     source: \"admin_trading_reset_kill\"\n#     actorUserId: 708\n#     wasEngaged: true\n#     rowCount: 2\n# [07:44:35.191] WARN (8920): platform emergency stop engage written (commits with the caller's transaction)\n#     source: \"admin_trading_emergency_kill\"\n#     actorUserId: 708\n#     reason: \"qa again\"\n#     engagedAt: \"2026-10-25T07:44:35.184Z\"\n#     rowCount: 2\n# Subtest: releasing one stop never touches the other\nok 2 - releasing one stop never touches the other\n  ---\n  duration_ms: 92.508716\n  type: 'test'\n  ...\n# Subtest: authorization and reason: refused, nothing written\nok 3 - authorization and reason: refused, nothing written\n  ---\n  duration_ms: 15.425628\n  type: 'test'\n  ...\n# [07:44:35.237] WARN (8920): safety-core kill switch released (audited)\n#     stop: \"safety_core_kill_switch\"\n#     source: \"system_kill_switch_reset\"\n#     actorUserId: 708\n#     wasEngaged: true\n# [07:44:35.247] WARN (8920): platform emergency stop engage written (commits with the caller's transaction)\n#     source: \"admin_trading_emergency_kill\"\n#     actorUserId: 708\n#     reason: \"qa auth\"\n#     engagedAt: \"2026-10-25T07:44:35.244Z\"\n#     rowCount: 2\n# [07:44:35.263] WARN (8920): platform emergency stop engage written (commits with the caller's transaction)\n#     source: \"admin_trading_emergency_kill\"\n#     actorUserId: 708\n#     reason: \"qa route\"\n#     engagedAt: \"2026-10-25T07:44:35.261Z\"\n#     rowCount: 2\n# [07:44:35.353] WARN (8920): platform emergency stop released on every settings row (audited)\n#     stop: \"platform_emergency_stop\"\n#     source: \"admin_trading_reset_kill\"\n#     actorUserId: 708\n#     wasEngaged: true\n#     rowCount: 2\n# [07:44:35.359] WARN (8920): platform emergency stop engage written (commits with the caller's transaction)\n#     source: \"admin_trading_emergency_kill\"\n#     actorUserId: 708\n#     reason: \"qa route 2\"\n#     engagedAt: \"2026-10-25T07:44:35.357Z\"\n#     rowCount: 2\n# [07:44:35.396] WARN (8920): safety-core kill switch released (audited)\n#     stop: \"safety_core_kill_switch\"\n#     source: \"system_kill_switch_reset\"\n#     actorUserId: 708\n#     wasEngaged: true\n# Subtest: routes: reset-kill releases every row; activation refuses to release; system reset releases only the safety core\nok 4 - routes: reset-kill releases every row; activation refuses to release; system reset releases only the safety core\n  ---\n  duration_ms: 145.877131\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 3297.688996\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:platform-switches"
+      ],
+      "cwd": ".",
+      "duration_s": 4.1,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:platform-switches",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: no settings row: fail closed by default; defaults / seed only when asked\nok 1 - no settings row: fail closed by default; defaults / seed only when asked\n  ---\n  duration_ms: 93.678941\n  type: 'test'\n  ...\n# Subtest: DEFAULT_SWITCH_ROW matches the schema defaults the seed writes\nok 2 - DEFAULT_SWITCH_ROW matches the schema defaults the seed writes\n  ---\n  duration_ms: 10.603188\n  type: 'test'\n  ...\n# Subtest: venues follow the platform mode and the enable flags\nok 3 - venues follow the platform mode and the enable flags\n  ---\n  duration_ms: 19.433394\n  type: 'test'\n  ...\n# Subtest: with a stray second row the strictest row wins\nok 4 - with a stray second row the strictest row wins\n  ---\n  duration_ms: 29.039312\n  type: 'test'\n  ...\n# Subtest: venueTradingVerdict: venue switch AND every stop switch\nok 5 - venueTradingVerdict: venue switch AND every stop switch\n  ---\n  duration_ms: 63.661634\n  type: 'test'\n  ...\n# Subtest: the safety-core kill switch is read without seeding and halts\nok 6 - the safety-core kill switch is read without seeding and halts\n  ---\n  duration_ms: 8.612965\n  type: 'test'\n  ...\n# Subtest: platformStop: every combination of the two stops\nok 7 - platformStop: every combination of the two stops\n  ---\n  duration_ms: 36.72062\n  type: 'test'\n  ...\n# Subtest: platformStop: no settings row reads released (schema defaults); never writes\nok 8 - platformStop: no settings row reads released (schema defaults); never writes\n  ---\n  duration_ms: 7.66889\n  type: 'test'\n  ...\n# Subtest: platformStop: fail closed when either read errors or is unreadable\nok 9 - platformStop: fail closed when either read errors or is unreadable\n  ---\n  duration_ms: 1.533224\n  type: 'test'\n  ...\n# Subtest: preCheckStopRefusal: own stop refuses as before; the other only adds new-risk refusals\nok 10 - preCheckStopRefusal: own stop refuses as before; the other only adds new-risk refusals\n  ---\n  duration_ms: 0.709162\n  type: 'test'\n  ...\n# [07:44:39.244] WARN (8956): platform stop unreadable; failing closed\n#     err: \"Error: db down\"\n# [07:44:39.244] WARN (8956): platform stop unreadable; failing closed\n#     err: \"Error: db down\"\n# Subtest: trade-action guard: either stop refuses an OPEN; a CLOSE passes the emergency stop\nok 11 - trade-action guard: either stop refuses an OPEN; a CLOSE passes the emergency stop\n  ---\n  duration_ms: 72.984419\n  type: 'test'\n  ...\n# [07:44:39.315] WARN (8956): platform stop unreadable; failing closed\n#     err: \"Error: x\"\n# Subtest: the config view carries no switch\nok 12 - the config view carries no switch\n  ---\n  duration_ms: 2.363405\n  type: 'test'\n  ...\n# Subtest: platformStopWith: the caller's switches decide the emergency stop; the safety core is added\nok 13 - platformStopWith: the caller's switches decide the emergency stop; the safety core is added\n  ---\n  duration_ms: 18.365167\n  type: 'test'\n  ...\n# Subtest: approvedTraderLiveState: per-source emergencyKillSwitch kept, combined platformStop fields added\nok 14 - approvedTraderLiveState: per-source emergencyKillSwitch kept, combined platformStop fields added\n  ---\n  duration_ms: 30.929595\n  type: 'test'\n  ...\n# [07:44:39.375] WARN (8956): platform emergency stop engage written (commits with the caller's transaction)\n#     source: \"admin_live_shared_rollback\"\n#     actorUserId: 709\n#     reason: \"qa rollback\"\n#     engagedAt: \"2026-10-25T07:44:39.374Z\"\n#     rowCount: 2\n# [07:44:39.378] WARN (8956): platform emergency stop engage written (commits with the caller's transaction)\n#     source: \"admin_trading_emergency_kill\"\n#     actorUserId: 709\n#     reason: \"qa engage\"\n#     engagedAt: \"2026-10-25T07:44:39.377Z\"\n#     rowCount: 2\n# Subtest: engagePlatformStop: every row engaged with one reason, time and actor; rolls back with the caller's transaction\nok 15 - engagePlatformStop: every row engaged with one reason, time and actor; rolls back with the caller's transaction\n  ---\n  duration_ms: 17.569994\n  type: 'test'\n  ...\n# Subtest: envelope: both stops reported, emergencyKillSwitch truthful, new risk from the combination, closes not blanket-refused\nok 16 - envelope: both stops reported, emergencyKillSwitch truthful, new risk from the combination, closes not blanket-refused\n  ---\n  duration_ms: 34.009372\n  type: 'test'\n  ...\n# Subtest: venueTradingVerdict: broker execution disabled / maintenance / unreadable block NEW RISK on DEMO and LIVE only\nok 17 - venueTradingVerdict: broker execution disabled / maintenance / unreadable block NEW RISK on DEMO and LIVE only\n  ---\n  duration_ms: 67.230121\n  type: 'test'\n  ...\n1..17\n# tests 17\n# suites 0\n# pass 17\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 3713.432444\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:readiness-stop-switches"
+      ],
+      "cwd": ".",
+      "duration_s": 2.2,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:readiness-stop-switches",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: an open live venue with no stop engaged reports no platform-wide stop, whatever live_trading_state says\nok 1 - an open live venue with no stop engaged reports no platform-wide stop, whatever live_trading_state says\n  ---\n  duration_ms: 73.996737\n  type: 'test'\n  ...\n# Subtest: the platform emergency stop reads as a platform-wide live stop\nok 2 - the platform emergency stop reads as a platform-wide live stop\n  ---\n  duration_ms: 12.502628\n  type: 'test'\n  ...\n# Subtest: a live venue switched off by the admin reads as a platform-wide live stop\nok 3 - a live venue switched off by the admin reads as a platform-wide live stop\n  ---\n  duration_ms: 14.437325\n  type: 'test'\n  ...\n# Subtest: broker execution disabled or maintenance reads as a platform-wide live stop (owner decision 2)\nok 4 - broker execution disabled or maintenance reads as a platform-wide live stop (owner decision 2)\n  ---\n  duration_ms: 57.380791\n  type: 'test'\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1820.670975\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:legacy-gates-action-aware"
+      ],
+      "cwd": ".",
+      "duration_s": 4.1,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:legacy-gates-action-aware",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: /mt5 commands: new risk honours both stops; closes are refused only by the gate's own safety-core stop\nok 1 - /mt5 commands: new risk honours both stops; closes are refused only by the gate's own safety-core stop\n  ---\n  duration_ms: 224.638984\n  type: 'test'\n  ...\n# Subtest: /broker/reconnect: available under both stops; never clears a stop, arms, or dispatches a queued order\nok 2 - /broker/reconnect: available under both stops; never clears a stop, arms, or dispatches a queued order\n  ---\n  duration_ms: 71.408028\n  type: 'test'\n  ...\n# Subtest: /permission (paper): the safety-core kill switch blocks; the platform emergency stop does not (documented exemption)\nok 3 - /permission (paper): the safety-core kill switch blocks; the platform emergency stop does not (documented exemption)\n  ---\n  duration_ms: 44.802959\n  type: 'test'\n  ...\n1..3\n# tests 3\n# suites 0\n# pass 3\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 3767.064665\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:risk-governor-pipelines"
+      ],
+      "cwd": ".",
+      "duration_s": 6.9,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:risk-governor-pipelines",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "\"marketData\"\n#     symbol: \"EURUSD\"\n#     provider: \"none-real-unavailable\"\n#     source: \"FALLBACK\"\n#     realVsFallback: \"FALLBACK\"\n#     latencyMs: 0\n#     candlesReturned: 0\n#     dataQualityStatus: \"MISSING\"\n#     warnings: [\n#       \"Symbol \\\\\"EURUSD\\\\\" is not in the supported list.\"\n#     ]\n#     usedFallback: true\n#     providerError: \"symbol unsupported\"\n# Subtest: trade action: DEMO and LIVE entries become governed venue commands, never legacy mailbox rows\nok 9 - trade action: DEMO and LIVE entries become governed venue commands, never legacy mailbox rows\n  ---\n  duration_ms: 1766.069331\n  type: 'test'\n  ...\n# Subtest: trade action: a close on a position opened outside ARX is refused by governedOps; a governed one reaches the demo queue\nok 10 - trade action: a close on a position opened outside ARX is refused by governedOps; a governed one reaches the demo queue\n  ---\n  duration_ms: 45.981034\n  type: 'test'\n  ...\n# Subtest: trade action: a SIMULATED action records no broker command\nok 11 - trade action: a SIMULATED action records no broker command\n  ---\n  duration_ms: 227.659787\n  type: 'test'\n  ...\n# Subtest: D live sandbox: the live venue reads the trader's own edited limits (per-trade risk)\nok 12 - D live sandbox: the live venue reads the trader's own edited limits (per-trade risk)\n  ---\n  duration_ms: 51.630414\n  type: 'test'\n  ...\n# Subtest: D live sandbox: degraded bridge blocks new risk but not a close; a dead bridge blocks both\nok 13 - D live sandbox: degraded bridge blocks new risk but not a close; a dead bridge blocks both\n  ---\n  duration_ms: 98.982987\n  type: 'test'\n  ...\n# Subtest: D live sandbox: a stale broker quote blocks the entry\nok 14 - D live sandbox: a stale broker quote blocks the entry\n  ---\n  duration_ms: 31.975969\n  type: 'test'\n  ...\n# [07:44:51.238] WARN (9074): ARX_REQUIRE_FRESH_RECONCILIATION is OFF (default this release): live ENTRY dispatch is NOT gated on reconciliation freshness. The scheduled reconciler NOW EXISTS (startUnknownReconcilerWorker, 60s cadence), so the original blocker is cleared — the gate stays OFF only until an operator confirms reconciliation_runs rows are accumulating cleanly against the real database. Flipping it is an owner decision (Owner Decision Registry, Ruling 10): a default-ON gate whose reconciler is failing would refuse every live entry.\n#     [arx-live-phaseB]: true\n#     event: \"RECONCILIATION_FRESHNESS_GATE_OFF\"\n#     envVar: \"ARX_REQUIRE_FRESH_RECONCILIATION\"\n#     rawValue: null\n# [07:44:51.528] INFO (9074): Build DD: market data request served\n#     system: \"marketData\"\n#     symbol: \"EURUSD\"\n#     provider: \"none-real-unavailable\"\n#     source: \"FALLBACK\"\n#     realVsFallback: \"FALLBACK\"\n#     latencyMs: 0\n#     candlesReturned: 0\n#     dataQualityStatus: \"MISSING\"\n#     warnings: [\n#       \"Symbol \\\\\"EURUSD\\\\\" is not in the supported list.\"\n#     ]\n#     usedFallback: true\n#     providerError: \"symbol unsupported\"\n# Subtest: D live sandbox: a stale or missing broker account snapshot refuses new risk on that account only; closing still works\nok 15 - D live sandbox: a stale or missing broker account snapshot refuses new risk on that account only; closing still works\n  ---\n  duration_ms: 101.300193\n  type: 'test'\n  ...\n# Subtest: D live dispatch and the demo MT5 queue call the governor before their send step\nok 16 - D live dispatch and the demo MT5 queue call the governor before their send step\n  ---\n  duration_ms: 3.092081\n  type: 'test'\n  ...\n# Subtest: demo/live boundary: a stopless live position blocks live entries but not paper ones\nok 17 - demo/live boundary: a stopless live position blocks live entries but not paper ones\n  ---\n  duration_ms: 70.912225\n  type: 'test'\n  ...\n# Subtest: isolation: another trader's losses, positions and bridge never decide this trader's order\nok 18 - isolation: another trader's losses, positions and bridge never decide this trader's order\n  ---\n  duration_ms: 57.327865\n  type: 'test'\n  ...\n# Subtest: A demo manual: an off-step quantity is refused by the route, never written, and audited (invalid price/quantity)\nok 19 - A demo manual: an off-step quantity is refused by the route, never written, and audited (invalid price/quantity)\n  ---\n  duration_ms: 45.442197\n  type: 'test'\n  ...\n# Subtest: D live sandbox: buying power, leverage and concentration block on the trader's stored account and positions\nok 20 - D live sandbox: buying power, leverage and concentration block on the trader's stored account and positions\n  ---\n  duration_ms: 58.292102\n  type: 'test'\n  ...\n# Subtest: halt: a trader's own kill switch stops their new risk on paper, demo and live, but never a close or a tightened stop, and never another trader\nok 21 - halt: a trader's own kill switch stops their new risk on paper, demo and live, but never a close or a tightened stop, and never another trader\n  ---\n  duration_ms: 159.293474\n  type: 'test'\n  ...\n# Subtest: halt: the platform emergency stop halts demo and live for everyone; the paper simulator keeps running\nok 22 - halt: the platform emergency stop halts demo and live for everyone; the paper simulator keeps running\n  ---\n  duration_ms: 71.478536\n  type: 'test'\n  ...\n# Subtest: halt: the safety-core kill switch halts every venue, paper included\nok 23 - halt: the safety-core kill switch halts every venue, paper included\n  ---\n  duration_ms: 72.868306\n  type: 'test'\n  ...\n# Subtest: halt: paper POST /paper/orders refuses with the halt named while the trader's switch is engaged\nok 24 - halt: paper POST /paper/orders refuses with the halt named while the trader's switch is engaged\n  ---\n  duration_ms: 34.462849\n  type: 'test'\n  ...\n# Subtest: preview evaluates without writing an audit row; a real check writes exactly one\nok 25 - preview evaluates without writing an audit row; a real check writes exactly one\n  ---\n  duration_ms: 39.11425\n  type: 'test'\n  ...\n1..25\n# tests 25\n# suites 0\n# pass 25\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 6477.890013\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:risk-governor-effective-views"
+      ],
+      "cwd": ".",
+      "duration_s": 2.8,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:risk-governor-effective-views",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "never the enforced value\nok 5 - PATCH /me/risk-settings still edits the preference, never the enforced value\n  ---\n  duration_ms: 40.295835\n  type: 'test'\n  ...\n# Subtest: dashboard cards and intelligence show the enforced caps; the saved value stays the preference\nok 6 - dashboard cards and intelligence show the enforced caps; the saved value stays the preference\n  ---\n  duration_ms: 54.719812\n  type: 'test'\n  ...\n# Subtest: portfolio-risk snapshot uses the enforced limits, not 2 / 2 / 0.5\nok 7 - portfolio-risk snapshot uses the enforced limits, not 2 / 2 / 0.5\n  ---\n  duration_ms: 38.317185\n  type: 'test'\n  ...\n# [07:44:55.350] INFO (9110): readiness: evaluation started\n#     governorId: \"gov_60104827-85a2-4ed8-9405-ca4b76b9b3c4\"\n# [07:44:55.373] INFO (9110): readiness: data sources read\n#     count: 10\n#     sources: [\n#       \"paper_orders\",\n#       \"trade_decision_logs\",\n#       \"post_trade_debriefs\",\n#       \"learning_events\",\n#       \"strategy_edges\",\n#       \"mistake_patterns\",\n#       \"market_data_mode\",\n#       \"autopilot_cycles\",\n#       \"autopilot_symbol_cooldowns\",\n#       \"user_risk_settings\"\n#     ]\n# [07:44:55.373] INFO (9110): readiness: metrics calculated\n#     metrics: {\n#       \"dailyPnl\": 0,\n#       \"dailyLossLimit\": 100,\n#       \"weeklyPnl\": 0,\n#       \"maxDrawdown\": 0,\n#       \"openPaperTrades\": 0,\n#       \"maxOpenPaperTrades\": 4,\n#       \"sameSymbolExposure\": {},\n#       \"winRate30d\": 0,\n#       \"sampleSize\": 0,\n#       \"decisionToWinRate\": 0,\n#       \"avgRiskScore\": 0,\n#       \"avgConfidence\": 0,\n#       \"learningConfidence\": 0,\n#       \"marketDataQuality\": \"GOOD\",\n#       \"autopilotErrorRate\": 0,\n#       \"repeatedMistakeCount\": 0\n#     }\n# [07:44:55.374] INFO (9110): readiness: hard blocks found\n#     count: 0\n# [07:44:55.374] INFO (9110): readiness: soft warnings found\n#     count: 0\n# [07:44:55.374] USERLVL (9110): readiness: readiness score calculated\n#     score: 55\n#     grade: \"F\"\n# [07:44:55.374] INFO (9110): readiness: allowed actions returned\n#     canRunAADecision: true\n#     canOpenPaperTrade: true\n#     canRunPaperAutopilot: true\n#     canManualClosePaperTrade: true\n#     canRebuildPerformance: true\n#     canProcessLearning: true\n#     canPlaceLiveTrade: false\n# [07:44:55.375] INFO (9110): readiness: evaluation completed\n#     governorId: \"gov_60104827-85a2-4ed8-9405-ca4b76b9b3c4\"\n#     status: \"PAPER_CAUTION\"\n#     score: 55\n# [07:44:55.375] INFO (9110): readiness: evaluation started\n#     governorId: \"gov_7db27be1-da83-43bc-a390-3cc857fb0910\"\n# Subtest: trader readiness: enforced max open and the governor's daily-loss cap; off → no daily-loss block\nok 8 - trader readiness: enforced max open and the governor's daily-loss cap; off → no daily-loss block\n  ---\n  duration_ms: 46.574633\n  type: 'test'\n  ...\n# [07:44:55.395] INFO (9110): readiness: data sources read\n#     count: 10\n#     sources: [\n#       \"paper_orders\",\n#       \"trade_decision_logs\",\n#       \"post_trade_debriefs\",\n#       \"learning_events\",\n#       \"strategy_edges\",\n#       \"mistake_patterns\",\n#       \"market_data_mode\",\n#       \"autopilot_cycles\",\n#       \"autopilot_symbol_cooldowns\",\n#       \"user_risk_settings\"\n#     ]\n# [07:44:55.395] INFO (9110): readiness: metrics calculated\n#     metrics: {\n#       \"dailyPnl\": -5000,\n#       \"dailyLossLimit\": null,\n#       \"weeklyPnl\": 0,\n#       \"maxDrawdown\": 0,\n#       \"openPaperTrades\": 0,\n#       \"maxOpenPaperTrades\": 3,\n#       \"sameSymbolExposure\": {},\n#       \"winRate30d\": 0,\n#       \"sampleSize\": 0,\n#       \"decisionToWinRate\": 0,\n#       \"avgRiskScore\": 0,\n#       \"avgConfidence\": 0,\n#       \"learningConfidence\": 0,\n#       \"marketDataQuality\": \"GOOD\",\n#       \"autopilotErrorRate\": 0,\n#       \"repeatedMistakeCount\": 0\n#     }\n# [07:44:55.395] INFO (9110): readiness: hard blocks found\n#     count: 0\n# [07:44:55.395] INFO (9110): readiness: soft warnings found\n#     count: 0\n# [07:44:55.395] USERLVL (9110): readiness: readiness score calculated\n#     score: 55\n#     grade: \"F\"\n# [07:44:55.395] INFO (9110): readiness: allowed actions returned\n#     canRunAADecision: true\n#     canOpenPaperTrade: true\n#     canRunPaperAutopilot: true\n#     canManualClosePaperTrade: true\n#     canRebuildPerformance: true\n#     canProcessLearning: true\n#     canPlaceLiveTrade: false\n# [07:44:55.395] INFO (9110): readiness: evaluation completed\n#     governorId: \"gov_7db27be1-da83-43bc-a390-3cc857fb0910\"\n#     status: \"PAPER_CAUTION\"\n#     score: 55\n# [07:44:55.407] WARN (9110): alert delivery channel not configured — alert NOT sent\n#     channel: \"email\"\n#     alertId: 39\n#     alertType: \"BROKER_HEALTH\"\n# [07:44:55.408] WARN (9110): alert delivery channel not configured — alert NOT sent\n#     channel: \"sms\"\n#     alertId: 39\n#     alertType: \"BROKER_HEALTH\"\n# [07:44:55.408] WARN (9110): alert delivery channel not configured — alert NOT sent\n#     channel: \"push\"\n#     alertId: 39\n#     alertType: \"BROKER_HEALTH\"\n# [07:44:55.424] WARN (9110): alert delivery channel not configured — alert NOT sent\n#     channel: \"email\"\n#     alertId: 40\n#     alertType: \"RISK_LOCK\"\n# [07:44:55.424] WARN (9110): alert delivery channel not configured — alert NOT sent\n#     channel: \"sms\"\n#     alertId: 40\n#     alertType: \"RISK_LOCK\"\n# [07:44:55.424] WARN (9110): alert delivery channel not configured — alert NOT sent\n#     channel: \"push\"\n#     alertId: 40\n#     alertType: \"RISK_LOCK\"\n# Subtest: NEAR_DAILY_LOSS_LIMIT alert uses the enforced cap (operator USD cap counts; off switch respected)\nok 9 - NEAR_DAILY_LOSS_LIMIT alert uses the enforced cap (operator USD cap counts; off switch respected)\n  ---\n  duration_ms: 30.335446\n  type: 'test'\n  ...\n# Subtest: account shell risk view: limits in force, preference separate, override reason\nok 10 - account shell risk view: limits in force, preference separate, override reason\n  ---\n  duration_ms: 47.046052\n  type: 'test'\n  ...\n1..10\n# tests 10\n# suites 0\n# pass 10\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 2401.091468\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:risk-governor-rr-daily"
+      ],
+      "cwd": ".",
+      "duration_s": 3.1,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:risk-governor-rr-daily",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: checkRewardRiskFloor: boundaries, sides, missing and invalid inputs\nok 1 - checkRewardRiskFloor: boundaries, sides, missing and invalid inputs\n  ---\n  duration_ms: 30.342467\n  type: 'test'\n  ...\n# Subtest: ticket rules: the floor applies in every mode, with the governor's semantics\nok 2 - ticket rules: the floor applies in every mode, with the governor's semantics\n  ---\n  duration_ms: 1.006031\n  type: 'test'\n  ...\n# Subtest: pending-order draft reads the configured min_reward_risk_ratio through the risk authority\nok 3 - pending-order draft reads the configured min_reward_risk_ratio through the risk authority\n  ---\n  duration_ms: 175.688761\n  type: 'test'\n  ...\n# Subtest: no saved row = the governor's default floor (1.5); a saved 0 switches it off\nok 4 - no saved row = the governor's default floor (1.5); a saved 0 switches it off\n  ---\n  duration_ms: 60.12378\n  type: 'test'\n  ...\n# Subtest: the governor's trading day is the UTC calendar day\nok 5 - the governor's trading day is the UTC calendar day\n  ---\n  duration_ms: 0.513532\n  type: 'test'\n  ...\n# Subtest: operational rate cap: approved commands in a rolling 24h, own reason, per user\nok 6 - operational rate cap: approved commands in a rolling 24h, own reason, per user\n  ---\n  duration_ms: 9.12419\n  type: 'test'\n  ...\n# Subtest: both caps measure differently at the day boundary\nok 7 - both caps measure differently at the day boundary\n  ---\n  duration_ms: 22.882203\n  type: 'test'\n  ...\n1..7\n# tests 7\n# suites 0\n# pass 7\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 2721.76721\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:open-position-view"
+      ],
+      "cwd": ".",
+      "duration_s": 2.1,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:open-position-view",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: each basis returns exactly the rows the legacy inline predicates returned\nok 1 - each basis returns exactly the rows the legacy inline predicates returned\n  ---\n  duration_ms: 47.0842\n  type: 'test'\n  ...\n# Subtest: closed rows never appear; reconciled ghosts only under UNCLOSED\nok 2 - closed rows never appear; reconciled ghosts only under UNCLOSED\n  ---\n  duration_ms: 15.624263\n  type: 'test'\n  ...\n# Subtest: both venues normalise to one shape; ALL lists LIVE before DEMO\nok 3 - both venues normalise to one shape; ALL lists LIVE before DEMO\n  ---\n  duration_ms: 2.624686\n  type: 'test'\n  ...\n# Subtest: colliding tickets stay tenant-scoped on both venues\nok 4 - colliding tickets stay tenant-scoped on both venues\n  ---\n  duration_ms: 10.715804\n  type: 'test'\n  ...\n# Subtest: mode scope drops venues the account mode does not show\nok 5 - mode scope drops venues the account mode does not show\n  ---\n  duration_ms: 2.741606\n  type: 'test'\n  ...\n# Subtest: filters, ordering, limit and bridge scope\nok 6 - filters, ordering, limit and bridge scope\n  ---\n  duration_ms: 7.504587\n  type: 'test'\n  ...\n# Subtest: a supplied transaction is used, not replaced by the global db\nok 7 - a supplied transaction is used, not replaced by the global db\n  ---\n  duration_ms: 5.40391\n  type: 'test'\n  ...\n# Subtest: projected per-user reads match the raw predicates the migrated callers used\nok 8 - projected per-user reads match the raw predicates the migrated callers used\n  ---\n  duration_ms: 12.981443\n  type: 'test'\n  ...\n# Subtest: DEMO projected read: confirmedTicket drops rows without a broker position id\nok 9 - DEMO projected read: confirmedTicket drops rows without a broker position id\n  ---\n  duration_ms: 7.579348\n  type: 'test'\n  ...\n# Subtest: cross-user reads carry the same bases and respect a user filter\nok 10 - cross-user reads carry the same bases and respect a user filter\n  ---\n  duration_ms: 16.864843\n  type: 'test'\n  ...\n# Subtest: ALERT_ELIGIBLE (owner decision 11): owned, status OPEN, closed_at unset; never ownerless or closed rows\nok 11 - ALERT_ELIGIBLE (owner decision 11): owned, status OPEN, closed_at unset; never ownerless or closed rows\n  ---\n  duration_ms: 10.808559\n  type: 'test'\n  ...\n1..11\n# tests 11\n# suites 0\n# pass 11\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1714.941526\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:simulated-open"
+      ],
+      "cwd": ".",
+      "duration_s": 4.1,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:simulated-open",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# (node:9221) ExperimentalWarning: Module mocking is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: Trade Action Center: a draft and a preview book nothing\nok 1 - Trade Action Center: a draft and a preview book nothing\n  ---\n  duration_ms: 110.879852\n  type: 'test'\n  ...\n# Subtest: Trade Action Center: a SIMULATED open must be confirmed as SIMULATED explicitly\nok 2 - Trade Action Center: a SIMULATED open must be confirmed as SIMULATED explicitly\n  ---\n  duration_ms: 13.002012\n  type: 'test'\n  ...\n# Subtest: Trade Action Center: a confirmed SIMULATED open books one governed PAPER order at the real quote; a repeat returns it\nok 3 - Trade Action Center: a confirmed SIMULATED open books one governed PAPER order at the real quote; a repeat returns it\n  ---\n  duration_ms: 92.375268\n  type: 'test'\n  ...\n# Subtest: Trade Action Center: two concurrent confirms of one action book exactly one order\nok 4 - Trade Action Center: two concurrent confirms of one action book exactly one order\n  ---\n  duration_ms: 81.422552\n  type: 'test'\n  ...\n# Subtest: Trade Action Center: without a valid current price nothing is booked\nok 5 - Trade Action Center: without a valid current price nothing is booked\n  ---\n  duration_ms: 100.29792\n  type: 'test'\n  ...\n# Subtest: tenant isolation: another trader cannot confirm the action, and request keys are per trader\nok 6 - tenant isolation: another trader cannot confirm the action, and request keys are per trader\n  ---\n  duration_ms: 77.474125\n  type: 'test'\n  ...\n# Subtest: refusals book nothing: no paper account, pending order, missing stop, Risk Governor\nok 7 - refusals book nothing: no paper account, pending order, missing stop, Risk Governor\n  ---\n  duration_ms: 52.416745\n  type: 'test'\n  ...\n# Subtest: My Trades: a SIMULATED open needs a key, books one PAPER order through the guards, and a retry returns it\nok 8 - My Trades: a SIMULATED open needs a key, books one PAPER order through the guards, and a retry returns it\n  ---\n  duration_ms: 249.924462\n  type: 'test'\n  ...\n# Subtest: My Trades: without a valid current price the SIMULATED open is refused and nothing is booked\nok 9 - My Trades: without a valid current price the SIMULATED open is refused and nothing is booked\n  ---\n  duration_ms: 37.608235\n  type: 'test'\n  ...\n1..9\n# tests 9\n# suites 0\n# pass 9\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 3696.857785\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:paper-book"
+      ],
+      "cwd": ".",
+      "duration_s": 3.0,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:paper-book",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: openPaperFill: governed OPEN with venue PAPER, books at the caller's fill price with its event\nok 1 - openPaperFill: governed OPEN with venue PAPER, books at the caller's fill price with its event\n  ---\n  duration_ms: 143.039677\n  type: 'test'\n  ...\n# Subtest: openPaperFill: a Risk Governor refusal books nothing and returns the decision\nok 2 - openPaperFill: a Risk Governor refusal books nothing and returns the decision\n  ---\n  duration_ms: 57.959297\n  type: 'test'\n  ...\n# Subtest: Trade Engine PAPER fills: fillPaperTrade / settlePaperTrade / voidPaperTrade pass through to the venue unchanged\nok 3 - Trade Engine PAPER fills: fillPaperTrade / settlePaperTrade / voidPaperTrade pass through to the venue unchanged\n  ---\n  duration_ms: 212.962871\n  type: 'test'\n  ...\n# Subtest: closePaperFill: governed CLOSE, owner-scoped, CLOSED_MANUAL with P&L and its event\nok 4 - closePaperFill: governed CLOSE, owner-scoped, CLOSED_MANUAL with P&L and its event\n  ---\n  duration_ms: 42.30627\n  type: 'test'\n  ...\n# Subtest: settlePaperOrder and voidPaperOrder: venue fills, not re-governed, only status / exit / P&L move\nok 5 - settlePaperOrder and voidPaperOrder: venue fills, not re-governed, only status / exit / P&L move\n  ---\n  duration_ms: 59.032353\n  type: 'test'\n  ...\n# Subtest: Build EE monitor: stop/target hits settle through the venue; manual close is governed there\nok 6 - Build EE monitor: stop/target hits settle through the venue; manual close is governed there\n  ---\n  duration_ms: 129.751451\n  type: 'test'\n  ...\n# Subtest: legacy trades book: the emergency-stop cancel of existing rows stays owner-scoped\nok 7 - legacy trades book: the emergency-stop cancel of existing rows stays owner-scoped\n  ---\n  duration_ms: 14.53178\n  type: 'test'\n  ...\n# [07:45:07.565] INFO (9259): paper trade loaded\n#     component: \"auto-debrief\"\n#     orderId: 322\n#     status: \"CLOSED_MANUAL\"\n#     decisionId: null\n# [07:45:07.566] INFO (9259): no decision_id linked to trade\n#     component: \"auto-debrief\"\n#     orderId: 322\n# [07:45:07.572] INFO (9259): auto-debrief created\n#     component: \"auto-debrief\"\n#     orderId: 322\n#     debriefId: 46\n#     result: \"LOSS\"\n# [07:45:07.587] INFO (9259): analytics snapshot generated\n#     component: \"auto-debrief\"\n#     orderId: 322\n#     snapshotId: 37\n#     totalTrades: 1\n# [07:45:07.608] INFO (9259): paper trade loaded\n#     component: \"auto-debrief\"\n#     orderId: 321\n#     status: \"CLOSED_TP\"\n#     decisionId: null\n# [07:45:07.610] INFO (9259): no decision_id linked to trade\n#     component: \"auto-debrief\"\n#     orderId: 321\n# [07:45:07.613] INFO (9259): auto-debrief created\n#     component: \"auto-debrief\"\n#     orderId: 321\n#     debriefId: 47\n#     result: \"WIN\"\n# [07:45:07.614] INFO (9259): learning event processed\n#     component: \"learningEngine\"\n#     eventId: 38\n#     debriefId: 46\n#     tradeId: 322\n#     symbol: \"QAPCUSD\"\n#     action: \"BUY\"\n#     result: \"LOSS\"\n#     edgesUpdated: 0\n#     mistakesUpdated: 1\n#     sampleBucket: \"LOW\"\n# [07:45:07.614] INFO (9259): Build CC processed BB learning payload\n#     component: \"auto-debrief\"\n#     orderId: 322\n#     debriefId: 46\n#     ccStatus: \"processed\"\n#     ccEventId: 38\n#     edgesUpdated: 0\n#     mistakesUpdated: 1\n# [07:45:07.620] INFO (9259): analytics snapshot generated\n#     component: \"auto-debrief\"\n#     orderId: 321\n#     snapshotId: 38\n#     totalTrades: 2\n# [07:45:07.621] INFO (9259): Build EE monitor: BB auto-debrief triggered\n#     system: \"paperExecutionMonitor\"\n#     orderId: 321\n#     bbStatus: \"created\"\n#     bbDebriefId: 47\n# [07:45:07.622] INFO (9259): Build EE monitor complete\n#     system: \"paperExecutionMonitor\"\n#     scanned: 1\n#     closed: 1\n#     stillOpen: 0\n# [07:45:07.630] INFO (9259): learning event processed\n#     component: \"learningEngine\"\n#     eventId: 39\n#     debriefId: 47\n#     tradeId: 321\n#     symbol: \"QAPBUSD\"\n#     action: \"BUY\"\n#     result: \"WIN\"\n#     edgesUpdated: 0\n#     mistakesUpdated: 0\n#     sampleBucket: \"LOW\"\n# [07:45:07.630] INFO (9259): Build CC processed BB learning payload\n#     component: \"auto-debrief\"\n#     orderId: 321\n#     debriefId: 47\n#     ccStatus: \"processed\"\n#     ccEventId: 39\n#     edgesUpdated: 0\n#     mistakesUpdated: 0\n1..7\n# tests 7\n# suites 0\n# pass 7\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 2604.916868\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:my-trades-demo-open"
+      ],
+      "cwd": ".",
+      "duration_s": 3.6,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:my-trades-demo-open",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# (node:9297) ExperimentalWarning: Module mocking is an experimental feature and might change at any time\n# (Use `node --trace-warnings ...` to show where the warning was created)\n# Subtest: DEMO: a confirmed open goes through the guards and the Risk Governor to the demo queue, never placeOrder\nok 1 - DEMO: a confirmed open goes through the guards and the Risk Governor to the demo queue, never placeOrder\n  ---\n  duration_ms: 197.227286\n  type: 'test'\n  ...\n# Subtest: LIVE: a My Trades live open is refused by name and creates nothing\nok 2 - LIVE: a My Trades live open is refused by name and creates nothing\n  ---\n  duration_ms: 21.219779\n  type: 'test'\n  ...\n# Subtest: confirmation is required: an unconfirmed DEMO open creates nothing\nok 3 - confirmation is required: an unconfirmed DEMO open creates nothing\n  ---\n  duration_ms: 9.775594\n  type: 'test'\n  ...\n# Subtest: ownership: unauthenticated is refused; a trader's open uses only their own connection; another trader cannot confirm it\nok 4 - ownership: unauthenticated is refused; a trader's open uses only their own connection; another trader cannot confirm it\n  ---\n  duration_ms: 97.349955\n  type: 'test'\n  ...\n# Subtest: mode: a trader whose mode does not permit DEMO is refused before anything is recorded\nok 5 - mode: a trader whose mode does not permit DEMO is refused before anything is recorded\n  ---\n  duration_ms: 15.18077\n  type: 'test'\n  ...\n# Subtest: sizing and the Risk Governor: an oversized DEMO open is refused by name and never queued\nok 6 - sizing and the Risk Governor: an oversized DEMO open is refused by name and never queued\n  ---\n  duration_ms: 63.116212\n  type: 'test'\n  ...\n# Subtest: the demo queue's own refusal is returned as-is, and a duplicate in flight is refused\nok 7 - the demo queue's own refusal is returned as-is, and a duplicate in flight is refused\n  ---\n  duration_ms: 181.88557\n  type: 'test'\n  ...\n1..7\n# tests 7\n# suites 0\n# pass 7\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 3193.645643\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:broker-hub-heartbeat-policy"
+      ],
+      "cwd": ".",
+      "duration_s": 0.8,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:broker-hub-heartbeat-policy",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: owner bounds: < 15 s fresh, 15–60 s degraded, >= 60 s offline\nok 1 - owner bounds: < 15 s fresh, 15–60 s degraded, >= 60 s offline\n  ---\n  duration_ms: 1.276541\n  type: 'test'\n  ...\n# Subtest: missing / invalid / negative / non-finite observations are unknown and never execution-ready\nok 2 - missing / invalid / negative / non-finite observations are unknown and never execution-ready\n  ---\n  duration_ms: 0.319234\n  type: 'test'\n  ...\n# Subtest: seconds: exact for fractional and floored ages\nok 3 - seconds: exact for fractional and floored ages\n  ---\n  duration_ms: 0.195498\n  type: 'test'\n  ...\n# Subtest: only fresh is execution-ready; fresh and degraded are online\nok 4 - only fresh is execution-ready; fresh and degraded are online\n  ---\n  duration_ms: 1.004022\n  type: 'test'\n  ...\n# Subtest: timestamps: Date, ISO string, epoch ms; unparseable or future-dated → unknown\nok 5 - timestamps: Date, ISO string, epoch ms; unparseable or future-dated → unknown\n  ---\n  duration_ms: 0.555734\n  type: 'test'\n  ...\n# Subtest: the server authority re-exports the same policy (one implementation)\nok 6 - the server authority re-exports the same policy (one implementation)\n  ---\n  duration_ms: 0.188772\n  type: 'test'\n  ...\n# Subtest: broker-health evaluator: heartbeat bands from the shared policy\nok 7 - broker-health evaluator: heartbeat bands from the shared policy\n  ---\n  duration_ms: 0.734346\n  type: 'test'\n  ...\n# Subtest: legacy broker-status engine defaults follow the policy\nok 8 - legacy broker-status engine defaults follow the policy\n  ---\n  duration_ms: 0.400139\n  type: 'test'\n  ...\n# Subtest: AACI bridgeHeartbeat source is stale once not fresh (>= 15 s) or unknown\nok 9 - AACI bridgeHeartbeat source is stale once not fresh (>= 15 s) or unknown\n  ---\n  duration_ms: 0.950141\n  type: 'test'\n  ...\n1..9\n# tests 9\n# suites 0\n# pass 9\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 434.083933\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "--filter",
+        "@workspace/api-server",
+        "run",
+        "test:bridge-v2-liveness"
+      ],
+      "cwd": ".",
+      "duration_s": 0.8,
+      "exit": 0,
+      "label": "pnpm -s --filter @workspace/api-server run test:bridge-v2-liveness",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "TAP version 13\n# Subtest: heartbeatFreshness uses the shared policy at the exact boundaries\nok 1 - heartbeatFreshness uses the shared policy at the exact boundaries\n  ---\n  duration_ms: 0.616497\n  type: 'test'\n  ...\n# Subtest: stream health keeps its own separately named bands (legacy values, inclusive)\nok 2 - stream health keeps its own separately named bands (legacy values, inclusive)\n  ---\n  duration_ms: 0.130678\n  type: 'test'\n  ...\n# Subtest: the two vocabularies are reported side by side and can differ\nok 3 - the two vocabularies are reported side by side and can differ\n  ---\n  duration_ms: 0.082643\n  type: 'test'\n  ...\n# Subtest: legacy connected is unchanged: stream LIVE (age <= 15 s)\nok 4 - legacy connected is unchanged: stream LIVE (age <= 15 s)\n  ---\n  duration_ms: 0.07342\n  type: 'test'\n  ...\n# Subtest: a healthy stream never implies execution readiness\nok 5 - a healthy stream never implies execution readiness\n  ---\n  duration_ms: 0.578712\n  type: 'test'\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 414.759534\n\n"
+    },
+    {
+      "argv": [
+        "pnpm",
+        "-s",
+        "run",
+        "ci:integration"
+      ],
+      "cwd": ".",
+      "duration_s": 487.8,
+      "exit": 1,
+      "label": "integration lane",
+      "needs_db": true,
+      "state": "ran",
+      "tail": "st:scanner-no-feed-honesty\n\nerror: cannot drop constraint broker_hub_accounts_id_connection_owner_uq on table broker_hub_accounts because other objects depend on it\n    at /home/claude/arxai/node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.query (/home/claude/arxai/node_modules/.pnpm/drizzle-kit@0.31.9/node_modules/drizzle-kit/bin.cjs:80623:26)\n    at async pgPush (/home/claude/arxai/node_modules/.pnpm/drizzle-kit@0.31.9/node_modules/drizzle-kit/bin.cjs:84485:13)\n    at async Object.handler (/home/claude/arxai/node_modules/.pnpm/drizzle-kit@0.31.9/node_modules/drizzle-kit/bin.cjs:93943:9)\n    at async run (/home/claude/arxai/node_modules/.pnpm/drizzle-kit@0.31.9/node_modules/drizzle-kit/bin.cjs:93189:7) {\n  length: 550,\n  severity: 'ERROR',\n  code: '2BP01',\n  detail: 'constraint broker_hub_discovery_owner_account_fk on table broker_hub_discovery_evidence depends on index broker_hub_accounts_id_connection_owner_uq\\n' +\n    'constraint broker_hub_instruments_owner_account_fk on table broker_hub_instruments depends on index broker_hub_accounts_id_connection_owner_uq',\n  hint: 'Use DROP ... CASCADE to drop the dependent objects too.',\n  position: undefined,\n  internalPosition: undefined,\n  internalQuery: undefined,\n  where: undefined,\n  schema: undefined,\n  table: undefined,\n  column: undefined,\n  dataType: undefined,\n  constraint: undefined,\n  file: 'dependency.c',\n  line: '1204',\n  routine: 'reportDependentObjects'\n}\n  ✗ treatment: governanceOutcome \"downgraded\" (got null)\n  ✗ treatment: verdict caution (got tradeable)\n  ✗ signal changes the setup: verdict tradeable→caution (control=tradeable, treatment=tradeable)\n  ✗ signal changes governance: null→downgraded (control=null, treatment=null)\nadminUnrestrictedRiskTest crashed: DrizzleQueryError: Failed query: insert into \"risk_templates\" (\"id\", \"name\", \"description\", \"payload\", \"is_archived\", \"created_by\", \"created_at\", \"updated_at\") values (default, $1, $2, default, default, default, default, default) returning \"id\"\nparams: Approved Shared Bridge Default,auto-created by adminUnrestrictedRiskTest\n    at NodePgPreparedQuery.queryWithCache (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)\n    at async ensureTemplate (/home/claude/arxai/scripts/src/adminUnrestrictedRiskTest.ts:57:15)\n    at async main (/home/claude/arxai/scripts/src/adminUnrestrictedRiskTest.ts:137:23) {\n  query: 'insert into \"risk_templates\" (\"id\", \"name\", \"description\", \"payload\", \"is_archived\", \"created_by\", \"created_at\", \"updated_at\") values (default, $1, $2, default, default, default, default, default) returning \"id\"',\n  params: [\n    'Approved Shared Bridge Default',\n    'auto-created by adminUnrestrictedRiskTest'\n  ],\n  cause: error: null value in column \"created_by\" of relation \"risk_templates\" violates not-null constraint\n      at /home/claude/arxai/node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11\n      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n      at async <anonymous> (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:161:13)\n      at async NodePgPreparedQuery.queryWithCache (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:71:12)\n      at async <anonymous> (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)\n      at async ensureTemplate (/home/claude/arxai/scripts/src/adminUnrestrictedRiskTest.ts:57:15)\n      at async main (/home/claude/arxai/scripts/src/adminUnrestrictedRiskTest.ts:137:23) {\n    length: 361,\n    severity: 'ERROR',\n    code: '23502',\n    detail: 'Failing row contains (3, Approved Shared Bridge Default, auto-created by adminUnrestrictedRiskTest, {}, f, null, 2026-10-25 07:46:16.652767, 2026-10-25 07:46:16.652767).',\n    hint: undefined,\n    position: undefined,\n    internalPosition: undefined,\n    internalQuery: undefined,\n    where: undefined,\n    schema: 'public',\n    table: 'risk_templates',\n    column: 'created_by',\n    dataType: undefined,\n    constraint: undefined,\n    file: 'execMain.c',\n    line: '2057',\n    routine: 'ExecConstraints'\n  }\n}\nQA crashed: error: insert or update on table \"arx_dispatch_exposure_reservations\" violates foreign key constraint \"arx_dispatch_exposure_reservations_user_id_users_id_fk\"\n    at /home/claude/arxai/node_modules/.pnpm/pg@8.20.0/node_modules/pg/lib/client.js:631:17\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/home/claude/arxai/artifacts/api-server/src/lib/concurrency/exposureReservation.ts:138:19)\n    at async withTxAdvisoryLock (/home/claude/arxai/artifacts/api-server/src/lib/concurrency/advisoryLock.ts:73:19)\n    at async reserveExposureAtomic (/home/claude/arxai/artifacts/api-server/src/lib/concurrency/exposureReservation.ts:128:16)\n    at async main (/home/claude/arxai/scripts/src/qaOneClickConcurrency.ts:176:14) {\n  length: 372,\n  severity: 'ERROR',\n  code: '23503',\n  detail: 'Key (user_id)=(1) is not present in table \"users\".',\n  hint: undefined,\n  position: undefined,\n  internalPosition: undefined,\n  internalQuery: undefined,\n  where: undefined,\n  schema: 'public',\n  table: 'arx_dispatch_exposure_reservations',\n  column: undefined,\n  dataType: undefined,\n  constraint: 'arx_dispatch_exposure_reservations_user_id_users_id_fk',\n  file: 'ri_triggers.c',\n  line: '2608',\n  routine: 'ri_ReportViolation'\n}\n"
+    }
+  ]
+}
