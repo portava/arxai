@@ -95,7 +95,20 @@ Validation on an isolated local PostgreSQL database (UTC):
 4. Owner actions from the handoff: the seven production migrations, the legacy
    owner user ID as an explicit deploy parameter, and `validate:broker` against
    a real demo bridge.
-5. A physical merge of the two position tables, planned separately and last.
-   The plan (not applied) is `docs/TIER1_POSITION_TABLE_MERGE_PLAN.md`.
+5. A physical merge of the two position tables: **not in this phase** (owner
+   decision 12, option A, 2026-10-25). Both tables stay behind one ledger and
+   read model. The decisions D1 to D10 (no physical merge; preserve decision 6
+   and the named view semantics; preserve NULL ownership; savepoint-and-continue
+   with a cutover block if a merge is ever approved; P0 evidence for time zone,
+   float widening, PostgreSQL version and uniqueness; preserve legacy ids; a
+   full trading week of clean demo-bridge evidence with passive LIVE
+   observation and no real-money validation trades; separate tenant-security
+   review for RLS; no table or column drops) are recorded in
+   `docs/TIER1_POSITION_TABLE_MERGE_PLAN.md` section 7.
+6. Trader alerts keep the stricter `ALERT_ELIGIBLE` rule (owner decision 11),
+   expressed in the read model; see `docs/TIER1_OPEN_POSITION_VIEW.md`
+   ("Round 5: alert eligibility"). Ownerless DEMO rows are never alerted or
+   attributed to an inferred trader; they remain visible only to ADMIN/OWNER
+   sessions on the existing DEMO positions routes (`lib/auth/ownerScope.ts`).
 
 **TIER 1 NOT COMPLETE**
