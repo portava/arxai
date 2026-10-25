@@ -67,5 +67,22 @@
     "settings_rows": 1
   },
   "production_published": false,
-  "broker_commands_issued": false
+  "broker_commands_issued": false,
+  "development_restart": {
+    "at": "2026-10-25T12:23:53.624685+00:00",
+    "smoke": {
+      "api_health": {
+        "status": 200,
+        "expected": 200
+      },
+      "anonymous_identity": {
+        "status": 401,
+        "expected": 401
+      },
+      "login_page": {
+        "status": 200,
+        "expected": 200
+      }
+    }
+  }
 }
