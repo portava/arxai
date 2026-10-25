@@ -147,4 +147,18 @@ each change below with the reason, and bump `version`.
 
 ### Rubric changelog
 
-- 2.0.0 (2026-10-25): first version, committed before the baseline.
+- 2.0.0 (2026-10-25, `190db1c`): first version, committed before any
+  measurement.
+- 2.0.1 (2026-10-25): two checks measured the wrong thing. Both were found
+  in a static-only dry run (`--skip-commands`) of 2.0.0, before the baseline;
+  no requirement, criterion or status rule changed.
+  - IMPL-PG-02 (deferral scope, "no table or column drops"): the regex also
+    matched `DROP COLUMN` inside SQL comments, the documented rollback steps
+    of `2026-10-24_learning_scopes.sql` and `2026-10-24_user_risk_profile.sql`.
+    Neither migration executes a drop. The check now skips comment lines.
+    Effect: 2.0.0 reported FAIL (scope violated); 2.0.1 reports DEFERRED.
+  - IMPL-PL-03 (open-position readers): `routes/meLive.ts` passed because it
+    imports the read model for another query, while it still reads every
+    row for the user and filters in memory. Each file now must also have no
+    whole-user ledger read. Effect: stricter; the criterion was and stays
+    FAIL.

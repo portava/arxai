@@ -1,6 +1,6 @@
 {
   "name": "ARX Tier 1 Scorecard v2",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "authority": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
   "statuses": {
     "PASS": "The check found the required behaviour or evidence on the measured commit.",
@@ -642,10 +642,10 @@
             },
             {
               "kind": "pattern",
-              "regex": "\\bdrop\\s+(table|column)\\b",
+              "regex": "^(?!\\s*--).*\\bdrop\\s+(table|column)\\b",
               "expect": "absent",
-              "describe": "no table/column drop in migrations",
-              "flags": "i",
+              "describe": "no table/column drop executed by a migration (SQL comments excluded)",
+              "flags": "im",
               "globs": [
                 "lib/db/migrations/*.sql"
               ]
@@ -688,10 +688,10 @@
           },
           {
             "kind": "pattern",
-            "regex": "\\bdrop\\s+(table|column)\\b",
+            "regex": "^(?!\\s*--).*\\bdrop\\s+(table|column)\\b",
             "expect": "absent",
-            "describe": "no table/column drop in migrations",
-            "flags": "i",
+            "describe": "no table/column drop executed by a migration (SQL comments excluded)",
+            "flags": "im",
             "globs": [
               "lib/db/migrations/*.sql"
             ]
@@ -725,46 +725,118 @@
         "kind": "all",
         "checks": [
           {
-            "kind": "pattern",
-            "regex": "positions/openPositions",
-            "expect": "present",
-            "path": "artifacts/api-server/src/routes/meLive.ts",
-            "describe": "routes/meLive.ts imports the read model"
+            "kind": "all",
+            "checks": [
+              {
+                "kind": "pattern",
+                "regex": "positions/openPositions",
+                "expect": "present",
+                "path": "artifacts/api-server/src/routes/meLive.ts",
+                "describe": "routes/meLive.ts imports the read model"
+              },
+              {
+                "kind": "pattern",
+                "regex": "PositionLedger\\.read\\(\\{\\s*where: (eq\\(\\w+\\.userId, userId\\)|ownedBy\\(|ownerScope\\()",
+                "expect": "absent",
+                "path": "artifacts/api-server/src/routes/meLive.ts",
+                "describe": "routes/meLive.ts has no whole-user ledger read filtered in memory"
+              }
+            ]
           },
           {
-            "kind": "pattern",
-            "regex": "positions/openPositions",
-            "expect": "present",
-            "path": "artifacts/api-server/src/lib/tradeHealth/tradeHealthService.ts",
-            "describe": "lib/tradeHealth/tradeHealthService.ts imports the read model"
+            "kind": "all",
+            "checks": [
+              {
+                "kind": "pattern",
+                "regex": "positions/openPositions",
+                "expect": "present",
+                "path": "artifacts/api-server/src/lib/tradeHealth/tradeHealthService.ts",
+                "describe": "lib/tradeHealth/tradeHealthService.ts imports the read model"
+              },
+              {
+                "kind": "pattern",
+                "regex": "PositionLedger\\.read\\(\\{\\s*where: (eq\\(\\w+\\.userId, userId\\)|ownedBy\\(|ownerScope\\()",
+                "expect": "absent",
+                "path": "artifacts/api-server/src/lib/tradeHealth/tradeHealthService.ts",
+                "describe": "lib/tradeHealth/tradeHealthService.ts has no whole-user ledger read filtered in memory"
+              }
+            ]
           },
           {
-            "kind": "pattern",
-            "regex": "positions/openPositions",
-            "expect": "present",
-            "path": "artifacts/api-server/src/lib/scalp/scalpManageService.ts",
-            "describe": "lib/scalp/scalpManageService.ts imports the read model"
+            "kind": "all",
+            "checks": [
+              {
+                "kind": "pattern",
+                "regex": "positions/openPositions",
+                "expect": "present",
+                "path": "artifacts/api-server/src/lib/scalp/scalpManageService.ts",
+                "describe": "lib/scalp/scalpManageService.ts imports the read model"
+              },
+              {
+                "kind": "pattern",
+                "regex": "PositionLedger\\.read\\(\\{\\s*where: (eq\\(\\w+\\.userId, userId\\)|ownedBy\\(|ownerScope\\()",
+                "expect": "absent",
+                "path": "artifacts/api-server/src/lib/scalp/scalpManageService.ts",
+                "describe": "lib/scalp/scalpManageService.ts has no whole-user ledger read filtered in memory"
+              }
+            ]
           },
           {
-            "kind": "pattern",
-            "regex": "positions/openPositions",
-            "expect": "present",
-            "path": "artifacts/api-server/src/lib/broker/mt5BridgeProvider.ts",
-            "describe": "lib/broker/mt5BridgeProvider.ts imports the read model"
+            "kind": "all",
+            "checks": [
+              {
+                "kind": "pattern",
+                "regex": "positions/openPositions",
+                "expect": "present",
+                "path": "artifacts/api-server/src/lib/broker/mt5BridgeProvider.ts",
+                "describe": "lib/broker/mt5BridgeProvider.ts imports the read model"
+              },
+              {
+                "kind": "pattern",
+                "regex": "PositionLedger\\.read\\(\\{\\s*where: (eq\\(\\w+\\.userId, userId\\)|ownedBy\\(|ownerScope\\()",
+                "expect": "absent",
+                "path": "artifacts/api-server/src/lib/broker/mt5BridgeProvider.ts",
+                "describe": "lib/broker/mt5BridgeProvider.ts has no whole-user ledger read filtered in memory"
+              }
+            ]
           },
           {
-            "kind": "pattern",
-            "regex": "positions/openPositions",
-            "expect": "present",
-            "path": "artifacts/api-server/src/routes/livePositions.ts",
-            "describe": "routes/livePositions.ts imports the read model"
+            "kind": "all",
+            "checks": [
+              {
+                "kind": "pattern",
+                "regex": "positions/openPositions",
+                "expect": "present",
+                "path": "artifacts/api-server/src/routes/livePositions.ts",
+                "describe": "routes/livePositions.ts imports the read model"
+              },
+              {
+                "kind": "pattern",
+                "regex": "PositionLedger\\.read\\(\\{\\s*where: (eq\\(\\w+\\.userId, userId\\)|ownedBy\\(|ownerScope\\()",
+                "expect": "absent",
+                "path": "artifacts/api-server/src/routes/livePositions.ts",
+                "describe": "routes/livePositions.ts has no whole-user ledger read filtered in memory"
+              }
+            ]
           },
           {
-            "kind": "pattern",
-            "regex": "positions/openPositions",
-            "expect": "present",
-            "path": "artifacts/api-server/src/routes/portfolioRisk.ts",
-            "describe": "routes/portfolioRisk.ts imports the read model"
+            "kind": "all",
+            "checks": [
+              {
+                "kind": "pattern",
+                "regex": "positions/openPositions",
+                "expect": "present",
+                "path": "artifacts/api-server/src/routes/portfolioRisk.ts",
+                "describe": "routes/portfolioRisk.ts imports the read model"
+              },
+              {
+                "kind": "pattern",
+                "regex": "PositionLedger\\.read\\(\\{\\s*where: (eq\\(\\w+\\.userId, userId\\)|ownedBy\\(|ownerScope\\()",
+                "expect": "absent",
+                "path": "artifacts/api-server/src/routes/portfolioRisk.ts",
+                "describe": "routes/portfolioRisk.ts has no whole-user ledger read filtered in memory"
+              }
+            ]
           }
         ]
       }
