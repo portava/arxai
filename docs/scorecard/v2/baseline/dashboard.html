@@ -1,0 +1,2063 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ARX Tier 1 Scorecard v2</title><style>
+:root{--bg:#fbfbfa;--fg:#1d1d1b;--muted:#6b6a66;--line:#e3e2de;--card:#fff;
+--pass:#1f7a3f;--pass-bg:#e5f3ea;--fail:#b3261e;--fail-bg:#fbe7e5;--unk:#8a5a00;--unk-bg:#fbf0d9;
+--def:#3d5a99;--def-bg:#e6ecf8;--code:#f2f1ee}
+@media (prefers-color-scheme:dark){:root{--bg:#161615;--fg:#ecebe7;--muted:#a3a19a;--line:#33322f;--card:#1f1f1d;
+--pass:#7fd39b;--pass-bg:#183323;--fail:#ff9b92;--fail-bg:#3a1d1a;--unk:#f0c36b;--unk-bg:#352a12;
+--def:#a9bdf0;--def-bg:#1d2740;--code:#2a2a27}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
+font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 12px}h3{font-size:15px;margin:16px 0 6px}
+.muted{color:var(--muted)}code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+code{background:var(--code);padding:1px 4px;border-radius:4px;word-break:break-all}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px 24px;margin:12px 0 0}
+.meta div{min-width:0}.meta b{display:block;font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.verdicts{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.verdict{font-size:18px;font-weight:700}.ok{color:var(--pass)}.bad{color:var(--fail)}
+.counts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pill{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.PASS{background:var(--pass-bg);color:var(--pass)}.FAIL{background:var(--fail-bg);color:var(--fail)}
+.UNKNOWN{background:var(--unk-bg);color:var(--unk)}.DEFERRED{background:var(--def-bg);color:var(--def)}
+.warn{border-left:4px solid var(--unk);background:var(--unk-bg);padding:10px 12px;border-radius:6px;margin-top:16px}
+ul.gates{padding-left:18px;margin:6px 0}ul.gates li{margin:3px 0}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.filters select,.filters input{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg)}
+.filters input{flex:1;min-width:160px}
+details.crit{background:var(--card);border:1px solid var(--line);border-radius:8px;margin:6px 0}
+details.crit>summary{cursor:pointer;padding:9px 12px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;list-style:none}
+details.crit>summary::-webkit-details-marker{display:none}
+details.crit>summary .id{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--muted);min-width:96px}
+details.crit>summary .t{flex:1;min-width:200px}
+.body{padding:0 12px 12px;border-top:1px solid var(--line)}
+pre{background:var(--code);padding:8px 10px;border-radius:6px;overflow-x:auto;font-size:12px;line-height:1.45;margin:6px 0;white-space:pre-wrap;word-break:break-word}
+blockquote{margin:4px 0 8px;padding:2px 10px;border-left:3px solid var(--line);color:var(--muted)}
+table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.tablewrap{overflow-x:auto}
+</style></head>
+<body><main>
+<h1>ARX Tier 1 Scorecard v2</h1>
+<div class="muted">Counts and completion gates, no weights. Results are not comparable with the retired original scorecard's 68.7%.</div>
+<div class="meta"><div><b>Measured commit</b><code>51d231b0adeec61a5b77f2547e853b1ba9d732bb</code><div class="muted">Scorecard v2: an unreachable local database gives UNKNOWN, not FAIL</div></div><div><b>Base (main)</b><code>67d8a6521b780ef7182a17d51bcf3c392b5a251e</code></div><div><b>Measured at (UTC)</b>2026-10-25T07:43:16Z</div><div><b>Rubric</b>v2.0.1 · <code>5a75ff7c34ce7aee</code><div class="muted">last commit <code>7a823ebaf8ac</code></div></div><div><b>Database</b>local database</div><div><b>Totals</b><div class="counts"><span class="pill PASS">35 PASS</span><span class="pill FAIL">16 FAIL</span><span class="pill UNKNOWN">10 UNKNOWN</span><span class="pill DEFERRED">4 DEFERRED</span></div></div></div>
+<div class="warn">The working tree had uncommitted or untracked paths when this was measured: .claude/worktrees/agent-a435ce2cbfa97761e/, .claude/worktrees/agent-a445f0cdd7b32b22d/, .claude/worktrees/agent-a47f4fa072e351793/, .claude/worktrees/agent-a928fff6dce13e7c5/, .claude/worktrees/agent-ab2857bf43ce5de65/</div>
+<div class="verdicts">
+<div class="card"><div class="muted">Tier 1</div><div class="verdict bad">TIER 1 NOT COMPLETE</div><div class="muted" style="margin-top:6px">IMPL · Architecture and code implementation</div><div class="counts"><span class="pill PASS">22 PASS</span><span class="pill FAIL">9 FAIL</span><span class="pill UNKNOWN">1 UNKNOWN</span><span class="pill DEFERRED">1 DEFERRED</span></div><div class="muted" style="margin-top:6px">OPS · Deployment and operational readiness</div><div class="counts"><span class="pill PASS">0 PASS</span><span class="pill FAIL">0 FAIL</span><span class="pill UNKNOWN">9 UNKNOWN</span><span class="pill DEFERRED">3 DEFERRED</span></div><div class="muted" style="margin-top:6px">VER · Verification and regression evidence</div><div class="counts"><span class="pill PASS">13 PASS</span><span class="pill FAIL">7 FAIL</span><span class="pill UNKNOWN">0 UNKNOWN</span><span class="pill DEFERRED">0 DEFERRED</span></div></div>
+<div class="card"><div class="muted">Code (implementation + verification)</div><div class="verdict bad">CODE NOT COMPLETE</div><div class="muted" style="margin-top:6px">IMPL · Architecture and code implementation</div><div class="counts"><span class="pill PASS">22 PASS</span><span class="pill FAIL">9 FAIL</span><span class="pill UNKNOWN">1 UNKNOWN</span><span class="pill DEFERRED">1 DEFERRED</span></div><div class="muted" style="margin-top:6px">VER · Verification and regression evidence</div><div class="counts"><span class="pill PASS">13 PASS</span><span class="pill FAIL">7 FAIL</span><span class="pill UNKNOWN">0 UNKNOWN</span><span class="pill DEFERRED">0 DEFERRED</span></div></div>
+<div class="card"><div class="muted">Operational readiness</div><div class="verdict bad">NOT OPERATIONALLY READY</div><div class="muted" style="margin-top:6px">OPS · Deployment and operational readiness</div><div class="counts"><span class="pill PASS">0 PASS</span><span class="pill FAIL">0 FAIL</span><span class="pill UNKNOWN">9 UNKNOWN</span><span class="pill DEFERRED">3 DEFERRED</span></div></div>
+</div>
+<h2>Unmet gates (26)</h2>
+<p class="muted">Every FAIL or UNKNOWN criterion. Tier 1 is complete only when this list is empty.</p>
+<h3>IMPL · Architecture and code implementation (10)</h3><ul class="gates"><li><span class="pill FAIL">FAIL</span> <a href="#IMPL-PS-03"><code>IMPL-PS-03</code></a> Broker operator controls are enforced on the order path<div class="muted">operator controls read by the pre-trade governor: 0 match(es), required &gt;= 1</div></li><li><span class="pill FAIL">FAIL</span> <a href="#IMPL-RG-04"><code>IMPL-RG-04</code></a> No remaining status verdict or duplicate limit calculation on the saved row<div class="muted">all of 3: 3 FAIL</div></li><li><span class="pill FAIL">FAIL</span> <a href="#IMPL-RG-07"><code>IMPL-RG-07</code></a> Risk audit is scoped to the trader<div class="muted">trades queries filtered by user: 0 of 5 contain /tradesTable\.userId/</div></li><li><span class="pill FAIL">FAIL</span> <a href="#IMPL-PL-03"><code>IMPL-PL-03</code></a> Per-user open-position readers use the central read model<div class="muted">all of 6: 6 FAIL</div></li><li><span class="pill FAIL">FAIL</span> <a href="#IMPL-PL-04"><code>IMPL-PL-04</code></a> Unified position feed&#x27;s DEMO list comes from the read model<div class="muted">DEMO list from mt5_state: 2 match(es), required == 0</div></li><li><span class="pill FAIL">FAIL</span> <a href="#IMPL-TE-02"><code>IMPL-TE-02</code></a> Closing a decision-13 paper order keeps real price provenance<div class="muted">any of 2: 2 FAIL</div></li><li><span class="pill FAIL">FAIL</span> <a href="#IMPL-TE-05"><code>IMPL-TE-05</code></a> A retried My Trades DEMO open cannot place a second order<div class="muted">all of 2: 2 FAIL</div></li><li><span class="pill FAIL">FAIL</span> <a href="#IMPL-BH-02"><code>IMPL-BH-02</code></a> No platform balance is used for a trader&#x27;s sizing<div class="muted">platform mt5_state in paper sizing: 2 match(es), required == 0</div></li><li><span class="pill FAIL">FAIL</span> <a href="#IMPL-BH-03"><code>IMPL-BH-03</code></a> A multi-connection user&#x27;s account figures come from one defined connection<div class="muted">connection order used for account figures: 2 different values (accountSynced, oldest)</div></li><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#IMPL-BH-07"><code>IMPL-BH-07</code></a> Owner has confirmed the heartbeat close policy<div class="muted">no owner evidence recorded for &#x27;owner_confirmed_heartbeat_close_policy&#x27;</div></li></ul><h3>VER · Verification and regression evidence (7)</h3><ul class="gates"><li><span class="pill FAIL">FAIL</span> <a href="#VER-CI-01"><code>VER-CI-01</code></a> Per-commit CI aggregate passes<div class="muted">exit 1: pnpm -s run ci</div></li><li><span class="pill FAIL">FAIL</span> <a href="#VER-INT-1"><code>VER-INT-1</code></a> Tracked integration failure INT-1 passes: test:admin-unrestricted-risk<div class="muted">@workspace/scripts::test:admin-unrestricted-risk failed</div></li><li><span class="pill FAIL">FAIL</span> <a href="#VER-INT-2"><code>VER-INT-2</code></a> Tracked integration failure INT-2 passes: test:chart-decision-receipts<div class="muted">@workspace/scripts::test:chart-decision-receipts failed</div></li><li><span class="pill FAIL">FAIL</span> <a href="#VER-INT-3"><code>VER-INT-3</code></a> Tracked integration failure INT-3 passes: test:mode-scope<div class="muted">@workspace/scripts::test:mode-scope failed</div></li><li><span class="pill FAIL">FAIL</span> <a href="#VER-INT-4"><code>VER-INT-4</code></a> Tracked integration failure INT-4 passes: test:one-click-concurrency<div class="muted">@workspace/scripts::test:one-click-concurrency failed</div></li><li><span class="pill FAIL">FAIL</span> <a href="#VER-INT-5"><code>VER-INT-5</code></a> Tracked integration failure INT-5 passes: test:scanner-no-feed-honesty<div class="muted">@workspace/api-server::test:scanner-no-feed-honesty failed</div></li><li><span class="pill FAIL">FAIL</span> <a href="#VER-INT-6"><code>VER-INT-6</code></a> Tracked integration failure INT-6 passes: test:ruby-draw-setup-route<div class="muted">rubyDrawSetupRouteTest: 49 passed, 4 failed</div></li></ul><h3>OPS · Deployment and operational readiness (9)</h3><ul class="gates"><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#OPS-01"><code>OPS-01</code></a> All eight migrations are applied in production<div class="muted">no owner evidence recorded for &#x27;prod_migrations_applied&#x27;</div></li><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#OPS-02"><code>OPS-02</code></a> Duplicate global_trading_settings rows are inspected and resolved in production<div class="muted">no owner evidence recorded for &#x27;prod_duplicate_settings_rows_resolved&#x27;</div></li><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#OPS-03"><code>OPS-03</code></a> The legacy owner user ID is supplied explicitly and the claim is run<div class="muted">no owner evidence recorded for &#x27;legacy_owner_id_supplied&#x27;</div></li><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#OPS-04"><code>OPS-04</code></a> check:production-readiness passes against production<div class="muted">no owner evidence recorded for &#x27;prod_readiness_check_passed&#x27;</div></li><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#OPS-05"><code>OPS-05</code></a> validate:broker passes against a real demo bridge<div class="muted">no owner evidence recorded for &#x27;validate_broker_real_demo_passed&#x27;</div></li><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#OPS-06"><code>OPS-06</code></a> The production broker_health_state row is known<div class="muted">no owner evidence recorded for &#x27;prod_broker_health_state_known&#x27;</div></li><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#OPS-07"><code>OPS-07</code></a> A real market-data provider is configured for SIMULATED opens<div class="muted">no owner evidence recorded for &#x27;market_data_provider_configured&#x27;</div></li><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#OPS-08"><code>OPS-08</code></a> Account snapshot reconciliation has been run against production<div class="muted">no owner evidence recorded for &#x27;account_reconciliation_run&#x27;</div></li><li><span class="pill UNKNOWN">UNKNOWN</span> <a href="#OPS-09"><code>OPS-09</code></a> Production runs a commit that includes round 5<div class="muted">no owner evidence recorded for &#x27;prod_deployed_commit_includes_round5&#x27;</div></li></ul>
+<h2>Approved deferrals (4)</h2><ul class="gates"><li><a href="#IMPL-PG-02"><code>IMPL-PG-02</code></a> Physical position tables stay behind one ledger (approved deferral)<div class="muted">Deferred: a unified physical positions table and any migration toward it. Not deferred: both tables must stay behind the ledger/read model, with no table or column dropped (checked here). Read-model coverage of the remaining readers is a separate, non-deferred criterion (IMPL-PL-03, IMPL-PL-04).</div></li><li><a href="#OPS-10"><code>OPS-10</code></a> P0 inspection for a physical position-table merge (approved deferral)<div class="muted">Deferred only while no physical merge is started. Any unified positions table or migration toward it makes this a current requirement (checked here).</div></li><li><a href="#OPS-11"><code>OPS-11</code></a> A full trading week of clean demo-bridge evidence (approved deferral)<div class="muted">Deferred only while no physical merge or cutover is started (checked here).</div></li><li><a href="#OPS-12"><code>OPS-12</code></a> My Trades LIVE opens (approved future project)<div class="muted">Deferred while the surface stays refused. If My Trades LIVE opens are reachable without the refusal, this fails (checked here).</div></li></ul>
+<h2>All criteria (65)</h2>
+<div class="filters"><select id="fs" aria-label="Status"><option value="">All statuses</option>
+<option>FAIL</option><option>UNKNOWN</option><option>DEFERRED</option><option>PASS</option></select>
+<select id="fx" aria-label="Section"><option value="">All sections</option><option value="IMPL">IMPL · Architecture and code implementation</option><option value="OPS">OPS · Deployment and operational readiness</option><option value="VER">VER · Verification and regression evidence</option></select>
+<input id="fq" type="search" placeholder="Search criteria, evidence, sources" aria-label="Search"></div>
+<details class="crit" data-status="FAIL" data-section="IMPL" id="IMPL-PS-03"><summary><span class="pill FAIL">FAIL</span><span class="id">IMPL-PS-03</span><span class="t">Broker operator controls are enforced on the order path</span></summary><div class="body"><h3>Result</h3><p>operator controls read by the pre-trade governor: 0 match(es), required &gt;= 1</p><h3>Requirement</h3><p>Owner decision 2: disabled execution or maintenance blocks new risk. Every DEMO/LIVE order passes the pre-trade Risk Governor, so the controls must be read there (directly or through the venue verdict) for the block to apply at dispatch.</p><h3>Notes</h3><p>The doc records a production prerequisite: the production broker_health_state row (OPS-06) must be known before enforcement, because execution_enabled defaults to false.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Disabled execution or maintenance blocks new risk.</blockquote></li><li><code>docs/TIER1_PLATFORM_SAFETY_SOURCE.md</code><blockquote>Not done: no order path (order guard, live dispatch, pre-trade governor) reads the verdict or the toggles yet, so they are reported, not enforced, at dispatch.</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="FAIL" data-section="IMPL" id="IMPL-RG-04"><summary><span class="pill FAIL">FAIL</span><span class="id">IMPL-RG-04</span><span class="t">No remaining status verdict or duplicate limit calculation on the saved row</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 FAIL</p><h3>Requirement</h3><p>Owner decision 8 also requires removing contradictory defaults and duplicate calculations. The paper permission verdict, the trade-decision advisor and the risk audit still decide on the trader&#x27;s saved values, not the limits in force.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Remove contradictory display defaults and duplicate calculations.</blockquote></li><li><code>docs/TIER1_RISK_GOVERNOR_SOURCE.md</code><blockquote>uses the trader&#x27;s saved values, not the effective limits (operator caps and the daily-loss switch are not applied)</blockquote></li><li><code>docs/TIER1_RISK_GOVERNOR_SOURCE.md</code><blockquote>Open trades and losing streak against the saved values</blockquote></li></ul><h3>Evidence</h3><pre>[FAIL] permission verdict on limits in force: 0 match(es), required &gt;= 1
+[FAIL] trade-decision advisor on limits in force: 0 match(es), required &gt;= 1
+[FAIL] risk audit on limits in force: 0 match(es), required &gt;= 1</pre></div></details><details class="crit" data-status="FAIL" data-section="IMPL" id="IMPL-RG-07"><summary><span class="pill FAIL">FAIL</span><span class="id">IMPL-RG-07</span><span class="t">Risk audit is scoped to the trader</span></summary><div class="body"><h3>Result</h3><p>trades queries filtered by user: 0 of 5 contain /tradesTable\.userId/</p><h3>Requirement</h3><p>Tenant and account isolation (owner&#x27;s verification list; never bypass RLS). computeRiskAudit feeds /risk/audit and the legacy /mt5/execute gate, and must count only the caller&#x27;s trades.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Test: tenant and account isolation</blockquote></li><li><code>docs/TIER1_RISK_GOVERNOR_SOURCE.md</code><blockquote>from the legacy `trades` table (not scoped to the user)</blockquote></li></ul><h3>Evidence</h3><pre>missing at artifacts/api-server/src/lib/riskAudit.ts:61
+missing at artifacts/api-server/src/lib/riskAudit.ts:70
+missing at artifacts/api-server/src/lib/riskAudit.ts:79
+missing at artifacts/api-server/src/lib/riskAudit.ts:86
+missing at artifacts/api-server/src/lib/riskAudit.ts:93</pre></div></details><details class="crit" data-status="FAIL" data-section="IMPL" id="IMPL-PL-03"><summary><span class="pill FAIL">FAIL</span><span class="id">IMPL-PL-03</span><span class="t">Per-user open-position readers use the central read model</span></summary><div class="body"><h3>Result</h3><p>all of 6: 6 FAIL</p><h3>Requirement</h3><p>Owner decision 12 keeps both tables behind one ledger/read model. Six modules read every row for a user through the ledger and drop closed rows in memory with their own rules, outside the read model.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>retain both physical position tables behind one ledger/read model</blockquote></li><li><code>docs/TIER1_OPEN_POSITION_VIEW.md</code><blockquote>A module that reads every row for a user and drops closed rows in memory is not detected</blockquote></li></ul><h3>Evidence</h3><pre>[FAIL] all of 2: 1 PASS, 1 FAIL
+    [PASS] routes/meLive.ts imports the read model: 1 match(es), required &gt;= 1
+        artifacts/api-server/src/routes/meLive.ts:21: positions/openPositions
+    [FAIL] routes/meLive.ts has no whole-user ledger read filtered in memory: 1 match(es), required == 0
+        artifacts/api-server/src/routes/meLive.ts:340: PositionLedger.read({ where: eq(livePositionColumns.userId, userId)
+[FAIL] all of 2: 2 FAIL
+    [FAIL] lib/tradeHealth/tradeHealthService.ts imports the read model: 0 match(es), required &gt;= 1
+    [FAIL] lib/tradeHealth/tradeHealthService.ts has no whole-user ledger read filtered in memory: 1 match(es), required == 0
+        artifacts/api-server/src/lib/tradeHealth/tradeHealthService.ts:98: PositionLedger.read({ where: eq(livePositionColumns.userId, userId)
+[FAIL] all of 2: 2 FAIL
+    [FAIL] lib/scalp/scalpManageService.ts imports the read model: 0 match(es), required &gt;= 1
+    [FAIL] lib/scalp/scalpManageService.ts has no whole-user ledger read filtered in memory: 1 match(es), required == 0
+        artifacts/api-server/src/lib/scalp/scalpManageService.ts:104: PositionLedger.read({ where: eq(livePositionColumns.userId, userId)
+[FAIL] all of 2: 2 FAIL
+    [FAIL] lib/broker/mt5BridgeProvider.ts imports the read model: 0 match(es), required &gt;= 1
+    [FAIL] lib/broker/mt5BridgeProvider.ts has no whole-user ledger read filtered in memory: 1 match(es), required == 0
+        artifacts/api-server/src/lib/broker/mt5BridgeProvider.ts:117: PositionLedger.read({ where: ownedBy(
+[FAIL] all of 2: 2 FAIL
+    [FAIL] routes/livePositions.ts imports the read model: 0 match(es), required &gt;= 1
+    [FAIL] routes/livePositions.ts has no whole-user ledger read filtered in memory: 1 match(es), required == 0
+        artifacts/api-server/src/routes/livePositions.ts:310: PositionLedger.read({ where: ownerScope(
+[FAIL] all of 2: 2 FAIL
+    [FAIL] routes/portfolioRisk.ts imports the read model: 0 match(es), required &gt;= 1
+    [FAIL] routes/portfolioRisk.ts has no whole-user ledger read filtered in memory: 1 match(es), required == 0
+        artifacts/api-server/src/routes/portfolioRisk.ts:65: PositionLedger.read({ where: ownerScope(</pre></div></details><details class="crit" data-status="FAIL" data-section="IMPL" id="IMPL-PL-04"><summary><span class="pill FAIL">FAIL</span><span class="id">IMPL-PL-04</span><span class="t">Unified position feed&#x27;s DEMO list comes from the read model</span></summary><div class="body"><h3>Result</h3><p>DEMO list from mt5_state: 2 match(es), required == 0</p><h3>Requirement</h3><p>The unified feed&#x27;s DEMO list must come from the position read model, not the mt5_state snapshot.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OPEN_POSITION_VIEW.md</code><blockquote>The unified feed&#x27;s DEMO list still comes from `mt5_state`</blockquote></li></ul><h3>Evidence</h3><pre>artifacts/api-server/src/routes/mePositionsUnified.ts:26: readLatestUserMt5State
+artifacts/api-server/src/routes/mePositionsUnified.ts:120: readLatestUserMt5State</pre></div></details><details class="crit" data-status="FAIL" data-section="IMPL" id="IMPL-TE-02"><summary><span class="pill FAIL">FAIL</span><span class="id">IMPL-TE-02</span><span class="t">Closing a decision-13 paper order keeps real price provenance</span></summary><div class="body"><h3>Result</h3><p>any of 2: 2 FAIL</p><h3>Requirement</h3><p>Owner decision 13 requires valid price provenance and no fabricated fills. A manual close of a real-quote paper order still prices the exit with the simulator&#x27;s mock price.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>valid price provenance</blockquote></li><li><code>docs/TIER1_TRADE_ENGINE_MODES.md</code><blockquote>still prices the exit with the paper simulator</blockquote></li></ul><h3>Evidence</h3><pre>[FAIL] closePaperOrder never uses the mock price: 1 match(es), expected absent
+    artifacts/api-server/src/lib/tradeEngine/paperVenue.ts:328: getMockPrice(
+[FAIL] closePaperOrder distinguishes real-quote orders: 0 match(es), expected present</pre></div></details><details class="crit" data-status="FAIL" data-section="IMPL" id="IMPL-TE-05"><summary><span class="pill FAIL">FAIL</span><span class="id">IMPL-TE-05</span><span class="t">A retried My Trades DEMO open cannot place a second order</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 FAIL</p><h3>Requirement</h3><p>Owner decision 13 asks for retry-safe idempotency and the owner&#x27;s verification list names retries and duplicate prevention. A My Trades DEMO open has no idempotency key; only a 5-minute in-flight duplicate check stops a retry.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>paper accounting, retries and duplicate prevention</blockquote></li><li><code>docs/TIER1_TRADE_ENGINE_MODES.md</code><blockquote>A My Trades DEMO open has no client idempotency key</blockquote></li></ul><h3>Evidence</h3><pre>[FAIL] openMyTradesDemo uses a retry key: 0 match(es), expected present
+[FAIL] route passes the key: 0 match(es), required &gt;= 1</pre></div></details><details class="crit" data-status="FAIL" data-section="IMPL" id="IMPL-BH-02"><summary><span class="pill FAIL">FAIL</span><span class="id">IMPL-BH-02</span><span class="t">No platform balance is used for a trader&#x27;s sizing</span></summary><div class="body"><h3>Result</h3><p>platform mt5_state in paper sizing: 2 match(es), required == 0</p><h3>Requirement</h3><p>Owner decision 16: do not substitute platform-account balances for a trader&#x27;s account. /intelligence/analyze sizes paper lots from the platform balance for any caller.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Do not substitute platform-account balances for a trader&#x27;s account</blockquote></li><li><code>docs/TIER1_BROKER_HUB_SOURCE.md</code><blockquote>sizes paper lots from the platform balance for any caller</blockquote></li></ul><h3>Evidence</h3><pre>artifacts/api-server/src/lib/paperIntelligence.ts:14: readPlatformMt5State
+artifacts/api-server/src/lib/paperIntelligence.ts:113: readPlatformMt5State</pre></div></details><details class="crit" data-status="FAIL" data-section="IMPL" id="IMPL-BH-03"><summary><span class="pill FAIL">FAIL</span><span class="id">IMPL-BH-03</span><span class="t">A multi-connection user&#x27;s account figures come from one defined connection</span></summary><div class="body"><h3>Result</h3><p>connection order used for account figures: 2 different values (accountSynced, oldest)</p><h3>Requirement</h3><p>Owner decision 16 (one authoritative snapshot; no source chosen without identity evidence). The investor live balance uses the oldest connection and /me/live the freshest-synced one.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>choose a source without identity evidence</blockquote></li><li><code>docs/TIER1_BROKER_HUB_SOURCE.md</code><blockquote>The connection a multi-connection user&#x27;s account figures come from is not unified yet</blockquote></li></ul><h3>Evidence</h3><pre>accountSynced at artifacts/api-server/src/routes/meLive.ts:990, artifacts/api-server/src/routes/meLive.ts:1133
+oldest at artifacts/api-server/src/lib/live/investorLiveBalance.ts:389</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="IMPL" id="IMPL-BH-07"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">IMPL-BH-07</span><span class="t">Owner has confirmed the heartbeat close policy</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;owner_confirmed_heartbeat_close_policy&#x27;</p><h3>Requirement</h3><p>The Broker Hub doc asks the owner to confirm that closes are refused from 60 s, or to ask for a separately named close-path allowance. Until the owner records that decision, the close policy is unresolved.</p><h3>Sources</h3><ul><li><code>docs/TIER1_BROKER_HUB_SOURCE.md</code><blockquote>Confirm or ask for a separately named close-path allowance.</blockquote></li><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Preserve any stricter existing execution requirement.</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="DEFERRED" data-section="IMPL" id="IMPL-PG-02"><summary><span class="pill DEFERRED">DEFERRED</span><span class="id">IMPL-PG-02</span><span class="t">Physical position tables stay behind one ledger (approved deferral)</span></summary><div class="body"><h3>Result</h3><p>approved deferral; scope holds: all of 5: 5 PASS</p><h3>Requirement</h3><p>Owner decision 12, option A: retain both physical tables (arx_live_positions, live_positions) behind one ledger and read model; no physical merge, migration, or table/column drop in this phase.</p><h3>Deferral</h3><p><b>Approved by:</b> Owner decision 12 (2026-10-25), D1 and D10<br><b>Why:</b> The owner chose option A: no physical merge in this phase, and not to start one to improve a score.<br><b>Scope:</b> Deferred: a unified physical positions table and any migration toward it. Not deferred: both tables must stay behind the ledger/read model, with no table or column dropped (checked here). Read-model coverage of the remaining readers is a separate, non-deferred criterion (IMPL-PL-03, IMPL-PL-04).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Choose option A for now: retain both physical position tables behind one ledger/read model.</blockquote></li><li><code>docs/TIER1_POSITION_LEDGER.md</code><blockquote>no physical merge in this phase</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] LIVE table kept: 1 match(es), required &gt;= 1
+    lib/db/src/schema/arxLiveExecution.ts:265: pgTable(&quot;arx_live_positions&quot;
+[PASS] DEMO table kept: 1 match(es), required &gt;= 1
+    lib/db/src/schema/livePositions.ts:11: pgTable(&quot;live_positions&quot;
+[PASS] no unified positions table: 0 match(es), required == 0
+[PASS] no table/column drop executed by a migration (SQL comments excluded): 0 match(es), required == 0
+[PASS] 2 path(s) present
+    present artifacts/api-server/src/lib/positions/ledger.ts
+    present artifacts/api-server/src/lib/positions/openPositions.ts</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-PS-01"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-PS-01</span><span class="t">One explicit stop release; live activation never releases a stop</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>Owner decision 1: one explicit, authorized, audited release operation; live activation must not release an emergency stop.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Live activation must NOT release an emergency stop. Create one explicit, authorized, audited release operation.</blockquote></li><li><code>docs/TIER1_PLATFORM_SAFETY_SOURCE.md</code><blockquote>Release is one operation, `releasePlatformStop()`, and live activation no longer releases a stop.</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] release writer: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/safety/platformStopWriter.ts:163: export async function releasePlatformStop(
+[PASS] activation refuses to release: 3 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/adminLiveSharedReadiness.ts:66: ACTIVATION_DOES_NOT_RELEASE_STOP
+    artifacts/api-server/src/routes/adminLiveSharedReadiness.ts:66: ACTIVATION_DOES_NOT_RELEASE_STOP
+    artifacts/api-server/src/routes/adminLiveSharedReadiness.ts:640: ACTIVATION_DOES_NOT_RELEASE_STOP</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-PS-02"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-PS-02</span><span class="t">Broker operator controls are part of the DEMO/LIVE venue verdict</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>Owner decision 2: executionEnabled and maintenanceMode affect the applicable DEMO/LIVE venue verdict; Platform Safety owns the decision.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Broker-health executionEnabled and maintenanceMode must affect the applicable DEMO/LIVE venue verdict.</blockquote></li><li><code>docs/TIER1_PLATFORM_SAFETY_SOURCE.md</code><blockquote>Round 5 (decision 2): `venueTradingVerdict` blocks new DEMO/LIVE risk on them.</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] venue verdict: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/safety/tradingHalt.ts:223: export async function venueTradingVerdict(
+[PASS] operator-control blocks: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/safety/tradingHalt.ts:183: export function brokerControlBlocks(</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-PS-04"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-PS-04</span><span class="t">Legacy gates are action-aware</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>Owner decision 3: new-risk commands honour both install-wide stops; reconnect stays available for recovery but cannot clear stops, arm trading or dispatch queued orders.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Make the four legacy gates action-aware.</blockquote></li><li><code>docs/TIER1_PLATFORM_SAFETY_SOURCE.md</code><blockquote>`/mt5/*`, `/broker/reconnect` and the paper permission verdict are action-aware.</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] /mt5 new-risk action set: 2 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/mt5.ts:171: MT5_NEW_RISK_ACTIONS
+    artifacts/api-server/src/routes/mt5.ts:178: MT5_NEW_RISK_ACTIONS
+[PASS] reconnect reads the stop authority as recovery: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/brokerHealth.ts:253: preCheckStopRefusal(await platformStop(), { own: &quot;safety_core_kill_switch&quot;, opensNewRisk: false
+[PASS] /execute-trade retired (decision 14): 3 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/trades.ts:77: EXECUTE_TRADE_RETIRED
+    artifacts/api-server/src/routes/trades.ts:80: EXECUTE_TRADE_RETIRED
+    artifacts/api-server/src/routes/trades.ts:93: EXECUTE_TRADE_RETIRED</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-PS-05"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-PS-05</span><span class="t">Safety envelope includes the safety-core kill switch</span></summary><div class="body"><h3>Result</h3><p>envelope field: 5 match(es), required &gt;= 1</p><h3>Requirement</h3><p>Owner decision 4: include the safety-core kill switch in the safety envelope and report both sources.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Include the safety-core kill switch in the safety envelope.</blockquote></li><li><code>docs/TIER1_PLATFORM_SAFETY_SOURCE.md</code><blockquote>the envelope reports both stops and derives new-risk permission from them</blockquote></li></ul><h3>Evidence</h3><pre>artifacts/api-server/src/lib/adminTrading/safetyEnvelope.ts:16: safetyCoreKillSwitch
+artifacts/api-server/src/lib/adminTrading/safetyEnvelope.ts:60: safetyCoreKillSwitch
+artifacts/api-server/src/lib/adminTrading/safetyEnvelope.ts:101: safetyCoreKillSwitch
+artifacts/api-server/src/lib/adminTrading/safetyEnvelope.ts:233: safetyCoreKillSwitch
+artifacts/api-server/src/lib/adminTrading/safetyEnvelope.ts:234: safetyCoreKillSwitch</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-PS-06"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-PS-06</span><span class="t">Install-wide stops block automatic EA updates</span></summary><div class="body"><h3>Result</h3><p>EA update gate stop input: 2 match(es), required &gt;= 1</p><h3>Requirement</h3><p>Owner decision 5: install-wide stops block automatic EA updates; existing checks stay.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Install-wide stops should block automatic EA updates.</blockquote></li><li><code>docs/TIER1_PLATFORM_SAFETY_SOURCE.md</code><blockquote>it also blocks while either install-wide stop is engaged</blockquote></li></ul><h3>Evidence</h3><pre>lib/domain/src/safety-contracts/eaUpdateGate.ts:29: PLATFORM_STOP_ENGAGED
+lib/domain/src/safety-contracts/eaUpdateGate.ts:108: PLATFORM_STOP_ENGAGED</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-PS-07"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-PS-07</span><span class="t">Shared-live pause is a scoped Platform Safety API</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>Owner decision 19: Platform Safety owns the shared-live pause; allocation routes call the authorized, audited safety API; the pause stays scoped.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Platform Safety should own the shared-live pause decision.</blockquote></li><li><code>docs/TIER1_PLATFORM_SAFETY_SOURCE.md</code><blockquote>the pause is per pool row</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] 1 path(s) present
+    present artifacts/api-server/src/lib/safety/sharedLivePause.ts
+[PASS] allocation routes call the safety API: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/adminAllocations.ts:55: from &quot;../lib/safety/sharedLivePause.js&quot;</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-RG-01"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-RG-01</span><span class="t">Self-trade cap counts on the governor&#x27;s UNCLOSED basis</span></summary><div class="body"><h3>Result</h3><p>self-trade gate count basis: 3 match(es), required &gt;= 1</p><h3>Requirement</h3><p>Owner decision 6: keep UNCLOSED as the conservative count basis and align the self-trade risk cap with it.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Align the self-trade risk cap with this conservative basis.</blockquote></li><li><code>docs/TIER1_RISK_GOVERNOR_SOURCE.md</code><blockquote>counts on `RISK_COUNT_BASIS` (`UNCLOSED`), the governor&#x27;s basis</blockquote></li></ul><h3>Evidence</h3><pre>artifacts/api-server/src/lib/selfTrade/executionGate.ts:17: RISK_COUNT_BASIS
+artifacts/api-server/src/lib/selfTrade/executionGate.ts:115: RISK_COUNT_BASIS
+artifacts/api-server/src/lib/selfTrade/executionGate.ts:132: RISK_COUNT_BASIS</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-RG-02"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-RG-02</span><span class="t">Automated PAPER risk facts come from the paper book</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>Owner decision 7: the governor&#x27;s PAPER P/L, activity and streaks come from paper_orders through the paper-book authority, never paper_trades.</p><h3>Notes</h3><p>docs/TIER1_TRADE_ENGINE_MODES.md &#x27;What remains (round 5)&#x27; item 2 says the governor still reads trades for non-LIVE P/L. Current code reads trades only for DEMO (the DEMO journal); PAPER goes through the paper book. That doc line is stale.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Use paper_orders, through the paper-book authority, for automated PAPER P/L, activity, losing streaks and risk decisions.</blockquote></li><li><code>docs/TIER1_PAPER_BOOK.md</code><blockquote>Automated PAPER P/L, activity, streaks and risk decisions read `paper_orders` through</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] governor reads the paper book: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/riskGovernor/enforce.ts:42: from &quot;../tradeEngine/paperBookReader.js&quot;
+[PASS] governor never reads paper_trades: 0 match(es), required == 0</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-RG-03"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-RG-03</span><span class="t">Trader status views show the limits in force</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>Owner decision 8: status views show the effective limit actually enforced, with the saved preference separately.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Status views should show the effective limit actually enforced.</blockquote></li><li><code>docs/TIER1_RISK_GOVERNOR_SOURCE.md</code><blockquote>moved them onto the limits in force</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] /me/risk/status: 4 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/meRiskGovernor.ts:17: effectiveLimitViews
+    artifacts/api-server/src/routes/meRiskGovernor.ts:159: effectiveLimitViews
+    artifacts/api-server/src/routes/meRiskGovernor.ts:165: effectiveLimitViews
+    artifacts/api-server/src/routes/meRiskGovernor.ts:190: effectiveLimitViews
+[PASS] dashboard risk card: 2 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/meDashboard.ts:18: effectiveLimitViews
+    artifacts/api-server/src/routes/meDashboard.ts:78: effectiveLimitViews
+[PASS] account shell: 2 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/meAccountShell.ts:35: effectiveLimitViews
+    artifacts/api-server/src/routes/meAccountShell.ts:285: effectiveLimitViews</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-RG-05"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-RG-05</span><span class="t">Daily-trade limit and operational rate cap are separate</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>Owner decision 9: the daily-trade limit uses the governor&#x27;s trading day; the rolling-24h approved-command count stays as a separately named operational rate cap.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Preserve the existing rolling-24-hour approved-command restriction as a separately named operational rate cap</blockquote></li><li><code>docs/TIER1_RISK_GOVERNOR_SOURCE.md</code><blockquote>gate 6b `operational_rate_cap`</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] named rate cap gate: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/adminTrading/orderGuard.ts:203: operational_rate_cap
+[PASS] rate cap reason: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/adminTrading/orderGuard.ts:79: OPERATIONAL_RATE_CAP_REACHED
+[PASS] governor trading day: 2 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/riskGovernor/preTrade.ts:494: tradingDayStart
+    artifacts/api-server/src/lib/riskGovernor/preTrade.ts:521: tradingDayStart</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-RG-06"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-RG-06</span><span class="t">Pending-order R:R hook applies the configured floor</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>Owner decision 10: read the configured min_reward_risk_ratio through the risk authority and apply the governor&#x27;s calculation.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Fix the dead pending-order R:R hook.</blockquote></li><li><code>docs/TIER1_RISK_GOVERNOR_SOURCE.md</code><blockquote>reads the floor in force</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] governor calculation imported: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/tradeAction/riskGovernorEnforcement.ts:187: import { checkRewardRiskFloor } from &quot;../riskGovernor/preTrade.js&quot;
+[PASS] floor applied: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/tradeAction/riskGovernorEnforcement.ts:225: checkRewardRiskFloor(</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-PG-01"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-PG-01</span><span class="t">Trader alerts use the named ALERT_ELIGIBLE rule</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>Owner decision 11: keep alerts&#x27; stricter eligibility, expressed through the central read model as a named, tested rule.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Express alert eligibility through the central read model as a named, tested rule.</blockquote></li><li><code>docs/TIER1_POSITION_GUARDIAN_RULES.md</code><blockquote>Trader alerts keep the stricter `ALERT_ELIGIBLE` rule (owner decision 11)</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] rule in the read model: 7 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/positions/openPositions.ts:82: ALERT_ELIGIBLE
+    artifacts/api-server/src/lib/positions/openPositions.ts:96: ALERT_ELIGIBLE
+    artifacts/api-server/src/lib/positions/openPositions.ts:98: ALERT_ELIGIBLE
+    artifacts/api-server/src/lib/positions/openPositions.ts:101: ALERT_ELIGIBLE
+    artifacts/api-server/src/lib/positions/openPositions.ts:101: ALERT_ELIGIBLE
+    artifacts/api-server/src/lib/positions/openPositions.ts:234: ALERT_ELIGIBLE
+    artifacts/api-server/src/lib/positions/openPositions.ts:487: ALERT_ELIGIBLE
+[PASS] alerts use it: 2 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/alerts/ruleEngine.ts:19: ALERT_ELIGIBLE_BASIS
+    artifacts/api-server/src/lib/alerts/ruleEngine.ts:138: ALERT_ELIGIBLE_BASIS</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-PL-05"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-PL-05</span><span class="t">Management engines are Guardian rules behind one exit door</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>Handoff work: fold the six management engines into Guardian rules without changing deterministic protection authority.</p><h3>Notes</h3><p>Registration is checked, not a merged engine; the Guardian doc states the engines keep their own decision logic.</p><h3>Sources</h3><ul><li><code>docs/TIER1_POSITION_LEDGER.md</code><blockquote>Fold the six management engines into Guardian rules without changing deterministic protection authority.</blockquote></li><li><code>docs/TIER1_POSITION_GUARDIAN_RULES.md</code><blockquote>they are now registered rules behind one exit door, not one merged engine</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] rule registry: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:48: export const GUARDIAN_RULES
+[PASS] registered rules: 8 match(es), required &gt;= 6
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:50: id: &quot;position-protection&quot;,
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:58: id: &quot;protective-close&quot;,
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:74: id: &quot;trade-monitor&quot;,
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:82: id: &quot;mission-exit&quot;,
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:90: id: &quot;self-trade-manage&quot;,
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:98: id: &quot;trade-health&quot;,
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:106: id: &quot;scalp-manage&quot;,
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:114: id: &quot;trade-management&quot;,
+[PASS] one exit door: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/positionGuardian/rules.ts:138: GUARDIAN_MANAGE_MODULE = &quot;lib/positionGuardian/manage.ts&quot;</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-PL-06"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-PL-06</span><span class="t">The legacy owner ID is never guessed</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>Owner limit: never guess the legacy owner ID. The claim script must refuse to run without an explicit ID.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Never guess the legacy owner ID.</blockquote></li><li><code>docs/TIER1_OWNER_RUNBOOK.md</code><blockquote>The legacy owner user ID (explicit, never guessed)</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] explicit env parameter: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/scripts/claimLegacyBehaviorRows.ts:56: process.env[&quot;ARX_LEGACY_OWNER_USER_ID&quot;]
+[PASS] refuses without an ID: 2 match(es), required &gt;= 1
+    artifacts/api-server/src/scripts/claimLegacyBehaviorRows.ts:74: process.exit(2)
+    artifacts/api-server/src/scripts/claimLegacyBehaviorRows.ts:80: process.exit(2)</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-TE-01"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-TE-01</span><span class="t">Confirmed SIMULATED opens book PAPER orders with price provenance and a retry key</span></summary><div class="body"><h3>Result</h3><p>all of 4: 4 PASS</p><h3>Requirement</h3><p>Owner decision 13: confirmed SIMULATED opens create PAPER orders through the pipeline, for Trade Action Center and My Trades, with valid price provenance and retry-safe idempotency.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Confirmed SIMULATED opens should create PAPER orders through the existing pipeline.</blockquote></li><li><code>docs/TIER1_PAPER_BOOK.md</code><blockquote>SIMULATED opens book PAPER orders</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] no fabricated fill: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/tradeEngine/simulatedOpen.ts:153: NO_VALID_PRICE_SOURCE
+[PASS] retry key: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/tradeEngine/simulatedOpen.ts:166: clientRequestKey
+[PASS] Trade Action Center path: 2 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/tradeAction/route.ts:133: openSimulatedPaperOrder
+    artifacts/api-server/src/lib/tradeAction/route.ts:134: openSimulatedPaperOrder
+[PASS] My Trades requires a key: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/meTrades.ts:362: IDEMPOTENCY_KEY_REQUIRED</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-TE-03"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-TE-03</span><span class="t">/execute-trade is retired</span></summary><div class="body"><h3>Result</h3><p>retired response: 3 match(es), required &gt;= 1</p><h3>Requirement</h3><p>Owner decision 14: retire the legacy /execute-trade path and refuse it with an actionable response.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Retire the legacy /execute-trade execution path.</blockquote></li><li><code>docs/TIER1_PAPER_BOOK.md</code><blockquote>`/execute-trade` is retired</blockquote></li></ul><h3>Evidence</h3><pre>artifacts/api-server/src/routes/trades.ts:77: EXECUTE_TRADE_RETIRED
+artifacts/api-server/src/routes/trades.ts:80: EXECUTE_TRADE_RETIRED
+artifacts/api-server/src/routes/trades.ts:93: EXECUTE_TRADE_RETIRED</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-TE-04"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-TE-04</span><span class="t">My Trades DEMO opens use the governed pipeline; LIVE stays refused</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>Owner decision 15: enable My Trades DEMO opens through the governed pipeline; keep My Trades LIVE opens refused.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Enable My Trades DEMO opens through the existing governed pipeline.</blockquote></li><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Keep My Trades LIVE opens refused until broker validation passes and I separately authorize enabling that surface.</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] DEMO through the governed open: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/meTrades.ts:346: await openMyTradesDemo(
+[PASS] LIVE refused: 4 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/meTrades.ts:44: MY_TRADES_LIVE_NOT_ENABLED
+    artifacts/api-server/src/routes/meTrades.ts:44: MY_TRADES_LIVE_NOT_ENABLED
+    artifacts/api-server/src/routes/meTrades.ts:340: MY_TRADES_LIVE_NOT_ENABLED
+    artifacts/api-server/src/routes/meTrades.ts:340: MY_TRADES_LIVE_NOT_ENABLED</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-TE-06"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-TE-06</span><span class="t">DEMO and PAPER are modes of the one Trade Engine pipeline</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>Handoff work: unify demo and paper as modes of the execution pipeline.</p><h3>Notes</h3><p>docs/TIER1_PAPER_BOOK.md notes the caller-priced PAPER fill channel is a sibling of submitTrade, not a submitTrade intent.</p><h3>Sources</h3><ul><li><code>docs/TIER1_POSITION_LEDGER.md</code><blockquote>Unify demo and paper as modes of the execution pipeline</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] pipeline modes: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/tradeEngine/pipeline.ts:70: TRADE_MODES = [&quot;LIVE&quot;, &quot;DEMO&quot;, &quot;PAPER&quot;]
+[PASS] PAPER through submitTrade: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/tradeEngine/pipeline.ts:138: if (req.mode === &quot;PAPER&quot;) return submitPaper(req)
+[PASS] DEMO through submitTrade: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/tradeEngine/pipeline.ts:140: req.mode === &quot;DEMO&quot; ? openDemo(req)</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-BH-01"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-BH-01</span><span class="t">One authoritative account snapshot per MT5 connection</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>Owner decision 16: Broker Hub owns one balance/equity snapshot per connection with identity, provenance and observation time, and reconciliation is prepared.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Establish one authoritative account snapshot per MT5 connection.</blockquote></li><li><code>docs/TIER1_BROKER_HUB_SOURCE.md</code><blockquote>added the authoritative per-connection snapshot, the reconciliation diff</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] snapshot: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/brokerHub/accountSnapshot.ts:143: export function connectionAccountSnapshot(
+[PASS] reconciliation diff: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/brokerHub/accountSnapshot.ts:291: export function reconcileAccountSnapshots(
+[PASS] 1 path(s) present
+    present artifacts/api-server/src/lib/brokerHub/accountSnapshotReader.ts</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-BH-04"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-BH-04</span><span class="t">One shared MT5 heartbeat policy (15 s / 60 s)</span></summary><div class="body"><h3>Result</h3><p>all of 4: 4 PASS</p><h3>Requirement</h3><p>Owner decision 17: fresh under 15 s, degraded 15-60 s, offline from 60 s, unknown never execution-ready; one shared pure policy for server, domain and dashboard.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Use one shared pure policy across server, domain and dashboard.</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] fresh bound: 1 match(es), required &gt;= 1
+    lib/domain/src/broker-health/heartbeatPolicy.ts:24: MT5_HEARTBEAT_FRESH_BELOW_MS = 15_000
+[PASS] offline bound: 1 match(es), required &gt;= 1
+    lib/domain/src/broker-health/heartbeatPolicy.ts:26: MT5_HEARTBEAT_OFFLINE_AT_MS = 60_000
+[PASS] server uses it: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/riskGovernor/enforce.ts:280: classifyHeartbeatAgeMs(
+[PASS] dashboard uses it: 3 match(es), required &gt;= 1
+    artifacts/trading-dashboard/src/components/trading/MT5StatusIndicator.tsx:8: classifyHeartbeat
+    artifacts/trading-dashboard/src/components/trading/MT5StatusIndicator.tsx:8: heartbeatPolicy
+    artifacts/trading-dashboard/src/components/trading/MT5StatusIndicator.tsx:33: classifyHeartbeat</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-BH-05"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-BH-05</span><span class="t">Bridge v2 reports heartbeat freshness separately from stream health</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>Owner decision 18: shared freshness vocabulary for heartbeats; stream health separately identified; a healthy stream never implies execution-ready.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>A healthy stream must not imply that an account is execution-ready.</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] shared vocabulary: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/bridgeV2/liveness.ts:31: heartbeatFreshness: HeartbeatFreshness
+[PASS] stream never implies ready: 2 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/bridgeV2/liveness.ts:34: streamImpliesExecutionReady: false
+    artifacts/api-server/src/lib/bridgeV2/liveness.ts:51: streamImpliesExecutionReady: false</pre></div></details><details class="crit" data-status="PASS" data-section="IMPL" id="IMPL-BH-06"><summary><span class="pill PASS">PASS</span><span class="id">IMPL-BH-06</span><span class="t">Heartbeat close behaviour is explicit and regression-tested</span></summary><div class="body"><h3>Result</h3><p>all of 4: 4 PASS</p><h3>Requirement</h3><p>Current code: from 60 s the governor&#x27;s broker status is DISCONNECTED and every order, including a close, is refused; a degraded bridge (15-60 s) still allows closes. This checks that the code and its regression test state that behaviour.</p><h3>Sources</h3><ul><li><code>docs/TIER1_BROKER_HUB_SOURCE.md</code><blockquote>the Risk Governor&#x27;s DISCONNECTED (which also refuses closes) now starts at 60 s instead of 120 s</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] offline maps to DISCONNECTED: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/riskGovernor/enforce.ts:284: band === &quot;fresh&quot; ? &quot;CONNECTED&quot; : band === &quot;degraded&quot; ? &quot;DEGRADED&quot; : &quot;DISCONNECTED&quot;
+[PASS] DISCONNECTED blocks every order: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/riskGovernor/preTrade.ts:674: b.status === &quot;DISCONNECTED&quot;) { set(&quot;broker_unavailable&quot;, &quot;BLOCK&quot;
+[PASS] DEGRADED blocks only new risk: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/riskGovernor/preTrade.ts:676: b.status === &quot;DEGRADED&quot; &amp;&amp; !reduces
+[PASS] regression test: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/__qa__/riskGovernorPipelines.test.ts:524: at exactly 60 s the bridge is offline, so a close is refused</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="OPS" id="OPS-01"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">OPS-01</span><span class="t">All eight migrations are applied in production</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;prod_migrations_applied&#x27;</p><h3>Requirement</h3><p>All eight migrations are applied in production. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key &#x27;prod_migrations_applied&#x27;); without it the status is UNKNOWN.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_RUNBOOK.md</code><blockquote>Pending production migrations (order, effect, pre-apply snapshot, rollback)</blockquote></li><li><code>docs/TIER1_POSITION_LEDGER.md</code><blockquote>Apply the seven production migrations through the owner-controlled deployment process</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="OPS" id="OPS-02"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">OPS-02</span><span class="t">Duplicate global_trading_settings rows are inspected and resolved in production</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;prod_duplicate_settings_rows_resolved&#x27;</p><h3>Requirement</h3><p>Duplicate global_trading_settings rows are inspected and resolved in production. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key &#x27;prod_duplicate_settings_rows_resolved&#x27;); without it the status is UNKNOWN.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_RUNBOOK.md</code><blockquote>Duplicate `global_trading_settings` rows (inspect, what the reader does, cleanup)</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="OPS" id="OPS-03"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">OPS-03</span><span class="t">The legacy owner user ID is supplied explicitly and the claim is run</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;legacy_owner_id_supplied&#x27;</p><h3>Requirement</h3><p>The legacy owner user ID is supplied explicitly and the claim is run. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key &#x27;legacy_owner_id_supplied&#x27;); without it the status is UNKNOWN.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_RUNBOOK.md</code><blockquote>The legacy owner user ID (explicit, never guessed)</blockquote></li><li><code>docs/TIER1_POSITION_LEDGER.md</code><blockquote>supply the legacy owner user ID explicitly</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="OPS" id="OPS-04"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">OPS-04</span><span class="t">check:production-readiness passes against production</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;prod_readiness_check_passed&#x27;</p><h3>Requirement</h3><p>check:production-readiness passes against production. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key &#x27;prod_readiness_check_passed&#x27;); without it the status is UNKNOWN.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_RUNBOOK.md</code><blockquote>check:production-readiness</blockquote></li><li><code>docs/TIER1_POSITION_LEDGER.md</code><blockquote>run production readiness plus validation against a real demo bridge</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="OPS" id="OPS-05"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">OPS-05</span><span class="t">validate:broker passes against a real demo bridge</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;validate_broker_real_demo_passed&#x27;</p><h3>Requirement</h3><p>validate:broker passes against a real demo bridge. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key &#x27;validate_broker_real_demo_passed&#x27;); without it the status is UNKNOWN.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_RUNBOOK.md</code><blockquote>Real demo-bridge validation (`validate:broker`)</blockquote></li><li><code>docs/TIER1_BROKER_HUB_SOURCE.md</code><blockquote>`validate:broker` against a real demo bridge is an owner action and was not run.</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="OPS" id="OPS-06"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">OPS-06</span><span class="t">The production broker_health_state row is known</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;prod_broker_health_state_known&#x27;</p><h3>Requirement</h3><p>The production broker_health_state row is known. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key &#x27;prod_broker_health_state_known&#x27;); without it the status is UNKNOWN.</p><h3>Sources</h3><ul><li><code>docs/TIER1_PLATFORM_SAFETY_SOURCE.md</code><blockquote>Production fact needed first: the current `broker_health_state` row (exists? `execution_enabled`? `maintenance_mode`?) on the production install.</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="OPS" id="OPS-07"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">OPS-07</span><span class="t">A real market-data provider is configured for SIMULATED opens</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;market_data_provider_configured&#x27;</p><h3>Requirement</h3><p>A real market-data provider is configured for SIMULATED opens. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key &#x27;market_data_provider_configured&#x27;); without it the status is UNKNOWN.</p><h3>Sources</h3><ul><li><code>docs/TIER1_TRADE_ENGINE_MODES.md</code><blockquote>Without a real market-data provider configured, every SIMULATED open is refused with `NO_VALID_PRICE_SOURCE` (intended: no fabricated fill).</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="OPS" id="OPS-08"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">OPS-08</span><span class="t">Account snapshot reconciliation has been run against production</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;account_reconciliation_run&#x27;</p><h3>Requirement</h3><p>Account snapshot reconciliation has been run against production. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key &#x27;account_reconciliation_run&#x27;); without it the status is UNKNOWN.</p><h3>Sources</h3><ul><li><code>docs/TIER1_BROKER_HUB_SOURCE.md</code><blockquote>Running `readConnectionAccountReconciliation` against production data, to see how often the two feeds diverge, is an owner action and was not run.</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="UNKNOWN" data-section="OPS" id="OPS-09"><summary><span class="pill UNKNOWN">UNKNOWN</span><span class="id">OPS-09</span><span class="t">Production runs a commit that includes round 5</span></summary><div class="body"><h3>Result</h3><p>no owner evidence recorded for &#x27;prod_deployed_commit_includes_round5&#x27;</p><h3>Requirement</h3><p>Production runs a commit that includes round 5. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key &#x27;prod_deployed_commit_includes_round5&#x27;); without it the status is UNKNOWN.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_RUNBOOK.md</code><blockquote>Nothing in it has been run against production.</blockquote></li></ul><h3>Evidence</h3><pre>(no evidence lines)</pre></div></details><details class="crit" data-status="DEFERRED" data-section="OPS" id="OPS-10"><summary><span class="pill DEFERRED">DEFERRED</span><span class="id">OPS-10</span><span class="t">P0 inspection for a physical position-table merge (approved deferral)</span></summary><div class="body"><h3>Result</h3><p>approved deferral; scope holds: all of 2: 2 PASS</p><h3>Requirement</h3><p>Decision 12 D5/D6: time-zone and float-widening evidence, the production PostgreSQL version and uniqueness support. These are required before a physical merge, which is not in this phase.</p><h3>Deferral</h3><p><b>Approved by:</b> Owner decision 12 (2026-10-25), D1, D5, D6<br><b>Why:</b> The P0 facts gate a physical merge, and the owner deferred the merge (option A).<br><b>Scope:</b> Deferred only while no physical merge is started. Any unified positions table or migration toward it makes this a current requirement (checked here).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>D5: Timestamp zone and conversion correctness require P0 evidence</blockquote></li><li><code>docs/TIER1_OWNER_RUNBOOK.md</code><blockquote>P0 inspection before any future position-table work</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] no unified positions table: 0 match(es), required == 0
+[PASS] no positions-table migration: 0 match(es), required == 0</pre></div></details><details class="crit" data-status="DEFERRED" data-section="OPS" id="OPS-11"><summary><span class="pill DEFERRED">DEFERRED</span><span class="id">OPS-11</span><span class="t">A full trading week of clean demo-bridge evidence (approved deferral)</span></summary><div class="body"><h3>Result</h3><p>approved deferral; scope holds: all of 2: 2 PASS</p><h3>Requirement</h3><p>Decision 12 D8: a future cutover needs a full trading week of clean demo-bridge evidence and passive LIVE observation, with no real-money validation trades.</p><h3>Deferral</h3><p><b>Approved by:</b> Owner decision 12 (2026-10-25), D8<br><b>Why:</b> The evidence is a precondition of a future cutover, which the owner deferred.<br><b>Scope:</b> Deferred only while no physical merge or cutover is started (checked here).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>D8: A future cutover requires at least one full trading week of clean demo-bridge evidence</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] no unified positions table: 0 match(es), required == 0
+[PASS] no positions-table migration: 0 match(es), required == 0</pre></div></details><details class="crit" data-status="DEFERRED" data-section="OPS" id="OPS-12"><summary><span class="pill DEFERRED">DEFERRED</span><span class="id">OPS-12</span><span class="t">My Trades LIVE opens (approved future project)</span></summary><div class="body"><h3>Result</h3><p>approved deferral; scope holds: all of 2: 2 PASS</p><h3>Requirement</h3><p>Decision 15: My Trades LIVE opens stay refused until broker validation passes and the owner separately authorizes them.</p><h3>Deferral</h3><p><b>Approved by:</b> Owner decision 15 (2026-10-25)<br><b>Why:</b> Enabling the surface is a future project the owner must authorize separately; it is not a current requirement.<br><b>Scope:</b> Deferred while the surface stays refused. If My Trades LIVE opens are reachable without the refusal, this fails (checked here).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Keep My Trades LIVE opens refused until broker validation passes and I separately authorize enabling that surface.</blockquote></li><li><code>docs/TIER1_TRADE_ENGINE_MODES.md</code><blockquote>Enabling My Trades LIVE opens needs broker validation and a separate owner authorization</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] LIVE refused with 403: 1 match(es), required &gt;= 1
+    artifacts/api-server/src/routes/meTrades.ts:339: parsed.data.mode === &quot;LIVE&quot;) { res.status(403).json({ ok: false, mode: &quot;LIVE&quot;, error: MY_TRADES_LIVE_NOT_ENABLED
+[PASS] refusal code defined: 4 match(es), required &gt;= 1
+    artifacts/api-server/src/lib/tradeAction/myTradesOpen.ts:23: MY_TRADES_LIVE_OPEN_NOT_ENABLED
+    artifacts/api-server/src/lib/tradeAction/myTradesOpen.ts:33: MY_TRADES_LIVE_NOT_ENABLED
+    artifacts/api-server/src/lib/tradeAction/myTradesOpen.ts:33: MY_TRADES_LIVE_OPEN_NOT_ENABLED
+    artifacts/api-server/src/lib/tradeAction/myTradesOpen.ts:34: MY_TRADES_LIVE_NOT_ENABLED</pre></div></details><details class="crit" data-status="FAIL" data-section="VER" id="VER-CI-01"><summary><span class="pill FAIL">FAIL</span><span class="id">VER-CI-01</span><span class="t">Per-commit CI aggregate passes</span></summary><div class="body"><h3>Result</h3><p>exit 1: pnpm -s run ci</p><h3>Requirement</h3><p>The root `pnpm run ci` aggregate (offline per-commit lane) passes.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Never weaken tests or bypass failed checks.</blockquote></li></ul><h3>Evidence</h3><pre>$ pnpm -s run ci (cwd .)
+exit 1</pre></div></details><details class="crit" data-status="FAIL" data-section="VER" id="VER-INT-1"><summary><span class="pill FAIL">FAIL</span><span class="id">VER-INT-1</span><span class="t">Tracked integration failure INT-1 passes: test:admin-unrestricted-risk</span></summary><div class="body"><h3>Result</h3><p>@workspace/scripts::test:admin-unrestricted-risk failed</p><h3>Requirement</h3><p>@workspace/scripts::test:admin-unrestricted-risk was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.</p><h3>Sources</h3><ul><li><code>docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md</code><blockquote>test:admin-unrestricted-risk</blockquote></li></ul><h3>Evidence</h3><pre>[FAIL] @workspace/scripts::test:admin-unrestricted-risk</pre></div></details><details class="crit" data-status="FAIL" data-section="VER" id="VER-INT-2"><summary><span class="pill FAIL">FAIL</span><span class="id">VER-INT-2</span><span class="t">Tracked integration failure INT-2 passes: test:chart-decision-receipts</span></summary><div class="body"><h3>Result</h3><p>@workspace/scripts::test:chart-decision-receipts failed</p><h3>Requirement</h3><p>@workspace/scripts::test:chart-decision-receipts was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.</p><h3>Sources</h3><ul><li><code>docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md</code><blockquote>test:chart-decision-receipts</blockquote></li></ul><h3>Evidence</h3><pre>[FAIL] @workspace/scripts::test:chart-decision-receipts</pre></div></details><details class="crit" data-status="FAIL" data-section="VER" id="VER-INT-3"><summary><span class="pill FAIL">FAIL</span><span class="id">VER-INT-3</span><span class="t">Tracked integration failure INT-3 passes: test:mode-scope</span></summary><div class="body"><h3>Result</h3><p>@workspace/scripts::test:mode-scope failed</p><h3>Requirement</h3><p>@workspace/scripts::test:mode-scope was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.</p><h3>Sources</h3><ul><li><code>docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md</code><blockquote>test:mode-scope</blockquote></li></ul><h3>Evidence</h3><pre>[FAIL] @workspace/scripts::test:mode-scope</pre></div></details><details class="crit" data-status="FAIL" data-section="VER" id="VER-INT-4"><summary><span class="pill FAIL">FAIL</span><span class="id">VER-INT-4</span><span class="t">Tracked integration failure INT-4 passes: test:one-click-concurrency</span></summary><div class="body"><h3>Result</h3><p>@workspace/scripts::test:one-click-concurrency failed</p><h3>Requirement</h3><p>@workspace/scripts::test:one-click-concurrency was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.</p><h3>Sources</h3><ul><li><code>docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md</code><blockquote>test:one-click-concurrency</blockquote></li></ul><h3>Evidence</h3><pre>[FAIL] @workspace/scripts::test:one-click-concurrency</pre></div></details><details class="crit" data-status="FAIL" data-section="VER" id="VER-INT-5"><summary><span class="pill FAIL">FAIL</span><span class="id">VER-INT-5</span><span class="t">Tracked integration failure INT-5 passes: test:scanner-no-feed-honesty</span></summary><div class="body"><h3>Result</h3><p>@workspace/api-server::test:scanner-no-feed-honesty failed</p><h3>Requirement</h3><p>@workspace/api-server::test:scanner-no-feed-honesty was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.</p><h3>Sources</h3><ul><li><code>docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md</code><blockquote>test:scanner-no-feed-honesty</blockquote></li></ul><h3>Evidence</h3><pre>[FAIL] @workspace/api-server::test:scanner-no-feed-honesty</pre></div></details><details class="crit" data-status="FAIL" data-section="VER" id="VER-INT-6"><summary><span class="pill FAIL">FAIL</span><span class="id">VER-INT-6</span><span class="t">Tracked integration failure INT-6 passes: test:ruby-draw-setup-route</span></summary><div class="body"><h3>Result</h3><p>rubyDrawSetupRouteTest: 49 passed, 4 failed</p><h3>Requirement</h3><p>@workspace/scripts::test:ruby-draw-setup-route was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.</p><h3>Sources</h3><ul><li><code>docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md</code><blockquote>test:ruby-draw-setup-route</blockquote></li></ul><h3>Evidence</h3><pre>✗ rubyDrawSetupRouteTest: 49 passed, 4 failed</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-TSC-01"><summary><span class="pill PASS">PASS</span><span class="id">VER-TSC-01</span><span class="t">Library typecheck passes</span></summary><div class="body"><h3>Result</h3><p>passed: pnpm -s run typecheck:libs</p><h3>Requirement</h3><p>Typechecks pass on the measured commit.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Never weaken tests or bypass failed checks.</blockquote></li></ul><h3>Evidence</h3><pre>$ pnpm -s run typecheck:libs (cwd .)
+exit 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-TSC-02"><summary><span class="pill PASS">PASS</span><span class="id">VER-TSC-02</span><span class="t">API server typecheck passes</span></summary><div class="body"><h3>Result</h3><p>passed: pnpm -s --filter @workspace/api-server run typecheck</p><h3>Requirement</h3><p>Typechecks pass on the measured commit.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Never weaken tests or bypass failed checks.</blockquote></li></ul><h3>Evidence</h3><pre>$ pnpm -s --filter @workspace/api-server run typecheck (cwd .)
+exit 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-TSC-03"><summary><span class="pill PASS">PASS</span><span class="id">VER-TSC-03</span><span class="t">Dashboard typecheck passes</span></summary><div class="body"><h3>Result</h3><p>passed: pnpm -s --filter @workspace/trading-dashboard run typecheck</p><h3>Requirement</h3><p>Typechecks pass on the measured commit.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Never weaken tests or bypass failed checks.</blockquote></li></ul><h3>Evidence</h3><pre>$ pnpm -s --filter @workspace/trading-dashboard run typecheck (cwd .)
+exit 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-TSC-04"><summary><span class="pill PASS">PASS</span><span class="id">VER-TSC-04</span><span class="t">Scripts typecheck passes</span></summary><div class="body"><h3>Result</h3><p>passed: pnpm -s --filter @workspace/scripts run typecheck</p><h3>Requirement</h3><p>Typechecks pass on the measured commit.</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>Never weaken tests or bypass failed checks.</blockquote></li></ul><h3>Evidence</h3><pre>$ pnpm -s --filter @workspace/scripts run typecheck (cwd .)
+exit 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-GUARD-01"><summary><span class="pill PASS">PASS</span><span class="id">VER-GUARD-01</span><span class="t">Architecture guards pass</span></summary><div class="body"><h3>Result</h3><p>passed: pnpm -s run ci:guards</p><h3>Requirement</h3><p>All registered architecture guards pass. Guards are regression evidence only; they do not establish architectural completion (see the IMPL criteria).</p><h3>Sources</h3><ul><li><code>docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md</code><blockquote>Guard counts alone cannot establish architectural completion.</blockquote></li></ul><h3>Evidence</h3><pre>$ pnpm -s run ci:guards (cwd .)
+exit 0
+87/87 guards passed in &lt;t&gt;</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-OWN-1"><summary><span class="pill PASS">PASS</span><span class="id">VER-OWN-1</span><span class="t">Owner test category passes: tenant and account isolation</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>The owner&#x27;s verification list requires tests for tenant and account isolation. Every mapped suite must run and pass on the measured commit.</p><h3>Notes</h3><p>Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>tenant and account isolation</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] passed: pnpm -s --filter @workspace/api-server run test:broker-hub-account-snapshot-db
+    $ pnpm -s --filter @workspace/api-server run test:broker-hub-account-snapshot-db (cwd .)
+    exit 0
+    # tests 6
+    # pass 6
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:account-ownership-route
+    $ pnpm -s --filter @workspace/api-server run test:account-ownership-route (cwd .)
+    exit 0
+    # tests 20
+    # pass 20
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:risk-governor-paper-facts
+    $ pnpm -s --filter @workspace/api-server run test:risk-governor-paper-facts (cwd .)
+    exit 0
+    # tests 6
+    # pass 6
+    # fail 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-OWN-2"><summary><span class="pill PASS">PASS</span><span class="id">VER-OWN-2</span><span class="t">Owner test category passes: stop engagement, explicit release and re-arm requirements</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>The owner&#x27;s verification list requires tests for stop engagement, explicit release and re-arm requirements. Every mapped suite must run and pass on the measured commit.</p><h3>Notes</h3><p>Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>stop engagement, explicit release and re-arm requirements</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] passed: pnpm -s --filter @workspace/api-server run test:platform-stop-release
+    $ pnpm -s --filter @workspace/api-server run test:platform-stop-release (cwd .)
+    exit 0
+    # tests 4
+    # pass 4
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:platform-switches
+    $ pnpm -s --filter @workspace/api-server run test:platform-switches (cwd .)
+    exit 0
+    # tests 17
+    # pass 17
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:readiness-stop-switches
+    $ pnpm -s --filter @workspace/api-server run test:readiness-stop-switches (cwd .)
+    exit 0
+    # tests 4
+    # pass 4
+    # fail 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-OWN-3"><summary><span class="pill PASS">PASS</span><span class="id">VER-OWN-3</span><span class="t">Owner test category passes: new-risk versus recovery/close behavior</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>The owner&#x27;s verification list requires tests for new-risk versus recovery/close behavior. Every mapped suite must run and pass on the measured commit.</p><h3>Notes</h3><p>Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>new-risk versus recovery/close behavior</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] passed: pnpm -s --filter @workspace/api-server run test:legacy-gates-action-aware
+    $ pnpm -s --filter @workspace/api-server run test:legacy-gates-action-aware (cwd .)
+    exit 0
+    # tests 3
+    # pass 3
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:risk-governor-pipelines
+    $ pnpm -s --filter @workspace/api-server run test:risk-governor-pipelines (cwd .)
+    exit 0
+    # tests 25
+    # pass 25
+    # fail 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-OWN-4"><summary><span class="pill PASS">PASS</span><span class="id">VER-OWN-4</span><span class="t">Owner test category passes: duplicate settings rows</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>The owner&#x27;s verification list requires tests for duplicate settings rows. Every mapped suite must run and pass on the measured commit.</p><h3>Notes</h3><p>Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>duplicate settings rows</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] passed: pnpm -s --filter @workspace/api-server run test:platform-stop-release
+    $ pnpm -s --filter @workspace/api-server run test:platform-stop-release (cwd .)
+    exit 0
+    # tests 4
+    # pass 4
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:platform-switches
+    $ pnpm -s --filter @workspace/api-server run test:platform-switches (cwd .)
+    exit 0
+    # tests 17
+    # pass 17
+    # fail 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-OWN-5"><summary><span class="pill PASS">PASS</span><span class="id">VER-OWN-5</span><span class="t">Owner test category passes: effective limits and counting boundaries</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>The owner&#x27;s verification list requires tests for effective limits and counting boundaries. Every mapped suite must run and pass on the measured commit.</p><h3>Notes</h3><p>Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>effective limits and counting boundaries</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] passed: pnpm -s --filter @workspace/api-server run test:risk-governor-effective-views
+    $ pnpm -s --filter @workspace/api-server run test:risk-governor-effective-views (cwd .)
+    exit 0
+    # tests 10
+    # pass 10
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:risk-governor-rr-daily
+    $ pnpm -s --filter @workspace/api-server run test:risk-governor-rr-daily (cwd .)
+    exit 0
+    # tests 7
+    # pass 7
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:open-position-view
+    $ pnpm -s --filter @workspace/api-server run test:open-position-view (cwd .)
+    exit 0
+    # tests 11
+    # pass 11
+    # fail 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-OWN-6"><summary><span class="pill PASS">PASS</span><span class="id">VER-OWN-6</span><span class="t">Owner test category passes: paper accounting, retries and duplicate prevention</span></summary><div class="body"><h3>Result</h3><p>all of 3: 3 PASS</p><h3>Requirement</h3><p>The owner&#x27;s verification list requires tests for paper accounting, retries and duplicate prevention. Every mapped suite must run and pass on the measured commit.</p><h3>Notes</h3><p>Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>paper accounting, retries and duplicate prevention</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] passed: pnpm -s --filter @workspace/api-server run test:simulated-open
+    $ pnpm -s --filter @workspace/api-server run test:simulated-open (cwd .)
+    exit 0
+    # tests 9
+    # pass 9
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:paper-book
+    $ pnpm -s --filter @workspace/api-server run test:paper-book (cwd .)
+    exit 0
+    # tests 7
+    # pass 7
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:my-trades-demo-open
+    $ pnpm -s --filter @workspace/api-server run test:my-trades-demo-open (cwd .)
+    exit 0
+    # tests 7
+    # pass 7
+    # fail 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-OWN-7"><summary><span class="pill PASS">PASS</span><span class="id">VER-OWN-7</span><span class="t">Owner test category passes: freshness boundaries and unavailable inputs</span></summary><div class="body"><h3>Result</h3><p>all of 2: 2 PASS</p><h3>Requirement</h3><p>The owner&#x27;s verification list requires tests for freshness boundaries and unavailable inputs. Every mapped suite must run and pass on the measured commit.</p><h3>Notes</h3><p>Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05).</p><h3>Sources</h3><ul><li><code>docs/TIER1_OWNER_DECISIONS_2026-10-25.md</code><blockquote>freshness boundaries and unavailable inputs</blockquote></li></ul><h3>Evidence</h3><pre>[PASS] passed: pnpm -s --filter @workspace/api-server run test:broker-hub-heartbeat-policy
+    $ pnpm -s --filter @workspace/api-server run test:broker-hub-heartbeat-policy (cwd .)
+    exit 0
+    # tests 9
+    # pass 9
+    # fail 0
+[PASS] passed: pnpm -s --filter @workspace/api-server run test:bridge-v2-liveness
+    $ pnpm -s --filter @workspace/api-server run test:bridge-v2-liveness (cwd .)
+    exit 0
+    # tests 5
+    # pass 5
+    # fail 0</pre></div></details><details class="crit" data-status="PASS" data-section="VER" id="VER-INT-00"><summary><span class="pill PASS">PASS</span><span class="id">VER-INT-00</span><span class="t">Integration lane has no failure outside the six tracked</span></summary><div class="body"><h3>Result</h3><p>no integration failure outside the tracked list</p><h3>Requirement</h3><p>The `ci:integration` lane (local database) must not fail on any suite other than the six tracked failures.</p><h3>Sources</h3><ul><li><code>docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md</code><blockquote>Preserve the six reported integration failures individually until their current status and baseline comparison are verified.</blockquote></li></ul><h3>Evidence</h3><pre>total 132 test(s)
+failed: @workspace/api-server::test:scanner-no-feed-honesty, @workspace/scripts::test:admin-unrestricted-risk, @workspace/scripts::test:chart-decision-receipts, @workspace/scripts::test:mode-scope, @workspace/scripts::test:one-click-concurrency, ci:integration-inprocess
+in-process failed: rubyDrawSetupRouteTest</pre></div></details>
+<h2>Measurement run</h2>
+<div class="tablewrap"><table><tr><th>Fact</th><th>Value</th></tr>
+<tr><td>Finished at (UTC)</td><td>2026-10-25T07:53:20Z</td></tr>
+<tr><td>Tools</td><td class="mono">python 3.13.17 · node v22.22.0 · pnpm 10.28.0</td></tr>
+<tr><td>Files changed vs main</td><td class="mono">.gitignore, docs/TIER1_OWNER_DECISIONS_2026-10-25.md, docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md, docs/scorecard/v2/README.md, docs/scorecard/v2/evidence.json, docs/scorecard/v2/rubric.json, package.json, scripts/scorecard/build_csv.py, scripts/scorecard/build_dashboard.py, scripts/scorecard/measure.py, scripts/scorecard/test_scorecard.py</td></tr>
+<tr><td>Repository changed by measurement</td><td class="mono">none</td></tr>
+</table></div>
+<h3>Commands (23)</h3><details class="crit"><summary><span class="id">0.5 s</span><span class="t mono">pnpm -s run typecheck:libs</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>
+</pre></div></details><details class="crit"><summary><span class="id">6.3 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run typecheck</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>
+</pre></div></details><details class="crit"><summary><span class="id">3.8 s</span><span class="t mono">pnpm -s --filter @workspace/trading-dashboard run typecheck</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>
+</pre></div></details><details class="crit"><summary><span class="id">5.8 s</span><span class="t mono">pnpm -s --filter @workspace/scripts run typecheck</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>
+</pre></div></details><details class="crit"><summary><span class="id">26.3 s</span><span class="t mono">pnpm -s run ci:guards</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>-harness-honesty
+  · The /live-ai-auto-test harness must stay admin/dev-only, audit-only, and honest:
+  ·   - no Math.random-driven displayed results, no hardcoded risk-governor state,
+  ·   - the audit-only banner and accepted=false explanation must remain,
+  ·   - its routes must never enter NORMAL_USER_EXACT,
+  ·   - investor.tsx must never import/call live execution surfaces.
+[PASS] backtest-no-live-execution
+[PASS] mission-no-direct-execution (Profit Mission trades route ONLY through executeInstant → 18-gate dispatch; planning/backtest never touches execution; no fabricated randomness)
+  · mission backend surfaces scanned: 14/14
+  · dispatch surfaces anchored (submitInstantTrade / guardianInstantManage + source &quot;mission&quot; + missionId): 2
+  · isolated planning/backtest surfaces scanned: 35
+  · Math.random-scanned surfaces: 51
+  · provenance-resolved re-export alias bindings: 0
+  · curated forbidden-origin integrity issues: 0
+[PASS] scanner-verdict-import-boundary
+  · All scanner verdict engine functions are used only by designated publishers.
+[PASS] no-fabrication
+  · Rule 1: 7/7 protected honest-data surfaces scanned for Math.random( and Date.now( (comments excluded — the P0-4 fix documents the formulas it deleted).
+  · Rule 2: swept 832 live file(s) under artifacts/api-server/src/lib, artifacts/api-server/src/routes; 5 file(s) quarantined with pinned counts.
+  · Allowed without quarantine: only base36 and hex IDENTIFIER shapes. Nothing that can yield a price, level, confidence, volatility or size.
+[PASS] capital-constitution
+  · 8 pinned article heading(s) + central-rule sentence verified in docs/CAPITAL_CONSTITUTION.md
+[PASS] provenance-no-collapse
+  · artifacts/api-server/src/lib/data/mt5FeedStalenessWatchdogCore.ts: 1 allowlisted display/diagnostic key(s), pin exact ✓
+  · artifacts/api-server/src/lib/data/providers/mt5Provider.ts: 1 partition-scoped key(s), pin exact ✓
+  · artifacts/api-server/src/lib/data/chart/chartIntelligence.ts: 2 allowlisted display/diagnostic key(s), pin exact ✓
+  · artifacts/api-server/src/lib/data/chart/formingBarComposer.ts: 1 allowlisted display/diagnostic key(s), pin exact ✓
+  · artifacts/api-server/src/lib/data/chart/sessionProfile.ts: 1 allowlisted display/diagnostic key(s), pin exact ✓
+  · Scanned 71 live file(s) under lib/data; 6 symbol|tf key(s) classified.
+[PASS] broker-hub-no-execution
+  · hub directories found: 2/2
+  · source files scanned: 21
+  · forbidden-pattern groups: 53
+[PASS] execution-single-entry
+  · writers: 7 governed, 7 lifecycle, 3 non-trade, 5 QA scripts
+[PASS] instrument-mapping-single-source
+  · 865 files scanned outside lib/instruments; 4 retired modules absent
+[PASS] broker-state-single-reader
+  · 869 files scanned; mt5_state read only via lib/brokerHub/mt5StateReader.ts, written only by routes/mt5.ts
+[PASS] single-risk-authority
+  · 870 files scanned; 4 retired risk modules absent; pre-trade verdicts only in lib/riskGovernor/
+[PASS] broker-connection-single-owner
+  · 853 files scanned; mt5_connection read and written only via lib/brokerHub/connections.ts
+[PASS] learning-memory-single-owner
+  · 869 files scanned; strategy_edges / mistake_patterns read and written only via lib/learning/scopedMemory.ts
+[PASS] position-guardian-wired
+  · 849 files scanned; 5 required Guardian hooks
+[PASS] single-role-model
+  · 849 files scanned; the role is users.role, read on every request
+[PASS] stop-modification-authority
+  · 849 files scanned; 5 broker-truth ledger writers
+[PASS] single-position-sizer
+  · one engine (lib/domain/src/risk/positionSizing.engine.ts); 2 value-model adapters
+[PASS] single-position-ledger
+  · 849 runtime files scanned; two physical tables, one ledger; broker-fact writer boundary preserved
+[PASS] single-position-guardian
+  · 8 guardian rules (5 acting, 3 advisory) over 22 modules; 849 runtime files scanned; one exit door lib/positionGuardian/manage.ts
+[PASS] single-open-position-view
+  · 849 runtime files scanned; 3 justified raw open-position reads in 2 allowlisted modules; 10 operator-wide modules use the cross-user read-model functions; everything else reads lib/positions/openPositions.ts
+[PASS] trade-engine-single-pipeline
+  · 849 runtime files scanned; one pipeline (lib/tradeEngine/pipeline.ts) with modes LIVE/DEMO/PAPER; 2 listed venue producers, 3 listed paper writers, 1 mailbox trade exception (routes/meTrades.ts DEMO close)
+[PASS] single-paper-book
+  · 849 runtime files scanned; paper_orders + paper_trade_events → lib/tradeEngine/paperVenue.ts; paper_trades (journal) → routes/mePaperTrades.ts; trades (legacy record) → lib/trades/paperBook.ts; 5 governed venue functions, 2 settlements
+[PASS] single-limit-store
+  · limits: user_risk_settings; risk_settings preferences only via lib/risk/userRiskSettings.ts
+[PASS] legacy-live-state-confined
+  · live_trading_state only under lib/liveTrading/
+[PASS] single-llm-gateway
+  · model SDKs only under lib/ai/
+[PASS] single-safety-switch-source
+  · safety switches read only through lib/safety/platformSwitches.ts + lib/safety/tradingHalt.ts; emergency stop engaged and stops released only through lib/safety/platformStopWriter.ts; shared-live pause read and written only through lib/safety/sharedLivePause.ts; 10 reviewed exceptions
+[PASS] single-risk-limit-source
+  · 849 files scanned; limit settings read only through lib/riskGovernor/limitSettings.ts; limits evaluated only in lib/riskGovernor/; 28 reviewed exceptions
+[PASS] broker-read-adapter-single-factory
+  · 2 venue adapters, constructed only in lib/brokerHub/readAdapters.ts
+[PASS] single-broker-state-source
+  · 870 files scanned; 6 broker state tables, 5 allowlisted files outside lib/brokerHub/
+  · delegated: mt5_connection, mt5_state
+[PASS] single-bridge-freshness-source
+  · 2574 files scanned (api-server, lib/domain, trading-dashboard); heartbeat bounds only in lib/domain/src/broker-health/heartbeatPolicy.ts, snapshot thresholds only in lib/brokerHub/freshness.ts; 4 reviewed exceptions
+
+87/87 guards passed in 22.66s
+
+</pre></div></details><details class="crit"><summary><span class="id">22.3 s</span><span class="t mono">pnpm -s run ci</span><span class="muted">ran, exit 1</span></summary><div class="body"><pre>
+──────── typecheck:ci → lib/* (composite, tsc --build) (heap 3072MB) ────────
+
+──────── typecheck:ci → @workspace/api-server (heap 2560MB) ────────
+
+──────── typecheck:ci → @workspace/scripts (heap 2560MB) ────────
+
+──────── typecheck:ci → @workspace/trading-dashboard (heap 2560MB) ────────
+
+════════════════ typecheck:ci summary ════════════════
+  PASS            lib/* (composite, tsc --build)  (0.7s)
+  PASS            @workspace/api-server  (6.7s)
+  PASS            @workspace/scripts  (6.2s)
+  PASS            @workspace/trading-dashboard  (3.9s)
+══════════════════════════════════════════════════════
+typecheck:ci PASSED — all 4 unit(s) typecheck clean.
+
+/home/claude/arxai/lib/db/src/index.ts:8
+  throw new Error(
+        ^
+
+Error: DATABASE_URL must be set. Did you forget to provision a database?
+    at &lt;anonymous&gt; (/home/claude/arxai/lib/db/src/index.ts:8:9)
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v22.22.0
+</pre></div></details><details class="crit"><summary><span class="id">2.2 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:broker-hub-account-snapshot-db</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: a user reads only their own connection&#x27;s snapshot
+ok 1 - a user reads only their own connection&#x27;s snapshot
+  ---
+  duration_ms: 52.731008
+  type: &#x27;test&#x27;
+  ...
+# Subtest: a never-synced connection is unknown, not 0
+ok 2 - a never-synced connection is unknown, not 0
+  ---
+  duration_ms: 7.990022
+  type: &#x27;test&#x27;
+  ...
+# Subtest: reconciliation reads only the user&#x27;s own legacy row, never another tenant&#x27;s or the platform row
+ok 3 - reconciliation reads only the user&#x27;s own legacy row, never another tenant&#x27;s or the platform row
+  ---
+  duration_ms: 22.721192
+  type: &#x27;test&#x27;
+  ...
+# Subtest: reconciliation reports divergence and a different account on the user&#x27;s own row
+ok 4 - reconciliation reports divergence and a different account on the user&#x27;s own row
+  ---
+  duration_ms: 16.260204
+  type: &#x27;test&#x27;
+  ...
+# Subtest: another user&#x27;s connection id gives an unknown reconciliation
+ok 5 - another user&#x27;s connection id gives an unknown reconciliation
+  ---
+  duration_ms: 9.263262
+  type: &#x27;test&#x27;
+  ...
+# Subtest: selection falls back to the user&#x27;s legacy row only with identity evidence
+ok 6 - selection falls back to the user&#x27;s legacy row only with identity evidence
+  ---
+  duration_ms: 14.098707
+  type: &#x27;test&#x27;
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1882.975358
+
+</pre></div></details><details class="crit"><summary><span class="id">4.8 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:account-ownership-route</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>t_trade_debriefs&quot;,
+#       &quot;learning_events&quot;,
+#       &quot;strategy_edges&quot;,
+#       &quot;mistake_patterns&quot;,
+#       &quot;market_data_mode&quot;,
+#       &quot;autopilot_cycles&quot;,
+#       &quot;autopilot_symbol_cooldowns&quot;,
+#       &quot;user_risk_settings&quot;
+#     ]
+# [07:44:27.718] INFO (8846): readiness: metrics calculated
+#     metrics: {
+#       &quot;dailyPnl&quot;: 500,
+#       &quot;dailyLossLimit&quot;: 300,
+#       &quot;weeklyPnl&quot;: 500,
+#       &quot;maxDrawdown&quot;: 0,
+#       &quot;openPaperTrades&quot;: 0,
+#       &quot;maxOpenPaperTrades&quot;: 3,
+#       &quot;sameSymbolExposure&quot;: {},
+#       &quot;winRate30d&quot;: 100,
+#       &quot;sampleSize&quot;: 1,
+#       &quot;decisionToWinRate&quot;: 0,
+#       &quot;avgRiskScore&quot;: 0,
+#       &quot;avgConfidence&quot;: 0,
+#       &quot;learningConfidence&quot;: 0,
+#       &quot;marketDataQuality&quot;: &quot;GOOD&quot;,
+#       &quot;autopilotErrorRate&quot;: 0,
+#       &quot;repeatedMistakeCount&quot;: 0
+#     }
+# [07:44:27.718] INFO (8846): readiness: hard blocks found
+#     count: 0
+# [07:44:27.718] INFO (8846): readiness: soft warnings found
+#     count: 0
+# [07:44:27.718] USERLVL (8846): readiness: readiness score calculated
+#     score: 63
+#     grade: &quot;D&quot;
+# [07:44:27.718] INFO (8846): readiness: allowed actions returned
+#     canRunAADecision: true
+#     canOpenPaperTrade: true
+#     canRunPaperAutopilot: true
+#     canManualClosePaperTrade: true
+#     canRebuildPerformance: true
+#     canProcessLearning: true
+#     canPlaceLiveTrade: false
+# [07:44:27.718] INFO (8846): readiness: evaluation completed
+#     governorId: &quot;gov_e8d344f6-a9c8-436d-ad1d-8f48df823ade&quot;
+#     status: &quot;PAPER_CAUTION&quot;
+#     score: 63
+# [07:44:27.733] INFO (8846): readiness: evaluation started
+#     governorId: &quot;gov_a24b8d59-6455-4edf-9b6f-fb7cd3b430b2&quot;
+# [07:44:27.745] INFO (8846): readiness: data sources read
+#     count: 10
+#     sources: [
+#       &quot;paper_orders&quot;,
+#       &quot;trade_decision_logs&quot;,
+#       &quot;post_trade_debriefs&quot;,
+#       &quot;learning_events&quot;,
+#       &quot;strategy_edges&quot;,
+#       &quot;mistake_patterns&quot;,
+#       &quot;market_data_mode&quot;,
+#       &quot;autopilot_cycles&quot;,
+#       &quot;autopilot_symbol_cooldowns&quot;,
+#       &quot;user_risk_settings&quot;
+#     ]
+# [07:44:27.745] INFO (8846): readiness: metrics calculated
+#     metrics: {
+#       &quot;dailyPnl&quot;: 501,
+#       &quot;dailyLossLimit&quot;: null,
+#       &quot;weeklyPnl&quot;: 501,
+#       &quot;maxDrawdown&quot;: 0,
+#       &quot;openPaperTrades&quot;: 1,
+#       &quot;maxOpenPaperTrades&quot;: 3,
+#       &quot;sameSymbolExposure&quot;: {
+#         &quot;QAACCT.A&quot;: 1
+#       },
+#       &quot;winRate30d&quot;: 100,
+#       &quot;sampleSize&quot;: 2,
+#       &quot;decisionToWinRate&quot;: 0,
+#       &quot;avgRiskScore&quot;: 0,
+#       &quot;avgConfidence&quot;: 0,
+#       &quot;learningConfidence&quot;: 0,
+#       &quot;marketDataQuality&quot;: &quot;GOOD&quot;,
+#       &quot;autopilotErrorRate&quot;: 0,
+#       &quot;repeatedMistakeCount&quot;: 0
+#     }
+# [07:44:27.745] INFO (8846): readiness: hard blocks found
+#     count: 0
+# [07:44:27.745] INFO (8846): readiness: soft warnings found
+#     count: 0
+# [07:44:27.745] USERLVL (8846): readiness: readiness score calculated
+#     score: 63
+#     grade: &quot;D&quot;
+# [07:44:27.745] INFO (8846): readiness: allowed actions returned
+#     canRunAADecision: true
+#     canOpenPaperTrade: true
+#     canRunPaperAutopilot: true
+#     canManualClosePaperTrade: true
+#     canRebuildPerformance: true
+#     canProcessLearning: true
+#     canPlaceLiveTrade: false
+# [07:44:27.745] INFO (8846): readiness: evaluation completed
+#     governorId: &quot;gov_a24b8d59-6455-4edf-9b6f-fb7cd3b430b2&quot;
+#     status: &quot;PAPER_CAUTION&quot;
+#     score: 63
+# Subtest: paper sessions: sessions, the active session and lifecycle actions are per trader
+ok 14 - paper sessions: sessions, the active session and lifecycle actions are per trader
+  ---
+  duration_ms: 82.357091
+  type: &#x27;test&#x27;
+  ...
+# Subtest: playbooks: a trader cannot list, edit, add entries to or mine another trader&#x27;s playbook
+ok 15 - playbooks: a trader cannot list, edit, add entries to or mine another trader&#x27;s playbook
+  ---
+  duration_ms: 32.575626
+  type: &#x27;test&#x27;
+  ...
+# Subtest: paper ideas: the watchlist is per trader
+ok 16 - paper ideas: the watchlist is per trader
+  ---
+  duration_ms: 12.990178
+  type: &#x27;test&#x27;
+  ...
+# Subtest: backtests: a trader sees their own runs; legacy runs belong to the operator
+ok 17 - backtests: a trader sees their own runs; legacy runs belong to the operator
+  ---
+  duration_ms: 33.00727
+  type: &#x27;test&#x27;
+  ...
+# Subtest: alerts: a user&#x27;s alert is visible to them and never to another user
+ok 18 - alerts: a user&#x27;s alert is visible to them and never to another user
+  ---
+  duration_ms: 12.619432
+  type: &#x27;test&#x27;
+  ...
+# Subtest: notifications: the same event for two users creates two notifications, not a merged one
+ok 19 - notifications: the same event for two users creates two notifications, not a merged one
+  ---
+  duration_ms: 20.868974
+  type: &#x27;test&#x27;
+  ...
+# Subtest: broker health: a trader can read the status but not the operator&#x27;s account number, and cannot flip operator toggles
+ok 20 - broker health: a trader can read the status but not the operator&#x27;s account number, and cannot flip operator toggles
+  ---
+  duration_ms: 43.587848
+  type: &#x27;test&#x27;
+  ...
+# [07:44:27.889] WARN (8846): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;email&quot;
+#     alertId: 37
+#     alertType: &quot;TRADE_CLOSED&quot;
+# [07:44:27.889] WARN (8846): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;sms&quot;
+#     alertId: 37
+#     alertType: &quot;TRADE_CLOSED&quot;
+# [07:44:27.889] WARN (8846): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;push&quot;
+#     alertId: 37
+#     alertType: &quot;TRADE_CLOSED&quot;
+# [07:44:27.893] WARN (8846): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;email&quot;
+#     alertId: 38
+#     alertType: &quot;TRADE_CLOSED&quot;
+# [07:44:27.893] WARN (8846): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;sms&quot;
+#     alertId: 38
+#     alertType: &quot;TRADE_CLOSED&quot;
+# [07:44:27.893] WARN (8846): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;push&quot;
+#     alertId: 38
+#     alertType: &quot;TRADE_CLOSED&quot;
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4431.03183
+
+</pre></div></details><details class="crit"><summary><span class="id">3.7 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:risk-governor-paper-facts</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: no double count: the governor&#x27;s PAPER P/L is paper_orders only (not the journal, not trades)
+ok 1 - no double count: the governor&#x27;s PAPER P/L is paper_orders only (not the journal, not trades)
+  ---
+  duration_ms: 90.989451
+  type: &#x27;test&#x27;
+  ...
+# Subtest: read side: settled / open / realized, per scope
+ok 2 - read side: settled / open / realized, per scope
+  ---
+  duration_ms: 5.713441
+  type: &#x27;test&#x27;
+  ...
+# Subtest: trader readiness: daily P/L is the settled paper_orders P/L (was always 0 on status &#x27;CLOSED&#x27;)
+ok 3 - trader readiness: daily P/L is the settled paper_orders P/L (was always 0 on status &#x27;CLOSED&#x27;)
+  ---
+  duration_ms: 20.190437
+  type: &#x27;test&#x27;
+  ...
+# Subtest: missing coverage stays conservative: switching paper accounts does not reset the losing streak
+ok 4 - missing coverage stays conservative: switching paper accounts does not reset the losing streak
+  ---
+  duration_ms: 9.757238
+  type: &#x27;test&#x27;
+  ...
+# [07:44:31.636] INFO (8886): readiness: evaluation started
+#     governorId: &quot;gov_3d5897f4-b618-47be-b306-34662854baca&quot;
+# Subtest: tenant isolation: another trader&#x27;s paper_orders never count
+ok 5 - tenant isolation: another trader&#x27;s paper_orders never count
+  ---
+  duration_ms: 22.773713
+  type: &#x27;test&#x27;
+  ...
+# [07:44:31.654] INFO (8886): readiness: data sources read
+#     count: 10
+#     sources: [
+#       &quot;paper_orders&quot;,
+#       &quot;trade_decision_logs&quot;,
+#       &quot;post_trade_debriefs&quot;,
+#       &quot;learning_events&quot;,
+#       &quot;strategy_edges&quot;,
+#       &quot;mistake_patterns&quot;,
+#       &quot;market_data_mode&quot;,
+#       &quot;autopilot_cycles&quot;,
+#       &quot;autopilot_symbol_cooldowns&quot;,
+#       &quot;user_risk_settings&quot;
+#     ]
+# [07:44:31.654] INFO (8886): readiness: metrics calculated
+#     metrics: {
+#       &quot;dailyPnl&quot;: -50,
+#       &quot;dailyLossLimit&quot;: 300,
+#       &quot;weeklyPnl&quot;: -50,
+#       &quot;maxDrawdown&quot;: 50,
+#       &quot;openPaperTrades&quot;: 1,
+#       &quot;maxOpenPaperTrades&quot;: 3,
+#       &quot;sameSymbolExposure&quot;: {
+#         &quot;EURUSD&quot;: 1
+#       },
+#       &quot;winRate30d&quot;: 0,
+#       &quot;sampleSize&quot;: 1,
+#       &quot;decisionToWinRate&quot;: 0,
+#       &quot;avgRiskScore&quot;: 0,
+#       &quot;avgConfidence&quot;: 0,
+#       &quot;learningConfidence&quot;: 0,
+#       &quot;marketDataQuality&quot;: &quot;GOOD&quot;,
+#       &quot;autopilotErrorRate&quot;: 0,
+#       &quot;repeatedMistakeCount&quot;: 0
+#     }
+# [07:44:31.655] INFO (8886): readiness: hard blocks found
+#     count: 0
+# [07:44:31.655] INFO (8886): readiness: soft warnings found
+#     count: 0
+# [07:44:31.655] USERLVL (8886): readiness: readiness score calculated
+#     score: 52
+#     grade: &quot;F&quot;
+# [07:44:31.655] INFO (8886): readiness: allowed actions returned
+#     canRunAADecision: true
+#     canOpenPaperTrade: true
+#     canRunPaperAutopilot: true
+#     canManualClosePaperTrade: true
+#     canRebuildPerformance: true
+#     canProcessLearning: true
+#     canPlaceLiveTrade: false
+# [07:44:31.655] INFO (8886): readiness: evaluation completed
+#     governorId: &quot;gov_3d5897f4-b618-47be-b306-34662854baca&quot;
+#     status: &quot;PAPER_CAUTION&quot;
+#     score: 52
+# [07:44:31.667] INFO (8886): readiness: evaluation started
+#     governorId: &quot;gov_90d9cddb-0c1f-44ad-8464-23f94c1be02f&quot;
+# [07:44:31.681] INFO (8886): readiness: data sources read
+#     count: 10
+#     sources: [
+#       &quot;paper_orders&quot;,
+#       &quot;trade_decision_logs&quot;,
+#       &quot;post_trade_debriefs&quot;,
+#       &quot;learning_events&quot;,
+#       &quot;strategy_edges&quot;,
+#       &quot;mistake_patterns&quot;,
+#       &quot;market_data_mode&quot;,
+#       &quot;autopilot_cycles&quot;,
+#       &quot;autopilot_symbol_cooldowns&quot;,
+#       &quot;user_risk_settings&quot;
+#     ]
+# [07:44:31.681] INFO (8886): readiness: metrics calculated
+#     metrics: {
+#       &quot;dailyPnl&quot;: -50,
+#       &quot;dailyLossLimit&quot;: 300,
+#       &quot;weeklyPnl&quot;: -50,
+#       &quot;maxDrawdown&quot;: 50,
+#       &quot;openPaperTrades&quot;: 1,
+#       &quot;maxOpenPaperTrades&quot;: 3,
+#       &quot;sameSymbolExposure&quot;: {
+#         &quot;EURUSD&quot;: 1
+#       },
+#       &quot;winRate30d&quot;: 0,
+#       &quot;sampleSize&quot;: 1,
+#       &quot;decisionToWinRate&quot;: 0,
+#       &quot;avgRiskScore&quot;: 0,
+#       &quot;avgConfidence&quot;: 0,
+#       &quot;learningConfidence&quot;: 0,
+#       &quot;marketDataQuality&quot;: &quot;GOOD&quot;,
+#       &quot;autopilotErrorRate&quot;: 0,
+#       &quot;repeatedMistakeCount&quot;: 0
+#     }
+# [07:44:31.681] INFO (8886): readiness: hard blocks found
+#     count: 0
+# [07:44:31.681] INFO (8886): readiness: soft warnings found
+#     count: 0
+# [07:44:31.681] USERLVL (8886): readiness: readiness score calculated
+#     score: 52
+#     grade: &quot;F&quot;
+# [07:44:31.681] INFO (8886): readiness: allowed actions returned
+#     canRunAADecision: true
+#     canOpenPaperTrade: true
+#     canRunPaperAutopilot: true
+#     canManualClosePaperTrade: true
+#     canRebuildPerformance: true
+#     canProcessLearning: true
+#     canPlaceLiveTrade: false
+# [07:44:31.681] INFO (8886): readiness: evaluation completed
+#     governorId: &quot;gov_90d9cddb-0c1f-44ad-8464-23f94c1be02f&quot;
+#     status: &quot;PAPER_CAUTION&quot;
+#     score: 52
+# Subtest: DEMO unchanged: the DEMO governor still reads trades, untouched by paper_orders
+ok 6 - DEMO unchanged: the DEMO governor still reads trades, untouched by paper_orders
+  ---
+  duration_ms: 28.194293
+  type: &#x27;test&#x27;
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3308.32511
+
+</pre></div></details><details class="crit"><summary><span class="id">3.7 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:platform-stop-release</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: duplicate settings rows: engage then release clears EVERY row, records the actor, audits with the old reason
+ok 1 - duplicate settings rows: engage then release clears EVERY row, records the actor, audits with the old reason
+  ---
+  duration_ms: 82.140692
+  type: &#x27;test&#x27;
+  ...
+# [07:44:35.100] WARN (8920): platform emergency stop engage written (commits with the caller&#x27;s transaction)
+#     source: &quot;admin_trading_emergency_kill&quot;
+#     actorUserId: 708
+#     reason: &quot;qa incident&quot;
+#     engagedAt: &quot;2026-10-25T07:44:35.097Z&quot;
+#     rowCount: 2
+# [07:44:35.123] WARN (8920): platform emergency stop released on every settings row (audited)
+#     stop: &quot;platform_emergency_stop&quot;
+#     source: &quot;admin_trading_reset_kill&quot;
+#     actorUserId: 708
+#     wasEngaged: true
+#     rowCount: 2
+# [07:44:35.167] WARN (8920): platform emergency stop engage written (commits with the caller&#x27;s transaction)
+#     source: &quot;admin_trading_emergency_kill&quot;
+#     actorUserId: 708
+#     reason: &quot;qa both&quot;
+#     engagedAt: &quot;2026-10-25T07:44:35.160Z&quot;
+#     rowCount: 2
+# [07:44:35.179] WARN (8920): platform emergency stop released on every settings row (audited)
+#     stop: &quot;platform_emergency_stop&quot;
+#     source: &quot;admin_trading_reset_kill&quot;
+#     actorUserId: 708
+#     wasEngaged: true
+#     rowCount: 2
+# [07:44:35.191] WARN (8920): platform emergency stop engage written (commits with the caller&#x27;s transaction)
+#     source: &quot;admin_trading_emergency_kill&quot;
+#     actorUserId: 708
+#     reason: &quot;qa again&quot;
+#     engagedAt: &quot;2026-10-25T07:44:35.184Z&quot;
+#     rowCount: 2
+# Subtest: releasing one stop never touches the other
+ok 2 - releasing one stop never touches the other
+  ---
+  duration_ms: 92.508716
+  type: &#x27;test&#x27;
+  ...
+# Subtest: authorization and reason: refused, nothing written
+ok 3 - authorization and reason: refused, nothing written
+  ---
+  duration_ms: 15.425628
+  type: &#x27;test&#x27;
+  ...
+# [07:44:35.237] WARN (8920): safety-core kill switch released (audited)
+#     stop: &quot;safety_core_kill_switch&quot;
+#     source: &quot;system_kill_switch_reset&quot;
+#     actorUserId: 708
+#     wasEngaged: true
+# [07:44:35.247] WARN (8920): platform emergency stop engage written (commits with the caller&#x27;s transaction)
+#     source: &quot;admin_trading_emergency_kill&quot;
+#     actorUserId: 708
+#     reason: &quot;qa auth&quot;
+#     engagedAt: &quot;2026-10-25T07:44:35.244Z&quot;
+#     rowCount: 2
+# [07:44:35.263] WARN (8920): platform emergency stop engage written (commits with the caller&#x27;s transaction)
+#     source: &quot;admin_trading_emergency_kill&quot;
+#     actorUserId: 708
+#     reason: &quot;qa route&quot;
+#     engagedAt: &quot;2026-10-25T07:44:35.261Z&quot;
+#     rowCount: 2
+# [07:44:35.353] WARN (8920): platform emergency stop released on every settings row (audited)
+#     stop: &quot;platform_emergency_stop&quot;
+#     source: &quot;admin_trading_reset_kill&quot;
+#     actorUserId: 708
+#     wasEngaged: true
+#     rowCount: 2
+# [07:44:35.359] WARN (8920): platform emergency stop engage written (commits with the caller&#x27;s transaction)
+#     source: &quot;admin_trading_emergency_kill&quot;
+#     actorUserId: 708
+#     reason: &quot;qa route 2&quot;
+#     engagedAt: &quot;2026-10-25T07:44:35.357Z&quot;
+#     rowCount: 2
+# [07:44:35.396] WARN (8920): safety-core kill switch released (audited)
+#     stop: &quot;safety_core_kill_switch&quot;
+#     source: &quot;system_kill_switch_reset&quot;
+#     actorUserId: 708
+#     wasEngaged: true
+# Subtest: routes: reset-kill releases every row; activation refuses to release; system reset releases only the safety core
+ok 4 - routes: reset-kill releases every row; activation refuses to release; system reset releases only the safety core
+  ---
+  duration_ms: 145.877131
+  type: &#x27;test&#x27;
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3297.688996
+
+</pre></div></details><details class="crit"><summary><span class="id">4.1 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:platform-switches</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: no settings row: fail closed by default; defaults / seed only when asked
+ok 1 - no settings row: fail closed by default; defaults / seed only when asked
+  ---
+  duration_ms: 93.678941
+  type: &#x27;test&#x27;
+  ...
+# Subtest: DEFAULT_SWITCH_ROW matches the schema defaults the seed writes
+ok 2 - DEFAULT_SWITCH_ROW matches the schema defaults the seed writes
+  ---
+  duration_ms: 10.603188
+  type: &#x27;test&#x27;
+  ...
+# Subtest: venues follow the platform mode and the enable flags
+ok 3 - venues follow the platform mode and the enable flags
+  ---
+  duration_ms: 19.433394
+  type: &#x27;test&#x27;
+  ...
+# Subtest: with a stray second row the strictest row wins
+ok 4 - with a stray second row the strictest row wins
+  ---
+  duration_ms: 29.039312
+  type: &#x27;test&#x27;
+  ...
+# Subtest: venueTradingVerdict: venue switch AND every stop switch
+ok 5 - venueTradingVerdict: venue switch AND every stop switch
+  ---
+  duration_ms: 63.661634
+  type: &#x27;test&#x27;
+  ...
+# Subtest: the safety-core kill switch is read without seeding and halts
+ok 6 - the safety-core kill switch is read without seeding and halts
+  ---
+  duration_ms: 8.612965
+  type: &#x27;test&#x27;
+  ...
+# Subtest: platformStop: every combination of the two stops
+ok 7 - platformStop: every combination of the two stops
+  ---
+  duration_ms: 36.72062
+  type: &#x27;test&#x27;
+  ...
+# Subtest: platformStop: no settings row reads released (schema defaults); never writes
+ok 8 - platformStop: no settings row reads released (schema defaults); never writes
+  ---
+  duration_ms: 7.66889
+  type: &#x27;test&#x27;
+  ...
+# Subtest: platformStop: fail closed when either read errors or is unreadable
+ok 9 - platformStop: fail closed when either read errors or is unreadable
+  ---
+  duration_ms: 1.533224
+  type: &#x27;test&#x27;
+  ...
+# Subtest: preCheckStopRefusal: own stop refuses as before; the other only adds new-risk refusals
+ok 10 - preCheckStopRefusal: own stop refuses as before; the other only adds new-risk refusals
+  ---
+  duration_ms: 0.709162
+  type: &#x27;test&#x27;
+  ...
+# [07:44:39.244] WARN (8956): platform stop unreadable; failing closed
+#     err: &quot;Error: db down&quot;
+# [07:44:39.244] WARN (8956): platform stop unreadable; failing closed
+#     err: &quot;Error: db down&quot;
+# Subtest: trade-action guard: either stop refuses an OPEN; a CLOSE passes the emergency stop
+ok 11 - trade-action guard: either stop refuses an OPEN; a CLOSE passes the emergency stop
+  ---
+  duration_ms: 72.984419
+  type: &#x27;test&#x27;
+  ...
+# [07:44:39.315] WARN (8956): platform stop unreadable; failing closed
+#     err: &quot;Error: x&quot;
+# Subtest: the config view carries no switch
+ok 12 - the config view carries no switch
+  ---
+  duration_ms: 2.363405
+  type: &#x27;test&#x27;
+  ...
+# Subtest: platformStopWith: the caller&#x27;s switches decide the emergency stop; the safety core is added
+ok 13 - platformStopWith: the caller&#x27;s switches decide the emergency stop; the safety core is added
+  ---
+  duration_ms: 18.365167
+  type: &#x27;test&#x27;
+  ...
+# Subtest: approvedTraderLiveState: per-source emergencyKillSwitch kept, combined platformStop fields added
+ok 14 - approvedTraderLiveState: per-source emergencyKillSwitch kept, combined platformStop fields added
+  ---
+  duration_ms: 30.929595
+  type: &#x27;test&#x27;
+  ...
+# [07:44:39.375] WARN (8956): platform emergency stop engage written (commits with the caller&#x27;s transaction)
+#     source: &quot;admin_live_shared_rollback&quot;
+#     actorUserId: 709
+#     reason: &quot;qa rollback&quot;
+#     engagedAt: &quot;2026-10-25T07:44:39.374Z&quot;
+#     rowCount: 2
+# [07:44:39.378] WARN (8956): platform emergency stop engage written (commits with the caller&#x27;s transaction)
+#     source: &quot;admin_trading_emergency_kill&quot;
+#     actorUserId: 709
+#     reason: &quot;qa engage&quot;
+#     engagedAt: &quot;2026-10-25T07:44:39.377Z&quot;
+#     rowCount: 2
+# Subtest: engagePlatformStop: every row engaged with one reason, time and actor; rolls back with the caller&#x27;s transaction
+ok 15 - engagePlatformStop: every row engaged with one reason, time and actor; rolls back with the caller&#x27;s transaction
+  ---
+  duration_ms: 17.569994
+  type: &#x27;test&#x27;
+  ...
+# Subtest: envelope: both stops reported, emergencyKillSwitch truthful, new risk from the combination, closes not blanket-refused
+ok 16 - envelope: both stops reported, emergencyKillSwitch truthful, new risk from the combination, closes not blanket-refused
+  ---
+  duration_ms: 34.009372
+  type: &#x27;test&#x27;
+  ...
+# Subtest: venueTradingVerdict: broker execution disabled / maintenance / unreadable block NEW RISK on DEMO and LIVE only
+ok 17 - venueTradingVerdict: broker execution disabled / maintenance / unreadable block NEW RISK on DEMO and LIVE only
+  ---
+  duration_ms: 67.230121
+  type: &#x27;test&#x27;
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3713.432444
+
+</pre></div></details><details class="crit"><summary><span class="id">2.2 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:readiness-stop-switches</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: an open live venue with no stop engaged reports no platform-wide stop, whatever live_trading_state says
+ok 1 - an open live venue with no stop engaged reports no platform-wide stop, whatever live_trading_state says
+  ---
+  duration_ms: 73.996737
+  type: &#x27;test&#x27;
+  ...
+# Subtest: the platform emergency stop reads as a platform-wide live stop
+ok 2 - the platform emergency stop reads as a platform-wide live stop
+  ---
+  duration_ms: 12.502628
+  type: &#x27;test&#x27;
+  ...
+# Subtest: a live venue switched off by the admin reads as a platform-wide live stop
+ok 3 - a live venue switched off by the admin reads as a platform-wide live stop
+  ---
+  duration_ms: 14.437325
+  type: &#x27;test&#x27;
+  ...
+# Subtest: broker execution disabled or maintenance reads as a platform-wide live stop (owner decision 2)
+ok 4 - broker execution disabled or maintenance reads as a platform-wide live stop (owner decision 2)
+  ---
+  duration_ms: 57.380791
+  type: &#x27;test&#x27;
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1820.670975
+
+</pre></div></details><details class="crit"><summary><span class="id">4.1 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:legacy-gates-action-aware</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: /mt5 commands: new risk honours both stops; closes are refused only by the gate&#x27;s own safety-core stop
+ok 1 - /mt5 commands: new risk honours both stops; closes are refused only by the gate&#x27;s own safety-core stop
+  ---
+  duration_ms: 224.638984
+  type: &#x27;test&#x27;
+  ...
+# Subtest: /broker/reconnect: available under both stops; never clears a stop, arms, or dispatches a queued order
+ok 2 - /broker/reconnect: available under both stops; never clears a stop, arms, or dispatches a queued order
+  ---
+  duration_ms: 71.408028
+  type: &#x27;test&#x27;
+  ...
+# Subtest: /permission (paper): the safety-core kill switch blocks; the platform emergency stop does not (documented exemption)
+ok 3 - /permission (paper): the safety-core kill switch blocks; the platform emergency stop does not (documented exemption)
+  ---
+  duration_ms: 44.802959
+  type: &#x27;test&#x27;
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3767.064665
+
+</pre></div></details><details class="crit"><summary><span class="id">6.9 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:risk-governor-pipelines</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>&quot;marketData&quot;
+#     symbol: &quot;EURUSD&quot;
+#     provider: &quot;none-real-unavailable&quot;
+#     source: &quot;FALLBACK&quot;
+#     realVsFallback: &quot;FALLBACK&quot;
+#     latencyMs: 0
+#     candlesReturned: 0
+#     dataQualityStatus: &quot;MISSING&quot;
+#     warnings: [
+#       &quot;Symbol \\&quot;EURUSD\\&quot; is not in the supported list.&quot;
+#     ]
+#     usedFallback: true
+#     providerError: &quot;symbol unsupported&quot;
+# Subtest: trade action: DEMO and LIVE entries become governed venue commands, never legacy mailbox rows
+ok 9 - trade action: DEMO and LIVE entries become governed venue commands, never legacy mailbox rows
+  ---
+  duration_ms: 1766.069331
+  type: &#x27;test&#x27;
+  ...
+# Subtest: trade action: a close on a position opened outside ARX is refused by governedOps; a governed one reaches the demo queue
+ok 10 - trade action: a close on a position opened outside ARX is refused by governedOps; a governed one reaches the demo queue
+  ---
+  duration_ms: 45.981034
+  type: &#x27;test&#x27;
+  ...
+# Subtest: trade action: a SIMULATED action records no broker command
+ok 11 - trade action: a SIMULATED action records no broker command
+  ---
+  duration_ms: 227.659787
+  type: &#x27;test&#x27;
+  ...
+# Subtest: D live sandbox: the live venue reads the trader&#x27;s own edited limits (per-trade risk)
+ok 12 - D live sandbox: the live venue reads the trader&#x27;s own edited limits (per-trade risk)
+  ---
+  duration_ms: 51.630414
+  type: &#x27;test&#x27;
+  ...
+# Subtest: D live sandbox: degraded bridge blocks new risk but not a close; a dead bridge blocks both
+ok 13 - D live sandbox: degraded bridge blocks new risk but not a close; a dead bridge blocks both
+  ---
+  duration_ms: 98.982987
+  type: &#x27;test&#x27;
+  ...
+# Subtest: D live sandbox: a stale broker quote blocks the entry
+ok 14 - D live sandbox: a stale broker quote blocks the entry
+  ---
+  duration_ms: 31.975969
+  type: &#x27;test&#x27;
+  ...
+# [07:44:51.238] WARN (9074): ARX_REQUIRE_FRESH_RECONCILIATION is OFF (default this release): live ENTRY dispatch is NOT gated on reconciliation freshness. The scheduled reconciler NOW EXISTS (startUnknownReconcilerWorker, 60s cadence), so the original blocker is cleared — the gate stays OFF only until an operator confirms reconciliation_runs rows are accumulating cleanly against the real database. Flipping it is an owner decision (Owner Decision Registry, Ruling 10): a default-ON gate whose reconciler is failing would refuse every live entry.
+#     [arx-live-phaseB]: true
+#     event: &quot;RECONCILIATION_FRESHNESS_GATE_OFF&quot;
+#     envVar: &quot;ARX_REQUIRE_FRESH_RECONCILIATION&quot;
+#     rawValue: null
+# [07:44:51.528] INFO (9074): Build DD: market data request served
+#     system: &quot;marketData&quot;
+#     symbol: &quot;EURUSD&quot;
+#     provider: &quot;none-real-unavailable&quot;
+#     source: &quot;FALLBACK&quot;
+#     realVsFallback: &quot;FALLBACK&quot;
+#     latencyMs: 0
+#     candlesReturned: 0
+#     dataQualityStatus: &quot;MISSING&quot;
+#     warnings: [
+#       &quot;Symbol \\&quot;EURUSD\\&quot; is not in the supported list.&quot;
+#     ]
+#     usedFallback: true
+#     providerError: &quot;symbol unsupported&quot;
+# Subtest: D live sandbox: a stale or missing broker account snapshot refuses new risk on that account only; closing still works
+ok 15 - D live sandbox: a stale or missing broker account snapshot refuses new risk on that account only; closing still works
+  ---
+  duration_ms: 101.300193
+  type: &#x27;test&#x27;
+  ...
+# Subtest: D live dispatch and the demo MT5 queue call the governor before their send step
+ok 16 - D live dispatch and the demo MT5 queue call the governor before their send step
+  ---
+  duration_ms: 3.092081
+  type: &#x27;test&#x27;
+  ...
+# Subtest: demo/live boundary: a stopless live position blocks live entries but not paper ones
+ok 17 - demo/live boundary: a stopless live position blocks live entries but not paper ones
+  ---
+  duration_ms: 70.912225
+  type: &#x27;test&#x27;
+  ...
+# Subtest: isolation: another trader&#x27;s losses, positions and bridge never decide this trader&#x27;s order
+ok 18 - isolation: another trader&#x27;s losses, positions and bridge never decide this trader&#x27;s order
+  ---
+  duration_ms: 57.327865
+  type: &#x27;test&#x27;
+  ...
+# Subtest: A demo manual: an off-step quantity is refused by the route, never written, and audited (invalid price/quantity)
+ok 19 - A demo manual: an off-step quantity is refused by the route, never written, and audited (invalid price/quantity)
+  ---
+  duration_ms: 45.442197
+  type: &#x27;test&#x27;
+  ...
+# Subtest: D live sandbox: buying power, leverage and concentration block on the trader&#x27;s stored account and positions
+ok 20 - D live sandbox: buying power, leverage and concentration block on the trader&#x27;s stored account and positions
+  ---
+  duration_ms: 58.292102
+  type: &#x27;test&#x27;
+  ...
+# Subtest: halt: a trader&#x27;s own kill switch stops their new risk on paper, demo and live, but never a close or a tightened stop, and never another trader
+ok 21 - halt: a trader&#x27;s own kill switch stops their new risk on paper, demo and live, but never a close or a tightened stop, and never another trader
+  ---
+  duration_ms: 159.293474
+  type: &#x27;test&#x27;
+  ...
+# Subtest: halt: the platform emergency stop halts demo and live for everyone; the paper simulator keeps running
+ok 22 - halt: the platform emergency stop halts demo and live for everyone; the paper simulator keeps running
+  ---
+  duration_ms: 71.478536
+  type: &#x27;test&#x27;
+  ...
+# Subtest: halt: the safety-core kill switch halts every venue, paper included
+ok 23 - halt: the safety-core kill switch halts every venue, paper included
+  ---
+  duration_ms: 72.868306
+  type: &#x27;test&#x27;
+  ...
+# Subtest: halt: paper POST /paper/orders refuses with the halt named while the trader&#x27;s switch is engaged
+ok 24 - halt: paper POST /paper/orders refuses with the halt named while the trader&#x27;s switch is engaged
+  ---
+  duration_ms: 34.462849
+  type: &#x27;test&#x27;
+  ...
+# Subtest: preview evaluates without writing an audit row; a real check writes exactly one
+ok 25 - preview evaluates without writing an audit row; a real check writes exactly one
+  ---
+  duration_ms: 39.11425
+  type: &#x27;test&#x27;
+  ...
+1..25
+# tests 25
+# suites 0
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6477.890013
+
+</pre></div></details><details class="crit"><summary><span class="id">2.8 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:risk-governor-effective-views</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>never the enforced value
+ok 5 - PATCH /me/risk-settings still edits the preference, never the enforced value
+  ---
+  duration_ms: 40.295835
+  type: &#x27;test&#x27;
+  ...
+# Subtest: dashboard cards and intelligence show the enforced caps; the saved value stays the preference
+ok 6 - dashboard cards and intelligence show the enforced caps; the saved value stays the preference
+  ---
+  duration_ms: 54.719812
+  type: &#x27;test&#x27;
+  ...
+# Subtest: portfolio-risk snapshot uses the enforced limits, not 2 / 2 / 0.5
+ok 7 - portfolio-risk snapshot uses the enforced limits, not 2 / 2 / 0.5
+  ---
+  duration_ms: 38.317185
+  type: &#x27;test&#x27;
+  ...
+# [07:44:55.350] INFO (9110): readiness: evaluation started
+#     governorId: &quot;gov_60104827-85a2-4ed8-9405-ca4b76b9b3c4&quot;
+# [07:44:55.373] INFO (9110): readiness: data sources read
+#     count: 10
+#     sources: [
+#       &quot;paper_orders&quot;,
+#       &quot;trade_decision_logs&quot;,
+#       &quot;post_trade_debriefs&quot;,
+#       &quot;learning_events&quot;,
+#       &quot;strategy_edges&quot;,
+#       &quot;mistake_patterns&quot;,
+#       &quot;market_data_mode&quot;,
+#       &quot;autopilot_cycles&quot;,
+#       &quot;autopilot_symbol_cooldowns&quot;,
+#       &quot;user_risk_settings&quot;
+#     ]
+# [07:44:55.373] INFO (9110): readiness: metrics calculated
+#     metrics: {
+#       &quot;dailyPnl&quot;: 0,
+#       &quot;dailyLossLimit&quot;: 100,
+#       &quot;weeklyPnl&quot;: 0,
+#       &quot;maxDrawdown&quot;: 0,
+#       &quot;openPaperTrades&quot;: 0,
+#       &quot;maxOpenPaperTrades&quot;: 4,
+#       &quot;sameSymbolExposure&quot;: {},
+#       &quot;winRate30d&quot;: 0,
+#       &quot;sampleSize&quot;: 0,
+#       &quot;decisionToWinRate&quot;: 0,
+#       &quot;avgRiskScore&quot;: 0,
+#       &quot;avgConfidence&quot;: 0,
+#       &quot;learningConfidence&quot;: 0,
+#       &quot;marketDataQuality&quot;: &quot;GOOD&quot;,
+#       &quot;autopilotErrorRate&quot;: 0,
+#       &quot;repeatedMistakeCount&quot;: 0
+#     }
+# [07:44:55.374] INFO (9110): readiness: hard blocks found
+#     count: 0
+# [07:44:55.374] INFO (9110): readiness: soft warnings found
+#     count: 0
+# [07:44:55.374] USERLVL (9110): readiness: readiness score calculated
+#     score: 55
+#     grade: &quot;F&quot;
+# [07:44:55.374] INFO (9110): readiness: allowed actions returned
+#     canRunAADecision: true
+#     canOpenPaperTrade: true
+#     canRunPaperAutopilot: true
+#     canManualClosePaperTrade: true
+#     canRebuildPerformance: true
+#     canProcessLearning: true
+#     canPlaceLiveTrade: false
+# [07:44:55.375] INFO (9110): readiness: evaluation completed
+#     governorId: &quot;gov_60104827-85a2-4ed8-9405-ca4b76b9b3c4&quot;
+#     status: &quot;PAPER_CAUTION&quot;
+#     score: 55
+# [07:44:55.375] INFO (9110): readiness: evaluation started
+#     governorId: &quot;gov_7db27be1-da83-43bc-a390-3cc857fb0910&quot;
+# Subtest: trader readiness: enforced max open and the governor&#x27;s daily-loss cap; off → no daily-loss block
+ok 8 - trader readiness: enforced max open and the governor&#x27;s daily-loss cap; off → no daily-loss block
+  ---
+  duration_ms: 46.574633
+  type: &#x27;test&#x27;
+  ...
+# [07:44:55.395] INFO (9110): readiness: data sources read
+#     count: 10
+#     sources: [
+#       &quot;paper_orders&quot;,
+#       &quot;trade_decision_logs&quot;,
+#       &quot;post_trade_debriefs&quot;,
+#       &quot;learning_events&quot;,
+#       &quot;strategy_edges&quot;,
+#       &quot;mistake_patterns&quot;,
+#       &quot;market_data_mode&quot;,
+#       &quot;autopilot_cycles&quot;,
+#       &quot;autopilot_symbol_cooldowns&quot;,
+#       &quot;user_risk_settings&quot;
+#     ]
+# [07:44:55.395] INFO (9110): readiness: metrics calculated
+#     metrics: {
+#       &quot;dailyPnl&quot;: -5000,
+#       &quot;dailyLossLimit&quot;: null,
+#       &quot;weeklyPnl&quot;: 0,
+#       &quot;maxDrawdown&quot;: 0,
+#       &quot;openPaperTrades&quot;: 0,
+#       &quot;maxOpenPaperTrades&quot;: 3,
+#       &quot;sameSymbolExposure&quot;: {},
+#       &quot;winRate30d&quot;: 0,
+#       &quot;sampleSize&quot;: 0,
+#       &quot;decisionToWinRate&quot;: 0,
+#       &quot;avgRiskScore&quot;: 0,
+#       &quot;avgConfidence&quot;: 0,
+#       &quot;learningConfidence&quot;: 0,
+#       &quot;marketDataQuality&quot;: &quot;GOOD&quot;,
+#       &quot;autopilotErrorRate&quot;: 0,
+#       &quot;repeatedMistakeCount&quot;: 0
+#     }
+# [07:44:55.395] INFO (9110): readiness: hard blocks found
+#     count: 0
+# [07:44:55.395] INFO (9110): readiness: soft warnings found
+#     count: 0
+# [07:44:55.395] USERLVL (9110): readiness: readiness score calculated
+#     score: 55
+#     grade: &quot;F&quot;
+# [07:44:55.395] INFO (9110): readiness: allowed actions returned
+#     canRunAADecision: true
+#     canOpenPaperTrade: true
+#     canRunPaperAutopilot: true
+#     canManualClosePaperTrade: true
+#     canRebuildPerformance: true
+#     canProcessLearning: true
+#     canPlaceLiveTrade: false
+# [07:44:55.395] INFO (9110): readiness: evaluation completed
+#     governorId: &quot;gov_7db27be1-da83-43bc-a390-3cc857fb0910&quot;
+#     status: &quot;PAPER_CAUTION&quot;
+#     score: 55
+# [07:44:55.407] WARN (9110): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;email&quot;
+#     alertId: 39
+#     alertType: &quot;BROKER_HEALTH&quot;
+# [07:44:55.408] WARN (9110): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;sms&quot;
+#     alertId: 39
+#     alertType: &quot;BROKER_HEALTH&quot;
+# [07:44:55.408] WARN (9110): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;push&quot;
+#     alertId: 39
+#     alertType: &quot;BROKER_HEALTH&quot;
+# [07:44:55.424] WARN (9110): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;email&quot;
+#     alertId: 40
+#     alertType: &quot;RISK_LOCK&quot;
+# [07:44:55.424] WARN (9110): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;sms&quot;
+#     alertId: 40
+#     alertType: &quot;RISK_LOCK&quot;
+# [07:44:55.424] WARN (9110): alert delivery channel not configured — alert NOT sent
+#     channel: &quot;push&quot;
+#     alertId: 40
+#     alertType: &quot;RISK_LOCK&quot;
+# Subtest: NEAR_DAILY_LOSS_LIMIT alert uses the enforced cap (operator USD cap counts; off switch respected)
+ok 9 - NEAR_DAILY_LOSS_LIMIT alert uses the enforced cap (operator USD cap counts; off switch respected)
+  ---
+  duration_ms: 30.335446
+  type: &#x27;test&#x27;
+  ...
+# Subtest: account shell risk view: limits in force, preference separate, override reason
+ok 10 - account shell risk view: limits in force, preference separate, override reason
+  ---
+  duration_ms: 47.046052
+  type: &#x27;test&#x27;
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2401.091468
+
+</pre></div></details><details class="crit"><summary><span class="id">3.1 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:risk-governor-rr-daily</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: checkRewardRiskFloor: boundaries, sides, missing and invalid inputs
+ok 1 - checkRewardRiskFloor: boundaries, sides, missing and invalid inputs
+  ---
+  duration_ms: 30.342467
+  type: &#x27;test&#x27;
+  ...
+# Subtest: ticket rules: the floor applies in every mode, with the governor&#x27;s semantics
+ok 2 - ticket rules: the floor applies in every mode, with the governor&#x27;s semantics
+  ---
+  duration_ms: 1.006031
+  type: &#x27;test&#x27;
+  ...
+# Subtest: pending-order draft reads the configured min_reward_risk_ratio through the risk authority
+ok 3 - pending-order draft reads the configured min_reward_risk_ratio through the risk authority
+  ---
+  duration_ms: 175.688761
+  type: &#x27;test&#x27;
+  ...
+# Subtest: no saved row = the governor&#x27;s default floor (1.5); a saved 0 switches it off
+ok 4 - no saved row = the governor&#x27;s default floor (1.5); a saved 0 switches it off
+  ---
+  duration_ms: 60.12378
+  type: &#x27;test&#x27;
+  ...
+# Subtest: the governor&#x27;s trading day is the UTC calendar day
+ok 5 - the governor&#x27;s trading day is the UTC calendar day
+  ---
+  duration_ms: 0.513532
+  type: &#x27;test&#x27;
+  ...
+# Subtest: operational rate cap: approved commands in a rolling 24h, own reason, per user
+ok 6 - operational rate cap: approved commands in a rolling 24h, own reason, per user
+  ---
+  duration_ms: 9.12419
+  type: &#x27;test&#x27;
+  ...
+# Subtest: both caps measure differently at the day boundary
+ok 7 - both caps measure differently at the day boundary
+  ---
+  duration_ms: 22.882203
+  type: &#x27;test&#x27;
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2721.76721
+
+</pre></div></details><details class="crit"><summary><span class="id">2.1 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:open-position-view</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: each basis returns exactly the rows the legacy inline predicates returned
+ok 1 - each basis returns exactly the rows the legacy inline predicates returned
+  ---
+  duration_ms: 47.0842
+  type: &#x27;test&#x27;
+  ...
+# Subtest: closed rows never appear; reconciled ghosts only under UNCLOSED
+ok 2 - closed rows never appear; reconciled ghosts only under UNCLOSED
+  ---
+  duration_ms: 15.624263
+  type: &#x27;test&#x27;
+  ...
+# Subtest: both venues normalise to one shape; ALL lists LIVE before DEMO
+ok 3 - both venues normalise to one shape; ALL lists LIVE before DEMO
+  ---
+  duration_ms: 2.624686
+  type: &#x27;test&#x27;
+  ...
+# Subtest: colliding tickets stay tenant-scoped on both venues
+ok 4 - colliding tickets stay tenant-scoped on both venues
+  ---
+  duration_ms: 10.715804
+  type: &#x27;test&#x27;
+  ...
+# Subtest: mode scope drops venues the account mode does not show
+ok 5 - mode scope drops venues the account mode does not show
+  ---
+  duration_ms: 2.741606
+  type: &#x27;test&#x27;
+  ...
+# Subtest: filters, ordering, limit and bridge scope
+ok 6 - filters, ordering, limit and bridge scope
+  ---
+  duration_ms: 7.504587
+  type: &#x27;test&#x27;
+  ...
+# Subtest: a supplied transaction is used, not replaced by the global db
+ok 7 - a supplied transaction is used, not replaced by the global db
+  ---
+  duration_ms: 5.40391
+  type: &#x27;test&#x27;
+  ...
+# Subtest: projected per-user reads match the raw predicates the migrated callers used
+ok 8 - projected per-user reads match the raw predicates the migrated callers used
+  ---
+  duration_ms: 12.981443
+  type: &#x27;test&#x27;
+  ...
+# Subtest: DEMO projected read: confirmedTicket drops rows without a broker position id
+ok 9 - DEMO projected read: confirmedTicket drops rows without a broker position id
+  ---
+  duration_ms: 7.579348
+  type: &#x27;test&#x27;
+  ...
+# Subtest: cross-user reads carry the same bases and respect a user filter
+ok 10 - cross-user reads carry the same bases and respect a user filter
+  ---
+  duration_ms: 16.864843
+  type: &#x27;test&#x27;
+  ...
+# Subtest: ALERT_ELIGIBLE (owner decision 11): owned, status OPEN, closed_at unset; never ownerless or closed rows
+ok 11 - ALERT_ELIGIBLE (owner decision 11): owned, status OPEN, closed_at unset; never ownerless or closed rows
+  ---
+  duration_ms: 10.808559
+  type: &#x27;test&#x27;
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1714.941526
+
+</pre></div></details><details class="crit"><summary><span class="id">4.1 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:simulated-open</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# (node:9221) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Trade Action Center: a draft and a preview book nothing
+ok 1 - Trade Action Center: a draft and a preview book nothing
+  ---
+  duration_ms: 110.879852
+  type: &#x27;test&#x27;
+  ...
+# Subtest: Trade Action Center: a SIMULATED open must be confirmed as SIMULATED explicitly
+ok 2 - Trade Action Center: a SIMULATED open must be confirmed as SIMULATED explicitly
+  ---
+  duration_ms: 13.002012
+  type: &#x27;test&#x27;
+  ...
+# Subtest: Trade Action Center: a confirmed SIMULATED open books one governed PAPER order at the real quote; a repeat returns it
+ok 3 - Trade Action Center: a confirmed SIMULATED open books one governed PAPER order at the real quote; a repeat returns it
+  ---
+  duration_ms: 92.375268
+  type: &#x27;test&#x27;
+  ...
+# Subtest: Trade Action Center: two concurrent confirms of one action book exactly one order
+ok 4 - Trade Action Center: two concurrent confirms of one action book exactly one order
+  ---
+  duration_ms: 81.422552
+  type: &#x27;test&#x27;
+  ...
+# Subtest: Trade Action Center: without a valid current price nothing is booked
+ok 5 - Trade Action Center: without a valid current price nothing is booked
+  ---
+  duration_ms: 100.29792
+  type: &#x27;test&#x27;
+  ...
+# Subtest: tenant isolation: another trader cannot confirm the action, and request keys are per trader
+ok 6 - tenant isolation: another trader cannot confirm the action, and request keys are per trader
+  ---
+  duration_ms: 77.474125
+  type: &#x27;test&#x27;
+  ...
+# Subtest: refusals book nothing: no paper account, pending order, missing stop, Risk Governor
+ok 7 - refusals book nothing: no paper account, pending order, missing stop, Risk Governor
+  ---
+  duration_ms: 52.416745
+  type: &#x27;test&#x27;
+  ...
+# Subtest: My Trades: a SIMULATED open needs a key, books one PAPER order through the guards, and a retry returns it
+ok 8 - My Trades: a SIMULATED open needs a key, books one PAPER order through the guards, and a retry returns it
+  ---
+  duration_ms: 249.924462
+  type: &#x27;test&#x27;
+  ...
+# Subtest: My Trades: without a valid current price the SIMULATED open is refused and nothing is booked
+ok 9 - My Trades: without a valid current price the SIMULATED open is refused and nothing is booked
+  ---
+  duration_ms: 37.608235
+  type: &#x27;test&#x27;
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3696.857785
+
+</pre></div></details><details class="crit"><summary><span class="id">3.0 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:paper-book</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: openPaperFill: governed OPEN with venue PAPER, books at the caller&#x27;s fill price with its event
+ok 1 - openPaperFill: governed OPEN with venue PAPER, books at the caller&#x27;s fill price with its event
+  ---
+  duration_ms: 143.039677
+  type: &#x27;test&#x27;
+  ...
+# Subtest: openPaperFill: a Risk Governor refusal books nothing and returns the decision
+ok 2 - openPaperFill: a Risk Governor refusal books nothing and returns the decision
+  ---
+  duration_ms: 57.959297
+  type: &#x27;test&#x27;
+  ...
+# Subtest: Trade Engine PAPER fills: fillPaperTrade / settlePaperTrade / voidPaperTrade pass through to the venue unchanged
+ok 3 - Trade Engine PAPER fills: fillPaperTrade / settlePaperTrade / voidPaperTrade pass through to the venue unchanged
+  ---
+  duration_ms: 212.962871
+  type: &#x27;test&#x27;
+  ...
+# Subtest: closePaperFill: governed CLOSE, owner-scoped, CLOSED_MANUAL with P&amp;L and its event
+ok 4 - closePaperFill: governed CLOSE, owner-scoped, CLOSED_MANUAL with P&amp;L and its event
+  ---
+  duration_ms: 42.30627
+  type: &#x27;test&#x27;
+  ...
+# Subtest: settlePaperOrder and voidPaperOrder: venue fills, not re-governed, only status / exit / P&amp;L move
+ok 5 - settlePaperOrder and voidPaperOrder: venue fills, not re-governed, only status / exit / P&amp;L move
+  ---
+  duration_ms: 59.032353
+  type: &#x27;test&#x27;
+  ...
+# Subtest: Build EE monitor: stop/target hits settle through the venue; manual close is governed there
+ok 6 - Build EE monitor: stop/target hits settle through the venue; manual close is governed there
+  ---
+  duration_ms: 129.751451
+  type: &#x27;test&#x27;
+  ...
+# Subtest: legacy trades book: the emergency-stop cancel of existing rows stays owner-scoped
+ok 7 - legacy trades book: the emergency-stop cancel of existing rows stays owner-scoped
+  ---
+  duration_ms: 14.53178
+  type: &#x27;test&#x27;
+  ...
+# [07:45:07.565] INFO (9259): paper trade loaded
+#     component: &quot;auto-debrief&quot;
+#     orderId: 322
+#     status: &quot;CLOSED_MANUAL&quot;
+#     decisionId: null
+# [07:45:07.566] INFO (9259): no decision_id linked to trade
+#     component: &quot;auto-debrief&quot;
+#     orderId: 322
+# [07:45:07.572] INFO (9259): auto-debrief created
+#     component: &quot;auto-debrief&quot;
+#     orderId: 322
+#     debriefId: 46
+#     result: &quot;LOSS&quot;
+# [07:45:07.587] INFO (9259): analytics snapshot generated
+#     component: &quot;auto-debrief&quot;
+#     orderId: 322
+#     snapshotId: 37
+#     totalTrades: 1
+# [07:45:07.608] INFO (9259): paper trade loaded
+#     component: &quot;auto-debrief&quot;
+#     orderId: 321
+#     status: &quot;CLOSED_TP&quot;
+#     decisionId: null
+# [07:45:07.610] INFO (9259): no decision_id linked to trade
+#     component: &quot;auto-debrief&quot;
+#     orderId: 321
+# [07:45:07.613] INFO (9259): auto-debrief created
+#     component: &quot;auto-debrief&quot;
+#     orderId: 321
+#     debriefId: 47
+#     result: &quot;WIN&quot;
+# [07:45:07.614] INFO (9259): learning event processed
+#     component: &quot;learningEngine&quot;
+#     eventId: 38
+#     debriefId: 46
+#     tradeId: 322
+#     symbol: &quot;QAPCUSD&quot;
+#     action: &quot;BUY&quot;
+#     result: &quot;LOSS&quot;
+#     edgesUpdated: 0
+#     mistakesUpdated: 1
+#     sampleBucket: &quot;LOW&quot;
+# [07:45:07.614] INFO (9259): Build CC processed BB learning payload
+#     component: &quot;auto-debrief&quot;
+#     orderId: 322
+#     debriefId: 46
+#     ccStatus: &quot;processed&quot;
+#     ccEventId: 38
+#     edgesUpdated: 0
+#     mistakesUpdated: 1
+# [07:45:07.620] INFO (9259): analytics snapshot generated
+#     component: &quot;auto-debrief&quot;
+#     orderId: 321
+#     snapshotId: 38
+#     totalTrades: 2
+# [07:45:07.621] INFO (9259): Build EE monitor: BB auto-debrief triggered
+#     system: &quot;paperExecutionMonitor&quot;
+#     orderId: 321
+#     bbStatus: &quot;created&quot;
+#     bbDebriefId: 47
+# [07:45:07.622] INFO (9259): Build EE monitor complete
+#     system: &quot;paperExecutionMonitor&quot;
+#     scanned: 1
+#     closed: 1
+#     stillOpen: 0
+# [07:45:07.630] INFO (9259): learning event processed
+#     component: &quot;learningEngine&quot;
+#     eventId: 39
+#     debriefId: 47
+#     tradeId: 321
+#     symbol: &quot;QAPBUSD&quot;
+#     action: &quot;BUY&quot;
+#     result: &quot;WIN&quot;
+#     edgesUpdated: 0
+#     mistakesUpdated: 0
+#     sampleBucket: &quot;LOW&quot;
+# [07:45:07.630] INFO (9259): Build CC processed BB learning payload
+#     component: &quot;auto-debrief&quot;
+#     orderId: 321
+#     debriefId: 47
+#     ccStatus: &quot;processed&quot;
+#     ccEventId: 39
+#     edgesUpdated: 0
+#     mistakesUpdated: 0
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2604.916868
+
+</pre></div></details><details class="crit"><summary><span class="id">3.6 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:my-trades-demo-open</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# (node:9297) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: DEMO: a confirmed open goes through the guards and the Risk Governor to the demo queue, never placeOrder
+ok 1 - DEMO: a confirmed open goes through the guards and the Risk Governor to the demo queue, never placeOrder
+  ---
+  duration_ms: 197.227286
+  type: &#x27;test&#x27;
+  ...
+# Subtest: LIVE: a My Trades live open is refused by name and creates nothing
+ok 2 - LIVE: a My Trades live open is refused by name and creates nothing
+  ---
+  duration_ms: 21.219779
+  type: &#x27;test&#x27;
+  ...
+# Subtest: confirmation is required: an unconfirmed DEMO open creates nothing
+ok 3 - confirmation is required: an unconfirmed DEMO open creates nothing
+  ---
+  duration_ms: 9.775594
+  type: &#x27;test&#x27;
+  ...
+# Subtest: ownership: unauthenticated is refused; a trader&#x27;s open uses only their own connection; another trader cannot confirm it
+ok 4 - ownership: unauthenticated is refused; a trader&#x27;s open uses only their own connection; another trader cannot confirm it
+  ---
+  duration_ms: 97.349955
+  type: &#x27;test&#x27;
+  ...
+# Subtest: mode: a trader whose mode does not permit DEMO is refused before anything is recorded
+ok 5 - mode: a trader whose mode does not permit DEMO is refused before anything is recorded
+  ---
+  duration_ms: 15.18077
+  type: &#x27;test&#x27;
+  ...
+# Subtest: sizing and the Risk Governor: an oversized DEMO open is refused by name and never queued
+ok 6 - sizing and the Risk Governor: an oversized DEMO open is refused by name and never queued
+  ---
+  duration_ms: 63.116212
+  type: &#x27;test&#x27;
+  ...
+# Subtest: the demo queue&#x27;s own refusal is returned as-is, and a duplicate in flight is refused
+ok 7 - the demo queue&#x27;s own refusal is returned as-is, and a duplicate in flight is refused
+  ---
+  duration_ms: 181.88557
+  type: &#x27;test&#x27;
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3193.645643
+
+</pre></div></details><details class="crit"><summary><span class="id">0.8 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:broker-hub-heartbeat-policy</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: owner bounds: &lt; 15 s fresh, 15–60 s degraded, &gt;= 60 s offline
+ok 1 - owner bounds: &lt; 15 s fresh, 15–60 s degraded, &gt;= 60 s offline
+  ---
+  duration_ms: 1.276541
+  type: &#x27;test&#x27;
+  ...
+# Subtest: missing / invalid / negative / non-finite observations are unknown and never execution-ready
+ok 2 - missing / invalid / negative / non-finite observations are unknown and never execution-ready
+  ---
+  duration_ms: 0.319234
+  type: &#x27;test&#x27;
+  ...
+# Subtest: seconds: exact for fractional and floored ages
+ok 3 - seconds: exact for fractional and floored ages
+  ---
+  duration_ms: 0.195498
+  type: &#x27;test&#x27;
+  ...
+# Subtest: only fresh is execution-ready; fresh and degraded are online
+ok 4 - only fresh is execution-ready; fresh and degraded are online
+  ---
+  duration_ms: 1.004022
+  type: &#x27;test&#x27;
+  ...
+# Subtest: timestamps: Date, ISO string, epoch ms; unparseable or future-dated → unknown
+ok 5 - timestamps: Date, ISO string, epoch ms; unparseable or future-dated → unknown
+  ---
+  duration_ms: 0.555734
+  type: &#x27;test&#x27;
+  ...
+# Subtest: the server authority re-exports the same policy (one implementation)
+ok 6 - the server authority re-exports the same policy (one implementation)
+  ---
+  duration_ms: 0.188772
+  type: &#x27;test&#x27;
+  ...
+# Subtest: broker-health evaluator: heartbeat bands from the shared policy
+ok 7 - broker-health evaluator: heartbeat bands from the shared policy
+  ---
+  duration_ms: 0.734346
+  type: &#x27;test&#x27;
+  ...
+# Subtest: legacy broker-status engine defaults follow the policy
+ok 8 - legacy broker-status engine defaults follow the policy
+  ---
+  duration_ms: 0.400139
+  type: &#x27;test&#x27;
+  ...
+# Subtest: AACI bridgeHeartbeat source is stale once not fresh (&gt;= 15 s) or unknown
+ok 9 - AACI bridgeHeartbeat source is stale once not fresh (&gt;= 15 s) or unknown
+  ---
+  duration_ms: 0.950141
+  type: &#x27;test&#x27;
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 434.083933
+
+</pre></div></details><details class="crit"><summary><span class="id">0.8 s</span><span class="t mono">pnpm -s --filter @workspace/api-server run test:bridge-v2-liveness</span><span class="muted">ran, exit 0</span></summary><div class="body"><pre>TAP version 13
+# Subtest: heartbeatFreshness uses the shared policy at the exact boundaries
+ok 1 - heartbeatFreshness uses the shared policy at the exact boundaries
+  ---
+  duration_ms: 0.616497
+  type: &#x27;test&#x27;
+  ...
+# Subtest: stream health keeps its own separately named bands (legacy values, inclusive)
+ok 2 - stream health keeps its own separately named bands (legacy values, inclusive)
+  ---
+  duration_ms: 0.130678
+  type: &#x27;test&#x27;
+  ...
+# Subtest: the two vocabularies are reported side by side and can differ
+ok 3 - the two vocabularies are reported side by side and can differ
+  ---
+  duration_ms: 0.082643
+  type: &#x27;test&#x27;
+  ...
+# Subtest: legacy connected is unchanged: stream LIVE (age &lt;= 15 s)
+ok 4 - legacy connected is unchanged: stream LIVE (age &lt;= 15 s)
+  ---
+  duration_ms: 0.07342
+  type: &#x27;test&#x27;
+  ...
+# Subtest: a healthy stream never implies execution readiness
+ok 5 - a healthy stream never implies execution readiness
+  ---
+  duration_ms: 0.578712
+  type: &#x27;test&#x27;
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 414.759534
+
+</pre></div></details><details class="crit"><summary><span class="id">487.8 s</span><span class="t mono">pnpm -s run ci:integration</span><span class="muted">ran, exit 1</span></summary><div class="body"><pre>st:scanner-no-feed-honesty
+
+error: cannot drop constraint broker_hub_accounts_id_connection_owner_uq on table broker_hub_accounts because other objects depend on it
+    at /home/claude/arxai/node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Object.query (/home/claude/arxai/node_modules/.pnpm/drizzle-kit@0.31.9/node_modules/drizzle-kit/bin.cjs:80623:26)
+    at async pgPush (/home/claude/arxai/node_modules/.pnpm/drizzle-kit@0.31.9/node_modules/drizzle-kit/bin.cjs:84485:13)
+    at async Object.handler (/home/claude/arxai/node_modules/.pnpm/drizzle-kit@0.31.9/node_modules/drizzle-kit/bin.cjs:93943:9)
+    at async run (/home/claude/arxai/node_modules/.pnpm/drizzle-kit@0.31.9/node_modules/drizzle-kit/bin.cjs:93189:7) {
+  length: 550,
+  severity: &#x27;ERROR&#x27;,
+  code: &#x27;2BP01&#x27;,
+  detail: &#x27;constraint broker_hub_discovery_owner_account_fk on table broker_hub_discovery_evidence depends on index broker_hub_accounts_id_connection_owner_uq\n&#x27; +
+    &#x27;constraint broker_hub_instruments_owner_account_fk on table broker_hub_instruments depends on index broker_hub_accounts_id_connection_owner_uq&#x27;,
+  hint: &#x27;Use DROP ... CASCADE to drop the dependent objects too.&#x27;,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: &#x27;dependency.c&#x27;,
+  line: &#x27;1204&#x27;,
+  routine: &#x27;reportDependentObjects&#x27;
+}
+  ✗ treatment: governanceOutcome &quot;downgraded&quot; (got null)
+  ✗ treatment: verdict caution (got tradeable)
+  ✗ signal changes the setup: verdict tradeable→caution (control=tradeable, treatment=tradeable)
+  ✗ signal changes governance: null→downgraded (control=null, treatment=null)
+adminUnrestrictedRiskTest crashed: DrizzleQueryError: Failed query: insert into &quot;risk_templates&quot; (&quot;id&quot;, &quot;name&quot;, &quot;description&quot;, &quot;payload&quot;, &quot;is_archived&quot;, &quot;created_by&quot;, &quot;created_at&quot;, &quot;updated_at&quot;) values (default, $1, $2, default, default, default, default, default) returning &quot;id&quot;
+params: Approved Shared Bridge Default,auto-created by adminUnrestrictedRiskTest
+    at NodePgPreparedQuery.queryWithCache (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async &lt;anonymous&gt; (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+    at async ensureTemplate (/home/claude/arxai/scripts/src/adminUnrestrictedRiskTest.ts:57:15)
+    at async main (/home/claude/arxai/scripts/src/adminUnrestrictedRiskTest.ts:137:23) {
+  query: &#x27;insert into &quot;risk_templates&quot; (&quot;id&quot;, &quot;name&quot;, &quot;description&quot;, &quot;payload&quot;, &quot;is_archived&quot;, &quot;created_by&quot;, &quot;created_at&quot;, &quot;updated_at&quot;) values (default, $1, $2, default, default, default, default, default) returning &quot;id&quot;&#x27;,
+  params: [
+    &#x27;Approved Shared Bridge Default&#x27;,
+    &#x27;auto-created by adminUnrestrictedRiskTest&#x27;
+  ],
+  cause: error: null value in column &quot;created_by&quot; of relation &quot;risk_templates&quot; violates not-null constraint
+      at /home/claude/arxai/node_modules/.pnpm/pg-pool@3.13.0_pg@8.20.0/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async &lt;anonymous&gt; (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:161:13)
+      at async NodePgPreparedQuery.queryWithCache (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:71:12)
+      at async &lt;anonymous&gt; (/home/claude/arxai/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+      at async ensureTemplate (/home/claude/arxai/scripts/src/adminUnrestrictedRiskTest.ts:57:15)
+      at async main (/home/claude/arxai/scripts/src/adminUnrestrictedRiskTest.ts:137:23) {
+    length: 361,
+    severity: &#x27;ERROR&#x27;,
+    code: &#x27;23502&#x27;,
+    detail: &#x27;Failing row contains (3, Approved Shared Bridge Default, auto-created by adminUnrestrictedRiskTest, {}, f, null, 2026-10-25 07:46:16.652767, 2026-10-25 07:46:16.652767).&#x27;,
+    hint: undefined,
+    position: undefined,
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: &#x27;public&#x27;,
+    table: &#x27;risk_templates&#x27;,
+    column: &#x27;created_by&#x27;,
+    dataType: undefined,
+    constraint: undefined,
+    file: &#x27;execMain.c&#x27;,
+    line: &#x27;2057&#x27;,
+    routine: &#x27;ExecConstraints&#x27;
+  }
+}
+QA crashed: error: insert or update on table &quot;arx_dispatch_exposure_reservations&quot; violates foreign key constraint &quot;arx_dispatch_exposure_reservations_user_id_users_id_fk&quot;
+    at /home/claude/arxai/node_modules/.pnpm/pg@8.20.0/node_modules/pg/lib/client.js:631:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async &lt;anonymous&gt; (/home/claude/arxai/artifacts/api-server/src/lib/concurrency/exposureReservation.ts:138:19)
+    at async withTxAdvisoryLock (/home/claude/arxai/artifacts/api-server/src/lib/concurrency/advisoryLock.ts:73:19)
+    at async reserveExposureAtomic (/home/claude/arxai/artifacts/api-server/src/lib/concurrency/exposureReservation.ts:128:16)
+    at async main (/home/claude/arxai/scripts/src/qaOneClickConcurrency.ts:176:14) {
+  length: 372,
+  severity: &#x27;ERROR&#x27;,
+  code: &#x27;23503&#x27;,
+  detail: &#x27;Key (user_id)=(1) is not present in table &quot;users&quot;.&#x27;,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: &#x27;public&#x27;,
+  table: &#x27;arx_dispatch_exposure_reservations&#x27;,
+  column: undefined,
+  dataType: undefined,
+  constraint: &#x27;arx_dispatch_exposure_reservations_user_id_users_id_fk&#x27;,
+  file: &#x27;ri_triggers.c&#x27;,
+  line: &#x27;2608&#x27;,
+  routine: &#x27;ri_ReportViolation&#x27;
+}
+</pre></div></details>
+</main><script>
+(function(){var s=document.getElementById('fs'),x=document.getElementById('fx'),q=document.getElementById('fq');
+function f(){var st=s.value,sx=x.value,t=q.value.toLowerCase();document.querySelectorAll('details.crit').forEach(function(d){
+var ok=(!st||d.dataset.status===st)&&(!sx||d.dataset.section===sx)&&(!t||d.textContent.toLowerCase().indexOf(t)>=0);
+d.style.display=ok?'':'none';});}
+[s,x].forEach(function(e){e.addEventListener('change',f)});q.addEventListener('input',f);})();
+</script></body></html>

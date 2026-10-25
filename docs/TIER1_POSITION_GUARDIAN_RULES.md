@@ -91,7 +91,8 @@ Validation on an isolated local PostgreSQL database (UTC):
 1. The engines keep their own decision logic and modules; they are now
    registered rules behind one exit door, not one merged engine.
 2. Demo and paper as modes of the one Trade Engine pipeline (separate change).
-3. Rescore with the original scorecard tools once they are available.
+3. ~~Rescore with the original scorecard tools once they are available.~~
+   Retired (owner, 2026-10-25): the original scorecard is unavailable and its 68.7% is a historical figure only. Use ARX Tier 1 Scorecard v2: `docs/scorecard/v2/README.md` (regenerate with `pnpm run scorecard`; baseline dashboard `docs/scorecard/v2/baseline/dashboard.html`). Do not ask the owner for the original scorecard.
 4. Owner actions from the handoff: the seven production migrations, the legacy
    owner user ID as an explicit deploy parameter, and `validate:broker` against
    a real demo bridge.

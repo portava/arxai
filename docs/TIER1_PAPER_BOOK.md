@@ -223,8 +223,8 @@ Verification on an isolated local PostgreSQL database (UTC):
 4. **Done (owner decision 14): `/execute-trade` is retired** and `trades` is
    closed to new rows. The `mode` column is documented as Safety Core state,
    not a broker execution; no column was changed or dropped.
-5. **No published score.** The scorecard tools and dashboard destination are
-   still needed.
+5. ~~**No published score.** The scorecard tools and dashboard destination are
+   still needed.~~ Retired (owner, 2026-10-25): the original scorecard is unavailable and its 68.7% is a historical figure only. Use ARX Tier 1 Scorecard v2: `docs/scorecard/v2/README.md` (regenerate with `pnpm run scorecard`; baseline dashboard `docs/scorecard/v2/baseline/dashboard.html`). Do not ask the owner for the original scorecard.
 
 ## Honest limits
 

@@ -674,7 +674,8 @@ DB test: `test:broker-hub-state-sources`
    platform safety switch work, which is out of scope here.
 6. `validate:broker` against a real demo bridge is an owner action and was not
    run.
-7. Obtain the scorecard rubric before measuring and publishing a new score.
+7. ~~Obtain the scorecard rubric before measuring and publishing a new score.~~
+   Retired (owner, 2026-10-25): the original scorecard is unavailable and its 68.7% is a historical figure only. Use ARX Tier 1 Scorecard v2: `docs/scorecard/v2/README.md` (regenerate with `pnpm run scorecard`; baseline dashboard `docs/scorecard/v2/baseline/dashboard.html`). Do not ask the owner for the original scorecard.
 8. ~~Freshness values are named, not unified (round 4).~~ Done for MT5
    connection heartbeats in round 5 (owner decision 17): one shared policy.
    Account snapshots (30 s / 60 s), positions snapshots, the fund-book

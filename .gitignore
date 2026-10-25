@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Python bytecode (scripts/scorecard)
+__pycache__/

@@ -79,9 +79,8 @@ passes with the test database configured to UTC.
    deterministic protection authority.
 2. Unify demo and paper as modes of the execution pipeline; retain explicit
    treatment of the My Trades DEMO risk-reducing close exception.
-3. Obtain the original scorecard tools/rubric and dashboard destination before
-   measuring and publishing a new score. The handoff's
-   `/mnt/project-files/arx-scorecard` is not present on this Mac.
+3. ~~Obtain the original scorecard tools/rubric and dashboard destination.~~
+   Retired (owner, 2026-10-25): the original scorecard is unavailable and its 68.7% is a historical figure only. Use ARX Tier 1 Scorecard v2: `docs/scorecard/v2/README.md` (regenerate with `pnpm run scorecard`; baseline dashboard `docs/scorecard/v2/baseline/dashboard.html`). Do not ask the owner for the original scorecard.
 4. Apply the seven production migrations through the owner-controlled deployment
    process; supply the legacy owner user ID explicitly and run production
    readiness plus validation against a real demo bridge.
