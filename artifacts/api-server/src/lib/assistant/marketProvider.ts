@@ -352,6 +352,35 @@ function emptyQuote(symbol: string, source: string, freshness: MarketQuote["fres
   };
 }
 
+// Fetch/cache time is not market time. Missing or invalid source timestamps
+// remain unknown; they must never be replaced with the time of the request.
+function quoteTimestamp(value: unknown, scale = 1): string | null {
+  const ms = typeof value === "number" ? value * scale
+    : typeof value === "string" && value.trim() ? Date.parse(value) : NaN;
+  const date = new Date(ms);
+  return Number.isFinite(date.getTime()) && ms > 0 ? date.toISOString() : null;
+}
+
+function withQuoteFreshness(provider: MarketProvider): MarketProvider {
+  return {
+    ...provider,
+    async getLiveQuote(symbol) {
+      const quote = await provider.getLiveQuote(symbol);
+      if (quote.freshness === "ERROR" || quote.freshness === "UNAVAILABLE" || quote.freshness === "DEMO") return quote;
+      if (quote.price == null || !Number.isFinite(quote.price) || quote.price <= 0) {
+        return { ...quote, freshness: "UNAVAILABLE", stale: true };
+      }
+      const age = quote.asOf == null ? null : Date.now() - Date.parse(quote.asOf);
+      const observed = classifyQuoteFreshness(age);
+      // Re-evaluate even cache hits; never mutate the cached source payload.
+      if (quote.stale || quote.freshness === "STALE" || observed.stale) {
+        return { ...quote, freshness: "STALE", stale: true };
+      }
+      return { ...quote, freshness: quote.freshness === "DELAYED" || !observed.fresh ? "DELAYED" : "REALTIME", stale: false };
+    },
+  };
+}
+
 // ── Common session computation ───────────────────────────────────────────
 function computeSessions() {
   const now = new Date();
@@ -455,7 +484,7 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
         change: num(j.change), changePct: num(j.percent_change),
         high: num(j.high), low: num(j.low),
         open: num(j.open), previousClose: num(j.previous_close),
-        asOf: j.timestamp ? new Date(j.timestamp * 1000).toISOString() : new Date().toISOString(),
+        asOf: quoteTimestamp(j.timestamp, 1000),
         freshness: "REALTIME", source: "twelve_data", stale: false,
       };
       markSuccess({ freshness: "REALTIME", source: "twelve_data" });
@@ -565,7 +594,7 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
           changePct: typeof bar.o === "number" && bar.o !== 0 ? +(((price - bar.o) / bar.o) * 100).toFixed(4) : null,
           high: bar.h ?? null, low: bar.l ?? null,
           open: bar.o ?? null, previousClose: null,
-          asOf: typeof bar.t === "number" ? new Date(bar.t).toISOString() : new Date().toISOString(),
+          asOf: quoteTimestamp(bar.t),
           freshness: "DELAYED",
           source: "polygon",
           stale: false,
@@ -587,7 +616,8 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
         return q;
       }
       const price = t.lastTrade?.p ?? t.day?.c ?? null;
-      const asOfMs = t.updated ?? t.lastTrade?.t ?? null;
+      // A snapshot refresh does not advance the time of its last trade.
+      const asOfMs = t.lastTrade?.p != null ? t.lastTrade.t : null;
       const q: MarketQuote = {
         symbol,
         price: price ?? null,
@@ -596,7 +626,7 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
         changePct: t.todaysChangePerc ?? null,
         high: t.day?.h ?? null, low: t.day?.l ?? null,
         open: t.day?.o ?? null, previousClose: t.prevDay?.c ?? null,
-        asOf: asOfMs ? new Date(typeof asOfMs === "number" && asOfMs > 1e12 ? asOfMs / 1e6 : asOfMs).toISOString() : null,
+        asOf: quoteTimestamp(asOfMs, typeof asOfMs === "number" && asOfMs > 1e12 ? 1e-6 : 1),
         freshness: price != null ? "REALTIME" : "UNAVAILABLE",
         source: "polygon",
         stale: false,
@@ -712,7 +742,7 @@ function finnhubProvider(apiKey: string, newsApiKey: string | null): MarketProvi
         change: j.d ?? null, changePct: j.dp ?? null,
         high: j.h ?? null, low: j.l ?? null,
         open: j.o ?? null, previousClose: j.pc ?? null,
-        asOf: j.t ? new Date(j.t * 1000).toISOString() : new Date().toISOString(),
+        asOf: quoteTimestamp(j.t, 1000),
         freshness: "REALTIME", source: "finnhub", stale: false,
       };
       markSuccess();
@@ -819,7 +849,7 @@ function alphaVantageProvider(apiKey: string, newsApiKey: string | null): Market
         changePct: (() => { const s = (g["10. change percent"] ?? "").replace("%", ""); const n = parseFloat(s); return Number.isFinite(n) ? n : null; })(),
         high: num("03. high"), low: num("04. low"),
         open: num("02. open"), previousClose: num("08. previous close"),
-        asOf: g["07. latest trading day"] ? new Date(g["07. latest trading day"]).toISOString() : new Date().toISOString(),
+        asOf: quoteTimestamp(g["07. latest trading day"]),
         freshness: "DELAYED", source: "alpha_vantage", stale: false,
       };
       if (q.price != null) markSuccess();
@@ -1086,6 +1116,10 @@ export function getMarketProvider(): MarketProvider {
   if (finnhubKey && !twelveDataKey)  chain.push(finnhubProvider(finnhubKey, newsKey));
   if (avKey)                         chain.push(alphaVantageProvider(avKey, newsKey));
 
+  // Normalize before composite selection, so an old primary cannot mask a
+  // current fallback. Single-provider mode follows exactly the same contract.
+  const observedChain = chain.map(withQuoteFreshness);
+
   let chosen: MarketProvider;
   if (chain.length === 0) {
     if (newsKey) {
@@ -1102,9 +1136,9 @@ export function getMarketProvider(): MarketProvider {
       chosen = nullProvider();
     }
   } else if (chain.length === 1) {
-    chosen = chain[0]!;
+    chosen = observedChain[0]!;
   } else {
-    chosen = compositeProvider(chain);
+    chosen = compositeProvider(observedChain);
   }
 
   const base = chosen.features.candles ? withCandleCache(chosen) : chosen;
