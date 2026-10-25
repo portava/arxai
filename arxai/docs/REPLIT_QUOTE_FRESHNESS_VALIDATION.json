@@ -2,7 +2,7 @@
   "at": "2026-10-25T12:22:52.282330+00:00",
   "github_pr": "https://github.com/portava/arxai/pull/70",
   "github_head": "ef5d3fc012b9b3e0291819a316cbdc9bcac0bd1b",
-  "github_status": "OPEN; main merge awaiting explicit owner approval",
+  "github_status": "MERGED with explicit owner approval",
   "verification": {
     "quote-regressions": {
       "exit_code": 0,
@@ -84,5 +84,6 @@
         "expected": 200
       }
     }
-  }
+  },
+  "github_merge_commit": "d0508e52c6de6e23bf2df9cc297713beebbd359e"
 }

@@ -16,9 +16,9 @@ import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
 import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets, anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
 import { placeLiveOrderGuarded } from "../lib/liveTrading/guard.js";
 import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve, basename } from "node:path";
-import { buildZip } from "../lib/zipBuilder.js";
+import { bridgeDir, bridgeFile, bridgePackageManifest, bridgePackageZip } from "../lib/mt5/bridgePackage.js";
 
 const router: IRouter = Router();
 
@@ -41,60 +41,22 @@ function envelope(body: Record<string, unknown>) {
 // Resolves files from the repo's mt5-bridge/ directory. Uses an allowlist —
 // no user-controlled path traversal.
 
-const BRIDGE_FILES = {
-  "ea": { name: "ReplitMT5BridgeEA.mq5", contentType: "text/x-mql5; charset=utf-8" },
-  "webreq-test": { name: "ARXWebRequestTest.mq5", contentType: "text/x-mql5; charset=utf-8" },
-  "readme": { name: "README_SETUP.md", contentType: "text/markdown; charset=utf-8" },
-  "checklist": { name: "BRIDGE_TESTING_CHECKLIST.md", contentType: "text/markdown; charset=utf-8" },
-  "security": { name: "SECURITY_NOTES.md", contentType: "text/markdown; charset=utf-8" },
-  "troubleshooting": { name: "TROUBLESHOOTING.md", contentType: "text/markdown; charset=utf-8" },
-} as const;
-type BridgeFileKey = keyof typeof BRIDGE_FILES;
-
-function bridgeDir(): string {
-  // api-server runs from artifacts/api-server; the package is at <repo>/mt5-bridge
-  return resolve(process.cwd(), "../../mt5-bridge");
-}
-
 router.get("/mt5/bridge-package/manifest", async (_req, res) => {
   try {
-    const dir = bridgeDir();
-    const files = await Promise.all((Object.keys(BRIDGE_FILES) as BridgeFileKey[]).map(async (key) => {
-      const meta = BRIDGE_FILES[key];
-      const fp = resolve(dir, meta.name);
-      try {
-        const st = await stat(fp);
-        return { key, name: meta.name, size: st.size, downloadUrl: `/api/mt5/bridge-package/${key}`, present: true };
-      } catch {
-        return { key, name: meta.name, size: 0, downloadUrl: `/api/mt5/bridge-package/${key}`, present: false };
-      }
-    }));
-    res.json(envelope({
-      version: "1.0.0",
-      readOnly: true,
-      files,
-      note: "EA v1 is READ-ONLY. It does not place, modify, or close orders. See README_SETUP.md.",
-    }));
+    res.json(envelope(await bridgePackageManifest()));
   } catch (e) {
     res.status(500).json(envelope({ error: String((e as Error).message) }));
   }
 });
 
 // Streams a freshly-built ZIP of the entire bridge package on every request.
-// The ZIP is small (< 50 KB) and is rebuilt in memory — no on-disk artifact
+// The ZIP is rebuilt in memory — no on-disk artifact
 // to drift out of sync with the source files.
 router.get("/mt5/bridge-package/zip", async (_req, res) => {
   try {
-    const dir = bridgeDir();
-    const keys = Object.keys(BRIDGE_FILES) as BridgeFileKey[];
-    const entries = await Promise.all(keys.map(async (k) => {
-      const meta = BRIDGE_FILES[k];
-      const data = await readFile(resolve(dir, meta.name));
-      return { name: meta.name, data };
-    }));
-    const zip = buildZip(entries);
+    const zip = await bridgePackageZip();
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", 'attachment; filename="replit-mt5-bridge-package.zip"');
+    res.setHeader("Content-Disposition", 'attachment; filename="arx-mt5-demo-read-only-v129.zip"');
     res.setHeader("Content-Length", String(zip.length));
     res.send(zip);
   } catch (e) {
@@ -103,10 +65,9 @@ router.get("/mt5/bridge-package/zip", async (_req, res) => {
 });
 
 router.get("/mt5/bridge-package/:key", async (req, res) => {
-  const key = req.params.key as BridgeFileKey;
-  const meta = BRIDGE_FILES[key];
+  const meta = bridgeFile(String(req.params.key));
   if (!meta) {
-    res.status(404).json(envelope({ error: "Unknown bridge file. Allowed keys: ea, readme, checklist." }));
+    res.status(404).json(envelope({ error: "Unknown bridge file. See /api/mt5/bridge-package/manifest for allowed keys." }));
     return;
   }
   try {
