@@ -103,13 +103,12 @@ export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   // (round 5, owner decision 4: the envelope itself reads platformStopWith() and left this list)
   "lib/assistant/derivedEnvelope.ts": { rules: ["single_stop"], why: "Ruby's read-only projection of the envelope's labelled emergencyKillSwitch field (Ruby never executes); its allowOrderExecution / liveLocked / bannerReason come from the envelope, which derives them from platformStop()" },
   "lib/live/liveCommandPipeline.ts": { rules: ["single_stop"], why: "emergencyKillSwitchBlocksDispatch() is the pure dispatch pre-gate decision; its emergencyKillSwitch / safetyCoreKillSwitch inputs come from platformStop() + preCheckStopRefusal() at its one call site" },
-  // Legacy gates the pre-trade Risk Governor does not run behind. Folding the
-  // emergency stop in would add a refusal the governor never makes, which this
-  // change may not do, so they keep their safety-core-only rule.
-  "routes/mt5.ts": { rules: ["single_stop"], why: "legacy /mt5 command endpoints: safety-core LIVE_TRADING arm (mode + kill) middleware; every command is stored BLOCKED (paper-only lock) and no governor runs on this path" },
-  "routes/brokerHealth.ts": { rules: ["single_stop"], why: "RECONNECT command PENDING vs BLOCKED by the safety-core LIVE_TRADING arm; not an order, no governor on this path" },
+  // Legacy gates the pre-trade Risk Governor does not run behind. Round 5
+  // (owner decision 3): /mt5 command endpoints, /broker/reconnect and the paper
+  // permission verdict are action-aware through platformStop() +
+  // preCheckStopRefusal() and left this list. /execute-trade is being retired
+  // (decision 14, another change) and stays listed until then.
   "routes/trades.ts": { rules: ["single_stop"], why: "legacy /execute-trade TOCTOU re-check of the safety core's own tradeGate snapshot (kill + mode + state); the path records into the paper book without the governor" },
-  "routes/permission.ts": { rules: ["single_stop"], why: "paper permission verdict (evaluatePermission); the emergency stop does not halt paper (tradingHalt), so it must not be folded in" },
   // ── Reviewed env-flag readers ──────────────────────────────────────────────
   "lib/live/phaseBConfig.ts": { rules: ["env_flag"], why: "Phase B master switch helpers (liveBrokerExecutionEnabled); the DB arm comes from the authority" },
   "lib/startup/envChecklist.ts": { rules: ["env_flag"], why: "boot env inventory reports the variable's state; never gates" },
