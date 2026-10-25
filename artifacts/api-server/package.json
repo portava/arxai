@@ -262,7 +262,8 @@
     "test:pattern-sync": "node --import tsx --test-isolation=none --test --test-force-exit src/lib/patternSync/__qa__/patternSync.test.ts",
     "test:admin-cockpit-route": "node --import tsx --test --test-force-exit src/routes/__qa__/adminCockpitRoute.test.ts",
     "test:quote-observation-freshness": "node --import tsx --test --test-force-exit src/lib/assistant/__qa__/quoteObservationFreshness.test.ts",
-    "test:mt5-bridge-package": "node --import tsx --test --test-force-exit src/lib/mt5/__qa__/bridgePackage.test.ts"
+    "test:mt5-bridge-package": "node --import tsx --test --test-force-exit src/lib/mt5/__qa__/bridgePackage.test.ts",
+    "test:mt5-demo-ea": "python3 ../../mt5-bridge/tests/run_demo_core.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

@@ -76,4 +76,47 @@ headers at a path without spaces resolved it.
 
 The compiled artifact remains in the local release kit, unattached to a terminal.
 No broker login, token entry or account-data transmission was performed. MT5's
-macOS app-control surface timed out; owner terminal sign-in is pending.
+macOS app-control surface timed out. The owner has since confirmed MT5 is open
+on DEMO; direct app-control selection still times out. This is owner-reported
+terminal state, not observed ARX connectivity.
+
+## v1.31 execution repair (current follow-up)
+
+PR #71 merged with explicit owner approval at
+`da5b7cb79b3d2e8a13f889d7b3c1dd5690792f22`. Its v1.29 findings above are historical.
+The current package selects `ReplitMT5BridgeEA_v131.mq5` plus its required
+`ArxDemoExecution.mqh` companion. Keep them together when compiling.
+
+The repair honors the governed queue's `lotSize`, `stopLoss`, `takeProfit`,
+uppercase direction and string ticket fields. Legacy aliases remain accepted
+only when the canonical field is absent. Entry volume is never rounded up.
+Every close is ticket-scoped and capped at the requested size, including full
+closes. Invalid volume/remainders and mismatched symbols are refused locally.
+
+DEMO execution requires **hedging accounting**; netting/exchange is refused
+before any broker request. CTrade booleans alone cannot report success: actual
+return codes, fill price/volume and position identity are required. Modifications
+return the position ticket and verify the resulting stops without inventing a
+fill. A disk journal records intent before sending and retains the exact result
+for acknowledgement retries. Uncertain/crashed attempts never execute again;
+manual broker reconciliation is required. Journal protection is local to the
+terminal's common files; it is not distributed coordination between machines.
+
+The unchanged defaults and supplied profile keep all trading disabled. Remote
+configuration now also defaults off in the source, as does verbose account
+logging. The disabled updater's bool/string checksum bug is fixed. LIVE behavior
+is inherited from v1.29 and is not certified by this DEMO-only repair.
+
+Verification: **56 offline behavioral assertions** exercise the actual included
+execution core and extracted wire parser/poller against a fake terminal, with
+zero network/broker calls. The real Mac MetaEditor compiler reports **0 errors,
+0 warnings**. Package/token/validator regressions: **46/46**. Both API and dashboard
+type checks pass. A compiled source is not broker lifecycle evidence; all seven
+external scenarios remain unrun and `demoLifecycleValidationReady` stays false.
+
+Compiled artifact hashes:
+
+- `ReplitMT5BridgeEA_v131.mq5`: `f3f5a87d1a8d9be2f6887ec04b42e2c65dc5b3f02179dc1f595c63edeaa505f4`
+- `ArxDemoExecution.mqh`: `e81aa17fd95b242c9d0785357bbb8bc827df9a773d1a048d95a55d819156900d`
+- `ReplitMT5BridgeEA_v131.ex5`: `5160b50cbbbe9b6163a901508b6e226405604b09437e9d2100509e564f75425d`
+- `ReplitMT5BridgeEA_v131.log`: `725b023996a7802f6ca755a925d0f89c1abf5d6ba2c5b9fe9c83c35eab909e82`
