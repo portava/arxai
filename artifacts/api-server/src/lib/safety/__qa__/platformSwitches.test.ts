@@ -25,16 +25,25 @@
 //     both stops (per-source field unchanged, combined field added),
 //   - (round 4) engagePlatformStop() engages EVERY settings row with the same
 //     reason, time and actor, and inside a caller's transaction rolls back
-//     with it.
+//     with it,
+//   - (round 5, owner decision 4) the safety envelope reports both stops:
+//     emergencyKillSwitch names the emergency stop only, safetyCoreKillSwitch
+//     the safety core only, platformStop* the combination; new-risk permission
+//     (allowOrderExecution / liveLocked) follows the combination while
+//     tradingMode / readOnlyMode (which the guarded close reads) do not change
+//     for the safety core; an unreadable safety core fails closed for new risk,
+//   - (round 5, owner decision 2) venueTradingVerdict blocks NEW RISK on
+//     DEMO/LIVE while broker execution is disabled, maintenance is on, or the
+//     controls cannot be read; a close is not blocked by them; PAPER never is.
 //
-// The original settings and safety_core rows are restored afterwards.
+// The original settings, safety_core and broker_health_state rows are restored afterwards.
 //
 // Run: pnpm --filter @workspace/api-server run test:platform-switches
 
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { asc, eq, inArray } from "drizzle-orm";
-import { arxLiveArmingTable, db, globalTradingSettingsTable, safetyCoreTable, usersTable } from "@workspace/db";
+import { arxLiveArmingTable, brokerHealthStateTable, db, globalTradingSettingsTable, safetyCoreTable, userTradingPermissionsTable, usersTable } from "@workspace/db";
 import {
   DEFAULT_SWITCH_ROW,
   SWITCH_FIELDS,
@@ -53,7 +62,7 @@ import {
 } from "../platformSwitches.js";
 import { engagePlatformStop } from "../platformStopWriter.js";
 import { buildApprovedTraderLiveState } from "../../live/approvedTraderLiveState.js";
-import { loadPlatformHalt, loadTradingHalt, venueTradingVerdict } from "../tradingHalt.js";
+import { brokerControlBlocks, loadPlatformHalt, loadTradingHalt, readBrokerOperatorControls, venueTradingVerdict, type BrokerOperatorControls } from "../tradingHalt.js";
 import { runActionGuards } from "../../tradeAction/guards.js";
 import { getEnvelope, getGlobalSettings } from "../../adminTrading/safetyEnvelope.js";
 import { engageKillSwitchForUser, releaseKillSwitchForUser } from "../../live/liveArming.js";
@@ -63,7 +72,12 @@ type CoreRow = typeof safetyCoreTable.$inferSelect;
 const EMAIL = "qa+platform-switches@arx.test";
 let saved: Row[] = [];
 let savedCore: CoreRow[] = [];
+let savedBroker: Array<typeof brokerHealthStateTable.$inferSelect> = [];
 let userId = 0;
+const setBroker = async (executionEnabled: boolean, maintenanceMode: boolean) => {
+  await db.delete(brokerHealthStateTable);
+  await db.insert(brokerHealthStateTable).values({ executionEnabled, maintenanceMode });
+};
 
 before(async () => {
   saved = await db.select().from(globalTradingSettingsTable).orderBy(asc(globalTradingSettingsTable.id));
@@ -72,6 +86,9 @@ before(async () => {
   const [u] = await db.insert(usersTable).values({ email: EMAIL, name: "QA switches", role: "USER", isSystemUser: true }).returning({ id: usersTable.id });
   userId = u!.id;
   await db.delete(globalTradingSettingsTable);
+  // Broker operator controls open (owner decision 2 is tested on its own below).
+  savedBroker = await db.select().from(brokerHealthStateTable).orderBy(asc(brokerHealthStateTable.id));
+  await setBroker(true, false);
 });
 
 after(async () => {
@@ -79,7 +96,10 @@ after(async () => {
   if (saved.length) await db.insert(globalTradingSettingsTable).values(saved);
   await db.delete(safetyCoreTable);
   if (savedCore.length) await db.insert(safetyCoreTable).values(savedCore);
+  await db.delete(brokerHealthStateTable);
+  if (savedBroker.length) await db.insert(brokerHealthStateTable).values(savedBroker);
   await db.delete(arxLiveArmingTable).where(eq(arxLiveArmingTable.userId, userId));
+  await db.delete(userTradingPermissionsTable).where(eq(userTradingPermissionsTable.userId, userId));
   await db.delete(usersTable).where(eq(usersTable.id, userId));
 });
 
@@ -468,4 +488,103 @@ test("engagePlatformStop: every row engaged with one reason, time and actor; rol
     "no row: nothing engaged, the write throws",
   );
   await loadGlobalTradingSettingsRow();
+});
+
+// ── Round 5: owner decisions 4 (envelope) and 2 (broker operator controls) ──
+
+test("envelope: both stops reported, emergencyKillSwitch truthful, new risk from the combination, closes not blanket-refused", async () => {
+  await ensureCore();
+  if (!(await db.select().from(globalTradingSettingsTable).limit(1)).length) await loadGlobalTradingSettingsRow();
+  await setAll({ platformMode: "DEMO", demoEnabled: true, liveEnabled: false });
+  await db.delete(userTradingPermissionsTable).where(eq(userTradingPermissionsTable.userId, userId));
+  await db.insert(userTradingPermissionsTable).values({ userId, tradingMode: "DEMO", demoEnabled: true, suspended: false });
+
+  await setStops(false, false);
+  const released = await getEnvelope(userId);
+  assert.equal(released.tradingMode, "DEMO");
+  assert.deepEqual(
+    [released.emergencyKillSwitch, released.safetyCoreKillSwitch, released.platformStopEngaged, released.platformStopSources],
+    [false, false, false, []],
+  );
+
+  // Safety core only: new risk refused, per-source field truthful, close-relevant fields unchanged.
+  await setStops(false, true);
+  const core = await getEnvelope(userId);
+  assert.equal(core.emergencyKillSwitch, false, "emergencyKillSwitch names the emergency stop only");
+  assert.equal(core.safetyCoreKillSwitch, true);
+  assert.equal(core.platformStopEngaged, true);
+  assert.deepEqual(core.platformStopSources, ["safety_core_kill_switch"]);
+  assert.match(core.platformStopReason!, /safety-core kill switch.*qa core/);
+  assert.equal(core.allowOrderExecution, false, "no new orders");
+  assert.equal(core.liveLocked, true);
+  assert.equal(core.tradingMode, released.tradingMode, "tradingMode unchanged: POST /me/trades/close (refuses on DISABLED) is not blanket-refused");
+  assert.equal(core.readOnlyMode, released.readOnlyMode, "readOnlyMode unchanged");
+  assert.equal(core.bannerLabel, "Emergency Trading Halt");
+  assert.match(core.bannerReason, /safety-core kill switch/);
+
+  // Emergency stop only: the existing early return, exactly as before, plus the combined fields.
+  await setStops(true, false);
+  const em = await getEnvelope(userId);
+  assert.deepEqual([em.emergencyKillSwitch, em.safetyCoreKillSwitch, em.tradingMode, em.allowOrderExecution], [true, false, "DISABLED", false]);
+  assert.deepEqual(em.platformStopSources, ["platform_emergency_stop"]);
+
+  await setStops(true, true);
+  const both = await getEnvelope(userId);
+  assert.deepEqual([both.emergencyKillSwitch, both.safetyCoreKillSwitch], [true, true]);
+  assert.deepEqual(both.platformStopSources, ["platform_emergency_stop", "safety_core_kill_switch"]);
+
+  // An unreadable safety core fails closed for new risk (and is reported as engaged).
+  await setStops(false, false);
+  const unreadable = await getEnvelope(userId, { readSafetyCore: async () => ({ readable: false, engaged: true, reason: "state unreadable" }) });
+  assert.equal(unreadable.safetyCoreKillSwitch, true);
+  assert.equal(unreadable.emergencyKillSwitch, false);
+  assert.equal(unreadable.allowOrderExecution, false);
+  assert.equal(unreadable.tradingMode, released.tradingMode);
+  await setAll({ platformMode: "LIVE", demoEnabled: true, liveEnabled: true });
+});
+
+test("venueTradingVerdict: broker execution disabled / maintenance / unreadable block NEW RISK on DEMO and LIVE only", async () => {
+  await ensureCore();
+  if (!(await db.select().from(globalTradingSettingsTable).limit(1)).length) await loadGlobalTradingSettingsRow();
+  await setAll({ platformMode: "LIVE", demoEnabled: true, liveEnabled: true });
+  await setStops(false, false);
+
+  const open: BrokerOperatorControls = { readable: true, present: true, executionEnabled: true, maintenanceMode: false };
+  const cases: Array<[string, BrokerOperatorControls, string[]]> = [
+    ["open", open, []],
+    ["execution disabled", { ...open, executionEnabled: false }, ["broker_execution_disabled"]],
+    ["maintenance", { ...open, maintenanceMode: true }, ["broker_maintenance_mode"]],
+    ["both", { ...open, executionEnabled: false, maintenanceMode: true }, ["broker_execution_disabled", "broker_maintenance_mode"]],
+    ["unreadable", { readable: false, present: false, executionEnabled: false, maintenanceMode: true }, ["broker_controls_unreadable"]],
+    ["no row (schema defaults)", { readable: true, present: false, executionEnabled: false, maintenanceMode: false }, ["broker_execution_disabled"]],
+  ];
+  for (const [label, controls, blocks] of cases) {
+    for (const venue of ["DEMO", "LIVE"] as const) {
+      const newRisk = await venueTradingVerdict({ userId, venue, readBrokerControls: async () => controls });
+      assert.deepEqual(newRisk.brokerControlBlocks, blocks, `${label} ${venue} new risk`);
+      assert.equal(newRisk.allowed, blocks.length === 0, `${label} ${venue} new risk allowed`);
+      const close = await venueTradingVerdict({ userId, venue, opensNewRisk: false, readBrokerControls: async () => controls });
+      assert.deepEqual(close.brokerControlBlocks, [], `${label} ${venue}: a close is never blocked by the operator controls`);
+      assert.equal(close.allowed, true, `${label} ${venue} close allowed`);
+    }
+    const paper = await venueTradingVerdict({ userId, venue: "PAPER", readBrokerControls: async () => controls });
+    assert.equal(paper.allowed, true, `${label}: PAPER is never blocked by broker controls`);
+    assert.equal(paper.brokerControls, null);
+  }
+  // A reader that throws fails closed for new risk only.
+  const boom = async (): Promise<never> => { throw new Error("db down"); };
+  assert.deepEqual((await venueTradingVerdict({ userId, venue: "LIVE", readBrokerControls: boom })).brokerControlBlocks, ["broker_controls_unreadable"]);
+  assert.equal((await venueTradingVerdict({ userId, venue: "LIVE", opensNewRisk: false, readBrokerControls: boom })).allowed, true);
+  assert.match((await venueTradingVerdict({ userId, venue: "DEMO", readBrokerControls: async () => ({ ...open, maintenanceMode: true }) })).reasons.join(" "), /maintenance mode/);
+
+  // The real reader goes through the Broker Hub (lowest-id row).
+  await setBroker(false, true);
+  assert.deepEqual(await readBrokerOperatorControls(), { readable: true, present: true, executionEnabled: false, maintenanceMode: true });
+  assert.deepEqual((await venueTradingVerdict({ userId, venue: "LIVE" })).brokerControlBlocks, ["broker_execution_disabled", "broker_maintenance_mode"]);
+  await db.delete(brokerHealthStateTable);
+  assert.deepEqual(await readBrokerOperatorControls(), { readable: true, present: false, executionEnabled: false, maintenanceMode: false });
+  await setBroker(true, false);
+  assert.equal((await venueTradingVerdict({ userId, venue: "LIVE" })).allowed, true);
+  // The pure rule: PAPER never.
+  assert.deepEqual(brokerControlBlocks({ ...open, executionEnabled: false }, { venue: "PAPER", opensNewRisk: true }), []);
 });

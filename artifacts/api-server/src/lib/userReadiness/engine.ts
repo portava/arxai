@@ -99,7 +99,8 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
   // `systemLiveHardStop` = blocks live for EVERYONE, including an approved +
   // armed trader. An unreadable switch or settings row counts as a stop.
   // One read: lib/safety/tradingHalt venueTradingVerdict (venue switch AND
-  // every stop switch).
+  // every stop switch AND, for new live risk, the broker's operator controls:
+  // execution disabled / maintenance, owner decision 2).
   const liveVerdict = await venueTradingVerdict({ userId, venue: "LIVE" });
   const liveHalt = liveVerdict.halt;
   const liveVenueOpen = liveVerdict.venueOpen;
@@ -189,7 +190,7 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
     "pass",
     ["paper", "demo", "live"],
     paperOnlyHardLock
-      ? `Live trading is stopped platform-wide: ${liveHalt.reason ?? (liveVenueOpen ? "a stop switch is engaged" : "the live venue is switched off by the admin")}.`
+      ? `Live trading is stopped platform-wide: ${liveHalt.reason ?? (liveVenueOpen ? (liveVerdict.reasons[0]?.replace(/\.$/, "") ?? "a stop switch is engaged") : "the live venue is switched off by the admin")}.`
       : "No platform-wide stop is engaged. Live still needs your approval, arming, a verified live account and the live disclosure.",
     null,
     null,
