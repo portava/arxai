@@ -1,0 +1,2385 @@
+{
+  "name": "ARX Tier 1 Scorecard v2",
+  "version": "2.0.0",
+  "authority": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
+  "statuses": {
+    "PASS": "The check found the required behaviour or evidence on the measured commit.",
+    "FAIL": "The check found the requirement unmet, or a deferral's scope violated.",
+    "UNKNOWN": "No evidence: an owner fact not recorded, a database not provided, a command not run or timed out, or a target not found.",
+    "DEFERRED": "An owner-approved deferral, with justification and sources, whose scope check passes."
+  },
+  "sections": [
+    {
+      "id": "IMPL",
+      "title": "Architecture and code implementation",
+      "description": "Owner decisions and documented Tier 1 requirements, checked in the code. Includes unresolved requirements."
+    },
+    {
+      "id": "VER",
+      "title": "Verification and regression evidence",
+      "description": "Typechecks, guards, the per-commit CI lane, the owner's seven test categories and the integration lane, run on the measured commit."
+    },
+    {
+      "id": "OPS",
+      "title": "Deployment and operational readiness",
+      "description": "Production facts and owner actions. UNKNOWN until the owner records evidence; never queried."
+    }
+  ],
+  "verdicts": {
+    "rule": "A section is COMPLETE only when every criterion in it is PASS or DEFERRED. No weights, no percentage.",
+    "code": {
+      "sections": [
+        "IMPL",
+        "VER"
+      ],
+      "complete": "CODE COMPLETE",
+      "not_complete": "CODE NOT COMPLETE"
+    },
+    "operational": {
+      "sections": [
+        "OPS"
+      ],
+      "complete": "OPERATIONALLY READY",
+      "not_complete": "NOT OPERATIONALLY READY"
+    },
+    "tier1": {
+      "complete": "TIER 1 COMPLETE",
+      "not_complete": "TIER 1 NOT COMPLETE"
+    }
+  },
+  "integration_lane": {
+    "argv": [
+      "pnpm",
+      "-s",
+      "run",
+      "ci:integration"
+    ],
+    "timeout_s": 3600
+  },
+  "tracked_integration_failures": [
+    {
+      "id": "INT-1",
+      "suite": "@workspace/scripts::test:admin-unrestricted-risk"
+    },
+    {
+      "id": "INT-2",
+      "suite": "@workspace/scripts::test:chart-decision-receipts"
+    },
+    {
+      "id": "INT-3",
+      "suite": "@workspace/scripts::test:mode-scope"
+    },
+    {
+      "id": "INT-4",
+      "suite": "@workspace/scripts::test:one-click-concurrency"
+    },
+    {
+      "id": "INT-5",
+      "suite": "@workspace/api-server::test:scanner-no-feed-honesty"
+    },
+    {
+      "id": "INT-6",
+      "inprocess": "rubyDrawSetupRouteTest",
+      "name": "@workspace/scripts::test:ruby-draw-setup-route"
+    }
+  ],
+  "criteria": [
+    {
+      "id": "IMPL-PS-01",
+      "section": "IMPL",
+      "title": "One explicit stop release; live activation never releases a stop",
+      "requirement": "Owner decision 1: one explicit, authorized, audited release operation; live activation must not release an emergency stop.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Live activation must NOT release an emergency stop. Create one explicit, authorized, audited release operation."
+        },
+        {
+          "file": "docs/TIER1_PLATFORM_SAFETY_SOURCE.md",
+          "quote": "Release is one operation, `releasePlatformStop()`, and live activation no longer releases a stop."
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "export async function releasePlatformStop\\(",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/safety/platformStopWriter.ts",
+            "describe": "release writer"
+          },
+          {
+            "kind": "pattern",
+            "regex": "ACTIVATION_DOES_NOT_RELEASE_STOP",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/adminLiveSharedReadiness.ts",
+            "describe": "activation refuses to release"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-PS-02",
+      "section": "IMPL",
+      "title": "Broker operator controls are part of the DEMO/LIVE venue verdict",
+      "requirement": "Owner decision 2: executionEnabled and maintenanceMode affect the applicable DEMO/LIVE venue verdict; Platform Safety owns the decision.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Broker-health executionEnabled and maintenanceMode must affect the applicable DEMO/LIVE venue verdict."
+        },
+        {
+          "file": "docs/TIER1_PLATFORM_SAFETY_SOURCE.md",
+          "quote": "Round 5 (decision 2): `venueTradingVerdict` blocks new DEMO/LIVE risk on them."
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "export async function venueTradingVerdict\\(",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/safety/tradingHalt.ts",
+            "describe": "venue verdict"
+          },
+          {
+            "kind": "pattern",
+            "regex": "export function brokerControlBlocks\\(",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/safety/tradingHalt.ts",
+            "describe": "operator-control blocks"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-PS-03",
+      "section": "IMPL",
+      "title": "Broker operator controls are enforced on the order path",
+      "requirement": "Owner decision 2: disabled execution or maintenance blocks new risk. Every DEMO/LIVE order passes the pre-trade Risk Governor, so the controls must be read there (directly or through the venue verdict) for the block to apply at dispatch.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Disabled execution or maintenance blocks new risk."
+        },
+        {
+          "file": "docs/TIER1_PLATFORM_SAFETY_SOURCE.md",
+          "quote": "Not done: no order path (order guard, live dispatch, pre-trade governor) reads the verdict or the toggles yet, so they are reported, not enforced, at dispatch."
+        }
+      ],
+      "check": {
+        "kind": "pattern",
+        "regex": "venueTradingVerdict|readBrokerOperatorControls|brokerControlBlocks|brokerOperatorControl|executionEnabled|maintenanceMode",
+        "expect": "present",
+        "paths": [
+          "artifacts/api-server/src/lib/riskGovernor/enforce.ts",
+          "artifacts/api-server/src/lib/riskGovernor/preTrade.ts"
+        ],
+        "describe": "operator controls read by the pre-trade governor"
+      },
+      "notes": "The doc records a production prerequisite: the production broker_health_state row (OPS-06) must be known before enforcement, because execution_enabled defaults to false."
+    },
+    {
+      "id": "IMPL-PS-04",
+      "section": "IMPL",
+      "title": "Legacy gates are action-aware",
+      "requirement": "Owner decision 3: new-risk commands honour both install-wide stops; reconnect stays available for recovery but cannot clear stops, arm trading or dispatch queued orders.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Make the four legacy gates action-aware."
+        },
+        {
+          "file": "docs/TIER1_PLATFORM_SAFETY_SOURCE.md",
+          "quote": "`/mt5/*`, `/broker/reconnect` and the paper permission verdict are action-aware."
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "MT5_NEW_RISK_ACTIONS",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/mt5.ts",
+            "describe": "/mt5 new-risk action set"
+          },
+          {
+            "kind": "pattern",
+            "regex": "preCheckStopRefusal\\(await platformStop\\(\\), \\{[^}]*opensNewRisk: false",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/brokerHealth.ts",
+            "describe": "reconnect reads the stop authority as recovery"
+          },
+          {
+            "kind": "pattern",
+            "regex": "EXECUTE_TRADE_RETIRED",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/trades.ts",
+            "describe": "/execute-trade retired (decision 14)"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-PS-05",
+      "section": "IMPL",
+      "title": "Safety envelope includes the safety-core kill switch",
+      "requirement": "Owner decision 4: include the safety-core kill switch in the safety envelope and report both sources.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Include the safety-core kill switch in the safety envelope."
+        },
+        {
+          "file": "docs/TIER1_PLATFORM_SAFETY_SOURCE.md",
+          "quote": "the envelope reports both stops and derives new-risk permission from them"
+        }
+      ],
+      "check": {
+        "kind": "pattern",
+        "regex": "safetyCoreKillSwitch",
+        "expect": "present",
+        "path": "artifacts/api-server/src/lib/adminTrading/safetyEnvelope.ts",
+        "describe": "envelope field"
+      }
+    },
+    {
+      "id": "IMPL-PS-06",
+      "section": "IMPL",
+      "title": "Install-wide stops block automatic EA updates",
+      "requirement": "Owner decision 5: install-wide stops block automatic EA updates; existing checks stay.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Install-wide stops should block automatic EA updates."
+        },
+        {
+          "file": "docs/TIER1_PLATFORM_SAFETY_SOURCE.md",
+          "quote": "it also blocks while either install-wide stop is engaged"
+        }
+      ],
+      "check": {
+        "kind": "pattern",
+        "regex": "PLATFORM_STOP_ENGAGED",
+        "expect": "present",
+        "path": "lib/domain/src/safety-contracts/eaUpdateGate.ts",
+        "describe": "EA update gate stop input"
+      }
+    },
+    {
+      "id": "IMPL-PS-07",
+      "section": "IMPL",
+      "title": "Shared-live pause is a scoped Platform Safety API",
+      "requirement": "Owner decision 19: Platform Safety owns the shared-live pause; allocation routes call the authorized, audited safety API; the pause stays scoped.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Platform Safety should own the shared-live pause decision."
+        },
+        {
+          "file": "docs/TIER1_PLATFORM_SAFETY_SOURCE.md",
+          "quote": "the pause is per pool row"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "files_exist",
+            "paths": [
+              "artifacts/api-server/src/lib/safety/sharedLivePause.ts"
+            ]
+          },
+          {
+            "kind": "pattern",
+            "regex": "from \"\\.\\./lib/safety/sharedLivePause\\.js\"",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/adminAllocations.ts",
+            "describe": "allocation routes call the safety API"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-RG-01",
+      "section": "IMPL",
+      "title": "Self-trade cap counts on the governor's UNCLOSED basis",
+      "requirement": "Owner decision 6: keep UNCLOSED as the conservative count basis and align the self-trade risk cap with it.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Align the self-trade risk cap with this conservative basis."
+        },
+        {
+          "file": "docs/TIER1_RISK_GOVERNOR_SOURCE.md",
+          "quote": "counts on `RISK_COUNT_BASIS` (`UNCLOSED`), the governor's basis"
+        }
+      ],
+      "check": {
+        "kind": "pattern",
+        "regex": "RISK_COUNT_BASIS",
+        "expect": "present",
+        "path": "artifacts/api-server/src/lib/selfTrade/executionGate.ts",
+        "describe": "self-trade gate count basis"
+      }
+    },
+    {
+      "id": "IMPL-RG-02",
+      "section": "IMPL",
+      "title": "Automated PAPER risk facts come from the paper book",
+      "requirement": "Owner decision 7: the governor's PAPER P/L, activity and streaks come from paper_orders through the paper-book authority, never paper_trades.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Use paper_orders, through the paper-book authority, for automated PAPER P/L, activity, losing streaks and risk decisions."
+        },
+        {
+          "file": "docs/TIER1_PAPER_BOOK.md",
+          "quote": "Automated PAPER P/L, activity, streaks and risk decisions read `paper_orders` through"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "from \"\\.\\./tradeEngine/paperBookReader\\.js\"",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/riskGovernor/enforce.ts",
+            "describe": "governor reads the paper book"
+          },
+          {
+            "kind": "pattern",
+            "regex": "paperTradesTable",
+            "expect": "absent",
+            "path": "artifacts/api-server/src/lib/riskGovernor/enforce.ts",
+            "describe": "governor never reads paper_trades"
+          }
+        ]
+      },
+      "notes": "docs/TIER1_TRADE_ENGINE_MODES.md 'What remains (round 5)' item 2 says the governor still reads trades for non-LIVE P/L. Current code reads trades only for DEMO (the DEMO journal); PAPER goes through the paper book. That doc line is stale."
+    },
+    {
+      "id": "IMPL-RG-03",
+      "section": "IMPL",
+      "title": "Trader status views show the limits in force",
+      "requirement": "Owner decision 8: status views show the effective limit actually enforced, with the saved preference separately.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Status views should show the effective limit actually enforced."
+        },
+        {
+          "file": "docs/TIER1_RISK_GOVERNOR_SOURCE.md",
+          "quote": "moved them onto the limits in force"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "effectiveLimitViews",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/meRiskGovernor.ts",
+            "describe": "/me/risk/status"
+          },
+          {
+            "kind": "pattern",
+            "regex": "effectiveLimitViews",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/meDashboard.ts",
+            "describe": "dashboard risk card"
+          },
+          {
+            "kind": "pattern",
+            "regex": "effectiveLimitViews",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/meAccountShell.ts",
+            "describe": "account shell"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-RG-04",
+      "section": "IMPL",
+      "title": "No remaining status verdict or duplicate limit calculation on the saved row",
+      "requirement": "Owner decision 8 also requires removing contradictory defaults and duplicate calculations. The paper permission verdict, the trade-decision advisor and the risk audit still decide on the trader's saved values, not the limits in force.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Remove contradictory display defaults and duplicate calculations."
+        },
+        {
+          "file": "docs/TIER1_RISK_GOVERNOR_SOURCE.md",
+          "quote": "uses the trader's saved values, not the effective limits (operator caps and the daily-loss switch are not applied)"
+        },
+        {
+          "file": "docs/TIER1_RISK_GOVERNOR_SOURCE.md",
+          "quote": "Open trades and losing streak against the saved values"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "loadEffectiveLimits|effectiveLimitViews",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/permission.ts",
+            "describe": "permission verdict on limits in force"
+          },
+          {
+            "kind": "pattern",
+            "regex": "loadEffectiveLimits|effectiveLimitViews",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/tradeDecision.ts",
+            "describe": "trade-decision advisor on limits in force"
+          },
+          {
+            "kind": "pattern",
+            "regex": "loadEffectiveLimits|effectiveLimitViews",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/riskAudit.ts",
+            "describe": "risk audit on limits in force"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-RG-05",
+      "section": "IMPL",
+      "title": "Daily-trade limit and operational rate cap are separate",
+      "requirement": "Owner decision 9: the daily-trade limit uses the governor's trading day; the rolling-24h approved-command count stays as a separately named operational rate cap.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Preserve the existing rolling-24-hour approved-command restriction as a separately named operational rate cap"
+        },
+        {
+          "file": "docs/TIER1_RISK_GOVERNOR_SOURCE.md",
+          "quote": "gate 6b `operational_rate_cap`"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "operational_rate_cap",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/adminTrading/orderGuard.ts",
+            "describe": "named rate cap gate"
+          },
+          {
+            "kind": "pattern",
+            "regex": "OPERATIONAL_RATE_CAP_REACHED",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/adminTrading/orderGuard.ts",
+            "describe": "rate cap reason"
+          },
+          {
+            "kind": "pattern",
+            "regex": "tradingDayStart",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/riskGovernor/preTrade.ts",
+            "describe": "governor trading day"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-RG-06",
+      "section": "IMPL",
+      "title": "Pending-order R:R hook applies the configured floor",
+      "requirement": "Owner decision 10: read the configured min_reward_risk_ratio through the risk authority and apply the governor's calculation.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Fix the dead pending-order R:R hook."
+        },
+        {
+          "file": "docs/TIER1_RISK_GOVERNOR_SOURCE.md",
+          "quote": "reads the floor in force"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "import \\{ checkRewardRiskFloor \\} from \"\\.\\./riskGovernor/preTrade\\.js\"",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeAction/riskGovernorEnforcement.ts",
+            "describe": "governor calculation imported"
+          },
+          {
+            "kind": "pattern",
+            "regex": "checkRewardRiskFloor\\(",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeAction/riskGovernorEnforcement.ts",
+            "describe": "floor applied"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-RG-07",
+      "section": "IMPL",
+      "title": "Risk audit is scoped to the trader",
+      "requirement": "Tenant and account isolation (owner's verification list; never bypass RLS). computeRiskAudit feeds /risk/audit and the legacy /mt5/execute gate, and must count only the caller's trades.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Test: tenant and account isolation"
+        },
+        {
+          "file": "docs/TIER1_RISK_GOVERNOR_SOURCE.md",
+          "quote": "from the legacy `trades` table (not scoped to the user)"
+        }
+      ],
+      "check": {
+        "kind": "each_match_contains",
+        "path": "artifacts/api-server/src/lib/riskAudit.ts",
+        "match_regex": "\\.from\\(tradesTable\\)",
+        "contains_regex": "tradesTable\\.userId",
+        "describe": "trades queries filtered by user"
+      }
+    },
+    {
+      "id": "IMPL-PG-01",
+      "section": "IMPL",
+      "title": "Trader alerts use the named ALERT_ELIGIBLE rule",
+      "requirement": "Owner decision 11: keep alerts' stricter eligibility, expressed through the central read model as a named, tested rule.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Express alert eligibility through the central read model as a named, tested rule."
+        },
+        {
+          "file": "docs/TIER1_POSITION_GUARDIAN_RULES.md",
+          "quote": "Trader alerts keep the stricter `ALERT_ELIGIBLE` rule (owner decision 11)"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "ALERT_ELIGIBLE",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/positions/openPositions.ts",
+            "describe": "rule in the read model"
+          },
+          {
+            "kind": "pattern",
+            "regex": "ALERT_ELIGIBLE_BASIS",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/alerts/ruleEngine.ts",
+            "describe": "alerts use it"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-PG-02",
+      "section": "IMPL",
+      "title": "Physical position tables stay behind one ledger (approved deferral)",
+      "requirement": "Owner decision 12, option A: retain both physical tables (arx_live_positions, live_positions) behind one ledger and read model; no physical merge, migration, or table/column drop in this phase.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Choose option A for now: retain both physical position tables behind one ledger/read model."
+        },
+        {
+          "file": "docs/TIER1_POSITION_LEDGER.md",
+          "quote": "no physical merge in this phase"
+        }
+      ],
+      "deferral": {
+        "approved_by": "Owner decision 12 (2026-10-25), D1 and D10",
+        "justification": "The owner chose option A: no physical merge in this phase, and not to start one to improve a score.",
+        "scope": "Deferred: a unified physical positions table and any migration toward it. Not deferred: both tables must stay behind the ledger/read model, with no table or column dropped (checked here). Read-model coverage of the remaining readers is a separate, non-deferred criterion (IMPL-PL-03, IMPL-PL-04).",
+        "sources": [
+          {
+            "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+            "quote": "D1: No physical merge in this phase."
+          },
+          {
+            "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+            "quote": "D10: Retain legacy data for audit. No table or column drops."
+          }
+        ],
+        "scope_check": {
+          "kind": "all",
+          "checks": [
+            {
+              "kind": "pattern",
+              "regex": "pgTable\\(\"arx_live_positions\"",
+              "expect": "present",
+              "path": "lib/db/src/schema/arxLiveExecution.ts",
+              "describe": "LIVE table kept"
+            },
+            {
+              "kind": "pattern",
+              "regex": "pgTable\\(\"live_positions\"",
+              "expect": "present",
+              "path": "lib/db/src/schema/livePositions.ts",
+              "describe": "DEMO table kept"
+            },
+            {
+              "kind": "pattern",
+              "regex": "pgTable\\(\"positions\"",
+              "expect": "absent",
+              "describe": "no unified positions table",
+              "globs": [
+                "lib/db/src/schema/*.ts"
+              ]
+            },
+            {
+              "kind": "pattern",
+              "regex": "\\bdrop\\s+(table|column)\\b",
+              "expect": "absent",
+              "describe": "no table/column drop in migrations",
+              "flags": "i",
+              "globs": [
+                "lib/db/migrations/*.sql"
+              ]
+            },
+            {
+              "kind": "files_exist",
+              "paths": [
+                "artifacts/api-server/src/lib/positions/ledger.ts",
+                "artifacts/api-server/src/lib/positions/openPositions.ts"
+              ]
+            }
+          ]
+        }
+      },
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "pgTable\\(\"arx_live_positions\"",
+            "expect": "present",
+            "path": "lib/db/src/schema/arxLiveExecution.ts",
+            "describe": "LIVE table kept"
+          },
+          {
+            "kind": "pattern",
+            "regex": "pgTable\\(\"live_positions\"",
+            "expect": "present",
+            "path": "lib/db/src/schema/livePositions.ts",
+            "describe": "DEMO table kept"
+          },
+          {
+            "kind": "pattern",
+            "regex": "pgTable\\(\"positions\"",
+            "expect": "absent",
+            "describe": "no unified positions table",
+            "globs": [
+              "lib/db/src/schema/*.ts"
+            ]
+          },
+          {
+            "kind": "pattern",
+            "regex": "\\bdrop\\s+(table|column)\\b",
+            "expect": "absent",
+            "describe": "no table/column drop in migrations",
+            "flags": "i",
+            "globs": [
+              "lib/db/migrations/*.sql"
+            ]
+          },
+          {
+            "kind": "files_exist",
+            "paths": [
+              "artifacts/api-server/src/lib/positions/ledger.ts",
+              "artifacts/api-server/src/lib/positions/openPositions.ts"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-PL-03",
+      "section": "IMPL",
+      "title": "Per-user open-position readers use the central read model",
+      "requirement": "Owner decision 12 keeps both tables behind one ledger/read model. Six modules read every row for a user through the ledger and drop closed rows in memory with their own rules, outside the read model.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "retain both physical position tables behind one ledger/read model"
+        },
+        {
+          "file": "docs/TIER1_OPEN_POSITION_VIEW.md",
+          "quote": "A module that reads every row for a user and drops closed rows in memory is not detected"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "positions/openPositions",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/meLive.ts",
+            "describe": "routes/meLive.ts imports the read model"
+          },
+          {
+            "kind": "pattern",
+            "regex": "positions/openPositions",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeHealth/tradeHealthService.ts",
+            "describe": "lib/tradeHealth/tradeHealthService.ts imports the read model"
+          },
+          {
+            "kind": "pattern",
+            "regex": "positions/openPositions",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/scalp/scalpManageService.ts",
+            "describe": "lib/scalp/scalpManageService.ts imports the read model"
+          },
+          {
+            "kind": "pattern",
+            "regex": "positions/openPositions",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/broker/mt5BridgeProvider.ts",
+            "describe": "lib/broker/mt5BridgeProvider.ts imports the read model"
+          },
+          {
+            "kind": "pattern",
+            "regex": "positions/openPositions",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/livePositions.ts",
+            "describe": "routes/livePositions.ts imports the read model"
+          },
+          {
+            "kind": "pattern",
+            "regex": "positions/openPositions",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/portfolioRisk.ts",
+            "describe": "routes/portfolioRisk.ts imports the read model"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-PL-04",
+      "section": "IMPL",
+      "title": "Unified position feed's DEMO list comes from the read model",
+      "requirement": "The unified feed's DEMO list must come from the position read model, not the mt5_state snapshot.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OPEN_POSITION_VIEW.md",
+          "quote": "The unified feed's DEMO list still comes from `mt5_state`"
+        }
+      ],
+      "check": {
+        "kind": "pattern",
+        "regex": "readLatestUserMt5State",
+        "expect": "absent",
+        "path": "artifacts/api-server/src/routes/mePositionsUnified.ts",
+        "describe": "DEMO list from mt5_state"
+      }
+    },
+    {
+      "id": "IMPL-PL-05",
+      "section": "IMPL",
+      "title": "Management engines are Guardian rules behind one exit door",
+      "requirement": "Handoff work: fold the six management engines into Guardian rules without changing deterministic protection authority.",
+      "sources": [
+        {
+          "file": "docs/TIER1_POSITION_LEDGER.md",
+          "quote": "Fold the six management engines into Guardian rules without changing deterministic protection authority."
+        },
+        {
+          "file": "docs/TIER1_POSITION_GUARDIAN_RULES.md",
+          "quote": "they are now registered rules behind one exit door, not one merged engine"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "export const GUARDIAN_RULES",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/positionGuardian/rules.ts",
+            "describe": "rule registry"
+          },
+          {
+            "kind": "pattern",
+            "regex": "^\\s*id: \"[a-z-]+\",",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/positionGuardian/rules.ts",
+            "describe": "registered rules",
+            "flags": "m",
+            "min": 6
+          },
+          {
+            "kind": "pattern",
+            "regex": "GUARDIAN_MANAGE_MODULE = \"lib/positionGuardian/manage\\.ts\"",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/positionGuardian/rules.ts",
+            "describe": "one exit door"
+          }
+        ]
+      },
+      "notes": "Registration is checked, not a merged engine; the Guardian doc states the engines keep their own decision logic."
+    },
+    {
+      "id": "IMPL-PL-06",
+      "section": "IMPL",
+      "title": "The legacy owner ID is never guessed",
+      "requirement": "Owner limit: never guess the legacy owner ID. The claim script must refuse to run without an explicit ID.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Never guess the legacy owner ID."
+        },
+        {
+          "file": "docs/TIER1_OWNER_RUNBOOK.md",
+          "quote": "The legacy owner user ID (explicit, never guessed)"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "process\\.env\\[\"ARX_LEGACY_OWNER_USER_ID\"\\]",
+            "expect": "present",
+            "path": "artifacts/api-server/src/scripts/claimLegacyBehaviorRows.ts",
+            "describe": "explicit env parameter"
+          },
+          {
+            "kind": "pattern",
+            "regex": "process\\.exit\\(2\\)",
+            "expect": "present",
+            "path": "artifacts/api-server/src/scripts/claimLegacyBehaviorRows.ts",
+            "describe": "refuses without an ID"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-TE-01",
+      "section": "IMPL",
+      "title": "Confirmed SIMULATED opens book PAPER orders with price provenance and a retry key",
+      "requirement": "Owner decision 13: confirmed SIMULATED opens create PAPER orders through the pipeline, for Trade Action Center and My Trades, with valid price provenance and retry-safe idempotency.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Confirmed SIMULATED opens should create PAPER orders through the existing pipeline."
+        },
+        {
+          "file": "docs/TIER1_PAPER_BOOK.md",
+          "quote": "SIMULATED opens book PAPER orders"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "NO_VALID_PRICE_SOURCE",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeEngine/simulatedOpen.ts",
+            "describe": "no fabricated fill"
+          },
+          {
+            "kind": "pattern",
+            "regex": "clientRequestKey",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeEngine/simulatedOpen.ts",
+            "describe": "retry key"
+          },
+          {
+            "kind": "pattern",
+            "regex": "openSimulatedPaperOrder",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeAction/route.ts",
+            "describe": "Trade Action Center path"
+          },
+          {
+            "kind": "pattern",
+            "regex": "IDEMPOTENCY_KEY_REQUIRED",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/meTrades.ts",
+            "describe": "My Trades requires a key"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-TE-02",
+      "section": "IMPL",
+      "title": "Closing a decision-13 paper order keeps real price provenance",
+      "requirement": "Owner decision 13 requires valid price provenance and no fabricated fills. A manual close of a real-quote paper order still prices the exit with the simulator's mock price.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "valid price provenance"
+        },
+        {
+          "file": "docs/TIER1_TRADE_ENGINE_MODES.md",
+          "quote": "still prices the exit with the paper simulator"
+        }
+      ],
+      "check": {
+        "kind": "any",
+        "checks": [
+          {
+            "kind": "function_body_pattern",
+            "path": "artifacts/api-server/src/lib/tradeEngine/paperVenue.ts",
+            "function": "closePaperOrder",
+            "regex": "getMockPrice\\(",
+            "expect": "absent",
+            "describe": "closePaperOrder never uses the mock price"
+          },
+          {
+            "kind": "function_body_pattern",
+            "path": "artifacts/api-server/src/lib/tradeEngine/paperVenue.ts",
+            "function": "closePaperOrder",
+            "regex": "clientRequestKey|priceSource|realQuote",
+            "expect": "present",
+            "describe": "closePaperOrder distinguishes real-quote orders"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-TE-03",
+      "section": "IMPL",
+      "title": "/execute-trade is retired",
+      "requirement": "Owner decision 14: retire the legacy /execute-trade path and refuse it with an actionable response.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Retire the legacy /execute-trade execution path."
+        },
+        {
+          "file": "docs/TIER1_PAPER_BOOK.md",
+          "quote": "`/execute-trade` is retired"
+        }
+      ],
+      "check": {
+        "kind": "pattern",
+        "regex": "EXECUTE_TRADE_RETIRED",
+        "expect": "present",
+        "path": "artifacts/api-server/src/routes/trades.ts",
+        "describe": "retired response"
+      }
+    },
+    {
+      "id": "IMPL-TE-04",
+      "section": "IMPL",
+      "title": "My Trades DEMO opens use the governed pipeline; LIVE stays refused",
+      "requirement": "Owner decision 15: enable My Trades DEMO opens through the governed pipeline; keep My Trades LIVE opens refused.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Enable My Trades DEMO opens through the existing governed pipeline."
+        },
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Keep My Trades LIVE opens refused until broker validation passes and I separately authorize enabling that surface."
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "await openMyTradesDemo\\(",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/meTrades.ts",
+            "describe": "DEMO through the governed open"
+          },
+          {
+            "kind": "pattern",
+            "regex": "MY_TRADES_LIVE_NOT_ENABLED",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/meTrades.ts",
+            "describe": "LIVE refused"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-TE-05",
+      "section": "IMPL",
+      "title": "A retried My Trades DEMO open cannot place a second order",
+      "requirement": "Owner decision 13 asks for retry-safe idempotency and the owner's verification list names retries and duplicate prevention. A My Trades DEMO open has no idempotency key; only a 5-minute in-flight duplicate check stops a retry.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "paper accounting, retries and duplicate prevention"
+        },
+        {
+          "file": "docs/TIER1_TRADE_ENGINE_MODES.md",
+          "quote": "A My Trades DEMO open has no client idempotency key"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "function_body_pattern",
+            "path": "artifacts/api-server/src/lib/tradeAction/myTradesOpen.ts",
+            "function": "openMyTradesDemo",
+            "regex": "idempoten|requestKey",
+            "flags": "i",
+            "describe": "openMyTradesDemo uses a retry key"
+          },
+          {
+            "kind": "pattern",
+            "regex": "openMyTradesDemo\\(\\{[^}]*idempotencyKey",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/meTrades.ts",
+            "describe": "route passes the key",
+            "flags": "s"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-TE-06",
+      "section": "IMPL",
+      "title": "DEMO and PAPER are modes of the one Trade Engine pipeline",
+      "requirement": "Handoff work: unify demo and paper as modes of the execution pipeline.",
+      "sources": [
+        {
+          "file": "docs/TIER1_POSITION_LEDGER.md",
+          "quote": "Unify demo and paper as modes of the execution pipeline"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "TRADE_MODES = \\[\"LIVE\", \"DEMO\", \"PAPER\"\\]",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeEngine/pipeline.ts",
+            "describe": "pipeline modes"
+          },
+          {
+            "kind": "pattern",
+            "regex": "if \\(req\\.mode === \"PAPER\"\\) return submitPaper\\(req\\)",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeEngine/pipeline.ts",
+            "describe": "PAPER through submitTrade"
+          },
+          {
+            "kind": "pattern",
+            "regex": "req\\.mode === \"DEMO\" \\? openDemo\\(req\\)",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeEngine/pipeline.ts",
+            "describe": "DEMO through submitTrade"
+          }
+        ]
+      },
+      "notes": "docs/TIER1_PAPER_BOOK.md notes the caller-priced PAPER fill channel is a sibling of submitTrade, not a submitTrade intent."
+    },
+    {
+      "id": "IMPL-BH-01",
+      "section": "IMPL",
+      "title": "One authoritative account snapshot per MT5 connection",
+      "requirement": "Owner decision 16: Broker Hub owns one balance/equity snapshot per connection with identity, provenance and observation time, and reconciliation is prepared.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Establish one authoritative account snapshot per MT5 connection."
+        },
+        {
+          "file": "docs/TIER1_BROKER_HUB_SOURCE.md",
+          "quote": "added the authoritative per-connection snapshot, the reconciliation diff"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "export function connectionAccountSnapshot\\(",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/brokerHub/accountSnapshot.ts",
+            "describe": "snapshot"
+          },
+          {
+            "kind": "pattern",
+            "regex": "export function reconcileAccountSnapshots\\(",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/brokerHub/accountSnapshot.ts",
+            "describe": "reconciliation diff"
+          },
+          {
+            "kind": "files_exist",
+            "paths": [
+              "artifacts/api-server/src/lib/brokerHub/accountSnapshotReader.ts"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-BH-02",
+      "section": "IMPL",
+      "title": "No platform balance is used for a trader's sizing",
+      "requirement": "Owner decision 16: do not substitute platform-account balances for a trader's account. /intelligence/analyze sizes paper lots from the platform balance for any caller.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Do not substitute platform-account balances for a trader's account"
+        },
+        {
+          "file": "docs/TIER1_BROKER_HUB_SOURCE.md",
+          "quote": "sizes paper lots from the platform balance for any caller"
+        }
+      ],
+      "check": {
+        "kind": "pattern",
+        "regex": "readPlatformMt5State",
+        "expect": "absent",
+        "path": "artifacts/api-server/src/lib/paperIntelligence.ts",
+        "describe": "platform mt5_state in paper sizing"
+      }
+    },
+    {
+      "id": "IMPL-BH-03",
+      "section": "IMPL",
+      "title": "A multi-connection user's account figures come from one defined connection",
+      "requirement": "Owner decision 16 (one authoritative snapshot; no source chosen without identity evidence). The investor live balance uses the oldest connection and /me/live the freshest-synced one.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "choose a source without identity evidence"
+        },
+        {
+          "file": "docs/TIER1_BROKER_HUB_SOURCE.md",
+          "quote": "The connection a multi-connection user's account figures come from is not unified yet"
+        }
+      ],
+      "check": {
+        "kind": "consistent_capture",
+        "paths": [
+          "artifacts/api-server/src/lib/live/investorLiveBalance.ts",
+          "artifacts/api-server/src/routes/meLive.ts"
+        ],
+        "regex": "listUserConnections\\(userId, \\{ order: \"(\\w+)\", limit: 1 \\}\\)",
+        "describe": "connection order used for account figures"
+      }
+    },
+    {
+      "id": "IMPL-BH-04",
+      "section": "IMPL",
+      "title": "One shared MT5 heartbeat policy (15 s / 60 s)",
+      "requirement": "Owner decision 17: fresh under 15 s, degraded 15-60 s, offline from 60 s, unknown never execution-ready; one shared pure policy for server, domain and dashboard.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Use one shared pure policy across server, domain and dashboard."
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "MT5_HEARTBEAT_FRESH_BELOW_MS = 15_000",
+            "expect": "present",
+            "path": "lib/domain/src/broker-health/heartbeatPolicy.ts",
+            "describe": "fresh bound"
+          },
+          {
+            "kind": "pattern",
+            "regex": "MT5_HEARTBEAT_OFFLINE_AT_MS = 60_000",
+            "expect": "present",
+            "path": "lib/domain/src/broker-health/heartbeatPolicy.ts",
+            "describe": "offline bound"
+          },
+          {
+            "kind": "pattern",
+            "regex": "classifyHeartbeatAgeMs\\(",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/riskGovernor/enforce.ts",
+            "describe": "server uses it"
+          },
+          {
+            "kind": "pattern",
+            "regex": "heartbeatPolicy|classifyHeartbeat",
+            "expect": "present",
+            "path": "artifacts/trading-dashboard/src/components/trading/MT5StatusIndicator.tsx",
+            "describe": "dashboard uses it"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-BH-05",
+      "section": "IMPL",
+      "title": "Bridge v2 reports heartbeat freshness separately from stream health",
+      "requirement": "Owner decision 18: shared freshness vocabulary for heartbeats; stream health separately identified; a healthy stream never implies execution-ready.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "A healthy stream must not imply that an account is execution-ready."
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "heartbeatFreshness: HeartbeatFreshness",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/bridgeV2/liveness.ts",
+            "describe": "shared vocabulary"
+          },
+          {
+            "kind": "pattern",
+            "regex": "streamImpliesExecutionReady: false",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/bridgeV2/liveness.ts",
+            "describe": "stream never implies ready"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-BH-06",
+      "section": "IMPL",
+      "title": "Heartbeat close behaviour is explicit and regression-tested",
+      "requirement": "Current code: from 60 s the governor's broker status is DISCONNECTED and every order, including a close, is refused; a degraded bridge (15-60 s) still allows closes. This checks that the code and its regression test state that behaviour.",
+      "sources": [
+        {
+          "file": "docs/TIER1_BROKER_HUB_SOURCE.md",
+          "quote": "the Risk Governor's DISCONNECTED (which also refuses closes) now starts at 60 s instead of 120 s"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "band === \"fresh\" \\? \"CONNECTED\" : band === \"degraded\" \\? \"DEGRADED\" : \"DISCONNECTED\"",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/riskGovernor/enforce.ts",
+            "describe": "offline maps to DISCONNECTED"
+          },
+          {
+            "kind": "pattern",
+            "regex": "b\\.status === \"DISCONNECTED\"\\) \\{\\s*set\\(\"broker_unavailable\", \"BLOCK\"",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/riskGovernor/preTrade.ts",
+            "describe": "DISCONNECTED blocks every order"
+          },
+          {
+            "kind": "pattern",
+            "regex": "b\\.status === \"DEGRADED\" && !reduces",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/riskGovernor/preTrade.ts",
+            "describe": "DEGRADED blocks only new risk"
+          },
+          {
+            "kind": "pattern",
+            "regex": "at exactly 60 s the bridge is offline, so a close is refused",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/__qa__/riskGovernorPipelines.test.ts",
+            "describe": "regression test"
+          }
+        ]
+      }
+    },
+    {
+      "id": "IMPL-BH-07",
+      "section": "IMPL",
+      "title": "Owner has confirmed the heartbeat close policy",
+      "requirement": "The Broker Hub doc asks the owner to confirm that closes are refused from 60 s, or to ask for a separately named close-path allowance. Until the owner records that decision, the close policy is unresolved.",
+      "sources": [
+        {
+          "file": "docs/TIER1_BROKER_HUB_SOURCE.md",
+          "quote": "Confirm or ask for a separately named close-path allowance."
+        },
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Preserve any stricter existing execution requirement."
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "owner_confirmed_heartbeat_close_policy"
+      }
+    },
+    {
+      "id": "VER-TSC-01",
+      "section": "VER",
+      "title": "Library typecheck passes",
+      "requirement": "Typechecks pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Never weaken tests or bypass failed checks."
+        }
+      ],
+      "check": {
+        "kind": "command",
+        "argv": [
+          "pnpm",
+          "-s",
+          "run",
+          "typecheck:libs"
+        ],
+        "timeout_s": 1800,
+        "env": {
+          "NODE_OPTIONS": "--max-old-space-size=8192"
+        },
+        "summary_regex": "error TS"
+      }
+    },
+    {
+      "id": "VER-TSC-02",
+      "section": "VER",
+      "title": "API server typecheck passes",
+      "requirement": "Typechecks pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Never weaken tests or bypass failed checks."
+        }
+      ],
+      "check": {
+        "kind": "command",
+        "argv": [
+          "pnpm",
+          "-s",
+          "--filter",
+          "@workspace/api-server",
+          "run",
+          "typecheck"
+        ],
+        "timeout_s": 1800,
+        "env": {
+          "NODE_OPTIONS": "--max-old-space-size=8192"
+        },
+        "summary_regex": "error TS"
+      }
+    },
+    {
+      "id": "VER-TSC-03",
+      "section": "VER",
+      "title": "Dashboard typecheck passes",
+      "requirement": "Typechecks pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Never weaken tests or bypass failed checks."
+        }
+      ],
+      "check": {
+        "kind": "command",
+        "argv": [
+          "pnpm",
+          "-s",
+          "--filter",
+          "@workspace/trading-dashboard",
+          "run",
+          "typecheck"
+        ],
+        "timeout_s": 1800,
+        "env": {
+          "NODE_OPTIONS": "--max-old-space-size=8192"
+        },
+        "summary_regex": "error TS"
+      }
+    },
+    {
+      "id": "VER-TSC-04",
+      "section": "VER",
+      "title": "Scripts typecheck passes",
+      "requirement": "Typechecks pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Never weaken tests or bypass failed checks."
+        }
+      ],
+      "check": {
+        "kind": "command",
+        "argv": [
+          "pnpm",
+          "-s",
+          "--filter",
+          "@workspace/scripts",
+          "run",
+          "typecheck"
+        ],
+        "timeout_s": 1800,
+        "env": {
+          "NODE_OPTIONS": "--max-old-space-size=8192"
+        },
+        "summary_regex": "error TS"
+      }
+    },
+    {
+      "id": "VER-GUARD-01",
+      "section": "VER",
+      "title": "Architecture guards pass",
+      "requirement": "All registered architecture guards pass. Guards are regression evidence only; they do not establish architectural completion (see the IMPL criteria).",
+      "sources": [
+        {
+          "file": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
+          "quote": "Guard counts alone cannot establish architectural completion."
+        }
+      ],
+      "check": {
+        "kind": "command",
+        "argv": [
+          "pnpm",
+          "-s",
+          "run",
+          "ci:guards"
+        ],
+        "timeout_s": 1800,
+        "needs_db": true,
+        "pass_regex": "^(\\d+)/\\1 guards passed",
+        "summary_regex": "guards passed|✗"
+      }
+    },
+    {
+      "id": "VER-CI-01",
+      "section": "VER",
+      "title": "Per-commit CI aggregate passes",
+      "requirement": "The root `pnpm run ci` aggregate (offline per-commit lane) passes.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Never weaken tests or bypass failed checks."
+        }
+      ],
+      "check": {
+        "kind": "command",
+        "argv": [
+          "pnpm",
+          "-s",
+          "run",
+          "ci"
+        ],
+        "timeout_s": 5400,
+        "env": {
+          "NODE_OPTIONS": "--max-old-space-size=8192"
+        },
+        "summary_regex": "^# (pass|fail) [1-9]|guards passed|ERR_PNPM|Command failed"
+      }
+    },
+    {
+      "id": "VER-OWN-1",
+      "section": "VER",
+      "title": "Owner test category passes: tenant and account isolation",
+      "requirement": "The owner's verification list requires tests for tenant and account isolation. Every mapped suite must run and pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "tenant and account isolation"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:broker-hub-account-snapshot-db"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:account-ownership-route"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:risk-governor-paper-facts"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          }
+        ]
+      },
+      "notes": "Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05)."
+    },
+    {
+      "id": "VER-OWN-2",
+      "section": "VER",
+      "title": "Owner test category passes: stop engagement, explicit release and re-arm requirements",
+      "requirement": "The owner's verification list requires tests for stop engagement, explicit release and re-arm requirements. Every mapped suite must run and pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "stop engagement, explicit release and re-arm requirements"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:platform-stop-release"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:platform-switches"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:readiness-stop-switches"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          }
+        ]
+      },
+      "notes": "Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05)."
+    },
+    {
+      "id": "VER-OWN-3",
+      "section": "VER",
+      "title": "Owner test category passes: new-risk versus recovery/close behavior",
+      "requirement": "The owner's verification list requires tests for new-risk versus recovery/close behavior. Every mapped suite must run and pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "new-risk versus recovery/close behavior"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:legacy-gates-action-aware"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:risk-governor-pipelines"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          }
+        ]
+      },
+      "notes": "Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05)."
+    },
+    {
+      "id": "VER-OWN-4",
+      "section": "VER",
+      "title": "Owner test category passes: duplicate settings rows",
+      "requirement": "The owner's verification list requires tests for duplicate settings rows. Every mapped suite must run and pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "duplicate settings rows"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:platform-stop-release"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:platform-switches"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          }
+        ]
+      },
+      "notes": "Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05)."
+    },
+    {
+      "id": "VER-OWN-5",
+      "section": "VER",
+      "title": "Owner test category passes: effective limits and counting boundaries",
+      "requirement": "The owner's verification list requires tests for effective limits and counting boundaries. Every mapped suite must run and pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "effective limits and counting boundaries"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:risk-governor-effective-views"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:risk-governor-rr-daily"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:open-position-view"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          }
+        ]
+      },
+      "notes": "Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05)."
+    },
+    {
+      "id": "VER-OWN-6",
+      "section": "VER",
+      "title": "Owner test category passes: paper accounting, retries and duplicate prevention",
+      "requirement": "The owner's verification list requires tests for paper accounting, retries and duplicate prevention. Every mapped suite must run and pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "paper accounting, retries and duplicate prevention"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:simulated-open"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:paper-book"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:my-trades-demo-open"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          }
+        ]
+      },
+      "notes": "Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05)."
+    },
+    {
+      "id": "VER-OWN-7",
+      "section": "VER",
+      "title": "Owner test category passes: freshness boundaries and unavailable inputs",
+      "requirement": "The owner's verification list requires tests for freshness boundaries and unavailable inputs. Every mapped suite must run and pass on the measured commit.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "freshness boundaries and unavailable inputs"
+        }
+      ],
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:broker-hub-heartbeat-policy"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          },
+          {
+            "kind": "command",
+            "argv": [
+              "pnpm",
+              "-s",
+              "--filter",
+              "@workspace/api-server",
+              "run",
+              "test:bridge-v2-liveness"
+            ],
+            "needs_db": true,
+            "timeout_s": 900,
+            "fail_regex": "^# fail [1-9]",
+            "pass_regex": "^# pass [1-9]",
+            "summary_regex": "^# (tests|pass|fail) "
+          }
+        ]
+      },
+      "notes": "Passing suites show the mapped behaviour is tested and green; they do not prove coverage is complete (gaps are IMPL criteria, e.g. IMPL-TE-05)."
+    },
+    {
+      "id": "VER-INT-00",
+      "section": "VER",
+      "title": "Integration lane has no failure outside the six tracked",
+      "requirement": "The `ci:integration` lane (local database) must not fail on any suite other than the six tracked failures.",
+      "sources": [
+        {
+          "file": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
+          "quote": "Preserve the six reported integration failures individually until their current status and baseline comparison are verified."
+        }
+      ],
+      "check": {
+        "kind": "integration_lane"
+      }
+    },
+    {
+      "id": "VER-INT-1",
+      "section": "VER",
+      "title": "Tracked integration failure INT-1 passes: test:admin-unrestricted-risk",
+      "requirement": "@workspace/scripts::test:admin-unrestricted-risk was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.",
+      "sources": [
+        {
+          "file": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
+          "quote": "test:admin-unrestricted-risk"
+        }
+      ],
+      "check": {
+        "kind": "integration_suite",
+        "tracked": "INT-1",
+        "suite": "@workspace/scripts::test:admin-unrestricted-risk"
+      }
+    },
+    {
+      "id": "VER-INT-2",
+      "section": "VER",
+      "title": "Tracked integration failure INT-2 passes: test:chart-decision-receipts",
+      "requirement": "@workspace/scripts::test:chart-decision-receipts was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.",
+      "sources": [
+        {
+          "file": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
+          "quote": "test:chart-decision-receipts"
+        }
+      ],
+      "check": {
+        "kind": "integration_suite",
+        "tracked": "INT-2",
+        "suite": "@workspace/scripts::test:chart-decision-receipts"
+      }
+    },
+    {
+      "id": "VER-INT-3",
+      "section": "VER",
+      "title": "Tracked integration failure INT-3 passes: test:mode-scope",
+      "requirement": "@workspace/scripts::test:mode-scope was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.",
+      "sources": [
+        {
+          "file": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
+          "quote": "test:mode-scope"
+        }
+      ],
+      "check": {
+        "kind": "integration_suite",
+        "tracked": "INT-3",
+        "suite": "@workspace/scripts::test:mode-scope"
+      }
+    },
+    {
+      "id": "VER-INT-4",
+      "section": "VER",
+      "title": "Tracked integration failure INT-4 passes: test:one-click-concurrency",
+      "requirement": "@workspace/scripts::test:one-click-concurrency was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.",
+      "sources": [
+        {
+          "file": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
+          "quote": "test:one-click-concurrency"
+        }
+      ],
+      "check": {
+        "kind": "integration_suite",
+        "tracked": "INT-4",
+        "suite": "@workspace/scripts::test:one-click-concurrency"
+      }
+    },
+    {
+      "id": "VER-INT-5",
+      "section": "VER",
+      "title": "Tracked integration failure INT-5 passes: test:scanner-no-feed-honesty",
+      "requirement": "@workspace/api-server::test:scanner-no-feed-honesty was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.",
+      "sources": [
+        {
+          "file": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
+          "quote": "test:scanner-no-feed-honesty"
+        }
+      ],
+      "check": {
+        "kind": "integration_suite",
+        "tracked": "INT-5",
+        "suite": "@workspace/api-server::test:scanner-no-feed-honesty"
+      }
+    },
+    {
+      "id": "VER-INT-6",
+      "section": "VER",
+      "title": "Tracked integration failure INT-6 passes: test:ruby-draw-setup-route",
+      "requirement": "@workspace/scripts::test:ruby-draw-setup-route was reported failing on 32033c6 and on main after round 5 (local database). It stays an individual criterion until it passes.",
+      "sources": [
+        {
+          "file": "docs/scorecard/v2/OWNER_INSTRUCTION_2026-10-25.md",
+          "quote": "test:ruby-draw-setup-route"
+        }
+      ],
+      "check": {
+        "kind": "integration_suite",
+        "tracked": "INT-6",
+        "inprocess": "rubyDrawSetupRouteTest"
+      }
+    },
+    {
+      "id": "OPS-01",
+      "section": "OPS",
+      "title": "All eight migrations are applied in production",
+      "requirement": "All eight migrations are applied in production. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key 'prod_migrations_applied'); without it the status is UNKNOWN.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_RUNBOOK.md",
+          "quote": "Pending production migrations (order, effect, pre-apply snapshot, rollback)"
+        },
+        {
+          "file": "docs/TIER1_POSITION_LEDGER.md",
+          "quote": "Apply the seven production migrations through the owner-controlled deployment process"
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "prod_migrations_applied"
+      }
+    },
+    {
+      "id": "OPS-02",
+      "section": "OPS",
+      "title": "Duplicate global_trading_settings rows are inspected and resolved in production",
+      "requirement": "Duplicate global_trading_settings rows are inspected and resolved in production. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key 'prod_duplicate_settings_rows_resolved'); without it the status is UNKNOWN.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_RUNBOOK.md",
+          "quote": "Duplicate `global_trading_settings` rows (inspect, what the reader does, cleanup)"
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "prod_duplicate_settings_rows_resolved"
+      }
+    },
+    {
+      "id": "OPS-03",
+      "section": "OPS",
+      "title": "The legacy owner user ID is supplied explicitly and the claim is run",
+      "requirement": "The legacy owner user ID is supplied explicitly and the claim is run. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key 'legacy_owner_id_supplied'); without it the status is UNKNOWN.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_RUNBOOK.md",
+          "quote": "The legacy owner user ID (explicit, never guessed)"
+        },
+        {
+          "file": "docs/TIER1_POSITION_LEDGER.md",
+          "quote": "supply the legacy owner user ID explicitly"
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "legacy_owner_id_supplied"
+      }
+    },
+    {
+      "id": "OPS-04",
+      "section": "OPS",
+      "title": "check:production-readiness passes against production",
+      "requirement": "check:production-readiness passes against production. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key 'prod_readiness_check_passed'); without it the status is UNKNOWN.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_RUNBOOK.md",
+          "quote": "check:production-readiness"
+        },
+        {
+          "file": "docs/TIER1_POSITION_LEDGER.md",
+          "quote": "run production readiness plus validation against a real demo bridge"
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "prod_readiness_check_passed"
+      }
+    },
+    {
+      "id": "OPS-05",
+      "section": "OPS",
+      "title": "validate:broker passes against a real demo bridge",
+      "requirement": "validate:broker passes against a real demo bridge. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key 'validate_broker_real_demo_passed'); without it the status is UNKNOWN.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_RUNBOOK.md",
+          "quote": "Real demo-bridge validation (`validate:broker`)"
+        },
+        {
+          "file": "docs/TIER1_BROKER_HUB_SOURCE.md",
+          "quote": "`validate:broker` against a real demo bridge is an owner action and was not run."
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "validate_broker_real_demo_passed"
+      }
+    },
+    {
+      "id": "OPS-06",
+      "section": "OPS",
+      "title": "The production broker_health_state row is known",
+      "requirement": "The production broker_health_state row is known. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key 'prod_broker_health_state_known'); without it the status is UNKNOWN.",
+      "sources": [
+        {
+          "file": "docs/TIER1_PLATFORM_SAFETY_SOURCE.md",
+          "quote": "Production fact needed first: the current `broker_health_state` row (exists? `execution_enabled`? `maintenance_mode`?) on the production install."
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "prod_broker_health_state_known"
+      }
+    },
+    {
+      "id": "OPS-07",
+      "section": "OPS",
+      "title": "A real market-data provider is configured for SIMULATED opens",
+      "requirement": "A real market-data provider is configured for SIMULATED opens. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key 'market_data_provider_configured'); without it the status is UNKNOWN.",
+      "sources": [
+        {
+          "file": "docs/TIER1_TRADE_ENGINE_MODES.md",
+          "quote": "Without a real market-data provider configured, every SIMULATED open is refused with `NO_VALID_PRICE_SOURCE` (intended: no fabricated fill)."
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "market_data_provider_configured"
+      }
+    },
+    {
+      "id": "OPS-08",
+      "section": "OPS",
+      "title": "Account snapshot reconciliation has been run against production",
+      "requirement": "Account snapshot reconciliation has been run against production. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key 'account_reconciliation_run'); without it the status is UNKNOWN.",
+      "sources": [
+        {
+          "file": "docs/TIER1_BROKER_HUB_SOURCE.md",
+          "quote": "Running `readConnectionAccountReconciliation` against production data, to see how often the two feeds diverge, is an owner action and was not run."
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "account_reconciliation_run"
+      }
+    },
+    {
+      "id": "OPS-09",
+      "section": "OPS",
+      "title": "Production runs a commit that includes round 5",
+      "requirement": "Production runs a commit that includes round 5. This is a production fact. Only the owner can record it (docs/scorecard/v2/evidence.json, key 'prod_deployed_commit_includes_round5'); without it the status is UNKNOWN.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_RUNBOOK.md",
+          "quote": "Nothing in it has been run against production."
+        }
+      ],
+      "check": {
+        "kind": "evidence",
+        "key": "prod_deployed_commit_includes_round5"
+      }
+    },
+    {
+      "id": "OPS-10",
+      "section": "OPS",
+      "title": "P0 inspection for a physical position-table merge (approved deferral)",
+      "requirement": "Decision 12 D5/D6: time-zone and float-widening evidence, the production PostgreSQL version and uniqueness support. These are required before a physical merge, which is not in this phase.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "D5: Timestamp zone and conversion correctness require P0 evidence"
+        },
+        {
+          "file": "docs/TIER1_OWNER_RUNBOOK.md",
+          "quote": "P0 inspection before any future position-table work"
+        }
+      ],
+      "deferral": {
+        "approved_by": "Owner decision 12 (2026-10-25), D1, D5, D6",
+        "justification": "The P0 facts gate a physical merge, and the owner deferred the merge (option A).",
+        "scope": "Deferred only while no physical merge is started. Any unified positions table or migration toward it makes this a current requirement (checked here).",
+        "sources": [
+          {
+            "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+            "quote": "D6: Verify the production PostgreSQL version and uniqueness support; do not invent these facts."
+          }
+        ],
+        "scope_check": {
+          "kind": "all",
+          "checks": [
+            {
+              "kind": "pattern",
+              "regex": "pgTable\\(\"positions\"",
+              "expect": "absent",
+              "describe": "no unified positions table",
+              "globs": [
+                "lib/db/src/schema/*.ts"
+              ]
+            },
+            {
+              "kind": "pattern",
+              "regex": "create\\s+table\\s+(if\\s+not\\s+exists\\s+)?\"?positions\"?\\s*\\(",
+              "expect": "absent",
+              "describe": "no positions-table migration",
+              "flags": "i",
+              "globs": [
+                "lib/db/migrations/*.sql"
+              ]
+            }
+          ]
+        }
+      },
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "pgTable\\(\"positions\"",
+            "expect": "absent",
+            "describe": "no unified positions table",
+            "globs": [
+              "lib/db/src/schema/*.ts"
+            ]
+          },
+          {
+            "kind": "pattern",
+            "regex": "create\\s+table\\s+(if\\s+not\\s+exists\\s+)?\"?positions\"?\\s*\\(",
+            "expect": "absent",
+            "describe": "no positions-table migration",
+            "flags": "i",
+            "globs": [
+              "lib/db/migrations/*.sql"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "OPS-11",
+      "section": "OPS",
+      "title": "A full trading week of clean demo-bridge evidence (approved deferral)",
+      "requirement": "Decision 12 D8: a future cutover needs a full trading week of clean demo-bridge evidence and passive LIVE observation, with no real-money validation trades.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "D8: A future cutover requires at least one full trading week of clean demo-bridge evidence"
+        }
+      ],
+      "deferral": {
+        "approved_by": "Owner decision 12 (2026-10-25), D8",
+        "justification": "The evidence is a precondition of a future cutover, which the owner deferred.",
+        "scope": "Deferred only while no physical merge or cutover is started (checked here).",
+        "sources": [
+          {
+            "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+            "quote": "Never generate real-money trades for validation."
+          }
+        ],
+        "scope_check": {
+          "kind": "all",
+          "checks": [
+            {
+              "kind": "pattern",
+              "regex": "pgTable\\(\"positions\"",
+              "expect": "absent",
+              "describe": "no unified positions table",
+              "globs": [
+                "lib/db/src/schema/*.ts"
+              ]
+            },
+            {
+              "kind": "pattern",
+              "regex": "create\\s+table\\s+(if\\s+not\\s+exists\\s+)?\"?positions\"?\\s*\\(",
+              "expect": "absent",
+              "describe": "no positions-table migration",
+              "flags": "i",
+              "globs": [
+                "lib/db/migrations/*.sql"
+              ]
+            }
+          ]
+        }
+      },
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "pgTable\\(\"positions\"",
+            "expect": "absent",
+            "describe": "no unified positions table",
+            "globs": [
+              "lib/db/src/schema/*.ts"
+            ]
+          },
+          {
+            "kind": "pattern",
+            "regex": "create\\s+table\\s+(if\\s+not\\s+exists\\s+)?\"?positions\"?\\s*\\(",
+            "expect": "absent",
+            "describe": "no positions-table migration",
+            "flags": "i",
+            "globs": [
+              "lib/db/migrations/*.sql"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "OPS-12",
+      "section": "OPS",
+      "title": "My Trades LIVE opens (approved future project)",
+      "requirement": "Decision 15: My Trades LIVE opens stay refused until broker validation passes and the owner separately authorizes them.",
+      "sources": [
+        {
+          "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+          "quote": "Keep My Trades LIVE opens refused until broker validation passes and I separately authorize enabling that surface."
+        },
+        {
+          "file": "docs/TIER1_TRADE_ENGINE_MODES.md",
+          "quote": "Enabling My Trades LIVE opens needs broker validation and a separate owner authorization"
+        }
+      ],
+      "deferral": {
+        "approved_by": "Owner decision 15 (2026-10-25)",
+        "justification": "Enabling the surface is a future project the owner must authorize separately; it is not a current requirement.",
+        "scope": "Deferred while the surface stays refused. If My Trades LIVE opens are reachable without the refusal, this fails (checked here).",
+        "sources": [
+          {
+            "file": "docs/TIER1_OWNER_DECISIONS_2026-10-25.md",
+            "quote": "Do not turn on live trading in this work."
+          }
+        ],
+        "scope_check": {
+          "kind": "all",
+          "checks": [
+            {
+              "kind": "pattern",
+              "regex": "parsed\\.data\\.mode === \"LIVE\"\\) \\{\\s*res\\.status\\(403\\)\\.json\\(\\{ ok: false, mode: \"LIVE\", error: MY_TRADES_LIVE_NOT_ENABLED",
+              "expect": "present",
+              "path": "artifacts/api-server/src/routes/meTrades.ts",
+              "describe": "LIVE refused with 403"
+            },
+            {
+              "kind": "pattern",
+              "regex": "MY_TRADES_LIVE_OPEN_NOT_ENABLED|MY_TRADES_LIVE_NOT_ENABLED",
+              "expect": "present",
+              "path": "artifacts/api-server/src/lib/tradeAction/myTradesOpen.ts",
+              "describe": "refusal code defined"
+            }
+          ]
+        }
+      },
+      "check": {
+        "kind": "all",
+        "checks": [
+          {
+            "kind": "pattern",
+            "regex": "parsed\\.data\\.mode === \"LIVE\"\\) \\{\\s*res\\.status\\(403\\)\\.json\\(\\{ ok: false, mode: \"LIVE\", error: MY_TRADES_LIVE_NOT_ENABLED",
+            "expect": "present",
+            "path": "artifacts/api-server/src/routes/meTrades.ts",
+            "describe": "LIVE refused with 403"
+          },
+          {
+            "kind": "pattern",
+            "regex": "MY_TRADES_LIVE_OPEN_NOT_ENABLED|MY_TRADES_LIVE_NOT_ENABLED",
+            "expect": "present",
+            "path": "artifacts/api-server/src/lib/tradeAction/myTradesOpen.ts",
+            "describe": "refusal code defined"
+          }
+        ]
+      }
+    }
+  ]
+}

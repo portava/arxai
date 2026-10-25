@@ -1,0 +1,24 @@
+{
+  "_about": "Owner-recorded production facts for ARX Tier 1 Scorecard v2. The scorecard never queries production; a fact missing here is UNKNOWN. Only the owner adds facts. See docs/scorecard/v2/README.md, 'Recording owner evidence'.",
+  "_format": {
+    "<key>": {
+      "status": "PASS or FAIL",
+      "evidence": "what was observed and where (command output, row counts, commit)",
+      "recorded_by": "who recorded it",
+      "recorded_on": "YYYY-MM-DD"
+    }
+  },
+  "_keys": {
+    "account_reconciliation_run": "OPS-08: Account snapshot reconciliation has been run against production",
+    "legacy_owner_id_supplied": "OPS-03: The legacy owner user ID is supplied explicitly and the claim is run",
+    "market_data_provider_configured": "OPS-07: A real market-data provider is configured for SIMULATED opens",
+    "owner_confirmed_heartbeat_close_policy": "IMPL-BH-07: Owner has confirmed the heartbeat close policy",
+    "prod_broker_health_state_known": "OPS-06: The production broker_health_state row is known",
+    "prod_deployed_commit_includes_round5": "OPS-09: Production runs a commit that includes round 5",
+    "prod_duplicate_settings_rows_resolved": "OPS-02: Duplicate global_trading_settings rows are inspected and resolved in production",
+    "prod_migrations_applied": "OPS-01: All eight migrations are applied in production",
+    "prod_readiness_check_passed": "OPS-04: check:production-readiness passes against production",
+    "validate_broker_real_demo_passed": "OPS-05: validate:broker passes against a real demo bridge"
+  },
+  "facts": {}
+}

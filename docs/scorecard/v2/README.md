@@ -1,0 +1,150 @@
+# ARX Tier 1 Scorecard v2
+
+The scorecard for Tier 1. It replaces the original scorecard, which is
+retired (see below). Authority: the owner's instruction of 2026-10-25,
+recorded in [`OWNER_INSTRUCTION_2026-10-25.md`](OWNER_INSTRUCTION_2026-10-25.md).
+
+## Regenerate
+
+One command, from the repository root:
+
+```sh
+SCORECARD_DATABASE_URL="postgresql://postgres@localhost:5432/arx?host=/var/tmp" pnpm run scorecard
+```
+
+It runs `scripts/scorecard/measure.py`, `build_csv.py` and
+`build_dashboard.py` and writes to `docs/scorecard/v2/latest/`:
+
+| File | Content |
+|---|---|
+| `metrics.json` | Deterministic results: commit, rubric hash, each criterion's status and evidence, counts and verdicts. No timestamps or durations. |
+| `metrics.csv` | One row per criterion, from `metrics.json`. |
+| `measurement.json` | The run's non-deterministic facts: measurement time, durations, tool versions, command output tails, `git status` before and after. |
+| `dashboard.html` | The readable dashboard. Open it from disk; it loads nothing external. |
+
+**Dashboard path:** `docs/scorecard/v2/latest/dashboard.html` after a run.
+The committed baseline is `docs/scorecard/v2/baseline/dashboard.html`.
+
+`SCORECARD_DATABASE_URL` must point at a **local** database (host
+`localhost`, `127.0.0.1`, `::1` or a Unix socket); anything else is refused
+and the database-backed criteria become UNKNOWN. Without it the static
+checks and typechecks still run. A full run takes about an hour (the
+per-commit `ci` aggregate and the integration lane are the slow parts).
+
+Other commands:
+
+- `pnpm run scorecard:validate` checks the rubric's structure and that every
+  cited source file and quote, and every check target, exists. It does not
+  evaluate anything.
+- `pnpm run scorecard:selftest` runs the tooling's self-tests (missing
+  evidence, failed and timed-out commands, failure lines on exit 0, unsafe
+  database URLs, deferral scope, integration parsing, determinism).
+- `python3 scripts/scorecard/measure.py --skip-commands --out <dir>` runs the
+  static checks only (command criteria are UNKNOWN). Useful while editing
+  code; not a baseline.
+
+## The original scorecard is retired
+
+The original scorecard (its `measure.py`, `build_csv.py`, rubric, metrics and
+dashboard link) is **unavailable** and retired by the owner on 2026-10-25.
+Its last reported result, **68.7%**, is kept as a historical figure only.
+v2 uses different criteria and no percentage, so its results are **not
+comparable** with 68.7%.
+
+Do not ask the owner for the original scripts, metrics, rubric or dashboard
+link. Use v2.
+
+## Method
+
+**Rubric.** [`rubric.json`](rubric.json) is the only source of criteria. Each
+criterion has an id, a section, the requirement, at least one cited source
+(a repository file and a quote that must appear in it), and a check. The
+sources are the Tier 1 docs (`docs/TIER1_*.md`), the owner decisions
+(`docs/TIER1_OWNER_DECISIONS_2026-10-25.md`), the owner runbook and the
+owner's instruction. Unresolved requirements are criteria too, not only
+implemented features.
+
+**Sections.**
+
+| Section | What it covers |
+|---|---|
+| IMPL: Architecture and code implementation | Owner decisions 1-19 and the documented Tier 1 requirements and findings, checked in the code. |
+| VER: Verification and regression evidence | Typechecks, architecture guards, the per-commit `ci` aggregate, the owner's seven test categories, the integration lane and the six tracked integration failures. |
+| OPS: Deployment and operational readiness | Production facts and owner actions. Never queried; UNKNOWN until the owner records evidence. |
+
+**Statuses.**
+
+| Status | Meaning |
+|---|---|
+| PASS | The check found the required behaviour or evidence on the measured commit. |
+| FAIL | The check found the requirement unmet, or a deferral's scope violated. |
+| UNKNOWN | No evidence: an owner fact not recorded, no local database, a command not run or timed out, or a target not found. Missing evidence is never PASS. |
+| DEFERRED | An owner-approved deferral, with its justification and sources, whose scope check passes. If the scope check fails the criterion is FAIL. |
+
+**Verdicts are completion gates, not a score.** A section is COMPLETE only
+when every criterion in it is PASS or DEFERRED. The code verdict is IMPL and
+VER together; the operational verdict is OPS. Tier 1 is complete only when
+both are. There are no weights and no percentage: the documented
+requirements do not justify weights. A TIER 1 NOT COMPLETE verdict lists
+every unmet gate (each FAIL or UNKNOWN criterion).
+
+**Guards are not completion.** Architecture guards count as regression
+evidence (VER-GUARD-01). IMPL criteria check the specific behaviour in the
+code, so a passing guard cannot make an architectural requirement PASS.
+
+**Approved deferrals.** Three, each with a scope check:
+
+- IMPL-PG-02: the two physical position tables stay behind one ledger
+  (decision 12, option A). Deferred: a unified physical table and any
+  migration toward it. Not deferred: both tables stay behind the ledger and
+  no table or column is dropped. Read-model coverage of the remaining
+  readers is not deferred (IMPL-PL-03, IMPL-PL-04).
+- OPS-10 and OPS-11: the P0 inspection (D5, D6) and the trading week of
+  demo-bridge evidence (D8). They gate a physical merge, so they are deferred
+  only while no merge is started.
+- OPS-12: My Trades LIVE opens, a future project the owner must authorize
+  (decision 15). Deferred while the surface stays refused.
+
+**The six tracked integration failures** (listed in the owner instruction
+file) are each their own criterion (VER-INT-1 to VER-INT-6). VER-INT-00
+fails if the integration lane fails anywhere else.
+
+## Safety of a measurement
+
+- **Read-only toward the repository.** The scripts write only the output
+  directory. `measurement.json` records `git status` before and after, and
+  `repository_changed_by_measurement` lists anything a measured command
+  changed.
+- **No production access.** `DATABASE_URL` and the `PG*` variables are
+  removed from every command the scorecard runs. Database-backed checks get
+  only the local `SCORECARD_DATABASE_URL`. The integration lane and the
+  database tests write test rows to that local database, as they do in CI.
+- **Owner facts only from `evidence.json`.** Nothing infers a production fact.
+
+## Recording owner evidence
+
+Production facts go in [`evidence.json`](evidence.json) under `facts`, one
+entry per key listed in `_keys`:
+
+```json
+"prod_migrations_applied": {
+  "status": "PASS",
+  "evidence": "All eight files in lib/db/migrations applied on 2026-11-02; check:production-readiness migrationChecks all present",
+  "recorded_by": "Portava",
+  "recorded_on": "2026-11-02"
+}
+```
+
+An entry without `status` (PASS or FAIL), `evidence` and `recorded_by`
+counts as UNKNOWN. Only the owner records these facts.
+
+## Changing the rubric
+
+The rubric was committed before the first measurement. Do not change
+criteria to improve a result. A change is allowed only to fix a check that
+measures the wrong thing, or to add a requirement the owner decides; record
+each change below with the reason, and bump `version`.
+
+### Rubric changelog
+
+- 2.0.0 (2026-10-25): first version, committed before the baseline.
