@@ -5,12 +5,15 @@ import {
   type BrokerHealthStatus,
   type BrokerHealthVerdict,
 } from "./types.js";
+import { classifyHeartbeatAgeMs, heartbeatAgeMsFrom } from "./heartbeatPolicy.js";
 
 // Severity-ordered status resolution. The first matching predicate wins,
 // because operators must see the most-severe blocker first.
 
-const HEARTBEAT_DEGRADED_MS = 30_000;          //  >30s = degraded
-const HEARTBEAT_DISCONNECTED_MS = 60_000;      //  >60s = disconnected
+// Heartbeat bands come from the shared MT5 heartbeat policy (owner decision
+// 17): < 15 s fresh, 15–60 s DEGRADED, >= 60 s / missing / invalid /
+// future-dated → DISCONNECTED. The price-feed lag below is a market-data
+// concept with its own thresholds.
 const PRICE_FEED_WARN_MS = 60_000;             //  >60s = price feed delayed (WARN)
 const PRICE_FEED_DANGER_MS = 180_000;          // >180s = treated as disconnected feed
 
@@ -20,10 +23,10 @@ export function evaluateBrokerHealth(input: BrokerHealthInput): BrokerHealthVerd
   const warnings: string[] = [];
   const blockers: string[] = [];
 
-  const heartbeatAgeMs = input.lastHeartbeatAtMs == null
-    ? Number.POSITIVE_INFINITY
-    : Math.max(0, input.nowMs - input.lastHeartbeatAtMs);
-  const latencyMs = Number.isFinite(heartbeatAgeMs) ? heartbeatAgeMs : null;
+  const rawHeartbeatAgeMs = heartbeatAgeMsFrom(input.lastHeartbeatAtMs, input.nowMs);
+  const heartbeat = classifyHeartbeatAgeMs(rawHeartbeatAgeMs);
+  const heartbeatAgeMs = rawHeartbeatAgeMs == null ? Number.POSITIVE_INFINITY : rawHeartbeatAgeMs;
+  const latencyMs = heartbeat === "unknown" ? null : heartbeatAgeMs;
 
   // 1. MAINTENANCE_MODE — explicit operator toggle, highest priority.
   if (input.maintenanceMode) {
@@ -46,11 +49,13 @@ export function evaluateBrokerHealth(input: BrokerHealthInput): BrokerHealthVerd
   }
 
   // 3. DISCONNECTED — no heartbeat or stale beyond DISCONNECTED threshold.
-  if (heartbeatAgeMs >= HEARTBEAT_DISCONNECTED_MS) {
+  if (heartbeat === "offline" || heartbeat === "unknown") {
     return finish("DISCONNECTED",
       input.lastHeartbeatAtMs == null
         ? ["no MT5 heartbeat ever received"]
-        : [`MT5 heartbeat is ${Math.round(heartbeatAgeMs / 1000)}s stale`],
+        : heartbeat === "unknown"
+          ? ["MT5 heartbeat time is invalid (missing, non-finite or in the future)"]
+          : [`MT5 heartbeat is ${Math.round(heartbeatAgeMs / 1000)}s stale`],
       [],
       ["broker / MT5 is not connected — live execution unavailable"],
       latencyMs,
@@ -90,7 +95,7 @@ export function evaluateBrokerHealth(input: BrokerHealthInput): BrokerHealthVerd
   }
 
   // 6. DEGRADED — heartbeat alive but slow.
-  if (heartbeatAgeMs >= HEARTBEAT_DEGRADED_MS) {
+  if (heartbeat === "degraded") {
     return finish("DEGRADED",
       [`MT5 heartbeat is ${Math.round(heartbeatAgeMs / 1000)}s old`],
       ["heartbeat is degraded — link is alive but slow"],

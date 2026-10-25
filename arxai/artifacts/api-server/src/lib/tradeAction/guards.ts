@@ -6,15 +6,19 @@
 //
 //   1.  authenticated user            (the route enforces this; guard recorded)
 //   2.  ownership of the trade        (resolveUserTrade)
-//   3.  platform trading mode allows  (safetyCore.getStatus.allowedModes)
-//   4.  emergency stop is false       (safetyCore.killSwitchEngaged)
+//   3.  platform stop is released     (lib/safety/platformSwitches.platformStop:
+//                                      the safety-core kill switch refuses every
+//                                      action; the platform emergency stop also
+//                                      refuses new risk on DEMO/LIVE)
+//   4.  platform venue switch allows  (readPlatformSwitches.venueOpen)
 //   5.  user is not suspended         (users.suspendedAt is null)
 //   6.  routing mode resolves         (resolveRouting)
 //   7.  account type matches mode     (LIVE→live, DEMO→demo/unknown)
-//   8.  risk limits pass              (lot vs max lot)
+//   8.  risk limits pass              (platform hard lot cap; the trader's own
+//                                      lot cap is enforced by the Risk Governor, 8b)
 //   9.  command is not a duplicate    (5-min window same user+trade+type)
 //  10.  action has not expired        (expiresAt)
-//  11.  live disclosure accepted      (riskSettings.liveDisclosureAcknowledgedAt)
+//  11.  live disclosure accepted      (user_readiness_state.live_disclosure_accepted_at)
 //  12.  explicit confirmation         (confirmedByUser=true for LIVE)
 //  13.  audit log written             (recorded after pass)
 //  14.  command queueable to a resolved MT5 connection (only for real
@@ -24,16 +28,20 @@ import { db } from "@workspace/db";
 import {
   usersTable,
   tradeActionRequestsTable,
-  riskSettingsTable,
+  userReadinessStateTable,
 } from "@workspace/db/schema";
 import { and, eq, gte, ne } from "drizzle-orm";
-import { getStatus as getSafetyStatus } from "../safetyCore.js";
 import { resolveRouting } from "../adminTrading/routingResolver.js";
+import { platformStop, preCheckStopRefusal, readPlatformSwitches, type PlatformStop } from "../safety/platformSwitches.js";
 import { resolveUserTrade } from "../trades/resolveTrade.js";
-import { enforceRiskGovernor } from "./riskGovernorEnforcement.js";
+import { enforceRiskGovernor, RG_CLASSIFY } from "./riskGovernorEnforcement.js";
 import type { GuardChainResult, GuardCheckResult } from "./types.js";
+import { PLATFORM_RISK_CEILINGS } from "../riskGovernor/preTrade.js";
 
-const MAX_LOT_HARD_CAP = 5.0; // hard ceiling regardless of user settings
+// Hard ceiling regardless of user settings: the Risk Governor's platform lot
+// ceiling, read from the governor so the early refusal and the governor's own
+// rule can never disagree.
+const MAX_LOT_HARD_CAP = PLATFORM_RISK_CEILINGS.maxLotSize;
 
 export interface ActionGuardInput {
   userId: number;
@@ -43,6 +51,12 @@ export interface ActionGuardInput {
   symbol: string;
   side: string | null;
   lotSize: number | null;
+  /** Order prices for the pre-trade rules (loss at stop, price sanity). */
+  requestedPrice?: number | null;
+  stopLoss?: number | null;
+  takeProfit?: number | null;
+  /** Who originated the draft: the trader, Ruby, or the decision engine. */
+  origin?: "manual" | "ruby" | "automation";
   tradeKey: string | null;
   confirmedByUser: boolean;
   expiresAt: Date | null;
@@ -67,14 +81,14 @@ export interface ActionGuardInput {
 }
 
 export interface ActionGuardPrefetched {
-  /** Result of safetyCore.getStatus() — covers kill switch + allowedModes. */
-  safety?: Awaited<ReturnType<typeof getSafetyStatus>>;
+  /** Result of platformStop() — both install-wide stops (emergency stop + safety-core kill switch). */
+  platformStop?: PlatformStop;
   /** Result of resolveRouting() for the requested mode. */
   routing?: Awaited<ReturnType<typeof resolveRouting>>;
   /** users row for this userId. */
   user?: { id: number; suspendedAt?: Date | null } | null;
-  /** risk_settings row (used for max lot + live disclosure). */
-  riskSettings?: { maxLotSize?: number | null; liveDisclosureAcknowledgedAt?: Date | null } | null;
+  /** When the trader accepted the live trading disclosure (user_readiness_state); null = never. */
+  liveDisclosureAcceptedAt?: Date | null;
   /** ISO timestamp the cache was filled — for "stale data" callouts upstream. */
   cachedAt?: string;
   /** Where the cached data came from ('radar-scan' | 'action-center' | etc.). */
@@ -95,23 +109,42 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
   pass("auth", "authenticated user");
 
   // 2. Ownership — re-check trade belongs to user (skip for OPEN with no tradeKey).
+  let trade: Awaited<ReturnType<typeof resolveUserTrade>> = null;
   if (input.tradeKey) {
-    const trade = await resolveUserTrade(input.userId, input.tradeKey);
+    trade = await resolveUserTrade(input.userId, input.tradeKey);
     if (!trade) return fail("ownership", "user owns or is attributed to the trade", "Trade not found or not attributed to you.");
     pass("ownership", "user owns or is attributed to the trade");
   } else {
     pass("ownership", "user owns or is attributed to the trade", "no trade linked (OPEN draft)");
   }
 
-  // 3 + 4. Platform mode + kill switch.
-  const safety = input.prefetched?.safety ?? await getSafetyStatus();
-  if (safety.killSwitchEngaged) return fail("kill_switch", "emergency stop is disengaged", "Emergency stop is engaged. No trade actions can be confirmed.");
+  // 3. Platform stop, read once through the switch authority (platformStop).
+  // This step always enforced the safety-core kill switch for every action;
+  // it keeps doing so. The platform emergency stop is added for actions that
+  // open new risk on DEMO/LIVE, which the pre-trade Risk Governor refuses
+  // anyway (tradingHalt); closes and modifies are left to the governor.
+  // Unreadable → engaged (fail closed).
+  const stop = preCheckStopRefusal(input.prefetched?.platformStop ?? await platformStop(), {
+    own: "safety_core_kill_switch",
+    opensNewRisk: RG_CLASSIFY.OPENS_NEW_RISK.has(input.actionType),
+    venue: input.requestedMode === "SIMULATED" ? "PAPER" : input.requestedMode,
+  });
+  if (stop.engaged) {
+    // Same check id and (for the safety core) the same message as before; the
+    // emergency stop is an additional reason under the same id.
+    return fail("kill_switch", "emergency stop is disengaged", stop.sources.includes("safety_core_kill_switch")
+      ? "Emergency stop is engaged. No trade actions can be confirmed."
+      : `The platform emergency stop is engaged. No new positions can be opened.${stop.reason ? ` ${stop.reason}` : ""}`);
+  }
   pass("kill_switch", "emergency stop is disengaged");
 
-  const allowed = safety.allowedModes ?? [];
+  // The platform venue switch, read through the one switch authority
+  // (lib/safety/platformSwitches), the same reading the venue queues use
+  // (safetyEnvelope). Unreadable → fail closed.
+  const sw = input.requestedMode === "SIMULATED" ? null : await readPlatformSwitches({ ifMissing: "seed" });
   const modeOk = input.requestedMode === "SIMULATED"
-    || (input.requestedMode === "DEMO" && (allowed.includes("PAPER_TRADING") || allowed.includes("LIVE_TRADING")))
-    || (input.requestedMode === "LIVE" && allowed.includes("LIVE_TRADING"));
+    || (input.requestedMode === "DEMO" && !!sw?.venueOpen.DEMO)
+    || (input.requestedMode === "LIVE" && !!sw?.venueOpen.LIVE);
   if (!modeOk) return fail("platform_mode", "platform trading mode allows this action", `Platform mode does not allow ${input.requestedMode} actions right now.`);
   pass("platform_mode", "platform trading mode allows this action");
 
@@ -143,21 +176,15 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
   if (input.lotSize !== null && input.lotSize > MAX_LOT_HARD_CAP) {
     return fail("risk_limits", "risk limits pass", `Lot size ${input.lotSize} exceeds hard cap ${MAX_LOT_HARD_CAP}.`);
   }
-  try {
-    const rs = input.prefetched?.riskSettings !== undefined
-      ? input.prefetched.riskSettings
-      : (await db.select().from(riskSettingsTable).where(eq(riskSettingsTable.userId, input.userId)).limit(1))[0];
-    const maxLot = (rs as { maxLotSize?: number | null } | undefined)?.maxLotSize ?? null;
-    if (rs && maxLot && input.lotSize !== null && input.lotSize > maxLot) {
-      return fail("risk_limits", "risk limits pass", `Lot size ${input.lotSize} exceeds your max ${maxLot}.`);
-    }
-  } catch { /* risk settings table optional */ }
+  // The trader's own lot cap lives in user_risk_settings and is enforced, with
+  // the operator's and the platform's, by the Risk Governor below (8b).
   pass("risk_limits", "risk limits pass");
 
   // 8b. Central Risk Governor enforcement — max open trades, max trades/day,
   //     daily loss cap, close-only mode, allowed symbols/direction,
   //     shared-master allocation. Fail-closed; every block is logged to
-  //     user_risk_events. Only applied to non-SIMULATED actions.
+  //     user_risk_events. The 12 pre-trade rules (lib/riskGovernor) run
+  //     for every mode; the account-level caps for DEMO/LIVE only.
   const rg = await enforceRiskGovernor({
     userId: input.userId,
     actionId: input.actionId,
@@ -166,12 +193,17 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
     symbol: input.symbol,
     side: input.side,
     lotSize: input.lotSize,
+    requestedPrice: input.requestedPrice ?? null,
+    stopLoss: input.stopLoss ?? null,
+    takeProfit: input.takeProfit ?? null,
+    origin: input.origin,
+    position: trade
+      ? { side: trade.side, entryPrice: trade.entryPrice, stopLoss: trade.stopLoss, lotSize: trade.lotSize }
+      : null,
     routingMode: routing.effectiveRoutingMode,
+    connectionId: routing.connectionId ?? null,
     virtualAccountId: routing.virtualAccountId,
     previewMode: input.previewMode,
-    prefetched: input.prefetched ? {
-      riskSettings: input.prefetched.riskSettings,
-    } : undefined,
   });
   if (!rg.passed) {
     return fail("risk_governor", "risk governor allows this action", rg.reason ?? "Blocked by Risk Governor.");
@@ -208,10 +240,11 @@ export async function runActionGuards(input: ActionGuardInput): Promise<GuardCha
   // 11. Live disclosure accepted.
   if (input.requestedMode === "LIVE") {
     try {
-      const rs = input.prefetched?.riskSettings !== undefined
-        ? input.prefetched.riskSettings
-        : (await db.select().from(riskSettingsTable).where(eq(riskSettingsTable.userId, input.userId)).limit(1))[0];
-      const ack = (rs as { liveDisclosureAcknowledgedAt?: Date | null } | undefined)?.liveDisclosureAcknowledgedAt ?? null;
+      // The disclosure is accepted on the readiness page (routes/userReadiness.ts).
+      const ack = input.prefetched?.liveDisclosureAcceptedAt !== undefined
+        ? input.prefetched.liveDisclosureAcceptedAt
+        : (await db.select({ at: userReadinessStateTable.liveDisclosureAcceptedAt }).from(userReadinessStateTable)
+          .where(eq(userReadinessStateTable.userId, input.userId)).limit(1))[0]?.at ?? null;
       if (!ack) return fail("live_disclosure", "live disclosure accepted", "Live disclosure must be acknowledged before live actions.");
     } catch {
       return fail("live_disclosure", "live disclosure accepted", "Live disclosure status unavailable; cannot confirm live action.");

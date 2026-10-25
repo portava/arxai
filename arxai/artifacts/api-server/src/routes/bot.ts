@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { botSettingsTable, tradesTable } from "@workspace/db";
+import { botSettingsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import {
   GetBotStatusResponse,
@@ -10,7 +10,10 @@ import {
   EmergencyStopResponse,
 } from "@workspace/api-zod";
 import { engageKillSwitch } from "../lib/safetyCore.js";
+import { engageKillSwitchForUser } from "../lib/live/liveArming.js";
 import { requireUser } from "../lib/auth/middleware.js";
+import { canSeeLegacyRows } from "../lib/auth/ownerScope.js";
+import { cancelOpenLegacyTrades } from "../lib/trades/paperBook.js";
 
 const router = Router();
 
@@ -104,31 +107,32 @@ router.patch("/bot/settings", requireUser, async (req, res) => {
   }
 });
 
-// POST /bot/emergency-stop — Phase-2: stops THIS user's bot and cancels THIS
-// user's open trades. The kill switch is a system-wide safety lever and stays
-// global by design (one user pulling it must protect every other user).
+// POST /bot/emergency-stop — stops THIS user's bot and cancels THIS user's
+// open trades. Who it halts depends on who pulls it (owner decision
+// 2026-10-24): an owner/operator engages the global safety-core kill switch;
+// a trader engages only their own kill switch, which halts their own new
+// risk on every venue. A trader can never halt the whole platform.
 router.post("/bot/emergency-stop", requireUser, async (req, res) => {
   try {
     const userId = req.authUser!.id;
+    const operator = canSeeLegacyRows(req.authUser);
     const settings = await getOrCreateBotSettings(userId);
-    await engageKillSwitch({ reason: `Emergency stop triggered by user_id=${userId}`, triggeredBy: "user" });
+    if (operator) {
+      await engageKillSwitch({ reason: `Emergency stop triggered by operator user_id=${userId}`, triggeredBy: "user" });
+    } else {
+      await engageKillSwitchForUser({ userId, reason: "Emergency stop from the bot panel" });
+    }
     await db
       .update(botSettingsTable)
       .set({ mode: "OFF", isRunning: false, isPaused: false, updatedAt: new Date() })
       .where(and(eq(botSettingsTable.id, settings.id), eq(botSettingsTable.userId, userId)));
-    const openTrades = await db
-      .select()
-      .from(tradesTable)
-      .where(and(eq(tradesTable.status, "OPEN"), eq(tradesTable.userId, userId)));
-    for (const trade of openTrades) {
-      await db
-        .update(tradesTable)
-        .set({ status: "CANCELLED", closedAt: new Date(), pnl: 0 })
-        .where(and(eq(tradesTable.id, trade.id), eq(tradesTable.userId, userId)));
-    }
+    // The legacy simulated-trade book (`trades`) is written only by lib/trades/paperBook.ts.
+    const openTrades = await cancelOpenLegacyTrades(userId);
     const data = EmergencyStopResponse.parse({
       success: true,
-      message: "Emergency stop executed. Your trades cancelled. Bot is OFF.",
+      message: operator
+        ? "Platform emergency stop engaged. Your trades cancelled. Bot is OFF."
+        : "Emergency stop executed. Your kill switch is engaged, your trades cancelled and your bot is OFF.",
       closedTrades: openTrades.length,
     });
     res.json(data);

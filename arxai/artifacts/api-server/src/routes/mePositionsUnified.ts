@@ -14,14 +14,16 @@
 //  - Emits POSITION_SELECTED on every read (via req.log) so we have an
 //    append-only trail of when each user viewed their open positions.
 
+import { readOpenPositions } from "../lib/positions/openPositions.js";
 import { Router, type Request } from "express";
-import { desc, eq, sql } from "drizzle-orm";
-import { db, mt5StateTable, mt5DemoCommandsTable } from "@workspace/db";
-import { arxLivePositionsTable } from "@workspace/db";
+import { desc, eq } from "drizzle-orm";
+import { db, mt5DemoCommandsTable } from "@workspace/db";
+
 import { requireUser } from "../lib/auth/middleware.js";
-import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
 import { getUserModeScope, modeScopeEnvelope } from "../lib/modeScope/getUserModeScope.js";
 import { resolveLivePositionVisibility } from "../lib/modeScope/livePositionVisibility.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readLatestUserMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -61,7 +63,7 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   // unified positions feed (and vice versa). A PAPER user sees nothing
   // here at all — paper rows live on the paper trades feed.
   const role = (req as Request & { authUser?: { role?: string } }).authUser?.role;
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(userId, { isAdmin });
   // Canonical live-position visibility — shared verbatim with
   // /api/me/live/positions so one real broker position can never produce two
@@ -79,32 +81,33 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   // closed_at on phantoms would shift the relative stale-floor below so the
   // remaining reconciled rows passed it. Ghost reconcile (stale-floor) below
   // stays as defense-in-depth for not-yet-reconciled stale rows.
+  // The canonical open-position read model applies the same exposure predicate
+  // (openLiveExposureCondition) and the same LIVE_SHARED-only mode rule.
   const liveRowsAll = includeLive
-    ? await db.select().from(arxLivePositionsTable)
-        .where(openLiveExposureCondition(userId))
+    ? await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE", modeScope: scope })
     : [];
   const LIVE_STALE_MS = 90_000;
   const newestLiveSync = liveRowsAll.reduce((max, r) => {
-    const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
+    const t = r.observedAt ? new Date(r.observedAt).getTime() : 0;
     return t > max ? t : max;
   }, 0);
   const liveFloor = newestLiveSync > 0 ? newestLiveSync - LIVE_STALE_MS : 0;
   const liveRows = liveRowsAll.filter((r) => {
-    if (r.closedAt) return false;
-    const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
+    if (r.row.closedAt) return false;
+    const t = r.observedAt ? new Date(r.observedAt).getTime() : 0;
     return t >= liveFloor;
   });
   const live = liveRows.map((r) => ({
     scope: "live" as const,
-    brokerTicket: r.brokerTicket,
+    brokerTicket: r.ticket,
     symbol: r.symbol,
     side: r.side,
-    lotSize: Number(r.volume),
+    lotSize: Number(r.lots),
     entryPrice: Number(r.entryPrice),
     currentPrice: r.currentPrice != null ? Number(r.currentPrice) : null,
     stopLoss: r.stopLoss != null ? Number(r.stopLoss) : null,
     takeProfit: r.takeProfit != null ? Number(r.takeProfit) : null,
-    floatingPnl: r.floatingPl != null ? Number(r.floatingPl) : null,
+    floatingPnl: r.floatingPnl != null ? Number(r.floatingPnl) : null,
     openedAt: r.openedAt instanceof Date ? r.openedAt.toISOString() : String(r.openedAt ?? ""),
     sourceCommandId: r.sourceCommandId ?? null,
     accountMode: "LIVE" as const,
@@ -114,12 +117,8 @@ router.get("/me/positions/all", requireUser, async (req, res) => {
   // DEMO — pull latest mt5_state row for this user, then map positions.
   // Skipped entirely when mode is not DEMO so a LIVE_SHARED user never
   // sees their old demo positions bleed into the unified feed.
-  const stateRows = includeDemo
-    ? await db.select().from(mt5StateTable)
-        .where(eq(mt5StateTable.userId, userId))
-        .orderBy(sql`${mt5StateTable.lastSyncAt} DESC NULLS LAST`)
-        .limit(1)
-    : [];
+  const demoState = includeDemo ? await readLatestUserMt5State(userId) : null;
+  const stateRows = demoState ? [demoState] : [];
   const positionsRaw: DemoRaw[] = Array.isArray(stateRows[0]?.positions)
     ? (stateRows[0]!.positions as DemoRaw[]) : [];
 

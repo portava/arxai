@@ -20,13 +20,9 @@
 //   5. NEVER reads/returns tokens, hashes, or broker passwords.
 //   6. EVERY outcome (admitted / refused) writes a SecurityEvent.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { and, eq } from "drizzle-orm";
-import {
-  db,
-  mt5DemoCommandsTable,
-  sharedTradeAttributionTable,
-  type Mt5DemoCommand,
-} from "@workspace/db";
+import { db, mt5DemoCommandsTable, sharedTradeAttributionTable, type Mt5DemoCommand } from "@workspace/db";
 import {
   buildSafetyGateSnapshot,
   canDispatchToMt5,
@@ -38,6 +34,31 @@ import { evaluateRoutedDemoDispatchGate } from "./masterBridgeRouting.js";
 import { findRecentDuplicate, computeCommandFingerprint } from "./demoDispatchDuplicate.js";
 import { recordSecurityEvent } from "../security/events.js";
 import { logger } from "../logger.js";
+import { enforcePreTradeRisk, type IntentAction } from "../riskGovernor/enforce.js";
+
+// Demo command → pre-trade intent. Cancel / sync add no risk.
+const DEMO_INTENT_ACTION: Record<string, IntentAction> = {
+  PLACE_MARKET_ORDER: "OPEN",
+  PLACE_PENDING_ORDER: "OPEN",
+  MODIFY_SLTP: "MODIFY",
+  CLOSE_POSITION: "CLOSE",
+};
+
+// The page or agent that produced a demo command decides its governor origin.
+// Automated producers (autopilot, missions, self-trade, the Position Guardian)
+// may only tighten a stop, exactly as on the live path.
+export function demoIntentOrigin(sourcePage: unknown): "manual" | "ruby" | "automation" {
+  const s = typeof sourcePage === "string" ? sourcePage : "";
+  if (/ruby|assistant/i.test(s)) return "ruby";
+  if (/self_trade|mission|autopilot|automation|position_guardian/i.test(s)) return "automation";
+  return "manual";
+}
+
+function num(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
 export interface ConsumeArgs {
   userId: number;
@@ -49,7 +70,9 @@ export interface ConsumeArgs {
 export interface ConsumeResult {
   ok: boolean;
   reason: string;
-  stage: "LOAD" | "OWNERSHIP" | "STATE" | "PER_USER_GATE" | "DUPLICATE" | "CHOKEPOINT" | "DISPATCH" | "RECONCILE";
+  stage: "LOAD" | "OWNERSHIP" | "STATE" | "PER_USER_GATE" | "DUPLICATE" | "RISK_GATE" | "CHOKEPOINT" | "DISPATCH" | "RECONCILE";
+  /** Rules the pre-trade Risk Governor blocked on (stage RISK_GATE). */
+  riskBlockedBy?: string[];
   command?: Mt5DemoCommand;
   perUserBlockers?: string[];
   duplicateMatchedCommandIds?: string[];
@@ -240,6 +263,81 @@ export async function consumeApprovedCommand(args: ConsumeArgs): Promise<Consume
     };
   }
 
+  // 4b. Pre-trade Risk Governor — the same 12 rules every venue faces,
+  //     against the bridge this command will actually route to. Writes its
+  //     own user_risk_events row; a block never reaches the EA.
+  let riskGatePassed = true;
+  const intentAction = DEMO_INTENT_ACTION[row.commandType];
+  if (intentAction) {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const sideRaw = String(p["side"] ?? "").toUpperCase();
+    // MODIFY_SLTP: the open demo position it changes, by its EA ticket.
+    let position: { entryPrice: number; stopLoss: number | null } | null = null;
+    const ticket = p["ticket"] ?? p["positionTicket"] ?? p["brokerPositionId"];
+    if (intentAction === "MODIFY" && ticket != null) {
+      const [pos] = await demoPositionLedger.select(
+        { entryPrice: demoPositionColumns.entryPrice, stopLoss: demoPositionColumns.stopLoss },
+        {
+          where: and(
+            eq(demoPositionColumns.userId, args.userId),
+            eq(demoPositionColumns.brokerPositionId, String(ticket)),
+          ),
+          limit: 1,
+        },
+      );
+      if (pos?.entryPrice != null) position = { entryPrice: pos.entryPrice, stopLoss: pos.stopLoss ?? null };
+    }
+    const risk = await enforcePreTradeRisk({
+      userId: args.userId,
+      venue: "DEMO",
+      origin: demoIntentOrigin(p["sourcePage"] ?? row.sourcePage),
+      action: intentAction,
+      symbol: String(p["symbol"] ?? ""),
+      side: sideRaw === "BUY" || sideRaw === "SELL" ? sideRaw : null,
+      lots: num(p["lotSize"]),
+      entryPrice: row.commandType === "PLACE_PENDING_ORDER" ? num(p["price"] ?? p["entryPrice"]) : null,
+      stopLoss: num(p["stopLoss"]),
+      takeProfit: num(p["takeProfit"]),
+      intentRef: `demo_command:${row.commandId}`,
+      position,
+    }, {
+      connectionId: gate.evidence.bridgeConnectionId ?? null,
+      virtualAccountId: gate.routing.routedViaMaster ? gate.routing.virtualAccountId ?? null : null,
+      auditContext: { caller: "demo_command_consumer", commandId: row.commandId, commandType: row.commandType },
+    });
+    riskGatePassed = risk.allowed;
+    if (!risk.allowed) {
+      await audit({
+        userId: args.userId,
+        commandId: args.commandId,
+        eventType: "DEMO_DISPATCH_REFUSED",
+        severity: "HIGH",
+        status: "DENIED",
+        message: `Consumer refused: pre-trade Risk Governor blocked (${risk.primaryReason ?? risk.blockedBy.join(",")}).`,
+        metadata: {
+          commandId: args.commandId,
+          commandType: row.commandType,
+          bridgeConnectionId: row.bridgeConnectionId,
+          result: "REFUSED",
+          reason: "RISK_GATE_FAILED",
+          riskBlockedBy: risk.blockedBy,
+          riskAuditEventId: risk.auditEventId,
+          safetyGateSnapshot: row.safetyGateSnapshot,
+        },
+        actorIp: args.actorIp,
+        actorUserAgent: args.actorUserAgent,
+      });
+      return {
+        ok: false,
+        reason: `RISK_GATE_FAILED:${risk.blockedBy.join(",") || "audit_unavailable"}`,
+        stage: "RISK_GATE",
+        command: row,
+        riskBlockedBy: risk.blockedBy,
+        canDispatchToMt5Allowed: false,
+      };
+    }
+  }
+
   // 5. Chokepoint.
   const dispatchInputs: PerUserDispatchInputs = {
     executionMode: "MT5_DEMO_EXECUTION",
@@ -250,7 +348,7 @@ export async function consumeApprovedCommand(args: ConsumeArgs): Promise<Consume
     heartbeatFresh: gate.evidence.heartbeatFresh,
     userConfirmed: !!row.confirmedAt,
     duplicateClear: true,
-    riskGatePassed: true,
+    riskGatePassed,
     liveLocked: true,
     eaVersionAtLeast: gate.evidence.eaVersionAtLeast,
     reportedEaVersion: gate.evidence.reportedEaVersion,

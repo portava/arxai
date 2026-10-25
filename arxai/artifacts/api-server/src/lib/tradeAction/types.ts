@@ -60,6 +60,9 @@ export interface ActionSummary {
   guardResult: GuardChainResult | null;
   mt5Ticket: string | null;
   tradeCommandId: number | null;
+  /** DEMO | LIVE once the action became a governed venue command; null for SIMULATED. */
+  executionVenue: string | null;
+  venueCommandId: string | null;
   aiDecisionId: number | null;
   // Phase UX9 — execution result surface.
   mt5OrderTicket: string | null;

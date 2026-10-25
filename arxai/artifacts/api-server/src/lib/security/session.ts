@@ -74,25 +74,43 @@ export function dbRoleFor(role: AuthRole): "OWNER" | "ADMIN" | "TRADER" | "VIEWE
   }
 }
 
+/** The one role model: a signed-in user's role is their users.role, read on every request. */
+export function roleForUser(dbRole: string | null | undefined): AuthRole {
+  const r = String(dbRole ?? "").toUpperCase();
+  return r === "OWNER" ? "OWNER" : r === "ADMIN" ? "ADMIN" : r === "TESTER" ? "TESTER" : "VIEWER";
+}
+
+/** Dev/test-only role channels (dev-owner-login cookie, header, implicit owner). Never in production. */
+export const DEV_ROLE_CHANNELS = !IS_PROD;
+
 export function getSessionFromReq(req: Request): SessionPayload {
-  // 1. Signed cookie (preferred — the only trustable source in production).
   const cookieRaw = (req as Request & { cookies?: Record<string, string> }).cookies?.[COOKIE_NAME];
   const fromCookie = decodeSession(cookieRaw);
-  if (fromCookie) return fromCookie;
 
-  // 2. x-security-role header — DEV ONLY back-compat. Many existing tester
-  //    pages send this header to satisfy admin-gated reads. In production it
-  //    is rejected so it cannot be used as an auth-bypass channel.
-  if (!IS_PROD || ALLOW_DEV_AUTH) {
-    const headerRole = String(req.header("x-security-role") ?? "").toUpperCase();
-    if ((AUTH_ROLES as readonly string[]).includes(headerRole)) {
-      return { sid: "header", role: headerRole as AuthRole, ts: Date.now() };
-    }
+  // 1. A signed-in user (arx_user_session, verified by attachAuthUser): the
+  //    role is users.role as it is NOW. A role cookie minted at login is only
+  //    a mirror; it can neither raise nor outlive the user's current role, so
+  //    a demoted admin loses admin on their next request, and an operator
+  //    previewing as a user (authUser.role downgraded) is a user everywhere.
+  const authUser = (req as Request & { authUser?: { id: number; role?: string | null } }).authUser;
+  if (authUser) {
+    return { sid: fromCookie?.sid ?? `user:${authUser.id}`, role: roleForUser(authUser.role), ts: Date.now(), uid: authUser.id };
   }
+  // A login-minted cookie whose user session is gone grants nothing.
+  if (fromCookie && typeof fromCookie.uid === "number") return { sid: fromCookie.sid, role: "VIEWER", ts: Date.now() };
 
-  // 3. Default: dev/test → implicit OWNER (so the workflow is never
-  //    accidentally locked out). Production → VIEWER (read-only safe default).
-  return { sid: "anon", role: !IS_PROD ? "OWNER" : "VIEWER", ts: Date.now() };
+  // 2. Production: no other channel. No signed-in user = read-only VIEWER.
+  if (!DEV_ROLE_CHANNELS) return { sid: "anon", role: "VIEWER", ts: Date.now() };
+
+  // 3. Dev/test only (never production, whatever ALLOW_DEV_AUTH says): the
+  //    dev-owner-login cookie, the x-security-role header used by the QA
+  //    harness, and an implicit OWNER so a local workflow is not locked out.
+  if (fromCookie) return fromCookie;
+  const headerRole = String(req.header("x-security-role") ?? "").toUpperCase();
+  if ((AUTH_ROLES as readonly string[]).includes(headerRole)) {
+    return { sid: "header", role: headerRole as AuthRole, ts: Date.now() };
+  }
+  return { sid: "anon", role: "OWNER", ts: Date.now() };
 }
 
 export function setSessionCookie(res: Response, role: AuthRole, uid?: number): SessionPayload {

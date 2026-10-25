@@ -40,7 +40,7 @@
 //     no-op and the router falls through to the next provider.
 
 import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
-import { resolveCanonicalSymbol, type CanonicalAssetClass } from "./symbolResolution.js";
+import { resolveCanonicalSymbol, type CanonicalAssetClass } from "../instruments/index.js";
 import {
   getDerivCandles,
   getDerivTick,

@@ -279,3 +279,24 @@ test("every stamped sourcePage literal is in the route allowlist", () => {
 });
 
 export {};
+
+test("governed position ops stamp sources the integrity check allows", async () => {
+  // Stamped through constants, so the literal scan above cannot see them; a
+  // refused route would block every Guardian stop restore and page edit at dispatch.
+  const { GUARDIAN_SOURCE } = await import("../../positionGuardian/reconcile.js");
+  const page = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../routes/livePositions.ts"), "utf8")
+    .match(/POSITIONS_PAGE_SOURCE\s*=\s*"([^"]+)"/)?.[1];
+  assert.ok(page, "livePositions.ts names POSITIONS_PAGE_SOURCE");
+  for (const s of [GUARDIAN_SOURCE, page!]) assert.equal(isRouteAllowed(s), true, s);
+});
+
+test("Trade Action Center and My Trades live sources pass the integrity check", async () => {
+  // Trade Action stamps constants and My Trades picks its close source with a
+  // ternary, so the literal scan above cannot see either. A refused route
+  // blocks every confirmed live Trade Action and every live My Trades close.
+  const { TRADE_ACTION_SOURCE, TRADE_ACTION_RUBY_SOURCE } = await import("../../tradeAction/route.js");
+  const meTrades = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../routes/meTrades.ts"), "utf8");
+  const closes = [...meTrades.matchAll(/sourcePage:\s*isShared\s*\?\s*"([A-Z_]+)"\s*:\s*"([A-Z_]+)"/g)].flatMap((m) => [m[1]!, m[2]!]);
+  assert.ok(closes.length >= 2, "meTrades.ts names its live close sources");
+  for (const s of [TRADE_ACTION_SOURCE, TRADE_ACTION_RUBY_SOURCE, ...closes]) assert.equal(isRouteAllowed(s), true, s);
+});

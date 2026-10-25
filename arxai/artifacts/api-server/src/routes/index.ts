@@ -395,7 +395,7 @@ import autopilotRouter from "./autopilot.js";
 router.use(autopilotRouter);
 
 // Risk Governor 2.0 + Account Protection.
-import riskGov2Router from "./riskGovernor2.js";
+import riskGov2Router from "./riskProfile.js";
 router.use(riskGov2Router);
 
 // Shadow Mode + Forward Testing + Strategy Tournament + Promotion Gates.

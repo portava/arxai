@@ -25,6 +25,13 @@ import type {
   SignalScores,
 } from "./signalIntelligence.types.js";
 import { atr, clamp, mean, round } from "./_math.js";
+import {
+  MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+  classifyHeartbeatAgeSeconds,
+} from "../broker-health/heartbeatPolicy.js";
+
+/** Execution-score curve point: inside the degraded band, ages past 2 x the fresh bound (30 s) cost the heavy penalty. */
+const SIGNAL_SCORE_HEAVY_HEARTBEAT_PENALTY_AFTER_S = MT5_HEARTBEAT_FRESH_BELOW_SECONDS * 2;
 
 // ── Late detection ───────────────────────────────────────────────────────────
 
@@ -189,10 +196,14 @@ function scoreExecution(execution: SignalExecutionInput | null, scalp: SignalSca
   if (!execution) return 50;
   let s = 70;
   if (execution.bridgeConnected === false) s -= 30;
-  if (execution.heartbeatAgeSeconds != null) {
-    if (execution.heartbeatAgeSeconds > 30) s -= 25;
-    else if (execution.heartbeatAgeSeconds > 15) s -= 12;
-  }
+  // Shared MT5 heartbeat policy (owner decision 17): a degraded heartbeat
+  // (>= 15 s) costs 12; offline (>= 60 s) costs 25. The score's own heavier
+  // step from 2 x the fresh bound (30 s) inside the degraded band is kept as a
+  // separately named scoring curve point. Missing / invalid: no penalty here
+  // (as before for null); bridgeConnected carries disconnection.
+  const hb = classifyHeartbeatAgeSeconds(execution.heartbeatAgeSeconds);
+  if (hb === "offline" || (hb === "degraded" && (execution.heartbeatAgeSeconds as number) > SIGNAL_SCORE_HEAVY_HEARTBEAT_PENALTY_AFTER_S)) s -= 25;
+  else if (hb === "degraded") s -= 12;
   if (execution.liveSpreadPoints != null && execution.liveSpreadPoints > 0) {
     if (execution.liveSpreadPoints > 50) s -= 20;
     else if (execution.liveSpreadPoints > 25) s -= 10;

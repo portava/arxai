@@ -231,6 +231,17 @@ test("fails closed when the owned connection is absent or heartbeat is stale", a
   assert.equal(staleHealthData.reason, "HEALTH_UNAVAILABLE");
 });
 
+test("health uses the shared heartbeat policy: online below 60 s, never on a future-dated heartbeat", async () => {
+  const health = async (lastHeartbeat: Date) =>
+    new Mt5ReadOnlyAdapter(fixtureReader({ connection: connection({ lastHeartbeat }) }), 7, 44, () => NOW).readHealth();
+  // Degraded (15–60 s) is still a live link for the read contract.
+  assert.equal((await health(new Date(NOW - 59_999))).connected, true);
+  // Exactly 60 s is offline (was still fresh at <= 60 s before owner decision 17).
+  assert.equal((await health(new Date(NOW - 60_000))).status, "STALE");
+  // A future-dated heartbeat is unknown, never connected.
+  assert.equal((await health(new Date(NOW + 1_000))).connected, false);
+});
+
 test("stale discovery and market snapshots remain explicitly unavailable", async () => {
   const staleDiscovery = new Mt5ReadOnlyAdapter(
     fixtureReader({

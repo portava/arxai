@@ -31,22 +31,21 @@
 // never weakens any existing auth/trading gate — it only further restricts who
 // may be live-activated.
 
+import { isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
+import { getConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
 import {
   db,
   usersTable,
   userMasterLiveAccessTable,
   virtualTradingAccountsTable,
-  globalTradingSettingsTable,
-  mt5ConnectionTable,
 } from "@workspace/db";
 import { getMyArming } from "./liveArming.js";
 import { resolveRouting } from "../adminTrading/routingResolver.js";
-import { resolveLiveBrokerExecutionEnabledAsync } from "./phaseBConfig.js";
+import { loadPlatformSettings, platformStopWith, stopSourceEngaged, type PlatformStopSource } from "../safety/platformSwitches.js";
 import { normalizeProductRole, type ProductRole } from "../auth/productRole.js";
 import { logger } from "../logger.js";
 
-const HEARTBEAT_FRESH_SECONDS = 15;
 
 export interface ApprovedTraderLiveState {
   userId: number;
@@ -78,7 +77,12 @@ export interface ApprovedTraderLiveState {
   // ---- Platform live posture ------------------------------------------
   serverLiveExecutionOn: boolean;
   operatorLiveArmed: boolean;
+  /** The platform emergency stop on its own (labelled per-source field; kept for clients that parse it). */
   emergencyKillSwitch: boolean;
+  /** Either install-wide stop (the emergency stop or the safety-core kill switch), from platformStop(). */
+  platformStopEngaged: boolean;
+  /** The engaged install-wide stops, emergency stop first. */
+  platformStopSources: PlatformStopSource[];
   sharedLiveTradingEnabled: boolean;
 
   // ---- Risk profile ---------------------------------------------------
@@ -127,6 +131,7 @@ const USER_SAFE_BLOCK_COPY: Record<string, string> = {
     "Your live shared-bridge allocation is still being set up. Contact your operator to finish onboarding.",
   KILL_SWITCH_ENGAGED: "Live trading is halted by the kill switch. Reset it before arming again.",
   EMERGENCY_STOP_ACTIVE: "Live trading is paused platform-wide. Trades will resume once your operator re-enables it.",
+  SAFETY_CORE_KILL_SWITCH_ENGAGED: "Live trading is paused platform-wide by the safety kill switch. Trades will resume once your operator releases it.",
   LIVE_CONFIRMATION_REQUIRED:
     "Complete live confirmation to start placing live orders. Your operator can enable Full Live Activation on your behalf.",
   LIVE_ARMING_PENDING:
@@ -157,6 +162,8 @@ function failClosedState(userId: number): ApprovedTraderLiveState {
     serverLiveExecutionOn: false,
     operatorLiveArmed: false,
     emergencyKillSwitch: true,
+    platformStopEngaged: true,
+    platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
     sharedLiveTradingEnabled: false,
     riskProfileReady: false,
     approvedSymbols: [],
@@ -186,7 +193,7 @@ export async function buildApprovedTraderLiveState(
   const includeBridgeHeartbeat = opts.includeBridgeHeartbeat !== false;
 
   try {
-    const [userRow, accessRow, vAccounts, arming, settingsRow, serverLiveOn] =
+    const [userRow, accessRow, vAccounts, arming, platform] =
       await Promise.all([
         db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1).then((r) => r[0] ?? null),
         db
@@ -203,8 +210,9 @@ export async function buildApprovedTraderLiveState(
           .from(virtualTradingAccountsTable)
           .where(eq(virtualTradingAccountsTable.userId, userId)),
         getMyArming(userId),
-        db.select().from(globalTradingSettingsTable).limit(1).then((r) => r[0] ?? null),
-        resolveLiveBrokerExecutionEnabledAsync(),
+        // One read of the platform switches (lib/safety/platformSwitches):
+        // missing or unreadable settings fail closed.
+        loadPlatformSettings(),
       ]);
 
     // ---- Classification ------------------------------------------------
@@ -241,9 +249,15 @@ export async function buildApprovedTraderLiveState(
     const killSwitchEngaged = arming?.killSwitchEngaged === true;
 
     // ---- Platform posture ---------------------------------------------
-    const operatorLiveArmed = settingsRow?.liveBrokerExecutionArmed === true;
-    const emergencyKillSwitch = settingsRow?.emergencyKillSwitch !== false; // default true (fail-closed)
-    const sharedLiveTradingEnabled = settingsRow?.sharedLiveTradingEnabled === true;
+    const serverLiveOn = platform.switches.liveBrokerExecution.enabled;
+    const operatorLiveArmed = platform.switches.liveBrokerExecution.operatorArmed;
+    // Both install-wide stops through platformStop(). The emergency stop comes
+    // from the switches read above (missing/unreadable → engaged, fail-closed),
+    // so emergencyKillSwitch keeps its meaning; the safety-core kill switch is
+    // read alongside (unreadable → engaged).
+    const stop = await platformStopWith(platform.switches);
+    const emergencyKillSwitch = stopSourceEngaged(stop, "platform_emergency_stop");
+    const sharedLiveTradingEnabled = platform.config?.sharedLiveTradingEnabled === true;
 
     // ---- Risk profile -------------------------------------------------
     const approvedSymbols = Array.isArray(accessRow?.allowedSymbols)
@@ -266,17 +280,11 @@ export async function buildApprovedTraderLiveState(
         const routing = await resolveRouting({ userId, mode: "LIVE" });
         if (routing.ok && routing.connectionId) {
           bridgeConnectionId = routing.connectionId;
-          const [conn] = await db
-            .select({ lastHeartbeat: mt5ConnectionTable.lastHeartbeat })
-            .from(mt5ConnectionTable)
-            .where(eq(mt5ConnectionTable.id, routing.connectionId))
-            .limit(1);
+          const conn = await getConnection(routing.connectionId);
           bridgeHeartbeatAgeSeconds = conn?.lastHeartbeat
             ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)
             : null;
-          bridgeHeartbeatFresh =
-            bridgeHeartbeatAgeSeconds !== null &&
-            bridgeHeartbeatAgeSeconds <= HEARTBEAT_FRESH_SECONDS;
+          bridgeHeartbeatFresh = isHeartbeatAgeSecondsFresh(bridgeHeartbeatAgeSeconds);
           bridgeConnected = bridgeHeartbeatFresh;
         }
       } catch (err) {
@@ -300,6 +308,7 @@ export async function buildApprovedTraderLiveState(
     else if (!liveBridgeAssigned) blockingReasonCode = "LIVE_BRIDGE_ASSIGNMENT_PENDING";
     else if (killSwitchEngaged) blockingReasonCode = "KILL_SWITCH_ENGAGED";
     else if (emergencyKillSwitch) blockingReasonCode = "EMERGENCY_STOP_ACTIVE";
+    else if (stop.engaged) blockingReasonCode = "SAFETY_CORE_KILL_SWITCH_ENGAGED";
     else if (!executionActivated) blockingReasonCode = "LIVE_CONFIRMATION_REQUIRED";
     else if (!armed) blockingReasonCode = "LIVE_ARMING_PENDING";
     else if (!serverLiveOn) blockingReasonCode = "SERVER_LIVE_EXECUTION_OFF";
@@ -330,6 +339,8 @@ export async function buildApprovedTraderLiveState(
       serverLiveExecutionOn: serverLiveOn,
       operatorLiveArmed,
       emergencyKillSwitch,
+      platformStopEngaged: stop.engaged,
+      platformStopSources: [...stop.sources],
       sharedLiveTradingEnabled,
       riskProfileReady,
       approvedSymbols,

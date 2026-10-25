@@ -12,6 +12,7 @@ import {
   vaultEventsTable,
 } from "@workspace/db";
 import { desc, eq, and } from "drizzle-orm";
+import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -62,11 +63,27 @@ const EntryPatch = z.object({
   isActive:         z.boolean().optional(),
 }).strict();
 
+// Playbooks belong to the trader who wrote them; entries are reached only
+// through a playbook the caller owns. Anything else answers 404.
+router.use("/playbooks", requireUser);
+router.use("/playbook-entries", requireUser);
+
+async function ownPlaybook(id: number, userId: number) {
+  return (await db.select().from(tradingPlaybooksTable)
+    .where(and(eq(tradingPlaybooksTable.id, id), eq(tradingPlaybooksTable.userId, userId))).limit(1))[0] ?? null;
+}
+
+async function ownEntry(id: number, userId: number) {
+  const e = (await db.select().from(playbookEntriesTable).where(eq(playbookEntriesTable.id, id)).limit(1))[0];
+  return e && (await ownPlaybook(e.playbookId, userId)) ? e : null;
+}
+
 // ── Playbooks ──────────────────────────────────────────────────────────────
 router.post("/playbooks", async (req, res): Promise<void> => {
   try {
     const b = PlaybookCreate.parse(req.body ?? {});
     const ins = await db.insert(tradingPlaybooksTable).values({
+      userId: req.authUser!.id,
       title: b.title, description: b.description ?? "",
       isActive: b.isActive ? 1 : 0,
     }).returning();
@@ -79,15 +96,16 @@ router.post("/playbooks", async (req, res): Promise<void> => {
   }
 });
 
-router.get("/playbooks", async (_req, res): Promise<void> => {
+router.get("/playbooks", async (req, res): Promise<void> => {
   const rows = await db.select().from(tradingPlaybooksTable)
+    .where(eq(tradingPlaybooksTable.userId, req.authUser!.id))
     .orderBy(desc(tradingPlaybooksTable.updatedAt));
   ok(res, { playbooks: rows });
 });
 
-router.get("/playbooks/active", async (_req, res): Promise<void> => {
+router.get("/playbooks/active", async (req, res): Promise<void> => {
   const r = (await db.select().from(tradingPlaybooksTable)
-    .where(eq(tradingPlaybooksTable.isActive, 1))
+    .where(and(eq(tradingPlaybooksTable.userId, req.authUser!.id), eq(tradingPlaybooksTable.isActive, 1)))
     .orderBy(desc(tradingPlaybooksTable.updatedAt)).limit(1))[0];
   if (!r) { ok(res, { playbook: null }); return; }
   ok(res, { playbook: r });
@@ -106,9 +124,10 @@ router.patch("/playbooks/:id", async (req, res): Promise<void> => {
     if (b.title !== undefined)       patch["title"]       = b.title;
     if (b.description !== undefined) patch["description"] = b.description;
     if (b.isActive !== undefined)    patch["isActive"]    = b.isActive ? 1 : 0;
-    await db.update(tradingPlaybooksTable).set(patch).where(eq(tradingPlaybooksTable.id, id));
-    const r = (await db.select().from(tradingPlaybooksTable)
-      .where(eq(tradingPlaybooksTable.id, id)).limit(1))[0];
+    if (!(await ownPlaybook(id, req.authUser!.id))) { fail(res, 404, "Not found"); return; }
+    await db.update(tradingPlaybooksTable).set(patch)
+      .where(and(eq(tradingPlaybooksTable.id, id), eq(tradingPlaybooksTable.userId, req.authUser!.id)));
+    const r = await ownPlaybook(id, req.authUser!.id);
     if (!r) { fail(res, 404, "Not found"); return; }
     ok(res, { playbook: r });
   } catch (err) {
@@ -122,10 +141,10 @@ router.patch("/playbooks/:id", async (req, res): Promise<void> => {
 router.post("/playbook-entries", async (req, res): Promise<void> => {
   try {
     const b = EntryCreate.parse(req.body ?? {});
-    const pb = (await db.select().from(tradingPlaybooksTable)
-      .where(eq(tradingPlaybooksTable.id, b.playbookId)).limit(1))[0];
+    const pb = await ownPlaybook(b.playbookId, req.authUser!.id);
     if (!pb) { fail(res, 404, "Playbook not found"); return; }
     const ins = await db.insert(playbookEntriesTable).values({
+      userId: req.authUser!.id,
       playbookId: b.playbookId,
       entryType: b.entryType,
       title: b.title,
@@ -150,6 +169,7 @@ router.post("/playbook-entries", async (req, res): Promise<void> => {
 router.get("/playbook-entries", async (req, res): Promise<void> => {
   const playbookId = Number(req.query["playbookId"]);
   if (!Number.isFinite(playbookId)) { fail(res, 400, "playbookId required"); return; }
+  if (!(await ownPlaybook(playbookId, req.authUser!.id))) { fail(res, 404, "Playbook not found"); return; }
   const entryType = req.query["entryType"] as string | undefined;
   const cond = entryType
     ? and(eq(playbookEntriesTable.playbookId, playbookId), eq(playbookEntriesTable.entryType, entryType))
@@ -170,6 +190,7 @@ router.patch("/playbook-entries/:id", async (req, res): Promise<void> => {
     if (b.description !== undefined)      patch["description"]     = b.description;
     if (b.confidenceScore !== undefined)  patch["confidenceScore"] = b.confidenceScore;
     if (b.isActive !== undefined)         patch["isActive"]        = b.isActive ? 1 : 0;
+    if (!(await ownEntry(id, req.authUser!.id))) { fail(res, 404, "Not found"); return; }
     await db.update(playbookEntriesTable).set(patch).where(eq(playbookEntriesTable.id, id));
     const r = (await db.select().from(playbookEntriesTable)
       .where(eq(playbookEntriesTable.id, id)).limit(1))[0];
@@ -209,14 +230,15 @@ router.post("/playbooks/:id/suggest", async (req, res): Promise<void> => {
   try {
     const id = Number(req.params["id"]);
     if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
-    const pb = (await db.select().from(tradingPlaybooksTable)
-      .where(eq(tradingPlaybooksTable.id, id)).limit(1))[0];
+    const userId = req.authUser!.id;
+    const pb = await ownPlaybook(id, userId);
     if (!pb) { fail(res, 404, "Playbook not found"); return; }
 
+    // Suggestions are mined from the caller's own journal, debriefs and reviews.
     const [journals, debriefs, reviews, existing] = await Promise.all([
-      db.select().from(tradeJournalTable).limit(500),
-      db.select().from(postTradeDebriefsTable).limit(500),
-      db.select().from(weeklyReviewsTable).limit(50),
+      db.select().from(tradeJournalTable).where(eq(tradeJournalTable.userId, userId)).limit(500),
+      db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId)).limit(500),
+      db.select().from(weeklyReviewsTable).where(eq(weeklyReviewsTable.userId, userId)).limit(50),
       db.select().from(playbookEntriesTable).where(eq(playbookEntriesTable.playbookId, id)),
     ]);
     const existingTitles = new Set(existing.map((e) => e.title.trim().toLowerCase()));

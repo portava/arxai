@@ -15,6 +15,9 @@
 //     NOT return entire rows from mt5_connection.
 //   * No execution. No order placement. No live-trade flags toggled.
 
+import { livePositionLedger, livePositionColumns, readAttributedLivePositions } from "../lib/positions/ledger.js";
+import { countOpenPositions, readOpenPositions } from "../lib/positions/openPositions.js";
+import { getConnection } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import type { Request } from "express";
 import { db } from "@workspace/db";
@@ -22,17 +25,16 @@ import {
   virtualTradingAccountsTable,
   sharedTradeAttributionTable,
   sharedMasterAccountsTable,
-  mt5ConnectionTable,
-  arxLivePositionsTable,
   unattributedMasterTradesTable,
 } from "@workspace/db/schema";
-import { and, desc, eq, gte, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
   getUserAllocationView,
   recomputeMasterPool,
   resolveActiveMasterConnectionId,
 } from "../lib/live/masterBridgePool.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -43,7 +45,7 @@ function isAdminOrOwner(req: Request): boolean {
   const role = String(
     (req as Request & { authUser?: { role?: string } }).authUser?.role ?? "",
   ).toUpperCase();
-  return role === "ADMIN" || role === "OWNER";
+  return operatorRoleFromSession(role) != null;
 }
 
 /**
@@ -66,14 +68,7 @@ async function buildMasterMt5Snapshot(userId: number) {
   let accountNumberMasked: string | null = null;
   let masterOwnerUserId: number | null = null;
   if (masterConnId != null) {
-    const connRows = await db.select({
-      userId: mt5ConnectionTable.userId,
-      brokerName: mt5ConnectionTable.brokerName,
-      serverName: mt5ConnectionTable.serverName,
-      accountType: mt5ConnectionTable.accountType,
-      accountNumber: mt5ConnectionTable.accountNumber,
-    }).from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
-    const c = connRows[0];
+    const c = await getConnection(masterConnId);
     if (c) {
       masterOwnerUserId = c.userId ?? null;
       brokerName = c.brokerName ?? null;
@@ -90,15 +85,12 @@ async function buildMasterMt5Snapshot(userId: number) {
   // only (not closed). Falls back to 0 when the master is unknown.
   let openPositions = 0;
   if (masterOwnerUserId != null && masterConnId != null) {
-    const openRows = await db.select({ count: sql<number>`count(*)::int` })
-      .from(arxLivePositionsTable)
-      .where(and(
-        eq(arxLivePositionsTable.userId, masterOwnerUserId),
-        eq(arxLivePositionsTable.bridgeConnectionId, masterConnId),
-        isNull(arxLivePositionsTable.closedAt),
-        isNull(arxLivePositionsTable.reconcileState),
-      ));
-    openPositions = Number(openRows[0]?.count ?? 0);
+    openPositions = await countOpenPositions({
+      userId: masterOwnerUserId,
+      venue: "LIVE",
+      basis: "EXPOSURE",
+      bridgeConnectionId: masterConnId,
+    });
   }
 
   // Real broker floating P/L = equity − balance, straight from the EA
@@ -385,37 +377,33 @@ router.get("/me/shared-account/positions", requireUser, async (req, res) => {
         res.json({ ok: true, userId, scope: "MASTER", masterConnectionId: null, count: 0, lastMt5SyncAt: null, reconciledOrphanCount: 0, rows: [], note: "MASTER_BRIDGE_NOT_PINNED" });
         return;
       }
-      const connRows = await db.select({ ownerId: mt5ConnectionTable.userId })
-        .from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
-      const masterOwnerUserId = connRows[0]?.ownerId ?? null;
+      const masterOwnerUserId = (await getConnection(masterConnId))?.userId ?? null;
       if (masterOwnerUserId == null) {
         res.json({ ok: true, userId, scope: "MASTER", masterConnectionId: masterConnId, count: 0, lastMt5SyncAt: null, reconciledOrphanCount: 0, rows: [], note: "MASTER_CONNECTION_MISSING" });
         return;
       }
 
       // All real OPEN master positions — not closed, not operator-reconciled.
-      const masterRows = await db.select({
-        id: arxLivePositionsTable.id,
-        brokerTicket: arxLivePositionsTable.brokerTicket,
-        symbol: arxLivePositionsTable.symbol,
-        side: arxLivePositionsTable.side,
-        volume: arxLivePositionsTable.volume,
-        entryPrice: arxLivePositionsTable.entryPrice,
-        currentPrice: arxLivePositionsTable.currentPrice,
-        pnl: arxLivePositionsTable.floatingPl,
-        stopLoss: arxLivePositionsTable.stopLoss,
-        takeProfit: arxLivePositionsTable.takeProfit,
-        openedAt: arxLivePositionsTable.openedAt,
-        lastSyncedAt: arxLivePositionsTable.lastSyncedAt,
-      })
-        .from(arxLivePositionsTable)
-        .where(and(
-          eq(arxLivePositionsTable.userId, masterOwnerUserId),
-          eq(arxLivePositionsTable.bridgeConnectionId, masterConnId),
-          isNull(arxLivePositionsTable.closedAt),
-          isNull(arxLivePositionsTable.reconcileState),
-        ))
-        .orderBy(desc(arxLivePositionsTable.openedAt));
+      const masterRows = (await readOpenPositions({
+        userId: masterOwnerUserId,
+        venue: "LIVE",
+        basis: "EXPOSURE",
+        bridgeConnectionId: masterConnId,
+        order: "openedAtDesc",
+      })).map((p) => ({
+        id: p.id,
+        brokerTicket: p.ticket,
+        symbol: p.symbol,
+        side: p.side,
+        volume: p.lots,
+        entryPrice: p.entryPrice,
+        currentPrice: p.currentPrice,
+        pnl: p.floatingPnl,
+        stopLoss: p.stopLoss,
+        takeProfit: p.takeProfit,
+        openedAt: p.row.openedAt,
+        lastSyncedAt: p.row.lastSyncedAt,
+      }));
 
       // Label by ARX attribution WITHOUT widening any user's visibility. This is
       // the owner/admin operator view; we look up attributions for the pinned
@@ -473,14 +461,17 @@ router.get("/me/shared-account/positions", requireUser, async (req, res) => {
 
       // Recently operator-reconciled master positions (honest "N reconciled" note).
       const dayAgo = new Date(now - 24 * 60 * 60 * 1000);
-      const recRows = await db.select({ count: sql<number>`count(*)::int` })
-        .from(arxLivePositionsTable)
-        .where(and(
-          eq(arxLivePositionsTable.userId, masterOwnerUserId),
-          eq(arxLivePositionsTable.bridgeConnectionId, masterConnId),
-          isNotNull(arxLivePositionsTable.reconcileState),
-          gte(arxLivePositionsTable.reconciledAt, dayAgo),
-        ));
+      const recRows = await livePositionLedger.select(
+        { count: sql<number>`count(*)::int` },
+        {
+          where: and(
+            eq(livePositionColumns.userId, masterOwnerUserId),
+            eq(livePositionColumns.bridgeConnectionId, masterConnId),
+            isNotNull(livePositionColumns.reconcileState),
+            gte(livePositionColumns.reconciledAt, dayAgo),
+          ),
+        },
+      );
       const reconciledOrphanCount = Number(recRows[0]?.count ?? 0);
 
       res.json({
@@ -492,40 +483,7 @@ router.get("/me/shared-account/positions", requireUser, async (req, res) => {
       return;
     }
 
-    const raw = await db.select({
-      id: sharedTradeAttributionTable.id,
-      virtualAccountId: sharedTradeAttributionTable.virtualAccountId,
-      sharedMasterAccountId: sharedTradeAttributionTable.sharedMasterAccountId,
-      symbol: sharedTradeAttributionTable.symbol,
-      side: sharedTradeAttributionTable.side,
-      lotSize: sharedTradeAttributionTable.lotSize,
-      stopLoss: sharedTradeAttributionTable.stopLoss,
-      takeProfit: sharedTradeAttributionTable.takeProfit,
-      slippage: sharedTradeAttributionTable.slippage,
-      brokerTicket: arxLivePositionsTable.brokerTicket,
-      entryPrice: arxLivePositionsTable.entryPrice,
-      currentPrice: arxLivePositionsTable.currentPrice,
-      pnl: arxLivePositionsTable.floatingPl,
-      openedAt: arxLivePositionsTable.openedAt,
-      lastSyncedAt: arxLivePositionsTable.lastSyncedAt,
-    })
-      .from(sharedTradeAttributionTable)
-      .innerJoin(arxLivePositionsTable, and(
-        // Per-user isolation: arx_live_positions uniqueness is (user_id,
-        // broker_ticket), NOT global — so the join MUST be scoped by user or a
-        // shared ticket string could cross-join another user's live position.
-        eq(arxLivePositionsTable.userId, sharedTradeAttributionTable.userId),
-        eq(arxLivePositionsTable.brokerTicket, sharedTradeAttributionTable.mt5PositionTicket),
-        isNull(arxLivePositionsTable.closedAt),
-        isNull(arxLivePositionsTable.reconcileState),
-      ))
-      .where(and(
-        eq(sharedTradeAttributionTable.userId, userId),
-        eq(sharedTradeAttributionTable.status, "open"),
-        isNotNull(sharedTradeAttributionTable.mt5PositionTicket),
-        ne(sharedTradeAttributionTable.mt5PositionTicket, ""),
-      ))
-      .orderBy(desc(arxLivePositionsTable.openedAt));
+    const raw = await readAttributedLivePositions(userId);
 
     const now = Date.now();
     let lastMt5SyncAt: Date | null = null;

@@ -4,9 +4,10 @@
 // and write an admin_action_audit_log row before responding (fail-CLOSED).
 // No route ever writes to arx_live_commands or to any live execution table.
 
+import { livePositionColumns } from "../lib/positions/ledger.js";
+import { selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
 import { Router, type Request, type Response } from "express";
-import { and, isNull } from "drizzle-orm";
-import { db, arxLivePositionsTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import { adminActionAuditLogTable } from "@workspace/db/schema";
 import {
   aggregateReconciliationIssues,
@@ -19,13 +20,14 @@ import {
   runBrokerAbsenceReconcile,
   type BrokerAbsenceReconcileResult,
 } from "../lib/live/brokerAbsenceReconcileRunner.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
-  const role = String(u?.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u?.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_OR_OWNER_REQUIRED" });
     return null;
   }
@@ -174,12 +176,10 @@ async function handleAction(
 // manual call with dryRun=false cannot stamp closed_at while the flag is OFF.
 
 async function enumerateUsersWithOpenLivePositions(): Promise<number[]> {
-  const rows = await db.selectDistinct({ userId: arxLivePositionsTable.userId })
-    .from(arxLivePositionsTable)
-    .where(and(
-      isNull(arxLivePositionsTable.closedAt),
-      isNull(arxLivePositionsTable.reconcileState),
-    ));
+  const rows = await selectLiveOpenPositionsForAllUsers(
+    { userId: livePositionColumns.userId },
+    { basis: "EXPOSURE", distinct: true },
+  );
   return rows.map((r) => r.userId).filter((n): n is number => typeof n === "number");
 }
 

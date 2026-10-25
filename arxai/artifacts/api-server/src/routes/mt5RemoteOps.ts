@@ -14,22 +14,20 @@
 //   supported. Unsupported features come back with featureStatus = the admin
 //   warning, and the actionable payload is withheld.
 
+import { type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { and, eq, desc, isNull, inArray } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import {
   db,
-  mt5ConnectionTable,
   eaRemoteConfigTable,
   eaUpdateManifestTable,
   eaUpdateReportTable,
-  arxLivePositionsTable,
-  arxLiveCommandsTable,
-  arxLiveArmingTable,
   EA_UPDATE_REPORT_PHASES,
   EA_UPDATE_REPORT_OUTCOMES,
 } from "@workspace/db";
 import { z } from "zod/v4";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
+import { loadEaUpdateGateSafetyInputs } from "../lib/mt5/eaUpdateGateInputs.js";
 import {
   normaliseCapabilities,
   isFeatureSupported,
@@ -42,13 +40,11 @@ import {
 
 const router = Router();
 
-// Heartbeat-stability window (mirrors the Phase B 15s heartbeat gate).
-const HEARTBEAT_STABLE_MS = 15_000;
 // Default channels an EA may take. beta requires explicit opt-in (?betaOptIn=1).
 const DEFAULT_ALLOWED_CHANNELS = ["stable", "emergency"] as const;
 
 interface AugReq extends Request {
-  mt5Connection?: typeof mt5ConnectionTable.$inferSelect;
+  mt5Connection?: BrokerConnectionFacts;
 }
 
 // Shape of an approved manifest as needed for the update-check response.
@@ -109,7 +105,7 @@ export function buildUpdateCheckResponse(
 function requireBridge(
   req: AugReq,
   res: Response,
-): typeof mt5ConnectionTable.$inferSelect | null {
+): BrokerConnectionFacts | null {
   const conn = req.mt5Connection;
   if (!conn) {
     res.status(401).json({ error: "BRIDGE_AUTH_REQUIRED" });
@@ -225,44 +221,10 @@ router.get("/mt5/update-check", bridgeAuthPerUserOnly, async (req: AugReq, res) 
     .orderBy(desc(eaUpdateManifestTable.approvedAt))
     .limit(1);
 
-  // Gate inputs — read the REAL safety state.
-  const [arming] = await db
-    .select()
-    .from(arxLiveArmingTable)
-    .where(eq(arxLiveArmingTable.userId, userId))
-    .limit(1);
-
-  const openPositions = await db
-    .select({ id: arxLivePositionsTable.id })
-    .from(arxLivePositionsTable)
-    .where(
-      and(
-        eq(arxLivePositionsTable.userId, userId),
-        isNull(arxLivePositionsTable.closedAt),
-      ),
-    )
-    .limit(1);
-
-  const pendingCommands = await db
-    .select({ id: arxLiveCommandsTable.id })
-    .from(arxLiveCommandsTable)
-    .where(
-      and(
-        eq(arxLiveCommandsTable.userId, userId),
-        inArray(arxLiveCommandsTable.status, ["SENT_TO_MT5_LIVE", "LIVE_APPROVED"]),
-      ),
-    )
-    .limit(1);
-
-  // maintenanceMode is a remote-config tunable.
-  const [cfg] = await db
-    .select({ maintenanceMode: eaRemoteConfigTable.maintenanceMode })
-    .from(eaRemoteConfigTable)
-    .where(eq(eaRemoteConfigTable.userId, userId))
-    .limit(1);
-
-  const lastHb = conn.lastHeartbeat ? conn.lastHeartbeat.getTime() : 0;
-  const heartbeatStable = Date.now() - lastHb <= HEARTBEAT_STABLE_MS;
+  // Gate inputs — read the REAL safety state (kill switch, open LIVE trade,
+  // in-flight command, remote-config maintenance, 15 s heartbeat window). The
+  // admin EA-health preview reads the same inputs through the same loader.
+  const safety = await loadEaUpdateGateSafetyInputs(userId, conn.lastHeartbeat);
 
   const decision = evaluateEaUpdateGate({
     manifest: manifest
@@ -277,11 +239,7 @@ router.get("/mt5/update-check", bridgeAuthPerUserOnly, async (req: AugReq, res) 
     currentVersion: conn.eaVersion ?? null,
     allowedChannels,
     eaSupportsSelfUpdate: isFeatureSupported(caps, "supportsSelfUpdate"),
-    hasOpenLiveTrade: openPositions.length > 0,
-    hasPendingCommand: pendingCommands.length > 0,
-    heartbeatStable,
-    killSwitchEngaged: !!arming?.killSwitchEngaged,
-    maintenanceMode: !!cfg?.maintenanceMode,
+    ...safety,
   });
 
   res.json(

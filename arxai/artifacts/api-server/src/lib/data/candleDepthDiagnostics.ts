@@ -36,7 +36,7 @@ import { getMt5QuoteAvailability } from "./providers/mt5Provider.js";
 import {
   resolveBrokerSymbolName,
   getBrokerSymbolDirectoryStatus,
-} from "../mt5/brokerSymbolName.js";
+} from "../instruments/index.js";
 
 // The six canonical timeframes the spec's "Test Candle Depth" runner probes,
 // with the operator-facing label and the canonical engine timeframe.

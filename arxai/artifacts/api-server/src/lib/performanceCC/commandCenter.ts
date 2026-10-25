@@ -3,31 +3,34 @@
 // SAFETY: liveTradingStatus is hardcoded to "DISABLED". Reading-only.
 
 import { db } from "@workspace/db";
+import { listOwnEdges, listOwnMistakes } from "../learning/scopedMemory.js";
 import {
   paperOrdersTable,
   tradeDecisionLogsTable,
   postTradeDebriefsTable,
   learningEventsTable,
-  strategyEdgesTable,
-  mistakePatternsTable,
   autopilotCyclesTable,
   autopilotSettingsTable,
 } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { generateInsights } from "./insights.js";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { evaluateReadiness } from "../readiness/traderReadiness.js";
 
-export async function buildCommandCenter() {
+// The caller's own trades, decisions, debriefs, learnings and autopilot runs.
+// Learning memory (edges / mistake patterns) is the caller's own too.
+export async function buildCommandCenter(userId: number) {
   // Pull source data.
-  const trades = await db.select().from(paperOrdersTable);
-  const decisions = await db.select().from(tradeDecisionLogsTable);
-  const debriefs = await db.select().from(postTradeDebriefsTable);
-  const learnings = await db.select().from(learningEventsTable);
-  const edges = await db.select().from(strategyEdgesTable);
-  const mistakes = await db.select().from(mistakePatternsTable);
+  const trades = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId));
+  const decisions = await db.select().from(tradeDecisionLogsTable).where(eq(tradeDecisionLogsTable.userId, userId));
+  const debriefs = await db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId));
+  const learnings = await db.select().from(learningEventsTable).where(eq(learningEventsTable.userId, userId));
+  const edges = await listOwnEdges(userId);
+  const mistakes = await listOwnMistakes(userId);
   const recentCycles = await db.select().from(autopilotCyclesTable)
+    .where(eq(autopilotCyclesTable.userId, userId))
     .orderBy(desc(autopilotCyclesTable.id)).limit(20);
   const settingsRows = await db.select().from(autopilotSettingsTable)
+    .where(eq(autopilotSettingsTable.userId, userId))
     .orderBy(desc(autopilotSettingsTable.id)).limit(1);
   const settings = settingsRows[0];
 
@@ -114,8 +117,8 @@ export async function buildCommandCenter() {
     settings?.enabled ? "ACTIVE" : (recentCycles.some(c => c.status === "RUNNING") ? "ACTIVE" : "IDLE");
 
   // Build HH governor snapshot (read-only).
-  let governor: Awaited<ReturnType<typeof evaluateGovernor>> | null = null;
-  try { governor = await evaluateGovernor({ persist: false }); } catch { governor = null; }
+  let governor: Awaited<ReturnType<typeof evaluateReadiness>> | null = null;
+  try { governor = await evaluateReadiness({ persist: false, userId }); } catch { governor = null; }
 
   // Insights.
   const insightOut = generateInsights({

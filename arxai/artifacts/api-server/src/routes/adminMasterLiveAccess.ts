@@ -19,6 +19,7 @@
 //   - No raw token, apiKeyHash, password hash, or session secret is ever
 //     surfaced. Email is shown to operators (they need to identify the
 //     user); on the user-facing /me endpoint email is NOT exposed.
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
@@ -35,7 +36,6 @@ import {
   userMasterLiveAccessTable,
   masterLiveAccessAuditTable,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
   riskTemplatesTable,
   globalTradingSettingsTable,
   MASTER_LIVE_ACCESS_ACTIONS,
@@ -49,6 +49,7 @@ import {
 } from "./adminAllocations.js";
 import { buildApprovedTraderLiveState } from "../lib/live/approvedTraderLiveState.js";
 import { adminForceArmLiveForUser, LIVE_CONFIRMATION_PHRASE } from "../lib/live/liveArming.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 // Phase 22V Part 3 — name of the seed shared-bridge default risk template
 // applied automatically when an admin first approves a user. Idempotent
@@ -94,8 +95,8 @@ function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" 
     res.status(401).json({ ok: false, error: "AUTH_REQUIRED" });
     return null;
   }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }
@@ -184,13 +185,13 @@ router.get("/admin/master-live/users", async (req, res) => {
 
   const result = await Promise.all(users.map(async (u) => {
     const a = accessByUser.get(u.id);
-    const exposureRows = await db.select({
-      open: sql<number>`COALESCE(SUM(${arxLivePositionsTable.volume}), 0)`,
-      pnl: sql<number>`COALESCE(SUM(${arxLivePositionsTable.floatingPl}), 0)`,
-    }).from(arxLivePositionsTable).where(and(
-      eq(arxLivePositionsTable.userId, u.id),
-      sql`${arxLivePositionsTable.closedAt} IS NULL`,
-    ));
+    const exposureRows = await livePositionLedger.select(
+      {
+        open: sql<number>`COALESCE(SUM(${livePositionColumns.volume}), 0)`,
+        pnl: sql<number>`COALESCE(SUM(${livePositionColumns.floatingPl}), 0)`,
+      },
+      { where: and(eq(livePositionColumns.userId, u.id), sql`${livePositionColumns.closedAt} IS NULL`) },
+    );
     const lastTradeRows = await db.select({ at: arxLiveCommandsTable.createdAt })
       .from(arxLiveCommandsTable).where(eq(arxLiveCommandsTable.userId, u.id))
       .orderBy(desc(arxLiveCommandsTable.createdAt)).limit(1);
@@ -1504,7 +1505,9 @@ router.get("/admin/users/:userId/live-readiness", async (req, res) => {
     armed: state.armed,
     killSwitchEngaged: state.killSwitchEngaged,
     serverLiveExecutionOn: state.serverLiveExecutionOn,
-    emergencyKillSwitch: state.emergencyKillSwitch,
+    emergencyKillSwitch: state.platformStopSources.includes("platform_emergency_stop"),
+    platformStopEngaged: state.platformStopEngaged,
+    platformStopSources: state.platformStopSources,
     riskProfileReady: state.riskProfileReady,
     approvedSymbols: state.approvedSymbols,
     maxLot: state.maxLot,

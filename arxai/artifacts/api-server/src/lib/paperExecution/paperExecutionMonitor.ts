@@ -8,18 +8,23 @@
 //   4. Trigger Build BB auto-debrief (existing runAutoDebrief)
 //
 // All state-mutations are scoped to paper_orders + paper_executions + paper_trade_events.
-// Live execution surfaces are NEVER touched.
+// Live execution surfaces are NEVER touched. paper_orders and its events are
+// written only by the PAPER venue (lib/tradeEngine/paperVenue.ts): an SL/TP
+// hit is settled there (settlePaperOrder, a venue fill) and a manual close is
+// governed and booked there (closePaperFill), both reached through the Trade
+// Engine (pipeline.ts settlePaperTrade / fillPaperTrade CLOSE). This file keeps
+// paper_executions.
 
 import {
   db,
   paperOrdersTable,
   paperExecutionsTable,
-  paperTradeEventsTable,
 } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { logger } from "../logger.js";
 import { getMarketData } from "../marketData/marketDataService.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
+import { fillPaperTrade, settlePaperTrade } from "../tradeEngine/pipeline.js";
 
 const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
 
@@ -69,13 +74,19 @@ export interface MonitorSummary {
 export async function runPaperMonitor(opts?: {
   forcePrice?: number; // test-only: override DD price to force TP/SL
   forceSymbol?: string;
+  // Set when a user triggers the scan: only their own orders are touched.
+  // Left undefined by the server-side autopilot, which scans every account.
+  userId?: number;
 }): Promise<MonitorSummary> {
   const log = logger.child({ system: "paperExecutionMonitor" });
   const summary: MonitorSummary = { scanned: 0, closed: 0, stillOpen: 0, closures: [], updates: [], warnings: [] };
 
-  // Pull all open paper orders (across accounts).
+  // Open paper orders: the caller's own, or every account for the server scan.
   const openOrders = await db.select().from(paperOrdersTable)
-    .where(eq(paperOrdersTable.status, "OPEN"));
+    .where(and(
+      eq(paperOrdersTable.status, "OPEN"),
+      opts?.userId != null ? eq(paperOrdersTable.userId, opts.userId) : undefined,
+    ));
 
   for (const order of openOrders) {
     summary.scanned++;
@@ -112,15 +123,11 @@ export async function runPaperMonitor(opts?: {
     const realized = unrealizedPnl(order.direction, order.lotSize, order.entryPrice, exitPrice);
     const status = hit === "SL" ? "CLOSED_SL" : "CLOSED_TP";
 
-    // Close the paper order (Build Q table).
-    await db.update(paperOrdersTable).set({
-      status, closedAt: new Date(), exitPrice, profitLoss: realized, updatedAt: new Date(),
-    }).where(eq(paperOrdersTable.id, order.id));
-
-    await db.insert(paperTradeEventsTable).values({
-      paperOrderId: order.id, eventType: status,
-      message: `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${realized.toFixed(2)}`,
-    }).catch(() => {});
+    // Settle the paper order in the PAPER venue (a stop/target fill).
+    await settlePaperTrade({
+      order, status, exitPrice, pnl: realized,
+      eventMessage: `${SIMULATED_TAG} EE-monitor ${hit} hit at ${exitPrice.toFixed(5)}, P&L ${realized.toFixed(2)}`,
+    });
 
     // Sync paper_executions row (if one exists for this decision_id).
     if (order.decisionId != null) {
@@ -162,10 +169,10 @@ export async function runPaperMonitor(opts?: {
   return summary;
 }
 
-export async function closePaperManually(orderId: number, opts?: { exitPrice?: number }) {
+export async function closePaperManually(orderId: number, userId: number, opts?: { exitPrice?: number }) {
   const log = logger.child({ system: "paperExecutionMonitor", orderId });
   const order = (await db.select().from(paperOrdersTable)
-    .where(eq(paperOrdersTable.id, orderId)).limit(1))[0];
+    .where(and(eq(paperOrdersTable.id, orderId), eq(paperOrdersTable.userId, userId))).limit(1))[0];
   if (!order) return { ok: false, error: "Paper order not found" };
   if (order.status !== "OPEN") return { ok: false, error: `Order not open (status=${order.status})` };
 
@@ -174,15 +181,22 @@ export async function closePaperManually(orderId: number, opts?: { exitPrice?: n
     const { snapshot } = await getMarketData({ symbol: order.symbol, timeframe: "M5", limit: 100 });
     exitPrice = snapshot.mid;
   }
-  const pnl = unrealizedPnl(order.direction, order.lotSize, order.entryPrice, exitPrice);
-
-  await db.update(paperOrdersTable).set({
-    status: "CLOSED_MANUAL", closedAt: new Date(), exitPrice, profitLoss: pnl, updatedAt: new Date(),
-  }).where(eq(paperOrdersTable.id, orderId));
-  await db.insert(paperTradeEventsTable).values({
-    paperOrderId: orderId, eventType: "CLOSED_MANUAL",
-    message: `${SIMULATED_TAG} EE manual close @ ${exitPrice.toFixed(5)}, P&L ${pnl.toFixed(2)}`,
-  }).catch(() => {});
+  // Governed (Risk Governor CLOSE, venue PAPER) and booked in the PAPER venue.
+  const closed = await fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, {
+    userId, order, exitPrice,
+    intentRef: `paper_execution_close:${orderId}`,
+    auditContext: { caller: "POST /paper-execution/close/:id", orderId, exitPriceOverride: opts?.exitPrice ?? null },
+    eventLabel: "EE manual close",
+  });
+  if (!closed.ok) {
+    if (closed.reason === "RISK_GOVERNOR_BLOCK") {
+      return { ok: false, error: closed.risk.primaryReason ?? "Blocked by Risk Governor", blockedBy: closed.risk.blockedBy };
+    }
+    return closed.reason === "PAPER_ORDER_NOT_OPEN"
+      ? { ok: false, error: `Order not open (status=${order.status})` }
+      : { ok: false, error: "Paper order not found" };
+  }
+  const pnl = closed.pnl;
 
   if (order.decisionId != null) {
     await db.update(paperExecutionsTable)

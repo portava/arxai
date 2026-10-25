@@ -6,11 +6,12 @@
 //   by placeLiveOrderGuarded(), which by design always rejects in this build.
 // - Default state is FAIL-CLOSED. liveTradingEligible always reflects truth.
 
+import { demoPositionLedger } from "../lib/positions/ledger.js";
 import { Router, type IRouter } from "express";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 
 import { db } from "@workspace/db";
-import { liveTradeApprovalsTable, liveTradingAuditTable, notificationsTable, livePositionsTable } from "@workspace/db/schema";
+import { liveTradeApprovalsTable, liveTradingAuditTable, notificationsTable } from "@workspace/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { checkPermission } from "../lib/security/permissions.js";
 import { recordSecurityEvent } from "../lib/security/events.js";
@@ -233,7 +234,7 @@ router.post("/live-trading/approval/:id/execute", async (req, res) => {
   const rows = await db.select().from(liveTradeApprovalsTable).where(eq(liveTradeApprovalsTable.approvalId, req.params.id)).limit(1);
   const a = rows[0];
   if (!a) { res.status(404).json(envelope({ result: { status: "REJECTED", reason: "NOT_FOUND" } })); return; }
-  const livePosCount = (await db.select({ c: sql<number>`count(*)::int` }).from(livePositionsTable))[0]?.c ?? 0;
+  const livePosCount = (await demoPositionLedger.select({ c: sql<number>`count(*)::int` }, {}))[0]?.c ?? 0;
   const result = await placeLiveOrderGuarded({
     approvalId: a.approvalId, idempotencyKey: a.idempotencyKey,
     actorRole: role, actorSession: req.header("x-session-id") ?? undefined,

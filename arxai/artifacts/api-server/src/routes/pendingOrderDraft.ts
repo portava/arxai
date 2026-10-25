@@ -16,9 +16,11 @@
 //     only ever written by the /mt5/command-result write-back path AFTER
 //     MT5 returns a real ticket.
 
+import { classifyHeartbeatAt, heartbeatIsOnline } from "../lib/brokerHub/freshness.js";
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
-import { tradeActionRequestsTable, userRiskSettingsTable, mt5ConnectionTable } from "@workspace/db/schema";
+import { tradeActionRequestsTable } from "@workspace/db/schema";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { ORDER_TYPES, isMarketOrder, directionOf, type OrderType } from "../lib/tradeAction/orderTypes.js";
@@ -34,6 +36,7 @@ import {
   type BridgeCapabilities,
   type PendingSubmitStatus,
 } from "../lib/mt5/bridgeCapabilities.js";
+import { loadEffectiveLimits } from "../lib/riskGovernor/limitSettings.js";
 
 const router: IRouter = Router();
 
@@ -88,16 +91,25 @@ router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
     return;
   }
 
-  // 1. Load user min-RR setting (best-effort).
-  let minRr: number | null = null;
+  // 1. The trader's minimum R:R in force (owner decision 10): the configured
+  //    min_reward_risk_ratio resolved by the risk authority exactly as the
+  //    governor resolves it (no row = the 1.5 default; 0 / null = off).
+  //    Unreadable limits refuse, as the governor refuses when it cannot load
+  //    its context.
+  let minRr: number | null;
   try {
-    const [s] = await db.select().from(userRiskSettingsTable)
-      .where(eq(userRiskSettingsTable.userId, userId)).limit(1);
-    // Future-proof: minRiskRewardRatio column does not exist yet; this is a
-    // pre-wired hook so the value flows through once admin/risk settings expose it.
-    const v = (s as unknown as { minRiskRewardRatio?: number | null } | undefined)?.minRiskRewardRatio;
-    minRr = typeof v === "number" && v > 0 ? v : null;
-  } catch { /* non-critical */ }
+    minRr = (await loadEffectiveLimits(userId)).discipline.minRewardRiskRatio;
+  } catch {
+    res.status(200).json({
+      ok: false,
+      executable: false,
+      blocked: true,
+      checkId: "rg_rr_limits_unavailable",
+      reason: "Your risk limits could not be read, so the reward:risk minimum cannot be checked. Draft not saved.",
+      ...SAFETY,
+    });
+    return;
+  }
 
   // 2. Price-level ticket validation + RR floor.
   const ticket = enforceTradeTicketRules({
@@ -137,7 +149,11 @@ router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
     symbol: body.symbol,
     side: directionOf(orderType),
     lotSize: body.lotSize,
+    requestedPrice: body.entryPrice ?? body.stopLimitPrice ?? null,
+    stopLoss: body.stopLoss ?? null,
+    takeProfit: body.takeProfit ?? null,
     routingMode: routing?.effectiveRoutingMode ?? null,
+    connectionId: routing?.connectionId ?? null,
     virtualAccountId: routing?.virtualAccountId ?? null,
     previewMode: true,
   });
@@ -291,12 +307,12 @@ router.get("/me/bridge-capabilities", async (req, res): Promise<void> => {
   if (!userId) { res.status(401).json({ ok: false, error: "unauthorized", ...SAFETY }); return; }
 
   try {
-    const rows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+    const rows = await listUserConnections(userId, { order: "oldest", limit: 1 });
     const conn = rows[0] ?? null;
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    const bridgeConnected = !!lastHb && (Date.now() - lastHb.getTime() < 90_000);
+    // Shared heartbeat policy: online (age < 60 s). Was a 90 s advisory window.
+    const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, Date.now()));
     // Honest "what would the submit endpoint say right now" probe.
     const probe = resolvePendingSubmitStatus({
       capabilities: caps,
@@ -368,12 +384,12 @@ router.post("/me/pending-order-draft/:id/submit", async (req, res): Promise<void
       return;
     }
 
-    const connRows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+    const connRows = await listUserConnections(userId, { order: "oldest", limit: 1 });
     const conn = connRows[0] ?? null;
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    const bridgeConnected = !!lastHb && (Date.now() - lastHb.getTime() < 90_000);
+    // Shared heartbeat policy: online (age < 60 s). Was a 90 s advisory window.
+    const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, Date.now()));
     const needsStopLimit =
       draft.orderType === "BUY_STOP_LIMIT" || draft.orderType === "SELL_STOP_LIMIT";
 

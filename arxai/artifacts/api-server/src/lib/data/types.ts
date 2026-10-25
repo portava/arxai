@@ -94,7 +94,7 @@ export interface DataProvider {
 /**
  * @deprecated R4 slice 6 (audit-marketdata §4.2 registry #3). This legacy
  * four-bucket taxonomy predates the canonical registry. Use
- * `resolveCanonicalSymbol` in `./symbolResolution.ts` (router-facing
+ * `resolveCanonicalSymbol` in `../instruments/canonicalSymbol.ts` (router-facing
  * `CanonicalAssetClass` + fine-grained universe `family`) instead. Kept only
  * because the shape is part of this module's historical surface; do not add
  * new consumers.
@@ -106,7 +106,7 @@ export type MarketType = "forex" | "index" | "stock" | "synthetic";
  * 16-symbol list that duplicates — and long ago drifted from — the approved
  * @workspace/markets ARX Top 250 universe. It has ZERO importers in live code
  * (verified 2026-08-20: no module imports SUPPORTED_SYMBOLS or getMarketType
- * from this file). Resolution now goes through `./symbolResolution.ts`.
+ * from this file). Resolution now goes through `../instruments/canonicalSymbol.ts`.
  * Retained un-deleted this wave because removals belong to a deliberate
  * cleanup slice, not a deprecation pass; do not add new consumers.
  */
@@ -135,11 +135,11 @@ export const SUPPORTED_SYMBOLS: { symbol: string; marketType: MarketType }[] = [
  * outside the 16-entry legacy list — i.e. almost everything — is silently
  * reported as "synthetic", which would route it toward the Deriv chain and
  * misrepresent an unknown as a known class. `resolveCanonicalSymbol`
- * (./symbolResolution.ts) is the replacement and returns an EXPLICIT
+ * (../instruments/canonicalSymbol.ts) is the replacement and returns an EXPLICIT
  * "unknown" instead of guessing. This function has ZERO importers in live
  * code (verified 2026-08-20); its behavior is intentionally left byte-stable
  * (deprecation-notes-only scope this wave) and is pinned as deprecated by
- * __qa__/symbolResolution.test.ts so any new consumer trips a review. Do not
+ * lib/instruments/__qa__/symbolResolution.test.ts so any new consumer trips a review. Do not
  * call this.
  */
 export function getMarketType(symbol: string): MarketType {

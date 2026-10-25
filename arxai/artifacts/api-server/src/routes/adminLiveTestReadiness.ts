@@ -16,15 +16,14 @@
 //  audit row is written for the GET and `LIVE_TEST_PREFLIGHT_EVALUATED`
 //  is written for the POST so operators can prove the panel was opened
 //  without anyone dispatching a trade.
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
-  arxLiveArmingTable,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
-  mt5ConnectionTable,
   userMasterLiveAccessTable,
   globalTradingSettingsTable,
   adminActionAuditLogTable,
@@ -41,12 +40,15 @@ import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
 import {
   ARX_LIVE_DEFAULT_ALLOWED_SYMBOLS,
   ARX_LIVE_DEFAULT_MAX_LOT_PER_MARKET,
+  getMyArming,
 } from "../lib/live/liveArming.js";
+import { loadPlatformSettings, platformStopReport, platformStopWith, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { getUserAllocationView } from "../lib/live/masterBridgePool.js";
 import {
   T015_MANUAL_LIVE_PHASE,
   T015_MANUAL_LIVE_PHASE_LABEL,
 } from "../lib/live/liveCommandPipeline.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -58,8 +60,8 @@ const CONTROLLED_TEST_SIDE = "BUY" as const;
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const sess = (req as Request & { authUser?: { id: number; role?: string } }).authUser;
   if (!sess?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }
@@ -95,18 +97,18 @@ type BridgeFacts = {
 };
 
 async function loadPlatformMasterBridge(): Promise<BridgeFacts> {
-  const settings = (await db.select().from(globalTradingSettingsTable).limit(1))[0];
+  const settings = (await db.select({
+    platformMasterBridgeConnectionId: globalTradingSettingsTable.platformMasterBridgeConnectionId,
+  }).from(globalTradingSettingsTable).limit(1))[0];
   const pinnedId = settings?.platformMasterBridgeConnectionId ?? null;
-  let picked: typeof mt5ConnectionTable.$inferSelect | null = null;
+  let picked: BrokerConnectionFacts | null = null;
   if (pinnedId != null) {
-    const r = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, pinnedId)).limit(1);
+    const r = await listConnections({ connectionIds: [pinnedId], limit: 1 });
     picked = r[0] ?? null;
   }
   if (!picked) {
     // Fall back to freshest non-revoked LIVE bridge across all users.
-    const rows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.mode, "LIVE"));
+    const rows = await listConnections({ modes: ["LIVE"], order: "oldest" });
     const nonRevoked = rows.filter((r) => !r.tokenRevokedAt);
     picked = nonRevoked.slice().sort((a, b) => {
       const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;
@@ -151,30 +153,36 @@ async function loadPlatformMasterBridge(): Promise<BridgeFacts> {
 async function loadOperatorAccess(adminId: number) {
   const access = (await db.select().from(userMasterLiveAccessTable)
     .where(eq(userMasterLiveAccessTable.userId, adminId)).limit(1))[0] ?? null;
-  const arming = (await db.select().from(arxLiveArmingTable)
-    .where(eq(arxLiveArmingTable.userId, adminId)).limit(1))[0] ?? null;
+  const arming = await getMyArming(adminId);
   return { access, arming };
 }
 
 async function loadMasterGates() {
-  const s = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
+  // Switches from the one switch authority (missing/unreadable → OFF, stop engaged).
+  const { switches: sw, config: s } = await loadPlatformSettings();
+  // Both install-wide stops through platformStop(); the emergency-stop fields
+  // keep naming that stop, platformStop* say either.
+  const stop = await platformStopWith(sw);
   const queueDepth = await db.select({ n: sql<number>`COUNT(*)::int` })
     .from(arxLiveCommandsTable)
     .where(sql`${arxLiveCommandsTable.status} IN ('LIVE_DRAFT','SENT_TO_MT5_LIVE','LIVE_CONFIRMED')`);
-  const openExposure = await db.select({
-    lots: sql<number>`COALESCE(SUM(${arxLivePositionsTable.volume}), 0)`,
-  }).from(arxLivePositionsTable)
-    .where(sql`${arxLivePositionsTable.closedAt} IS NULL`);
+  const openExposure = await livePositionLedger.select(
+    {
+      lots: sql<number>`COALESCE(SUM(${livePositionColumns.volume}), 0)`,
+    },
+    { where: sql`${livePositionColumns.closedAt} IS NULL` },
+  );
   return {
     masterSwitchEnabled: liveBrokerExecutionEnabled(),
-    platformMode: s?.platformMode ?? "OFF",
-    liveEnabled: s?.liveEnabled ?? false,
+    platformMode: sw.platformMode as string,
+    liveEnabled: sw.venueEnabled.LIVE,
     sharedLiveTradingEnabled: s?.sharedLiveTradingEnabled ?? false,
     masterBridgeLiveEnabled: s?.masterBridgeLiveEnabled ?? false,
     accountRoutingMode: s?.accountRoutingMode ?? "USER_OWNED_MT5",
-    emergencyKillSwitch: s?.emergencyKillSwitch ?? true,
-    killSwitchEngagedAt: s?.killSwitchEngagedAt ?? null,
-    killSwitchReason: s?.killSwitchReason ?? null,
+    emergencyKillSwitch: stopSourceEngaged(stop, "platform_emergency_stop"),
+    killSwitchEngagedAt: stop.engagedAt?.platform_emergency_stop ?? null,
+    killSwitchReason: stop.detail.platform_emergency_stop ?? null,
+    ...platformStopReport(stop),
     queueDepth: Number(queueDepth[0]?.n ?? 0),
     currentOpenExposureLots: Number(openExposure[0]?.lots ?? 0),
   };
@@ -274,12 +282,17 @@ async function runControlledDryRun(
   // in the last 24h (arx_live_positions has no realized_pl column; floatingPl
   // is the last-synced P/L snapshot, which equals realised P/L at close time
   // for closed positions). Used only as input to the daily-loss gate.
-  const realisedToday = await db.select({
-    pnl: sql<number>`COALESCE(SUM(${arxLivePositionsTable.floatingPl}), 0)`,
-  }).from(arxLivePositionsTable).where(and(
-    eq(arxLivePositionsTable.userId, adminId),
-    sql`${arxLivePositionsTable.closedAt} >= NOW() - INTERVAL '24 hours'`,
-  ));
+  const realisedToday = await livePositionLedger.select(
+    {
+      pnl: sql<number>`COALESCE(SUM(${livePositionColumns.floatingPl}), 0)`,
+    },
+    {
+      where: and(
+        eq(livePositionColumns.userId, adminId),
+        sql`${livePositionColumns.closedAt} >= NOW() - INTERVAL '24 hours'`,
+      ),
+    },
+  );
   const realisedDailyLossUsd = Math.max(0, -Number(realisedToday[0]?.pnl ?? 0));
 
   const input: LivePhaseBGateInput = {
@@ -287,7 +300,9 @@ async function runControlledDryRun(
     globalLiveEnabled: master.liveEnabled,
     userLiveApproved: opAccess.access?.approvedForMasterLive ?? false,
     userArmed: opAccess.arming?.isArmed ?? false,
-    killSwitchEngaged: (opAccess.arming?.killSwitchEngaged ?? false) || (master.emergencyKillSwitch === true),
+    // Dry run only (nothing is submitted): either install-wide stop shows as
+    // the kill-switch gate failing, as the Risk Governor would refuse the order.
+    killSwitchEngaged: (opAccess.arming?.killSwitchEngaged ?? false) || master.platformStopEngaged,
     bridgeAccountType: bridge.accountType,
     bridgeHeartbeatAgeSec: bridge.heartbeatAgeSeconds,
     bridgeEaVersion: bridge.eaVersion,

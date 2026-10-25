@@ -19,11 +19,26 @@
 //   - Every mutating action requires a trimmed reason (≥3 chars) and writes an
 //     admin_action_audit_log row before responding (fail-CLOSED).
 
+import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import {
+  reconcileLivePositionMetadata,
+  type LivePositionReconciliationMetadata,
+  livePositionLedger,
+  livePositionColumns,
+  type LivePositionRow,
+} from "../lib/positions/ledger.js";
+import {
+  getConnection,
+  listConnections,
+  revokeBridgeToken,
+  rotateBridgeToken,
+  type BrokerConnectionRecord,
+} from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
 import { randomBytes, createHash } from "node:crypto";
 import { db } from "@workspace/db";
-import { mt5ConnectionTable, arxLivePositionsTable, adminActionAuditLogTable } from "@workspace/db/schema";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { adminActionAuditLogTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   runEmergencyClose,
@@ -119,7 +134,7 @@ function generateToken(): { raw: string; hash: string; last4: string } {
 // ─── GET /api/admin/bridge/connections ──────────────────────────────────────
 router.get("/admin/bridge/connections", async (req, res) => {
   const role = requireAdmin(req, res); if (!role) return;
-  const rows = await db.select().from(mt5ConnectionTable).orderBy(desc(mt5ConnectionTable.updatedAt));
+  const rows = await listConnections({ order: "updated" });
   res.json({ ok: true, connections: rows.map((r) => maskConnection(r)) });
 });
 
@@ -140,8 +155,7 @@ router.post("/admin/bridge/connections/:id/rotate-token", async (req, res): Prom
   try { body = RotateBody.parse(req.body ?? {}); }
   catch { res.status(400).json({ ok: false, error: "REASON_REQUIRED" }); return; }
 
-  const existing = await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, id)).limit(1);
-  const row = existing[0];
+  const row = await getConnection(id);
   if (!row) { res.status(404).json({ ok: false, error: "CONNECTION_NOT_FOUND" }); return; }
   if (row.tokenRevokedAt) { res.status(409).json({ ok: false, error: "CONNECTION_REVOKED" }); return; }
 
@@ -155,20 +169,12 @@ router.post("/admin/bridge/connections/:id/rotate-token", async (req, res): Prom
   // Fail-CLOSED: mutation + audit run in ONE transaction. If the audit insert
   // throws, the token rotation is rolled back — no privileged change without an
   // audit trail.
-  let updated: (typeof mt5ConnectionTable.$inferSelect)[];
+  let updated: (BrokerConnectionRecord | null)[];
   try {
     updated = await db.transaction(async (tx) => {
-      const rows = await tx.update(mt5ConnectionTable).set({
-        apiKeyHash: tok.hash,
-        tokenLast4: tok.last4,
-        tokenCreatedAt: now,
-        previousApiKeyHash: graceExpiry ? row.apiKeyHash : null,
-        previousTokenExpiresAt: graceExpiry,
-        tokenRotatedAt: now,
-        tokenRotatedByAdminId: getAdminId(req),
-        tokenRotationReason: body.reason,
-        updatedAt: now,
-      }).where(eq(mt5ConnectionTable.id, id)).returning();
+      const rows = [await rotateBridgeToken(id, {
+        hash: tok.hash, last4: tok.last4, now, graceExpiry, adminId: getAdminId(req), reason: body.reason,
+      }, tx)];
       await writeAudit({
         adminId: getAdminId(req), role,
         action: "BRIDGE_TOKEN_ROTATED",
@@ -214,24 +220,16 @@ router.post("/admin/bridge/connections/:id/revoke", async (req, res): Promise<vo
   const reason = readReason(req.body);
   if (!reason) { res.status(400).json({ ok: false, error: "REASON_REQUIRED" }); return; }
 
-  const existing = await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, id)).limit(1);
-  const row = existing[0];
+  const row = await getConnection(id);
   if (!row) { res.status(404).json({ ok: false, error: "CONNECTION_NOT_FOUND" }); return; }
 
   const now = new Date();
   // Revoke kills both the active hash AND any grace hash so neither token can
   // authenticate after revocation. Fail-CLOSED: mutation + audit are atomic.
-  let updated: (typeof mt5ConnectionTable.$inferSelect)[];
+  let updated: (BrokerConnectionRecord | null)[];
   try {
     updated = await db.transaction(async (tx) => {
-      const rows = await tx.update(mt5ConnectionTable).set({
-        status: "revoked",
-        tokenRevokedAt: now,
-        apiKeyHash: null,
-        previousApiKeyHash: null,
-        previousTokenExpiresAt: null,
-        updatedAt: now,
-      }).where(eq(mt5ConnectionTable.id, id)).returning();
+      const rows = [await revokeBridgeToken(id, now, tx)];
       await writeAudit({
         adminId: getAdminId(req), role,
         action: "BRIDGE_TOKEN_REVOKED",
@@ -368,7 +366,7 @@ const OrphanActionBody = z.object({
 });
 
 async function loadPosition(id: number) {
-  const rows = await db.select().from(arxLivePositionsTable).where(eq(arxLivePositionsTable.id, id)).limit(1);
+  const rows = await livePositionLedger.read({ where: eq(livePositionColumns.id, id), limit: 1 });
   return rows[0] ?? null;
 }
 
@@ -391,7 +389,7 @@ async function handleOrphanAction(
   }
 
   const now = new Date();
-  const set: Record<string, unknown> = {
+  const set: LivePositionReconciliationMetadata = {
     reconcileState,
     reconcileNote: body.note ?? body.reason,
     reconciledByAdminId: getAdminId(req),
@@ -402,11 +400,10 @@ async function handleOrphanAction(
   if (reconcileState === "IMPORTED") set.sourceCommandId = body.sourceCommandId;
 
   // Fail-CLOSED: reconcile mutation + audit are atomic.
-  let updated: (typeof arxLivePositionsTable.$inferSelect)[];
+  let updated: (LivePositionRow)[];
   try {
     updated = await db.transaction(async (tx) => {
-      const rows = await tx.update(arxLivePositionsTable).set(set)
-        .where(eq(arxLivePositionsTable.id, id)).returning();
+      const rows = await reconcileLivePositionMetadata(id, set, tx);
       await writeAudit({
         adminId: getAdminId(req), role,
         action,
@@ -487,8 +484,7 @@ router.post("/admin/bridge/orphans/:id/close", async (req, res): Promise<void> =
 // stale/offline bridge. Read-only on the bridge state.
 router.get("/admin/bridge/watchdog", async (req, res): Promise<void> => {
   const role = requireAdmin(req, res); if (!role) return;
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(isNull(mt5ConnectionTable.tokenRevokedAt));
+  const rows = await listConnections({ activeTokenOnly: true, order: "oldest" });
 
   // Per-user fresh-bridge counts for leader-conflict detection.
   const now = new Date();
@@ -496,7 +492,7 @@ router.get("/admin/bridge/watchdog", async (req, res): Promise<void> => {
   for (const r of rows) {
     if (r.userId == null || !r.lastHeartbeat) continue;
     const age = Math.floor((now.getTime() - new Date(r.lastHeartbeat).getTime()) / 1000);
-    if (age <= 15) freshByUser.set(r.userId, (freshByUser.get(r.userId) ?? 0) + 1);
+    if (isHeartbeatAgeSecondsFresh(age)) freshByUser.set(r.userId, (freshByUser.get(r.userId) ?? 0) + 1);
   }
 
   const verdicts = rows.map((r) => {

@@ -50,9 +50,14 @@ export interface PositionSizingResult {
 }
 
 export interface ExecuteFromDecisionOpts {
+  // Owner of the trade. The paper account, the order and the execution row all
+  // belong to this user; null only for legacy operator callers.
+  ownerUserId?: number | null;
   // If provided, use this paper account; else pick the active one.
   paperAccountId?: number;
   // If true, allow taking the trade even with a same-symbol+direction
   // already open. Default false (conservative).
   allowConflicts?: boolean;
+  // Who asked for the trade, recorded on the Risk Governor audit row.
+  origin?: "manual" | "ruby" | "automation" | "strategy";
 }

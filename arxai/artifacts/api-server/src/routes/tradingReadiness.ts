@@ -6,17 +6,23 @@
 // safety layer. This router only summarizes signals + the trader's self-
 // reported state into a single readiness signal for the UI and AI Coach.
 //
+// OWNERSHIP: checks are stamped with and read by req.authUser, and the rule
+// contract / weekly review signals come from that user's rows only.
+//
 // No guaranteed-profit claims. Disclaimer surfaced on every response.
 
 import { Router } from "express";
 import {
   db, tradingReadinessChecksTable,
-  safetyCoreTable, riskLocksTable, brokerHealthLogsTable,
+  riskLocksTable,
   economicEventsTable, tradingRuleContractsTable,
   weeklyPerformanceReviewsTable, vaultEventsTable,
 } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod/v4";
+import { platformStop, readSafetyCorePosture, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
+import { requireUser } from "../lib/auth/middleware.js";
+import { readLatestBrokerHealthLog } from "../lib/brokerHub/brokerHealthState.js";
 
 const router = Router();
 
@@ -55,23 +61,34 @@ interface ChecklistItem {
   detail: string;
 }
 
-async function gatherSignals() {
-  const safety = (await db.select().from(safetyCoreTable).orderBy(asc(safetyCoreTable.id)).limit(1))[0] ?? null;
+async function gatherSignals(userId: number) {
+  // Both install-wide stops through platformStop() (unreadable → engaged):
+  // the safety-core kill switch as before, and the platform emergency stop,
+  // which halts the broker venues this readiness is about. The safety core's
+  // operational mode comes from the same authority.
+  const [stop, posture] = await Promise.all([platformStop(), readSafetyCorePosture()]);
+  const safety = posture.present || !posture.readable
+    ? {
+      killSwitchEngaged: stopSourceEngaged(stop, "safety_core_kill_switch"),
+      operationalMode: posture.operationalMode ?? "OBSERVE_ONLY",
+    }
+    : null;
+  const emergencyStopEngaged = stopSourceEngaged(stop, "platform_emergency_stop");
   const activeLocks = await db.select().from(riskLocksTable).where(eq(riskLocksTable.isActive, true)).limit(10);
-  const brokerLog = (await db.select().from(brokerHealthLogsTable)
-    .orderBy(desc(brokerHealthLogsTable.createdAt)).limit(1))[0] ?? null;
+  const brokerLog = await readLatestBrokerHealthLog();
   const now = new Date();
   const in2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
   const upcomingNews = await db.select().from(economicEventsTable)
     .where(and(gte(economicEventsTable.eventTime, now), lte(economicEventsTable.eventTime, in2h)))
     .orderBy(asc(economicEventsTable.eventTime)).limit(20);
   const activeContract = (await db.select().from(tradingRuleContractsTable)
-    .where(eq(tradingRuleContractsTable.isActive, 1)).limit(1))[0] ?? null;
+    .where(and(eq(tradingRuleContractsTable.userId, userId), eq(tradingRuleContractsTable.isActive, 1)))
+    .orderBy(desc(tradingRuleContractsTable.createdAt)).limit(1))[0] ?? null;
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
   const recentReview = (await db.select().from(weeklyPerformanceReviewsTable)
-    .where(gte(weeklyPerformanceReviewsTable.weekStart, fourteenDaysAgo))
+    .where(and(eq(weeklyPerformanceReviewsTable.userId, userId), gte(weeklyPerformanceReviewsTable.weekStart, fourteenDaysAgo)))
     .orderBy(desc(weeklyPerformanceReviewsTable.weekStart)).limit(1))[0] ?? null;
-  return { safety, activeLocks, brokerLog, upcomingNews, activeContract, recentReview };
+  return { safety, emergencyStopEngaged, activeLocks, brokerLog, upcomingNews, activeContract, recentReview };
 }
 
 interface EvalInput {
@@ -180,17 +197,21 @@ function evaluateReadiness(
 
   // 9. No active risk lock + safety mode permits trading
   const lockCount = signals.activeLocks.length;
-  const ks = signals.safety?.killSwitchEngaged === true;
+  const coreKs = signals.safety?.killSwitchEngaged === true;
+  const emergency = signals.emergencyStopEngaged;
+  const ks = coreKs || emergency;
   const opMode = signals.safety?.operationalMode ?? "OBSERVE_ONLY";
   const modeBlocks = opMode === "OBSERVE_ONLY" || opMode === "SUGGEST_ONLY";
   const safetyBlocks = lockCount > 0 || ks || modeBlocks;
   checklist.push({ id: "safety", label: "No active risk lock",
     status: ks ? "FAIL" : lockCount > 0 ? "FAIL" : modeBlocks ? "WARN" : "PASS",
-    detail: ks ? "Kill switch engaged"
+    detail: coreKs ? "Kill switch engaged"
+      : emergency ? "Platform emergency stop engaged"
       : lockCount > 0 ? `${lockCount} active risk lock(s)`
       : modeBlocks ? `Operational mode: ${opMode}`
       : `Operational mode: ${opMode}` });
-  if (ks) { blockers.push("Kill switch engaged"); lockedByHard = true; }
+  if (coreKs) { blockers.push("Kill switch engaged"); lockedByHard = true; }
+  if (emergency) { blockers.push("Platform emergency stop engaged"); lockedByHard = true; }
   if (lockCount > 0) { blockers.push(`${lockCount} active risk lock(s)`); lockedByHard = true; }
   if (modeBlocks && !ks && lockCount === 0) warnings.push(`Operational mode '${opMode}' does not permit live execution`);
 
@@ -223,7 +244,7 @@ function buildSummary(
   inp: EvalInput,
 ): string {
   if (status === "LOCKED") {
-    return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${signals.safety?.killSwitchEngaged ? "Kill switch must be cleared by an operator." : "This is a safety hold, not a punishment."}`;
+    return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${signals.safety?.killSwitchEngaged || signals.emergencyStopEngaged ? "Kill switch must be cleared by an operator." : "This is a safety hold, not a punishment."}`;
   }
   if (status === "NOT_READY") {
     return `NOT_READY — readiness score ${score}/100. Complete the failed checklist items (mental check-in, broker, news) before starting.`;
@@ -241,10 +262,11 @@ function buildSummary(
 // ── Routes ─────────────────────────────────────────────────────────────────
 
 // POST /readiness/checks — submit a self-report; immediately evaluate + persist.
-router.post("/readiness/checks", async (req, res): Promise<void> => {
+router.post("/readiness/checks", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const b = SelfReport.parse(req.body ?? {});
-    const signals = await gatherSignals();
+    const signals = await gatherSignals(userId);
     const evald = evaluateReadiness(signals, {
       mentalState: b.mentalState ?? null,
       sleepQuality: b.sleepQuality ?? null,
@@ -254,6 +276,7 @@ router.post("/readiness/checks", async (req, res): Promise<void> => {
       riskRulesConfirmed: b.riskRulesConfirmed,
     });
     const ins = await db.insert(tradingReadinessChecksTable).values({
+      userId,
       sessionName: b.sessionName,
       readinessScore: evald.score,
       mentalState: b.mentalState ?? null,
@@ -289,28 +312,30 @@ router.post("/readiness/checks", async (req, res): Promise<void> => {
 });
 
 // GET /readiness/checks/latest
-router.get("/readiness/checks/latest", async (_req, res): Promise<void> => {
+router.get("/readiness/checks/latest", requireUser, async (req, res): Promise<void> => {
   const r = (await db.select().from(tradingReadinessChecksTable)
+    .where(eq(tradingReadinessChecksTable.userId, req.authUser!.id))
     .orderBy(desc(tradingReadinessChecksTable.createdAt)).limit(1))[0];
   if (!r) { fail(res, 404, "No readiness check yet"); return; }
   ok(res, { check: r });
 });
 
 // GET /readiness/checks — history
-router.get("/readiness/checks", async (req, res): Promise<void> => {
+router.get("/readiness/checks", requireUser, async (req, res): Promise<void> => {
   // Architect fix: NaN-guard + clamp on limit to prevent invalid query 500s.
   const raw = Number(req.query["limit"]);
   const limit = Number.isFinite(raw) ? Math.max(1, Math.min(raw, 200)) : 50;
   const rows = await db.select().from(tradingReadinessChecksTable)
+    .where(eq(tradingReadinessChecksTable.userId, req.authUser!.id))
     .orderBy(desc(tradingReadinessChecksTable.createdAt)).limit(limit);
   ok(res, { checks: rows });
 });
 
 // POST /readiness/evaluate — preview evaluation without persisting (dry-run)
-router.post("/readiness/evaluate", async (req, res): Promise<void> => {
+router.post("/readiness/evaluate", requireUser, async (req, res): Promise<void> => {
   try {
     const b = SelfReport.parse(req.body ?? {});
-    const signals = await gatherSignals();
+    const signals = await gatherSignals(req.authUser!.id);
     const evald = evaluateReadiness(signals, {
       mentalState: b.mentalState ?? null,
       sleepQuality: b.sleepQuality ?? null,

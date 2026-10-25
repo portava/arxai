@@ -1,6 +1,17 @@
+import {
+  MT5_ACCOUNT_SNAPSHOT_FRESH_MS,
+  MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+  classifyHeartbeatAt,
+  heartbeatIsOnline,
+  isHeartbeatAgeMsFresh,
+  isHeartbeatAgeSecondsFresh,
+} from "../lib/brokerHub/freshness.js";
+import { findConnectionByBridgeTokenHash, getUserActiveConnection, updateConnection, type BrokerConnectionPatch, type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
+import { applyOwnPositionSnapshot } from "../lib/mt5/executionReconciler.js";
+import { noteBridgeHeartbeat, scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod/v4";
-import { db, mt5CommandsTable, mt5StateTable, mt5ConnectionTable, riskSettingsTable, sharedMasterAccountsTable, sharedTradeAttributionTable, arxSymbolSpecsTable } from "@workspace/db";
+import { db, mt5CommandsTable, mt5StateTable, sharedMasterAccountsTable, sharedTradeAttributionTable, arxSymbolSpecsTable } from "@workspace/db";
 import { recordUnattributedMasterTrade } from "../lib/mt5/unattributedMasterTrades.js";
 import { mapV150Enumeration, type V150EnumEntry } from "../lib/mt5/symbolDirectory.js";
 import { ingestEaCapabilities } from "../lib/mt5/eaCapabilityMapping.js";
@@ -27,6 +38,9 @@ import { recordSecurityEvent } from "../lib/security/events.js";
 import { anyActiveUserBridgeTokenExists } from "../lib/broker/secrets.js";
 import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
+import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 
 const router = Router();
 
@@ -133,8 +147,8 @@ async function auditBridge(
 }
 
 async function loadOrCreateState() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  if (rows[0]) return rows[0];
+  const existing = await readPlatformMt5State();
+  if (existing) return existing;
   const inserted = await db.insert(mt5StateTable).values({}).returning();
   return inserted[0];
 }
@@ -145,11 +159,33 @@ async function loadOrCreateState() {
 // /mt5/close, /mt5/modify, /mt5/close-all could enqueue rows without any auth
 // or invariant check. Even when this gate opens, placeLiveOrderGuarded still
 // rejects placement with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
-async function refuseWhenNotArmed(_req: Request, res: Response, next: NextFunction) {
+//
+// Action-aware (owner decision 3, round 5). Both install-wide stops are read
+// once through the platform-stop authority: the safety-core kill switch (this
+// gate's own stop) still refuses every command, as before; the platform
+// emergency stop now also refuses NEW-RISK commands (OPEN, pending-order
+// placement). Closes, modifies and close-all are not refused by the emergency
+// stop here, and the bridge's own endpoints (heartbeat, sync, diagnostics,
+// command polling/results) never run this gate.
+/** Commands that open new risk on the /mt5 command endpoints. */
+export const MT5_NEW_RISK_ACTIONS: ReadonlySet<string> = new Set(["OPEN", "PLACE_PENDING_ORDER"]);
+/** Does this /mt5 command request open new risk? An unknown or unparseable queued action counts as new risk (fail closed). */
+export function mt5RequestOpensNewRisk(path: string, body: unknown): boolean {
+  if (path.endsWith("/mt5/execute")) return true;
+  if (path.endsWith("/mt5/close") || path.endsWith("/mt5/modify") || path.endsWith("/mt5/close-all")) return false;
+  const action = (body as { action?: unknown } | null | undefined)?.action;
+  const known = ["CLOSE", "MODIFY", "CLOSE_ALL", "MODIFY_POSITION_PROTECTION", "MODIFY_PENDING_ORDER", "CANCEL_PENDING_ORDER"];
+  return typeof action !== "string" || !known.includes(action) || MT5_NEW_RISK_ACTIONS.has(action);
+}
+async function refuseWhenNotArmed(req: Request, res: Response, next: NextFunction) {
   try {
     const { getStatus: getSafetyStatus } = await import("../lib/safetyCore.js");
     const s = await getSafetyStatus();
-    const armed = s.operationalMode === "LIVE_TRADING" && !s.killSwitchEngaged;
+    const opensNewRisk = mt5RequestOpensNewRisk(req.path, req.body);
+    const stop = preCheckStopRefusal(await platformStop(), {
+      own: "safety_core_kill_switch", opensNewRisk, venue: "LIVE",
+    });
+    const armed = s.operationalMode === "LIVE_TRADING" && !stop.engaged;
     if (!armed) {
       res.status(403).json({
         system: "mt5",
@@ -159,8 +195,10 @@ async function refuseWhenNotArmed(_req: Request, res: Response, next: NextFuncti
           status: "REJECTED",
           reason: "NOT_ARMED_FOR_LIVE",
           operationalMode: s.operationalMode,
-          killSwitchEngaged: s.killSwitchEngaged,
-          message: "MT5 command-producing endpoints are disabled. The system must be in LIVE_TRADING mode with the kill switch released before commands can be enqueued. Even then, placeLiveOrderGuarded() still rejects placement until a real broker layer ships.",
+          killSwitchEngaged: stopSourceEngaged(stop, "safety_core_kill_switch"),
+          platformStopSources: stop.sources,
+          opensNewRisk,
+          message: "MT5 command-producing endpoints are disabled. The system must be in LIVE_TRADING mode with the safety-core kill switch released (and, for new-risk commands, the platform emergency stop released) before commands can be enqueued. Even then, placeLiveOrderGuarded() still rejects placement until a real broker layer ships.",
         },
       });
       return;
@@ -208,30 +246,12 @@ export async function bridgeAuthPerUserOnly(req: Request, res: Response, next: N
     return;
   }
   const hash = hashBridgeToken(provided);
-  let matched = await db.select().from(mt5ConnectionTable)
-    .where(and(eq(mt5ConnectionTable.apiKeyHash, hash), isNull(mt5ConnectionTable.tokenRevokedAt)))
-    .limit(1);
-  let graceAccepted = false;
-  if (!matched[0]) {
-    // Task #31 — rotation grace window. After an admin rotates a bridge
-    // token, the OLD token's hash is parked in `previousApiKeyHash` with an
-    // expiry in `previousTokenExpiresAt`. We accept the previous hash ONLY
-    // while now < previousTokenExpiresAt, so an EA on a VPS keeps working
-    // until the operator swaps the token. Revoked connections are still
-    // rejected (isNull tokenRevokedAt), and the system token was already
-    // hard-denied above — neither path is reachable here.
-    const graceRows = await db.select().from(mt5ConnectionTable)
-      .where(and(
-        eq(mt5ConnectionTable.previousApiKeyHash, hash),
-        isNull(mt5ConnectionTable.tokenRevokedAt),
-      ))
-      .limit(1);
-    const candidate = graceRows[0];
-    if (candidate && candidate.previousTokenExpiresAt && candidate.previousTokenExpiresAt.getTime() > Date.now()) {
-      matched = graceRows;
-      graceAccepted = true;
-    }
-  }
+  // Task #31 — rotation grace window: the previous token is accepted only
+  // while now < previousTokenExpiresAt and the connection is not revoked
+  // (the Broker Hub lookup enforces both).
+  const found = await findConnectionByBridgeTokenHash(hash);
+  const matched = found ? [found.connection] : [];
+  const graceAccepted = found?.via === "previous_grace";
   if (!matched[0] || matched[0].userId == null) {
     bridgeDiag.lastRejectedHeartbeatAt = new Date();
     bridgeDiag.lastRejectReason = "TOKEN_NO_USER_MATCH";
@@ -274,7 +294,7 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
   // Safe metadata log — token value is NEVER included.
   const ip = shortIp(req);
   const ua = req.headers["user-agent"] ?? null;
-  const userConn = (req as Request & { mt5Connection?: typeof mt5ConnectionTable.$inferSelect }).mt5Connection ?? null;
+  const userConn = (req as Request & { mt5Connection?: BrokerConnectionRecord }).mt5Connection ?? null;
   req.log.info({ event: "mt5_heartbeat_received", ip, ua, hasBody: !!req.body, perUser: !!userConn, connectionId: userConn?.id }, "MT5 heartbeat received (token accepted)");
   try {
     const body = Mt5HeartbeatBody.parse(req.body);
@@ -407,7 +427,9 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
       serverReceivedMs: heartbeatReceivedAt.getTime(),
     });
     const state = await loadOrCreateState();
-    const wasOffline = !state.lastHeartbeatAt || (Date.now() - new Date(state.lastHeartbeatAt).getTime() > 30_000);
+    // Shared heartbeat policy: the platform EA "was offline" unless its last
+    // heartbeat was online (fresh or degraded, age < 60 s).
+    const wasOffline = !heartbeatIsOnline(classifyHeartbeatAt(state.lastHeartbeatAt ?? null, Date.now()));
     await db.update(mt5StateTable).set({
       account: body.account,
       broker: body.broker ?? state.broker,
@@ -418,9 +440,14 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
       lastHeartbeatAt: new Date(),
     }).where(eq(mt5StateTable.id, state.id));
     if (userConn) {
+      // Position Guardian — a heartbeat after a gap is a reconnect: the next
+      // full position snapshot reconciles every governed position.
+      if (userConn.userId != null) {
+        noteBridgeHeartbeat(userConn.accountType === "demo" ? "DEMO" : "LIVE", userConn.userId, userConn.lastHeartbeat ?? null, heartbeatReceivedAt);
+      }
       // Phase 3C — also write to the per-user connection record.
       // Phase TU — also persist capability disclosure.
-      await db.update(mt5ConnectionTable).set({
+      await updateConnection(userConn.id, {
         status: "connected",
         accountNumber: body.account ?? userConn.accountNumber,
         brokerName: body.broker ?? userConn.brokerName,
@@ -465,7 +492,7 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
         clockDriftSeverity: drift.severity,
         lastHeartbeat: new Date(),
         updatedAt: new Date(),
-      }).where(eq(mt5ConnectionTable.id, userConn.id));
+      });
       if (drift.severity === "SEVERE") {
         req.log.warn({ event: "mt5_clock_drift_severe", connectionId: userConn.id, driftSeconds: drift.driftSeconds, flags: drift.flags }, "EA host clock drift is SEVERE");
       }
@@ -551,7 +578,7 @@ router.get("/mt5/heartbeat/status", async (_req, res) => {
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
-  const fresh = ageSec !== null && ageSec < HEARTBEAT_THRESHOLD_MS / 1000;
+  const fresh = isHeartbeatAgeSecondsFresh(ageSec);
   const eaConnected = fresh;
   const tokenAccepted = bridgeDiag.acceptedCount > 0
     ? "yes"
@@ -575,7 +602,7 @@ router.get("/mt5/heartbeat/status", async (_req, res) => {
     lastAcceptedUserAgent: bridgeDiag.lastAcceptedUserAgent,
     expectedPostEndpoint: "/api/mt5/heartbeat",
     expectedHeader: "X-MT5-Bridge-Token",
-    freshnessThresholdSeconds: HEARTBEAT_THRESHOLD_MS / 1000,
+    freshnessThresholdSeconds: MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
     serverTime: new Date().toISOString(),
     note: "Diagnostic only. Does not unlock execution. Token values are never returned.",
   });
@@ -589,7 +616,7 @@ router.get("/mt5/bridge-diagnostics", async (req, res) => {
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
-  const fresh = ageSec !== null && ageSec < HEARTBEAT_THRESHOLD_MS / 1000;
+  const fresh = isHeartbeatAgeSecondsFresh(ageSec);
 
   // Endpoint mount probe — derived from this very router's stack so the truth
   // matches whatever is actually wired up at runtime, not a hand-maintained list.
@@ -613,7 +640,7 @@ router.get("/mt5/bridge-diagnostics", async (req, res) => {
   const snapshotAgeMs = bridgeDiag.lastBrokerSnapshotAt
     ? Date.now() - bridgeDiag.lastBrokerSnapshotAt.getTime()
     : null;
-  const brokerSnapshotFresh = snapshotAgeMs !== null && snapshotAgeMs < 60_000;
+  const brokerSnapshotFresh = snapshotAgeMs !== null && snapshotAgeMs < MT5_ACCOUNT_SNAPSHOT_FRESH_MS;
   const now = new Date().toISOString();
   res.json({
     // Phase 28-MT5-VPS spec-named fields (canonical, never breaking).
@@ -707,12 +734,12 @@ export async function buildBridgeOpsRollup(requesterRole: "admin" | "user") {
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
-  const fresh = ageSec !== null && ageSec < HEARTBEAT_THRESHOLD_MS / 1000;
+  const fresh = isHeartbeatAgeSecondsFresh(ageSec);
   const dup = detectDuplicateEa();
   const snapshotAgeMs = bridgeDiag.lastBrokerSnapshotAt
     ? Date.now() - bridgeDiag.lastBrokerSnapshotAt.getTime()
     : null;
-  const brokerSnapshotFresh = snapshotAgeMs !== null && snapshotAgeMs < 60_000;
+  const brokerSnapshotFresh = snapshotAgeMs !== null && snapshotAgeMs < MT5_ACCOUNT_SNAPSHOT_FRESH_MS;
   // Operator-only identifiers (server-wide). Non-admin users see "REDACTED".
   const isAdmin = requesterRole === "admin";
   return {
@@ -740,7 +767,7 @@ export async function buildBridgeOpsRollup(requesterRole: "admin" | "user") {
     duplicateEaReason: dup.reason,
     distinctAcceptedIpsLast5m: dup.distinctIps.length,
     distinctAcceptedAccountsLast5m: dup.distinctAccounts.length,
-    freshnessThresholdSeconds: HEARTBEAT_THRESHOLD_MS / 1000,
+    freshnessThresholdSeconds: MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
     requesterScope: isAdmin ? "admin" : "user_redacted",
     safetyEnvelope: {
       liveLocked: true,
@@ -760,7 +787,7 @@ export async function buildBridgeOpsRollup(requesterRole: "admin" | "user") {
 
 router.get("/mt5/bridge-ops-monitor", requireUser, async (req, res) => {
   const role = readRoleFromRequest(req);
-  const rollup = await buildBridgeOpsRollup(role === "OWNER" || role === "ADMIN" ? "admin" : "user");
+  const rollup = await buildBridgeOpsRollup(operatorRoleFromSession(role) != null ? "admin" : "user");
   void auditBridge("BRIDGE_OPS_MONITOR_VIEWED", "INFO", "ALLOWED", req, { requesterScope: rollup.requesterScope });
   if (rollup.lastHeartbeatAt && !rollup.heartbeatFresh) {
     void auditBridge("BRIDGE_HEARTBEAT_STALE", "WARNING", "TRIGGERED", req, {
@@ -783,7 +810,7 @@ router.get("/mt5/setup-checklist", async (req, res) => {
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
-  const fresh = ageSec !== null && ageSec < HEARTBEAT_THRESHOLD_MS / 1000;
+  const fresh = isHeartbeatAgeSecondsFresh(ageSec);
   const hasSnapshot = state.balance != null || state.equity != null;
 
   type ItemState = "ok" | "missing" | "waiting" | "stale" | "manual";
@@ -816,7 +843,7 @@ router.get("/mt5/setup-checklist", async (req, res) => {
       state: fresh ? "ok" : (lastHb ? "stale" : "waiting"),
       detail: fresh
         ? `Last heartbeat ${ageSec}s ago.`
-        : (lastHb ? `Stale — last heartbeat ${ageSec}s ago (threshold ${HEARTBEAT_THRESHOLD_MS / 1000}s).` : "Waiting for first heartbeat."),
+        : (lastHb ? `Stale — last heartbeat ${ageSec}s ago (threshold ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s).` : "Waiting for first heartbeat."),
     },
     {
       id: "broker_snapshot_read_only",
@@ -875,7 +902,7 @@ router.get("/mt5/setup-checklist", async (req, res) => {
 // flips PENDING→DELIVERED, so a concurrent cancel/poll cannot double-claim
 // or resurrect a cancelled row.
 router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
-  const conn = (req as Request & { mt5Connection: typeof mt5ConnectionTable.$inferSelect }).mt5Connection;
+  const conn = (req as Request & { mt5Connection: BrokerConnectionRecord }).mt5Connection;
   const candidateIds = (await db.select({ id: mt5CommandsTable.id }).from(mt5CommandsTable)
     .where(and(
       eq(mt5CommandsTable.status, "PENDING"),
@@ -954,7 +981,7 @@ router.post("/mt5/queue-command", requireUser, refuseWhenNotArmed, async (req, r
 // userId AND mt5ConnectionId. Cross-user attempts return 404.
 router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Promise<void> => {
   try {
-    const conn = (req as Request & { mt5Connection: typeof mt5ConnectionTable.$inferSelect }).mt5Connection;
+    const conn = (req as Request & { mt5Connection: BrokerConnectionRecord }).mt5Connection;
     const body = PostMt5CommandResultBody.parse(req.body);
     const isFailed = /fail|error|reject/i.test(body.status);
     const now = new Date();
@@ -1224,14 +1251,14 @@ router.post("/mt5/sync-account", bridgeAuthPerUserOnly, async (req, res) => {
       lastSyncAt: new Date(),
     }).where(eq(mt5StateTable.id, state.id));
 
-    const userConn = (req as Request & { mt5Connection?: typeof mt5ConnectionTable.$inferSelect }).mt5Connection ?? null;
+    const userConn = (req as Request & { mt5Connection?: BrokerConnectionRecord }).mt5Connection ?? null;
     let accountChangedUserId: number | null = null;
     if (userConn) {
       // Per-user mirror. Only set fields the EA actually reported (nullish
       // → leave the existing column value alone) so a partial snapshot can
       // never overwrite known-good data with NULL. accountType / mode are
       // managed exclusively by the heartbeat path.
-      const patch: Partial<typeof mt5ConnectionTable.$inferInsert> = {
+      const patch: BrokerConnectionPatch = {
         accountBalance: body.balance,
         accountEquity: body.equity,
         accountCurrency: body.currency,
@@ -1245,8 +1272,7 @@ router.post("/mt5/sync-account", bridgeAuthPerUserOnly, async (req, res) => {
       // body.account is the broker account number — only fill if the per-
       // user row hasn't captured it yet.
       if (!userConn.accountNumber && body.account) patch.accountNumber = body.account;
-      await db.update(mt5ConnectionTable).set(patch)
-        .where(eq(mt5ConnectionTable.id, userConn.id));
+      await updateConnection(userConn.id, patch);
       accountChangedUserId = userConn.userId ?? null;
     }
     // Task #1 — pool snapshot must follow every balance/equity write.
@@ -1305,7 +1331,8 @@ router.post("/mt5/sync-positions", bridgeAuthPerUserOnly, async (req, res) => {
 
 // ── Phase 7 additions ──────────────────────────────────────────────────────
 
-const HEARTBEAT_THRESHOLD_MS = 15_000;
+// Platform EA "connected" / "fresh" in the diagnostics below is the shared
+// heartbeat policy's fresh band (age < 15 s).
 
 // Phase 12 hardening: ARX AI is paper-only by construction. Broker placement
 // is not implemented; no live execution path is reachable. `liveLocked` is
@@ -1317,7 +1344,7 @@ async function getLiveLocked(): Promise<boolean> {
 }
 
 function determineMode(state: { lastHeartbeatAt: Date | null; liveAllowed: number | null }, liveLocked: boolean): "MOCK" | "DEMO" | "LIVE_LOCKED" | "LIVE" {
-  const connected = !!state.lastHeartbeatAt && Date.now() - new Date(state.lastHeartbeatAt).getTime() < HEARTBEAT_THRESHOLD_MS;
+  const connected = isHeartbeatAgeMsFresh(state.lastHeartbeatAt ? Date.now() - new Date(state.lastHeartbeatAt).getTime() : null);
   if (!connected) return "MOCK";
   if (liveLocked) return "LIVE_LOCKED";
   if (state.liveAllowed) return "LIVE";
@@ -1378,12 +1405,10 @@ async function queueCommand(action: Mt5GatedAction, payload: {
   // command enqueued by this helper is forced to status=BLOCKED so the EA
   // poll (/mt5/commands filters status='PENDING') CANNOT pick it up. This
   // closes the reachable live-command path identified in the Phase 12
-  // production audit. The legacy + safetyCore checks remain as
-  // belt-and-braces context but no longer drive deliverability.
-  const { getStatus: getSafetyStatus } = await import("../lib/safetyCore.js");
-  const safety = await getSafetyStatus();
-  const safetyArmed = safety.operationalMode === "LIVE_TRADING" && !safety.killSwitchEngaged;
-  void safetyArmed; // retained for future audit; no longer gates delivery
+  // production audit. The stop and arm checks run in front of this helper
+  // (refuseWhenNotArmed, through the platform-stop authority); they no longer
+  // drive deliverability here. (Round 5: an unused safety-core read that sat
+  // here was removed; it never affected the stored status.)
   const status = "BLOCKED" as const;
   const effectiveBlockedReason = blockedReason
     ?? "ARX AI is paper-only by construction. Broker placement is not implemented; command stored as BLOCKED.";
@@ -1429,11 +1454,7 @@ router.get("/mt5/status", requireUser, async (req, res) => {
   // "not connected" instead of falling back to the singleton mt5_state
   // (which represents the legacy global owner bridge and would otherwise
   // leak that account's balance/equity into another user's UI).
-  const userConns = await db.select().from(mt5ConnectionTable)
-    .where(and(eq(mt5ConnectionTable.userId, userId), isNull(mt5ConnectionTable.tokenRevokedAt)))
-    .orderBy(desc(mt5ConnectionTable.lastHeartbeat))
-    .limit(1);
-  const userConn = userConns[0];
+  const userConn = await getUserActiveConnection(userId);
 
   const counts = await db.select({
     status: mt5CommandsTable.status,
@@ -1480,7 +1501,7 @@ router.get("/mt5/status", requireUser, async (req, res) => {
 
   const lastHb = userConn.lastHeartbeat ? new Date(userConn.lastHeartbeat) : null;
   const ageMs = lastHb ? Date.now() - lastHb.getTime() : null;
-  const fresh = ageMs !== null && ageMs < HEARTBEAT_THRESHOLD_MS;
+  const fresh = isHeartbeatAgeMsFresh(ageMs);
   const secondsSinceHeartbeat = ageMs !== null ? Math.floor(ageMs / 1000) : null;
   const connected = fresh;
   const mode: "NOT_CONNECTED" | "STALE" | "DEMO" | "LIVE_LOCKED" =
@@ -1524,7 +1545,7 @@ router.get("/mt5/status", requireUser, async (req, res) => {
 // scoped to the requesting admin's user_id only.
 router.get("/mt5/bridge-info", requireUser, async (req, res) => {
   const role = req.authUser?.role;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (!operatorRoleFromSession(role)) {
     res.status(403).json({ error: "admin_required" });
     return;
   }
@@ -1687,7 +1708,7 @@ const Mt5ExecutionResultBody = z.object({
 
 router.post("/mt5/execution-result", bridgeAuthPerUserOnly, async (req, res): Promise<void> => {
   try {
-    const conn = (req as Request & { mt5Connection: typeof mt5ConnectionTable.$inferSelect }).mt5Connection;
+    const conn = (req as Request & { mt5Connection: BrokerConnectionRecord }).mt5Connection;
     const parsed = Mt5ExecutionResultBody.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ ok: false, error: "invalid_body" });
@@ -1753,9 +1774,13 @@ router.post("/mt5/execution-result", bridgeAuthPerUserOnly, async (req, res): Pr
 
 router.get("/mt5/state", async (_req, res) => {
   const state = await loadOrCreateState();
-  const connected = !!state.lastHeartbeatAt && Date.now() - new Date(state.lastHeartbeatAt).getTime() < 30_000;
+  // "connected" = heartbeat online under the shared policy (fresh or
+  // degraded, age < 60 s); heartbeatFreshness carries the full band.
+  const heartbeatFreshness = classifyHeartbeatAt(state.lastHeartbeatAt ?? null, Date.now());
+  const connected = heartbeatIsOnline(heartbeatFreshness);
   res.json({
     connected,
+    heartbeatFreshness,
     account: state.account,
     broker: state.broker,
     server: state.server,
@@ -1800,7 +1825,7 @@ router.get("/mt5/state", async (_req, res) => {
 router.post("/mt5/sync-positions-per-user", bridgeAuthPerUserOnly, async (req, res) => {
   try {
     const body = Mt5SyncPositionsBody.parse(req.body);
-    const conn = (req as Request & { mt5Connection: typeof mt5ConnectionTable.$inferSelect }).mt5Connection;
+    const conn = (req as Request & { mt5Connection: BrokerConnectionRecord }).mt5Connection;
 
     // Per-connection state: persist this EA's snapshot so future routes can
     // surface it. We reuse the singleton mt5_state for the legacy global view
@@ -1820,10 +1845,21 @@ router.post("/mt5/sync-positions-per-user", bridgeAuthPerUserOnly, async (req, r
     })();
 
     if (!isMaster) {
-      // User-owned MT5 — nothing to detect. Just acknowledge so the EA can
-      // continue. We deliberately do NOT touch mt5_state here either, since
-      // that table is the legacy global singleton owned by the system bridge.
-      res.json({ received: true, isMaster: false, unattributedRecorded: 0, unattributedSkipped: 0 });
+      // User-owned MT5 — no attribution to detect. We deliberately do NOT
+      // touch mt5_state here, since that table is the legacy global singleton
+      // owned by the system bridge. The snapshot is broker truth for this
+      // trader's own tracked positions: refresh them, then let the Position
+      // Guardian verify every governed stop against it.
+      let refreshed = 0;
+      if (conn.userId != null) {
+        try {
+          refreshed = await applyOwnPositionSnapshot(conn.userId, body.positions);
+          scheduleGuardian("DEMO", conn.userId, null, "snapshot");
+        } catch (e) {
+          req.log.warn({ err: e }, "sync_positions_per_user_own_snapshot_failed");
+        }
+      }
+      res.json({ received: true, isMaster: false, unattributedRecorded: 0, unattributedSkipped: 0, positionsRefreshed: refreshed });
       return;
     }
 
@@ -1923,7 +1959,7 @@ const SymbolSpecItem = z.object({
 const SyncSymbolSpecsBody = z.object({ symbols: z.array(SymbolSpecItem).max(500) });
 
 router.post("/mt5/sync-symbol-specs", bridgeAuthPerUserOnly, async (req, res) => {
-  const userConn = (req as Request & { mt5Connection?: typeof mt5ConnectionTable.$inferSelect }).mt5Connection ?? null;
+  const userConn = (req as Request & { mt5Connection?: BrokerConnectionRecord }).mt5Connection ?? null;
   if (!userConn || userConn.userId == null) { res.status(401).json({ error: "Per-user bridge required" }); return; }
   const connUserId = userConn.userId;
   const parsed = SyncSymbolSpecsBody.safeParse(req.body);
@@ -2048,7 +2084,7 @@ function isValidOhlc(b: { open: number; high: number; low: number; close: number
 }
 
 router.post("/mt5/sync-candles", bridgeAuthPerUserOnly, async (req, res) => {
-  const userConn = (req as Request & { mt5Connection?: typeof mt5ConnectionTable.$inferSelect }).mt5Connection ?? null;
+  const userConn = (req as Request & { mt5Connection?: BrokerConnectionRecord }).mt5Connection ?? null;
   if (!userConn || userConn.userId == null) { res.status(401).json({ error: "Per-user bridge required" }); return; }
   const parsed = SyncCandlesBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid candle payload", details: parsed.error.issues }); return; }
@@ -2171,7 +2207,7 @@ const SyncQuoteBody = z.object({
 });
 
 router.post("/mt5/sync-quotes", bridgeAuthPerUserOnly, async (req, res) => {
-  const userConn = (req as Request & { mt5Connection?: typeof mt5ConnectionTable.$inferSelect }).mt5Connection ?? null;
+  const userConn = (req as Request & { mt5Connection?: BrokerConnectionRecord }).mt5Connection ?? null;
   if (!userConn || userConn.userId == null) { res.status(401).json({ error: "Per-user bridge required" }); return; }
   const parsed = SyncQuoteBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid quote payload", details: parsed.error.issues }); return; }
@@ -2251,7 +2287,7 @@ router.post("/mt5/sync-quotes", bridgeAuthPerUserOnly, async (req, res) => {
 // EA producer is untestable here — the server path is validated by crafted,
 // real-shaped payloads in scripts/src/mt5CandleHistoryIngestTest.ts.
 router.post("/mt5/sync-candle-history", bridgeAuthPerUserOnly, async (req, res) => {
-  const userConn = (req as Request & { mt5Connection?: typeof mt5ConnectionTable.$inferSelect }).mt5Connection ?? null;
+  const userConn = (req as Request & { mt5Connection?: BrokerConnectionRecord }).mt5Connection ?? null;
   if (!userConn || userConn.userId == null) { res.status(401).json({ error: "Per-user bridge required" }); return; }
   const { Mt5CandleHistoryIngestSchema, ingestMt5CandleHistory } =
     await import("../lib/data/mt5History.js");
@@ -2294,7 +2330,7 @@ router.post("/mt5/sync-candle-history", bridgeAuthPerUserOnly, async (req, res) 
 // untestable here — the server path is validated by crafted, real-shaped
 // payloads in scripts/src/brokerCandleIngestTest.ts.
 router.post("/mt5/candles/ingest", bridgeAuthPerUserOnly, async (req, res) => {
-  const userConn = (req as Request & { mt5Connection?: typeof mt5ConnectionTable.$inferSelect }).mt5Connection ?? null;
+  const userConn = (req as Request & { mt5Connection?: BrokerConnectionRecord }).mt5Connection ?? null;
   if (!userConn || userConn.userId == null) { res.status(401).json({ error: "Per-user bridge required" }); return; }
   const { BrokerCandleIngestSchema, ingestBrokerCandles } =
     await import("../lib/data/brokerCandleStore.js");

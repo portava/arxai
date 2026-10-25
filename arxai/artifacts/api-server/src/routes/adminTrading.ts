@@ -9,6 +9,7 @@
 // - Default state is fail-closed; this router never relaxes that without an
 //   explicit, authenticated admin action with a reason.
 
+import { listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import {
@@ -18,7 +19,6 @@ import {
   adminActionAuditLogTable,
   tradeCommandAuditLogTable,
   usersTable,
-  mt5ConnectionTable,
   sharedMasterAccountsTable,
   virtualTradingAccountsTable,
   sharedTradeAttributionTable,
@@ -28,27 +28,21 @@ import {
 import { eq, desc, asc, and, gte, sql } from "drizzle-orm";
 import { tradingModeGate } from "@workspace/db/repositories";
 import { z } from "zod/v4";
-import { getEnvelope, getGlobalSettings } from "../lib/adminTrading/safetyEnvelope.js";
+import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
+import { loadGlobalTradingSettingsRow } from "../lib/safety/platformSwitches.js";
+import { engagePlatformStop, engagedRow, releasePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readOperatorRiskLimits } from "../lib/riskGovernor/limitSettings.js";
 
 const router: IRouter = Router();
 
 function getAdminRole(req: Request): "ADMIN" | "OWNER" | null {
-  // SECURITY: never trust the `x-security-role` header on its own — a logged-in
-  // non-admin user could forge it. Authority is the validated session role on
-  // `req.authUser` (set by attachAuthUser after verifying the session cookie).
-  // The header is still accepted by the existing admin UI, but only as a hint
-  // that must match the validated role (so the header can never elevate).
+  // SECURITY: authority is the signed-in user's role on `req.authUser` (set by
+  // attachAuthUser after verifying the session cookie), through the shared
+  // operator gate so INVESTOR/USER sessions are denied identically across all
+  // admin/live-control routes. No request header is consulted.
   const u = (req as Request & { authUser?: { role?: string } }).authUser;
-  // Task #743 Cluster D — operator gate via the shared helper so INVESTOR/USER
-  // sessions are denied identically across all admin/live-control routes.
-  const sessionRole = operatorRoleFromSession(u?.role);
-  if (!sessionRole) return null;
-  const headerRole = String(req.header("x-security-role") ?? "").toUpperCase();
-  if (headerRole && headerRole !== sessionRole && !(sessionRole === "OWNER" && headerRole === "ADMIN")) {
-    return null;
-  }
-  return sessionRole as "ADMIN" | "OWNER";
+  return operatorRoleFromSession(u?.role);
 }
 
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
@@ -82,7 +76,7 @@ async function writeAdminAudit(args: {
 
 router.get("/admin/trading/settings", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const settings = await getGlobalSettings();
+  const settings = await loadGlobalTradingSettingsRow();
   res.json({ ok: true, settings });
 });
 
@@ -98,7 +92,7 @@ router.post("/admin/trading/mode", async (req, res) => {
     res.status(400).json({ ok: false, error: "INVALID_BODY", details: parsed.error.message });
     return;
   }
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
 
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
@@ -126,22 +120,16 @@ router.post("/admin/trading/mode", async (req, res) => {
 
 router.post("/admin/trading/emergency-kill", async (req, res) => {
   const role = requireAdmin(req, res); if (!role) return;
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
   const reason = String((req.body as { reason?: string })?.reason ?? "").trim();
   if (reason.length < 4) { res.status(400).json({ ok: false, error: "REASON_REQUIRED" }); return; }
 
-  const updated = await db.update(globalTradingSettingsTable)
-    .set({
-      emergencyKillSwitch: true,
-      killSwitchEngagedAt: new Date(),
-      killSwitchReason: reason,
-      updatedByAdminId: adminId,
-      updatedAt: new Date(),
-    })
-    .where(eq(globalTradingSettingsTable.id, before.id))
-    .returning();
+  // The one engage writer (every settings row, reason/time/actor); the audit
+  // event below is unchanged.
+  const engaged = await engagePlatformStop({ reason, actorUserId: adminId, source: "admin_trading_emergency_kill" });
+  const updated = [engagedRow(engaged, before.id)];
   await writeAdminAudit({
     adminId, adminRole: role, action: "ENGAGE_KILL_SWITCH",
     beforeState: { emergencyKillSwitch: before.emergencyKillSwitch },
@@ -153,29 +141,28 @@ router.post("/admin/trading/emergency-kill", async (req, res) => {
 
 router.post("/admin/trading/reset-kill", async (req, res) => {
   const role = requireAdmin(req, res); if (!role) return;
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
   const reason = String((req.body as { reason?: string })?.reason ?? "").trim();
   if (reason.length < 4) { res.status(400).json({ ok: false, error: "REASON_REQUIRED" }); return; }
 
-  const updated = await db.update(globalTradingSettingsTable)
-    .set({
-      emergencyKillSwitch: false,
-      killSwitchEngagedAt: null,
-      killSwitchReason: null,
-      updatedByAdminId: adminId,
-      updatedAt: new Date(),
-    })
-    .where(eq(globalTradingSettingsTable.id, before.id))
-    .returning();
-  await writeAdminAudit({
-    adminId, adminRole: role, action: "RESET_KILL_SWITCH",
-    beforeState: { emergencyKillSwitch: before.emergencyKillSwitch },
-    afterState: { emergencyKillSwitch: false },
-    reason, ipAddress: req.ip ?? null,
+  // The one release operation (owner decision 1): the platform emergency stop
+  // only, on EVERY settings row, audited (RESET_KILL_SWITCH) in the same
+  // transaction. The safety-core kill switch and the live arm are untouched.
+  const released = await releasePlatformStop({
+    stop: "platform_emergency_stop",
+    reason,
+    actor: { userId: adminId, role },
+    source: "admin_trading_reset_kill",
+    ipAddress: req.ip ?? null,
   });
-  res.json({ ok: true, settings: updated[0] });
+  if (!released.ok) {
+    res.status(released.code === "NOT_AUTHORIZED" ? 403 : released.code === "REASON_REQUIRED" ? 400 : 500)
+      .json({ ok: false, error: released.code, detail: released.message });
+    return;
+  }
+  res.json({ ok: true, settings: released.rows.find((r) => r.id === before.id) ?? released.rows[0] });
 });
 
 // ─── Per-user ───────────────────────────────────────────────────────────────
@@ -281,6 +268,12 @@ const riskLimitsSchema = z.object({
   allowedAccountType: z.enum(["demo", "live", "both"]).default("demo"),
   allowedDirection: z.enum(["buy", "sell", "both"]).default("both"),
   requireLiveConfirmation: z.boolean().default(true),
+  // Exposure hard limits (Tier 1 step 8); null or absent = no admin limit.
+  maxLeverage: z.number().positive().max(1000).nullable().optional(),
+  maxSymbolLeverage: z.number().positive().max(1000).nullable().optional(),
+  maxPositionsPerSymbol: z.number().int().positive().max(100).nullable().optional(),
+  maxPortfolioRiskPercent: z.number().positive().max(100).nullable().optional(),
+  maxDrawdownPercent: z.number().positive().max(100).nullable().optional(),
   reason: z.string().min(3).optional(),
 });
 
@@ -292,8 +285,7 @@ router.post("/admin/users/:id/risk-limits", async (req, res) => {
   if (!parsed.success) { res.status(400).json({ ok: false, error: "INVALID_BODY", details: parsed.error.message }); return; }
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
 
-  const before = (await db.select().from(userRiskLimitsTable)
-    .where(eq(userRiskLimitsTable.userId, targetUserId)).limit(1))[0] ?? null;
+  const before = await readOperatorRiskLimits(targetUserId);
 
   const patch = {
     userId: targetUserId,
@@ -304,6 +296,11 @@ router.post("/admin/users/:id/risk-limits", async (req, res) => {
     allowedAccountType: parsed.data.allowedAccountType,
     allowedDirection: parsed.data.allowedDirection,
     requireLiveConfirmation: parsed.data.requireLiveConfirmation,
+    maxLeverage: parsed.data.maxLeverage ?? null,
+    maxSymbolLeverage: parsed.data.maxSymbolLeverage ?? null,
+    maxPositionsPerSymbol: parsed.data.maxPositionsPerSymbol ?? null,
+    maxPortfolioRiskPercent: parsed.data.maxPortfolioRiskPercent ?? null,
+    maxDrawdownPercent: parsed.data.maxDrawdownPercent ?? null,
     updatedByAdminId: adminId,
     updatedAt: new Date(),
   };
@@ -402,7 +399,7 @@ router.post("/admin/trading/routing-mode", async (req, res) => {
   const role = requireAdmin(req, res); if (!role) return;
   const parsed = routingModeSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ ok: false, error: "INVALID_BODY", details: parsed.error.message }); return; }
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   const adminId = (req as Request & { authUser?: { id?: number } }).authUser?.id ?? null;
   const updated = await db.update(globalTradingSettingsTable)
@@ -430,7 +427,7 @@ router.post("/admin/trading/shared-live-enabled", async (req, res) => {
   if (role !== "OWNER") { res.status(403).json({ ok: false, error: "OWNER_REQUIRED_FOR_SHARED_LIVE" }); return; }
   const parsed = sharedLiveEnabledSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ ok: false, error: "INVALID_BODY" }); return; }
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   if (parsed.data.enabled && !before.sharedLiveConnectionId) {
     res.status(400).json({ ok: false, error: "SHARED_LIVE_MASTER_NOT_CONFIGURED" });
@@ -469,8 +466,7 @@ router.post("/admin/trading/shared-master", async (req, res) => {
   const parsed = sharedMasterSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ ok: false, error: "INVALID_BODY", details: parsed.error.message }); return; }
 
-  const [conn] = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, parsed.data.connectionId)).limit(1);
+  const [conn] = await listConnections({ connectionIds: [parsed.data.connectionId], limit: 1 });
   if (!conn || conn.userId == null) {
     res.status(404).json({ ok: false, error: "CONNECTION_NOT_FOUND" }); return;
   }
@@ -479,7 +475,7 @@ router.post("/admin/trading/shared-master", async (req, res) => {
   // The owning user of the master connection must be ADMIN or OWNER.
   const [owner] = await db.select({ id: usersTable.id, role: usersTable.role })
     .from(usersTable).where(eq(usersTable.id, connOwnerId)).limit(1);
-  if (!owner || (owner.role !== "ADMIN" && owner.role !== "OWNER")) {
+  if (!owner || (!operatorRoleFromSession(owner.role))) {
     res.status(400).json({ ok: false, error: "MASTER_CONNECTION_MUST_BE_OWNED_BY_ADMIN_OR_OWNER" });
     return;
   }
@@ -526,7 +522,7 @@ router.post("/admin/trading/shared-master", async (req, res) => {
   }
 
   // Wire it as the active demo or live master on the global settings.
-  const before = await getGlobalSettings();
+  const before = await loadGlobalTradingSettingsRow();
   if (!before) { res.status(500).json({ ok: false, error: "SETTINGS_UNAVAILABLE" }); return; }
   const patch = wantedType === "demo"
     ? { sharedDemoConnectionId: parsed.data.isActive ? parsed.data.connectionId : null }
@@ -560,9 +556,9 @@ router.get("/admin/shared-masters", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const admins = await db.select({ id: usersTable.id, role: usersTable.role, email: usersTable.email })
     .from(usersTable);
-  const adminIds = admins.filter((u) => u.role === "ADMIN" || u.role === "OWNER").map((u) => u.id);
+  const adminIds = admins.filter((u) => operatorRoleFromSession(u.role) != null).map((u) => u.id);
 
-  const conns = adminIds.length === 0 ? [] : await db.select().from(mt5ConnectionTable);
+  const conns = adminIds.length === 0 ? [] : await listConnections({ userIds: adminIds, order: "oldest" });
   const candidates = conns
     .filter((c) => c.userId != null && adminIds.includes(c.userId))
     .map((c) => ({
@@ -577,7 +573,7 @@ router.get("/admin/shared-masters", async (req, res) => {
     }));
 
   const registered = await db.select().from(sharedMasterAccountsTable);
-  const settings = await getGlobalSettings();
+  const settings = await loadGlobalTradingSettingsRow();
   res.json({
     ok: true,
     activeDemoConnectionId: settings?.sharedDemoConnectionId ?? null,

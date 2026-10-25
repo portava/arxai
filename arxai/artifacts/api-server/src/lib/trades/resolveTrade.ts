@@ -2,10 +2,9 @@
 // USER_OWNED_MT5 → live_positions; SHARED_MASTER_MT5 → shared_trade_attribution.
 // Returns null when the trade does not exist or does not belong to userId.
 
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { db } from "@workspace/db";
-import {
-  livePositionsTable, sharedTradeAttributionTable, sharedMasterAccountsTable,
-} from "@workspace/db/schema";
+import { sharedTradeAttributionTable, sharedMasterAccountsTable } from "@workspace/db/schema";
 import { and, eq } from "drizzle-orm";
 
 export type ResolvedTrade = {
@@ -28,8 +27,10 @@ export async function resolveUserTrade(userId: number, tradeKey: string): Promis
   if (tradeKey.startsWith("lp_")) {
     const id = Number(tradeKey.slice(3));
     if (!Number.isFinite(id) || id <= 0) return null;
-    const [r] = await db.select().from(livePositionsTable)
-      .where(and(eq(livePositionsTable.id, id), eq(livePositionsTable.userId, userId))).limit(1);
+    const [r] = await demoPositionLedger.read({
+      where: and(eq(demoPositionColumns.id, id), eq(demoPositionColumns.userId, userId)),
+      limit: 1,
+    });
     if (!r) return null;
     return {
       tradeKey, routingMode: "USER_OWNED_MT5",

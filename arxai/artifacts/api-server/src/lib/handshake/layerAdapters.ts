@@ -12,12 +12,11 @@
 //   rows and exposes readiness booleans/counts only — never balances, the ARX
 //   60/40 waterfall, trader comp, or another tenant's data.
 
+import { BROKER_HEALTH_VERDICT_STALE_MS } from "../brokerHub/freshness.js";
 import { db } from "@workspace/db";
 import {
   fundDiscrepanciesTable,
   fundControlFreezesTable,
-  globalTradingSettingsTable,
-  brokerHealthStateTable,
 } from "@workspace/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import type {
@@ -26,11 +25,13 @@ import type {
   HandshakeLayerStatus,
 } from "@workspace/domain/handshake";
 import { getProviderHealthSnapshot } from "../data/providerHealth.js";
+import { platformStopWith, readPlatformSwitches, type PlatformStopSource } from "../safety/platformSwitches.js";
 import { getNewsIntelligence } from "../news/newsIntelligenceService.js";
 import { scannerStatus } from "../marketScanner.js";
 import { getMarketStatus } from "../assistant/marketProvider.js";
 import { buildChartIntelligenceState } from "../data/chart/chartIntelligence.js";
 import { listSymbolsForUser } from "../mt5/symbolDirectory.js";
+import { readBrokerHealthState } from "../brokerHub/brokerHealthState.js";
 
 export interface LayerReadiness {
   status: HandshakeLayerStatus;
@@ -44,7 +45,7 @@ export type LayerAdapter = (ctx?: HandshakeContext) => Promise<LayerReadiness>;
 
 // Freshness windows (coarse, advisory). Distinct from the authoritative 15s
 // dispatch heartbeat gate — these only colour the handshake monitor.
-const BROKER_STALE_MS = 120_000;
+const BROKER_STALE_MS = BROKER_HEALTH_VERDICT_STALE_MS;
 const SCANNER_STALE_MS = 120_000;
 
 function notAvailable(detail: string): LayerReadiness {
@@ -68,10 +69,10 @@ const marketDataAdapter: LayerAdapter = async () => {
   }
 };
 
-// ── BROKER_BRIDGE — broker_health_state singleton (read-only) ────────────────
+// ── BROKER_BRIDGE — broker_health_state singleton via the Broker Hub (read-only)
 const brokerBridgeAdapter: LayerAdapter = async () => {
   try {
-    const [row] = await db.select().from(brokerHealthStateTable).limit(1);
+    const row = await readBrokerHealthState();
     if (!row) return notAvailable("no broker health state");
     if (row.maintenanceMode) {
       return { status: "WARN", detail: "maintenance mode", ageMs: null };
@@ -170,36 +171,33 @@ const investorFundBookAdapter: LayerAdapter = async (ctx) => {
 };
 
 // ── ADMIN_CONTROL — global settings singleton present + platform mode ────────
+// Read through the one switch authority (lib/safety/platformSwitches).
 const adminControlAdapter: LayerAdapter = async () => {
-  try {
-    const [row] = await db
-      .select({ platformMode: globalTradingSettingsTable.platformMode })
-      .from(globalTradingSettingsTable)
-      .where(eq(globalTradingSettingsTable.id, 1));
-    if (!row) return notAvailable("global settings singleton missing");
-    return { status: "PASS", detail: `platformMode=${row.platformMode}`, ageMs: null };
-  } catch {
-    return notAvailable("admin control read failed");
-  }
+  const sw = await readPlatformSwitches();
+  if (sw.unreadableReason === "missing") return notAvailable("global settings singleton missing");
+  if (!sw.readable) return notAvailable("admin control read failed");
+  return { status: "PASS", detail: `platformMode=${sw.platformMode}`, ageMs: null };
 };
 
-// ── KILL_SWITCH — emergency stop state (advisory awareness only) ─────────────
-// The real kill switch remains authoritative and independent; this only colours
-// the handshake verdict so the monitor reflects the engaged state.
+// ── KILL_SWITCH — install-wide stop state (advisory awareness only) ──────────
+// The real stops remain authoritative and independent; this only colours the
+// handshake verdict so the monitor reflects the engaged state. Both install-
+// wide stops (the platform emergency stop and the safety-core kill switch)
+// are read through platformStop(), so the layer fails while either is engaged.
+const STOP_LAYER_DETAIL: Record<PlatformStopSource, string> = {
+  platform_emergency_stop: "emergency kill switch engaged",
+  safety_core_kill_switch: "safety-core kill switch engaged",
+};
 const killSwitchAdapter: LayerAdapter = async () => {
-  try {
-    const [row] = await db
-      .select({ engaged: globalTradingSettingsTable.emergencyKillSwitch })
-      .from(globalTradingSettingsTable)
-      .where(eq(globalTradingSettingsTable.id, 1));
-    if (!row) return notAvailable("global settings singleton missing");
-    if (row.engaged) {
-      return { status: "FAIL", detail: "emergency kill switch engaged", ageMs: null };
-    }
-    return { status: "PASS", detail: "kill switch clear", ageMs: null };
-  } catch {
-    return notAvailable("kill switch read failed");
+  const sw = await readPlatformSwitches();
+  if (sw.unreadableReason === "missing") return notAvailable("global settings singleton missing");
+  if (!sw.readable) return notAvailable("kill switch read failed");
+  const stop = await platformStopWith(sw);
+  if (!stop.readable) return notAvailable("kill switch read failed");
+  if (stop.engaged) {
+    return { status: "FAIL", detail: stop.sources.map((s) => STOP_LAYER_DETAIL[s]).join("; "), ageMs: null };
   }
+  return { status: "PASS", detail: "kill switch clear", ageMs: null };
 };
 
 // Per-user layers report SKIPPED (not NOT_AVAILABLE) when there is no user

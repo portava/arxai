@@ -12,13 +12,13 @@
 // exact broker string (or candidates / a reason). The preflight + guard chain
 // still run on every order.
 
+import { getConnection } from "../brokerHub/connections.js";
 import { and, eq } from "drizzle-orm";
 import {
   db,
   arxSymbolSpecsTable,
   userMasterLiveAccessTable,
   arxMasterAccountConfigTable,
-  mt5ConnectionTable,
 } from "@workspace/db";
 
 export type SymbolFreshness = "FRESH" | "STALE" | "MISSING";
@@ -248,11 +248,7 @@ export async function resolveEffectiveSymbolOwnerId(
   const masterConnId = cfg[0]?.masterConnectionId;
   if (masterConnId == null) return { ownerId: userId, viaSharedMaster: false };
 
-  const conn = await db.select({ userId: mt5ConnectionTable.userId })
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, masterConnId))
-    .limit(1);
-  const masterOwnerId = conn[0]?.userId;
+  const masterOwnerId = (await getConnection(masterConnId))?.userId;
   if (masterOwnerId == null || masterOwnerId === userId) {
     return { ownerId: userId, viaSharedMaster: false };
   }

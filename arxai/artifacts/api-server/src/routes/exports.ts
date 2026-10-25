@@ -8,7 +8,7 @@ import { listOrders, listPositions, pnlSummary, pnlDaily, brokerReconStatus, oms
 import { listDecisions as autoDecisions, status as autopilotStatus } from "../lib/autopilot.js";
 import { shadowStatus, listDecisions as shadowDecisions, forwardStatus, readinessScore } from "../lib/shadowMode.js";
 import { listAudit } from "../lib/systemHealth/audit.js";
-import { permissions, listEvents as listRiskEvents } from "../lib/riskGovernor2.js";
+import { listRiskEventsView, platformRiskPermissions } from "../lib/riskGovernor/riskProfile.js";
 import { requireRole, getSessionFromReq } from "../lib/security/session.js";
 import { auditEvent } from "../lib/systemHealth/audit.js";
 
@@ -39,7 +39,7 @@ router.get("/export/full-system-report", exportGate, async (req, res) => {
     generatedAt: new Date().toISOString(),
     environments: ["PAPER", "DEMO_SIMULATOR", "LIVE_TESTER_INTENT", "SHADOW", "FORWARD_TEST", "FUTURE_MT5_DEMO", "FUTURE_MT5_LIVE"],
     safety: { mt5Connected: false, mt5Deferred: true, realBrokerExecutionAvailable: false },
-    permissions: permissions(),
+    permissions: await platformRiskPermissions(),
     oms: omsDashboardSummary(),
     pnl: pnlSummary(),
     autopilot: autopilotStatus(),
@@ -91,7 +91,7 @@ router.get("/export/strategies.json", exportGate, async (req, res) => {
 
 router.get("/export/risk-events.json", exportGate, async (req, res) => {
   await logExport(req, "export risk-events.json", "json");
-  res.json({ environment: "RISK_GOVERNOR", events: listRiskEvents(2000) });
+  res.json({ environment: "RISK_GOVERNOR", events: await listRiskEventsView({ limit: 2000 }) });
 });
 
 router.get("/export/shadow-results.json", exportGate, async (req, res) => {

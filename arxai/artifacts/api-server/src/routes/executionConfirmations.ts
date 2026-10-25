@@ -7,8 +7,9 @@
 // only records *intent + decision*. Every state transition appends a vault
 // event for full audit trail.
 
+import { classifyHeartbeatAt, heartbeatIsOnline } from "../lib/brokerHub/freshness.js";
 import { Router } from "express";
-import { db, executionConfirmationsTable, riskSettingsTable, mt5StateTable, vaultEventsTable } from "@workspace/db";
+import { db, executionConfirmationsTable, vaultEventsTable } from "@workspace/db";
 import { and, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
@@ -21,6 +22,7 @@ import {
 import { evaluateChecklist, type ChecklistMarketCondition } from "@workspace/domain/execution-safety";
 import { getStatus } from "../lib/safetyCore.js";
 import { getOrCreateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
+import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -31,8 +33,7 @@ const CONFIRMATION_TTL_SECONDS = 120;
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 async function loadMt5State() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  return rows[0] ?? null;
+  return readPlatformMt5State();
 }
 
 async function loadCurrentPermission(userId: number) {
@@ -119,11 +120,10 @@ router.post("/execution-confirmations", requireUser, async (req, res) => {
       getStatus(),
     ]);
 
-    // Broker is "connected" when we've seen an MT5 EA heartbeat in the last 60s.
-    // mt5_state has no boolean column for this — recency is the canonical signal.
-    const HEARTBEAT_FRESH_MS = 60_000;
-    const lastHb = mt5?.lastHeartbeatAt ? new Date(mt5.lastHeartbeatAt).getTime() : 0;
-    const brokerConnected = lastHb > 0 && Date.now() - lastHb <= HEARTBEAT_FRESH_MS;
+    // Broker is "connected" when the MT5 EA heartbeat is online under the
+    // shared policy (fresh or degraded: age < 60 s). mt5_state has no boolean
+    // column for this — recency is the canonical signal.
+    const brokerConnected = heartbeatIsOnline(classifyHeartbeatAt(mt5?.lastHeartbeatAt ?? null, Date.now()));
     const balanceProxy = 10_000; // matches riskAudit/permission convention
     const marketCondition: ChecklistMarketCondition = (body.marketCondition ?? "UNKNOWN") as ChecklistMarketCondition;
 

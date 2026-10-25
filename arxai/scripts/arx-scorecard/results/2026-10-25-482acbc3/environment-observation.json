@@ -1,0 +1,62 @@
+{
+  "at_date": "2026-10-25",
+  "method": "Read-only Replit desktop UI; workspace Git metadata and tracked-file blob comparison; no environment values or secrets read",
+  "user_confirmed": "ARX has not been deployed yet",
+  "connector_app": {
+    "url": "https://replit.com/@areyouokthecard/arxai",
+    "publication_found": false,
+    "inspection_result": "empty response twice"
+  },
+  "desktop_workspace": {
+    "url": "https://replit.com/@portavainc/ARX-AI-baseline-import",
+    "workspace_head": "72c52811d897561e1ad3e45f4202d21804ebc8db",
+    "branch": "main",
+    "working_tree": "clean",
+    "nested_source": "arxai/",
+    "cached_upstream_main": "d10810713f13c022874ee0ee6adcade190243381",
+    "scorecard_v2_present": false,
+    "sql_migration_files": [],
+    "outer_deployment": {
+      "deploymentTarget": "autoscale",
+      "build": null,
+      "run": null,
+      "publicDir": null
+    },
+    "changed_imported_files": [
+      "artifacts/api-server/package.json",
+      "artifacts/api-server/src/lib/__qa__/scannerNoFeedHonesty.test.ts",
+      "artifacts/trading-dashboard/src/hooks/useCurrentUser.ts",
+      "artifacts/trading-dashboard/vite.config.ts",
+      "lib/api-spec/package.json",
+      "lib/domain/src/agent-system/governance/trafficController.engine.ts",
+      "pnpm-lock.yaml",
+      "scripts/package.json",
+      "scripts/src/adminUnrestrictedRiskTest.ts",
+      "scripts/src/ci/runIntegrationTests.ts",
+      "scripts/src/fundBookTierIntegrationTest.ts",
+      "scripts/src/qaOneClickConcurrency.ts",
+      "scripts/src/rubyChatChartReadParityTest.ts",
+      "scripts/src/rubyDrawSetupRouteTest.ts",
+      "scripts/src/securityRegressionSuite.ts",
+      "scripts/src/trafficControllerTest.ts"
+    ],
+    "moved_artifact_metadata": "artifacts/trading-dashboard/.replit-artifact/artifact.toml",
+    "upstream_changed_paths": 599,
+    "overlapping_imported_paths": [
+      "artifacts/api-server/package.json",
+      "artifacts/api-server/src/lib/__qa__/scannerNoFeedHonesty.test.ts",
+      "scripts/package.json",
+      "scripts/src/adminUnrestrictedRiskTest.ts",
+      "scripts/src/fundBookTierIntegrationTest.ts",
+      "scripts/src/qaOneClickConcurrency.ts",
+      "scripts/src/rubyChatChartReadParityTest.ts",
+      "scripts/src/rubyDrawSetupRouteTest.ts"
+    ]
+  },
+  "limitations": [
+    "Cached upstream ref does not by itself identify every current source blob; modified imported files are listed separately.",
+    "Outer deployment config is only one source; artifact-specific production commands were not verified.",
+    "No development or production database, provider or broker connection was queried in Replit.",
+    "Added workspace files and runtime adapters must also be preserved when updating the import."
+  ]
+}

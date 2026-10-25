@@ -22,6 +22,7 @@ import type { BridgeV2AdminStatus } from "@workspace/api-client-react";
 import {
   RefreshCw, CheckCircle2, XCircle, HelpCircle, Wifi, WifiOff, Lock, Activity,
 } from "lucide-react";
+import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 async function apiJson<T>(path: string): Promise<T> {
@@ -177,7 +178,7 @@ function BridgeV2MonitorInner() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <div className="text-xs uppercase tracking-wider text-txt-secondary">Readiness</div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Heartbeat age</span><span className={(b.heartbeatAgeSeconds ?? 999) > 15 ? "text-warning" : ""}>{b.heartbeatAgeSeconds == null ? "—" : `${b.heartbeatAgeSeconds}s`}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Heartbeat age</span><span className={!isHeartbeatAgeSecondsFresh(b.heartbeatAgeSeconds) ? "text-warning" : ""}>{b.heartbeatAgeSeconds == null ? "—" : `${b.heartbeatAgeSeconds}s`}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Terminal connected</span><Tri v={b.terminalConnected} /></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">AlgoTrading allowed</span><Tri v={b.algoTradingAllowed} /></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">EnableLiveExecution</span><Tri v={b.enableLiveExecution} /></div>

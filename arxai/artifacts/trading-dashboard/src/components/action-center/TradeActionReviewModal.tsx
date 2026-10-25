@@ -83,7 +83,8 @@ export function TradeActionReviewModal({ open, action, onClose, onConfirmed, onC
     try {
       const r = await fetch(`/api/me/trade-actions/${action.id}/confirm`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(isLive ? { liveConfirmPhrase: confirmText.trim().toUpperCase() } : {}),
+        // The confirmed mode is sent explicitly: a SIMULATED open books a paper order.
+        body: JSON.stringify(isLive ? { liveConfirmPhrase: confirmText.trim().toUpperCase() } : { mode: action.requestedMode }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data.ok) {

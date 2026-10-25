@@ -16,9 +16,10 @@
 //   - Reuses minRewardRiskRatio + requireStopLoss + requireTakeProfit +
 //     requireJournalReason from user_risk_settings (no duplicate scoring).
 
-import { db, paperTradesTable, userRiskSettingsTable, userSettingsTable } from "@workspace/db";
+import { db, paperTradesTable, userSettingsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { getMarketProvider } from "./marketProvider.js";
+import { readTraderRiskSettings } from "../riskGovernor/limitSettings.js";
 
 type Side = "buy" | "sell";
 type PlanLabel =
@@ -116,9 +117,7 @@ export async function evaluatePaperTradePlan(
   }
 
   // 2. Load the user's risk settings — fresh user => null, never invented.
-  const rsRows = await db.select().from(userRiskSettingsTable)
-    .where(eq(userRiskSettingsTable.userId, userId)).limit(1);
-  const rs = rsRows[0] ?? null;
+  const rs = await readTraderRiskSettings(userId);
 
   // 3. Plan completeness (7 fields).
   const completeness: CategoryScore = { category: "plan_completeness", score: 0, weight: 0.30, passes: [], warnings: [], blockers: [] };
@@ -240,11 +239,10 @@ export async function evaluatePaperTradePlan(
 }
 
 export async function getTradingStyleProfile(userId: number) {
-  const [rsRows, usRows] = await Promise.all([
-    db.select().from(userRiskSettingsTable).where(eq(userRiskSettingsTable.userId, userId)).limit(1),
+  const [rs, usRows] = await Promise.all([
+    readTraderRiskSettings(userId),
     db.select().from(userSettingsTable).where(eq(userSettingsTable.userId, userId)).limit(1),
   ]);
-  const rs = rsRows[0] ?? null;
   const us = usRows[0] ?? null;
   if (!rs && !us) {
     return {

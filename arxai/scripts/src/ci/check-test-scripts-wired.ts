@@ -139,6 +139,31 @@ const MANUAL_ONLY = new Set<string>([
   // (test:broker-hub-contracts) is a pure offline test available standalone.
   "@workspace/scripts::test:broker-hub-no-execution",
   "@workspace/scripts::test:broker-hub-contracts",
+  // execution-single-entry runs inside ci:guards; the standalone script adds
+  // its pure negative-fixture test.
+  "@workspace/scripts::test:execution-single-entry",
+  "@workspace/scripts::test:instrument-mapping-single-source",
+  "@workspace/scripts::test:broker-state-single-reader",
+  "@workspace/scripts::test:single-risk-authority",
+  "@workspace/scripts::test:broker-connection-single-owner",
+  "@workspace/scripts::test:learning-memory-single-owner",
+  "@workspace/scripts::test:position-guardian-wired",
+  "@workspace/scripts::test:single-role-model",
+  "@workspace/scripts::test:stop-modification-authority",
+  "@workspace/scripts::test:single-position-sizer",
+  "@workspace/scripts::test:single-limit-store",
+  "@workspace/scripts::test:single-position-ledger",
+  "@workspace/scripts::test:single-position-guardian",
+  "@workspace/scripts::test:single-open-position-view",
+  "@workspace/scripts::test:trade-engine-single-pipeline",
+  "@workspace/scripts::test:single-paper-book",
+  "@workspace/scripts::test:legacy-live-state-confined",
+  "@workspace/scripts::test:single-llm-gateway",
+  "@workspace/scripts::test:single-safety-switch-source",
+  "@workspace/scripts::test:single-risk-limit-source",
+  "@workspace/scripts::test:broker-read-adapter-single-factory",
+  "@workspace/scripts::test:single-broker-state-source",
+  "@workspace/scripts::test:single-bridge-freshness-source",
   // MT5 projection boundary test uses an injected reader and performs no DB IO.
   // It stays targeted because broker-hub has its own required phase-entry lane.
   "@workspace/api-server::test:broker-hub-mt5-projection",

@@ -4,13 +4,14 @@
 // Even when all 15 pass, the live command pipeline still blocks at
 // `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` (see liveDispatchGate.ts).
 
+import { isHeartbeatAgeSecondsFresh, MT5_HEARTBEAT_FRESH_BELOW_SECONDS } from "../brokerHub/freshness.js";
+import { getUserActiveConnection } from "../brokerHub/connections.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import {
   db,
   arxLiveArmingTable,
   liveTradingAuditTable,
-  mt5ConnectionTable,
   userMasterLiveAccessTable,
 } from "@workspace/db";
 import { resolveLiveBrokerExecutionEnabledAsync } from "./phaseBConfig.js";
@@ -159,18 +160,7 @@ export async function evaluateLiveArmingGate(
     input.isAdmin ? null : "Only an admin/operator account may arm live trading.");
 
   // 2-8: derive from the user's active MT5 bridge.
-  const bridges = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, input.userId));
-  const nonRevoked = bridges.filter((b) => !b.tokenRevokedAt);
-  const bridge = nonRevoked
-    .slice()
-    .sort((a, b) => {
-      const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;
-      const bh = b.lastHeartbeat ? new Date(b.lastHeartbeat).getTime() : 0;
-      return bh - ah;
-    })[0] ?? null;
+  const bridge = await getUserActiveConnection(input.userId);
 
   const hbAge = bridge?.lastHeartbeat
     ? Math.max(0, Math.floor((Date.now() - new Date(bridge.lastHeartbeat).getTime()) / 1000))
@@ -201,11 +191,11 @@ export async function evaluateLiveArmingGate(
       `Bridge reports accountType=${bridge.accountType ?? "?"}. Must be 'live' or 'real'.`);
 
   // 3. Fresh EA heartbeat exists.
-  const hbFresh = hbAge !== null && hbAge <= 15;
-  push(3, "HEARTBEAT_FRESH", "Fresh EA heartbeat (≤15s)",
+  const hbFresh = isHeartbeatAgeSecondsFresh(hbAge);
+  push(3, "HEARTBEAT_FRESH", `Fresh EA heartbeat (<${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s)`,
     hbFresh,
     hbAge === null ? "No heartbeat received yet." :
-      hbFresh ? null : `Last heartbeat ${hbAge}s ago (max 15s).`);
+      hbFresh ? null : `Last heartbeat ${hbAge}s ago (must be < ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s).`);
 
   // 4. EA version is v1.27 or newer.
   // Phase A: pin to 1.27+ since that is the planned live-ready version.
@@ -392,6 +382,11 @@ export async function getMyArming(userId: number) {
     .select().from(arxLiveArmingTable)
     .where(eq(arxLiveArmingTable.userId, userId)).limit(1);
   return rows[0] ?? null;
+}
+
+/** Every trader's arming flag, for fleet views (operator cockpit). Read-only. */
+export async function listArmingFlags(): Promise<Array<{ userId: number; isArmed: boolean }>> {
+  return db.select({ userId: arxLiveArmingTable.userId, isArmed: arxLiveArmingTable.isArmed }).from(arxLiveArmingTable);
 }
 
 export async function armLiveForUser(input: LiveArmingInput & { ip?: string }) {

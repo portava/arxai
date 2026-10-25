@@ -19,14 +19,13 @@
 // SAFETY: never closes positions. Never writes to safetyCore. Trade-plan
 // validate consumes the latest snapshot and blocks ONLY when CRITICAL.
 
+import { demoPositionLedger, demoPositionColumns } from "../lib/positions/ledger.js";
+import { listScopedConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
-import {
-  db,
-  livePositionsTable, riskSettingsTable, mt5ConnectionTable,
-  portfolioRiskSnapshotsTable, correlationRiskReportsTable, vaultEventsTable,
-} from "@workspace/db";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { db, portfolioRiskSnapshotsTable, correlationRiskReportsTable, vaultEventsTable } from "@workspace/db";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+import { ownerScope } from "../lib/auth/ownerScope.js";
 import crypto from "node:crypto";
 
 // (O-fix) Stable rank for sorting correlation reports CRITICAL → LOW at the
@@ -39,7 +38,9 @@ import {
   type OpenPositionInput,
 } from "@workspace/domain/portfolio-risk";
 import { createAlert } from "../lib/alerts/alertManager.js";
-import { z } from "zod/v4";
+import { loadEffectiveLimits } from "../lib/riskGovernor/limitSettings.js";
+import { resolveEffectiveLimits, dailyLossCapAmount } from "../lib/riskGovernor/preTrade.js";
+
 
 const router = Router();
 
@@ -53,11 +54,19 @@ async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
 
 const POSITION_TERMINAL = new Set(["CLOSED", "CANCELED", "REJECTED"]);
 
-async function loadInputs() {
-  const [positions, settingsRows, mt5Rows] = await Promise.all([
-    db.select().from(livePositionsTable),
-    db.select().from(riskSettingsTable).limit(1),
-    db.select().from(mt5ConnectionTable).orderBy(desc(mt5ConnectionTable.updatedAt)).limit(1),
+// Everything here is the caller's own book: their positions, their broker
+// account and the limits the Risk Governor enforces for them (owner decision 8:
+// loadEffectiveLimits, strictest of trader, operator and platform; no display
+// defaults of its own). An operator's book also includes the shared MT5
+// connection's ownerless rows.
+type PortfolioOwner = Parameters<typeof ownerScope>[1];
+async function loadInputs(authUser: PortfolioOwner) {
+  const [positions, L, mt5Rows] = await Promise.all([
+    demoPositionLedger.read({ where: ownerScope(demoPositionColumns.userId, authUser) }),
+    authUser
+      ? loadEffectiveLimits(authUser.id)
+      : Promise.resolve(resolveEffectiveLimits({})),
+    listScopedConnections((col) => ownerScope(col, authUser), { order: "updated", limit: 1 }),
   ]);
 
   // (O) Per-position risk approximation. The trades schema doesn't carry an
@@ -80,25 +89,36 @@ async function loadInputs() {
     };
   });
 
-  const settings = settingsRows[0];
   const mt5 = mt5Rows[0];
+  const accountBalance = mt5?.accountBalance ?? 0;
+  const accountEquity = mt5?.accountEquity ?? 0;
   return {
     positionsInput,
-    accountBalance: mt5?.accountBalance ?? 0,
-    accountEquity:  mt5?.accountEquity  ?? 0,
-    maxOpenTrades:    settings?.maxOpenTrades    ?? 2,
-    maxDailyLossPct:  settings?.maxDailyLossPct  ?? 2,
-    riskPerTradePct:  settings?.riskPerTradePct  ?? 0.5,
+    accountBalance,
+    accountEquity,
+    // Enforced values; a limit that is off is passed as "no limit".
+    maxOpenTrades:    L.discipline.maxOpenTrades ?? Number.POSITIVE_INFINITY,
+    maxDailyLossPct:  L.maxDailyLossPercent ?? Number.POSITIVE_INFINITY,
+    riskPerTradePct:  L.maxRiskPerTradePercent,
+    maxOpenRiskPct:   L.maxPortfolioRiskPercent,
+    // The governor's daily-loss cap in money (rule 7 measures percent against equity).
+    dailyLossCapAmount: dailyLossCapAmount(L, accountEquity > 0 ? accountEquity : accountBalance),
+    limitsSnapshot: {
+      maxOpenTrades: L.discipline.maxOpenTrades,
+      maxDailyLossPct: L.maxDailyLossPercent,
+      maxDailyLossAmount: L.maxDailyLossAmount,
+      riskPerTradePct: L.maxRiskPerTradePercent,
+      maxOpenRiskPct: L.maxPortfolioRiskPercent,
+      sources: L.sources,
+    },
   };
 }
 
 // ── POST /portfolio-risk/snapshot ─────────────────────────────────────────
-// Portfolio QA P1: snapshots are now persisted with userId so latest/history
-// reads can scope per-tenant. loadInputs() still pulls global account/risk
-// settings (out of scope for this QA fix — flagged as remaining blocker).
+// Snapshots are persisted with userId and computed from the caller's own book.
 router.post("/portfolio-risk/snapshot", requireUser, async (req, res): Promise<void> => {
   try {
-    const inputs = await loadInputs();
+    const inputs = await loadInputs(req.authUser);
     const result = computePortfolioRisk({
       accountBalance: inputs.accountBalance,
       accountEquity: inputs.accountEquity,
@@ -106,6 +126,8 @@ router.post("/portfolio-risk/snapshot", requireUser, async (req, res): Promise<v
       maxOpenTrades: inputs.maxOpenTrades,
       maxDailyLossPct: inputs.maxDailyLossPct,
       riskPerTradePct: inputs.riskPerTradePct,
+      maxOpenRiskPct: inputs.maxOpenRiskPct,
+      dailyLossCapAmount: inputs.dailyLossCapAmount,
     });
 
     const inserted = await db.insert(portfolioRiskSnapshotsTable).values({
@@ -122,18 +144,19 @@ router.post("/portfolio-risk/snapshot", requireUser, async (req, res): Promise<v
       reasons: result.reasons,
       warnings: result.warnings,
       blockers: result.blockers,
-      inputsSnapshot: { positions: inputs.positionsInput, settings: { maxOpenTrades: inputs.maxOpenTrades, maxDailyLossPct: inputs.maxDailyLossPct, riskPerTradePct: inputs.riskPerTradePct } },
+      inputsSnapshot: { positions: inputs.positionsInput, settings: inputs.limitsSnapshot },
     }).returning();
 
     if (result.portfolioRiskLevel === "CRITICAL" || result.portfolioRiskLevel === "HIGH") {
       const priority = result.portfolioRiskLevel === "CRITICAL" ? "CRITICAL" : "HIGH";
       const severity = result.portfolioRiskLevel === "CRITICAL" ? "danger" : "warning";
       void createAlert({
+        userId: req.authUser!.id,
         type: "RISK_LIMIT_HIT", priority, severity,
         title: `Portfolio risk: ${result.portfolioRiskLevel}`,
         message: result.aiSummary,
         actionRequired: result.portfolioRiskLevel === "CRITICAL",
-        dedupeKey: `portfolio-risk:${result.portfolioRiskLevel}:${result.openPositionsCount}:${Math.round(result.totalRiskPercent * 10)}`,
+        dedupeKey: `portfolio-risk:${req.authUser!.id}:${result.portfolioRiskLevel}:${result.openPositionsCount}:${Math.round(result.totalRiskPercent * 10)}`,
       });
     }
 
@@ -187,7 +210,7 @@ router.get("/portfolio-risk/history", requireUser, async (req, res): Promise<voi
 // ── POST /correlation-risk/generate ───────────────────────────────────────
 router.post("/correlation-risk/generate", requireUser, async (req, res): Promise<void> => {
   try {
-    const inputs = await loadInputs();
+    const inputs = await loadInputs(req.authUser);
     const reports = buildCorrelationReports(inputs.positionsInput);
     const batchId = crypto.randomUUID();
     const inserted = [];
@@ -246,8 +269,8 @@ router.get("/correlation-risk/latest", requireUser, async (req, res): Promise<vo
 });
 
 // ── helper for trade-plan validate hook ───────────────────────────────────
-export async function getLatestPortfolioRiskOrCompute() {
-  const inputs = await loadInputs();
+export async function getLatestPortfolioRiskOrCompute(authUser: PortfolioOwner) {
+  const inputs = await loadInputs(authUser);
   const result = computePortfolioRisk({
     accountBalance: inputs.accountBalance,
     accountEquity: inputs.accountEquity,
@@ -255,6 +278,8 @@ export async function getLatestPortfolioRiskOrCompute() {
     maxOpenTrades: inputs.maxOpenTrades,
     maxDailyLossPct: inputs.maxDailyLossPct,
     riskPerTradePct: inputs.riskPerTradePct,
+    maxOpenRiskPct: inputs.maxOpenRiskPct,
+    dailyLossCapAmount: inputs.dailyLossCapAmount,
   });
   return result;
 }

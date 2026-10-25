@@ -20,19 +20,20 @@ import {
   maskBridgeEvidenceForUser,
 } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
-import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
+import { liveBrokerExecutionEnabled as phaseBEnvMasterSwitch } from "../lib/live/phaseBConfig.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
 
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const sess = (req as Request & { authUser?: { id: number; role?: string } }).authUser;
-  const role = sess?.role ?? null;
+  const role = operatorRoleFromSession(sess?.role);
   if (!sess) {
     res.status(401).json({ ok: false, error: "AUTH_REQUIRED" });
     return null;
   }
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }
@@ -43,7 +44,7 @@ function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
 // bridge panel can show whether the runtime gate is in the "may PASS" state.
 // We never read or echo the env value anywhere else; UI gets a boolean only.
 function liveBrokerExecutionEnabled(): boolean {
-  return isLiveBrokerExecutionEnabledEnv();
+  return phaseBEnvMasterSwitch();
 }
 
 router.get("/admin/master-bridge/current", async (req, res) => {
@@ -86,7 +87,7 @@ router.post("/admin/master-bridge/snapshot", async (req, res) => {
       primaryReason: det.primaryReason,
     });
   }
-  const rows = await db.select().from(globalTradingSettingsTable).limit(1);
+  const rows = await db.select({ id: globalTradingSettingsTable.id }).from(globalTradingSettingsTable).limit(1);
   const s = rows[0];
   if (!s) {
     return res.status(500).json({ ok: false, error: "SETTINGS_ROW_MISSING" });

@@ -1,10 +1,13 @@
 import { Router } from "express";
+import { requireOperator } from "../lib/auth/ownerScope.js";
 import { z } from "zod/v4";
 import {
   getStatus, setOperationalMode,
-  engageKillSwitch, resetKillSwitch, listVaultEvents, listStateTransitions,
+  engageKillSwitch, listVaultEvents, listStateTransitions,
   driveGlobalState,
 } from "../lib/safetyCore.js";
+import { releasePlatformStop } from "../lib/safety/platformStopWriter.js";
+import { resolveProductRole } from "../lib/auth/productRole.js";
 import { logUserOverride } from "../lib/vaultLogger.js";
 import { scanVaultIntegrity } from "../lib/vaultIntegrity.js";
 import { selectBrokerKind, describeRequiredSecrets, missingRequiredSecrets } from "../lib/broker/secrets.js";
@@ -73,7 +76,7 @@ const UserOverrideBody = z.object({
 // remains gated by placeLiveOrderGuarded() and the safety core invariants
 // (canPlaceTrades=false, kill switch, etc.) — those are not touched here.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get("/system/mt5-deferred-status", async (_req, res) => {
+router.get("/system/mt5-deferred-status", async (req, res) => {
   try {
     const brokerKind = selectBrokerKind();
     const missing = missingRequiredSecrets(describeRequiredSecrets(brokerKind))
@@ -86,7 +89,9 @@ router.get("/system/mt5-deferred-status", async (_req, res) => {
       const status = await provider.status();
       bridgeConnected = !!status.connected;
       if (status.connected) {
-        try { const acct = await provider.account(); accountReadable = !!acct; } catch { /* not readable */ }
+        // System-level readability of the shared bridge; only a boolean leaves here.
+        const owner = { userId: req.authUser?.id ?? 0, includeLegacy: true };
+        try { const acct = await provider.account(owner); accountReadable = !!acct; } catch { /* not readable */ }
       }
     } catch { /* fail closed: deferred */ }
 
@@ -161,7 +166,7 @@ router.get("/system/status", async (_req, res) => {
   }
 });
 
-router.post("/system/mode", async (req, res) => {
+router.post("/system/mode", requireOperator, async (req, res) => {
   try {
     const body = SetModeBody.parse(req.body);
     const result = await setOperationalMode(body);
@@ -172,7 +177,7 @@ router.post("/system/mode", async (req, res) => {
   }
 });
 
-router.post("/system/kill-switch/engage", async (req, res) => {
+router.post("/system/kill-switch/engage", requireOperator, async (req, res) => {
   try {
     const body = EngageKillBody.parse(req.body);
     await engageKillSwitch(body);
@@ -184,12 +189,27 @@ router.post("/system/kill-switch/engage", async (req, res) => {
   }
 });
 
-router.post("/system/kill-switch/reset", async (req, res) => {
+router.post("/system/kill-switch/reset", requireOperator, async (req, res) => {
   try {
     const body = ResetKillBody.parse(req.body);
-    const result = await resetKillSwitch(body);
+    // The one release operation (owner decision 1): the safety-core kill
+    // switch only, through its owner (acknowledgement unchanged), audited.
+    const released = await releasePlatformStop({
+      stop: "safety_core_kill_switch",
+      reason: `safety-core kill switch reset requested by ${body.resetBy}`,
+      actor: { userId: req.authUser?.id ?? null, role: resolveProductRole(req.authUser) },
+      source: "system_kill_switch_reset",
+      ipAddress: req.ip ?? null,
+      acknowledgement: body.acknowledgement,
+      resetBy: body.resetBy,
+    });
+    const result = {
+      ok: released.ok,
+      reasons: released.safetyCore?.reasons ?? [],
+      blockers: released.safetyCore?.blockers ?? (released.ok ? [] : [released.message]),
+    };
     const status = await getStatus();
-    res.status(result.ok ? 200 : 409).json({ ...result, status });
+    res.status(released.ok ? 200 : released.code === "NOT_AUTHORIZED" ? 403 : 409).json({ ...result, status });
   } catch (err) {
     req.log.error(err);
     res.status(400).json({ error: "Invalid kill switch reset request" });

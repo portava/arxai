@@ -23,11 +23,11 @@
 //   - No raw tokens, no apiKeyHash, no account passwords are ever
 //     accepted as payload or written to the table.
 
+import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   db,
-  mt5ConnectionTable,
   mt5DemoCommandsTable,
   type Mt5DemoCommand,
 } from "@workspace/db";
@@ -129,19 +129,16 @@ export async function createDraftCommand(args: DraftCommandArgs): Promise<QueueO
       reason: `${routedViaMaster ? "NO_ACTIVE_MASTER_BRIDGE" : "NO_ACTIVE_DEMO_BRIDGE"}:${reasons.join(",") || "UNKNOWN"}`,
     };
   }
-  const connRows = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, activeBridgeId))
-    .limit(1);
-  const conn = connRows[0];
+  const conn = await getConnection(activeBridgeId);
   if (!conn) {
     return { ok: false, reason: "NO_ACTIVE_DEMO_BRIDGE:RACE_BRIDGE_GONE" };
   }
 
   // MASTER_ACCOUNT_EXPOSURE guard (M06) — only relevant when routing
-  // through the shared master bridge.
-  if (routedViaMaster && probeGate.routing.sharedMasterAccountId) {
+  // through the shared master bridge, and only for an entry: a close or a
+  // stop/target change adds no exposure and must never be refused by the cap.
+  const addsExposure = args.commandType === "PLACE_MARKET_ORDER" || args.commandType === "PLACE_PENDING_ORDER";
+  if (addsExposure && routedViaMaster && probeGate.routing.sharedMasterAccountId) {
     const lotRaw = (args.payload as Record<string, unknown>)?.["lotSize"];
     const addingLot = typeof lotRaw === "number"
       ? lotRaw
@@ -512,10 +509,7 @@ export async function cancelOrphanedSentCommands(args: {
   reason?: string;
 }> {
   // Resolve the user's current bridge (freshest, non-revoked).
-  const connRows = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, args.userId));
+  const connRows = await listUserConnections(args.userId);
   connRows.sort((a, b) => {
     const ra = a.tokenRevokedAt ? 1 : 0;
     const rb = b.tokenRevokedAt ? 1 : 0;

@@ -1,3 +1,5 @@
+import { MT5_ACCOUNT_SNAPSHOT_FRESH_MS, classifyHeartbeatAt, heartbeatIsOnline } from "./freshness.js";
+import { connectionAccountSnapshot } from "./accountSnapshot.js";
 import type {
   BrokerAccountSnapshot,
   BrokerCapabilitySnapshot,
@@ -10,8 +12,6 @@ import type {
   ReadOnlyBrokerAdapter,
 } from "@workspace/domain/broker-hub";
 
-const MT5_HEARTBEAT_FRESH_MS = 60_000;
-const MT5_ACCOUNT_SNAPSHOT_FRESH_MS = 60_000;
 const MT5_DISCOVERY_FRESH_MS = 5 * 60_000;
 const MT5_MARKET_DATA_FRESH_MS = 60_000;
 
@@ -123,7 +123,9 @@ function healthOf(
   const heartbeatMs = connection.lastHeartbeat?.getTime() ?? null;
   const ageMs = heartbeatMs == null ? null : Math.max(0, now - heartbeatMs);
   const staleSeconds = ageMs == null ? null : Math.floor(ageMs / 1000);
-  const heartbeatFresh = isFresh(connection.lastHeartbeat, now, MT5_HEARTBEAT_FRESH_MS);
+  // Shared heartbeat policy: the link counts as up while the heartbeat is
+  // online (fresh or degraded, age < 60 s). Missing / future-dated → not up.
+  const heartbeatFresh = heartbeatIsOnline(classifyHeartbeatAt(connection.lastHeartbeat, now));
 
   if (nativeStatus === "revoked") {
     return {
@@ -213,6 +215,10 @@ export class Mt5ReadOnlyAdapter implements ReadOnlyBrokerAdapter {
   async readAccount(): Promise<BrokerAccountSnapshot | null> {
     const connection = await this.readConnection();
     if (!connection) return null;
+    // Figures come from the authoritative per-connection snapshot (owner
+    // decision 16): only what the EA delivered, never a default 0.
+    const snapshot = connectionAccountSnapshot(connection);
+    const observed = snapshot.status === "observed";
     return {
       identity: this.identity,
       accountRefMasked: maskAccountRef(connection.accountNumber),
@@ -220,10 +226,10 @@ export class Mt5ReadOnlyAdapter implements ReadOnlyBrokerAdapter {
       serverName: connection.serverName,
       environment: environmentOf(connection),
       currency: connection.accountCurrency,
-      balance: connection.accountSyncedAt ? connection.accountBalance : null,
-      equity: connection.accountSyncedAt ? connection.accountEquity : null,
-      margin: connection.accountSyncedAt ? connection.margin : null,
-      freeMargin: connection.accountSyncedAt ? connection.freeMargin : null,
+      balance: observed ? snapshot.balance : null,
+      equity: observed ? snapshot.equity : null,
+      margin: observed ? snapshot.margin : null,
+      freeMargin: observed ? snapshot.freeMargin : null,
       leverage: connection.leverage,
       observedAt: iso(connection.accountSyncedAt),
       snapshotStatus: connection.accountSyncedAt == null

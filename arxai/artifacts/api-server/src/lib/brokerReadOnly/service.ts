@@ -11,8 +11,14 @@
 //   - this module imports zero execution code paths.
 
 import { randomUUID } from "node:crypto";
+// This module writes broker_readonly_snapshots / broker_readonly_logs; every
+// read goes through the Broker Hub (ci guard single-broker-state-source).
 import { db, brokerReadonlySnapshotsTable, brokerReadonlyLogsTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import {
+  listOwnerReadOnlyLogs,
+  listOwnerReadOnlySnapshots,
+  readOwnerLatestReadOnlyStatus,
+} from "../brokerHub/readOnlySnapshots.js";
 import { redactForAudit, scrub, scrubString } from "../security/redact.js";
 
 export type Severity = "INFO" | "WARN" | "ERROR" | "CRITICAL";
@@ -229,28 +235,17 @@ export async function buildSnapshot(opts: ConnectorOptions): Promise<{ snapshot:
 
 export async function listSnapshots(userId: number, limit = 20) {
   const ownerId = requireOwnerId(userId);
-  return db.select().from(brokerReadonlySnapshotsTable)
-    .where(eq(brokerReadonlySnapshotsTable.userId, ownerId))
-    .orderBy(desc(brokerReadonlySnapshotsTable.id)).limit(limit);
+  return listOwnerReadOnlySnapshots(ownerId, limit, "id");
 }
 
 export async function listLogs(userId: number, limit = 50) {
   const ownerId = requireOwnerId(userId);
-  return db.select().from(brokerReadonlyLogsTable)
-    .where(eq(brokerReadonlyLogsTable.userId, ownerId))
-    .orderBy(desc(brokerReadonlyLogsTable.id)).limit(limit);
+  return listOwnerReadOnlyLogs(ownerId, limit, "id");
 }
 
 export async function brokerStatusForUser(userId: number) {
   const ownerId = requireOwnerId(userId);
-  const [last] = await db.select({
-    createdAt: brokerReadonlySnapshotsTable.createdAt,
-    provider: brokerReadonlySnapshotsTable.provider,
-    connected: brokerReadonlySnapshotsTable.connected,
-  }).from(brokerReadonlySnapshotsTable)
-    .where(eq(brokerReadonlySnapshotsTable.userId, ownerId))
-    .orderBy(desc(brokerReadonlySnapshotsTable.id))
-    .limit(1);
+  const last = await readOwnerLatestReadOnlyStatus(ownerId);
   return {
     mode: "READ_ONLY" as const,
     safety: checkBrokerSafety(),

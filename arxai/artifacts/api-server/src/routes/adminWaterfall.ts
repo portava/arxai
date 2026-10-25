@@ -45,6 +45,7 @@ import {
   TRADER_SHARE_PCT,
   INVESTOR_DISTRIBUTABLE_PCT,
 } from "../lib/fundbook/waterfallEngine.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -53,11 +54,12 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
   if (!u?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  if (u.role !== "ADMIN" && u.role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }
-  return { id: u.id, role: u.role };
+  return { id: u.id, role };
 }
 
 function isCasConflict(err: unknown, sentinel: string): boolean {

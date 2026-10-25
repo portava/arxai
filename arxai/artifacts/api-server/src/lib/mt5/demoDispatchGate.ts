@@ -12,8 +12,10 @@
 //     by the consumer/route after this gate returns.
 //   - No tokens, no apiKeyHash, no broker passwords ever returned.
 
+import { isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
+import { listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
-import { db, mt5ConnectionTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import {
   evaluatePerUserDispatchEligibility,
   eaVersionAtLeast,
@@ -24,7 +26,6 @@ import { runDemoVerificationGate } from "./demoVerificationGate.js";
 import { getDuplicateEaProbe } from "../../routes/mt5.js";
 import { isArmedForDemo } from "./demoArmingService.js";
 
-const HEARTBEAT_FRESH_SECONDS = 15;
 
 export interface PerUserDispatchEvaluation {
   eligibility: PerUserDispatchEligibility;
@@ -68,7 +69,7 @@ function extractEaInputs(
 }
 
 /** Score a bridge row for demo-execution eligibility. Higher is better. */
-function scoreBridge(row: typeof mt5ConnectionTable.$inferSelect): {
+function scoreBridge(row: BrokerConnection): {
   score: number;
   blockers: string[];
 } {
@@ -77,7 +78,7 @@ function scoreBridge(row: typeof mt5ConnectionTable.$inferSelect): {
   const hbAge = row.lastHeartbeat
     ? Math.floor((Date.now() - new Date(row.lastHeartbeat).getTime()) / 1000)
     : null;
-  const hbFresh = hbAge !== null && hbAge <= HEARTBEAT_FRESH_SECONDS;
+  const hbFresh = isHeartbeatAgeSecondsFresh(hbAge);
   if (!hbFresh) blockers.push(hbAge === null ? "NO_HEARTBEAT" : `HEARTBEAT_STALE(${hbAge}s)`);
   const accountType = (row.accountType ?? "unknown").toString();
   if (accountType !== "demo" && accountType !== "contest") {
@@ -117,10 +118,7 @@ export async function evaluatePerUserDispatchGate(args: {
   //   2. inside each tier, fewer blockers wins
   //   3. tie-break by freshest heartbeat
   // Revoked rows are excluded entirely.
-  const allRows = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, args.userId));
+  const allRows = await listUserConnections(args.userId);
   const nonRevoked = allRows.filter((r) => !r.tokenRevokedAt);
   const ranked = nonRevoked
     .map((r) => ({ row: r, ...scoreBridge(r) }))
@@ -133,8 +131,7 @@ export async function evaluatePerUserDispatchGate(args: {
   const heartbeatAgeSeconds = conn?.lastHeartbeat
     ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)
     : null;
-  const heartbeatFresh =
-    heartbeatAgeSeconds !== null && heartbeatAgeSeconds <= HEARTBEAT_FRESH_SECONDS;
+  const heartbeatFresh = isHeartbeatAgeSecondsFresh(heartbeatAgeSeconds);
   const accountTypeReported = (conn?.accountType ?? "none").toString();
   const accountTypeExplicitDemo = accountTypeReported === "demo" || accountTypeReported === "contest";
   const reportedEaVersion = conn?.eaVersion ?? null;

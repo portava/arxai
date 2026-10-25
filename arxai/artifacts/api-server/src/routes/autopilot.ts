@@ -4,7 +4,7 @@
 // human-override/mark-decision) require ADMIN. Live broker execution is
 // never invoked. FUTURE_MT5_LIVE_AUTO is rejected.
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { requireAdmin } from "../lib/security/middleware.js";
 
 import { z } from "zod/v4";
 import {
@@ -14,15 +14,6 @@ import {
 } from "../lib/autopilot.js";
 
 const router = Router();
-
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") {
-    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
-    return;
-  }
-  next();
-}
 
 const Mode = z.enum(["OFF", "OBSERVE_ONLY", "AI_ASSIST", "DEMO_AUTO_SIMULATOR", "LIVE_INTENT_AUTO_TESTER", "FUTURE_MT5_LIVE_AUTO_LOCKED"]);
 
@@ -75,13 +66,13 @@ router.post("/autopilot/start", requireAdmin, (req, res) => {
 router.post("/autopilot/pause", requireAdmin, (_req, res) => { const r = pauseSession(); return res.json(r); });
 router.post("/autopilot/resume", requireAdmin, (_req, res) => { const r = resumeSession(); return res.json(r); });
 router.post("/autopilot/stop", requireAdmin, (_req, res) => { const r = stopSession(); return res.json(r); });
-router.post("/autopilot/force-scan", requireAdmin, (req, res) => {
+router.post("/autopilot/force-scan", requireAdmin, async (req, res) => {
   const symbol = req.query.symbol ? String(req.query.symbol) : undefined;
-  const r = runDecisionPipeline({ force: true, symbol });
+  const r = await runDecisionPipeline({ force: true, symbol, actorUserId: req.authUser!.id });
   return res.json(r);
 });
 
-router.post("/autopilot/human-override", requireAdmin, (req, res) => {
+router.post("/autopilot/human-override", requireAdmin, async (req, res) => {
   const Body = z.object({
     kind: z.enum(["APPROVE", "REJECT", "PAUSE", "RESUME", "STOP", "EMERGENCY_STOP", "FORCE_SCAN"]),
     decisionId: z.string().optional(),
@@ -89,7 +80,7 @@ router.post("/autopilot/human-override", requireAdmin, (req, res) => {
   });
   const p = Body.safeParse(req.body ?? {});
   if (!p.success) return res.status(400).json({ error: "invalid", issues: p.error.issues });
-  const r = humanOverride(p.data);
+  const r = await humanOverride({ ...p.data, actorUserId: req.authUser!.id });
   return res.json(r);
 });
 

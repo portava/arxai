@@ -21,12 +21,13 @@ import {
   runGlobalAggregation,
 } from "../lib/globalLearning.js";
 import { getAssistantDisplayName } from "../lib/assistant/assistantName.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
 function requireAdmin(req: any, res: any, next: any) {
-  const role = req.authUser?.role;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(req.authUser?.role);
+  if (!role) {
     return res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
   }
   next();

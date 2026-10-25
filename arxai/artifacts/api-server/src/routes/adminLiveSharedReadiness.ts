@@ -9,13 +9,16 @@
 //     append-only audit rows. They MUST NOT insert into arx_live_commands,
 //     MUST NOT contact the EA, and MUST NOT mutate any per-user state.
 //   - POST /activate-step performs the explicit operator-confirmed DB writes
-//     against global_trading_settings (mode/routing/flag toggles + kill-switch
-//     release). It requires a typed confirmation phrase and writes a full
+//     against global_trading_settings (mode/routing/flag toggles). It never
+//     releases a stop (owner decision 1: POST /admin/trading/reset-kill is the
+//     one audited release). It requires a typed confirmation phrase and writes a full
 //     before/after audit row to admin_action_audit_log. It does NOT flip
 //     the env-level master switch ARX_LIVE_BROKER_EXECUTION_ENABLED —
 //     that remains a server-side operator-only env toggle.
 //   - Account numbers are masked to the last 4 chars on every response.
 //   - Raw bridge tokens / broker passwords / server URLs are never returned.
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { getConnection, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
@@ -23,10 +26,7 @@ import {
   usersTable,
   globalTradingSettingsTable,
   adminActionAuditLogTable,
-  mt5ConnectionTable,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
-  arxLiveArmingTable,
   userMasterLiveAccessTable,
   liveRiskDisclosureAcceptancesTable,
 } from "@workspace/db";
@@ -36,7 +36,11 @@ import {
   MIN_LIVE_EA_VERSION,
   LIVE_HEARTBEAT_MAX_AGE_SEC,
 } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
-import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
+import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
+import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { loadPlatformSettings, platformStopReport, platformStopWith, readPlatformSwitches } from "../lib/safety/platformSwitches.js";
+import { engagePlatformStop } from "../lib/safety/platformStopWriter.js";
+import { getMyArming } from "../lib/live/liveArming.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
 import {
   detectCurrentConnectedBridge,
@@ -46,6 +50,7 @@ import {
   ARX_LIVE_DEFAULT_ALLOWED_SYMBOLS,
   ARX_LIVE_DEFAULT_MAX_LOT_PER_MARKET,
 } from "../lib/live/liveArming.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -57,6 +62,8 @@ router.use(express.json());
 // same phrase everywhere they're asked to confirm a live action.
 const ACTIVATION_CONFIRM_PHRASE = "ENABLE LIVE TRADING" as const;
 const KILL_SWITCH_CONFIRM_PHRASE = "ENGAGE KILL SWITCH" as const;
+/** Refusal code when an activation request asks to release a stop (owner decision 1). */
+export const ACTIVATION_DOES_NOT_RELEASE_STOP = "ACTIVATION_DOES_NOT_RELEASE_STOP" as const;
 
 function requireAdmin(
   req: Request,
@@ -67,8 +74,8 @@ function requireAdmin(
     res.status(401).json({ ok: false, error: "AUTH_REQUIRED" });
     return null;
   }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }
@@ -137,26 +144,21 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
   if (!admin) return;
 
   try {
-  const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
+  // Switches from the one switch authority (lib/safety/platformSwitches);
+  // missing/unreadable settings read as OFF, stop engaged, not armed.
+  const { switches: sw, config: settingsRow } = await loadPlatformSettings();
   const masterSwitchEnvOnly = liveBrokerExecutionEnabled();
-  // Effective master switch = env OR DB-armed. The DB flag is the admin-
+  // Effective master switch = env AND DB-armed. The DB flag is the admin-
   // controllable arm switch; the env var remains a hard kill override.
-  const masterSwitch = resolveLiveBrokerExecutionEnabled(settingsRow);
-  const liveBrokerExecutionArmedDb = settingsRow?.liveBrokerExecutionArmed === true;
+  const masterSwitch = sw.liveBrokerExecution.enabled;
+  const liveBrokerExecutionArmedDb = sw.liveBrokerExecution.operatorArmed;
 
   // Master live bridge — detector + gate
   const detector = await detectCurrentConnectedBridge();
   const bridgeGate = await loadAndEvaluateMasterLiveBridgeGate();
-  let pinnedBridge: typeof mt5ConnectionTable.$inferSelect | null = null;
+  let pinnedBridge: BrokerConnectionFacts | null = null;
   if (settingsRow?.platformMasterBridgeConnectionId != null) {
-    pinnedBridge =
-      (
-        await db
-          .select()
-          .from(mt5ConnectionTable)
-          .where(eq(mt5ConnectionTable.id, settingsRow.platformMasterBridgeConnectionId))
-          .limit(1)
-      )[0] ?? null;
+    pinnedBridge = await getConnection(settingsRow.platformMasterBridgeConnectionId);
   }
   const bridgeForUi = pinnedBridge
     ? {
@@ -210,14 +212,14 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
 
   // Open exposure across all users
   const openExposure = (
-    await db
-      .select({
-        lots: sql<number>`COALESCE(SUM(${arxLivePositionsTable.volume}), 0)`,
-        floatingPl: sql<number>`COALESCE(SUM(${arxLivePositionsTable.floatingPl}), 0)`,
+    await livePositionLedger.select(
+      {
+        lots: sql<number>`COALESCE(SUM(${livePositionColumns.volume}), 0)`,
+        floatingPl: sql<number>`COALESCE(SUM(${livePositionColumns.floatingPl}), 0)`,
         n: sql<number>`COUNT(*)::int`,
-      })
-      .from(arxLivePositionsTable)
-      .where(sql`${arxLivePositionsTable.closedAt} IS NULL`)
+      },
+      { where: sql`${livePositionColumns.closedAt} IS NULL` },
+    )
   )[0] ?? { lots: 0, floatingPl: 0, n: 0 };
 
   // Recent commands (last 25)
@@ -260,7 +262,7 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
     after: {
       arxLiveCommandsCount: Number(liveCount[0]?.n ?? 0),
       masterSwitch,
-      platformMode: settingsRow?.platformMode ?? "OFF",
+      platformMode: sw.platformMode,
       accountRoutingMode: settingsRow?.accountRoutingMode ?? "USER_OWNED_MT5",
     },
   });
@@ -281,18 +283,21 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
       // from "set via Replit Secret env var" (env is a hard-kill override).
       serverMasterSwitchEnvOnly: masterSwitchEnvOnly,
       liveBrokerExecutionArmedDb,
-      liveBrokerExecutionArmedAt: settingsRow?.liveBrokerExecutionArmedAt ?? null,
-      liveBrokerExecutionArmedBy: settingsRow?.liveBrokerExecutionArmedBy ?? null,
-      liveBrokerExecutionArmedBridgeId: settingsRow?.liveBrokerExecutionArmedBridgeId ?? null,
-      platformMode: settingsRow?.platformMode ?? "OFF",
-      liveEnabled: settingsRow?.liveEnabled ?? false,
+      liveBrokerExecutionArmedAt: sw.liveBrokerExecution.armedAt,
+      liveBrokerExecutionArmedBy: sw.liveBrokerExecution.armedBy,
+      liveBrokerExecutionArmedBridgeId: sw.liveBrokerExecution.armedBridgeId,
+      platformMode: sw.platformMode,
+      liveEnabled: sw.venueEnabled.LIVE,
       accountRoutingMode: settingsRow?.accountRoutingMode ?? "USER_OWNED_MT5",
       sharedLiveTradingEnabled: settingsRow?.sharedLiveTradingEnabled ?? false,
       masterBridgeLiveEnabled: settingsRow?.masterBridgeLiveEnabled ?? false,
       complianceReviewFlag: settingsRow?.complianceReviewFlag ?? false,
-      emergencyKillSwitch: settingsRow?.emergencyKillSwitch ?? true,
-      killSwitchEngagedAt: settingsRow?.killSwitchEngagedAt ?? null,
-      killSwitchReason: settingsRow?.killSwitchReason ?? null,
+      emergencyKillSwitch: sw.emergencyStop.engaged,
+      killSwitchEngagedAt: sw.emergencyStop.engagedAt,
+      killSwitchReason: sw.emergencyStop.reason,
+      // Either install-wide stop (platformStop()); the fields above name the
+      // platform emergency stop this handler writes.
+      ...platformStopReport(await platformStopWith(sw)),
     },
     liveAccount: {
       pinnedBridge: bridgeForUi,
@@ -396,6 +401,9 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
         emergencyKillSwitch: true,
         killSwitchEngagedAt: null,
         killSwitchReason: null,
+        platformStopEngaged: true,
+        platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
+        platformStopReason: null,
       },
       liveAccount: {
         pinnedBridge: null,
@@ -442,8 +450,9 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
   const detector = await detectCurrentConnectedBridge();
   const bridgeGate = await loadAndEvaluateMasterLiveBridgeGate();
 
-  const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
-  const masterSwitch = resolveLiveBrokerExecutionEnabled(settingsRow);
+  // Switches from the one switch authority (missing/unreadable → strict).
+  const sw = await readPlatformSwitches();
+  const masterSwitch = sw.liveBrokerExecution.enabled;
 
   // Run the 16-gate Phase B evaluator from the operator's own perspective so
   // the response shows exactly which gates would block a real dispatch right
@@ -457,13 +466,7 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
         .where(eq(userMasterLiveAccessTable.userId, admin.id))
         .limit(1)
     )[0] ?? null;
-    const arming = (
-      await db
-        .select()
-        .from(arxLiveArmingTable)
-        .where(eq(arxLiveArmingTable.userId, admin.id))
-        .limit(1)
-    )[0] ?? null;
+    const arming = await getMyArming(admin.id);
     const disclosure =
       (
         await db
@@ -472,25 +475,27 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
           .where(eq(liveRiskDisclosureAcceptancesTable.userId, admin.id))
           .limit(1)
       ).length > 0;
-    const realisedToday = await db
-      .select({
-        pnl: sql<number>`COALESCE(SUM(${arxLivePositionsTable.floatingPl}), 0)`,
-      })
-      .from(arxLivePositionsTable)
-      .where(
-        and(
-          eq(arxLivePositionsTable.userId, admin.id),
-          sql`${arxLivePositionsTable.closedAt} >= NOW() - INTERVAL '24 hours'`,
+    const realisedToday = await livePositionLedger.select(
+      {
+        pnl: sql<number>`COALESCE(SUM(${livePositionColumns.floatingPl}), 0)`,
+      },
+      {
+        where: and(
+          eq(livePositionColumns.userId, admin.id),
+          sql`${livePositionColumns.closedAt} >= NOW() - INTERVAL '24 hours'`,
         ),
-      );
+      },
+    );
     const realisedDailyLossUsd = Math.max(0, -Number(realisedToday[0]?.pnl ?? 0));
     const input: LivePhaseBGateInput = {
       liveBrokerExecutionEnabled: masterSwitch,
-      globalLiveEnabled: settingsRow?.liveEnabled ?? false,
+      globalLiveEnabled: sw.venueEnabled.LIVE,
       userLiveApproved: access?.approvedForMasterLive ?? false,
       userArmed: arming?.isArmed ?? false,
+      // Dry run only: either install-wide stop (platformStop()) shows as the
+      // kill-switch gate failing, as the Risk Governor would refuse the order.
       killSwitchEngaged:
-        (arming?.killSwitchEngaged ?? false) || (settingsRow?.emergencyKillSwitch ?? true) === true,
+        (arming?.killSwitchEngaged ?? false) || (await platformStopWith(sw)).engaged,
       bridgeAccountType: detector.bridge.accountType ?? null,
       bridgeHeartbeatAgeSec: detector.bridge.heartbeatAgeSec,
       bridgeEaVersion: detector.bridge.eaVersion,
@@ -575,7 +580,8 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
 //   masterBridgeLiveEnabled?: boolean                   // optional
 //   platformMode?: "DEMO" | "LIVE"                      // optional
 //   liveEnabled?: boolean                               // optional
-//   releaseKillSwitch?: boolean                         // optional
+//   releaseKillSwitch                                   // REFUSED (409): activation never
+//                                                       // releases a stop (owner decision 1)
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/admin/live-shared/activate-step", async (req, res) => {
   const admin = requireAdmin(req, res);
@@ -625,10 +631,18 @@ router.post("/admin/live-shared/activate-step", async (req, res) => {
   if (typeof body.liveEnabled === "boolean") {
     patch.liveEnabled = body.liveEnabled;
   }
-  if (body.releaseKillSwitch === true) {
-    patch.emergencyKillSwitch = false;
-    patch.killSwitchEngagedAt = null;
-    patch.killSwitchReason = null;
+  // Owner decision 1: live activation never releases a stop. A release is its
+  // own explicit, audited operation (releasePlatformStop via
+  // POST /api/admin/trading/reset-kill). Nothing is written here.
+  if (body.releaseKillSwitch !== undefined && body.releaseKillSwitch !== false) {
+    res.status(409).json({
+      ok: false,
+      error: ACTIVATION_DOES_NOT_RELEASE_STOP,
+      detail:
+        "Live activation does not release the emergency stop. Release it separately with POST /api/admin/trading/reset-kill (operator role and a reason are required; the release is audited), then repeat this activation step without releaseKillSwitch.",
+      releaseEndpoint: "/api/admin/trading/reset-kill",
+    });
+    return;
   }
 
   // Compute the post-write state (current + patch) for precondition checks.
@@ -657,14 +671,12 @@ router.post("/admin/live-shared/activate-step", async (req, res) => {
     return;
   }
 
-  // FOOTGUN GUARD: any of (platformMode=LIVE, liveEnabled=true, kill-switch
-  // release) MUST happen against a fully shared-mode posture — routing
+  // FOOTGUN GUARD: any of (platformMode=LIVE, liveEnabled=true) MUST happen against a fully shared-mode posture — routing
   // SHARED_MASTER_MT5 + both shared flags on + bridge pinned. Otherwise the
   // legacy per-user Phase B dispatch surface could be reached unintentionally.
   const touchingLiveControls =
     body.platformMode === "LIVE" ||
-    body.liveEnabled === true ||
-    body.releaseKillSwitch === true;
+    body.liveEnabled === true;
   if (touchingLiveControls) {
     const sharedPostureOk =
       projected.accountRoutingMode === "SHARED_MASTER_MT5" &&
@@ -676,7 +688,7 @@ router.post("/admin/live-shared/activate-step", async (req, res) => {
         ok: false,
         error: "SHARED_POSTURE_REQUIRED_FOR_LIVE_CONTROLS",
         detail:
-          "platformMode=LIVE, liveEnabled=true, and kill-switch release may only be applied while accountRoutingMode=SHARED_MASTER_MT5, sharedLiveTradingEnabled=true, masterBridgeLiveEnabled=true, and a master bridge is pinned. Switch shared posture on first in earlier steps.",
+          "platformMode=LIVE and liveEnabled=true may only be applied while accountRoutingMode=SHARED_MASTER_MT5, sharedLiveTradingEnabled=true, masterBridgeLiveEnabled=true, and a master bridge is pinned. Switch shared posture on first in earlier steps.",
         projected,
       });
       return;
@@ -760,12 +772,12 @@ router.post("/admin/live-shared/kill-switch", async (req, res) => {
   }
   // ATOMIC: kill-switch flip + audit insert in a single transaction.
   await db.transaction(async (tx) => {
+    // The one engage writer (every settings row, reason/time/actor), inside
+    // this transaction; the shared posture below is this handler's own write.
+    await engagePlatformStop({ reason, actorUserId: admin.id, source: "admin_live_shared_kill_switch" }, tx);
     await tx
       .update(globalTradingSettingsTable)
       .set({
-        emergencyKillSwitch: true,
-        killSwitchEngagedAt: new Date(),
-        killSwitchReason: reason,
         sharedLiveTradingEnabled: false,
         masterBridgeLiveEnabled: false,
         updatedAt: new Date(),
@@ -813,9 +825,12 @@ router.post("/admin/live-shared/arm-live-execution", async (req, res) => {
 
   const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0] ?? null;
   if (!settingsRow) { res.status(500).json({ ok: false, error: "SETTINGS_ROW_MISSING" }); return; }
+  // The switch preconditions come from the one switch authority (strictest
+  // row wins); the raw row above is only the write target and audit snapshot.
+  const sw = await readPlatformSwitches();
 
   // Kill switch trumps everything.
-  if (settingsRow.emergencyKillSwitch === true) {
+  if (sw.emergencyStop.engaged) {
     res.status(409).json({
       ok: false, error: "KILL_SWITCH_ACTIVE",
       detail: "Emergency kill switch is engaged. Release it before arming live execution.",
@@ -861,9 +876,7 @@ router.post("/admin/live-shared/arm-live-execution", async (req, res) => {
   // stay in sync with `useChecklist()` in live-shared-activation.tsx — both
   // sides answer the same question, and divergence is the kind of bug that
   // gets people in trouble in live trading.
-  const fresh =
-    detector.bridge.heartbeatAgeSec != null &&
-    detector.bridge.heartbeatAgeSec <= LIVE_HEARTBEAT_MAX_AGE_SEC;
+  const fresh = isHeartbeatAgeSecondsFresh(detector.bridge.heartbeatAgeSec);
   const eaOk =
     detector.bridge.eaVersion != null &&
     detector.bridge.eaVersion >= MIN_LIVE_EA_VERSION;
@@ -897,9 +910,9 @@ router.post("/admin/live-shared/arm-live-execution", async (req, res) => {
     { id: "routing_shared", ok: settingsRow.accountRoutingMode === "SHARED_MASTER_MT5" },
     { id: "master_bridge_mode_live", ok: settingsRow.masterBridgeLiveEnabled === true },
     { id: "shared_live_enabled", ok: settingsRow.sharedLiveTradingEnabled === true },
-    { id: "platform_mode_live", ok: settingsRow.platformMode === "LIVE" },
-    { id: "live_enabled", ok: settingsRow.liveEnabled === true },
-    { id: "kill_released", ok: settingsRow.emergencyKillSwitch === false },
+    { id: "platform_mode_live", ok: sw.platformMode === "LIVE" },
+    { id: "live_enabled", ok: sw.venueEnabled.LIVE },
+    { id: "kill_released", ok: sw.readable && !sw.emergencyStop.engaged },
     { id: "approved_users", ok: approvedCount > 0 },
     { id: "user_limits", ok: approvedWithCaps > 0 && approvedWithCaps === approvedCount },
   ];

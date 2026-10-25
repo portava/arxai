@@ -56,7 +56,7 @@ record("live-intent/queue does NOT broaden by removing the gate (sanity)",
 const idRouteMatch = liSrc.match(/router\.get\("\/live-intent\/:id"[\s\S]*?\n\}\);/);
 record("/live-intent/:id route exists in source", !!idRouteMatch);
 record("/live-intent/:id admin-gates non-admin callers",
-  !!idRouteMatch && /role\s*===\s*"ADMIN"/.test(idRouteMatch![0]) && /if\s*\(\s*!isAdmin\s*\)/.test(idRouteMatch![0]));
+  !!idRouteMatch && /operatorRoleFromSession\(role\)\s*!=\s*null/.test(idRouteMatch![0]) && /if\s*\(\s*!isAdmin\s*\)/.test(idRouteMatch![0]));
 
 console.log("\nPART C — /me/positions/all mode scope");
 const posSrc = read("artifacts/api-server/src/routes/mePositionsUnified.ts");
@@ -69,7 +69,8 @@ record("positions/all exposes currentAccountMode + modeScopeApplied",
   (posSrc.includes("currentAccountMode: scope.currentAccountMode") || posSrc.includes("modeScopeEnvelope(scope)"))
   && (posSrc.includes("modeScopeApplied: true") || posSrc.includes("modeScopeEnvelope(scope)")));
 record("positions/all conditionally reads arx_live_positions via includeLive",
-  posSrc.includes("includeLive") && posSrc.includes("? await db.select().from(arxLivePositionsTable)"));
+  posSrc.includes("includeLive")
+  && posSrc.includes('? await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE", modeScope: scope })'));
 record("positions/all conditionally reads mt5_state via includeDemo",
   posSrc.includes("includeDemo"));
 
@@ -117,14 +118,16 @@ record("helper does not write to arx_live_commands",
 // The read-only mode-scope routes must never reach the live dispatch pipeline.
 // meTrades is the ONE sanctioned exception: it gained a live-CLOSE / ops
 // dispatch path (a close always reduces risk and is routed through the SAME
-// 18-gate dispatchLiveCommand as any other live command). It is excluded from
+// 18-gate dispatchLiveCommand as any other live command, reached through the
+// Trade Engine's staged OPS draft + LIVE dispatch). It is excluded from
 // the blanket check here and pinned by the dedicated assertion below so the
 // exception stays narrow (close/ops only, never a generic open-draft creator).
 record("read-only mode-scope routes do not import the live dispatch pipeline",
   !liSrc.includes(PIPELINE) && !calSrc.includes(PIPELINE)
    && !pccSrc.includes(PIPELINE) && !posSrc.includes(PIPELINE));
 record("meTrades pipeline use is confined to the live-CLOSE / ops dispatch path",
-  !trSrc.includes("createLiveDraft(") && trSrc.includes("dispatchLiveCommand"));
+  !trSrc.includes("createLiveDraft(") && !/kind:\s*"ENTRY"/.test(trSrc) && !/submitTrade\(/.test(trSrc)
+   && /draftTrade\(\{ mode: "LIVE", kind: "OPS" \}/.test(trSrc) && /dispatchTrade\(\{ mode: "LIVE" \}/.test(trSrc));
 
 const total = pass + fail;
 console.log(`\nSummary: ${pass}/${total} PASS${fail ? ` · ${fail} FAIL` : ""}`);

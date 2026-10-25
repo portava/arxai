@@ -2,6 +2,13 @@ import { pgTable, serial, real, integer, boolean, timestamp, text, uniqueIndex }
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+// Trader preferences (risk mode label, confidence floor, symbol rules, the
+// trader's own live lock). Its limit columns (max_daily_loss_pct,
+// max_weekly_loss_pct, max_trades_per_day, max_open_trades, max_lot_size,
+// risk_per_trade_pct, stop_after_losing_streak, cooldown_after_loss_minutes)
+// were folded into user_risk_settings, the one trader-editable limit store
+// (migration 2026-10-24_one_limit_store). They stay in the table, unread and
+// unwritten, until an owner drops them.
 export const riskSettingsTable = pgTable("risk_settings", {
   id: serial("id").primaryKey(),
   userId: integer("user_id"), // Phase-2 ownership column. Nullable for legacy rows.

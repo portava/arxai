@@ -157,6 +157,9 @@ export function QuickTradeModal({
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [confirmStep, setConfirmStep] = useState(false);
+  // Retry-safe key of a SIMULATED open: reused if the same order is retried,
+  // replaced once it succeeds or the order changes (one paper order per key).
+  const requestKeyRef = useRef<string | null>(null);
 
   // Unified per-user account mode (read-only). Drives the honest default mode +
   // disabled states. Authorizes nothing — the backend re-runs every gate.
@@ -200,8 +203,13 @@ export function QuickTradeModal({
     takeProfit: n(tp),
   }), [orderType, lotSize, currentPrice, entryPrice, stopTriggerPrice, stopLimitPrice, sl, tp]);
 
+  useEffect(() => { requestKeyRef.current = null; }, [open, mode, symbol, orderType, lotSize, sl, tp]);
+
   async function submitMarket() {
     setBusy(true); setErr(null); setResult(null);
+    if (mode !== "LIVE" && !requestKeyRef.current) {
+      requestKeyRef.current = `qt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    }
     try {
       const r = await fetch(u("/api/me/trades/open"), {
         method: "POST",
@@ -211,14 +219,20 @@ export function QuickTradeModal({
           symbol, side: direction, lotSize, mode,
           stopLoss: n(sl), takeProfit: n(tp),
           confirmedByUser: true,
+          ...(mode !== "LIVE" ? { idempotencyKey: requestKeyRef.current } : {}),
         }),
       });
       const body = await r.json();
       if (!r.ok || !body.ok) {
-        setErr(String(body.error ?? `HTTP ${r.status}`));
+        setErr(String(body.message ?? body.error ?? `HTTP ${r.status}`));
         return;
       }
-      setResult(`Market order ${body.result?.status ?? "QUEUED"}`);
+      requestKeyRef.current = null;
+      setResult(body.simulated
+        ? `${body.simulated.label} Paper order #${body.simulated.paperOrderId} at ${body.simulated.fillPrice}.`
+        : body.demo
+          ? `Demo order sent to your demo account (command ${body.demo.commandId ?? "pending"}).`
+          : `Market order ${body.result?.status ?? "QUEUED"}`);
       onOpened();
     } catch (e) {
       setErr(String((e as Error).message ?? e));
@@ -428,7 +442,7 @@ export function QuickTradeModal({
               <div className="rounded bg-danger/10 p-3 text-danger">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="mt-0.5 h-4 w-4" />
-                  <div>This is a <strong>LIVE</strong> market order. The full safety guard chain must approve before it reaches your broker.</div>
+                  <div>This is a <strong>LIVE</strong> market order. Live opens from My Trades are not enabled yet: they stay off until broker validation passes and the owner authorizes this surface, so the server will refuse it and send nothing.</div>
                 </div>
                 <label className="mt-2 flex items-start gap-2">
                   <Checkbox checked={ack} onCheckedChange={(v) => setAck(v === true)} />

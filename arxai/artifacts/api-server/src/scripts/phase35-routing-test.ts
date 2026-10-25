@@ -12,11 +12,12 @@
 // restored to its observed pre-run snapshot (kill switch + platform mode
 // re-engaged if they were that way before).
 
+import { createConnection, deleteFixtureConnections } from "../lib/brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
   globalTradingSettingsTable, userTradingPermissionsTable,
   userRiskLimitsTable, tradeCommandAuditLogTable,
-  mt5ConnectionTable, sharedMasterAccountsTable,
+  sharedMasterAccountsTable,
   virtualTradingAccountsTable, sharedTradeAttributionTable,
   usersTable, mt5CommandsTable,
 } from "@workspace/db/schema";
@@ -76,23 +77,23 @@ async function main() {
   createdUserIds.push(adminUser!.id, regUser!.id);
 
   // Master demo connection (owned by admin)
-  const [adminDemoConn] = await db.insert(mt5ConnectionTable).values({
+  const adminDemoConn = await createConnection({
     userId: adminUser!.id, connectionName: "P35 admin demo",
     accountNumber: "9000001", brokerName: "TestBroker",
     accountType: "demo", status: "connected",
-  } as never).returning();
+  } as never);
   // Master live connection (owned by admin)
-  const [adminLiveConn] = await db.insert(mt5ConnectionTable).values({
+  const adminLiveConn = await createConnection({
     userId: adminUser!.id, connectionName: "P35 admin live",
     accountNumber: "9000002", brokerName: "TestBroker",
     accountType: "live", status: "connected",
-  } as never).returning();
+  } as never);
   // Regular user's own demo connection
-  const [regDemoConn] = await db.insert(mt5ConnectionTable).values({
+  const regDemoConn = await createConnection({
     userId: regUser!.id, connectionName: "P35 user demo",
     accountNumber: "1000001", brokerName: "TestBroker",
     accountType: "demo", status: "connected",
-  } as never).returning();
+  } as never);
   createdConnIds.push(adminDemoConn!.id, adminLiveConn!.id, regDemoConn!.id);
 
   // Set permissions: enable DEMO trading, allow demo, lift suspension, perms allow DEMO mode.
@@ -463,8 +464,7 @@ async function main() {
       .where(inArray(userTradingPermissionsTable.id, createdPermIds));
   }
   if (createdConnIds.length) {
-    await db.delete(mt5ConnectionTable)
-      .where(inArray(mt5ConnectionTable.id, createdConnIds));
+    await deleteFixtureConnections(createdConnIds);
   }
   if (createdUserIds.length) {
     await db.delete(usersTable)

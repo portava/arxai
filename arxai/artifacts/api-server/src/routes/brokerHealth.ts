@@ -6,6 +6,7 @@
 //   - mt5_commands       — used to queue a RECONNECT command for the EA
 //   - broker_health_state (singleton) — operator toggles + cached status
 //   - broker_health_logs — append-only audit trail
+//     (both written only here; read through lib/brokerHub/brokerHealthState.ts)
 //
 // The pure verdict logic lives in lib/domain/src/broker-health/evaluator.ts.
 // This file only does I/O: read the inputs, call the evaluator, persist.
@@ -15,35 +16,50 @@ import {
   db,
   brokerHealthLogsTable,
   brokerHealthStateTable,
-  mt5StateTable,
   mt5CommandsTable,
   vaultEventsTable,
 } from "@workspace/db";
-import { asc, desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { evaluateBrokerHealth, type BrokerHealthVerdict } from "@workspace/domain/broker-health";
 import { getStatus } from "../lib/safetyCore.js";
+import { canSeeLegacyRows, requireOperator } from "../lib/auth/ownerScope.js";
+import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
+import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
+import {
+  listBrokerHealthLogs,
+  readBrokerHealthState,
+  type BrokerHealthStateRow,
+} from "../lib/brokerHub/brokerHealthState.js";
 
 const router = Router();
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-// Singleton accessor — deterministic order to mirror safetyCore's pattern.
-// If a concurrent first-write creates duplicates, the lowest-id row is the
-// canonical one and the others are ignored (a follow-up cleanup job could
-// fold them; the cached lastStatus is overwritten on every persistSnapshot).
-async function loadOrCreateBrokerState() {
-  const rows = await db.select().from(brokerHealthStateTable)
-    .orderBy(asc(brokerHealthStateTable.id))
-    .limit(1);
-  if (rows[0]) return rows[0];
+// This route is the only writer of broker_health_state / broker_health_logs;
+// it reads them back through the Broker Hub like every other caller, so the
+// lowest-id row is canonical everywhere. If a concurrent first-write creates
+// duplicates, the others are ignored (the cached lastStatus is overwritten on
+// every persistSnapshot).
+type BrokerStateWriter = Pick<typeof db, "update">;
+
+async function loadOrCreateBrokerState(): Promise<BrokerHealthStateRow> {
+  const row = await readBrokerHealthState();
+  if (row) return row;
   const inserted = await db.insert(brokerHealthStateTable).values({}).returning();
   return inserted[0]!;
 }
 
+async function updateBrokerHealthState(
+  id: number,
+  patch: Partial<Omit<typeof brokerHealthStateTable.$inferInsert, "id">>,
+  writer: BrokerStateWriter = db,
+): Promise<void> {
+  await writer.update(brokerHealthStateTable).set(patch).where(eq(brokerHealthStateTable.id, id));
+}
+
 async function loadMt5State() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  return rows[0] ?? null;
+  return readPlatformMt5State();
 }
 
 async function appendVault(
@@ -94,7 +110,7 @@ async function evaluateNow() {
 }
 
 /** Persist a snapshot to broker_health_logs and update cached state. */
-async function persistSnapshot(verdict: BrokerHealthVerdict, state: typeof brokerHealthStateTable.$inferSelect, mt5: { broker: string | null; lastHeartbeatAt: Date | null } | null) {
+async function persistSnapshot(verdict: BrokerHealthVerdict, state: BrokerHealthStateRow, mt5: { broker: string | null; lastHeartbeatAt: Date | null } | null) {
   await db.insert(brokerHealthLogsTable).values({
     brokerName: mt5?.broker ?? null,
     status: verdict.status,
@@ -110,24 +126,22 @@ async function persistSnapshot(verdict: BrokerHealthVerdict, state: typeof broke
     blockers: verdict.blockers,
   });
 
-  await db.update(brokerHealthStateTable)
-    .set({
-      lastStatus: verdict.status,
-      lastEvaluatedAt: new Date(),
-      // Reset reconnect counter once we're back to a fully healthy link.
-      reconnectAttempts: verdict.status === "CONNECTED" ? 0 : state.reconnectAttempts,
-      // Clear cached error on CONNECTED.
-      ...(verdict.status === "CONNECTED" ? {
-        lastErrorCode: null, lastErrorMessage: null, lastErrorAt: null,
-      } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(brokerHealthStateTable.id, state.id));
+  await updateBrokerHealthState(state.id, {
+    lastStatus: verdict.status,
+    lastEvaluatedAt: new Date(),
+    // Reset reconnect counter once we're back to a fully healthy link.
+    reconnectAttempts: verdict.status === "CONNECTED" ? 0 : state.reconnectAttempts,
+    // Clear cached error on CONNECTED.
+    ...(verdict.status === "CONNECTED" ? {
+      lastErrorCode: null, lastErrorMessage: null, lastErrorAt: null,
+    } : {}),
+    updatedAt: new Date(),
+  });
 }
 
 function verdictToResponse(
   verdict: BrokerHealthVerdict,
-  state: typeof brokerHealthStateTable.$inferSelect,
+  state: BrokerHealthStateRow,
   mt5: { broker: string | null; account: string | null; lastHeartbeatAt: Date | null; lastSyncAt: Date | null } | null,
   coreLink: "OK" | "DEGRADED" | "DOWN",
 ) {
@@ -161,7 +175,10 @@ function verdictToResponse(
 router.get("/broker/health", async (req, res) => {
   try {
     const { verdict, state, mt5State, coreLink } = await evaluateNow();
-    res.json(verdictToResponse(verdict, state, mt5State, coreLink));
+    const body = verdictToResponse(verdict, state, mt5State, coreLink);
+    // The server-wide MT5 account belongs to the operator, not to the caller.
+    if (!canSeeLegacyRows(req.authUser)) body.accountNumber = null;
+    res.json(body);
   } catch (err) {
     req.log.error({ err: String(err) }, "GET /broker/health failed");
     res.status(500).json({ error: "Failed to evaluate broker health" });
@@ -169,7 +186,7 @@ router.get("/broker/health", async (req, res) => {
 });
 
 // POST /broker/health-check — force re-evaluation, persist log, vault event.
-router.post("/broker/health-check", async (req, res) => {
+router.post("/broker/health-check", requireOperator, async (req, res) => {
   try {
     const { verdict, state, mt5State, coreLink } = await evaluateNow();
     await persistSnapshot(verdict, state, mt5State);
@@ -189,9 +206,7 @@ router.post("/broker/health-check", async (req, res) => {
 router.get("/broker/health-logs", async (req, res) => {
   try {
     const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
-    const rows = await db.select().from(brokerHealthLogsTable)
-      .orderBy(desc(brokerHealthLogsTable.createdAt))
-      .limit(limit);
+    const rows = await listBrokerHealthLogs(limit);
     res.json({
       logs: rows.map((r) => ({
         id: r.id,
@@ -218,31 +233,39 @@ router.get("/broker/health-logs", async (req, res) => {
 
 // POST /broker/reconnect — queue a RECONNECT command for the EA + bump counter.
 const ReconnectBody = z.object({ reason: z.string().max(500).optional() });
-router.post("/broker/reconnect", async (req, res): Promise<void> => {
+router.post("/broker/reconnect", requireOperator, async (req, res): Promise<void> => {
   try {
     const body = ReconnectBody.parse(req.body ?? {});
     // SAFETY: Only enqueue a deliverable PENDING RECONNECT when the system is
     // armed for live trading. Otherwise store as BLOCKED so the EA poll cannot
     // pick it up. This closes the unauthenticated-enqueue path through this
     // endpoint while preserving the operator's ability to record an attempt.
+    //
+    // Recovery only (owner decision 3, round 5): reconnect stays available
+    // while a stop is engaged, and it can never clear a stop, arm trading or
+    // dispatch a queued order. It writes only the RECONNECT command row, the
+    // reconnect counter and its vault event. The stop is read through the
+    // platform-stop authority: a reconnect opens no new risk, so the
+    // safety-core kill switch (this gate's own stop) decides PENDING vs
+    // BLOCKED exactly as before, and the emergency stop does not.
     const { getStatus: getSafetyStatus } = await import("../lib/safetyCore.js");
     const safety = await getSafetyStatus();
-    const armed = safety.operationalMode === "LIVE_TRADING" && !safety.killSwitchEngaged;
+    const stop = preCheckStopRefusal(await platformStop(), { own: "safety_core_kill_switch", opensNewRisk: false, venue: "LIVE" });
+    const kill = stopSourceEngaged(stop, "safety_core_kill_switch");
+    const armed = safety.operationalMode === "LIVE_TRADING" && !kill;
     const cmdStatus = armed ? "PENDING" : "BLOCKED";
     const cmdDetail = armed
       ? (body.reason ?? "operator-initiated")
-      : `BLOCKED: not armed for live (mode=${safety.operationalMode}, kill=${safety.killSwitchEngaged}). Reason: ${body.reason ?? "operator-initiated"}`;
+      : `BLOCKED: not armed for live (mode=${safety.operationalMode}, kill=${kill}). Reason: ${body.reason ?? "operator-initiated"}`;
 
     const state = await loadOrCreateBrokerState();
     const nextAttempts = state.reconnectAttempts + 1;
 
-    await db.update(brokerHealthStateTable)
-      .set({
-        reconnectAttempts: nextAttempts,
-        lastReconnectAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(brokerHealthStateTable.id, state.id));
+    await updateBrokerHealthState(state.id, {
+      reconnectAttempts: nextAttempts,
+      lastReconnectAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     await db.insert(mt5CommandsTable).values({
       action: "RECONNECT",
@@ -272,13 +295,11 @@ router.post("/broker/reconnect", async (req, res): Promise<void> => {
 
 // POST /broker/disable-execution — operator toggle off.
 const DisableBody = z.object({ reason: z.string().max(500).optional() });
-router.post("/broker/disable-execution", async (req, res): Promise<void> => {
+router.post("/broker/disable-execution", requireOperator, async (req, res): Promise<void> => {
   try {
     const body = DisableBody.parse(req.body ?? {});
     const state = await loadOrCreateBrokerState();
-    await db.update(brokerHealthStateTable)
-      .set({ executionEnabled: false, updatedAt: new Date() })
-      .where(eq(brokerHealthStateTable.id, state.id));
+    await updateBrokerHealthState(state.id, { executionEnabled: false, updatedAt: new Date() });
 
     await db.insert(vaultEventsTable).values({
       kind: "BROKER_EXECUTION_DISABLED",
@@ -303,7 +324,7 @@ router.post("/broker/disable-execution", async (req, res): Promise<void> => {
 
 // POST /broker/enable-execution — operator toggle on, but only if link is healthy.
 const EnableBody = z.object({ reason: z.string().max(500).optional() });
-router.post("/broker/enable-execution", async (req, res): Promise<void> => {
+router.post("/broker/enable-execution", requireOperator, async (req, res): Promise<void> => {
   try {
     const body = EnableBody.parse(req.body ?? {});
 
@@ -313,14 +334,10 @@ router.post("/broker/enable-execution", async (req, res): Promise<void> => {
     // safetyCore is the canonical authority — if it says the link is not
     // "OK", we refuse regardless of what the broker probe says.
     const result = await db.transaction(async (tx) => {
-      const bhRows = await tx.select().from(brokerHealthStateTable)
-        .orderBy(asc(brokerHealthStateTable.id)).limit(1);
-      const bh = bhRows[0];
+      const bh = await readBrokerHealthState(tx);
       if (!bh) throw new Error("broker_health_state singleton missing");
 
-      const mt5Rows = await tx.select().from(mt5StateTable)
-        .orderBy(asc(mt5StateTable.id)).limit(1);
-      const mt5 = mt5Rows[0] ?? null;
+      const mt5 = await readPlatformMt5State(tx);
 
       const sc = await getStatus();
 
@@ -345,9 +362,7 @@ router.post("/broker/enable-execution", async (req, res): Promise<void> => {
         return { ok: false as const, code: 409, status: probe.status, blockers: probe.blockers };
       }
 
-      await tx.update(brokerHealthStateTable)
-        .set({ executionEnabled: true, updatedAt: new Date() })
-        .where(eq(brokerHealthStateTable.id, bh.id));
+      await updateBrokerHealthState(bh.id, { executionEnabled: true, updatedAt: new Date() }, tx);
 
       return { ok: true as const, probeStatus: probe.status };
     });

@@ -10,15 +10,16 @@
 // (`mt5DemoCommandsTable`). A demo command can never accidentally route as
 // live and vice versa.
 
+import { livePositionWriter, livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions } from "../positions/openPositions.js";
+import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
   arxLiveUserSettingsTable,
   liveTradingAuditTable,
-  mt5ConnectionTable,
   userMasterLiveAccessTable,
   type ArxLiveCommand,
   type ArxLiveCommandStatus,
@@ -90,8 +91,15 @@ import {
   ARX_LIVE_HARD_MAX_CLUSTER_RISK_USD,
   ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS,
 } from "./liveArming.js";
-import { liveBrokerExecutionEnabled, resolveLiveBrokerExecutionEnabledAsync, buildLiveIdempotencyKey, PHASE_B_LIVE_LOG_PREFIX } from "./phaseBConfig.js";
+import {
+  liveBrokerExecutionEnabled,
+  resolveLiveBrokerExecutionEnabledAsync,
+  buildLiveIdempotencyKey,
+  PHASE_B_LIVE_LOG_PREFIX,
+} from "./phaseBConfig.js";
 import { getEnvelope } from "../adminTrading/safetyEnvelope.js";
+import { platformStop, preCheckStopRefusal } from "../safety/platformSwitches.js";
+import { sharedLivePauseOf } from "../safety/sharedLivePause.js";
 import { logger } from "../logger.js";
 import { globalTradingSettingsTable, liveRiskDisclosureAcceptancesTable } from "@workspace/db";
 import {
@@ -122,8 +130,9 @@ import { getUserRiskProfile } from "./userRiskProfile.js";
 import { persistLiveBypassTrace } from "../agentEcosystem/governance.js";
 import { getEffectiveTradingGovernance } from "../governance/effectiveGovernance.js";
 import { getSymbolTradability } from "../data/symbolTradability.js";
-import { recomputeMasterPool, loadMasterPool, getUserAllocationView, resolveActiveMasterConnectionId } from "./masterBridgePool.js";
+import { recomputeMasterPool, getUserAllocationView, resolveActiveMasterConnectionId } from "./masterBridgePool.js";
 import { resolveAllocationGate } from "./allocationGate.js";
+import { enforcePreTradeRisk, type IntentAction } from "../riskGovernor/enforce.js";
 import {
   claimLiveCommandForConfirm,
   claimLiveCommandForDispatch,
@@ -453,6 +462,9 @@ async function recordExecutionEvent(input: {
 // Global emergency-kill-switch pre-gate. POST /api/admin/trading/emergency-kill
 // engages global_trading_settings.emergency_kill_switch; dispatch consumes it
 // via this reason literal BEFORE the 18-gate evaluator, in BOTH routing modes.
+/** Live command types that open new risk (the rest close or modify). */
+const LIVE_ENTRY_COMMAND_TYPES: ReadonlySet<string> = new Set(["PLACE_LIVE_MARKET_ORDER", "PLACE_LIVE_PENDING_ORDER"]);
+
 export const EMERGENCY_KILL_SWITCH_BLOCK_REASON =
   "LIVE_BLOCKED:EMERGENCY_KILL_SWITCH_ENGAGED" as const;
 
@@ -472,9 +484,20 @@ export const EMERGENCY_KILL_SWITCH_BLOCK_REASON =
  */
 export function emergencyKillSwitchBlocksDispatch(args: {
   emergencyKillSwitch: boolean | null | undefined;
+  /**
+   * The other install-wide stop (safety_core.kill_switch_engaged), from the
+   * one platform-stop read (lib/safety/platformSwitches.platformStop). When
+   * given, an engaged (or unknown: `!== false`) safety-core kill switch also
+   * refuses ENTRY commands (PLACE_LIVE_*), which the pre-trade Risk Governor
+   * refuses anyway (tradingHalt). Closes and modifies are left to the
+   * governor. Omitted → only the emergency stop is consulted (as before).
+   */
+  safetyCoreKillSwitch?: boolean | null;
   commandType: string;
   hasKillSwitchCloseBypassMarker: boolean;
 }): boolean {
+  if ("safetyCoreKillSwitch" in args && args.safetyCoreKillSwitch !== false
+    && LIVE_ENTRY_COMMAND_TYPES.has(args.commandType)) return true;
   const engaged = args.emergencyKillSwitch !== false;
   if (!engaged) return false;
   return !killSwitchCloseBypassApplies({
@@ -1143,7 +1166,7 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
   // The pre-gate is intentionally fail-CLOSED:
   //   1. Master bridge must be pinned.
   //   2. Heartbeat snapshot must be FRESH (≤60s) — never STALE/MISSING.
-  //   3. sharedLivePaused must be false.
+  //   3. shared-live must not be paused for this pool (sharedLivePauseOf).
   //   4. Pool must not be over-allocated (Strict Real-Balance Mode).
   //   5. User's available allocation (allocated − reservedRisk − openFloatingLoss)
   //      must be > 0.
@@ -1188,9 +1211,10 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
           detail: rowEarly.freezeReason ?? "Your allocation is frozen by the operator. Contact your operator." };
       }
     }
-    if (pool.sharedLivePaused) {
+    const sharedPause = sharedLivePauseOf(pool);
+    if (sharedPause.paused) {
       return { ok: false, reason: "LIVE_BLOCKED:SHARED_LIVE_PAUSED",
-        detail: pool.pausedReason ?? "Live shared trading is temporarily paused for reconciliation." };
+        detail: sharedPause.reason ?? "Live shared trading is temporarily paused for reconciliation." };
     }
     if (pool.snapshotStatus === "MISSING") {
       return { ok: false, reason: "LIVE_BLOCKED:MASTER_SNAPSHOT_MISSING",
@@ -1346,9 +1370,8 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
       if (isOwnerUnrestricted) {
         const masterConnId = await resolveActiveMasterConnectionId();
         if (masterConnId != null) {
-          const mc = await db.select({ brokerName: mt5ConnectionTable.brokerName })
-            .from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
-          brokerIsDeriv = /deriv/i.test(mc[0]?.brokerName ?? "");
+          const mc = await getConnection(masterConnId);
+          brokerIsDeriv = /deriv/i.test(mc?.brokerName ?? "");
         }
         const spec = await getBrokerSymbolSpec(input.userId, input.symbol);
         brokerTruthBlocks = spec.hasBrokerTruth && (
@@ -1667,8 +1690,7 @@ export async function createLiveOpsDraft(input: {
     return { ok: false, reason: "KILL_SWITCH_ENGAGED" };
   }
 
-  const bridge = (await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, input.userId))).find((b) => !b.tokenRevokedAt) ?? null;
+  const bridge = (await listUserConnections(input.userId, { activeTokenOnly: true, order: "oldest", limit: 1 }))[0] ?? null;
 
   const ownership = await resolveOwnershipFields({
     userId: input.userId,
@@ -1822,8 +1844,7 @@ export async function createLiveDraft(
 
   const arming = (await getMyArming(input.userId))!;
   const bridge = arming
-    ? (await db.select().from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.userId, input.userId))).find((b) => !b.tokenRevokedAt) ?? null
+    ? (await listUserConnections(input.userId, { activeTokenOnly: true, order: "oldest", limit: 1 }))[0] ?? null
     : null;
 
   // Task #28 — derive the cycle link from the payload the caller passed
@@ -2183,13 +2204,25 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // (already verified by the command-integrity pre-gate above), mirroring
   // the narrow gate-#5 relaxation so an operator can still flatten exposure
   // while the platform is halted.
+  //
+  // Both install-wide stops are read once through the platform-stop authority
+  // (lib/safety/platformSwitches.platformStop): the emergency stop keeps its
+  // rule above; the safety-core kill switch is an additional reason that
+  // refuses entries only (the Risk Governor refuses them anyway). Same block
+  // reason literal for either; the snapshot names the source(s).
   {
     const hasKillSwitchCloseBypassMarker =
       row.payload != null
       && typeof row.payload === "object"
       && (row.payload as { killSwitchCloseBypass?: unknown }).killSwitchCloseBypass != null;
+    const stop = preCheckStopRefusal(await platformStop(), {
+      own: "platform_emergency_stop",
+      opensNewRisk: LIVE_ENTRY_COMMAND_TYPES.has(row.commandType),
+      venue: "LIVE",
+    });
     if (emergencyKillSwitchBlocksDispatch({
-      emergencyKillSwitch: env.emergencyKillSwitch,
+      emergencyKillSwitch: stop.sources.includes("platform_emergency_stop"),
+      safetyCoreKillSwitch: stop.sources.includes("safety_core_kill_switch"),
       commandType: row.commandType,
       hasKillSwitchCloseBypassMarker,
     })) {
@@ -2203,6 +2236,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           primaryReason: reason,
           blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
           emergencyKillSwitchGate: true,
+          platformStopSources: stop.sources,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
       }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
@@ -2210,7 +2244,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         eventType: "EMERGENCY_KILL_SWITCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
         message: `Live dispatch BLOCKED by emergency kill switch: ${reason}`,
-        metadata: { commandId: args.commandId, commandType: row.commandType },
+        metadata: { commandId: args.commandId, commandType: row.commandType, platformStopSources: stop.sources },
       });
       logger.warn({
         [PHASE_B_LIVE_LOG_PREFIX]: true,
@@ -2470,14 +2504,14 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // refusals (a corrupt row must never silently create capacity).
   if (isWave4EntryCommand
     && (settings.maxClusterRiskUsd != null || settings.maxClusterPositions != null)) {
-    const clusterOpenPositions = await db.select({
-      symbol: arxLivePositionsTable.symbol,
-      side: arxLivePositionsTable.side,
-      volume: arxLivePositionsTable.volume,
-    }).from(arxLivePositionsTable).where(and(
-      eq(arxLivePositionsTable.userId, args.userId),
-      isNull(arxLivePositionsTable.closedAt),
-    ));
+    const clusterOpenPositions = await selectLiveOpenPositions(
+      {
+        symbol: livePositionColumns.symbol,
+        side: livePositionColumns.side,
+        volume: livePositionColumns.volume,
+      },
+      { userId: args.userId, basis: "UNCLOSED" },
+    );
     const clusterInFlight = await db.select({
       symbol: arxLiveCommandsTable.symbol,
       side: arxLiveCommandsTable.side,
@@ -2824,9 +2858,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       if (isOwnerUnrestrictedDispatch) {
         const masterConnId = await resolveActiveMasterConnectionId();
         if (masterConnId != null) {
-          const mc = await db.select({ brokerName: mt5ConnectionTable.brokerName })
-            .from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
-          brokerIsDeriv = /deriv/i.test(mc[0]?.brokerName ?? "");
+          const mc = await getConnection(masterConnId);
+          brokerIsDeriv = /deriv/i.test(mc?.brokerName ?? "");
         }
         const spec = await getBrokerSymbolSpec(args.userId, row.symbol);
         brokerTruthBlocks = spec.hasBrokerTruth && (
@@ -2876,7 +2909,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // bridge-binding rule. When PASS, we override the bridge selection
   // below with the bound bridge so pickupNextLiveCommand and
   // recordLiveCommandResult both validate against the same row.
-  const gtsRows = await db.select().from(globalTradingSettingsTable).limit(1);
+  const gtsRows = await db.select({ accountRoutingMode: globalTradingSettingsTable.accountRoutingMode }).from(globalTradingSettingsTable).limit(1);
   const gts = gtsRows[0] ?? null;
   const routingMode = (gts?.accountRoutingMode as "USER_OWNED_MT5" | "SHARED_MASTER_MT5") ?? "USER_OWNED_MT5";
   let masterBoundBridgeId: number | null = null;
@@ -2957,8 +2990,8 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // The explicit MOCK short-circuit below refuses dispatch before the
   // evaluator runs, so a MOCK row cannot ever satisfy live readiness.
   const bridgePool = masterBoundBridgeId != null
-    ? await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterBoundBridgeId))
-    : await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, args.userId));
+    ? [await getConnection(masterBoundBridgeId)].filter((c) => c != null)
+    : await listUserConnections(args.userId);
   const nonRevoked = bridgePool.filter((b) => !b.tokenRevokedAt);
   const byFreshness = (a: typeof nonRevoked[number], b: typeof nonRevoked[number]) => {
     const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;
@@ -3052,19 +3085,24 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // position closes its floatingPl no longer counts as open, but its
   // realised loss still counts against today's limit.
   const startOfDayUtc = new Date(); startOfDayUtc.setUTCHours(0, 0, 0, 0);
-  const openLossRows = await db.select({
-    totalNegFloat: sql<number>`COALESCE(SUM(CASE WHEN ${arxLivePositionsTable.floatingPl} < 0 THEN ${arxLivePositionsTable.floatingPl} ELSE 0 END), 0)`,
-  }).from(arxLivePositionsTable).where(and(
-    eq(arxLivePositionsTable.userId, args.userId),
-    isNull(arxLivePositionsTable.closedAt),
-  ));
-  const closedTodayLossRows = await db.select({
-    totalNegRealised: sql<number>`COALESCE(SUM(CASE WHEN ${arxLivePositionsTable.floatingPl} < 0 THEN ${arxLivePositionsTable.floatingPl} ELSE 0 END), 0)`,
-  }).from(arxLivePositionsTable).where(and(
-    eq(arxLivePositionsTable.userId, args.userId),
-    sql`${arxLivePositionsTable.closedAt} IS NOT NULL`,
-    sql`${arxLivePositionsTable.closedAt} >= ${startOfDayUtc.toISOString()}`,
-  ));
+  const openLossRows = await selectLiveOpenPositions(
+    {
+      totalNegFloat: sql<number>`COALESCE(SUM(CASE WHEN ${livePositionColumns.floatingPl} < 0 THEN ${livePositionColumns.floatingPl} ELSE 0 END), 0)`,
+    },
+    { userId: args.userId, basis: "UNCLOSED" },
+  );
+  const closedTodayLossRows = await livePositionLedger.select(
+    {
+      totalNegRealised: sql<number>`COALESCE(SUM(CASE WHEN ${livePositionColumns.floatingPl} < 0 THEN ${livePositionColumns.floatingPl} ELSE 0 END), 0)`,
+    },
+    {
+      where: and(
+        eq(livePositionColumns.userId, args.userId),
+        sql`${livePositionColumns.closedAt} IS NOT NULL`,
+        sql`${livePositionColumns.closedAt} >= ${startOfDayUtc.toISOString()}`,
+      ),
+    },
+  );
   const realisedDailyLossUsd =
     Math.abs(Number(openLossRows[0]?.totalNegFloat ?? 0)) +
     Math.abs(Number(closedTodayLossRows[0]?.totalNegRealised ?? 0));
@@ -3093,13 +3131,18 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       : Number(settings.weeklyDrawdownCeilingPct ?? 0);
     if (isEntryRow && weeklyCeilingPct !== 0) {
       const weekWindowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const closedWeekLossRows = await db.select({
-        totalNegRealised: sql<number>`COALESCE(SUM(CASE WHEN ${arxLivePositionsTable.floatingPl} < 0 THEN ${arxLivePositionsTable.floatingPl} ELSE 0 END), 0)`,
-      }).from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, args.userId),
-        sql`${arxLivePositionsTable.closedAt} IS NOT NULL`,
-        sql`${arxLivePositionsTable.closedAt} >= ${weekWindowStart.toISOString()}`,
-      ));
+      const closedWeekLossRows = await livePositionLedger.select(
+        {
+          totalNegRealised: sql<number>`COALESCE(SUM(CASE WHEN ${livePositionColumns.floatingPl} < 0 THEN ${livePositionColumns.floatingPl} ELSE 0 END), 0)`,
+        },
+        {
+          where: and(
+            eq(livePositionColumns.userId, args.userId),
+            sql`${livePositionColumns.closedAt} IS NOT NULL`,
+            sql`${livePositionColumns.closedAt} >= ${weekWindowStart.toISOString()}`,
+          ),
+        },
+      );
       const realisedWeeklyLossUsd =
         Math.abs(Number(openLossRows[0]?.totalNegFloat ?? 0)) +
         Math.abs(Number(closedWeekLossRows[0]?.totalNegRealised ?? 0));
@@ -3181,13 +3224,13 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       // This closes the TOCTOU window between this check and the
       // SENT_TO_MT5_LIVE write below; the minute-bucket idempotency key on
       // arx_live_commands already prevents identical duplicates.
-      const openPositions = await db.select({
-        symbol: arxLivePositionsTable.symbol,
-        volume: arxLivePositionsTable.volume,
-      }).from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, args.userId),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const openPositions = await selectLiveOpenPositions(
+        {
+          symbol: livePositionColumns.symbol,
+          volume: livePositionColumns.volume,
+        },
+        { userId: args.userId, basis: "UNCLOSED" },
+      );
       const inFlight = await db.select({
         symbol: arxLiveCommandsTable.symbol,
         volume: arxLiveCommandsTable.requestedVolume,
@@ -3263,6 +3306,99 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           command: blocked,
         };
       }
+    }
+  }
+
+  // ── PRE-TRADE RISK GOVERNOR PRE-GATE (the 12 mandatory rules) ──────────
+  // The same evaluator every demo and paper path calls (lib/riskGovernor):
+  // the trader's OWN limits (user_risk_settings, risk_settings, admin
+  // user_risk_limits — strictest wins) are read here at dispatch, against the
+  // bridge this command is bound to. Entries face all 12 rules; a close is
+  // held back only by an invalid quantity or a disconnected bridge, so open
+  // exposure is never trapped. Writes a user_risk_events row either way.
+  {
+    const rgAction: IntentAction = row.commandType === "CLOSE_LIVE_POSITION" ? "CLOSE"
+      : row.commandType === "MODIFY_LIVE_SLTP" ? "MODIFY" : "OPEN";
+    let rgVirtualAccountId: number | null = null;
+    if (routingMode === "SHARED_MASTER_MT5") {
+      const { virtualTradingAccountsTable: _rgVta } = await import("@workspace/db");
+      const [va] = await db.select({ id: _rgVta.id }).from(_rgVta)
+        .where(and(eq(_rgVta.userId, args.userId), eq(_rgVta.status, "active"))).limit(1);
+      rgVirtualAccountId = va?.id ?? null;
+    }
+    const isPendingEntry = row.commandType === "PLACE_LIVE_PENDING_ORDER";
+    const pendingPriceRaw = (row.payload as Record<string, unknown> | null)?.["price"];
+    // A modify names the position it changes; a null new stop means "leave
+    // the stop as it is", so the resulting stop is the position's current one.
+    let rgPosition: { entryPrice: number; stopLoss: number | null } | null = null;
+    if (rgAction === "MODIFY") {
+      const ticket = (row.payload as Record<string, unknown> | null)?.["brokerTicket"];
+      if (typeof ticket === "string" && ticket) {
+        const [p] = await livePositionLedger.select(
+          { entryPrice: livePositionColumns.entryPrice, stopLoss: livePositionColumns.stopLoss },
+          {
+            where: and(eq(livePositionColumns.userId, args.userId), eq(livePositionColumns.brokerTicket, ticket)),
+            limit: 1,
+          },
+        );
+        rgPosition = p ? { entryPrice: Number(p.entryPrice), stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null } : null;
+      }
+    }
+    const risk = await enforcePreTradeRisk({
+      userId: args.userId,
+      venue: "LIVE",
+      origin: /RUBY|ASSISTANT/i.test(row.sourcePage ?? "") ? "ruby"
+        : /SELF_TRADE|MISSION|AUTOPILOT|AUTOMATION|POSITION_GUARDIAN/i.test(row.sourcePage ?? "") ? "automation" : "manual",
+      action: rgAction,
+      symbol: row.symbol,
+      side: row.side === "BUY" || row.side === "SELL" ? row.side : null,
+      lots: Number(row.requestedVolume),
+      entryPrice: isPendingEntry && typeof pendingPriceRaw === "number" ? pendingPriceRaw : null,
+      stopLoss: row.stopLoss ?? (rgAction === "MODIFY" ? rgPosition?.stopLoss ?? null : null),
+      takeProfit: row.takeProfit ?? null,
+      intentRef: `live_command:${args.commandId}`,
+      position: rgPosition,
+    }, {
+      connectionId: bridge?.id ?? null,
+      virtualAccountId: rgVirtualAccountId,
+      auditContext: { caller: "live_dispatch", commandId: args.commandId, commandType: row.commandType },
+    });
+    if (!risk.allowed) {
+      const reason = `RISK_GOVERNOR_BLOCK:${risk.blockedBy.join(",") || "audit_unavailable"}`;
+      const [blocked] = await db.update(arxLiveCommandsTable).set({
+        status: "LIVE_BLOCKED",
+        rejectionReason: reason,
+        rejectedAt: new Date(),
+        brokerMessage: risk.primaryReason,
+        dispatchGateSnapshot: {
+          decision: "BLOCKED",
+          primaryReason: reason,
+          blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+          preTradeRiskGate: true,
+          riskBlockedBy: risk.blockedBy,
+          riskAuditEventId: risk.auditEventId,
+          riskRules: risk.rules,
+          at: new Date().toISOString(),
+        } as unknown as Record<string, unknown>,
+      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      await audit({
+        eventType: "PRE_TRADE_RISK_BLOCKED", severity: "HIGH",
+        userId: args.userId, symbol: row.symbol,
+        message: `Live dispatch BLOCKED by the pre-trade Risk Governor: ${risk.primaryReason ?? reason}`,
+        metadata: { commandId: args.commandId, commandType: row.commandType, riskBlockedBy: risk.blockedBy, riskAuditEventId: risk.auditEventId },
+      });
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "PRE_TRADE_RISK_BLOCKED",
+        commandId: args.commandId, userId: args.userId, primaryReason: reason,
+      }, "Pre-trade Risk Governor blocked live dispatch");
+      return {
+        ok: false as const,
+        reason: "LIVE_BLOCKED" as const,
+        primaryReason: reason,
+        blockReasons: [reason, "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"],
+        command: blocked,
+      };
     }
   }
 
@@ -4160,7 +4296,7 @@ async function enqueueBridgedMt5Command(opts: {
   if (!action) throw new Error(`UNMAPPED_LIVE_COMMAND_TYPE:${opts.liveRow.commandType}`);
 
   const { mt5CommandsTable } = await import("@workspace/db");
-  const { resolveBrokerSymbolName } = await import("../mt5/brokerSymbolName.js");
+  const { resolveBrokerSymbolName } = await import("../instruments/index.js");
   // Resolve to the broker's exact (case-sensitive) Market Watch symbol, same
   // as the live-poll path does, so the EA preflight resolves it cleanly.
   const brokerSymbol = await resolveBrokerSymbolName(opts.liveRow.symbol);
@@ -4602,14 +4738,44 @@ export async function recordLiveCommandResult(args: {
       : (args.brokerTicket ?? null);
     if (closeTicket) {
       try {
-        const closedRows = await db.update(arxLivePositionsTable).set({
-          closedAt: now,
-          lastSyncedAt: now,
-        }).where(and(
-          eq(arxLivePositionsTable.userId, args.userId),
-          eq(arxLivePositionsTable.brokerTicket, closeTicket),
-          isNull(arxLivePositionsTable.closedAt),
-        )).returning();
+        // A partial close (closed volume below what the position holds) only
+        // shrinks the position: it stays open, in the ledger and under the
+        // Position Guardian. Only a close of the whole volume stamps closedAt.
+        const [openRow] = await livePositionLedger.select(
+          { id: livePositionColumns.id, volume: livePositionColumns.volume },
+          {
+            where: and(
+              eq(livePositionColumns.userId, args.userId),
+              eq(livePositionColumns.brokerTicket, closeTicket),
+              isNull(livePositionColumns.closedAt),
+            ),
+            limit: 1,
+          },
+        );
+        const closedVolume = Number(args.executedVolume ?? row.requestedVolume);
+        const partial = openRow != null && Number.isFinite(closedVolume) && closedVolume > 0
+          && Number(openRow.volume) - closedVolume > LIVE_VOLUME_EPSILON;
+        if (partial) {
+          await livePositionWriter.update(
+            {
+              volume: Math.round((Number(openRow.volume) - closedVolume) * 1e8) / 1e8,
+              lastSyncedAt: now,
+            },
+            eq(livePositionColumns.id, openRow.id),
+          );
+        }
+        const closedRows = partial ? [] : await livePositionWriter.updateReturning(
+          {
+            closedAt: now,
+            lastSyncedAt: now,
+          },
+          and(
+            eq(livePositionColumns.userId, args.userId),
+            eq(livePositionColumns.brokerTicket, closeTicket),
+            isNull(livePositionColumns.closedAt),
+          ),
+          livePositionColumns,
+        );
         if (closedRows.length > 0) {
           await audit({
             eventType: "LIVE_POSITION_CLOSED_RECONCILED", severity: "INFO",

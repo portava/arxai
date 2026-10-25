@@ -37,11 +37,20 @@ export const strategyEdgesTable = pgTable("strategy_edges", {
   edgeScore:    real("edge_score").notNull().default(0),
   lastResult:   text("last_result").notNull().default(""),  // WIN|LOSS|BREAKEVEN|CANCELLED
   lastTradeId:  integer("last_trade_id"),
+  // Scope (Tier 1 finalization, item 8): user | strategy | account | broker |
+  // instrument | portfolio (private to scope_owner) or platform (anonymized,
+  // scope_owner 0, no trade id). Read and written only via lib/learning/scopedMemory.ts.
+  scopeType: text("scope_type").notNull().default("platform"),
+  scopeKey: text("scope_key").notNull().default(""),
+  scopeOwner: integer("scope_owner").notNull().default(0),
+  // Distinct traders behind a platform row; null = legacy row of unknown origin.
+  contributors: integer("contributors"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({
   // One edge row per (symbol, signal, action). Upsert key.
-  byCohort:   uniqueIndex("strategy_edges_cohort_uq").on(t.symbol, t.signalName, t.action),
+  byCohort: uniqueIndex("strategy_edges_scope_cohort_uq").on(t.scopeType, t.scopeOwner, t.scopeKey, t.symbol, t.signalName, t.action),
+  byOwner: index("strategy_edges_owner_idx").on(t.scopeOwner, t.scopeType),
   bySymbol:   index("strategy_edges_symbol_idx").on(t.symbol),
   byUpdated:  index("strategy_edges_updated_idx").on(t.updatedAt),
 }));

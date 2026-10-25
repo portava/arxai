@@ -56,8 +56,14 @@ export function checkOneClickConcurrency(): CheckResult {
   if (!/LIVE_ONE_CLICK_REQUIRES_MASTER_LIVE_ACCESS/.test(route)) {
     violations.push("PUT /me/one-click must return LIVE_ONE_CLICK_REQUIRES_MASTER_LIVE_ACCESS when master-live access is BLOCKED on a live enable");
   }
-  if (!/dispatchLiveCommand/.test(route)) {
-    violations.push("/me/one-click/submit-live must call dispatchLiveCommand so all gates run");
+  // Code only: the staged LIVE dispatch delegates to dispatchLiveCommand.
+  const routeCode = route.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  if (!/\bdispatchTrade\(\s*\{\s*mode:\s*"LIVE"\s*\}/.test(routeCode) && !/\bdispatchLiveCommand\s*\(/.test(routeCode)) {
+    violations.push("/me/one-click/submit-live must call dispatchTrade({ mode: \"LIVE\" }) (dispatchLiveCommand) so all gates run");
+  }
+  const tradeEngine = read("artifacts/api-server/src/lib/tradeEngine/pipeline.ts");
+  if (!/export\s+async\s+function\s+dispatchTrade[\s\S]*?\bdispatchLiveCommand\s*\(/.test(tradeEngine)) {
+    violations.push("tradeEngine/pipeline.ts: the staged LIVE dispatch must delegate to dispatchLiveCommand");
   }
   if (!/withTxAdvisoryLock/.test(route)) {
     violations.push("/me/one-click/submit-live must hold a per-user advisory lock");

@@ -40,6 +40,7 @@ import { listActiveCooldowns } from "../lib/security/cooldowns.js";
 import { getOperationalMode, setOperationalMode } from "../lib/security/operationalMode.js";
 import { guardDangerousAdminAction } from "../lib/security/dangerousAction.js";
 import { getProdDevPosture, getSupplyChainPosture } from "../lib/security/prodDevChecks.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -58,7 +59,7 @@ function requireAdmin(req: Request, res: Response): boolean {
     return false;
   }
   const role = normalizeProductRole(req.authUser?.role);
-  if (!isAdminProductRole(role)) {
+  if (!operatorRoleFromSession(role)) {
     res.status(403).json({ error: "Admin or owner access required" });
     return false;
   }

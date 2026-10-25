@@ -17,6 +17,7 @@
 // (the row is kept for audit). `fulfillReservation` flips RESERVED →
 // FULFILLED when the broker confirms a fill; the row remains in the
 // aggregation source until the underlying attribution closes the trade.
+import { readLiveFloatingLoss } from "../positions/ledger.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock, type ArxLockNamespace, type PoolClient } from "./advisoryLock.js";
 import { pool, db, arxDispatchExposureReservationsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -288,18 +289,7 @@ export async function reserveExposureAtomicWithUserHeadroom(args: {
             AND NOT (c.status = ANY($3))`,
         [args.userId, entryTypes, inFlightStatuses],
       );
-      const loss = await client.query<{ loss: string | number | null }>(
-        // Open-exposure predicate parity with openLiveExposureCondition
-        // (lib/live/livePositionExposure.ts): closed_at IS NULL AND
-        // reconcile_state IS NULL — a reconciled ghost must never shrink
-        // headroom. LEAST(pl, 0) keeps only losses.
-        `SELECT COALESCE(SUM(LEAST(floating_pl, 0)), 0) AS loss
-           FROM arx_live_positions
-          WHERE user_id = $1
-            AND closed_at IS NULL
-            AND reconcile_state IS NULL`,
-        [args.userId],
-      );
+      const loss = await readLiveFloatingLoss(client, args.userId);
       const snapshot: UserHeadroomSnapshot = {
         allocatedFunds: Number(alloc.rows[0]?.allocated ?? 0),
         reservedRiskUsd:

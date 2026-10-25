@@ -13,6 +13,7 @@
 //     Also disables platform oneClick + autoTrade by force on the OWNER.
 //     Returns { ok, applied: { … } }. Audit row written.
 
+import { isHeartbeatAgeSecondsFresh, MT5_HEARTBEAT_FRESH_BELOW_SECONDS } from "../lib/brokerHub/freshness.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import {
@@ -25,12 +26,12 @@ import {
 import { detectCurrentConnectedBridge } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { getOrCreateUserSettings } from "../lib/live/liveCommandPipeline.js";
 import { getUserRiskProfile } from "../lib/live/userRiskProfile.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
 
 const OWNER_USER_ID = 4 as const;
-const HEARTBEAT_MAX_AGE_SEC = 15 as const;
 
 function requireAdmin(
   req: Request,
@@ -38,8 +39,8 @@ function requireAdmin(
 ): { id: number; role: "ADMIN" | "OWNER" } | null {
   const sess = (req as Request & { authUser?: { id: number; role?: string } }).authUser;
   if (!sess?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }
@@ -79,7 +80,7 @@ async function writeAudit(args: {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/live/pin-master-bridge
 // Body: { confirm: true }
-// 409 if detector blocked or heartbeat older than HEARTBEAT_MAX_AGE_SEC.
+// 409 if detector blocked or heartbeat not fresh (shared policy: age < 15 s).
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/admin/live/pin-master-bridge", async (req, res) => {
   const admin = requireAdmin(req, res);
@@ -99,15 +100,18 @@ router.post("/admin/live/pin-master-bridge", async (req, res) => {
     return;
   }
   const ageSec = det.bridge.heartbeatAgeSec;
-  if (ageSec == null || ageSec > HEARTBEAT_MAX_AGE_SEC) {
+  if (!isHeartbeatAgeSecondsFresh(ageSec)) {
     res.status(409).json({
       ok: false, error: "HEARTBEAT_TOO_OLD",
-      detail: `Heartbeat must be ≤${HEARTBEAT_MAX_AGE_SEC}s. Current: ${ageSec == null ? "none" : ageSec + "s"}.`,
+      detail: `Heartbeat must be <${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s. Current: ${ageSec == null ? "none" : ageSec + "s"}.`,
       heartbeatAgeSec: ageSec,
     });
     return;
   }
-  const settingsRow = (await db.select().from(globalTradingSettingsTable).limit(1))[0];
+  const settingsRow = (await db.select({
+    id: globalTradingSettingsTable.id,
+    platformMasterBridgeConnectionId: globalTradingSettingsTable.platformMasterBridgeConnectionId,
+  }).from(globalTradingSettingsTable).limit(1))[0];
   if (!settingsRow) { res.status(500).json({ ok: false, error: "SETTINGS_ROW_MISSING" }); return; }
   const before = { platformMasterBridgeConnectionId: settingsRow.platformMasterBridgeConnectionId };
   await db.transaction(async (tx) => {

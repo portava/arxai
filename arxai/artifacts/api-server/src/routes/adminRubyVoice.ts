@@ -24,6 +24,7 @@ import {
   resolveDefaultElevenLabsVoiceId,
   getDefaultElevenLabsVoiceName,
 } from "./meTTS.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const log = logger.child({ component: "adminRubyVoice" });
 const router = Router();
@@ -31,11 +32,12 @@ const router = Router();
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const sess = (req as unknown as { authUser?: { id: number; role?: string } }).authUser;
   if (!sess) { res.status(401).json({ error: "AUTH_REQUIRED" }); return null; }
-  if (sess.role !== "ADMIN" && sess.role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ error: "FORBIDDEN", message: "Admin or Owner role required." });
     return null;
   }
-  return { id: sess.id, role: sess.role as "ADMIN" | "OWNER" };
+  return { id: sess.id, role };
 }
 
 // ── GET /api/admin/ruby-voice/health ─────────────────────────────────────────

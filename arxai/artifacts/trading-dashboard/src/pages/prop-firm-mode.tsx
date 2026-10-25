@@ -9,19 +9,19 @@ type Status = {
   config: { enabled: boolean; startingBalance: number; profitTarget: number; maxDailyDrawdownUsd: number; maxTotalDrawdownUsd: number; minTradingDays: number; maxLotSize: number; maxPositions: number; newsTradingAllowed: boolean; weekendHoldingAllowed: boolean; consistencyRulePctOfTotal: number };
   profitUsd: number; profitTargetProgress: number;
   dailyDrawdownRemainingUsd: number; totalDrawdownRemainingUsd: number;
-  passed: string[]; failed: string[]; status: "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
+  passed: string[]; failed: string[]; status: "OFF" | "ACTIVE" | "WARNING" | "FAILED" | "PASSED";
 };
-const STATUS_COLOR: Record<string, string> = { ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-amber-500/20 text-amber-400", FAILED: "bg-rose-500/20 text-rose-400", PASSED: "bg-emerald-500/20 text-emerald-400" };
+const STATUS_COLOR: Record<string, string> = { OFF: "bg-muted text-muted-foreground", ACTIVE: "bg-blue-500/20 text-blue-400", WARNING: "bg-amber-500/20 text-amber-400", FAILED: "bg-rose-500/20 text-rose-400", PASSED: "bg-emerald-500/20 text-emerald-400" };
 
 async function api(path: string, init?: RequestInit) {
-  const r = await fetch(path, { headers: { "x-security-role": "ADMIN", "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });
+  const r = await fetch(path, { credentials: "include", headers: { "content-type": "application/json", ...(init?.headers ?? {}) }, ...init });
   return r.json();
 }
 
 export default function PropFirmMode() {
   const [s, setS] = useState<Status | null>(null);
   const [edit, setEdit] = useState<Partial<Status["config"]>>({});
-  async function load() { setS(await fetch("/api/prop-firm/status").then((r) => r.json())); }
+  async function load() { setS(await api("/api/prop-firm/status")); }
   useEffect(() => { void load(); const id = setInterval(load, 4000); return () => clearInterval(id); }, []);
 
   async function save() { await api("/api/prop-firm/configure", { method: "POST", body: JSON.stringify({ enabled: true, ...edit }) }); load(); }
@@ -34,9 +34,9 @@ export default function PropFirmMode() {
         <Trophy className="h-6 w-6 text-primary" />
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Prop Firm Challenge Mode</h1>
-          <p className="text-sm text-muted-foreground">Simulator-only practice for prop-firm rules. Never connects to a real broker.</p>
+          <p className="text-sm text-muted-foreground">Practise a prop-firm challenge on your paper account. Saving writes the daily and total drawdown, lot and position caps into your own risk limits, which the Risk Governor enforces. Turning it off keeps those limits until you change them.</p>
         </div>
-        <Badge variant="outline">SIMULATOR</Badge>
+        <Badge variant="outline">PAPER</Badge>
         {s && <Badge className={STATUS_COLOR[s.status]}>{s.status}</Badge>}
       </div>
 

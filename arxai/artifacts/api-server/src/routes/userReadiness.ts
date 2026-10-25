@@ -21,6 +21,7 @@ import { requireUser } from "../lib/auth/middleware.js";
 import {
   evaluateUserReadiness, getOrCreateReadinessState, listUsersReadinessSummary,
 } from "../lib/userReadiness/engine.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -40,7 +41,7 @@ function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   const u = req.authUser;
   if (!u) { res.status(401).json(envelope({ error: "unauthenticated" })); return; }
   const role = (u as { role?: string }).role;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (!operatorRoleFromSession(role)) {
     res.status(403).json(envelope({ error: "forbidden", reason: "admin role required" }));
     return;
   }

@@ -5,7 +5,7 @@
 // CRUD which mutates an in-memory store and is admin-gated. No new code
 // touches live_positions / mt5_commands / placeLiveOrderGuarded.
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { requireAdmin } from "../lib/security/middleware.js";
 
 import { z } from "zod/v4";
 import {
@@ -16,15 +16,6 @@ import {
 } from "../lib/marketDataLayer.js";
 
 const router = Router();
-
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") {
-    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
-    return;
-  }
-  next();
-}
 
 router.get("/market/data-source", (_req, res) => res.json(dataSource()));
 

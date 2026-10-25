@@ -77,7 +77,7 @@ async function http(path: string, init: RequestInit = {}): Promise<{ status: num
 
   // ── 5. Reconciler updates live_positions (OPEN upsert / CLOSE / MODIFY) ─
   {
-    const hasOpen = /livePositionsTable[\s\S]{0,400}OPEN/.test(reconciler);
+    const hasOpen = /demoPositionWriter\.(?:insert|insertReturning)\([\s\S]{0,500}OPEN/.test(reconciler);
     const hasClose = /CLOSED/.test(reconciler);
     const hasModify = /stopLoss|takeProfit/.test(reconciler);
     record("5. Reconciler covers OPEN/CLOSE/MODIFY in live_positions",

@@ -16,6 +16,7 @@ import { AdminDiagnosticsGate } from "@/components/admin/AdminDiagnosticsGate";
 import {
   RefreshCw, CheckCircle2, XCircle, AlertTriangle, Wifi, WifiOff, Clock, HelpCircle,
 } from "lucide-react";
+import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 async function apiJson<T>(path: string): Promise<T> {
@@ -183,7 +184,7 @@ function EaHealthInner() {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <div className="text-xs uppercase tracking-wider text-txt-secondary">Heartbeat & connection</div>
-                <div className="flex justify-between"><span className="text-txt-secondary">Heartbeat age</span><span className={(row.heartbeatAgeSeconds ?? 999) > 15 ? "text-warning" : ""}>{row.heartbeatAgeSeconds === null ? "—" : `${row.heartbeatAgeSeconds}s`}</span></div>
+                <div className="flex justify-between"><span className="text-txt-secondary">Heartbeat age</span><span className={!isHeartbeatAgeSecondsFresh(row.heartbeatAgeSeconds) ? "text-warning" : ""}>{row.heartbeatAgeSeconds === null ? "—" : `${row.heartbeatAgeSeconds}s`}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Last heartbeat</span><span>{row.connection.lastHeartbeatAt ? new Date(row.connection.lastHeartbeatAt).toLocaleString() : "never"}</span></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Terminal connected</span><Tri v={row.eaInputs.terminalConnected} /></div>
                 <div className="flex justify-between"><span className="text-txt-secondary">Command-poll age</span><span>{row.commandPollAgeSeconds === null ? "—" : `${row.commandPollAgeSeconds}s`}</span></div>

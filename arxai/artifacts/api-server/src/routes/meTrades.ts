@@ -6,34 +6,40 @@
 //   * SHARED_MASTER_MT5       → reads only the user's own attribution rows.
 //   * Never returns master MT5 credentials, broker tokens, or other users'
 //     trade tickets / P&L.
-//   * POST /open  → placeOrder() (which runs the full guard chain).
+//   * POST /open  → SIMULATED: placeOrder() (the full guard chain), then one
+//     PAPER order through the Trade Engine pipeline (owner decision 13); it
+//     needs an idempotencyKey and a retry with the same key returns the
+//     order it already booked. DEMO: the governed DEMO pipeline through
+//     lib/tradeAction/myTradesOpen.ts (owner decision 15). LIVE: refused with
+//     MY_TRADES_LIVE_OPEN_NOT_ENABLED (not enabled on this surface).
 //   * POST /close → runs envelope checks, requires confirmedByUser, queues
 //     an mt5_commands row, writes trade_command_audit_log, and (in shared
 //     mode) writes a shared_trade_attribution row tagging the close.
 
+import { demoPositionLedger, demoPositionColumns } from "../lib/positions/ledger.js";
+import { selectDemoOpenPositions } from "../lib/positions/openPositions.js";
+import { getUserPrimaryConnection } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import {
-  livePositionsTable,
   sharedTradeAttributionTable,
   tradeCommandAuditLogTable,
-  mt5CommandsTable,
   globalTradingSettingsTable,
   sharedMasterAccountsTable,
-  mt5ConnectionTable,
   virtualTradingAccountsTable,
 } from "@workspace/db/schema";
 import { and, eq, desc, isNotNull, ne } from "drizzle-orm";
 import { z } from "zod/v4";
 import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
+import { platformStop, preCheckStopRefusal } from "../lib/safety/platformSwitches.js";
 import { resolveClosePolicy } from "../lib/live/closePolicy.js";
 import { placeOrder } from "../lib/adminTrading/placeOrder.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
-import {
-  createLiveOpsDraft,
-  confirmLiveCommand,
-  dispatchLiveCommand,
-} from "../lib/live/liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade, closeLegacyDemoTrade } from "../lib/tradeEngine/pipeline.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { paperOrderByRequestKey } from "../lib/tradeEngine/paperVenue.js";
+import { SIMULATED_LABEL, simulatedRequestKey } from "../lib/tradeEngine/simulatedOpen.js";
+import { openMyTradesDemo, MY_TRADES_LIVE_NOT_ENABLED, MY_TRADES_LIVE_NOT_ENABLED_MESSAGE } from "../lib/tradeAction/myTradesOpen.js";
 
 const router: IRouter = Router();
 
@@ -69,7 +75,7 @@ router.get("/me/trades/open", async (req, res) => {
   if (!userId) { res.status(401).json({ ok: false, error: "NOT_AUTHENTICATED" }); return; }
   const env = await getEnvelope(userId);
   const role = String((req as Request & { authUser?: { role?: string } }).authUser?.role ?? "").toUpperCase();
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(userId, { isAdmin });
   const cards: OpenCard[] = [];
 
@@ -97,14 +103,12 @@ router.get("/me/trades/open", async (req, res) => {
       // real position (broker_position_id present). A row with status='OPEN'
       // but no broker id is an unconfirmed/phantom open and must never render
       // as a position the user believes is live at the broker.
-      const rows = await db.select().from(livePositionsTable)
-        .where(and(
-          eq(livePositionsTable.userId, userId),
-          eq(livePositionsTable.status, "OPEN"),
-          isNotNull(livePositionsTable.brokerPositionId),
-          ne(livePositionsTable.brokerPositionId, ""),
-        ))
-        .orderBy(desc(livePositionsTable.openedAt));
+      const rows = await selectDemoOpenPositions(demoPositionColumns, {
+        userId,
+        basis: "CONFIRMED_OPEN",
+        confirmedTicket: true,
+        orderBy: [desc(demoPositionColumns.openedAt)],
+      });
       for (const r of rows) {
         const entry = r.entryPrice ?? null;
         const cur = r.currentPrice ?? null;
@@ -213,7 +217,7 @@ router.get("/me/trades/history", async (req, res) => {
   if (!userId) { res.status(401).json({ ok: false, error: "NOT_AUTHENTICATED" }); return; }
   const env = await getEnvelope(userId);
   const role = String((req as Request & { authUser?: { role?: string } }).authUser?.role ?? "").toUpperCase();
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(userId, { isAdmin });
   const limit = Math.min(200, Number(req.query["limit"] ?? 50));
 
@@ -225,10 +229,11 @@ router.get("/me/trades/history", async (req, res) => {
 
   try {
     if (env.accountRoutingMode === "USER_OWNED_MT5") {
-      const rows = await db.select().from(livePositionsTable)
-        .where(eq(livePositionsTable.userId, userId))
-        .orderBy(desc(livePositionsTable.createdAt))
-        .limit(limit);
+      const rows = await demoPositionLedger.read({
+        where: eq(demoPositionColumns.userId, userId),
+        orderBy: [desc(demoPositionColumns.createdAt)],
+        limit: limit,
+      });
       res.json({ ok: true, routingMode: env.accountRoutingMode, rows, currentAccountMode: scope.currentAccountMode, modeScopeApplied: true });
     } else {
       const rows = await db.select().from(sharedTradeAttributionTable)
@@ -248,7 +253,7 @@ router.get("/me/trades/summary", async (req, res) => {
   if (!userId) { res.status(401).json({ ok: false, error: "NOT_AUTHENTICATED" }); return; }
   const env = await getEnvelope(userId);
   const role = String((req as Request & { authUser?: { role?: string } }).authUser?.role ?? "").toUpperCase();
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
   const scope = await getUserModeScope(userId, { isAdmin });
 
   // T006 — paper user gets zero-state summary (no live tables read).
@@ -264,8 +269,7 @@ router.get("/me/trades/summary", async (req, res) => {
   try {
     let openCount = 0, openPnl = 0, closedCount = 0, closedPnl = 0;
     if (env.accountRoutingMode === "USER_OWNED_MT5") {
-      const rows = await db.select().from(livePositionsTable)
-        .where(eq(livePositionsTable.userId, userId));
+      const rows = await demoPositionLedger.read({ where: eq(demoPositionColumns.userId, userId) });
       for (const r of rows) {
         // CONFIRMED-ONLY: an unconfirmed open (no broker_position_id) is not a
         // real open position and must not inflate openCount/openPnl.
@@ -312,6 +316,8 @@ const openSchema = z.object({
   stopLoss: z.number().positive().optional().nullable(),
   takeProfit: z.number().positive().optional().nullable(),
   confirmedByUser: z.boolean(),
+  /** Retry-safe key of a SIMULATED open (owner decision 13): one paper order per key. */
+  idempotencyKey: z.string().min(8).max(128).regex(/^[A-Za-z0-9_.:-]+$/).optional().nullable(),
 });
 
 router.post("/me/trades/open", async (req, res) => {
@@ -326,6 +332,49 @@ router.post("/me/trades/open", async (req, res) => {
     res.status(400).json({ ok: false, error: "CONFIRMATION_REQUIRED" });
     return;
   }
+  // LIVE (owner decision 15): not enabled on this surface until broker
+  // validation passes and the owner separately authorizes it.
+  if (parsed.data.mode === "LIVE") {
+    res.status(403).json({ ok: false, mode: "LIVE", error: MY_TRADES_LIVE_NOT_ENABLED, message: MY_TRADES_LIVE_NOT_ENABLED_MESSAGE, sent: false });
+    return;
+  }
+  // DEMO (owner decision 15): the governed DEMO pipeline (mode, ownership,
+  // confirmation, readiness, sizing, Risk Governor), never placeOrder.
+  if (parsed.data.mode === "DEMO") {
+    const demo = await openMyTradesDemo({
+      userId, symbol: parsed.data.symbol, side: parsed.data.side, lotSize: parsed.data.lotSize,
+      stopLoss: parsed.data.stopLoss ?? null, takeProfit: parsed.data.takeProfit ?? null,
+      confirmedByUser: parsed.data.confirmedByUser,
+      requestKey: parsed.data.idempotencyKey ?? null,
+    });
+    res.json(demo.ok
+      ? { ok: true, mode: "DEMO", venue: "DEMO", demo: demo.demo, action: demo.action }
+      : { ok: false, mode: "DEMO", venue: "DEMO", error: demo.error, message: demo.message, action: demo.action ?? null });
+    return;
+  }
+  // SIMULATED (owner decision 13): explicit mode in the request, a retry-safe
+  // key, and a retry of an already-booked key returns that paper order
+  // without running (or auditing) the guard chain again.
+  if (parsed.data.mode === "SIMULATED") {
+    const key = parsed.data.idempotencyKey ?? null;
+    if (!key) {
+      res.status(400).json({ ok: false, error: "IDEMPOTENCY_KEY_REQUIRED", mode: "SIMULATED", venue: "PAPER",
+        message: "A simulated open needs an idempotencyKey so a retry cannot book a second paper order." });
+      return;
+    }
+    const prior = await paperOrderByRequestKey(userId, simulatedRequestKey("MY_TRADES", key));
+    if (prior) {
+      res.json({
+        ok: true, mode: "SIMULATED", venue: "PAPER", replayed: true,
+        simulated: {
+          mode: "SIMULATED", venue: "PAPER", label: SIMULATED_LABEL, paperOrderId: prior.id, paperAccountId: prior.paperAccountId,
+          symbol: prior.symbol, side: prior.direction, lots: prior.lotSize, fillPrice: prior.entryPrice,
+          stopLoss: prior.stopLoss, takeProfit: prior.takeProfit, priceSource: null, quoteAt: null, replayed: true,
+        },
+      });
+      return;
+    }
+  }
   const result = await placeOrder({
     userId,
     mode: parsed.data.mode,
@@ -336,8 +385,15 @@ router.post("/me/trades/open", async (req, res) => {
     takeProfit: parsed.data.takeProfit ?? null,
     requestedBy: "user",
     confirmedByUser: parsed.data.confirmedByUser,
+    simulatedRequestKey: parsed.data.mode === "SIMULATED" ? parsed.data.idempotencyKey ?? null : null,
   });
-  res.json({ ok: result.status === "QUEUED" || result.status === "SIMULATED_FILL", result });
+  // Only SIMULATED reaches placeOrder (DEMO and LIVE returned above).
+  res.json({
+    ok: result.status === "SIMULATED_FILL", mode: "SIMULATED", venue: "PAPER",
+    replayed: result.paper?.replayed === true, simulated: result.paper ?? null,
+    ...(result.status === "SIMULATED_FILL" ? {} : { error: result.reason, message: result.message ?? null }),
+    result,
+  });
 });
 
 // ─── POST /me/trades/close — guarded close ──────────────────────────────
@@ -361,9 +417,18 @@ router.post("/me/trades/close", async (req, res) => {
     res.status(409).json({ ok: false, error: "TRADING_DISABLED", bannerReason: env.bannerReason });
     return;
   }
-  if (env.emergencyKillSwitch) {
-    res.status(409).json({ ok: false, error: "EMERGENCY_KILL_SWITCH_ACTIVE" });
-    return;
+  // The platform emergency stop refuses this close, as it always did. Read
+  // through the one platform-stop authority: a close opens no new risk, so
+  // the safety-core kill switch is left to the governor (which keeps closes
+  // open) and this check refuses exactly what it refused before.
+  {
+    const stop = preCheckStopRefusal(await platformStop(), {
+      own: "platform_emergency_stop", opensNewRisk: false, venue: "LIVE",
+    });
+    if (stop.engaged) {
+      res.status(409).json({ ok: false, error: "EMERGENCY_KILL_SWITCH_ACTIVE" });
+      return;
+    }
   }
   // Look up the card and verify the user owns it (no cross-user leakage).
   const m = /^(lp|att)_(\d+)$/.exec(parsed.data.cardId);
@@ -380,14 +445,15 @@ router.post("/me/trades/close", async (req, res) => {
   let masterConnectionId: number | null = null;
 
   if (kind === "lp") {
-    const [lp] = await db.select().from(livePositionsTable)
-      .where(and(eq(livePositionsTable.id, rowId), eq(livePositionsTable.userId, userId))).limit(1);
+    const [lp] = await demoPositionLedger.read({
+      where: and(eq(demoPositionColumns.id, rowId), eq(demoPositionColumns.userId, userId)),
+      limit: 1,
+    });
     if (!lp || lp.status !== "OPEN") { res.status(404).json({ ok: false, error: "POSITION_NOT_FOUND" }); return; }
     symbol = lp.symbol; side = lp.direction as "BUY" | "SELL"; lotSize = lp.lotSize;
     ticket = lp.brokerPositionId ? Number(lp.brokerPositionId) : null;
     // Resolve user's own MT5 connection.
-    const [conn] = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+    const conn = await getUserPrimaryConnection(userId);
     if (!conn) { res.status(409).json({ ok: false, error: "NO_USER_BROKER_CONNECTION" }); return; }
     mt5ConnectionId = conn.id;
   } else {
@@ -436,7 +502,7 @@ router.post("/me/trades/close", async (req, res) => {
       res.status(409).json({ ok: false, error: "POSITION_MISSING_BROKER_TICKET" });
       return;
     }
-    const draft = await createLiveOpsDraft({
+    const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
       userId,
       commandType: "CLOSE_LIVE_POSITION",
       brokerTicket: String(ticket),
@@ -450,12 +516,12 @@ router.post("/me/trades/close", async (req, res) => {
       return;
     }
     const commandId = draft.command.commandId;
-    const confirmed = await confirmLiveCommand({ userId, commandId });
+    const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId });
     if (!confirmed.ok) {
       res.status(409).json({ ok: false, error: confirmed.reason, commandId });
       return;
     }
-    const dispatched = await dispatchLiveCommand({ userId, commandId });
+    const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId });
     const dispatchOk = dispatched.ok === true;
     const dispatchReason = dispatchOk
       ? null
@@ -513,42 +579,14 @@ router.post("/me/trades/close", async (req, res) => {
     return;
   }
 
-  // Singleton (DEMO/SIMULATED): refuse if any prior CLOSE for this ticket on
-  // this user's own connection is still pending. Scoped by userId +
-  // connection + ticket so another user's identically-numbered ticket can
-  // never false-dedupe (ticket numbers are per-connection, not global).
-  if (ticket !== null) {
-    const dupConds = [
-      eq(mt5CommandsTable.userId, userId),
-      eq(mt5CommandsTable.action, "CLOSE"),
-      eq(mt5CommandsTable.ticket, ticket),
-      eq(mt5CommandsTable.status, "PENDING"),
-    ];
-    if (mt5ConnectionId !== null) {
-      dupConds.push(eq(mt5CommandsTable.mt5ConnectionId, mt5ConnectionId));
-    }
-    const [dup] = await db.select({ id: mt5CommandsTable.id }).from(mt5CommandsTable)
-      .where(and(...dupConds)).limit(1);
-    if (dup) {
-      res.status(409).json({ ok: false, error: "CLOSE_ALREADY_QUEUED", commandId: dup.id });
-      return;
-    }
+  // The Trade Engine owns the legacy DEMO transport and repeats identity and
+  // risk checks. A SIMULATED request cannot enqueue any broker command.
+  const close = await closeLegacyDemoTrade({ userId, cardId: parsed.data.cardId });
+  if (!close.ok) {
+    res.status(409).json({ ok: false, error: close.reason, commandId: close.commandId ?? null });
+    return;
   }
-
-  // Queue the CLOSE command.
-  const [cmd] = await db.insert(mt5CommandsTable).values({
-    userId,
-    mt5ConnectionId,
-    requestedByUserId: userId,
-    action: "CLOSE",
-    symbol, side, lot: lotSize,
-    ticket,
-    status: "PENDING",
-    // LIVE is handled above through the Phase-B pipeline and returns early, so
-    // this direct-insert path is DEMO/SIMULATED only — always paper-only.
-    safetyMode: "paper_only",
-    payload: { source: kind === "lp" ? "user_owned_mt5" : "shared_master_attribution", cardId: parsed.data.cardId },
-  }).returning();
+  const cmd = close.command;
 
   // Audit row — closures get their own row in trade_command_audit_log so
   // they show up in the same compliance queries as opens.
@@ -598,13 +636,9 @@ router.post("/me/trades/close", async (req, res) => {
       source: "user",
       context: { commandId: cmd?.id ?? null, ticket, auditLogId: audit?.id ?? null },
     } as never);
-    // Use latest snapshot peak/giveback so the exit-review carries honest
-    // "what AI saw at close" context. ARX AI is paper-only and there is no
-    // async broker-confirmed close (queueMt5CommandWithGate forces BLOCKED),
-    // so the user's confirmed close IS the terminal event. We finalize the
-    // review inline using the latest snapshot's unrealizedPnl as the proxy
-    // for final realized PnL and tag the source explicitly. Deterministic
-    // labels only — never fabricated.
+    // Keep snapshot context as advisory. Only reconciliation can finalize P/L.
+    // Preserve the last observed snapshot as context while the close is pending.
+    // It is not broker-confirmed realized P/L or an exit price.
     const [snap] = await db.select().from(tradeIntelligenceSnapshotsTable)
       .where(_and(
         _eq(tradeIntelligenceSnapshotsTable.userId, userId),
@@ -642,18 +676,18 @@ router.post("/me/trades/close", async (req, res) => {
       userId, tradeKey: parsed.data.cardId,
       symbol, side,
       entryPrice: snap?.entryPrice ?? null,
-      exitPrice: snap?.currentPrice ?? null,
+      exitPrice: null,
       peakUnrealizedPnl: peak,
-      finalRealizedPnl: finalPnl,
+      finalRealizedPnl: null,
       profitGivebackPercent: giveback,
       closeMethod: "manual",
-      closeMethodNote: `User-confirmed close in ${env.tradingMode}. finalRealizedPnl derived from latest intelligence snapshot (paper-only; no broker fill).`,
+      closeMethodNote: `Close requested in ${env.tradingMode}; awaiting broker-confirmed fill. Snapshot is advisory only.`,
       aiAlertsFiredCount: fired,
       aiAlertsActedCount: acted,
       labels,
       aiSnapshotAtClose: snap ?? null,
-      status: "finalized",
-      finalizedAt: new Date(),
+      status: "pending",
+      finalizedAt: null,
     } as never);
   } catch (e) {
     req.log.warn({ err: String(e) }, "UX3 close hook failed (non-fatal)");

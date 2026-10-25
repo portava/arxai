@@ -7,7 +7,8 @@
 // SAFETY:
 // - An update is BLOCKED while a live trade is open, a command is pending, the
 //   heartbeat is unstable, the channel is disallowed, the kill switch is
-//   engaged, maintenance policy blocks it, the manifest is not `approved`, the
+//   engaged, an install-wide stop is engaged (platform emergency stop or
+//   safety-core kill switch; owner decision 5), maintenance policy blocks it, the manifest is not `approved`, the
 //   EA cannot self-update, or the checksum is absent. ANY blocking condition →
 //   BLOCK:<reason>. There is no "force" path.
 // - Updating never weakens a safety surface; at worst the EA stays on its
@@ -25,6 +26,7 @@ export const EA_UPDATE_BLOCK_REASONS = [
   "MAINTENANCE_MODE",
   "ALREADY_UP_TO_DATE",
   "MANUAL_BOOTSTRAP_REQUIRED",
+  "PLATFORM_STOP_ENGAGED",
 ] as const;
 export type EaUpdateBlockReason = (typeof EA_UPDATE_BLOCK_REASONS)[number];
 
@@ -46,6 +48,9 @@ export interface EaUpdateGateInput {
   hasPendingCommand: boolean;
   heartbeatStable: boolean;            // heartbeat age within the stability window
   killSwitchEngaged: boolean;
+  // Either install-wide stop (platform emergency stop or safety-core kill
+  // switch), unreadable = engaged. No automatic update while engaged.
+  platformStopEngaged: boolean;
   maintenanceMode: boolean;
 }
 
@@ -100,6 +105,7 @@ export function evaluateEaUpdateGate(input: EaUpdateGateInput): EaUpdateGateResu
 
   // ── Hard safety blocks first ──────────────────────────────────────────────
   if (input.killSwitchEngaged) return block("KILL_SWITCH_ENGAGED");
+  if (input.platformStopEngaged) return block("PLATFORM_STOP_ENGAGED");
   if (input.maintenanceMode) return block("MAINTENANCE_MODE");
   if (input.hasOpenLiveTrade) return block("OPEN_LIVE_TRADE");
   if (input.hasPendingCommand) return block("COMMAND_PENDING");

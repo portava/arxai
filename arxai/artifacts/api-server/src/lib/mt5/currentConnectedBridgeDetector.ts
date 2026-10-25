@@ -6,7 +6,7 @@
 // Selection priority (in order — all are AND-ed):
 //   1. mode = 'LIVE' (i.e. real EA heartbeat — not 'MOCK', not 'DEMO')
 //   2. lastHeartbeat present
-//   3. heartbeat age ≤ LIVE_HEARTBEAT_MAX_AGE_SEC
+//   3. heartbeat fresh under the shared policy (age < 15 s)
 //   4. eaVersion ≥ MIN_LIVE_EA_VERSION (1.27)
 //   5. accountType ∈ {live, real}
 //   6. capabilities.eaInputs.terminalConnected = true
@@ -37,12 +37,11 @@
 // responsible for further masking. Account number is included raw here
 // because OPERATOR/ADMIN-scoped callers need it; the route layer masks
 // it before serving.
+import { listConnections, type BrokerConnection } from "../brokerHub/connections.js";
 import { and, desc, isNull, sql } from "drizzle-orm";
-import { db, mt5ConnectionTable } from "@workspace/db";
-import {
-  MIN_LIVE_EA_VERSION,
-  LIVE_HEARTBEAT_MAX_AGE_SEC,
-} from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
+import { db } from "@workspace/db";
+import { MIN_LIVE_EA_VERSION } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
+import { isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
 
 export type CurrentConnectedBridgeBlockReason =
   | "MASTER_LIVE_REQUIRES_REAL_BRIDGE"
@@ -142,7 +141,7 @@ function extractEaInputs(capabilities: unknown): DetectedBridgeEvidence["eaInput
   };
 }
 
-function toEvidence(row: typeof mt5ConnectionTable.$inferSelect, nowMs: number): DetectedBridgeEvidence {
+function toEvidence(row: BrokerConnection, nowMs: number): DetectedBridgeEvidence {
   const hb = row.lastHeartbeat ? new Date(row.lastHeartbeat) : null;
   const ageSec = hb ? Math.max(0, Math.floor((nowMs - hb.getTime()) / 1000)) : null;
   return {
@@ -176,7 +175,7 @@ export function evaluateBridgeAsMasterLive(e: DetectedBridgeEvidence):
   if (!e.lastHeartbeat || e.heartbeatAgeSec == null) {
     return { ok: false, reason: "MASTER_BRIDGE_HEARTBEAT_STALE" };
   }
-  if (e.heartbeatAgeSec > LIVE_HEARTBEAT_MAX_AGE_SEC) {
+  if (!isHeartbeatAgeSecondsFresh(e.heartbeatAgeSec)) {
     return { ok: false, reason: "MASTER_BRIDGE_HEARTBEAT_STALE" };
   }
   if (!e.eaVersion || compareEaVersion(e.eaVersion, MIN_LIVE_EA_VERSION) < 0) {
@@ -212,10 +211,7 @@ export async function detectCurrentConnectedBridge(): Promise<DetectorResult> {
   // passes all gates is preferred over a fresher LIVE row that fails
   // (e.g., ReadOnlyMode=true). Bounded at 16 candidates so a misbehaving
   // EA cluster can never widen the scan.
-  const liveRows = await db.select().from(mt5ConnectionTable).where(and(
-    sql`${mt5ConnectionTable.mode} = 'LIVE'`,
-    isNull(mt5ConnectionTable.tokenRevokedAt),
-  )).orderBy(desc(mt5ConnectionTable.lastHeartbeat)).limit(16);
+  const liveRows = await listConnections({ modes: ["LIVE"], activeTokenOnly: true, order: "heartbeat", limit: 16 });
 
   if (liveRows.length > 0) {
     let freshestFailHint: DetectedBridgeEvidence | null = null;
@@ -238,9 +234,7 @@ export async function detectCurrentConnectedBridge(): Promise<DetectorResult> {
 
   // No LIVE-mode row at all → look at the freshest non-revoked row of
   // any mode so the operator sees what IS connected.
-  const anyRows = await db.select().from(mt5ConnectionTable).where(
-    isNull(mt5ConnectionTable.tokenRevokedAt),
-  ).orderBy(desc(mt5ConnectionTable.lastHeartbeat)).limit(1);
+  const anyRows = await listConnections({ activeTokenOnly: true, order: "heartbeat", limit: 1 });
 
   if (anyRows.length === 0) {
     return { ok: false, primaryReason: "NO_BRIDGE_REGISTERED", latestHint: null };

@@ -7,20 +7,41 @@
 
 import { db } from "@workspace/db";
 import { tradeActionRequestsTable } from "@workspace/db/schema";
-import { and, eq } from "drizzle-orm";
-import { queueMt5CommandWithGate } from "../../routes/mt5.js";
+import { and, eq, inArray } from "drizzle-orm";
+import { routeConfirmedAction, type RouteResult } from "./route.js";
 import { runActionGuards } from "./guards.js";
 import { writeActionTimeline } from "./timeline.js";
 import { notifyAction } from "./notifications.js";
 import { canTransition } from "./statusMachine.js";
 import { toSummary, humanize } from "./create.js";
 import type { ActionStatus, ActionSummary, ActionType } from "./types.js";
+import type { SimulatedOpenReceipt } from "../tradeEngine/simulatedOpen.js";
 
 export type ConfirmResult =
-  | { ok: true; action: ActionSummary }
+  | { ok: true; action: ActionSummary; /** SIMULATED open: the PAPER order it booked (owner decision 13). */ paper?: SimulatedOpenReceipt }
   | { ok: false; error: string; action?: ActionSummary };
 
-export async function confirmAction(opts: { userId: number; actionId: number; liveConfirmPhrase?: string | null }): Promise<ConfirmResult> {
+const CONFIRMABLE: ActionStatus[] = ["awaiting_confirmation", "ai_suggested", "user_reviewing"];
+
+type ActionRow = typeof tradeActionRequestsTable.$inferSelect;
+const routable = (row: ActionRow, sourcePage?: string) => ({
+  userId: row.userId, actionType: row.actionType as ActionType, requestedMode: row.requestedMode,
+  tradeKey: row.tradeKey, symbol: row.symbol, side: row.side, orderType: row.orderType ?? null,
+  lotSize: row.lotSize ?? null, requestedPrice: row.requestedPrice ?? null,
+  stopLoss: row.stopLoss ?? null, takeProfit: row.takeProfit ?? null, source: row.source ?? null,
+  actionId: row.id,
+  ...(sourcePage ? { sourcePage } : {}),
+  origin: (row.source === "ai_suggested" ? "ruby" : row.source === "decision_engine" ? "automation" : "manual") as "manual" | "ruby" | "automation",
+});
+const isSimulatedOpen = (row: ActionRow) => row.requestedMode === "SIMULATED" && row.actionType === "OPEN";
+
+export async function confirmAction(opts: {
+  userId: number; actionId: number; liveConfirmPhrase?: string | null;
+  /** The mode the trader saw and confirmed; a SIMULATED open requires "SIMULATED" (owner decision 13). */
+  confirmedMode?: string | null;
+  /** The surface stamped on the venue command when it is not the Trade Action Center (My Trades: owner decision 15). */
+  sourcePage?: string;
+}): Promise<ConfirmResult> {
   const [row] = await db.select().from(tradeActionRequestsTable)
     .where(and(eq(tradeActionRequestsTable.id, opts.actionId), eq(tradeActionRequestsTable.userId, opts.userId)))
     .limit(1);
@@ -29,8 +50,20 @@ export async function confirmAction(opts: { userId: number; actionId: number; li
   const status = row.status as ActionStatus;
 
   // Only awaiting_confirmation or ai_suggested can be confirmed.
-  if (status !== "awaiting_confirmation" && status !== "ai_suggested" && status !== "user_reviewing") {
+  if (!CONFIRMABLE.includes(status)) {
+    // Retry-safe (owner decision 13): a repeated confirm of a SIMULATED open
+    // that already booked its paper order returns that order; nothing new.
+    if (isSimulatedOpen(row) && row.executionVenue === "PAPER" && row.venueCommandId?.startsWith("paper_order:")) {
+      const replay = await routeConfirmedAction(routable(row)).catch(() => null);
+      if (replay?.ok && replay.paper) return { ok: true, action: toSummary(row), paper: replay.paper };
+    }
     return { ok: false, error: `cannot_confirm_from_status:${status}`, action: toSummary(row) };
+  }
+
+  // Explicit simulated-mode labelling (owner decision 13): a SIMULATED open
+  // books a paper order, so the confirm must say it is confirming SIMULATED.
+  if (isSimulatedOpen(row) && (opts.confirmedMode ?? "").trim().toUpperCase() !== "SIMULATED") {
+    return { ok: false, error: "simulated_mode_label_required", action: toSummary(row) };
   }
 
   // Server-side LIVE binding: a LIVE action cannot be confirmed unless the
@@ -43,11 +76,18 @@ export async function confirmAction(opts: { userId: number; actionId: number; li
     }
   }
 
-  // Move to confirmed (records intent regardless of guard outcome).
+  // Move to confirmed (records intent regardless of guard outcome). The
+  // transition is conditional on the row still being confirmable, so two
+  // concurrent confirms of one action cannot both proceed.
   const now = new Date();
-  await db.update(tradeActionRequestsTable)
+  const claimed = await db.update(tradeActionRequestsTable)
     .set({ status: "confirmed", confirmedByUser: true, confirmedAt: now, updatedAt: now })
-    .where(eq(tradeActionRequestsTable.id, row.id));
+    .where(and(eq(tradeActionRequestsTable.id, row.id), inArray(tradeActionRequestsTable.status, CONFIRMABLE)))
+    .returning({ id: tradeActionRequestsTable.id });
+  if (!claimed.length) {
+    const [cur] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, row.id)).limit(1);
+    return { ok: false, error: `cannot_confirm_from_status:${cur?.status ?? status}`, action: cur ? toSummary(cur) : undefined };
+  }
 
   await writeActionTimeline({
     userId: row.userId, tradeKey: row.tradeKey, actionId: row.id,
@@ -71,6 +111,12 @@ export async function confirmAction(opts: { userId: number; actionId: number; li
     symbol: row.symbol,
     side: row.side,
     lotSize: row.lotSize,
+    // Market drafts are priced from the live quote at confirm time; only a
+    // pending order carries its own price.
+    requestedPrice: row.orderType && !row.orderType.endsWith("_MARKET") ? row.requestedPrice ?? null : null,
+    stopLoss: row.stopLoss ?? null,
+    takeProfit: row.takeProfit ?? null,
+    origin: row.source === "ai_suggested" ? "ruby" : row.source === "decision_engine" ? "automation" : "manual",
     tradeKey: row.tradeKey,
     confirmedByUser: true,
     expiresAt: row.expiresAt,
@@ -116,50 +162,82 @@ export async function confirmAction(opts: { userId: number; actionId: number; li
     source: "system",
   });
 
-  // Queue to mt5_commands for trade-touching actions (paper-only lock will
-  // mark the row as BLOCKED inside queueMt5CommandWithGate; we still
-  // transition our action lifecycle to "queued" because the command row
-  // exists and is observable).
-  let tradeCommandId: number | null = null;
-  const mt5Action = mapToMt5Action(row.actionType as ActionType);
-  if (mt5Action) {
-    try {
-      const { command } = await queueMt5CommandWithGate(mt5Action, {
-        symbol: row.symbol, side: row.side, lot: row.lotSize ?? null,
-        sl: row.stopLoss ?? null, tp: row.takeProfit ?? null,
-        ticket: parseTicket(row.tradeKey),
-      }, row.userId);
-      tradeCommandId = command.id;
-    } catch {
-      await db.update(tradeActionRequestsTable).set({
-        status: "failed",
-        rejectionReason: "MT5 command queue failed.",
-        guardResult: guard,
-        updatedAt: new Date(),
-      }).where(eq(tradeActionRequestsTable.id, row.id));
-      await writeActionTimeline({
-        userId: row.userId, tradeKey: row.tradeKey, actionId: row.id,
-        actionType: row.actionType as ActionType,
-        eventType: "action_failed",
-        severity: "urgent",
-        title: "Queue failed",
-        message: "Command could not be queued.",
-        source: "system",
-      });
-      const [updated] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, row.id)).limit(1);
-      return { ok: false, error: "queue_failed", action: updated ? toSummary(updated) : undefined };
-    }
+  // Hand the action to its venue's governed queue (lib/tradeAction/route.ts):
+  // DEMO → demo command queue, LIVE → live pipeline, position ops →
+  // governedOps. Each runs its own gates and the Risk Governor again on the
+  // exact command; a refusal there rejects the action with that reason.
+  let routed: RouteResult;
+  try {
+    routed = await routeConfirmedAction(routable(row, opts.sourcePage));
+  } catch {
+    routed = { ok: false, venue: null, commandId: null, reason: "VENUE_QUEUE_FAILED" };
   }
 
-  // Validate transition guard_checking → queued.
-  if (!canTransition("guard_checking", "queued")) {
-    // unreachable; guarded by statusMachine.
+  if (!routed.ok) {
+    const failed = routed.reason === "VENUE_QUEUE_FAILED";
+    await db.update(tradeActionRequestsTable).set({
+      status: failed ? "failed" : "rejected",
+      rejectionReason: routed.message ?? `The ${routed.venue ?? "broker"} queue refused this action: ${routed.reason}.`,
+      guardResult: guard, executionVenue: routed.venue, venueCommandId: routed.commandId,
+      updatedAt: new Date(),
+    }).where(eq(tradeActionRequestsTable.id, row.id));
+    await writeActionTimeline({
+      userId: row.userId, tradeKey: row.tradeKey, actionId: row.id,
+      actionType: row.actionType as ActionType,
+      eventType: failed ? "action_failed" : "action_guard_rejected",
+      severity: failed ? "urgent" : "warning",
+      title: failed ? "Queue failed" : `Refused by the ${routed.venue} queue`,
+      message: routed.reason,
+      source: "system",
+      context: { venue: routed.venue, venueCommandId: routed.commandId },
+    });
+    await notifyAction({
+      userId: row.userId, actionId: row.id, actionType: row.actionType as ActionType,
+      tradeKey: row.tradeKey, symbol: row.symbol, status: failed ? "failed" : "rejected",
+      kind: "action_rejected",
+      title: `Action rejected: ${humanize(row.actionType as ActionType)}`,
+      message: `The ${routed.venue ?? "broker"} queue refused this action (${routed.reason}).`,
+    });
+    const [updated] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, row.id)).limit(1);
+    return { ok: false, error: failed ? "queue_failed" : "venue_rejected", action: updated ? toSummary(updated) : undefined };
   }
 
+  // SIMULATED open (owner decision 13): the PAPER venue filled it at a real
+  // quote, so the action is executed — as a paper order, never a broker one.
+  if (routed.paper) {
+    const p = routed.paper;
+    const done: ActionStatus = canTransition("queued", "executed") ? "executed" : "queued";
+    await db.update(tradeActionRequestsTable).set({
+      status: done, guardResult: guard, executionVenue: "PAPER", venueCommandId: routed.commandId,
+      fillPrice: p.fillPrice, filledLotSize: p.lots, executedAt: new Date(),
+      brokerMessage: `${p.label} Paper order #${p.paperOrderId}${p.priceSource ? `, priced from ${p.priceSource} at ${p.quoteAt}` : ""}.`,
+      updatedAt: new Date(),
+    }).where(eq(tradeActionRequestsTable.id, row.id));
+    await writeActionTimeline({
+      userId: row.userId, tradeKey: row.tradeKey, actionId: row.id,
+      actionType: row.actionType as ActionType,
+      eventType: "action_queued",
+      severity: "info",
+      title: "Simulated paper order booked",
+      message: `${p.label} Paper order #${p.paperOrderId} ${p.side} ${p.lots} ${p.symbol} @ ${p.fillPrice}.`,
+      source: "system",
+      context: { venue: "PAPER", venueCommandId: routed.commandId, priceSource: p.priceSource, quoteAt: p.quoteAt, replayed: p.replayed },
+    });
+    await notifyAction({
+      userId: row.userId, actionId: row.id, actionType: row.actionType as ActionType,
+      tradeKey: row.tradeKey, symbol: row.symbol, status: done,
+      kind: "action_queued",
+      title: `Simulated: ${humanize(row.actionType as ActionType)}`,
+      message: `${p.label} Paper order #${p.paperOrderId}.`,
+    });
+    const [updated] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, row.id)).limit(1);
+    return { ok: true, action: toSummary(updated!), paper: p };
+  }
+
+  // guard_checking → queued → sent_to_mt5: a dispatched command passes both.
+  const nextStatus: ActionStatus = routed.sent && canTransition("queued", "sent_to_mt5") ? "sent_to_mt5" : "queued";
   await db.update(tradeActionRequestsTable).set({
-    status: "queued",
-    guardResult: guard,
-    tradeCommandId,
+    status: nextStatus, guardResult: guard, executionVenue: routed.venue, venueCommandId: routed.commandId,
     updatedAt: new Date(),
   }).where(eq(tradeActionRequestsTable.id, row.id));
 
@@ -168,40 +246,20 @@ export async function confirmAction(opts: { userId: number; actionId: number; li
     actionType: row.actionType as ActionType,
     eventType: "action_queued",
     severity: "info",
-    title: "Action queued",
-    message: tradeCommandId ? `MT5 command #${tradeCommandId}` : "No broker queue for this action.",
+    title: routed.sent ? `Sent to the ${routed.venue} broker` : "Action recorded",
+    message: routed.commandId ? `${routed.venue} command ${routed.commandId}` : "Simulated: no broker command.",
     source: "system",
-    context: { tradeCommandId },
+    context: { venue: routed.venue, venueCommandId: routed.commandId },
   });
 
   await notifyAction({
     userId: row.userId, actionId: row.id, actionType: row.actionType as ActionType,
-    tradeKey: row.tradeKey, symbol: row.symbol, status: "queued",
+    tradeKey: row.tradeKey, symbol: row.symbol, status: nextStatus,
     kind: "action_queued",
-    title: `Action queued: ${humanize(row.actionType as ActionType)}`,
-    message: "Awaiting MT5 execution.",
+    title: `Action ${routed.sent ? "sent" : "queued"}: ${humanize(row.actionType as ActionType)}`,
+    message: routed.sent ? `Awaiting the ${routed.venue} broker's fill.` : "Simulated action recorded.",
   });
 
   const [updated] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, row.id)).limit(1);
   return { ok: true, action: toSummary(updated!) };
-}
-
-function mapToMt5Action(t: ActionType): "OPEN" | "CLOSE" | "MODIFY" | null {
-  switch (t) {
-    case "OPEN": return "OPEN";
-    case "CLOSE": return "CLOSE";
-    case "PARTIAL_CLOSE": return "CLOSE";       // EA derives partial from lot < open lot
-    case "MOVE_STOP": return "MODIFY";
-    case "TRAIL_STOP": return "MODIFY";
-    case "MODIFY_TP_SL": return "MODIFY";
-    case "CANCEL_ORDER": return null;           // no broker queue path for cancel review yet
-  }
-}
-
-function parseTicket(tradeKey: string | null): number | null {
-  if (!tradeKey) return null;
-  const m = /^(?:lp|att)_(\d+)$/.exec(tradeKey);
-  if (!m) return null;
-  const n = Number(m[1]);
-  return Number.isFinite(n) ? n : null;
 }

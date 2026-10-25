@@ -15,12 +15,12 @@
 //    number or a margin.
 //  - Learning only ever TIGHTENS (qualityBias ≤ 0, minQualityDelta ≥ 0).
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { and, eq, inArray, desc, isNotNull, sql } from "drizzle-orm";
 import {
   db,
   scalpJournalEntriesTable,
   scalpSymbolPersonalityTable,
-  arxLivePositionsTable,
   type ScalpJournalEntry,
   type ScalpSymbolPersonality,
 } from "@workspace/db";
@@ -186,11 +186,13 @@ async function finalizeClosedEntry(
   if (accountMode === "LIVE_SHARED") {
     const tickets = Array.isArray(row.legTickets) ? (row.legTickets as unknown[]).map(String) : [];
     if (tickets.length > 0) {
-      const closed = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        inArray(arxLivePositionsTable.brokerTicket, tickets),
-        isNotNull(arxLivePositionsTable.closedAt),
-      ));
+      const closed = await livePositionLedger.read({
+        where: and(
+          eq(livePositionColumns.userId, userId),
+          inArray(livePositionColumns.brokerTicket, tickets),
+          isNotNull(livePositionColumns.closedAt),
+        ),
+      });
       if (closed.length > 0) {
         let sum = 0;
         let any = false;

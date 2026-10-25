@@ -4,9 +4,9 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db, securityRolesTable, securityPermissionsTable, securityRolePermissionsTable, securityUserRolesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { buildSecurityStatus, createDataProtectionExport, listDataProtectionExports } from "../lib/security/service.js";
-import { seedSecurity, ROLE_KEYS, PERMISSIONS } from "../lib/security/seed.js";
+import { seedSecurity, PERMISSIONS } from "../lib/security/seed.js";
 import { checkPermission } from "../lib/security/permissions.js";
-import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { readRoleFromRequest, requireAdmin } from "../lib/security/middleware.js";
 import { getSettings, patchSettings } from "../lib/security/settings.js";
 import { listEvents, listAccessLogs, recordSecurityEvent, recordAccessLog, repeatedDeniedCount } from "../lib/security/events.js";
 import { redactionSelfTest, scrub } from "../lib/security/redact.js";
@@ -108,28 +108,26 @@ router.post("/security/role-permissions", async (req, res) => {
   res.json(envelope({ note: "Built-in role-permission mappings are immutable; use seed.ts to evolve.", matrixPreview: PERMISSIONS.length }));
 });
 
-router.get("/security/user-roles", async (_req, res) => {
+// One role model: a user's role is users.role (read on every request; see
+// lib/security/session.ts). security_user_roles assignments were never read
+// by any authorization check, so "assigning" a role here granted nothing.
+// The old rows stay readable to operators as history; new assignments go
+// through POST /admin/user-control/users/:userId/role (granting ADMIN is
+// owner-only and needs confirmation).
+router.get("/security/user-roles", requireAdmin, async (_req, res) => {
   const rows = await db.select().from(securityUserRolesTable);
-  res.json(envelope({ count: rows.length, userRoles: rows }));
+  res.json(envelope({ count: rows.length, userRoles: rows, authoritative: false,
+    note: "Historical assignments only. A user's role is users.role." }));
 });
 
 router.post("/security/user-roles", async (req, res) => {
   const callerRole = readRoleFromRequest(req);
   const decision = await checkPermission(callerRole, "security:manage_roles");
   if (!decision.allowed) { await denyResponse(req, res, decision.role, decision.permissionKey, decision.reason, decision.forbidden); return; }
-  const userId = Number(req.body?.userId);
-  const roleKey = String(req.body?.roleKey ?? "").toUpperCase();
-  if (!userId || !(ROLE_KEYS as readonly string[]).includes(roleKey)) {
-    res.status(400).json(envelope({ error: "userId (number) and valid roleKey required" })); return;
-  }
-  const [r] = await db.select().from(securityRolesTable).where(eq(securityRolesTable.roleKey, roleKey)).limit(1);
-  if (!r) { res.status(404).json(envelope({ error: "role not found" })); return; }
-  const [created] = await db.insert(securityUserRolesTable).values({ userId, roleId: r.id, assignedBy: callerRole }).returning();
-  await recordSecurityEvent({
-    eventType: "ROLE_CHANGED", severity: "HIGH", status: "TRIGGERED", actorRole: callerRole,
-    message: `Role ${roleKey} assigned to user ${userId}`, metadata: { userId, roleKey },
-  });
-  res.json(envelope({ assigned: created }));
+  res.status(410).json(envelope({
+    error: "ROLE_ASSIGNMENT_MOVED",
+    message: "A user's role is users.role. Change it with POST /api/admin/user-control/users/:userId/role.",
+  }));
 });
 
 router.post("/security/test-permission", async (req, res) => {
@@ -163,14 +161,14 @@ router.post("/security/forbidden-action-test", async (req, res) => {
   } }));
 });
 
-router.get("/security/events", async (req, res) => {
+router.get("/security/events", requireAdmin, async (req, res) => {
   const limit = Number(req.query.limit ?? 50);
   const eventType = req.query.eventType ? String(req.query.eventType) : undefined;
   const events = await listEvents(limit, eventType);
   res.json(envelope({ count: events.length, events }));
 });
 
-router.get("/security/access-logs", async (req, res) => {
+router.get("/security/access-logs", requireAdmin, async (req, res) => {
   const limit = Number(req.query.limit ?? 50);
   const logs = await listAccessLogs(limit);
   res.json(envelope({ count: logs.length, accessLogs: logs }));
@@ -209,7 +207,7 @@ router.post("/security/settings", async (req, res) => {
   res.json(envelope({ settings: result.settings, rejectedKeys: result.rejected }));
 });
 
-router.post("/security/demo", async (_req, res) => {
+router.post("/security/demo", requireAdmin, async (_req, res) => {
   await seedSecurity();
   const status = await buildSecurityStatus();
   const allowed = await checkPermission("TRADER", "paper_trade:create");
@@ -238,7 +236,7 @@ router.post("/security/export-data", async (req, res) => {
   res.json(envelope({ export: exp, note: "All exports are scrub()-ed before persistence" }));
 });
 
-router.get("/security/data-protection/exports", async (req, res) => {
+router.get("/security/data-protection/exports", requireAdmin, async (req, res) => {
   const limit = Number(req.query.limit ?? 20);
   const items = await listDataProtectionExports(limit);
   res.json(envelope({ count: items.length, exports: items }));

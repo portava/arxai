@@ -35,20 +35,19 @@
 //
 // SECURITY: requireUser on every handler. No endpoint reveals another
 // user's settings or any bridge/master state.
+import { classifyHeartbeatAt, heartbeatAllowsExecution } from "../lib/brokerHub/freshness.js";
+import { getUserPrimaryConnection, listUserConnections } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
 import { normalizeProductRole, type ProductRole } from "../lib/auth/productRole.js";
 import {
   db, userOneClickSettingsTable, oneClickAuditTable,
-  userMasterLiveAccessTable, globalTradingSettingsTable, mt5ConnectionTable,
-} from "@workspace/db";
+  userMasterLiveAccessTable, globalTradingSettingsTable, } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { loadAndEvaluateUserMasterLiveAccessGate } from "../lib/mt5/userMasterLiveAccessGate.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock } from "../lib/concurrency/advisoryLock.js";
 import { tryConsumeToken, checkSymbolCooldown, clampPerMinute } from "../lib/concurrency/rateLimit.js";
-import {
-  createLiveDraft, confirmLiveCommand, dispatchLiveCommand,
-} from "../lib/live/liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipeline.js";
 
 export const REQUIRED_TYPED_PHRASE = "ENABLE ONE CLICK TRADING";
 
@@ -476,7 +475,7 @@ router.post("/me/one-click/submit-live", requireUser, async (req: Request, res: 
 
   // Per-user advisory lock — blocks double-tap from the same user.
   const lock = await withTxAdvisoryLock(ARX_LOCK_NS.USER_SUBMIT, userId, async () => {
-    const draft = await createLiveDraft({
+    const draft = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
       userId,
       commandType: resolvedCommandType,
       symbol: body.symbol!,
@@ -491,9 +490,9 @@ router.post("/me/one-click/submit-live", requireUser, async (req: Request, res: 
       allowNoStopLossThisDraft: noSlOverride,
     });
     if (!("ok" in draft) || draft.ok !== true) return { stage: "draft" as const, result: draft };
-    const confirmed = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     if (!confirmed.ok) return { stage: "confirm" as const, result: confirmed };
-    const dispatched = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     return { stage: "dispatch" as const, result: dispatched, commandId: draft.command.commandId };
   });
   if (!lock.acquired) {
@@ -534,10 +533,7 @@ router.post("/me/one-click/submit-live", requireUser, async (req: Request, res: 
  *   NONE   — no bridge configured for this user
  */
 async function resolveBridgeType(userId: number): Promise<"SHARED" | "OWN" | "NONE"> {
-  const [conn] = await db.select({ id: mt5ConnectionTable.id })
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId))
-    .limit(1);
+  const conn = await getUserPrimaryConnection(userId);
   if (conn) return "OWN";
   const [g] = await db.select({ mode: globalTradingSettingsTable.accountRoutingMode })
     .from(globalTradingSettingsTable)
@@ -627,7 +623,6 @@ router.get("/me/one-click/status", requireUser, async (req: Request, res: Respon
   // The 16-gate evaluator always runs server-side on every actual dispatch.
   let executionReadinessState: "READY" | "BLOCKED" | "STALE" | "UNAVAILABLE";
   let executionBlockReason: string | null = null;
-  const HEARTBEAT_STALE_MS = 15_000; // mirrors Phase B gate #7
   if (bridgeType === "NONE") {
     executionReadinessState = "UNAVAILABLE";
     executionBlockReason = "NO_BRIDGE_CONFIGURED";
@@ -647,14 +642,9 @@ router.get("/me/one-click/status", requireUser, async (req: Request, res: Respon
     // For own-bridge users, check whether their bridge heartbeat is fresh.
     // A stale/absent heartbeat means the EA is disconnected; dispatching
     // live commands will fail gate #7 on the 16-gate evaluator.
-    const [conn] = await db.select({
-      lastHeartbeat: mt5ConnectionTable.lastHeartbeat,
-    }).from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId))
-      .limit(1);
-    const heartbeatMs = conn?.lastHeartbeat ? conn.lastHeartbeat.getTime() : null;
-    const ageMs = heartbeatMs !== null ? Date.now() - heartbeatMs : Infinity;
-    if (ageMs > HEARTBEAT_STALE_MS) {
+    const conn = await getUserPrimaryConnection(userId);
+    // Shared heartbeat policy, same as Phase B gate #7: only "fresh" is ready.
+    if (!heartbeatAllowsExecution(classifyHeartbeatAt(conn?.lastHeartbeat ?? null, Date.now()))) {
       executionReadinessState = "STALE";
       executionBlockReason = "OWN_BRIDGE_STALE_OR_DISCONNECTED";
     } else {

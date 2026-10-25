@@ -87,13 +87,26 @@ type RiskEvent = {
   reason: string; createdAt: string; overrideReason: string | null; overriddenAt: string | null;
   paperTradeId: number | null;
 };
+/** A limit the Risk Governor enforces, next to the trader's saved preference. */
+type EffectiveLimitView = {
+  label: string; unit: string; effective: number | null; preference: number | null;
+  source: string; winner: string; overriddenBy: string | null; reason: string | null;
+};
 type RiskStatus = {
   settings: RiskSettings;
+  /** Limits in force (optional for older servers). */
+  effective?: Record<string, EffectiveLimitView>;
   today: { pnl: number; trades: number; openTrades: number; consecutiveLosses: number };
   week: { pnl: number };
   cooldown: { active: boolean; minutesRemaining: number };
   lastBlocked: { reason: string; createdAt: string; eventType: string } | null;
 };
+
+/** The value the Risk Governor enforces; falls back to the saved value on an older server. */
+function enforcedLimit(s: RiskStatus, key: string, saved: number | null | undefined): number | null {
+  const v = s.effective?.[key];
+  return v ? v.effective : (saved ?? null);
+}
 
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await fetch(`/api${path}`, {
@@ -309,8 +322,8 @@ export default function MyPaperTradesPage() {
           {riskStatus && (
             <div className="grid gap-3 md:grid-cols-4">
               <Card><CardHeader className="pb-1"><CardDescription>Today P&amp;L</CardDescription><CardTitle className={riskStatus.today.pnl >= 0 ? "text-emerald-500" : "text-red-500"}>{riskStatus.today.pnl.toFixed(2)}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.today.trades} trades · {riskStatus.today.openTrades} open</CardContent></Card>
-              <Card><CardHeader className="pb-1"><CardDescription>Consecutive losses</CardDescription><CardTitle>{riskStatus.today.consecutiveLosses} / {riskStatus.settings.maxConsecutiveLosses}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">{riskStatus.settings.blockAfterConsecutiveLosses ? "Block after cap" : "Warn only"}</CardContent></Card>
-              <Card><CardHeader className="pb-1"><CardDescription>Cooldown</CardDescription><CardTitle className={riskStatus.cooldown.active ? "text-amber-500" : ""}>{riskStatus.cooldown.active ? `${riskStatus.cooldown.minutesRemaining}m` : "—"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">After loss: {riskStatus.settings.cooldownAfterLossMinutes}m</CardContent></Card>
+              <Card><CardHeader className="pb-1"><CardDescription>Consecutive losses</CardDescription><CardTitle>{riskStatus.today.consecutiveLosses} / {enforcedLimit(riskStatus, "maxConsecutiveLosses", riskStatus.settings.maxConsecutiveLosses) ?? "off"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground" title={riskStatus.effective?.maxConsecutiveLosses?.reason ?? undefined}>{enforcedLimit(riskStatus, "maxConsecutiveLosses", riskStatus.settings.maxConsecutiveLosses) != null ? "Enforced limit" : "Not enforced"}</CardContent></Card>
+              <Card><CardHeader className="pb-1"><CardDescription>Cooldown</CardDescription><CardTitle className={riskStatus.cooldown.active ? "text-amber-500" : ""}>{riskStatus.cooldown.active ? `${riskStatus.cooldown.minutesRemaining}m` : "—"}</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground" title={riskStatus.effective?.cooldownAfterLossMinutes?.reason ?? undefined}>After loss: {enforcedLimit(riskStatus, "cooldownAfterLossMinutes", riskStatus.settings.cooldownAfterLossMinutes) ?? 0}m</CardContent></Card>
               <Card><CardHeader className="pb-1"><CardDescription>Live contract</CardDescription><CardTitle className="text-sm flex items-center gap-1"><Lock className="h-3 w-3"/>locked</CardTitle></CardHeader><CardContent className="text-xs text-muted-foreground">demo_only · no broker writes</CardContent></Card>
             </div>
           )}

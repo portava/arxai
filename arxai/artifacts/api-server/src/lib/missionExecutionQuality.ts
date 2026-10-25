@@ -26,8 +26,8 @@
 //     pre-check additive (it never relaxes a gate) without falsely blocking an
 //     already-approved, fully-gated draft on un-observable cost data.
 //   - Capital efficiency is advisory/ranking ONLY and never blocks.
-import { and, eq, isNull } from "drizzle-orm";
-import { db, arxLivePositionsTable } from "@workspace/db";
+import { readOpenPositions } from "./positions/openPositions.js";
+
 import {
   composeExecutionHealthGate,
   computeExecutionQuality,
@@ -55,7 +55,7 @@ import type { BrokerHealthStatus } from "@workspace/domain/broker-health";
 import type { SymbolFeedVerdict } from "@workspace/domain/safety-contracts/syntheticLiveFloor";
 import { getBrokerHealthVerdict } from "../routes/brokerHealth.js";
 import { evaluateEntryDataSufficiency } from "./live/entryDataSufficiency.js";
-import type { MissionLiveSignals } from "./missionRiskService.js";
+import type { MissionLiveSignals } from "./missionRiskState.js";
 
 // Net-profit blockers that are fail-closed "we could not verify" states rather
 // than positively-evidenced rejections. These are surfaced as warnings at the
@@ -241,10 +241,7 @@ function spreadFrom(signals: MissionLiveSignals): ExecHealthSpread {
 
 /** Load this user's OPEN live positions as honest exposure rows (per-user only). */
 async function loadOpenExposure(userId: number): Promise<ExposurePosition[]> {
-  const rows = await db
-    .select()
-    .from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)));
+  const rows = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED" })).map((p) => p.row);
   return rows.map((r) => {
     const direction: "BUY" | "SELL" = String(r.side).toUpperCase() === "SELL" ? "SELL" : "BUY";
     // Risk amount on an open broker position is not always known; a negative

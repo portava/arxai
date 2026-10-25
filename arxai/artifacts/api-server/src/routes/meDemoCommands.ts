@@ -20,11 +20,10 @@ import { requireUser } from "../lib/auth/middleware.js";
 import {
   cancelCommand,
   cancelOrphanedSentCommands,
-  confirmCommand,
-  createDraftCommand,
   getUserCommand,
   listUserCommands,
 } from "../lib/mt5/demoCommandQueue.js";
+import { draftTrade, confirmTrade } from "../lib/tradeEngine/pipeline.js";
 import { consumeApprovedCommand } from "../lib/mt5/demoCommandConsumer.js";
 import { DEMO_COMMAND_TYPES, type DemoCommandType } from "@workspace/domain/safety-contracts/executionMode";
 
@@ -53,7 +52,7 @@ router.post("/me/demo-commands", requireUser, async (req, res) => {
   if (!parsed.success) {
     res.status(400).json({ error: "INVALID_BODY", issues: parsed.error.issues }); return;
   }
-  const result = await createDraftCommand({
+  const result = await draftTrade({ mode: "DEMO" }, {
     userId,
     commandType: parsed.data.commandType,
     payload: parsed.data.payload,
@@ -75,7 +74,7 @@ router.post("/me/demo-commands/:commandId/confirm", requireUser, async (req, res
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const commandId = String(req.params.commandId ?? "");
   if (!commandId) { res.status(400).json({ error: "MISSING_COMMAND_ID" }); return; }
-  const result = await confirmCommand({
+  const result = await confirmTrade({ mode: "DEMO" }, {
     userId,
     commandId,
     actorIp: clientIp(req),

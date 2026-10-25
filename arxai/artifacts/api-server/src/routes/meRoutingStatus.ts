@@ -9,15 +9,16 @@
 //    effective routing decision (override or inherit). No other user's
 //    data is read.
 
+import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { getConnection, listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request } from "express";
 import { eq } from "drizzle-orm";
-import { db, mt5ConnectionTable, sharedMasterAccountsTable } from "@workspace/db";
+import { db, sharedMasterAccountsTable } from "@workspace/db";
 import { requireUser } from "../lib/auth/middleware.js";
 import { resolveRouting } from "../lib/adminTrading/routingResolver.js";
 
 const router = Router();
 
-const HEARTBEAT_FRESH_SECONDS = 15;
 
 router.get("/me/routing-status", requireUser, async (req: Request, res) => {
   const userId = (req as Request & { authUser?: { id?: number } }).authUser?.id;
@@ -50,15 +51,7 @@ router.get("/me/routing-status", requireUser, async (req: Request, res) => {
       sharedMasterAccountId: number | null;
     } | null = null;
     if (routing.connectionId) {
-      const [conn] = await db
-        .select({
-          eaVersion: mt5ConnectionTable.eaVersion,
-          lastHeartbeat: mt5ConnectionTable.lastHeartbeat,
-          accountType: mt5ConnectionTable.accountType,
-        })
-        .from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.id, routing.connectionId))
-        .limit(1);
+      const conn = await getConnection(routing.connectionId);
       let smRow: { brokerName: string | null; accountNumberMasked: string | null } | undefined;
       if (routing.sharedMasterAccountId) {
         [smRow] = await db
@@ -73,7 +66,7 @@ router.get("/me/routing-status", requireUser, async (req: Request, res) => {
       const hbAge = conn?.lastHeartbeat
         ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)
         : null;
-      const healthy = hbAge !== null && hbAge <= HEARTBEAT_FRESH_SECONDS
+      const healthy = isHeartbeatAgeSecondsFresh(hbAge)
         && (conn?.accountType === "demo" || conn?.accountType === "contest");
       master = {
         brokerName: smRow?.brokerName ?? null,

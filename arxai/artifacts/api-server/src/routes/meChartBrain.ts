@@ -55,6 +55,7 @@ import {
 } from "../lib/chart/aiAlerts.js";
 import { deriveChartFlameSignal } from "../lib/chart/chartFlameSignal.js";
 import { getOpenPositions } from "../lib/assistant/tools.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -310,7 +311,7 @@ router.get(
   requireUser,
   safe(async (req, res) => {
     const u = req.authUser!;
-    if (u.role !== "ADMIN" && u.role !== "OWNER") {
+    if (!operatorRoleFromSession(u.role)) {
       err(res, 403, "admin_required");
       return;
     }
@@ -508,7 +509,7 @@ router.get(
   requireUser,
   safe(async (req, res) => {
     const u = req.authUser!;
-    if (u.role !== "ADMIN" && u.role !== "OWNER") {
+    if (!operatorRoleFromSession(u.role)) {
       err(res, 403, "admin_required");
       return;
     }

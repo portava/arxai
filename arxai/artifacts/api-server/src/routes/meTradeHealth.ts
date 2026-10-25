@@ -19,6 +19,7 @@ import {
   type TradeHealthServiceResult,
 } from "../lib/tradeHealth/tradeHealthService.js";
 import { createShortTtlCache } from "../lib/perf/shortTtlCache.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -60,7 +61,7 @@ router.get("/me/trade-health", requireUser, async (req, res): Promise<void> => {
   }
 
   const role = (req as Request & { authUser?: { role?: string } }).authUser?.role;
-  const isAdmin = role === "ADMIN" || role === "OWNER";
+  const isAdmin = operatorRoleFromSession(role) != null;
 
   const rawChartSymbol = req.query["chartSymbol"];
   const chartSymbol =

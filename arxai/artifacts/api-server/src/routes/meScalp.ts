@@ -28,16 +28,17 @@ import {
   getScalpAfterActionReviews,
   getSymbolPersonalities,
 } from "../lib/scalp/scalpJournalService.js";
-import { normalizeSymbol } from "../lib/scannerSelected/symbolNormalize.js";
+import { normalizeSymbol } from "../lib/instruments/index.js";
 import { buildRubyMarketEdgeForUser } from "../lib/signalIntelligence/signalIntelligenceService.js";
 import { getCachedOpportunityMap } from "../lib/signalIntelligence/opportunityMapReadCache.js";
 import { explainMarketRead } from "@workspace/domain/signal-intelligence";
 import type { UniverseId } from "../lib/marketScanner.js";
 import { getAssistantDisplayName } from "../lib/assistant/assistantName.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 function isAdminSession(req: import("express").Request): boolean {
   const role = (req.authUser as { role?: string } | undefined)?.role;
-  return role === "ADMIN" || role === "OWNER";
+  return operatorRoleFromSession(role) != null;
 }
 
 /**

@@ -1,4 +1,5 @@
-import { db, safetyCoreTable, vaultEventsTable, stateTransitionsTable, mt5StateTable } from "@workspace/db";
+import { classifyHeartbeatAgeMs } from "./brokerHub/freshness.js";
+import { db, safetyCoreTable, vaultEventsTable, stateTransitionsTable } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte, type SQL } from "drizzle-orm";
 import {
   globalState as gs,
@@ -6,6 +7,7 @@ import {
 } from "@workspace/domain";
 import { shadowCapture, isVaultDegraded } from "./auditVault.js";
 import { logger } from "./logger.js";
+import { readPlatformMt5State } from "./brokerHub/mt5StateReader.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 1 — Safety Core service (server side)
@@ -33,8 +35,8 @@ export const ALL_OPERATIONAL_MODES: ReadonlyArray<OperationalMode> = [
   "OBSERVE_ONLY", "SUGGEST_ONLY", "PAPER_TRADING", "LIVE_TRADING",
 ];
 
-const HEARTBEAT_DEGRADED_MS = 15_000;
-const HEARTBEAT_LOCKDOWN_MS = 60_000;
+// MT5 link health comes from the shared heartbeat policy (owner decision 17):
+// fresh → OK, degraded → DEGRADED, offline / unknown (incl. future-dated) → DOWN.
 
 // ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -55,8 +57,7 @@ export async function ensureSafetyCoreInitialized(): Promise<void> {
 }
 
 async function loadMt5State() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  return rows[0] ?? null;
+  return readPlatformMt5State();
 }
 
 function ageMs(d: Date | null | undefined): number | null {
@@ -154,10 +155,10 @@ export async function getStatus(): Promise<SafetyCoreStatus> {
   const sc = await loadOrCreate();
   const mt5 = await loadMt5State();
   const age = ageMs(mt5?.lastHeartbeatAt ?? null);
+  const hb = classifyHeartbeatAgeMs(age);
   const link: SafetyCoreStatus["mt5LinkHealth"] =
-    age === null ? "DOWN"
-    : age < HEARTBEAT_DEGRADED_MS ? "OK"
-    : age < HEARTBEAT_LOCKDOWN_MS ? "DEGRADED"
+    hb === "fresh" ? "OK"
+    : hb === "degraded" ? "DEGRADED"
     : "DOWN";
 
   const globalState = sc.globalState as gs.GlobalState;

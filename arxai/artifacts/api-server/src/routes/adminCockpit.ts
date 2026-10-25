@@ -19,19 +19,19 @@
 //   trade; it is a self-contained structural comparator over real candles
 //   (honest-empty on insufficient history).
 
+import { livePositionColumns } from "../lib/positions/ledger.js";
+import { readOpenPositions, selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
+import { listConnections } from "../lib/brokerHub/connections.js";
+import { classifyHeartbeatAt, heartbeatIsOnline } from "../lib/brokerHub/freshness.js";
 import express, { Router, type Request, type Response } from "express";
 import { z } from "zod";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
-  mt5ConnectionTable,
   userMasterLiveAccessTable,
   investorProfilesTable,
-  arxLivePositionsTable,
-  arxLiveArmingTable,
   strategyPoolsTable,
-  strategyPoolNavTable,
   investorPoolHoldingsTable,
   adminCockpitAuditLogTable,
   adminCockpitAlertsTable,
@@ -50,18 +50,17 @@ import {
 import {
   adminForceArmLiveForUser,
   disarmLiveForUser,
+  listArmingFlags,
 } from "../lib/live/liveArming.js";
 import { runEmergencyClose } from "../lib/live/emergencyClose.js";
 import { buildApprovedTraderLiveState } from "../lib/live/approvedTraderLiveState.js";
-import { getGlobalSettings } from "../lib/adminTrading/safetyEnvelope.js";
-import { resolveLiveBrokerExecutionEnabledAsync } from "../lib/live/phaseBConfig.js";
+import { platformStopReport, platformStopWith, readPlatformSwitches, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { getProviderHealthSnapshot } from "../lib/data/providerHealth.js";
 import { getPoolNav } from "../lib/fundbook/navEngine.js";
 import { routeCandles } from "../lib/data/marketDataRouter.js";
 import {
   runPatternSyncEngine,
   patternMatchScore,
-  PATTERN_SYNC_MIN_CANDLES,
   type PatternSyncCandle,
   type PatternSyncEngineResult,
 } from "../lib/patternSync/patternSyncEngine.js";
@@ -72,8 +71,8 @@ import {
 
 const router = Router();
 
-// A bridge heartbeat newer than this is "connected/fresh" for cockpit display.
-const BRIDGE_FRESH_MS = 60_000;
+// Cockpit "connected" = the bridge heartbeat is online under the shared
+// heartbeat policy (fresh or degraded, age < 60 s).
 
 // ─── Auth gate ──────────────────────────────────────────────────────────────
 
@@ -201,17 +200,15 @@ async function computeTraderRows(): Promise<TraderRow[]> {
       status: userMasterLiveAccessTable.masterLiveStatus,
       approved: userMasterLiveAccessTable.approvedForMasterLive,
     }).from(userMasterLiveAccessTable),
-    db.select({
-      userId: arxLiveArmingTable.userId,
-      isArmed: arxLiveArmingTable.isArmed,
-    }).from(arxLiveArmingTable),
-    db.select({
-      userId: arxLivePositionsTable.userId,
-      cnt: sql<number>`cast(count(*) as int)`,
-      floating: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)`,
-    }).from(arxLivePositionsTable)
-      .where(isNull(arxLivePositionsTable.closedAt))
-      .groupBy(arxLivePositionsTable.userId),
+    listArmingFlags(),
+    selectLiveOpenPositionsForAllUsers(
+      {
+        userId: livePositionColumns.userId,
+        cnt: sql<number>`cast(count(*) as int)`,
+        floating: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
+      },
+      { basis: "UNCLOSED", groupBy: [livePositionColumns.userId] },
+    ),
     db.select({
       userId: investorProfilesTable.userId,
       displayName: investorProfilesTable.displayName,
@@ -360,19 +357,18 @@ async function loadNotes(targetType: string, targetUserId?: number): Promise<Coc
 router.get("/admin/cockpit/overview", async (req, res) => {
   const op = requireOperator(req, res); if (!op) return;
 
-  const [traderRows, investorRows, connections, openAgg, g, liveEnabled, alertAgg] = await Promise.all([
+  const [traderRows, investorRows, connections, openAgg, sw, alertAgg] = await Promise.all([
     computeTraderRows(),
     db.select({ status: investorProfilesTable.status }).from(investorProfilesTable),
-    db.select({
-      accountType: mt5ConnectionTable.accountType,
-      lastHeartbeat: mt5ConnectionTable.lastHeartbeat,
-    }).from(mt5ConnectionTable),
-    db.select({
-      cnt: sql<number>`cast(count(*) as int)`,
-      floating: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)`,
-    }).from(arxLivePositionsTable).where(isNull(arxLivePositionsTable.closedAt)),
-    getGlobalSettings(),
-    resolveLiveBrokerExecutionEnabledAsync().catch(() => false),
+    listConnections({ order: "oldest" }),
+    selectLiveOpenPositionsForAllUsers(
+      {
+        cnt: sql<number>`cast(count(*) as int)`,
+        floating: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
+      },
+      { basis: "UNCLOSED" },
+    ),
+    readPlatformSwitches({ ifMissing: "seed" }),
     db.select({
       open: sql<number>`cast(count(*) filter (where ${adminCockpitAlertsTable.status} = 'ACTIVE') as int)`,
       critical: sql<number>`cast(count(*) filter (where ${adminCockpitAlertsTable.status} = 'ACTIVE' and ${adminCockpitAlertsTable.alertLevel} = 'CRITICAL') as int)`,
@@ -387,12 +383,14 @@ router.get("/admin/cockpit/overview", async (req, res) => {
     }
   }
   const ageSec = heartbeatAgeSeconds(freshest?.lastHeartbeat ?? null);
-  const bridgeConnected = ageSec != null && ageSec * 1000 <= BRIDGE_FRESH_MS;
+  const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(freshest?.lastHeartbeat ?? null, Date.now()));
   const acctType = (freshest?.accountType ?? "").toLowerCase();
   const bridgeLive = bridgeConnected && (acctType === "live" || acctType === "real");
 
   const open = openAgg[0];
   const alerts = alertAgg[0];
+  // Both install-wide stops (platformStop()), the emergency stop from the switches read above.
+  const stop = await platformStopWith(sw);
 
   return res.json({
     ok: true,
@@ -424,9 +422,12 @@ router.get("/admin/cockpit/overview", async (req, res) => {
       availableAllocation: null,
     },
     safety: {
-      liveExecutionEnabled: !!liveEnabled,
-      killSwitchActive: !!g?.emergencyKillSwitch,
-      platformMode: g?.platformMode ?? "OFF",
+      liveExecutionEnabled: sw.liveBrokerExecution.enabled,
+      // killSwitchActive keeps naming the platform emergency stop; the
+      // platformStop* fields say whether either install-wide stop is engaged.
+      killSwitchActive: stopSourceEngaged(stop, "platform_emergency_stop"),
+      ...platformStopReport(stop),
+      platformMode: sw.platformMode,
     },
     alerts: {
       open: alerts?.open ?? 0,
@@ -452,9 +453,8 @@ router.get("/admin/cockpit/traders/:userId", async (req, res) => {
 
   const [liveState, openPositions, notes, recentAudit] = await Promise.all([
     buildApprovedTraderLiveState(userId).catch(() => null),
-    db.select().from(arxLivePositionsTable)
-      .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)))
-      .orderBy(desc(arxLivePositionsTable.openedAt)),
+    readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", order: "openedAtDesc" })
+      .then((rows) => rows.map((p) => p.row)),
     loadNotes("trader", userId),
     loadAuditEntries(25, userId),
   ]);
@@ -582,7 +582,7 @@ router.get("/admin/cockpit/bridge", async (req, res) => {
   const isOwner = op.role === "OWNER";
 
   const [connections, users, providerHealth] = await Promise.all([
-    db.select().from(mt5ConnectionTable),
+    listConnections({ order: "oldest" }),
     db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable),
     getProviderHealthSnapshot().catch(() => ({ providers: [] as unknown[] })),
   ]);
@@ -590,7 +590,7 @@ router.get("/admin/cockpit/bridge", async (req, res) => {
 
   const rows = connections.map((c) => {
     const ageSec = heartbeatAgeSeconds(c.lastHeartbeat);
-    const connected = ageSec != null && ageSec * 1000 <= BRIDGE_FRESH_MS;
+    const connected = heartbeatIsOnline(classifyHeartbeatAt(c.lastHeartbeat, Date.now()));
     return {
       userId: c.userId ?? 0,
       email: c.userId ? (emailMap.get(c.userId) ?? null) : null,
@@ -618,8 +618,10 @@ router.get("/admin/cockpit/open-trades", async (req, res) => {
   const isOwner = op.role === "OWNER";
 
   const [positions, users] = await Promise.all([
-    db.select().from(arxLivePositionsTable).where(isNull(arxLivePositionsTable.closedAt))
-      .orderBy(desc(arxLivePositionsTable.openedAt)),
+    selectLiveOpenPositionsForAllUsers(livePositionColumns, {
+      basis: "UNCLOSED",
+      orderBy: [desc(livePositionColumns.openedAt)],
+    }),
     db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable),
   ]);
   const emailMap = new Map(users.map((u) => [u.id, u.email]));
@@ -666,9 +668,12 @@ router.get("/admin/cockpit/capital", async (req, res) => {
 
   const [poolRows, openAgg] = await Promise.all([
     db.select().from(strategyPoolsTable).orderBy(strategyPoolsTable.id).limit(1),
-    db.select({
-      floating: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)`,
-    }).from(arxLivePositionsTable).where(isNull(arxLivePositionsTable.closedAt)),
+    selectLiveOpenPositionsForAllUsers(
+      {
+        floating: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
+      },
+      { basis: "UNCLOSED" },
+    ),
   ]);
   const pool = poolRows[0];
   const nav = pool ? await getPoolNav(pool.id) : null;

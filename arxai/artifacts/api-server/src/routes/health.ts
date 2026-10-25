@@ -9,18 +9,19 @@
 //   notification unread count, and report counts. No tokens, no hashes,
 //   no other users' data.
 
+import { classifyHeartbeatAgeMs } from "../lib/brokerHub/freshness.js";
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter } from "express";
 import { HealthCheckResponse } from "@workspace/api-zod";
 import {
   db,
-  mt5ConnectionTable,
   tradingSessionsTable,
   userNotificationsTable,
   userReportsTable,
-  userRiskSettingsTable,
 } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
+import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
 
 const router: IRouter = Router();
 
@@ -56,20 +57,15 @@ router.get("/me/system-health", requireUser, async (req, res): Promise<void> => 
   const userId = req.authUser!.id;
   try {
     // Personal MT5 connection count (active only; never exposes apiKeyHash/tokens).
-    const mt5Rows = await db
-      .select({
-        id: mt5ConnectionTable.id,
-        status: mt5ConnectionTable.status,
-        lastHeartbeatAt: mt5ConnectionTable.lastHeartbeat,
-      })
-      .from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId));
+    const mt5Rows = (await listUserConnections(userId, { order: "oldest" }))
+      .map((c) => ({ id: c.id, status: c.status, lastHeartbeatAt: c.lastHeartbeat }));
 
     const now = Date.now();
     const personalMt5 = mt5Rows.map((r) => {
       const age = r.lastHeartbeatAt ? now - new Date(r.lastHeartbeatAt).getTime() : null;
+      const band = classifyHeartbeatAgeMs(age);
       const heartbeatHealth: "ok" | "stale" | "down" =
-        age == null ? "down" : age < 15_000 ? "ok" : age < 60_000 ? "stale" : "down";
+        band === "fresh" ? "ok" : band === "degraded" ? "stale" : "down";
       return { id: r.id, status: r.status, heartbeatHealth };
     });
 
@@ -84,11 +80,7 @@ router.get("/me/system-health", requireUser, async (req, res): Promise<void> => 
       .limit(5);
 
     // Personal risk-governor row (defaults if none yet).
-    const rg = await db
-      .select()
-      .from(userRiskSettingsTable)
-      .where(eq(userRiskSettingsTable.userId, userId))
-      .limit(1);
+    const rg = await readTraderRiskSettings(userId);
 
     // Unread notifications.
     const unreadRows = await db
@@ -130,7 +122,7 @@ router.get("/me/system-health", requireUser, async (req, res): Promise<void> => 
         sessionIds: activeSessions.map((s) => s.id),
       },
       riskGovernor: {
-        configured: rg.length > 0,
+        configured: rg != null,
         active: true,
         liveBlocked: true,
       },

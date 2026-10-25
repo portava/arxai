@@ -2,7 +2,7 @@
 // All endpoints return executionEnvironment="SIMULATOR". This is NEVER a real
 // broker quote feed and never claims to be.
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { readRoleFromRequest } from "../lib/security/middleware.js";
+import { requireAdmin } from "../lib/security/middleware.js";
 
 import { z } from "zod/v4";
 import { marketSimulator } from "../lib/marketSimulator.js";
@@ -12,15 +12,6 @@ const router = Router();
 // Admin-only gate for state-mutating simulator controls. Reads stay open
 // because simulator quotes/candles are tagged executionEnvironment=SIMULATOR
 // and never claim broker realism.
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = readRoleFromRequest(req);
-  if (role !== "ADMIN" && role !== "OWNER") {
-    res.status(403).json({ error: "Forbidden", requiredRole: "ADMIN" });
-    return;
-  }
-  next();
-}
-
 router.get("/market/symbols", (_req, res) => res.json({ symbols: marketSimulator.symbols(), executionEnvironment: "SIMULATOR" }));
 
 router.get("/market/quote/:symbol", (req, res) => {

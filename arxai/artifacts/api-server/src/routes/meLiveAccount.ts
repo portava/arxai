@@ -11,17 +11,15 @@
 // - When no allocation exists, we return zeros + an explicit honest note
 //   instead of fabricating a balance.
 
-import { Router, type Request, type Response } from "express";
-import { and, eq, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
+import { isHeartbeatAgeMsFresh } from "../lib/brokerHub/freshness.js";
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { getUserLiveBridge } from "../lib/brokerHub/connections.js";
+import { Router, type Request } from "express";
+import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
-import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
+import { readOpenPositions } from "../lib/positions/openPositions.js";
 import { isForexPair } from "../lib/mt5/contractSize.js";
-import {
-  db,
-  arxLivePositionsTable,
-  mt5ConnectionTable,
-  userSlotAllocationTable,
-} from "@workspace/db";
+import { db, userSlotAllocationTable } from "@workspace/db";
 import {
   isSnapshotReliable,
   classifyRow,
@@ -39,7 +37,6 @@ function uid(req: Request): number | null {
   return u?.id ?? null;
 }
 
-const HEARTBEAT_LIVE_MS = 20_000;
 
 // Conservative notional-based margin estimate used ONLY when EA does not
 // push per-position margin. Forex standard lot = 100,000 base units.
@@ -101,8 +98,7 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   // 2. Open positions for this user only.
   // Open exposure only (shared truth predicate) — reconciled/closed ghosts
   // excluded from the user's account totals.
-  const openPositions = await db.select().from(arxLivePositionsTable)
-    .where(openLiveExposureCondition(userId));
+  const openPositions = (await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE" })).map((p) => p.row);
 
   // 3. Realised P/L = sum of floatingPl on positions the broker CONFIRMED
   //    closed (a real CLOSE fill stamped closed_at). Reconciled ghosts
@@ -111,14 +107,18 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   //    realised close P/L (the EA never sent a close event), so summing it would
   //    fabricate realised P/L. Mirrors openLiveExposureCondition's reconcile
   //    filter on the closed side.
-  const closedRows = await db.select({
-    realised: sql<number>`coalesce(sum(${arxLivePositionsTable.floatingPl}), 0)`,
-  }).from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      isNotNull(arxLivePositionsTable.closedAt),
-      isNull(arxLivePositionsTable.reconcileState),
-    ));
+  const closedRows = await livePositionLedger.select(
+    {
+      realised: sql<number>`coalesce(sum(${livePositionColumns.floatingPl}), 0)`,
+    },
+    {
+      where: and(
+        eq(livePositionColumns.userId, userId),
+        isNotNull(livePositionColumns.closedAt),
+        isNull(livePositionColumns.reconcileState),
+      ),
+    },
+  );
   const realisedPnl = Number(closedRows[0]?.realised ?? 0);
 
   // 4. The user's own bridge connection (used for leverage + heartbeat
@@ -129,25 +129,15 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   // connection rows over time (old demo/live bridges, rotated tokens); reading
   // the lowest id would surface a long-dead bridge's heartbeat/leverage and
   // wrongly mark a live, actively-syncing account as stale.
-  const connRows = await db.select().from(mt5ConnectionTable)
-    .where(and(
-      eq(mt5ConnectionTable.userId, userId),
-      ne(mt5ConnectionTable.status, "revoked"),
-      // Live slot summary must reflect a LIVE/REAL bridge. Exclude demo bridges
-      // so a fresh demo connection can't masquerade as the live account's
-      // heartbeat/leverage. Keep unknown/null (not-yet-classified live bridge):
-      // a bare ne() would drop NULL rows under SQL three-valued logic, so OR in
-      // the null case explicitly even though the column is currently NOT NULL.
-      or(isNull(mt5ConnectionTable.accountType), ne(mt5ConnectionTable.accountType, "demo")),
-    ))
-    .orderBy(sql`${mt5ConnectionTable.lastHeartbeat} desc nulls last`)
-    .limit(1);
-  const conn = connRows[0];
+  // Live slot summary must reflect a LIVE/REAL bridge: demo bridges are
+  // excluded so a fresh demo connection can't masquerade as the live
+  // account's heartbeat/leverage; unclassified bridges still count.
+  const conn = await getUserLiveBridge(userId);
   const leverage = conn?.leverage ?? 100;
   const lastHeartbeat = conn?.lastHeartbeat ?? null;
   const heartbeatAgeMs = lastHeartbeat ? Date.now() - new Date(lastHeartbeat).getTime() : null;
-  const isLive = heartbeatAgeMs !== null && heartbeatAgeMs <= HEARTBEAT_LIVE_MS;
-  const isStale = heartbeatAgeMs !== null && heartbeatAgeMs > HEARTBEAT_LIVE_MS;
+  const isLive = isHeartbeatAgeMsFresh(heartbeatAgeMs);
+  const isStale = heartbeatAgeMs !== null && !isHeartbeatAgeMsFresh(heartbeatAgeMs);
 
   // 5. Freshness. The EA pushes a COMPLETE open-positions snapshot every ~5s,
   // so a row's lastSyncedAt is when the broker last confirmed it open. CRITICAL:

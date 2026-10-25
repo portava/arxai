@@ -38,7 +38,7 @@ import {
 } from "../data/chart/timeframes.js";
 import { scoreNewsRisk } from "../news/calendar/newsRiskScorer.js";
 import type { EconomicEvent } from "../news/calendar/economicEvents.js";
-import { isSupported, normalizeSymbol } from "./symbolNormalize.js";
+import { isSupported, normalizeSymbol } from "../instruments/index.js";
 import { getCache } from "../cache/cacheAdapter.js";
 
 // Namespace + TTL are intentionally hard-coded so the cache shape stays

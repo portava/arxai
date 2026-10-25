@@ -40,6 +40,12 @@ export interface PortfolioInputs {
   // Daily realized loss already booked, in account currency. Optional —
   // when present, escalates risk if combined with unrealized drawdown.
   dailyRealizedLoss?: number;
+  // Optional caps already resolved by the caller (the Risk Governor's limits
+  // in force). When given they replace the derived figures below:
+  //   maxOpenRiskPct     — instead of riskPerTradePct × maxOpenTrades,
+  //   dailyLossCapAmount — instead of accountBalance × maxDailyLossPct (null = no daily cap).
+  maxOpenRiskPct?: number;
+  dailyLossCapAmount?: number | null;
 }
 
 // ── Symbol → group mapping ────────────────────────────────────────────────
@@ -160,8 +166,10 @@ export function computePortfolioRisk(input: PortfolioInputs): PortfolioRiskSnaps
 
   // Max allowed total open risk: positions × per-trade limit, capped to 1×daily loss limit.
   const perTradeCapPct = input.riskPerTradePct;
-  const maxAllowedRiskPct = Math.min(perTradeCapPct * input.maxOpenTrades, input.maxDailyLossPct);
-  const dailyLossCapAmount = accountBalance * (input.maxDailyLossPct / 100);
+  const maxAllowedRiskPct = Math.min(input.maxOpenRiskPct ?? perTradeCapPct * input.maxOpenTrades, input.maxDailyLossPct);
+  const dailyLossCapAmount = input.dailyLossCapAmount !== undefined
+    ? (input.dailyLossCapAmount ?? 0)
+    : accountBalance * (input.maxDailyLossPct / 100);
 
   // Rule A — total open risk vs. cap.
   if (totalRiskPercent > maxAllowedRiskPct * 1.5) {

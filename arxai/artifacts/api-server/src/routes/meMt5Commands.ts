@@ -2,8 +2,9 @@
 // Allowed actions are READ-ONLY/SAFE only. Live order paths are explicitly
 // rejected with HTTP 403. Every route requires login and verifies the
 // target mt5_connection belongs to req.authUser.id.
+import { getUserConnection } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
-import { db, mt5CommandsTable, mt5ConnectionTable, tradingSessionsTable } from "@workspace/db";
+import { db, mt5CommandsTable, tradingSessionsTable } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -41,10 +42,7 @@ const CreateCommandBody = z.object({
 });
 
 async function ownConnection(userId: number, id: number) {
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(and(eq(mt5ConnectionTable.id, id), eq(mt5ConnectionTable.userId, userId)))
-    .limit(1);
-  return rows[0] ?? null;
+  return getUserConnection(userId, id);
 }
 
 function serialize(r: typeof mt5CommandsTable.$inferSelect) {
@@ -105,7 +103,7 @@ router.post("/me/mt5-connections/:id/commands", requireUser, async (req, res): P
     const action = body.action.toUpperCase();
     if (FORBIDDEN_ACTIONS.has(action)) {
       try {
-        const { logRiskEvent } = await import("./meRiskGovernor.js");
+        const { logRiskEvent } = await import("../lib/riskGovernor/riskEvents.js");
         await logRiskEvent({
           userId, eventType: "live_execution_blocked", severity: "critical", decision: "block",
           reason: `Blocked live action "${action}" — live trading is locked.`,

@@ -13,7 +13,8 @@
 //
 // Isolated test user (random high id); all seeded rows are removed in finally.
 
-import { and, desc, eq, isNotNull, isNull, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { readAttributedLivePositions as loadConfirmedOpen } from "../../artifacts/api-server/src/lib/positions/ledger.js";
 import {
   db, sharedTradeAttributionTable, arxLivePositionsTable,
 } from "@workspace/db";
@@ -26,32 +27,7 @@ function check(name: string, ok: boolean, detail = "") {
   else { fail += 1; console.log(`FAIL  ${name}  ${detail}`); } // eslint-disable-line no-console
 }
 
-// Replicates the /me/shared-account/positions truth query from meSharedAccount.ts.
-async function loadConfirmedOpen(userId: number) {
-  return db.select({
-    id: sharedTradeAttributionTable.id,
-    symbol: sharedTradeAttributionTable.symbol,
-    brokerTicket: arxLivePositionsTable.brokerTicket,
-    entryPrice: arxLivePositionsTable.entryPrice,
-    currentPrice: arxLivePositionsTable.currentPrice,
-    pnl: arxLivePositionsTable.floatingPl,
-    openedAt: arxLivePositionsTable.openedAt,
-  })
-    .from(sharedTradeAttributionTable)
-    .innerJoin(arxLivePositionsTable, and(
-      eq(arxLivePositionsTable.userId, sharedTradeAttributionTable.userId),
-      eq(arxLivePositionsTable.brokerTicket, sharedTradeAttributionTable.mt5PositionTicket),
-      isNull(arxLivePositionsTable.closedAt),
-      isNull(arxLivePositionsTable.reconcileState),
-    ))
-    .where(and(
-      eq(sharedTradeAttributionTable.userId, userId),
-      eq(sharedTradeAttributionTable.status, "open"),
-      isNotNull(sharedTradeAttributionTable.mt5PositionTicket),
-      ne(sharedTradeAttributionTable.mt5PositionTicket, ""),
-    ))
-    .orderBy(desc(arxLivePositionsTable.openedAt));
-}
+// Exercise the production ledger query, including its owner-and-ticket join.
 
 async function main() {
   const attrBase = {

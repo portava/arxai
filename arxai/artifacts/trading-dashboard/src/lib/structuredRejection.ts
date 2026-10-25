@@ -487,6 +487,11 @@ const CODE_META: Record<string, CodeMeta> = {
     rejectLayer: "backend-gate", fixableBy: "admin",
     suggestedFix: "Trades will resume once your operator re-enables live trading. Existing positions can still be closed or modified.",
   },
+  SAFETY_CORE_KILL_SWITCH_ENGAGED: {
+    userMessage: "Live trading is paused platform-wide by the safety kill switch.",
+    rejectLayer: "backend-gate", fixableBy: "admin",
+    suggestedFix: "Trades will resume once your operator releases the safety kill switch. Existing positions can still be closed.",
+  },
   LIVE_CONFIRMATION_REQUIRED: {
     userMessage: "Your account is approved, but Full Live Activation isn't complete yet.",
     rejectLayer: "backend-gate", fixableBy: "admin",

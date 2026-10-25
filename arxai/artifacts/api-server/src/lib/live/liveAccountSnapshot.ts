@@ -28,6 +28,7 @@
 //     snapshot carries a reconciliation discrepancy marker. The UI must surface
 //     "P/L under verification" — never show the stale figure as normal profit.
 
+import { ACCOUNT_SNAPSHOT_LIVE_MS, ACCOUNT_SNAPSHOT_FRESH_MS, ACCOUNT_SNAPSHOT_DELAYED_MS } from "../brokerHub/freshness.js";
 import { isSnapshotReliable, classifyRow } from "./positionFreshness.js";
 
 export type AccountMode = "LIVE_SHARED" | "PAPER" | "DEMO" | "UNKNOWN";
@@ -35,9 +36,9 @@ export type Freshness = "live" | "fresh" | "delayed" | "stale" | "unavailable";
 export type PlSource = "broker" | "computed" | "unavailable";
 
 // Default freshness bands (ms). Tunable by the caller.
-export const DEFAULT_LIVE_MS = 5_000;      // ≤5s → live
-export const DEFAULT_FRESH_MS = 30_000;    // ≤30s → fresh
-export const DEFAULT_DELAYED_MS = 120_000; // ≤2m → delayed; beyond → stale
+export const DEFAULT_LIVE_MS = ACCOUNT_SNAPSHOT_LIVE_MS;       // ≤5s → live
+export const DEFAULT_FRESH_MS = ACCOUNT_SNAPSHOT_FRESH_MS;     // ≤30s → fresh
+export const DEFAULT_DELAYED_MS = ACCOUNT_SNAPSHOT_DELAYED_MS; // ≤2m → delayed; beyond → stale
 
 // Tolerance for equity − balance vs summed open P/L reconciliation. Within
 // this band the figures are consistent (broker rounding, spread, unsettled

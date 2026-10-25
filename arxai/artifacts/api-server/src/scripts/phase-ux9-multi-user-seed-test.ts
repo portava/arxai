@@ -12,9 +12,10 @@
 // Usage:
 //   pnpm --filter @workspace/api-server exec tsx src/scripts/phase-ux9-multi-user-seed-test.ts
 
+import { createConnection, deleteFixtureConnections } from "../lib/brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
-  usersTable, mt5ConnectionTable, mt5CommandsTable,
+  usersTable, mt5CommandsTable,
   livePositionsTable, tradeActionRequestsTable,
   globalTradingSettingsTable, notificationsTable,
 } from "@workspace/db/schema";
@@ -77,16 +78,16 @@ async function main() {
     } as never).returning();
     createdUserIds.push(u1!.id, u2!.id);
 
-    const [c1] = await db.insert(mt5ConnectionTable).values({
+    const c1 = await createConnection({
       userId: u1!.id, connectionName: "UX9H u1 demo",
       accountNumber: `99000${stamp % 1000}1`, brokerName: "TestBroker",
       accountType: "demo", status: "connected",
-    } as never).returning();
-    const [c2] = await db.insert(mt5ConnectionTable).values({
+    } as never);
+    const c2 = await createConnection({
       userId: u2!.id, connectionName: "UX9H u2 demo",
       accountNumber: `99000${stamp % 1000}2`, brokerName: "TestBroker",
       accountType: "demo", status: "connected",
-    } as never).returning();
+    } as never);
     createdConnIds.push(c1!.id, c2!.id);
 
     // ── Seed: one OPEN command per user, same broker symbol+side ──
@@ -361,7 +362,7 @@ async function main() {
       if (createdCmdIds.length)
         await db.delete(mt5CommandsTable).where(inArray(mt5CommandsTable.id, createdCmdIds));
       if (createdConnIds.length)
-        await db.delete(mt5ConnectionTable).where(inArray(mt5ConnectionTable.id, createdConnIds));
+        await deleteFixtureConnections(createdConnIds);
       if (createdUserIds.length)
         await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
       // Restore global settings snapshot.

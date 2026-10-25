@@ -1,4 +1,4 @@
-// 10-step order guard chain.
+// 10-step order guard chain (plus 9b, the pre-trade Risk Governor).
 //
 // SAFETY (inviolable):
 // - The ONLY path that may insert status='APPROVED' into trade_command_audit_log.
@@ -10,13 +10,13 @@
 import { db } from "@workspace/db";
 import {
   tradeCommandAuditLogTable,
-  userRiskLimitsTable,
-  mt5ConnectionTable,
 } from "@workspace/db/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 import { getEnvelope } from "./safetyEnvelope.js";
+import { platformStop, preCheckStopRefusal } from "../safety/platformSwitches.js";
 import { resolveRouting, type RoutingDecision } from "./routingResolver.js";
 import { logger } from "../logger.js";
+import { enforcePreTradeRisk } from "../riskGovernor/enforce.js";
 
 export interface OrderRequest {
   userId: number;
@@ -46,6 +46,7 @@ export interface OrderGuardResult {
 // emergency_kill_switch=true). The guard chain below is the only path
 // that may emit status='APPROVED'.
 import { BROKER_PLACEMENT_LAYER_ENABLED } from "./brokerPlacement.js";
+import { readOperatorRiskLimits } from "../riskGovernor/limitSettings.js";
 const BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED =
   "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED" as const;
 
@@ -65,14 +66,56 @@ export function liveConfirmationGate(
   return null;
 }
 
+/** Window of the operational rate cap (gate 6b): rolling, not a trading day. */
+export const OPERATIONAL_RATE_CAP_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Refusal code of the operational rate cap (owner decision 9). Deliberately
+ * not "trades per day": it counts approved order-guard commands in a rolling
+ * 24 hours, which is a different measurement from the Risk Governor's
+ * daily-trade limit (RISK_GOVERNOR_BLOCK:trading_discipline).
+ */
+export function operationalRateCapRefusal(cap: number): string {
+  return `OPERATIONAL_RATE_CAP_REACHED:${cap}_APPROVED_COMMANDS_PER_ROLLING_24H`;
+}
+
+/**
+ * Gate 6b: this trader's APPROVED order-guard commands in the rolling window
+ * ending at `now`, against `cap` (the operator's max_trades_per_day; 0 or
+ * less = no cap). Returns the refusal code, or null.
+ */
+export async function operationalRateCapCheck(userId: number, cap: number, now: Date = new Date()): Promise<string | null> {
+  if (!(cap > 0)) return null;
+  const r = await db.select({ c: sql<number>`count(*)::int` })
+    .from(tradeCommandAuditLogTable)
+    .where(and(
+      eq(tradeCommandAuditLogTable.userId, userId),
+      gte(tradeCommandAuditLogTable.createdAt, new Date(now.getTime() - OPERATIONAL_RATE_CAP_WINDOW_MS)),
+      eq(tradeCommandAuditLogTable.status, "APPROVED"),
+    ));
+  const count = r[0]?.c ?? 0;
+  return count >= cap ? operationalRateCapRefusal(cap) : null;
+}
+
 export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResult> {
   const env = await getEnvelope(req.userId);
+  // Both install-wide stops, one read through the switch authority. Gate 4
+  // always enforced the platform emergency stop (on every mode); an order
+  // opens new risk, so the safety-core kill switch refuses it too — the
+  // pre-trade Risk Governor (gate 9b, tradingHalt) refuses it anyway.
+  const stop = preCheckStopRefusal(await platformStop(), {
+    own: "platform_emergency_stop",
+    opensNewRisk: true,
+    venue: req.mode === "SIMULATED" ? "PAPER" : req.mode,
+  });
   // Routing resolution runs early — its result feeds gate 5 (account_type)
   // and gates 8b/8c. The resolver itself is non-mutating except for the
   // virtual-account get-or-create in shared mode.
   const routing = await resolveRouting({ userId: req.userId, mode: req.mode });
   let connectionId: number | null = routing.connectionId;
   let accountType = routing.connectionId ? routing.accountType : env.accountType;
+  // Set by gate 6 from the operator's limits row; read by gate 6b.
+  let rateCap = 0;
 
   // Run gates. First failure short-circuits.
   const gates: Array<{ name: string; test: () => Promise<string | null> | string | null }> = [
@@ -102,9 +145,11 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
         return null;
       } },
 
-    // 4. Emergency kill switch check.
+    // 4. Platform stop check (emergency stop OR safety-core kill switch).
+    // The refusal code is unchanged for either source; the audit row's
+    // details carry which source refused (platformStopSources).
     { name: "kill_switch", test: () =>
-        env.emergencyKillSwitch ? "EMERGENCY_KILL_SWITCH_ACTIVE" : null },
+        stop.engaged ? "EMERGENCY_KILL_SWITCH_ACTIVE" : null },
 
     // 5. Account routing + type verification.
     //
@@ -133,9 +178,7 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
 
     // 6. Risk limit check.
     { name: "risk_limits", test: async () => {
-        const rows = await db.select().from(userRiskLimitsTable)
-          .where(eq(userRiskLimitsTable.userId, req.userId)).limit(1);
-        const lim = rows[0];
+        const lim = await readOperatorRiskLimits(req.userId);
         if (!lim) return "NO_RISK_LIMITS_CONFIGURED";
         if (req.lotSize > lim.maxLotSize) return `LOT_EXCEEDS_LIMIT:${lim.maxLotSize}`;
         const symbols = Array.isArray(lim.allowedSymbols) ? lim.allowedSymbols as string[] : [];
@@ -146,20 +189,18 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
         if (lim.allowedAccountType !== "both" && lim.allowedAccountType !== accountType && req.mode !== "SIMULATED") {
           return `ACCOUNT_TYPE_NOT_ALLOWED:${lim.allowedAccountType}`;
         }
-        if (lim.maxTradesPerDay > 0) {
-          const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          const r = await db.select({ c: sql<number>`count(*)::int` })
-            .from(tradeCommandAuditLogTable)
-            .where(and(
-              eq(tradeCommandAuditLogTable.userId, req.userId),
-              gte(tradeCommandAuditLogTable.createdAt, since),
-              eq(tradeCommandAuditLogTable.status, "APPROVED"),
-            ));
-          const count = r[0]?.c ?? 0;
-          if (count >= lim.maxTradesPerDay) return `MAX_TRADES_PER_DAY_REACHED:${lim.maxTradesPerDay}`;
-        }
+        rateCap = lim.maxTradesPerDay;
         return null;
       } },
+
+    // 6b. Operational rate cap (owner decision 9). NOT the daily-trade limit:
+    // it counts this guard's APPROVED commands in trade_command_audit_log over
+    // a rolling 24 hours, against the operator's max_trades_per_day. The
+    // daily-trade limit itself (trades on the governor's UTC trading day, from
+    // the governor's activity source, strictest of trader and operator caps)
+    // is decided by the Risk Governor at 9b. Both stay; neither replaces the
+    // other.
+    { name: "operational_rate_cap", test: () => operationalRateCapCheck(req.userId, rateCap) },
 
     // 7. Live confirmation check (pure helper — see liveConfirmationGate).
     { name: "live_confirmation", test: () => liveConfirmationGate(req.mode, req.confirmedByUser) },
@@ -190,6 +231,25 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
         if (req.mode === "SIMULATED") return null;
         if (!BROKER_PLACEMENT_LAYER_ENABLED) return BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED;
         return null;
+      } },
+
+    // 9b. Pre-trade Risk Governor — the 12 mandatory rules (lib/riskGovernor),
+    // last so only an order that would otherwise dispatch is evaluated. It
+    // writes its own user_risk_events row.
+    { name: "pre_trade_risk", test: async () => {
+        const risk = await enforcePreTradeRisk({
+          userId: req.userId,
+          venue: req.mode === "SIMULATED" ? "PAPER" : req.mode,
+          origin: req.requestedBy === "ai-assistant" ? "ruby" : req.requestedBy === "system" ? "automation" : "manual",
+          action: "OPEN",
+          symbol: req.symbol, side: req.side, lots: req.lotSize,
+          stopLoss: req.stopLoss ?? null, takeProfit: req.takeProfit ?? null,
+        }, {
+          connectionId: routing.connectionId,
+          virtualAccountId: routing.virtualAccountId,
+          auditContext: { caller: "admin_trading_order_guard" },
+        });
+        return risk.allowed ? null : `RISK_GOVERNOR_BLOCK:${risk.blockedBy.join(",") || "audit_unavailable"}`;
       } },
   ];
 
@@ -227,6 +287,7 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
       envelope: env,
       routing,
       gateResults: gates.map((g) => g.name),
+      platformStopSources: stop.sources,
       brokerPlacementLayerEnabled: BROKER_PLACEMENT_LAYER_ENABLED,
     },
     accountRoutingMode: routing.effectiveRoutingMode,

@@ -14,8 +14,8 @@
 //
 // Auth: requireUser resolves the per-user session from the `arx_user_session`
 // cookie — we mock `findUserBySessionToken` so a test cookie maps to a fake
-// user id. Role (for the projection) is selected with the dev-only
-// `x-security-role` header, exactly like the sibling RBAC route test.
+// user. The fake user carries its role (users.role), the one role ARX honours
+// for a signed-in caller: a cookie "u:<id>:<ROLE>" signs in that user.
 //
 // The heavy scanner internals (scanOnce + the async enrichment decorators) are
 // mocked to a deterministic 2-row result so the test is hermetic and fast; the
@@ -34,16 +34,16 @@ import type { User } from "@workspace/db";
 import type { ScannerOpportunity } from "../../lib/marketScanner.js";
 
 // ── Mock the per-user auth lookup BEFORE the router is imported ──────────────
-// A test cookie value "u:<id>" maps to a fake user carrying that numeric id, so
-// the per-user cooldown can be keyed independently per test.
+// A test cookie value "u:<id>[:<ROLE>]" maps to a fake user carrying that id
+// and role, so the per-user cooldown can be keyed independently per test.
 const realUserSessions = await import("../../lib/auth/userSessions.js");
 mock.module("../../lib/auth/userSessions.js", {
   namedExports: {
     ...realUserSessions,
     findUserBySessionToken: async (raw: string): Promise<User | null> => {
-      const m = /^u:(\d+)$/.exec(raw);
+      const m = /^u:(\d+)(?::([A-Z]+))?$/.exec(raw);
       if (!m) return null;
-      return { id: Number(m[1]) } as unknown as User;
+      return { id: Number(m[1]), role: m[2] ?? "USER" } as unknown as User;
     },
   },
 });
@@ -152,6 +152,10 @@ before(async () => {
   const app = express();
   app.use(express.json());
   app.use(cookieParser());
+  // Production mounts attachAuthUser globally (app.ts): the signed-in user's
+  // role is what every role gate reads.
+  const { attachAuthUser } = await import("../../lib/auth/middleware.js");
+  app.use(attachAuthUser);
   app.use("/api", scannerRouter);
   await new Promise<void>((resolve) => {
     server = app.listen(0, () => resolve());
@@ -175,8 +179,7 @@ function scanReq(userId: number, role: string) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      cookie: `arx_user_session=u:${userId}`,
-      "x-security-role": role,
+      cookie: `arx_user_session=u:${userId}:${role}`,
     },
     body: JSON.stringify({ universe: "all" }),
   });
@@ -211,8 +214,7 @@ for (const path of ["/api/market-scanner/start", "/api/market-scanner/stop"]) {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        cookie: "arx_user_session=u:90001",
-        "x-security-role": "TESTER",
+        cookie: "arx_user_session=u:90001:TESTER",
       },
       body: JSON.stringify({}),
     });

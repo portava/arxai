@@ -32,6 +32,7 @@ import {
   AlertTriangle, FileText, PlugZap, ChevronDown, ChevronRight, PinIcon,
 } from "lucide-react";
 import { ControlledLiveTestButton } from "@/components/live/ControlledLiveTestButton";
+import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 type Readiness = {
   ok: boolean;
@@ -256,6 +257,14 @@ export function LiveSharedAccountPanel() {
         "/api/admin/live-shared/activate-step", { confirm: true, ...body }),
     onSuccess: (r) => { setActionMsg(r.ok ? "Applied." : `Failed: ${r.error ?? "unknown"}${r.detail ? " — " + r.detail : ""}`); invalidateAll(); },
   });
+  // Owner decision 1: activation never releases a stop. The release is its own
+  // audited operation (POST /api/admin/trading/reset-kill, reason required).
+  const releaseMut = useMutation({
+    mutationFn: (reason: string) =>
+      jpost<{ ok: boolean; error?: string; detail?: string }>(
+        "/api/admin/trading/reset-kill", { reason }),
+    onSuccess: (r) => { setActionMsg(r.ok ? "Emergency stop released." : `Failed: ${r.error ?? "unknown"}${r.detail ? " — " + r.detail : ""}`); invalidateAll(); },
+  });
   const killMut = useMutation({
     mutationFn: (reason: string) =>
       jpost<{ ok: boolean; error?: string }>(
@@ -292,10 +301,10 @@ export function LiveSharedAccountPanel() {
     g.sharedLiveTradingEnabled && g.masterBridgeLiveEnabled && !g.emergencyKillSwitch;
 
   const hbAge = detectorQ.data?.bridge?.heartbeatAgeSec ?? null;
-  const detectorFresh = hbAge != null && hbAge <= 15 && detectorQ.data?.ok === true;
+  const detectorFresh = isHeartbeatAgeSecondsFresh(hbAge) && detectorQ.data?.ok === true;
   const detectorReason = detectorQ.data?.primaryReason ?? null;
 
-  const busyAny = activateMut.isPending || killMut.isPending || pinMut.isPending || firstTestMut.isPending;
+  const busyAny = activateMut.isPending || releaseMut.isPending || killMut.isPending || pinMut.isPending || firstTestMut.isPending;
 
   return (
     <div className="p-3 md:p-6 space-y-6">
@@ -406,7 +415,7 @@ export function LiveSharedAccountPanel() {
               </Button>
               {!detectorFresh && (
                 <div className="text-xs text-muted-foreground">
-                  Button enables automatically once a live EA heartbeat (≤15s) is detected.
+                  Button enables automatically once a live EA heartbeat (under 15s) is detected.
                 </div>
               )}
               <ConfirmActionDialog
@@ -513,11 +522,15 @@ export function LiveSharedAccountPanel() {
                 helper="Re-allows live dispatch once the conditions that triggered the kill have been resolved."
                 checked={!g.emergencyKillSwitch}
                 disabled={!g.emergencyKillSwitch}
-                busy={activateMut.isPending}
+                busy={releaseMut.isPending}
                 confirmTitle="Release kill switch?"
-                confirmDesc="This clears emergencyKillSwitch in global_trading_settings and writes an audit row. The 16-gate evaluator still applies on every dispatch."
+                confirmDesc="This releases the platform emergency stop on every settings row and writes an audit row. It does not release the safety-core kill switch or arm live execution. The 16-gate evaluator still applies on every dispatch."
                 confirmLabel="Release"
-                onConfirm={() => activateMut.mutate({ releaseKillSwitch: true })}
+                onConfirm={() => {
+                  const reason = window.prompt("Reason for releasing the emergency stop (audited, at least 4 characters):")?.trim() ?? "";
+                  if (reason.length < 4) { setActionMsg("Release cancelled: a reason of at least 4 characters is required."); return; }
+                  releaseMut.mutate(reason);
+                }}
               />
 
               <Separator className="my-3" />

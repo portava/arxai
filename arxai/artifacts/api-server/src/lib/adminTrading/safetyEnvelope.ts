@@ -8,16 +8,37 @@
 // This is the canonical source for the assistant envelope and every
 // trade-mode aware response. It does NOT itself authorize anything — the
 // order guard chain (./orderGuard.ts) is the only thing that may APPROVE.
+//
+// Both install-wide stops (owner decision 4, round 5): the stop is read
+// through the one platform-stop authority (platformStopWith over the same
+// switches read, so the emergency stop's missing-row rule is unchanged).
+//   emergencyKillSwitch   the platform emergency stop ONLY (truthful per source)
+//   safetyCoreKillSwitch  the safety-core kill switch ONLY
+//   platformStop*         the combined answer (either stop, fail closed)
+// New-risk permission (allowOrderExecution / liveLocked) is derived from the
+// combined answer. tradingMode and readOnlyMode are NOT changed by the safety
+// core: the guarded close (POST /me/trades/close) refuses on
+// tradingMode=DISABLED, and a close must stay governed exactly as before
+// (no blanket close refusal). The emergency stop keeps its early return.
 
+import { getConnection, getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
-  globalTradingSettingsTable,
   userTradingPermissionsTable,
-  mt5ConnectionTable,
   sharedMasterAccountsTable,
 } from "@workspace/db/schema";
-import { eq, asc, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { logger } from "../logger.js";
+import {
+  getGlobalTradingConfig,
+  loadPlatformSettings,
+  platformStopReport,
+  platformStopWith,
+  stopSourceEngaged,
+  type GlobalTradingConfig,
+  type PlatformStopReaders,
+  type PlatformStopSource,
+} from "../safety/platformSwitches.js";
 
 export type PlatformMode = "OFF" | "SIMULATED" | "DEMO" | "LIVE";
 export type UserTradingMode = "DISABLED" | "SIMULATED" | "DEMO" | "LIVE";
@@ -33,8 +54,14 @@ export interface SafetyEnvelope {
   globalLiveEnabled: boolean;
   // Whether this specific user is approved for live trading.
   userLiveApproved: boolean;
-  // Whether the global emergency kill switch is engaged.
+  // Whether the global emergency kill switch is engaged (that switch only).
   emergencyKillSwitch: boolean;
+  // Whether the safety-core kill switch is engaged (that switch only; unreadable = engaged).
+  safetyCoreKillSwitch: boolean;
+  // Either install-wide stop (lib/safety/platformSwitches.platformStop), sources and first reason.
+  platformStopEngaged: boolean;
+  platformStopSources: PlatformStopSource[];
+  platformStopReason: string | null;
   // Account type of the user's connected broker, if any.
   accountType: AccountType;
   // Phase 3.5 — effective routing for this user (after per-user override).
@@ -71,6 +98,10 @@ const FAIL_CLOSED: SafetyEnvelope = {
   globalLiveEnabled: false,
   userLiveApproved: false,
   emergencyKillSwitch: true,
+  safetyCoreKillSwitch: true,
+  platformStopEngaged: true,
+  platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
+  platformStopReason: null,
   accountType: "unknown",
   accountRoutingMode: "USER_OWNED_MT5",
   routingOverride: "inherit",
@@ -93,24 +124,14 @@ const FAIL_CLOSED: SafetyEnvelope = {
 // engaging the kill switch instantly reverts to fail-closed.
 import { BROKER_PLACEMENT_LAYER_ENABLED } from "./brokerPlacement.js";
 
-export async function getGlobalSettings() {
-  try {
-    const rows = await db.select().from(globalTradingSettingsTable)
-      .orderBy(asc(globalTradingSettingsTable.id)).limit(1);
-    if (rows[0]) return rows[0];
-    // Seed singleton fail-closed if missing.
-    const inserted = await db.insert(globalTradingSettingsTable).values({
-      platformMode: "OFF",
-      simulatedEnabled: true,
-      demoEnabled: false,
-      liveEnabled: false,
-      emergencyKillSwitch: true,
-    }).returning();
-    return inserted[0]!;
-  } catch (err) {
-    logger.warn({ err: String(err) }, "global_trading_settings read failed; using fail-closed default");
-    return null;
-  }
+/**
+ * The global settings WITHOUT the safety switches (routing, shared master,
+ * policy flags). Seeds the singleton when missing; null when unreadable.
+ * The switches (platform mode, venue enables, emergency stop, live arm) are
+ * read only through lib/safety/platformSwitches.ts.
+ */
+export async function getGlobalSettings(): Promise<GlobalTradingConfig | null> {
+  return getGlobalTradingConfig();
 }
 
 export async function getUserPermissions(userId: number) {
@@ -126,9 +147,7 @@ export async function getUserPermissions(userId: number) {
 
 async function getUserAccountType(userId: number): Promise<AccountType> {
   try {
-    const rows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
-    const c = rows[0];
+    const c = await getUserPrimaryConnection(userId);
     if (!c) return "unknown";
     const t = String((c as { accountType?: string | null }).accountType ?? "").toLowerCase();
     if (t === "demo") return "demo";
@@ -139,16 +158,22 @@ async function getUserAccountType(userId: number): Promise<AccountType> {
   }
 }
 
-export async function getEnvelope(userId: number | null | undefined): Promise<SafetyEnvelope> {
+export async function getEnvelope(
+  userId: number | null | undefined,
+  /** Tests inject a failing safety-core read; production reads the canonical row. */
+  readers: Pick<PlatformStopReaders, "readSafetyCore"> = {},
+): Promise<SafetyEnvelope> {
   if (!userId || userId <= 0) return FAIL_CLOSED;
 
-  const [g, p, userOwnedAccountType] = await Promise.all([
-    getGlobalSettings(),
+  const [settings, p, userOwnedAccountType] = await Promise.all([
+    loadPlatformSettings({ ifMissing: "seed" }),
     getUserPermissions(userId),
     getUserAccountType(userId),
   ]);
 
-  if (!g) return FAIL_CLOSED;
+  const g = settings.config;
+  const sw = settings.switches;
+  if (!g || !sw.readable) return FAIL_CLOSED;
 
   // Phase 3.5 — when this user is routed through a shared master, the
   // effective broker is the master, not their personal MT5 connection. The
@@ -169,7 +194,7 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
     // actually approve it. The order guard remains authoritative for
     // execution; this is defence-in-depth so the assistant/UI banner does
     // not overstate eligibility.
-    const pm = (g.platformMode as PlatformMode) ?? "OFF";
+    const pm: PlatformMode = sw.platformMode;
     const canBeLive = pm === "LIVE" && !!g.sharedLiveTradingEnabled && !!g.sharedLiveConnectionId;
     const candidateConnId = canBeLive ? g.sharedLiveConnectionId : g.sharedDemoConnectionId;
     const wantedType: AccountType | null = canBeLive ? "live" : g.sharedDemoConnectionId ? "demo" : null;
@@ -179,13 +204,11 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
           smActive: sharedMasterAccountsTable.isActive,
           smStatus: sharedMasterAccountsTable.status,
           smType: sharedMasterAccountsTable.accountType,
-          connType: mt5ConnectionTable.accountType,
         }).from(sharedMasterAccountsTable)
-          .innerJoin(mt5ConnectionTable,
-            eq(mt5ConnectionTable.id, sharedMasterAccountsTable.connectionId))
           .where(eq(sharedMasterAccountsTable.connectionId, candidateConnId))
           .limit(1);
-        const m = masterRows[0];
+        const masterConn = masterRows[0] ? await getConnection(candidateConnId) : null;
+        const m = masterRows[0] && masterConn ? { ...masterRows[0], connType: masterConn.accountType } : undefined;
         const connT = String(m?.connType ?? "").toLowerCase();
         const smT = String(m?.smType ?? "").toLowerCase();
         const validForLive = wantedType === "live"
@@ -203,10 +226,15 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
     }
   }
 
-  const emergencyKillSwitch = !!g.emergencyKillSwitch;
-  const platformMode = (g.platformMode as PlatformMode) ?? "OFF";
-  const globalLiveEnabled = !!g.liveEnabled && platformMode === "LIVE";
-  const globalDemoEnabled = !!g.demoEnabled && (platformMode === "DEMO" || platformMode === "LIVE");
+  // Both install-wide stops, one read (the emergency stop from the switches
+  // read above; the safety core added; an unreadable source is engaged).
+  const stop = await platformStopWith(sw, readers);
+  const emergencyKillSwitch = stopSourceEngaged(stop, "platform_emergency_stop");
+  const safetyCoreKillSwitch = stopSourceEngaged(stop, "safety_core_kill_switch");
+  const stopFields = { safetyCoreKillSwitch, ...platformStopReport(stop) };
+  const platformMode: PlatformMode = sw.platformMode;
+  const globalLiveEnabled = sw.venueOpen.LIVE;
+  const globalDemoEnabled = sw.venueOpen.DEMO;
 
   // Phase 3.5 routing shared across early-return paths.
   const globalRoutingEarly: AccountRoutingMode =
@@ -232,6 +260,7 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
     return {
       ...FAIL_CLOSED,
       ...routingFieldsEarly,
+      ...stopFields,
       globalLiveEnabled,
       userLiveApproved: !!p?.liveApproved,
       emergencyKillSwitch: true,
@@ -246,6 +275,7 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
     return {
       ...FAIL_CLOSED,
       ...routingFieldsEarly,
+      ...stopFields,
       emergencyKillSwitch: false,
       accountType,
       bannerLabel: "Trading Off",
@@ -258,6 +288,7 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
     return {
       ...FAIL_CLOSED,
       ...routingFieldsEarly,
+      ...stopFields,
       globalLiveEnabled,
       userLiveApproved: !!p?.liveApproved,
       emergencyKillSwitch: false,
@@ -297,8 +328,15 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
     bannerReason = "Simulator trading is active. No broker routing.";
   }
 
-  const liveLocked = !BROKER_PLACEMENT_LAYER_ENABLED || tradingMode !== "LIVE";
-  const allowOrderExecution = BROKER_PLACEMENT_LAYER_ENABLED && tradingMode === "LIVE";
+  // New-risk permission from the combined stop (owner decision 4). Here only
+  // the safety core can be engaged (the emergency stop returned above).
+  // tradingMode / readOnlyMode stay as they were, so closes are not refused.
+  const liveLocked = !BROKER_PLACEMENT_LAYER_ENABLED || tradingMode !== "LIVE" || stop.engaged;
+  const allowOrderExecution = BROKER_PLACEMENT_LAYER_ENABLED && tradingMode === "LIVE" && !stop.engaged;
+  if (stop.engaged) {
+    bannerLabel = "Emergency Trading Halt";
+    bannerReason = `${stop.reason ?? "An install-wide stop is engaged."} No new orders are accepted.`;
+  }
   const readOnlyMode = tradingMode === "DISABLED";
   const safetyMode: SafetyEnvelope["safetyMode"] =
     tradingMode === "DISABLED" ? "off" :
@@ -323,6 +361,7 @@ export async function getEnvelope(userId: number | null | undefined): Promise<Sa
     globalLiveEnabled,
     userLiveApproved: !!p.liveApproved,
     emergencyKillSwitch: false,
+    ...stopFields,
     accountType,
     accountRoutingMode: effectiveRouting,
     routingOverride,

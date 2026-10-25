@@ -14,10 +14,13 @@
 //   - Read-only. No mutation, no audit row, no trade path.
 //   - Counts only — never account numbers, IP addresses, tokens, or hashes.
 
+import { classifyHeartbeatAgeMs } from "../lib/brokerHub/freshness.js";
+import { listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, mt5ConnectionTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { enforceSensitiveAction } from "../lib/security/handshake.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 
@@ -39,8 +42,8 @@ const SAFETY_ENVELOPE = {
 // already the trusted source.
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { role?: string } }).authUser;
-  const role = String(u?.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u?.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_OR_OWNER_REQUIRED" });
     return null;
   }
@@ -78,14 +81,13 @@ router.get("/admin/runtime-health", async (req: Request, res: Response): Promise
     latestHeartbeatAgeSeconds: null as number | null,
   };
   try {
-    const rows = await db
-      .select({ lastHeartbeat: mt5ConnectionTable.lastHeartbeat })
-      .from(mt5ConnectionTable);
+    const rows = await listConnections({ order: "oldest" });
     let latest: number | null = null;
     for (const r of rows) {
       const age = r.lastHeartbeat ? now - new Date(r.lastHeartbeat).getTime() : null;
+      const band = classifyHeartbeatAgeMs(age);
       const health: "healthy" | "stale" | "down" =
-        age == null ? "down" : age < 15_000 ? "healthy" : age < 60_000 ? "stale" : "down";
+        band === "fresh" ? "healthy" : band === "degraded" ? "stale" : "down";
       bridge.total += 1;
       bridge[health] += 1;
       if (age != null && (latest == null || age < latest)) latest = age;

@@ -12,14 +12,13 @@ import {
   riskGovernorEvaluationsTable,
   paperOrdersTable,
   autopilotCyclesTable,
-  brokerReadonlyLogsTable,
-  brokerReadonlySnapshotsTable,
   dataImportsTable,
   postTradeDebriefsTable,
   learningEventsTable,
-  mistakePatternsTable,
   tradeDecisionLogsTable,
 } from "@workspace/db";
+import { listOwnMistakes } from "../learning/scopedMemory.js";
+import { listOwnerReadOnlyLogs, listOwnerReadOnlySnapshots } from "../brokerHub/readOnlySnapshots.js";
 import { desc, eq } from "drizzle-orm";
 import { notify, type NotifyResult } from "./service.js";
 import {
@@ -41,18 +40,25 @@ function ts(d: Date | null | undefined): string {
   return d ? String((d as Date).getTime()) : "0";
 }
 
-async function fire(
+// Ingest runs for one user: it reads that user's own source rows and files the
+// resulting notifications under them, mistake patterns included (learning
+// memory is per trader).
+async function fireAs(
   s: IngestStats,
   inp: NotifyInput | null,
   sourceEventId: string,
+  userId: number | null,
 ) {
   if (!inp) return;
   inp.sourceEventId = sourceEventId;
-  tally(s, await notify(inp, { idempotent: true }));
+  tally(s, await notify({ ...inp, userId }, { idempotent: true }));
 }
 
-export async function ingest(opts: { limitPerSource?: number; userId?: number } = {}) {
+export async function ingest(opts: { limitPerSource?: number; userId: number }) {
   const lim = opts.limitPerSource ?? 50;
+  const uid = opts.userId;
+  const fire = (s: IngestStats, inp: NotifyInput | null, sourceEventId: string, userId: number | null = uid) =>
+    fireAs(s, inp, sourceEventId, userId);
   const stats: IngestStats[] = [];
 
   // HH governor evaluations
@@ -67,7 +73,8 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
         hardBlocks: (r.hardBlocks as Array<{ code: string; severity: string; message: string }>) ?? [],
         metrics: (r.metrics as { dailyPnl?: number; dailyLossLimit?: number }) ?? {},
       });
-      await fire(s, inp, `HH:eval:${r.governorId}:${ts(r.createdAt)}`);
+      // Governor evaluations are install-wide (no owner column) — system-wide.
+      await fire(s, inp, `HH:eval:${r.governorId}:${ts(r.createdAt)}`, null);
     }
     stats.push(s);
   }
@@ -75,7 +82,7 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
   // EE paper orders
   {
     const s: IngestStats = { source: "EE:paper_orders", scanned: 0, created: 0, updated: 0, skipped: 0 };
-    const rows = await db.select().from(paperOrdersTable).orderBy(desc(paperOrdersTable.createdAt)).limit(lim);
+    const rows = await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, uid)).orderBy(desc(paperOrdersTable.createdAt)).limit(lim);
     for (const r of rows) {
       await fire(s,
         rulePaperExecution({ paperOrderId: r.id, event: "OPENED", symbol: r.symbol ?? undefined }),
@@ -95,7 +102,7 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
   // FF autopilot cycles
   {
     const s: IngestStats = { source: "FF:autopilot_cycles", scanned: 0, created: 0, updated: 0, skipped: 0 };
-    const rows = await db.select().from(autopilotCyclesTable).orderBy(desc(autopilotCyclesTable.createdAt)).limit(lim);
+    const rows = await db.select().from(autopilotCyclesTable).where(eq(autopilotCyclesTable.userId, uid)).orderBy(desc(autopilotCyclesTable.createdAt)).limit(lim);
     for (const r of rows) {
       const cycleId = r.autopilotCycleId;
       const status = (r.status ?? "").toString().toUpperCase();
@@ -114,7 +121,7 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
   // BB debriefs
   {
     const s: IngestStats = { source: "BB:post_trade_debriefs", scanned: 0, created: 0, updated: 0, skipped: 0 };
-    const rows = await db.select().from(postTradeDebriefsTable).orderBy(desc(postTradeDebriefsTable.createdAt)).limit(lim);
+    const rows = await db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, uid)).orderBy(desc(postTradeDebriefsTable.createdAt)).limit(lim);
     for (const r of rows) {
       await fire(s, ruleDebrief({ debriefId: r.id, event: "CREATED", tradeId: r.tradeId ?? undefined }),
         `BB:created:${r.id}:${ts(r.createdAt)}`);
@@ -125,7 +132,7 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
   // CC learning events
   {
     const s: IngestStats = { source: "CC:learning_events", scanned: 0, created: 0, updated: 0, skipped: 0 };
-    const rows = await db.select().from(learningEventsTable).orderBy(desc(learningEventsTable.createdAt)).limit(lim);
+    const rows = await db.select().from(learningEventsTable).where(eq(learningEventsTable.userId, uid)).orderBy(desc(learningEventsTable.createdAt)).limit(lim);
     for (const r of rows) {
       await fire(s, ruleLearning({ learningEventId: r.id, event: "PROCESSED", symbol: r.symbol ?? undefined }),
         `CC:processed:${r.id}:${ts(r.createdAt)}`);
@@ -136,7 +143,8 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
   // CC mistake patterns rising
   {
     const s: IngestStats = { source: "CC:mistake_patterns", scanned: 0, created: 0, updated: 0, skipped: 0 };
-    const rows = await db.select().from(mistakePatternsTable).orderBy(desc(mistakePatternsTable.updatedAt)).limit(lim);
+    // Only this trader's own patterns: another trader's mistakes are not theirs to see.
+    const rows = await listOwnMistakes(uid, { limit: lim });
     for (const r of rows) {
       if ((r.count ?? 0) >= 3) {
         await fire(s,
@@ -157,7 +165,8 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
         importId: r.importId, status: r.status,
         warnings: (r.warnings as string[]) ?? [], errors: (r.errors as string[]) ?? [],
       });
-      await fire(s, inp, `KK:import:${r.importId}:${r.status}:${ts(r.createdAt)}`);
+      // data_imports has no owner column — system-wide.
+      await fire(s, inp, `KK:import:${r.importId}:${r.status}:${ts(r.createdAt)}`, null);
     }
     stats.push(s);
   }
@@ -168,9 +177,7 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
     // Broker diagnostics are private per-user data. A missing owner scopes to
     // no real user (0), so background/legacy callers fail closed.
     const brokerOwnerId = opts.userId ?? 0;
-    const rows = await db.select().from(brokerReadonlyLogsTable)
-      .where(eq(brokerReadonlyLogsTable.userId, brokerOwnerId))
-      .orderBy(desc(brokerReadonlyLogsTable.createdAt)).limit(lim);
+    const rows = await listOwnerReadOnlyLogs(brokerOwnerId, lim, "createdAt");
     for (const r of rows) {
       if (r.eventType === "BROKER_MODE_UNSAFE" || (r.severity === "CRITICAL" && /BROKER_MODE/i.test(r.message))) {
         const det = (r.details as Record<string, unknown>) ?? {};
@@ -189,9 +196,7 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
   {
     const s: IngestStats = { source: "KK:broker_readonly_snapshots", scanned: 0, created: 0, updated: 0, skipped: 0 };
     const brokerOwnerId = opts.userId ?? 0;
-    const rows = await db.select().from(brokerReadonlySnapshotsTable)
-      .where(eq(brokerReadonlySnapshotsTable.userId, brokerOwnerId))
-      .orderBy(desc(brokerReadonlySnapshotsTable.createdAt)).limit(lim);
+    const rows = await listOwnerReadOnlySnapshots(brokerOwnerId, lim, "createdAt");
     for (const r of rows) {
       const inp = ruleBroker({ event: "SNAPSHOT_CREATED", snapshotId: r.snapshotId });
       if (inp) {
@@ -206,7 +211,7 @@ export async function ingest(opts: { limitPerSource?: number; userId?: number } 
   // AA decisions
   {
     const s: IngestStats = { source: "AA:trade_decision_logs", scanned: 0, created: 0, updated: 0, skipped: 0 };
-    const rows = await db.select().from(tradeDecisionLogsTable).orderBy(desc(tradeDecisionLogsTable.createdAt)).limit(lim);
+    const rows = await db.select().from(tradeDecisionLogsTable).where(eq(tradeDecisionLogsTable.userId, uid)).orderBy(desc(tradeDecisionLogsTable.createdAt)).limit(lim);
     for (const r of rows) {
       const inp = ruleAADecision({
         decisionId: r.id, symbol: r.symbol ?? undefined,

@@ -16,8 +16,13 @@
 //
 // Mount path: /api/me/live/*
 
+import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
+import { getUserLiveSnapshotMarkerMs, getUserAccountConnection, listUserConnections } from "../lib/brokerHub/connections.js";
+import { accountFiguresOf, connectionAccountSnapshot } from "../lib/brokerHub/accountSnapshot.js";
 import { Router, type Request, type Response } from "express";
-import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
   evaluateLiveArmingGate,
@@ -34,16 +39,13 @@ import {
   ARX_LIVE_HARD_MAX_CLUSTER_POSITIONS,
 } from "../lib/live/liveArming.js";
 import {
-  createLiveDraft,
-  createLiveOpsDraft,
-  confirmLiveCommand,
-  dispatchLiveCommand,
   cancelLiveCommand,
   listMyLiveCommands,
   getMyLiveCommand,
   getOrCreateUserSettings,
   updateUserSettings,
 } from "../lib/live/liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipeline.js";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
 import { ARX_LOCK_NS, withTxAdvisoryLock } from "../lib/concurrency/advisoryLock.js";
 import {
@@ -57,12 +59,13 @@ import {
   resolveLivePositionVisibility,
   ACCOUNT_NOT_IN_LIVE_MODE,
 } from "../lib/modeScope/livePositionVisibility.js";
-import { db, arxLiveCommandsTable, arxLivePositionsTable, mt5ConnectionTable } from "@workspace/db";
+import { db, arxLiveCommandsTable } from "@workspace/db";
 import {
   composeInvestorBalance,
   fetchInvestorBalanceParts,
   toInvestorLiveBalanceWire,
 } from "../lib/live/investorLiveBalance.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -74,7 +77,7 @@ function uid(req: Request): number | null {
 }
 function isAdmin(req: Request): boolean {
   const u = (req as Request & { authUser?: { role?: string } }).authUser;
-  return u?.role === "ADMIN" || u?.role === "OWNER";
+  return operatorRoleFromSession(u?.role) != null;
 }
 
 const SAFETY_ENVELOPE = {
@@ -231,7 +234,7 @@ router.post("/me/live/commands", requireUser, async (req, res) => {
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const b = req.body ?? {};
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.ip;
-  const result = await createLiveDraft({
+  const result = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId,
     commandType: b.commandType,
     symbol: String(b.symbol ?? ""),
@@ -251,7 +254,7 @@ router.post("/me/live/commands", requireUser, async (req, res) => {
 router.post("/me/live/commands/:commandId/confirm", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const result = await confirmLiveCommand({ userId, commandId: String(req.params.commandId ?? "") });
+  const result = await confirmTrade({ mode: "LIVE" }, { userId, commandId: String(req.params.commandId ?? "") });
   res.status(result.ok ? 200 : 409).json({ ...result, ...envelope() });
 });
 
@@ -259,7 +262,7 @@ router.post("/me/live/commands/:commandId/dispatch", requireUser, async (req, re
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const locked = await withUserSubmitLock(userId, res, () =>
-    dispatchLiveCommand({ userId, commandId: String(req.params.commandId ?? "") }));
+    dispatchTrade({ mode: "LIVE" }, { userId, commandId: String(req.params.commandId ?? "") }));
   if (!locked.ran) return;
   // Phase B: result.ok may be true (PASS path → SENT_TO_MT5_LIVE) or false
   // (BLOCKED with the exact failing gate reason). Surface 200 either way so
@@ -334,8 +337,7 @@ router.get("/me/live/positions", requireUser, async (req, res) => {
 
   // Admin diagnostics may request stale rows too via ?includeStale=1.
   const includeStale = req.query.includeStale === "1" || req.query.includeStale === "true";
-  const allRows = await db.select().from(arxLivePositionsTable)
-    .where(eq(arxLivePositionsTable.userId, userId));
+  const allRows = await livePositionLedger.read({ where: eq(livePositionColumns.userId, userId) });
 
   // Position visibility rule (see positionFreshness.ts). A stale lastSyncedAt
   // NEVER hides a real open position on its own. A stale/missing row is only
@@ -353,15 +355,7 @@ router.get("/me/live/positions", requireUser, async (req, res) => {
   // book — NOT by the newest row timestamp (which would decay to unreliable on
   // a flat broker and pin closed rows on screen). Max across the user's
   // non-revoked, non-demo bridges so any live bridge counts.
-  const snapMarkerRows = await db
-    .select({ t: sql<string | null>`max(${mt5ConnectionTable.lastPositionsSnapshotAt})` })
-    .from(mt5ConnectionTable)
-    .where(and(
-      eq(mt5ConnectionTable.userId, userId),
-      ne(mt5ConnectionTable.status, "revoked"),
-      or(isNull(mt5ConnectionTable.accountType), ne(mt5ConnectionTable.accountType, "demo")),
-    ));
-  const snapshotAtMs = snapMarkerRows[0]?.t ? new Date(snapMarkerRows[0].t).getTime() : null;
+  const snapshotAtMs = await getUserLiveSnapshotMarkerMs(userId);
   const snapshotReliable = isSnapshotReliable(snapshotAtMs, STALE_MS, now);
   const classifyOf = (r: (typeof allRows)[number]) =>
     classifyRow(r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : null, { windowMs: STALE_MS, now, snapshotReliable });
@@ -425,13 +419,14 @@ router.post("/me/live/positions/:ticket/close", requireUser, async (req, res) =>
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
   const ticket = String(req.params.ticket ?? "");
   req.log.info({ action: "CLOSE_TRADE_REQUESTED", userId, ticket, scope: "live" }, "trade.close.requested");
-  const rows = await db.select().from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), eq(arxLivePositionsTable.brokerTicket, ticket)))
-    .limit(1);
+  const rows = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, ticket)),
+    limit: 1,
+  });
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND" }); return; }
 
-  const draft = await createLiveOpsDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId, commandType: "CLOSE_LIVE_POSITION",
     brokerTicket: ticket, symbol: pos.symbol, side: pos.side as "BUY" | "SELL",
     volume: Number(pos.volume), sourcePage: "LIVE_POSITIONS_CLOSE",
@@ -443,9 +438,9 @@ router.post("/me/live/positions/:ticket/close", requireUser, async (req, res) =>
   // P0-1 — confirm + dispatch run inside ONE per-user lock scope so a second
   // close request for the same ticket cannot interleave between them.
   const locked = await withUserSubmitLock(userId, res, async () => {
-    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     if (!conf.ok) return { stage: "confirm" as const, result: conf };
-    const d = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const d = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     return { stage: "dispatch" as const, result: d };
   });
   if (!locked.ran) return;
@@ -477,11 +472,7 @@ router.post("/me/live/positions/:ticket/close", requireUser, async (req, res) =>
 router.post("/me/live/positions/close-all", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const open = await db.select().from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      isNull(arxLivePositionsTable.closedAt),
-    ));
+  const open = await selectLiveOpenPositions(livePositionColumns, { userId, basis: "UNCLOSED" });
   req.log.info({ action: "CLOSE_ALL_REQUESTED", userId, openCount: open.length }, "trade.close-all.requested");
   // P0-1 — the WHOLE sweep runs in one per-user lock scope. Locking each
   // iteration instead would let a concurrent single-ticket close slot in
@@ -494,7 +485,7 @@ router.post("/me/live/positions/close-all", requireUser, async (req, res) => {
         results.push({ ticket: String(pos.id), ok: false, reason: "NO_BROKER_TICKET" });
         continue;
       }
-      const draft = await createLiveOpsDraft({
+      const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
         userId, commandType: "CLOSE_LIVE_POSITION",
         brokerTicket: ticket, symbol: pos.symbol, side: pos.side as "BUY" | "SELL",
         volume: Number(pos.volume), sourcePage: "LIVE_POSITIONS_CLOSE_ALL",
@@ -503,12 +494,12 @@ router.post("/me/live/positions/close-all", requireUser, async (req, res) => {
         results.push({ ticket, ok: false, reason: (draft as { reason?: string }).reason });
         continue;
       }
-      const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+      const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
       if (!conf.ok) {
         results.push({ ticket, ok: false, reason: (conf as { reason?: string }).reason });
         continue;
       }
-      const disp = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+      const disp = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
       const ok = (disp as { ok?: boolean }).ok === true;
       results.push({ ticket, ok, reason: ok ? undefined : ((disp as { primaryReason?: string; reason?: string }).primaryReason ?? (disp as { reason?: string }).reason) });
     }
@@ -532,13 +523,14 @@ router.post("/me/live/positions/:ticket/modify", requireUser, async (req, res) =
   if (newSL == null && newTP == null) {
     res.status(400).json({ error: "NO_CHANGES", detail: "Provide newStopLoss or newTakeProfit" }); return;
   }
-  const rows = await db.select().from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), eq(arxLivePositionsTable.brokerTicket, ticket)))
-    .limit(1);
+  const rows = await livePositionLedger.read({
+    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, ticket)),
+    limit: 1,
+  });
   const pos = rows[0];
   if (!pos) { res.status(404).json({ error: "POSITION_NOT_FOUND" }); return; }
 
-  const draft = await createLiveOpsDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId, commandType: "MODIFY_LIVE_SLTP",
     brokerTicket: ticket, symbol: pos.symbol, side: pos.side as "BUY" | "SELL",
     volume: Number(pos.volume), newStopLoss: newSL, newTakeProfit: newTP,
@@ -550,9 +542,9 @@ router.post("/me/live/positions/:ticket/modify", requireUser, async (req, res) =
   }
   // P0-1 — confirm + dispatch share ONE per-user lock scope.
   const locked = await withUserSubmitLock(userId, res, async () => {
-    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     if (!conf.ok) return { stage: "confirm" as const, result: conf };
-    const d = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const d = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     return { stage: "dispatch" as const, result: d };
   });
   if (!locked.ran) return;
@@ -596,7 +588,7 @@ router.post("/me/live/controlled-test-trigger", requireUser, async (req, res) =>
     return;
   }
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.ip;
-  const draft = await createLiveDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId,
     commandType: "PLACE_LIVE_MARKET_ORDER",
     symbol: "EURUSD",          // pinned
@@ -614,9 +606,9 @@ router.post("/me/live/controlled-test-trigger", requireUser, async (req, res) =>
   // sends real live money; a double-submitted controlled test must not be able
   // to interleave two dispatches of the same command.
   const locked = await withUserSubmitLock(userId, res, async () => {
-    const conf = await confirmLiveCommand({ userId, commandId: draft.command.commandId });
+    const conf = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     if (!conf.ok) return { stage: "confirm" as const, result: conf };
-    const d = await dispatchLiveCommand({ userId, commandId: draft.command.commandId });
+    const d = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
     return { stage: "dispatch" as const, result: d };
   });
   if (!locked.ran) return;
@@ -664,13 +656,13 @@ router.get("/me/live/command-status/:commandId", requireUser, async (req, res) =
       (typeof payload?.["brokerTicket"] === "string" ? String(payload["brokerTicket"]) : null);
     let positionClosedAt: Date | string | null = null;
     if (targetTicket) {
-      const posRows = await db.select({ closedAt: arxLivePositionsTable.closedAt })
-        .from(arxLivePositionsTable)
-        .where(and(
-          eq(arxLivePositionsTable.userId, userId),
-          eq(arxLivePositionsTable.brokerTicket, targetTicket),
-        ))
-        .limit(1);
+      const posRows = await livePositionLedger.select(
+        { closedAt: livePositionColumns.closedAt },
+        {
+          where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, targetTicket)),
+          limit: 1,
+        },
+      );
       positionClosedAt = posRows[0]?.closedAt ?? null;
     }
     const verdict = resolveLiveCloseConfirmation({
@@ -755,8 +747,7 @@ router.put("/me/live/settings", requireUser, async (req, res) => {
 router.get("/me/live/bridge-debug", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
+  const rows = await listUserConnections(userId);
   const nonRevoked = rows.filter((r) => !r.tokenRevokedAt);
   const byFreshness = (a: typeof nonRevoked[number], b: typeof nonRevoked[number]) => {
     const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;
@@ -811,7 +802,7 @@ router.get("/me/live/bridge-debug", requireUser, async (req, res) => {
       bridgeVersion: caps.bridgeVersion ?? null,
       lastHeartbeatAt: picked.lastHeartbeat?.toISOString() ?? null,
       heartbeatAgeSeconds: hbAgeSec,
-      heartbeatFresh: hbAgeSec !== null && hbAgeSec <= 15,
+      heartbeatFresh: isHeartbeatAgeSecondsFresh(hbAgeSec),
       readOnlyMode: picked.readOnlyMode,
       // EA v1.27 reported runtime fields (null = EA build pre-dates the
       // heartbeat extension or did not include the field on this poll)
@@ -858,8 +849,7 @@ router.get("/me/live/bridge-debug", requireUser, async (req, res) => {
 router.get("/me/live/ea-inputs", requireUser, async (req, res) => {
   const userId = uid(req);
   if (!userId) { res.status(401).json({ error: "AUTH_REQUIRED" }); return; }
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
+  const rows = await listUserConnections(userId);
   const nonRevoked = rows.filter((r) => !r.tokenRevokedAt);
   const fresh = nonRevoked
     .slice()
@@ -915,8 +905,7 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
   const { buildLiveAccountSnapshot } = await import("../lib/live/liveAccountSnapshot.js");
 
   // Bridge state — classify from the freshest non-revoked connection's heartbeat.
-  const connRows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
+  const connRows = await listUserConnections(userId);
   const nonRevoked = connRows.filter((r) => !r.tokenRevokedAt);
   const freshestConn = nonRevoked
     .slice()
@@ -941,13 +930,18 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
   } else {
     const hbAt = freshestConn.lastHeartbeat ? new Date(freshestConn.lastHeartbeat).getTime() : null;
     const ageMs = hbAt != null ? Math.max(0, now - hbAt) : null;
+    // Shared heartbeat policy on the raw age: fresh → live, degraded →
+    // delayed, offline → stale; missing / future-dated → stale.
+    const band = classifyHeartbeatAgeMs(hbAt != null ? now - hbAt : null);
     let state: "live" | "delayed" | "stale" | "offline";
     let stateReason: string | null = null;
     if (ageMs == null) {
       state = "stale"; stateReason = "Bridge has never sent a heartbeat";
-    } else if (ageMs <= 15_000) {
+    } else if (band === "unknown") {
+      state = "stale"; stateReason = "Bridge heartbeat time is invalid (in the future)";
+    } else if (band === "fresh") {
       state = "live";
-    } else if (ageMs <= 60_000) {
+    } else if (band === "degraded") {
       state = "delayed"; stateReason = `Last heartbeat ${Math.round(ageMs / 1000)}s ago`;
     } else {
       state = "stale"; stateReason = `Last heartbeat ${Math.round(ageMs / 1000)}s ago`;
@@ -990,16 +984,13 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
   }
 
   // Fetch open positions for this user — same query as account-stream.
-  const posRows = await db.select().from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)));
+  const posRows = await selectLiveOpenPositions(livePositionColumns, { userId, basis: "UNCLOSED" });
 
   // Freshest account-synced connection for equity/balance.
-  const equityRows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId))
-    .orderBy(sql`${mt5ConnectionTable.accountSyncedAt} DESC NULLS LAST`)
-    .limit(1);
-  const conn = equityRows[0];
-  const acctSynced = conn?.accountSyncedAt ?? null;
+  const conn = await getUserAccountConnection(userId);
+  // Authoritative per-connection snapshot (owner decision 16): the figures the
+  // EA delivered, all-null when never synced (never a default 0).
+  const acct = accountFiguresOf(connectionAccountSnapshot(conn));
 
   const snapshot = buildLiveAccountSnapshot({
     userId,
@@ -1012,13 +1003,7 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
       lastSyncedAtMs: r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : null,
     })),
     quotes: undefined,
-    account: {
-      equity: acctSynced ? (conn?.accountEquity ?? null) : null,
-      balance: acctSynced ? (conn?.accountBalance ?? null) : null,
-      margin: acctSynced ? (conn?.margin ?? null) : null,
-      freeMargin: acctSynced ? (conn?.freeMargin ?? null) : null,
-      syncedAtMs: acctSynced ? new Date(acctSynced).getTime() : null,
-    },
+    account: acct,
     lastPositionsSnapshotAtMs: conn?.lastPositionsSnapshotAt
       ? new Date(conn.lastPositionsSnapshotAt).getTime()
       : null,
@@ -1046,16 +1031,16 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
     checkedAt: new Date(now).toISOString(),
     bridgeState,
     account: {
-      balance: acctSynced ? (conn?.accountBalance ?? null) : null,
-      equity: acctSynced ? (conn?.accountEquity ?? null) : null,
-      margin: acctSynced ? (conn?.margin ?? null) : null,
-      freeMargin: acctSynced ? (conn?.freeMargin ?? null) : null,
+      balance: acct.balance,
+      equity: acct.equity,
+      margin: acct.margin,
+      freeMargin: acct.freeMargin,
       // marginLevel is not a stored connection column; the SSE snapshot also
       // never derives it, so keep it null here rather than fabricate.
       marginLevel: snapshot.marginLevel ?? null,
       openPL: snapshot.openPL,
       openPositionsCount: snapshot.openPositionsCount,
-      syncedAtMs: acctSynced ? new Date(acctSynced).getTime() : null,
+      syncedAtMs: acct.syncedAtMs,
       freshness: snapshot.freshness,
     },
     positions: snapshot.positions,
@@ -1140,21 +1125,18 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
         });
         return;
       }
-      const rows = await db.select().from(arxLivePositionsTable)
-        .where(and(eq(arxLivePositionsTable.userId, userId), isNull(arxLivePositionsTable.closedAt)));
+      const rows = await selectLiveOpenPositions(livePositionColumns, { userId, basis: "UNCLOSED" });
       // Deterministically pick the user's most-recently account-synced
       // connection (NULLS LAST) so a multi-connection user never reads a stale
       // row's figures over a freshly-synced one.
-      const equityRows = await db.select().from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.userId, userId))
-        .orderBy(sql`${mt5ConnectionTable.accountSyncedAt} DESC NULLS LAST`)
-        .limit(1);
-      const conn = equityRows[0];
+      const conn = await getUserAccountConnection(userId);
       // Honesty: accountBalance/equity/margin/freeMargin default to 0 in the DB,
       // so an existing-but-never-synced connection would emit fabricated zeros.
       // Only surface figures the EA has actually delivered (accountSyncedAt
       // present); otherwise null. Never paint a default 0 as a real broker value.
-      const acctSynced = conn?.accountSyncedAt ?? null;
+      // The authoritative per-connection snapshot (owner decision 16) applies
+      // exactly that rule.
+      const acct = accountFiguresOf(connectionAccountSnapshot(conn));
       const snapshot = buildLiveAccountSnapshot({
         userId,
         accountMode: "LIVE_SHARED",
@@ -1171,13 +1153,7 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
         // Real account figures the EA pushed via heartbeat / sync-account.
         // syncedAtMs is the dedicated account-sync marker (not updatedAt) so the
         // client can honestly flag equity as stale when it ages past 60s.
-        account: {
-          equity: acctSynced ? (conn?.accountEquity ?? null) : null,
-          balance: acctSynced ? (conn?.accountBalance ?? null) : null,
-          margin: acctSynced ? (conn?.margin ?? null) : null,
-          freeMargin: acctSynced ? (conn?.freeMargin ?? null) : null,
-          syncedAtMs: acctSynced ? new Date(acctSynced).getTime() : null,
-        },
+        account: acct,
         // Bridge's last complete positions snapshot — used by the adapter to
         // classify broker-confirmed-absent rows for display exclusion. The
         // select-all query already fetches this column; access it directly.

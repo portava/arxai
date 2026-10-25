@@ -139,6 +139,8 @@ after(async () => {
 });
 
 // ── (A) Testing Lab: submit a run → it completes → results appear ────────────
+// Backtest runs belong to the signed-in trader, so these calls carry the
+// session (production's global auth gate already required one).
 
 interface RunDto {
   id: number;
@@ -161,7 +163,7 @@ let runId: number;
 let createdRun: RunDto;
 
 test("POST /backtest-runs completes a deterministic run with real metrics", async () => {
-  const res = await postJson("/api/backtest-runs", false, {
+  const res = await postJson("/api/backtest-runs", true, {
     strategyId: "trendContinuation",
     symbol: "EURUSD",
     timeframe: "M1",
@@ -187,13 +189,13 @@ test("POST /backtest-runs completes a deterministic run with real metrics", asyn
 
 test("the completed run's results appear via list, detail, and trades", async () => {
   // List surfaces the run.
-  const listRes = await req("/api/backtest-runs?limit=200", false);
+  const listRes = await req("/api/backtest-runs?limit=200", true);
   assert.equal(listRes.status, 200);
   const list = (await listRes.json()) as { runs: RunDto[] };
   assert.equal(list.runs.some((r) => r.id === runId), true, "run appears in the Testing Lab list");
 
   // Detail returns the persisted metrics + the display-only reliability verdict.
-  const getRes = await req(`/api/backtest-runs/${runId}`, false);
+  const getRes = await req(`/api/backtest-runs/${runId}`, true);
   assert.equal(getRes.status, 200);
   const detail = (await getRes.json()) as RunDto;
   assert.equal(detail.id, runId);
@@ -203,7 +205,7 @@ test("the completed run's results appear via list, detail, and trades", async ()
   assert.ok(detail.dataReliability != null, "detail carries the dataReliability verdict");
 
   // Per-trade detail matches the run's totalTrades exactly.
-  const tradesRes = await req(`/api/backtest-runs/${runId}/trades`, false);
+  const tradesRes = await req(`/api/backtest-runs/${runId}/trades`, true);
   assert.equal(tradesRes.status, 200);
   const trades = (await tradesRes.json()) as { trades: { result: string; profitLoss: number }[] };
   assert.equal(trades.trades.length, createdRun.totalTrades, "one persisted trade row per simulated trade");
@@ -213,7 +215,7 @@ test("the completed run's results appear via list, detail, and trades", async ()
   }
 
   // Determinism sanity: identical config reproduces identical headline metrics.
-  const res2 = await postJson("/api/backtest-runs", false, {
+  const res2 = await postJson("/api/backtest-runs", true, {
     strategyId: "trendContinuation",
     symbol: "EURUSD",
     timeframe: "M1",

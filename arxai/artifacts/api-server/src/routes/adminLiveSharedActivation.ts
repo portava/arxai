@@ -19,6 +19,8 @@
 //
 //   GET  /api/admin/live-shared/command-queue
 //     Paginated, filterable read of arx_live_commands. Admin-only.
+import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
@@ -28,11 +30,12 @@ import {
   userMasterLiveAccessTable,
   sharedTradeAttributionTable,
   adminActionAuditLogTable,
-  mt5ConnectionTable,
-} from "@workspace/db";
+  } from "@workspace/db";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
+import { engagePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { detectCurrentConnectedBridge } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -44,8 +47,8 @@ function requireAdmin(req: Request, res: Response):
   { id: number; role: "ADMIN" | "OWNER" } | null {
   const sess = (req as Request & { authUser?: { id: number; role?: string } }).authUser;
   if (!sess?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" }); return null;
   }
   return { id: sess.id, role };
@@ -87,10 +90,9 @@ router.post("/admin/live-shared/activation-smoke-test", async (req, res) => {
 
   // C2 — pinned bridge snapshot present
   const pinnedId = settings?.platformMasterBridgeConnectionId ?? null;
-  let pinned: typeof mt5ConnectionTable.$inferSelect | null = null;
+  let pinned: BrokerConnectionFacts | null = null;
   if (pinnedId != null) {
-    pinned = (await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, pinnedId)).limit(1))[0] ?? null;
+    pinned = (await listConnections({ connectionIds: [pinnedId], limit: 1 }))[0] ?? null;
   }
   checks.push({
     id: "C2_pinned_bridge", label: "Master bridge pinned",
@@ -98,12 +100,12 @@ router.post("/admin/live-shared/activation-smoke-test", async (req, res) => {
     detail: pinned ? `connectionId=${pinned.id}` : "no platformMasterBridgeConnectionId set",
   });
 
-  // C3 — heartbeat fresh (≤15s) on pinned bridge
+  // C3 — heartbeat fresh (shared policy: < 15 s) on pinned bridge
   const hbAge = pinned?.lastHeartbeat
     ? Math.floor((Date.now() - new Date(pinned.lastHeartbeat).getTime()) / 1000) : null;
   checks.push({
-    id: "C3_heartbeat", label: "Bridge heartbeat fresh (≤15s)",
-    pass: hbAge != null && hbAge <= 15,
+    id: "C3_heartbeat", label: "Bridge heartbeat fresh (<15s)",
+    pass: isHeartbeatAgeSecondsFresh(hbAge),
     detail: hbAge == null ? "no heartbeat recorded" : `${hbAge}s old`,
   });
 
@@ -248,10 +250,13 @@ router.post("/admin/live-shared/rollback", async (req, res) => {
   //   - cancel every queued/draft/approved command NOT yet picked by EA
   //   - keep audit, trade history, demo path untouched
   const result = await db.transaction(async (tx) => {
+    // The one engage writer (every settings row, reason/time/actor), inside
+    // this transaction; the shared posture below is this handler's own write.
+    await engagePlatformStop(
+      { reason: `[ROLLBACK by admin ${admin.id}] ${reason}`, actorUserId: admin.id, source: "admin_live_shared_rollback" },
+      tx,
+    );
     await tx.update(globalTradingSettingsTable).set({
-      emergencyKillSwitch: true,
-      killSwitchEngagedAt: new Date(),
-      killSwitchReason: `[ROLLBACK by admin ${admin.id}] ${reason}`,
       sharedLiveTradingEnabled: false,
       masterBridgeLiveEnabled: false,
       accountRoutingMode: "USER_OWNED_MT5",

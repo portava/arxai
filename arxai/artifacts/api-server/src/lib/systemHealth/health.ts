@@ -5,19 +5,23 @@
 // trading. liveTradingStatus is always reported as DISABLED. mode is always
 // PAPER_ONLY.
 
+import { countDemoPositions } from "../positions/ledger.js";
+import { demoPositionColumns } from "../positions/ledger.js";
 import {
-  db, systemHealthChecksTable,
-  notificationsTable, notificationLogsTable,
-  autopilotSettingsTable, autopilotCyclesTable,
+  db,
+  systemHealthChecksTable,
+  notificationsTable,
+  notificationLogsTable,
+  autopilotSettingsTable,
+  autopilotCyclesTable,
   paperOrdersTable,
   riskGovernorEvaluationsTable,
-  brokerHealthStateTable,
-  livePositionsTable, mt5CommandsTable,
-  safetyCoreTable,
+  mt5CommandsTable,
 } from "@workspace/db";
 import { desc, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { auditEvent } from "./audit.js";
+import { platformStop, platformStopForVenue, readSafetyCorePosture } from "../safety/platformSwitches.js";
 import { patchConfig, getConfig } from "./config.js";
 import { marketDataHealthCheck } from "../marketData/marketDataService.js";
 
@@ -263,13 +267,16 @@ async function probeDatabase(): Promise<DatabaseStatus> {
     status.connected = true;
     status.missingTables = EXPECTED_TABLES.filter((t) => !present.has(t));
     // sample row counts
-    const counted = ["notifications", "system_health_checks", "system_audit_logs", "admin_action_logs", "paper_orders", "live_positions", "mt5_commands"];
+    const counted = ["notifications", "system_health_checks", "system_audit_logs", "admin_action_logs", "paper_orders", "mt5_commands"];
     for (const t of counted) {
       if (!present.has(t)) continue;
       try {
         const r = await db.execute(sql`select count(*)::int as c from ${sql.identifier(t)}`);
         status.rowCounts[t] = (r.rows[0] as { c: number } | undefined)?.c ?? 0;
       } catch { /* ignore */ }
+    }
+    if (present.has("live_positions")) {
+      try { status.rowCounts["live_positions"] = await countDemoPositions(); } catch { /* ignore */ }
     }
     // write-check (uses safe audit insert/rollback would require transaction — we just time a SELECT 1)
     const t0 = Date.now();
@@ -295,12 +302,18 @@ async function probeEndpoints(): Promise<EndpointStatus> {
 async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promise<SafetyStatus> {
   const warnings: string[] = [];
   const hardBlocks: Array<{ code: string; severity: string; message: string }> = [];
-  // Read safetyCore (informational only — MM never writes here)
-  const sc = await db.select().from(safetyCoreTable).limit(1).catch(() => []);
-  const row = sc[0] as (typeof safetyCoreTable.$inferSelect | undefined);
-  if (row?.killSwitchEngaged) hardBlocks.push({ code: "KILL_SWITCH", severity: "CRITICAL", message: row.killSwitchReason ?? "engaged" });
-  if (row?.operationalMode && !["OBSERVE_ONLY", "PAPER_ONLY", "RECOVERY_MODE"].includes(row.operationalMode))
-    warnings.push(`safetyCore.operationalMode=${row.operationalMode}`);
+  // Read the install-wide stops through platformStop() (informational only —
+  // MM never writes here). This report covers the paper (PAPER_ONLY) stack,
+  // which the platform emergency stop does not halt, so the stop is taken as
+  // it applies to PAPER: the safety-core kill switch. An unreadable switch
+  // reports as engaged.
+  const paperStop = platformStopForVenue(await platformStop(), "PAPER");
+  if (paperStop.engaged) {
+    hardBlocks.push({ code: "KILL_SWITCH", severity: "CRITICAL", message: paperStop.detail.safety_core_kill_switch ?? "engaged" });
+  }
+  const sc = await readSafetyCorePosture();
+  if (sc.operationalMode && !["OBSERVE_ONLY", "PAPER_ONLY", "RECOVERY_MODE"].includes(sc.operationalMode))
+    warnings.push(`safetyCore.operationalMode=${sc.operationalMode}`);
   // Detect FF/HH/KK reporting unsafe
   for (const b of ["FF", "HH", "KK"] as SubsystemBuild[]) {
     if (subs[b]?.status === "UNSAFE") hardBlocks.push({ code: `${b}_UNSAFE`, severity: "CRITICAL", message: subs[b].notes.join("; ") });
@@ -459,4 +472,6 @@ export async function exportHealthReport(): Promise<{ exportId: string; generate
 }
 
 // ── Touch unused imports so type-check confirms them as live deps ──────────
-export const _wiring = { brokerHealthStateTable, livePositionsTable, mt5CommandsTable, notificationLogsTable };
+// broker_health_state is owned by lib/brokerHub/brokerHealthState.ts and is
+// not referenced here (ci guard single-broker-state-source).
+export const _wiring = { demoPositionColumns, mt5CommandsTable, notificationLogsTable };

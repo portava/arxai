@@ -1,7 +1,8 @@
 // Phase 3A — Per-user trading sessions. All endpoints require auth and are
 // scoped by req.authUser.id. Client-supplied userId is ignored for ownership.
+import { getUserConnection } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
-import { db, tradingSessionsTable, mt5ConnectionTable } from "@workspace/db";
+import { db, tradingSessionsTable } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -58,10 +59,7 @@ function serialize(row: typeof tradingSessionsTable.$inferSelect) {
 // Verify the connection belongs to this user, or return null.
 async function ensureOwnedConnection(userId: number, connId: number | null | undefined): Promise<number | null> {
   if (connId == null) return null;
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(and(eq(mt5ConnectionTable.id, connId), eq(mt5ConnectionTable.userId, userId)))
-    .limit(1);
-  return rows[0] ? connId : null;
+  return (await getUserConnection(userId, connId)) ? connId : null;
 }
 
 router.get("/me/trading-sessions", requireUser, async (req, res) => {

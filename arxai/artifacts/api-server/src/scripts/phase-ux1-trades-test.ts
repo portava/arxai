@@ -9,10 +9,11 @@
 //
 // NON-DESTRUCTIVE: cleans up every seeded row in reverse FK order.
 
+import { createConnection, deleteFixtureConnections } from "../lib/brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
   globalTradingSettingsTable, userTradingPermissionsTable, userRiskLimitsTable,
-  mt5ConnectionTable, sharedMasterAccountsTable, virtualTradingAccountsTable,
+  sharedMasterAccountsTable, virtualTradingAccountsTable,
   sharedTradeAttributionTable, usersTable, mt5CommandsTable,
   livePositionsTable, tradeCommandAuditLogTable,
 } from "@workspace/db/schema";
@@ -67,16 +68,16 @@ async function main() {
   } as never).returning();
   createdUserIds.push(u1!.id, u2!.id);
 
-  const [conn1] = await db.insert(mt5ConnectionTable).values({
+  const conn1 = await createConnection({
     userId: u1!.id, connectionName: "UX1 u1 demo",
     accountNumber: "8800001", brokerName: "TestBroker",
     accountType: "demo", status: "connected",
-  } as never).returning();
-  const [conn2] = await db.insert(mt5ConnectionTable).values({
+  } as never);
+  const conn2 = await createConnection({
     userId: u2!.id, connectionName: "UX1 u2 demo",
     accountNumber: "8800002", brokerName: "TestBroker",
     accountType: "demo", status: "connected",
-  } as never).returning();
+  } as never);
   createdConnIds.push(conn1!.id, conn2!.id);
 
   for (const uid of [u1!.id, u2!.id]) {
@@ -219,7 +220,7 @@ async function main() {
   if (createdLpIds.length) await db.delete(livePositionsTable).where(inArray(livePositionsTable.id, createdLpIds));
   if (createdLimitIds.length) await db.delete(userRiskLimitsTable).where(inArray(userRiskLimitsTable.id, createdLimitIds));
   if (createdPermIds.length) await db.delete(userTradingPermissionsTable).where(inArray(userTradingPermissionsTable.id, createdPermIds));
-  if (createdConnIds.length) await db.delete(mt5ConnectionTable).where(inArray(mt5ConnectionTable.id, createdConnIds));
+  if (createdConnIds.length) await deleteFixtureConnections(createdConnIds);
   if (createdUserIds.length) await db.delete(usersTable).where(inArray(usersTable.id, createdUserIds));
   await db.update(globalTradingSettingsTable).set({
     platformMode: globalBefore.platformMode,

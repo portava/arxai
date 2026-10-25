@@ -15,8 +15,10 @@
 //     digits; broker name and server name ARE returned (admins need
 //     them to identify the bridge), but only to admin sessions.
 //   - No write side-effects. Pure read.
+import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
-import { db, globalTradingSettingsTable, userOneClickSettingsTable } from "@workspace/db";
+import { db, userOneClickSettingsTable } from "@workspace/db";
+import { loadPlatformSettings, platformStopWith, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { eq } from "drizzle-orm";
 import {
   derivePlatformBridgeMode,
@@ -24,6 +26,7 @@ import {
 import { detectCurrentConnectedBridge } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
 import { loadAndEvaluateMasterLiveBridgeGate } from "../lib/mt5/masterLiveBridgeGate.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -34,8 +37,8 @@ function requireAdmin(req: Request, res: Response): boolean {
     res.status(401).json({ ok: false, error: "AUTH_REQUIRED" });
     return false;
   }
-  const role = sess.role ?? null;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(sess.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return false;
   }
@@ -112,11 +115,11 @@ function fmtArm(v: boolean | null | undefined): string {
 router.get("/admin/live-gates/diagnostic", async (req, res) => {
   if (!requireAdmin(req, res)) return;
 
-  const settingsRows = await db.select().from(globalTradingSettingsTable).limit(1);
-  const s = settingsRows[0];
+  // Switches from the one switch authority (missing/unreadable → OFF, stop engaged).
+  const { switches: sw, config: s } = await loadPlatformSettings();
   const switchOn = liveBrokerExecutionEnabled();
   const platform = derivePlatformBridgeMode({
-    platformMode: s?.platformMode,
+    platformMode: sw.platformMode,
     accountRoutingMode: s?.accountRoutingMode,
     masterBridgeLiveEnabled: !!s?.masterBridgeLiveEnabled,
     sharedLiveTradingEnabled: !!s?.sharedLiveTradingEnabled,
@@ -182,22 +185,42 @@ router.get("/admin/live-gates/diagnostic", async (req, res) => {
     rawCode: switchOn ? "LIVE_BROKER_EXECUTION_ENABLED" : "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED",
   });
 
+  // Both install-wide stops through platformStop(): the operator emergency
+  // stop row as before, plus the safety-core kill switch, which also refuses
+  // every new live order at the Risk Governor.
+  const stop = await platformStopWith(sw);
+  const emergencyOn = stopSourceEngaged(stop, "platform_emergency_stop");
+  const emergencyAt = stop.engagedAt?.platform_emergency_stop ?? null;
+  const emergencyWhy = stop.detail.platform_emergency_stop ?? null;
   rows.push({
     id: "kill_switch",
     label: "Operator kill switch",
-    status: s?.killSwitchEngagedAt ? "fail" : "pass",
-    detail: s?.killSwitchEngagedAt
-      ? `Kill switch engaged at ${new Date(s.killSwitchEngagedAt).toISOString()}${s.killSwitchReason ? ` — ${s.killSwitchReason}` : ""}.`
+    status: emergencyOn ? "fail" : "pass",
+    detail: emergencyOn
+      ? `Kill switch engaged${emergencyAt ? ` at ${new Date(emergencyAt).toISOString()}` : ""}${emergencyWhy ? ` — ${emergencyWhy}` : ""}.`
       : "Kill switch is not engaged.",
-    rawCode: s?.killSwitchEngagedAt ? "KILL_SWITCH_ENGAGED" : "KILL_SWITCH_CLEAR",
+    rawCode: emergencyOn ? "KILL_SWITCH_ENGAGED" : "KILL_SWITCH_CLEAR",
+  });
+
+  const coreOn = stopSourceEngaged(stop, "safety_core_kill_switch");
+  const coreAt = stop.engagedAt?.safety_core_kill_switch ?? null;
+  const coreWhy = stop.detail.safety_core_kill_switch ?? null;
+  rows.push({
+    id: "safety_core_kill_switch",
+    label: "Safety-core kill switch",
+    status: coreOn ? "fail" : "pass",
+    detail: coreOn
+      ? `Safety-core kill switch engaged${coreAt ? ` at ${new Date(coreAt).toISOString()}` : ""}${coreWhy ? ` — ${coreWhy}` : ""}. New live orders are refused.`
+      : "Safety-core kill switch is not engaged.",
+    rawCode: coreOn ? "SAFETY_CORE_KILL_SWITCH_ENGAGED" : "SAFETY_CORE_KILL_SWITCH_CLEAR",
   });
 
   rows.push({
     id: "trading_mode",
     label: "Global trading mode",
-    status: (s?.platformMode ?? "OFF").toUpperCase() === "LIVE" ? "pass" : "info",
-    detail: `Currently ${(s?.platformMode ?? "OFF").toUpperCase()}.`,
-    rawCode: s?.platformMode ?? "OFF",
+    status: sw.platformMode === "LIVE" ? "pass" : "info",
+    detail: `Currently ${sw.platformMode}.`,
+    rawCode: sw.platformMode,
   });
 
   rows.push({
@@ -269,11 +292,11 @@ router.get("/admin/live-gates/diagnostic", async (req, res) => {
     rows.push({
       id: "ea_heartbeat",
       label: "EA heartbeat age",
-      status: ev.heartbeatAgeSec != null && ev.heartbeatAgeSec <= 15 ? "pass" : "fail",
+      status: isHeartbeatAgeSecondsFresh(ev.heartbeatAgeSec) ? "pass" : "fail",
       detail: ev.heartbeatAgeSec == null
         ? "No heartbeat received yet."
         : `Last heartbeat ${ev.heartbeatAgeSec}s ago (must be ≤15s for live).`,
-      rawCode: ev.heartbeatAgeSec != null && ev.heartbeatAgeSec <= 15 ? "EA_HEARTBEAT_FRESH" : "MASTER_BRIDGE_HEARTBEAT_STALE",
+      rawCode: isHeartbeatAgeSecondsFresh(ev.heartbeatAgeSec) ? "EA_HEARTBEAT_FRESH" : "MASTER_BRIDGE_HEARTBEAT_STALE",
     });
     const readOnlyRead = readEaBool(ev.eaInputs.readOnlyMode, {
       passWhen: false,

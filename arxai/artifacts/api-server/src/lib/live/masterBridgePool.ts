@@ -15,9 +15,9 @@
 // SAFETY:
 // - Pure derived projection. Never mutates user_slot_allocation,
 //   arx_live_commands, mt5_connection, or any safety gate.
-// - When sharedLivePaused is currently true on the existing row, the
-//   recompute PRESERVES that flag (only an explicit admin pause/resume
-//   endpoint may flip it).
+// - The shared-live pause columns are never written here: the recompute
+//   PRESERVES them (only the Platform Safety authority,
+//   lib/safety/sharedLivePause.ts, pauses or resumes; owner decision 19).
 // - The Prop-Firm hook (allow_over_allocation_prop_firm_mode) is read
 //   from arx_master_account_config and currently has no effect — the
 //   derived is_over_allocated/allocation_deficit still reflect the real
@@ -25,21 +25,24 @@
 //   are responsible for deciding whether to *block* on the deficit.
 //   This separation keeps the projection truthful regardless of mode.
 
+import { MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from "../brokerHub/freshness.js";
+import { livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions, selectLiveOpenPositionsForAllUsers } from "../positions/openPositions.js";
+import { getConnection } from "../brokerHub/connections.js";
+import { readMasterBridgePoolByMaster } from "../brokerHub/masterBridgePoolReader.js";
 import { eq, inArray } from "drizzle-orm";
-import { openLiveExposureCondition } from "./livePositionExposure.js";
 import { computeAvailableBalance } from "./investorLiveBalance.js";
+import { sharedLivePauseOf } from "../safety/sharedLivePause.js";
 import {
   db,
   arxLiveCommandsTable,
   arxMasterAccountConfigTable,
   arxMasterBridgePoolTable,
-  arxLivePositionsTable,
-  mt5ConnectionTable,
   userSlotAllocationTable,
   type ArxMasterBridgePool,
 } from "@workspace/db";
 
-const POOL_SNAPSHOT_FRESH_BUDGET_MS = 60_000;
+const POOL_SNAPSHOT_FRESH_BUDGET_MS = MT5_ACCOUNT_SNAPSHOT_FRESH_MS;
 
 export type PoolSnapshotStatus = "FRESH" | "STALE" | "MISSING";
 
@@ -86,9 +89,7 @@ export async function recomputeMasterPool(args?: {
     return { ok: false, masterConnectionId: null, pool: null, reason: "MASTER_BRIDGE_NOT_PINNED" };
   }
 
-  const connRows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, resolvedId)).limit(1);
-  const conn = connRows[0];
+  const conn = await getConnection(resolvedId);
   if (!conn) {
     return { ok: false, masterConnectionId: resolvedId, pool: null, reason: "MASTER_CONNECTION_MISSING" };
   }
@@ -126,10 +127,13 @@ export async function recomputeMasterPool(args?: {
     // Open exposure only — closed AND reconciled ghosts excluded via the shared
     // truth predicate so they can never inflate unrealized P/L or flip
     // is_over_allocated.
-    const openPositions = await db.select({
-      userId: arxLivePositionsTable.userId,
-      floatingPl: arxLivePositionsTable.floatingPl,
-    }).from(arxLivePositionsTable).where(openLiveExposureCondition());
+    const openPositions = await selectLiveOpenPositionsForAllUsers(
+      {
+        userId: livePositionColumns.userId,
+        floatingPl: livePositionColumns.floatingPl,
+      },
+      { basis: "EXPOSURE" },
+    );
     for (const p of openPositions) {
       if (allocUserIds.has(p.userId)) {
         totalUserUnrealizedPnl += Number(p.floatingPl ?? 0);
@@ -146,12 +150,10 @@ export async function recomputeMasterPool(args?: {
 
   const now = new Date();
 
-  // Upsert. Preserve sharedLivePaused / pausedReason / pausedAt /
-  // pausedByUserId from any existing row — only the admin pause/resume
-  // endpoints may flip them.
-  const existingRows = await db.select().from(arxMasterBridgePoolTable)
-    .where(eq(arxMasterBridgePoolTable.masterConnectionId, resolvedId)).limit(1);
-  const existing = existingRows[0];
+  // Upsert. The shared-live pause columns are not in baseValues, so an
+  // existing row keeps them and a new row takes the schema defaults (not
+  // paused); only lib/safety/sharedLivePause.ts writes them.
+  const existing = await readMasterBridgePoolByMaster(resolvedId);
 
   const baseValues = {
     masterConnectionId: resolvedId,
@@ -179,13 +181,7 @@ export async function recomputeMasterPool(args?: {
       .returning();
     pool = updated!;
   } else {
-    const [inserted] = await db.insert(arxMasterBridgePoolTable).values({
-      ...baseValues,
-      sharedLivePaused: false,
-      pausedReason: null,
-      pausedAt: null,
-      pausedByUserId: null,
-    }).returning();
+    const [inserted] = await db.insert(arxMasterBridgePoolTable).values(baseValues).returning();
     pool = inserted!;
   }
 
@@ -199,9 +195,7 @@ export async function recomputeMasterPool(args?: {
 export async function loadMasterPool(): Promise<ArxMasterBridgePool | null> {
   const id = await resolveActiveMasterConnectionId();
   if (id == null) return null;
-  const rows = await db.select().from(arxMasterBridgePoolTable)
-    .where(eq(arxMasterBridgePoolTable.masterConnectionId, id)).limit(1);
-  return rows[0] ?? null;
+  return readMasterBridgePoolByMaster(id);
 }
 
 /**
@@ -240,9 +234,12 @@ export async function getUserAllocationView(userId: number): Promise<{
   // shrinks the "available to trade" figure the user sees.
   // Open exposure only (shared truth predicate) — reconciled / orphan-resolved
   // rows must never shrink the user's available allocation.
-  const openRows = await db.select({
-    floatingPl: arxLivePositionsTable.floatingPl,
-  }).from(arxLivePositionsTable).where(openLiveExposureCondition(userId));
+  const openRows = await selectLiveOpenPositions(
+    {
+      floatingPl: livePositionColumns.floatingPl,
+    },
+    { userId, basis: "EXPOSURE" },
+  );
   const openFloatingLoss = openRows.reduce(
     (s, r) => s + Math.min(0, Number(r.floatingPl ?? 0)),
     0,
@@ -258,7 +255,7 @@ export async function getUserAllocationView(userId: number): Promise<{
   let bridgeAvailability: "HEALTHY" | "RECONCILING" | "UNAVAILABLE" = "UNAVAILABLE";
   let bridgeMessage = "Live bridge is not currently available.";
   if (pool) {
-    if (pool.sharedLivePaused) {
+    if (sharedLivePauseOf(pool).paused) {
       bridgeAvailability = "UNAVAILABLE";
       bridgeMessage = "Live bridge is paused for reconciliation.";
     } else if (pool.snapshotStatus === "MISSING") {

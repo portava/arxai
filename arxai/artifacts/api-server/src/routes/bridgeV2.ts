@@ -19,18 +19,21 @@
 // - Per-user isolation: ingest attributes every row to the authenticated
 //   connection's userId; admin trace can scope by userId.
 
+import { type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { db, bridgeV2EventsTable, bridgeV2StreamStateTable, mt5ConnectionTable } from "@workspace/db";
+import { db, bridgeV2EventsTable } from "@workspace/db";
+import { listRecentBridgeV2StreamStates } from "../lib/brokerHub/bridgeV2StreamState.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { bridgeAuthPerUserOnly } from "./mt5.js";
 import { ingestBridgeV2Message } from "../lib/bridgeV2/ingest.js";
 import { loadBridgeV2ConfigForEa, listBridgeV2CommandsForEa } from "../lib/bridgeV2/egress.js";
 import { buildBridgeV2AdminStatus } from "../lib/bridgeV2/status.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
 type ConnReq = Request & {
-  mt5Connection?: typeof mt5ConnectionTable.$inferSelect;
+  mt5Connection?: BrokerConnectionRecord;
 };
 
 // ─── POST /api/bridge/v2/ingest ─────────────────────────────────────────────
@@ -128,8 +131,8 @@ router.get("/bridge/v2/commands", bridgeAuthPerUserOnly, async (req: ConnReq, re
 // ─── Admin gating helper (mirrors adminEaHealth) ────────────────────────────
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
-  const role = String(u?.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u?.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_OR_OWNER_REQUIRED" });
     return null;
   }
@@ -144,12 +147,7 @@ router.get("/admin/bridge-v2/streams", async (req: Request, res: Response): Prom
   const userIdRaw = req.query.userId;
   const userId = typeof userIdRaw === "string" && userIdRaw.length > 0 ? Number(userIdRaw) : null;
 
-  const rows = await db
-    .select()
-    .from(bridgeV2StreamStateTable)
-    .where(userId != null && Number.isFinite(userId) ? eq(bridgeV2StreamStateTable.userId, userId) : sql`true`)
-    .orderBy(desc(bridgeV2StreamStateTable.updatedAt))
-    .limit(500);
+  const rows = await listRecentBridgeV2StreamStates(userId != null && Number.isFinite(userId) ? userId : null, 500);
 
   res.json({ ok: true, count: rows.length, streams: rows });
 });

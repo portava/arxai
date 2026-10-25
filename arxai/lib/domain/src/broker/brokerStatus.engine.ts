@@ -1,4 +1,9 @@
 import type { Mt5ConnectionState, Mt5Status } from "./mt5.types";
+import {
+  MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+  MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
+  classifyHeartbeatAgeMs,
+} from "../broker-health/heartbeatPolicy.js";
 
 export interface BrokerHealthReport {
   status: Mt5Status;
@@ -8,10 +13,13 @@ export interface BrokerHealthReport {
   reasons: string[];
 }
 
-// Default thresholds — caller can override per environment.
+// Default thresholds are the shared MT5 heartbeat policy (owner decision 17):
+// DELAYED from 15 s (degraded), ERROR from 60 s (offline). The bounds are
+// exclusive-fresh like the policy: age >= bound crosses it. A caller may still
+// override per environment; no app caller does.
 export const DEFAULTS = {
-  staleAfterSeconds: 30,
-  errorAfterSeconds: 120,
+  staleAfterSeconds: MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+  errorAfterSeconds: MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
 };
 
 export function evaluateBrokerHealth(
@@ -32,9 +40,13 @@ export function evaluateBrokerHealth(
   }
 
   const age = (now.getTime() - state.lastHeartbeatMs) / 1000;
-  const isStale = age > cfg.staleAfterSeconds;
+  if (classifyHeartbeatAgeMs(age * 1000) === "unknown") {
+    reasons.push("Heartbeat time is invalid (non-finite or in the future)");
+    return { status: "DISCONNECTED", isHealthy: false, isStale: true, ageSeconds: null, reasons };
+  }
+  const isStale = age >= cfg.staleAfterSeconds;
   let status: Mt5Status = state.status;
-  if (age > cfg.errorAfterSeconds) {
+  if (age >= cfg.errorAfterSeconds) {
     status = "ERROR";
     reasons.push(`Heartbeat ${Math.round(age)}s old — exceeded error threshold ${cfg.errorAfterSeconds}s`);
   } else if (isStale) {

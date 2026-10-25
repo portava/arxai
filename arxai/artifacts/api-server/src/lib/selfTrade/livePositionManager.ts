@@ -10,27 +10,23 @@
 // path; we never invent one).
 //
 // SAFETY (inviolable):
-// - No new MT5 path, no gate bypass. Every modify/close rides executeInstant →
+// - No new MT5 path, no gate bypass. Every modify/close goes through the
+//   Position Guardian (lib/positionGuardian/manage.ts) to executeInstant →
 //   16-gate Phase B pipeline. Risk-reducing actions are allowed under a kill
 //   switch because the live pipeline itself enforces what is permitted.
 // - We only manage a position when the REAL broker row (arx_live_positions)
 //   exists; if it is absent we skip (never act on a phantom).
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { and, eq } from "drizzle-orm";
-import {
-  db,
-  selfTradeAgentExecutionsTable,
-  selfTradeDecisionsTable,
-  arxLivePositionsTable,
-  type SelfTradeAgent,
-} from "@workspace/db";
+import { db, selfTradeAgentExecutionsTable, selfTradeDecisionsTable, type SelfTradeAgent } from "@workspace/db";
 import {
   evaluateManagementAction,
   type TradeThesis,
   type ManagementAction,
 } from "@workspace/domain/self-trade";
 import { logger } from "../logger.js";
-import { executeInstant } from "../live/instantTrade.js";
+import { guardianInstantManage } from "../positionGuardian/manage.js";
 import { writeSelfTradeAudit } from "./audit.js";
 
 export interface ManagePositionsResult {
@@ -73,16 +69,13 @@ export async function manageAgentPositions(
     if (!e.brokerTicket || e.executingUserId == null) continue;
 
     // The real broker position must exist — never manage a phantom.
-    const [pos] = await db
-      .select()
-      .from(arxLivePositionsTable)
-      .where(
-        and(
-          eq(arxLivePositionsTable.userId, e.executingUserId),
-          eq(arxLivePositionsTable.brokerTicket, e.brokerTicket),
-        ),
-      )
-      .limit(1);
+    const [pos] = await livePositionLedger.read({
+      where: and(
+        eq(livePositionColumns.userId, e.executingUserId),
+        eq(livePositionColumns.brokerTicket, e.brokerTicket),
+      ),
+      limit: 1,
+    });
     if (!pos || pos.closedAt != null) continue;
 
     const decision =
@@ -102,6 +95,13 @@ export async function manageAgentPositions(
     if (currentPrice == null || entryPrice == null) continue;
 
     const mgmt = (e.managementState ?? {}) as ManagementMemory;
+    // Position Guardian rule "self-trade-manage": every modify/close is checked
+    // against the guardian registry (never a widened stop) before the router.
+    const guardedPosition = {
+      side: (e.side === "SELL" ? "SELL" : "BUY") as "BUY" | "SELL",
+      stopLoss: pos.stopLoss != null ? Number(pos.stopLoss) : null,
+      takeProfit: pos.takeProfit != null ? Number(pos.takeProfit) : null,
+    };
 
     const verdict = evaluateManagementAction({
       side: e.side as "BUY" | "SELL",
@@ -154,8 +154,10 @@ export async function manageAgentPositions(
 
     // L3+: MOVE_TO_BE / TIGHTEN_SL → modify the stop via the existing pipeline.
     if ((verdict.action === "MOVE_TO_BE" || verdict.action === "TIGHTEN_SL") && verdict.newStopLoss != null) {
-      const res = await executeInstant({
+      const res = await guardianInstantManage({
+        ruleId: "self-trade-manage",
         userId: e.executingUserId,
+        position: guardedPosition,
         intent: {
           source: "self_trade",
           action: "MODIFY_SL_TP",
@@ -188,8 +190,10 @@ export async function manageAgentPositions(
     // L3+: EXIT → close via the existing pipeline; record the close command id
     // so reconcile resolves the realized P/L from the REAL close fill.
     if (verdict.action === "EXIT") {
-      const res = await executeInstant({
+      const res = await guardianInstantManage({
+        ruleId: "self-trade-manage",
         userId: e.executingUserId,
+        position: guardedPosition,
         intent: {
           source: "self_trade",
           action: "CLOSE",

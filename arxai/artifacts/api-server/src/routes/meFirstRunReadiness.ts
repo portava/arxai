@@ -11,6 +11,7 @@
 //   gates (e.g. whether an active per-user bridge token exists), not values.
 // - Envelope shows liveLocked:true so any UI consumer can reflect it.
 
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
@@ -18,7 +19,6 @@ import {
   paperTradesTable,
   paperAccountsTable,
   propChallengesTable,
-  mt5ConnectionTable,
   tradeJournalEntriesTable,
 } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
@@ -79,16 +79,9 @@ router.get("/me/first-run-readiness", requireUser, async (req, res): Promise<voi
     // 4. MT5 bridge — optional. EA auth is per-user only: every EA endpoint
     // rejects the legacy server-wide MT5_BRIDGE_TOKEN env value, so readiness
     // is derived solely from this user's connections + active token state.
-    // apiKeyHash/tokenRevokedAt are read to compute a boolean only — never
-    // returned in the payload.
-    const conns = await db.select({
-      id: mt5ConnectionTable.id,
-      status: mt5ConnectionTable.status,
-      lastHeartbeat: mt5ConnectionTable.lastHeartbeat,
-      apiKeyHash: mt5ConnectionTable.apiKeyHash,
-      tokenRevokedAt: mt5ConnectionTable.tokenRevokedAt,
-    }).from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, userId));
-    const hasActiveToken = conns.some((c) => !!c.apiKeyHash && !c.tokenRevokedAt);
+    // The Broker Hub reports token presence as a boolean; no hash leaves it.
+    const conns = await listUserConnections(userId, { order: "oldest" });
+    const hasActiveToken = conns.some((c) => c.hasBridgeToken);
     const anyConnected = conns.some((c) => c.status === "connected");
     let mt5Status: ReadinessStatus;
     let mt5Detail: string;

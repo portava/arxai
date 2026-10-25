@@ -48,13 +48,13 @@
 //   tsx src/scripts/reconcileOwnerPhantomLiveByBrokerState.ts --user=4 --bridge=446          # dry-run
 //   tsx src/scripts/reconcileOwnerPhantomLiveByBrokerState.ts --user=4 --bridge=446 --apply  # apply
 
+import { getUserConnection } from "../lib/brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, gte, inArray, isNull } from "drizzle-orm";
 import {
   db,
   arxLivePositionsTable,
   arxLiveCommandsTable,
-  mt5ConnectionTable,
   liveTradingAuditTable,
   adminActionAuditLogTable,
 } from "@workspace/db";
@@ -106,11 +106,7 @@ async function main(): Promise<void> {
   const now = new Date();
 
   // ── 1. Load the scoped bridge + verify the broker EVIDENCE GATE ──────────
-  const conns = await db.select().from(mt5ConnectionTable).where(and(
-    eq(mt5ConnectionTable.userId, args.userId),
-    eq(mt5ConnectionTable.id, args.bridgeConnectionId),
-  ));
-  const conn = conns[0];
+  const conn = await getUserConnection(args.userId, args.bridgeConnectionId);
   if (!conn) throw new Error(`No bridge ${args.bridgeConnectionId} for user ${args.userId}`);
 
   const accountType = (conn.accountType ?? "").toLowerCase();

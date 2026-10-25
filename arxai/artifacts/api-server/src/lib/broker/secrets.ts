@@ -1,7 +1,8 @@
 // Detect broker-related secrets WITHOUT crashing if any are missing.
 // Never logs secret values. Returns presence-only metadata.
 
-import { db, mt5ConnectionTable } from "@workspace/db";
+import { anyActiveBridgeToken, listUserConnections } from "../brokerHub/connections.js";
+import { db } from "@workspace/db";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import type { BrokerSecretRequirement, BrokerKind } from "./types.js";
 
@@ -11,21 +12,11 @@ import type { BrokerSecretRequirement, BrokerKind } from "./types.js";
 // per-user bridge token exists — never that the env var is set. These
 // helpers return booleans only; token values/hashes are never returned.
 export async function anyActiveUserBridgeTokenExists(): Promise<boolean> {
-  const rows = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-    .where(and(isNotNull(mt5ConnectionTable.apiKeyHash), isNull(mt5ConnectionTable.tokenRevokedAt)))
-    .limit(1);
-  return !!rows[0];
+  return anyActiveBridgeToken();
 }
 
 export async function userHasActiveBridgeToken(userId: number): Promise<boolean> {
-  const rows = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-    .where(and(
-      eq(mt5ConnectionTable.userId, userId),
-      isNotNull(mt5ConnectionTable.apiKeyHash),
-      isNull(mt5ConnectionTable.tokenRevokedAt),
-    ))
-    .limit(1);
-  return !!rows[0];
+  return (await listUserConnections(userId, { activeTokenOnly: true })).some((c) => c.hasBridgeToken);
 }
 
 export function selectBrokerKind(): BrokerKind {

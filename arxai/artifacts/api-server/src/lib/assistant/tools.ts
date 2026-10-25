@@ -6,14 +6,22 @@
 // Pre-trade risk check is purely advisory; live order execution is system-locked.
 
 import {
+  MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
+  classifyHeartbeatAgeSeconds,
+  classifyHeartbeatAt,
+  heartbeatIsOnline,
+  isHeartbeatAgeSecondsOnline,
+} from "../brokerHub/freshness.js";
+import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
+import { readOpenPositions } from "../positions/openPositions.js";
+import { getUserPrimaryConnection, listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
+import {
   db,
   paperTradesTable,
   tradeJournalTable,
   paperSessionsTable,
   userNotificationsTable,
   userActivityTimelineTable,
-  userRiskSettingsTable,
-  mt5ConnectionTable,
   usersTable,
   propChallengesTable,
   paperOrdersTable,
@@ -22,7 +30,13 @@ import {
   adminActionAuditLogTable,
 } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { ARX_FEATURES, getAppFeatureMap, explainFeature as featureExplain, getAppFeatureRegistry as featureRegistry, getFeatureHelp as featureHelpLookup, getCurrentPageHelp as pageHelpLookup } from "./featureMap.js";
+import {
+  getAppFeatureMap,
+  explainFeature as featureExplain,
+  getAppFeatureRegistry as featureRegistry,
+  getFeatureHelp as featureHelpLookup,
+  getCurrentPageHelp as pageHelpLookup,
+} from "./featureMap.js";
 import { scannerStatus, effectiveOpportunityScore, DEFAULT_SYMBOLS } from "../marketScanner.js";
 import { getMarketProvider, getMarketStatus, getCurrentEventsFromProvider } from "./marketProvider.js";
 import { sanitizeExternalText } from "../security/promptInjectionGuard.js";
@@ -41,7 +55,6 @@ import { evaluatePaperTradePlan, getTradingStyleProfile } from "./coachTools.js"
 import { getVoiceModeStatus } from "./realtimeSession.js";
 import { mapLegacyReconciliationStatus } from "@workspace/domain/safety-contracts/reconciliation";
 import { mapLegacyBridgeMode, applyHeartbeatStaleness } from "@workspace/domain/safety-contracts/bridgeMode";
-import { isLiveBrokerExecutionEnabledEnv } from "@workspace/domain/safety-contracts/isLiveBrokerExecutionEnabled";
 import { computeAccountShell } from "../../routes/meAccountShell.js";
 import { aggregateReconciliationIssues } from "../reconciliation/detect.js";
 import { resolveAssistantMarket } from "../markets/assistantMarketResolver.js";
@@ -117,7 +130,7 @@ function dayKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function publicConn(c: typeof mt5ConnectionTable.$inferSelect) {
+function publicConn(c: BrokerConnection) {
   return {
     id: c.id,
     connectionName: c.connectionName,
@@ -210,8 +223,7 @@ export async function getRoutingContext(userId: number) {
     let brokerLabel: string | null = null;
     let sharedMasterLabel: string | null = null;
     if (env.connectionType === "user_owned") {
-      const [c] = await db.select().from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+      const c = await getUserPrimaryConnection(userId);
       brokerLabel = c
         ? `${c.brokerName ?? "MT5"} ${c.accountNumber ? `(•••• ${String(c.accountNumber).slice(-4)})` : ""}`.trim()
         : null;
@@ -278,7 +290,7 @@ export function getAppFeatureMapTool() {
 
 // ── 3. getMT5BridgeStatus ───────────────────────────────────────────────
 export async function getMT5BridgeStatus(userId: number) {
-  const rows = await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, userId));
+  const rows = await listUserConnections(userId, { order: "oldest" });
   const connections = rows.map(publicConn);
   const anyConnected = connections.some((c) => c.status === "connected");
   const env = await deriveAssistantEnvelope(userId);
@@ -295,18 +307,24 @@ export async function getMT5BridgeStatus(userId: number) {
 }
 
 // ── 4. getMT5Heartbeat ──────────────────────────────────────────────────
+const HEARTBEAT_HEALTH_WORD = {
+  fresh: "healthy",
+  degraded: "stale",
+  offline: "unhealthy",
+  unknown: "unknown",
+} as const;
+
 export async function getMT5Heartbeat(userId: number) {
-  const rows = await db.select({
-    id: mt5ConnectionTable.id, status: mt5ConnectionTable.status,
-    lastHeartbeat: mt5ConnectionTable.lastHeartbeat,
-  }).from(mt5ConnectionTable).where(eq(mt5ConnectionTable.userId, userId));
+  const rows = await listUserConnections(userId, { order: "oldest" });
   const now = Date.now();
   const items = rows.map((r) => {
     const ageSec = r.lastHeartbeat ? Math.floor((now - new Date(r.lastHeartbeat).getTime()) / 1000) : null;
     return {
       connectionId: r.id, status: r.status, lastHeartbeat: r.lastHeartbeat,
       ageSeconds: ageSec,
-      health: ageSec == null ? "unknown" : ageSec <= 60 ? "healthy" : ageSec <= 300 ? "stale" : "unhealthy",
+      // Shared heartbeat policy → Ruby's vocabulary: fresh → healthy,
+      // degraded → stale, offline → unhealthy, missing / invalid → unknown.
+      health: HEARTBEAT_HEALTH_WORD[classifyHeartbeatAgeSeconds(ageSec)],
     };
   });
   return { items,};
@@ -407,9 +425,7 @@ export async function getDailyPnLCalendar(userId: number, days = 30) {
 
 // ── 9. getRiskLimits ────────────────────────────────────────────────────
 export async function getRiskLimits(userId: number) {
-  const rows = await db.select().from(userRiskSettingsTable)
-    .where(eq(userRiskSettingsTable.userId, userId)).limit(1);
-  const r = rows[0] ?? null;
+  const r = await readTraderRiskSettings(userId);
   if (!r) {
     return { hasRiskSettings: false, defaults: true, note: "No personal risk settings yet — defaults apply.",};
   }
@@ -692,13 +708,13 @@ export async function getRiskUtilization(userId: number) {
  */
 export async function getReconciliationStatus(userId: number) {
   // 1. Bridge health
-  const [conn] = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
+  const conn = await getUserPrimaryConnection(userId);
   const lastHeartbeatAt = conn?.lastHeartbeat ?? null;
   const heartbeatAgeSec = lastHeartbeatAt
     ? Math.floor((Date.now() - new Date(lastHeartbeatAt).getTime()) / 1000)
     : null;
-  const bridgeConnected = !!conn && heartbeatAgeSec !== null && heartbeatAgeSec < 60;
+  // Shared heartbeat policy: connected = online (fresh or degraded, < 60 s).
+  const bridgeConnected = !!conn && isHeartbeatAgeSecondsOnline(heartbeatAgeSec);
   const bridgeMode: "OFFLINE" | "READ_ONLY" | "PAPER_ONLY" | "LIVE_LOCKED" =
     !bridgeConnected ? "OFFLINE" : (conn?.liveLocked ? "LIVE_LOCKED" : "READ_ONLY");
 
@@ -762,7 +778,7 @@ export async function getReconciliationStatus(userId: number) {
   // `reconciliationStatus` and `bridge.mode` unchanged; new fields
   // consume the shared contract enums at lib/domain/safety-contracts.
   const canonicalReconciliationStatus = mapLegacyReconciliationStatus(reconciliationStatus);
-  const heartbeatStale = !bridgeConnected || (heartbeatAgeSec != null && heartbeatAgeSec > 60);
+  const heartbeatStale = !bridgeConnected;
   const canonicalBridgeMode = applyHeartbeatStaleness(
     mapLegacyBridgeMode(bridgeConnected ? "connected" : "disconnected"),
     heartbeatStale,
@@ -776,7 +792,7 @@ export async function getReconciliationStatus(userId: number) {
       canonicalMode: canonicalBridgeMode,
       lastHeartbeatAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
       heartbeatAgeSec,
-      heartbeatStaleThresholdSec: 60,
+      heartbeatStaleThresholdSec: MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
       accountNumber: conn?.accountNumber ?? null,
       serverName: conn?.serverName ?? null,
       readOnlyMode: conn?.readOnlyMode ?? true,
@@ -1746,7 +1762,7 @@ export type ToolName = typeof TOOL_DEFINITIONS[number]["name"];
 export async function getMyLiveOpenTrades(userId: number) {
   const { getEnvelope } = await import("../adminTrading/safetyEnvelope.js");
   const env = await getEnvelope(userId);
-  const { livePositionsTable, sharedTradeAttributionTable } = await import("@workspace/db/schema");
+  const { sharedTradeAttributionTable } = await import("@workspace/db/schema");
   const now = Date.now();
 
   type VerifiedTrade = {
@@ -1764,8 +1780,7 @@ export async function getMyLiveOpenTrades(userId: number) {
 
   if (env.accountRoutingMode === "USER_OWNED_MT5") {
     const snapshotReliable = await getUserSnapshotReliable(userId, now);
-    const rows = await db.select().from(livePositionsTable)
-      .where(and(eq(livePositionsTable.userId, userId), eq(livePositionsTable.status, "OPEN")));
+    const rows = (await readOpenPositions({ userId, venue: "DEMO", basis: "CONFIRMED_OPEN" })).map((p) => p.row);
     for (const r of rows) {
       const verdict = classifyLivePosition(r, { snapshotReliable, now });
       if (verdict.isVerifiedLive) {
@@ -1871,7 +1886,7 @@ async function resolveAndComputeForUser(userId: number, tradeKey: string) {
   const { resolveRouting: _r } = await import("../adminTrading/routingResolver.js");
   void _r;
   const { db } = await import("@workspace/db");
-  const { livePositionsTable, sharedTradeAttributionTable, sharedMasterAccountsTable } = await import("@workspace/db/schema");
+  const { sharedTradeAttributionTable, sharedMasterAccountsTable } = await import("@workspace/db/schema");
   const { and: a2, eq: e2 } = await import("drizzle-orm");
   let trade: {
     tradeKey: string; routingMode: "USER_OWNED_MT5" | "SHARED_MASTER_MT5";
@@ -1889,8 +1904,10 @@ async function resolveAndComputeForUser(userId: number, tradeKey: string) {
   if (tradeKey.startsWith("lp_")) {
     const id = Number(tradeKey.slice(3));
     if (Number.isFinite(id) && id > 0) {
-      const [r] = await db.select().from(livePositionsTable)
-        .where(a2(e2(livePositionsTable.id, id), e2(livePositionsTable.userId, userId))).limit(1);
+      const [r] = await demoPositionLedger.read({
+        where: a2(e2(demoPositionColumns.id, id), e2(demoPositionColumns.userId, userId)),
+        limit: 1,
+      });
       if (r) {
         const snapshotReliable = await getUserSnapshotReliable(userId, nowMs);
         truth = classifyLivePosition(r, { snapshotReliable, now: nowMs });
@@ -2101,14 +2118,13 @@ export async function getExitPlanTool(userId: number, tradeKey: string) {
 
 // ── Phase UX3 — Sniper watchlist + timeline + exit-review tools ──────────
 export async function getSniperWatchlistTool(userId: number) {
-  const { livePositionsTable, sharedTradeAttributionTable } = await import("@workspace/db/schema");
+  const { sharedTradeAttributionTable } = await import("@workspace/db/schema");
   const { getEnvelope } = await import("../adminTrading/safetyEnvelope.js");
   const env = await getEnvelope(userId);
   // Re-build keys here (cannot call the route handler directly).
   const keys: string[] = [];
   if (env.accountRoutingMode === "USER_OWNED_MT5") {
-    const rows = await db.select({ id: livePositionsTable.id }).from(livePositionsTable)
-      .where(and(eq(livePositionsTable.userId, userId), eq(livePositionsTable.status, "OPEN")));
+    const rows = await readOpenPositions({ userId, venue: "DEMO", basis: "CONFIRMED_OPEN" });
     for (const r of rows) keys.push(`lp_${r.id}`);
   } else {
     const rows = await db.select({ id: sharedTradeAttributionTable.id }).from(sharedTradeAttributionTable)
@@ -2507,19 +2523,23 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
       return { ok: false, error: "ADMIN_REQUIRED",};
     }
     const [{ detectCurrentConnectedBridge }, { aggregateReconciliationIssues },
-           { getGlobalSettings }, schema] = await Promise.all([
+           { loadPlatformSettings, platformStopWith, stopSourceEngaged, platformStopReport }, schema] = await Promise.all([
       import("../mt5/currentConnectedBridgeDetector.js"),
       import("../reconciliation/detect.js"),
-      import("../adminTrading/safetyEnvelope.js"),
+      import("../safety/platformSwitches.js"),
       import("@workspace/db"),
     ]);
-    const masterSwitch = isLiveBrokerExecutionEnabledEnv();
     const det = await detectCurrentConnectedBridge();
-    const settings = await getGlobalSettings();
-    const sharedLive = !!(settings as { sharedLiveTradingEnabled?: boolean }).sharedLiveTradingEnabled;
-    const platformMode = (settings as { platformMode?: string }).platformMode ?? "OFF";
-    // schema field is `emergencyKillSwitch` (default TRUE = engaged).
-    const killEngaged = !!(settings as { emergencyKillSwitch?: boolean }).emergencyKillSwitch;
+    // The switches come from the one switch authority; an unreadable row
+    // reads as engaged / OFF.
+    const { switches, config } = await loadPlatformSettings({ ifMissing: "seed" });
+    const masterSwitch = switches.liveBrokerExecution.envEnabled;
+    const sharedLive = !!config?.sharedLiveTradingEnabled;
+    const platformMode = switches.platformMode;
+    // Both install-wide stops through platformStop(); killSwitchEngaged keeps
+    // naming the platform emergency stop, the combined fields say either.
+    const stop = await platformStopWith(switches);
+    const killEngaged = stopSourceEngaged(stop, "platform_emergency_stop");
 
     const [queueRows, openLiveRows, recon, approvalRows] = await Promise.all([
       db.select({ n: sql<number>`COUNT(*)::int` }).from(schema.mt5CommandsTable)
@@ -2544,6 +2564,7 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
     const blockers: string[] = [];
     if (!masterSwitch) blockers.push("ARX_LIVE_BROKER_EXECUTION_ENABLED=false (server master switch off)");
     if (killEngaged) blockers.push("GLOBAL_KILL_SWITCH_ENGAGED");
+    if (stopSourceEngaged(stop, "safety_core_kill_switch")) blockers.push("SAFETY_CORE_KILL_SWITCH_ENGAGED");
     if (!det.ok) blockers.push(`NO_CURRENT_LIVE_BRIDGE:${det.primaryReason}`);
     if ((openLiveRows[0]?.n ?? 0) > 0) blockers.push(`OPEN_LIVE_COMMANDS_NONTERMINAL=${openLiveRows[0]?.n}`);
     if ((recon.countsBySeverity?.critical ?? 0) > 0) blockers.push(`RECONCILIATION_CRITICAL=${recon.countsBySeverity?.critical}`);
@@ -2561,7 +2582,7 @@ export async function summarizeLaunchReadinessForAdminTool(userId: number) {
       blockers,
       needsAction,
       safeToManuallyTest,
-      systemStatus: { platformMode, killSwitchEngaged: killEngaged, latestQaStatus: "ARX_AUDIT_FIX_BUILD_READY" },
+      systemStatus: { platformMode, killSwitchEngaged: killEngaged, ...platformStopReport(stop), latestQaStatus: "ARX_AUDIT_FIX_BUILD_READY" },
       tradingMode: { liveBrokerExecutionEnabled: masterSwitch, sharedLiveTradingEnabled: sharedLive, currentBridgeDetected: !!det.ok },
       counts: {
         queueDepth: queueRows[0]?.n ?? 0,
@@ -3346,7 +3367,7 @@ export async function evaluateTradeAgainstPlaybookTool(userId: number, preTradeC
         message: "No pre-trade check with that id exists for you. Run a pre-trade check first from the Playbook page.",};
     }
     const [pb] = await db.select({ id: userPlaybooksTable.id, title: userPlaybooksTable.title })
-      .from(userPlaybooksTable).where(eq(userPlaybooksTable.id, check.playbookId)).limit(1);
+      .from(userPlaybooksTable).where(and(eq(userPlaybooksTable.id, check.playbookId), eq(userPlaybooksTable.userId, userId))).limit(1);
     const score = Number(check.score ?? 0);
     let label: string;
     if (score >= 90) label = "A+";
@@ -3418,7 +3439,7 @@ export async function getBestAndWorstPlaybooksTool(userId: number, minTrades: nu
     }
     const pbIds = candidates.map((c) => c.playbookId);
     const pbs = await db.select({ id: userPlaybooksTable.id, title: userPlaybooksTable.title })
-      .from(userPlaybooksTable).where(sql`${userPlaybooksTable.id} = ANY(${pbIds})`);
+      .from(userPlaybooksTable).where(and(sql`${userPlaybooksTable.id} = ANY(${pbIds})`, eq(userPlaybooksTable.userId, userId)));
     const titleById = new Map(pbs.map((p) => [p.id, p.title]));
     const enriched = candidates.map((c) => ({
       playbookId: c.playbookId, title: titleById.get(c.playbookId) ?? `Playbook ${c.playbookId}`,
@@ -3539,10 +3560,15 @@ export async function explainOpportunityRankingTool(userId: number, limit: numbe
 }
 
 // ── Phase TT — Trade ticket assistant tools ────────────────────────────────
-import { ORDER_TYPES as TT_ORDER_TYPES, isOrderType as ttIsOrderType, isMarketOrder as ttIsMarketOrder } from "../tradeAction/orderTypes.js";
+import {
+  ORDER_TYPES as TT_ORDER_TYPES,
+  isOrderType as ttIsOrderType,
+  isMarketOrder as ttIsMarketOrder,
+} from "../tradeAction/orderTypes.js";
 import { validateOrderTicket as ttValidate } from "../tradeAction/orderTicketValidation.js";
 import { tradeActionRequestsTable } from "@workspace/db/schema";
 import { isNotNull } from "drizzle-orm";
+import { readTraderRiskSettings } from "../riskGovernor/limitSettings.js";
 
 const ORDER_TYPE_INFO: Record<string, { whatItIs: string; whenToUse: string; requiredFields: string[]; placementRule: string; typicalUseCase: string; slTpRule: string }> = {
   BUY_MARKET: {
@@ -3783,18 +3809,16 @@ export async function getProtectiveCloseStatusTool(
 
 export async function getBridgeCapabilitiesTool(userId: number, env: SafetyEnvelope) {
   try {
-    const { mt5ConnectionTable } = await import("@workspace/db/schema");
     const {
       normaliseCapabilities,
       resolvePendingSubmitStatus,
       explainStatus,
     } = await import("../mt5/bridgeCapabilities.js");
-    const rows = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId)).limit(1);
-    const conn = rows[0] ?? null;
+    const conn = await getUserPrimaryConnection(userId);
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    const bridgeConnected = !!lastHb && (Date.now() - lastHb.getTime() < 90_000);
+    // Shared heartbeat policy: online (age < 60 s). Was a 90 s advisory window.
+    const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, Date.now()));
     const probe = resolvePendingSubmitStatus({
       capabilities: caps,
       bridgeConnected,

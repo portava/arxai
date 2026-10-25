@@ -9,6 +9,13 @@
 // Usage: pnpm --filter @workspace/api-server run test
 //        (api-server workflow must be running)
 
+// NOTE (owner decision 14, 2026-10-25): POST /execute-trade is retired and
+// returns 410 EXECUTE_TRADE_RETIRED for every authenticated call (401 before
+// that, as since Phase-2 requireUser). The cases below that drive the Safety
+// Core through /execute-trade no longer reach it. This server-dependent
+// legacy suite is not part of ci; see docs/TIER1_TRADE_ENGINE_MODES.md
+// (round 5) for the retirement and the governed paths that replace it.
+
 import { test, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import pkg from "pg";

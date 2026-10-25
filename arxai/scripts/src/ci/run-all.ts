@@ -9,6 +9,7 @@ import { checkDomainCircular } from "./check-domain-circular.js";
 import { checkPaperAutopilotIsolation } from "./check-paper-autopilot-isolation.js";
 import { checkLiveTradingReadinessLock } from "./check-live-trading-readiness-lock.js";
 import { checkEmergencyKillSwitch } from "./check-emergency-kill-switch.js";
+import { checkAdminGateSingleSource } from "./check-admin-gate-single-source.js";
 import { checkLiveOrderRiskLimits } from "./check-live-order-risk-limits.js";
 import { checkSecurityRoleHeader } from "./check-security-role-header.js";
 import { checkNoCommittedPepper } from "./check-no-committed-pepper.js";
@@ -64,6 +65,29 @@ import { checkWorktreeIntegrity } from "./check-worktree-integrity.js";
 import { checkCapitalConstitution } from "./check-capital-constitution.js";
 import { checkProvenanceNoCollapse } from "./check-provenance-no-collapse.js";
 import { checkBrokerHubNoExecution } from "./check-broker-hub-no-execution.js";
+import { checkExecutionSingleEntry } from "./check-execution-single-entry.js";
+import { checkInstrumentMappingSingleSource } from "./check-instrument-mapping-single-source.js";
+import { checkBrokerStateSingleReader } from "./check-broker-state-single-reader.js";
+import { checkSingleRiskAuthority } from "./check-single-risk-authority.js";
+import { checkBrokerConnectionSingleOwner } from "./check-broker-connection-single-owner.js";
+import { checkLearningMemorySingleOwner } from "./check-learning-memory-single-owner.js";
+import { checkPositionGuardianWired } from "./check-position-guardian-wired.js";
+import { checkSingleRoleModel } from "./check-single-role-model.js";
+import { checkStopModificationAuthority } from "./check-stop-modification-authority.js";
+import { checkSinglePositionSizer } from "./check-single-position-sizer.js";
+import { checkSinglePositionLedger } from "./check-single-position-ledger.js";
+import { checkSinglePositionGuardian } from "./check-single-position-guardian.js";
+import { checkSingleOpenPositionView } from "./check-single-open-position-view.js";
+import { checkTradeEngineSinglePipeline } from "./check-trade-engine-single-pipeline.js";
+import { checkSinglePaperBook } from "./check-single-paper-book.js";
+import { checkSingleLimitStore } from "./check-single-limit-store.js";
+import { checkLegacyLiveStateConfined } from "./check-legacy-live-state-confined.js";
+import { checkSingleLlmGateway } from "./check-single-llm-gateway.js";
+import { checkSingleSafetySwitchSource } from "./check-single-safety-switch-source.js";
+import { checkSingleRiskLimitSource } from "./check-single-risk-limit-source.js";
+import { checkBrokerReadAdapterSingleFactory } from "./check-broker-read-adapter-single-factory.js";
+import { checkSingleBrokerStateSource } from "./check-single-broker-state-source.js";
+import { checkSingleBridgeFreshnessSource } from "./check-single-bridge-freshness-source.js";
 // NOTE: `check-no-user-facing-paper-only.ts` exists as a future guard but
 // is intentionally NOT registered yet — it finds 65 pre-existing UI
 // strings (login.tsx, onboarding.tsx, my-paper-trades.tsx, etc.) that are
@@ -84,6 +108,7 @@ const checks: Array<() => CheckResult> = [
   checkPaperAutopilotIsolation,
   checkLiveTradingReadinessLock,
   checkEmergencyKillSwitch,
+  checkAdminGateSingleSource,
   checkLiveOrderRiskLimits,
   checkSecurityRoleHeader,
   checkNoCommittedPepper,
@@ -136,6 +161,29 @@ const checks: Array<() => CheckResult> = [
   checkCapitalConstitution,
   checkProvenanceNoCollapse,
   checkBrokerHubNoExecution,
+  checkExecutionSingleEntry,
+  checkInstrumentMappingSingleSource,
+  checkBrokerStateSingleReader,
+  checkSingleRiskAuthority,
+  checkBrokerConnectionSingleOwner,
+  checkLearningMemorySingleOwner,
+  checkPositionGuardianWired,
+  checkSingleRoleModel,
+  checkStopModificationAuthority,
+  checkSinglePositionSizer,
+  checkSinglePositionLedger,
+  checkSinglePositionGuardian,
+  checkSingleOpenPositionView,
+  checkTradeEngineSinglePipeline,
+  checkSinglePaperBook,
+  checkSingleLimitStore,
+  checkLegacyLiveStateConfined,
+  checkSingleLlmGateway,
+  checkSingleSafetySwitchSource,
+  checkSingleRiskLimitSource,
+  checkBrokerReadAdapterSingleFactory,
+  checkSingleBrokerStateSource,
+  checkSingleBridgeFreshnessSource,
 ];
 
 let failed = 0;

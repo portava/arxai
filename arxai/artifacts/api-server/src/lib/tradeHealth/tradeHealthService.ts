@@ -13,15 +13,9 @@
 //    input degrades to an honest "unknown" in the engine, never a fabricated
 //    value, and never sim/mock/paper data treated as real.
 
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { and, desc, eq, gte, isNotNull, inArray, sql } from "drizzle-orm";
-import {
-  db,
-  arxLiveCommandsTable,
-  arxLivePositionsTable,
-  mt5DemoCommandsTable,
-  mt5StateTable,
-  tradesTable,
-} from "@workspace/db";
+import { db, arxLiveCommandsTable, mt5DemoCommandsTable, tradesTable } from "@workspace/db";
 import {
   buildTradeHealthReport,
   type OpenPositionInput,
@@ -33,6 +27,7 @@ import {
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { getEconomicCalendar } from "../news/economicCalendarProvider.js";
+import { readLatestUserMt5State } from "../brokerHub/mt5StateReader.js";
 
 export interface TradeHealthServiceArgs {
   userId: number;
@@ -100,10 +95,7 @@ async function readOpenPositions(
   // reports as open). fillRecorded comes from the source command's real fill
   // price — never fabricated.
   if (includeLive) {
-    const liveRowsAll = await db
-      .select()
-      .from(arxLivePositionsTable)
-      .where(eq(arxLivePositionsTable.userId, userId));
+    const liveRowsAll = await livePositionLedger.read({ where: eq(livePositionColumns.userId, userId) });
     const newestSync = liveRowsAll.reduce((max, r) => {
       const t = r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : 0;
       return t > max ? t : max;
@@ -160,13 +152,7 @@ async function readOpenPositions(
 
   // DEMO — latest mt5_state row for the user, then map its positions JSON.
   if (includeDemo) {
-    const stateRows = await db
-      .select()
-      .from(mt5StateTable)
-      .where(eq(mt5StateTable.userId, userId))
-      .orderBy(sql`${mt5StateTable.lastSyncAt} DESC NULLS LAST`)
-      .limit(1);
-    const stateRow = stateRows[0];
+    const stateRow = await readLatestUserMt5State(userId);
     const syncedMs = toMs(stateRow?.lastSyncAt);
     const positionsRaw: DemoRaw[] = Array.isArray(stateRow?.positions)
       ? (stateRow!.positions as DemoRaw[])

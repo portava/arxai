@@ -43,7 +43,7 @@ import {
 import { ensurePools } from "./navEngine.js";
 import { handshakeEventBus } from "../handshake/eventBus.js";
 import { getBrokerMirror, getPoolFloatingPl } from "./brokerMirror.js";
-import { ageMsOf } from "./mirrorFreshness.js";
+import { ageMsOf, classifyBrokerFreshness } from "./mirrorFreshness.js";
 import { createAlert } from "../alerts/alertManager.js";
 import {
   evaluateReconciliation,
@@ -1024,14 +1024,8 @@ export async function getValueStatusForUser(
     }
   }
   const brokerAgeMs = ageMsOf(newestBrokerAt, now);
-  const brokerFreshness =
-    brokerAgeMs == null
-      ? ("MISSING" as const)
-      : brokerAgeMs <= 15_000
-        ? ("FRESH" as const)
-        : brokerAgeMs <= 60_000
-          ? ("DELAYED" as const)
-          : ("STALE" as const);
+  // Same bands as the broker mirror (≤ 15 s FRESH, ≤ 60 s DELAYED, null MISSING).
+  const brokerFreshness = classifyBrokerFreshness(brokerAgeMs);
 
   const poolIds = holdings.map((h) => h.poolId);
 

@@ -18,7 +18,7 @@ import {
   arxAssistantMessagesTable, arxAssistantToolCallsTable,
 } from "@workspace/db";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { completeChat } from "../ai/llmGateway.js";
 import { encryptField, readField } from "../security/encryptionAtRest.js";
 import { logger } from "../logger.js";
 import { recordSecurityEvent } from "../security/events.js";
@@ -310,9 +310,10 @@ export async function summarizeIfNeeded(userId: number, conversationId: number):
   let tradingStyle = existing.tradingStyle ?? {};
   let preferences = existing.preferences ?? {};
   try {
-    const res = await openai.chat.completions.create({
+    const raw = await completeChat({
+      purpose: "assistant_memory_summary",
       model: "gpt-5.4",
-      max_completion_tokens: 800,
+      maxTokens: 800,
       messages: [
         { role: "system", content:
           "You maintain a compact long-term memory profile of an ARX AI user. " +
@@ -327,9 +328,8 @@ export async function summarizeIfNeeded(userId: number, conversationId: number):
         { role: "user", content:
           `PRIOR SUMMARY:\n${priorSummary || "(empty)"}\n\nRECENT TRANSCRIPT:\n${transcript}\n\nReturn JSON only.` },
       ],
-      response_format: { type: "json_object" },
+      json: true,
     });
-    const raw = res.choices?.[0]?.message?.content ?? "";
     if (raw) {
       const parsed = JSON.parse(raw) as {
         rollingSummary?: string; tradingStyle?: Record<string, unknown>; preferences?: Record<string, unknown>;

@@ -31,11 +31,11 @@
 //   - No token/secret/account-number/broker-name ever in the payload
 //   - Raw gate codes only under `details.rawCodes`
 import express, { type IRouter, Router } from "express";
+import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
   db,
-  globalTradingSettingsTable,
   virtualTradingAccountsTable,
 } from "@workspace/db";
 import {
@@ -121,8 +121,8 @@ const PLATFORM_BLOCK_HEADLINES: Record<PlatformBridgeMode, string> = {
 router.get("/me/live-readiness", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
 
-  const [settingsRows, vAccounts, userGate, arming, liveState] = await Promise.all([
-    db.select().from(globalTradingSettingsTable).limit(1),
+  const [platformSettings, vAccounts, userGate, arming, liveState] = await Promise.all([
+    loadPlatformSettings(),
     db
       .select({
         status: virtualTradingAccountsTable.status,
@@ -135,9 +135,9 @@ router.get("/me/live-readiness", requireUser, async (req, res) => {
     buildApprovedTraderLiveState(userId),
   ]);
 
-  const s = settingsRows[0];
+  const s = platformSettings.config;
   const platform = derivePlatformBridgeMode({
-    platformMode: s?.platformMode,
+    platformMode: platformSettings.switches.platformMode,
     accountRoutingMode: s?.accountRoutingMode,
     masterBridgeLiveEnabled: !!s?.masterBridgeLiveEnabled,
     sharedLiveTradingEnabled: !!s?.sharedLiveTradingEnabled,

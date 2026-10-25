@@ -13,14 +13,10 @@
 //   floating signal an investor ever sees (as their own pro-rata share),
 //   never a raw position, ticket, or account number.
 
-import { and, eq, isNull } from "drizzle-orm";
-import {
-  db,
-  mt5ConnectionTable,
-  arxLivePositionsTable,
-  tradePoolAllocationsTable,
-  type ArxLivePosition,
-} from "@workspace/db";
+import { readOpenLivePositionsWithPools } from "../positions/ledger.js";
+
+import { listConnections } from "../brokerHub/connections.js";
+import { db, type ArxLivePosition } from "@workspace/db";
 import {
   aggregatePoolFloatingPl,
   isFloatingPlIngestible,
@@ -52,24 +48,7 @@ export interface OpenPositionWithPool extends ArxLivePosition {
 export async function getOpenPositionsWithPools(
   dbh: DbReader = db,
 ): Promise<OpenPositionWithPool[]> {
-  const rows = await dbh
-    .select({
-      pos: arxLivePositionsTable,
-      allocPoolId: tradePoolAllocationsTable.strategyPoolId,
-      allocStatus: tradePoolAllocationsTable.status,
-    })
-    .from(arxLivePositionsTable)
-    .leftJoin(
-      tradePoolAllocationsTable,
-      // Ticket uniqueness is per-user, so the join MUST be scoped by BOTH the
-      // user id and the ticket — joining on ticket alone over-matches across
-      // accounts and could attribute one user's position to another's pool.
-      and(
-        eq(arxLivePositionsTable.userId, tradePoolAllocationsTable.userId),
-        eq(arxLivePositionsTable.brokerTicket, tradePoolAllocationsTable.brokerTicket),
-      ),
-    )
-    .where(isNull(arxLivePositionsTable.closedAt));
+  const rows = await readOpenLivePositionsWithPools(dbh);
 
   return rows.map((r) => {
     const assigned =
@@ -113,12 +92,11 @@ export async function getOverlayFreshness(now: number = Date.now()): Promise<{
   freshness: BrokerFreshness;
   asOf: Date | null;
 }> {
-  const connections = await db
-    .select({ snapshotAt: mt5ConnectionTable.lastPositionsSnapshotAt })
-    .from(mt5ConnectionTable);
+  const connections = await listConnections();
   let newest: Date | null = null;
   for (const c of connections) {
-    if (c.snapshotAt && (newest == null || c.snapshotAt > newest)) newest = c.snapshotAt;
+    const at = c.lastPositionsSnapshotAt;
+    if (at && (newest == null || at > newest)) newest = at;
   }
   return { freshness: classifyBrokerFreshness(ageMsOf(newest, now), { now }), asOf: newest };
 }
@@ -153,7 +131,7 @@ export async function getBrokerMirror(now: number = Date.now()): Promise<{
   positions: OpenPositionWithPool[];
 }> {
   const [connections, { positions }] = await Promise.all([
-    db.select().from(mt5ConnectionTable),
+    listConnections(),
     getPoolFloatingPl(),
   ]);
 

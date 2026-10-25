@@ -84,11 +84,19 @@ export interface BrokerStatus {
   notes: string[];
 }
 
+// Whose broker data a read may return. Required on every per-account read so a
+// caller cannot forget it: a trader gets their own rows, and only an operator
+// (includeLegacy) also gets the user_id=NULL rows of the shared MT5 connection.
+export interface BrokerOwner {
+  userId: number;
+  includeLegacy: boolean;
+}
+
 export interface BrokerProvider {
   readonly kind: BrokerKind;
   status(): Promise<BrokerStatus>;
-  account(): Promise<BrokerAccount | null>;
+  account(owner: BrokerOwner): Promise<BrokerAccount | null>;
   symbols(): Promise<BrokerSymbol[]>;
-  positions(): Promise<BrokerPosition[]>;
-  orders(limit?: number): Promise<BrokerOrder[]>;
+  positions(owner: BrokerOwner): Promise<BrokerPosition[]>;
+  orders(owner: BrokerOwner, limit?: number): Promise<BrokerOrder[]>;
 }

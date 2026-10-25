@@ -1,14 +1,23 @@
 // Phase 5B — User-safe paper trade lifecycle routes.
 // SAFETY: paper-only. No broker order is ever placed from this file.
 // Every route requires login; every query is scoped by req.authUser.id.
+//
+// JOURNAL-ONLY (Tier 1 step 5): a paper_trades row is the trader's own record
+// of a trade they planned or took, with prices they type in. Nothing here
+// fills, books exposure in a venue, or moves a stop anywhere; the rows are
+// not read by any execution path or by the pre-trade Risk Governor's book.
+// Executable paper orders go through POST /paper/orders (paper ledger) or the
+// simulator OMS, both governed. omsGovernance.test.ts holds the line: this is
+// the only writer of paper_trades and it imports no execution path.
+import { getUserConnection } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import {
-  db, paperTradesTable, tradingSessionsTable, mt5ConnectionTable,
-} from "@workspace/db";
+  db, paperTradesTable, tradingSessionsTable, } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
-import { evaluateForPaperOpen, postPaperCloseRiskHooks } from "./meRiskGovernor.js";
+import { postPaperCloseRiskHooks } from "./meRiskGovernor.js";
+import { enforceJournalModify, enforceJournalOpen } from "../lib/riskGovernor/journal.js";
 import { fireNotify, fireActivity } from "../lib/notificationService.js";
 
 const router = Router();
@@ -83,10 +92,7 @@ async function verifySession(userId: number, sessionId: number | null | undefine
 }
 async function verifyConnection(userId: number, connId: number | null | undefined) {
   if (connId == null) return true;
-  const r = await db.select({ id: mt5ConnectionTable.id }).from(mt5ConnectionTable)
-    .where(and(eq(mt5ConnectionTable.id, connId), eq(mt5ConnectionTable.userId, userId)))
-    .limit(1);
-  return !!r[0];
+  return !!(await getUserConnection(userId, connId));
 }
 
 function serialize(t: typeof paperTradesTable.$inferSelect) {
@@ -99,6 +105,8 @@ function serialize(t: typeof paperTradesTable.$inferSelect) {
     updatedAt: t.updatedAt?.toISOString() ?? null,
     tradeKind: "paper" as const,
     safetyMode: "paper_only" as const,
+    recordKind: "journal" as const,
+    executionCapable: false as const,
   };
 }
 
@@ -210,6 +218,23 @@ router.patch("/me/paper-trades/:id", requireUser, async (req, res): Promise<void
     if (body.mt5ConnectionId !== undefined && !(await verifyConnection(userId, body.mt5ConnectionId))) {
       res.status(404).json({ error: "MT5 connection not found" }); return;
     }
+    if (t.status === "open") {
+      // An open trade's exposure is fixed: size, side and symbol cannot change,
+      // and a stop or target move goes through the Risk Governor.
+      const locked = (["symbol", "lotSize", "plannedEntryPrice", "entryType"] as const)
+        .filter((k) => body[k] !== undefined && body[k] !== t[k]);
+      if (locked.length) { res.status(409).json({ error: "OPEN_TRADE_EXPOSURE_LOCKED", fields: locked }); return; }
+      if ((body.stopLoss !== undefined && body.stopLoss !== t.stopLoss) || (body.takeProfit !== undefined && body.takeProfit !== t.takeProfit)) {
+        const check = await enforceJournalModify(userId, t, {
+          stopLoss: body.stopLoss !== undefined ? body.stopLoss ?? null : t.stopLoss,
+          takeProfit: body.takeProfit !== undefined ? body.takeProfit ?? null : t.takeProfit,
+        });
+        if (check.decision !== "pass") {
+          res.status(409).json({ error: "RISK_GOVERNOR_BLOCKED", reason: check.reason, failedRules: check.failedRules, blockedBy: check.risk.blockedBy });
+          return;
+        }
+      }
+    }
     const next = { ...t, ...body, updatedAt: new Date() };
     next.rewardRiskRatio = rrr(next.side, next.plannedEntryPrice ?? next.entryPrice, next.stopLoss, next.takeProfit);
     await db.update(paperTradesTable).set({
@@ -275,11 +300,13 @@ router.post("/me/paper-trades/:id/open", requireUser, async (req, res): Promise<
     const body = OpenBody.parse(req.body ?? {});
     const openedAt = body.openedAt ? new Date(body.openedAt) : new Date();
     const rr = rrr(t.side, body.entryPrice, t.stopLoss, t.takeProfit);
-    // Phase 8E — Risk Governor pre-flight (paper-only). Override allowed in paper mode with reason.
+    // Pre-trade Risk Governor: the same 13 rules as every venue. A written
+    // override (paper only) can pass a block raised by the trader's own
+    // discipline settings alone, never an exposure rule.
     const overrideReason = typeof (req.body as Record<string, unknown> | undefined)?.overrideReason === "string"
       ? String((req.body as Record<string, unknown>).overrideReason) : null;
-    const tForCheck = { ...t, entryPrice: body.entryPrice, rewardRiskRatio: rr ?? t.rewardRiskRatio };
-    const guard = await evaluateForPaperOpen(userId, { trade: tForCheck, override: overrideReason ? { reason: overrideReason } : null });
+    const check = await enforceJournalOpen(userId, t, body.entryPrice, overrideReason ? { reason: overrideReason } : null);
+    const guard = { allow: check.decision === "pass", result: check };
     if (!guard.allow) {
       // Phase 28-AUD: audit hook — blocked paper order. Captures decision,
       // failed rules, and the safety gate state. No secrets; per-user scoped.
@@ -299,8 +326,10 @@ router.post("/me/paper-trades/:id/open", requireUser, async (req, res): Promise<
         error: "RISK_GOVERNOR_BLOCKED",
         decision: guard.result.decision, reason: guard.result.reason,
         failedRules: guard.result.failedRules, requiredActions: guard.result.requiredActions,
-        overrideAllowed: guard.result.overrideAllowed,
-        message: "Paper trade blocked by your Risk Governor. Provide an overrideReason (paper mode only) if you accept the risk.",
+        overrideAllowed: guard.result.overrideAllowed, blockedBy: check.risk.blockedBy,
+        message: guard.result.overrideAllowed
+          ? "Paper trade blocked by your own trading rules. Provide an overrideReason (paper mode only) if you accept the risk."
+          : "Paper trade blocked by the Risk Governor.",
         safetyMode: "paper_only", liveLocked: true, allowOrderExecution: false,
       });
       return;

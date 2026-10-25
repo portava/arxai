@@ -13,6 +13,7 @@
 //   GET  /api/me/assistant/tools                    list tool definitions
 //   GET  /api/me/assistant/market-status            market provider status
 
+import { readOpenPositions } from "../lib/positions/openPositions.js";
 import express, { Router } from "express";
 import multer from "multer";
 
@@ -25,24 +26,29 @@ const voiceUpload = multer({
 });
 import type { Request } from "express";
 import {
-  db, arxAssistantConversationsTable, arxAssistantMessagesTable, arxAssistantToolCallsTable,
-  oneClickAuditTable, userOneClickSettingsTable, arxLivePositionsTable,
-  rubyCommandsTable, rubyWatchInstructionsTable, type RubyCommandKind,
+  db,
+  arxAssistantConversationsTable,
+  arxAssistantMessagesTable,
+  arxAssistantToolCallsTable,
+  oneClickAuditTable,
+  userOneClickSettingsTable,
+  rubyCommandsTable,
+  rubyWatchInstructionsTable,
+  type RubyCommandKind,
 } from "@workspace/db";
-import { and, asc, desc, eq, isNull, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { parseTradeCommand } from "../lib/assistant/parseTradeCommand.js";
-import { executeInstant, type InstantTradeIntent, type InstantTradeResult } from "../lib/live/instantTrade.js";
+import type { InstantTradeIntent, InstantTradeResult } from "../lib/live/instantTrade.js";
+import { submitInstantTrade } from "../lib/tradeEngine/pipeline.js";
 import { runHandshake } from "../lib/handshake/coordinator.js";
 import { classifyTradeHealth, computeSlDistance, type OpenPositionInput } from "@workspace/domain/trade-health";
 import { getMarketData } from "../lib/data/dataManager.js";
-import {
-  analyzeChartStructure, quickTrend, higherTimeframeOf, type StructureBias,
-} from "../lib/assistant/chartStructure.js";
+import { analyzeChartStructure, quickTrend, type StructureBias } from "../lib/assistant/chartStructure.js";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { isUniqueViolation } from "../lib/pgError.js";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { chatProviderConfigured, streamToolChat, voiceAudio, type ToolChatStreamChunk } from "../lib/ai/llmGateway.js";
 import {
   TOOL_DEFINITIONS, dispatchTool, classifyIntent,
   setRequestPageContext,
@@ -59,10 +65,7 @@ import { getAssistantDisplayName } from "../lib/assistant/assistantName.js";
 import { getMarketStatus } from "../lib/assistant/marketProvider.js";
 import { buildRubyContext, composeRubyBriefing, type RubyRole } from "../lib/assistant/rubyContext.js";
 import { resolveAssistantMarket } from "../lib/markets/assistantMarketResolver.js";
-import {
-  buildChartIntelligenceState,
-  getCachedIntelligenceContext,
-} from "../lib/data/chart/chartIntelligence.js";
+import { buildChartIntelligenceState } from "../lib/data/chart/chartIntelligence.js";
 import { type ChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { buildRubyChartContext, buildGatedTrustLine } from "../lib/data/chart/rubyChartContext.js";
 import { buildRubyStructuralRead } from "../lib/assistant/rubyStructuralReadService.js";
@@ -218,9 +221,8 @@ router.get("/me/assistant/voice-status", requireUser, async (req, res) => {
 // request (avoids unnecessary token spend), so we only claim connectivity
 // when the key is present and the in-process openai client was constructed.
 router.get("/me/assistant/provider-status", requireUser, async (req, res) => {
-  const proxyKey = process.env["AI_INTEGRATIONS_OPENAI_API_KEY"];
   const directKey = process.env["OPENAI_API_KEY"];
-  const configured = Boolean(proxyKey && proxyKey.trim().length > 0);
+  const configured = chatProviderConfigured();
   res.json({
     provider: configured ? "openai" : "none",
     configured,
@@ -1242,19 +1244,15 @@ router.post("/me/assistant/conversations/:id/messages", requireUser, safe(async 
 
   for (let turn = 0; turn < MAX_TURNS_PER_REQUEST; turn++) {
     if (aborted) break;
-    let stream: AsyncIterable<{ choices: Array<{ delta: { content?: string | null; tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }> }; finish_reason?: string | null }> }>;
+    let stream: AsyncIterable<ToolChatStreamChunk>;
     try {
-      stream = await openai.chat.completions.create({
+      stream = await streamToolChat({
         model: MODEL,
-        max_completion_tokens: 8192,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        messages: messages as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tools: tools as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tool_choice: resolveAssistantToolChoice(turn, forceStructuralRead) as any,
-        stream: true,
-      }) as unknown as AsyncIterable<{ choices: Array<{ delta: { content?: string | null; tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }> }; finish_reason?: string | null }> }>;
+        maxTokens: 8192,
+        messages,
+        tools,
+        toolChoice: resolveAssistantToolChoice(turn, forceStructuralRead),
+      });
     } catch (e) {
       try { (req as { log?: { error: (...a: unknown[]) => void } }).log?.error({ err: (e as Error)?.message }, "assistant_openai_failed"); } catch { /* noop */ }
       send({ type: "error", message: "AI provider unavailable. Please try again in a moment." });
@@ -1550,7 +1548,7 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
   let userTranscript = "";
   let assistantTranscript = "";
   try {
-    const audio = await import("@workspace/integrations-openai-ai-server/audio");
+    const audio = await voiceAudio();
     const { buffer, format } = await audio.ensureCompatibleFormat(audioBuffer);
     const stream = await audio.voiceChatStream(buffer, "alloy", format, voicePriorMessages);
     for await (const event of stream) {
@@ -1623,7 +1621,8 @@ router.post("/me/assistant/conversations/:id/voice", requireUser, voiceUpload.si
 // raw user utterance ("buy EURUSD 0.01", "close my XAUUSD", "close all"
 // "set TP on EURUSD to 1.0920"); this endpoint parses it, decides whether
 // it's a CLEAR direct command or a VAGUE analysis question, and — only
-// when clear — forwards through `executeInstant()` which then runs every
+// when clear — forwards through the Trade Engine one-click leg
+// (`submitInstantTrade()` → `executeInstant()`) which then runs every
 // existing live-trading gate (master-live access, server master switch,
 // 16-gate Phase B, kill switch, max lot, daily loss, missing-SL override,
 // per-user advisory lock, idempotency).
@@ -1671,7 +1670,7 @@ function rubyFingerprint(commandKind: string, intent: InstantTradeIntent): strin
 // Record a Ruby command in the ledger, run the advisory RUBY_EXECUTION
 // handshake, dispatch through the EXISTING instant-trade router, and link the
 // outcome back onto the ledger row. There is NO second execution path — this
-// only WRAPS executeInstant with idempotency + evidence + an advisory check.
+// only WRAPS submitInstantTrade (→ executeInstant) with idempotency + evidence + an advisory check.
 async function recordAndExecuteRuby(args: {
   userId: number;
   intent: InstantTradeIntent;
@@ -1729,7 +1728,7 @@ async function recordAndExecuteRuby(args: {
     .set({ status: "EXECUTING", handshakeStatus, updatedAt: new Date() })
     .where(eq(rubyCommandsTable.id, commandRowId));
 
-  const result = await executeInstant({ userId, intent, ip, ua });
+  const result = await submitInstantTrade({ userId, intent, ip, ua });
 
   if (result.ok) {
     await db.update(rubyCommandsTable).set({
@@ -2029,11 +2028,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which open position should I watch?" });
         return;
       }
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol })).map((p) => p.row);
       if (open.length === 0) {
         res.json({ ok: false, classification: "NO_OPEN_POSITION", message: `No open ${symbol} position to watch.` });
         return;
@@ -2111,11 +2106,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
     case "CLOSE_ONE": {
       // Resolve a single open position for that symbol; if multiple,
       // refuse and let the user disambiguate. NEVER pick one silently.
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, parsed.symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: parsed.symbol })).map((p) => p.row);
       if (open.length === 0) {
         await db.insert(oneClickAuditTable).values({
           userId, action: "INSTANT_CLOSE_REJECTED", ip, userAgent: ua,
@@ -2148,11 +2139,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
       // Reduce-risk: close part of a single open position. Resolves the same
       // way as CLOSE_ONE (no silent pick) but carries closeVolume so only that
       // many lots are closed via the EXISTING close primitive.
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, parsed.symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: parsed.symbol })).map((p) => p.row);
       if (open.length === 0) {
         await db.insert(oneClickAuditTable).values({
           userId, action: "INSTANT_CLOSE_REJECTED", ip, userAgent: ua,
@@ -2244,11 +2231,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which market should I modify?" });
         return;
       }
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, sym),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: sym })).map((p) => p.row);
       if (open.length === 0) {
         await db.insert(oneClickAuditTable).values({
           userId, action: "INSTANT_EXECUTE_REJECTED", ip, userAgent: ua,
@@ -2288,11 +2271,7 @@ router.post("/me/assistant/instant-trade-command", requireUser, safe(async (req,
         res.json({ ok: false, classification: "MODIFY_NEEDS_SYMBOL", message: "Which market should I move to break-even?" });
         return;
       }
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, sym),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: sym })).map((p) => p.row);
       if (open.length === 0) {
         res.json({ ok: false, classification: "NO_OPEN_POSITION", message: `No open ${sym} position to move to break-even.` });
         return;
@@ -2435,11 +2414,7 @@ router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) =
     // user's own stop. Permission + authority are re-checked at fire-time below.
     if (w.kind === "MONITOR_TRADE") {
       if (!w.symbol) continue;
-      const openRows = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, w.symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const openRows = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: w.symbol })).map((p) => p.row);
       const row = w.positionTicket
         ? openRows.find((o) => o.brokerTicket === w.positionTicket)
         : (openRows.length === 1 ? openRows[0] : undefined);
@@ -2586,11 +2561,7 @@ router.post("/me/assistant/watch/evaluate", requireUser, safe(async (req, res) =
       commandKind = "OPEN_TRADE";
     } else {
       // WATCH_AND_CLOSE — confirm the position still exists.
-      const open = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, w.symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+      const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol: w.symbol })).map((p) => p.row);
       const row = w.positionTicket
         ? open.find((o) => o.brokerTicket === w.positionTicket)
         : (open.length === 1 ? open[0] : undefined);

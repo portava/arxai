@@ -15,14 +15,15 @@
 
 import { type Request, type Response, Router } from "express";
 import { getChartTruthAudit } from "../lib/data/chart/chartTruthAuditService.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router: Router = Router();
 
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const u = (req as unknown as { authUser?: { id: number; role?: string } }).authUser;
   if (!u) { res.status(401).json({ error: "AUTH_REQUIRED" }); return null; }
-  const role = String(u.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ error: "FORBIDDEN", message: "Admin or Owner role required." });
     return null;
   }

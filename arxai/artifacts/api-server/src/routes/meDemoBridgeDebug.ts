@@ -13,11 +13,12 @@
 // SAFETY: never returns tokens, hashes, IPs, raw account numbers, or
 // safetyGateSnapshot blobs. Account login is masked.
 
+import { isHeartbeatAgeSecondsOnline } from "../lib/brokerHub/freshness.js";
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request } from "express";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
-  mt5ConnectionTable,
   mt5DemoCommandsTable,
   securityEventsTable,
 } from "@workspace/db";
@@ -28,7 +29,6 @@ import { evaluatePerUserDispatchGate } from "../lib/mt5/demoDispatchGate.js";
 const router = Router();
 
 const POLL_FRESH_WINDOW_MS = 60_000;
-const HEARTBEAT_FRESH_WINDOW_MS = 60_000;
 
 function getUserId(req: Request): number | null {
   const authUser = (req as Request & { authUser?: { id: number } }).authUser;
@@ -76,10 +76,7 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
   // which bridge is "active". Falls back to the legacy freshest-non-revoked
   // rule only if the gate evidence is missing (defensive — should not
   // happen in practice).
-  const bridgeRows = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
+  const bridgeRows = await listUserConnections(userId, { order: "oldest" });
   let activeBridgeIdFromGate: number | null = null;
   let gateEvidence: Awaited<ReturnType<typeof evaluatePerUserDispatchGate>>["evidence"] | null = null;
   let gateBlockers: string[] = [];
@@ -226,8 +223,8 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
 
   const lastHeartbeatAt = conn?.lastHeartbeat ?? null;
   const heartbeatAgeSeconds = ageSeconds(lastHeartbeatAt);
-  const bridgeHeartbeatFresh =
-    heartbeatAgeSeconds != null && heartbeatAgeSeconds * 1000 < HEARTBEAT_FRESH_WINDOW_MS;
+  // Debug "heartbeat fresh" = online under the shared policy (age < 60 s).
+  const bridgeHeartbeatFresh = isHeartbeatAgeSecondsOnline(heartbeatAgeSeconds);
 
   const lastPollAt = lastPoll?.createdAt ?? null;
   const lastPollAgeSeconds = ageSeconds(lastPollAt);
@@ -284,7 +281,7 @@ router.get("/me/demo-bridge-debug", requireUser, async (req, res) => {
       isActive: r.id === (conn?.id ?? -1),
     }));
   const staleBridges = allBridges.filter(
-    (b) => !b.isActive && (b.heartbeatAgeSeconds == null || b.heartbeatAgeSeconds > 60),
+    (b) => !b.isActive && !isHeartbeatAgeSecondsOnline(b.heartbeatAgeSeconds),
   );
   // Group by UNMASKED accountNumber server-side — masked logins (`***last4`)
   // can collide for distinct accounts and produce false positives. The

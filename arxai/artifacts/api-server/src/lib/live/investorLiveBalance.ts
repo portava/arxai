@@ -29,14 +29,11 @@
 //   • Freshness is derived from real timestamps and mapped from the adapter's
 //     5-level scale; stale data is reported stale, never relabelled fresh.
 
+import { readOpenPositions } from "../positions/openPositions.js";
+import { getUserAccountConnection } from "../brokerHub/connections.js";
+import { accountFiguresOf, connectionAccountSnapshot } from "../brokerHub/accountSnapshot.js";
 import { db } from "@workspace/db";
-import {
-  arxLivePositionsTable,
-  userSlotAllocationTable,
-  virtualTradingAccountsTable,
-  mt5ConnectionTable,
-  sharedTradeAttributionTable,
-} from "@workspace/db/schema";
+import { userSlotAllocationTable, virtualTradingAccountsTable, sharedTradeAttributionTable } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   buildLiveAccountSnapshot,
@@ -46,7 +43,6 @@ import {
   type AccountMode,
   type Freshness,
 } from "./liveAccountSnapshot.js";
-import { openLiveExposureCondition } from "./livePositionExposure.js";
 import { getUserModeScope } from "../modeScope/getUserModeScope.js";
 import { resolveLivePositionVisibility } from "../modeScope/livePositionVisibility.js";
 
@@ -389,39 +385,33 @@ export async function buildInvestorLiveBalanceSnapshot(
   // Live floating P/L — only when the user is genuinely in LIVE_SHARED mode.
   let liveSnapshot: LiveAccountSnapshot | null = null;
   if (includeLive) {
-    const rows = await db
-      .select()
-      .from(arxLivePositionsTable)
-      .where(openLiveExposureCondition(userId));
-    const connRows = await db
-      .select()
-      .from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId))
-      .limit(1);
-    const conn = connRows[0];
+    const rows = await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE", modeScope: scope });
+    const conn = await getUserAccountConnection(userId);
     liveSnapshot = buildLiveAccountSnapshot({
       userId,
       accountMode: "LIVE_SHARED",
       rows: rows.map((r) => ({
         id: r.id,
-        brokerTicket: r.brokerTicket,
+        brokerTicket: r.ticket,
         symbol: r.symbol,
         side: r.side,
-        volume: r.volume,
+        volume: r.lots,
         entryPrice: r.entryPrice,
         currentPrice: r.currentPrice,
-        floatingPl: r.floatingPl,
+        floatingPl: r.floatingPnl,
         stopLoss: r.stopLoss,
         takeProfit: r.takeProfit,
-        closedAt: r.closedAt,
-        reconcileState: r.reconcileState,
-        lastSyncedAtMs: r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : null,
+        closedAt: r.row.closedAt,
+        reconcileState: r.row.reconcileState,
+        lastSyncedAtMs: r.observedAt ? new Date(r.observedAt).getTime() : null,
       })),
       quotes: undefined,
-      account: {
-        equity: conn?.accountEquity ?? null,
-        balance: conn?.accountBalance ?? null,
-      },
+      // Authoritative per-connection snapshot (owner decision 16): a
+      // never-synced connection reports null, not the column default 0.
+      account: (() => {
+        const f = accountFiguresOf(connectionAccountSnapshot(conn));
+        return { equity: f.equity, balance: f.balance };
+      })(),
       now,
     });
   }

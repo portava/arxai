@@ -132,9 +132,12 @@ export async function notify(input: NotifyInput & { userId?: number | null }, op
   const safeMessage = scrubString(input.message);
   const safeMetadata = scrubObject(input.metadata ?? {}) as Record<string, unknown>;
 
-  // Dedupe lookup
+  // Dedupe lookup. dedupe_key is unique across the table, so a per-user event
+  // is stored under a user-namespaced key: two users raising the same logical
+  // event get separate notifications instead of one overwriting the other's.
+  const storedDedupeKey = typeof input.userId === "number" ? `u${input.userId}:${input.dedupeKey}` : input.dedupeKey;
   const [existing] = await db.select().from(notificationsTable)
-    .where(eq(notificationsTable.dedupeKey, input.dedupeKey)).limit(1);
+    .where(eq(notificationsTable.dedupeKey, storedDedupeKey)).limit(1);
 
   if (existing) {
     // Idempotent ingest re-runs of unchanged source rows must NOT bump repeat_count.
@@ -199,7 +202,7 @@ export async function notify(input: NotifyInput & { userId?: number | null }, op
     recommendedAction: input.recommendedAction ?? null,
     actionUrl: input.actionUrl ?? null,
     metadata: safeMetadata,
-    dedupeKey: input.dedupeKey,
+    dedupeKey: storedDedupeKey,
     repeatCount: 1,
     expiresAt,
   }).returning();

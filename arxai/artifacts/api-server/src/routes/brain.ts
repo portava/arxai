@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod/v4";
 import { analyzeMarket } from "../brain/marketBrain.js";
-import { getAllSymbols, getSymbolInfo, getSymbolsByCategory } from "../brain/symbols/symbolRegistry.js";
+import { getAllSymbols, getSymbolInfo, getSymbolsByCategory } from "../lib/instruments/index.js";
 import { attachAuthUser } from "../lib/auth/middleware.js";
 import { getBrokerSymbolSpec } from "../lib/mt5/brokerSymbolSpec.js";
 

@@ -14,8 +14,10 @@
 //   broker balance is never split across investors.
 // - NO guaranteed / fixed / risk-free return wording anywhere.
 
+import { livePositionColumns } from "../lib/positions/ledger.js";
+import { selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
 import { Router, type Request, type Response } from "express";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
@@ -24,7 +26,6 @@ import {
   strategyPoolNavTable,
   investorPoolHoldingsTable,
   tradePoolAllocationsTable,
-  arxLivePositionsTable,
   fundBookHighWaterMarksTable,
   usersTable,
 } from "@workspace/db";
@@ -47,6 +48,7 @@ import {
   getReportByIdAdmin,
   WeeklyReportError,
 } from "../lib/fundbook/weeklyReportEngine.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -55,11 +57,12 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
   if (!u?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  if (u.role !== "ADMIN" && u.role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }
-  return { id: u.id, role: u.role };
+  return { id: u.id, role };
 }
 
 async function auditInTx(
@@ -148,10 +151,7 @@ router.get("/admin/fundbook/trade-allocations", requireUser, async (req, res) =>
   await ensurePools();
 
   // Mirror open broker positions that have no allocation row yet.
-  const openPositions = await db
-    .select()
-    .from(arxLivePositionsTable)
-    .where(isNull(arxLivePositionsTable.closedAt));
+  const openPositions = await selectLiveOpenPositionsForAllUsers(livePositionColumns, { basis: "UNCLOSED" });
   if (openPositions.length > 0) {
     const existing = await db
       .select({

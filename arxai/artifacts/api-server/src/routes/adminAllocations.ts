@@ -15,28 +15,33 @@
 //   MASTER_BRIDGE_STALE so admins never over-allocate against a stale
 //   snapshot.
 
+import { isHeartbeatAgeMsOnline } from "../lib/brokerHub/freshness.js";
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import {
+  countOpenPositions,
+  readOpenPositions,
+  selectLiveOpenPositions,
+  selectLiveOpenPositionsForAllUsers,
+} from "../lib/positions/openPositions.js";
+import { getConnection, listConnections, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { and, desc, eq, ilike, inArray, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import {
   db,
   usersTable,
   userSlotAllocationTable,
   arxMasterAccountConfigTable,
-  arxLivePositionsTable,
   adminActionAuditLogTable,
-  mt5ConnectionTable,
   sharedMasterAccountsTable,
   virtualTradingAccountsTable,
   userMasterLiveAccessTable,
-  userRiskLimitsTable,
   arxLiveUserSettingsTable,
   unattributedMasterTradesTable,
   type UserSlotAllocation,
 } from "@workspace/db";
 import { requireUser } from "../lib/auth/middleware.js";
 import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
-import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
 import { mirrorCriticalEvent } from "../lib/security/events.js";
 import { detectCurrentConnectedBridge } from "../lib/mt5/currentConnectedBridgeDetector.js";
 import {
@@ -45,8 +50,12 @@ import {
   reconcileAllocationsReservedRisk,
 } from "../lib/live/masterBridgePool.js";
 import {
-  arxMasterBridgePoolTable,
+  type ArxMasterBridgePool,
 } from "@workspace/db";
+import { pauseSharedLive, resumeSharedLive, sharedLivePauseOf } from "../lib/safety/sharedLivePause.js";
+import { anyMasterBridgePoolOverAllocated } from "../lib/brokerHub/masterBridgePoolReader.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { readOperatorRiskLimitsMany } from "../lib/riskGovernor/limitSettings.js";
 
 const router = Router();
 
@@ -57,7 +66,7 @@ const router = Router();
 // allocate against. Pure read; does NOT mutate anything inside the
 // caller's transaction.
 async function precheckMasterPoolForAllocation(): Promise<
-  | { ok: true; pool: typeof arxMasterBridgePoolTable.$inferSelect }
+  | { ok: true; pool: ArxMasterBridgePool }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
   const recompute = await recomputeMasterPool();
@@ -73,10 +82,11 @@ async function precheckMasterPoolForAllocation(): Promise<
     } };
   }
   const pool = recompute.pool;
-  if (pool.sharedLivePaused) {
+  const pause = sharedLivePauseOf(pool);
+  if (pause.paused) {
     return { ok: false, status: 409, body: {
       ok: false, error: "SHARED_LIVE_PAUSED",
-      message: pool.pausedReason ?? "Live shared trading is paused for reconciliation.",
+      message: pause.reason ?? "Live shared trading is paused for reconciliation.",
     } };
   }
   if (pool.snapshotStatus === "MISSING") {
@@ -94,17 +104,16 @@ async function precheckMasterPoolForAllocation(): Promise<
   return { ok: true, pool };
 }
 
-const HEARTBEAT_LIVE_MS = 20_000;
-const ADMIN_STALE_BUDGET_MS = 60_000;
 
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
   if (!u?.id) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  if (u.role !== "ADMIN" && u.role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
     return null;
   }
-  return { id: u.id, role: u.role };
+  return { id: u.id, role };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -137,7 +146,7 @@ function mask(num: string | null | undefined): string | null {
   return num.length > 2 ? `••••${num.slice(-2)}` : num;
 }
 
-function summarizeConn(conn: typeof mt5ConnectionTable.$inferSelect, source: "pinned" | "auto-detected"): MasterContext {
+function summarizeConn(conn: BrokerConnectionFacts, source: "pinned" | "auto-detected"): MasterContext {
   const ageMs = conn.lastHeartbeat ? Date.now() - new Date(conn.lastHeartbeat).getTime() : null;
   const balance = Number(conn.accountBalance ?? 0);
   const equity = Number(conn.accountEquity ?? 0);
@@ -158,7 +167,7 @@ function summarizeConn(conn: typeof mt5ConnectionTable.$inferSelect, source: "pi
     accountType: conn.accountType ?? null,
     lastHeartbeatAt: conn.lastHeartbeat ? new Date(conn.lastHeartbeat).toISOString() : null,
     lastHeartbeatAgeMs: ageMs,
-    isStale: ageMs == null || ageMs > ADMIN_STALE_BUDGET_MS,
+    isStale: !isHeartbeatAgeMsOnline(ageMs),
     hasRealBalance: balance > 0 || equity > 0,
     detectorBlockedReason: null,
   };
@@ -176,16 +185,14 @@ async function getMasterContext(): Promise<MasterContext> {
     .where(eq(arxMasterAccountConfigTable.isActive, true)).limit(1);
   const config = configs[0];
   if (config) {
-    const conns = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, config.masterConnectionId)).limit(1);
+    const conns = await listConnections({ connectionIds: [config.masterConnectionId], limit: 1 });
     const conn = conns[0];
     if (conn) return summarizeConn(conn, "pinned");
     // Pinned row points at a deleted connection — fall through to detector.
   }
   const det = await detectCurrentConnectedBridge();
   if (det.ok) {
-    const conns = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, det.bridge.bridgeId)).limit(1);
+    const conns = await listConnections({ connectionIds: [det.bridge.bridgeId], limit: 1 });
     const conn = conns[0];
     if (conn) return summarizeConn(conn, "auto-detected");
   }
@@ -202,12 +209,12 @@ async function getMasterContext(): Promise<MasterContext> {
 
 // Pull realised + open P/L for one user from arx_live_positions.
 async function getUserPnl(userId: number): Promise<{ realisedPnl: number; openPnL: number; openCount: number }> {
-  const open = await db.select({ pl: arxLivePositionsTable.floatingPl })
-    .from(arxLivePositionsTable)
-    .where(openLiveExposureCondition(userId));
-  const closed = await db.select({ pl: arxLivePositionsTable.floatingPl })
-    .from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, userId), isNotNull(arxLivePositionsTable.closedAt)));
+  const open = (await readOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE" }))
+    .map((p) => ({ pl: p.floatingPnl }));
+  const closed = await livePositionLedger.select(
+    { pl: livePositionColumns.floatingPl },
+    { where: and(eq(livePositionColumns.userId, userId), isNotNull(livePositionColumns.closedAt)) },
+  );
   const openPnL = open.reduce((s, r) => s + Number(r.pl ?? 0), 0);
   const realisedPnl = closed.reduce((s, r) => s + Number(r.pl ?? 0), 0);
   return { realisedPnl, openPnL, openCount: open.length };
@@ -455,12 +462,7 @@ router.get("/admin/allocations", requireUser, async (req, res) => {
         dailyLossLimitUsd: arxLiveUserSettingsTable.dailyLossLimitUsd,
       }).from(arxLiveUserSettingsTable).where(inArray(arxLiveUserSettingsTable.userId, userIds))
     : [];
-  const riskLimitRows = userIds.length
-    ? await db.select({
-        userId: userRiskLimitsTable.userId,
-        maxDailyLossUsd: userRiskLimitsTable.maxDailyLossUsd,
-      }).from(userRiskLimitsTable).where(inArray(userRiskLimitsTable.userId, userIds))
-    : [];
+  const riskLimitRows = await readOperatorRiskLimitsMany(userIds);
   const liveSettingsByUser = new Map<number, number>();
   for (const s of liveSettingsRows) liveSettingsByUser.set(s.userId, Number(s.dailyLossLimitUsd ?? 0));
   const riskLimitByUser = new Map<number, number>();
@@ -681,8 +683,7 @@ router.post("/admin/allocations/pin-master", requireUser, async (req, res) => {
   const targetConnectionId = det.bridge.bridgeId;
 
   const result = await db.transaction(async (tx) => {
-    const conns = await tx.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, targetConnectionId)).limit(1);
+    const conns = await listConnections({ connectionIds: [targetConnectionId], limit: 1 }, tx);
     const conn = conns[0];
     if (!conn) return fail(409, { ok: false, error: "DETECTED_CONNECTION_MISSING" });
 
@@ -782,7 +783,7 @@ async function loadMasterContextInTxForUpdate(tx: Tx): Promise<{
   const config = configs[0];
 
   const summarize = (
-    conn: typeof mt5ConnectionTable.$inferSelect,
+    conn: BrokerConnectionFacts,
     source: "pinned" | "auto-detected",
   ) => {
     const ageMs = conn.lastHeartbeat ? Date.now() - new Date(conn.lastHeartbeat).getTime() : null;
@@ -796,14 +797,13 @@ async function loadMasterContextInTxForUpdate(tx: Tx): Promise<{
       balance,
       equity,
       freeMargin: Number(conn.freeMargin ?? 0),
-      isStale: ageMs == null || ageMs > ADMIN_STALE_BUDGET_MS,
+      isStale: !isHeartbeatAgeMsOnline(ageMs),
       hasRealBalance: balance > 0 || equity > 0,
     };
   };
 
   if (config) {
-    const conns = await tx.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, config.masterConnectionId)).limit(1);
+    const conns = await listConnections({ connectionIds: [config.masterConnectionId], limit: 1 }, tx);
     const conn = conns[0];
     if (conn) return summarize(conn, "pinned");
     // Pinned row dangles — fall through to detector.
@@ -813,8 +813,7 @@ async function loadMasterContextInTxForUpdate(tx: Tx): Promise<{
   // capacity check below is against the real broker-reported balance.
   const det = await detectCurrentConnectedBridge();
   if (det.ok) {
-    const conns = await tx.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, det.bridge.bridgeId)).limit(1);
+    const conns = await listConnections({ connectionIds: [det.bridge.bridgeId], limit: 1 }, tx);
     const conn = conns[0];
     if (conn) return summarize(conn, "auto-detected");
   }
@@ -900,12 +899,9 @@ async function ensureSharedMasterAccountInTx(
     .where(eq(sharedMasterAccountsTable.connectionId, masterConnectionId))
     .limit(1);
   if (existing[0]) return existing[0].id;
-  const conn = await tx.select({
-    accountNumber: mt5ConnectionTable.accountNumber,
-    brokerName: mt5ConnectionTable.brokerName,
-  }).from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, masterConnectionId)).limit(1);
-  const masked = conn[0]?.accountNumber
-    ? (conn[0].accountNumber.length > 2 ? `••••${conn[0].accountNumber.slice(-2)}` : conn[0].accountNumber)
+  const conn = await getConnection(masterConnectionId, tx);
+  const masked = conn?.accountNumber
+    ? (conn.accountNumber.length > 2 ? `••••${conn.accountNumber.slice(-2)}` : conn.accountNumber)
     : null;
   // ON CONFLICT DO NOTHING + re-read. The unique index on connectionId
   // (`shared_master_accounts_connection_uidx`) means two concurrent
@@ -915,7 +911,7 @@ async function ensureSharedMasterAccountInTx(
   const inserted = await tx.insert(sharedMasterAccountsTable).values({
     connectionId: masterConnectionId,
     accountType,
-    brokerName: conn[0]?.brokerName ?? null,
+    brokerName: conn?.brokerName ?? null,
     accountNumberMasked: masked,
     status: "active",
     isActive: true,
@@ -1057,11 +1053,7 @@ export async function autoReconcileSettledAllocations(): Promise<AutoReconcileRe
   // locked check still re-verifies inside the tx below for the over-allocated
   // case, so this is a pure no-op optimization with no TOCTOU risk (a missed
   // edge re-evaluates on the next heartbeat).
-  const overFlagged = await db.select({ id: arxMasterBridgePoolTable.id })
-    .from(arxMasterBridgePoolTable)
-    .where(eq(arxMasterBridgePoolTable.isOverAllocated, true))
-    .limit(1);
-  if (overFlagged.length === 0) {
+  if (!(await anyMasterBridgePoolOverAllocated())) {
     return { adjusted: false, reason: "WITHIN_CAP" };
   }
 
@@ -1091,15 +1083,13 @@ export async function autoReconcileSettledAllocations(): Promise<AutoReconcileRe
 
     // Users with OPEN live exposure are protected and never reduced. Single
     // grouped read inside the tx for a snapshot consistent with the locked rows.
-    const openRows = await tx.select({
-      userId: arxLivePositionsTable.userId,
-      cnt: sql<number>`count(*)::int`,
-    }).from(arxLivePositionsTable)
-      // Shared open-exposure truth — a reconciled/closed ghost must NOT keep a
-      // user flagged as having open exposure (it would wrongly protect them
-      // from allocation reduction).
-      .where(openLiveExposureCondition())
-      .groupBy(arxLivePositionsTable.userId);
+    const openRows = await selectLiveOpenPositionsForAllUsers(
+      {
+        userId: livePositionColumns.userId,
+        cnt: sql<number>`count(*)::int`,
+      },
+      { basis: "EXPOSURE", groupBy: [livePositionColumns.userId], executor: tx },
+    );
     const openUserIds = new Set(openRows.map((r) => r.userId));
 
     // Settled = positive allocation AND no open positions.
@@ -1864,11 +1854,8 @@ router.post("/admin/allocations/:userId/detach-shared-master", requireUser, asyn
     // orphaning the ledger between EA fills and the virtual account. The
     // user-row FOR UPDATE above serialises this against any other admin
     // mutation that could insert a position via Phase B dispatch.
-    const openCount = await tx.select({ id: arxLivePositionsTable.id })
-      .from(arxLivePositionsTable)
-      // Shared open-exposure truth — a reconciled ghost must not block detach.
-      .where(openLiveExposureCondition(userId));
-    if (openCount.length > 0) {
+    const openCount = await countOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE", executor: tx });
+    if (openCount > 0) {
       return fail(409, { ok: false, error: "OPEN_POSITIONS_BLOCK_DETACH",
         message: "User has open live positions. Close them before detaching." });
     }
@@ -2064,7 +2051,7 @@ router.get("/admin/allocations/master-pool", requireUser, async (req, res) => {
   const p = r.pool;
   let bridgeAvailability: "HEALTHY" | "RECONCILING" | "UNAVAILABLE" = "HEALTHY";
   let bridgeMessage = "Live bridge is healthy.";
-  if (p.sharedLivePaused) {
+  if (sharedLivePauseOf(p).paused) {
     bridgeAvailability = "UNAVAILABLE";
     bridgeMessage = "Live bridge is paused for reconciliation.";
   } else if (p.snapshotStatus === "MISSING") {
@@ -2118,13 +2105,17 @@ router.get("/admin/live-positions/reconcile-summary", requireUser, async (req, r
 
   // One grouped pass over every OPEN row. reconcile_state NULL = genuinely
   // live exposure; any non-null value is a reconciled/orphan-resolved ghost.
-  const grouped = await db.select({
-    userId: arxLivePositionsTable.userId,
-    reconcileState: arxLivePositionsTable.reconcileState,
-    count: sql<number>`count(*)::int`,
-  }).from(arxLivePositionsTable)
-    .where(isNull(arxLivePositionsTable.closedAt))
-    .groupBy(arxLivePositionsTable.userId, arxLivePositionsTable.reconcileState);
+  const grouped = await selectLiveOpenPositionsForAllUsers(
+    {
+      userId: livePositionColumns.userId,
+      reconcileState: livePositionColumns.reconcileState,
+      count: sql<number>`count(*)::int`,
+    },
+    {
+      basis: "UNCLOSED",
+      groupBy: [livePositionColumns.userId, livePositionColumns.reconcileState],
+    },
+  );
 
   type PerUser = {
     userId: number;
@@ -2198,40 +2189,31 @@ router.get("/admin/live-positions/:userId/reconcile-detail", requireUser, async 
 
   // Open reconciled rows = the exact rows behind the badge's reconciledCount
   // (open = closed_at IS NULL; reconciled = reconcile_state IS NOT NULL).
-  const rows = await db.select({
-    id: arxLivePositionsTable.id,
-    symbol: arxLivePositionsTable.symbol,
-    side: arxLivePositionsTable.side,
-    volume: arxLivePositionsTable.volume,
-    brokerTicket: arxLivePositionsTable.brokerTicket,
-    reconcileState: arxLivePositionsTable.reconcileState,
-    reconcileNote: arxLivePositionsTable.reconcileNote,
-    reconcileReason: arxLivePositionsTable.reconcileReason,
-    reconciledByAdminId: arxLivePositionsTable.reconciledByAdminId,
-    reconciledAt: arxLivePositionsTable.reconciledAt,
-    openedAt: arxLivePositionsTable.openedAt,
-  }).from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      isNull(arxLivePositionsTable.closedAt),
-      isNotNull(arxLivePositionsTable.reconcileState),
-    ))
-    .orderBy(desc(arxLivePositionsTable.reconciledAt));
+  const rows = await selectLiveOpenPositions(
+    {
+      id: livePositionColumns.id,
+      symbol: livePositionColumns.symbol,
+      side: livePositionColumns.side,
+      volume: livePositionColumns.volume,
+      brokerTicket: livePositionColumns.brokerTicket,
+      reconcileState: livePositionColumns.reconcileState,
+      reconcileNote: livePositionColumns.reconcileNote,
+      reconcileReason: livePositionColumns.reconcileReason,
+      reconciledByAdminId: livePositionColumns.reconciledByAdminId,
+      reconciledAt: livePositionColumns.reconciledAt,
+      openedAt: livePositionColumns.openedAt,
+    },
+    { userId, basis: "UNCLOSED_RECONCILED", orderBy: [desc(livePositionColumns.reconciledAt)] },
+  );
 
   // Genuine open exposure (reconcile_state IS NULL) — surfaced alongside so the
   // operator sees the real-exposure context next to the ghosts.
-  const [genuine] = await db.select({ count: sql<number>`count(*)::int` })
-    .from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      isNull(arxLivePositionsTable.closedAt),
-      isNull(arxLivePositionsTable.reconcileState),
-    ));
+  const genuineOpen = await countOpenPositions({ userId, venue: "LIVE", basis: "EXPOSURE" });
 
   res.json({
     ok: true,
     userId,
-    genuineOpen: Number(genuine?.count ?? 0),
+    genuineOpen,
     rows: rows.map((r) => ({
       id: r.id,
       symbol: r.symbol,
@@ -2385,8 +2367,10 @@ router.post("/admin/allocations/reduce-proportional", requireUser, async (req, r
 });
 
 // ── POST /api/admin/shared-live/pause ──────────────────────────────────────
-// Sets pool.sharedLivePaused = true so the dispatch pre-gate refuses
-// every new entry. Existing positions are NOT closed. Idempotent.
+// Pauses shared-live for the pinned master's pool through the Platform Safety
+// authority (lib/safety/sharedLivePause.ts, owner decision 19) so the dispatch
+// pre-gate refuses every new entry. Scoped to that pool row only, never
+// install-wide. Existing positions are NOT closed. Idempotent.
 const PauseBody = z.object({ reason: z.string().min(1).max(500) });
 router.post("/admin/shared-live/pause", requireUser, async (req, res) => {
   const admin = requireAdmin(req, res);
@@ -2398,20 +2382,10 @@ router.post("/admin/shared-live/pause", requireUser, async (req, res) => {
   await recomputeMasterPool();
   const pool = await loadMasterPool();
   if (!pool) { res.status(409).json({ ok: false, error: "MASTER_BRIDGE_NOT_PINNED" }); return; }
-  const [updated] = await db.update(arxMasterBridgePoolTable).set({
-    sharedLivePaused: true,
-    pausedReason: reason,
-    pausedAt: new Date(),
-    pausedByUserId: admin.id,
-  }).where(eq(arxMasterBridgePoolTable.id, pool.id)).returning();
-  await auditInTx(db as unknown as Tx, {
-    admin, action: "SHARED_LIVE_PAUSED_OVER_ALLOCATION", targetUserId: null,
-    beforeState: { sharedLivePaused: pool.sharedLivePaused },
-    afterState: { sharedLivePaused: true, pausedReason: reason },
-    reason, ipAddress: ipOf(req),
-  });
+  const r = await pauseSharedLive({ scope: { poolId: pool.id }, reason, actor: { userId: admin.id, role: admin.role }, ipAddress: ipOf(req) });
+  if (!r.ok) { sendPauseRefusal(res, r.code); return; }
   await mirrorAllocationChange(admin, "SHARED_LIVE_PAUSED_OVER_ALLOCATION", null, reason);
-  res.json({ ok: true, pool: updated });
+  res.json({ ok: true, pool: r.pool });
 });
 
 // ── POST /api/admin/shared-live/resume ─────────────────────────────────────
@@ -2420,20 +2394,17 @@ router.post("/admin/shared-live/resume", requireUser, async (req, res) => {
   if (!admin) return;
   const pool = await loadMasterPool();
   if (!pool) { res.status(409).json({ ok: false, error: "MASTER_BRIDGE_NOT_PINNED" }); return; }
-  const [updated] = await db.update(arxMasterBridgePoolTable).set({
-    sharedLivePaused: false,
-    pausedReason: null,
-    pausedAt: null,
-    pausedByUserId: null,
-  }).where(eq(arxMasterBridgePoolTable.id, pool.id)).returning();
-  await auditInTx(db as unknown as Tx, {
-    admin, action: "SHARED_LIVE_RESUMED", targetUserId: null,
-    beforeState: { sharedLivePaused: pool.sharedLivePaused, pausedReason: pool.pausedReason },
-    afterState: { sharedLivePaused: false },
-    reason: null, ipAddress: ipOf(req),
-  });
+  const r = await resumeSharedLive({ scope: { poolId: pool.id }, actor: { userId: admin.id, role: admin.role }, ipAddress: ipOf(req) });
+  if (!r.ok) { sendPauseRefusal(res, r.code); return; }
   await mirrorAllocationChange(admin, "SHARED_LIVE_RESUMED", null, null);
-  res.json({ ok: true, pool: updated });
+  res.json({ ok: true, pool: r.pool });
 });
+
+// The authority's refusals, in the responses these routes already gave.
+function sendPauseRefusal(res: Response, code: "NOT_AUTHORIZED" | "REASON_REQUIRED" | "POOL_NOT_FOUND"): void {
+  if (code === "NOT_AUTHORIZED") res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
+  else if (code === "REASON_REQUIRED") res.status(400).json({ ok: false, error: "BAD_BODY" });
+  else res.status(409).json({ ok: false, error: "MASTER_BRIDGE_NOT_PINNED" });
+}
 
 export default router;

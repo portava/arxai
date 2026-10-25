@@ -3,6 +3,9 @@
 // ISOLATION: reads trade_journal + paper_orders + post_trade_debriefs.
 // Never references live trades / mt5_* / safetyCore / canPlaceTrades / risk
 // mutation surfaces. Reports are advisory historical analytics, not signals.
+//
+// OWNERSHIP: reports and warnings are built from, stamped with, and read by
+// req.authUser only.
 
 import { Router } from "express";
 import {
@@ -10,7 +13,8 @@ import {
   tradeJournalTable, paperOrdersTable, postTradeDebriefsTable,
   vaultEventsTable,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import { requireUser } from "../lib/auth/middleware.js";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -155,11 +159,11 @@ function summarize(name: string, status: string, s: ReturnType<typeof computeSta
 }
 
 // ── Source loader (READ-ONLY) ──────────────────────────────────────────────
-async function loadTrades(): Promise<TradeLike[]> {
+async function loadTrades(userId: number): Promise<TradeLike[]> {
   const [journals, papers, debriefs] = await Promise.all([
-    db.select().from(tradeJournalTable).limit(2000),
-    db.select().from(paperOrdersTable).limit(2000),
-    db.select().from(postTradeDebriefsTable).limit(2000),
+    db.select().from(tradeJournalTable).where(eq(tradeJournalTable.userId, userId)).limit(2000),
+    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, userId)).limit(2000),
+    db.select().from(postTradeDebriefsTable).where(eq(postTradeDebriefsTable.userId, userId)).limit(2000),
   ]);
   // Map debriefs by trade id for emotion lookup on paper orders.
   const debriefByTrade = new Map<number, { emotion: string | null }>();
@@ -186,10 +190,11 @@ async function loadTrades(): Promise<TradeLike[]> {
 }
 
 // ── POST /edge/reports — generate ──────────────────────────────────────────
-router.post("/edge/reports", async (req, res): Promise<void> => {
+router.post("/edge/reports", requireUser, async (req, res): Promise<void> => {
   try {
+    const userId = req.authUser!.id;
     const b = GenerateBody.parse(req.body ?? {});
-    const all = await loadTrades();
+    const all = await loadTrades(userId);
     const filtered = all.filter((t) =>
       (!b.symbol   || t.symbol   === b.symbol) &&
       (!b.strategy || t.strategy === b.strategy));
@@ -214,7 +219,8 @@ router.post("/edge/reports", async (req, res): Promise<void> => {
 
     // Behavior overlays from debriefs (averages over the union of trade ids in
     // the buckets that came from PAPER trades; we approximate by all debriefs).
-    const debriefs = await db.select().from(postTradeDebriefsTable).limit(2000);
+    const debriefs = await db.select().from(postTradeDebriefsTable)
+      .where(eq(postTradeDebriefsTable.userId, userId)).limit(2000);
     const followed = debriefs.filter((d) => d.followedPlan === 1).length;
     const calmish  = debriefs.filter((d) => ["CALM","RELIEVED","NEUTRAL"].includes(d.traderEmotionAfter ?? "")).length;
     const disciplineAvg = debriefs.length ? Math.round((followed / debriefs.length) * 100) : 0;
@@ -230,6 +236,7 @@ router.post("/edge/reports", async (req, res): Promise<void> => {
       const conf   = confidence(stats, status);
       const summary = summarize(name, status, stats);
       const ins = await db.insert(edgeDiscoveryReportsTable).values({
+        userId,
         edgeName:  `${b.groupBy}=${name}`,
         symbol:    b.groupBy === "symbol"   ? name : (b.symbol ?? null),
         sessionName: null,
@@ -247,6 +254,7 @@ router.post("/edge/reports", async (req, res): Promise<void> => {
       const ws = warnings(bucket, stats);
       for (const w of ws) {
         await db.insert(edgeWarningsTable).values({
+          userId,
           edgeReportId: rep.id, warningType: w.warningType,
           message: w.message, severity: w.severity,
         });
@@ -265,29 +273,32 @@ router.post("/edge/reports", async (req, res): Promise<void> => {
 });
 
 // ── GET /edge/reports ──────────────────────────────────────────────────────
-router.get("/edge/reports", async (req, res): Promise<void> => {
+router.get("/edge/reports", requireUser, async (req, res): Promise<void> => {
   const raw = Number(req.query["limit"]);
   const limit = Number.isFinite(raw) ? Math.max(1, Math.min(raw, 200)) : 100;
   const rows = await db.select().from(edgeDiscoveryReportsTable)
+    .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
     .orderBy(desc(edgeDiscoveryReportsTable.createdAt)).limit(limit);
   ok(res, { reports: rows });
 });
 
 // ── GET /edge/reports/:id ──────────────────────────────────────────────────
-router.get("/edge/reports/:id", async (req, res): Promise<void> => {
+router.get("/edge/reports/:id", requireUser, async (req, res): Promise<void> => {
+  const userId = req.authUser!.id;
   const id = Number(req.params["id"]);
   if (!Number.isFinite(id)) { fail(res, 400, "Invalid id"); return; }
   const r = (await db.select().from(edgeDiscoveryReportsTable)
-    .where(eq(edgeDiscoveryReportsTable.id, id)).limit(1))[0];
+    .where(and(eq(edgeDiscoveryReportsTable.id, id), eq(edgeDiscoveryReportsTable.userId, userId))).limit(1))[0];
   if (!r) { fail(res, 404, "Not found"); return; }
   const ws = await db.select().from(edgeWarningsTable)
-    .where(eq(edgeWarningsTable.edgeReportId, id));
+    .where(and(eq(edgeWarningsTable.edgeReportId, id), eq(edgeWarningsTable.userId, userId)));
   ok(res, { report: r, warnings: ws });
 });
 
 // ── GET /edge/strongest ────────────────────────────────────────────────────
-router.get("/edge/strongest", async (_req, res): Promise<void> => {
+router.get("/edge/strongest", requireUser, async (req, res): Promise<void> => {
   const rows = await db.select().from(edgeDiscoveryReportsTable)
+    .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
     .orderBy(desc(edgeDiscoveryReportsTable.confidenceScore)).limit(50);
   const strong = rows
     .filter((r) => r.status === "STRONG_EDGE" || r.status === "DEVELOPING_EDGE")
@@ -296,8 +307,9 @@ router.get("/edge/strongest", async (_req, res): Promise<void> => {
 });
 
 // ── GET /edge/weakest ──────────────────────────────────────────────────────
-router.get("/edge/weakest", async (_req, res): Promise<void> => {
+router.get("/edge/weakest", requireUser, async (req, res): Promise<void> => {
   const rows = await db.select().from(edgeDiscoveryReportsTable)
+    .where(eq(edgeDiscoveryReportsTable.userId, req.authUser!.id))
     .orderBy(edgeDiscoveryReportsTable.expectancy).limit(50);
   const weak = rows
     .filter((r) => r.status === "WEAK_EDGE" || r.status === "NO_EDGE")
@@ -306,14 +318,16 @@ router.get("/edge/weakest", async (_req, res): Promise<void> => {
 });
 
 // ── GET /edge/warnings ─────────────────────────────────────────────────────
-router.get("/edge/warnings", async (req, res): Promise<void> => {
+router.get("/edge/warnings", requireUser, async (req, res): Promise<void> => {
+  const mine = eq(edgeWarningsTable.userId, req.authUser!.id);
   const reportId = Number(req.query["reportId"]);
   if (Number.isFinite(reportId)) {
     const rows = await db.select().from(edgeWarningsTable)
-      .where(eq(edgeWarningsTable.edgeReportId, reportId));
+      .where(and(mine, eq(edgeWarningsTable.edgeReportId, reportId)));
     ok(res, { warnings: rows }); return;
   }
   const rows = await db.select().from(edgeWarningsTable)
+    .where(mine)
     .orderBy(desc(edgeWarningsTable.createdAt)).limit(100);
   ok(res, { warnings: rows });
 });

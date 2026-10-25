@@ -32,6 +32,7 @@ import type {
 } from "./scalpTypes.js";
 import { blindFlameRead, finalizeScalpVerdict, readFlame } from "./flameRead.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
+import { clampLotToStep, lotForRisk } from "@workspace/domain/risk";
 
 const DEFAULT_RISK_FRACTION = 0.01; // Focus card default when user gives no risk amount: 1% of equity/balance.
 const DEFAULT_LEVERAGE = 100; // conservative margin estimate fallback when broker leverage unknown.
@@ -63,34 +64,6 @@ function roundTo(v: number, digits: number): number {
   return Number(v.toFixed(d));
 }
 
-function decimalsOf(step: number): number {
-  const s = String(step);
-  if (s.includes("e") || s.includes("E")) {
-    const m = step.toExponential().match(/e-(\d+)/);
-    return m ? Number(m[1]) : 8;
-  }
-  return (s.split(".")[1] || "").length;
-}
-
-/** Floor `raw` to the broker volume step, then clamp to [min,max]. Risk-conservative (floors). */
-function clampLotToStep(raw: number, step: number, min: number, max: number): { lot: number; clampedToMin: boolean; clampedToMax: boolean } {
-  const safeStep = step > 0 ? step : 0.01;
-  const dec = decimalsOf(safeStep);
-  let lot = Math.floor(raw / safeStep) * safeStep;
-  lot = Number(lot.toFixed(dec));
-  let clampedToMin = false;
-  let clampedToMax = false;
-  if (lot < min) {
-    lot = min;
-    clampedToMin = true;
-  }
-  if (lot > max) {
-    lot = Number((Math.floor(max / safeStep) * safeStep).toFixed(dec));
-    if (lot > max) lot = max;
-    clampedToMax = true;
-  }
-  return { lot: Number(lot.toFixed(dec)), clampedToMin, clampedToMax };
-}
 
 /** $ change per 1.0 price move per 1.0 lot — broker truth first, contract size fallback. */
 function moneyPerPricePerLot(spec: ScalpSpecInput): number | null {
@@ -730,8 +703,11 @@ function sizeLot(a: SizeArgs): SizeResult {
   }
 
   // Candidate lot from the risk budget (cap) and, if given, the target (driver).
+  // The risk candidate is the one sizing formula (@workspace/domain/risk).
   const candidates: number[] = [];
-  if (num(a.riskBudget) && a.riskBudget > 0) candidates.push(a.riskBudget / perLotRisk);
+  if (num(a.riskBudget) && a.riskBudget > 0) {
+    candidates.push(lotForRisk({ riskAmount: a.riskBudget, stopDistance: a.stopDist, valuePerUnitPerLot: a.mpp }).rawLot);
+  }
   if (num(a.targetProfit) && a.targetProfit > 0 && perLotProfit > 0) candidates.push(a.targetProfit / perLotProfit);
   // No basis to size — cannot honestly produce a lot.
   if (candidates.length === 0) {

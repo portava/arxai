@@ -13,7 +13,7 @@
 import { db, arxSymbolSpecsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import type { PreTradeBrokerSpec, PreTradeTradeMode } from "@workspace/domain/safety-contracts";
-import { getSymbolInfo } from "../../brain/symbols/symbolRegistry.js";
+import { getSymbolInfo } from "../instruments/index.js";
 
 export interface ResolvedBrokerSymbolSpec {
   symbol: string;

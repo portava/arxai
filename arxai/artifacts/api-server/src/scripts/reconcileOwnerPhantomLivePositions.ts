@@ -33,8 +33,9 @@
 //   tsx src/scripts/reconcileOwnerPhantomLivePositions.ts --user=4 --apply    # auto-resolve bridge + apply
 //   tsx src/scripts/reconcileOwnerPhantomLivePositions.ts --user=4 --bridge=446 --apply
 
+import { getUserLiveBridge } from "../lib/brokerHub/connections.js";
 import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
-import { db, arxLivePositionsTable, mt5ConnectionTable } from "@workspace/db";
+import { db, arxLivePositionsTable } from "@workspace/db";
 import { brokerAbsenceAutoReconcilePolicy } from "../lib/live/brokerAbsencePolicy.js";
 import {
   runBrokerAbsenceReconcile,
@@ -73,17 +74,7 @@ function parseArgs(argv: string[]): Args {
 // over a live, recently-heartbeating bridge and the runner would scope to a
 // connection with no truth (snapshotReliable=false → 0 candidates).
 async function resolveLiveBridge(userId: number): Promise<number | null> {
-  const rows = await db
-    .select({ id: mt5ConnectionTable.id })
-    .from(mt5ConnectionTable)
-    .where(and(
-      eq(mt5ConnectionTable.userId, userId),
-      ne(mt5ConnectionTable.status, "revoked"),
-      or(isNull(mt5ConnectionTable.accountType), ne(mt5ConnectionTable.accountType, "demo")),
-    ))
-    .orderBy(sql`${mt5ConnectionTable.lastPositionsSnapshotAt} DESC NULLS LAST`)
-    .limit(1);
-  return rows[0]?.id ?? null;
+  return (await getUserLiveBridge(userId, "positionsSnapshot"))?.id ?? null;
 }
 
 function printResult(label: string, r: BrokerAbsenceReconcileResult): void {

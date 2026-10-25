@@ -22,8 +22,10 @@
 //     `bridgeReadinessAtDraft` snapshot. It is masked when surfaced to
 //     end users in UI/Ruby copy (mt5-setup / scanner / assistant).
 
+import { isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
+import { getConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
-import { db, mt5ConnectionTable, sharedTradeAttributionTable, sharedMasterAccountsTable } from "@workspace/db";
+import { db, sharedTradeAttributionTable, sharedMasterAccountsTable } from "@workspace/db";
 import {
   evaluatePerUserDispatchEligibility,
   eaVersionAtLeast,
@@ -39,7 +41,6 @@ import {
 } from "./demoDispatchGate.js";
 import { and, sql } from "drizzle-orm";
 
-const HEARTBEAT_FRESH_SECONDS = 15;
 
 export interface RoutedDemoDispatchEvaluation {
   eligibility: PerUserDispatchEvaluation["eligibility"];
@@ -165,16 +166,12 @@ export async function evaluateRoutedDemoDispatchGate(args: {
   }
 
   // Master conn present — evaluate master bridge readiness.
-  const [conn] = await db
-    .select()
-    .from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, routing.connectionId))
-    .limit(1);
+  const conn = await getConnection(routing.connectionId);
 
   const hbAge = conn?.lastHeartbeat
     ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)
     : null;
-  const hbFresh = hbAge !== null && hbAge <= HEARTBEAT_FRESH_SECONDS;
+  const hbFresh = isHeartbeatAgeSecondsFresh(hbAge);
   const accountTypeReported = (conn?.accountType ?? "none").toString();
   const accountTypeExplicitDemo =
     accountTypeReported === "demo" || accountTypeReported === "contest";

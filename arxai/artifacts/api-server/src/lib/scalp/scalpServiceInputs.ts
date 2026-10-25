@@ -8,11 +8,13 @@
 //  - Per-user isolation: specs + execution + account are read scoped by userId.
 //  - No fabrication: candles/prices are real or null (caller reads blind).
 
-import { db, arxSymbolSpecsTable, mt5ConnectionTable } from "@workspace/db";
+import { isHeartbeatAgeMsOnline } from "../brokerHub/freshness.js";
+import { getUserPrimaryConnection } from "../brokerHub/connections.js";
+import { db, arxSymbolSpecsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { routeQuote, routeCandles } from "../data/marketDataRouter.js";
 import { getUserAllocationView } from "../live/masterBridgePool.js";
-import { getSymbolInfo } from "../../brain/symbols/symbolRegistry.js";
+import { getSymbolInfo } from "../instruments/index.js";
 import type {
   ScalpAccountInput,
   ScalpCandle,
@@ -116,11 +118,7 @@ export async function candleWindowFor(symbol: string): Promise<ScalpCandle[] | n
  */
 export async function loadExecutionInput(userId: number): Promise<ScalpExecutionInput | null> {
   try {
-    const rows = await db.select({ lastHeartbeat: mt5ConnectionTable.lastHeartbeat })
-      .from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId))
-      .limit(1);
-    const row = rows[0];
+    const row = await getUserPrimaryConnection(userId);
     if (!row) return null;
     const ts = row.lastHeartbeat ? new Date(row.lastHeartbeat).getTime() : null;
     if (ts === null || !Number.isFinite(ts)) {
@@ -129,7 +127,8 @@ export async function loadExecutionInput(userId: number): Promise<ScalpExecution
     const ageSeconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
     return {
       heartbeatAgeSeconds: ageSeconds,
-      bridgeConnected: ageSeconds <= 60,
+      // Shared heartbeat policy on the exact ms age: online (< 60 s).
+      bridgeConnected: isHeartbeatAgeMsOnline(Date.now() - ts),
     };
   } catch {
     return null;

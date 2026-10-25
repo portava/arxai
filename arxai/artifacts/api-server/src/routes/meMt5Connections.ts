@@ -5,8 +5,10 @@
 //   - Only the SHA-256 hash of the token is stored in apiKeyHash.
 //   - All routes require auth; queries scoped by req.authUser.id.
 //   - Client-supplied userId is ignored for ownership.
+import { classifyHeartbeatAt, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
+import { createConnection, getUserConnection, listUserConnections, updateUserConnection, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
-import { db, mt5ConnectionTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { randomBytes, createHash } from "crypto";
@@ -14,7 +16,6 @@ import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
 
-const STALE_MS = 60_000;
 
 export function hashBridgeToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
@@ -37,16 +38,18 @@ function maskAccountNumber(acct: string | null): string | null {
   return `****${acct.slice(-4)}`;
 }
 
-function deriveStatus(row: typeof mt5ConnectionTable.$inferSelect): string {
+function deriveStatus(row: BrokerConnectionFacts): string {
   if (row.tokenRevokedAt) return "revoked";
   if (!row.lastHeartbeat) return "waiting";
-  const age = Date.now() - new Date(row.lastHeartbeat).getTime();
-  if (age < 15_000) return "connected";
-  if (age < STALE_MS) return "stale";
+  // Shared heartbeat policy: fresh → connected, degraded → stale,
+  // offline / unknown (e.g. future-dated) → disconnected.
+  const f = classifyHeartbeatAt(row.lastHeartbeat, Date.now());
+  if (f === "fresh") return "connected";
+  if (f === "degraded") return "stale";
   return "disconnected";
 }
 
-function serialize(row: typeof mt5ConnectionTable.$inferSelect, opts: { rawToken?: string } = {}) {
+function serialize(row: BrokerConnectionFacts, opts: { rawToken?: string } = {}) {
   const status = deriveStatus(row);
   const heartbeatAgeSeconds = row.lastHeartbeat
     ? Math.floor((Date.now() - new Date(row.lastHeartbeat).getTime()) / 1000)
@@ -59,9 +62,10 @@ function serialize(row: typeof mt5ConnectionTable.$inferSelect, opts: { rawToken
   const marginN = Number(row.margin ?? 0);
   const marginLevelPercent = marginN > 0 ? (equityN / marginN) * 100 : null;
   // Account snapshot freshness — heartbeat is the canonical liveness
-  // signal (EA POSTs both heartbeat and sync-account every 5s). 15s
-  // matches the Phase B `heartbeat age ≤ 15s` gate.
-  const accountSnapshotFresh = heartbeatAgeSeconds != null && heartbeatAgeSeconds <= 15;
+  // signal (EA POSTs both heartbeat and sync-account every 5s). "Fresh"
+  // is the shared heartbeat policy's fresh band (age < 15 s), the same as
+  // Phase B gate #7.
+  const accountSnapshotFresh = isHeartbeatAgeSecondsFresh(heartbeatAgeSeconds);
   return {
     id: row.id,
     connectionName: row.connectionName,
@@ -106,9 +110,7 @@ const UpdateBody = z.object({
 
 router.get("/me/mt5-connections", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId))
-    .orderBy(desc(mt5ConnectionTable.createdAt));
+  const rows = await listUserConnections(userId, { order: "newest" });
   res.json({ connections: rows.map((r) => serialize(r)) });
 });
 
@@ -117,7 +119,7 @@ router.post("/me/mt5-connections", requireUser, async (req, res): Promise<void> 
     const userId = req.authUser!.id;
     const body = CreateBody.parse(req.body ?? {});
     const tok = generateToken();
-    const inserted = await db.insert(mt5ConnectionTable).values({
+    const created = await createConnection({
       userId,
       connectionName: body.connectionName,
       apiKeyHash: tok.hash,
@@ -129,7 +131,8 @@ router.post("/me/mt5-connections", requireUser, async (req, res): Promise<void> 
       allowOrderExecution: false,
       liveLocked: true,
       mode: "MOCK",
-    }).returning();
+    });
+    const inserted = [created];
     // Phase 10F — notify + activity (no token in payload).
     try {
       const { fireNotify } = await import("../lib/notificationService.js");
@@ -150,21 +153,16 @@ router.get("/me/mt5-connections/:id", requireUser, async (req, res): Promise<voi
   const userId = req.authUser!.id;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(and(eq(mt5ConnectionTable.id, id), eq(mt5ConnectionTable.userId, userId)))
-    .limit(1);
-  if (!rows[0]) { res.status(404).json({ error: "Not found" }); return; }
-  res.json(serialize(rows[0]));
+  const row = await getUserConnection(userId, id);
+  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+  res.json(serialize(row));
 });
 
 router.get("/me/mt5-connections/:id/status", requireUser, async (req, res): Promise<void> => {
   const userId = req.authUser!.id;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(and(eq(mt5ConnectionTable.id, id), eq(mt5ConnectionTable.userId, userId)))
-    .limit(1);
-  const r = rows[0];
+  const r = await getUserConnection(userId, id);
   if (!r) { res.status(404).json({ error: "Not found" }); return; }
   res.json({
     id: r.id,
@@ -195,11 +193,9 @@ router.patch("/me/mt5-connections/:id", requireUser, async (req, res): Promise<v
     if (body.connectionName !== undefined) set.connectionName = body.connectionName;
     if (body.brokerName !== undefined) set.brokerName = body.brokerName;
     if (body.serverName !== undefined) set.serverName = body.serverName;
-    const updated = await db.update(mt5ConnectionTable).set(set)
-      .where(and(eq(mt5ConnectionTable.id, id), eq(mt5ConnectionTable.userId, userId)))
-      .returning();
-    if (!updated[0]) { res.status(404).json({ error: "Not found" }); return; }
-    res.json(serialize(updated[0]));
+    const updated = await updateUserConnection(userId, id, set);
+    if (!updated) { res.status(404).json({ error: "Not found" }); return; }
+    res.json(serialize(updated));
   } catch (err) {
     if (err instanceof z.ZodError) { res.status(400).json({ error: "Invalid body", details: err.issues }); return; }
     req.log.error({ err: String(err) }, "PATCH /me/mt5-connections/:id failed");
@@ -211,12 +207,10 @@ router.post("/me/mt5-connections/:id/regenerate-token", requireUser, async (req,
   const userId = req.authUser!.id;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-  const own = await db.select().from(mt5ConnectionTable)
-    .where(and(eq(mt5ConnectionTable.id, id), eq(mt5ConnectionTable.userId, userId)))
-    .limit(1);
-  if (!own[0]) { res.status(404).json({ error: "Not found" }); return; }
+  const own = await getUserConnection(userId, id);
+  if (!own) { res.status(404).json({ error: "Not found" }); return; }
   const tok = generateToken();
-  const updated = await db.update(mt5ConnectionTable).set({
+  const updated = await updateUserConnection(userId, id, {
     apiKeyHash: tok.hash,
     tokenLast4: tok.last4,
     tokenCreatedAt: new Date(),
@@ -224,22 +218,22 @@ router.post("/me/mt5-connections/:id/regenerate-token", requireUser, async (req,
     status: "waiting",
     lastHeartbeat: null,
     updatedAt: new Date(),
-  }).where(and(eq(mt5ConnectionTable.id, id), eq(mt5ConnectionTable.userId, userId))).returning();
-  res.json(serialize(updated[0]!, { rawToken: tok.raw }));
+  });
+  res.json(serialize(updated!, { rawToken: tok.raw }));
 });
 
 router.post("/me/mt5-connections/:id/revoke", requireUser, async (req, res): Promise<void> => {
   const userId = req.authUser!.id;
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-  const updated = await db.update(mt5ConnectionTable).set({
+  const updated = await updateUserConnection(userId, id, {
     status: "revoked",
     tokenRevokedAt: new Date(),
     apiKeyHash: null,
     updatedAt: new Date(),
-  }).where(and(eq(mt5ConnectionTable.id, id), eq(mt5ConnectionTable.userId, userId))).returning();
-  if (!updated[0]) { res.status(404).json({ error: "Not found" }); return; }
-  res.json(serialize(updated[0]));
+  });
+  if (!updated) { res.status(404).json({ error: "Not found" }); return; }
+  res.json(serialize(updated));
 });
 
 router.delete("/me/mt5-connections/:id", requireUser, async (req, res): Promise<void> => {
@@ -247,14 +241,14 @@ router.delete("/me/mt5-connections/:id", requireUser, async (req, res): Promise<
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   // Soft-delete by revoking; preserves audit trail.
-  const updated = await db.update(mt5ConnectionTable).set({
+  const updated = await updateUserConnection(userId, id, {
     status: "revoked",
     tokenRevokedAt: new Date(),
     apiKeyHash: null,
     updatedAt: new Date(),
-  }).where(and(eq(mt5ConnectionTable.id, id), eq(mt5ConnectionTable.userId, userId))).returning();
-  if (!updated[0]) { res.status(404).json({ error: "Not found" }); return; }
-  res.json({ ok: true, softDeleted: true, id: updated[0].id });
+  });
+  if (!updated) { res.status(404).json({ error: "Not found" }); return; }
+  res.json({ ok: true, softDeleted: true, id: updated.id });
 });
 
 // Phase 3C — Personal MT5 status: aggregates the user's most-recent active
@@ -262,15 +256,7 @@ router.delete("/me/mt5-connections/:id", requireUser, async (req, res): Promise<
 // `waiting` when the user has no connections.
 router.get("/me/mt5-status", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(and(
-      eq(mt5ConnectionTable.userId, userId),
-      isNotNull(mt5ConnectionTable.apiKeyHash),
-      isNull(mt5ConnectionTable.tokenRevokedAt),
-    ))
-    .orderBy(desc(mt5ConnectionTable.lastHeartbeat), desc(mt5ConnectionTable.createdAt))
-    .limit(1);
-  const r = rows[0];
+  const r = (await listUserConnections(userId, { activeTokenOnly: true, order: "heartbeat" })).find((c) => c.hasBridgeToken);
   if (!r) {
     res.json({
       hasConnection: false,

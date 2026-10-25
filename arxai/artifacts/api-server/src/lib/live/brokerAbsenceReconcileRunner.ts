@@ -7,15 +7,12 @@
 // reconcileState=RECONCILED_BROKER_ABSENT on safe candidates with a CAS guard
 // and a system audit row. NEVER sends a broker command.
 
+import { livePositionWriter, livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions } from "../positions/openPositions.js";
+import { getUserConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, gte, inArray, isNull } from "drizzle-orm";
-import {
-  db,
-  arxLiveCommandsTable,
-  arxLivePositionsTable,
-  mt5ConnectionTable,
-  liveTradingAuditTable,
-} from "@workspace/db";
+import { db, arxLiveCommandsTable, liveTradingAuditTable } from "@workspace/db";
 import { logger } from "../logger.js";
 import { isSnapshotReliable } from "./positionFreshness.js";
 import {
@@ -72,14 +69,9 @@ export async function runBrokerAbsenceReconcile(args: {
   // bridge is in scope use its marker; otherwise use the freshest marker the
   // user has. A stale/missing marker => we have no reliable current broker
   // truth, so nothing is stampable (the helper blocks every row).
-  const connRows = await db.select({
-    id: mt5ConnectionTable.id,
-    lastPositionsSnapshotAt: mt5ConnectionTable.lastPositionsSnapshotAt,
-  }).from(mt5ConnectionTable).where(
-    bridgeConnectionId != null
-      ? and(eq(mt5ConnectionTable.userId, args.userId), eq(mt5ConnectionTable.id, bridgeConnectionId))
-      : eq(mt5ConnectionTable.userId, args.userId),
-  );
+  const connRows = bridgeConnectionId != null
+    ? [await getUserConnection(args.userId, bridgeConnectionId)].filter((c) => c != null)
+    : await listUserConnections(args.userId);
   let markerMs: number | null = null;
   for (const c of connRows) {
     const t = c.lastPositionsSnapshotAt ? c.lastPositionsSnapshotAt.getTime() : null;
@@ -88,12 +80,16 @@ export async function runBrokerAbsenceReconcile(args: {
   const snapshotReliable = isSnapshotReliable(markerMs, policy.snapshotReliabilityWindowMs, now.getTime());
 
   // Open, not-yet-reconciled rows for this user (+ bridge if scoped).
-  const openRows = await db.select().from(arxLivePositionsTable).where(and(
-    eq(arxLivePositionsTable.userId, args.userId),
-    isNull(arxLivePositionsTable.closedAt),
-    isNull(arxLivePositionsTable.reconcileState),
-    ...(bridgeConnectionId != null ? [eq(arxLivePositionsTable.bridgeConnectionId, bridgeConnectionId)] : []),
-  ));
+  // The admin candidates report passes a query-string id through Number(); no
+  // position is owned by a non-positive or fractional id, so such an id
+  // matches nothing (the read model would throw instead).
+  const openRows = Number.isInteger(args.userId) && args.userId > 0
+    ? await selectLiveOpenPositions(livePositionColumns, {
+      userId: args.userId,
+      basis: "EXPOSURE",
+      ...(bridgeConnectionId != null ? { bridgeConnectionId } : {}),
+    })
+    : [];
 
   // Pending ARX close tickets — never race the ARX-initiated close path.
   const pendingCloseTickets = new Set<string>();
@@ -182,22 +178,26 @@ export async function runBrokerAbsenceReconcile(args: {
         // count. A re-appeared position (count→0, firstAbsent→null) or a new
         // absence cycle (different firstAbsent) fails the match and is skipped,
         // so we never close a position the broker re-confirmed open.
-        const stamped = await db.update(arxLivePositionsTable).set({
-          closedAt: closeAt,
-          reconcileState: "RECONCILED_BROKER_ABSENT",
-          reconcileReason,
-          reconciledAt: now,
-          lastSyncedAt: now,
-        }).where(and(
-          eq(arxLivePositionsTable.id, positionId),
-          eq(arxLivePositionsTable.userId, args.userId),
-          eq(arxLivePositionsTable.bridgeConnectionId, bridgeConnectionId),
-          eq(arxLivePositionsTable.brokerTicket, c.brokerTicket),
-          eq(arxLivePositionsTable.firstBrokerAbsentAt, evaluatedFirstAbsent),
-          gte(arxLivePositionsTable.brokerAbsentSnapshotCount, policy.requiredReliableAbsences),
-          isNull(arxLivePositionsTable.closedAt),
-          isNull(arxLivePositionsTable.reconcileState),
-        )).returning({ id: arxLivePositionsTable.id });
+        const stamped = await livePositionWriter.updateReturning(
+          {
+            closedAt: closeAt,
+            reconcileState: "RECONCILED_BROKER_ABSENT",
+            reconcileReason,
+            reconciledAt: now,
+            lastSyncedAt: now,
+          },
+          and(
+            eq(livePositionColumns.id, positionId),
+            eq(livePositionColumns.userId, args.userId),
+            eq(livePositionColumns.bridgeConnectionId, bridgeConnectionId),
+            eq(livePositionColumns.brokerTicket, c.brokerTicket),
+            eq(livePositionColumns.firstBrokerAbsentAt, evaluatedFirstAbsent),
+            gte(livePositionColumns.brokerAbsentSnapshotCount, policy.requiredReliableAbsences),
+            isNull(livePositionColumns.closedAt),
+            isNull(livePositionColumns.reconcileState),
+          ),
+          { id: livePositionColumns.id },
+        );
         if (stamped.length === 0) continue; // lost the race — leave as-is
         stampedCount += 1;
         c.candidateState = "auto_reconciled_broker_absent";

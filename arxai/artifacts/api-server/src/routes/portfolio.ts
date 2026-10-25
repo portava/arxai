@@ -33,7 +33,7 @@ import { eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { computeExposure, detectCorrelationWarnings } from "../lib/portfolio/exposure.js";
 import { shadowCapture } from "../lib/auditVault.js";
-import { getStatus as getSafetyCoreStatus } from "../lib/safetyCore.js";
+import { platformStop } from "../lib/safety/platformSwitches.js";
 import {
   AccountRiskRulesSchema,
   StrategyMetricsSchema,
@@ -209,24 +209,16 @@ router.post("/portfolio/plan", async (req: Request, res: Response) => {
   const body = parseOr400(PortfolioPlanBodySchema, req.body, res);
   if (!body) return;
 
-  // Consult AUTHORITATIVE Risk Governor / Kill Switch state. The plan
-  // cannot bypass it: if the kill switch is engaged, the account is
-  // treated as frozen no matter what the caller supplied.
-  let authoritative: AuthoritativeOverride = { frozen: false, reason: null };
-  try {
-    const sc = await getSafetyCoreStatus();
-    authoritative = {
-      frozen: !!sc.killSwitchEngaged,
-      reason: sc.killSwitchReason ?? null,
-    };
-  } catch (err) {
-    // Fail-closed: if we cannot reach the safety core, FREEZE the plan
-    // to be safe — the alternative is silently producing an unfrozen plan.
-    authoritative = {
-      frozen: true,
-      reason: `safety core unreachable: ${(err as Error).message}`,
-    };
-  }
+  // Consult the AUTHORITATIVE install-wide stops (platformStop(): the
+  // safety-core kill switch and the platform emergency stop). The plan
+  // cannot bypass them: while either is engaged the account is treated as
+  // frozen no matter what the caller supplied. Fail-closed: platformStop()
+  // never throws, and a stop it cannot read counts as engaged, so an
+  // unreachable store FREEZES the plan.
+  const stop = await platformStop();
+  const authoritative: AuthoritativeOverride = stop.engaged
+    ? { frozen: true, reason: stop.reason }
+    : { frozen: false, reason: null };
 
   const scopeEvents: PortfolioLogEntry[] = [];
   const ports = buildPorts(body.freezes, authoritative, scopeEvents);

@@ -1,0 +1,204 @@
+// Per-user risk profile: presets, prop-firm limits and the budget view.
+//
+// Replaces the old in-memory "Risk Governor 2.0" profile, which was one global
+// profile for every user and reset on restart. A preset or a prop-firm setup
+// is now written into the trader's own user_risk_settings row, where the one
+// pre-trade Risk Governor reads it (strictest of trader, admin and platform
+// wins, so a preset can never loosen an admin or platform limit). The views
+// here are read models of the governor's own facts; they decide nothing.
+
+import { and, desc, eq, gte } from "drizzle-orm";
+import { db, userRiskEventsTable, userRiskSettingsTable } from "@workspace/db";
+import { buildRiskContext } from "./enforce.js";
+import type { RiskContext, RiskVenue } from "./preTrade.js";
+import { getOrCreateRiskSettings } from "./riskEvents.js";
+import { loadPlatformHalt } from "../safety/tradingHalt.js";
+
+export const RISK_PRESETS = ["ULTRA_CONSERVATIVE", "CONSERVATIVE", "BALANCED_TESTER", "AGGRESSIVE_SIMULATOR", "PROP_FIRM_CHALLENGE"] as const;
+export type RiskPreset = (typeof RISK_PRESETS)[number];
+
+type PresetColumns = Pick<typeof userRiskSettingsTable.$inferInsert,
+  "maxRiskPerTradeAmount" | "maxDailyLossAmount" | "maxWeeklyLossAmount" | "maxOpenTrades" | "maxPositionsPerSymbol"
+  | "maxTradesPerDay" | "maxPositionSize" | "minRewardRiskRatio" | "maxConsecutiveLosses" | "blockAfterConsecutiveLosses"
+  | "cooldownAfterLossMinutes" | "requireTakeProfit">;
+
+// The same numbers the old presets carried, mapped onto the trader's columns.
+export const PRESET_LIMITS: Record<RiskPreset, PresetColumns> = {
+  ULTRA_CONSERVATIVE: { maxRiskPerTradeAmount: 5, maxDailyLossAmount: 15, maxWeeklyLossAmount: 50, maxOpenTrades: 1, maxPositionsPerSymbol: 1,
+    maxTradesPerDay: 2, maxPositionSize: 0.02, minRewardRiskRatio: 2.5, maxConsecutiveLosses: 1, blockAfterConsecutiveLosses: true,
+    cooldownAfterLossMinutes: 30, requireTakeProfit: true },
+  CONSERVATIVE: { maxRiskPerTradeAmount: 15, maxDailyLossAmount: 50, maxWeeklyLossAmount: 200, maxOpenTrades: 2, maxPositionsPerSymbol: 1,
+    maxTradesPerDay: 5, maxPositionSize: 0.05, minRewardRiskRatio: 1.8, maxConsecutiveLosses: 2, blockAfterConsecutiveLosses: true,
+    cooldownAfterLossMinutes: 15, requireTakeProfit: true },
+  BALANCED_TESTER: { maxRiskPerTradeAmount: 30, maxDailyLossAmount: 150, maxWeeklyLossAmount: 500, maxOpenTrades: 3, maxPositionsPerSymbol: 2,
+    maxTradesPerDay: 10, maxPositionSize: 0.1, minRewardRiskRatio: 1.5, maxConsecutiveLosses: 3, blockAfterConsecutiveLosses: true,
+    cooldownAfterLossMinutes: 10, requireTakeProfit: true },
+  AGGRESSIVE_SIMULATOR: { maxRiskPerTradeAmount: 100, maxDailyLossAmount: 500, maxWeeklyLossAmount: 2000, maxOpenTrades: 5, maxPositionsPerSymbol: 3,
+    maxTradesPerDay: 25, maxPositionSize: 0.5, minRewardRiskRatio: 1.2, maxConsecutiveLosses: 5, blockAfterConsecutiveLosses: true,
+    cooldownAfterLossMinutes: 2, requireTakeProfit: true },
+  PROP_FIRM_CHALLENGE: { maxRiskPerTradeAmount: 50, maxDailyLossAmount: 250, maxWeeklyLossAmount: 750, maxOpenTrades: 3, maxPositionsPerSymbol: 1,
+    maxTradesPerDay: 8, maxPositionSize: 0.2, minRewardRiskRatio: 2, maxConsecutiveLosses: 2, blockAfterConsecutiveLosses: true,
+    cooldownAfterLossMinutes: 20, requireTakeProfit: true },
+};
+
+export interface PropFirmConfig {
+  enabled: boolean;
+  startingBalance: number;
+  profitTarget: number;
+  maxDailyDrawdownUsd: number;
+  maxTotalDrawdownUsd: number;
+  minTradingDays: number;
+  maxLotSize: number;
+  maxPositions: number;
+  newsTradingAllowed: boolean;
+  weekendHoldingAllowed: boolean;
+  consistencyRulePctOfTotal: number;
+}
+
+export const DEFAULT_PROP_FIRM: PropFirmConfig = {
+  enabled: false, startingBalance: 100_000, profitTarget: 8_000,
+  maxDailyDrawdownUsd: 5_000, maxTotalDrawdownUsd: 10_000, minTradingDays: 5,
+  maxLotSize: 1.0, maxPositions: 3, newsTradingAllowed: false,
+  weekendHoldingAllowed: false, consistencyRulePctOfTotal: 40,
+};
+
+/** Write a preset into the trader's own settings. Platform and admin limits still bound it. */
+export async function applyRiskPreset(userId: number, preset: RiskPreset) {
+  await getOrCreateRiskSettings(userId);
+  const [row] = await db.update(userRiskSettingsTable)
+    .set({ ...PRESET_LIMITS[preset], riskPreset: preset, updatedAt: new Date() })
+    .where(eq(userRiskSettingsTable.userId, userId)).returning();
+  return row!;
+}
+
+/**
+ * Enable or change prop-firm mode. The challenge's daily and total drawdown,
+ * lot and position caps become the trader's limits (drawdown as a percent of
+ * the challenge balance). Turning it off keeps the limits until the trader
+ * changes them, so switching off never silently loosens protection.
+ */
+export async function configurePropFirm(userId: number, patch: Partial<PropFirmConfig>) {
+  const current = await getOrCreateRiskSettings(userId);
+  const cfg: PropFirmConfig = { ...DEFAULT_PROP_FIRM, ...((current.propFirm as Partial<PropFirmConfig> | null) ?? {}), ...patch };
+  const limits = cfg.enabled ? {
+    maxDailyLossAmount: cfg.maxDailyDrawdownUsd,
+    maxDrawdownPercent: cfg.startingBalance > 0 ? Number(((cfg.maxTotalDrawdownUsd / cfg.startingBalance) * 100).toFixed(2)) : null,
+    maxPositionSize: cfg.maxLotSize,
+    maxOpenTrades: Math.max(1, Math.round(cfg.maxPositions)),
+  } : {};
+  const [row] = await db.update(userRiskSettingsTable)
+    .set({ ...limits, propFirm: cfg, updatedAt: new Date() })
+    .where(eq(userRiskSettingsTable.userId, userId)).returning();
+  return { config: cfg, settings: row! };
+}
+
+async function governorFacts(userId: number, venue: RiskVenue): Promise<RiskContext> {
+  return buildRiskContext({ userId, venue, origin: "manual", action: "OPEN", symbol: "EURUSD", side: "BUY", lots: 0.01 },
+    { facts: { quote: null } });
+}
+
+const r2 = (n: number) => Number(n.toFixed(2));
+
+/** The trader's budget as the Risk Governor sees it on one venue. */
+export async function riskOverview(userId: number, venue: RiskVenue = "PAPER") {
+  const settings = await getOrCreateRiskSettings(userId);
+  const ctx = await governorFacts(userId, venue);
+  const L = ctx.limits;
+  const equity = ctx.account?.equity ?? null;
+  const realized = ctx.daily.realizedPnl ?? 0;
+  const floatingLoss = ctx.daily.floatingPnl != null && ctx.daily.floatingPnl < 0 ? ctx.daily.floatingPnl : 0;
+  const dailyUsed = Math.max(0, -(realized + floatingLoss));
+  const caps = [L.maxDailyLossAmount, L.maxDailyLossPercent != null && equity != null ? (equity * L.maxDailyLossPercent) / 100 : null]
+    .filter((v): v is number => v != null);
+  const dailyLimit = caps.length ? Math.min(...caps) : null;
+  const weekUsed = Math.max(0, -(ctx.activity?.weekRealizedPnl ?? 0));
+  const wcaps = [L.discipline.maxWeeklyLossAmount, L.discipline.maxWeeklyLossPercent != null && equity != null ? (equity * L.discipline.maxWeeklyLossPercent) / 100 : null]
+    .filter((v): v is number => v != null);
+  const weeklyLimit = wcaps.length ? Math.min(...wcaps) : null;
+  const openRisk = ctx.positions.reduce((s, p) => {
+    const inst = ctx.instruments[p.symbol];
+    if (p.stopLoss == null || !inst?.contractSize) return s;
+    return s + Math.abs(p.entryPrice - p.stopLoss) * p.lots * inst.contractSize * (inst.quoteToAccountFx ?? 1);
+  }, 0);
+  const halt = ctx.halt ?? { engaged: false, sources: [], reason: null };
+  const status = halt.engaged || (dailyLimit != null && dailyUsed >= dailyLimit) || (weeklyLimit != null && weekUsed >= weeklyLimit)
+    ? "BLOCK" : dailyLimit != null && dailyUsed > dailyLimit * 0.7 ? "CAUTION" : "OK";
+  return {
+    venue,
+    preset: settings.riskPreset ?? null,
+    limits: L,
+    budget: {
+      dailyRiskLimit: dailyLimit != null ? r2(dailyLimit) : null, dailyRiskUsed: r2(dailyUsed),
+      dailyRiskRemaining: dailyLimit != null ? r2(dailyLimit - dailyUsed) : null,
+      weeklyRiskLimit: weeklyLimit != null ? r2(weeklyLimit) : null, weeklyRiskUsed: r2(weekUsed),
+      weeklyRiskRemaining: weeklyLimit != null ? r2(weeklyLimit - weekUsed) : null,
+      openRisk: r2(openRisk), openPositions: ctx.positions.length, equity, riskStatus: status,
+    },
+    activity: ctx.activity ?? null,
+    halt,
+    permissions: { trading: !halt.engaged, pauseReason: halt.reason },
+  };
+}
+
+/** Prop-firm progress on the paper ledger, against the trader's stored challenge. */
+export async function propFirmStatus(userId: number) {
+  const settings = await getOrCreateRiskSettings(userId);
+  const cfg: PropFirmConfig = { ...DEFAULT_PROP_FIRM, ...((settings.propFirm as Partial<PropFirmConfig> | null) ?? {}) };
+  const ov = await riskOverview(userId, "PAPER");
+  const equity = ov.budget.equity;
+  const profit = equity != null ? equity - cfg.startingBalance : 0;
+  const dailyDD = ov.budget.dailyRiskUsed;
+  const totalDD = Math.max(0, -profit);
+  const passed: string[] = []; const failed: string[] = [];
+  if (profit >= cfg.profitTarget) passed.push("PROFIT_TARGET");
+  if (dailyDD >= cfg.maxDailyDrawdownUsd) failed.push("DAILY_DD"); else passed.push("DAILY_DD");
+  if (totalDD >= cfg.maxTotalDrawdownUsd) failed.push("TOTAL_DD"); else passed.push("TOTAL_DD");
+  const status = !cfg.enabled ? "OFF" : failed.length ? "FAILED" : profit >= cfg.profitTarget ? "PASSED"
+    : dailyDD > cfg.maxDailyDrawdownUsd * 0.7 || totalDD > cfg.maxTotalDrawdownUsd * 0.7 ? "WARNING" : "ACTIVE";
+  return {
+    config: cfg, profitUsd: r2(profit),
+    profitTargetProgress: cfg.profitTarget > 0 ? r2((profit / cfg.profitTarget) * 100) : 0,
+    dailyDrawdownRemainingUsd: r2(cfg.maxDailyDrawdownUsd - dailyDD),
+    totalDrawdownRemainingUsd: r2(cfg.maxTotalDrawdownUsd - totalDD),
+    passed, failed, status, equitySource: "paper_ledger" as const,
+  };
+}
+
+export interface RiskEventView {
+  eventId: string; ts: string; userId: number; symbol?: string; source?: string;
+  rule: string; severity: "INFO" | "WARN" | "BLOCK"; decision: string; explanation: string;
+}
+
+/** Risk Governor audit rows (user_risk_events), newest first. `userId` = one trader; omit for the operator view. */
+export async function listRiskEventsView(opts: { userId?: number; limit?: number; since?: Date } = {}): Promise<RiskEventView[]> {
+  const conds = [
+    opts.userId != null ? eq(userRiskEventsTable.userId, opts.userId) : undefined,
+    opts.since ? gte(userRiskEventsTable.createdAt, opts.since) : undefined,
+  ].filter((c) => c != null);
+  const rows = await db.select().from(userRiskEventsTable).where(conds.length ? and(...conds) : undefined)
+    .orderBy(desc(userRiskEventsTable.createdAt)).limit(Math.min(opts.limit ?? 200, 2000));
+  return rows.map((r) => {
+    const d = (r.details ?? {}) as Record<string, unknown>;
+    const intent = (d["intent"] ?? {}) as Record<string, unknown>;
+    return {
+      eventId: `ure_${r.id}`, ts: r.createdAt.toISOString(), userId: r.userId,
+      symbol: typeof intent["symbol"] === "string" ? intent["symbol"] : undefined,
+      source: typeof intent["origin"] === "string" ? intent["origin"] : undefined,
+      rule: r.eventType,
+      severity: r.decision === "block" ? "BLOCK" : r.decision === "warning" ? "WARN" : "INFO",
+      decision: r.decision, explanation: r.reason,
+    };
+  });
+}
+
+/** Install-wide trading availability from the platform stop switches. */
+export async function platformRiskPermissions() {
+  const halt = await loadPlatformHalt();
+  return {
+    aiTrading: !halt.engaged, manualTrading: !halt.engaged,
+    // The paper simulator is halted only by the safety-core switch (lib/safety/tradingHalt).
+    simulator: !halt.sources.includes("safety_core_kill_switch"),
+    liveTesterIntent: !halt.engaged, futureMt5: false as const,
+    pauseReason: halt.reason, haltSources: halt.sources,
+  };
+}

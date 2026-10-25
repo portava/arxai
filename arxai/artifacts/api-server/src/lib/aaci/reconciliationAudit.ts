@@ -12,14 +12,10 @@
 // - Pre-critical-news exposure is surfaced ONLY when a REAL news calendar is
 //   wired (mock provider → no fabricated alert).
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import {
-  db,
-  selfTradeAgentExecutionsTable,
-  arxLiveCommandsTable,
-  arxLivePositionsTable,
-  type SelfTradeAgentExecution,
-} from "@workspace/db";
+import { livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositionsForAllUsers } from "../positions/openPositions.js";
+import { and, eq, inArray } from "drizzle-orm";
+import { db, selfTradeAgentExecutionsTable, arxLiveCommandsTable, type SelfTradeAgentExecution } from "@workspace/db";
 import { createAlert } from "../alerts/alertManager.js";
 import { writeSelfTradeAudit } from "../selfTrade/audit.js";
 import { pickNewsProvider } from "../news/calendar/newsProvider.js";
@@ -170,15 +166,10 @@ export async function reconcileAaciChain(
     const openByUserTicket = new Set<string>();
     const brokerOpenTickets: string[] = [];
     if (userIds.length) {
-      const positions = await db
-        .select()
-        .from(arxLivePositionsTable)
-        .where(
-          and(
-            inArray(arxLivePositionsTable.userId, userIds),
-            isNull(arxLivePositionsTable.closedAt),
-          ),
-        );
+      const positions = await selectLiveOpenPositionsForAllUsers(livePositionColumns, {
+        basis: "UNCLOSED",
+        userIds,
+      });
       for (const p of positions) {
         openByUserTicket.add(`${p.userId}:${p.brokerTicket}`);
         brokerOpenTickets.push(p.brokerTicket);

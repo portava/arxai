@@ -22,6 +22,7 @@ import {
 } from "@workspace/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -30,8 +31,8 @@ const router = Router();
 // than introduce one in this minimal patch we re-use the same shape.
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
-  const role = u?.role?.toUpperCase();
-  if (role === "ADMIN" || role === "OWNER") return role as "ADMIN" | "OWNER";
+  const role = operatorRoleFromSession(u?.role);
+  if (role) return role;
   res.status(403).json({ ok: false, error: "admin_only" });
   return null;
 }

@@ -8,20 +8,28 @@
 //
 // Inviolable: no rule may claim guaranteed profit. Messages describe the
 // observed condition only.
+//
+// Ownership: an alert with no userId is shown to every user (alertManager
+// visibleTo), so only platform-wide conditions (broker link, price feed) are
+// raised that way. Every rule over a trader's own rows attributes the alert
+// to that row's owner and skips ownerless legacy rows, which would otherwise
+// be broadcast.
 
+import { demoPositionColumns } from "../positions/ledger.js";
+import { ALERT_ELIGIBLE_BASIS, selectDemoOpenPositionsForAllUsers } from "../positions/openPositions.js";
 import {
   db,
   tradePlansTable,
   riskLocksTable,
-  brokerHealthStateTable,
-  livePositionsTable,
   weeklyPerformanceReviewsTable,
-  riskSettingsTable,
   tradesTable,
   performanceDailyTable,
 } from "@workspace/db";
-import { and, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { createAlert } from "./alertManager.js";
+import { readBrokerHealthState } from "../brokerHub/brokerHealthState.js";
+import { loadEffectiveLimitsMany } from "../riskGovernor/limitSettings.js";
+import { dailyLossCapAmount } from "../riskGovernor/preTrade.js";
 
 export interface RuleResult {
   evaluated: number;
@@ -57,8 +65,7 @@ export async function evaluateAndGenerate(): Promise<RuleResult> {
 // ── Broker / market rules ────────────────────────────────────────────────
 
 async function brokerDisconnectedRule() {
-  const rows = await db.select().from(brokerHealthStateTable).limit(1);
-  const s = rows[0];
+  const s = await readBrokerHealthState();
   if (!s) return { fired: false, reason: "no broker_health_state row" };
   const status = s.lastStatus ?? "UNKNOWN";
   if (status === "DISCONNECTED" || status === "DOWN" || s.executionEnabled === false) {
@@ -78,8 +85,7 @@ async function brokerDisconnectedRule() {
 
 async function priceFeedDelayedRule() {
   // Delay signal lives in broker_health_logs.priceFeedDelayMs — read latest log.
-  const rows = await db.select().from(brokerHealthStateTable).limit(1);
-  const s = rows[0];
+  const s = await readBrokerHealthState();
   if (!s) return { fired: false, reason: "no state" };
   // We treat reconnectAttempts > 0 with a degraded status as a feed delay proxy.
   const status = s.lastStatus ?? "UNKNOWN";
@@ -101,12 +107,13 @@ async function marketNoTradeRule() {
   // Any active trade plan currently in NO_TRADE market condition → coach the
   // trader. We only emit one per symbol per dedupe window.
   const plans = await db.select().from(tradePlansTable)
-    .where(and(eq(tradePlansTable.marketCondition, "NO_TRADE"), eq(tradePlansTable.status, "DRAFT")))
+    .where(and(eq(tradePlansTable.marketCondition, "NO_TRADE"), eq(tradePlansTable.status, "DRAFT"), isNotNull(tradePlansTable.userId)))
     .limit(20);
   if (plans.length === 0) return { fired: false };
   let any = false;
   for (const p of plans) {
     const r = await createAlert({
+      userId: p.userId,
       type: "MARKET_CONDITION",
       priority: "MEDIUM",
       severity: "warning",
@@ -125,9 +132,12 @@ async function marketNoTradeRule() {
 
 async function positionNearStopLossRule() {
   // Open positions whose current price is within 25% of the SL distance.
-  const open = await db.select().from(livePositionsTable)
-    .where(and(eq(livePositionsTable.status, "OPEN"), isNull(livePositionsTable.closedAt)))
-    .limit(50);
+  // ALERT_ELIGIBLE (owner decision 11): status OPEN, closed_at not stamped and
+  // an owner on the row; ownerless and closed rows never raise a trader alert.
+  const open = await selectDemoOpenPositionsForAllUsers(demoPositionColumns, {
+    basis: ALERT_ELIGIBLE_BASIS.DEMO,
+    limit: 50,
+  });
   let any = false;
   for (const p of open) {
     if (p.stopLoss == null || p.currentPrice == null) continue;
@@ -139,6 +149,7 @@ async function positionNearStopLossRule() {
     const pctOfSlRemaining = remaining / slDist;
     if (pctOfSlRemaining <= 0.25) {
       const r = await createAlert({
+        userId: p.userId,
         type: "POSITION_WARNING",
         priority: pctOfSlRemaining <= 0.05 ? "CRITICAL" : "HIGH",
         severity: pctOfSlRemaining <= 0.05 ? "danger" : "warning",
@@ -163,12 +174,13 @@ async function tradePlanInvalidRule() {
   // Plans newly INVALIDATED in the last 5 min.
   const since = new Date(Date.now() - 5 * 60 * 1000);
   const plans = await db.select().from(tradePlansTable)
-    .where(and(eq(tradePlansTable.status, "INVALIDATED"), gte(tradePlansTable.updatedAt, since)))
+    .where(and(eq(tradePlansTable.status, "INVALIDATED"), gte(tradePlansTable.updatedAt, since), isNotNull(tradePlansTable.userId)))
     .limit(10);
   if (plans.length === 0) return { fired: false };
   let any = false;
   for (const p of plans) {
     const r = await createAlert({
+      userId: p.userId,
       type: "TRADE_PLAN_INVALIDATED",
       priority: "MEDIUM",
       severity: "warning",
@@ -186,13 +198,14 @@ async function tradePlanInvalidRule() {
 
 async function riskLockActiveRule() {
   const locks = await db.select().from(riskLocksTable)
-    .where(eq(riskLocksTable.isActive, true))
+    .where(and(eq(riskLocksTable.isActive, true), isNotNull(riskLocksTable.userId)))
     .orderBy(desc(riskLocksTable.startTime))
     .limit(10);
   if (locks.length === 0) return { fired: false };
   let any = false;
   for (const l of locks) {
     const r = await createAlert({
+      userId: l.userId,
       type: "RISK_LOCK",
       priority: "HIGH",
       severity: "danger",
@@ -207,50 +220,63 @@ async function riskLockActiveRule() {
 }
 
 async function weeklyReviewReadyRule() {
-  // Most-recent review created in the last 24h.
+  // Each trader's reviews that closed in the last 24h; the alert goes to the
+  // review's owner only.
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const rows = await db.select().from(weeklyPerformanceReviewsTable)
-    .where(gte(weeklyPerformanceReviewsTable.weekEnd, since))
+    .where(and(gte(weeklyPerformanceReviewsTable.weekEnd, since), isNotNull(weeklyPerformanceReviewsTable.userId)))
     .orderBy(desc(weeklyPerformanceReviewsTable.weekEnd))
-    .limit(1);
-  const r = rows[0];
-  if (!r) return { fired: false };
-  const out = await createAlert({
-    type: "WEEKLY_REVIEW",
-    priority: "LOW",
-    severity: "info",
-    title: "Weekly performance review ready",
-    message: `Your review for week ending ${new Date(r.weekEnd).toISOString().slice(0, 10)} is available — ${r.totalTrades} trades, win rate ${(r.winRate * 100).toFixed(0)}%.`,
-    dedupeKey: `weekly-review:${r.id}`,
-  });
-  return { fired: out.id !== 0 };
+    .limit(50);
+  let any = false;
+  for (const r of rows) {
+    const out = await createAlert({
+      userId: r.userId,
+      type: "WEEKLY_REVIEW",
+      priority: "LOW",
+      severity: "info",
+      title: "Weekly performance review ready",
+      message: `Your review for week ending ${new Date(r.weekEnd).toISOString().slice(0, 10)} is available — ${r.totalTrades} trades, win rate ${(r.winRate * 100).toFixed(0)}%.`,
+      dedupeKey: `weekly-review:${r.id}`,
+    });
+    if (out.id !== 0) any = true;
+  }
+  return { fired: any };
 }
 
 async function nearDailyLossLimitRule() {
-  // Compose: read riskSettings.maxDailyLossPct + most recent
-  // performance_daily row, alert when realized loss is ≥ 80% of limit.
-  const rs = await db.select().from(riskSettingsTable).limit(1);
-  const settings = rs[0];
-  if (!settings) return { fired: false, reason: "no risk_settings" };
+  // Per trader: today's performance_daily row against the daily-loss cap the
+  // Risk Governor enforces for that trader (owner decision 8:
+  // loadEffectiveLimits, so the operator's USD cap and the trader's off
+  // switch count); alert at >= 80%. It used to also take the first
+  // risk_settings row as a "platform" figure, which was whichever trader's
+  // row came back first.
 
   const today = new Date();
   const dayKey = today.toISOString().slice(0, 10);
-  const rows = await db.select().from(performanceDailyTable)
-    .where(eq(performanceDailyTable.date, dayKey))
-    .limit(1);
-  const day = rows[0];
-  if (!day || !day.pnl || day.pnl >= 0) return { fired: false };
+  const days = await db.select().from(performanceDailyTable)
+    .where(and(eq(performanceDailyTable.date, dayKey), isNotNull(performanceDailyTable.userId)))
+    .limit(200);
+  const losing = days.filter((d) => d.pnl != null && d.pnl < 0);
+  if (losing.length === 0) return { fired: false };
 
-  // Equity baseline for the max-loss budget. We use the recorded endBalance
-  // as the basis; we never fabricate a placeholder capital figure. Without a
-  // real end-balance baseline we cannot compute a trustworthy budget, so we
-  // do not fire a budget-based alert rather than triggering off fake capital.
-  const equity = day.endBalance && day.endBalance > 0 ? day.endBalance : null;
-  if (equity == null) return { fired: false, reason: "no equity baseline" };
-  const lossLimit = (settings.maxDailyLossPct / 100) * equity;
-  const lossSoFar = Math.abs(day.pnl);
-  if (lossSoFar >= 0.8 * lossLimit) {
+  const userIds = [...new Set(losing.map((d) => d.userId!))];
+  const limits = await loadEffectiveLimitsMany(userIds);
+
+  let any = false;
+  for (const day of losing) {
+    const L = limits.get(day.userId!);
+    if (!L) continue;
+    // Equity baseline for a percent cap. We use the recorded endBalance as
+    // the basis; we never fabricate a placeholder capital figure. Without a
+    // real end-balance baseline only an amount cap can be checked; with
+    // neither there is no trustworthy budget and no alert fires.
+    const equity = day.endBalance && day.endBalance > 0 ? day.endBalance : null;
+    const lossLimit = dailyLossCapAmount(L, equity);
+    if (lossLimit == null) continue;
+    const lossSoFar = Math.abs(day.pnl!);
+    if (lossSoFar < 0.8 * lossLimit) continue;
     const out = await createAlert({
+      userId: day.userId,
       type: "RISK_LOCK",
       priority: lossSoFar >= lossLimit ? "CRITICAL" : "HIGH",
       severity: lossSoFar >= lossLimit ? "danger" : "warning",
@@ -259,9 +285,9 @@ async function nearDailyLossLimitRule() {
       actionRequired: lossSoFar >= lossLimit,
       dedupeKey: `daily-loss:${dayKey}:${Math.floor((lossSoFar / lossLimit) * 10)}`,
     });
-    return { fired: out.id !== 0 };
+    if (out.id !== 0) any = true;
   }
-  return { fired: false };
+  return { fired: any };
 }
 
 void tradesTable;

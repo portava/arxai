@@ -1,14 +1,16 @@
 // Self-Trade AI — Agent Executor (Task #213).
 //
 // Turns ONE supervisor-approved decision into a REAL autonomous live entry by
-// riding the EXISTING executeInstant → createLiveDraft → confirm → dispatch →
+// riding the EXISTING Trade Engine one-click leg (submitInstantTrade →
+// executeInstant) → createLiveDraft → confirm → dispatch →
 // 16-gate Phase B pipeline → master bridge. It records every attempt in
 // self_trade_agent_executions and reconciles real outcomes from
 // arx_live_commands.
 //
 // SAFETY (inviolable):
 // - There is NO new MT5 path and NO gate bypass. Every live order goes through
-//   executeInstant, which runs master-live access + one-click + rate-limit
+//   the Trade Engine (submitInstantTrade → executeInstant), which runs
+//   master-live access + one-click + rate-limit
 //   pre-gates and then the 16 Phase B gates. This module cannot weaken any gate.
 // - dispatch ≠ fill. A DISPATCHED row means the command reached the bridge. A
 //   row becomes FILLED ONLY when a real brokerTicket + LIVE_FILLED arrives via
@@ -35,7 +37,7 @@ import {
   type HandshakeReadinessContext,
 } from "@workspace/domain/self-trade";
 import { logger } from "../logger.js";
-import { executeInstant } from "../live/instantTrade.js";
+import { submitInstantTrade } from "../tradeEngine/pipeline.js";
 import { routeQuote } from "../data/marketDataRouter.js";
 import { computeRealizedPnlUsd, isRealizedPnlIngestible } from "../live/realizedPnl.js";
 import {
@@ -413,7 +415,7 @@ export async function executeAgentDecision(
     reason: prepareOnly ? "Staging prepare-only draft." : "Dispatching autonomous live entry.",
   });
 
-  const res = await executeInstant({
+  const res = await submitInstantTrade({
     userId: executingUserId,
     intent: {
       source: "self_trade",

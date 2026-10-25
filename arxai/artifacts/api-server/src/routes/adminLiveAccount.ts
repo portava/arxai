@@ -8,17 +8,15 @@
 // - Unassigned positions = open arx_live_positions whose userId does not
 //   match any active allocation. Surfaced only to admins for triage.
 
+import { isHeartbeatAgeMsFresh } from "../lib/brokerHub/freshness.js";
+import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
+import { selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
+import { listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request, type Response } from "express";
-import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
-import { openLiveExposureCondition } from "../lib/live/livePositionExposure.js";
-import {
-  db,
-  arxLivePositionsTable,
-  mt5ConnectionTable,
-  userSlotAllocationTable,
-  arxMasterAccountConfigTable,
-} from "@workspace/db";
+import { db, userSlotAllocationTable, arxMasterAccountConfigTable } from "@workspace/db";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -28,15 +26,14 @@ function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" 
     res.status(401).json({ error: "AUTH_REQUIRED" });
     return null;
   }
-  const role = u.role;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ error: "ADMIN_REQUIRED" });
     return null;
   }
   return { id: u.id, role };
 }
 
-const HEARTBEAT_LIVE_MS = 20_000;
 
 router.get("/admin/live/master-summary", requireUser, async (req, res) => {
   const admin = requireAdmin(req, res);
@@ -54,8 +51,7 @@ router.get("/admin/live/master-summary", requireUser, async (req, res) => {
     return;
   }
 
-  const connRows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.id, config.masterConnectionId)).limit(1);
+  const connRows = await listConnections({ connectionIds: [config.masterConnectionId], limit: 1 });
   const conn = connRows[0];
   if (!conn) {
     res.json({
@@ -87,8 +83,8 @@ router.get("/admin/live/master-summary", requireUser, async (req, res) => {
     serverName: conn.serverName,
     accountType: conn.accountType,
     lastHeartbeat,
-    isLive: heartbeatAgeMs !== null && heartbeatAgeMs <= HEARTBEAT_LIVE_MS,
-    isStale: heartbeatAgeMs !== null && heartbeatAgeMs > HEARTBEAT_LIVE_MS,
+    isLive: isHeartbeatAgeMsFresh(heartbeatAgeMs),
+    isStale: heartbeatAgeMs !== null && !isHeartbeatAgeMsFresh(heartbeatAgeMs),
     readOnly: true,
   });
 });
@@ -102,14 +98,20 @@ router.get("/admin/live/user-slots", requireUser, async (req, res) => {
   // One pass over arx_live_positions, group by userId in-memory.
   // Open exposure only (shared truth predicate) — reconciled/closed ghosts
   // excluded from per-user open P/L totals.
-  const allOpen = await db.select({
-    userId: arxLivePositionsTable.userId,
-    floatingPl: arxLivePositionsTable.floatingPl,
-  }).from(arxLivePositionsTable).where(openLiveExposureCondition());
-  const allClosed = await db.select({
-    userId: arxLivePositionsTable.userId,
-    floatingPl: arxLivePositionsTable.floatingPl,
-  }).from(arxLivePositionsTable).where(isNotNull(arxLivePositionsTable.closedAt));
+  const allOpen = await selectLiveOpenPositionsForAllUsers(
+    {
+      userId: livePositionColumns.userId,
+      floatingPl: livePositionColumns.floatingPl,
+    },
+    { basis: "EXPOSURE" },
+  );
+  const allClosed = await livePositionLedger.select(
+    {
+      userId: livePositionColumns.userId,
+      floatingPl: livePositionColumns.floatingPl,
+    },
+    { where: isNotNull(livePositionColumns.closedAt) },
+  );
 
   const openByUser = new Map<number, { pnl: number; count: number }>();
   for (const r of allOpen) {
@@ -155,8 +157,7 @@ router.get("/admin/live/unassigned-positions", requireUser, async (req, res) => 
     .where(eq(userSlotAllocationTable.isActive, true));
   const allocatedIds = new Set(allocations.map((a) => a.userId));
 
-  const positions = await db.select().from(arxLivePositionsTable)
-    .where(isNull(arxLivePositionsTable.closedAt));
+  const positions = await selectLiveOpenPositionsForAllUsers(livePositionColumns, { basis: "UNCLOSED" });
 
   const unassigned = positions.filter((p) => !allocatedIds.has(p.userId)).map((p) => ({
     id: p.id,

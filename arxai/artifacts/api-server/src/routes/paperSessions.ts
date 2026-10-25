@@ -16,8 +16,12 @@ import { checkPermission } from "../lib/security/permissions.js";
 import { recordSecurityEvent } from "../lib/security/events.js";
 import { auditEvent } from "../lib/systemHealth/audit.js";
 import { scrub } from "../lib/security/redact.js";
+import { requireUser } from "../lib/auth/middleware.js";
 
 const router: IRouter = Router();
+// Every paper session belongs to the signed-in trader; another user's session
+// id answers 404, and the single-ACTIVE rule is per trader.
+router.use("/paper-sessions", requireUser);
 
 const DISCLAIMER = "Build PP — Controlled Paper Testing Launch Mode + Session Manager. PAPER_ONLY. Never places trades, never enables live trading, never calls MT5, never modifies canPlaceTrades, never exposes secrets, never recommends live trading.";
 
@@ -55,39 +59,42 @@ async function audit(action: string, status: string, details: Record<string, unk
 
 // ── Status / listing ─────────────────────────────────────────────────────────
 
-router.get("/paper-sessions/status", async (_req, res) => {
-  const active = await getActiveSession();
+router.get("/paper-sessions/status", async (req, res) => {
+  const active = await getActiveSession(req.authUser!.id);
   res.json(envelope({ active: scrub(active), hasActive: !!active }));
 });
 
-router.get("/paper-sessions/active", async (_req, res) => {
-  const active = await getActiveSession();
+router.get("/paper-sessions/active", async (req, res) => {
+  const active = await getActiveSession(req.authUser!.id);
   res.json(envelope({ active: scrub(active) }));
 });
 
 router.get("/paper-sessions", async (req, res) => {
   const limit = Math.min(parseInt(String(req.query.limit ?? "20"), 10) || 20, 100);
-  const sessions = await listSessions(limit);
+  const sessions = await listSessions(req.authUser!.id, limit);
   res.json(envelope({ count: sessions.length, sessions: scrub(sessions) }));
 });
 
 router.get("/paper-sessions/:id", async (req, res) => {
-  const s = await getSessionById(req.params.id);
+  const s = await getSessionById(req.params.id, req.authUser!.id);
   if (!s) { res.status(404).json(envelope({ error: "session not found" })); return; }
   res.json(envelope({ session: scrub(s) }));
 });
 
 router.get("/paper-sessions/:id/events", async (req, res) => {
+  if (!(await getSessionById(req.params.id, req.authUser!.id))) { res.status(404).json(envelope({ error: "session not found" })); return; }
   const events = await listSessionEvents(req.params.id);
   res.json(envelope({ count: events.length, events: scrub(events) }));
 });
 
 router.get("/paper-sessions/:id/trades", async (req, res) => {
+  if (!(await getSessionById(req.params.id, req.authUser!.id))) { res.status(404).json(envelope({ error: "session not found" })); return; }
   const trades = await listSessionTrades(req.params.id);
   res.json(envelope({ count: trades.length, trades: scrub(trades) }));
 });
 
 router.get("/paper-sessions/:id/report", async (req, res) => {
+  if (!(await getSessionById(req.params.id, req.authUser!.id))) { res.status(404).json(envelope({ error: "session not found" })); return; }
   const r = await getLatestReport(req.params.id);
   if (!r) { res.status(404).json(envelope({ error: "no report yet — POST /:id/report to generate" })); return; }
   res.json(envelope({ report: scrub(r) }));
@@ -106,7 +113,7 @@ router.post("/paper-sessions/start", async (req, res) => {
   const role = readRoleFromRequest(req);
   const decision = await checkPermission(role, "paper_trade:create");
   if (!decision.allowed) { await deny(res, role, "paper_trade:create", "/api/paper-sessions/start"); return; }
-  const result = await startSession(req.body ?? {});
+  const result = await startSession(req.authUser!.id, req.body ?? {});
   await audit("SESSION_START", result.status, { paperSessionId: result.session.paper_session_id, role });
   res.status(result.status === "BLOCKED" ? 409 : 200).json(envelope({ result: scrub(result) }));
 });
@@ -117,7 +124,7 @@ router.post("/paper-sessions/pause", async (req, res) => {
   if (!decision.allowed) { await deny(res, role, "paper_trade:create", "/api/paper-sessions/pause"); return; }
   const id = String((req.body ?? {}).paperSessionId ?? "");
   const reason = String((req.body ?? {}).reason ?? "manual pause");
-  const result = await pauseSession(id, reason);
+  const result = await pauseSession(req.authUser!.id, id, reason);
   await audit("SESSION_PAUSE", result.ok ? "SUCCESS" : "REJECTED", { paperSessionId: id, reason, role });
   res.status(result.ok ? 200 : 400).json(envelope({ result: scrub(result) }));
 });
@@ -127,7 +134,7 @@ router.post("/paper-sessions/resume", async (req, res) => {
   const decision = await checkPermission(role, "paper_trade:create");
   if (!decision.allowed) { await deny(res, role, "paper_trade:create", "/api/paper-sessions/resume"); return; }
   const id = String((req.body ?? {}).paperSessionId ?? "");
-  const result = await resumeSession(id);
+  const result = await resumeSession(req.authUser!.id, id);
   await audit("SESSION_RESUME", result.ok ? "SUCCESS" : "REJECTED", { paperSessionId: id, role });
   res.status(result.ok ? 200 : 400).json(envelope({ result: scrub(result) }));
 });
@@ -138,7 +145,7 @@ router.post("/paper-sessions/end", async (req, res) => {
   if (!decision.allowed) { await deny(res, role, "paper_trade:create", "/api/paper-sessions/end"); return; }
   const id = String((req.body ?? {}).paperSessionId ?? "");
   const reason = String((req.body ?? {}).reason ?? "manual end");
-  const result = await endSession(id, reason);
+  const result = await endSession(req.authUser!.id, id, reason);
   await audit("SESSION_END", result.ok ? "SUCCESS" : "REJECTED", { paperSessionId: id, reason, role });
   res.status(result.ok ? 200 : 400).json(envelope({ result: scrub(result) }));
 });
@@ -147,7 +154,7 @@ router.post("/paper-sessions/:id/report", async (req, res) => {
   const role = readRoleFromRequest(req);
   const decision = await checkPermission(role, "paper_trade:create");
   if (!decision.allowed) { await deny(res, role, "paper_trade:create", "/api/paper-sessions/:id/report"); return; }
-  const r = await generateSessionReport(req.params.id);
+  const r = await generateSessionReport(req.authUser!.id, req.params.id);
   if (!r) { res.status(404).json(envelope({ error: "session not found" })); return; }
   await audit("SESSION_REPORT", "SUCCESS", { paperSessionId: req.params.id, sessionReportId: r.session_report_id });
   res.json(envelope({ report: scrub(r) }));
@@ -157,12 +164,12 @@ router.post("/paper-sessions/:id/report", async (req, res) => {
 
 router.get("/paper-sessions/check/ee", async (req, res) => {
   const symbol = req.query.symbol ? String(req.query.symbol) : undefined;
-  const r = await checkSessionAllowsPaperTrade({ symbol });
+  const r = await checkSessionAllowsPaperTrade(req.authUser!.id, { symbol });
   res.json(envelope({ enforcement: r }));
 });
 
-router.get("/paper-sessions/check/ff", async (_req, res) => {
-  const r = await checkSessionAllowsAutopilot();
+router.get("/paper-sessions/check/ff", async (req, res) => {
+  const r = await checkSessionAllowsAutopilot(req.authUser!.id);
   res.json(envelope({ enforcement: r }));
 });
 
@@ -170,7 +177,7 @@ router.post("/paper-sessions/link-trade", async (req, res) => {
   const role = readRoleFromRequest(req);
   const decision = await checkPermission(role, "paper_trade:create");
   if (!decision.allowed) { await deny(res, role, "paper_trade:create", "/api/paper-sessions/link-trade"); return; }
-  const r = await linkTradeToActiveSession(req.body ?? {});
+  const r = await linkTradeToActiveSession(req.authUser!.id, req.body ?? {});
   res.json(envelope({ result: r }));
 });
 

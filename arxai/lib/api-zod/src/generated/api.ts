@@ -4113,7 +4113,9 @@ export const GetOpenTradesResponseItem = zod.object({
 export const GetOpenTradesResponse = zod.array(GetOpenTradesResponseItem);
 
 /**
- * @summary Execute a trade (mock or bridge-ready)
+ * Retired by owner decision 14 (2026-10-25). It never placed a broker order. Every call now returns 410 with code EXECUTE_TRADE_RETIRED and the governed paths to use instead (simulated orders: POST /paper/orders; DEMO / LIVE: the Trade Action Center). Nothing is executed or recorded, and a LIVE request is never converted into a simulated one.
+ * @deprecated
+ * @summary Retired legacy trade endpoint — always refuses (410 EXECUTE_TRADE_RETIRED)
  */
 export const ExecuteTradeBody = zod.object({
   symbol: zod.string(),
@@ -4125,13 +4127,6 @@ export const ExecuteTradeBody = zod.object({
   strategy: zod.string(),
   confidence: zod.number(),
   confirmationId: zod.number().nullish(),
-});
-
-export const ExecuteTradeResponse = zod.object({
-  success: zod.boolean(),
-  message: zod.string(),
-  tradeId: zod.number(),
-  mode: zod.string(),
 });
 
 /**
@@ -4615,6 +4610,24 @@ export const GetAdminBridgeV2StatusResponse = zod.object({
         bridgeConnectionId: zod.number().nullish(),
         connected: zod.boolean(),
         freshness: zod.enum(["LIVE", "STALE", "OFFLINE", "UNKNOWN"]),
+        heartbeatFreshness: zod
+          .enum(["fresh", "degraded", "offline", "unknown"])
+          .optional()
+          .describe(
+            "Shared MT5 heartbeat vocabulary (owner decision 17\/18) — the comparable heartbeat fact.",
+          ),
+        streamHealth: zod
+          .enum(["LIVE", "STALE", "OFFLINE", "UNKNOWN"])
+          .optional()
+          .describe(
+            "Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only.",
+          ),
+        streamImpliesExecutionReady: zod
+          .literal(false)
+          .optional()
+          .describe(
+            "Always false. A healthy stream never makes an account execution-ready.",
+          ),
         lastHeartbeatAt: zod.string().nullish(),
         heartbeatAgeSeconds: zod.number().nullish(),
         eaVersion: zod.string().nullish(),
@@ -4660,6 +4673,24 @@ export const GetMeBridgeV2StatusResponse = zod
     hasV2Bridge: zod.boolean(),
     connected: zod.boolean(),
     feedFreshness: zod.enum(["LIVE", "STALE", "OFFLINE", "UNKNOWN"]),
+    heartbeatFreshness: zod
+      .enum(["fresh", "degraded", "offline", "unknown"])
+      .optional()
+      .describe(
+        "Shared MT5 heartbeat vocabulary (owner decision 17\/18) — the comparable heartbeat fact.",
+      ),
+    streamHealth: zod
+      .enum(["LIVE", "STALE", "OFFLINE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only.",
+      ),
+    streamImpliesExecutionReady: zod
+      .literal(false)
+      .optional()
+      .describe(
+        "Always false. A healthy stream never makes an account execution-ready.",
+      ),
     accountType: zod.string().nullish(),
     lastHeartbeatAt: zod.string().nullish(),
     lastAccountAt: zod.string().nullish(),

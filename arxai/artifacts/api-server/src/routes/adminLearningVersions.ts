@@ -45,6 +45,7 @@ import { requireUser } from "../lib/auth/middleware.js";
 // can never drift from the literal shadowPersistence actually writes.
 import { SYNTHETIC_SIMULATOR_SOURCE } from "../lib/shadowPersistence.js";
 import { logger } from "../lib/logger.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const log = logger.child({ component: "learningVersions" });
 const router = Router();
@@ -53,10 +54,11 @@ const router = Router();
 function requireAdmin(req: any, res: any): { id: number; role: string } | null {
   const u = req.authUser;
   if (!u) { res.status(401).json({ ok: false, error: "AUTH_REQUIRED" }); return null; }
-  if (u.role !== "ADMIN" && u.role !== "OWNER") {
+  const role = operatorRoleFromSession(u.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" }); return null;
   }
-  return { id: u.id, role: u.role };
+  return { id: u.id, role };
 }
 
 // ── Compute gates from current data ──────────────────────────────────────────

@@ -8,9 +8,8 @@ import { randomUUID } from "node:crypto";
 import {
   db,
   tradingPlaybookEntriesTable,
-  strategyEdgesTable,
-  mistakePatternsTable,
 } from "@workspace/db";
+import { listPlatformEdges, listPlatformMistakes } from "../learning/scopedMemory.js";
 import { eq, and, desc } from "drizzle-orm";
 
 export type PlaybookStatus = "ACTIVE" | "WATCHLIST" | "AVOID" | "REVIEW";
@@ -85,11 +84,12 @@ export async function generatePlaybook(opts: GeneratePlaybookOpts = {}): Promise
   let edges = opts.edges ?? [];
   let mistakes = opts.mistakes ?? [];
   if (!opts.edges) {
-    try { edges = await db.select().from(strategyEdgesTable); }
+    // The shared playbook learns from anonymized platform cohorts only (item 8).
+    try { edges = await listPlatformEdges(); }
     catch (err) { log.warn("Build II playbook: strategy_edges unavailable, returning safe-empty", { err: String(err) }); return []; }
   }
   if (!opts.mistakes) {
-    try { mistakes = await db.select().from(mistakePatternsTable); }
+    try { mistakes = await listPlatformMistakes(); }
     catch (err) { log.warn("Build II playbook: mistake_patterns unavailable, continuing without warnings", { err: String(err) }); mistakes = []; }
   }
 
@@ -129,7 +129,7 @@ export async function generatePlaybook(opts: GeneratePlaybookOpts = {}): Promise
       "Stop loss is mandatory",
       "Take profit is mandatory",
       "Risk score must be below your configured maximum",
-      "Position size must respect risk_settings.maxOpenTrades",
+      "Position size must respect your max open trades (Risk Governor settings)",
     ];
     const invalidationRules = [
       "Edge score drops below 0 over the next 10 paper trades",

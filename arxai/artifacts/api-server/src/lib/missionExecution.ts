@@ -3,14 +3,16 @@
 // SAFETY / SCOPE:
 //   - This is the FIRST time an approved Profit-Mission draft can become a real
 //     order, and it routes EXCLUSIVELY through the existing instant-trade router
-//     (`executeInstant`, source "mission") → live command pipeline → 18-gate
-//     dispatch. There is NO new execution path; nothing here can place an order
-//     by itself. `executeInstant` is injectable ONLY so tests can substitute a
-//     spy — production always uses the real router.
+//     (Trade Engine `submitInstantTrade` → `executeInstant`, source "mission")
+//     → live command pipeline → 18-gate dispatch. There is NO new execution
+//     path; nothing here can place an order by itself. The executor is
+//     injectable ONLY so tests can substitute a spy — production always uses
+//     the real router through the pipeline.
 //   - Per-draft user approval (Level 2) is still required: a draft must already
 //     be `approved` (or `waiting_confirmation`→approved) before it can dispatch.
 //     This hook never approves; it only dispatches an already-approved draft.
-//   - The additive, STRICTER-ONLY mission gate (`composeMissionGate`) runs FIRST.
+//   - The additive, STRICTER-ONLY mission-scope rules of the Risk Governor
+//     (`enforceMissionScope`) run FIRST.
 //     If it blocks, no order is attempted and the draft stays `approved`. The
 //     real per-user governor + 18-gate live dispatch still run unconditionally
 //     inside `executeInstant` — the mission gate can only ADD strictness.
@@ -29,16 +31,11 @@ import {
   oneClickAuditTable,
   type MissionTradeDraftRow,
 } from "@workspace/db";
-import {
-  composeMissionGate,
-  type MissionGateResult,
-} from "@workspace/domain/profit-mission";
-import {
-  executeInstant,
-  type InstantTradeIntent,
-  type InstantTradeResult,
-} from "./live/instantTrade.js";
-import { refreshMissionRisk, type MissionLiveSignals } from "./missionRiskService.js";
+import type { MissionGateResult } from "@workspace/domain/profit-mission";
+import { enforceMissionScope } from "./riskGovernor/missionScope.js";
+import type { InstantTradeIntent, InstantTradeResult } from "./live/instantTrade.js";
+import { submitInstantTrade } from "./tradeEngine/pipeline.js";
+import { refreshMissionRisk, type MissionLiveSignals } from "./missionRiskState.js";
 import {
   evaluatePhase7PreChecks,
   exposureBudgetFrom,
@@ -144,7 +141,7 @@ export async function dispatchApprovedDraft(
   args: DispatchApprovedDraftArgs,
   opts: DispatchApprovedDraftOpts = {},
 ): Promise<DispatchApprovedDraftResult> {
-  const executor = opts.executor ?? executeInstant;
+  const executor = opts.executor ?? submitInstantTrade;
   const nowMs = args.nowMs ?? Date.now();
 
   // ── Load mission + draft, both scoped by userId (per-user isolation) ────────
@@ -196,18 +193,9 @@ export async function dispatchApprovedDraft(
   if (!risk.ok) return { ok: false, kind: "mission_not_found" };
   const state = risk.state;
 
-  const gate = composeMissionGate({
-    // The real per-user governor + 18-gate run inside executeInstant; this seam
-    // starts from "pass" and the mission layer can only escalate strictness.
-    governorDecision: "pass",
-    mode: state.mode,
-    ladderAction: state.ladderAction,
-    blowupAction: state.blowup.action,
-    budgetExceeded: state.budgetUsedPct >= 100,
-    cooldownActive: state.behavioral.cooldownTriggered,
-    emergencyTriggered: state.emergency.triggered,
-    hasStopLoss: draft.stopLoss != null,
-    edgeTier: draft.edgeTier,
+  const gate = await enforceMissionScope({
+    userId: args.userId, missionId: args.missionId, draftId: draft.draftId, symbol: draft.symbol,
+    state, hasStopLoss: draft.stopLoss != null, edgeTier: draft.edgeTier,
   });
 
   if (!gate.allow) {

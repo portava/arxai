@@ -16,6 +16,7 @@ import { desc, eq } from "drizzle-orm";
 import { selectBrokerKind } from "../lib/broker/secrets.js";
 import { getBrokerProvider } from "../lib/broker/registry.js";
 import { randomUUID } from "node:crypto";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
@@ -176,7 +177,7 @@ router.get("/live-intent/queue", async (req, res) => {
     const role = String(
       (req as unknown as { authUser?: { role?: string } }).authUser?.role ?? "",
     ).toUpperCase();
-    const isAdmin = role === "ADMIN" || role === "OWNER";
+    const isAdmin = operatorRoleFromSession(role) != null;
 
     const empty = {
       intents: [],
@@ -214,7 +215,7 @@ router.get("/live-intent/:id", async (req, res) => {
     const role = String(
       (req as unknown as { authUser?: { role?: string } }).authUser?.role ?? "",
     ).toUpperCase();
-    const isAdmin = role === "ADMIN" || role === "OWNER";
+    const isAdmin = operatorRoleFromSession(role) != null;
     if (!isAdmin) {
       return res.status(404).json({ error: "Live intent not found" });
     }

@@ -247,7 +247,7 @@ export function LiveEaHeartbeatDebugCard() {
                       <Row label="heartbeat age">
                         {b.heartbeatAgeSeconds === null ? "—" : `${b.heartbeatAgeSeconds}s`}
                       </Row>
-                      <Row label="heartbeat fresh (≤15s)">
+                      <Row label="heartbeat fresh (<15s)">
                         <TriCell v={b.heartbeatFresh} />
                       </Row>
                       <Row label="ReadOnlyMode (want false)">

@@ -6,9 +6,9 @@
 // writes a row to admin_action_audit_log on every fetch.
 
 import { Router, type Request, type Response } from "express";
+import { loadPlatformSettings, platformStopReport, platformStopWith, stopSourceEngaged, type PlatformStopReport } from "../lib/safety/platformSwitches.js";
 import { db } from "@workspace/db";
 import {
-  globalTradingSettingsTable,
   adminActionAuditLogTable,
   arxLiveCommandsTable,
   mt5CommandsTable,
@@ -17,13 +17,14 @@ import {
 import { sql, eq, and, gte } from "drizzle-orm";
 import { computeEnvChecklist, summarizeEnvChecklist } from "../lib/startup/envChecklist.js";
 import { maskSensitiveOutput } from "../lib/security/redact.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
 function requireAdmin(req: Request, res: Response): "ADMIN" | "OWNER" | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
-  const role = String(u?.role ?? "").toUpperCase();
-  if (role !== "ADMIN" && role !== "OWNER") {
+  const role = operatorRoleFromSession(u?.role);
+  if (!role) {
     res.status(403).json({ ok: false, error: "ADMIN_OR_OWNER_REQUIRED" });
     return null;
   }
@@ -39,7 +40,7 @@ interface Blocker { code: string; severity: "INFO" | "WARN" | "CRITICAL"; messag
 async function computeReadiness(): Promise<{
   env: ReturnType<typeof computeEnvChecklist>;
   envSummary: ReturnType<typeof summarizeEnvChecklist>;
-  safety: { platformMode: string; emergencyKillSwitch: boolean; sharedLiveTradingEnabled: boolean; accountRoutingMode: string; demoEnabled: boolean; liveEnabled: boolean; };
+  safety: { platformMode: string; emergencyKillSwitch: boolean; sharedLiveTradingEnabled: boolean; accountRoutingMode: string; demoEnabled: boolean; liveEnabled: boolean; } & PlatformStopReport;
   counts: { arxLiveCommandsTotal: number; arxLiveCommandsLast24h: number; mt5CommandsTotal: number; openNeedsReviewMasterTrades: number; recentAdminActions24h: number; };
   modeContext: { nodeEnv: string; isProduction: boolean; isDevelopment: boolean; isTest: boolean; };
   launchBlockers: Blocker[];
@@ -49,15 +50,21 @@ async function computeReadiness(): Promise<{
   const envItems = computeEnvChecklist();
   const envSummary = summarizeEnvChecklist(envItems);
 
-  const settingsRows = await db.select().from(globalTradingSettingsTable).limit(1);
-  const s = settingsRows[0];
+  // Switches from the one switch authority (missing/unreadable → OFF, stop engaged).
+  const { switches: sw, config: s } = await loadPlatformSettings();
+  // Both install-wide stops through platformStop(). emergencyKillSwitch keeps
+  // naming the platform emergency stop (the PLATFORM_LIVE_WITHOUT_KILL_SWITCH
+  // blocker below asks for that stop); platformStop* say either stop.
+  const stop = await platformStopWith(sw);
+  const emergencyOn = stopSourceEngaged(stop, "platform_emergency_stop");
   const safety = {
-    platformMode: String(s?.platformMode ?? "OFF"),
-    emergencyKillSwitch: !!s?.emergencyKillSwitch,
+    platformMode: sw.platformMode as string,
+    emergencyKillSwitch: emergencyOn,
+    ...platformStopReport(stop),
     sharedLiveTradingEnabled: !!s?.sharedLiveTradingEnabled,
     accountRoutingMode: String(s?.accountRoutingMode ?? "USER_OWNED_MT5"),
-    demoEnabled: !!s?.demoEnabled,
-    liveEnabled: !!s?.liveEnabled,
+    demoEnabled: sw.venueEnabled.DEMO,
+    liveEnabled: sw.venueEnabled.LIVE,
   };
 
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -94,10 +101,10 @@ async function computeReadiness(): Promise<{
   if (envSummary.liveMasterSwitchEnabled) {
     launchBlockers.push({ code: "LIVE_MASTER_SWITCH_ENABLED", severity: "WARN", message: "ARX_LIVE_BROKER_EXECUTION_ENABLED is TRUE. Phase B 16-gate evaluator is active — every gate still must individually PASS, but this is no longer the default-deny posture." });
   }
-  if (envSummary.liveMasterSwitchEnabled && !safety.emergencyKillSwitch && safety.platformMode !== "LIVE") {
+  if (envSummary.liveMasterSwitchEnabled && !emergencyOn && safety.platformMode !== "LIVE") {
     // Informational only — operator may be staging
   }
-  if (!safety.emergencyKillSwitch && safety.platformMode === "LIVE") {
+  if (!emergencyOn && safety.platformMode === "LIVE") {
     launchBlockers.push({ code: "PLATFORM_LIVE_WITHOUT_KILL_SWITCH", severity: "CRITICAL", message: "platformMode=LIVE with emergencyKillSwitch=FALSE. Engage the kill switch before any controlled live test." });
   }
   if (counts.openNeedsReviewMasterTrades > 0) {

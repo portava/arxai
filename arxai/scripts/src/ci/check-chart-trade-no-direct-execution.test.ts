@@ -2,9 +2,9 @@
 //
 // The chart/scanner trade actions (place, Close, partial close, break-even,
 // Reverse, Cancel) must route ONLY through the Global Instant Trade Router
-// (`executeInstant`). This suite exercises the shared `scanForViolations`
+// (Trade Engine `submitInstantTrade` → `executeInstant`). This suite exercises the shared `scanForViolations`
 // scanner against synthetic instant-trade-route snippets with the chart-route
-// REQUIRED anchor (executeInstant, WITHOUT the Ruby ledger boundary). The
+// REQUIRED anchor (submitInstantTrade, WITHOUT the Ruby ledger boundary). The
 // sanctioned path must stay clean; every direct-execution escape — direct
 // command-table insert, the legacy `/api/me/trades/close` bypass, a broker
 // order-send primitive, or an ALIASED import of any of those — MUST be flagged.
@@ -13,9 +13,9 @@
 import {
   scanForViolations,
   type ForbiddenAlias,
-  type Needle,
 } from "./check-assistant-no-direct-execution.js";
 import {
+  CHART_REQUIRED,
   SCANNER_PANEL_REQUIRED,
   SCANNER_PANEL_FORBIDDEN,
   scanForbiddenStrings,
@@ -23,20 +23,15 @@ import {
 
 export {};
 
-// The chart/scanner instant-trade route's sanctioned anchor: executeInstant
-// only (no recordAndExecuteRuby — that boundary is assistant-specific).
-const CHART_REQUIRED: Needle[] = [
-  {
-    rx: /\bexecuteInstant\b/,
-    why: "chart/scanner trade actions must dispatch through the instant-trade router (executeInstant)",
-  },
-];
+// The chart/scanner instant-trade route's sanctioned anchor (the guard's own
+// list): submitInstantTrade only (no recordAndExecuteRuby — that boundary is
+// assistant-specific).
 
 // A minimal sanctioned tail so the REQUIRED check is satisfied; append to any
 // "stay clean" / "still flag the bypass" snippet so a failure is unambiguously
 // about the forbidden scan, not a MISSING path.
 const SANCTIONED = `
-  const result = await executeInstant({ userId, intent, ip, ua });
+  const result = await submitInstantTrade({ userId, intent, ip, ua });
 `;
 
 type Case = {
@@ -49,7 +44,7 @@ type Case = {
 const cases: Case[] = [
   // ── Must stay CLEAN ────────────────────────────────────────────────────────
   {
-    name: "sanctioned instant-router path only (executeInstant)",
+    name: "sanctioned instant-router path only (submitInstantTrade)",
     shouldFlag: false,
     src: SANCTIONED,
   },
@@ -57,7 +52,7 @@ const cases: Case[] = [
     name: "assistant ledger boundary is NOT required on the chart route",
     shouldFlag: false,
     // No recordAndExecuteRuby — must still be clean (chart route never uses it).
-    src: `const r = await executeInstant({ source: "chart" });`,
+    src: `const r = await submitInstantTrade({ source: "chart" });`,
   },
   {
     name: "doc-comment mentioning a forbidden table is stripped, not flagged",
@@ -112,7 +107,12 @@ const cases: Case[] = [
 
   // ── Must be FLAGGED — sanctioned path removed ──────────────────────────────
   {
-    name: "missing executeInstant is flagged",
+    name: "a direct executeInstant call no longer satisfies the router anchor",
+    shouldFlag: true,
+    src: `const result = await executeInstant({ userId, intent, ip, ua });\n`,
+  },
+  {
+    name: "missing submitInstantTrade is flagged",
     shouldFlag: true,
     src: `const noop = 1;\n`,
   },

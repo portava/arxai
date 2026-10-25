@@ -212,6 +212,88 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // sessions, seeds owner A/B plus legacy ownerless rows, and proves list/status/
   // create isolation together with account/provider-error redaction.
   { pkg: "@workspace/api-server", script: "test:broker-readonly-route" },
+  // Paper sandbox + behaviour-coaching ownership boundary. Boots the real paper,
+  // debrief, auto-debrief, prop, mentor, skill, analytics, edge, rule-contract,
+  // weekly-review, trade-decision and readiness routers with two genuine
+  // sessions plus legacy ownerless rows, and proves no cross-user read, edit,
+  // close or aggregation, per-user "single active" invariants, and that new
+  // rows are stamped with the caller's id.
+  { pkg: "@workspace/api-server", script: "test:behavior-ownership-route" },
+  // Per-user isolation step 1b — boots the real live-positions, trade
+  // management, portfolio risk, broker, paper execution, autopilot,
+  // performance, coach, paper session, cockpit, playbook, ideas and backtest
+  // routers with two traders, an operator and legacy ownerless rows, and
+  // proves no cross-user read, mutation or aggregation, operator-only
+  // singletons, and per-user alerts/notifications.
+  { pkg: "@workspace/api-server", script: "test:account-ownership-route" },
+  // Global stop controls: a trader's emergency stop halts only that trader;
+  // only an owner/operator can engage, reset or re-mode the safety core.
+  { pkg: "@workspace/api-server", script: "test:platform-controls-route" },
+  // Pre-trade Risk Governor: the 12 mandatory rules one by one and in
+  // combination (pure), then end to end on a real DB through the manual paper
+  // route, Ruby Trade Action drafts, paper automation and the live venue
+  // against a sandbox bridge — decision, enforcement, rejection and the
+  // user_risk_events audit row for each.
+  { pkg: "@workspace/api-server", script: "test:risk-governor-rules" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-pipelines" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-automation" },
+  // Position Guardian: the post-fill protection check case by case, then on a
+  // real DB — governed stop vs broker stop, restore through the governed
+  // queue, escalation, stale data, audit throttling, demo origin mapping.
+  { pkg: "@workspace/api-server", script: "test:position-guardian-assess" },
+  { pkg: "@workspace/api-server", script: "test:position-guardian-reconcile" },
+  { pkg: "@workspace/api-server", script: "test:position-guardian-manage" },
+  { pkg: "@workspace/api-server", script: "test:position-ledger" },
+  // Canonical open-position read model (both venues, mode scope, tenant isolation).
+  { pkg: "@workspace/api-server", script: "test:open-position-view" },
+  { pkg: "@workspace/api-server", script: "test:risk-count-basis" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-rr-daily" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-effective-views" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-paper-facts" },
+  // Trade Engine: LIVE / DEMO / PAPER as modes of one pipeline (submitTrade).
+  { pkg: "@workspace/api-server", script: "test:trade-engine-pipeline" },
+  // Its staged contract (draftTrade / confirmTrade / dispatchTrade) passes
+  // input and results through to the venue queues unchanged.
+  { pkg: "@workspace/api-server", script: "test:trade-engine-staged" },
+  { pkg: "@workspace/api-server", script: "test:paper-book" },
+  // Owner decision 14: /execute-trade is retired (410), records nothing.
+  { pkg: "@workspace/api-server", script: "test:execute-trade-retired" },
+  // Owner decision 13: confirmed SIMULATED opens book one governed PAPER order.
+  { pkg: "@workspace/api-server", script: "test:simulated-open" },
+  // Owner decision 15: My Trades DEMO opens use the governed DEMO pipeline; LIVE stays refused.
+  { pkg: "@workspace/api-server", script: "test:my-trades-demo-open" },
+  { pkg: "@workspace/api-server", script: "test:oms-governance" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-per-user-limits" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-discipline" },
+  { pkg: "@workspace/api-server", script: "test:risk-governor-journal" },
+  { pkg: "@workspace/api-server", script: "test:broker-hub-connections" },
+  { pkg: "@workspace/api-server", script: "test:learning-scopes" },
+  { pkg: "@workspace/api-server", script: "test:single-role-model" },
+  { pkg: "@workspace/api-server", script: "test:limit-layers" },
+  { pkg: "@workspace/api-server", script: "test:position-sizer" },
+  { pkg: "@workspace/api-server", script: "test:one-limit-store" },
+  { pkg: "@workspace/api-server", script: "test:readiness-stop-switches" },
+  { pkg: "@workspace/api-server", script: "test:llm-gateway" },
+  { pkg: "@workspace/api-server", script: "test:broker-read-adapters" },
+  { pkg: "@workspace/api-server", script: "test:production-readiness-check" },
+  { pkg: "@workspace/api-server", script: "test:broker-validation-suite" },
+  { pkg: "@workspace/api-server", script: "test:snapshot-ownership" },
+  { pkg: "@workspace/api-server", script: "test:broker-hub-mt5-state" },
+  { pkg: "@workspace/api-server", script: "test:broker-hub-state-sources" },
+  // Owner decision 16: account snapshot reads with tenant/account isolation.
+  { pkg: "@workspace/api-server", script: "test:broker-hub-account-snapshot-db" },
+  // Imports @workspace/db (reads injected; no rows touched): admin EA-health
+  // update preview reads the same gate inputs as GET /mt5/update-check.
+  { pkg: "@workspace/api-server", script: "test:ea-update-gate-inputs" },
+  // Imports @workspace/db via riskGovernor/enforce (no rows read): the Risk
+  // Governor broker status bands follow the shared heartbeat policy.
+  { pkg: "@workspace/api-server", script: "test:risk-governor-broker-heartbeat" },
+  { pkg: "@workspace/api-server", script: "test:alert-rule-ownership" },
+  { pkg: "@workspace/api-server", script: "test:trading-on-by-default" },
+  { pkg: "@workspace/api-server", script: "test:platform-switches" },
+  { pkg: "@workspace/api-server", script: "test:platform-stop-release" },
+  { pkg: "@workspace/api-server", script: "test:legacy-gates-action-aware" },
+  { pkg: "@workspace/api-server", script: "test:shared-live-pause" },
   // Task #660 — Profit Mission Phase 1 route per-user isolation + no-secret-leak
   // proof. Boots the REAL profitMissions router on loopback, seeds two real users
   // with genuine sessions, and proves anonymous 401s, a feed-gated estimate-

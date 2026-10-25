@@ -127,6 +127,12 @@ const SINGLE_GATE_CASES: ReadonlyArray<{
     expected: "EA_HEARTBEAT_STALE",
   },
   {
+    // Owner decision 17: fresh is age < 15 s, so exactly 15 s is now stale.
+    name: "EA heartbeat exactly 15s (shared policy: not fresh)",
+    override: { bridgeHeartbeatAgeSec: 15 },
+    expected: "EA_HEARTBEAT_STALE",
+  },
+  {
     name: "EA never sent a heartbeat",
     override: { bridgeHeartbeatAgeSec: null },
     expected: "EA_HEARTBEAT_STALE",

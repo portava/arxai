@@ -8,10 +8,11 @@ import { and, eq, isNotNull, gte, lte } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
+import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 function isAdminReq(req: Request): boolean {
   const role = (req as Request & { authUser?: { role?: string } }).authUser?.role;
-  return role === "ADMIN" || role === "OWNER";
+  return operatorRoleFromSession(role) != null;
 }
 
 const router = Router();

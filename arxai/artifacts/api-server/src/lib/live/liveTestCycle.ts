@@ -16,14 +16,16 @@
 //   rejects), the cycle locks in CLOSE_FAILED_MANUAL_REQUIRED — we never
 //   retry. An operator must use /resolve to acknowledge.
 
+import { isHeartbeatAgeMsFresh, MT5_HEARTBEAT_FRESH_BELOW_SECONDS } from "../brokerHub/freshness.js";
+import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
+import { selectLiveOpenPositions } from "../positions/openPositions.js";
+import { getUserActiveConnection } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   db,
   arxLiveTestCyclesTable,
   arxLiveCommandsTable,
-  arxLivePositionsTable,
-  mt5ConnectionTable,
   liveTradingAuditTable,
   userMasterLiveAccessTable,
   ARX_LIVE_TEST_CYCLE_TERMINAL,
@@ -31,12 +33,9 @@ import {
   type ArxLiveTestCycleStatus,
 } from "@workspace/db";
 import {
-  createLiveDraft,
-  createLiveOpsDraft,
-  confirmLiveCommand,
-  dispatchLiveCommand,
   cancelLiveCommand,
 } from "./liveCommandPipeline.js";
+import { draftTrade, confirmTrade, dispatchTrade } from "../tradeEngine/pipeline.js";
 import { getMyArming } from "./liveArming.js";
 import { computeRealizedPnlUsd } from "./realizedPnl.js";
 import { resolveContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
@@ -47,7 +46,6 @@ import { logger } from "../logger.js";
 
 const PINNED_SYMBOL = "EURUSD" as const;
 const PINNED_VOLUME = 0.01 as const;
-const HEARTBEAT_FRESH_MS = 15_000;
 
 export interface LiveTestCycleInput {
   userId: number;
@@ -79,16 +77,7 @@ async function audit(args: {
 }
 
 async function loadBridgeFacts(userId: number) {
-  const rows = await db.select().from(mt5ConnectionTable)
-    .where(eq(mt5ConnectionTable.userId, userId));
-  const fresh = rows
-    .filter((b) => !b.tokenRevokedAt)
-    .sort((a, b) => {
-      const ah = a.lastHeartbeat ? new Date(a.lastHeartbeat).getTime() : 0;
-      const bh = b.lastHeartbeat ? new Date(b.lastHeartbeat).getTime() : 0;
-      return bh - ah;
-    })[0] ?? null;
-  return fresh;
+  return getUserActiveConnection(userId);
 }
 
 export async function runPrecheck(userId: number): Promise<{
@@ -147,13 +136,13 @@ export async function runPrecheck(userId: number): Promise<{
   const heartbeatAgeMs = bridge?.lastHeartbeat
     ? Date.now() - new Date(bridge.lastHeartbeat).getTime()
     : null;
-  const heartbeatOk = heartbeatAgeMs != null && heartbeatAgeMs <= HEARTBEAT_FRESH_MS;
+  const heartbeatOk = isHeartbeatAgeMsFresh(heartbeatAgeMs);
   checks.push({
     key: "bridge_heartbeat_fresh",
     ok: heartbeatOk,
     detail: bridge
       ? heartbeatAgeMs != null
-        ? `last heartbeat ${(heartbeatAgeMs / 1000).toFixed(1)}s ago (must be ≤ ${HEARTBEAT_FRESH_MS / 1000}s)`
+        ? `last heartbeat ${(heartbeatAgeMs / 1000).toFixed(1)}s ago (must be < ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s)`
         : "no heartbeat received yet"
       : "no MT5 bridge configured",
   });
@@ -228,12 +217,10 @@ export async function runPrecheck(userId: number): Promise<{
   });
 
   // 7. no existing open arx_live_positions for EURUSD
-  const openPos = await db.select({ id: arxLivePositionsTable.id }).from(arxLivePositionsTable)
-    .where(and(
-      eq(arxLivePositionsTable.userId, userId),
-      eq(arxLivePositionsTable.symbol, PINNED_SYMBOL),
-      isNull(arxLivePositionsTable.closedAt),
-    )).limit(1);
+  const openPos = await selectLiveOpenPositions(
+    { id: livePositionColumns.id },
+    { userId, basis: "UNCLOSED", symbol: PINNED_SYMBOL, limit: 1 },
+  );
   checks.push({
     key: "no_existing_eurusd_position",
     ok: openPos.length === 0,
@@ -267,7 +254,7 @@ export async function previewCycle(input: LiveTestCycleInput) {
   let cancelledDraftId: string | null = null;
 
   if (precheck.ok) {
-    const d = await createLiveDraft({
+    const d = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
       userId: input.userId,
       commandType: "PLACE_LIVE_MARKET_ORDER",
       symbol: PINNED_SYMBOL,
@@ -373,7 +360,7 @@ export async function startCycle(input: LiveTestCycleInput): Promise<{
   });
 
   // OPEN leg — standard pipeline (preflight + draft + confirm + dispatch).
-  const draft = await createLiveDraft({
+  const draft = await draftTrade({ mode: "LIVE", kind: "ENTRY" }, {
     userId: input.userId,
     commandType: "PLACE_LIVE_MARKET_ORDER",
     symbol: PINNED_SYMBOL,
@@ -402,7 +389,7 @@ export async function startCycle(input: LiveTestCycleInput): Promise<{
     return { ok: false, cycle: updated!, reason: draft.reason, detail: draft.detail };
   }
   const openCommandId = draft.command.commandId;
-  const conf = await confirmLiveCommand({ userId: input.userId, commandId: openCommandId });
+  const conf = await confirmTrade({ mode: "LIVE" }, { userId: input.userId, commandId: openCommandId });
   if (!conf.ok) {
     const [updated] = await db.update(arxLiveTestCyclesTable).set({
       status: "OPEN_REJECTED",
@@ -413,7 +400,7 @@ export async function startCycle(input: LiveTestCycleInput): Promise<{
     }).where(eq(arxLiveTestCyclesTable.cycleId, cycleId)).returning();
     return { ok: false, cycle: updated!, reason: conf.reason };
   }
-  const disp = await dispatchLiveCommand({ userId: input.userId, commandId: openCommandId });
+  const disp = await dispatchTrade({ mode: "LIVE" }, { userId: input.userId, commandId: openCommandId });
   const dispOk = (disp as { ok?: boolean }).ok === true;
   if (!dispOk) {
     const primary = (disp as { primaryReason?: string }).primaryReason ?? "DISPATCH_BLOCKED";
@@ -495,16 +482,16 @@ export async function advanceCycle(args: { userId: number; cycleId: string }): P
     const openTicket = update.openBrokerTicket ?? row.openBrokerTicket;
     if (openTicket) {
       // position detected?
-      const [pos] = await db.select().from(arxLivePositionsTable).where(and(
-        eq(arxLivePositionsTable.userId, args.userId),
-        eq(arxLivePositionsTable.brokerTicket, openTicket),
-      )).limit(1);
+      const [pos] = await livePositionLedger.read({
+        where: and(eq(livePositionColumns.userId, args.userId), eq(livePositionColumns.brokerTicket, openTicket)),
+        limit: 1,
+      });
       if (pos && !row.positionDetectedAt) {
         update.positionDetectedAt = pos.lastSyncedAt ?? now;
         changed = true;
       }
       // queue the close (only once)
-      const closeDraft = await createLiveOpsDraft({
+      const closeDraft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
         userId: args.userId, commandType: "CLOSE_LIVE_POSITION",
         brokerTicket: openTicket, symbol: row.symbol,
         side: row.side as "BUY" | "SELL", volume: Number(row.requestedVolume),
@@ -516,14 +503,14 @@ export async function advanceCycle(args: { userId: number; cycleId: string }): P
         changed = true;
       } else {
         const closeCommandId = closeDraft.command.commandId;
-        const closeConf = await confirmLiveCommand({ userId: args.userId, commandId: closeCommandId });
+        const closeConf = await confirmTrade({ mode: "LIVE" }, { userId: args.userId, commandId: closeCommandId });
         if (!closeConf.ok) {
           update.status = "CLOSE_FAILED_MANUAL_REQUIRED";
           update.closeCommandId = closeCommandId;
           update.closeRejectionReason = `confirm_failed:${closeConf.reason}`;
           changed = true;
         } else {
-          const closeDisp = await dispatchLiveCommand({ userId: args.userId, commandId: closeCommandId });
+          const closeDisp = await dispatchTrade({ mode: "LIVE" }, { userId: args.userId, commandId: closeCommandId });
           const closeOk = (closeDisp as { ok?: boolean }).ok === true;
           if (!closeOk) {
             const primary = (closeDisp as { primaryReason?: string }).primaryReason ?? "CLOSE_DISPATCH_BLOCKED";
@@ -578,11 +565,13 @@ export async function advanceCycle(args: { userId: number; cycleId: string }): P
       // mark the cycle COMPLETED / surface to the user as "executed".
       const openTicket = update.openBrokerTicket ?? row.openBrokerTicket;
       const closePosRows = openTicket
-        ? await db.select({ closedAt: arxLivePositionsTable.closedAt })
-            .from(arxLivePositionsTable).where(and(
-              eq(arxLivePositionsTable.userId, args.userId),
-              eq(arxLivePositionsTable.brokerTicket, openTicket),
-            )).limit(1)
+        ? await livePositionLedger.select(
+          { closedAt: livePositionColumns.closedAt },
+          {
+            where: and(eq(livePositionColumns.userId, args.userId), eq(livePositionColumns.brokerTicket, openTicket)),
+            limit: 1,
+          },
+        )
         : [];
       const closePos = closePosRows[0];
       const closeEvidence = resolveLiveCloseConfirmation({

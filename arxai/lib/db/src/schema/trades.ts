@@ -2,6 +2,8 @@ import { pgTable, serial, text, integer, real, timestamp, index } from "drizzle-
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+// Legacy simulated-trade record (docs/TIER1_PAPER_BOOK.md). No broker order
+// stands behind any row. Closed to new rows since /execute-trade was retired.
 export const tradesTable = pgTable("trades", {
   id: serial("id").primaryKey(),
   userId: integer("user_id"), // Phase-2 ownership column. Nullable for legacy rows.
@@ -14,7 +16,13 @@ export const tradesTable = pgTable("trades", {
   strategy: text("strategy").notNull(),
   confidence: integer("confidence").notNull(),
   status: text("status").notNull().default("OPEN"), // OPEN, CLOSED_WIN, CLOSED_LOSS, CANCELLED
-  mode: text("mode").notNull().default("DEMO"), // DEMO, LIVE
+  // Historical meaning (owner decision 14, 2026-10-25): the retired
+  // /execute-trade endpoint stamped "LIVE" when the Safety Core reported LIVE
+  // and "DEMO" otherwise (including PAPER decisions). It records the Safety
+  // Core state at the time, NOT a broker execution — no row in this table was
+  // ever sent to a broker. /execute-trade no longer writes rows; existing rows
+  // are kept for history. Documentation only: the column is unchanged.
+  mode: text("mode").notNull().default("DEMO"), // DEMO, LIVE (Safety Core state, not a venue)
   pnl: real("pnl"),
   // Mirrors the live-test-cycle pnlStatus contract. Nullable for legacy /
   // demo rows where the value is implicitly COMPUTED (or PENDING for OPEN).

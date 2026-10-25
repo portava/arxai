@@ -14,24 +14,25 @@
 //     They see ONLY their own assigned allocation slice + personal P/L.
 //   * Pure read. No execution. No queue inserts. No live broker call.
 
+import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import {
   virtualTradingAccountsTable,
   sharedTradeAttributionTable,
-  userRiskSettingsTable,
   userMasterLiveAccessTable,
   performanceDailyTable,
   paperTradesTable,
-  globalTradingSettingsTable,
   userTradingPermissionsTable,
-  mt5ConnectionTable,
   userSlotAllocationTable,
 } from "@workspace/db/schema";
 import { and, asc, eq, isNull } from "drizzle-orm";
+import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEffectiveTradingGovernance } from "../lib/governance/effectiveGovernance.js";
 import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
+import { loadStoredLimitRows } from "../lib/riskGovernor/limitSettings.js";
+import { effectiveLimitViews, type EffectiveLimitView } from "../lib/riskGovernor/limitLayers.js";
 
 const router = Router();
 
@@ -94,6 +95,19 @@ export type AccountShellResponse = {
     maxExposurePerSymbolLots: number | null;
     allowedSymbols: string[] | null; // null = all symbols allowed
     requireStopLoss: boolean;
+    // Owner decision 8 (additive). The numbers above are the limits in force:
+    // the stricter of this account lane's cap and what the Risk Governor
+    // enforces on every order. `preference` is the trader's saved value
+    // (what the settings pages edit); `limits` explains each Risk Governor
+    // limit and why an override applies.
+    preference: {
+      maxLotSize: number | null;
+      maxOpenTrades: number | null;
+      maxDailyLossAmount: number | null;
+      maxRiskPerTradePercent: number | null;
+      requireStopLoss: boolean | null;
+    };
+    limits: Record<string, EffectiveLimitView>;
   };
   // For UI banners. Never leaks other users' data.
   notes: {
@@ -133,14 +147,10 @@ export async function computeAccountShell(
     //    seeds a fail-closed row on first read (a write-on-read side effect).
     //    A user-facing GET must never mutate state, so we SELECT both
     //    singletons directly. Missing rows fall back to safe defaults.
-    const [globalRows, permRows, mt5Rows, allocRows] = await Promise.all([
-      db.select({
-        platformMode: globalTradingSettingsTable.platformMode,
-        accountRoutingMode: globalTradingSettingsTable.accountRoutingMode,
-      })
-        .from(globalTradingSettingsTable)
-        .orderBy(asc(globalTradingSettingsTable.id))
-        .limit(1),
+    //    The platform mode comes from the one switch authority, which never
+    //    seeds (ifMissing defaults to fail_closed → OFF).
+    const [platform, permRows, mt5Rows, allocRows] = await Promise.all([
+      loadPlatformSettings(),
       db.select({
         accountRoutingOverride: userTradingPermissionsTable.accountRoutingOverride,
         tradingMode: userTradingPermissionsTable.tradingMode,
@@ -150,10 +160,7 @@ export async function computeAccountShell(
         .from(userTradingPermissionsTable)
         .where(eq(userTradingPermissionsTable.userId, userId))
         .limit(1),
-      db.select({ accountType: mt5ConnectionTable.accountType })
-        .from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.userId, userId))
-        .limit(1),
+      listUserConnections(userId, { order: "oldest", limit: 1 }),
       // T004: user_slot_allocation is the authoritative source for the
       // admin-allocated amount (total / manual / AI sleeve). Read-only;
       // never returned to other users; freeze reason is sanitized below.
@@ -172,15 +179,14 @@ export async function computeAccountShell(
         .where(eq(userSlotAllocationTable.userId, userId))
         .limit(1),
     ]);
-    const globalRow = globalRows[0];
     const globalRoutingMode: "USER_OWNED_MT5" | "SHARED_MASTER_MT5" =
-      globalRow?.accountRoutingMode === "SHARED_MASTER_MT5" ? "SHARED_MASTER_MT5" : "USER_OWNED_MT5";
+      platform.config?.accountRoutingMode === "SHARED_MASTER_MT5" ? "SHARED_MASTER_MT5" : "USER_OWNED_MT5";
     const override = String(permRows[0]?.accountRoutingOverride ?? "inherit").toLowerCase();
     const routingMode: "USER_OWNED_MT5" | "SHARED_MASTER_MT5" =
       override === "user_owned_mt5" ? "USER_OWNED_MT5"
         : override === "shared_master_mt5" ? "SHARED_MASTER_MT5"
         : globalRoutingMode;
-    const platformMode = String(globalRow?.platformMode ?? "OFF").toUpperCase();
+    const platformMode = platform.switches.platformMode;
     const mt5AccountType = String(mt5Rows[0]?.accountType ?? "").toLowerCase();
     const tradingMode: "DISABLED" | "SIMULATED" | "DEMO" | "LIVE" =
       platformMode === "LIVE" ? "LIVE"
@@ -272,12 +278,11 @@ export async function computeAccountShell(
       .where(eq(userMasterLiveAccessTable.userId, userId))
       .limit(1);
 
-    // 4) Advisory risk settings.
-    const [rs] = await db
-      .select()
-      .from(userRiskSettingsTable)
-      .where(eq(userRiskSettingsTable.userId, userId))
-      .limit(1);
+    // 4) The trader's saved limits and the limits the Risk Governor enforces
+    //    (owner decision 8: status views show the enforced value).
+    const storedLimits = await loadStoredLimitRows(userId);
+    const rs = storedLimits.userSettings;
+    const { limits: L, views: limitViews } = effectiveLimitViews(storedLimits);
 
     // 5) Performance — closed P/L today / week / total + counts.
     const today = new Date().toISOString().slice(0, 10);
@@ -357,22 +362,12 @@ export async function computeAccountShell(
               ? "RESTRICTED"
               : "ACTIVE";
 
-    // 8) Risk view — merge hard limits (master live access) with advisory.
-    const maxLotSize = mla?.maxLot != null
-      ? Number(mla.maxLot)
-      : rs?.maxPositionSize != null
-        ? Number(rs.maxPositionSize)
-        : null;
-    const maxOpenTrades = mla?.maxOpenPositions != null
-      ? Number(mla.maxOpenPositions)
-      : rs?.maxOpenTrades != null
-        ? Number(rs.maxOpenTrades)
-        : null;
-    const maxDailyLossAmount = mla?.dailyLossLimitUsd != null
-      ? Number(mla.dailyLossLimitUsd)
-      : rs?.maxDailyLossAmount != null
-        ? Number(rs.maxDailyLossAmount)
-        : null;
+    // 8) Risk view — this account lane's hard limits (master live access).
+    //    The trader's own saved values no longer stand in here: the Risk
+    //    Governor's enforced value is merged in below (strictest wins).
+    const maxLotSize = mla?.maxLot != null ? Number(mla.maxLot) : null;
+    const maxOpenTrades = mla?.maxOpenPositions != null ? Number(mla.maxOpenPositions) : null;
+    const maxDailyLossAmount = mla?.dailyLossLimitUsd != null ? Number(mla.dailyLossLimitUsd) : null;
     const maxExposurePerSymbolLots = mla?.maxExposurePerSymbolLots != null
       ? Number(mla.maxExposurePerSymbolLots)
       : null;
@@ -394,13 +389,20 @@ export async function computeAccountShell(
     // must combine the two here or a control-OFF owner/admin would wrongly read
     // governance values instead of the protective fallback.
     const govActive = gov.isPrivileged && gov.ownerLiveControlMode;
-    const effMaxLotSize = govActive ? gov.maxLotPerTrade : maxLotSize;
-    const effMaxOpenTrades = govActive ? gov.maxOpenPositions : maxOpenTrades;
-    const effMaxDailyLossAmount = govActive ? gov.maxDailyLossUsd : maxDailyLossAmount;
+    // Owner decision 8: what is shown is what applies. The Risk Governor
+    // enforces L on every order, whatever the lane, so each number is the
+    // stricter of the lane's cap and L (null = no limit from either).
+    const strictest = (...vs: Array<number | null | undefined>): number | null => {
+      const ok = vs.filter((v): v is number => v != null && Number.isFinite(v) && v > 0);
+      return ok.length ? Math.min(...ok) : null;
+    };
+    const effMaxLotSize = strictest(govActive ? gov.maxLotPerTrade : maxLotSize, L.maxLotSize);
+    const effMaxOpenTrades = strictest(govActive ? gov.maxOpenPositions : maxOpenTrades, L.discipline.maxOpenTrades);
+    const effMaxDailyLossAmount = strictest(govActive ? gov.maxDailyLossUsd : maxDailyLossAmount, L.maxDailyLossAmount);
     const effAllowedSymbols = govActive ? gov.allowedSymbols : allowedSymbols;
-    const effRequireStopLoss = govActive
+    const effRequireStopLoss = (govActive
       ? gov.requireStopLoss
-      : (mla?.requireStopLoss ?? rs?.requireStopLoss ?? true);
+      : (mla?.requireStopLoss ?? false)) || L.requireStopLoss;
 
     const dailyLossRemaining = effMaxDailyLossAmount != null
       ? Math.max(0, effMaxDailyLossAmount - Math.max(0, -closedPnlToday))
@@ -410,8 +412,8 @@ export async function computeAccountShell(
     // cannot compute a dollar risk amount, so report it as unknown (null) —
     // rendered as "—" — rather than deriving it from a placeholder balance.
     const baseBalance = allocatedBalance > 0 ? allocatedBalance : null;
-    const availableRiskAmount = (rs?.maxRiskPerTradePercent != null && baseBalance != null)
-      ? (Number(rs.maxRiskPerTradePercent) / 100) * baseBalance
+    const availableRiskAmount = baseBalance != null
+      ? strictest((L.maxRiskPerTradePercent / 100) * baseBalance, L.maxRiskPerTradeAmount)
       : null;
 
     const perUserTradingMode = (() => {
@@ -487,6 +489,14 @@ export async function computeAccountShell(
         maxExposurePerSymbolLots,
         allowedSymbols: effAllowedSymbols,
         requireStopLoss: effRequireStopLoss,
+        preference: {
+          maxLotSize: rs?.maxPositionSize != null ? Number(rs.maxPositionSize) : null,
+          maxOpenTrades: rs?.maxOpenTrades != null ? Number(rs.maxOpenTrades) : null,
+          maxDailyLossAmount: rs?.maxDailyLossAmount != null ? Number(rs.maxDailyLossAmount) : null,
+          maxRiskPerTradePercent: rs?.maxRiskPerTradePercent != null ? Number(rs.maxRiskPerTradePercent) : null,
+          requireStopLoss: rs?.requireStopLoss ?? null,
+        },
+        limits: limitViews,
       },
       notes: {
         needsReviewItems: 0, // surfaced to admins only; users see 0

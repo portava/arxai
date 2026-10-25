@@ -17,6 +17,11 @@
 //   - Writes only own table + vault audit. Reads everywhere else.
 //   - Defaults to PAPER_TRADING mode unless safetyCore says otherwise.
 //
+// OWNERSHIP:
+//   - Account, open-trade, history, skill, mentor, readiness and edge context
+//     come only from the evaluating user's rows. Decision logs are stamped
+//     with and read by that user.
+//
 // HONESTY:
 //   - No "expected return," no "guaranteed profit." Every response carries
 //     a disclaimer that this is decision support, not a profit promise.
@@ -26,15 +31,15 @@ import { Router, type Response } from "express";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getOrCreateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
+import { loadTradingActivity } from "../lib/riskGovernor/enforce.js";
+import { summarizeActivity } from "../lib/riskGovernor/preTrade.js";
+import { readActivePaperAccount, readOpenPaperOrders, readPaperCloses } from "../lib/tradeEngine/paperBookReader.js";
 import {
   db,
   tradeDecisionLogsTable,
   signalsTable,
   botSettingsTable,
-  riskSettingsTable,
   riskLocksTable,
-  paperOrdersTable,
-  paperAccountsTable,
   traderSkillProfilesTable,
   analyticsSnapshotsTable,
   aiMentorSessionsTable,
@@ -50,6 +55,7 @@ import {
   getMarketTypeForSymbol,
 } from "../lib/strategyEngine";
 import { getStatus as getSafetyStatus } from "../lib/safetyCore";
+import { platformStop, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { getMarketData, summarizeForAA, computeBlockers as computeMdBlockers } from "../lib/marketData/marketDataService.js";
 import type { MarketDataSnapshot, MarketDataBlocker } from "../lib/marketData/types.js";
 
@@ -161,6 +167,22 @@ const EvaluateBody = z.object({
   injectMarketIssue: z.enum(["NONE", "STALE", "MISSING", "WIDE_SPREAD", "EXTREME_VOLATILITY"]).optional().default("NONE"),
 });
 
+/**
+ * The trader's PAPER losing streak for the revenge guard (owner decision 7):
+ * the governor's streak measure (summarizeActivity) on settled paper_orders
+ * P/L, over every paper account of this trader, and never shorter than the
+ * governor's own active-account streak, so switching accounts cannot reset
+ * it. Read through the paper book's read side; the journal and the legacy
+ * `trades` table are not counted.
+ */
+export async function paperLosingStreak(userId: number, activity: { consecutiveLosses: number } | null): Promise<number> {
+  const recentCloses = await readPaperCloses({ user: userId }, { limit: 20 });
+  return Math.max(
+    summarizeActivity(recentCloses.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })), 0, new Date(), "paper_orders:user").consecutiveLosses,
+    activity?.consecutiveLosses ?? 0,
+  );
+}
+
 // ── Core orchestration ──────────────────────────────────────────────────────
 export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: number): Promise<TradeDecision> {
   const symbol = input.symbol;
@@ -169,10 +191,17 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   const blockers: string[] = [];
 
   // 1) Safety core — terminal authority. Never bypassable.
-  const safety = await getSafetyStatus().catch(() => null);
+  // The kill switches come from platformStop() (both install-wide stops, fail
+  // closed); getStatus() still gives the operational mode and allowed modes.
+  const [safety, stop] = await Promise.all([getSafetyStatus().catch(() => null), platformStop()]);
   const operationalMode = safety?.operationalMode ?? "PAPER_TRADING";
-  if (safety?.killSwitchEngaged) {
-    blockers.push(`Kill switch engaged: ${safety.killSwitchReason ?? "no reason"}`);
+  if (stopSourceEngaged(stop, "platform_emergency_stop")) {
+    // Reported, not a blocker: the emergency stop halts broker (DEMO/LIVE)
+    // entries but not the paper simulator this orchestrator defaults to.
+    warnings.push(`Platform emergency stop engaged: ${stop.detail.platform_emergency_stop ?? "no reason"} — broker (demo/live) entries are refused`);
+  }
+  if (stopSourceEngaged(stop, "safety_core_kill_switch")) {
+    blockers.push(`Kill switch engaged: ${stop.detail.safety_core_kill_switch ?? "no reason"}`);
     signalsUsed.push({ source: "safetyCore", status: "FAIL", score: 0, detail: "Kill switch ENGAGED — only OBSERVE_ONLY allowed" });
   } else if (!safety) {
     warnings.push("Safety core unreachable — defaulting to PAPER_TRADING posture");
@@ -285,11 +314,11 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   if (risk?.liveLocked) warnings.push("Live trading is locked in risk settings");
 
   // 5) Account + open-position context (paper account is always available).
-  const [paperAccts, openTrades] = await Promise.all([
-    db.select().from(paperAccountsTable).where(eq(paperAccountsTable.isActive, 1)).limit(1),
-    db.select().from(paperOrdersTable).where(eq(paperOrdersTable.status, "OPEN")),
+  // Paper facts through the paper book's read side (owner decision 7).
+  const [paperAcct, openTrades] = await Promise.all([
+    readActivePaperAccount(userId),
+    readOpenPaperOrders({ user: userId }),
   ]);
-  const paperAcct = paperAccts[0] ?? null;
   const openCount = openTrades.length;
   if (risk && openCount >= risk.maxOpenTrades) {
     blockers.push(`Max open trades reached (${openCount} / ${risk.maxOpenTrades})`);
@@ -299,24 +328,19 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   }
 
   // 6) Recent trade history — overtrading + revenge guard.
-  const recent = await db.select().from(paperOrdersTable).orderBy(desc(paperOrdersTable.id)).limit(20);
-  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-  const todays = recent.filter((o) => o.openedAt && o.openedAt >= today);
-  const losingStreak = (() => {
-    let s = 0;
-    for (const o of recent) {
-      if (o.status === "OPEN" || o.exitPrice == null) continue;
-      const dir = o.direction === "BUY" ? 1 : -1;
-      const pnl = (o.exitPrice - o.entryPrice) * dir;
-      if (pnl < 0) s++; else break;
-    }
-    return s;
-  })();
-  if (risk && todays.length >= risk.maxTradesPerDay) {
-    blockers.push(`Daily trade cap hit (${todays.length} / ${risk.maxTradesPerDay}) — overtrading guard`);
-    signalsUsed.push({ source: "overtrading", status: "FAIL", score: 0, detail: `Today=${todays.length}` });
+  // Daily-trade limit (owner decision 9): the Risk Governor's trading day and
+  // its PAPER activity source (trades opened on the UTC trading day and still
+  // open, plus trades closed on it), not orders opened among the last 20.
+  const activity = await loadTradingActivity(userId, "PAPER");
+  const losingStreak = await paperLosingStreak(userId, activity);
+  if (risk && activity == null) {
+    blockers.push("Your paper trading activity could not be read, so the daily trade limit cannot be checked");
+    signalsUsed.push({ source: "overtrading", status: "FAIL", score: 0, detail: "Activity unavailable" });
+  } else if (risk && activity && activity.tradesToday >= risk.maxTradesPerDay) {
+    blockers.push(`Daily trade limit reached (${activity.tradesToday} / ${risk.maxTradesPerDay} trades today, UTC) — overtrading guard`);
+    signalsUsed.push({ source: "overtrading", status: "FAIL", score: 0, detail: `Today=${activity.tradesToday}` });
   } else {
-    signalsUsed.push({ source: "overtrading", status: "PASS", score: 5, detail: `Today=${todays.length}` });
+    signalsUsed.push({ source: "overtrading", status: "PASS", score: 5, detail: `Today=${activity?.tradesToday ?? 0}` });
   }
   if (risk && losingStreak >= risk.stopAfterLosingStreak) {
     blockers.push(`Losing streak guard tripped (${losingStreak} losses in a row) — revenge-trade prevention`);
@@ -330,11 +354,16 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
 
   // 7) AI confidence score from latest analytics snapshot + skill profile.
   const [snapRows, skillRows, mentorRows, readinessRows, edgeRows] = await Promise.all([
-    db.select().from(analyticsSnapshotsTable).orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1),
-    db.select().from(traderSkillProfilesTable).orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
-    db.select().from(aiMentorSessionsTable).orderBy(desc(aiMentorSessionsTable.createdAt)).limit(1),
-    db.select().from(tradingReadinessChecksTable).orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
-    db.select().from(edgeDiscoveryReportsTable).where(eq(edgeDiscoveryReportsTable.symbol, symbol)).limit(5),
+    db.select().from(analyticsSnapshotsTable).where(eq(analyticsSnapshotsTable.userId, userId))
+      .orderBy(desc(analyticsSnapshotsTable.createdAt)).limit(1),
+    db.select().from(traderSkillProfilesTable).where(eq(traderSkillProfilesTable.userId, userId))
+      .orderBy(desc(traderSkillProfilesTable.updatedAt)).limit(1),
+    db.select().from(aiMentorSessionsTable).where(eq(aiMentorSessionsTable.userId, userId))
+      .orderBy(desc(aiMentorSessionsTable.createdAt)).limit(1),
+    db.select().from(tradingReadinessChecksTable).where(eq(tradingReadinessChecksTable.userId, userId))
+      .orderBy(desc(tradingReadinessChecksTable.id)).limit(1),
+    db.select().from(edgeDiscoveryReportsTable)
+      .where(and(eq(edgeDiscoveryReportsTable.userId, userId), eq(edgeDiscoveryReportsTable.symbol, symbol))).limit(5),
   ]);
   const snap = snapRows[0] ?? null;
   const skill = skillRows[0] ?? null;
@@ -421,13 +450,13 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
       const { getSymbolLearningView } = await import("../lib/learningEngine.js");
       const probeAction = chosenStrategySignal?.direction === "BUY" ? "BUY"
                        : chosenStrategySignal?.direction === "SELL" ? "SELL" : "HOLD";
-      let v = await getSymbolLearningView(symbol, probeAction);
+      let v = await getSymbolLearningView(userId, symbol, probeAction);
       // Fallback: if HOLD probe found nothing, sample BUY/SELL to surface
       // historical bias for this symbol so the user can still see the data.
       if (v.totalSampleSize === 0 && probeAction === "HOLD") {
         const [buyV, sellV] = await Promise.all([
-          getSymbolLearningView(symbol, "BUY"),
-          getSymbolLearningView(symbol, "SELL"),
+          getSymbolLearningView(userId, symbol, "BUY"),
+          getSymbolLearningView(userId, symbol, "SELL"),
         ]);
         v = buyV.totalSampleSize >= sellV.totalSampleSize ? buyV : sellV;
       }
@@ -543,8 +572,9 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   return decision;
 }
 
-export async function persistDecision(d: TradeDecision): Promise<number> {
+export async function persistDecision(d: TradeDecision, userId: number | null): Promise<number> {
   const ins = await db.insert(tradeDecisionLogsTable).values({
+    userId,
     symbol: d.symbol, action: d.action, shouldTrade: d.shouldTrade,
     confidence: d.confidence, riskScore: d.riskScore,
     entryReason: d.entryReason, invalidationReason: d.invalidationReason,
@@ -568,7 +598,7 @@ router.post("/trade-decision/evaluate", requireUser, async (req, res): Promise<v
     const parsed = EvaluateBody.safeParse(req.body ?? {});
     if (!parsed.success) { fail(res, 400, "Invalid input: " + parsed.error.message); return; }
     const decision = await orchestrate(parsed.data, req.authUser!.id);
-    const id = await persistDecision(decision);
+    const id = await persistDecision(decision, req.authUser!.id);
     ok(res, { decisionId: id, decision });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /trade-decision/evaluate failed");
@@ -582,7 +612,7 @@ router.post("/trade-decision/demo", requireUser, async (req, res): Promise<void>
   try {
     const symbol = typeof req.body?.symbol === "string" ? req.body.symbol : "Volatility 75 Index";
     const decision = await orchestrate({ symbol, proposedAction: "AUTO", injectMarketIssue: "NONE" }, req.authUser!.id);
-    const id = await persistDecision(decision);
+    const id = await persistDecision(decision, req.authUser!.id);
     ok(res, { decisionId: id, decision, demo: true });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "POST /trade-decision/demo failed");
@@ -591,10 +621,11 @@ router.post("/trade-decision/demo", requireUser, async (req, res): Promise<void>
 });
 
 // ── GET /trade-decision/logs ───────────────────────────────────────────────
-router.get("/trade-decision/logs", async (req, res): Promise<void> => {
+router.get("/trade-decision/logs", requireUser, async (req, res): Promise<void> => {
   try {
     const limit = Math.min(200, Math.max(1, Number(req.query["limit"] ?? 50)));
     const rows = await db.select().from(tradeDecisionLogsTable)
+      .where(eq(tradeDecisionLogsTable.userId, req.authUser!.id))
       .orderBy(desc(tradeDecisionLogsTable.id)).limit(limit);
     ok(res, { logs: rows, count: rows.length });
   } catch (err) {
@@ -604,15 +635,13 @@ router.get("/trade-decision/logs", async (req, res): Promise<void> => {
 });
 
 // ── GET /trade-decision/latest?symbol= ─────────────────────────────────────
-router.get("/trade-decision/latest", async (req, res): Promise<void> => {
+router.get("/trade-decision/latest", requireUser, async (req, res): Promise<void> => {
   try {
     const symbol = typeof req.query["symbol"] === "string" ? req.query["symbol"] : null;
-    const q = symbol
-      ? db.select().from(tradeDecisionLogsTable)
-          .where(and(eq(tradeDecisionLogsTable.symbol, symbol)))
-          .orderBy(desc(tradeDecisionLogsTable.id)).limit(1)
-      : db.select().from(tradeDecisionLogsTable)
-          .orderBy(desc(tradeDecisionLogsTable.id)).limit(1);
+    const mine = eq(tradeDecisionLogsTable.userId, req.authUser!.id);
+    const q = db.select().from(tradeDecisionLogsTable)
+      .where(symbol ? and(mine, eq(tradeDecisionLogsTable.symbol, symbol)) : mine)
+      .orderBy(desc(tradeDecisionLogsTable.id)).limit(1);
     const row = (await q)[0] ?? null;
     ok(res, { latest: row });
   } catch (err) {

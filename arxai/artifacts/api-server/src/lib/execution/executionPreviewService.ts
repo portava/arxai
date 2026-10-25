@@ -9,13 +9,11 @@
 //
 // Advisory / read-only: nothing here places, modifies, or gates a trade.
 
-import { and, eq, desc, isNull } from "drizzle-orm";
+import { readOpenPositions } from "../positions/openPositions.js";
+import { getUserPrimaryConnection } from "../brokerHub/connections.js";
+import { and, eq, desc } from "drizzle-orm";
 import { db } from "@workspace/db";
-import {
-  virtualTradingAccountsTable,
-  mt5ConnectionTable,
-  arxLivePositionsTable,
-} from "@workspace/db/schema";
+import { virtualTradingAccountsTable } from "@workspace/db/schema";
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
 import { computeATR, type Candle } from "@workspace/domain/market";
 import {
@@ -106,25 +104,15 @@ export async function buildExecutionPreviewForUser(
 
   let leverage: number | null = null;
   try {
-    const crows = await db.select({ lev: mt5ConnectionTable.leverage })
-      .from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.userId, userId))
-      .limit(1);
-    if (crows[0]?.lev != null && crows[0].lev > 0) leverage = crows[0].lev;
+    const lev = (await getUserPrimaryConnection(userId))?.leverage;
+    if (lev != null && lev > 0) leverage = lev;
   } catch { /* null leverage — margin omitted honestly */ }
 
   // Existing open exposure on this symbol for this user (multi-entry awareness).
   let openExposure: Parameters<typeof estimateExecutionPreview>[0]["openExposure"] = null;
   try {
-    const prows = await db.select({
-      volume: arxLivePositionsTable.volume,
-      side: arxLivePositionsTable.side,
-    }).from(arxLivePositionsTable)
-      .where(and(
-        eq(arxLivePositionsTable.userId, userId),
-        eq(arxLivePositionsTable.symbol, symbol),
-        isNull(arxLivePositionsTable.closedAt),
-      ));
+    const prows = (await readOpenPositions({ userId, venue: "LIVE", basis: "UNCLOSED", symbol }))
+      .map((p) => ({ volume: p.lots, side: p.side }));
     if (prows.length > 0) {
       let openLots = 0;
       const sides = new Set<string>();

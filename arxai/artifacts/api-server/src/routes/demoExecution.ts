@@ -4,9 +4,8 @@
 // Hard safety contract:
 //   * Live execution stays impossible. liveExecutionEnabled / liveBrokerExecution-
 //     Available / brokerPlacementImplemented all remain false everywhere else.
-//   * This layer queues commands ONLY with action="DEMO_MARKET_ORDER" and
-//     volume <= 0.01. The EA refuses anything else and refuses ALL orders on
-//     a non-DEMO MT5 account.
+//   * This layer queues demo market orders (volume <= 0.01) through the one
+//     demo pipeline, demoCommandQueue, which refuses a non-DEMO bridge.
 //   * Server-side enable: requires env ARX_ALLOW_DEMO_EXECUTION=true. Default
 //     OFF. If unset, every demo queue/test endpoint returns
 //     BLOCKED_DEMO_SAFETY_GUARD.
@@ -16,17 +15,19 @@
 //     order per call and never loops.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { isHeartbeatAgeMsFresh } from "../lib/brokerHub/freshness.js";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod/v4";
-import { db } from "@workspace/db";
-import { mt5StateTable, mt5CommandsTable } from "@workspace/db";
 import { denyInvestorExecution } from "../lib/auth/productRole.js";
+import { routeConfirmedAction } from "../lib/tradeAction/route.js";
+import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 // Task #71 — investor accounts cannot reach demo execution either.
 router.use(denyInvestorExecution);
 
 const MAX_DEMO_LOT = 0.01;
+const DEMO_PANEL_SOURCE = "DEMO_EXECUTION_PANEL";
 const DISCLAIMER = "Demo-only execution. Live broker placement remains disabled.";
 
 const BLOCKED_LIVE = {
@@ -43,8 +44,7 @@ function isDemoExecutionAllowedOnServer(): boolean {
 }
 
 async function loadAccountTypeAndState() {
-  const rows = await db.select().from(mt5StateTable).limit(1);
-  const s = rows[0] ?? null;
+  const s = await readPlatformMt5State();
   // mt5_state.liveAllowed is set by the EA heartbeat: 1 when ACCOUNT_TRADE_MODE
   // == ACCOUNT_TRADE_MODE_REAL. Anything else (0/null) is treated as DEMO/UNKNOWN.
   let accountType: "DEMO" | "REAL" | "UNKNOWN";
@@ -52,7 +52,7 @@ async function loadAccountTypeAndState() {
   else if (s.liveAllowed === 1) accountType = "REAL";
   else accountType = "DEMO";
   const ageMs = s?.lastHeartbeatAt ? Date.now() - new Date(s.lastHeartbeatAt).getTime() : null;
-  const isFresh = ageMs !== null && ageMs < 15_000;
+  const isFresh = isHeartbeatAgeMsFresh(ageMs);
   return { accountType, isFresh, state: s };
 }
 
@@ -65,7 +65,7 @@ router.get("/status", async (_req: Request, res: Response) => {
     accountType,
     bridgeFresh: isFresh,
     maxDemoLot: MAX_DEMO_LOT,
-    allowedAction: "DEMO_MARKET_ORDER",
+    allowedAction: "PLACE_MARKET_ORDER",
     // Canonical safety vocabulary (UNCHANGED — live execution stays impossible)
     executionMode: "READ_ONLY",
     placementLayer: "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED",
@@ -91,7 +91,7 @@ const demoBody = z.object({
   executionMode: z.enum(["DEMO_ONLY", "READ_ONLY_WITH_DEMO_EXECUTION"]),
 });
 
-async function validateAndQueueDemo(input: z.infer<typeof demoBody>, source: string) {
+async function validateAndQueueDemo(input: z.infer<typeof demoBody>, source: string, userId: number | null) {
   // 1. Server enablement. Default OFF — must be explicitly turned on per env.
   if (!isDemoExecutionAllowedOnServer()) {
     return {
@@ -140,48 +140,39 @@ async function validateAndQueueDemo(input: z.infer<typeof demoBody>, source: str
     return { ok: false as const, http: 400, body: blockedDemo("side must be BUY or SELL.") };
   }
 
-  // 4. Insert directly into mt5_commands with action="DEMO_MARKET_ORDER".
-  //    NOTE: we deliberately do NOT route through queueMt5CommandWithGate /
-  //    queueCommand — those are typed for OPEN/CLOSE/MODIFY/CLOSE_ALL and
-  //    apply the LIVE-armed gate. This is a parallel, demo-only insert.
-  //    The EA enforces ALL of: ACCOUNT_TRADE_MODE==DEMO, DemoExecutionMode,
-  //    AllowDemoOrderExecution, RequireDemoAccount, demoOnly==true,
-  //    volume<=MaxDemoLot, action=="DEMO_MARKET_ORDER".
-  const detail = JSON.stringify({
-    demoOnly: true,
-    executionMode: input.executionMode,
-    reason: input.reason ?? `ARX AI demo execution (${source})`,
-    queuedAt: new Date().toISOString(),
-    source,
+  // 4. The one demo pipeline: demoCommandQueue (per-user arming, the routed
+  //    bridge gate, the pre-trade Risk Governor in the consumer). This panel
+  //    used to insert DEMO_MARKET_ORDER rows straight into the legacy
+  //    mt5_commands mailbox, a parallel demo path (Tier 1 Trade Engine).
+  if (userId == null) {
+    return { ok: false as const, http: 401, body: blockedDemo("Sign in required to queue a demo order.") };
+  }
+  const routed = await routeConfirmedAction({
+    userId, actionType: "OPEN", requestedMode: "DEMO", tradeKey: null,
+    symbol: input.symbol, side: input.side, orderType: null, lotSize: input.volume, requestedPrice: null,
+    stopLoss: input.stopLoss ? input.stopLoss : null, takeProfit: input.takeProfit ? input.takeProfit : null,
+    source: null, sourcePage: DEMO_PANEL_SOURCE,
   });
-  const inserted = await db
-    .insert(mt5CommandsTable)
-    .values({
-      action: "DEMO_MARKET_ORDER",
-      symbol: input.symbol,
-      side: input.side,
-      lot: input.volume,
-      sl: input.stopLoss ?? null,
-      tp: input.takeProfit ?? null,
-      ticket: null,
-      status: "PENDING",
-      detail,
-    })
-    .returning();
+  if (!routed.ok) {
+    return {
+      ok: false as const,
+      http: 422,
+      body: { ...blockedDemo(`The DEMO queue refused this order: ${routed.reason}.`), code: "DEMO_QUEUE_REFUSED", commandId: routed.commandId },
+    };
+  }
 
   return {
     ok: true as const,
     http: 200,
     body: {
       queued: true,
-      commandId: inserted[0]?.id,
-      action: "DEMO_MARKET_ORDER" as const,
+      commandId: routed.commandId,
+      action: "PLACE_MARKET_ORDER" as const,
       demoOnly: true,
       maxDemoLot: MAX_DEMO_LOT,
       // Echo canonical safety so the dashboard never misreads this success
       // as "live execution available".
       executionMode: "READ_ONLY",
-      placementLayer: "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED",
       liveExecutionEnabled: false,
       disclaimer: DISCLAIMER,
     },
@@ -199,7 +190,7 @@ router.post("/queue", async (req: Request, res: Response) => {
     );
     return;
   }
-  const result = await validateAndQueueDemo(parsed.data, "api:queue");
+  const result = await validateAndQueueDemo(parsed.data, "api:queue", req.authUser?.id ?? null);
   res.status(result.http).json(result.body);
 });
 
@@ -225,7 +216,8 @@ router.post("/test", async (req: Request, res: Response) => {
       demoOnly: true,
       executionMode: "READ_ONLY_WITH_DEMO_EXECUTION",
     },
-    "api:test"
+    "api:test",
+    req.authUser?.id ?? null,
   );
   res.status(result.http).json(result.body);
 });

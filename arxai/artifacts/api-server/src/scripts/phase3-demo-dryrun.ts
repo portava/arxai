@@ -9,11 +9,11 @@
 
 /* eslint-disable no-console */
 
+import { getConnection, updateConnection } from "../lib/brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
   userTradingPermissionsTable, userRiskLimitsTable,
-  globalTradingSettingsTable, mt5CommandsTable, mt5ConnectionTable,
-  tradeCommandAuditLogTable,
+  globalTradingSettingsTable, mt5CommandsTable, tradeCommandAuditLogTable,
 } from "@workspace/db/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { placeOrder } from "../lib/adminTrading/placeOrder.js";
@@ -32,7 +32,7 @@ async function snapshotState() {
   const [g] = await db.select().from(globalTradingSettingsTable).limit(1);
   const [p] = await db.select().from(userTradingPermissionsTable).where(eq(userTradingPermissionsTable.userId, USER_ID)).limit(1);
   const [r] = await db.select().from(userRiskLimitsTable).where(eq(userRiskLimitsTable.userId, USER_ID)).limit(1);
-  const [c] = await db.select().from(mt5ConnectionTable).where(eq(mt5ConnectionTable.id, CONN_ID)).limit(1);
+  const c = await getConnection(CONN_ID);
   return { g, p, r, c };
 }
 
@@ -46,9 +46,7 @@ async function restore(snap: Awaited<ReturnType<typeof snapshotState>>) {
   if (snap.r) await db.update(userRiskLimitsTable)
     .set({ maxLotSize: snap.r.maxLotSize })
     .where(eq(userRiskLimitsTable.userId, USER_ID));
-  if (snap.c) await db.update(mt5ConnectionTable)
-    .set({ accountType: snap.c.accountType })
-    .where(eq(mt5ConnectionTable.id, CONN_ID));
+  if (snap.c) await updateConnection(CONN_ID, { accountType: snap.c.accountType });
 }
 
 const baseDemoOrder = {
@@ -63,7 +61,7 @@ const scenarios: Scenario[] = [
     setup: async () => {
       await db.update(globalTradingSettingsTable).set({ platformMode: "DEMO", emergencyKillSwitch: false }).where(eq(globalTradingSettingsTable.id, 1));
       await db.update(userTradingPermissionsTable).set({ tradingMode: "DEMO", demoEnabled: true, suspended: false }).where(eq(userTradingPermissionsTable.userId, USER_ID));
-      await db.update(mt5ConnectionTable).set({ accountType: "demo" }).where(eq(mt5ConnectionTable.id, CONN_ID));
+      await updateConnection(CONN_ID, { accountType: "demo" });
     },
     call: async () => { const r = await placeOrder(baseDemoOrder); return { status: r.status, reason: r.reason, commandId: r.commandId }; },
     expect: { status: "QUEUED" },
@@ -88,14 +86,14 @@ const scenarios: Scenario[] = [
   },
   {
     name: "05 [-] DEMO on non-demo account → REJECTED DEMO_REQUIRES_DEMO_ACCOUNT",
-    setup: async () => { await db.update(mt5ConnectionTable).set({ accountType: "unknown" }).where(eq(mt5ConnectionTable.id, CONN_ID)); },
+    setup: async () => { await updateConnection(CONN_ID, { accountType: "unknown" }); },
     call: async () => { const r = await placeOrder({ ...baseDemoOrder, lotSize: 0.01, symbol: "GBPUSD" }); return { status: r.status, reason: r.reason, commandId: r.commandId }; },
     expect: { status: "REJECTED", reasonContains: "DEMO_REQUIRES_DEMO_ACCOUNT" },
   },
   {
     name: "06 [-] emergency stop engaged → REJECTED EMERGENCY_KILL_SWITCH_ACTIVE",
     setup: async () => {
-      await db.update(mt5ConnectionTable).set({ accountType: "demo" }).where(eq(mt5ConnectionTable.id, CONN_ID));
+      await updateConnection(CONN_ID, { accountType: "demo" });
       await db.update(globalTradingSettingsTable).set({ emergencyKillSwitch: true }).where(eq(globalTradingSettingsTable.id, 1));
     },
     call: async () => { const r = await placeOrder({ ...baseDemoOrder, symbol: "EURUSD" }); return { status: r.status, reason: r.reason, commandId: r.commandId }; },
@@ -128,7 +126,7 @@ const scenarios: Scenario[] = [
     setup: async () => {
       await db.update(globalTradingSettingsTable).set({ platformMode: "LIVE", liveEnabled: true }).where(eq(globalTradingSettingsTable.id, 1));
       await db.update(userTradingPermissionsTable).set({ tradingMode: "LIVE", liveApproved: true, liveEnabled: true }).where(eq(userTradingPermissionsTable.userId, USER_ID));
-      await db.update(mt5ConnectionTable).set({ accountType: "live" }).where(eq(mt5ConnectionTable.id, CONN_ID));
+      await updateConnection(CONN_ID, { accountType: "live" });
     },
     call: async () => { const r = await placeOrder({ ...baseDemoOrder, mode: "LIVE", symbol: "EURUSD", confirmedByUser: false }); return { status: r.status, reason: r.reason, commandId: r.commandId }; },
     // NOTE: without risk_disclosure_accepted_at, the envelope falls back to

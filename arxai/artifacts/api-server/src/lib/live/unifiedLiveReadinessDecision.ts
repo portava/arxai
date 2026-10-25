@@ -18,6 +18,7 @@
 //   * Fail-closed by construction: any false input simply yields a blocker.
 
 import type { ProductRole } from "../auth/productRole.js";
+import type { PlatformStopSource } from "../safety/platformSwitches.js";
 
 export type LiveReadinessBlockerCode =
   | "INVESTOR_NOT_ALLOWED"
@@ -29,6 +30,7 @@ export type LiveReadinessBlockerCode =
   | "SERVER_LIVE_EXECUTION_OFF"
   | "KILL_SWITCH_ENGAGED"
   | "EMERGENCY_STOP_ACTIVE"
+  | "SAFETY_CORE_KILL_SWITCH_ENGAGED"
   | "RISK_PROFILE_INCOMPLETE"
   | "NO_LIVE_ALLOCATION"
   | "BRIDGE_HEARTBEAT_STALE"
@@ -53,6 +55,7 @@ const BLOCKER_COPY: Record<LiveReadinessBlockerCode, { message: string; category
   SERVER_LIVE_EXECUTION_OFF: { message: "Live execution is currently paused. It will resume once re-enabled.", category: "ACCOUNT" },
   KILL_SWITCH_ENGAGED: { message: "Live trading is halted by the kill switch. Reset it before arming again.", category: "ACCOUNT" },
   EMERGENCY_STOP_ACTIVE: { message: "Live trading is paused platform-wide by the emergency stop.", category: "ACCOUNT" },
+  SAFETY_CORE_KILL_SWITCH_ENGAGED: { message: "Live trading is paused platform-wide by the safety kill switch.", category: "ACCOUNT" },
   RISK_PROFILE_INCOMPLETE: { message: "Complete your risk settings (max lot, daily loss limit, symbols) to continue.", category: "ACCOUNT" },
   NO_LIVE_ALLOCATION: { message: "No live allocation is available to trade. Contact your operator.", category: "BRIDGE" },
   BRIDGE_HEARTBEAT_STALE: { message: "The live bridge heartbeat is stale — the broker terminal is not reporting.", category: "BRIDGE" },
@@ -77,7 +80,12 @@ export interface UnifiedLiveReadinessInput {
   armed: boolean;
   serverLiveExecutionOn: boolean;
   killSwitchEngaged: boolean;
-  emergencyKillSwitch: boolean;
+  /**
+   * The engaged install-wide stops (platformStop(): the platform emergency stop
+   * and the safety-core kill switch), emergency stop first. The output's
+   * per-source emergencyKillSwitch is derived from this.
+   */
+  platformStopSources: PlatformStopSource[];
   riskProfileReady: boolean;
 
   // ---- Bridge ----
@@ -105,11 +113,15 @@ export interface UnifiedLiveReadinessInput {
 }
 
 export interface UnifiedLiveReadiness extends UnifiedLiveReadinessInput {
+  /** The platform emergency stop on its own (labelled per-source field; kept for clients that parse it). */
+  emergencyKillSwitch: boolean;
+  /** Either install-wide stop is engaged (the emergency stop or the safety-core kill switch). */
+  platformStopEngaged: boolean;
   /** Account-level live execution is active (activated + server-on + armed + kill clear). */
   liveExecutionActive: boolean;
   /** Risk profile complete AND live allocation available. */
   riskEligible: boolean;
-  /** Neither the user kill switch nor the platform emergency stop is engaged. */
+  /** Neither the user kill switch nor either install-wide stop is engaged. */
   killSwitchClear: boolean;
   /** Every applicable blocker, in precedence order (account → bridge → feed). */
   blockers: LiveReadinessBlocker[];
@@ -131,7 +143,10 @@ function blocker(code: LiveReadinessBlockerCode): LiveReadinessBlocker {
 export function decideUnifiedLiveReadiness(
   input: UnifiedLiveReadinessInput,
 ): UnifiedLiveReadiness {
-  const killSwitchClear = !input.killSwitchEngaged && !input.emergencyKillSwitch;
+  const emergencyStop = input.platformStopSources.includes("platform_emergency_stop");
+  const safetyCoreStop = input.platformStopSources.includes("safety_core_kill_switch");
+  const platformStopEngaged = emergencyStop || safetyCoreStop;
+  const killSwitchClear = !input.killSwitchEngaged && !platformStopEngaged;
   const liveExecutionActive =
     input.fullLiveActivation && input.serverLiveExecutionOn && input.armed && killSwitchClear;
   const riskEligible = input.riskProfileReady && input.availableLiveAllocation > 0;
@@ -148,7 +163,8 @@ export function decideUnifiedLiveReadiness(
     if (!input.armed) blockers.push(blocker("LIVE_ARMING_PENDING"));
     if (!input.serverLiveExecutionOn) blockers.push(blocker("SERVER_LIVE_EXECUTION_OFF"));
     if (input.killSwitchEngaged) blockers.push(blocker("KILL_SWITCH_ENGAGED"));
-    if (input.emergencyKillSwitch) blockers.push(blocker("EMERGENCY_STOP_ACTIVE"));
+    if (emergencyStop) blockers.push(blocker("EMERGENCY_STOP_ACTIVE"));
+    if (safetyCoreStop) blockers.push(blocker("SAFETY_CORE_KILL_SWITCH_ENGAGED"));
     if (!input.riskProfileReady) blockers.push(blocker("RISK_PROFILE_INCOMPLETE"));
 
     // ---- BRIDGE / allocation / heartbeat ----
@@ -168,6 +184,8 @@ export function decideUnifiedLiveReadiness(
 
   return {
     ...input,
+    emergencyKillSwitch: emergencyStop,
+    platformStopEngaged,
     liveExecutionActive,
     riskEligible,
     killSwitchClear,

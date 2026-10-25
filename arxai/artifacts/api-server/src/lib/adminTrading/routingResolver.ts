@@ -15,11 +15,11 @@
 //    serverName / accountNumber — only the masked display string the
 //    admin set up.
 
+import { getConnection, getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
   globalTradingSettingsTable,
   userTradingPermissionsTable,
-  mt5ConnectionTable,
   sharedMasterAccountsTable,
   virtualTradingAccountsTable,
 } from "@workspace/db/schema";
@@ -84,7 +84,15 @@ export async function resolveRouting(args: ResolveRoutingArgs): Promise<RoutingD
   }
 
   try {
-    const [g] = await db.select().from(globalTradingSettingsTable).limit(1);
+    // Routing config only; the safety switches are read through
+    // lib/safety/platformSwitches.ts by the envelope and guard chain.
+    const [g] = await db.select({
+      accountRoutingMode: globalTradingSettingsTable.accountRoutingMode,
+      sharedLiveConnectionId: globalTradingSettingsTable.sharedLiveConnectionId,
+      sharedDemoConnectionId: globalTradingSettingsTable.sharedDemoConnectionId,
+      sharedLiveTradingEnabled: globalTradingSettingsTable.sharedLiveTradingEnabled,
+      sharedMasterNettingMode: globalTradingSettingsTable.sharedMasterNettingMode,
+    }).from(globalTradingSettingsTable).limit(1);
     if (!g) {
       return { ...FAIL, effectiveRoutingMode: "USER_OWNED_MT5", blockReason: "NO_GLOBAL_SETTINGS" };
     }
@@ -106,8 +114,7 @@ export async function resolveRouting(args: ResolveRoutingArgs): Promise<RoutingD
 
     // ── USER_OWNED_MT5 branch ────────────────────────────────────────────
     if (effective === "USER_OWNED_MT5") {
-      const [conn] = await db.select().from(mt5ConnectionTable)
-        .where(eq(mt5ConnectionTable.userId, args.userId)).limit(1);
+      const conn = await getUserPrimaryConnection(args.userId);
       if (!conn) {
         return {
           ok: false, effectiveRoutingMode: effective,
@@ -170,8 +177,7 @@ export async function resolveRouting(args: ResolveRoutingArgs): Promise<RoutingD
         notes };
     }
 
-    const [masterConn] = await db.select().from(mt5ConnectionTable)
-      .where(eq(mt5ConnectionTable.id, masterConnId)).limit(1);
+    const masterConn = await getConnection(masterConnId);
     if (!masterConn) {
       return { ...FAIL, effectiveRoutingMode: effective,
         blockReason: "SHARED_MASTER_CONNECTION_MISSING", notes };

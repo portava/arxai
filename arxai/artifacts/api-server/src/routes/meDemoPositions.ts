@@ -13,13 +13,13 @@
 // numbers, or safetyGateSnapshot blobs. Read-only.
 
 import { Router, type Request } from "express";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import {
   db,
   mt5DemoCommandsTable,
-  mt5StateTable,
 } from "@workspace/db";
 import { requireUser } from "../lib/auth/middleware.js";
+import { readLatestUserMt5State } from "../lib/brokerHub/mt5StateReader.js";
 
 const router = Router();
 
@@ -60,13 +60,7 @@ router.get("/me/demo-positions-snapshot", requireUser, async (req, res) => {
   // Latest positions snapshot belonging to this user. mt5_state is currently
   // a single-row table; we filter by user_id defensively so user A can never
   // see user B's positions even if the table grows multi-row later.
-  const stateRows = await db
-    .select()
-    .from(mt5StateTable)
-    .where(eq(mt5StateTable.userId, userId))
-    .orderBy(sql`${mt5StateTable.lastSyncAt} DESC NULLS LAST`)
-    .limit(1);
-  const state = stateRows[0] ?? null;
+  const state = await readLatestUserMt5State(userId);
 
   const positionsRaw: RawPosition[] = Array.isArray(state?.positions)
     ? (state!.positions as RawPosition[])

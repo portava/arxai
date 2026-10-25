@@ -7,11 +7,10 @@ import {
   db,
   weeklyImprovementPlansTable,
   paperOrdersTable,
-  mistakePatternsTable,
-  strategyEdgesTable,
 } from "@workspace/db";
-import { eq, gte } from "drizzle-orm";
-import { evaluateGovernor } from "../riskGovernor/governor.js";
+import { listOwnEdges, listOwnMistakes } from "../learning/scopedMemory.js";
+import { and, eq, gte } from "drizzle-orm";
+import { evaluateReadiness } from "../readiness/traderReadiness.js";
 
 export interface WeeklyPlan {
   week_start: string;
@@ -48,7 +47,9 @@ function startOfWeek(d: Date): Date {
   return x;
 }
 
-export async function generateWeeklyPlan(opts: { persist?: boolean } = {}): Promise<WeeklyPlan> {
+// userId: the plan is built from this trader's own week. persist writes this
+// trader's own weekly_improvement_plans row (one per user per week).
+export async function generateWeeklyPlan(opts: { userId: number; persist?: boolean }): Promise<WeeklyPlan> {
   const persist = opts.persist ?? false;
   const today = new Date();
   const weekStartDate = startOfWeek(today);
@@ -61,18 +62,20 @@ export async function generateWeeklyPlan(opts: { persist?: boolean } = {}): Prom
   const sevenAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   let lastWeekTrades: { id: number; status: string; pnl: number | null }[] = [];
   try {
-    const rows = await db.select().from(paperOrdersTable).where(gte(paperOrdersTable.createdAt, sevenAgo));
+    const rows = await db.select().from(paperOrdersTable)
+      .where(and(eq(paperOrdersTable.userId, opts.userId), gte(paperOrdersTable.createdAt, sevenAgo)));
     lastWeekTrades = rows.map(r => ({ id: r.id, status: r.status, pnl: r.profitLoss ?? null }));
   } catch { /* empty */ }
 
   let mistakes: { tag: string; symbol: string; action: string; count: number; severityScore: number }[] = [];
-  try { mistakes = await db.select().from(mistakePatternsTable); } catch { /* empty */ }
+  // The trader's own learning memory only (item 8).
+  try { mistakes = await listOwnMistakes(opts.userId); } catch { /* empty */ }
 
   let edges: { symbol: string; signalName: string; action: string; sampleCount: number; edgeScore: number; winCount: number }[] = [];
-  try { edges = await db.select().from(strategyEdgesTable); } catch { /* empty */ }
+  try { edges = await listOwnEdges(opts.userId); } catch { /* empty */ }
 
-  let governor: Awaited<ReturnType<typeof evaluateGovernor>> | null = null;
-  try { governor = await evaluateGovernor({ persist: false }); } catch { /* empty */ }
+  let governor: Awaited<ReturnType<typeof evaluateReadiness>> | null = null;
+  try { governor = await evaluateReadiness({ persist: false, userId: opts.userId }); } catch { /* empty */ }
 
   const closedLastWeek = lastWeekTrades.filter(t => t.status !== "OPEN");
   const wins = closedLastWeek.filter(t => (t.pnl ?? 0) > 0).length;
@@ -189,7 +192,7 @@ export async function generateWeeklyPlan(opts: { persist?: boolean } = {}): Prom
   if (persist) {
     try {
       const existing = await db.select().from(weeklyImprovementPlansTable)
-        .where(eq(weeklyImprovementPlansTable.weekStart, weekStart)).limit(1);
+        .where(and(eq(weeklyImprovementPlansTable.userId, opts.userId), eq(weeklyImprovementPlansTable.weekStart, weekStart))).limit(1);
       if (existing[0]) {
         await db.update(weeklyImprovementPlansTable).set({
           weekEnd, mainGoal, focusAreas, rulesToPractice,
@@ -197,10 +200,10 @@ export async function generateWeeklyPlan(opts: { persist?: boolean } = {}): Prom
           paperTradingTargets: paperTradingTargets as unknown as Record<string, unknown>,
           progressMetrics, reviewQuestions, successCriteria, warnings,
           updatedAt: new Date(),
-        }).where(eq(weeklyImprovementPlansTable.id, existing[0].id));
+        }).where(and(eq(weeklyImprovementPlansTable.id, existing[0].id), eq(weeklyImprovementPlansTable.userId, opts.userId)));
       } else {
         await db.insert(weeklyImprovementPlansTable).values({
-          weekStart, weekEnd, mainGoal, focusAreas, rulesToPractice,
+          userId: opts.userId, weekStart, weekEnd, mainGoal, focusAreas, rulesToPractice,
           mistakesToReduce, setupsToStudy, setupsToAvoid,
           paperTradingTargets: paperTradingTargets as unknown as Record<string, unknown>,
           progressMetrics, reviewQuestions, successCriteria, warnings,

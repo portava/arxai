@@ -50,7 +50,7 @@ async function normalizeSymbol(raw: string): Promise<string> {
   if (!_normalizeSymbol) {
     // Indirect path string so tsc treats this as opaque runtime resolution
     // (preserving the rootDir boundary). The runtime path is unchanged.
-    const modPath: string = "../../artifacts/api-server/src/lib/scannerSelected/symbolNormalize.js";
+    const modPath: string = "../../artifacts/api-server/src/lib/instruments/index.js";
     const mod = (await import(modPath)) as { normalizeSymbol: NormalizeSymbol };
     _normalizeSymbol = mod.normalizeSymbol;
   }

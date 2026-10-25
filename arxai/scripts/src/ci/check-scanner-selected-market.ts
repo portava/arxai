@@ -22,13 +22,13 @@ export function checkScannerSelectedMarket(): CheckResult {
   const violations: string[] = [];
 
   let norm = "";
-  try { norm = read("artifacts/api-server/src/lib/scannerSelected/symbolNormalize.ts"); }
-  catch { violations.push("lib/scannerSelected/symbolNormalize.ts missing"); }
+  try { norm = read("artifacts/api-server/src/lib/instruments/brokerDecoration.ts"); }
+  catch { violations.push("lib/instruments/brokerDecoration.ts missing"); }
   if (norm && !/export function normalizeSymbol/.test(norm)) {
-    violations.push("symbolNormalize.ts must export normalizeSymbol");
+    violations.push("brokerDecoration.ts must export normalizeSymbol");
   }
   if (norm && !/SUPPORTED_SYMBOLS/.test(norm)) {
-    violations.push("symbolNormalize.ts must export SUPPORTED_SYMBOLS");
+    violations.push("brokerDecoration.ts must export SUPPORTED_SYMBOLS");
   }
 
   let svc = "";
@@ -89,7 +89,7 @@ export function checkScannerSelectedMarket(): CheckResult {
   // LiveTradeTicket on the client.
   // Strip comments before scanning so historical safety notes don't trip the guard.
   const routeCode = route.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
-  if (routeCode && /dispatchLiveCommand\(|placeLiveOrderGuarded\(|arx_live_commands/.test(routeCode)) {
+  if (routeCode && /dispatchLiveCommand\(|dispatchTrade\(|submitTrade\(|submitInstantTrade\(|placeLiveOrderGuarded\(|arx_live_commands/.test(routeCode)) {
     violations.push("scanner.ts must not dispatch or insert live commands");
   }
   for (const sec of FORBIDDEN_SECRETS) {

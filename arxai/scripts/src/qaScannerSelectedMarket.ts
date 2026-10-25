@@ -12,7 +12,7 @@ import { sql } from "drizzle-orm";
 import { db, pool } from "@workspace/db";
 import {
   normalizeSymbol, isSupported, SUPPORTED_SYMBOLS,
-} from "../../artifacts/api-server/src/lib/scannerSelected/symbolNormalize.js";
+} from "../../artifacts/api-server/src/lib/instruments/index.js";
 import {
   getSelectedMarketSnapshot, clearSelectedMarketCache,
   SELECTED_MARKET_CACHE_META,

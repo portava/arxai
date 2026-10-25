@@ -7,7 +7,9 @@
 //     per-user open `arx_live_positions`, the executed mission drafts, the MFE
 //     tracker, the mission risk read). It is PROTECTIVE / SIZING / DISPLAY only.
 //   - EVERY exit action routes EXCLUSIVELY through the existing instant-trade
-//     router (`executeInstant`, source "mission") → live command pipeline →
+//     router via the Position Guardian exit door (guardianInstantManage →
+//     Trade Engine submitInstantTrade → `executeInstant`, source "mission") →
+//     live command pipeline →
 //     18-gate dispatch — exactly like a manual close/modify. There is NO new
 //     execution path; nothing here can place, add, or relax a gate. The executor
 //     is injectable ONLY so tests can substitute a spy.
@@ -19,14 +21,14 @@
 //     and (missionId); open positions are read ONLY from rows owned by the user.
 //   - Honest degradation: unknown inputs never fabricate an exit, a milestone, or
 //     a compounding boost — they fail toward LESS risk / MORE protection.
-import { and, eq, isNull } from "drizzle-orm";
+import { readOpenPositions } from "./positions/openPositions.js";
+import { and, eq } from "drizzle-orm";
 import {
   db,
   profitMissionsTable,
   missionTradeDraftsTable,
   missionEventsTable,
   oneClickAuditTable,
-  arxLivePositionsTable,
   type MissionTradeDraftRow,
 } from "@workspace/db";
 import {
@@ -43,17 +45,13 @@ import {
   type CompoundingMode,
   type MissionMode,
 } from "@workspace/domain/profit-mission";
-import {
-  executeInstant,
-  type InstantTradeIntent,
-  type InstantTradeResult,
+import type {
+  InstantTradeIntent,
+  InstantTradeResult,
 } from "./live/instantTrade.js";
 import type { MissionExecutor } from "./missionExecution.js";
-import {
-  refreshMissionRisk,
-  type MissionLiveSignals,
-  type MissionRiskState,
-} from "./missionRiskService.js";
+import { guardianInstantManage } from "./positionGuardian/manage.js";
+import { type MissionRiskState } from "./missionRiskState.js";
 import { getRunning } from "./intelligence/mfeTracker.js";
 
 type MissionRow = typeof profitMissionsTable.$inferSelect;
@@ -514,7 +512,7 @@ export async function refreshMissionProtection(args: {
   });
 }
 
-// ── Exit management for an OPEN mission trade (routes via executeInstant) ──────
+// ── Exit management for an OPEN mission trade (routes via the exit door → executeInstant) ─
 
 export interface MissionExitOpenPosition {
   brokerTicket: string;
@@ -647,14 +645,17 @@ function intentForDecision(
  * Decide and (optionally) route the next protective exit action for an OPEN
  * mission trade. The decision comes from the pure Exit Manager Pro engine; the
  * chosen action is mapped onto the EXISTING instant-trade actions and routed
- * through `executeInstant` (source "mission"). NONE → nothing is dispatched.
+ * through the guardian exit door → pipeline.submitInstantTrade → `executeInstant`
+ * (source "mission"). NONE → nothing is dispatched.
  * Per-user / per-mission isolation throughout.
  */
 export async function manageMissionTradeExit(
   args: ManageMissionExitArgs,
   opts: ManageMissionExitOpts = {},
 ): Promise<ManageMissionExitResult> {
-  const executor = opts.executor ?? executeInstant;
+  // No override → the exit door uses its default, the Trade Engine one-click
+  // entry (pipeline.submitInstantTrade → executeInstant).
+  const executor = opts.executor;
   const nowMs = args.nowMs ?? Date.now();
   const signals = args.signals ?? {};
 
@@ -688,10 +689,7 @@ export async function manageMissionTradeExit(
   // The draft links to its live command via `commandId`; the position carries
   // `source_command_id` back to that command. A still-open position has no
   // `closedAt`. Read ONLY rows owned by this user.
-  const posRows = await db
-    .select()
-    .from(arxLivePositionsTable)
-    .where(and(eq(arxLivePositionsTable.userId, args.userId), isNull(arxLivePositionsTable.closedAt)));
+  const posRows = (await readOpenPositions({ userId: args.userId, venue: "LIVE", basis: "UNCLOSED" })).map((p) => p.row);
   const match = posRows.find((r) => {
     if (draft.brokerTicket != null && r.brokerTicket === draft.brokerTicket) return true;
     if (draft.commandId != null && r.sourceCommandId === draft.commandId) return true;
@@ -774,9 +772,14 @@ export async function manageMissionTradeExit(
     },
   });
 
-  const exec: InstantTradeResult = await executor({
+  // Position Guardian rule "mission-exit": the guardian checks the intent
+  // against its registry (never a widened stop) before the router sees it.
+  const exec: InstantTradeResult = await guardianInstantManage({
+    ruleId: "mission-exit",
     userId: args.userId,
     intent,
+    position: { side: position.side, stopLoss: position.stopLoss, takeProfit: position.takeProfit },
+    executor,
     ip: args.ip,
     ua: args.ua,
   });
