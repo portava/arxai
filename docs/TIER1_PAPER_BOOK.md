@@ -93,10 +93,12 @@ gates were changed.
   order is placed in any mode. The `mode` column describes the Safety Core
   state, not a venue.
 - The Risk Governor reads `trades` as the realized-P/L and activity ledger for
-  every non-LIVE venue (`enforce.ts`, "DEMO uses the trades journal"). This
-  includes PAPER intents. It is a second P/L source next to `paper_orders`.
-  Changing that would change governor decisions, so it is left as it is and
-  recorded here.
+  the DEMO venue (`enforce.ts`, `loadBrokerFacts`). PAPER intents do NOT read
+  it: the governor's PAPER facts are `paper_orders` of the active paper
+  account (`loadPaperFacts`), read through the paper book's read side
+  (`lib/tradeEngine/paperBookReader.ts`, owner decision 7). `/execute-trade`
+  rows written while Safety Core is not LIVE land in `trades` with mode
+  `DEMO` and so count as DEMO facts, never as PAPER facts.
 - Operator backfills in `scripts/src/backfill*` update `trades` P/L. They are
   one-off operator scripts, not runtime, and the guard does not scan them.
 
@@ -203,9 +205,11 @@ Verification on an isolated local PostgreSQL database (UTC):
    governor's `EnforceResult`, and folding the fills into it would change the
    shape Build EE reads. The fills still run their own eligibility, sizing
    and pricing before they call the pipeline.
-3. **Two P/L sources for paper.** The Risk Governor's non-LIVE realized P/L
-   reads `trades`, while the paper account balance reads `paper_orders`.
-   Unifying them changes governor decisions and needs its own change.
+3. **Paper P/L source (owner decision 7).** Automated PAPER P/L, activity,
+   streaks and risk decisions read `paper_orders` through
+   `lib/tradeEngine/paperBookReader.ts`; `paper_trades` is the journal and
+   `trades` legacy history / the DEMO ledger. See
+   `docs/TIER1_RISK_GOVERNOR_SOURCE.md`, "Decision 7".
 4. **`trades` is still a live table with a misleading `mode` column.**
    Retiring `/execute-trade` or relabelling its rows is a data and product
    decision. Nothing was dropped.

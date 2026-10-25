@@ -20,11 +20,11 @@
 import {
   db,
   paperAccountsTable,
-  paperOrdersTable,
   paperExecutionsTable,
   paperExecutionLogsTable,
   tradeDecisionLogsTable,
 } from "@workspace/db";
+import { readOpenPaperOrders } from "../tradeEngine/paperBookReader.js";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { logger } from "../logger.js";
@@ -139,8 +139,8 @@ export async function executePaperFromDecision(
 
   // Account + caps
   const acct = await ensurePaperAccount(opts.ownerUserId ?? null, opts.paperAccountId);
-  const allOpen = await db.select().from(paperOrdersTable)
-    .where(and(eq(paperOrdersTable.paperAccountId, acct.id), eq(paperOrdersTable.status, "OPEN")));
+  // Paper facts through the paper book's read side (owner decision 7).
+  const allOpen = await readOpenPaperOrders({ account: acct.id });
   const openSameSymbolDir = allOpen.filter((o) => o.symbol === symbol && o.direction === action).length;
 
   // ── Eligibility ──

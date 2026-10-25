@@ -51,6 +51,16 @@ import { ROOT, walk, rel, reportResult, type CheckResult } from "./_lib.js";
 const API_SRC = join(ROOT, "artifacts/api-server/src");
 
 export const AUTHORITY = "lib/riskGovernor/limitSettings.ts";
+/** The paper book's read side (owner decision 7). */
+export const PAPER_BOOK_READER = "lib/tradeEngine/paperBookReader.ts";
+/** Files whose PAPER P/L, activity, streak or risk decision reads paper facts. */
+export const PAPER_FACT_READERS = [
+  "lib/riskGovernor/enforce.ts",
+  "routes/tradeDecision.ts",
+  "lib/readiness/traderReadiness.ts",
+  "lib/paperAutopilot/autopilotService.ts",
+  "lib/paperExecution/paperExecutionService.ts",
+];
 export const GOVERNOR_DIR = "lib/riskGovernor/";
 
 const TABLES = new Set(["userRiskSettingsTable", "userRiskLimitsTable"]);
@@ -273,6 +283,16 @@ export function checkAuthorityShape(read: (key: string) => string | null): strin
   for (const f of ["routes/portfolioRisk.ts", "lib/readiness/traderReadiness.ts", "lib/alerts/ruleEngine.ts"]) {
     const src = read(f);
     if (src && !/dailyLossCapAmount\(/.test(src)) out.push(`${f}: the daily-loss cap shown must be the governor's dailyLossCapAmount(effective limits, equity) (owner decision 8)`);
+  }
+  // Owner decision 7: automated PAPER P/L, activity, streaks and risk
+  // decisions read paper_orders through the paper book's read side, and never
+  // read the journal (paper_trades) as paper facts.
+  for (const f of PAPER_FACT_READERS) {
+    const src = read(f);
+    if (!src) continue;
+    if (/\bpaperOrdersTable\b/.test(src)) out.push(`${f}: reads paper_orders directly; read it through ${PAPER_BOOK_READER} (owner decision 7)`);
+    if (/\bpaperTradesTable\b/.test(src)) out.push(`${f}: paper_trades is the trader's journal, not a paper fact (owner decision 7)`);
+    if (!/tradeEngine\/paperBookReader\.js"/.test(src)) out.push(`${f}: must read paper facts through ${PAPER_BOOK_READER} (owner decision 7)`);
   }
   const shell = read("routes/meAccountShell.ts");
   if (shell && !/effectiveLimitViews\(/.test(shell)) out.push("routes/meAccountShell.ts: the risk view must show the limits in force (effectiveLimitViews) next to the saved preference (owner decision 8)");

@@ -93,7 +93,7 @@ export async function loadEffectiveLimits(
   return resolveEffectiveLimits(await loadStoredLimitRows(userId));`;
 const files: Record<string, string> = {
   [AUTHORITY]: goodAuth,
-  "lib/riskGovernor/enforce.ts": `import { loadEffectiveLimits } from "./limitSettings.js"; const limits = await loadEffectiveLimits(intent.userId);`,
+  "lib/riskGovernor/enforce.ts": `import { loadEffectiveLimits } from "./limitSettings.js"; const limits = await loadEffectiveLimits(intent.userId); import { readPaperCloses } from "../tradeEngine/paperBookReader.js";`,
   "lib/riskGovernor/preTrade.ts": `export function resolveEffectiveLimits(rows) {} checkRewardRiskFloor(D.minRewardRiskRatio, s, r, l, t); export function tradingDayStart(now) {} export function dailyLossCapAmount(L, equity) {}`,
   "lib/tradeAction/guards.ts": `const MAX_LOT_HARD_CAP = PLATFORM_RISK_CEILINGS.maxLotSize;`,
 };
@@ -123,13 +123,20 @@ n++; assert.equal(checkAuthorityShape((k) => ({ ...rrFiles, "lib/riskGovernor/pr
 const viewFiles: Record<string, string> = {
   ...rrFiles,
   "routes/portfolioRisk.ts": "dailyLossCapAmount: dailyLossCapAmount(L, equity),",
-  "lib/readiness/traderReadiness.ts": "dailyLossLimit = dailyLossCapAmount(L, equity);",
+  "lib/readiness/traderReadiness.ts": "import { readPaperCloses } from \"../tradeEngine/paperBookReader.js\"; dailyLossLimit = dailyLossCapAmount(L, equity);",
   "lib/alerts/ruleEngine.ts": "const lossLimit = dailyLossCapAmount(L, equity);",
   "routes/meAccountShell.ts": "const { limits: L, views } = effectiveLimitViews(storedLimits);",
 };
 n++; assert.deepEqual(checkAuthorityShape((k) => viewFiles[k] ?? null), []);
-n++; assert.equal(checkAuthorityShape((k) => ({ ...viewFiles, "lib/readiness/traderReadiness.ts": "dailyLossLimit = Math.max(10, Math.round(pct * 50));" })[k] ?? null).length, 1, "readiness with its own daily-loss formula → fails");
+n++; assert.equal(checkAuthorityShape((k) => ({ ...viewFiles, "lib/readiness/traderReadiness.ts": "import { readPaperCloses } from \"../tradeEngine/paperBookReader.js\"; dailyLossLimit = Math.max(10, Math.round(pct * 50));" })[k] ?? null).length, 1, "readiness with its own daily-loss formula → fails");
 n++; assert.equal(checkAuthorityShape((k) => ({ ...viewFiles, "routes/meAccountShell.ts": "const maxLotSize = mla?.maxLot ?? rs?.maxPositionSize;" })[k] ?? null).length, 1, "account shell without the limits in force → fails");
 n++; assert.equal(checkAuthorityShape((k) => ({ ...viewFiles, "lib/riskGovernor/preTrade.ts": rrFiles["lib/riskGovernor/preTrade.ts"]!.replace("export function dailyLossCapAmount(L, equity) {}", "") })[k] ?? null).length, 1, "lost the governor's daily-loss cap → fails");
+// Owner decision 7: PAPER facts through the paper book's read side; the journal is not a paper fact.
+const readerImport = `import { readPaperCloses } from "../lib/tradeEngine/paperBookReader.js";`;
+const paperFiles: Record<string, string> = { ...viewFiles, "routes/tradeDecision.ts": `${readerImport} const c = await readPaperCloses({ user: userId });` };
+n++; assert.deepEqual(checkAuthorityShape((k) => paperFiles[k] ?? null), []);
+n++; assert.equal(checkAuthorityShape((k) => ({ ...paperFiles, "routes/tradeDecision.ts": `${readerImport} db.select().from(paperOrdersTable)` })[k] ?? null).length, 1, "direct paper_orders read → fails");
+n++; assert.equal(checkAuthorityShape((k) => ({ ...paperFiles, "routes/tradeDecision.ts": `${readerImport} db.select().from(paperTradesTable)` })[k] ?? null).length, 1, "journal read as a paper fact → fails");
+n++; assert.equal(checkAuthorityShape((k) => ({ ...paperFiles, "routes/tradeDecision.ts": "const x = 1;" })[k] ?? null).length, 1, "no read side import → fails");
 
 console.log(`check-single-risk-limit-source.test: ${n} assertions passed`);
