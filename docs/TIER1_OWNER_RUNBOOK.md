@@ -1,6 +1,6 @@
 # Tier 1: owner runbook for production
 
-Base: `2a0b3f6` (PR #48) plus the round 5 Position Guardian branches. This is
+Base: `main` after round 5 (PRs #49–#65, owner decisions 1–19). This is
 a runbook for the owner. **Nothing in it has been run against production.** No
 agent deploys, applies a migration, alters a production row, arms live
 trading, runs a broker action or places a real-money trade. Every step marked
@@ -20,7 +20,7 @@ Contents:
 5. Real demo-bridge validation (`validate:broker`)
 6. P0 inspection before any future position-table work
 7. Behaviour to know before deploying
-8. Round 5 behaviour changes (for the lead to fill)
+8. Round 5 behaviour changes (owner decisions 1–19)
 
 ---
 
@@ -29,13 +29,14 @@ Contents:
 ### 1.1 Where they are and how many
 
 - Directory: `lib/db/migrations/`. Plain SQL files named
-  `YYYY-MM-DD_<name>.sql`. There are seven, all added in PR #29 (`9efb744`).
+  `YYYY-MM-DD_<name>.sql`. There are eight: seven added in PR #29 (`9efb744`)
+  and one added in round 5 by PR #64 (owner decision 13).
 - The handoff's "seven production migrations" are referenced in
   `docs/TIER1_POSITION_LEDGER.md` (remaining work 4),
   `docs/TIER1_POSITION_GUARDIAN_RULES.md` (what remains 4),
   `docs/TIER1_POSITION_TABLE_MERGE_PLAN.md` (section 8) and
   `artifacts/api-server/src/scripts/productionReadinessCheck.ts` (header and
-  `migrationChecks()`, which detects exactly these seven). The original
+  `migrationChecks()`, which detects all eight). The original
   handoff document itself is not in the repository; the list below comes from
   the directory and the readiness check, which agree.
 - The repository has **no migration runner** for these files and no record of
@@ -49,7 +50,7 @@ Contents:
 
 ### 1.2 Order
 
-The repository does not prescribe an apply order. Reading the seven files,
+The repository does not prescribe an apply order. Reading the eight files,
 each one references only tables that exist in the current Drizzle schema plus
 columns it creates itself; none depends on another file's changes. The order
 below is the order `productionReadinessCheck.ts` lists and checks them in;
@@ -64,14 +65,13 @@ use it unless the owner has a reason to differ.
 | 5 | `2026-10-24_learning_scopes.sql` | additive columns, **data updates**, index swap | yes (`BEGIN … COMMIT`) |
 | 6 | `2026-10-24_trade_action_venue_command.sql` | additive columns | no |
 | 7 | `2026-10-24_one_limit_store.sql` | additive column, **data upsert** into `user_risk_settings` | no |
+| 8 | `2026-10-25_paper_order_request_key.sql` | additive nullable column, new unique index | no |
 
 Every file is written to be idempotent (`IF NOT EXISTS`, `duplicate_object`
 handlers, `LEAST`/`COALESCE` upserts), per its own header.
 
-New migrations from other round 5 workers: **to be appended** here by the lead
-(file name, effect, order, rollback). Owner decisions allow a new nullable
-column or new table only where a decision needs it, additive, with a file in
-`lib/db/migrations/`.
+Round 5 added one migration, file 8 (PR #64, owner decision 13). No other
+round 5 change touched the schema. File 8 does not depend on files 1–7.
 
 ### 1.3 Before applying anything [OWNER]
 
@@ -79,7 +79,7 @@ column or new table only where a decision needs it, additive, with a file in
    must confirm the procedure). At minimum dump the tables the data-changing
    files touch: `pg_dump --data-only -t strategy_edges -t mistake_patterns -t user_risk_settings`.
 2. Run `check:production-readiness` (section 4) and save the output. Its
-   "Migrations" block shows which of the seven are already applied.
+   "Migrations" block shows which of the eight are already applied.
 3. Save the catalogue state the rollbacks below restore:
 
 ```sql
@@ -165,6 +165,19 @@ in `lib/db/src/schema/`), so restoring the
 pre-fold rows can **loosen** a trader's effective limits. Prefer not to roll
 the data back.
 
+**8. `paper_order_request_key`** (round 5, owner decision 13) — adds nullable
+`client_request_key text` to `paper_orders` and the unique index
+`paper_orders_user_request_key_uq` on (`user_id`, `client_request_key`).
+Existing rows keep NULL, and NULL keys are never in conflict, so the index
+builds on any existing data. It lets a retried confirmed SIMULATED open find
+the paper order it already booked instead of booking a second one.
+Idempotent (`IF NOT EXISTS`). The code from PR #64 writes this column, so
+**apply file 8 before deploying PR #64 or later**; without it, every
+confirmed SIMULATED open fails at the insert. Rollback: `DROP INDEX IF EXISTS
+paper_orders_user_request_key_uq;` removes the duplicate guard (only safe with
+the pre-#64 code deployed); leave the column in place, since dropping it needs
+an owner decision.
+
 After applying: re-run `check:production-readiness`; every migration line
 should read `ok` and the header `Migrations: APPLIED`.
 
@@ -190,9 +203,9 @@ should read `ok` and the header `Migrations: APPLIED`.
   PR #48). On `2a0b3f6`, `POST /admin/trading/reset-kill`
   (`routes/adminTrading.ts`) releases the **lowest-id row only**, so with an
   engaged stray row the stop stays engaged after a reset
-  (`docs/TIER1_PLATFORM_SAFETY_SOURCE.md`, round 4 change 22). Round 5 owner
-  decision 1 adds one audited release operation across all rows; the lead
-  should confirm the merged behaviour in section 8.
+  (`docs/TIER1_PLATFORM_SAFETY_SOURCE.md`, round 4 change 22). Since round 5
+  (PR #54, owner decision 1) the audited release also clears the emergency
+  stop on every row, in one transaction with its audit row.
 - `check:production-readiness` reads only the lowest-id row
   (`tradingStatus()`, `ORDER BY id ASC LIMIT 1`). With duplicates it can print
   `TRADING AVAILABLE` while the runtime reader says halted. Use the queries
@@ -300,7 +313,7 @@ DATABASE_URL=... pnpm --filter @workspace/api-server run check:production-readin
 ```
 Migrations: APPLIED
   ok   2026-10-24_trading_on_by_default: global_trading_settings defaults: ...
-  ... (seven lines, all "ok")
+  ... (eight lines, all "ok")
 
 Trading: TRADING AVAILABLE
   ok   platform emergency stop: released
@@ -450,15 +463,107 @@ From the merged PRs on `main` (`docs/TIER1_PLATFORM_SAFETY_SOURCE.md`,
 
 ## 8. Round 5 behaviour changes
 
-_Placeholder for the lead to fill from the round 5 domain docs (owner
-decisions 1–19), including any new migrations to append to section 1._
+Merged on `main` as PRs #49–#65. Each item is recorded, with its regression
+test, in the domain doc named. These are the changes an operator or trader
+can see; everything else in round 5 moved code onto an authority with the
+same results.
 
-- Position Guardian (owner decisions 11 and 12): no behaviour change. Alert
-  eligibility is now the named read-model rule `ALERT_ELIGIBLE`; the alert
-  sweep returns the same rows. No physical position-table merge.
-- Platform Safety: _to be filled_
-- Risk Governor: _to be filled_
-- Trade Engine: _to be filled_
-- Broker Hub: _to be filled_
+### Platform Safety (`docs/TIER1_PLATFORM_SAFETY_SOURCE.md`, changes 23–31)
+
+- **Live activation no longer releases a stop** (#54, decision 1).
+  `POST /admin/live-shared/activate-step` with `releaseKillSwitch` returns
+  409 `ACTIVATION_DOES_NOT_RELEASE_STOP` and writes nothing. Release a stop
+  only with `POST /admin/trading/reset-kill` (emergency stop) or
+  `POST /system/kill-switch/reset` (safety core). Both need ADMIN/OWNER and a
+  reason (at least 4 characters), release only the selected stop, never arm
+  anything, and write `admin_action_audit_log`. The emergency-stop release
+  clears every settings row in one transaction. After a release, live trading
+  still needs its normal arming.
+- **Safety envelope** (#55, decision 4): reports `safetyCoreKillSwitch` and
+  the `platformStop*` fields separately; `allowOrderExecution` and
+  `liveLocked` follow both stops. `emergencyKillSwitch` still means only the
+  emergency stop. Closes are not newly refused.
+- **Broker controls in the venue verdict** (#55, decision 2): the readiness
+  view reports new DEMO/LIVE risk as blocked when `broker_health_state`
+  says execution is disabled, maintenance is on, or the row cannot be read.
+  **No order path enforces this yet.** On an install with no
+  `broker_health_state` row, or with `execution_enabled = false` (the schema
+  default), readiness will show a platform-wide block. [OWNER] Before anyone
+  wires this into the order path, inspect production (read-only):
+  `SELECT id, execution_enabled, maintenance_mode FROM broker_health_state ORDER BY id;`
+- **Legacy gates are action-aware** (#56, decision 3): new-risk `/mt5`
+  commands are refused under the emergency stop. Reconnect and the paper
+  permission verdict allow and refuse what they did before (PAPER keeps its
+  emergency-stop exemption and honours the safety-core stop).
+- **EA auto-updates** (#56, decision 5): blocked while either install-wide
+  stop is engaged (new blocker `PLATFORM_STOP_ENGAGED`). The admin
+  EA-health preview shows the same.
+- **Shared-live pause** (#57, decision 19): pause and resume of one master
+  pool write the flag and the audit row in one transaction; a blank or
+  whitespace-only reason is refused (400 `BAD_BODY`). The pause never touches
+  the install-wide stops. It is pool-scoped only; there is no per-allocation
+  pause (an allocation's own `trading_frozen` covers that).
+
+### Risk Governor (`docs/TIER1_RISK_GOVERNOR_SOURCE.md`, round 5)
+
+- **Self-trade concurrent cap counts on UNCLOSED** (#58, decision 6): LIVE
+  positions labelled IGNORED, EXTERNAL or IMPORTED count until a broker close
+  is confirmed. Expect more refusals where such rows exist.
+- **Pending-order R:R floor** (#60, decision 10): the pending-order draft now
+  enforces the configured `min_reward_risk_ratio`, and refuses with
+  `rg_rr_limits_unavailable` when limits cannot be read. New refusals.
+- **Daily trade limit** (#60, decision 9): counted on the governor's UTC
+  trading day. The order guard's rolling 24-hour cap is unchanged in effect
+  but has a new code, `OPERATIONAL_RATE_CAP_REACHED:<n>_APPROVED_COMMANDS_PER_ROLLING_24H`
+  (was `MAX_TRADES_PER_DAY_REACHED`). Update any alerting that matches the old
+  code. `riskAudit` "today" starts at UTC midnight.
+- **Status views show the enforced limit** (#61, decision 8): `/me/risk/status`,
+  `/daily-status`, portfolio risk, readiness, the account shell, the dashboard
+  and the NEAR_DAILY_LOSS_LIMIT alert show the value actually enforced, with
+  the saved preference and any override reason separately. Some fields can now
+  be null. The NEAR_DAILY_LOSS_LIMIT alert can now fire on an operator USD cap.
+- **Paper risk facts from `paper_orders`** (#62, decision 7): readiness shows
+  real paper P/L, win rate and drawdown (they read 0 before); the trade
+  decision losing streak spans all of a trader's paper accounts. DEMO is
+  unchanged.
+
+### Trade Engine (`docs/TIER1_TRADE_ENGINE_MODES.md`, round 5)
+
+- **`/execute-trade` is retired** (#63, decision 14): every authenticated call
+  returns 410 `EXECUTE_TRADE_RETIRED` and writes nothing. No runtime caller
+  existed. Historical `trades` rows are kept; their `mode` column recorded
+  Safety Core state, not a broker execution.
+- **Confirmed SIMULATED opens book PAPER orders** (#64, decision 13): Trade
+  Action Center confirms must send `{ mode: "SIMULATED" }`; My Trades SIMULATED
+  opens need an `idempotencyKey`. A real current quote is required
+  (`NO_VALID_PRICE_SOURCE` otherwise), so **without a real market-data
+  provider every SIMULATED open is refused**. Requires migration 8.
+- **My Trades DEMO opens** (#65, decision 15): go through the Trade Action
+  pipeline and the demo command queue (all DEMO gates and the Risk Governor).
+  They now appear in the Trade Action Center history. **My Trades LIVE opens
+  return 403 `MY_TRADES_LIVE_OPEN_NOT_ENABLED`**; enabling that surface needs
+  broker validation and a separate owner authorization.
+
+### Broker Hub (`docs/TIER1_BROKER_HUB_SOURCE.md`, round 5)
+
+- **One heartbeat policy** (#51, decision 17): under 15 s fresh, 15 s to under
+  60 s degraded, 60 s or more offline, missing or invalid unknown (never
+  execution-ready). Execution gates need strictly under 15 s (was 15 s or
+  less). **[OWNER] confirm:** the Risk Governor now treats a bridge as
+  offline at 60 s instead of 120 s, so a **close is refused** while the
+  heartbeat is 60–120 s old. If closes should keep a longer allowance, that
+  needs a separate decision.
+- **Bridge v2 status** (#52, decision 18): adds `heartbeatFreshness`,
+  `streamHealth` and `streamImpliesExecutionReady: false`; old fields are
+  unchanged.
+- **Account snapshot** (#53, decision 16): one snapshot per MT5 connection
+  with identity, provenance and time. `investorLiveBalance` returns null
+  (was 0) for a connection that never synced.
+
+### Position Guardian (`docs/TIER1_OPEN_POSITION_VIEW.md`, `docs/TIER1_POSITION_TABLE_MERGE_PLAN.md`)
+
+- Decisions 11 and 12 (#49, #50): no behaviour change. Alert eligibility is
+  the named read-model rule `ALERT_ELIGIBLE`; no physical position-table merge
+  (D1–D10 recorded).
 
 **TIER 1 NOT COMPLETE**
