@@ -145,7 +145,7 @@ export const MAILBOX_EXCEPTION = "routes/meTrades.ts";
 export const PAPER_WRITERS: Record<string, { tables: (typeof PAPER_TABLES)[number][]; why: string }> = {
   [PAPER_VENUE]: { tables: ["paperOrdersTable"], why: "the one paper book: PAPER mode of the pipeline and the Build EE / QA fixture fills (Risk Governor on open/modify/close; SL/TP hits are venue fills)" },
   "routes/mePaperTrades.ts": { tables: ["paperTradesTable"], why: "paper trade journal (governed open and stop/target edits)" },
-  "lib/trades/paperBook.ts": { tables: ["tradesTable"], why: "legacy simulated-trade book: /execute-trade record, emergency-stop cancel, and Position Guardian management (applyPaperManagement, exit door only)" },
+  "lib/trades/paperBook.ts": { tables: ["tradesTable"], why: "legacy simulated-trade book, closed to new rows since /execute-trade was retired (owner decision 14): emergency-stop cancel and Position Guardian management (applyPaperManagement, exit door only)" },
 };
 
 /** Violations in one runtime file, keyed by its path under artifacts/api-server/src. */

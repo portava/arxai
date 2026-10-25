@@ -15,6 +15,116 @@ producer calls: the one-click router and the caller-priced PAPER fills are
 now reached only through it. It is described in
 [Round 3](#round-3-one-entry-for-every-producer).
 
+A fifth round (base `2a0b3f6`, PR #48) carries out the owner's Trade Engine
+decisions 13, 14 and 15 of 2026-10-25. It is described in
+[Round 5](#round-5-owner-decisions-13-14-15). These decisions intentionally
+change behaviour; each change is listed there and covered by a test.
+
+## Round 5: owner decisions 13, 14, 15
+
+The owner decided (2026-10-25, verbatim in the round brief):
+
+- **14.** Retire the legacy `/execute-trade` execution path. Inventory and
+  migrate its callers to the canonical PAPER pipeline, then refuse the
+  retired endpoint with an actionable response. Preserve historical `trades`
+  rows and explain that their old `mode` field represented Safety Core state,
+  not actual broker execution. Never silently convert a requested LIVE trade
+  into PAPER.
+- **13.** Confirmed SIMULATED opens in the Trade Action Center and My Trades
+  create PAPER orders through the existing pipeline. Previews and drafts
+  create nothing. Explicit simulated-mode labelling, normal risk checks,
+  valid price provenance, retry-safe idempotency, no fabricated fills.
+- **15.** My Trades DEMO opens go through the existing governed pipeline
+  (mode, ownership, confirmation, readiness, sizing, Risk Governor). My
+  Trades LIVE opens stay refused until broker validation passes and the
+  owner separately authorizes that surface. Live trading is not turned on.
+
+### Decision 14: `/execute-trade` retired
+
+**Caller inventory** (searched `artifacts/`, `lib/`, `scripts/`,
+`mt5-bridge-export/` for `execute-trade`, `executeTrade`, `useExecuteTrade`
+and `execute_trade`):
+
+| Caller | What it was | Action |
+|---|---|---|
+| `routes/trades.ts` `POST /execute-trade` | the endpoint itself | now refuses (below) |
+| `lib/api-client-react` `executeTrade` / `useExecuteTrade`, `lib/api-zod` `ExecuteTradeBody` (generated) | generated client bindings | no runtime caller in the dashboard, server or scripts. The OpenAPI operation is marked `deprecated` with a 410 response and the clients were regenerated (`ExecuteTradeResponse` is gone) |
+| `artifacts/trading-dashboard/src/pages/emergency.tsx` | user-facing copy only (no request) | copy now says the endpoint is retired and places nothing |
+| `artifacts/api-server/tests/phase1.test.mjs`, `phase2.test.mjs`, `phase2-validation.test.mjs` | legacy server-dependent suites (`pnpm --filter @workspace/api-server run test`, not in `ci`); unauthenticated, so already refused with 401 since Phase-2 `requireUser` | header note added; they did not mean a simulated order, they drove the Safety Core through this endpoint, so there is nothing to migrate to PAPER |
+| Ruby / assistant tools, scripts, mt5-bridge-export | none call it (only forbidden-pattern lists and comments name it) | unchanged |
+
+No runtime caller meant a simulated trade, so nothing was migrated to
+`submitTrade` mode PAPER by this decision; the paths that replace it are
+`POST /api/paper/orders` (PAPER, already `submitTrade` mode PAPER) and the
+Trade Action Center (DEMO / LIVE through the pipeline).
+
+**The endpoint now** (`routes/trades.ts`): an unauthenticated call is still
+refused first (401, `requireUser`). Every authenticated call returns **410**
+with:
+
+```json
+{ "ok": false, "success": false, "code": "EXECUTE_TRADE_RETIRED",
+  "executed": false, "converted": false,
+  "instead": { "PAPER": { "path": "/api/paper/orders" }, "DEMO": { "path": "/api/me/trade-actions" }, "LIVE": { "path": "/api/me/trade-actions" } },
+  "history": { "path": "/api/trades" } }
+```
+
+No gate runs, no `execution_confirmations` row is claimed or rejected, no
+vault trade log is written and no `trades` or `paper_orders` row is created.
+A body that asks for LIVE gets the same refusal: nothing is converted into a
+simulated trade.
+
+**Historical rows:** `trades` keeps every row and column. `GET /trades` and
+`GET /trades/open` still return the caller's own rows. The `mode` column is
+documented (schema comment in `lib/db/src/schema/trades.ts`, no column
+change) as the Safety Core state at the time, not a broker execution.
+`cancelOpenLegacyTrades` (bot emergency stop) and `applyPaperManagement`
+(Position Guardian exit door) still manage existing rows.
+
+**Guards:**
+
+- `single-paper-book`: `recordLegacyExecuteTrade` is deleted from
+  `lib/trades/paperBook.ts` and fenced: its `BOOK_API` entry now has no
+  allowed caller, so any call fails. New: the legacy book may not insert into
+  `trades` at all, even as the table's owner (drizzle or raw SQL); updates of
+  existing rows stay allowed. 64 fixtures (was 60): the old passing
+  `routes/trades.ts` caller fixture now fails, plus one more caller and three
+  shape fixtures.
+- `trade-engine-single-pipeline`: the `PAPER_WRITERS` reason for
+  `lib/trades/paperBook.ts` now says it is closed to new rows.
+- `single-safety-switch-source`: the `routes/trades.ts` single-stop entry
+  (the `/execute-trade` TOCTOU re-check) is removed; that code is gone, so
+  the entry would be stale. Owner decision 3 (legacy gates honour both stops)
+  no longer applies to `/execute-trade`: it refuses everything.
+
+**Tests:** `test:execute-trade-retired` (new, in `ci:integration`, 5 cases):
+401 unauthenticated; 410 with the code and the replacement paths for a
+normal, an empty and a low-confidence body, with no `trades` or `paper_orders`
+row written; a LIVE body refused and not converted; a confirmation id left
+`CONFIRMED`; historical rows still readable and owner-scoped.
+`test:paper-book` inserts its legacy fixture rows directly now.
+
+### Behaviour changes (round 5)
+
+1. `POST /execute-trade` returns 410 `EXECUTE_TRADE_RETIRED` for every
+   authenticated request (before: Safety Core gate, then 409 refusals or a
+   200 with a new `trades` row). Nothing is recorded. *(decision 14)*
+
+### What remains (round 5)
+
+1. `tradeGate` in `lib/safetyCore.ts`, `claimConfirmationForExecution` /
+   `markConfirmationExecuted` / `markConfirmationRejected` in
+   `routes/executionConfirmations.ts`, and the vault trade loggers it used
+   now have no runtime caller. They are left in place (no behaviour); the
+   Pre-Trade Checklist confirmations no longer back any execution.
+2. The Risk Governor still reads `trades` for non-LIVE realized P/L; owner
+   decision 7 (paper P/L from `paper_orders`) belongs to the Risk Governor
+   worker. Since nothing writes new `trades` rows, that source is now frozen
+   history.
+3. `docs/TIER1_PLATFORM_SAFETY_SOURCE.md` still lists the `/execute-trade`
+   re-check among the legacy gates; that doc belongs to the Platform Safety
+   worker.
+
 ## Round 3: one entry for every producer
 
 ### What changed in this round

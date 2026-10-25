@@ -75,7 +75,7 @@ passes("export async function executeInstant(args) {}", INSTANT_ENTRY);
 passes("await db.insert(paperOrdersTable).values(row)", PAPER_VENUE);
 fails("await db.update(tradesTable).set({ status: 'CANCELLED' })", "routes/bot.ts"); // the legacy book is written only by lib/trades/paperBook.ts
 passes("await cancelOpenLegacyTrades(userId)", "routes/bot.ts");
-fails("await db.insert(tradesTable).values(row)", "routes/trades.ts"); // /execute-trade records through lib/trades/paperBook.ts
+fails("await db.insert(tradesTable).values(row)", "routes/trades.ts"); // /execute-trade is retired (410); nothing records a legacy row
 // The one paper book: caller-priced fills go through the PAPER venue.
 fails("await db.insert(paperOrdersTable).values(row)", "lib/paperExecution/paperExecutionService.ts");
 fails("await db.update(paperOrdersTable).set({ status: 'CLOSED_TP' })", "lib/paperExecution/paperExecutionMonitor.ts");

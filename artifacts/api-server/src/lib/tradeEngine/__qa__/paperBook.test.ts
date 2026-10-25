@@ -8,7 +8,7 @@
 //                       re-governed, only status / exit / P&L move.
 //   The Build EE monitor settles stop/target hits and governs manual closes
 //   through the venue, with the same rows and event text as before.
-//   trades (legacy /execute-trade record) is written only by
+//   trades (legacy record of the retired /execute-trade) is updated only by
 //   lib/trades/paperBook.ts; the emergency-stop cancel stays owner-scoped.
 //
 // Nothing here reaches a broker.
@@ -34,7 +34,7 @@ import {
 } from "../paperVenue.js";
 import { fillPaperTrade, settlePaperTrade, voidPaperTrade } from "../pipeline.js";
 import { closePaperManually, runPaperMonitor } from "../../paperExecution/paperExecutionMonitor.js";
-import { cancelOpenLegacyTrades, recordLegacyExecuteTrade } from "../../trades/paperBook.js";
+import { cancelOpenLegacyTrades } from "../../trades/paperBook.js";
 
 const EMAIL_A = "qa+paper-book-a@arx.test";
 const EMAIL_B = "qa+paper-book-b@arx.test";
@@ -283,16 +283,19 @@ test("Build EE monitor: stop/target hits settle through the venue; manual close 
   assert.match((await events(tp.order.id)).at(-1)!.message, new RegExp(`^${SIMULATED_TAG} EE-monitor TP hit at 1\\.12000, P&L `));
 });
 
-test("legacy trades book: /execute-trade record and the emergency-stop cancel stay owner-scoped", async () => {
+test("legacy trades book: the emergency-stop cancel of existing rows stays owner-scoped", async () => {
   await clearBooks([u.a, u.b]);
-  const mine = await recordLegacyExecuteTrade({
+  // Historical rows (the retired /execute-trade wrote them; owner decision 14
+  // closed the book to new rows, so the fixture inserts them directly).
+  const [mine] = await db.insert(tradesTable).values({
     userId: u.a, symbol: SYMBOL, direction: "BUY", lot: 0.01, entryPrice: PX, stopLoss: 1.09, takeProfit: 1.12,
     strategy: "QA", confidence: 50, status: "OPEN", mode: "DEMO",
-  });
-  const theirs = await recordLegacyExecuteTrade({
+  }).returning();
+  const [theirs] = await db.insert(tradesTable).values({
     userId: u.b, symbol: SYMBOL, direction: "SELL", lot: 0.01, entryPrice: PX, stopLoss: 1.11, takeProfit: 1.08,
     strategy: "QA", confidence: 50, status: "OPEN", mode: "DEMO",
-  });
+  }).returning();
+  if (!mine || !theirs) throw new Error("fixture insert failed");
   assert.equal(mine.userId, u.a);
   const cancelled = await cancelOpenLegacyTrades(u.a);
   assert.deepEqual(cancelled.map((t) => t.id), [mine.id]);

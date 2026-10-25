@@ -253,6 +253,8 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // input and results through to the venue queues unchanged.
   { pkg: "@workspace/api-server", script: "test:trade-engine-staged" },
   { pkg: "@workspace/api-server", script: "test:paper-book" },
+  // Owner decision 14: /execute-trade is retired (410), records nothing.
+  { pkg: "@workspace/api-server", script: "test:execute-trade-retired" },
   { pkg: "@workspace/api-server", script: "test:oms-governance" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-per-user-limits" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-discipline" },

@@ -88,17 +88,25 @@ gates were changed.
 
 ## Status of `trades` (honest)
 
-- `/execute-trade` writes a row whose `mode` is `"LIVE"` when Safety Core
-  reports LIVE and `"DEMO"` otherwise, including PAPER decisions. No broker
-  order is placed in any mode. The `mode` column describes the Safety Core
-  state, not a venue.
+- **Owner decision 14 (2026-10-25): `/execute-trade` is retired.** It now
+  returns 410 `EXECUTE_TRADE_RETIRED` and writes nothing, and
+  `recordLegacyExecuteTrade` is deleted. `trades` is closed to new rows
+  (`single-paper-book` refuses any insert); the historical rows are kept and
+  still readable, and the emergency-stop cancel and Position Guardian
+  management still update existing rows. See `TIER1_TRADE_ENGINE_MODES.md`,
+  round 5.
+- Historically, `/execute-trade` wrote a row whose `mode` is `"LIVE"` when
+  Safety Core reported LIVE and `"DEMO"` otherwise, including PAPER
+  decisions. No broker order was placed in any mode. The `mode` column
+  describes the Safety Core state at the time, not a venue or a broker
+  execution (now also a schema comment).
 - The Risk Governor reads `trades` as the realized-P/L and activity ledger for
   the DEMO venue (`enforce.ts`, `loadBrokerFacts`). PAPER intents do NOT read
   it: the governor's PAPER facts are `paper_orders` of the active paper
   account (`loadPaperFacts`), read through the paper book's read side
-  (`lib/tradeEngine/paperBookReader.ts`, owner decision 7). `/execute-trade`
-  rows written while Safety Core is not LIVE land in `trades` with mode
-  `DEMO` and so count as DEMO facts, never as PAPER facts.
+  (`lib/tradeEngine/paperBookReader.ts`, owner decision 7). Historical
+  `/execute-trade` rows written while Safety Core was not LIVE are in `trades`
+  with mode `DEMO` and so count as DEMO facts, never as PAPER facts.
 - Operator backfills in `scripts/src/backfill*` update `trades` P/L. They are
   one-off operator scripts, not runtime, and the guard does not scan them.
 
@@ -210,9 +218,9 @@ Verification on an isolated local PostgreSQL database (UTC):
    `lib/tradeEngine/paperBookReader.ts`; `paper_trades` is the journal and
    `trades` legacy history / the DEMO ledger. See
    `docs/TIER1_RISK_GOVERNOR_SOURCE.md`, "Decision 7".
-4. **`trades` is still a live table with a misleading `mode` column.**
-   Retiring `/execute-trade` or relabelling its rows is a data and product
-   decision. Nothing was dropped.
+4. **Done (owner decision 14): `/execute-trade` is retired** and `trades` is
+   closed to new rows. The `mode` column is documented as Safety Core state,
+   not a broker execution; no column was changed or dropped.
 5. **No published score.** The scorecard tools and dashboard destination are
    still needed.
 

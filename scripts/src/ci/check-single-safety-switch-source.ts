@@ -117,9 +117,8 @@ export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   // Legacy gates the pre-trade Risk Governor does not run behind. Round 5
   // (owner decision 3): /mt5 command endpoints, /broker/reconnect and the paper
   // permission verdict are action-aware through platformStop() +
-  // preCheckStopRefusal() and left this list. /execute-trade is being retired
-  // (decision 14, another change) and stays listed until then.
-  "routes/trades.ts": { rules: ["single_stop"], why: "legacy /execute-trade TOCTOU re-check of the safety core's own tradeGate snapshot (kill + mode + state); the path records into the paper book without the governor" },
+  // preCheckStopRefusal() and left this list. /execute-trade is retired
+  // (owner decision 14): its re-check is gone, so routes/trades.ts left too.
   // ── Reviewed env-flag readers ──────────────────────────────────────────────
   "lib/live/phaseBConfig.ts": { rules: ["env_flag"], why: "Phase B master switch helpers (liveBrokerExecutionEnabled); the DB arm comes from the authority" },
   "lib/startup/envChecklist.ts": { rules: ["env_flag"], why: "boot env inventory reports the variable's state; never gates" },

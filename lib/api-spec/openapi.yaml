@@ -1285,20 +1285,23 @@ paths:
     post:
       operationId: executeTrade
       tags: [trades]
-      summary: Execute a trade (mock or bridge-ready)
+      deprecated: true
+      summary: Retired legacy trade endpoint — always refuses (410 EXECUTE_TRADE_RETIRED)
+      description: >-
+        Retired by owner decision 14 (2026-10-25). It never placed a broker
+        order. Every call now returns 410 with code EXECUTE_TRADE_RETIRED and
+        the governed paths to use instead (simulated orders: POST /paper/orders;
+        DEMO / LIVE: the Trade Action Center). Nothing is executed or recorded,
+        and a LIVE request is never converted into a simulated one.
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/TradeInput"
       responses:
-        "200":
-          description: Trade execution result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TradeResult"
+        "410":
+          description: Retired — nothing executed or recorded (code EXECUTE_TRADE_RETIRED)
 
   /risk/settings:
     get:

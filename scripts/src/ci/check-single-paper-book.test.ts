@@ -65,7 +65,9 @@ passes('await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, a); await voidPa
 passes('await settlePaperTrade(a); await fillPaperTrade({ mode: "PAPER", intent: "CLOSE" }, b)', "lib/paperExecution/paperExecutionMonitor.ts");
 passes('await fillPaperTrade({ mode: "PAPER", intent: "OPEN" }, a); await settlePaperTrade(b)', "routes/autoDebrief.ts");
 passes("await applyPaperManagement(id, step)", "lib/positionGuardian/manage.ts");
-passes("await recordLegacyExecuteTrade(row)", "routes/trades.ts");
+// Owner decision 14: /execute-trade is retired, so nothing may record a legacy row.
+fails("await recordLegacyExecuteTrade(row)", "routes/trades.ts");
+fails("await book.recordLegacyExecuteTrade(row)", "routes/meTrades.ts");
 passes("await cancelOpenLegacyTrades(userId)", "routes/bot.ts");
 passes("db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u))");
 passes('import type { PaperOrderRow } from "../lib/tradeEngine/paperVenue.js";', PAPER_JOURNAL);
@@ -107,7 +109,14 @@ assert.ok(shape(goodVenue.replace(gov("closePaperFill", "CLOSE"), "export async 
 assert.ok(shape(goodVenue, "export async function applyPaperManagement(id: string) {}")
   .some((v) => v.includes("signature")), "the guardian's book signature is pinned");
 assert.ok(shape(goodVenue, "").length === 1);
-n += 10;
+// Owner decision 14: the legacy book is closed to new rows, even for its owner.
+assert.ok(shape(goodVenue, goodBook + "\nexport async function recordLegacyExecuteTrade(v) { return db.insert(tradesTable).values(v).returning(); }")
+  .some((v) => v.includes("closed to new rows")), "a trades insert in the legacy book fails");
+assert.ok(shape(goodVenue, goodBook + "\nexport async function raw() { await db.execute(sql`insert into trades (symbol) values (${s})`); }")
+  .some((v) => v.includes("closed to new rows")), "a raw trades insert in the legacy book fails");
+assert.deepEqual(shape(goodVenue, goodBook + "\nexport async function cancel(u) { await db.update(tradesTable).set({ status: \"CANCELLED\" }); }"), [],
+  "updating existing legacy rows stays allowed");
+n += 13;
 
 // The real tree is green.
 const real = checkSinglePaperBook();

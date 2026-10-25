@@ -4113,7 +4113,9 @@ export const GetOpenTradesResponseItem = zod.object({
 export const GetOpenTradesResponse = zod.array(GetOpenTradesResponseItem);
 
 /**
- * @summary Execute a trade (mock or bridge-ready)
+ * Retired by owner decision 14 (2026-10-25). It never placed a broker order. Every call now returns 410 with code EXECUTE_TRADE_RETIRED and the governed paths to use instead (simulated orders: POST /paper/orders; DEMO / LIVE: the Trade Action Center). Nothing is executed or recorded, and a LIVE request is never converted into a simulated one.
+ * @deprecated
+ * @summary Retired legacy trade endpoint — always refuses (410 EXECUTE_TRADE_RETIRED)
  */
 export const ExecuteTradeBody = zod.object({
   symbol: zod.string(),
@@ -4125,13 +4127,6 @@ export const ExecuteTradeBody = zod.object({
   strategy: zod.string(),
   confidence: zod.number(),
   confirmationId: zod.number().nullish(),
-});
-
-export const ExecuteTradeResponse = zod.object({
-  success: zod.boolean(),
-  message: zod.string(),
-  tradeId: zod.number(),
-  mode: zod.string(),
 });
 
 /**
