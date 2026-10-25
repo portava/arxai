@@ -11,8 +11,10 @@
 //       separate concept, not a second position book; governed by
 //       lib/riskGovernor/journal.ts. Never books into the venue.
 //   trades → lib/trades/paperBook.ts
-//       The legacy /execute-trade simulated record (no broker order), the
-//       bot emergency-stop cancel, and Position Guardian management.
+//       The legacy simulated record of the retired /execute-trade endpoint
+//       (no broker order). Closed to new rows (owner decision 14): only the
+//       bot emergency-stop cancel and Position Guardian management update
+//       existing rows. An insert into trades fails anywhere.
 //
 // The guard fails when:
 //   1. any other runtime file inserts, updates or deletes one of those tables
@@ -48,7 +50,7 @@ export const TABLE_OWNERS: Record<string, { physical: string; owner: string; rol
   paperOrdersTable: { physical: "paper_orders", owner: PAPER_VENUE, role: "canonical simulated-position book" },
   paperTradeEventsTable: { physical: "paper_trade_events", owner: PAPER_VENUE, role: "paper order event trail" },
   paperTradesTable: { physical: "paper_trades", owner: PAPER_JOURNAL, role: "paper trade journal (trader-entered)" },
-  tradesTable: { physical: "trades", owner: LEGACY_BOOK, role: "legacy /execute-trade simulated record" },
+  tradesTable: { physical: "trades", owner: LEGACY_BOOK, role: "legacy simulated record (retired /execute-trade; closed to new rows)" },
 };
 const OWNER_OF_PHYSICAL = new Map(Object.entries(TABLE_OWNERS).map(([t, v]) => [v.physical, t] as const));
 const RAW_WRITE =
@@ -69,7 +71,8 @@ export const BOOK_API: Record<string, { module: string; callers: string[] }> = {
   voidPaperOrder: { module: PAPER_VENUE, callers: [PIPELINE] },
   // Legacy simulated-trade book.
   applyPaperManagement: { module: LEGACY_BOOK, callers: [GUARDIAN_EXIT_DOOR] },
-  recordLegacyExecuteTrade: { module: LEGACY_BOOK, callers: ["routes/trades.ts"] },
+  // Retired with /execute-trade (owner decision 14): no file may call it.
+  recordLegacyExecuteTrade: { module: LEGACY_BOOK, callers: [] },
   cancelOpenLegacyTrades: { module: LEGACY_BOOK, callers: ["routes/bot.ts"] },
 };
 
@@ -253,6 +256,15 @@ export function checkBookShape(read: (key: string) => string | null): string[] {
   }
 
   const book = read(LEGACY_BOOK);
+  if (book != null) {
+    // Owner decision 14: the legacy book is closed to new rows. It may update
+    // (cancel, guardian steps) but never insert, even as its owner.
+    const bookFile = ts.createSourceFile(LEGACY_BOOK, book, ts.ScriptTarget.Latest, true);
+    for (const w of findWrites(bookFile).filter((x) => x.table === "tradesTable" && /insert/.test(x.op))) {
+      const ln = bookFile.getLineAndCharacterOfPosition(w.node.getStart(bookFile)).line + 1;
+      v.push(`${LEGACY_BOOK}:${ln}: ${w.op} on trades — the legacy book is closed to new rows since /execute-trade was retired (owner decision 14); simulated opens book through ${PIPELINE} (mode PAPER)`);
+    }
+  }
   if (book == null) v.push(`${LEGACY_BOOK} missing`);
   else if (!/export\s+async\s+function\s+applyPaperManagement\s*\(\s*tradeId:\s*number,\s*step:\s*PaperManagementStep\s*\)/.test(book)) {
     v.push(`${LEGACY_BOOK}: applyPaperManagement(tradeId: number, step: PaperManagementStep) is what the Position Guardian exit door calls — keep its signature`);

@@ -6,22 +6,8 @@ import {
   GetTradesQueryParams,
   GetTradesResponse,
   GetOpenTradesResponse,
-  ExecuteTradeBody,
-  ExecuteTradeResponse,
 } from "@workspace/api-zod";
-import { tradeGate, getStatus } from "../lib/safetyCore.js";
-import {
-  logBlockedTrade, logApprovedTrade, logPaperTrade, logSimulatedTrade,
-  logRejectedTrade,
-} from "../lib/vaultLogger.js";
-import {
-  claimConfirmationForExecution,
-  markConfirmationExecuted,
-  markConfirmationRejected,
-} from "./executionConfirmations.js";
-import { getBrokerHealthVerdict } from "./brokerHealth.js";
 import { requireUser } from "../lib/auth/middleware.js";
-import { recordLegacyExecuteTrade } from "../lib/trades/paperBook.js";
 
 const router = Router();
 
@@ -72,213 +58,39 @@ router.get("/trades/open", requireUser, async (req, res) => {
   }
 });
 
-// POST /execute-trade — Phase-2: stamps userId on every inserted trade.
-router.post("/execute-trade", requireUser, async (req, res) => {
-  try {
-    const body = ExecuteTradeBody.parse(req.body);
-    const userId = req.authUser!.id;
+// POST /execute-trade — RETIRED (owner decision 14, 2026-10-25).
+//
+// This endpoint never placed a broker order. It ran the Safety Core gate and
+// wrote a `trades` row whose `mode` column recorded the Safety Core state
+// ("LIVE" / "DEMO"), not a venue. It now refuses every request and executes
+// nothing: no gate runs, no confirmation is claimed and no row is written. A
+// request is never converted into a different mode — in particular a LIVE
+// request is NOT turned into a simulated trade. The response names the
+// governed paths to use instead:
+//   simulated (PAPER) → POST /api/paper/orders (Trade Engine submitTrade, mode
+//                       PAPER, with the pre-trade Risk Governor)
+//   DEMO / LIVE       → the Trade Action Center (/api/me/trade-actions), whose
+//                       confirmed actions go through the Trade Engine pipeline
+//                       and every venue gate.
+// Historical `trades` rows are kept and still readable through GET /trades.
+// See docs/TIER1_TRADE_ENGINE_MODES.md (round 5) and docs/TIER1_PAPER_BOOK.md.
+export const EXECUTE_TRADE_RETIRED = {
+  ok: false,
+  success: false,
+  code: "EXECUTE_TRADE_RETIRED",
+  error: "POST /api/execute-trade is retired. Nothing was executed and nothing was recorded.",
+  executed: false,
+  converted: false,
+  instead: {
+    PAPER: { method: "POST", path: "/api/paper/orders", note: "Simulated order in your active paper account, checked by the Risk Governor." },
+    DEMO: { method: "POST", path: "/api/me/trade-actions", note: "Create a DEMO action, then confirm it; it goes through the governed DEMO venue." },
+    LIVE: { method: "POST", path: "/api/me/trade-actions", note: "LIVE orders go only through the governed LIVE path and its own confirmation; this endpoint never converts a LIVE request into a simulated one." },
+  },
+  history: { method: "GET", path: "/api/trades", note: "Historical rows are kept. Their mode field recorded the Safety Core state, not a broker execution." },
+} as const;
 
-    // ── Phase 1 Safety Core gate — Control Tower / Risk Governor / Kill Switch ─
-    const gate = await tradeGate({
-      intentId: `intent_${Date.now()}_${body.symbol}`,
-      symbol: body.symbol,
-      direction: body.direction,
-      lot: body.lot,
-      strategy: body.strategy,
-      confidence: body.confidence,
-    });
-
-    if (gate.decision === "HARD_BLOCK") {
-      await logBlockedTrade({
-        symbol: body.symbol, direction: body.direction, lot: body.lot,
-        strategy: body.strategy, confidence: body.confidence,
-        reasons: gate.reasons, blockers: gate.blockers,
-        operationalMode: gate.operationalMode, globalState: gate.globalState,
-        generatedAtIso: new Date().toISOString(),
-      });
-      if (typeof body.confirmationId === "number") {
-        await markConfirmationRejected({
-          confirmationId: body.confirmationId,
-          reason: `Safety Core HARD_BLOCK: ${gate.reasons.join("; ")}`,
-        });
-      }
-      res.status(409).json({
-        error: "Trade blocked by Safety Core",
-        decision: gate.decision,
-        decisionMode: gate.decisionMode,
-        operationalMode: gate.operationalMode,
-        globalState: gate.globalState,
-        reasons: gate.reasons,
-        blockers: gate.blockers,
-      });
-      return;
-    }
-
-    if (gate.decisionMode === "OBSERVE" || gate.decisionMode === "SUGGEST") {
-      await logSimulatedTrade({
-        symbol: body.symbol, direction: body.direction, lot: body.lot,
-        strategy: body.strategy, confidence: body.confidence,
-        reasons: gate.reasons,
-        operationalMode: gate.operationalMode, globalState: gate.globalState,
-        generatedAtIso: new Date().toISOString(),
-      });
-      res.json(ExecuteTradeResponse.parse({
-        success: true,
-        message: `Signal recorded in ${gate.operationalMode} mode (no order placed). Reasons: ${gate.reasons.join("; ")}`,
-        tradeId: 0,
-        mode: gate.operationalMode,
-      }));
-      return;
-    }
-
-    const recheck = await getStatus();
-    if (
-      recheck.killSwitchEngaged ||
-      recheck.operationalMode !== gate.operationalMode ||
-      recheck.globalState !== gate.globalState
-    ) {
-      const blockers = recheck.killSwitchEngaged
-        ? ["kill switch engaged mid-flight"]
-        : ["mode or global state changed mid-flight"];
-      await logRejectedTrade({
-        symbol: body.symbol, direction: body.direction, lot: body.lot,
-        strategy: body.strategy, confidence: body.confidence,
-        reasons: ["safety state changed between gate decision and execution"],
-        blockers,
-        operationalMode: recheck.operationalMode, globalState: recheck.globalState,
-        generatedAtIso: new Date().toISOString(),
-      });
-      if (typeof body.confirmationId === "number") {
-        await markConfirmationRejected({
-          confirmationId: body.confirmationId,
-          reason: `TOCTOU abort: ${blockers.join("; ")}`,
-        });
-      }
-      res.status(409).json({
-        error: "Trade aborted — safety state changed during gating",
-        decision: "HARD_BLOCK",
-        operationalMode: recheck.operationalMode,
-        globalState: recheck.globalState,
-        reasons: ["safety state changed between gate decision and execution"],
-        blockers,
-      });
-      return;
-    }
-
-    if (gate.decisionMode === "LIVE") {
-      const brokerVerdict = await getBrokerHealthVerdict();
-      if (brokerVerdict.status !== "CONNECTED") {
-        await logBlockedTrade({
-          symbol: body.symbol, direction: body.direction, lot: body.lot,
-          strategy: body.strategy, confidence: body.confidence,
-          reasons: [`broker health=${brokerVerdict.status}`, ...brokerVerdict.reasons],
-          blockers: brokerVerdict.blockers,
-          operationalMode: gate.operationalMode, globalState: gate.globalState,
-          generatedAtIso: new Date().toISOString(),
-        });
-        if (typeof body.confirmationId === "number") {
-          await markConfirmationRejected({
-            confirmationId: body.confirmationId,
-            reason: `Broker health HARD_BLOCK: ${brokerVerdict.status}`,
-          });
-        }
-        res.status(409).json({
-          error: "Trade blocked by Broker Health gate",
-          decision: "HARD_BLOCK",
-          brokerStatus: brokerVerdict.status,
-          reasons: brokerVerdict.reasons,
-          blockers: brokerVerdict.blockers,
-          aiExplanation: brokerVerdict.aiExplanation,
-        });
-        return;
-      }
-    }
-
-    type ClaimResult = Awaited<ReturnType<typeof claimConfirmationForExecution>>;
-    let claimedConfirmation: ClaimResult | null = null;
-    const isEffectivelyLive = gate.decisionMode === "LIVE";
-    if (isEffectivelyLive && typeof body.confirmationId !== "number") {
-      res.status(409).json({
-        error: "Live execution requires a confirmed execution_confirmations id (Pre-Trade Checklist).",
-        decision: "HARD_BLOCK",
-        reasons: ["missing confirmationId"],
-        blockers: ["Pre-Trade Checklist confirmation required for live execution"],
-      });
-      return;
-    }
-    if (typeof body.confirmationId === "number") {
-      claimedConfirmation = await claimConfirmationForExecution({
-        confirmationId: body.confirmationId,
-        symbol: body.symbol,
-        direction: body.direction,
-        lotSize: body.lot,
-      });
-      if (!claimedConfirmation) {
-        res.status(409).json({
-          error: "Execution confirmation could not be claimed (already used, expired, mismatched, or not in CONFIRMED state).",
-          decision: "HARD_BLOCK",
-          reasons: ["confirmation not claimable"],
-          blockers: ["Open the Pre-Trade Checklist and confirm again with fresh prices"],
-        });
-        return;
-      }
-    }
-
-    const adjustedLot = Number((body.lot * gate.recommendedSizeMultiplier01).toFixed(4));
-
-    // Phase-2: stamp the trade with the authenticated user's id. We deliberately
-    // do NOT accept a userId from the request body — the only authoritative
-    // source of identity is the session cookie.
-    const trade = await recordLegacyExecuteTrade({
-      userId,
-      symbol: body.symbol,
-      direction: body.direction,
-      lot: adjustedLot,
-      entryPrice: body.entry,
-      stopLoss: body.sl,
-      takeProfit: body.tp,
-      strategy: body.strategy,
-      confidence: body.confidence,
-      status: "OPEN",
-      mode: gate.decisionMode === "LIVE" ? "LIVE" : "DEMO",
-    });
-
-    const generatedAtIso = new Date().toISOString();
-    if (gate.decisionMode === "PAPER") {
-      await logPaperTrade({
-        symbol: body.symbol, direction: body.direction, lot: adjustedLot,
-        strategy: body.strategy, confidence: body.confidence,
-        tradeId: String(trade.id),
-        operationalMode: gate.operationalMode, globalState: gate.globalState,
-        generatedAtIso,
-      });
-    } else {
-      await logApprovedTrade({
-        symbol: body.symbol, direction: body.direction, lot: adjustedLot,
-        strategy: body.strategy, confidence: body.confidence,
-        tradeId: String(trade.id),
-        operationalMode: gate.operationalMode, globalState: gate.globalState,
-        generatedAtIso,
-      });
-    }
-    const data = ExecuteTradeResponse.parse({
-      success: true,
-      message: `${gate.decisionMode} trade executed. Mode: ${gate.operationalMode}, state: ${gate.globalState}, size×${gate.recommendedSizeMultiplier01.toFixed(2)}.`,
-      tradeId: trade.id,
-      mode: gate.operationalMode,
-    });
-    if (claimedConfirmation) {
-      await markConfirmationExecuted({
-        confirmationId: claimedConfirmation.id,
-        tradeId: trade.id,
-        resultSummary: `${gate.decisionMode} executed (size×${gate.recommendedSizeMultiplier01.toFixed(2)})`,
-      });
-    }
-    res.json(data);
-  } catch (err) {
-    req.log.error(err);
-    res.status(400).json({ error: "Failed to execute trade" });
-  }
+router.post("/execute-trade", requireUser, (_req, res) => {
+  res.status(410).json(EXECUTE_TRADE_RETIRED);
 });
 
 // Suppress unused-var warning when botSettingsTable is no longer referenced.

@@ -571,9 +571,9 @@ export default function Emergency() {
       <div className="text-xs text-muted-foreground p-3 rounded-md border border-dashed flex items-start gap-2">
         <AlertTriangle size={14} className="shrink-0 mt-0.5" />
         <span>
-          Phase 1 Foundation/Safety. Trade execution is gated by the Risk Governor + Control Tower at the API layer
-          (<span className="font-mono">/api/execute-trade</span>). HARD_BLOCK verdicts return HTTP 409. OBSERVE/SUGGEST modes
-          downgrade trades to signal-only logs. DEMO/LIVE modes apply size multipliers from the active risk profile.
+          Phase 1 Foundation/Safety. Every order goes through the governed trade pipeline and the pre-trade Risk
+          Governor at the API layer. The legacy <span className="font-mono">/api/execute-trade</span> endpoint is retired:
+          it returns HTTP 410 and places or records nothing.
         </span>
       </div>
     </div>
