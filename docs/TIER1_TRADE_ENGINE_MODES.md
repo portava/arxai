@@ -194,6 +194,65 @@ user's same key books separately; My Trades with no price →
 updated: the SIMULATED Ruby and trade-action cases confirm with the label and
 expect the PAPER venue's no-price refusal (this sandbox has no real feed).
 
+### Decision 15: My Trades DEMO opens governed; LIVE opens stay refused
+
+**DEMO.** `POST /me/trades/open` with mode DEMO no longer goes through
+`placeOrder` (whose structural `bridge_token` gate refuses every DEMO order
+with `DEMO_DISPATCH_DISABLED_USE_DEMO_QUEUE`; that gate is unchanged). It
+calls `lib/tradeAction/myTradesOpen.ts` (`openMyTradesDemo`), which uses the
+existing governed DEMO pipeline, the same one a Trade Action Center DEMO
+open uses:
+
+1. **Confirmation:** `confirmedByUser` is required (the route checks it, and
+   the module checks it again).
+2. **Mode:** the request names DEMO, and the trader's own envelope mode must
+   permit DEMO (the ladder the My Trades order guard used: `DISABLED` →
+   `USER_TRADING_DISABLED`, `SIMULATED` → `MODE_NOT_PERMITTED_FOR_USER:DEMO`).
+3. The order is recorded as a Trade Action (`trade_action_requests`,
+   requested mode DEMO, source `user_initiated`) and confirmed through
+   `confirmAction`, which runs `runActionGuards`: **ownership**, both platform
+   stops, the platform DEMO venue switch, suspension, **routing** and account
+   type (never a live account), the platform lot cap, the **Risk Governor**
+   (venue DEMO, with the trader's, operator's and platform's limits:
+   **sizing**), duplicate in flight, expiry, and a resolved MT5 connection
+   (**readiness**).
+4. `submitTrade({ mode: "DEMO", intent: "OPEN" })` → `demoCommandQueue`:
+   per-user demo arming, `VERIFIED_DEMO` readiness, a fresh demo bridge the
+   trader owns (or the routed master), master exposure, and the Risk Governor
+   again at dispatch. The command is stamped `ME_TRADES_DEMO_OPEN`.
+
+Every refusal is returned by name with a message (`guard_rejected`,
+`venue_rejected` with the queue's reason, …). The response is
+`{ ok, mode: "DEMO", venue: "DEMO", demo: { actionId, status, commandId, sent }, action }`.
+`confirmAction` gained an optional `sourcePage` (the stamp of a caller other
+than the Trade Action Center); nothing else in the Trade Action chain changed.
+
+**LIVE.** Refused at the route with **403 `MY_TRADES_LIVE_OPEN_NOT_ENABLED`**:
+*"Live opens from My Trades are not enabled. They stay off until broker
+validation passes and the owner separately authorizes this surface. Nothing
+was sent."* Nothing is drafted, no guard chain runs, no venue is called. The
+ticket's LIVE warning says the same. Live trading is not turned on anywhere;
+the My Trades LIVE **close** path is unchanged.
+
+**Guards.** None changed. `modeScopeContract` still pins that `meTrades`
+calls no `submitTrade` and drafts no ENTRY (the DEMO open goes through the
+Trade Action module); `admin-trading-no-live-bypass` still pins the
+`bridge_token` gate and `placeOrder`'s APPROVED check; the command-integrity
+source allowlist already covers `ME_TRADES_` stamps.
+
+**Tests:** `test:my-trades-demo-open` (new, in `ci:integration`, 7 cases;
+the demo command queue is stubbed to record calls, since it needs a live EA,
+arming and `VERIFIED_DEMO`): a confirmed DEMO open passes every Trade Action
+guard and the Risk Governor (venue DEMO) and reaches the queue as
+draft → confirm → dispatch with this surface's stamp, with no
+`trade_command_audit_log` or `mt5_commands` row; LIVE refused by name with
+nothing created; confirmation required; unauthenticated refused, a trader
+without a connection refused at routing and never routed to another trader's
+connection, another trader cannot confirm the action; a trader whose mode
+does not permit DEMO refused; an oversized order refused by the Risk Governor
+and never queued; the queue's own refusal returned as-is; a duplicate in
+flight refused.
+
 ### Behaviour changes (round 5)
 
 1. `POST /execute-trade` returns 410 `EXECUTE_TRADE_RETIRED` for every
@@ -214,6 +273,15 @@ expect the PAPER venue's no-price refusal (this sandbox has no real feed).
    mode: of two concurrent confirms of one action, one proceeds and the other
    gets `cannot_confirm_from_status`. The status machine also allows
    `queued → executed`. *(decision 13)*
+7. A confirmed My Trades DEMO open goes through the governed DEMO pipeline
+   (Trade Action guards, Risk Governor, demo command queue) and can reach the
+   trader's demo account (before: always refused by the order guard with
+   `DEMO_DISPATCH_DISABLED_USE_DEMO_QUEUE`). It is now recorded as a Trade
+   Action and appears in the Trade Action Center history; it no longer writes
+   a `trade_command_audit_log` row. *(decision 15)*
+8. A My Trades LIVE open returns 403 `MY_TRADES_LIVE_OPEN_NOT_ENABLED` before
+   any guard runs (before: refused by the order guard, usually
+   `LIVE_DISPATCH_DISABLED_USE_PHASE_B`, with an audit row). *(decision 15)*
 
 ### What remains (round 5)
 
@@ -240,6 +308,14 @@ expect the PAPER venue's no-price refusal (this sandbox has no real feed).
    stay `queued`; decision 13 covers opens only.
 7. Without a real market-data provider configured, every SIMULATED open is
    refused with `NO_VALID_PRICE_SOURCE` (intended: no fabricated fill).
+8. Enabling My Trades LIVE opens needs broker validation and a separate owner
+   authorization (decision 15); not done.
+9. `placeOrder` still refuses DEMO for its other callers (`routes/tradePlacement.ts`,
+   the assistant's `requestDemoOrder`, which is blocked anyway as an AI
+   actor); decision 15 covers My Trades only.
+10. A My Trades DEMO open has no client idempotency key: a retried request is
+    stopped by the Trade Action duplicate check (an identical open in flight
+    within 5 minutes), not by a key.
 
 ## Round 3: one entry for every producer
 
@@ -662,11 +738,10 @@ still listed.
 
    Merging these books into one is a data and product decision that this
    change does not make.
-4. **Some SIMULATED paths write nothing to paper.** Trade Action Center
-   `SIMULATED` actions and My Trades `SIMULATED` opens still record no paper
-   order, and My Trades DEMO/LIVE opens are still refused by the order guard.
-   Routing them to PAPER/DEMO would change user-visible behaviour and needs an
-   owner decision.
+4. **Done (round 5, owner decisions 13 and 15):** SIMULATED opens in the
+   Trade Action Center and My Trades book PAPER orders, and My Trades DEMO
+   opens go through the governed DEMO pipeline; My Trades LIVE opens stay
+   refused. See Round 5.
 5. **No published score.** The scorecard tools/rubric and dashboard
    destination are still needed before a new score can be measured.
 

@@ -257,6 +257,8 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:execute-trade-retired" },
   // Owner decision 13: confirmed SIMULATED opens book one governed PAPER order.
   { pkg: "@workspace/api-server", script: "test:simulated-open" },
+  // Owner decision 15: My Trades DEMO opens use the governed DEMO pipeline; LIVE stays refused.
+  { pkg: "@workspace/api-server", script: "test:my-trades-demo-open" },
   { pkg: "@workspace/api-server", script: "test:oms-governance" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-per-user-limits" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-discipline" },

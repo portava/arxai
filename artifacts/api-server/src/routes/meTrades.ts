@@ -6,10 +6,12 @@
 //   * SHARED_MASTER_MT5       → reads only the user's own attribution rows.
 //   * Never returns master MT5 credentials, broker tokens, or other users'
 //     trade tickets / P&L.
-//   * POST /open  → placeOrder() (which runs the full guard chain). A
-//     SIMULATED open books one PAPER order through the Trade Engine pipeline
-//     (owner decision 13) and needs an idempotencyKey; a retry with the same
-//     key returns the order it already booked.
+//   * POST /open  → SIMULATED: placeOrder() (the full guard chain), then one
+//     PAPER order through the Trade Engine pipeline (owner decision 13); it
+//     needs an idempotencyKey and a retry with the same key returns the
+//     order it already booked. DEMO: the governed DEMO pipeline through
+//     lib/tradeAction/myTradesOpen.ts (owner decision 15). LIVE: refused with
+//     MY_TRADES_LIVE_OPEN_NOT_ENABLED (not enabled on this surface).
 //   * POST /close → runs envelope checks, requires confirmedByUser, queues
 //     an mt5_commands row, writes trade_command_audit_log, and (in shared
 //     mode) writes a shared_trade_attribution row tagging the close.
@@ -39,6 +41,7 @@ import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipe
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { paperOrderByRequestKey } from "../lib/tradeEngine/paperVenue.js";
 import { SIMULATED_LABEL, simulatedRequestKey } from "../lib/tradeEngine/simulatedOpen.js";
+import { openMyTradesDemo, MY_TRADES_LIVE_NOT_ENABLED, MY_TRADES_LIVE_NOT_ENABLED_MESSAGE } from "../lib/tradeAction/myTradesOpen.js";
 
 const router: IRouter = Router();
 
@@ -331,6 +334,25 @@ router.post("/me/trades/open", async (req, res) => {
     res.status(400).json({ ok: false, error: "CONFIRMATION_REQUIRED" });
     return;
   }
+  // LIVE (owner decision 15): not enabled on this surface until broker
+  // validation passes and the owner separately authorizes it.
+  if (parsed.data.mode === "LIVE") {
+    res.status(403).json({ ok: false, mode: "LIVE", error: MY_TRADES_LIVE_NOT_ENABLED, message: MY_TRADES_LIVE_NOT_ENABLED_MESSAGE, sent: false });
+    return;
+  }
+  // DEMO (owner decision 15): the governed DEMO pipeline (mode, ownership,
+  // confirmation, readiness, sizing, Risk Governor), never placeOrder.
+  if (parsed.data.mode === "DEMO") {
+    const demo = await openMyTradesDemo({
+      userId, symbol: parsed.data.symbol, side: parsed.data.side, lotSize: parsed.data.lotSize,
+      stopLoss: parsed.data.stopLoss ?? null, takeProfit: parsed.data.takeProfit ?? null,
+      confirmedByUser: parsed.data.confirmedByUser,
+    });
+    res.json(demo.ok
+      ? { ok: true, mode: "DEMO", venue: "DEMO", demo: demo.demo, action: demo.action }
+      : { ok: false, mode: "DEMO", venue: "DEMO", error: demo.error, message: demo.message, action: demo.action ?? null });
+    return;
+  }
   // SIMULATED (owner decision 13): explicit mode in the request, a retry-safe
   // key, and a retry of an already-booked key returns that paper order
   // without running (or auditing) the guard chain again.
@@ -366,16 +388,13 @@ router.post("/me/trades/open", async (req, res) => {
     confirmedByUser: parsed.data.confirmedByUser,
     simulatedRequestKey: parsed.data.mode === "SIMULATED" ? parsed.data.idempotencyKey ?? null : null,
   });
-  if (parsed.data.mode === "SIMULATED") {
-    res.json({
-      ok: result.status === "SIMULATED_FILL", mode: "SIMULATED", venue: "PAPER",
-      replayed: result.paper?.replayed === true, simulated: result.paper ?? null,
-      ...(result.status === "SIMULATED_FILL" ? {} : { error: result.reason, message: result.message ?? null }),
-      result,
-    });
-    return;
-  }
-  res.json({ ok: result.status === "QUEUED" || result.status === "SIMULATED_FILL", result });
+  // Only SIMULATED reaches placeOrder (DEMO and LIVE returned above).
+  res.json({
+    ok: result.status === "SIMULATED_FILL", mode: "SIMULATED", venue: "PAPER",
+    replayed: result.paper?.replayed === true, simulated: result.paper ?? null,
+    ...(result.status === "SIMULATED_FILL" ? {} : { error: result.reason, message: result.message ?? null }),
+    result,
+  });
 });
 
 // ─── POST /me/trades/close — guarded close ──────────────────────────────
