@@ -19,6 +19,7 @@ import { computeTimingRead } from "../../brain/timing/marketTimingBrainService.j
 import {
   db,
   paperOrdersTable,
+  paperAccountsTable,
   tradeDecisionLogsTable,
   postTradeDebriefsTable,
   learningEventsTable,
@@ -33,7 +34,8 @@ import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { logger } from "../logger.js";
 import { checkBrokerSafety } from "../brokerReadOnly/service.js";
-import { readTraderRiskSettings } from "../riskGovernor/limitSettings.js";
+import { loadEffectiveLimits } from "../riskGovernor/limitSettings.js";
+import { resolveEffectiveLimits, dailyLossCapAmount } from "../riskGovernor/preTrade.js";
 
 export type OverallStatus = "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED";
 export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY";
@@ -47,11 +49,13 @@ export interface Cooldown { symbol: string; reason: string | null; until: string
 
 export interface GovernorMetrics {
   dailyPnl: number;
-  dailyLossLimit: number;
+  /** Enforced daily loss cap in money (Risk Governor); null = none enforced. */
+  dailyLossLimit: number | null;
   weeklyPnl: number;
   maxDrawdown: number;
   openPaperTrades: number;
-  maxOpenPaperTrades: number;
+  /** Enforced max open trades (Risk Governor); null = none enforced. */
+  maxOpenPaperTrades: number | null;
   sameSymbolExposure: Record<string, number>;
   winRate30d: number;
   sampleSize: number;
@@ -263,19 +267,26 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
     dataSourcesRead.push("autopilot_symbol_cooldowns");
   } catch { missingDataSources.push("autopilot_cycles"); }
 
-  // --- Risk settings (limits) ---
-  let dailyLossLimit = 100;
-  let maxOpenPaperTrades = 2;
+  // --- Risk limits (owner decision 8: the limits the Risk Governor enforces) ---
+  // loadEffectiveLimits (strictest of trader, operator and platform). The
+  // daily loss cap in money is the governor's own: the enforced amount or the
+  // enforced percent of the active paper account's equity, whichever is
+  // stricter. null = no limit is enforced (or a percent-only cap with no paper
+  // account). An anonymous read has no trader and shows the governor's
+  // defaults rather than borrowing another trader's row.
+  let dailyLossLimit: number | null = null;
+  let maxOpenPaperTrades: number | null = null;
   try {
-    // The trader's own limits (user_risk_settings, the one limit store). An
-    // anonymous read has no trader, so it keeps the defaults above rather than
-    // borrowing another trader's row.
-    const rs = userId == null ? null : await readTraderRiskSettings(userId);
-    if (rs) {
-      maxOpenPaperTrades = rs.maxOpenTrades ?? 2;
-      const pct = rs.maxDailyLossPercent ?? 2;
-      dailyLossLimit = Math.max(10, Math.round(pct * 50)); // simple proxy: $50 per 1%
+    const L = userId == null ? resolveEffectiveLimits({}) : await loadEffectiveLimits(userId);
+    maxOpenPaperTrades = L.discipline.maxOpenTrades;
+    let equity: number | null = null;
+    if (userId != null) {
+      const [acct] = await db.select({ equity: paperAccountsTable.equity }).from(paperAccountsTable)
+        .where(and(eq(paperAccountsTable.userId, userId), eq(paperAccountsTable.isActive, 1)))
+        .orderBy(desc(paperAccountsTable.createdAt)).limit(1);
+      equity = acct?.equity ?? null;
     }
+    dailyLossLimit = dailyLossCapAmount(L, equity);
     dataSourcesRead.push("user_risk_settings");
   } catch { missingDataSources.push("user_risk_settings"); }
 
@@ -340,10 +351,10 @@ function evaluateStatus(
   if (effectiveMode !== "read_only" && effectiveMode !== "missing") {
     hardBlocks.push({ code: "MARKET_DATA_MODE_NOT_READ_ONLY", severity: "CRITICAL", message: `MARKET_DATA_MODE is "${effectiveMode}" — must be "read_only" for paper-only safety.` });
   }
-  if (m.openPaperTrades > m.maxOpenPaperTrades && m.maxOpenPaperTrades > 0) {
+  if (m.maxOpenPaperTrades != null && m.openPaperTrades > m.maxOpenPaperTrades && m.maxOpenPaperTrades > 0) {
     hardBlocks.push({ code: "MAX_OPEN_PAPER_TRADES_EXCEEDED", severity: "BLOCK", message: `Open paper trades ${m.openPaperTrades} exceed configured max ${m.maxOpenPaperTrades}.`, details: { open: m.openPaperTrades, max: m.maxOpenPaperTrades } });
   }
-  if (m.dailyPnl <= -Math.abs(m.dailyLossLimit)) {
+  if (m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit)) {
     hardBlocks.push({ code: "DAILY_LOSS_LIMIT_EXCEEDED", severity: "BLOCK", message: `Daily P&L ${m.dailyPnl} exceeds loss limit -${m.dailyLossLimit}.`, details: { dailyPnl: m.dailyPnl, limit: m.dailyLossLimit } });
   }
   for (const [sym, n] of Object.entries(m.sameSymbolExposure)) {
@@ -368,7 +379,7 @@ function evaluateStatus(
 
   // ── PAUSE conditions ─────────────────────────────────────────────────────
   let pauseReasons = 0;
-  if (m.dailyPnl < 0 && m.dailyPnl > -Math.abs(m.dailyLossLimit) && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) {
+  if (m.dailyLossLimit != null && m.dailyPnl < 0 && m.dailyPnl > -Math.abs(m.dailyLossLimit) && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) {
     softWarnings.push({ code: "DAILY_LOSS_NEAR_LIMIT", message: `Daily P&L ${m.dailyPnl} is within 30% of loss limit -${m.dailyLossLimit}.` }); pauseReasons += 1;
   }
   if (cooldowns.some(c => (c.reason ?? "").toUpperCase().includes("REVENGE"))) {
@@ -411,9 +422,9 @@ function evaluateStatus(
 function scoreReadiness(m: GovernorMetrics): { score: number; grade: ReadinessGrade; level: ReadinessLevel; breakdown: Record<string, number> } {
   // A. Risk discipline (25)
   let a = 25;
-  if (m.dailyPnl <= -Math.abs(m.dailyLossLimit)) a -= 15;
-  else if (m.dailyPnl < 0 && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) a -= 8;
-  if (m.openPaperTrades > m.maxOpenPaperTrades) a -= 10;
+  if (m.dailyLossLimit != null && m.dailyPnl <= -Math.abs(m.dailyLossLimit)) a -= 15;
+  else if (m.dailyLossLimit != null && m.dailyPnl < 0 && Math.abs(m.dailyPnl) >= 0.7 * Math.abs(m.dailyLossLimit)) a -= 8;
+  if (m.maxOpenPaperTrades != null && m.openPaperTrades > m.maxOpenPaperTrades) a -= 10;
   if (Object.values(m.sameSymbolExposure).some(n => n >= 3)) a -= 5;
   if (m.avgRiskScore >= 80) a -= 5;
   a = Math.max(0, a);

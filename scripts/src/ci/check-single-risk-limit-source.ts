@@ -78,7 +78,7 @@ export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   "lib/riskGovernor/riskEvents.ts": { rules: ["write"], why: "governor: getOrCreateRiskSettings inserts the trader's default row (reads through limitSettings)" },
   "lib/riskGovernor/riskProfile.ts": { rules: ["write"], why: "governor: applyRiskPreset / configurePropFirm write the trader's own row; the governor still bounds it by operator and platform limits" },
   "lib/risk/userRiskSettings.ts": { rules: ["write", "raw_reader"], why: "the older settings page's store: splits a write into user_risk_settings (limits) and risk_settings (preferences); reads the row through readTraderRiskSettings to compose the page (shows saved values)" },
-  "routes/meRiskGovernor.ts": { rules: ["write", "raw_reader", "limit_eval"], why: "the Risk Governor settings page: upserts the trader's row (write); /me/risk/status, /daily-status and the post-close hooks show the trader's own saved caps against paper_trades history (display + warning-level events, never a block; paper_trades vs paper_orders basis is an owner decision); the limits in force are /me/risk-limits/layers (explainLimitLayers)" },
+  "routes/meRiskGovernor.ts": { rules: ["write", "raw_reader", "limit_eval"], why: "the Risk Governor settings page: upserts the trader's row (write); /me/risk/status, /daily-status and the post-close hooks show the limits in force (owner decision 8: `effective`, from effectiveLimitViews, with the saved preference and the override reason) against paper_trades history; the post-close hooks still compare the trader's saved caps (warning-level events, never a block; paper_trades vs paper_orders basis is owner decision 7); the settings endpoints read the saved row to edit it" },
   "routes/adminTrading.ts": { rules: ["write", "raw_reader"], why: "audited admin risk-limits handler: writes user_risk_limits and reads the row first for the before/after audit snapshot" },
   // ── (a) Stricter-only pre-checks before the governor ───────────────────────
   "lib/adminTrading/orderGuard.ts": { rules: ["raw_reader", "limit_eval"], why: "(a) order guard step 6 runs before its own pre_trade_risk step (enforcePreTradeRisk) and only adds refusals: NO_RISK_LIMITS_CONFIGURED, admin max lot, symbol / direction / account type; step 6b is the separately named operational rate cap (owner decision 9: APPROVED commands in a rolling 24h, OPERATIONAL_RATE_CAP_REACHED, never called trades per day). The daily-trade limit itself is the governor's (9b)" },
@@ -86,15 +86,11 @@ export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   "lib/live/liveCommandPipeline.ts": { rules: ["limit_eval"], why: "(a) live lane: the arming-time confirmed max lot (arx_live_arming) refuses at draft time, before the Risk Governor pre-gate at dispatch; the live lane's other caps (governance, master live access, arx_live_user_settings) are their own stores, listed in the doc" },
   "lib/live/liveArming.ts": { rules: ["limit_eval"], why: "(a) arming checklist item 13: the confirmed max lot must be > 0 and <= 1.0 (Phase A) before a trader can arm; not an order decision" },
   // ── (b) Display / report / alert / advisory (never gate an order) ──────────
-  "lib/readiness/traderReadiness.ts": { rules: ["raw_reader"], why: "(b) readiness read model (single-risk-authority keeps it off the order path); shows the trader's own max open trades and a $50-per-1% daily-loss proxy (own formula, listed in the doc)" },
   "lib/assistant/tools.ts": { rules: ["raw_reader", "limit_eval"], why: "(b) Ruby read-only tools: getRiskLimits returns the trader's saved row; the prop-challenge compliance summary compares challenge config (prop_challenges, not a governor limit); Ruby never executes" },
   "lib/assistant/coachTools.ts": { rules: ["raw_reader"], why: "(b) Ruby coach: plan scoring and trading-style profile read the trader's saved row (advice, never a gate)" },
-  "lib/alerts/ruleEngine.ts": { rules: ["raw_reader"], why: "(b) RISK_LOCK alert at 80% / 100% of the trader's own max_daily_loss_percent x recorded end balance; ignores the operator USD cap and the daily-loss on/off switch, so it can disagree with the governor (listed in the doc; unifying changes which alerts fire)" },
   "lib/reportBuilder.ts": { rules: ["raw_reader"], why: "(b) user report: prints the trader's saved settings row" },
-  "routes/meDashboard.ts": { rules: ["raw_reader", "limit_eval"], why: "(b) dashboard: trade-quality score (risk % / R:R vs saved settings), cooldown and approaching-cap copy over paper_trades history; display only" },
+  "routes/meDashboard.ts": { rules: ["raw_reader", "limit_eval"], why: "(b) dashboard: the risk card, cooldown and approaching-cap copy show the limits in force (owner decision 8, effectiveLimitViews); the trade-quality score still grades closed paper_trades against the saved risk % / R:R (getOrCreateRiskSettings); display only" },
   "routes/health.ts": { rules: ["raw_reader"], why: "(b) personal health: riskGovernor.configured = the trader saved a row" },
-  "routes/meAccountShell.ts": { rules: ["raw_reader"], why: "(b) account shell risk view: master-live-access caps first, then the trader's saved values (own precedence, display only; listed in the doc)" },
-  "routes/portfolioRisk.ts": { rules: ["raw_reader"], why: "(b) portfolio-risk snapshot: the trader's saved max open / daily loss / risk-per-trade with its own defaults (2 / 2 / 0.5, the governor's are 3 / 3 / 1) feed a concentration report; listed in the doc" },
   "routes/adminAllocations.ts": { rules: ["raw_reader"], why: "(b) admin allocations table: the at-risk flag's daily-loss cap is the first positive of arx_live_user_settings, master live access, then user_risk_limits.max_daily_loss_usd (the live lane's own precedence, display only)" },
   "routes/riskProfile.ts": { rules: ["raw_reader"], why: "(b) risk profile page: shows the saved preset next to the governor's effective limits (riskOverview)" },
   "routes/risk.ts": { rules: ["raw_reader"], why: "(b) older settings page: GET/PATCH /risk/settings, /risk/audit report and the position-size calculator read the saved values (the stateless /risk/guards/* calculators take numbers from the request)" },
@@ -269,6 +265,17 @@ export function checkAuthorityShape(read: (key: string) => string | null): strin
   if (preTrade && !/export function tradingDayStart\(/.test(preTrade)) {
     out.push("preTrade.ts lost tradingDayStart() (the governor's trading day, owner decision 9)");
   }
+  // Owner decision 8: status views show the limit in force. The daily-loss
+  // cap in money is the governor's dailyLossCapAmount, not a view's own formula.
+  if (preTrade && !/export function dailyLossCapAmount\(/.test(preTrade)) {
+    out.push("preTrade.ts lost dailyLossCapAmount() (the enforced daily-loss cap in money, owner decision 8)");
+  }
+  for (const f of ["routes/portfolioRisk.ts", "lib/readiness/traderReadiness.ts", "lib/alerts/ruleEngine.ts"]) {
+    const src = read(f);
+    if (src && !/dailyLossCapAmount\(/.test(src)) out.push(`${f}: the daily-loss cap shown must be the governor's dailyLossCapAmount(effective limits, equity) (owner decision 8)`);
+  }
+  const shell = read("routes/meAccountShell.ts");
+  if (shell && !/effectiveLimitViews\(/.test(shell)) out.push("routes/meAccountShell.ts: the risk view must show the limits in force (effectiveLimitViews) next to the saved preference (owner decision 8)");
   return out;
 }
 

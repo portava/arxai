@@ -93,9 +93,10 @@ export async function buildAaciSnapshot(
   // ── Risk Governor (R + risk gate inputs) ──────────────────────────────────
   try {
     const gov = await evaluateReadiness({ persist: false, userId });
+    const lossCap = gov.metrics.dailyLossLimit;
     const dailyLossHit =
-      gov.metrics.dailyLossLimit > 0
-        ? gov.metrics.dailyPnl <= -Math.abs(gov.metrics.dailyLossLimit)
+      lossCap != null && lossCap > 0
+        ? gov.metrics.dailyPnl <= -Math.abs(lossCap)
         : undefined;
     snapshot.risk = {
       hardPass: gov.hardBlocks.length === 0,

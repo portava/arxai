@@ -94,7 +94,7 @@ export async function loadEffectiveLimits(
 const files: Record<string, string> = {
   [AUTHORITY]: goodAuth,
   "lib/riskGovernor/enforce.ts": `import { loadEffectiveLimits } from "./limitSettings.js"; const limits = await loadEffectiveLimits(intent.userId);`,
-  "lib/riskGovernor/preTrade.ts": `export function resolveEffectiveLimits(rows) {} checkRewardRiskFloor(D.minRewardRiskRatio, s, r, l, t); export function tradingDayStart(now) {}`,
+  "lib/riskGovernor/preTrade.ts": `export function resolveEffectiveLimits(rows) {} checkRewardRiskFloor(D.minRewardRiskRatio, s, r, l, t); export function tradingDayStart(now) {} export function dailyLossCapAmount(L, equity) {}`,
   "lib/tradeAction/guards.ts": `const MAX_LOT_HARD_CAP = PLATFORM_RISK_CEILINGS.maxLotSize;`,
 };
 n++; assert.deepEqual(checkAuthorityShape((k) => files[k] ?? null), []);
@@ -105,19 +105,31 @@ n++; assert.ok(checkAuthorityShape(() => null).length === 1, "missing reader →
 // Owner decision 10: one R:R floor calculation, the floor in force.
 const rrFiles: Record<string, string> = {
   ...files,
-  "lib/riskGovernor/preTrade.ts": `export function resolveEffectiveLimits(rows) {} const rr = checkRewardRiskFloor(D.minRewardRiskRatio, side, ref, sl, tp); export function tradingDayStart(now) {}`,
+  "lib/riskGovernor/preTrade.ts": `export function resolveEffectiveLimits(rows) {} const rr = checkRewardRiskFloor(D.minRewardRiskRatio, side, ref, sl, tp); export function tradingDayStart(now) {} export function dailyLossCapAmount(L, equity) {}`,
   "lib/tradeAction/riskGovernorEnforcement.ts": `const rr = checkRewardRiskFloor(input.minRiskRewardRatio ?? null, side, entry, sl, tp);`,
   "routes/pendingOrderDraft.ts": `minRr = (await loadEffectiveLimits(userId)).discipline.minRewardRiskRatio;`,
 };
 n++; assert.deepEqual(checkAuthorityShape((k) => rrFiles[k] ?? null), []);
 n++; assert.equal(checkAuthorityShape((k) => ({ ...rrFiles, "lib/tradeAction/riskGovernorEnforcement.ts": "if (v.riskReward < input.minRiskRewardRatio) refuse();" })[k] ?? null).length, 1, "own R:R formula in the ticket check → fails");
 n++; assert.equal(checkAuthorityShape((k) => ({ ...rrFiles, "routes/pendingOrderDraft.ts": "const v = (s as any).minRiskRewardRatio;" })[k] ?? null).length, 1, "draft not reading the floor in force → fails");
-n++; assert.equal(checkAuthorityShape((k) => ({ ...rrFiles, "lib/riskGovernor/preTrade.ts": "export function resolveEffectiveLimits(rows) {} if (rr < D.minRewardRiskRatio) soft(); export function tradingDayStart(now) {}" })[k] ?? null).length, 1, "rule 13 with its own formula → fails");
+n++; assert.equal(checkAuthorityShape((k) => ({ ...rrFiles, "lib/riskGovernor/preTrade.ts": "export function resolveEffectiveLimits(rows) {} if (rr < D.minRewardRiskRatio) soft(); export function tradingDayStart(now) {} export function dailyLossCapAmount(L, equity) {}" })[k] ?? null).length, 1, "rule 13 with its own formula → fails");
 // Owner decision 9: the rolling-24h count is the named operational rate cap.
 const goodGuard = `{ name: "operational_rate_cap", test: async () => count >= rateCap ? operationalRateCapRefusal(rateCap) : null } function operationalRateCapRefusal(c) { return \`OPERATIONAL_RATE_CAP_REACHED:\${c}\`; }`;
 n++; assert.deepEqual(checkAuthorityShape((k) => ({ ...rrFiles, "lib/adminTrading/orderGuard.ts": goodGuard })[k] ?? null), []);
 n++; assert.equal(checkAuthorityShape((k) => ({ ...rrFiles, "lib/adminTrading/orderGuard.ts": "if (count >= lim.maxTradesPerDay) return `MAX_TRADES_PER_DAY_REACHED:${n}`;" })[k] ?? null).length, 1, "rolling count named trades per day → fails");
 n++; assert.equal(checkAuthorityShape((k) => ({ ...rrFiles, "lib/adminTrading/orderGuard.ts": goodGuard + " // TRADES_PER_DAY" })[k] ?? null).length, 1, "any TRADES_PER_DAY wording in the guard → fails");
-n++; assert.equal(checkAuthorityShape((k) => ({ ...rrFiles, "lib/riskGovernor/preTrade.ts": "export function resolveEffectiveLimits(rows) {} checkRewardRiskFloor(D.minRewardRiskRatio, s, r, l, t);" })[k] ?? null).length, 1, "lost the governor's trading day → fails");
+n++; assert.equal(checkAuthorityShape((k) => ({ ...rrFiles, "lib/riskGovernor/preTrade.ts": "export function resolveEffectiveLimits(rows) {} checkRewardRiskFloor(D.minRewardRiskRatio, s, r, l, t); export function dailyLossCapAmount(L, equity) {}" })[k] ?? null).length, 1, "lost the governor's trading day → fails");
+// Owner decision 8: status views show the limit in force.
+const viewFiles: Record<string, string> = {
+  ...rrFiles,
+  "routes/portfolioRisk.ts": "dailyLossCapAmount: dailyLossCapAmount(L, equity),",
+  "lib/readiness/traderReadiness.ts": "dailyLossLimit = dailyLossCapAmount(L, equity);",
+  "lib/alerts/ruleEngine.ts": "const lossLimit = dailyLossCapAmount(L, equity);",
+  "routes/meAccountShell.ts": "const { limits: L, views } = effectiveLimitViews(storedLimits);",
+};
+n++; assert.deepEqual(checkAuthorityShape((k) => viewFiles[k] ?? null), []);
+n++; assert.equal(checkAuthorityShape((k) => ({ ...viewFiles, "lib/readiness/traderReadiness.ts": "dailyLossLimit = Math.max(10, Math.round(pct * 50));" })[k] ?? null).length, 1, "readiness with its own daily-loss formula → fails");
+n++; assert.equal(checkAuthorityShape((k) => ({ ...viewFiles, "routes/meAccountShell.ts": "const maxLotSize = mla?.maxLot ?? rs?.maxPositionSize;" })[k] ?? null).length, 1, "account shell without the limits in force → fails");
+n++; assert.equal(checkAuthorityShape((k) => ({ ...viewFiles, "lib/riskGovernor/preTrade.ts": rrFiles["lib/riskGovernor/preTrade.ts"]!.replace("export function dailyLossCapAmount(L, equity) {}", "") })[k] ?? null).length, 1, "lost the governor's daily-loss cap → fails");
 
 console.log(`check-single-risk-limit-source.test: ${n} assertions passed`);

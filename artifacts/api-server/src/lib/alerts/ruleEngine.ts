@@ -28,7 +28,8 @@ import {
 import { and, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { createAlert } from "./alertManager.js";
 import { readBrokerHealthState } from "../brokerHub/brokerHealthState.js";
-import { readTraderRiskSettingsMany } from "../riskGovernor/limitSettings.js";
+import { loadEffectiveLimitsMany } from "../riskGovernor/limitSettings.js";
+import { dailyLossCapAmount } from "../riskGovernor/preTrade.js";
 
 export interface RuleResult {
   evaluated: number;
@@ -243,10 +244,12 @@ async function weeklyReviewReadyRule() {
 }
 
 async function nearDailyLossLimitRule() {
-  // Per trader: today's performance_daily row against the trader's own
-  // daily-loss percent (user_risk_settings); alert at >= 80%. It used to also
-  // take the first risk_settings row as a "platform" figure, which was
-  // whichever trader's row came back first.
+  // Per trader: today's performance_daily row against the daily-loss cap the
+  // Risk Governor enforces for that trader (owner decision 8:
+  // loadEffectiveLimits, so the operator's USD cap and the trader's off
+  // switch count); alert at >= 80%. It used to also take the first
+  // risk_settings row as a "platform" figure, which was whichever trader's
+  // row came back first.
 
   const today = new Date();
   const dayKey = today.toISOString().slice(0, 10);
@@ -257,20 +260,19 @@ async function nearDailyLossLimitRule() {
   if (losing.length === 0) return { fired: false };
 
   const userIds = [...new Set(losing.map((d) => d.userId!))];
-  const own = await readTraderRiskSettingsMany(userIds);
-  const ownPct = new Map(own.map((r) => [r.userId, r.maxDailyLossPercent]));
+  const limits = await loadEffectiveLimitsMany(userIds);
 
   let any = false;
   for (const day of losing) {
-    const pcts = [ownPct.get(day.userId!)].filter((p): p is number => typeof p === "number" && p > 0);
-    if (pcts.length === 0) continue;
-    // Equity baseline for the max-loss budget. We use the recorded endBalance
-    // as the basis; we never fabricate a placeholder capital figure. Without a
-    // real end-balance baseline we cannot compute a trustworthy budget, so we
-    // do not fire a budget-based alert rather than triggering off fake capital.
+    const L = limits.get(day.userId!);
+    if (!L) continue;
+    // Equity baseline for a percent cap. We use the recorded endBalance as
+    // the basis; we never fabricate a placeholder capital figure. Without a
+    // real end-balance baseline only an amount cap can be checked; with
+    // neither there is no trustworthy budget and no alert fires.
     const equity = day.endBalance && day.endBalance > 0 ? day.endBalance : null;
-    if (equity == null) continue;
-    const lossLimit = (Math.min(...pcts) / 100) * equity;
+    const lossLimit = dailyLossCapAmount(L, equity);
+    if (lossLimit == null) continue;
     const lossSoFar = Math.abs(day.pnl!);
     if (lossSoFar < 0.8 * lossLimit) continue;
     const out = await createAlert({

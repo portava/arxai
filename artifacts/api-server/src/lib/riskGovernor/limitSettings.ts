@@ -57,3 +57,12 @@ export async function loadStoredLimitRows(userId: number): Promise<StoredLimitRo
 export async function loadEffectiveLimits(userId: number): Promise<EffectiveLimits> {
   return resolveEffectiveLimits(await loadStoredLimitRows(userId));
 }
+
+/** The limits in force for several traders (two batched reads), keyed by user id. */
+export async function loadEffectiveLimitsMany(userIds: readonly number[]): Promise<Map<number, EffectiveLimits>> {
+  const ids = [...new Set(userIds)];
+  const [own, op] = await Promise.all([readTraderRiskSettingsMany(ids), readOperatorRiskLimitsMany(ids)]);
+  const ownBy = new Map(own.map((r) => [r.userId, r]));
+  const opBy = new Map(op.map((r) => [r.userId, r]));
+  return new Map(ids.map((id) => [id, resolveEffectiveLimits({ userSettings: ownBy.get(id) ?? null, adminLimits: opBy.get(id) ?? null })]));
+}

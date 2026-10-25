@@ -116,6 +116,7 @@
     "test:open-position-view": "node --import tsx --test --test-force-exit src/lib/positions/__qa__/openPositions.test.ts",
     "test:risk-count-basis": "node --import tsx --test --test-force-exit src/lib/positions/__qa__/riskCountBasis.test.ts",
     "test:risk-governor-rr-daily": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/rewardRiskAndDailyLimits.test.ts",
+    "test:risk-governor-effective-views": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/effectiveLimitViews.test.ts",
     "test:position-guardian-manage": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/manage.test.ts",
     "test:trade-engine-pipeline": "node --import tsx --test --test-force-exit src/lib/tradeEngine/__qa__/pipeline.test.ts",
     "test:trade-engine-staged": "node --import tsx --test --test-force-exit src/lib/tradeEngine/__qa__/stagedContract.test.ts",

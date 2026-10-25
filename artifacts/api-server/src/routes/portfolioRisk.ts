@@ -38,7 +38,8 @@ import {
   type OpenPositionInput,
 } from "@workspace/domain/portfolio-risk";
 import { createAlert } from "../lib/alerts/alertManager.js";
-import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
+import { loadEffectiveLimits } from "../lib/riskGovernor/limitSettings.js";
+import { resolveEffectiveLimits, dailyLossCapAmount } from "../lib/riskGovernor/preTrade.js";
 
 
 const router = Router();
@@ -54,15 +55,17 @@ async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
 const POSITION_TERMINAL = new Set(["CLOSED", "CANCELED", "REJECTED"]);
 
 // Everything here is the caller's own book: their positions, their broker
-// account and their Risk Governor limits (user_risk_settings). An operator's
-// book also includes the shared MT5 connection's ownerless rows.
+// account and the limits the Risk Governor enforces for them (owner decision 8:
+// loadEffectiveLimits, strictest of trader, operator and platform; no display
+// defaults of its own). An operator's book also includes the shared MT5
+// connection's ownerless rows.
 type PortfolioOwner = Parameters<typeof ownerScope>[1];
 async function loadInputs(authUser: PortfolioOwner) {
-  const [positions, settingsRow, mt5Rows] = await Promise.all([
+  const [positions, L, mt5Rows] = await Promise.all([
     demoPositionLedger.read({ where: ownerScope(demoPositionColumns.userId, authUser) }),
     authUser
-      ? readTraderRiskSettings(authUser.id)
-      : Promise.resolve(null),
+      ? loadEffectiveLimits(authUser.id)
+      : Promise.resolve(resolveEffectiveLimits({})),
     listScopedConnections((col) => ownerScope(col, authUser), { order: "updated", limit: 1 }),
   ]);
 
@@ -86,15 +89,28 @@ async function loadInputs(authUser: PortfolioOwner) {
     };
   });
 
-  const settings = settingsRow;
   const mt5 = mt5Rows[0];
+  const accountBalance = mt5?.accountBalance ?? 0;
+  const accountEquity = mt5?.accountEquity ?? 0;
   return {
     positionsInput,
-    accountBalance: mt5?.accountBalance ?? 0,
-    accountEquity:  mt5?.accountEquity  ?? 0,
-    maxOpenTrades:    settings?.maxOpenTrades           ?? 2,
-    maxDailyLossPct:  settings?.maxDailyLossPercent     ?? 2,
-    riskPerTradePct:  settings?.maxRiskPerTradePercent  ?? 0.5,
+    accountBalance,
+    accountEquity,
+    // Enforced values; a limit that is off is passed as "no limit".
+    maxOpenTrades:    L.discipline.maxOpenTrades ?? Number.POSITIVE_INFINITY,
+    maxDailyLossPct:  L.maxDailyLossPercent ?? Number.POSITIVE_INFINITY,
+    riskPerTradePct:  L.maxRiskPerTradePercent,
+    maxOpenRiskPct:   L.maxPortfolioRiskPercent,
+    // The governor's daily-loss cap in money (rule 7 measures percent against equity).
+    dailyLossCapAmount: dailyLossCapAmount(L, accountEquity > 0 ? accountEquity : accountBalance),
+    limitsSnapshot: {
+      maxOpenTrades: L.discipline.maxOpenTrades,
+      maxDailyLossPct: L.maxDailyLossPercent,
+      maxDailyLossAmount: L.maxDailyLossAmount,
+      riskPerTradePct: L.maxRiskPerTradePercent,
+      maxOpenRiskPct: L.maxPortfolioRiskPercent,
+      sources: L.sources,
+    },
   };
 }
 
@@ -110,6 +126,8 @@ router.post("/portfolio-risk/snapshot", requireUser, async (req, res): Promise<v
       maxOpenTrades: inputs.maxOpenTrades,
       maxDailyLossPct: inputs.maxDailyLossPct,
       riskPerTradePct: inputs.riskPerTradePct,
+      maxOpenRiskPct: inputs.maxOpenRiskPct,
+      dailyLossCapAmount: inputs.dailyLossCapAmount,
     });
 
     const inserted = await db.insert(portfolioRiskSnapshotsTable).values({
@@ -126,7 +144,7 @@ router.post("/portfolio-risk/snapshot", requireUser, async (req, res): Promise<v
       reasons: result.reasons,
       warnings: result.warnings,
       blockers: result.blockers,
-      inputsSnapshot: { positions: inputs.positionsInput, settings: { maxOpenTrades: inputs.maxOpenTrades, maxDailyLossPct: inputs.maxDailyLossPct, riskPerTradePct: inputs.riskPerTradePct } },
+      inputsSnapshot: { positions: inputs.positionsInput, settings: inputs.limitsSnapshot },
     }).returning();
 
     if (result.portfolioRiskLevel === "CRITICAL" || result.portfolioRiskLevel === "HIGH") {
@@ -260,6 +278,8 @@ export async function getLatestPortfolioRiskOrCompute(authUser: PortfolioOwner) 
     maxOpenTrades: inputs.maxOpenTrades,
     maxDailyLossPct: inputs.maxDailyLossPct,
     riskPerTradePct: inputs.riskPerTradePct,
+    maxOpenRiskPct: inputs.maxOpenRiskPct,
+    dailyLossCapAmount: inputs.dailyLossCapAmount,
   });
   return result;
 }

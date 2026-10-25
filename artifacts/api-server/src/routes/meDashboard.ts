@@ -14,7 +14,8 @@ import { requireUser } from "../lib/auth/middleware.js";
 import { aggregateHistory, DEFAULT_USER_RISK_SETTINGS } from "../lib/riskGovernor/journalActivity.js";
 import { getOrCreateRiskSettings } from "./meRiskGovernor.js";
 import { upsertAlertOnce, dismissAlertsByType } from "./meAlerts.js";
-import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
+import { loadStoredLimitRows, type TraderRiskSettingsRow } from "../lib/riskGovernor/limitSettings.js";
+import { effectiveLimitViews } from "../lib/riskGovernor/limitLayers.js";
 
 const router = Router();
 
@@ -39,7 +40,7 @@ function strip<T extends Record<string, unknown>>(row: T) {
 }
 
 async function loadAll(userId: number) {
-  const [conns, sessions, trades, journal, reviews, playbooks, checks, riskSettings, riskEvents, alerts] = await Promise.all([
+  const [conns, sessions, trades, journal, reviews, playbooks, checks, limitRows, riskEvents, alerts] = await Promise.all([
     listUserConnections(userId, { order: "oldest" }),
     db.select().from(tradingSessionsTable).where(eq(tradingSessionsTable.userId, userId)).orderBy(desc(tradingSessionsTable.createdAt)),
     db.select().from(paperTradesTable).where(eq(paperTradesTable.userId, userId)),
@@ -47,11 +48,11 @@ async function loadAll(userId: number) {
     db.select().from(aiTradeReviewsTable).where(eq(aiTradeReviewsTable.userId, userId)).orderBy(desc(aiTradeReviewsTable.createdAt)).limit(50),
     db.select().from(userPlaybooksTable).where(eq(userPlaybooksTable.userId, userId)),
     db.select().from(preTradeChecksTable).where(eq(preTradeChecksTable.userId, userId)).orderBy(desc(preTradeChecksTable.createdAt)).limit(50),
-    readTraderRiskSettings(userId),
+    loadStoredLimitRows(userId),
     db.select().from(userRiskEventsTable).where(eq(userRiskEventsTable.userId, userId)).orderBy(desc(userRiskEventsTable.createdAt)).limit(50),
     db.select().from(userAlertsTable).where(and(eq(userAlertsTable.userId, userId), eq(userAlertsTable.status, "unread"))).orderBy(desc(userAlertsTable.createdAt)).limit(50),
   ]);
-  return { conns, sessions, trades, journal, reviews, playbooks, checks, riskSettings, riskEvents, alerts };
+  return { conns, sessions, trades, journal, reviews, playbooks, checks, riskSettings: limitRows.userSettings as TraderRiskSettingsRow | null, limitRows, riskEvents, alerts };
 }
 
 type Bundle = Awaited<ReturnType<typeof loadAll>>;
@@ -72,7 +73,10 @@ function summarize(b: Bundle) {
   const heartbeat = activeConn ? classifyHeartbeat(activeConn.lastHeartbeat) : "missing";
   const activeSession = b.sessions.find((s) => s.status === "active") ?? null;
   const lastBlocked = b.riskEvents.find((e) => e.decision === "block") ?? null;
-  return { settings, history, closed, closedToday, wins, losses, avgWin, avgLoss, winRateToday, activeConn, heartbeat, activeSession, lastBlocked };
+  // Owner decision 8: the caps shown are the ones the Risk Governor enforces;
+  // `settings` stays the trader's saved row (the preference).
+  const { limits, views: limitViews } = effectiveLimitViews(b.limitRows);
+  return { settings, limits, limitViews, history, closed, closedToday, wins, losses, avgWin, avgLoss, winRateToday, activeConn, heartbeat, activeSession, lastBlocked };
 }
 
 function tradeQualityScore(b: Bundle, s: ReturnType<typeof summarize>): { score: number | null; label: string; reasons: string[]; nextImprovement: string; sampleSize: number } {
@@ -123,10 +127,11 @@ function tradeQualityScore(b: Bundle, s: ReturnType<typeof summarize>): { score:
 
 function buildIntelligence(b: Bundle) {
   const s = summarize(b);
-  const cooldownActive = !!(s.history.lastClosedWasLoss && s.history.lastClosedAt &&
-    (Date.now() - s.history.lastClosedAt.getTime()) / 60_000 < s.settings.cooldownAfterLossMinutes);
-  const cooldownMin = cooldownActive && s.history.lastClosedAt
-    ? Math.max(0, Math.ceil(s.settings.cooldownAfterLossMinutes - (Date.now() - s.history.lastClosedAt.getTime()) / 60_000)) : 0;
+  const cooldownLimit = s.limits.discipline.cooldownAfterLossMinutes;
+  const cooldownActive = !!(cooldownLimit != null && s.history.lastClosedWasLoss && s.history.lastClosedAt &&
+    (Date.now() - s.history.lastClosedAt.getTime()) / 60_000 < cooldownLimit);
+  const cooldownMin = cooldownActive && cooldownLimit != null && s.history.lastClosedAt
+    ? Math.max(0, Math.ceil(cooldownLimit - (Date.now() - s.history.lastClosedAt.getTime()) / 60_000)) : 0;
   const checksTotal = b.checks.length;
   const checksPassed = b.checks.filter((c) => c.decision === "pass").length;
   const tradesWithoutPlaybook = s.closed.filter((t) => !b.playbooks.some((p) => p.preferredSymbols?.includes(t.symbol))).length;
@@ -158,6 +163,11 @@ function buildIntelligence(b: Bundle) {
       settings: s.settings ? { liveLocked: true, readOnlyMode: true, allowOrderExecution: false,
         maxDailyLossPercent: s.settings.maxDailyLossPercent, maxTradesPerDay: s.settings.maxTradesPerDay,
         maxConsecutiveLosses: s.settings.maxConsecutiveLosses, cooldownAfterLossMinutes: s.settings.cooldownAfterLossMinutes } : null,
+      // Enforced by the Risk Governor, with the saved preference and the override reason.
+      effective: {
+        maxDailyLossPercent: s.limitViews["maxDailyLossPercent"]!, maxTradesPerDay: s.limitViews["maxTradesPerDay"]!,
+        maxConsecutiveLosses: s.limitViews["maxConsecutiveLosses"]!, cooldownAfterLossMinutes: s.limitViews["cooldownAfterLossMinutes"]!,
+      },
       todayPnl: s.history.todayPnl, tradesToday: s.history.tradesToday,
       consecutiveLosses: s.history.consecutiveLosses, openTrades: s.history.openTradesCount,
       cooldown: { active: cooldownActive, minutesRemaining: cooldownMin },
@@ -193,7 +203,7 @@ function buildCards(intel: ReturnType<typeof buildIntelligence>) {
   const sessionStatus = !intel.activeSession ? "no_session" : intel.activeSession.status;
   const riskStatus = intel.risk.cooldown.active ? "cooldown"
     : intel.risk.lastBlocked && (Date.now() - new Date(intel.risk.lastBlocked.createdAt).getTime()) / 60_000 < 30 ? "blocked"
-    : intel.risk.consecutiveLosses >= (intel.risk.settings?.maxConsecutiveLosses ?? 99) - 1 ? "warning" : "safe";
+    : intel.risk.consecutiveLosses >= (intel.risk.effective.maxConsecutiveLosses.effective ?? 99) - 1 ? "warning" : "safe";
   return {
     mt5Bridge: {
       status: mt5Status, lastHeartbeat: intel.mt5?.lastHeartbeat ?? null,
@@ -212,9 +222,9 @@ function buildCards(intel: ReturnType<typeof buildIntelligence>) {
     risk: {
       status: riskStatus,
       reason: intel.risk.lastBlocked?.reason ?? null,
-      tradesToday: intel.risk.tradesToday, maxTradesPerDay: intel.risk.settings?.maxTradesPerDay ?? null,
+      tradesToday: intel.risk.tradesToday, maxTradesPerDay: intel.risk.effective.maxTradesPerDay.effective,
       cooldownMinutesRemaining: intel.risk.cooldown.minutesRemaining,
-      consecutiveLosses: intel.risk.consecutiveLosses, maxConsecutiveLosses: intel.risk.settings?.maxConsecutiveLosses ?? null,
+      consecutiveLosses: intel.risk.consecutiveLosses, maxConsecutiveLosses: intel.risk.effective.maxConsecutiveLosses.effective,
       isEmpty: false,
     },
     paperPerformance: {
@@ -317,20 +327,22 @@ router.get("/me/session-health", requireUser, async (req, res) => {
   const losses = closed.filter((t) => (t.pnl ?? 0) < 0);
   const journalLinks = bundle.journal.filter((j) => j.tradeId && sessTrades.some((t) => t.id === j.tradeId)).length;
   const journalCompletion = closed.length ? Number(((journalLinks / closed.length) * 100).toFixed(1)) : 0;
-  const cooldownActive = !!(s.history.lastClosedWasLoss && s.history.lastClosedAt &&
-    (Date.now() - s.history.lastClosedAt.getTime()) / 60_000 < s.settings.cooldownAfterLossMinutes);
+  const D = s.limits.discipline;
+  const cooldownActive = !!(D.cooldownAfterLossMinutes != null && s.history.lastClosedWasLoss && s.history.lastClosedAt &&
+    (Date.now() - s.history.lastClosedAt.getTime()) / 60_000 < D.cooldownAfterLossMinutes);
   let recommendation = "Your session is healthy. Keep following your playbook.";
   if (cooldownActive) recommendation = "You are in a cooldown. Wait before opening another trade.";
-  else if (s.history.tradesToday >= s.settings.maxTradesPerDay - 1) recommendation = "You are approaching your max trades per day.";
+  else if (D.maxTradesPerDay != null && s.history.tradesToday >= D.maxTradesPerDay - 1) recommendation = "You are approaching your max trades per day.";
   else if (journalCompletion < 50 && closed.length >= 2) recommendation = "Journal your recent trades to learn from them.";
   res.json({
     activeSession: { id: sess.id, title: sess.title, status: sess.status, mode: sess.mode,
       durationMinutes: Math.round((Date.now() - sess.createdAt.getTime()) / 60_000),
       tradesCount: sessTrades.length, openTrades: open.length, closedTrades: closed.length,
       pnl: sess.pnl ?? 0, recentLosses: losses.slice(-3).length },
-    riskUsage: { tradesToday: s.history.tradesToday, maxTradesPerDay: s.settings.maxTradesPerDay,
-      consecutiveLosses: s.history.consecutiveLosses, maxConsecutiveLosses: s.settings.maxConsecutiveLosses },
-    cooldown: { active: cooldownActive, minutesRemaining: cooldownActive && s.history.lastClosedAt ? Math.max(0, Math.ceil(s.settings.cooldownAfterLossMinutes - (Date.now() - s.history.lastClosedAt.getTime()) / 60_000)) : 0 },
+    // Enforced caps (null = no limit applies).
+    riskUsage: { tradesToday: s.history.tradesToday, maxTradesPerDay: D.maxTradesPerDay,
+      consecutiveLosses: s.history.consecutiveLosses, maxConsecutiveLosses: D.maxConsecutiveLosses },
+    cooldown: { active: cooldownActive, minutesRemaining: cooldownActive && D.cooldownAfterLossMinutes != null && s.history.lastClosedAt ? Math.max(0, Math.ceil(D.cooldownAfterLossMinutes - (Date.now() - s.history.lastClosedAt.getTime()) / 60_000)) : 0 },
     journalCompletion,
     recommendation, isEmpty: false,
     ...SAFETY_ENVELOPE,

@@ -31,7 +31,8 @@ import { loadPlatformSettings } from "../lib/safety/platformSwitches.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getEffectiveTradingGovernance } from "../lib/governance/effectiveGovernance.js";
 import { buildInvestorLiveBalanceSnapshot } from "../lib/live/investorLiveBalance.js";
-import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
+import { loadStoredLimitRows } from "../lib/riskGovernor/limitSettings.js";
+import { effectiveLimitViews, type EffectiveLimitView } from "../lib/riskGovernor/limitLayers.js";
 
 const router = Router();
 
@@ -94,6 +95,19 @@ export type AccountShellResponse = {
     maxExposurePerSymbolLots: number | null;
     allowedSymbols: string[] | null; // null = all symbols allowed
     requireStopLoss: boolean;
+    // Owner decision 8 (additive). The numbers above are the limits in force:
+    // the stricter of this account lane's cap and what the Risk Governor
+    // enforces on every order. `preference` is the trader's saved value
+    // (what the settings pages edit); `limits` explains each Risk Governor
+    // limit and why an override applies.
+    preference: {
+      maxLotSize: number | null;
+      maxOpenTrades: number | null;
+      maxDailyLossAmount: number | null;
+      maxRiskPerTradePercent: number | null;
+      requireStopLoss: boolean | null;
+    };
+    limits: Record<string, EffectiveLimitView>;
   };
   // For UI banners. Never leaks other users' data.
   notes: {
@@ -264,8 +278,11 @@ export async function computeAccountShell(
       .where(eq(userMasterLiveAccessTable.userId, userId))
       .limit(1);
 
-    // 4) Advisory risk settings.
-    const rs = await readTraderRiskSettings(userId);
+    // 4) The trader's saved limits and the limits the Risk Governor enforces
+    //    (owner decision 8: status views show the enforced value).
+    const storedLimits = await loadStoredLimitRows(userId);
+    const rs = storedLimits.userSettings;
+    const { limits: L, views: limitViews } = effectiveLimitViews(storedLimits);
 
     // 5) Performance — closed P/L today / week / total + counts.
     const today = new Date().toISOString().slice(0, 10);
@@ -345,22 +362,12 @@ export async function computeAccountShell(
               ? "RESTRICTED"
               : "ACTIVE";
 
-    // 8) Risk view — merge hard limits (master live access) with advisory.
-    const maxLotSize = mla?.maxLot != null
-      ? Number(mla.maxLot)
-      : rs?.maxPositionSize != null
-        ? Number(rs.maxPositionSize)
-        : null;
-    const maxOpenTrades = mla?.maxOpenPositions != null
-      ? Number(mla.maxOpenPositions)
-      : rs?.maxOpenTrades != null
-        ? Number(rs.maxOpenTrades)
-        : null;
-    const maxDailyLossAmount = mla?.dailyLossLimitUsd != null
-      ? Number(mla.dailyLossLimitUsd)
-      : rs?.maxDailyLossAmount != null
-        ? Number(rs.maxDailyLossAmount)
-        : null;
+    // 8) Risk view — this account lane's hard limits (master live access).
+    //    The trader's own saved values no longer stand in here: the Risk
+    //    Governor's enforced value is merged in below (strictest wins).
+    const maxLotSize = mla?.maxLot != null ? Number(mla.maxLot) : null;
+    const maxOpenTrades = mla?.maxOpenPositions != null ? Number(mla.maxOpenPositions) : null;
+    const maxDailyLossAmount = mla?.dailyLossLimitUsd != null ? Number(mla.dailyLossLimitUsd) : null;
     const maxExposurePerSymbolLots = mla?.maxExposurePerSymbolLots != null
       ? Number(mla.maxExposurePerSymbolLots)
       : null;
@@ -382,13 +389,20 @@ export async function computeAccountShell(
     // must combine the two here or a control-OFF owner/admin would wrongly read
     // governance values instead of the protective fallback.
     const govActive = gov.isPrivileged && gov.ownerLiveControlMode;
-    const effMaxLotSize = govActive ? gov.maxLotPerTrade : maxLotSize;
-    const effMaxOpenTrades = govActive ? gov.maxOpenPositions : maxOpenTrades;
-    const effMaxDailyLossAmount = govActive ? gov.maxDailyLossUsd : maxDailyLossAmount;
+    // Owner decision 8: what is shown is what applies. The Risk Governor
+    // enforces L on every order, whatever the lane, so each number is the
+    // stricter of the lane's cap and L (null = no limit from either).
+    const strictest = (...vs: Array<number | null | undefined>): number | null => {
+      const ok = vs.filter((v): v is number => v != null && Number.isFinite(v) && v > 0);
+      return ok.length ? Math.min(...ok) : null;
+    };
+    const effMaxLotSize = strictest(govActive ? gov.maxLotPerTrade : maxLotSize, L.maxLotSize);
+    const effMaxOpenTrades = strictest(govActive ? gov.maxOpenPositions : maxOpenTrades, L.discipline.maxOpenTrades);
+    const effMaxDailyLossAmount = strictest(govActive ? gov.maxDailyLossUsd : maxDailyLossAmount, L.maxDailyLossAmount);
     const effAllowedSymbols = govActive ? gov.allowedSymbols : allowedSymbols;
-    const effRequireStopLoss = govActive
+    const effRequireStopLoss = (govActive
       ? gov.requireStopLoss
-      : (mla?.requireStopLoss ?? rs?.requireStopLoss ?? true);
+      : (mla?.requireStopLoss ?? false)) || L.requireStopLoss;
 
     const dailyLossRemaining = effMaxDailyLossAmount != null
       ? Math.max(0, effMaxDailyLossAmount - Math.max(0, -closedPnlToday))
@@ -398,8 +412,8 @@ export async function computeAccountShell(
     // cannot compute a dollar risk amount, so report it as unknown (null) —
     // rendered as "—" — rather than deriving it from a placeholder balance.
     const baseBalance = allocatedBalance > 0 ? allocatedBalance : null;
-    const availableRiskAmount = (rs?.maxRiskPerTradePercent != null && baseBalance != null)
-      ? (Number(rs.maxRiskPerTradePercent) / 100) * baseBalance
+    const availableRiskAmount = baseBalance != null
+      ? strictest((L.maxRiskPerTradePercent / 100) * baseBalance, L.maxRiskPerTradeAmount)
       : null;
 
     const perUserTradingMode = (() => {
@@ -475,6 +489,14 @@ export async function computeAccountShell(
         maxExposurePerSymbolLots,
         allowedSymbols: effAllowedSymbols,
         requireStopLoss: effRequireStopLoss,
+        preference: {
+          maxLotSize: rs?.maxPositionSize != null ? Number(rs.maxPositionSize) : null,
+          maxOpenTrades: rs?.maxOpenTrades != null ? Number(rs.maxOpenTrades) : null,
+          maxDailyLossAmount: rs?.maxDailyLossAmount != null ? Number(rs.maxDailyLossAmount) : null,
+          maxRiskPerTradePercent: rs?.maxRiskPerTradePercent != null ? Number(rs.maxRiskPerTradePercent) : null,
+          requireStopLoss: rs?.requireStopLoss ?? null,
+        },
+        limits: limitViews,
       },
       notes: {
         needsReviewItems: 0, // surfaced to admins only; users see 0
