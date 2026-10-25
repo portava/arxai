@@ -267,6 +267,8 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:snapshot-ownership" },
   { pkg: "@workspace/api-server", script: "test:broker-hub-mt5-state" },
   { pkg: "@workspace/api-server", script: "test:broker-hub-state-sources" },
+  // Owner decision 16: account snapshot reads with tenant/account isolation.
+  { pkg: "@workspace/api-server", script: "test:broker-hub-account-snapshot-db" },
   // Imports @workspace/db (reads injected; no rows touched): admin EA-health
   // update preview reads the same gate inputs as GET /mt5/update-check.
   { pkg: "@workspace/api-server", script: "test:ea-update-gate-inputs" },

@@ -31,6 +31,7 @@
 
 import { readOpenPositions } from "../positions/openPositions.js";
 import { listUserConnections } from "../brokerHub/connections.js";
+import { accountFiguresOf, connectionAccountSnapshot } from "../brokerHub/accountSnapshot.js";
 import { db } from "@workspace/db";
 import { userSlotAllocationTable, virtualTradingAccountsTable, sharedTradeAttributionTable } from "@workspace/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -405,10 +406,12 @@ export async function buildInvestorLiveBalanceSnapshot(
         lastSyncedAtMs: r.observedAt ? new Date(r.observedAt).getTime() : null,
       })),
       quotes: undefined,
-      account: {
-        equity: conn?.accountEquity ?? null,
-        balance: conn?.accountBalance ?? null,
-      },
+      // Authoritative per-connection snapshot (owner decision 16): a
+      // never-synced connection reports null, not the column default 0.
+      account: (() => {
+        const f = accountFiguresOf(connectionAccountSnapshot(conn));
+        return { equity: f.equity, balance: f.balance };
+      })(),
       now,
     });
   }

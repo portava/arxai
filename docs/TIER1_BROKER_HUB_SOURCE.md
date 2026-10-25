@@ -415,6 +415,126 @@ Tests: `test:bridge-v2-liveness`
 LIVE + degraded, 90 s STALE + offline), legacy `connected` unchanged, and
 `streamImpliesExecutionReady` false for every input including the best case.
 
+### Round 5: one authoritative account snapshot per MT5 connection (owner decision 16)
+
+Decision recorded: Broker Hub owns one authoritative balance/equity snapshot
+per MT5 connection, with account identity, provenance and observation time.
+Legacy fields may remain as compatibility projections. Platform-account
+balances are never substituted for a trader's account. No source is chosen
+without identity evidence. No columns are dropped. Reconciliation is
+prepared before consumers change.
+
+**The snapshot** (`lib/brokerHub/accountSnapshot.ts`, pure):
+
+| Part | Content |
+|---|---|
+| Figures | balance, equity, margin, free margin, currency |
+| Identity | `connectionId`, owning `userId`, `login` (account number), `server`, `broker` |
+| Provenance | `feed`: `mt5_connection` (authoritative) or `mt5_state` (legacy projection, never authoritative) |
+| Observation time | `observedAt` / `observedAtMs` = the connection's `accountSyncedAt` (when the EA delivered the figures) |
+| Status | `observed`, or `unknown` with a reason: `NO_CONNECTION`, `NOT_OWNER`, `NEVER_SYNCED`, `INVALID_OBSERVATION_TIME`, `NO_LEGACY_ROW`, `PLATFORM_FEED_NOT_A_TRADER_ACCOUNT`, `NO_IDENTITY_EVIDENCE` |
+
+Why `mt5_connection` is the authoritative feed: it is per connection and is
+written by the EA authenticated with that connection's own bridge token.
+`mt5_state` has no connection id, and its lowest-id row is the platform
+(ownerless) feed.
+
+Functions:
+
+- `connectionAccountSnapshot(conn)`: the authoritative snapshot. A connection
+  that has never account-synced is `unknown` (NEVER_SYNCED), never the
+  column default 0. Non-finite figures are reported as null.
+- `legacyStateAccountSnapshot(row)`: the mt5_state row as a compatibility
+  projection (`authoritative: false`, `connectionId: null`).
+- `compareAccountIdentity(a, b)`: identity evidence means the same non-null
+  owner and the same login and server (whitespace removed; server compare is
+  case-insensitive). Anything less returns `platform_feed`,
+  `different_tenant`, `different_account` or `no_evidence`.
+- `reconcileAccountSnapshots(authoritative, legacy)`: the reconciliation diff.
+  It reports `consistent`, `diverged` (with each field's delta; tolerance
+  0.01; currency compared case-insensitively) or `not_comparable`. A platform
+  row, another tenant's row, another account's row, a row with no identity
+  evidence, or an unknown side is `not_comparable`, and its figures are not
+  compared. It never chooses or writes.
+- `selectConnectionAccountSnapshot({ userId, connection, legacy })`: the
+  snapshot to show. The connection must be the user's own (otherwise
+  NOT_OWNER, with no figures or login exposed). The authoritative snapshot
+  when observed. Otherwise the user's own legacy row, only with identity
+  evidence, and labelled `mt5_state` / non-authoritative. Otherwise `unknown`.
+  Never the platform feed and never another tenant.
+- `accountFiguresOf(snapshot)`: the figures a live snapshot builder consumes
+  (all null when unknown).
+
+DB reads (`lib/brokerHub/accountSnapshotReader.ts`) are all user-scoped:
+`readConnectionAccountSnapshot`, `readConnectionAccountReconciliation`,
+`readSelectedConnectionAccountSnapshot`. The connection comes from
+`getUserConnection(userId, id)`. The legacy row comes from
+`readLatestUserMt5State(userId)`, so the platform row and other users' rows
+are never read.
+
+**Consumers moved** to the authoritative snapshot:
+
+| Consumer | Before | After |
+|---|---|---|
+| `brokerHub/mt5ReadOnlyAdapter.ts` `readAccount` | figures when `accountSyncedAt` set | same values via `connectionAccountSnapshot` |
+| `routes/meLive.ts` live account summary (JSON) | figures when `accountSyncedAt` set | same values via `accountFiguresOf(connectionAccountSnapshot(conn))` |
+| `routes/meLive.ts` account stream (SSE) | same rule | same values, same helper |
+| `lib/live/investorLiveBalance.ts` live snapshot | raw `accountEquity` / `accountBalance` (default 0 when never synced) | snapshot figures: **null when never synced** (behaviour change 1 below) |
+
+**Consumers not moved, with reasons.** Each would change a value or needs a
+decision outside decision 16:
+
+| Consumer | Feed today | Why not moved |
+|---|---|---|
+| `lib/safetyCore.ts`, `routes/brokerHealth.ts`, `routes/executionConfirmations.ts`, `routes/demoExecution.ts`, `broker/mt5BridgeProvider.ts` `status()` | platform mt5_state | Install-wide EA health and heartbeat views, not a trader's account. Correct as the platform feed. |
+| `routes/livePositions.ts` | platform mt5_state positions and equity | Syncs the operator (user_id NULL) position rows against the platform feed. Platform figures for platform rows. Correct as is. |
+| `routes/mt5.ts` | platform mt5_state | The EA writer itself. |
+| `lib/paperIntelligence.ts` | platform mt5_state balance for paper sizing | **Flag for owner:** `/intelligence/analyze` sizes paper lots from the platform balance for any caller; the handler does not use the caller's identity. Moving it to the trader's connection needs the route to know the user, and it changes the suggested lot. Not changed here. |
+| `broker/mt5BridgeProvider.ts` `account(owner)` | scoped mt5_state (operators also see the platform row) | Behind the operator `includeLegacy` scope. Moving it to a connection snapshot changes the account `/broker` reports. Needs a decision about which connection a multi-connection user sees. |
+| `lib/tradeHealth/tradeHealthService.ts`, `lib/scalp/scalpManageService.ts`, `routes/mePositionsUnified.ts`, `routes/meDemoPositions.ts`, `routes/tradeManagement.ts` | per-user or scoped mt5_state (positions) | Open-position views (demo position feed), not account figures. Out of scope for the account snapshot. |
+| `routes/meMt5Connections.ts`, `routes/meDashboard.ts`, `routes/adminCockpit.ts`, `lib/reportBuilder.ts` | mt5_connection raw columns | They show the raw stored value, which is 0 for a never-synced connection. Switching to the snapshot changes 0 to null on response contracts. Needs a contract change and dashboard handling. |
+| `routes/adminLiveAccount.ts`, `routes/adminAllocations.ts`, `lib/live/masterBridgePool.ts`, `lib/live/liveCommandPipeline.ts` | mt5_connection (shared LIVE master), `?? 0` | LIVE allocation and over-allocation math. Changing 0 to unknown changes allocation gates. That is the LIVE projection owner's decision. |
+| `lib/fundbook/brokerMirror.ts`, `drawdownEngine.ts`, `fundControls.ts` | mt5_connection, `?? 0` | Fund-book money math, owned by the fund book. It has its own mirror-freshness rule. |
+| `routes/portfolioRisk.ts`, `lib/riskGovernor/journal.ts` | mt5_connection, `?? 0` or `> 0` | Risk inputs. Changing them is a Risk Governor decision, not a Broker Hub one. |
+| `lib/execution/executionPreviewService.ts`, `routes/performance.ts`, `routes/risk.ts`, `missionAgents.ts`, `missionDrafts.ts`, `riskAudit.ts`, `positionSizer.ts`, `paperExecutionService.ts` | vault, mission, fixed or caller-supplied balances | Not an MT5 account feed. |
+
+No schema change was needed: `mt5_connection` already carries identity
+(`account_number`, `server_name`, `broker_name`), the owner and
+`account_synced_at`. No migration. No column is dropped, and `mt5_state`
+stays as the legacy projection.
+
+Behaviour changes (decision 16):
+
+1. `lib/live/investorLiveBalance.ts`: a LIVE_SHARED user whose oldest
+   connection has never account-synced now passes `equity`/`balance` = null
+   (unknown) to the live snapshot instead of the column default 0. The
+   effect: the snapshot's equity-minus-balance P/L reconciliation is skipped
+   (null) instead of computing 0, which could raise a false "P/L under
+   verification" warning when open P/L was non-zero. When the connection has
+   synced, the values are unchanged. Which connection is read (oldest here,
+   freshest-synced in `meLive`) is unchanged and listed under remaining work.
+2. All other moved consumers return identical values.
+
+Tests:
+
+- `test:broker-hub-account-snapshot`
+  (`lib/brokerHub/__qa__/accountSnapshot.test.ts`, root `ci`, 18 tests):
+  snapshot parts, never-synced → unknown (not 0), invalid time,
+  non-finite figures, legacy never authoritative, identity evidence
+  (owner/login/server, case and spacing), reconcile consistent / diverged
+  (delta) / tolerance / currency, not comparable for the platform, another
+  tenant, another account, no evidence or an unknown side (with no figures
+  compared), and selection (NOT_OWNER leaks no figures or login, never the
+  platform feed, no evidence → unknown, legacy only with evidence and
+  labelled).
+- `test:broker-hub-account-snapshot-db`
+  (`lib/brokerHub/__qa__/accountSnapshotReader.test.ts`, `ci:integration`,
+  6 tests, real PostgreSQL): tenant isolation (another user's connection id →
+  unknown with no figures), never-synced → unknown, reconciliation never reads
+  another tenant's or the platform row even when they are newer and carry the
+  same login/server, divergence and different-account on the user's own row,
+  and selection falling back only with evidence.
+
 ### Behaviour changes (round 2)
 
 1. The alert rules `BROKER_HEALTH` (disconnected and feed-delay), the
@@ -524,11 +644,16 @@ DB test: `test:broker-hub-state-sources`
 
 ## Remaining work
 
-1. **One account snapshot per MT5 connection.** `mt5_state` (platform EA feed)
-   and `mt5_connection` still each store balance and equity. Unifying them
-   means changing which value ~13 `mt5_state` consumers show, which is a
-   behaviour change for owner and EA surfaces. It needs an owner decision and
-   is not done here.
+1. **One account snapshot per MT5 connection.** Round 5 (owner decision 16)
+   added the authoritative per-connection snapshot, the reconciliation diff
+   and user-scoped reads, and moved four consumers (see the decision 16
+   section). Still open: the consumers listed there as not moved, each with
+   its reason. The `paperIntelligence` platform-balance sizing is flagged for
+   the owner. The connection a multi-connection user's account figures come
+   from is not unified yet (`investorLiveBalance`: oldest; `meLive`:
+   freshest-synced). Running `readConnectionAccountReconciliation` against
+   production data, to see how often the two feeds diverge, is an owner
+   action and was not run.
 2. ~~`arx_master_bridge_pool` reads~~ done in round 3 (hub reader). The
    writes stay with the LIVE projection owner and the admin pause route, by
    design. Whether the shared-live pause flag should move to the platform
