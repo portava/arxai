@@ -75,7 +75,7 @@ assert.deepEqual(scanFile("lib/safety/platformSwitches.ts", `const r = await db.
 assert.deepEqual(scanFile("lib/safety/tradingHalt.ts", `const a = await db.select({ on: arxLiveArmingTable.killSwitchEngaged }).from(arxLiveArmingTable);`), []);
 
 // Allowlisted files may break only their listed rules.
-assert.deepEqual(scanFile("routes/adminTrading.ts", `await db.update(globalTradingSettingsTable).set({ emergencyKillSwitch: false, killSwitchReason: null });`), [], "a release write stays with its reviewed writer");
+assert.deepEqual(scanFile("routes/adminTrading.ts", `await db.update(globalTradingSettingsTable).set({ accountRoutingMode: "USER_OWNED_MT5" });`), [], "a config write stays with its reviewed writer");
 
 // 10. Engaging the emergency stop goes through the one writer.
 assert.equal(one("routes/adminTrading.ts", `await db.update(globalTradingSettingsTable).set({ emergencyKillSwitch: true });`), 1, "an engage write outside the writer fails, even in a reviewed writer");
@@ -84,7 +84,16 @@ assert.equal(one("routes/adminTrading.ts", `const on = true; await db.update(glo
 assert.equal(one("routes/adminTrading.ts", `const emergencyKillSwitch = true; await db.update(globalTradingSettingsTable).set({ emergencyKillSwitch });`), 1, "shorthand");
 assert.equal(one("routes/adminLiveSharedReadiness.ts", `const patch: Record<string, unknown> = {}; patch.emergencyKillSwitch = true; await db.update(globalTradingSettingsTable).set(patch);`), 1, "patch object");
 assert.equal(one("routes/adminLiveSharedReadiness.ts", `patch["emergencyKillSwitch"] = 1;`), 1, "element access");
-assert.deepEqual(scanFile("routes/adminLiveSharedReadiness.ts", `patch.emergencyKillSwitch = false; await db.update(globalTradingSettingsTable).set(patch);`), [], "a release is not this rule");
+// 10 (round 5, owner decision 1). Releasing a stop goes through the one release operation.
+assert.equal(one("routes/adminLiveSharedReadiness.ts", `patch.emergencyKillSwitch = false; await db.update(globalTradingSettingsTable).set(patch);`), 1, "activation may not release (patch object)");
+assert.equal(one("routes/adminTrading.ts", `await db.update(globalTradingSettingsTable).set({ emergencyKillSwitch: false, killSwitchReason: null });`), 1, "a release write outside the writer fails, even in a reviewed writer");
+assert.equal(one("routes/adminTrading.ts", `await db.update(globalTradingSettingsTable).set({ ...{ emergencyKillSwitch: false } });`), 1, "release through a spread literal");
+assert.equal(one("routes/adminLiveSharedReadiness.ts", `patch["emergencyKillSwitch"] = false;`), 1, "release through element access");
+assert.equal(one("routes/system.ts", `import { resetKillSwitch } from "../lib/safetyCore.js";\nawait resetKillSwitch(body);`), 1, "the safety core's reset outside the release operation fails");
+assert.deepEqual(scanFile("lib/other.ts", `function resetKillSwitch() {}\nresetKillSwitch();`), [], "an unrelated resetKillSwitch (not the safety core's) is not flagged");
+assert.deepEqual(scanFile(STOP_ENGAGE_WRITER, `import { resetKillSwitch } from "../safetyCore.js";\nawait resetKillSwitch({ resetBy, acknowledgement });\nawait tx.update(globalTradingSettingsTable).set({ emergencyKillSwitch: false }).returning();`), [], "the release operation itself");
+assert.deepEqual(scanFile("routes/adminTrading.ts", `await releasePlatformStop({ stop: "platform_emergency_stop", reason, actor: { userId: 1, role }, source: "admin_trading_reset_kill" });`), [], "a caller of the release operation");
+assert.deepEqual(scanFile("routes/x.ts", `res.json({ emergencyKillSwitch: false }); const before = { emergencyKillSwitch: false };`), [], "a report object is not a release");
 assert.equal(one("routes/adminTrading.ts", `await db.insert(globalTradingSettingsTable).values({ emergencyKillSwitch: true });`), 1, "insert");
 // A report or snapshot object is not a write.
 assert.deepEqual(scanFile("routes/x.ts", `const after = { emergencyKillSwitch: true }; res.json({ emergencyKillSwitch: true });`), []);
@@ -104,13 +113,38 @@ const goodWriter = `export async function engagePlatformStop(
       killSwitchReason: args.reason,
       updatedByAdminId: args.actorUserId,
     })
-    .returning();`;
+    .returning();
+export async function releasePlatformStop(
+  const role = operatorRoleFromSession(args.actor.role);
+    const r = await resetKillSwitch({ resetBy, acknowledgement });
+  const rows = await db.transaction(async (tx) => {
+    const updated = await tx.update(globalTradingSettingsTable)
+      .set({
+        emergencyKillSwitch: false,
+        killSwitchEngagedAt: null,
+        killSwitchReason: null,
+        updatedByAdminId: args.actor.userId,
+      })
+      .returning();
+    await tx.insert(adminActionAuditLogTable).values({});
+  });
+}
+`;
 const writerShape = (src: string | null) => checkStopWriterShape((k) => (k === STOP_ENGAGE_WRITER ? src : null));
 assert.deepEqual(writerShape(goodWriter), []);
 assert.equal(writerShape(null).length, 1, "writer missing");
 assert.equal(writerShape(goodWriter.replace("    .returning();", "    .where(eq(globalTradingSettingsTable.id, 1))\n    .returning();")).length, 1, "engage must set every row");
 assert.equal(writerShape(goodWriter.replace("      killSwitchReason: args.reason,\n", "")).length, 1, "reason recorded");
 assert.equal(writerShape(goodWriter.replace("      updatedByAdminId: args.actorUserId,\n", "")).length, 1, "actor recorded");
+// The release operation's shape (owner decision 1).
+assert.equal(writerShape(goodWriter.replace("export async function releasePlatformStop(", "async function other(")).length, 1, "release operation must exist");
+assert.equal(writerShape(goodWriter.replace("operatorRoleFromSession(args.actor.role)", "args.actor.role")).length, 1, "release must be authorized");
+assert.equal(writerShape(goodWriter.replace("      })\n      .returning();", "      })\n      .where(eq(globalTradingSettingsTable.id, 1))\n      .returning();")).length, 1, "release must clear every row");
+assert.equal(writerShape(goodWriter.replace("        killSwitchReason: null,\n", "")).length, 1, "release clears the reason");
+assert.equal(writerShape(goodWriter.replace("        killSwitchEngagedAt: null,\n", "")).length, 1, "release clears the time");
+assert.equal(writerShape(goodWriter.replace("        killSwitchReason: null,\n", "        killSwitchReason: null,\n        liveBrokerExecutionArmed: true,\n")).length, 1, "release never arms");
+assert.equal(writerShape(goodWriter.replace("    await tx.insert(adminActionAuditLogTable).values({});\n", "")).length, 1, "release audited in its transaction");
+assert.equal(writerShape(goodWriter.replace("await resetKillSwitch(", "await somethingElse(")).length, 1, "safety-core release goes through its owner");
 assert.equal(one("routes/adminTrading.ts", `const [g] = await db.select().from(globalTradingSettingsTable);`), 1, "adminTrading is not allowed whole-row reads");
 
 // Stale allowlist: an entry whose file no longer breaks the rule (or is gone) is reported.

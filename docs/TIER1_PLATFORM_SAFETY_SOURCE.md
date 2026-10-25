@@ -14,6 +14,11 @@ Round 4 (branch `r4/safety-readers-and-engage`, on `04a197e` / PR #45) moves
 the reports and readiness views onto `platformStop()` and gives the
 emergency stop one engage writer. See [Round 4: reports on the platform stop, one engage writer](#round-4-reports-on-the-platform-stop-one-engage-writer).
 
+Round 5 (stacked branches `r5/safety-1..4`, on `2a0b3f6` / PR #48) implements
+the owner's Platform Safety decisions 1–5 and 19 (2026-10-25). Those
+decisions allow the behaviour changes listed there and nothing else. See
+[Round 5: owner decisions](#round-5-owner-decisions).
+
 ## The problem
 
 Several places could each say whether trading is stopped or allowed, and
@@ -157,7 +162,7 @@ Why this cannot loosen anything (round 4): every per-source field is taken from 
 
 ## What remains
 
-1. **Engage is unified, release is not.** Round 4 gives the emergency stop one engage writer. The stop is still released by `adminTrading` (`reset-kill`, canonical row only, audited) and by the activation handler in `adminLiveSharedReadiness`, which releases it with `patch.emergencyKillSwitch=false`, does not clear the reason or time, and writes an unordered first row. Both should move to one audited `releasePlatformStop` that clears every row. That needs an owner decision on whether activation may release a stop at all, so both release paths are left as they are.
+1. ~~**Engage is unified, release is not.**~~ **Done in round 5 (owner decision 1).** Release is one operation, `releasePlatformStop()`, and live activation no longer releases a stop. See [Round 5](#round-5-owner-decisions).
 2. **Two install-wide stops: one read now (round 3), two switches still.** `platformStop()` is the one answer, and every pre-check that sits in front of the governor reads it (see round 3). What remains:
    - The two stops are still two switches with two writers (admin handlers; `lib/safetyCore.ts`). Merging them into one stored switch is out of scope here.
    - Four legacy gates keep their safety-core-only rule because no governor runs behind them, so folding in the emergency stop would add a refusal the governor never makes: `/mt5/*` command endpoints (every command is stored `BLOCKED` anyway), `/broker/reconnect`, the `/execute-trade` TOCTOU re-check, and the paper permission verdict (the emergency stop does not halt paper). Whether these should honour the emergency stop is an owner decision.
@@ -217,6 +222,41 @@ Survey of every reader of the safety core's operational mode, global state, kill
 | `mt5`, `brokerHealth`, `trades`, `permission` | safety core | unchanged (owner decision) |
 
 **Engage writer.** `lib/safety/platformStopWriter.ts` is the only file that may write an engaged emergency stop (guard rule 10). It writes every settings row because the reader says "engaged" when any row does. It takes an optional transaction so the live-shared kill switch and the rollback keep their atomic writes. Each caller still writes its own audit event; the guard fails a caller that does not reference `admin_action_audit_log`. The release paths were not touched.
+
+## Round 5: owner decisions
+
+The owner decided the Platform Safety questions this doc left open (2026-10-25). They are recorded here as given, with what each PR did. Each PR is one commit on its own stacked branch.
+
+| # | Owner decision (short) | PR / branch |
+|---|---|---|
+| 1 | Live activation must not release an emergency stop. One explicit, authorized, audited release of the selected stop, on every applicable settings row, clearing its active reason/time and keeping audit history. Never clear the other stop or re-arm. | `r5/safety-1` |
+
+### Decision 1: one release operation (`r5/safety-1`)
+
+`releasePlatformStop({ stop, reason, actor: { userId, role }, source, ipAddress?, acknowledgement?, resetBy? })` in `lib/safety/platformStopWriter.ts`, next to the engage writer:
+
+- **Authorized:** refuses `NOT_AUTHORIZED` unless the actor's role is ADMIN or OWNER (`operatorRoleFromSession`, the same check as the admin routes). Refuses `REASON_REQUIRED` under 4 characters. A refusal writes nothing.
+- **Selected stop only:**
+  - `platform_emergency_stop`: one transaction sets `emergency_kill_switch=false`, `kill_switch_engaged_at=null`, `kill_switch_reason=null`, `updated_by_admin_id` (the actor) on EVERY `global_trading_settings` row (the reader says engaged when any row does), and writes the audit row (`RESET_KILL_SWITCH`, as before). The audit's before-state keeps the reason and engage time the stop had, the other engaged stops and the source; the after-state the row count. No settings row: `NO_SETTINGS_ROW`, nothing written.
+  - `safety_core_kill_switch`: delegated to its owner, `lib/safetyCore.ts resetKillSwitch()` (acknowledgement `I_UNDERSTAND_RISK` still required; it drops to `OBSERVE_ONLY` / `RECOVERY_MODE` and records its vault event and state transition as before), then audited (`RESET_SAFETY_CORE_KILL_SWITCH`). A refused reset returns `SAFETY_CORE_REFUSED`.
+- **Never the other stop, never arming:** neither branch writes the other stop, the live-execution arm, the platform mode or the venue enables. The safety core's own reset lowers its mode; nothing raises it.
+
+Callers:
+
+- `POST /admin/trading/reset-kill` (emergency stop). Same auth, reason check and response shape (`settings` is the canonical row).
+- `POST /system/kill-switch/reset` (safety-core kill switch). Same `requireOperator`, body, acknowledgement and response shape (`ok`, `reasons`, `blockers`, `status`); the actor's product role is passed in.
+- `POST /admin/live-shared/activate-step` no longer releases. A request with `releaseKillSwitch` gets 409 `ACTIVATION_DOES_NOT_RELEASE_STOP` naming `POST /api/admin/trading/reset-kill`, and nothing is written. The footgun posture check no longer lists a release (it cannot happen there).
+- The dashboard's two release buttons (Live Shared panel, activation wizard step 9) now call `reset-kill` and ask the operator for a reason.
+
+Guard rule 10 now covers releases too: an `emergencyKillSwitch: false` property in a `.set()` / `.values()` object, `<x>.emergencyKillSwitch = false`, or a call to the safety core's `resetKillSwitch()` (in a file that imports `lib/safetyCore.ts`) outside the writer fails the build, in every file, allowlisted writers included. The writer-shape check requires `releasePlatformStop()` to check the operator role, update every settings row (no `.where()`) inside its transaction with the flag, time, reason and actor, write its audit row in that transaction, touch no arm / mode / venue column, and release the safety core through `resetKillSwitch()`. The allowlist stays at 15 entries (no file added; reasons updated).
+
+Tests: `test:platform-stop-release` (new, `ci:integration`): duplicate settings rows (engage then release clears every row, actor recorded, audit row keeps the old reason and time); releasing either stop leaves the other engaged; live arm, mode and venue unchanged; the safety core's acknowledgement still required and its mode comes back `OBSERVE_ONLY`; non-operator roles and short reasons refused with nothing written; the routes (activation with the stop engaged and `releaseKillSwitch` refuses with the actionable message and writes nothing; an activation step without it still applies and leaves the stop engaged; `reset-kill` 403 / 400 / 200 and every row released; the system reset releases only the safety core). `test:single-safety-switch-source` adds release fixtures and the release-shape checks.
+
+### Round 5 behaviour changes
+
+23. **Live activation no longer releases the emergency stop** (decision 1). `releaseKillSwitch` in an activation request is refused (409 `ACTIVATION_DOES_NOT_RELEASE_STOP`) and nothing in that request is applied. Before, it released the stop on one row (the canonical one), and the readback that fed its audit row came from an unordered first row. The dashboard buttons that sent it now call `reset-kill`.
+24. **`reset-kill` releases every settings row** (decision 1). Before, only the canonical row; with a stray engaged row the stop stayed engaged (round 4 behaviour change 22). The audit row (`RESET_KILL_SWITCH`) now records the combined before-state (engaged if any row was), its old reason and time, and the row count, and is written in the same transaction as the release.
+25. **The safety-core reset is audited in `admin_action_audit_log`** (`RESET_SAFETY_CORE_KILL_SWITCH`) as well as in the vault. Its checks and response are unchanged.
 
 ## Honest limits
 

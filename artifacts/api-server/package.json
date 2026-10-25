@@ -162,6 +162,7 @@
     "test:alert-rule-ownership": "node --import tsx --test --test-force-exit src/lib/alerts/__qa__/ruleEngineOwnership.test.ts",
     "test:trading-on-by-default": "node --import tsx --test --test-force-exit src/lib/safety/__qa__/tradingOnByDefault.test.ts",
     "test:platform-switches": "node --import tsx --test --test-force-exit --test-concurrency=1 src/lib/safety/__qa__/platformSwitches.test.ts",
+    "test:platform-stop-release": "node --import tsx --test --test-force-exit --test-concurrency=1 src/lib/safety/__qa__/platformStopRelease.test.ts",
     "test:fix-agent-route": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/routes/__qa__/adminFixAgentRoute.test.ts",
     "test:cluster-d-route": "node --import tsx --test --test-force-exit src/routes/__qa__/clusterDRoute.test.ts",
     "test:trader-tier-route": "node --import tsx --test --test-force-exit src/routes/__qa__/traderTierRoute.test.ts",
