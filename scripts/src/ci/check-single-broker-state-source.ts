@@ -85,10 +85,11 @@ export const ALLOWLIST: Readonly<Record<string, AllowEntry>> = {
     access: "write",
     reason: "writer/owner (LIVE execution domain): recomputes and upserts the shared-master pool projection from mt5_connection on every heartbeat; reads the row back through the hub reader",
   },
-  "routes/adminAllocations.ts": {
+  "lib/safety/sharedLivePause.ts": {
     tables: ["arx_master_bridge_pool"],
     access: "write",
-    reason: "admin writer: shared-live pause/resume flag on the pool row; reads the row and the over-allocation flag through the hub reader",
+    lockingReads: true,
+    reason: "Platform Safety writer (owner decision 19): pauses / resumes shared-live on ONE pool row, row-locking it (SELECT ... FOR UPDATE in its transaction) for the audited before-state; status reads go through the hub reader",
   },
   "lib/bridgeV2/ingest.ts": {
     tables: ["bridge_v2_stream_state"],

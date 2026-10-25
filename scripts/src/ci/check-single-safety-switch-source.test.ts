@@ -1,6 +1,6 @@
 // Negative fixtures for check-single-safety-switch-source. Pure, no IO.
 import assert from "node:assert/strict";
-import { ALLOW, checkAuthorityShape, checkStopWriterShape, scanFile, staleEntries, STOP_ENGAGE_WRITER } from "./check-single-safety-switch-source.js";
+import { ALLOW, checkAuthorityShape, checkSharedLivePauseShape, checkStopWriterShape, scanFile, staleEntries, SHARED_LIVE_PAUSE_AUTHORITY, STOP_ENGAGE_WRITER } from "./check-single-safety-switch-source.js";
 
 export {};
 
@@ -173,5 +173,38 @@ assert.equal(shape(goodSwitches.replace("export async function platformStop(", "
 assert.equal(shape(goodSwitches.replace(`["platform_emergency_stop", "safety_core_kill_switch"]`, "[]"), goodHalt).length, 1, "platformStop() must fail closed on both");
 assert.equal(shape(goodSwitches.replace("export function preCheckStopRefusal(", "function y("), goodHalt).length, 1);
 assert.equal(shape(goodSwitches, goodHalt.replace("await platformStop()", "await readSafetyCoreSwitch()")).length, 1, "tradingHalt reads platformStop()");
+
+// 11. The shared-live pause flag (owner decision 19): readers and writers go through its authority.
+assert.equal(one("lib/live/liveCommandPipeline.ts", `if (pool.sharedLivePaused) return refuse();`), 1, "a direct read of the flag fails");
+assert.equal(one("routes/adminAllocations.ts", `await db.update(arxMasterBridgePoolTable).set({ sharedLivePaused: true, pausedReason: r }).where(eq(arxMasterBridgePoolTable.id, id));`), 1, "a direct pause write fails");
+assert.equal(one("routes/x.ts", `await db.update(t).set({ ...{ sharedLivePaused: false } });`), 1, "a resume write through a spread fails");
+assert.equal(one("lib/live/masterBridgePool.ts", `await db.insert(arxMasterBridgePoolTable).values({ ...baseValues, sharedLivePaused: false });`), 1, "the recompute may not write the flag either");
+assert.equal(one("routes/x.ts", "await db.execute(sql`UPDATE arx_master_bridge_pool SET shared_live_paused = true`)"), 1, "raw SQL naming the flag fails");
+assert.deepEqual(scanFile("lib/live/liveCommandPipeline.ts", `const p = sharedLivePauseOf(pool); if (p.paused) return refuse(p.reason);`), [], "the authority's reader passes");
+assert.deepEqual(scanFile("routes/adminAllocations.ts", `const r = await pauseSharedLive({ scope: { poolId: pool.id }, reason, actor });`), [], "the authority's writer passes");
+assert.deepEqual(scanFile(SHARED_LIVE_PAUSE_AUTHORITY, `const paused = pool.sharedLivePaused === true; await tx.update(arxMasterBridgePoolTable).set({ sharedLivePaused: true });`), [], "the authority itself");
+assert.deepEqual(scanFile("lib/investor/x.ts", `const r = profile.pausedReason;`), [], "other tables' pausedReason is not the flag");
+
+// Authority shape: one pool row by id, operator-only, audited, never install-wide.
+const pauseFn = (name: string) => `export async function ${name}(args: A): Promise<R> {
+  const role = operatorRoleFromSession(args.actor.role);
+  return db.transaction(async (tx) => {
+    const [pool] = await tx.update(arxMasterBridgePoolTable).set({
+      sharedLivePaused: true,
+    }).where(eq(arxMasterBridgePoolTable.id, scope.poolId)).returning();
+    await tx.insert(adminActionAuditLogTable).values({});
+  });
+}
+`;
+const goodPause = `export function sharedLivePauseOf(pool: P) {}\n${pauseFn("pauseSharedLive")}${pauseFn("resumeSharedLive")}`;
+const pauseShape = (src: string) => checkSharedLivePauseShape((k) => (k === SHARED_LIVE_PAUSE_AUTHORITY ? src : null));
+assert.deepEqual(pauseShape(goodPause), []);
+assert.equal(pauseShape("").length, 1, "the authority must exist");
+assert.equal(pauseShape(goodPause.replace("export async function resumeSharedLive(", "async function other(")).length, 1, "resume must exist");
+assert.equal(pauseShape(goodPause.replace("operatorRoleFromSession(args.actor.role)", "args.actor.role")).length, 1, "pause must be authorized");
+assert.equal(pauseShape(goodPause.replace(".where(eq(arxMasterBridgePoolTable.id, scope.poolId)).returning()", ".returning()")).length, 1, "an unscoped pause (every pool row) fails");
+assert.equal(pauseShape(goodPause.replace("    await tx.insert(adminActionAuditLogTable).values({});\n", "")).length, 1, "pause audited in its transaction");
+assert.equal(pauseShape(goodPause.replace("export function sharedLivePauseOf(", "function x(")).length, 1, "the reader must exist");
+assert.equal(pauseShape(goodPause + "await db.update(globalTradingSettingsTable).set({ emergencyKillSwitch: true });\n").length, 1, "never install-wide");
 
 console.log("check-single-safety-switch-source fixtures: ok");
