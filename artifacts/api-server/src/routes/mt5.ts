@@ -40,6 +40,7 @@ import { readRoleFromRequest } from "../lib/security/middleware.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
+import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 
 const router = Router();
 
@@ -158,11 +159,33 @@ async function loadOrCreateState() {
 // /mt5/close, /mt5/modify, /mt5/close-all could enqueue rows without any auth
 // or invariant check. Even when this gate opens, placeLiveOrderGuarded still
 // rejects placement with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
-async function refuseWhenNotArmed(_req: Request, res: Response, next: NextFunction) {
+//
+// Action-aware (owner decision 3, round 5). Both install-wide stops are read
+// once through the platform-stop authority: the safety-core kill switch (this
+// gate's own stop) still refuses every command, as before; the platform
+// emergency stop now also refuses NEW-RISK commands (OPEN, pending-order
+// placement). Closes, modifies and close-all are not refused by the emergency
+// stop here, and the bridge's own endpoints (heartbeat, sync, diagnostics,
+// command polling/results) never run this gate.
+/** Commands that open new risk on the /mt5 command endpoints. */
+export const MT5_NEW_RISK_ACTIONS: ReadonlySet<string> = new Set(["OPEN", "PLACE_PENDING_ORDER"]);
+/** Does this /mt5 command request open new risk? An unknown or unparseable queued action counts as new risk (fail closed). */
+export function mt5RequestOpensNewRisk(path: string, body: unknown): boolean {
+  if (path.endsWith("/mt5/execute")) return true;
+  if (path.endsWith("/mt5/close") || path.endsWith("/mt5/modify") || path.endsWith("/mt5/close-all")) return false;
+  const action = (body as { action?: unknown } | null | undefined)?.action;
+  const known = ["CLOSE", "MODIFY", "CLOSE_ALL", "MODIFY_POSITION_PROTECTION", "MODIFY_PENDING_ORDER", "CANCEL_PENDING_ORDER"];
+  return typeof action !== "string" || !known.includes(action) || MT5_NEW_RISK_ACTIONS.has(action);
+}
+async function refuseWhenNotArmed(req: Request, res: Response, next: NextFunction) {
   try {
     const { getStatus: getSafetyStatus } = await import("../lib/safetyCore.js");
     const s = await getSafetyStatus();
-    const armed = s.operationalMode === "LIVE_TRADING" && !s.killSwitchEngaged;
+    const opensNewRisk = mt5RequestOpensNewRisk(req.path, req.body);
+    const stop = preCheckStopRefusal(await platformStop(), {
+      own: "safety_core_kill_switch", opensNewRisk, venue: "LIVE",
+    });
+    const armed = s.operationalMode === "LIVE_TRADING" && !stop.engaged;
     if (!armed) {
       res.status(403).json({
         system: "mt5",
@@ -172,8 +195,10 @@ async function refuseWhenNotArmed(_req: Request, res: Response, next: NextFuncti
           status: "REJECTED",
           reason: "NOT_ARMED_FOR_LIVE",
           operationalMode: s.operationalMode,
-          killSwitchEngaged: s.killSwitchEngaged,
-          message: "MT5 command-producing endpoints are disabled. The system must be in LIVE_TRADING mode with the kill switch released before commands can be enqueued. Even then, placeLiveOrderGuarded() still rejects placement until a real broker layer ships.",
+          killSwitchEngaged: stopSourceEngaged(stop, "safety_core_kill_switch"),
+          platformStopSources: stop.sources,
+          opensNewRisk,
+          message: "MT5 command-producing endpoints are disabled. The system must be in LIVE_TRADING mode with the safety-core kill switch released (and, for new-risk commands, the platform emergency stop released) before commands can be enqueued. Even then, placeLiveOrderGuarded() still rejects placement until a real broker layer ships.",
         },
       });
       return;
@@ -1380,12 +1405,10 @@ async function queueCommand(action: Mt5GatedAction, payload: {
   // command enqueued by this helper is forced to status=BLOCKED so the EA
   // poll (/mt5/commands filters status='PENDING') CANNOT pick it up. This
   // closes the reachable live-command path identified in the Phase 12
-  // production audit. The legacy + safetyCore checks remain as
-  // belt-and-braces context but no longer drive deliverability.
-  const { getStatus: getSafetyStatus } = await import("../lib/safetyCore.js");
-  const safety = await getSafetyStatus();
-  const safetyArmed = safety.operationalMode === "LIVE_TRADING" && !safety.killSwitchEngaged;
-  void safetyArmed; // retained for future audit; no longer gates delivery
+  // production audit. The stop and arm checks run in front of this helper
+  // (refuseWhenNotArmed, through the platform-stop authority); they no longer
+  // drive deliverability here. (Round 5: an unused safety-core read that sat
+  // here was removed; it never affected the stored status.)
   const status = "BLOCKED" as const;
   const effectiveBlockedReason = blockedReason
     ?? "ARX AI is paper-only by construction. Broker placement is not implemented; command stored as BLOCKED.";

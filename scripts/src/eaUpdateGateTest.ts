@@ -56,6 +56,7 @@ function base(overrides: Partial<EaUpdateGateInput> = {}): EaUpdateGateInput {
     hasPendingCommand: false,
     heartbeatStable: true,
     killSwitchEngaged: false,
+    platformStopEngaged: false,
     maintenanceMode: false,
     ...overrides,
   };
@@ -119,6 +120,10 @@ const blockCases: Array<[string, Partial<EaUpdateGateInput>, string]> = [
     "ALREADY_UP_TO_DATE",
   ],
   ["cannot self-update", { eaSupportsSelfUpdate: false }, "MANUAL_BOOTSTRAP_REQUIRED"],
+  // Round 5, owner decision 5: either install-wide stop blocks automatic updates.
+  ["install-wide stop engaged", { platformStopEngaged: true }, "PLATFORM_STOP_ENGAGED"],
+  ["install-wide stop + open trade", { platformStopEngaged: true, hasOpenLiveTrade: true }, "PLATFORM_STOP_ENGAGED"],
+  ["trader kill switch still first", { platformStopEngaged: true, killSwitchEngaged: true }, "KILL_SWITCH_ENGAGED"],
 ];
 for (const [name, overrides, expected] of blockCases) {
   const r = evaluateEaUpdateGate(base(overrides));

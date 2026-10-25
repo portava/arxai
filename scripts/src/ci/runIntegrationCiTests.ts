@@ -279,6 +279,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:trading-on-by-default" },
   { pkg: "@workspace/api-server", script: "test:platform-switches" },
   { pkg: "@workspace/api-server", script: "test:platform-stop-release" },
+  { pkg: "@workspace/api-server", script: "test:legacy-gates-action-aware" },
   // Task #660 — Profit Mission Phase 1 route per-user isolation + no-secret-leak
   // proof. Boots the REAL profitMissions router on loopback, seeds two real users
   // with genuine sessions, and proves anonymous 401s, a feed-gated estimate-

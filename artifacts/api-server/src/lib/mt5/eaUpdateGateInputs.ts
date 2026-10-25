@@ -11,15 +11,21 @@
 // This module only READS. It does not change what the gate blocks on: the
 // trader's own kill switch (arx_live_arming via liveArming.getMyArming), the
 // per-trader EA remote-config maintenance flag (ea_remote_config), an open LIVE
-// position, a live command still in flight, and heartbeat stability. The
-// install-wide stops are deliberately NOT inputs (owner decision; an EA update
-// is not an order and no governor runs behind it).
+// position, a live command still in flight, and heartbeat stability. Round 5
+// (owner decision 5) adds the install-wide stops: while the platform emergency
+// stop or the safety-core kill switch is engaged (or unreadable) the EA gets
+// no automatic update. It is read last, through the platform-stop authority
+// (lib/safety/platformSwitches.platformStop), so the existing reads keep their
+// order. There is no bypass: the update stays blocked until the stop is
+// released through its own audited release. The admin preview (diagnostics)
+// still runs and reports the reason.
 
 import { and, eq, inArray } from "drizzle-orm";
 import { db, eaRemoteConfigTable, arxLiveCommandsTable } from "@workspace/db";
 import { readOpenPositions } from "../positions/openPositions.js";
 import { getMyArming } from "../live/liveArming.js";
 import { classifyHeartbeatAt, heartbeatAllowsExecution } from "../brokerHub/freshness.js";
+import { platformStop } from "../safety/platformSwitches.js";
 
 /** Live command statuses that mean a command is still in flight. */
 export const EA_UPDATE_PENDING_COMMAND_STATUSES = ["SENT_TO_MT5_LIVE", "LIVE_APPROVED"] as const;
@@ -29,6 +35,8 @@ export interface EaUpdateGateSafetyInputs {
   hasPendingCommand: boolean;
   heartbeatStable: boolean;
   killSwitchEngaged: boolean;
+  /** Either install-wide stop (unreadable = engaged). */
+  platformStopEngaged: boolean;
   maintenanceMode: boolean;
 }
 
@@ -38,6 +46,8 @@ export interface EaUpdateGateReaders {
   hasOpenLiveTrade(userId: number): Promise<boolean>;
   hasPendingCommand(userId: number): Promise<boolean>;
   maintenanceMode(userId: number): Promise<boolean>;
+  /** Install-wide, not per trader. */
+  platformStopEngaged(): Promise<boolean>;
 }
 
 export const dbEaUpdateGateReaders: EaUpdateGateReaders = {
@@ -71,6 +81,10 @@ export const dbEaUpdateGateReaders: EaUpdateGateReaders = {
       .limit(1);
     return !!cfg?.maintenanceMode;
   },
+  // Both install-wide stops; platformStop() never throws and fails closed.
+  async platformStopEngaged() {
+    return (await platformStop()).engaged;
+  },
 };
 
 /**
@@ -96,16 +110,18 @@ export async function loadEaUpdateGateSafetyInputs(
   const hasOpenLiveTrade = await r.hasOpenLiveTrade(userId);
   const hasPendingCommand = await r.hasPendingCommand(userId);
   const maintenanceMode = await r.maintenanceMode(userId);
+  const platformStopEngaged = await r.platformStopEngaged();
   const heartbeatStable = isHeartbeatStableForEaUpdate(lastHeartbeat, opts.nowMs ?? Date.now());
-  return { hasOpenLiveTrade, hasPendingCommand, heartbeatStable, killSwitchEngaged, maintenanceMode };
+  return { hasOpenLiveTrade, hasPendingCommand, heartbeatStable, killSwitchEngaged, platformStopEngaged, maintenanceMode };
 }
 
 /**
  * The admin EA-health preview's inputs for one connection: the same loader the
  * EA's update check uses. A connection with no user can never call the
  * per-user update check, and there is no trader state to read for it, so only
- * the heartbeat window is evaluated and the trader-scoped inputs are reported
- * clear (the real check never runs for such a row).
+ * the heartbeat window and the install-wide stops are evaluated and the
+ * trader-scoped inputs are reported clear (the real check never runs for such
+ * a row).
  */
 export async function previewEaUpdateGateSafety(
   userId: number | null,
@@ -114,7 +130,10 @@ export async function previewEaUpdateGateSafety(
   readers?: EaUpdateGateReaders,
 ): Promise<EaUpdateGateSafetyInputs> {
   if (userId == null) {
+    // The install-wide stops are not trader-scoped, so they are read here too.
+    const platformStopEngaged = await (readers ?? dbEaUpdateGateReaders).platformStopEngaged();
     return {
+      platformStopEngaged,
       hasOpenLiveTrade: false,
       hasPendingCommand: false,
       heartbeatStable: isHeartbeatStableForEaUpdate(lastHeartbeat, now.getTime()),

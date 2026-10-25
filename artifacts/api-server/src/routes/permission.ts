@@ -9,6 +9,7 @@ import {
 import { z } from "zod/v4";
 import { evaluatePermission, type ActiveLockSummary } from "@workspace/domain/safety-permission";
 import { getStatus } from "../lib/safetyCore.js";
+import { platformStop, platformStopForVenue, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import { explainPermission } from "../lib/aiLearning/permissionCoach.js";
 import { selectBrokerKind, userHasActiveBridgeToken } from "../lib/broker/secrets.js";
 import { getBrokerProvider } from "../lib/broker/registry.js";
@@ -106,7 +107,7 @@ async function loadActiveLocks() {
 }
 
 export async function gatherInputsAndEvaluate(userId: number) {
-  const [sysStatus, settings, todaysTrades, activeLockRows, brokerCredentialsConfigured] = await Promise.all([
+  const [sysStatus, settings, todaysTrades, activeLockRows, brokerCredentialsConfigured, stop] = await Promise.all([
     getStatus(),
     getOrCreateUserRiskSettings(userId),
     db.select().from(tradesTable)
@@ -117,6 +118,10 @@ export async function gatherInputsAndEvaluate(userId: number) {
     // MT5_BRIDGE_TOKEN env value is rejected on every EA endpoint), so
     // "broker credentials configured" = THIS user has an active token.
     userHasActiveBridgeToken(userId),
+    // Paper verdict (owner decision 3): the safety-core kill switch halts it;
+    // the platform emergency stop does not (documented paper exemption, as
+    // in tradingHalt). Read through the platform-stop authority.
+    platformStop().then((s) => platformStopForVenue(s, "PAPER")),
   ]);
 
   const activeLocks = activeLockRows.map(rowToActiveLock);
@@ -140,7 +145,7 @@ export async function gatherInputsAndEvaluate(userId: number) {
 
   const verdict = evaluatePermission({
     operationalMode: sysStatus.operationalMode,
-    killSwitchEngaged: sysStatus.killSwitchEngaged,
+    killSwitchEngaged: stopSourceEngaged(stop, "safety_core_kill_switch"),
     mt5LinkHealth: sysStatus.mt5LinkHealth,
     liveAllowed,
 

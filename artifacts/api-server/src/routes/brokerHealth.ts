@@ -25,6 +25,7 @@ import { evaluateBrokerHealth, type BrokerHealthVerdict } from "@workspace/domai
 import { getStatus } from "../lib/safetyCore.js";
 import { canSeeLegacyRows, requireOperator } from "../lib/auth/ownerScope.js";
 import { readPlatformMt5State } from "../lib/brokerHub/mt5StateReader.js";
+import { platformStop, preCheckStopRefusal, stopSourceEngaged } from "../lib/safety/platformSwitches.js";
 import {
   listBrokerHealthLogs,
   readBrokerHealthState,
@@ -239,13 +240,23 @@ router.post("/broker/reconnect", requireOperator, async (req, res): Promise<void
     // armed for live trading. Otherwise store as BLOCKED so the EA poll cannot
     // pick it up. This closes the unauthenticated-enqueue path through this
     // endpoint while preserving the operator's ability to record an attempt.
+    //
+    // Recovery only (owner decision 3, round 5): reconnect stays available
+    // while a stop is engaged, and it can never clear a stop, arm trading or
+    // dispatch a queued order. It writes only the RECONNECT command row, the
+    // reconnect counter and its vault event. The stop is read through the
+    // platform-stop authority: a reconnect opens no new risk, so the
+    // safety-core kill switch (this gate's own stop) decides PENDING vs
+    // BLOCKED exactly as before, and the emergency stop does not.
     const { getStatus: getSafetyStatus } = await import("../lib/safetyCore.js");
     const safety = await getSafetyStatus();
-    const armed = safety.operationalMode === "LIVE_TRADING" && !safety.killSwitchEngaged;
+    const stop = preCheckStopRefusal(await platformStop(), { own: "safety_core_kill_switch", opensNewRisk: false, venue: "LIVE" });
+    const kill = stopSourceEngaged(stop, "safety_core_kill_switch");
+    const armed = safety.operationalMode === "LIVE_TRADING" && !kill;
     const cmdStatus = armed ? "PENDING" : "BLOCKED";
     const cmdDetail = armed
       ? (body.reason ?? "operator-initiated")
-      : `BLOCKED: not armed for live (mode=${safety.operationalMode}, kill=${safety.killSwitchEngaged}). Reason: ${body.reason ?? "operator-initiated"}`;
+      : `BLOCKED: not armed for live (mode=${safety.operationalMode}, kill=${kill}). Reason: ${body.reason ?? "operator-initiated"}`;
 
     const state = await loadOrCreateBrokerState();
     const nextAttempts = state.reconnectAttempts + 1;
