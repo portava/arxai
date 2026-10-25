@@ -6,7 +6,9 @@
 //   * POST /:id/confirm runs the 14-check guard chain and, only on a full
 //     pass, routes the action into its venue's governed queue (DEMO →
 //     demoCommandQueue, LIVE → liveCommandPipeline, position ops →
-//     governedOps) via lib/tradeAction/route.ts. SIMULATED sends nothing.
+//     governedOps) via lib/tradeAction/route.ts. A SIMULATED open books one
+//     PAPER order through the pipeline (owner decision 13; the confirm must
+//     carry mode "SIMULATED"); other SIMULATED actions send nothing.
 //   * Safety envelope on every payload (success AND error).
 
 import { Router, type IRouter, type Request } from "express";
@@ -147,12 +149,13 @@ router.post("/me/trade-actions/:id/confirm", denyInvestorExecution, async (req, 
     const liveConfirmPhrase = typeof req.body?.liveConfirmPhrase === "string"
       ? String(req.body.liveConfirmPhrase).slice(0, 64)
       : null;
-    const result = await confirmAction({ userId, actionId: id, liveConfirmPhrase });
+    const confirmedMode = typeof req.body?.mode === "string" ? String(req.body.mode).slice(0, 16) : null;
+    const result = await confirmAction({ userId, actionId: id, liveConfirmPhrase, confirmedMode });
     if (!result.ok) {
       const status = result.error === "action_not_found" ? 404 : 400;
       return res.status(status).json({ ok: false, error: result.error, action: result.action ?? null, safety: SAFETY_ENVELOPE });
     }
-    return res.json({ ok: true, action: result.action, safety: SAFETY_ENVELOPE });
+    return res.json({ ok: true, action: result.action, ...(result.paper ? { simulated: result.paper } : {}), safety: SAFETY_ENVELOPE });
   } catch (e) {
     req.log.error({ err: e, userId, id }, "trade_action_confirm_failed");
     return res.status(500).json({ ok: false, error: "trade_action_confirm_failed", safety: SAFETY_ENVELOPE });

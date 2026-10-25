@@ -255,6 +255,8 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:paper-book" },
   // Owner decision 14: /execute-trade is retired (410), records nothing.
   { pkg: "@workspace/api-server", script: "test:execute-trade-retired" },
+  // Owner decision 13: confirmed SIMULATED opens book one governed PAPER order.
+  { pkg: "@workspace/api-server", script: "test:simulated-open" },
   { pkg: "@workspace/api-server", script: "test:oms-governance" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-per-user-limits" },
   { pkg: "@workspace/api-server", script: "test:risk-governor-discipline" },

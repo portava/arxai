@@ -17,6 +17,7 @@ import { tradeCommandAuditLogTable } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { evaluateAiActionBoundary } from "@workspace/domain/security";
 import { recordSecurityEvent } from "../security/events.js";
+import type { SimulatedOpenReceipt } from "../tradeEngine/simulatedOpen.js";
 
 export interface PlaceOrderInput {
   userId: number;
@@ -28,6 +29,12 @@ export interface PlaceOrderInput {
   takeProfit?: number | null;
   requestedBy: "user" | "ai-assistant" | "system";
   confirmedByUser: boolean;
+  /**
+   * SIMULATED only (owner decision 13): the caller's retry-safe request key.
+   * A SIMULATED order that passes every guard books ONE PAPER order through
+   * the Trade Engine pipeline under this key; without a key it is refused.
+   */
+  simulatedRequestKey?: string | null;
 }
 
 export interface PlaceOrderResult {
@@ -38,6 +45,10 @@ export interface PlaceOrderResult {
   commandId: number | null;
   idempotencyKey: string | null;
   expiresAt: string | null;
+  /** SIMULATED: the PAPER order booked (or replayed) for this request (owner decision 13). */
+  paper?: SimulatedOpenReceipt | null;
+  /** A human-readable refusal, when one exists. */
+  message?: string;
 }
 
 export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
@@ -108,6 +119,36 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
       idempotencyKey: null,
       expiresAt: null,
     };
+  }
+
+  // SIMULATED (owner decision 13): every guard above passed, so the order is
+  // booked as ONE PAPER order through the Trade Engine pipeline (Risk
+  // Governor venue PAPER, a real current quote, idempotent on the caller's
+  // request key) instead of an internal fill that recorded nothing.
+  if (input.mode === "SIMULATED") {
+    const { openSimulatedPaperOrder } = await import("../tradeEngine/simulatedOpen.js");
+    const sim = await openSimulatedPaperOrder({
+      userId: input.userId, surface: "MY_TRADES", requestKey: input.simulatedRequestKey ?? "",
+      symbol: input.symbol, side: input.side, lots: input.lotSize,
+      stopLoss: input.stopLoss ?? null, takeProfit: input.takeProfit ?? null,
+      origin: input.requestedBy === "system" ? "automation" : "manual",
+      sourcePage: "ME_TRADES_SIMULATED_OPEN",
+    });
+    await db.update(tradeCommandAuditLogTable)
+      .set({
+        status: sim.ok ? "EXECUTED" : "FAILED",
+        rejectionReason: sim.ok ? null : `SIMULATED_PAPER_REFUSED:${sim.reason}`,
+        guardSnapshot: sql`coalesce(${tradeCommandAuditLogTable.guardSnapshot}, '{}'::jsonb)
+          || ${JSON.stringify({ placement: sim.ok
+            ? { status: "SIMULATED_FILL", venue: "PAPER", paperOrderId: sim.receipt.paperOrderId, fillPrice: sim.receipt.fillPrice, priceSource: sim.receipt.priceSource, quoteAt: sim.receipt.quoteAt, replayed: sim.receipt.replayed }
+            : { status: "REJECTED", venue: "PAPER", reason: sim.reason } })}::jsonb`,
+      })
+      .where(eq(tradeCommandAuditLogTable.id, guard.auditLogId));
+    return sim.ok
+      ? { status: "SIMULATED_FILL", mode: input.mode, reason: `PAPER_ORDER:${sim.receipt.paperOrderId}`, auditLogId: guard.auditLogId,
+          commandId: null, idempotencyKey: input.simulatedRequestKey ?? null, expiresAt: null, paper: sim.receipt }
+      : { status: "REJECTED", mode: input.mode, reason: sim.reason, message: sim.message, auditLogId: guard.auditLogId,
+          commandId: null, idempotencyKey: input.simulatedRequestKey ?? null, expiresAt: null, paper: null };
   }
 
   let placement: BrokerPlacementResult;

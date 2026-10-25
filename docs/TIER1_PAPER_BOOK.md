@@ -110,18 +110,19 @@ gates were changed.
 - Operator backfills in `scripts/src/backfill*` update `trades` P/L. They are
   one-off operator scripts, not runtime, and the guard does not scan them.
 
-## Not changed: SIMULATED opens record no paper order
+## SIMULATED opens book PAPER orders (owner decision 13)
 
-These paths still record no paper order:
-
-- **Trade Action Center `SIMULATED`** actions (`lib/tradeAction/route.ts`):
-  "no broker command", and no `paper_orders` row.
-- **My Trades `SIMULATED` opens** (`POST /me/trades/open`, `placeOrder`): no
-  `paper_orders` row.
-
-Routing them into the PAPER venue would create simulated positions, P/L,
-debriefs and Risk Governor book facts that do not exist today. That is a
-user-visible product change and needs an owner decision. It is not made here.
+The owner decided (2026-10-25) that confirmed SIMULATED opens in the Trade
+Action Center and My Trades book PAPER orders. Both now call
+`lib/tradeEngine/simulatedOpen.ts`, which calls `submitTrade` mode PAPER, so
+`paperVenue.openPaperOrder` stays the only `paper_orders` writer and the Risk
+Governor (venue PAPER) runs before the write. Fills are at a real current
+quote (ask / bid), never the simulator price, and these orders
+(`strategy_id = market_priced_simulated_open`) are skipped by the paper
+mark-to-market loop. Retries are safe through the new nullable
+`paper_orders.client_request_key` column (unique per user). Non-OPEN
+SIMULATED trade actions still record nothing. Details, refusal codes and
+tests: `docs/TIER1_TRADE_ENGINE_MODES.md`, Round 5, Decision 13.
 
 ## Enforcement
 
@@ -194,9 +195,10 @@ Verification on an isolated local PostgreSQL database (UTC):
 
 ## What remains
 
-1. **Owner decision on SIMULATED opens.** Should Trade Action Center and My
-   Trades `SIMULATED` opens book into the PAPER venue (through `submitTrade`
-   mode PAPER)?
+1. **Done (owner decision 13): SIMULATED opens book PAPER orders** (above).
+   What remains: a manual close of such an order from the Paper Trading page
+   still prices the exit with the simulator, and the
+   `client_request_key` migration must be applied by the owner runbook.
 2. **Done (Trade Engine round 3): Build EE and the QA fixture call the
    pipeline.** The pipeline now has a caller-priced PAPER fill channel:
    `fillPaperTrade({ mode: "PAPER", intent: "OPEN" | "CLOSE" }, args)`,

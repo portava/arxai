@@ -39,6 +39,17 @@ import type { IntentOrigin, RiskQuote } from "../riskGovernor/preTrade.js";
 
 export const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
 
+/**
+ * strategyId tag of a confirmed SIMULATED open (owner decision 13), booked at
+ * a real market quote. Like Build EE orders, mark-to-market never settles it
+ * at the synthetic simulator price; its stop/target are settled by the Build
+ * EE monitor from real market data.
+ */
+export const MARKET_PRICED_SIMULATED_OPEN = "market_priced_simulated_open";
+
+/** A real market quote with its provenance (source, observation time). */
+export interface PaperQuote { bid: number; ask: number; at: Date; source: string }
+
 export type PaperOrderRow = typeof paperOrdersTable.$inferSelect;
 
 export type PaperRefusal =
@@ -48,7 +59,7 @@ export type PaperRefusal =
   | { ok: false; reason: "INVALID_SLTP_GEOMETRY"; entryPrice?: number }
   | { ok: false; reason: "RISK_GOVERNOR_BLOCK"; primaryReason: string | null; blockedBy: string[]; auditEventId: number | null };
 
-export type PaperResult = { ok: true; order: PaperOrderRow | null } | PaperRefusal;
+export type PaperResult = { ok: true; order: PaperOrderRow | null; replayed?: boolean } | PaperRefusal;
 
 export interface PaperOpenArgs {
   userId: number;
@@ -64,6 +75,19 @@ export interface PaperOpenArgs {
   tradePlanId: number | null;
   decisionId: number | null;
   caller: string;
+  /** Governor intent origin; omitted → "manual" (the trader's ticket). */
+  origin?: IntentOrigin;
+  /**
+   * A real market quote to fill at (owner decision 13). When present the order
+   * is a market fill at the quote (ask for BUY, bid for SELL), the governor
+   * sees this quote, and the simulator price is not used. Omitted → the
+   * trader's ticket behaviour (simulator price).
+   */
+  quote?: PaperQuote | null;
+  /** Retry-safe idempotency key: one order per (user, key); a repeat returns the booked order. */
+  clientRequestKey?: string | null;
+  /** The caller's own in-flight row (e.g. "trade_action:12"), excluded from the governor's duplicate scan. */
+  intentRef?: string;
 }
 
 async function vaultBehavior(kind: string, payload: Record<string, unknown>) {
@@ -83,6 +107,13 @@ async function logEvent(userId: number | null, orderId: number, eventType: strin
 export async function ownPaperAccount(id: number, userId: number) {
   return (await db.select().from(paperAccountsTable)
     .where(and(eq(paperAccountsTable.id, id), eq(paperAccountsTable.userId, userId)))
+    .limit(1))[0] ?? null;
+}
+
+/** The order a user already booked under a request key, if any (owner-scoped). */
+export async function paperOrderByRequestKey(userId: number, key: string) {
+  return (await db.select().from(paperOrdersTable)
+    .where(and(eq(paperOrdersTable.userId, userId), eq(paperOrdersTable.clientRequestKey, key)))
     .limit(1))[0] ?? null;
 }
 
@@ -145,7 +176,7 @@ export async function markToMarket(accountId: number) {
     // (Build EE) EE-managed orders are owned by the Build EE monitor (which
     // uses Build DD market data). Mark-to-market must NOT auto-close them
     // with mock prices — only refresh unrealized P&L for equity display.
-    const eeOwned = o.strategyId === "build_ee_paper_execution";
+    const eeOwned = o.strategyId === "build_ee_paper_execution" || o.strategyId === MARKET_PRICED_SIMULATED_OPEN;
     let hit: "TP" | "SL" | null = null;
     if (!eeOwned) {
       if (o.direction === "BUY") {
@@ -192,9 +223,17 @@ export async function markToMarket(accountId: number) {
 /** Open a paper order: owner check, SL/TP geometry, Risk Governor, then the simulator book. */
 export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
   if (!(await ownPaperAccount(a.paperAccountId, a.userId))) return { ok: false, reason: "PAPER_ACCOUNT_NOT_FOUND" };
+  // Retry-safe: a request key that already booked an order returns it, with
+  // no second governor decision and no second order.
+  if (a.clientRequestKey) {
+    const prior = await paperOrderByRequestKey(a.userId, a.clientRequestKey);
+    if (prior) return { ok: true, order: prior, replayed: true };
+  }
   const nowMs = Date.now();
-  const marketPx = getMockPrice(a.symbol, nowMs);
-  const px = a.entryPrice ?? marketPx;
+  const q = a.quote ?? null;
+  const marketPx = q ? (a.side === "BUY" ? q.ask : q.bid) : getMockPrice(a.symbol, nowMs);
+  // A quoted open is always a market fill at the quote, never at a caller price.
+  const px = q ? marketPx : a.entryPrice ?? marketPx;
   // Validate SL/TP geometry to refuse malformed paper orders.
   const slOk = a.side === "BUY" ? a.stopLoss < px   : a.stopLoss > px;
   const tpOk = a.side === "BUY" ? a.takeProfit > px : a.takeProfit < px;
@@ -202,13 +241,16 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
   // Pre-trade Risk Governor: the same rules a live order faces, priced
   // against the paper simulator's market.
   const risk = await enforcePreTradeRisk({
-    userId: a.userId, venue: "PAPER", origin: "manual", action: "OPEN",
+    userId: a.userId, venue: "PAPER", origin: a.origin ?? "manual", action: "OPEN",
     symbol: a.symbol, side: a.side, lots: a.lots,
-    entryPrice: a.entryPrice, stopLoss: a.stopLoss, takeProfit: a.takeProfit,
+    entryPrice: q ? null : a.entryPrice, stopLoss: a.stopLoss, takeProfit: a.takeProfit,
+    ...(a.intentRef ? { intentRef: a.intentRef } : {}),
   }, {
     paperAccountId: a.paperAccountId,
-    facts: { quote: { bid: marketPx, ask: marketPx, at: new Date(nowMs), source: "paper_simulator_price" } },
-    auditContext: { caller: a.caller },
+    facts: { quote: q
+      ? { bid: q.bid, ask: q.ask, at: q.at, source: q.source }
+      : { bid: marketPx, ask: marketPx, at: new Date(nowMs), source: "paper_simulator_price" } },
+    auditContext: { caller: a.caller, ...(a.clientRequestKey ? { clientRequestKey: a.clientRequestKey } : {}) },
   });
   if (!risk.allowed) return governorRefusal(risk);
   const ins = await db.insert(paperOrdersTable).values({
@@ -221,12 +263,21 @@ export async function openPaperOrder(a: PaperOpenArgs): Promise<PaperResult> {
     strategyId: a.strategyId,
     tradePlanId: a.tradePlanId,
     decisionId: a.decisionId,
-  }).returning();
-  const order = ins[0]!;
-  await logEvent(a.userId, order.id, "PLACED", `${SIMULATED_TAG} ${a.side} ${a.symbol} @ ${px.toFixed(5)} SL ${a.stopLoss} TP ${a.takeProfit} lot ${a.lots}`);
+    clientRequestKey: a.clientRequestKey ?? null,
+  }).onConflictDoNothing({ target: [paperOrdersTable.userId, paperOrdersTable.clientRequestKey] }).returning();
+  const order = ins[0];
+  if (!order) {
+    // A concurrent request with the same key booked first: return its order.
+    const prior = a.clientRequestKey ? await paperOrderByRequestKey(a.userId, a.clientRequestKey) : null;
+    if (!prior) throw new Error("paper order insert returned no row");
+    return { ok: true, order: prior, replayed: true };
+  }
+  const priced = q ? ` (price ${q.source} at ${q.at.toISOString()})` : "";
+  await logEvent(a.userId, order.id, "PLACED", `${SIMULATED_TAG} ${a.side} ${a.symbol} @ ${px.toFixed(5)} SL ${a.stopLoss} TP ${a.takeProfit} lot ${a.lots}${priced}`);
   await vaultBehavior("PAPER_ORDER_PLACED", {
     orderId: order.id, accountId: a.paperAccountId,
     symbol: a.symbol, direction: a.side, lotSize: a.lots,
+    ...(q ? { priceSource: q.source, quoteAt: q.at.toISOString(), caller: a.caller } : {}),
   });
   await markToMarket(a.paperAccountId);
   return { ok: true, order };

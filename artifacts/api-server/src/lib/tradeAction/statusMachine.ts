@@ -14,7 +14,8 @@ const TRANSITIONS: Record<ActionStatus, ReadonlyArray<ActionStatus>> = {
   awaiting_confirmation: ["confirmed", "cancelled", "expired"],
   confirmed:             ["guard_checking", "rejected"],
   guard_checking:        ["queued", "rejected"],
-  queued:                ["sent_to_mt5", "failed", "cancelled", "rejected"],
+  // queued → executed: a SIMULATED open's PAPER fill is immediate (owner decision 13).
+  queued:                ["sent_to_mt5", "executed", "failed", "cancelled", "rejected"],
   sent_to_mt5:           ["executed", "failed", "rejected"],
   // terminals
   executed:  [],

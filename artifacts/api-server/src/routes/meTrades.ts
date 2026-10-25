@@ -6,7 +6,10 @@
 //   * SHARED_MASTER_MT5       → reads only the user's own attribution rows.
 //   * Never returns master MT5 credentials, broker tokens, or other users'
 //     trade tickets / P&L.
-//   * POST /open  → placeOrder() (which runs the full guard chain).
+//   * POST /open  → placeOrder() (which runs the full guard chain). A
+//     SIMULATED open books one PAPER order through the Trade Engine pipeline
+//     (owner decision 13) and needs an idempotencyKey; a retry with the same
+//     key returns the order it already booked.
 //   * POST /close → runs envelope checks, requires confirmedByUser, queues
 //     an mt5_commands row, writes trade_command_audit_log, and (in shared
 //     mode) writes a shared_trade_attribution row tagging the close.
@@ -34,6 +37,8 @@ import { placeOrder } from "../lib/adminTrading/placeOrder.js";
 import { getUserModeScope } from "../lib/modeScope/getUserModeScope.js";
 import { draftTrade, confirmTrade, dispatchTrade } from "../lib/tradeEngine/pipeline.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { paperOrderByRequestKey } from "../lib/tradeEngine/paperVenue.js";
+import { SIMULATED_LABEL, simulatedRequestKey } from "../lib/tradeEngine/simulatedOpen.js";
 
 const router: IRouter = Router();
 
@@ -310,6 +315,8 @@ const openSchema = z.object({
   stopLoss: z.number().positive().optional().nullable(),
   takeProfit: z.number().positive().optional().nullable(),
   confirmedByUser: z.boolean(),
+  /** Retry-safe key of a SIMULATED open (owner decision 13): one paper order per key. */
+  idempotencyKey: z.string().min(8).max(128).regex(/^[A-Za-z0-9_.:-]+$/).optional().nullable(),
 });
 
 router.post("/me/trades/open", async (req, res) => {
@@ -324,6 +331,29 @@ router.post("/me/trades/open", async (req, res) => {
     res.status(400).json({ ok: false, error: "CONFIRMATION_REQUIRED" });
     return;
   }
+  // SIMULATED (owner decision 13): explicit mode in the request, a retry-safe
+  // key, and a retry of an already-booked key returns that paper order
+  // without running (or auditing) the guard chain again.
+  if (parsed.data.mode === "SIMULATED") {
+    const key = parsed.data.idempotencyKey ?? null;
+    if (!key) {
+      res.status(400).json({ ok: false, error: "IDEMPOTENCY_KEY_REQUIRED", mode: "SIMULATED", venue: "PAPER",
+        message: "A simulated open needs an idempotencyKey so a retry cannot book a second paper order." });
+      return;
+    }
+    const prior = await paperOrderByRequestKey(userId, simulatedRequestKey("MY_TRADES", key));
+    if (prior) {
+      res.json({
+        ok: true, mode: "SIMULATED", venue: "PAPER", replayed: true,
+        simulated: {
+          mode: "SIMULATED", venue: "PAPER", label: SIMULATED_LABEL, paperOrderId: prior.id, paperAccountId: prior.paperAccountId,
+          symbol: prior.symbol, side: prior.direction, lots: prior.lotSize, fillPrice: prior.entryPrice,
+          stopLoss: prior.stopLoss, takeProfit: prior.takeProfit, priceSource: null, quoteAt: null, replayed: true,
+        },
+      });
+      return;
+    }
+  }
   const result = await placeOrder({
     userId,
     mode: parsed.data.mode,
@@ -334,7 +364,17 @@ router.post("/me/trades/open", async (req, res) => {
     takeProfit: parsed.data.takeProfit ?? null,
     requestedBy: "user",
     confirmedByUser: parsed.data.confirmedByUser,
+    simulatedRequestKey: parsed.data.mode === "SIMULATED" ? parsed.data.idempotencyKey ?? null : null,
   });
+  if (parsed.data.mode === "SIMULATED") {
+    res.json({
+      ok: result.status === "SIMULATED_FILL", mode: "SIMULATED", venue: "PAPER",
+      replayed: result.paper?.replayed === true, simulated: result.paper ?? null,
+      ...(result.status === "SIMULATED_FILL" ? {} : { error: result.reason, message: result.message ?? null }),
+      result,
+    });
+    return;
+  }
   res.json({ ok: result.status === "QUEUED" || result.status === "SIMULATED_FILL", result });
 });
 

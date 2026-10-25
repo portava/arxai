@@ -20,7 +20,7 @@ after(async () => {
 
 test("every Tier 1 migration is detected on a migrated database", async () => {
   const m = await migrationChecks();
-  assert.equal(m.length, 7);
+  assert.equal(m.length, 8);
   assert.deepEqual(m.filter((c) => !c.ok).map((c) => c.name), []);
 });
 

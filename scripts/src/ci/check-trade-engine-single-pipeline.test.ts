@@ -163,12 +163,16 @@ assert.ok(shape({ [PIPELINE]: goodPipe + "\nawait db.insert(paperOrdersTable)", 
   .some((v) => v.includes("must not write")), "the pipeline may not write tables");
 assert.ok(shape({ [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper.replace(/action: "MODIFY"/, 'action: "X"') })
   .some((v) => v.includes("MODIFY")), "an ungoverned paper modify fails");
+// Owner decision 13: the trader ticket's governor origin may come from the caller (Ruby-suggested opens).
+assert.deepEqual(shape({ ...base, [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper.replace('origin: "manual", action: "OPEN"', 'origin: a.origin ?? "manual", action: "OPEN"') }), []);
+assert.ok(shape({ [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper.replace('venue: "PAPER", origin: "manual", action: "OPEN"', 'venue: v, origin: a.origin ?? "manual", action: "OPEN"') })
+  .some((v) => v.includes("OPEN")), "a non-PAPER venue on open still fails");
 assert.ok(shape({ [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper, [MAILBOX_EXCEPTION]: goodMe.replace('action: "CLOSE", payload', 'action: "OPEN", payload') })
   .some((v) => v.includes("mailbox exception")), "the mailbox exception is CLOSE only");
 assert.ok(shape({ [PIPELINE]: goodPipe, [PAPER_VENUE]: goodPaper,
   [MAILBOX_EXCEPTION]: goodMe + '\nawait db.insert(mt5CommandsTable).values({ action: "CLOSE" }).returning();' })
   .some((v) => v.includes("ONE")), "a second mailbox insert fails");
-n += 7;
+n += 9;
 
 // The real tree is green.
 const real = checkTradeEngineSinglePipeline();
