@@ -8,7 +8,7 @@
 //  - Per-user isolation: specs + execution + account are read scoped by userId.
 //  - No fabrication: candles/prices are real or null (caller reads blind).
 
-import { EA_HEARTBEAT_STALE_SECONDS } from "../brokerHub/freshness.js";
+import { isHeartbeatAgeMsOnline } from "../brokerHub/freshness.js";
 import { getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { db, arxSymbolSpecsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
@@ -127,7 +127,8 @@ export async function loadExecutionInput(userId: number): Promise<ScalpExecution
     const ageSeconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
     return {
       heartbeatAgeSeconds: ageSeconds,
-      bridgeConnected: ageSeconds <= EA_HEARTBEAT_STALE_SECONDS,
+      // Shared heartbeat policy on the exact ms age: online (< 60 s).
+      bridgeConnected: isHeartbeatAgeMsOnline(Date.now() - ts),
     };
   } catch {
     return null;

@@ -5,7 +5,7 @@
 // tables. Order placement is centralized in placeLiveOrderGuarded(), which
 // still rejects with BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED.
 
-import { EA_HEARTBEAT_STALE_SECONDS } from "../brokerHub/freshness.js";
+import { isHeartbeatAgeSecondsOnline } from "../brokerHub/freshness.js";
 import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { db, mt5CommandsTable } from "@workspace/db";
 import { desc, eq, isNull, or, type SQL } from "drizzle-orm";
@@ -15,8 +15,6 @@ import type {
 } from "./types.js";
 import { describeRequiredSecrets, missingRequiredSecrets } from "./secrets.js";
 import { readPlatformMt5State, readScopedMt5State } from "../brokerHub/mt5StateReader.js";
-
-const STALE_AFTER_SECONDS = EA_HEARTBEAT_STALE_SECONDS;
 
 function maskAccount(id: string | null | undefined): string {
   if (!id) return "•••";
@@ -58,7 +56,8 @@ export class MT5BridgeProvider implements BrokerProvider {
     const state = await this.loadState();
     const lastHb = state?.lastHeartbeatAt ?? null;
     const staleSeconds = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
-    const connected = !!lastHb && staleSeconds !== null && staleSeconds <= STALE_AFTER_SECONDS;
+    // "connected" = heartbeat online (fresh or degraded) under the shared policy.
+    const connected = !!lastHb && isHeartbeatAgeSecondsOnline(staleSeconds);
     const env = process.env.MT5_ENVIRONMENT?.toLowerCase() === "live" ? "LIVE" as const
               : process.env.MT5_ENVIRONMENT?.toLowerCase() === "demo" ? "DEMO" as const
               : ((state?.liveAllowed ?? 0) === 1 ? "LIVE" as const : "DEMO" as const);

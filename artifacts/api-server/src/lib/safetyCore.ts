@@ -1,4 +1,4 @@
-import { EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_STALE_MS } from "./brokerHub/freshness.js";
+import { classifyHeartbeatAgeMs } from "./brokerHub/freshness.js";
 import { db, safetyCoreTable, vaultEventsTable, stateTransitionsTable } from "@workspace/db";
 import { and, asc, desc, eq, gte, lte, type SQL } from "drizzle-orm";
 import {
@@ -35,8 +35,8 @@ export const ALL_OPERATIONAL_MODES: ReadonlyArray<OperationalMode> = [
   "OBSERVE_ONLY", "SUGGEST_ONLY", "PAPER_TRADING", "LIVE_TRADING",
 ];
 
-const HEARTBEAT_DEGRADED_MS = EA_HEARTBEAT_FRESH_MS;
-const HEARTBEAT_LOCKDOWN_MS = EA_HEARTBEAT_STALE_MS;
+// MT5 link health comes from the shared heartbeat policy (owner decision 17):
+// fresh → OK, degraded → DEGRADED, offline / unknown (incl. future-dated) → DOWN.
 
 // ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -155,10 +155,10 @@ export async function getStatus(): Promise<SafetyCoreStatus> {
   const sc = await loadOrCreate();
   const mt5 = await loadMt5State();
   const age = ageMs(mt5?.lastHeartbeatAt ?? null);
+  const hb = classifyHeartbeatAgeMs(age);
   const link: SafetyCoreStatus["mt5LinkHealth"] =
-    age === null ? "DOWN"
-    : age < HEARTBEAT_DEGRADED_MS ? "OK"
-    : age < HEARTBEAT_LOCKDOWN_MS ? "DEGRADED"
+    hb === "fresh" ? "OK"
+    : hb === "degraded" ? "DEGRADED"
     : "DOWN";
 
   const globalState = sc.globalState as gs.GlobalState;

@@ -13,7 +13,7 @@
 //     Also disables platform oneClick + autoTrade by force on the OWNER.
 //     Returns { ok, applied: { … } }. Audit row written.
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
+import { isHeartbeatAgeSecondsFresh, MT5_HEARTBEAT_FRESH_BELOW_SECONDS } from "../lib/brokerHub/freshness.js";
 import express, { type IRouter, Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import {
@@ -32,7 +32,6 @@ const router: IRouter = Router();
 router.use(express.json());
 
 const OWNER_USER_ID = 4 as const;
-const HEARTBEAT_MAX_AGE_SEC = EA_HEARTBEAT_FRESH_SECONDS;
 
 function requireAdmin(
   req: Request,
@@ -81,7 +80,7 @@ async function writeAudit(args: {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/admin/live/pin-master-bridge
 // Body: { confirm: true }
-// 409 if detector blocked or heartbeat older than HEARTBEAT_MAX_AGE_SEC.
+// 409 if detector blocked or heartbeat not fresh (shared policy: age < 15 s).
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/admin/live/pin-master-bridge", async (req, res) => {
   const admin = requireAdmin(req, res);
@@ -101,10 +100,10 @@ router.post("/admin/live/pin-master-bridge", async (req, res) => {
     return;
   }
   const ageSec = det.bridge.heartbeatAgeSec;
-  if (ageSec == null || ageSec > HEARTBEAT_MAX_AGE_SEC) {
+  if (!isHeartbeatAgeSecondsFresh(ageSec)) {
     res.status(409).json({
       ok: false, error: "HEARTBEAT_TOO_OLD",
-      detail: `Heartbeat must be ≤${HEARTBEAT_MAX_AGE_SEC}s. Current: ${ageSec == null ? "none" : ageSec + "s"}.`,
+      detail: `Heartbeat must be <${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s. Current: ${ageSec == null ? "none" : ageSec + "s"}.`,
       heartbeatAgeSec: ageSec,
     });
     return;

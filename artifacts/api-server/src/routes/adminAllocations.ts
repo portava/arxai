@@ -15,7 +15,7 @@
 //   MASTER_BRIDGE_STALE so admins never over-allocate against a stale
 //   snapshot.
 
-import { LIVE_ACCOUNT_HEARTBEAT_LIVE_MS, EA_HEARTBEAT_STALE_MS } from "../lib/brokerHub/freshness.js";
+import { isHeartbeatAgeMsOnline } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import {
   countOpenPositions,
@@ -103,8 +103,6 @@ async function precheckMasterPoolForAllocation(): Promise<
   return { ok: true, pool };
 }
 
-const HEARTBEAT_LIVE_MS = LIVE_ACCOUNT_HEARTBEAT_LIVE_MS;
-const ADMIN_STALE_BUDGET_MS = EA_HEARTBEAT_STALE_MS;
 
 function requireAdmin(req: Request, res: Response): { id: number; role: "ADMIN" | "OWNER" } | null {
   const u = (req as Request & { authUser?: { id?: number; role?: string } }).authUser;
@@ -168,7 +166,7 @@ function summarizeConn(conn: BrokerConnectionFacts, source: "pinned" | "auto-det
     accountType: conn.accountType ?? null,
     lastHeartbeatAt: conn.lastHeartbeat ? new Date(conn.lastHeartbeat).toISOString() : null,
     lastHeartbeatAgeMs: ageMs,
-    isStale: ageMs == null || ageMs > ADMIN_STALE_BUDGET_MS,
+    isStale: !isHeartbeatAgeMsOnline(ageMs),
     hasRealBalance: balance > 0 || equity > 0,
     detectorBlockedReason: null,
   };
@@ -798,7 +796,7 @@ async function loadMasterContextInTxForUpdate(tx: Tx): Promise<{
       balance,
       equity,
       freeMargin: Number(conn.freeMargin ?? 0),
-      isStale: ageMs == null || ageMs > ADMIN_STALE_BUDGET_MS,
+      isStale: !isHeartbeatAgeMsOnline(ageMs),
       hasRealBalance: balance > 0 || equity > 0,
     };
   };

@@ -16,7 +16,7 @@
 //
 // Mount path: /api/me/live/*
 
-import { EA_HEARTBEAT_FRESH_SECONDS, EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_STALE_MS } from "../lib/brokerHub/freshness.js";
+import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserLiveSnapshotMarkerMs, listUserConnections } from "../lib/brokerHub/connections.js";
@@ -801,7 +801,7 @@ router.get("/me/live/bridge-debug", requireUser, async (req, res) => {
       bridgeVersion: caps.bridgeVersion ?? null,
       lastHeartbeatAt: picked.lastHeartbeat?.toISOString() ?? null,
       heartbeatAgeSeconds: hbAgeSec,
-      heartbeatFresh: hbAgeSec !== null && hbAgeSec <= EA_HEARTBEAT_FRESH_SECONDS,
+      heartbeatFresh: isHeartbeatAgeSecondsFresh(hbAgeSec),
       readOnlyMode: picked.readOnlyMode,
       // EA v1.27 reported runtime fields (null = EA build pre-dates the
       // heartbeat extension or did not include the field on this poll)
@@ -929,13 +929,18 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
   } else {
     const hbAt = freshestConn.lastHeartbeat ? new Date(freshestConn.lastHeartbeat).getTime() : null;
     const ageMs = hbAt != null ? Math.max(0, now - hbAt) : null;
+    // Shared heartbeat policy on the raw age: fresh → live, degraded →
+    // delayed, offline → stale; missing / future-dated → stale.
+    const band = classifyHeartbeatAgeMs(hbAt != null ? now - hbAt : null);
     let state: "live" | "delayed" | "stale" | "offline";
     let stateReason: string | null = null;
     if (ageMs == null) {
       state = "stale"; stateReason = "Bridge has never sent a heartbeat";
-    } else if (ageMs <= EA_HEARTBEAT_FRESH_MS) {
+    } else if (band === "unknown") {
+      state = "stale"; stateReason = "Bridge heartbeat time is invalid (in the future)";
+    } else if (band === "fresh") {
       state = "live";
-    } else if (ageMs <= EA_HEARTBEAT_STALE_MS) {
+    } else if (band === "degraded") {
       state = "delayed"; stateReason = `Last heartbeat ${Math.round(ageMs / 1000)}s ago`;
     } else {
       state = "stale"; stateReason = `Last heartbeat ${Math.round(ageMs / 1000)}s ago`;

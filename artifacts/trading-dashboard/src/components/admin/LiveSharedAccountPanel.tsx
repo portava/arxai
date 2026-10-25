@@ -32,6 +32,7 @@ import {
   AlertTriangle, FileText, PlugZap, ChevronDown, ChevronRight, PinIcon,
 } from "lucide-react";
 import { ControlledLiveTestButton } from "@/components/live/ControlledLiveTestButton";
+import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 type Readiness = {
   ok: boolean;
@@ -292,7 +293,7 @@ export function LiveSharedAccountPanel() {
     g.sharedLiveTradingEnabled && g.masterBridgeLiveEnabled && !g.emergencyKillSwitch;
 
   const hbAge = detectorQ.data?.bridge?.heartbeatAgeSec ?? null;
-  const detectorFresh = hbAge != null && hbAge <= 15 && detectorQ.data?.ok === true;
+  const detectorFresh = isHeartbeatAgeSecondsFresh(hbAge) && detectorQ.data?.ok === true;
   const detectorReason = detectorQ.data?.primaryReason ?? null;
 
   const busyAny = activateMut.isPending || killMut.isPending || pinMut.isPending || firstTestMut.isPending;
@@ -406,7 +407,7 @@ export function LiveSharedAccountPanel() {
               </Button>
               {!detectorFresh && (
                 <div className="text-xs text-muted-foreground">
-                  Button enables automatically once a live EA heartbeat (≤15s) is detected.
+                  Button enables automatically once a live EA heartbeat (under 15s) is detected.
                 </div>
               )}
               <ConfirmActionDialog

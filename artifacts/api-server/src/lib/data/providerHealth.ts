@@ -24,7 +24,7 @@
 //   - NEVER fabricates candles. Empty results stay empty.
 //   - NEVER touches MT5 dispatch, live order pipeline, or any safety state.
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
+import { classifyHeartbeatAgeSeconds, type HeartbeatFreshness } from "../brokerHub/freshness.js";
 import {
   classifySymbol,
   getRouterDiagnostics,
@@ -182,6 +182,13 @@ export interface ProviderHealthSnapshot {
     configuredButUnused: number;
   };
 }
+
+const HB_FEED_STATUS: Record<HeartbeatFreshness, "live" | "stale" | "offline"> = {
+  fresh: "live",
+  degraded: "stale",
+  offline: "offline",
+  unknown: "offline",
+};
 
 const PROBE_SYMBOLS: ReadonlyArray<{ symbol: string; timeframe: string }> = [
   { symbol: "EURUSD",  timeframe: "M5" },
@@ -436,11 +443,13 @@ export async function getProviderHealthSnapshot(): Promise<ProviderHealthSnapsho
 
   // ── Live feed status rows ───────────────────────────────────────────────
   // MT5 heartbeat — read the freshest connected bridge (read-only detector).
+  // Shared heartbeat policy: fresh → live, degraded → stale, offline /
+  // missing / invalid → offline.
   const bridge = await detectCurrentConnectedBridge().catch(() => null);
   const bridgeEv = bridge ? (bridge.ok ? bridge.bridge : bridge.latestHint) : null;
   const hbAgeSec = bridgeEv?.heartbeatAgeSec ?? null;
   const hbStatus: FeedsHealth["mt5"]["heartbeat"]["status"] =
-    !bridgeEv ? "none" : hbAgeSec == null ? "offline" : hbAgeSec <= EA_HEARTBEAT_FRESH_SECONDS ? "live" : "stale";
+    !bridgeEv ? "none" : HB_FEED_STATUS[classifyHeartbeatAgeSeconds(hbAgeSec)];
 
   // MT5 quote push — honest count of probe symbols with a fresh usable quote.
   // EA v1.27/1.50 is heartbeat-only, so this stays 0/false until a quote-push

@@ -374,15 +374,30 @@ console.log("\nB3: news risk gating via production pipeline (skip on missing pro
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("\nB5: stale bridge heartbeat");
 {
-  // Heartbeat age exactly at the limit: should PASS.
+  // Shared heartbeat policy (owner decision 17): fresh means age < 15 s.
+  // Just under the bound passes; exactly at the bound is now BLOCKED (the gate
+  // was <= 15 s, one boundary point looser).
+  const underLimit = evaluateLivePhaseBDispatchGate(
+    baseGateInput({ bridgeHeartbeatAgeSec: LIVE_HEARTBEAT_MAX_AGE_SEC - 0.001 }),
+  );
+  check(
+    `B5: heartbeat just under the bound (${LIVE_HEARTBEAT_MAX_AGE_SEC - 0.001}s) ⇒ PASS`,
+    underLimit.decision === "PASS",
+    underLimit.primaryReason ?? "ok",
+  );
   const atLimit = evaluateLivePhaseBDispatchGate(
     baseGateInput({ bridgeHeartbeatAgeSec: LIVE_HEARTBEAT_MAX_AGE_SEC }),
   );
   check(
-    `B5: heartbeat at limit (${LIVE_HEARTBEAT_MAX_AGE_SEC}s) ⇒ PASS`,
-    atLimit.decision === "PASS",
+    `B5: heartbeat at the bound (${LIVE_HEARTBEAT_MAX_AGE_SEC}s) ⇒ EA_HEARTBEAT_STALE`,
+    atLimit.decision === "BLOCKED" && atLimit.primaryReason === "EA_HEARTBEAT_STALE",
     atLimit.primaryReason ?? "ok",
   );
+  for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const r = evaluateLivePhaseBDispatchGate(baseGateInput({ bridgeHeartbeatAgeSec: bad }));
+    check(`B5: invalid heartbeat age ${bad} ⇒ EA_HEARTBEAT_STALE`,
+      r.decision === "BLOCKED" && r.primaryReason === "EA_HEARTBEAT_STALE", r.primaryReason ?? "ok");
+  }
 
   // One second over the limit: must BLOCK.
   const stale = evaluateLivePhaseBDispatchGate(

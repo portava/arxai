@@ -10,7 +10,7 @@
 //   lifted. By design, this function CANNOT enable live trading. It only
 //   reports state.
 
-import { EA_HEARTBEAT_DEAD_MS } from "../brokerHub/freshness.js";
+import { heartbeatAgeMsFrom, isHeartbeatAgeMsOnline } from "../brokerHub/freshness.js";
 import { listUserConnections } from "../brokerHub/connections.js";
 import { db } from "@workspace/db";
 import {
@@ -66,7 +66,6 @@ const SAFETY_ENVELOPE = {
   allowOrderExecution: false as const,
 };
 
-const HEARTBEAT_STALE_MS = EA_HEARTBEAT_DEAD_MS; // 5 minutes
 
 export async function evaluateUserReadiness(userId: number): Promise<ReadinessReport> {
   const now = new Date();
@@ -226,8 +225,9 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
   );
 
   // 8. mt5_heartbeat_recent — only required for USER_OWNED routing
-  const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat).getTime() : 0;
-  const hbFresh = lastHb > 0 && (now.getTime() - lastHb) < HEARTBEAT_STALE_MS;
+  // "Recent" = online under the shared heartbeat policy (fresh or degraded,
+  // age < 60 s). Was 5 minutes before owner decision 17.
+  const hbFresh = isHeartbeatAgeMsOnline(heartbeatAgeMsFrom(conn?.lastHeartbeat ?? null, now.getTime()));
   pushStatus(
     "mt5_heartbeat_recent",
     "MT5 heartbeat recent",
@@ -237,7 +237,7 @@ export async function evaluateUserReadiness(userId: number): Promise<ReadinessRe
     ["demo", "live", "user_owned_mt5"],
     isUserOwned
       ? (hbFresh
-        ? "Your MT5 EA has reported a heartbeat in the last 5 minutes."
+        ? "Your MT5 EA has reported a heartbeat in the last minute."
         : "No recent heartbeat from your MT5 EA.")
       : isSharedMaster ? "Not required for shared-master routing." : "Choose an account mode first.",
     isUserOwned && !hbFresh ? "Confirm the EA is attached and the terminal is running." : null,

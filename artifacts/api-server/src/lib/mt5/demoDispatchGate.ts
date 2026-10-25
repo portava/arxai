@@ -12,7 +12,7 @@
 //     by the consumer/route after this gate returns.
 //   - No tokens, no apiKeyHash, no broker passwords ever returned.
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
+import { isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
 import { listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
@@ -26,7 +26,6 @@ import { runDemoVerificationGate } from "./demoVerificationGate.js";
 import { getDuplicateEaProbe } from "../../routes/mt5.js";
 import { isArmedForDemo } from "./demoArmingService.js";
 
-const HEARTBEAT_FRESH_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
 
 export interface PerUserDispatchEvaluation {
   eligibility: PerUserDispatchEligibility;
@@ -79,7 +78,7 @@ function scoreBridge(row: BrokerConnection): {
   const hbAge = row.lastHeartbeat
     ? Math.floor((Date.now() - new Date(row.lastHeartbeat).getTime()) / 1000)
     : null;
-  const hbFresh = hbAge !== null && hbAge <= HEARTBEAT_FRESH_SECONDS;
+  const hbFresh = isHeartbeatAgeSecondsFresh(hbAge);
   if (!hbFresh) blockers.push(hbAge === null ? "NO_HEARTBEAT" : `HEARTBEAT_STALE(${hbAge}s)`);
   const accountType = (row.accountType ?? "unknown").toString();
   if (accountType !== "demo" && accountType !== "contest") {
@@ -132,8 +131,7 @@ export async function evaluatePerUserDispatchGate(args: {
   const heartbeatAgeSeconds = conn?.lastHeartbeat
     ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)
     : null;
-  const heartbeatFresh =
-    heartbeatAgeSeconds !== null && heartbeatAgeSeconds <= HEARTBEAT_FRESH_SECONDS;
+  const heartbeatFresh = isHeartbeatAgeSecondsFresh(heartbeatAgeSeconds);
   const accountTypeReported = (conn?.accountType ?? "none").toString();
   const accountTypeExplicitDemo = accountTypeReported === "demo" || accountTypeReported === "contest";
   const reportedEaVersion = conn?.eaVersion ?? null;

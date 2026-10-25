@@ -11,7 +11,6 @@
 //
 // Read-only. Records PAPER_BETA_GATE_RUN + PASSED/FAILED audit events. Never
 // returns tokens. Never enables execution. Never sends MT5 commands.
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
 import { Router, type Request } from "express";
 import { db, mt5CommandsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -23,7 +22,6 @@ import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 
 const router = Router();
 
-const HEARTBEAT_THRESHOLD_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
 
 async function audit(
   eventType: string,

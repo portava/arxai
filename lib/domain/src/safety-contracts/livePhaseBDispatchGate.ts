@@ -17,9 +17,20 @@
 //   in the api-server Phase B path. The Build TT `placeLiveOrderGuarded()` /
 //   `lib/liveTrading/guard.ts` chokepoint also stays untouched.
 
+import {
+  MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+  isHeartbeatAgeSecondsFresh,
+} from "../broker-health/heartbeatPolicy.js";
+
 export const LIVE_BROKER_EXECUTION_ENABLED_DEFAULT = false as const;
 export const MIN_LIVE_EA_VERSION = "1.27" as const;
-export const LIVE_HEARTBEAT_MAX_AGE_SEC = 15 as const;
+/**
+ * Kept for response compatibility (admin readiness `constants` blocks). Since
+ * owner decision 17 this is the shared policy's EXCLUSIVE fresh bound: a
+ * heartbeat passes gate #7 only when age < 15 s (was <= 15 s). Compare through
+ * `isHeartbeatAgeSecondsFresh`, never against this number.
+ */
+export const LIVE_HEARTBEAT_MAX_AGE_SEC = MT5_HEARTBEAT_FRESH_BELOW_SECONDS;
 
 export type LivePhaseBGateKey =
   | "LIVE_BROKER_EXECUTION_DISABLED"           // server master switch off
@@ -28,7 +39,7 @@ export type LivePhaseBGateKey =
   | "GLOBAL_LIVE_DISABLED"                     // singleton flag off
   | "KILL_SWITCH_ENGAGED"                      // per-user kill switch
   | "BRIDGE_NOT_LIVE_ACCOUNT"                  // accountType != live/real
-  | "EA_HEARTBEAT_STALE"                       // > LIVE_HEARTBEAT_MAX_AGE_SEC
+  | "EA_HEARTBEAT_STALE"                       // not fresh (shared policy: age >= 15 s / unknown)
   | "EA_VERSION_TOO_OLD"                       // < MIN_LIVE_EA_VERSION
   | "EA_ENABLE_LIVE_EXECUTION_FALSE"           // EA input toggle
   | "EA_READ_ONLY_MODE_TRUE"                   // EA input toggle
@@ -159,9 +170,9 @@ export function evaluateLivePhaseBDispatchGate(
 
   // 7. Heartbeat fresh
   const hb = input.bridgeHeartbeatAgeSec;
-  if (hb == null || hb > LIVE_HEARTBEAT_MAX_AGE_SEC) fail("EA_HEARTBEAT_STALE",
+  if (!isHeartbeatAgeSecondsFresh(hb)) fail("EA_HEARTBEAT_STALE",
     hb == null ? "No heartbeat received yet."
-      : `Last heartbeat ${hb}s ago (max ${LIVE_HEARTBEAT_MAX_AGE_SEC}s).`);
+      : `Last heartbeat ${hb}s ago (must be < ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s).`);
   else pass("EA_HEARTBEAT_STALE");
 
   // 8. EA version >= 1.27

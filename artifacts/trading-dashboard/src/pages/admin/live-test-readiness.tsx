@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { FeedCompletenessDebugPanel } from "@/components/readiness/FeedCompletenessDebugPanel";
+import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type BridgeFacts = {
@@ -100,7 +101,7 @@ function buildGateChecklist(state: State, pre: Preflight | null): Array<{
 
   return [
     { label: "EA connected to MT5",          pass: A.terminalConnected,                    blocker: "EA is not connected to the MT5 terminal" },
-    { label: "Heartbeat fresh (< 15s)",       pass: A.heartbeatAgeSeconds != null && A.heartbeatAgeSeconds <= 15, blocker: "Heartbeat is stale — EA may have stopped" },
+    { label: "Heartbeat fresh (< 15s)",       pass: isHeartbeatAgeSecondsFresh(A.heartbeatAgeSeconds), blocker: "Heartbeat is stale — EA may have stopped" },
     { label: "Master bridge pinned",          pass: A.bridgeConnectionId != null,           blocker: "Master bridge is not pinned in platform settings" },
     { label: "Broker execution permission",   pass: A.enableLiveExecution === true,         blocker: "Broker execution is disabled (EA flag)" },
     { label: "ReadOnly mode off",             pass: A.readOnlyMode === false,               blocker: "Bridge is in read-only mode" },

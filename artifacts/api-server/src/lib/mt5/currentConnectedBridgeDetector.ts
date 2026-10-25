@@ -6,7 +6,7 @@
 // Selection priority (in order — all are AND-ed):
 //   1. mode = 'LIVE' (i.e. real EA heartbeat — not 'MOCK', not 'DEMO')
 //   2. lastHeartbeat present
-//   3. heartbeat age ≤ LIVE_HEARTBEAT_MAX_AGE_SEC
+//   3. heartbeat fresh under the shared policy (age < 15 s)
 //   4. eaVersion ≥ MIN_LIVE_EA_VERSION (1.27)
 //   5. accountType ∈ {live, real}
 //   6. capabilities.eaInputs.terminalConnected = true
@@ -40,10 +40,8 @@
 import { listConnections, type BrokerConnection } from "../brokerHub/connections.js";
 import { and, desc, isNull, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import {
-  MIN_LIVE_EA_VERSION,
-  LIVE_HEARTBEAT_MAX_AGE_SEC,
-} from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
+import { MIN_LIVE_EA_VERSION } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
+import { isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
 
 export type CurrentConnectedBridgeBlockReason =
   | "MASTER_LIVE_REQUIRES_REAL_BRIDGE"
@@ -177,7 +175,7 @@ export function evaluateBridgeAsMasterLive(e: DetectedBridgeEvidence):
   if (!e.lastHeartbeat || e.heartbeatAgeSec == null) {
     return { ok: false, reason: "MASTER_BRIDGE_HEARTBEAT_STALE" };
   }
-  if (e.heartbeatAgeSec > LIVE_HEARTBEAT_MAX_AGE_SEC) {
+  if (!isHeartbeatAgeSecondsFresh(e.heartbeatAgeSec)) {
     return { ok: false, reason: "MASTER_BRIDGE_HEARTBEAT_STALE" };
   }
   if (!e.eaVersion || compareEaVersion(e.eaVersion, MIN_LIVE_EA_VERSION) < 0) {

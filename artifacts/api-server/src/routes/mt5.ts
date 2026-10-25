@@ -1,4 +1,11 @@
-import { BROKER_HEARTBEAT_FRESH_MS, MT5_ACCOUNT_SNAPSHOT_FRESH_MS, EA_HEARTBEAT_FRESH_MS } from "../lib/brokerHub/freshness.js";
+import {
+  MT5_ACCOUNT_SNAPSHOT_FRESH_MS,
+  MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+  classifyHeartbeatAt,
+  heartbeatIsOnline,
+  isHeartbeatAgeMsFresh,
+  isHeartbeatAgeSecondsFresh,
+} from "../lib/brokerHub/freshness.js";
 import { findConnectionByBridgeTokenHash, getUserActiveConnection, updateConnection, type BrokerConnectionPatch, type BrokerConnectionRecord } from "../lib/brokerHub/connections.js";
 import { applyOwnPositionSnapshot } from "../lib/mt5/executionReconciler.js";
 import { noteBridgeHeartbeat, scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
@@ -395,7 +402,9 @@ router.post("/mt5/heartbeat", bridgeAuthPerUserOnly, async (req, res) => {
       serverReceivedMs: heartbeatReceivedAt.getTime(),
     });
     const state = await loadOrCreateState();
-    const wasOffline = !state.lastHeartbeatAt || (Date.now() - new Date(state.lastHeartbeatAt).getTime() > BROKER_HEARTBEAT_FRESH_MS);
+    // Shared heartbeat policy: the platform EA "was offline" unless its last
+    // heartbeat was online (fresh or degraded, age < 60 s).
+    const wasOffline = !heartbeatIsOnline(classifyHeartbeatAt(state.lastHeartbeatAt ?? null, Date.now()));
     await db.update(mt5StateTable).set({
       account: body.account,
       broker: body.broker ?? state.broker,
@@ -544,7 +553,7 @@ router.get("/mt5/heartbeat/status", async (_req, res) => {
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
-  const fresh = ageSec !== null && ageSec < HEARTBEAT_THRESHOLD_MS / 1000;
+  const fresh = isHeartbeatAgeSecondsFresh(ageSec);
   const eaConnected = fresh;
   const tokenAccepted = bridgeDiag.acceptedCount > 0
     ? "yes"
@@ -568,7 +577,7 @@ router.get("/mt5/heartbeat/status", async (_req, res) => {
     lastAcceptedUserAgent: bridgeDiag.lastAcceptedUserAgent,
     expectedPostEndpoint: "/api/mt5/heartbeat",
     expectedHeader: "X-MT5-Bridge-Token",
-    freshnessThresholdSeconds: HEARTBEAT_THRESHOLD_MS / 1000,
+    freshnessThresholdSeconds: MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
     serverTime: new Date().toISOString(),
     note: "Diagnostic only. Does not unlock execution. Token values are never returned.",
   });
@@ -582,7 +591,7 @@ router.get("/mt5/bridge-diagnostics", async (req, res) => {
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
-  const fresh = ageSec !== null && ageSec < HEARTBEAT_THRESHOLD_MS / 1000;
+  const fresh = isHeartbeatAgeSecondsFresh(ageSec);
 
   // Endpoint mount probe — derived from this very router's stack so the truth
   // matches whatever is actually wired up at runtime, not a hand-maintained list.
@@ -700,7 +709,7 @@ export async function buildBridgeOpsRollup(requesterRole: "admin" | "user") {
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
-  const fresh = ageSec !== null && ageSec < HEARTBEAT_THRESHOLD_MS / 1000;
+  const fresh = isHeartbeatAgeSecondsFresh(ageSec);
   const dup = detectDuplicateEa();
   const snapshotAgeMs = bridgeDiag.lastBrokerSnapshotAt
     ? Date.now() - bridgeDiag.lastBrokerSnapshotAt.getTime()
@@ -733,7 +742,7 @@ export async function buildBridgeOpsRollup(requesterRole: "admin" | "user") {
     duplicateEaReason: dup.reason,
     distinctAcceptedIpsLast5m: dup.distinctIps.length,
     distinctAcceptedAccountsLast5m: dup.distinctAccounts.length,
-    freshnessThresholdSeconds: HEARTBEAT_THRESHOLD_MS / 1000,
+    freshnessThresholdSeconds: MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
     requesterScope: isAdmin ? "admin" : "user_redacted",
     safetyEnvelope: {
       liveLocked: true,
@@ -776,7 +785,7 @@ router.get("/mt5/setup-checklist", async (req, res) => {
   const state = await loadOrCreateState();
   const lastHb = state.lastHeartbeatAt ?? bridgeDiag.lastAcceptedHeartbeatAt;
   const ageSec = lastHb ? Math.floor((Date.now() - new Date(lastHb).getTime()) / 1000) : null;
-  const fresh = ageSec !== null && ageSec < HEARTBEAT_THRESHOLD_MS / 1000;
+  const fresh = isHeartbeatAgeSecondsFresh(ageSec);
   const hasSnapshot = state.balance != null || state.equity != null;
 
   type ItemState = "ok" | "missing" | "waiting" | "stale" | "manual";
@@ -809,7 +818,7 @@ router.get("/mt5/setup-checklist", async (req, res) => {
       state: fresh ? "ok" : (lastHb ? "stale" : "waiting"),
       detail: fresh
         ? `Last heartbeat ${ageSec}s ago.`
-        : (lastHb ? `Stale — last heartbeat ${ageSec}s ago (threshold ${HEARTBEAT_THRESHOLD_MS / 1000}s).` : "Waiting for first heartbeat."),
+        : (lastHb ? `Stale — last heartbeat ${ageSec}s ago (threshold ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s).` : "Waiting for first heartbeat."),
     },
     {
       id: "broker_snapshot_read_only",
@@ -1297,7 +1306,8 @@ router.post("/mt5/sync-positions", bridgeAuthPerUserOnly, async (req, res) => {
 
 // ── Phase 7 additions ──────────────────────────────────────────────────────
 
-const HEARTBEAT_THRESHOLD_MS = EA_HEARTBEAT_FRESH_MS;
+// Platform EA "connected" / "fresh" in the diagnostics below is the shared
+// heartbeat policy's fresh band (age < 15 s).
 
 // Phase 12 hardening: ARX AI is paper-only by construction. Broker placement
 // is not implemented; no live execution path is reachable. `liveLocked` is
@@ -1309,7 +1319,7 @@ async function getLiveLocked(): Promise<boolean> {
 }
 
 function determineMode(state: { lastHeartbeatAt: Date | null; liveAllowed: number | null }, liveLocked: boolean): "MOCK" | "DEMO" | "LIVE_LOCKED" | "LIVE" {
-  const connected = !!state.lastHeartbeatAt && Date.now() - new Date(state.lastHeartbeatAt).getTime() < HEARTBEAT_THRESHOLD_MS;
+  const connected = isHeartbeatAgeMsFresh(state.lastHeartbeatAt ? Date.now() - new Date(state.lastHeartbeatAt).getTime() : null);
   if (!connected) return "MOCK";
   if (liveLocked) return "LIVE_LOCKED";
   if (state.liveAllowed) return "LIVE";
@@ -1468,7 +1478,7 @@ router.get("/mt5/status", requireUser, async (req, res) => {
 
   const lastHb = userConn.lastHeartbeat ? new Date(userConn.lastHeartbeat) : null;
   const ageMs = lastHb ? Date.now() - lastHb.getTime() : null;
-  const fresh = ageMs !== null && ageMs < HEARTBEAT_THRESHOLD_MS;
+  const fresh = isHeartbeatAgeMsFresh(ageMs);
   const secondsSinceHeartbeat = ageMs !== null ? Math.floor(ageMs / 1000) : null;
   const connected = fresh;
   const mode: "NOT_CONNECTED" | "STALE" | "DEMO" | "LIVE_LOCKED" =
@@ -1741,9 +1751,13 @@ router.post("/mt5/execution-result", bridgeAuthPerUserOnly, async (req, res): Pr
 
 router.get("/mt5/state", async (_req, res) => {
   const state = await loadOrCreateState();
-  const connected = !!state.lastHeartbeatAt && Date.now() - new Date(state.lastHeartbeatAt).getTime() < BROKER_HEARTBEAT_FRESH_MS;
+  // "connected" = heartbeat online under the shared policy (fresh or
+  // degraded, age < 60 s); heartbeatFreshness carries the full band.
+  const heartbeatFreshness = classifyHeartbeatAt(state.lastHeartbeatAt ?? null, Date.now());
+  const connected = heartbeatIsOnline(heartbeatFreshness);
   res.json({
     connected,
+    heartbeatFreshness,
     account: state.account,
     broker: state.broker,
     server: state.server,

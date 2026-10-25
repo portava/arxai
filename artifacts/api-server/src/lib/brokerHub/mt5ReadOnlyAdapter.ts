@@ -1,4 +1,4 @@
-import { EA_HEARTBEAT_STALE_MS, MT5_ACCOUNT_SNAPSHOT_FRESH_MS } from "./freshness.js";
+import { MT5_ACCOUNT_SNAPSHOT_FRESH_MS, classifyHeartbeatAt, heartbeatIsOnline } from "./freshness.js";
 import type {
   BrokerAccountSnapshot,
   BrokerCapabilitySnapshot,
@@ -11,7 +11,6 @@ import type {
   ReadOnlyBrokerAdapter,
 } from "@workspace/domain/broker-hub";
 
-const MT5_HEARTBEAT_FRESH_MS = EA_HEARTBEAT_STALE_MS;
 const MT5_DISCOVERY_FRESH_MS = 5 * 60_000;
 const MT5_MARKET_DATA_FRESH_MS = 60_000;
 
@@ -123,7 +122,9 @@ function healthOf(
   const heartbeatMs = connection.lastHeartbeat?.getTime() ?? null;
   const ageMs = heartbeatMs == null ? null : Math.max(0, now - heartbeatMs);
   const staleSeconds = ageMs == null ? null : Math.floor(ageMs / 1000);
-  const heartbeatFresh = isFresh(connection.lastHeartbeat, now, MT5_HEARTBEAT_FRESH_MS);
+  // Shared heartbeat policy: the link counts as up while the heartbeat is
+  // online (fresh or degraded, age < 60 s). Missing / future-dated → not up.
+  const heartbeatFresh = heartbeatIsOnline(classifyHeartbeatAt(connection.lastHeartbeat, now));
 
   if (nativeStatus === "revoked") {
     return {

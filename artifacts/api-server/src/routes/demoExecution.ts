@@ -15,7 +15,7 @@
 //     order per call and never loops.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { EA_HEARTBEAT_FRESH_MS } from "../lib/brokerHub/freshness.js";
+import { isHeartbeatAgeMsFresh } from "../lib/brokerHub/freshness.js";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod/v4";
 import { denyInvestorExecution } from "../lib/auth/productRole.js";
@@ -52,7 +52,7 @@ async function loadAccountTypeAndState() {
   else if (s.liveAllowed === 1) accountType = "REAL";
   else accountType = "DEMO";
   const ageMs = s?.lastHeartbeatAt ? Date.now() - new Date(s.lastHeartbeatAt).getTime() : null;
-  const isFresh = ageMs !== null && ageMs < EA_HEARTBEAT_FRESH_MS;
+  const isFresh = isHeartbeatAgeMsFresh(ageMs);
   return { accountType, isFresh, state: s };
 }
 

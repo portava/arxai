@@ -18,7 +18,7 @@
 // sole rule that blocked and the trader's settings allow overrides. The 12
 // exposure rules and the stop switches can never be overridden.
 
-import { BROKER_HEARTBEAT_FRESH_MS, BROKER_HEARTBEAT_DEGRADED_MS } from "../brokerHub/freshness.js";
+import { classifyHeartbeatAgeMs } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { readOpenPositions } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
@@ -70,9 +70,9 @@ export const PAPER_LEDGER_INSTRUMENT: InstrumentModel = {
 /** Paper accounts carry no leverage column; margin is modelled at 1:100. */
 export const PAPER_ACCOUNT_LEVERAGE = 100;
 
-// EA heartbeat budget. Fresh within 30s; up to 2 min the bridge is degraded
-// (closing still allowed); beyond that it is treated as disconnected.
-export { BROKER_HEARTBEAT_FRESH_MS, BROKER_HEARTBEAT_DEGRADED_MS };
+// EA heartbeat budget: the shared heartbeat policy (owner decision 17).
+// Fresh below 15 s; 15–60 s the bridge is degraded (closing still allowed);
+// 60 s or older, or a future-dated heartbeat, is treated as disconnected.
 
 const IN_FLIGHT_ACTION_STATUSES = ["confirmed", "guard_checking", "queued", "sent_to_mt5"];
 const LIVE_TERMINAL = ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "LIVE_BLOCKED", "LIVE_CANCELLED", "LIVE_CLOSED", "LIVE_EXPIRED"];
@@ -264,9 +264,11 @@ export function classifyBrokerHeartbeat(
   if (!conn.lastHeartbeat) return { status: "DISCONNECTED", lastSeenAt: null, detail: "bridge has never sent a heartbeat" };
   const age = now.getTime() - conn.lastHeartbeat.getTime();
   const secs = Math.round(age / 1000);
-  let status: BrokerStatus = "CONNECTED";
-  if (age > BROKER_HEARTBEAT_DEGRADED_MS) status = "DISCONNECTED";
-  else if (age > BROKER_HEARTBEAT_FRESH_MS) status = "DEGRADED";
+  const band = classifyHeartbeatAgeMs(age);
+  if (band === "unknown") {
+    return { status: "DISCONNECTED", lastSeenAt: conn.lastHeartbeat, detail: "heartbeat time is invalid (in the future)" };
+  }
+  const status: BrokerStatus = band === "fresh" ? "CONNECTED" : band === "degraded" ? "DEGRADED" : "DISCONNECTED";
   return { status, lastSeenAt: conn.lastHeartbeat, detail: `last heartbeat ${secs}s ago` };
 }
 

@@ -1,7 +1,7 @@
 // Phase 9A/9B/9F/9G — Per-user dashboard intelligence aggregator.
 // SAFETY: requireUser; every query scoped by req.authUser.id; no live execution.
 // Never returns raw bridge tokens. First-time users get clean empty state.
-import { BROKER_HEARTBEAT_FRESH_SECONDS, BROKER_HEARTBEAT_DEGRADED_SECONDS } from "../lib/brokerHub/freshness.js";
+import { classifyHeartbeatAt } from "../lib/brokerHub/freshness.js";
 import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import {
@@ -21,14 +21,13 @@ const router = Router();
 // Phase 9I — forced safety envelope. Identical constants on every payload.
 const SAFETY_ENVELOPE = { safetyMode: "paper_only" as const, liveLocked: true as const, readOnlyMode: true as const, allowOrderExecution: false as const };
 
-const HEARTBEAT_FRESH_S = BROKER_HEARTBEAT_FRESH_SECONDS;
-const HEARTBEAT_STALE_S = BROKER_HEARTBEAT_DEGRADED_SECONDS;
-
+// Response vocabulary kept for compatibility; bands come from the shared
+// heartbeat policy: fresh → "fresh", degraded → "stale", offline / unknown →
+// "missing".
 function classifyHeartbeat(lastHeartbeat: Date | null): "fresh" | "stale" | "missing" {
-  if (!lastHeartbeat) return "missing";
-  const age = (Date.now() - lastHeartbeat.getTime()) / 1000;
-  if (age <= HEARTBEAT_FRESH_S) return "fresh";
-  if (age <= HEARTBEAT_STALE_S) return "stale";
+  const f = classifyHeartbeatAt(lastHeartbeat, Date.now());
+  if (f === "fresh") return "fresh";
+  if (f === "degraded") return "stale";
   return "missing";
 }
 

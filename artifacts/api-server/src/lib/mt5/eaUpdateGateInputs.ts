@@ -19,7 +19,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, eaRemoteConfigTable, arxLiveCommandsTable } from "@workspace/db";
 import { readOpenPositions } from "../positions/openPositions.js";
 import { getMyArming } from "../live/liveArming.js";
-import { EA_HEARTBEAT_FRESH_MS } from "../brokerHub/freshness.js";
+import { classifyHeartbeatAt, heartbeatAllowsExecution } from "../brokerHub/freshness.js";
 
 /** Live command statuses that mean a command is still in flight. */
 export const EA_UPDATE_PENDING_COMMAND_STATUSES = ["SENT_TO_MT5_LIVE", "LIVE_APPROVED"] as const;
@@ -73,10 +73,12 @@ export const dbEaUpdateGateReaders: EaUpdateGateReaders = {
   },
 };
 
-/** Heartbeat stability for the update gate: last heartbeat within the 15 s gate window. */
+/**
+ * Heartbeat stability for the update gate: the heartbeat must be "fresh" under
+ * the shared policy (age < 15 s). Missing, invalid or future-dated → not stable.
+ */
 export function isHeartbeatStableForEaUpdate(lastHeartbeat: Date | null | undefined, nowMs: number): boolean {
-  const lastHb = lastHeartbeat ? new Date(lastHeartbeat).getTime() : 0;
-  return nowMs - lastHb <= EA_HEARTBEAT_FRESH_MS;
+  return heartbeatAllowsExecution(classifyHeartbeatAt(lastHeartbeat ?? null, nowMs));
 }
 
 /**

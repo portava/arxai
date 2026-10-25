@@ -16,7 +16,7 @@ import {
   isHeartbeatStableForEaUpdate,
   type EaUpdateGateReaders,
 } from "../eaUpdateGateInputs.js";
-import { EA_HEARTBEAT_FRESH_MS } from "../../brokerHub/freshness.js";
+import { MT5_HEARTBEAT_FRESH_BELOW_MS } from "../../brokerHub/freshness.js";
 
 const SRC = join(import.meta.dirname, "../../..");
 
@@ -77,12 +77,17 @@ test("reads are scoped to the trader and run in the update-check order", async (
   assert.deepEqual(calls, ["killSwitchEngaged:42", "hasOpenLiveTrade:42", "hasPendingCommand:42", "maintenanceMode:42"]);
 });
 
-test("heartbeat stability is the 15 s gate window in ms (not the watchdog's floored seconds)", () => {
+test("heartbeat stability is the shared policy's fresh band (age < 15 s, owner decision 17)", () => {
   const now = NOW.getTime();
-  assert.equal(EA_HEARTBEAT_FRESH_MS, 15_000);
-  assert.equal(isHeartbeatStableForEaUpdate(new Date(now - 15_000), now), true);
+  assert.equal(MT5_HEARTBEAT_FRESH_BELOW_MS, 15_000);
+  assert.equal(isHeartbeatStableForEaUpdate(new Date(now - 14_999), now), true);
+  // Was stable at exactly 15 000 ms (<= 15 s); the policy is strictly < 15 s.
+  assert.equal(isHeartbeatStableForEaUpdate(new Date(now - 15_000), now), false);
   assert.equal(isHeartbeatStableForEaUpdate(new Date(now - 15_001), now), false);
   assert.equal(isHeartbeatStableForEaUpdate(null, now), false);
+  // A future-dated heartbeat is "unknown", never stable.
+  assert.equal(isHeartbeatStableForEaUpdate(new Date(now + 1_000), now), false);
+  assert.equal(isHeartbeatStableForEaUpdate(new Date(Number.NaN), now), false);
 });
 
 test("a userless connection reads no trader state", async () => {

@@ -270,6 +270,9 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // Imports @workspace/db (reads injected; no rows touched): admin EA-health
   // update preview reads the same gate inputs as GET /mt5/update-check.
   { pkg: "@workspace/api-server", script: "test:ea-update-gate-inputs" },
+  // Imports @workspace/db via riskGovernor/enforce (no rows read): the Risk
+  // Governor broker status bands follow the shared heartbeat policy.
+  { pkg: "@workspace/api-server", script: "test:risk-governor-broker-heartbeat" },
   { pkg: "@workspace/api-server", script: "test:alert-rule-ownership" },
   { pkg: "@workspace/api-server", script: "test:trading-on-by-default" },
   { pkg: "@workspace/api-server", script: "test:platform-switches" },

@@ -5,6 +5,7 @@ import { StatusBadge } from "./StatusBadge";
 import { cn } from "@/lib/utils";
 import { STATUS_COLORS, type StatusTone } from "@/lib/design-tokens";
 import { useFeatureUnlock } from "@/hooks/useFeatureUnlock";
+import { classifyHeartbeatAt } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 interface Props {
   variant?: "badge" | "dot";
@@ -27,15 +28,13 @@ export function MT5StatusIndicator({ variant = "badge", className }: Props) {
   let tone: StatusTone = "inactive";
   let label = "Disconnected";
   let Icon = WifiOff;
-  if (mt5?.connected) {
-    const ageSec = mt5.lastHeartbeatAt
-      ? (Date.now() - new Date(mt5.lastHeartbeatAt).getTime()) / 1000
-      : 0;
-    if (ageSec > 8) {
-      tone = "warning"; label = "Delayed"; Icon = Clock;
-    } else {
-      tone = "success"; label = "Connected"; Icon = Wifi;
-    }
+  // Shared heartbeat policy: fresh → Connected, degraded → Delayed,
+  // offline / missing / invalid → Disconnected.
+  const hb = mt5?.connected ? classifyHeartbeatAt(mt5.lastHeartbeatAt ?? null, Date.now()) : "unknown";
+  if (hb === "degraded") {
+    tone = "warning"; label = "Delayed"; Icon = Clock;
+  } else if (hb === "fresh") {
+    tone = "success"; label = "Connected"; Icon = Wifi;
   }
 
   if (variant === "dot") {

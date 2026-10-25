@@ -4,7 +4,7 @@
 // Even when all 15 pass, the live command pipeline still blocks at
 // `BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED` (see liveDispatchGate.ts).
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
+import { isHeartbeatAgeSecondsFresh, MT5_HEARTBEAT_FRESH_BELOW_SECONDS } from "../brokerHub/freshness.js";
 import { getUserActiveConnection } from "../brokerHub/connections.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
@@ -191,11 +191,11 @@ export async function evaluateLiveArmingGate(
       `Bridge reports accountType=${bridge.accountType ?? "?"}. Must be 'live' or 'real'.`);
 
   // 3. Fresh EA heartbeat exists.
-  const hbFresh = hbAge !== null && hbAge <= EA_HEARTBEAT_FRESH_SECONDS;
-  push(3, "HEARTBEAT_FRESH", "Fresh EA heartbeat (≤15s)",
+  const hbFresh = isHeartbeatAgeSecondsFresh(hbAge);
+  push(3, "HEARTBEAT_FRESH", `Fresh EA heartbeat (<${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s)`,
     hbFresh,
     hbAge === null ? "No heartbeat received yet." :
-      hbFresh ? null : `Last heartbeat ${hbAge}s ago (max 15s).`);
+      hbFresh ? null : `Last heartbeat ${hbAge}s ago (must be < ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s).`);
 
   // 4. EA version is v1.27 or newer.
   // Phase A: pin to 1.27+ since that is the planned live-ready version.

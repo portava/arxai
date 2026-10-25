@@ -70,8 +70,22 @@ test("state resolves MOST-RESTRICTIVE-first — never a reassuring state over a 
 });
 
 test("a stale or absent heartbeat is never CONNECTED", () => {
-  assert.equal(resolveConnectionState(input({ lastHeartbeat: fresh(600) })), "DEGRADED");
+  // Shared heartbeat policy (owner decision 17): >= 60 s is offline →
+  // DISCONNECTED (was DEGRADED for any age past 60 s).
+  assert.equal(resolveConnectionState(input({ lastHeartbeat: fresh(600) })), "DISCONNECTED");
   assert.equal(resolveConnectionState(input({ lastHeartbeat: null })), "DISCONNECTED");
+});
+
+test("heartbeat bands follow the shared policy at the exact boundaries", () => {
+  const at = (ms: number) => new Date(NOW.getTime() - ms);
+  assert.equal(resolveConnectionState(input({ lastHeartbeat: at(14_999) })), "CONNECTED");
+  // 15–60 s was CONNECTED before decision 17; it is now DEGRADED.
+  assert.equal(resolveConnectionState(input({ lastHeartbeat: at(15_000) })), "DEGRADED");
+  assert.equal(resolveConnectionState(input({ lastHeartbeat: at(59_999) })), "DEGRADED");
+  assert.equal(resolveConnectionState(input({ lastHeartbeat: at(60_000) })), "DISCONNECTED");
+  // A future-dated (negative-age) or invalid heartbeat is unknown, never CONNECTED.
+  assert.equal(resolveConnectionState(input({ lastHeartbeat: at(-5_000) })), "DISCONNECTED");
+  assert.equal(resolveConnectionState(input({ lastHeartbeat: new Date(Number.NaN) })), "DISCONNECTED");
 });
 
 test("an untrustworthy clock DEGRADES a live connection", () => {

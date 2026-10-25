@@ -5,7 +5,13 @@
 //
 // Pre-trade risk check is purely advisory; live order execution is system-locked.
 
-import { EA_HEARTBEAT_STALE_SECONDS, EA_HEARTBEAT_DEAD_SECONDS, ADVISORY_BRIDGE_CONNECTED_MS } from "../brokerHub/freshness.js";
+import {
+  MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
+  classifyHeartbeatAgeSeconds,
+  classifyHeartbeatAt,
+  heartbeatIsOnline,
+  isHeartbeatAgeSecondsOnline,
+} from "../brokerHub/freshness.js";
 import { demoPositionLedger, demoPositionColumns } from "../positions/ledger.js";
 import { readOpenPositions } from "../positions/openPositions.js";
 import { getUserPrimaryConnection, listUserConnections, type BrokerConnection } from "../brokerHub/connections.js";
@@ -301,6 +307,13 @@ export async function getMT5BridgeStatus(userId: number) {
 }
 
 // ── 4. getMT5Heartbeat ──────────────────────────────────────────────────
+const HEARTBEAT_HEALTH_WORD = {
+  fresh: "healthy",
+  degraded: "stale",
+  offline: "unhealthy",
+  unknown: "unknown",
+} as const;
+
 export async function getMT5Heartbeat(userId: number) {
   const rows = await listUserConnections(userId, { order: "oldest" });
   const now = Date.now();
@@ -309,7 +322,9 @@ export async function getMT5Heartbeat(userId: number) {
     return {
       connectionId: r.id, status: r.status, lastHeartbeat: r.lastHeartbeat,
       ageSeconds: ageSec,
-      health: ageSec == null ? "unknown" : ageSec <= EA_HEARTBEAT_STALE_SECONDS ? "healthy" : ageSec <= EA_HEARTBEAT_DEAD_SECONDS ? "stale" : "unhealthy",
+      // Shared heartbeat policy → Ruby's vocabulary: fresh → healthy,
+      // degraded → stale, offline → unhealthy, missing / invalid → unknown.
+      health: HEARTBEAT_HEALTH_WORD[classifyHeartbeatAgeSeconds(ageSec)],
     };
   });
   return { items,};
@@ -698,7 +713,8 @@ export async function getReconciliationStatus(userId: number) {
   const heartbeatAgeSec = lastHeartbeatAt
     ? Math.floor((Date.now() - new Date(lastHeartbeatAt).getTime()) / 1000)
     : null;
-  const bridgeConnected = !!conn && heartbeatAgeSec !== null && heartbeatAgeSec < EA_HEARTBEAT_STALE_SECONDS;
+  // Shared heartbeat policy: connected = online (fresh or degraded, < 60 s).
+  const bridgeConnected = !!conn && isHeartbeatAgeSecondsOnline(heartbeatAgeSec);
   const bridgeMode: "OFFLINE" | "READ_ONLY" | "PAPER_ONLY" | "LIVE_LOCKED" =
     !bridgeConnected ? "OFFLINE" : (conn?.liveLocked ? "LIVE_LOCKED" : "READ_ONLY");
 
@@ -762,7 +778,7 @@ export async function getReconciliationStatus(userId: number) {
   // `reconciliationStatus` and `bridge.mode` unchanged; new fields
   // consume the shared contract enums at lib/domain/safety-contracts.
   const canonicalReconciliationStatus = mapLegacyReconciliationStatus(reconciliationStatus);
-  const heartbeatStale = !bridgeConnected || (heartbeatAgeSec != null && heartbeatAgeSec > EA_HEARTBEAT_STALE_SECONDS);
+  const heartbeatStale = !bridgeConnected;
   const canonicalBridgeMode = applyHeartbeatStaleness(
     mapLegacyBridgeMode(bridgeConnected ? "connected" : "disconnected"),
     heartbeatStale,
@@ -776,7 +792,7 @@ export async function getReconciliationStatus(userId: number) {
       canonicalMode: canonicalBridgeMode,
       lastHeartbeatAt: lastHeartbeatAt ? new Date(lastHeartbeatAt).toISOString() : null,
       heartbeatAgeSec,
-      heartbeatStaleThresholdSec: EA_HEARTBEAT_STALE_SECONDS,
+      heartbeatStaleThresholdSec: MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
       accountNumber: conn?.accountNumber ?? null,
       serverName: conn?.serverName ?? null,
       readOnlyMode: conn?.readOnlyMode ?? true,
@@ -3801,7 +3817,8 @@ export async function getBridgeCapabilitiesTool(userId: number, env: SafetyEnvel
     const conn = await getUserPrimaryConnection(userId);
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    const bridgeConnected = !!lastHb && (Date.now() - lastHb.getTime() < ADVISORY_BRIDGE_CONNECTED_MS);
+    // Shared heartbeat policy: online (age < 60 s). Was a 90 s advisory window.
+    const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, Date.now()));
     const probe = resolvePendingSubmitStatus({
       capabilities: caps,
       bridgeConnected,

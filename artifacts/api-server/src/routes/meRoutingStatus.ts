@@ -9,7 +9,7 @@
 //    effective routing decision (override or inherit). No other user's
 //    data is read.
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
+import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { getConnection, listConnections } from "../lib/brokerHub/connections.js";
 import { Router, type Request } from "express";
 import { eq } from "drizzle-orm";
@@ -19,7 +19,6 @@ import { resolveRouting } from "../lib/adminTrading/routingResolver.js";
 
 const router = Router();
 
-const HEARTBEAT_FRESH_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
 
 router.get("/me/routing-status", requireUser, async (req: Request, res) => {
   const userId = (req as Request & { authUser?: { id?: number } }).authUser?.id;
@@ -67,7 +66,7 @@ router.get("/me/routing-status", requireUser, async (req: Request, res) => {
       const hbAge = conn?.lastHeartbeat
         ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)
         : null;
-      const healthy = hbAge !== null && hbAge <= HEARTBEAT_FRESH_SECONDS
+      const healthy = isHeartbeatAgeSecondsFresh(hbAge)
         && (conn?.accountType === "demo" || conn?.accountType === "contest");
       master = {
         brokerName: smRow?.brokerName ?? null,

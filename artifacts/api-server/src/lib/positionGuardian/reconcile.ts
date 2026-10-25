@@ -24,6 +24,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { arxLiveCommandsTable, db, mt5DemoCommandsTable, userRiskEventsTable } from "@workspace/db";
 import { logRiskEvent } from "../riskGovernor/riskEvents.js";
 import { logger } from "../logger.js";
+import { MT5_HEARTBEAT_OFFLINE_AT_MS, classifyHeartbeatAt, heartbeatIsOnline } from "../brokerHub/freshness.js";
 import {
   assessProtection,
   GUARDIAN_DEFAULTS,
@@ -338,12 +339,15 @@ export async function reconcileOpenPositions(venue: GuardianVenue, userId: numbe
 // after it reconciles every governed position (trigger "reconnect") and
 // records each one in the audit trail, whatever its state.
 
-/** A heartbeat gap longer than this is a reconnect. */
-export const RECONNECT_GAP_MS = 60_000;
+/**
+ * A reconnect is a heartbeat arriving after the previous one went offline
+ * under the shared heartbeat policy (gap >= 60 s, or missing / future-dated).
+ */
+export const RECONNECT_GAP_MS = MT5_HEARTBEAT_OFFLINE_AT_MS;
 const pendingReconnect = new Set<string>();
 
 export function noteBridgeHeartbeat(venue: GuardianVenue, userId: number, previousHeartbeat: Date | null, now = new Date()): boolean {
-  const reconnect = previousHeartbeat == null || now.getTime() - previousHeartbeat.getTime() > RECONNECT_GAP_MS;
+  const reconnect = !heartbeatIsOnline(classifyHeartbeatAt(previousHeartbeat, now.getTime()));
   if (reconnect) pendingReconnect.add(`${venue}:${userId}`);
   return reconnect;
 }

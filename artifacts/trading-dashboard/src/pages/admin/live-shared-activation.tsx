@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ShieldAlert, Zap, RotateCcw, RefreshCw, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { MT5_HEARTBEAT_FRESH_BELOW_SECONDS, isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 type ApiResp<T> = T & { ok?: boolean; error?: string };
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -209,7 +210,7 @@ function computeArmState(r: ReadinessResp | null): { state: ArmState; preArmFail
   const g = r.globalSwitches;
   const b = r.liveAccount.pinnedBridge;
   if (g.emergencyKillSwitch === true) return { state: "KILL_SWITCH_ACTIVE", preArmFailures: [] };
-  const fresh = b?.heartbeatAgeSeconds != null && b.heartbeatAgeSeconds <= r.constants.LIVE_HEARTBEAT_MAX_AGE_SEC;
+  const fresh = isHeartbeatAgeSecondsFresh(b?.heartbeatAgeSeconds);
   const eaOk = b?.eaVersion != null && b.eaVersion >= r.constants.MIN_LIVE_EA_VERSION;
   const liveAccountType = b?.accountType === "live" || b?.accountType === "real";
   const detected = r.liveAccount.detectedAccountNumber && r.liveAccount.detectedBrokerName && r.liveAccount.detectedServerName;
@@ -316,7 +317,7 @@ function ReadinessCards({ readiness }: { readiness: ReadinessResp | null }) {
   if (!readiness) return <div className="text-xs text-muted-foreground italic">loading…</div>;
   const g = readiness.globalSwitches;
   const b = readiness.liveAccount.pinnedBridge;
-  const fresh = b?.heartbeatAgeSeconds != null && b.heartbeatAgeSeconds <= readiness.constants.LIVE_HEARTBEAT_MAX_AGE_SEC;
+  const fresh = isHeartbeatAgeSecondsFresh(b?.heartbeatAgeSeconds);
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Platform</CardTitle></CardHeader><CardContent className="pt-1">
@@ -351,7 +352,7 @@ function useChecklist(r: ReadinessResp | null): Check[] {
     if (!r) return [];
     const g = r.globalSwitches;
     const b = r.liveAccount.pinnedBridge;
-    const fresh = b?.heartbeatAgeSeconds != null && b.heartbeatAgeSeconds <= r.constants.LIVE_HEARTBEAT_MAX_AGE_SEC;
+    const fresh = isHeartbeatAgeSecondsFresh(b?.heartbeatAgeSeconds);
     const eaOk = b?.eaVersion != null && b.eaVersion >= r.constants.MIN_LIVE_EA_VERSION;
     const liveAccountType = b?.accountType === "live" || b?.accountType === "real";
     const usersWithCaps = r.approvedUsers.rows.filter(u => u.approved && u.maxLot != null).length;
@@ -368,7 +369,7 @@ function useChecklist(r: ReadinessResp | null): Check[] {
     return [
       { id: "operator_auth", ok: true, label: "Admin/operator authenticated" },
       { id: "bridge_pinned", ok: b != null, label: "Master bridge pinned" },
-      { id: "heartbeat", ok: fresh, label: `Bridge heartbeat fresh (≤${r.constants.LIVE_HEARTBEAT_MAX_AGE_SEC}s)`, detail: b?.heartbeatAgeSeconds != null ? `${b.heartbeatAgeSeconds}s old` : "no heartbeat" },
+      { id: "heartbeat", ok: fresh, label: `Bridge heartbeat fresh (<${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s)`, detail: b?.heartbeatAgeSeconds != null ? `${b.heartbeatAgeSeconds}s old` : "no heartbeat" },
       { id: "ea_version", ok: eaOk, label: `EA ≥ ${r.constants.MIN_LIVE_EA_VERSION}`, detail: b?.eaVersion ?? "—" },
       { id: "ea_on_live_chart", ok: liveAccountType, label: "EA attached to LIVE master MT5 chart" },
       { id: "read_only_off", ok: b?.readOnlyMode === false, label: "EA ReadOnlyMode=false" },
@@ -722,7 +723,7 @@ function BridgeTab({
           {row("Account (masked)", b.accountNumberMasked ?? "—")}
           {row("Broker", b.brokerName ?? "—")}
           {row("EA version", b.eaVersion ?? "—", b.eaVersion != null && b.eaVersion >= (readiness?.constants.MIN_LIVE_EA_VERSION ?? "1.27"))}
-          {row("Heartbeat", `${b.heartbeatAgeSeconds ?? "—"}s`, b.heartbeatAgeSeconds != null && b.heartbeatAgeSeconds <= (readiness?.constants.LIVE_HEARTBEAT_MAX_AGE_SEC ?? 15))}
+          {row("Heartbeat", `${b.heartbeatAgeSeconds ?? "—"}s`, isHeartbeatAgeSecondsFresh(b.heartbeatAgeSeconds))}
           {row("ReadOnlyMode", String(b.readOnlyMode), b.readOnlyMode === false)}
         </>
       )}

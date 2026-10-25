@@ -1,74 +1,54 @@
-// Broker Hub — the one place bridge / EA heartbeat and MT5 snapshot freshness
-// thresholds are named (Tier 1 Broker State).
+// Broker Hub — the one server place bridge / EA heartbeat and MT5 snapshot
+// freshness is named (Tier 1 Broker State).
 //
-// Every surface that asks "is the bridge fresh / stale / offline" or "is the
-// account snapshot fresh" imports its number from here instead of typing a
-// literal. Guard: scripts/src/ci/check-single-bridge-freshness-source.ts.
+// MT5 CONNECTION HEARTBEATS (owner decision 17, 2026-10-25): one shared pure
+// policy, defined in @workspace/domain/broker-health/heartbeatPolicy so the
+// api-server, the pure domain evaluators and the trading dashboard all import
+// the same classifier. It is re-exported here for server callers:
+//   age < 15 s fresh · 15 s ≤ age < 60 s degraded · age ≥ 60 s offline ·
+//   missing / invalid / negative / non-finite → unknown (never execution-ready).
+// Callers compare through the classifier functions, never against a number,
+// so `<` vs `<=` cannot drift. Guard:
+// scripts/src/ci/check-single-bridge-freshness-source.ts.
 //
-// The values are exactly the ones each caller used before this module
-// existed. Where two callers use DIFFERENT numbers for what reads like the
-// same idea ("fresh" is 15 s at the dispatch gate, 20 s on the live-account
-// pages, 30 s in the Risk Governor broker status and the platform EA views,
-// 60 s in the read-only adapter), they are kept as separately named
-// thresholds below. Unifying them would change what a surface reports and is
-// an owner decision (docs/TIER1_BROKER_HUB_SOURCE.md, "Freshness thresholds").
+// DISTINCT CONCEPTS (not heartbeats, kept separately named below with their
+// own values): account snapshots, positions snapshots, the fund-book broker
+// mirror, Bridge v2 stream health and the cached broker-health verdict.
+// Market-data feeds live in lib/data/freshness.ts; escalation timers live
+// with their owners.
 //
-// Pure constants and one pure classifier: no IO, no imports.
+// Pure: no IO.
 
-// ── EA / bridge heartbeat ───────────────────────────────────────────────────
+export {
+  MT5_HEARTBEAT_FRESH_BELOW_MS,
+  MT5_HEARTBEAT_OFFLINE_AT_MS,
+  MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+  MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
+  HEARTBEAT_FRESHNESS_VALUES,
+  type HeartbeatFreshness,
+  classifyHeartbeatAgeMs,
+  classifyHeartbeatAgeSeconds,
+  classifyHeartbeatAt,
+  heartbeatAgeMsFrom,
+  heartbeatAllowsExecution,
+  heartbeatIsOnline,
+  isHeartbeatAgeMsFresh,
+  isHeartbeatAgeSecondsFresh,
+  isHeartbeatAgeMsOnline,
+  isHeartbeatAgeSecondsOnline,
+} from "@workspace/domain/broker-health/heartbeatPolicy";
 
-/**
- * 15 s — the dispatch heartbeat gate (Phase B live gate #7). An EA heartbeat
- * at most this old is "fresh" / "live" / "stable". Used by the live and demo
- * dispatch gates, the EA self-update gate, the safety core (older → DEGRADED),
- * the bridge watchdog, readiness views and the paper-intelligence stale gate.
- */
-export const EA_HEARTBEAT_FRESH_MS = 15_000;
-export const EA_HEARTBEAT_FRESH_SECONDS = 15;
-
-/**
- * 60 s — past this the bridge is stale / offline / not connected: watchdog
- * OFFLINE, safety-core LOCKDOWN, connection card DEGRADED, read-only adapter
- * heartbeat not fresh, broker provider not connected, Ruby's bridge status.
- */
-export const EA_HEARTBEAT_STALE_MS = 60_000;
-export const EA_HEARTBEAT_STALE_SECONDS = 60;
-
-/**
- * 5 min — a long-dead heartbeat: user readiness "heartbeat stale", Ruby's
- * heartbeat tool "unhealthy".
- */
-export const EA_HEARTBEAT_DEAD_MS = 5 * 60_000;
-export const EA_HEARTBEAT_DEAD_SECONDS = 300;
+// ── Bridge v2 stream health (stream-specific, not the heartbeat policy) ─────
 
 /**
- * 20 s — the live-account pages' "heartbeat live" pill (meLiveAccount,
- * adminLiveAccount, adminAllocations). Differs from the 15 s gate.
+ * Bridge v2 STREAM health (lib/bridgeV2/status.ts, observability): LIVE up to
+ * 15 s, STALE up to 120 s, OFFLINE beyond (inclusive). Stream-specific health,
+ * separately named from the shared MT5 heartbeat policy (owner decision 18).
  */
-export const LIVE_ACCOUNT_HEARTBEAT_LIVE_MS = 20_000;
+export const BRIDGE_V2_STREAM_LIVE_MS = 15_000;
+export const BRIDGE_V2_STREAM_STALE_MS = 120_000;
 
-/**
- * 30 s / 120 s — broker heartbeat FRESH / DEGRADED bands: the Risk Governor's
- * broker status (fresh ≤ 30 s, degraded ≤ 2 min, then disconnected), the
- * platform EA (`mt5_state`) "connected" window in routes/mt5.ts, and the
- * trader dashboard's heartbeat card. "Fresh" here is 30 s, not the 15 s gate.
- */
-export const BROKER_HEARTBEAT_FRESH_MS = 30_000;
-export const BROKER_HEARTBEAT_FRESH_SECONDS = 30;
-export const BROKER_HEARTBEAT_DEGRADED_MS = 120_000;
-export const BROKER_HEARTBEAT_DEGRADED_SECONDS = 120;
-
-/**
- * 90 s — advisory "bridge connected" for surfaces that only describe what a
- * submit would do (pending-order draft, Ruby's pending-submit probe), and the
- * reconciliation STALE_HEARTBEAT detector. Looser than the 60 s stale line.
- */
-export const ADVISORY_BRIDGE_CONNECTED_MS = 90_000;
-
-/** 120 s — Bridge v2 status: STALE up to this, OFFLINE beyond (observability). */
-export const BRIDGE_V2_HEARTBEAT_STALE_MS = 120_000;
-
-// ── Broker / account snapshots ──────────────────────────────────────────────
+// ── Broker / account / positions snapshots ──────────────────────────────────
 
 /**
  * 60 s — an MT5 broker/account snapshot is fresh for this long: read-only
@@ -86,28 +66,20 @@ export const ACCOUNT_SNAPSHOT_LIVE_MS = 5_000;
 export const ACCOUNT_SNAPSHOT_FRESH_MS = 30_000;
 export const ACCOUNT_SNAPSHOT_DELAYED_MS = 120_000;
 
-/** 120 s — the cached broker-health verdict is stale for the handshake monitor (advisory). */
-export const BROKER_HEALTH_VERDICT_STALE_MS = 120_000;
-
-// ── Classifier ──────────────────────────────────────────────────────────────
-
-export type AgeBand = "fresh" | "stale" | "offline" | "unknown";
+/**
+ * 60 s — an MT5 positions / telemetry snapshot is fresh for this long
+ * (connection card `marketDataHealth`, inclusive). A positions snapshot, not
+ * a heartbeat: owner decision 17 keeps it off the heartbeat policy.
+ */
+export const MT5_POSITIONS_SNAPSHOT_FRESH_SECONDS = 60;
 
 /**
- * Classify an age against two thresholds in the SAME unit as the age (ms or
- * seconds; callers keep their own rounding). `inclusive` (default) means
- * age ≤ fresh is fresh and age ≤ stale is stale; `exclusive` uses < for both.
- * A null / non-finite age is "unknown"; callers decide what unknown means.
+ * 15 s / 60 s — fund-book broker-mirror freshness (inclusive: ≤ 15 s FRESH,
+ * ≤ 60 s DELAYED). The age is the newer of the heartbeat and the positions
+ * snapshot, so it is a mirror concept, kept off the heartbeat policy.
  */
-export function classifyAge(
-  age: number | null | undefined,
-  fresh: number,
-  stale: number,
-  bound: "inclusive" | "exclusive" = "inclusive",
-): AgeBand {
-  if (age == null || !Number.isFinite(age)) return "unknown";
-  const within = (limit: number) => (bound === "inclusive" ? age <= limit : age < limit);
-  if (within(fresh)) return "fresh";
-  if (within(stale)) return "stale";
-  return "offline";
-}
+export const FUNDBOOK_MIRROR_FRESH_MS = 15_000;
+export const FUNDBOOK_MIRROR_DELAYED_MS = 60_000;
+
+/** 120 s — the cached broker-health verdict is stale for the handshake monitor (advisory). */
+export const BROKER_HEALTH_VERDICT_STALE_MS = 120_000;
