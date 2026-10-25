@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BridgeV2UserStatusFeedFreshness } from "./bridgeV2UserStatusFeedFreshness";
+import type { BridgeV2UserStatusHeartbeatFreshness } from "./bridgeV2UserStatusHeartbeatFreshness";
+import type { BridgeV2UserStatusStreamHealth } from "./bridgeV2UserStatusStreamHealth";
 
 /**
  * Redacted per-user Bridge v2 connection + feed freshness.
@@ -15,6 +17,12 @@ export interface BridgeV2UserStatus {
   hasV2Bridge: boolean;
   connected: boolean;
   feedFreshness: BridgeV2UserStatusFeedFreshness;
+  /** Shared MT5 heartbeat vocabulary (owner decision 17/18) — the comparable heartbeat fact. */
+  heartbeatFreshness?: BridgeV2UserStatusHeartbeatFreshness;
+  /** Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only. */
+  streamHealth?: BridgeV2UserStatusStreamHealth;
+  /** Always false. A healthy stream never makes an account execution-ready. */
+  streamImpliesExecutionReady?: boolean;
   accountType?: string | null;
   lastHeartbeatAt?: string | null;
   lastAccountAt?: string | null;

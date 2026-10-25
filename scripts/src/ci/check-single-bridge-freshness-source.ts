@@ -72,10 +72,6 @@ export const ALLOW: Record<string, { count: number; why: string }> = {
     count: 1,
     why: "Shared-master pool ACCOUNT snapshot freshness (POOL_SNAPSHOT_FRESH_BUDGET_MS = MT5_ACCOUNT_SNAPSHOT_FRESH_MS, 60 s): the pool's balance/equity snapshot is stamped by the connection heartbeat, but it answers 'is the mirrored account snapshot fresh', a distinct concept owner decision 17 keeps off the heartbeat policy",
   },
-  "lib/bridgeV2/status.ts": {
-    count: 2,
-    why: "Bridge v2 STREAM health (LIVE <= 15 s, STALE <= 120 s, OFFLINE beyond; legacy `connected`/`freshness`/`feedFreshness` response fields) is stream-specific health kept separately named and unchanged for response compatibility (owner decision 18); the comparable heartbeat fact is reported through the shared policy",
-  },
   "lib/scalp/flameRead.ts": {
     count: 3,
     why: "Scalp execution-quality grading (owner decision 17: preserve stricter execution requirements). BLOCKED past 2 x the policy fresh bound (30 s) is STRICTER than the policy's 60 s offline line; EXCELLENT (<= 4 s) and GOOD (<= 8 s) are quality sub-bands inside the fresh band. Not-fresh → POOR goes through the policy classifier",

@@ -4615,6 +4615,24 @@ export const GetAdminBridgeV2StatusResponse = zod.object({
         bridgeConnectionId: zod.number().nullish(),
         connected: zod.boolean(),
         freshness: zod.enum(["LIVE", "STALE", "OFFLINE", "UNKNOWN"]),
+        heartbeatFreshness: zod
+          .enum(["fresh", "degraded", "offline", "unknown"])
+          .optional()
+          .describe(
+            "Shared MT5 heartbeat vocabulary (owner decision 17\/18) — the comparable heartbeat fact.",
+          ),
+        streamHealth: zod
+          .enum(["LIVE", "STALE", "OFFLINE", "UNKNOWN"])
+          .optional()
+          .describe(
+            "Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only.",
+          ),
+        streamImpliesExecutionReady: zod
+          .literal(false)
+          .optional()
+          .describe(
+            "Always false. A healthy stream never makes an account execution-ready.",
+          ),
         lastHeartbeatAt: zod.string().nullish(),
         heartbeatAgeSeconds: zod.number().nullish(),
         eaVersion: zod.string().nullish(),
@@ -4660,6 +4678,24 @@ export const GetMeBridgeV2StatusResponse = zod
     hasV2Bridge: zod.boolean(),
     connected: zod.boolean(),
     feedFreshness: zod.enum(["LIVE", "STALE", "OFFLINE", "UNKNOWN"]),
+    heartbeatFreshness: zod
+      .enum(["fresh", "degraded", "offline", "unknown"])
+      .optional()
+      .describe(
+        "Shared MT5 heartbeat vocabulary (owner decision 17\/18) — the comparable heartbeat fact.",
+      ),
+    streamHealth: zod
+      .enum(["LIVE", "STALE", "OFFLINE", "UNKNOWN"])
+      .optional()
+      .describe(
+        "Bridge v2 stream-specific health (same value as the legacy freshness field). Observability only.",
+      ),
+    streamImpliesExecutionReady: zod
+      .literal(false)
+      .optional()
+      .describe(
+        "Always false. A healthy stream never makes an account execution-ready.",
+      ),
     accountType: zod.string().nullish(),
     lastHeartbeatAt: zod.string().nullish(),
     lastAccountAt: zod.string().nullish(),

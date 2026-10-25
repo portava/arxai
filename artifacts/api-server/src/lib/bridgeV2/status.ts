@@ -16,7 +16,8 @@
 // - Per-user isolation: every query is scoped by userId; the user DTO uses the
 //   authenticated user's id, never a bridge token.
 
-import { BRIDGE_V2_STREAM_LIVE_MS, BRIDGE_V2_STREAM_STALE_MS } from "../brokerHub/freshness.js";
+import type { HeartbeatFreshness } from "../brokerHub/freshness.js";
+import { deriveBridgeV2Liveness, type BridgeV2Freshness } from "./liveness.js";
 import {
   db,
   bridgeV2EventsTable,
@@ -25,21 +26,28 @@ import { listBridgeV2StreamStates, type BridgeV2StreamStateRow } from "../broker
 import { and, desc, eq, sql } from "drizzle-orm";
 import { loadBridgeV2ConfigForEa, listBridgeV2CommandsForEa } from "./egress.js";
 
-// Bridge v2 STREAM health bands (observability, not a gate). These are the
-// stream's own LIVE/STALE/OFFLINE vocabulary, separately named from the shared
-// MT5 heartbeat policy (owner decision 18 adds the policy's comparable field).
-const HEARTBEAT_LIVE_MS = BRIDGE_V2_STREAM_LIVE_MS;
-const HEARTBEAT_STALE_MS = BRIDGE_V2_STREAM_STALE_MS;
-
-export type BridgeV2Freshness = "LIVE" | "STALE" | "OFFLINE" | "UNKNOWN";
+// Liveness facts (owner decision 18, lib/bridgeV2/liveness.ts): the
+// comparable heartbeat fact in the shared vocabulary (`heartbeatFreshness`),
+// the stream-specific health (`streamHealth`, same values as the legacy
+// `freshness` / `feedFreshness`), the legacy `connected`, and an explicit
+// `streamImpliesExecutionReady: false`. Observability, never a gate.
+export type { BridgeV2Freshness };
 
 export interface BridgeV2AdminStatus {
   userId: number;
   bridgeConnectionId: number | null;
 
   // Liveness
+  /** Legacy (compatibility): stream LIVE, age ≤ 15 s. */
   connected: boolean;
+  /** Legacy (compatibility): same value as `streamHealth`. */
   freshness: BridgeV2Freshness;
+  /** Shared MT5 heartbeat vocabulary (owner decision 17/18). */
+  heartbeatFreshness: HeartbeatFreshness;
+  /** Bridge v2 stream-specific health (LIVE ≤ 15 s, STALE ≤ 120 s, OFFLINE). */
+  streamHealth: BridgeV2Freshness;
+  /** Always false: a healthy stream never implies an execution-ready account. */
+  streamImpliesExecutionReady: false;
   lastHeartbeatAt: string | null;
   heartbeatAgeSeconds: number | null;
 
@@ -87,8 +95,16 @@ export interface BridgeV2AdminStatus {
 
 export interface BridgeV2UserStatus {
   hasV2Bridge: boolean;
+  /** Legacy (compatibility): stream LIVE, age ≤ 15 s. */
   connected: boolean;
+  /** Legacy (compatibility): same value as `streamHealth`. */
   feedFreshness: BridgeV2Freshness;
+  /** Shared MT5 heartbeat vocabulary (owner decision 17/18). */
+  heartbeatFreshness: HeartbeatFreshness;
+  /** Bridge v2 stream-specific health. */
+  streamHealth: BridgeV2Freshness;
+  /** Always false: a healthy stream never implies an execution-ready account. */
+  streamImpliesExecutionReady: false;
   accountType: string | null;
   lastHeartbeatAt: string | null;
   lastAccountAt: string | null;
@@ -110,13 +126,6 @@ function keyOf(r: { userId: number; bridgeConnectionId: number | null }): string
 
 function isoOf(d: Date | null | undefined): string | null {
   return d ? new Date(d).toISOString() : null;
-}
-
-function freshnessFromAgeMs(ageMs: number | null): BridgeV2Freshness {
-  if (ageMs == null) return "UNKNOWN";
-  if (ageMs <= HEARTBEAT_LIVE_MS) return "LIVE";
-  if (ageMs <= HEARTBEAT_STALE_MS) return "STALE";
-  return "OFFLINE";
 }
 
 // Safe field readers over an untyped jsonb payload — never throws, never coerces
@@ -211,8 +220,8 @@ export async function buildBridgeV2AdminStatus(
 
     const lastHeartbeatAt = isoOf(heartbeat?.at ?? null);
     const heartbeatAgeMs = lastHeartbeatAt ? Date.now() - new Date(lastHeartbeatAt).getTime() : null;
-    const freshness = freshnessFromAgeMs(heartbeatAgeMs);
-    const connected = heartbeatAgeMs != null && heartbeatAgeMs <= HEARTBEAT_LIVE_MS;
+    const liveness = deriveBridgeV2Liveness(heartbeatAgeMs);
+    const connected = liveness.connected;
 
     const hbPayload = heartbeat?.payload;
     const eaInputs = hbPayload && typeof hbPayload === "object" ? (hbPayload as Record<string, unknown>).eaInputs : undefined;
@@ -254,7 +263,10 @@ export async function buildBridgeV2AdminStatus(
       userId: key.userId,
       bridgeConnectionId: key.bridgeConnectionId,
       connected,
-      freshness,
+      freshness: liveness.streamHealth,
+      heartbeatFreshness: liveness.heartbeatFreshness,
+      streamHealth: liveness.streamHealth,
+      streamImpliesExecutionReady: liveness.streamImpliesExecutionReady,
       lastHeartbeatAt,
       heartbeatAgeSeconds: heartbeatAgeMs != null ? Math.round(heartbeatAgeMs / 1000) : null,
       eaVersion: heartbeat?.eaVersion ?? null,
@@ -306,6 +318,9 @@ export async function buildBridgeV2UserStatus(userId: number): Promise<BridgeV2U
       hasV2Bridge: false,
       connected: false,
       feedFreshness: "UNKNOWN",
+      heartbeatFreshness: "unknown",
+      streamHealth: "UNKNOWN",
+      streamImpliesExecutionReady: false,
       accountType: null,
       lastHeartbeatAt: null,
       lastAccountAt: null,
@@ -320,11 +335,15 @@ export async function buildBridgeV2UserStatus(userId: number): Promise<BridgeV2U
   // null-keyed event (the user may have a concrete connection id).
   const lastHeartbeatAt = heartbeat?.at ? isoOf(heartbeat.at) : streamLastAt(streams, "HEARTBEAT");
   const ageMs = lastHeartbeatAt ? Date.now() - new Date(lastHeartbeatAt).getTime() : null;
+  const liveness = deriveBridgeV2Liveness(ageMs);
 
   return {
     hasV2Bridge: true,
-    connected: ageMs != null && ageMs <= HEARTBEAT_LIVE_MS,
-    feedFreshness: freshnessFromAgeMs(ageMs),
+    connected: liveness.connected,
+    feedFreshness: liveness.streamHealth,
+    heartbeatFreshness: liveness.heartbeatFreshness,
+    streamHealth: liveness.streamHealth,
+    streamImpliesExecutionReady: liveness.streamImpliesExecutionReady,
     accountType: readStr(heartbeat?.payload, "accountType"),
     lastHeartbeatAt,
     lastAccountAt: streamLastAt(streams, "ACCOUNT_SNAPSHOT"),
