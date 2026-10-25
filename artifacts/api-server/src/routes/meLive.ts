@@ -20,6 +20,7 @@ import { classifyHeartbeatAgeMs, isHeartbeatAgeSecondsFresh } from "../lib/broke
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { selectLiveOpenPositions } from "../lib/positions/openPositions.js";
 import { getUserLiveSnapshotMarkerMs, listUserConnections } from "../lib/brokerHub/connections.js";
+import { accountFiguresOf, connectionAccountSnapshot } from "../lib/brokerHub/accountSnapshot.js";
 import { Router, type Request, type Response } from "express";
 import { and, eq } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
@@ -988,7 +989,9 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
   // Freshest account-synced connection for equity/balance.
   const equityRows = await listUserConnections(userId, { order: "accountSynced", limit: 1 });
   const conn = equityRows[0];
-  const acctSynced = conn?.accountSyncedAt ?? null;
+  // Authoritative per-connection snapshot (owner decision 16): the figures the
+  // EA delivered, all-null when never synced (never a default 0).
+  const acct = accountFiguresOf(connectionAccountSnapshot(conn));
 
   const snapshot = buildLiveAccountSnapshot({
     userId,
@@ -1001,13 +1004,7 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
       lastSyncedAtMs: r.lastSyncedAt ? new Date(r.lastSyncedAt).getTime() : null,
     })),
     quotes: undefined,
-    account: {
-      equity: acctSynced ? (conn?.accountEquity ?? null) : null,
-      balance: acctSynced ? (conn?.accountBalance ?? null) : null,
-      margin: acctSynced ? (conn?.margin ?? null) : null,
-      freeMargin: acctSynced ? (conn?.freeMargin ?? null) : null,
-      syncedAtMs: acctSynced ? new Date(acctSynced).getTime() : null,
-    },
+    account: acct,
     lastPositionsSnapshotAtMs: conn?.lastPositionsSnapshotAt
       ? new Date(conn.lastPositionsSnapshotAt).getTime()
       : null,
@@ -1035,16 +1032,16 @@ router.get("/me/live/refresh-snapshot", requireUser, async (req, res) => {
     checkedAt: new Date(now).toISOString(),
     bridgeState,
     account: {
-      balance: acctSynced ? (conn?.accountBalance ?? null) : null,
-      equity: acctSynced ? (conn?.accountEquity ?? null) : null,
-      margin: acctSynced ? (conn?.margin ?? null) : null,
-      freeMargin: acctSynced ? (conn?.freeMargin ?? null) : null,
+      balance: acct.balance,
+      equity: acct.equity,
+      margin: acct.margin,
+      freeMargin: acct.freeMargin,
       // marginLevel is not a stored connection column; the SSE snapshot also
       // never derives it, so keep it null here rather than fabricate.
       marginLevel: snapshot.marginLevel ?? null,
       openPL: snapshot.openPL,
       openPositionsCount: snapshot.openPositionsCount,
-      syncedAtMs: acctSynced ? new Date(acctSynced).getTime() : null,
+      syncedAtMs: acct.syncedAtMs,
       freshness: snapshot.freshness,
     },
     positions: snapshot.positions,
@@ -1139,7 +1136,9 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
       // so an existing-but-never-synced connection would emit fabricated zeros.
       // Only surface figures the EA has actually delivered (accountSyncedAt
       // present); otherwise null. Never paint a default 0 as a real broker value.
-      const acctSynced = conn?.accountSyncedAt ?? null;
+      // The authoritative per-connection snapshot (owner decision 16) applies
+      // exactly that rule.
+      const acct = accountFiguresOf(connectionAccountSnapshot(conn));
       const snapshot = buildLiveAccountSnapshot({
         userId,
         accountMode: "LIVE_SHARED",
@@ -1156,13 +1155,7 @@ router.get("/me/live/account-stream", requireUser, async (req, res) => {
         // Real account figures the EA pushed via heartbeat / sync-account.
         // syncedAtMs is the dedicated account-sync marker (not updatedAt) so the
         // client can honestly flag equity as stale when it ages past 60s.
-        account: {
-          equity: acctSynced ? (conn?.accountEquity ?? null) : null,
-          balance: acctSynced ? (conn?.accountBalance ?? null) : null,
-          margin: acctSynced ? (conn?.margin ?? null) : null,
-          freeMargin: acctSynced ? (conn?.freeMargin ?? null) : null,
-          syncedAtMs: acctSynced ? new Date(acctSynced).getTime() : null,
-        },
+        account: acct,
         // Bridge's last complete positions snapshot — used by the adapter to
         // classify broker-confirmed-absent rows for display exclusion. The
         // select-all query already fetches this column; access it directly.
