@@ -503,9 +503,13 @@ test("D live sandbox: degraded bridge blocks new risk but not a close; a dead br
     userId: u.a, venue: "LIVE" as const, origin: "manual" as const, action: "OPEN" as const,
     symbol: SYMBOL, side: "BUY" as const, lots: 0.1, stopLoss: 1.0951, takeProfit: 1.11,
   };
-  await seedBridge(u.a, 60_000);
+  // Shared heartbeat policy (owner decision 17): 15 s up to 60 s is degraded, 60 s or more is offline.
+  await seedBridge(u.a, 30_000);
   assert.deepEqual((await enforcePreTradeRisk(intent, RELEASED)).blockedBy, ["broker_unavailable"]);
   assert.equal((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).decision, "ALLOW");
+  // Intentional round 5 change: at exactly 60 s the bridge is offline, so a close is refused too (was 120 s).
+  await seedBridge(u.a, 60_000);
+  assert.deepEqual((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).blockedBy, ["broker_unavailable"]);
   await seedBridge(u.a, 10 * 60_000);
   assert.deepEqual((await enforcePreTradeRisk({ ...intent, action: "CLOSE" }, RELEASED)).blockedBy, ["broker_unavailable"]);
 });
