@@ -15,9 +15,9 @@
 // SAFETY:
 // - Pure derived projection. Never mutates user_slot_allocation,
 //   arx_live_commands, mt5_connection, or any safety gate.
-// - When sharedLivePaused is currently true on the existing row, the
-//   recompute PRESERVES that flag (only an explicit admin pause/resume
-//   endpoint may flip it).
+// - The shared-live pause columns are never written here: the recompute
+//   PRESERVES them (only the Platform Safety authority,
+//   lib/safety/sharedLivePause.ts, pauses or resumes; owner decision 19).
 // - The Prop-Firm hook (allow_over_allocation_prop_firm_mode) is read
 //   from arx_master_account_config and currently has no effect — the
 //   derived is_over_allocated/allocation_deficit still reflect the real
@@ -32,6 +32,7 @@ import { getConnection } from "../brokerHub/connections.js";
 import { readMasterBridgePoolByMaster } from "../brokerHub/masterBridgePoolReader.js";
 import { eq, inArray } from "drizzle-orm";
 import { computeAvailableBalance } from "./investorLiveBalance.js";
+import { sharedLivePauseOf } from "../safety/sharedLivePause.js";
 import {
   db,
   arxLiveCommandsTable,
@@ -149,9 +150,9 @@ export async function recomputeMasterPool(args?: {
 
   const now = new Date();
 
-  // Upsert. Preserve sharedLivePaused / pausedReason / pausedAt /
-  // pausedByUserId from any existing row — only the admin pause/resume
-  // endpoints may flip them.
+  // Upsert. The shared-live pause columns are not in baseValues, so an
+  // existing row keeps them and a new row takes the schema defaults (not
+  // paused); only lib/safety/sharedLivePause.ts writes them.
   const existing = await readMasterBridgePoolByMaster(resolvedId);
 
   const baseValues = {
@@ -180,13 +181,7 @@ export async function recomputeMasterPool(args?: {
       .returning();
     pool = updated!;
   } else {
-    const [inserted] = await db.insert(arxMasterBridgePoolTable).values({
-      ...baseValues,
-      sharedLivePaused: false,
-      pausedReason: null,
-      pausedAt: null,
-      pausedByUserId: null,
-    }).returning();
+    const [inserted] = await db.insert(arxMasterBridgePoolTable).values(baseValues).returning();
     pool = inserted!;
   }
 
@@ -260,7 +255,7 @@ export async function getUserAllocationView(userId: number): Promise<{
   let bridgeAvailability: "HEALTHY" | "RECONCILING" | "UNAVAILABLE" = "UNAVAILABLE";
   let bridgeMessage = "Live bridge is not currently available.";
   if (pool) {
-    if (pool.sharedLivePaused) {
+    if (sharedLivePauseOf(pool).paused) {
       bridgeAvailability = "UNAVAILABLE";
       bridgeMessage = "Live bridge is paused for reconciliation.";
     } else if (pool.snapshotStatus === "MISSING") {

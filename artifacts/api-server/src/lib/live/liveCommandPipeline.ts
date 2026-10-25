@@ -99,6 +99,7 @@ import {
 } from "./phaseBConfig.js";
 import { getEnvelope } from "../adminTrading/safetyEnvelope.js";
 import { platformStop, preCheckStopRefusal } from "../safety/platformSwitches.js";
+import { sharedLivePauseOf } from "../safety/sharedLivePause.js";
 import { logger } from "../logger.js";
 import { globalTradingSettingsTable, liveRiskDisclosureAcceptancesTable } from "@workspace/db";
 import {
@@ -1165,7 +1166,7 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
   // The pre-gate is intentionally fail-CLOSED:
   //   1. Master bridge must be pinned.
   //   2. Heartbeat snapshot must be FRESH (≤60s) — never STALE/MISSING.
-  //   3. sharedLivePaused must be false.
+  //   3. shared-live must not be paused for this pool (sharedLivePauseOf).
   //   4. Pool must not be over-allocated (Strict Real-Balance Mode).
   //   5. User's available allocation (allocated − reservedRisk − openFloatingLoss)
   //      must be > 0.
@@ -1210,9 +1211,10 @@ async function preflight(input: LiveDraftInput): Promise<LiveDraftRefusal | { ok
           detail: rowEarly.freezeReason ?? "Your allocation is frozen by the operator. Contact your operator." };
       }
     }
-    if (pool.sharedLivePaused) {
+    const sharedPause = sharedLivePauseOf(pool);
+    if (sharedPause.paused) {
       return { ok: false, reason: "LIVE_BLOCKED:SHARED_LIVE_PAUSED",
-        detail: pool.pausedReason ?? "Live shared trading is temporarily paused for reconciliation." };
+        detail: sharedPause.reason ?? "Live shared trading is temporarily paused for reconciliation." };
     }
     if (pool.snapshotStatus === "MISSING") {
       return { ok: false, reason: "LIVE_BLOCKED:MASTER_SNAPSHOT_MISSING",

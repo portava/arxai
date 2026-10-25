@@ -50,9 +50,9 @@ import {
   reconcileAllocationsReservedRisk,
 } from "../lib/live/masterBridgePool.js";
 import {
-  arxMasterBridgePoolTable,
   type ArxMasterBridgePool,
 } from "@workspace/db";
+import { pauseSharedLive, resumeSharedLive, sharedLivePauseOf } from "../lib/safety/sharedLivePause.js";
 import { anyMasterBridgePoolOverAllocated } from "../lib/brokerHub/masterBridgePoolReader.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readOperatorRiskLimitsMany } from "../lib/riskGovernor/limitSettings.js";
@@ -82,10 +82,11 @@ async function precheckMasterPoolForAllocation(): Promise<
     } };
   }
   const pool = recompute.pool;
-  if (pool.sharedLivePaused) {
+  const pause = sharedLivePauseOf(pool);
+  if (pause.paused) {
     return { ok: false, status: 409, body: {
       ok: false, error: "SHARED_LIVE_PAUSED",
-      message: pool.pausedReason ?? "Live shared trading is paused for reconciliation.",
+      message: pause.reason ?? "Live shared trading is paused for reconciliation.",
     } };
   }
   if (pool.snapshotStatus === "MISSING") {
@@ -2050,7 +2051,7 @@ router.get("/admin/allocations/master-pool", requireUser, async (req, res) => {
   const p = r.pool;
   let bridgeAvailability: "HEALTHY" | "RECONCILING" | "UNAVAILABLE" = "HEALTHY";
   let bridgeMessage = "Live bridge is healthy.";
-  if (p.sharedLivePaused) {
+  if (sharedLivePauseOf(p).paused) {
     bridgeAvailability = "UNAVAILABLE";
     bridgeMessage = "Live bridge is paused for reconciliation.";
   } else if (p.snapshotStatus === "MISSING") {
@@ -2366,8 +2367,10 @@ router.post("/admin/allocations/reduce-proportional", requireUser, async (req, r
 });
 
 // ── POST /api/admin/shared-live/pause ──────────────────────────────────────
-// Sets pool.sharedLivePaused = true so the dispatch pre-gate refuses
-// every new entry. Existing positions are NOT closed. Idempotent.
+// Pauses shared-live for the pinned master's pool through the Platform Safety
+// authority (lib/safety/sharedLivePause.ts, owner decision 19) so the dispatch
+// pre-gate refuses every new entry. Scoped to that pool row only, never
+// install-wide. Existing positions are NOT closed. Idempotent.
 const PauseBody = z.object({ reason: z.string().min(1).max(500) });
 router.post("/admin/shared-live/pause", requireUser, async (req, res) => {
   const admin = requireAdmin(req, res);
@@ -2379,20 +2382,10 @@ router.post("/admin/shared-live/pause", requireUser, async (req, res) => {
   await recomputeMasterPool();
   const pool = await loadMasterPool();
   if (!pool) { res.status(409).json({ ok: false, error: "MASTER_BRIDGE_NOT_PINNED" }); return; }
-  const [updated] = await db.update(arxMasterBridgePoolTable).set({
-    sharedLivePaused: true,
-    pausedReason: reason,
-    pausedAt: new Date(),
-    pausedByUserId: admin.id,
-  }).where(eq(arxMasterBridgePoolTable.id, pool.id)).returning();
-  await auditInTx(db as unknown as Tx, {
-    admin, action: "SHARED_LIVE_PAUSED_OVER_ALLOCATION", targetUserId: null,
-    beforeState: { sharedLivePaused: pool.sharedLivePaused },
-    afterState: { sharedLivePaused: true, pausedReason: reason },
-    reason, ipAddress: ipOf(req),
-  });
+  const r = await pauseSharedLive({ scope: { poolId: pool.id }, reason, actor: { userId: admin.id, role: admin.role }, ipAddress: ipOf(req) });
+  if (!r.ok) { sendPauseRefusal(res, r.code); return; }
   await mirrorAllocationChange(admin, "SHARED_LIVE_PAUSED_OVER_ALLOCATION", null, reason);
-  res.json({ ok: true, pool: updated });
+  res.json({ ok: true, pool: r.pool });
 });
 
 // ── POST /api/admin/shared-live/resume ─────────────────────────────────────
@@ -2401,20 +2394,17 @@ router.post("/admin/shared-live/resume", requireUser, async (req, res) => {
   if (!admin) return;
   const pool = await loadMasterPool();
   if (!pool) { res.status(409).json({ ok: false, error: "MASTER_BRIDGE_NOT_PINNED" }); return; }
-  const [updated] = await db.update(arxMasterBridgePoolTable).set({
-    sharedLivePaused: false,
-    pausedReason: null,
-    pausedAt: null,
-    pausedByUserId: null,
-  }).where(eq(arxMasterBridgePoolTable.id, pool.id)).returning();
-  await auditInTx(db as unknown as Tx, {
-    admin, action: "SHARED_LIVE_RESUMED", targetUserId: null,
-    beforeState: { sharedLivePaused: pool.sharedLivePaused, pausedReason: pool.pausedReason },
-    afterState: { sharedLivePaused: false },
-    reason: null, ipAddress: ipOf(req),
-  });
+  const r = await resumeSharedLive({ scope: { poolId: pool.id }, actor: { userId: admin.id, role: admin.role }, ipAddress: ipOf(req) });
+  if (!r.ok) { sendPauseRefusal(res, r.code); return; }
   await mirrorAllocationChange(admin, "SHARED_LIVE_RESUMED", null, null);
-  res.json({ ok: true, pool: updated });
+  res.json({ ok: true, pool: r.pool });
 });
+
+// The authority's refusals, in the responses these routes already gave.
+function sendPauseRefusal(res: Response, code: "NOT_AUTHORIZED" | "REASON_REQUIRED" | "POOL_NOT_FOUND"): void {
+  if (code === "NOT_AUTHORIZED") res.status(403).json({ ok: false, error: "ADMIN_REQUIRED" });
+  else if (code === "REASON_REQUIRED") res.status(400).json({ ok: false, error: "BAD_BODY" });
+  else res.status(409).json({ ok: false, error: "MASTER_BRIDGE_NOT_PINNED" });
+}
 
 export default router;

@@ -29,10 +29,10 @@ assert.deepEqual(scanForBrokerStateTables(`select * from broker_health_state_arc
 assert.deepEqual(scanFile("routes/x.ts", `const s = await readBrokerHealthState();`).violations, []);
 
 // Allowlisted files may touch only their named tables.
-const pool = scanFile("routes/adminAllocations.ts", `await db.update(arxMasterBridgePoolTable).set({})`);
+const pool = scanFile("lib/safety/sharedLivePause.ts", `await db.update(arxMasterBridgePoolTable).set({})`);
 assert.deepEqual(pool.violations, []);
 assert.equal(pool.allowUsed, true);
-const wrong = scanFile("routes/adminAllocations.ts", `await db.select().from(brokerHealthStateTable)`);
+const wrong = scanFile("lib/safety/sharedLivePause.ts", `await db.select().from(brokerHealthStateTable)`);
 assert.equal(wrong.violations.length, 1);
 assert.equal(wrong.allowUsed, false);
 
@@ -62,12 +62,16 @@ assert.deepEqual(scanFile("lib/live/masterBridgePool.ts", `const [i] = await db.
 const ownerRead = scanFile("lib/live/masterBridgePool.ts", `const rows = await db.select().from(arxMasterBridgePoolTable)\n  .where(eq(arxMasterBridgePoolTable.masterConnectionId, id)).limit(1);`);
 assert.equal(ownerRead.violations.length, 1);
 assert.match(ownerRead.violations[0]!, /writer reads the table directly; read it back through lib\/brokerHub\/masterBridgePoolReader\.ts/);
-// The admin route: column-select read and raw SQL read both fail; pause/resume updates pass.
-assert.equal(scanFile("routes/adminAllocations.ts", `const o = await db.select({ id: arxMasterBridgePoolTable.id })\n  .from(arxMasterBridgePoolTable)\n  .where(eq(arxMasterBridgePoolTable.isOverAllocated, true));`).violations.length, 1);
-assert.equal(scanFile("routes/adminAllocations.ts", "await db.execute(sql`SELECT id FROM arx_master_bridge_pool WHERE is_over_allocated`)").violations.length, 1);
-assert.deepEqual(scanFile("routes/adminAllocations.ts", `await db.update(arxMasterBridgePoolTable).set({ sharedLivePaused: true }).where(eq(arxMasterBridgePoolTable.id, pool.id)).returning();`).violations, []);
+// The shared-live pause authority (owner decision 19): column-select read and
+// raw SQL read both fail; its scoped pause/resume update and its own row-locked
+// read pass. The admin route no longer touches the table.
+assert.equal(scanFile("lib/safety/sharedLivePause.ts", `const o = await db.select({ id: arxMasterBridgePoolTable.id })\n  .from(arxMasterBridgePoolTable)\n  .where(eq(arxMasterBridgePoolTable.isOverAllocated, true));`).violations.length, 1);
+assert.equal(scanFile("lib/safety/sharedLivePause.ts", "await db.execute(sql`SELECT id FROM arx_master_bridge_pool WHERE is_over_allocated`)").violations.length, 1);
+assert.deepEqual(scanFile("lib/safety/sharedLivePause.ts", `await tx.update(arxMasterBridgePoolTable).set({ sharedLivePaused: true }).where(eq(arxMasterBridgePoolTable.id, scope.poolId)).returning();`).violations, []);
+assert.deepEqual(scanFile("lib/safety/sharedLivePause.ts", `const [row] = await tx.select().from(arxMasterBridgePoolTable)\n  .where(eq(arxMasterBridgePoolTable.id, scope.poolId)).for("update");`).violations, []);
+assert.equal(scanFile("routes/adminAllocations.ts", `await db.update(arxMasterBridgePoolTable).set({ sharedLivePaused: true }).where(eq(arxMasterBridgePoolTable.id, pool.id)).returning();`).violations.length, 1);
 // A row lock does not excuse a pool read: only lockingReads entries get that.
-assert.equal(scanFile("routes/adminAllocations.ts", `await tx.select().from(arxMasterBridgePoolTable).for("update");`).violations.length, 1);
+assert.equal(scanFile("lib/live/masterBridgePool.ts", `await tx.select().from(arxMasterBridgePoolTable).for("update");`).violations.length, 1);
 // Raw SQL and type-only use elsewhere fail.
 assert.equal(scanFile("routes/x.ts", "await db.execute(sql`select * from \"arx_master_bridge_pool\"`)").violations.length, 1);
 assert.equal(scanFile("routes/x.ts", `type P = typeof arxMasterBridgePoolTable.$inferSelect;`).violations.length, 1);

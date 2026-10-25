@@ -4,10 +4,11 @@
 // The projection is OWNED and WRITTEN by lib/live/masterBridgePool.ts (LIVE
 // execution domain): it recomputes balance/equity/margin mirrored from the
 // pinned master mt5_connection plus allocation totals on every heartbeat and
-// upserts one row per master. The admin pause/resume endpoints in
-// routes/adminAllocations.ts write the sharedLivePaused flag. Both read the row
-// back through this file, so there is one place that decides how the pool row
-// is selected.
+// upserts one row per master. The shared-live pause columns are written only
+// by the Platform Safety authority (lib/safety/sharedLivePause.ts, owner
+// decision 19), which row-locks the one scoped row inside its own transaction.
+// Status reads go through this file, so there is one place that decides how
+// the pool row is selected.
 //
 // Honesty: a row is what the last recompute stored. It carries
 // lastMt5SnapshotAt / snapshotAgeMs / snapshotStatus (FRESH | STALE | MISSING)

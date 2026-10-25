@@ -43,6 +43,15 @@
 //      false`, or a call to the safety core's resetKillSwitch() outside the one
 //      release operation (releasePlatformStop() in the same writer, which is
 //      authorized and audited itself). Live activation may not release a stop.
+//  11. (Round 5, owner decision 19) the shared-live pause flag read or written
+//      anywhere but its authority, lib/safety/sharedLivePause.ts: a
+//      `.sharedLivePaused` property access (readers interpret a pool row
+//      through sharedLivePauseOf()), a `sharedLivePaused` property in a
+//      .set() / .values() object (pauseSharedLive() / resumeSharedLive() are
+//      the one scoped, operator-only, audited writer), or raw SQL naming
+//      shared_live_paused. The authority's shape is checked too: it writes ONE
+//      pool row by id, refuses a non-operator, audits in the same transaction
+//      and never touches an install-wide switch.
 //
 // Every allowlist entry carries a reason. An entry whose file no longer
 // needs it (or no longer exists) is reported as stale, so the lists only
@@ -63,6 +72,8 @@ export const AUTHORITY = ["lib/safety/platformSwitches.ts", "lib/safety/tradingH
 export const STOP_ENGAGE_WRITER = "lib/safety/platformStopWriter.ts";
 export const SAFETY_CORE_OWNER = "lib/safetyCore.ts";
 export const ARMING_OWNER = "lib/live/liveArming.ts";
+/** The shared-live pause authority (owner decision 19). */
+export const SHARED_LIVE_PAUSE_AUTHORITY = "lib/safety/sharedLivePause.ts";
 
 /** global_trading_settings columns that are safety switches (camel, as drizzle names them). */
 export const SWITCH_COLUMNS = [
@@ -77,7 +88,7 @@ const RAW_SWITCH_SQL = /\b(emergency_kill_switch|kill_switch_engaged|live_broker
 const RAW_GTS_VENUE_SQL = /\bglobal_trading_settings\b[\s\S]*\b(platform_mode|live_enabled|demo_enabled|simulated_enabled|kill_switch_reason)\b|\b(platform_mode|live_enabled|demo_enabled|simulated_enabled|kill_switch_reason)\b[\s\S]*\bglobal_trading_settings\b/;
 const RAW_SAFETY_CORE_SQL = /\b(from|join|update|into)\s+"?safety_core"?\b/i;
 
-type Rule = "gts_column" | "gts_whole_row" | "gts_write" | "safety_core" | "arming" | "raw_row" | "env_flag" | "raw_sql" | "single_stop" | "stop_engage" | "stop_release";
+type Rule = "gts_column" | "gts_whole_row" | "gts_write" | "safety_core" | "arming" | "raw_row" | "env_flag" | "raw_sql" | "single_stop" | "stop_engage" | "stop_release" | "shared_live_pause";
 
 /** A module specifier that names the safety-core owner (lib/safetyCore.ts). */
 const SAFETY_CORE_MODULE = /(^|\/)safetyCore(\.js|\.ts)?$/;
@@ -134,6 +145,22 @@ function stopProperty(e: ts.Expression, want: "engaged" | "released"): ts.Node |
     const released = ts.isPropertyAssignment(p) && p.initializer.kind === ts.SyntaxKind.FalseKeyword;
     if (want === "released" && released) return p;
     if (want === "engaged" && !released && (ts.isShorthandPropertyAssignment(p) || ts.isPropertyAssignment(p))) return p;
+  }
+  return null;
+}
+
+/** A property named `name` in an object literal (spreads of literals followed), or null. */
+function namedProperty(e: ts.Expression, name: string): ts.Node | null {
+  let x: ts.Expression = e;
+  while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression;
+  if (!ts.isObjectLiteralExpression(x)) return null;
+  for (const p of x.properties) {
+    if (ts.isSpreadAssignment(p)) {
+      const inner = namedProperty(p.expression, name);
+      if (inner) return inner;
+      continue;
+    }
+    if (p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) && p.name.text === name) return p;
   }
   return null;
 }
@@ -263,6 +290,22 @@ export function scanFile(key: string, source: string): string[] {
         engageCalls.push(node);
       }
     }
+    // 11. The shared-live pause flag outside its authority.
+    if (key !== SHARED_LIVE_PAUSE_AUTHORITY) {
+      if (ts.isPropertyAccessExpression(node) && node.name.text === "sharedLivePaused") {
+        hit("shared_live_pause", node, `reads or writes the shared-live pause flag (.sharedLivePaused) outside its authority; read a pool row through sharedLivePauseOf() and pause / resume through pauseSharedLive() / resumeSharedLive() in ${SHARED_LIVE_PAUSE_AUTHORITY}`);
+      }
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+        && (node.expression.name.text === "set" || node.expression.name.text === "values")) {
+        for (const arg of node.arguments) {
+          const p = namedProperty(arg, "sharedLivePaused");
+          if (p) hit("shared_live_pause", p, `reads or writes the shared-live pause flag (sharedLivePaused in a write) outside its authority; pause / resume through pauseSharedLive() / resumeSharedLive() in ${SHARED_LIVE_PAUSE_AUTHORITY} (one pool row, operator-only, audited)`);
+        }
+      }
+      if ((ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) && /\bshared_live_paused\b/.test(node.text)) {
+        hit("shared_live_pause", node, `reads or writes the shared-live pause flag (raw SQL shared_live_paused) outside its authority; go through ${SHARED_LIVE_PAUSE_AUTHORITY}`);
+      }
+    }
     if (ts.isIdentifier(node) && node.text === "adminActionAuditLogTable" && !ts.isImportSpecifier(node.parent)) writesAudit = true;
     if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
       const text = node.text;
@@ -314,6 +357,7 @@ const MESSAGE_RULE: [RegExp, Rule][] = [
   [/^\d+: reads one install-wide stop on its own/, "single_stop"],
   [/^\d+: (writes|sets) an engaged emergency stop|^\d+: calls engagePlatformStop\(\) without/, "stop_engage"],
   [/^\d+: (writes a released|releases the) (emergency stop|safety-core kill switch)/, "stop_release"],
+  [/^\d+: reads or writes the shared-live pause flag/, "shared_live_pause"],
 ];
 export function ruleOfMessage(msg: string): Rule | null {
   for (const [re, rule] of MESSAGE_RULE) if (re.test(msg)) return rule;
@@ -376,6 +420,28 @@ export function checkStopWriterShape(read: (key: string) => string | null): stri
   return out;
 }
 
+/** The shared-live pause authority must keep its contract: one pool row by id, operator-only, audited, never install-wide. */
+export function checkSharedLivePauseShape(read: (key: string) => string | null): string[] {
+  const a = read(SHARED_LIVE_PAUSE_AUTHORITY);
+  if (!a) return [`${SHARED_LIVE_PAUSE_AUTHORITY} is missing (the shared-live pause authority)`];
+  const out: string[] = [];
+  for (const fn of ["pauseSharedLive", "resumeSharedLive"]) {
+    const m = new RegExp(`export async function ${fn}\\(([\\s\\S]*?)\\n}\\n`).exec(a);
+    if (!m) { out.push(`${SHARED_LIVE_PAUSE_AUTHORITY} lost ${fn}()`); continue; }
+    const body = m[1]!;
+    if (!/operatorRoleFromSession\(/.test(body)) out.push(`${SHARED_LIVE_PAUSE_AUTHORITY}: ${fn}() must refuse a non-operator actor (operatorRoleFromSession)`);
+    const w = /tx\.update\(arxMasterBridgePoolTable\)([\s\S]*?)\.returning\(\)/.exec(body);
+    if (!w) out.push(`${SHARED_LIVE_PAUSE_AUTHORITY}: ${fn}() must update the pool row inside its transaction`);
+    else if (!/\.where\(eq\(arxMasterBridgePoolTable\.id, scope\.poolId\)\)\s*$/.test(w[1]!)) out.push(`${SHARED_LIVE_PAUSE_AUTHORITY}: ${fn}() must write ONE pool row, .where(eq(arxMasterBridgePoolTable.id, scope.poolId)) (never install-wide)`);
+    if (!/tx\.insert\(adminActionAuditLogTable\)/.test(body)) out.push(`${SHARED_LIVE_PAUSE_AUTHORITY}: ${fn}() must write its audit row in the same transaction`);
+  }
+  if (!/export function sharedLivePauseOf\(/.test(a)) out.push(`${SHARED_LIVE_PAUSE_AUTHORITY} lost sharedLivePauseOf() (the one reader of the flag)`);
+  if (/globalTradingSettingsTable|safetyCore|liveBrokerExecutionArmed|engagePlatformStop|releasePlatformStop/.test(a.replace(/^\s*\/\/.*$/gm, ""))) {
+    out.push(`${SHARED_LIVE_PAUSE_AUTHORITY}: the shared-live pause must stay scoped to its pool and never touch an install-wide switch`);
+  }
+  return out;
+}
+
 export function checkSingleSafetySwitchSource(): CheckResult {
   const violations: string[] = [];
   for (const file of walk(API_SRC, { skip: (p) => p.includes("__qa__") || p.endsWith(".test.ts") || p.includes("/src/scripts/") })) {
@@ -390,11 +456,12 @@ export function checkSingleSafetySwitchSource(): CheckResult {
   for (const s of staleEntries(read)) violations.push(`stale allowlist: ${s}`);
   for (const s of checkAuthorityShape(read)) violations.push(s);
   for (const s of checkStopWriterShape(read)) violations.push(s);
+  for (const s of checkSharedLivePauseShape(read)) violations.push(s);
   return {
     name: "single-safety-switch-source",
     ok: violations.length === 0,
     violations,
-    notes: [`safety switches read only through ${AUTHORITY.join(" + ")}; emergency stop engaged and stops released only through ${STOP_ENGAGE_WRITER}; ${Object.keys(ALLOW).length} reviewed exceptions`],
+    notes: [`safety switches read only through ${AUTHORITY.join(" + ")}; emergency stop engaged and stops released only through ${STOP_ENGAGE_WRITER}; shared-live pause read and written only through ${SHARED_LIVE_PAUSE_AUTHORITY}; ${Object.keys(ALLOW).length} reviewed exceptions`],
   };
 }
 
