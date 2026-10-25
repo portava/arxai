@@ -63,3 +63,17 @@ scores remain scoped to their measured commits. This report makes no operational
   workspace. These builds do not publish the app or compile MQL5.
 - Independent ZIP extraction and CRC checks pass; the kit contains seven files.
 - No EA source, broker account or execution-control setting was changed.
+
+## Compile evidence on the selected Mac
+
+The installed MetaEditor compiler produced an `.ex5` from the unchanged v1.29
+source: **0 errors, 2 warnings**. The warnings are the long description and an
+implicit boolean-to-string conversion in the existing self-update checksum
+comparison. The supplied profile keeps self-update disabled; that path still
+needs correction before remote updates are considered. The initial compiler
+attempt could not resolve the standard-library path; using the installed
+headers at a path without spaces resolved it.
+
+The compiled artifact remains in the local release kit, unattached to a terminal.
+No broker login, token entry or account-data transmission was performed. MT5's
+macOS app-control surface timed out; owner terminal sign-in is pending.
