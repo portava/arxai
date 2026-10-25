@@ -116,3 +116,27 @@ broker or production configuration.
 Follow [the updated runbook](TIER1_OWNER_RUNBOOK.md), including additive migration
 9 before deployment. No production migrations, deployment, live arming, broker
 orders, real-money trades, guessed owner assignments or column drops occurred.
+
+## Operational-readiness follow-up
+
+The next completion pass found false-positive risks in the tools used to prepare
+production. The database preflight now reads the same combined stop/venue and
+broker-control authorities as execution, counts every settings row, names
+missing/unreadable controls, and reports the live arm without requiring arming.
+It covers weekly legacy reviews/goals too. Schema indicators are explicitly
+separate from migration execution/backfill evidence, and `--strict` exposes
+blocked checks as a nonzero exit.
+
+The bounded platform switch reader fetches one overflow sentinel. More than 16
+rows fails closed in both canonical readers instead of ignoring later switches.
+The broker rehearsal refuses a lot size that cannot exercise partial close,
+requires an unambiguous user-owned DEMO route, never resolves a DEMO ticket through
+the LIVE-first lookup, and checks fresh broker snapshots for the expected stop,
+remaining size and final close. A different refusal reason cannot pass the
+no-widening test; the governor's stop rule must be the cause.
+
+These changes improve the validity of operational evidence. They do not supply
+production migration receipts, deploy the app or replace the seven real broker
+scenarios. Replit's connector returned no publication and no inspection details;
+production identity/access remains to be established. The owner runbook contains
+the concrete evidence checklist. No scoring threshold or required gate changed.

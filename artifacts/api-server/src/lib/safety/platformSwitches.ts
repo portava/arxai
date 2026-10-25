@@ -182,7 +182,11 @@ export function switchesFromRows(rows: ReadonlyArray<Pick<GlobalTradingSettingsR
 const MAX_ROWS = 16;
 
 async function readRows(): Promise<GlobalTradingSettingsRow[]> {
-  return db.select().from(globalTradingSettingsTable).orderBy(asc(globalTradingSettingsTable.id)).limit(MAX_ROWS);
+  // Fetch a sentinel row so the bound cannot hide a stricter switch. All
+  // callers catch this and fail closed; never evaluate a truncated set.
+  const rows = await db.select().from(globalTradingSettingsTable).orderBy(asc(globalTradingSettingsTable.id)).limit(MAX_ROWS + 1);
+  if (rows.length > MAX_ROWS) throw new Error("global_trading_settings exceeds the 16-row safety read limit");
+  return rows;
 }
 
 /**
