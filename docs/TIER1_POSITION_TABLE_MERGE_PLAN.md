@@ -552,7 +552,7 @@ Consequences for this phase:
   It is not physically met, and this document makes no score claim about it.
 - Any future position-table work must start with the P0 inspection in
   section 4 and the D5 / D6 evidence; the owner runbook
-  (`TIER1_OWNER_RUNBOOK.md`, when present) lists the queries.
+  (`TIER1_OWNER_RUNBOOK.md`, section 6) lists the queries.
 
 ## 8. Production actions the owner must run
 
