@@ -2,6 +2,7 @@
 //
 // PUBLIC (allowlisted in globalGate):
 //   GET /healthz — minimal liveness probe; no secrets, no user data.
+//   GET /health/ready — bounded database readiness; no secrets, no user data.
 //
 // AUTHENTICATED (user-scoped):
 //   GET /me/system-health — per-user diagnostic envelope. Returns only the
@@ -22,6 +23,7 @@ import {
 import { and, eq, sql } from "drizzle-orm";
 import { requireUser } from "../lib/auth/middleware.js";
 import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
+import { checkDatabaseReadiness } from "../lib/startup/databaseReadiness.js";
 
 const router: IRouter = Router();
 
@@ -50,6 +52,14 @@ router.get("/healthz", (_req, res) => {
     uptimeSeconds: Math.floor((Date.now() - PROCESS_STARTED_AT) / 1000),
     timestamp: new Date().toISOString(),
   });
+});
+
+// Already-public /health/ namespace. Minimal dependency readiness, no database
+// address/error text, user information, safety switches or broker credentials.
+router.get("/health/ready", async (_req, res) => {
+  const result = await checkDatabaseReadiness();
+  res.setHeader("Cache-Control", "no-store");
+  res.status(result.status === "ready" ? 200 : 503).json(result);
 });
 
 // User-scoped diagnostic. Returns ONLY data owned by the caller.
