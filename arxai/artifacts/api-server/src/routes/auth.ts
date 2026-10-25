@@ -260,7 +260,6 @@ router.post("/auth/forgot-password", async (req, res) => {
     res.status(429).json({ ok: true, message: NEUTRAL_FORGOT_MESSAGE });
     return;
   }
-  let devResetLink: string | undefined;
   try {
     const rows = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
     const user = rows[0];
@@ -296,12 +295,6 @@ router.post("/auth/forgot-password", async (req, res) => {
             );
           }
         });
-      if (!IS_PROD) {
-        // Dev only: also surface the link via the server log AND the response so
-        // the flow is testable without inspecting a mailbox. Strictly dev-gated.
-        req.log.info({ userId: user.id, expiresAt, link }, "DEV password reset link issued");
-        devResetLink = link;
-      }
       void recordBetaGateAudit("password_reset_requested", { userId: user.id });
     } else {
       // Timing-equalization (anti-enumeration): a non-existent email must not be
@@ -315,7 +308,6 @@ router.post("/auth/forgot-password", async (req, res) => {
   res.status(200).json({
     ok: true,
     message: NEUTRAL_FORGOT_MESSAGE,
-    ...(devResetLink ? { devResetLink } : {}),
   });
 });
 
