@@ -340,7 +340,7 @@ test("B demo Ruby: a Ruby-suggested draft with no stop is rejected at confirm an
     symbol: SYMBOL, side: "BUY", lotSize: 0.1, stopLoss: null, takeProfit: 1.11, source: "ai_suggested",
   });
   assert.ok(draft.ok);
-  const result = await confirmAction({ userId: u.a, actionId: draft.action.id });
+  const result = await confirmAction({ userId: u.a, actionId: draft.action.id, confirmedMode: "SIMULATED" });
   assert.equal(result.ok, false);
   const [row] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, draft.action.id));
   assert.equal(row!.status, "rejected");
@@ -354,7 +354,7 @@ test("B demo Ruby: a Ruby-suggested draft with no stop is rejected at confirm an
   assert.ok(ev.blockedBy.includes("stop_loss_required"));
 });
 
-test("B demo Ruby: a sound Ruby draft passes the governor and moves on to the queue", async () => {
+test("B demo Ruby: a sound Ruby draft passes the governor and moves on to the PAPER venue", async () => {
   await resetPaper(u.a);
   await seedBridge(u.a);
   const draft = await createActionDraft({
@@ -362,8 +362,15 @@ test("B demo Ruby: a sound Ruby draft passes the governor and moves on to the qu
     symbol: SYMBOL, side: "BUY", lotSize: 0.1, stopLoss: 1.095, takeProfit: 1.11, source: "ai_suggested",
   });
   assert.ok(draft.ok);
-  const result = await confirmAction({ userId: u.a, actionId: draft.action.id });
-  assert.equal(result.ok, true, JSON.stringify(result));
+  const result = await confirmAction({ userId: u.a, actionId: draft.action.id, confirmedMode: "SIMULATED" });
+  // Owner decision 13: a confirmed SIMULATED open books a PAPER order at a
+  // real current quote. This sandbox has no real market-data provider, so the
+  // venue refuses it by name and books nothing (test:simulated-open covers
+  // the booked path with a stubbed feed).
+  assert.equal(result.ok ? null : result.error, "venue_rejected", JSON.stringify(result));
+  const [row] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, draft.action.id));
+  assert.match(row!.rejectionReason ?? "", /No valid current price/);
+  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u.a))).length, 0);
   const ev = await latestEvent(u.a);
   assert.equal(ev.row.decision, "pass");
   assert.equal(ev.intent["origin"], "ruby");
@@ -375,7 +382,10 @@ test("B demo Ruby: a sound Ruby draft passes the governor and moves on to the qu
 async function confirmed(input: Parameters<typeof createActionDraft>[0], phrase?: string) {
   const draft = await createActionDraft(input);
   assert.ok(draft.ok, JSON.stringify(draft));
-  const result = await confirmAction({ userId: input.userId, actionId: draft.action.id, liveConfirmPhrase: phrase });
+  const result = await confirmAction({
+    userId: input.userId, actionId: draft.action.id, liveConfirmPhrase: phrase,
+    ...(input.requestedMode === "SIMULATED" ? { confirmedMode: "SIMULATED" } : {}),
+  });
   const [row] = await db.select().from(tradeActionRequestsTable).where(eq(tradeActionRequestsTable.id, draft.action.id));
   return { result, row: row! };
 }
@@ -462,10 +472,14 @@ test("trade action: a SIMULATED action records no broker command", async () => {
     userId: u.a, actionType: "OPEN", tradeKey: null, requestedMode: "SIMULATED",
     symbol: SYMBOL, side: "BUY", lotSize: 0.1, stopLoss: 1.095, takeProfit: 1.11,
   });
-  assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(row.status, "queued");
-  assert.equal(row.executionVenue, null);
+  // Owner decision 13: a confirmed SIMULATED open goes to the PAPER venue,
+  // never to a broker. With no real feed in this sandbox the venue refuses it
+  // (no valid price) — either way no broker command or mailbox row exists.
+  assert.equal(result.ok ? null : result.error, "venue_rejected", JSON.stringify(result));
+  assert.notEqual(row.executionVenue, "DEMO");
+  assert.notEqual(row.executionVenue, "LIVE");
   assert.equal(row.tradeCommandId, null);
+  assert.equal((await db.select().from(paperOrdersTable).where(eq(paperOrdersTable.userId, u.a))).length, 0);
 });
 
 // ── C. Demo, automated: riskGovernorAutomation.test.ts (needs a stubbed

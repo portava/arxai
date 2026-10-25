@@ -1,7 +1,7 @@
 // Production readiness check — READ ONLY (Tier 1 finalization, items 9 and 10).
 //
 // Answers, against whatever DATABASE_URL points at:
-//   1. Which of the seven Tier 1 migrations are applied (by the columns,
+//   1. Which of the Tier 1 migrations are applied (by the columns,
 //      defaults, tables and indexes each one creates).
 //   2. Whether trading is available: the install-wide stop switches the
 //      pre-trade Risk Governor reads (lib/safety/tradingHalt.ts), the platform
@@ -62,6 +62,9 @@ export async function migrationChecks(): Promise<Check[]> {
   ]), "execution_venue + venue_command_id on trade_action_requests");
   await add("2026-10-24_one_limit_store", hasColumn("user_risk_settings", "legacy_merged_at"),
     "risk_settings limits folded into user_risk_settings (legacy_merged_at)");
+  await add("2026-10-25_paper_order_request_key", all([
+    hasColumn("paper_orders", "client_request_key"), hasIndex("paper_orders_user_request_key_uq"),
+  ]), "client_request_key + per-user unique index on paper_orders (owner decision 13)");
   return out;
 }
 

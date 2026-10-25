@@ -104,11 +104,116 @@ row written; a LIVE body refused and not converted; a confirmation id left
 `CONFIRMED`; historical rows still readable and owner-scoped.
 `test:paper-book` inserts its legacy fixture rows directly now.
 
+### Decision 13: confirmed SIMULATED opens become PAPER orders
+
+**One module, two surfaces.** `lib/tradeEngine/simulatedOpen.ts`
+(`openSimulatedPaperOrder`) is the only place either surface books a
+simulated open. It calls `submitTrade({ mode: "PAPER", intent: "OPEN" })`,
+so the PAPER venue (`paperVenue.openPaperOrder`) runs the pre-trade Risk
+Governor (venue PAPER) and the SL/TP geometry check, and is still the only
+writer of `paper_orders`. Nothing reaches a broker.
+
+- **Trade Action Center:** `confirmAction` → `runActionGuards` (all checks,
+  including the Risk Governor) → `routeConfirmedAction`, which sends a
+  SIMULATED `OPEN` to the module with request key = the action id and
+  `intentRef: "trade_action:<id>"` (so the governor's duplicate scan skips
+  the action's own row). On success the action is `executed` with
+  `executionVenue: "PAPER"`, `tradeCommandId: "paper_order:<id>"`, the fill
+  price and size, and the simulated label in `brokerMessage`; the response
+  carries `simulated` (the receipt). A refusal leaves the action `rejected`
+  with the venue's message as the reason.
+- **My Trades** (`POST /me/trades/open`, mode SIMULATED): the existing
+  `placeOrder` → `runOrderGuards` chain must return `APPROVED` first; then,
+  instead of `dispatchToBroker`, the module books the order (source
+  `ME_TRADES_SIMULATED_OPEN`) and the `trade_command_audit_log` row is set to
+  `EXECUTED` (placement `{ venue: "PAPER", paperOrderId, … }`) or `FAILED`.
+  The response is `{ ok, mode: "SIMULATED", venue: "PAPER", replayed,
+  simulated, error?, message? }`.
+
+**Previews and drafts create nothing.** Only a confirmed action (TAC) or a
+guarded open (My Trades) reaches the module. A TAC draft, a preview, an
+unconfirmed or cancelled action books no paper order (tested).
+
+**Explicit labelling.** The TAC confirm must now name the mode: a SIMULATED
+action is refused with `simulated_mode_label_required` unless the confirm
+body says `{ "mode": "SIMULATED" }` (the dashboard review modal sends the
+action's requested mode). Every receipt carries `mode: "SIMULATED"`,
+`venue: "PAPER"` and the label *"Simulated — a paper order in your paper
+account. No broker order was sent."* The My Trades modal shows the label and
+the paper order.
+
+**Price provenance.** The fill is the current **real** quote: ask for BUY,
+bid for SELL, at the quote's observation time (`getMarketData`). The module
+refuses with `NO_VALID_PRICE_SOURCE` (with `priceBlockers`) when the snapshot
+is not `REAL`, has any CRITICAL/HIGH market-data blocker (missing, stale,
+synthetic, closed market, …), or has no valid bid/ask or time. No fill is
+fabricated: a pending order type is refused
+(`SIMULATED_PENDING_NOT_SUPPORTED`), the client's entry price is ignored, and
+the simulator price (`getMockPrice`) is never used for these orders. Orders
+are tagged `strategy_id = market_priced_simulated_open`, and the paper
+mark-to-market loop skips that tag, so they are never settled from synthetic
+prices. The event message and vault payload record the price source.
+
+**Other refusals.** `INVALID_SIDE`, `INVALID_VOLUME`,
+`SIMULATED_REQUIRES_STOP_AND_TARGET` (a paper order carries both),
+`NO_ACTIVE_PAPER_ACCOUNT` (never created implicitly), and the venue's own
+codes (`RISK_GOVERNOR_BLOCK`, `INVALID_SLTP_GEOMETRY`, …) with a message.
+
+**Idempotency (retry-safe).** New nullable column
+`paper_orders.client_request_key` with a unique index on
+`(user_id, client_request_key)` (NULLs stay distinct, so existing rows and
+other writers are unaffected). Keys are namespaced per surface
+(`trade_action:<id>`, `my_trades:<client key>`) and scoped per user. A repeat
+returns the order already booked with `replayed: true`, before any price read
+or governor decision; a concurrent duplicate loses on the unique index
+(`ON CONFLICT DO NOTHING`) and gets the winner's order. The TAC confirm is
+also a compare-and-set now (below). My Trades SIMULATED opens require an
+`idempotencyKey` (8–128 chars, `[A-Za-z0-9_.:-]`); the modal generates one per
+ticket and reuses it on retry. A replayed My Trades request returns the
+booked order without a new audit row.
+
+**Schema / runbook.** `lib/db/migrations/2026-10-25_paper_order_request_key.sql`
+(additive: `ADD COLUMN IF NOT EXISTS`, `CREATE UNIQUE INDEX IF NOT EXISTS`).
+`productionReadinessCheck` checks both. It must be applied to shared and
+production databases by the owner runbook before this code ships.
+
+**Guards.** `trade-engine-single-pipeline`: the PAPER governance shape check
+accepted only a literal `origin: "manual"`; it now accepts any origin
+expression and still pins `venue: "PAPER"` and the action (115 fixtures, was
+113). No allowlist was added.
+
+**Tests:** `test:simulated-open` (new, in `ci:integration`, 9 cases, stubbed
+feed): drafts and previews book nothing; the label is required; a governed
+booking at the ask with provenance, replay, and mark-to-market leaving it
+open; concurrent confirms book one order (SELL at the bid); no valid price →
+refused, nothing booked; tenant isolation and per-user keys; refusals
+(pending, no stop, governor lot cap, no paper account); My Trades key
+required, booking, audit `EXECUTED`, replay with no new audit row, another
+user's same key books separately; My Trades with no price →
+`NO_VALID_PRICE_SOURCE`, audit `FAILED`. `test:risk-governor-pipelines`
+updated: the SIMULATED Ruby and trade-action cases confirm with the label and
+expect the PAPER venue's no-price refusal (this sandbox has no real feed).
+
 ### Behaviour changes (round 5)
 
 1. `POST /execute-trade` returns 410 `EXECUTE_TRADE_RETIRED` for every
    authenticated request (before: Safety Core gate, then 409 refusals or a
    200 with a new `trades` row). Nothing is recorded. *(decision 14)*
+2. A confirmed SIMULATED **open** in the Trade Action Center books one PAPER
+   order and the action becomes `executed` (venue PAPER) or `rejected` (before:
+   `queued`, nothing booked). A confirmed SIMULATED My Trades open books one
+   PAPER order (before: `SIMULATED_FILL` with nothing booked). *(decision 13)*
+3. A SIMULATED Trade Action confirm must send `{ "mode": "SIMULATED" }`,
+   otherwise `simulated_mode_label_required`. *(decision 13)*
+4. A SIMULATED open is refused without a valid real price, without both stop
+   and target, as a pending order, or without an active paper account.
+   *(decision 13)*
+5. My Trades SIMULATED opens require `idempotencyKey` (400
+   `IDEMPOTENCY_KEY_REQUIRED`). *(decision 13)*
+6. The Trade Action confirm transition is a compare-and-set for **every**
+   mode: of two concurrent confirms of one action, one proceeds and the other
+   gets `cannot_confirm_from_status`. The status machine also allows
+   `queued → executed`. *(decision 13)*
 
 ### What remains (round 5)
 
@@ -124,6 +229,17 @@ row written; a LIVE body refused and not converted; a confirmation id left
 3. `docs/TIER1_PLATFORM_SAFETY_SOURCE.md` still lists the `/execute-trade`
    re-check among the legacy gates; that doc belongs to the Platform Safety
    worker.
+4. The `paper_orders.client_request_key` migration is applied only to this
+   worker's sandbox database, not to shared or production databases (owner
+   runbook).
+5. Closing a decision-13 order from the Paper Trading page
+   (`closePaperOrder`) still prices the exit with the paper simulator; the
+   order is never auto-settled from it, but a manual close is. A real-quote
+   close for these orders is not built.
+6. Non-OPEN SIMULATED trade actions (modify / close) still book nothing and
+   stay `queued`; decision 13 covers opens only.
+7. Without a real market-data provider configured, every SIMULATED open is
+   refused with `NO_VALID_PRICE_SOURCE` (intended: no fabricated fill).
 
 ## Round 3: one entry for every producer
 

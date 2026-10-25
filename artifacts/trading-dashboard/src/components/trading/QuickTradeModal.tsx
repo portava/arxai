@@ -157,6 +157,9 @@ export function QuickTradeModal({
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [confirmStep, setConfirmStep] = useState(false);
+  // Retry-safe key of a SIMULATED open: reused if the same order is retried,
+  // replaced once it succeeds or the order changes (one paper order per key).
+  const requestKeyRef = useRef<string | null>(null);
 
   // Unified per-user account mode (read-only). Drives the honest default mode +
   // disabled states. Authorizes nothing — the backend re-runs every gate.
@@ -200,8 +203,13 @@ export function QuickTradeModal({
     takeProfit: n(tp),
   }), [orderType, lotSize, currentPrice, entryPrice, stopTriggerPrice, stopLimitPrice, sl, tp]);
 
+  useEffect(() => { requestKeyRef.current = null; }, [open, mode, symbol, orderType, lotSize, sl, tp]);
+
   async function submitMarket() {
     setBusy(true); setErr(null); setResult(null);
+    if (mode === "SIMULATED" && !requestKeyRef.current) {
+      requestKeyRef.current = `qt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    }
     try {
       const r = await fetch(u("/api/me/trades/open"), {
         method: "POST",
@@ -211,14 +219,18 @@ export function QuickTradeModal({
           symbol, side: direction, lotSize, mode,
           stopLoss: n(sl), takeProfit: n(tp),
           confirmedByUser: true,
+          ...(mode === "SIMULATED" ? { idempotencyKey: requestKeyRef.current } : {}),
         }),
       });
       const body = await r.json();
       if (!r.ok || !body.ok) {
-        setErr(String(body.error ?? `HTTP ${r.status}`));
+        setErr(String(body.message ?? body.error ?? `HTTP ${r.status}`));
         return;
       }
-      setResult(`Market order ${body.result?.status ?? "QUEUED"}`);
+      requestKeyRef.current = null;
+      setResult(body.simulated
+        ? `${body.simulated.label} Paper order #${body.simulated.paperOrderId} at ${body.simulated.fillPrice}.`
+        : `Market order ${body.result?.status ?? "QUEUED"}`);
       onOpened();
     } catch (e) {
       setErr(String((e as Error).message ?? e));

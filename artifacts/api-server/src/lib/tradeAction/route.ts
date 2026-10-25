@@ -11,7 +11,11 @@
 //   CLOSE / PARTIAL_CLOSE / MOVE_STOP / TRAIL_STOP / MODIFY_TP_SL
 //               → lib/positions/governedOps on the trader's own governed
 //                 position (a position opened outside ARX is refused)
-//   SIMULATED   → no broker command.
+//   SIMULATED OPEN → one PAPER order through the pipeline (owner decision
+//                 13): lib/tradeEngine/simulatedOpen.ts, submitTrade mode
+//                 PAPER, Risk Governor venue PAPER, a real current quote,
+//                 idempotent on the action id. No broker command.
+//   other SIMULATED actions → no broker command, nothing booked.
 // It used to write the legacy mt5_commands mailbox, which forces every row
 // to BLOCKED, so DEMO and LIVE actions read "queued" and never executed.
 // Owner decision 2026-10-24: Trade Action DEMO and LIVE go through the
@@ -23,6 +27,7 @@ import { db, sharedTradeAttributionTable } from "@workspace/db";
 import { isOrderType, isPendingOrder, directionOf } from "./orderTypes.js";
 import type { ActionType } from "./types.js";
 import { submitTrade } from "../tradeEngine/pipeline.js";
+import type { SimulatedOpenReceipt } from "../tradeEngine/simulatedOpen.js";
 
 export const TRADE_ACTION_SOURCE = "TRADE_ACTION_CENTER";
 export const TRADE_ACTION_RUBY_SOURCE = "TRADE_ACTION_RUBY";
@@ -42,11 +47,15 @@ export interface RoutableAction {
   source: string | null;
   /** Overrides the venue command's source (a caller other than the Trade Action Center). */
   sourcePage?: string;
+  /** The action row id: the idempotency key of a SIMULATED open's paper order. */
+  actionId?: number;
+  /** Ruby / decision-engine origin for the PAPER governor intent. */
+  origin?: "manual" | "ruby" | "automation";
 }
 
 export type RouteResult =
-  | { ok: true; venue: "DEMO" | "LIVE" | null; commandId: string | null; sent: boolean }
-  | { ok: false; venue: "DEMO" | "LIVE" | null; commandId: string | null; reason: string };
+  | { ok: true; venue: "DEMO" | "LIVE" | "PAPER" | null; commandId: string | null; sent: boolean; paper?: SimulatedOpenReceipt }
+  | { ok: false; venue: "DEMO" | "LIVE" | "PAPER" | null; commandId: string | null; reason: string; message?: string };
 
 /** The source stamped on the venue command; Ruby-suggested actions keep the ruby origin. */
 export function sourceFor(a: Pick<RoutableAction, "source" | "sourcePage">): string {
@@ -81,6 +90,7 @@ export async function tradeRefFor(userId: number, tradeKey: string | null): Prom
 }
 
 export async function routeConfirmedAction(a: RoutableAction): Promise<RouteResult> {
+  if (a.requestedMode === "SIMULATED" && a.actionType === "OPEN") return routeSimulatedOpen(a);
   const venue = a.requestedMode === "DEMO" || a.requestedMode === "LIVE" ? a.requestedMode : null;
   if (!venue) return { ok: true, venue: null, commandId: null, sent: false };
   if (a.actionType === "CANCEL_ORDER") return { ok: false, venue, commandId: null, reason: "CANCEL_NOT_ROUTED" };
@@ -113,6 +123,23 @@ async function routeOpen(a: RoutableAction, venue: "DEMO" | "LIVE"): Promise<Rou
   return r.ok
     ? { ok: true, venue, commandId: r.commandId, sent: r.sent }
     : { ok: false, venue, commandId: r.commandId, reason: r.reason };
+}
+
+/** Owner decision 13: a confirmed SIMULATED open books one PAPER order, keyed on the action id. */
+async function routeSimulatedOpen(a: RoutableAction): Promise<RouteResult> {
+  if (!(a.actionId && a.actionId > 0)) return { ok: false, venue: "PAPER", commandId: null, reason: "IDEMPOTENCY_KEY_REQUIRED" };
+  const orderType = isOrderType(a.orderType) ? a.orderType : null;
+  const side = orderType ? directionOf(orderType) : a.side;
+  const { openSimulatedPaperOrder } = await import("../tradeEngine/simulatedOpen.js");
+  const r = await openSimulatedPaperOrder({
+    userId: a.userId, surface: "TRADE_ACTION_CENTER", requestKey: String(a.actionId),
+    symbol: a.symbol, side, lots: a.lotSize, stopLoss: a.stopLoss, takeProfit: a.takeProfit,
+    pending: orderType != null && isPendingOrder(orderType),
+    origin: a.origin ?? "manual", intentRef: `trade_action:${a.actionId}`, sourcePage: sourceFor(a),
+  });
+  return r.ok
+    ? { ok: true, venue: "PAPER", commandId: `paper_order:${r.receipt.paperOrderId}`, sent: false, paper: r.receipt }
+    : { ok: false, venue: "PAPER", commandId: null, reason: r.reason, message: r.message };
 }
 
 async function sharedMasterRouting(): Promise<boolean> {

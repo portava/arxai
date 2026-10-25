@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, real, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, real, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 // (Q) Build Q — Paper Trading Sandbox.
 //
@@ -47,12 +47,20 @@ export const paperOrdersTable = pgTable("paper_orders", {
   // the orchestrator (in which case Build BB still creates a debrief but
   // flags the missing-context warning).
   decisionId: integer("decision_id"),
+  // Owner decision 13 (2026-10-25): the retry-safe idempotency key of a
+  // confirmed SIMULATED open (Trade Action Center: "trade_action:<id>",
+  // My Trades: "my_trades:<client key>"). One order per (user, key): a retried
+  // confirm returns the order it already booked. Null for every other order.
+  // Additive (migrations/2026-10-25_paper_order_request_key.sql).
+  clientRequestKey: text("client_request_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({
   byAccount: index("paper_orders_account_idx").on(t.paperAccountId),
   byStatus:  index("paper_orders_status_idx").on(t.status),
   byOpened:  index("paper_orders_opened_idx").on(t.openedAt),
+  // NULLs are distinct in a Postgres unique index, so only keyed orders are constrained.
+  byRequestKey: uniqueIndex("paper_orders_user_request_key_uq").on(t.userId, t.clientRequestKey),
 }));
 export type PaperOrder = typeof paperOrdersTable.$inferSelect;
 

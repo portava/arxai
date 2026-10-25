@@ -258,7 +258,8 @@ export function checkPipelineShape(read: (key: string) => string | null): string
     const n = (paper.match(/\benforcePreTradeRisk\s*\(/g) ?? []).length;
     if (n < 3) v.push(`${PAPER_VENUE}: the Risk Governor must gate open, modify and close (found ${n} call(s))`);
     for (const a of ["OPEN", "MODIFY", "CLOSE"]) {
-      if (!new RegExp(`venue:\\s*"PAPER",\\s*origin:\\s*"manual",\\s*action:\\s*"${a}"`).test(paper)) {
+      // The origin is the caller's (manual, ruby, automation); the venue and action are pinned.
+      if (!new RegExp(`venue:\\s*"PAPER",\\s*origin:\\s*[^,]+,\\s*action:\\s*"${a}"`).test(paper)) {
         v.push(`${PAPER_VENUE}: ${a} is not governed with venue PAPER`);
       }
     }

@@ -60,7 +60,8 @@
 // without being a listed producer.
 
 import type { GovernedPosition } from "../positions/governedOps.js";
-import type { PaperOrderRow } from "./paperVenue.js";
+import type { PaperOrderRow, PaperQuote } from "./paperVenue.js";
+import type { IntentOrigin } from "../riskGovernor/preTrade.js";
 import type * as LiveQueue from "../live/liveCommandPipeline.js";
 import type * as DemoQueue from "../mt5/demoCommandQueue.js";
 import type * as Instant from "../live/instantTrade.js";
@@ -100,6 +101,14 @@ export interface PaperOpen {
   stopLoss: number; takeProfit: number;
   strategyId?: string | null; tradePlanId?: number | null; decisionId?: number | null;
   sourcePage: string;
+  /** Governor intent origin (omitted → manual). */
+  origin?: IntentOrigin;
+  /** A real market quote with provenance: the order fills at it (owner decision 13). */
+  quote?: PaperQuote | null;
+  /** Retry-safe idempotency key: one order per (user, key). */
+  clientRequestKey?: string | null;
+  /** The caller's own in-flight row, excluded from the governor's duplicate scan. */
+  intentRef?: string;
 }
 export interface PaperClose { mode: "PAPER"; intent: "CLOSE"; userId: number; orderId: number; sourcePage: string }
 export interface PaperModify {
@@ -114,7 +123,9 @@ export type TradeRequest = BrokerOpen | BrokerClose | BrokerModify | PaperOpen |
 export type TradeResult =
   | { ok: true; mode: TradeMode; intent: TradeIntent; commandId: string | null; sent: boolean;
       /** The broker position the op acted on (CLOSE / MODIFY on LIVE or DEMO). */
-      position?: GovernedPosition; paperOrder?: PaperOrderRow | null }
+      position?: GovernedPosition; paperOrder?: PaperOrderRow | null;
+      /** PAPER: the request key had already booked this order (nothing new was booked). */
+      replayed?: boolean }
   | { ok: false; mode: TradeMode; intent: TradeIntent; commandId: string | null; reason: string;
       /** PAPER Risk Governor refusals and geometry refusals carry their detail. */
       detail?: { primaryReason?: string | null; blockedBy?: string[]; auditEventId?: number | null; entryPrice?: number } };
@@ -323,11 +334,18 @@ async function submitPaper(r: PaperOpen | PaperClose | PaperModify): Promise<Tra
       stopLoss: r.stopLoss, takeProfit: r.takeProfit,
       strategyId: r.strategyId ?? null, tradePlanId: r.tradePlanId ?? null, decisionId: r.decisionId ?? null,
       caller: r.sourcePage,
+      ...(r.origin ? { origin: r.origin } : {}),
+      ...(r.quote ? { quote: r.quote } : {}),
+      ...(r.clientRequestKey ? { clientRequestKey: r.clientRequestKey } : {}),
+      ...(r.intentRef ? { intentRef: r.intentRef } : {}),
     })
     : r.intent === "MODIFY"
       ? await venue.modifyPaperOrder({ userId: r.userId, orderId: r.orderId, stopLoss: r.stopLoss, takeProfit: r.takeProfit, caller: r.sourcePage })
       : await venue.closePaperOrder({ userId: r.userId, orderId: r.orderId, caller: r.sourcePage });
-  if (res.ok) return { ok: true, mode: "PAPER", intent: r.intent, commandId: null, sent: false, paperOrder: res.order };
+  if (res.ok) {
+    return { ok: true, mode: "PAPER", intent: r.intent, commandId: null, sent: false, paperOrder: res.order,
+      ...(res.replayed ? { replayed: true } : {}) };
+  }
   const detail = res.reason === "RISK_GOVERNOR_BLOCK"
     ? { primaryReason: res.primaryReason, blockedBy: res.blockedBy, auditEventId: res.auditEventId }
     : res.reason === "INVALID_SLTP_GEOMETRY" && res.entryPrice !== undefined ? { entryPrice: res.entryPrice } : undefined;
