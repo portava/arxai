@@ -18,8 +18,6 @@ import { randomUUID } from "node:crypto";
 import { computeTimingRead } from "../../brain/timing/marketTimingBrainService.js";
 import {
   db,
-  paperOrdersTable,
-  paperAccountsTable,
   tradeDecisionLogsTable,
   postTradeDebriefsTable,
   learningEventsTable,
@@ -36,6 +34,10 @@ import { logger } from "../logger.js";
 import { checkBrokerSafety } from "../brokerReadOnly/service.js";
 import { loadEffectiveLimits } from "../riskGovernor/limitSettings.js";
 import { resolveEffectiveLimits, dailyLossCapAmount } from "../riskGovernor/preTrade.js";
+import {
+  readActivePaperAccount, readOpenPaperOrders, readPaperCloses, readPaperOrders, sumPaperRealizedSince,
+  isSettledPaperStatus, realizedOf, type PaperBookScope,
+} from "../tradeEngine/paperBookReader.js";
 
 export type OverallStatus = "PAPER_ALLOWED" | "PAPER_CAUTION" | "PAPER_PAUSED" | "WATCH_ONLY" | "LOCKED";
 export type ReadinessLevel = "NOT_READY" | "EARLY_TESTING" | "DEVELOPING_EDGE" | "PAPER_STABLE" | "ADVANCED_PAPER_READY";
@@ -157,30 +159,26 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
   // --- EE: paper_orders ---
   let dailyPnl = 0, weeklyPnl = 0, openCount = 0, winRate30d = 0, sampleSize = 0, maxDrawdown = 0;
   const sameSymbolExposure: Record<string, number> = {};
+  // Owner decision 7: paper_orders through the paper book's read side. A
+  // settled order is CLOSED_SL / CLOSED_TP / CLOSED_MANUAL (the venue never
+  // writes "CLOSED"; filtering on it read every P/L as 0).
+  const book: PaperBookScope = userId == null ? { install: true } : { user: userId };
   try {
-    const dRows = await db.select({ pnl: sql<number>`COALESCE(SUM(${paperOrdersTable.profitLoss}),0)` })
-      .from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, utcMidnight), own(paperOrdersTable.userId)));
-    dailyPnl = Number(dRows[0]?.pnl ?? 0);
+    dailyPnl = await sumPaperRealizedSince(book, utcMidnight);
+    weeklyPnl = await sumPaperRealizedSince(book, weekAgo);
 
-    const wRows = await db.select({ pnl: sql<number>`COALESCE(SUM(${paperOrdersTable.profitLoss}),0)` })
-      .from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, weekAgo), own(paperOrdersTable.userId)));
-    weeklyPnl = Number(wRows[0]?.pnl ?? 0);
-
-    const open = await db.select().from(paperOrdersTable).where(and(eq(paperOrdersTable.status, "OPEN"), own(paperOrdersTable.userId)));
+    const open = await readOpenPaperOrders(book);
     openCount = open.length;
     for (const o of open) sameSymbolExposure[o.symbol] = (sameSymbolExposure[o.symbol] ?? 0) + 1;
 
-    const closed30 = await db.select().from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.status, "CLOSED"), gte(paperOrdersTable.closedAt, thirtyAgo), own(paperOrdersTable.userId)));
+    const closed30 = await readPaperCloses(book, { since: thirtyAgo });
     sampleSize = closed30.length;
     if (sampleSize > 0) {
-      const wins = closed30.filter(t => Number(t.profitLoss ?? 0) > 0).length;
+      const wins = closed30.filter(t => t.pnl > 0).length;
       winRate30d = Math.round((wins / sampleSize) * 10000) / 100;
       let cum = 0, peak = 0, dd = 0;
-      const sorted = [...closed30].sort((a, b) => (a.closedAt?.getTime() ?? 0) - (b.closedAt?.getTime() ?? 0));
-      for (const t of sorted) { cum += Number(t.profitLoss ?? 0); if (cum > peak) peak = cum; if (peak - cum > dd) dd = peak - cum; }
+      const sorted = [...closed30].sort((a, b) => a.closedAt.getTime() - b.closedAt.getTime());
+      for (const t of sorted) { cum += t.pnl; if (cum > peak) peak = cum; if (peak - cum > dd) dd = peak - cum; }
       maxDrawdown = Math.round(dd * 100) / 100;
     }
     dataSourcesRead.push("paper_orders");
@@ -198,9 +196,9 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
     }
     const shouldTradeIds = decisions.filter(d => d.shouldTrade).map(d => d.id);
     if (shouldTradeIds.length > 0) {
-      const placed = await db.select().from(paperOrdersTable).where(own(paperOrdersTable.userId));
-      const winFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && Number(p.profitLoss ?? 0) > 0).length;
-      const closedFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && p.status === "CLOSED").length;
+      const placed = await readPaperOrders(book);
+      const winFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && isSettledPaperStatus(p.status) && realizedOf(p) > 0).length;
+      const closedFromDecision = placed.filter(p => p.decisionId && shouldTradeIds.includes(p.decisionId) && isSettledPaperStatus(p.status) && p.closedAt != null).length;
       decisionToWinRate = closedFromDecision > 0 ? Math.round((winFromDecision / closedFromDecision) * 10000) / 100 : 0;
     }
     dataSourcesRead.push("trade_decision_logs");
@@ -279,13 +277,7 @@ async function collectMetrics(overrides: SimulateOverrides | undefined, userId: 
   try {
     const L = userId == null ? resolveEffectiveLimits({}) : await loadEffectiveLimits(userId);
     maxOpenPaperTrades = L.discipline.maxOpenTrades;
-    let equity: number | null = null;
-    if (userId != null) {
-      const [acct] = await db.select({ equity: paperAccountsTable.equity }).from(paperAccountsTable)
-        .where(and(eq(paperAccountsTable.userId, userId), eq(paperAccountsTable.isActive, 1)))
-        .orderBy(desc(paperAccountsTable.createdAt)).limit(1);
-      equity = acct?.equity ?? null;
-    }
+    const equity = userId == null ? null : (await readActivePaperAccount(userId))?.equity ?? null;
     dailyLossLimit = dailyLossCapAmount(L, equity);
     dataSourcesRead.push("user_risk_settings");
   } catch { missingDataSources.push("user_risk_settings"); }

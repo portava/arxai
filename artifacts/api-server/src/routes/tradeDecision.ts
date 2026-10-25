@@ -32,14 +32,14 @@ import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getOrCreateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
 import { loadTradingActivity } from "../lib/riskGovernor/enforce.js";
+import { summarizeActivity } from "../lib/riskGovernor/preTrade.js";
+import { readActivePaperAccount, readOpenPaperOrders, readPaperCloses } from "../lib/tradeEngine/paperBookReader.js";
 import {
   db,
   tradeDecisionLogsTable,
   signalsTable,
   botSettingsTable,
   riskLocksTable,
-  paperOrdersTable,
-  paperAccountsTable,
   traderSkillProfilesTable,
   analyticsSnapshotsTable,
   aiMentorSessionsTable,
@@ -166,6 +166,22 @@ const EvaluateBody = z.object({
   // the provider layer.
   injectMarketIssue: z.enum(["NONE", "STALE", "MISSING", "WIDE_SPREAD", "EXTREME_VOLATILITY"]).optional().default("NONE"),
 });
+
+/**
+ * The trader's PAPER losing streak for the revenge guard (owner decision 7):
+ * the governor's streak measure (summarizeActivity) on settled paper_orders
+ * P/L, over every paper account of this trader, and never shorter than the
+ * governor's own active-account streak, so switching accounts cannot reset
+ * it. Read through the paper book's read side; the journal and the legacy
+ * `trades` table are not counted.
+ */
+export async function paperLosingStreak(userId: number, activity: { consecutiveLosses: number } | null): Promise<number> {
+  const recentCloses = await readPaperCloses({ user: userId }, { limit: 20 });
+  return Math.max(
+    summarizeActivity(recentCloses.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })), 0, new Date(), "paper_orders:user").consecutiveLosses,
+    activity?.consecutiveLosses ?? 0,
+  );
+}
 
 // ── Core orchestration ──────────────────────────────────────────────────────
 export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: number): Promise<TradeDecision> {
@@ -298,14 +314,11 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   if (risk?.liveLocked) warnings.push("Live trading is locked in risk settings");
 
   // 5) Account + open-position context (paper account is always available).
-  const [paperAccts, openTrades] = await Promise.all([
-    db.select().from(paperAccountsTable)
-      .where(and(eq(paperAccountsTable.userId, userId), eq(paperAccountsTable.isActive, 1)))
-      .orderBy(desc(paperAccountsTable.createdAt)).limit(1),
-    db.select().from(paperOrdersTable)
-      .where(and(eq(paperOrdersTable.userId, userId), eq(paperOrdersTable.status, "OPEN"))),
+  // Paper facts through the paper book's read side (owner decision 7).
+  const [paperAcct, openTrades] = await Promise.all([
+    readActivePaperAccount(userId),
+    readOpenPaperOrders({ user: userId }),
   ]);
-  const paperAcct = paperAccts[0] ?? null;
   const openCount = openTrades.length;
   if (risk && openCount >= risk.maxOpenTrades) {
     blockers.push(`Max open trades reached (${openCount} / ${risk.maxOpenTrades})`);
@@ -315,22 +328,11 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   }
 
   // 6) Recent trade history — overtrading + revenge guard.
-  const recent = await db.select().from(paperOrdersTable)
-    .where(eq(paperOrdersTable.userId, userId)).orderBy(desc(paperOrdersTable.id)).limit(20);
-  const losingStreak = (() => {
-    let s = 0;
-    for (const o of recent) {
-      if (o.status === "OPEN" || o.exitPrice == null) continue;
-      const dir = o.direction === "BUY" ? 1 : -1;
-      const pnl = (o.exitPrice - o.entryPrice) * dir;
-      if (pnl < 0) s++; else break;
-    }
-    return s;
-  })();
   // Daily-trade limit (owner decision 9): the Risk Governor's trading day and
   // its PAPER activity source (trades opened on the UTC trading day and still
   // open, plus trades closed on it), not orders opened among the last 20.
   const activity = await loadTradingActivity(userId, "PAPER");
+  const losingStreak = await paperLosingStreak(userId, activity);
   if (risk && activity == null) {
     blockers.push("Your paper trading activity could not be read, so the daily trade limit cannot be checked");
     signalsUsed.push({ source: "overtrading", status: "FAIL", score: 0, detail: "Activity unavailable" });

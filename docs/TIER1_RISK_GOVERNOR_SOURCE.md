@@ -218,21 +218,23 @@ what they show, so they stay listed:
 - `riskAudit` (`computeRiskAudit`), used by `/risk/audit` and the legacy
   `/mt5/execute` gate (`routes/mt5.ts`): daily / weekly loss, trade count,
   open trades and losing streak from the legacy `trades` table (not
-  scoped to the user), against the trader's saved values. Legacy `trades`
-  vs `paper_orders` P/L is an **owner decision**. Commands on `/mt5` are
-  stored BLOCKED and no governor runs on that path.
+  scoped to the user), against the trader's saved values. Commands on
+  `/mt5` are stored BLOCKED and no governor runs on that path. Round 5
+  (owner decision 7): left on `trades` (legacy history / DEMO), not a PAPER
+  decision; see "Decision 7".
 - `routes/permission.ts`: the paper permission verdict
   (`evaluatePermission`, `@workspace/domain/safety-permission`) uses the
   trader's saved values, not the effective limits (operator caps and the
   daily-loss switch are not applied). Unifying would change the verdict.
-- `routes/tradeDecision.ts`: an advisory orchestrator. Open trades
-  (`paper_orders` OPEN) and losing streak against the saved values; trades
-  today from the governor's PAPER activity since round 5 (decision 9). It
+- `routes/tradeDecision.ts`: an advisory orchestrator. Open trades and
+  losing streak against the saved values; trades today from the governor's
+  PAPER activity since round 5 (decision 9); open trades and the streak
+  read through the paper book's read side since round 5 (decision 7). It
   adds blocker lines and places nothing.
 - `meRiskGovernor.postPaperCloseRiskHooks`: warning-level
   `consecutive_losses_hit` / `cooldown_started` events from `paper_trades`
-  history. The governor's discipline rule decides on its own activity facts
-  (`paper_trades` vs `paper_orders` basis: **owner decision**).
+  history. Round 5 (decision 7): these follow the trader's hand-entered
+  journal on purpose; the governor decides on `paper_orders`.
 
 **Pure engines in `lib/domain`** (not scanned by the guard): about 19 files
 compare against limit-named inputs (`risk-governor/*`, `execution-gate`,
@@ -257,7 +259,9 @@ the `raw_reader` rule.
    `UNCLOSED` for both.**
 2. Legacy `trades` vs `paper_orders` (and `paper_trades`) as the P/L and
    streak basis for `riskAudit`, `/mt5/execute`, `/me/risk/status` and the
-   post-close hooks.
+   post-close hooks. **Decided (owner decision 7): `paper_orders`, through
+   the paper book's read side, for automated PAPER facts; `paper_trades`
+   stays the journal, `trades` legacy history.**
 3. Whether the (b) and (c) readers above should show / decide on the
    limit in force (`loadEffectiveLimits`) instead of the saved value. Each
    switch changes what a trader sees or which advisory blockers appear.
@@ -574,5 +578,105 @@ daily-loss block), the alert (operator cap fires at 90 of 100; off switch
 quiet) and the account shell. `check-single-risk-limit-source.test.ts`
 gains 4 assertions. `test:account-shell-route`, `test:alert-rule-ownership`,
 `test:limit-layers` and `test:one-limit-store` pass unchanged.
+
+### Decision 7: paper_orders for automated PAPER facts (`r5/risk-4`)
+
+> Use paper_orders, through the paper-book authority, for automated PAPER
+> P/L, activity, losing streaks and risk decisions. paper_trades remains a
+> manually entered journal. trades remains historical legacy data. Do not
+> mix these sources or double-count them. Missing historical coverage must
+> not silently reset losses or restore a risk budget. Do not change DEMO
+> accounting as a side effect.
+
+Survey first (what each automated PAPER reader used before this branch):
+
+| Reader | Before | Now |
+|---|---|---|
+| Risk Governor PAPER facts (`enforce.loadPaperFacts`, `loadTradingActivity`) | `paper_orders` of the active paper account, own queries | the same rows through the read side |
+| `tradeDecision` open trades / losing streak | `paper_orders` direct (all accounts); streak from fill prices over the last 20 orders by id | read side; streak = governor's measure over all accounts, at least the governor's (see below) |
+| `traderReadiness` daily / weekly P/L, win rate, drawdown, decision win rate | `paper_orders` filtered on status `CLOSED`, which the venue never writes, so every P/L read 0 | read side; settled = `CLOSED_SL` / `CLOSED_TP` / `CLOSED_MANUAL` (and a venue-settled `CANCELLED`) |
+| Autopilot daily P/L and open caps (`paperAutopilot`) | `paper_orders` direct (owner + EE strategy) | read side, same scope |
+| Build EE eligibility open count (`paperExecutionService`) | `paper_orders` direct (account) | read side |
+
+Not PAPER facts, so unchanged: `riskAudit` / `/mt5/execute` (legacy
+`trades`), `permission.ts` (the live / broker execution permission verdict;
+reads `trades`, the DEMO ledger), the governor's DEMO facts (`trades`) and
+LIVE facts (`arx_live_positions`). `meRiskGovernor` `/me/risk/status`,
+`/daily-status` and the post-close hooks follow `paper_trades` on purpose:
+they are the hand-entered journal's discipline view (`activitySource:
+"paper_trades"` says so), not automated PAPER facts.
+
+The read side, `lib/tradeEngine/paperBookReader.ts` (reads only, next to
+the venue that writes the book):
+
+- scopes: one account (the governor), one trader (all accounts), the
+  autopilot owner + strategy (owner `null` = ownerless rows), the
+  operator's whole install;
+- `readActivePaperAccount`, `readOpenPaperOrders`,
+  `readPaperOrdersOpenedSince`, `countPaperOpenedSinceStillOpen`,
+  `sumPaperRealizedSince`, `readPaperCloses`, `readPaperOrders`,
+  `isSettledPaperStatus`, `realizedOf`;
+- "settled" = status not `OPEN` with a `closed_at` (a voided order never
+  counts); realized = `profit_loss` (`realizedOf` reads the sign from the
+  fills if a settled row ever lacks it; the column is `NOT NULL DEFAULT 0`
+  today, so this is defensive only).
+- It never reads `paper_trades` or `trades`; nothing sums across tables.
+
+Conservative handling:
+
+- The governor's PAPER facts read exactly the rows they read before (same
+  scope, statuses and time bounds); only the query moved.
+- `tradeDecision` losing streak (`paperLosingStreak`, exported for tests):
+  the governor's streak measure (`summarizeActivity`) on settled
+  `paper_orders` P/L over every paper account of the trader, and never
+  shorter than the governor's own active-account streak. Like the old
+  calculation it spans every account, so switching paper accounts cannot
+  reset it; unlike it, the order is by close time (not by order id) and the
+  sign is the recorded P/L (not the raw price move).
+- Readers fail closed as before: a read error in the governor blocks
+  (unchanged); `tradeDecision` adds its "activity could not be read"
+  blocker; readiness reports `paper_orders` under `missingDataSources`.
+- No coverage gap needed a legacy carry: every automated PAPER reader
+  already read `paper_orders`; none read `paper_trades` or `trades` for
+  PAPER, so there is no historical P/L to carry over and no budget is
+  restored.
+- `single-risk-limit-source` shape check: the five reader files above may
+  not reference `paperOrdersTable` (read through the read side) or
+  `paperTradesTable` (the journal is not a paper fact), and must import the
+  read side. `check-single-risk-limit-source.test.ts` gains 4 assertions.
+
+Behaviour changes (decision 7):
+
+- Trader readiness: `dailyPnl`, `weeklyPnl`, `winRate30d`, `sampleSize`,
+  `maxDrawdown` and `decisionToWinRate` now reflect settled paper orders
+  (they were 0 / empty because of the `CLOSED` filter). With PR3's enforced
+  limits, `DAILY_LOSS_LIMIT_EXCEEDED` / `DAILY_LOSS_NEAR_LIMIT` and the
+  readiness score can now trigger on real paper losses.
+- Trade decision revenge guard: the losing streak counts settled paper
+  orders by close time across all the trader's paper accounts (P/L sign
+  from `profit_loss`, not the price move; order by close time, not order
+  id), and is never shorter than the governor's streak. The count can
+  differ from before when orders closed out of id order.
+- DEMO: none. LIVE: none. Governor PAPER decisions: none (same rows).
+
+Tests: `test:risk-governor-paper-facts` (new, real DB, wired into
+`ci:integration`): no double count (the governor's PAPER P/L and readiness
+P/L exclude a journal loss and a legacy `trades` loss on the same day),
+the read side's settled / open / realized per scope (voided order ignored,
+ownerless strategy rows), missing coverage stays conservative (account
+switch keeps the streak; never shorter than the governor's), tenant
+isolation (another trader's losses never count), and DEMO unchanged (DEMO
+activity and P/L still from `trades`, untouched by paper rows).
+
+What remains (decision 7):
+
+- Analytics readers of `paper_orders` (`performanceCC`, coach, analytics
+  and debrief routes, notifications ingest) still query the table directly.
+  They are reports, not P/L-driven risk decisions; moving them onto the
+  read side is mechanical. `notifications/ingest.ts` matches closed
+  statuses (`CLOSED`, `TP_HIT`, `SL_HIT`, `MANUAL_CLOSED`) the venue does
+  not write (it writes `CLOSED_SL` / `CLOSED_TP` / `CLOSED_MANUAL`); not
+  changed here.
+- `riskAudit` and `/mt5/execute` stay on legacy `trades`, unscoped by user.
 
 **TIER 1 NOT COMPLETE**

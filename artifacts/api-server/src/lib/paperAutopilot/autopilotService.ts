@@ -14,13 +14,14 @@ import { db,
   autopilotCyclesTable,
   autopilotCycleLogsTable,
   autopilotSymbolCooldownsTable,
-  paperOrdersTable,
   paperExecutionsTable,
   postTradeDebriefsTable,
   learningEventsTable,
 } from "@workspace/db";
 import { and, desc, eq, gt, gte, isNull, sql } from "drizzle-orm";
 import { logger } from "../logger.js";
+import { readOpenPaperOrders, sumPaperRealizedSince } from "../tradeEngine/paperBookReader.js";
+import { tradingDayStart } from "../riskGovernor/preTrade.js";
 import { loadSettings, assertSafe } from "./settings.js";
 import { runSniperFilter } from "./sniperFilter.js";
 import { orchestrate, persistDecision } from "../../routes/tradeDecision.js";
@@ -73,30 +74,17 @@ async function applyCooldown(symbol: string, action: string, reason: string, min
   });
 }
 
-// Daily loss and open-trade caps count the autopilot owner's own book only.
-function ownedBy(ownerUserId: number | null) {
-  return ownerUserId == null ? isNull(paperOrdersTable.userId) : eq(paperOrdersTable.userId, ownerUserId);
-}
+// Daily loss and open-trade caps count the autopilot owner's own book only,
+// read through the paper book's read side (owner decision 7).
+const eeBook = (ownerUserId: number | null) => ({ owner: ownerUserId, strategyId: "build_ee_paper_execution" });
 
 async function dailyPaperPnl(ownerUserId: number | null): Promise<number> {
-  // Sum of profit_loss on EE-owned closed paper_orders since UTC midnight.
-  const since = new Date(); since.setUTCHours(0, 0, 0, 0);
-  const rows = await db.select({
-    pnl: sql<number>`COALESCE(SUM(${paperOrdersTable.profitLoss}), 0)`,
-  }).from(paperOrdersTable)
-    .where(and(
-      eq(paperOrdersTable.strategyId, "build_ee_paper_execution"),
-      gte(paperOrdersTable.closedAt, since),
-      ownedBy(ownerUserId),
-    ));
-  return Number(rows[0]?.pnl ?? 0);
+  // Realized P/L of EE-owned settled paper_orders since UTC midnight (the governor's trading day).
+  return sumPaperRealizedSince(eeBook(ownerUserId), tradingDayStart(new Date()));
 }
 
 async function countOpen(ownerUserId: number | null): Promise<{ total: number; bySymbolDir: Map<string, number> }> {
-  const rows = await db.select({
-    symbol: paperOrdersTable.symbol, direction: paperOrdersTable.direction,
-  }).from(paperOrdersTable)
-    .where(and(eq(paperOrdersTable.strategyId, "build_ee_paper_execution"), eq(paperOrdersTable.status, "OPEN"), ownedBy(ownerUserId)));
+  const rows = await readOpenPaperOrders(eeBook(ownerUserId));
   const map = new Map<string, number>();
   for (const r of rows) {
     const k = `${r.symbol}|${r.direction}`;

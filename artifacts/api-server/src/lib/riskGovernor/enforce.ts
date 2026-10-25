@@ -23,8 +23,6 @@ import { livePositionLedger, livePositionColumns } from "../positions/ledger.js"
 import { readOpenPositions, RISK_COUNT_BASIS } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
 import {
-  paperAccountsTable,
-  paperOrdersTable,
   tradesTable,
   tradeActionRequestsTable,
   arxLiveCommandsTable,
@@ -34,10 +32,14 @@ import {
   userEquityPeaksTable,
   sharedTradeAttributionTable,
 } from "@workspace/db/schema";
-import { and, desc, eq, gte, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { logRiskEvent } from "./riskEvents.js";
 import { loadEffectiveLimits } from "./limitSettings.js";
+import {
+  readActivePaperAccount, readOpenPaperOrders, readPaperOrdersOpenedSince, sumPaperRealizedSince,
+  readPaperCloses, countPaperOpenedSinceStillOpen,
+} from "../tradeEngine/paperBookReader.js";
 import { decideContractSize, resolveQuoteToAccountFx } from "../mt5/contractSize.js";
 import { loadTradingHalt } from "../safety/tradingHalt.js";
 import { brokerReadAdapter } from "../brokerHub/readAdapters.js";
@@ -206,14 +208,11 @@ async function loadActionInFlight(userId: number, venue: TradeIntent["venue"], n
   }));
 }
 
+// PAPER facts come from the paper book's read side (owner decision 7):
+// paper_orders of the active paper account, never paper_trades (the journal)
+// or trades (legacy / DEMO).
 async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Date): Promise<Omit<RiskContext, "limits" | "now">> {
-  const acctRows = opts.paperAccountId != null
-    ? await db.select().from(paperAccountsTable).where(and(
-        eq(paperAccountsTable.id, opts.paperAccountId), eq(paperAccountsTable.userId, intent.userId))).limit(1)
-    : await db.select().from(paperAccountsTable).where(and(
-        eq(paperAccountsTable.userId, intent.userId), eq(paperAccountsTable.isActive, 1)))
-        .orderBy(desc(paperAccountsTable.createdAt)).limit(1);
-  const acct = acctRows[0] ?? null;
+  const acct = await readActivePaperAccount(intent.userId, opts.paperAccountId);
   const account: RiskAccount | null = acct ? {
     equity: acct.equity, freeMargin: acct.equity - acct.marginUsed,
     leverage: PAPER_ACCOUNT_LEVERAGE, currency: "USD", source: `paper_account:${acct.id}`,
@@ -223,39 +222,29 @@ async function loadPaperFacts(intent: TradeIntent, opts: EnforceOptions, now: Da
   const inFlight: RiskInFlight[] = [];
   let realized: number | null = 0;
   if (acct) {
-    const open = await db.select().from(paperOrdersTable).where(and(
-      eq(paperOrdersTable.paperAccountId, acct.id), eq(paperOrdersTable.status, "OPEN")));
+    const book = { account: acct.id };
+    const open = await readOpenPaperOrders(book);
     positions = open.map((o) => ({
       symbol: o.symbol, side: o.direction as "BUY" | "SELL", lots: o.lotSize,
       entryPrice: o.entryPrice, stopLoss: o.stopLoss,
     }));
     const since = new Date(now.getTime() - 60 * 60_000);
-    const recent = await db.select().from(paperOrdersTable).where(and(
-      eq(paperOrdersTable.paperAccountId, acct.id), gte(paperOrdersTable.openedAt, since)));
+    const recent = await readPaperOrdersOpenedSince(book, since);
     for (const o of recent) {
       inFlight.push({ ref: `paper_order:${o.id}`, symbol: o.symbol, side: o.direction as "BUY" | "SELL",
         lots: o.lotSize, at: o.openedAt, kind: "filled" });
     }
-    const [r] = await db.select({ s: sql<number>`coalesce(sum(${paperOrdersTable.profitLoss}), 0)::float8` })
-      .from(paperOrdersTable).where(and(
-        eq(paperOrdersTable.paperAccountId, acct.id), ne(paperOrdersTable.status, "OPEN"),
-        gte(paperOrdersTable.closedAt, startOfTodayUtc(now))));
-    realized = Number(r?.s ?? 0);
+    realized = await sumPaperRealizedSince(book, startOfTodayUtc(now));
   }
   inFlight.push(...await loadActionInFlight(intent.userId, "PAPER", now));
 
   let activity: TradingActivity | null = null;
   if (acct) {
     try {
-      const closes = await db.select({ closedAt: paperOrdersTable.closedAt, pnl: paperOrdersTable.profitLoss })
-        .from(paperOrdersTable).where(and(eq(paperOrdersTable.paperAccountId, acct.id), ne(paperOrdersTable.status, "OPEN"),
-          sql`${paperOrdersTable.closedAt} is not null`))
-        .orderBy(desc(paperOrdersTable.closedAt)).limit(ACTIVITY_CLOSES);
-      const day = startOfTodayUtc(now);
-      activity = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt!, pnl: Number(c.pnl ?? 0) })),
-        positions.length ? (await db.select({ id: paperOrdersTable.id }).from(paperOrdersTable).where(and(
-          eq(paperOrdersTable.paperAccountId, acct.id), eq(paperOrdersTable.status, "OPEN"),
-          gte(paperOrdersTable.openedAt, day)))).length : 0,
+      const book = { account: acct.id };
+      const closes = await readPaperCloses(book, { limit: ACTIVITY_CLOSES });
+      activity = summarizeActivity(closes.map((c) => ({ closedAt: c.closedAt, pnl: c.pnl })),
+        positions.length ? await countPaperOpenedSinceStillOpen(book, startOfTodayUtc(now)) : 0,
         now, `paper_orders:account:${acct.id}`);
     } catch { activity = null; }
   }
