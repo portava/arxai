@@ -58,6 +58,7 @@ import {
   type BrokerStatus,
   type TradingActivity,
   summarizeActivity,
+  tradingDayStart,
 } from "./preTrade.js";
 
 export * from "./preTrade.js";
@@ -152,10 +153,33 @@ export function overrideApplies(
 
 const ACTIVITY_CLOSES = 50;
 
-function startOfTodayUtc(now: Date): Date {
-  const d = new Date(now);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
+/** The governor's trading day (preTrade.tradingDayStart, owner decision 9). */
+const startOfTodayUtc = tradingDayStart;
+
+/**
+ * The governor's own trading-activity facts for a venue (rule 13: trades on
+ * the trading day, weekly P/L, losing streak, cooldown), from the same
+ * ledger the governor decides on. For views and advisory checks that show or
+ * apply the daily-trade limit (owner decision 9), so they count what the
+ * governor counts. null = the facts could not be read. Read-only.
+ */
+export async function loadTradingActivity(
+  userId: number,
+  venue: TradeIntent["venue"],
+  opts: { now?: Date; paperAccountId?: number | null; connectionId?: number | null } = {},
+): Promise<TradingActivity | null> {
+  const now = opts.now ?? new Date();
+  const intent: TradeIntent = { userId, venue, origin: "system", action: "OPEN", symbol: "", side: null, lots: null };
+  try {
+    const loaded = venue === "PAPER"
+      ? await loadPaperFacts(intent, { paperAccountId: opts.paperAccountId ?? null }, now)
+      : await loadBrokerFacts(intent, { connectionId: opts.connectionId ?? null }, now, null);
+    // No active paper account = no paper book to count (not an unreadable one).
+    if (venue === "PAPER" && loaded.account == null) return summarizeActivity([], 0, now, "paper_orders:no_active_account");
+    return loaded.activity ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // The limit-settings rows are read in ./limitSettings.ts (the one reader).

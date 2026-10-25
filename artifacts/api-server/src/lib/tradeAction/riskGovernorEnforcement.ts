@@ -179,15 +179,18 @@ export const RG_CLASSIFY = { OPENS_NEW_RISK, REDUCES_RISK, MODIFIES };
 //     (pending-order-draft route) decides whether to log a block.
 //   * Returns the first failing check. Never bypasses validateOrderTicket —
 //     wraps it and adds the configurable RR floor on top.
-//   * SIMULATED actions still get the ticket validation (so draft previews
-//     surface direction errors), but RR-floor blocks are skipped.
+//   * The RR floor is the Risk Governor's (checkRewardRiskFloor, owner
+//     decision 10) and applies in every mode, SIMULATED included, as the
+//     governor's discipline rule does.
 import { validateOrderTicket, type OrderTicketInput, type OrderTicketValidation } from "./orderTicketValidation.js";
-import type { OrderType } from "./orderTypes.js";
+import { directionOf, type OrderType } from "./orderTypes.js";
+import { checkRewardRiskFloor } from "../riskGovernor/preTrade.js";
 
 export interface TradeTicketEnforcementInput extends OrderTicketInput {
   userId: number;
   requestedMode: "SIMULATED" | "DEMO" | "LIVE";
-  minRiskRewardRatio?: number | null; // user/admin setting; 0 or null = disabled
+  /** The trader's effective minimum R:R (loadEffectiveLimits().discipline.minRewardRiskRatio); null = none. */
+  minRiskRewardRatio?: number | null;
 }
 
 export interface TradeTicketEnforcementResult {
@@ -214,16 +217,23 @@ export function enforceTradeTicketRules(input: TradeTicketEnforcementInput): Tra
     };
   }
 
-  // RR floor only enforced when explicitly set AND we have both SL + TP.
-  if (input.requestedMode !== "SIMULATED"
-      && input.minRiskRewardRatio != null
-      && input.minRiskRewardRatio > 0
-      && validation.riskReward != null
-      && validation.riskReward < input.minRiskRewardRatio) {
+  // R:R floor (owner decision 10): the Risk Governor's own calculation and
+  // semantics (checkRewardRiskFloor), in every mode. No floor (null / 0 /
+  // invalid) = no check; a ticket whose R:R cannot be measured (no stop or
+  // target) is not refused here — the governor's stop / take-profit rules
+  // decide those. Below the floor refuses on its own.
+  const rr = checkRewardRiskFloor(
+    input.minRiskRewardRatio ?? null,
+    directionOf(input.orderType),
+    validation.effectiveEntryPrice,
+    input.stopLoss ?? null,
+    input.takeProfit ?? null,
+  );
+  if (rr.outcome === "BELOW_FLOOR") {
     return {
       passed: false,
       checkId: "rg_rr_ratio_min",
-      reason: `Risk/Reward ${validation.riskReward.toFixed(2)} is below your minimum of ${input.minRiskRewardRatio}.`,
+      reason: `Blocked by your trading rules: ${rr.reason}.`,
       validation,
     };
   }

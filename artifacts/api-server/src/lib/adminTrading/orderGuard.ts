@@ -66,6 +66,37 @@ export function liveConfirmationGate(
   return null;
 }
 
+/** Window of the operational rate cap (gate 6b): rolling, not a trading day. */
+export const OPERATIONAL_RATE_CAP_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Refusal code of the operational rate cap (owner decision 9). Deliberately
+ * not "trades per day": it counts approved order-guard commands in a rolling
+ * 24 hours, which is a different measurement from the Risk Governor's
+ * daily-trade limit (RISK_GOVERNOR_BLOCK:trading_discipline).
+ */
+export function operationalRateCapRefusal(cap: number): string {
+  return `OPERATIONAL_RATE_CAP_REACHED:${cap}_APPROVED_COMMANDS_PER_ROLLING_24H`;
+}
+
+/**
+ * Gate 6b: this trader's APPROVED order-guard commands in the rolling window
+ * ending at `now`, against `cap` (the operator's max_trades_per_day; 0 or
+ * less = no cap). Returns the refusal code, or null.
+ */
+export async function operationalRateCapCheck(userId: number, cap: number, now: Date = new Date()): Promise<string | null> {
+  if (!(cap > 0)) return null;
+  const r = await db.select({ c: sql<number>`count(*)::int` })
+    .from(tradeCommandAuditLogTable)
+    .where(and(
+      eq(tradeCommandAuditLogTable.userId, userId),
+      gte(tradeCommandAuditLogTable.createdAt, new Date(now.getTime() - OPERATIONAL_RATE_CAP_WINDOW_MS)),
+      eq(tradeCommandAuditLogTable.status, "APPROVED"),
+    ));
+  const count = r[0]?.c ?? 0;
+  return count >= cap ? operationalRateCapRefusal(cap) : null;
+}
+
 export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResult> {
   const env = await getEnvelope(req.userId);
   // Both install-wide stops, one read through the switch authority. Gate 4
@@ -83,6 +114,8 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
   const routing = await resolveRouting({ userId: req.userId, mode: req.mode });
   let connectionId: number | null = routing.connectionId;
   let accountType = routing.connectionId ? routing.accountType : env.accountType;
+  // Set by gate 6 from the operator's limits row; read by gate 6b.
+  let rateCap = 0;
 
   // Run gates. First failure short-circuits.
   const gates: Array<{ name: string; test: () => Promise<string | null> | string | null }> = [
@@ -156,20 +189,18 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
         if (lim.allowedAccountType !== "both" && lim.allowedAccountType !== accountType && req.mode !== "SIMULATED") {
           return `ACCOUNT_TYPE_NOT_ALLOWED:${lim.allowedAccountType}`;
         }
-        if (lim.maxTradesPerDay > 0) {
-          const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          const r = await db.select({ c: sql<number>`count(*)::int` })
-            .from(tradeCommandAuditLogTable)
-            .where(and(
-              eq(tradeCommandAuditLogTable.userId, req.userId),
-              gte(tradeCommandAuditLogTable.createdAt, since),
-              eq(tradeCommandAuditLogTable.status, "APPROVED"),
-            ));
-          const count = r[0]?.c ?? 0;
-          if (count >= lim.maxTradesPerDay) return `MAX_TRADES_PER_DAY_REACHED:${lim.maxTradesPerDay}`;
-        }
+        rateCap = lim.maxTradesPerDay;
         return null;
       } },
+
+    // 6b. Operational rate cap (owner decision 9). NOT the daily-trade limit:
+    // it counts this guard's APPROVED commands in trade_command_audit_log over
+    // a rolling 24 hours, against the operator's max_trades_per_day. The
+    // daily-trade limit itself (trades on the governor's UTC trading day, from
+    // the governor's activity source, strictest of trader and operator caps)
+    // is decided by the Risk Governor at 9b. Both stay; neither replaces the
+    // other.
+    { name: "operational_rate_cap", test: () => operationalRateCapCheck(req.userId, rateCap) },
 
     // 7. Live confirmation check (pure helper — see liveConfirmationGate).
     { name: "live_confirmation", test: () => liveConfirmationGate(req.mode, req.confirmedByUser) },

@@ -81,7 +81,7 @@ export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   "routes/meRiskGovernor.ts": { rules: ["write", "raw_reader", "limit_eval"], why: "the Risk Governor settings page: upserts the trader's row (write); /me/risk/status, /daily-status and the post-close hooks show the trader's own saved caps against paper_trades history (display + warning-level events, never a block; paper_trades vs paper_orders basis is an owner decision); the limits in force are /me/risk-limits/layers (explainLimitLayers)" },
   "routes/adminTrading.ts": { rules: ["write", "raw_reader"], why: "audited admin risk-limits handler: writes user_risk_limits and reads the row first for the before/after audit snapshot" },
   // ── (a) Stricter-only pre-checks before the governor ───────────────────────
-  "lib/adminTrading/orderGuard.ts": { rules: ["raw_reader", "limit_eval"], why: "(a) order guard step 6 runs before its own pre_trade_risk step (enforcePreTradeRisk) and only adds refusals: NO_RISK_LIMITS_CONFIGURED, admin max lot, symbol / direction / account type, and MAX_TRADES_PER_DAY counted over trade_command_audit_log APPROVED rows in a rolling 24h (the governor counts today's trades on its own activity basis — a different basis, listed in the doc)" },
+  "lib/adminTrading/orderGuard.ts": { rules: ["raw_reader", "limit_eval"], why: "(a) order guard step 6 runs before its own pre_trade_risk step (enforcePreTradeRisk) and only adds refusals: NO_RISK_LIMITS_CONFIGURED, admin max lot, symbol / direction / account type; step 6b is the separately named operational rate cap (owner decision 9: APPROVED commands in a rolling 24h, OPERATIONAL_RATE_CAP_REACHED, never called trades per day). The daily-trade limit itself is the governor's (9b)" },
   "lib/autopilot.ts": { rules: ["limit_eval"], why: "(a) in-memory autopilot session rules (max open positions / max trades of the session's own config) decide whether to propose an order; every order it makes goes through oms.placeOrder, which runs enforcePreTradeRisk" },
   "lib/live/liveCommandPipeline.ts": { rules: ["limit_eval"], why: "(a) live lane: the arming-time confirmed max lot (arx_live_arming) refuses at draft time, before the Risk Governor pre-gate at dispatch; the live lane's other caps (governance, master live access, arx_live_user_settings) are their own stores, listed in the doc" },
   "lib/live/liveArming.ts": { rules: ["limit_eval"], why: "(a) arming checklist item 13: the confirmed max lot must be > 0 and <= 1.0 (Phase A) before a trader can arm; not an order decision" },
@@ -95,7 +95,6 @@ export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   "routes/health.ts": { rules: ["raw_reader"], why: "(b) personal health: riskGovernor.configured = the trader saved a row" },
   "routes/meAccountShell.ts": { rules: ["raw_reader"], why: "(b) account shell risk view: master-live-access caps first, then the trader's saved values (own precedence, display only; listed in the doc)" },
   "routes/portfolioRisk.ts": { rules: ["raw_reader"], why: "(b) portfolio-risk snapshot: the trader's saved max open / daily loss / risk-per-trade with its own defaults (2 / 2 / 0.5, the governor's are 3 / 3 / 1) feed a concentration report; listed in the doc" },
-  "routes/pendingOrderDraft.ts": { rules: ["raw_reader"], why: "(b) pending-order draft: reads a minRiskRewardRatio field that does not exist on the row (always null, so no R:R floor); the governor's own R:R rule still runs. Wiring the real min_reward_risk_ratio would add refusals — listed in the doc" },
   "routes/adminAllocations.ts": { rules: ["raw_reader"], why: "(b) admin allocations table: the at-risk flag's daily-loss cap is the first positive of arx_live_user_settings, master live access, then user_risk_limits.max_daily_loss_usd (the live lane's own precedence, display only)" },
   "routes/riskProfile.ts": { rules: ["raw_reader"], why: "(b) risk profile page: shows the saved preset next to the governor's effective limits (riskOverview)" },
   "routes/risk.ts": { rules: ["raw_reader"], why: "(b) older settings page: GET/PATCH /risk/settings, /risk/audit report and the position-size calculator read the saved values (the stateless /risk/guards/* calculators take numbers from the request)" },
@@ -110,7 +109,7 @@ export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   // ── (c) Duplicate decisions on a different basis (listed, not unified) ────
   "routes/mt5.ts": { rules: ["raw_reader"], why: "(c) legacy /mt5/execute risk approval via computeRiskAudit on the trader's saved values and the legacy trades table; commands on this path are stored BLOCKED (paper-only lock) and no governor runs here. Owner decision (legacy trades basis)" },
   "routes/permission.ts": { rules: ["raw_reader"], why: "(c) paper permission verdict (evaluatePermission, @workspace/domain) on the trader's saved values, not the effective limits (operator caps and the daily-loss switch not applied); unifying would change the verdict — listed in the doc" },
-  "routes/tradeDecision.ts": { rules: ["raw_reader", "limit_eval"], why: "(c) advisory trade-decision orchestrator: open trades (paper_orders OPEN) / trades today / losing streak vs the trader's saved values; adds blocker lines, places nothing. Own counting basis, listed in the doc" },
+  "routes/tradeDecision.ts": { rules: ["raw_reader", "limit_eval"], why: "(c) advisory trade-decision orchestrator: open trades (paper_orders OPEN) / losing streak vs the trader's saved values, and trades today from the governor's PAPER activity (loadTradingActivity, owner decision 9); adds blocker lines, places nothing. Listed in the doc" },
 };
 
 function unwrap(e: ts.Expression): ts.Expression {
@@ -247,6 +246,28 @@ export function checkAuthorityShape(read: (key: string) => string | null): strin
   if (!preTrade || !/export function resolveEffectiveLimits\(/.test(preTrade)) out.push("preTrade.ts lost resolveEffectiveLimits() (strictest of trader, operator and platform)");
   if (guards && !/MAX_LOT_HARD_CAP = PLATFORM_RISK_CEILINGS\.maxLotSize/.test(guards)) {
     out.push("lib/tradeAction/guards.ts: the early lot hard cap must read PLATFORM_RISK_CEILINGS.maxLotSize (the governor's ceiling), not its own number");
+  }
+  // Owner decision 10: one R:R calculation. Rule 13 and the ticket pre-check
+  // both call checkRewardRiskFloor; the draft route reads the floor in force.
+  if (preTrade && !/checkRewardRiskFloor\(D\.minRewardRiskRatio,/.test(preTrade)) {
+    out.push("preTrade.ts: rule 13 must measure the trader's R:R floor with checkRewardRiskFloor(D.minRewardRiskRatio, ...)");
+  }
+  const ticket = read("lib/tradeAction/riskGovernorEnforcement.ts");
+  if (ticket && !/checkRewardRiskFloor\(/.test(ticket)) {
+    out.push("lib/tradeAction/riskGovernorEnforcement.ts: the ticket R:R floor must use the governor's checkRewardRiskFloor (owner decision 10)");
+  }
+  const draft = read("routes/pendingOrderDraft.ts");
+  if (draft && !/loadEffectiveLimits\(userId\)\)\.discipline\.minRewardRiskRatio/.test(draft)) {
+    out.push("routes/pendingOrderDraft.ts: the R:R floor must be the limit in force, loadEffectiveLimits(userId).discipline.minRewardRiskRatio (owner decision 10)");
+  }
+  // Owner decision 9: the order guard's rolling-24h count is the operational
+  // rate cap, its own gate and reason, never "trades per day".
+  const orderGuard = read("lib/adminTrading/orderGuard.ts");
+  if (orderGuard && (/TRADES_PER_DAY/.test(orderGuard) || !/name: "operational_rate_cap"/.test(orderGuard) || !/OPERATIONAL_RATE_CAP_REACHED/.test(orderGuard))) {
+    out.push("lib/adminTrading/orderGuard.ts: the rolling-24h approved-command count must be the separately named operational_rate_cap gate (OPERATIONAL_RATE_CAP_REACHED), never a TRADES_PER_DAY reason (owner decision 9)");
+  }
+  if (preTrade && !/export function tradingDayStart\(/.test(preTrade)) {
+    out.push("preTrade.ts lost tradingDayStart() (the governor's trading day, owner decision 9)");
   }
   return out;
 }

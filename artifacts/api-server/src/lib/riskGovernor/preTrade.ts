@@ -484,6 +484,19 @@ export interface TradingActivity {
   source: string;
 }
 
+/**
+ * The Risk Governor's trading day (owner decision 9): the UTC calendar day
+ * that contains `now`, starting at 00:00:00.000 UTC. Every daily-trade count
+ * and "today" P/L the governor decides on starts here; a view or pre-check
+ * that shows or applies the daily-trade limit uses this, not a rolling 24h
+ * window or server-local midnight.
+ */
+export function tradingDayStart(now: Date): Date {
+  const d = new Date(now);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
 /** Summarise a venue's closed trades (any order) and today's still-open entries. */
 export function summarizeActivity(
   closes: ReadonlyArray<{ closedAt: Date; pnl: number }>,
@@ -491,7 +504,7 @@ export function summarizeActivity(
   now: Date,
   source: string,
 ): TradingActivity {
-  const day = new Date(now); day.setUTCHours(0, 0, 0, 0);
+  const day = tradingDayStart(now);
   const week = now.getTime() - 7 * 86_400_000;
   const hour = now.getTime() - 60 * 60_000;
   const sorted = [...closes].sort((a, b) => b.closedAt.getTime() - a.closedAt.getTime());
@@ -965,6 +978,52 @@ function evaluateRules(intent: TradeIntent, ctx: RiskContext): RiskDecision {
 /** Share of the daily loss cap after which automated origins stop opening. */
 export const AUTOMATION_DAILY_BUDGET_SHARE = 0.7;
 
+/**
+ * The trader's reward:risk, measured the one way the governor measures it:
+ * reward / risk from the reference price, signed by side. null when it cannot
+ * be measured: side not BUY / SELL, a missing or non-finite price, or a stop
+ * or target that is not on the correct side of the reference (risk <= 0 or
+ * reward <= 0). Those inputs are refused by other rules (invalid price,
+ * stop required, ticket validation), not by the R:R floor.
+ */
+export function measureRewardRisk(
+  side: string | null, ref: number | null, sl: number | null, tp: number | null,
+): number | null {
+  if (side !== "BUY" && side !== "SELL") return null;
+  if (ref == null || sl == null || tp == null) return null;
+  const risk = side === "BUY" ? ref - sl : sl - ref;
+  const reward = side === "BUY" ? tp - ref : ref - tp;
+  if (!(risk > 0 && reward > 0)) return null;
+  const rr = reward / risk;
+  return Number.isFinite(rr) ? rr : null;
+}
+
+export type RewardRiskFloorCheck =
+  | { outcome: "NO_FLOOR"; floor: null; rewardRisk: null; reason: null }
+  | { outcome: "NOT_MEASURED"; floor: number; rewardRisk: null; reason: null }
+  | { outcome: "PASS"; floor: number; rewardRisk: number; reason: null }
+  | { outcome: "BELOW_FLOOR"; floor: number; rewardRisk: number; reason: string };
+
+/**
+ * The trader's minimum reward:risk (DisciplineLimits.minRewardRiskRatio, the
+ * effective value from resolveEffectiveLimits) against a ticket. A floor that
+ * is null, not finite or not positive means no floor (the trader switched it
+ * off). A ticket whose R:R cannot be measured is NOT refused by the floor
+ * (see measureRewardRisk). Rule 13 and every pre-check that applies the
+ * trader's floor (owner decision 10: the pending-order draft) call this.
+ */
+export function checkRewardRiskFloor(
+  floor: number | null, side: string | null, ref: number | null, sl: number | null, tp: number | null,
+): RewardRiskFloorCheck {
+  if (floor == null || !Number.isFinite(floor) || floor <= 0) return { outcome: "NO_FLOOR", floor: null, rewardRisk: null, reason: null };
+  const rr = measureRewardRisk(side, ref, sl, tp);
+  if (rr == null) return { outcome: "NOT_MEASURED", floor, rewardRisk: null, reason: null };
+  if (rr < floor) {
+    return { outcome: "BELOW_FLOOR", floor, rewardRisk: rr, reason: `reward:risk ${round(rr, 2)} is below your minimum of ${floor}` };
+  }
+  return { outcome: "PASS", floor, rewardRisk: rr, reason: null };
+}
+
 function evaluateDiscipline(
   intent: TradeIntent,
   ctx: RiskContext,
@@ -1061,14 +1120,10 @@ function evaluateDiscipline(
     if (open >= D.maxOpenTrades) hard.push(`${open} trades are already open (your limit is ${D.maxOpenTrades})`);
   }
   if (D.requireTakeProfit && tp == null) soft.push("a take profit is required by your settings");
-  if (D.minRewardRiskRatio != null && ref != null && sl != null && tp != null && intent.side) {
-    const risk = intent.side === "BUY" ? ref - sl : sl - ref;
-    const reward = intent.side === "BUY" ? tp - ref : ref - tp;
-    if (risk > 0 && reward > 0) {
-      const rr = reward / risk;
-      measured["rewardRisk"] = round(rr, 3);
-      if (rr < D.minRewardRiskRatio) soft.push(`reward:risk ${round(rr, 2)} is below your minimum of ${D.minRewardRiskRatio}`);
-    }
+  {
+    const rr = checkRewardRiskFloor(D.minRewardRiskRatio, intent.side ?? null, ref, sl, tp);
+    if (rr.outcome === "PASS" || rr.outcome === "BELOW_FLOOR") measured["rewardRisk"] = round(rr.rewardRisk, 3);
+    if (rr.outcome === "BELOW_FLOOR") soft.push(rr.reason);
   }
   const p = intent.process;
   if (p) {
