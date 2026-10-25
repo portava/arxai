@@ -59,6 +59,10 @@ type ShellResponse = {
     maxExposurePerSymbolLots: number | null;
     allowedSymbols: string[] | null;
     requireStopLoss: boolean;
+    // Owner decision 8 (additive): the numbers above are the limits in force;
+    // these are the trader's saved values and why an override applies.
+    preference?: { maxLotSize: number | null; maxOpenTrades: number | null; maxDailyLossAmount: number | null; maxRiskPerTradePercent: number | null; requireStopLoss: boolean | null };
+    limits?: Record<string, { label: string; effective: number | null; preference: number | null; overriddenBy: string | null; reason: string | null }>;
   };
   notes: { needsReviewItems: number; sharedMasterAccountAssigned: boolean };
 };
@@ -316,6 +320,12 @@ export default function MyAccountPage() {
             testid="my-max-exposure-per-symbol"
           />
           <Stat label="Stop-Loss Required" value={s.risk.requireStopLoss ? "Yes" : "No"} testid="my-require-sl" />
+        </CardContent>
+        <CardContent className="pt-0 text-xs text-txt-secondary space-y-1" data-testid="my-risk-limits-in-force">
+          <div>Limits shown are the ones enforced on every order. Your saved preferences are edited in Risk settings.</div>
+          {Object.entries(s.risk.limits ?? {})
+            .filter(([k, v]) => ["maxLotSize", "maxOpenTrades", "maxDailyLossAmount", "maxRiskPerTradePercent"].includes(k) && v.reason && v.overriddenBy !== "default")
+            .map(([k, v]) => <div key={k} data-testid={`my-risk-override-${k}`}>{v.label}: {v.reason}</div>)}
         </CardContent>
         {s.risk.allowedSymbols && s.risk.allowedSymbols.length > 0 && (
           <CardContent className="pt-0">

@@ -194,22 +194,17 @@ trader's SAVED value rather than the limit in force, or use their own
 defaults or formulas. Moving them to `loadEffectiveLimits` would change
 what they show, so they stay listed:
 
-- `alerts/ruleEngine`: the RISK_LOCK alert uses the trader's own
-  `max_daily_loss_percent` only. It ignores the operator USD cap and the
-  daily-loss on/off switch, so it can fire when the governor would not
-  block, or stay quiet when an operator cap is tighter.
-- `portfolioRisk`: defaults 2 open / 2% daily / 0.5% per trade where the
-  governor's defaults are 3 / 3% / 1%.
-- `readiness/traderReadiness`: a "$50 per 1%" daily-loss proxy (its own
-  formula).
-- `meAccountShell`: master-live-access caps first, then the trader's saved
-  values (its own precedence).
-- `meRiskGovernor` `/me/risk/status`, `/daily-status`: the trader's saved
-  caps against `paper_trades` history. The limits in force are
-  `/me/risk-limits/layers`.
-- `meDashboard`, `reportBuilder`, `health`, `riskProfile`, `risk` (older
-  page), `executionConfirmations`, the assistant tools: show or score
-  against the saved row.
+- `alerts/ruleEngine`, `portfolioRisk`, `readiness/traderReadiness`,
+  `meAccountShell`: round 5 (owner decision 8) moved them onto the limits
+  in force (`loadEffectiveLimits` / `effectiveLimitViews`, the governor's
+  `dailyLossCapAmount`); no longer allowlisted. See "Decision 8".
+- `meRiskGovernor` `/me/risk/status`, `/daily-status`: round 5 shows the
+  limits in force (`effective`) next to the saved preference. Its activity
+  is still `paper_trades` history (owner decision 7, see below).
+- `meDashboard` (trade-quality score only; its caps moved in round 5),
+  `reportBuilder`, `health`, `riskProfile`, `risk` (older page),
+  `executionConfirmations`, the assistant tools: show or score against the
+  saved row.
 - `pendingOrderDraft`: round 5 (owner decision 10) reads the floor in force
   (`loadEffectiveLimits().discipline.minRewardRiskRatio`) and applies the
   governor's `checkRewardRiskFloor`; no longer allowlisted.
@@ -266,6 +261,8 @@ the `raw_reader` rule.
 3. Whether the (b) and (c) readers above should show / decide on the
    limit in force (`loadEffectiveLimits`) instead of the saved value. Each
    switch changes what a trader sees or which advisory blockers appear.
+   **Decided (owner decision 8): status views show the limit in force, with
+   the saved preference separately and the override reason.**
 4. Whether `pendingOrderDraft` should apply the real `min_reward_risk_ratio`
    (adds refusals). **Decided (owner decision 10): yes, with the
    governor's calculation.**
@@ -459,5 +456,123 @@ rows, another trader, no cap, reason text never says "per day"); and both
 caps at 00:30 UTC (yesterday 23:50 is outside the governor's day but inside
 the rate window). `check-single-risk-limit-source.test.ts` gains 8 shape
 assertions.
+
+### Decision 8: status views show the limit in force (`r5/risk-3`)
+
+> Status views show the effective limit enforced by the Risk Governor
+> (loadEffectiveLimits), with the saved preference shown separately and the
+> reason an override applies. Remove contradictory display defaults and
+> duplicate calculations. Editing endpoints keep editing the preference.
+
+New in the risk authority (reads and explains only; decides nothing):
+
+- `limitSettings.loadEffectiveLimitsMany(userIds)`: the limits in force for
+  several traders (two batched reads, `resolveEffectiveLimits` per trader).
+- `limitLayers.effectiveLimitViews(rows)`: per limit, `{ effective,
+  preference, source, winner, overriddenBy, reason }`. `overriddenBy` is
+  `account` (operator stricter), `platform` (ceiling stricter), `default`
+  (nothing saved, the governor's default applies), `disabled` (the trader
+  switched it off) or `null` (the saved value is what is enforced). Covers
+  every limit of `explainLimitLayers` plus the streak, cooldown and minimum
+  R:R.
+- `preTrade.dailyLossCapAmount(L, equity)`: the daily loss in money at which
+  rule 7 blocks, the stricter of the enforced amount and the enforced
+  percent of equity; `null` when no daily-loss limit applies (or only a
+  percent applies and equity is unknown). Rule 7 itself is unchanged.
+
+Views moved:
+
+- `routes/meRiskGovernor.ts`: `/me/risk/status` adds `effective` (all
+  views) and `activitySource`; its cooldown uses the enforced cooldown
+  (none when switched off). `/me/risk/daily-status` returns the enforced
+  `maxTradesPerDay`, `maxDailyLossPercent` and `maxConsecutiveLosses`
+  (`null` = no limit), adds `preference` (the saved values), `effective`
+  (views for those three), `tradingDay: "UTC"` and `activitySource`. The
+  settings endpoints (`GET/POST/PATCH /me/risk-settings`, reset) are
+  unchanged: they edit the preference.
+- `routes/portfolioRisk.ts`: the engine gets the enforced max open trades,
+  daily-loss percent, risk per trade, open-risk cap
+  (`maxPortfolioRiskPercent`) and the governor's daily-loss cap in money.
+  The 2 / 2% / 0.5% display defaults are gone; an anonymous read uses the
+  governor's defaults (`resolveEffectiveLimits({})`). The persisted
+  `inputsSnapshot.settings` records the enforced values and their sources.
+  `@workspace/domain/portfolio-risk` gains two optional inputs
+  (`maxOpenRiskPct`, `dailyLossCapAmount`); without them it computes as
+  before.
+- `lib/readiness/traderReadiness.ts`: max open paper trades is the enforced
+  value; the daily-loss limit is `dailyLossCapAmount` against the active
+  paper account's equity instead of "$50 per 1%". Both are `null` when no
+  limit is enforced, and the checks that use them skip. (Its paper P/L
+  status filter is decision 7.)
+- `lib/alerts/ruleEngine.ts` (NEAR_DAILY_LOSS_LIMIT): the cap is
+  `dailyLossCapAmount` of the trader's limits in force, against the
+  recorded end balance. The operator USD cap counts, the trader's off
+  switch is respected, and an amount cap is checked even without an end
+  balance.
+- `routes/meAccountShell.ts`: each risk number is the stricter of this
+  account lane's cap (master live access, or governance when Owner Live
+  Control is on) and the governor's enforced value; the trader's saved
+  values no longer stand in for a missing lane cap. `requireStopLoss` is
+  true when the lane or the governor requires it. `availableRiskAmount`
+  uses the enforced per-trade percent (and amount). Additive:
+  `risk.preference` (saved values) and `risk.limits` (views with reasons).
+- `routes/meDashboard.ts`: `/me/dashboard/cards` (risk card trades-today
+  and losses caps, warning status), `/me/dashboard/intelligence` (cooldown,
+  new `risk.effective` views; `risk.settings` stays the saved row) and
+  `/me/session-health` (`riskUsage`, cooldown, the approaching-cap
+  recommendation) use the limits in force. The trade-quality score still
+  grades against the saved risk % and R:R (a score of the trader's own
+  plan, not a limit display; listed under "What remains").
+- Dashboard: `my-paper-trades` shows the enforced streak and cooldown with
+  "Enforced limit" / "Not enforced" and the reason; `my-account` adds a
+  "limits in force" note listing operator / platform overrides. Types are
+  additive (optional fields).
+- `single-risk-limit-source`: `traderReadiness`, `ruleEngine`,
+  `meAccountShell` and `portfolioRisk` leave the allowlist (32 → 28). The
+  shape check fails if `dailyLossCapAmount` disappears, if portfolio risk,
+  readiness or the alert stop using it, or if the account shell stops using
+  `effectiveLimitViews`.
+
+Behaviour changes (decision 8):
+
+- `/me/risk/daily-status`: `maxTradesPerDay`, `maxDailyLossPercent`,
+  `maxConsecutiveLosses` are the enforced values (were the saved values)
+  and may be `null`; `dailyTradeCapHit` / `consecutiveLossCapHit` follow
+  them. `/me/risk/status` cooldown follows the enforced cooldown.
+- Portfolio-risk snapshot (and the trade-plan validate hook that uses it):
+  limits are the enforced ones (defaults 3 / 3% / 1% instead of
+  2 / 2% / 0.5%; operator caps count), the open-risk cap is the enforced
+  `maxPortfolioRiskPercent`, and the daily rule uses the governor's cap in
+  money (percent of equity, or the amount). With no daily-loss limit
+  enforced the daily rule does not run. Levels and warnings can differ.
+- Trader readiness: `metrics.dailyLossLimit` and
+  `metrics.maxOpenPaperTrades` are the enforced values (`number | null`);
+  `DAILY_LOSS_LIMIT_EXCEEDED`, `DAILY_LOSS_NEAR_LIMIT`,
+  `MAX_OPEN_PAPER_TRADES_EXCEEDED` and the matching score deductions use
+  them and do not apply when no limit is enforced. The AACI snapshot reads
+  the nullable value safely.
+- NEAR_DAILY_LOSS_LIMIT alert: can fire on an operator USD cap, no longer
+  fires for a trader who switched daily-loss blocking off (without an
+  operator cap), applies the governor's 3% default to a trader with no saved
+  row, and checks an amount cap without an end balance.
+- `/me/account-shell` `risk.maxLotSize`, `maxOpenTrades`,
+  `maxDailyLossAmount`, `requireStopLoss`, `availableRiskAmount`,
+  `dailyLossRemaining` are the limits in force (can be stricter than
+  before); new `risk.preference`, `risk.limits`.
+- Dashboard cards / intelligence / session health: caps, cooldown, the
+  "warning" status and the approaching-cap recommendation follow the
+  enforced values (an operator cap shows; a switched-off streak or cooldown
+  shows as no limit).
+
+Tests: `test:risk-governor-effective-views` (new, real DB, wired into
+`ci:integration`): the views (operator override with reason, default,
+switched off), `dailyLossCapAmount`, the portfolio engine's new inputs,
+`/me/risk/status` and `/daily-status` (enforced, preference, reason),
+`PATCH /me/risk-settings` still editing only the preference, the dashboard
+cards and intelligence, the portfolio snapshot without 2 / 2 / 0.5, trader readiness (enforced values, off → no
+daily-loss block), the alert (operator cap fires at 90 of 100; off switch
+quiet) and the account shell. `check-single-risk-limit-source.test.ts`
+gains 4 assertions. `test:account-shell-route`, `test:alert-rule-ownership`,
+`test:limit-layers` and `test:one-limit-store` pass unchanged.
 
 **TIER 1 NOT COMPLETE**

@@ -497,6 +497,20 @@ export function tradingDayStart(now: Date): Date {
   return d;
 }
 
+/**
+ * The daily loss, in account currency, at which rule 7 blocks (owner decision
+ * 8): the stricter of the enforced amount and the enforced percent of current
+ * equity. null = no daily-loss limit is enforced, or only a percent applies
+ * and equity is unknown. For status views; rule 7 itself decides.
+ */
+export function dailyLossCapAmount(L: Pick<EffectiveLimits, "maxDailyLossPercent" | "maxDailyLossAmount">, equity: number | null | undefined): number | null {
+  const caps = [
+    L.maxDailyLossAmount,
+    L.maxDailyLossPercent != null && equity != null && equity > 0 ? equity * (L.maxDailyLossPercent / 100) : null,
+  ].filter((v): v is number => v != null && Number.isFinite(v) && v > 0);
+  return caps.length ? Math.min(...caps) : null;
+}
+
 /** Summarise a venue's closed trades (any order) and today's still-open entries. */
 export function summarizeActivity(
   closes: ReadonlyArray<{ closedAt: Date; pnl: number }>,

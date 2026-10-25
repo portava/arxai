@@ -78,3 +78,76 @@ export function explainLimitLayers(rows: StoredLimitRows): { rows: LimitLayerRow
   ];
   return { rows: out, limits: L };
 }
+
+/**
+ * One limit as a status view shows it (owner decision 8): the value the Risk
+ * Governor enforces, the trader's saved preference next to it, and why they
+ * differ. Status views show `effective`; settings pages edit `preference`.
+ */
+export interface EffectiveLimitView {
+  label: string;
+  unit: LimitLayerRow["unit"] | "min" | "ratio";
+  /** Enforced by the Risk Governor; null = no limit applies. */
+  effective: number | null;
+  /** The trader's saved value; null = not saved, or switched off. */
+  preference: number | null;
+  /** The stored column (or "platform" / a default) that won. */
+  source: string;
+  winner: LimitLayer;
+  /** Set when the enforced value is not the trader's saved preference. */
+  overriddenBy: "account" | "platform" | "default" | "disabled" | null;
+  /** Plain-language reason for `overriddenBy`; null when the preference is enforced. */
+  reason: string | null;
+}
+
+const fmt = (v: number | null, unit: string) => (v == null ? "none" : `${v}${unit === "%" ? "%" : unit === "USD" ? " USD" : unit === "lots" ? " lots" : unit === "min" ? " min" : unit === "x" ? "x" : ""}`);
+
+function viewOf(label: string, unit: EffectiveLimitView["unit"], effective: number | null, preference: number | null, source: string): EffectiveLimitView {
+  const winner = layerOf(source);
+  let overriddenBy: EffectiveLimitView["overriddenBy"] = null;
+  let reason: string | null = null;
+  if (winner === "account" && effective !== preference) {
+    overriddenBy = "account";
+    reason = preference == null
+      ? `Your operator set ${fmt(effective, unit)} for your account; it is enforced.`
+      : `Your operator's limit (${fmt(effective, unit)}) is stricter than your saved ${fmt(preference, unit)}, so the operator's limit is enforced.`;
+  } else if (winner === "platform" && preference != null && effective !== preference) {
+    overriddenBy = "platform";
+    reason = `The platform ceiling (${fmt(effective, unit)}) is stricter than your saved ${fmt(preference, unit)}, so the ceiling is enforced.`;
+  } else if (winner === "default") {
+    overriddenBy = "default";
+    reason = `You have not saved this limit; the Risk Governor's default (${fmt(effective, unit)}) is enforced.`;
+  } else if (winner === "disabled") {
+    overriddenBy = "disabled";
+    reason = "You switched this limit off; no limit of yours applies.";
+  }
+  return { label, unit, effective, preference, source, winner, overriddenBy, reason };
+}
+
+/**
+ * Status-view form of the limits in force, keyed by limit name: every
+ * numeric limit of explainLimitLayers plus the trader-only discipline limits
+ * (streak, cooldown, minimum R:R). Reads nothing; decides nothing.
+ */
+export function effectiveLimitViews(rows: StoredLimitRows): { limits: EffectiveLimits; views: Record<string, EffectiveLimitView> } {
+  const { rows: layered, limits: L } = explainLimitLayers(rows);
+  const u = rows.userSettings ?? null;
+  const views: Record<string, EffectiveLimitView> = {};
+  for (const r of layered) {
+    let source = r.source;
+    // The daily-loss switch also silences the trader's USD cap; an operator cap still applies.
+    if (u && !u.blockAfterDailyLossHit && (r.key === "maxDailyLossPercent" || r.key === "maxDailyLossAmount") && r.winner !== "account") source = "disabled_by_user";
+    views[r.key] = viewOf(r.label, r.unit, r.effective, r.user, source);
+  }
+  const D = L.discipline;
+  const saved = (v: number | null | undefined) => (v != null && Number.isFinite(v) && v > 0 ? v : null);
+  const src = (col: string, v: number | null | undefined) => (u == null ? `default:user_risk_settings.${col}` : saved(v) == null ? "disabled_by_user" : `user_risk_settings.${col}`);
+  const streakOff = !!u && u.blockAfterConsecutiveLosses === false;
+  views["maxConsecutiveLosses"] = viewOf("Losses in a row", "count", D.maxConsecutiveLosses, streakOff ? null : saved(u?.maxConsecutiveLosses),
+    streakOff ? "disabled_by_user" : src("max_consecutive_losses", u?.maxConsecutiveLosses));
+  views["cooldownAfterLossMinutes"] = viewOf("Cooldown after a loss", "min", D.cooldownAfterLossMinutes, saved(u?.cooldownAfterLossMinutes),
+    src("cooldown_after_loss_minutes", u?.cooldownAfterLossMinutes));
+  views["minRewardRiskRatio"] = viewOf("Minimum reward:risk", "ratio", D.minRewardRiskRatio, saved(u?.minRewardRiskRatio),
+    src("min_reward_risk_ratio", u?.minRewardRiskRatio));
+  return { limits: L, views };
+}

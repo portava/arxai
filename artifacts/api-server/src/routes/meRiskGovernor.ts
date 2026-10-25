@@ -14,7 +14,7 @@ import { aggregateHistory, DEFAULT_USER_RISK_SETTINGS } from "../lib/riskGoverno
 import { parseSymbolLimits } from "../lib/riskGovernor/preTrade.js";
 import { previewJournalTicket } from "../lib/riskGovernor/journal.js";
 import { loadStoredLimitRows } from "../lib/riskGovernor/enforce.js";
-import { explainLimitLayers } from "../lib/riskGovernor/limitLayers.js";
+import { explainLimitLayers, effectiveLimitViews } from "../lib/riskGovernor/limitLayers.js";
 
 const router = Router();
 
@@ -154,23 +154,32 @@ router.get("/me/risk/events", requireUser, async (req, res) => {
   res.json({ events: rows, isEmpty: rows.length === 0 });
 });
 
+// Status views show the limits the Risk Governor enforces (owner decision 8):
+// `effective` (and the cap fields) come from resolveEffectiveLimits through
+// effectiveLimitViews, with the trader's saved preference and the reason an
+// operator cap, the platform ceiling, a default or the trader's own switch
+// overrides it. `settings` stays the saved row (what the settings page edits).
 router.get("/me/risk/status", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   const settings = await getOrCreateRiskSettings(userId);
+  const { limits, views } = effectiveLimitViews(await loadStoredLimitRows(userId));
   const trades = await db.select().from(paperTradesTable).where(eq(paperTradesTable.userId, userId));
   const history = aggregateHistory(trades);
   const lastBlocked = (await db.select().from(userRiskEventsTable)
     .where(and(eq(userRiskEventsTable.userId, userId), eq(userRiskEventsTable.decision, "block")))
     .orderBy(desc(userRiskEventsTable.createdAt)).limit(1))[0] ?? null;
+  const cooldownMin = limits.discipline.cooldownAfterLossMinutes;
   res.json({
     settings: withSafetyContract(settings),
+    effective: views,
     today: { pnl: history.todayPnl, trades: history.tradesToday, openTrades: history.openTradesCount, consecutiveLosses: history.consecutiveLosses },
     week: { pnl: history.weekPnl },
-    cooldown: history.lastClosedWasLoss && history.lastClosedAt
-      ? { active: (Date.now() - history.lastClosedAt.getTime()) / 60_000 < settings.cooldownAfterLossMinutes,
-          minutesRemaining: Math.max(0, Math.ceil(settings.cooldownAfterLossMinutes - (Date.now() - history.lastClosedAt.getTime()) / 60_000)) }
+    cooldown: cooldownMin != null && history.lastClosedWasLoss && history.lastClosedAt
+      ? { active: (Date.now() - history.lastClosedAt.getTime()) / 60_000 < cooldownMin,
+          minutesRemaining: Math.max(0, Math.ceil(cooldownMin - (Date.now() - history.lastClosedAt.getTime()) / 60_000)) }
       : { active: false, minutesRemaining: 0 },
     lastBlocked: lastBlocked ? { reason: lastBlocked.reason, createdAt: lastBlocked.createdAt, eventType: lastBlocked.eventType } : null,
+    activitySource: "paper_trades",
     safetyMode: "paper_only", educationalOnly: true, ...SAFE_LIVE_CONTRACT,
   });
 });
@@ -178,14 +187,28 @@ router.get("/me/risk/status", requireUser, async (req, res) => {
 router.get("/me/risk/daily-status", requireUser, async (req, res) => {
   const userId = req.authUser!.id;
   const settings = await getOrCreateRiskSettings(userId);
+  const { limits, views } = effectiveLimitViews(await loadStoredLimitRows(userId));
   const trades = await db.select().from(paperTradesTable).where(eq(paperTradesTable.userId, userId));
   const history = aggregateHistory(trades);
+  const D = limits.discipline;
   res.json({
     pnl: history.todayPnl, trades: history.tradesToday,
-    maxTradesPerDay: settings.maxTradesPerDay, maxDailyLossPercent: settings.maxDailyLossPercent,
-    consecutiveLosses: history.consecutiveLosses, maxConsecutiveLosses: settings.maxConsecutiveLosses,
-    dailyTradeCapHit: history.tradesToday >= settings.maxTradesPerDay,
-    consecutiveLossCapHit: history.consecutiveLosses >= settings.maxConsecutiveLosses,
+    // Enforced values (null = no limit applies).
+    maxTradesPerDay: D.maxTradesPerDay, maxDailyLossPercent: limits.maxDailyLossPercent,
+    consecutiveLosses: history.consecutiveLosses, maxConsecutiveLosses: D.maxConsecutiveLosses,
+    dailyTradeCapHit: D.maxTradesPerDay != null && history.tradesToday >= D.maxTradesPerDay,
+    consecutiveLossCapHit: D.maxConsecutiveLosses != null && history.consecutiveLosses >= D.maxConsecutiveLosses,
+    // The trader's saved preferences, shown separately.
+    preference: {
+      maxTradesPerDay: settings.maxTradesPerDay, maxDailyLossPercent: settings.maxDailyLossPercent,
+      maxConsecutiveLosses: settings.maxConsecutiveLosses,
+    },
+    effective: {
+      maxTradesPerDay: views["maxTradesPerDay"], maxDailyLossPercent: views["maxDailyLossPercent"],
+      maxConsecutiveLosses: views["maxConsecutiveLosses"],
+    },
+    tradingDay: "UTC",
+    activitySource: "paper_trades",
   });
 });
 
