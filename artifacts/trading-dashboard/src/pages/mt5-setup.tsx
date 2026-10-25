@@ -1738,12 +1738,12 @@ export default function MT5SetupWizardPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Plug className="w-6 h-6" /> MT5 Bridge Setup Wizard</h1>
-          <p className="text-sm text-muted-foreground">Five steps to connect your MetaTrader 5 to this app — read-only by design.</p>
+          <p className="text-sm text-muted-foreground">Connect your DEMO terminal with trading disabled. Broker order validation is a separate step.</p>
         </div>
         <div className="flex gap-2">
           <Button asChild variant="default" size="sm" data-testid="button-download-zip">
             <a href="/api/mt5/bridge-package/zip" download>
-              <Download className="w-4 h-4 mr-2" /> Download MT5 Bridge Package (.zip)
+              <Download className="w-4 h-4 mr-2" /> Download read-only DEMO kit (.zip)
             </a>
           </Button>
           <Button variant="outline" size="sm" onClick={refreshAll} disabled={refreshing} data-testid="button-refresh-status">
@@ -1832,73 +1832,37 @@ export default function MT5SetupWizardPage() {
         <CardContent className="pt-4 flex items-start gap-3">
           <ShieldCheck className="w-5 h-5 text-success mt-0.5" />
           <div className="text-sm">
-            <p className="font-semibold text-success">Bridge connection is read-only by design.</p>
+            <p className="font-semibold text-success">Start with a read-only DEMO connection.</p>
             <p className="text-muted-foreground">
-              This setup page only <strong>reads</strong> your account, positions, and orders. Live orders
-              are never placed from here — they go through the trade ticket with full server-side safety
-              checks and your explicit confirmation.
+              The downloaded profile disables execution. Keep those settings unchanged while checking
+              account and position snapshots. Arming and order tests are separate actions that require
+              a compatible bridge and explicit approval.
             </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* EA v1.28 install — dedicated, anchorable section so the
-          Trade Logs upgrade hint can deep-link straight here. v1.28 is a
-          strict superset of v1.27 that additionally reports the broker's
-          real close fill price on every CLOSE. */}
-      <Card
-        id="ea-v128-install"
-        className="border-2 border-primary/30 bg-primary/5 scroll-mt-24"
-        data-testid="card-ea-v128-install"
-      >
+      {/* Keep the historic anchor so existing Trade Logs links still work. */}
+      <Card id="ea-v128-install" className="border-2 border-primary/30 bg-primary/5 scroll-mt-24" data-testid="card-ea-v128-install">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-primary">
-            <Download className="w-4 h-4" /> EA v1.28 install (recommended)
+            <Download className="w-4 h-4" /> MT5 DEMO read-only kit · EA v1.29
           </CardTitle>
           <CardDescription>
-            v1.28 is a strict superset of v1.27. The only behavioural change is
-            that on every successful CLOSE the EA reports the broker's real close
-            fill price and executed volume — this unblocks deterministic P/L on
-            closed live test cycles. No server-side change is required.
+            Includes the EA source, a settings profile with trading disabled, and setup instructions.
+            Compile the source in MetaEditor before installing it.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm space-y-3">
-          <ol className="list-decimal pl-5 space-y-1.5 text-muted-foreground">
-            <li>
-              Save the delivered file as{" "}
-              <code className="text-xs">ReplitMT5BridgeEA_v128.mq5</code> into{" "}
-              <code className="text-xs">&lt;MT5 data folder&gt;/MQL5/Experts/</code>.
-            </li>
-            <li>
-              Open it in MetaEditor → press <strong>F7</strong> to compile →
-              confirm <strong>0 errors, 0 warnings</strong>.
-            </li>
-            <li>
-              On the chart, remove the v1.27 EA and attach the v1.28 EA. Keep
-              every input identical to your v1.27 setup (ServerBaseUrl,
-              BridgeToken, EnableLiveExecution, MaxLiveLot, ReadOnlyMode, …).
-            </li>
-            <li>
-              Verify the Experts tab shows{" "}
-              <code className="text-xs">EA version=1.28</code> and a heartbeat ACK.
-            </li>
-          </ol>
-          <div className="rounded border border-warning/40 bg-warning/20 p-2.5 text-xs text-warning flex items-start gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            <span>
-              <strong>Allow Algo Trading caveat:</strong> MT5 has three independent
-              AutoTrading switches — the terminal toolbar button, the per-EA
-              Common-tab "Allow Algo Trading" checkbox, and Tools → Options →
-              Expert Advisors → "Allow algorithmic trading". All three must be ON,
-              otherwise <code className="text-[11px]">OrderSend</code> returns
-              retcode <code className="text-[11px]">10027</code> even when every
-              server-side gate has passed.
-            </span>
+          <p>Load <code>ARX_DEMO_READ_ONLY.set</code> before entering your private connection token.
+            Keep automated trading disabled and every execution switch off.</p>
+          <div className="rounded border border-warning/40 bg-warning/20 p-2.5 text-xs text-warning">
+            <strong>Connection checks only.</strong> This EA closes the whole position when asked for a partial close.
+            Broker order validation is blocked until a compatible execution bridge is corrected and verified.
+            A connected heartbeat does not mean trading is ready.
           </div>
           <Button asChild variant="outline" size="sm" data-testid="button-v128-download-zip">
-            <a href="/api/mt5/bridge-package/zip" download>
-              <Download className="w-4 h-4 mr-2" /> Download MT5 Bridge Package (.zip)
-            </a>
+            <a href="/api/mt5/bridge-package/zip" download><Download className="w-4 h-4 mr-2" /> Download read-only DEMO kit (.zip)</a>
           </Button>
         </CardContent>
       </Card>
@@ -1915,7 +1879,7 @@ export default function MT5SetupWizardPage() {
             <li>Your account snapshot (balance, equity, margin, currency)</li>
             <li>Your open positions (ticket, symbol, side, lot, entry, SL/TP, profit)</li>
           </ul>
-          <p>The bridge <strong>never sends</strong> your broker password. It <strong>never executes</strong> orders in v1 — even if a command is queued, the EA replies <code className="text-xs">EA_READ_ONLY_MODE_ACTIVE</code>.</p>
+          <p>The bridge <strong>never sends</strong> your broker password. This EA contains order execution code. The supplied read-only profile keeps its trading switches disabled.</p>
         </CardContent>
       </Card>
 
@@ -1986,19 +1950,19 @@ export default function MT5SetupWizardPage() {
             <li>Open MetaTrader 5.</li>
             <li>File → Open Data Folder.</li>
             <li>Open <code>MQL5</code> → <code>Experts</code>.</li>
-            <li>Copy <code>ReplitMT5BridgeEA.mq5</code> from the ZIP into <code>Experts</code>.</li>
+            <li>Copy <code>ReplitMT5BridgeEA_v129.mq5</code> from the ZIP into <code>Experts</code>.</li>
             <li>Open MetaEditor (refresh the Navigator if needed).</li>
-            <li>Compile <code>ReplitMT5BridgeEA.mq5</code> (F7) — expect 0 errors.</li>
+            <li>Compile <code>ReplitMT5BridgeEA_v129.mq5</code> (F7) — expect 0 errors.</li>
             <li>Return to MT5.</li>
             <li>Drag the EA onto any chart.</li>
-            <li>Tick <strong>Allow Algo Trading</strong> on the Common tab.</li>
+            <li>Keep automated trading disabled for this connection check.</li>
             <li>Tools → Options → Expert Advisors.</li>
             <li>Tick <strong>Allow WebRequest for listed URL</strong>.</li>
             <li>Add your Replit app base URL (e.g. <code>https://your-repl.replit.app</code>).</li>
-            <li>Paste your per-user bridge token (from Step 3) into the EA <code>BridgeToken</code> input.</li>
+            <li>Load <code>ARX_DEMO_READ_ONLY.set</code>, then enter <code>ServerBaseUrl</code> and privately paste your per-user <code>BridgeToken</code>.</li>
             <li>Keep <code>ReadOnlyMode = true</code>.</li>
-            <li>Keep <code>AllowOrderExecution = false</code>.</li>
-            <li>Click OK to start the EA. Confirm the Algo Trading button at the top of MT5 is green.</li>
+            <li>Keep <code>AllowOrderExecution</code>, <code>EnableDemoExecution</code>, <code>EnableLiveExecution</code>, <code>EnableSelfUpdate</code>, and <code>EnableRemoteConfig</code> set to <code>false</code>.</li>
+            <li>Start the EA on the verified DEMO account and check for a fresh heartbeat and account snapshot. Keep trading disabled.</li>
           </ol>
         </CardContent>
       </Card>
@@ -2051,7 +2015,7 @@ export default function MT5SetupWizardPage() {
         <CardContent className="text-sm grid gap-3 sm:grid-cols-2">
           <Trouble title="A. No heartbeat">
             <li>EA not attached to a chart</li>
-            <li>Algo Trading disabled (button must be green)</li>
+            <li>Check the Experts log for HTTP failures; keep trading disabled during read-only setup</li>
             <li>WebRequest URL not allowed in MT5 Options</li>
             <li>Wrong Replit URL in EA inputs</li>
             <li>Wrong or revoked per-user token (HTTP 401 in EA log)</li>
