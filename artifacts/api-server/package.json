@@ -114,6 +114,7 @@
     "test:position-guardian-assess": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/assess.test.ts",
     "test:position-ledger": "node --import tsx --test --test-force-exit src/lib/positions/__qa__/ledger.test.ts",
     "test:open-position-view": "node --import tsx --test --test-force-exit src/lib/positions/__qa__/openPositions.test.ts",
+    "test:risk-count-basis": "node --import tsx --test --test-force-exit src/lib/positions/__qa__/riskCountBasis.test.ts",
     "test:position-guardian-manage": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/manage.test.ts",
     "test:trade-engine-pipeline": "node --import tsx --test --test-force-exit src/lib/tradeEngine/__qa__/pipeline.test.ts",
     "test:trade-engine-staged": "node --import tsx --test --test-force-exit src/lib/tradeEngine/__qa__/stagedContract.test.ts",

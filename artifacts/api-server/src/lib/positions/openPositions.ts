@@ -61,6 +61,15 @@ export type OpenPositionVenueSelector = OpenPositionVenue | "ALL";
 export type OpenPositionBasis = "EXPOSURE" | "UNCLOSED" | "CONFIRMED_OPEN";
 
 /**
+ * The basis every risk cap counts open positions on (owner decision 6): the
+ * Risk Governor and the self-trade concurrent cap. Only a broker-confirmed
+ * close leaves it (LIVE `closed_at` stamped, incl. RECONCILED_BROKER_ABSENT;
+ * DEMO `status = 'CLOSED'`). IGNORED / EXTERNAL / IMPORTED labels and DEMO
+ * STOP_LOSS_HIT / TAKE_PROFIT_HIT / MANUALLY_CLOSED rows keep counting.
+ */
+export const RISK_COUNT_BASIS = "UNCLOSED" satisfies OpenPositionBasis;
+
+/**
  * LIVE-only addition for the projected reads: UNCLOSED_RECONCILED is
  * `closed_at IS NULL AND reconcile_state IS NOT NULL`, i.e. exactly the rows
  * UNCLOSED adds on top of EXPOSURE (operator-reconciled IGNORED / EXTERNAL /

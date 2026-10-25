@@ -185,7 +185,7 @@ engines in `lib/domain`.
 | `adminTrading/orderGuard` step 6 | operator lot, symbols, direction, account type, trades per day | trades per day counts `trade_command_audit_log` APPROVED rows over a rolling 24h; the governor counts today's trades on its own activity basis. Symbols match exactly here (the governor trims and upper-cases). A different basis, so not unified |
 | `live/liveCommandPipeline` | arming confirmed max lot, governance `maxLotPerTrade` / `maxOpenPositions` / `maxDailyLossUsd`, master live access caps, `arx_live_user_settings` per-market lot | the live lane's own stores; the open-position cap counts `UNCLOSED` live rows plus in-flight commands (same `UNCLOSED` basis as the governor) |
 | `live/instantTrade` | Ruby open-position cap | `UNCLOSED` basis |
-| `selfTrade/executionGate` | `maxConcurrentPositions` | `EXPOSURE` basis, while the governor counts `UNCLOSED`: **owner decision** (see `TIER1_OPEN_POSITION_VIEW.md`) |
+| `selfTrade/executionGate` | `maxConcurrentPositions` | round 5 (owner decision 6): counts on `RISK_COUNT_BASIS` (`UNCLOSED`), the governor's basis; floating P/L stays on `EXPOSURE` |
 | `liveTrading/limits` + `guard` | micro-live hard-coded caps (lot 0.01, risk 0.25%, daily 0.5%, ...) | constants, guarded by `live-order-risk-limits` |
 | `autopilot` | session max open positions / max trades | in-memory session rules; orders go through `oms.placeOrder` |
 
@@ -255,10 +255,11 @@ governor's own position sizer and the scalp engine) and `self-trade`. A
 server caller that feeds these engines the trader's saved row is caught by
 the `raw_reader` rule.
 
-### Owner decisions (not decided here)
+### Owner decisions (round 4 list; decided 2026-10-25, see "Round 5")
 
 1. Open-position count basis for the self-trade concurrent cap
-   (`EXPOSURE`) vs the governor (`UNCLOSED`).
+   (`EXPOSURE`) vs the governor (`UNCLOSED`). **Decided (owner decision 6):
+   `UNCLOSED` for both.**
 2. Legacy `trades` vs `paper_orders` (and `paper_trades`) as the P/L and
    streak basis for `riskAudit`, `/mt5/execute`, `/me/risk/status` and the
    post-close hooks.
@@ -287,5 +288,64 @@ the `raw_reader` rule.
 - The guard proves who reads and compares; it does not prove the (a)
   pre-checks are stricter than the governor. That is argued per entry in
   the allowlist `why`, and the governor still runs after each of them.
+
+## Round 5: owner decisions 6, 10, 9, 8 and 7
+
+Base: `2a0b3f6` (PR #48). Stacked branches `r5/risk-1` .. `r5/risk-4`, one
+commit per decision group. These decisions intentionally change behaviour;
+every change is listed under its decision and covered by a regression test.
+
+### Decision 6: one conservative count basis for risk caps (`r5/risk-1`)
+
+> Keep UNCLOSED as the governor's conservative position-count basis. An
+> IGNORED or EXTERNAL reconciliation label is not broker-confirmed closure.
+> Align the self-trade risk cap with this conservative basis. Do not exclude
+> DEMO stop/target-hit rows merely because of their label when closure is
+> unconfirmed.
+
+What `UNCLOSED` includes, confirmed in code:
+
+| Venue | `UNCLOSED` predicate | Counts | Does not count |
+|---|---|---|---|
+| LIVE (`arx_live_positions`) | `closed_at IS NULL` | open rows; operator labels `IGNORED`, `EXTERNAL`, `IMPORTED` (`routes/adminBridgeControl.ts` sets only `reconcile_state`) | a stamped `closed_at`: the live pipeline's broker close, and `RECONCILED_BROKER_ABSENT` (the broker-absence reconciler stamps `closed_at` only after the required run of reliable broker snapshots without the ticket) |
+| DEMO (`live_positions`) | `status <> 'CLOSED'` | `OPEN`, `SYNC_PENDING`, `PARTIALLY_CLOSED`, `BROKER_ERROR`, `STOP_LOSS_HIT`, `TAKE_PROFIT_HIT`, `MANUALLY_CLOSED` | `CLOSED`, which only the execution reconciler writes from the broker's close result |
+
+The DEMO SL/TP-hit statuses come from the price evaluator
+(`routes/livePositions.ts`, `evaluateLivePosition`), which also stamps
+`closed_at` on them; the broker has not confirmed those closes, and
+`UNCLOSED` ignores `closed_at` for DEMO, so they keep counting. The basis
+already met the decision; it was **not** changed.
+
+- `lib/positions/openPositions.ts` exports `RISK_COUNT_BASIS = "UNCLOSED"`
+  (a two-line, additive diff; the read model is shared with the Position
+  Guardian work). The Risk Governor (`enforce.ts`) and the self-trade gate
+  both count with it.
+- `lib/selfTrade/executionGate.ts` `computeAgentDailyPnlUsd`: the
+  `openPositionsCount` fed to `MAX_CONCURRENT_POSITIONS` now counts the
+  agent's FILLED tickets on `RISK_COUNT_BASIS`. Floating P/L is a separate
+  read and stays on `EXPOSURE` (a ghost carries no live exposure).
+- Display and advisory bases stay separately named in the read model:
+  `EXPOSURE` (exposure totals, unified feed, wallet and pool views, Guardian)
+  and `CONFIRMED_OPEN` (advice and open-trade lists).
+- `reconciled-ghost-exposure` now pins this split: the gate's P/L read must
+  be `EXPOSURE`, its count must be `unclosed.length` from a
+  `basis: RISK_COUNT_BASIS` read, the read model must export
+  `RISK_COUNT_BASIS = "UNCLOSED"`, and the governor must count with it.
+
+Behaviour changes (decision 6):
+
+- The self-trade concurrent cap counts a FILLED execution whose live row is
+  labelled `IGNORED` / `EXTERNAL` / `IMPORTED` and not closed. An agent can
+  therefore be refused `MAX_CONCURRENT_POSITIONS` where it was permitted
+  before. Daily P/L is unchanged.
+
+Tests: `test:risk-count-basis` (new, real DB, wired into `ci:integration`):
+LIVE `IGNORED` / `EXTERNAL` / `IMPORTED` count, closed and
+`RECONCILED_BROKER_ABSENT` do not; DEMO `STOP_LOSS_HIT` / `TAKE_PROFIT_HIT`
+with a stamped `closed_at` count, `CLOSED` does not; the governor's
+`buildRiskContext` counts the same rows for LIVE and DEMO; tenant isolation
+with colliding tickets. `reconciledGhostExposureDbTest` (in-process
+integration lane) now seeds REAL, IGNORED, EXTERNAL, broker-absent and closed
+rows with FILLED executions and asserts count 3, P/L +10.
 
 **TIER 1 NOT COMPLETE**

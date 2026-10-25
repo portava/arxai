@@ -14,7 +14,7 @@
 //   execution rows / broker positions only — never from intents.
 
 import { livePositionColumns } from "../positions/ledger.js";
-import { selectLiveOpenPositions } from "../positions/openPositions.js";
+import { selectLiveOpenPositions, RISK_COUNT_BASIS } from "../positions/openPositions.js";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -111,26 +111,34 @@ export async function computeAgentDailyPnlUsd(
 
   const filled = execs.filter((e) => e.status === "FILLED" && e.brokerTicket != null);
 
-  // openPositionsCount is derived from the filtered livePositionColumns query
-  // below, NOT from filled.length. A FILLED agent execution whose broker ticket
-  // matches a reconciled (IGNORED/EXTERNAL/IMPORTED) live position must NOT
-  // count as an open concurrent position — it carries no live exposure. Using
-  // filled.length would let ghost arx_live_positions with reconcile_state IS NOT
-  // NULL trip MAX_CONCURRENT_POSITIONS incorrectly. Consistent with
-  // getUserAllocationView and recomputeMasterPool.
+  // openPositionsCount (the MAX_CONCURRENT_POSITIONS input) counts on the Risk
+  // Governor's conservative basis, RISK_COUNT_BASIS = UNCLOSED (owner decision
+  // 6): a FILLED execution whose live row is still not closed counts, even when
+  // an operator labelled it IGNORED / EXTERNAL / IMPORTED, because a label is
+  // not a broker-confirmed close and the position may still stand at the
+  // broker. Only a stamped closed_at (a real close, or the broker-absence
+  // reconciler) removes it. It is derived from the live rows, never from
+  // filled.length, so an execution with no live row does not count.
+  //
+  // Floating P/L is a separate figure and stays on EXPOSURE: a reconciled
+  // ghost carries no live exposure, so its floating P/L is not summed
+  // (consistent with getUserAllocationView and recomputeMasterPool).
   let openPositionsCount = 0;
   let floating = 0;
   if (executingUserId != null && filled.length > 0) {
     const tickets = filled.map((e) => e.brokerTicket as string);
-    const positions = await selectLiveOpenPositions(livePositionColumns, {
+    const unclosed = await selectLiveOpenPositions({ id: livePositionColumns.id }, {
+      userId: executingUserId,
+      basis: RISK_COUNT_BASIS,
+      tickets,
+    });
+    openPositionsCount = unclosed.length;
+    const exposure = await selectLiveOpenPositions(livePositionColumns, {
       userId: executingUserId,
       basis: "EXPOSURE",
       tickets,
     });
-    // Derive from filtered live-positions truth — not agent-execution records —
-    // so reconciled ghosts cannot inflate the concurrent-position gate.
-    openPositionsCount = positions.length;
-    for (const p of positions) {
+    for (const p of exposure) {
       if (p.floatingPl != null) floating += Number(p.floatingPl);
     }
   }

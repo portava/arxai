@@ -10,17 +10,21 @@
 //     the pool's totalUserUnrealizedPnl. Only the genuine open position
 //     (reconcile_state IS NULL) contributes.
 //   - computeAgentDailyPnlUsd() — the same IGNORED row must not contribute
-//     floating P/L nor inflate openPositionsCount for an agent whose FILLED
-//     execution carries that broker ticket.
+//     floating P/L for an agent whose FILLED execution carries that broker
+//     ticket. Its openPositionsCount (the MAX_CONCURRENT_POSITIONS input) DOES
+//     count IGNORED / EXTERNAL rows: owner decision 6 aligns it with the Risk
+//     Governor's UNCLOSED basis (a label is not a broker-confirmed close).
+//     Confirmed closes (closed_at stamped, incl. RECONCILED_BROKER_ABSENT)
+//     never count.
 //
 // HOW IT PROVES EXCLUSION (not merely "no positions"):
 //   We seed TWO open positions for one user:
 //     GHOST: floating_pl = -500, reconcile_state = "IGNORED"
 //     REAL:  floating_pl = +10,  reconcile_state =  NULL
 //   If either function forgot the `reconcile_state IS NULL` filter the result
-//   would reflect -490 (and openPositionsCount=2). The assertions demand +10
-//   (and openPositionsCount=1), so a regression that re-admits ghosts fails
-//   loudly.
+//   would reflect -490. The assertions demand +10, so a regression that
+//   re-admits ghosts into P/L fails loudly. The agent count is asserted on the
+//   UNCLOSED basis (REAL + IGNORED + EXTERNAL = 3; two confirmed closes = 0).
 //
 // ISOLATION / SAFETY:
 //   - recomputeMasterPool sums unrealized P/L across ALL allocated users, so
@@ -62,6 +66,9 @@ const CONN_NAME = "qa-reconciled-ghost-exposure-fake-master";
 const AGENT_KEY = "qa-reconciled-ghost-exposure-agent";
 const GHOST_TICKET = "QA-GHOST-IGNORED-1";
 const REAL_TICKET = "QA-REAL-OPEN-1";
+const EXTERNAL_TICKET = "QA-GHOST-EXTERNAL-1";
+const ABSENT_TICKET = "QA-CLOSED-BROKER-ABSENT-1";
+const CLOSED_TICKET = "QA-CLOSED-1";
 
 let passes = 0;
 let failures = 0;
@@ -202,7 +209,20 @@ export async function run(): Promise<CiTestResultLike> {
     assert(delta === 10, `pool totalUserUnrealizedPnl delta = +10 (only the REAL +10; got ${delta})`);
     assert(delta !== -490, "pool delta is NOT -490 (the IGNORED -500 ghost is excluded)");
 
-    // ── Agent daily-P/L gate: IGNORED ghost must not contribute ────────────
+    // ── Agent gate boundaries (owner decision 6) ────────────────────────────
+    //   EXTERNAL: -300, closed_at NULL, reconcile_state="EXTERNAL" → counts, P/L excluded
+    //   ABSENT:   -200, closed_at SET,  RECONCILED_BROKER_ABSENT  → confirmed close: neither
+    //   CLOSED:   +50,  closed_at SET,  reconcile_state NULL      → confirmed close: neither
+    await db.insert(arxLivePositionsTable).values([
+      { userId: user.id, bridgeConnectionId: conn.id, brokerTicket: EXTERNAL_TICKET, symbol: "EURUSD", side: "BUY",
+        volume: 0.01, entryPrice: 1.05, floatingPl: -300, openedAt, closedAt: null, reconcileState: "EXTERNAL" },
+      { userId: user.id, bridgeConnectionId: conn.id, brokerTicket: ABSENT_TICKET, symbol: "EURUSD", side: "BUY",
+        volume: 0.01, entryPrice: 1.05, floatingPl: -200, openedAt, closedAt: new Date(), reconcileState: "RECONCILED_BROKER_ABSENT" },
+      { userId: user.id, bridgeConnectionId: conn.id, brokerTicket: CLOSED_TICKET, symbol: "EURUSD", side: "BUY",
+        volume: 0.01, entryPrice: 1.05, floatingPl: 50, openedAt, closedAt: new Date(), reconcileState: null },
+    ]);
+
+    // ── Agent daily-P/L gate: IGNORED ghost must not contribute P/L ────────
     const [agent] = await db.insert(selfTradeAgentsTable).values({
       agentKey: AGENT_KEY,
       name: "QA Reconciled Ghost Agent",
@@ -236,14 +256,24 @@ export async function run(): Promise<CiTestResultLike> {
         status: "FILLED",
         brokerTicket: REAL_TICKET,
       },
+      ...[EXTERNAL_TICKET, ABSENT_TICKET, CLOSED_TICKET].map((t) => ({
+        agentId: agent.id,
+        agentKey: AGENT_KEY,
+        symbol: "EURUSD",
+        side: "BUY",
+        executingUserId: user.id,
+        idempotencyKey: `${AGENT_KEY}-${t}`,
+        status: "FILLED",
+        brokerTicket: t,
+      })),
     ]);
 
     // eslint-disable-next-line no-console
-    console.log("\ncomputeAgentDailyPnlUsd — IGNORED ghost excluded from floating P/L + count");
+    console.log("\ncomputeAgentDailyPnlUsd — ghosts excluded from floating P/L, counted on the governor's UNCLOSED basis");
     const agentPnl = await computeAgentDailyPnlUsd(agent.id, user.id, new Date());
     assert(
-      agentPnl.openPositionsCount === 1,
-      `openPositionsCount = 1 (only the REAL position; got ${agentPnl.openPositionsCount})`,
+      agentPnl.openPositionsCount === 3,
+      `openPositionsCount = 3 (REAL + IGNORED + EXTERNAL; confirmed closes excluded; got ${agentPnl.openPositionsCount})`,
     );
     assert(
       agentPnl.dailyPnlUsd === 10,

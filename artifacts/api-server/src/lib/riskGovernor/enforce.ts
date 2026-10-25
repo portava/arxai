@@ -20,7 +20,7 @@
 
 import { classifyHeartbeatAgeMs } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
-import { readOpenPositions } from "../positions/openPositions.js";
+import { readOpenPositions, RISK_COUNT_BASIS } from "../positions/openPositions.js";
 import { db } from "@workspace/db";
 import {
   paperAccountsTable,
@@ -321,10 +321,11 @@ async function loadBrokerFacts(intent: TradeIntent, opts: EnforceOptions, now: D
   // Open positions: LIVE reads the live pipeline's own ledger
   // (arx_live_positions); DEMO reads the EA-synced live_positions.
   type OpenRow = { id: number; symbol: string; side: string; lots: number; entryPrice: number; stopLoss: number | null; floating: number | null; at: Date };
-  // UNCLOSED is the conservative basis: an operator-reconciled LIVE row that
-  // was never closed may still stand at the broker, so it keeps counting. The
-  // intent's venue is authoritative here, so no account-mode filter applies.
-  const posRows: OpenRow[] = (await readOpenPositions({ userId, venue: intent.venue === "LIVE" ? "LIVE" : "DEMO", basis: "UNCLOSED" }))
+  // RISK_COUNT_BASIS (UNCLOSED) is the conservative basis (owner decision 6):
+  // an operator-reconciled LIVE row that was never closed may still stand at
+  // the broker, so it keeps counting. The intent's venue is authoritative
+  // here, so no account-mode filter applies.
+  const posRows: OpenRow[] = (await readOpenPositions({ userId, venue: intent.venue === "LIVE" ? "LIVE" : "DEMO", basis: RISK_COUNT_BASIS }))
     .map((p) => ({ id: p.id, symbol: p.symbol, side: p.side, lots: p.lots, entryPrice: p.entryPrice,
       stopLoss: p.stopLoss, floating: p.floatingPnl, at: p.openedAt ?? p.recordedAt }));
   const sided = posRows.filter((p): p is OpenRow & { side: "BUY" | "SELL" } => p.side === "BUY" || p.side === "SELL");

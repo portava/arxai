@@ -156,6 +156,12 @@ every `basis:` it names is `"EXPOSURE"`, and it checks that the read model's
 per-user and cross-user `EXPOSURE` bases are `openLiveExposureCondition(userId)`
 / `openLiveExposureCondition()`. A file that switched to `UNCLOSED` would fail.
 
+Round 5 (owner decision 6, see `TIER1_RISK_GOVERNOR_SOURCE.md`): risk caps
+count on `RISK_COUNT_BASIS` (= `UNCLOSED`), exported by the read model. The
+self-trade gate's concurrent-position count moved to it; its floating P/L
+stays on `EXPOSURE`, and the guard now pins exactly that split. `EXPOSURE`
+and `CONFIRMED_OPEN` remain the named display / advisory bases.
+
 Round 3 behaviour: none intended, and none observed in the tests below.
 
 - The migrated reads produce the same SQL predicate (conjunct order differs in
