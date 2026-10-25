@@ -16,7 +16,7 @@
 // - Per-user isolation: every query is scoped by userId; the user DTO uses the
 //   authenticated user's id, never a bridge token.
 
-import { EA_HEARTBEAT_FRESH_MS, BRIDGE_V2_HEARTBEAT_STALE_MS } from "../brokerHub/freshness.js";
+import { BRIDGE_V2_STREAM_LIVE_MS, BRIDGE_V2_STREAM_STALE_MS } from "../brokerHub/freshness.js";
 import {
   db,
   bridgeV2EventsTable,
@@ -25,10 +25,11 @@ import { listBridgeV2StreamStates, type BridgeV2StreamStateRow } from "../broker
 import { and, desc, eq, sql } from "drizzle-orm";
 import { loadBridgeV2ConfigForEa, listBridgeV2CommandsForEa } from "./egress.js";
 
-// Heartbeat fresher than this = a connected bridge (mirrors the live gate #7
-// semantics for display; this is observability, not a gate).
-const HEARTBEAT_LIVE_MS = EA_HEARTBEAT_FRESH_MS;
-const HEARTBEAT_STALE_MS = BRIDGE_V2_HEARTBEAT_STALE_MS;
+// Bridge v2 STREAM health bands (observability, not a gate). These are the
+// stream's own LIVE/STALE/OFFLINE vocabulary, separately named from the shared
+// MT5 heartbeat policy (owner decision 18 adds the policy's comparable field).
+const HEARTBEAT_LIVE_MS = BRIDGE_V2_STREAM_LIVE_MS;
+const HEARTBEAT_STALE_MS = BRIDGE_V2_STREAM_STALE_MS;
 
 export type BridgeV2Freshness = "LIVE" | "STALE" | "OFFLINE" | "UNKNOWN";
 

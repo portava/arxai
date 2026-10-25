@@ -5,7 +5,7 @@
 //   - Only the SHA-256 hash of the token is stored in apiKeyHash.
 //   - All routes require auth; queries scoped by req.authUser.id.
 //   - Client-supplied userId is ignored for ownership.
-import { EA_HEARTBEAT_STALE_MS, EA_HEARTBEAT_FRESH_MS, EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
+import { classifyHeartbeatAt, isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { createConnection, getUserConnection, listUserConnections, updateUserConnection, type BrokerConnectionFacts } from "../lib/brokerHub/connections.js";
 import { Router } from "express";
 import { db } from "@workspace/db";
@@ -16,7 +16,6 @@ import { requireUser } from "../lib/auth/middleware.js";
 
 const router = Router();
 
-const STALE_MS = EA_HEARTBEAT_STALE_MS;
 
 export function hashBridgeToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
@@ -42,9 +41,11 @@ function maskAccountNumber(acct: string | null): string | null {
 function deriveStatus(row: BrokerConnectionFacts): string {
   if (row.tokenRevokedAt) return "revoked";
   if (!row.lastHeartbeat) return "waiting";
-  const age = Date.now() - new Date(row.lastHeartbeat).getTime();
-  if (age < EA_HEARTBEAT_FRESH_MS) return "connected";
-  if (age < STALE_MS) return "stale";
+  // Shared heartbeat policy: fresh → connected, degraded → stale,
+  // offline / unknown (e.g. future-dated) → disconnected.
+  const f = classifyHeartbeatAt(row.lastHeartbeat, Date.now());
+  if (f === "fresh") return "connected";
+  if (f === "degraded") return "stale";
   return "disconnected";
 }
 
@@ -61,9 +62,10 @@ function serialize(row: BrokerConnectionFacts, opts: { rawToken?: string } = {})
   const marginN = Number(row.margin ?? 0);
   const marginLevelPercent = marginN > 0 ? (equityN / marginN) * 100 : null;
   // Account snapshot freshness — heartbeat is the canonical liveness
-  // signal (EA POSTs both heartbeat and sync-account every 5s). 15s
-  // matches the Phase B `heartbeat age ≤ 15s` gate.
-  const accountSnapshotFresh = heartbeatAgeSeconds != null && heartbeatAgeSeconds <= EA_HEARTBEAT_FRESH_SECONDS;
+  // signal (EA POSTs both heartbeat and sync-account every 5s). "Fresh"
+  // is the shared heartbeat policy's fresh band (age < 15 s), the same as
+  // Phase B gate #7.
+  const accountSnapshotFresh = isHeartbeatAgeSecondsFresh(heartbeatAgeSeconds);
   return {
     id: row.id,
     connectionName: row.connectionName,

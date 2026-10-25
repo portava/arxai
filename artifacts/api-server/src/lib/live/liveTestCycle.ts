@@ -16,7 +16,7 @@
 //   rejects), the cycle locks in CLOSE_FAILED_MANUAL_REQUIRED — we never
 //   retry. An operator must use /resolve to acknowledge.
 
-import { EA_HEARTBEAT_FRESH_MS } from "../brokerHub/freshness.js";
+import { isHeartbeatAgeMsFresh, MT5_HEARTBEAT_FRESH_BELOW_SECONDS } from "../brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getUserActiveConnection } from "../brokerHub/connections.js";
@@ -46,7 +46,6 @@ import { logger } from "../logger.js";
 
 const PINNED_SYMBOL = "EURUSD" as const;
 const PINNED_VOLUME = 0.01 as const;
-const HEARTBEAT_FRESH_MS = EA_HEARTBEAT_FRESH_MS;
 
 export interface LiveTestCycleInput {
   userId: number;
@@ -137,13 +136,13 @@ export async function runPrecheck(userId: number): Promise<{
   const heartbeatAgeMs = bridge?.lastHeartbeat
     ? Date.now() - new Date(bridge.lastHeartbeat).getTime()
     : null;
-  const heartbeatOk = heartbeatAgeMs != null && heartbeatAgeMs <= HEARTBEAT_FRESH_MS;
+  const heartbeatOk = isHeartbeatAgeMsFresh(heartbeatAgeMs);
   checks.push({
     key: "bridge_heartbeat_fresh",
     ok: heartbeatOk,
     detail: bridge
       ? heartbeatAgeMs != null
-        ? `last heartbeat ${(heartbeatAgeMs / 1000).toFixed(1)}s ago (must be ≤ ${HEARTBEAT_FRESH_MS / 1000}s)`
+        ? `last heartbeat ${(heartbeatAgeMs / 1000).toFixed(1)}s ago (must be < ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s)`
         : "no heartbeat received yet"
       : "no MT5 bridge configured",
   });

@@ -11,7 +11,7 @@
 // - When no allocation exists, we return zeros + an explicit honest note
 //   instead of fabricating a balance.
 
-import { LIVE_ACCOUNT_HEARTBEAT_LIVE_MS } from "../lib/brokerHub/freshness.js";
+import { isHeartbeatAgeMsFresh } from "../lib/brokerHub/freshness.js";
 import { livePositionLedger, livePositionColumns } from "../lib/positions/ledger.js";
 import { getUserLiveBridge } from "../lib/brokerHub/connections.js";
 import { Router, type Request } from "express";
@@ -37,7 +37,6 @@ function uid(req: Request): number | null {
   return u?.id ?? null;
 }
 
-const HEARTBEAT_LIVE_MS = LIVE_ACCOUNT_HEARTBEAT_LIVE_MS;
 
 // Conservative notional-based margin estimate used ONLY when EA does not
 // push per-position margin. Forex standard lot = 100,000 base units.
@@ -137,8 +136,8 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   const leverage = conn?.leverage ?? 100;
   const lastHeartbeat = conn?.lastHeartbeat ?? null;
   const heartbeatAgeMs = lastHeartbeat ? Date.now() - new Date(lastHeartbeat).getTime() : null;
-  const isLive = heartbeatAgeMs !== null && heartbeatAgeMs <= HEARTBEAT_LIVE_MS;
-  const isStale = heartbeatAgeMs !== null && heartbeatAgeMs > HEARTBEAT_LIVE_MS;
+  const isLive = isHeartbeatAgeMsFresh(heartbeatAgeMs);
+  const isStale = heartbeatAgeMs !== null && !isHeartbeatAgeMsFresh(heartbeatAgeMs);
 
   // 5. Freshness. The EA pushes a COMPLETE open-positions snapshot every ~5s,
   // so a row's lastSyncedAt is when the broker last confirmed it open. CRITICAL:

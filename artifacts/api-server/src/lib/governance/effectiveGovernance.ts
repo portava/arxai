@@ -367,7 +367,7 @@ const BLOCK_CATEGORY_MAP: Record<string, Omit<CategorizedBlock, "reason">> = {
   "LIVE_BLOCKED:MASTER_SNAPSHOT_STALE": { category: "TECHNICAL", userReason: "Live bridge syncing. Try again shortly.", adminReason: "Master snapshot stale.", changeableInGovernance: false, brokerEnforced: false },
   "LIVE_BLOCKED:SHARED_LIVE_PAUSED": { category: "TECHNICAL", userReason: "Live trading is paused for reconciliation.", adminReason: "sharedLivePaused.", changeableInGovernance: false, brokerEnforced: false },
   "LIVE_BLOCKED:ALLOCATION_FROZEN": { category: "TECHNICAL", userReason: "Your allocation is frozen. Contact your operator.", adminReason: "Allocation frozen.", changeableInGovernance: false, brokerEnforced: false },
-  EA_HEARTBEAT_STALE: { category: "TECHNICAL", userReason: "Trading bridge is offline.", adminReason: "EA heartbeat > 15s.", changeableInGovernance: false, brokerEnforced: false },
+  EA_HEARTBEAT_STALE: { category: "TECHNICAL", userReason: "Trading bridge is offline.", adminReason: "EA heartbeat not fresh (>= 15s).", changeableInGovernance: false, brokerEnforced: false },
   EA_VERSION_TOO_OLD: { category: "TECHNICAL", userReason: "Trading bridge needs updating.", adminReason: "EA version < 1.27.", changeableInGovernance: false, brokerEnforced: false },
   EA_TERMINAL_NOT_CONNECTED: { category: "TECHNICAL", userReason: "Trading terminal is not connected.", adminReason: "terminalConnected=false.", changeableInGovernance: false, brokerEnforced: false },
 

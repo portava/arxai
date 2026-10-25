@@ -3,6 +3,7 @@
 
 import { useGetAdminCockpitOverview, getGetAdminCockpitOverviewQueryKey } from "@workspace/api-client-react";
 import { cockpitQuery, fmtAge, fmtMoney, fmtNum, fmtPl, Panel, SectionState, Stat } from "./cockpitShared";
+import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 export function OverviewSection() {
   const q = useGetAdminCockpitOverview({ query: { queryKey: getGetAdminCockpitOverviewQueryKey(), ...cockpitQuery } });
@@ -33,7 +34,7 @@ export function OverviewSection() {
               <Stat label="Connected" value={d.bridge.connected ? "Yes" : "No"} tone={d.bridge.connected ? "success" : "danger"} />
               <Stat label="Live" value={d.bridge.live ? "Yes" : "No"} tone={d.bridge.live ? "success" : "muted"} />
               <Stat label="Account type" value={d.bridge.masterAccountType ?? "—"} />
-              <Stat label="Heartbeat" value={fmtAge(d.bridge.heartbeatAgeSeconds)} tone={(d.bridge.heartbeatAgeSeconds ?? 999) <= 15 ? "success" : "warning"} />
+              <Stat label="Heartbeat" value={fmtAge(d.bridge.heartbeatAgeSeconds)} tone={isHeartbeatAgeSecondsFresh(d.bridge.heartbeatAgeSeconds) ? "success" : "warning"} />
             </div>
           </Panel>
 

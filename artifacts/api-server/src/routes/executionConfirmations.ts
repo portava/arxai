@@ -7,7 +7,7 @@
 // only records *intent + decision*. Every state transition appends a vault
 // event for full audit trail.
 
-import { EA_HEARTBEAT_STALE_MS } from "../lib/brokerHub/freshness.js";
+import { classifyHeartbeatAt, heartbeatIsOnline } from "../lib/brokerHub/freshness.js";
 import { Router } from "express";
 import { db, executionConfirmationsTable, vaultEventsTable } from "@workspace/db";
 import { and, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
@@ -120,11 +120,10 @@ router.post("/execution-confirmations", requireUser, async (req, res) => {
       getStatus(),
     ]);
 
-    // Broker is "connected" when we've seen an MT5 EA heartbeat in the last 60s.
-    // mt5_state has no boolean column for this — recency is the canonical signal.
-    const HEARTBEAT_FRESH_MS = EA_HEARTBEAT_STALE_MS;
-    const lastHb = mt5?.lastHeartbeatAt ? new Date(mt5.lastHeartbeatAt).getTime() : 0;
-    const brokerConnected = lastHb > 0 && Date.now() - lastHb <= HEARTBEAT_FRESH_MS;
+    // Broker is "connected" when the MT5 EA heartbeat is online under the
+    // shared policy (fresh or degraded: age < 60 s). mt5_state has no boolean
+    // column for this — recency is the canonical signal.
+    const brokerConnected = heartbeatIsOnline(classifyHeartbeatAt(mt5?.lastHeartbeatAt ?? null, Date.now()));
     const balanceProxy = 10_000; // matches riskAudit/permission convention
     const marketCondition: ChecklistMarketCondition = (body.marketCondition ?? "UNKNOWN") as ChecklistMarketCondition;
 

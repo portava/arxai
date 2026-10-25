@@ -149,7 +149,8 @@ guard's first run listed 66 hits).
   `adminLiveSharedActivation`, `adminLiveFirstTestMode` and
   `pendingOrderDraft`.
 
-**Inconsistencies kept as separate names (owner decision, not unified).**
+**Inconsistencies kept as separate names (round 4; superseded for MT5
+heartbeats by owner decision 17 in round 5, below).**
 Some thresholds use different numbers for what reads like the same idea:
 
 | Idea | Named thresholds (value) | Used by |
@@ -185,6 +186,196 @@ Install-wide stops are still not gate inputs (owner decision). A connection
 with no user cannot call the per-user check, so its preview evaluates only the
 heartbeat window. Test: `test:ea-update-gate-inputs` (in `ci:integration`,
 because it imports `@workspace/db`; its reads are injected).
+
+### Round 5: one shared MT5 heartbeat policy (owner decision 17)
+
+**Decision (Portava, 2026-10-25).** "Unify thresholds only where they
+measure the same concept. For comparable MT5 connection heartbeats, use: age
+<15 seconds: fresh; age >=15 and <60 seconds: degraded; age >=60 seconds:
+offline; missing or invalid observation: unknown, never execution-ready. Use
+one shared pure policy across server, domain and dashboard. Preserve any
+stricter existing execution requirement. Account snapshots, market prices,
+position snapshots and escalation timers are distinct concepts; do not force
+them onto heartbeat thresholds. Document each separately and test exact
+boundaries."
+
+**Where the policy lives.** `lib/domain/src/broker-health/heartbeatPolicy.ts`
+(exported as `@workspace/domain/broker-health/heartbeatPolicy` and from
+`@workspace/domain/broker-health`). It is pure and has no imports, so the
+api-server, the domain evaluators and the trading dashboard (which already
+imports `@workspace/domain`) all use the same code.
+`lib/brokerHub/freshness.ts` re-exports it for server callers and no longer
+defines any heartbeat threshold of its own.
+
+- `classifyHeartbeatAgeMs(age)` / `classifyHeartbeatAgeSeconds(age)` /
+  `classifyHeartbeatAt(timestamp, nowMs)` return `fresh | degraded | offline
+  | unknown`. A null, undefined, NaN, ±Infinity or negative age is `unknown`.
+  So is an unparseable or future-dated timestamp.
+- `heartbeatAllowsExecution(f)` is true only for `fresh`. Use it for every
+  execution, dispatch or arming requirement.
+- `heartbeatIsOnline(f)` is true for `fresh` or `degraded`. Use it only for
+  "connected / reachable" displays, never as an execution requirement.
+- The seconds classifier is exact for fractional ages and for `Math.floor`ed
+  whole seconds (`floor(x) < 15` holds exactly when `x < 15`). A
+  `Math.round`ed age can only classify half a second early, which is
+  stricter, never later.
+- Callers compare through these functions, never against a number, so the
+  `<` / `<=` boundary cannot drift. The guard enforces this (see below).
+
+**How every heartbeat threshold site was classified.** The round 4 survey
+list, plus the sites the extended guard found in `lib/domain`, the dashboard
+and `routes/adminCockpit.ts` / `positionGuardian/reconcile.ts`:
+
+| Site | Concept | Before | After |
+|---|---|---|---|
+| Phase B live gate #7 (`lib/domain/.../livePhaseBDispatchGate.ts`), master-live detector (`currentConnectedBridgeDetector`), shared-live pre-arm (`adminLiveSharedReadiness`), live arming #3 (`liveArming`), live test cycle, first-test mode, approved-trader live state, master bridge routing, demo dispatch gate, demo verification gate, demo arming (`canArmExecution` input), EA self-update gate (`eaUpdateGateInputs`), one-click readiness (`meOneClick`), admin live gates diagnostic, shared activation check C3, bridge-control fresh count, routing status, unified mode, `/me/live` `heartbeatFresh` | execution / dispatch / arming freshness | age ≤ 15 s (≤ 15 000 ms, or floored seconds ≤ 15) | **fresh only** (age < 15 s). One boundary point stricter, never looser. |
+| Safety core `mt5LinkHealth`, `/me/mt5-connections` status, `/me/system-health`, admin runtime-health bridge counts, demo-execution status, `/mt5` diagnostics and `determineMode`, paper-intelligence stale gate | heartbeat bands | < 15 s / < 60 s (already the policy) | same values through the classifier; a future-dated heartbeat is now DOWN / disconnected / not fresh (it used to count as fresh) |
+| Bridge watchdog (`classifyBridge`) | heartbeat bands | ≤ 15 s fresh, ≤ 60 s stale (floored, inclusive) | < 15 s fresh, < 60 s "stale" (degraded), ≥ 60 s or future-dated offline. Its `fresh/stale/offline` vocabulary is unchanged. `WATCHDOG_*_MAX_SECONDS` exports removed. |
+| Risk Governor broker status (`classifyBrokerHeartbeat`) | heartbeat bands | > 30 s DEGRADED, > 120 s DISCONNECTED | ≥ 15 s DEGRADED, ≥ 60 s or future-dated DISCONNECTED |
+| Domain broker-health evaluator (`evaluateBrokerHealth`) | heartbeat bands | ≥ 30 s DEGRADED, ≥ 60 s DISCONNECTED, negative age clamped to 0 (CONNECTED) | ≥ 15 s DEGRADED, ≥ 60 s DISCONNECTED, invalid / future-dated DISCONNECTED (`latencyMs` null) |
+| Legacy domain broker-status engine (`broker/brokerStatus.engine.ts`, no app caller) | heartbeat bands | > 30 s DELAYED, > 120 s ERROR | ≥ 15 s DELAYED, ≥ 60 s ERROR, future-dated DISCONNECTED (overrides still accepted) |
+| Live-account pages `isLive` / `isStale` (`meLiveAccount`, `adminLiveAccount`) | "heartbeat live" pill | ≤ 20 s | fresh (< 15 s) |
+| Trader dashboard heartbeat card (`meDashboard`) | heartbeat bands | ≤ 30 s fresh, ≤ 120 s stale, else missing | fresh → "fresh", degraded → "stale", offline / unknown → "missing" |
+| Platform EA `/mt5/state` `connected`, heartbeat "was offline" (reconnect log) in `routes/mt5.ts` | connected | < 30 s | online (< 60 s). `/mt5/state` also gains an additive `heartbeatFreshness` field. |
+| Connection card state | heartbeat bands | ≤ 60 s CONNECTED, > 60 s DEGRADED | < 15 s CONNECTED (subject to the clock-drift check), 15–60 s DEGRADED, ≥ 60 s or invalid DISCONNECTED |
+| Read-only adapter health, broker provider `connected`, execution-confirmation `brokerConnected`, demo-bridge debug, Ruby `getReconciliationStatus` / pending-submit probe, scalp service `bridgeConnected`, admin cockpit `connected`, admin allocations `isStale`, pending-order draft `bridgeConnected` | connected / reachable | ≤ 60 s, or < 90 s for the advisory pending-submit surfaces, or `ageSec*1000 ≤ 60 000` for the cockpit | online (< 60 s) |
+| Ruby heartbeat tool `health` | heartbeat bands | ≤ 60 s healthy, ≤ 5 min stale, else unhealthy | fresh → healthy, degraded → stale, offline → unhealthy, invalid → unknown |
+| User readiness `mt5_heartbeat_recent` | heartbeat recent | < 5 min | online (< 60 s). Copy reads "in the last minute". |
+| Reconciliation `STALE_HEARTBEAT` | heartbeat stale | > 90 s or missing | not online (≥ 60 s, missing or future-dated) |
+| Provider-health MT5 heartbeat row | heartbeat bands | ≤ 15 s live, else stale; null offline | fresh → live, degraded → stale, offline / unknown → offline |
+| Position Guardian reconnect detection (`noteBridgeHeartbeat`) | heartbeat gap = was offline | gap > 60 s | previous heartbeat not online (gap ≥ 60 s, missing or future-dated). `RECONNECT_GAP_MS` is kept as an alias of the policy bound. |
+| AACI `bridgeHeartbeat` freshness source | heartbeat stale | > 15 000 ms (and negative ages clamped to 0) | not fresh (≥ 15 s or unknown). Its score curve still uses the 15 s bound. |
+| Signal-intelligence execution score | heartbeat penalty | > 15 s −12, > 30 s −25 | degraded −12, offline −25. The heavier step past 2 × the fresh bound (30 s) inside the degraded band is a named score-curve point (reviewed guard entry). |
+| Scalp flame execution quality (`flameRead`) | heartbeat quality | > 15 s POOR, > 30 s BLOCKED | not fresh → POOR. BLOCKED past 30 s is **stricter** than the 60 s offline line, so it is kept as a named, reviewed execution requirement (`SCALP_EXEC_BLOCKED_AFTER_S`). The 4 s / 8 s EXCELLENT / GOOD sub-bands inside the fresh band are unchanged. |
+| Dashboard: cockpit overview, admin EA health, Bridge v2 monitor (warning tint), live-test readiness checklist, live shared-account panel, live shared activation (4 checks + label), `MT5StatusIndicator`, `/my-mt5` commands panel, status-command readiness score | heartbeat display / checklist | ≤ 15 s, > 15 s, `≤ constants.LIVE_HEARTBEAT_MAX_AGE_SEC`, 8 s "Delayed", < 90 s commands, < 60 s "ready" | fresh (< 15 s) for "fresh / ready / success"; degraded → "Delayed" in the indicator (was 8 s); online (< 60 s) for the commands panel (was 90 s); readiness score "ready" only when fresh (was < 60 s) |
+
+**Kept separately named (distinct concepts, not heartbeats).** Values are
+unchanged. Each is named in `freshness.ts` or by its owner and documented
+there:
+
+- Account snapshots: `MT5_ACCOUNT_SNAPSHOT_FRESH_MS` (60 s). It covers the
+  read-only adapter account, the `/mt5` broker snapshot and the shared-master
+  pool (`POOL_SNAPSHOT_FRESH_BUDGET_MS`, which is stamped by the heartbeat
+  but answers "is the mirrored account snapshot fresh"; reviewed guard
+  entry). It also covers `ACCOUNT_SNAPSHOT_LIVE/FRESH/DELAYED_MS` (5 s,
+  30 s, 2 min) in `liveAccountSnapshot`.
+- Positions snapshots: `MT5_POSITIONS_SNAPSHOT_FRESH_SECONDS` (60 s,
+  inclusive) for the connection card `marketDataHealth` (it used to borrow
+  the heartbeat constant). The position-row sync windows stay with the
+  open-position view (90 s), and the Position Guardian keeps
+  `maxSnapshotAgeMs`. The dashboard positions card stale tint (`mt5-setup`,
+  > 30 s since the last positions sync) and the cockpit equity tint (60 s)
+  are snapshot displays, not heartbeats.
+- Fund-book broker mirror: `FUNDBOOK_MIRROR_FRESH_MS` /
+  `FUNDBOOK_MIRROR_DELAYED_MS` (≤ 15 s / ≤ 60 s). The age is the newer of
+  the heartbeat and the positions snapshot, so this is a mirror concept.
+- Bridge v2 stream health: `BRIDGE_V2_STREAM_LIVE_MS` /
+  `BRIDGE_V2_STREAM_STALE_MS` (≤ 15 s / ≤ 120 s; decision 18 below).
+- Cached broker-health verdict: `BROKER_HEALTH_VERDICT_STALE_MS` (120 s,
+  handshake). Market-data feeds (`data/freshness.ts`) and the domain
+  evaluator's price-feed lag (60 s / 180 s) are market data. Command-poll
+  windows (`meDemoBridgeDebug` 60 s), the stuck-command watchdog and the
+  escalation timers stay with their owners.
+- Caller-supplied: the domain Risk Governor kill-switch
+  `maxHeartbeatAgeSec` is an input with no app caller, so it has no
+  threshold to move.
+
+**Compatibility.** Response field names and vocabularies are unchanged:
+`connected`, `isLive`, `isStale`, `fresh/stale/missing`, `live/delayed/stale`,
+the watchdog's `fresh/stale/offline` and `healthy/stale/unhealthy`. Only the
+bands behind them moved. `LIVE_HEARTBEAT_MAX_AGE_SEC` (15) is still served in
+the admin readiness `constants` blocks. It now documents the exclusive fresh
+bound, and nothing compares against it.
+
+### Behaviour changes (round 5, decision 17, intentional)
+
+1. **Execution gates: exactly 15 s is no longer fresh.** This applies to
+   every gate listed in the first table row: Phase B gate #7 (age 15 s now
+   `EA_HEARTBEAT_STALE`), live arming, demo dispatch / verification / arming,
+   master routing, EA self-update, live test cycle, first-test mode,
+   shared-live pre-arm and one-click readiness. Each is one boundary point
+   stricter. No gate got looser.
+2. **A future-dated (negative-age) or unparseable heartbeat is `unknown`,
+   never fresh.** It used to count as fresh or connected everywhere the age
+   was clamped or compared directly.
+3. **Risk Governor:** DEGRADED (new risk refused) now starts at 15 s instead
+   of 30 s. DISCONNECTED now starts at 60 s instead of 120 s.
+   **DISCONNECTED refuses every order, including closes.** So between 60 s
+   and 120 s, closes that were allowed as DEGRADED are now refused. This is
+   the policy's "offline". The owner should confirm this is the wanted
+   close-path behaviour (see Remaining work).
+4. Domain broker-health evaluator: DEGRADED from 15 s (was 30 s). This
+   feeds `/broker-health`.
+5. Live-account pages: "heartbeat live" now needs < 15 s (was ≤ 20 s).
+6. Trader dashboard heartbeat card: fresh < 15 s (was ≤ 30 s). "Stale"
+   lasts until 60 s (was 120 s), then "missing".
+7. `/mt5/state` `connected` and the platform-EA "was offline" reconnect log
+   now use online (< 60 s) instead of < 30 s.
+8. Connection card: 15–60 s is DEGRADED (was CONNECTED). ≥ 60 s is
+   DISCONNECTED (was DEGRADED).
+9. "Connected" surfaces at 60 s: exactly 60 s is now offline where they
+   used ≤ 60 s. The advisory pending-submit / Ruby probes and the
+   reconciliation `STALE_HEARTBEAT` detector move from 90 s to 60 s, and
+   `/my-mt5` commands from 90 s to 60 s.
+10. User readiness "heartbeat recent" and Ruby's heartbeat tool: the 5 min
+    "dead" line is gone. Offline starts at 60 s, and Ruby's "healthy" now
+    means fresh (< 15 s; was ≤ 60 s).
+11. Provider health: an MT5 heartbeat ≥ 60 s reads `offline` (was `stale`).
+12. AACI: the bridge heartbeat source is stale at exactly 15 s.
+    Signal-intelligence: the −12 penalty applies at exactly 15 s. Between
+    30 s and 60 s the score is unchanged (−25).
+13. Dashboard: `MT5StatusIndicator` shows "Delayed" from 15 s (was 8 s),
+    and the status-command readiness score marks the heartbeat "ready" only
+    when it is fresh (was < 60 s).
+
+Regression coverage: `test:broker-hub-heartbeat-policy` covers the policy at
+14.999 / 15 / 59.999 / 60 s, null, NaN, ±Infinity, negative and future
+timestamps; the domain evaluator, the legacy engine, AACI and server
+re-export identity. Further coverage:
+
+- `test:risk-governor-broker-heartbeat` (ci:integration): the Risk Governor
+  bands and future-dated input.
+- `test:connection-card`: the new card bands.
+- `test:broker-hub-mt5-projection`: adapter health at 59.999 / 60 s and in
+  the future.
+- `test:ea-update-gate-inputs`: 14.999 / 15 s, future and NaN.
+- `test:bridge-watchdog`: 14.999 / 15 / 59.999 / 60 s, future and NaN.
+- `test:self-trade-safety-audit` B5: Phase B 14.999 passes, 15 is
+  refused, −1 / NaN / ∞ are refused.
+- `test:one-click-gates`: Phase B 15 s is stale.
+
+**Deferred production fact.** Heartbeats are stamped with the app server
+clock (`new Date()` in `routes/mt5.ts`) and read on the same or another app
+instance. If production runs more than one instance with clock skew, a fresh
+heartbeat can read as a few ms in the future and is then `unknown` (fail
+closed). Verify instance clock sync (NTP) before relying on this in LIVE.
+This was not measured here.
+
+**Guard (round 5).** `single-bridge-freshness-source` now scans
+`lib/domain/src` and `artifacts/trading-dashboard/src` (`.ts` and `.tsx`) as
+well as the api-server, and adds rule 3, `threshold_bypass`. This rule
+flags a heartbeat age compared with a named SCREAMING_CASE constant, for
+example `hbAge <= LIVE_HEARTBEAT_MAX_AGE_SEC`,
+`ageSec < HEARTBEAT_THRESHOLD_MS / 1000` or `age > RECONNECT_GAP_MS`.
+Heartbeat ages must go through the classifier. Snapshot ages, lowercase
+locals and object literals that merely carry a heartbeat field do not count.
+
+The authority-shape check now requires all of the following:
+
+- the policy keeps `MT5_HEARTBEAT_FRESH_BELOW_MS = 15_000`,
+  `MT5_HEARTBEAT_OFFLINE_AT_MS = 60_000` and its classifiers;
+- the policy has no imports;
+- `freshness.ts` re-exports the policy and defines no `*HEARTBEAT*`
+  constant of its own.
+
+Against the pre-change (`2a0b3f6`) versions of the source files changed here,
+the guard reports 91 hits. The tree now passes with five reviewed entries:
+
+- `positionGuardian/assess.ts` 1 (unchanged);
+- `live/masterBridgePool.ts` 1 (account snapshot);
+- `bridgeV2/status.ts` 2 (stream health);
+- `scalp/flameRead.ts` 3 (stricter BLOCKED plus fresh sub-bands);
+- `lib/domain/src/signal-intelligence/scoring.ts` 1 (score-curve point).
 
 ### Behaviour changes (round 2)
 
@@ -319,20 +510,17 @@ DB test: `test:broker-hub-state-sources`
 6. `validate:broker` against a real demo bridge is an owner action and was not
    run.
 7. Obtain the scorecard rubric before measuring and publishing a new score.
-8. **Freshness values are named, not unified (round 4).** The 15/20/30/60 s
-   "fresh", the 60/90 s "connected", the 60/120 s / 5 min "offline" and the
-   30/60 s snapshot "fresh" splits (table above) are separate names. Choosing
-   one value per idea is an owner decision because it changes gates and
-   reports.
-9. **Freshness thresholds outside the api-server are not guarded.**
-   `lib/domain/src/broker-health/evaluator.ts` (degraded > 30 s, disconnected
-   > 60 s) and `lib/domain/src/signal-intelligence/scoring.ts` (15 s / 30 s
-   heartbeat penalties) keep their own literals. `@workspace/domain` cannot
-   import the api-server module, so the authority would have to move into
-   `lib/domain` first. Dashboard literals are also not guarded: admin
-   `LiveSharedAccountPanel` and cockpit `OverviewSection` (≤ 15 s) and
-   `MT5StatusIndicator` (8 s). The guard scans
-   `artifacts/api-server/src` only.
+8. ~~Freshness values are named, not unified (round 4).~~ Done for MT5
+   connection heartbeats in round 5 (owner decision 17): one shared policy.
+   Account snapshots (30 s / 60 s), positions snapshots, the fund-book
+   mirror, Bridge v2 stream health and the cached verdict stay separately
+   named by decision. **Owner check:** the Risk Governor's DISCONNECTED (which
+   also refuses closes) now starts at 60 s instead of 120 s. Confirm or ask for
+   a separately named close-path allowance.
+9. ~~Freshness thresholds outside the api-server are not guarded.~~ Round 5
+   moved the policy into `lib/domain` and the guard now scans `lib/domain/src`
+   and `artifacts/trading-dashboard/src`. Not scanned: `mockup-sandbox`,
+   `mt5-ea` (MQL) and `scripts/src` QA harnesses.
 10. **Freshness guard detection is name-based.** It recognises a threshold by
     a heartbeat/snapshot word in a declaration name, or by a heartbeat-age
     identifier in a comparison (including locals computed from one). A

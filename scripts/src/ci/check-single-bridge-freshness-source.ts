@@ -1,6 +1,13 @@
 // Broker Hub — one source for bridge / EA heartbeat and MT5 snapshot
 // freshness thresholds (Tier 1 Broker State).
 //
+// Round 5 (owner decision 17): MT5 connection heartbeats are classified by ONE
+// shared pure policy, lib/domain/src/broker-health/heartbeatPolicy.ts
+// (< 15 s fresh, 15–60 s degraded, >= 60 s offline, invalid → unknown), used
+// by the api-server, lib/domain and the trading dashboard. The guard now scans
+// all three trees (api-server src, lib/domain/src, trading-dashboard/src) and
+// adds a third rule, threshold_bypass (below).
+//
 // "Is the bridge fresh, stale or offline" depends on a number: the heartbeat
 // (or account snapshot) age past which a surface stops calling the bridge
 // connected. Those numbers used to be typed inline in ~40 files (15 s, 30 s,
@@ -20,6 +27,13 @@
 //      that names a heartbeat age (an identifier containing the word
 //      heartbeat / hb, e.g. hbAgeSec, lastHb, heartbeatAgeSeconds), or a
 //      broker/snapshot age (brokerAgeMs, snapshotAgeMs).
+//   3. threshold_bypass — a comparison between such a heartbeat age and a
+//      NAMED constant (SCREAMING_CASE identifier or property, optionally in
+//      literal arithmetic, e.g. hbAge <= LIVE_HEARTBEAT_MAX_AGE_SEC,
+//      ageSec < HEARTBEAT_THRESHOLD_MS / 1000). Heartbeat ages must go through
+//      the policy's classifier (classifyHeartbeatAge*, isHeartbeatAge*) so the
+//      < vs <= boundary cannot drift. Distinct concepts that are compared with
+//      a heartbeat age on purpose are reviewed allowlist entries.
 //
 // Reviewed exceptions are listed below with a reason and the exact number of
 // hits allowed. A file with more hits fails (a new literal); a file with fewer
@@ -41,14 +55,34 @@ import { ROOT, walk, rel, reportResult, type CheckResult } from "./_lib.js";
 
 const API_SRC = join(ROOT, "artifacts/api-server/src");
 export const AUTHORITY = "lib/brokerHub/freshness.ts";
+/** The shared pure heartbeat policy (repo-relative key; domain and dashboard files use repo-relative keys). */
+export const POLICY = "lib/domain/src/broker-health/heartbeatPolicy.ts";
+/** Extra trees scanned since round 5, keyed by repo-relative path. */
+export const EXTRA_ROOTS = ["lib/domain/src", "artifacts/trading-dashboard/src"] as const;
 
-export type Rule = "threshold_const" | "threshold_compare";
+export type Rule = "threshold_const" | "threshold_compare" | "threshold_bypass";
 
 /** Reviewed exceptions: file → allowed hit count and why. */
 export const ALLOW: Record<string, { count: number; why: string }> = {
   "lib/positionGuardian/assess.ts": {
     count: 1,
     why: "GUARDIAN_DEFAULTS.maxSnapshotAgeMs is the Position Guardian's own tunable (position snapshot age before it refuses to assess), owned by the Position Guardian domain and overridable per call; not a bridge connection threshold",
+  },
+  "lib/live/masterBridgePool.ts": {
+    count: 1,
+    why: "Shared-master pool ACCOUNT snapshot freshness (POOL_SNAPSHOT_FRESH_BUDGET_MS = MT5_ACCOUNT_SNAPSHOT_FRESH_MS, 60 s): the pool's balance/equity snapshot is stamped by the connection heartbeat, but it answers 'is the mirrored account snapshot fresh', a distinct concept owner decision 17 keeps off the heartbeat policy",
+  },
+  "lib/bridgeV2/status.ts": {
+    count: 2,
+    why: "Bridge v2 STREAM health (LIVE <= 15 s, STALE <= 120 s, OFFLINE beyond; legacy `connected`/`freshness`/`feedFreshness` response fields) is stream-specific health kept separately named and unchanged for response compatibility (owner decision 18); the comparable heartbeat fact is reported through the shared policy",
+  },
+  "lib/scalp/flameRead.ts": {
+    count: 3,
+    why: "Scalp execution-quality grading (owner decision 17: preserve stricter execution requirements). BLOCKED past 2 x the policy fresh bound (30 s) is STRICTER than the policy's 60 s offline line; EXCELLENT (<= 4 s) and GOOD (<= 8 s) are quality sub-bands inside the fresh band. Not-fresh → POOR goes through the policy classifier",
+  },
+  "lib/domain/src/signal-intelligence/scoring.ts": {
+    count: 1,
+    why: "Signal execution-score curve point: inside the policy's degraded band, ages past 2 x the fresh bound (30 s) cost the heavy penalty, as before. A score, not a freshness classification; degraded/offline come from the policy classifier",
   },
 };
 
@@ -132,18 +166,24 @@ function isReference(n: ts.Identifier): boolean {
   return true;
 }
 
-function namesAge(e: ts.Node, tainted: ReadonlySet<ts.Node> = new Set()): boolean {
+/** An identifier that names an MT5 heartbeat (not a snapshot) age: the word heartbeat or hb. */
+export function isHeartbeatAgeIdentifier(name: string): boolean {
+  const w = words(name);
+  return w.includes("heartbeat") || w.includes("hb");
+}
+
+function namesAge(e: ts.Node, tainted: ReadonlySet<ts.Node> = new Set(), match: (name: string) => boolean = isAgeIdentifier): boolean {
   let found = false;
   const v = (n: ts.Node): void => {
     if (found) return;
     if (ts.isIdentifier(n)) {
-      if (isAgeIdentifier(n.text)) { found = true; return; }
+      if (match(n.text)) { found = true; return; }
       if (tainted.size && isReference(n)) {
         const d = declarationOf(n);
         if (d && tainted.has(d)) { found = true; return; }
       }
     }
-    if (ts.isPrivateIdentifier(n) && isAgeIdentifier(n.text.slice(1))) { found = true; return; }
+    if (ts.isPrivateIdentifier(n) && match(n.text.slice(1))) { found = true; return; }
     ts.forEachChild(n, v);
   };
   v(e);
@@ -153,9 +193,27 @@ function namesAge(e: ts.Node, tainted: ReadonlySet<ts.Node> = new Set()): boolea
 export interface Hit { line: number; rule: Rule; msg: string }
 
 /** Every raw threshold in one file (key relative to api-server/src), ignoring the allowlist. */
+/** SCREAMING_CASE constant name referenced by e (identifier, property, or literal arithmetic over one), else null. */
+export function constantRef(e: ts.Expression): string | null {
+  const SCREAM = /^[A-Z][A-Z0-9_]*[A-Z0-9]$/;
+  if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e) || ts.isNonNullExpression(e)) return constantRef(e.expression);
+  if (ts.isIdentifier(e)) return SCREAM.test(e.text) ? e.text : null;
+  if (ts.isPropertyAccessExpression(e)) {
+    if (ts.isIdentifier(e.expression) && (e.expression.text === "Number" || e.expression.text === "Math")) return null;
+    return SCREAM.test(e.name.text) ? e.name.text : null;
+  }
+  if (ts.isBinaryExpression(e) && (e.operatorToken.kind === ts.SyntaxKind.AsteriskToken || e.operatorToken.kind === ts.SyntaxKind.SlashToken)) {
+    const l = constantRef(e.left);
+    const r = constantRef(e.right);
+    if (l && (r || literalValue(e.right) != null)) return l;
+    if (r && literalValue(e.left) != null) return r;
+  }
+  return null;
+}
+
 export function scanSource(key: string, source: string): Hit[] {
-  if (key === AUTHORITY) return [];
-  const file = ts.createSourceFile(key, source, ts.ScriptTarget.Latest, true);
+  if (key === AUTHORITY || key === POLICY) return [];
+  const file = ts.createSourceFile(key, source, ts.ScriptTarget.Latest, true, key.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const out: Hit[] = [];
   const at = (node: ts.Node) => file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
   // A local computed from a heartbeat/snapshot age (const age = now - r.lastHeartbeat...)
@@ -166,6 +224,16 @@ export function scanSource(key: string, source: string): Hit[] {
     ts.forEachChild(node, taint);
   };
   taint(file);
+  // Heartbeat-only taint for threshold_bypass (snapshot ages and object /
+  // array literals that merely carry a heartbeat field are not heartbeat ages).
+  const hbTainted = new Set<ts.Node>();
+  const hbTaint = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer
+      && !ts.isObjectLiteralExpression(node.initializer) && !ts.isArrayLiteralExpression(node.initializer)
+      && namesAge(node.initializer, hbTainted, isHeartbeatAgeIdentifier)) hbTainted.add(node);
+    ts.forEachChild(node, hbTaint);
+  };
+  hbTaint(file);
   const isThreshold = (e: ts.Expression) => { const v = literalValue(e); return v != null && v >= 2; };
   function visit(node: ts.Node): void {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer
@@ -184,6 +252,14 @@ export function scanSource(key: string, source: string): Hit[] {
       const val = lv ?? rv;
       if (lit && val != null && val >= 2 && literalValue(other) == null && namesAge(other, tainted)) {
         out.push({ line: at(node), rule: "threshold_compare", msg: `compares a heartbeat/snapshot age with the raw literal ${lit.getText(file)} (${node.getText(file).replace(/\s+/g, " ").slice(0, 90)}); compare with a named threshold from ${AUTHORITY}` });
+      } else if (lv == null && rv == null) {
+        const lc = constantRef(node.left);
+        const rc = constantRef(node.right);
+        const name = lc ?? rc;
+        const ageSide = lc ? node.right : node.left;
+        if (name && !(lc && rc) && namesAge(ageSide, hbTainted, isHeartbeatAgeIdentifier)) {
+          out.push({ line: at(node), rule: "threshold_bypass", msg: `compares a heartbeat age with the named constant ${name} (${node.getText(file).replace(/\s+/g, " ").slice(0, 90)}); classify it through ${POLICY} (classifyHeartbeatAge*/isHeartbeatAge*)` });
+        }
       }
     }
     ts.forEachChild(node, visit);
@@ -213,15 +289,29 @@ export function staleEntries(read: (key: string) => string | null): string[] {
   return out;
 }
 
-/** The authority must keep its named thresholds and the classifier. */
-export function checkAuthorityShape(read: (key: string) => string | null): string[] {
+/**
+ * The shared policy must keep the owner's bounds and classifier; the server
+ * authority must re-export it, keep its snapshot thresholds, and define no
+ * heartbeat threshold of its own.
+ */
+export function checkAuthorityShape(read: (key: string) => string | null, readRepo: (key: string) => string | null = () => null): string[] {
   const src = read(AUTHORITY);
   if (!src) return [`artifacts/api-server/src/${AUTHORITY} is missing (the freshness threshold authority)`];
   const out: string[] = [];
-  for (const name of ["EA_HEARTBEAT_FRESH_MS", "EA_HEARTBEAT_STALE_MS", "MT5_ACCOUNT_SNAPSHOT_FRESH_MS"]) {
-    if (!new RegExp(`export const ${name}\\b`).test(src)) out.push(`${AUTHORITY} lost ${name}`);
+  if (!/export const MT5_ACCOUNT_SNAPSHOT_FRESH_MS\b/.test(src)) out.push(`${AUTHORITY} lost MT5_ACCOUNT_SNAPSHOT_FRESH_MS`);
+  if (!/from "@workspace\/domain\/broker-health\/heartbeatPolicy"/.test(src) || !/\bclassifyHeartbeatAgeMs\b/.test(src)) {
+    out.push(`${AUTHORITY} must re-export the shared heartbeat policy (classifyHeartbeatAgeMs) from @workspace/domain/broker-health/heartbeatPolicy`);
   }
-  if (!/export function classifyAge\(/.test(src)) out.push(`${AUTHORITY} lost classifyAge()`);
+  const own = src.match(/export const \w*HEARTBEAT\w*/g);
+  if (own) out.push(`${AUTHORITY} defines its own heartbeat threshold(s) (${own.join(", ")}); heartbeat bounds live only in ${POLICY}`);
+  const pol = readRepo(POLICY);
+  if (!pol) { out.push(`${POLICY} is missing (the shared heartbeat policy)`); return out; }
+  if (!/export const MT5_HEARTBEAT_FRESH_BELOW_MS = 15_000;/.test(pol)) out.push(`${POLICY} lost MT5_HEARTBEAT_FRESH_BELOW_MS = 15_000 (owner decision 17)`);
+  if (!/export const MT5_HEARTBEAT_OFFLINE_AT_MS = 60_000;/.test(pol)) out.push(`${POLICY} lost MT5_HEARTBEAT_OFFLINE_AT_MS = 60_000 (owner decision 17)`);
+  for (const fn of ["classifyHeartbeatAgeMs", "classifyHeartbeatAgeSeconds", "heartbeatAllowsExecution"]) {
+    if (!new RegExp(`export function ${fn}\\(`).test(pol)) out.push(`${POLICY} lost ${fn}()`);
+  }
+  if (/^import /m.test(pol)) out.push(`${POLICY} must stay pure (no imports)`);
   return out;
 }
 
@@ -234,17 +324,30 @@ export function checkSingleBridgeFreshnessSource(): CheckResult {
     const key = file.slice(API_SRC.length + 1);
     for (const v of scanFile(key, readFileSync(file, "utf8"))) violations.push(`${rel(file)}:${v}`);
   }
+  for (const root of EXTRA_ROOTS) {
+    for (const file of walk(join(ROOT, root), { skip: (p) => p.includes("__qa__") || /\.test\.tsx?$/.test(p) })) {
+      if (!file.endsWith(".ts") && !file.endsWith(".tsx")) continue;
+      scanned++;
+      const key = rel(file);
+      for (const v of scanFile(key, readFileSync(file, "utf8"))) violations.push(`${key}:${v}`);
+    }
+  }
+  const readRepo = (key: string) => {
+    const p = join(ROOT, key);
+    return existsSync(p) ? readFileSync(p, "utf8") : null;
+  };
   const read = (key: string) => {
+    if (EXTRA_ROOTS.some((r) => key.startsWith(`${r}/`))) return readRepo(key);
     const p = join(API_SRC, key);
     return existsSync(p) ? readFileSync(p, "utf8") : null;
   };
   for (const s of staleEntries(read)) violations.push(`stale allowlist: ${s}`);
-  for (const s of checkAuthorityShape(read)) violations.push(s);
+  for (const s of checkAuthorityShape(read, readRepo)) violations.push(s);
   return {
     name: "single-bridge-freshness-source",
     ok: violations.length === 0,
     violations,
-    notes: [`${scanned} files scanned; heartbeat/snapshot thresholds named only in ${AUTHORITY}; ${Object.keys(ALLOW).length} reviewed exceptions`],
+    notes: [`${scanned} files scanned (api-server, lib/domain, trading-dashboard); heartbeat bounds only in ${POLICY}, snapshot thresholds only in ${AUTHORITY}; ${Object.keys(ALLOW).length} reviewed exceptions`],
   };
 }
 

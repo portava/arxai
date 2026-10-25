@@ -8,6 +8,11 @@
 // the HARD_GATE and confidence ceilings elsewhere.
 
 import type { AaciFreshnessRecord, AaciSharedTruthSnapshot } from "./types";
+import {
+  MT5_HEARTBEAT_FRESH_BELOW_MS,
+  heartbeatAgeMsFrom,
+  isHeartbeatAgeMsFresh,
+} from "../broker-health/heartbeatPolicy.js";
 
 // Per-source staleness thresholds (ms) and their weight in the F average.
 // Thresholds follow the spec's suggested freshness windows (fast-market biased).
@@ -18,7 +23,9 @@ export const AACI_FRESHNESS_THRESHOLDS_MS = {
   ruby: 30_000,
   heat: 60_000,
   news: 15 * 60_000,
-  bridgeHeartbeat: 15_000,
+  // Shared MT5 heartbeat policy fresh bound (owner decision 17). Staleness for
+  // this source is the policy's "not fresh" (age >= 15 s, or unknown).
+  bridgeHeartbeat: MT5_HEARTBEAT_FRESH_BELOW_MS,
   account: 5_000,
   positions: 3_000,
   risk: 10_000,
@@ -91,10 +98,12 @@ export function computeFreshness(
     ruby: ageFromIso(nowMs, snapshot.ruby?.lastUpdated),
     heat: ageFromIso(nowMs, snapshot.heat?.lastUpdated),
     news: ageFromIso(nowMs, snapshot.news?.lastUpdated),
+    // Raw (unclamped) age: a negative / future-dated heartbeat is "unknown"
+    // under the shared policy, never fresh.
     bridgeHeartbeat:
       typeof snapshot.bridge.heartbeatAgeMs === "number"
-        ? Math.max(0, snapshot.bridge.heartbeatAgeMs)
-        : ageFromIso(nowMs, snapshot.bridge.lastHeartbeat),
+        ? snapshot.bridge.heartbeatAgeMs
+        : heartbeatAgeMsFrom(snapshot.bridge.lastHeartbeat ?? null, nowMs),
     account: ageFromIso(nowMs, snapshot.account.lastUpdated),
     positions: ageFromIso(nowMs, snapshot.positions.lastUpdated),
     risk: ageFromIso(nowMs, snapshot.risk?.lastUpdated),
@@ -110,7 +119,10 @@ export function computeFreshness(
     const thresholdMs = AACI_FRESHNESS_THRESHOLDS_MS[source];
     const ageMs = ages[source];
     const score = scoreFreshness(ageMs, thresholdMs);
-    const stale = ageMs === null ? true : ageMs > thresholdMs;
+    const stale =
+      source === "bridgeHeartbeat"
+        ? !isHeartbeatAgeMsFresh(ageMs)
+        : ageMs === null ? true : ageMs > thresholdMs;
     const weight = AACI_FRESHNESS_WEIGHTS[source];
     weighted += score * weight;
     weightSum += weight;

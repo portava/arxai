@@ -6,19 +6,17 @@
 // `decision: "MT5_DATA_STALE"` so callers can show a clear banner and
 // withhold any new paper-trade decision rather than acting on stale data.
 
-import { EA_HEARTBEAT_FRESH_MS } from "./brokerHub/freshness.js";
+import { MT5_HEARTBEAT_FRESH_BELOW_SECONDS, isHeartbeatAgeMsFresh } from "./brokerHub/freshness.js";
 import { runStrategyScan, type SignalOutput, type Candle } from "./strategyEngine.js";
 import { calculatePositionSize } from "./riskGovernor/positionSizer.js";
 import { getMarketDataWithProvenance } from "./data/dataManager.js";
 import { getStatus as getSafetyStatus } from "./safetyCore.js";
 import { readPlatformMt5State } from "./brokerHub/mt5StateReader.js";
 
-// 15s matches the bridge's heartbeat freshness threshold (mt5.ts /
-// safetyCore.ts HEARTBEAT_DEGRADED_MS) so the UI's "fresh" green light
-// and this service's stale-gate flip together. Compared at millisecond
-// precision so the two gates are byte-for-byte aligned.
-const MT5_FRESHNESS_THRESHOLD_MS = EA_HEARTBEAT_FRESH_MS;
-const MT5_FRESHNESS_THRESHOLD_SECONDS = MT5_FRESHNESS_THRESHOLD_MS / 1000;
+// The stale gate uses the shared heartbeat policy's fresh band (age < 15 s),
+// the same classifier as mt5.ts and safetyCore.ts, so the UI's "fresh" green
+// light and this service's stale-gate flip together.
+const MT5_FRESHNESS_THRESHOLD_SECONDS = MT5_HEARTBEAT_FRESH_BELOW_SECONDS;
 
 export interface PaperIntelligenceInput {
   symbol: string;
@@ -116,7 +114,7 @@ async function loadMt5Snapshot(): Promise<MT5SnapshotView> {
   const lastHb = row?.lastHeartbeatAt ?? null;
   const ageMs = lastHb ? Date.now() - new Date(lastHb).getTime() : null;
   const ageSec = ageMs === null ? null : Math.floor(ageMs / 1000);
-  const isFresh = ageMs !== null && ageMs < MT5_FRESHNESS_THRESHOLD_MS;
+  const isFresh = isHeartbeatAgeMsFresh(ageMs);
   const positions = (row?.positions as unknown as unknown[] | null) ?? [];
   return {
     account: row?.account ?? null,

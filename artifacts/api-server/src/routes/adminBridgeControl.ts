@@ -19,7 +19,7 @@
 //   - Every mutating action requires a trimmed reason (≥3 chars) and writes an
 //     admin_action_audit_log row before responding (fail-CLOSED).
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../lib/brokerHub/freshness.js";
+import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import {
   reconcileLivePositionMetadata,
   type LivePositionReconciliationMetadata,
@@ -492,7 +492,7 @@ router.get("/admin/bridge/watchdog", async (req, res): Promise<void> => {
   for (const r of rows) {
     if (r.userId == null || !r.lastHeartbeat) continue;
     const age = Math.floor((now.getTime() - new Date(r.lastHeartbeat).getTime()) / 1000);
-    if (age <= EA_HEARTBEAT_FRESH_SECONDS) freshByUser.set(r.userId, (freshByUser.get(r.userId) ?? 0) + 1);
+    if (isHeartbeatAgeSecondsFresh(age)) freshByUser.set(r.userId, (freshByUser.get(r.userId) ?? 0) + 1);
   }
 
   const verdicts = rows.map((r) => {

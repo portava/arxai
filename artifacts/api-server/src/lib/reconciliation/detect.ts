@@ -4,7 +4,7 @@
 // returns [] (never throws). Issue IDs are deterministic SHA-256(type|naturalKey)
 // so admin actions can target them without persisting issues to a new table.
 
-import { ADVISORY_BRIDGE_CONNECTED_MS } from "../brokerHub/freshness.js";
+import { classifyHeartbeatAt, heartbeatIsOnline } from "../brokerHub/freshness.js";
 import { readOrphanLivePositions } from "../positions/ledger.js";
 import { listConnections } from "../brokerHub/connections.js";
 import { createHash } from "node:crypto";
@@ -211,9 +211,11 @@ async function detectUserAllocationMismatch(): Promise<ReconciliationIssue[]> {
 // 6. STALE_HEARTBEAT — active connections without a recent heartbeat.
 async function detectStaleHeartbeat(): Promise<ReconciliationIssue[]> {
   return safe("stale_heartbeat", async () => {
-    const cutoff = Date.now() - ADVISORY_BRIDGE_CONNECTED_MS;
+    // Shared heartbeat policy: stale = not online (offline >= 60 s, missing
+    // or future-dated). Was a 90 s cutoff.
+    const nowMs = Date.now();
     const rows = (await listConnections({ statuses: ["ACTIVE"], order: "oldest" }))
-      .filter((c) => !c.lastHeartbeat || c.lastHeartbeat.getTime() < cutoff).slice(0, 50);
+      .filter((c) => !heartbeatIsOnline(classifyHeartbeatAt(c.lastHeartbeat, nowMs))).slice(0, 50);
     return rows.map((c) => ({
       id: issueId("STALE_HEARTBEAT", `conn:${c.id}`),
       type: "STALE_HEARTBEAT" as const,
@@ -222,7 +224,7 @@ async function detectStaleHeartbeat(): Promise<ReconciliationIssue[]> {
       bridgeConnectionId: c.id,
       commandId: null, brokerTicket: null, symbol: null,
       status: c.status ?? "ACTIVE",
-      reason: "Bridge marked ACTIVE but heartbeat is stale (>90s).",
+      reason: "Bridge marked ACTIVE but heartbeat is stale (>=60s or missing).",
       recommendedAction: "Have user restart EA or mark bridge offline.",
       createdAt: null, updatedAt: iso(c.lastHeartbeat),
       metadata: { mode: c.mode },

@@ -36,6 +36,7 @@ import {
   LIVE_HEARTBEAT_MAX_AGE_SEC,
 } from "@workspace/domain/safety-contracts/livePhaseBDispatchGate";
 import { liveBrokerExecutionEnabled } from "../lib/live/phaseBConfig.js";
+import { isHeartbeatAgeSecondsFresh } from "../lib/brokerHub/freshness.js";
 import { loadPlatformSettings, platformStopReport, platformStopWith, readPlatformSwitches } from "../lib/safety/platformSwitches.js";
 import { engagePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { getMyArming } from "../lib/live/liveArming.js";
@@ -865,9 +866,7 @@ router.post("/admin/live-shared/arm-live-execution", async (req, res) => {
   // stay in sync with `useChecklist()` in live-shared-activation.tsx — both
   // sides answer the same question, and divergence is the kind of bug that
   // gets people in trouble in live trading.
-  const fresh =
-    detector.bridge.heartbeatAgeSec != null &&
-    detector.bridge.heartbeatAgeSec <= LIVE_HEARTBEAT_MAX_AGE_SEC;
+  const fresh = isHeartbeatAgeSecondsFresh(detector.bridge.heartbeatAgeSec);
   const eaOk =
     detector.bridge.eaVersion != null &&
     detector.bridge.eaVersion >= MIN_LIVE_EA_VERSION;

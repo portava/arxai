@@ -7,6 +7,7 @@
  */
 import type { RuntimeContext } from "@/assistant/runtimeContextTypes";
 import type { ChecklistItem } from "@/knowledge/setupChecklist";
+import { isHeartbeatAgeSecondsFresh } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 export type ReadinessSectionId =
   | "app-health"
@@ -133,7 +134,8 @@ export function computeReadinessScore(
   {
     const present = ctx.heartbeatPresent;
     const age = ctx.heartbeatAgeSeconds;
-    const fresh = present && age !== null && age < 60;
+    // Shared heartbeat policy: only the fresh band (< 15 s) is "ready".
+    const fresh = present && isHeartbeatAgeSecondsFresh(age);
     sections.push({
       id: "heartbeat", title: "Heartbeat",
       score: fresh ? 10 : present ? 6 : ctx.mt5Deferred ? 7 : 2, max: 10,

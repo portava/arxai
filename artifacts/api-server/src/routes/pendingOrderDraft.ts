@@ -16,7 +16,7 @@
 //     only ever written by the /mt5/command-result write-back path AFTER
 //     MT5 returns a real ticket.
 
-import { ADVISORY_BRIDGE_CONNECTED_MS } from "../lib/brokerHub/freshness.js";
+import { classifyHeartbeatAt, heartbeatIsOnline } from "../lib/brokerHub/freshness.js";
 import { listUserConnections } from "../lib/brokerHub/connections.js";
 import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
@@ -301,7 +301,8 @@ router.get("/me/bridge-capabilities", async (req, res): Promise<void> => {
     const conn = rows[0] ?? null;
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    const bridgeConnected = !!lastHb && (Date.now() - lastHb.getTime() < ADVISORY_BRIDGE_CONNECTED_MS);
+    // Shared heartbeat policy: online (age < 60 s). Was a 90 s advisory window.
+    const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, Date.now()));
     // Honest "what would the submit endpoint say right now" probe.
     const probe = resolvePendingSubmitStatus({
       capabilities: caps,
@@ -377,7 +378,8 @@ router.post("/me/pending-order-draft/:id/submit", async (req, res): Promise<void
     const conn = connRows[0] ?? null;
     const caps = normaliseCapabilities(conn?.capabilities);
     const lastHb = conn?.lastHeartbeat ? new Date(conn.lastHeartbeat) : null;
-    const bridgeConnected = !!lastHb && (Date.now() - lastHb.getTime() < ADVISORY_BRIDGE_CONNECTED_MS);
+    // Shared heartbeat policy: online (age < 60 s). Was a 90 s advisory window.
+    const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(lastHb, Date.now()));
     const needsStopLimit =
       draft.orderType === "BUY_STOP_LIMIT" || draft.orderType === "SELL_STOP_LIMIT";
 

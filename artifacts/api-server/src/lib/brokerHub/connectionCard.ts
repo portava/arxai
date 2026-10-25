@@ -11,7 +11,7 @@
 //
 // PURE: no DB, no clock beyond an injected `now`. The route supplies rows.
 
-import { EA_HEARTBEAT_STALE_SECONDS } from "./freshness.js";
+import { MT5_POSITIONS_SNAPSHOT_FRESH_SECONDS, classifyHeartbeatAt } from "./freshness.js";
 
 /** Spec §3.1 connection states, plus the states this system actually has. */
 export type ConnectionCardState =
@@ -48,8 +48,6 @@ export interface ConnectionCardInput {
   now: Date;
 }
 
-/** Heartbeat age past which a connection is no longer considered live. */
-export const HEARTBEAT_STALE_SECONDS = EA_HEARTBEAT_STALE_SECONDS;
 
 /** Mask all but the last 4 characters. Mirrors meMt5Connections. */
 export function maskAccountIdentifier(acct: string | null): string | null {
@@ -72,12 +70,12 @@ export function resolveConnectionState(i: ConnectionCardInput): ConnectionCardSt
   if (i.status === "revoked") return "REVOKED";
   if (i.status === "error") return "ERROR";
 
-  const hbAgeSec = i.lastHeartbeat == null
-    ? null
-    : Math.max(0, (i.now.getTime() - i.lastHeartbeat.getTime()) / 1000);
-
-  if (hbAgeSec == null) return "DISCONNECTED";
-  if (hbAgeSec > HEARTBEAT_STALE_SECONDS) return "DEGRADED";
+  // Shared heartbeat policy (owner decision 17): fresh → may be CONNECTED,
+  // degraded (15–60 s) → DEGRADED, offline (>= 60 s) / missing / invalid /
+  // future-dated → DISCONNECTED.
+  const hb = classifyHeartbeatAt(i.lastHeartbeat, i.now.getTime());
+  if (hb === "offline" || hb === "unknown") return "DISCONNECTED";
+  if (hb === "degraded") return "DEGRADED";
   // A live heartbeat with a clock the server cannot trust is DEGRADED, not
   // CONNECTED: every freshness decision downstream keys off timestamps.
   if (i.clockDriftSeconds != null && Math.abs(i.clockDriftSeconds) > 5) return "DEGRADED";
@@ -124,11 +122,12 @@ export function buildConnectionCard(i: ConnectionCardInput): ConnectionCard {
     : Math.round(Math.max(0, (i.now.getTime() - i.lastHeartbeat.getTime()) / 1000));
 
   // Market-data health keys off the POSITIONS/telemetry push, which is the
-  // EA's data path — deliberately NOT the same signal as trading health.
+  // EA's data path — deliberately NOT the same signal as trading health, and
+  // a positions snapshot, not a heartbeat: its window is separately named.
   let marketDataHealth: ConnectionCard["marketDataHealth"] = "UNKNOWN";
   if (i.lastPositionsSnapshotAt != null) {
     const ageSec = (i.now.getTime() - i.lastPositionsSnapshotAt.getTime()) / 1000;
-    marketDataHealth = ageSec <= HEARTBEAT_STALE_SECONDS ? "HEALTHY" : "STALE";
+    marketDataHealth = ageSec <= MT5_POSITIONS_SNAPSHOT_FRESH_SECONDS ? "HEALTHY" : "STALE";
   } else {
     unavailable.push("marketDataHealth: no telemetry snapshot has been received");
   }

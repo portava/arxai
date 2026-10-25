@@ -17,7 +17,7 @@
 //     gate result + safety-gate snapshot into the row.
 //   - No tokens, no apiKeyHash, no broker passwords are read or written.
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
+import { isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
 import { listUserConnections } from "../brokerHub/connections.js";
 import { and, eq } from "drizzle-orm";
 import {
@@ -103,8 +103,7 @@ export async function armDemoExecution(args: {
     decision: { status: readiness.status, blockers: readiness.blockers },
     inputs: {
       bridgeConnected: readiness.evidence.heartbeatAgeSeconds !== null,
-      heartbeatFresh: readiness.evidence.heartbeatAgeSeconds !== null
-        && readiness.evidence.heartbeatAgeSeconds <= EA_HEARTBEAT_FRESH_SECONDS,
+      heartbeatFresh: isHeartbeatAgeSecondsFresh(readiness.evidence.heartbeatAgeSeconds),
       demoVerified: readiness.status === "VERIFIED_DEMO",
       liveLocked: true,
     },

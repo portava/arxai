@@ -25,7 +25,7 @@
 //   - No tokens, no apiKeyHash, no broker passwords are read or returned.
 //   - No mutation of any table. Read-only.
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
+import { isHeartbeatAgeSecondsFresh, MT5_HEARTBEAT_FRESH_BELOW_SECONDS } from "../brokerHub/freshness.js";
 import { listUserConnections } from "../brokerHub/connections.js";
 import { and, eq } from "drizzle-orm";
 import { db } from "@workspace/db";
@@ -39,7 +39,6 @@ import {
   type SafetyGateSnapshot,
 } from "@workspace/domain/safety-contracts/executionMode";
 
-const HEARTBEAT_FRESH_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
 
 export type GateCheckStatus = "PASS" | "FAIL" | "INFO" | "WARN";
 
@@ -142,7 +141,7 @@ export async function runDemoVerificationGate(args: {
       const reason: string[] = [];
       if (r.tokenRevokedAt) reason.push("token_revoked");
       if (hbAge === null) reason.push("no_heartbeat");
-      else if (hbAge > HEARTBEAT_FRESH_SECONDS) reason.push(`heartbeat_stale(${hbAge}s)`);
+      else if (!isHeartbeatAgeSecondsFresh(hbAge)) reason.push(`heartbeat_stale(${hbAge}s)`);
       if ((r.accountType ?? "unknown").toLowerCase() === "unknown") reason.push("accountType_unknown");
       if (!r.eaVersion) reason.push("no_ea_version");
       return `#${r.id} (${reason.join(",") || "older"})`;
@@ -179,7 +178,7 @@ export async function runDemoVerificationGate(args: {
   const heartbeatAgeSeconds = conn?.lastHeartbeat
     ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)
     : null;
-  const heartbeatFresh = heartbeatAgeSeconds !== null && heartbeatAgeSeconds <= HEARTBEAT_FRESH_SECONDS;
+  const heartbeatFresh = isHeartbeatAgeSecondsFresh(heartbeatAgeSeconds);
 
   if (!conn) {
     // already failed above
@@ -196,7 +195,7 @@ export async function runDemoVerificationGate(args: {
       key: "heartbeat_fresh",
       label: "EA heartbeat fresh (< 15s)",
       status: "FAIL",
-      detail: `Last heartbeat ${heartbeatAgeSeconds}s ago (threshold ${HEARTBEAT_FRESH_SECONDS}s).`,
+      detail: `Last heartbeat ${heartbeatAgeSeconds}s ago (must be < ${MT5_HEARTBEAT_FRESH_BELOW_SECONDS}s).`,
     });
     blockers.push("HEARTBEAT_STALE");
   } else {

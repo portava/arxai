@@ -31,7 +31,7 @@
 // never weakens any existing auth/trading gate — it only further restricts who
 // may be live-activated.
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
+import { isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
 import { getConnection } from "../brokerHub/connections.js";
 import { eq } from "drizzle-orm";
 import {
@@ -46,7 +46,6 @@ import { loadPlatformSettings, platformStopWith, stopSourceEngaged, type Platfor
 import { normalizeProductRole, type ProductRole } from "../auth/productRole.js";
 import { logger } from "../logger.js";
 
-const HEARTBEAT_FRESH_SECONDS = EA_HEARTBEAT_FRESH_SECONDS;
 
 export interface ApprovedTraderLiveState {
   userId: number;
@@ -285,9 +284,7 @@ export async function buildApprovedTraderLiveState(
           bridgeHeartbeatAgeSeconds = conn?.lastHeartbeat
             ? Math.floor((Date.now() - new Date(conn.lastHeartbeat).getTime()) / 1000)
             : null;
-          bridgeHeartbeatFresh =
-            bridgeHeartbeatAgeSeconds !== null &&
-            bridgeHeartbeatAgeSeconds <= HEARTBEAT_FRESH_SECONDS;
+          bridgeHeartbeatFresh = isHeartbeatAgeSecondsFresh(bridgeHeartbeatAgeSeconds);
           bridgeConnected = bridgeHeartbeatFresh;
         }
       } catch (err) {

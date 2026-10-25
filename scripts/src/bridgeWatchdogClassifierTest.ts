@@ -8,10 +8,12 @@
 
 import {
   classifyBridge,
-  WATCHDOG_FRESH_MAX_SECONDS,
-  WATCHDOG_STALE_MAX_SECONDS,
   type BridgeWatchdogInput,
 } from "../../artifacts/api-server/src/lib/live/bridgeWatchdog.js";
+import {
+  MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
+  MT5_HEARTBEAT_OFFLINE_AT_SECONDS,
+} from "../../lib/domain/src/broker-health/heartbeatPolicy.js";
 
 const NOW = new Date("2026-05-29T12:00:00.000Z");
 function hbAgo(seconds: number): Date {
@@ -53,25 +55,36 @@ function check(name: string, cond: boolean, detail = ""): void {
   check("fresh no alert", v.shouldAlert === false, `got ${v.shouldAlert}`);
   check("fresh severity info", v.alertSeverity === "info", v.alertSeverity);
 }
+// Shared heartbeat policy (owner decision 17): < 15 s fresh, < 60 s "stale"
+// (degraded), >= 60 s offline. Before the decision the watchdog was
+// inclusive (15 s fresh, 60 s stale) on floored seconds.
 {
-  const v = classifyBridge(baseInput({ lastHeartbeat: hbAgo(WATCHDOG_FRESH_MAX_SECONDS) }));
-  check("fresh at exact max", v.liveness === "fresh", `got ${v.liveness}`);
+  const v = classifyBridge(baseInput({ lastHeartbeat: hbAgo(MT5_HEARTBEAT_FRESH_BELOW_SECONDS - 0.001) }));
+  check("fresh at 14.999s", v.liveness === "fresh", `got ${v.liveness}`);
 }
 {
-  const v = classifyBridge(baseInput({ lastHeartbeat: hbAgo(WATCHDOG_FRESH_MAX_SECONDS + 1) }));
-  check("stale just over fresh max", v.liveness === "stale", `got ${v.liveness}`);
+  const v = classifyBridge(baseInput({ lastHeartbeat: hbAgo(MT5_HEARTBEAT_FRESH_BELOW_SECONDS) }));
+  check("stale at exactly 15s (was fresh)", v.liveness === "stale", `got ${v.liveness}`);
   check("stale alerts", v.shouldAlert === true, `got ${v.shouldAlert}`);
   check("stale severity warning", v.alertSeverity === "warning", v.alertSeverity);
 }
 {
-  const v = classifyBridge(baseInput({ lastHeartbeat: hbAgo(WATCHDOG_STALE_MAX_SECONDS) }));
-  check("stale at exact stale max", v.liveness === "stale", `got ${v.liveness}`);
+  const v = classifyBridge(baseInput({ lastHeartbeat: hbAgo(MT5_HEARTBEAT_OFFLINE_AT_SECONDS - 0.001) }));
+  check("stale at 59.999s", v.liveness === "stale", `got ${v.liveness}`);
 }
 {
-  const v = classifyBridge(baseInput({ lastHeartbeat: hbAgo(WATCHDOG_STALE_MAX_SECONDS + 1) }));
-  check("offline just over stale max", v.liveness === "offline", `got ${v.liveness}`);
+  const v = classifyBridge(baseInput({ lastHeartbeat: hbAgo(MT5_HEARTBEAT_OFFLINE_AT_SECONDS) }));
+  check("offline at exactly 60s (was stale)", v.liveness === "offline", `got ${v.liveness}`);
   check("offline alerts", v.shouldAlert === true, `got ${v.shouldAlert}`);
   check("offline severity danger", v.alertSeverity === "danger", v.alertSeverity);
+}
+{
+  const v = classifyBridge(baseInput({ lastHeartbeat: hbAgo(-5) }));
+  check("future-dated heartbeat is offline (unknown, never fresh)", v.liveness === "offline", `got ${v.liveness}`);
+}
+{
+  const v = classifyBridge(baseInput({ lastHeartbeat: new Date(Number.NaN) }));
+  check("invalid heartbeat is offline", v.liveness === "offline", `got ${v.liveness}`);
 }
 {
   const v = classifyBridge(baseInput({ lastHeartbeat: null }));
@@ -101,7 +114,7 @@ function check(name: string, cond: boolean, detail = ""): void {
 {
   // Offline suppresses stale EA flags (last-known values are unreliable).
   const v = classifyBridge(baseInput({
-    lastHeartbeat: hbAgo(WATCHDOG_STALE_MAX_SECONDS + 100),
+    lastHeartbeat: hbAgo(MT5_HEARTBEAT_OFFLINE_AT_SECONDS + 100),
     eaInputs: { readOnlyMode: true, enableLiveExecution: false, terminalConnected: false, algoTradingAllowed: false },
   }));
   check("offline suppresses EA conditions",

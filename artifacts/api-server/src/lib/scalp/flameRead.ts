@@ -13,7 +13,7 @@
 //    looser, but it can never weaken a safety/economic gate in the engine.
 //  - All copy is plain English — no internal names, codes, or jargon.
 
-import { EA_HEARTBEAT_FRESH_SECONDS } from "../brokerHub/freshness.js";
+import { MT5_HEARTBEAT_FRESH_BELOW_SECONDS, isHeartbeatAgeSecondsFresh } from "../brokerHub/freshness.js";
 import type {
   ChaseRisk,
   EntryTiming,
@@ -37,8 +37,14 @@ import type {
 const MIN_FLAME_CANDLES = 5;
 /** Window we read momentum over (most recent N). */
 const FLAME_WINDOW = 14;
-/** Heartbeat freshness mirrors the live gate (15s) for execution-quality bands. */
-const HEARTBEAT_FRESH_S = EA_HEARTBEAT_FRESH_SECONDS;
+/**
+ * Execution-quality bands. A heartbeat that is not "fresh" under the shared
+ * policy (age >= 15 s) is POOR. The scalp read's own BLOCKED line stays at
+ * 2 x the fresh bound (30 s): it is STRICTER than the policy's 60 s offline
+ * line, so it is preserved as a separately named execution requirement
+ * (owner decision 17: keep stricter execution requirements).
+ */
+const SCALP_EXEC_BLOCKED_AFTER_S = MT5_HEARTBEAT_FRESH_BELOW_SECONDS * 2;
 const HEARTBEAT_EXCELLENT_S = 4;
 const HEARTBEAT_GOOD_S = 8;
 
@@ -121,9 +127,9 @@ function readExecutionQuality(
   let band: ExecutionQuality = "GOOD";
   if (age == null) {
     band = "FAIR";
-  } else if (age > HEARTBEAT_FRESH_S * 2) {
+  } else if (age > SCALP_EXEC_BLOCKED_AFTER_S) {
     return "BLOCKED";
-  } else if (age > HEARTBEAT_FRESH_S) {
+  } else if (!isHeartbeatAgeSecondsFresh(age)) {
     band = "POOR";
   } else if (age > HEARTBEAT_GOOD_S) {
     band = "FAIR";

@@ -22,6 +22,7 @@
 import { livePositionColumns } from "../lib/positions/ledger.js";
 import { readOpenPositions, selectLiveOpenPositionsForAllUsers } from "../lib/positions/openPositions.js";
 import { listConnections } from "../lib/brokerHub/connections.js";
+import { classifyHeartbeatAt, heartbeatIsOnline } from "../lib/brokerHub/freshness.js";
 import express, { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -70,8 +71,8 @@ import {
 
 const router = Router();
 
-// A bridge heartbeat newer than this is "connected/fresh" for cockpit display.
-const BRIDGE_FRESH_MS = 60_000;
+// Cockpit "connected" = the bridge heartbeat is online under the shared
+// heartbeat policy (fresh or degraded, age < 60 s).
 
 // ─── Auth gate ──────────────────────────────────────────────────────────────
 
@@ -382,7 +383,7 @@ router.get("/admin/cockpit/overview", async (req, res) => {
     }
   }
   const ageSec = heartbeatAgeSeconds(freshest?.lastHeartbeat ?? null);
-  const bridgeConnected = ageSec != null && ageSec * 1000 <= BRIDGE_FRESH_MS;
+  const bridgeConnected = heartbeatIsOnline(classifyHeartbeatAt(freshest?.lastHeartbeat ?? null, Date.now()));
   const acctType = (freshest?.accountType ?? "").toLowerCase();
   const bridgeLive = bridgeConnected && (acctType === "live" || acctType === "real");
 
@@ -589,7 +590,7 @@ router.get("/admin/cockpit/bridge", async (req, res) => {
 
   const rows = connections.map((c) => {
     const ageSec = heartbeatAgeSeconds(c.lastHeartbeat);
-    const connected = ageSec != null && ageSec * 1000 <= BRIDGE_FRESH_MS;
+    const connected = heartbeatIsOnline(classifyHeartbeatAt(c.lastHeartbeat, Date.now()));
     return {
       userId: c.userId ?? 0,
       email: c.userId ? (emailMap.get(c.userId) ?? null) : null,

@@ -14,6 +14,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, Lock, Plus, RefreshCw, Send, ShieldAlert, Trash2, X } from "lucide-react";
+import { isHeartbeatAgeSecondsOnline } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 type Mt5Conn = {
   id: number;
@@ -101,7 +102,8 @@ function CommandsPanel({ conn }: { conn: Mt5Conn }) {
   const { toast } = useToast();
   const [cmds, setCmds] = useState<Mt5CommandRow[]>([]);
   const [busy, setBusy] = useState(false);
-  const heartbeatOk = conn.heartbeatAgeSeconds != null && conn.heartbeatAgeSeconds < 90;
+  // Shared heartbeat policy: commands are offered while the heartbeat is online (< 60 s).
+  const heartbeatOk = isHeartbeatAgeSecondsOnline(conn.heartbeatAgeSeconds);
   const revoked = !!conn.tokenRevokedAt;
   async function load() {
     try {

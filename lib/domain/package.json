@@ -24,6 +24,7 @@
     "./safety-permission": "./src/safety-permission/index.ts",
     "./execution-safety": "./src/execution-safety/index.ts",
     "./broker-health": "./src/broker-health/index.ts",
+    "./broker-health/heartbeatPolicy": "./src/broker-health/heartbeatPolicy.ts",
     "./live-position": "./src/live-position/index.ts",
     "./execution-gate": "./src/execution-gate/index.ts",
     "./confidence-gate": "./src/confidence-gate/index.ts",
