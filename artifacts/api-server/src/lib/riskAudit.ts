@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { tradesTable } from "@workspace/db";
 import { eq, gte, and } from "drizzle-orm";
 import { sql } from "drizzle-orm";
+import { tradingDayStart } from "./riskGovernor/preTrade.js";
 
 export interface RiskAuditInput {
   // Settings
@@ -45,8 +46,10 @@ export async function computeRiskAudit(
   const reasonsBlocked: string[] = [];
   const warnings: string[] = [];
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  // The Risk Governor's trading day (owner decision 9): UTC midnight, not
+  // server-local midnight. The trade-count source here is still the legacy
+  // trades table (listed in docs/TIER1_RISK_GOVERNOR_SOURCE.md).
+  const todayStart = tradingDayStart(new Date());
 
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - weekStart.getDay());

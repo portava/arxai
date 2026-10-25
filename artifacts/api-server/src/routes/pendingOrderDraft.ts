@@ -36,7 +36,7 @@ import {
   type BridgeCapabilities,
   type PendingSubmitStatus,
 } from "../lib/mt5/bridgeCapabilities.js";
-import { readTraderRiskSettings } from "../lib/riskGovernor/limitSettings.js";
+import { loadEffectiveLimits } from "../lib/riskGovernor/limitSettings.js";
 
 const router: IRouter = Router();
 
@@ -91,15 +91,25 @@ router.post("/me/pending-order-draft", async (req, res): Promise<void> => {
     return;
   }
 
-  // 1. Load user min-RR setting (best-effort).
-  let minRr: number | null = null;
+  // 1. The trader's minimum R:R in force (owner decision 10): the configured
+  //    min_reward_risk_ratio resolved by the risk authority exactly as the
+  //    governor resolves it (no row = the 1.5 default; 0 / null = off).
+  //    Unreadable limits refuse, as the governor refuses when it cannot load
+  //    its context.
+  let minRr: number | null;
   try {
-    const s = (await readTraderRiskSettings(userId)) ?? undefined;
-    // Future-proof: minRiskRewardRatio column does not exist yet; this is a
-    // pre-wired hook so the value flows through once admin/risk settings expose it.
-    const v = (s as unknown as { minRiskRewardRatio?: number | null } | undefined)?.minRiskRewardRatio;
-    minRr = typeof v === "number" && v > 0 ? v : null;
-  } catch { /* non-critical */ }
+    minRr = (await loadEffectiveLimits(userId)).discipline.minRewardRiskRatio;
+  } catch {
+    res.status(200).json({
+      ok: false,
+      executable: false,
+      blocked: true,
+      checkId: "rg_rr_limits_unavailable",
+      reason: "Your risk limits could not be read, so the reward:risk minimum cannot be checked. Draft not saved.",
+      ...SAFETY,
+    });
+    return;
+  }
 
   // 2. Price-level ticket validation + RR floor.
   const ticket = enforceTradeTicketRules({

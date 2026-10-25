@@ -31,6 +31,7 @@ import { Router, type Response } from "express";
 import { z } from "zod/v4";
 import { requireUser } from "../lib/auth/middleware.js";
 import { getOrCreateUserRiskSettings } from "../lib/risk/userRiskSettings.js";
+import { loadTradingActivity } from "../lib/riskGovernor/enforce.js";
 import {
   db,
   tradeDecisionLogsTable,
@@ -316,8 +317,6 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
   // 6) Recent trade history — overtrading + revenge guard.
   const recent = await db.select().from(paperOrdersTable)
     .where(eq(paperOrdersTable.userId, userId)).orderBy(desc(paperOrdersTable.id)).limit(20);
-  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-  const todays = recent.filter((o) => o.openedAt && o.openedAt >= today);
   const losingStreak = (() => {
     let s = 0;
     for (const o of recent) {
@@ -328,11 +327,18 @@ export async function orchestrate(input: z.infer<typeof EvaluateBody>, userId: n
     }
     return s;
   })();
-  if (risk && todays.length >= risk.maxTradesPerDay) {
-    blockers.push(`Daily trade cap hit (${todays.length} / ${risk.maxTradesPerDay}) — overtrading guard`);
-    signalsUsed.push({ source: "overtrading", status: "FAIL", score: 0, detail: `Today=${todays.length}` });
+  // Daily-trade limit (owner decision 9): the Risk Governor's trading day and
+  // its PAPER activity source (trades opened on the UTC trading day and still
+  // open, plus trades closed on it), not orders opened among the last 20.
+  const activity = await loadTradingActivity(userId, "PAPER");
+  if (risk && activity == null) {
+    blockers.push("Your paper trading activity could not be read, so the daily trade limit cannot be checked");
+    signalsUsed.push({ source: "overtrading", status: "FAIL", score: 0, detail: "Activity unavailable" });
+  } else if (risk && activity && activity.tradesToday >= risk.maxTradesPerDay) {
+    blockers.push(`Daily trade limit reached (${activity.tradesToday} / ${risk.maxTradesPerDay} trades today, UTC) — overtrading guard`);
+    signalsUsed.push({ source: "overtrading", status: "FAIL", score: 0, detail: `Today=${activity.tradesToday}` });
   } else {
-    signalsUsed.push({ source: "overtrading", status: "PASS", score: 5, detail: `Today=${todays.length}` });
+    signalsUsed.push({ source: "overtrading", status: "PASS", score: 5, detail: `Today=${activity?.tradesToday ?? 0}` });
   }
   if (risk && losingStreak >= risk.stopAfterLosingStreak) {
     blockers.push(`Losing streak guard tripped (${losingStreak} losses in a row) — revenge-trade prevention`);

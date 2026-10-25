@@ -182,7 +182,7 @@ engines in `lib/domain`.
 | Where | Limit | Notes |
 |---|---|---|
 | `tradeAction/guards` step 8 | platform lot ceiling | now reads `PLATFORM_RISK_CEILINGS.maxLotSize` |
-| `adminTrading/orderGuard` step 6 | operator lot, symbols, direction, account type, trades per day | trades per day counts `trade_command_audit_log` APPROVED rows over a rolling 24h; the governor counts today's trades on its own activity basis. Symbols match exactly here (the governor trims and upper-cases). A different basis, so not unified |
+| `adminTrading/orderGuard` step 6 / 6b | operator lot, symbols, direction, account type; 6b operational rate cap | round 5 (owner decision 9): the rolling-24h count of `trade_command_audit_log` APPROVED rows is gate 6b `operational_rate_cap` (`OPERATIONAL_RATE_CAP_REACHED:<n>_APPROVED_COMMANDS_PER_ROLLING_24H`); the daily-trade limit is the governor's (9b). Symbols match exactly here (the governor trims and upper-cases) |
 | `live/liveCommandPipeline` | arming confirmed max lot, governance `maxLotPerTrade` / `maxOpenPositions` / `maxDailyLossUsd`, master live access caps, `arx_live_user_settings` per-market lot | the live lane's own stores; the open-position cap counts `UNCLOSED` live rows plus in-flight commands (same `UNCLOSED` basis as the governor) |
 | `live/instantTrade` | Ruby open-position cap | `UNCLOSED` basis |
 | `selfTrade/executionGate` | `maxConcurrentPositions` | round 5 (owner decision 6): counts on `RISK_COUNT_BASIS` (`UNCLOSED`), the governor's basis; floating P/L stays on `EXPOSURE` |
@@ -210,10 +210,9 @@ what they show, so they stay listed:
 - `meDashboard`, `reportBuilder`, `health`, `riskProfile`, `risk` (older
   page), `executionConfirmations`, the assistant tools: show or score
   against the saved row.
-- `pendingOrderDraft`: reads a `minRiskRewardRatio` field the row does not
-  have (the column is `min_reward_risk_ratio`), so it never applies an R:R
-  floor. The governor's own R:R rule still runs on the order. Wiring the
-  real column would add refusals, so it is listed, not fixed.
+- `pendingOrderDraft`: round 5 (owner decision 10) reads the floor in force
+  (`loadEffectiveLimits().discipline.minRewardRiskRatio`) and applies the
+  governor's `checkRewardRiskFloor`; no longer allowlisted.
 - `propChallenges`, `ruleContracts`, `paperSession/manager`,
   `missionRiskState`, `marketDataLayer`: compare against their own stores
   (prop challenge config, accountability contracts, paper-session rules,
@@ -232,8 +231,9 @@ what they show, so they stay listed:
   trader's saved values, not the effective limits (operator caps and the
   daily-loss switch are not applied). Unifying would change the verdict.
 - `routes/tradeDecision.ts`: an advisory orchestrator. Open trades
-  (`paper_orders` OPEN), trades today and losing streak against the saved
-  values. It adds blocker lines and places nothing.
+  (`paper_orders` OPEN) and losing streak against the saved values; trades
+  today from the governor's PAPER activity since round 5 (decision 9). It
+  adds blocker lines and places nothing.
 - `meRiskGovernor.postPaperCloseRiskHooks`: warning-level
   `consecutive_losses_hit` / `cooldown_started` events from `paper_trades`
   history. The governor's discipline rule decides on its own activity facts
@@ -267,9 +267,12 @@ the `raw_reader` rule.
    limit in force (`loadEffectiveLimits`) instead of the saved value. Each
    switch changes what a trader sees or which advisory blockers appear.
 4. Whether `pendingOrderDraft` should apply the real `min_reward_risk_ratio`
-   (adds refusals).
+   (adds refusals). **Decided (owner decision 10): yes, with the
+   governor's calculation.**
 5. Whether the order guard's trades-per-day count (audit log, rolling 24h)
-   should follow the governor's basis.
+   should follow the governor's basis. **Decided (owner decision 9): the
+   daily-trade limit is the governor's; the rolling count stays as a
+   separately named operational rate cap.**
 
 ## Honest limits
 
@@ -347,5 +350,114 @@ with a stamped `closed_at` count, `CLOSED` does not; the governor's
 with colliding tickets. `reconciledGhostExposureDbTest` (in-process
 integration lane) now seeds REAL, IGNORED, EXTERNAL, broker-absent and closed
 rows with FILLED executions and asserts count 3, P/L +10.
+
+### Decision 10: the pending-order R:R floor (`r5/risk-2`)
+
+> Fix the dead pending-order R:R hook. Read the real configured
+> min_reward_risk_ratio through the risk authority. Apply the same
+> calculation and refusal semantics as the governor, including
+> missing/invalid inputs.
+
+- `preTrade.ts` now owns the one R:R calculation: `measureRewardRisk` and
+  `checkRewardRiskFloor(floor, side, ref, sl, tp)`. Rule 13 calls it
+  (unchanged result: same formula, same "not measured" cases, same text).
+- `routes/pendingOrderDraft.ts` reads the floor in force,
+  `loadEffectiveLimits(userId).discipline.minRewardRiskRatio`: the saved
+  `min_reward_risk_ratio`, or the governor's default 1.5 when the trader has
+  no row; 0 switches it off. If the limits cannot be read the draft is
+  refused (`rg_rr_limits_unavailable`), as the governor refuses when it
+  cannot load its context.
+- `enforceTradeTicketRules` applies `checkRewardRiskFloor` to the ticket's
+  effective entry (the same reference price the draft passes to the
+  governor preview), stop and target:
+  - below the floor: refused, `rg_rr_ratio_min`, "Blocked by your trading
+    rules: reward:risk X is below your minimum of F.";
+  - not measurable (no stop or target, stop or target on the wrong side,
+    non-finite price): not refused by the floor, exactly as in rule 13. The
+    stop / take-profit rules and ticket validation decide those;
+  - no floor (null, 0, negative, NaN): no check.
+- The floor now applies in every mode, `SIMULATED` included, as rule 13
+  does. The old hook skipped `SIMULATED`.
+- One honest difference: in rule 13 an R:R below the floor is a "soft"
+  failure that blocks together with a second soft failure; at the draft's
+  ticket step it refuses on its own. That is the refusal the owner asked to
+  add (a stricter-only pre-check before the governor preview, which still
+  runs). The value compared is the unrounded ratio, as in the governor; the
+  old hook compared a ratio rounded to 2 decimals. Binary floating point can
+  put a ratio typed as exactly the floor a hair below it (for example entry
+  1.1000, stop 1.0900, target 1.1150 is 1.4999999999999891); the governor has
+  always compared it this way.
+- `single-risk-limit-source`: `pendingOrderDraft` left the allowlist (33 →
+  32 reviewed exceptions). The authority shape now also fails if rule 13 or
+  the ticket check stop calling `checkRewardRiskFloor`, or the draft stops
+  reading `loadEffectiveLimits(userId).discipline.minRewardRiskRatio`.
+
+Behaviour changes (decision 10):
+
+- Pending-order drafts whose R:R is below the trader's effective floor are
+  refused (`rg_rr_ratio_min`), including traders with no settings row (the
+  1.5 default) and `SIMULATED` drafts. Before, no floor ever ran there.
+- A draft is refused when the trader's limits cannot be read.
+
+### Decision 9: daily-trade limit vs operational rate cap (`r5/risk-2`)
+
+> Use the governor's authoritative trading-day definition and activity
+> source for the daily-trade limit. Preserve the existing rolling-24-hour
+> approved-command restriction as a separately named operational rate cap,
+> with its own clear reason.
+
+- `preTrade.tradingDayStart(now)` is the governor's trading day: the UTC
+  calendar day containing `now`. `summarizeActivity` and the governor's
+  "today" P/L use it. `enforce.loadTradingActivity(userId, venue)` returns
+  the governor's own rule-13 activity facts for a venue (PAPER: the active
+  paper account's `paper_orders`; DEMO: `trades`; LIVE: `arx_live_positions`),
+  for views and advisory checks that show or apply the daily-trade limit.
+- Order guard (`lib/adminTrading/orderGuard.ts`): the rolling-24h count of
+  this trader's APPROVED `trade_command_audit_log` rows moved out of gate 6
+  into its own gate 6b, `operational_rate_cap`, with its own reason
+  `OPERATIONAL_RATE_CAP_REACHED:<n>_APPROVED_COMMANDS_PER_ROLLING_24H`
+  (`operationalRateCapCheck`, `operationalRateCapRefusal`). It still reads
+  the operator's `max_trades_per_day` and still runs at the same point in
+  the chain, so it refuses exactly when it did before; only the code and
+  name changed. The daily-trade limit itself (strictest of trader and
+  operator caps, on the trading day) is the governor's, at gate 9b. Neither
+  replaces the other.
+- `routes/tradeDecision.ts` (advisory): "trades today" for its daily-trade
+  blocker is now the governor's PAPER activity (`loadTradingActivity`),
+  not paper orders opened today among the trader's last 20 orders. If the
+  activity cannot be read it adds a blocker saying so (no active paper
+  account = nothing to count, not a blocker).
+- `lib/riskAudit.ts` (legacy `/risk/audit`, `/mt5/execute`): "today" (trade
+  count and daily P/L) starts at the governor's trading day (UTC) instead of
+  server-local midnight. Its source is still the legacy `trades` table (see
+  "What remains").
+- `single-risk-limit-source` fails if the order guard names its rolling
+  count `TRADES_PER_DAY` again, drops the `operational_rate_cap` gate or its
+  reason, or `tradingDayStart` disappears.
+
+Behaviour changes (decision 9):
+
+- Order guard refusal code `MAX_TRADES_PER_DAY_REACHED:<n>` is now
+  `OPERATIONAL_RATE_CAP_REACHED:<n>_APPROVED_COMMANDS_PER_ROLLING_24H`, from
+  gate `operational_rate_cap` (the audit snapshot's gate list gains that
+  name). Same condition, same position. No caller matched on the old code.
+- Trade-decision blocker "Daily trade cap hit (n / m)" is now "Daily trade
+  limit reached (n / m trades today, UTC)", counted from the governor's
+  PAPER activity (closed on the trading day plus opened on it and still
+  open, active paper account), so `n` can differ from before.
+- `/risk/audit` and the legacy `/mt5/execute` risk check count "today" from
+  UTC midnight. On a server running in UTC nothing changes.
+
+Tests: `test:risk-governor-rr-daily` (new, real DB, wired into
+`ci:integration`): `checkRewardRiskFloor` boundaries (at the floor passes,
+below refuses, BUY and SELL, missing stop / target / reference / side,
+wrong-side geometry, NaN, floor off); the ticket rule in all three modes;
+the draft route against a saved floor of 2, the 1.5 default with no row and
+a saved 0; the UTC trading-day boundary (a close at 23:59:59.999 is
+yesterday); the rate cap's rolling window (inside / outside 24h, REJECTED
+rows, another trader, no cap, reason text never says "per day"); and both
+caps at 00:30 UTC (yesterday 23:50 is outside the governor's day but inside
+the rate window). `check-single-risk-limit-source.test.ts` gains 8 shape
+assertions.
 
 **TIER 1 NOT COMPLETE**
