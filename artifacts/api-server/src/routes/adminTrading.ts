@@ -30,7 +30,7 @@ import { tradingModeGate } from "@workspace/db/repositories";
 import { z } from "zod/v4";
 import { getEnvelope } from "../lib/adminTrading/safetyEnvelope.js";
 import { loadGlobalTradingSettingsRow } from "../lib/safety/platformSwitches.js";
-import { engagePlatformStop, engagedRow } from "../lib/safety/platformStopWriter.js";
+import { engagePlatformStop, engagedRow, releasePlatformStop } from "../lib/safety/platformStopWriter.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { readOperatorRiskLimits } from "../lib/riskGovernor/limitSettings.js";
 
@@ -147,23 +147,22 @@ router.post("/admin/trading/reset-kill", async (req, res) => {
   const reason = String((req.body as { reason?: string })?.reason ?? "").trim();
   if (reason.length < 4) { res.status(400).json({ ok: false, error: "REASON_REQUIRED" }); return; }
 
-  const updated = await db.update(globalTradingSettingsTable)
-    .set({
-      emergencyKillSwitch: false,
-      killSwitchEngagedAt: null,
-      killSwitchReason: null,
-      updatedByAdminId: adminId,
-      updatedAt: new Date(),
-    })
-    .where(eq(globalTradingSettingsTable.id, before.id))
-    .returning();
-  await writeAdminAudit({
-    adminId, adminRole: role, action: "RESET_KILL_SWITCH",
-    beforeState: { emergencyKillSwitch: before.emergencyKillSwitch },
-    afterState: { emergencyKillSwitch: false },
-    reason, ipAddress: req.ip ?? null,
+  // The one release operation (owner decision 1): the platform emergency stop
+  // only, on EVERY settings row, audited (RESET_KILL_SWITCH) in the same
+  // transaction. The safety-core kill switch and the live arm are untouched.
+  const released = await releasePlatformStop({
+    stop: "platform_emergency_stop",
+    reason,
+    actor: { userId: adminId, role },
+    source: "admin_trading_reset_kill",
+    ipAddress: req.ip ?? null,
   });
-  res.json({ ok: true, settings: updated[0] });
+  if (!released.ok) {
+    res.status(released.code === "NOT_AUTHORIZED" ? 403 : released.code === "REASON_REQUIRED" ? 400 : 500)
+      .json({ ok: false, error: released.code, detail: released.message });
+    return;
+  }
+  res.json({ ok: true, settings: released.rows.find((r) => r.id === before.id) ?? released.rows[0] });
 });
 
 // ─── Per-user ───────────────────────────────────────────────────────────────

@@ -596,6 +596,20 @@ function ActivationWizard({
       onAfterStep();
     } finally { setBusy(null); }
   }
+  // Owner decision 1: activation never releases a stop; the release is its own
+  // audited operation (POST /api/admin/trading/reset-kill, reason required).
+  async function releaseStop() {
+    const reason = window.prompt("Reason for releasing the emergency stop (audited, at least 4 characters):")?.trim() ?? "";
+    if (reason.length < 4) { setMsg("release-kill: a reason of at least 4 characters is required"); return; }
+    setBusy("release-kill"); setMsg(null);
+    try {
+      const r = await apiJson<{ ok: boolean; error?: string }>("/api/admin/trading/reset-kill", {
+        method: "POST", body: JSON.stringify({ reason }),
+      });
+      setMsg(r.ok ? "release-kill: OK" : `release-kill: ${r.error ?? "failed"}`);
+      onAfterStep();
+    } finally { setBusy(null); }
+  }
   async function testConnection() {
     setBusy("test-connection"); setMsg(null);
     try {
@@ -683,7 +697,7 @@ function ActivationWizard({
                 {s.id === "routing" && <Button size="sm" variant="outline" disabled={!allConfirmOk || !prevOk || busy != null} onClick={() => call({ accountRoutingMode: "SHARED_MASTER_MT5" }, "routing")} data-testid="wiz-routing">Apply</Button>}
                 {s.id === "bridge_live" && <Button size="sm" variant="outline" disabled={!allConfirmOk || !prevOk || busy != null} onClick={() => call({ masterBridgeLiveEnabled: true, sharedLiveTradingEnabled: true }, "bridge-live")} data-testid="wiz-bridge-live">Apply</Button>}
                 {s.id === "platform_live" && <Button size="sm" variant="destructive" disabled={!allConfirmOk || !prevOk || busy != null} onClick={() => call({ platformMode: "LIVE", liveEnabled: true }, "platform-live")} data-testid="wiz-platform-live">Apply</Button>}
-                {s.id === "kill" && <Button size="sm" variant="destructive" disabled={!allConfirmOk || !prevOk || busy != null} onClick={() => call({ releaseKillSwitch: true }, "release-kill")} data-testid="wiz-release-kill">Release</Button>}
+                {s.id === "kill" && <Button size="sm" variant="destructive" disabled={!allConfirmOk || !prevOk || busy != null} onClick={() => void releaseStop()} data-testid="wiz-release-kill">Release</Button>}
                 {s.id === "dry_validate" && <Button size="sm" variant="outline" disabled={busy != null} onClick={testConnection} data-testid="wiz-dry">Run</Button>}
                 {s.id === "smoke" && <Button size="sm" variant="outline" disabled={busy != null} onClick={smoke} data-testid="wiz-smoke">Run</Button>}
               </span>

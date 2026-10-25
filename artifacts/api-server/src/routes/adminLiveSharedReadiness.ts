@@ -9,8 +9,9 @@
 //     append-only audit rows. They MUST NOT insert into arx_live_commands,
 //     MUST NOT contact the EA, and MUST NOT mutate any per-user state.
 //   - POST /activate-step performs the explicit operator-confirmed DB writes
-//     against global_trading_settings (mode/routing/flag toggles + kill-switch
-//     release). It requires a typed confirmation phrase and writes a full
+//     against global_trading_settings (mode/routing/flag toggles). It never
+//     releases a stop (owner decision 1: POST /admin/trading/reset-kill is the
+//     one audited release). It requires a typed confirmation phrase and writes a full
 //     before/after audit row to admin_action_audit_log. It does NOT flip
 //     the env-level master switch ARX_LIVE_BROKER_EXECUTION_ENABLED —
 //     that remains a server-side operator-only env toggle.
@@ -61,6 +62,8 @@ router.use(express.json());
 // same phrase everywhere they're asked to confirm a live action.
 const ACTIVATION_CONFIRM_PHRASE = "ENABLE LIVE TRADING" as const;
 const KILL_SWITCH_CONFIRM_PHRASE = "ENGAGE KILL SWITCH" as const;
+/** Refusal code when an activation request asks to release a stop (owner decision 1). */
+export const ACTIVATION_DOES_NOT_RELEASE_STOP = "ACTIVATION_DOES_NOT_RELEASE_STOP" as const;
 
 function requireAdmin(
   req: Request,
@@ -577,7 +580,8 @@ router.post("/admin/live-shared/test-connection", async (req, res) => {
 //   masterBridgeLiveEnabled?: boolean                   // optional
 //   platformMode?: "DEMO" | "LIVE"                      // optional
 //   liveEnabled?: boolean                               // optional
-//   releaseKillSwitch?: boolean                         // optional
+//   releaseKillSwitch                                   // REFUSED (409): activation never
+//                                                       // releases a stop (owner decision 1)
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/admin/live-shared/activate-step", async (req, res) => {
   const admin = requireAdmin(req, res);
@@ -627,10 +631,18 @@ router.post("/admin/live-shared/activate-step", async (req, res) => {
   if (typeof body.liveEnabled === "boolean") {
     patch.liveEnabled = body.liveEnabled;
   }
-  if (body.releaseKillSwitch === true) {
-    patch.emergencyKillSwitch = false;
-    patch.killSwitchEngagedAt = null;
-    patch.killSwitchReason = null;
+  // Owner decision 1: live activation never releases a stop. A release is its
+  // own explicit, audited operation (releasePlatformStop via
+  // POST /api/admin/trading/reset-kill). Nothing is written here.
+  if (body.releaseKillSwitch !== undefined && body.releaseKillSwitch !== false) {
+    res.status(409).json({
+      ok: false,
+      error: ACTIVATION_DOES_NOT_RELEASE_STOP,
+      detail:
+        "Live activation does not release the emergency stop. Release it separately with POST /api/admin/trading/reset-kill (operator role and a reason are required; the release is audited), then repeat this activation step without releaseKillSwitch.",
+      releaseEndpoint: "/api/admin/trading/reset-kill",
+    });
+    return;
   }
 
   // Compute the post-write state (current + patch) for precondition checks.
@@ -659,14 +671,12 @@ router.post("/admin/live-shared/activate-step", async (req, res) => {
     return;
   }
 
-  // FOOTGUN GUARD: any of (platformMode=LIVE, liveEnabled=true, kill-switch
-  // release) MUST happen against a fully shared-mode posture — routing
+  // FOOTGUN GUARD: any of (platformMode=LIVE, liveEnabled=true) MUST happen against a fully shared-mode posture — routing
   // SHARED_MASTER_MT5 + both shared flags on + bridge pinned. Otherwise the
   // legacy per-user Phase B dispatch surface could be reached unintentionally.
   const touchingLiveControls =
     body.platformMode === "LIVE" ||
-    body.liveEnabled === true ||
-    body.releaseKillSwitch === true;
+    body.liveEnabled === true;
   if (touchingLiveControls) {
     const sharedPostureOk =
       projected.accountRoutingMode === "SHARED_MASTER_MT5" &&
@@ -678,7 +688,7 @@ router.post("/admin/live-shared/activate-step", async (req, res) => {
         ok: false,
         error: "SHARED_POSTURE_REQUIRED_FOR_LIVE_CONTROLS",
         detail:
-          "platformMode=LIVE, liveEnabled=true, and kill-switch release may only be applied while accountRoutingMode=SHARED_MASTER_MT5, sharedLiveTradingEnabled=true, masterBridgeLiveEnabled=true, and a master bridge is pinned. Switch shared posture on first in earlier steps.",
+          "platformMode=LIVE and liveEnabled=true may only be applied while accountRoutingMode=SHARED_MASTER_MT5, sharedLiveTradingEnabled=true, masterBridgeLiveEnabled=true, and a master bridge is pinned. Switch shared posture on first in earlier steps.",
         projected,
       });
       return;

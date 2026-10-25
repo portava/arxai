@@ -37,8 +37,12 @@
 //      every settings row): an `emergencyKillSwitch: <not false>` property in
 //      a .set() / .values() object, or `<x>.emergencyKillSwitch = <not false>`;
 //      and a call to engagePlatformStop() from a file that does not write
-//      admin_action_audit_log (every engage stays audited). Releasing the stop
-//      is not this rule: the release paths are an owner decision.
+//      admin_action_audit_log (every engage stays audited). (Round 5, owner
+//      decision 1) the same for RELEASES: an `emergencyKillSwitch: false`
+//      property in a .set() / .values() object, `<x>.emergencyKillSwitch =
+//      false`, or a call to the safety core's resetKillSwitch() outside the one
+//      release operation (releasePlatformStop() in the same writer, which is
+//      authorized and audited itself). Live activation may not release a stop.
 //
 // Every allowlist entry carries a reason. An entry whose file no longer
 // needs it (or no longer exists) is reported as stale, so the lists only
@@ -55,7 +59,7 @@ import { ROOT, walk, rel, reportResult, type CheckResult } from "./_lib.js";
 const API_SRC = join(ROOT, "artifacts/api-server/src");
 
 export const AUTHORITY = ["lib/safety/platformSwitches.ts", "lib/safety/tradingHalt.ts"] as const;
-/** The one writer that engages the platform emergency stop (every settings row). */
+/** The one writer that engages the platform emergency stop (every settings row) and releases one selected stop (releasePlatformStop). */
 export const STOP_ENGAGE_WRITER = "lib/safety/platformStopWriter.ts";
 export const SAFETY_CORE_OWNER = "lib/safetyCore.ts";
 export const ARMING_OWNER = "lib/live/liveArming.ts";
@@ -73,7 +77,7 @@ const RAW_SWITCH_SQL = /\b(emergency_kill_switch|kill_switch_engaged|live_broker
 const RAW_GTS_VENUE_SQL = /\bglobal_trading_settings\b[\s\S]*\b(platform_mode|live_enabled|demo_enabled|simulated_enabled|kill_switch_reason)\b|\b(platform_mode|live_enabled|demo_enabled|simulated_enabled|kill_switch_reason)\b[\s\S]*\bglobal_trading_settings\b/;
 const RAW_SAFETY_CORE_SQL = /\b(from|join|update|into)\s+"?safety_core"?\b/i;
 
-type Rule = "gts_column" | "gts_whole_row" | "gts_write" | "safety_core" | "arming" | "raw_row" | "env_flag" | "raw_sql" | "single_stop" | "stop_engage";
+type Rule = "gts_column" | "gts_whole_row" | "gts_write" | "safety_core" | "arming" | "raw_row" | "env_flag" | "raw_sql" | "single_stop" | "stop_engage" | "stop_release";
 
 /** A module specifier that names the safety-core owner (lib/safetyCore.ts). */
 const SAFETY_CORE_MODULE = /(^|\/)safetyCore(\.js|\.ts)?$/;
@@ -85,9 +89,9 @@ const SAFETY_CORE_MODULE = /(^|\/)safetyCore(\.js|\.ts)?$/;
  */
 export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   // ── Writers (audited admin handlers) ──────────────────────────────────────
-  "lib/safety/platformStopWriter.ts": { rules: ["gts_write"], why: "the one emergency-stop ENGAGE writer (engagePlatformStop: every settings row, reason/time/actor); its callers keep their own audit events" },
-  "routes/adminTrading.ts": { rules: ["gts_write", "raw_row", "single_stop"], why: "audited admin writer: platform mode, emergency stop RELEASE (reset), routing, shared master; engages through engagePlatformStop() (before/after audit snapshots need the raw row; single_stop: the emergency stop's own before/after audit snapshot)" },
-  "routes/adminLiveSharedReadiness.ts": { rules: ["gts_whole_row", "gts_write", "single_stop"], why: "audited admin writer: activation, arm / disarm live execution, shared posture on kill switch (engages through engagePlatformStop(); the raw row is the write target and before/after audit snapshot; single_stop: the arm precondition kill_released, the activation handler and the readiness report's per-source fields name the emergency stop this handler writes; arming is not an order, and this handler's release path is owner decision 1)" },
+  "lib/safety/platformStopWriter.ts": { rules: ["gts_write"], why: "the one emergency-stop ENGAGE writer (engagePlatformStop: every settings row, reason/time/actor; its callers keep their own audit events) and the one RELEASE operation (releasePlatformStop: one selected stop, operator-only, audited in the same transaction; owner decision 1)" },
+  "routes/adminTrading.ts": { rules: ["gts_write", "raw_row", "single_stop"], why: "audited admin writer: platform mode, routing, shared master; engages through engagePlatformStop() and releases through releasePlatformStop() (before/after audit snapshots need the raw row; single_stop: the emergency stop's own before/after audit snapshot)" },
+  "routes/adminLiveSharedReadiness.ts": { rules: ["gts_whole_row", "gts_write", "single_stop"], why: "audited admin writer: activation, arm / disarm live execution, shared posture on kill switch (engages through engagePlatformStop(); the raw row is the write target and before/after audit snapshot; single_stop: the arm precondition kill_released, the activation handler and the readiness report's per-source fields name the emergency stop this handler writes; arming is not an order; activation never releases a stop, owner decision 1)" },
   "routes/adminLiveSharedActivation.ts": { rules: ["gts_whole_row", "gts_write", "single_stop"], why: "audited admin writer: shared live posture on rollback (engages the stop through engagePlatformStop(); single_stop: the emergency stop's before/after audit snapshot)" },
   "routes/adminMasterBridge.ts": { rules: ["gts_write"], why: "audited admin writer: master bridge snapshot / enable (no switch column)" },
   "routes/adminLiveFirstTestMode.ts": { rules: ["gts_write"], why: "audited admin writer: first-test-mode policy (no switch column)" },
@@ -111,21 +115,26 @@ export const ALLOW: Record<string, { rules: Rule[]; why: string }> = {
   "lib/startup/envChecklist.ts": { rules: ["env_flag"], why: "boot env inventory reports the variable's state; never gates" },
 };
 
-/** `emergencyKillSwitch: <not false>` in an object literal (spreads of literals followed), or null. */
-function engagedStopProperty(e: ts.Expression): ts.Node | null {
+/**
+ * `emergencyKillSwitch: <not false>` (want "engaged") or `emergencyKillSwitch:
+ * false` (want "released") in an object literal (spreads of literals
+ * followed), or null.
+ */
+function stopProperty(e: ts.Expression, want: "engaged" | "released"): ts.Node | null {
   let x: ts.Expression = e;
   while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression;
   if (!ts.isObjectLiteralExpression(x)) return null;
   for (const p of x.properties) {
     if (ts.isSpreadAssignment(p)) {
-      const inner = engagedStopProperty(p.expression);
+      const inner = stopProperty(p.expression, want);
       if (inner) return inner;
       continue;
     }
     const name = p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : null;
     if (name !== "emergencyKillSwitch") continue;
-    if (ts.isShorthandPropertyAssignment(p)) return p;
-    if (ts.isPropertyAssignment(p) && p.initializer.kind !== ts.SyntaxKind.FalseKeyword) return p;
+    const released = ts.isPropertyAssignment(p) && p.initializer.kind === ts.SyntaxKind.FalseKeyword;
+    if (want === "released" && released) return p;
+    if (want === "engaged" && !released && (ts.isShorthandPropertyAssignment(p) || ts.isPropertyAssignment(p))) return p;
   }
   return null;
 }
@@ -163,6 +172,7 @@ export function scanFile(key: string, source: string): string[] {
     hit("single_stop", node, `reads one install-wide stop on its own (${what}); read both through platformStop() + preCheckStopRefusal() in lib/safety/platformSwitches.ts`);
   const killReads: ts.Node[] = [];
   const engageCalls: ts.Node[] = [];
+  const resetCalls: ts.Node[] = [];
   let writesAudit = false;
 
   function visit(node: ts.Node): void {
@@ -233,13 +243,22 @@ export function scanFile(key: string, source: string): string[] {
       if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
         && (node.expression.name.text === "set" || node.expression.name.text === "values")) {
         for (const arg of node.arguments) {
-          const engage = engagedStopProperty(arg);
+          const engage = stopProperty(arg, "engaged");
           if (engage) hit("stop_engage", engage, "writes an engaged emergency stop (emergencyKillSwitch) outside the one engage writer; call engagePlatformStop() in lib/safety/platformStopWriter.ts (every settings row, audited by the caller)");
+          const release = stopProperty(arg, "released");
+          if (release) hit("stop_release", release, "writes a released emergency stop (emergencyKillSwitch: false) outside the one release operation; call releasePlatformStop() in lib/safety/platformStopWriter.ts (one selected stop, every settings row, operator-only, audited)");
         }
       }
-      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken
-        && isEmergencyFlagTarget(node.left) && node.right.kind !== ts.SyntaxKind.FalseKeyword) {
-        hit("stop_engage", node, "sets an engaged emergency stop (emergencyKillSwitch) outside the one engage writer; call engagePlatformStop() in lib/safety/platformStopWriter.ts");
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && isEmergencyFlagTarget(node.left)) {
+        if (node.right.kind !== ts.SyntaxKind.FalseKeyword) {
+          hit("stop_engage", node, "sets an engaged emergency stop (emergencyKillSwitch) outside the one engage writer; call engagePlatformStop() in lib/safety/platformStopWriter.ts");
+        } else {
+          hit("stop_release", node, "releases the emergency stop (emergencyKillSwitch = false) outside the one release operation; call releasePlatformStop() in lib/safety/platformStopWriter.ts");
+        }
+      }
+      if (ts.isIdentifier(node) && node.text === "resetKillSwitch" && key !== SAFETY_CORE_OWNER
+        && ts.isCallExpression(node.parent) && node.parent.expression === node) {
+        resetCalls.push(node);
       }
       if (ts.isIdentifier(node) && node.text === "engagePlatformStop" && ts.isCallExpression(node.parent) && node.parent.expression === node) {
         engageCalls.push(node);
@@ -256,6 +275,9 @@ export function scanFile(key: string, source: string): string[] {
   }
   visit(file);
   if (importsSafetyCore && killReads[0]) singleStop(killReads[0], "the safety-core kill switch, getStatus().killSwitchEngaged");
+  if (importsSafetyCore && resetCalls[0]) {
+    hit("stop_release", resetCalls[0], "releases the safety-core kill switch (resetKillSwitch()) outside the one release operation; call releasePlatformStop({ stop: \"safety_core_kill_switch\" }) in lib/safety/platformStopWriter.ts (operator-only, audited)");
+  }
   if (engageCalls[0] && !writesAudit) {
     hit("stop_engage", engageCalls[0], "calls engagePlatformStop() without writing admin_action_audit_log; every emergency-stop engage is audited by its caller");
   }
@@ -292,6 +314,7 @@ const MESSAGE_RULE: [RegExp, Rule][] = [
   [/^\d+: raw SQL names a safety switch/, "raw_sql"],
   [/^\d+: reads one install-wide stop on its own/, "single_stop"],
   [/^\d+: (writes|sets) an engaged emergency stop|^\d+: calls engagePlatformStop\(\) without/, "stop_engage"],
+  [/^\d+: (writes a released|releases the) (emergency stop|safety-core kill switch)/, "stop_release"],
 ];
 export function ruleOfMessage(msg: string): Rule | null {
   for (const [re, rule] of MESSAGE_RULE) if (re.test(msg)) return rule;
@@ -332,6 +355,25 @@ export function checkStopWriterShape(read: (key: string) => string | null): stri
       if (!m[1]!.includes(f)) out.push(`${STOP_ENGAGE_WRITER}: the engage write must set ${f.replace(":", "")}`);
     }
   }
+  // Release (owner decision 1): one selected stop, every row, reason/time
+  // cleared, operator-only, audited in the same transaction, never arming.
+  const fn = /export async function releasePlatformStop\(([\s\S]*?)\n}\n/.exec(w);
+  if (!fn) out.push(`${STOP_ENGAGE_WRITER} lost releasePlatformStop() (the one audited release)`);
+  else {
+    const body = fn[1]!;
+    if (!/operatorRoleFromSession\(/.test(body)) out.push(`${STOP_ENGAGE_WRITER}: releasePlatformStop() must refuse a non-operator actor (operatorRoleFromSession)`);
+    const r = /tx\.update\(globalTradingSettingsTable\)([\s\S]*?)\.returning\(\)/.exec(body);
+    if (!r) out.push(`${STOP_ENGAGE_WRITER}: releasePlatformStop() must update global_trading_settings inside its transaction`);
+    else {
+      if (/\.where\(/.test(r[1]!)) out.push(`${STOP_ENGAGE_WRITER}: the release write must clear EVERY settings row (no .where())`);
+      for (const f of ["emergencyKillSwitch: false", "killSwitchEngagedAt: null", "killSwitchReason: null", "updatedByAdminId:"]) {
+        if (!r[1]!.includes(f)) out.push(`${STOP_ENGAGE_WRITER}: the release write must set ${f}`);
+      }
+      if (/liveBrokerExecutionArmed|platformMode|liveEnabled|demoEnabled/.test(r[1]!)) out.push(`${STOP_ENGAGE_WRITER}: the release write must not arm or open anything (no live arm / mode / venue column)`);
+    }
+    if (!/tx\.insert\(adminActionAuditLogTable\)/.test(body)) out.push(`${STOP_ENGAGE_WRITER}: the emergency-stop release must write its audit row in the same transaction`);
+    if (!/resetKillSwitch\(/.test(body)) out.push(`${STOP_ENGAGE_WRITER}: the safety-core release must go through its owner (lib/safetyCore.ts resetKillSwitch)`);
+  }
   return out;
 }
 
@@ -353,7 +395,7 @@ export function checkSingleSafetySwitchSource(): CheckResult {
     name: "single-safety-switch-source",
     ok: violations.length === 0,
     violations,
-    notes: [`safety switches read only through ${AUTHORITY.join(" + ")}; emergency stop engaged only through ${STOP_ENGAGE_WRITER}; ${Object.keys(ALLOW).length} reviewed exceptions`],
+    notes: [`safety switches read only through ${AUTHORITY.join(" + ")}; emergency stop engaged and stops released only through ${STOP_ENGAGE_WRITER}; ${Object.keys(ALLOW).length} reviewed exceptions`],
   };
 }
 

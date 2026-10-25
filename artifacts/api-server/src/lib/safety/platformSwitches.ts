@@ -41,7 +41,9 @@
 //
 // Writers are not here. ENGAGING the emergency stop has one writer,
 // ./platformStopWriter.ts (engagePlatformStop(): every row, audited by its
-// caller). The other switches, and releasing the stop, are written by their
+// caller); RELEASING either install-wide stop has one operation there too
+// (releasePlatformStop(): one selected stop, operator-only, audited; owner
+// decision 1). The other switches are written by their
 // audited admin handlers (routes/adminTrading.ts and the reviewed writers
 // listed in the guard) and the safety-core state machine (lib/safetyCore.ts).
 
