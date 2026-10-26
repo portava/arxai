@@ -1,6 +1,6 @@
 import { describe,it,expect } from "vitest";
 import { analyzeSmartChart,bindSmartChartBars } from "./smartChartAnalysis";
-import { CANDLE_FIXTURES } from "../../../../../lib/domain/src/chart-patterns/__qa__/candlestickFixtures";
+import { CANDLE_FIXTURES, mirror } from "../../../../../lib/domain/src/chart-patterns/__qa__/candlestickFixtures";
 const context={symbol:"EURUSD",timeframe:"M5",source:"mt5_broker",sourceIdentity:"a".repeat(64)};
 const input=(bars:typeof CANDLE_FIXTURES[number]["bars"])=>({...context,bars,asOfMs:bars.at(-1)!.closeTime*1000,dataState:"current" as const});
 describe("source-aware catalogue integration",()=>{
@@ -40,5 +40,25 @@ describe("source-aware catalogue integration",()=>{
    const bars=fixture.map((b,i)=>i===fixture.length-1?{...b,open:102*scale,high:104*scale,low:100*scale,close:102.4*scale}:({...b,open:b.open*scale,high:b.high*scale,low:b.low*scale,close:b.close*scale}));
    expect(analyzeSmartChart(input(bars)).allFindings.some(f=>f.id===`doji:${bars.at(-1)!.time}`)).toBe(true);
   }
+ });
+ for(const [id,family] of [["hammer","long_shadow"],["takuri_line","doji"]])it(`does not present legacy pin-bar and ${id} geometry as independent summary families`,()=>{
+  const tail=CANDLE_FIXTURES.find(f=>f.id===id)!.bars;
+  const first=tail[0]!;
+  const prefix=Array.from({length:20},(_,i)=>({...first,time:first.time-(20-i)*300,closeTime:first.time-(19-i)*300}));
+  const bars=[...prefix,...tail],result=analyzeSmartChart(input(bars));
+  expect(result.allFindings.some(f=>f.id.startsWith("bullish_pin_bar:"))).toBe(true);
+  expect(result.allFindings.find(f=>f.id.startsWith("bullish_pin_bar:"))!.family).toBe(family);
+  expect(result.allFindings.some(f=>f.id.startsWith(`${id}:`))).toBe(true);
+  expect(result.findings.filter(f=>(f.family??f.id.split(":")[0])===family)).toHaveLength(1);
+  expect(result.findings.filter(f=>f.id.startsWith("bullish_pin_bar:")||f.id.startsWith(`${id}:`)).length).toBeLessThanOrEqual(1);
+ });
+ it("keeps the dedicated Shooting Star lifecycle and legacy bearish pin bar in one summary family",()=>{
+  const tail=mirror(CANDLE_FIXTURES.find(f=>f.id==="hammer")!.bars),first=tail[0]!;
+  const prefix=Array.from({length:20},(_,i)=>({...first,time:first.time-(20-i)*300,closeTime:first.time-(19-i)*300}));
+  const result=analyzeSmartChart(input([...prefix,...tail]));
+  expect(result.allFindings.find(f=>f.id.startsWith("bearish_pin_bar:"))!.family).toBe("long_shadow");
+  const star=result.allFindings.find(f=>f.id.startsWith("shooting_star:"));
+  expect(star).toMatchObject({family:"long_shadow",status:"developing"});
+  expect(result.findings.filter(f=>f.family==="long_shadow")).toHaveLength(1);
  });
 });
