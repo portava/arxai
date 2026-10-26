@@ -6,13 +6,14 @@ import type { Candle } from "@/components/scanner/scannerCandleAdapter";
 import type { ChartHistoryPage } from "@/lib/chartCandlesQuery";
 import { analyzeSmartChart, smartChartIntervalSeconds, type SmartChartAnalysisResult, type SmartChartAnalysisBar, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
+import { captureReplayAnalysisPrefix, type ChartReplayReadWindow } from "@/lib/chart-engine/chartReplayAnalysis";
 import { chartDescriptiveStats, chartNumber, chartObservationGaps } from "@/lib/chart-engine/chartDescriptiveStats";
 import type { ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
 import type { SmartChartAnnotation } from "@/lib/chart-engine/smartChartAnnotation";
 import { Button } from "@/components/ui/button";
 
 interface Props {adapter:ChartEngineAdapter|null;epoch:number;symbol:string;timeframe:string;data:ChartCandlesResponse|undefined;
-  older:readonly Candle[];historyEvidence:ChartHistoryPage["historyEvidence"];liveConfirmed:boolean;readFailed:boolean;view?:Pick<ChartPreferences,"style"|"scale"|"inverted">}
+  older:readonly Candle[];historyEvidence:ChartHistoryPage["historyEvidence"];liveConfirmed:boolean;readFailed:boolean;view?:Pick<ChartPreferences,"style"|"scale"|"inverted">;replay?:ChartReplayReadWindow}
 const EMPTY:readonly Candle[]=[];
 const statusText={confirmed:"Confirmed by closed candles",developing:"Still developing",invalidated:"No longer valid",observed:"Observed shape"};
 export function findingAnnotation(finding:SmartChartFinding|null):SmartChartAnnotation|null {
@@ -25,9 +26,10 @@ export function findingAnnotation(finding:SmartChartFinding|null):SmartChartAnno
 
 /** Explanations live inside the chart frame. A single selected shape owns the
  * automatic annotation layer; detailed readings stay collapsed by default. */
-export function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view}:Props) {
-  const contextKey=JSON.stringify([symbol,timeframe,data?.marketEvidence?.sourceIdentity,data?.feedStatus?.source]);
-  const bound=useMemo(()=>captureSmartChartBars(data,{symbol,timeframe},older,historyEvidence,Date.now()),[data,symbol,timeframe,older,historyEvidence]);
+export function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view,replay}:Props) {
+  const ownershipKey=JSON.stringify([symbol,timeframe,replay?.snapshot.id,replay?.snapshot.sourceIdentity??data?.marketEvidence?.sourceIdentity,replay?.snapshot.source??data?.feedStatus?.source]);
+  const contextKey=JSON.stringify([ownershipKey,replay?.installedCount]);
+  const bound=useMemo<ReturnType<typeof captureSmartChartBars> & {asOfMs?:number|null;replayCutoff?:number|null}>(()=>replay?captureReplayAnalysisPrefix(replay,{symbol,timeframe}):captureSmartChartBars(data,{symbol,timeframe},older,historyEvidence,Date.now()),[data,symbol,timeframe,older,historyEvidence,replay?.snapshot,replay?.installedCount]);
   const [reading,setReading]=useState<{key:string;result:SmartChartAnalysisResult;bars:SmartChartAnalysisBar[];historical:boolean}|null>(null);
   const [selected,setSelected]=useState<string|null>(null);
   const [annotations,setAnnotations]=useState(true);
@@ -39,12 +41,14 @@ export function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPT
       if(!source)return index!==actual.length-1||bar.time<(bound.bars.at(-1)?.closeTime??Infinity);
       return (["open","high","low","close"] as const).some(key=>source[key]!==bar[key]);});
     const range=actual.length?{from:actual[0]!.time,to:actual.at(-1)!.time}:undefined;
-    const historical=!!range&&range.to<(bound.bars.at(-1)?.time??Infinity);
+    const historical=!!replay || !!range&&range.to<(bound.bars.at(-1)?.time??Infinity);
     const result=analyzeSmartChart({...bound.context,bars:actual.length&&!mismatch&&bound.status==="ready"?bound.bars:[],
-      visibleRange:range,asOfMs:Date.now(),dataState:!liveConfirmed||readFailed?"stale":historical?"historical":"current"});
+      visibleRange:range,asOfMs:replay?bound.asOfMs??NaN:Date.now(),
+      replayCutoff:replay?bound.replayCutoff??undefined:undefined,
+      dataState:replay?"historical":!liveConfirmed||readFailed?"stale":historical?"historical":"current"});
     if(bound.status!=="ready"||mismatch||!actual.length){result.status="unavailable";result.findings=[];result.allFindings=[];result.reason=bound.reason??(mismatch?"The displayed candles are updating; analysis will follow the applied chart.":"Waiting for the chart's visible candles.");}
     setReading({key:contextKey,result,bars:observed,historical});
-  },[adapter,bound,contextKey,liveConfirmed,readFailed]);
+  },[adapter,bound,contextKey,liveConfirmed,readFailed,replay]);
   useLayoutEffect(()=>{
     setSelected(null);refresh();
     return adapter?.subscribeViewport?.(refresh);
@@ -60,12 +64,15 @@ export function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPT
   },[adapter,epoch,annotations,chosen,result?.status,contextKey]);
   // Clear on ownership changes/unmount, not before every viewport refresh:
   // toggling null between two readings would rebuild hidden server overlays.
-  useLayoutEffect(()=>()=>adapter?.setSmartAnnotation?.(null),[adapter,epoch,contextKey]);
+  useLayoutEffect(()=>()=>adapter?.setSmartAnnotation?.(null),[adapter,epoch,ownershipKey]);
   const narrative=chosen?.explanation??(stats?`Price ${stats.change>0?"rose":stats.change<0?"fell":"stayed level"} ${chartNumber(Math.abs(stats.changePercent))}% across ${stats.count} closed candles. The observed range is ${chartNumber(stats.low)} to ${chartNumber(stats.high)}. No clear pattern was found by the available detectors.`:result?.reason??"Waiting for a source-identified chart window.");
-  return <section className="border-b border-zinc-800 bg-sky-950/10 px-3 py-2.5 text-xs" aria-label="Automatic chart analysis" data-testid="smart-chart-reader">
+  return <section className="border-b border-zinc-800 bg-sky-950/10 px-3 py-2.5 text-xs" aria-label="Automatic chart analysis" data-testid="smart-chart-reader"
+    data-analysis-status={result?.status??"unavailable"} data-analysis-asof={result?.status==="ready"?result.asOf??undefined:undefined}
+    data-analysis-source-identity={result?.status==="ready"?bound.context.sourceIdentity??undefined:undefined}
+    data-replay-installed-count={result?.status==="ready"?replay?.installedCount:undefined}>
     <div className="flex flex-wrap items-center gap-2">
       <Sparkles className="h-3.5 w-3.5 text-sky-300"/><span className="font-semibold text-zinc-100">What the chart is doing</span>
-      <span className="text-[10px] text-zinc-400">{current?.historical?"Historical window · ":""}{!liveConfirmed||readFailed?"Stored candles · feed not live-confirmed":"Closed candles only"}</span>
+      <span className="text-[10px] text-zinc-400">{replay?"Historical replay · closed candles only":<>{current?.historical?"Historical window · ":""}{!liveConfirmed||readFailed?"Stored candles · feed not live-confirmed":"Closed candles only"}</>}</span>
       {view?.inverted&&<span className="text-[10px] text-amber-300">Inverted scale · higher prices appear lower</span>}
       <Button size="sm" variant="ghost" className="ml-auto h-7 gap-1.5 text-[11px]" aria-pressed={annotations} aria-label="Show automatic chart annotations" onClick={()=>setAnnotations(value=>!value)}>{annotations?<Eye className="h-3 w-3"/>:<EyeOff className="h-3 w-3"/>}{annotations?"Annotations on":"Annotations off"}</Button>
     </div>

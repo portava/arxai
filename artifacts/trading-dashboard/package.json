@@ -63,7 +63,7 @@
     "test:scanner-chart-lifecycle": "vitest run src/components/scanner/useScannerChartLifecycle.test.tsx src/lib/chartCandlesQuery.evidence.test.ts src/lib/useChartDeepHistory.test.ts src/components/scanner/useDerivedOverlayContext.test.tsx",
     "test:self-trade-accounting": "vitest run src/components/selfTrade/AccountingSummary.test.tsx",
     "test:backtest-evidence": "vitest run src/components/testing-lab/BacktestEvidence.test.tsx",
-    "test:chart-replay": "vitest run src/lib/chart-engine/chartReplay.test.ts src/components/chart-replay/ChartReplayPlayer.test.tsx src/components/chart-replay/ChartReplayBoundary.test.tsx",
+    "test:chart-replay": "vitest run src/lib/chart-engine/chartReplay.test.ts src/lib/chart-engine/chartReplayAnalysis.test.ts src/components/chart-replay/ChartReplayPlayer.test.tsx src/components/chart-replay/ChartReplayBoundary.test.tsx",
     "test:smart-chart-reader": "vitest run src/lib/chart-engine/smartChartAnalysis.test.ts src/lib/chart-engine/chartNavigation.test.ts src/lib/chart-engine/smartChartCapture.test.ts src/lib/chart-engine/chartDescriptiveStats.test.ts src/lib/chart-engine/smartChartAnnotation.test.ts src/components/charts/SmartChartReader.test.tsx src/lib/useChartDeepHistory.test.ts"
   },
   "devDependencies": {

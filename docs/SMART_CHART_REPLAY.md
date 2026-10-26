@@ -10,6 +10,12 @@ The authenticated `/chart-replay` route sits outside the live application layout
 
 The player supports previous/next, start, a loaded-window slider, a UTC close-time seek, keyboard stepping, pause/play and 0.5–8 bars per second. Hidden tabs pause and delayed timers do not catch up in a burst. Drawings are isolated to the private replay session. Every study receives only the revealed prefix, including after backwards and arbitrary seeks; future values are not precomputed and cosmetically hidden.
 
+## Automatic explanation in replay
+
+The automatic reader receives a dedicated historical input: the validated snapshot plus the count acknowledged by the chart adapter. It does not construct a live candle API response or borrow the current feed. Its observation time and replay cutoff are the last installed closed candle, not the complete snapshot endpoint or wall clock. Uninstalled, mismatched or empty chart windows withhold findings and annotations. Only the revealed prefix reaches the real pattern model; tests compare its full output with a physically truncated snapshot and use hostile future getters to detect unintended access.
+
+The reader labels this as historical replay and keeps one chosen annotation. A rendered result exposes its actual source, observation time and installed count for browser correctness and completion checks. Chart data installation and completed explanation remain separate measurement boundaries. Focused chart keys pan/zoom without also stepping the replay; dates beyond the revealed window explain that fixed boundary without promising a network history load.
+
 ## Rendering and validation
 
 The installed Lightweight Charts 5.2 API supports removing an unchanged tail with `pop`. Small rewinds use it; large additions use one `setData` call instead of thousands of incremental updates. Study calculators retain only an unchanged causal prefix, and an earlier queued stream correction keeps its dirty boundary. Price/range changes are grouped so studies render against the final viewport. Ordinary live/panned view behavior remains covered by regression tests. Replay follows its cursor without the library's animated scroll.
