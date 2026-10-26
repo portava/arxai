@@ -38,6 +38,8 @@ import { draftTrade, confirmTrade, dispatchTrade } from "../tradeEngine/pipeline
 import { liveBrokerExecutionEnabled } from "./phaseBConfig.js";
 import { resolveBrokerSymbol } from "../mt5/symbolDirectory.js";
 import { recordManualAaciAdvisory } from "../aaci/manualAdvisory.js";
+import { MANAGEMENT_TARGET_SOURCE, ManagementTargetError, resolveManagementTarget,
+  type ManagementReference, type ManagementTarget } from "../selfTrade/managementTarget.js";
 import { enforceSensitiveAction } from "../security/handshake.js";
 
 export const INSTANT_TRADE_SOURCES = [
@@ -78,6 +80,8 @@ export type InstantTradeIntent = {
   /** Server-only durable admission; no browser input sets this field. */
   selfTradeExecutionId?: number | null;
   prepareOnly?: boolean;
+  /** Internal reference only. Public request schemas do not accept this field. */
+  selfTradeManagement?: ManagementReference;
   // Task #319 — Ruby bounded executor. `rubyCommandKind` lets the auth layer
   // distinguish a plain MODIFY from a break-even move, and a full CLOSE from a
   // PARTIAL_CLOSE, so the per-action permission flags map correctly. Optional;
@@ -524,6 +528,27 @@ async function executeOpen(args: {
   };
 }
 
+async function resolveInstantManagementPosition(userId: number, intent: InstantTradeIntent) {
+  const attributed = intent.source === "self_trade" || intent.selfTradeAgentId != null ||
+    intent.selfTradeDecisionId != null || intent.selfTradeManagement != null;
+  if (!attributed) {
+    const [position] = await livePositionLedger.read({
+      where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, intent.positionId!)), limit: 1,
+    });
+    return { position, target: undefined as ManagementTarget | undefined };
+  }
+  if (intent.source !== "self_trade" || !intent.selfTradeManagement) throw new ManagementTargetError("MANAGEMENT_TARGET_REQUIRED");
+  const facts = await resolveManagementTarget(userId, intent.selfTradeManagement);
+  const target = facts.target;
+  if (intent.selfTradeAgentId !== target.agentId || intent.selfTradeDecisionId !== target.decisionId ||
+      intent.positionId !== target.brokerTicket || intent.closeVolume != null ||
+      intent.action !== (target.action === "EXIT" ? "CLOSE" : "MODIFY_SL_TP") ||
+      (target.action !== "EXIT" && (intent.newStopLoss !== target.nextStopLoss ||
+        (intent.newTakeProfit != null && intent.newTakeProfit !== target.currentTakeProfit))))
+    throw new ManagementTargetError("MANAGEMENT_INTENT_MISMATCH");
+  return { position: facts.position, target };
+}
+
 async function executeClose(args: {
   userId: number;
   intent: InstantTradeIntent;
@@ -534,11 +559,13 @@ async function executeClose(args: {
     await writeAudit({ userId, action: "INSTANT_CLOSE_REJECTED", ip, ua, metadata: { intent, blockReason: "MISSING_POSITION_ID" } });
     return { ok: false, httpStatus: 400, error: "MISSING_POSITION_ID" };
   }
-  const pos = await livePositionLedger.read({
-    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, intent.positionId)),
-    limit: 1,
-  });
-  const row = pos[0];
+  let resolved: Awaited<ReturnType<typeof resolveInstantManagementPosition>>;
+  try { resolved = await resolveInstantManagementPosition(userId, intent); }
+  catch (error) {
+    if (!(error instanceof ManagementTargetError)) throw error;
+    return { ok: false, httpStatus: 409, error: error.reason };
+  }
+  const { position: row, target } = resolved;
   if (!row) {
     await writeAudit({ userId, action: "INSTANT_CLOSE_REJECTED", ip, ua, metadata: { intent, blockReason: "POSITION_NOT_FOUND" } });
     return { ok: false, httpStatus: 404, error: "POSITION_NOT_FOUND" };
@@ -554,7 +581,7 @@ async function executeClose(args: {
     if (intent.closeVolume < full) closeVolume = intent.closeVolume;
   }
 
-  const r = await closeOnePosition({ userId, position: row, closeVolume });
+  const r = await closeOnePosition({ userId, position: row, closeVolume, managementTarget: target });
   await writeAudit({
     userId, action: r.ok ? "INSTANT_CLOSE_ACCEPTED" : "INSTANT_CLOSE_REJECTED", ip, ua,
     metadata: {
@@ -596,11 +623,13 @@ async function executeModify(args: {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "MISSING_POSITION_ID" } });
     return { ok: false, httpStatus: 400, error: "MISSING_POSITION_ID" };
   }
-  const pos = await livePositionLedger.read({
-    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, intent.positionId)),
-    limit: 1,
-  });
-  const row = pos[0];
+  let resolved: Awaited<ReturnType<typeof resolveInstantManagementPosition>>;
+  try { resolved = await resolveInstantManagementPosition(userId, intent); }
+  catch (error) {
+    if (!(error instanceof ManagementTargetError)) throw error;
+    return { ok: false, httpStatus: 409, error: error.reason };
+  }
+  const { position: row, target } = resolved;
   if (!row) {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "POSITION_NOT_FOUND" } });
     return { ok: false, httpStatus: 404, error: "POSITION_NOT_FOUND" };
@@ -615,7 +644,8 @@ async function executeModify(args: {
     volume: Number(row.volume),
     newStopLoss: intent.newStopLoss ?? (row.stopLoss != null ? Number(row.stopLoss) : null),
     newTakeProfit: intent.newTakeProfit ?? (row.takeProfit != null ? Number(row.takeProfit) : null),
-    sourcePage: `INSTANT_MODIFY_${intent.source.toUpperCase()}`,
+    sourcePage: target ? MANAGEMENT_TARGET_SOURCE : `INSTANT_MODIFY_${intent.source.toUpperCase()}`,
+    managementTarget: target,
   });
   if (!("ok" in draft) || draft.ok !== true) {
     const d = draft as { reason?: string; primaryReason?: string };
@@ -652,8 +682,9 @@ async function closeOnePosition(args: {
   // When set (PARTIAL_CLOSE), reduce only this many lots via the SAME
   // CLOSE_LIVE_POSITION draft. Must already be validated as > 0 and < full.
   closeVolume?: number;
+  managementTarget?: ManagementTarget;
 }): Promise<InstantTradeResult> {
-  const { userId, position, closeVolume } = args;
+  const { userId, position, closeVolume, managementTarget } = args;
   if (!position.brokerTicket) return { ok: false, httpStatus: 400, error: "POSITION_MISSING_BROKER_TICKET" };
   const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId,
@@ -662,7 +693,8 @@ async function closeOnePosition(args: {
     symbol: position.symbol,
     side: position.side as "BUY" | "SELL",
     volume: closeVolume ?? Number(position.volume),
-    sourcePage: "INSTANT_CLOSE",
+    sourcePage: managementTarget ? MANAGEMENT_TARGET_SOURCE : "INSTANT_CLOSE",
+    managementTarget,
   });
   if (!("ok" in draft) || draft.ok !== true) {
     const d = draft as { reason?: string; primaryReason?: string };

@@ -34,6 +34,7 @@
 // SAFETY:
 // - Dispatch claims run AFTER the existing gate evaluator has returned PASS.
 //   Agent entries additionally revalidate their admission authority under locks.
+//   Automatic management additionally revalidates its exact server target.
 //   This can only add a refusal; it cannot weaken, reorder or skip a live gate.
 // - Losing the CAS is fail-CLOSED: no order is mirrored.
 // - Read/writes are keyed by commandId; ownership (userId) is enforced by the
@@ -48,6 +49,7 @@ import {
   withEntryAuthority,
   AgentEntryAuthorityError,
 } from "../selfTrade/entryAuthority.js";
+import { claimManagementCommand, isAgentManagementCommand } from "../selfTrade/managementTarget.js";
 import { writeSelfTradeAudit } from "../selfTrade/audit.js";
 
 /**
@@ -92,6 +94,8 @@ export async function claimLiveCommandForDispatch(
         .where(eq(arxLiveCommandsTable.commandId, commandId))
         .limit(1)
     )[0];
+  if (observed && isAgentManagementCommand(observed))
+    return claimManagementCommand(observed, "LIVE_APPROVED", patch, database);
   if (observed && isAgentEntryCommand(observed))
     return claimAgentCommand(observed, "LIVE_APPROVED", patch, database, clock);
   const rows = await database
@@ -131,6 +135,8 @@ export async function claimLiveCommandForConfirm(
         .where(eq(arxLiveCommandsTable.commandId, commandId))
         .limit(1)
     )[0];
+  if (observed && isAgentManagementCommand(observed))
+    return claimManagementCommand(observed, "LIVE_CONFIRMATION_REQUIRED", patch, database);
   if (observed && isAgentEntryCommand(observed))
     return claimAgentCommand(
       observed,
