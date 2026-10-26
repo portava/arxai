@@ -22878,6 +22878,30 @@ components:
         totalAvailable: { type: number }
         totalRealizedPnl: { type: number }
         totalOpenPnl: { type: number }
+        accounting: { $ref: "#/components/schemas/SelfTradeAccountingCoverage" }
+
+    SelfTradeAccountingCoverage:
+      type: object
+      description: Recorded book coverage, not broker verification. Subtotals exclude unknown values and do not assert a complete account balance or usable risk budget.
+      required: [status, asOf, dayStart, closedTrades, recordedTrades, unknownTrades, unresolvedAccounting, unknownCloseTime, missingLedgers, unpostedTrades, unreconciledLedgers, unmatchedPostings, recordedRealizedPnl, recordedAvailableFunds, dailyRecordedPnl, dailyLossUsed, notes]
+      properties:
+        status: { type: string, enum: [RECORDED, INCOMPLETE, UNAVAILABLE] }
+        asOf: { type: string }
+        dayStart: { type: string, description: Inclusive UTC start of the current reporting day. }
+        closedTrades: { type: integer }
+        recordedTrades: { type: integer }
+        unknownTrades: { type: integer }
+        unresolvedAccounting: { type: integer }
+        unknownCloseTime: { type: integer }
+        missingLedgers: { type: integer, description: Missing or invalid ledgers. }
+        unpostedTrades: { type: integer, description: Numeric closed outcomes without exactly one matching ledger posting. }
+        unreconciledLedgers: { type: integer, description: Ledgers whose realized subtotal or posting currency does not reconcile. }
+        unmatchedPostings: { type: integer, description: Realized postings without one matching usable closed execution for the same agent. }
+        recordedRealizedPnl: { type: number, nullable: true, description: Recorded ledger subtotal in USD. An incomplete subtotal is not total realized performance. }
+        recordedAvailableFunds: { type: number, nullable: true, description: "Recorded ledger subtotal in USD, not independently verified withdrawable or tradeable capital." }
+        dailyRecordedPnl: { type: number, nullable: true, description: Recorded execution P/L subtotal from dayStart through asOf; unknown outcomes are excluded. }
+        dailyLossUsed: { type: number, nullable: true, description: Nonnegative net recorded loss for the current UTC day; unavailable when coverage is incomplete. }
+        notes: { type: array, items: { type: string } }
 
     SelfTradeAgent:
       type: object
@@ -22951,6 +22975,7 @@ components:
       required: [agent]
       properties:
         agent: { $ref: "#/components/schemas/SelfTradeAgent" }
+        accounting: { $ref: "#/components/schemas/SelfTradeAccountingCoverage" }
         settings:
           oneOf:
             - { $ref: "#/components/schemas/SelfTradeAgentSettings" }

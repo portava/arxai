@@ -277,7 +277,8 @@
     "diagnose:deriv-public-data": "node --import tsx src/scripts/derivPublicDataProbe.ts",
     "test:self-trade-management-postgres": "node src/lib/selfTrade/__qa__/runManagementTargetPostgres.mjs",
     "test:truth-component-evidence": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/truth/__qa__/componentEvidence.test.ts src/lib/truth/__qa__/componentProducerWiring.test.ts",
-    "test:truth-memory-postgres": "node src/lib/truth/__qa__/runSignalMemoryPostgres.mjs"
+    "test:truth-memory-postgres": "node src/lib/truth/__qa__/runSignalMemoryPostgres.mjs",
+    "test:self-trade-accounting-postgres": "node src/lib/selfTrade/__qa__/runAccountingCoveragePostgres.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
