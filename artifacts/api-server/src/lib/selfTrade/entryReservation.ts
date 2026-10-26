@@ -1,6 +1,10 @@
 // Atomic agent admission. No broker/network operation runs inside this short
 // transaction. A committed pending row is a durable capacity reservation, even
 // when a process dies before storing a command link. Time never releases it.
+import {
+  hasUnresolvedAgentAccounting,
+  ENTRY_ACCOUNTING_UNRESOLVED,
+} from "./accountingHold.js";
 import { writeSelfTradeAudit } from "./audit.js";
 import { entryAuthoritySnapshot } from "./entryAuthority.js";
 import { isDeepStrictEqual } from "node:util";
@@ -148,6 +152,9 @@ export async function reserveAgentEntry(
     ) {
       return { ok: false, reason: "ENTRY_PROTECTION_MISMATCH" };
     }
+
+    if (await hasUnresolvedAgentAccounting(tx, agent.id))
+      return { ok: false, reason: ENTRY_ACCOUNTING_UNRESOLVED };
 
     const idempotencyKey = `decision:${decision.id}`;
     // Terminal states remain consumed decisions. A fresh decision has a new ID;
