@@ -8,3 +8,4 @@
 - [Browser QA dependencies](browser-qa-dependencies.md) — scripts declare Playwright/Vite, but a fresh nested workspace may need a filtered frozen install before browser tests run.
 - [Auth query cancellation](auth-query-cancellation.md) — notify auth observers, cancel pending private queries synchronously, then clear without awaiting network settlement.
 - [React Query browser focus checks](react-query-browser-focus-checks.md) — simulate `visibilitychange` on `window` to trigger TanStack Query's default focus revalidation in browser QA.
+- [Preview admin setup approval](preview-admin-setup.md) — admin bootstrap is approved for preview only; do not extend that approval to production.
