@@ -3,12 +3,12 @@ const m=vi.hoisted(()=>{
   const handles:any[]=[];
   const range={from:10,to:30};
   const scale={subscribeVisibleLogicalRangeChange:vi.fn(),getVisibleLogicalRange:()=>range,setVisibleLogicalRange:vi.fn(),setVisibleRange:vi.fn(),fitContent:vi.fn(),width:()=>800,coordinateToTime:vi.fn(()=>100)};
-  const chart={addSeries:vi.fn((kind:any,options:any,pane=0)=>{const handle={kind,options,pane,setData:vi.fn(),update:vi.fn(),applyOptions:vi.fn(),createPriceLine:vi.fn(()=>({applyOptions:vi.fn()})),removePriceLine:vi.fn(),coordinateToPrice:()=>1.2,attachPrimitive:vi.fn(),detachPrimitive:vi.fn()};handles.push(handle);return handle;}),removeSeries:vi.fn(),subscribeClick:vi.fn(),subscribeCrosshairMove:vi.fn(),timeScale:()=>scale,applyOptions:vi.fn(),remove:vi.fn(),panes:()=>Array.from({length:4},()=>({setHeight:vi.fn(),setStretchFactor:vi.fn(),getHeight:()=>300}))};
+  const chart={addSeries:vi.fn((kind:any,options:any,pane=0)=>{const handle={kind,options,pane,setData:vi.fn(),update:vi.fn(),pop:vi.fn(),applyOptions:vi.fn(),createPriceLine:vi.fn(()=>({applyOptions:vi.fn()})),removePriceLine:vi.fn(),coordinateToPrice:()=>1.2,attachPrimitive:vi.fn(),detachPrimitive:vi.fn()};handles.push(handle);return handle;}),removeSeries:vi.fn(),subscribeClick:vi.fn(),subscribeCrosshairMove:vi.fn(),timeScale:()=>scale,applyOptions:vi.fn(),remove:vi.fn(),panes:()=>Array.from({length:4},()=>({setHeight:vi.fn(),setStretchFactor:vi.fn(),getHeight:()=>300}))};
   return{chart,handles,scale};
 });
 vi.mock("lightweight-charts",()=>({createChart:()=>m.chart,CandlestickSeries:"candles",BarSeries:"bars",LineSeries:"line",HistogramSeries:"histogram",createSeriesMarkers:()=>({detach:vi.fn()}),ColorType:{Solid:"solid"},CrosshairMode:{Normal:0},LineStyle:{Dashed:2,Solid:0},PriceScaleMode:{Normal:0,Logarithmic:1}}));
 import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
-import { STUDY_DEFAULTS } from "./chartStudies";
+import { STUDY_DEFAULTS, STUDY_CATALOG, StudyCalculator } from "./chartStudies";
 const bars=Array.from({length:100},(_,i)=>({time:100+i*60,open:1,high:2,low:1,close:1.5+Math.sin(i)*.1}));
 let adapter:LightweightChartsAdapter;
 let container:HTMLDivElement;
@@ -40,6 +40,29 @@ describe("Smart Chart studies, styles and drawing ownership",()=>{
     expect((adapter as any).hoveredCandle?.time).toBe(bars[40]!.time);
     adapter.setStudies([]);
     expect(adapter.getStudyValues(bars[40]!.time)).toEqual([]);
+  });
+  it.each(STUDY_CATALOG)("$name retains only correct causal state across replay and corrections", definition => {
+    const config = definition.defaults;
+    adapter.setStudies([config]);
+    const verify = (next: typeof bars) => {
+      adapter.setCandles(next);
+      const expected = new StudyCalculator(config).calculate(next);
+      for (const [i,candle] of next.entries()) {
+        expect(adapter.getStudyValues(candle.time)[0]!.values.map(v=>v.value)).toEqual(expected[i]!.values);
+      }
+      const future = bars.find(c=>!next.some(n=>n.time===c.time));
+      if(future)expect(adapter.getStudyValues(future.time)[0]!.values.every(v=>v.value==null)).toBe(true);
+    };
+    verify(bars.slice(0,99)); verify(bars); verify(bars.slice(0,1)); verify(bars);
+    verify([]); verify(bars.slice(0,1)); verify(bars.slice(10)); verify(bars);
+    const revised = bars.map((b,i)=>i===30?{...b,close:1.9}:b);
+    verify(revised); verify(revised.slice(0,50)); verify(bars);
+    adapter.setChartStyle("line"); verify(bars.slice(0,99));
+    adapter.setChartStyle("bars"); verify(bars);
+    adapter.updateActiveCandle({...bars.at(-1)!,close:1.85});
+    // A queued streaming revision must not be lost when an immediate poll adds
+    // a new candle before the scheduled study frame runs.
+    verify([...bars.slice(0,-1),{...bars.at(-1)!,close:1.85},{...bars.at(-1)!,time:6100,close:1.7}]);
   });
   it("keeps user drawings separate and excludes off-history endpoints from the time scale",()=>{
     adapter.setDrawings([{id:"h",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"},{id:"t",kind:"trend",start:{time:100,price:1.2},end:{time:160,price:1.4},color:"#ffffff"},{id:"outside",kind:"trend",start:{time:1,price:1.2},end:{time:160,price:1.4},color:"#ffffff"}]);

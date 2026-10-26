@@ -79,6 +79,20 @@ describe("study viewport rendering and streaming", () => {
     expect(handles[0].update).not.toHaveBeenCalled();
     expect(scale.unsubscribeVisibleLogicalRangeChange).toHaveBeenCalledTimes(1);
   });
+  it("batches intermediate price-axis movement and renders only the final study window", () => {
+    const {renderer,handles,candles,move}=fixture();
+    renderer.setStudies(STUDY_DEFAULTS.slice(0,1),candles);
+    handles[0].setData.mockClear();
+    renderer.batchViewport(()=>{
+      move(0,10);move(4000,4100);
+      renderer.refresh(candles,9999,true);
+    });
+    expect(handles[0].setData).toHaveBeenCalledTimes(1);
+    const rendered=handles[0].setData.mock.calls[0][0];
+    expect(rendered[0].time).toBe(candles[3800]!.time);
+    expect(rendered.at(-1).time).toBe(candles[4300]!.time);
+    move(9000,9100);expect(handles[0].setData).toHaveBeenCalledTimes(2);
+  });
   it("bounds windows at empty, first, last and out-of-range views", () => {
     expect(studyDisplayWindow(0, null, null)).toEqual({ from: 0, to: 0 });
     expect(studyDisplayWindow(10000, { from: -100, to: 100 } as any, null)).toEqual({ from: 0, to: 301 });

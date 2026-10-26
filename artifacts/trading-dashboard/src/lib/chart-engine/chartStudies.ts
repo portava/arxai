@@ -107,7 +107,7 @@ export class StudyCalculator {
         const count = input == null ? 0 : (prior?.count ?? 0) + 1;
         const expired = this.states[i - period]?.averages[key]?.input ?? 0;
         const sum = input == null ? 0 : (prior?.sum ?? 0) + input - (count > period ? expired : 0);
-        const weighted = input == null ? 0 : count <= period
+        const weighted = method !== "wma" || input == null ? 0 : count <= period
           ? (prior?.weighted ?? 0) + count * input
           : (prior?.weighted ?? 0) - (prior?.sum ?? 0) + period * input;
         let value: number | null = null;
@@ -118,12 +118,6 @@ export class StudyCalculator {
         }
         state.averages[key] = { input, count, sum, weighted, value };
         return value;
-      };
-      const windowPrices = () => {
-        const values: number[] = [];
-        for (let j = i - p + 1; j < i; j++) values.push(this.states[j]!.price);
-        values.push(price);
-        return values;
       };
       let values: (number | null)[] = [null];
       switch (c.kind) {
@@ -141,14 +135,20 @@ export class StudyCalculator {
           const mean = average("basis", price, p, "sma");
           values = c.kind === "bollinger" ? [null, null, null] : [null];
           if (mean != null) {
-            const window = windowPrices();
-            // Centered variance avoids catastrophic cancellation on FX prices.
-            const deviation = Math.sqrt(window.reduce((sum, x) => sum + (x - mean) ** 2, 0) / p);
-            if (c.kind === "stddev") values = [deviation];
-            if (c.kind === "bollinger") values = [mean, mean + deviation * (c.multiplier ?? 2), mean - deviation * (c.multiplier ?? 2)];
+            // Preserve centered formulas and summation order without an
+            // allocated window per bar. CCI needs absolute deviation only;
+            // calculating variance/sqrt as well cannot affect its result.
+            let sum = 0;
             if (c.kind === "cci") {
-              const mad = window.reduce((sum, x) => sum + Math.abs(x - mean), 0) / p;
+              for (let j = i - p + 1; j < i; j++) sum += Math.abs(this.states[j]!.price - mean);
+              sum += Math.abs(price - mean);
+              const mad = sum / p;
               values = [mad === 0 ? 0 : (price - mean) / (.015 * mad)];
+            } else {
+              for (let j = i - p + 1; j < i; j++) sum += (this.states[j]!.price - mean) ** 2;
+              sum += (price - mean) ** 2;
+              const deviation = Math.sqrt(sum / p);
+              values = c.kind === "stddev" ? [deviation] : [mean, mean + deviation * (c.multiplier ?? 2), mean - deviation * (c.multiplier ?? 2)];
             }
           }
           break;

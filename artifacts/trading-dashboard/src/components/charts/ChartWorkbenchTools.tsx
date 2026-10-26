@@ -11,11 +11,15 @@ interface Props {
   adapter: ChartEngineAdapter | null; epoch: number; symbol: string; timeframe: string;
   preferences: ChartPreferences; onPreferences: Dispatch<SetStateAction<ChartPreferences>>;
   hasCandles: boolean; feedLabel: string;
+  /** Optional private analysis namespace; live charts keep their existing key. */
+  drawingKey?: string;
+  /** Private replay annotations never persist or synchronize across sessions. */
+  ephemeralDrawings?: boolean;
 }
-export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel}: Props) {
-  const key = drawingStorageKey(symbol,timeframe);
+export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false}: Props) {
+  const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
-  const [history,setHistory] = useState<{past:ChartDrawing[][];present:ChartDrawing[];future:ChartDrawing[][]}>(()=>({past:[],present:validateDrawings(readChartStorage(key)),future:[]}));
+  const [history,setHistory] = useState<{past:ChartDrawing[][];present:ChartDrawing[];future:ChartDrawing[][]}>(()=>({past:[],present:ephemeralDrawings ? [] : validateDrawings(readChartStorage(key)),future:[]}));
   const [panel,setPanel] = useState<"studies" | "objects" | null>(null);
   const [tool,setTool] = useState<DrawingKind | null>(null);
   const [anchor,setAnchor] = useState<ChartAnchor | null>(null);
@@ -27,21 +31,23 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [snap,setSnap] = useState(false);
   const drawings = history.present;
   const persist = (next: ChartDrawing[]) => {
+    if(ephemeralDrawings)return;
     const saved = writeChartStorage(key,next);
     setStorageFailed(!saved);
     if (saved) window.dispatchEvent(new CustomEvent("arx.chart.drawings.updated",{detail:{key,source:instanceId}}));
   };
   useEffect(()=>{
+    if(ephemeralDrawings)return;
     const receive = (event:Event) => {
       const detail=(event as CustomEvent<{key:string;source:string}>).detail;
       const changedKey=event instanceof StorageEvent ? event.key : detail?.key;
       if(changedKey===key && detail?.source!==instanceId) {
-        setHistory({past:[],present:validateDrawings(readChartStorage(key)),future:[]});
+        setHistory({past:[],present:ephemeralDrawings ? [] : validateDrawings(readChartStorage(key)),future:[]});
       }
     };
     window.addEventListener("storage",receive);window.addEventListener("arx.chart.drawings.updated",receive);
     return()=>{window.removeEventListener("storage",receive);window.removeEventListener("arx.chart.drawings.updated",receive);};
-  },[key,instanceId]);
+  },[key,instanceId,ephemeralDrawings]);
   const change = (next: ChartDrawing[]) => {
     const valid = validateDrawings(next);
     if (JSON.stringify(valid) === JSON.stringify(drawings)) return;

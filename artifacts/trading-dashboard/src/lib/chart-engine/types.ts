@@ -134,7 +134,7 @@ export interface ChartEngineAdapter {
   /** Update the live-price affordance verdict. Re-applies on the next paint. */
   setFeedState(state: ChartEngineFeedState): void;
   /** Reconcile candles incrementally; replace only changed history. Preserve zoom/pan. */
-  setCandles(candles: ChartEngineCandle[]): void;
+  setCandles(candles: ChartEngineCandle[], view?: { revealLatest?: boolean }): void;
   /**
    * Draw the read-only overlay set (lines / zones / markers). `latestBarTime` is
    * the Unix-seconds time of the most recent bar (markers anchor to it); null
@@ -156,7 +156,7 @@ export interface ChartEngineAdapter {
   /** Map a price to a Y pixel coordinate (for DOM overlays); null if off-scale. */
   priceToCoordinate(price: number): number | null;
   /** View controls only; none of these methods touches execution. */
-  goToLatest?(): void;
+  goToLatest?(animated?: boolean): void;
   fitHistory?(): void;
   setScaleMode?(mode: ChartScaleMode): void;
   setPriceScaleInverted?(inverted: boolean): void;

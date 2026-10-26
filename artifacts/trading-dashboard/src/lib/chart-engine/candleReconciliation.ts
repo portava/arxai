@@ -4,6 +4,14 @@ export function sameCandle(a: ChartEngineCandle, b: ChartEngineCandle): boolean 
   return a.time === b.time && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close;
 }
 
+/** Number of observed candles whose OHLC and timestamp are unchanged. Study
+ * state before this index is causal and may survive appends or truncation. */
+export function unchangedCandlePrefix(previous: readonly ChartEngineCandle[], next: readonly ChartEngineCandle[]): number {
+  let index = 0;
+  while (index < previous.length && index < next.length && sameCandle(previous[index]!, next[index]!)) index++;
+  return index;
+}
+
 /** Only an unchanged prefix can use update(). Corrections/prepends need setData. */
 export function incrementalCandles(previous: readonly ChartEngineCandle[], next: readonly ChartEngineCandle[]): ChartEngineCandle[] | null {
   if (!previous.length || next.length < previous.length) return null;

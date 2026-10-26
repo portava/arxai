@@ -59,9 +59,19 @@ export class ChartAnalysisRenderer {
     this.refresh(candles, 0, true);
     if (range) this.chart.timeScale().setVisibleLogicalRange(range);
   }
+  /** Price writes can move the shared time axis several times in one JS task.
+   * Render studies once against the final viewport, before that task can paint. */
+  batchViewport(work: () => void): void {
+    const previous = this.rendering;
+    this.rendering = true;
+    try { work(); } finally { this.rendering = previous; }
+  }
   refresh(candles: ChartEngineCandle[], from: number, replace: boolean): void {
+    // A stream revision may still be queued when a poll/seek arrives. Its
+    // earliest dirty index must survive coalescing into this synchronous read.
+    const dirtyFrom = Math.min(from, this.pending?.from ?? from);
     this.cancelPending();
-    const changed = this.studies.map(study => study.calculator.calculate(candles, replace ? 0 : from));
+    const changed = this.studies.map(study => study.calculator.calculate(candles, dirtyFrom));
     const window = this.nextWindow();
     if (replace || window !== this.displayWindow) { this.renderWindow(window); return; }
     const first = this.studies[0]?.calculator.points[window.from]?.time;
