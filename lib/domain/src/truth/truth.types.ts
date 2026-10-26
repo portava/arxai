@@ -17,6 +17,19 @@ export type TruthDataState =
   | "STALE"
   | "UNAVAILABLE";
 
+/** Observed input identity, separate from the time a calculation was built.
+ * sourceIdentity is an opaque digest of the provider/bridge provenance; no
+ * account identifiers are exposed. A scheduled candle end is not finality. */
+export interface TruthReadEvidence {
+  symbol: string;
+  timeframe: string;
+  source: string;
+  sourceIdentity: string;
+  lastClosedCandleAt: string;
+  /** User whose account-dependent inputs were evaluated; absent for market-only reads. */
+  userId?: number;
+}
+
 /** A single component's directional read. UNKNOWN when blind/absent. */
 export type TruthAlignment = "BULLISH" | "BEARISH" | "NEUTRAL" | "UNKNOWN";
 
@@ -58,7 +71,7 @@ export interface TruthComponentInput {
   alignment: TruthAlignment;
   /** Clean-English one-liner shown verbatim by every surface. */
   label: string;
-  /** ISO timestamp of when THIS component's read was generated (data time). */
+  /** ISO timestamp of the confirmed bar behind this read, distinct from build time. */
   asOf: string | null;
 }
 

@@ -30,7 +30,9 @@ import type {
   SignalLifecycleStage,
   ConfidenceBand,
 } from "@workspace/domain/signal-intelligence";
-import { routeCandles, classifySymbol, resolveDerivSymbol } from "../data/marketDataRouter.js";
+import { prepareMarketRead, matchedMarketQuote, evidenceMatches, isCurrentBuild } from "../truth/marketReadEvidence.js";
+import { scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
+import { routeCandles, routeQuote, classifySymbol, resolveDerivSymbol } from "../data/marketDataRouter.js";
 import {
   scanSymbolTimeframe,
   decorateOpportunitiesWithNewsRisk,
@@ -38,11 +40,9 @@ import {
 } from "../marketScanner.js";
 import { evaluateScalpForSymbol } from "../scalp/scalpService.js";
 import type { ScalpResult } from "../scalp/scalpTypes.js";
-import { loadExecutionInput, currentPriceFor } from "../scalp/scalpServiceInputs.js";
+import { loadExecutionInput } from "../scalp/scalpServiceInputs.js";
 import { resolveSymbolFeedVerdict } from "../data/symbolFeedVerdict.js";
 import { hasRecentDerivTickFor } from "../data/providers/derivProvider.js";
-import { rawTrailingIntervalGap } from "../data/chart/candleNormalization.js";
-import { isChartTimeframe } from "../data/chart/timeframes.js";
 
 /** Default timeframe for a market-edge read (aligns with scanner/scalp). */
 export const DEFAULT_SIGNAL_TIMEFRAME = "M5";
@@ -224,37 +224,26 @@ export async function buildRubyMarketEdgeForUser(
       ? Promise.resolve(options.scalp)
       : evaluateScalpForSymbol(userId, { symbol, mode: "ANY" }).catch(() => null);
 
-  const [candleResult, opp, scalp, execution, price, previous] = await Promise.all([
+  const [candleResult, opp, scalp, execution, quoteResult, previous] = await Promise.all([
     routeCandles(symbol, timeframe, SIGNAL_CANDLE_LIMIT),
     scanSymbolTimeframe(symbol, timeframe),
     scalpPromise,
     loadExecutionInput(userId),
-    currentPriceFor(symbol),
+    routeQuote(symbol),
     loadPreviousSnapshot(userId, symbol, timeframe),
   ]);
 
-  // Real candles only (router never fabricates). Empty → honest blind read.
-  const candles: SignalCandle[] | null =
-    candleResult.ok && candleResult.candles.length > 0
-      ? candleResult.candles.map((c) => ({
-          open: c.open,
-          high: c.high,
-          low: c.low,
-          close: c.close,
-          volume: c.volume ?? null,
-          time: c.time,
-        }))
-      : null;
-
-  let dataSource: string = candles ? "LIVE_FEED" : "AWAITING_FEED";
+  const now = Date.now();
+  const marketRead = prepareMarketRead(candleResult, symbol, timeframe, now);
+  const candles: SignalCandle[] | null = marketRead?.openClosed ?? null;
+  const price = matchedMarketQuote(candleResult, quoteResult, symbol, now)?.mid ?? null;
+  let dataSource = marketRead?.trailingIntervals != null && marketRead.trailingIntervals <= 1 ? "LIVE_FEED" : "AWAITING_FEED";
   const derivBacked =
     (assetClass === "synthetic" || resolveDerivSymbol(symbol) !== null) &&
     (candleResult.primaryProvider === "deriv" ||
       candleResult.primaryProvider?.startsWith("deriv") === true);
-  if (candles && derivBacked) {
-    const trailingIntervals = isChartTimeframe(timeframe)
-      ? rawTrailingIntervalGap(candleResult.candles, candleResult.primaryProvider ?? null, timeframe)
-      : null;
+  if (marketRead && derivBacked) {
+    const trailingIntervals = marketRead.trailingIntervals;
     const verdict = resolveSymbolFeedVerdict({
       hasRecentTick: hasRecentDerivTickFor(symbol),
       trailingIntervals,
@@ -270,7 +259,9 @@ export async function buildRubyMarketEdgeForUser(
   // Scanner technical read — drop any SIMULATOR-tagged opp so sim data can't leak.
   let scanner: SignalScannerInput | null = null;
   let scannerOpp: DecoratedOpportunity | null = null;
-  if (opp && opp.dataSource !== "SIMULATOR") {
+  if (opp && marketRead && price != null && opp.symbol === symbol && opp.timeframe === timeframe &&
+      opp.featureSnapshot?.computedAt === marketRead.evidence.lastClosedCandleAt && opp.dataSource === "LIVE_FEED" && opp.sufficiency?.canShowTradeSetup &&
+      scannerRowSourceIdentity(opp) === marketRead.evidence.sourceIdentity && isCurrentBuild(opp.generatedAt, now)) {
     const [decorated] = await decorateOpportunitiesWithNewsRisk([opp]);
     scannerOpp = (decorated ?? opp) as DecoratedOpportunity;
     scanner = oppToScannerInput(scannerOpp);
@@ -279,7 +270,9 @@ export async function buildRubyMarketEdgeForUser(
     ? mapNewsRiskLevel(scannerOpp)
     : null;
 
-  const scalpInput: SignalScalpInput | null = scalp
+  const scalpInput: SignalScalpInput | null = scalp &&
+    evidenceMatches(scalp.marketEvidence, marketRead?.evidence, now, userId) &&
+    isCurrentBuild(scalp.generatedAt, now) && Date.parse(scalp.expiresAt) > now
     ? {
         flameStage: scalp.flame.flameStage,
         freshness: scalp.flame.freshness,
@@ -315,8 +308,10 @@ export async function buildRubyMarketEdgeForUser(
     execution: executionInput,
     newsRiskLevel,
     previous,
-    now: Date.now(),
+    now,
   });
+
+  signal.marketEvidence = marketRead ? { ...marketRead.evidence, userId } : null;
 
   if (!options.skipPersist) {
     await persistSnapshot(userId, signal);

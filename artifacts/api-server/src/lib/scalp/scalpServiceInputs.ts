@@ -8,6 +8,7 @@
 //  - Per-user isolation: specs + execution + account are read scoped by userId.
 //  - No fabrication: candles/prices are real or null (caller reads blind).
 
+import { prepareMarketRead, matchedMarketQuote } from "../truth/marketReadEvidence.js";
 import { isHeartbeatAgeMsOnline } from "../brokerHub/freshness.js";
 import { getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { db, arxSymbolSpecsTable } from "@workspace/db";
@@ -169,4 +170,18 @@ export function deriveHtfBias(candles: ScalpCandle[] | null): "bullish" | "beari
   if (driftPct > 0.05) return "bullish";
   if (driftPct < -0.05) return "bearish";
   return "neutral";
+}
+
+/** Focus reads bind the actual M5 bars and price before discarding timestamps.
+ * Legacy management input loaders retain their separate protective-command path. */
+export async function scalpMarketInputsFor(symbol: string) {
+  const [bars, quote] = await Promise.allSettled([
+    routeCandles(symbol, SCALP_TIMEFRAME, SCALP_CANDLE_LIMIT), routeQuote(symbol),
+  ]);
+  const now = Date.now();
+  const read = bars.status === "fulfilled" ? prepareMarketRead(bars.value, symbol, SCALP_TIMEFRAME, now) : null;
+  const current = read && read.trailingIntervals != null && read.trailingIntervals <= 1 ? read : null;
+  const price = bars.status === "fulfilled" && quote.status === "fulfilled"
+    ? matchedMarketQuote(bars.value, quote.value, symbol, now)?.mid ?? null : null;
+  return { candles: current?.openClosed ?? null, price, evidence: current && price != null ? current.evidence : null };
 }

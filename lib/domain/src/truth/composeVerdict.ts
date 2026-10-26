@@ -77,6 +77,21 @@ export function evaluateLevelStaleness(
   return { stale: false, reason: null };
 }
 
+/** Complete finite geometry is required for a directional entry suggestion.
+ * Missing values are not "not stale" evidence. Invalidation is optional, but
+ * when supplied must be on the protective side of the whole entry zone. */
+function usableGeometry(levels: TruthLevelInput, bias: TruthBias, price: number | null): boolean {
+  const positive = (v: number | null): v is number => v != null && Number.isFinite(v) && v > 0;
+  if (!positive(price) || !positive(levels.entryFrom) || !positive(levels.entryTo) ||
+      !positive(levels.stopLoss) || levels.entryFrom > levels.entryTo || !levels.takeProfit.length ||
+      !levels.takeProfit.every(positive) || (levels.invalidation != null && !positive(levels.invalidation))) return false;
+  const side = bias === "BULLISH" ? "BUY" : bias === "BEARISH" ? "SELL" :
+    levels.stopLoss < levels.entryFrom ? "BUY" : "SELL";
+  return side === "BUY"
+    ? levels.stopLoss < levels.entryFrom && (levels.invalidation == null || levels.invalidation < levels.entryFrom) && levels.takeProfit.every(v => v > levels.entryTo!)
+    : levels.stopLoss > levels.entryTo && (levels.invalidation == null || levels.invalidation > levels.entryTo) && levels.takeProfit.every(v => v < levels.entryFrom!);
+}
+
 // ── Evidence templates ──────────────────────────────────────────────────────
 //
 // Keyed by component + its OWN direction. Reused for BOTH the "for" list (when
@@ -236,7 +251,8 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
     atr: input.atr ?? null,
   });
 
-  const levels: ComposedLevels = staleness.stale
+  const geometryUsable = usableGeometry(input.levels, bias, input.price);
+  const levels: ComposedLevels = staleness.stale || !geometryUsable
     ? {
         entryFrom: null,
         entryTo: null,
@@ -244,7 +260,7 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
         invalidation: null,
         takeProfit: [],
         withheld: true,
-        withheldReason: staleness.reason,
+        withheldReason: staleness.reason ?? "A complete, consistent entry, stop, and target are not available yet.",
       }
     : {
         entryFrom: input.levels.entryFrom,

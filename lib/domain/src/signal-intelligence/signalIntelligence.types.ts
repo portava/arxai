@@ -253,6 +253,8 @@ export interface PreviousSignalSnapshot {
 // ── The normalized signal object ─────────────────────────────────────────────
 
 export interface RubyMarketEdgeSignal {
+  /** Optional for compatibility; absent evidence cannot vote in a truth snapshot. */
+  marketEvidence?: import("../truth/truth.types.js").TruthReadEvidence | null;
   symbol: string;
   displayName: string;
   timeframe: string;
