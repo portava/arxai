@@ -230,7 +230,7 @@ test("[C1] includeFormingTip APPENDS a tip for the new interval", async () => {
   const currentOpen = Math.floor(now / M5_MS) * M5_MS;
   const prevOpen = currentOpen - M5_MS;
   updateCandlesFromMT5(SYM, contiguousM5(prevOpen, 40), TF);
-  foldFormingTick(SYM, 1234.5, now, now);
+  foldFormingTick(SYM, 1234.5, now, now, "mt5_broker");
 
   await withFixedNow(now, async () => {
     const withTip = await getChartCandles(SYM, TF, 200, true);
@@ -268,8 +268,8 @@ test("[C2] includeFormingTip MERGES live extremes onto a same-interval newest ba
   updateCandlesFromMT5(SYM, bars, TF);
   // Fold ticks that push a new high and a new close beyond the closed bar.
   const higherHigh = newest.high + 5;
-  foldFormingTick(SYM, newest.close, now, now);
-  foldFormingTick(SYM, higherHigh, now + 1_000, now + 1_000);
+  foldFormingTick(SYM, newest.close, now, now, "mt5_broker");
+  foldFormingTick(SYM, higherHigh, now + 1_000, now + 1_000, "mt5_broker");
 
   await withFixedNow(now + 1_000, async () => {
     const withTip = await getChartCandles(SYM, TF, 200, true);
@@ -301,7 +301,7 @@ test("[C3] a stale tip BEHIND the closed feed is ignored (no rewind)", async () 
   // nothing is appended/merged.
   updateCandlesFromMT5(SYM, contiguousM5(currentOpen, 40), TF);
   const priorTickTime = currentOpen - M5_MS + 1_000;
-  foldFormingTick(SYM, 999.9, priorTickTime, priorTickTime);
+  foldFormingTick(SYM, 999.9, priorTickTime, priorTickTime, "mt5_broker");
 
   await withFixedNow(now, async () => {
     const res = await getChartCandles(SYM, TF, 200, true);

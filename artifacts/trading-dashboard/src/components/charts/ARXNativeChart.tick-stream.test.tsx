@@ -217,6 +217,7 @@ function formingBarEvent(opts: {
 }) {
   return {
     type: "forming_bar",
+    source: "mt5_broker",
     symbol: SYMBOL,
     timeframe: TF,
     bar: {
@@ -241,6 +242,7 @@ function formingBarEvent(opts: {
 function feedStatusEvent(opts: { marketFrozen: boolean; lastBrokerTimeMs: number | null }) {
   return {
     type: "feed_status",
+    source: "mt5_broker",
     symbol: SYMBOL,
     timeframe: TF,
     marketFrozen: opts.marketFrozen,
@@ -281,6 +283,7 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
     expect(openedStreams).toHaveLength(1);
     const { url, withCredentials } = openedStreams[0]!;
     expect(url).toContain("/api/chart/tick-stream");
+    expect(url).toContain("source=mt5_broker");
     expect(url).toContain(`symbol=${SYMBOL}`);
     expect(url).toContain(`timeframe=${TF}`);
     // The component sends the session cookie with the stream.
@@ -616,5 +619,38 @@ describe("Smart Chart view controls", () => {
     fireEvent.keyDown(chart,{key:"End"});
     expect(adapterSpies.fitHistory).toHaveBeenCalledOnce();
     expect(adapterSpies.goToLatest).toHaveBeenCalledOnce();
+  });
+});
+
+describe("source-bound chart ticks", () => {
+  const event = () => formingBarEvent({ openTimeMs: NEWEST_OPEN_MS, open: 1.1, high: 1.2, low: 1.0, close: 1.15 });
+  it("rejects missing, wrong-source and wrong-context prices and status", () => {
+    renderChart();
+    const stream = openedStreams[0]!;
+    act(() => {
+      for (const patch of [{ source: undefined }, { source: "deriv_public" }, { source: "deriv" },
+        { symbol: "V75" }, { timeframe: "M1" }]) {
+        stream.emit({ ...event(), ...patch });
+        stream.emit({ ...feedStatusEvent({ marketFrozen: true, lastBrokerTimeMs: 0 }), ...patch });
+      }
+    });
+    expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
+  });
+  it("rebinds on provider switch and ignores already queued frames from the old stream", () => {
+    const view = renderChart();
+    const oldStream = openedStreams[0]!;
+    currentCandleResponse = makeResponse({ ...liveFeedStatus(), source: "deriv_public" } as ChartFeedStatus);
+    view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS} />);
+    expect(oldStream.closed).toBe(true);
+    expect(openedStreams[1]!.url).toContain("source=deriv_public");
+    act(() => { oldStream.emit(event()); openedStreams[1]!.emit(event()); });
+    expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();
+    act(() => { openedStreams[1]!.emit({ ...event(), source: "deriv_public" }); });
+    expect(adapterSpies.updateActiveCandle).toHaveBeenCalledTimes(1);
+  });
+  it("does not subscribe before an identified candle source exists", () => {
+    currentCandleResponse = makeResponse({ ...liveFeedStatus(), source: null } as unknown as ChartFeedStatus);
+    renderChart();
+    expect(openedStreams).toHaveLength(0);
   });
 });

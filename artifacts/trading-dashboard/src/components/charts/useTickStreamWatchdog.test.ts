@@ -202,7 +202,7 @@ describe("C3.4 — ARXNativeChart is wired to the watchdog", () => {
 
   it("rebuilds the EventSource when the watchdog bumps the epoch", () => {
     expect(chartSrc).toMatch(
-      /\[resolvedSymbol,\s*timeframe,\s*streamWatchdog\.epoch\]/,
+      /\[resolvedSymbol,\s*timeframe,\s*streamWatchdog\.epoch,\s*tickSource\]/,
       "the reconnect signal must be a dependency of the subscribe effect",
     );
   });

@@ -1,3 +1,4 @@
+import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
 import { useEffect, useMemo, useRef, useState, useCallback, useContext } from "react";
 import { ChartLinkContext } from "./ChartLinkContext";
 import {
@@ -613,6 +614,8 @@ export function ARXNativeChart({
     if (newest) newestBarSecRef.current = newest.time;
   }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch]);
 
+  const tickSource = chartTickSource(data?.feedStatus?.source);
+
   // ── Real-time forming-tip (Task #501). Subscribe to the SAME server SSE
   //    tick-stream the Scanner chart uses (Task #496) for the current
   //    (symbol, timeframe) and apply each forming bar through the chart-engine
@@ -642,11 +645,12 @@ export function ARXNativeChart({
     // symbol/timeframe's verdict is no longer relevant, and a new stream with no
     // tick yet emits no feed_status, so a stale badge would otherwise linger.
     setMarketFrozen(null);
-    if (resolvedSymbol.length === 0) return;
+    if (resolvedSymbol.length === 0 || !tickSource) return;
     const url = u(
-      `/api/chart/tick-stream?symbol=${encodeURIComponent(resolvedSymbol)}&timeframe=${encodeURIComponent(timeframe)}`,
+      `/api/chart/tick-stream?symbol=${encodeURIComponent(resolvedSymbol)}&timeframe=${encodeURIComponent(timeframe)}&source=${encodeURIComponent(tickSource)}`,
     );
     let es: EventSource | null = null;
+    let disposed = false;
     try {
       es = new EventSource(url, { withCredentials: true });
     } catch {
@@ -654,11 +658,15 @@ export function ARXNativeChart({
     }
     streamWatchdog.noteStreamOpened();
     es.onmessage = (ev) => {
+      if (disposed) return;
       // Any frame — tip, feed_status, or heartbeat — proves the stream is alive.
       // Recorded before parsing so even an unrecognised frame counts as liveness.
       streamWatchdog.noteFrame();
       let msg: {
         type?: string;
+        source?: string;
+        symbol?: string;
+        timeframe?: string;
         frozen?: boolean;
         tickWallMs?: number;
         marketFrozen?: boolean;
@@ -670,6 +678,7 @@ export function ARXNativeChart({
       } catch {
         return;
       }
+      if (!matchesChartTickContext(msg, tickSource, resolvedSymbol, timeframe)) return;
       // Market-frozen / closed-market indicator. Handled BEFORE the tip-apply
       // guards below because it must surface even when no live tip is applied
       // (a frozen broker quote is exactly the case where we apply NO tip).
@@ -723,12 +732,13 @@ export function ARXNativeChart({
     };
 
     return () => {
+      disposed = true;
       es?.close();
     };
     // The watchdog's callbacks are stable; `epoch` is the reconnect signal and
     // this effect's cleanup closes the dead stream before the replacement opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedSymbol, timeframe, streamWatchdog.epoch]);
+  }, [resolvedSymbol, timeframe, streamWatchdog.epoch, tickSource]);
 
   // ── Deep-history scroll-back wiring. Register a stable handler with the engine
   //    that fires when the user pans near the oldest loaded bar; it asks the

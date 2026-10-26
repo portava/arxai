@@ -40,6 +40,7 @@ import { computeChartTruthScore, type ChartTruthScore } from "./chartTruthScore.
 import { buildFeedStatus, type FeedQuality } from "../freshness.js";
 import {
   getFormingBar,
+  isFormingTickSource,
   getFormingTickAgeMs,
   type FormingBarSnapshot,
 } from "./formingBarComposer.js";
@@ -265,20 +266,13 @@ async function buildChartFeed(
   // later naturally supersedes the tip (its openMs moves past the tip → ignore),
   // so there is never an orphan duplicate.
   //
-  // PROVIDER SCOPE (Theme C3.2): the append gate is deliberately NOT keyed on
-  // the winning candle source. It used to require `source === "mt5_broker"`,
-  // which froze every Deriv-fed chart between closed candles — up to a full
-  // interval of no motion on a perfectly healthy feed. The question that
-  // actually matters is "is there a REAL tick for this symbol's current
-  // interval", and getFormingBar already answers exactly that: a symbol with no
-  // folded ticks returns null and gets no tip. Basis stays coherent because the
-  // tip is folded from the same provider's stream that serves the closed bars
-  // beneath it (broker BID under broker candles, Deriv quotes under Deriv
-  // candles).
+  // The tip must share the winning history provider. Canonical symbols can
+  // exist at both MT5 and Deriv; a real tick from a different source is still
+  // the wrong price basis for this series. Unknown providers get no live tip.
   let formingTipPresent = false;
   let formingTickAgeMs: number | null = null;
-  if (includeFormingTip && lastCandle) {
-    const forming = getFormingBar(symbol, timeframe, now);
+  if (includeFormingTip && lastCandle && isFormingTickSource(source)) {
+    const forming = getFormingBar(symbol, timeframe, now, source);
     if (forming) {
       const tipOpenMs = forming.openMs;
       const lastClosedOpenMs = Date.parse(lastCandle.openTime);
@@ -308,7 +302,7 @@ async function buildChartFeed(
       }
       // tipOpenMs < lastClosedOpenMs → stale tip behind the closed feed; ignore.
       if (formingTipPresent) {
-        formingTickAgeMs = getFormingTickAgeMs(symbol, timeframe, now);
+        formingTickAgeMs = getFormingTickAgeMs(symbol, timeframe, now, source);
       }
     }
   }

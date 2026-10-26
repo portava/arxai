@@ -28,8 +28,8 @@
 //     - mt5_broker → tick BID under BID closed candles
 //     - Deriv WS   → tick quote under Deriv closed candles
 //   The composer itself is provider-agnostic; sourcing is wired per provider
-//   (EA ingest, derivFormingBridge) and the append gate asks only whether a real
-//   current-interval tick exists.
+//   (EA ingest, derivFormingBridge). Every store and reader is scoped by the
+//   exact provider, including the SSE event bus and freshness clock.
 
 import { EventEmitter } from "node:events";
 import { CHART_TIMEFRAMES, timeframeMs, type ChartTimeframe } from "./timeframes.js";
@@ -55,7 +55,16 @@ function formingKey(symbol: string): string {
 }
 
 /** A single synthesized forming bar for one (symbol, timeframe) bucket. */
+export type FormingTickSource = "mt5_broker" | "deriv" | "deriv_public";
+type StoreSource = FormingTickSource | "unknown";
+
+export function isFormingTickSource(value: unknown): value is FormingTickSource {
+  return value === "mt5_broker" || value === "deriv" || value === "deriv_public";
+}
+
 export interface FormingBarState {
+  /** Exact tick provider; never inferred from the symbol. */
+  source: StoreSource;
   /** Interval-open epoch ms (floor(tickMs / intervalMs) * intervalMs). */
   openMs: number;
   open: number;
@@ -74,11 +83,17 @@ export interface FormingBarSnapshot extends FormingBarState {
   timeframe: ChartTimeframe;
 }
 
-// Map key: `${symbolKey}|${timeframe}` → forming bar state.
+// Provider is part of every key: another venue cannot overwrite OHLC or age.
+// The unknown namespace preserves unidentified diagnostics, but no HTTP/SSE
+// production reader accepts it as a live source.
 const store = new Map<string, FormingBarState>();
 
-function stateKey(symbolKey: string, timeframe: ChartTimeframe): string {
-  return `${symbolKey}|${timeframe}`;
+function sourceSymbolKey(symbolKey: string, source: StoreSource): string {
+  return `${source}|${symbolKey}`;
+}
+
+function stateKey(symbolKey: string, timeframe: ChartTimeframe, source: StoreSource): string {
+  return `${sourceSymbolKey(symbolKey, source)}|${timeframe}`;
 }
 
 /**
@@ -96,7 +111,7 @@ export interface LastTickInfo {
   bid: number;
 }
 
-// symbolKey → last tick seen (across all timeframes).
+// source + symbolKey → last tick seen (across all timeframes).
 const lastTickBySymbol = new Map<string, LastTickInfo>();
 
 // ── Tick notification bus ──────────────────────────────────────────────────
@@ -110,18 +125,18 @@ class FormingBarBus {
     // the ceiling well above the default 10; listeners are removed on close.
     this.emitter.setMaxListeners(1000);
   }
-  private key(symbolKey: string): string {
-    return `forming:${symbolKey}`;
+  private key(symbolKey: string, source: StoreSource): string {
+    return `forming:${sourceSymbolKey(formingKey(symbolKey), source)}`;
   }
-  on(symbolKey: string, listener: () => void): void {
-    this.emitter.on(this.key(symbolKey), listener);
+  on(symbolKey: string, listener: () => void, source: StoreSource = "unknown"): void {
+    this.emitter.on(this.key(symbolKey, source), listener);
   }
-  off(symbolKey: string, listener: () => void): void {
-    this.emitter.off(this.key(symbolKey), listener);
+  off(symbolKey: string, listener: () => void, source: StoreSource = "unknown"): void {
+    this.emitter.off(this.key(symbolKey, source), listener);
   }
-  emit(symbolKey: string): void {
+  emit(symbolKey: string, source: StoreSource): void {
     try {
-      this.emitter.emit(this.key(symbolKey));
+      this.emitter.emit(this.key(symbolKey, source));
     } catch {
       // Advisory bus — a misbehaving listener must never propagate into the
       // EA ingest path that folds the tick.
@@ -149,6 +164,7 @@ export function foldFormingTick(
   bid: number,
   brokerTimeMs: number | null,
   nowWallMs: number = Date.now(),
+  source: StoreSource = "unknown",
 ): void {
   if (!Number.isFinite(bid) || bid <= 0) return;
   const symbolKey = formingKey(symbol);
@@ -158,7 +174,7 @@ export function foldFormingTick(
   // Record the raw last tick (exact broker time, not interval-floored) so the
   // market-frozen / closed indicator can report the real last-quote time and
   // measure broker-time staleness. Display/telemetry only.
-  lastTickBySymbol.set(symbolKey, {
+  lastTickBySymbol.set(sourceSymbolKey(symbolKey, source), {
     brokerTimeMs: brokerTimeMs != null && Number.isFinite(brokerTimeMs) ? brokerTimeMs : null,
     wallMs: nowWallMs,
     bid,
@@ -167,11 +183,12 @@ export function foldFormingTick(
   for (const tf of CHART_TIMEFRAMES) {
     const intervalMs = timeframeMs(tf);
     const openMs = Math.floor(bucketTime / intervalMs) * intervalMs;
-    const k = stateKey(symbolKey, tf);
+    const k = stateKey(symbolKey, tf, source);
     const prev = store.get(k);
     if (!prev || prev.openMs !== openMs) {
       // New interval (or first tick) → open a fresh bar at this tick's price.
       store.set(k, {
+        source,
         openMs,
         open: bid,
         high: bid,
@@ -188,7 +205,7 @@ export function foldFormingTick(
       prev.tickCount += 1;
     }
   }
-  formingBarBus.emit(symbolKey);
+  formingBarBus.emit(symbolKey, source);
 }
 
 /**
@@ -205,10 +222,11 @@ export function getFormingBar(
   symbol: string,
   timeframe: ChartTimeframe,
   nowWallMs: number = Date.now(),
+  source: StoreSource = "unknown",
 ): FormingBarSnapshot | null {
   const symbolKey = formingKey(symbol);
   if (!symbolKey) return null;
-  const state = store.get(stateKey(symbolKey, timeframe));
+  const state = store.get(stateKey(symbolKey, timeframe, source));
   if (!state) return null;
   const intervalMs = timeframeMs(timeframe);
   const currentOpenMs = Math.floor(nowWallMs / intervalMs) * intervalMs;
@@ -224,8 +242,9 @@ export function getFormingTickAgeMs(
   symbol: string,
   timeframe: ChartTimeframe,
   nowWallMs: number = Date.now(),
+  source: StoreSource = "unknown",
 ): number | null {
-  const snap = getFormingBar(symbol, timeframe, nowWallMs);
+  const snap = getFormingBar(symbol, timeframe, nowWallMs, source);
   if (!snap) return null;
   return Math.max(0, nowWallMs - snap.lastTickWallMs);
 }
@@ -264,10 +283,11 @@ export interface MarketFreshness {
 export function getFeedFreshness(
   symbol: string,
   nowWallMs: number = Date.now(),
+  source: StoreSource = "unknown",
 ): MarketFreshness | null {
   const symbolKey = formingKey(symbol);
   if (!symbolKey) return null;
-  const last = lastTickBySymbol.get(symbolKey);
+  const last = lastTickBySymbol.get(sourceSymbolKey(symbolKey, source));
   if (!last) return null;
   const brokerStaleMs =
     last.brokerTimeMs != null ? Math.max(0, nowWallMs - last.brokerTimeMs) : null;

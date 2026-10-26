@@ -25,7 +25,7 @@
 //     leaves it unchanged and the shared freshness layer marks it stale.
 //   - Touches no execution path, no arx_live_* table, no safety gate.
 
-import { getDerivWsClient } from "../providers/derivWsClient.js";
+import { getDerivWsClient, type DerivTickListener } from "../providers/derivWsClient.js";
 import { resolveDerivSymbol } from "../providers/derivProvider.js";
 import { foldFormingTick } from "./formingBarComposer.js";
 
@@ -39,9 +39,11 @@ let unsubscribe: (() => void) | null = null;
  * rather than guessed at, and the composer's own listener isolation means a
  * failure here can never disturb tick caching or the socket.
  */
-export function startDerivFormingBridge(): void {
+export function startDerivFormingBridge(
+  client: { onTick(listener: DerivTickListener): () => void } = getDerivWsClient(),
+  source: "deriv" | "deriv_public" = "deriv",
+): void {
   if (unsubscribe) return;
-  const client = getDerivWsClient();
   unsubscribe = client.onTick((tick) => {
     // The composer collapses Deriv aliases onto the canonical ARX code, so the
     // WS id is a valid address; resolve first purely to reject ids we do not
@@ -52,7 +54,7 @@ export function startDerivFormingBridge(): void {
     // Deriv `epoch` is unix SECONDS; the composer buckets in ms.
     const providerTimeMs =
       Number.isFinite(tick.epoch) && tick.epoch > 0 ? tick.epoch * 1000 : null;
-    foldFormingTick(mapped.symbol, tick.quote, providerTimeMs, Date.now());
+    foldFormingTick(mapped.symbol, tick.quote, providerTimeMs, Date.now(), source);
   });
 }
 
