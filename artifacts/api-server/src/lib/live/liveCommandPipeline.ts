@@ -19,6 +19,7 @@ import { livePositionWriter, livePositionLedger, livePositionColumns } from "../
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
+import { resultReceiptScheduler, ResultReceiptCapacityError } from "./resultReceiptScheduler.js";
 import { AgentEntryAuthorityError, createAgentEntryDraft, type AgentAdmissionEnvelope, type AuthorityTransaction } from "../selfTrade/entryAuthority.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -4944,7 +4945,10 @@ export async function recordLiveCommandResult(args: {
   };
 
   const reportFingerprint = executionReportFingerprint(reportedEvidence);
-  const persisted = await db.transaction(async (tx) => {
+  // Bounded local scheduling avoids spending pool slots waiting on this same
+  // command. This is not acceptance: no reply succeeds before its own commit.
+  const weightBytes = Buffer.byteLength(JSON.stringify(reportedEvidence)) + Buffer.byteLength(args.commandId);
+  const persisted = await resultReceiptScheduler.run(args.userId, args.commandId, weightBytes, () => db.transaction(async (tx) => {
     const [row] = await tx
       .select()
       .from(arxLiveCommandsTable)
@@ -5183,9 +5187,12 @@ export async function recordLiveCommandResult(args: {
           ? "RESULT_RETAINED_FOR_RECONCILIATION"
           : "DUPLICATE_IGNORED",
     };
+  })).catch((error: unknown) => {
+    if (error instanceof ResultReceiptCapacityError) return { ok: false as const, command: null, reason: error.message };
+    throw error;
   });
   if (!persisted.ok)
-    return { ok: false, command: persisted.command, reason: persisted.reason };
+    return { ok: false, command: persisted.command, reason: persisted.reason, receiptPersisted: false };
   const updated = persisted.command;
   const row = updated;
   const finalStatus = updated.status as ArxLiveCommandStatus;

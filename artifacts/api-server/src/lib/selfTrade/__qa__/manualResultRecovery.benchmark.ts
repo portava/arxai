@@ -5,7 +5,8 @@ import { mock } from "node:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
-import { pool } from "@workspace/db";
+import { pool, db } from "@workspace/db";
+import * as realDatabase from "@workspace/db";
 import { recordLiveCommandResult } from "../../live/liveCommandPipeline.js";
 export async function runManualResultRecoveryBenchmark(
   prepare: () => Promise<Parameters<typeof recordLiveCommandResult>[0]>,
@@ -16,10 +17,19 @@ export async function runManualResultRecoveryBenchmark(
   const sourceHash = createHash("sha256")
     .update(readFileSync(sourcePath))
     .digest("hex");
-  assert.equal(
-    sourceHash,
-    "cfeca39801a3c9a998e43bb2700c2696728810a8b0f6a70dde831b3d83b35aa5",
-  );
+  const baselineCommits: Record<string, string> = {
+    cfeca39801a3c9a998e43bb2700c2696728810a8b0f6a70dde831b3d83b35aa5:
+      "8042af5018bb900e5d150c2bf3d3447e5b304122",
+    e1d0b2cb9a0a25e6a2a922b6a197d5e2ec396694d5d98a1b2e9cd7f3bd65bee9:
+      "644182385862398a1f6209b46161b6c952d9f3d1",
+  };
+  const baselineCommit = baselineCommits[sourceHash];
+  assert.ok(baselineCommit);
+  const baselineDbUrl = pathToFileURL(`${root}/lib/db/src/index.ts`).href;
+  mock.module(baselineDbUrl, { namedExports: { ...realDatabase } });
+  const baselineDatabase = await import(baselineDbUrl);
+  assert.equal(baselineDatabase.pool, pool);
+  assert.equal(baselineDatabase.db, db);
   for (const [file, namedExports] of [
     [
       "concurrency/exposureReservation.ts",
@@ -158,10 +168,16 @@ export async function runManualResultRecoveryBenchmark(
   const receipt = {
     measuredAt: new Date().toISOString(),
     baseline: {
-      commit: "8042af5018bb900e5d150c2bf3d3447e5b304122",
+      commit: baselineCommit,
       sourceHash,
     },
     runtime: process.version,
+    poolIdentity: {
+      actualPoolEqual: baselineDatabase.pool === pool,
+      actualDbEqual: baselineDatabase.db === db,
+      max: pool.options.max,
+      witnessUsesSamePool: true,
+    },
     fixture:
       "Actual old/current full manual CLOSE handler; signed0.1-lot local row basis; no broker snapshot changes; real result/event/security-chain and position writes; ancillary exposure/mission callbacks stubbed equally",
     timing:
@@ -174,7 +190,9 @@ export async function runManualResultRecoveryBenchmark(
     },
     limitations: [
       "No network/EA/broker/UI latency",
-      "Old handler lacks signed row-version/cumulative marker protection; durability correctness compared separately",
+      baselineCommit.startsWith("8042")
+        ? "8042 lacks signed row-version/cumulative markers"
+        : "Both644baseline and candidate retain signed row-version/cumulative markers; only bounded receipt scheduling differs",
       "Receipt/position timing does not certify broker account identity or realized P/L",
       "Missing baseline result receipts remain explicit incomplete coverage; conditional timing samples do not prove baseline durability",
     ],

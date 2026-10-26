@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import { db, pool, arxLiveCommandsTable as commands } from "@workspace/db";
+import * as realDatabase from "@workspace/db";
 import { recordLiveCommandResult } from "../liveCommandPipeline.js";
 import { verifySecurityEventChain } from "../../security/events.js";
 export async function runResultEvidenceBenchmark(
@@ -17,11 +18,22 @@ export async function runResultEvidenceBenchmark(
   const hash = createHash("sha256")
     .update(readFileSync(sourcePath))
     .digest("hex");
-  assert.equal(
-    hash,
-    "cfeca39801a3c9a998e43bb2700c2696728810a8b0f6a70dde831b3d83b35aa5",
-    "baseline must equal8042af50",
-  );
+  const baselineCommits: Record<string, string> = {
+    cfeca39801a3c9a998e43bb2700c2696728810a8b0f6a70dde831b3d83b35aa5:
+      "8042af5018bb900e5d150c2bf3d3447e5b304122",
+    e1d0b2cb9a0a25e6a2a922b6a197d5e2ec396694d5d98a1b2e9cd7f3bd65bee9:
+      "644182385862398a1f6209b46161b6c952d9f3d1",
+  };
+  const baselineCommit = baselineCommits[hash];
+  assert.ok(baselineCommit, "baseline must match a frozen checked source");
+  // Resolve both handlers to the exact same REAL database, pool and schema.
+  // No query or transaction is mocked. This fixes previous baseline-witness
+  // asymmetry (old worktree's own pool vs witness using the current pool).
+  const baselineDbUrl = pathToFileURL(`${root}/lib/db/src/index.ts`).href;
+  mock.module(baselineDbUrl, { namedExports: { ...realDatabase } });
+  const baselineDatabase = await import(baselineDbUrl);
+  assert.equal(baselineDatabase.pool, pool);
+  assert.equal(baselineDatabase.db, db);
   assert.equal(
     createHash("sha256")
       .update(
@@ -62,17 +74,22 @@ export async function runResultEvidenceBenchmark(
     "distinct_report_burst8",
     "distinct_report_burst32",
     "independent_commands8",
+    "mixed_key_burst32_plus4",
   ] as const) {
-    const width = workload.endsWith("32")
-      ? 32
-      : workload === "sequential"
-        ? 1
-        : 8;
+    const width =
+      workload === "mixed_key_burst32_plus4"
+        ? 36
+        : workload.endsWith("32")
+          ? 32
+          : workload === "sequential"
+            ? 1
+            : 8;
     const rounds = width === 1 ? 100 : 30;
     const samples: Record<
       string,
       {
         response: number[];
+        independentResponse: number[];
         durable: number[];
         sent: number;
         uniqueExpected: number;
@@ -86,6 +103,7 @@ export async function runResultEvidenceBenchmark(
         n,
         {
           response: [],
+          independentResponse: [],
           durable: [],
           sent: 0,
           uniqueExpected: 0,
@@ -101,19 +119,25 @@ export async function runResultEvidenceBenchmark(
         ? ["current", "previous"]
         : ["previous", "current"]) {
         await resetFixture();
-        if (workload === "independent_commands8")
+        if (
+          workload === "independent_commands8" ||
+          workload === "mixed_key_burst32_plus4"
+        )
           await db.insert(commands).values(
-            Array.from({ length: 7 }, (_, i) => ({
-              commandId: `qa-bench-${i}`,
-              userId: 9,
-              bridgeConnectionId: 1,
-              commandType: "MODIFY_LIVE_SLTP" as const,
-              symbol: "EURUSD.a",
-              side: "BUY" as const,
-              orderType: "MODIFY",
-              requestedVolume: 0.1,
-              status: "SENT_TO_MT5_LIVE" as const,
-            })),
+            Array.from(
+              { length: workload === "independent_commands8" ? 7 : 4 },
+              (_, i) => ({
+                commandId: `qa-bench-${i}`,
+                userId: 9,
+                bridgeConnectionId: 1,
+                commandType: "MODIFY_LIVE_SLTP" as const,
+                symbol: "EURUSD.a",
+                side: "BUY" as const,
+                orderType: "MODIFY",
+                requestedVolume: 0.1,
+                status: "SENT_TO_MT5_LIVE" as const,
+              }),
+            ),
           );
         const fn =
           name === "previous"
@@ -139,17 +163,25 @@ export async function runResultEvidenceBenchmark(
           Array.from({ length: width }, async (_, i) => {
             const args = {
               ...report(),
-              ...(workload.startsWith("distinct_report")
+              ...(workload.startsWith("distinct_report") ||
+              workload === "mixed_key_burst32_plus4"
                 ? { fillPrice: 1 + i / 100, brokerMessage: `report-${i}` }
                 : {}),
               ...(workload === "independent_commands8" && i > 0
                 ? { commandId: `qa-bench-${i - 1}` }
+                : {}),
+              ...(workload === "mixed_key_burst32_plus4" && i >= 32
+                ? { commandId: `qa-bench-${i - 32}` }
                 : {}),
             };
             const before = performance.now();
             const r = await fn(args);
             if (round >= 0)
               samples[name].response.push(performance.now() - before);
+            if (round >= 0 && workload === "mixed_key_burst32_plus4" && i >= 32)
+              samples[name].independentResponse.push(
+                performance.now() - before,
+              );
             return r;
           }),
         );
@@ -191,10 +223,14 @@ export async function runResultEvidenceBenchmark(
           name,
           {
             response,
+            ...(s.independentResponse.length
+              ? { independentCommandResponse: stats(s.independentResponse) }
+              : {}),
             allUniqueReportsDurableObserved: durable,
             ...Object.fromEntries(
               Object.entries(s).filter(
-                ([k]) => !["response", "durable"].includes(k),
+                ([k]) =>
+                  !["response", "independentResponse", "durable"].includes(k),
               ),
             ),
             durableCompleteRounds: s.durable.length,
@@ -207,10 +243,17 @@ export async function runResultEvidenceBenchmark(
   const receipt = {
     measuredAt: new Date().toISOString(),
     baseline: {
-      commit: "8042af5018bb900e5d150c2bf3d3447e5b304122",
+      commit: baselineCommit,
       sourceHash: hash,
     },
     runtime: process.version,
+    poolIdentity: {
+      actualDbEqual: baselineDatabase.db === db,
+      actualPoolEqual: baselineDatabase.pool === pool,
+      max: pool.options.max,
+      witnessUsesSamePool: true,
+      note: "Only baseline module resolution is redirected to real current DB exports; all queries, transactions, locks and commits execute. Earlier receipts retained with baseline/current pool asymmetry disclosed.",
+    },
     fixture:
       "Actual old/new result handlers and same real security-chain writer; disposable Unix-socket PostgreSQL; synthetic MODIFY reports; exposure settlement stubbed identically",
     timing:
@@ -223,7 +266,9 @@ export async function runResultEvidenceBenchmark(
     },
     limitations: [
       "No network, EA, orders or broker latency measured",
-      "Old path acknowledges best-effort persistence; current path requires atomic receipt plus hash-chain audit for each distinct report, so they provide different durability guarantees",
+      baselineCommit.startsWith("8042")
+        ? "8042 path acknowledges best-effort persistence; current requires atomic evidence, so guarantees differ"
+        : "Both644baseline and candidate require atomic receipt and unchanged securitychain; only bounded local scheduling differs",
       "Contradictory reports remain evidence, not new terminal state authority",
       "Serial gaps and maximum latency outliers retained; single-host fixture is not production capacity",
     ],

@@ -200,3 +200,16 @@ test("durable receipt explicitly distinguishes held position settlement", async 
     positionSettlementReason: "LEGACY_PARTIAL_APPLICATION_UNKNOWN",
   });
 });
+
+test("capacity refusal is retryable503 and never acknowledged as a durable receipt", async () => {
+  const reply = await run(async () => ({
+    ok: false,
+    receiptPersisted: false,
+    reason: "LIVE_RESULT_RECEIPT_CAPACITY",
+  }));
+  assert.equal(reply.code, 503);
+  assert.deepEqual(reply.body, {
+    received: false,
+    error: "LIVE_RESULT_RECEIPT_CAPACITY",
+  });
+});

@@ -1194,7 +1194,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
           eaReason,
         });
         if (!fwd.ok) {
-          res.status(409).json({ received: false, error: fwd.reason ?? "LIVE_RESULT_NOT_RECORDED" });
+          res.status(fwd.reason === "LIVE_RESULT_RECEIPT_CAPACITY" ? 503 : 409).json({ received: false, error: fwd.reason ?? "LIVE_RESULT_NOT_RECORDED" });
           return;
         }
         req.log.info(
