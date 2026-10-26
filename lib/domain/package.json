@@ -109,6 +109,7 @@
     "./news-risk": "./src/news-risk/index.ts",
     "./portfolio-risk": "./src/portfolio-risk/index.ts",
     "./backtest": "./src/backtest/index.ts",
+    "./backtest/research": "./src/backtest/research.ts",
     "./safety-contracts": "./src/safety-contracts/index.ts",
     "./safety-contracts/bridgeMode": "./src/safety-contracts/bridgeMode.ts",
     "./safety-contracts/reconciliation": "./src/safety-contracts/reconciliation.ts",
