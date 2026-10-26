@@ -32,3 +32,9 @@ export function useGetMeOpportunityMap() {
   return { data, isLoading: false, isFetching: false, isError, refetch: () => { setError(false); setData(fixture()); } };
 }
 export const getGetMeOpportunityMapQueryKey = () => ["offline-scanner"];
+
+export const getGetWatchlistsQueryKey = () => ["offline-watchlists"];
+export function useGetWatchlists() { return { data: [
+  { id: 1, name: "FX focus", items: [{ symbol: "EURUSD" }, { symbol: "GBPUSD" }, { symbol: "AUDUSD" }] },
+  { id: 2, name: "Synthetic context", items: [{ symbol: "Volatility 75 Index" }] },
+], isError: false }; }
