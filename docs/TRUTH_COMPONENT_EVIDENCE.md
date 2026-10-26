@@ -24,6 +24,18 @@ Entry advice requires finite positive, complete entry/stop/target geometry. Stop
 
 A provider's current bar can have a scheduled future `closeTime`. That is not rejected as a future observation or counted as final. `feedStatus.lastCandleTime` keeps its existing wire meaning, while `marketEvidence.lastClosedCandleAt` explicitly describes the preceding accepted closed bar.
 
+## Review corrections: patterns and durable continuity
+
+The scalp focus producer now takes pattern impact only from the same scanner row that passed source/bar checks. Downgrade-only pattern evidence is still a factual claim about a market; a rejected provider's pattern must not change the selected market's quality or labels through an independent engine input.
+
+Ruby's prior `signal_memory` lookup was scoped by user/symbol/timeframe but had no provider identity. That allowed a different source's old `firstSeenAt` to control the current lifecycle and what-changed diff. The service now waits for actual routed provenance, then looks up a private storage key: `source-v1:[canonical timeframe, provider, opaque source identity]`. The existing `timeframe` database column is unrestricted text and is used only by this service; the schema comment documents its private key meaning. Public responses keep the canonical timeframe. The composite user/symbol/key constraint isolates provider, bridge, environment and native-symbol context durably across processes. Legacy bare-timeframe rows are preserved as history and never reused as source-bound lifecycle evidence. No migration runs.
+
+Same-source reads retain persisted age, including expired age when returning after a source switch. Invalid/future memory dates cannot establish continuity. A new context's first observation is not proof of when a setup formed. The additive `continuity` metadata distinguishes source-bound prior memory from the current observation and reports whether this request actually saved it. Read-only Truth polls and failed writes never claim a saved observation. Persistence remains best effort; this patch does not invent durable continuity where none exists.
+
+Review acceptance: a rejected source's pattern cannot reach the scalp engine, no user/provider/bridge/symbol/timeframe switch inherits the old lifecycle, same-source expiry survives real PostgreSQL reads, legacy history remains unchanged, and read-only/failed persistence reports no save. The comparative local Ruby-service plus PostgreSQL fixture has a completed-service p95 budget of 10 ms and an added p95 budget of 3 ms. It measures the new sequential dependency explicitly; provider lookup latency and competitor broker latency remain unmeasured. Actual producer baseline probes, disposable-database tests and timing results are saved in the review supplement receipt.
+
+The follow-up's actual Ruby service plus local PostgreSQL benchmark used 80 bars, 50 warmups and 500 samples per version. Previous completed-service median/p95/p99 was **0.576/0.783/1.081 ms**; updated was **0.491/0.636/0.773 ms**. Invocation return was **0.027/0.047/0.068 ms** versus **0.009/0.017/0.032 ms**. Both meet the local budget. These sequential in-process samples with immediate provider stand-ins do not establish a speed improvement; in production the new source-scoped database lookup necessarily waits for routing. The initial PostgreSQL runner passed assertions but retained imported background handles; adding the existing test-force-exit discipline produced a clean 10/10 run and removed the disposable cluster.
+
 ## Research and comparison
 
 Checked official documentation on 2026-10-26:
