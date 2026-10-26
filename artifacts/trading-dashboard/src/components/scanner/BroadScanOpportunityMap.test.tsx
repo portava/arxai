@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import type {
   MeOpportunityMapResp,
   OpportunityMapResult,
@@ -102,6 +102,7 @@ function mapResult(rows: OpportunityMapRow[]): OpportunityMapResult {
 function resp(over: Partial<MeOpportunityMapResp> = {}): MeOpportunityMapResp {
   return {
     universe: "all",
+    generatedAt: new Date().toISOString(),
     timeframe: "M5",
     map: mapResult([
       row({}),
@@ -137,7 +138,7 @@ beforeEach(() => {
   mockUseScannerTimeframe.mockReset();
   mockUseScannerTimeframe.mockReturnValue(["15m", () => {}]);
 });
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 // A `useSymbolTruth` return whose consolidated verdict is `verdict` — the exact
 // shape the chart header & Ruby Chart Read read from. Only the field the map
@@ -162,7 +163,7 @@ describe("BroadScanOpportunityMap — honest render states", () => {
 
   it("renders the empty state honestly", () => {
     mockUseGetMeOpportunityMap.mockReturnValue(
-      hookState({ data: resp({ map: mapResult([]) }) }),
+      hookState({ data: resp({ generatedAt: undefined, map: mapResult([]) }) }),
     );
     render(<BroadScanOpportunityMap marketGroup="all" />);
     expect(screen.getByTestId("opportunity-map-empty")).toBeTruthy();
@@ -461,7 +462,7 @@ describe("Task #605 — onScanned reports real scan-existence to the page", () =
   it("fires onScanned(false) for a genuine no-scan payload (no generatedAt, zero scanned)", () => {
     const onScanned = vi.fn();
     mockUseGetMeOpportunityMap.mockReturnValue(
-      hookState({ data: resp({ map: mapResult([]) }) }),
+      hookState({ data: resp({ generatedAt: undefined, map: mapResult([]) }) }),
     );
     render(<BroadScanOpportunityMap marketGroup="all" onScanned={onScanned} />);
     expect(onScanned).toHaveBeenCalledWith(false);
@@ -1387,4 +1388,84 @@ describe("Task #609 — BroadScanOpportunityMap survives a half-loaded payload",
     rerender(<BroadScanOpportunityMap marketGroup="all" />);
     expect(screen.getByTestId("opportunity-map-err")).toBeTruthy();
   });
+});
+
+
+describe("BroadScanOpportunityMap — snapshot freshness", () => {
+  it("expires all directions, scores, best picks and affirmative headers without another response", () => {
+    vi.useFakeTimers();
+    const data = resp();
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-row-direction-EURUSD")).toBeTruthy();
+    expect(screen.getByTestId("opportunity-map-best-picks")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(31_000));
+    expect(screen.getByTestId("opportunity-map-expired")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-row-direction-EURUSD")).toBeNull();
+    expect(screen.queryByTestId("opportunity-row-stats-EURUSD")).toBeNull();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    expect(screen.getByTestId("opportunity-map-cat-READY_NOW").getAttribute("data-group-degraded")).toBe("true");
+    expect(screen.getByTestId("opportunity-map-summary").textContent).toContain("live at last scan");
+  });
+
+  it.each([undefined, "invalid", new Date(Date.now() + 60_000).toISOString()])("withholds readiness for an untrusted scan timestamp: %s", (generatedAt) => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ generatedAt }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-map-expired")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    expect(screen.queryByTestId("opportunity-row-direction-EURUSD")).toBeNull();
+  });
+
+  it("removes cached best picks and comparisons when refresh fails", () => {
+    const best = row();
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ isError: true, data: resp({
+      bestVsSelected: { hasCleanerAlternative: true, best, message: "Cleaner alternative", selectedSymbol: "GBPUSD", selectedEdge: 40 },
+    }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-map-err")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    expect(screen.queryByTestId("opportunity-map-best-vs-selected")).toBeNull();
+  });
+
+  it("applies the selected chart feed cap to best picks as well as row cards", () => {
+    mockUseSymbolTruth.mockReturnValue(truthWithVerdict("FEED_LIMITED"));
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([row()]) }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="EURUSD" />);
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    expect(screen.getByTestId("opportunity-map-cat-READY_NOW").getAttribute("data-group-degraded")).toBe("true");
+  });
+
+  it("offers bounded refresh choices and never polls hidden tabs", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    let options = mockUseGetMeOpportunityMap.mock.lastCall?.[1];
+    expect(options.query.refetchInterval).toBe(10_000);
+    expect(options.query.refetchIntervalInBackground).toBe(false);
+    fireEvent.change(screen.getByLabelText("Scanner refresh interval"), { target: { value: "0" } });
+    options = mockUseGetMeOpportunityMap.mock.lastCall?.[1];
+    expect(options.query.refetchInterval).toBe(false);
+  });
+});
+
+
+it.each(["0", "60000"])("refresh mode %s expires cached selected-row actions and recovers only with a newer scan", (interval) => {
+  vi.useFakeTimers();
+  const cached = resp();
+  mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: cached }));
+  const view = render(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="EURUSD" />);
+  fireEvent.change(screen.getByLabelText("Scanner refresh interval"), { target: { value: interval } });
+  expect(screen.getByTestId("opportunity-row-EURUSD").getAttribute("data-actionability")).toBe("READY_NOW");
+  act(() => vi.advanceTimersByTime(31_000));
+  expect(screen.getByTestId("opportunity-row-EURUSD").getAttribute("data-actionability")).toBe("FEED_LIMITED");
+  expect(screen.queryByTestId("opportunity-row-direction-EURUSD")).toBeNull();
+  // A successful request serving the same cached scan is not a new read.
+  mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: { ...cached }, dataUpdatedAt: Date.now() }));
+  view.rerender(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="EURUSD" />);
+  expect(screen.getByTestId("opportunity-map-expired")).toBeTruthy();
+  expect(screen.getByTestId("opportunity-row-EURUSD").getAttribute("data-actionability")).toBe("FEED_LIMITED");
+  mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+  view.rerender(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="EURUSD" />);
+  expect(screen.queryByTestId("opportunity-map-expired")).toBeNull();
+  expect(screen.getByTestId("opportunity-row-EURUSD").getAttribute("data-actionability")).toBe("READY_NOW");
+  expect(screen.getByTestId("opportunity-row-direction-EURUSD")).toBeTruthy();
 });

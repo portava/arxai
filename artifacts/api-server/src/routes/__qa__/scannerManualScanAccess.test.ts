@@ -97,10 +97,14 @@ const identityDecorator = async (rows: ScannerOpportunity[]) => rows;
 mock.module("../../lib/marketScanner.js", {
   namedExports: {
     ...realScanner,
-    scanOnce: async () => [SIM_ROW, LIVE_ROW],
+    scanOnceSnapshot: async () => ({
+      universe: "forex", symbols: ["EURUSD", "GBPUSD"], timeframes: ["M5"],
+      opportunities: [SIM_ROW, LIVE_ROW], generatedAt: new Date().toISOString(), durationMs: 1,
+    }),
     decorateOpportunitiesWithHistory: identityDecorator,
     decorateOpportunitiesWithNewsRisk: identityDecorator,
     decorateOpportunitiesWithTimingContext: identityDecorator,
+    decorateOpportunitiesWithFvgRead: identityDecorator,
     decorateOpportunitiesWithFinalRead: (rows: ScannerOpportunity[]) => rows,
     effectiveOpportunityScore: (o: ScannerOpportunity) => o.opportunity?.score ?? 0,
     scannerStatus: () => ({ universe: "all", universeSymbols: [], feedNote: "" }),
@@ -174,14 +178,14 @@ beforeEach(() => {
   scanConsumed.clear();
 });
 
-function scanReq(userId: number, role: string) {
+function scanReq(userId: number, role: string, body: unknown = { universe: "all" }) {
   return fetch(`${base}/api/market-scanner/scan`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       cookie: `arx_user_session=u:${userId}:${role}`,
     },
-    body: JSON.stringify({ universe: "all" }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -287,4 +291,27 @@ test("the cooldown is isolated per user", async () => {
   // A different user is unaffected by user 90005 having just scanned.
   const b = await scanReq(90006, "TESTER");
   assert.equal(b.status, 200, "a different user must not be throttled by another's scan");
+});
+
+
+test("manual response metadata belongs to its snapshot, not another global scan", async () => {
+  const response = await scanReq(90007, "TESTER");
+  const body = await response.json() as { universe: string; universeSymbols: string[]; timeframes: string[]; generatedAt: string };
+  assert.equal(body.universe, "forex");
+  assert.deepEqual(body.universeSymbols, ["EURUSD", "GBPUSD"]);
+  assert.deepEqual(body.timeframes, ["M5"]);
+  assert.ok(Number.isFinite(Date.parse(body.generatedAt)));
+});
+
+test("invalid or excessive scan selections return 400 without consuming the user's cooldown", async () => {
+  for (const body of [
+    { symbols: [] }, { symbols: ["not-a-market"] },
+    { symbols: Array(37).fill("EURUSD") },
+    { timeframes: [] }, { timeframes: ["not-a-timeframe"] },
+    { timeframes: Array(22).fill("M5") }, { universe: "unknown" },
+  ]) {
+    const response = await scanReq(90008, "TESTER", body);
+    assert.equal(response.status, 400, JSON.stringify(body));
+  }
+  assert.equal((await scanReq(90008, "TESTER")).status, 200);
 });

@@ -1,13 +1,14 @@
 // Market Scanner + Opportunity Scorer + Session Plan + Decision Stream.
 //
-// SAFETY: Pure read-side intelligence over the in-memory market simulator.
+// SAFETY: Read-side market intelligence with advisory audit traces.
 // Never calls placeLiveOrderGuarded(). Never writes to live_positions or
 // mt5_commands. Read-side outputs are tagged with their resolved dataSource;
 // router-served paths (status, opportunities, scan) report "ROUTER".
 
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
+import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
 import { getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
-import { type ChartTimeframe, isChartTimeframe } from "./data/chart/timeframes.js";
+import { type ChartTimeframe, isChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { rawTrailingIntervalGap } from "./data/chart/candleNormalization.js";
 import { buildPatternTruthVerdict } from "./data/chart/patternTruthService.js";
 import { buildTrendlineTruthVerdict } from "./data/chart/trendlineTruthService.js";
@@ -45,6 +46,7 @@ import {
   ARX_FOCUS_MARKETS,
   getTierOneMarkets,
   isApprovedArxMarket,
+  resolveArxMarket,
   evaluateMarketDataSufficiency,
   type ArxMarketCategory,
   type MarketDataSufficiencyVerdict,
@@ -882,15 +884,6 @@ export async function decorateOpportunitiesWithNewsRisk(
   await mapWithConcurrency(uniqueSymbols, ENRICHMENT_CONCURRENCY, async (sym) => {
       try {
         const pack = await runWithScannerBudget(() => getNewsIntelligence(sym));
-        const scannerDir = opps.find((o) => o.symbol === sym)?.recommendedAction;
-        const wantsUp = scannerDir === "BUY";
-        const wantsDown = scannerDir === "SELL";
-        const aligns =
-          pack.bias === "bullish" && wantsUp ? true :
-          pack.bias === "bearish" && wantsDown ? true :
-          pack.bias === "bullish" && wantsDown ? false :
-          pack.bias === "bearish" && wantsUp ? false :
-          null;
         ctxBySymbol.set(sym, {
           riskLevel: pack.riskLevel,
           bias: pack.bias,
@@ -901,7 +894,7 @@ export async function decorateOpportunitiesWithNewsRisk(
           upcomingEventTitle: pack.upcomingEvent?.title ?? null,
           minutesUntilEvent: pack.upcomingEvent?.minutesUntil ?? null,
           warning: pack.warningSummary,
-          alignsWithScanner: aligns,
+          alignsWithScanner: null,
         });
       } catch {
         ctxBySymbol.set(sym, {
@@ -920,7 +913,14 @@ export async function decorateOpportunitiesWithNewsRisk(
     });
   return opps.map((o) => {
     const ctx = ctxBySymbol.get(o.symbol);
-    return ctx ? { ...o, newsContext: ctx } : o;
+    if (!ctx) return o;
+    const direction = o.recommendedAction;
+    const alignsWithScanner = ctx.bias === "bullish"
+      ? direction === "BUY" ? true : direction === "SELL" ? false : null
+      : ctx.bias === "bearish"
+        ? direction === "SELL" ? true : direction === "BUY" ? false : null
+        : null;
+    return { ...o, newsContext: { ...ctx, alignsWithScanner } };
   });
 }
 
@@ -1158,7 +1158,7 @@ interface ScannerState {
   intervalMs: number;
   lastScanAt: string | null;
   lastResults: ScannerOpportunity[];
-  loop: NodeJS.Timeout | null;
+  lastSnapshot: ScannerSnapshot | null;
 }
 const scannerState: ScannerState = {
   running: false,
@@ -1168,26 +1168,32 @@ const scannerState: ScannerState = {
   intervalMs: 10_000,
   lastScanAt: null,
   lastResults: [],
-  loop: null,
+  lastSnapshot: null,
 };
 
 export function scannerStatus() {
   return {
     running: scannerState.running,
     universe: scannerState.universe,
-    universeSymbols: scannerState.symbols,
-    symbols: scannerState.symbols,
-    timeframes: scannerState.timeframes,
+    universeSymbols: [...scannerState.symbols],
+    symbols: [...scannerState.symbols],
+    timeframes: [...scannerState.timeframes],
     intervalMs: scannerState.intervalMs,
     lastScanAt: scannerState.lastScanAt,
     opportunityCount: scannerState.lastResults.length,
+    activeScanCount: scanCoordinator.activeCount,
     // Honesty: the scanner routes every symbol through the unified Market Data
     // Router first, and the authoritative per-card source tag lives on each
     // opportunity row (LIVE_FEED | AWAITING_FEED | SIMULATOR). This status
     // surface mirrors the /opportunities envelope label ("ROUTER") rather than
     // the legacy "SIMULATOR" — the two must not disagree.
     dataSource: "ROUTER",
-    feedNote: scannerState.universe === "synthetic"
+    feedNote: scannerFeedNote(scannerState.universe),
+  };
+}
+
+export function scannerFeedNote(universe: UniverseId): string {
+  return universe === "synthetic"
       ? (() => {
           // Phase 22X — readiness-aware copy. Mirrors Deriv warm-up
           // lifecycle without leaking provider internals to end users.
@@ -1207,11 +1213,10 @@ export function scannerStatus() {
               return "Synthetic-index feed connected. Live ticks streaming; scanner cards are analyzing real Deriv candles.";
           }
         })()
-      : "Live market feed status varies by symbol — see the feed badge on each card. Open Admin → Market Data diagnostics for the full provider chain.",
-  };
+      : "Live market feed status varies by symbol — see the feed badge on each card. Open Admin → Market Data diagnostics for the full provider chain.";
 }
 
-interface ScanOpts {
+export interface ScanOpts {
   symbols?: string[];
   timeframes?: string[];
   universe?: UniverseId;
@@ -1634,44 +1639,83 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
   } catch { return null; /* skip bad symbol/tf */ }
 }
 
+export interface ScannerSnapshot {
+  universe: UniverseId;
+  symbols: string[];
+  timeframes: ChartTimeframe[];
+  opportunities: ScannerOpportunity[];
+  generatedAt: string;
+  durationMs: number;
+}
+
+const scanCoordinator = new ScannerRunCoordinator<ScannerSnapshot>();
+
+/** Snapshot and normalize before the first await. Empty explicit selections
+ * remain empty; unsupported or duplicate tokens never expand into default work. */
+function scanRequest(opts: ScanOpts) {
+  const universe = opts.universe ?? scannerState.universe;
+  const requestedSymbols = opts.universe
+    ? symbolsForUniverse(opts.universe)
+    : opts.symbols ?? scannerState.symbols;
+  const syms = [...new Set(requestedSymbols.map((symbol) =>
+    resolveArxMarket(symbol)?.canonicalSymbol,
+  ).filter((symbol): symbol is string => !!symbol && isApprovedScannerSymbol(symbol)))].sort();
+  const tfs = [...new Set((opts.timeframes ?? scannerState.timeframes)
+    .map(normalizeChartTimeframe)
+    .filter((tf): tf is ChartTimeframe => tf !== null))].sort();
+  return { universe, syms, tfs };
+}
+
+/** A caller's rows and metadata always come from the same scan. */
+export async function scanOnceSnapshot(opts: ScanOpts = {}): Promise<ScannerSnapshot> {
+  const request = scanRequest(opts);
+  const key = JSON.stringify(request);
+  return scanCoordinator.run(key, async () => {
+    const started = performance.now();
+    const generatedAt = new Date().toISOString();
+    const { universe, syms, tfs } = request;
+    // Bounded fan-out over every symbol×timeframe pair. Previously a fully
+    // sequential loop; now the SAME worker-pool limiter caps how many per-symbol
+    // scans (each of which fires router/DB lookups) run at once, keeping a wide
+    // scan light + predictable instead of crawling one-at-a-time or, if ever
+    // switched to an unbounded Promise.all, hammering the providers. Result order
+    // is preserved by the limiter (and re-sorted below regardless).
+    const pairs = syms.flatMap((sym) => tfs.map((tf) => ({ sym, tf })));
+    const scanned = await mapWithConcurrency(
+      pairs,
+      ENRICHMENT_CONCURRENCY,
+      ({ sym, tf }) => scanSymbolTimeframe(sym, tf),
+    );
+    const out: ScannerOpportunity[] = scanned.filter(
+      (o): o is ScannerOpportunity => o != null,
+    );
+    // Rank by the agent-adjusted score when the Agent Ecosystem has weighed in
+    // (advisory-only), otherwise by the raw opportunity score.
+    out.sort((x, y) => effectiveOpportunityScore(y) - effectiveOpportunityScore(x));
+    return {
+      universe, symbols: syms, timeframes: tfs, opportunities: out,
+      generatedAt,
+      durationMs: Math.round(performance.now() - started),
+    };
+  }, publishScanSnapshot);
+}
+
 export async function scanOnce(opts: ScanOpts = {}): Promise<ScannerOpportunity[]> {
-  // Universe wins if provided. Otherwise use explicit symbols, otherwise
-  // current scanner state.
-  if (opts.universe) {
-    scannerState.universe = opts.universe;
-    scannerState.symbols = symbolsForUniverse(opts.universe);
-  } else if (opts.symbols?.length) {
-    scannerState.symbols = opts.symbols;
-  }
-  // Task #412 — never scan outside the approved ARX Top 250. Filter here too
-  // (scanSymbolTimeframe also hard-blocks) so non-approved symbols don't even
-  // cost a router call.
-  const syms = scannerState.symbols.filter(isApprovedScannerSymbol);
-  const tfs = opts.timeframes?.length ? opts.timeframes : scannerState.timeframes;
-  // Bounded fan-out over every symbol×timeframe pair. Previously a fully
-  // sequential loop; now the SAME worker-pool limiter caps how many per-symbol
-  // scans (each of which fires router/DB lookups) run at once, keeping a wide
-  // scan light + predictable instead of crawling one-at-a-time or, if ever
-  // switched to an unbounded Promise.all, hammering the providers. Result order
-  // is preserved by the limiter (and re-sorted below regardless).
-  const pairs = syms.flatMap((sym) => tfs.map((tf) => ({ sym, tf })));
-  const scanned = await mapWithConcurrency(
-    pairs,
-    ENRICHMENT_CONCURRENCY,
-    ({ sym, tf }) => scanSymbolTimeframe(sym, tf),
-  );
-  const out: ScannerOpportunity[] = scanned.filter(
-    (o): o is ScannerOpportunity => o != null,
-  );
-  // Rank by the agent-adjusted score when the Agent Ecosystem has weighed in
-  // (advisory-only), otherwise by the raw opportunity score.
-  out.sort((x, y) => effectiveOpportunityScore(y) - effectiveOpportunityScore(x));
+  return [...(await scanOnceSnapshot(opts)).opportunities];
+}
+
+function publishScanSnapshot(snapshot: ScannerSnapshot): void {
+  const { universe, symbols: syms, timeframes: tfs, opportunities: out } = snapshot;
+  scannerState.lastSnapshot = snapshot;
   scannerState.lastResults = out;
-  scannerState.lastScanAt = new Date().toISOString();
+  scannerState.lastScanAt = snapshot.generatedAt;
+  scannerState.universe = universe;
+  scannerState.symbols = [...syms];
+  scannerState.timeframes = [...tfs];
   pushDecision({
     type: "SCAN_EVENT",
-    summary: `Scanned [${scannerState.universe}] ${syms.length}×${tfs.length}=${out.length}; top ${out[0]?.symbol}/${out[0]?.timeframe} score ${out[0]?.opportunity.score}`,
-    payload: { count: out.length, universe: scannerState.universe, top: out[0] ?? null },
+    summary: `Scanned [${universe}] ${syms.length}×${tfs.length}=${out.length}; top ${out[0]?.symbol}/${out[0]?.timeframe} score ${out[0]?.opportunity.score}`,
+    payload: { count: out.length, universe, top: out[0] ?? null },
   });
   // Surface a HOT_SETUP alert for elite finds (in-memory only).
   for (const o of out.slice(0, 3)) {
@@ -1693,8 +1737,14 @@ export async function scanOnce(opts: ScanOpts = {}): Promise<ScannerOpportunity[
       });
     }
   }
-  return out;
 }
+
+// Configuration for the operator loop is independent of one-shot requests.
+let pollingUniverse: UniverseId = "all";
+const scannerLoop = new ScannerPollLoop(
+  () => scanOnce({ universe: pollingUniverse, timeframes: [...DEFAULT_TIMEFRAMES] }),
+  () => scannerState.intervalMs,
+);
 
 export function scannerStart(opts: { intervalMs?: number; universe?: UniverseId } = {}) {
   if (opts.intervalMs && opts.intervalMs >= 1000) scannerState.intervalMs = opts.intervalMs;
@@ -1702,26 +1752,34 @@ export function scannerStart(opts: { intervalMs?: number; universe?: UniverseId 
     scannerState.universe = opts.universe;
     scannerState.symbols = symbolsForUniverse(opts.universe);
   }
+  pollingUniverse = opts.universe ?? scannerState.universe;
   if (scannerState.running) return scannerStatus();
   scannerState.running = true;
-  scannerState.loop = setInterval(() => {
-    void scanOnce().catch(() => { /* swallow */ });
-  }, scannerState.intervalMs);
-  scannerState.loop.unref?.();
-  void scanOnce().catch(() => { /* swallow */ });
+  scannerLoop.start();
   pushDecision({ type: "SCANNER_STARTED", summary: `Scanner started @${scannerState.intervalMs}ms universe=${scannerState.universe}`, payload: { universe: scannerState.universe } });
   return scannerStatus();
 }
 
 export function scannerStop() {
-  if (scannerState.loop) clearInterval(scannerState.loop);
-  scannerState.loop = null; scannerState.running = false;
+  scannerLoop.stop();
+  scannerState.running = false;
   pushDecision({ type: "SCANNER_STOPPED", summary: "Scanner stopped", payload: {} });
   return scannerStatus();
 }
 
 export function scannerOpportunities(limit = 50) {
   return scannerState.lastResults.slice(0, limit);
+}
+
+/** Read the published rows and their own metadata atomically. */
+export function scannerSnapshot(limit = 50): ScannerSnapshot | null {
+  const snapshot = scannerState.lastSnapshot;
+  return snapshot ? {
+    ...snapshot,
+    symbols: [...snapshot.symbols],
+    timeframes: [...snapshot.timeframes],
+    opportunities: snapshot.opportunities.slice(0, limit),
+  } : null;
 }
 
 // ── Session plan ───────────────────────────────────────────────────────────

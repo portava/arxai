@@ -8,7 +8,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { z } from "zod/v4";
 import { readRoleFromRequest, requireAdmin } from "../lib/security/middleware.js";
 import {
-  scanOnce, scannerStart, scannerStop, scannerStatus, scannerOpportunities,
+  scanOnceSnapshot, scannerSnapshot, scannerFeedNote, scannerStart, scannerStop, scannerStatus,
   opportunityScore, sessionPlan, decisionStream, listAlerts, alertAction, alertCount,
   decorateOpportunitiesWithHistory, decorateOpportunitiesWithNewsRisk,
   decorateOpportunitiesWithFinalRead, decorateOpportunitiesWithTimingContext,
@@ -34,6 +34,7 @@ import {
 } from "../lib/devScannerOutage.js";
 import { analyzeMarket, generateTradeCard } from "../lib/aiBrain.js";
 import { getSelectedMarketSnapshot } from "../lib/scannerSelected/selectedMarket.js";
+import { normalizeChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { ALL_SUPPORTED_SYMBOLS, normalizeSymbol } from "../lib/instruments/index.js";
 
 const router = Router();
@@ -69,9 +70,11 @@ router.post("/market-scanner/__dev/outage", (req, res) => {
 
 router.get("/market-scanner/opportunities", async (req, res) => {
   if (isScannerOutageArmed()) return res.status(502).end();
-  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const parsedLimit = z.coerce.number().int().min(1).max(200).safeParse(req.query.limit ?? 50);
+  if (!parsedLimit.success) return res.status(400).json({ error: "limit must be an integer from 1 to 200" });
   const status = scannerStatus();
-  const base = scannerOpportunities(limit);
+  const snapshot = scannerSnapshot(parsedLimit.data);
+  const base = snapshot?.opportunities ?? [];
   const withHistory = await decorateOpportunitiesWithHistory(base);
   const withNews = await decorateOpportunitiesWithNewsRisk(withHistory);
   const withTiming = await decorateOpportunitiesWithTimingContext(withNews);
@@ -84,8 +87,11 @@ router.get("/market-scanner/opportunities", async (req, res) => {
   const projected = projectOpportunitiesForViewer(decorated, readRoleFromRequest(req));
   return res.json({
     opportunities: projected,
-    universe: status.universe,
-    universeSymbols: status.universeSymbols,
+    universe: snapshot?.universe ?? status.universe,
+    universeSymbols: snapshot?.symbols ?? status.universeSymbols,
+    timeframes: snapshot?.timeframes ?? status.timeframes,
+    generatedAt: snapshot?.generatedAt ?? null,
+    durationMs: snapshot?.durationMs ?? null,
     defaults: { symbols: DEFAULT_SYMBOLS, timeframes: DEFAULT_TIMEFRAMES },
     // Envelope-level dataSource is informational only; the authoritative
     // per-opportunity tag is on each row's `dataSource`/`feedProvider`
@@ -93,7 +99,7 @@ router.get("/market-scanner/opportunities", async (req, res) => {
     // symbol through the unified Market Data Router first, so the
     // envelope is labelled "ROUTER" rather than the legacy "SIMULATOR".
     dataSource: "ROUTER",
-    feedNote: status.feedNote,
+    feedNote: scannerFeedNote(snapshot?.universe ?? status.universe),
   });
 });
 
@@ -120,11 +126,12 @@ const UniverseEnum = z.enum(UNIVERSE_IDS as [UniverseId, ...UniverseId[]]);
 
 router.post("/market-scanner/start", requireAdmin, (req, res) => {
   const Body = z.object({
-    intervalMs: z.number().int().min(1000).optional(),
+    intervalMs: z.number().int().min(1000).max(3_600_000).optional(),
     universe: UniverseEnum.optional(),
   });
   const p = Body.safeParse(req.body ?? {});
-  return res.json(scannerStart(p.success ? p.data : {}));
+  if (!p.success) return res.status(400).json({ error: "Invalid scanner settings" });
+  return res.json(scannerStart(p.data));
 });
 
 router.post("/market-scanner/stop", requireAdmin, (_req, res) => res.json(scannerStop()));
@@ -135,6 +142,16 @@ router.post("/market-scanner/stop", requireAdmin, (_req, res) => res.json(scanne
 // discovery surface: the per-viewer projection + bounded enrichment below are
 // unchanged, so a normal user never sees simulator-derived/privileged fields.
 router.post("/market-scanner/scan", requireUser, async (req, res) => {
+  const Body = z.object({
+    symbols: z.array(z.string().trim().min(1).max(80)).min(1).max(36).optional(),
+    timeframes: z.array(z.string().trim().min(1).max(12)).min(1).max(21).optional(),
+    universe: UniverseEnum.optional(),
+  });
+  const p = Body.safeParse(req.body ?? {});
+  if (!p.success || p.data.symbols?.some((symbol) => !isApprovedArxMarket(symbol)) ||
+      p.data.timeframes?.some((tf) => normalizeChartTimeframe(tf) === null)) {
+    return res.status(400).json({ error: "Choose approved markets and supported chart timeframes" });
+  }
   // Durable per-user manual-scan cooldown, backed by the DB limiter
   // (security_cooldowns) via the MANUAL_SCAN policy. Unlike the prior in-memory
   // limiter (which reset on restart and split per node), this throttle survives
@@ -149,18 +166,8 @@ router.post("/market-scanner/scan", requireUser, async (req, res) => {
       retryAfterMs: cooldown.retryAfterMs,
     });
   }
-  const Body = z.object({
-    symbols: z.array(z.string()).optional(),
-    timeframes: z.array(z.string()).optional(),
-    universe: UniverseEnum.optional(),
-  });
-  const p = Body.safeParse(req.body ?? {});
-  // Task #558 — ARX Focus backstop (additive): even an explicit admin symbol list
-  // is filtered to approved markets before scanning. The default universe already
-  // derives from the registry; this guards the explicit-list path too.
-  const scanArgs = p.success ? { ...p.data } : {};
-  if (scanArgs.symbols) scanArgs.symbols = scanArgs.symbols.filter((s) => isApprovedArxMarket(s));
-  const opps = await scanOnce(scanArgs);
+  const snapshot = await scanOnceSnapshot(p.data);
+  const opps = snapshot.opportunities;
   const withHistory = await decorateOpportunitiesWithHistory(opps);
   const withNews = await decorateOpportunitiesWithNewsRisk(withHistory);
   const withTiming = await decorateOpportunitiesWithTimingContext(withNews);
@@ -170,15 +177,17 @@ router.post("/market-scanner/scan", requireUser, async (req, res) => {
   const decorated = decorateOpportunitiesWithFinalRead(withFvg);
   // Non-admin/owner viewers never see simulator-derived indicator values.
   const projected = projectOpportunitiesForViewer(decorated, readRoleFromRequest(req));
-  const status = scannerStatus();
   return res.json({
     opportunities: projected,
     count: projected.length,
-    universe: status.universe,
-    universeSymbols: status.universeSymbols,
+    universe: snapshot.universe,
+    universeSymbols: snapshot.symbols,
+    timeframes: snapshot.timeframes,
+    generatedAt: snapshot.generatedAt,
+    durationMs: snapshot.durationMs,
     // Envelope tag — per-opportunity dataSource on each row is authoritative.
     dataSource: "ROUTER",
-    feedNote: status.feedNote,
+    feedNote: scannerFeedNote(snapshot.universe),
   });
 });
 

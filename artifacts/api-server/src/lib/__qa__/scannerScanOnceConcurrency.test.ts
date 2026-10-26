@@ -49,6 +49,7 @@ let inFlight = 0;
 let peak = 0;
 let candleCalls = 0;
 let quoteCalls = 0;
+const candleGates = new Map<string, Promise<void>>();
 
 // A leaf lookup that genuinely overlaps in time: it yields across several
 // microtasks so concurrent callers actually coexist. An un-budgeted fan-out
@@ -86,6 +87,7 @@ mock.module("../data/marketDataRouter.js", {
     // scanned pair actually drives both leaf lookups.
     routeCandles: async (symbol: string, _timeframe: string, limit: number) => {
       candleCalls++;
+      await candleGates.get(symbol);
       await leafBody();
       return {
         ok: true,
@@ -193,4 +195,49 @@ test("a second back-to-back scan still respects the same shared cap", async () =
     `second-scan peak ${peak} must stay <= shared cap ${scanner.ENRICHMENT_CONCURRENCY}`,
   );
   assert.equal(inFlight, 0, "no permit leaked after the second scan");
+});
+
+
+test("identical normalized scans coalesce without duplicate symbol/timeframe work", async () => {
+  const beforeCandles = candleCalls;
+  const beforeQuotes = quoteCalls;
+  const [a, b] = await Promise.all([
+    scanner.scanOnceSnapshot({ symbols: ["EURUSD", "EURUSD"], timeframes: ["5m", "M5"] }),
+    scanner.scanOnceSnapshot({ symbols: ["EURUSD"], timeframes: ["M5"] }),
+  ]);
+  assert.equal(candleCalls - beforeCandles, 1);
+  assert.equal(quoteCalls - beforeQuotes, 1);
+  assert.deepEqual(a.symbols, ["EURUSD"]);
+  assert.deepEqual(a.timeframes, ["M5"]);
+  assert.equal(a.generatedAt, b.generatedAt);
+  assert.equal(a.opportunities.length, 1);
+});
+
+test("overlapping scans retain their own metadata and only the newest request publishes", async () => {
+  let release!: () => void;
+  candleGates.set("EURUSD", new Promise<void>((resolve) => { release = resolve; }));
+  const olderOptions = { symbols: ["EURUSD"], timeframes: ["M1"] };
+  const older = scanner.scanOnceSnapshot(olderOptions);
+  // Mutating a caller-owned input after dispatch cannot alter the run.
+  olderOptions.symbols[0] = "USDJPY";
+  olderOptions.timeframes[0] = "H4";
+  const newer = await scanner.scanOnceSnapshot({ symbols: ["GBPUSD"], timeframes: ["M5"] });
+  release();
+  const old = await older;
+  candleGates.clear();
+  assert.deepEqual(old.symbols, ["EURUSD"]);
+  assert.deepEqual(old.timeframes, ["M1"]);
+  assert.equal(old.opportunities[0]?.symbol, "EURUSD");
+  assert.deepEqual(newer.symbols, ["GBPUSD"]);
+  assert.equal(scanner.scannerSnapshot()?.opportunities[0]?.symbol, "GBPUSD");
+  assert.deepEqual(scanner.scannerStatus().symbols, ["GBPUSD"]);
+  assert.deepEqual(scanner.scannerStatus().timeframes, ["M5"]);
+});
+
+test("explicit empty or unsupported selections never silently scan the default universe", async () => {
+  const before = candleCalls + quoteCalls;
+  assert.equal((await scanner.scanOnce({ symbols: [], timeframes: ["M5"] })).length, 0);
+  assert.equal((await scanner.scanOnce({ symbols: ["EURUSD"], timeframes: ["unsupported"] })).length, 0);
+  assert.equal((await scanner.scanOnce({ symbols: ["not-a-market"], timeframes: ["M5"] })).length, 0);
+  assert.equal(candleCalls + quoteCalls, before);
 });
