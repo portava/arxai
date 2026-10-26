@@ -40,6 +40,13 @@ async page => {
     await page.screenshot({ path: `/private/tmp/arx-scanner-speed-${cpuRate}x.png`, fullPage: false });
   }
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  for (const run of runs) {
+    if (run.clicks !== 20 || run.interactions.some(item => !item.selectionCorrect || item.selectedMarker !== 'true')) {
+      throw Error('A selection failed to reach the next measured render opportunity');
+    }
+    if (run.minRows !== 43 || run.emptyTransitions.length) throw Error('Same-universe selection blanked the results');
+    if (run.eventToSecondAnimationFrameP95Ms > 100) throw Error('Offline click-feedback p95 exceeded the100ms target');
+  }
   if (errors.length) throw Error(errors.join('\n'));
   return { fixture: 'Actual Opportunity Map / approved registry / invented data / 450ms delayed response',
     method: 'Trusted click capture to second requestAnimationFrame after DOM commit; a render opportunity proxy, not a hardware presentation timestamp', runs, errors };
