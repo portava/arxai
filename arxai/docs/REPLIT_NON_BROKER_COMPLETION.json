@@ -4,7 +4,7 @@
   "github_pr": "https://github.com/portava/arxai/pull/75",
   "github_head": "bbc99f008b78f4b5750946d7076d544377ff40f2",
   "measured_implementation": "cc0f268d2eee439db382ce5c30b3d4becff82dc2",
-  "merge_status": "OPEN; owner approval pending",
+  "merge_status": "MERGED with explicit owner approval",
   "original_workspace_commit": "371c86ae738b0bb48ea9b3e616bdb8b23850cf40",
   "source_checkpoint": "697fa2241c6501ab332def893e4cc3fc5ac56f27",
   "source_checkpoint_note": "Replit made a checkpoint while the user started a separate task. Source hashes were rechecked and all 16 applied files still matched; workspace was clean.",
@@ -186,5 +186,7 @@
     "Intraday market-data access remains restricted.",
     "Seven actual DEMO lifecycle scenarios remain unperformed.",
     "Local GitHub release-gate results are recorded in the exact-commit scorecard; no GitHub workflow runs or statuses were reported for this PR."
-  ]
+  ],
+  "github_merge_commit": "76cdbdc9525a2da1eec8113cb3c5fe9b63cf2325",
+  "merge_receipt_note": "Supersedes pending-merge wording in the historical completion report; deployment remains unperformed."
 }
