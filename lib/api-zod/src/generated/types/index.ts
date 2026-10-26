@@ -1525,6 +1525,8 @@ export * from "./scalpResultUserAction";
 export * from "./scalpSymbolPersonality";
 export * from "./scalpTakeProfit";
 export * from "./schoolQuizAttempt";
+export * from "./selfTradeAccountingCoverage";
+export * from "./selfTradeAccountingCoverageStatus";
 export * from "./selfTradeAgent";
 export * from "./selfTradeAgentDetailResp";
 export * from "./selfTradeAgentLedger";
