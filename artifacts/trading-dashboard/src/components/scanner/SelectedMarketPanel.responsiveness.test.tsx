@@ -77,6 +77,19 @@ describe("selected-market interaction responsiveness", () => {
     expect(screen.getByTestId("ticket").textContent).toBe("GBPUSD"); expect(calls).toHaveLength(3);
   });
 
+  it("a failed refresh hides stale analysis and cannot reopen its ticket after retry", async () => {
+    mount(); await complete(0); await screen.findByTestId("btn-open-ticket-buy");
+    fireEvent.click(screen.getByTestId("btn-open-ticket-buy"));
+    fireEvent.click(screen.getByTestId("btn-refresh-symbol"));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await act(async () => calls[1].resolve(new Response("{}", { status: 500 })));
+    await screen.findByRole("alert");
+    expect(screen.queryByTestId("ticket")).toBeNull(); expect(screen.queryByTestId("btn-open-ticket-buy")).toBeNull();
+    fireEvent.click(screen.getByTestId("btn-refresh-symbol"));
+    await waitFor(() => expect(calls).toHaveLength(3)); await complete(2);
+    await screen.findByTestId("btn-open-ticket-buy"); expect(screen.queryByTestId("ticket")).toBeNull();
+  });
+
   it("an account switch clears the previous user's read and open ticket", async () => {
     mount(); await complete(0); await screen.findByTestId("btn-open-ticket-buy");
     fireEvent.click(screen.getByTestId("btn-open-ticket-buy"));

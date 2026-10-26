@@ -85,7 +85,7 @@ export function SelectedMarketPanel() {
   // the exact same user/symbol/timeframe key, request and cancellation signal.
   const q = useSelectedMarketSnapshot(activeSymbol, scannerTf);
   const selection = JSON.stringify(q.queryKey);
-  useEffect(() => { setTicket(null); }, [selection]);
+  useEffect(() => { setTicket(null); }, [selection, q.isError, q.data?.ok]);
 
   // Shared scanner feed-truth for the focused symbol/timeframe — same source the
   // header strip and chart read. Drives an honest, NON-BLOCKING feed warning on
