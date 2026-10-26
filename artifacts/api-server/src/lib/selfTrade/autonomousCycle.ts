@@ -278,6 +278,7 @@ export async function runAutonomousCycle(
       result.reconciled.filled += rec.filled;
       result.reconciled.rejected += rec.rejected;
       result.reconciled.closed += rec.closed;
+      result.positionsClosed += rec.closed;
       result.reconciled.expired += rec.expired;
 
       // 2. AACI chain audit (advisory): fill-no-position / lost-command /

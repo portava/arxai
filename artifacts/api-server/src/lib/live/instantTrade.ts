@@ -116,7 +116,9 @@ export type RubyAuthReason = (typeof RUBY_AUTH_REASONS)[number];
 
 export type InstantTradeResult =
   | { ok: true; commandId?: string; action: InstantTradeAction; detail?: unknown }
-  | { ok: false; error: string; primaryReason?: string; blockingReasonCode?: string; detail?: unknown; httpStatus: number };
+  | { ok: false; error: string; primaryReason?: string; blockingReasonCode?: string; detail?: unknown; httpStatus: number;
+      /** Retain management command evidence even when confirm/dispatch refuses. */
+      commandId?: string };
 
 async function writeAudit(args: {
   userId: number; action: string; ip?: string | null; ua?: string | null; metadata?: unknown;
@@ -458,7 +460,9 @@ async function executeOpen(args: {
       requestedVolume: intent.volume!, stopLoss: intent.stopLoss ?? null, takeProfit: intent.takeProfit ?? null,
       sourcePage: `INSTANT_${intent.source.toUpperCase()}`,
       rubyExplanationSummary: intent.rawUserCommand ?? null,
-      payload: {},
+      // Server-created provenance survives canonical → broker symbol mapping.
+      // createLiveDraft integrity-signs this payload with the exact broker symbol.
+      payload: intent.source === "self_trade" ? { selfTradeSymbolBinding: { requestedSymbol: typedSymbol, brokerSymbol: symbol } } : {},
       allowNoStopLossThisDraft: noSlOverride,
       selfTradeAgentId: intent.selfTradeAgentId ?? null,
       selfTradeDecisionId: intent.selfTradeDecisionId ?? null,
@@ -617,7 +621,7 @@ async function executeModify(args: {
   const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   if (!confirmed.ok) {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, modify: true, blockReason: confirmed.reason ?? "MODIFY_CONFIRM_FAILED", commandId: draft.command.commandId } });
-    return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED" };
+    return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED", commandId: draft.command.commandId };
   }
   const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   const accepted = dispatched.ok === true;
@@ -632,7 +636,7 @@ async function executeModify(args: {
   });
   return accepted
     ? { ok: true, action: "MODIFY_SL_TP", commandId: draft.command.commandId }
-    : { ok: false, httpStatus: 409, error: dispatched.primaryReason ?? dispatched.reason ?? "MODIFY_DISPATCH_REJECTED", detail: dispatched };
+    : { ok: false, httpStatus: 409, error: dispatched.primaryReason ?? dispatched.reason ?? "MODIFY_DISPATCH_REJECTED", commandId: draft.command.commandId, detail: dispatched };
 }
 
 // Internal: dispatch ONE reduce-only CLOSE for a given position row.
@@ -661,11 +665,11 @@ async function closeOnePosition(args: {
     return { ok: false, httpStatus: 409, error: d.primaryReason ?? d.reason ?? "CLOSE_REJECTED", detail: d };
   }
   const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
-  if (!confirmed.ok) return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED" };
+  if (!confirmed.ok) return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED", commandId: draft.command.commandId };
   const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   return dispatched.ok === true
     ? { ok: true, action: "CLOSE", commandId: draft.command.commandId }
-    : { ok: false, httpStatus: 409, error: dispatched.primaryReason ?? dispatched.reason ?? "CLOSE_DISPATCH_REJECTED", detail: dispatched };
+    : { ok: false, httpStatus: 409, error: dispatched.primaryReason ?? dispatched.reason ?? "CLOSE_DISPATCH_REJECTED", commandId: draft.command.commandId, detail: dispatched };
 }
 
 /**
