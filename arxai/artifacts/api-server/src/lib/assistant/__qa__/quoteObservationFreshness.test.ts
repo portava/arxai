@@ -100,7 +100,7 @@ test("an old real quote does not pass a readiness refresh", async () => {
 for (const [key, payload] of [
   ["TWELVEDATA_API_KEY", { close: "123" }],
   ["POLYGON_API_KEY", { results: [{ c: 1.12 }] }],
-  ["ALPHA_VANTAGE_API_KEY", { "Global Quote": { "05. price": "123" } }],
+  ["ALPHA_VANTAGE_API_KEY", { "Realtime Currency Exchange Rate": { "1. From_Currency Code": "EUR", "3. To_Currency Code": "USD", "5. Exchange Rate": "1.12" } }],
 ] as const) {
   test(`${key} also preserves missing observation time`, async () => {
     process.env[key] = "offline-fixture";

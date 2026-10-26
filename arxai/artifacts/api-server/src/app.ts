@@ -11,6 +11,8 @@ import { startRubyOutcomeWorker } from "./lib/rubyQuality/outcomeWorker";
 import { perfTimer } from "./middlewares/perfTimer";
 import { CANDLE_INGEST_BODY_LIMIT_BYTES } from "./lib/data/brokerCandleStore";
 import { recordIngestRejection, isIngestRoute } from "./lib/data/ingestRejectionCounter";
+import { mountProductionDashboard } from "./lib/startup/dashboard.js";
+import path from "node:path";
 
 const app: Express = express();
 
@@ -179,6 +181,10 @@ app.use("/api/mt5", (req, _res, next) => {
 // readable only by ADMIN/OWNER via /api/admin/performance/recent-actions.
 app.use("/api", perfTimer);
 app.use("/api", router);
+
+if (process.env.ARX_SERVE_DASHBOARD === "true") {
+  mountProductionDashboard(app, path.resolve("artifacts/trading-dashboard/dist/public"));
+}
 
 // UX4 — start the background trade-monitor worker (paper-only, read-mostly).
 startMonitor();

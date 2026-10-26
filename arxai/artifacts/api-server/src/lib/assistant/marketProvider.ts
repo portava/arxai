@@ -13,6 +13,8 @@
 // - Symbol validation. Provider failures never crash callers.
 
 import { logger } from "../logger.js";
+import { marketHttpJson as httpJson, providerFailureCode, resetMarketHttpObservations } from "./marketHttp.js";
+import { alphaFxPair, FX_INTERVALS, parseAlphaFxQuote, parseAlphaFxCandles } from "./alphaVantageFx.js";
 import {
   getEconomicCalendarResult,
   isEconomicCalendarConfigured,
@@ -145,7 +147,7 @@ export async function getCurrentEventsFromProvider(limit = 10): Promise<CurrentE
       }
       return r;
     } catch (e) {
-      return { connected: false, events: [], provider: p.name, reason: `Current-events adapter error: ${(e as Error).message}`, fetchedAt };
+      return { connected: false, events: [], provider: p.name, reason: "Current-events adapter failed.", fetchedAt };
     }
   }
   return {
@@ -324,25 +326,6 @@ export function validateSymbol(s: string): string | null {
   return t;
 }
 
-// ── HTTP helper with timeout, never throws to caller ─────────────────────
-async function httpJson(url: string, headers?: Record<string, string>, timeoutMs = 5000): Promise<unknown> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const r = await fetch(url, { headers, signal: ctrl.signal });
-    if (!r.ok) {
-      logger.warn({ url: url.replace(/[?&](apikey|token|api_key|apiKey)=[^&]+/gi, "$1=REDACTED"), status: r.status }, "marketProvider http non-2xx");
-      return null;
-    }
-    return await r.json();
-  } catch (e) {
-    logger.warn({ url: url.replace(/[?&](apikey|token|api_key|apiKey)=[^&]+/gi, "$1=REDACTED"), err: (e as Error).message }, "marketProvider http error");
-    return null;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
 // ── Empty quote helper ───────────────────────────────────────────────────
 function emptyQuote(symbol: string, source: string, freshness: MarketQuote["freshness"] = "UNAVAILABLE"): MarketQuote {
   return {
@@ -440,7 +423,7 @@ function twelveDataProvider(apiKey: string, newsApiKey: string | null): MarketPr
       markChecked();
       const j = (await httpJson(url).catch(() => null)) as { status?: string; values?: Array<{ datetime: string; open: string; high: string; low: string; close: string; volume?: string }>; message?: string; code?: number } | null;
       if (!j || j.status === "error" || !Array.isArray(j.values) || j.values.length === 0) {
-        const reason = j?.message ?? `status=${j?.status ?? "no_response"}`;
+        const reason = providerFailureCode(j) ?? "NO_DATA";
         markError(`candles ${tdSym}@${interval}: ${reason}`);
         return { connected: true, source: "twelve_data", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Twelve Data returned no candle data for ${tdSym} @ ${interval}: ${reason}` };
       }
@@ -543,7 +526,7 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
       markChecked();
       const j = (await httpJson(url).catch(() => null)) as { status?: string; results?: Array<{ t: number; o: number; h: number; l: number; c: number; v?: number }>; resultsCount?: number; error?: string; message?: string } | null;
       if (!j || !Array.isArray(j.results) || j.results.length === 0) {
-        const reason = j?.error ?? j?.message ?? j?.status ?? "no_response";
+        const reason = providerFailureCode(j) ?? "NO_DATA";
         markError(`polygon candles ${fx.ticker}@${tf}: ${reason}`);
         return { connected: true, source: "polygon", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Polygon returned no candle data for ${fx.ticker} @ ${tf}: ${reason}` };
       }
@@ -581,7 +564,7 @@ function polygonProvider(apiKey: string, newsApiKey: string | null): MarketProvi
         const bar = Array.isArray(j?.results) && j!.results.length > 0 ? j!.results[0]! : null;
         const price = typeof bar?.c === "number" && Number.isFinite(bar.c) && bar.c > 0 ? bar.c : null;
         if (!bar || price == null) {
-          markError(`polygon fx ${fx.ticker}/prev: ${j?.error ?? j?.message ?? j?.status ?? "no_bar"}`);
+          markError(`polygon fx ${fx.ticker}/prev: ${providerFailureCode(j) ?? "NO_DATA"}`);
           const q = emptyQuote(symbol, "polygon", "UNAVAILABLE");
           cacheSet(quoteCache, `polygon:${symbol}`, q);
           return q;
@@ -709,7 +692,7 @@ function finnhubProvider(apiKey: string, newsApiKey: string | null): MarketProvi
       markChecked();
       const j = (await httpJson(url).catch(() => null)) as { s?: string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[]; v?: number[] } | null;
       if (!j || j.s !== "ok" || !Array.isArray(j.t) || !Array.isArray(j.c) || j.c.length === 0) {
-        return { connected: true, source: "finnhub", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Finnhub returned no candle data for ${mapped.symbol} @ ${resolution} (status=${j?.s ?? "no_response"}). May be tier-restricted or off-hours.` };
+        return { connected: true, source: "finnhub", symbol: rawSymbol, timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `Finnhub returned no candle data for ${mapped.symbol} @ ${resolution} (status=${j?.s === "no_data" ? "NO_DATA" : "UNAVAILABLE"}). May be tier-restricted or off-hours.` };
       }
       const n = Math.min(j.t.length, safeLimit);
       const start = j.t.length - n;
@@ -822,10 +805,19 @@ function alphaVantageProvider(apiKey: string, newsApiKey: string | null): Market
     name: "alpha_vantage",
     connected: true,
     notes: "Alpha Vantage connected. Note: free tier has strict rate limits.",
-    features: { quotes: true, news: true, snapshots: true, economicCalendar: false, candles: false },
-    async getCandles(symbol, timeframe) {
-      // Alpha Vantage candle support not wired in this adapter yet (Phase 22O scoped to Finnhub).
-      return { connected: true, source: "alpha_vantage", symbol, timeframe, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: "Alpha Vantage candle support not implemented in this adapter yet. Set FINNHUB_API_KEY to use live scanner candles." };
+    features: { quotes: true, news: true, snapshots: true, economicCalendar: false, candles: true },
+    async getCandles(rawSymbol, timeframe, limit = 30) {
+      const symbol = validateSymbol(rawSymbol) ?? "", tf = (timeframe || "M15").toUpperCase();
+      const pair = alphaFxPair(symbol), interval = FX_INTERVALS[tf];
+      if (!pair || !interval) return { connected: true, source: "alpha_vantage", symbol: rawSymbol,
+        timeframe: tf, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: "Unsupported FX pair or interval." };
+      markChecked();
+      const url = `${base}?function=FX_INTRADAY&from_symbol=${pair.from}&to_symbol=${pair.to}&interval=${interval.name}&outputsize=compact&apikey=${encodeURIComponent(apiKey)}`;
+      const payload = await httpJson(url);
+      const result = parseAlphaFxCandles(symbol, tf, limit, payload);
+      if (result.candles.length) markSuccess({ freshness: result.freshness, source: "alpha_vantage" });
+      else markError(`alpha_vantage candles: ${providerFailureCode(payload) ?? "NO_DATA"}`);
+      return result;
     },
     async getLiveQuote(rawSymbol) {
       const symbol = validateSymbol(rawSymbol);
@@ -833,6 +825,15 @@ function alphaVantageProvider(apiKey: string, newsApiKey: string | null): Market
       const cached = cacheGet(quoteCache, `av:${symbol}`, QUOTE_TTL_MS);
       if (cached) return cached;
       markChecked();
+      const pair = alphaFxPair(symbol);
+      if (pair) {
+        const payload = await httpJson(`${base}?function=CURRENCY_EXCHANGE_RATE&from_currency=${pair.from}&to_currency=${pair.to}&apikey=${encodeURIComponent(apiKey)}`);
+        const q = parseAlphaFxQuote(symbol, payload) ?? emptyQuote(symbol, "alpha_vantage");
+        if (q.price !== null) markSuccess({ freshness: "REALTIME", source: "alpha_vantage" });
+        else markError(`alpha_vantage quote: ${providerFailureCode(payload) ?? "NO_DATA"}`);
+        cacheSet(quoteCache, `av:${symbol}`, q);
+        return q;
+      }
       const url = `${base}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${encodeURIComponent(apiKey)}`;
       const j = (await httpJson(url)) as { "Global Quote"?: Record<string, string> } | null;
       const g = j?.["Global Quote"];
@@ -1015,7 +1016,7 @@ function compositeProvider(providers: MarketProvider[]): MarketProvider {
           }
           last = q;
         } catch (e) {
-          logger.warn({ provider: p.name, err: (e as Error).message, symbol }, "composite: quote provider threw, falling through");
+          logger.warn({ provider: p.name, error: "PROVIDER_EXCEPTION", symbol }, "composite: quote provider threw, falling through");
         }
       }
       return last ?? emptyQuote(symbol || "", compositeName, "UNAVAILABLE");
@@ -1029,7 +1030,7 @@ function compositeProvider(providers: MarketProvider[]): MarketProvider {
           if (r.connected && r.candles.length > 0) return r;
           last = r;
         } catch (e) {
-          logger.warn({ provider: p.name, err: (e as Error).message, symbol, timeframe }, "composite: candle provider threw, falling through");
+          logger.warn({ provider: p.name, error: "PROVIDER_EXCEPTION", symbol, timeframe }, "composite: candle provider threw, falling through");
         }
       }
       return last ?? { connected: false, source: compositeName, symbol, timeframe, candles: [], freshness: "UNAVAILABLE", asOf: null, notes: `All providers (${names}) failed or returned empty.` };
@@ -1174,6 +1175,7 @@ function withTradingEconomicsCalendar(provider: MarketProvider): MarketProvider 
 
 // For tests — reset memoized provider & caches
 export function _resetMarketProviderForTests() {
+  resetMarketHttpObservations();
   _provider = null;
   _newsOnlyKey = null;
   quoteCache.clear();
