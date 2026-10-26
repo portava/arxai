@@ -10449,6 +10449,69 @@ export interface PaperOrder {
   updatedAt: string;
 }
 
+export type BacktestEvidenceVersion =
+  (typeof BacktestEvidenceVersion)[keyof typeof BacktestEvidenceVersion];
+
+export const BacktestEvidenceVersion = {
+  NUMBER_1: 1,
+} as const;
+
+export type BacktestEvidenceClassification =
+  (typeof BacktestEvidenceClassification)[keyof typeof BacktestEvidenceClassification];
+
+export const BacktestEvidenceClassification = {
+  diagnostic: "diagnostic",
+} as const;
+
+export type BacktestEvidenceVerification =
+  (typeof BacktestEvidenceVerification)[keyof typeof BacktestEvidenceVerification];
+
+export const BacktestEvidenceVerification = {
+  unverified: "unverified",
+} as const;
+
+export type BacktestEvidenceSource =
+  (typeof BacktestEvidenceSource)[keyof typeof BacktestEvidenceSource];
+
+export const BacktestEvidenceSource = {
+  generated_prices: "generated_prices",
+  unattested_broker_history: "unattested_broker_history",
+  unknown: "unknown",
+} as const;
+
+export type BacktestEvidencePnlUnit =
+  (typeof BacktestEvidencePnlUnit)[keyof typeof BacktestEvidencePnlUnit];
+
+export const BacktestEvidencePnlUnit = {
+  price_units: "price_units",
+} as const;
+
+export type BacktestEvidenceCosts =
+  (typeof BacktestEvidenceCosts)[keyof typeof BacktestEvidenceCosts];
+
+export const BacktestEvidenceCosts = {
+  not_modelled: "not_modelled",
+} as const;
+
+export type BacktestEvidenceHoldout =
+  (typeof BacktestEvidenceHoldout)[keyof typeof BacktestEvidenceHoldout];
+
+export const BacktestEvidenceHoldout = {
+  not_recorded: "not_recorded",
+} as const;
+
+export interface BacktestEvidence {
+  version: BacktestEvidenceVersion;
+  classification: BacktestEvidenceClassification;
+  verification: BacktestEvidenceVerification;
+  comparisonEligible: boolean;
+  source: BacktestEvidenceSource;
+  pnlUnit: BacktestEvidencePnlUnit;
+  costs: BacktestEvidenceCosts;
+  holdout: BacktestEvidenceHoldout;
+  limitations: string[];
+}
+
 export type BacktestRunStatus =
   (typeof BacktestRunStatus)[keyof typeof BacktestRunStatus];
 
@@ -10476,6 +10539,16 @@ export const BacktestRunDataSource = {
   synthetic: "synthetic",
 } as const;
 
+export type BacktestRunHistoryStatus =
+  (typeof BacktestRunHistoryStatus)[keyof typeof BacktestRunHistoryStatus];
+
+export const BacktestRunHistoryStatus = {
+  available_unattested: "available_unattested",
+  unavailable: "unavailable",
+  ambiguous_source: "ambiguous_source",
+  invalid_bars: "invalid_bars",
+} as const;
+
 export interface BacktestRun {
   id: number;
   /** @nullable */
@@ -10498,6 +10571,8 @@ export interface BacktestRun {
   status: BacktestRunStatus;
   isVerified: BacktestRunIsVerified;
   dataSource?: BacktestRunDataSource;
+  evidence?: BacktestEvidence;
+  historyStatus?: BacktestRunHistoryStatus;
   /** @nullable */
   aiSummary?: string | null;
   equityCurve?: number[];
@@ -10545,6 +10620,10 @@ export interface BacktestEquityPoint {
   equity: number;
   peak: number;
   drawdown: number;
+  /** Cumulative unscaled P/L independent of the plotting offset. */
+  grossPriceUnits?: number;
+  /** Running peak of cumulative unscaled P/L. */
+  peakGrossPriceUnits?: number;
 }
 
 export type BacktestTradeMarkerDirection =
@@ -10595,6 +10674,7 @@ export type BacktestChartSeriesSummary = {
 };
 
 export interface BacktestChartSeries {
+  evidence?: BacktestEvidence;
   kind: BacktestChartSeriesKind;
   label: string;
   initialBalance: number;

@@ -1,21 +1,13 @@
-// Testing Lab — comparison overlay chart (Task #763). DISPLAY-ONLY.
-//
-// Overlays two (or more) equity curves on one chart, each as its own line with
-// an explicit legend label that names its source AND its native unit. Backtest
-// equity is account currency ($), forward equity is realised R — these are NOT
-// silently merged: every line carries its unit in the legend and the Y-axis note
-// states both, so the reader compares trajectory/shape, never a fabricated
-// common magnitude. X-axis is the closed-trade sequence (each series rebased so
-// trade #1 is its first outcome) because the two tests span different clocks.
+// Diagnostic curves: keep each unit on its own scale. No cross-unit magnitude comparison.
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 export interface OverlaySeries {
   key: string;
   label: string;
-  unit: "$" | "R";
+  unit: "$" | "R" | "price units";
   color: string;
-  // value = growth-from-start: backtest $ delta from initial, forward cumulative R.
+  // Value is growth from the plotting origin, in the explicitly named unit.
   points: { tradeId: number; value: number }[];
 }
 
@@ -31,6 +23,14 @@ export function ComparisonOverlayChart({ series }: { series: OverlaySeries[] }) 
     );
   }
 
+  const units = Array.from(new Set(nonEmpty.map((s) => s.unit)));
+  if (units.length > 1) {
+    return <div className="space-y-3">
+      <p className="text-xs text-slate-400">Different units use separate charts; their magnitudes cannot be compared.</p>
+      {units.map((unit) => <ComparisonOverlayChart key={unit} series={nonEmpty.filter((s) => s.unit === unit)} />)}
+    </div>;
+  }
+
   // Merge by tradeId into a single row set; each series writes its own keyed field.
   const maxLen = Math.max(...nonEmpty.map((s) => s.points.length));
   const rows: Record<string, number>[] = [];
@@ -43,10 +43,7 @@ export function ComparisonOverlayChart({ series }: { series: OverlaySeries[] }) 
     rows.push(row);
   }
 
-  const units = Array.from(new Set(nonEmpty.map((s) => s.unit)));
-  const yNote = units.length > 1
-    ? "Growth from start — units differ per curve (see legend); compare trajectory, not magnitude."
-    : units[0] === "$" ? "Growth from start ($)" : "Growth from start (R)";
+  const yNote = `Growth from start (${units[0]})`;
 
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
@@ -62,8 +59,8 @@ export function ComparisonOverlayChart({ series }: { series: OverlaySeries[] }) 
             <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #334155", fontSize: 11 }} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             {nonEmpty.map((s) => (
-              <Line key={s.key} type="monotone" dataKey={s.key} name={`${s.label} (${s.unit})`}
-                stroke={s.color} strokeWidth={2} dot={false} connectNulls />
+              <Line key={s.key} type="linear" dataKey={s.key} name={`${s.label} (${s.unit})`}
+                stroke={s.color} strokeWidth={2} dot={false} />
             ))}
           </LineChart>
         </ResponsiveContainer>

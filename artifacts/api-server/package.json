@@ -281,7 +281,9 @@
     "test:truth-component-evidence": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/truth/__qa__/componentEvidence.test.ts src/lib/truth/__qa__/componentProducerWiring.test.ts",
     "test:truth-memory-postgres": "node src/lib/truth/__qa__/runSignalMemoryPostgres.mjs",
     "test:history-evidence": "node --experimental-test-module-mocks --import tsx --test src/lib/data/__qa__/historySourceEvidence.test.ts src/lib/data/providers/__qa__/derivCandleProducer.test.ts",
-    "test:self-trade-accounting-postgres": "node src/lib/selfTrade/__qa__/runAccountingCoveragePostgres.mjs"
+    "test:self-trade-accounting-postgres": "node src/lib/selfTrade/__qa__/runAccountingCoveragePostgres.mjs",
+    "test:backtest-evidence": "node --import tsx --test src/lib/backtest/__qa__/backtestEvidence.test.ts",
+    "test:backtest-evidence:postgres": "node src/lib/backtest/__qa__/runBacktestEvidencePostgres.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

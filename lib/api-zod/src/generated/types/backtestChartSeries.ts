@@ -8,9 +8,11 @@
 import type { BacktestChartSeriesKind } from "./backtestChartSeriesKind";
 import type { BacktestChartSeriesSummary } from "./backtestChartSeriesSummary";
 import type { BacktestEquityPoint } from "./backtestEquityPoint";
+import type { BacktestEvidence } from "./backtestEvidence";
 import type { BacktestTradeMarker } from "./backtestTradeMarker";
 
 export interface BacktestChartSeries {
+  evidence?: BacktestEvidence;
   kind: BacktestChartSeriesKind;
   label: string;
   initialBalance: number;

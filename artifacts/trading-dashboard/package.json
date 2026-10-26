@@ -61,7 +61,8 @@
     "test:deriv-health": "vitest run src/pages/admin/deriv-health.test.tsx",
     "test:truth-evidence": "vitest run src/lib/scannerTruth.test.ts src/lib/scannerTruthRegression.test.ts src/lib/symbolTruthEvidence.test.ts src/hooks/useScannerTruth.expiry.test.tsx src/hooks/useScannerTruth.selectedMarket.test.tsx src/hooks/useSymbolTruth.evidence.test.tsx src/components/scanner/ScannerReadGate.test.tsx src/components/scanner/RubyMarketReadCard.test.tsx",
     "test:scanner-chart-lifecycle": "vitest run src/components/scanner/useScannerChartLifecycle.test.tsx src/lib/chartCandlesQuery.evidence.test.ts src/lib/useChartDeepHistory.test.ts src/components/scanner/useDerivedOverlayContext.test.tsx",
-    "test:self-trade-accounting": "vitest run src/components/selfTrade/AccountingSummary.test.tsx"
+    "test:self-trade-accounting": "vitest run src/components/selfTrade/AccountingSummary.test.tsx",
+    "test:backtest-evidence": "vitest run src/components/testing-lab/BacktestEvidence.test.tsx"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
