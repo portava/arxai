@@ -10,6 +10,9 @@
 // (`mt5DemoCommandsTable`). A demo command can never accidentally route as
 // live and vice versa.
 
+import { MANAGEMENT_TARGET_SOURCE, ManagementTargetError, createManagementDraft, assertManagementGeometry,
+  managementTargetFromCommand, isAgentManagementCommand, boundManagementTransportSymbol,
+  type ManagementTarget } from "../selfTrade/managementTarget.js";
 import { livePositionWriter, livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
@@ -1680,6 +1683,7 @@ export async function createLiveOpsDraft(input: {
   // this, after verifying OWNER/ADMIN role, the confirmation phrase, and
   // read-only ownership. NEVER honored for OPEN / MODIFY / increase-exposure.
   killSwitchCloseBypass?: KillSwitchCloseBypass | null;
+  managementTarget?: ManagementTarget;
 }): Promise<{ ok: true; command: ArxLiveCommand } | { ok: false; reason: string; detail?: string }> {
   const arming = await getMyArming(input.userId);
   if (!arming || !arming.isArmed) return { ok: false, reason: "USER_NOT_ARMED_FOR_LIVE" };
@@ -1692,7 +1696,14 @@ export async function createLiveOpsDraft(input: {
     return { ok: false, reason: "KILL_SWITCH_ENGAGED" };
   }
 
-  const bridge = (await listUserConnections(input.userId, { activeTokenOnly: true, order: "oldest", limit: 1 }))[0] ?? null;
+  const target = input.managementTarget;
+  if ((input.sourcePage === MANAGEMENT_TARGET_SOURCE || input.sourcePage === "INSTANT_MODIFY_SELF_TRADE") && !target)
+    return { ok: false, reason: "MANAGEMENT_TARGET_REQUIRED" };
+  if (target) {
+    try { assertManagementGeometry(target, input); }
+    catch (error) { if (error instanceof ManagementTargetError) return { ok: false, reason: error.reason }; throw error; }
+  }
+  const manualBridge = target ? null : (await listUserConnections(input.userId, { activeTokenOnly: true, order: "oldest", limit: 1 }))[0] ?? null;
 
   const ownership = await resolveOwnershipFields({
     userId: input.userId,
@@ -1702,69 +1713,85 @@ export async function createLiveOpsDraft(input: {
 
   const commandId = `lvcmd_${randomUUID()}`;
   const opsOrderType = input.commandType === "CLOSE_LIVE_POSITION" ? "CLOSE" : "MODIFY";
-  const opsPayload: Record<string, unknown> = {
-    brokerTicket: input.brokerTicket,
-    newStopLoss: input.newStopLoss ?? null,
-    newTakeProfit: input.newTakeProfit ?? null,
-  };
-  // Task #743 Cluster D — stamp the bypass marker into the payload BEFORE the
-  // integrity hash is computed, so the marker is covered by the integrity
-  // envelope and cannot be forged after draft creation. Only stamped when the
-  // bypass actually applies (CLOSE + marker present).
-  if (bypassApplies && input.killSwitchCloseBypass) {
-    opsPayload["killSwitchCloseBypass"] = {
-      reason: input.killSwitchCloseBypass.reason,
-      source: input.killSwitchCloseBypass.source,
-      initiatorAdminId: input.killSwitchCloseBypass.initiatorAdminId,
-      initiatorRole: input.killSwitchCloseBypass.initiatorRole,
-      killSwitchEngagedAtDraft: !!arming.killSwitchEngaged,
-      stampedAt: new Date().toISOString(),
+  const insertOps = async (writer: typeof db | AuthorityTransaction, bridge: typeof manualBridge, entry?: ArxLiveCommand) => {
+    const opsPayload: Record<string, unknown> = {
+      ...(target ? { managementTargetV1: target,
+        agentOwnership: (entry?.payload as Record<string, unknown> | null)?.agentOwnership,
+        selfTradeSymbolBinding: (entry?.payload as Record<string, unknown> | null)?.selfTradeSymbolBinding } : {}),
+      brokerTicket: input.brokerTicket,
+      newStopLoss: input.newStopLoss ?? null,
+      newTakeProfit: input.newTakeProfit ?? null,
     };
+    // Task #743 Cluster D — stamp the bypass marker into the payload BEFORE the
+    // integrity hash is computed, so the marker is covered by the integrity
+    // envelope and cannot be forged after draft creation. Only stamped when the
+    // bypass actually applies (CLOSE + marker present).
+    if (bypassApplies && input.killSwitchCloseBypass) {
+      opsPayload["killSwitchCloseBypass"] = {
+        reason: input.killSwitchCloseBypass.reason,
+        source: input.killSwitchCloseBypass.source,
+        initiatorAdminId: input.killSwitchCloseBypass.initiatorAdminId,
+        initiatorRole: input.killSwitchCloseBypass.initiatorRole,
+        killSwitchEngagedAtDraft: !!arming.killSwitchEngaged,
+        stampedAt: new Date().toISOString(),
+      };
+    }
+    // AACI Security Phase 3 — stamp the integrity envelope on the ops command too
+    // (close/modify are sensitive live commands). Actor = the per-user owner.
+    const opsIntegrity: CommandIntegrityFields = buildCommandIntegrityFields({
+      commandId,
+      userId: input.userId,
+      commandType: input.commandType,
+      symbol: input.symbol,
+      side: input.side,
+      orderType: opsOrderType,
+      requestedVolume: input.volume,
+      stopLoss: input.newStopLoss ?? null,
+      takeProfit: input.newTakeProfit ?? null,
+      payload: opsPayload,
+      actorId: input.userId,
+      actorType: target ? "SELF_TRADE_AGENT" : "USER",
+    });
+    const [row] = await writer.insert(arxLiveCommandsTable).values({
+      commandId,
+      userId: input.userId,
+      bridgeConnectionId: bridge?.id ?? null,
+      accountLogin: bridge?.accountNumber ?? null,
+      brokerServer: bridge?.brokerName ?? null,
+      accountNumber: arming.accountNumberConfirmed,
+      commandType: input.commandType,
+      status: "LIVE_CONFIRMATION_REQUIRED",
+      symbol: input.symbol,
+      side: input.side,
+      orderType: opsOrderType,
+      requestedVolume: input.volume,
+      stopLoss: input.newStopLoss ?? null,
+      takeProfit: input.newTakeProfit ?? null,
+      sourcePage: target ? MANAGEMENT_TARGET_SOURCE : input.sourcePage ?? "LIVE_POSITION_OPS",
+      selfTradeAgentId: target?.agentId ?? null,
+      selfTradeDecisionId: target?.decisionId ?? null,
+      allocationId: ownership.allocationId,
+      cycleId: ownership.cycleId,
+      source: target ? MANAGEMENT_TARGET_SOURCE : ownership.source,
+      payload: opsPayload,
+      payloadHash: opsIntegrity.payloadHash,
+      integrityHash: opsIntegrity.integrityHash,
+      integrityKeyVersion: opsIntegrity.integrityKeyVersion,
+      integrityStatus: opsIntegrity.integrityStatus,
+      actorId: opsIntegrity.actorId,
+      actorType: opsIntegrity.actorType,
+      actionType: opsIntegrity.actionType,
+    }).returning();
+    return row!;
+  };
+  let row: ArxLiveCommand;
+  try {
+    row = target ? await createManagementDraft(target, (tx, facts, bridge) => insertOps(tx, bridge, facts.entry))
+      : await insertOps(db, manualBridge);
+  } catch (error) {
+    if (error instanceof ManagementTargetError) return { ok: false, reason: error.reason };
+    throw error;
   }
-  // AACI Security Phase 3 — stamp the integrity envelope on the ops command too
-  // (close/modify are sensitive live commands). Actor = the per-user owner.
-  const opsIntegrity: CommandIntegrityFields = buildCommandIntegrityFields({
-    commandId,
-    userId: input.userId,
-    commandType: input.commandType,
-    symbol: input.symbol,
-    side: input.side,
-    orderType: opsOrderType,
-    requestedVolume: input.volume,
-    stopLoss: input.newStopLoss ?? null,
-    takeProfit: input.newTakeProfit ?? null,
-    payload: opsPayload,
-    actorId: input.userId,
-    actorType: "USER",
-  });
-  const [row] = await db.insert(arxLiveCommandsTable).values({
-    commandId,
-    userId: input.userId,
-    bridgeConnectionId: bridge?.id ?? null,
-    accountLogin: bridge?.accountNumber ?? null,
-    brokerServer: bridge?.brokerName ?? null,
-    accountNumber: arming.accountNumberConfirmed,
-    commandType: input.commandType,
-    status: "LIVE_CONFIRMATION_REQUIRED",
-    symbol: input.symbol,
-    side: input.side,
-    orderType: opsOrderType,
-    requestedVolume: input.volume,
-    stopLoss: input.newStopLoss ?? null,
-    takeProfit: input.newTakeProfit ?? null,
-    sourcePage: input.sourcePage ?? "LIVE_POSITION_OPS",
-    allocationId: ownership.allocationId,
-    cycleId: ownership.cycleId,
-    source: ownership.source,
-    payload: opsPayload,
-    payloadHash: opsIntegrity.payloadHash,
-    integrityHash: opsIntegrity.integrityHash,
-    integrityKeyVersion: opsIntegrity.integrityKeyVersion,
-    integrityStatus: opsIntegrity.integrityStatus,
-    actorId: opsIntegrity.actorId,
-    actorType: opsIntegrity.actorType,
-    actionType: opsIntegrity.actionType,
-  }).returning();
 
   await audit({
     eventType: "LIVE_DRAFT_CREATED", userId: input.userId, symbol: input.symbol,
@@ -2015,7 +2042,7 @@ export async function confirmLiveCommand(args: { userId: number; commandId: stri
       status: "LIVE_APPROVED", confirmedAt: new Date(),
     }, row);
   } catch (error) {
-    if (!(error instanceof AgentEntryAuthorityError)) throw error;
+    if (!(error instanceof AgentEntryAuthorityError) && !(error instanceof ManagementTargetError)) throw error;
     // A refusal must not overwrite a command another caller already sent.
     const [blocked] = await db.update(arxLiveCommandsTable).set({
       status: "LIVE_BLOCKED", rejectionReason: error.reason, rejectedAt: new Date(),
@@ -3078,7 +3105,16 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // can surface their specific failure reason instead of "no bridge".
   // The explicit MOCK short-circuit below refuses dispatch before the
   // evaluator runs, so a MOCK row cannot ever satisfy live readiness.
-  const bridgePool = masterBoundBridgeId != null
+  const managementTarget = managementTargetFromCommand(row);
+  if (isAgentManagementCommand(row) && (!managementTarget ||
+      (masterBoundBridgeId != null ? managementTarget.bridgeConnectionId !== masterBoundBridgeId : managementTarget.bridgeOwnerUserId !== args.userId))) {
+    const reason = "MANAGEMENT_ROUTING_TARGET_CHANGED";
+    const [blocked] = await db.update(arxLiveCommandsTable).set({ status: "LIVE_BLOCKED", rejectionReason: reason, rejectedAt: new Date() })
+      .where(and(eq(arxLiveCommandsTable.commandId, args.commandId), eq(arxLiveCommandsTable.userId, args.userId), eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+    if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
+    return { ok: false as const, reason, primaryReason: reason, command: blocked };
+  }
+  const bridgePool = managementTarget ? [await getConnection(managementTarget.bridgeConnectionId)].filter((c) => c != null) : masterBoundBridgeId != null
     ? [await getConnection(masterBoundBridgeId)].filter((c) => c != null)
     : await listUserConnections(args.userId);
   const nonRevoked = bridgePool.filter((b) => !b.tokenRevokedAt);
@@ -3999,7 +4035,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     const isDup = /arx_live_commands_idem_active_uq|duplicate key/.test(msg);
-    const reason = e instanceof AgentEntryAuthorityError ? e.reason
+    const reason = e instanceof AgentEntryAuthorityError || e instanceof ManagementTargetError ? e.reason
       : isDup ? "DUPLICATE_LIVE_IDEMPOTENCY_KEY" : "DB_INSERT_FAILED";
     // AACI Security Phase 3 — a duplicate-idempotency collision is a replayed /
     // double-submitted command. Record a redacted security event + admin alert
@@ -4400,6 +4436,11 @@ export function buildBridgedMt5CommandPayload(liveRow: {
     payload: liveRow.payload,
   });
   if (positionTicket) payload.positionTicket = positionTicket;
+  const managementTarget = managementTargetFromCommand(liveRow);
+  if (managementTarget) {
+    if (positionTicket !== managementTarget.brokerTicket) throw new ManagementTargetError("MANAGEMENT_TRANSPORT_TARGET_MISMATCH");
+    payload.managementTargetV1 = managementTarget;
+  }
   return payload;
 }
 
@@ -4415,7 +4456,7 @@ async function enqueueBridgedMt5Command(opts: {
   const { resolveBrokerSymbolName } = await import("../instruments/index.js");
   // Resolve to the broker's exact (case-sensitive) Market Watch symbol, same
   // as the live-poll path does, so the EA preflight resolves it cleanly.
-  const brokerSymbol = await resolveBrokerSymbolName(opts.liveRow.symbol);
+  const brokerSymbol = boundManagementTransportSymbol(opts.liveRow) ?? await resolveBrokerSymbolName(opts.liveRow.symbol);
 
   // Build the mirror payload (incl. the silent-close-failure guard around
   // `positionTicket`) via the pure, regression-tested helper.

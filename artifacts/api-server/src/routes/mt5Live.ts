@@ -24,6 +24,7 @@ import {
   recordLiveCommandResult,
   findGhostClosedPositionIds,
 } from "../lib/live/liveCommandPipeline.js";
+import { boundManagementTransportSymbol } from "../lib/selfTrade/managementTarget.js";
 import { resolveBrokerSymbolName } from "../lib/instruments/index.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
@@ -106,7 +107,7 @@ router.post("/mt5/live-commands-poll", bridgeAuthPerUserOnly, async (req: AugReq
   // than ARX's internal uppercased/alias form. No-op for forex; verbatim
   // fallback for anything not in the registry. Does NOT alter the stored
   // command or any safety gate.
-  const brokerSymbol = await resolveBrokerSymbolName(c.symbol);
+  const brokerSymbol = boundManagementTransportSymbol(c) ?? await resolveBrokerSymbolName(c.symbol);
   res.json({
     command: {
       commandId: c.commandId,
