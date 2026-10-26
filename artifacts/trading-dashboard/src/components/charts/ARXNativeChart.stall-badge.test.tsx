@@ -34,6 +34,10 @@ const adapterSpies = {
   updateActiveCandle: vi.fn(),
   setOverlays: vi.fn(),
   resetScale: vi.fn(),
+  resize: vi.fn(),
+  goToLatest: vi.fn(),
+  fitHistory: vi.fn(),
+  setScaleMode: vi.fn(),
   setReachStartHandler: vi.fn(),
   priceToCoordinate: vi.fn(() => null),
 };

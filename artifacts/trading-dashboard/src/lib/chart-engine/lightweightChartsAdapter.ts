@@ -5,6 +5,7 @@ import {
   ColorType,
   CrosshairMode,
   LineStyle,
+  PriceScaleMode,
   type UTCTimestamp,
   type IChartApi,
   type ISeriesApi,
@@ -25,11 +26,9 @@ import type {
   ChartStructureLine,
   ChartStructureMarker,
 } from "./types";
+import { candleDisplayPrecision, incrementalCandles, historyRangeShift } from "./candleReconciliation";
 import { applyStructureLines, clearStructureLines } from "./structureLines";
 
-// Crosshair move handler throttle (ms). The chart fires a CrosshairMove event on
-// every pixel; throttling prevents thrashing on slow machines (≈60fps).
-const CROSSHAIR_THROTTLE_MS = 16;
 
 const DEFAULT_VISIBLE_DESKTOP = 150;
 const DEFAULT_VISIBLE_MOBILE = 80;
@@ -93,7 +92,12 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   // a redraw when a candle refresh didn't actually move any anchor.
   private structureSnappedTimes: number[] = [];
   private resizeObserver: ResizeObserver | null = null;
-  private crosshairThrottle: number | null = null;
+  private crosshairFrame: number | null = null;
+  private crosshairHandler: ((candle: ChartEngineCandle | null) => void) | null = null;
+  private hoveredCandle: ChartEngineCandle | null = null;
+  private streamTip: ChartEngineCandle | null = null;
+  private symbol = "";
+  private precision = -1;
 
   private container: HTMLElement | null = null;
   private candles: ChartEngineCandle[] = [];
@@ -122,6 +126,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.didFit = false;
     this.candles = [];
     this.newestSeriesTime = null;
+    this.streamTip = null;
+    this.precision = -1;
     this.visibleDesktop = options.visibleDesktop ?? DEFAULT_VISIBLE_DESKTOP;
     this.visibleMobile = options.visibleMobile ?? DEFAULT_VISIBLE_MOBILE;
 
@@ -146,7 +152,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         // the forming bar never clips against the price axis.
         rightOffset: 8,
         // Let the user zoom/pan freely without the chart fighting them.
-        lockVisibleTimeRangeOnResize: false,
+        lockVisibleTimeRangeOnResize: true,
       },
       rightPriceScale: {
         borderColor: "rgba(63, 63, 70, 0.5)",
@@ -169,12 +175,13 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       wickDownColor: "#ef4444",
     });
 
-    // Throttled crosshair subscription (≈60fps) to avoid thrashing.
-    chart.subscribeCrosshairMove(() => {
-      if (this.crosshairThrottle != null) return;
-      this.crosshairThrottle = window.setTimeout(() => {
-        this.crosshairThrottle = null;
-      }, CROSSHAIR_THROTTLE_MS);
+    // At most one legend update per animation frame; no React render per pixel.
+    chart.subscribeCrosshairMove((event) => {
+      const bar = event.seriesData.get(series);
+      this.hoveredCandle = event.point && typeof event.time === "number" && bar && "open" in bar
+        ? { time: event.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close }
+        : null;
+      this.queueLegendUpdate();
     });
 
     // Deep-history scroll-back: when the user pans so the left edge approaches the
@@ -214,10 +221,13 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       try { this.resizeObserver.disconnect(); } catch { /* already gone */ }
       this.resizeObserver = null;
     }
-    if (this.crosshairThrottle != null) {
-      clearTimeout(this.crosshairThrottle);
-      this.crosshairThrottle = null;
-    }
+    if (this.crosshairFrame != null) cancelAnimationFrame(this.crosshairFrame);
+    this.crosshairFrame = null;
+    this.crosshairHandler = null;
+    this.hoveredCandle = null;
+    this.streamTip = null;
+    this.candles = [];
+    this.reachStartHandler = null;
     if (this.chart) {
       try { this.chart.remove(); } catch { /* already removed */ }
     }
@@ -235,11 +245,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.container = null;
   }
 
-  resize(width?: number): void {
+  resize(width?: number, height?: number): void {
     if (!this.chart) return;
     const w = width ?? this.container?.clientWidth;
     if (w != null && Number.isFinite(w)) {
-      try { this.chart.applyOptions({ width: w }); } catch { /* ignore */ }
+      try { this.chart.applyOptions({ width: w, ...(height != null && height > 0 ? { height } : {}) }); } catch { /* ignore */ }
     }
   }
 
@@ -255,40 +265,27 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     const chart = this.chart;
     if (!series) return;
 
-    // Detect how many bars were PREPENDED (older history loaded at the front).
-    // lightweight-charts' setData preserves the visible range by bar INDEX, so a
-    // prepend would shift the user's view rightward; we counter-shift the logical
-    // range by the prepended count to keep the same bars on screen.
-    const prevOldest = this.candles[0]?.time;
-    let prependedCount = 0;
-    if (prevOldest != null && candles.length > this.candles.length) {
-      const idx = candles.findIndex((c) => c.time === prevOldest);
-      if (idx > 0) prependedCount = idx;
+    let sanitized = sanitizeCandlestickData(candles.map((c) => ({ ...c, time: c.time as UTCTimestamp })));
+    // A closed-window poll may lag a streamed forming bar. Keep that newer tip
+    // until the authoritative window reaches it; never make a candle disappear.
+    if (sanitized.length && this.streamTip && this.streamTip.time > sanitized[sanitized.length - 1]!.time) {
+      sanitized = [...sanitized, { ...this.streamTip, time: this.streamTip.time as UTCTimestamp }];
+    } else {
+      this.streamTip = null;
     }
-    const savedRange =
-      prependedCount > 0 && chart
-        ? chart.timeScale().getVisibleLogicalRange()
-        : null;
-
-    this.candles = candles;
-    // Drop any malformed bar (missing / null / NaN OHLC) BEFORE handing data to
-    // lightweight-charts: its candlestick colorer reads the bar's color data
-    // during PAINT via ensureNotNull and throws "Value is null" on the next
-    // repaint otherwise — uncatchable at this call site.
-    const sanitized = sanitizeCandlestickData(
-      candles.map((c) => ({
-        time: c.time as UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
-    );
-    // The authoritative closed window resets the newest-time watermark so a
-    // reconciled closed bar can cleanly supersede a prior live tip.
-    this.newestSeriesTime =
-      sanitized.length > 0 ? (sanitized[sanitized.length - 1]!.time as number) : null;
-    series.setData(sanitized);
+    const previous = this.candles;
+    const savedRange = chart?.timeScale().getVisibleLogicalRange();
+    const followingLatest = savedRange != null && savedRange.to >= previous.length - 1;
+    const shift = followingLatest ? sanitized.length - previous.length : historyRangeShift(previous, sanitized);
+    const updates = incrementalCandles(previous, sanitized);
+    this.candles = sanitized;
+    this.newestSeriesTime = sanitized.at(-1)?.time ?? null;
+    this.applyPricePrecision();
+    if (updates === null) {
+      series.setData(sanitized);
+    } else {
+      for (const candle of updates) series.update({ ...candle, time: candle.time as UTCTimestamp });
+    }
 
     // Re-anchor any structural markers onto the NEW bar set. When the fixed-size
     // window slides forward (oldest bars roll off), a marker still pointing at a
@@ -300,24 +297,17 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     }
 
     this.applyLivePriceAffordance();
+    if (this.hoveredCandle) this.hoveredCandle = sanitized.find((c) => c.time === this.hoveredCandle!.time) ?? null;
+    this.queueLegendUpdate();
 
-    if (savedRange && chart) {
-      // Restore the user's view shifted by the prepended bars so the chart stays
-      // put instead of jumping when older history arrives.
-      try {
-        chart.timeScale().setVisibleLogicalRange({
-          from: savedRange.from + prependedCount,
-          to: savedRange.to + prependedCount,
-        });
-      } catch { /* ignore — fall back to library default */ }
-    } else if (!this.didFit && candles.length > 0) {
-      // Smart initial visible range: on first real-data load show the most recent
-      // N candles so the chart opens with readable price action, not a full-history
-      // compression. After that respect the user's own zoom/pan.
+    if (!this.didFit && sanitized.length > 0) {
       this.applyDefaultVisibleRange();
       this.didFit = true;
+    } else if (updates === null && savedRange && chart && sanitized.length) {
+      chart.timeScale().setVisibleLogicalRange({ from: savedRange.from + shift, to: savedRange.to + shift });
     }
   }
+
 
   setOverlays(overlays: ChartOverlay[], latestBarTime: number | null): void {
     const series = this.series;
@@ -400,15 +390,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   // candlestick series — sanitized identically to setCandles' setData path so a
   // marker can only ever anchor to a bar that exists.
   private sanitizedBarSecsAsc(): number[] {
-    return sanitizeCandlestickData(
-      this.candles.map((c) => ({
-        time: c.time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
-    ).map((c) => c.time);
+    return this.candles.map((c) => c.time);
   }
 
   // Draw (or re-draw) the stored structural overlay with every marker snapped
@@ -468,8 +450,19 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       try { this.chart.timeScale().fitContent(); } catch { /* ignore */ }
       return;
     }
+    this.chart.applyOptions({ rightPriceScale: { autoScale: true } });
     this.applyDefaultVisibleRange();
   }
+
+  goToLatest(): void { this.chart?.timeScale().scrollToRealTime(); }
+  fitHistory(): void {
+    this.chart?.applyOptions({ rightPriceScale: { autoScale: true } });
+    this.chart?.timeScale().fitContent();
+  }
+  setScaleMode(mode: "linear" | "log"): void {
+    this.chart?.applyOptions({ rightPriceScale: { mode: mode === "log" ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal } });
+  }
+  setCrosshairHandler(handler: ((candle: ChartEngineCandle | null) => void) | null): void { this.crosshairHandler = handler; }
 
   priceToCoordinate(price: number): number | null {
     const s = this.series;
@@ -496,6 +489,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       !Number.isFinite(candle.high) ||
       !Number.isFinite(candle.low) ||
       !Number.isFinite(candle.close) ||
+      candle.time <= 0 || candle.high < Math.max(candle.open, candle.close, candle.low) ||
+      candle.low > Math.min(candle.open, candle.close, candle.high) ||
       (this.newestSeriesTime != null && candle.time < this.newestSeriesTime)
     ) {
       return;
@@ -509,10 +504,18 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         close: candle.close,
       });
       this.newestSeriesTime = candle.time;
+      this.streamTip = { ...candle };
+      if (this.hoveredCandle?.time === candle.time) this.hoveredCandle = { ...candle };
+      this.queueLegendUpdate();
+      if (this.candles.at(-1)?.time === candle.time) this.candles[this.candles.length - 1] = { ...candle };
+      else this.candles.push({ ...candle });
+      if (this.lastPriceLine && this.feedState.livePriceAffordance) this.lastPriceLine.applyOptions({ price: candle.close });
     } catch { /* ignore a bad streaming update */ }
   }
 
-  setSymbol(_symbol: string): void {
+  setSymbol(symbol: string): void {
+    this.symbol = symbol;
+    this.applyPricePrecision();
     // Informational only. lightweight-charts has no instrument concept; the
     // Shell rebuilds the engine (init) on a symbol change so overlays/levels
     // never bleed across instruments.
@@ -541,21 +544,34 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // live last price (shared honesty rule).
     series.applyOptions({ priceLineVisible: live, lastValueVisible: live });
 
-    if (this.lastPriceLine) {
-      try { series.removePriceLine(this.lastPriceLine); } catch { /* gone */ }
+    const last = this.candles.at(-1);
+    if (!live || !last) {
+      if (this.lastPriceLine) series.removePriceLine(this.lastPriceLine);
       this.lastPriceLine = null;
-    }
-    const last = this.candles[this.candles.length - 1];
-    if (last && live) {
+    } else if (this.lastPriceLine) {
+      this.lastPriceLine.applyOptions({ price: last.close });
+    } else {
       this.lastPriceLine = series.createPriceLine({
-        price: last.close,
-        color: "#60a5fa",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: "Last",
+        price: last.close, color: "#60a5fa", lineWidth: 1,
+        lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "Last",
       });
     }
+  }
+
+  private queueLegendUpdate(): void {
+    if (this.crosshairFrame != null || !this.crosshairHandler) return;
+    this.crosshairFrame = requestAnimationFrame(() => {
+      this.crosshairFrame = null;
+      this.crosshairHandler?.(this.hoveredCandle ?? this.candles.at(-1) ?? null);
+    });
+  }
+
+  private applyPricePrecision(): void {
+    if (!this.candles.length || !this.series) return;
+    const precision = candleDisplayPrecision(this.candles, this.symbol);
+    if (precision === this.precision) return;
+    this.precision = precision;
+    this.series.applyOptions({ priceFormat: { type: "price", precision, minMove: 10 ** -precision } });
   }
 
   private applyDefaultVisibleRange(): void {

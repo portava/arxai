@@ -125,11 +125,11 @@ export interface ChartEngineAdapter {
   /** Tear the engine down and release the container. Safe to call repeatedly. */
   destroy(): void;
   /** Re-measure / re-fit to the container width (driven by a ResizeObserver). */
-  resize(width?: number): void;
+  resize(width?: number, height?: number): void;
 
   /** Update the live-price affordance verdict. Re-applies on the next paint. */
   setFeedState(state: ChartEngineFeedState): void;
-  /** Replace the candle series. Preserves the user's zoom/pan after first fit. */
+  /** Reconcile candles incrementally; replace only changed history. Preserve zoom/pan. */
   setCandles(candles: ChartEngineCandle[]): void;
   /**
    * Draw the read-only overlay set (lines / zones / markers). `latestBarTime` is
@@ -151,9 +151,14 @@ export interface ChartEngineAdapter {
   resetScale(): void;
   /** Map a price to a Y pixel coordinate (for DOM overlays); null if off-scale. */
   priceToCoordinate(price: number): number | null;
+  /** View controls only; none of these methods touches execution. */
+  goToLatest?(): void;
+  fitHistory?(): void;
+  setScaleMode?(mode: "linear" | "log"): void;
+  setCrosshairHandler?(handler: ((candle: ChartEngineCandle | null) => void) | null): void;
 
   // ── Optional / staged. Present so the Shell can feature-detect support. ──────
-  /** Update only the most-recent (forming) bar — for future tick streaming. */
+  /** Update the most-recent forming bar from the existing tick stream. */
   updateActiveCandle?(candle: ChartEngineCandle): void;
   /** Informational: the symbol currently shown (engine may relabel/no-op). */
   setSymbol?(symbol: string): void;

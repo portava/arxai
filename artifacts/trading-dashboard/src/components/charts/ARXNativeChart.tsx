@@ -25,7 +25,11 @@ import {
   AlertCircle,
   LineChart,
   Clock,
+  Maximize2,
+  Minimize2,
+  ArrowRightToLine,
 } from "lucide-react";
+import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
@@ -107,11 +111,13 @@ const TIMEFRAMES: { id: ArxTimeframe; label: string }[] = [
 
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
+const EMPTY_OVERLAYS: ChartOverlay[] = [];
 
 
 function loadTimeframe(): ArxTimeframe {
   if (typeof window === "undefined") return DEFAULT_TF;
-  const v = localStorage.getItem(TF_KEY);
+  let v: string | null = null;
+  try { v = localStorage.getItem(TF_KEY); } catch { /* private storage unavailable */ }
   return (TIMEFRAMES.some((t) => t.id === v) ? (v as ArxTimeframe) : DEFAULT_TF);
 }
 
@@ -247,7 +253,7 @@ export function ARXNativeChart({
   showFallbackToggle = false,
   onRequestFallback,
   limit = 300,
-  overlays = [],
+  overlays = EMPTY_OVERLAYS,
   onChartContextChange,
   onIntelligenceChange,
   mirrorLockDefault = true,
@@ -258,6 +264,37 @@ export function ARXNativeChart({
     () => bareSymbol(symbol || "EURUSD").toUpperCase(),
     [symbol],
   );
+
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [scaleMode, setScaleMode] = useState<"linear" | "log">("linear");
+  const legendRef = useRef<HTMLOutputElement | null>(null);
+  const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
+    const bar = candle;
+    if (!legendRef.current) return;
+    const digits = bar ? candleDisplayPrecision([bar], symbol) : 5;
+    legendRef.current.textContent = bar
+      ? `${new Date(bar.time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}`
+      : "Move the crosshair over a candle to inspect it";
+  }, [symbol]);
+  useEffect(() => {
+    if (!expanded) return;
+    const previous = document.body.style.overflow;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = "hidden";
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+      if (event.key === "Tab") {
+        const items = cardRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], [tabindex="0"]');
+        const first = items?.[0];
+        const last = items?.[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", escape); previousFocus?.focus(); };
+  }, [expanded]);
 
   const [internalTf, setInternalTf] = useState<ArxTimeframe>(() => loadTimeframe());
   const timeframe = controlledTf ?? internalTf;
@@ -280,6 +317,7 @@ export function ARXNativeChart({
   // TF buttons normally triggers one chart rebuild + fetch per click; the
   // debounce collapses that to a single rebuild for the settled value.
   const tfDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (tfDebounceRef.current) clearTimeout(tfDebounceRef.current); }, []);
 
   useEffect(() => {
     onSymbolChange?.(resolvedSymbol);
@@ -292,7 +330,7 @@ export function ARXNativeChart({
         tfDebounceRef.current = null;
         if (controlledTf == null) {
           setInternalTf(tf);
-          if (typeof window !== "undefined") localStorage.setItem(TF_KEY, tf);
+          try { localStorage.setItem(TF_KEY, tf); } catch { /* optional preference */ }
         }
         onTimeframeChange?.(tf);
       }, 200);
@@ -400,7 +438,9 @@ export function ARXNativeChart({
   useEffect(() => {
     const update = () => {
       const isMobile = window.innerWidth < 768;
-      if (isMobile && mobileHeight != null) {
+      if (expanded) {
+        setEffectiveHeight(Math.max(240, window.innerHeight - 240));
+      } else if (isMobile && mobileHeight != null) {
         setEffectiveHeight(mobileHeight);
       } else if (isMobile) {
         setEffectiveHeight(Math.max(320, Math.min(height, 380)));
@@ -411,9 +451,9 @@ export function ARXNativeChart({
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, [height, mobileHeight]);
+  }, [height, mobileHeight, expanded]);
 
-  // ── Build the engine once per (symbol, timeframe, height). Rebuilding only on
+  // ── Build the engine once per (symbol, timeframe). Rebuilding only on
   //    these keys preserves the user's zoom/scroll across data polls and
   //    guarantees overlays/levels never bleed across instruments. The actual
   //    chart engine is created behind the adapter — this component never touches
@@ -426,6 +466,8 @@ export function ARXNativeChart({
     adapter.init({ container: el, height: effectiveHeight });
     adapter.setSymbol?.(resolvedSymbol);
     adapter.setTimeframe?.(timeframe);
+    adapter.setCrosshairHandler?.(updateLegend);
+    updateLegend(null);
     adapterRef.current = adapter;
 
     // Signal the data + overlay effects that a fresh engine is ready to draw onto.
@@ -436,7 +478,10 @@ export function ARXNativeChart({
       adapterRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedSymbol, timeframe, effectiveHeight]);
+  }, [resolvedSymbol, timeframe]);
+
+  useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
+  useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
@@ -501,7 +546,7 @@ export function ARXNativeChart({
   }, [mergedEngineCandles]);
 
   // ── Push data into the existing series on every poll WITHOUT recreating the
-  //    chart. setData keeps the current visible range, so the still-forming last
+  //    chart. The adapter reconciles the current visible range, so the forming last
   //    bar updates and new bars append while the user's zoom/pan is preserved.
   //    Phase 2: on first data load we set a smart visible range (last N candles)
   //    instead of fitContent() over the whole history. This prevents the y-axis
@@ -882,7 +927,7 @@ export function ARXNativeChart({
   const isEmpty = !isInitialLoading && !isError && !hasCandles;
 
   return (
-    <Card data-testid="arx-native-chart" className="overflow-hidden border-zinc-800 bg-zinc-950/40">
+    <Card ref={cardRef} role={expanded ? "dialog" : undefined} aria-modal={expanded || undefined} aria-label={expanded ? `${resolvedSymbol} fullscreen chart` : undefined} data-testid="arx-native-chart" className={expanded ? "fixed inset-0 z-50 overflow-auto rounded-none border-zinc-800 bg-zinc-950" : "overflow-hidden border-zinc-800 bg-zinc-950/40"}>
       <CardHeader className="py-3 px-3 md:px-4">
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
@@ -973,6 +1018,8 @@ export function ARXNativeChart({
                 variant={timeframe === tf.id ? "default" : "outline"}
                 className="h-7 px-2 text-xs"
                 onClick={() => setTimeframe(tf.id)}
+                aria-pressed={timeframe === tf.id}
+                aria-label={`${tf.label} timeframe`}
                 data-testid={`arx-native-tf-${tf.id}`}
               >
                 {tf.label}
@@ -984,6 +1031,7 @@ export function ARXNativeChart({
                 variant="ghost"
                 className="h-7 px-2 text-[11px] text-zinc-500 hover:text-zinc-300"
                 onClick={resetScale}
+                aria-label="Reset chart scale"
                 title="Reset scale — restore default visible range"
                 data-testid="arx-native-reset-scale"
               >
@@ -1064,11 +1112,36 @@ export function ARXNativeChart({
         </span>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2" role="toolbar" aria-label="Chart view controls">
+        <div className="flex flex-wrap items-center gap-1">
+          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.goToLatest?.()} title="Return to latest candles (End)">
+            <ArrowRightToLine className="mr-1 h-3.5 w-3.5" /> Latest
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
+          <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={scaleMode === "log"} onClick={() => setScaleMode((m) => m === "linear" ? "log" : "linear")} title="Toggle logarithmic price scale">
+            {scaleMode === "log" ? "Log scale" : "Linear scale"}
+          </Button>
+        </div>
+        <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={expanded} onClick={() => setExpanded((v) => !v)}>
+          {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
+          {expanded ? "Exit fullscreen" : "Fullscreen"}
+        </Button>
+      </div>
+      <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
+        Move the crosshair over a candle to inspect it
+      </output>
       <CardContent className="relative p-0">
         {/* The chart canvas is always mounted so the v5 series handle is stable;
             overlays cover it for loading / empty / error. */}
         <div
           ref={containerRef}
+          tabIndex={0}
+          role="region"
+          aria-label={`${resolvedSymbol} ${timeframe} price chart. Pan to inspect history, scroll to zoom. Home fits history; End returns to latest candles.`}
+          onKeyDown={(event) => {
+            if (event.key === "End") { event.preventDefault(); adapterRef.current?.goToLatest?.(); }
+            if (event.key === "Home") { event.preventDefault(); adapterRef.current?.fitHistory?.(); }
+          }}
           data-testid="arx-native-canvas"
           className="w-full overflow-hidden"
           style={{ height: effectiveHeight }}
