@@ -24,7 +24,7 @@ import { useEffect } from "react";
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   const url = typeof input === "string" ? input : input.toString();
   if (url.includes("/market-scanner/scan")) {
-    return { ok: true, status: 200, json: async () => ({ ok: true }) } as unknown as Response;
+    return { ok: true, status: 200, json: async () => ({ opportunities: [], universe: "all", universeSymbols: [], generatedAt: new Date().toISOString() }) } as unknown as Response;
   }
   return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
 });
@@ -206,7 +206,7 @@ describe("Market Scanner — empty-state honesty (never-scanned vs scanned-empty
     await settle();
     expect(screen.getByTestId("scanner-never-scanned")).toBeTruthy();
 
-    // Drive the REAL scan() → load() chain; the mocked reads return zero opps.
+    // Drive the REAL scan() response; the POST returns an empty result envelope.
     await act(async () => {
       fireEvent.click(screen.getByTestId("scanner-btn-scan"));
       await Promise.resolve();

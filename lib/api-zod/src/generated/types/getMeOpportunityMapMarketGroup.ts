@@ -13,7 +13,7 @@ export const GetMeOpportunityMapMarketGroup = {
   all: "all",
   forex: "forex",
   metals: "metals",
+  indices: "indices",
   crypto: "crypto",
-  stocks: "stocks",
   synthetic: "synthetic",
 } as const;

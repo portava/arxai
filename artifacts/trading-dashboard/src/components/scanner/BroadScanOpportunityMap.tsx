@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { sameUniversePlaceholder } from "./scannerMapQuery";
 import { isScannerMapFresh } from "./scannerMapFreshness";
 import { ScannerScreenToolbar } from "./ScannerScreenToolbar";
 import { DEFAULT_SCREEN, filterScreenRows, prepareScreenRows, resolveScreenScope, scannerScreenCsv,
@@ -38,7 +40,7 @@ import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery
 // honest dataNote and empty buckets — this component renders that state and never
 // fabricates opportunities.
 
-type UniverseId = "all" | "forex" | "metals" | "crypto" | "stocks" | "synthetic";
+type UniverseId = "all" | "forex" | "metals" | "crypto" | "indices" | "synthetic";
 
 const CATEGORY_META: Record<
   OpportunityMapRowCategory,
@@ -207,10 +209,12 @@ export function BroadScanOpportunityMap({
   onScanned?: (scanned: boolean) => void;
 }) {
   const { name } = useAssistantName();
+  const { user } = useCurrentUser();
+  const userId = user?.id ?? null;
   const [now, setNow] = useState(Date.now);
   const [screen, setScreen] = useState<ScannerScreen>({ ...DEFAULT_SCREEN });
   const [exportNotice, setExportNotice] = useState("");
-  const watchlists = useGetWatchlists({ query: { queryKey: getGetWatchlistsQueryKey(), staleTime: 60_000, refetchOnWindowFocus: true } });
+  const watchlists = useGetWatchlists({ query: { queryKey: [...getGetWatchlistsQueryKey(), userId], enabled: userId !== null, staleTime: 60_000, refetchOnWindowFocus: true } });
   const [refreshMs, setRefreshMs] = useState<10_000 | 60_000 | 0>(10_000);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
@@ -226,7 +230,9 @@ export function BroadScanOpportunityMap({
 
   const { data, isLoading, isFetching, isError, refetch } = useGetMeOpportunityMap(params, {
     query: {
-      queryKey: getGetMeOpportunityMapQueryKey(params),
+      queryKey: [...getGetMeOpportunityMapQueryKey(params), userId],
+      enabled: userId !== null,
+      placeholderData: (previous, query) => sameUniversePlaceholder(previous, query, marketGroup, userId),
       refetchOnWindowFocus: true,
       refetchInterval: refreshMs || false,
       refetchIntervalInBackground: false,
@@ -299,7 +305,8 @@ export function BroadScanOpportunityMap({
   const comparisonSelected = map?.rows.find((row) => symbolKey(row.symbol) === symbolKey(rawBestVsSelected?.selectedSymbol));
   const selectedBaselineAvailable = rawBestVsSelected?.selectedEdge == null ||
     (validHeuristic(rawBestVsSelected.selectedEdge) && comparisonSelected != null && visibleBest(comparisonSelected) != null);
-  const bestVsSelected = snapshotFresh && visibleRows.length > 0 && selectedBaselineAvailable && (!rawBestVsSelected?.best || visibleBest(rawBestVsSelected.best))
+  const comparisonMatchesSelection = symbolKey(rawBestVsSelected?.selectedSymbol) === selectedKey;
+  const bestVsSelected = comparisonMatchesSelection && snapshotFresh && visibleRows.length > 0 && selectedBaselineAvailable && (!rawBestVsSelected?.best || visibleBest(rawBestVsSelected.best))
     ? rawBestVsSelected : null;
   const safeBest: OpportunityBestPicks | null = map ? {
     bestScalp: visibleBest(map.best.bestScalp), bestRetest: visibleBest(map.best.bestRetest),
@@ -375,6 +382,11 @@ export function BroadScanOpportunityMap({
         </Button>
       </div>
 
+      {map && isFetching && (
+        <p className="mt-2 text-xs text-txt-muted" role="status" data-testid="opportunity-map-updating">
+          Updating scan context… Current rows keep their original scan time.
+        </p>
+      )}
       {map && !snapshotFresh && (
         <div className="mt-3 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning" data-testid="opportunity-map-expired" role="status">
           This scan needs a fresh check. Directions, scores and best picks stay hidden until a recent scan succeeds.
@@ -502,6 +514,7 @@ export function BroadScanOpportunityMap({
                         <OpportunityRowCard
                           key={`${r.symbol}-${r.kind}`}
                           row={r}
+                          selected={isSelectedRow}
                           onPick={onPick}
                           feedCapOverride={capForRow(r) ?? (metricsAvailable ? null : "FEED_LIMITED")}
                           scanTimeframe={isSelectedRow ? scanTimeframe : null}
@@ -563,14 +576,16 @@ function BestPicks({
   );
 }
 
-function OpportunityRowCard({
+const OpportunityRowCard = memo(function OpportunityRowCard({
   row,
   onPick,
+  selected = false,
   feedCapOverride = null,
   scanTimeframe = null,
   chartTimeframe = null,
 }: {
   row: OpportunityMapRow;
+  selected?: boolean;
   onPick?: (symbol: string) => void;
   // Cross-surface feed cap for the SELECTED symbol's row (Task #608). When the
   // selected chart's own feed verdict is degraded (FEED_LIMITED / ANALYSIS_ONLY /
@@ -617,7 +632,8 @@ function OpportunityRowCard({
     <button
       type="button"
       onClick={() => onPick?.(row.symbol)}
-      className="rounded-xl border border-border bg-background/40 p-2.5 text-left hover:border-primary/40"
+      className={`rounded-xl border p-2.5 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${selected ? "border-primary/60 bg-primary/10" : "border-border bg-background/40"}`}
+      aria-pressed={selected}
       data-testid={`opportunity-row-${row.symbol}`}
       data-actionability={action}
     >
@@ -699,6 +715,6 @@ function OpportunityRowCard({
       </div>
     </button>
   );
-}
+});
 
 export default BroadScanOpportunityMap;

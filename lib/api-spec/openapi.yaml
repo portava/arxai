@@ -6950,7 +6950,7 @@ paths:
         - in: query
           name: marketGroup
           required: false
-          schema: { type: string, enum: [all, forex, metals, crypto, stocks, synthetic] }
+          schema: { type: string, enum: [all, forex, metals, indices, crypto, synthetic] }
         - in: query
           name: selectedSymbol
           required: false

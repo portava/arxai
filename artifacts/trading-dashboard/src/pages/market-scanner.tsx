@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, useState } from "react";
+import { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import { markActionStart, markUiFeedback, markActionEnd } from "@/lib/perf";
 import { useGetAaciCohesion, getGetAaciCohesionQueryKey, type AaciCohesionItem } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -70,13 +70,12 @@ type Opp = {
 const MANUAL_SCAN_COOLDOWN_MS = 7_000;
 
 type UniverseId = "all" | "forex" | "metals" | "indices" | "crypto" | "synthetic" | "full";
+type ScanEnvelope = { opportunities?: Opp[]; generatedAt?: string; universe?: UniverseId; universeSymbols?: string[] };
 type UniverseInfo = { id: UniverseId; label: string; symbols: string[]; available: boolean; note: string | null };
 
-/** The opportunity-map endpoint groups equities/indices under "stocks" and has
- *  no "full" — map the scanner universe onto its accepted set. */
-type OpportunityMapGroup = "all" | "forex" | "metals" | "crypto" | "stocks" | "synthetic";
+/** The public opportunity-map route accepts six groups; full uses all. */
+type OpportunityMapGroup = "all" | "forex" | "metals" | "crypto" | "indices" | "synthetic";
 function opportunityMapGroup(u: UniverseId): OpportunityMapGroup {
-  if (u === "indices") return "stocks";
   if (u === "full") return "all";
   return u;
 }
@@ -220,12 +219,35 @@ export default function MarketScanner() {
     running: boolean; opportunityCount: number; lastScanAt: string | null;
     universe?: UniverseId; universeSymbols?: string[]; feedNote?: string;
   } | null>(null);
-  const [opps, setOpps] = useState<Opp[]>([]);
+  const [snapshotOpps, setOpps] = useState<Opp[]>([]);
+  const [snapshotInfo, setSnapshotInfo] = useState<ScanEnvelope | null>(null);
+  const snapshotRef = useRef<ScanEnvelope | null>(null);
+  const selectedUniverse = useRef<UniverseId>("all");
+  const selectionVersion = useRef(0);
+  const actionVersion = useRef(0);
+  const activeAction = useRef<number | null>(null);
+  const mounted = useRef(true);
+  const readController = useRef<AbortController | null>(null);
+  const actionController = useRef<AbortController | null>(null);
+  const pinnedUniverse = useRef<UniverseId | null>(null);
+  const opps = useMemo(() => {
+    const symbols = universes.find((entry) => entry.id === universe)?.symbols;
+    if (symbols) { const scope = new Set(symbols); return snapshotOpps.filter((row) => scope.has(row.symbol)); }
+    return universe === "all" ? snapshotOpps : [];
+  }, [snapshotOpps, universes, universe]);
   const [snapshotClock, setSnapshotClock] = useState(Date.now);
   const loadVersion = useRef(0);
   useEffect(() => {
+    mounted.current = true;
     const timer = setInterval(() => setSnapshotClock(Date.now()), 1000);
-    return () => { clearInterval(timer); loadVersion.current++; };
+    return () => {
+      mounted.current = false;
+      clearInterval(timer);
+      loadVersion.current++;
+      actionVersion.current++;
+      readController.current?.abort();
+      actionController.current?.abort();
+    };
   }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -309,46 +331,70 @@ export default function MarketScanner() {
       const res = await safeJson<{ universes?: UniverseInfo[] }>(
         "/api/market-scanner/universes",
       );
+      if (!mounted.current) return;
       if (res.ok) setUniverses(res.data.universes ?? []);
       else console.debug("[MarketScanner] universes read failed", res.kind, res.status, res.message);
     })();
   }, []);
 
-  async function load() {
+  function applySnapshot(data: ScanEnvelope) {
+    const previous = snapshotRef.current;
+    // A global read can lag behind the result just returned by a manual scan.
+    const previousTime = Date.parse(previous?.generatedAt ?? "");
+    const nextTime = Date.parse(data.generatedAt ?? "");
+    if (previous?.universe === data.universe && Number.isFinite(previousTime) &&
+        (!Number.isFinite(nextTime) || nextTime < previousTime)) return;
+    const universeSyms = data.universeSymbols ?? [];
+    const rows = (data.opportunities ?? []).map((row) => ({ ...row, scanGeneratedAt: data.generatedAt }));
+    setOpps(universeSyms.length ? rows.filter((row) => universeSyms.includes(row.symbol)) : rows);
+    snapshotRef.current = data;
+    setSnapshotInfo(data);
+  }
+
+  function beginAction() {
+    const version = ++actionVersion.current;
+    const selection = selectionVersion.current;
+    activeAction.current = version;
+    loadVersion.current++;
+    readController.current?.abort();
+    actionController.current?.abort();
+    const controller = new AbortController();
+    actionController.current = controller;
+    setErr(""); setBusy(true);
+    return { version, signal: controller.signal,
+      current: () => mounted.current && version === actionVersion.current && selection === selectionVersion.current };
+  }
+
+  function finishAction(action: ReturnType<typeof beginAction>) {
+    if (!action.current()) return;
+    activeAction.current = null;
+    actionController.current = null;
+    setBusy(false);
+  }
+
+  async function load(owningAction?: number) {
+    if (!mounted.current || (activeAction.current !== null && activeAction.current !== owningAction)) return;
     const requestVersion = ++loadVersion.current;
-    // Both reads go through safeJson: a 502 / empty / truncated body comes back
-    // as a typed failure instead of an uncaught SyntaxError. On any failure we
-    // keep the prior status/opportunities (no wipe on a transient blip), show
-    // honest degraded copy, and route the raw detail to the operator console.
+    const selection = selectionVersion.current;
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
     const [s, o] = await Promise.all([
-      safeJson<{
-        running: boolean; opportunityCount: number; lastScanAt: string | null;
-        universe?: UniverseId; universeSymbols?: string[]; feedNote?: string;
-      }>("/api/market-scanner/status"),
-      safeJson<{ opportunities?: Opp[]; generatedAt?: string; universeSymbols?: string[] }>("/api/market-scanner/opportunities?limit=40"),
+      safeJson<NonNullable<typeof status>>("/api/market-scanner/status", { signal: controller.signal }),
+      safeJson<ScanEnvelope>("/api/market-scanner/opportunities?limit=40", { signal: controller.signal }),
     ]);
-    if (requestVersion !== loadVersion.current) return;
-    // Narrow each result independently so TypeScript keeps the failure variant
-    // (the union can't be correlated through a shared `f` ternary).
-    if (!s.ok) {
-      console.debug("[MarketScanner] status read failed", s.kind, s.status, s.message);
-      setErr(SCANNER_DEGRADED_MESSAGE);
-      return;
-    }
-    if (!o.ok) {
-      console.debug("[MarketScanner] opportunities read failed", o.kind, o.status, o.message);
+    if (!mounted.current || requestVersion !== loadVersion.current || selection !== selectionVersion.current) return;
+    readController.current = null;
+    if (!s.ok || !o.ok) {
       setErr(SCANNER_DEGRADED_MESSAGE);
       return;
     }
     setErr("");
     setStatus(s.data);
-    // The result envelope owns its universe and timestamp; status is a
-    // separate request and can already describe a different scan.
-    const universeSyms: string[] = o.data.universeSymbols ?? [];
-    const all: Opp[] = (o.data.opportunities ?? []).map((row) => ({
-      ...row, scanGeneratedAt: o.data.generatedAt,
-    }));
-    setOpps(universeSyms.length ? all.filter((x) => universeSyms.includes(x.symbol)) : all);
+    // The exact manual result remains selected if a different global scan wins
+    // the engine race. Polling still observes engine status independently.
+    if (pinnedUniverse.current === selectedUniverse.current && o.data.universe !== pinnedUniverse.current) return;
+    applySnapshot(o.data);
   }
   // Tick the Scan-button cooldown countdown. A single 250ms interval (so the
   // displayed seconds update promptly) recomputes the remaining whole seconds
@@ -428,88 +474,68 @@ export default function MarketScanner() {
   }
 
   async function start() {
-    setErr("");
-    setBusy(true);
+    const action = beginAction();
     try {
-      await api("/api/market-scanner/start", { method: "POST", body: JSON.stringify({ intervalMs: 10_000, universe }) });
-      await load();
-    } catch (e) { reportErr(e); }
-    finally { setBusy(false); }
+      await api("/api/market-scanner/start", { method: "POST", body: JSON.stringify({ intervalMs: 10_000, universe }), signal: action.signal });
+      if (action.current()) await load(action.version);
+    } catch (e) { if (action.current()) reportErr(e); }
+    finally { finishAction(action); }
   }
   async function stop() {
-    setErr("");
-    setBusy(true);
+    const action = beginAction();
     try {
-      await api("/api/market-scanner/stop", { method: "POST" });
-      await load();
-    } catch (e) { reportErr(e); }
-    finally { setBusy(false); }
+      await api("/api/market-scanner/stop", { method: "POST", signal: action.signal });
+      if (action.current()) await load(action.version);
+    } catch (e) { if (action.current()) reportErr(e); }
+    finally { finishAction(action); }
   }
-  async function scan()  {
-    // PART B — Scanner.Scan timing. Targets: button feedback <50ms,
-    // first results <1s. setBusy() is the user-visible loading state.
-    //
-    // Every authenticated user now triggers a real one-shot Broad Scan
-    // (Task #562): the POST runs the scan server-side (per-user rate-limited,
-    // per-viewer projected), then `load()` refreshes the visible feed. A
-    // too-fast retry comes back as a clean 429 we surface honestly — never a
-    // raw error and never a silent no-op. The always-on engine (Start/Stop)
-    // stays operator-only.
-    const id = markActionStart("scanner.scan", { page: "market-scanner" });
-    setErr("");
-    setBusy(true);
+  async function runScan(target: UniverseId, label: string) {
+    const id = markActionStart(label, { page: "market-scanner" });
+    const action = beginAction();
     markUiFeedback(id);
     try {
-      await api("/api/market-scanner/scan", { method: "POST", body: JSON.stringify({ universe }) });
-      await load();
-      // Proactively disable the Scan button for the cooldown window so the next
-      // click can't trip the 429. Seeded from the mirrored client constant
-      // (success carries no server timer); the 429 path below corrects it if it
-      // ever fires.
+      const body = await api("/api/market-scanner/scan", {
+        method: "POST", body: JSON.stringify({ universe: target }), signal: action.signal,
+      });
+      if (!action.current()) return;
+      // The scan response already carries the fully decorated, viewer-scoped
+      // result. A second global GET adds latency and can return another run.
       setCooldownUntil(Date.now() + MANUAL_SCAN_COOLDOWN_MS);
-    } catch (e) {
-      if (!handleScanCooldown(e)) reportErr(e);
-    } finally {
-      // A scan was attempted this session — an empty feed now reads as
-      // SCANNED-EMPTY ("found nothing"), not NEVER-SCANNED.
+      const snapshot = body as ScanEnvelope | null;
+      if (!snapshot || !Array.isArray(snapshot.opportunities) || snapshot.universe !== target ||
+          !Number.isFinite(Date.parse(snapshot.generatedAt ?? ""))) {
+        setErr(SCANNER_DEGRADED_MESSAGE);
+        return;
+      }
+      pinnedUniverse.current = target;
+      applySnapshot(snapshot);
       setHasScanned(true);
-      setBusy(false);
+    } catch (e) {
+      if (action.current() && !handleScanCooldown(e)) reportErr(e);
+    } finally {
+      finishAction(action);
       markActionEnd(id);
     }
+  }
+  async function scan() {
+    await runScan(universe, "scanner.scan");
   }
 
   async function changeUniverse(next: UniverseId) {
-    // PART D fix — previously this called `scan` THEN `load` sequentially
-    // and pre-cleared `opps` (which caused an empty-state flash). Now we
-    // fire scan + status/opportunities in parallel and only clear the
-    // visible cards if the scan itself succeeded. Two roundtrips become
-    // one wall-clock wait.
-    const id = markActionStart("scanner.changeUniverse", { page: "market-scanner" });
+    if (next === selectedUniverse.current) return;
+    selectedUniverse.current = next;
+    selectionVersion.current++;
+    actionVersion.current++;
+    loadVersion.current++;
+    readController.current?.abort();
+    actionController.current?.abort();
+    activeAction.current = null;
+    pinnedUniverse.current = null;
     setUniverse(next);
-    setErr("");
-    setBusy(true);
-    markUiFeedback(id);
-    try {
-      // Admins kick the engine scan first (server queues the work) so fresh
-      // opportunities are written; non-admins just re-read the USER-allowed
-      // feed for the new universe. Either way we read status + opportunities
-      // in the SAME tick and never silently swallow a 403.
-      if (realIsAdmin) {
-        await api("/api/market-scanner/scan", { method: "POST", body: JSON.stringify({ universe: next }) });
-      }
-      await load();
-    } catch (e) {
-      // A too-fast universe switch hits the SAME per-user scan cooldown as the
-      // Scan button, so surface the identical honest "Scanning too fast" copy
-      // (and reconcile the shared countdown) rather than a raw 429 error.
-      if (!handleScanCooldown(e)) reportErr(e);
-    } finally {
-      // A universe switch re-reads/re-scans the feed — treat an empty result as
-      // SCANNED-EMPTY, not NEVER-SCANNED.
-      setHasScanned(true);
-      setBusy(false);
-      markActionEnd(id);
-    }
+    setErr(""); setBusy(false); setHasScanned(false);
+    // All viewers can immediately filter existing results. Only operators keep
+    // the existing automatic universe-switch scan; others explicitly click Scan.
+    if (realIsAdmin) await runScan(next, "scanner.changeUniverse");
   }
 
   async function sendToIntent(o: Opp) {
@@ -554,11 +580,11 @@ export default function MarketScanner() {
   };
 
   // Load a symbol (by name) onto the shared chart bus (canonicalised).
-  const handleSymbolPick = (symbol: string) => {
+  const handleSymbolPick = useCallback((symbol: string) => {
     const bare = bareSymbol(symbol).toUpperCase();
     const canonical = resolveSymbol(bare)?.canonicalSymbol ?? symbol;
     setChartSymbol(canonical);
-  };
+  }, []);
 
   // ---------- Tab contents -------------------------------------------------
 
@@ -594,11 +620,16 @@ export default function MarketScanner() {
   // the in-session case before the next poll lands.
   const scanExists = hasScanned || Boolean(status?.lastScanAt) || mapScanned;
 
+  const filteredExistingResults = universe !== "all" && snapshotInfo?.universe !== universe;
+  const resultTimestamp = snapshotInfo?.generatedAt;
   const resultsBlock = (
     <div className="space-y-3">
-      {status?.lastScanAt && (
+      {filteredExistingResults && <p className="text-xs text-muted-foreground" data-testid="scanner-existing-scope">
+        Showing existing results filtered to {activeUniverse?.label ?? "this universe"}. Click Scan to refresh this universe.
+      </p>}
+      {resultTimestamp && (
         <p className="text-xs text-muted-foreground">
-          Last scan {new Date(status.lastScanAt).toLocaleTimeString()} · {opps.length} opportunit{opps.length === 1 ? "y" : "ies"} in {activeUniverse?.label ?? "current universe"}
+          Last scan {new Date(resultTimestamp).toLocaleTimeString()} · {opps.length} opportunit{opps.length === 1 ? "y" : "ies"} in {activeUniverse?.label ?? "current universe"}
         </p>
       )}
 
@@ -624,6 +655,8 @@ export default function MarketScanner() {
             <span data-testid="scanner-empty-degraded">
               Scanner results couldn't be refreshed just now — see the message above. This is a temporary feed issue, not an empty market.
             </span>
+          ) : filteredExistingResults ? (
+            <span data-testid="scanner-scope-empty">No existing results in this universe. Click Scan to analyze it.</span>
           ) : scanExists ? (
             <span data-testid="scanner-scanned-empty">
               Scan complete — no qualifying setups in {activeUniverse?.label ?? "this universe"} right now. Nothing met the scanner's criteria; try another universe above or scan again shortly.
@@ -870,7 +903,7 @@ export default function MarketScanner() {
       {activeUniverse && activeUniverse.symbols.length > 0 && (
         <CollapsibleSection
           title={`Scan universe symbols (${activeUniverse.symbols.length})`}
-          description={`${activeUniverse.label} — the symbols the scanner is scoring right now.`}
+          description={`${activeUniverse.label} — markets included in this selected view.`}
           storageKey="scanner.universeSymbols"
           testId="scanner-universe-symbols"
         >

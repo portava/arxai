@@ -17657,7 +17657,7 @@ export const getMeOpportunityMapQueryTimeframeMax = 8;
 
 export const GetMeOpportunityMapQueryParams = zod.object({
   marketGroup: zod
-    .enum(["all", "forex", "metals", "crypto", "stocks", "synthetic"])
+    .enum(["all", "forex", "metals", "indices", "crypto", "synthetic"])
     .optional(),
   selectedSymbol: zod.coerce
     .string()
