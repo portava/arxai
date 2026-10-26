@@ -1,5 +1,5 @@
 import { logger } from "../../logger.js";
-import { getDerivWsClient } from "./derivWsClient.js";
+import { getDerivFeedClient, derivMarketDataConfigured, derivMarketDataSource } from "./derivFeedClient.js";
 import { DERIV_SYNTHETIC_SYMBOLS, resolveDerivSymbol } from "./derivProvider.js";
 import { startDerivFormingBridge } from "../chart/derivFormingBridge.js";
 import { mapWithConcurrency } from "../../marketScanner.js";
@@ -88,16 +88,13 @@ let cycleInFlight = false;
 let invalidUniverseWarned = false;
 const lastRefreshBySymbol = new Map<string, number>();
 
-function derivConfigured(): boolean {
-  return Boolean(process.env.DERIV_APP_ID && process.env.DERIV_APP_ID.trim());
-}
 
 async function runKeepAliveCycle(): Promise<void> {
   if (cycleInFlight) return;
-  if (!derivConfigured()) return;
+  if (!derivMarketDataConfigured()) return;
   cycleInFlight = true;
   try {
-    const client = getDerivWsClient();
+    const client = getDerivFeedClient();
     client.ensureConnection();
     // Narrowed universe (audit collision #5): the keep-alive previously pinned
     // ALL 22 mapped synthetics every cycle. It now pins only the configured
@@ -143,7 +140,7 @@ export function startDerivKeepAlive(): void {
   // a whole interval for the next closed candle (Theme C3.1). Display-only;
   // idempotent; failure here must never stop the keep-alive itself.
   try {
-    startDerivFormingBridge();
+    startDerivFormingBridge(getDerivFeedClient(), derivMarketDataSource());
   } catch (err) {
     logger.warn({ err: String(err) }, "Deriv forming-bar bridge start failed (non-fatal)");
   }

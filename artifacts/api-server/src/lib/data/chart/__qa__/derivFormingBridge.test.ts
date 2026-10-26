@@ -138,7 +138,7 @@ describe("C3.1 — the bridge folds Deriv ticks through the client's observer", 
     const epochSec = Math.floor(Date.now() / 1000);
     client.emitTick({ symbol: "R_75", epoch: epochSec, quote: 1500.75 });
 
-    const bar = getFormingBar("V75", "M1", Date.now());
+    const bar = getFormingBar("V75", "M1", Date.now(), "deriv");
     assert.ok(bar, "a Deriv tick must produce a forming tip");
     assert.equal(bar.close, 1500.75);
 
@@ -178,7 +178,7 @@ describe("C3.1 — the bridge folds Deriv ticks through the client's observer", 
     };
     client.emitTick({ symbol: "R_75", epoch: Math.floor(Date.now() / 1000), quote: 0 });
 
-    assert.equal(getFormingBar("V75", "M1", Date.now()), null);
+    assert.equal(getFormingBar("V75", "M1", Date.now(), "deriv"), null);
 
     __stopDerivFormingBridgeForTests();
   });
@@ -199,7 +199,7 @@ describe("C3.1 — the bridge folds Deriv ticks through the client's observer", 
     const epochSec = Math.floor(Date.now() / 1000);
     client.emitTick({ symbol: "R_75", epoch: epochSec, quote: 111 });
 
-    const bar = getFormingBar("V75", "M1", Date.now());
+    const bar = getFormingBar("V75", "M1", Date.now(), "deriv");
     assert.ok(bar);
     assert.equal(bar.tickCount, 1, "one tick must fold exactly once");
 

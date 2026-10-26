@@ -182,9 +182,9 @@ ensureSafetyCoreInitialized()
       // before the first scanner pass. Non-blocking; lazy ensureConnection
       // remains the fallback. Never logs DERIV_APP_ID / DERIV_API_TOKEN.
       try {
-        if (process.env.DERIV_APP_ID && process.env.DERIV_APP_ID.trim()) {
-          import("./lib/data/providers/derivWsClient.js")
-            .then((m) => m.getDerivWsClient().ensureConnection())
+        if (process.env.ARX_DERIV_PUBLIC_DATA_ENABLED === "true" || process.env.DERIV_APP_ID?.trim()) {
+          import("./lib/data/providers/derivFeedClient.js")
+            .then((m) => m.getDerivFeedClient().ensureConnection())
             .catch((err) => logger.warn({ err: String(err) }, "Deriv WS eager bootstrap failed (non-fatal)"));
           import("./lib/data/providers/derivKeepAlive.js")
             .then((m) => m.startDerivKeepAlive())

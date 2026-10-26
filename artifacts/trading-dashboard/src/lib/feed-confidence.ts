@@ -198,9 +198,9 @@ export function providerInfo(source: string | null | undefined): FeedProviderInf
         "Live bars straight from your MT5 broker bridge — the primary, highest-trust source. Matches the prices your broker fills against.",
     };
   }
-  if (source === "deriv") {
+  if (source === "deriv" || source === "deriv_public") {
     return {
-      label: "Deriv",
+      label: source === "deriv_public" ? "Deriv public data" : "Deriv",
       tier: "synthetic",
       trustNote:
         "Deriv synthetic feed (algorithmic volatility indices). Real-time, but a synthetic instrument — not your broker's live bars.",

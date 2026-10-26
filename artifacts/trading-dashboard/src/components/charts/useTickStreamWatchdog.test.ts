@@ -17,8 +17,8 @@
 //     triggers, which would reset its own clock.
 //
 // The hook is tested directly rather than through ARXNativeChart: the logic is
-// entirely here, and driving it in isolation lets the timings be real and small
-// instead of faking the clock underneath a full chart render.
+// entirely here. A controlled clock checks exact silence boundaries without
+// making assertions depend on machine load or scheduler delays.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, cleanup } from "@testing-library/react";
@@ -32,20 +32,23 @@ import {
   STREAM_WATCHDOG_TICK_MS,
 } from "./useTickStreamWatchdog";
 
-// Small REAL timings — the hook takes them as options precisely so a test need
-// not fake the clock. Ratio mirrors production (checks well inside the window).
+// Small deterministic timings. Ratio mirrors production (checks well inside
+// the window); advancing fake time exercises the actual interval and Date clock.
 const SILENCE_MS = 60;
 const TICK_MS = 10;
 const OPTS = { silenceMs: SILENCE_MS, tickMs: TICK_MS };
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 
 beforeEach(() => {
-  vi.useRealTimers();
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-26T12:00:00Z"));
 });
 
 afterEach(() => {
   cleanup();
+  vi.clearAllTimers();
+  vi.useRealTimers();
 });
 
 describe("C3.4 — production timings", () => {
@@ -111,10 +114,8 @@ describe("C3.4 — silence detection", () => {
     await act(async () => {
       await wait(SILENCE_MS * windows + TICK_MS * 3);
     });
-    // If it retried per check it would be ~(SILENCE*windows)/TICK ≈ 18.
-    const spinBound = (SILENCE_MS * windows) / TICK_MS;
-    expect(result.current.epoch).toBeGreaterThanOrEqual(1);
-    expect(result.current.epoch).toBeLessThan(spinBound / 2);
+    // Three silence windows produce exactly three retries, not one per check.
+    expect(result.current.epoch).toBe(windows);
   });
 });
 
@@ -132,6 +133,7 @@ describe("C3.4 — stream lifecycle signals", () => {
 
   it("noteStreamOpened clears a stall and restarts the clock", async () => {
     const { result } = renderHook(() => useTickStreamWatchdog(OPTS));
+    await act(async () => { await wait(SILENCE_MS * 2 / 3); });
     act(() => {
       result.current.noteError();
     });
@@ -142,17 +144,19 @@ describe("C3.4 — stream lifecycle signals", () => {
     });
     expect(result.current.stalled).toBe(false);
 
-    // The fresh clock means no immediate re-trigger.
-    await act(async () => {
-      await wait(SILENCE_MS / 2);
-    });
+    // Pass the original deadline, but remain inside the restarted window.
+    await act(async () => { await wait(SILENCE_MS - 1); });
     expect(result.current.epoch).toBe(0);
+    await act(async () => { await wait(1); });
+    expect(result.current.epoch).toBe(1);
+    expect(result.current.stalled).toBe(true);
   });
 
   it("stops watching after unmount", async () => {
     const { result, unmount } = renderHook(() => useTickStreamWatchdog(OPTS));
     const before = result.current.epoch;
     unmount();
+    expect(vi.getTimerCount()).toBe(0);
     await wait(SILENCE_MS * 3);
     expect(result.current.epoch).toBe(before);
   });
@@ -202,7 +206,7 @@ describe("C3.4 — ARXNativeChart is wired to the watchdog", () => {
 
   it("rebuilds the EventSource when the watchdog bumps the epoch", () => {
     expect(chartSrc).toMatch(
-      /\[resolvedSymbol,\s*timeframe,\s*streamWatchdog\.epoch\]/,
+      /\[resolvedSymbol,\s*timeframe,\s*streamWatchdog\.epoch,\s*tickSource\]/,
       "the reconnect signal must be a dependency of the subscribe effect",
     );
   });

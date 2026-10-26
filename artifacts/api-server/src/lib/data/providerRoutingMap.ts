@@ -191,5 +191,5 @@ export function getProviderRoute(assetClass: AssetClass): ProviderRouteEntry {
  *  Deriv synthetic feed supports a true older-than cursor today. */
 export function sourceSupportsDeepCursor(source: string | null): boolean {
   if (!source) return false;
-  return source === "deriv";
+  return (source === "deriv" || source === "deriv_public");
 }
