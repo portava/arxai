@@ -23293,6 +23293,12 @@ export const GetSelfTradeExecutionsResponse = zod.object({
       closePrice: zod.number().nullish(),
       realizedPnl: zod.number().nullish(),
       blockReason: zod.string().nullish(),
+      managementNote: zod
+        .string()
+        .nullish()
+        .describe(
+          "Broker-confirmation or review status for an outstanding management request; never an execution confirmation.",
+        ),
       openedAt: zod.string().nullish(),
       filledAt: zod.string().nullish(),
       closedAt: zod.string().nullish(),

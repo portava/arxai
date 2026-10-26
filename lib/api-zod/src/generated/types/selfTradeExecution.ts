@@ -27,6 +27,8 @@ export interface SelfTradeExecution {
   closePrice?: number | null;
   realizedPnl?: number | null;
   blockReason?: string | null;
+  /** Broker-confirmation or review status for an outstanding management request; never an execution confirmation. */
+  managementNote?: string | null;
   openedAt?: string | null;
   filledAt?: string | null;
   closedAt?: string | null;

@@ -1234,7 +1234,10 @@ function AutonomousExecutionTab() {
                       <TableCell className={`text-right text-xs ${e.realizedPnl != null ? (e.realizedPnl >= 0 ? "text-emerald-400" : "text-rose-400") : ""}`}>
                         {e.realizedPnl != null ? usd(e.realizedPnl) : "—"}
                       </TableCell>
-                      <TableCell className="max-w-[14rem] truncate text-xs text-muted-foreground">{e.blockReason ?? "—"}</TableCell>
+                      <TableCell className="max-w-[18rem] whitespace-normal text-xs text-muted-foreground">
+                        {e.managementNote && <span className="block text-amber-300">{e.managementNote}</span>}
+                        {e.blockReason ?? (e.managementNote ? null : "—")}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

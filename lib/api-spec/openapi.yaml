@@ -23269,6 +23269,10 @@ components:
         closePrice: { type: number, nullable: true }
         realizedPnl: { type: number, nullable: true }
         blockReason: { type: string, nullable: true }
+        managementNote:
+          type: string
+          nullable: true
+          description: Broker-confirmation or review status for an outstanding management request; never an execution confirmation.
         openedAt: { type: string, nullable: true }
         filledAt: { type: string, nullable: true }
         closedAt: { type: string, nullable: true }
