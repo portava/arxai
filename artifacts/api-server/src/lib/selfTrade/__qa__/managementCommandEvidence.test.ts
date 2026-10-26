@@ -106,6 +106,17 @@ mock.module("../../tradeEngine/pipeline.js", {
     },
   },
 });
+// This router-boundary fixture supplies an already verified target. The real
+// database reconstruction, ownership and race cases run in the PostgreSQL lane.
+const realTarget = await import("../managementTarget.js");
+let managedAction: "EXIT" | "TIGHTEN_SL" = "EXIT";
+mock.module("../managementTarget.js", { namedExports: { ...realTarget,
+  resolveManagementTarget: async () => ({
+    position: { userId: 9, brokerTicket: "123", symbol: "EURUSD", side: "BUY", volume: 0.1, stopLoss: 1.09 },
+    target: { version: 1, userId: 9, agentId: 4, decisionId: 7, brokerTicket: "123", action: managedAction,
+      nextStopLoss: managedAction === "EXIT" ? null : 1.1, currentTakeProfit: null },
+  }),
+} });
 const { executeInstant } = await import("../../live/instantTrade.js");
 beforeEach(() => {
   phase = "accepted";
@@ -121,10 +132,13 @@ for (const action of ["MODIFY_SL_TP", "CLOSE"] as const) {
       accountMode: "live" as const,
       action,
       positionId: "123",
+      selfTradeAgentId: 4, selfTradeDecisionId: 7,
+      selfTradeManagement: { executionId: 1, positionRowId: 1, claimId: "fixture" },
       newStopLoss: 1.1,
     },
   };
   it(`${action}: pre-draft refusal has no command; confirm refusal keeps its command`, async () => {
+    managedAction = action === "CLOSE" ? "EXIT" : "TIGHTEN_SL";
     phase = "draft";
     const draft = await executeInstant(request);
     assert.equal(draft.ok, false);
@@ -136,6 +150,7 @@ for (const action of ["MODIFY_SL_TP", "CLOSE"] as const) {
     assert.equal(dispatchCalls, 0);
   });
   it(`${action}: ambiguous dispatch retains evidence rather than inviting blind retry`, async () => {
+    managedAction = action === "CLOSE" ? "EXIT" : "TIGHTEN_SL";
     phase = "dispatch";
     const result = await executeInstant(request);
     assert.equal(result.ok, false);
@@ -143,6 +158,7 @@ for (const action of ["MODIFY_SL_TP", "CLOSE"] as const) {
     assert.equal(dispatchCalls, 1);
   });
   it(`${action}: accepted request keeps the same command identity`, async () => {
+    managedAction = action === "CLOSE" ? "EXIT" : "TIGHTEN_SL";
     const result = await executeInstant(request);
     assert.equal(result.ok, true);
     assert.equal(result.commandId, "ops-1");

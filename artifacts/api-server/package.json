@@ -274,7 +274,8 @@
     "test:scanner-signal-integrity": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/__qa__/scannerInputIntegrity.test.ts src/lib/__qa__/scannerClosedBarPipeline.test.ts src/lib/signalIntelligence/__qa__/scannerRankingIntegrity.test.ts src/lib/__qa__/scannerReplayIntegrity.test.ts",
     "test:self-trade-entry-postgres": "node src/lib/selfTrade/__qa__/runEntryReservationPostgres.mjs",
     "test:deriv-public-data": "node --experimental-test-module-mocks --import tsx --test --test-force-exit src/lib/data/providers/__qa__/derivPublicDataClient.test.ts src/lib/data/providers/__qa__/derivPublicDataWiring.test.ts src/lib/brokerHub/__qa__/brokerReadAdapters.test.ts",
-    "diagnose:deriv-public-data": "node --import tsx src/scripts/derivPublicDataProbe.ts"
+    "diagnose:deriv-public-data": "node --import tsx src/scripts/derivPublicDataProbe.ts",
+    "test:self-trade-management-postgres": "node src/lib/selfTrade/__qa__/runManagementTargetPostgres.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

@@ -347,6 +347,7 @@ export async function manageAgentPositions(
           action: action === "EXIT" ? "CLOSE" : "MODIFY_SL_TP",
           accountMode: "live",
           positionId: e.brokerTicket,
+          selfTradeManagement: { executionId: e.id, positionRowId: pos.id, claimId: claim.claimId },
           ...(action === "EXIT" ? {} : { newStopLoss: claim.stopLoss }),
           oneClick: true,
           selfTradeAgentId: agent.id,
