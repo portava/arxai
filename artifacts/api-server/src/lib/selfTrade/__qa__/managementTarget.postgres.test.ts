@@ -2,7 +2,18 @@
 // is an in-process fixture; no account, provider or order endpoint is contacted.
 import { after, before, beforeEach, it, mock } from "node:test";
 import assert from "node:assert/strict";
-import { eq, getTableColumns, getTableName, SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNull,
+  sql,
+  getTableColumns,
+  getTableName,
+  SQL,
+} from "drizzle-orm";
+import { readFileSync } from "node:fs";
+import ts from "typescript";
 import { PgDialect, type PgTable } from "drizzle-orm/pg-core";
 const destination = new URL(process.env.DATABASE_URL ?? "postgres://invalid");
 assert.equal(process.env.ARX_MANAGEMENT_TARGET_PG, "1");
@@ -28,6 +39,7 @@ const {
   oneClickAuditTable: instantAudit,
   liveTradingAuditTable: audit,
   executionEventsTable: executionEvents,
+  securityEventsTable: securityEvents,
   selfTradeAgentLedgerTable: agentLedger,
   selfTradeLedgerEntriesTable: ledgerEntries,
   arxSymbolSpecsTable: specs,
@@ -48,8 +60,10 @@ mock.module("../../live/liveArming.js", {
     }),
   },
 });
+const realSecurityEvents = await import("../../security/events.js");
 mock.module("../../security/events.js", {
   namedExports: {
+    ...realSecurityEvents,
     mirrorCriticalEvent: async () => undefined,
     recordSecurityEvent: async () => undefined,
   },
@@ -168,6 +182,7 @@ const tables = [
   decisions,
   selfAudit,
   executionEvents,
+  securityEvents,
   specs,
   allocations,
   agentLedger,
@@ -1643,3 +1658,440 @@ it(
     });
   },
 );
+
+async function manualProgressFixture(positionVolume = 0.2) {
+  await db
+    .update(positions)
+    .set({ volume: positionVolume })
+    .where(eq(positions.id, 1));
+  const r = await createLiveOpsDraft({
+    userId: 9,
+    commandType: "CLOSE_LIVE_POSITION",
+    brokerTicket: "123",
+    symbol: "EURUSD.a",
+    side: "BUY",
+    volume: 0.1,
+    sourcePage: "LIVE_POSITION_OPS",
+  });
+  assert.ok(r.ok);
+  await db
+    .update(commands)
+    .set({ status: "SENT_TO_MT5_LIVE" })
+    .where(eq(commands.id, r.command.id));
+  return {
+    userId: 9,
+    commandId: r.command.commandId,
+    outcome: "LIVE_FILLED" as const,
+    reportingBridgeConnectionId: 1,
+    brokerTicket: "123",
+    executedVolume: 0.1,
+    fillPrice: 1.11,
+  };
+}
+it("manual ACK/partial/full cumulative reports, changed messages and reordered identities never double-shrink", async () => {
+  const input = await manualProgressFixture();
+  await recordLiveCommandResult({
+    ...input,
+    outcome: "LIVE_ACKNOWLEDGED",
+    executedVolume: null,
+    brokerTicket: null,
+  });
+  await recordLiveCommandResult({ ...input, executedVolume: 0.04 });
+  assert.equal((await ledgerRows())[0].volume, 0.16);
+  await recordLiveCommandResult({
+    ...input,
+    executedVolume: 0.04,
+    brokerMessage: "repeated fill evidence",
+  });
+  assert.equal((await ledgerRows())[0].volume, 0.16);
+  const identity = reportedManagementIdentity({
+    accountLogin: "A",
+    serverName: "Venue-Server-1",
+  });
+  await recordLiveCommandResult({
+    ...input,
+    reportedExecutionIdentity: identity,
+  });
+  assert.equal((await ledgerRows())[0].volume, 0.1);
+  await Promise.all(
+    Array.from({ length: 8 }, (_, i) =>
+      recordLiveCommandResult({
+        ...input,
+        brokerMessage: `retry-${i}`,
+        reportedExecutionIdentity: [...identity].reverse(),
+      }),
+    ),
+  );
+  assert.equal((await ledgerRows())[0].volume, 0.1);
+  assert.equal((await ledgerRows())[0].closedAt, null);
+  assert.equal(await reconcileGhostClosedPositions(9), 0);
+  assert.equal((await ledgerRows())[0].volume, 0.1);
+  const marks = await pool.query(
+    "SELECT payload FROM execution_events WHERE event_type='POSITION_RESULT_APPLIED'",
+  );
+  assert.equal(marks.rows.length, 2);
+});
+it("pre-upgrade partial without an application marker holds the first new full report", async () => {
+  const input = await manualProgressFixture();
+  await db
+    .update(commands)
+    .set({ status: "LIVE_PARTIALLY_FILLED", executedVolume: 0.04 })
+    .where(eq(commands.commandId, input.commandId));
+  await db.update(positions).set({ volume: 0.16 }).where(eq(positions.id, 1));
+  const result = await recordLiveCommandResult(input);
+  assert.equal(result.receiptPersisted, true);
+  assert.equal(result.positionSettlement, "HELD");
+  assert.equal(
+    result.positionSettlementReason,
+    "LEGACY_PARTIAL_APPLICATION_UNKNOWN",
+  );
+  assert.equal((await ledgerRows())[0].volume, 0.16);
+  assert.equal(await reconcileGhostClosedPositions(9), 0);
+  assert.equal((await ledgerRows())[0].closedAt, null);
+});
+for (const recovery of ["exact retry", "snapshot repair"] as const)
+  it(`manual position application and marker rollback together; ${recovery} applies once`, async () => {
+    const input = await manualProgressFixture();
+    await pool.query(
+      "CREATE FUNCTION qa_marker_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='POSITION_RESULT_APPLIED' THEN RAISE EXCEPTION 'qa marker write failure'; END IF; RETURN NEW; END $$",
+    );
+    await pool.query(
+      "CREATE TRIGGER qa_marker_fault BEFORE INSERT ON execution_events FOR EACH ROW EXECUTE FUNCTION qa_marker_fault()",
+    );
+    try {
+      await assert.rejects(recordLiveCommandResult(input));
+      assert.equal((await ledgerRows())[0].volume, 0.2);
+      assert.equal(
+        (
+          await db
+            .select()
+            .from(commands)
+            .where(eq(commands.commandId, input.commandId))
+        )[0].status,
+        "LIVE_FILLED",
+      );
+    } finally {
+      await pool.query("DROP TRIGGER qa_marker_fault ON execution_events");
+      await pool.query("DROP FUNCTION qa_marker_fault()");
+    }
+    if (recovery === "exact retry") {
+      const reply = await recordLiveCommandResult(input);
+      assert.equal(reply.receiptPersisted, true);
+      assert.equal(reply.positionSettlement, "APPLIED");
+    } else await reconcileGhostClosedPositions(9);
+    assert.equal((await ledgerRows())[0].volume, 0.1);
+    await recordLiveCommandResult(input);
+    assert.equal((await ledgerRows())[0].volume, 0.1);
+    assert.equal(
+      (
+        await pool.query(
+          "SELECT id FROM execution_events WHERE event_type='RESULT_LIVE_FILLED'",
+        )
+      ).rows.length,
+      1,
+    );
+  });
+for (const recovery of ["exact retry", "snapshot repair"] as const)
+  it(`bound post-commit consumer failure is repaired by ${recovery} without changing another account`, async () => {
+    await otherAccountRow();
+    const beforeOther = (await ledgerRows())[1];
+    const sent = (await send(await approved()))!;
+    const input = {
+      userId: 9,
+      commandId: sent.commandId,
+      outcome: "LIVE_FILLED" as const,
+      reportingBridgeConnectionId: 1,
+      brokerTicket: "123",
+      executedVolume: 0.1,
+      fillPrice: 1.11,
+    };
+    await pool.query(
+      "CREATE FUNCTION qa_position_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'qa post-commit position failure'; END $$",
+    );
+    await pool.query(
+      "CREATE TRIGGER qa_position_fault BEFORE UPDATE ON arx_live_positions FOR EACH ROW EXECUTE FUNCTION qa_position_fault()",
+    );
+    await pool.query(
+      "CREATE FUNCTION qa_held_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='MANAGEMENT_LEDGER_APPLICATION_HELD' THEN RAISE EXCEPTION 'qa held event failure'; END IF; RETURN NEW; END $$",
+    );
+    await pool.query(
+      "CREATE TRIGGER qa_held_fault BEFORE INSERT ON execution_events FOR EACH ROW EXECUTE FUNCTION qa_held_fault()",
+    );
+    try {
+      await assert.rejects(recordLiveCommandResult(input));
+      assert.equal((await ledgerRows())[0].closedAt, null);
+      assert.equal(
+        (await db.select().from(commands).where(eq(commands.id, sent.id)))[0]
+          .status,
+        "LIVE_FILLED",
+      );
+    } finally {
+      await pool.query("DROP TRIGGER qa_position_fault ON arx_live_positions");
+      await pool.query("DROP FUNCTION qa_position_fault()");
+      await pool.query("DROP TRIGGER qa_held_fault ON execution_events");
+      await pool.query("DROP FUNCTION qa_held_fault()");
+    }
+    if (recovery === "exact retry") {
+      const reply = await recordLiveCommandResult(input);
+      assert.equal(reply.receiptPersisted, true);
+      assert.equal(reply.positionSettlement, "APPLIED");
+    } else assert.equal(await reconcileGhostClosedPositions(9), 1);
+    assert.ok((await ledgerRows())[0].closedAt);
+    assert.deepEqual((await ledgerRows())[1], beforeOther);
+    assert.equal(
+      (
+        await pool.query(
+          "SELECT id FROM execution_events WHERE command_id=$1 AND event_type='RESULT_LIVE_FILLED'",
+          [sent.id],
+        )
+      ).rows.length,
+      1,
+    );
+  });
+
+// Actual snapshot handler body with real database/ledger/repair; only bridge
+// authentication and advisory notifications/guardian scheduling are controlled.
+async function ingestActualSnapshot(volume: number) {
+  const source = readFileSync(
+    new URL("../../../routes/mt5Live.ts", import.meta.url),
+    "utf8",
+  );
+  const tree = ts.createSourceFile(
+    "mt5Live.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const names = [
+    "snapNumOrNull",
+    "snapNonZeroOrNull",
+    "parseMt5Time",
+    "handleLivePositionsSnapshot",
+  ];
+  const nodes = tree.statements.filter(
+    (n) => ts.isFunctionDeclaration(n) && names.includes(n.name?.text ?? ""),
+  );
+  assert.equal(nodes.length, names.length);
+  const compiled = ts.transpileModule(
+    nodes.map((n) => n.getText(tree)).join("\n"),
+    {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+      },
+      transformers: {
+        before: [
+          (context) => (root) => {
+            const replace = (n: ts.Node): ts.VisitResult<ts.Node> =>
+              ts.isCallExpression(n) &&
+              n.expression.kind === ts.SyntaxKind.ImportKeyword
+                ? ts.factory.updateCallExpression(
+                    n,
+                    ts.factory.createIdentifier("loadModule"),
+                    undefined,
+                    n.arguments,
+                  )
+                : ts.visitEachChild(n, replace, context);
+            return ts.visitNode(root, replace) as ts.SourceFile;
+          },
+        ],
+      },
+    },
+  ).outputText;
+  const { livePositionLedger, livePositionColumns } =
+    await import("../../positions/ledger.js");
+  const dependencies = {
+    db,
+    arxLiveCommandsTable: commands,
+    and,
+    eq,
+    isNull,
+    inArray,
+    sql,
+    livePositionLedger,
+    livePositionWriter,
+    livePositionColumns,
+    reconcileGhostClosedPositions,
+    requireLiveBridge: (req: any) => req.connection,
+    updateConnection: (id: number, values: any) =>
+      db.update(bridges).set(values).where(eq(bridges.id, id)),
+    brokerAbsenceAutoReconcilePolicy: { enabled: false },
+    emitLiveAccountChanged: () => {},
+    scheduleGuardian: () => {},
+    LIVE_SAFETY_ENVELOPE: {},
+    loadModule: async () => ({ recomputeMasterPool: async () => {} }),
+  };
+  const handler = new Function(
+    ...Object.keys(dependencies),
+    compiled + ";return handleLivePositionsSnapshot;",
+  )(...Object.values(dependencies));
+  const [conn] = await db.select().from(bridges).where(eq(bridges.id, 1));
+  let reply: any;
+  await handler(
+    {
+      connection: conn,
+      body: {
+        positions: [
+          {
+            ticket: "123",
+            symbol: "EURUSD.a",
+            side: "BUY",
+            volume,
+            entryPrice: 1.1,
+            currentPrice: 1.11,
+          },
+        ],
+      },
+      log: { warn() {} },
+    },
+    {
+      json(body: any) {
+        reply = body;
+      },
+    },
+  );
+  assert.equal(reply.ok, true);
+  assert.equal(reply.upserts, 1);
+}
+it("actual snapshot before first manual result cannot double-subtract broker-applied volume", async () => {
+  const input = await manualProgressFixture();
+  await ingestActualSnapshot(0.16);
+  const result = await recordLiveCommandResult({
+    ...input,
+    executedVolume: 0.04,
+  });
+  assert.equal(result.positionSettlement, "HELD");
+  assert.equal(
+    result.positionSettlementReason,
+    "MANUAL_CLOSE_POSITION_REVISION_CHANGED",
+  );
+  assert.equal((await ledgerRows())[0].volume, 0.16);
+  assert.equal(
+    (
+      await pool.query(
+        "SELECT id FROM execution_events WHERE event_type='POSITION_RESULT_APPLIED'",
+      )
+    ).rows.length,
+    0,
+  );
+});
+it("actual snapshot between partial and full reports invalidates the next delta", async () => {
+  const input = await manualProgressFixture();
+  await recordLiveCommandResult({ ...input, executedVolume: 0.04 });
+  assert.equal((await ledgerRows())[0].volume, 0.16);
+  await ingestActualSnapshot(0.1);
+  const result = await recordLiveCommandResult(input);
+  assert.equal(result.positionSettlement, "HELD");
+  assert.equal(
+    result.positionSettlementReason,
+    "MANUAL_CLOSE_POSITION_REVISION_CHANGED",
+  );
+  assert.equal((await ledgerRows())[0].volume, 0.1);
+  await reconcileGhostClosedPositions(9);
+  assert.equal((await ledgerRows())[0].volume, 0.1);
+  assert.equal((await ledgerRows())[0].closedAt, null);
+});
+for (const volume of [0.3, -0.1, 0])
+  it(`malformed cumulative close volume ${volume} never closes or shrinks the row`, async () => {
+    const input = await manualProgressFixture();
+    const result = await recordLiveCommandResult({
+      ...input,
+      executedVolume: volume,
+    });
+    assert.equal(result.positionSettlement, "HELD");
+    assert.equal(
+      result.positionSettlementReason,
+      "MANUAL_CLOSE_VOLUME_UNVERIFIED",
+    );
+    assert.equal((await ledgerRows())[0].volume, 0.2);
+    assert.equal((await ledgerRows())[0].closedAt, null);
+  });
+it("a same-volume snapshot still invalidates the local revision witness", async () => {
+  const input = await manualProgressFixture();
+  await ingestActualSnapshot(0.2);
+  const result = await recordLiveCommandResult(input);
+  assert.equal(
+    result.positionSettlementReason,
+    "MANUAL_CLOSE_POSITION_REVISION_CHANGED",
+  );
+  assert.equal((await ledgerRows())[0].volume, 0.2);
+});
+it("tampered manual basis is held and cannot select another position row", async () => {
+  const input = await manualProgressFixture();
+  const [row] = await db
+    .select()
+    .from(commands)
+    .where(eq(commands.commandId, input.commandId));
+  const payload = row.payload as Record<string, any>;
+  await db
+    .update(commands)
+    .set({
+      payload: {
+        ...payload,
+        manualClosePositionBasisV1: {
+          ...payload.manualClosePositionBasisV1,
+          volume: 0.4,
+        },
+      },
+    })
+    .where(eq(commands.id, row.id));
+  const result = await recordLiveCommandResult(input);
+  assert.equal(
+    result.positionSettlementReason,
+    "MANUAL_CLOSE_SIGNATURE_INVALID",
+  );
+  assert.equal((await ledgerRows())[0].volume, 0.2);
+});
+
+it(
+  "controlled old/current manual receipt and position recovery latency",
+  { skip: !process.env.ARX_MANUAL_RESULT_BENCHMARK_OUTPUT },
+  async () => {
+    const { runManualResultRecoveryBenchmark } =
+      await import("./manualResultRecovery.benchmark.js");
+    await runManualResultRecoveryBenchmark(async () => {
+      await resetFixture();
+      return manualProgressFixture(0.1);
+    });
+  },
+);
+
+it("a reported different ticket cannot mutate the manual target position", async () => {
+  const input = await manualProgressFixture();
+  const result = await recordLiveCommandResult({
+    ...input,
+    brokerTicket: "other-ticket",
+  });
+  assert.equal(
+    result.positionSettlementReason,
+    "MANUAL_CLOSE_RECEIPT_MISMATCH",
+  );
+  assert.equal((await ledgerRows())[0].volume, 0.2);
+});
+it("snapshot recovery refuses mutable command volume that disagrees with its accepted receipt", async () => {
+  const input = await manualProgressFixture();
+  await recordLiveCommandResult(input);
+  assert.equal((await ledgerRows())[0].volume, 0.1);
+  await db
+    .update(commands)
+    .set({ executedVolume: 0.05 })
+    .where(eq(commands.commandId, input.commandId));
+  const result = await recordLiveCommandResult(input);
+  assert.equal(
+    result.positionSettlementReason,
+    "MANUAL_CLOSE_RECEIPT_MISMATCH",
+  );
+  await reconcileGhostClosedPositions(9);
+  assert.equal((await ledgerRows())[0].volume, 0.1);
+});
+
+it("snapshot repair never applies an old manual basis to a new row reusing the ticket",async()=>{
+  const input=await manualProgressFixture(0.1);
+  await recordLiveCommandResult(input);
+  await otherAccountRow();
+  await db.update(positions).set({closedAt:null,volume:0.2}).where(eq(positions.id,2));
+  const before=(await ledgerRows())[1];
+  assert.equal(await reconcileGhostClosedPositions(9),0);
+  assert.deepEqual((await ledgerRows())[1],before);
+});

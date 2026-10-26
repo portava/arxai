@@ -32,8 +32,10 @@ const {
   arxLiveCommandsTable: commands,
   liveTradingAuditTable: liveAudit,
 } = database;
+const realSecurityEvents = await import("../../security/events.js");
 mock.module("../../security/events.js", {
   namedExports: {
+    ...realSecurityEvents,
     mirrorCriticalEvent: async () => undefined,
     recordSecurityEvent: async () => undefined,
   },

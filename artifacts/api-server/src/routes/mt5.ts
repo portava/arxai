@@ -1193,6 +1193,10 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
           brokerMessage,
           eaReason,
         });
+        if (!fwd.ok) {
+          res.status(409).json({ received: false, error: fwd.reason ?? "LIVE_RESULT_NOT_RECORDED" });
+          return;
+        }
         req.log.info(
           {
             event: "live_bridge_result_forwarded",
@@ -1206,6 +1210,12 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
           },
           "Phase B live result forwarded from mt5_commands mirror to arx_live_commands",
         );
+        // Receipt is durable even when an explicitly held position/accounting
+        // consumer still needs reconciliation. Do not imply completed settlement.
+        res.json({ received: true, receiptPersisted: fwd.receiptPersisted === true,
+          positionSettlement: fwd.positionSettlement ?? "NOT_APPLICABLE",
+          ...(fwd.positionSettlementReason ? { positionSettlementReason: fwd.positionSettlementReason } : {}) });
+        return;
       } catch (fwdErr) {
         req.log.error(
           {
@@ -1216,6 +1226,8 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
           },
           "Failed to forward Phase B live result into arx_live_commands",
         );
+        res.status(503).json({ received: false, error: "LIVE_RESULT_PERSISTENCE_FAILED" });
+        return;
       }
     }
 
