@@ -24,9 +24,9 @@ export interface ScannerReadGateState {
   reason: string | null;
 }
 
-export function useScannerReadGate(symbol: string): ScannerReadGateState {
-  const [timeframe] = useScannerTimeframe();
-  const { truth } = useScannerTruth(symbol, timeframe);
+export function useScannerReadGate(symbol: string, timeframe?: string): ScannerReadGateState {
+  const [scannerTimeframe] = useScannerTimeframe();
+  const { truth } = useScannerTruth(symbol, timeframe || scannerTimeframe);
   const level = truth?.analysis.level ?? null;
   const isFull = level === "full";
   return {

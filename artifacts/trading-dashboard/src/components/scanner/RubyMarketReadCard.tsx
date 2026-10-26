@@ -3,7 +3,9 @@ import { Sparkles, Loader2, ChevronDown, RefreshCw, Clock, AlertTriangle } from 
 import { Button } from "@/components/ui/button";
 import { ScannerReadGate } from "@/components/scanner/ScannerReadGate";
 import { useScannerReadGate } from "@/hooks/useScannerReadGate";
+import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
+import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromMarketRead } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
@@ -107,6 +109,11 @@ export function RubyMarketReadCard({
   timeframe?: string;
 }) {
   const { name } = useAssistantName();
+  const [scannerTimeframe] = useScannerTimeframe();
+  // Missing props follow the scanner selection. An empty value previously
+  // requested an unrelated M5 read while the card's gate used the chart bus.
+  const chartTimeframe = normalizeChartTimeframe(timeframe || scannerTimeframe);
+  const apiTimeframe = toApiTimeframe(chartTimeframe);
   const [mode, setMode] = useState<"SIMPLE" | "ADVANCED">(() => {
     if (typeof window === "undefined") return "SIMPLE";
     const saved = window.localStorage.getItem(MODE_KEY);
@@ -144,8 +151,8 @@ export function RubyMarketReadCard({
   }, []);
 
   const params = useMemo(
-    () => ({ symbol, ...(timeframe ? { timeframe } : {}) }),
-    [symbol, timeframe],
+    () => ({ symbol, timeframe: apiTimeframe }),
+    [symbol, apiTimeframe],
   );
 
   const { data, isLoading, isFetching, isError, refetch } = useGetMeMarketEdge(params, {
@@ -162,13 +169,13 @@ export function RubyMarketReadCard({
   // /100 confidence numbers) so it can never look more confident than the rest
   // of the scanner. The compact ScannerReadGate caption above is the headline
   // notice; this is the in-body content gate.
-  const { downgraded, level, reason } = useScannerReadGate(symbol);
+  const { downgraded, level, reason } = useScannerReadGate(symbol, chartTimeframe);
 
   // Task #515 — news state and the "updated X ago" freshness anchor come from
   // the ONE per-symbol Truth Snapshot, so this card can never disagree with the
   // chart / scanner rows on the same page. The age is anchored to the DATA
   // timestamp (newest of lastTickAt / lastCandleAt), never the signal build time.
-  const { news, data: truthData } = useSymbolTruth(symbol, timeframe ?? "");
+  const { news, data: truthData } = useSymbolTruth(symbol, chartTimeframe);
   const dataUpdatedIso = useMemo(() => {
     const stamps = [truthData?.lastTickAt, truthData?.lastCandleAt]
       .map((s) => (s ? Date.parse(s) : NaN))
@@ -218,9 +225,9 @@ export function RubyMarketReadCard({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="text-[15px] font-semibold text-foreground">{name} Market Read</span>
-            <span className="text-xs text-txt-muted">{symbol}{timeframe ? ` · ${timeframe}` : ""}</span>
+            <span className="text-xs text-txt-muted">{symbol} · {chartTimeframe}</span>
           </div>
-          <ScannerReadGate symbol={symbol} compact />
+          <ScannerReadGate symbol={symbol} timeframe={chartTimeframe} compact />
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           {/* Simple / Advanced toggle */}
