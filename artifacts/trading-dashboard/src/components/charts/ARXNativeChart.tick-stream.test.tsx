@@ -25,7 +25,7 @@
 //   stubbed — everything CI cannot supply headlessly.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup, act } from "@testing-library/react";
+import { render, cleanup, act, fireEvent } from "@testing-library/react";
 import type {
   ChartCandle,
   ChartCandlesResponse,
@@ -51,6 +51,10 @@ const adapterSpies = {
   updateActiveCandle: vi.fn(),
   setOverlays: vi.fn(),
   resetScale: vi.fn(),
+  resize: vi.fn(),
+  goToLatest: vi.fn(),
+  fitHistory: vi.fn(),
+  setScaleMode: vi.fn(),
   setReachStartHandler: vi.fn(),
   priceToCoordinate: vi.fn(() => null),
 };
@@ -441,7 +445,7 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
 
     // The closed-feed grade still governs the last-price label / dashed "Last"
     // line — only the tick gate moved off it.
-    expect(adapterSpies.setFeedState).toHaveBeenCalledWith({ livePriceAffordance: false });
+    expect(adapterSpies.setFeedState).toHaveBeenCalledWith({ livePriceAffordance: false, source: "mt5_broker" });
   });
 
   it("ignores malformed / wrong-type events without ticking the bar", () => {
@@ -580,5 +584,37 @@ describe("ARXNativeChart closed-market badge wiring", () => {
     expect(view.container.querySelector(BADGE)).toBeNull();
     expect(openedStreams.length).toBeGreaterThan(1);
     expect(openedStreams[openedStreams.length - 1]!.url).toContain("symbol=GBPUSD");
+  });
+});
+
+
+describe("Smart Chart view controls", () => {
+  it("renders safely without an overlays prop", () => {
+    render(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} />);
+    expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+    expect(adapterSpies.setCandles.mock.calls.length).toBeLessThan(4);
+  });
+  it("changes viewport and scale without restarting the renderer or stream", () => {
+    const view = renderChart();
+    fireEvent.click(view.getByRole("button", {name:"Latest",exact:true}));
+    fireEvent.click(view.getByRole("button", {name:"Fit history",exact:true}));
+    fireEvent.change(view.getByLabelText("Price scale"), {target:{value:"log"}});
+    expect(adapterSpies.goToLatest).toHaveBeenCalledOnce();
+    expect(adapterSpies.fitHistory).toHaveBeenCalledOnce();
+    expect(adapterSpies.setScaleMode).toHaveBeenLastCalledWith("log");
+    fireEvent.click(view.getByRole("button", {name:"Fullscreen",exact:true}));
+    expect(view.getByRole("button", {name:"Exit fullscreen",exact:true})).toBeTruthy();
+    fireEvent.keyDown(window,{key:"Escape"});
+    expect(view.getByRole("button", {name:"Fullscreen",exact:true})).toBeTruthy();
+    expect(adapterSpies.init).toHaveBeenCalledTimes(1);
+    expect(openedStreams).toHaveLength(1);
+  });
+  it("supports Home and End only inside the focused chart", () => {
+    const view = renderChart();
+    const chart=view.getByTestId("arx-native-canvas");
+    fireEvent.keyDown(chart,{key:"Home"});
+    fireEvent.keyDown(chart,{key:"End"});
+    expect(adapterSpies.fitHistory).toHaveBeenCalledOnce();
+    expect(adapterSpies.goToLatest).toHaveBeenCalledOnce();
   });
 });

@@ -138,6 +138,7 @@ export async function fetchChartHistory(args: {
   limit?: number;
   before?: string | null;
   source?: string | null;
+  signal?: AbortSignal;
 }): Promise<ChartHistoryPage> {
   const params = new URLSearchParams({
     symbol: args.symbol,
@@ -148,6 +149,7 @@ export async function fetchChartHistory(args: {
   if (args.source) params.set("source", args.source);
   const res = await fetch(`${BASE}/api/chart/history?${params.toString()}`, {
     credentials: "include",
+    signal: args.signal,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const obj = (await res.json()) as Record<string, unknown>;

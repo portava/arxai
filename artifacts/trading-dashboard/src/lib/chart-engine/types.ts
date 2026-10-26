@@ -1,4 +1,8 @@
+import type { DrawingInteraction } from "./chartDrawingEditor";
+import type { ChartTimeRange, ChartViewEvent } from "./chartViewLink";
 import type { ChartOverlay } from "@/lib/chart-overlays";
+import type { ChartStudy } from "./chartStudies";
+import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ARX Smart Chart — swappable chart-engine adapter contract (Task #373).
@@ -31,11 +35,9 @@ export interface ChartEngineCandle {
 }
 
 /**
- * Feed truth the engine needs to render honestly. Today this is just the
- * live-price affordance verdict (whether the last-value label and dashed "Last"
- * price line may be shown). Richer feed/source truth stays in the React shell as
- * badges/banners — the engine only needs to know whether it may imply a live
- * current price.
+ * Feed truth the engine needs to render honestly: the live-price affordance
+ * verdict and the history source that owns any retained streamed tip. Richer
+ * feed truth stays in the React shell as badges/banners.
  */
 export interface ChartEngineFeedState {
   /**
@@ -44,6 +46,8 @@ export interface ChartEngineFeedState {
    * composite feed must never look more live than it is (shared honesty rule).
    */
   livePriceAffordance: boolean;
+  /** History provider. A change invalidates the prior provider's retained tip. */
+  source?: string | null;
 }
 
 export interface ChartEngineInitOptions {
@@ -77,7 +81,7 @@ export interface ChartEngineCapabilities {
   zones: boolean;
   /** Price↔coordinate API for DOM overlays (e.g. floating P/L bubbles). */
   coordinateApi: boolean;
-  /** User drawing tools (trendlines, rays, etc.). Staged — not built yet. */
+  /** User drawing tools, when supported by the active renderer. */
   drawingTools: boolean;
   /** Draggable order/SL/TP handles. Staged — not built yet. */
   draggableOrders: boolean;
@@ -125,11 +129,11 @@ export interface ChartEngineAdapter {
   /** Tear the engine down and release the container. Safe to call repeatedly. */
   destroy(): void;
   /** Re-measure / re-fit to the container width (driven by a ResizeObserver). */
-  resize(width?: number): void;
+  resize(width?: number, height?: number): void;
 
   /** Update the live-price affordance verdict. Re-applies on the next paint. */
   setFeedState(state: ChartEngineFeedState): void;
-  /** Replace the candle series. Preserves the user's zoom/pan after first fit. */
+  /** Reconcile candles incrementally; replace only changed history. Preserve zoom/pan. */
   setCandles(candles: ChartEngineCandle[]): void;
   /**
    * Draw the read-only overlay set (lines / zones / markers). `latestBarTime` is
@@ -151,9 +155,29 @@ export interface ChartEngineAdapter {
   resetScale(): void;
   /** Map a price to a Y pixel coordinate (for DOM overlays); null if off-scale. */
   priceToCoordinate(price: number): number | null;
+  /** View controls only; none of these methods touches execution. */
+  goToLatest?(): void;
+  fitHistory?(): void;
+  setScaleMode?(mode: ChartScaleMode): void;
+  setPriceScaleInverted?(inverted: boolean): void;
+  goToTime?(time: number): boolean;
+  showRecentRange?(seconds: number): { complete: boolean } | null;
+  getStudyValues?(time: number): { label: string; color: string; values: { name: string; value: number | null }[] }[];
+  setCrosshairHandler?(handler: ((candle: ChartEngineCandle | null) => void) | null): void;
+  /** Linked workspace inspection only. Never changes instrument/order context. */
+  setViewLinkHandler?(handler: ((event: ChartViewEvent) => void) | null): void;
+  setLinkedCrosshair?(time: number | null): void;
+  setLinkedTimeRange?(range: ChartTimeRange | null): void;
+  setViewLinkStatusHandler?(handler: ((message: string) => void) | null): void;
+  setChartStyle?(style: ChartStyle): void;
+  setStudies?(studies: ChartStudy[]): void;
+  setDrawings?(drawings: ChartDrawing[]): void;
+  setDrawingInteraction?(config: DrawingInteraction | null): void;
+  setDrawingHandler?(handler: ((anchor: ChartAnchor) => void) | null): void;
+  exportImage?(): string | null;
 
   // ── Optional / staged. Present so the Shell can feature-detect support. ──────
-  /** Update only the most-recent (forming) bar — for future tick streaming. */
+  /** Update the most-recent forming bar from the existing tick stream. */
   updateActiveCandle?(candle: ChartEngineCandle): void;
   /** Informational: the symbol currently shown (engine may relabel/no-op). */
   setSymbol?(symbol: string): void;
