@@ -84,7 +84,7 @@
     "test:symbol-resolution": "node --import tsx --test --test-force-exit src/lib/instruments/__qa__/symbolResolution.test.ts",
     "test:instruments": "node --import tsx --test --test-force-exit src/lib/instruments/__qa__/resolveInstrument.test.ts",
     "test:encrypt-credential": "node --import tsx --test --test-force-exit src/lib/security/__qa__/encryptCredential.test.ts",
-    "test:execution-epistemology": "node --import tsx --test --test-force-exit src/lib/live/__qa__/executionEpistemology.test.ts",
+    "test:execution-epistemology": "node --import tsx --test --test-force-exit src/lib/live/__qa__/executionEpistemology.test.ts src/routes/__qa__/mt5ResultReceipt.test.ts",
     "test:fallback-honesty": "node --import tsx --test --test-force-exit src/lib/marketData/__qa__/fallbackHonesty.test.ts",
     "test:market-regime-authority": "node --import tsx --test --test-force-exit src/lib/regime/__qa__/marketRegimeAuthority.test.ts",
     "test:risk-pre-gates": "node --import tsx --test --test-force-exit src/lib/live/__qa__/riskPreGates.test.ts",
@@ -283,7 +283,8 @@
     "test:history-evidence": "node --experimental-test-module-mocks --import tsx --test src/lib/data/__qa__/historySourceEvidence.test.ts src/lib/data/providers/__qa__/derivCandleProducer.test.ts",
     "test:self-trade-accounting-postgres": "node src/lib/selfTrade/__qa__/runAccountingCoveragePostgres.mjs",
     "test:backtest-evidence": "node --import tsx --test src/lib/backtest/__qa__/backtestEvidence.test.ts",
-    "test:backtest-evidence:postgres": "node src/lib/backtest/__qa__/runBacktestEvidencePostgres.mjs"
+    "test:backtest-evidence:postgres": "node src/lib/backtest/__qa__/runBacktestEvidencePostgres.mjs",
+    "test:result-evidence-postgres": "node src/lib/live/__qa__/runResultEvidencePostgres.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
