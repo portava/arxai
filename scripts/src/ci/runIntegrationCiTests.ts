@@ -142,6 +142,8 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // cap" probe no longer depends on lane ordering.
   { pkg: "@workspace/scripts", script: "test:one-click-concurrency" },
   // @workspace/api-server — DB-backed node:test safety + contract tests.
+  // Real source-scoped signal-memory persistence in a disposable local PostgreSQL.
+  { pkg: "@workspace/api-server", script: "test:truth-memory-postgres" },
   { pkg: "@workspace/api-server", script: "test:product-role" },
   { pkg: "@workspace/api-server", script: "test:mt5-broker-feed" },
   { pkg: "@workspace/api-server", script: "test:live-outcome-map" },
