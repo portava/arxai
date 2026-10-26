@@ -1,4 +1,4 @@
-import { detectChartPatterns, findSwings, type ChartPatternCandle } from "@workspace/domain/chart-patterns";
+import { detectChartPatterns, findSwings, scanCandlestickCatalogue, isObservedDoji, CANDLE_DEFINITIONS, CANDLE_CRITERIA_VERSION, type ChartPatternCandle } from "@workspace/domain/chart-patterns";
 import { resolveShootingStarTruth, detectEngulfing, resolveStructureBreakTruth, type DetectedPattern } from "@workspace/domain/market";
 
 export interface SmartChartAnalysisContext {
@@ -35,6 +35,9 @@ export interface SmartChartAnalysisInput extends SmartChartAnalysisContext {
 export interface SmartChartFinding {
   id: string;
   title: string;
+  /** Related geometry variants share one summary slot; basic anatomy stays in details. */
+  family?: string;
+  summaryEligible?: boolean;
   explanation: string;
   status: "developing" | "confirmed" | "invalidated" | "observed";
   /** Actual observation/confirmation close times, Unix seconds. */
@@ -55,6 +58,7 @@ export interface SmartChartAnalysisResult {
   /** At most three summary chips; render geometry only for the focused finding. */
   findings: SmartChartFinding[];
   allFindings: SmartChartFinding[];
+  catalogue?: { criteriaVersion:string; definedVariants:number; geometryFamilies:number; note:string };
 }
 
 const INTERVAL_SECONDS: Record<string, number> = {
@@ -189,7 +193,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
     const candle = prefix[prefix.length - 1]!;
     const body = Math.abs(candle.close - candle.open), span = candle.high - candle.low;
     // Explicit geometric convention, not a reliability probability.
-    if (span > 0 && body / span <= 0.1) {
+    if (isObservedDoji(candle)) {
       add({ id: `doji:${candle.time}`, title: "Doji", status: "observed", asOf: candle.closeTime,
         explanation: `Open ${price(candle.open)} and close ${price(candle.close)} are nearly equal: the body is ${price(body / span * 100)}% of the candle's range. Neither side kept much ground; this does not establish a direction.`,
         anchors: [{ time: candle.time, price: candle.close, role: "doji" }], levels: [], invalidation: null,
@@ -239,12 +243,28 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
       anchors: [{ time: last.time, price: last.close, role: "break_observation" }], levels: [{ price: structure.level, label: "Fitted boundary" }],
       invalidation: confirmed ? `A close back ${last.close > structure.level ? "below" : "above"} ${price(structure.level)} would lose this break.` : null, caveat: note }, last.time, 2);
   }
+  const catalogue = scanCandlestickCatalogue(bars, { asOf: last.closeTime, intervalSeconds: interval, eventLookback: EVENT_LOOKBACK });
+  for (const observed of catalogue.observations) {
+    const def=observed.definition;
+    // Standard Doji retains the established core wording. Basic anatomy is
+    // useful in details for the latest bar, not repeated as historical signals.
+    if(def.id==="doji"||(!def.summaryEligible&&observed.endIndex!==bars.length-1))continue;
+    const event=bars[observed.endIndex]!;
+    add({id:`${def.id}:${event.time}`,title:def.name,family:def.family,summaryEligible:def.summaryEligible,
+      status:"observed",asOf:observed.observedAt,
+      explanation:observed.explanation,
+      anchors:bars.slice(observed.startIndex,observed.endIndex+1).map((bar,i)=>({time:bar.time,price:bar.close,role:i===observed.endIndex-observed.startIndex?def.id:"pattern_start"})),
+      levels:observed.referenceLevel==null?[]:[{price:observed.referenceLevel,label:"Observed reference"}],
+      invalidation:null,caveat:`${note} Criteria (${CANDLE_CRITERIA_VERSION}): ${def.criteria} This is a completed shape, not confirmed future movement.`
+    },event.time,def.summaryEligible?1:-1);
+  }
   const ranked = [...rows.values()].sort((a, b) => b.observedAt - a.observedAt
     || statusRank[b.finding.status] - statusRank[a.finding.status] || b.scale - a.scale || a.finding.id.localeCompare(b.finding.id));
   const allFindings = ranked.map(r => r.finding);
   const summaryFamilies = new Set<string>();
   const findings = allFindings.filter(f => {
-    const family = f.id.split(":")[0]!;
+    if(f.summaryEligible===false)return false;
+    const family = f.family ?? f.id.split(":")[0]!;
     if (summaryFamilies.has(family)) return false;
     summaryFamilies.add(family);
     return true;
@@ -253,7 +273,10 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
     asOf: last.closeTime, closedBarsUsed: bars.length,
     coverage: { available: selected.length, analyzed: bars.length, truncated: selected.length > bars.length,
       note: selected.length > bars.length ? `Analyzing the latest ${bars.length} of ${selected.length} closed candles in view; earlier pattern context is outside this window.` : null },
-    findings, allFindings };
+    findings, allFindings,
+    catalogue: {criteriaVersion:CANDLE_CRITERIA_VERSION,definedVariants:CANDLE_DEFINITIONS.length,
+      geometryFamilies:new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,
+      note:"Explicit ARX candle-shape conventions; related variants are not independent confirmations. The complete owner catalogue remains in progress."} };
 }
 
 function headAndShoulders(raw: DetectedPattern, bars: SmartChartAnalysisBar[], note: string): SmartChartFinding | null {
