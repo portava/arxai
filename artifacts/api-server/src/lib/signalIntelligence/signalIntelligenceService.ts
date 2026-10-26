@@ -43,6 +43,7 @@ import type { ScalpResult } from "../scalp/scalpTypes.js";
 import { loadExecutionInput } from "../scalp/scalpServiceInputs.js";
 import { resolveSymbolFeedVerdict } from "../data/symbolFeedVerdict.js";
 import { hasRecentDerivTickFor } from "../data/providers/derivProvider.js";
+import type { TruthReadEvidence } from "@workspace/domain/truth";
 
 /** Default timeframe for a market-edge read (aligns with scanner/scalp). */
 export const DEFAULT_SIGNAL_TIMEFRAME = "M5";
@@ -97,11 +98,19 @@ function oppToScannerInput(opp: DecoratedOpportunity): SignalScannerInput {
   };
 }
 
-/** Load the per-user previous snapshot for the what-changed diff. */
+/** Private storage key, not a public timeframe. Legacy bare-timeframe rows lack
+ * provenance and remain history only. The existing text key allows durable
+ * source isolation without a schema migration or volatile process memory. */
+function memoryContextKey(evidence: TruthReadEvidence): string {
+  return `source-v1:${JSON.stringify([evidence.timeframe, evidence.source, evidence.sourceIdentity])}`;
+}
+
+/** Load the previous snapshot for this exact user/market/source context. */
 async function loadPreviousSnapshot(
   userId: number,
   symbol: string,
-  timeframe: string,
+  contextKey: string,
+  now: number,
 ): Promise<PreviousSignalSnapshot | null> {
   try {
     const rows = await db
@@ -111,12 +120,15 @@ async function loadPreviousSnapshot(
         and(
           eq(signalMemoryTable.userId, userId),
           eq(signalMemoryTable.symbol, symbol),
-          eq(signalMemoryTable.timeframe, timeframe),
+          eq(signalMemoryTable.timeframe, contextKey),
         ),
       )
       .limit(1);
     const row = rows[0];
-    if (!row) return null;
+    if (!row || row.userId !== userId || row.symbol !== symbol || row.timeframe !== contextKey) return null;
+    const generated = row.generatedAt.getTime();
+    const first = row.firstSeenAt?.getTime() ?? NaN;
+    if (!Number.isFinite(generated) || !Number.isFinite(first) || first > generated || generated > now) return null;
     return {
       bias: row.bias as SignalBias,
       direction: row.direction as SignalDirection,
@@ -139,7 +151,8 @@ async function loadPreviousSnapshot(
 async function persistSnapshot(
   userId: number,
   signal: RubyMarketEdgeSignal,
-): Promise<void> {
+  contextKey: string,
+): Promise<boolean> {
   try {
     const now = new Date();
     await db
@@ -147,7 +160,7 @@ async function persistSnapshot(
       .values({
         userId,
         symbol: signal.symbol,
-        timeframe: signal.timeframe,
+        timeframe: contextKey,
         bias: signal.bias,
         direction: signal.direction,
         regime: signal.regime,
@@ -178,8 +191,10 @@ async function persistSnapshot(
           updatedAt: now,
         },
       });
+    return true;
   } catch {
     // Best-effort continuity write. A failed persist must never fail the read.
+    return false;
   }
 }
 
@@ -224,17 +239,20 @@ export async function buildRubyMarketEdgeForUser(
       ? Promise.resolve(options.scalp)
       : evaluateScalpForSymbol(userId, { symbol, mode: "ANY" }).catch(() => null);
 
-  const [candleResult, opp, scalp, execution, quoteResult, previous] = await Promise.all([
+  const [candleResult, opp, scalp, execution, quoteResult] = await Promise.all([
     routeCandles(symbol, timeframe, SIGNAL_CANDLE_LIMIT),
     scanSymbolTimeframe(symbol, timeframe),
     scalpPromise,
     loadExecutionInput(userId),
     routeQuote(symbol),
-    loadPreviousSnapshot(userId, symbol, timeframe),
   ]);
 
   const now = Date.now();
   const marketRead = prepareMarketRead(candleResult, symbol, timeframe, now);
+  const contextKey = marketRead ? memoryContextKey(marketRead.evidence) : null;
+  // Source identity exists only after the actual route resolves. A parallel
+  // user/symbol/timeframe-only lookup can import another provider's setup age.
+  const previous = contextKey ? await loadPreviousSnapshot(userId, symbol, contextKey, now) : null;
   const candles: SignalCandle[] | null = marketRead?.openClosed ?? null;
   const price = matchedMarketQuote(candleResult, quoteResult, symbol, now)?.mid ?? null;
   let dataSource = marketRead?.trailingIntervals != null && marketRead.trailingIntervals <= 1 ? "LIVE_FEED" : "AWAITING_FEED";
@@ -313,8 +331,8 @@ export async function buildRubyMarketEdgeForUser(
 
   signal.marketEvidence = marketRead ? { ...marketRead.evidence, userId } : null;
 
-  if (!options.skipPersist) {
-    await persistSnapshot(userId, signal);
-  }
+  const saved = !options.skipPersist && contextKey != null
+    ? await persistSnapshot(userId, signal, contextKey) : false;
+  signal.continuity = { basis: previous ? "source_bound_memory" : "current_observation", saved };
   return signal;
 }

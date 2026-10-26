@@ -197,10 +197,14 @@ export async function evaluateScalpForSymbol(userId: number, args: ScalpFocusArg
 
   const { price, candles } = market;
   let scanner: ScalpScannerInput | null = null;
+  let patternImpact: ScalpPatternImpact | null = null;
   if (opp && market.evidence && opp.symbol === args.symbol && opp.timeframe === SCALP_TIMEFRAME &&
       opp.featureSnapshot?.computedAt === market.evidence.lastClosedCandleAt && scannerRowSourceIdentity(opp) === market.evidence.sourceIdentity && isCurrentBuild(opp.generatedAt, Date.now())) {
     const [decorated] = await decorateOpportunitiesWithNewsRisk([opp]);
     scanner = oppToScannerInput((decorated ?? opp) as DecoratedOpportunity);
+    // A downgrade is still a factual claim about this market context. Never
+    // fold a rejected source/bar's pattern back in through an independent input.
+    patternImpact = oppToScalpPatternImpact(opp.patternImpact);
   }
 
   const input: ScalpEngineInput = {
@@ -219,7 +223,7 @@ export async function evaluateScalpForSymbol(userId: number, args: ScalpFocusArg
     symbolPersonality: personality
       ? { qualityBias: personality.qualityBias, minQualityDelta: personality.minQualityDelta }
       : null,
-    patternImpact: opp ? oppToScalpPatternImpact(opp.patternImpact) : null,
+    patternImpact,
   };
   let result = evaluateScalp(input);
 
