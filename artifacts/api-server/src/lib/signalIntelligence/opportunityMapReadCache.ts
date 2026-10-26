@@ -31,14 +31,18 @@ import {
   type OpportunityMapResponse,
 } from "./opportunityMapService.js";
 import { createShortTtlCache } from "../perf/shortTtlCache.js";
+import { normalizeChartTimeframe } from "../data/chart/timeframes.js";
+import { UNIVERSE_IDS } from "../marketScanner.js";
 
 const OPPORTUNITY_MAP_TTL_MS = 10_000;
 
-// Universes (≤6) × the few selectable timeframes — 64 is generous headroom.
+// Bound resolved entries independently of active work. An evicted/expired
+// result must not detach a still-running build and start duplicate provider I/O.
 const cache = createShortTtlCache<OpportunityMapCore>({
   ttlMs: OPPORTUNITY_MAP_TTL_MS,
   maxEntries: 64,
 });
+const pendingBuilds = new Map<string, Promise<OpportunityMapCore>>();
 
 /**
  * Opportunity-map read with short-TTL single-flight caching of the expensive
@@ -48,15 +52,33 @@ const cache = createShortTtlCache<OpportunityMapCore>({
 export async function getCachedOpportunityMap(
   args: OpportunityMapArgs,
 ): Promise<OpportunityMapResponse> {
-  const timeframe = args.timeframe?.trim() || OPPORTUNITY_MAP_TIMEFRAME;
+  // Canonical, finite keys: 7 internal universes × 21 supported timeframes.
+  // The HTTP route retains its existing 6 public groups. Reject invalid input
+  // before any build; aliases must not multiply identical provider reads.
+  if (!UNIVERSE_IDS.includes(args.universe)) throw new RangeError("Unsupported opportunity-map universe");
+  const timeframe = normalizeChartTimeframe(args.timeframe ?? OPPORTUNITY_MAP_TIMEFRAME);
+  if (!timeframe) throw new RangeError("Unsupported opportunity-map timeframe");
   const key = `${args.universe}|${timeframe}`;
-  const core = await cache.get(key, () =>
-    buildOpportunityMapCore({ universe: args.universe, timeframe }),
-  );
+  let pending = pendingBuilds.get(key);
+  if (!pending) {
+    pending = cache.get(key, () => buildOpportunityMapCore({ universe: args.universe, timeframe }));
+    pendingBuilds.set(key, pending);
+    const current = pending;
+    const release = () => {
+      if (pendingBuilds.get(key) === current) pendingBuilds.delete(key);
+    };
+    // Share pending work even beyond the result TTL. Do not timeout/race it:
+    // the underlying provider must settle before its I/O permit is released.
+    // The existing cache still expires from read START, and neither this layer
+    // nor composition resets generatedAt or extends result freshness on finish.
+    void pending.then(release, release);
+  }
+  const core = await pending;
   return composeOpportunityMap(core, args.selectedSymbol ?? null);
 }
 
 /** Test helper — clear the cache between cases. */
 export function __clearOpportunityMapCache(): void {
   cache.clear();
+  pendingBuilds.clear();
 }
