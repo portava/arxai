@@ -167,6 +167,7 @@ it("self-trade entry persists exact canonical/broker mapping before preparation"
   });
   assert.equal(result.ok, true);
   assert.equal(draftedInput?.symbol, "EURUSD.a");
+  assert.equal(draftedInput?.requestedVolume, 0.1);
   assert.deepEqual(draftedInput?.payload, {
     selfTradeSymbolBinding: {
       requestedSymbol: "EURUSD",

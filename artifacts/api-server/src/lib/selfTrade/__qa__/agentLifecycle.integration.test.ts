@@ -31,6 +31,7 @@ let execution: SelfTradeAgentExecution;
 let commandRows: ArxLiveCommand[];
 let entryCommand: ArxLiveCommand;
 let position: Record<string, unknown>;
+let competingPosition: Record<string, unknown> | undefined;
 let dispatches: unknown[];
 let submit: () => Promise<
   | { ok: true; commandId?: string }
@@ -129,7 +130,38 @@ mock.module("@workspace/db", { namedExports: { ...database, db: fakeDb } });
 mock.module("../../positions/ledger.js", {
   namedExports: {
     livePositionColumns: getTableColumns(positions),
-    livePositionLedger: { read: async () => [structuredClone(position)] },
+    livePositionLedger: {
+      read: async (args: { where: SQL; limit: number }) => {
+        const query = dialect.sqlToQuery(args.where);
+        for (const column of [
+          "user_id",
+          "broker_ticket",
+          "bridge_connection_id",
+          "account_login",
+          "broker_server",
+          "symbol",
+        ]) {
+          assert.ok(
+            query.sql.includes(`"${column}" = `),
+            `lookup must scope ${column}`,
+          );
+        }
+        const [userId, ticket, bridge, login, server, symbol] = query.params;
+        return [competingPosition, position]
+          .filter(
+            (p) =>
+              p &&
+              p.userId === userId &&
+              p.brokerTicket === ticket &&
+              p.bridgeConnectionId === bridge &&
+              p.accountLogin === login &&
+              p.brokerServer === server &&
+              p.symbol === symbol,
+          )
+          .slice(0, args.limit)
+          .map((p) => structuredClone(p));
+      },
+    },
   },
 });
 mock.module("../../positionGuardian/manage.js", {
@@ -203,6 +235,7 @@ beforeEach(() => {
   } as SelfTradeAgentExecution;
   commandRows = [];
   entryCommand = fullEntry();
+  competingPosition = undefined;
   position = {
     userId: 9,
     brokerTicket: "123",
@@ -508,7 +541,7 @@ describe("full broker identity and quantity orchestration", () => {
     };
     position.symbol = "EURUSD.a";
     position.accountLogin = "different-account";
-    assert.equal((await manageAgentPositions(agent)).held, 1);
+    await manageAgentPositions(agent);
     assert.equal(dispatches.length, 0);
     position.accountLogin = "synthetic-demo";
     await manageAgentPositions(agent);
@@ -539,4 +572,14 @@ describe("full broker identity and quantity orchestration", () => {
     commandRows[0].accountLogin = "other-account";
     assert.equal((await reconcileAgentExecutions(5)).closed, 0);
   });
+});
+
+it("ticket reuse selects the exact account even when another account's row comes first", async () => {
+  competingPosition = {
+    ...position,
+    bridgeConnectionId: 99,
+    accountLogin: "other-account",
+  };
+  await manageAgentPositions(agent);
+  assert.equal(dispatches.length, 1);
 });

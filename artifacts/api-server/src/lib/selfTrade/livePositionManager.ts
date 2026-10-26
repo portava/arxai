@@ -126,7 +126,11 @@ export async function manageAgentPositions(
         )[0]
       : undefined;
     const entry = ownedEntryBinding(e, entryCommand);
-    if (!entry || !fullVolumeEvidence(entry, e.intendedVolume)) {
+    if (
+      !entry ||
+      !sameBrokerAccount(entry, entry) ||
+      !fullVolumeEvidence(entry, e.intendedVolume)
+    ) {
       result.held++;
       continue;
     }
@@ -136,6 +140,10 @@ export async function manageAgentPositions(
       where: and(
         eq(livePositionColumns.userId, e.executingUserId),
         eq(livePositionColumns.brokerTicket, e.brokerTicket),
+        eq(livePositionColumns.bridgeConnectionId, entry.bridgeConnectionId!),
+        eq(livePositionColumns.accountLogin, entry.accountLogin!),
+        eq(livePositionColumns.brokerServer, entry.brokerServer!),
+        eq(livePositionColumns.symbol, entry.symbol),
       ),
       limit: 1,
     });
