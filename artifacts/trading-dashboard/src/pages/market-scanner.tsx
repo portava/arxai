@@ -255,9 +255,13 @@ export default function MarketScanner() {
   // claim "No scan run yet" while the map renders populated results.
   const [mapScanned, setMapScanned] = useState(false);
   const [tradeTarget, setTradeTarget] = useState<{ opp: Opp; side: "BUY" | "SELL" } | null>(null);
+  const tradeTargetUsable = !!tradeTarget && !err && canUseScannerOpportunity(tradeTarget.opp, snapshotClock) &&
+    opps.some((current) => current.symbol === tradeTarget.opp.symbol && current.timeframe === tradeTarget.opp.timeframe &&
+      canUseScannerOpportunity(current, snapshotClock) && current.recommendedAction === tradeTarget.opp.recommendedAction &&
+      current.entry === tradeTarget.opp.entry && current.stopLoss === tradeTarget.opp.stopLoss && current.takeProfit === tradeTarget.opp.takeProfit);
   useEffect(() => {
-    if (tradeTarget && (err || !canUseScannerOpportunity(tradeTarget.opp, snapshotClock))) setTradeTarget(null);
-  }, [tradeTarget, err, snapshotClock]);
+    if (tradeTarget && !tradeTargetUsable) setTradeTarget(null);
+  }, [tradeTarget, tradeTargetUsable]);
   const [scalpTrade, setScalpTrade] = useState<{ result: ScalpResult; side: "BUY" | "SELL" } | null>(null);
   // Advanced analysis surfaces (Trade Review / Market Replay / Backtesting)
   // are admin-only routes now. Hide their quick-links from normal users so a
@@ -380,25 +384,22 @@ export default function MarketScanner() {
   // anyway because the next tick is up to 5s away. See
   // `.agents/memory/perf-poll-and-invalidation-rules.md`.
   useEffect(() => {
-    void load();
-    let id: ReturnType<typeof setInterval> | null = null;
-    const start = () => {
-      if (id != null) return;
-      id = setInterval(load, 5000);
-    };
-    const stop = () => { if (id != null) { clearInterval(id); id = null; } };
-    const onVis = () => {
-      if (document.hidden) {
-        stop();
-      } else {
-        // Resync once on return so we don't show ≤5s-stale results.
-        void load();
-        start();
+    let id: ReturnType<typeof setTimeout> | null = null;
+    let active = false, disposed = false;
+    const stop = () => { if (id != null) clearTimeout(id); id = null; };
+    const poll = async () => {
+      if (active || disposed || document.hidden) return;
+      active = true;
+      try { await load(); }
+      finally {
+        active = false;
+        if (!disposed && !document.hidden) id = setTimeout(() => void poll(), 5000);
       }
     };
-    if (!document.hidden) start();
+    const onVis = () => { stop(); if (!document.hidden) void poll(); };
+    void poll();
     document.addEventListener("visibilitychange", onVis);
-    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
+    return () => { disposed = true; stop(); document.removeEventListener("visibilitychange", onVis); };
   }, []);
 
   // Surface any thrown error through the existing `err` state / CompactAlert.
@@ -956,7 +957,7 @@ export default function MarketScanner() {
         ]}
       />
 
-      {tradeTarget && !err && canUseScannerOpportunity(tradeTarget.opp, snapshotClock) && (
+      {tradeTarget && tradeTargetUsable && (
         <SectionErrorBoundary section="Trade ticket">
         <ScannerTradeModal
           open={!!tradeTarget}

@@ -153,6 +153,7 @@ interface RegimeStateEntry {
   oppositeStreak: number;
   /** Open time of the last bar the machine stepped on. */
   lastBarTime: string;
+  inputFingerprint: string;
 }
 
 const regimeState = new Map<string, RegimeStateEntry>();
@@ -172,6 +173,7 @@ export function resolveScannerRegime(
   symbol: string,
   timeframe: string,
   candles: RegimeCandle[] | null,
+  sourceIdentity = "unattributed",
 ): ScannerRegimeRead {
   if (!candles || candles.length === 0) {
     return unknownRead("No real candles routed for this symbol/timeframe — regime cannot be classified.");
@@ -183,9 +185,18 @@ export function resolveScannerRegime(
     );
   }
 
-  const key = `${symbol}|${timeframe}`;
+  const key = JSON.stringify([symbol, timeframe, sourceIdentity]);
   const held = regimeState.get(key) ?? null;
   const lastBarTime = candles[candles.length - 1]!.time;
+  const barMs = Date.parse(lastBarTime);
+  if (!Number.isFinite(barMs)) return unknownRead("The closed bar timestamp is invalid.");
+  if (held && barMs < Date.parse(held.lastBarTime)) {
+    return unknownRead("An older candle window cannot advance the current regime state.");
+  }
+  const inputFingerprint = JSON.stringify(candles.map((bar) => [bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume ?? null]));
+  if (held && held.lastBarTime === lastBarTime && held.inputFingerprint !== inputFingerprint) {
+    return unknownRead("The closed candle window changed without a new bar — wait for fresh confirmation.");
+  }
 
   if (held && held.lastBarTime === lastBarTime) {
     // Same closed bar — no new evidence; return the held state.
@@ -199,7 +210,7 @@ export function resolveScannerRegime(
   }
 
   const { next, oppositeStreakAfter } = stepMarketState(held?.record ?? null, signals, held?.oppositeStreak ?? 0);
-  regimeState.set(key, { record: next, oppositeStreak: oppositeStreakAfter, lastBarTime });
+  regimeState.set(key, { record: next, oppositeStreak: oppositeStreakAfter, lastBarTime, inputFingerprint });
   return {
     regime: next.phase,
     substate: next.substate,
