@@ -3600,7 +3600,7 @@ export const ExecuteMissionProposalDraftResponse = zod
   );
 
 /**
- * @summary Run a deterministic historical/simulated BACKTEST for the mission's strategy via the shared backtest engine and persist an honestly-labelled result (Phase 9). Advisory only — a backtest can NEVER grant live permission or bypass any live gate. Focus-Lock + user/mission scoped.
+ * @summary Run a deterministic generated-price diagnostic for the mission strategy. These are not observed market prices; costs and chronological holdouts are not modelled. Persisted results cannot support promotion or strategy drift. Focus-Lock and user/mission scoped; never grants live permission.
 
  */
 export const RunMissionBacktestParams = zod.object({
@@ -3630,11 +3630,11 @@ export const RunMissionBacktestBody = zod
       .nullish(),
   })
   .describe(
-    "Phase 9 backtest request. Runs a deterministic historical\/simulated backtest for the named strategy; advisory only — never a live grant.\n",
+    "Generated-price diagnostic request. Prices are synthetic; this is not historical market validation and cannot support promotion or strategy drift.\n",
   );
 
 /**
- * @summary Aggregate a FORWARD test result from the mission's OWN executed-and-closed trade drafts (real realised outcomes only) and persist an honestly-labelled result with a small-sample warning when sparse (Phase 9). Never fabricates a forward record. Advisory only. User/mission scoped.
+ * @summary Aggregate a FORWARD test result from the mission's OWN executed-and-closed trade drafts, filtered by any supplied strategy, symbol and timeframe. Execution mode, risk coverage and net costs remain unverified. These diagnostics cannot support promotion or strategy drift. User/mission scoped.
 
  */
 export const AggregateMissionForwardParams = zod.object({
@@ -3648,7 +3648,7 @@ export const AggregateMissionForwardBody = zod
     timeframe: zod.string().nullish(),
   })
   .describe(
-    "Phase 9 forward-test request. Aggregates the mission's OWN closed trade drafts (real outcomes); all fields optional (derived from the drafts).\n",
+    "Aggregate the mission's own closed drafts. Optional fields are exact source filters, never display labels. Unfiltered mixed contexts are labelled Mixed.\n",
   );
 
 /**
@@ -3699,9 +3699,20 @@ export const ListMissionTestResultsResponse = zod.object({
         notes: zod.array(zod.string()),
         promotionEligible: zod.boolean(),
         createdAt: zod.string(),
+        evidence: zod
+          .object({
+            version: zod.literal(1),
+            source: zod.enum([
+              "generated_prices",
+              "closed_mission_drafts",
+              "unknown",
+            ]),
+            validation: zod.enum(["unverified"]),
+          })
+          .optional(),
       })
       .describe(
-        "An honestly-labelled, append-only mission test result. `kind` distinguishes BACKTEST (historical\/simulated) from FORWARD (real realised). `sampleWarning` is set when the sample is too small to be meaningful. Advisory only.\n",
+        "Append-only diagnostic history, projected through current evidence rules. Generated prices and unreconciled closed drafts remain unverified. Legacy verified and eligible flags are not trusted. Sample minima do not establish statistical significance; current diagnostics cannot support promotion or drift.\n",
       ),
   ),
 });

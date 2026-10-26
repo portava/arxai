@@ -2093,9 +2093,12 @@ function MissionTestResultRow({ r }: { r: MissionTestResult }): ReactElement {
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span>Trades: {m.totalTrades}</span>
         <span>Win rate: {(m.winRate * 100).toFixed(1)}%</span>
-        <span>Expectancy: {m.expectancyR.toFixed(2)}R</span>
+        <span>{r.isVerified ? `Expectancy: ${m.expectancyR.toFixed(2)}R` : "R metrics: see evidence and coverage below"}</span>
         <span>Max DD: {m.maxDrawdownPct.toFixed(1)}%</span>
-        <span>Net P/L: {m.netProfitLoss.toFixed(2)}</span>
+        <span>{r.evidence?.source === "generated_prices" ? "Gross P/L (price units)" : "Reported P/L (units and costs unverified)"}: {m.netProfitLoss.toFixed(2)}</span>
+      </div>
+      <div className="space-y-1 text-xs text-muted-foreground" data-testid={`test-evidence-notes-${r.id}`}>
+        {r.notes.map((note, index) => <p key={index}>{note}</p>)}
       </div>
       {r.sampleWarning && (
         <p className="text-xs text-warning" data-testid={`test-sample-warning-${r.id}`}>
@@ -2109,7 +2112,7 @@ function MissionTestResultRow({ r }: { r: MissionTestResult }): ReactElement {
 function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElement {
   const missionId = mission.id;
   const qc = useQueryClient();
-  const [strategyId, setStrategyId] = useState("flame_scalp");
+  const [strategyId, setStrategyId] = useState("trendContinuation");
   const [symbol, setSymbol] = useState("EURUSD");
   const [timeframe, setTimeframe] = useState("M15");
   const [targetLevel, setTargetLevel] = useState<number>(mission.automationLevel ?? 2);
@@ -2209,9 +2212,9 @@ function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElemen
             <ClipboardCheck className="h-4 w-4" /> Testing Lab
           </CardTitle>
           <CardDescription>
-            Backtest results are historical and simulated; forward results are your
-            mission's real, closed trades. Results are estimates — they never grant
-            live permission or bypass any safety gate.
+            This runner uses generated prices for diagnostics. Forward aggregation reads closed mission
+            drafts; execution mode and net costs remain unverified. These records cannot support
+            promotion or strategy drift.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -2257,7 +2260,7 @@ function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElemen
               ) : (
                 <TrendingUp className="mr-2 h-4 w-4" />
               )}
-              Run backtest
+              Run generated-price diagnostic
             </Button>
             <Button
               variant="outline"
@@ -2270,13 +2273,13 @@ function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElemen
               ) : (
                 <Layers className="mr-2 h-4 w-4" />
               )}
-              Aggregate forward (real trades)
+              Aggregate closed drafts
             </Button>
           </div>
 
           {results.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="text-no-test-results">
-              No test results yet. Run a backtest, or aggregate forward results from
+              No test results yet. Run a generated-price diagnostic, or aggregate
               your mission's closed trades.
             </p>
           ) : (
@@ -2296,15 +2299,15 @@ function MissionTestingLab({ mission }: { mission: ProfitMission }): ReactElemen
             <ShieldAlert className="h-4 w-4" /> Strategy drift
           </CardTitle>
           <CardDescription>
-            Compares your forward (real) results against the backtest baseline. Severe
+            Compares verified forward evidence against a verified historical baseline. Severe
             drift automatically demotes the mission, reduces risk, and pauses promotion.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {drift?.insufficientEvidence ? (
             <p className="text-sm text-muted-foreground" data-testid="text-drift-unknown">
-              Not enough evidence yet — run a backtest and gather real forward trades for
-              an honest comparison.
+              No verified comparison is available. Generated-price runs and unreconciled closed drafts
+              cannot establish strategy drift.
             </p>
           ) : (
             <div className="flex flex-wrap items-center gap-3 text-sm">
