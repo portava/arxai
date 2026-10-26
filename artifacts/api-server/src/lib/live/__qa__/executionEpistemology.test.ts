@@ -178,14 +178,15 @@ test("recordLiveCommandResult settles reservations ONLY through the pure matrix 
   const fnStart = pipelineSource.indexOf("export async function recordLiveCommandResult");
   assert.ok(fnStart > 0);
   const fnBody = pipelineSource.slice(fnStart);
-  assert.ok(
-    fnBody.includes("settleReservationForStatus(finalStatus)"),
-    "settlement must consult settleReservationForStatus",
-  );
-  assert.ok(
-    fnBody.includes("RESERVATION_HELD_UNKNOWN_OUTCOME"),
-    "the HOLD branch must exist (reservation held on unknown outcome)",
-  );
+  assert.ok(fnBody.includes("settleCommandJobs(updated.id, args.userId)"), "receipt must run its durable settlement intents");
+  assert.ok(fnBody.includes("enqueueResultSettlement(tx, updated"), "accepted receipt and intent must share the transaction");
+  const outbox = readFileSync(new URL("../resultSettlementOutbox.ts", import.meta.url), "utf8");
+  const exposure = outbox.slice(outbox.indexOf("async function reconcileExposure"), outbox.indexOf("export async function runClaimedSettlement"));
+  assert.match(exposure, /settleReservationForStatus\(\s*command.status/);
+  assert.match(exposure, /if \(action === "HOLD"\) return \{ heldReason: "OUTCOME_UNCONFIRMED" \}/);
+  assert.ok(exposure.indexOf('action === "HOLD"') < exposure.indexOf("update arx_dispatch_exposure_reservations"), "HOLD returns before exposure mutation");
+  assert.match(exposure, /user_id=\$\{command.userId\} and status='RESERVED'/);
+
 });
 
 test("sweepExpiredLiveCommands classifies through the pure helper and holds reservations on UNKNOWN (source pin)", () => {

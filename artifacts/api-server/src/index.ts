@@ -1,3 +1,4 @@
+import { startResultSettlementWorker } from "./lib/live/resultSettlementWorker.js";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { ensureSafetyCoreInitialized } from "./lib/safetyCore";
@@ -138,6 +139,8 @@ ensureSafetyCoreInitialized()
       // dispatch freshness gate to be turned on at all (Ruling 10).
       // Opt-out via ARX_UNKNOWN_RECONCILER_ENABLED; disabling is logged loudly.
       startUnknownReconcilerWorker();
+      // Default OFF. Migration precedes release; this never sends broker work.
+      void startResultSettlementWorker();
       // MT5 candle-feed staleness + connectivity watchdog — raises an admin
       // alert when a previously-contributing symbol+timeframe series stops
       // pushing candles for longer than CANDLE_TTL (the chart then silently

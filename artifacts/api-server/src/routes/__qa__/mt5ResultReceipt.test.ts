@@ -213,3 +213,9 @@ test("capacity refusal is retryable503 and never acknowledged as a durable recei
     error: "LIVE_RESULT_RECEIPT_CAPACITY",
   });
 });
+test("durable receipt with pending recovery explicitly reports default-off worker",async()=>{
+  const recovery={workerEnabled:false,pending:true,held:false,scope:"LATEST_ACCEPTED_COMMAND_STATE",jobs:[{consumer:"MANUAL_CLOSE_POSITION",status:"RETRY",generation:1,completedGeneration:null,reason:"SETTLEMENT_PROCESSING_FAILED"}]};
+  const reply=await run(async()=>({ok:true,receiptPersisted:true,positionSettlement:"PENDING",settlementRecovery:recovery}));
+  assert.equal(reply.code,200);
+  assert.deepEqual(reply.body,{received:true,receiptPersisted:true,positionSettlement:"PENDING",settlementRecovery:recovery});
+});
