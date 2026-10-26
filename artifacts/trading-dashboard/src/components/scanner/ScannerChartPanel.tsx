@@ -1,3 +1,4 @@
+import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createChart, CandlestickSeries, createSeriesMarkers, ColorType, CrosshairMode, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "lightweight-charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1294,6 +1295,8 @@ export function ScannerChartPanel() {
     }
   }, [mergedCandles, chartEpoch]);
 
+  const tickSource = chartTickSource(feedStatus?.source);
+
   // ── Real-time forming-tip (Task #496). Subscribe to the server SSE tick-stream
   //    for the bus symbol + timeframe and apply each forming bar with
   //    series.update() — NOT setData — so the most-recent candle ticks in real
@@ -1311,17 +1314,22 @@ export function ScannerChartPanel() {
     formingCloseRef.current = null;
     setFormingCloseMs(null);
     setMarketFrozen(null);
-    if (symbol.length === 0) return;
-    const url = u(`/api/chart/tick-stream?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}`);
+    if (symbol.length === 0 || !tickSource) return;
+    const url = u(`/api/chart/tick-stream?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&source=${encodeURIComponent(tickSource)}`);
     let es: EventSource | null = null;
+    let disposed = false;
     try {
       es = new EventSource(url, { withCredentials: true });
     } catch {
       return; // EventSource unavailable — the 15s poll still keeps the tip fresh.
     }
     es.onmessage = (ev) => {
+      if (disposed) return;
       let msg: {
         type?: string;
+        source?: string;
+        symbol?: string;
+        timeframe?: string;
         frozen?: boolean;
         tickWallMs?: number;
         marketFrozen?: boolean;
@@ -1333,6 +1341,7 @@ export function ScannerChartPanel() {
       } catch {
         return;
       }
+      if (!matchesChartTickContext(msg, tickSource, symbol, apiTf)) return;
       // Market-frozen / closed-market indicator. Handled BEFORE the forming-bar
       // branch because it must surface even when there is no live tip (a frozen
       // broker quote is exactly the no-tip case).
@@ -1403,9 +1412,10 @@ export function ScannerChartPanel() {
       // remains the reconciliation backstop while the stream is down.
     };
     return () => {
+      disposed = true;
       es?.close();
     };
-  }, [symbol, apiTf]);
+  }, [symbol, apiTf, tickSource]);
 
   // ── Display-truth: keep the candlestick series' built-in last-price line +
   //    last-value label in lockstep with the live/non-live display status,

@@ -22,6 +22,7 @@
 import type { Request, Response } from "express";
 import {
   formingBarBus,
+  isFormingTickSource,
   getFormingBar,
   getFormingTickAgeMs,
   getFeedFreshness,
@@ -33,8 +34,9 @@ import { FORMING_TIP_LIVE_MS } from "../lib/data/freshness.js";
 export function handleChartTickStream(req: Request, res: Response): void {
   const rawSymbol = typeof req.query["symbol"] === "string" ? req.query["symbol"] : "";
   const rawTf = typeof req.query["timeframe"] === "string" ? req.query["timeframe"] : "M5";
+  const source = req.query["source"];
   const symbolKey = normalizeSymbolKey(rawSymbol);
-  if (!symbolKey || !isChartTimeframe(rawTf)) {
+  if (!symbolKey || !isChartTimeframe(rawTf) || !isFormingTickSource(source)) {
     res.status(400).json({ error: "Invalid tick-stream request" });
     return;
   }
@@ -57,12 +59,13 @@ export function handleChartTickStream(req: Request, res: Response): void {
   const emitForming = () => {
     if (aborted) return;
     const now = Date.now();
-    const forming = getFormingBar(rawSymbol, timeframe, now);
+    const forming = getFormingBar(rawSymbol, timeframe, now, source);
     if (!forming) return; // no current-interval tip yet → nothing to push
-    const ageMs = getFormingTickAgeMs(rawSymbol, timeframe, now) ?? 0;
+    const ageMs = getFormingTickAgeMs(rawSymbol, timeframe, now, source) ?? 0;
     send({
       type: "forming_bar",
       symbol: rawSymbol,
+      source,
       timeframe,
       bar: {
         openTimeMs: forming.openMs,
@@ -96,11 +99,12 @@ export function handleChartTickStream(req: Request, res: Response): void {
   const emitStatus = () => {
     if (aborted) return;
     const now = Date.now();
-    const fresh = getFeedFreshness(rawSymbol, now);
+    const fresh = getFeedFreshness(rawSymbol, now, source);
     if (!fresh) return; // no tick seen yet → assert nothing (honest unknown)
     send({
       type: "feed_status",
       symbol: rawSymbol,
+      source,
       timeframe,
       marketFrozen: fresh.marketFrozen,
       lastBrokerTimeMs: fresh.lastBrokerTimeMs,
@@ -118,7 +122,7 @@ export function handleChartTickStream(req: Request, res: Response): void {
     emitForming();
     emitStatus();
   };
-  formingBarBus.on(symbolKey, onTick);
+  formingBarBus.on(symbolKey, onTick, source);
 
   // Initial push so a fresh subscriber sees the current tip + feed state.
   emitForming();
@@ -129,7 +133,7 @@ export function handleChartTickStream(req: Request, res: Response): void {
   // a flush timer for tick data — ticks are already pushed inline above.
   const heartbeat = setInterval(() => {
     if (aborted) return;
-    send({ type: "heartbeat", ts: Date.now() });
+    send({ type: "heartbeat", symbol: rawSymbol, timeframe, source, ts: Date.now() });
     emitForming();
     emitStatus();
   }, 15_000);
@@ -137,6 +141,6 @@ export function handleChartTickStream(req: Request, res: Response): void {
   req.on("close", () => {
     aborted = true;
     clearInterval(heartbeat);
-    formingBarBus.off(symbolKey, onTick);
+    formingBarBus.off(symbolKey, onTick, source);
   });
 }
