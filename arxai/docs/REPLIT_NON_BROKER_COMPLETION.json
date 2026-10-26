@@ -1,0 +1,190 @@
+{
+  "at": "2026-10-26T11:07:40.304100+00:00",
+  "scope": "Approved Replit development workspace only",
+  "github_pr": "https://github.com/portava/arxai/pull/75",
+  "github_head": "bbc99f008b78f4b5750946d7076d544377ff40f2",
+  "measured_implementation": "cc0f268d2eee439db382ce5c30b3d4becff82dc2",
+  "merge_status": "OPEN; owner approval pending",
+  "original_workspace_commit": "371c86ae738b0bb48ea9b3e616bdb8b23850cf40",
+  "source_checkpoint": "697fa2241c6501ab332def893e4cc3fc5ac56f27",
+  "source_checkpoint_note": "Replit made a checkpoint while the user started a separate task. Source hashes were rechecked and all 16 applied files still matched; workspace was clean.",
+  "checks": {
+    "focused": {
+      "exit_code": 0,
+      "seconds": 6,
+      "log_sha256": "c2ac6e55afeff0adf0daa5b638da7e3d4a098f5209a77184c9ee952673ebee92"
+    },
+    "release": {
+      "exit_code": 0,
+      "seconds": 5,
+      "log_sha256": "3c017fa2f4641e1221e9ae53854699501e4b0e2efcb40858822b9cbeddc4dcba"
+    },
+    "monitoring": {
+      "exit_code": 0,
+      "seconds": 3,
+      "log_sha256": "239e089e7847d539bbe3f4d48a09b86eb3ce90d54daf4a42c0a727d52bad5f7f"
+    },
+    "launcher": {
+      "exit_code": 0,
+      "seconds": 1,
+      "log_sha256": "23baea1aeba19b711c5947a10445edc15ce5d4459726bddc1c327a41c488ed96"
+    },
+    "api_typecheck": {
+      "exit_code": 0,
+      "seconds": 33,
+      "log_sha256": "d6743742a7c68327395f5864f92db1c7ebbd9db85bf56e2e04d1d4dd78da06eb"
+    },
+    "web_typecheck": {
+      "exit_code": 0,
+      "seconds": 6,
+      "log_sha256": "059db5be152aa305ef6b8dd2c19dacd1533b37c2d80640b47836a9daacb2626a"
+    },
+    "guards": {
+      "exit_code": 0,
+      "seconds": 25,
+      "log_sha256": "4a025282d57a0527fedaca33dde274ee5ec30eb53d7abfd014b7da55da40d55a"
+    },
+    "api_build": {
+      "exit_code": 0,
+      "seconds": 2,
+      "log_sha256": "30f33bc1c151a913da15659073362ebd294c53008d0b1473470aa56c85a83848"
+    },
+    "web_build": {
+      "exit_code": 0,
+      "seconds": 15,
+      "log_sha256": "de2eea9b3573aecf20f1f1f8a64b393c875707835c1b23b614f340d250bf1236"
+    }
+  },
+  "focused_regressions": 73,
+  "guards": 87,
+  "http_smoke": {
+    "at": "2026-10-26T11:05:49.517255+00:00",
+    "scope": "Development API restart only",
+    "http": {
+      "/api/healthz": 200,
+      "/api/health/ready": 200,
+      "/api/me": 401
+    },
+    "passed": true,
+    "live_execution_enabled": false
+  },
+  "provider_observation": {
+    "github_head": "cc0f268d2eee439db382ce5c30b3d4becff82dc2",
+    "cli_exit": 2,
+    "report": {
+      "scope": "Read-only development/release probe of one symbol and ten M1 bars; not broker execution or full-market certification.",
+      "observedAt": "2026-10-26T10:56:14.746Z",
+      "provider": "composite(polygon,finnhub,alpha_vantage)",
+      "symbol": "EURUSD",
+      "ready": false,
+      "quote": {
+        "ready": true,
+        "source": "alpha_vantage",
+        "freshness": "REALTIME",
+        "asOf": "2026-10-26T10:56:13.000Z",
+        "hasBid": true,
+        "hasAsk": true,
+        "stale": false
+      },
+      "candles": {
+        "ready": false,
+        "source": "alpha_vantage",
+        "freshness": "UNAVAILABLE",
+        "asOf": null,
+        "count": 0,
+        "trailingIntervals": null
+      },
+      "requests": [
+        {
+          "provider": "polygon",
+          "operation": "quote",
+          "status": 200,
+          "reason": null,
+          "observedAt": "2026-10-26T10:56:12.740Z"
+        },
+        {
+          "provider": "finnhub",
+          "operation": "quote",
+          "status": 200,
+          "reason": null,
+          "observedAt": "2026-10-26T10:56:13.571Z"
+        },
+        {
+          "provider": "alpha_vantage",
+          "operation": "quote",
+          "status": 200,
+          "reason": null,
+          "observedAt": "2026-10-26T10:56:13.815Z"
+        },
+        {
+          "provider": "polygon",
+          "operation": "candles",
+          "status": 403,
+          "reason": "ACCESS_RESTRICTED",
+          "observedAt": "2026-10-26T10:56:14.054Z"
+        },
+        {
+          "provider": "finnhub",
+          "operation": "candles",
+          "status": 403,
+          "reason": "ACCESS_RESTRICTED",
+          "observedAt": "2026-10-26T10:56:14.301Z"
+        },
+        {
+          "provider": "alpha_vantage",
+          "operation": "candles",
+          "status": 200,
+          "reason": "ACCESS_RESTRICTED",
+          "observedAt": "2026-10-26T10:56:14.528Z"
+        }
+      ]
+    }
+  },
+  "source_sha256_at_validation": {
+    "arxai/artifacts/api-server/package.json": "d15d064ed62e732090d6130d8a5877cb5ca42b8006abe340a22dec8e95de4f07",
+    "arxai/artifacts/api-server/src/app.ts": "da1753e51ab2f3eaf7293106bae0f5a81ec3783f2b7849f9411e612b3cc2c7b6",
+    "arxai/artifacts/api-server/src/lib/assistant/__qa__/alphaVantageFx.test.ts": "70f08865394a0e7f269fb2b9c6eda5470276b5e282995243378bcfc1820b142b",
+    "arxai/artifacts/api-server/src/lib/assistant/__qa__/quoteObservationFreshness.test.ts": "7232267e889f403260ffa049699a8da35ae5ad5d20f3c995b3b178e68e5df84d",
+    "arxai/artifacts/api-server/src/lib/assistant/alphaVantageFx.ts": "347fb5c320be7ab0635eedb9f110beb6a54c3d20223857c7779d474a5f612ecc",
+    "arxai/artifacts/api-server/src/lib/assistant/marketDataReadiness.ts": "22e173ca6da40ea3cc37801ae1b0b04d3e42175159bd099d010a7448a0dc713b",
+    "arxai/artifacts/api-server/src/lib/assistant/marketHttp.ts": "afdca1bfce98f9550537d4524304dac86db29e3aef45956f125c01e322c59270",
+    "arxai/artifacts/api-server/src/lib/assistant/marketProvider.ts": "b8ed0cb2cc9b7f9f4b88ca0692da7fd552582cb937d93268e8aee552d1da8397",
+    "arxai/artifacts/api-server/src/lib/startup/__qa__/dashboard.test.ts": "156af965a13a5a38070b9c889921147f4d227a96b5834be3c830965669b92a77",
+    "arxai/artifacts/api-server/src/lib/startup/dashboard.ts": "1b397328c5cb846669ee5b217071dbf2ad36062c0b75a8964d44943bb826d386",
+    "arxai/artifacts/api-server/src/scripts/marketDataReadinessCheck.ts": "f9f0f43704866d4ea317534a329714119e0a00dbfd179546a67d75fec4054c0c",
+    "arxai/docs/TIER1_MARKET_DATA_READINESS.md": "d37172766cb3e391c2db19982dfed56415343beb7be80f66bceab6913805ee93",
+    "arxai/docs/TIER1_NON_BROKER_READINESS.md": "950f3aa1dbdfd6eeb359d829fe493a31c3ea0e261283de0a272eb84d276043f7",
+    "arxai/package.json": "151d7b25baebd517aa13a2be6456ac5a3ef1c4323e772e9714fd0bf3f544621b",
+    "arxai/scripts/release/check-arx-production-env.test.mjs": "0d07505f2b2cafee7179ba8cbfb0bdd9c8565b820310b42cdd7973a7698bcefc",
+    "arxai/scripts/release/run-arx-production.sh": "88758de396fe7d4cd74ec96f2859fa42b2b5c30ae59ac194c6c8cc6604e49a4c"
+  },
+  "documentation_sha256": {
+    "arxai/docs/TIER1_MARKET_DATA_READINESS.md": "1dd3f4dacc415406f912d69ef274d3b21ddc835d237c5e5518ff36efc6f0dd16",
+    "arxai/docs/TIER1_NON_BROKER_COMPLETION.md": "882ca12803fd45bb26aceb0f367fc166398172110ba99e0d21e0ae5fba88227d",
+    "arxai/docs/TIER1_OWNER_RUNBOOK.md": "711627d69dc654510146249930f32785fe514af48b3d6eef269285f96016c4ff",
+    "arxai/scripts/arx-scorecard/results/2026-10-26-cc0f268d/evidence.json": "4c9f743ce5453dbe10ec7835c4a6977e4e45452116a93f9894862e918516cefb",
+    "arxai/scripts/arx-scorecard/results/2026-10-26-cc0f268d/index.html": "ecdd7c536792b68956ed12d960ec342701ed012f012aa2d07922d5174672fc82",
+    "arxai/scripts/arx-scorecard/results/2026-10-26-cc0f268d/logs/builds.log.gz": "4d041dd0dbab244db3203a4b4732c7587733d36374e8a8ff55a07864040b50d0",
+    "arxai/scripts/arx-scorecard/results/2026-10-26-cc0f268d/logs/full-ci.log.gz": "f2cb08d6bf5599c2ed5db1f1f676cfcb7919f7c4bed487c0e0920c150ef6e8b6",
+    "arxai/scripts/arx-scorecard/results/2026-10-26-cc0f268d/logs/integration.log.gz": "7f4f0dc57a179bc74fd8abcab93ab51ad84adde917e73857a19e5a4e6038f63e",
+    "arxai/scripts/arx-scorecard/results/2026-10-26-cc0f268d/logs/production-routing.log.gz": "85f6fb38f7b53dc2bd982004809cf4504dc31610e69030f31da9f8b2766c7cba",
+    "arxai/scripts/arx-scorecard/results/2026-10-26-cc0f268d/logs/types.log.gz": "ff64b5e66e81a2c4fb5ffbcf10c258f3439a8d59c296b66eae55f51779221699",
+    "arxai/scripts/arx-scorecard/results/2026-10-26-cc0f268d/metrics.json": "4508d4f18963f969e84c65bd0e0e3b64f6c2abf3385bd85ab1f81057b278a464",
+    "arxai/scripts/arx-scorecard/results/2026-10-26-cc0f268d/scorecard.csv": "28c2b4885201e2a32ca8d87c41dd9c07eff1b661f19b770b7ebc97677bb48a1a",
+    "arxai/scripts/arx-scorecard/results/README.md": "92ecb8d3e81de806d5ccdcf5047efbf83fa7d190e54a7684e9200a4cba3b3b8a"
+  },
+  "runtime_restart": "Only development API restarted through existing safe wrapper; LIVE execution remains disabled.",
+  "preservation": "Existing sign-out work, Replit wrappers, dependency additions and other tasks preserved. Only upstream package-script deltas applied.",
+  "actions": {
+    "broker_orders": 0,
+    "real_email_sends": 0,
+    "published": false,
+    "trading_controls_changed": false
+  },
+  "limitations": [
+    "Development checks and a single current EURUSD quote do not establish production readiness.",
+    "Intraday market-data access remains restricted.",
+    "Seven actual DEMO lifecycle scenarios remain unperformed.",
+    "Local GitHub release-gate results are recorded in the exact-commit scorecard; no GitHub workflow runs or statuses were reported for this PR."
+  ]
+}

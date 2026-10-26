@@ -22,7 +22,7 @@ From the repository root with the environment's existing provider secrets:
 
 ```sh
 pnpm --filter @workspace/api-server run check:market-data
-pnpm --filter @workspace/api-server run check:market-data -- --symbol GBPUSD
+pnpm --filter @workspace/api-server run check:market-data --symbol GBPUSD
 ```
 
 The command only requests quotes and ten M1 bars. It does not connect to a
@@ -53,6 +53,12 @@ existing feed entitlement covering the required instruments and resolution, or
 separately approve changes to the provider account. Do not close the provider
 operational gate based on a quote alone.
 
-After applying the repair, rerun the diagnostic in the intended environment and
-retain its report with the exact revision. Production evidence remains separate.
+After applying revision `cc0f268d2eee439db382ce5c30b3d4becff82dc2`, the
+read-only development diagnostic at 10:56:14 UTC returned a current Alpha Vantage
+EURUSD quote observed at 10:56:13 UTC with real bid and ask. It returned zero
+intraday candles: Polygon and Finnhub reported HTTP 403, and Alpha Vantage
+reported restricted access. The command correctly exited 2 with `ready: false`.
+This confirms the quote repair; it does not close the intraday-feed or production
+gates. Retain reports with the tested revision and repeat in the intended
+environment. Production evidence remains separate.
 See [the owner runbook](TIER1_OWNER_RUNBOOK.md).
