@@ -180,6 +180,8 @@ export interface TimingDataQuality {
  * must check `dataQuality.label` before treating scores as actionable.
  */
 export interface MarketTimingRead {
+  /** Input observation identity, not the timestamp of this calculation. */
+  marketEvidence?: import("../truth/truth.types.js").TruthReadEvidence | null;
   symbol: string;
   timeframe: string;
   generatedAt: string; // ISO timestamp
