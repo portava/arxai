@@ -14,6 +14,7 @@ import { livePositionWriter, livePositionLedger, livePositionColumns } from "../
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
+import { AgentEntryAuthorityError, createAgentEntryDraft, type AgentAdmissionEnvelope, type AuthorityTransaction } from "../selfTrade/entryAuthority.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
@@ -1036,13 +1037,14 @@ export interface LiveDraftInput {
   selfTradeAgentId?: number | null;
   selfTradeDecisionId?: number | null;
   selfTradeAgentKey?: string | null;
+  selfTradeExecutionId?: number | null;
 }
 
 export interface LiveDraftRefusal {
   ok: false;
   reason:
     | "USER_NOT_ARMED_FOR_LIVE" | "KILL_SWITCH_ENGAGED"
-    | "INVALID_COMMAND_TYPE" | "INVALID_SIDE"
+    | "INVALID_COMMAND_TYPE" | "INVALID_SIDE" | "ENTRY_AUTHORITY_REFUSED"
     | "VOLUME_EXCEEDS_USER_MAX_LOT" | "VOLUME_EXCEEDS_MARKET_MAX_LOT"
     | "SYMBOL_NOT_ALLOWED" | "SYMBOL_NOT_LIVE_TRADABLE"
     | "SYMBOL_NOT_IN_ARX_FOCUS"
@@ -1868,7 +1870,8 @@ export async function createLiveDraft(
   // smuggle the bit through `payload`.
   const draftPayload: Record<string, unknown> = (() => {
     const raw = (input.payload ?? {}) as Record<string, unknown>;
-    const { allowNoStopLossThisDraft: _stripped, referencePrice: _rpStripped, ...safe } = raw;
+    const { allowNoStopLossThisDraft: _stripped, referencePrice: _rpStripped,
+      agentAdmissionV1: _admissionStripped, agentOwnership: _ownerStripped, ...safe } = raw;
     // referencePrice is set ONLY from the typed server-side argument, never
     // smuggled through client payload (stripped above).
     const withRef = typeof input.referencePrice === "number" && input.referencePrice > 0
@@ -1898,63 +1901,86 @@ export async function createLiveDraft(
   // HMAC signature) in the SAME insert. Advisory-additive: re-verified before
   // the 16-gate at dispatch. Actor = the per-user owner; SELF_TRADE_AGENT when
   // an agent originated the draft.
-  const draftActorType: CommandActorType = input.selfTradeAgentId != null ? "SELF_TRADE_AGENT" : "USER";
-  const integrity: CommandIntegrityFields = buildCommandIntegrityFields({
-    commandId,
-    userId: input.userId,
-    commandType: input.commandType,
-    symbol: input.symbol,
-    side: input.side,
-    orderType: input.orderType,
-    requestedVolume: input.requestedVolume,
-    stopLoss: input.stopLoss ?? null,
-    takeProfit: input.takeProfit ?? null,
-    payload: draftPayload,
-    actorId: input.userId,
-    actorType: draftActorType,
-  });
+  const insertDraft = async (writer: typeof db | AuthorityTransaction, envelope?: AgentAdmissionEnvelope): Promise<ArxLiveCommand> => {
+    const signedPayload = envelope ? { ...draftPayload, agentAdmissionV1: envelope } : draftPayload;
+    const draftActorType: CommandActorType = input.selfTradeAgentId != null ? "SELF_TRADE_AGENT" : "USER";
+    const integrity: CommandIntegrityFields = buildCommandIntegrityFields({
+      commandId,
+      userId: input.userId,
+      commandType: input.commandType,
+      symbol: input.symbol,
+      side: input.side,
+      orderType: input.orderType,
+      requestedVolume: input.requestedVolume,
+      stopLoss: input.stopLoss ?? null,
+      takeProfit: input.takeProfit ?? null,
+      payload: signedPayload,
+      actorId: input.userId,
+      actorType: draftActorType,
+    });
 
-  const [row] = await db.insert(arxLiveCommandsTable).values({
-    commandId,
-    userId: input.userId,
-    bridgeConnectionId: bridge?.id ?? null,
-    accountLogin: bridge?.accountNumber ?? null,
-    brokerServer: bridge?.brokerName ?? null,
-    accountNumber: arming.accountNumberConfirmed,
-    commandType: input.commandType,
-    status: "LIVE_CONFIRMATION_REQUIRED",
-    symbol: input.symbol,
-    side: input.side,
-    orderType: input.orderType,
-    requestedVolume: input.requestedVolume,
-    stopLoss: input.stopLoss ?? null,
-    takeProfit: input.takeProfit ?? null,
-    sourcePage: input.sourcePage ?? "LIVE_TRADE_TICKET",
-    allocationId: ownership.allocationId,
-    cycleId: ownership.cycleId,
-    source: ownership.source,
-    // Task #213 — self-trade agent/decision attribution (additive, nullable).
-    selfTradeAgentId: input.selfTradeAgentId ?? null,
-    selfTradeDecisionId: input.selfTradeDecisionId ?? null,
-    // R3 slice 5 — signal-provenance stamp (typed column; nullable). An
-    // unparseable caller value is stored as NULL — provenance is never
-    // fabricated; with a max_signal_age_ms bound configured the dispatch
-    // pre-gate then fail-closed refuses the entry.
-    signalTimestamp: (() => {
-      if (input.signalTimestamp == null) return null;
-      const d = new Date(input.signalTimestamp);
-      return Number.isFinite(d.getTime()) ? d : null;
-    })(),
-    rubyExplanationSummary: input.rubyExplanationSummary ?? null,
-    payload: draftPayload,
-    payloadHash: integrity.payloadHash,
-    integrityHash: integrity.integrityHash,
-    integrityKeyVersion: integrity.integrityKeyVersion,
-    integrityStatus: integrity.integrityStatus,
-    actorId: integrity.actorId,
-    actorType: integrity.actorType,
-    actionType: integrity.actionType,
-  }).returning();
+    const [row] = await writer.insert(arxLiveCommandsTable).values({
+      commandId,
+      userId: input.userId,
+      bridgeConnectionId: bridge?.id ?? null,
+      accountLogin: bridge?.accountNumber ?? null,
+      brokerServer: bridge?.brokerName ?? null,
+      accountNumber: arming.accountNumberConfirmed,
+      commandType: input.commandType,
+      status: "LIVE_CONFIRMATION_REQUIRED",
+      symbol: input.symbol,
+      side: input.side,
+      orderType: input.orderType,
+      requestedVolume: input.requestedVolume,
+      stopLoss: input.stopLoss ?? null,
+      takeProfit: input.takeProfit ?? null,
+      sourcePage: input.sourcePage ?? "LIVE_TRADE_TICKET",
+      allocationId: ownership.allocationId,
+      cycleId: ownership.cycleId,
+      source: ownership.source,
+      // Task #213 — self-trade agent/decision attribution (additive, nullable).
+      selfTradeAgentId: input.selfTradeAgentId ?? null,
+      selfTradeDecisionId: input.selfTradeDecisionId ?? null,
+      // R3 slice 5 — signal-provenance stamp (typed column; nullable). An
+      // unparseable caller value is stored as NULL — provenance is never
+      // fabricated; with a max_signal_age_ms bound configured the dispatch
+      // pre-gate then fail-closed refuses the entry.
+      signalTimestamp: (() => {
+        if (input.signalTimestamp == null) return null;
+        const d = new Date(input.signalTimestamp);
+        return Number.isFinite(d.getTime()) ? d : null;
+      })(),
+      rubyExplanationSummary: input.rubyExplanationSummary ?? null,
+      payload: signedPayload,
+      payloadHash: integrity.payloadHash,
+      integrityHash: integrity.integrityHash,
+      integrityKeyVersion: integrity.integrityKeyVersion,
+      integrityStatus: integrity.integrityStatus,
+      actorId: integrity.actorId,
+      actorType: integrity.actorType,
+      actionType: integrity.actionType,
+    }).returning();
+
+    return row;
+  };
+  let row: ArxLiveCommand;
+  try {
+    const agentOrigin = input.selfTradeAgentId != null || input.selfTradeDecisionId != null ||
+      input.selfTradeExecutionId != null || input.sourcePage === "INSTANT_SELF_TRADE";
+    row = agentOrigin ? await createAgentEntryDraft({
+      userId: input.userId, agentId: input.selfTradeAgentId!,
+      decisionId: input.selfTradeDecisionId!, executionId: input.selfTradeExecutionId!,
+      symbol: input.symbol, side: input.side, volume: input.requestedVolume,
+      stopLoss: input.stopLoss ?? null, takeProfit: input.takeProfit ?? null,
+      symbolBinding: draftPayload.selfTradeSymbolBinding,
+    }, insertDraft) : await insertDraft(db);
+  } catch (error) {
+    if (!(error instanceof AgentEntryAuthorityError)) throw error;
+    await audit({ eventType: "LIVE_DRAFT_REFUSED", severity: "WARNING", userId: input.userId,
+      symbol: input.symbol, message: `Agent entry draft refused: ${error.reason}`,
+      metadata: { reason: error.reason, executionId: input.selfTradeExecutionId ?? null } });
+    return { ok: false, reason: "ENTRY_AUTHORITY_REFUSED", detail: error.reason };
+  }
 
   await audit({
     eventType: "LIVE_DRAFT_CREATED", userId: input.userId, symbol: input.symbol,
@@ -1983,10 +2009,25 @@ export async function confirmLiveCommand(args: { userId: number; commandId: stri
   // the same draft both pass that read and both "succeed", producing two
   // LIVE_APPROVED transitions (and two audit rows) for one command. A null
   // return means a concurrent confirmer already claimed it.
-  const updated = await claimLiveCommandForConfirm(args.commandId, {
-    status: "LIVE_APPROVED",
-    confirmedAt: new Date(),
-  });
+  let updated: ArxLiveCommand | null;
+  try {
+    updated = await claimLiveCommandForConfirm(args.commandId, {
+      status: "LIVE_APPROVED", confirmedAt: new Date(),
+    }, row);
+  } catch (error) {
+    if (!(error instanceof AgentEntryAuthorityError)) throw error;
+    // A refusal must not overwrite a command another caller already sent.
+    const [blocked] = await db.update(arxLiveCommandsTable).set({
+      status: "LIVE_BLOCKED", rejectionReason: error.reason, rejectedAt: new Date(),
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+      eq(arxLiveCommandsTable.userId, args.userId),
+      eq(arxLiveCommandsTable.status, "LIVE_CONFIRMATION_REQUIRED"))).returning();
+    if (!blocked) return { ok: false as const, reason: LIVE_CONFIRM_RACE_LOST, command: null };
+    await audit({ eventType: "LIVE_CONFIRM_BLOCKED", severity: "WARNING", userId: args.userId,
+      symbol: row.symbol, message: `Agent entry confirmation refused: ${error.reason}`,
+      metadata: { commandId: args.commandId, reason: error.reason } });
+    return { ok: false as const, reason: error.reason, command: blocked };
+  }
   if (!updated) {
     const [current] = await db.select({ status: arxLiveCommandsTable.status })
       .from(arxLiveCommandsTable)
@@ -2057,7 +2098,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           tamper: verify.verdict.tamper,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2114,7 +2158,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           allocationFreezeGate: true,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "ALLOCATION_FREEZE_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2162,7 +2209,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         operatorFundedPilotGate: true,
         at: pilotGate.evaluatedAt,
       } as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "OPERATOR_FUNDED_PILOT_BLOCKED", severity: "HIGH",
       userId: args.userId, symbol: row.symbol,
@@ -2239,7 +2289,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           platformStopSources: stop.sources,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "EMERGENCY_KILL_SWITCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2296,7 +2349,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           riskLockGate: true,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "RISK_LOCK_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2344,7 +2400,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           closeOnlyGate: true,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "CLOSE_ONLY_MODE_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2424,7 +2483,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           dispatchReferencePrice,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "PRICE_COLLAR_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2470,7 +2532,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             ? new Date(row.signalTimestamp).toISOString() : null,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "SIGNAL_AGE_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2555,7 +2620,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           maxClusterPositions: settings.maxClusterPositions,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "CLUSTER_EXPOSURE_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2621,7 +2689,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           detail: feedGate.detail,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "BROKER_FEED_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2712,7 +2783,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           runReadError,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "RECONCILIATION_FRESHNESS_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2798,7 +2872,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         arxFocusMarketLock: true,
         at: new Date().toISOString(),
       } as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     return { ok: false as const, reason: "LIVE_BLOCKED" as const,
       primaryReason: reason, blockReasons: [reason], command: blocked };
   }
@@ -2832,7 +2909,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           },
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       return { ok: false as const, reason: "LIVE_BLOCKED" as const,
         primaryReason: reason, blockReasons: [reason], command: blocked };
     }
@@ -2892,7 +2972,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           syntheticFloor: true,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       return { ok: false as const, reason: "LIVE_BLOCKED" as const,
         primaryReason: reason, blockReasons: [reason], command: blocked };
       }
@@ -2934,7 +3017,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           routingMode,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "MASTER_LIVE_USER_ACCESS_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -2964,7 +3050,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           routingMode,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "MASTER_LIVE_DISPATCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -3008,7 +3097,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // broker dispatch through. Distinct reason for operator clarity.
   if (bridge && bridge.mode === "MOCK") {
     const mockBlockReasons = ["MOCK_BRIDGE_NOT_LIVE_CAPABLE", "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED"] as const;
-    const blocked = await db.update(arxLiveCommandsTable)
+    const [blocked] = await db.update(arxLiveCommandsTable)
       .set({
         status: "LIVE_BLOCKED",
         rejectionReason: "MOCK_BRIDGE_NOT_LIVE_CAPABLE",
@@ -3024,8 +3113,11 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         rejectedAt: new Date(),
         brokerMessage: `Bridge ${bridge.id} is a MOCK placeholder, not a real MT5 EA heartbeat. Attach EA v1.27 from your live MT5 terminal so a real heartbeat replaces the MOCK row.`,
       })
-      .where(eq(arxLiveCommandsTable.commandId, args.commandId))
+      .where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED")))
       .returning();
+    if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "LIVE_BLOCKED", userId: args.userId, symbol: row.symbol,
       message: `Live dispatch refused: MOCK_BRIDGE_NOT_LIVE_CAPABLE (bridge id=${bridge.id})`,
@@ -3035,7 +3127,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       reason: "LIVE_BLOCKED" as const,
       primaryReason: "MOCK_BRIDGE_NOT_LIVE_CAPABLE" as const,
       blockReasons: mockBlockReasons,
-      command: blocked[0],
+      command: blocked,
     };
   }
 
@@ -3177,7 +3269,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             realisedWeeklyLossUsd,
             at: new Date().toISOString(),
           } as unknown as Record<string, unknown>,
-        }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+        }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
         await audit({
           eventType: "WEEKLY_DRAWDOWN_BLOCKED", severity: "HIGH",
           userId: args.userId, symbol: row.symbol,
@@ -3277,7 +3372,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             userMaxExposurePerSymbolLots: userMaxExposurePerSymbol,
             at: new Date().toISOString(),
           } as unknown as Record<string, unknown>,
-        }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+        }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
         await audit({
           eventType: "LIVE_TRADE_BLOCKED_EXPOSURE_LIMIT", severity: "HIGH",
           userId: args.userId, symbol: row.symbol,
@@ -3380,7 +3478,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           riskRules: risk.rules,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "PRE_TRADE_RISK_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -3425,7 +3526,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
         bridgeConnectionId: bridge?.id ?? null,
         evaluatedAt: new Date().toISOString(),
       } as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
       userId: args.userId, symbol: row.symbol,
@@ -3544,7 +3648,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       rejectionReason: reason,
       rejectedAt: new Date(),
       dispatchGateSnapshot: snapshot as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
       userId: args.userId, symbol: row.symbol,
@@ -3590,7 +3697,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
           routingMode,
           at: new Date().toISOString(),
         } as unknown as Record<string, unknown>,
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+      }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
       await audit({
         eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
         userId: args.userId, symbol: row.symbol,
@@ -3644,7 +3754,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             routingMode,
             at: new Date().toISOString(),
           } as unknown as Record<string, unknown>,
-        }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+        }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+      if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
         await audit({
           eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
           userId: args.userId, symbol: row.symbol,
@@ -3704,7 +3817,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       accountLogin: bridge!.accountNumber,
       brokerServer: bridge!.brokerName,
       dispatchGateSnapshot: snapshot as unknown as Record<string, unknown>,
-    });
+    }, row);
     if (!sent) {
       // LOST THE RACE. A concurrent dispatcher already claimed this command.
       // Refuse fail-CLOSED: return BEFORE the EA mailbox mirror below so this
@@ -3886,28 +3999,31 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     const isDup = /arx_live_commands_idem_active_uq|duplicate key/.test(msg);
-    const reason = isDup ? "DUPLICATE_LIVE_IDEMPOTENCY_KEY" : "DB_INSERT_FAILED";
+    const reason = e instanceof AgentEntryAuthorityError ? e.reason
+      : isDup ? "DUPLICATE_LIVE_IDEMPOTENCY_KEY" : "DB_INSERT_FAILED";
     // AACI Security Phase 3 — a duplicate-idempotency collision is a replayed /
     // double-submitted command. Record a redacted security event + admin alert
     // (best-effort) so duplicate live dispatch is observable.
     if (isDup) {
       void recordLiveCommandDuplicateBlocked({ userId: args.userId, commandId: args.commandId });
     }
-    // Release the reservation we just took — the live command did not
-    // make it to SENT_TO_MT5_LIVE so the master account should not be
-    // attributed those lots.
-    if (reservationId != null) {
-      try {
-        const { releaseReservation } = await import("../concurrency/exposureReservation.js");
-        await releaseReservation(reservationId);
-      } catch { /* audit-only failure */ }
-    }
+    // Only an unsent command may become BLOCKED. If commit/outcome is unknown
+    // or a concurrent caller already claimed it, preserve its state and exposure.
     const [blocked] = await db.update(arxLiveCommandsTable).set({
       status: "LIVE_BLOCKED",
       rejectionReason: reason,
       rejectedAt: new Date(),
       dispatchGateSnapshot: { ...snapshot, dbError: msg } as unknown as Record<string, unknown>,
-    }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+    }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+      eq(arxLiveCommandsTable.userId, args.userId),
+      eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+    if (blocked && reservationId != null) {
+      try {
+        const { releaseReservation } = await import("../concurrency/exposureReservation.js");
+        await releaseReservation(reservationId);
+      } catch { /* retain ambiguous exposure for reconciliation */ }
+    }
+    if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
     await audit({
       eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
       userId: args.userId, symbol: row.symbol,

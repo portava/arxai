@@ -20,7 +20,7 @@
 //   decision key stays consumed after terminal outcomes. Unknowns retain slots.
 // - TOCTOU: the kill switch is re-checked immediately before dispatch.
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   db,
   selfTradeAgentExecutionsTable,
@@ -361,7 +361,8 @@ export async function executeAgentDecision(
     await db
       .update(selfTradeAgentExecutionsTable)
       .set({ status: "BLOCKED", blockReason: killNow.reason ?? "KILL_SWITCH_ENGAGED", updatedAt: new Date() })
-      .where(eq(selfTradeAgentExecutionsTable.id, execRow.id));
+      .where(and(eq(selfTradeAgentExecutionsTable.id, execRow.id),
+        eq(selfTradeAgentExecutionsTable.status, "PENDING_TICKET")));
     await writeSelfTradeAudit(db, {
       agentId: agent.id,
       eventType: "EXECUTION_BLOCKED_TOCTOU",
@@ -413,6 +414,7 @@ export async function executeAgentDecision(
       selfTradeAgentId: agent.id,
       selfTradeDecisionId: decision.id,
       selfTradeAgentKey: agent.agentKey,
+      selfTradeExecutionId: execRow.id,
     },
   });
 
@@ -426,7 +428,8 @@ export async function executeAgentDecision(
         status: res.commandId ? "PENDING_TICKET" : "BLOCKED",
         commandId: res.commandId ?? null, blockReason, updatedAt: new Date(),
       })
-      .where(eq(selfTradeAgentExecutionsTable.id, execRow.id));
+      .where(and(eq(selfTradeAgentExecutionsTable.id, execRow.id),
+        eq(selfTradeAgentExecutionsTable.status, "PENDING_TICKET")));
     return { status: "BLOCKED", executionId: execRow.id, blockReason, action: side };
   }
 
@@ -436,7 +439,8 @@ export async function executeAgentDecision(
     await db
       .update(selfTradeAgentExecutionsTable)
       .set({ commandId: res.commandId ?? null, updatedAt: new Date() })
-      .where(eq(selfTradeAgentExecutionsTable.id, execRow.id));
+      .where(and(eq(selfTradeAgentExecutionsTable.id, execRow.id),
+        eq(selfTradeAgentExecutionsTable.status, "PENDING_TICKET")));
     return { status: "PREPARED", executionId: execRow.id, commandId: res.commandId, action: side };
   }
 
@@ -444,7 +448,8 @@ export async function executeAgentDecision(
   await db
     .update(selfTradeAgentExecutionsTable)
     .set({ status: "DISPATCHED", commandId: res.commandId ?? null, openedAt: new Date(), updatedAt: new Date() })
-    .where(eq(selfTradeAgentExecutionsTable.id, execRow.id));
+    .where(and(eq(selfTradeAgentExecutionsTable.id, execRow.id),
+      eq(selfTradeAgentExecutionsTable.status, "PENDING_TICKET")));
   return { status: "DISPATCHED", executionId: execRow.id, commandId: res.commandId, action: side };
 }
 
