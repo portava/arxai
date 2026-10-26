@@ -22,7 +22,7 @@
 //     are consulted; no cross-user data is read or returned.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { db, arxLiveCommandsTable, selfTradeDecisionsTable, selfTradeAgentsTable } from "@workspace/db";
 import { entrySymbolMatches } from "../selfTrade/entryAuthority.js";
 import { eq } from "drizzle-orm";
@@ -219,6 +219,25 @@ export interface IntegrityVerifiableRow {
   actionType: string | null;
   selfTradeDecisionId: number | null;
   selfTradeAgentId?: number | null;
+}
+
+/** Historical evidence check only. Does not grant permission or require a fresh approval. */
+export function hasIntactCommandSignature(row: IntegrityVerifiableRow): boolean {
+  try {
+    if (!isCommandActorType(row.actorType) || row.integrityStatus !== "ACTIVE") return false;
+    const expected = buildCommandIntegrityFields({
+      commandId: row.commandId, userId: row.userId, commandType: row.commandType,
+      symbol: row.symbol, side: row.side, orderType: row.orderType,
+      requestedVolume: Number(row.requestedVolume), stopLoss: toNum(row.stopLoss),
+      takeProfit: toNum(row.takeProfit), payload: row.payload as Record<string, unknown> | null,
+      actorId: row.actorId, actorType: row.actorType,
+    });
+    const equal = (a: string | null, b: string | null): boolean => !!a && !!b &&
+      Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+    return expected.integrityStatus === "ACTIVE" && row.integrityKeyVersion === expected.integrityKeyVersion &&
+      row.actionType === expected.actionType && equal(row.payloadHash, expected.payloadHash) &&
+      equal(row.integrityHash, expected.integrityHash);
+  } catch { return false; }
 }
 
 function toNum(v: number | string | null | undefined): number | null {

@@ -1185,6 +1185,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
           commandId: liveCommandId,
           outcome: liveOutcome,
           reportingBridgeConnectionId: conn.id,
+          reportedExecutionIdentity: (await import("../lib/selfTrade/managementConsumers.js")).reportedManagementIdentity(raw, rp),
           brokerTicket: liveBrokerTicket,
           fillPrice,
           executedVolume: filledLotSize,
