@@ -7,6 +7,7 @@
 // consume this rather than re-deriving freshness/permission logic on its own.
 
 import { useQuery } from "@tanstack/react-query";
+import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import type { ChartFeedStatus } from "@workspace/api-client-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useAssistantName } from "@/lib/assistant-name";
@@ -14,6 +15,7 @@ import {
   chartCandlesQueryKey,
   fetchChartCandles,
   toApiTimeframe,
+  normalizeChartTimeframe,
   type ChartCandlesResult,
 } from "@/lib/chartCandlesQuery";
 import {
@@ -36,7 +38,6 @@ export interface UseScannerTruthResult {
 }
 
 const DEFAULT_LIMIT = 200;
-const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
 export function useScannerTruth(
   symbolDisplay: string,
@@ -44,12 +45,13 @@ export function useScannerTruth(
   opts?: { limit?: number; refetchInterval?: number },
 ): UseScannerTruthResult {
   const symbol = (symbolDisplay || "").toUpperCase();
-  const apiTf = toApiTimeframe(timeframe);
+  const chartTimeframe = normalizeChartTimeframe(timeframe);
+  const apiTf = toApiTimeframe(chartTimeframe);
   const limit = opts?.limit ?? DEFAULT_LIMIT;
 
   const candlesQ = useQuery<ChartCandlesResult>({
     queryKey: chartCandlesQueryKey(symbol, apiTf, limit),
-    queryFn: () => fetchChartCandles(symbol, apiTf, limit),
+    queryFn: ({ signal }) => fetchChartCandles(symbol, apiTf, limit, signal),
     enabled: symbol.length > 0,
     refetchInterval: opts?.refetchInterval ?? 15_000,
     staleTime: 5_000,
@@ -58,20 +60,8 @@ export function useScannerTruth(
   // Header feed-ok snapshot — resolved INSIDE the one truth source so the header
   // strip, chart, read-gate and cards all share an identical header-ok cap. No
   // surface re-applies applyHeaderCap on its own afterwards (Task #391).
-  const headerSnapQ = useQuery<{ ok?: boolean }>({
-    queryKey: ["scanner-header-snapshot", symbol],
-    queryFn: async () => {
-      const r = await fetch(
-        `${BASE}/api/market-scanner/selected-market?symbol=${encodeURIComponent(symbol)}`,
-        { credentials: "include" },
-      );
-      return r.json() as Promise<{ ok?: boolean }>;
-    },
-    enabled: symbol.length > 0,
-    refetchInterval: 15_000,
-    staleTime: 5_000,
-  });
-  const headerOk: boolean | null = headerSnapQ.data?.ok ?? null;
+  const headerSnapQ = useSelectedMarketSnapshot(symbol, chartTimeframe);
+  const headerOk: boolean | null = headerSnapQ.isError ? false : headerSnapQ.data?.ok ?? false;
 
   const mode = useTradingMode();
   const { name: assistantName } = useAssistantName();
@@ -102,7 +92,7 @@ export function useScannerTruth(
     ? resolveScannerTruth({
         symbolDisplay: symbol,
         symbolInternal: symbol,
-        timeframe,
+        timeframe: chartTimeframe,
         feedStatus,
         candleCount: candles.length,
         requestedCount: limit,

@@ -25,7 +25,7 @@
     "test:execution-preview": "vitest run src/components/live/ExecutionPreviewPanel.test.tsx",
     "test:scanner-ux": "vitest run src/components/scanner/RubyMarketReadCard.test.tsx src/components/scanner/BroadScanOpportunityMap.test.tsx",
     "test:selected-market-view": "vitest run src/components/scanner/selectedMarketView.test.ts",
-    "test:selected-market-panel": "vitest run src/components/scanner/SelectedMarketPanel.test.tsx",
+    "test:selected-market-panel": "vitest run src/components/scanner/SelectedMarketPanel.test.tsx src/components/scanner/SelectedMarketPanel.responsiveness.test.tsx src/lib/selectedMarketQuery.test.tsx src/hooks/useScannerTruth.selectedMarket.test.tsx",
     "test:chart-deep-history-hook": "vitest run src/lib/useChartDeepHistory.test.ts",
     "test:chart-display-status": "vitest run src/lib/chart-display-status.test.ts",
     "test:scanner-feed-badge": "vitest run src/components/scanner/ScannerChartFeedBadge.test.tsx",

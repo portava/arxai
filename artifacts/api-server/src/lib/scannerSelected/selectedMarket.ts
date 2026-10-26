@@ -154,12 +154,22 @@ function cache() {
   return getCache(SELECTED_MARKET_CACHE_NS, SELECTED_MARKET_CACHE_TTL_MS);
 }
 
+// Pending work has no TTL: an unresolved build must not spawn another copy.
+// A forced refresh may supersede one ordinary build, but never another forced
+// build. Identity checks prevent superseded work from publishing older data.
+const pendingBuilds = new Map<string, { forced: boolean; promise: Promise<SelectedMarketEnvelope> }>();
 export function clearSelectedMarketCache(): void {
   cache().clear();
+  pendingBuilds.clear();
 }
 
-function cacheKey(symbol: string, timeframe: string): string {
-  return `${symbol}|${timeframe}`;
+function cacheKey(symbol: string, timeframe: string, viewerUserId?: number): string {
+  if (viewerUserId !== undefined && (!Number.isSafeInteger(viewerUserId) || viewerUserId <= 0)) {
+    throw new Error("Invalid selected-market viewer identity");
+  }
+  // Background/internal callers occupy a separate namespace. HTTP callers
+  // always supply the authenticated user, never a query-string user id.
+  return JSON.stringify([viewerUserId ?? "internal", symbol, timeframe]);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -332,6 +342,7 @@ export async function getSelectedMarketSnapshot(args: {
   symbolRaw: string;
   timeframe?: string;
   refresh?: boolean;
+  viewerUserId?: number;
 }, depsOverride: Partial<SelectedMarketDeps> = {}): Promise<SelectedMarketEnvelope> {
   const deps: SelectedMarketDeps = { ...REAL_DEPS, ...depsOverride };
   const symbol = normalizeSymbol(args.symbolRaw);
@@ -353,16 +364,35 @@ export async function getSelectedMarketSnapshot(args: {
       message: `${symbol} is not available in the scanner yet. Try a major pair, gold, an index, or a top crypto.`,
     };
   }
-  const key = cacheKey(symbol, timeframe);
+  const key = cacheKey(symbol, timeframe, args.viewerUserId);
+  const inFlight = pendingBuilds.get(key);
+  if (inFlight && (!args.refresh || inFlight.forced)) {
+    return { ...await inFlight.promise, symbolRaw: args.symbolRaw };
+  }
   if (!args.refresh) {
     const hit = cache().get<SelectedMarketEnvelope>(key);
     if (hit.hit) {
       const cached = hit.value;
-      if (cached.ok) return { ...cached, cacheHit: true };
-      return cached;
+      return cached.ok ? { ...cached, symbolRaw: args.symbolRaw, cacheHit: true } : { ...cached, symbolRaw: args.symbolRaw };
     }
+  } else {
+    // A failed explicit refresh cannot silently revive the previous envelope.
+    cache().clear(key);
   }
+  const build = { forced: Boolean(args.refresh), promise: null as unknown as Promise<SelectedMarketEnvelope> };
+  build.promise = buildSelectedMarketSnapshot(args.symbolRaw, symbol, timeframe, deps).then((result) => {
+    if (pendingBuilds.get(key) === build) cache().set(key, result);
+    return result;
+  }).finally(() => {
+    if (pendingBuilds.get(key) === build) pendingBuilds.delete(key);
+  });
+  pendingBuilds.set(key, build);
+  return build.promise;
+}
 
+async function buildSelectedMarketSnapshot(
+  symbolRaw: string, symbol: string, timeframe: ChartTimeframe, deps: SelectedMarketDeps,
+): Promise<SelectedMarketEnvelope> {
   // Pull REAL candles from the SAME canonical chart pipeline the chart bars and
   // the truth brain read. The simulator is never consulted from this envelope.
   const chart = await deps.getChartCandlesFn(symbol, timeframe, CANDLE_LIMIT, false);
@@ -385,7 +415,7 @@ export async function getSelectedMarketSnapshot(args: {
   if (a.recommendedAction === "REJECT" && a.reasonForTrade === "no data") {
     const waiting: SelectedMarketResult = {
       ok: true,
-      symbolRaw: args.symbolRaw,
+      symbolRaw,
       symbol,
       timeframe,
       highlights: {
@@ -420,7 +450,6 @@ export async function getSelectedMarketSnapshot(args: {
       generatedAt: new Date().toISOString(),
       cacheHit: false,
     };
-    cache().set(key, waiting);
     return waiting;
   }
 
@@ -455,7 +484,7 @@ export async function getSelectedMarketSnapshot(args: {
   const explanation = buildExplanation(a, news.blockTrading, news.reason);
   const result: SelectedMarketResult = {
     ok: true,
-    symbolRaw: args.symbolRaw,
+    symbolRaw,
     symbol,
     timeframe,
     highlights,
@@ -471,6 +500,5 @@ export async function getSelectedMarketSnapshot(args: {
     generatedAt: new Date().toISOString(),
     cacheHit: false,
   };
-  cache().set(key, result);
   return result;
 }

@@ -292,7 +292,7 @@ router.get("/market-scanner/supported-symbols", (_req, res) => {
   });
 });
 
-router.get("/market-scanner/selected-market", async (req, res) => {
+router.get("/market-scanner/selected-market", requireUser, async (req, res) => {
   const rawSymbol = String(req.query.symbol ?? "").trim();
   const timeframe = (typeof req.query.timeframe === "string" ? req.query.timeframe : "M15") || "M15";
   const refresh = req.query.refresh === "true" || req.query.refresh === "1";
@@ -317,7 +317,7 @@ router.get("/market-scanner/selected-market", async (req, res) => {
     });
   }
   try {
-    const snapshot = await getSelectedMarketSnapshot({ symbolRaw: rawSymbol, timeframe, refresh });
+    const snapshot = await getSelectedMarketSnapshot({ symbolRaw: rawSymbol, timeframe, refresh, viewerUserId: req.authUser!.id });
     const normalized = normalizeSymbol(rawSymbol);
     req.log.info({
       action: refresh ? "SCANNER_SELECTED_SYMBOL_REFRESH" : "SCANNER_SELECTED_SYMBOL_VIEW",

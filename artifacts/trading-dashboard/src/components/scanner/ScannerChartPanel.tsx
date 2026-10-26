@@ -380,7 +380,7 @@ export function ScannerChartPanel() {
   const apiTf = toApiTimeframe(timeframe);
   const candlesQuery = useQuery<ChartCandlesResult>({
     queryKey: chartCandlesQueryKey(symbol, apiTf, 200),
-    queryFn: () => fetchChartCandles(symbol, apiTf, 200),
+    queryFn: ({ signal }) => fetchChartCandles(symbol, apiTf, 200, signal),
     enabled: symbol.length > 0,
     refetchInterval: 15_000,
     staleTime: 5_000,
