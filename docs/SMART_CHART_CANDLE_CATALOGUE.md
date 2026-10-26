@@ -1,5 +1,7 @@
 # Smart Chart candle catalogue: explicit geometry, first expansion
 
+This document records the first expansion checkpoint. The current successor's additional definitions and criteria are documented in `SMART_CHART_CANDLE_CATALOGUE_V2.md`; its exact current coverage is in `SMART_CHART_CANDLE_COVERAGE.json`. The measurements below remain the original checkpoint's historical evidence.
+
 This checkpoint adds a pure shared candle catalogue to the existing source-bound Smart Chart model. It contains 34 named variants grouped into 10 geometry families. Together with the existing Shooting Star and two Engulfing implementations, 37 of the owner's 104 named candle entries have code and focused fixtures. This is named-requirement coverage, not 37 independent signals, a completion percentage for the application, or proof of forecasting value. The other 67 entries remain in `SMART_CHART_CANDLE_COVERAGE.json`; no owner requirement is excluded.
 
 The module exports `CANDLE_DEFINITIONS`, version `arx-candle-geometry-v1`, and `scanCandlestickCatalogue`. Definitions include names, exact criteria, family grouping and primary references. Existing API pattern engines remain unchanged. The frontend invokes the catalogue only after its established source, opaque identity, symbol, timeframe and closed-bar boundary checks. Every new result is an **observed shape**, with actual prices and observation time. No confidence percentage, future confirmation, inferred trade instruction or execution authority is added.

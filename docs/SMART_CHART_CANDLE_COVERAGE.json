@@ -1,14 +1,14 @@
 {
-  "criteriaVersion": "arx-candle-geometry-v1",
+  "criteriaVersion": "arx-candle-geometry-v2",
   "updated": "2026-10-26",
   "ownerManifestSha256": "6dba7b73af6242dd08d56420aea250ce0f40079967e154d26653107f100d5508",
   "meaning": "Coverage of named requirements, not independent algorithms, predictive reliability, UI parity, or architecture completion. Related variants deliberately share geometry.",
   "counts": {
     "ownerNamedEntries": 104,
-    "newCatalogueNamedVariants": 34,
-    "newGeometryFamilies": 10,
-    "includingExistingCoreNamedEntries": 37,
-    "pendingNamedEntries": 67
+    "newCatalogueNamedVariants": 50,
+    "newGeometryFamilies": 14,
+    "includingExistingCoreNamedEntries": 53,
+    "pendingNamedEntries": 51
   },
   "entries": [
     {
@@ -342,34 +342,34 @@
     {
       "name": "Bullish Meeting Lines/Counterattack",
       "ownerFamily": "Meeting and counterattack",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bullish_counterattack",
+      "geometryFamily": "counterattack",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bearish Meeting Lines/Counterattack",
       "ownerFamily": "Meeting and counterattack",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bearish_counterattack",
+      "geometryFamily": "counterattack",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bullish Kicking/Kicker",
       "ownerFamily": "Kicking",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bullish_kicking",
+      "geometryFamily": "marubozu",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bearish Kicking/Kicker",
       "ownerFamily": "Kicking",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bearish_kicking",
+      "geometryFamily": "marubozu",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Kicking by Length",
@@ -470,18 +470,18 @@
     {
       "name": "Bullish Doji Star",
       "ownerFamily": "Doji stars",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bullish_doji_star",
+      "geometryFamily": "doji",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bearish Doji Star",
       "ownerFamily": "Doji stars",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bearish_doji_star",
+      "geometryFamily": "doji",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Collapsing Doji Star",
@@ -526,18 +526,18 @@
     {
       "name": "Bullish Abandoned Baby",
       "ownerFamily": "Abandoned Baby",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bullish_abandoned_baby",
+      "geometryFamily": "stars",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bearish Abandoned Baby",
       "ownerFamily": "Abandoned Baby",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bearish_abandoned_baby",
+      "geometryFamily": "stars",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bullish Tri-Star",
@@ -558,18 +558,18 @@
     {
       "name": "Three White Soldiers",
       "ownerFamily": "Soldiers and crows",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "three_white_soldiers",
+      "geometryFamily": "soldiers_crows",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Three Black Crows",
       "ownerFamily": "Soldiers and crows",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "three_black_crows",
+      "geometryFamily": "soldiers_crows",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Identical Three Crows",
@@ -598,34 +598,34 @@
     {
       "name": "Three Inside Up",
       "ownerFamily": "Three Inside/Outside",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "three_inside_up",
+      "geometryFamily": "harami",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Three Inside Down",
       "ownerFamily": "Three Inside/Outside",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "three_inside_down",
+      "geometryFamily": "harami",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Three Outside Up",
       "ownerFamily": "Three Inside/Outside",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "three_outside_up",
+      "geometryFamily": "engulfing",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Three Outside Down",
       "ownerFamily": "Three Inside/Outside",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "three_outside_down",
+      "geometryFamily": "engulfing",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Advance Block",
@@ -670,18 +670,18 @@
     {
       "name": "Rising Window",
       "ownerFamily": "Windows",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "rising_window",
+      "geometryFamily": "windows",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Falling Window",
       "ownerFamily": "Windows",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "falling_window",
+      "geometryFamily": "windows",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Upside Tasuki Gap",

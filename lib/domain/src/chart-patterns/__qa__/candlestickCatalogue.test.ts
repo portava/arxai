@@ -8,8 +8,8 @@ const ids=(bars:readonly CatalogueCandle[])=>scan(bars).observations.map(o=>o.de
 const fixture=(id:string)=>CANDLE_FIXTURES.find(f=>f.id===id)!.bars.map(b=>({...b}));
 test("every advertised definition has a distinct named fixture; related variants remain grouped",()=>{
  assert.deepEqual([...CANDLE_DEFINITIONS.map(d=>d.id)].sort(),CANDLE_FIXTURES.map(f=>f.id).sort());
- assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.id)).size,34);
- assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,10);
+ assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.id)).size,50);
+ assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,14);
 });
 test("owner coverage preserves all 104 entries and never advertises a missing catalogue implementation",()=>{
  const coverage=JSON.parse(readFileSync(new URL("../../../../../docs/SMART_CHART_CANDLE_COVERAGE.json",import.meta.url),"utf8"));
@@ -17,7 +17,7 @@ test("owner coverage preserves all 104 entries and never advertises a missing ca
  const catalogue=coverage.entries.filter((r:{status:string})=>r.status==="IMPLEMENTED_EXPLICIT_ARX_VARIANT");
  assert.deepEqual(catalogue.map((r:{definitionId:string})=>r.definitionId).sort(),CANDLE_DEFINITIONS.map(d=>d.id).sort());
  const pending=coverage.entries.filter((r:{definitionId:unknown})=>r.definitionId===null);
- assert.equal(pending.length,67);
+ assert.equal(pending.length,51);
  assert.ok(pending.every((r:{status:string})=>r.status.startsWith("PENDING_")));
 });
 for(const f of CANDLE_FIXTURES){
@@ -121,4 +121,83 @@ test("missing session observations cannot create a five-close trend across a gap
 test("a completed bar cannot follow an unfinished earlier bar",()=>{
  const bars=fixture("hammer");Object.assign(bars.at(-2)!,{isComplete:false,isFinal:false,isForming:true});
  assert.equal(scan(bars).status,"unavailable");
+});
+test("v2 reversal and continuation names require their stated preceding trend",()=>{
+ for(const id of ["rising_window","falling_window","bullish_abandoned_baby","bearish_abandoned_baby","three_inside_up","three_inside_down","three_outside_up","three_outside_down","three_white_soldiers","three_black_crows","bullish_doji_star","bearish_doji_star","bullish_counterattack","bearish_counterattack"]){
+  const bars=fixture(id);for(let i=0;i<12;i++)bars[i]={...bars[i]!,open:101,high:103,low:100,close:102};
+  assert.ok(!ids(bars).includes(id),id);
+ }
+});
+test("full-range gaps cannot be replaced by body gaps or touching shadows",()=>{
+ for(const [id,mutate] of [
+  ["rising_window",(b:CatalogueCandle[])=>{b.at(-1)!.low=b.at(-2)!.high;}],
+  ["falling_window",(b:CatalogueCandle[])=>{b.at(-1)!.high=b.at(-2)!.low;}],
+  ["bullish_abandoned_baby",(b:CatalogueCandle[])=>{b.at(-2)!.high=b.at(-3)!.low;}],
+  ["bearish_abandoned_baby",(b:CatalogueCandle[])=>{b.at(-2)!.low=b.at(-3)!.high;}],
+  ["bullish_kicking",(b:CatalogueCandle[])=>{b.at(-1)!.low=b.at(-2)!.high;}],
+  ["bearish_kicking",(b:CatalogueCandle[])=>{b.at(-1)!.high=b.at(-2)!.low;}],
+ ] as [string,(b:CatalogueCandle[])=>void][]){const bars=fixture(id);mutate(bars);assert.ok(!ids(bars).includes(id),id);}
+ const baby=fixture("bullish_abandoned_baby");baby.at(-1)!.low=baby.at(-2)!.high;
+ assert.ok(!ids(baby).includes("bullish_abandoned_baby"));
+});
+test("Three Inside requires penetration of the first open, not just the contained candle",()=>{
+ const bars=fixture("three_inside_up");bars.at(-1)!.close=bars.at(-3)!.open;
+ assert.ok(!ids(bars).includes("three_inside_up"));
+ const sameColour=fixture("three_inside_up");Object.assign(sameColour.at(-2)!,{open:100.8,close:100});
+ assert.ok(ids(sameColour).includes("three_inside_up"),"middle colour is not restricted by the Three Inside definition");
+});
+test("Three Outside needs strict body engulfment and actual third-close follow-through",()=>{
+ const edge=fixture("three_outside_up");edge.at(-2)!.open=edge.at(-3)!.close;
+ assert.ok(!ids(edge).includes("three_outside_up"));
+ const noFollow=fixture("three_outside_down");noFollow.at(-1)!.close=noFollow.at(-2)!.close;
+ assert.ok(!ids(noFollow).includes("three_outside_down"));
+});
+test("Three Outside records closing progression even when the third candle colour differs",()=>{
+ const bars=fixture("three_outside_up");Object.assign(bars.at(-1)!,{open:106,high:106.2,low:104.8,close:105});
+ assert.ok(ids(bars).includes("three_outside_up"));
+});
+test("Soldiers/Crows reject shrinking bodies, large final-side shadows, and opens outside prior bodies",()=>{
+ const shrinking=fixture("three_white_soldiers");Object.assign(shrinking.at(-1)!,{open:106.5,high:108.1,low:106.4,close:108});
+ assert.ok(!ids(shrinking).includes("three_white_soldiers"));
+ const wick=fixture("three_black_crows");wick.at(-1)!.low-=4;
+ assert.ok(!ids(wick).includes("three_black_crows"));
+ const outside=fixture("three_white_soldiers");outside.at(-1)!.open=outside.at(-2)!.close;
+ assert.ok(!ids(outside).includes("three_white_soldiers"));
+});
+test("two-candle Doji Star is not a three-candle Morning/Evening Star or Abandoned Baby",()=>{
+ for(const id of ["bullish_doji_star","bearish_doji_star"]){
+  const result=ids(fixture(id));assert.ok(result.includes(id));
+  assert.ok(!result.some(x=>["morning_star","morning_doji_star","evening_star","evening_doji_star","bullish_abandoned_baby","bearish_abandoned_baby"].includes(x)));
+ }
+ const gap=fixture("bullish_doji_star");Object.assign(gap.at(-1)!,{open:99,close:99.01,high:99.5,low:98.5});
+ assert.ok(!ids(gap).includes("bullish_doji_star"));
+});
+test("Doji Star needs a body gap, not an invented whole-shadow gap",()=>{
+ const bars=fixture("bullish_doji_star");bars.at(-1)!.high=99.5;
+ assert.ok(bars.at(-1)!.high>bars.at(-2)!.low);
+ assert.ok(ids(bars).includes("bullish_doji_star"));
+});
+test("Kicking requires both long nearly shadowless bodies, but no invented prior trend",()=>{
+ const b=fixture("bullish_kicking");b.at(-2)!.low-=4;assert.ok(!ids(b).includes("bullish_kicking"));
+ const small=fixture("bearish_kicking");small.at(-1)!.close=small.at(-1)!.open-.1;small.at(-1)!.low=small.at(-1)!.close;
+ assert.ok(!ids(small).includes("bearish_kicking"));
+ assert.equal(scan(fixture("bullish_kicking")).observations.find(o=>o.definition.id==="bullish_kicking")!.priorTrend,"none");
+});
+test("Counterattack rejects unmatched closes and short bodies",()=>{
+ const b=fixture("bullish_counterattack");b.at(-1)!.close+=.5;b.at(-1)!.high+=.5;assert.ok(!ids(b).includes("bullish_counterattack"));
+ const small=fixture("bearish_counterattack");small.at(-1)!.open=small.at(-1)!.close+.1;assert.ok(!ids(small).includes("bearish_counterattack"));
+});
+test("every new multi-candle definition refuses missing and future final observations",()=>{
+ for(const f of CANDLE_FIXTURES.slice(34)){
+  const bars=f.bars.map(b=>({...b})),end=bars.at(-1)!;
+  end.time+=300;end.closeTime+=300;assert.ok(!ids(bars).includes(f.id),f.id);
+  const priorEnd=f.bars.at(-2)!.closeTime;
+  const full=scanCandlestickCatalogue(f.bars,{asOf:priorEnd,intervalSeconds:300,eventLookback:12});
+  const prefix=scanCandlestickCatalogue(f.bars.slice(0,-1),{asOf:priorEnd,intervalSeconds:300,eventLookback:12});
+  assert.deepEqual(full,prefix,f.id);
+ }
+});
+test("public definition metadata cannot be mutated by callers",()=>{
+ assert.ok(Object.isFrozen(CANDLE_DEFINITIONS));
+ for(const d of CANDLE_DEFINITIONS){assert.ok(Object.isFrozen(d));assert.ok(Object.isFrozen(d.sources));}
 });
