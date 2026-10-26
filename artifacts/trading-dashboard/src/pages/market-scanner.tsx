@@ -384,25 +384,22 @@ export default function MarketScanner() {
   // anyway because the next tick is up to 5s away. See
   // `.agents/memory/perf-poll-and-invalidation-rules.md`.
   useEffect(() => {
-    void load();
-    let id: ReturnType<typeof setInterval> | null = null;
-    const start = () => {
-      if (id != null) return;
-      id = setInterval(load, 5000);
-    };
-    const stop = () => { if (id != null) { clearInterval(id); id = null; } };
-    const onVis = () => {
-      if (document.hidden) {
-        stop();
-      } else {
-        // Resync once on return so we don't show ≤5s-stale results.
-        void load();
-        start();
+    let id: ReturnType<typeof setTimeout> | null = null;
+    let active = false, disposed = false;
+    const stop = () => { if (id != null) clearTimeout(id); id = null; };
+    const poll = async () => {
+      if (active || disposed || document.hidden) return;
+      active = true;
+      try { await load(); }
+      finally {
+        active = false;
+        if (!disposed && !document.hidden) id = setTimeout(() => void poll(), 5000);
       }
     };
-    if (!document.hidden) start();
+    const onVis = () => { stop(); if (!document.hidden) void poll(); };
+    void poll();
     document.addEventListener("visibilitychange", onVis);
-    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
+    return () => { disposed = true; stop(); document.removeEventListener("visibilitychange", onVis); };
   }, []);
 
   // Surface any thrown error through the existing `err` state / CompactAlert.
