@@ -15,6 +15,9 @@ const outsideTail=[first,row(98,104.3,97.5,104),row(104,105.5,103.8,105)];
 const soldierTail=[row(101,105.2,100.8,105),row(103,107.2,102.8,107),row(105,109.2,104.8,109)];
 const windowTail=[row(103,105,102,104),row(106,108,105.5,107)];
 const kickerTail=[row(103,103,99,99),row(104,108,104,108)];
+const triTail=[row(102,102.5,101.5,102.01),row(101,101.5,100.5,101.01),row(101.5,102,101,101.51)];
+const tasukiTail=[row(103,104.3,102.8,104),row(106,108.2,105.8,108),row(107.5,107.8,105.2,105.5)];
+const separatingTail=[row(103,103.2,100.8,101),row(103.05,107.3,103.04,107.05)];
 export const CANDLE_FIXTURES:{id:string;bars:CatalogueCandle[]}[]=[
 {id:"white_candle",bars:make([row(102,104,101,103)])},
 {id:"black_candle",bars:make([row(103,104,101,102)])},
@@ -66,4 +69,16 @@ export const CANDLE_FIXTURES:{id:string;bars:CatalogueCandle[]}[]=[
 {id:"bearish_kicking",bars:mirror(make(kickerTail))},
 {id:"bullish_counterattack",bars:make([first,row(95,99.3,94.5,99.05)],"down")},
 {id:"bearish_counterattack",bars:mirror(make([first,row(95,99.3,94.5,99.05)],"down"))},
+{id:"matching_low",bars:make([first,row(101,101.3,98,99.05)],"down")},
+{id:"homing_pigeon",bars:make([first,row(102,102.2,100.8,101)],"down")},
+{id:"on_neck",bars:make([first,row(97,98.7,96.8,98.55)],"down")},
+{id:"in_neck",bars:make([first,row(97,99.3,96.8,99.05)],"down")},
+{id:"thrusting",bars:make([first,row(97,100.3,96.8,100)],"down")},
+{id:"bullish_separating_lines",bars:make(separatingTail,"up")},
+{id:"bearish_separating_lines",bars:mirror(make(separatingTail,"up"))},
+{id:"bullish_tri_star",bars:make(triTail,"down")},
+{id:"bearish_tri_star",bars:mirror(make(triTail,"down"))},
+{id:"upside_tasuki_gap",bars:make(tasukiTail,"up")},
+{id:"downside_tasuki_gap",bars:mirror(make(tasukiTail,"up"))},
+{id:"kicking_by_length",bars:make([row(103,103,99,99),row(104,109,104,109)])},
 ];
