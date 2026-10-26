@@ -12,12 +12,14 @@
 // the backend deep-history layer; on a provider ceiling we stop and report.
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { fetchChartHistory } from "@/lib/chartCandlesQuery";
+import { fetchChartHistory, type ChartHistoryPage } from "@/lib/chartCandlesQuery";
 import type { Candle } from "@/components/scanner/scannerCandleAdapter";
 
 export interface ChartDeepHistoryState {
   /** Older candles accumulated in front of the newest window (epoch-ms, ascending). */
   olderCandles: Candle[];
+  /** Actual producer evidence retained for optional historical analysis. */
+  analysisEvidence: ChartHistoryPage["historyEvidence"];
   /** True while a back-page fetch is in flight. */
   loading: boolean;
   /** Older bars may still exist (cache or a deep-cursor provider). */
@@ -66,6 +68,9 @@ export function useChartDeepHistory(
   const [coverageDays, setCoverageDays] = useState<number | null>(null);
   const [depthTargetDays, setDepthTargetDays] = useState(0);
   const [loadedAny, setLoadedAny] = useState(false);
+  const [analysisEvidence, setAnalysisEvidence] = useState<ChartHistoryPage["historyEvidence"]>(null);
+  const analysisRefused = useRef(false);
+  const analysisObservations = useRef(new Map<number,string>());
   const [stateIdentity, setStateIdentity] = useState({ symbol, apiTf, sourceIdentity });
 
   // The source pinned by the first page keeps the whole series coherent.
@@ -98,6 +103,9 @@ export function useChartDeepHistory(
     setCoverageDays(null);
     setDepthTargetDays(0);
     setLoadedAny(false);
+    setAnalysisEvidence(null);
+    analysisRefused.current = false;
+    analysisObservations.current.clear();
   }, []);
 
   // Reset whenever the series identity changes so pages never cross symbols/tfs.
@@ -163,6 +171,29 @@ export function useChartDeepHistory(
             return;
           }
           if (page.source) sourceRef.current = page.source;
+          // Retain producer evidence, never stamp the newest feed's identity
+          // onto an earlier page. Unattested pages remain display-only.
+          if (page.candles.length > 0) {
+            const observed = page.historyEvidence;
+            const unit = apiTf.match(/^(M|H|D|W)(\d+)$/);
+            const interval = apiTf === "MN1" ? 2592000 : unit ? Number(unit[2]) * ({M:60,H:3600,D:86400,W:604800}[unit[1] as "M"] ?? 0) : 0;
+            const closedThrough = observed ? Date.parse(observed.lastClosedCandleAt) : NaN;
+            let disagreement = false;
+            for (let i=0;i<page.candles.length;i++) {
+              const bar=page.candles[i]!, value=JSON.stringify([bar.open,bar.high,bar.low,bar.close]);
+              const previous=analysisObservations.current.get(bar.time);
+              if (!Number.isFinite(bar.time) || bar.time+interval*1000>closedThrough
+                || (i>0 && bar.time<=page.candles[i-1]!.time) || (previous!=null && previous!==value)) disagreement=true;
+              analysisObservations.current.set(bar.time,value);
+            }
+            if (!observed || observed.scope !== "public_provider" || !interval || !Number.isFinite(closedThrough)
+              || closedThrough>Date.now() || disagreement) {
+              analysisRefused.current = true;
+              setAnalysisEvidence(null);
+            } else if (!analysisRefused.current) {
+              setAnalysisEvidence(previous => previous && Date.parse(previous.lastClosedCandleAt) > Date.parse(observed.lastClosedCandleAt) ? previous : observed);
+            }
+          }
           cursorRef.current = page.nextBefore;
           if (page.candles.length > 0) {
             setOlderCandles((prev) => isCurrent() ? dedupeAscending(prev, page.candles) : prev);
@@ -193,6 +224,7 @@ export function useChartDeepHistory(
   const currentState = stateIdentity.symbol === symbol && stateIdentity.apiTf === apiTf && stateIdentity.sourceIdentity === sourceIdentity;
   return {
     olderCandles: currentState ? olderCandles : [],
+    analysisEvidence: currentState ? analysisEvidence : null,
     loading: currentState ? loading : false,
     hasMore: currentState ? hasMore : true,
     providerCapped: currentState ? providerCapped : false,

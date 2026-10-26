@@ -1,9 +1,10 @@
-import { useEffect, useId, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useLayoutEffect, useId, useState, type Dispatch, type SetStateAction } from "react";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
 import { studyId, studyLabel } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
 import { DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, TEMPLATE_KEY, validateDrawings, validatePreferences, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
 import { Button } from "@/components/ui/button";
+import { ArrowLeft, ArrowRight, Hand, ZoomIn, ZoomOut } from "lucide-react";
 
 const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100";
 const names = DRAWING_NAMES;
@@ -25,6 +26,11 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [storageFailed,setStorageFailed] = useState(false);
   const [selectedId,setSelectedId] = useState<string | null>(null);
   const [snap,setSnap] = useState(false);
+  const [panOnly,setPanOnly] = useState(false);
+  useLayoutEffect(()=>{
+    adapter?.setNavigationMode?.(panOnly ? "pan" : "inspect");
+    return ()=>adapter?.setNavigationMode?.("inspect");
+  },[adapter,epoch,panOnly]);
   const drawings = history.present;
   const persist = (next: ChartDrawing[]) => {
     const saved = writeChartStorage(key,next);
@@ -102,11 +108,18 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   };
   return <div className="border-b border-zinc-800 px-3 py-2 text-xs" data-testid="chart-workbench-tools">
     <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1 rounded-md border border-zinc-800 p-0.5" role="group" aria-label="Zoom and pan">
+        <Button size="sm" variant={panOnly ? "secondary" : "ghost"} className="h-8 gap-1.5 text-xs" aria-pressed={panOnly} disabled={!hasCandles || !adapter?.setNavigationMode} title="Drag freely across candles and drawings. Select again to edit drawings." onClick={()=>{setPanOnly(value=>!value);setTool(null);setAnchor(null);setSelectedId(null);setMessage("");}}><Hand className="h-3.5 w-3.5"/>Pan</Button>
+        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Pan to earlier candles" title="Earlier candles (Left arrow on chart)" disabled={!hasCandles || !adapter?.panBy} onClick={()=>adapter?.panBy?.(-0.25)}><ArrowLeft className="h-3.5 w-3.5"/></Button>
+        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Pan to later candles" title="Later candles (Right arrow on chart)" disabled={!hasCandles || !adapter?.panBy} onClick={()=>adapter?.panBy?.(0.25)}><ArrowRight className="h-3.5 w-3.5"/></Button>
+        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom in chart" title="Zoom in (+ on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(0.75)}><ZoomIn className="h-3.5 w-3.5"/></Button>
+        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom out chart" title="Zoom out (− on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(4/3)}><ZoomOut className="h-3.5 w-3.5"/></Button>
+      </div>
       <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
         <option value="candles">Candlesticks</option><option value="bars">OHLC bars</option><option value="line">Close line</option>
       </select></label>
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "studies"} onClick={()=>setPanel(p=>p === "studies" ? null : "studies")}>Studies ({preferences.studies.length})</Button>
-      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setHidden(false);setMessage("");}}>
+      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{setPanOnly(false);setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setHidden(false);setMessage("");}}>
         <option value="">Select / crosshair / pan</option>{Object.entries(names).map(([kind,name])=><option key={kind} value={kind}>{name}</option>)}
       </select>
       <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={snap} title="Snap new anchors and dragged handles to the nearest open, high, low or close of the candle" onClick={()=>setSnap(value=>!value)}>Magnet {snap ? "on" : "off"}</Button>
@@ -126,6 +139,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     </div>
     {preferences.studies.length > 0 && <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label="Active studies">{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyLabel(study)}</span>)}</div>}
     {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Escape cancels. Drawings are analysis only.</p>}
+    {panOnly && <p className="mt-2 text-zinc-400" role="status">Pan mode · drag through history without moving drawings. Use + / − to zoom and arrow keys to pan while the chart is focused.</p>}
     {message && <p className="mt-2 text-zinc-300" role="status">{message}</p>}
     {storageFailed && <p className="mt-2 text-amber-300" role="alert">Browser storage is unavailable. Drawing changes will be lost when this view closes.</p>}
     {panel === "studies" && <ChartStudySettings preferences={preferences} onPreferences={onPreferences} />}
