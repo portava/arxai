@@ -445,7 +445,7 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
 
     // The closed-feed grade still governs the last-price label / dashed "Last"
     // line — only the tick gate moved off it.
-    expect(adapterSpies.setFeedState).toHaveBeenCalledWith({ livePriceAffordance: false });
+    expect(adapterSpies.setFeedState).toHaveBeenCalledWith({ livePriceAffordance: false, source: "mt5_broker" });
   });
 
   it("ignores malformed / wrong-type events without ticking the bar", () => {

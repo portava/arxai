@@ -188,3 +188,18 @@ The rendering approach follows the library's
 and [multi-pane API](https://tradingview.github.io/lightweight-charts/tutorials/how_to/panes).
 
 History requests now cancel on symbol/timeframe changes and cannot publish late results, failures or loading state into the new chart. Linked follower ranges do not autonomously page provider history; a new local navigation gesture restores normal older-history loading.
+
+## Retained candle source correction
+
+When the history provider changes, the chart now discards its retained streamed
+candle before reconciling the replacement window. A lagging history response
+from the same provider still preserves the newer streamed candle. Six provider
+transition regressions cover MT5, legacy Deriv, public Deriv and unknown-source
+transitions. This correction passed 48 focused adapter and chart-wiring tests,
+dashboard typechecking, 87 architecture guards and the production dashboard
+build. The earlier browser benchmark was not rerun for this five-file source
+correction; its measurements remain tied to the prior checkpoint.
+
+PR #89 separately supplies source-bound server composition and stream routing.
+This retained-tip correction prepares the expanded adapter to preserve that
+isolation when both changes are combined; it does not alone certify the feed.
