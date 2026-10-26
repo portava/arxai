@@ -1,0 +1,328 @@
+{
+  "commit": "cc0f268d2eee439db382ce5c30b3d4becff82dc2",
+  "reviewer": "Codex source and delta review with freshly executed checks; not an independent external audit",
+  "scope": "Five Tier 1 architecture domains under approved Option A; operations remain separate.",
+  "environment": {
+    "platform": "macOS arm64",
+    "node": "24.16.0",
+    "database": "Separate fresh local PostgreSQL 17 test databases, UTC",
+    "credentials": "Full CI, integration, types, builds and local HTTP tests exclude inherited provider/broker/email credentials. Read-only provider observation ran separately in approved Replit development.",
+    "native_test_binaries": "Matching Mac binaries documented in scorecard README; no lockfile or workspace override changes"
+  },
+  "checks": {
+    "types": {
+      "commit": "cc0f268d2eee439db382ce5c30b3d4becff82dc2",
+      "command": "pnpm run typecheck",
+      "environment": "isolated local PostgreSQL and loopback HTTP where needed; no inherited provider/broker/email credentials",
+      "exit_code": 0,
+      "seconds": 50,
+      "log": "logs/types.log.gz",
+      "sha256": "ff64b5e66e81a2c4fb5ffbcf10c258f3439a8d59c296b66eae55f51779221699",
+      "raw_sha256": "f0aa5b1ad4956cee3062d573db07955c5138117c11d27e2ae99ea91beec57245"
+    },
+    "full-ci": {
+      "commit": "cc0f268d2eee439db382ce5c30b3d4becff82dc2",
+      "command": "pnpm run ci",
+      "environment": "isolated local PostgreSQL and loopback HTTP where needed; no inherited provider/broker/email credentials",
+      "exit_code": 0,
+      "seconds": 552,
+      "log": "logs/full-ci.log.gz",
+      "sha256": "f2cb08d6bf5599c2ed5db1f1f676cfcb7919f7c4bed487c0e0920c150ef6e8b6",
+      "raw_sha256": "ed6d9c1778e9fafaa166e7043695758aa369751f3f24e8e47e8a10c412519875"
+    },
+    "integration": {
+      "commit": "cc0f268d2eee439db382ce5c30b3d4becff82dc2",
+      "command": "pnpm run ci:integration",
+      "environment": "isolated local PostgreSQL and loopback HTTP where needed; no inherited provider/broker/email credentials",
+      "exit_code": 0,
+      "seconds": 446,
+      "log": "logs/integration.log.gz",
+      "sha256": "7f4f0dc57a179bc74fd8abcab93ab51ad84adde917e73857a19e5a4e6038f63e",
+      "raw_sha256": "d9a74fd50bc990930354529763038fa105b5519d940b6d4e2c199746dde178ac"
+    },
+    "builds": {
+      "commit": "cc0f268d2eee439db382ce5c30b3d4becff82dc2",
+      "command": "pnpm run release:build:api && pnpm run release:build:web",
+      "environment": "isolated local PostgreSQL and loopback HTTP where needed; no inherited provider/broker/email credentials",
+      "exit_code": 0,
+      "seconds": 24,
+      "log": "logs/builds.log.gz",
+      "sha256": "4d041dd0dbab244db3203a4b4732c7587733d36374e8a8ff55a07864040b50d0",
+      "raw_sha256": "ab65b44c35489708fc0c0212c84ff2125875c25fdab14da7e1781080df13ffb4"
+    },
+    "production-routing": {
+      "commit": "cc0f268d2eee439db382ce5c30b3d4becff82dc2",
+      "command": "Local production-mode HTTP routes + built dashboard assets + read-only production preflight (assert expected exit 2)",
+      "exit_code": 0,
+      "seconds": 9,
+      "log": "logs/production-routing.log.gz",
+      "sha256": "85f6fb38f7b53dc2bd982004809cf4504dc31610e69030f31da9f8b2766c7cba",
+      "raw_sha256": "aa24297b0554f3189f5b5af86e535a6568b42942839f7642e0cb5bd3fbd65b3b"
+    }
+  },
+  "criteria": {
+    "risk-governor.authority": {
+      "status": "PASS",
+      "review": "Reviewed enforce.ts and preTrade.ts plus the single-risk-authority guard: one evaluator decides action risk. Venue caps remain additional restrictions; advisory engines cannot authorize execution. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "risk-governor.source": {
+      "status": "PASS",
+      "review": "limitSettings.ts owns effective versus saved limits; positionSizer.ts delegates sizing to domain risk math; openPositions.ts supplies conservative counts; paperBookReader.ts supplies automated paper facts. Source guards and DB suites cover these boundaries. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "risk-governor.callers": {
+      "status": "PASS",
+      "review": "Reviewed LIVE final dispatch and DEMO consume enforcement, PAPER venue actions and the internal legacy DEMO close adapter. The governor always loads broker operator controls even when other facts are supplied by callers. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "risk-governor.contract": {
+      "status": "PASS",
+      "review": "Actions retain structured block reasons and audit ids. Close-only heartbeat allowance preserves the inclusive 120-second historical boundary independently of the 15/60-second display classifier. Additional venue checks may still refuse a close. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "risk-governor.proof": {
+      "status": "PASS",
+      "review": "Integration covers risk rules, effective views, daily/reward risk, paper facts, per-user limits, discipline, journal, automation and pipelines. Heartbeat tests cover exact boundaries, disconnected/revoked transports and permitted close versus blocked new risk. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.authority": {
+      "status": "PASS",
+      "review": "Reviewed pipeline.ts as the common mode/intent entry and its staged lifecycle, instant channel, PAPER fills and legacy close adapter. Venue transports keep their narrower enforcement; the pipeline guard fences direct producer access. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.source": {
+      "status": "PASS",
+      "review": "LIVE and governed DEMO queues own their command writes; paperVenue.ts owns automated paper_orders. Legacy manual DEMO mailbox writes now occur only in the engine adapter. Retired trades inserts stay forbidden; journal/history remain distinct. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.callers": {
+      "status": "PASS",
+      "review": "The route no longer imports or inserts mt5CommandsTable. closeLegacyDemoTrade is the only public entry for this adapter. Guard fixtures reject a route insert or direct adapter call; existing producers retain their governed staged or intent paths. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.contract": {
+      "status": "PASS",
+      "review": "DEMO request keys are unique per user and bind immutable request details; existing confirmation claims prevent duplicate dispatch. Unsupported SIMULATED management refuses explicitly, My Trades LIVE remains refused, and close reviews stay pending until broker fill evidence. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "trade-engine.proof": {
+      "status": "PASS",
+      "review": "DB tests prove concurrent DEMO retries, input conflicts, per-user keys, concurrent legacy closes, ambiguous-account refusal, paper ownership, real bid/ask closes, stale/fallback quote refusal, unavailable valuations and duplicate settlement protection. Paper profit calculation retains its documented simplified simulator model. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision. Quote adapters now use provider observation time, reject unknown/stale/future time, and fall through to current real quotes. The FX parser preserves actual bid/ask; market-priced paper still requires its existing current-price checks.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.authority": {
+      "status": "PASS",
+      "review": "Reviewed rules.ts and manage.ts: the registered acting/advisory families share one management authorization boundary. Unknown/advisory rules, unregistered actions/routes and widened stops cannot use the acting exit door. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.source": {
+      "status": "PASS",
+      "review": "ledger.ts remains the sole runtime access boundary for the two position stores. Approved Option A is logical consolidation, not a physical table merge. No ownerless row is claimed implicitly. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.callers": {
+      "status": "PASS",
+      "review": "Registered acting families submit through Guardian management and the Trade Engine; advisory families cannot execute. Ledger and Guardian guards fence other readers/writers and acting modules. Explicit manual transport boundaries do not grant autonomous rule access. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.contract": {
+      "status": "PASS",
+      "review": "Named UNCLOSED, EXPOSURE, CONFIRMED_OPEN and ALERT_ELIGIBLE views preserve their distinct purposes and scoped identity. Legacy mirrors without connection identity now refuse multi-account closes; queued close requests never finalize realized P/L. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "position-guardian.proof": {
+      "status": "PASS",
+      "review": "Integration covers Guardian assess/manage/reconcile, ledger isolation and position views, close evidence and ownership. Guard fixtures cover forbidden rule execution, stop widening and raw position persistence. Physical merge remains explicitly deferred. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.authority": {
+      "status": "PASS",
+      "review": "Reviewed the MT5/Deriv read-adapter factory and Broker Hub ownership guards. Hub supplies facts/capabilities; it does not grant permission or dispatch trades. Deriv read-only feed capability is not represented as unsupported account execution. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.source": {
+      "status": "PASS",
+      "review": "connections.ts owns connection facts and deterministic per-user account-summary selection; accountSnapshot.ts retains identity and provenance. JSON, SSE and investor balance use the same selection. Paper intelligence no longer borrows platform account balance. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.callers": {
+      "status": "PASS",
+      "review": "Broker connection/state/factory guards cover runtime consumers and narrow ingestion owners. Shared heartbeat labels come from the domain policy; account, position and quote freshness retain separate named contracts. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.contract": {
+      "status": "PASS",
+      "review": "Account facts are scoped, token-revoked rows are excluded from summary selection, missing facts stay unavailable, and account-snapshot freshness is distinct from transport freshness. Close grace is an action permission, not a false fresh heartbeat label. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "broker-hub.proof": {
+      "status": "PASS",
+      "review": "Integration includes connection/state/account snapshot DB tests and isolation; offline/domain checks cover adapter contracts and freshness. Added tests distinguish two accounts, revoked accounts and another user's/platform balance. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision. Offline MT5 package/EA and validation-runner checks pass in full CI; no real bridge lifecycle result is inferred.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.authority": {
+      "status": "PASS",
+      "review": "platformSwitches.ts and tradingHalt.ts own switch and operator-control interpretation; the Broker Hub supplies control facts. The same brokerControlBlocks policy serves readiness and actual risk enforcement. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.source": {
+      "status": "PASS",
+      "review": "Reviewed canonical switch readers and audited stop writer. Duplicate global settings combine conservatively. Missing execution controls default disabled and unreadable controls block new risk; stop-default policy remains separately documented. Follow-up: both canonical bounded readers now fail closed on a seventeenth row; no stricter row can hide past the read limit. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.callers": {
+      "status": "PASS",
+      "review": "buildRiskContext always reads operator controls, so the existing LIVE dispatch and DEMO consume governor calls enforce them. PAPER is outside broker controls. Legacy DEMO closes repeat mode, account, ownership and risk checks inside the engine. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.contract": {
+      "status": "PASS",
+      "review": "Activation cannot release an emergency stop; pause disarms live and resume cannot silently re-arm. New-risk controls do not become blanket close permission: quantity, heartbeat and transport checks remain in force. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci",
+        "integration"
+      ]
+    },
+    "platform-safety.proof": {
+      "status": "PASS",
+      "review": "Platform-switch and route DB suites cover both stops, duplicate rows, activation/release and scope. Added actual governor tests cover execution-disabled, maintenance and absent controls despite a supplied false halt; disconnected closes remain refused. Follow-up: database tests prove exact-16/overflow behavior and readiness uses both stops, modes and broker controls; the CLI also passed on PostgreSQL connections with writes disabled. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision. Operational-cap alerts observe persisted refusals and cannot approve or dispatch. Real application HTTP checks retain production auth and no cross-origin grant; the read-only database preflight correctly exits 2 for missing controls.",
+      "checks": [
+        "full-ci",
+        "integration",
+        "production-routing"
+      ]
+    },
+    "verification.types": {
+      "status": "PASS",
+      "review": "Full repository typecheck includes libraries, API, dashboard and scripts at the measured implementation commit. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "types"
+      ]
+    },
+    "verification.guards": {
+      "status": "PASS",
+      "review": "All 87 guards pass in the configured CI lane. The route mailbox exception was moved inside the engine and narrowed to DEMO/demo-account checks; direct route writes remain rejected. No boundary was widened to obtain a pass. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision.",
+      "checks": [
+        "full-ci"
+      ]
+    },
+    "verification.regressions": {
+      "status": "PASS",
+      "review": "Full configured CI and all 132 integration entries pass on isolated local PostgreSQL databases. Tests use UTC. The repository excludes Mac native packages; exact-version local binaries were supplied without changing its lockfile. The no-URL CI import limitation and earlier fixture failures are recorded in the results notes. No live broker was exercised. Follow-up broker-validation tests reject skipped partials, stale/future or mismatched snapshot evidence, unrelated refusals, and direct LIVE/unconfirmed runner calls. Re-reviewed at cc0f268d: canonical risk, position, Broker Hub and platform safety authorities remain unchanged; the provider and release follow-ups add no execution authority. Full CI and integration evidence was collected anew on this revision. Added FX, safe HTTP diagnostics and production dashboard regressions pass. Both production builds and real application routing with the built dashboard pass. Earlier temporary smoke-harness mistakes (TypeScript loader and guessed identity path) were corrected; application source did not change.",
+      "checks": [
+        "full-ci",
+        "integration",
+        "builds",
+        "production-routing"
+      ]
+    },
+    "operations.migrations": {
+      "status": "UNKNOWN",
+      "review": "Production-scoped owner evidence remains absent. Approved development work does not establish this gate. Owner evidence confirms all required migrations applied before deployment.",
+      "checks": []
+    },
+    "operations.controls": {
+      "status": "UNKNOWN",
+      "review": "Production-scoped owner evidence remains absent. Approved development work does not establish this gate. Owner inspection verifies broker controls and duplicate global settings.",
+      "checks": []
+    },
+    "operations.provider": {
+      "status": "UNKNOWN",
+      "review": "Development read-only check at 2026-10-26T10:56:14.746Z on this implementation returned a REALTIME Alpha Vantage EURUSD quote observed at 10:56:13 UTC with bid/ask. Zero M1 candles: Polygon/Finnhub HTTP 403 and Alpha Vantage restricted access. Diagnostic exit 2 correctly reports incomplete readiness. No deployed-environment evidence; do not infer a full feed from one quote.",
+      "checks": []
+    },
+    "operations.legacy-owner": {
+      "status": "UNKNOWN",
+      "review": "Production-scoped owner evidence remains absent. Approved development work does not establish this gate. Legacy owner is explicit where ownerless rows must be claimed; no inferred ownership.",
+      "checks": []
+    },
+    "operations.demo-validation": {
+      "status": "UNKNOWN",
+      "review": "Seven real DEMO lifecycle scenarios remain unperformed. User explicitly requested work excluding LIVE and DEMO testing; offline mocks and integration fixtures are not actual broker validation.",
+      "checks": []
+    },
+    "operations.deployment": {
+      "status": "FAIL",
+      "review": "Owner confirmed ARX has not been deployed. This task updates approved development only. Production release, deployed checks and external alert receipt are still absent.",
+      "checks": []
+    }
+  },
+  "limitations": [
+    "No production deployment, migrations or broker actions were performed.",
+    "No real email or alert was sent by this task.",
+    "One usable development quote does not establish intraday feed access or production readiness.",
+    "Physical position-table merge remains deferred under Option A.",
+    "Static guards and behavioral tests are bounded evidence, not proof of every possible execution.",
+    "Paper accounting retains its documented simplified model."
+  ]
+}

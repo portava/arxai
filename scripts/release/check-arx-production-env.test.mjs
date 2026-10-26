@@ -63,6 +63,15 @@ test('launcher forces safe launch flags and removes inherited broker/bootstrap c
     assert.equal(result.status, 0, result.stderr); assert.equal(result.stdout, 'SAFE\n');
     const missing = spawnSync('bash', [join(scripts, 'run-arx-production.sh')], { env, encoding: 'utf8' });
     assert.equal(missing.status, 2); assert.match(missing.stderr, /Build the ARX API/);
+    mkdirSync(join(folder, 'artifacts/api-server/dist'), { recursive:true });
+    writeFileSync(join(folder, 'artifacts/api-server/dist/index.mjs'), `if (process.env.ARX_SERVE_DASHBOARD !== 'true') process.exit(4); console.log('BUILT_APP_STARTED');`);
+    const noDashboard = spawnSync('bash', [join(scripts, 'run-arx-production.sh')], { env, encoding:'utf8' });
+    assert.equal(noDashboard.status,2); assert.match(noDashboard.stderr,/Build the ARX dashboard/);
+    mkdirSync(join(folder, 'artifacts/trading-dashboard/dist/public'), { recursive:true });
+    writeFileSync(join(folder, 'artifacts/trading-dashboard/dist/public/index.html'), '<title>fixture</title>');
+    const complete = spawnSync('bash', [join(scripts, 'run-arx-production.sh')], { env, encoding:'utf8' });
+    assert.equal(complete.status,0,complete.stderr); assert.match(complete.stdout,/BUILT_APP_STARTED/);
+
     const bad = spawnSync('bash', [join(scripts, 'run-arx-production.sh'), '--enable-live'], { env, encoding: 'utf8' });
     assert.equal(bad.status, 2); assert.match(bad.stderr, /Usage/); assert.equal(bad.stdout, '');
   } finally { rmSync(folder, { recursive: true, force: true }); }
