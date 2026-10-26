@@ -13,6 +13,7 @@ export NODE_ENV=production
 export ALLOW_DEV_AUTH=false
 export ARX_LIVE_BROKER_EXECUTION_ENABLED=false
 export ARX_BETA_INVITE_REQUIRED=true
+export ARX_SERVE_DASHBOARD=true
 export PORT="${PORT:-8080}"
 export APP_PUBLIC_ORIGIN="${APP_PUBLIC_ORIGIN:-${APP_BASE_URL:-}}"
 
@@ -24,4 +25,5 @@ node "$launch_root/scripts/release/check-arx-production-env.mjs"
 if [[ "${1:-}" == '--check' ]]; then exit 0; fi
 cd "$launch_root"
 test -f artifacts/api-server/dist/index.mjs || { printf '%s\n' 'Build the ARX API before starting production.' >&2; exit 2; }
+test -f artifacts/trading-dashboard/dist/public/index.html || { printf '%s\n' 'Build the ARX dashboard before starting production.' >&2; exit 2; }
 exec node --enable-source-maps artifacts/api-server/dist/index.mjs

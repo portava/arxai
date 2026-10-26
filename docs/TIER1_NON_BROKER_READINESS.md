@@ -1,6 +1,6 @@
 # Non-broker release readiness
 
-Updated 2026-10-25. This work covers release features that can be verified without
+Updated 2026-10-26. This work covers release features that can be verified without
 placing DEMO or LIVE orders. The [architecture map](ARCHITECTURE_MAP.md) remains
 the breakdown of the five domains, their responsibilities and boundaries.
 
@@ -59,9 +59,13 @@ match the application origin. Reports contain check names and booleans only.
 After a separately approved production release, `pnpm release:start` runs the
 built API. It forces production mode, disables development authentication and
 LIVE execution, requires invitations, and removes legacy broker/bootstrap
-credentials from the child process. It refuses missing builds. Dashboard output
-still needs the host's static routing arrangement; this command does not provision
-hosting, deploy, run migrations or configure external monitoring.
+credentials from the child process. It requires both API and dashboard builds
+and serves them on the same port. Browser deep links, including login and password
+recovery, load the dashboard. Missing API endpoints, private paths and missing
+assets never fall back to successful HTML. Responses revalidate on later requests
+to avoid stale release entry pages. Development retains its existing Vite setup.
+This command does not provision hosting, deploy, run migrations or configure
+external monitoring.
 
 ## Verification and limits
 
@@ -70,7 +74,14 @@ trusted origins, readiness timeouts/concurrency and the actual HTTP routes with
 fake dependencies, plus seven production-launcher regressions. They are included
 in the repository CI command. Development validation also runs both type checks,
 both production builds, all 87 architecture guards and scorecard unit tests.
+An additional 13 regressions cover FX parsing, provider diagnostic redaction,
+readiness criteria and production dashboard routing. Launcher regressions also
+verify that both builds are required and dashboard serving is enabled.
 
 This does not satisfy production deployment, real mail delivery, fresh provider
 data, production database/control receipts or the seven real DEMO lifecycle
 scenarios. No readiness threshold is lowered and no operational 100% is claimed.
+
+The [market-data readiness guide](TIER1_MARKET_DATA_READINESS.md) covers the
+currency quote repair, FX candle adapter and read-only diagnostic. It distinguishes
+a usable quote from intraday-feed access and production evidence.
