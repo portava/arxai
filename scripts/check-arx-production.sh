@@ -137,6 +137,43 @@ grep -Eiq '^content-type:.*(javascript|ecmascript)' "$TMP_DIR/entry-asset.header
   fail "built frontend entry asset did not return JavaScript"
 [[ -s "$TMP_DIR/entry-asset.body" ]] || fail "built frontend entry asset was empty"
 
+if ! node --input-type=module - "$TMP_DIR/entry-asset.body" "$ENTRY_ASSET" \
+  >"$TMP_DIR/chunk-assets.txt" <<'NODE'
+import fs from "node:fs";
+
+const [bundlePath, entryAsset] = process.argv.slice(2);
+const bundle = fs.readFileSync(bundlePath, "utf8");
+const chunkAssets = new Set();
+for (const match of bundle.matchAll(/\bimport\s*\(\s*["']([^"']+\.js(?:\?[^"']*)?)["']\s*\)/g)) {
+  const specifier = match[1];
+  if (!specifier.startsWith(".") && !specifier.startsWith("/")) continue;
+  const assetPath = new URL(specifier, `http://arx.local${entryAsset}`).pathname;
+  if (assetPath.startsWith("/assets/") && assetPath.endsWith(".js")) {
+    chunkAssets.add(assetPath);
+  }
+}
+
+if (chunkAssets.size === 0) {
+  console.error("built frontend entry asset did not reference any local JavaScript chunks");
+  process.exit(1);
+}
+for (const assetPath of chunkAssets) console.log(assetPath);
+NODE
+then
+  fail "could not discover JavaScript chunks referenced by the built entry asset"
+fi
+
+chunk_number=0
+while IFS= read -r CHUNK_ASSET; do
+  ((chunk_number += 1))
+  chunk_name="chunk-$chunk_number"
+  fetch_200 "$WEB_URL$CHUNK_ASSET" "$chunk_name"
+  grep -Eiq '^content-type:.*(javascript|ecmascript)' "$TMP_DIR/$chunk_name.headers" ||
+    fail "$CHUNK_ASSET did not return JavaScript"
+  [[ -s "$TMP_DIR/$chunk_name.body" ]] ||
+    fail "$CHUNK_ASSET returned an empty JavaScript chunk"
+done <"$TMP_DIR/chunk-assets.txt"
+
 CSS_ASSET="$(grep -Eo 'href="/assets/[^"]+\.css"' "$TMP_DIR/page-_.body" | head -1 | cut -d '"' -f 2 || true)"
 if [[ -n "$CSS_ASSET" ]]; then
   fetch_200 "$WEB_URL$CSS_ASSET" "style-asset"
@@ -156,4 +193,4 @@ grep -Eq '"app"[[:space:]]*:[[:space:]]*"ARX AI"' "$TMP_DIR/healthz.body" ||
 grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' "$TMP_DIR/healthz.body" ||
   fail "/api/healthz did not report a healthy service"
 
-printf 'ARX production smoke check passed: /, /login, built/missing assets, separate /api/healthz\n'
+printf 'ARX production smoke check passed: /, /login, built/missing assets (%s lazy chunks), separate /api/healthz\n' "$chunk_number"
