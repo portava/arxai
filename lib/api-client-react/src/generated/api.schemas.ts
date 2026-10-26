@@ -1274,7 +1274,7 @@ export interface MissionDispatchResult {
 }
 
 /**
- * Phase 9 backtest request. Runs a deterministic historical/simulated backtest for the named strategy; advisory only — never a live grant.
+ * Generated-price diagnostic request. Prices are synthetic; this is not historical market validation and cannot support promotion or strategy drift.
 
  */
 export interface MissionBacktestRequest {
@@ -1294,7 +1294,7 @@ export interface MissionBacktestRequest {
 }
 
 /**
- * Phase 9 forward-test request. Aggregates the mission's OWN closed trade drafts (real outcomes); all fields optional (derived from the drafts).
+ * Aggregate the mission's own closed drafts. Optional fields are exact source filters, never display labels. Unfiltered mixed contexts are labelled Mixed.
 
  */
 export interface MissionForwardRequest {
@@ -1323,8 +1323,37 @@ export const MissionTestResultKind = {
   FORWARD: "FORWARD",
 } as const;
 
+export type MissionTestResultEvidenceVersion =
+  (typeof MissionTestResultEvidenceVersion)[keyof typeof MissionTestResultEvidenceVersion];
+
+export const MissionTestResultEvidenceVersion = {
+  NUMBER_1: 1,
+} as const;
+
+export type MissionTestResultEvidenceSource =
+  (typeof MissionTestResultEvidenceSource)[keyof typeof MissionTestResultEvidenceSource];
+
+export const MissionTestResultEvidenceSource = {
+  generated_prices: "generated_prices",
+  closed_mission_drafts: "closed_mission_drafts",
+  unknown: "unknown",
+} as const;
+
+export type MissionTestResultEvidenceValidation =
+  (typeof MissionTestResultEvidenceValidation)[keyof typeof MissionTestResultEvidenceValidation];
+
+export const MissionTestResultEvidenceValidation = {
+  unverified: "unverified",
+} as const;
+
+export type MissionTestResultEvidence = {
+  version: MissionTestResultEvidenceVersion;
+  source: MissionTestResultEvidenceSource;
+  validation: MissionTestResultEvidenceValidation;
+};
+
 /**
- * An honestly-labelled, append-only mission test result. `kind` distinguishes BACKTEST (historical/simulated) from FORWARD (real realised). `sampleWarning` is set when the sample is too small to be meaningful. Advisory only.
+ * Append-only diagnostic history, projected through current evidence rules. Generated prices and unreconciled closed drafts remain unverified. Legacy verified and eligible flags are not trusted. Sample minima do not establish statistical significance; current diagnostics cannot support promotion or drift.
 
  */
 export interface MissionTestResult {
@@ -1343,6 +1372,7 @@ export interface MissionTestResult {
   notes: string[];
   promotionEligible: boolean;
   createdAt: string;
+  evidence?: MissionTestResultEvidence;
 }
 
 export type MissionDriftResultDrift = { [key: string]: unknown };

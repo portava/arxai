@@ -2708,7 +2708,7 @@ export const useExecuteMissionProposalDraft = <
 };
 
 /**
- * @summary Run a deterministic historical/simulated BACKTEST for the mission's strategy via the shared backtest engine and persist an honestly-labelled result (Phase 9). Advisory only — a backtest can NEVER grant live permission or bypass any live gate. Focus-Lock + user/mission scoped.
+ * @summary Run a deterministic generated-price diagnostic for the mission strategy. These are not observed market prices; costs and chronological holdouts are not modelled. Persisted results cannot support promotion or strategy drift. Focus-Lock and user/mission scoped; never grants live permission.
 
  */
 export const getRunMissionBacktestUrl = (id: number) => {
@@ -2777,7 +2777,7 @@ export type RunMissionBacktestMutationError = ErrorType<
 >;
 
 /**
- * @summary Run a deterministic historical/simulated BACKTEST for the mission's strategy via the shared backtest engine and persist an honestly-labelled result (Phase 9). Advisory only — a backtest can NEVER grant live permission or bypass any live gate. Focus-Lock + user/mission scoped.
+ * @summary Run a deterministic generated-price diagnostic for the mission strategy. These are not observed market prices; costs and chronological holdouts are not modelled. Persisted results cannot support promotion or strategy drift. Focus-Lock and user/mission scoped; never grants live permission.
 
  */
 export const useRunMissionBacktest = <
@@ -2803,7 +2803,7 @@ export const useRunMissionBacktest = <
 };
 
 /**
- * @summary Aggregate a FORWARD test result from the mission's OWN executed-and-closed trade drafts (real realised outcomes only) and persist an honestly-labelled result with a small-sample warning when sparse (Phase 9). Never fabricates a forward record. Advisory only. User/mission scoped.
+ * @summary Aggregate a FORWARD test result from the mission's OWN executed-and-closed trade drafts, filtered by any supplied strategy, symbol and timeframe. Execution mode, risk coverage and net costs remain unverified. These diagnostics cannot support promotion or strategy drift. User/mission scoped.
 
  */
 export const getAggregateMissionForwardUrl = (id: number) => {
@@ -2870,7 +2870,7 @@ export type AggregateMissionForwardMutationError =
   ErrorType<AggregateMissionForward404>;
 
 /**
- * @summary Aggregate a FORWARD test result from the mission's OWN executed-and-closed trade drafts (real realised outcomes only) and persist an honestly-labelled result with a small-sample warning when sparse (Phase 9). Never fabricates a forward record. Advisory only. User/mission scoped.
+ * @summary Aggregate a FORWARD test result from the mission's OWN executed-and-closed trade drafts, filtered by any supplied strategy, symbol and timeframe. Execution mode, risk coverage and net costs remain unverified. These diagnostics cannot support promotion or strategy drift. User/mission scoped.
 
  */
 export const useAggregateMissionForward = <
