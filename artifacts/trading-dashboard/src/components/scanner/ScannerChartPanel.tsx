@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createChart, CandlestickSeries, createSeriesMarkers, ColorType, CrosshairMode, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "lightweight-charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -353,6 +353,104 @@ function CandleCloseCountdown({
       {formatCandleCountdown(remainingMs, timeframe)}
     </Badge>
   );
+}
+
+type RubyReadView = {
+  title: string;
+  headline?: string;
+  points?: string[];
+  cautions?: string[];
+  bestNextAction?: string;
+  consensus?: { headline?: string; note?: string } | null;
+};
+
+/** A read belongs to one committed chart context and one request. A provider
+ * may finish after abort, so transport cancellation never replaces ownership. */
+export function useScannerChartRead(
+  symbol: string, timeframe: string, assistantName: string, onError: (error: unknown) => void,
+) {
+  const context = JSON.stringify([symbol, timeframe]);
+  const contextRef = useRef(context);
+  const mounted = useRef(false);
+  const request = useRef<AbortController | null>(null);
+  const [result, setResult] = useState<{ context: string; view: RubyReadView } | null>(null);
+  const [pendingContext, setPendingContext] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    mounted.current = true;
+    contextRef.current = context;
+    setResult(null);
+    setPendingContext(null);
+    return () => {
+      mounted.current = false;
+      const obsolete = request.current;
+      request.current = null;
+      obsolete?.abort();
+    };
+  }, [context]);
+
+  function clear() {
+    if (!mounted.current || contextRef.current !== context) return;
+    const obsolete = request.current;
+    request.current = null;
+    obsolete?.abort();
+    setResult(null);
+    setPendingContext(null);
+  }
+
+  async function ask(intent: RubyChartIntent) {
+    // Retained callbacks from a previous chart cannot start obsolete work.
+    if (!mounted.current || contextRef.current !== context) return;
+    const controller = new AbortController();
+    const obsolete = request.current;
+    request.current = controller;
+    obsolete?.abort();
+    const isCurrent = () => mounted.current && contextRef.current === context && request.current === controller;
+    setPendingContext(context);
+    try {
+      const response = await fetch(u("/api/me/assistant/draft-read"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        signal: controller.signal,
+        body: JSON.stringify({ symbol, timeframe: toAnnotationTf(timeframe), intent }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = (await response.json()) as { draftRead?: Record<string, unknown> };
+      if (!isCurrent()) return;
+      const read = body.draftRead ?? {};
+      const consensus = read.agentConsensus as Record<string, unknown> | undefined;
+      // Overlay reads use the existing supported timeframe bucket. Show that
+      // actual requested context rather than labeling an H4 read as H8, etc.
+      const label = `${symbol} (${toAnnotationTf(timeframe)})`;
+      setResult({ context, view: {
+        title: intent === "agent-consensus" ? `Agent view — ${label}` : `${assistantName} read — ${label}`,
+        headline: typeof read.headline === "string" ? read.headline : undefined,
+        points: Array.isArray(read.points) ? read.points as string[] : [],
+        cautions: Array.isArray(read.cautions) ? read.cautions as string[] : [],
+        bestNextAction: typeof read.bestNextAction === "string" ? read.bestNextAction : undefined,
+        consensus: consensus ? {
+          headline: typeof consensus.headline === "string" ? consensus.headline : undefined,
+          note: typeof consensus.note === "string" ? consensus.note : undefined,
+        } : null,
+      } });
+    } catch (error) {
+      if (isCurrent()) onError(error);
+    } finally {
+      if (isCurrent()) {
+        request.current = null;
+        setPendingContext(null);
+      }
+    }
+  }
+
+  return {
+    // Mask before effects, so even the first render after a switch is clean.
+    read: result?.context === context ? result.view : null,
+    busy: pendingContext === context,
+    ask,
+    clear,
+  };
 }
 
 export function ScannerChartPanel() {
@@ -715,16 +813,16 @@ export function ScannerChartPanel() {
 
   // ── Chart Brain v2 Task 6 — read-only "Ruby read" result overlay. Filled by
   //    the menu's Ask-Ruby / agent-disagreement actions (read-only endpoints).
-  type RubyReadView = {
-    title: string;
-    headline?: string;
-    points?: string[];
-    cautions?: string[];
-    bestNextAction?: string;
-    consensus?: { headline?: string; note?: string } | null;
-  };
-  const [rubyRead, setRubyRead] = useState<RubyReadView | null>(null);
-  const [rubyBusy, setRubyBusy] = useState(false);
+  const { read: rubyRead, busy: rubyBusy, ask: askRuby, clear: clearRubyRead } = useScannerChartRead(
+    symbol, timeframe, name, (error) => toast({
+      title: `${name} read failed`,
+      description: error instanceof Error ? error.message : "network error",
+      variant: "destructive",
+    }),
+  );
+  // Saving a receipt has its own lifecycle; its completion must not unlock a
+  // newer assistant read after a market switch.
+  const [receiptBusy, setReceiptBusy] = useState(false);
 
   const priceAtClientY = (clientY: number): number | null => {
     const s = seriesRef.current;
@@ -2079,57 +2177,12 @@ export function ScannerChartPanel() {
 
   // Ask Ruby (read-only) about the chart at this candle/level. Routes ONLY
   // through the read-only assistant draft-read endpoint — never trades.
-  const menuAskRuby = async (intent: RubyChartIntent, _price: number) => {
-    setRubyBusy(true);
-    try {
-      const r = await fetch(u("/api/me/assistant/draft-read"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ symbol, timeframe: toAnnotationTf(timeframe), intent }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as { draftRead?: Record<string, unknown> };
-      const dr = j.draftRead ?? {};
-      const consensusRaw = dr["agentConsensus"] as Record<string, unknown> | undefined;
-      setRubyRead({
-        title:
-          intent === "agent-consensus"
-            ? `Agent view — ${symbol}`
-            : `${name} read — ${symbol}`,
-        headline: typeof dr["headline"] === "string" ? (dr["headline"] as string) : undefined,
-        points: Array.isArray(dr["points"]) ? (dr["points"] as string[]) : [],
-        cautions: Array.isArray(dr["cautions"]) ? (dr["cautions"] as string[]) : [],
-        bestNextAction:
-          typeof dr["bestNextAction"] === "string" ? (dr["bestNextAction"] as string) : undefined,
-        consensus: consensusRaw
-          ? {
-              headline:
-                typeof consensusRaw["headline"] === "string"
-                  ? (consensusRaw["headline"] as string)
-                  : undefined,
-              note:
-                typeof consensusRaw["note"] === "string"
-                  ? (consensusRaw["note"] as string)
-                  : undefined,
-            }
-          : null,
-      });
-    } catch (e) {
-      toast({
-        title: `${name} read failed`,
-        description: e instanceof Error ? e.message : "network error",
-        variant: "destructive",
-      });
-    } finally {
-      setRubyBusy(false);
-    }
-  };
+  const menuAskRuby = (intent: RubyChartIntent, _price: number) => askRuby(intent);
 
   // Save an immutable decision receipt for the current symbol/timeframe (Task 5
   // surface). Read-only memory write — never trades.
   const menuShowReceipt = async () => {
-    setRubyBusy(true);
+    setReceiptBusy(true);
     try {
       const r = await fetch(u("/api/me/chart/decision-receipt"), {
         method: "POST",
@@ -2154,7 +2207,7 @@ export function ScannerChartPanel() {
         variant: "destructive",
       });
     } finally {
-      setRubyBusy(false);
+      setReceiptBusy(false);
     }
   };
 
@@ -2343,7 +2396,7 @@ export function ScannerChartPanel() {
                   hasDraft={draft != null}
                   isReviewMode={isReviewMode}
                   fmt={fmt}
-                  busy={createAnnotation.isPending || rubyBusy}
+                  busy={createAnnotation.isPending || rubyBusy || receiptBusy}
                   onPlan={menuPlan}
                   onMarkLevel={(k, p) => menuMarkLevel(k, p)}
                   onWatchZone={menuWatchZone}
@@ -2365,7 +2418,7 @@ export function ScannerChartPanel() {
                     <button
                       type="button"
                       className="rounded p-0.5 text-zinc-500 hover:text-zinc-200"
-                      onClick={() => setRubyRead(null)}
+                      onClick={clearRubyRead}
                       aria-label="Close"
                     >
                       <X className="h-3.5 w-3.5" />

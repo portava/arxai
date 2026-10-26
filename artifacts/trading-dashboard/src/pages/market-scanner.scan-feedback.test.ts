@@ -53,24 +53,22 @@ describe("market-scanner scan button — never silently fails", () => {
     expect(code).toMatch(/if \(!r\.ok\)[\s\S]*?throw /);
   });
 
-  it("routes the admin-gated engine scan behind realIsAdmin (non-admin re-reads)", () => {
-    // The engine POST must be guarded so non-admins never hit the admin-gated
-    // endpoint; they fall through to load() for a visible refresh.
-    const scanBody = code.slice(code.indexOf("async function scan("));
-    expect(scanBody).toMatch(/if \(realIsAdmin\)[\s\S]*?market-scanner\/scan/);
-    // load() is reached regardless of role, so a non-admin scan always refreshes.
-    const scanFn = scanBody.slice(0, scanBody.indexOf("async function changeUniverse"));
-    expect(scanFn).toContain("await load();");
+  it("keeps automatic universe scans operator-only and manual scans explicit", () => {
+    const change = code.slice(code.indexOf("async function changeUniverse("), code.indexOf("async function sendToIntent("));
+    expect(change).toContain('if (realIsAdmin) await runScan(next, "scanner.changeUniverse")');
+    const manual = code.slice(code.indexOf("async function scan("), code.indexOf("async function changeUniverse("));
+    expect(manual).toContain('await runScan(universe, "scanner.scan")');
   });
 
-  it("every scanner trigger has a catch that surfaces the error", () => {
-    for (const fn of ["async function start(", "async function stop(", "async function scan(", "async function changeUniverse("]) {
+  it("shared scan and engine action handlers surface current errors", () => {
+    for (const fn of ["async function start(", "async function stop(", "async function runScan("]) {
       const start = code.indexOf(fn);
       expect(start, `${fn} should exist`).toBeGreaterThan(-1);
-      // Grab a generous window covering the function body.
-      const body = code.slice(start, start + 1200);
+      const end = code.indexOf("async function", start + fn.length);
+      const body = code.slice(start, end < 0 ? undefined : end);
       expect(body, `${fn} must have a catch`).toMatch(/catch\s*\(/);
-      expect(body, `${fn} must surface the error`).toMatch(/reportErr\(|setErr\(/);
+      expect(body, `${fn} must surface the error`).toContain("reportErr(e)");
+      expect(body, `${fn} must ignore obsolete errors`).toContain("action.current()");
     }
   });
 
