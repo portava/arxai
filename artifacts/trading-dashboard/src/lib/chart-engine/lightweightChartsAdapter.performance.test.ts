@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const line = { applyOptions: vi.fn() };
   const series = { setData: vi.fn(), update: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn(() => line), removePriceLine: vi.fn(), priceToCoordinate: vi.fn() };
-  const scale = { subscribeVisibleLogicalRangeChange: vi.fn(), getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 1 })), setVisibleLogicalRange: vi.fn(), setVisibleRange: vi.fn(), fitContent: vi.fn(), scrollToRealTime: vi.fn() };
-  const chart = { addSeries: vi.fn(() => series), subscribeCrosshairMove: vi.fn(), timeScale: () => scale, applyOptions: vi.fn(), remove: vi.fn() };
+  const scale = { subscribeVisibleLogicalRangeChange: vi.fn(), getVisibleRange: vi.fn(() => ({from:100,to:400})), getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 1 })), setVisibleLogicalRange: vi.fn(), setVisibleRange: vi.fn(), fitContent: vi.fn(), scrollToRealTime: vi.fn() };
+  const chart = { addSeries: vi.fn(() => series), subscribeCrosshairMove: vi.fn(), setCrosshairPosition:vi.fn(), clearCrosshairPosition:vi.fn(), timeScale: () => scale, applyOptions: vi.fn(), remove: vi.fn() };
   return { line, series, scale, chart };
 });
 vi.mock("lightweight-charts", () => ({ createChart: () => mocks.chart, CandlestickSeries: {}, LineSeries: {}, createSeriesMarkers: vi.fn(), ColorType: { Solid: "solid" }, CrosshairMode: {Normal: 0}, LineStyle: {Dashed: 2}, PriceScaleMode: {Normal: 0, Logarithmic: 1, Percentage:2, IndexedTo100:3} }));
@@ -19,6 +19,7 @@ beforeEach(() => {
   adapter = new LightweightChartsAdapter();
   adapter.init({container:document.createElement("div"),height:400});
 });
+afterEach(() => {adapter.destroy();vi.useRealTimers();});
 describe("chart refresh and inspection", () => {
   it("avoids all series work for identical polls; tail edits and appends use update", () => {
     adapter.setCandles([bar(100),bar(200),bar(300)]);
@@ -107,5 +108,46 @@ describe("chart refresh and inspection", () => {
     expect(mocks.scale.scrollToRealTime).toHaveBeenCalledOnce();
     expect(mocks.scale.fitContent).toHaveBeenCalledOnce();
     expect(mocks.chart.applyOptions).toHaveBeenLastCalledWith({rightPriceScale:{mode:1}});
+  });
+});
+
+describe("linked view adapter boundaries", () => {
+  it("uses the target candle's own close and clears missing times rather than substituting latest", () => {
+    vi.useFakeTimers(); adapter.setTimeframe("M1");adapter.setCandles([bar(100),bar(160,1.17),bar(500)]);
+    const legend=vi.fn(), publish=vi.fn();adapter.setCrosshairHandler(legend);adapter.setViewLinkHandler(publish);
+    adapter.setLinkedCrosshair(190);vi.advanceTimersByTime(20);
+    expect(mocks.chart.setCrosshairPosition).toHaveBeenLastCalledWith(1.17,160,mocks.series);expect(legend).toHaveBeenLastCalledWith(bar(160,1.17));
+    adapter.setLinkedCrosshair(220);vi.advanceTimersByTime(20);
+    expect(mocks.chart.clearCrosshairPosition).toHaveBeenCalled();expect(legend).toHaveBeenLastCalledWith(null);expect(publish).not.toHaveBeenCalled();
+  });
+  it("clips by actual target timestamps and reports unavailable windows without moving", () => {
+    adapter.setTimeframe("M1");adapter.setCandles([bar(100),bar(160),bar(500),bar(560)]);
+    const status=vi.fn();adapter.setViewLinkStatusHandler(status);
+    adapter.setLinkedTimeRange({from:120,to:550});expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:0,to:2});expect(status).toHaveBeenLastCalledWith("");
+    adapter.setLinkedTimeRange({from:10,to:150});expect(status).toHaveBeenLastCalledWith(expect.stringContaining("clipped"));
+    mocks.scale.setVisibleLogicalRange.mockClear();adapter.setLinkedTimeRange({from:300,to:400});expect(mocks.scale.setVisibleLogicalRange).not.toHaveBeenCalled();expect(status).toHaveBeenLastCalledWith(expect.stringContaining("has not moved"));
+    adapter.setLinkedTimeRange(null);expect(status).toHaveBeenLastCalledWith("");
+  });
+  it("publishes user navigation but suppresses deferred range echoes until a new local gesture", () => {
+    vi.useFakeTimers();adapter.setTimeframe("M1");adapter.setCandles([bar(100),bar(160),bar(220),bar(400)]);
+    const publish=vi.fn();adapter.setViewLinkHandler(publish);
+    const onRange=mocks.scale.subscribeVisibleLogicalRangeChange.mock.calls[0]![0];
+    adapter.resetScale();onRange({from:0,to:3});vi.advanceTimersByTime(20);expect(publish).toHaveBeenCalledExactlyOnceWith({kind:"range",range:{from:100,to:400}});
+    publish.mockClear();adapter.setLinkedTimeRange({from:150,to:300});vi.advanceTimersByTime(20);onRange({from:.5,to:2.5});vi.advanceTimersByTime(20);expect(publish).not.toHaveBeenCalled();
+    adapter.fitHistory();onRange({from:0,to:3});vi.advanceTimersByTime(20);expect(publish).toHaveBeenCalledTimes(1);
+  });
+  it("does not start history paging in linked followers; local navigation can still load history", () => {
+    adapter.setCandles([bar(100),bar(160),bar(220)]);const load=vi.fn();adapter.setReachStartHandler(load);
+    const onRange=mocks.scale.subscribeVisibleLogicalRangeChange.mock.calls[0]![0];
+    adapter.setLinkedTimeRange({from:50,to:200});onRange({from:0,to:2});expect(load).not.toHaveBeenCalled();
+    adapter.resetScale();onRange({from:0,to:2});expect(load).toHaveBeenCalledTimes(1);
+  });
+  it("coalesces real cursor moves and never publishes programmatic crosshair recalculation", () => {
+    vi.useFakeTimers();adapter.setCandles([bar(100),bar(200)]);const publish=vi.fn();adapter.setViewLinkHandler(publish);
+    const move=mocks.chart.subscribeCrosshairMove.mock.calls[0]![0];
+    move({time:100,point:{x:1,y:1},sourceEvent:{}});move({time:200,point:{x:2,y:1},sourceEvent:{}});vi.advanceTimersByTime(20);
+    expect(publish).toHaveBeenCalledExactlyOnceWith({kind:"crosshair",time:200});publish.mockClear();
+    move({time:100,point:{x:1,y:1}});vi.advanceTimersByTime(20);expect(publish).not.toHaveBeenCalled();
+    move({time:200,point:{x:1,y:1},sourceEvent:{}});adapter.destroy();vi.advanceTimersByTime(20);expect(publish).not.toHaveBeenCalled();
   });
 });

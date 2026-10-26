@@ -30,9 +30,16 @@ certify the entire app or claim parity with every feature of a commercial chart.
   steps. Off-history endpoints stay stored and render when their bars load;
   drawings never insert artificial dates or stretch the price autoscale. All
   drawings share one canvas primitive; a Fib no longer creates seven data series.
-- One/two-chart layouts share the instrument with independent timeframes and
-  primary/comparison preferences. Only the primary supplies setup/intelligence
-  context to the existing single trade ticket. Narrow screens stack the charts.
+- One/two/four-chart layouts support independent comparison instruments, intervals
+  and preferences, or an explicit follow-primary instrument option. Optional UTC
+  crosshair/time-window links follow the chart the user navigates. Crosshairs use
+  each view’s own candle close, clear across absent candles/session gaps, and
+  never copy another instrument’s price. Windows map to real target bars; partial
+  or unavailable loaded history is disclosed without inventing data. Deferred
+  events cannot echo between followers. Only the primary supplies setup and
+  intelligence to the existing single trade ticket; it stays mounted across
+  layout changes. Narrow screens stack the charts. The old two-chart preference
+  migrates; storage refusal is visible. Saving is browser-local.
 - A browser-local template stores style, scale and studies. PNG export includes
   instrument, interval, UTC capture time, feed source/verdict/warning and study
   parameters. Chart preferences and drawings contain no credentials or positions.
@@ -72,14 +79,17 @@ These are synchronous processing timings on one machine, not a market-feed
 latency SLA, end-to-end paint time, or profitability measure. The browser fixture
 and repeatable acceptance script live in `scripts/chart-qa/`.
 
-Current development validation passed: 213 tests in 26 chart-related suites, 87/87 architecture
+Current development validation passed: 232 tests in 27 chart-related suites, 87/87 architecture
 guards, dashboard typechecking and production build. Browser checks cover
 desktop/mobile controls, symbol/timeframe changes, canvas
 lifecycle, crosshair inspection and no page overflow at 390px. Workbench browser
 acceptance additionally covers all three styles, the original five-study starter collection and pane
 cleanup, the original three drawing tools, object edits, undo/redo, saved drawings/settings,
 symbol/timeframe isolation, templates, PNG export, two-chart layout persistence,
-independent intervals and touch drawing. The drawing acceptance adds all seven
+independent intervals and touch drawing. Linked-workspace acceptance adds four
+views, independent instrument selection, UTC crosshair mapping with different
+intervals/prices, history clipping, primary-context preservation, teardown,
+persistence and mobile overflow checks. The drawing acceptance adds all seven
 tools, actual Chromium touch dragging, mouse editing, single-step undo/redo,
 Escape rollback, locks, persistence and desktop/mobile overflow checks. Existing freshness,
 stream reconnect, overlay clearing, trade setup and scanner-candle regressions
@@ -127,6 +137,24 @@ the research release artifacts; repeat using `runChartStressBenchmark()` in the
 offline fixture. The pre-rewrite observation was not a separately committed
 release and should not be presented as an independently versioned benchmark.
 
+## Four-view renderer workload
+
+The linked-workspace checkpoint uses four visible renderers at 1,600 × 1,100,
+each with 5,000 constructed candles, 12 studies at their default periods and
+40 Fibonacci drawings. All **4,800 attempted updates were independently counted
+as accepted series updates** over 120 paced frames. The four visible UTC time
+windows converged exactly. One run on the development Mac measured 16.7 ms p95
+frame interval, 1.8 ms p95 combined ingestion/deferred-study CPU per 40-update
+burst, and 163 ms setup through three frame callbacks. There was one 101 ms
+setup long task. This is an offline renderer workload, not network latency,
+React dashboard startup, a device-wide SLA, or a competitor benchmark.
+
+An earlier harness attempt supplied out-of-range OHLC revisions and measured
+rejected updates; it is excluded. The retained harness now asserts the accepted
+update count. A real-engine check also caught and fixed an extra edge candle
+introduced by half-bar range padding. Repeat with
+`scripts/chart-qa/workspace-performance.js` and retain the raw result.
+
 ## Calculation conventions
 
 See [the formula and compatibility report](SMART_CHART_STUDY_CONVENTIONS.md).
@@ -144,7 +172,7 @@ is claimed without matching data, seed boundary and configuration.
   behavior require the separately pending broker validation.
 - The broader commercial-chart gaps are listed in
   [SMART_CHART_PLATFORM_COMPARISON.md](SMART_CHART_PLATFORM_COMPARISON.md):
-  broader drawing tools/studies, crosshair/range synchronization,
+  broader drawing tools/studies, overlaid comparison series,
   named cloud workspaces, replay, custom scripting and validated market feeds.
 - Saving is local to the current browser/device, shared by users of that browser
   profile, and may be unavailable in restrictive browsing modes. It is not an
@@ -158,3 +186,5 @@ is claimed without matching data, seed boundary and configuration.
 The rendering approach follows the library's
 [incremental-update guidance](https://tradingview.github.io/lightweight-charts/tutorials/demos/realtime-updates)
 and [multi-pane API](https://tradingview.github.io/lightweight-charts/tutorials/how_to/panes).
+
+History requests now cancel on symbol/timeframe changes and cannot publish late results, failures or loading state into the new chart. Linked follower ranges do not autonomously page provider history; a new local navigation gesture restores normal older-history loading.
