@@ -32,9 +32,9 @@
 // TTL sweep racing an EA pickup; dispatch and confirm simply never got it.
 //
 // SAFETY:
-// - This module NEVER decides whether a dispatch is allowed. It runs strictly
-//   AFTER the 18-gate evaluator has returned PASS. It cannot weaken, reorder,
-//   or skip a gate — it can only refuse a transition that already raced.
+// - Dispatch claims run AFTER the existing gate evaluator has returned PASS.
+//   Agent entries additionally revalidate their admission authority under locks.
+//   This can only add a refusal; it cannot weaken, reorder or skip a live gate.
 // - Losing the CAS is fail-CLOSED: no order is mirrored.
 // - Read/writes are keyed by commandId; ownership (userId) is enforced by the
 //   caller's `loadOwned()` before any of this runs.
