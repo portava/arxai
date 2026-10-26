@@ -598,7 +598,7 @@ describe("Smart Chart view controls", () => {
     const view = renderChart();
     fireEvent.click(view.getByRole("button", {name:"Latest",exact:true}));
     fireEvent.click(view.getByRole("button", {name:"Fit history",exact:true}));
-    fireEvent.click(view.getByRole("button", {name:"Linear scale",exact:true}));
+    fireEvent.change(view.getByLabelText("Price scale"), {target:{value:"log"}});
     expect(adapterSpies.goToLatest).toHaveBeenCalledOnce();
     expect(adapterSpies.fitHistory).toHaveBeenCalledOnce();
     expect(adapterSpies.setScaleMode).toHaveBeenLastCalledWith("log");

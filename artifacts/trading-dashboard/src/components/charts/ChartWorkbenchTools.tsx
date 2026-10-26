@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type Dispatch, type SetStateAction } from "react";
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
-import { STUDY_DEFAULTS } from "@/lib/chart-engine/chartStudies";
+import { studyId, studyLabel } from "@/lib/chart-engine/chartStudies";
+import { ChartStudySettings } from "./ChartStudySettings";
 import { drawingStorageKey, MAX_DRAWINGS, readChartStorage, TEMPLATE_KEY, validateDrawings, validatePreferences, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
 import { Button } from "@/components/ui/button";
 
@@ -20,6 +21,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [anchor,setAnchor] = useState<ChartAnchor | null>(null);
   const [hidden,setHidden] = useState(false);
   const [message,setMessage] = useState("");
+  const [goToDate,setGoToDate] = useState("");
   const [storageFailed,setStorageFailed] = useState(false);
   const drawings = history.present;
   const persist = (next: ChartDrawing[]) => {
@@ -74,7 +76,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         const ctx=canvas.getContext("2d");if(!ctx) return;
         ctx.font="12px sans-serif";
         const labels = [`ARX · ${symbol} ${timeframe}`, `Captured ${new Date().toISOString()}`, feedLabel,
-          preferences.studies.map(study=>`${study.kind.toUpperCase()}(${study.period}${study.kind === "macd" ? `,${study.slow},${study.signal}` : study.kind === "bollinger" ? `,${study.multiplier}` : ""})`).join(" · ")].filter(Boolean);
+          preferences.studies.map(studyLabel).join(" · ")].filter(Boolean);
         const lines:string[]=[];
         for(const label of labels) {
           let line="";
@@ -105,24 +107,18 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{const saved=readChartStorage(TEMPLATE_KEY);if(saved){onPreferences(validatePreferences(saved));setMessage("Template applied. Drawings remain with their instrument and timeframe.");}else setMessage("No template saved in this browser yet.");}}>Load template</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles} onClick={exportImage}>Export PNG</Button>
     </div>
-    {preferences.studies.length > 0 && <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label="Active studies">{preferences.studies.map(study=><span key={study.kind} style={{color:study.color}}>{study.kind.toUpperCase()} ({study.period}{study.kind === "macd" ? `, ${study.slow}, ${study.signal}` : study.kind === "bollinger" ? `, ${study.multiplier}` : ""})</span>)}</div>}
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-zinc-400" aria-label="Chart date navigation">
+      <span>Range</span>{[["1D",86400],["5D",432000],["1M",2592000],["3M",7776000],["1Y",31536000]].map(([label,seconds])=><button key={label} type="button" className="rounded px-2 py-1 text-[11px] hover:bg-zinc-800 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40" disabled={!hasCandles} onClick={()=>{const range=adapter?.showRecentRange?.(Number(seconds));setMessage(range ? range.complete ? "Range shown from loaded history." : "Showing available history; the requested range starts before the loaded candles." : "No history available.");}}>{label}</button>)}
+      <form className="flex flex-wrap items-center gap-2" onSubmit={event=>{event.preventDefault();const time=Date.parse(`${goToDate}Z`)/1000;setMessage(adapter?.goToTime?.(time) ? "Centered on the first loaded candle at or after that UTC time." : "That UTC time is outside loaded history. Pan left to load older candles, then try again.");}}>
+        <input type="datetime-local" step="60" aria-label="Go to UTC date and time" className={`${field} max-w-full`} value={goToDate} onChange={event=>setGoToDate(event.target.value)} required />
+        <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles || !goToDate} type="submit">Go to UTC</Button>
+      </form>
+    </div>
+    {preferences.studies.length > 0 && <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label="Active studies">{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyLabel(study)}</span>)}</div>}
     {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Escape cancels. Drawings are analysis only.</p>}
     {message && <p className="mt-2 text-zinc-300" role="status">{message}</p>}
     {storageFailed && <p className="mt-2 text-amber-300" role="alert">Browser storage is unavailable. Drawing changes will be lost when this view closes.</p>}
-    {panel === "studies" && <div className="mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Study settings">
-      <p className="text-zinc-400">Calculated from loaded closes, including the forming bar. Warm-up bars are left blank. Additional history can change seeded values.</p>
-      {STUDY_DEFAULTS.map(defaults=>{
-        const selected=preferences.studies.find(s=>s.kind===defaults.kind), config=selected ?? defaults;
-        const update=(values: Partial<typeof config>)=>onPreferences(p=>validatePreferences({...p,studies:p.studies.map(s=>s.kind===config.kind ? {...s,...values} : s)}));
-        return <div key={config.kind} className="flex flex-wrap items-center gap-3">
-          <label className="flex w-28 items-center gap-2"><input type="checkbox" checked={!!selected} onChange={e=>onPreferences(p=>({...p,studies:e.target.checked ? [...p.studies,defaults] : p.studies.filter(s=>s.kind!==config.kind)}))}/>{config.kind.toUpperCase()}</label>
-          <label className="flex items-center gap-2">{config.kind === "macd" ? "Fast" : "Period"}<input key={`${config.kind}-${config.period}`} className={`${field} w-16`} aria-label={`${config.kind.toUpperCase()} period`} type="number" min={2} max={config.kind === "macd" ? (config.slow ?? 26)-1 : 200} defaultValue={config.period} disabled={!selected} onBlur={e=>{if(e.target.validity.valid && e.target.value) update({period:Number(e.target.value)});else e.target.value=String(config.period);}}/></label>
-          {config.kind === "bollinger" && <label className="flex items-center gap-2">Deviation<input key={config.multiplier} className={`${field} w-16`} aria-label="Bollinger deviation" type="number" min={.5} max={5} step={.5} defaultValue={config.multiplier} disabled={!selected} onBlur={e=>{if(e.target.validity.valid && e.target.value) update({multiplier:Number(e.target.value)});else e.target.value=String(config.multiplier);}}/></label>}
-          {config.kind === "macd" && (["slow","signal"] as const).map(name=><label key={name} className="flex items-center gap-2">{name}<input key={config[name]} className={`${field} w-16`} aria-label={`MACD ${name}`} type="number" min={name === "slow" ? config.period+1 : 2} max={200} defaultValue={config[name]} disabled={!selected} onBlur={e=>{if(e.target.validity.valid && e.target.value) update({[name]:Number(e.target.value)});else e.target.value=String(config[name]);}}/></label>)}
-          <input type="color" aria-label={`${config.kind.toUpperCase()} color`} className="h-7 w-8 bg-transparent" value={config.color} disabled={!selected} onChange={e=>update({color:e.target.value})}/>
-        </div>;
-      })}
-    </div>}
+    {panel === "studies" && <ChartStudySettings preferences={preferences} onPreferences={onPreferences} />}
     {panel === "objects" && <div className="mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Drawing objects">
       <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">Saved on this browser for {symbol} · {timeframe}. Lines outside loaded history appear when their candles load.</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>setHidden(h=>!h)}>{hidden ? "Show drawings" : "Hide drawings"}</Button></div>
       {!drawings.length && <p>No drawings on this chart. Choose a drawing tool to begin.</p>}

@@ -1,6 +1,6 @@
 import type { ChartOverlay } from "@/lib/chart-overlays";
 import type { ChartStudy } from "./chartStudies";
-import type { ChartAnchor, ChartDrawing, ChartStyle } from "./chartWorkspace";
+import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ARX Smart Chart — swappable chart-engine adapter contract (Task #373).
@@ -156,7 +156,11 @@ export interface ChartEngineAdapter {
   /** View controls only; none of these methods touches execution. */
   goToLatest?(): void;
   fitHistory?(): void;
-  setScaleMode?(mode: "linear" | "log"): void;
+  setScaleMode?(mode: ChartScaleMode): void;
+  setPriceScaleInverted?(inverted: boolean): void;
+  goToTime?(time: number): boolean;
+  showRecentRange?(seconds: number): { complete: boolean } | null;
+  getStudyValues?(time: number): { label: string; color: string; values: { name: string; value: number | null }[] }[];
   setCrosshairHandler?(handler: ((candle: ChartEngineCandle | null) => void) | null): void;
   setChartStyle?(style: ChartStyle): void;
   setStudies?(studies: ChartStudy[]): void;

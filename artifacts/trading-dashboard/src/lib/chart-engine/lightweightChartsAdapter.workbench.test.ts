@@ -3,7 +3,7 @@ const m=vi.hoisted(()=>{
   const handles:any[]=[];
   const range={from:10,to:30};
   const scale={subscribeVisibleLogicalRangeChange:vi.fn(),getVisibleLogicalRange:()=>range,setVisibleLogicalRange:vi.fn(),setVisibleRange:vi.fn(),fitContent:vi.fn(),width:()=>800,coordinateToTime:vi.fn(()=>100)};
-  const chart={addSeries:vi.fn((kind:any,options:any,pane=0)=>{const handle={kind,options,pane,setData:vi.fn(),update:vi.fn(),applyOptions:vi.fn(),createPriceLine:vi.fn(()=>({applyOptions:vi.fn()})),removePriceLine:vi.fn(),coordinateToPrice:()=>1.2};handles.push(handle);return handle;}),removeSeries:vi.fn(),subscribeClick:vi.fn(),subscribeCrosshairMove:vi.fn(),timeScale:()=>scale,applyOptions:vi.fn(),remove:vi.fn(),panes:()=>Array.from({length:4},()=>({setHeight:vi.fn(),setStretchFactor:vi.fn(),getHeight:()=>300}))};
+  const chart={addSeries:vi.fn((kind:any,options:any,pane=0)=>{const handle={kind,options,pane,setData:vi.fn(),update:vi.fn(),applyOptions:vi.fn(),createPriceLine:vi.fn(()=>({applyOptions:vi.fn()})),removePriceLine:vi.fn(),coordinateToPrice:()=>1.2,attachPrimitive:vi.fn(),detachPrimitive:vi.fn()};handles.push(handle);return handle;}),removeSeries:vi.fn(),subscribeClick:vi.fn(),subscribeCrosshairMove:vi.fn(),timeScale:()=>scale,applyOptions:vi.fn(),remove:vi.fn(),panes:()=>Array.from({length:4},()=>({setHeight:vi.fn(),setStretchFactor:vi.fn(),getHeight:()=>300}))};
   return{chart,handles,scale};
 });
 vi.mock("lightweight-charts",()=>({createChart:()=>m.chart,CandlestickSeries:"candles",BarSeries:"bars",LineSeries:"line",HistogramSeries:"histogram",createSeriesMarkers:()=>({detach:vi.fn()}),ColorType:{Solid:"solid"},CrosshairMode:{Normal:0},LineStyle:{Dashed:2,Solid:0},PriceScaleMode:{Normal:0,Logarithmic:1}}));
@@ -18,6 +18,7 @@ describe("Smart Chart studies, styles and drawing ownership",()=>{
     adapter.setStudies(STUDY_DEFAULTS);const studies=m.handles.slice(1);
     expect(studies).toHaveLength(9);expect(studies.filter(s=>s.pane===1)).toHaveLength(1);expect(studies.filter(s=>s.pane===2)).toHaveLength(3);
     adapter.updateActiveCandle({...bars.at(-1)!,close:1.7});
+    adapter.getStudyValues(bars.at(-1)!.time); // inspection flushes the pending frame
     for(const study of studies){expect(study.setData).toHaveBeenCalledTimes(1);expect(study.update).toHaveBeenCalledTimes(1);}
     adapter.setChartStyle("line");const price=m.handles.at(-1);
     expect(price.setData.mock.calls[0][0].at(-1)).toEqual({time:bars.at(-1)!.time,value:1.7});
@@ -26,13 +27,29 @@ describe("Smart Chart studies, styles and drawing ownership",()=>{
     adapter.setStudies([]);expect(m.chart.removeSeries).not.toHaveBeenCalledWith(price);
     for(const study of studies)expect(m.chart.removeSeries).toHaveBeenCalledWith(study);
   });
+  it("inspects indicator values by the same candle from every pane", () => {
+    adapter.setStudies([{...STUDY_DEFAULTS[0]!, id:"first", period:2}, {...STUDY_DEFAULTS[0]!, id:"second", period:20}, STUDY_DEFAULTS[3]!]);
+    expect(adapter.getStudyValues(bars[0]!.time).map(row=>row.values[0]!.value)).toEqual([null,null,null]);
+    const last = adapter.getStudyValues(bars.at(-1)!.time);
+    expect(last).toHaveLength(3);
+    expect(last[0]!.values[0]!.value).toBeCloseTo((bars.at(-1)!.close + bars.at(-2)!.close)/2, 10);
+    expect(last[0]!.label).not.toBe(last[1]!.label);
+    const crosshair = m.chart.subscribeCrosshairMove.mock.calls[0]![0];
+    crosshair({point:{x:50,y:350},paneIndex:1,time:bars[40]!.time});
+    expect((adapter as any).hoveredCandle?.time).toBe(bars[40]!.time);
+    adapter.setStudies([]);
+    expect(adapter.getStudyValues(bars[40]!.time)).toEqual([]);
+  });
   it("keeps user drawings separate and excludes off-history endpoints from the time scale",()=>{
     adapter.setDrawings([{id:"h",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"},{id:"t",kind:"trend",start:{time:100,price:1.2},end:{time:160,price:1.4},color:"#ffffff"},{id:"outside",kind:"trend",start:{time:1,price:1.2},end:{time:160,price:1.4},color:"#ffffff"}]);
-    expect(m.handles).toHaveLength(2);
-    expect(m.handles[1].options.autoscaleInfoProvider()).toBeNull();
+    expect(m.handles).toHaveLength(1);
+    expect(m.handles[0].attachPrimitive).toHaveBeenCalledTimes(1);
+    const primitive = m.handles[0].attachPrimitive.mock.calls[0][0];
+    expect(primitive.autoscaleInfo).toBeUndefined();
     adapter.setStructureLines([{id:"ai",start:{time:100,price:1.3},end:{time:160,price:1.4},color:"#ffffff",dashed:false,width:1}],[]);
     const structure=m.handles.at(-1);adapter.setDrawings([]);
-    expect(m.chart.removeSeries).toHaveBeenCalledWith(m.handles[1]);expect(m.chart.removeSeries).not.toHaveBeenCalledWith(structure);
+    expect(m.chart.removeSeries).not.toHaveBeenCalledWith(structure);
+    expect(primitive.drawings).toEqual([]);
     expect(m.chart.removeSeries).not.toHaveBeenCalledWith(m.handles[0]);
   });
   it("accepts drawing clicks only over real candles in the price pane",()=>{

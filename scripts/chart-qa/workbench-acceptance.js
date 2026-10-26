@@ -11,9 +11,9 @@ async page => {
    await page.waitForFunction(()=>document.querySelector('[data-testid="chart-candle-inspector"]')?.textContent.includes('UTC'));
  }
  await page.getByRole('button',{name:'Studies (0)',exact:true}).click();
- for(const name of ['SMA','EMA','BOLLINGER','RSI','MACD']) await page.getByRole('checkbox',{name,exact:true}).check();
- await page.getByLabel('SMA period',{exact:true}).fill('10');
- await page.getByLabel('SMA period',{exact:true}).blur();
+ for(const name of ['Simple moving average','Exponential moving average','Bollinger Bands','Relative strength index','MACD']) await page.getByRole('button',{name:`Add ${name}`,exact:true}).click();
+ await page.getByLabel('SMA 1 Period',{exact:true}).fill('10');
+ await page.getByLabel('SMA 1 Period',{exact:true}).blur();
  await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
  if(await chart.locator('tr').count()!==6) throw Error('Expected price, RSI, MACD panes and time-axis row');
  for(const tool of ['horizontal','trend','fibonacci']) {
@@ -44,7 +44,7 @@ async page => {
  await page.getByRole('button',{name:'Objects (3)',exact:true}).waitFor();
  await page.getByRole('button',{name:'Studies (5)',exact:true}).waitFor();
  await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
- if(await page.getByLabel('SMA period',{exact:true}).inputValue()!=='10') throw Error('Study period was not persisted');
+ if(await page.getByLabel('SMA 1 Period',{exact:true}).inputValue()!=='10') throw Error('Study period was not persisted');
  await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
  await page.getByRole('button',{name:'Switch instrument',exact:true}).click();
  await page.getByRole('button',{name:'Objects (0)',exact:true}).waitFor();
@@ -69,7 +69,7 @@ async page => {
  await page.screenshot({path:'/private/tmp/arx-smart-chart-workbench-mobile.png',fullPage:true});
  await page.getByRole('button',{name:'One chart',exact:true}).click();
  await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
- for(const name of ['SMA','EMA','BOLLINGER','RSI','MACD']) await page.getByRole('checkbox',{name,exact:true}).uncheck();
+ for(let i=0;i<5;i++) await page.getByRole('button',{name:'Remove study 1',exact:true}).click();
  await page.getByRole('button',{name:'Studies (0)',exact:true}).click();
  if(await page.getByTestId('arx-native-canvas').locator('tr').count()!==2) throw Error('Empty indicator panes leaked');
  const touchContext=await page.context().browser().newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});

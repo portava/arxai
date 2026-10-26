@@ -71,11 +71,12 @@ contract can be dropped in without touching the Shell. Until then:
 ## 5. Recommendation
 
 **Keep lightweight-charts v5 (MIT, on npm, already integrated) as the production
-engine.** It satisfies every current need (candles, price-line overlays, zones,
-markers, price↔coordinate for DOM bubbles) and is the labeled real fallback. Do
+engine.** It supports the current implemented renderer features (candles, overlays,
+markers and coordinate conversion); broader TradingView parity remains open and is the labeled real fallback. Do
 not attempt to use the free TradingView widget as if it were Advanced Charts —
 the widget cannot host ARX overlays, our own datafeed, or drawing tools.
 
-> Drawing tools and draggable orders (advertised as `false` in the
-> lightweight-charts capability descriptor) are future work (Task #374 and
-> beyond) and are independent of the TradingView licensing question.
+> Updated 2026-10-26: PR #76 implements native user drawings and advertises
+> `drawingTools: true`. Native draggable orders remain unsupported. These
+> capabilities are independent of proprietary TradingView licensing. See
+> [the current comparison](SMART_CHART_PLATFORM_COMPARISON.md) for remaining gaps.

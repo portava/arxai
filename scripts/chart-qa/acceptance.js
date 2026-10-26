@@ -6,9 +6,9 @@ async page => {
  await page.getByRole('button',{name:'Latest',exact:true}).waitFor();
  await page.getByRole('button',{name:'Fit history',exact:true}).click();
  await page.getByRole('button',{name:'Latest',exact:true}).click();
- await page.getByRole('button',{name:'Linear scale',exact:true}).click();
- if(await page.getByRole('button',{name:'Log scale',exact:true}).getAttribute('aria-pressed')!=='true') throw Error('Log scale did not activate');
- await page.getByRole('button',{name:'Log scale',exact:true}).click();
+ for(const scale of ['log','percent','indexed','linear']) await page.getByLabel('Price scale',{exact:true}).selectOption(scale);
+ await page.getByRole('button',{name:'Invert scale',exact:true}).click();
+ await page.getByRole('button',{name:'Invert scale',exact:true}).click();
  const count=await page.locator('[data-testid="arx-native-canvas"] canvas').count();
  await page.getByRole('button',{name:'Fullscreen',exact:true}).click();
  await page.getByRole('button',{name:'Exit fullscreen',exact:true}).waitFor();

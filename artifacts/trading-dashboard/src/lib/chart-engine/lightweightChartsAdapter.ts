@@ -31,7 +31,7 @@ import type {
 import { candleDisplayPrecision, incrementalCandles, historyRangeShift } from "./candleReconciliation";
 import { ChartAnalysisRenderer } from "./chartAnalysisRenderer";
 import type { ChartStudy } from "./chartStudies";
-import type { ChartAnchor, ChartDrawing, ChartStyle } from "./chartWorkspace";
+import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
 import { applyStructureLines, clearStructureLines } from "./structureLines";
 
 
@@ -191,7 +191,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       // Read canonical OHLC even when the visible series is a close-price line.
       let lo = 0, hi = this.candles.length - 1;
       this.hoveredCandle = null;
-      if (event.point && event.paneIndex === 0 && typeof time === "number") while (lo <= hi) {
+      if (event.point && typeof time === "number") while (lo <= hi) {
         const mid = (lo + hi) >>> 1, candle = this.candles[mid]!;
         if (candle.time === time) { this.hoveredCandle = candle; break; }
         if (candle.time < time) lo = mid + 1; else hi = mid - 1;
@@ -262,6 +262,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.streamTip = null;
     this.candles = [];
     this.reachStartHandler = null;
+    this.analysis?.destroy();
     if (this.chart) {
       try { this.chart.remove(); } catch { /* already removed */ }
     }
@@ -502,9 +503,30 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.chart?.applyOptions({ rightPriceScale: { autoScale: true } });
     this.chart?.timeScale().fitContent();
   }
-  setScaleMode(mode: "linear" | "log"): void {
-    this.chart?.applyOptions({ rightPriceScale: { mode: mode === "log" ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal } });
+  setScaleMode(mode: ChartScaleMode): void {
+    const modes = {linear:PriceScaleMode.Normal,log:PriceScaleMode.Logarithmic,percent:PriceScaleMode.Percentage,indexed:PriceScaleMode.IndexedTo100};
+    this.chart?.applyOptions({ rightPriceScale: { mode: modes[mode] } });
   }
+  setPriceScaleInverted(invertScale: boolean): void { this.chart?.applyOptions({rightPriceScale:{invertScale}}); }
+  goToTime(time: number): boolean {
+    if (!this.chart || !Number.isFinite(time) || !this.candles.length || time < this.candles[0]!.time || time > this.candles.at(-1)!.time) return false;
+    let lo = 0, hi = this.candles.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time < time) lo = mid + 1; else hi = mid; }
+    const previous = this.chart.timeScale().getVisibleLogicalRange();
+    const span = Math.max(20, previous ? previous.to - previous.from : DEFAULT_VISIBLE_DESKTOP);
+    this.chart.timeScale().setVisibleLogicalRange({from:lo-span/2,to:lo+span/2});
+    return true;
+  }
+  showRecentRange(seconds: number): {complete:boolean} | null {
+    const last = this.candles.at(-1), first = this.candles[0];
+    if (!this.chart || !first || !last || !Number.isFinite(seconds) || seconds <= 0) return null;
+    const start = last.time - seconds;
+    let lo = 0, hi = this.candles.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time < start) lo = mid + 1; else hi = mid; }
+    this.chart.timeScale().setVisibleLogicalRange({from:lo,to:this.candles.length - 1 + 3});
+    return {complete:first.time <= start};
+  }
+  getStudyValues(time: number) { return this.analysis?.inspect(time) ?? []; }
   setCrosshairHandler(handler: ((candle: ChartEngineCandle | null) => void) | null): void { this.crosshairHandler = handler; }
 
   private priceData(candle: ChartEngineCandle) {
@@ -540,7 +562,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.chart?.applyOptions({handleScroll:!handler});
     if (this.container) this.container.style.cursor = handler ? "crosshair" : "";
   }
-  exportImage(): string | null { return this.chart?.takeScreenshot().toDataURL("image/png") ?? null; }
+  exportImage(): string | null { this.analysis?.flushPending(); return this.chart?.takeScreenshot().toDataURL("image/png") ?? null; }
 
   priceToCoordinate(price: number): number | null {
     const s = this.series;
@@ -579,10 +601,10 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       this.newestSeriesTime = candle.time;
       this.streamTip = { ...candle };
       if (this.hoveredCandle?.time === candle.time) this.hoveredCandle = { ...candle };
-      this.queueLegendUpdate();
       if (this.candles.at(-1)?.time === candle.time) this.candles[this.candles.length - 1] = { ...candle };
       else this.candles.push({ ...candle });
-      this.analysis?.refresh(this.candles, changedIndex, false);
+      this.analysis?.refreshLater(this.candles, changedIndex);
+      this.queueLegendUpdate();
       if (this.lastPriceLine && this.feedState.livePriceAffordance) this.lastPriceLine.applyOptions({ price: candle.close });
     } catch { /* ignore a bad streaming update */ }
   }

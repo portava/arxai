@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
   const chart = { addSeries: vi.fn(() => series), subscribeCrosshairMove: vi.fn(), timeScale: () => scale, applyOptions: vi.fn(), remove: vi.fn() };
   return { line, series, scale, chart };
 });
-vi.mock("lightweight-charts", () => ({ createChart: () => mocks.chart, CandlestickSeries: {}, LineSeries: {}, createSeriesMarkers: vi.fn(), ColorType: { Solid: "solid" }, CrosshairMode: {Normal: 0}, LineStyle: {Dashed: 2}, PriceScaleMode: {Normal: 0, Logarithmic: 1} }));
+vi.mock("lightweight-charts", () => ({ createChart: () => mocks.chart, CandlestickSeries: {}, LineSeries: {}, createSeriesMarkers: vi.fn(), ColorType: { Solid: "solid" }, CrosshairMode: {Normal: 0}, LineStyle: {Dashed: 2}, PriceScaleMode: {Normal: 0, Logarithmic: 1, Percentage:2, IndexedTo100:3} }));
 import { LightweightChartsAdapter } from "./lightweightChartsAdapter";
 import { sanitizeCandlestickData } from "./candleSanitize";
 import { candleDisplayPrecision } from "./candleReconciliation";
@@ -81,6 +81,23 @@ describe("chart refresh and inspection", () => {
     adapter.setCandles([bar(100)]);
     expect(mocks.series.applyOptions).toHaveBeenCalledWith({priceFormat:{type:"price",precision:5,minMove:10**-5}});
     expect(candleDisplayPrecision([{time:100,open:.00001234,high:.00001238,low:.0000123,close:.00001235}])).toBe(8);
+  });
+  it("supports all four price scales and date navigation without changing canonical prices", () => {
+    adapter.setCandles([bar(100),bar(200),bar(300),bar(400)]);
+    adapter.setScaleMode("percent");
+    expect(mocks.chart.applyOptions).toHaveBeenLastCalledWith({rightPriceScale:{mode:2}});
+    adapter.setScaleMode("indexed");
+    expect(mocks.chart.applyOptions).toHaveBeenLastCalledWith({rightPriceScale:{mode:3}});
+    adapter.setPriceScaleInverted(true);
+    expect(mocks.chart.applyOptions).toHaveBeenLastCalledWith({rightPriceScale:{invertScale:true}});
+    expect(adapter.goToTime(250)).toBe(true);
+    expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:-8,to:12});
+    expect(adapter.goToTime(50)).toBe(false);
+    expect(adapter.goToTime(NaN)).toBe(false);
+    expect(adapter.showRecentRange(150)).toEqual({complete:true});
+    expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:2,to:6});
+    expect(adapter.showRecentRange(1000)).toEqual({complete:false});
+    expect(mocks.series.setData).toHaveBeenCalledTimes(1);
   });
   it("resizes without recreating the chart and offers explicit viewport commands", () => {
     adapter.resize(1000,700);

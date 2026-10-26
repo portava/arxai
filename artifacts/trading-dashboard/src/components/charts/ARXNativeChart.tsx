@@ -276,16 +276,37 @@ export function ARXNativeChart({
   const [preferences, setPreferences] = useState(() => validatePreferences(readChartStorage(preferencesKey) ?? readChartStorage(PREFERENCES_KEY)));
   const [preferencesSaved, setPreferencesSaved] = useState(true);
   const scaleMode = preferences.scale;
-  const setScaleMode = (fn: (mode: "linear" | "log") => "linear" | "log") => setPreferences(p=>({...p,scale:fn(p.scale)}));
+
   useEffect(()=>{setPreferencesSaved(writeChartStorage(preferencesKey,preferences));},[preferences,preferencesKey]);
   const legendRef = useRef<HTMLOutputElement | null>(null);
+  const studyInspectorRef = useRef<HTMLOutputElement | null>(null);
+  const dataWindowRef = useRef<HTMLDetailsElement | null>(null);
+  const inspectedCandleRef = useRef<ChartEngineCandle | null>(null);
   const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
     const bar = candle;
+    inspectedCandleRef.current = bar;
     if (!legendRef.current) return;
     const digits = bar ? candleDisplayPrecision([bar], symbol) : 5;
     legendRef.current.textContent = bar
       ? `${new Date(bar.time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}`
       : "Move the crosshair over a candle to inspect it";
+    if (studyInspectorRef.current && dataWindowRef.current?.open) {
+      const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
+      const fragment = document.createDocumentFragment();
+      for (const row of rows) {
+        const line = document.createElement("div");
+        line.className = "flex flex-wrap justify-between gap-x-4 gap-y-1 border-t border-zinc-800 py-1.5";
+        const label = document.createElement("span");
+        label.textContent = row.label;
+        label.style.color = row.color;
+        const values = document.createElement("span");
+        values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? "— (warm-up / unavailable)" : Number(item.value.toPrecision(8))}`).join(" · ");
+        line.append(label, values);
+        fragment.append(line);
+      }
+      if (!rows.length) fragment.append(document.createTextNode("Add a study to inspect its values."));
+      studyInspectorRef.current.replaceChildren(fragment);
+    }
   }, [symbol]);
   useEffect(() => {
     if (!expanded) return;
@@ -492,9 +513,13 @@ export function ARXNativeChart({
 
   useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
+  useEffect(() => { adapterRef.current?.setPriceScaleInverted?.(preferences.inverted === true); }, [preferences.inverted, chartEpoch]);
 
   useEffect(() => { adapterRef.current?.setChartStyle?.(preferences.style); }, [preferences.style, chartEpoch]);
-  useEffect(() => { adapterRef.current?.setStudies?.(preferences.studies); }, [preferences.studies, chartEpoch]);
+  useEffect(() => {
+    adapterRef.current?.setStudies?.(preferences.studies);
+    updateLegend(inspectedCandleRef.current);
+  }, [preferences.studies, chartEpoch, updateLegend]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
@@ -1131,9 +1156,10 @@ export function ARXNativeChart({
             <ArrowRightToLine className="mr-1 h-3.5 w-3.5" /> Latest
           </Button>
           <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
-          <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={scaleMode === "log"} onClick={() => setScaleMode((m) => m === "linear" ? "log" : "linear")} title="Toggle logarithmic price scale">
-            {scaleMode === "log" ? "Log scale" : "Linear scale"}
-          </Button>
+          <label className="ml-1 flex items-center gap-2 text-xs text-zinc-400">Scale<select aria-label="Price scale" className="h-8 rounded border border-zinc-700 bg-zinc-900 px-2 text-zinc-100" value={scaleMode} onChange={event => setPreferences(p => ({...p, scale:event.target.value as typeof p.scale}))}>
+            <option value="linear">Regular price</option><option value="log">Logarithmic</option><option value="percent">Percentage</option><option value="indexed">Indexed to 100</option>
+          </select></label>
+          <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={preferences.inverted === true} onClick={() => setPreferences(p => ({...p,inverted:!p.inverted}))}>Invert scale</Button>
         </div>
         <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={expanded} onClick={() => setExpanded((v) => !v)}>
           {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
@@ -1145,6 +1171,10 @@ export function ARXNativeChart({
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect it
       </output>
+      <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
+        <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
+        <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
+      </details>
       <CardContent className="relative p-0">
         {/* The chart canvas is always mounted so the v5 series handle is stable;
             overlays cover it for loading / empty / error. */}
