@@ -25,6 +25,8 @@
 // intervals the newest bar trails the current bar, plus — for synthetics — a
 // confirmed recent live tick), not from any hidden provider flag.
 
+import type { TruthReadEvidence } from "@workspace/domain/truth";
+import { prepareMarketRead } from "../../truth/marketReadEvidence.js";
 import { routeCandles, classifySymbol, type AssetClass } from "../marketDataRouter.js";
 import {
   getDerivSymbolFeedStatus,
@@ -87,6 +89,7 @@ export interface ChartFeedStatus {
 }
 
 export interface ChartCandlesResponse {
+  marketEvidence?: TruthReadEvidence | null;
   symbol: string;
   displaySymbol: string;
   timeframe: ChartTimeframe;
@@ -115,6 +118,7 @@ function resolveDisplaySymbol(symbol: string, assetClass: AssetClass): string {
 }
 
 interface BuiltFeed {
+  marketEvidence: TruthReadEvidence | null;
   assetClass: AssetClass;
   displaySymbol: string;
   source: string | null;
@@ -163,9 +167,10 @@ function buildFormingTipCandle(
  * `includeFormingTip` (default FALSE) is the ONLY switch that folds the live
  * forming-bar tip onto the newest bar. It is passed `true` ONLY by the chart
  * display/feed-status surfaces. Every analysis caller (chart-intelligence,
- * flame signal, timeframe agreement, market overview, Ruby) leaves it false so
- * they keep consuming closed bars exclusively. truthResult + chartTruthScore are
- * always computed on the closed bars BEFORE any tip is appended.
+ * flame signal, timeframe agreement, market overview, Ruby) leaves it false.
+ * A provider may already include its unfinished interval; analysis consumers
+ * must still respect completion flags. marketEvidence refers only to accepted
+ * closed bars; truthResult + chartTruthScore precede any appended display tip.
  */
 async function buildChartFeed(
   symbol: string,
@@ -251,8 +256,9 @@ async function buildChartFeed(
   const derivSymbolStatus = derivBacked ? getDerivSymbolFeedStatus(symbol) : null;
   const hasLiveTick = derivSymbolStatus?.hasRecentTick ?? false;
 
-  // Trailing-gap + last-CLOSED-candle are computed BEFORE any forming tip so
-  // they always describe provider truth (the tip would pin trailing to 0).
+  // Trailing-gap + newest provider candle precede any appended display tip.
+  // A provider forming bar can have a scheduled future closeTime; that is not
+  // the closed-bar observation carried separately in marketEvidence.
   const trailing = trailingIntervalGap(candles, timeframe, now);
   const lastCandle = candles[candles.length - 1] ?? null;
   const lastCandleTime = lastCandle ? lastCandle.closeTime : null;
@@ -370,7 +376,8 @@ async function buildChartFeed(
   // Phase 3: Chart Truth Score — derived from Phase 1 signals.
   const chartTruthScore = computeChartTruthScore(truthResult, status);
 
-  return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore };
+  return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore,
+    marketEvidence: prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null };
 }
 
 /**
@@ -437,6 +444,7 @@ export async function getChartCandles(
     candleCount: feed.candles.length,
     candles: feed.candles,
     feedStatus: feed.status,
+    marketEvidence: feed.marketEvidence,
     truthResult: feed.truthResult,
     chartTruthScore: feed.chartTruthScore,
   };

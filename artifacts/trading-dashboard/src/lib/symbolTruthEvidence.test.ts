@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MarketTruthResponse } from "@workspace/api-client-react";
 import type { ScannerTruth } from "./scannerTruth";
-import { resolveSymbolTruthEvidence, SYMBOL_TRUTH_MAX_AGE_MS } from "./symbolTruthEvidence";
+import { resolveSymbolTruthEvidence, symbolTruthDeadline, SYMBOL_TRUTH_MAX_AGE_MS } from "./symbolTruthEvidence";
 
 const NOW = Date.parse("2026-10-26T14:00:01.000Z");
 const CLOSE = "2026-10-26T14:00:00.000Z";
@@ -72,5 +72,27 @@ describe("composed truth evidence", () => {
   it("withdraws an incomplete response instead of crashing or retaining its advice", () => {
     const value = input(); value.snapshot = { ...value.snapshot!, data: undefined } as unknown as MarketTruthResponse;
     expect(resolveSymbolTruthEvidence(value)).toEqual({ snapshot: null, actionCapped: true });
+  });
+});
+
+
+describe("server component deadline", () => {
+  it("uses the earlier exact boundary and cannot extend the existing horizon", () => {
+    const value = input();
+    Object.assign(value.snapshot!, { validUntil: new Date(NOW + 2000).toISOString() });
+    expect(symbolTruthDeadline(value.snapshot)).toBe(NOW + 2000);
+    expect(resolveSymbolTruthEvidence({ ...value, nowMs: NOW + 1999 }).actionCapped).toBe(false);
+    expect(resolveSymbolTruthEvidence({ ...value, nowMs: NOW + 2000 })).toEqual({ snapshot: null, actionCapped: true });
+    Object.assign(value.snapshot!, { validUntil: new Date(NOW + 999_000).toISOString() });
+    expect(symbolTruthDeadline(value.snapshot)).toBe(NOW + SYMBOL_TRUTH_MAX_AGE_MS + 1);
+  });
+  it.each(["invalid", 1234, "", new Date(NOW - 1).toISOString()])("rejects a malformed or expired supplied deadline: %s", (validUntil) => {
+    const value = input(); Object.assign(value.snapshot!, { validUntil });
+    expect(resolveSymbolTruthEvidence(value)).toEqual({ snapshot: null, actionCapped: true });
+  });
+  it("retains the old-server cap when the optional field is absent or null", () => {
+    const value = input(); expect(symbolTruthDeadline(value.snapshot)).toBe(NOW + SYMBOL_TRUTH_MAX_AGE_MS + 1);
+    Object.assign(value.snapshot!, { validUntil: null });
+    expect(symbolTruthDeadline(value.snapshot)).toBe(NOW + SYMBOL_TRUTH_MAX_AGE_MS + 1);
   });
 });

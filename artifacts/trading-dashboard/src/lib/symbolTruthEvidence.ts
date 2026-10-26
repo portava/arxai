@@ -12,6 +12,20 @@ function currentTimestamp(iso: string | null | undefined, nowMs: number): number
   return Number.isFinite(stamp) && stamp <= nowMs ? stamp : null;
 }
 
+/** Newer servers expose the earliest component/bar deadline. It can only
+ * shorten the existing client horizon; older responses retain the 30s cap.
+ * A supplied but malformed deadline is not permission to keep advice alive. */
+export function symbolTruthDeadline(snapshot: MarketTruthResponse | null): number | null {
+  if (!snapshot) return null;
+  const built = Date.parse(snapshot.generatedAt);
+  if (!Number.isFinite(built)) return null;
+  const localDeadline = built + SYMBOL_TRUTH_MAX_AGE_MS + 1;
+  const supplied = (snapshot as MarketTruthResponse & { validUntil?: unknown }).validUntil;
+  if (supplied == null) return localDeadline;
+  const serverDeadline = typeof supplied === "string" ? Date.parse(supplied) : NaN;
+  return Number.isFinite(serverDeadline) ? Math.min(localDeadline, serverDeadline) : built;
+}
+
 /** Bind advice to the same confirmed chart evidence; this grants no execution authority. */
 export function resolveSymbolTruthEvidence(input: {
   snapshot: MarketTruthResponse | null;
@@ -30,7 +44,7 @@ export function resolveSymbolTruthEvidence(input: {
   // old value, so explicitly withdraw it rather than displaying cached advice as current.
   if (input.snapshotError || !snapshot.data || !snapshot.verdict || !snapshot.components || !snapshot.levels ||
       snapshot.symbol !== input.symbol || snapshot.timeframe !== input.apiTimeframe ||
-      generatedAt == null || nowMs - generatedAt > SYMBOL_TRUTH_MAX_AGE_MS) {
+      generatedAt == null || nowMs >= (symbolTruthDeadline(snapshot) ?? generatedAt)) {
     return { snapshot: null, actionCapped: true };
   }
   // ChartDataService exposes closeTime here, which may be the scheduled end of
