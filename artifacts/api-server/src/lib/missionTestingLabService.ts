@@ -3,13 +3,13 @@
 // SAFETY / SCOPE:
 //   - COMPOSES the existing backtest engine (@workspace/domain/backtest +
 //     backtestStrategyRegistry) and the pure Phase 9 testing-lab module to give a
-//     mission an HONEST, labelled performance record. A BACKTEST result is
-//     historical/simulated; a FORWARD result is aggregated from the mission's OWN
-//     real executed-and-closed drafts (never fabricated). Results are persisted
+//     mission a labelled diagnostic record. BACKTEST uses generated prices;
+//     FORWARD aggregates the mission's OWN closed drafts without proving their
+//     historical execution mode, account units or net costs. Results are persisted
 //     append-only into `mission_test_results`.
 //   - ADVISORY ONLY. Nothing here places a trade, touches the EA/broker, alters a
-//     position, or relaxes/bypasses any live execution gate. A passing test can
-//     never grant live permission — it is one input to the promotion gate.
+//     position, or relaxes/bypasses any live execution gate. Current diagnostic
+//     producers cannot supply verification, promotion or strategy-drift evidence.
 //   - Per-user / per-mission isolation: every read/write is scoped by (userId,
 //     missionId). ARX Focus-Lock is enforced before a backtest runs.
 import { and, desc, eq } from "drizzle-orm";
@@ -25,13 +25,12 @@ import {
   type MissionTestKind,
   type MissionTestMetrics,
   type MissionTestSummary,
+  type MissionTestEvidence,
 } from "@workspace/domain/profit-mission";
 import {
   simulateBacktest,
   type BacktestCandle,
   type BacktestSignal,
-  type BacktestSimTrade,
-  type BacktestRunMetrics,
 } from "@workspace/domain/backtest";
 import { resolveArxMarket, arxFocusBlockedEnvelope } from "@workspace/domain/market";
 import {
@@ -42,6 +41,10 @@ import {
   type StrategyId,
 } from "./backtestStrategyRegistry.js";
 import type { Candle } from "./strategyEngine.js";
+import {
+  GENERATED_PRICE_EVIDENCE, CLOSED_DRAFT_EVIDENCE, backtestToMissionMetrics,
+  projectMissionTestResult, roundMetric as round,
+} from "./missionTestingEvidence.js";
 
 const KNOWN_STRATEGIES = [
   "trendContinuation", "breakOfStructure", "liquiditySweep", "volatilityExpansion",
@@ -66,6 +69,7 @@ export interface MissionTestResultDto {
   notes: string[];
   promotionEligible: boolean;
   createdAt: string;
+  evidence: MissionTestEvidence;
 }
 
 export type TestingLabFailure =
@@ -82,42 +86,6 @@ function clampFinite(n: number, max = 999): number {
   return n;
 }
 
-function round(n: number, dp = 4): number {
-  const f = 10 ** dp;
-  return Math.round((Number.isFinite(n) ? n : 0) * f) / f;
-}
-
-// Signed realised R for a simulated trade: a WIN banks the planned reward-to-risk,
-// a LOSS is a full -1R stop, breakeven/timeout contribute 0R. This yields a true
-// expectancy in R (vs `averageRr`, which is the mean PLANNED reward-to-risk).
-function realisedR(t: BacktestSimTrade): number {
-  if (t.result === "WIN") return Number.isFinite(t.rewardToRisk) ? t.rewardToRisk : 0;
-  if (t.result === "LOSS") return -1;
-  return 0;
-}
-
-function backtestToMissionMetrics(
-  m: BacktestRunMetrics,
-  trades: BacktestSimTrade[],
-  initialBalance: number,
-): MissionTestMetrics {
-  const expectancyR = trades.length > 0
-    ? trades.reduce((s, t) => s + realisedR(t), 0) / trades.length
-    : 0;
-  const maxDrawdownPct = initialBalance > 0 ? (m.maxDrawdown / initialBalance) * 100 : 0;
-  return {
-    totalTrades: m.totalTrades,
-    winningTrades: m.winningTrades,
-    losingTrades: m.losingTrades,
-    winRate: round(m.winRate),
-    netProfitLoss: round(m.netProfitLoss, 2),
-    maxDrawdownPct: round(Math.max(0, maxDrawdownPct), 2),
-    averageRr: round(m.averageRr),
-    expectancyR: round(expectancyR),
-    profitFactor: round(clampFinite(m.profitFactor), 3),
-  };
-}
-
 async function loadOwnedMission(userId: number, missionId: number): Promise<MissionRow | null> {
   const rows = await db
     .select()
@@ -125,31 +93,6 @@ async function loadOwnedMission(userId: number, missionId: number): Promise<Miss
     .where(and(eq(profitMissionsTable.id, missionId), eq(profitMissionsTable.userId, userId)))
     .limit(1);
   return rows[0] ?? null;
-}
-
-function projectResult(row: typeof missionTestResultsTable.$inferSelect): MissionTestResultDto {
-  const blob = (row.metricsJson as Record<string, unknown> | null) ?? {};
-  const metrics = (blob.metrics as MissionTestMetrics | undefined) ?? {
-    totalTrades: 0, winningTrades: 0, losingTrades: 0, winRate: 0, netProfitLoss: 0,
-    maxDrawdownPct: 0, averageRr: 0, expectancyR: 0, profitFactor: 0,
-  };
-  return {
-    id: row.id,
-    missionId: row.missionId,
-    kind: row.kind as MissionTestKind,
-    strategyKey: row.strategyKey,
-    symbol: row.symbol,
-    timeframe: row.timeframe,
-    label: row.label,
-    sampleSize: row.sampleSize,
-    sampleWarning: row.sampleWarning ?? null,
-    isVerified: row.isVerified,
-    metrics,
-    headline: typeof blob.headline === "string" ? blob.headline : "",
-    notes: Array.isArray(blob.notes) ? (blob.notes as string[]) : [],
-    promotionEligible: blob.promotionEligible === true,
-    createdAt: row.createdAt.toISOString(),
-  };
 }
 
 async function persistTestResult(args: {
@@ -161,6 +104,7 @@ async function persistTestResult(args: {
   timeframe: string;
   metrics: MissionTestMetrics;
   summary: MissionTestSummary;
+  experiment?: Record<string, unknown>;
 }): Promise<MissionTestResultDto> {
   const inserted = await db
     .insert(missionTestResultsTable)
@@ -179,11 +123,13 @@ async function persistTestResult(args: {
         headline: args.summary.headline,
         notes: args.summary.notes,
         promotionEligible: args.summary.promotionEligible,
+        evidence: args.summary.evidence,
+        experiment: args.experiment ?? null,
       },
-      isVerified: args.summary.promotionEligible,
+      isVerified: false,
     })
     .returning();
-  return projectResult(inserted[0]!);
+  return projectMissionTestResult(inserted[0]!);
 }
 
 export interface RunBacktestArgs {
@@ -199,9 +145,9 @@ export interface RunBacktestArgs {
 }
 
 /**
- * Run a deterministic historical/simulated backtest for the mission's strategy and
+ * Run a deterministic generated-price diagnostic for the mission's strategy and
  * persist an honest, labelled BACKTEST result. Focus-Lock + per-user scoped. The
- * result is advisory input to the promotion gate — never a live grant.
+ * result cannot satisfy the promotion gate or grant live permission.
  */
 export async function runMissionBacktest(args: RunBacktestArgs): Promise<TestingLabResult> {
   const mission = await loadOwnedMission(args.userId, args.missionId);
@@ -239,7 +185,7 @@ export async function runMissionBacktest(args: RunBacktestArgs): Promise<Testing
   const metrics = backtestToMissionMetrics(sim.metrics, sim.trades, initialBalance);
   const summary = summarizeMissionTest({
     kind: "BACKTEST", strategyKey: strategyId, symbol: args.symbol,
-    timeframe: args.timeframe, metrics,
+    timeframe: args.timeframe, metrics, evidence: GENERATED_PRICE_EVIDENCE,
   });
 
   // Anchor timeframe so the backtest window stays deterministic for the seed.
@@ -248,6 +194,12 @@ export async function runMissionBacktest(args: RunBacktestArgs): Promise<Testing
   const result = await persistTestResult({
     userId: args.userId, missionId: args.missionId, kind: "BACKTEST",
     strategyKey: strategyId, symbol: args.symbol, timeframe: args.timeframe, metrics, summary,
+    experiment: {
+      version: 1, engine: "generated-price-diagnostic-v1", strategyId,
+      seed, baseTimeMs, candleCount, minConfidence, initialBalance,
+      symbol: args.symbol, timeframe: args.timeframe,
+      costs: "not_modelled", chronologicalHoldout: "not_performed", pnlUnit: "price_units",
+    },
   });
   return { ok: true, result };
 }
@@ -255,18 +207,17 @@ export async function runMissionBacktest(args: RunBacktestArgs): Promise<Testing
 export interface AggregateForwardArgs {
   userId: number;
   missionId: number;
-  /** Strategy/agent label to attribute the forward record to (display only). */
+  /** Exact optional source filter. Never relabel another strategy's outcomes. */
   strategyKey?: string;
   symbol?: string;
   timeframe?: string;
 }
 
 /**
- * Aggregate a FORWARD result from the mission's OWN executed-and-closed drafts —
- * real realised outcomes only. Never fabricates a forward record: with zero closed
- * trades it still writes an honest empty result with a small-sample warning. The
- * result label keeps it honest (paper/demo/live forward), and a small sample is
- * flagged so the promotion gate will not count it as satisfied.
+ * Aggregate recorded outcomes from the mission's OWN closed drafts. Historical
+ * execution mode, account units, costs and reconciliation are not established by
+ * this table. Empty and partial-R samples stay explicit; no current aggregate
+ * can satisfy promotion or become a verified strategy-drift baseline.
  */
 export async function aggregateMissionForward(args: AggregateForwardArgs): Promise<TestingLabResult> {
   const mission = await loadOwnedMission(args.userId, args.missionId);
@@ -291,7 +242,10 @@ export async function aggregateMissionForward(args: AggregateForwardArgs): Promi
     )
     .orderBy(missionTradeDraftsTable.closedAt);
 
-  const closed = rows.filter((r) => r.closedAt != null && r.pnl != null && Number.isFinite(r.pnl));
+  const closed = rows.filter((r) => r.closedAt != null && r.pnl != null && Number.isFinite(r.pnl)
+    && (args.strategyKey == null || r.agentKey === args.strategyKey)
+    && (args.symbol == null || r.symbol === args.symbol)
+    && (args.timeframe == null || r.timeframe === args.timeframe));
   const startingAmount = mission.startingAmount > 0 ? mission.startingAmount : 0;
 
   let winning = 0;
@@ -305,7 +259,7 @@ export async function aggregateMissionForward(args: AggregateForwardArgs): Promi
   // Equity curve from realised P/L for an honest drawdown read.
   let equity = startingAmount;
   let peak = startingAmount;
-  let maxDrawdown = 0;
+  let maxDrawdownPct = 0;
   for (const r of closed) {
     const pnl = r.pnl as number;
     if (pnl > 0) { winning += 1; grossWin += pnl; }
@@ -316,12 +270,10 @@ export async function aggregateMissionForward(args: AggregateForwardArgs): Promi
     }
     equity += pnl;
     if (equity > peak) peak = equity;
-    const dd = peak - equity;
-    if (dd > maxDrawdown) maxDrawdown = dd;
+    if (peak > 0) maxDrawdownPct = Math.max(maxDrawdownPct, (peak - equity) / peak * 100);
   }
   const total = closed.length;
   const profitFactor = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? 999 : 0);
-  const maxDrawdownPct = peak > 0 ? (maxDrawdown / peak) * 100 : 0;
 
   const metrics: MissionTestMetrics = {
     totalTrades: total,
@@ -335,14 +287,21 @@ export async function aggregateMissionForward(args: AggregateForwardArgs): Promi
     profitFactor: round(clampFinite(profitFactor), 3),
   };
 
-  const strategyKey = args.strategyKey ?? closed[0]?.agentKey ?? "mission";
-  const symbol = args.symbol ?? closed[0]?.symbol ?? "—";
-  const timeframe = args.timeframe ?? closed[0]?.timeframe ?? "—";
-  const summary = summarizeMissionTest({ kind: "FORWARD", strategyKey, symbol, timeframe, metrics });
+  const unique = (values: (string | null)[], fallback: string): string => {
+    const labels = new Set(values);
+    return labels.size === 1 ? [...labels][0] ?? fallback : labels.size ? "Mixed" : fallback;
+  };
+  const strategyKey = args.strategyKey ?? unique(closed.map((r) => r.agentKey), "Unattributed");
+  const symbol = args.symbol ?? unique(closed.map((r) => r.symbol), "Unknown");
+  const timeframe = args.timeframe ?? unique(closed.map((r) => r.timeframe), "Unknown");
+  const summary = summarizeMissionTest({ kind: "FORWARD", strategyKey, symbol, timeframe, metrics, evidence: CLOSED_DRAFT_EVIDENCE });
 
   const result = await persistTestResult({
     userId: args.userId, missionId: args.missionId, kind: "FORWARD",
     strategyKey, symbol, timeframe, metrics, summary,
+    experiment: { version: 1, engine: "closed-draft-aggregate-v1", rObservedCount: rCount, closedDraftCount: total,
+      filters: { strategyKey: args.strategyKey ?? null, symbol: args.symbol ?? null, timeframe: args.timeframe ?? null },
+      executionMode: "unverified", netCosts: "unverified" },
   });
   return { ok: true, result };
 }
@@ -362,18 +321,18 @@ export async function listMissionTestResults(
     )
     .orderBy(desc(missionTestResultsTable.createdAt), desc(missionTestResultsTable.id))
     .limit(limit);
-  return rows.map(projectResult);
+  return rows.map(projectMissionTestResult);
 }
 
-/** Latest BACKTEST + FORWARD result (for drift / promotion composition). */
+/** Latest verified BACKTEST + FORWARD evidence only. Diagnostic runs remain in the history. */
 export async function latestMissionTestResults(
   userId: number,
   missionId: number,
 ): Promise<{ backtest: MissionTestResultDto | null; forward: MissionTestResultDto | null }> {
   const recent = await listMissionTestResults(userId, missionId, { limit: 200 });
   return {
-    backtest: recent.find((r) => r.kind === "BACKTEST") ?? null,
-    forward: recent.find((r) => r.kind === "FORWARD") ?? null,
+    backtest: recent.find((r) => r.kind === "BACKTEST" && r.isVerified) ?? null,
+    forward: recent.find((r) => r.kind === "FORWARD" && r.isVerified) ?? null,
   };
 }
 

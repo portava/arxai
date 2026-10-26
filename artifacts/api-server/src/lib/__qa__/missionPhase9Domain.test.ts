@@ -127,15 +127,15 @@ test("guardrail: paper/demo account can never reach a live-auto level", () => {
 
 // ── Testing lab labels + sample warnings ─────────────────────────────────────
 
-test("testing lab labels backtest as historical/simulated and forward distinctly", () => {
-  assert.match(MISSION_TEST_LABEL.BACKTEST, /historical|simulated/i);
+test("testing lab labels unknown evidence unverified and separates test kinds", () => {
+  assert.match(MISSION_TEST_LABEL.BACKTEST, /unverified/i);
   assert.notEqual(MISSION_TEST_LABEL.FORWARD, MISSION_TEST_LABEL.BACKTEST);
 
   const bt = summarizeMissionTest({
     kind: "BACKTEST", strategyKey: "flame_scalp", symbol: "EURUSD", timeframe: "M15",
     metrics: metrics({ totalTrades: 40 }),
   });
-  assert.match(bt.headline, /historical|simulated/i);
+  assert.match(bt.headline, /unverified/i);
   assert.equal(bt.label, MISSION_TEST_LABEL.BACKTEST);
 });
 
@@ -151,14 +151,14 @@ test("testing lab flags small samples and withholds promotion eligibility", () =
   assert.ok(small.sampleWarning);
   assert.equal(small.promotionEligible, false);
 
-  // Sufficient sample + positive edge → eligible, no warning.
+  // A minimum sample and positive metrics do not establish verified evidence.
   assert.equal(hasSufficientSample("BACKTEST", 40), true);
   assert.equal(sampleWarning("BACKTEST", 40), null);
   const big = summarizeMissionTest({
     kind: "BACKTEST", strategyKey: "flame_scalp", symbol: "EURUSD", timeframe: "M15",
     metrics: metrics({ totalTrades: 40, expectancyR: 0.4, profitFactor: 1.8 }),
   });
-  assert.equal(big.promotionEligible, true);
+  assert.equal(big.promotionEligible, false);
   assert.equal(big.sampleWarning, null);
 
   // Sufficient sample but no positive edge → still not eligible (honest).
