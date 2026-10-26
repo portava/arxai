@@ -237,6 +237,7 @@ beforeEach(() => {
   entryCommand = fullEntry();
   competingPosition = undefined;
   position = {
+    id: 1,
     userId: 9,
     brokerTicket: "123",
     symbol: "EURUSD",
@@ -279,6 +280,10 @@ describe("actual manager orchestration", () => {
       manageAgentPositions(agent),
     ]);
     assert.equal(dispatches.length, 1);
+    assert.deepEqual((dispatches[0] as { intent: { selfTradeManagement: unknown } }).intent.selfTradeManagement, {
+      executionId: execution.id, positionRowId: 1,
+      claimId: (execution.managementState as { pendingManagement: { claimId: string } }).pendingManagement.claimId,
+    });
     assert.equal(execution.slPrice, 1.09);
     assert.equal(
       (execution.managementState as { beMoved?: boolean }).beMoved,
