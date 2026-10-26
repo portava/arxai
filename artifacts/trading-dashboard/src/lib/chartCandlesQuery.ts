@@ -79,6 +79,13 @@ export function normalizeChartTimeframe(tf: string | null | undefined): string {
 export interface ChartCandlesResult {
   candles: Candle[];
   feedStatus: ChartFeedStatus | null;
+  marketEvidence?: {
+    symbol: string;
+    timeframe: string;
+    source: string;
+    sourceIdentity: string;
+    lastClosedCandleAt: string | null;
+  } | null;
 }
 
 export function chartCandlesQueryKey(symbol: string, apiTf: string, limit: number) {
@@ -101,7 +108,14 @@ export async function fetchChartCandles(
   const arr = Array.isArray(data) ? data : (obj?.candles as unknown[] | undefined) ?? [];
   const candles = adaptChartCandles(arr as Array<Record<string, unknown>>);
   const feedStatus = (obj?.feedStatus as ChartFeedStatus | undefined) ?? null;
-  return { candles, feedStatus };
+  const evidence = obj?.marketEvidence as Partial<NonNullable<ChartCandlesResult["marketEvidence"]>> | null | undefined;
+  const marketEvidence = evidence && evidence.symbol === symbol && evidence.timeframe === apiTf && typeof evidence.source === "string"
+    && evidence.source === feedStatus?.source && typeof evidence.sourceIdentity === "string"
+    && evidence.sourceIdentity.length > 0
+    ? { symbol, timeframe: apiTf, source: evidence.source, sourceIdentity: evidence.sourceIdentity,
+        lastClosedCandleAt: typeof evidence.lastClosedCandleAt === "string" ? evidence.lastClosedCandleAt : null }
+    : null;
+  return { candles, feedStatus, ...(marketEvidence ? { marketEvidence } : {}) };
 }
 
 // ── Deep history (Task #438) ────────────────────────────────────────────────

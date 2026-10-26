@@ -53,7 +53,10 @@ export function useChartDeepHistory(
   symbol: string,
   apiTf: string,
   enabled = true,
+  source: string | null = null,
+  evidenceIdentity: string | null = null,
 ): ChartDeepHistoryState {
+  const sourceIdentity = JSON.stringify([source, evidenceIdentity]);
   const [olderCandles, setOlderCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -62,7 +65,7 @@ export function useChartDeepHistory(
   const [coverageDays, setCoverageDays] = useState<number | null>(null);
   const [depthTargetDays, setDepthTargetDays] = useState(0);
   const [loadedAny, setLoadedAny] = useState(false);
-  const [stateIdentity, setStateIdentity] = useState({ symbol, apiTf });
+  const [stateIdentity, setStateIdentity] = useState({ symbol, apiTf, sourceIdentity });
 
   // The source pinned by the first page keeps the whole series coherent.
   const sourceRef = useRef<string | null>(null);
@@ -73,7 +76,7 @@ export function useChartDeepHistory(
   const generationRef = useRef(0);
   const requestRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(false);
-  const identityRef = useRef({ symbol, apiTf });
+  const identityRef = useRef({ symbol, apiTf, sourceIdentity, source });
 
   const reset = useCallback(() => {
     if (!mountedRef.current) return;
@@ -82,7 +85,7 @@ export function useChartDeepHistory(
     generationRef.current++;
     requestRef.current?.abort();
     requestRef.current = null;
-    sourceRef.current = null;
+    sourceRef.current = identityRef.current.source;
     cursorRef.current = null;
     inFlightRef.current = false;
     setStateIdentity(identityRef.current);
@@ -99,7 +102,7 @@ export function useChartDeepHistory(
   // Reset whenever the series identity changes so pages never cross symbols/tfs.
   useLayoutEffect(() => {
     mountedRef.current = true;
-    identityRef.current = { symbol, apiTf };
+    identityRef.current = { symbol, apiTf, sourceIdentity, source };
     reset();
     return () => {
       mountedRef.current = false;
@@ -108,13 +111,13 @@ export function useChartDeepHistory(
       requestRef.current = null;
       inFlightRef.current = false;
     };
-  }, [symbol, apiTf, reset]);
+  }, [symbol, apiTf, sourceIdentity, source, reset]);
 
   const loadOlder = useCallback(
     (oldestLoadedIso: string | null) => {
       if (!mountedRef.current || !enabled || inFlightRef.current) return;
       // A renderer may retain a prior series' reach-start callback briefly.
-      if (identityRef.current.symbol !== symbol || identityRef.current.apiTf !== apiTf) return;
+      if (identityRef.current.symbol !== symbol || identityRef.current.apiTf !== apiTf || identityRef.current.sourceIdentity !== sourceIdentity) return;
       if (!hasMore) return;
       const before = cursorRef.current ?? oldestLoadedIso;
       if (!before) return; // nothing on screen yet to page behind
@@ -138,6 +141,11 @@ export function useChartDeepHistory(
             signal: controller.signal,
           });
           if (!isCurrent()) return;
+          if (source != null && page.source !== source) {
+            setHasMore(false);
+            setLimitationReason("Older history did not match the chart's data source.");
+            return;
+          }
           if (page.source) sourceRef.current = page.source;
           cursorRef.current = page.nextBefore;
           if (page.candles.length > 0) {
@@ -161,12 +169,12 @@ export function useChartDeepHistory(
         }
       })();
     },
-    [enabled, hasMore, symbol, apiTf],
+    [enabled, hasMore, symbol, apiTf, sourceIdentity, source],
   );
 
   // Never expose the previous instrument's accumulated bars during the render
   // before its layout-effect reset. Both chart renderers share this contract.
-  const currentState = stateIdentity.symbol === symbol && stateIdentity.apiTf === apiTf;
+  const currentState = stateIdentity.symbol === symbol && stateIdentity.apiTf === apiTf && stateIdentity.sourceIdentity === sourceIdentity;
   return {
     olderCandles: currentState ? olderCandles : [],
     loading: currentState ? loading : false,

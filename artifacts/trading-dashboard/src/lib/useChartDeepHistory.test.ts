@@ -63,6 +63,46 @@ describe("useChartDeepHistory", () => {
     fetchChartHistory.mockReset();
   });
 
+  it.each([
+    { source: "deriv_public", evidence: "public" },
+    { source: "mt5_broker", evidence: "different-opaque-account" },
+  ])("masks and aborts older history after a source identity change: $source/$evidence", async (next) => {
+    const old = deferred<ReturnType<typeof page>>(), current = deferred<ReturnType<typeof page>>();
+    fetchChartHistory.mockResolvedValueOnce(page({ source: "mt5_broker", candles: [candle(100)] }))
+      .mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const seen: number[][] = [];
+    const { result, rerender } = renderHook(({ source, evidence }) => {
+      const value = useChartDeepHistory("V75", "M15", true, source, evidence);
+      if (evidence === next.evidence) seen.push(value.olderCandles.map(c => c.time));
+      return value;
+    }, { initialProps: { source: "mt5_broker", evidence: "first-opaque-account" } });
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([candle(100)]);
+    act(() => result.current.loadOlder(before));
+    const staleLoad = result.current.loadOlder;
+    const signal = fetchChartHistory.mock.calls[1]![0].signal as AbortSignal;
+    rerender(next);
+    expect(signal.aborted).toBe(true);
+    expect(seen.every(row => row.length === 0)).toBe(true);
+    act(() => { staleLoad(before); result.current.loadOlder(before); });
+    expect(fetchChartHistory).toHaveBeenCalledTimes(3);
+    expect(fetchChartHistory.mock.calls[2]![0]).toMatchObject({ source: next.source, before });
+    await act(async () => old.resolve(page({ source: "mt5_broker", candles: [candle(150)] })));
+    expect(result.current.olderCandles).toEqual([]);
+    expect(result.current.loading).toBe(true);
+    await act(async () => current.resolve(page({ source: next.source, candles: [candle(200)] })));
+    expect(result.current.olderCandles).toEqual([candle(200)]);
+  });
+
+  it("refuses a history response from a different provider instead of mixing candle prefixes", async () => {
+    fetchChartHistory.mockResolvedValueOnce(page({ source: "deriv_public", candles: [candle(100)] }));
+    const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "mt5_broker", "opaque"));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([]);
+    expect(result.current.hasMore).toBe(false);
+    expect(result.current.limitationReason).toContain("did not match");
+  });
+
   it("no-ops when there is nothing on screen to page behind", () => {
     const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5", true));
     act(() => result.current.loadOlder(null));
