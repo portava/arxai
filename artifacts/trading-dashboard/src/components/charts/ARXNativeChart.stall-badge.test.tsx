@@ -241,6 +241,7 @@ describe("C3.5 — stalled-stream badge", () => {
     act(() => {
       openedStreams[0]!.emit({
         type: "feed_status",
+        source: "mt5_broker",
         symbol: SYMBOL,
         timeframe: TF,
         marketFrozen: true,
@@ -258,6 +259,7 @@ describe("C3.5 — stalled-stream badge", () => {
     act(() => {
       openedStreams[0]!.emit({
         type: "feed_status",
+        source: "mt5_broker",
         symbol: SYMBOL,
         timeframe: TF,
         marketFrozen: true,
@@ -272,6 +274,7 @@ describe("C3.5 — stalled-stream badge", () => {
     act(() => {
       openedStreams[0]!.emit({
         type: "feed_status",
+        source: "mt5_broker",
         symbol: SYMBOL,
         timeframe: TF,
         marketFrozen: false,
