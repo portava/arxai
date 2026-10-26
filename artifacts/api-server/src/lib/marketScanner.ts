@@ -7,6 +7,7 @@
 
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
+import { prepareScannerCandles, scannerQuoteFor } from "./scannerInputIntegrity.js";
 import { getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, isChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { rawTrailingIntervalGap } from "./data/chart/candleNormalization.js";
@@ -455,10 +456,12 @@ export interface ScannerTimingContext {
  * into opportunity.score by decorateOpportunitiesWithTimingContext.
  */
 export function effectiveOpportunityScore(o: ScannerOpportunity): number {
-  const heatBoost = o.timingContext?.heatBoost ?? 0;
-  if (o.agentGovernance) return Math.max(0, Math.min(100, o.agentGovernance.rankingScore + heatBoost));
-  if (o.agentAdvisory) return Math.max(0, Math.min(100, o.agentAdvisory.adjustedScore + heatBoost));
-  return o.opportunity.score; // already includes heatBoost from decoration
+  const base = o.agentGovernance?.rankingScore ?? o.agentAdvisory?.adjustedScore ?? o.opportunity.score;
+  // Plain opportunities already include the timing decoration. Invalid inputs
+  // are a refusal to rank, never an infinite score promoted to the top.
+  const heatBoost = o.agentGovernance || o.agentAdvisory ? o.timingContext?.heatBoost ?? 0 : 0;
+  if (!Number.isFinite(base) || !Number.isFinite(heatBoost)) return 0;
+  return clamp(base + heatBoost, 0, 100);
 }
 
 function advisoryDirectionFor(a: MarketAnalysis): AdvisoryDirection {
@@ -1248,6 +1251,8 @@ async function analyzeViaRouter(
    *  from "unknown" and is reported as null, never as a zero-cost spread).
    *  Feeds opportunityScore's spreadCondition factor — never riskScore. */
   quoteSpreadPrice: number | null;
+  quoteUsable: boolean;
+  sourceIdentity: string;
 } | null> {
   try {
     // Bounded fan-out: route the candle + quote lookups through the SHARED
@@ -1261,15 +1266,16 @@ async function analyzeViaRouter(
       runWithScannerBudget(async () => { cr = await routeCandles(sym, tf, SCAN_ROUTED_LIMIT); }),
       runWithScannerBudget(async () => { qr = await routeQuote(sym); }),
     ]);
-    if (!cr.ok || cr.candles.length === 0) return null;
-    const analysisWindow = cr.candles.slice(-SCAN_ANALYSIS_WINDOW);
+    const now = Date.now();
+    const prepared = prepareScannerCandles(cr, sym, tf, now);
+    if (!prepared || prepared.rawClosed.length === 0) return null;
+    const analysisWindow = prepared.rawClosed.slice(-SCAN_ANALYSIS_WINDOW);
     const candles = analysisWindow.map((c) => ({ o: c.open, h: c.high, l: c.low, c: c.close }));
     const last = candles[candles.length - 1];
-    const quote = qr.ok && qr.quote
-      ? {
-          mid: qr.quote.last ?? (qr.quote.bid != null && qr.quote.ask != null ? (qr.quote.bid + qr.quote.ask) / 2 : last.c),
-          spread: qr.quote.spread ?? 0,
-        }
+    const usableQuote = scannerQuoteFor(cr, qr, sym, now);
+    // A closed candle can support historical context, but quoteUsable below
+    // prevents its close or an unknown spread from becoming live trade geometry.
+    const quote = usableQuote ? { mid: usableQuote.mid, spread: usableQuote.spread ?? 0 }
       : { mid: last.c, spread: 0 };
     // Trailing-interval freshness over the SAME raw bars, using the identical
     // open-time basis + interval rule the chart feed-status contract applies.
@@ -1285,15 +1291,14 @@ async function analyzeViaRouter(
     return {
       analysis,
       trailingIntervals,
-      closedCandleCount: cr.candles.length,
+      closedCandleCount: prepared.rawClosed.length,
       rawCandles: analysisWindow,
-      regimeCandles: cr.candles,
+      regimeCandles: prepared.openClosed,
       primaryProvider: cr.primaryProvider ?? null,
-      quoteSpreadPrice:
-        qr.ok && qr.quote && qr.quote.spread != null &&
-        Number.isFinite(qr.quote.spread) && qr.quote.spread > 0
-          ? qr.quote.spread
-          : null,
+      quoteSpreadPrice: usableQuote?.spread ?? null,
+      quoteUsable: usableQuote !== null,
+      sourceIdentity: JSON.stringify([cr.primaryProvider, cr.provenance?.bridgeConnectionId ?? null,
+        cr.provenance?.userId ?? null, cr.provenance?.environment ?? "unknown", cr.provenance?.brokerSymbol ?? null]),
     };
   } catch { return null; }
 }
@@ -1307,7 +1312,11 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
   // never produces a scanner row, no matter how it was supplied (admin /scan
   // body, per-user scalp focus, stale state). This is the single chokepoint
   // every scanner read funnels through.
-  if (!isApprovedScannerSymbol(sym)) return null;
+  const canonicalSymbol = resolveArxMarket(sym)?.canonicalSymbol;
+  const canonicalTimeframe = normalizeChartTimeframe(tf);
+  if (!canonicalSymbol || !canonicalTimeframe || !isApprovedScannerSymbol(canonicalSymbol)) return null;
+  sym = canonicalSymbol;
+  tf = canonicalTimeframe;
   // Classify both via the router's primary asset-class table AND the
   // Deriv synthetic resolver (which accepts aliases like "V25 1s",
   // "Volatility 25 (1s) Index", "Boom 1000", "Crash 1000"). Either
@@ -1338,7 +1347,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     // ONLY by real routed candles (the full routed window; the legacy 30-bar
     // analysis window is unchanged for every other consumer). No feed / thin
     // feed ⇒ UNKNOWN, and computeFinalRead withholds the actionable label.
-    const regime = resolveScannerRegime(sym, tf, routed?.regimeCandles ?? null);
+    const regime = resolveScannerRegime(sym, tf, routed?.regimeCandles ?? null, routed?.sourceIdentity);
     // ── ONE FEATURE PATH (R7 step 4) ───────────────────────────────────────
     // Compute the shared-engine feature snapshot ONCE per symbol scan, from
     // the SAME routed window the regime authority just consumed — no second
@@ -1447,7 +1456,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       timeframe: tf,
       freshnessVerdict:
         ds === "LIVE_FEED"
-          ? "LIVE"
+          ? routed?.quoteUsable ? "LIVE" : "LIVE_DELAYED"
           : ds === "LIVE_DELAYED" || ds === "STALE_FEED"
             ? "LIVE_DELAYED"
             : "AWAITING",
@@ -1467,6 +1476,11 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       ds = "AWAITING_FEED";
       dataStatus = "no_data";
       disabledReason = sufficiency.humanReason;
+    }
+    if (ds === "LIVE_FEED" && !routed?.quoteUsable) {
+      ds = "STALE_FEED";
+      dataStatus = "stale";
+      disabledReason = "Waiting for a fresh quote from the same market feed as the candles.";
     }
     const selectable = dataStatus === "live";
 

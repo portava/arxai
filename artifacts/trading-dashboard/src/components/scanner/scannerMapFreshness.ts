@@ -17,5 +17,5 @@ export function canUseScannerOpportunity(row: {
 }, now: number): boolean {
   return row.dataStatus === "live" && row.tradeable === true &&
     isScannerMapFresh(row.generatedAt, now) &&
-    (row.scanGeneratedAt == null || isScannerMapFresh(row.scanGeneratedAt, now));
+    isScannerMapFresh(row.scanGeneratedAt, now);
 }

@@ -41,7 +41,7 @@ import {
   type ScannerOpportunity,
   type UniverseId,
 } from "../marketScanner.js";
-import { classifyQuoteFreshness } from "../data/freshness.js";
+import { prepareScannerCandles, scannerQuoteFor } from "../scannerInputIntegrity.js";
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
 
 /** Timeframe the opportunity map reads at (aligns with the market-edge default). */
@@ -135,23 +135,18 @@ async function latenessFor(opp: ScannerOpportunity): Promise<LateDetection | nul
       runWithScannerBudget(async () => { cr = await routeCandles(opp.symbol, opp.timeframe, 30); }),
       runWithScannerBudget(async () => { qr = await routeQuote(opp.symbol); }),
     ]);
-    const candles: SignalCandle[] | null =
-      cr.ok && cr.candles.length > 0
-        ? cr.candles.map((c) => ({
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            time: c.time,
-          }))
-        : null;
-    const q = qr.ok ? qr.quote : null;
-    const observedAt = q?.timestamp ? Date.parse(q.timestamp) : NaN;
-    if (!classifyQuoteFreshness(Date.now() - observedAt).fresh) return null;
-    const currentPrice = q?.last ??
-      (q?.bid != null && q?.ask != null ? (q.bid + q.ask) / 2 : null);
-    if (currentPrice == null || !Number.isFinite(currentPrice) || currentPrice <= 0) return null;
+    if (!opp.feedProvider || cr.primaryProvider !== opp.feedProvider) return null;
+    const now = Date.now();
+    const prepared = prepareScannerCandles(cr, opp.symbol, opp.timeframe, now);
+    const quote = scannerQuoteFor(cr, qr, opp.symbol, now);
+    if (!prepared?.rawClosed.length || !quote) return null;
+    const candles: SignalCandle[] = prepared.rawClosed.map((c) => ({
+      open: c.open, high: c.high, low: c.low, close: c.close, time: c.time,
+    }));
+    const currentPrice = quote.mid;
     if (![opp.entry, opp.stopLoss, opp.takeProfit].every((n) => Number.isFinite(n) && n > 0)) return null;
+    if (direction === "BUY" ? !(opp.stopLoss < opp.entry && opp.entry < opp.takeProfit)
+      : !(opp.takeProfit < opp.entry && opp.entry < opp.stopLoss)) return null;
     return computeLateDetection({
       direction,
       candles,

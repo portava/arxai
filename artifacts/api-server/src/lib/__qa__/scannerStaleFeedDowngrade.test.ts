@@ -29,6 +29,7 @@ import assert from "node:assert/strict";
 
 import {
   updateCandlesFromMT5,
+  updateQuoteFromMT5,
   __resetMt5ProviderStore,
 } from "../data/providers/mt5Provider.js";
 import { scanSymbolTimeframe } from "../marketScanner.js";
@@ -87,6 +88,7 @@ test("a sufficient FRESH LIVE feed stays LIVE_FEED/live (demotion is freshness-d
   // Same symbol, same provider seam, same bar count — but the newest bar opens
   // on the current interval boundary (trailing gap 0), so it stays live-grade.
   updateCandlesFromMT5("EURUSD", m5BarsTrailingBy(120, 0), "M5");
+  updateQuoteFromMT5("EURUSD", { symbol: "EURUSD", bid: 1.082, ask: 1.0822, spread: 0.0002, timestamp: new Date().toISOString() });
 
   const op = await scanSymbolTimeframe("EURUSD", "M5");
   assert.ok(op != null, "scanner must return a row for an approved symbol");

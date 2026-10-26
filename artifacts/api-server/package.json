@@ -269,7 +269,8 @@
     "test:operational-rate-cap-monitoring": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/alerts/__qa__/operationalRateCapMonitor.test.ts src/lib/adminTrading/__qa__/operationalRateCapMonitoring.test.ts",
     "check:market-data": "node --import tsx src/scripts/marketDataReadinessCheck.ts",
     "test:non-broker-launch": "node --import tsx --test src/lib/assistant/__qa__/alphaVantageFx.test.ts src/lib/startup/__qa__/dashboard.test.ts",
-    "test:scanner-quality": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/__qa__/scannerRunCoordinator.test.ts src/lib/__qa__/scannerNewsAlignment.test.ts src/lib/signalIntelligence/__qa__/opportunityMapConcurrency.test.ts src/lib/__qa__/scannerScanOnceConcurrency.test.ts src/lib/__qa__/scannerEnrichmentConcurrency.test.ts src/routes/__qa__/scannerManualScanAccess.test.ts src/routes/__qa__/scannerGenuineSessionAccess.test.ts"
+    "test:scanner-quality": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/__qa__/scannerRunCoordinator.test.ts src/lib/__qa__/scannerNewsAlignment.test.ts src/lib/signalIntelligence/__qa__/opportunityMapConcurrency.test.ts src/lib/__qa__/scannerScanOnceConcurrency.test.ts src/lib/__qa__/scannerEnrichmentConcurrency.test.ts src/routes/__qa__/scannerManualScanAccess.test.ts src/routes/__qa__/scannerGenuineSessionAccess.test.ts",
+    "test:scanner-signal-integrity": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/__qa__/scannerInputIntegrity.test.ts src/lib/__qa__/scannerClosedBarPipeline.test.ts src/lib/signalIntelligence/__qa__/scannerRankingIntegrity.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

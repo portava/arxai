@@ -255,9 +255,13 @@ export default function MarketScanner() {
   // claim "No scan run yet" while the map renders populated results.
   const [mapScanned, setMapScanned] = useState(false);
   const [tradeTarget, setTradeTarget] = useState<{ opp: Opp; side: "BUY" | "SELL" } | null>(null);
+  const tradeTargetUsable = !!tradeTarget && !err && canUseScannerOpportunity(tradeTarget.opp, snapshotClock) &&
+    opps.some((current) => current.symbol === tradeTarget.opp.symbol && current.timeframe === tradeTarget.opp.timeframe &&
+      canUseScannerOpportunity(current, snapshotClock) && current.recommendedAction === tradeTarget.opp.recommendedAction &&
+      current.entry === tradeTarget.opp.entry && current.stopLoss === tradeTarget.opp.stopLoss && current.takeProfit === tradeTarget.opp.takeProfit);
   useEffect(() => {
-    if (tradeTarget && (err || !canUseScannerOpportunity(tradeTarget.opp, snapshotClock))) setTradeTarget(null);
-  }, [tradeTarget, err, snapshotClock]);
+    if (tradeTarget && !tradeTargetUsable) setTradeTarget(null);
+  }, [tradeTarget, tradeTargetUsable]);
   const [scalpTrade, setScalpTrade] = useState<{ result: ScalpResult; side: "BUY" | "SELL" } | null>(null);
   // Advanced analysis surfaces (Trade Review / Market Replay / Backtesting)
   // are admin-only routes now. Hide their quick-links from normal users so a
@@ -956,7 +960,7 @@ export default function MarketScanner() {
         ]}
       />
 
-      {tradeTarget && !err && canUseScannerOpportunity(tradeTarget.opp, snapshotClock) && (
+      {tradeTarget && tradeTargetUsable && (
         <SectionErrorBoundary section="Trade ticket">
         <ScannerTradeModal
           open={!!tradeTarget}

@@ -428,6 +428,36 @@ describe("Market Scanner — stale result action containment", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("live-intent"))).toBe(false);
   });
 
+  it("dismisses a still-fresh ticket when the next read invalidates or changes its setup", async () => {
+    vi.useFakeTimers();
+    let result = freshResult();
+    safeJsonMock.mockImplementation(async (url) => url.includes("/opportunities")
+      ? { ok: true, data: result } : defaultReads(url));
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByTestId("scanner-buy-EURUSD"));
+    expect(screen.getByTestId("scanner-ticket-fixture")).toBeTruthy();
+    result = freshResult(); result.opportunities[0]!.tradeable = false;
+    await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); }); await settle();
+    expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
+    result = freshResult();
+    await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); }); await settle();
+    fireEvent.click(screen.getByTestId("scanner-buy-EURUSD"));
+    expect(screen.getByTestId("scanner-ticket-fixture")).toBeTruthy();
+    result = freshResult(); result.opportunities[0]!.stopLoss = 1.08;
+    await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); }); await settle();
+    expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
+    expect(screen.getByTestId("scanner-buy-EURUSD")).toBeTruthy();
+  });
+
+  it("does not accept a newly stamped row without its original scan timestamp", async () => {
+    const { generatedAt: _missing, ...result } = freshResult();
+    safeJsonMock.mockImplementation(async (url) => url.includes("/opportunities")
+      ? { ok: true, data: result } : defaultReads(url));
+    render(<MarketScanner />); await settle();
+    expect(screen.queryByTestId("scanner-buy-EURUSD")).toBeNull();
+    expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
+  });
+
   it("withholds result actions when the latest read fails or the row is non-tradeable", async () => {
     vi.useFakeTimers();
     let broken = false;

@@ -18,8 +18,9 @@ describe("scanner map freshness", () => {
 
 it("requires the selected opportunity and its containing scan to be fresh and tradeable", () => {
   const now = Date.now();
-  const row = { generatedAt: new Date(now).toISOString(), dataStatus: "live", tradeable: true };
+  const row = { generatedAt: new Date(now).toISOString(), scanGeneratedAt: new Date(now).toISOString(), dataStatus: "live", tradeable: true };
   expect(canUseScannerOpportunity(row, now)).toBe(true);
+  expect(canUseScannerOpportunity({ ...row, scanGeneratedAt: undefined }, now)).toBe(false);
   expect(canUseScannerOpportunity({ ...row, tradeable: false }, now)).toBe(false);
   expect(canUseScannerOpportunity({ ...row, dataStatus: "delayed" }, now)).toBe(false);
   expect(canUseScannerOpportunity({ ...row, generatedAt: undefined }, now)).toBe(false);

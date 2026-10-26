@@ -148,6 +148,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   { pkg: "@workspace/api-server", script: "test:bridged-close-ticket" },
   // Scanner request races, shared budgets, quote honesty and fixture HTTP access.
   { pkg: "@workspace/api-server", script: "test:scanner-quality" },
+  { pkg: "@workspace/api-server", script: "test:scanner-signal-integrity" },
   { pkg: "@workspace/api-server", script: "test:scanner-enrichment-concurrency" },
   { pkg: "@workspace/api-server", script: "test:scanner-truth-caps" },
   // Task #792 — thin-feed scanner honesty. Exercises the REAL scanner read path

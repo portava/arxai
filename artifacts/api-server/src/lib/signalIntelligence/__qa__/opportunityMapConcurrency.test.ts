@@ -6,6 +6,8 @@ let inFlight = 0, peak = 0, calls = 0;
 let scans = 0, scanPeak = 0;
 let quoteAgeMs = 0;
 let missingQuote = false;
+let lateProvider = "mt5_broker";
+let stopLoss = 1.09;
 async function leaf() {
   calls++; inFlight++; peak = Math.max(peak, inFlight);
   await new Promise((resolve) => setTimeout(resolve, 1));
@@ -15,13 +17,13 @@ const router = await import("../../data/marketDataRouter.js");
 mock.module("../../data/marketDataRouter.js", {
   namedExports: {
     ...router,
-    routeCandles: async () => {
+    routeCandles: async (symbol: string) => {
       await leaf();
-      return { ok: true, candles: [{ time: new Date().toISOString(), open: 1.1, high: 1.11, low: 1.09, close: 1.1 }] };
+      return { ok: true, symbol, primaryProvider: lateProvider, assetClass: "forex", candles: [{ time: new Date(Date.now() - 600_000).toISOString(), open: 1.1, high: 1.11, low: 1.09, close: 1.1 }] };
     },
-    routeQuote: async () => {
+    routeQuote: async (symbol: string) => {
       await leaf();
-      return { ok: !missingQuote, quote: missingQuote ? null : { last: 1.1, bid: 1.0999, ask: 1.1001, timestamp: new Date(Date.now() - quoteAgeMs).toISOString() } };
+      return { ok: !missingQuote, symbol, primaryProvider: lateProvider, quote: missingQuote ? null : { symbol, last: 1.1, bid: 1.0999, ask: 1.1001, timestamp: new Date(Date.now() - quoteAgeMs).toISOString() } };
     },
   },
 });
@@ -35,8 +37,8 @@ mock.module("../../marketScanner.js", {
       await new Promise((resolve) => setTimeout(resolve, 1));
       scans--;
       return {
-        symbol, timeframe, dataSource: "LIVE_FEED", dataStatus: "live",
-        recommendedAction: "BUY", bias: "bullish", entry: 1.1, stopLoss: 1.09, takeProfit: 1.12,
+        symbol, timeframe, dataSource: "LIVE_FEED", dataStatus: "live", feedProvider: "mt5_broker",
+        recommendedAction: "BUY", bias: "bullish", entry: 1.1, stopLoss, takeProfit: 1.12,
         entrySniperScore: 70, confidenceScore: 70, riskRewardRatio: 2,
         setupType: "Trend continuation", opportunity: { score: 70 },
       } as ScannerOpportunity;
@@ -83,4 +85,18 @@ test("stale, future or missing quotes cannot manufacture ready-now or best-pick 
   const core = await buildOpportunityMapCore({ universe: "forex", timeframe: "M5" });
   assert.equal(core.map.categories.READY_NOW.length, 0, "a candle close must not replace the missing quote");
   missingQuote = false;
+});
+
+
+test("lateness cannot switch the setup feed or accept reversed stop geometry", async () => {
+  const fresh = await buildOpportunityMapCore({ universe: "forex", timeframe: "M5" });
+  assert.ok(fresh.map.categories.READY_NOW.length > 0);
+  lateProvider = "assistant_real:twelve_data";
+  const switched = await buildOpportunityMapCore({ universe: "forex", timeframe: "M5" });
+  assert.equal(switched.map.categories.READY_NOW.length, 0);
+  assert.ok(Object.values(switched.map.best).every((pick) => pick === null));
+  lateProvider = "mt5_broker"; stopLoss = 1.115;
+  const reversed = await buildOpportunityMapCore({ universe: "forex", timeframe: "M5" });
+  assert.equal(reversed.map.categories.READY_NOW.length, 0);
+  stopLoss = 1.09;
 });
