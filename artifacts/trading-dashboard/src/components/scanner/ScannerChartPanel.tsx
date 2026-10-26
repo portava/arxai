@@ -1,4 +1,6 @@
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
+import { useScannerChartLifecycle } from "./useScannerChartLifecycle";
+import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "./useDerivedOverlayContext";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createChart, CandlestickSeries, createSeriesMarkers, ColorType, CrosshairMode, LineStyle, type UTCTimestamp, type IChartApi, type ISeriesApi, type IPriceLine, type SeriesType, type SeriesMarker } from "lightweight-charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -494,7 +496,13 @@ export function ScannerChartPanel() {
   //    GET /api/chart/history as the user pans left. View-only: this loads market
   //    data and never touches an execution path; the hook never fabricates a bar,
   //    and a provider ceiling is reported honestly via the history badge.
-  const deepHistory = useChartDeepHistory(symbol, apiTf, hasCandles);
+  const evidenceIdentity = candlesQuery.data?.marketEvidence?.sourceIdentity ?? null;
+  const chartContext = JSON.stringify([symbol, apiTf, feedStatus?.source ?? null, evidenceIdentity]);
+  const overlayRequiresEvidence = useDerivedOverlayContext(JSON.stringify([symbol, apiTf]),
+    hasCandles ? JSON.stringify([feedStatus?.source ?? null, evidenceIdentity]) : null);
+  const committedChartContext = useRef(chartContext);
+  useLayoutEffect(() => { committedChartContext.current = chartContext; }, [chartContext]);
+  const deepHistory = useChartDeepHistory(symbol, apiTf, hasCandles, feedStatus?.source ?? null, evidenceIdentity);
 
   // Older history bars (Candle ms shape) merged IN FRONT of the live window,
   // deduped by time with the live window winning a collision (it carries the
@@ -547,14 +555,15 @@ export function ScannerChartPanel() {
     { symbol, timeframe: apiTf as GetMeChartIntelligenceTimeframe, limit: 200 },
     {
       query: {
-        queryKey: getGetMeChartIntelligenceQueryKey({ symbol, timeframe: apiTf as GetMeChartIntelligenceTimeframe, limit: 200 }),
-        enabled: symbol.length > 0,
+        queryKey: [...getGetMeChartIntelligenceQueryKey({ symbol, timeframe: apiTf as GetMeChartIntelligenceTimeframe, limit: 200 }), { chartContext }],
+        enabled: symbol.length > 0 && hasCandles,
         refetchInterval: 8000,
         staleTime: 4000,
       },
     },
   );
-  const trendlineOverlay = intelligenceQuery.data?.state?.trendlineOverlay ?? null;
+  const structureEvidenceMissing = overlayRequiresEvidence && !hasMatchingOverlayEvidence(candlesQuery.data?.marketEvidence, intelligenceQuery.data);
+  const trendlineOverlay = structureEvidenceMissing ? null : intelligenceQuery.data?.state?.trendlineOverlay ?? null;
 
   const [positions, setPositions] = useState<ChartPosition[]>([]);
   const [pending, setPending] = useState<ChartPending[]>([]);
@@ -580,7 +589,7 @@ export function ScannerChartPanel() {
   // loadOlder when `hasMore` flips to false; without this ref a stale closure
   // would keep firing back-page fetches after history is exhausted.
   const loadOlderRef = useRef(deepHistory.loadOlder);
-  useEffect(() => {
+  useLayoutEffect(() => {
     loadOlderRef.current = deepHistory.loadOlder;
   }, [deepHistory.loadOlder]);
   const seriesRef = useRef<{ priceToCoordinate: (p: number) => number | null; coordinateToPrice: (c: number) => number | null } | null>(null);
@@ -715,11 +724,13 @@ export function ScannerChartPanel() {
   const smartLayersParams = { symbol, timeframe: toSmartLayersTf(timeframe) };
   const smartLayersQuery = useGetMeChartSmartLayers(smartLayersParams, {
     query: {
-      queryKey: getGetMeChartSmartLayersQueryKey(smartLayersParams),
+      queryKey: [...getGetMeChartSmartLayersQueryKey(smartLayersParams), { chartContext }],
+      enabled: hasCandles,
       refetchInterval: 45_000,
     },
   });
-  const smartData = smartLayersQuery.data ?? null;
+  const smartEvidenceMissing = overlayRequiresEvidence && !hasMatchingOverlayEvidence(candlesQuery.data?.marketEvidence, smartLayersQuery.data);
+  const smartData = smartEvidenceMissing ? null : smartLayersQuery.data ?? null;
   const smartLayers: SmartChartLayer[] = smartData?.layers ?? [];
   // Task #515 — the chart's NEWS state (event markers, high-impact toasts, and
   // the Impact Radar strip) now comes from the ONE per-symbol Truth Snapshot, so
@@ -1197,14 +1208,10 @@ export function ScannerChartPanel() {
     [pending, symbol],
   );
 
-  // ── Create the candlestick chart ONCE per (symbol, timeframe). Decoupled from
-  //    the candle data (Task #438): rebuilding on every 15s poll used to reset
-  //    the user's zoom/scroll AND would discard accumulated deep history. The
-  //    SEPARATE data effect below pushes bars incrementally with setData, which
-  //    preserves the visible range. We only recreate when the symbol/timeframe
-  //    changes, or when the FIRST candles arrive (hasCandles flips true once).
-  //    Mirrors the proven PositionMiniChart lightweight-charts v5 pattern.
-  useEffect(() => {
+  // Reuse the canvas engine across cached selections. Its geometry, cursor and
+  // overlays are cleared in layout effects before the new context can paint.
+  // A cold/no-data context still removes the engine and shows honest loading.
+  useScannerChartLifecycle(hasCandles, chartContext, () => {
     const el = containerRef.current;
     if (!el || !hasCandles) return;
     el.innerHTML = "";
@@ -1308,6 +1315,10 @@ export function ScannerChartPanel() {
 
     return () => {
       disposed = true;
+      delete el.dataset.chartDataContext;
+      delete el.dataset.chartDataCount;
+      delete el.dataset.chartDataLastTime;
+      delete el.dataset.chartDataLastClose;
       ro.disconnect();
       try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* chart already removed */ }
       try { chart.remove(); } catch { /* already disposed */ }
@@ -1316,13 +1327,38 @@ export function ScannerChartPanel() {
       lineSeriesRef.current = null;
       priceLinesRef.current = [];
     };
-    // Chart is rebuilt ONLY when symbol/timeframe changes or the first candles
-    // arrive — never on a routine poll. The reach-start handler calls
-    // loadOlderRef.current (kept fresh by its own effect) so the latest
-    // loadOlder — which no-ops once history is exhausted — always runs; the
-    // oldest cursor comes from oldestIsoRef.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, apiTf, hasCandles]);
+  }, () => {
+    const chart = chartApiRef.current;
+    const series = lineSeriesRef.current;
+    if (!chart || !series) return;
+    const element = containerRef.current;
+    if (element) {
+      delete element.dataset.chartDataContext;
+      delete element.dataset.chartDataCount;
+      delete element.dataset.chartDataLastTime;
+      delete element.dataset.chartDataLastClose;
+    }
+    // Clear cursor authority before setData can fire a range callback.
+    oldestIsoRef.current = null;
+    newestBarSecRef.current = null;
+    prevOldestSecRef.current = null;
+    didFitRef.current = false;
+    chart.clearCrosshairPosition();
+    chart.priceScale("right").applyOptions({ autoScale: true, scaleMargins: { top: 0.08, bottom: 0.08 } });
+    for (const line of [...priceLinesRef.current, ...smartLayerLinesRef.current,
+      ...(lastKnownLineRef.current ? [lastKnownLineRef.current] : [])]) {
+      try { series.removePriceLine(line); } catch { /* already removed */ }
+    }
+    priceLinesRef.current = [];
+    smartLayerLinesRef.current = [];
+    lastKnownLineRef.current = null;
+    try { newsMarkersApiRef.current?.detach(); } catch { /* already detached */ }
+    newsMarkersApiRef.current = null;
+    clearStructureLines(chart, structureHandlesRef.current);
+    structureHandlesRef.current = EMPTY_STRUCTURE_HANDLES;
+    series.applyOptions({ priceLineVisible: false, lastValueVisible: false });
+    series.setData([]);
+  });
 
   // ── Push candle data into the EXISTING series WITHOUT recreating the chart.
   //    setData keeps the current visible bar-index range, so when older bars are
@@ -1361,6 +1397,16 @@ export function ScannerChartPanel() {
 
     const before = chart.timeScale().getVisibleLogicalRange();
     series.setData(mapped);
+    // A retained canvas is not evidence that the new dataset was installed.
+    // These non-visible diagnostics are written only after setData succeeds;
+    // browser acceptance separately checks a subsequent display opportunity.
+    const element = containerRef.current;
+    if (element) {
+      element.dataset.chartDataContext = chartContext;
+      element.dataset.chartDataCount = String(mapped.length);
+      element.dataset.chartDataLastTime = String(mapped[mapped.length - 1]!.time);
+      element.dataset.chartDataLastClose = String(mapped[mapped.length - 1]!.close);
+    }
     prevOldestSecRef.current = newOldestSec;
     // Track the newest bar time so the forming-tip SSE never calls update() with
     // an out-of-order time. The 15s poll above carries the authoritative closed
@@ -1391,7 +1437,7 @@ export function ScannerChartPanel() {
         to: before.to + prependedCount,
       });
     }
-  }, [mergedCandles, chartEpoch]);
+  }, [mergedCandles, chartEpoch, chartContext]);
 
   const tickSource = chartTickSource(feedStatus?.source);
 
@@ -1406,7 +1452,7 @@ export function ScannerChartPanel() {
   //    (ticks flowing within the live window) and the time is >= the newest bar,
   //    so a silent/stale stream can never keep a fake bar ticking. The payload is
   //    pure OHLC display telemetry — no execution path is touched here.
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Reset the countdown whenever the stream key changes — the previous
     // symbol/timeframe's forming bar is no longer relevant (Task #524).
     formingCloseRef.current = null;
@@ -1422,7 +1468,7 @@ export function ScannerChartPanel() {
       return; // EventSource unavailable — the 15s poll still keeps the tip fresh.
     }
     es.onmessage = (ev) => {
-      if (disposed) return;
+      if (disposed || committedChartContext.current !== chartContext) return;
       let msg: {
         type?: string;
         source?: string;
@@ -1513,7 +1559,7 @@ export function ScannerChartPanel() {
       disposed = true;
       es?.close();
     };
-  }, [symbol, apiTf, tickSource]);
+  }, [symbol, apiTf, tickSource, chartContext]);
 
   // ── Display-truth: keep the candlestick series' built-in last-price line +
   //    last-value label in lockstep with the live/non-live display status,
@@ -1524,7 +1570,7 @@ export function ScannerChartPanel() {
     const series = lineSeriesRef.current;
     if (!series) return;
     series.applyOptions({ priceLineVisible: isLiveDisplay, lastValueVisible: isLiveDisplay });
-  }, [isLiveDisplay, chartEpoch]);
+  }, [isLiveDisplay, chartEpoch, chartContext]);
 
   // ── Phase 3 — overlay the user's own positions + pending orders as price
   //    lines. Runs on every positions/pending poll WITHOUT recreating the
@@ -1583,7 +1629,7 @@ export function ScannerChartPanel() {
         addLine(a.priceTo, "#a78bfa", "Zone", true);
       }
     }
-  }, [symbolPositions, symbolPending, annotations, chartEpoch]);
+  }, [symbolPositions, symbolPending, annotations, chartEpoch, chartContext]);
 
   // ── Smart Chart Layers (Task #197) — draw Ruby / structure / target geometry
   //    AND the live execution-cost overlay (expected-fill band + break-even line)
@@ -1637,7 +1683,7 @@ export function ScannerChartPanel() {
         add(l.price, smartLayerColor(l.severity), l.label, true);
       }
     }
-  }, [smartLayers, tradeHealthOverlays, layerToggles, chartEpoch]);
+  }, [smartLayers, tradeHealthOverlays, layerToggles, chartEpoch, chartContext]);
 
   // ── Economic event markers — events are time-based, so they are drawn as
   //    time-positioned markers on the candle series (not price lines). Events
@@ -1717,7 +1763,7 @@ export function ScannerChartPanel() {
       try { newsMarkersApiRef.current?.detach(); } catch { /* already detached */ }
       newsMarkersApiRef.current = null;
     };
-  }, [news, layerToggles.news, candles, displayStatus, chartEpoch]);
+  }, [news, layerToggles.news, candles, displayStatus, chartEpoch, chartContext]);
 
   // ── Structural trendline overlay (Task #670). Mirrors the ARX native chart's
   //    structure effect 1:1 so users see the SAME detected trendlines / channel
@@ -1822,7 +1868,7 @@ export function ScannerChartPanel() {
     // repaint (uncatchable here), which crashed the Scanner page when the chart
     // sat open across candle refreshes. Re-running on every candle window keeps
     // every anchor on a real bar.
-  }, [trendlineOverlay, isLiveDisplay, chartEpoch, candles]);
+  }, [trendlineOverlay, isLiveDisplay, chartEpoch, candles, chartContext]);
 
   // News alert routing — Critical/High events that are imminent or live AND
   // affect this symbol raise a toast (Critical = destructive). Medium/Low stay
@@ -1897,7 +1943,7 @@ export function ScannerChartPanel() {
         title: "last-known",
       });
     }
-  }, [isLiveDisplay, lastClose, displayStatus, candles.length, chartEpoch]);
+  }, [isLiveDisplay, lastClose, displayStatus, candles.length, chartEpoch, chartContext]);
 
   // ── Phase 4 — reposition the draggable handles to track the price scale
   //    (zoom / scroll / resize). Runs only while a draft is active.
@@ -1946,9 +1992,19 @@ export function ScannerChartPanel() {
     };
   }, []);
 
-  // Clear an in-progress draft whenever the chart symbol changes — a draft is
-  // symbol-specific and must never carry over to a different instrument.
-  useEffect(() => { setDraft(null); }, [symbol]);
+  // Transient menu/drag state must not outlive the data identity. Same-source
+  // timeframe changes keep the existing draft behavior; its symbol stays fixed.
+  useLayoutEffect(() => {
+    setMenu(null);
+    if (longPressRef.current != null) window.clearTimeout(longPressRef.current);
+    longPressRef.current = null;
+  }, [chartContext]);
+  useLayoutEffect(() => {
+    dragKeyRef.current = null;
+    setDraft(null);
+    setHandleY(previous => previous.entry == null && previous.sl == null && previous.tp == null
+      ? previous : { entry: null, sl: null, tp: null });
+  }, [symbol, feedStatus?.source, evidenceIdentity]);
 
   // ── Task #764 — drag-to-modify SL/TP for the user's OWN open LIVE positions.
   //    This is NOT a second execution path: a drop routes through the SAME
@@ -2130,8 +2186,16 @@ export function ScannerChartPanel() {
     };
   }, []);
 
-  // A modify is symbol-specific — clear it when the chart symbol changes.
-  useEffect(() => { setPosModify(null); setModifyArmed(false); }, [symbol]);
+  // Cancel an old account/provider's unfinished drag before it can be dropped
+  // against the next context. This only withdraws a transient proposal.
+  useLayoutEffect(() => {
+    posModifyRef.current = null;
+    posDragKeyRef.current = null;
+    setPosModify(null);
+    setModifyArmed(false);
+    setPosHandleY(previous => previous.entry == null && previous.sl == null && previous.tp == null
+      ? previous : { entry: null, sl: null, tp: null });
+  }, [symbol, feedStatus?.source, evidenceIdentity]);
 
   const startDraft = (side: "BUY" | "SELL", at?: number) => {
     const base = at ?? lastClose ?? (candles.length > 0 ? candles[candles.length - 1]!.close : 0);
@@ -2793,6 +2857,11 @@ export function ScannerChartPanel() {
               {smartLayersQuery.isError && (
                 <div className="text-[11px] text-amber-400/80" data-testid="scanner-smart-error">
                   Smart layers are momentarily unavailable — the chart and your data are unaffected.
+                </div>
+              )}
+              {(smartEvidenceMissing || structureEvidenceMissing) && (
+                <div className="text-[10px] text-amber-400/90" data-testid="scanner-overlay-source-pending">
+                  Market source changed — waiting for verified analysis. Your positions and saved annotations remain available.
                 </div>
               )}
             </div>

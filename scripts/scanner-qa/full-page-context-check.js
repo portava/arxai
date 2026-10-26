@@ -1,0 +1,31 @@
+async page => {
+ const waitSeries=async(symbol,source,identity)=>{await page.waitForFunction(({symbol,source,identity})=>{const e=document.querySelector('[data-testid="scanner-chart-canvas"]');if(!e?.dataset.chartDataContext)return false;const c=JSON.parse(e.dataset.chartDataContext);return c[0]===symbol&&c[1]==='M15'&&c[2]===source&&c[3]===identity&&Number(e.dataset.chartDataCount)===200;},{symbol,source,identity});await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));};
+ const pick=async symbol=>{const panel=page.getByTestId('selected-market-panel'),chip=panel.getByTestId('chip-symbol-'+symbol);if(!await chip.isVisible())await panel.getByTestId('category-chip-forex').click();await chip.click();};
+ const hash=async()=>await page.evaluate(async()=>{const canvases=[...document.querySelectorAll('[data-testid="scanner-chart-canvas"] canvas')].sort((a,b)=>b.width*b.height-a.width*a.height);const data=new TextEncoder().encode(canvases[0].toDataURL());const h=await crypto.subtle.digest('SHA-256',data);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('');});
+ await page.getByTestId('scanner-chart-tf-15m').click();await waitSeries('EURUSD','deriv_public','fixture-A');
+ await pick('GBPUSD');await waitSeries('GBPUSD','deriv_public','fixture-A');
+ await pick('EURUSD');await waitSeries('EURUSD','deriv_public','fixture-A');
+ await page.getByTestId('scanner-chart-panel').scrollIntoViewIfNeeded();
+ await page.evaluate(()=>window.__retainedCanvas=document.querySelector('[data-testid="scanner-chart-canvas"] canvas'));
+ let box=await page.getByTestId('scanner-chart-canvas').boundingBox();
+ await page.mouse.move(box.x+box.width-16,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width-16,box.y+box.height/2+110,{steps:10});await page.mouse.up();
+ await page.screenshot({path:'.playwright-cli/lifecycle-manual-scale-eurusd.png'});
+ await pick('GBPUSD');await waitSeries('GBPUSD','deriv_public','fixture-A');
+ const priceSwitch=await page.evaluate(()=>{const e=document.querySelector('[data-testid="scanner-chart-canvas"]');return{context:JSON.parse(e.dataset.chartDataContext),close:Number(e.dataset.chartDataLastClose),count:Number(e.dataset.chartDataCount),sameCanvas:window.__retainedCanvas===e.querySelector('canvas')};});
+ if(!priceSwitch.sameCanvas||priceSwitch.close<90||priceSwitch.close>110)throw Error('Cached different-price switch failed');
+ await page.getByTestId('scanner-chart-panel').scrollIntoViewIfNeeded();await page.screenshot({path:'.playwright-cli/lifecycle-autoscale-gbpusd.png'});
+ box=await page.getByTestId('scanner-chart-canvas').boundingBox();
+ await page.mouse.move(box.x+box.width*.6,box.y+box.height*.5);await page.mouse.down();await page.mouse.move(box.x+box.width*.6-70,box.y+box.height*.5,{steps:10});await page.mouse.up();await page.mouse.move(250,100);await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ const pannedHash=await hash();await page.getByTestId('scanner-chart-reload').click();await page.waitForResponse(r=>r.url().includes('/chart/candles?')&&r.url().includes('symbol=GBPUSD'));await waitSeries('GBPUSD','deriv_public','fixture-A');
+ const reloadedHash=await hash();if(pannedHash!==reloadedHash)throw Error('Same-context refresh changed chart pixels/viewport');
+ await page.evaluate(()=>{window.__oldStream=window.__offlineStreams.filter(s=>s.url.includes('symbol=GBPUSD')&&s.url.includes('timeframe=M15')).at(-1);});
+ await page.evaluate(()=>window.__fixtureSwitchSource({source:'deriv_public',identity:'fixture-B'}));
+ await page.getByTestId('scanner-chart-reload').click();await waitSeries('GBPUSD','deriv_public','fixture-B');
+ await page.getByTestId('scanner-overlay-source-pending').waitFor();
+ const oldStreamClosed=await page.evaluate(()=>{const old=window.__oldStream;old.onmessage?.({data:JSON.stringify({type:'feed_status',source:'deriv_public',symbol:'GBPUSD',timeframe:'M15',marketFrozen:true,lastBrokerTimeMs:1000})});return old.closed===true;});
+ if(!oldStreamClosed||await page.getByTestId('scanner-chart-market-closed').count())throw Error('Obsolete stream changed current context');
+ await page.evaluate(()=>window.__fixtureSwitchSource({source:'mt5_broker',identity:'fixture-C'}));await page.getByTestId('scanner-chart-reload').click();await waitSeries('GBPUSD','mt5_broker','fixture-C');await page.getByTestId('scanner-overlay-source-pending').waitFor();
+ await page.screenshot({path:'.playwright-cli/lifecycle-source-switch.png'});
+ const log=await page.evaluate(()=>window.__readFixtureLog());if(log.errors.length)throw Error(JSON.stringify(log.errors));
+ return{passed:true,priceSwitch,manualScaleThen100xPriceSwitch:'visually inspect screenshots',sameContextRefreshPixelHashPreserved:pannedHash===reloadedHash,canvasHash:pannedHash,oldStreamClosed,obsoleteStreamIgnored:true,sourceSwitchWithheldDerivedGeometry:true,pageErrors:log.errors,limitations:['Synthetic historical fixtures, allAPI intercepted, no broker/trade checks.','Current series dataset witness is not hardware presentation timing.','Initial legacy overlay provenance and history page account identity remain unsupported.']};
+}

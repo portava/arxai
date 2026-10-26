@@ -52,6 +52,13 @@ const candlestickCharts = collectSourceFiles(COMPONENTS_DIR)
   .filter((f) => rendersCandlestickSeries(readFileSync(f, "utf8")))
   .map((f) => ({ path: f, src: readFileSync(f, "utf8") }));
 
+// A context reset may explicitly withdraw both labels immediately before
+// emptying that SAME series. This can never turn on a live affordance. Keep
+// ordinary creation/update sites under the shared live-display gate below.
+function withoutEmptySeriesReset(source: string): string {
+  return source.replace(/\b([A-Za-z_$][\w$]*)\.applyOptions\(\{\s*priceLineVisible:\s*false,\s*lastValueVisible:\s*false\s*\}\);\s*\1\.setData\(\[\]\);/g, "");
+}
+
 // ── Marker / overlay live-affordance detection (Task #352) ──────────────────
 //
 // The checks above only cover the series' last-value / price-line LABEL. A
@@ -257,14 +264,14 @@ describe("chart live-price affordance guard", () => {
     }
   });
 
-  it("no candlestick chart hardcodes its live-price affordance to a literal true/false", () => {
+  it("only an empty-series reset can disable labels outside the live-display gate", () => {
     // The label value must be bound to a live-gated variable (a name containing
     // "isLive" — e.g. isLiveDisplay, isLive, isLivePriceAffordance), never a
     // literal. A literal `true` is the exact regression this guard prevents.
     const optionRe = /(lastValueVisible|priceLineVisible)\s*:\s*([A-Za-z0-9_]+)/g;
     for (const chart of candlestickCharts) {
       let m: RegExpExecArray | null;
-      while ((m = optionRe.exec(chart.src)) !== null) {
+      while ((m = optionRe.exec(withoutEmptySeriesReset(chart.src))) !== null) {
         const [, option, value] = m;
         expect(
           value === "true" || value === "false",
@@ -275,6 +282,16 @@ describe("chart live-price affordance guard", () => {
           `${chart.path} sets ${option}: ${value} — must be derived from isLivePriceDisplay (name should contain "isLive")`,
         ).toBe(true);
       }
+    }
+  });
+
+  it("allows only the exact paired withdrawal followed by clearing the same series", () => {
+    const safe = "series.applyOptions({ priceLineVisible: false, lastValueVisible: false }); series.setData([]);";
+    expect(withoutEmptySeriesReset(safe)).toBe("");
+    for (const unsafe of [safe.replace("priceLineVisible: false", "priceLineVisible: true"),
+      safe.replace("series.setData([]);", ""), safe.replace("setData([])", "setData(bars)"),
+      safe.replace("series.setData", "otherSeries.setData")]) {
+      expect(withoutEmptySeriesReset(unsafe)).toBe(unsafe);
     }
   });
 });
