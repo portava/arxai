@@ -41,7 +41,7 @@ import {
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
-import { resolveSymbolTruthEvidence, SYMBOL_TRUTH_MAX_AGE_MS } from "@/lib/symbolTruthEvidence";
+import { resolveSymbolTruthEvidence, symbolTruthDeadline } from "@/lib/symbolTruthEvidence";
 import type { ScannerTruth } from "@/lib/scannerTruth";
 
 export interface UseSymbolTruthResult {
@@ -106,8 +106,7 @@ export function useSymbolTruth(
 
   const rawSnapshot = enabled ? snapQ.data ?? null : null;
   const scannerTruth = scanner.truth;
-  const generatedAt = rawSnapshot?.generatedAt ? Date.parse(rawSnapshot.generatedAt) : NaN;
-  const nowMs = useEvidenceDeadline(Number.isFinite(generatedAt) ? generatedAt + SYMBOL_TRUTH_MAX_AGE_MS + 1 : null);
+  const nowMs = useEvidenceDeadline(symbolTruthDeadline(rawSnapshot));
   const { snapshot, actionCapped } = useMemo(() => resolveSymbolTruthEvidence({
     snapshot: rawSnapshot, symbol, apiTimeframe: apiTf, scannerTruth,
     scannerLastCandleAt: scanner.feedStatus?.lastCandleTime ?? null,
