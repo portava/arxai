@@ -19,13 +19,15 @@ import { useScannerTruth } from "@/hooks/useScannerTruth";
 // the shared truth says the data is historical/limited/blocked.
 export function ScannerReadGate({
   symbol,
+  timeframe,
   compact = false,
 }: {
   symbol: string;
+  timeframe?: string;
   compact?: boolean;
 }) {
-  const [timeframe] = useScannerTimeframe();
-  const { truth } = useScannerTruth(symbol, timeframe);
+  const [scannerTimeframe] = useScannerTimeframe();
+  const { truth } = useScannerTruth(symbol, timeframe || scannerTimeframe);
   if (!truth) return null;
 
   const level = truth.analysis.level;
