@@ -18,7 +18,7 @@ const server = await createServer({ root, configFile: false, plugins: [react(), 
  {find:"@workspace/api-client-react", replacement:path.join(root,"api.ts")},
  {find:"@", replacement:path.join(dashboard,"src")},
  ], dedupe:["react","react-dom"], },
- server:{host:"127.0.0.1",port:4181,strictPort:true,fs:{allow:[repo]}},
+ server:{host:"127.0.0.1",port:Number(process.env.SCANNER_QA_PORT ?? 4181),strictPort:true,fs:{allow:[repo]}},
 });
 await server.listen();
-console.log("Isolated scanner fixture: http://127.0.0.1:4181 — no broker or API connection");
+console.log(`Isolated scanner fixture: http://127.0.0.1:${server.config.server.port} — no broker or API connection`);
