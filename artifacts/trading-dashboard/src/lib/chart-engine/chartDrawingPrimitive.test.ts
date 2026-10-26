@@ -12,7 +12,7 @@ function fixture() {
   const priceToCoordinate = vi.fn((price: number) => 100 - price);
   const requestUpdate = vi.fn();
   const primitive = new ChartDrawingPrimitive();
-  primitive.attached({ chart: { timeScale: () => ({ timeToCoordinate, width: () => 800 }) }, series: { priceToCoordinate, priceFormatter: () => ({ format: String }) }, requestUpdate } as any);
+  primitive.attached({ chart: { timeScale: () => ({ timeToCoordinate, width: () => 800 }) }, series: { getPane: () => ({getHeight: () => 400}), priceToCoordinate, priceFormatter: () => ({ format: String }) }, requestUpdate } as any);
   const context = { save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), rect: vi.fn(), clip: vi.fn(), setLineDash: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fillText: vi.fn() };
   const draw = () => primitive.paneViews()[0]!.renderer()!.draw({ useMediaCoordinateSpace: (callback: any) => callback({ context, mediaSize: { width: 800, height: 400 } }) } as any);
   return { primitive, draw, context, requestUpdate, timeToCoordinate, priceToCoordinate };

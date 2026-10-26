@@ -59,11 +59,11 @@ this Smart Chart implementation. None means production verification is complete.
 | Oscillator panes | MT5 separate indicator windows [M4] | Implemented; resizable panes and reference levels |
 | Indicator custom scripting | Pine/MQL5/platform APIs [T3,T4,M4] | Open; no user script execution sandbox |
 | Volume studies / VWAP | MT5 distinguishes tick and actual traded volume [M4] | Open; volume semantics must be preserved end to end |
-| User levels / trend / Fibonacci | TV drawing families [T5] | Implemented: three tools, real candle anchors, reversible edits |
+| User levels / trend / Fibonacci | TV drawing families [T5] | Implemented: seven tools, real candle anchors, reversible edits |
 | Pointer/touch placement | Drawing interaction [T5] | Implemented; rapid two-anchor mouse/touch tested |
-| Drag handles / whole object | MT5 graphical objects / drawing interaction [M6,T5] | Open; editing currently uses the object list |
-| Snap / lock / styling | MT5 object settings [M6] | Partial: color and exact price editing; no magnetic snap or locks |
-| Rays / channels / geometry / text | TV/MT5 drawing families [T5,M2] | Open |
+| Drag handles / whole object | MT5 graphical objects / drawing interaction [M6,T5] | Implemented: selection, whole-object/anchor mouse and touch drag; one undo entry, cancel rollback |
+| Snap / lock / styling | MT5 object settings [M6] | Implemented: OHLC magnetic anchors, geometry locks, width/dash/color and exact prices; no object groups |
+| Rays / channels / geometry / text | TV/MT5 drawing families [T5,M2] | Partial: rays, extended/vertical lines and rectangles implemented; channels, text and broader tools remain |
 | Gann / Elliott / pitchfork / patterns | TV/MT5 analytical families [T5,M2] | Open |
 | Object management | TV object tree / MT5 object list [T5,M6] | Partial: list, hide-all, delete, undo/redo; no groups/search/reorder |
 | Multi-chart workspace | TV layouts; MT5 chart profiles [T6,M7] | Partial: one/two responsive charts, same symbol, independent interval/settings |
@@ -106,8 +106,9 @@ this Smart Chart implementation. None means production verification is complete.
 1. **Study foundation:** independently checked math, repeated studies, applied
    prices, named conventions and pane inspection. Implemented in the current
    development changes; browser and regression results recorded separately.
-2. **Drawing interaction:** shared drawing layer, hit testing, selection, drag,
-   locks, snapping, geometric/text tools, undo/redo with mouse and touch.
+2. **Drawing interaction:** shared layer, selection/drag, OHLC snapping and locks
+   implemented with reversible mouse/touch edits. Expand channels, text,
+   future-space annotations and keyboard editing.
 3. **Professional navigation/workspaces:** scale modes, go-to/ranges, multiple
    symbols, linked crosshair/time range, named templates/import/export.
 4. **Replay:** immutable history snapshot, no lookahead, deterministic stepping,

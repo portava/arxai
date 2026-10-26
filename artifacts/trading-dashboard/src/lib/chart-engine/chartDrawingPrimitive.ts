@@ -2,27 +2,64 @@ import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, ISer
 import { drawingSegments, type ChartAnchor, type ChartDrawing } from "./chartWorkspace";
 import type { ChartEngineCandle } from "./types";
 
-interface PixelPoint { x: number; y: number }
-export interface DrawingStroke { id: string; start: PixelPoint; end: PixelPoint; color: string; dashed: boolean; label?: string }
+export interface PixelPoint { x: number; y: number }
+export interface DrawingStroke { id: string; start: PixelPoint; end: PixelPoint; color: string; dashed: boolean; width: number; label?: string }
 export type ProjectAnchor = (anchor: ChartAnchor, priceOnly?: boolean) => PixelPoint | null;
 
 /** Drawing geometry never contributes timestamps, prices, or autoscale extents
  * to the market series. Forty Fibs are forty objects, not 280 data series. */
-export function drawingStrokes(drawings: ChartDrawing[], project: ProjectAnchor, width: number): DrawingStroke[] {
+export function drawingStrokes(drawings: ChartDrawing[], project: ProjectAnchor, width: number, height = 0): DrawingStroke[] {
   const strokes: DrawingStroke[] = [];
   for (const drawing of drawings) {
+    const style = { id: drawing.id, color: drawing.color, width: drawing.width ?? 1, dashed: drawing.dashed ?? ["horizontal", "fibonacci"].includes(drawing.kind) };
     if (drawing.kind === "horizontal") {
       const start = project(drawing.start, true);
-      if (start) strokes.push({ id: drawing.id, start: { x: 0, y: start.y }, end: { x: width, y: start.y }, color: drawing.color, dashed: true });
+      if (start) strokes.push({ ...style, start: { x: 0, y: start.y }, end: { x: width, y: start.y } });
+      continue;
+    }
+    if (drawing.kind === "vertical") {
+      const point = project(drawing.start);
+      if (point) strokes.push({ ...style, start: { x: point.x, y: 0 }, end: { x: point.x, y: height } });
       continue;
     }
     for (const segment of drawingSegments(drawing)) {
-      const start = project(segment.start), end = project(segment.end);
+      let start = project(segment.start), end = project(segment.end);
       if (!start || !end) continue;
-      strokes.push({ id: drawing.id, start, end, color: drawing.color, dashed: drawing.kind === "fibonacci", ...(drawing.kind === "fibonacci" ? { label: segment.label } : {}) });
+      if (["ray", "extended"].includes(drawing.kind)) {
+        const dx = end.x - start.x;
+        if (Math.abs(dx) < .001) continue;
+        const slope = (end.y - start.y) / dx;
+        const at = (x: number) => ({ x, y: start!.y + slope * (x - start!.x) });
+        end = at(dx > 0 ? width : 0);
+        if (drawing.kind === "extended") start = at(dx > 0 ? 0 : width);
+      }
+      strokes.push({ ...style, start, end, ...(drawing.kind === "fibonacci" ? { label: segment.label } : {}) });
     }
   }
   return strokes;
+}
+
+export function drawingHandles(drawing: ChartDrawing, project: ProjectAnchor, width: number, height: number): { part: "start" | "end"; point: PixelPoint }[] {
+  const start = project(drawing.start, drawing.kind === "horizontal");
+  if (!start) return [];
+  if (drawing.kind === "horizontal") return [{ part: "start", point: { x: width / 2, y: start.y } }];
+  if (drawing.kind === "vertical") return [{ part: "start", point: { x: start.x, y: height / 2 } }];
+  const end = drawing.end && project(drawing.end);
+  return end ? [{ part: "start", point: start }, { part: "end", point: end }] : [];
+}
+
+export function hitTestDrawings(drawings: ChartDrawing[], selected: string | null, project: ProjectAnchor, width: number, height: number, point: PixelPoint, tolerance = 8): { id: string; part: "start" | "end" | "body" } | null {
+  const active = drawings.find(drawing => drawing.id === selected);
+  if (active && !active.locked) for (const handle of drawingHandles(active, project, width, height)) {
+    if (Math.hypot(point.x - handle.point.x, point.y - handle.point.y) <= tolerance + 2) return { id: active.id, part: handle.part };
+  }
+  for (const stroke of drawingStrokes(drawings, project, width, height).reverse()) {
+    const dx = stroke.end.x - stroke.start.x, dy = stroke.end.y - stroke.start.y;
+    const length = dx * dx + dy * dy;
+    const fraction = length ? Math.max(0, Math.min(1, ((point.x - stroke.start.x) * dx + (point.y - stroke.start.y) * dy) / length)) : 0;
+    if (Math.hypot(point.x - stroke.start.x - dx * fraction, point.y - stroke.start.y - dy * fraction) <= tolerance + stroke.width / 2) return { id: stroke.id, part: "body" };
+  }
+  return null;
 }
 
 export class ChartDrawingPrimitive implements ISeriesPrimitive {
@@ -31,6 +68,10 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
   private times = new Set<number>();
   private strokes: DrawingStroke[] = [];
   private dirty = true;
+  private selected: string | null = null;
+  private candleRef: ChartEngineCandle[] | null = null;
+  private candleKey = "";
+  private handles: PixelPoint[] = [];
   private labels: ISeriesPrimitiveAxisView[] = [];
   private renderer: IPrimitivePaneRenderer = {
     draw: target => target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
@@ -44,12 +85,16 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
           if (Math.max(stroke.start.x, stroke.end.x) < 0 || Math.min(stroke.start.x, stroke.end.x) > mediaSize.width) continue;
           if (Math.max(stroke.start.y, stroke.end.y) < 0 || Math.min(stroke.start.y, stroke.end.y) > mediaSize.height) continue;
           ctx.strokeStyle = stroke.color; ctx.fillStyle = stroke.color;
-          ctx.lineWidth = 1; ctx.setLineDash(stroke.dashed ? [4, 4] : []);
+          ctx.lineWidth = stroke.width; ctx.setLineDash(stroke.dashed ? [4, 4] : []);
           ctx.beginPath(); ctx.moveTo(stroke.start.x, stroke.start.y); ctx.lineTo(stroke.end.x, stroke.end.y); ctx.stroke();
           if (stroke.label) {
             const left = stroke.start.x < stroke.end.x ? stroke.start : stroke.end;
             ctx.fillText(stroke.label, Math.max(3, left.x + 3), left.y - 3);
           }
+        }
+        ctx.setLineDash([]); ctx.lineWidth = 2; ctx.strokeStyle = "#38bdf8"; ctx.fillStyle = "#09090b";
+        for (const point of this.handles) {
+          ctx.beginPath(); ctx.arc(point.x, point.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         }
       } finally { ctx.restore(); }
     }),
@@ -57,13 +102,16 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
   private views: IPrimitivePaneView[] = [{ zOrder: () => "normal", renderer: () => this.renderer }];
 
   attached(attachment: SeriesAttachedParameter): void { this.attachment = attachment; this.updateAllViews(); }
-  detached(): void { this.attachment = null; this.strokes = []; this.labels = []; }
+  detached(): void { this.attachment = null; this.strokes = []; this.labels = []; this.handles = []; }
   paneViews(): readonly IPrimitivePaneView[] { return this.views; }
   priceAxisViews(): readonly ISeriesPrimitiveAxisView[] { return this.labels; }
 
   setData(drawings: ChartDrawing[], candles: ChartEngineCandle[]): void {
     this.drawings = drawings;
-    this.times = new Set(candles.map(candle => candle.time));
+    const key = `${candles.length}:${candles[0]?.time}:${candles.at(-1)?.time}`;
+    if (this.candleRef !== candles || this.candleKey !== key) {
+      this.times = new Set(candles.map(candle => candle.time)); this.candleRef = candles; this.candleKey = key;
+    }
     this.labels = drawings.filter(drawing => drawing.kind === "horizontal").map(drawing => ({
       coordinate: () => this.attachment?.series.priceToCoordinate(drawing.start.price) ?? -1e6,
       text: () => this.attachment?.series.priceFormatter().format(drawing.start.price) ?? String(drawing.start.price),
@@ -74,6 +122,8 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
     this.attachment?.requestUpdate();
   }
 
+  setSelection(id: string | null): void { this.selected = id; this.updateAllViews(); this.attachment?.requestUpdate(); }
+
   // The chart can invalidate primitives for every series/tick in a burst.
   // Projection belongs at draw time, once per frame, not once per invalidation.
   updateAllViews(): void { this.dirty = true; }
@@ -81,12 +131,16 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
     this.dirty = false;
     const attached = this.attachment;
     if (!attached) return;
-    this.strokes = drawingStrokes(this.drawings, (anchor, priceOnly) => {
+    const project: ProjectAnchor = (anchor, priceOnly) => {
       const y = attached.series.priceToCoordinate(anchor.price);
       if (y == null || !Number.isFinite(y) || !this.times.size) return null;
       // Horizontal levels are price-only and remain visible after backfill rolls.
       const x = priceOnly ? 0 : this.times.has(anchor.time) ? attached.chart.timeScale().timeToCoordinate(anchor.time as UTCTimestamp) : null;
       return x == null ? null : { x, y };
-    }, attached.chart.timeScale().width());
+    };
+    const width = attached.chart.timeScale().width(), height = attached.series.getPane().getHeight();
+    this.strokes = drawingStrokes(this.drawings, project, width, height);
+    const selected = this.drawings.find(drawing => drawing.id === this.selected);
+    this.handles = selected && !selected.locked ? drawingHandles(selected, project, width, height).map(handle => handle.point) : [];
   }
 }

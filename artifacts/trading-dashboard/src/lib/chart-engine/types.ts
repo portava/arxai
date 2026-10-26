@@ -1,3 +1,4 @@
+import type { DrawingInteraction } from "./chartDrawingEditor";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 import type { ChartStudy } from "./chartStudies";
 import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
@@ -165,6 +166,7 @@ export interface ChartEngineAdapter {
   setChartStyle?(style: ChartStyle): void;
   setStudies?(studies: ChartStudy[]): void;
   setDrawings?(drawings: ChartDrawing[]): void;
+  setDrawingInteraction?(config: DrawingInteraction | null): void;
   setDrawingHandler?(handler: ((anchor: ChartAnchor) => void) | null): void;
   exportImage?(): string | null;
 

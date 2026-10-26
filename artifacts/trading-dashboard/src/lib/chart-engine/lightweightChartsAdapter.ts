@@ -29,6 +29,7 @@ import type {
   ChartStructureMarker,
 } from "./types";
 import { candleDisplayPrecision, incrementalCandles, historyRangeShift } from "./candleReconciliation";
+import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
 import { ChartAnalysisRenderer } from "./chartAnalysisRenderer";
 import type { ChartStudy } from "./chartStudies";
 import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
@@ -78,7 +79,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private series: ISeriesApi<"Candlestick" | "Bar" | "Line"> | null = null;
   private style: ChartStyle = "candles";
   private analysis: ChartAnalysisRenderer | null = null;
-  private drawingCleanup: (() => void) | null = null;
+  private drawingEditor: ChartDrawingEditor | null = null;
   private drawingHandler: ((anchor: ChartAnchor) => void) | null = null;
   private overlaysRaw: ChartOverlay[] = [];
   private overlayTime: number | null = null;
@@ -199,23 +200,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       this.queueLegendUpdate();
     });
 
-    // Handle drawing anchors directly: the library intentionally consumes the
-    // second rapid click even when it is too far away to be a double-click.
-    // Pointer coordinates keep fast two-anchor tools and touch taps reliable.
-    let down: {x:number;y:number} | null = null;
-    const pointerDown = (event: PointerEvent) => { down = event.button === 0 ? {x:event.clientX,y:event.clientY} : null; };
-    const pointerUp = (event: PointerEvent) => {
-      const start = down; down = null;
-      if (!start || !this.drawingHandler || Math.hypot(event.clientX-start.x,event.clientY-start.y) > 5) return;
-      if (!(event.target instanceof HTMLCanvasElement)) return;
-      const rect = el.getBoundingClientRect(), x = event.clientX-rect.left, y = event.clientY-rect.top;
-      if (x < 0 || x > chart.timeScale().width() || y < 0 || y > chart.panes()[0]!.getHeight()) return;
-      const time = chart.timeScale().coordinateToTime(x), price = this.series?.coordinateToPrice(y);
-      if (typeof time === "number" && price != null && Number.isFinite(price) && price > 0 && this.candles.some(c => c.time === time)) this.drawingHandler({time,price});
-    };
-    el.addEventListener("pointerdown",pointerDown); el.addEventListener("pointerup",pointerUp);
-    this.drawingCleanup = () => {el.removeEventListener("pointerdown",pointerDown);el.removeEventListener("pointerup",pointerUp);};
-
     // Deep-history scroll-back: when the user pans so the left edge approaches the
     // OLDEST loaded bar (logical index near 0), ask the Shell to load more. The
     // handler guards its own concurrency; this only signals intent. View-only.
@@ -228,6 +212,45 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
 
     this.chart = chart;
     this.series = series;
+    let frozenOptions: { scroll: ReturnType<IChartApi["options"]>["handleScroll"]; scale: ReturnType<IChartApi["options"]>["handleScale"]; autoScale: boolean } | null = null;
+    const anchorAt = (point: { x:number; y:number }, snap: boolean) => {
+      const time = chart.timeScale().coordinateToTime(point.x);
+      let price: number | null | undefined = this.series?.coordinateToPrice(point.y);
+      if (typeof time !== "number" || price == null || !Number.isFinite(price) || price <= 0) return null;
+      const candle = this.candles[candleIndex(this.candles, time)];
+      if (!candle) return null;
+      if (snap) price = [candle.open,candle.high,candle.low,candle.close].reduce((best,value) => {
+        const y = this.series?.priceToCoordinate(value), bestY = this.series?.priceToCoordinate(best);
+        return y != null && bestY != null && Math.abs(y-point.y) < Math.abs(bestY-point.y) ? value : best;
+      });
+      return { time, price };
+    };
+    this.drawingEditor = new ChartDrawingEditor(el, {
+      candles: () => this.candles,
+      project: (anchor, priceOnly) => {
+        const y = this.series?.priceToCoordinate(anchor.price);
+        const x = priceOnly ? 0 : candleIndex(this.candles, anchor.time) >= 0 ? chart.timeScale().timeToCoordinate(anchor.time as UTCTimestamp) : null;
+        return x != null && y != null && Number.isFinite(y) ? {x,y} : null;
+      },
+      anchor: anchorAt,
+      price: y => this.series?.coordinateToPrice(y) ?? null,
+      size: () => ({width:chart.timeScale().width(),height:chart.panes()[0]?.getHeight() ?? 0}),
+      render: drawings => this.analysis?.setDrawings(drawings, this.candles),
+      select: id => this.analysis?.selectDrawing(id),
+      freeze: active => {
+        if (active && !frozenOptions) {
+          const options = chart.options();
+          frozenOptions = {scroll:options.handleScroll,scale:options.handleScale,autoScale:this.series!.priceScale().options().autoScale};
+          chart.applyOptions({handleScroll:false,handleScale:false});
+          this.series?.priceScale().applyOptions({autoScale:false});
+        } else if (!active && frozenOptions) {
+          chart.applyOptions({handleScroll:frozenOptions.scroll,handleScale:frozenOptions.scale});
+          this.series?.priceScale().applyOptions({autoScale:frozenOptions.autoScale});
+          frozenOptions = null;
+        }
+      },
+    });
+
     this.style = "candles";
     this.analysis = new ChartAnalysisRenderer(chart, series);
     this.lastPriceLine = null;
@@ -262,6 +285,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.streamTip = null;
     this.candles = [];
     this.reachStartHandler = null;
+    this.drawingEditor?.destroy(); this.drawingEditor = null;
     this.analysis?.destroy();
     if (this.chart) {
       try { this.chart.remove(); } catch { /* already removed */ }
@@ -270,7 +294,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.series = null;
     this.analysis = null;
     this.drawingHandler = null;
-    this.drawingCleanup?.(); this.drawingCleanup = null;
     this.overlaysRaw = [];
     this.overlayTime = null;
     this.lastPriceLine = null;
@@ -556,9 +579,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (range) chart.timeScale().setVisibleLogicalRange(range);
   }
   setStudies(studies: ChartStudy[]): void { this.analysis?.setStudies(studies, this.candles); }
-  setDrawings(drawings: ChartDrawing[]): void { this.analysis?.setDrawings(drawings, this.candles); }
+  setDrawings(drawings: ChartDrawing[]): void { this.drawingEditor?.setDrawings(drawings); this.analysis?.setDrawings(drawings, this.candles); }
+  setDrawingInteraction(config: DrawingInteraction | null): void { this.drawingEditor?.configure(config); }
   setDrawingHandler(handler: ((anchor: ChartAnchor) => void) | null): void {
     this.drawingHandler = handler;
+    this.drawingEditor?.setPlacement(handler);
     this.chart?.applyOptions({handleScroll:!handler});
     if (this.container) this.container.style.cursor = handler ? "crosshair" : "";
   }

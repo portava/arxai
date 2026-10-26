@@ -2,11 +2,11 @@ import { useEffect, useId, useState, type Dispatch, type SetStateAction } from "
 import type { ChartEngineAdapter } from "@/lib/chart-engine";
 import { studyId, studyLabel } from "@/lib/chart-engine/chartStudies";
 import { ChartStudySettings } from "./ChartStudySettings";
-import { drawingStorageKey, MAX_DRAWINGS, readChartStorage, TEMPLATE_KEY, validateDrawings, validatePreferences, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
+import { DRAWING_NAMES, singleAnchorDrawing, drawingStorageKey, MAX_DRAWINGS, readChartStorage, TEMPLATE_KEY, validateDrawings, validatePreferences, writeChartStorage, type ChartAnchor, type ChartDrawing, type ChartPreferences, type DrawingKind } from "@/lib/chart-engine/chartWorkspace";
 import { Button } from "@/components/ui/button";
 
 const field = "h-8 min-w-0 rounded border border-zinc-700 bg-zinc-900 px-2 text-xs text-zinc-100";
-const names = { horizontal:"Horizontal level", trend:"Trend line", fibonacci:"Fibonacci retracement" };
+const names = DRAWING_NAMES;
 interface Props {
   adapter: ChartEngineAdapter | null; epoch: number; symbol: string; timeframe: string;
   preferences: ChartPreferences; onPreferences: Dispatch<SetStateAction<ChartPreferences>>;
@@ -23,6 +23,8 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [message,setMessage] = useState("");
   const [goToDate,setGoToDate] = useState("");
   const [storageFailed,setStorageFailed] = useState(false);
+  const [selectedId,setSelectedId] = useState<string | null>(null);
+  const [snap,setSnap] = useState(false);
   const drawings = history.present;
   const persist = (next: ChartDrawing[]) => {
     const saved = writeChartStorage(key,next);
@@ -42,17 +44,24 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   },[key,instanceId]);
   const change = (next: ChartDrawing[]) => {
     const valid = validateDrawings(next);
+    if (JSON.stringify(valid) === JSON.stringify(drawings)) return;
     setHistory(h=>({past:[...h.past.slice(-19),h.present],present:valid,future:[]}));
     persist(valid);
   };
   useEffect(()=>{adapter?.setDrawings?.(hidden ? [] : drawings);},[adapter,epoch,hidden,drawings]);
   useEffect(()=>{
+    adapter?.setDrawingInteraction?.(hidden ? null : {selectedId,snap,onSelect:setSelectedId,onCommit:change});
+  });
+  useEffect(()=>()=>adapter?.setDrawingInteraction?.(null),[adapter]);
+  useEffect(()=>{if(selectedId && !drawings.some(d=>d.id === selectedId)) setSelectedId(null);},[drawings,selectedId]);
+  useEffect(()=>{
     adapter?.setDrawingHandler?.(tool && hasCandles ? point=>{
       if (drawings.length >= MAX_DRAWINGS) {setMessage(`Limit of ${MAX_DRAWINGS} drawings reached. Delete an object first.`);setTool(null);return;}
-      if (tool !== "horizontal" && !anchor) {setAnchor(point);return;}
+      if (!singleAnchorDrawing(tool) && !anchor) {setAnchor(point);return;}
       if (anchor && point.time === anchor.time) {setMessage("Choose a different candle for the second anchor.");return;}
-      change([...drawings,{id:crypto.randomUUID(),kind:tool,start:anchor ?? point,...(anchor ? {end:point} : {}),color:"#fbbf24"}]);
-      setTool(null);setAnchor(null);setHidden(false);setMessage("Drawing added. Edit its levels in Objects.");
+      const id = crypto.randomUUID();
+      change([...drawings,{id,kind:tool,start:anchor ?? point,...(anchor ? {end:point} : {}),color:"#fbbf24"}]);
+      setSelectedId(id);setTool(null);setAnchor(null);setHidden(false);setMessage("Drawing added. Drag the line or its handles to edit; Objects has exact values and locking.");
     } : null);
     return ()=>adapter?.setDrawingHandler?.(null);
   },[adapter,epoch,tool,anchor,drawings,hasCandles,key]);
@@ -97,9 +106,10 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <option value="candles">Candlesticks</option><option value="bars">OHLC bars</option><option value="line">Close line</option>
       </select></label>
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "studies"} onClick={()=>setPanel(p=>p === "studies" ? null : "studies")}>Studies ({preferences.studies.length})</Button>
-      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setMessage("");}}>
-        <option value="">Crosshair / pan</option><option value="horizontal">Horizontal level</option><option value="trend">Trend line</option><option value="fibonacci">Fibonacci retracement</option>
+      <select className={field} aria-label="Drawing tool" value={tool ?? ""} disabled={!hasCandles} onChange={e=>{setTool((e.target.value || null) as DrawingKind | null);setAnchor(null);setHidden(false);setMessage("");}}>
+        <option value="">Select / crosshair / pan</option>{Object.entries(names).map(([kind,name])=><option key={kind} value={kind}>{name}</option>)}
       </select>
+      <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={snap} title="Snap new anchors and dragged handles to the nearest open, high, low or close of the candle" onClick={()=>setSnap(value=>!value)}>Magnet {snap ? "on" : "off"}</Button>
       <Button size="sm" variant="outline" className="h-8 text-xs" aria-expanded={panel === "objects"} onClick={()=>setPanel(p=>p === "objects" ? null : "objects")}>Objects ({drawings.length})</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!history.past.length} onClick={()=>undo()}>Undo</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!history.future.length} onClick={()=>undo(true)}>Redo</Button>
@@ -123,9 +133,12 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">Saved on this browser for {symbol} · {timeframe}. Lines outside loaded history appear when their candles load.</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>setHidden(h=>!h)}>{hidden ? "Show drawings" : "Hide drawings"}</Button></div>
       {!drawings.length && <p>No drawings on this chart. Choose a drawing tool to begin.</p>}
       {drawings.map((d,index)=><div key={d.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-2" data-testid="chart-drawing-object">
-        <span className="w-36">{index+1}. {names[d.kind]}</span>
-        {(["start","end"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{new Date(d[name]!.time*1000).toISOString().slice(0,16).replace("T"," ")} UTC</span></label>)}
+        <button type="button" className={`w-36 rounded p-1 text-left ${selectedId===d.id ? "bg-sky-500/15 text-sky-300" : "hover:bg-zinc-800"}`} aria-pressed={selectedId===d.id} aria-label={`Select drawing ${index+1}`} onClick={()=>setSelectedId(d.id)}>{index+1}. {names[d.kind]}</button>
+        {(["start","end"] as const).filter(name=>d[name]).map(name=><label key={name} className="flex flex-wrap items-center gap-2">{name}<input key={d[name]!.price} aria-label={`Drawing ${index+1} ${name} price`} className={`${field} w-32`} type="number" step="any" min="0.00000001" disabled={d.locked || d.kind === "vertical"} defaultValue={Number(d[name]!.price.toPrecision(10))} onBlur={e=>{const price=Number(e.target.value);if(Number.isFinite(price)&&price>0) change(drawings.map(item=>item.id === d.id ? {...item,[name]:{...item[name]!,price}} : item));else e.target.value=String(d[name]!.price);}}/><span className="text-[10px] text-zinc-500">{new Date(d[name]!.time*1000).toISOString().slice(0,16).replace("T"," ")} UTC</span></label>)}
         <input type="color" aria-label={`Drawing ${index+1} color`} className="h-7 w-8 bg-transparent" value={d.color} onChange={e=>change(drawings.map(item=>item.id===d.id ? {...item,color:e.target.value} : item))}/>
+        <select className={field} aria-label={`Drawing ${index+1} line width`} value={d.width ?? 1} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,width:Number(event.target.value) as 1|2|3} : item))}>{[1,2,3].map(width=><option key={width} value={width}>{width}px</option>)}</select>
+        <select className={field} aria-label={`Drawing ${index+1} line style`} value={(d.dashed ?? ["horizontal","fibonacci"].includes(d.kind)) ? "dashed" : "solid"} onChange={event=>change(drawings.map(item=>item.id===d.id ? {...item,dashed:event.target.value==="dashed"} : item))}><option value="solid">Solid</option><option value="dashed">Dashed</option></select>
+        <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`${d.locked ? "Unlock" : "Lock"} drawing ${index+1}`} aria-pressed={!!d.locked} onClick={()=>change(drawings.map(item=>item.id===d.id ? {...item,locked:!item.locked} : item))}>{d.locked ? "Unlock" : "Lock"}</Button>
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Delete drawing ${index+1}`} onClick={()=>change(drawings.filter(item=>item.id!==d.id))}>Delete</Button>
       </div>)}
     </div>}

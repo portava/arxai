@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const m=vi.hoisted(()=>{
   const handles:any[]=[];
   const range={from:10,to:30};
@@ -12,7 +12,8 @@ import { STUDY_DEFAULTS } from "./chartStudies";
 const bars=Array.from({length:100},(_,i)=>({time:100+i*60,open:1,high:2,low:1,close:1.5+Math.sin(i)*.1}));
 let adapter:LightweightChartsAdapter;
 let container:HTMLDivElement;
-beforeEach(()=>{vi.clearAllMocks();m.handles.length=0;vi.stubGlobal("ResizeObserver",class{observe(){}disconnect(){}});adapter=new LightweightChartsAdapter();container=document.createElement("div");adapter.init({container,height:500});adapter.setCandles(bars);});
+beforeEach(()=>{vi.clearAllMocks();m.handles.length=0;vi.stubGlobal("ResizeObserver",class{observe(){}disconnect(){}});adapter=new LightweightChartsAdapter();container=document.createElement("div");document.body.append(container);adapter.init({container,height:500});adapter.setCandles(bars);});
+afterEach(()=>{adapter.destroy();container.remove();});
 describe("Smart Chart studies, styles and drawing ownership",()=>{
   it("keeps studies incremental and independent of style switches and live-price truth",()=>{
     adapter.setStudies(STUDY_DEFAULTS);const studies=m.handles.slice(1);

@@ -17,9 +17,15 @@ certify the entire app or claim parity with every feature of a commercial chart.
   smoothing are explicit. Oscillators use separate resizable panes; a data window
   inspects all study channels at the same crosshair timestamp in any pane.
   Warm-up values remain blank; revised forming candles replace checkpoints.
-- Horizontal levels, trend lines and seven-level Fibonacci retracements support
-  mouse/touch placement, object-list price/color editing, deletion, hide/show,
-  undo/redo and browser persistence per instrument/timeframe. Matching charts
+- Seven tools—horizontal and vertical lines, trend lines, rays, extended lines,
+  rectangles and Fibonacci retracements—support mouse/touch placement, selection,
+  whole-object and anchor dragging, OHLC magnet snapping, geometry locking,
+  line width/style/color editing, deletion, hide/show, undo/redo and browser
+  persistence per instrument/timeframe. One completed drag is one undo entry;
+  Escape, pointer cancellation, blur and replaced snapshots discard previews.
+  Pan/scale changes are frozen only during an edit. Time translation uses actual
+  candle indices across market gaps, and price translation respects logarithmic
+  and inverted scales. Matching charts
   in the same browser receive drawing updates. Maximum 40 objects, 20 undo
   steps. Off-history endpoints stay stored and render when their bars load;
   drawings never insert artificial dates or stretch the price autoscale. All
@@ -66,14 +72,16 @@ These are synchronous processing timings on one machine, not a market-feed
 latency SLA, end-to-end paint time, or profitability measure. The browser fixture
 and repeatable acceptance script live in `scripts/chart-qa/`.
 
-Current development validation passed: 204 tests in 25 chart-related suites, 87/87 architecture
+Current development validation passed: 213 tests in 26 chart-related suites, 87/87 architecture
 guards, dashboard typechecking and production build. Browser checks cover
 desktop/mobile controls, symbol/timeframe changes, canvas
 lifecycle, crosshair inspection and no page overflow at 390px. Workbench browser
 acceptance additionally covers all three styles, the original five-study starter collection and pane
-cleanup, all three drawing tools, object edits, undo/redo, saved drawings/settings,
+cleanup, the original three drawing tools, object edits, undo/redo, saved drawings/settings,
 symbol/timeframe isolation, templates, PNG export, two-chart layout persistence,
-independent intervals and touch drawing. Existing freshness,
+independent intervals and touch drawing. The drawing acceptance adds all seven
+tools, actual Chromium touch dragging, mouse editing, single-step undo/redo,
+Escape rollback, locks, persistence and desktop/mobile overflow checks. Existing freshness,
 stream reconnect, overlay clearing, trade setup and scanner-candle regressions
 remain part of validation. New performance/workbench regressions are wired into
 root CI. Additional browser acceptance exercises every one of the 17 study types,
@@ -136,7 +144,7 @@ is claimed without matching data, seed boundary and configuration.
   behavior require the separately pending broker validation.
 - The broader commercial-chart gaps are listed in
   [SMART_CHART_PLATFORM_COMPARISON.md](SMART_CHART_PLATFORM_COMPARISON.md):
-  drag handles, more drawing tools/studies, crosshair/range synchronization,
+  broader drawing tools/studies, crosshair/range synchronization,
   named cloud workspaces, replay, custom scripting and validated market feeds.
 - Saving is local to the current browser/device, shared by users of that browser
   profile, and may be unavailable in restrictive browsing modes. It is not an

@@ -15,6 +15,7 @@ export class ChartAnalysisRenderer {
   private studyKey = "";
   private drawings: ChartDrawing[] = [];
   private drawingPrimitive: ChartDrawingPrimitive | null = null;
+  private selectedDrawing: string | null = null;
   private frame: number | null = null;
   private pending: { candles: ChartEngineCandle[]; from: number } | null = null;
   private displayWindow: { from: number; to: number } | null = null;
@@ -142,9 +143,11 @@ export class ChartAnalysisRenderer {
     if (!this.drawingPrimitive && this.drawings.length) {
       this.drawingPrimitive = new ChartDrawingPrimitive();
       this.price.attachPrimitive(this.drawingPrimitive);
+      this.drawingPrimitive.setSelection(this.selectedDrawing);
     }
     this.drawingPrimitive?.setData(this.drawings, candles);
   }
+  selectDrawing(id: string | null): void { this.selectedDrawing = id; this.drawingPrimitive?.setSelection(id); }
   replacePriceSeries(price: PriceSeries, candles: ChartEngineCandle[]): void {
     if (this.drawingPrimitive) this.price.detachPrimitive(this.drawingPrimitive);
     this.price = price;
