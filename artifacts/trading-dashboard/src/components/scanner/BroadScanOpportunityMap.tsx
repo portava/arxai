@@ -294,7 +294,12 @@ export function BroadScanOpportunityMap({
   const visibleLiveRows = new Map(visibleRows.filter((entry) => entry.metricsAvailable).map(({ row }) => [rowKey(row), row]));
   const visibleBest = (row: OpportunityMapRow | null | undefined) => row ? visibleLiveRows.get(rowKey(row)) ?? null : null;
   const rawBestVsSelected = data?.bestVsSelected ?? null;
-  const bestVsSelected = snapshotFresh && visibleRows.length > 0 && (!rawBestVsSelected?.best || visibleBest(rawBestVsSelected.best))
+  // The server message can embed BOTH participants' numeric scores. A selected
+  // chart cap, older row or view filter must also withhold that hidden baseline.
+  const comparisonSelected = map?.rows.find((row) => symbolKey(row.symbol) === symbolKey(rawBestVsSelected?.selectedSymbol));
+  const selectedBaselineAvailable = rawBestVsSelected?.selectedEdge == null ||
+    (validHeuristic(rawBestVsSelected.selectedEdge) && comparisonSelected != null && visibleBest(comparisonSelected) != null);
+  const bestVsSelected = snapshotFresh && visibleRows.length > 0 && selectedBaselineAvailable && (!rawBestVsSelected?.best || visibleBest(rawBestVsSelected.best))
     ? rawBestVsSelected : null;
   const safeBest: OpportunityBestPicks | null = map ? {
     bestScalp: visibleBest(map.best.bestScalp), bestRetest: visibleBest(map.best.bestRetest),

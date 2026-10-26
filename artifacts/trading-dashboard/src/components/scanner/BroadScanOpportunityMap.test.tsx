@@ -1114,7 +1114,7 @@ describe("BroadScanOpportunityMap — a SELECTED degraded opportunity stays cont
           bestVsSelected: {
             hasCleanerAlternative: true,
             selectedSymbol: "GBPUSD",
-            selectedEdge: 80,
+            selectedEdge: null,
             best: live,
             message:
               "GBPUSD isn't on a live-confirmed feed right now — EURUSD has the cleaner live read.",
@@ -1174,7 +1174,7 @@ describe("BroadScanOpportunityMap — a SELECTED degraded opportunity stays cont
           bestVsSelected: {
             hasCleanerAlternative: false,
             selectedSymbol: "GBPUSD",
-            selectedEdge: 80,
+            selectedEdge: null,
             best: null,
             message:
               "GBPUSD is the only read right now and its feed isn't live-confirmed — historical context only.",
@@ -1608,4 +1608,25 @@ it("withholds invalid metric fields from cards and best picks", () => {
   const card = screen.getByTestId("opportunity-row-EURUSD");
   expect(card.textContent).not.toMatch(/NaN|Infinity|Feed -1/);
   expect(screen.getByTestId("opportunity-map-best-picks").textContent).not.toContain("NaN");
+});
+
+describe("comparison selected baseline containment", () => {
+  it.each(["selected chart cap", "expired selected row", "selected row filtered out"])("withholds both-score comparison for %s", (cause) => {
+    const best = row({ symbol: "EURUSD", displayName: "EURUSD", edgeScore: 80 });
+    const selected = row({ symbol: "GBPUSD", displayName: "GBPUSD", edgeScore: 40 });
+    const payload = resp({ map: mapResult([best, selected]), bestVsSelected: {
+      hasCleanerAlternative: true, selectedSymbol: "GBPUSD", selectedEdge: 40, best,
+      message: "EURUSD looks cleaner than GBPUSD right now (edge 80 vs 40).",
+    } });
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: payload }));
+    const view = render(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="GBPUSD" />);
+    expect(screen.getByTestId("opportunity-map-best-vs-selected").textContent).toContain("80 vs 40");
+    if (cause === "selected chart cap") mockUseSymbolTruth.mockReturnValue(truthWithVerdict("FEED_LIMITED"));
+    if (cause === "expired selected row") Object.assign(selected, { generatedAt: new Date(Date.now() - 31_000).toISOString() });
+    if (cause === "selected row filtered out") fireEvent.change(screen.getByLabelText("Find in scanner results"), { target: { value: "EUR" } });
+    view.rerender(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="GBPUSD" />);
+    expect(screen.queryByTestId("opportunity-map-best-vs-selected")).toBeNull();
+    expect(screen.getByTestId("opportunity-row-direction-EURUSD")).toBeTruthy();
+    expect(screen.getByTestId("opportunity-map-best-picks")).toBeTruthy();
+  });
 });
