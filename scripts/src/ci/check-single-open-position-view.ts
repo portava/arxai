@@ -63,7 +63,7 @@ export const OPEN_READ_ALLOWLIST: Record<string, OpenReadAllowance> = {
   // Broker-truth producers: they reconcile the broker facts they are ingesting
   // against the open rows they are about to write.
   "routes/mt5Live.ts": {
-    openReads: 2, category: "BROKER_TRUTH",
+    openReads: 1, category: "BROKER_TRUTH",
     reason: "LIVE snapshot ingest compares the incoming broker snapshot with the connection's open rows",
   },
   "lib/live/liveCommandPipeline.ts": {

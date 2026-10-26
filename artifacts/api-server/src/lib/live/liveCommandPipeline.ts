@@ -13,6 +13,8 @@
 import { MANAGEMENT_TARGET_SOURCE, ManagementTargetError, createManagementDraft, assertManagementGeometry,
   managementTargetFromCommand, isAgentManagementCommand, boundManagementTransportSymbol,
   type ManagementTarget } from "../selfTrade/managementTarget.js";
+import { readBoundManagementRiskPosition, withBoundManagementClose, managementFullCloseScope,
+  type reportedManagementIdentity } from "../selfTrade/managementConsumers.js";
 import { livePositionWriter, livePositionLedger, livePositionColumns } from "../positions/ledger.js";
 import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
@@ -256,6 +258,8 @@ export function findGhostClosedPositionIds(
 ): number[] {
   const closedTickets = new Set<string>();
   for (const c of filledCloseCommands) {
+    // Projected bound commands must never degrade into this legacy matcher.
+    if (c.payload?.managementTargetV1 != null || c.payload?.agentOwnership != null || c.payload?.selfTradeSymbolBinding != null) continue;
     const pt = (c.payload ?? null)?.["brokerTicket"];
     if (typeof pt === "string" && pt) closedTickets.add(pt);
     if (typeof c.brokerTicket === "string" && c.brokerTicket) closedTickets.add(c.brokerTicket);
@@ -263,6 +267,84 @@ export function findGhostClosedPositionIds(
   return openPositions
     .filter((r) => typeof r.brokerTicket === "string" && closedTickets.has(r.brokerTicket))
     .map((r) => r.id);
+}
+
+/** Exact target for automatic management; the ordinary manual read is unchanged. */
+export async function readLiveModifyRiskPosition(row: ArxLiveCommand) {
+  if (isAgentManagementCommand(row)) return readBoundManagementRiskPosition(row);
+  const ticket = (row.payload as Record<string, unknown> | null)?.["brokerTicket"];
+  if (typeof ticket !== "string" || !ticket) return null;
+  const [p] = await livePositionLedger.select(
+    { entryPrice: livePositionColumns.entryPrice, stopLoss: livePositionColumns.stopLoss },
+    { where: and(eq(livePositionColumns.userId, row.userId), eq(livePositionColumns.brokerTicket, ticket)), limit: 1 },
+  );
+  return p ? { entryPrice: Number(p.entryPrice), stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null } : null;
+}
+
+/** Applies a reported full close only to its signed server target. Never sends an order. */
+export async function reconcileBoundManagementClose(command: ArxLiveCommand, now = new Date()) {
+  try {
+    const closedRows = await withBoundManagementClose(command, async (tx, target) =>
+      livePositionWriter.updateReturning({ closedAt: now, lastSyncedAt: now },
+        managementFullCloseScope(target), livePositionColumns, tx));
+    return { closedRows, heldReason: null };
+  } catch (error) {
+    const heldReason = error instanceof ManagementTargetError ? error.reason : "MANAGEMENT_LEDGER_READ_FAILED";
+    logger.warn({ commandId: command.commandId, heldReason }, "Automatic close receipt retained; ledger application held");
+    await recordExecutionEvent({ commandRowId: command.id, source: "arx", eventType: "MANAGEMENT_LEDGER_APPLICATION_HELD",
+      payload: { commandId: command.commandId, applied: false, reason: heldReason } });
+    return { closedRows: [], heldReason };
+  }
+}
+
+/** Snapshot repair shares the exact target checks used by result application. */
+export async function reconcileGhostClosedPositions(userId: number, snapshotNow = new Date()): Promise<number> {
+  let reconciledClosed = 0;
+  const openRows = await selectLiveOpenPositions(
+    {
+      id: livePositionColumns.id,
+      brokerTicket: livePositionColumns.brokerTicket,
+    },
+    { userId, basis: "UNCLOSED" },
+  );
+  if (openRows.length > 0) {
+    const filledCloses = await db.select().from(arxLiveCommandsTable).where(and(
+      eq(arxLiveCommandsTable.userId, userId),
+      eq(arxLiveCommandsTable.commandType, "CLOSE_LIVE_POSITION"),
+      eq(arxLiveCommandsTable.status, "LIVE_FILLED"),
+    ));
+    const ghostIds = findGhostClosedPositionIds(
+      openRows.map((r) => ({ id: r.id, brokerTicket: r.brokerTicket ?? "" })),
+      filledCloses.filter((c) => !isAgentManagementCommand(c)).map((c) => ({
+        brokerTicket: c.brokerTicket,
+        payload: c.payload as Record<string, unknown> | null,
+      })),
+    );
+    if (ghostIds.length > 0) {
+      await livePositionWriter.update(
+        {
+          closedAt: new Date(),
+          lastSyncedAt: new Date(),
+        },
+        and(
+          eq(livePositionColumns.userId, userId),
+          inArray(livePositionColumns.id, ghostIds),
+          isNull(livePositionColumns.closedAt),
+        ),
+      );
+      reconciledClosed = ghostIds.length;
+    }
+    // Bound automatic results must never enter the legacy ticket-only repair.
+    // Reuse exact result evidence and row predicates, including after restart.
+    const openIds = new Set(openRows.map((position) => position.id));
+    for (const command of filledCloses.filter(isAgentManagementCommand)) {
+      const target = managementTargetFromCommand(command);
+      if (!target || !openIds.has(target.positionRowId)) continue;
+      const result = await reconcileBoundManagementClose(command, snapshotNow);
+      reconciledClosed += result.closedRows.length;
+    }
+  }
+  return reconciledClosed;
 }
 
 // ── R2 S1 — pure UNKNOWN-semantics helpers ──────────────────────────────────
@@ -3466,16 +3548,15 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     // the stop as it is", so the resulting stop is the position's current one.
     let rgPosition: { entryPrice: number; stopLoss: number | null } | null = null;
     if (rgAction === "MODIFY") {
-      const ticket = (row.payload as Record<string, unknown> | null)?.["brokerTicket"];
-      if (typeof ticket === "string" && ticket) {
-        const [p] = await livePositionLedger.select(
-          { entryPrice: livePositionColumns.entryPrice, stopLoss: livePositionColumns.stopLoss },
-          {
-            where: and(eq(livePositionColumns.userId, args.userId), eq(livePositionColumns.brokerTicket, ticket)),
-            limit: 1,
-          },
-        );
-        rgPosition = p ? { entryPrice: Number(p.entryPrice), stopLoss: p.stopLoss != null ? Number(p.stopLoss) : null } : null;
+      try { rgPosition = await readLiveModifyRiskPosition(row); }
+      catch (error) {
+        if (!(error instanceof ManagementTargetError)) throw error;
+        const [blocked] = await db.update(arxLiveCommandsTable).set({
+          status: "LIVE_BLOCKED", rejectionReason: error.reason, rejectedAt: new Date(),
+        }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+          eq(arxLiveCommandsTable.userId, args.userId), eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
+        if (!blocked) return { ok: false as const, reason: LIVE_DISPATCH_RACE_LOST, command: null };
+        return { ok: false as const, reason: error.reason, primaryReason: error.reason, command: blocked };
       }
     }
     const risk = await enforcePreTradeRisk({
@@ -4608,6 +4689,8 @@ export async function recordLiveCommandResult(args: {
   // entry point directly once its lifecycle mapping lands.
   outcome: "LIVE_FILLED" | "LIVE_PARTIALLY_FILLED" | "LIVE_ACKNOWLEDGED" | "LIVE_REJECTED" | "LIVE_FAILED" | "LIVE_UNKNOWN" | "STALE_COMMAND_REJECTED";
   reportingBridgeConnectionId: number;
+  /** Only identity explicitly reported by the terminal; never filled from the current bridge. */
+  reportedExecutionIdentity?: ReturnType<typeof reportedManagementIdentity>;
   brokerTicket?: string | null;
   fillPrice?: number | null;
   executedVolume?: number | null;
@@ -4647,6 +4730,7 @@ export async function recordLiveCommandResult(args: {
     brokerMessage: args.brokerMessage ?? null,
     eaReason: args.eaReason ?? null,
     reportingBridgeConnectionId: args.reportingBridgeConnectionId,
+    reportedExecutionIdentity: args.reportedExecutionIdentity ?? [],
   };
 
   // Task #28 — exactly-once: if the command is already in a terminal state
@@ -4890,89 +4974,95 @@ export async function recordLiveCommandResult(args: {
   // ALERT_ONLY-consistent: we only record broker-confirmed truth, never
   // initiate a close ourselves.
   if (args.outcome === "LIVE_FILLED" && row.commandType === "CLOSE_LIVE_POSITION") {
-    const closeTicket = typeof (row.payload as Record<string, unknown> | null)?.["brokerTicket"] === "string"
-      ? String((row.payload as Record<string, unknown>)["brokerTicket"])
-      : (args.brokerTicket ?? null);
-    if (closeTicket) {
-      try {
-        // A partial close (closed volume below what the position holds) only
-        // shrinks the position: it stays open, in the ledger and under the
-        // Position Guardian. Only a close of the whole volume stamps closedAt.
-        const [openRow] = await livePositionLedger.select(
-          { id: livePositionColumns.id, volume: livePositionColumns.volume },
-          {
-            where: and(
+    if (isAgentManagementCommand(row)) {
+      // Strict full-volume evidence and exact identity. A partial/unknown or
+      // conflicting receipt is held; it never falls through to ticket matching.
+      await reconcileBoundManagementClose(updated, now);
+    } else {
+      const closeTicket = typeof (row.payload as Record<string, unknown> | null)?.["brokerTicket"] === "string"
+        ? String((row.payload as Record<string, unknown>)["brokerTicket"])
+        : (args.brokerTicket ?? null);
+      if (closeTicket) {
+        try {
+          // A partial close (closed volume below what the position holds) only
+          // shrinks the position: it stays open, in the ledger and under the
+          // Position Guardian. Only a close of the whole volume stamps closedAt.
+          const [openRow] = await livePositionLedger.select(
+            { id: livePositionColumns.id, volume: livePositionColumns.volume },
+            {
+              where: and(
+                eq(livePositionColumns.userId, args.userId),
+                eq(livePositionColumns.brokerTicket, closeTicket),
+                isNull(livePositionColumns.closedAt),
+              ),
+              limit: 1,
+            },
+          );
+          const closedVolume = Number(args.executedVolume ?? row.requestedVolume);
+          const partial = openRow != null && Number.isFinite(closedVolume) && closedVolume > 0
+            && Number(openRow.volume) - closedVolume > LIVE_VOLUME_EPSILON;
+          if (partial) {
+            await livePositionWriter.update(
+              {
+                volume: Math.round((Number(openRow.volume) - closedVolume) * 1e8) / 1e8,
+                lastSyncedAt: now,
+              },
+              eq(livePositionColumns.id, openRow.id),
+            );
+          }
+          const closedRows = partial ? [] : await livePositionWriter.updateReturning(
+            {
+              closedAt: now,
+              lastSyncedAt: now,
+            },
+            and(
               eq(livePositionColumns.userId, args.userId),
               eq(livePositionColumns.brokerTicket, closeTicket),
               isNull(livePositionColumns.closedAt),
             ),
-            limit: 1,
-          },
-        );
-        const closedVolume = Number(args.executedVolume ?? row.requestedVolume);
-        const partial = openRow != null && Number.isFinite(closedVolume) && closedVolume > 0
-          && Number(openRow.volume) - closedVolume > LIVE_VOLUME_EPSILON;
-        if (partial) {
-          await livePositionWriter.update(
-            {
-              volume: Math.round((Number(openRow.volume) - closedVolume) * 1e8) / 1e8,
-              lastSyncedAt: now,
-            },
-            eq(livePositionColumns.id, openRow.id),
+            livePositionColumns,
           );
-        }
-        const closedRows = partial ? [] : await livePositionWriter.updateReturning(
-          {
-            closedAt: now,
-            lastSyncedAt: now,
-          },
-          and(
-            eq(livePositionColumns.userId, args.userId),
-            eq(livePositionColumns.brokerTicket, closeTicket),
-            isNull(livePositionColumns.closedAt),
-          ),
-          livePositionColumns,
-        );
-        if (closedRows.length > 0) {
-          await audit({
-            eventType: "LIVE_POSITION_CLOSED_RECONCILED", severity: "INFO",
-            userId: args.userId, symbol: row.symbol,
-            message: `Position ${closeTicket} marked closed from filled CLOSE command ${args.commandId}`,
-            metadata: { commandId: args.commandId, brokerTicket: closeTicket },
-          });
-          // Best-effort: if this closed position is a Profit Mission trade, record
-          // its realised outcome + missed-profit verdict against the executed
-          // mission draft. No-op for non-mission positions; never an execution
-          // path and never allowed to disturb the close-confirmation result.
-          try {
-            const closedPos = closedRows[0] as { floatingPl?: number | null } | undefined;
-            const realisedPnl =
-              typeof closedPos?.floatingPl === "number" && Number.isFinite(closedPos.floatingPl)
-                ? closedPos.floatingPl
-                : null;
-            const { recordMissionTradeCloseByBrokerTicket } = await import("../missionExitManager.js");
-            await recordMissionTradeCloseByBrokerTicket({
-              userId: args.userId,
-              brokerTicket: closeTicket,
-              realisedPnl,
-              nowMs: now.getTime(),
+          if (closedRows.length > 0) {
+            await audit({
+              eventType: "LIVE_POSITION_CLOSED_RECONCILED", severity: "INFO",
+              userId: args.userId, symbol: row.symbol,
+              message: `Position ${closeTicket} marked closed from filled CLOSE command ${args.commandId}`,
+              metadata: { commandId: args.commandId, brokerTicket: closeTicket },
             });
-          } catch (e) {
-            logger.error({
-              [PHASE_B_LIVE_LOG_PREFIX]: true,
-              event: "MISSION_TRADE_CLOSE_RECORD_FAILED",
-              commandId: args.commandId, brokerTicket: closeTicket,
-              error: e instanceof Error ? e.message : String(e),
-            }, "failed to record mission-trade close (advisory) — non-fatal");
+            // Best-effort: if this closed position is a Profit Mission trade, record
+            // its realised outcome + missed-profit verdict against the executed
+            // mission draft. No-op for non-mission positions; never an execution
+            // path and never allowed to disturb the close-confirmation result.
+            try {
+              const closedPos = closedRows[0] as { floatingPl?: number | null } | undefined;
+              const realisedPnl =
+                typeof closedPos?.floatingPl === "number" && Number.isFinite(closedPos.floatingPl)
+                  ? closedPos.floatingPl
+                  : null;
+              const { recordMissionTradeCloseByBrokerTicket } = await import("../missionExitManager.js");
+              await recordMissionTradeCloseByBrokerTicket({
+                userId: args.userId,
+                brokerTicket: closeTicket,
+                realisedPnl,
+                nowMs: now.getTime(),
+              });
+            } catch (e) {
+              logger.error({
+                [PHASE_B_LIVE_LOG_PREFIX]: true,
+                event: "MISSION_TRADE_CLOSE_RECORD_FAILED",
+                commandId: args.commandId, brokerTicket: closeTicket,
+                error: e instanceof Error ? e.message : String(e),
+              }, "failed to record mission-trade close (advisory) — non-fatal");
+            }
           }
+        } catch (e) {
+          logger.error({
+            [PHASE_B_LIVE_LOG_PREFIX]: true,
+            event: "LIVE_POSITION_CLOSE_RECONCILE_FAILED",
+            commandId: args.commandId, brokerTicket: closeTicket,
+            error: e instanceof Error ? e.message : String(e),
+          }, "failed to reconcile position closedAt after filled CLOSE");
         }
-      } catch (e) {
-        logger.error({
-          [PHASE_B_LIVE_LOG_PREFIX]: true,
-          event: "LIVE_POSITION_CLOSE_RECONCILE_FAILED",
-          commandId: args.commandId, brokerTicket: closeTicket,
-          error: e instanceof Error ? e.message : String(e),
-        }, "failed to reconcile position closedAt after filled CLOSE");
       }
     }
   }

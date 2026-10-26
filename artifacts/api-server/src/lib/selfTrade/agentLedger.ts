@@ -12,6 +12,7 @@
 //   Any throw rolls everything back (fail-closed).
 // - An agent can never be defunded below zero available funds.
 
+import { hasUnresolvedAgentAccounting } from "./accountingHold.js";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   db,
@@ -176,6 +177,10 @@ export async function defundAgent(input: DefundAgentInput): Promise<LedgerResult
         inArray(selfTradeAgentExecutionsTable.status, ["PENDING_TICKET", "DISPATCHED", "FILLED"]))).limit(1);
     if (active) return { ok: false, error: "ACTIVE_EXECUTIONS_PRESENT", message: "Resolve pending entries and open positions before withdrawing agent capital." };
 
+    if (await hasUnresolvedAgentAccounting(tx, input.agentId)) {
+      return { ok: false, error: "ACCOUNTING_UNRESOLVED", message: "Verify the agent's closed-trade profit or loss before withdrawing capital." };
+    }
+
     const before = await ensureLedgerRow(tx, input.agentId);
     if (input.amount > before.availableFunds + 1e-9) {
       return {
@@ -273,6 +278,8 @@ export async function applyRealizedFromFills(
     const [agent] = await tx.select({ id: selfTradeAgentsTable.id }).from(selfTradeAgentsTable)
       .where(eq(selfTradeAgentsTable.id, agentId)).for("update");
     if (!agent) return { posted: 0, totalRealizedUsd: 0 };
+    if (await hasUnresolvedAgentAccounting(tx, agentId))
+      return { posted: 0, totalRealizedUsd: 0 };
     const closed = await tx
       .select()
       .from(selfTradeAgentExecutionsTable)
