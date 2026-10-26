@@ -89,10 +89,11 @@ export async function fetchChartCandles(
   symbol: string,
   apiTf: string,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<ChartCandlesResult> {
   const res = await fetch(
     `${BASE}/api/chart/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(apiTf)}&limit=${limit}`,
-    { credentials: "include" },
+    { credentials: "include", signal },
   );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data: unknown = await res.json();

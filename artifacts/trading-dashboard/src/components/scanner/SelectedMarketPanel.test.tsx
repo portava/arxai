@@ -48,6 +48,9 @@ const SELECTED_PANEL_FORBIDDEN = [
 // test controls the snapshot while the deriv badge stays inert.
 const mockSnapshotQuery = vi.fn();
 const mockDerivQuery = vi.fn();
+vi.mock("@/hooks/useSelectedMarketSnapshot", () => ({
+  useSelectedMarketSnapshot: () => ({ ...mockSnapshotQuery(), queryKey: ["scanner", "selected-market", 1, "EURUSD", "M15"], enabled: true, refresh: vi.fn() }),
+}));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey?: unknown[] }) => {
     const k = Array.isArray(opts.queryKey) ? opts.queryKey[0] : undefined;

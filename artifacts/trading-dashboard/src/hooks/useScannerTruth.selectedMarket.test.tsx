@@ -1,0 +1,51 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isLoading: false, envelope: null }) }));
+vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
+const resolver = vi.hoisted(() => vi.fn((input) => input));
+vi.mock("@/lib/scannerTruth", () => ({ resolveScannerTruth: resolver }));
+import { useScannerTruth } from "./useScannerTruth";
+import { useSelectedMarketSnapshot } from "./useSelectedMarketSnapshot";
+import { selectedMarketQueryOptions } from "@/lib/selectedMarketQuery";
+let client: QueryClient;
+afterEach(() => { cleanup(); client.clear(); vi.unstubAllGlobals(); resolver.mockClear(); });
+
+it("truth and panel share active timeframe analysis, cap pending/error, and cancel candles", async () => {
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(["me"], { id: 7 });
+  const requests: Array<{ url: string; signal: AbortSignal; resolve: (r: Response) => void }> = [];
+  vi.stubGlobal("fetch", vi.fn((url: string, init: RequestInit) => new Promise<Response>((resolve) => {
+    requests.push({ url: String(url), signal: init.signal as AbortSignal, resolve });
+  })));
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const { result, rerender } = renderHook(({ symbol }) => {
+    const truth = useScannerTruth(symbol, "M15");
+    const panel = useSelectedMarketSnapshot(symbol, "15m");
+    return { truth, panel };
+  }, { wrapper, initialProps: { symbol: "EURUSD" } });
+  expect(requests).toHaveLength(2);
+  expect(requests.every((r) => r.url.includes("timeframe=M15"))).toBe(true);
+  const candles = requests.find((r) => r.url.includes("/chart/candles"))!;
+  const analysis = requests.find((r) => r.url.includes("selected-market"))!;
+  await act(async () => candles.resolve(new Response(JSON.stringify({ candles: [], feedStatus: null }))));
+  await waitFor(() => expect(resolver).toHaveBeenCalled());
+  expect(resolver.mock.calls.at(-1)?.[0]).toMatchObject({ headerOk: false, timeframe: "15m" });
+  await act(async () => analysis.resolve(new Response(JSON.stringify({ ok: true, symbol: "EURUSD", timeframe: "M15", highlights: {}, explanation: {} }))));
+  await waitFor(() => expect(result.current.panel.data?.ok).toBe(true));
+  expect(resolver.mock.calls.at(-1)?.[0].headerOk).toBe(true);
+  let refresh!: Promise<unknown>;
+  act(() => { refresh = result.current.panel.refresh().catch(() => undefined); });
+  await waitFor(() => expect(requests).toHaveLength(3));
+  await act(async () => { requests[2].resolve(new Response("{}", { status: 500 })); await refresh; });
+  await waitFor(() => expect(result.current.panel.isError).toBe(true));
+  expect(resolver.mock.calls.at(-1)?.[0].headerOk).toBe(false);
+  const oldKey = selectedMarketQueryOptions(7, "EURUSD", "M15").queryKey;
+  expect(client.getQueryState(oldKey)?.status).toBe("error");
+  rerender({ symbol: "GBPUSD" });
+  expect(requests).toHaveLength(5);
+  const pending = requests.slice(3);
+  rerender({ symbol: "EURUSD" });
+  expect(pending.every((request) => request.signal.aborted)).toBe(true);
+});

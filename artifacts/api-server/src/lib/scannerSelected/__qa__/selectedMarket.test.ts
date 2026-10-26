@@ -208,3 +208,158 @@ test("requested timeframe echoes back and the cache key separates timeframes", a
   assert.equal(h1.cacheHit, false);
   assert.equal(calls["H1"], 1);
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+function freshChart(timestamp = "2026-10-26T12:00:00.000Z") {
+  return makeChart(bullishBars(60, 1.15, 0.0005), { ...FRESH_FS, lastCandleTime: timestamp });
+}
+
+test("16 concurrent readers share one pending source and news read", async () => {
+  clearSelectedMarketCache();
+  const gate = deferred<ChartCandlesResponse>();
+  let sourceCalls = 0, newsCalls = 0;
+  const deps = {
+    getChartCandlesFn: async () => { sourceCalls++; return gate.promise; },
+    loadEventsFn: async () => { newsCalls++; return noEvents("EURUSD", []); },
+  };
+  const reads = Array.from({ length: 16 }, () => getSelectedMarketSnapshot({ symbolRaw: "EURUSD", viewerUserId: 7 }, deps));
+  assert.equal(sourceCalls, 1);
+  gate.resolve(freshChart());
+  const answers = await Promise.all(reads);
+  assert.equal(newsCalls, 1);
+  assert.ok(answers.every((answer) => answer.ok && answer.dataAsOf === "2026-10-26T12:00:00.000Z"));
+  const cached = await getSelectedMarketSnapshot({ symbolRaw: "eurusd", viewerUserId: 7 }, deps);
+  assert.ok(cached.ok && cached.cacheHit);
+  assert.equal(cached.symbolRaw, "eurusd");
+});
+
+test("pending work never expires into duplicate builds after the cache TTL", async (t) => {
+  clearSelectedMarketCache();
+  let now = 100_000, calls = 0;
+  t.mock.method(Date, "now", () => now);
+  const gate = deferred<ChartCandlesResponse>();
+  const deps = { getChartCandlesFn: async () => { calls++; return gate.promise; }, loadEventsFn: noEvents };
+  const first = getSelectedMarketSnapshot({ symbolRaw: "EURUSD", viewerUserId: 7 }, deps);
+  now += 31_000;
+  const second = getSelectedMarketSnapshot({ symbolRaw: "EURUSD", viewerUserId: 7 }, deps);
+  assert.equal(calls, 1);
+  gate.resolve(freshChart());
+  const [a, b] = await Promise.all([first, second]);
+  assert.deepEqual(a, b);
+});
+
+test("forced refresh supersedes ordinary work; older completion cannot replace it", async () => {
+  clearSelectedMarketCache();
+  const old = deferred<ChartCandlesResponse>(), fresh = deferred<ChartCandlesResponse>();
+  let calls = 0;
+  const deps = { getChartCandlesFn: async () => ++calls === 1 ? old.promise : fresh.promise, loadEventsFn: noEvents };
+  const args = { symbolRaw: "EURUSD", viewerUserId: 7 };
+  const first = getSelectedMarketSnapshot(args, deps);
+  const force = getSelectedMarketSnapshot({ ...args, refresh: true }, deps);
+  const joinedForce = getSelectedMarketSnapshot({ ...args, refresh: true }, deps);
+  const joinedOrdinary = getSelectedMarketSnapshot(args, deps);
+  assert.equal(calls, 2);
+  fresh.resolve(freshChart("2026-10-26T12:15:00.000Z"));
+  const expected = await force;
+  assert.deepEqual(await joinedForce, expected);
+  assert.deepEqual(await joinedOrdinary, expected);
+  old.resolve(freshChart());
+  await first;
+  const cached = await getSelectedMarketSnapshot(args, deps);
+  assert.ok(cached.ok && cached.dataAsOf === "2026-10-26T12:15:00.000Z" && cached.cacheHit);
+});
+
+test("a failed forced build cannot revive an older pending result and permits retry", async () => {
+  clearSelectedMarketCache();
+  const old = deferred<ChartCandlesResponse>(), failure = deferred<ChartCandlesResponse>();
+  let calls = 0;
+  const deps = { getChartCandlesFn: async () => { calls++; return calls === 1 ? old.promise : calls === 2 ? failure.promise : freshChart(); }, loadEventsFn: noEvents };
+  const args = { symbolRaw: "EURUSD", viewerUserId: 7 };
+  const first = getSelectedMarketSnapshot(args, deps);
+  const force = getSelectedMarketSnapshot({ ...args, refresh: true }, deps);
+  const rejected = assert.rejects(force, /fixture failure/);
+  failure.reject(new Error("fixture failure"));
+  await rejected;
+  old.resolve(freshChart());
+  await first;
+  const retry = await getSelectedMarketSnapshot(args, deps);
+  assert.ok(retry.ok && !retry.cacheHit);
+  assert.equal(calls, 3);
+});
+
+test("cache and pending work are isolated by viewer, symbol and timeframe", async () => {
+  clearSelectedMarketCache();
+  let calls = 0;
+  const deps = { getChartCandlesFn: async () => { calls++; return freshChart(); }, loadEventsFn: noEvents };
+  const reads = [
+    { symbolRaw: "EURUSD", viewerUserId: 7, timeframe: "M5" },
+    { symbolRaw: "EURUSD", viewerUserId: 8, timeframe: "M5" },
+    { symbolRaw: "GBPUSD", viewerUserId: 7, timeframe: "M5" },
+    { symbolRaw: "EURUSD", viewerUserId: 7, timeframe: "M15" },
+    { symbolRaw: "EURUSD", timeframe: "M5" },
+  ];
+  await Promise.all(reads.map((args) => getSelectedMarketSnapshot(args, deps)));
+  assert.equal(calls, 5);
+  await Promise.all(reads.map((args) => getSelectedMarketSnapshot(args, deps)));
+  assert.equal(calls, 5);
+  await assert.rejects(getSelectedMarketSnapshot({ symbolRaw: "EURUSD", viewerUserId: 0 }, deps), /viewer identity/);
+});
+
+test("cached reads preserve source and generated timestamps and expire after the existing 30 seconds", async (t) => {
+  clearSelectedMarketCache();
+  let now = 100_000, calls = 0;
+  t.mock.method(Date, "now", () => now);
+  const deps = { getChartCandlesFn: async () => { calls++; return freshChart(); }, loadEventsFn: noEvents };
+  const args = { symbolRaw: "EURUSD", viewerUserId: 7 };
+  const first = await getSelectedMarketSnapshot(args, deps);
+  now += 29_000;
+  const cached = await getSelectedMarketSnapshot(args, deps);
+  assert.ok(first.ok && cached.ok && cached.cacheHit);
+  if (first.ok && cached.ok) {
+    assert.equal(cached.dataAsOf, first.dataAsOf);
+    assert.equal(cached.generatedAt, first.generatedAt);
+  }
+  now += 2_000;
+  await getSelectedMarketSnapshot(args, deps);
+  assert.equal(calls, 2);
+});
+
+test("clearing the cache fences pending work from repopulating it", async () => {
+  clearSelectedMarketCache();
+  const gate = deferred<ChartCandlesResponse>();
+  let calls = 0;
+  const deps = { getChartCandlesFn: async () => ++calls === 1 ? gate.promise : freshChart(), loadEventsFn: noEvents };
+  const first = getSelectedMarketSnapshot({ symbolRaw: "EURUSD" }, deps);
+  clearSelectedMarketCache();
+  gate.resolve(freshChart());
+  await first;
+  await getSelectedMarketSnapshot({ symbolRaw: "EURUSD" }, deps);
+  assert.equal(calls, 2);
+});
+
+test("controlled latency probe: one 75ms source read serves 32 readers; warm reads require no I/O", async (t) => {
+  clearSelectedMarketCache();
+  let sourceCalls = 0, newsCalls = 0;
+  const deps = {
+    getChartCandlesFn: async () => { sourceCalls++; await new Promise((resolve) => setTimeout(resolve, 75)); return freshChart(); },
+    loadEventsFn: async () => { newsCalls++; return noEvents("EURUSD", []); },
+  };
+  const args = { symbolRaw: "EURUSD", viewerUserId: 7 };
+  const started = performance.now();
+  await Promise.all(Array.from({ length: 32 }, () => getSelectedMarketSnapshot(args, deps)));
+  const coldBatchMs = performance.now() - started;
+  const warmMs: number[] = [];
+  for (let i = 0; i < 500; i++) {
+    const before = performance.now();
+    await getSelectedMarketSnapshot(args, deps);
+    warmMs.push(performance.now() - before);
+  }
+  warmMs.sort((a, b) => a - b);
+  assert.equal(sourceCalls, 1); assert.equal(newsCalls, 1);
+  t.diagnostic(JSON.stringify({ kind: "offline-controlled-latency-not-production-SLA", syntheticSourceDelayMs: 75, concurrentReaders: 32, sourceCalls, newsCalls, coldBatchMs, warmReads: 500, warmP50Ms: warmMs[250], warmP95Ms: warmMs[475] }));
+});

@@ -12,7 +12,7 @@ import { useChartSymbol, bareSymbol, setChartSymbol } from "@/lib/use-chart-symb
 import { resolveSymbol } from "@/lib/symbolRegistry";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
-import { toApiTimeframe } from "@/lib/chartCandlesQuery";
+import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
 import { resolveSelectedMarketView } from "@/components/scanner/selectedMarketView";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
@@ -21,78 +21,13 @@ import { useAssistantName } from "@/lib/assistant-name";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
-type ImpactLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-type Bias = "BUY" | "SELL" | "NEUTRAL" | "WAIT";
-
-interface SelectedMarketEvent {
-  externalId: string;
-  title: string;
-  currency: string;
-  impactLevel: ImpactLevel;
-  eventTime: string;
-  minutesUntil: number;
-}
-
-type DataState = "LIVE_CONFIRMED" | "SYNCING" | "STALE" | "UNAVAILABLE";
-
-interface SnapshotOk {
-  ok: true;
-  symbolRaw: string;
-  symbol: string;
-  timeframe: string;
-  highlights: {
-    bias: Bias;
-    confidenceLabel: string;
-    confidenceScore: number;
-    volatilityLabel: string;
-    trendState: string;
-    // Levels are withheld (null) when the stale-level guard fires or the feed
-    // has no confirmed candles — never rendered as numbers in those states.
-    entryZone: { low: number; high: number } | null;
-    suggestedStop: number | null;
-    suggestedTakeProfit: number | null;
-    riskRewardRatio: number;
-    riskWarnings: string[];
-  };
-  explanation: {
-    hedge: string;
-    why: string;
-    whyItMatters: string;
-    risk: string;
-    invalidation: string;
-    cautions: string[];
-    disclaimer: string;
-  };
-  upcomingEvents: SelectedMarketEvent[];
-  newsRisk: { riskLevel: string; blockTrading: boolean; summary: string };
-  // Additive truth fields (Task #518). dataAsOf = the DATA timestamp (newest
-  // confirmed candle), distinct from generatedAt (analysis build time).
-  dataSource?: string;
-  dataSourceLabel?: string | null;
-  dataState?: DataState;
-  dataAsOf?: string | null;
-  levelsWithheld?: boolean;
-  levelsWithheldReason?: string | null;
-  generatedAt: string;
-  cacheHit: boolean;
-}
-
-interface SnapshotUnavailable {
-  ok: false;
-  symbol?: string;
-  reason?: string;
-  message: string;
-}
-
-type Snapshot = SnapshotOk | SnapshotUnavailable;
-
-function biasBadgeClass(b: Bias): string {
+function biasBadgeClass(b: "BUY" | "SELL" | "NEUTRAL" | "WAIT"): string {
   if (b === "BUY") return "bg-success/20 text-success border-success/40";
   if (b === "SELL") return "bg-danger/20 text-danger border-danger/40";
   if (b === "WAIT") return "bg-warning/20 text-warning border-warning/40";
   return "bg-zinc-500/20 text-foreground border-zinc-500/40";
 }
-function impactBadgeClass(i: ImpactLevel): string {
+function impactBadgeClass(i: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"): string {
   if (i === "CRITICAL") return "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40";
   if (i === "HIGH") return "bg-rose-500/20 text-danger border-rose-500/40";
   if (i === "MEDIUM") return "bg-amber-500/20 text-warning border-amber-500/40";
@@ -111,22 +46,8 @@ export function SelectedMarketPanel() {
   // immediately updates chart / trade ticket / Ruby context everywhere.
   const [chartSym] = useChartSymbol();
   const { name } = useAssistantName();
-  const initial = (() => {
-    const bare = bareSymbol(chartSym || "EURUSD").toUpperCase();
-    return resolveSymbol(bare)?.canonicalSymbol ?? "EURUSD";
-  })();
-  const [activeSymbol, setActiveSymbol] = useState(initial);
-  const [ticketOpen, setTicketOpen] = useState(false);
-  const [ticketSide, setTicketSide] = useState<"BUY" | "SELL">("BUY");
-
-  // Listen for external symbol changes (chart, ticket, Ruby chat) and
-  // mirror them into this panel.
-  useEffect(() => {
-    const bare = bareSymbol(chartSym || "").toUpperCase();
-    if (!bare) return;
-    const hit = resolveSymbol(bare);
-    if (hit && hit.canonicalSymbol !== activeSymbol) setActiveSymbol(hit.canonicalSymbol);
-  }, [chartSym, activeSymbol]);
+  const activeSymbol = resolveSymbol(bareSymbol(chartSym || "EURUSD").toUpperCase())?.canonicalSymbol ?? "EURUSD";
+  const [ticket, setTicket] = useState<{ selection: string; side: "BUY" | "SELL" } | null>(null);
 
   // Compact public Deriv status — drives the "Deriv feed not configured"
   // badge in SymbolExplorer. Synthetics stay selectable either way.
@@ -160,22 +81,11 @@ export function SelectedMarketPanel() {
   // enum (e.g. "M15"). The analysis must match the timeframe the user's chart
   // is on, so it flows into BOTH the fetch URL and the react-query key.
   const [scannerTf] = useScannerTimeframe();
-  const apiTf = toApiTimeframe(scannerTf);
-
-  const enabled = activeSymbol.length > 0;
-  const q = useQuery<Snapshot>({
-    queryKey: ["scanner", "selected-market", activeSymbol, apiTf],
-    queryFn: async () => {
-      const r = await fetch(
-        `${BASE}/api/market-scanner/selected-market?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(apiTf)}`,
-        { credentials: "include" },
-      );
-      return (await r.json()) as Snapshot;
-    },
-    enabled,
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: false,
-  });
+  // Shared /api/market-scanner/selected-market read: panel + truth header use
+  // the exact same user/symbol/timeframe key, request and cancellation signal.
+  const q = useSelectedMarketSnapshot(activeSymbol, scannerTf);
+  const selection = JSON.stringify(q.queryKey);
+  useEffect(() => { setTicket(null); }, [selection]);
 
   // Shared scanner feed-truth for the focused symbol/timeframe — same source the
   // header strip and chart read. Drives an honest, NON-BLOCKING feed warning on
@@ -186,25 +96,13 @@ export function SelectedMarketPanel() {
     ? { warningTitle: liveAffordance.warningTitle, warningDetail: liveAffordance.warningDetail }
     : null;
 
-  const refreshMutating = useState(false);
-  const [refreshing, setRefreshing] = refreshMutating;
   async function manualRefresh() {
-    if (!activeSymbol) return;
-    setRefreshing(true);
-    try {
-      await fetch(
-        `${BASE}/api/market-scanner/selected-market?symbol=${encodeURIComponent(activeSymbol)}&timeframe=${encodeURIComponent(apiTf)}&refresh=1`,
-        { credentials: "include" },
-      );
-      await q.refetch();
-    } finally {
-      setRefreshing(false);
-    }
+    try { await q.refresh(); }
+    catch { /* The shared query owns the visible failure; never publish old data as a refresh. */ }
   }
 
   /** Single point that switches global market focus. */
   function selectSymbol(canonical: string) {
-    setActiveSymbol(canonical);
     // Broadcast to chart, trade ticket, Ruby context.
     setChartSymbol(canonical);
     // Scroll the explanation card into view on mobile.
@@ -216,7 +114,7 @@ export function SelectedMarketPanel() {
     }
   }
 
-  const snap = q.data;
+  const snap = q.isError ? undefined : q.data;
   // A snapshot only drives the full "ok" render path when it actually carries
   // the structural pieces that path reads (highlights + explanation). A
   // truthy-but-partial payload (ok:true but missing those) has historically
@@ -287,11 +185,11 @@ export function SelectedMarketPanel() {
             size="sm"
             variant="outline"
             onClick={manualRefresh}
-            disabled={refreshing || !ok}
+            disabled={q.isFetching || !q.enabled}
             data-testid="btn-refresh-symbol"
             className="ml-auto"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} />
           </Button>
         </div>
         <div className="pt-2">
@@ -308,7 +206,8 @@ export function SelectedMarketPanel() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {q.isLoading && <div className="text-sm text-muted-foreground">Loading market…</div>}
+        {q.isLoading && <div className="text-sm text-muted-foreground" role="status">Loading market…</div>}
+        {q.isError && <div className="text-sm text-warning" role="alert">Market analysis could not be refreshed. Try again.</div>}
         {fallback && (() => {
           // When the legacy scanner endpoint can't deliver a complete snapshot
           // (e.g. Deriv synthetics, fresh symbols, OR a truthy-but-partial
@@ -444,12 +343,12 @@ export function SelectedMarketPanel() {
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 <Button
                   className="bg-success hover:bg-success/90 text-white font-bold h-11 text-base sm:flex-1 sm:min-w-[120px]"
-                  onClick={() => { setTicketSide("BUY"); setTicketOpen(true); }}
+                  onClick={() => { setTicket({ selection, side: "BUY" }); }}
                   data-testid="btn-open-ticket-buy"
                 >BUY</Button>
                 <Button
                   className="bg-danger hover:bg-danger/90 text-white font-bold h-11 text-base sm:flex-1 sm:min-w-[120px]"
-                  onClick={() => { setTicketSide("SELL"); setTicketOpen(true); }}
+                  onClick={() => { setTicket({ selection, side: "SELL" }); }}
                   data-testid="btn-open-ticket-sell"
                 >SELL</Button>
               </div>
@@ -469,10 +368,11 @@ export function SelectedMarketPanel() {
 
       {ok && (
         <LiveTradeTicket
-          open={ticketOpen}
-          onOpenChange={setTicketOpen}
+          key={selection}
+          open={ticket?.selection === selection}
+          onOpenChange={(open) => { if (!open) setTicket(null); }}
           defaultSymbol={ok.symbol}
-          defaultSide={ticketSide}
+          defaultSide={ticket?.side ?? "BUY"}
           sourcePage="SCANNER_SELECTED_MARKET"
           rubyExplanationSummary={rubyNote}
           feedWarning={liveFeedWarning}
