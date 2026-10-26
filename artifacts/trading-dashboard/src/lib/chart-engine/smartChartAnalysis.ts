@@ -222,7 +222,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
         const failed = bars.slice(absoluteIndex + 1).some(b => b.close > at.high);
         const confirmed = next != null && next.close < at.low;
         const status = failed ? "invalidated" : confirmed ? "confirmed" : next ? "observed" : "developing";
-        add({ id: `shooting_star:${at.time}`, title: "Shooting Star", status,
+        add({ id: `shooting_star:${at.time}`, title: "Shooting Star", family: isObservedDoji(at) ? "doji" : "long_shadow", status,
           ...(confirmed ? { confirmedAt: next.closeTime } : {}), asOf: failed ? last.closeTime : next?.closeTime ?? at.closeTime,
           explanation: `After an advance, the upper wick reaches ${price(at.high)} while the body stays near the low ${price(at.low)}. ${failed ? "A later close above the high invalidated the rejection." : confirmed ? `The next candle closed at ${price(next.close)}, below ${price(at.low)}, confirming the rejection.` : next ? "The next close did not confirm the rejection." : `The next candle must close below ${price(at.low)} to confirm this rejection.`}`,
           anchors: [{ time: at.time, price: at.high, role: "shooting_star" }], levels: [{ price: at.low, label: "Confirmation below" }, { price: at.high, label: "Invalidation above" }],
@@ -328,7 +328,11 @@ function catalogFinding(raw: DetectedPattern, bars: SmartChartAnalysisBar[], not
   const status: SmartChartFinding["status"] = raw.status === "confirmed" ? "confirmed" : raw.status === "invalidated" || raw.status === "failed" ? "invalidated" : raw.status === "forming" ? "developing" : "observed";
   const last = bars[bars.length - 1]!;
   const levels = [{ price: raw.levels.confirmation, label: "Confirmation level" }, { price: raw.levels.invalidation, label: "Invalidation level" }].filter((v): v is { price: number; label: string } => v.price != null && positive(v.price));
-  return { id: `${raw.id}:${points.map(p => bars[p.index]!.time).join(":")}`, title: raw.name, status,
+  // Legacy pin-bar geometry overlaps the new named candle variants. Retain
+  // its distinct lifecycle in details without granting an extra summary vote.
+  const candleFamily = raw.id === "bullish_pin_bar" || raw.id === "bearish_pin_bar"
+    ? isObservedDoji(last) ? "doji" : "long_shadow" : undefined;
+  return { id: `${raw.id}:${points.map(p => bars[p.index]!.time).join(":")}`, title: raw.name, ...(candleFamily ? { family: candleFamily } : {}), status,
     // Legacy catalog does not expose earliest causal confirmation; report this
     // observation time, never backdate a discovery to a swing's own bar.
     ...(status === "confirmed" ? { confirmedAt: last.closeTime } : {}), asOf: last.closeTime,

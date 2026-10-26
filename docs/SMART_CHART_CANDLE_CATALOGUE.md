@@ -43,17 +43,19 @@ Run `pnpm --filter @workspace/api-server test:candlestick-catalogue` and `pnpm -
 
 The paired benchmark is `smartChartAnalysis.catalogue.benchmark.ts`, run with the API package's existing `node --import tsx`. It extracts the exact preceding core model from Git into a temporary sibling module and removes that file afterward. Old and expanded functions run in the same process, interleaved across 500 samples after warmup, on the same 5,000 bars and 600-bar cap. A separate batch exercises all 34 pattern fixtures. It reports median/p95/p99/max and retains the existing full-model p95 ≤10 ms, p99 ≤20 ms budgets. This measures computation only; browser response, paint, provider/network and order latency require separate evidence. Receipts are stored under `/Users/areyouok/arx-tier1-release/candlestick-catalogue-20261026`.
 
-Validation at this checkpoint: 148 catalogue tests, 84 chart-model tests, 59 original API pattern tests, all four workspace typecheck units, 87 guards plus seven guard-syntax assertions, and both production builds pass. The test scripts are wired into root CI. The normal guard launcher could not open its sandbox IPC pipe; the identical guard modules passed through `node --import tsx`. A first guard run also caught the newly added test scripts before CI wiring; the corrected run passed.
+Validation at this checkpoint: 148 catalogue tests, 87 chart-model tests, 59 original API pattern tests, all four workspace typecheck units, 87 guards plus seven guard-syntax assertions, and both production builds pass. The test scripts are wired into root CI. The normal guard launcher could not open its sandbox IPC pipe; the identical guard modules passed through `node --import tsx`. A first guard run also caught the newly added test scripts before CI wiring; the corrected run passed.
 
-Isolated measurement on this Mac/Node v24.16.0, 2026-10-26 21:56:16.539–21:56:19.896 UTC:
+Isolated measurement on this Mac/Node v24.16.0, 2026-10-26 22:02:56.930–22:03:00.450 UTC:
 
 | Same-input computation | Median ms | p95 ms | p99 ms |
 | --- | ---: | ---: | ---: |
-| Previous core model | 0.595 | 0.715 | 0.955 |
-| Expanded model | 0.688 | 0.798 | 1.038 |
-| Previous bind + model | 1.016 | 1.307 | 1.547 |
-| Expanded bind + model | 1.109 | 1.507 | 1.757 |
-| New catalogue alone, 600 bars / 12 endpoints | 0.029 | 0.037 | 0.044 |
-| All 34 positive fixtures in one model batch | 0.961 | 1.092 | 1.213 |
+| Previous core model | 0.594 | 0.742 | 0.946 |
+| Expanded model | 0.685 | 0.811 | 1.029 |
+| Previous bind + model | 1.011 | 1.329 | 1.625 |
+| Expanded bind + model | 1.105 | 1.535 | 1.727 |
+| New catalogue alone, 600 bars / 12 endpoints | 0.029 | 0.039 | 0.045 |
+| All 34 positive fixtures in one model batch | 0.966 | 1.085 | 1.263 |
 
-The added work increases full-model p95 by about 0.083 ms and bind-plus-model p95 by about 0.200 ms in this trial; it does not make the existing computation faster. Both complete-operation budgets pass. A preceding run overlapped another agent's typecheck; it remains in the receipt as diagnostic evidence and is not the isolated acceptance measurement. No browser or TradingView/MT5 speed-parity claim follows from these numbers.
+The added work increases full-model p95 by about 0.069 ms and bind-plus-model p95 by about 0.206 ms in this trial; it does not make the existing computation faster. Both complete-operation budgets pass. A preceding run overlapped another agent's typecheck; it remains in the receipt as diagnostic evidence and is not the isolated acceptance measurement. No browser or TradingView/MT5 speed-parity claim follows from these numbers.
+
+A longer-window integration fixture also reproduces the old Pin Bar and new Hammer appearing as two summary entries for the same candle. The final model groups legacy pin bars and the dedicated Shooting Star with their related Doji/long-shadow family, preserving each detailed lifecycle while limiting summary duplication. Hammer, Takuri/Doji and Shooting Star overlap regressions pass. The final table above includes this correction; earlier checkpoint timings remain in the receipt.
