@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { SelfTradeAccountingCoverage } from "./selfTradeAccountingCoverage";
 import type { SelfTradeOverviewRespByStatus } from "./selfTradeOverviewRespByStatus";
 
 export interface SelfTradeOverviewResp {
@@ -16,4 +17,5 @@ export interface SelfTradeOverviewResp {
   totalAvailable: number;
   totalRealizedPnl: number;
   totalOpenPnl: number;
+  accounting?: SelfTradeAccountingCoverage;
 }
