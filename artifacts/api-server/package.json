@@ -277,7 +277,9 @@
     "diagnose:deriv-public-data": "node --import tsx src/scripts/derivPublicDataProbe.ts",
     "test:self-trade-management-postgres": "node src/lib/selfTrade/__qa__/runManagementTargetPostgres.mjs",
     "test:mission-evidence": "node --import tsx --test --test-force-exit src/lib/__qa__/missionTestingEvidence.test.ts",
-    "test:mission-evidence:postgres": "node src/lib/__qa__/runMissionEvidencePostgres.mjs"
+    "test:mission-evidence:postgres": "node src/lib/__qa__/runMissionEvidencePostgres.mjs",
+    "test:backtest-evidence": "node --import tsx --test src/lib/backtest/__qa__/backtestEvidence.test.ts",
+    "test:backtest-evidence:postgres": "node src/lib/backtest/__qa__/runBacktestEvidencePostgres.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

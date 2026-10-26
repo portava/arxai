@@ -19445,6 +19445,20 @@ components:
         createdAt:      { type: string }
         updatedAt:      { type: string }
 
+    BacktestEvidence:
+      type: object
+      required: [version, classification, verification, comparisonEligible, source, pnlUnit, costs, holdout, limitations]
+      properties:
+        version: { type: integer, enum: [1] }
+        classification: { type: string, enum: [diagnostic] }
+        verification: { type: string, enum: [unverified] }
+        comparisonEligible: { type: boolean, enum: [false] }
+        source: { type: string, enum: [generated_prices, unattested_broker_history, unknown] }
+        pnlUnit: { type: string, enum: [price_units] }
+        costs: { type: string, enum: [not_modelled] }
+        holdout: { type: string, enum: [not_recorded] }
+        limitations: { type: array, items: { type: string } }
+
     BacktestRun:
       type: object
       required: [id, strategyId, symbol, timeframe, startTime, endTime, initialBalance, totalTrades, winningTrades, losingTrades, netProfitLoss, maxDrawdown, winRate, averageRr, expectancy, profitFactor, status, isVerified, createdAt]
@@ -19471,6 +19485,8 @@ components:
         # Which candle series fed the simulation: real broker bars or the
         # clearly-labeled deterministic synthetic generator.
         dataSource:     { type: string, enum: [broker, synthetic] }
+        evidence: { $ref: "#/components/schemas/BacktestEvidence" }
+        historyStatus: { type: string, enum: [available_unattested, unavailable, ambiguous_source, invalid_bars] }
         aiSummary:      { type: ["string", "null"] }
         equityCurve:
           type: array
@@ -19505,6 +19521,8 @@ components:
         equity:   { type: number }
         peak:     { type: number }
         drawdown: { type: number }
+        grossPriceUnits: { type: number, description: Cumulative unscaled P/L independent of the plotting offset. }
+        peakGrossPriceUnits: { type: number, description: Running peak of cumulative unscaled P/L. }
 
     BacktestTradeMarker:
       type: object
@@ -19523,6 +19541,7 @@ components:
       type: object
       required: [kind, label, initialBalance, finalBalance, maxDrawdown, equity, markers, summary]
       properties:
+        evidence: { $ref: "#/components/schemas/BacktestEvidence" }
         kind:           { type: string, enum: [BACKTEST] }
         label:          { type: string }
         initialBalance: { type: number }
