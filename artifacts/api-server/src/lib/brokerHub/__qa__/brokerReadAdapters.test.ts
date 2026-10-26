@@ -13,7 +13,8 @@ import {
   DerivReadOnlyAdapter,
   type DerivFeedReader,
 } from "../derivReadOnlyAdapter.js";
-import { BROKER_READ_VENUES, brokerReadAdapter } from "../readAdapters.js";
+process.env.DATABASE_URL ??= "postgresql://offline@localhost/offline?host=%2Fprivate%2Ftmp%2Farx-no-db";
+const { BROKER_READ_VENUES, brokerReadAdapter } = await import("../readAdapters.js");
 
 const NOW = Date.parse("2026-10-24T12:00:00.000Z");
 const nowSec = Math.floor(NOW / 1000);
@@ -31,6 +32,7 @@ function reader(status: Partial<Status> = {}, candles: Array<{ epoch: number; cl
       activeSymbolsLoadedAt: new Date(NOW - 60_000).toISOString(),
       ...status,
     }),
+    isDiscovered: (id) => id === "R_75",
     catalog: () => [{ symbol: "V75", derivId: "R_75", displayName: "Volatility 75 Index" }],
     candles: async () => ({
       ok: candles.length > 0,
@@ -126,4 +128,21 @@ test("the factory serves every Hub venue behind the one read contract", () => {
   }
   assert.deepEqual(mt5.identity, { venue: "MT5", userId: 7, nativeConnectionRef: "44" });
   assert.deepEqual(deriv.identity, { venue: "DERIV", userId: 7, nativeConnectionRef: DERIV_PLATFORM_FEED_REF });
+});
+
+
+test("discovery for another instrument never marks this catalog entry fresh", async () => {
+  const r = reader(); r.isDiscovered = () => false;
+  assert.equal((await adapter(r).readInstruments())[0].discoveryStatus, "STALE");
+  const missing = reader(); delete missing.isDiscovered;
+  assert.equal((await adapter(missing).readInstruments())[0].discoveryStatus, "STALE");
+});
+
+test("public market data retains public provenance and never creates trading capability", async () => {
+  const r = reader({}, [{ epoch: nowSec - 60, close: 1 }]); r.source = () => "deriv_public";
+  const a = adapter(r); const data = await a.readMarketData({ exactBrokerSymbol: "R_75", timeframe: "M1" });
+  assert.ok(data.available); assert.equal(data.provenance.source, "deriv_public");
+  assert.equal(await a.readAccount(), null);
+  assert.equal((await a.readCapabilities()).capabilities.openOrderSnapshot, false);
+  assert.equal((await a.readInstruments())[0].brokerReportsTradeAllowed, false);
 });

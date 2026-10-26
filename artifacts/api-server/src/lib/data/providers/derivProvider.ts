@@ -14,7 +14,10 @@
 //   - When unconfigured, getDerivCandles returns `{ ok:false }` and
 //     never fabricates synthetic candles.
 
-import { getDerivWsClient, type DerivCandle, type DerivGranularity } from "./derivWsClient.js";
+import type { DerivCandle, DerivGranularity } from "./derivWsClient.js";
+
+import { DERIV_PUBLIC_DATA_URL } from "./derivPublicDataClient.js";
+import { getDerivFeedClient, derivMarketDataConfigured, derivMarketDataSource } from "./derivFeedClient.js";
 
 export interface DerivSyntheticSymbol {
   symbol: string;          // ARX-internal label
@@ -55,7 +58,9 @@ export interface DerivFeedStatus {
   appIdConfigured: boolean;
   apiTokenConfigured: boolean;
   accountIdConfigured: boolean;
-  mode: "new" | "legacy" | "none";
+  mode: "new" | "legacy" | "none" | "public";
+  source: "deriv" | "deriv_public";
+  authorized: boolean;
   maskedAppId: string;
   maskedToken: string;
   wsUrl: string;
@@ -89,8 +94,6 @@ export interface DerivFeedStatus {
     | "LIVE_FEED";
 }
 
-const DEFAULT_DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3";
-
 /** Map clean ARX label → Deriv WS symbol id, or null when unknown. */
 /** Phase 22X — per-symbol live-tick freshness check. Returns true when the
  *  cached tick for this specific Deriv symbol arrived within `maxAgeMs`.
@@ -99,9 +102,9 @@ const DEFAULT_DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3";
 export function hasRecentDerivTickFor(symbolOrLabel: string, maxAgeMs: number = 30_000): boolean {
   const map = resolveDerivSymbol(symbolOrLabel);
   if (!map) return false;
-  const client = getDerivWsClient();
+  const client = getDerivFeedClient();
   const tick = client.getCachedTickByDerivId(map.derivId);
-  if (!tick || typeof tick.epoch !== "number") return false;
+  if (!client.isConnected() || !tick || !Number.isFinite(tick.epoch) || !Number.isFinite(tick.quote) || tick.quote <= 0) return false;
   const ageMs = Date.now() - tick.epoch * 1000;
   return ageMs >= 0 && ageMs <= maxAgeMs;
 }
@@ -146,8 +149,9 @@ export function toDerivGranularity(tf: string): DerivGranularity | null {
 export function getDerivFeedStatus(): DerivFeedStatus {
   const appIdConfigured   = Boolean(process.env.DERIV_APP_ID && process.env.DERIV_APP_ID.trim());
   const apiTokenConfigured = Boolean(process.env.DERIV_API_TOKEN && process.env.DERIV_API_TOKEN.trim());
-  const client = getDerivWsClient();
-  if (appIdConfigured) client.ensureConnection();
+  const client = getDerivFeedClient();
+  const configured = derivMarketDataConfigured();
+  if (configured) client.ensureConnection();
   const subs       = client.getSubscribedSymbols();
   const connected  = client.isConnected();
   const authorized = client.isAuthorized();
@@ -169,11 +173,11 @@ export function getDerivFeedStatus(): DerivFeedStatus {
   // live data is flowing — i.e. it is purely informational for the
   // private-account features that require auth.
   const feedReadinessState: DerivFeedStatus["feedReadinessState"] =
-    !appIdConfigured                                            ? "UNCONFIGURED" :
+    !configured                                                 ? "UNCONFIGURED" :
     !connected                                                   ? "CONNECTING" :
     hasRecentTick                                                ? "LIVE_FEED" :
     (!authorized && (process.env.DERIV_API_TOKEN ?? "").trim() && authErr) ? "AUTH_FAILED" :
-    activeSymbolsLoaded                                          ? "HISTORY_READY_AWAITING_LIVE_TICK" :
+    (mode === "public" ? !!client.getLastCandleAt() : activeSymbolsLoaded) ? "HISTORY_READY_AWAITING_LIVE_TICK" :
                                                                    "CONNECTED_AWAITING_FEED";
 
   // Health rolls up readiness state. Anything past CONNECTING that has not
@@ -188,10 +192,10 @@ export function getDerivFeedStatus(): DerivFeedStatus {
     feedReadinessState === "HISTORY_READY_AWAITING_LIVE_TICK"    ? "warming" :
                                                                    "healthy";
 
-  const message = !appIdConfigured
-    ? "Deriv feed not configured. Add DERIV_APP_ID (and DERIV_API_TOKEN for new API mode)."
+  const message = !configured
+    ? "Deriv market data is off. Set ARX_DERIV_PUBLIC_DATA_ENABLED=true to enable public synthetic data; no account credentials are required."
     : feedReadinessState === "LIVE_FEED"
-      ? `Deriv feed connected (${mode} mode) — live ticks streaming.`
+      ? `Deriv market data connected (${mode} mode) — receiving live ticks; ${subs.length} subscriptions. Account trading is separate.`
       : feedReadinessState === "HISTORY_READY_AWAITING_LIVE_TICK"
         ? `Deriv feed connected (${mode} mode). Historical candles ready; waiting for first live tick…`
         : feedReadinessState === "CONNECTED_AWAITING_FEED"
@@ -201,7 +205,9 @@ export function getDerivFeedStatus(): DerivFeedStatus {
             : `Deriv feed configured (${mode} mode). Connecting…`;
 
   return {
-    configured: appIdConfigured,
+    configured,
+    source: derivMarketDataSource(),
+    authorized,
     connected,
     appIdConfigured,
     apiTokenConfigured,
@@ -209,7 +215,7 @@ export function getDerivFeedStatus(): DerivFeedStatus {
     mode,
     maskedAppId:  client.getMaskedAppId(),
     maskedToken:  client.getMaskedToken(),
-    wsUrl: connected ? "connected" : "connecting…",
+    wsUrl: mode === "public" ? DERIV_PUBLIC_DATA_URL : connected ? "connected" : "connecting…",
     knownSyntheticSymbolCount: DERIV_SYNTHETIC_SYMBOLS.length,
     activeSymbolCount: subs.length,
     subscribedSymbols: subs,
@@ -264,9 +270,9 @@ export function getDerivSymbolFeedStatus(
   symbolOrLabel: string,
   maxAgeMs: number = 30_000,
 ): DerivSymbolFeedStatus {
-  const appIdConfigured = Boolean(process.env.DERIV_APP_ID && process.env.DERIV_APP_ID.trim());
-  const client = getDerivWsClient();
-  if (appIdConfigured) client.ensureConnection();
+  const client = getDerivFeedClient();
+  const configured = derivMarketDataConfigured();
+  if (configured) client.ensureConnection();
   const connected = client.isConnected();
   const authorized = client.isAuthorized();
   const authErr = client.getLastAuthorizeError();
@@ -276,9 +282,9 @@ export function getDerivSymbolFeedStatus(
   let lastTickAt: string | null = null;
   let lastTickAgeMs: number | null = null;
   let hasRecentTick = false;
-  if (map) {
+  if (map && connected) {
     const tick = client.getCachedTickByDerivId(map.derivId);
-    if (tick && typeof tick.epoch === "number") {
+    if (tick && Number.isFinite(tick.epoch) && Number.isFinite(tick.quote) && tick.quote > 0) {
       const epochMs = tick.epoch * 1000;
       const ageMs = Date.now() - epochMs;
       lastTickAgeMs = ageMs;
@@ -291,11 +297,11 @@ export function getDerivSymbolFeedStatus(
   // symbol's own recent tick. AUTH_FAILED stays purely informational — public
   // synthetic data does not require an authorized session.
   const feedReadinessState: DerivFeedStatus["feedReadinessState"] =
-    !appIdConfigured                                                        ? "UNCONFIGURED" :
+    !configured                                                             ? "UNCONFIGURED" :
     !connected                                                              ? "CONNECTING" :
     hasRecentTick                                                           ? "LIVE_FEED" :
     (!authorized && (process.env.DERIV_API_TOKEN ?? "").trim() && authErr)  ? "AUTH_FAILED" :
-    activeSymbolsLoaded                                                     ? "HISTORY_READY_AWAITING_LIVE_TICK" :
+    (client.getMode() === "public" ? ("hasSymbolHistory" in client && client.hasSymbolHistory(map?.derivId ?? "")) : activeSymbolsLoaded) ? "HISTORY_READY_AWAITING_LIVE_TICK" :
                                                                              "CONNECTED_AWAITING_FEED";
 
   return {
@@ -334,7 +340,7 @@ export async function getDerivCandles(
   if (!granularity) {
     return { ok: false, reason: "TIMEFRAME_UNSUPPORTED", candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: null };
   }
-  const client = getDerivWsClient();
+  const client = getDerivFeedClient();
   if (!client.configured()) {
     return { ok: false, reason: "DERIV_NOT_CONFIGURED", candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
   }
@@ -356,7 +362,7 @@ export interface DerivTickResult {
 export async function getDerivTick(symbol: string): Promise<DerivTickResult> {
   const map = resolveDerivSymbol(symbol);
   if (!map) return { ok: false, reason: "SYMBOL_UNAVAILABLE_FROM_DERIV_FEED", tick: null };
-  const client = getDerivWsClient();
+  const client = getDerivFeedClient();
   if (!client.configured()) return { ok: false, reason: "DERIV_NOT_CONFIGURED", tick: null };
   client.ensureConnection();
   try {

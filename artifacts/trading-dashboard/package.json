@@ -55,7 +55,8 @@
     "test:testing-lab": "vitest run src/components/testing-lab/TestingLab.test.tsx src/components/testing-lab/ChartPanels.test.tsx",
     "test:live-ai-harness": "vitest run src/pages/live-ai-auto-test.honesty.test.tsx",
     "test:mission-honest-labelling": "vitest run src/pages/profit-missions.honest-labelling.test.ts",
-    "test:chart-tick-source": "vitest run src/lib/chartTickStreamContext.test.ts src/components/charts/ARXNativeChart.tick-stream.test.tsx"
+    "test:chart-tick-source": "vitest run src/lib/chartTickStreamContext.test.ts src/components/charts/ARXNativeChart.tick-stream.test.tsx",
+    "test:deriv-health": "vitest run src/pages/admin/deriv-health.test.tsx"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
