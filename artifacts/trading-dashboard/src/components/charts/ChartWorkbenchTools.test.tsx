@@ -11,6 +11,29 @@ const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkb
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 describe("drawing workspace controls",()=>{
+  it("offers explicit pan and zoom and restores drawing placement when a tool is selected",()=>{
+    const engine={...adapter,setNavigationMode:vi.fn(),panBy:vi.fn(),zoomBy:vi.fn()} as unknown as ChartEngineAdapter;
+    mount("EURUSD","M15",engine);
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"trend"}});
+    act(()=>click?.({time:100,price:1.2}));
+    fireEvent.click(screen.getByRole("button",{name:"Pan",exact:true}));
+    expect(click).toBeNull();
+    expect(engine.setNavigationMode).toHaveBeenLastCalledWith("pan");
+    expect(screen.getByRole("button",{name:"Pan",exact:true}).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByLabelText("Pan to earlier candles"));
+    fireEvent.click(screen.getByLabelText("Pan to later candles"));
+    expect(engine.panBy).toHaveBeenNthCalledWith(1,-0.25);
+    expect(engine.panBy).toHaveBeenNthCalledWith(2,0.25);
+    fireEvent.click(screen.getByLabelText("Zoom in chart"));
+    fireEvent.click(screen.getByLabelText("Zoom out chart"));
+    expect(engine.zoomBy).toHaveBeenNthCalledWith(1,0.75);
+    expect(engine.zoomBy).toHaveBeenNthCalledWith(2,4/3);
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"horizontal"}});
+    expect(engine.setNavigationMode).toHaveBeenLastCalledWith("inspect");
+    act(()=>click?.({time:200,price:1.3}));
+    expect(drawings.mock.calls.at(-1)![0]).toHaveLength(1);
+    expect(drawings.mock.calls.at(-1)![0][0].start).toEqual({time:200,price:1.3});
+  });
   it("creates, edits, undoes, redoes and reloads a drawing without trade calls",()=>{
     const view=mount();fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"horizontal"}});
     act(()=>click?.({time:100,price:1.2}));

@@ -33,6 +33,7 @@ import {
   ArrowRightToLine,
 } from "lucide-react";
 import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { SmartChartReader } from "./SmartChartReader";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 import { bareSymbol } from "@/lib/use-chart-symbol";
@@ -1196,6 +1197,7 @@ export function ARXNativeChart({
       </div>
       <ChartWorkbenchTools key={`${resolvedSymbol}:${timeframe}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
+      <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect it
       </output>
@@ -1211,10 +1213,14 @@ export function ARXNativeChart({
           ref={containerRef}
           tabIndex={0}
           role="region"
-          aria-label={`${resolvedSymbol} ${timeframe} price chart. Pan to inspect history, scroll to zoom. Home fits history; End returns to latest candles.`}
+          aria-label={`${resolvedSymbol} ${timeframe} price chart. Drag or arrow keys to pan; scroll, plus or minus to zoom. Home fits history; End returns to latest candles.`}
           onKeyDown={(event) => {
+            if (event.target !== event.currentTarget || event.ctrlKey || event.metaKey || event.altKey) return;
             if (event.key === "End") { event.preventDefault(); adapterRef.current?.goToLatest?.(); }
             if (event.key === "Home") { event.preventDefault(); adapterRef.current?.fitHistory?.(); }
+            if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); adapterRef.current?.panBy?.(event.key === "ArrowLeft" ? -0.25 : 0.25); }
+            if (event.key === "+" || event.key === "=") { event.preventDefault(); adapterRef.current?.zoomBy?.(0.75); }
+            if (event.key === "-" || event.key === "_") { event.preventDefault(); adapterRef.current?.zoomBy?.(4/3); }
           }}
           data-testid="arx-native-canvas"
           className="w-full overflow-hidden"
