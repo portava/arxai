@@ -22958,6 +22958,64 @@ export const GetSelfTradeOverviewResponse = zod.object({
   totalAvailable: zod.number(),
   totalRealizedPnl: zod.number(),
   totalOpenPnl: zod.number(),
+  accounting: zod
+    .object({
+      status: zod.enum(["RECORDED", "INCOMPLETE", "UNAVAILABLE"]),
+      asOf: zod.string(),
+      dayStart: zod
+        .string()
+        .describe("Inclusive UTC start of the current reporting day."),
+      closedTrades: zod.number(),
+      recordedTrades: zod.number(),
+      unknownTrades: zod.number(),
+      unresolvedAccounting: zod.number(),
+      unknownCloseTime: zod.number(),
+      missingLedgers: zod.number().describe("Missing or invalid ledgers."),
+      unpostedTrades: zod
+        .number()
+        .describe(
+          "Numeric closed outcomes without exactly one matching ledger posting.",
+        ),
+      unreconciledLedgers: zod
+        .number()
+        .describe(
+          "Ledgers whose realized subtotal or posting currency does not reconcile.",
+        ),
+      unmatchedPostings: zod
+        .number()
+        .describe(
+          "Realized postings without one matching usable closed execution for the same agent.",
+        ),
+      recordedRealizedPnl: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded ledger subtotal in USD. An incomplete subtotal is not total realized performance.",
+        ),
+      recordedAvailableFunds: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded ledger subtotal in USD, not independently verified withdrawable or tradeable capital.",
+        ),
+      dailyRecordedPnl: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded execution P\/L subtotal from dayStart through asOf; unknown outcomes are excluded.",
+        ),
+      dailyLossUsed: zod
+        .number()
+        .nullable()
+        .describe(
+          "Nonnegative net recorded loss for the current UTC day; unavailable when coverage is incomplete.",
+        ),
+      notes: zod.array(zod.string()),
+    })
+    .optional()
+    .describe(
+      "Recorded book coverage, not broker verification. Subtotals exclude unknown values and do not assert a complete account balance or usable risk budget.",
+    ),
 });
 
 /**
@@ -23014,6 +23072,64 @@ export const GetSelfTradeAgentByIdResponse = zod.object({
     createdAt: zod.string(),
     updatedAt: zod.string(),
   }),
+  accounting: zod
+    .object({
+      status: zod.enum(["RECORDED", "INCOMPLETE", "UNAVAILABLE"]),
+      asOf: zod.string(),
+      dayStart: zod
+        .string()
+        .describe("Inclusive UTC start of the current reporting day."),
+      closedTrades: zod.number(),
+      recordedTrades: zod.number(),
+      unknownTrades: zod.number(),
+      unresolvedAccounting: zod.number(),
+      unknownCloseTime: zod.number(),
+      missingLedgers: zod.number().describe("Missing or invalid ledgers."),
+      unpostedTrades: zod
+        .number()
+        .describe(
+          "Numeric closed outcomes without exactly one matching ledger posting.",
+        ),
+      unreconciledLedgers: zod
+        .number()
+        .describe(
+          "Ledgers whose realized subtotal or posting currency does not reconcile.",
+        ),
+      unmatchedPostings: zod
+        .number()
+        .describe(
+          "Realized postings without one matching usable closed execution for the same agent.",
+        ),
+      recordedRealizedPnl: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded ledger subtotal in USD. An incomplete subtotal is not total realized performance.",
+        ),
+      recordedAvailableFunds: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded ledger subtotal in USD, not independently verified withdrawable or tradeable capital.",
+        ),
+      dailyRecordedPnl: zod
+        .number()
+        .nullable()
+        .describe(
+          "Recorded execution P\/L subtotal from dayStart through asOf; unknown outcomes are excluded.",
+        ),
+      dailyLossUsed: zod
+        .number()
+        .nullable()
+        .describe(
+          "Nonnegative net recorded loss for the current UTC day; unavailable when coverage is incomplete.",
+        ),
+      notes: zod.array(zod.string()),
+    })
+    .optional()
+    .describe(
+      "Recorded book coverage, not broker verification. Subtotals exclude unknown values and do not assert a complete account balance or usable risk budget.",
+    ),
   settings: zod
     .union([
       zod.object({

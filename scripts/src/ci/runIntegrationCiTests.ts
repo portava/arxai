@@ -147,6 +147,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // (or ARX_TEST_PG_BIN). A missing PostgreSQL runtime fails, never skips.
   { pkg: "@workspace/api-server", script: "test:self-trade-entry-postgres" },
   { pkg: "@workspace/api-server", script: "test:self-trade-management-postgres" },
+  { pkg: "@workspace/api-server", script: "test:self-trade-accounting-postgres" },
   { pkg: "@workspace/api-server", script: "test:product-role" },
   { pkg: "@workspace/api-server", script: "test:mt5-broker-feed" },
   { pkg: "@workspace/api-server", script: "test:live-outcome-map" },

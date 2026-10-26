@@ -14463,6 +14463,47 @@ export interface SelfTradeMutationOkResp {
 
 export type SelfTradeOverviewRespByStatus = { [key: string]: number };
 
+export type SelfTradeAccountingCoverageStatus =
+  (typeof SelfTradeAccountingCoverageStatus)[keyof typeof SelfTradeAccountingCoverageStatus];
+
+export const SelfTradeAccountingCoverageStatus = {
+  RECORDED: "RECORDED",
+  INCOMPLETE: "INCOMPLETE",
+  UNAVAILABLE: "UNAVAILABLE",
+} as const;
+
+/**
+ * Recorded book coverage, not broker verification. Subtotals exclude unknown values and do not assert a complete account balance or usable risk budget.
+ */
+export interface SelfTradeAccountingCoverage {
+  status: SelfTradeAccountingCoverageStatus;
+  asOf: string;
+  /** Inclusive UTC start of the current reporting day. */
+  dayStart: string;
+  closedTrades: number;
+  recordedTrades: number;
+  unknownTrades: number;
+  unresolvedAccounting: number;
+  unknownCloseTime: number;
+  /** Missing or invalid ledgers. */
+  missingLedgers: number;
+  /** Numeric closed outcomes without exactly one matching ledger posting. */
+  unpostedTrades: number;
+  /** Ledgers whose realized subtotal or posting currency does not reconcile. */
+  unreconciledLedgers: number;
+  /** Realized postings without one matching usable closed execution for the same agent. */
+  unmatchedPostings: number;
+  /** Recorded ledger subtotal in USD. An incomplete subtotal is not total realized performance. */
+  recordedRealizedPnl: number | null;
+  /** Recorded ledger subtotal in USD, not independently verified withdrawable or tradeable capital. */
+  recordedAvailableFunds: number | null;
+  /** Recorded execution P/L subtotal from dayStart through asOf; unknown outcomes are excluded. */
+  dailyRecordedPnl: number | null;
+  /** Nonnegative net recorded loss for the current UTC day; unavailable when coverage is incomplete. */
+  dailyLossUsed: number | null;
+  notes: string[];
+}
+
 export interface SelfTradeOverviewResp {
   totalAgents: number;
   activeAgents: number;
@@ -14472,6 +14513,7 @@ export interface SelfTradeOverviewResp {
   totalAvailable: number;
   totalRealizedPnl: number;
   totalOpenPnl: number;
+  accounting?: SelfTradeAccountingCoverage;
 }
 
 export interface SelfTradeAgent {
@@ -14531,6 +14573,7 @@ export interface SelfTradeAgentsResp {
 
 export interface SelfTradeAgentDetailResp {
   agent: SelfTradeAgent;
+  accounting?: SelfTradeAccountingCoverage;
   settings?: SelfTradeAgentSettings | null;
   ledger?: SelfTradeAgentLedger | null;
 }

@@ -271,7 +271,8 @@
     "test:non-broker-launch": "node --import tsx --test src/lib/assistant/__qa__/alphaVantageFx.test.ts src/lib/startup/__qa__/dashboard.test.ts",
     "test:self-trade-lifecycle": "node --import tsx --experimental-test-module-mocks --test src/lib/selfTrade/__qa__/executionLifecycle.test.ts src/lib/selfTrade/__qa__/agentLifecycle.integration.test.ts src/lib/selfTrade/__qa__/managementCommandEvidence.test.ts",
     "test:self-trade-entry-postgres": "node src/lib/selfTrade/__qa__/runEntryReservationPostgres.mjs",
-    "test:self-trade-management-postgres": "node src/lib/selfTrade/__qa__/runManagementTargetPostgres.mjs"
+    "test:self-trade-management-postgres": "node src/lib/selfTrade/__qa__/runManagementTargetPostgres.mjs",
+    "test:self-trade-accounting-postgres": "node src/lib/selfTrade/__qa__/runAccountingCoveragePostgres.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
