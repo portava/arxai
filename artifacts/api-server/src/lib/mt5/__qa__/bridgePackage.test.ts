@@ -40,10 +40,11 @@ test("downloaded ZIP agrees with the manifest, hashes and real EA version", asyn
     assert.equal(data.length, file.size);
     assert.equal(createHash("sha256").update(data).digest("hex"), file.sha256);
   }
-  const ea = entries.get("ReplitMT5BridgeEA_v129.mq5")!.toString();
+  const ea = entries.get("ReplitMT5BridgeEA_v131.mq5")!.toString();
   assert.equal(ea.match(/#property version\s+"([^"]+)"/)?.[1], manifest.version);
   assert.match(ea, /\/api\/mt5\/demo-commands-poll/);
-  assert.match(manifest.note, /does not implement partial close/);
+  assert.match(manifest.note, /broker lifecycle evidence/);
+  assert.ok(entries.has("ArxDemoExecution.mqh"));
 });
 
 test("settings contain no credentials and keep every trading arm off", async () => {
@@ -54,7 +55,7 @@ test("settings contain no credentials and keep every trading arm off", async () 
     assert.equal(values[key], "false", key);
   }
   for (const key of ["BridgeToken", "AccountId", "ServerBaseUrl"]) assert.equal(values[key], "");
-  const source = await readFile(join(dir, "ReplitMT5BridgeEA_v129.mq5"), "utf8");
+  const source = await readFile(join(dir, "ReplitMT5BridgeEA_v131.mq5"), "utf8");
   for (const key of Object.keys(values)) assert.match(source, new RegExp(`input\\s+\\w+\\s+${key}\\s*=`), key);
 });
 
@@ -62,7 +63,7 @@ test("unknown keys, inherited properties and path traversal cannot select a file
   for (const key of ["__proto__", "constructor", "toString", "../README_SETUP.md", "ea/../../.env", ""]) {
     assert.equal(bridgeFile(key), null, key);
   }
-  assert.equal(bridgeFile("ea")?.name, "ReplitMT5BridgeEA_v129.mq5");
+  assert.equal(bridgeFile("ea")?.name, "ReplitMT5BridgeEA_v131.mq5");
 });
 
 test("missing package files are explicit and abort the ZIP", async () => {
