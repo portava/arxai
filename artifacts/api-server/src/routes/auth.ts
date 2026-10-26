@@ -29,6 +29,7 @@ import { requireUser } from "../lib/auth/middleware.js";
 import { recordUserActivity } from "../lib/auth/activity.js";
 import { sendPasswordResetEmail } from "../lib/email/passwordResetEmail.js";
 import { isEmailNotConfiguredError } from "../lib/email/resend.js";
+import { resolvePublicOrigin } from "../lib/auth/publicOrigin.js";
 import { enforceSensitiveAction } from "../lib/security/handshake.js";
 import { consumeRateLimit, hashScope } from "../lib/security/cooldowns.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
@@ -228,21 +229,6 @@ async function forgotThrottled(req: import("express").Request, key: string): Pro
   }
 }
 
-// Resolve the canonical public origin from TRUSTED config only. Request headers
-// (Host / X-Forwarded-Host) are deliberately NOT used: trusting them would allow
-// host-header poisoning — an attacker could forge a reset email pointing at their
-// own domain carrying a victim's token. Precedence: explicit APP_PUBLIC_ORIGIN,
-// then the platform-provided published/dev domains, then localhost for dev.
-function resolvePublicOrigin(): string {
-  const configured = process.env.APP_PUBLIC_ORIGIN?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-  const published = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
-  if (published) return `https://${published}`;
-  const dev = process.env.REPLIT_DEV_DOMAIN?.trim();
-  if (dev) return `https://${dev}`;
-  return "http://localhost";
-}
-
 function buildResetLink(rawToken: string): string {
   return `${resolvePublicOrigin()}/reset-password?token=${encodeURIComponent(rawToken)}`;
 }
@@ -265,7 +251,6 @@ router.post("/auth/forgot-password", async (req, res) => {
     res.status(429).json({ ok: true, message: NEUTRAL_FORGOT_MESSAGE });
     return;
   }
-  let devResetLink: string | undefined;
   try {
     const rows = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
     const user = rows[0];
@@ -301,12 +286,8 @@ router.post("/auth/forgot-password", async (req, res) => {
             );
           }
         });
-      if (!IS_PROD) {
-        // Dev only: also surface the link via the server log AND the response so
-        // the flow is testable without inspecting a mailbox. Strictly dev-gated.
-        req.log.info({ userId: user.id, expiresAt, link }, "DEV password reset link issued");
-        devResetLink = link;
-      }
+      // Reset links are credentials even in development. Deliver only through
+      // the mailer; never expose the link in the HTTP response or server log.
       void recordBetaGateAudit("password_reset_requested", { userId: user.id });
     } else {
       // Timing-equalization (anti-enumeration): a non-existent email must not be
@@ -320,7 +301,6 @@ router.post("/auth/forgot-password", async (req, res) => {
   res.status(200).json({
     ok: true,
     message: NEUTRAL_FORGOT_MESSAGE,
-    ...(devResetLink ? { devResetLink } : {}),
   });
 });
 

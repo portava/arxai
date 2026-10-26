@@ -1,11 +1,11 @@
 // Transactional email via Resend.
 //
 // Integration: Resend connector (@replit/connectors-sdk). The connector stores
-// the Resend API key and the verified sender address (`from_email`) as secrets —
-// nothing is hardcoded and the raw API key never enters this process: outbound
-// sends go through the connectors proxy, which injects the Authorization header
-// server-side. We only read the (non-secret) sender address from the connection
-// settings to populate the `from` field.
+// the Resend API key; the sender comes from EMAIL_FROM or connection metadata —
+// nothing is hardcoded. Outbound sends use the connectors proxy. Older Replit
+// connections expose from_email only through their settings endpoint (which may
+// also return secrets); the compatibility adapter extracts only the sender and
+// never logs, returns or caches the remaining settings.
 //
 // This is the single shared email helper for the API server. Reuse `sendEmail`
 // for future transactional mail (invites, access approvals, security notices) —
@@ -26,7 +26,7 @@ export class EmailNotConfiguredError extends Error {
 }
 
 // Raised when Resend accepts the request but rejects the send (e.g. unverified
-// sender domain, invalid recipient). Carries the upstream status + message for
+// sender domain, invalid recipient). Carries a safe code and upstream status for
 // the admin/developer log.
 export class EmailSendError extends Error {
   readonly status: number;
@@ -41,61 +41,11 @@ export function isEmailNotConfiguredError(err: unknown): err is EmailNotConfigur
   return err instanceof EmailNotConfiguredError;
 }
 
-const connectors = new ReplitConnectors();
-
-// Sender address resolution is cached briefly so we don't hit the connectors
-// settings endpoint on every send. It is NOT a secret (the API key is never
-// cached here — that stays inside the proxy).
-const SENDER_TTL_MS = 5 * 60 * 1000;
-let cachedSender: { value: string; at: number } | null = null;
-
-interface ConnectionListResponse {
-  items?: Array<{ settings?: { from_email?: string } }>;
-}
-
-// Resolve the verified sender address. Precedence: explicit EMAIL_FROM env
-// override (handy for testing against a verified domain), then the connector's
-// configured `from_email`.
-async function resolveSenderAddress(): Promise<string> {
-  const override = process.env.EMAIL_FROM?.trim();
-  if (override) return override;
-
-  if (cachedSender && Date.now() - cachedSender.at < SENDER_TTL_MS) {
-    return cachedSender.value;
-  }
-
-  let resp: Response;
-  try {
-    // getProxyHeaders gives us the Replit identity headers (with token refresh
-    // handled by the SDK). We use them to read the connection's non-secret
-    // sender address via the connectors settings endpoint.
-    const headers = await connectors.getProxyHeaders(CONNECTOR_NAME);
-    const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME ?? "connectors.replit.com";
-    const url =
-      `https://${hostname}/api/v2/connection` +
-      `?include_secrets=true&connector_names=${CONNECTOR_NAME}&refresh_policy=auto`;
-    resp = await fetch(url, { headers });
-  } catch (err) {
-    throw new EmailNotConfiguredError(
-      `Resend connection lookup failed: ${(err as Error).message}`,
-    );
-  }
-
-  if (!resp.ok) {
-    throw new EmailNotConfiguredError(
-      `Resend connection lookup returned ${resp.status} — is the Resend integration connected?`,
-    );
-  }
-
-  const data = (await resp.json()) as ConnectionListResponse;
-  const from = data.items?.[0]?.settings?.from_email?.trim();
-  if (!from) {
-    throw new EmailNotConfiguredError(
-      "Resend sender address (from_email) is not configured on the connection.",
-    );
-  }
-  cachedSender = { value: from, at: Date.now() };
-  return from;
+// Dependency boundary keeps transport tests offline and retains one shared mailer.
+export interface EmailConnector {
+  listConnections(options: { connector_names: string; refresh_policy: "none" }): Promise<unknown[]>;
+  proxy(name: string, path: string, options: { method: string; body: unknown }): Promise<Response>;
+  readLegacySender?(): Promise<unknown>;
 }
 
 export interface SendEmailInput {
@@ -106,42 +56,117 @@ export interface SendEmailInput {
   replyTo?: string;
 }
 
-interface ResendSendResponse {
-  id?: string;
-  message?: string;
-  name?: string;
+export type EmailConfiguration = {
+  configured: boolean;
+  deliveryVerified: false;
+  reason: "CONFIGURED_DELIVERY_UNVERIFIED" | "CONNECTOR_UNAVAILABLE" | "SENDER_MISSING_OR_INVALID";
+};
+
+function senderValid(value: unknown): value is string {
+  if (typeof value !== "string" || /[\r\n]/.test(value)) return false;
+  // Accept the provider's normal bare mailbox or display-name mailbox format.
+  return /^(?:[^<>]+\s<)?[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>?$/.test(value.trim())
+    && value.includes("<") === value.endsWith(">");
 }
 
-// Send a transactional email through Resend. Throws EmailNotConfiguredError if
-// the connection/sender is unavailable, or EmailSendError if Resend rejects the
-// send. Never logs or returns the API key.
-export async function sendEmail(input: SendEmailInput): Promise<{ id: string }> {
-  const from = await resolveSenderAddress();
+export function createEmailService(connector: EmailConnector, env: NodeJS.ProcessEnv = process.env,
+  now: () => number = Date.now) {
+  let cached: { sender: string; override: string; at: number } | null = null;
+  const resolveSender = async (): Promise<string> => {
+    const override = env.EMAIL_FROM?.trim() ?? "";
+    if (cached && cached.override === override && now() - cached.at >= 0 && now() - cached.at < 300_000) return cached.sender;
+    let items: unknown[];
+    try {
+      // SDK metadata listing deliberately does NOT request include_secrets.
+      // Outbound mail still uses the proxy; API keys remain outside this process.
+      items = await connector.listConnections({ connector_names: CONNECTOR_NAME, refresh_policy: "none" });
+    } catch {
+      throw new EmailNotConfiguredError("CONNECTOR_UNAVAILABLE");
+    }
+    if (!Array.isArray(items) || items.length === 0) throw new EmailNotConfiguredError("CONNECTOR_UNAVAILABLE");
+    const item = items[0];
+    const settings = item && typeof item === "object" ? (item as Record<string, unknown>).settings : null;
+    const configured = settings && typeof settings === "object" ? (settings as Record<string, unknown>).from_email : null;
+    let sender = override || (typeof configured === "string" ? configured.trim() : "");
+    if (!sender && connector.readLegacySender) {
+      try {
+        const legacy = await connector.readLegacySender();
+        sender = typeof legacy === "string" ? legacy.trim() : "";
+      } catch {
+        throw new EmailNotConfiguredError("CONNECTOR_UNAVAILABLE");
+      }
+    }
+    if (!senderValid(sender)) throw new EmailNotConfiguredError("SENDER_MISSING_OR_INVALID");
+    cached = { sender, override, at: now() };
+    return sender;
+  };
+  const inspectConfiguration = async (): Promise<EmailConfiguration> => {
+    try {
+      await resolveSender();
+      return { configured: true, deliveryVerified: false, reason: "CONFIGURED_DELIVERY_UNVERIFIED" };
+    } catch (error) {
+      const reason = error instanceof EmailNotConfiguredError && error.message === "SENDER_MISSING_OR_INVALID"
+        ? "SENDER_MISSING_OR_INVALID" : "CONNECTOR_UNAVAILABLE";
+      return { configured: false, deliveryVerified: false, reason };
+    }
+  };
+  const send = async (input: SendEmailInput): Promise<{ id: string }> => {
+    const from = await resolveSender();
+    let resp: Response;
+    try {
+      resp = await connector.proxy(CONNECTOR_NAME, "/emails", {
+        method: "POST",
+        body: { from, to: input.to, subject: input.subject, html: input.html, text: input.text,
+          ...(input.replyTo ? { reply_to: input.replyTo } : {}) },
+      });
+    } catch {
+      // Do not propagate provider exception text: it can contain recipient data,
+      // request bodies (including reset links) or authentication information.
+      throw new EmailSendError("EMAIL_TRANSPORT_FAILED", 0);
+    }
+    if (!resp.ok) {
+      cached = null;
+      throw new EmailSendError("EMAIL_PROVIDER_REJECTED", resp.status);
+    }
+    let body: unknown;
+    try { body = await resp.json(); } catch { throw new EmailSendError("EMAIL_RESPONSE_INVALID", resp.status); }
+    const id = body && typeof body === "object" ? (body as Record<string, unknown>).id : null;
+    if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
+      throw new EmailSendError("EMAIL_ACCEPTANCE_UNCONFIRMED", resp.status);
+    }
+    return { id };
+  };
+  return { send, inspectConfiguration };
+}
 
-  const resp = await connectors.proxy(CONNECTOR_NAME, "/emails", {
-    method: "POST",
-    body: {
-      from,
-      to: input.to,
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-      ...(input.replyTo ? { reply_to: input.replyTo } : {}),
-    },
-  });
-
-  const raw = await resp.text();
-  let parsed: ResendSendResponse = {};
+/** Compatibility with existing Replit connections whose sender is in settings.
+ * This is the pre-existing read path, used only if metadata/EMAIL_FROM lack it.
+ * The endpoint may return secrets: retain only from_email, never the payload. */
+export async function readLegacyResendSender(
+  connector: Pick<ReplitConnectors, "getProxyHeaders">,
+  env: NodeJS.ProcessEnv = process.env,
+  transport: typeof fetch = fetch,
+): Promise<unknown> {
   try {
-    parsed = raw ? (JSON.parse(raw) as ResendSendResponse) : {};
+    const hostname = env.REPLIT_CONNECTORS_HOSTNAME ?? "connectors.replit.com";
+    if (!/^[a-z0-9.-]+$/i.test(hostname)) throw new Error();
+    const headers = await connector.getProxyHeaders(CONNECTOR_NAME);
+    const response = await transport(`https://${hostname}/api/v2/connection?include_secrets=true&connector_names=resend&refresh_policy=auto`,
+      { headers, signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) throw new Error();
+    const data = await response.json() as { items?: Array<{ settings?: { from_email?: unknown } }> };
+    return data.items?.[0]?.settings?.from_email;
   } catch {
-    /* non-JSON body — fall through to status-based handling */
+    throw new EmailNotConfiguredError("CONNECTOR_UNAVAILABLE");
   }
-
-  if (!resp.ok) {
-    const detail = parsed.message ?? raw ?? "unknown error";
-    throw new EmailSendError(`Resend send failed: ${detail}`, resp.status);
-  }
-
-  return { id: parsed.id ?? "" };
 }
+
+const connector = new ReplitConnectors();
+const service = createEmailService({
+  listConnections: options => connector.listConnections(options),
+  proxy: (name, path, options) => connector.proxy(name, path, options),
+  readLegacySender: () => readLegacyResendSender(connector),
+});
+export const sendEmail = service.send;
+/** Read-only configuration check; never sends mail or claims inbox delivery. */
+export const inspectEmailConfiguration = service.inspectConfiguration;
