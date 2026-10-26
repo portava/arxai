@@ -144,6 +144,7 @@ function makeCandle(openMs: number, close: number): ChartCandle {
 
 function makeResponse(): ChartCandlesResponse {
   return {
+    symbol:SYMBOL,timeframe:TF,
     candles: [
       makeCandle(NEWEST_OPEN_MS - 2 * M5_MS, 1.1),
       makeCandle(NEWEST_OPEN_MS - M5_MS, 1.101),

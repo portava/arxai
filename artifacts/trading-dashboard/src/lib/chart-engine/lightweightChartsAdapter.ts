@@ -387,6 +387,26 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (this.series && this.candles.length > 0) this.applyLivePriceAffordance();
   }
 
+  resetDataContext(): void {
+    this.setFeedState({livePriceAffordance:false,source:null});
+    this.setDrawingHandler(null);
+    this.setDrawingInteraction(null);
+    this.setNavigationMode("inspect");
+    this.setDrawings([]);
+    this.setStructureLines([],[]);
+    this.setSmartAnnotation(null);
+    this.setOverlays([],null);
+    this.linkedRange=null;
+    this.linkedCursor=undefined;
+    this.pendingLinkedCursor=undefined;
+    this.pendingRange=false;
+    this.ownsRange=false;
+    this.didFit=false;
+    this.setCandles([]);
+    this.chart?.applyOptions({rightPriceScale:{autoScale:true}});
+    this.chart?.clearCrosshairPosition();
+  }
+
   setCandles(candles: ChartEngineCandle[], view?: { revealLatest?: boolean }): void {
     const series = this.series;
     const chart = this.chart;
@@ -862,9 +882,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   setSymbol(symbol: string): void {
     this.symbol = symbol;
     this.applyPricePrecision();
-    // Informational only. lightweight-charts has no instrument concept; the
-    // Shell rebuilds the engine (init) on a symbol change so overlays/levels
-    // never bleed across instruments.
+    // The shell resets context-owned data before changing this identifier;
+    // lightweight-charts itself has no instrument concept.
   }
 
   setTimeframe(timeframe: string): void {

@@ -14,8 +14,8 @@
 //     1. lines render ONLY when overlay.visible AND the feed-confidence verdict
 //        (aiUsable) AND the live-price affordance are all true,
 //     2. lines are CLEARED (setStructureLines([], [])) when any gate is false,
-//     3. lines are CLEARED across a symbol switch (the old engine is destroyed
-//        and structure for instrument A never bleeds onto instrument B).
+//     3. lines are CLEARED across context switches while retaining the engine;
+//        structure for instrument A never bleeds onto instrument B.
 //
 // WHY A jsdom RENDER TEST (not Playwright against the running app)
 //   The chart sits behind the app's session wall (the headless browser cannot
@@ -210,7 +210,7 @@ function makeResponse(symbol: string, feedStatus: ChartFeedStatus): ChartCandles
     makeCandle(symbol, NEWEST_OPEN_MS - M15_MS, 1.101),
     makeCandle(symbol, NEWEST_OPEN_MS, 1.102),
   ];
-  return { candles, feedStatus, warning: null } as unknown as ChartCandlesResponse;
+  return { symbol,timeframe:TF,candles, feedStatus, warning: null } as unknown as ChartCandlesResponse;
 }
 
 // A trendline overlay carrying ONE detected dominant line + ONE break marker.
@@ -248,11 +248,9 @@ function makeOverlay(visible: boolean): ChartTrendlineOverlay {
   } as unknown as ChartTrendlineOverlay;
 }
 
-// The structural-overlay effect only reads `state.trendlineOverlay`; everything
-// else on the intelligence state is irrelevant to the draw path, so a minimal
-// partial state is sufficient and honest for this render proof.
+// Include the response's real context so the view can reject a stale query.
 function intelligenceWith(overlay: ChartTrendlineOverlay): ChartIntelligenceResponse {
-  return { state: { trendlineOverlay: overlay } } as unknown as ChartIntelligenceResponse;
+  return { state: {symbol:"EURUSD",timeframe:TF,truthState:liveFeedStatus("EURUSD"),trendlineOverlay: overlay } } as unknown as ChartIntelligenceResponse;
 }
 
 // Stable empty overlays reference — an inline `[]` default is a fresh array each
@@ -326,6 +324,31 @@ describe("ARXNativeChart structural trendline overlay drawing (Task #669)", () =
     expect(last!.markers).toEqual([]);
   });
 
+  it.each([
+    {symbol:"GBPUSD"},
+    {timeframe:"H1"},
+    {truthState:{...liveFeedStatus("EURUSD"),source:"deriv_public"}},
+  ])("withholds structure from a mismatched intelligence context: %j", patch => {
+    currentIntelligence = {...currentIntelligence!,state:{...currentIntelligence!.state,...patch}} as ChartIntelligenceResponse;
+    renderChart("EURUSD");
+    expect(lastStructureCall()).toEqual({lines:[],markers:[]});
+  });
+
+  it("withholds unbound cached structure after a same-provider identity change, including new polls", () => {
+    const evidence = {symbol:"EURUSD",timeframe:TF,source:"mt5_broker",sourceIdentity:"a".repeat(64),lastClosedCandleAt:null};
+    currentCandleResponse = {...currentCandleResponse!,marketEvidence:evidence};
+    const view = renderChart("EURUSD");
+    expect(lastStructureCall()!.lines).toHaveLength(1);
+    currentCandleResponse = {...currentCandleResponse!,marketEvidence:{...evidence,sourceIdentity:"b".repeat(64)}};
+    const rerender = () => view.rerender(<ARXNativeChart symbol="EURUSD" timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS} onIntelligenceChange={()=>{}}/>);
+    rerender();
+    expect(lastStructureCall()).toEqual({lines:[],markers:[]});
+    currentIntelligence = intelligenceWith(makeOverlay(true));
+    rerender();
+    expect(lastStructureCall()).toEqual({lines:[],markers:[]});
+    expect(adapterSpies.init).toHaveBeenCalledOnce();
+  });
+
   it("CLEARS the structure on a non-live (stale) feed even when overlay.visible is true", () => {
     currentCandleResponse = makeResponse("EURUSD", staleFeedStatus("EURUSD"));
     currentIntelligence = intelligenceWith(makeOverlay(true));
@@ -395,8 +418,9 @@ describe("ARXNativeChart structural trendline overlay drawing (Task #669)", () =
       />,
     );
 
-    // The engine was rebuilt for the new instrument (old engine destroyed).
-    expect(adapterSpies.destroy.mock.calls.length).toBeGreaterThan(destroysBefore);
+    // Retaining the engine must still clear the old instrument's structure.
+    expect(adapterSpies.destroy.mock.calls.length).toBe(destroysBefore);
+    expect(adapterSpies.init).toHaveBeenCalledOnce();
     // And no structure is drawn for the new, non-live symbol.
     const last = lastStructureCall();
     expect(last).not.toBeNull();
