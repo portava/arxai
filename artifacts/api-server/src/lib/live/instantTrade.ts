@@ -460,7 +460,9 @@ async function executeOpen(args: {
       requestedVolume: intent.volume!, stopLoss: intent.stopLoss ?? null, takeProfit: intent.takeProfit ?? null,
       sourcePage: `INSTANT_${intent.source.toUpperCase()}`,
       rubyExplanationSummary: intent.rawUserCommand ?? null,
-      payload: {},
+      // Server-created provenance survives canonical → broker symbol mapping.
+      // createLiveDraft integrity-signs this payload with the exact broker symbol.
+      payload: intent.source === "self_trade" ? { selfTradeSymbolBinding: { requestedSymbol: typedSymbol, brokerSymbol: symbol } } : {},
       allowNoStopLossThisDraft: noSlOverride,
       selfTradeAgentId: intent.selfTradeAgentId ?? null,
       selfTradeDecisionId: intent.selfTradeDecisionId ?? null,

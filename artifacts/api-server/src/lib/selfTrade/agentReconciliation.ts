@@ -117,8 +117,17 @@ export async function reconcileAgentExecutions(
       if (!mgmt.closeCommandId) continue;
       const closeCmd = byCommand.get(mgmt.closeCommandId);
       if (!closeCmd) continue;
-      if (!isOwnedManagementCommand(e, closeCmd, "EXIT")) continue;
-      const closedAt = confirmedCloseTime(closeCmd);
+      const entryCommand = e.commandId ? byCommand.get(e.commandId) : undefined;
+      if (
+        !isOwnedManagementCommand(
+          e,
+          closeCmd,
+          "EXIT",
+          entryCommand,
+        )
+      )
+        continue;
+      const closedAt = confirmedCloseTime(closeCmd, e.intendedVolume);
       if (!closedAt) continue;
 
       // P0-2 — size the close from broker truth for THIS user's symbol spec.
@@ -126,7 +135,7 @@ export async function reconcileAgentExecutions(
       const pnlUserId = closeCmd.userId ?? e.executingUserId;
       const sizing =
         pnlUserId != null
-          ? await resolveContractSize(pnlUserId, e.symbol)
+          ? await resolveContractSize(pnlUserId, entryCommand!.symbol)
           : ({
               contractSize: null,
               profitCurrency: null,
@@ -136,7 +145,7 @@ export async function reconcileAgentExecutions(
       const accountCurrency =
         pnlUserId != null ? await getAccountCurrency(pnlUserId) : "USD";
       const fx = resolveQuoteToAccountFx({
-        symbol: e.symbol,
+        symbol: entryCommand!.symbol,
         profitCurrency: sizing.profitCurrency,
         accountCurrency,
         closePrice: closeCmd.fillPrice ?? 0,

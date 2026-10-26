@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import type { ArxLiveCommand, SelfTradeAgentExecution } from "@workspace/db";
 import {
   resolveEntryEvidence,
-  resolvePendingManagement,
+  resolvePendingManagement as resolvePending,
   confirmedCloseTime,
-  isOwnedManagementCommand,
+  isOwnedManagementCommand as isOwned,
   stopAtLeastAsProtective,
   managementNote,
   type PendingManagement,
@@ -20,6 +20,7 @@ const execution = {
   commandId: "entry-1",
   symbol: "EURUSD",
   side: "BUY",
+  intendedVolume: 0.1,
   brokerTicket: "123",
 } as SelfTradeAgentExecution;
 const entry = {
@@ -34,6 +35,11 @@ const entry = {
   fillPrice: 1.1,
   brokerTicket: "123",
   filledAt: stamp,
+  bridgeConnectionId: 12,
+  accountLogin: "synthetic-demo",
+  brokerServer: "synthetic-server",
+  requestedVolume: 0.1,
+  executedVolume: 0.1,
 } as ArxLiveCommand;
 const pending: PendingManagement = {
   claimId: "claim-1",
@@ -50,9 +56,23 @@ const modify = {
   side: "BUY",
   status: "LIVE_FILLED",
   filledAt: stamp,
+  bridgeConnectionId: 12,
+  accountLogin: "synthetic-demo",
+  brokerServer: "synthetic-server",
+  requestedVolume: 0.1,
+  executedVolume: 0.1,
   stopLoss: 1.1,
   payload: { brokerTicket: "123" },
 } as ArxLiveCommand;
+
+const resolvePendingManagement = (
+  ...args: Parameters<typeof resolvePending> extends [...infer T, unknown]
+    ? T
+    : never
+) => resolvePending(...args, entry);
+const isOwnedManagementCommand = (
+  ...args: Parameters<typeof isOwned> extends [...infer T, unknown] ? T : never
+) => isOwned(...args, entry);
 
 describe("entry evidence", () => {
   it("recognizes a human-confirmed prepared entry and preserves actual fill day", () => {
@@ -98,6 +118,9 @@ describe("entry evidence", () => {
       { fillPrice: Infinity },
       { fillPrice: null },
       { filledAt: null },
+      { executedVolume: 0.05 },
+      { executedVolume: null },
+      { requestedVolume: 0.05 },
       { filledAt: new Date(NaN) },
     ]) {
       assert.equal(
@@ -134,7 +157,11 @@ describe("entry evidence", () => {
   });
   it("releases a cancelled draft without pretending it traded", () => {
     assert.deepEqual(
-      resolveEntryEvidence(execution, { ...entry, status: "LIVE_CANCELLED" }),
+      resolveEntryEvidence(execution, {
+        ...entry,
+        status: "LIVE_CANCELLED",
+        executedVolume: 0,
+      }),
       { status: "BLOCKED", blockReason: "LIVE_CANCELLED" },
     );
   });
@@ -203,6 +230,10 @@ describe("management evidence", () => {
   it("will not complete against another position, account, action or requested stop", () => {
     for (const patch of [
       { payload: { brokerTicket: "456" } },
+      { bridgeConnectionId: 13 },
+      { accountLogin: "other-account" },
+      { brokerServer: "other-server" },
+      { symbol: "GBPUSD" },
       { userId: 99 },
       { commandType: "CLOSE_LIVE_POSITION" },
       { stopLoss: 1.09 },
@@ -233,15 +264,18 @@ describe("management evidence", () => {
       fillPrice: 1.12,
     };
     assert.equal(isOwnedManagementCommand(execution, close, "EXIT"), true);
-    assert.equal(confirmedCloseTime(close), stamp);
+    assert.equal(confirmedCloseTime(close, 0.1), stamp);
     for (const patch of [
       { fillPrice: NaN },
       { fillPrice: 0 },
       { fillPrice: null },
       { status: "LIVE_PARTIALLY_FILLED" },
+      { executedVolume: 0.05 },
+      { executedVolume: null },
+      { requestedVolume: 0.05 },
       { filledAt: null },
     ]) {
-      assert.equal(confirmedCloseTime({ ...close, ...patch }), null);
+      assert.equal(confirmedCloseTime({ ...close, ...patch }, 0.1), null);
     }
   });
 });
@@ -278,5 +312,67 @@ describe("operator visibility", () => {
       }),
       "Close awaiting broker confirmation.",
     );
+  });
+});
+
+describe("broker symbol and account binding", () => {
+  it("accepts canonical EURUSD → broker EURUSD.a only with persisted provenance", () => {
+    const mapped = {
+      ...entry,
+      symbol: "EURUSD.a",
+      payload: {
+        selfTradeSymbolBinding: {
+          requestedSymbol: "EURUSD",
+          brokerSymbol: "EURUSD.a",
+        },
+      },
+    };
+    assert.equal(resolveEntryEvidence(execution, mapped)?.status, "FILLED");
+    assert.equal(
+      resolveEntryEvidence(execution, { ...mapped, payload: {} }),
+      null,
+    );
+    assert.equal(
+      resolveEntryEvidence(execution, {
+        ...mapped,
+        payload: {
+          selfTradeSymbolBinding: {
+            requestedSymbol: "GBPUSD",
+            brokerSymbol: "EURUSD.a",
+          },
+        },
+      }),
+      null,
+    );
+    assert.equal(
+      resolveEntryEvidence(execution, { ...mapped, userId: 99 }),
+      null,
+    );
+    assert.equal(
+      resolveEntryEvidence(execution, { ...mapped, symbol: "GBPUSD.a" }),
+      null,
+    );
+    assert.equal(
+      resolveEntryEvidence(execution, { ...mapped, accountLogin: null }),
+      null,
+    );
+    const close = {
+      ...modify,
+      commandType: "CLOSE_LIVE_POSITION",
+      symbol: "EURUSD.a",
+    };
+    assert.equal(isOwned(execution, close, "EXIT", mapped), true);
+    for (const patch of [
+      { symbol: "EURUSD" },
+      { bridgeConnectionId: 13 },
+      { accountLogin: "different" },
+      { brokerServer: "different" },
+    ]) {
+      assert.equal(
+        isOwned(execution, { ...close, ...patch }, "EXIT", mapped),
+        false,
+      );
+    }
+    assert.equal(isOwned(execution, close, "EXIT", undefined), false);
   });
 });

@@ -84,11 +84,20 @@ export const CONFIRMED_NON_EXECUTION = new Set([
   "LIVE_EXPIRED",
 ]);
 
-/** A command link alone is insufficient: verify the owning user and decision. */
-export function resolveEntryEvidence(
+/** Identity comes from the persisted, attributed draft and its dispatch account. */
+export function ownedEntryBinding(
   execution: SelfTradeAgentExecution,
-  command: ArxLiveCommand,
-): EntryResolution | null {
+  command: ArxLiveCommand | undefined,
+) {
+  if (!command) return null;
+  const binding = (
+    command.payload as {
+      selfTradeSymbolBinding?: {
+        requestedSymbol?: unknown;
+        brokerSymbol?: unknown;
+      };
+    } | null
+  )?.selfTradeSymbolBinding;
   if (
     execution.commandId !== command.commandId ||
     execution.executingUserId == null ||
@@ -96,13 +105,69 @@ export function resolveEntryEvidence(
     command.selfTradeAgentId !== execution.agentId ||
     command.selfTradeDecisionId !== execution.decisionId ||
     !ENTRY_TYPES.has(command.commandType) ||
-    command.symbol !== execution.symbol ||
-    command.side !== execution.side
+    command.side !== execution.side ||
+    !command.symbol?.trim() ||
+    // Older drafts without provenance can only prove an exact symbol match.
+    (binding == null
+      ? command.symbol !== execution.symbol
+      : binding.requestedSymbol !== execution.symbol ||
+        binding.brokerSymbol !== command.symbol)
   )
     return null;
+  return command;
+}
+
+export function sameBrokerAccount(
+  a: Pick<
+    ArxLiveCommand,
+    "bridgeConnectionId" | "accountLogin" | "brokerServer"
+  >,
+  b: Pick<
+    ArxLiveCommand,
+    "bridgeConnectionId" | "accountLogin" | "brokerServer"
+  >,
+): boolean {
+  return (
+    Number.isInteger(a.bridgeConnectionId) &&
+    (a.bridgeConnectionId ?? 0) > 0 &&
+    typeof a.accountLogin === "string" &&
+    a.accountLogin.trim().length > 0 &&
+    typeof a.brokerServer === "string" &&
+    a.brokerServer.trim().length > 0 &&
+    a.bridgeConnectionId === b.bridgeConnectionId &&
+    a.accountLogin === b.accountLogin &&
+    a.brokerServer === b.brokerServer
+  );
+}
+
+export function fullVolumeEvidence(
+  command: ArxLiveCommand,
+  expectedVolume: number,
+): boolean {
+  if (
+    !isValidFillPrice(expectedVolume) ||
+    !isValidFillPrice(command.requestedVolume) ||
+    !isValidFillPrice(command.executedVolume)
+  )
+    return false;
+  const tolerance = Math.max(1, expectedVolume) * Number.EPSILON * 16;
+  return (
+    Math.abs(command.requestedVolume - expectedVolume) <= tolerance &&
+    Math.abs(command.executedVolume - expectedVolume) <= tolerance
+  );
+}
+
+/** A command link alone is insufficient: verify the owning user and decision. */
+export function resolveEntryEvidence(
+  execution: SelfTradeAgentExecution,
+  command: ArxLiveCommand,
+): EntryResolution | null {
+  if (!ownedEntryBinding(execution, command)) return null;
 
   if (
     command.status === "LIVE_FILLED" &&
+    sameBrokerAccount(command, command) &&
+    fullVolumeEvidence(command, execution.intendedVolume) &&
     command.brokerTicket?.trim() &&
     isValidFillPrice(command.fillPrice) &&
     validEvidenceTime(command.filledAt)
@@ -145,22 +210,35 @@ export function isOwnedManagementCommand(
   execution: SelfTradeAgentExecution,
   command: ArxLiveCommand,
   action: "EXIT" | "MOVE_TO_BE" | "TIGHTEN_SL",
+  entryCommand: ArxLiveCommand | undefined,
 ): boolean {
+  const entry = ownedEntryBinding(execution, entryCommand);
+  if (
+    !entry ||
+    !sameBrokerAccount(entry, command) ||
+    !fullVolumeEvidence(entry, execution.intendedVolume) ||
+    entry.brokerTicket !== execution.brokerTicket
+  )
+    return false;
   const payload = command.payload as { brokerTicket?: unknown } | null;
   return (
     execution.executingUserId != null &&
     command.userId === execution.executingUserId &&
     command.commandType ===
       (action === "EXIT" ? "CLOSE_LIVE_POSITION" : "MODIFY_LIVE_SLTP") &&
-    command.symbol === execution.symbol &&
+    command.symbol === entry.symbol &&
     payload?.brokerTicket === execution.brokerTicket
   );
 }
 
-export function confirmedCloseTime(command: ArxLiveCommand): Date | null {
+export function confirmedCloseTime(
+  command: ArxLiveCommand,
+  expectedVolume: number,
+): Date | null {
   if (
     (command.status !== "LIVE_FILLED" && command.status !== "LIVE_CLOSED") ||
-    !isValidFillPrice(command.fillPrice)
+    !isValidFillPrice(command.fillPrice) ||
+    !fullVolumeEvidence(command, expectedVolume)
   )
     return null;
   return validEvidenceTime(command.closedAt)
@@ -191,12 +269,13 @@ export function resolvePendingManagement(
   pending: PendingManagement,
   command: ArxLiveCommand | undefined,
   observedStop: number | null,
+  entryCommand: ArxLiveCommand | undefined,
 ): PendingResolution {
   if (
     !pending.commandId ||
     !command ||
     command.commandId !== pending.commandId ||
-    !isOwnedManagementCommand(execution, command, pending.action)
+    !isOwnedManagementCommand(execution, command, pending.action, entryCommand)
   )
     return "WAIT";
   if (CONFIRMED_NON_EXECUTION.has(command.status)) {

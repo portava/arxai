@@ -29,6 +29,7 @@ const dialect = new PgDialect();
 const stamp = new Date("2026-10-25T23:59:58Z");
 let execution: SelfTradeAgentExecution;
 let commandRows: ArxLiveCommand[];
+let entryCommand: ArxLiveCommand;
 let position: Record<string, unknown>;
 let dispatches: unknown[];
 let submit: () => Promise<
@@ -68,7 +69,12 @@ function queryFor(table: unknown) {
             },
           ];
         else if (table === commands)
-          rows = commandRows
+          rows = [
+            ...commandRows,
+            ...(commandRows.some((c) => c.commandId === "entry-1")
+              ? []
+              : [entryCommand]),
+          ]
             .filter((c) => params.includes(c.commandId))
             .map((c) => structuredClone(c));
         else throw new Error("Unexpected select table");
@@ -157,6 +163,27 @@ const { manageAgentPositions } = await import("../livePositionManager.js");
 const { reconcileAgentExecutions } = await import("../agentReconciliation.js");
 const agent = { id: 5, agentKey: "alpha", autonomyLevel: 3 } as SelfTradeAgent;
 
+function fullEntry() {
+  return {
+    commandId: "entry-1",
+    userId: 9,
+    selfTradeAgentId: 5,
+    selfTradeDecisionId: 7,
+    commandType: "PLACE_LIVE_MARKET_ORDER",
+    symbol: "EURUSD",
+    side: "BUY",
+    status: "LIVE_FILLED",
+    fillPrice: 1.1,
+    brokerTicket: "123",
+    filledAt: stamp,
+    bridgeConnectionId: 12,
+    accountLogin: "synthetic-demo",
+    brokerServer: "synthetic-server",
+    requestedVolume: 0.1,
+    executedVolume: 0.1,
+  } as ArxLiveCommand;
+}
+
 beforeEach(() => {
   execution = {
     id: 1,
@@ -175,7 +202,14 @@ beforeEach(() => {
     updatedAt: stamp,
   } as SelfTradeAgentExecution;
   commandRows = [];
+  entryCommand = fullEntry();
   position = {
+    userId: 9,
+    brokerTicket: "123",
+    symbol: "EURUSD",
+    bridgeConnectionId: 12,
+    accountLogin: "synthetic-demo",
+    brokerServer: "synthetic-server",
     entryPrice: 1.1,
     currentPrice: 1.112,
     stopLoss: 1.09,
@@ -194,6 +228,11 @@ function settledModify(status = "LIVE_FILLED") {
     symbol: "EURUSD",
     status,
     filledAt: stamp,
+    bridgeConnectionId: 12,
+    accountLogin: "synthetic-demo",
+    brokerServer: "synthetic-server",
+    requestedVolume: 0.1,
+    executedVolume: 0.1,
     stopLoss: 1.1,
     payload: { brokerTicket: "123" },
   } as ArxLiveCommand;
@@ -394,21 +433,6 @@ describe("actual manager orchestration", () => {
 });
 
 describe("actual execution reconciliation", () => {
-  function fullEntry() {
-    return {
-      commandId: "entry-1",
-      userId: 9,
-      selfTradeAgentId: 5,
-      selfTradeDecisionId: 7,
-      commandType: "PLACE_LIVE_MARKET_ORDER",
-      symbol: "EURUSD",
-      side: "BUY",
-      status: "LIVE_FILLED",
-      fillPrice: 1.1,
-      brokerTicket: "123",
-      filledAt: stamp,
-    } as ArxLiveCommand;
-  }
   it("prepared human-confirmed fill advances exactly once even with overlapping sweeps", async () => {
     execution.status = "PENDING_TICKET";
     commandRows = [fullEntry()];
@@ -429,6 +453,7 @@ describe("actual execution reconciliation", () => {
     assert.equal((await reconcileAgentExecutions(5)).filled, 0);
     assert.equal(execution.status, "DISPATCHED");
     commandRows[0].status = "LIVE_CANCELLED";
+    commandRows[0].executedVolume = 0;
     await reconcileAgentExecutions(5);
     assert.equal(execution.status, "BLOCKED");
   });
@@ -469,5 +494,49 @@ describe("actual execution reconciliation", () => {
     commandRows[0].userId = 99;
     assert.equal((await reconcileAgentExecutions(5)).closed, 0);
     assert.equal(execution.status, "FILLED");
+  });
+});
+
+describe("full broker identity and quantity orchestration", () => {
+  it("manages a proven decorated symbol but holds a different same-user account", async () => {
+    entryCommand.symbol = "EURUSD.a";
+    entryCommand.payload = {
+      selfTradeSymbolBinding: {
+        requestedSymbol: "EURUSD",
+        brokerSymbol: "EURUSD.a",
+      },
+    };
+    position.symbol = "EURUSD.a";
+    position.accountLogin = "different-account";
+    assert.equal((await manageAgentPositions(agent)).held, 1);
+    assert.equal(dispatches.length, 0);
+    position.accountLogin = "synthetic-demo";
+    await manageAgentPositions(agent);
+    assert.equal(dispatches.length, 1);
+  });
+  it("holds missing entry identity without making a management request", async () => {
+    entryCommand = { ...entryCommand, symbol: "EURUSD.a", payload: {} };
+    await manageAgentPositions(agent);
+    assert.equal(dispatches.length, 0);
+  });
+  it("never books full P&L when the close command reports a smaller quantity", async () => {
+    execution.managementState = { closeCommandId: "close-1" };
+    commandRows = [
+      {
+        ...settledModify(),
+        commandId: "close-1",
+        commandType: "CLOSE_LIVE_POSITION",
+        fillPrice: 1.11,
+        executedVolume: 0.05,
+      },
+    ];
+    assert.equal((await reconcileAgentExecutions(5)).closed, 0);
+    assert.equal(execution.status, "FILLED");
+    assert.equal(execution.realizedPnl, undefined);
+    commandRows[0].requestedVolume = 0.05;
+    assert.equal((await reconcileAgentExecutions(5)).closed, 0);
+    commandRows[0].requestedVolume = commandRows[0].executedVolume = 0.1;
+    commandRows[0].accountLogin = "other-account";
+    assert.equal((await reconcileAgentExecutions(5)).closed, 0);
   });
 });

@@ -14,10 +14,15 @@ mock.method(database.pool, "connect", () => {
 });
 let phase: "draft" | "confirm" | "dispatch" | "accepted";
 let dispatchCalls: number;
+let draftedInput: Record<string, unknown> | undefined;
 const fakeDb = {
   select: () => ({
     from: () => ({
-      where: () => ({ limit: async () => [{ perUserSubmitsPerMinute: 30 }] }),
+      where: () => ({
+        limit: async () => [
+          { perUserSubmitsPerMinute: 30, liveOneClickEnabled: true },
+        ],
+      }),
     }),
   }),
   insert: () => ({ values: async () => undefined }),
@@ -53,15 +58,17 @@ mock.module("../../mt5/userMasterLiveAccessGate.js", {
 mock.module("../../concurrency/advisoryLock.js", {
   namedExports: {
     ARX_LOCK_NS: {},
-    withTxAdvisoryLock: () => {
-      throw new Error("Unexpected entry path");
-    },
+    withTxAdvisoryLock: async (
+      _ns: number,
+      _key: number,
+      fn: () => Promise<unknown>,
+    ) => ({ acquired: true, value: await fn() }),
   },
 });
 mock.module("../../concurrency/rateLimit.js", {
   namedExports: {
     tryConsumeToken: () => true,
-    checkSymbolCooldown: () => null,
+    checkSymbolCooldown: () => true,
   },
 });
 mock.module("../../aaci/manualAdvisory.js", {
@@ -76,17 +83,17 @@ mock.module("../../security/handshake.js", {
 });
 mock.module("../../mt5/symbolDirectory.js", {
   namedExports: {
-    resolveBrokerSymbol: () => {
-      throw new Error("Unexpected entry path");
-    },
+    resolveBrokerSymbol: async () => ({ ok: true, brokerSymbol: "EURUSD.a" }),
   },
 });
 mock.module("../../tradeEngine/pipeline.js", {
   namedExports: {
-    draftTrade: async () =>
-      phase === "draft"
+    draftTrade: async (_ctx: unknown, input: Record<string, unknown>) => {
+      draftedInput = input;
+      return phase === "draft"
         ? { ok: false, reason: "DRAFT_BLOCKED" }
-        : { ok: true, command: { commandId: "ops-1" } },
+        : { ok: true, command: { commandId: "ops-1" } };
+    },
     confirmTrade: async () =>
       phase === "confirm"
         ? { ok: false, reason: "CONFIRM_BLOCKED" }
@@ -103,6 +110,7 @@ const { executeInstant } = await import("../../live/instantTrade.js");
 beforeEach(() => {
   phase = "accepted";
   dispatchCalls = 0;
+  draftedInput = undefined;
 });
 
 for (const action of ["MODIFY_SL_TP", "CLOSE"] as const) {
@@ -141,3 +149,29 @@ for (const action of ["MODIFY_SL_TP", "CLOSE"] as const) {
     assert.equal(dispatchCalls, 1);
   });
 }
+
+it("self-trade entry persists exact canonical/broker mapping before preparation", async () => {
+  const result = await executeInstant({
+    userId: 9,
+    intent: {
+      source: "self_trade",
+      accountMode: "live",
+      action: "BUY",
+      symbol: "EURUSD",
+      volume: 0.1,
+      stopLoss: 1.09,
+      prepareOnly: true,
+      selfTradeAgentId: 5,
+      selfTradeDecisionId: 7,
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(draftedInput?.symbol, "EURUSD.a");
+  assert.deepEqual(draftedInput?.payload, {
+    selfTradeSymbolBinding: {
+      requestedSymbol: "EURUSD",
+      brokerSymbol: "EURUSD.a",
+    },
+  });
+  assert.equal(dispatchCalls, 0);
+});

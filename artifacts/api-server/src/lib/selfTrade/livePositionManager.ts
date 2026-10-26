@@ -39,6 +39,9 @@ import { logger } from "../logger.js";
 import { guardianInstantManage } from "../positionGuardian/manage.js";
 import { writeSelfTradeAudit } from "./audit.js";
 import {
+  ownedEntryBinding,
+  sameBrokerAccount,
+  fullVolumeEvidence,
   readManagementMemory,
   resolvePendingManagement,
   stopAtLeastAsProtective,
@@ -111,6 +114,23 @@ export async function manageAgentPositions(
   for (const e of filled) {
     if (!e.brokerTicket || e.executingUserId == null) continue;
 
+    // Resolve exact broker identity from the attributed entry, never from a
+    // fuzzy symbol alias or a ticket that could be reused on another account.
+    const entryCommand = e.commandId
+      ? (
+          await db
+            .select()
+            .from(arxLiveCommandsTable)
+            .where(eq(arxLiveCommandsTable.commandId, e.commandId))
+            .limit(1)
+        )[0]
+      : undefined;
+    const entry = ownedEntryBinding(e, entryCommand);
+    if (!entry || !fullVolumeEvidence(entry, e.intendedVolume)) {
+      result.held++;
+      continue;
+    }
+
     // The real broker position must exist — never manage a phantom.
     const [pos] = await livePositionLedger.read({
       where: and(
@@ -120,6 +140,15 @@ export async function manageAgentPositions(
       limit: 1,
     });
     if (!pos || pos.closedAt != null) continue;
+    if (
+      !sameBrokerAccount(entry, pos) ||
+      pos.symbol !== entry.symbol ||
+      pos.userId !== e.executingUserId ||
+      pos.brokerTicket !== e.brokerTicket
+    ) {
+      result.held++;
+      continue;
+    }
 
     const decision =
       e.decisionId != null
@@ -168,6 +197,7 @@ export async function manageAgentPositions(
         pending,
         command,
         observedStop,
+        entryCommand,
       );
       if (resolution === "WAIT") {
         result.held++;
