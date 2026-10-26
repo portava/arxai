@@ -1,13 +1,13 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { EquityPoint } from "./types";
 
-export function EquityCurveChart({ points }: { points: EquityPoint[] }) {
+export function EquityCurveChart({ points, title = "Equity Curve" }: { points: EquityPoint[]; title?: string }) {
   if (points.length === 0) {
     return <p className="rounded border border-dashed border-slate-700 p-6 text-center text-xs text-slate-500">No closed trades yet.</p>;
   }
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3">
-      <h3 className="mb-2 text-sm font-semibold text-slate-200">Equity Curve</h3>
+      <h3 className="mb-2 text-sm font-semibold text-slate-200">{title}</h3>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>

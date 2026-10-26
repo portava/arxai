@@ -270,7 +270,9 @@
     "check:market-data": "node --import tsx src/scripts/marketDataReadinessCheck.ts",
     "test:non-broker-launch": "node --import tsx --test src/lib/assistant/__qa__/alphaVantageFx.test.ts src/lib/startup/__qa__/dashboard.test.ts",
     "test:mission-evidence": "node --import tsx --test --test-force-exit src/lib/__qa__/missionTestingEvidence.test.ts",
-    "test:mission-evidence:postgres": "node src/lib/__qa__/runMissionEvidencePostgres.mjs"
+    "test:mission-evidence:postgres": "node src/lib/__qa__/runMissionEvidencePostgres.mjs",
+    "test:backtest-evidence": "node --import tsx --test src/lib/backtest/__qa__/backtestEvidence.test.ts",
+    "test:backtest-evidence:postgres": "node src/lib/backtest/__qa__/runBacktestEvidencePostgres.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
