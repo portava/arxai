@@ -30,6 +30,7 @@ import {
   listCachedSources,
   readCachedCandles,
   upsertCandles,
+  isValidCacheOhlc,
 } from "./candleCache.js";
 import { derivMarketDataSource } from "./providers/derivFeedClient.js";
 import { getDerivCandles } from "./providers/derivProvider.js";
@@ -40,6 +41,8 @@ import {
 } from "./providerRoutingMap.js";
 import { buildFeedStatus } from "./freshness.js";
 import type { Candle } from "./types.js";
+import { prepareMarketRead } from "../truth/marketReadEvidence.js";
+import { normalizeChartTimeframe, timeframeMs as chartTimeframeMs } from "./chart/timeframes.js";
 
 export type CandleHistoryStatus =
   | "live" // newest window, fresh feed
@@ -79,6 +82,82 @@ export interface CandleHistoryResult {
   limitationReason: string | null;
   userMessage: string;
   adminDetail: string;
+  /** Actual producer evidence, never inferred from the caller's continuation. */
+  historyEvidence?: {
+    symbol: string;
+    timeframe: string;
+    source: string;
+    sourceIdentity: string;
+    lastClosedCandleAt: string;
+    scope: "public_provider";
+  } | null;
+}
+
+/** Legacy provider-only callers remain explicitly unattested. Chart callers
+ * requesting continuity get producer evidence or no bars, never a digest
+ * stamped onto a mixed historical cache using today's connection settings. */
+export async function getCandleHistory(args: GetCandleHistoryArgs): Promise<CandleHistoryResult> {
+  if (args.expectedSourceIdentity == null) return getLegacyCandleHistory(args);
+  const symbol = (args.symbol ?? "").trim().toUpperCase();
+  const timeframe = normalizeChartTimeframe(args.timeframe);
+  const source = args.source?.trim() || null;
+  const unavailable = (reason: string): CandleHistoryResult => ({
+    ok: false, symbol, timeframe: timeframe ?? args.timeframe, assetClass: classifySymbol(symbol),
+    source, candles: [], status: "unavailable", returnedCount: 0, oldest: null, newest: null,
+    hasMoreHistory: false, nextBefore: null, providerLimitReached: true,
+    providerMessage: reason, limitationReason: reason, cacheHit: false,
+    fetchedAt: new Date().toISOString(), depthTargetDays: depthTargetDaysFor(timeframe ?? args.timeframe),
+    coverageDays: null, depthTargetMet: false, sourcePriorityUsed: [],
+    userMessage: reason, adminDetail: "Source-bound history withheld; no historical identity was inferred.",
+    historyEvidence: null,
+  });
+  if (!timeframe || !/^[a-f0-9]{64}$/.test(args.expectedSourceIdentity)) {
+    return unavailable("Older history has no valid source identity. Reload the chart.");
+  }
+  const beforeMs = args.before ? Date.parse(args.before) : NaN;
+  if (!Number.isFinite(beforeMs)) return unavailable("Source-bound history requires a valid older-than cursor.");
+
+  // The public Deriv producer has one fixed endpoint and no account identity.
+  // Its distinct cache namespace is written only by that validated transport.
+  // MT5's legacy mirror collapses bridges; even broker_candles lacks immutable
+  // account-era evidence on updates. A current owner/login cannot attest those
+  // old rows. Refuse them until the producer/storage contract can prove it.
+  if (source !== "deriv_public") {
+    return unavailable("Older history is unavailable because its original broker/account identity cannot be verified.");
+  }
+  if (derivMarketDataSource() !== source) {
+    return unavailable("The chart's original data connection is no longer selected. Reload the chart.");
+  }
+  const routed = await routeCandles(symbol, timeframe, 2);
+  const observed = prepareMarketRead(routed, symbol, timeframe, Date.now())?.evidence;
+  const provenance = routed.provenance;
+  if (!observed || observed.source !== source || observed.sourceIdentity !== args.expectedSourceIdentity
+    || provenance?.bridgeConnectionId != null || provenance?.userId != null
+    || provenance?.brokerSymbol != null || provenance?.environment !== "unknown"
+    || provenance?.subProviderId != null) {
+    return unavailable("The chart's data source changed or cannot be verified. Reload the chart.");
+  }
+  const page = await getLegacyCandleHistory({ ...args, symbol, timeframe, source });
+  if (derivMarketDataSource() !== source) {
+    return unavailable("The data connection changed while older history was loading. Reload the chart.");
+  }
+  if (!page.ok || page.candles.length === 0) return { ...page, historyEvidence: null };
+  const interval = chartTimeframeMs(timeframe);
+  const now = Date.now();
+  let prior = -Infinity;
+  for (const candle of page.candles) {
+    const at = Date.parse(candle.time);
+    if (!Number.isFinite(at) || at <= prior || at >= beforeMs || at + interval > beforeMs
+      || at + interval > now || !isValidCacheOhlc(candle)) {
+      return unavailable("Older history did not match the requested closed-candle window.");
+    }
+    prior = at;
+  }
+  return { ...page, status: "historical_only", historyEvidence: {
+    symbol: observed.symbol, timeframe: observed.timeframe, source: observed.source,
+    sourceIdentity: observed.sourceIdentity, lastClosedCandleAt: new Date(prior + interval).toISOString(),
+    scope: "public_provider",
+  } };
 }
 
 export interface GetCandleHistoryArgs {
@@ -89,6 +168,8 @@ export interface GetCandleHistoryArgs {
   before?: string | null;
   /** Continuation: the source echoed by a previous page (keeps one coherent series). */
   source?: string | null;
+  /** Opaque expected identity; a consistency constraint, never authorization. */
+  expectedSourceIdentity?: string | null;
 }
 
 const DEFAULT_LIMIT = 500;
@@ -145,7 +226,7 @@ function coverageDaysFrom(oldestIso: string | null, newestIso: string | null): n
  * Fetch a page of candle history for (symbol, timeframe), oldest-first, with an
  * honest metadata block. See file header for the safety/honesty contract.
  */
-export async function getCandleHistory(args: GetCandleHistoryArgs): Promise<CandleHistoryResult> {
+async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<CandleHistoryResult> {
   const symbol = (args.symbol ?? "").trim().toUpperCase();
   const timeframe = normalizeTimeframe(args.timeframe ?? "");
   const limit = Math.max(1, Math.min(MAX_LIMIT, args.limit ?? DEFAULT_LIMIT));

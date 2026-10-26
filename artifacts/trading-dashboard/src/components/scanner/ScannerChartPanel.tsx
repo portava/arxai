@@ -502,7 +502,7 @@ export function ScannerChartPanel() {
     hasCandles ? JSON.stringify([feedStatus?.source ?? null, evidenceIdentity]) : null);
   const committedChartContext = useRef(chartContext);
   useLayoutEffect(() => { committedChartContext.current = chartContext; }, [chartContext]);
-  const deepHistory = useChartDeepHistory(symbol, apiTf, hasCandles, feedStatus?.source ?? null, evidenceIdentity);
+  const deepHistory = useChartDeepHistory(symbol, apiTf, hasCandles, feedStatus?.source ?? null, evidenceIdentity, true);
 
   // Older history bars (Candle ms shape) merged IN FRONT of the live window,
   // deduped by time with the live window winning a collision (it carries the

@@ -43,6 +43,7 @@ function page(over: Partial<{
   providerMessage: string | null;
   coverageDays: number | null;
   depthTargetDays: number;
+  historyEvidence: { symbol: string; timeframe: string; source: string; sourceIdentity: string } | null;
 }> = {}) {
   return {
     source: "assistant_real",
@@ -68,7 +69,8 @@ describe("useChartDeepHistory", () => {
     { source: "mt5_broker", evidence: "different-opaque-account" },
   ])("masks and aborts older history after a source identity change: $source/$evidence", async (next) => {
     const old = deferred<ReturnType<typeof page>>(), current = deferred<ReturnType<typeof page>>();
-    fetchChartHistory.mockResolvedValueOnce(page({ source: "mt5_broker", candles: [candle(100)] }))
+    fetchChartHistory.mockResolvedValueOnce(page({ source: "mt5_broker", candles: [candle(100)],
+      historyEvidence: { symbol: "V75", timeframe: "M15", source: "mt5_broker", sourceIdentity: "first-opaque-account" } }))
       .mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
     const seen: number[][] = [];
     const { result, rerender } = renderHook(({ source, evidence }) => {
@@ -90,7 +92,8 @@ describe("useChartDeepHistory", () => {
     await act(async () => old.resolve(page({ source: "mt5_broker", candles: [candle(150)] })));
     expect(result.current.olderCandles).toEqual([]);
     expect(result.current.loading).toBe(true);
-    await act(async () => current.resolve(page({ source: next.source, candles: [candle(200)] })));
+    await act(async () => current.resolve(page({ source: next.source, candles: [candle(200)],
+      historyEvidence: { symbol: "V75", timeframe: "M15", source: next.source, sourceIdentity: next.evidence } })));
     expect(result.current.olderCandles).toEqual([candle(200)]);
   });
 
@@ -100,6 +103,7 @@ describe("useChartDeepHistory", () => {
     await act(async () => result.current.loadOlder(before));
     expect(result.current.olderCandles).toEqual([]);
     expect(result.current.hasMore).toBe(false);
+    expect(result.current.providerCapped).toBe(true);
     expect(result.current.limitationReason).toContain("did not match");
   });
 
@@ -107,6 +111,40 @@ describe("useChartDeepHistory", () => {
     const { result } = renderHook(() => useChartDeepHistory("EURUSD", "M5", true));
     act(() => result.current.loadOlder(null));
     expect(fetchChartHistory).not.toHaveBeenCalled();
+  });
+
+  it("does not request unattested history for a strict chart with missing identity", () => {
+    const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "mt5_broker", null, true));
+    act(() => result.current.loadOlder(before));
+    expect(fetchChartHistory).not.toHaveBeenCalled();
+    expect(result.current.providerCapped).toBe(true);
+    expect(result.current.limitationReason).toContain("identity can be verified");
+  });
+
+  it.each([null,
+    { symbol: "V75", timeframe: "M15", source: "deriv_public", sourceIdentity: "different-account-or-source" },
+    { symbol: "V25", timeframe: "M15", source: "deriv_public", sourceIdentity: "expected" },
+    { symbol: "V75", timeframe: "M5", source: "deriv_public", sourceIdentity: "expected" },
+  ])("withholds same-provider rows without the expected historical evidence: %s", async historyEvidence => {
+    fetchChartHistory.mockResolvedValueOnce(page({ source: "deriv_public", candles: [candle(100)], historyEvidence }));
+    const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "deriv_public", "expected", true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([]);
+    expect(result.current.providerCapped).toBe(true);
+    expect(result.current.hasMore).toBe(false);
+    expect(fetchChartHistory.mock.calls[0]![0]).toMatchObject({ sourceIdentity: "expected" });
+  });
+
+  it("accepts matching producer evidence and preserves a denied account-history explanation", async () => {
+    const historyEvidence = { symbol: "V75", timeframe: "M15", source: "deriv_public", sourceIdentity: "expected" };
+    fetchChartHistory.mockResolvedValueOnce(page({ source: "deriv_public", candles: [candle(100)], historyEvidence }))
+      .mockResolvedValueOnce(page({ source: "deriv_public", candles: [], limitationReason: "Original account history is unverified", historyEvidence: null }));
+    const { result } = renderHook(() => useChartDeepHistory("V75", "M15", true, "deriv_public", "expected", true));
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([candle(100)]);
+    await act(async () => result.current.loadOlder(before));
+    expect(result.current.olderCandles).toEqual([candle(100)]);
+    expect(result.current.limitationReason).toBe("Original account history is unverified");
   });
 
   it("stops fetching once the backend reports history is exhausted", async () => {

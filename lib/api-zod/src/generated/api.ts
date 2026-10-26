@@ -5298,6 +5298,18 @@ export const GetChartCandlesResponse = zod.object({
   latencyMs: zod.number().nullable(),
   requestedLimit: zod.number(),
   candleCount: zod.number(),
+  marketEvidence: zod
+    .object({
+      symbol: zod.string(),
+      timeframe: zod.string(),
+      source: zod.string(),
+      sourceIdentity: zod.string(),
+      lastClosedCandleAt: zod.string(),
+    })
+    .nullish()
+    .describe(
+      "Observed current candle source identity and latest confirmed close; no current account is inferred for legacy rows.",
+    ),
   candles: zod.array(
     zod
       .object({
@@ -5838,6 +5850,13 @@ export const getChartHistoryQueryTimeframeDefault = `M5`;
 export const getChartHistoryQueryLimitDefault = 500;
 export const getChartHistoryQueryLimitMax = 5000;
 
+export const getChartHistoryQuerySourceIdentityMin = 64;
+export const getChartHistoryQuerySourceIdentityMax = 64;
+
+export const getChartHistoryQuerySourceIdentityRegExp = new RegExp(
+  "^[a-f0-9]{64}$",
+);
+
 export const GetChartHistoryQueryParams = zod.object({
   symbol: zod.coerce.string().min(1).max(getChartHistoryQuerySymbolMax),
   timeframe: zod
@@ -5882,7 +5901,19 @@ export const GetChartHistoryQueryParams = zod.object({
     .describe(
       "Continuation — the source echoed by a previous page (keeps one coherent series).",
     ),
+  sourceIdentity: zod.coerce
+    .string()
+    .min(getChartHistoryQuerySourceIdentityMin)
+    .max(getChartHistoryQuerySourceIdentityMax)
+    .regex(getChartHistoryQuerySourceIdentityRegExp)
+    .optional()
+    .describe(
+      "Expected opaque source identity for strict chart continuation. This is not authorization; unverified historical sources return no bars.",
+    ),
 });
+
+export const getChartHistoryResponseHistoryEvidenceSourceIdentityRegExp =
+  new RegExp("^[a-f0-9]{64}$");
 
 export const GetChartHistoryResponse = zod
   .object({
@@ -5924,6 +5955,21 @@ export const GetChartHistoryResponse = zod
       .string()
       .nullable()
       .describe("The single source this page was served from (provenance)."),
+    historyEvidence: zod
+      .object({
+        symbol: zod.string(),
+        timeframe: zod.string(),
+        source: zod.string(),
+        sourceIdentity: zod
+          .string()
+          .regex(getChartHistoryResponseHistoryEvidenceSourceIdentityRegExp),
+        lastClosedCandleAt: zod.string(),
+        scope: zod.enum(["public_provider"]),
+      })
+      .nullish()
+      .describe(
+        "Actual producer evidence for the returned historical page; absent legacy evidence is never inferred from current account settings.",
+      ),
     candles: zod
       .array(
         zod.object({

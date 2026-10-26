@@ -279,7 +279,8 @@
     "test:mission-evidence": "node --import tsx --test --test-force-exit src/lib/__qa__/missionTestingEvidence.test.ts",
     "test:mission-evidence:postgres": "node src/lib/__qa__/runMissionEvidencePostgres.mjs",
     "test:truth-component-evidence": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/truth/__qa__/componentEvidence.test.ts src/lib/truth/__qa__/componentProducerWiring.test.ts",
-    "test:truth-memory-postgres": "node src/lib/truth/__qa__/runSignalMemoryPostgres.mjs"
+    "test:truth-memory-postgres": "node src/lib/truth/__qa__/runSignalMemoryPostgres.mjs",
+    "test:history-evidence": "node --experimental-test-module-mocks --import tsx --test src/lib/data/__qa__/historySourceEvidence.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

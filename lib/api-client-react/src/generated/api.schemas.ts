@@ -3961,6 +3961,18 @@ export const ChartCandlesResponseQuality = {
   unavailable: "unavailable",
 } as const;
 
+/**
+ * Observed current candle source identity and latest confirmed close; no current account is inferred for legacy rows.
+ * @nullable
+ */
+export type ChartCandlesResponseMarketEvidence = {
+  symbol: string;
+  timeframe: string;
+  source: string;
+  sourceIdentity: string;
+  lastClosedCandleAt: string;
+} | null;
+
 export interface ChartCandlesResponse {
   symbol: string;
   displaySymbol: string;
@@ -3976,6 +3988,11 @@ export interface ChartCandlesResponse {
   latencyMs: number | null;
   requestedLimit: number;
   candleCount: number;
+  /**
+   * Observed current candle source identity and latest confirmed close; no current account is inferred for legacy rows.
+   * @nullable
+   */
+  marketEvidence?: ChartCandlesResponseMarketEvidence;
   candles: ChartCandle[];
   feedStatus: ChartFeedStatus;
   /** Phase 1 structured per-timeframe truth audit result alongside candles. null when no candles were returned (unavailable/empty feed).
@@ -4026,6 +4043,20 @@ export const ChartHistoryResponseAssetClass = {
 } as const;
 
 /**
+ * Actual producer evidence for the returned historical page; absent legacy evidence is never inferred from current account settings.
+ * @nullable
+ */
+export type ChartHistoryResponseHistoryEvidence = {
+  symbol: string;
+  timeframe: string;
+  source: string;
+  /** @pattern ^[a-f0-9]{64}$ */
+  sourceIdentity: string;
+  lastClosedCandleAt: string;
+  scope: "public_provider";
+} | null;
+
+/**
  * live/stale apply only to the newest window; a page reached via the `before` cursor is always historical_only; unavailable = no source/candles.
 
  */
@@ -4062,6 +4093,11 @@ export interface ChartHistoryResponse {
    * @nullable
    */
   source: string | null;
+  /**
+   * Actual producer evidence for the returned historical page; absent legacy evidence is never inferred from current account settings.
+   * @nullable
+   */
+  historyEvidence?: ChartHistoryResponseHistoryEvidence;
   /** Ascending by time. */
   candles: Candle[];
   /** live/stale apply only to the newest window; a page reached via the `before` cursor is always historical_only; unavailable = no source/candles.
@@ -15830,6 +15866,13 @@ export type GetChartHistoryParams = {
    * Continuation — the source echoed by a previous page (keeps one coherent series).
    */
   source?: string;
+  /**
+   * Expected opaque source identity for strict chart continuation. This is not authorization; unverified historical sources return no bars.
+   * @minLength 64
+   * @maxLength 64
+   * @pattern ^[a-f0-9]{64}$
+   */
+  sourceIdentity?: string;
 };
 
 export type GetChartHistoryTimeframe =
