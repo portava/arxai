@@ -10,7 +10,7 @@ import { scanCandlestickCatalogue, CANDLE_DEFINITIONS } from "@workspace/domain/
 import { analyzeSmartChart, bindSmartChartBars, type SmartChartAnalysisBar } from "./smartChartAnalysis";
 import { CANDLE_FIXTURES } from "../../../../../lib/domain/src/chart-patterns/__qa__/candlestickFixtures";
 
-const baselineCommit=process.argv[2]??"920cf0ce993e63a81979cb70adde9218429345e0";
+const baselineCommit=process.argv[2]??"1815295aebc3e221ec36ac5ef38ec47d43987941";
 assert.match(baselineCommit,/^[a-f0-9]{8,40}$/);
 const root=fileURLToPath(new URL("../../../../../",import.meta.url));
 const baselineFile=fileURLToPath(new URL(`.candle-baseline-${process.pid}.ts`,import.meta.url));
@@ -34,8 +34,8 @@ try {
  const batches=[{evidence:context,bars:candles.slice(0,4550)},{evidence:context,bars:candles.slice(4500)}];
  const recent=candles.slice(-600);
  assert.equal(analyzeSmartChart(args).coverage.analyzed,600);
- assert.equal(analyzeSmartChart(args).catalogue!.definedVariants,50);
- assert.equal(baseline.analyzeSmartChart(args).catalogue!.definedVariants,34,"Old side must execute its original34 definitions");
+ assert.equal(analyzeSmartChart(args).catalogue!.definedVariants,62);
+ assert.equal(baseline.analyzeSmartChart(args).catalogue!.definedVariants,50,"Old side must execute its original50 definitions");
  const patternArgs=CANDLE_FIXTURES.map(f=>({...context,bars:f.bars,asOfMs:f.bars.at(-1)!.closeTime*1000,dataState:"current" as const}));
  // Correctness witness on the same inputs, separately from measurements.
  for(let i=0;i<CANDLE_FIXTURES.length;i++)assert.ok(analyzeSmartChart(patternArgs[i]!).allFindings.some(f=>f.id===`${CANDLE_FIXTURES[i]!.id}:${patternArgs[i]!.bars.at(-1)!.time}`));
@@ -45,7 +45,7 @@ try {
   baseline_bind_model_5000:()=>baseline.analyzeSmartChart({...args,bars:baseline.bindSmartChartBars(context,batches).bars}),
   expanded_bind_model_5000:()=>analyzeSmartChart({...args,bars:bindSmartChartBars(context,batches).bars}),
   catalogue_600_latest12:()=>scanCandlestickCatalogue(recent,{asOf:recent.at(-1)!.closeTime,intervalSeconds:300}),
-  all50_fixtures_one_batch:()=>patternArgs.map(p=>analyzeSmartChart(p)),
+  all62_fixtures_one_batch:()=>patternArgs.map(p=>analyzeSmartChart(p)),
  };
  const samples:Record<string,number[]>=Object.fromEntries(Object.keys(operations).map(k=>[k,[]]));
  let witness=0;
@@ -58,8 +58,8 @@ try {
  const metrics=Object.fromEntries(Object.entries(samples).map(([name,xs])=>[name,{samples:xs.length,medianMs:q(xs,.5),p95Ms:q(xs,.95),p99Ms:q(xs,.99),maxMs:Math.max(...xs)}]));
  const acceptance=Object.fromEntries(["expanded_model_5000","expanded_bind_model_5000"].map(name=>[name,{p95Under10ms:metrics[name]!.p95Ms<=10,p99Under20ms:metrics[name]!.p99Ms<=20}]));
  const result={baselineCommit,criteriaVariants:CANDLE_DEFINITIONS.length,node:process.version,
-  scope:"Pure synchronous computation only. Identical 5,000-bar inputs and 600-bar cap; 50-fixture batch exercises actual findings. No browser acknowledgement, paint, network, broker, or order latency.",
-  comparison:"Same Node process, original baseline model AND original34-definition catalogue extracted from Git; unchanged core chart detector/dependencies shared. Interleaved order after80 warmups; added features are not competitor parity.",
+  scope:"Pure synchronous computation only. Identical 5,000-bar inputs and 600-bar cap; 62-fixture batch exercises actual findings. No browser acknowledgement, paint, network, broker, or order latency.",
+  comparison:"Same Node process, original baseline model AND original50-definition catalogue extracted from Git; unchanged core chart detector/dependencies shared. Interleaved order after80 warmups; added features are not competitor parity.",
   metrics,acceptance,witness};
  console.log(JSON.stringify(result,null,2));
  for(const row of Object.values(acceptance))assert.ok(row.p95Under10ms&&row.p99Under20ms,"Pure processing budget missed");

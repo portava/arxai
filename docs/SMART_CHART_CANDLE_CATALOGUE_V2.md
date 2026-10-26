@@ -1,5 +1,7 @@
 # Smart Chart candle catalogue v2: paired and multi-candle observations
 
+This document records the frozen v2 checkpoint. For the next version see [v3 definitions and evidence](SMART_CHART_CANDLE_CATALOGUE_V3.md).
+
 Version `arx-candle-geometry-v2` adds 16 named variants to the first expansion: 50 catalogue definitions across 14 shared geometry families. Including the three preserved initial-core candle names, 53 of the owner's 104 named requirements have implementations and focused fixtures. The other 51 remain in `SMART_CHART_CANDLE_COVERAGE.json`. These counts describe names, not independent signals, predictive accuracy, application completion or competitor parity.
 
 All additions are **observed** patterns made from actual closed candles. The model retains the source/symbol/timeframe/opaque-identity boundary, 600-bar analysis cap and 12 recent endpoints. A pattern is available only when its final candle has closed; future replay rows cannot complete it early. Time gaps cannot be treated as adjacent pattern observations. Prior-trend guards use the documented v1 five-close definition and exclude the pattern itself. No confirmation percentage, invented data, execution instruction or future outcome is added.

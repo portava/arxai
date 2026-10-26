@@ -1,14 +1,14 @@
 {
-  "criteriaVersion": "arx-candle-geometry-v2",
+  "criteriaVersion": "arx-candle-geometry-v3",
   "updated": "2026-10-26",
   "ownerManifestSha256": "6dba7b73af6242dd08d56420aea250ce0f40079967e154d26653107f100d5508",
   "meaning": "Coverage of named requirements, not independent algorithms, predictive reliability, UI parity, or architecture completion. Related variants deliberately share geometry.",
   "counts": {
     "ownerNamedEntries": 104,
-    "newCatalogueNamedVariants": 50,
-    "newGeometryFamilies": 14,
-    "includingExistingCoreNamedEntries": 53,
-    "pendingNamedEntries": 51
+    "newCatalogueNamedVariants": 62,
+    "newGeometryFamilies": 16,
+    "includingExistingCoreNamedEntries": 65,
+    "pendingNamedEntries": 39
   },
   "entries": [
     {
@@ -326,10 +326,10 @@
     {
       "name": "Matching Low",
       "ownerFamily": "Tweezers and matching levels",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "matching_low",
+      "geometryFamily": "tweezers",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Matching High",
@@ -374,18 +374,18 @@
     {
       "name": "Kicking by Length",
       "ownerFamily": "Kicking",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "kicking_by_length",
+      "geometryFamily": "marubozu",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Homing Pigeon",
       "ownerFamily": "Other paired formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "homing_pigeon",
+      "geometryFamily": "harami",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Descending Hawk",
@@ -414,42 +414,42 @@
     {
       "name": "On-Neck",
       "ownerFamily": "Neck and thrusting",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "on_neck",
+      "geometryFamily": "neck_thrusting",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "In-Neck",
       "ownerFamily": "Neck and thrusting",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "in_neck",
+      "geometryFamily": "neck_thrusting",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Thrusting",
       "ownerFamily": "Neck and thrusting",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "thrusting",
+      "geometryFamily": "neck_thrusting",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bullish Separating Lines",
       "ownerFamily": "Separating and Tasuki lines",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bullish_separating_lines",
+      "geometryFamily": "belt_hold",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bearish Separating Lines",
       "ownerFamily": "Separating and Tasuki lines",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bearish_separating_lines",
+      "geometryFamily": "belt_hold",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bullish Tasuki Line",
@@ -542,18 +542,18 @@
     {
       "name": "Bullish Tri-Star",
       "ownerFamily": "Tri-Star",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bullish_tri_star",
+      "geometryFamily": "doji",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Bearish Tri-Star",
       "ownerFamily": "Tri-Star",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "bearish_tri_star",
+      "geometryFamily": "doji",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Three White Soldiers",
@@ -686,18 +686,18 @@
     {
       "name": "Upside Tasuki Gap",
       "ownerFamily": "Gap formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "upside_tasuki_gap",
+      "geometryFamily": "tasuki_gap",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Downside Tasuki Gap",
       "ownerFamily": "Gap formations",
-      "status": "PENDING_IMPLEMENTATION_AND_VALIDATION",
-      "definitionId": null,
-      "geometryFamily": null,
-      "note": "Retained owner requirement; no detection or authority claimed."
+      "status": "IMPLEMENTED_EXPLICIT_ARX_VARIANT",
+      "definitionId": "downside_tasuki_gap",
+      "geometryFamily": "tasuki_gap",
+      "note": "Observed geometry only; current criteria and evidence requirements apply."
     },
     {
       "name": "Upside Gap Three Methods",
