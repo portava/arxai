@@ -29,23 +29,50 @@ const {
   selfTradeAuditLogTable: audit,
   selfTradeLedgerEntriesTable: entries,
   selfTradeAllocationsTable: allocations,
+  arxLiveCommandsTable: commands,
+  liveTradingAuditTable: liveAudit,
 } = database;
 mock.module("../../security/events.js", {
-  namedExports: { mirrorCriticalEvent: async () => undefined },
+  namedExports: {
+    mirrorCriticalEvent: async () => undefined,
+    recordSecurityEvent: async () => undefined,
+  },
 });
 mock.module("../../security/handshake.js", {
   namedExports: { enforceSensitiveAction: async () => ({ ok: true }) },
 });
-let submitBehavior: "accepted" | "throw" | "refused" | "unknown" = "accepted";
+let submitBehavior:
+  | "accepted"
+  | "throw"
+  | "refused"
+  | "unknown"
+  | "filled"
+  | "filled_unknown" = "accepted";
 let submissions = 0;
 let dispatchRequests = 0;
 let submittedPrepareOnly: boolean | undefined;
 mock.module("../../tradeEngine/pipeline.js", {
   namedExports: {
-    submitInstantTrade: async (args: { intent: { prepareOnly?: boolean } }) => {
+    submitInstantTrade: async (args: {
+      intent: { prepareOnly?: boolean; selfTradeExecutionId?: number };
+    }) => {
       submittedPrepareOnly = args.intent.prepareOnly;
       if (!args.intent.prepareOnly) dispatchRequests++;
       submissions++;
+      if (submitBehavior === "filled" || submitBehavior === "filled_unknown") {
+        await db
+          .update(executions)
+          .set({
+            commandId: "qa-command",
+            status: "FILLED",
+            brokerTicket: "test-ticket",
+            filledAt: new Date(),
+          })
+          .where(eq(executions.id, args.intent.selfTradeExecutionId!));
+        return submitBehavior === "filled"
+          ? { ok: true, commandId: "qa-command" }
+          : { ok: false, error: "UNKNOWN_AFTER_FILL", commandId: "qa-command" };
+      }
       if (submitBehavior === "throw")
         throw new Error("simulated crash after pipeline invocation");
       if (submitBehavior === "refused")
@@ -79,6 +106,17 @@ mock.module("../killSwitchGate.js", {
 });
 mock.module("../../data/marketDataRouter.js", {
   namedExports: {
+    classifySymbol: () => "FOREX",
+    resolveDerivSymbol: (s: string) => s,
+    getRouterDiagnostics: () => ({}),
+    DECISION_VENUE_MISMATCH_REASON: "DERIV_EXECUTION_VENUE_REQUIRES_SYNTHETIC",
+    DECISION_FEED_UNAVAILABLE_REASON: "EXECUTION_BROKER_FEED_UNAVAILABLE",
+    routeCandlesForDecision: async () => {
+      throw new Error("No decision feed in test");
+    },
+    routeCandles: async () => {
+      throw new Error("No candle access in test");
+    },
     routeQuote: async () => {
       throw new Error("No market-data access in test");
     },
@@ -87,6 +125,14 @@ mock.module("../../data/marketDataRouter.js", {
 mock.module("../../mt5/contractSize.js", {
   namedExports: {
     FX_STANDARD_LOT_UNITS: 100000,
+    FIAT_CODES: new Set(["USD", "EUR"]),
+    splitForexPair: () => ({ base: "EUR", quote: "USD" }),
+    decideContractSize: () => {
+      throw new Error("No live sizing in test");
+    },
+    computeRealizedAmount: () => {
+      throw new Error("No broker P/L in test");
+    },
     isForexPair: () => true,
     resolveContractSize: async () => ({
       contractSize: 100000,
@@ -110,13 +156,44 @@ mock.module("../../aaci/executionAdvisory.js", {
   },
 });
 const { reserveAgentEntry } = await import("../entryReservation.js");
+const {
+  createAgentEntryDraft,
+  admissionEnvelope,
+  isAgentEntryCommand,
+  AgentEntryAuthorityError,
+} = await import("../entryAuthority.js");
+const { claimLiveCommandForConfirm, claimLiveCommandForDispatch } =
+  await import("../../live/liveCommandCas.js");
+// Synthetic signing material only, after the disposable-destination assertions.
+process.env.SESSION_SECRET = "offline-authority-fixture-public-key-material";
+mock.module("../../joinRequests/notifyAdmins.js", {
+  namedExports: { listAdminUserIds: async () => [] },
+});
+mock.module("../../notificationService.js", {
+  namedExports: { createNotification: async () => undefined },
+});
+const realIntegrity = await import("../../security/commandIntegrity.js");
+let integrityBarrier: ((row: unknown) => Promise<any>) | null = null;
+mock.module("../../security/commandIntegrity.js", {
+  namedExports: {
+    ...realIntegrity,
+    verifyCommandIntegrityForDispatch: async (row: any) =>
+      integrityBarrier
+        ? integrityBarrier(row)
+        : realIntegrity.verifyCommandIntegrityForDispatch(row),
+  },
+});
+const { dispatchLiveCommand } =
+  await import("../../live/liveCommandPipeline.js");
+
 const { executeAgentDecision } = await import("../agentExecutor.js");
 const { fundAgent, defundAgent, applyRealizedFromFills } =
   await import("../agentLedger.js");
 const Pool = pool.constructor as new (config: {
   connectionString?: string;
 }) => typeof pool;
-const { configureAgent, setAgentStatus } = await import("../service.js");
+const { configureAgent, setAgentStatus, setAutonomyLevel } =
+  await import("../service.js");
 const tables = [
   agents,
   settings,
@@ -126,6 +203,8 @@ const tables = [
   audit,
   entries,
   allocations,
+  commands,
+  liveAudit,
 ];
 const dialect = new PgDialect();
 const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
@@ -221,6 +300,7 @@ before(async () => {
   );
 });
 beforeEach(async () => {
+  integrityBarrier = null;
   submissions = 0;
   dispatchRequests = 0;
   submittedPrepareOnly = undefined;
@@ -747,4 +827,622 @@ it("supervisor PREPARE_ONLY at L3 reserves and stages once without automatic dis
   const [row] = await db.select().from(executions);
   assert.equal(row.status, "PENDING_TICKET");
   assert.equal(row.commandId, "qa-command");
+});
+
+// Dispatch-authority slice: production transaction helpers, a disposable DB,
+// and a synthetic mailbox counter. Nothing talks to an execution adapter.
+async function reservedAuthority() {
+  const request = await input();
+  const result = await reserveAgentEntry(request);
+  assert.equal(result.ok, true);
+  if (!result.ok) throw new Error("reservation failed");
+  return {
+    request: {
+      userId: 9,
+      agentId: agent.id,
+      decisionId: request.decision.id,
+      executionId: result.execution.id,
+      symbol: "EURUSD.a",
+      side: "BUY",
+      volume: 0.1,
+      stopLoss: 1.09,
+      takeProfit: 1.12,
+      symbolBinding: { requestedSymbol: "EURUSD", brokerSymbol: "EURUSD.a" },
+    },
+    execution: result.execution,
+  };
+}
+async function stageAuthority(
+  context?: Awaited<ReturnType<typeof reservedAuthority>>,
+) {
+  const { request, execution } = context ?? (await reservedAuthority());
+  const row = await createAgentEntryDraft(request, async (tx, envelope) => {
+    return (
+      await tx
+        .insert(commands)
+        .values({
+          commandId: `qa-${crypto.randomUUID()}`,
+          userId: 9,
+          commandType: "PLACE_LIVE_MARKET_ORDER",
+          status: "LIVE_CONFIRMATION_REQUIRED",
+          symbol: request.symbol,
+          side: request.side,
+          orderType: "MARKET_BUY",
+          requestedVolume: request.volume,
+          stopLoss: request.stopLoss,
+          takeProfit: request.takeProfit,
+          sourcePage: "INSTANT_SELF_TRADE",
+          actorId: 9,
+          actorType: "SELF_TRADE_AGENT",
+          selfTradeAgentId: agent.id,
+          selfTradeDecisionId: request.decisionId,
+          payload: {
+            agentAdmissionV1: envelope,
+            selfTradeSymbolBinding: request.symbolBinding,
+            agentOwnership: {
+              selfTradeAgentId: agent.id,
+              selfTradeDecisionId: request.decisionId,
+              selfTradeAgentKey: agent.agentKey,
+            },
+          },
+        })
+        .returning()
+    )[0];
+  });
+  return { row, execution, request };
+}
+async function approveAuthority(
+  context?: Awaited<ReturnType<typeof stageAuthority>>,
+) {
+  const staged = context ?? (await stageAuthority());
+  const approved = await claimLiveCommandForConfirm(
+    staged.row.commandId,
+    { status: "LIVE_APPROVED", confirmedAt: now },
+    staged.row,
+  );
+  assert.ok(approved);
+  return { ...staged, row: approved };
+}
+const sendPatch = () => ({
+  status: "SENT_TO_MT5_LIVE",
+  sentToMt5At: now,
+  expiresAt: new Date(now.getTime() + 120_000),
+});
+function authorityRefusal(error: unknown) {
+  assert.ok(error instanceof AgentEntryAuthorityError);
+  return true;
+}
+it("draft insert and durable reservation link commit together", async () => {
+  const { row, execution } = await stageAuthority();
+  const [linked] = await db
+    .select()
+    .from(executions)
+    .where(eq(executions.id, execution.id));
+  assert.equal(linked.commandId, row.commandId);
+  assert.deepEqual(
+    (row.payload as any).agentAdmissionV1,
+    admissionEnvelope(linked),
+  );
+});
+it("draft callback crash rolls back the command and linkage; retry stages once", async () => {
+  const context = await reservedAuthority();
+  await assert.rejects(
+    createAgentEntryDraft(context.request, async (tx) => {
+      await tx
+        .insert(commands)
+        .values({
+          commandId: "rolled-back",
+          userId: 9,
+          commandType: "PLACE_LIVE_MARKET_ORDER",
+          symbol: "EURUSD.a",
+          side: "BUY",
+          orderType: "MARKET_BUY",
+          requestedVolume: 0.1,
+        });
+      throw new Error("crash before linkage");
+    }),
+    /crash before linkage/,
+  );
+  assert.equal((await db.select().from(commands)).length, 0);
+  assert.equal((await db.select().from(executions))[0].commandId, null);
+  await stageAuthority(context);
+  assert.equal((await db.select().from(commands)).length, 1);
+});
+it("overlapping draft attempts produce one linked command", async () => {
+  const context = await reservedAuthority();
+  const results = await Promise.allSettled(
+    Array.from({ length: 12 }, () => stageAuthority(context)),
+  );
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  assert.equal((await db.select().from(commands)).length, 1);
+  assert.ok((await db.select().from(executions))[0].commandId);
+});
+it("unchanged PREPARE_ONLY remains staged, then human confirmation and dispatch revalidate", async () => {
+  const request = await input();
+  [request.decision] = await db
+    .update(decisions)
+    .set({ outcome: "PREPARE_ONLY" })
+    .where(eq(decisions.id, request.decision.id))
+    .returning();
+  const result = await reserveAgentEntry(request);
+  assert.ok(result.ok);
+  if (!result.ok) return;
+  const context = {
+    execution: result.execution,
+    request: {
+      userId: 9,
+      agentId: agent.id,
+      decisionId: request.decision.id,
+      executionId: result.execution.id,
+      symbol: "EURUSD",
+      side: "BUY",
+      volume: 0.1,
+      stopLoss: 1.09,
+      takeProfit: 1.12,
+      symbolBinding: { requestedSymbol: "EURUSD", brokerSymbol: "EURUSD" },
+    },
+  };
+  const staged = await stageAuthority(context);
+  assert.equal(staged.row.status, "LIVE_CONFIRMATION_REQUIRED");
+  const approved = await approveAuthority(staged);
+  assert.equal(
+    (
+      await claimLiveCommandForDispatch(
+        approved.row.commandId,
+        sendPatch(),
+        approved.row,
+      )
+    )?.status,
+    "SENT_TO_MT5_LIVE",
+  );
+  assert.equal(
+    (await db.select().from(audit)).filter(
+      (r) => r.eventType === "ENTRY_AUTHORITY_DISPATCH_CLAIMED",
+    ).length,
+    1,
+  );
+});
+for (const [label, mutate] of [
+  [
+    "pause",
+    () =>
+      db
+        .update(agents)
+        .set({ status: "PAUSED" })
+        .where(eq(agents.id, agent.id)),
+  ],
+  [
+    "owner",
+    () => db.update(agents).set({ ownerId: 10 }).where(eq(agents.id, agent.id)),
+  ],
+  [
+    "autonomy",
+    () =>
+      db
+        .update(agents)
+        .set({ autonomyLevel: 1 })
+        .where(eq(agents.id, agent.id)),
+  ],
+  [
+    "settings",
+    () =>
+      configureAgent(agent.id, { maxLotPerTrade: 0.01 }, "tighten", {
+        userId: 9,
+        role: "admin",
+      }),
+  ],
+  ["funding", () => fundAgent({ ...actor, agentId: agent.id, amount: 1 })],
+  ["decision", () => db.update(decisions).set({ outcome: "DENIED" })],
+  [
+    "protection",
+    () => db.update(decisions).set({ thesis: { stopLoss: 1.08 } }),
+  ],
+] as const) {
+  it(`refuses ${label} changes between admission and draft`, async () => {
+    const context = await reservedAuthority();
+    await mutate();
+    await assert.rejects(stageAuthority(context), authorityRefusal);
+    assert.equal((await db.select().from(commands)).length, 0);
+  });
+  it(`refuses ${label} changes after confirmation without resizing or sending`, async () => {
+    const { row } = await approveAuthority();
+    await mutate();
+    await assert.rejects(
+      claimLiveCommandForDispatch(row.commandId, sendPatch(), row),
+      authorityRefusal,
+    );
+    const [current] = await db.select().from(commands);
+    assert.equal(current.status, "LIVE_APPROVED");
+    assert.equal(current.requestedVolume, 0.1);
+  });
+}
+it("prepared command expires exactly at the thesis deadline", async () => {
+  const { row } = await stageAuthority();
+  await assert.rejects(
+    claimLiveCommandForConfirm(
+      row.commandId,
+      { status: "LIVE_APPROVED" },
+      row,
+      db,
+      () => new Date("2026-10-30T00:00:00Z"),
+    ),
+    /ENTRY_SETUP_EXPIRED/,
+  );
+});
+it("a waiting dispatch cannot use a command TTL that expired while acquiring authority", async () => {
+  const { row } = await approveAuthority();
+  await assert.rejects(
+    claimLiveCommandForDispatch(
+      row.commandId,
+      sendPatch(),
+      row,
+      db,
+      () => new Date(now.getTime() + 120_000),
+    ),
+    /ENTRY_COMMAND_EXPIRED/,
+  );
+});
+for (const field of [
+  "agentAdmissionV1",
+  "agentOwnership",
+  "selfTradeSymbolBinding",
+] as const) {
+  it(`rejects missing or spoofed ${field} while keeping the reservation`, async () => {
+    const { row } = await approveAuthority();
+    const payload = { ...(row.payload as object), [field]: {} };
+    const [corrupt] = await db
+      .update(commands)
+      .set({ payload })
+      .where(eq(commands.commandId, row.commandId))
+      .returning();
+    await assert.rejects(
+      claimLiveCommandForDispatch(row.commandId, sendPatch(), corrupt),
+      authorityRefusal,
+    );
+    assert.equal(
+      (await db.select().from(executions))[0].status,
+      "PENDING_TICKET",
+    );
+  });
+}
+it("partial attribution cannot select the manual CAS path", async () => {
+  const { row } = await approveAuthority();
+  const [corrupt] = await db
+    .update(commands)
+    .set({ selfTradeAgentId: null })
+    .where(eq(commands.commandId, row.commandId))
+    .returning();
+  assert.equal(isAgentEntryCommand(corrupt), true);
+  await assert.rejects(
+    claimLiveCommandForDispatch(row.commandId, sendPatch(), corrupt),
+    authorityRefusal,
+  );
+  assert.equal((await db.select().from(commands))[0].status, "LIVE_APPROVED");
+});
+it("final claim re-reads a command changed after outer verification", async () => {
+  const { row } = await approveAuthority();
+  await db
+    .update(commands)
+    .set({ requestedVolume: 0.2 })
+    .where(eq(commands.commandId, row.commandId));
+  await assert.rejects(
+    claimLiveCommandForDispatch(row.commandId, sendPatch(), row),
+    /ENTRY_AUTHORITY_COMMAND_CHANGED/,
+  );
+});
+it("parallel final claims produce one handoff and preserve terminal decisions", async () => {
+  const { row } = await approveAuthority();
+  let deliveries = 0;
+  const results = await Promise.all(
+    Array.from({ length: 16 }, async () => {
+      const claimed = await claimLiveCommandForDispatch(
+        row.commandId,
+        sendPatch(),
+        row,
+      );
+      if (claimed) deliveries++;
+      return claimed;
+    }),
+  );
+  assert.equal(results.filter(Boolean).length, 1);
+  assert.equal(deliveries, 1);
+  assert.equal(
+    (await db.select().from(audit)).filter(
+      (r) => r.eventType === "ENTRY_AUTHORITY_DISPATCH_CLAIMED",
+    ).length,
+    1,
+  );
+  await db
+    .update(commands)
+    .set({ status: "LIVE_FILLED" })
+    .where(eq(commands.commandId, row.commandId));
+  assert.equal(
+    await claimLiveCommandForDispatch(row.commandId, sendPatch(), row),
+    null,
+  );
+  assert.equal((await db.select().from(commands))[0].status, "LIVE_FILLED");
+});
+it("manual entry and protective commands keep their existing CAS behavior", async () => {
+  for (const commandType of [
+    "PLACE_LIVE_MARKET_ORDER",
+    "CLOSE_LIVE_POSITION",
+    "MODIFY_LIVE_SLTP",
+  ]) {
+    const [row] = await db
+      .insert(commands)
+      .values({
+        commandId: crypto.randomUUID(),
+        userId: 9,
+        commandType,
+        status: "LIVE_APPROVED",
+        symbol: "EURUSD",
+        side: "BUY",
+        orderType: "MARKET_BUY",
+        requestedVolume: 0.1,
+        actorId: 9,
+        actorType: "USER",
+        sourcePage: "LIVE_TRADE_TICKET",
+      })
+      .returning();
+    assert.equal(
+      (await claimLiveCommandForDispatch(row.commandId, sendPatch(), row))
+        ?.status,
+      "SENT_TO_MT5_LIVE",
+    );
+  }
+});
+for (const behavior of ["filled", "filled_unknown"] as const) {
+  it(`executor cannot overwrite an early linked fill after ${behavior} return`, async () => {
+    submitBehavior = behavior;
+    await executeAgentDecision(await executeInput());
+    assert.equal((await db.select().from(executions))[0].status, "FILLED");
+  });
+}
+
+async function waitForLock(query: string) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if ((await pool.query(query)).rows.length) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.fail("transaction did not reach expected lock barrier");
+}
+for (const [event, writer] of [
+  [
+    "SET_STATUS",
+    () =>
+      setAgentStatus(agent.id, "PAUSED", "pause", { userId: 9, role: "admin" }),
+  ],
+  [
+    "SET_AUTONOMY",
+    () => setAutonomyLevel(agent.id, 1, "lower", { userId: 9, role: "admin" }),
+  ],
+  [
+    "SET_CONFIG",
+    () =>
+      configureAgent(agent.id, { maxLotPerTrade: 0.01 }, "tighten", {
+        userId: 9,
+        role: "admin",
+      }),
+  ],
+  ["FUND", () => fundAgent({ ...actor, agentId: agent.id, amount: 1 })],
+  ["REALIZED_PNL_RECONCILE", () => applyRealizedFromFills(agent.id, 9)],
+] as const) {
+  it(`final claim waits behind ${event} writer and rejects its changed authority`, async () => {
+    const { row } = await approveAuthority();
+    if (event === "REALIZED_PNL_RECONCILE")
+      await db.insert(executions).values({
+        agentId: agent.id,
+        agentKey: agent.agentKey,
+        decisionId: 999,
+        cycleId: "previous",
+        symbol: "EURUSD",
+        side: "BUY",
+        autonomyLevel: 3,
+        mode: "LIVE",
+        intendedVolume: 0.1,
+        idempotencyKey: "previous",
+        status: "CLOSED",
+        realizedPnl: -10,
+      });
+    const barrier = await pool.connect();
+    await barrier.query("SELECT pg_advisory_lock(771235)");
+    await pool.query(`CREATE FUNCTION qa_authority_writer() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.event_type = '${event}' THEN PERFORM pg_advisory_xact_lock(771235); END IF; RETURN NEW; END $$`);
+    await pool.query(
+      "CREATE TRIGGER qa_authority_writer BEFORE INSERT ON self_trade_audit_log FOR EACH ROW EXECUTE FUNCTION qa_authority_writer()",
+    );
+    let mutation: Promise<unknown> | undefined;
+    let claim: Promise<unknown> | undefined;
+    try {
+      mutation = writer();
+      await waitForLock(
+        "SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=771235 AND NOT granted",
+      );
+      claim = claimLiveCommandForDispatch(
+        row.commandId,
+        sendPatch(),
+        row,
+      ).catch((error) => error);
+      await waitForLock(
+        "SELECT 1 FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND wait_event_type='Lock' AND query LIKE '%self_trade_agents%for update%'",
+      );
+      await barrier.query("SELECT pg_advisory_unlock(771235)");
+      await mutation;
+      assert.ok((await claim) instanceof AgentEntryAuthorityError);
+      assert.equal(
+        (await db.select().from(commands))[0].status,
+        "LIVE_APPROVED",
+      );
+    } finally {
+      await barrier.query("SELECT pg_advisory_unlock_all()");
+      await Promise.allSettled([mutation, claim].filter(Boolean));
+      barrier.release();
+      await pool.query(
+        "DROP TRIGGER qa_authority_writer ON self_trade_audit_log",
+      );
+      await pool.query("DROP FUNCTION qa_authority_writer()");
+    }
+  });
+}
+it("a pause waiting behind the final claim cannot rewrite its committed handoff", async () => {
+  const { row } = await approveAuthority();
+  const barrier = await pool.connect();
+  await barrier.query("SELECT pg_advisory_lock(771236)");
+  await pool.query(`CREATE FUNCTION qa_authority_claim() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.event_type = 'ENTRY_AUTHORITY_DISPATCH_CLAIMED' THEN PERFORM pg_advisory_xact_lock(771236); END IF; RETURN NEW; END $$`);
+  await pool.query(
+    "CREATE TRIGGER qa_authority_claim BEFORE INSERT ON self_trade_audit_log FOR EACH ROW EXECUTE FUNCTION qa_authority_claim()",
+  );
+  let claim: ReturnType<typeof claimLiveCommandForDispatch> | undefined;
+  let pause: ReturnType<typeof setAgentStatus> | undefined;
+  try {
+    claim = claimLiveCommandForDispatch(row.commandId, sendPatch(), row);
+    await waitForLock(
+      "SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=771236 AND NOT granted",
+    );
+    pause = setAgentStatus(agent.id, "PAUSED", "pause", {
+      userId: 9,
+      role: "admin",
+    });
+    await waitForLock(
+      "SELECT 1 FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND wait_event_type='Lock' AND query LIKE '%self_trade_agents%for update%'",
+    );
+    await barrier.query("SELECT pg_advisory_unlock(771236)");
+    assert.equal((await claim)?.status, "SENT_TO_MT5_LIVE");
+    assert.equal((await pause).ok, true);
+    assert.equal(
+      (await db.select().from(commands))[0].status,
+      "SENT_TO_MT5_LIVE",
+    );
+  } finally {
+    await barrier.query("SELECT pg_advisory_unlock_all()");
+    await Promise.allSettled([claim, pause].filter(Boolean));
+    barrier.release();
+    await pool.query("DROP TRIGGER qa_authority_claim ON self_trade_audit_log");
+    await pool.query("DROP FUNCTION qa_authority_claim()");
+  }
+});
+it("claim audit failure rolls back transition and permits one later retry", async () => {
+  const { row } = await approveAuthority();
+  await pool.query(`CREATE FUNCTION qa_authority_audit_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.event_type = 'ENTRY_AUTHORITY_DISPATCH_CLAIMED' THEN RAISE EXCEPTION 'isolated audit fault'; END IF; RETURN NEW; END $$`);
+  await pool.query(
+    "CREATE TRIGGER qa_authority_audit_fault BEFORE INSERT ON self_trade_audit_log FOR EACH ROW EXECUTE FUNCTION qa_authority_audit_fault()",
+  );
+  try {
+    await assert.rejects(
+      claimLiveCommandForDispatch(row.commandId, sendPatch(), row),
+      /Failed query/,
+    );
+    assert.equal((await db.select().from(commands))[0].status, "LIVE_APPROVED");
+  } finally {
+    await pool.query(
+      "DROP TRIGGER qa_authority_audit_fault ON self_trade_audit_log",
+    );
+    await pool.query("DROP FUNCTION qa_authority_audit_fault()");
+  }
+  assert.ok(await claimLiveCommandForDispatch(row.commandId, sendPatch(), row));
+  assert.equal(
+    await claimLiveCommandForDispatch(row.commandId, sendPatch(), row),
+    null,
+  );
+});
+it("reservation identity and geometry cannot be replaced after admission", async () => {
+  const { row, execution } = await approveAuthority();
+  await db
+    .update(executions)
+    .set({ intendedVolume: 0.2 })
+    .where(eq(executions.id, execution.id));
+  const [corrupt] = await db
+    .update(commands)
+    .set({ requestedVolume: 0.2 })
+    .where(eq(commands.commandId, row.commandId))
+    .returning();
+  await assert.rejects(
+    claimLiveCommandForDispatch(row.commandId, sendPatch(), corrupt),
+    /ENTRY_AUTHORITY_CHANGED/,
+  );
+});
+
+it("real integrity accepts signed canonical/native binding and rejects foreign ownership or forged mapping", async () => {
+  const { row } = await approveAuthority();
+  const integrity = realIntegrity.buildCommandIntegrityFields({
+    ...row,
+    payload: row.payload as Record<string, unknown>,
+    actorId: 9,
+    actorType: "SELF_TRADE_AGENT",
+  });
+  const signed = { ...row, ...integrity };
+  assert.equal(
+    (await realIntegrity.verifyCommandIntegrityForDispatch(signed)).ok,
+    true,
+  );
+  const forged = {
+    ...signed,
+    payload: {
+      ...(signed.payload as object),
+      selfTradeSymbolBinding: {
+        requestedSymbol: "GBPUSD",
+        brokerSymbol: "EURUSD.a",
+      },
+    },
+  };
+  assert.equal(
+    (await realIntegrity.verifyCommandIntegrityForDispatch(forged)).ok,
+    false,
+  );
+  await db.update(agents).set({ ownerId: 10 }).where(eq(agents.id, agent.id));
+  assert.equal(
+    (await realIntegrity.verifyCommandIntegrityForDispatch(signed)).ok,
+    false,
+  );
+});
+it("a stale gate refusal cannot overwrite a concurrent real final claim or publish a false block", async () => {
+  const { row } = await approveAuthority();
+  let arrived!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  let release!: () => void;
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  integrityBarrier = async () => {
+    arrived();
+    await barrier;
+    return {
+      ok: false,
+      verdict: {
+        ok: false,
+        reason: "FIXTURE_CHANGED_DURING_GATE",
+        tamper: false,
+        userMessage: "fixture",
+      },
+    };
+  };
+  const loser = dispatchLiveCommand({ userId: 9, commandId: row.commandId });
+  try {
+    await entered;
+    assert.ok(
+      await claimLiveCommandForDispatch(row.commandId, sendPatch(), row),
+    );
+    release();
+    const result = await loser;
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "LIVE_DISPATCH_RACE_LOST");
+    assert.equal(
+      (await db.select().from(commands))[0].status,
+      "SENT_TO_MT5_LIVE",
+    );
+    assert.equal(
+      (await db.select().from(liveAudit)).filter(
+        (r) => r.eventType === "LIVE_DISPATCH_BLOCKED",
+      ).length,
+      0,
+    );
+  } finally {
+    release();
+    await loser;
+    integrityBarrier = null;
+  }
 });

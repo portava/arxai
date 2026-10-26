@@ -23,7 +23,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { createHash } from "node:crypto";
-import { db, arxLiveCommandsTable, selfTradeDecisionsTable } from "@workspace/db";
+import { db, arxLiveCommandsTable, selfTradeDecisionsTable, selfTradeAgentsTable } from "@workspace/db";
+import { entrySymbolMatches } from "../selfTrade/entryAuthority.js";
 import { eq } from "drizzle-orm";
 import {
   COMMAND_INTEGRITY_KEY_VERSION,
@@ -217,6 +218,7 @@ export interface IntegrityVerifiableRow {
   actorType: string | null;
   actionType: string | null;
   selfTradeDecisionId: number | null;
+  selfTradeAgentId?: number | null;
 }
 
 function toNum(v: number | string | null | undefined): number | null {
@@ -241,12 +243,24 @@ function toDate(v: Date | string | null | undefined): Date | null {
 async function resolveDecisionMatch(row: IntegrityVerifiableRow): Promise<boolean | null> {
   if (row.selfTradeDecisionId == null) return null;
   const [decision] = await db
-    .select({ symbol: selfTradeDecisionsTable.symbol })
+    .select({ symbol: selfTradeDecisionsTable.symbol, agentId: selfTradeDecisionsTable.agentId,
+      agentKey: selfTradeDecisionsTable.agentKey, side: selfTradeDecisionsTable.side })
     .from(selfTradeDecisionsTable)
     .where(eq(selfTradeDecisionsTable.id, row.selfTradeDecisionId))
     .limit(1);
   if (!decision) return false; // stamped decision id must resolve — fail closed.
-  return String(decision.symbol).toUpperCase() === String(row.symbol).toUpperCase();
+  const [agent] = await db.select().from(selfTradeAgentsTable)
+    .where(eq(selfTradeAgentsTable.id, decision.agentId)).limit(1);
+  const owner = agent?.ownerType === "USER" ? agent.ownerId
+    : agent?.ownerType === "OPERATOR_FLEET" && agent.ownerId == null ? agent.createdByUserId : null;
+  const payload = row.payload as Record<string, unknown> | null;
+  const attribution = payload?.agentOwnership as Record<string, unknown> | null;
+  return owner === row.userId && row.actorId === row.userId && row.actorType === "SELF_TRADE_AGENT" &&
+    row.selfTradeAgentId === decision.agentId && agent?.agentKey === decision.agentKey &&
+    attribution?.selfTradeAgentId === decision.agentId &&
+    attribution?.selfTradeDecisionId === row.selfTradeDecisionId &&
+    attribution?.selfTradeAgentKey === decision.agentKey && decision.side === row.side &&
+    entrySymbolMatches(decision.symbol, row.symbol, payload?.selfTradeSymbolBinding);
 }
 
 export interface VerifyIntegrityResult {

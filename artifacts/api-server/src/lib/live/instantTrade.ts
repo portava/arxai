@@ -75,6 +75,8 @@ export type InstantTradeIntent = {
   selfTradeAgentId?: number | null;
   selfTradeDecisionId?: number | null;
   selfTradeAgentKey?: string | null;
+  /** Server-only durable admission; no browser input sets this field. */
+  selfTradeExecutionId?: number | null;
   prepareOnly?: boolean;
   // Task #319 — Ruby bounded executor. `rubyCommandKind` lets the auth layer
   // distinguish a plain MODIFY from a break-even move, and a full CLOSE from a
@@ -467,6 +469,7 @@ async function executeOpen(args: {
       selfTradeAgentId: intent.selfTradeAgentId ?? null,
       selfTradeDecisionId: intent.selfTradeDecisionId ?? null,
       selfTradeAgentKey: intent.selfTradeAgentKey ?? null,
+      selfTradeExecutionId: intent.selfTradeExecutionId ?? null,
     });
     if (!("ok" in draft) || draft.ok !== true) return { stage: "draft" as const, result: draft };
     // Task #213 — autonomy L1 (prepareOnly): the supervisor-approved draft is

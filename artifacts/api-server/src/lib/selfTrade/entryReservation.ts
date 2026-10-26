@@ -2,6 +2,7 @@
 // transaction. A committed pending row is a durable capacity reservation, even
 // when a process dies before storing a command link. Time never releases it.
 import { writeSelfTradeAudit } from "./audit.js";
+import { entryAuthoritySnapshot } from "./entryAuthority.js";
 import { isDeepStrictEqual } from "node:util";
 import { and, eq, gte, inArray, isNull, or } from "drizzle-orm";
 import {
@@ -245,6 +246,21 @@ export async function reserveAgentEntry(
         tpPrice: input.takeProfit,
         idempotencyKey,
         status: "PENDING_TICKET",
+        managementState: {
+          entryAdmissionV1: entryAuthoritySnapshot({
+            agent,
+            settings,
+            ledger,
+            decision,
+            order: {
+              symbol: decision.symbol,
+              side: input.side,
+              volume: input.volume,
+              stopLoss: input.stopLoss,
+              takeProfit: input.takeProfit,
+            },
+          }),
+        },
       })
       .returning();
     if (!execution) throw new Error("ENTRY_RESERVATION_INSERT_FAILED");

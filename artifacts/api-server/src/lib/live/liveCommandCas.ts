@@ -32,15 +32,23 @@
 // TTL sweep racing an EA pickup; dispatch and confirm simply never got it.
 //
 // SAFETY:
-// - This module NEVER decides whether a dispatch is allowed. It runs strictly
-//   AFTER the 18-gate evaluator has returned PASS. It cannot weaken, reorder,
-//   or skip a gate — it can only refuse a transition that already raced.
+// - Dispatch claims run AFTER the existing gate evaluator has returned PASS.
+//   Agent entries additionally revalidate their admission authority under locks.
+//   This can only add a refusal; it cannot weaken, reorder or skip a live gate.
 // - Losing the CAS is fail-CLOSED: no order is mirrored.
 // - Read/writes are keyed by commandId; ownership (userId) is enforced by the
 //   caller's `loadOwned()` before any of this runs.
 
 import { and, eq } from "drizzle-orm";
 import { db, arxLiveCommandsTable, type ArxLiveCommand } from "@workspace/db";
+import {
+  authorityRequestForCommand,
+  assertUnchangedAuthorityCommand,
+  isAgentEntryCommand,
+  withEntryAuthority,
+  AgentEntryAuthorityError,
+} from "../selfTrade/entryAuthority.js";
+import { writeSelfTradeAudit } from "../selfTrade/audit.js";
 
 /**
  * Typed refusal — a concurrent dispatcher already moved this command out of
@@ -69,13 +77,32 @@ type LiveCommandPatch = Partial<typeof arxLiveCommandsTable.$inferInsert>;
 export async function claimLiveCommandForDispatch(
   commandId: string,
   patch: LiveCommandPatch,
+  expected?: ArxLiveCommand,
+  database: typeof db = db,
+  clock?: () => Date,
 ): Promise<ArxLiveCommand | null> {
-  const rows = await db.update(arxLiveCommandsTable)
+  if (expected && expected.commandId !== commandId)
+    throw new AgentEntryAuthorityError("ENTRY_AUTHORITY_LINK_MISMATCH");
+  const observed =
+    expected ??
+    (
+      await database
+        .select()
+        .from(arxLiveCommandsTable)
+        .where(eq(arxLiveCommandsTable.commandId, commandId))
+        .limit(1)
+    )[0];
+  if (observed && isAgentEntryCommand(observed))
+    return claimAgentCommand(observed, "LIVE_APPROVED", patch, database, clock);
+  const rows = await database
+    .update(arxLiveCommandsTable)
     .set(patch)
-    .where(and(
-      eq(arxLiveCommandsTable.commandId, commandId),
-      eq(arxLiveCommandsTable.status, "LIVE_APPROVED"),
-    ))
+    .where(
+      and(
+        eq(arxLiveCommandsTable.commandId, commandId),
+        eq(arxLiveCommandsTable.status, "LIVE_APPROVED"),
+      ),
+    )
     .returning();
   return rows[0] ?? null;
 }
@@ -89,13 +116,100 @@ export async function claimLiveCommandForDispatch(
 export async function claimLiveCommandForConfirm(
   commandId: string,
   patch: LiveCommandPatch,
+  expected?: ArxLiveCommand,
+  database: typeof db = db,
+  clock?: () => Date,
 ): Promise<ArxLiveCommand | null> {
-  const rows = await db.update(arxLiveCommandsTable)
+  if (expected && expected.commandId !== commandId)
+    throw new AgentEntryAuthorityError("ENTRY_AUTHORITY_LINK_MISMATCH");
+  const observed =
+    expected ??
+    (
+      await database
+        .select()
+        .from(arxLiveCommandsTable)
+        .where(eq(arxLiveCommandsTable.commandId, commandId))
+        .limit(1)
+    )[0];
+  if (observed && isAgentEntryCommand(observed))
+    return claimAgentCommand(
+      observed,
+      "LIVE_CONFIRMATION_REQUIRED",
+      patch,
+      database,
+      clock,
+    );
+  const rows = await database
+    .update(arxLiveCommandsTable)
     .set(patch)
-    .where(and(
-      eq(arxLiveCommandsTable.commandId, commandId),
-      eq(arxLiveCommandsTable.status, "LIVE_CONFIRMATION_REQUIRED"),
-    ))
+    .where(
+      and(
+        eq(arxLiveCommandsTable.commandId, commandId),
+        eq(arxLiveCommandsTable.status, "LIVE_CONFIRMATION_REQUIRED"),
+      ),
+    )
     .returning();
   return rows[0] ?? null;
+}
+
+async function claimAgentCommand(
+  expected: ArxLiveCommand,
+  requiredStatus: string,
+  patch: LiveCommandPatch,
+  database: typeof db,
+  clock?: () => Date,
+): Promise<ArxLiveCommand | null> {
+  return withEntryAuthority(
+    authorityRequestForCommand(expected),
+    async (tx, execution, envelope) => {
+      const [current] = await tx
+        .select()
+        .from(arxLiveCommandsTable)
+        .where(eq(arxLiveCommandsTable.commandId, expected.commandId))
+        .for("update");
+      if (!current || current.status !== requiredStatus) return null;
+      assertUnchangedAuthorityCommand(expected, current, execution, envelope);
+      const now = clock?.() ?? new Date();
+      if (
+        requiredStatus === "LIVE_APPROVED" &&
+        patch.expiresAt != null &&
+        patch.expiresAt <= now
+      )
+        throw new AgentEntryAuthorityError("ENTRY_COMMAND_EXPIRED");
+      // This committed CAS is the authority linearization point. A later pause
+      // cannot retrospectively declare an already handed-off command unsent.
+      const [claimed] = await tx
+        .update(arxLiveCommandsTable)
+        .set(patch)
+        .where(
+          and(
+            eq(arxLiveCommandsTable.commandId, expected.commandId),
+            eq(arxLiveCommandsTable.status, requiredStatus),
+          ),
+        )
+        .returning();
+      if (claimed)
+        await writeSelfTradeAudit(tx, {
+          agentId: execution.agentId,
+          actorUserId: expected.userId,
+          eventType:
+            requiredStatus === "LIVE_APPROVED"
+              ? "ENTRY_AUTHORITY_DISPATCH_CLAIMED"
+              : "ENTRY_AUTHORITY_CONFIRMED",
+          afterState: {
+            executionId: execution.id,
+            commandId: expected.commandId,
+            admissionHash: envelope.snapshotHash,
+            at: now.toISOString(),
+          },
+          reason:
+            requiredStatus === "LIVE_APPROVED"
+              ? "Authority revalidated and dispatch claimed atomically; later changes cannot declare this request unsent."
+              : "Authority revalidated for confirmation; dispatch must validate again.",
+        });
+      return claimed ?? null;
+    },
+    database,
+    clock,
+  );
 }

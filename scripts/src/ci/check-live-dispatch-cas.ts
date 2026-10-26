@@ -69,7 +69,7 @@ export function checkLiveDispatchCas(): CheckResult {
   ];
   for (const { fn, status } of claims) {
     const body = new RegExp(
-      `export async function ${fn}[\\s\\S]{0,900}?\\.where\\(([\\s\\S]{0,400}?)\\)\\s*\\n?\\s*\\.returning\\(\\)`,
+      `export async function ${fn}[\\s\\S]{0,3000}?\\.where\\(([\\s\\S]{0,400}?)\\)\\s*\\n?\\s*\\.returning\\(\\)`,
     ).exec(cas);
     if (!body) {
       violations.push(
@@ -130,7 +130,7 @@ export function checkLiveDispatchCas(): CheckResult {
 
   // ── 5. The race-lost refusal returns before the EA mailbox mirror. ────────
   const casIdx = pipeline.indexOf("claimLiveCommandForDispatch(");
-  const raceLostIdx = pipeline.indexOf("reason: LIVE_DISPATCH_RACE_LOST");
+  const raceLostIdx = pipeline.indexOf("reason: LIVE_DISPATCH_RACE_LOST", casIdx);
   const mirrorIdx = pipeline.indexOf("enqueueBridgedMt5Command({");
   if (casIdx < 0 || raceLostIdx < 0 || mirrorIdx < 0) {
     violations.push(
@@ -153,6 +153,28 @@ export function checkLiveDispatchCas(): CheckResult {
       `the shared master stays attributed lots for an order this caller never sent.`,
     );
   }
+
+  // Losing gate evaluations must not erase a winning SENT/FILLED command or
+  // publish a false blocked event. The real PG counterpart races an integrity
+  // refusal against a successful final authority claim.
+  const dispatchBody = pipeline.slice(pipeline.indexOf("export async function dispatchLiveCommand("),
+    pipeline.indexOf("export async function", pipeline.indexOf("export async function dispatchLiveCommand(") + 30));
+  const refusals = [...dispatchBody.matchAll(/db\.update\(arxLiveCommandsTable\)\s*\.set\(\{\s*status:\s*"LIVE_BLOCKED"[\s\S]*?\.where\(([\s\S]*?)\)\s*\.returning\(\);([\s\S]{0,250})/g)];
+  if (refusals.length < 25) violations.push(`${PIPELINE}: expected all 25 dispatch refusal writes; re-point the guard if a gate moves.`);
+  for (const refusal of refusals) {
+    const predicate = refusal[1] ?? "";
+    if (!/eq\(arxLiveCommandsTable\.commandId, args\.commandId\)/.test(predicate) ||
+      !/eq\(arxLiveCommandsTable\.userId, args\.userId\)/.test(predicate) ||
+      !/eq\(arxLiveCommandsTable\.status, "LIVE_APPROVED"\)/.test(predicate)) {
+      violations.push(`${PIPELINE}: a dispatch refusal must match commandId, userId and still-LIVE_APPROVED.`);
+    }
+    // Final catch releases only its successfully blocked exposure before the
+    // same early return; ordinary gates must return immediately on zero rows.
+    const after = refusal[2] ?? "";
+    if (!after.includes("if (!blocked)") && !after.includes("if (blocked && reservationId"))
+      violations.push(`${PIPELINE}: a zero-row refusal must return as a lost claim before publishing a blocked event.`);
+  }
+  notes.push(`${refusals.length} dispatch refusal writes preserve already claimed commands`);
 
   // ── 6. meLive.ts dispatch sites are serialized per user. ──────────────────
   const meLiveRaw = read(ME_LIVE);

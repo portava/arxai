@@ -43,7 +43,7 @@ The tests exercise actual PostgreSQL row locks, audit rollback, client disconnec
 Still unresolved:
 
 - **Dispatch account pinning:** entry owner is checked here and #77 checks persisted dispatch account evidence, but the shared dispatcher can select/rebind a bridge later. Target-account/session pinning across every boundary still needs implementation and tests.
-- **Mutable facts after admission:** this reservation is an atomic admission point. It does not promise that all agent/account/market facts remain unchanged until a later human confirmation or broker dispatch. Shared dispatch gates remain authoritative; agent-specific final-boundary revalidation needs further work.
+- **Mutable facts after admission:** the follow-up [dispatch-authority change](SELF_TRADING_DISPATCH_AUTHORITY_2026_10_26.md) adds fresh agent/sizing authority checks at draft, confirmation and final claim. Account/session pinning and changing market/platform facts remain separate concerns; shared dispatch gates remain authoritative.
 - **Quantity-aware partial/external-close accounting:** unresolved partial fills, manual closes and missing close evidence remain held. A pending claim cannot be repaired solely by age; a scoped audited evidence-based repair workflow remains necessary.
 - **Portfolio/risk-budget semantics:** this reserves position count and daily attempt headroom, not cash margin or portfolio VaR. Existing shared risk gates still apply. Broker lot steps, current quote quality and strategy validation remain separate work.
 - **External validation:** no live/demo broker timing, account-switch, failover, partial-fill or profitability claim is established by these tests.
