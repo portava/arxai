@@ -34,6 +34,8 @@ Rapid EURUSD → GBPUSD → USDJPY → EURUSD selection started five fixture rea
 
 Validation: 333 scanner/page tests passed, nine optional live integration tests skipped; 87/87 architecture guards, dashboard typecheck and production build passed. The new regression suite is wired into root CI. Independent review checked the actual query observer, actor and universe boundaries, timestamps, failed reads, selected comparison and memoized render props. Existing saved-view/expiry/export browser acceptance is retained.
 
+The repeatable click acceptance now fails on a missing selection highlight, any same-universe blank transition, or p95 above the local 100 ms render-opportunity target. A final rerun passed at 31.9 ms desktop and 51.5 ms with 4× CPU slowdown. This is a test budget, not a production guarantee.
+
 ## Limits
 
 These changes are development work, unmerged and undeployed. They do not establish TradingView/MT5 parity, production latency, profitable signals or broker readiness. UI feedback and fresh analysis are separate timings: a click should acknowledge immediately while data can still be pending, unavailable or expired. The backend sharing change reduces duplicate work without extending freshness; provider/database deadlines and account/session binding have separate outstanding work documented in the other reports.
