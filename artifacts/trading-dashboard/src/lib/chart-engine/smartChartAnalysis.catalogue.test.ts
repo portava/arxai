@@ -17,7 +17,7 @@ describe("source-aware catalogue integration",()=>{
   expect(result.allFindings.some(f=>f.id.startsWith("rickshaw_man:"))).toBe(true);
   expect(result.findings.filter(f=>(f.family??f.id.split(":")[0])==="doji")).toHaveLength(1);
   expect(result.findings.every(f=>f.summaryEligible!==false)).toBe(true);
-  expect(result.catalogue).toMatchObject({definedVariants:50,geometryFamilies:14});
+  expect(result.catalogue).toMatchObject({definedVariants:62,geometryFamilies:16});
   expect(result.catalogue!.note).toContain("not independent confirmations");
  });
  it("never reuses another owner/source context or contradictory finality for catalogue observations",()=>{
@@ -73,4 +73,19 @@ describe("source-aware catalogue integration",()=>{
   expect(result.allFindings.some(f=>f.id.startsWith("bullish_abandoned_baby:"))).toBe(true);
   expect(result.findings.filter(f=>f.family==="stars")).toHaveLength(1);
  });
+ it("groups Tri-Star and Kicking length subtypes with their observed underlying geometry",()=>{
+  for(const [id,family,underlying] of [["bullish_tri_star","doji","doji"],["kicking_by_length","marubozu","bullish_kicking"]]){
+   const bars=CANDLE_FIXTURES.find(f=>f.id===id)!.bars,result=analyzeSmartChart(input(bars));
+   expect(result.allFindings.some(f=>f.id.startsWith(`${id}:`))).toBe(true);
+   expect(result.allFindings.some(f=>f.id.startsWith(`${underlying}:`))).toBe(true);
+   expect(result.findings.filter(f=>f.family===family).length).toBeLessThanOrEqual(1);
+  }
+ });
+ it("does not invent directional lifecycle confirmation from Kicking body-length classification",()=>{
+  const bars=CANDLE_FIXTURES.find(f=>f.id==="kicking_by_length")!.bars;
+  const finding=analyzeSmartChart(input(bars)).allFindings.find(f=>f.id.startsWith("kicking_by_length:"))!;
+  expect(finding.status).toBe("observed");expect(finding.confirmedAt).toBeUndefined();
+  expect(finding.explanation).toContain("not a forecast");
+ });
+
 });

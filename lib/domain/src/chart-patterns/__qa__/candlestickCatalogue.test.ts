@@ -8,8 +8,8 @@ const ids=(bars:readonly CatalogueCandle[])=>scan(bars).observations.map(o=>o.de
 const fixture=(id:string)=>CANDLE_FIXTURES.find(f=>f.id===id)!.bars.map(b=>({...b}));
 test("every advertised definition has a distinct named fixture; related variants remain grouped",()=>{
  assert.deepEqual([...CANDLE_DEFINITIONS.map(d=>d.id)].sort(),CANDLE_FIXTURES.map(f=>f.id).sort());
- assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.id)).size,50);
- assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,14);
+ assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.id)).size,62);
+ assert.equal(new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,16);
 });
 test("owner coverage preserves all 104 entries and never advertises a missing catalogue implementation",()=>{
  const coverage=JSON.parse(readFileSync(new URL("../../../../../docs/SMART_CHART_CANDLE_COVERAGE.json",import.meta.url),"utf8"));
@@ -17,7 +17,7 @@ test("owner coverage preserves all 104 entries and never advertises a missing ca
  const catalogue=coverage.entries.filter((r:{status:string})=>r.status==="IMPLEMENTED_EXPLICIT_ARX_VARIANT");
  assert.deepEqual(catalogue.map((r:{definitionId:string})=>r.definitionId).sort(),CANDLE_DEFINITIONS.map(d=>d.id).sort());
  const pending=coverage.entries.filter((r:{definitionId:unknown})=>r.definitionId===null);
- assert.equal(pending.length,51);
+ assert.equal(pending.length,39);
  assert.ok(pending.every((r:{status:string})=>r.status.startsWith("PENDING_")));
 });
 for(const f of CANDLE_FIXTURES){
@@ -200,4 +200,57 @@ test("every new multi-candle definition refuses missing and future final observa
 test("public definition metadata cannot be mutated by callers",()=>{
  assert.ok(Object.isFrozen(CANDLE_DEFINITIONS));
  for(const d of CANDLE_DEFINITIONS){assert.ok(Object.isFrozen(d));assert.ok(Object.isFrozen(d.sources));}
+});
+test("v3 trend-based names do not infer context from their own formation",()=>{
+ for(const f of CANDLE_FIXTURES.slice(50).filter(f=>f.id!=="kicking_by_length")){
+  const bars=f.bars.map(b=>({...b}));for(let i=0;i<12;i++)bars[i]={...bars[i]!,open:101,high:103,low:100,close:102};
+  assert.ok(!ids(bars).includes(f.id),f.id);
+ }
+});
+test("Matching Low compares closes rather than lows and does not invent a long-body requirement",()=>{
+ const matching=fixture("matching_low");assert.notEqual(matching.at(-2)!.low,matching.at(-1)!.low);assert.ok(ids(matching).includes("matching_low"));
+ const lows=fixture("matching_low");Object.assign(lows.at(-1)!,{low:lows.at(-2)!.low,close:99.5});assert.ok(!ids(lows).includes("matching_low"));
+ const short=fixture("matching_low");Object.assign(short.at(-2)!,{open:99.5,high:99.7,low:98.5,close:99});Object.assign(short.at(-1)!,{open:99.4,high:99.6,low:98,close:99.05});assert.ok(ids(short).includes("matching_low"));
+ const colour=fixture("matching_low");Object.assign(colour.at(-1)!,{open:98.9,close:99.05});assert.ok(!ids(colour).includes("matching_low"));
+});
+test("Homing Pigeon requires same down colour, strict containment and its causal short-body baseline",()=>{
+ const colour=fixture("homing_pigeon");Object.assign(colour.at(-1)!,{open:101,close:102});assert.ok(!ids(colour).includes("homing_pigeon"));
+ const edge=fixture("homing_pigeon");edge.at(-1)!.close=edge.at(-2)!.close;edge.at(-1)!.low=98.5;assert.ok(!ids(edge).includes("homing_pigeon"));
+ const long=fixture("homing_pigeon");Object.assign(long.at(-1)!,{open:102,close:100.4,low:100.2});assert.ok(!ids(long).includes("homing_pigeon"),"inside half-body is not sufficient if not short versus its own prior baseline");
+});
+test("On-Neck, In-Neck and Thrusting use distinct reference prices and penetration boundaries",()=>{
+ for(const id of ["on_neck","in_neck","thrusting"]){
+  const result=ids(fixture(id));assert.ok(result.includes(id));assert.ok(["on_neck","in_neck","thrusting"].filter(x=>x!==id).every(x=>!result.includes(x)));
+  const noGap=fixture(id);noGap.at(-1)!.open=noGap.at(-2)!.low;assert.ok(!ids(noGap).includes(id));
+ }
+ const edge=fixture("in_neck");edge.at(-1)!.close=99.125;
+ assert.ok(ids(edge).includes("in_neck"));assert.ok(!ids(edge).includes("thrusting"));
+ const midpoint=fixture("thrusting");midpoint.at(-1)!.close=101;midpoint.at(-1)!.high=101.3;
+ assert.ok(ids(midpoint).includes("thrusting"));assert.ok(!ids(midpoint).includes("piercing_line"));
+ midpoint.at(-1)!.close=101.01;assert.ok(!ids(midpoint).includes("thrusting"));assert.ok(ids(midpoint).includes("piercing_line"));
+});
+test("Separating Lines require near-equal opens and a long second body with a small opening shadow",()=>{
+ const open=fixture("bullish_separating_lines");open.at(-1)!.open+=.5;assert.ok(!ids(open).includes("bullish_separating_lines"));
+ const wick=fixture("bearish_separating_lines");wick.at(-1)!.high+=1;assert.ok(!ids(wick).includes("bearish_separating_lines"));
+ const short=fixture("bullish_separating_lines");Object.assign(short.at(-1)!,{close:103.4,high:103.5});assert.ok(!ids(short).includes("bullish_separating_lines"));
+});
+test("Tri-Star requires all three Doji, a middle body gap and movement from the middle extreme",()=>{
+ const notDoji=fixture("bullish_tri_star");notDoji.at(-3)!.close=102.3;assert.ok(!ids(notDoji).includes("bullish_tri_star"));
+ const noGap=fixture("bullish_tri_star");Object.assign(noGap.at(-2)!,{open:102,close:102.01,high:102.5,low:101.5});assert.ok(!ids(noGap).includes("bullish_tri_star"));
+ const notRecovered=fixture("bullish_tri_star");Object.assign(notRecovered.at(-1)!,{open:101,close:101.01,high:101.5,low:100.5});assert.ok(!ids(notRecovered).includes("bullish_tri_star"));
+ const overlap=fixture("bullish_tri_star");Object.assign(overlap.at(-1)!,{open:101.005,close:101.008,high:101.5,low:100.5});assert.ok(ids(overlap).includes("bullish_tri_star"),"third body need not gap above the middle body");
+});
+test("Tasuki retains a strict unfilled body gap, an interior open and similar last-two body lengths",()=>{
+ const filled=fixture("upside_tasuki_gap");filled.at(-1)!.close=104;filled.at(-1)!.low=103.8;assert.ok(!ids(filled).includes("upside_tasuki_gap"));
+ const open=fixture("upside_tasuki_gap");open.at(-1)!.open=open.at(-2)!.open;assert.ok(!ids(open).includes("upside_tasuki_gap"));
+ const unequal=fixture("upside_tasuki_gap");unequal.at(-1)!.close=104.1;unequal.at(-1)!.low=103.8;assert.ok(!ids(unequal).includes("upside_tasuki_gap"));
+ const freeFirst=fixture("upside_tasuki_gap");Object.assign(freeFirst.at(-3)!,{open:104,close:103});freeFirst.at(-2)!.low=103.8;
+ assert.ok(ids(freeFirst).includes("upside_tasuki_gap"),"first colour and whole-shadow gaps are not required");
+});
+test("Kicking by Length describes the larger body, never silently the final body or a tied pair",()=>{
+ const largerSecond=fixture("kicking_by_length"),second=scan(largerSecond).observations.find(o=>o.definition.id==="kicking_by_length")!;assert.match(second.explanation,/longer body is up/);assert.equal(second.priorTrend,"none");
+ const largerFirst=fixture("kicking_by_length");Object.assign(largerFirst.at(-2)!,{open:103,high:103,low:97,close:97});
+ const first=scan(largerFirst).observations.find(o=>o.definition.id==="kicking_by_length")!;assert.match(first.explanation,/longer body is down/);assert.ok(ids(largerFirst).includes("bullish_kicking"));
+ assert.ok(!ids(fixture("bullish_kicking")).includes("kicking_by_length"),"equal body lengths have no longer colour");
+ const noGap=fixture("kicking_by_length");Object.assign(noGap.at(-1)!,{open:103,low:103,high:108,close:108});assert.ok(!ids(noGap).includes("kicking_by_length"));
 });
