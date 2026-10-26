@@ -123,13 +123,13 @@
     "test:trade-engine-staged": "node --import tsx --test --test-force-exit src/lib/tradeEngine/__qa__/stagedContract.test.ts",
     "test:paper-book": "node --import tsx --test --test-force-exit src/lib/tradeEngine/__qa__/paperBook.test.ts",
     "test:my-trades-demo-open": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/tradeAction/__qa__/myTradesDemoOpen.test.ts",
-    "test:simulated-open":"node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/tradeEngine/__qa__/simulatedOpen.test.ts",
+    "test:simulated-open": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/tradeEngine/__qa__/simulatedOpen.test.ts",
     "test:execute-trade-retired": "node --import tsx --test --test-force-exit src/routes/__qa__/executeTradeRetired.test.ts",
     "test:position-guardian-reconcile": "node --import tsx --test --test-force-exit src/lib/positionGuardian/__qa__/reconcile.test.ts",
     "test:oms-governance": "node --import tsx --test --test-force-exit src/lib/__qa__/omsGovernance.test.ts",
     "test:snapshot-ownership": "node --import tsx --test --test-force-exit src/lib/performanceCC/__qa__/snapshotOwnership.test.ts",
     "test:platform-controls-route": "node --import tsx --test --test-force-exit src/routes/__qa__/platformControlsRoute.test.ts",
-    "test:account-ownership-route":"node --import tsx --test --test-force-exit src/routes/__qa__/accountOwnershipRoute.test.ts",
+    "test:account-ownership-route": "node --import tsx --test --test-force-exit src/routes/__qa__/accountOwnershipRoute.test.ts",
     "test:risk-governor-rules": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/preTradeRules.test.ts",
     "test:risk-governor-broker-heartbeat": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/brokerHeartbeat.test.ts",
     "test:risk-governor-per-user-limits": "node --import tsx --test --test-force-exit src/lib/riskGovernor/__qa__/perUserLimits.test.ts",
@@ -264,7 +264,8 @@
     "test:quote-observation-freshness": "node --import tsx --test --test-force-exit src/lib/assistant/__qa__/quoteObservationFreshness.test.ts",
     "test:mt5-bridge-package": "node --import tsx --test --test-force-exit src/lib/mt5/__qa__/bridgePackage.test.ts",
     "test:release-readiness": "node --import tsx --experimental-test-module-mocks --test --test-force-exit src/lib/email/__qa__/resend.test.ts src/lib/auth/__qa__/publicOrigin.test.ts src/lib/startup/__qa__/dependencyReadiness.test.ts src/routes/__qa__/healthReadiness.test.ts src/routes/__qa__/forgotPasswordPrivacy.test.ts",
-    "check:email-readiness": "node --import tsx src/scripts/emailReadinessCheck.ts"
+    "check:email-readiness": "node --import tsx src/scripts/emailReadinessCheck.ts",
+    "test:mt5-demo-ea": "python3 ../../mt5-bridge/tests/run_demo_core.py"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

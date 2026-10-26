@@ -1,7 +1,7 @@
-# ARX MT5 DEMO connection setup — v1.29
+# ARX MT5 DEMO connection setup — v1.31
 
 This kit is for **read-only connection checks on a DEMO account**. It contains
-`ReplitMT5BridgeEA_v129.mq5`, the credential-free `ARX_DEMO_READ_ONLY.set` profile,
+`ReplitMT5BridgeEA_v131.mq5`, its `ArxDemoExecution.mqh` companion, the credential-free `ARX_DEMO_READ_ONLY.set` profile,
 a WebRequest diagnostic script, and the three companion guides.
 
 The EA has execution code. Its local trading arms default off; the supplied
@@ -10,12 +10,18 @@ are historical and must not be used as a safety guarantee.
 
 ## Current boundary
 
-Do not arm this kit for the seven-step broker validation. Its `CLOSE_POSITION`
-handler closes the whole position even when a smaller volume is requested. The
-validator refuses known incompatible versions before opening a position. The
-Universal Agent v1.50–1.54 uses a different command mailbox and is not a drop-in
-replacement for this DEMO path. Operator-managed v1.55 is not source-controlled
-here and is not certified by this package.
+Keep this kit read-only until separate order approval. v1.31 fixes the legacy
+partial-close defect, decodes the governed queue fields, checks actual broker
+results and persists command attempts before sending. Execution is limited to
+**DEMO hedging accounts**. Netting/exchange accounts are refused before any order
+request because an opposite netting deal could reverse a changed position.
+
+The validator still blocks legacy v1.26–1.29 and the incompatible generic-mailbox
+families. v1.31 has offline tests; the seven broker scenarios remain unverified.
+Do not erase `ARX_DEMO_131` journal files to retry commands. An uncertain attempt
+requires broker reconciliation; it must not be automatically resubmitted. Use
+one terminal and one EA for this supervised connection. Local journal protection
+does not coordinate copies running on different machines.
 
 This download does not establish a compiled EA, a terminal connection, fresh
 quotes/candles, or a passed broker lifecycle. Each needs observed evidence.
@@ -38,7 +44,7 @@ quotes/candles, or a passed broker lifecycle. Each needs observed evidence.
 ## Install and verify
 
 1. MT5 → File → Open Data Folder → `MQL5/Experts`. Copy
-   `ReplitMT5BridgeEA_v129.mq5` there.
+   `ReplitMT5BridgeEA_v131.mq5` **and** `ArxDemoExecution.mqh` there, side by side.
 2. Open this exact file in MetaEditor and compile. Record the actual compiler
    result; resolve errors before continuing. This kit contains source, not a
    precompiled or certified `.ex5`.
