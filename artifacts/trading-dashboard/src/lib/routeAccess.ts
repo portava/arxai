@@ -85,7 +85,7 @@ const NORMAL_USER_EXACT: ReadonlySet<string> = new Set<string>([
   "/performance-scorecard",
   "/analytics",
   "/trade-logs",
-  "/shadow-journal",
+  "/journal", // personal entries; shadow journal remains admin-only
   "/scalp-journal",
   // ── Account & Control (visible nav group) ──
   "/my-account",
