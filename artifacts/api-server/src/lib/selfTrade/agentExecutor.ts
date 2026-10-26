@@ -15,9 +15,9 @@
 // - dispatch ≠ fill. A DISPATCHED row means the command reached the bridge. A
 //   row becomes FILLED ONLY when a real brokerTicket + LIVE_FILLED arrives via
 //   reconcile. Fills are never fabricated.
-// - Agent-layer exactly-once: the PENDING_TICKET row is inserted FIRST with a
-//   deterministic idempotencyKey (`decision:<id>`); the partial-unique index
-//   over active states turns a duplicate into SKIPPED_DUPLICATE.
+// - Atomic agent admission: PENDING_TICKET reserves concurrency/daily capacity
+//   before submission. Agent-row locking serializes distinct decisions; a
+//   decision key stays consumed after terminal outcomes. Unknowns retain slots.
 // - TOCTOU: the kill switch is re-checked immediately before dispatch.
 
 import { eq } from "drizzle-orm";
@@ -45,6 +45,7 @@ import {
   resolveQuoteToAccountFx,
 } from "../mt5/contractSize.js";
 import { getAccountCurrency } from "../live/accountCurrency.js";
+import { reserveAgentEntry } from "./entryReservation.js";
 import { evaluateAgentExecution } from "./executionGate.js";
 import { assertAgentNotKilled } from "./killSwitchGate.js";
 import { writeSelfTradeAudit } from "./audit.js";
@@ -333,37 +334,21 @@ export async function executeAgentDecision(
     return { status: "BLOCKED", blockReason, action: "BLOCK" };
   }
 
-  // Insert the PENDING_TICKET row FIRST (agent-layer exactly-once). A duplicate
-  // active row for the same (agentId, idempotencyKey) is rejected by the partial
-  // unique index → SKIPPED_DUPLICATE.
-  let execRow: SelfTradeAgentExecution | undefined;
+  // Atomically reserve per-agent concurrency and daily headroom using fresh
+  // identity/settings/funding/decision rows, before the pipeline can see it.
+  let execRow: SelfTradeAgentExecution;
   try {
-    const [row] = await db
-      .insert(selfTradeAgentExecutionsTable)
-      .values({
-        agentId: agent.id,
-        agentKey: agent.agentKey,
-        decisionId: decision.id,
-        cycleId: decision.cycleId,
-        symbol: decision.symbol,
-        side,
-        autonomyLevel: agent.autonomyLevel,
-        mode: agent.mode,
-        executingUserId,
-        intendedVolume: lotResult.lot,
-        slPrice: thesis.stopLoss ?? null,
-        tpPrice: thesis.takeProfits[0]?.from ?? null,
-        idempotencyKey: `decision:${decision.id}`,
-        status: "PENDING_TICKET",
-      })
-      .returning();
-    execRow = row;
+    const reservation = await reserveAgentEntry({ agent, settings, ledger: input.ledger,
+      decision, executingUserId, actorUserId, actorRole, side, volume: lotResult.lot,
+      stopLoss: thesis.stopLoss ?? null, takeProfit: thesis.takeProfits[0]?.from ?? null });
+    if (!reservation.ok) return {
+      status: reservation.duplicate ? "SKIPPED_DUPLICATE" : "BLOCKED",
+      blockReason: reservation.reason, action: verdict.action,
+    };
+    execRow = reservation.execution;
   } catch (err) {
-    logger.warn({ err, decisionId: decision.id }, "self-trade: duplicate execution suppressed");
-    return { status: "SKIPPED_DUPLICATE", action: verdict.action };
-  }
-  if (!execRow) {
-    return { status: "SKIPPED_DUPLICATE", action: verdict.action };
+    logger.error({ err, decisionId: decision.id }, "self-trade: entry reservation unavailable");
+    return { status: "BLOCKED", blockReason: "ENTRY_RESERVATION_UNAVAILABLE", action: "BLOCK" };
   }
 
   // TOCTOU: re-check the kill switch immediately before dispatch.
@@ -435,7 +420,12 @@ export async function executeAgentDecision(
     const blockReason = res.primaryReason ?? res.error;
     await db
       .update(selfTradeAgentExecutionsTable)
-      .set({ status: "BLOCKED", blockReason, updatedAt: new Date() })
+      .set({
+        // A failure after draft creation can still be unknown at the broker.
+        // Keep capacity until reconciliation proves non-execution.
+        status: res.commandId ? "PENDING_TICKET" : "BLOCKED",
+        commandId: res.commandId ?? null, blockReason, updatedAt: new Date(),
+      })
       .where(eq(selfTradeAgentExecutionsTable.id, execRow.id));
     return { status: "BLOCKED", executionId: execRow.id, blockReason, action: side };
   }

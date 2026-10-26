@@ -160,6 +160,10 @@ export async function configureAgent(
   });
   if (!hs.ok) return { ok: false, error: hs.reasonCode, message: hs.userMessage };
   return db.transaction(async (tx) => {
+    // Common order with admission/funding: agent before settings/ledger.
+    const [lockedAgent] = await tx.select({ id: selfTradeAgentsTable.id }).from(selfTradeAgentsTable)
+      .where(eq(selfTradeAgentsTable.id, agentId)).for("update");
+    if (!lockedAgent) return { ok: false, error: "AGENT_NOT_FOUND", message: "Agent not found." };
     const before = await tx
       .select()
       .from(selfTradeAgentSettingsTable)
@@ -207,7 +211,7 @@ export async function setAutonomyLevel(
       .select()
       .from(selfTradeAgentsTable)
       .where(eq(selfTradeAgentsTable.id, agentId))
-      .limit(1);
+      .limit(1).for("update");
     if (!before[0]) return { ok: false, error: "AGENT_NOT_FOUND", message: "Agent not found." };
 
     await tx
@@ -269,7 +273,7 @@ export async function setAgentStatus(
       .select()
       .from(selfTradeAgentsTable)
       .where(eq(selfTradeAgentsTable.id, agentId))
-      .limit(1);
+      .limit(1).for("update");
     const agent = before[0];
     if (!agent) return { ok: false, error: "AGENT_NOT_FOUND", message: "Agent not found." };
 
