@@ -59,6 +59,26 @@ describe("chart refresh and inspection", () => {
     adapter.setCandles([bar(100),bar(200),bar(300,1.17)]);
     expect(mocks.series.update).toHaveBeenLastCalledWith(bar(300,1.17));
   });
+  it.each([
+    ["mt5_broker", "deriv_public"], ["deriv_public", "mt5_broker"],
+    ["deriv", "deriv_public"], ["deriv_public", "deriv"],
+    ["mt5_broker", null], ["deriv_public", undefined],
+  ])("drops a retained tip when history source changes from %s to %s", (from, to) => {
+    adapter.setFeedState({livePriceAffordance:true,source:from});
+    adapter.setCandles([bar(100),bar(200)]);
+    adapter.updateActiveCandle(bar(300,1.19));
+    // An ordinary poll on the original source still preserves the newer tip.
+    adapter.setFeedState({livePriceAffordance:true,source:from});
+    adapter.setCandles([bar(100),bar(200)]);
+    expect(mocks.series.setData).toHaveBeenCalledTimes(1);
+    adapter.setFeedState({livePriceAffordance:true,source:to});
+    adapter.setCandles([bar(100),bar(200)]);
+    expect(mocks.series.setData).toHaveBeenLastCalledWith([bar(100),bar(200)]);
+    expect(mocks.series.setData).toHaveBeenCalledTimes(2);
+    // The replacement source can recover at an earlier valid forming interval.
+    adapter.updateActiveCandle(bar(200,1.16));
+    expect(mocks.series.update).toHaveBeenLastCalledWith(bar(200,1.16));
+  });
   it("updates the Last line on a streamed price and removes it when stale", () => {
     adapter.setFeedState({livePriceAffordance:true});
     adapter.setCandles([bar(100)]);

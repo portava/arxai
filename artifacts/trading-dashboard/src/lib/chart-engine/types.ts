@@ -35,11 +35,9 @@ export interface ChartEngineCandle {
 }
 
 /**
- * Feed truth the engine needs to render honestly. Today this is just the
- * live-price affordance verdict (whether the last-value label and dashed "Last"
- * price line may be shown). Richer feed/source truth stays in the React shell as
- * badges/banners — the engine only needs to know whether it may imply a live
- * current price.
+ * Feed truth the engine needs to render honestly: the live-price affordance
+ * verdict and the history source that owns any retained streamed tip. Richer
+ * feed truth stays in the React shell as badges/banners.
  */
 export interface ChartEngineFeedState {
   /**
@@ -48,6 +46,8 @@ export interface ChartEngineFeedState {
    * composite feed must never look more live than it is (shared honesty rule).
    */
   livePriceAffordance: boolean;
+  /** History provider. A change invalidates the prior provider's retained tip. */
+  source?: string | null;
 }
 
 export interface ChartEngineInitOptions {

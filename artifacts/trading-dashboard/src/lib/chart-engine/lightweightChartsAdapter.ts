@@ -358,6 +358,10 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   setFeedState(state: ChartEngineFeedState): void {
+    // A lagging history poll may retain a newer streamed tip only while both
+    // belong to the same source. Clear it before the shell reconciles candles;
+    // rejecting new mismatched SSE frames cannot remove an already accepted tip.
+    if (this.feedState.source !== state.source) this.streamTip = null;
     this.feedState = state;
     // Re-apply affordance immediately if data is already on screen so a feed
     // verdict flip (live→stale) takes effect without waiting for new candles.

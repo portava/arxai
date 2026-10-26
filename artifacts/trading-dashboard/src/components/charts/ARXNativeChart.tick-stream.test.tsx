@@ -448,7 +448,7 @@ describe("ARXNativeChart live tick-stream wiring (Task #508)", () => {
 
     // The closed-feed grade still governs the last-price label / dashed "Last"
     // line — only the tick gate moved off it.
-    expect(adapterSpies.setFeedState).toHaveBeenCalledWith({ livePriceAffordance: false });
+    expect(adapterSpies.setFeedState).toHaveBeenCalledWith({ livePriceAffordance: false, source: "mt5_broker" });
   });
 
   it("ignores malformed / wrong-type events without ticking the bar", () => {
@@ -642,6 +642,7 @@ describe("source-bound chart ticks", () => {
     currentCandleResponse = makeResponse({ ...liveFeedStatus(), source: "deriv_public" } as ChartFeedStatus);
     view.rerender(<ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus={false} overlays={NO_OVERLAYS} />);
     expect(oldStream.closed).toBe(true);
+    expect(adapterSpies.setFeedState).toHaveBeenLastCalledWith(expect.objectContaining({ source: "deriv_public" }));
     expect(openedStreams[1]!.url).toContain("source=deriv_public");
     act(() => { oldStream.emit(event()); openedStreams[1]!.emit(event()); });
     expect(adapterSpies.updateActiveCandle).not.toHaveBeenCalled();

@@ -590,6 +590,8 @@ export function ARXNativeChart({
       : null;
   }, [mergedEngineCandles]);
 
+  const historySource = data?.feedStatus?.source ?? null;
+
   // ── Push data into the existing series on every poll WITHOUT recreating the
   //    chart. The adapter reconciles the current visible range, so the forming last
   //    bar updates and new bars append while the user's zoom/pan is preserved.
@@ -604,7 +606,7 @@ export function ARXNativeChart({
     // suppressed unless the feed is genuinely LIVE (Task #351, shared honesty
     // rule). chartEpoch re-runs this after a rebuild so the fresh engine is
     // populated immediately rather than waiting for the next poll.
-    adapter.setFeedState({ livePriceAffordance: isLivePriceAffordance });
+    adapter.setFeedState({ livePriceAffordance: isLivePriceAffordance, source: historySource });
     adapter.setCandles(mergedEngineCandles);
     // Keep the newest-bar watermark in sync with the authoritative closed
     // window. When the poll reconciles a new closed bar it advances here, so the
@@ -612,7 +614,7 @@ export function ARXNativeChart({
     // closed bar cleanly supersedes any prior synthesized tip with no orphan dup.
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
-  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch]);
+  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource]);
 
   const tickSource = chartTickSource(data?.feedStatus?.source);
 
