@@ -247,7 +247,7 @@ async function buildChartFeed(
   // WS was not independently ticking that exact symbol. A genuinely
   // stale/historical feed is unaffected — trailing-interval staleness below
   // still demotes it honestly and keeps it entry-blocked.
-  const derivBacked = synthetic && (source === "deriv" || (source?.startsWith("deriv") ?? false));
+  const derivBacked = synthetic && (source?.startsWith("deriv") ?? false);
   const derivSymbolStatus = derivBacked ? getDerivSymbolFeedStatus(symbol) : null;
   const hasLiveTick = derivSymbolStatus?.hasRecentTick ?? false;
 
@@ -381,7 +381,7 @@ async function buildChartFeed(
 function friendlyFeedSource(source: string | null): string {
   if (!source) return "no source";
   if (source === "mt5_broker") return "your broker's MetaTrader 5 feed";
-  if (source === "deriv") return "Deriv";
+  if (source === "deriv" || source === "deriv_public") return "Deriv";
   if (source.startsWith("assistant_real:")) {
     const sub = source.slice("assistant_real:".length).trim();
     return sub.length > 0 ? sub : "market-data provider";
