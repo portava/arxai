@@ -10,6 +10,10 @@ let cacheReads = 0;
 let routeReads = 0;
 let afterCacheRead: (() => void) | null = null;
 let pageBars = [bar(now - 10 * 60_000), bar(now - 9 * 60_000)];
+let hasOlderInCache = true;
+let fetchProducer: string | null | undefined = undefined;
+let permitProviderFetch = false;
+const writtenSources: string[] = [];
 let routed: MarketCandlesResult;
 
 function resetRouted() {
@@ -27,17 +31,27 @@ mock.module("../marketDataRouter.js", { namedExports: {
 } });
 mock.module("../providers/derivFeedClient.js", { namedExports: { derivMarketDataSource: () => sourceMode } });
 mock.module("../providers/derivProvider.js", { namedExports: {
-  getDerivCandles: async () => { throw new Error("Unexpected provider request in cached fixture"); },
+  getDerivCandles: async () => {
+    assert.equal(permitProviderFetch, true, "Unexpected provider request in cached fixture");
+    sourceMode = "deriv";
+    await Promise.resolve();
+    sourceMode = "deriv_public"; // Same final mode must not attest the response.
+    return { ok: true, reason: null, source: fetchProducer,
+      candles: [bar(now - 10 * 60_000), bar(now - 9 * 60_000)].map(c => ({ ...c, epoch: Date.parse(c.time) / 1000 })) };
+  },
 } });
 mock.module("../candleCache.js", { namedExports: {
   readCachedCandles: async () => {
     cacheReads++; afterCacheRead?.();
     return { candles: pageBars, count: pageBars.length, oldest: pageBars[0]?.time ?? null,
-      newest: pageBars.at(-1)?.time ?? null, hasOlderInCache: true };
+      newest: pageBars.at(-1)?.time ?? null, hasOlderInCache };
   },
   getCacheCoverage: async () => ({ oldest: pageBars[0]?.time ?? null, newest: pageBars.at(-1)?.time ?? null }),
   listCachedSources: async () => [],
-  upsertCandles: async () => { throw new Error("Unexpected write in explicit-source history fixture"); },
+  upsertCandles: async (_symbol: string, _tf: string, source: string, bars: typeof pageBars) => {
+    assert.equal(permitProviderFetch, true, "Unexpected write in cached fixture");
+    writtenSources.push(source); pageBars = bars; hasOlderInCache = true;
+  },
   isValidCacheOhlc: (bar: { open: number; high: number; low: number; close: number }) =>
     [bar.open, bar.high, bar.low, bar.close].every(n => Number.isFinite(n) && n > 0)
       && bar.high >= Math.max(bar.open, bar.close) && bar.low <= Math.min(bar.open, bar.close),
@@ -48,6 +62,7 @@ const request = () => ({ symbol: "V75", timeframe: "M1", source: "deriv_public",
   expectedSourceIdentity: scannerSourceIdentity(routed) });
 beforeEach(() => {
   sourceMode = "deriv_public"; cacheReads = 0; routeReads = 0; afterCacheRead = null;
+  hasOlderInCache = true; fetchProducer = undefined; permitProviderFetch = false; writtenSources.length = 0;
   pageBars = [bar(now - 10 * 60_000), bar(now - 9 * 60_000)]; resetRouted();
 });
 
@@ -122,6 +137,25 @@ test("bound history refuses an invalid identity or absent cursor without touchin
     const result = await getCandleHistory(input); assert.equal(result.ok, false);
   }
   assert.equal(cacheReads, 0); assert.equal(routeReads, 0);
+});
+
+for (const producer of ["deriv", null, undefined]) {
+  test(`a returned ${producer} producer never pollutes the public namespace during a mode ABA`, async () => {
+    pageBars = []; hasOlderInCache = false; permitProviderFetch = true; fetchProducer = producer;
+    const result = await getCandleHistory(request());
+    assert.equal(sourceMode, "deriv_public");
+    assert.equal(result.ok, false); assert.equal(result.candles.length, 0);
+    assert.equal(result.historyEvidence, null); assert.deepEqual(writtenSources, []);
+    assert.match(result.providerMessage!, /original Deriv transport/);
+  });
+}
+
+test("a captured public producer may backfill its own namespace despite an intervening mode flip", async () => {
+  pageBars = []; hasOlderInCache = false; permitProviderFetch = true; fetchProducer = "deriv_public";
+  const result = await getCandleHistory(request());
+  assert.equal(result.ok, true); assert.equal(result.candles.length, 2);
+  assert.equal(result.historyEvidence?.source, "deriv_public");
+  assert.deepEqual(writtenSources, ["deriv_public"]);
 });
 
 if (process.env.ARX_HISTORY_BENCHMARK === "1") {
