@@ -44,6 +44,8 @@ const {
   selfTradeLedgerEntriesTable: ledgerEntries,
   arxSymbolSpecsTable: specs,
   userSlotAllocationTable: allocations,
+  arxDispatchExposureReservationsTable: reservations,
+  resultSettlementJobsTable: settlementJobs,
 } = database;
 process.env.SESSION_SECRET = "synthetic-offline-management-signing-material";
 mock.method(globalThis, "fetch", async () => {
@@ -92,15 +94,10 @@ mock.module("../../joinRequests/notifyAdmins.js", {
 mock.module("../../notificationService.js", {
   namedExports: { createNotification: async () => undefined },
 });
-mock.module("../../concurrency/exposureReservation.js", {
-  namedExports: {
-    fulfillReservationByCommandId: async () => undefined,
-    releaseReservationByCommandId: async () => undefined,
-  },
-});
+let missionCloseCalls = 0;
 mock.module("../../missionExitManager.js", {
   namedExports: {
-    recordMissionTradeCloseByBrokerTicket: async () => undefined,
+    recordMissionTradeCloseByBrokerTicket: async () => { missionCloseCalls++; },
   },
 });
 const {
@@ -187,6 +184,8 @@ const tables = [
   allocations,
   agentLedger,
   ledgerEntries,
+  reservations,
+  settlementJobs,
 ];
 const dialect = new PgDialect();
 const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
@@ -201,6 +200,7 @@ function value(v: unknown): string {
 }
 before(async () => {
   for (const table of tables) {
+    if (table === settlementJobs) continue;
     const columns = Object.values(getTableColumns(table)).map(
       (c) =>
         `${quote(c.name)} ${c.getSQLType()}${c.notNull ? " NOT NULL" : ""}${c.default !== undefined ? ` DEFAULT ${value(c.default)}` : ""}${c.primary ? " PRIMARY KEY" : ""}`,
@@ -209,6 +209,7 @@ before(async () => {
       `CREATE TABLE ${quote(getTableName(table))} (${columns.join(",")})`,
     );
   }
+  await pool.query(readFileSync(new URL("../../../../../../lib/db/migrations/2026-10-26_result_settlement_outbox.sql", import.meta.url), "utf8"));
   // Intentionally allow two ledger rows with a reused ticket to exercise the
   // future composite-identity world as well as today's overwritten-row failure.
   // This fixture does NOT assert that the production user+ticket index is fixed.
@@ -225,6 +226,7 @@ after(async () => {
 const reference = { executionId: 1, positionRowId: 1, claimId: "claim-1" };
 async function resetFixture() {
   deliveries = 0;
+  missionCloseCalls = 0;
   await pool.query(
     `TRUNCATE ${tables.map((t) => quote(getTableName(t))).join(",")} RESTART IDENTITY`,
   );
@@ -1749,7 +1751,7 @@ it("pre-upgrade partial without an application marker holds the first new full r
   assert.equal(await reconcileGhostClosedPositions(9), 0);
   assert.equal((await ledgerRows())[0].closedAt, null);
 });
-for (const recovery of ["exact retry", "snapshot repair"] as const)
+for (const recovery of ["exact retry", "snapshot repair", "outbox worker"] as const)
   it(`manual position application and marker rollback together; ${recovery} applies once`, async () => {
     const input = await manualProgressFixture();
     await pool.query(
@@ -1759,7 +1761,7 @@ for (const recovery of ["exact retry", "snapshot repair"] as const)
       "CREATE TRIGGER qa_marker_fault BEFORE INSERT ON execution_events FOR EACH ROW EXECUTE FUNCTION qa_marker_fault()",
     );
     try {
-      await assert.rejects(recordLiveCommandResult(input));
+      assert.equal((await recordLiveCommandResult(input)).positionSettlement, "PENDING");
       assert.equal((await ledgerRows())[0].volume, 0.2);
       assert.equal(
         (
@@ -1775,9 +1777,13 @@ for (const recovery of ["exact retry", "snapshot repair"] as const)
       await pool.query("DROP FUNCTION qa_marker_fault()");
     }
     if (recovery === "exact retry") {
+      await pool.query("update result_settlement_jobs set due_at=clock_timestamp() where status='RETRY'");
       const reply = await recordLiveCommandResult(input);
       assert.equal(reply.receiptPersisted, true);
       assert.equal(reply.positionSettlement, "APPLIED");
+    } else if (recovery === "outbox worker") {
+      await pool.query("update result_settlement_jobs set due_at=clock_timestamp() where status='RETRY'");
+      await (await import("../../live/resultSettlementOutbox.js")).runResultSettlementPass();
     } else await reconcileGhostClosedPositions(9);
     assert.equal((await ledgerRows())[0].volume, 0.1);
     await recordLiveCommandResult(input);
@@ -1791,7 +1797,7 @@ for (const recovery of ["exact retry", "snapshot repair"] as const)
       1,
     );
   });
-for (const recovery of ["exact retry", "snapshot repair"] as const)
+for (const recovery of ["exact retry", "snapshot repair", "outbox worker"] as const)
   it(`bound post-commit consumer failure is repaired by ${recovery} without changing another account`, async () => {
     await otherAccountRow();
     const beforeOther = (await ledgerRows())[1];
@@ -1818,7 +1824,7 @@ for (const recovery of ["exact retry", "snapshot repair"] as const)
       "CREATE TRIGGER qa_held_fault BEFORE INSERT ON execution_events FOR EACH ROW EXECUTE FUNCTION qa_held_fault()",
     );
     try {
-      await assert.rejects(recordLiveCommandResult(input));
+      assert.equal((await recordLiveCommandResult(input)).positionSettlement, "PENDING");
       assert.equal((await ledgerRows())[0].closedAt, null);
       assert.equal(
         (await db.select().from(commands).where(eq(commands.id, sent.id)))[0]
@@ -1832,9 +1838,13 @@ for (const recovery of ["exact retry", "snapshot repair"] as const)
       await pool.query("DROP FUNCTION qa_held_fault()");
     }
     if (recovery === "exact retry") {
+      await pool.query("update result_settlement_jobs set due_at=clock_timestamp() where status='RETRY'");
       const reply = await recordLiveCommandResult(input);
       assert.equal(reply.receiptPersisted, true);
       assert.equal(reply.positionSettlement, "APPLIED");
+    } else if (recovery === "outbox worker") {
+      await pool.query("update result_settlement_jobs set due_at=clock_timestamp() where status='RETRY'");
+      await (await import("../../live/resultSettlementOutbox.js")).runResultSettlementPass();
     } else assert.equal(await reconcileGhostClosedPositions(9), 1);
     assert.ok((await ledgerRows())[0].closedAt);
     assert.deepEqual((await ledgerRows())[1], beforeOther);
@@ -2094,4 +2104,98 @@ it("snapshot repair never applies an old manual basis to a new row reusing the t
   const before=(await ledgerRows())[1];
   assert.equal(await reconcileGhostClosedPositions(9),0);
   assert.deepEqual((await ledgerRows())[1],before);
+});
+
+const settlementOutbox = await import("../../live/resultSettlementOutbox.js");
+async function deferReceiptConsumers(input: Parameters<typeof recordLiveCommandResult>[0]) {
+  await pool.query("CREATE FUNCTION qa_defer_claim() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='LEASED' THEN RAISE EXCEPTION 'qa crash before claim'; END IF; RETURN NEW; END $$");
+  await pool.query("CREATE TRIGGER qa_defer_claim BEFORE UPDATE ON result_settlement_jobs FOR EACH ROW EXECUTE FUNCTION qa_defer_claim()");
+  try { await assert.rejects(recordLiveCommandResult(input)); }
+  finally { await pool.query("DROP TRIGGER qa_defer_claim ON result_settlement_jobs; DROP FUNCTION qa_defer_claim()"); }
+}
+async function claimPositionJob() {
+  for(let i=0;i<3;i++) {
+    const job=await settlementOutbox.claimResultSettlement();
+    assert.ok(job);
+    if(job.consumer!=="EXPOSURE_RESERVATION") return job;
+    await settlementOutbox.runClaimedSettlement(job);
+  }
+  throw new Error("No position job");
+}
+it("position commit before worker finish is recovered once, with no Mission callback replay", async () => {
+  const input=await manualProgressFixture(0.1);
+  await deferReceiptConsumers(input);
+  const job=await claimPositionJob();
+  await pool.query("CREATE FUNCTION qa_finish_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='DONE' THEN RAISE EXCEPTION 'qa crash after application'; END IF; RETURN NEW; END $$");
+  await pool.query("CREATE TRIGGER qa_finish_fault BEFORE UPDATE ON result_settlement_jobs FOR EACH ROW EXECUTE FUNCTION qa_finish_fault()");
+  try {
+    const outcome=await settlementOutbox.runClaimedSettlement(job);
+    assert.equal(outcome.saved,false);
+    assert.ok((await ledgerRows())[0].closedAt);
+    assert.equal((await pool.query("select count(*) from execution_events where event_type='POSITION_RESULT_APPLIED'")).rows[0].count,"1");
+  } finally { await pool.query("DROP TRIGGER qa_finish_fault ON result_settlement_jobs; DROP FUNCTION qa_finish_fault()"); }
+  await pool.query("update result_settlement_jobs set due_at=clock_timestamp() where status='RETRY'");
+  await settlementOutbox.runResultSettlementPass();
+  assert.equal((await pool.query("select status from result_settlement_jobs where consumer='MANUAL_CLOSE_POSITION'")).rows[0].status,"DONE");
+  assert.equal(missionCloseCalls,0,"server recovery must not replay advisory callback");
+  assert.equal((await pool.query("select count(*) from execution_events where event_type='POSITION_RESULT_APPLIED'")).rows[0].count,"1");
+});
+for (const reusedTicket of [false,true]) it(`leased manual recovery holds snapshot revision changes (reused other-account ticket: ${reusedTicket})`, async () => {
+  if(reusedTicket) await otherAccountRow();
+  const beforeOther=(await ledgerRows())[1];
+  const input=await manualProgressFixture();
+  await deferReceiptConsumers(input);
+  const job=await claimPositionJob();
+  await db.update(positions).set({volume:0.16,lastSyncedAt:new Date()}).where(eq(positions.id,1));
+  const result=await settlementOutbox.runClaimedSettlement(job);
+  if(reusedTicket) assert.ok(["MANUAL_CLOSE_POSITION_REVISION_CHANGED","MANUAL_CLOSE_POSITION_BASIS_UNAVAILABLE"].includes(result.heldReason ?? ""),"legacy ticket-only selection may fail at exact row identity first; either must hold");
+  else assert.equal(result.heldReason,"MANUAL_CLOSE_POSITION_REVISION_CHANGED");
+  assert.equal((await ledgerRows())[0].volume,0.16);
+  assert.deepEqual((await ledgerRows())[1],beforeOther);
+  await settlementOutbox.runResultSettlementPass();
+  assert.equal((await ledgerRows())[0].volume,0.16);
+});
+it("partial worker waiting for position lock loses to a newer full receipt generation without shrinking twice", async () => {
+  const input=await manualProgressFixture();
+  await deferReceiptConsumers({...input,executedVolume:0.04});
+  const old=await claimPositionJob();
+  const blocker=await pool.connect();
+  await blocker.query("BEGIN");
+  await blocker.query("SELECT id FROM arx_live_positions WHERE id=1 FOR UPDATE");
+  const oldWork=settlementOutbox.runClaimedSettlement(old);
+  const full=recordLiveCommandResult(input);
+  try {
+    let ready=false;
+    for(let i=0;i<100;i++) {
+      const result=await pool.query("select generation from result_settlement_jobs where consumer='MANUAL_CLOSE_POSITION'");
+      if(result.rows[0]?.generation===2) { ready=true;break; }
+      await new Promise(resolve=>setTimeout(resolve,5));
+    }
+    assert.equal(ready,true,"full receipt/generation must commit while position consumer is blocked");
+  } finally { await blocker.query("COMMIT");blocker.release(); }
+  assert.equal((await oldWork).saved,false);
+  await full;
+  await settlementOutbox.runResultSettlementPass();
+  assert.equal((await ledgerRows())[0].volume,0.1);
+  assert.equal((await pool.query("select count(*) from execution_events where event_type='POSITION_RESULT_APPLIED'")).rows[0].count,"1");
+  const row=(await pool.query("select * from result_settlement_jobs where consumer='MANUAL_CLOSE_POSITION'")).rows[0];
+  assert.equal(row.generation,2);assert.equal(row.completed_generation,2);assert.equal(row.status,"DONE");
+});
+it("lease expiring after committed position application cannot certify DONE; replacement recovery is idempotent",async()=>{
+  const input=await manualProgressFixture(0.1);
+  await deferReceiptConsumers(input);
+  const claim=await claimPositionJob();
+  const [command]=await db.select().from(commands).where(eq(commands.commandId,input.commandId));
+  const {reconcileManualResultPosition}=await import("../../live/liveCommandPipeline.js");
+  const applied=await reconcileManualResultPosition(command,new Date(),claim);
+  assert.equal(applied.closedRows.length,1);
+  await pool.query("update result_settlement_jobs set lease_until=clock_timestamp()-interval '1 second' where id=$1",[claim.id]);
+  assert.equal(await settlementOutbox.finishResultSettlement(claim,{status:"DONE"}),false,"stale completion cannot claim success");
+  assert.equal((await pool.query("select status from result_settlement_jobs where id=$1",[claim.id])).rows[0].status,"LEASED");
+  const replacement=(await settlementOutbox.claimResultSettlement())!;
+  assert.notEqual(replacement.lease_token,claim.lease_token);
+  assert.equal((await settlementOutbox.runClaimedSettlement(replacement)).saved,true);
+  assert.equal((await pool.query("select status from result_settlement_jobs where id=$1",[claim.id])).rows[0].status,"DONE");
+  assert.equal((await pool.query("select count(*) from execution_events where event_type='POSITION_RESULT_APPLIED'")).rows[0].count,"1");
+  assert.equal(missionCloseCalls,0);
 });

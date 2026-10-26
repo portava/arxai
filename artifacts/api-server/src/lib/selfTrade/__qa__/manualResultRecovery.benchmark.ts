@@ -18,6 +18,7 @@ export async function runManualResultRecoveryBenchmark(
     .update(readFileSync(sourcePath))
     .digest("hex");
   const baselineCommits: Record<string, string> = {
+    "4704069cbcb905c0a883d89770fb69432f4bd14abc2c7caa4c946bd8613e2f25": "248bbc410510c078c40cc11f7cf918c0a1337aa5",
     cfeca39801a3c9a998e43bb2700c2696728810a8b0f6a70dde831b3d83b35aa5:
       "8042af5018bb900e5d150c2bf3d3447e5b304122",
     e1d0b2cb9a0a25e6a2a922b6a197d5e2ec396694d5d98a1b2e9cd7f3bd65bee9:
@@ -31,13 +32,6 @@ export async function runManualResultRecoveryBenchmark(
   assert.equal(baselineDatabase.pool, pool);
   assert.equal(baselineDatabase.db, db);
   for (const [file, namedExports] of [
-    [
-      "concurrency/exposureReservation.ts",
-      {
-        fulfillReservationByCommandId: async () => {},
-        releaseReservationByCommandId: async () => {},
-      },
-    ],
     [
       "missionExitManager.ts",
       { recordMissionTradeCloseByBrokerTicket: async () => {} },
@@ -179,7 +173,7 @@ export async function runManualResultRecoveryBenchmark(
       witnessUsesSamePool: true,
     },
     fixture:
-      "Actual old/current full manual CLOSE handler; signed0.1-lot local row basis; no broker snapshot changes; real result/event/security-chain and position writes; ancillary exposure/mission callbacks stubbed equally",
+      "Actual old/current full manual CLOSE handler; signed0.1-lot local row basis; no broker snapshot changes; real result/event/security-chain and position writes; actual same-pool exposure queries; only advisory Mission callbacks stubbed equally",
     timing:
       "Handler response vs independently polled committed receipt and actual position closedAt;1ms observation granularity;50 alternating rounds with3 warmups; all outliers retained",
     results,
@@ -192,7 +186,7 @@ export async function runManualResultRecoveryBenchmark(
       "No network/EA/broker/UI latency",
       baselineCommit.startsWith("8042")
         ? "8042 lacks signed row-version/cumulative markers"
-        : "Both644baseline and candidate retain signed row-version/cumulative markers; only bounded receipt scheduling differs",
+        : "Both248baseline and candidate retain signed row-version/cumulative markers and bounded scheduling; current adds durable outbox/fencing",
       "Receipt/position timing does not certify broker account identity or realized P/L",
       "Missing baseline result receipts remain explicit incomplete coverage; conditional timing samples do not prove baseline durability",
     ],

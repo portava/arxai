@@ -1,3 +1,4 @@
+import { holdChangedSettlementEvidence, SettlementEvidenceHeld, enqueueResultSettlement, settleCommandJobs, settlementWorkerEnabled, assertSettlementClaim, StaleSettlementClaim, type SettlementClaim, type SettlementConsumer } from "./resultSettlementOutbox.js";
 // Phase A — Live command pipeline (per-user).
 //
 // PIPELINE: LIVE_DRAFT → LIVE_CONFIRMATION_REQUIRED → LIVE_APPROVED → dispatch
@@ -284,13 +285,14 @@ export async function readLiveModifyRiskPosition(row: ArxLiveCommand) {
 }
 
 /** Applies a reported full close only to its signed server target. Never sends an order. */
-export async function reconcileBoundManagementClose(command: ArxLiveCommand, now = new Date()) {
+export async function reconcileBoundManagementClose(command: ArxLiveCommand, now = new Date(), settlementClaim?: SettlementClaim) {
   try {
     const closedRows = await withBoundManagementClose(command, async (tx, target) =>
       livePositionWriter.updateReturning({ closedAt: now, lastSyncedAt: now },
-        managementFullCloseScope(target), livePositionColumns, tx));
+        managementFullCloseScope(target), livePositionColumns, tx), db, settlementClaim);
     return { closedRows, heldReason: null };
   } catch (error) {
+    if (error instanceof StaleSettlementClaim || error instanceof SettlementEvidenceHeld) throw error;
     const heldReason = error instanceof ManagementTargetError ? error.reason : "MANAGEMENT_LEDGER_READ_FAILED";
     logger.warn({ commandId: command.commandId, heldReason }, "Automatic close receipt retained; ledger application held");
     await recordExecutionEvent({ commandRowId: command.id, source: "arx", eventType: "MANAGEMENT_LEDGER_APPLICATION_HELD",
@@ -327,6 +329,7 @@ function usablePositionVersion(
 export async function reconcileManualResultPosition(
   command: ArxLiveCommand,
   now = new Date(),
+  settlementClaim?: SettlementClaim,
 ) {
   const payload = command.payload as Record<string, unknown> | null;
   const ticket =
@@ -367,7 +370,8 @@ export async function reconcileManualResultPosition(
       current.commandType !== "CLOSE_LIVE_POSITION" ||
       isAgentManagementCommand(current)
     )
-      throw new Error("MANUAL_CLOSE_IDENTITY_CHANGED");
+      throw new SettlementEvidenceHeld("MANUAL_CLOSE_IDENTITY_CHANGED");
+    await assertSettlementClaim(tx, current, settlementClaim);
     if (!hasIntactCommandSignature(current))
       return { closedRows: [], heldReason: "MANUAL_CLOSE_SIGNATURE_INVALID" };
     const basis = currentPayload?.manualClosePositionBasisV1 as
@@ -414,7 +418,7 @@ export async function reconcileManualResultPosition(
         !Number.isFinite(n) ||
         n < 0
       )
-        throw new Error("MANUAL_CLOSE_APPLICATION_EVIDENCE_INVALID");
+        throw new SettlementEvidenceHeld("MANUAL_CLOSE_APPLICATION_EVIDENCE_INVALID");
       if (n >= prior) {
         prior = n;
         expectedRevision = mark.payload.positionRevision;
@@ -4885,6 +4889,11 @@ export function mapBridgedLiveOutcome(input: {
   return input.hasBrokerTicket ? "LIVE_FILLED" : "LIVE_UNKNOWN";
 }
 
+function settlementConsumers(command: ArxLiveCommand): SettlementConsumer[] {
+  return ["EXPOSURE_RESERVATION", ...(command.commandType === "CLOSE_LIVE_POSITION"
+    ? [isAgentManagementCommand(command) ? "AGENT_CLOSE_POSITION" as const : "MANUAL_CLOSE_POSITION" as const] : [])];
+}
+
 export async function recordLiveCommandResult(args: {
   userId: number;
   commandId: string;
@@ -4927,7 +4936,10 @@ export async function recordLiveCommandResult(args: {
   command: ArxLiveCommand | null;
   reason?: string;
   receiptPersisted?: boolean;
-  positionSettlement?: "APPLIED" | "HELD" | "NOT_APPLICABLE";
+  positionSettlement?: "APPLIED" | "HELD" | "PENDING" | "NOT_APPLICABLE";
+  settlementRecovery?: { workerEnabled: boolean; pending: boolean; held: boolean;
+    scope: "LATEST_ACCEPTED_COMMAND_STATE";
+    jobs: Array<{consumer: string;status: string;generation: number;completedGeneration: number | null;reason: string | null}> };
   positionSettlementReason?: string;
 }> {
   // Commit the outcome and durable evidence together. No position/agent locks
@@ -4974,6 +4986,11 @@ export async function recordLiveCommandResult(args: {
     const existing = await tx.execute(sql`select payload from execution_events
       where command_id=${row.id} and payload->>'reportFingerprint'=${reportFingerprint} limit 1`);
     if (existing.rows.length > 0) {
+      const oldPayload = existing.rows[0]?.payload as Record<string, unknown>;
+      if (oldPayload.settlementOutboxVersion !== 1) {
+        await enqueueResultSettlement(tx, row, reportFingerprint, settlementConsumers(row), true);
+      }
+      await holdChangedSettlementEvidence(tx, row);
       // Exact retry is idempotent even after a restart: no new event, chain row,
       // counter increment, outcome overwrite or partial-close side effect.
       return {
@@ -5120,10 +5137,13 @@ export async function recordLiveCommandResult(args: {
             : { existingStatus: row.status }),
           ...reportedEvidence,
           reportFingerprint,
+          settlementOutboxVersion: 1,
         },
       },
       tx,
     );
+    if (mayApply) await enqueueResultSettlement(tx, updated, reportFingerprint, settlementConsumers(updated));
+    else await holdChangedSettlementEvidence(tx, updated);
     await audit(
       {
         eventType: mayApply
@@ -5197,85 +5217,34 @@ export async function recordLiveCommandResult(args: {
   const row = updated;
   const finalStatus = updated.status as ArxLiveCommandStatus;
   const now = new Date();
-  let positionSettlement: "APPLIED" | "HELD" | "NOT_APPLICABLE" =
-    "NOT_APPLICABLE";
+  // Each task already committed with the receipt. The synchronous path and
+  // opt-in recovery worker use identical fenced, idempotent consumers.
+  const { jobs, manualClosedRows } = await settleCommandJobs(updated.id, args.userId);
+  const positionJob = jobs.find(job => job.consumer !== "EXPOSURE_RESERVATION");
+  const settlementRecovery = {
+    scope: "LATEST_ACCEPTED_COMMAND_STATE" as const,
+    jobs: jobs.map(job => ({consumer:job.consumer,status:job.status,generation:job.generation,completedGeneration:job.completed_generation,reason:job.reason})),
+    workerEnabled: settlementWorkerEnabled(),
+    pending: jobs.some(job => ["PENDING", "LEASED", "RETRY"].includes(job.status)),
+    held: jobs.some(job => job.status === "HELD"),
+  };
+  let positionSettlement: "APPLIED" | "HELD" | "PENDING" | "NOT_APPLICABLE" = "NOT_APPLICABLE";
   let positionSettlementReason: string | undefined;
-
-  // Settle the master-exposure reservation taken at dispatch time
-  // (pure rule: settleReservationForStatus — audit G1b).
-  //   FULFILL — confirmed fill (lots stay attributed via shared_trade_attribution).
-  //   RELEASE — confirmed non-execution (lots return to the pool).
-  //   HOLD    — UNKNOWN outcome: the reservation is deliberately NOT touched;
-  //             releasing an unconfirmed order under-counts the pool and can
-  //             over-expose the master account. Reconciliation settles it.
-  // The fulfil/release helpers act only on rows still in RESERVED, so
-  // duplicate EA callbacks are idempotent.
-  const settlement = settleReservationForStatus(finalStatus);
-  if (settlement === "HOLD") {
-    logger.error(
-      {
-        [PHASE_B_LIVE_LOG_PREFIX]: true,
-        event: "RESERVATION_HELD_UNKNOWN_OUTCOME",
-        commandId: args.commandId,
-        outcome: args.outcome,
-      },
-      "exposure reservation HELD — outcome unknown, reconciliation required",
-    );
-  } else {
-    try {
-      const { fulfillReservationByCommandId, releaseReservationByCommandId } =
-        await import("../concurrency/exposureReservation.js");
-      if (settlement === "FULFILL") {
-        await fulfillReservationByCommandId(args.commandId);
-      } else {
-        await releaseReservationByCommandId(args.commandId);
-      }
-    } catch (e) {
-      logger.error(
-        {
-          [PHASE_B_LIVE_LOG_PREFIX]: true,
-          event: "RESERVATION_SETTLEMENT_FAILED",
-          commandId: args.commandId,
-          outcome: args.outcome,
-          error: e instanceof Error ? e.message : String(e),
-        },
-        "failed to settle exposure reservation — manual reconciliation required",
-      );
-    }
+  if (row.commandType === "CLOSE_LIVE_POSITION" && ["LIVE_FILLED", "LIVE_PARTIALLY_FILLED"].includes(finalStatus)) {
+    positionSettlement = positionJob?.status === "DONE" ? "APPLIED" : positionJob?.status === "HELD" ? "HELD" : "PENDING";
+    positionSettlementReason = positionJob?.reason ?? undefined;
   }
-
-  if (
-    row.commandType === "CLOSE_LIVE_POSITION" &&
-    ["LIVE_FILLED", "LIVE_PARTIALLY_FILLED"].includes(finalStatus)
-  ) {
-    const result = isAgentManagementCommand(row)
-      ? await reconcileBoundManagementClose(row, now)
-      : await reconcileManualResultPosition(row, now);
-    positionSettlement = result.heldReason ? "HELD" : "APPLIED";
-    positionSettlementReason = result.heldReason ?? undefined;
-    // Only a newly closed row triggers the advisory mission callback. The
-    // durable application marker prevents repeated partial/full ledger mutation.
-    if (result.closedRows.length > 0 && !isAgentManagementCommand(row)) {
-      try {
-        const closed = result.closedRows[0];
-        const { recordMissionTradeCloseByBrokerTicket } =
-          await import("../missionExitManager.js");
-        await recordMissionTradeCloseByBrokerTicket({
-          userId: args.userId,
-          brokerTicket: String(closed.brokerTicket),
-          realisedPnl:
-            typeof closed.floatingPl === "number" &&
-            Number.isFinite(closed.floatingPl)
-              ? closed.floatingPl
-              : null,
-          nowMs: now.getTime(),
-        });
-      } catch (error) {
-        logger.error(
-          { commandId: row.commandId, error: String(error) },
-          "Advisory mission close recording requires reconciliation",
-        );
-      }
+  // Advisory-only legacy callback is deliberately NOT an outbox consumer. Only
+  // the first synchronous actual row close may invoke it; recovery never does.
+  if (manualClosedRows.length > 0) {
+    try {
+      const closed = manualClosedRows[0] as { brokerTicket: string; floatingPl: number | null };
+      const { recordMissionTradeCloseByBrokerTicket } = await import("../missionExitManager.js");
+      await recordMissionTradeCloseByBrokerTicket({ userId: args.userId, brokerTicket: String(closed.brokerTicket),
+        realisedPnl: typeof closed.floatingPl === "number" && Number.isFinite(closed.floatingPl) ? closed.floatingPl : null,
+        nowMs: now.getTime() });
+    } catch (error) {
+      logger.error({ commandId: row.commandId, error: String(error) }, "Advisory mission close recording requires reconciliation");
     }
   }
   if (!persisted.applied)
@@ -5286,6 +5255,7 @@ export async function recordLiveCommandResult(args: {
       receiptPersisted: true,
       positionSettlement,
       positionSettlementReason,
+      settlementRecovery,
     };
 
   logger.warn(
@@ -5404,6 +5374,7 @@ export async function recordLiveCommandResult(args: {
     receiptPersisted: true,
     positionSettlement,
     positionSettlementReason,
+    settlementRecovery,
   };
 }
 

@@ -1,3 +1,4 @@
+import { assertSettlementClaim, type SettlementClaim } from "../live/resultSettlementOutbox.js";
 // Consumers of an already signed server target. A target describes intended
 // execution; it is NOT proof of the terminal account that actually executed it.
 import { isDeepStrictEqual } from "node:util";
@@ -184,6 +185,7 @@ export async function withBoundManagementClose<T>(
     },
   ) => Promise<T>,
   database: typeof db = db,
+  settlementClaim?: SettlementClaim,
 ): Promise<T> {
   const target = signedTarget(expected);
   if (
@@ -239,6 +241,7 @@ export async function withBoundManagementClose<T>(
         ),
       )
       .for("update");
+    if (command) await assertSettlementClaim(tx, command, settlementClaim);
     if (
       !command ||
       !isDeepStrictEqual(signedTarget(command), target) ||

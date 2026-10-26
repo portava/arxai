@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 // Actual result handler + shared event writer + security hash chain. Disposable DB only.
 import { after, before, beforeEach, it, mock } from "node:test";
 import assert from "node:assert/strict";
@@ -18,31 +19,23 @@ const {
   executionEventsTable: events,
   securityEventsTable: security,
   liveTradingAuditTable: audit,
+  arxDispatchExposureReservationsTable: reservations,
+  resultSettlementJobsTable: settlementJobs,
 } = await import("@workspace/db");
 process.env.SESSION_SECRET = "synthetic-offline-result-evidence";
 mock.method(globalThis, "fetch", async () => {
   throw new Error("Unexpected external request");
 });
-let fulfillCalls = 0;
-const fulfilled = new Set<string>();
-mock.module("../../concurrency/exposureReservation.js", {
-  namedExports: {
-    fulfillReservationByCommandId: async (commandId: string) => {
-      if (!fulfilled.has(commandId)) {
-        fulfillCalls++;
-        fulfilled.add(commandId);
-      }
-    },
-    releaseReservationByCommandId: async () => undefined,
-  },
-});
+async function fulfillCalls() {
+  return Number((await pool.query("select count(*) from arx_dispatch_exposure_reservations where status='FULFILLED'")).rows[0].count);
+}
 const { recordLiveCommandResult } = await import("../liveCommandPipeline.js");
 const { appendExecutionEvidence, executionReportFingerprint } =
   await import("../executionEvidence.js");
 const { appendExecutionEvidence: reconcilerAppend } =
   await import("../unknownReconciler.js");
 const { verifySecurityEventChain } = await import("../../security/events.js");
-const tables = [commands, events, security, audit];
+const tables = [commands, events, security, audit, reservations, settlementJobs];
 const dialect = new PgDialect();
 const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
 function value(v: unknown): string {
@@ -56,6 +49,7 @@ function value(v: unknown): string {
 }
 before(async () => {
   for (const table of tables) {
+    if (table === settlementJobs) continue;
     const columns = Object.values(getTableColumns(table)).map(
       (c) =>
         `${quote(c.name)} ${c.getSQLType()}${c.notNull ? " NOT NULL" : ""}${c.default !== undefined ? ` DEFAULT ${value(c.default)}` : ""}${c.primary ? " PRIMARY KEY" : ""}`,
@@ -64,6 +58,9 @@ before(async () => {
       `CREATE TABLE ${quote(getTableName(table))} (${columns.join(",")})`,
     );
   }
+  const migration = readFileSync(new URL("../../../../../../lib/db/migrations/2026-10-26_result_settlement_outbox.sql", import.meta.url), "utf8");
+  await pool.query(migration);
+  await pool.query(migration); // additive migration is repeatable
   await pool.query(
     "CREATE UNIQUE INDEX qa_command_identity ON arx_live_commands(command_id)",
   );
@@ -79,8 +76,6 @@ after(async () => {
 });
 let command: typeof commands.$inferSelect;
 async function resetFixture() {
-  fulfillCalls = 0;
-  fulfilled.clear();
   await pool.query(
     `TRUNCATE ${tables.map((t) => quote(getTableName(t))).join(",")} RESTART IDENTITY`,
   );
@@ -101,6 +96,8 @@ async function resetFixture() {
       payload: { brokerTicket: "123" },
     })
     .returning();
+  await db.insert(reservations).values({userId:9,commandId:command.commandId,symbol:command.symbol,lotSize:0.1,status:"RESERVED"});
+
 }
 beforeEach(resetFixture);
 const report = () => ({
@@ -163,11 +160,11 @@ it("twenty identical simultaneous reports commit one receipt, one audit chain ro
   assert.equal(state.command.duplicateResultCount, 0);
   assert.equal(state.events.length, 1);
   assert.equal(state.audit.length, 1);
-  assert.equal(fulfillCalls, 1);
+  assert.equal(await fulfillCalls(), 1);
   await assertChain(1);
   await recordLiveCommandResult(report());
   assert.deepEqual(await snapshot(), state);
-  assert.equal(fulfillCalls, 1);
+  assert.equal(await fulfillCalls(), 1);
 });
 it("all distinct simultaneous contradictions are retained without overwriting the accepted fill", async () => {
   await recordLiveCommandResult(report());
@@ -189,7 +186,7 @@ it("all distinct simultaneous contradictions are retained without overwriting th
   assert.equal(state.command.filledAt!.getTime(), accepted.filledAt!.getTime());
   assert.equal(state.command.duplicateResultCount, 24);
   assert.equal(state.events.length, 25);
-  assert.equal(fulfillCalls, 1);
+  assert.equal(await fulfillCalls(), 1);
   assert.deepEqual(
     state.events.map((e) => e.sequenceNo).sort((a, b) => a - b),
     Array.from({ length: 25 }, (_, i) => i + 1),
@@ -245,7 +242,7 @@ for (const table of [
       assert.equal(state.events.length, 0);
       assert.equal(state.security.length, 0);
       assert.equal(state.audit.length, 0);
-      assert.equal(fulfillCalls, 0);
+      assert.equal(await fulfillCalls(), 0);
     } finally {
       await pool.query(`DROP TRIGGER qa_fault ON ${table}`);
       await pool.query("DROP FUNCTION qa_refuse()");
@@ -289,10 +286,10 @@ it("ACK then fill and partial then full apply the legal next state, while exact 
   assert.equal((await snapshot()).command.status, "LIVE_PARTIALLY_FILLED");
   await recordLiveCommandResult({ ...report(), executedVolume: 0.04 });
   assert.equal((await snapshot()).events.length, 2);
-  assert.equal(fulfillCalls, 0);
+  assert.equal(await fulfillCalls(), 0);
   await recordLiveCommandResult(report());
   assert.equal((await snapshot()).command.status, "LIVE_FILLED");
-  assert.equal(fulfillCalls, 1);
+  assert.equal(await fulfillCalls(), 1);
   await assertChain(3);
 });
 it("a late acknowledgement or incompatible partial rejection is retained without regressing exposure", async () => {
@@ -312,7 +309,7 @@ it("a late acknowledgement or incompatible partial rejection is retained without
   assert.equal(state.command.status, "LIVE_PARTIALLY_FILLED");
   assert.equal(state.command.executedVolume, 0.04);
   assert.equal(state.events.length, 3);
-  assert.equal(fulfillCalls, 0);
+  assert.equal(await fulfillCalls(), 0);
   await assertChain(3);
 });
 it("unknown results remain held and preserve later contradictory evidence", async () => {
@@ -325,7 +322,7 @@ it("unknown results remain held and preserve later contradictory evidence", asyn
   const state = await snapshot();
   assert.equal(state.command.status, "LIVE_UNKNOWN");
   assert.equal((state.events[0].payload as any).applied, false);
-  assert.equal(fulfillCalls, 0);
+  assert.equal(await fulfillCalls(), 0);
   await assertChain(1);
 });
 it("foreign owner/bridge and pre-dispatch reports cannot create evidence or change state", async () => {
@@ -449,7 +446,7 @@ it("cancelling a blocked result transaction leaves no receipt and a later retry 
   await recordLiveCommandResult(report());
   state = await snapshot();
   assert.equal(state.command.status, "LIVE_FILLED");
-  assert.equal(fulfillCalls, 1);
+  assert.equal(await fulfillCalls(), 1);
   await assertChain(1);
 });
 it("independent commands keep separate sequences while the existing global hash chain never forks", async () => {
@@ -678,4 +675,136 @@ it("a cancelled active result releases its queued follower without accepting the
     await writer.query("ROLLBACK");
     writer.release();
   }
+});
+
+const outbox = await import("../resultSettlementOutbox.js");
+async function jobs() { return (await pool.query("select * from result_settlement_jobs order by id")).rows; }
+async function dueJobs() { await pool.query("update result_settlement_jobs set due_at=clock_timestamp() where status='RETRY'"); }
+it("outbox insertion failure rolls receipt, audit and outcome back atomically", async () => {
+  await pool.query("CREATE FUNCTION qa_outbox_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'qa outbox unavailable'; END $$");
+  await pool.query("CREATE TRIGGER qa_outbox_fault BEFORE INSERT ON result_settlement_jobs FOR EACH ROW EXECUTE FUNCTION qa_outbox_fault()");
+  try {
+    await assert.rejects(recordLiveCommandResult(report()));
+    const state = await snapshot();
+    assert.equal(state.events.length,0);
+    assert.equal((await db.select().from(commands))[0].status,"SENT_TO_MT5_LIVE");
+    assert.equal((await jobs()).length,0);
+  } finally { await pool.query("DROP TRIGGER qa_outbox_fault ON result_settlement_jobs; DROP FUNCTION qa_outbox_fault()"); }
+});
+it("post-receipt crash leaves recoverable intent; worker can finish without another report", async () => {
+  await pool.query("CREATE FUNCTION qa_claim_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status='LEASED' THEN RAISE EXCEPTION 'qa process stops before lease'; END IF; RETURN NEW; END $$");
+  await pool.query("CREATE TRIGGER qa_claim_fault BEFORE UPDATE ON result_settlement_jobs FOR EACH ROW EXECUTE FUNCTION qa_claim_fault()");
+  try { await assert.rejects(recordLiveCommandResult(report())); }
+  finally { await pool.query("DROP TRIGGER qa_claim_fault ON result_settlement_jobs; DROP FUNCTION qa_claim_fault()"); }
+  assert.equal((await snapshot()).events.length,1);
+  assert.equal((await jobs())[0].status,"PENDING");
+  assert.equal(await fulfillCalls(),0);
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const restarted = spawnSync(process.execPath,["--import","tsx",fileURLToPath(new URL("./settlementWorkerChild.mjs",import.meta.url))],{
+    env:{HOME:process.env.HOME,PATH:process.env.PATH,DATABASE_URL:process.env.DATABASE_URL,NODE_ENV:"test",SESSION_SECRET:"synthetic-offline-result-evidence",ESBUILD_BINARY_PATH:process.env.ESBUILD_BINARY_PATH},
+    encoding:"utf8",timeout:20_000});
+  assert.equal(restarted.status,0,restarted.stderr);
+  assert.equal((await jobs())[0].status,"DONE");
+  assert.equal(await fulfillCalls(),1);
+  const attempts=(await jobs())[0].attempts;
+  await recordLiveCommandResult(report());
+  assert.equal((await jobs())[0].attempts,attempts,"duplicate does not consume execution budget");
+});
+it("lease commit survives restart, expired owner cannot finish a replacement lease", async () => {
+  await recordLiveCommandResult({...report(),outcome:"LIVE_UNKNOWN",brokerTicket:null,executedVolume:null});
+  await pool.query("update result_settlement_jobs set status='PENDING'");
+  const first=(await outbox.claimResultSettlement())!;
+  assert.ok(first);
+  assert.equal((await jobs())[0].status,"LEASED");
+  assert.equal(await outbox.claimResultSettlement(),null);
+  await pool.query("update result_settlement_jobs set lease_until=clock_timestamp()-interval '1 second'");
+  const next=(await outbox.claimResultSettlement())!;
+  assert.notEqual(next.lease_token,first.lease_token);
+  assert.equal(await outbox.finishResultSettlement(first,{status:"DONE"}),false);
+  const stale=await outbox.runClaimedSettlement(first);
+  assert.equal(stale.saved,false);
+  await outbox.runClaimedSettlement(next);
+  assert.equal((await jobs())[0].status,"HELD");
+  assert.equal((await jobs())[0].reason,"OUTCOME_UNCONFIRMED");
+});
+it("new accepted generation fences old partial intent before side effects and completion", async () => {
+  await recordLiveCommandResult({...report(),executedVolume:0.04});
+  await pool.query("update result_settlement_jobs set status='PENDING'");
+  const old=(await outbox.claimResultSettlement())!;
+  await recordLiveCommandResult(report());
+  const current=(await jobs())[0];
+  assert.equal(current.generation,2);
+  assert.equal(current.status,"DONE");
+  assert.equal((await outbox.runClaimedSettlement(old)).saved,false);
+  assert.equal(await outbox.finishResultSettlement(old,{status:"HELD",reason:"old"}),false);
+  assert.equal((await jobs())[0].status,"DONE");
+  assert.equal(await fulfillCalls(),1);
+});
+it("retry budget is bounded, backoff is positive, HELD never ages into done", async () => {
+  await pool.query("CREATE FUNCTION qa_exposure_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'qa transient fault'; END $$");
+  await pool.query("CREATE TRIGGER qa_exposure_fault BEFORE UPDATE ON arx_dispatch_exposure_reservations FOR EACH ROW EXECUTE FUNCTION qa_exposure_fault()");
+  try {
+    const reply=await recordLiveCommandResult(report());
+    assert.equal(reply.receiptPersisted,true);
+    assert.equal(reply.settlementRecovery?.pending,true);
+    assert.equal(reply.settlementRecovery?.workerEnabled,false);
+    assert.equal((await jobs())[0].attempts,1);
+    assert.ok(new Date((await jobs())[0].due_at).getTime()>Date.now());
+    await recordLiveCommandResult(report());
+    assert.equal((await jobs())[0].attempts,1);
+    for(let i=1;i<8;i++) { await dueJobs(); await outbox.runResultSettlementPass(); }
+    assert.equal((await jobs())[0].status,"HELD");
+    assert.equal((await jobs())[0].reason,"RETRY_BUDGET_EXHAUSTED");
+  } finally { await pool.query("DROP TRIGGER qa_exposure_fault ON arx_dispatch_exposure_reservations; DROP FUNCTION qa_exposure_fault()"); }
+  await pool.query("update result_settlement_jobs set due_at=clock_timestamp()-interval '10 years'");
+  await outbox.runResultSettlementPass(); await recordLiveCommandResult(report());
+  assert.equal((await jobs())[0].status,"HELD");
+  assert.equal(await fulfillCalls(),0);
+});
+it("foreign reservation ownership holds without modifying either owner's exposure", async () => {
+  await pool.query("update arx_dispatch_exposure_reservations set user_id=88");
+  const result=await recordLiveCommandResult(report());
+  assert.equal(result.receiptPersisted,true);
+  assert.equal((await jobs())[0].reason,"RESERVATION_OWNER_MISMATCH");
+  assert.equal((await pool.query("select status from arx_dispatch_exposure_reservations")).rows[0].status,"RESERVED");
+});
+it("pre-upgrade duplicate is held durably, not silently backfilled or processed", async () => {
+  const args: Parameters<typeof recordLiveCommandResult>[0]=report();
+  const evidence={reportedOutcome:args.outcome,brokerTicket:args.brokerTicket??null,fillPrice:args.fillPrice??null,
+    executedVolume:args.executedVolume??null,mt5Retcode:args.mt5Retcode??null,brokerMessage:args.brokerMessage??null,
+    eaReason:null,reportingBridgeConnectionId:args.reportingBridgeConnectionId,reportedExecutionIdentity:args.reportedExecutionIdentity};
+  await db.update(commands).set({status:"LIVE_FILLED",brokerTicket:args.brokerTicket,executedVolume:args.executedVolume}).where(eq(commands.id,command.id));
+  await appendExecutionEvidence({commandRowId:command.id,source:"ea",eventType:"RESULT_LIVE_FILLED",payload:{...evidence,applied:true,finalStatus:"LIVE_FILLED",reportFingerprint:executionReportFingerprint(evidence)}});
+  const reply=await recordLiveCommandResult(args);
+  assert.equal(reply.receiptPersisted,true);
+  assert.equal((await jobs())[0].reason,"LEGACY_RECEIPT_REQUIRES_REVIEW");
+  await outbox.runResultSettlementPass();
+  assert.equal(await fulfillCalls(),0);
+});
+it("schema allowlist refuses arbitrary work and worker is off by default", async () => {
+  assert.equal(outbox.settlementWorkerEnabled(undefined),false);
+  assert.equal(outbox.settlementWorkerEnabled("1"),false);
+  assert.equal(outbox.settlementWorkerEnabled("true"),true);
+  await assert.rejects(pool.query("insert into result_settlement_jobs(command_row_id,user_id,consumer,receipt_fingerprint) values($1,9,'BROKER_ORDER',$2)",[command.id,"a".repeat(64)]));
+  for(let attempt=1;attempt<=8;attempt++) {
+    const delay=outbox.settlementRetryMs(1,1,attempt);
+    assert.ok(delay>=800 && delay<=60_000);
+  }
+});
+it("missing outbox migration refuses receipt instead of acknowledging undurable recovery", async()=>{
+  await pool.query("ALTER TABLE result_settlement_jobs RENAME TO qa_missing_settlement_jobs");
+  try {
+    await assert.rejects(recordLiveCommandResult(report()));
+    assert.equal((await snapshot()).events.length,0);
+    assert.equal((await db.select().from(commands))[0].status,"SENT_TO_MT5_LIVE");
+  } finally { await pool.query("ALTER TABLE qa_missing_settlement_jobs RENAME TO result_settlement_jobs"); }
+});
+it("changed command owner cannot acknowledge a new result while leaving its intent owned by someone else",async()=>{
+  await recordLiveCommandResult({...report(),executedVolume:0.04});
+  await db.update(commands).set({userId:88}).where(eq(commands.id,command.id));
+  await assert.rejects(recordLiveCommandResult({...report(),userId:88}),/SETTLEMENT_JOB_OWNERSHIP_CONFLICT/);
+  assert.equal((await db.select().from(commands))[0].status,"LIVE_PARTIALLY_FILLED");
+  assert.equal((await snapshot()).events.length,1);
+  assert.equal((await jobs())[0].user_id,9);assert.equal((await jobs())[0].generation,1);
 });

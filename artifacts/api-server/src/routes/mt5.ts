@@ -1214,6 +1214,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
         // consumer still needs reconciliation. Do not imply completed settlement.
         res.json({ received: true, receiptPersisted: fwd.receiptPersisted === true,
           positionSettlement: fwd.positionSettlement ?? "NOT_APPLICABLE",
+          ...(fwd.settlementRecovery ? { settlementRecovery: fwd.settlementRecovery } : {}),
           ...(fwd.positionSettlementReason ? { positionSettlementReason: fwd.positionSettlementReason } : {}) });
         return;
       } catch (fwdErr) {

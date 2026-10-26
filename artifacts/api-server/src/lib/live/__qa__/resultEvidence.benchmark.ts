@@ -19,6 +19,7 @@ export async function runResultEvidenceBenchmark(
     .update(readFileSync(sourcePath))
     .digest("hex");
   const baselineCommits: Record<string, string> = {
+    "4704069cbcb905c0a883d89770fb69432f4bd14abc2c7caa4c946bd8613e2f25": "248bbc410510c078c40cc11f7cf918c0a1337aa5",
     cfeca39801a3c9a998e43bb2700c2696728810a8b0f6a70dde831b3d83b35aa5:
       "8042af5018bb900e5d150c2bf3d3447e5b304122",
     e1d0b2cb9a0a25e6a2a922b6a197d5e2ec396694d5d98a1b2e9cd7f3bd65bee9:
@@ -42,17 +43,6 @@ export async function runResultEvidenceBenchmark(
       .digest("hex"),
     "c9bd6a4b1315c5099950d4ad3dcc37052369f52be38b802320e8a9985feb52db",
     "both versions retain the same real security-chain writer",
-  );
-  mock.module(
-    pathToFileURL(
-      `${root}/artifacts/api-server/src/lib/concurrency/exposureReservation.ts`,
-    ).href,
-    {
-      namedExports: {
-        fulfillReservationByCommandId: async () => undefined,
-        releaseReservationByCommandId: async () => undefined,
-      },
-    },
   );
   const previous = await import(pathToFileURL(sourcePath).href);
   const stats = (v: number[]) => {
@@ -91,6 +81,7 @@ export async function runResultEvidenceBenchmark(
         response: number[];
         independentResponse: number[];
         durable: number[];
+        settlement: number[];
         sent: number;
         uniqueExpected: number;
         events: number;
@@ -105,6 +96,7 @@ export async function runResultEvidenceBenchmark(
           response: [],
           independentResponse: [],
           durable: [],
+          settlement: [],
           sent: 0,
           uniqueExpected: 0,
           events: 0,
@@ -139,6 +131,8 @@ export async function runResultEvidenceBenchmark(
               }),
             ),
           );
+        await pool.query("insert into arx_dispatch_exposure_reservations(user_id,command_id,symbol,lot_size,status) select user_id,command_id,symbol,requested_volume,'RESERVED' from arx_live_commands c where not exists(select 1 from arx_dispatch_exposure_reservations r where r.command_id=c.command_id)");
+        const commandCount=workload === "independent_commands8" ? 8 : workload === "mixed_key_burst32_plus4" ? 5 : 1;
         const fn =
           name === "previous"
             ? previous.recordLiveCommandResult
@@ -147,15 +141,15 @@ export async function runResultEvidenceBenchmark(
         const start = performance.now();
         let done = false;
         let complete: number | null = null;
+        let settled: number | null = null;
         const witness = (async () => {
           while (!done) {
             const { rows } = await pool.query(
-              "SELECT count(*)::int AS events FROM execution_events WHERE source='ea' AND event_type IN ('RESULT_LIVE_FILLED','LATE_RESULT_RETAINED')",
+              "SELECT (select count(*)::int FROM execution_events WHERE source='ea' AND event_type IN ('RESULT_LIVE_FILLED','LATE_RESULT_RETAINED')) AS events,(select count(*)::int from arx_dispatch_exposure_reservations where status='FULFILLED') AS fulfilled,(select count(*)::int from result_settlement_jobs where status='DONE') AS done",
             );
-            if (rows[0].events >= expected) {
-              complete = performance.now() - start;
-              return;
-            }
+            if (rows[0].events >= expected && complete===null) complete = performance.now() - start;
+            if (rows[0].fulfilled===commandCount && (name==="previous" || rows[0].done===commandCount) && settled===null) settled=performance.now()-start;
+            if(complete!==null && settled!==null) return;
             await new Promise((r) => setTimeout(r, 1));
           }
         })();
@@ -190,6 +184,10 @@ export async function runResultEvidenceBenchmark(
         const { rows } = await pool.query(
           "SELECT count(*)::int AS events,count(*) FILTER(WHERE payload->>'applied'='true')::int AS applied FROM execution_events WHERE source='ea' AND event_type IN ('RESULT_LIVE_FILLED','LATE_RESULT_RETAINED')",
         );
+        const finalSettlement=await pool.query("select (select count(*)::int from arx_dispatch_exposure_reservations where status='FULFILLED') as fulfilled,(select count(*)::int from result_settlement_jobs where status='DONE') as done");
+        assert.equal(finalSettlement.rows[0].fulfilled,commandCount);
+        if(name==="current") assert.equal(finalSettlement.rows[0].done,commandCount);
+        if(settled===null) settled=performance.now()-start;
         const chain = await verifySecurityEventChain();
         assert.equal(chain.valid, true);
         assert.equal(chain.unknownCount, 0);
@@ -209,14 +207,16 @@ export async function runResultEvidenceBenchmark(
           record.chainRows += chain.checked;
           record.acknowledged += responses.filter((r) => r.ok).length;
           if (complete != null) record.durable.push(complete);
+          record.settlement.push(settled);
         }
       }
     results[workload] = Object.fromEntries(
       Object.entries(samples).map(([name, s]) => {
         const response = stats(s.response);
         const durable = s.durable.length ? stats(s.durable) : null;
+        const settlement=stats(s.settlement);
         if (name === "current") {
-          p95s.push(response.p95Ms);
+          p95s.push(response.p95Ms,settlement.p95Ms);
           if (durable) p95s.push(durable.p95Ms);
         }
         return [
@@ -227,10 +227,11 @@ export async function runResultEvidenceBenchmark(
               ? { independentCommandResponse: stats(s.independentResponse) }
               : {}),
             allUniqueReportsDurableObserved: durable,
+            allExposureSettlementObserved: settlement,
             ...Object.fromEntries(
               Object.entries(s).filter(
                 ([k]) =>
-                  !["response", "independentResponse", "durable"].includes(k),
+                  !["response", "independentResponse", "durable", "settlement"].includes(k),
               ),
             ),
             durableCompleteRounds: s.durable.length,
@@ -255,7 +256,7 @@ export async function runResultEvidenceBenchmark(
       note: "Only baseline module resolution is redirected to real current DB exports; all queries, transactions, locks and commits execute. Earlier receipts retained with baseline/current pool asymmetry disclosed.",
     },
     fixture:
-      "Actual old/new result handlers and same real security-chain writer; disposable Unix-socket PostgreSQL; synthetic MODIFY reports; exposure settlement stubbed identically",
+      "Actual old/new result handlers and same real security-chain writer; disposable Unix-socket PostgreSQL; synthetic MODIFY reports; real exposure rows/queries on the identical pool; current adds durable outbox/fencing",
     timing:
       "response is handler resolution; durable completion is 1ms polling observation of all unique receipt rows; missing baseline receipts are counted as incomplete, never dropped from coverage",
     results,
@@ -268,7 +269,7 @@ export async function runResultEvidenceBenchmark(
       "No network, EA, orders or broker latency measured",
       baselineCommit.startsWith("8042")
         ? "8042 path acknowledges best-effort persistence; current requires atomic evidence, so guarantees differ"
-        : "Both644baseline and candidate require atomic receipt and unchanged securitychain; only bounded local scheduling differs",
+        : "Both248baseline and candidate require atomic receipt and unchanged security chain/scheduling; current additionally persists and fences server settlement work",
       "Contradictory reports remain evidence, not new terminal state authority",
       "Serial gaps and maximum latency outliers retained; single-host fixture is not production capacity",
     ],
