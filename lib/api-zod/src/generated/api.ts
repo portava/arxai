@@ -10031,6 +10031,31 @@ export const GetBacktestRunsResponse = zod.object({
       ]),
       isVerified: zod.enum(["UNVERIFIED", "VERIFIED"]),
       dataSource: zod.enum(["broker", "synthetic"]).optional(),
+      evidence: zod
+        .object({
+          version: zod.literal(1),
+          classification: zod.enum(["diagnostic"]),
+          verification: zod.enum(["unverified"]),
+          comparisonEligible: zod.literal(false),
+          source: zod.enum([
+            "generated_prices",
+            "unattested_broker_history",
+            "unknown",
+          ]),
+          pnlUnit: zod.enum(["price_units"]),
+          costs: zod.enum(["not_modelled"]),
+          holdout: zod.enum(["not_recorded"]),
+          limitations: zod.array(zod.string()),
+        })
+        .optional(),
+      historyStatus: zod
+        .enum([
+          "available_unattested",
+          "unavailable",
+          "ambiguous_source",
+          "invalid_bars",
+        ])
+        .optional(),
       aiSummary: zod.string().nullish(),
       equityCurve: zod.array(zod.number()).optional(),
       createdAt: zod.string(),
@@ -10098,6 +10123,31 @@ export const CreateBacktestRunResponse = zod.object({
   ]),
   isVerified: zod.enum(["UNVERIFIED", "VERIFIED"]),
   dataSource: zod.enum(["broker", "synthetic"]).optional(),
+  evidence: zod
+    .object({
+      version: zod.literal(1),
+      classification: zod.enum(["diagnostic"]),
+      verification: zod.enum(["unverified"]),
+      comparisonEligible: zod.literal(false),
+      source: zod.enum([
+        "generated_prices",
+        "unattested_broker_history",
+        "unknown",
+      ]),
+      pnlUnit: zod.enum(["price_units"]),
+      costs: zod.enum(["not_modelled"]),
+      holdout: zod.enum(["not_recorded"]),
+      limitations: zod.array(zod.string()),
+    })
+    .optional(),
+  historyStatus: zod
+    .enum([
+      "available_unattested",
+      "unavailable",
+      "ambiguous_source",
+      "invalid_bars",
+    ])
+    .optional(),
   aiSummary: zod.string().nullish(),
   equityCurve: zod.array(zod.number()).optional(),
   createdAt: zod.string(),
@@ -10134,6 +10184,31 @@ export const GetBacktestRunResponse = zod.object({
   ]),
   isVerified: zod.enum(["UNVERIFIED", "VERIFIED"]),
   dataSource: zod.enum(["broker", "synthetic"]).optional(),
+  evidence: zod
+    .object({
+      version: zod.literal(1),
+      classification: zod.enum(["diagnostic"]),
+      verification: zod.enum(["unverified"]),
+      comparisonEligible: zod.literal(false),
+      source: zod.enum([
+        "generated_prices",
+        "unattested_broker_history",
+        "unknown",
+      ]),
+      pnlUnit: zod.enum(["price_units"]),
+      costs: zod.enum(["not_modelled"]),
+      holdout: zod.enum(["not_recorded"]),
+      limitations: zod.array(zod.string()),
+    })
+    .optional(),
+  historyStatus: zod
+    .enum([
+      "available_unattested",
+      "unavailable",
+      "ambiguous_source",
+      "invalid_bars",
+    ])
+    .optional(),
   aiSummary: zod.string().nullish(),
   equityCurve: zod.array(zod.number()).optional(),
   createdAt: zod.string(),
@@ -10172,6 +10247,23 @@ export const GetBacktestChartSeriesParams = zod.object({
 });
 
 export const GetBacktestChartSeriesResponse = zod.object({
+  evidence: zod
+    .object({
+      version: zod.literal(1),
+      classification: zod.enum(["diagnostic"]),
+      verification: zod.enum(["unverified"]),
+      comparisonEligible: zod.literal(false),
+      source: zod.enum([
+        "generated_prices",
+        "unattested_broker_history",
+        "unknown",
+      ]),
+      pnlUnit: zod.enum(["price_units"]),
+      costs: zod.enum(["not_modelled"]),
+      holdout: zod.enum(["not_recorded"]),
+      limitations: zod.array(zod.string()),
+    })
+    .optional(),
   kind: zod.enum(["BACKTEST"]),
   label: zod.string(),
   initialBalance: zod.number(),
@@ -10184,6 +10276,16 @@ export const GetBacktestChartSeriesResponse = zod.object({
       equity: zod.number(),
       peak: zod.number(),
       drawdown: zod.number(),
+      grossPriceUnits: zod
+        .number()
+        .optional()
+        .describe(
+          "Cumulative unscaled P\/L independent of the plotting offset.",
+        ),
+      peakGrossPriceUnits: zod
+        .number()
+        .optional()
+        .describe("Running peak of cumulative unscaled P\/L."),
     }),
   ),
   markers: zod.array(

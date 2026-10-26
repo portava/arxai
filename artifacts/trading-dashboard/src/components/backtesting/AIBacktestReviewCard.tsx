@@ -1,10 +1,11 @@
 // (P) AI review card for a backtest run. Refresh button regenerates summary.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { backtestDiagnosticSummary, type BacktestSummaryInput } from "@workspace/domain/backtest";
 
 export function AIBacktestReviewCard({ runId }: { runId: number | null }) {
   const qc = useQueryClient();
-  const { data } = useQuery<{ aiSummary: string | null; isVerified?: string; status?: string }>({
+  const { data, isLoading, isError } = useQuery<BacktestSummaryInput>({
     queryKey: ["backtest-run", runId],
     queryFn: async () => {
       const r = await fetch(`/api/backtest-runs/${runId}`);
@@ -32,8 +33,9 @@ export function AIBacktestReviewCard({ runId }: { runId: number | null }) {
         </button>
       </header>
       <p className="rounded border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-300">
-        {data?.aiSummary ?? "No review yet — click \"Refresh review\"."}
+        {isLoading ? "Loading diagnostic summary…" : isError || !data ? "Diagnostic summary unavailable." : backtestDiagnosticSummary(data)}
       </p>
+      {review.isError && <p className="text-xs text-amber-300">Review refresh failed. The saved summary has not been updated.</p>}
       <p className="text-[10px] text-slate-500">Past performance does not guarantee future results.</p>
     </div>
   );
