@@ -3,7 +3,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 
 // ScannerReadGate is the user-facing surface of the shared scanner-truth
 // downgrade decision (Task #391). It must:
-//   1. render nothing while truth is still loading,
+//   1. show a checking state while truth is still loading,
 //   2. render nothing when the read is fully actionable (level === "full"),
 //   3. surface a downgrade banner (full) / caption (compact) for every
 //      non-full level — so a card can never present a confident read while the
@@ -31,10 +31,18 @@ afterEach(() => {
 });
 
 describe("ScannerReadGate — shared-truth downgrade surface", () => {
-  it("renders nothing while truth is unresolved", () => {
+  it("shows the pending read cap while truth is unresolved", () => {
     mockTruth.mockReturnValue({ truth: null });
-    const { container } = render(<ScannerReadGate symbol="EURUSD" />);
-    expect(container.firstChild).toBeNull();
+    render(<ScannerReadGate symbol="EURUSD" />);
+    expect(screen.getByTestId("scanner-read-gate")).toBeTruthy();
+    expect(screen.getByText("Confirming market data")).toBeTruthy();
+    expect(screen.getByText(/directional reads and trade ideas are withheld/)).toBeTruthy();
+  });
+
+  it("keeps the pending cap visible in compact cards", () => {
+    mockTruth.mockReturnValue({ truth: null });
+    render(<ScannerReadGate symbol="EURUSD" compact />);
+    expect(screen.getByTestId("scanner-read-gate-compact").textContent).toContain("Confirming market data");
   });
 
   it("renders nothing when the read is fully actionable", () => {

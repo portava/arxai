@@ -19,7 +19,7 @@ export interface ScannerReadGateState {
   level: ScannerAnalysisLevel | null;
   /** Truth resolved AND fully actionable (analysis.level === "full"). */
   isFull: boolean;
-  /** Truth resolved AND NOT fully actionable — actionable content must downgrade. */
+  /** True until truth positively confirms a full read, including loading/error. */
   downgraded: boolean;
   reason: string | null;
 }
@@ -33,7 +33,7 @@ export function useScannerReadGate(symbol: string, timeframe?: string): ScannerR
     truth,
     level,
     isFull,
-    downgraded: truth != null && !isFull,
-    reason: truth?.analysis.reason ?? null,
+    downgraded: !isFull,
+    reason: truth?.analysis.reason ?? "Confirming this market's live feed — directional reads and trade ideas are withheld.",
   };
 }

@@ -11,6 +11,7 @@ import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import type { ChartFeedStatus } from "@workspace/api-client-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useAssistantName } from "@/lib/assistant-name";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import {
   chartCandlesQueryKey,
   fetchChartCandles,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/chartCandlesQuery";
 import {
   resolveScannerTruth,
+  thresholdsFor,
   type ScannerTruth,
   type ScannerTruthMode,
 } from "@/lib/scannerTruth";
@@ -39,12 +41,18 @@ export interface UseScannerTruthResult {
 
 const DEFAULT_LIMIT = 200;
 
+function candleTimeIso(time: number | undefined): string | null {
+  if (time == null) return null;
+  const date = new Date(time);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 export function useScannerTruth(
   symbolDisplay: string,
   timeframe: string,
   opts?: { limit?: number; refetchInterval?: number },
 ): UseScannerTruthResult {
-  const symbol = (symbolDisplay || "").toUpperCase();
+  const symbol = (symbolDisplay || "").trim().toUpperCase();
   const chartTimeframe = normalizeChartTimeframe(timeframe);
   const apiTf = toApiTimeframe(chartTimeframe);
   const limit = opts?.limit ?? DEFAULT_LIMIT;
@@ -70,6 +78,10 @@ export function useScannerTruth(
   const feedStatus = candlesQ.data?.feedStatus ?? null;
   const last = candles.length > 0 ? candles[candles.length - 1] : null;
   const first = candles.length > 0 ? candles[0] : null;
+  const lastTime = candleTimeIso(last?.time);
+  const nowMs = useEvidenceDeadline(lastTime != null
+    ? Date.parse(lastTime) + thresholdsFor(chartTimeframe).candleMaxAgeMs + 1
+    : null);
 
   const env = mode.envelope;
   const truthMode: ScannerTruthMode = {
@@ -96,8 +108,8 @@ export function useScannerTruth(
         feedStatus,
         candleCount: candles.length,
         requestedCount: limit,
-        firstTime: first ? new Date(first.time).toISOString() : null,
-        lastTime: last ? new Date(last.time).toISOString() : null,
+        firstTime: candleTimeIso(first?.time),
+        lastTime,
         lastClose: last ? last.close : null,
         // No trusted independent real-time quote exists: the only quote endpoint
         // is the simulator (the very source that caused the divergence bug and is
@@ -105,8 +117,11 @@ export function useScannerTruth(
         // divergence class entirely, so the consistency dimension stays neutral
         // rather than cross-checking against fabricated data (Task #391).
         quote: null,
-        headerOk,
+        // Keep cached bars as historical context after a failed refresh, but
+        // withdraw live affordances for every direct truth consumer as well.
+        headerOk: candlesQ.isError ? false : headerOk,
         mode: truthMode,
+        nowMs,
       }, assistantName)
     : null;
 
