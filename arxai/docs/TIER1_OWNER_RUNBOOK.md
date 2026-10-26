@@ -674,3 +674,8 @@ The [non-broker release readiness guide](TIER1_NON_BROKER_READINESS.md) covers
 password recovery, database readiness and portable production build/check/start
 commands. These features can be tested without DEMO orders; their development
 checks do not replace the operational evidence above.
+
+[Operational rate-cap monitoring](TIER1_OPERATIONAL_MONITORING.md) now describes
+the audit-correlated log event and owner-scoped dashboard notification for
+`OPERATIONAL_RATE_CAP_REACHED`. Offline tests prove the code path; production
+log collection and external monitoring receipt still require owner verification.

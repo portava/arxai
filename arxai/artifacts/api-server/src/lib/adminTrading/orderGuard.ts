@@ -17,6 +17,7 @@ import { platformStop, preCheckStopRefusal } from "../safety/platformSwitches.js
 import { resolveRouting, type RoutingDecision } from "./routingResolver.js";
 import { logger } from "../logger.js";
 import { enforcePreTradeRisk } from "../riskGovernor/enforce.js";
+import { reportOperationalRateCap } from "../alerts/operationalRateCap.js";
 
 export interface OrderRequest {
   userId: number;
@@ -296,6 +297,15 @@ export async function runOrderGuards(req: OrderRequest): Promise<OrderGuardResul
     virtualAccountId: routing.virtualAccountId,
     sharedMasterAccountId: routing.sharedMasterAccountId,
   }).returning({ id: tradeCommandAuditLogTable.id });
+
+  // Observe only a persisted refusal. Monitoring has no authority to approve,
+  // dispatch, change limits or alter the existing guard result.
+  try {
+    reportOperationalRateCap({
+      userId: req.userId, auditLogId: inserted[0]?.id ?? 0, mode: req.mode,
+      status, reason: rejection,
+    });
+  } catch { /* Observation must never replace the persisted guard result. */ }
 
   return {
     status,

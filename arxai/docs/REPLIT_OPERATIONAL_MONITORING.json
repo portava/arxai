@@ -1,0 +1,126 @@
+{
+  "at": "2026-10-26T10:05:51.329763+00:00",
+  "scope": "Approved Replit development workspace only",
+  "github_pr": "https://github.com/portava/arxai/pull/74",
+  "github_head": "21c11eece806e1744834200c063d5315f85f964a",
+  "github_status": "OPEN; awaiting owner merge approval",
+  "workspace_previous_commit": "82c766e7513f95c00659200640ce6fe7ff8f31ff",
+  "recovery_branch": "codex/backup-before-rate-cap-monitoring-20261026",
+  "checks": {
+    "monitoring": {
+      "exit_code": 0,
+      "seconds": 5.8,
+      "log_sha256": "436cb409582b4645e9224f12c7a52949e3980f325975187c65698b09bd65d299"
+    },
+    "release_regressions": {
+      "exit_code": 0,
+      "seconds": 7.2,
+      "log_sha256": "2c142e80891f58185d27dc30954bdc579e556da7bd5722a36476ce6db6a9ae37"
+    },
+    "api_typecheck": {
+      "exit_code": 0,
+      "seconds": 35.6,
+      "log_sha256": "d6743742a7c68327395f5864f92db1c7ebbd9db85bf56e2e04d1d4dd78da06eb"
+    },
+    "guards": {
+      "exit_code": 0,
+      "seconds": 25.5,
+      "log_sha256": "7b58a2f2b563c32da9d647bbca5b9882eae80473364d7927a22520a09e3ecd8b"
+    },
+    "api_build": {
+      "exit_code": 0,
+      "seconds": 1.7,
+      "log_sha256": "4e638431ad1f93103c1e39d560b70de72de83649dc24403d23ea0daa1db56a89"
+    }
+  },
+  "monitoring_tests": 11,
+  "release_regression_tests": 19,
+  "guards": 87,
+  "http_smoke_after_api_restart": {
+    "at": "2026-10-26T10:03:35.796330+00:00",
+    "checks": {
+      "liveness": {
+        "status": 200,
+        "expected": 200,
+        "pass": true
+      },
+      "database_readiness": {
+        "status": 200,
+        "expected": 200,
+        "pass": true
+      },
+      "anonymous_identity": {
+        "status": 401,
+        "expected": 401,
+        "pass": true
+      },
+      "login": {
+        "status": 200,
+        "expected": 200,
+        "pass": true
+      }
+    },
+    "all_passed": true
+  },
+  "source_sha256": {
+    "arxai/artifacts/api-server/src/lib/adminTrading/__qa__/operationalRateCapMonitoring.test.ts": "2a7891187c076860a274e66f016c9357b6d9738d9356869cc43f561a8da1d9a6",
+    "arxai/artifacts/api-server/src/lib/adminTrading/orderGuard.ts": "13d57c9749185ec415ff4e2b1f114e72e43f216ae3f7168859854e07df5db180",
+    "arxai/artifacts/api-server/src/lib/alerts/__qa__/operationalRateCapMonitor.test.ts": "acce98225547ab04ecee87c141c6493bc63fcaaa1ba1d4cd07b1298576dfb8cd",
+    "arxai/artifacts/api-server/src/lib/alerts/operationalRateCap.ts": "4979acb394f9bb307a68f76e3366fb149b3c1251947f963a7e29b6155c732c04",
+    "arxai/artifacts/api-server/src/lib/alerts/operationalRateCapMonitor.ts": "7cc6e0b87c008a2430be3feb306a01a8cba8d065a81c2f62f9206bc1f4bdbe79",
+    "arxai/docs/TIER1_OPERATIONAL_MONITORING.md": "6803971ecec773296356317d578dc5e66fcfc148009d13730ca256ab1283864c",
+    "arxai/docs/TIER1_OWNER_RUNBOOK.md": "01290f94c511fd3ab605724bf20356d78e8bffd42ce5879824660a6c16efc317"
+  },
+  "package_handling": "Only upstream script deltas merged; existing Replit scripts preserved",
+  "provider_observation": {
+    "at": "2026-10-26T10:02:31.471Z",
+    "provider": "composite(polygon,finnhub,alpha_vantage)",
+    "quotes": [
+      {
+        "symbol": "AAPL",
+        "source": "alpha_vantage",
+        "freshness": "STALE",
+        "asOf": "2026-10-23T00:00:00.000Z",
+        "hasBid": false,
+        "hasAsk": false,
+        "stale": true
+      },
+      {
+        "symbol": "EURUSD",
+        "source": "alpha_vantage",
+        "freshness": "UNAVAILABLE",
+        "asOf": null,
+        "hasBid": false,
+        "hasAsk": false,
+        "stale": true
+      }
+    ],
+    "candles": {
+      "symbol": "EURUSD",
+      "timeframe": "M1",
+      "source": "finnhub",
+      "freshness": "UNAVAILABLE",
+      "asOf": null,
+      "count": 0
+    },
+    "scope": "development read-only; no production or broker evidence"
+  },
+  "prior_pr_status": {
+    "72": "MERGED at 286e030dc8f31c584a9dfcd361e493971d3b60f7",
+    "73": "MERGED at cbf3a2668105f55b98e62136fac180e679b80966"
+  },
+  "external_alert_delivery_verified": false,
+  "actions": {
+    "published": false,
+    "broker_orders": 0,
+    "real_email_sends": 0,
+    "trading_controls_changed": false
+  },
+  "limitations": [
+    "Development checks do not establish production readiness.",
+    "Offline tests use fake dependencies; no real alert or order was created.",
+    "Frontend source was unchanged; frontend checks were not repeated for this API-only change.",
+    "No GitHub workflow runs or commit statuses were reported for this head.",
+    "Initial background validation stopped during workspace switching. Completed tests were retained, interrupted typecheck log preserved, and remaining checks completed successfully."
+  ]
+}
