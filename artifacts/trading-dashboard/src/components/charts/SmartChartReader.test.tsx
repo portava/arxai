@@ -3,6 +3,8 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import type { ChartEngineAdapter, ChartEngineCandle } from "@/lib/chart-engine";
 import { SmartChartReader, findingAnnotation } from "./SmartChartReader";
+import { captureChartReplay } from "@/lib/chart-engine/chartReplay";
+import { DEFAULT_PREFERENCES } from "@/lib/chart-engine/chartWorkspace";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { analyzeSmartChart, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
 const START=Date.parse("2026-10-25T10:00:00Z"),NOW=START+100*300_000;
@@ -53,6 +55,33 @@ describe("embedded chart reader follows applied candles",()=>{
     expect(screen.queryByLabelText("Relevant chart patterns")).toBeNull();
     expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
     view.unmount();expect(f.unsubscribe).toHaveBeenCalled();
+  });
+  it("historical replay consumes only acknowledged bars and never claims current-feed analysis",()=>{
+    const f=fixture();
+    const snapshot=captureChartReplay(f.data,7,DEFAULT_PREFERENCES,NOW).snapshot!;
+    f.show(f.all.slice(0,10));
+    const view=render(<SmartChartReader {...f.props} data={{...f.data,symbol:"EURUSD"}} liveConfirmed replay={{snapshot,installedCount:10}}/>);
+    expect(screen.getByText("Historical replay · closed candles only")).toBeTruthy();
+    expect(screen.getByText(/10 closed candles analyzed/)).toBeTruthy();
+    expect(screen.getByTestId("smart-chart-reader").getAttribute("data-replay-installed-count")).toBe("10");
+    expect(screen.getByTestId("smart-chart-reader").getAttribute("data-analysis-asof")).toBe(String(snapshot.bars[9]!.closeTime));
+    expect(screen.getByText(/Replay: only candles known by this point are analyzed/)).toBeTruthy();
+    const first=f.setSmartAnnotation.mock.lastCall?.[0];
+    expect(first.anchors.every((anchor:any)=>anchor.time<=f.all[9]!.time)).toBe(true);
+    // New requested count is not enough: the installed count remains10. A
+    // mismatched applied future window refuses instead of using live DTO bars.
+    f.show(f.all.slice(15,30));
+    expect(screen.queryByLabelText("Relevant chart patterns")).toBeNull();
+    expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
+    f.show(f.all.slice(0,5));
+    view.rerender(<SmartChartReader {...f.props} replay={{snapshot,installedCount:5}}/>);
+    expect(screen.getByText(/5 closed candles analyzed/)).toBeTruthy();
+    expect(screen.getByTestId("smart-chart-reader").getAttribute("data-replay-installed-count")).toBe("5");
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]?.anchors.every((anchor:any)=>anchor.time<=f.all[4]!.time)).toBe(true);
+    view.rerender(<SmartChartReader {...f.props} replay={{snapshot,installedCount:0}}/>);
+    expect(screen.getByTestId("smart-chart-reader").getAttribute("data-analysis-asof")).toBeNull();
+    expect(screen.queryByLabelText("Relevant chart patterns")).toBeNull();
+    expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
   });
   it("renders actual sloped neckline anchors without inventing a horizontal historical level",()=>{
     const finding={id:"head_and_shoulders:1",status:"confirmed",anchors:[{time:1,price:102,role:"left_shoulder"},{time:2,price:100,role:"neckline_left"},{time:3,price:110,role:"head"},{time:4,price:101,role:"neckline_right"},{time:5,price:103,role:"right_shoulder"}],levels:[{price:104,label:"Neckline now"}]} as SmartChartFinding;

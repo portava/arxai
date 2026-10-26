@@ -16,8 +16,10 @@ interface Props {
   drawingKey?: string;
   /** Private replay annotations never persist or synchronize across sessions. */
   ephemeralDrawings?: boolean;
+  /** Replay has no further history read beyond its frozen window. */
+  historyWindowOnly?: boolean;
 }
-export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false}: Props) {
+export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false}: Props) {
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
   const [history,setHistory] = useState<{past:ChartDrawing[][];present:ChartDrawing[];future:ChartDrawing[][]}>(()=>({past:[],present:ephemeralDrawings ? [] : validateDrawings(readChartStorage(key)),future:[]}));
@@ -138,7 +140,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
     </div>
     <div className="mt-2 flex flex-wrap items-center gap-2 text-zinc-400" aria-label="Chart date navigation">
       <span>Range</span>{[["1D",86400],["5D",432000],["1M",2592000],["3M",7776000],["1Y",31536000]].map(([label,seconds])=><button key={label} type="button" className="rounded px-2 py-1 text-[11px] hover:bg-zinc-800 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40" disabled={!hasCandles} onClick={()=>{const range=adapter?.showRecentRange?.(Number(seconds));setMessage(range ? range.complete ? "Range shown from loaded history." : "Showing available history; the requested range starts before the loaded candles." : "No history available.");}}>{label}</button>)}
-      <form className="flex flex-wrap items-center gap-2" onSubmit={event=>{event.preventDefault();const time=Date.parse(`${goToDate}Z`)/1000;setMessage(adapter?.goToTime?.(time) ? "Centered on the first loaded candle at or after that UTC time." : "That UTC time is outside loaded history. Pan left to load older candles, then try again.");}}>
+      <form className="flex flex-wrap items-center gap-2" onSubmit={event=>{event.preventDefault();const time=Date.parse(`${goToDate}Z`)/1000;setMessage(adapter?.goToTime?.(time) ? "Centered on the first loaded candle at or after that UTC time." : historyWindowOnly ? "That UTC time is outside the revealed replay window. Reveal more bars or choose an earlier time." : "That UTC time is outside loaded history. Pan left to load older candles, then try again.");}}>
         <input type="datetime-local" step="60" aria-label="Go to UTC date and time" className={`${field} max-w-full`} value={goToDate} onChange={event=>setGoToDate(event.target.value)} required />
         <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles || !goToDate} type="submit">Go to UTC</Button>
       </form>
