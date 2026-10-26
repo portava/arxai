@@ -35,6 +35,7 @@ import { explainMarketRead } from "@workspace/domain/signal-intelligence";
 import type { UniverseId } from "../lib/marketScanner.js";
 import { getAssistantDisplayName } from "../lib/assistant/assistantName.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { normalizeChartTimeframe } from "../lib/data/chart/timeframes.js";
 
 function isAdminSession(req: import("express").Request): boolean {
   const role = (req.authUser as { role?: string } | undefined)?.role;
@@ -334,6 +335,10 @@ router.get("/me/opportunity-map", requireUser, async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "invalid_request", message: "Please pick a market group to scan." });
   }
+  const timeframe = parsed.data.timeframe === undefined ? undefined : normalizeChartTimeframe(parsed.data.timeframe);
+  if (timeframe === null) {
+    return res.status(400).json({ error: "invalid_timeframe", message: "Choose a supported chart timeframe." });
+  }
   const universe = (parsed.data.marketGroup ?? "all") as UniverseId;
   const selectedSymbol = parsed.data.selectedSymbol
     ? normalizeSymbol(parsed.data.selectedSymbol) || null
@@ -342,7 +347,7 @@ router.get("/me/opportunity-map", requireUser, async (req, res) => {
     const result = await getCachedOpportunityMap({
       universe,
       selectedSymbol,
-      timeframe: parsed.data.timeframe ?? undefined,
+      timeframe,
     });
     return res.json(result);
   } catch (e) {
