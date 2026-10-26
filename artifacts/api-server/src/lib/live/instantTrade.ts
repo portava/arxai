@@ -513,6 +513,7 @@ async function executeOpen(args: {
   }
   return {
     ok: false, httpStatus: 409,
+    commandId: (stage as { commandId?: string }).commandId,
     error: draftR?.blockReason ?? draftR?.reason ?? draftR?.primaryReason ?? "EXECUTE_REJECTED",
     primaryReason: draftR?.primaryReason ?? draftR?.blockReason ?? draftR?.reason,
     blockingReasonCode: draftR?.blockingReasonCode,
