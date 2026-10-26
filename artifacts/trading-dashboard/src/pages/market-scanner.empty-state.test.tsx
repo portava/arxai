@@ -136,7 +136,7 @@ vi.mock("@/components/ui/select", () => ({
 vi.mock("@/components/trading/SetupQualityBadge", () => ({ SetupQualityBadge: () => null }));
 vi.mock("@/components/scanner/RubySetupReason", () => ({ RubySetupReason: () => null }));
 vi.mock("@/components/scanner/ScannerTimingBadges", () => ({ ScannerTimingBadges: () => null }));
-vi.mock("@/components/scanner/ScannerTradeModal", () => ({ ScannerTradeModal: () => null }));
+vi.mock("@/components/scanner/ScannerTradeModal", () => ({ ScannerTradeModal: ({ open }: { open: boolean }) => open ? <div data-testid="scanner-ticket-fixture" /> : null }));
 vi.mock("@/components/scanner/RecentScannerTrades", () => ({ RecentScannerTrades: () => null }));
 vi.mock("@/components/live/MasterLiveAccessGuard", () => ({ MasterLiveAccessBanner: () => null }));
 vi.mock("@/components/scanner/SelectedMarketPanel", () => ({ SelectedMarketPanel: () => null }));
@@ -188,6 +188,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("Market Scanner — empty-state honesty (never-scanned vs scanned-empty)", () => {
@@ -387,5 +388,91 @@ describe("Market Scanner — a scan that ran on a degraded feed never reads as n
     for (const phrase of NEVER_SCANNED_PHRASES) {
       expect(emptyState).not.toContain(phrase);
     }
+  });
+});
+
+
+describe("Market Scanner — stale result action containment", () => {
+  function freshResult() {
+    const generatedAt = new Date().toISOString();
+    return { generatedAt, universeSymbols: ["EURUSD"], opportunities: [{
+      symbol: "EURUSD", timeframe: "M5", bias: "bullish", recommendedAction: "BUY",
+      setupType: "Pullback", confidenceScore: 70, riskScore: 20, entrySniperScore: 65,
+      riskRewardRatio: 2, reasonForTrade: "Fixture", reasonToAvoid: "", rulesPassed: [], rulesFailed: [],
+      statusBadge: "WATCHLIST", opportunity: { score: 70, label: "ACCEPTABLE" },
+      entry: 1.1, stopLoss: 1.09, takeProfit: 1.12, generatedAt, dataStatus: "live", tradeable: true,
+    }] };
+  }
+
+  it("expires selected trade actions and an open ticket despite successful cached polls, then accepts a new scan", async () => {
+    vi.useFakeTimers();
+    let result = freshResult();
+    safeJsonMock.mockImplementation(async (url) => url.includes("/opportunities")
+      ? { ok: true, data: result } : defaultReads(url));
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByTestId("scanner-buy-EURUSD"));
+    expect(screen.getByTestId("scanner-ticket-fixture")).toBeTruthy();
+    await act(async () => { vi.advanceTimersByTime(31_000); await Promise.resolve(); });
+    await settle();
+    expect(screen.queryByTestId("scanner-buy-EURUSD")).toBeNull();
+    expect(screen.queryByTestId("scanner-sell-EURUSD")).toBeNull();
+    expect(screen.queryByText("Trade Setup")).toBeNull();
+    expect(screen.queryByText("Live Intent")).toBeNull();
+    expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
+    expect(screen.getByText(/This setup needs a fresh, tradeable market read/)).toBeTruthy();
+    result = freshResult();
+    await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); });
+    await settle();
+    expect(screen.getByTestId("scanner-buy-EURUSD")).toBeTruthy();
+    expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("live-intent"))).toBe(false);
+  });
+
+  it("dismisses a still-fresh ticket when the next read invalidates or changes its setup", async () => {
+    vi.useFakeTimers();
+    let result = freshResult();
+    safeJsonMock.mockImplementation(async (url) => url.includes("/opportunities")
+      ? { ok: true, data: result } : defaultReads(url));
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByTestId("scanner-buy-EURUSD"));
+    expect(screen.getByTestId("scanner-ticket-fixture")).toBeTruthy();
+    result = freshResult(); result.opportunities[0]!.tradeable = false;
+    await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); }); await settle();
+    expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
+    result = freshResult();
+    await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); }); await settle();
+    fireEvent.click(screen.getByTestId("scanner-buy-EURUSD"));
+    expect(screen.getByTestId("scanner-ticket-fixture")).toBeTruthy();
+    result = freshResult(); result.opportunities[0]!.stopLoss = 1.08;
+    await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); }); await settle();
+    expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
+    expect(screen.getByTestId("scanner-buy-EURUSD")).toBeTruthy();
+  });
+
+  it("does not accept a newly stamped row without its original scan timestamp", async () => {
+    const { generatedAt: _missing, ...result } = freshResult();
+    safeJsonMock.mockImplementation(async (url) => url.includes("/opportunities")
+      ? { ok: true, data: result } : defaultReads(url));
+    render(<MarketScanner />); await settle();
+    expect(screen.queryByTestId("scanner-buy-EURUSD")).toBeNull();
+    expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
+  });
+
+  it("withholds result actions when the latest read fails or the row is non-tradeable", async () => {
+    vi.useFakeTimers();
+    let broken = false;
+    const result = freshResult();
+    safeJsonMock.mockImplementation(async (url) => url.includes("/opportunities")
+      ? broken ? { ok: false, kind: "http", status: 502, message: "fixture outage" } : { ok: true, data: result }
+      : defaultReads(url));
+    render(<MarketScanner />); await settle();
+    fireEvent.click(screen.getByTestId("scanner-buy-EURUSD"));
+    broken = true;
+    await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); }); await settle();
+    expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
+    expect(screen.queryByTestId("scanner-buy-EURUSD")).toBeNull();
+    broken = false; result.opportunities[0]!.tradeable = false;
+    await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); }); await settle();
+    expect(screen.queryByTestId("scanner-buy-EURUSD")).toBeNull();
   });
 });

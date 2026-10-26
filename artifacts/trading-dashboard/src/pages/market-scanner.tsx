@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useRef, useEffect, useMemo, useState } from "react";
 import { markActionStart, markUiFeedback, markActionEnd } from "@/lib/perf";
 import { useGetAaciCohesion, getGetAaciCohesionQueryKey, type AaciCohesionItem } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -42,6 +42,7 @@ import { RubyScalpBasketPanel } from "@/components/scanner/RubyScalpBasketPanel"
 import { RubyScalpReviewPanel } from "@/components/scanner/RubyScalpReviewPanel";
 import { safeJson } from "@/lib/api/safeJson";
 import { SCANNER_DEGRADED_MESSAGE } from "@/lib/scannerResilience";
+import { canUseScannerOpportunity } from "@/components/scanner/scannerMapFreshness";
 import type { ScalpResult } from "@workspace/api-client-react";
 
 type Opp = {
@@ -54,6 +55,10 @@ type Opp = {
   statusBadge: string;
   opportunity: { score: number; label: string };
   entry: number; stopLoss: number; takeProfit: number;
+  generatedAt?: string;
+  scanGeneratedAt?: string;
+  dataStatus?: string;
+  tradeable?: boolean;
   timingContext?: ScannerTimingContext;
 };
 
@@ -216,6 +221,12 @@ export default function MarketScanner() {
     universe?: UniverseId; universeSymbols?: string[]; feedNote?: string;
   } | null>(null);
   const [opps, setOpps] = useState<Opp[]>([]);
+  const [snapshotClock, setSnapshotClock] = useState(Date.now);
+  const loadVersion = useRef(0);
+  useEffect(() => {
+    const timer = setInterval(() => setSnapshotClock(Date.now()), 1000);
+    return () => { clearInterval(timer); loadVersion.current++; };
+  }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // Scan-button cooldown (Task #565). After a successful scan we proactively
@@ -244,6 +255,13 @@ export default function MarketScanner() {
   // claim "No scan run yet" while the map renders populated results.
   const [mapScanned, setMapScanned] = useState(false);
   const [tradeTarget, setTradeTarget] = useState<{ opp: Opp; side: "BUY" | "SELL" } | null>(null);
+  const tradeTargetUsable = !!tradeTarget && !err && canUseScannerOpportunity(tradeTarget.opp, snapshotClock) &&
+    opps.some((current) => current.symbol === tradeTarget.opp.symbol && current.timeframe === tradeTarget.opp.timeframe &&
+      canUseScannerOpportunity(current, snapshotClock) && current.recommendedAction === tradeTarget.opp.recommendedAction &&
+      current.entry === tradeTarget.opp.entry && current.stopLoss === tradeTarget.opp.stopLoss && current.takeProfit === tradeTarget.opp.takeProfit);
+  useEffect(() => {
+    if (tradeTarget && !tradeTargetUsable) setTradeTarget(null);
+  }, [tradeTarget, tradeTargetUsable]);
   const [scalpTrade, setScalpTrade] = useState<{ result: ScalpResult; side: "BUY" | "SELL" } | null>(null);
   // Advanced analysis surfaces (Trade Review / Market Replay / Backtesting)
   // are admin-only routes now. Hide their quick-links from normal users so a
@@ -297,6 +315,7 @@ export default function MarketScanner() {
   }, []);
 
   async function load() {
+    const requestVersion = ++loadVersion.current;
     // Both reads go through safeJson: a 502 / empty / truncated body comes back
     // as a typed failure instead of an uncaught SyntaxError. On any failure we
     // keep the prior status/opportunities (no wipe on a transient blip), show
@@ -306,8 +325,9 @@ export default function MarketScanner() {
         running: boolean; opportunityCount: number; lastScanAt: string | null;
         universe?: UniverseId; universeSymbols?: string[]; feedNote?: string;
       }>("/api/market-scanner/status"),
-      safeJson<{ opportunities?: Opp[] }>("/api/market-scanner/opportunities?limit=40"),
+      safeJson<{ opportunities?: Opp[]; generatedAt?: string; universeSymbols?: string[] }>("/api/market-scanner/opportunities?limit=40"),
     ]);
+    if (requestVersion !== loadVersion.current) return;
     // Narrow each result independently so TypeScript keeps the failure variant
     // (the union can't be correlated through a shared `f` ternary).
     if (!s.ok) {
@@ -322,8 +342,12 @@ export default function MarketScanner() {
     }
     setErr("");
     setStatus(s.data);
-    const universeSyms: string[] = s.data?.universeSymbols ?? [];
-    const all: Opp[] = o.data.opportunities ?? [];
+    // The result envelope owns its universe and timestamp; status is a
+    // separate request and can already describe a different scan.
+    const universeSyms: string[] = o.data.universeSymbols ?? [];
+    const all: Opp[] = (o.data.opportunities ?? []).map((row) => ({
+      ...row, scanGeneratedAt: o.data.generatedAt,
+    }));
     setOpps(universeSyms.length ? all.filter((x) => universeSyms.includes(x.symbol)) : all);
   }
   // Tick the Scan-button cooldown countdown. A single 250ms interval (so the
@@ -492,6 +516,7 @@ export default function MarketScanner() {
   }
 
   async function sendToIntent(o: Opp) {
+    if (err || !canUseScannerOpportunity(o, Date.now())) return;
     await api("/api/live-intent/submit", {
       method: "POST",
       body: JSON.stringify({
@@ -614,7 +639,16 @@ export default function MarketScanner() {
         </CardContent></Card>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {opps.map((o, i) => (
+          {opps.map((o, i) => err || !canUseScannerOpportunity(o, snapshotClock) ? (
+            <Card key={`${o.symbol}-${o.timeframe}-${i}`} data-testid={`scanner-result-unavailable-${o.symbol}`}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">{o.symbol} <span className="text-xs text-muted-foreground">{o.timeframe}</span></CardTitle>
+              </CardHeader>
+              <CardContent className="text-xs text-muted-foreground">
+                This setup needs a fresh, tradeable market read. Scan again to restore its direction, scores and trade actions.
+              </CardContent>
+            </Card>
+          ) : (
             <Card
               key={`${o.symbol}-${o.timeframe}-${i}`}
               className="border-l-4"
@@ -707,7 +741,7 @@ export default function MarketScanner() {
                       // Target: modal visible <250ms. The end mark fires
                       // from ScannerTradeModal once its shell renders.
                       const tid = markActionStart("scanner.openTradeModal", { page: "market-scanner" });
-                      setTradeTarget({ opp: o, side: "BUY" });
+                      if (!err && canUseScannerOpportunity(o, Date.now())) setTradeTarget({ opp: o, side: "BUY" });
                       markUiFeedback(tid);
                       // End is captured in the same microtask so we
                       // measure the synchronous click→state-set cost.
@@ -721,7 +755,7 @@ export default function MarketScanner() {
                     className="h-9 text-sm font-bold bg-rose-600 hover:bg-rose-500 text-white"
                     onClick={() => {
                       const tid = markActionStart("scanner.openTradeModal", { page: "market-scanner" });
-                      setTradeTarget({ opp: o, side: "SELL" });
+                      if (!err && canUseScannerOpportunity(o, Date.now())) setTradeTarget({ opp: o, side: "SELL" });
                       markUiFeedback(tid);
                       markActionEnd(tid);
                     }}
@@ -731,7 +765,7 @@ export default function MarketScanner() {
                     size="sm"
                     variant="outline"
                     className="h-9 text-xs"
-                    onClick={() => setTradeTarget({ opp: o, side: o.recommendedAction === "SELL" ? "SELL" : "BUY" })}
+                    onClick={() => { if (!err && canUseScannerOpportunity(o, Date.now())) setTradeTarget({ opp: o, side: o.recommendedAction === "SELL" ? "SELL" : "BUY" }); }}
                   >
                     <Sliders className="h-3 w-3 mr-1" />Trade Setup
                   </Button>
@@ -926,7 +960,7 @@ export default function MarketScanner() {
         ]}
       />
 
-      {tradeTarget && (
+      {tradeTarget && tradeTargetUsable && (
         <SectionErrorBoundary section="Trade ticket">
         <ScannerTradeModal
           open={!!tradeTarget}

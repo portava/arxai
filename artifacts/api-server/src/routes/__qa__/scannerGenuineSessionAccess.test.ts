@@ -1,27 +1,6 @@
-// Task #573 Part B — non-admin scan honesty proven via a GENUINE signed session
-// cookie (NOT the dev-only `x-security-role` header).
-//
-// The companion proof (scannerManualScanAccess.test.ts) selects the viewer role
-// with the dev-only `x-security-role` header. Code review required a faithful,
-// production-shaped proof: the per-viewer simulator masking AND the operator-only
-// /start//stop gate must hold off a REAL signed `hr_session` role cookie — the
-// only role source trusted in production. `getSessionFromReq` tries the signed
-// cookie FIRST, before any dev header, regardless of IS_PROD, so this is exactly
-// the path a deployed non-admin user takes. NO request in this file ever sends
-// `x-security-role`.
-//
-// The cookie is minted with the server's OWN `encodeSession`, so it is signed
-// with the SAME secret the running router verifies against (same module
-// singleton ⇒ self-consistent whether or not SESSION_SECRET is set in env).
-//
-// Proves, using only signed cookies:
-//   (a) a non-admin (VIEWER) caller gets 200 from /scan, the simulator row is
-//       masked, and the genuinely-live row passes through unchanged;
-//   (b) an OWNER caller sees the unmasked simulator row (operator diagnostics);
-//   (c) that same VIEWER cookie gets 403 from /start and /stop.
-//
-// Run: node --import tsx --experimental-test-module-mocks --test \
-//   src/routes/__qa__/scannerGenuineSessionAccess.test.ts
+// Real user-session scanner access: role masking and operator-only controls use
+// the resolved user record. Signed legacy role cookies cannot elevate that role.
+// Provider reads, users and cooldowns are fixtures; no broker or database I/O.
 
 import { test, before, after, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
@@ -32,8 +11,10 @@ import type { AddressInfo } from "node:net";
 import type { User } from "@workspace/db";
 import type { ScannerOpportunity } from "../../lib/marketScanner.js";
 
-// ── Mock the per-user auth lookup BEFORE the router is imported ──────────────
-// A test cookie value "u:<id>" maps to a fake user carrying that numeric id.
+// Signed-in users now take their role from the resolved user record, not the
+// legacy signed role cookie. Mirror production's attachAuthUser middleware and
+// give the mocked session lookup an explicit user role.
+const sessionRoles = new Map<number, string>();
 const realUserSessions = await import("../../lib/auth/userSessions.js");
 mock.module("../../lib/auth/userSessions.js", {
   namedExports: {
@@ -41,7 +22,7 @@ mock.module("../../lib/auth/userSessions.js", {
     findUserBySessionToken: async (raw: string): Promise<User | null> => {
       const m = /^u:(\d+)$/.exec(raw);
       if (!m) return null;
-      return { id: Number(m[1]) } as unknown as User;
+      return { id: Number(m[1]), role: sessionRoles.get(Number(m[1])) ?? "VIEWER" } as unknown as User;
     },
   },
 });
@@ -94,10 +75,14 @@ const identityDecorator = async (rows: ScannerOpportunity[]) => rows;
 mock.module("../../lib/marketScanner.js", {
   namedExports: {
     ...realScanner,
-    scanOnce: async () => [SIM_ROW, LIVE_ROW],
+    scanOnceSnapshot: async () => ({
+      universe: "all", symbols: ["EURUSD", "GBPUSD"], timeframes: ["M5"],
+      opportunities: [SIM_ROW, LIVE_ROW], generatedAt: new Date().toISOString(), durationMs: 1,
+    }),
     decorateOpportunitiesWithHistory: identityDecorator,
     decorateOpportunitiesWithNewsRisk: identityDecorator,
     decorateOpportunitiesWithTimingContext: identityDecorator,
+    decorateOpportunitiesWithFvgRead: identityDecorator,
     decorateOpportunitiesWithFinalRead: (rows: ScannerOpportunity[]) => rows,
     effectiveOpportunityScore: (o: ScannerOpportunity) => o.opportunity?.score ?? 0,
     scannerStatus: () => ({ universe: "all", universeSymbols: [], feedNote: "" }),
@@ -145,6 +130,7 @@ function signedRoleCookie(role: SignableRole): string {
 
 /** Cookie header carrying BOTH the per-user session AND a signed role cookie. */
 function cookies(userId: number, role: SignableRole): string {
+  sessionRoles.set(userId, role);
   return `arx_user_session=u:${userId}; hr_session=${signedRoleCookie(role)}`;
 }
 
@@ -152,6 +138,8 @@ before(async () => {
   const app = express();
   app.use(express.json());
   app.use(cookieParser());
+  const { attachAuthUser } = await import("../../lib/auth/middleware.js");
+  app.use(attachAuthUser);
   app.use("/api", scannerRouter);
   await new Promise<void>((resolve) => { server = app.listen(0, () => resolve()); });
   const { port } = server.address() as AddressInfo;
@@ -162,7 +150,7 @@ after(async () => {
   await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())));
 });
 
-beforeEach(() => { scanConsumed.clear(); });
+beforeEach(() => { scanConsumed.clear(); sessionRoles.clear(); });
 
 function scan(userId: number, role: SignableRole) {
   return fetch(`${base}/api/market-scanner/scan`, {
@@ -223,3 +211,16 @@ for (const path of ["/api/market-scanner/start", "/api/market-scanner/stop"]) {
     assert.equal(res.status, 403, `${path} must stay admin-only`);
   });
 }
+
+
+test("a signed OWNER role cookie cannot elevate a resolved VIEWER session", async () => {
+  sessionRoles.set(90104, "VIEWER");
+  const response = await fetch(`${base}/api/market-scanner/scan`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: `arx_user_session=u:90104; hr_session=${signedRoleCookie("OWNER")}` },
+    body: JSON.stringify({ universe: "all" }),
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as { opportunities: ScannerOpportunity[] };
+  assert.equal(body.opportunities.find((row: ScannerOpportunity) => row.symbol === "GBPUSD")?.confidenceScore, 0);
+});
