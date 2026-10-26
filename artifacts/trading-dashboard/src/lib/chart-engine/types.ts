@@ -1,4 +1,5 @@
 import type { DrawingInteraction } from "./chartDrawingEditor";
+import type { ChartTimeRange, ChartViewEvent } from "./chartViewLink";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 import type { ChartStudy } from "./chartStudies";
 import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
@@ -163,6 +164,11 @@ export interface ChartEngineAdapter {
   showRecentRange?(seconds: number): { complete: boolean } | null;
   getStudyValues?(time: number): { label: string; color: string; values: { name: string; value: number | null }[] }[];
   setCrosshairHandler?(handler: ((candle: ChartEngineCandle | null) => void) | null): void;
+  /** Linked workspace inspection only. Never changes instrument/order context. */
+  setViewLinkHandler?(handler: ((event: ChartViewEvent) => void) | null): void;
+  setLinkedCrosshair?(time: number | null): void;
+  setLinkedTimeRange?(range: ChartTimeRange | null): void;
+  setViewLinkStatusHandler?(handler: ((message: string) => void) | null): void;
   setChartStyle?(style: ChartStyle): void;
   setStudies?(studies: ChartStudy[]): void;
   setDrawings?(drawings: ChartDrawing[]): void;

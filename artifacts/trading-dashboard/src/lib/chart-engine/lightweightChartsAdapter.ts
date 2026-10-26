@@ -34,6 +34,7 @@ import { ChartAnalysisRenderer } from "./chartAnalysisRenderer";
 import type { ChartStudy } from "./chartStudies";
 import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
 import { applyStructureLines, clearStructureLines } from "./structureLines";
+import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartViewEvent } from "./chartViewLink";
 
 
 const DEFAULT_VISIBLE_DESKTOP = 150;
@@ -109,6 +110,16 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private streamTip: ChartEngineCandle | null = null;
   private symbol = "";
   private precision = -1;
+  private intervalSeconds = 900;
+  private viewLinkHandler: ((event: ChartViewEvent) => void) | null = null;
+  private viewLinkStatusHandler: ((message: string) => void) | null = null;
+  private viewLinkFrame: number | null = null;
+  private pendingLinkedCursor: number | null | undefined;
+  private pendingRange = false;
+  private ownsRange = false;
+  private linkedRange: ChartTimeRange | null = null;
+  private linkedCursor: number | null | undefined;
+  private clearViewListeners: (() => void) | null = null;
 
   private container: HTMLElement | null = null;
   private candles: ChartEngineCandle[] = [];
@@ -197,6 +208,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
         if (candle.time === time) { this.hoveredCandle = candle; break; }
         if (candle.time < time) lo = mid + 1; else hi = mid - 1;
       }
+      if (event.sourceEvent) {
+        this.linkedCursor = undefined;
+        this.pendingLinkedCursor = this.hoveredCandle?.time ?? null;
+        this.queueViewLinkUpdate();
+      }
       this.queueLegendUpdate();
     });
 
@@ -204,7 +220,10 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // OLDEST loaded bar (logical index near 0), ask the Shell to load more. The
     // handler guards its own concurrency; this only signals intent. View-only.
     chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (!this.reachStartHandler || !range) return;
+      if (this.ownsRange) { this.pendingRange = true; this.queueViewLinkUpdate(); }
+      // Linking only inspects loaded history. A clipped follower must not
+      // silently page its entire provider history across several views.
+      if (this.linkedRange || !this.reachStartHandler || !range) return;
       if (range.from <= this.reachStartThresholdBars) {
         this.reachStartHandler();
       }
@@ -212,6 +231,18 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
 
     this.chart = chart;
     this.series = series;
+    const takeRange = () => this.takeRangeOwnership();
+    const leave = () => { this.pendingLinkedCursor = null; this.queueViewLinkUpdate(); };
+    el.addEventListener("pointerdown", takeRange, true);
+    el.addEventListener("wheel", takeRange, {capture:true,passive:true});
+    el.addEventListener("keydown", takeRange, true);
+    el.addEventListener("pointerleave", leave);
+    this.clearViewListeners = () => {
+      el.removeEventListener("pointerdown", takeRange, true);
+      el.removeEventListener("wheel", takeRange, true);
+      el.removeEventListener("keydown", takeRange, true);
+      el.removeEventListener("pointerleave", leave);
+    };
     let frozenOptions: { scroll: ReturnType<IChartApi["options"]>["handleScroll"]; scale: ReturnType<IChartApi["options"]>["handleScale"]; autoScale: boolean } | null = null;
     const anchorAt = (point: { x:number; y:number }, snap: boolean) => {
       const time = chart.timeScale().coordinateToTime(point.x);
@@ -280,6 +311,16 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     }
     if (this.crosshairFrame != null) cancelAnimationFrame(this.crosshairFrame);
     this.crosshairFrame = null;
+    if (this.viewLinkFrame != null) cancelAnimationFrame(this.viewLinkFrame);
+    this.viewLinkFrame = null;
+    this.viewLinkHandler = null;
+    this.viewLinkStatusHandler = null;
+    this.pendingLinkedCursor = undefined;
+    this.pendingRange = false;
+    this.ownsRange = false;
+    this.linkedRange = null;
+    this.linkedCursor = undefined;
+    this.clearViewListeners?.(); this.clearViewListeners = null;
     this.crosshairHandler = null;
     this.hoveredCandle = null;
     this.streamTip = null;
@@ -372,6 +413,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     } else if (updates === null && savedRange && chart && sanitized.length) {
       chart.timeScale().setVisibleLogicalRange({ from: savedRange.from + shift, to: savedRange.to + shift });
     }
+    if (this.linkedRange) this.setLinkedTimeRange(this.linkedRange);
+    if (this.linkedCursor !== undefined) this.setLinkedCrosshair(this.linkedCursor);
   }
 
 
@@ -513,6 +556,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
 
   resetScale(): void {
     if (!this.chart || !this.series) return;
+    this.takeRangeOwnership();
     if (this.candles.length === 0) {
       try { this.chart.timeScale().fitContent(); } catch { /* ignore */ }
       return;
@@ -521,8 +565,9 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.applyDefaultVisibleRange();
   }
 
-  goToLatest(): void { this.chart?.timeScale().scrollToRealTime(); }
+  goToLatest(): void { this.takeRangeOwnership(); this.chart?.timeScale().scrollToRealTime(); }
   fitHistory(): void {
+    this.takeRangeOwnership();
     this.chart?.applyOptions({ rightPriceScale: { autoScale: true } });
     this.chart?.timeScale().fitContent();
   }
@@ -533,6 +578,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   setPriceScaleInverted(invertScale: boolean): void { this.chart?.applyOptions({rightPriceScale:{invertScale}}); }
   goToTime(time: number): boolean {
     if (!this.chart || !Number.isFinite(time) || !this.candles.length || time < this.candles[0]!.time || time > this.candles.at(-1)!.time) return false;
+    this.takeRangeOwnership();
     let lo = 0, hi = this.candles.length - 1;
     while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time < time) lo = mid + 1; else hi = mid; }
     const previous = this.chart.timeScale().getVisibleLogicalRange();
@@ -543,6 +589,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   showRecentRange(seconds: number): {complete:boolean} | null {
     const last = this.candles.at(-1), first = this.candles[0];
     if (!this.chart || !first || !last || !Number.isFinite(seconds) || seconds <= 0) return null;
+    this.takeRangeOwnership();
     const start = last.time - seconds;
     let lo = 0, hi = this.candles.length - 1;
     while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time < start) lo = mid + 1; else hi = mid; }
@@ -551,6 +598,73 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
   getStudyValues(time: number) { return this.analysis?.inspect(time) ?? []; }
   setCrosshairHandler(handler: ((candle: ChartEngineCandle | null) => void) | null): void { this.crosshairHandler = handler; }
+
+  setViewLinkHandler(handler: ((event: ChartViewEvent) => void) | null): void { this.viewLinkHandler = handler; }
+  setViewLinkStatusHandler(handler: ((message: string) => void) | null): void { this.viewLinkStatusHandler = handler; }
+
+  setLinkedCrosshair(time: number | null): void {
+    if (time !== null && (!Number.isFinite(time) || time <= 0)) return;
+    this.linkedCursor = time;
+    this.pendingLinkedCursor = undefined;
+    this.hoveredCandle = time === null ? null : candleAtLinkedTime(this.candles, time, this.intervalSeconds);
+    if (this.chart && this.series && this.hoveredCandle) {
+      // Each view uses its OWN candle close, not another instrument's price.
+      this.chart.setCrosshairPosition(this.hoveredCandle.close, this.hoveredCandle.time as UTCTimestamp, this.series);
+    } else this.chart?.clearCrosshairPosition();
+    this.queueLegendUpdate();
+  }
+
+  setLinkedTimeRange(range: ChartTimeRange | null): void {
+    if (range && !validTimeRange(range)) return;
+    this.ownsRange = false;
+    this.pendingRange = false;
+    this.linkedRange = range ? { ...range } : null;
+    if (!range) { this.viewLinkStatusHandler?.(""); return; }
+    const first = this.candles[0], last = this.candles.at(-1);
+    if (!this.chart || !first || !last) { this.viewLinkStatusHandler?.("Linked time range is waiting for candles."); return; }
+    let lo = 0, hi = this.candles.length;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time < range.from) lo = mid + 1; else hi = mid; }
+    let from = lo;
+    if (lo > 0 && range.from < this.candles[lo - 1]!.time + this.intervalSeconds) from--;
+    lo = 0; hi = this.candles.length;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; if (this.candles[mid]!.time <= range.to) lo = mid + 1; else hi = mid; }
+    const to = lo - 1;
+    if (from > to || from >= this.candles.length || to < 0) {
+      this.viewLinkStatusHandler?.("Linked time range is outside loaded history. This view has not moved.");
+      return;
+    }
+    // Map UTC time to this instrument's real bars, never copy logical indices
+    // between intervals or create candles across a closed-market gap.
+    const current = this.chart.timeScale().getVisibleLogicalRange();
+    if (!current || Math.abs(current.from-from) > 1e-6 || Math.abs(current.to-to) > 1e-6) {
+      this.chart.timeScale().setVisibleLogicalRange({from,to});
+    }
+    this.viewLinkStatusHandler?.(range.from < first.time || range.to >= last.time + this.intervalSeconds
+      ? "Linked time range is clipped to this view's loaded history." : "");
+  }
+
+  private takeRangeOwnership(): void {
+    this.ownsRange = true;
+    this.linkedRange = null;
+    this.viewLinkStatusHandler?.("");
+  }
+
+  private queueViewLinkUpdate(): void {
+    if (this.viewLinkFrame != null || !this.viewLinkHandler) return;
+    this.viewLinkFrame = requestAnimationFrame(() => {
+      this.viewLinkFrame = null;
+      const cursor = this.pendingLinkedCursor;
+      this.pendingLinkedCursor = undefined;
+      if (cursor !== undefined) this.viewLinkHandler?.({kind:"crosshair",time:cursor});
+      if (this.pendingRange && this.ownsRange) {
+        this.pendingRange = false;
+        const range = this.chart?.timeScale().getVisibleRange();
+        if (range && typeof range.from === "number" && typeof range.to === "number" && validTimeRange(range as ChartTimeRange)) {
+          this.viewLinkHandler?.({kind:"range",range:{from:range.from,to:range.to}});
+        }
+      }
+    });
+  }
 
   private priceData(candle: ChartEngineCandle) {
     return this.style === "line" ? {time:candle.time as UTCTimestamp,value:candle.close} : {...candle,time:candle.time as UTCTimestamp};
@@ -577,6 +691,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.setOverlays(this.overlaysRaw, this.overlayTime);
     this.applyStructureFromRaw(true);
     if (range) chart.timeScale().setVisibleLogicalRange(range);
+    if (this.linkedCursor !== undefined) this.setLinkedCrosshair(this.linkedCursor);
   }
   setStudies(studies: ChartStudy[]): void { this.analysis?.setStudies(studies, this.candles); }
   setDrawings(drawings: ChartDrawing[]): void { this.drawingEditor?.setDrawings(drawings); this.analysis?.setDrawings(drawings, this.candles); }
@@ -642,8 +757,9 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // never bleed across instruments.
   }
 
-  setTimeframe(_timeframe: string): void {
-    // Informational only — see setSymbol. The Shell rebuilds on timeframe change.
+  setTimeframe(timeframe: string): void {
+    const intervals: Record<string, number> = {M1:60,M5:300,M15:900,M30:1800,H1:3600,H4:14400,D1:86400};
+    this.intervalSeconds = intervals[timeframe] ?? 0;
   }
 
   setReachStartHandler(handler: (() => void) | null, thresholdBars?: number): void {
@@ -683,7 +799,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (this.crosshairFrame != null || !this.crosshairHandler) return;
     this.crosshairFrame = requestAnimationFrame(() => {
       this.crosshairFrame = null;
-      this.crosshairHandler?.(this.hoveredCandle ?? this.candles.at(-1) ?? null);
+      this.crosshairHandler?.(this.linkedCursor !== undefined ? this.hoveredCandle : this.hoveredCandle ?? this.candles.at(-1) ?? null);
     });
   }
 

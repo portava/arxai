@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, useContext } from "react";
+import { ChartLinkContext } from "./ChartLinkContext";
 import {
   useGetChartCandles,
   getGetChartCandlesQueryKey,
@@ -186,7 +187,7 @@ function checkOhlcDiversity(candles: { open: number; high: number; low: number; 
 
 export interface ARXNativeChartProps {
   /** Distinguishes browser preferences for primary and comparison views. */
-  workspaceId?: "primary" | "comparison";
+  workspaceId?: "primary" | "comparison" | "comparison-2" | "comparison-3";
   /** ARX-canonical or display symbol (e.g. "EURUSD", "FX:EURUSD", "V75"). */
   symbol: string;
   /** Controlled timeframe. When omitted the chart manages its own (persisted). */
@@ -271,6 +272,8 @@ export function ARXNativeChart({
   );
 
   const cardRef = useRef<HTMLDivElement | null>(null);
+  const viewLinks = useContext(ChartLinkContext);
+  const linkStatusRef = useRef<HTMLOutputElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const preferencesKey = workspaceId === "primary" ? PREFERENCES_KEY : `${PREFERENCES_KEY}:${workspaceId}`;
   const [preferences, setPreferences] = useState(() => validatePreferences(readChartStorage(preferencesKey) ?? readChartStorage(PREFERENCES_KEY)));
@@ -498,6 +501,8 @@ export function ARXNativeChart({
     adapter.setSymbol?.(resolvedSymbol);
     adapter.setTimeframe?.(timeframe);
     adapter.setCrosshairHandler?.(updateLegend);
+    adapter.setViewLinkStatusHandler?.(message => {if (linkStatusRef.current) linkStatusRef.current.textContent = message;});
+    const unlink = viewLinks?.register(workspaceId,adapter);
     updateLegend(null);
     adapterRef.current = adapter;
 
@@ -505,11 +510,12 @@ export function ARXNativeChart({
     setChartEpoch((e) => e + 1);
 
     return () => {
+      unlink?.();
       adapter.destroy();
       adapterRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedSymbol, timeframe]);
+  }, [resolvedSymbol, timeframe, viewLinks, workspaceId]);
 
   useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
@@ -1171,6 +1177,7 @@ export function ARXNativeChart({
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect it
       </output>
+      <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
       <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
         <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
         <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>

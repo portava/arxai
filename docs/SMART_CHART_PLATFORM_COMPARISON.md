@@ -66,9 +66,9 @@ this Smart Chart implementation. None means production verification is complete.
 | Rays / channels / geometry / text | TV/MT5 drawing families [T5,M2] | Partial: rays, extended/vertical lines and rectangles implemented; channels, text and broader tools remain |
 | Gann / Elliott / pitchfork / patterns | TV/MT5 analytical families [T5,M2] | Open |
 | Object management | TV object tree / MT5 object list [T5,M6] | Partial: list, hide-all, delete, undo/redo; no groups/search/reorder |
-| Multi-chart workspace | TV layouts; MT5 chart profiles [T6,M7] | Partial: one/two responsive charts, same symbol, independent interval/settings |
-| Crosshair / time-range synchronization | TV selectable chart synchronization [T6] | Open |
-| Different-symbol comparison | TV compare/overlay [T3] | Open in native workspace |
+| Multi-chart workspace | TV layouts; MT5 chart profiles [T6,M7] | Partial: one/two/four responsive charts, independent instruments/intervals/settings; no cloud profiles |
+| Crosshair / time-range synchronization | TV selectable chart synchronization [T6] | Implemented within workspace: optional UTC links, own-instrument candle close, clipped/unavailable loaded-history disclosure |
+| Different-symbol comparison | TV compare/overlay [T3] | Partial: independent comparison panes implemented; overlaid/normalized comparison series remain open |
 | Drawing synchronization | TV within/across layouts [T6] | Partial: browser-local matching symbol/timeframe sync; no account cloud sync |
 | Templates / profiles | TV layouts; MT5 templates/profiles [T7,M7] | Partial: autosave plus one local template; named/importable/account workspaces open |
 | Bar replay | TV select start, seek, step, speed, multi-chart replay [T8] | Open; must isolate historical analysis from live signals/order context |

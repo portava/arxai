@@ -11,7 +11,7 @@
 // no balances, no fills. Never fabricates a bar — older candles come solely from
 // the backend deep-history layer; on a provider ceiling we stop and report.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { fetchChartHistory } from "@/lib/chartCandlesQuery";
 import type { Candle } from "@/components/scanner/scannerCandleAdapter";
 
@@ -62,6 +62,7 @@ export function useChartDeepHistory(
   const [coverageDays, setCoverageDays] = useState<number | null>(null);
   const [depthTargetDays, setDepthTargetDays] = useState(0);
   const [loadedAny, setLoadedAny] = useState(false);
+  const [stateIdentity, setStateIdentity] = useState({ symbol, apiTf });
 
   // The source pinned by the first page keeps the whole series coherent.
   const sourceRef = useRef<string | null>(null);
@@ -69,11 +70,22 @@ export function useChartDeepHistory(
   const cursorRef = useRef<string | null>(null);
   // Guards against overlapping fetches independent of the async state setter.
   const inFlightRef = useRef(false);
+  const generationRef = useRef(0);
+  const requestRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(false);
+  const identityRef = useRef({ symbol, apiTf });
 
   const reset = useCallback(() => {
+    if (!mountedRef.current) return;
+    // Invalidate before abort: even clients that finish after cancellation may
+    // never change another series or clear a newer request's in-flight guard.
+    generationRef.current++;
+    requestRef.current?.abort();
+    requestRef.current = null;
     sourceRef.current = null;
     cursorRef.current = null;
     inFlightRef.current = false;
+    setStateIdentity(identityRef.current);
     setOlderCandles([]);
     setLoading(false);
     setHasMore(true);
@@ -85,18 +97,33 @@ export function useChartDeepHistory(
   }, []);
 
   // Reset whenever the series identity changes so pages never cross symbols/tfs.
-  useEffect(() => {
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    identityRef.current = { symbol, apiTf };
     reset();
+    return () => {
+      mountedRef.current = false;
+      generationRef.current++;
+      requestRef.current?.abort();
+      requestRef.current = null;
+      inFlightRef.current = false;
+    };
   }, [symbol, apiTf, reset]);
 
   const loadOlder = useCallback(
     (oldestLoadedIso: string | null) => {
-      if (!enabled || inFlightRef.current) return;
+      if (!mountedRef.current || !enabled || inFlightRef.current) return;
+      // A renderer may retain a prior series' reach-start callback briefly.
+      if (identityRef.current.symbol !== symbol || identityRef.current.apiTf !== apiTf) return;
       if (!hasMore) return;
       const before = cursorRef.current ?? oldestLoadedIso;
       if (!before) return; // nothing on screen yet to page behind
 
       inFlightRef.current = true;
+      const generation = generationRef.current;
+      const controller = new AbortController();
+      requestRef.current = controller;
+      const isCurrent = () => mountedRef.current && generationRef.current === generation;
       setLoading(true);
       setLoadedAny(true);
 
@@ -108,11 +135,13 @@ export function useChartDeepHistory(
             limit: 500,
             before,
             source: sourceRef.current,
+            signal: controller.signal,
           });
+          if (!isCurrent()) return;
           if (page.source) sourceRef.current = page.source;
           cursorRef.current = page.nextBefore;
           if (page.candles.length > 0) {
-            setOlderCandles((prev) => dedupeAscending(prev, page.candles));
+            setOlderCandles((prev) => isCurrent() ? dedupeAscending(prev, page.candles) : prev);
           }
           setHasMore(page.hasMoreHistory && page.nextBefore != null);
           setProviderCapped(page.providerLimitReached);
@@ -122,25 +151,31 @@ export function useChartDeepHistory(
         } catch {
           // Network/parse failure: stop paging rather than silently retrying in a
           // loop. The chart keeps the bars it already has; nothing is fabricated.
-          setHasMore(false);
+          if (isCurrent()) setHasMore(false);
         } finally {
-          inFlightRef.current = false;
-          setLoading(false);
+          if (isCurrent()) {
+            requestRef.current = null;
+            inFlightRef.current = false;
+            setLoading(false);
+          }
         }
       })();
     },
     [enabled, hasMore, symbol, apiTf],
   );
 
+  // Never expose the previous instrument's accumulated bars during the render
+  // before its layout-effect reset. Both chart renderers share this contract.
+  const currentState = stateIdentity.symbol === symbol && stateIdentity.apiTf === apiTf;
   return {
-    olderCandles,
-    loading,
-    hasMore,
-    providerCapped,
-    limitationReason,
-    coverageDays,
-    depthTargetDays,
-    loadedAny,
+    olderCandles: currentState ? olderCandles : [],
+    loading: currentState ? loading : false,
+    hasMore: currentState ? hasMore : true,
+    providerCapped: currentState ? providerCapped : false,
+    limitationReason: currentState ? limitationReason : null,
+    coverageDays: currentState ? coverageDays : null,
+    depthTargetDays: currentState ? depthTargetDays : 0,
+    loadedAny: currentState ? loadedAny : false,
     loadOlder,
     reset,
   };
