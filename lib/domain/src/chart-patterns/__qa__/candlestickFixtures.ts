@@ -9,6 +9,12 @@ export const mirror=(bars:readonly CatalogueCandle[])=>bars.map(b=>({...b,open:2
 const first=row(103,103.5,98.5,99);
 const morningTail=[first,row(98,98.7,97.7,98.4),row(98.6,102.5,98.2,102)];
 const morningDojiTail=[first,row(98,98.4,97.6,98.01),row(98.6,102.5,98.2,102)];
+const abandonedTail=[first,row(97,97.5,96.5,97.01),row(98,102.5,97.8,102)];
+const insideTail=[first,row(100,101,99.8,100.8),row(100.5,104.5,100,104)];
+const outsideTail=[first,row(98,104.3,97.5,104),row(104,105.5,103.8,105)];
+const soldierTail=[row(101,105.2,100.8,105),row(103,107.2,102.8,107),row(105,109.2,104.8,109)];
+const windowTail=[row(103,105,102,104),row(106,108,105.5,107)];
+const kickerTail=[row(103,103,99,99),row(104,108,104,108)];
 export const CANDLE_FIXTURES:{id:string;bars:CatalogueCandle[]}[]=[
 {id:"white_candle",bars:make([row(102,104,101,103)])},
 {id:"black_candle",bars:make([row(103,104,101,102)])},
@@ -44,4 +50,20 @@ export const CANDLE_FIXTURES:{id:string;bars:CatalogueCandle[]}[]=[
 {id:"evening_star",bars:mirror(make(morningTail,"down"))},
 {id:"morning_doji_star",bars:make(morningDojiTail,"down")},
 {id:"evening_doji_star",bars:mirror(make(morningDojiTail,"down"))},
+{id:"rising_window",bars:make(windowTail,"up")},
+{id:"falling_window",bars:mirror(make(windowTail,"up"))},
+{id:"bullish_abandoned_baby",bars:make(abandonedTail,"down")},
+{id:"bearish_abandoned_baby",bars:mirror(make(abandonedTail,"down"))},
+{id:"three_inside_up",bars:make(insideTail,"down")},
+{id:"three_inside_down",bars:mirror(make(insideTail,"down"))},
+{id:"three_outside_up",bars:make(outsideTail,"down")},
+{id:"three_outside_down",bars:mirror(make(outsideTail,"down"))},
+{id:"three_white_soldiers",bars:make(soldierTail,"down")},
+{id:"three_black_crows",bars:mirror(make(soldierTail,"down"))},
+{id:"bullish_doji_star",bars:make(morningDojiTail.slice(0,2),"down")},
+{id:"bearish_doji_star",bars:mirror(make(morningDojiTail.slice(0,2),"down"))},
+{id:"bullish_kicking",bars:make(kickerTail)},
+{id:"bearish_kicking",bars:mirror(make(kickerTail))},
+{id:"bullish_counterattack",bars:make([first,row(95,99.3,94.5,99.05)],"down")},
+{id:"bearish_counterattack",bars:mirror(make([first,row(95,99.3,94.5,99.05)],"down"))},
 ];

@@ -1,8 +1,8 @@
 import type { ChartPatternCandle } from "./types.js";
 
-/** ARX explicit geometry convention v1. These are observations, not forecasts,
+/** ARX explicit geometry convention v2. These are observations, not forecasts,
  * TA-Lib output parity, calibrated confidence, or execution instructions. */
-export const CANDLE_CRITERIA_VERSION = "arx-candle-geometry-v1";
+export const CANDLE_CRITERIA_VERSION = "arx-candle-geometry-v2";
 export interface CatalogueCandle extends ChartPatternCandle { time:number; closeTime:number; isFinal:boolean }
 export interface CandleDefinition { id:string; name:string; family:string; criteria:string; sources:readonly string[]; summaryEligible:boolean }
 export interface CandleObservation {
@@ -13,7 +13,7 @@ const TA="https://github.com/TA-Lib/ta-lib/blob/main/src/ta_func/ta_";
 const TV="https://www.tradingview.com/support/solutions/";
 const defs:CandleDefinition[]=[];
 function define(id:string,name:string,family:string,criteria:string,source:string,summaryEligible=true):CandleDefinition {
-  const value={id,name,family,criteria,sources:[source],summaryEligible};defs.push(value);return value;
+  const value={id,name,family,criteria,sources:Object.freeze([source]),summaryEligible};defs.push(value);return value;
 }
 const bodyUp=define("white_candle","White/bullish candle","body","Close strictly above open; colour describes this candle only.",TA+"CDLLONGLINE.c",false);
 const bodyDown=define("black_candle","Black/bearish candle","body","Close strictly below open; colour describes this candle only.",TA+"CDLLONGLINE.c",false);
@@ -49,6 +49,22 @@ const morning=define("morning_star","Morning Star","stars","After a decline: lon
 const evening=define("evening_star","Evening Star","stars","After a rise: long up body, short non-Doji body entirely gapped above it, then long down body closing below the first body's midpoint. Third opens below the middle body's bottom.",TA+"CDLEVENINGSTAR.c");
 const morningDoji=define("morning_doji_star","Morning Doji Star","stars","Morning Star criteria with a Doji middle candle. No full-range gap is required; Abandoned Baby is a different pattern.",TA+"CDLMORNINGDOJISTAR.c");
 const eveningDoji=define("evening_doji_star","Evening Doji Star","stars","Evening Star criteria with a Doji middle candle. No full-range gap is required; Abandoned Baby is a different pattern.",TA+"CDLEVENINGDOJISTAR.c");
+const risingWindow=define("rising_window","Rising Window","windows","After a rise, two nonzero-range candles have a full-range upward gap: second low strictly above first high. No claim that the gap will act as support.",TV+"43000592721-rising-window-bullish/");
+const fallingWindow=define("falling_window","Falling Window","windows","After a decline, two nonzero-range candles have a full-range downward gap: second high strictly below first low. No claim that the gap will act as resistance.",TV+"43000592721-rising-window-bullish/");
+const abandonedUp=define("bullish_abandoned_baby","Bullish Abandoned Baby","stars","After a decline, a long down body, a Doji separated below by a full-range gap, then a long up body fully above the Doji and closing past the first body's midpoint.",TA+"CDLABANDONEDBABY.c");
+const abandonedDown=define("bearish_abandoned_baby","Bearish Abandoned Baby","stars","After a rise, a long up body, a Doji separated above by a full-range gap, then a long down body fully below the Doji and closing past the first body's midpoint.",TA+"CDLABANDONEDBABY.c");
+const insideUp=define("three_inside_up","Three Inside Up","harami","After a decline, a long down body strictly contains a second body <=half its size, then an up candle closes above the first open. The middle candle may have either colour or be a Doji.",TA+"CDL3INSIDE.c");
+const insideDown=define("three_inside_down","Three Inside Down","harami","After a rise, a long up body strictly contains a second body <=half its size, then a down candle closes below the first open. The middle candle may have either colour or be a Doji.",TA+"CDL3INSIDE.c");
+const outsideUp=define("three_outside_up","Three Outside Up","engulfing","After a decline, an up body strictly engulfs the prior down body, then the third close is higher than the second. This records follow-through already observed, not a future outcome.",TA+"CDL3OUTSIDE.c");
+const outsideDown=define("three_outside_down","Three Outside Down","engulfing","After a rise, a down body strictly engulfs the prior up body, then the third close is lower than the second. This records follow-through already observed, not a future outcome.",TA+"CDL3OUTSIDE.c");
+const soldiers=define("three_white_soldiers","Three White Soldiers","soldiers_crows","After a decline, three up bodies at least the prior-10 mean body, rising closes, each later open strictly inside the prior body, upper shadows <=10% of range, and each body >=75% of the previous body.",TA+"CDL3WHITESOLDIERS.c");
+const crows=define("three_black_crows","Three Black Crows","soldiers_crows","After a rise, three down bodies at least the prior-10 mean body, falling closes, each later open strictly inside the prior body, lower shadows <=10% of range, and each body >=75% of the previous body. ARX uses a symmetric variant with an observed prior rise.",TA+"CDL3BLACKCROWS.c");
+const dojiStarUp=define("bullish_doji_star","Bullish Doji Star","doji","After a decline, a long down body is followed by a Doji whose body lies entirely below the first body. This two-candle observation does not imply a completed three-candle Morning Star.",TA+"CDLDOJISTAR.c");
+const dojiStarDown=define("bearish_doji_star","Bearish Doji Star","doji","After a rise, a long up body is followed by a Doji whose body lies entirely above the first body. This two-candle observation does not imply a completed three-candle Evening Star.",TA+"CDLDOJISTAR.c");
+const kickerUp=define("bullish_kicking","Bullish Kicking/Kicker","marubozu","Two opposite Marubozu candles: down then up, with second low strictly above first high; each body above its prior-10 mean and each shadow <=5% of range. No preceding trend is required.",TA+"CDLKICKING.c");
+const kickerDown=define("bearish_kicking","Bearish Kicking/Kicker","marubozu","Two opposite Marubozu candles: up then down, with second high strictly below first low; each body above its prior-10 mean and each shadow <=5% of range. No preceding trend is required.",TA+"CDLKICKING.c");
+const counterUp=define("bullish_counterattack","Bullish Meeting Lines/Counterattack","counterattack","After a decline, long down then long up bodies close within 5% of the prior-10 mean range of one another. No subsequent reversal is established.",TA+"CDLCOUNTERATTACK.c");
+const counterDown=define("bearish_counterattack","Bearish Meeting Lines/Counterattack","counterattack","After a rise, long up then long down bodies close within 5% of the prior-10 mean range of one another. No subsequent reversal is established.",TA+"CDLCOUNTERATTACK.c");
 export const CANDLE_DEFINITIONS:readonly CandleDefinition[]=Object.freeze(defs.map(d=>Object.freeze(d)));
 const p=(n:number)=>Number(n.toPrecision(7)).toString();
 const body=(c:CatalogueCandle)=>Math.abs(c.close-c.open);
@@ -146,6 +162,20 @@ export function scanCandlestickCatalogue(bars:readonly CatalogueCandle[],options
       if(firstLong&&long&&bearish&&down(c)&&GT(c.open,a.high)&&LT(c.close,midpoint)&&GT(c.close,a.open))add(cloud,i-1,i,`The second candle opened at ${p(c.open)}, above the prior high ${p(a.high)}, then closed at ${p(c.close)} below the prior body midpoint ${p(midpoint)}.`,t,midpoint);
       if(firstLong&&ar!=null&&bullish&&up(c)&&LE(Math.abs(c.low-a.low),.05*ar))add(tweezerLow,i-1,i,`Opposite-colour candles reached lows ${p(a.low)} and ${p(c.low)} after a decline; tolerance is ${p(.05*ar)}. Equal lows do not establish future support.`,t,a.low);
       if(firstLong&&ar!=null&&bearish&&down(c)&&LE(Math.abs(c.high-a.high),.05*ar))add(tweezerHigh,i-1,i,`Opposite-colour candles reached highs ${p(a.high)} and ${p(c.high)} after a rise; tolerance is ${p(.05*ar)}. Equal highs do not establish future resistance.`,t,a.high);
+      if(range(a)>0&&r>0){
+        if(t==="up"&&GT(c.low,a.high))add(risingWindow,i-1,i,`The second low ${p(c.low)} is above the first high ${p(a.high)}, leaving an observed gap of ${p(c.low-a.high)} after a rise. Whether it will hold is unknown.`,t,a.high);
+        if(t==="down"&&LT(c.high,a.low))add(fallingWindow,i-1,i,`The second high ${p(c.high)} is below the first low ${p(a.low)}, leaving an observed gap of ${p(a.low-c.high)} after a decline. Whether it will hold is unknown.`,t,a.low);
+      }
+      if(firstLong&&isDoji(c)){
+        if(bullish&&LT(Math.max(c.open,c.close),Math.min(a.open,a.close)))add(dojiStarUp,i-1,i,`A long down body was followed by a Doji body below ${p(Math.min(a.open,a.close))}. Only two candles are observed; there is no third-candle confirmation.`,t);
+        if(bearish&&GT(Math.min(c.open,c.close),Math.max(a.open,a.close)))add(dojiStarDown,i-1,i,`A long up body was followed by a Doji body above ${p(Math.max(a.open,a.close))}. Only two candles are observed; there is no third-candle confirmation.`,t);
+      }
+      if(firstLong&&long){
+        const bothMarubozu=LE(upper(a),.05*range(a))&&LE(lower(a),.05*range(a))&&LE(u,.05*r)&&LE(l,.05*r);
+        if(bothMarubozu&&down(a)&&up(c)&&GT(c.low,a.high))add(kickerUp,i-1,i,`Opposite long bodies with very small shadows are separated by a full upward gap of ${p(c.low-a.high)}. The gap and body change are observed; continuation remains unknown.`,"none",a.high);
+        if(bothMarubozu&&up(a)&&down(c)&&LT(c.high,a.low))add(kickerDown,i-1,i,`Opposite long bodies with very small shadows are separated by a full downward gap of ${p(a.low-c.high)}. The gap and body change are observed; continuation remains unknown.`,"none",a.low);
+        if(ar!=null&&LE(Math.abs(c.close-a.close),.05*ar)&&((bullish&&up(c))||(bearish&&down(c))))add(bullish?counterUp:counterDown,i-1,i,`Opposite long candles closed at ${p(a.close)} and ${p(c.close)} after a ${bullish?"decline":"rise"}; near-equality tolerance is ${p(.05*ar)}. This is a recorded meeting of closes, not proof of a reversal.`,t,a.close);
+      }
     }
     if(i>=2&&contiguous(closed,i-2,i,intervalSeconds)){
       const a=closed[i-2]!,mid=closed[i-1]!,ab=body(a),mb=body(mid),am=priorMean(closed,i-2,body),t=trendBefore(closed,i-2,intervalSeconds),half=a.open/2+a.close/2;
@@ -153,6 +183,31 @@ export function scanCandlestickCatalogue(bars:readonly CatalogueCandle[],options
         const bullish=t==="down"&&down(a)&&up(c)&&LT(Math.max(mid.open,mid.close),Math.min(a.open,a.close))&&GT(c.open,Math.max(mid.open,mid.close))&&GT(c.close,half);
         const bearish=t==="up"&&up(a)&&down(c)&&GT(Math.min(mid.open,mid.close),Math.max(a.open,a.close))&&LT(c.open,Math.min(mid.open,mid.close))&&LT(c.close,half);
         if(bullish||bearish)add(isDoji(mid)?(bullish?morningDoji:eveningDoji):(bullish?morning:evening),i-2,i,`A long ${bullish?"down":"up"} candle was followed by a gapped ${isDoji(mid)?"Doji":"small body"}; the third close ${p(c.close)} passed the first body's midpoint ${p(half)}. The three-candle shape is observed, not a proven reversal.`,t,half);
+      }
+      const declining=t==="down"&&down(a),rising=t==="up"&&up(a),firstLong=am!=null&&GT(ab,am);
+      if(firstLong&&isDoji(mid)&&long){
+        const bullish=declining&&up(c)&&LT(mid.high,a.low)&&GT(c.low,mid.high)&&GT(c.close,half);
+        const bearish=rising&&down(c)&&GT(mid.low,a.high)&&LT(c.high,mid.low)&&LT(c.close,half);
+        if(bullish||bearish)add(bullish?abandonedUp:abandonedDown,i-2,i,`The middle Doji is separated from both neighbours by full high-low gaps. The final close ${p(c.close)} passed the first body's midpoint ${p(half)}. This three-candle observation does not establish a future reversal.`,t,half);
+      }
+      const middleInside=GT(Math.min(mid.open,mid.close),Math.min(a.open,a.close))&&LT(Math.max(mid.open,mid.close),Math.max(a.open,a.close));
+      if(firstLong&&LE(mb,ab*.5)&&middleInside){
+        const bullish=declining&&up(c)&&GT(c.close,a.open),bearish=rising&&down(c)&&LT(c.close,a.open);
+        if(bullish||bearish)add(bullish?insideUp:insideDown,i-2,i,`After a contained second body, the third close ${p(c.close)} moved beyond the first open ${p(a.open)}. The three-candle progression is observed; its future outcome remains unknown.`,t,a.open);
+      }
+      const outsideBull=declining&&up(mid)&&GT(mid.close,a.open)&&LT(mid.open,a.close)&&GT(c.close,mid.close);
+      const outsideBear=rising&&down(mid)&&GT(mid.open,a.close)&&LT(mid.close,a.open)&&LT(c.close,mid.close);
+      if(outsideBull||outsideBear)add(outsideBull?outsideUp:outsideDown,i-2,i,`The middle body engulfed the first body; the third close ${p(c.close)} moved beyond the middle close ${p(mid.close)}. That follow-through already happened; additional movement is unproven.`,t,mid.close);
+      const middleMean=priorMean(closed,i-1,body);
+      const bodiesSustained=am!=null&&middleMean!=null&&meanBody!=null&&GE(ab,am)&&GE(mb,middleMean)&&GE(b,meanBody)&&GE(mb,.75*ab)&&GE(b,.75*mb);
+      if(bodiesSustained){
+        const bullish=t==="down"&&up(a)&&up(mid)&&up(c)&&GT(mid.close,a.close)&&GT(c.close,mid.close)
+          &&GT(mid.open,a.open)&&LT(mid.open,a.close)&&GT(c.open,mid.open)&&LT(c.open,mid.close)
+          &&LE(upper(a),.1*range(a))&&LE(upper(mid),.1*range(mid))&&LE(u,.1*r);
+        const bearish=t==="up"&&down(a)&&down(mid)&&down(c)&&LT(mid.close,a.close)&&LT(c.close,mid.close)
+          &&LT(mid.open,a.open)&&GT(mid.open,a.close)&&LT(c.open,mid.open)&&GT(c.open,mid.close)
+          &&LE(lower(a),.1*range(a))&&LE(lower(mid),.1*range(mid))&&LE(l,.1*r);
+        if(bullish||bearish)add(bullish?soldiers:crows,i-2,i,`Three ${bullish?"up":"down"} bodies closed successively at ${p(a.close)}, ${p(mid.close)}, and ${p(c.close)}; later opens were inside preceding bodies and the bodies did not sharply shrink. Only this completed progression is observed.`,t);
       }
     }
   }

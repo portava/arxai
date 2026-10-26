@@ -17,7 +17,7 @@ describe("source-aware catalogue integration",()=>{
   expect(result.allFindings.some(f=>f.id.startsWith("rickshaw_man:"))).toBe(true);
   expect(result.findings.filter(f=>(f.family??f.id.split(":")[0])==="doji")).toHaveLength(1);
   expect(result.findings.every(f=>f.summaryEligible!==false)).toBe(true);
-  expect(result.catalogue).toMatchObject({definedVariants:34,geometryFamilies:10});
+  expect(result.catalogue).toMatchObject({definedVariants:50,geometryFamilies:14});
   expect(result.catalogue!.note).toContain("not independent confirmations");
  });
  it("never reuses another owner/source context or contradictory finality for catalogue observations",()=>{
@@ -60,5 +60,17 @@ describe("source-aware catalogue integration",()=>{
   const star=result.allFindings.find(f=>f.id.startsWith("shooting_star:"));
   expect(star).toMatchObject({family:"long_shadow",status:"developing"});
   expect(result.findings.filter(f=>f.family==="long_shadow")).toHaveLength(1);
+ });
+ it("groups Three Outside with its already-observed Engulfing stage",()=>{
+  const bars=CANDLE_FIXTURES.find(f=>f.id==="three_outside_up")!.bars,result=analyzeSmartChart(input(bars));
+  expect(result.allFindings.some(f=>f.id.startsWith("bullish_engulfing:"))).toBe(true);
+  expect(result.allFindings.find(f=>f.id.startsWith("three_outside_up:"))).toMatchObject({family:"engulfing",status:"observed",asOf:bars.at(-1)!.closeTime});
+  expect(result.findings.filter(f=>f.family==="engulfing")).toHaveLength(1);
+ });
+ it("groups the more specific Abandoned Baby with its Morning Doji Star geometry",()=>{
+  const bars=CANDLE_FIXTURES.find(f=>f.id==="bullish_abandoned_baby")!.bars,result=analyzeSmartChart(input(bars));
+  expect(result.allFindings.some(f=>f.id.startsWith("morning_doji_star:"))).toBe(true);
+  expect(result.allFindings.some(f=>f.id.startsWith("bullish_abandoned_baby:"))).toBe(true);
+  expect(result.findings.filter(f=>f.family==="stars")).toHaveLength(1);
  });
 });

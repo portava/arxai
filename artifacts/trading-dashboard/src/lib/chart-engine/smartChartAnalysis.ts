@@ -206,7 +206,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
       const invalidation = bullish ? candle.low : candle.high;
       const later = bars.slice(end);
       const failed = later.some(b => bullish ? b.close < invalidation : b.close > invalidation);
-      add({ id: `${engulfing.id}:${candle.time}`, title: engulfing.name, status: failed ? "invalidated" : "confirmed",
+      add({ id: `${engulfing.id}:${candle.time}`, title: engulfing.name, family: "engulfing", status: failed ? "invalidated" : "confirmed",
         confirmedAt: candle.closeTime, asOf: failed ? last.closeTime : candle.closeTime,
         explanation: `The ${bullish ? "up" : "down"} candle's body (${price(body)}) fully covers the previous ${bullish ? "down" : "up"} body (${price(Math.abs(previous.close - previous.open))}) after a ${bullish ? "decline" : "rise"}. The closed two-candle shape is confirmed; a market reversal is not.${failed ? ` A later close crossed ${price(invalidation)} against it.` : ""}`,
         anchors: [{ time: previous.time, price: previous.close, role: "previous_body" }, { time: candle.time, price: candle.close, role: "engulfing" }],
