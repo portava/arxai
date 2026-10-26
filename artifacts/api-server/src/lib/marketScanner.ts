@@ -7,7 +7,7 @@
 
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
-import { prepareScannerCandles, scannerQuoteFor } from "./scannerInputIntegrity.js";
+import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, bindScannerSource } from "./scannerInputIntegrity.js";
 import { getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, isChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { rawTrailingIntervalGap } from "./data/chart/candleNormalization.js";
@@ -1297,8 +1297,7 @@ async function analyzeViaRouter(
       primaryProvider: cr.primaryProvider ?? null,
       quoteSpreadPrice: usableQuote?.spread ?? null,
       quoteUsable: usableQuote !== null,
-      sourceIdentity: JSON.stringify([cr.primaryProvider, cr.provenance?.bridgeConnectionId ?? null,
-        cr.provenance?.userId ?? null, cr.provenance?.environment ?? "unknown", cr.provenance?.brokerSymbol ?? null]),
+      sourceIdentity: scannerSourceIdentity(cr),
     };
   } catch { return null; }
 }
@@ -1581,6 +1580,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       patternImpact,
       trendlineImpact,
     };
+    if (routed) bindScannerSource(op, routed.sourceIdentity);
     // Agent Ecosystem advisory (Phase 0). Bounded, advisory-only re-weighting by
     // the responsible agents' trust + lifecycle health. Fail-open: any error
     // leaves the base opportunity score untouched — advisory must never break or

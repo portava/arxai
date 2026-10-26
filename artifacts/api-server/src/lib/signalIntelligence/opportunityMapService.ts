@@ -41,7 +41,7 @@ import {
   type ScannerOpportunity,
   type UniverseId,
 } from "../marketScanner.js";
-import { prepareScannerCandles, scannerQuoteFor } from "../scannerInputIntegrity.js";
+import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
 import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
 
 /** Timeframe the opportunity map reads at (aligns with the market-edge default). */
@@ -135,7 +135,8 @@ async function latenessFor(opp: ScannerOpportunity): Promise<LateDetection | nul
       runWithScannerBudget(async () => { cr = await routeCandles(opp.symbol, opp.timeframe, 30); }),
       runWithScannerBudget(async () => { qr = await routeQuote(opp.symbol); }),
     ]);
-    if (!opp.feedProvider || cr.primaryProvider !== opp.feedProvider) return null;
+    if (!opp.feedProvider || cr.primaryProvider !== opp.feedProvider ||
+        scannerRowSourceIdentity(opp) !== scannerSourceIdentity(cr)) return null;
     const now = Date.now();
     const prepared = prepareScannerCandles(cr, opp.symbol, opp.timeframe, now);
     const quote = scannerQuoteFor(cr, qr, opp.symbol, now);

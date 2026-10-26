@@ -458,6 +458,25 @@ describe("Market Scanner — stale result action containment", () => {
     expect(screen.queryByTestId("scanner-ticket-fixture")).toBeNull();
   });
 
+  it("publishes slow healthy reads and never overlaps polling cycles", async () => {
+    vi.useFakeTimers();
+    let activePolls = 0, peak = 0, calls = 0;
+    safeJsonMock.mockImplementation(async (url) => {
+      if (!url.includes("/opportunities")) return defaultReads(url);
+      calls++; activePolls++; peak = Math.max(peak, activePolls);
+      await new Promise((resolve) => setTimeout(resolve, 7000));
+      activePolls--;
+      return { ok: true, data: freshResult() };
+    });
+    render(<MarketScanner />); await settle();
+    await act(async () => { await vi.advanceTimersByTimeAsync(7001); }); await settle();
+    expect(screen.getByTestId("scanner-buy-EURUSD")).toBeTruthy();
+    expect(calls).toBe(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(12001); }); await settle();
+    expect(calls).toBe(2); expect(peak).toBe(1);
+    expect(screen.getByTestId("scanner-buy-EURUSD")).toBeTruthy();
+  });
+
   it("withholds result actions when the latest read fails or the row is non-tradeable", async () => {
     vi.useFakeTimers();
     let broken = false;

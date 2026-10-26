@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareScannerCandles, scannerQuoteFor } from "../scannerInputIntegrity.js";
+import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, bindScannerSource, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
 
 const now = Date.parse("2026-10-26T12:02:00Z"), interval = 300_000;
@@ -100,4 +100,15 @@ test("provenance must bind the requested timeframe and the quote's bridge", () =
   assert.ok(scannerQuoteFor(result, q, "EURUSD", now));
   q.provenance.delayed = true;
   assert.equal(scannerQuoteFor(result, q, "EURUSD", now), null);
+});
+
+
+test("private source binding survives spread decorators but cannot disclose identity in JSON", () => {
+  const identity = scannerSourceIdentity(bars());
+  const row = bindScannerSource({ symbol: "EURUSD", score: 70 }, identity);
+  const decorated = { ...{ ...row, news: "fixture" }, score: 60 };
+  assert.equal(scannerRowSourceIdentity(decorated), identity);
+  assert.equal(JSON.stringify(decorated), '{"symbol":"EURUSD","score":60,"news":"fixture"}');
+  assert.equal(JSON.stringify(decorated).includes(identity), false);
+  assert.equal(scannerRowSourceIdentity(JSON.parse(JSON.stringify(decorated))), null);
 });

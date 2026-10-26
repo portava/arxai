@@ -1,9 +1,32 @@
+import { createHash } from "node:crypto";
 import { resolveArxMarket } from "@workspace/domain/market";
 import type { MarketCandlesResult, MarketQuoteResult } from "./data/marketDataRouter.js";
 import type { Candle } from "./data/types.js";
 import { normalizeCandles, sourceModeFromProvider } from "./data/chart/candleNormalization.js";
 import { normalizeChartTimeframe, timeframeMs } from "./data/chart/timeframes.js";
 import { classifyQuoteFreshness } from "./data/freshness.js";
+
+// Symbol properties survive object-spread decorators, while JSON.stringify
+// omits them. The value is an opaque digest, never raw account/bridge IDs.
+const sourceBinding: unique symbol = Symbol("scannerSourceBinding");
+type SourceBound = { [sourceBinding]?: string };
+
+export function scannerSourceIdentity(result: Pick<MarketCandlesResult, "primaryProvider" | "provenance">): string {
+  const p = result.provenance;
+  return createHash("sha256").update(JSON.stringify([result.primaryProvider,
+    p?.providerId ?? null, p?.subProviderId ?? null, p?.sourceId ?? null,
+    p?.bridgeConnectionId ?? null, p?.userId ?? null, p?.environment ?? "unknown", p?.brokerSymbol ?? null,
+  ])).digest("hex");
+}
+
+export function bindScannerSource<T extends object>(row: T, identity: string): T {
+  Object.defineProperty(row, sourceBinding, { value: identity, enumerable: true });
+  return row;
+}
+
+export function scannerRowSourceIdentity(row: object): string | null {
+  return (row as SourceBound)[sourceBinding] ?? null;
+}
 
 function sameSymbol(a: string, b: string): boolean {
   const left = resolveArxMarket(a)?.canonicalSymbol;

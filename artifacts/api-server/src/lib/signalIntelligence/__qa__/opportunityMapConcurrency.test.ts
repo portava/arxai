@@ -1,5 +1,7 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { bindScannerSource, scannerSourceIdentity } from "../../scannerInputIntegrity.js";
+import type { SeriesProvenance } from "../../data/types.js";
 import type { ScannerOpportunity } from "../../marketScanner.js";
 
 let inFlight = 0, peak = 0, calls = 0;
@@ -8,6 +10,10 @@ let quoteAgeMs = 0;
 let missingQuote = false;
 let lateProvider = "mt5_broker";
 let stopLoss = 1.09;
+let changedIdentity: Partial<SeriesProvenance> = {};
+function provenance(symbol: string, timeframe: string): SeriesProvenance {
+  return { providerId: "mt5_broker", subProviderId: null, sourceId: `mt5_broker:${symbol}:${timeframe}`, source: "DERIVED", brokerCode: "mt5", bridgeConnectionId: 101, userId: 42, brokerSymbol: symbol, environment: "demo", receivedAt: new Date().toISOString(), delayed: false };
+}
 async function leaf() {
   calls++; inFlight++; peak = Math.max(peak, inFlight);
   await new Promise((resolve) => setTimeout(resolve, 1));
@@ -19,11 +25,11 @@ mock.module("../../data/marketDataRouter.js", {
     ...router,
     routeCandles: async (symbol: string) => {
       await leaf();
-      return { ok: true, symbol, primaryProvider: lateProvider, assetClass: "forex", candles: [{ time: new Date(Date.now() - 600_000).toISOString(), open: 1.1, high: 1.11, low: 1.09, close: 1.1 }] };
+      return { ok: true, symbol, primaryProvider: lateProvider, provenance: { ...provenance(symbol, "M5"), ...changedIdentity }, assetClass: "forex", candles: [{ time: new Date(Date.now() - 600_000).toISOString(), open: 1.1, high: 1.11, low: 1.09, close: 1.1 }] };
     },
     routeQuote: async (symbol: string) => {
       await leaf();
-      return { ok: !missingQuote, symbol, primaryProvider: lateProvider, quote: missingQuote ? null : { symbol, last: 1.1, bid: 1.0999, ask: 1.1001, timestamp: new Date(Date.now() - quoteAgeMs).toISOString() } };
+      return { ok: !missingQuote, symbol, primaryProvider: lateProvider, provenance: { ...provenance(symbol, "M5"), ...changedIdentity, source: "LIVE_TICK", sourceId: `mt5_broker:${symbol}` }, quote: missingQuote ? null : { symbol, last: 1.1, bid: 1.0999, ask: 1.1001, timestamp: new Date(Date.now() - quoteAgeMs).toISOString() } };
     },
   },
 });
@@ -36,12 +42,12 @@ mock.module("../../marketScanner.js", {
       scans++; scanPeak = Math.max(scanPeak, scans);
       await new Promise((resolve) => setTimeout(resolve, 1));
       scans--;
-      return {
+      return bindScannerSource({
         symbol, timeframe, dataSource: "LIVE_FEED", dataStatus: "live", feedProvider: "mt5_broker",
         recommendedAction: "BUY", bias: "bullish", entry: 1.1, stopLoss, takeProfit: 1.12,
         entrySniperScore: 70, confidenceScore: 70, riskRewardRatio: 2,
         setupType: "Trend continuation", opportunity: { score: 70 },
-      } as ScannerOpportunity;
+      } as ScannerOpportunity, scannerSourceIdentity({ primaryProvider: "mt5_broker", provenance: provenance(symbol, timeframe) }));
     },
     decorateOpportunitiesWithHistory: identity,
     decorateOpportunitiesWithNewsRisk: identity,
@@ -99,4 +105,16 @@ test("lateness cannot switch the setup feed or accept reversed stop geometry", a
   const reversed = await buildOpportunityMapCore({ universe: "forex", timeframe: "M5" });
   assert.equal(reversed.map.categories.READY_NOW.length, 0);
   stopLoss = 1.09;
+});
+
+
+test("same-provider bridge/account/environment/native-symbol switches withhold lateness readiness", async () => {
+  for (const change of [{ bridgeConnectionId: 202 }, { userId: 84 }, { environment: "live" as const }, { brokerSymbol: "EURUSD.other" }]) {
+    changedIdentity = change;
+    const switched = await buildOpportunityMapCore({ universe: "forex", timeframe: "M5" });
+    assert.equal(switched.map.categories.READY_NOW.length, 0, JSON.stringify(change));
+    assert.ok(Object.values(switched.map.best).every((pick) => pick === null));
+  }
+  changedIdentity = {};
+  assert.ok((await buildOpportunityMapCore({ universe: "forex", timeframe: "M5" })).map.categories.READY_NOW.length > 0);
 });
