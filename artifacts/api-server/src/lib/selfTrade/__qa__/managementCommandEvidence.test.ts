@@ -176,3 +176,22 @@ it("self-trade entry persists exact canonical/broker mapping before preparation"
   });
   assert.equal(dispatchCalls, 0);
 });
+
+it("entry confirmation/dispatch refusal retains its persisted command identity", async () => {
+  for (const boundary of ["confirm", "dispatch"] as const) {
+    phase = boundary;
+    const result = await executeInstant({
+      userId: 9,
+      intent: {
+        source: "self_trade",
+        accountMode: "live",
+        action: "BUY",
+        symbol: "EURUSD",
+        volume: 0.1,
+        stopLoss: 1.09,
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.commandId, "ops-1");
+  }
+});

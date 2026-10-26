@@ -12,7 +12,7 @@
 //   Any throw rolls everything back (fail-closed).
 // - An agent can never be defunded below zero available funds.
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   db,
   selfTradeAgentsTable,
@@ -54,13 +54,13 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-// Ensure a snapshot row exists for the agent; returns it (locked via the tx).
+// Callers hold the agent row first, then lock/create its ledger snapshot.
 async function ensureLedgerRow(tx: Tx, agentId: number): Promise<SelfTradeAgentLedger> {
   const existing = await tx
     .select()
     .from(selfTradeAgentLedgerTable)
     .where(eq(selfTradeAgentLedgerTable.agentId, agentId))
-    .limit(1);
+    .limit(1).for("update");
   if (existing[0]) return existing[0];
   const inserted = await tx
     .insert(selfTradeAgentLedgerTable)
@@ -72,7 +72,7 @@ async function ensureLedgerRow(tx: Tx, agentId: number): Promise<SelfTradeAgentL
 // Atomically fund an agent: +allocation, +ledger entry, snapshot update, audit.
 // Promotes an UNFUNDED agent to FUNDED_IDLE.
 export async function fundAgent(input: FundAgentInput): Promise<LedgerResult> {
-  if (!(input.amount > 0)) {
+  if (!Number.isFinite(input.amount) || !(input.amount > 0)) {
     return { ok: false, error: "INVALID_AMOUNT", message: "Funding amount must be positive." };
   }
   const hs = await enforceSensitiveAction("ALLOCATE_FUNDS", {
@@ -84,7 +84,7 @@ export async function fundAgent(input: FundAgentInput): Promise<LedgerResult> {
       .select()
       .from(selfTradeAgentsTable)
       .where(eq(selfTradeAgentsTable.id, input.agentId))
-      .limit(1);
+      .limit(1).for("update");
     const agent = agentRows[0];
     if (!agent) {
       return { ok: false, error: "AGENT_NOT_FOUND", message: "Agent not found." };
@@ -151,7 +151,7 @@ export async function fundAgent(input: FundAgentInput): Promise<LedgerResult> {
 // Releases proportional allocation accounting by recording a DEFUND entry; the
 // snapshot is the source of truth for available funds.
 export async function defundAgent(input: DefundAgentInput): Promise<LedgerResult> {
-  if (!(input.amount > 0)) {
+  if (!Number.isFinite(input.amount) || !(input.amount > 0)) {
     return { ok: false, error: "INVALID_AMOUNT", message: "Defund amount must be positive." };
   }
   const hs = await enforceSensitiveAction("ALLOCATE_FUNDS", {
@@ -163,11 +163,18 @@ export async function defundAgent(input: DefundAgentInput): Promise<LedgerResult
       .select()
       .from(selfTradeAgentsTable)
       .where(eq(selfTradeAgentsTable.id, input.agentId))
-      .limit(1);
+      .limit(1).for("update");
     const agent = agentRows[0];
     if (!agent) {
       return { ok: false, error: "AGENT_NOT_FOUND", message: "Agent not found." };
     }
+
+    // A committed entry owns capacity even before command linkage or fill.
+    // Withdrawing behind it could invalidate its already-computed risk budget.
+    const [active] = await tx.select({ id: selfTradeAgentExecutionsTable.id }).from(selfTradeAgentExecutionsTable)
+      .where(and(eq(selfTradeAgentExecutionsTable.agentId, input.agentId),
+        inArray(selfTradeAgentExecutionsTable.status, ["PENDING_TICKET", "DISPATCHED", "FILLED"]))).limit(1);
+    if (active) return { ok: false, error: "ACTIVE_EXECUTIONS_PRESENT", message: "Resolve pending entries and open positions before withdrawing agent capital." };
 
     const before = await ensureLedgerRow(tx, input.agentId);
     if (input.amount > before.availableFunds + 1e-9) {
@@ -261,6 +268,11 @@ export async function applyRealizedFromFills(
   actorUserId?: number | null,
 ): Promise<ApplyRealizedResult> {
   return db.transaction(async (tx) => {
+    // Serialize posting with admission and funding; the previous read/check
+    // could post the same execution twice or lose a concurrent funding update.
+    const [agent] = await tx.select({ id: selfTradeAgentsTable.id }).from(selfTradeAgentsTable)
+      .where(eq(selfTradeAgentsTable.id, agentId)).for("update");
+    if (!agent) return { posted: 0, totalRealizedUsd: 0 };
     const closed = await tx
       .select()
       .from(selfTradeAgentExecutionsTable)

@@ -142,6 +142,10 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // cap" probe no longer depends on lane ordering.
   { pkg: "@workspace/scripts", script: "test:one-click-concurrency" },
   // @workspace/api-server — DB-backed node:test safety + contract tests.
+  // Own disposable cluster: ignores inherited DATABASE_URL, disables TCP,
+  // removes fixtures on completion. Requires initdb/pg_ctl/createdb on PATH
+  // (or ARX_TEST_PG_BIN). A missing PostgreSQL runtime fails, never skips.
+  { pkg: "@workspace/api-server", script: "test:self-trade-entry-postgres" },
   { pkg: "@workspace/api-server", script: "test:product-role" },
   { pkg: "@workspace/api-server", script: "test:mt5-broker-feed" },
   { pkg: "@workspace/api-server", script: "test:live-outcome-map" },
