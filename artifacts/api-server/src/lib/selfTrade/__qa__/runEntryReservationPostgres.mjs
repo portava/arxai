@@ -77,6 +77,7 @@ try {
         ARX_ENTRY_CAPACITY_PG: "1",
       },
       stdio: "inherit",
+      timeout: 60_000,
     },
   );
   status = result.status ?? 1;
