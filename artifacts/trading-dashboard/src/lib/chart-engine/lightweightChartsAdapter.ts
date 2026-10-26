@@ -28,7 +28,7 @@ import type {
   ChartStructureLine,
   ChartStructureMarker,
 } from "./types";
-import { candleDisplayPrecision, incrementalCandles, historyRangeShift } from "./candleReconciliation";
+import { candleDisplayPrecision, incrementalCandles, historyRangeShift, unchangedCandlePrefix } from "./candleReconciliation";
 import { candleIndex, ChartDrawingEditor, type DrawingInteraction } from "./chartDrawingEditor";
 import { ChartAnalysisRenderer } from "./chartAnalysisRenderer";
 import type { ChartStudy } from "./chartStudies";
@@ -368,7 +368,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (this.series && this.candles.length > 0) this.applyLivePriceAffordance();
   }
 
-  setCandles(candles: ChartEngineCandle[]): void {
+  setCandles(candles: ChartEngineCandle[], view?: { revealLatest?: boolean }): void {
     const series = this.series;
     const chart = this.chart;
     if (!series) return;
@@ -386,17 +386,37 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     const followingLatest = savedRange != null && savedRange.to >= previous.length - 1;
     const shift = followingLatest ? sanitized.length - previous.length : historyRangeShift(previous, sanitized);
     const updates = incrementalCandles(previous, sanitized);
+    const unchanged = unchangedCandlePrefix(previous, sanitized);
+    const removed = previous.length - sanitized.length;
+    // v5.2 pop removes an unchanged tail without rebuilding the entire price
+    // series. Large seeks use one full write, never thousands of live updates.
+    const trimTail = removed > 0 && removed <= 32 && unchanged === sanitized.length;
+    const bulk = updates != null && updates.length > 32;
     this.candles = sanitized;
     this.newestSeriesTime = sanitized.at(-1)?.time ?? null;
     this.applyPricePrecision();
-    if (updates === null) {
-      series.setData(sanitized.map(c => this.priceData(c)));
-    } else {
-      for (const candle of updates) series.update(this.priceData(candle));
-    }
-
-    if (updates === null || updates.length) this.analysis?.refresh(this.candles, updates === null ? 0 : Math.max(0, previous.length - 1), updates === null);
-    if (updates === null) this.analysis?.refreshDrawings(this.candles);
+    const reconcile = () => {
+      if (trimTail) {
+        series.pop(removed);
+      } else if (updates === null || bulk) {
+        series.setData(sanitized.map(c => this.priceData(c)));
+      } else {
+        for (const candle of updates) series.update(this.priceData(candle));
+      }
+      if (!this.didFit && sanitized.length > 0) {
+        this.applyDefaultVisibleRange();
+        this.didFit = true;
+      } else if ((updates === null || bulk) && savedRange && chart && sanitized.length) {
+        chart.timeScale().setVisibleLogicalRange({ from: savedRange.from + shift, to: savedRange.to + shift });
+      }
+      // Replay explicitly follows its cursor. Set its final range before the
+      // study render; never render the old viewport then rebuild it on a jump.
+      if (view?.revealLatest && sanitized.length) this.goToLatest(false);
+      if (updates === null || updates.length || view?.revealLatest) this.analysis?.refresh(this.candles, unchanged, updates === null || bulk);
+      if (updates === null) this.analysis?.refreshDrawings(this.candles);
+    };
+    if (this.analysis) this.analysis.batchViewport(reconcile);
+    else reconcile();
 
     // Re-anchor any structural markers onto the NEW bar set. When the fixed-size
     // window slides forward (oldest bars roll off), a marker still pointing at a
@@ -411,12 +431,6 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     if (this.hoveredCandle) this.hoveredCandle = sanitized.find((c) => c.time === this.hoveredCandle!.time) ?? null;
     this.queueLegendUpdate();
 
-    if (!this.didFit && sanitized.length > 0) {
-      this.applyDefaultVisibleRange();
-      this.didFit = true;
-    } else if (updates === null && savedRange && chart && sanitized.length) {
-      chart.timeScale().setVisibleLogicalRange({ from: savedRange.from + shift, to: savedRange.to + shift });
-    }
     if (this.linkedRange) this.setLinkedTimeRange(this.linkedRange);
     if (this.linkedCursor !== undefined) this.setLinkedCrosshair(this.linkedCursor);
   }
@@ -569,7 +583,12 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.applyDefaultVisibleRange();
   }
 
-  goToLatest(): void { this.takeRangeOwnership(); this.chart?.timeScale().scrollToRealTime(); }
+  goToLatest(animated = true): void {
+    this.takeRangeOwnership();
+    const scale = this.chart?.timeScale();
+    if (animated) scale?.scrollToRealTime();
+    else scale?.scrollToPosition(scale.options().rightOffset, false);
+  }
   fitHistory(): void {
     this.takeRangeOwnership();
     this.chart?.applyOptions({ rightPriceScale: { autoScale: true } });

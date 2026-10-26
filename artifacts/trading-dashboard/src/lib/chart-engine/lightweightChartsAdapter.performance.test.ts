@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const line = { applyOptions: vi.fn() };
-  const series = { setData: vi.fn(), update: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn(() => line), removePriceLine: vi.fn(), priceToCoordinate: vi.fn() };
-  const scale = { subscribeVisibleLogicalRangeChange: vi.fn(), getVisibleRange: vi.fn(() => ({from:100,to:400})), getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 1 })), setVisibleLogicalRange: vi.fn(), setVisibleRange: vi.fn(), fitContent: vi.fn(), scrollToRealTime: vi.fn() };
+  const series = { setData: vi.fn(), update: vi.fn(), pop: vi.fn(), applyOptions: vi.fn(), createPriceLine: vi.fn(() => line), removePriceLine: vi.fn(), priceToCoordinate: vi.fn() };
+  const scale = { subscribeVisibleLogicalRangeChange: vi.fn(), getVisibleRange: vi.fn(() => ({from:100,to:400})), getVisibleLogicalRange: vi.fn(() => ({ from: 0, to: 1 })), setVisibleLogicalRange: vi.fn(), setVisibleRange: vi.fn(), fitContent: vi.fn(), scrollToRealTime: vi.fn(), scrollToPosition: vi.fn(), options:()=>({rightOffset:8}) };
   const chart = { addSeries: vi.fn(() => series), subscribeCrosshairMove: vi.fn(), setCrosshairPosition:vi.fn(), clearCrosshairPosition:vi.fn(), timeScale: () => scale, applyOptions: vi.fn(), remove: vi.fn() };
   return { line, series, scale, chart };
 });
@@ -29,6 +29,39 @@ describe("chart refresh and inspection", () => {
     adapter.setCandles([bar(100),bar(200),bar(300,1.16),bar(400)]);
     expect(mocks.series.setData).toHaveBeenCalledTimes(1);
     expect(mocks.series.update.mock.calls.map(([c])=>c.time)).toEqual([300,400]);
+  });
+  it("bulk appends use one replacement while small unchanged truncations pop", () => {
+    const candles = Array.from({length:5000},(_,i)=>bar(100+i*60));
+    adapter.setCandles(candles.slice(0,1));
+    adapter.setCandles(candles);
+    expect(mocks.series.setData).toHaveBeenCalledTimes(2);
+    expect(mocks.series.update).not.toHaveBeenCalled();
+    adapter.setCandles(candles.slice(0,-1));
+    expect(mocks.series.pop).toHaveBeenLastCalledWith(1);
+    expect(mocks.series.setData).toHaveBeenCalledTimes(2);
+    adapter.setCandles(candles);
+    expect(mocks.series.update).toHaveBeenLastCalledWith(candles.at(-1));
+    adapter.setCandles([]);
+    expect(mocks.series.setData).toHaveBeenLastCalledWith([]);
+    adapter.setCandles(candles.slice(0,1));
+    adapter.setCandles([]);
+    expect(mocks.series.pop).toHaveBeenLastCalledWith(1);
+  });
+  it("bulk appends preserve past inspection and follow the edge only when already there", () => {
+    const candles = Array.from({length:100},(_,i)=>bar(100+i*60));
+    adapter.setCandles(candles.slice(0,10));
+    mocks.scale.getVisibleLogicalRange.mockReturnValue({from:0,to:3});
+    adapter.setCandles(candles.slice(0,50));
+    expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:0,to:3});
+    mocks.scale.getVisibleLogicalRange.mockReturnValue({from:40,to:55});
+    adapter.setCandles(candles);
+    expect(mocks.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:90,to:105});
+  });
+  it("a shortened but revised prefix cannot use tail removal", () => {
+    adapter.setCandles([bar(100),bar(200),bar(300)]);
+    adapter.setCandles([bar(100,1.19),bar(200)]);
+    expect(mocks.series.pop).not.toHaveBeenCalled();
+    expect(mocks.series.setData).toHaveBeenLastCalledWith([bar(100,1.19),bar(200)]);
   });
   it("replaces historical corrections rather than losing them in a tail optimization", () => {
     adapter.setCandles([bar(100),bar(200),bar(300)]);
@@ -73,8 +106,9 @@ describe("chart refresh and inspection", () => {
     expect(mocks.series.setData).toHaveBeenCalledTimes(1);
     adapter.setFeedState({livePriceAffordance:true,source:to});
     adapter.setCandles([bar(100),bar(200)]);
-    expect(mocks.series.setData).toHaveBeenLastCalledWith([bar(100),bar(200)]);
-    expect(mocks.series.setData).toHaveBeenCalledTimes(2);
+    expect(mocks.series.pop).toHaveBeenCalledExactlyOnceWith(1);
+    expect((adapter as any).candles).toEqual([bar(100),bar(200)]);
+    expect((adapter as any).streamTip).toBeNull();
     // The replacement source can recover at an earlier valid forming interval.
     adapter.updateActiveCandle(bar(200,1.16));
     expect(mocks.series.update).toHaveBeenLastCalledWith(bar(200,1.16));
@@ -125,6 +159,9 @@ describe("chart refresh and inspection", () => {
     expect(mocks.chart.applyOptions).toHaveBeenLastCalledWith({width:1000,height:700});
     expect(mocks.chart.remove).not.toHaveBeenCalled();
     adapter.goToLatest(); adapter.fitHistory(); adapter.setScaleMode("log");
+    expect(mocks.scale.scrollToRealTime).toHaveBeenCalledOnce();
+    adapter.goToLatest(false);
+    expect(mocks.scale.scrollToPosition).toHaveBeenCalledExactlyOnceWith(8,false);
     expect(mocks.scale.scrollToRealTime).toHaveBeenCalledOnce();
     expect(mocks.scale.fitContent).toHaveBeenCalledOnce();
     expect(mocks.chart.applyOptions).toHaveBeenLastCalledWith({rightPriceScale:{mode:1}});

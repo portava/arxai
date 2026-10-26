@@ -1,5 +1,6 @@
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
 import { useEffect, useMemo, useRef, useState, useCallback, useContext } from "react";
+import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
 import { ChartLinkContext } from "./ChartLinkContext";
 import {
   useGetChartCandles,
@@ -387,6 +388,8 @@ export function ARXNativeChart({
     },
   );
 
+  const replay = useContext(ChartReplayContext);
+  const [replayError,setReplayError] = useState<string | null>(null);
   const data: ChartCandlesResponse | undefined = query.data;
   const candles = data?.candles ?? [];
   const hasCandles = candles.length > 0;
@@ -1071,6 +1074,7 @@ export function ARXNativeChart({
           </div>
           {/* Phase 2 — TF controls + Reset Scale button. */}
           <div className="flex flex-wrap items-center gap-1" data-testid="arx-native-tf-controls">
+            {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>setReplayError(replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}))}>Replay loaded bars</Button>}
             {TIMEFRAMES.map((tf) => (
               <Button
                 key={tf.id}
@@ -1101,6 +1105,8 @@ export function ARXNativeChart({
           </div>
         </CardTitle>
       </CardHeader>
+
+      {replayError && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{replayError}</p>}
 
       {/* Phase 2 — Chart Mirror Layer.
           Compact status bar between the header and the canvas. Shows the

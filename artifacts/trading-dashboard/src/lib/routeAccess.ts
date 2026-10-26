@@ -74,6 +74,7 @@ const NORMAL_USER_EXACT: ReadonlySet<string> = new Set<string>([
   "/live-trading", // promoted into the approved-trader Primary group (Task #768)
   // ── Markets & Tools (visible nav group) ──
   "/live-chart",
+  "/chart-replay", // private historical chart analysis, same approved-trader containment
   "/watchlists",
   "/orders",
   "/mt5-setup",
