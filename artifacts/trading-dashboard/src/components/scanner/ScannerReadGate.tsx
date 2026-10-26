@@ -10,8 +10,7 @@
 import { AlertTriangle } from "lucide-react";
 import { CompactAlert, type CompactAlertTone } from "@/components/ui/CompactAlert";
 import { cn } from "@/lib/utils";
-import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
-import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { useScannerReadGate } from "@/hooks/useScannerReadGate";
 
 // When `compact` is set the gate renders as a single inline caption (for use
 // INSIDE an advisory card header) instead of a full banner. Same shared truth,
@@ -26,17 +25,14 @@ export function ScannerReadGate({
   timeframe?: string;
   compact?: boolean;
 }) {
-  const [scannerTimeframe] = useScannerTimeframe();
-  const { truth } = useScannerTruth(symbol, timeframe || scannerTimeframe);
-  if (!truth) return null;
-
-  const level = truth.analysis.level;
-  if (level === "full") return null;
+  const { truth, level, isFull, reason } = useScannerReadGate(symbol, timeframe);
+  if (isFull) return null;
+  const pending = truth == null;
 
   const tone: CompactAlertTone =
-    level === "blocked" ? "danger" : level === "limited" ? "info" : "warning";
+    pending ? "info" : level === "blocked" ? "danger" : level === "limited" ? "info" : "warning";
   const title =
-    level === "blocked"
+    pending ? "Confirming market data" : level === "blocked"
       ? "No live data — analysis unavailable"
       : level === "limited"
         ? "Delayed data — read with caution"
@@ -44,7 +40,7 @@ export function ScannerReadGate({
 
   if (compact) {
     const toneCls =
-      level === "blocked"
+      pending ? "text-blue-400" : level === "blocked"
         ? "text-rose-400"
         : level === "limited"
           ? "text-blue-400"
@@ -57,7 +53,7 @@ export function ScannerReadGate({
         <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
         <span>
           <span className="font-medium">{title}.</span>{" "}
-          <span className="text-txt-muted">{truth.analysis.reason}</span>
+          <span className="text-txt-muted">{reason}</span>
         </span>
       </div>
     );
@@ -67,7 +63,7 @@ export function ScannerReadGate({
     <CompactAlert
       tone={tone}
       title={title}
-      description={truth.analysis.reason}
+      description={reason ?? undefined}
       testId="scanner-read-gate"
     />
   );
