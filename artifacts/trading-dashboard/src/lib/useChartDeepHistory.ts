@@ -55,8 +55,9 @@ export function useChartDeepHistory(
   enabled = true,
   source: string | null = null,
   evidenceIdentity: string | null = null,
+  requireEvidence = false,
 ): ChartDeepHistoryState {
-  const sourceIdentity = JSON.stringify([source, evidenceIdentity]);
+  const sourceIdentity = JSON.stringify([source, evidenceIdentity, requireEvidence]);
   const [olderCandles, setOlderCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -121,7 +122,12 @@ export function useChartDeepHistory(
       if (!hasMore) return;
       const before = cursorRef.current ?? oldestLoadedIso;
       if (!before) return; // nothing on screen yet to page behind
-
+      if (requireEvidence && (!source || !evidenceIdentity)) {
+        setHasMore(false);
+        setProviderCapped(true);
+        setLimitationReason("Older history is unavailable until the chart's data-source identity can be verified.");
+        return;
+      }
       inFlightRef.current = true;
       const generation = generationRef.current;
       const controller = new AbortController();
@@ -138,12 +144,22 @@ export function useChartDeepHistory(
             limit: 500,
             before,
             source: sourceRef.current,
+            ...(evidenceIdentity ? { sourceIdentity: evidenceIdentity } : {}),
             signal: controller.signal,
           });
           if (!isCurrent()) return;
           if (source != null && page.source !== source) {
             setHasMore(false);
+            setProviderCapped(true);
             setLimitationReason("Older history did not match the chart's data source.");
+            return;
+          }
+          if ((requireEvidence || evidenceIdentity != null) && (!page.historyEvidence
+            || page.historyEvidence.symbol !== symbol || page.historyEvidence.timeframe !== apiTf
+            || page.historyEvidence.source !== source || page.historyEvidence.sourceIdentity !== evidenceIdentity)) {
+            setHasMore(false);
+            setProviderCapped(true);
+            setLimitationReason(page.limitationReason ?? "Older history could not verify the chart's original data source.");
             return;
           }
           if (page.source) sourceRef.current = page.source;
@@ -169,7 +185,7 @@ export function useChartDeepHistory(
         }
       })();
     },
-    [enabled, hasMore, symbol, apiTf, sourceIdentity, source],
+    [enabled, hasMore, symbol, apiTf, sourceIdentity, source, evidenceIdentity, requireEvidence],
   );
 
   // Never expose the previous instrument's accumulated bars during the render

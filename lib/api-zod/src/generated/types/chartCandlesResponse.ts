@@ -7,6 +7,7 @@
  */
 import type { ChartCandle } from "./chartCandle";
 import type { ChartCandlesResponseAssetClass } from "./chartCandlesResponseAssetClass";
+import type { ChartCandlesResponseMarketEvidence } from "./chartCandlesResponseMarketEvidence";
 import type { ChartCandlesResponseQuality } from "./chartCandlesResponseQuality";
 import type { ChartCandlesResponseTimeframe } from "./chartCandlesResponseTimeframe";
 import type { ChartCandleTruthResult } from "./chartCandleTruthResult";
@@ -28,6 +29,11 @@ export interface ChartCandlesResponse {
   latencyMs: number | null;
   requestedLimit: number;
   candleCount: number;
+  /**
+   * Observed current candle source identity and latest confirmed close; no current account is inferred for legacy rows.
+   * @nullable
+   */
+  marketEvidence?: ChartCandlesResponseMarketEvidence;
   candles: ChartCandle[];
   feedStatus: ChartFeedStatus;
   /** Phase 1 structured per-timeframe truth audit result alongside candles. null when no candles were returned (unavailable/empty feed).

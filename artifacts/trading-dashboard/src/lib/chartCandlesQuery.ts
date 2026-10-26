@@ -145,6 +145,14 @@ export interface ChartHistoryPage {
   depthTargetMet: boolean;
   sourcePriorityUsed: string[];
   userMessage: string;
+  historyEvidence?: {
+    symbol: string;
+    timeframe: string;
+    source: string;
+    sourceIdentity: string;
+    lastClosedCandleAt: string;
+    scope: "public_provider";
+  } | null;
 }
 
 export async function fetchChartHistory(args: {
@@ -153,6 +161,7 @@ export async function fetchChartHistory(args: {
   limit?: number;
   before?: string | null;
   source?: string | null;
+  sourceIdentity?: string | null;
   signal?: AbortSignal;
 }): Promise<ChartHistoryPage> {
   const params = new URLSearchParams({
@@ -162,6 +171,7 @@ export async function fetchChartHistory(args: {
   });
   if (args.before) params.set("before", args.before);
   if (args.source) params.set("source", args.source);
+  if (args.sourceIdentity) params.set("sourceIdentity", args.sourceIdentity);
   const res = await fetch(`${BASE}/api/chart/history?${params.toString()}`, {
     credentials: "include",
     signal: args.signal,
@@ -169,6 +179,16 @@ export async function fetchChartHistory(args: {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const obj = (await res.json()) as Record<string, unknown>;
   const rawCandles = Array.isArray(obj.candles) ? (obj.candles as unknown[]) : [];
+  const observed = obj.historyEvidence as Partial<NonNullable<ChartHistoryPage["historyEvidence"]>> | null | undefined;
+  const historyEvidence = observed && observed.symbol === args.symbol && observed.timeframe === args.apiTf
+    && observed.source === "deriv_public" && observed.source === obj.source && typeof observed.sourceIdentity === "string"
+    && /^[a-f0-9]{64}$/.test(observed.sourceIdentity) && observed.scope === "public_provider"
+    && (args.sourceIdentity == null || observed.sourceIdentity === args.sourceIdentity)
+    && (args.source == null || observed.source === args.source)
+    && typeof observed.lastClosedCandleAt === "string" && Number.isFinite(Date.parse(observed.lastClosedCandleAt))
+    && Date.parse(observed.lastClosedCandleAt) <= Date.now()
+    && !!args.before && Date.parse(observed.lastClosedCandleAt) <= Date.parse(args.before)
+    ? observed as NonNullable<ChartHistoryPage["historyEvidence"]> : null;
   return {
     ok: Boolean(obj.ok),
     source: (obj.source as string | null) ?? null,
@@ -190,5 +210,6 @@ export async function fetchChartHistory(args: {
       ? (obj.sourcePriorityUsed as string[])
       : [],
     userMessage: String(obj.userMessage ?? ""),
+    historyEvidence,
   };
 }

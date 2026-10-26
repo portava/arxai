@@ -396,7 +396,11 @@ export function ARXNativeChart({
   // View-only: loading history never touches an execution path, and the hook
   // never fabricates a bar — a provider ceiling stops paging and is reported
   // honestly via the history badge.
-  const deepHistory = useChartDeepHistory(resolvedSymbol, timeframe, hasCandles);
+  const evidence = data?.marketEvidence;
+  const evidenceIdentity = evidence?.symbol === resolvedSymbol && evidence.timeframe === timeframe
+    && evidence.source === data?.feedStatus?.source ? evidence.sourceIdentity : null;
+  const deepHistory = useChartDeepHistory(resolvedSymbol, timeframe, hasCandles,
+    data?.feedStatus?.source ?? null, evidenceIdentity, true);
 
   // ── Live-price affordance honesty (shared rule, Task #351) ──────────────────
   // The candlestick last-value label and the dashed "Last" price line are

@@ -2250,6 +2250,14 @@ paths:
           description: Continuation — the source echoed by a previous page (keeps one coherent series).
           schema:
             type: string
+        - name: sourceIdentity
+          in: query
+          description: Expected opaque source identity for strict chart continuation. This is not authorization; unverified historical sources return no bars.
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{64}$'
+            minLength: 64
+            maxLength: 64
       responses:
         "200":
           description: Paginated candle history with honest metadata
@@ -14045,6 +14053,16 @@ components:
         latencyMs: { type: ["number", "null"] }
         requestedLimit: { type: integer }
         candleCount: { type: integer }
+        marketEvidence:
+          type: ["object", "null"]
+          description: Observed current candle source identity and latest confirmed close; no current account is inferred for legacy rows.
+          required: [symbol, timeframe, source, sourceIdentity, lastClosedCandleAt]
+          properties:
+            symbol: { type: string }
+            timeframe: { type: string }
+            source: { type: string }
+            sourceIdentity: { type: string }
+            lastClosedCandleAt: { type: string }
         candles:
           type: array
           items: { $ref: "#/components/schemas/ChartCandle" }
@@ -14079,6 +14097,17 @@ components:
         source:
           type: ["string", "null"]
           description: The single source this page was served from (provenance).
+        historyEvidence:
+          type: ["object", "null"]
+          description: Actual producer evidence for the returned historical page; absent legacy evidence is never inferred from current account settings.
+          required: [symbol, timeframe, source, sourceIdentity, lastClosedCandleAt, scope]
+          properties:
+            symbol: { type: string }
+            timeframe: { type: string }
+            source: { type: string }
+            sourceIdentity: { type: string, pattern: '^[a-f0-9]{64}$' }
+            lastClosedCandleAt: { type: string }
+            scope: { type: string, enum: [public_provider] }
         candles:
           type: array
           description: Ascending by time.
