@@ -23,6 +23,7 @@ set -eu
 [[ "$ARX_ADMIN_EMAIL" == "admin@example.invalid" ]]
 [[ "$ARX_ADMIN_INITIAL_PASSWORD" == "synthetic-fixture-only" ]]
 [[ "$ARX_LIVE_BROKER_EXECUTION_ENABLED" == "false" ]]
+[[ "$ARX_DERIV_PUBLIC_DATA_ENABLED" == "true" ]]
 for key in ${blocked.join(' ')}; do
   [[ ! -v "$key" ]]
 done

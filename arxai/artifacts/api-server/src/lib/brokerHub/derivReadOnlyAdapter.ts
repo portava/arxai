@@ -34,6 +34,7 @@ import {
   toDerivGranularity,
   type DerivFeedStatus,
 } from "../data/providers/derivProvider.js";
+import { getDerivFeedClient, derivMarketDataSource } from "../data/providers/derivFeedClient.js";
 import type { DerivCandle } from "../data/providers/derivWsClient.js";
 
 /** The feed is one platform connection, shared by every reader. */
@@ -45,6 +46,8 @@ export interface DerivFeedReader {
     DerivFeedStatus,
     "feedReadinessState" | "connected" | "lastTickAt" | "lastTickAgeMs" | "activeSymbolsLoaded" | "activeSymbolsLoadedAt"
   >;
+  isDiscovered?(derivId: string): boolean;
+  source?(): string;
   catalog(): ReadonlyArray<{ symbol: string; derivId: string; displayName: string }>;
   candles(symbol: string, timeframe: string, count: number): Promise<{ ok: boolean; reason: string | null; candles: DerivCandle[] }>;
 }
@@ -52,6 +55,11 @@ export interface DerivFeedReader {
 export const derivFeedReader: DerivFeedReader = {
   feedStatus: () => getDerivFeedStatus(),
   catalog: () => DERIV_SYNTHETIC_SYMBOLS,
+  source: derivMarketDataSource,
+  isDiscovered: (id) => {
+    const client = getDerivFeedClient();
+    return client.isActiveSymbolsLoaded() && client.getLastDiscovery()?.symbols.some(s => s.symbol === id && s.exchangeIsOpen) === true;
+  },
   candles: (symbol, timeframe, count) => getDerivCandles(symbol, timeframe, count),
 };
 
@@ -127,7 +135,7 @@ export class DerivReadOnlyAdapter implements ReadOnlyBrokerAdapter {
       displayName: s.displayName,
       exactBrokerSymbol: s.derivId,
       brokerReportsTradeAllowed: false,
-      discoveryStatus: fresh ? "FRESH" : "STALE",
+      discoveryStatus: fresh && (this.reader.isDiscovered?.(s.derivId) ?? false) ? "FRESH" : "STALE",
       digits: null,
       point: null,
       minVolume: null,
@@ -168,7 +176,7 @@ export class DerivReadOnlyAdapter implements ReadOnlyBrokerAdapter {
         userId: this.identity.userId,
         nativeConnectionRef: DERIV_PLATFORM_FEED_REF,
         exactBrokerSymbol: request.exactBrokerSymbol,
-        source: "deriv_ws",
+        source: this.reader.source?.() ?? "deriv_ws",
         terminalRef: null,
       },
       candles: res.candles.map((c) => {

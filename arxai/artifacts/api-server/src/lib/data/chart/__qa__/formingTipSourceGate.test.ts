@@ -5,10 +5,9 @@
 // so even with Deriv ticks folding, a Deriv-fed chart still received no tip and
 // still froze between closed candles.
 //
-// The gate that matters is "is there a REAL tick for this symbol's current
-// interval", which `getFormingBar` already answers — not "which provider won
-// the candle race". A symbol with no folded ticks still gets no tip, because
-// the composer has nothing to give.
+// Both MT5 and Deriv remain supported. The newer source-isolation suite locks
+// the additional invariant: the real tick must match the winning history
+// provider. A symbol with no matching-provider ticks gets no tip.
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -32,7 +31,7 @@ function formingTipBlock(src: string): string {
   return src.slice(start, end);
 }
 
-describe("C3.2 — the append gate is not provider-scoped", () => {
+describe("C3.2 — the append gate supports both live providers", () => {
   it("does not require source === 'mt5_broker' to append a tip", () => {
     const block = formingTipBlock(serviceSource());
     assert.ok(

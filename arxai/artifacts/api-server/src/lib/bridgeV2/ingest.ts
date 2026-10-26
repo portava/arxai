@@ -285,7 +285,7 @@ function feedMarketDataStore(
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an
     // analysis/execution input.
-    foldFormingTick(symbol, bid, brokerTimeEpochMs, Date.now());
+    foldFormingTick(symbol, bid, brokerTimeEpochMs, Date.now(), "mt5_broker");
   } catch {
     // Market-data caching is best-effort; never propagate into the EA response.
   }

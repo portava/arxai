@@ -28,6 +28,13 @@ describe("providerInfo — provider label + trust tier mapping", () => {
     expect(info.trustNote).toMatch(/not your broker|not.*broker/i);
   });
 
+  it("names public Deriv data explicitly without broker trust", () => {
+    const info = providerInfo("deriv_public");
+    expect(info.label).toBe("Deriv public data");
+    expect(info.tier).toBe("synthetic");
+    expect(info.trustNote).toMatch(/not.*broker/i);
+  });
+
   it("maps a named assistant_real provider to its pretty name on the thirdParty tier", () => {
     const info = providerInfo("assistant_real:twelve_data");
     expect(info.label).toBe("TwelveData");
@@ -76,6 +83,7 @@ describe("providerInfo — provider label + trust tier mapping", () => {
   it("never labels a non-broker source as the broker tier (honesty floor)", () => {
     const nonBroker = [
       "deriv",
+      "deriv_public",
       "assistant_real:twelve_data",
       "assistant_real:composite(twelve_data,polygon)",
       "some_new_provider",

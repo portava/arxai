@@ -1,15 +1,18 @@
 // Deriv Provider Health Page — Admin/Owner only.
-// Shows connection mode, credentials (masked), OTP result, and setup instructions.
+// Public prices and private account authorization are separate capabilities.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Health = {
   ok?: boolean;
   error?: string;
-  health?: "healthy" | "degraded" | "failed" | "unconfigured";
-  mode?: "new" | "legacy" | "none";
+  health?: "healthy" | "degraded" | "failed" | "unconfigured" | "warming";
+  mode?: "new" | "legacy" | "none" | "public";
   configured?: boolean;
   connected?: boolean;
+  hasRecentTick?: boolean;
+  authorized?: boolean;
+  source?: string;
   credentials?: {
     appId?:     { present?: boolean; masked?: string };
     token?:     { present?: boolean; masked?: string };
@@ -26,7 +29,25 @@ type Health = {
   message?: string;
   blockers?: string[];
   setupInstructions?: string[];
+  perSymbol?: Array<{
+    symbol: string;
+    derivId: string;
+    lastTickAt: string | null;
+    lastTickAgeMs: number | null;
+    hasRecentTick: boolean;
+    feedReadinessState: string;
+  }>;
 };
+
+function tickAge(at: string | null | undefined, now: number): number | null {
+  if (!at) return null;
+  const age = now - Date.parse(at);
+  return Number.isFinite(age) && age >= 0 ? age : null;
+}
+
+function ageLabel(age: number | null): string {
+  return age === null ? "No verified timestamp" : `${Math.floor(age / 1000)}s ago`;
+}
 
 function StatusDot({ ok }: { ok: boolean }) {
   return (
@@ -48,23 +69,95 @@ function Row({ label, value, ok }: { label: string; value: string; ok?: boolean 
 export default function DerivHealthPage() {
   const [data, setData] = useState<Health | null>(null);
   const [checking, setChecking] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const controller = useRef<AbortController | null>(null);
+  const generation = useRef(0);
+  const checkingRef = useRef(false);
+  const loadingRef = useRef(false);
 
-  const load = () => {
-    fetch("/api/admin/deriv-status", { credentials: "include" })
-      .then(r => r.json())
-      .then(setData)
-      .catch(e => setErr(e.message));
-  };
+  const load = useCallback(async (check = false) => {
+    if (!check && checkingRef.current) return;
+    controller.current?.abort();
+    const active = new AbortController();
+    controller.current = active;
+    const version = ++generation.current;
+    checkingRef.current = check;
+    loadingRef.current = true;
+    setChecking(check);
+    setLoading(true);
+    setErr(null);
+    let timedOut = false;
+    let deadline: ReturnType<typeof setTimeout>;
+    const expired = new Promise<never>((_, reject) => {
+      deadline = setTimeout(() => {
+        timedOut = true;
+        active.abort();
+        reject(new Error("Status request timed out"));
+      }, 12_000);
+    });
+    try {
+      const read = async () => {
+        if (check) {
+          const response = await fetch("/api/admin/deriv-status/check", {
+            method: "POST", credentials: "include", signal: active.signal,
+          });
+          if (!response.ok) throw new Error("Connection check failed. Refresh to try again.");
+        }
+        const response = await fetch("/api/admin/deriv-status", { credentials: "include", signal: active.signal });
+        if (!response.ok) throw new Error(response.status === 401 || response.status === 403
+          ? "Sign in with an Admin or Owner account to view Deriv status."
+          : "Deriv status is unavailable. Refresh to try again.");
+        const result = await response.json() as Health;
+        if (!result || result.ok !== true || !result.credentials) throw new Error("Deriv returned an incomplete status. Refresh to try again.");
+        return result;
+      };
+      const result = await Promise.race([read(), expired]);
+      if (version !== generation.current || active.signal.aborted) return;
+      setData(result);
+      setNow(Date.now());
+    } catch {
+      if (version !== generation.current || (active.signal.aborted && !timedOut)) return;
+      // Never leave an old green connection card visible after a failed read.
+      setData(null);
+      setErr("Cannot verify Deriv status. Check your connection and Admin access, then refresh.");
+    } finally {
+      clearTimeout(deadline!);
+      if (version === generation.current && (!active.signal.aborted || timedOut)) {
+        checkingRef.current = false;
+        loadingRef.current = false;
+        setChecking(false);
+        setLoading(false);
+      }
+    }
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    void load();
+    const poll = setInterval(() => { if (document.visibilityState !== "hidden" && !loadingRef.current) void load(); }, 10_000);
+    const clock = setInterval(() => setNow(Date.now()), 1_000);
+    const visible = () => {
+      if (document.visibilityState === "visible") {
+        setNow(Date.now());
+        if (!loadingRef.current) void load();
+      }
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      generation.current++;
+      controller.current?.abort();
+      checkingRef.current = false;
+      loadingRef.current = false;
+      clearInterval(poll);
+      clearInterval(clock);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [load]);
 
-  const triggerCheck = async () => {
-    setChecking(true);
-    await fetch("/api/admin/deriv-status/check", { method: "POST", credentials: "include" });
-    load();
-    setChecking(false);
-  };
+  const publicData = data?.mode === "public";
+  const lastAge = tickAge(data?.lastTickAt, now);
+  const fresh = !!data?.connected && data.hasRecentTick === true && lastAge !== null && lastAge <= 30_000;
 
   const healthColor = (h: string) =>
     h === "healthy" ? "text-success border-success/40 bg-success/10" :
@@ -80,17 +173,17 @@ export default function DerivHealthPage() {
           <p className="text-xs text-txt-muted mt-0.5">Synthetic index market data via Deriv API</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={load} className="text-xs px-3 py-1.5 rounded border border-border bg-secondary text-txt-secondary hover:bg-secondary/80 transition">
-            Refresh
+          <button onClick={() => void load()} disabled={checking} className="text-xs px-3 py-1.5 rounded border border-border bg-secondary text-txt-secondary hover:bg-secondary/80 transition disabled:opacity-50">
+            {loading && !checking ? "Refreshing…" : "Refresh"}
           </button>
-          <button onClick={triggerCheck} disabled={checking}
+          <button onClick={() => void load(true)} disabled={checking}
             className="text-xs px-3 py-1.5 rounded border border-primary/50 bg-primary/20 text-primary hover:bg-primary/40 transition disabled:opacity-50">
             {checking ? "Checking…" : "Test Connection"}
           </button>
         </div>
       </div>
 
-      {err && <div className="rounded-lg border border-danger/40 bg-danger/20 p-3 text-xs text-danger">{err}</div>}
+      {err && <div role="alert" className="rounded-lg border border-danger/40 bg-danger/20 p-3 text-xs text-danger">{err}</div>}
 
       {data?.error && !data.credentials && (
         <div className="rounded-xl border border-warning/40 bg-warning/20 p-4 text-xs text-warning space-y-1">
@@ -103,28 +196,45 @@ export default function DerivHealthPage() {
       {data && data.credentials && (
         <>
           {/* Health banner */}
-          <div className={`rounded-xl border p-4 ${healthColor(data.health ?? "unconfigured")}`}>
-            <div className="font-semibold text-sm mb-1 capitalize">{data.health ?? "unknown"} — {data.mode ?? "none"} mode</div>
-            <p className="text-xs opacity-80">{data.message ?? ""}</p>
+          <div className={`rounded-xl border p-4 ${healthColor(data.health === "healthy" && !fresh ? "degraded" : data.health ?? "unconfigured")}`}>
+            <div className="font-semibold text-sm mb-1">{fresh ? "Live market prices" : "Live prices not verified"}</div>
+            <p className="text-xs opacity-80">{publicData
+              ? "Public market data only. This connection does not authorize an account or enable trading."
+              : data.message ?? ""}</p>
           </div>
 
           {/* Status grid */}
           <div className="rounded-xl border border-border bg-background/40 p-4">
             <h2 className="text-xs font-semibold text-txt-secondary uppercase tracking-wide mb-3">Status</h2>
-            <Row label="API Mode" value={data.mode === "new" ? "New PAT API" : data.mode === "legacy" ? "Legacy WebSocket" : "Not configured"} />
+            <Row label="API Mode" value={publicData ? "Public market data" : data.mode === "new" ? "New PAT API" : data.mode === "legacy" ? "Legacy WebSocket" : "Not configured"} />
             <Row label="Connected" value={data.connected ? "Yes" : "No"} ok={!!data.connected} />
-            <Row label="Subscribed symbols" value={`${data.activeSymbols ?? 0} / ${data.knownSymbols ?? 0}`} />
+            <Row label="Subscribed symbols" value={`${data.subscribedSymbols?.length ?? 0} / ${data.knownSymbols ?? 0}`} />
             <Row label="Reconnect count" value={String(data.reconnectCount ?? 0)} />
             <Row label="Connected at" value={data.connectedAt ? new Date(data.connectedAt).toLocaleTimeString() : "—"} />
-            <Row label="Last tick" value={data.lastTickAt ? new Date(data.lastTickAt).toLocaleTimeString() : "—"} />
+            <Row label="Last venue tick" value={ageLabel(lastAge)} ok={fresh} />
+            <Row label="Account authorization" value={publicData ? "Not available on this public connection" : data.authorized ? "Authorized; trading checks still apply" : "Not verified"} />
           </div>
+
+          {!!data.perSymbol?.length && (
+            <div className="rounded-xl border border-border bg-background/40 p-4">
+              <h2 className="text-xs font-semibold text-txt-secondary uppercase tracking-wide mb-3">Market price freshness</h2>
+              <p className="text-xs text-txt-muted mb-2">Each market needs its own recent price. Fresh prices do not confirm account spreads or permission to trade.</p>
+              {data.perSymbol.map(symbol => {
+                const age = tickAge(symbol.lastTickAt, now);
+                const live = !!data.connected && symbol.hasRecentTick && age !== null && age <= 30_000;
+                return <Row key={symbol.symbol} label={symbol.symbol} value={`${live ? "Live" : "Not live"} · ${ageLabel(age)}`} ok={live} />;
+              })}
+            </div>
+          )}
 
           {/* Credentials */}
           <div className="rounded-xl border border-border bg-background/40 p-4">
-            <h2 className="text-xs font-semibold text-txt-secondary uppercase tracking-wide mb-3">Credentials (masked)</h2>
+            <h2 className="text-xs font-semibold text-txt-secondary uppercase tracking-wide mb-3">{publicData ? "Public data access" : "Credentials (masked)"}</h2>
+            {publicData ? <p className="text-xs text-txt-secondary">No app ID, API token or account login is required for this market-data connection.</p> : <>
             <Row label="App ID" value={data.credentials.appId?.masked ?? "—"} ok={!!data.credentials.appId?.present} />
             <Row label="API Token" value={data.credentials.token?.masked ?? "—"} ok={!!data.credentials.token?.present} />
             <Row label="Account ID" value={data.credentials.accountId?.present ? "Present" : "Not set"} ok={!!data.credentials.accountId?.present} />
+            </>}
           </div>
 
           {/* OTP / error */}
@@ -164,15 +274,6 @@ export default function DerivHealthPage() {
               {data.setupInstructions.map((s, i) => (
                 <div key={i} className="text-xs text-txt-secondary">{s}</div>
               ))}
-              <div className="mt-2 pt-2 border-t border-border">
-                <p className="text-xs text-txt-muted">Required Replit Secrets:</p>
-                <div className="font-mono text-[11px] text-txt-secondary mt-1 space-y-0.5">
-                  <div>DERIV_APP_ID = your alphanumeric app ID</div>
-                  <div>DERIV_API_TOKEN = pat_xxxx... (your PAT)</div>
-                  <div>DERIV_API_MODE = new (or leave unset for auto)</div>
-                  <div>DERIV_ACCOUNT_ID = optional account ID</div>
-                </div>
-              </div>
             </div>
           )}
         </>

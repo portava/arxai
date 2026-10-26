@@ -65,7 +65,7 @@ function connectSse(
       {
         host: "127.0.0.1",
         port,
-        path: `/api/chart/tick-stream?symbol=${SYM}&timeframe=${TF}`,
+        path: `/api/chart/tick-stream?symbol=${SYM}&timeframe=${TF}&source=mt5_broker`,
       },
       (res) => {
         res.setEncoding("utf8");
@@ -113,7 +113,7 @@ test("[D1/D3] tick reaches SSE client in << 500ms and carries tickWallMs", async
 
   const now = Date.now();
   const t0 = performance.now();
-  foldFormingTick(SYM, 1.2345, now, now); // ingest accept → synchronous bus emit
+  foldFormingTick(SYM, 1.2345, now, now, "mt5_broker"); // ingest accept → synchronous bus emit
   await firstForming;
   const latencyMs = received[0]!.at - t0;
 
@@ -144,7 +144,7 @@ test("[D2] N back-to-back ticks produce N distinct frames (no coalescing)", asyn
   const now = Date.now();
   const sent = [1.0, 1.1, 1.2, 1.3, 1.4];
   for (let i = 0; i < sent.length; i++) {
-    foldFormingTick(SYM, sent[i]!, now + i, now + i);
+    foldFormingTick(SYM, sent[i]!, now + i, now + i, "mt5_broker");
   }
 
   // Drain the socket briefly; with immediate push every fold flushed a frame.

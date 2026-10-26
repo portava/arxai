@@ -184,7 +184,7 @@ export function sourceModeFromProvider(source: string | null): SourceMode {
   // (the account mode is managed by the trading-mode layer, not the data layer)
   if (source === "mt5_broker") return "live";
   // Deriv and real REST adapters are live data
-  if (source === "deriv") return "live";
+  if (source === "deriv" || source === "deriv_public") return "live";
   if (source.startsWith("assistant_real:")) return "live";
   return "unknown";
 }
@@ -193,7 +193,7 @@ export function sourceModeFromProvider(source: string | null): SourceMode {
 export function priceBasisFromProvider(source: string | null): PriceBasis {
   if (!source) return "UNKNOWN";
   if (source === "mt5_broker") return "BID"; // MT5 OHLC bars are bid-based
-  if (source === "deriv") return "SYNTHETIC";
+  if (source === "deriv" || source === "deriv_public") return "SYNTHETIC";
   // TwelveData, Polygon: forex/metals → MID; indices/stocks/crypto → LAST
   // We don't have asset-class context here — caller should override if known.
   if (source.startsWith("assistant_real:")) return "MID";
@@ -209,7 +209,7 @@ function providerSymbolFrom(source: string | null, symbol: string): string | nul
   // the actual mapping before the provider call, so by the time we see the
   // candles, the source already fetched the right symbol.
   if (source.startsWith("assistant_real:")) return null; // not tracked at this layer
-  if (source === "deriv") return null; // derivProvider resolves internally
+  if (source === "deriv" || source === "deriv_public") return null; // derivProvider resolves internally
   if (source === "mt5_broker") return symbol; // broker symbol = ARX symbol for MT5
   return null;
 }
@@ -405,7 +405,7 @@ export function normalizeCandles(
 
   const sourceMode = sourceModeFromProvider(source);
   const priceBasis = opts.priceBasisOverride ?? priceBasisFromProvider(source);
-  const isSyntheticSource = source === "deriv";
+  const isSyntheticSource = (source === "deriv" || source === "deriv_public");
   const providerSym = providerSymbolFrom(source, symbol);
   const brokerSym = source === "mt5_broker" ? symbol : null;
   const isMockSource = sourceMode === "mock";

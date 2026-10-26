@@ -453,7 +453,7 @@ export function runCandleTruth(
   // OHLC source type — derived from the provider's known behavior
   let ohlcSourceType: OhlcSourceType = profile.ohlcSourceType;
   if (source === "mt5_broker") ohlcSourceType = "true_ohlc"; // EA pushes real OHLC when active
-  if (source === "deriv") ohlcSourceType = "true_ohlc";
+  if (source === "deriv" || source === "deriv_public") ohlcSourceType = "true_ohlc";
 
   const truthResult: TimeframeTruthResult = {
     timeframe,

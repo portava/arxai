@@ -58,7 +58,9 @@ export interface BrokerConfirmedFeed {
 
 // Provider IDs the router can name (marketDataRouter `ProviderId` +
 // `assistant_real:<source>`). Only MT5-broker bars and Deriv WS ticks are
-// broker-confirmed LIVE sources. `assistant_real:*` is a third-party REST
+// broker-confirmed LIVE sources. The explicit `deriv_public` transport is
+// market-data-only and never supplies execution-feed evidence.
+// `assistant_real:*` is a third-party REST
 // fallback (e.g. twelvedata/polygon) — fresh data, but NOT broker-confirmed, so
 // it must never satisfy the live-entry "broker-confirmed feed" definition.
 const BROKER_GRADE_CANDLE_SOURCES: ReadonlySet<string> = new Set(["mt5_broker"]);
@@ -67,11 +69,11 @@ const BROKER_GRADE_CANDLE_SOURCES: ReadonlySet<string> = new Set(["mt5_broker"])
  * Pure broker-confirmed-live predicate. TRUE only when the feed is BOTH fresh
  * (verdict "LIVE") AND served by a broker-grade source:
  *   * `mt5_broker` — the broker bar IS the live source (Task #776), OR
- *   * a Deriv-backed provider — whose "LIVE" already required a real, recent WS
- *     tick (so freshness here implies a confirmed tick).
- * A fresh `assistant_real:*` REST fallback is fresh but NOT broker-confirmed and
- * returns false. This is a strict tightening — it can only ever BLOCK a
- * live-entry readiness, never relax one.
+ *   * an existing Deriv-backed provider other than `deriv_public` — whose
+ *     "LIVE" already required a real, recent WS tick.
+ * Fresh `deriv_public` and `assistant_real:*` data remain usable for analysis,
+ * but are NOT execution-feed evidence and return false. This is a strict
+ * tightening — it can only ever BLOCK live-entry readiness, never relax it.
  */
 export function isBrokerConfirmedLive(args: {
   verdict: SymbolFeedVerdict;
@@ -79,16 +81,19 @@ export function isBrokerConfirmedLive(args: {
   derivBacked: boolean;
 }): boolean {
   if (args.verdict !== "LIVE") return false;
+  // Public ticks can be fresh without any authorized account. Check the exact
+  // source before the broad Deriv freshness discriminator; dispatch currently
+  // invokes this gate before selecting a bridge, so bridge binding cannot
+  // provide the missing distinction. Never downgrade the analysis verdict.
+  if (args.source === "deriv_public") return false;
   if (args.derivBacked) return true;
   return args.source != null && BROKER_GRADE_CANDLE_SOURCES.has(args.source);
 }
 
 // ── Enforceable live-ENTRY dispatch gate (R4 slice 3 prep — pure predicate) ──
 //
-// `isBrokerConfirmedLive` is consumed OBSERVE-ONLY at today's dispatch
-// preflight (liveCommandPipeline.ts consults the unified readiness resolver
-// "purely to OBSERVE … it NEVER changes the return value"). This block is the
-// ENFORCING form the wave-4 pipeline integrator wires as a hard refusal: a
+// The unified readiness resolver describes feed readiness. Dispatch also calls
+// this ENFORCING form as a hard refusal before bridge selection: a
 // deterministic, side-effect-free decision over facts the caller supplies. It
 // reads no env, no DB, no feed — the SAME inputs always yield the SAME
 // decision, so the pipeline, tests, and audit replay agree byte-for-byte.

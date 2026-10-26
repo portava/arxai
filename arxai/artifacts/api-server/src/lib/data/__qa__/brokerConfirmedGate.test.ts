@@ -2,11 +2,10 @@
 // (docs/prodready-20260819/audit-reports/audit-marketdata.md §3.4;
 //  replit-command-arx-R4-marketdata-provenance.md slice 3).
 //
-// Truth-table proofs of the ENFORCING predicate the wave-4 pipeline integrator
-// wires as a hard refusal (the pipeline itself is NOT touched here — today it
-// consumes the feed verdict observe-only). Locks:
+// Truth-table proofs of the ENFORCING predicate the wave-4 pipeline calls as a
+// hard refusal before selecting a bridge. Locks:
 //   1. `isBrokerConfirmedLive`: only a LIVE verdict from mt5_broker or a
-//      Deriv-backed source confirms; assistant_real:* NEVER does — fresh
+//      existing Deriv-backed source confirms; deriv_public/assistant_real:* never do — fresh
 //      third-party data is fresh, not broker-confirmed.
 //   2. `evaluateLiveEntryFeedGate`: ENTRY-only; CLOSE/REDUCE/MODIFY exempt
 //      (they manage existing exposure). Same-bridge binding: mismatch AND
@@ -27,6 +26,9 @@ process.env.DATABASE_URL ??= "postgres://qa:qa@127.0.0.1:1/qa_offline_never_conn
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { resolveSymbolFeedVerdict } from "../symbolFeedVerdict.js";
+import { rawTrailingIntervalGap } from "../chart/candleNormalization.js";
+import { decideUnifiedLiveReadiness, type UnifiedLiveReadinessInput } from "../../live/unifiedLiveReadinessDecision.js";
 
 const {
   isBrokerConfirmedLive,
@@ -43,6 +45,8 @@ test("isBrokerConfirmedLive truth table", () => {
   const cases: Array<{ verdict: "LIVE" | "LIVE_DELAYED" | "AWAITING"; source: string | null; derivBacked: boolean; expect: boolean }> = [
     { verdict: "LIVE", source: "mt5_broker", derivBacked: false, expect: true },
     { verdict: "LIVE", source: "deriv", derivBacked: true, expect: true },
+    { verdict: "LIVE", source: "deriv_public", derivBacked: true, expect: false },
+    { verdict: "LIVE", source: "deriv_public", derivBacked: false, expect: false },
     // Fresh third-party data is fresh — NOT broker-confirmed.
     { verdict: "LIVE", source: "assistant_real:twelve_data", derivBacked: false, expect: false },
     { verdict: "LIVE", source: "assistant_real:polygon", derivBacked: false, expect: false },
@@ -156,4 +160,89 @@ test("purity: identical inputs yield identical decisions", () => {
     feedBridgeConnectionId: 9, executionBridgeConnectionId: 5,
   };
   assert.deepEqual(evaluateLiveEntryFeedGate(input), evaluateLiveEntryFeedGate(input));
+});
+
+function recentPublicFeed() {
+  const now = Date.parse("2026-10-26T12:00:30.000Z");
+  const tickEpoch = (now - 1000) / 1000;
+  const candles = [{ time: "2026-10-26T12:00:00.000Z", open: 100, high: 101, low: 99, close: 100.5, volume: 0 }];
+  const source = "deriv_public";
+  const trailingIntervals = rawTrailingIntervalGap(candles, source, "M1", now);
+  const hasRecentTick = now - tickEpoch * 1000 >= 0 && now - tickEpoch * 1000 <= 30_000;
+  return {
+    connected: true,
+    accountIdentity: null,
+    candles,
+    tickEpoch,
+    source,
+    derivBacked: true,
+    verdict: resolveSymbolFeedVerdict({ hasRecentTick, trailingIntervals }),
+  };
+}
+
+test("connected public ticks and candles stay LIVE for analysis but cannot satisfy the unbound ENTRY feed gate", () => {
+  const feed = recentPublicFeed();
+  assert.equal(feed.connected, true);
+  assert.equal(feed.accountIdentity, null);
+  assert.equal(feed.verdict, "LIVE", "fresh public market data must not be falsified into stale/unavailable data");
+  const before = structuredClone(feed);
+  const decision = evaluateLiveEntryFeedGate({ intent: "ENTRY", ...feed });
+  assert.equal(decision.feedConfirmed, false);
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.refusalCode, "BROKER_FEED_NOT_CONFIRMED");
+  assert.deepEqual(feed, before, "execution refusal never mutates chart/analysis facts");
+});
+
+test("a claimed matching bridge cannot promote public-only provenance into execution evidence", () => {
+  const decision = evaluateLiveEntryFeedGate({ intent: "ENTRY", ...recentPublicFeed(), feedBridgeConnectionId: 7, executionBridgeConnectionId: 7 });
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.refusalCode, "BROKER_FEED_NOT_CONFIRMED");
+});
+
+test("public-only provenance does not trap existing exposure or hide an explicit enforcement override", () => {
+  for (const intent of ["CLOSE", "REDUCE", "MODIFY"] as const) {
+    const decision = evaluateLiveEntryFeedGate({ intent, ...recentPublicFeed() });
+    assert.equal(decision.allowed, true);
+    assert.equal(decision.intentExempt, true);
+    assert.equal(decision.feedConfirmed, false);
+    assert.equal(decision.violation, "BROKER_FEED_NOT_CONFIRMED");
+  }
+  const overridden = evaluateLiveEntryFeedGate({ intent: "ENTRY", ...recentPublicFeed(), enforceEnvValue: "0" });
+  assert.equal(overridden.allowed, true, "existing owner override semantics remain unchanged");
+  assert.equal(overridden.feedConfirmed, false, "an override cannot manufacture feed evidence");
+  assert.equal(overridden.violation, "BROKER_FEED_NOT_CONFIRMED");
+});
+
+function readyAccountWithPublicFeed(): UnifiedLiveReadinessInput {
+  const feed = recentPublicFeed();
+  return {
+    userId: 7, email: "offline@example.invalid", role: "USER", isInvestor: false, isBotAgentSystem: false, isHumanTrader: true,
+    accountMode: "LIVE", liveApproved: true, sharedBridgeApproved: true, fullLiveActivation: true, armed: true,
+    serverLiveExecutionOn: true, killSwitchEngaged: false, platformStopSources: [], riskProfileReady: true,
+    bridgeMode: "MASTER_LIVE_SHARED", bridgeHeartbeatFresh: true, brokerAccountId: 42,
+    allocationSource: "SHARED_MASTER_POOL", allocatedAmount: 1000, availableLiveAllocation: 800, hasAllocation: true,
+    symbol: "V75", brokerSymbol: "V75", normalizedSymbol: "V75", selectedTimeframe: "M1",
+    lastTickAt: new Date(feed.tickEpoch * 1000).toISOString(), lastCandleAt: feed.candles[0].time,
+    feedSource: feed.source, feedConfirmed: isBrokerConfirmedLive(feed), missingIntervals: 0, symbolLiveEligible: true,
+  };
+}
+
+test("unified readiness remains entry-blocked even when other account and bridge checks pass", () => {
+  const state = decideUnifiedLiveReadiness(readyAccountWithPublicFeed());
+  assert.equal(state.liveEntryEligible, false);
+  assert.deepEqual(state.blockers.map((blocker) => blocker.code), ["BROKER_FEED_NOT_CONFIRMED"]);
+  assert.equal(state.feedSource, "deriv_public");
+});
+
+test("public data cannot clear absent-account, arming, stop, or symbol-mapping blockers", () => {
+  const state = decideUnifiedLiveReadiness({
+    ...readyAccountWithPublicFeed(), brokerAccountId: null, sharedBridgeApproved: false,
+    fullLiveActivation: false, armed: false, killSwitchEngaged: true,
+    platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"], symbolLiveEligible: false,
+  });
+  assert.equal(state.liveEntryEligible, false);
+  assert.equal(state.liveExecutionActive, false);
+  for (const code of ["LIVE_BRIDGE_ASSIGNMENT_PENDING", "LIVE_CONFIRMATION_REQUIRED", "LIVE_ARMING_PENDING", "KILL_SWITCH_ENGAGED", "EMERGENCY_STOP_ACTIVE", "SAFETY_CORE_KILL_SWITCH_ENGAGED", "SYMBOL_NOT_LIVE_ELIGIBLE", "BROKER_FEED_NOT_CONFIRMED"]) {
+    assert.ok(state.blockers.some((blocker) => blocker.code === code), `${code} remains authoritative`);
+  }
 });

@@ -39,6 +39,7 @@
 //     `updateCandlesFromMT5` / `updateQuoteFromMT5`, so the slot is a
 //     no-op and the router falls through to the next provider.
 
+import { derivMarketDataSource } from "./providers/derivFeedClient.js";
 import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
 import { resolveCanonicalSymbol, type CanonicalAssetClass } from "../instruments/index.js";
 import {
@@ -399,12 +400,13 @@ async function tryMt5Quote(symbol: string): Promise<ProviderAttempt & { quote: M
 async function tryDerivCandles(symbol: string, timeframe: string, limit: number): Promise<ProviderAttempt & { candles: Candle[]; provenance: SeriesProvenance | null }> {
   const t0 = Date.now();
   const status = getDerivFeedStatus();
+  const source = derivMarketDataSource();
   if (!status.configured) {
-    return { provider: "deriv", ok: false, reason: "DERIV_NOT_CONFIGURED", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
+    return { provider: source, ok: false, reason: "DERIV_NOT_CONFIGURED", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
   }
   const r = await getDerivCandles(symbol, timeframe, limit);
   if (!r.ok) {
-    return { provider: "deriv", ok: false, reason: r.reason ?? "DERIV_FETCH_FAILED", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
+    return { provider: source, ok: false, reason: r.reason ?? "DERIV_FETCH_FAILED", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
   }
   // Normalize DerivCandle → lib/data Candle.
   const candles: Candle[] = r.candles.map((c) => ({
@@ -416,16 +418,16 @@ async function tryDerivCandles(symbol: string, timeframe: string, limit: number)
     volume: 0,
   }));
   return {
-    provider: "deriv", ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles,
+    provider: source, ok: true, reason: null, candleCount: candles.length, ms: Date.now() - t0, candles,
     // Deriv candles come off the live WS subscription (no delayed tier on that
     // endpoint) → delayed: false. The WS app connection is platform-level, not
     // account-bound → environment stays "unknown".
     provenance: makeProvenance({
-      providerId: "deriv",
+      providerId: source,
       brokerCode: "deriv",
       delayed: false,
       source: "DERIVED",
-      sourceId: `deriv:${sourceSymbolKey(symbol)}:${timeframe}`,
+      sourceId: `${source}:${sourceSymbolKey(symbol)}:${timeframe}`,
     }),
   };
 }
@@ -433,12 +435,13 @@ async function tryDerivCandles(symbol: string, timeframe: string, limit: number)
 async function tryDerivQuote(symbol: string): Promise<ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null }> {
   const t0 = Date.now();
   const status = getDerivFeedStatus();
+  const source = derivMarketDataSource();
   if (!status.configured) {
-    return { provider: "deriv", ok: false, reason: "DERIV_NOT_CONFIGURED", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
+    return { provider: source, ok: false, reason: "DERIV_NOT_CONFIGURED", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
   const r = await getDerivTick(symbol);
   if (!r.ok || !r.tick) {
-    return { provider: "deriv", ok: false, reason: r.reason ?? "DERIV_NO_TICK", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
+    return { provider: source, ok: false, reason: r.reason ?? "DERIV_NO_TICK", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
   const quote: MarketQuote = {
     symbol,
@@ -446,13 +449,13 @@ async function tryDerivQuote(symbol: string): Promise<ProviderAttempt & { quote:
     timestamp: new Date(r.tick.epoch * 1000).toISOString(),
   };
   return {
-    provider: "deriv", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote,
+    provider: source, ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote,
     provenance: makeProvenance({
-      providerId: "deriv",
+      providerId: source,
       brokerCode: "deriv",
       delayed: false,
       source: "LIVE_TICK",
-      sourceId: `deriv:${sourceSymbolKey(symbol)}`,
+      sourceId: `${source}:${sourceSymbolKey(symbol)}`,
     }),
   };
 }
@@ -802,7 +805,7 @@ export function getRouterDiagnostics(): RouterDiagnostics {
       apiTokenConfigured: deriv.apiTokenConfigured,
       subscribedSymbolCount: deriv.subscribedSymbols.length,
       activeSymbolCount: deriv.activeSymbolCount,
-      authorized: deriv.healthSummary === "healthy",
+      authorized: deriv.authorized,
       lastTickAt: deriv.lastTickAt,
       reconnectCount: deriv.reconnectCount,
       errorMessage: deriv.errorMessage,

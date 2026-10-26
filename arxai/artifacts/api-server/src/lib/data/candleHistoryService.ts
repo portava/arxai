@@ -31,6 +31,7 @@ import {
   readCachedCandles,
   upsertCandles,
 } from "./candleCache.js";
+import { derivMarketDataSource } from "./providers/derivFeedClient.js";
 import { getDerivCandles } from "./providers/derivProvider.js";
 import {
   depthTargetDaysFor,
@@ -276,11 +277,19 @@ export async function getCandleHistory(args: GetCandleHistoryArgs): Promise<Cand
       let cursorIso = page.oldest ?? before ?? null;
       let fetches = 0;
       while (page.count < limit && fetches < MAX_DERIV_BACKFILL_FETCHES) {
+        // Continuations keep the exact transport identity of their first page.
+        // Enabling public mode must never append public bars to a legacy cache.
+        if (source !== derivMarketDataSource()) {
+          providerLimitReached = true;
+          providerMessage = "The original Deriv data connection is no longer selected. Reload the chart to use the current source.";
+          break;
+        }
         const cursorMs = cursorIso ? new Date(cursorIso).getTime() : Date.now();
         const endEpochSeconds = Math.floor(cursorMs / 1000) - 1;
         const res = await getDerivCandles(symbol, timeframe, MAX_LIMIT, endEpochSeconds);
         fetches += 1;
         cacheHit = false;
+        if (source !== derivMarketDataSource()) { providerLimitReached = true; providerMessage = "The Deriv data source changed during the history read. Reload the chart."; break; }
         if (!res.ok || res.candles.length === 0) {
           providerLimitReached = true;
           providerMessage = res.reason
