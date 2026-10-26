@@ -133,3 +133,35 @@ it("expires cached advice after two normal polls even while coarse candle eviden
   expect(result.current.verdict).toBeNull();
   expect(requests.filter((r) => r.url.includes("/market/truth/"))).toHaveLength(0);
 });
+
+
+function seedDeadlineSnapshot(validUntil: string) {
+  const value = { ...snapshot(), timeframe: "M15", validUntil };
+  client.setQueryData([...getGetMeMarketTruthQueryKey("EURUSD", { tf: "M15" }), { userId: 7 }], value);
+  const payload = candlePayload();
+  client.setQueryData(chartCandlesQueryKey("EURUSD", "M15", 200), { ...payload, candles: payload.candles.map(c => ({ ...c, time: Date.parse(c.openTime) })) });
+  client.setQueryData(selectedMarketQueryOptions(7, "EURUSD", "M15").queryKey, { ok: true, symbol: "EURUSD", timeframe: "M15", highlights: {}, explanation: {} });
+}
+
+it("expires at the earlier server deadline without a network poll or a busy timer", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(NOW);
+  seedDeadlineSnapshot(new Date(NOW + 2000).toISOString());
+  const { result } = renderHook(() => useSymbolTruth("EURUSD", "M15", { refetchInterval: 3_600_000 }), { wrapper });
+  expect(result.current.verdict?.bestAction).toBe("BUY");
+  await act(async () => { await vi.advanceTimersByTimeAsync(1999); });
+  expect(result.current.verdict?.bestAction).toBe("BUY");
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(result.current.snapshot).toBeNull();
+  expect(result.current.scannerTruth?.actionable).toBe(true);
+  expect(requests).toHaveLength(0);
+});
+
+it("focus rechecks a server deadline after the browser clock jumps forward", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(NOW);
+  seedDeadlineSnapshot(new Date(NOW + 2000).toISOString());
+  const { result } = renderHook(() => useSymbolTruth("EURUSD", "M15", { refetchInterval: 3_600_000 }), { wrapper });
+  expect(result.current.verdict?.bestAction).toBe("BUY");
+  act(() => { vi.setSystemTime(NOW + 3000); window.dispatchEvent(new Event("focus")); });
+  expect(result.current.snapshot).toBeNull();
+  expect(requests).toHaveLength(0);
+});
