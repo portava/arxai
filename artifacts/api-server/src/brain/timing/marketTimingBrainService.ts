@@ -18,6 +18,7 @@ import { computeTradeability } from "./tradeabilityEngine.js";
 import { computeTrapAndRoom } from "./trapRoomEngine.js";
 import { computeBroadFlow } from "./broadFlowEngine.js";
 import { computeNewsHeat } from "./newsHeatEngine.js";
+import { prepareMarketRead, matchedMarketQuote } from "../../lib/truth/marketReadEvidence.js";
 import { db } from "@workspace/db";
 import { heatSnapshots } from "@workspace/db/schema";
 
@@ -69,18 +70,17 @@ export async function computeTimingRead(
     routeQuoteFn(symbol),
   ]);
 
-  const candleData = candleResult.status === "fulfilled" && candleResult.value.ok
-    ? candleResult.value.candles.map((c) => ({ open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume ?? 0 }))
-    : [];
-
-  const quoteData = quoteResult.status === "fulfilled" && quoteResult.value.ok
-    ? quoteResult.value.quote
-    : null;
-
+  const observedAt = Date.now();
+  const candleRead = candleResult.status === "fulfilled"
+    ? prepareMarketRead(candleResult.value, symbol, timeframe, observedAt) : null;
+  // A newly calculated response cannot make old candles current. Closed-market
+  // bars remain available at the chart; the timing vote waits for current data.
+  const currentRead = candleRead && candleRead.trailingIntervals != null && candleRead.trailingIntervals <= 1 ? candleRead : null;
+  const candleData = currentRead?.openClosed.map((c) => ({ open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume ?? 0 })) ?? [];
+  const quoteData = candleResult.status === "fulfilled" && quoteResult.status === "fulfilled"
+    ? matchedMarketQuote(candleResult.value, quoteResult.value, symbol, observedAt) : null;
   const spread = quoteData?.spread ?? null;
-  const mid = quoteData != null
-    ? ((quoteData.bid != null && quoteData.ask != null) ? (quoteData.bid + quoteData.ask) / 2 : (quoteData.last ?? null))
-    : null;
+  const mid = quoteData?.mid ?? null;
 
   const hasCandleData = candleData.length >= 10;
   const hasQuoteData = quoteData != null;
@@ -168,6 +168,7 @@ export async function computeTimingRead(
     symbol,
     timeframe,
     generatedAt,
+    marketEvidence: currentRead?.evidence ?? null,
     heatScore: heatOut.heatScore,
     tradeabilityScore: tradeOut.tradeabilityScore,
     edgeScore: tradeOut.edgeScore,
