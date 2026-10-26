@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 vi.mock("@/hooks/useTradingMode", () => ({ useTradingMode: () => ({ isLoading: false, envelope: null }) }));
 vi.mock("@/lib/assistant-name", () => ({ useAssistantName: () => ({ name: "Ruby" }) }));
 const resolver = vi.hoisted(() => vi.fn((input) => input));
-vi.mock("@/lib/scannerTruth", () => ({ resolveScannerTruth: resolver }));
+vi.mock("@/lib/scannerTruth", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/scannerTruth")>(), resolveScannerTruth: resolver }));
 import { useScannerTruth } from "./useScannerTruth";
 import { useSelectedMarketSnapshot } from "./useSelectedMarketSnapshot";
 import { selectedMarketQueryOptions } from "@/lib/selectedMarketQuery";

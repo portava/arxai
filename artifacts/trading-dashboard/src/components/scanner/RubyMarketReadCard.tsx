@@ -272,6 +272,10 @@ export function RubyMarketReadCard({
             </p>
           ) : !explanation || !chosen || !signal ? (
             <p className="text-sm text-txt-secondary">No read available for {symbol} yet.</p>
+          ) : level == null ? (
+            <p className="text-sm text-txt-secondary" data-testid="ruby-market-read-confirming">
+              {reason ?? "Confirming market data before showing a directional read."}
+            </p>
           ) : (
             <>
               {/* Standardized, always-visible Ruby Reasoning Block — never behind

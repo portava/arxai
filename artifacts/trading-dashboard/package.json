@@ -58,7 +58,8 @@
     "test:chart-performance": "vitest run src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts src/lib/chart-engine/lightweightChartsAdapter.markers.test.ts src/lib/chart-engine/lightweightChartsAdapter.workbench.test.ts src/lib/chart-engine/chartStudies.test.ts src/lib/chart-engine/chartWorkspace.test.ts src/lib/chart-engine/chartDrawingPrimitive.test.ts src/lib/chart-engine/chartDrawingEditor.test.ts src/lib/chart-engine/chartAnalysisRenderer.test.ts src/components/charts/ChartWorkbenchTools.test.tsx src/components/charts/ChartStudySettings.test.tsx src/components/charts/SmartChartLayout.test.tsx src/lib/chart-engine/chartViewLink.test.ts",
     "test:scanner-responsiveness": "vitest run src/components/scanner/BroadScanOpportunityMap.test.tsx src/components/scanner/BroadScanOpportunityMap.continuity.test.tsx src/components/scanner/scannerMapQuery.test.ts src/components/scanner/scannerScreen.test.ts src/components/scanner/ScannerChartPanel.context-race.test.tsx src/pages/market-scanner.direct-results.test.tsx src/pages/market-scanner.empty-state.test.tsx src/pages/market-scanner.scan-feedback.test.ts",
     "test:chart-tick-source": "vitest run src/lib/chartTickStreamContext.test.ts src/components/charts/ARXNativeChart.tick-stream.test.tsx",
-    "test:deriv-health": "vitest run src/pages/admin/deriv-health.test.tsx"
+    "test:deriv-health": "vitest run src/pages/admin/deriv-health.test.tsx",
+    "test:truth-evidence": "vitest run src/lib/scannerTruth.test.ts src/lib/scannerTruthRegression.test.ts src/lib/symbolTruthEvidence.test.ts src/hooks/useScannerTruth.expiry.test.tsx src/hooks/useScannerTruth.selectedMarket.test.tsx src/hooks/useSymbolTruth.evidence.test.tsx src/components/scanner/ScannerReadGate.test.tsx src/components/scanner/RubyMarketReadCard.test.tsx"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
