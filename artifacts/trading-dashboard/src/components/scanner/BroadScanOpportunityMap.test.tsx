@@ -21,6 +21,7 @@ import type {
 // The categorizer's own determinism + no-fabrication is proven in
 // scannerExplanationTest; this guards the renderer + its query wiring.
 
+vi.mock("@/hooks/useCurrentUser", () => ({ useCurrentUser: () => ({ user: { id: 1 } }) }));
 const mockUseGetMeOpportunityMap = vi.fn();
 const mockUseGetWatchlists = vi.fn();
 
