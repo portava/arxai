@@ -18,6 +18,17 @@ export interface ManagementMemory {
   lastAction?: ManagementAction;
   closeCommandId?: string;
   pendingManagement?: PendingManagement;
+  closeAccounting?: {
+    status: "UNVERIFIED";
+    reason: "HISTORICAL_ACCOUNTING_EVIDENCE_MISSING";
+    entryCommandId: string;
+    symbol: string;
+    userId: number;
+    agentId: number;
+    accountLogin: string;
+    bridgeConnectionId: number;
+    observedServerName: string;
+  };
 }
 
 export function readManagementMemory(value: unknown): ManagementMemory {
@@ -31,8 +42,13 @@ export function managementNote(
   execution: Pick<SelfTradeAgentExecution, "status" | "managementState">,
   now = Date.now(),
 ): string | null {
-  if (execution.status !== "FILLED") return null;
   const memory = readManagementMemory(execution.managementState);
+  if (
+    execution.status === "CLOSED" &&
+    memory.closeAccounting?.status === "UNVERIFIED"
+  )
+    return "Close recorded; profit remains unverified because the original account valuation details are unavailable.";
+  if (execution.status !== "FILLED") return null;
   const pending = memory.pendingManagement;
   if (!pending)
     return memory.closeCommandId ? "Close awaiting broker confirmation." : null;

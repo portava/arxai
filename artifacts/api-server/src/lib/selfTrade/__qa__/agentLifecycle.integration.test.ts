@@ -191,6 +191,31 @@ mock.module("../../mt5/contractSize.js", {
 mock.module("../../live/accountCurrency.js", {
   namedExports: { getAccountCurrency: async () => "USD" },
 });
+// This in-memory orchestration suite supplies a trusted evidence seam. The real
+// signed-target/receipt/lock gate is exercised by managementTarget.postgres.test.
+mock.module("../managementConsumers.js", {
+  namedExports: {
+    withBoundManagementClose: async (
+      command: ArxLiveCommand,
+      apply: Function,
+    ) => {
+      execution.managementState = {
+        ...(execution.managementState as object),
+        closeAccounting: {
+          status: "UNVERIFIED",
+          reason: "HISTORICAL_ACCOUNTING_EVIDENCE_MISSING",
+          entryCommandId: entryCommand.commandId,
+          symbol: entryCommand.symbol,
+        },
+      };
+      return apply(fakeDb, {}, position, {
+        execution,
+        entry: entryCommand,
+        command,
+      });
+    },
+  },
+});
 const { manageAgentPositions } = await import("../livePositionManager.js");
 const { reconcileAgentExecutions } = await import("../agentReconciliation.js");
 const agent = { id: 5, agentKey: "alpha", autonomyLevel: 3 } as SelfTradeAgent;
@@ -280,10 +305,19 @@ describe("actual manager orchestration", () => {
       manageAgentPositions(agent),
     ]);
     assert.equal(dispatches.length, 1);
-    assert.deepEqual((dispatches[0] as { intent: { selfTradeManagement: unknown } }).intent.selfTradeManagement, {
-      executionId: execution.id, positionRowId: 1,
-      claimId: (execution.managementState as { pendingManagement: { claimId: string } }).pendingManagement.claimId,
-    });
+    assert.deepEqual(
+      (dispatches[0] as { intent: { selfTradeManagement: unknown } }).intent
+        .selfTradeManagement,
+      {
+        executionId: execution.id,
+        positionRowId: 1,
+        claimId: (
+          execution.managementState as {
+            pendingManagement: { claimId: string };
+          }
+        ).pendingManagement.claimId,
+      },
+    );
     assert.equal(execution.slPrice, 1.09);
     assert.equal(
       (execution.managementState as { beMoved?: boolean }).beMoved,
@@ -495,11 +529,14 @@ describe("actual execution reconciliation", () => {
     await reconcileAgentExecutions(5);
     assert.equal(execution.status, "BLOCKED");
   });
-  it("settled close uses broker time and books the outcome only once", async () => {
+  it("settled close uses broker time once and withholds uncertified profit", async () => {
     execution.managementState = { closeCommandId: "close-1" };
     commandRows = [
       {
         ...settledModify(),
+        actorType: "SELF_TRADE_AGENT",
+        selfTradeAgentId: 5,
+        selfTradeDecisionId: 7,
         commandId: "close-1",
         commandType: "CLOSE_LIVE_POSITION",
         fillPrice: 1.11,
@@ -515,7 +552,25 @@ describe("actual execution reconciliation", () => {
     );
     assert.equal(execution.status, "CLOSED");
     assert.equal(execution.closedAt?.getTime(), stamp.getTime());
-    assert.ok(Math.abs((execution.realizedPnl ?? 0) - 100) < 1e-8);
+    assert.equal(execution.realizedPnl, null);
+    assert.equal(
+      (execution.managementState as { closeAccounting: { status: string } })
+        .closeAccounting.status,
+      "UNVERIFIED",
+    );
+  });
+  it("legacy manual close retains its prior calculation path", async () => {
+    execution.managementState = { closeCommandId: "close-1" };
+    commandRows = [
+      {
+        ...settledModify(),
+        commandId: "close-1",
+        commandType: "CLOSE_LIVE_POSITION",
+        fillPrice: 1.11,
+      },
+    ];
+    assert.equal((await reconcileAgentExecutions(5)).closed, 1);
+    assert.ok(Math.abs(execution.realizedPnl! - 100) < 1e-8);
   });
   it("an invalid or cross-account close never mutates the execution", async () => {
     execution.managementState = { closeCommandId: "close-1" };

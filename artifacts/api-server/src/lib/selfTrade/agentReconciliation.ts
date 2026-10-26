@@ -21,6 +21,13 @@ import {
   readManagementMemory,
 } from "./executionLifecycle.js";
 
+import { logger } from "../logger.js";
+import {
+  isAgentManagementCommand,
+  ManagementTargetError,
+} from "./managementTarget.js";
+import { withBoundManagementClose } from "./managementConsumers.js";
+
 export interface ReconcileResult {
   filled: number;
   rejected: number;
@@ -118,17 +125,59 @@ export async function reconcileAgentExecutions(
       const closeCmd = byCommand.get(mgmt.closeCommandId);
       if (!closeCmd) continue;
       const entryCommand = e.commandId ? byCommand.get(e.commandId) : undefined;
-      if (
-        !isOwnedManagementCommand(
-          e,
-          closeCmd,
-          "EXIT",
-          entryCommand,
-        )
-      )
+      if (!isOwnedManagementCommand(e, closeCmd, "EXIT", entryCommand))
         continue;
       const closedAt = confirmedCloseTime(closeCmd, e.intendedVolume);
       if (!closedAt) continue;
+
+      if (isAgentManagementCommand(closeCmd)) {
+        // Account identity and valuation are different evidence. The current
+        // per-user spec/currency can belong to a subsequently selected account.
+        // No immutable historical valuation envelope is persisted today, so a
+        // proven exact close may settle lifecycle but cannot certify P/L.
+        try {
+          result.closed += await withBoundManagementClose(
+            closeCmd,
+            async (tx, _target, _position, facts) => {
+              const brokerClosedAt = confirmedCloseTime(
+                facts.command,
+                facts.execution.intendedVolume,
+              );
+              if (!brokerClosedAt) return 0;
+              const closed = await tx
+                .update(selfTradeAgentExecutionsTable)
+                .set({
+                  status: "CLOSED",
+                  closePrice: facts.command.fillPrice,
+                  realizedPnl: null,
+                  closedAt: brokerClosedAt,
+                  updatedAt: new Date(),
+                  managementState: facts.execution.managementState,
+                })
+                .where(
+                  and(
+                    eq(selfTradeAgentExecutionsTable.id, facts.execution.id),
+                    eq(selfTradeAgentExecutionsTable.status, "FILLED"),
+                  ),
+                )
+                .returning({ id: selfTradeAgentExecutionsTable.id });
+              return closed.length;
+            },
+          );
+        } catch (error) {
+          logger.warn(
+            {
+              commandId: closeCmd.commandId,
+              reason:
+                error instanceof ManagementTargetError
+                  ? error.reason
+                  : "MANAGEMENT_SETTLEMENT_READ_FAILED",
+            },
+            "Self-trade close settlement held",
+          );
+        }
+        continue;
+      }
 
       // P0-2 — size the close from broker truth for THIS user's symbol spec.
       // The close command carries the authoritative dispatching user.

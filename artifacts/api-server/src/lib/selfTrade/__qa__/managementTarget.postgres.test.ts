@@ -21,11 +21,17 @@ const {
   mt5ConnectionTable: bridges,
   selfTradeAgentExecutionsTable: executions,
   selfTradeAgentsTable: agents,
+  selfTradeAgentSettingsTable: agentSettings,
   selfTradeDecisionsTable: decisions,
   selfTradeAuditLogTable: selfAudit,
   userOneClickSettingsTable: settings,
   oneClickAuditTable: instantAudit,
   liveTradingAuditTable: audit,
+  executionEventsTable: executionEvents,
+  selfTradeAgentLedgerTable: agentLedger,
+  selfTradeLedgerEntriesTable: ledgerEntries,
+  arxSymbolSpecsTable: specs,
+  userSlotAllocationTable: allocations,
 } = database;
 process.env.SESSION_SECRET = "synthetic-offline-management-signing-material";
 mock.method(globalThis, "fetch", async () => {
@@ -72,6 +78,17 @@ mock.module("../../joinRequests/notifyAdmins.js", {
 mock.module("../../notificationService.js", {
   namedExports: { createNotification: async () => undefined },
 });
+mock.module("../../concurrency/exposureReservation.js", {
+  namedExports: {
+    fulfillReservationByCommandId: async () => undefined,
+    releaseReservationByCommandId: async () => undefined,
+  },
+});
+mock.module("../../missionExitManager.js", {
+  namedExports: {
+    recordMissionTradeCloseByBrokerTicket: async () => undefined,
+  },
+});
 const {
   resolveManagementTarget,
   createManagementDraft,
@@ -83,8 +100,14 @@ const {
 } = await import("../managementTarget.js");
 const { claimLiveCommandForConfirm, claimLiveCommandForDispatch } =
   await import("../../live/liveCommandCas.js");
-const { createLiveOpsDraft, buildBridgedMt5CommandPayload } =
-  await import("../../live/liveCommandPipeline.js");
+const {
+  createLiveOpsDraft,
+  buildBridgedMt5CommandPayload,
+  readLiveModifyRiskPosition,
+  reconcileBoundManagementClose,
+  reconcileGhostClosedPositions,
+  recordLiveCommandResult,
+} = await import("../../live/liveCommandPipeline.js");
 let deliveries = 0;
 mock.module("../../tradeEngine/pipeline.js", {
   namedExports: {
@@ -127,6 +150,11 @@ const { guardianInstantManage } =
   await import("../../positionGuardian/manage.js");
 const { livePositionWriter } = await import("../../positions/ledger.js");
 const { updateConnection } = await import("../../brokerHub/connections.js");
+const { reportedManagementIdentity } =
+  await import("../managementConsumers.js");
+const { reconcileAgentExecutions } = await import("../agentReconciliation.js");
+const { applyRealizedFromFills, defundAgent } =
+  await import("../agentLedger.js");
 const tables = [
   bridges,
   commands,
@@ -136,8 +164,14 @@ const tables = [
   audit,
   instantAudit,
   agents,
+  agentSettings,
   decisions,
   selfAudit,
+  executionEvents,
+  specs,
+  allocations,
+  agentLedger,
+  ledgerEntries,
 ];
 const dialect = new PgDialect();
 const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
@@ -166,12 +200,15 @@ before(async () => {
   await pool.query(
     "CREATE UNIQUE INDEX qa_command_identity ON arx_live_commands(command_id)",
   );
+  await pool.query(
+    "CREATE UNIQUE INDEX execution_events_command_seq_uq ON execution_events(command_id,sequence_no)",
+  );
 });
 after(async () => {
   await pool.end();
 });
 const reference = { executionId: 1, positionRowId: 1, claimId: "claim-1" };
-beforeEach(async () => {
+async function resetFixture() {
   deliveries = 0;
   await pool.query(
     `TRUNCATE ${tables.map((t) => quote(getTableName(t))).join(",")} RESTART IDENTITY`,
@@ -200,105 +237,102 @@ beforeEach(async () => {
       mode: "LIVE",
     },
   ]);
-  await db
-    .insert(commands)
-    .values({
-      commandId: "entry-1",
-      userId: 9,
-      bridgeConnectionId: 1,
-      accountLogin: "A",
-      brokerServer: "Venue Company",
-      commandType: "PLACE_LIVE_MARKET_ORDER",
-      status: "LIVE_FILLED",
-      symbol: "EURUSD.a",
-      side: "BUY",
-      orderType: "MARKET_BUY",
-      requestedVolume: 0.1,
-      executedVolume: 0.1,
-      brokerTicket: "123",
-      selfTradeAgentId: 4,
-      selfTradeDecisionId: 7,
-      payload: {
-        selfTradeSymbolBinding: {
-          requestedSymbol: "EURUSD",
-          brokerSymbol: "EURUSD.a",
-        },
-        agentOwnership: {
-          selfTradeAgentId: 4,
-          selfTradeDecisionId: 7,
-          selfTradeAgentKey: "agent",
-        },
+  await db.insert(commands).values({
+    commandId: "entry-1",
+    userId: 9,
+    bridgeConnectionId: 1,
+    accountLogin: "A",
+    brokerServer: "Venue Company",
+    commandType: "PLACE_LIVE_MARKET_ORDER",
+    status: "LIVE_FILLED",
+    symbol: "EURUSD.a",
+    side: "BUY",
+    orderType: "MARKET_BUY",
+    requestedVolume: 0.1,
+    executedVolume: 0.1,
+    fillPrice: 1.1,
+    brokerTicket: "123",
+    selfTradeAgentId: 4,
+    selfTradeDecisionId: 7,
+    payload: {
+      selfTradeSymbolBinding: {
+        requestedSymbol: "EURUSD",
+        brokerSymbol: "EURUSD.a",
       },
-    });
-  await db
-    .insert(executions)
-    .values({
-      id: 1,
-      agentId: 4,
-      agentKey: "agent",
-      decisionId: 7,
-      executingUserId: 9,
-      symbol: "EURUSD",
-      side: "BUY",
-      intendedVolume: 0.1,
-      commandId: "entry-1",
-      status: "FILLED",
-      brokerTicket: "123",
-      idempotencyKey: "entry",
-      managementState: {
-        pendingManagement: {
-          claimId: "claim-1",
-          action: "EXIT",
-          stopLoss: null,
-          requestedAt: new Date().toISOString(),
-        },
+      agentOwnership: {
+        selfTradeAgentId: 4,
+        selfTradeDecisionId: 7,
+        selfTradeAgentKey: "agent",
       },
-    });
-  await db
-    .insert(positions)
-    .values({
-      id: 1,
-      userId: 9,
-      bridgeConnectionId: 1,
-      accountLogin: "A",
-      brokerServer: "Venue Company",
-      brokerTicket: "123",
-      symbol: "EURUSD.a",
-      side: "BUY",
-      volume: 0.1,
-      entryPrice: 1.1,
-      stopLoss: 1.09,
-      takeProfit: 1.12,
-      openedAt: new Date(),
-      sourceCommandId: "entry-1",
-    });
+    },
+  });
+  await db.insert(executions).values({
+    id: 1,
+    agentId: 4,
+    agentKey: "agent",
+    decisionId: 7,
+    executingUserId: 9,
+    symbol: "EURUSD",
+    side: "BUY",
+    intendedVolume: 0.1,
+    mode: "LIVE",
+    fillPrice: 1.1,
+    commandId: "entry-1",
+    status: "FILLED",
+    brokerTicket: "123",
+    idempotencyKey: "entry",
+    managementState: {
+      pendingManagement: {
+        claimId: "claim-1",
+        action: "EXIT",
+        stopLoss: null,
+        requestedAt: new Date().toISOString(),
+      },
+    },
+  });
+  await db.insert(positions).values({
+    id: 1,
+    userId: 9,
+    bridgeConnectionId: 1,
+    accountLogin: "A",
+    brokerServer: "Venue Company",
+    brokerTicket: "123",
+    symbol: "EURUSD.a",
+    side: "BUY",
+    volume: 0.1,
+    entryPrice: 1.1,
+    stopLoss: 1.09,
+    takeProfit: 1.12,
+    openedAt: new Date(),
+    sourceCommandId: "entry-1",
+  });
   await db.insert(settings).values({ userId: 9, liveOneClickEnabled: true });
-  await db
-    .insert(agents)
-    .values({
-      id: 4,
-      agentKey: "agent",
-      name: "Offline fixture",
-      profileTemplate: "ALPHA",
-      ownerType: "USER",
-      ownerId: 9,
-      autonomyLevel: 3,
-    });
-  await db
-    .insert(decisions)
-    .values({
-      id: 7,
-      agentId: 4,
-      agentKey: "agent",
-      cycleId: "fixture",
-      symbol: "EURUSD",
-      side: "BUY",
-      outcome: "APPROVED",
-      plannedAction: "EXECUTE",
-      reason: "Offline fixture",
-      thesis: { stopLoss: 1.09, takeProfits: [], invalidation: null },
-    });
-});
+  await db.insert(agents).values({
+    id: 4,
+    agentKey: "agent",
+    name: "Offline fixture",
+    profileTemplate: "ALPHA",
+    ownerType: "USER",
+    ownerId: 9,
+    autonomyLevel: 3,
+  });
+  await db.insert(decisions).values({
+    id: 7,
+    agentId: 4,
+    agentKey: "agent",
+    cycleId: "fixture",
+    symbol: "EURUSD",
+    side: "BUY",
+    outcome: "APPROVED",
+    plannedAction: "EXECUTE",
+    reason: "Offline fixture",
+    thesis: { stopLoss: 1.09, takeProfits: [], invalidation: null },
+  });
+  await pool.query(
+    "SELECT setval(pg_get_serial_sequence('self_trade_agent_executions','id'),1,true)",
+  );
+}
+beforeEach(resetFixture);
 const target = async () => (await resolveManagementTarget(9, reference)).target;
 async function draft(inputTarget?: Awaited<ReturnType<typeof target>>) {
   const targetValue = inputTarget ?? (await target());
@@ -349,22 +383,20 @@ function denied(promise: Promise<unknown>, reason: string) {
 }
 
 it("reused ticket on another account cannot replace the exact selected position", async () => {
-  await db
-    .insert(positions)
-    .values({
-      id: 2,
-      userId: 9,
-      bridgeConnectionId: 2,
-      accountLogin: "B",
-      brokerServer: "Venue Company",
-      brokerTicket: "123",
-      symbol: "EURUSD.a",
-      side: "BUY",
-      volume: 0.1,
-      entryPrice: 1.1,
-      openedAt: new Date(),
-      sourceCommandId: "entry-1",
-    });
+  await db.insert(positions).values({
+    id: 2,
+    userId: 9,
+    bridgeConnectionId: 2,
+    accountLogin: "B",
+    brokerServer: "Venue Company",
+    brokerTicket: "123",
+    symbol: "EURUSD.a",
+    side: "BUY",
+    volume: 0.1,
+    entryPrice: 1.1,
+    openedAt: new Date(),
+    sourceCommandId: "entry-1",
+  });
   assert.equal((await target()).accountLogin, "A");
   await denied(
     resolveManagementTarget(9, { ...reference, positionRowId: 2 }),
@@ -442,17 +474,15 @@ it("draft insert and command link roll back together if creation fails", async (
   const t = await target();
   await assert.rejects(
     createManagementDraft(t, async (tx) => {
-      await tx
-        .insert(commands)
-        .values({
-          commandId: "crash",
-          userId: 9,
-          commandType: "CLOSE_LIVE_POSITION",
-          symbol: "EURUSD.a",
-          side: "BUY",
-          orderType: "CLOSE",
-          requestedVolume: 0.1,
-        });
+      await tx.insert(commands).values({
+        commandId: "crash",
+        userId: 9,
+        commandType: "CLOSE_LIVE_POSITION",
+        symbol: "EURUSD.a",
+        side: "BUY",
+        orderType: "CLOSE",
+        requestedVolume: 0.1,
+      });
       throw new Error("crash before linkage");
     }),
     /crash before linkage/,
@@ -887,3 +917,729 @@ it("changed pending claim command linkage and already-expired dispatch are refus
     .where(eq(executions.id, 1));
   await denied(send(row), "MANAGEMENT_COMMAND_CHANGED");
 });
+
+async function otherAccountRow(id = 2) {
+  const [original] = await db
+    .select()
+    .from(positions)
+    .where(eq(positions.id, 1));
+  await db.insert(positions).values({
+    ...original!,
+    id,
+    bridgeConnectionId: 2,
+    accountLogin: "B",
+    sourceCommandId: "other-entry",
+    stopLoss: 1.08,
+  });
+  return (await db.select().from(positions).where(eq(positions.id, id)))[0]!;
+}
+async function recordedClose(
+  row?: Awaited<ReturnType<typeof send>>,
+  identity: ReturnType<typeof reportedManagementIdentity> = [],
+) {
+  row ??= await send(await approved());
+  assert.ok(row);
+  const result = await recordLiveCommandResult({
+    userId: 9,
+    commandId: row.commandId,
+    outcome: "LIVE_FILLED",
+    reportingBridgeConnectionId: 1,
+    brokerTicket: "123",
+    executedVolume: 0.1,
+    fillPrice: 1.11,
+    reportedExecutionIdentity: identity,
+  });
+  assert.equal(result.ok, true);
+  return result.command!;
+}
+async function waitForBlockedRowLock(writer: {
+  query: (query: string) => Promise<{ rows: Array<Record<string, unknown>> }>;
+}) {
+  const started = performance.now();
+  while (performance.now() - started < 2000) {
+    const r = await writer.query(
+      "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pg_backend_pid() = ANY(pg_blocking_pids(pid))) AS waiting",
+    );
+    if (r.rows[0].waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.fail("Expected a real PostgreSQL row-lock waiter");
+}
+async function ledgerRows() {
+  return db.select().from(positions).orderBy(positions.id);
+}
+async function prepareModify() {
+  await db
+    .update(executions)
+    .set({
+      managementState: {
+        pendingManagement: {
+          claimId: "claim-1",
+          action: "TIGHTEN_SL",
+          stopLoss: 1.095,
+          requestedAt: new Date().toISOString(),
+        },
+      },
+    })
+    .where(eq(executions.id, 1));
+  return approved();
+}
+
+it("automatic MODIFY governor context uses the exact row despite a reused ticket", async () => {
+  const row = await prepareModify();
+  await otherAccountRow();
+  // Force the foreign row to be the first heap match for the old LIMIT 1 query.
+  await db
+    .update(positions)
+    .set({ currentPrice: 1.101 })
+    .where(eq(positions.id, 1));
+  const riskPosition = await readLiveModifyRiskPosition(row);
+  assert.deepEqual(riskPosition, { entryPrice: 1.1, stopLoss: 1.09 });
+  const { evaluatePreTradeRisk, resolveEffectiveLimits } =
+    await import("../../riskGovernor/preTrade.js");
+  const now = new Date();
+  const verdict = evaluatePreTradeRisk(
+    {
+      userId: 9,
+      venue: "LIVE",
+      origin: "automation",
+      action: "MODIFY",
+      symbol: row.symbol,
+      side: "BUY",
+      lots: 0.1,
+      stopLoss: 1.085,
+      takeProfit: null,
+      position: riskPosition,
+    },
+    {
+      now,
+      limits: resolveEffectiveLimits({}),
+      account: {
+        equity: 10000,
+        freeMargin: 9000,
+        leverage: 100,
+        currency: "USD",
+        source: "fixture",
+      },
+      instruments: {},
+      quote: null,
+      positions: [],
+      inFlight: [],
+      broker: { status: "CONNECTED", lastSeenAt: now, detail: "fixture" },
+      daily: { realizedPnl: 0, floatingPnl: 0 },
+    },
+  );
+  assert.ok(
+    verdict.blockedBy.includes("stop_loss_required"),
+    "actual target's stop cannot be widened using the other account's weaker stop",
+  );
+});
+it("risk context refuses an overwritten row and corrupted attribution without ticket fallback", async () => {
+  const row = await prepareModify();
+  await otherAccountRow();
+  await db
+    .update(positions)
+    .set({ accountLogin: "B", bridgeConnectionId: 2 })
+    .where(eq(positions.id, 1));
+  await assert.rejects(
+    readLiveModifyRiskPosition(row),
+    /MANAGEMENT_POSITION_IDENTITY_CHANGED/,
+  );
+  await assert.rejects(
+    readLiveModifyRiskPosition({ ...row, selfTradeAgentId: null }),
+    /MANAGEMENT_COMMAND_CHANGED/,
+  );
+});
+it("manual MODIFY retains its existing lookup", async () => {
+  const row = await prepareModify();
+  const manual = {
+    ...row,
+    source: null,
+    sourcePage: "LIVE_POSITION_OPS",
+    actorType: "USER",
+    selfTradeAgentId: null,
+    selfTradeDecisionId: null,
+    payload: { brokerTicket: "123" },
+  };
+  assert.deepEqual(await readLiveModifyRiskPosition(manual), {
+    entryPrice: 1.1,
+    stopLoss: 1.09,
+  });
+});
+it("actual result application closes only its exact target and duplicate result is harmless", async () => {
+  const other = await otherAccountRow();
+  const command = await recordedClose();
+  const rows = await ledgerRows();
+  assert.ok(rows[0]!.closedAt);
+  assert.deepEqual(rows[1], other);
+  await recordedClose(command);
+  assert.deepEqual(await ledgerRows(), rows);
+  assert.equal(await reconcileGhostClosedPositions(9), 0);
+  assert.deepEqual((await ledgerRows())[1], other);
+});
+it("overwritten target after dispatch is held and snapshot ghost repair cannot close its replacement", async () => {
+  const sent = await send(await approved());
+  await db
+    .update(positions)
+    .set({
+      bridgeConnectionId: 2,
+      accountLogin: "B",
+      sourceCommandId: "other-entry",
+    })
+    .where(eq(positions.id, 1));
+  const before = await ledgerRows();
+  const command = await recordedClose(sent);
+  assert.equal(
+    command.status,
+    "LIVE_FILLED",
+    "reported receipt is retained, not rewritten as a refusal",
+  );
+  assert.deepEqual(await ledgerRows(), before);
+  assert.equal(await reconcileGhostClosedPositions(9), 0);
+  assert.deepEqual(await ledgerRows(), before);
+  assert.ok(
+    (await db.select().from(executionEvents)).some(
+      (e) => e.eventType === "MANAGEMENT_LEDGER_APPLICATION_HELD",
+    ),
+  );
+});
+for (const evidence of [
+  { accountLogin: "B" },
+  { accountServer: "Other-Server" },
+  { resolvedBrokerSymbol: "GBPUSD.a" },
+  { positionTicket: "999" },
+  { accountLogin: "A", executionIdentity: { accountNumber: "B" } },
+])
+  it(`explicit result identity disagreement is retained and cannot be bypassed by ghost repair: ${JSON.stringify(evidence)}`, async () => {
+    const sent = await send(await approved());
+    const before = await ledgerRows();
+    await recordedClose(sent, reportedManagementIdentity(evidence));
+    assert.deepEqual(await ledgerRows(), before);
+    assert.equal(await reconcileGhostClosedPositions(9), 0);
+    assert.deepEqual(await ledgerRows(), before);
+  });
+it("legacy absent terminal identity is not fabricated from the switched current bridge", async () => {
+  const sent = await send(await approved());
+  await updateConnection(1, { accountNumber: "B", serverName: "Other-Server" });
+  await recordedClose(sent);
+  assert.ok((await ledgerRows())[0]!.closedAt);
+  const applied = (await db.select().from(executionEvents)).find(
+    (e) => e.eventType === "RESULT_LIVE_FILLED",
+  )!;
+  assert.deepEqual((applied.payload as any).reportedExecutionIdentity, []);
+});
+for (const volume of [null, 0, 0.05, 0.2])
+  it(`uncertain/partial/oversized close evidence ${volume} cannot close or shrink any automatic target`, async () => {
+    const sent = await send(await approved());
+    await otherAccountRow();
+    const before = await ledgerRows();
+    const r = await recordLiveCommandResult({
+      userId: 9,
+      commandId: sent!.commandId,
+      outcome: "LIVE_FILLED",
+      reportingBridgeConnectionId: 1,
+      brokerTicket: "123",
+      executedVolume: volume,
+    });
+    assert.equal(r.ok, true);
+    assert.deepEqual(await ledgerRows(), before);
+    await reconcileGhostClosedPositions(9);
+    assert.deepEqual(await ledgerRows(), before);
+  });
+it("result reconciliation waiting on a row observes the committed account replacement", async () => {
+  const sent = await send(await approved());
+  const writer = await pool.connect();
+  await writer.query("BEGIN");
+  await writer.query("SELECT id FROM arx_live_positions WHERE id=1 FOR UPDATE");
+  let completed = false;
+  const pending = recordedClose(sent).finally(() => {
+    completed = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(completed, false);
+  await writer.query(
+    "UPDATE arx_live_positions SET account_login='B', bridge_connection_id=2, source_command_id='other-entry' WHERE id=1",
+  );
+  await writer.query("COMMIT");
+  writer.release();
+  await pending;
+  const before = await ledgerRows();
+  assert.equal(before[0]!.closedAt, null);
+  await reconcileGhostClosedPositions(9);
+  assert.deepEqual(await ledgerRows(), before);
+});
+it("ghost repair rechecks changed row identity while waiting and never writes its replacement", async () => {
+  const command = await recordedClose();
+  await db.update(positions).set({ closedAt: null }).where(eq(positions.id, 1));
+  const writer = await pool.connect();
+  await writer.query("BEGIN");
+  await writer.query("SELECT id FROM arx_live_positions WHERE id=1 FOR UPDATE");
+  const repairing = reconcileGhostClosedPositions(9);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  await writer.query(
+    "UPDATE arx_live_positions SET source_command_id='other-entry' WHERE id=1",
+  );
+  await writer.query("COMMIT");
+  writer.release();
+  assert.equal(await repairing, 0);
+  assert.equal((await ledgerRows())[0]!.closedAt, null);
+  assert.equal(
+    (await reconcileBoundManagementClose(command)).closedRows.length,
+    0,
+  );
+});
+it("concurrent result receipt and ghost repair have one exact ledger update", async () => {
+  const command = await recordedClose();
+  await db.update(positions).set({ closedAt: null }).where(eq(positions.id, 1));
+  await otherAccountRow();
+  const beforeOther = (await ledgerRows())[1];
+  const results = await Promise.all(
+    Array.from({ length: 8 }, (_, i) =>
+      i % 2
+        ? reconcileGhostClosedPositions(9)
+        : reconcileBoundManagementClose(command).then(
+            (r) => r.closedRows.length,
+          ),
+    ),
+  );
+  assert.equal(
+    results.reduce((a, b) => a + b, 0),
+    1,
+  );
+  assert.deepEqual((await ledgerRows())[1], beforeOther);
+});
+it("tampered historical target and removed attribution never enter legacy ghost matching", async () => {
+  const command = await recordedClose();
+  await db.update(positions).set({ closedAt: null }).where(eq(positions.id, 1));
+  const targetValue = managementTargetFromCommand(command)!;
+  await db
+    .update(commands)
+    .set({
+      selfTradeAgentId: null,
+      payload: {
+        ...(command.payload as object),
+        managementTargetV1: { ...targetValue, positionRowId: 2 },
+      },
+    })
+    .where(eq(commands.commandId, command.commandId));
+  await otherAccountRow();
+  const before = await ledgerRows();
+  assert.equal(await reconcileGhostClosedPositions(9), 0);
+  assert.deepEqual(await ledgerRows(), before);
+});
+it("manual partial close reconciliation preserves its prior behavior", async () => {
+  const manual = await createLiveOpsDraft({
+    userId: 9,
+    commandType: "CLOSE_LIVE_POSITION",
+    brokerTicket: "123",
+    symbol: "EURUSD.a",
+    side: "BUY",
+    volume: 0.05,
+    sourcePage: "LIVE_POSITION_OPS",
+  });
+  assert.equal(manual.ok, true);
+  if (!manual.ok) return;
+  await db
+    .update(commands)
+    .set({ status: "SENT_TO_MT5_LIVE" })
+    .where(eq(commands.commandId, manual.command.commandId));
+  const result = await recordLiveCommandResult({
+    userId: 9,
+    commandId: manual.command.commandId,
+    outcome: "LIVE_FILLED",
+    reportingBridgeConnectionId: 1,
+    brokerTicket: "123",
+    executedVolume: 0.05,
+  });
+  assert.equal(result.ok, true);
+  assert.equal((await ledgerRows())[0]!.volume, 0.05);
+  assert.equal((await ledgerRows())[0]!.closedAt, null);
+});
+
+for (const [label, identity, expectedClosed] of [
+  ["explicit conflict", reportedManagementIdentity({ accountLogin: "B" }), 0],
+  [
+    "valid match",
+    reportedManagementIdentity({
+      accountLogin: "A",
+      serverName: "Venue-Server-1",
+      resolvedBrokerSymbol: "EURUSD.a",
+      positionTicket: "123",
+    }),
+    1,
+  ],
+  ["missing terminal identity", [], 1],
+  ["explicit zero account", reportedManagementIdentity({ accountLogin: 0 }), 0],
+  [
+    "nested symbol conflict",
+    reportedManagementIdentity({ executionIdentity: { symbol: "GBPUSD.a" } }),
+    0,
+  ],
+] as const)
+  it(`actual agent close settlement: ${label}, concurrent sweeps settle at most once`, async () => {
+    await otherAccountRow();
+    const sent = (await send(await approved()))!;
+    await recordedClose(sent, [...identity]);
+    const beforeOther = (await ledgerRows())[1];
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => reconcileAgentExecutions(4)),
+    );
+    assert.equal(
+      results.reduce((n, r) => n + r.closed, 0),
+      expectedClosed,
+    );
+    const [execution] = await db
+      .select()
+      .from(executions)
+      .where(eq(executions.id, 1));
+    assert.equal(execution!.status, expectedClosed ? "CLOSED" : "FILLED");
+    assert.equal(execution!.realizedPnl, null);
+    if (expectedClosed)
+      assert.equal(
+        (execution!.managementState as { closeAccounting: { status: string } })
+          .closeAccounting.status,
+        "UNVERIFIED",
+      );
+    assert.equal((await applyRealizedFromFills(4)).posted, 0);
+    assert.deepEqual((await ledgerRows())[1], beforeOther);
+    await recordedClose(
+      sent,
+      reportedManagementIdentity({ accountLogin: "A" }),
+    );
+    assert.equal(
+      (await reconcileAgentExecutions(4)).closed,
+      0,
+      "duplicate cannot replace the accepted receipt",
+    );
+  });
+it("agent settlement holds a missing durable receipt", async () => {
+  const command = await recordedClose();
+  await db
+    .delete(executionEvents)
+    .where(eq(executionEvents.commandId, command.id));
+  assert.equal((await reconcileAgentExecutions(4)).closed, 0);
+  const [execution] = await db
+    .select()
+    .from(executions)
+    .where(eq(executions.id, 1));
+  assert.equal(execution!.status, "FILLED");
+});
+it("manual full close still closes its original ledger row", async () => {
+  const result = await createLiveOpsDraft({
+    userId: 9,
+    commandType: "CLOSE_LIVE_POSITION",
+    brokerTicket: "123",
+    symbol: "EURUSD.a",
+    side: "BUY",
+    volume: 0.1,
+    sourcePage: "LIVE_POSITION_OPS",
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  await db
+    .update(commands)
+    .set({ status: "SENT_TO_MT5_LIVE" })
+    .where(eq(commands.commandId, result.command.commandId));
+  await recordedClose(result.command);
+  assert.ok((await ledgerRows())[0]!.closedAt);
+});
+
+it("concurrent conflicting result reports preserve the accepted identity decision for settlement", async () => {
+  await otherAccountRow();
+  const sent = (await send(await approved()))!;
+  await Promise.all([
+    recordedClose(sent, reportedManagementIdentity({ accountLogin: "B" })),
+    recordedClose(sent, reportedManagementIdentity({ accountLogin: "A" })),
+  ]);
+  const applied = await db
+    .select()
+    .from(executionEvents)
+    .where(eq(executionEvents.eventType, "RESULT_LIVE_FILLED"));
+  assert.equal(applied.length, 1);
+  const identity = (
+    applied[0]!.payload as {
+      reportedExecutionIdentity: Array<{ value: string }>;
+    }
+  ).reportedExecutionIdentity;
+  const conflict = identity[0]!.value === "B";
+  const results = await Promise.all([
+    reconcileAgentExecutions(4),
+    reconcileAgentExecutions(4),
+  ]);
+  assert.equal(
+    results.reduce((n, r) => n + r.closed, 0),
+    conflict ? 0 : 1,
+  );
+  const rows = await ledgerRows();
+  assert.equal(Boolean(rows[0]!.closedAt), !conflict);
+  assert.equal(rows[1]!.closedAt, null);
+});
+it("agent settlement waiting on a reused row refuses its replacement", async () => {
+  const command = await recordedClose();
+  const writer = await pool.connect();
+  await writer.query("BEGIN");
+  await writer.query(
+    "UPDATE arx_live_positions SET account_login='B',bridge_connection_id=2 WHERE id=1",
+  );
+  let completed = false;
+  const pending = reconcileAgentExecutions(4).finally(() => {
+    completed = true;
+  });
+  await waitForBlockedRowLock(writer);
+  assert.equal(completed, false);
+  await writer.query("COMMIT");
+  writer.release();
+  assert.equal((await pending).closed, 0);
+  const [execution] = await db
+    .select()
+    .from(executions)
+    .where(eq(executions.id, 1));
+  assert.equal(execution!.status, "FILLED");
+  assert.equal(execution!.realizedPnl, null);
+  assert.equal(
+    (await reconcileBoundManagementClose(command)).heldReason,
+    "MANAGEMENT_RESULT_TARGET_CHANGED",
+  );
+});
+
+it("same native symbol on a changed current account cannot certify historical agent profit", async () => {
+  await db.insert(specs).values({
+    userId: 9,
+    bridgeConnectionId: 1,
+    symbol: "EURUSD.a",
+    contractSize: 100000,
+    profitCurrency: "USD",
+  });
+  await db.insert(allocations).values({ userId: 9, accountCurrency: "USD" });
+  await db.insert(agentLedger).values([
+    { agentId: 4, availableFunds: 250, realizedPnl: 0 },
+    { agentId: 5, availableFunds: 900, realizedPnl: 0 },
+  ]);
+  const command = await recordedClose();
+  await db
+    .update(specs)
+    .set({ bridgeConnectionId: 2, contractSize: 200000, profitCurrency: "USD" })
+    .where(eq(specs.userId, 9));
+  await db
+    .update(allocations)
+    .set({ accountCurrency: "EUR" })
+    .where(eq(allocations.userId, 9));
+  await updateConnection(1, {
+    accountNumber: "B",
+    serverName: "Venue-Server-2",
+  });
+  assert.equal((await reconcileAgentExecutions(4)).closed, 1);
+  const [execution] = await db
+    .select()
+    .from(executions)
+    .where(eq(executions.id, 1));
+  assert.equal(execution!.realizedPnl, null);
+  const accounting = (
+    execution!.managementState as {
+      closeAccounting: { reason: string; symbol: string };
+    }
+  ).closeAccounting;
+  assert.equal(accounting.reason, "HISTORICAL_ACCOUNTING_EVIDENCE_MISSING");
+  assert.equal(accounting.symbol, "EURUSD.a");
+  const { managementNote } = await import("../executionLifecycle.js");
+  assert.match(managementNote(execution!)!, /profit remains unverified/);
+  const before = await db
+    .select()
+    .from(agentLedger)
+    .orderBy(agentLedger.agentId);
+  const posted = await Promise.all([
+    applyRealizedFromFills(4),
+    applyRealizedFromFills(4),
+  ]);
+  assert.equal(
+    posted.reduce((n, r) => n + r.posted, 0),
+    0,
+  );
+  assert.deepEqual(
+    await db.select().from(agentLedger).orderBy(agentLedger.agentId),
+    before,
+  );
+  assert.equal((await db.select().from(ledgerEntries)).length, 0);
+  const withdrawal = await defundAgent({
+    agentId: 4,
+    amount: 100,
+    actorUserId: 9,
+    actorRole: "admin",
+    reason: "Offline hold test",
+  });
+  assert.equal(withdrawal.ok, false);
+  if (!withdrawal.ok) assert.equal(withdrawal.error, "ACCOUNTING_UNRESOLVED");
+  assert.deepEqual(
+    await db.select().from(agentLedger).orderBy(agentLedger.agentId),
+    before,
+  );
+  assert.equal((await reconcileBoundManagementClose(command)).heldReason, null);
+});
+it("settlement revalidates locked entry identity after a concurrent entry snapshot replacement", async () => {
+  await recordedClose();
+  const writer = await pool.connect();
+  await writer.query("BEGIN");
+  await writer.query(
+    "UPDATE arx_live_commands SET symbol='GBPUSD.a' WHERE command_id='entry-1'",
+  );
+  const pending = reconcileAgentExecutions(4);
+  await waitForBlockedRowLock(writer);
+  await writer.query("COMMIT");
+  writer.release();
+  assert.equal((await pending).closed, 0);
+  const [execution] = await db
+    .select()
+    .from(executions)
+    .where(eq(executions.id, 1));
+  assert.equal(execution!.status, "FILLED");
+  assert.equal(execution!.realizedPnl, null);
+  assert.equal((await applyRealizedFromFills(4)).posted, 0);
+});
+
+it("a close holding the agent lock publishes its accounting hold before waiting admission can reserve", async () => {
+  const sent = (await send(await approved()))!;
+  await db
+    .update(agents)
+    .set({ status: "ACTIVE", mode: "LIVE" })
+    .where(eq(agents.id, 4));
+  await db.insert(agentSettings).values({
+    agentId: 4,
+    maxConcurrentPositions: 0,
+    baseMaxTrades: 100,
+    maxLotPerTrade: 1,
+  });
+  await db
+    .insert(agentLedger)
+    .values({ agentId: 4, allocatedFunds: 1000, availableFunds: 1000 });
+  await db.insert(decisions).values({
+    id: 8,
+    agentId: 4,
+    agentKey: "agent",
+    cycleId: "next",
+    symbol: "EURUSD",
+    side: "BUY",
+    outcome: "APPROVED",
+    plannedAction: "EXECUTE",
+    reason: "Offline",
+    thesis: { stopLoss: 1.09, takeProfits: [] },
+  });
+  const [agent] = await db.select().from(agents).where(eq(agents.id, 4));
+  const [settings] = await db
+    .select()
+    .from(agentSettings)
+    .where(eq(agentSettings.agentId, 4));
+  const [ledger] = await db
+    .select()
+    .from(agentLedger)
+    .where(eq(agentLedger.agentId, 4));
+  const [decision] = await db
+    .select()
+    .from(decisions)
+    .where(eq(decisions.id, 8));
+  const writer = await pool.connect();
+  await writer.query("BEGIN");
+  await writer.query("SELECT id FROM arx_live_positions WHERE id=1 FOR UPDATE");
+  const close = recordedClose(sent);
+  await waitForBlockedRowLock(writer);
+  const { reserveAgentEntry } = await import("../entryReservation.js");
+  let admitted = false;
+  const reservation = reserveAgentEntry({
+    agent: agent!,
+    settings: settings!,
+    ledger: ledger!,
+    decision: decision!,
+    executingUserId: 9,
+    side: "BUY",
+    volume: 0.1,
+    stopLoss: 1.09,
+    takeProfit: null,
+  }).finally(() => {
+    admitted = true;
+  });
+  const started = performance.now();
+  while (performance.now() - started < 2000) {
+    const waiting = await writer.query(
+      "SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%self_trade_agents%for update%'",
+    );
+    if (waiting.rows.length) break;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  assert.equal(admitted, false);
+  await writer.query("COMMIT");
+  writer.release();
+  await close;
+  const result = await reservation;
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.reason, "ENTRY_ACCOUNTING_UNRESOLVED");
+  assert.equal((await db.select().from(executions)).length, 1);
+  await updateConnection(1, { accountNumber: "B" });
+  assert.equal(
+    (
+      await reserveAgentEntry({
+        agent: agent!,
+        settings: settings!,
+        ledger: ledger!,
+        decision: decision!,
+        executingUserId: 9,
+        side: "BUY",
+        volume: 0.1,
+        stopLoss: 1.09,
+        takeProfit: null,
+      })
+    ).ok,
+    false,
+    "mutable account switch cannot release agent accounting hold",
+  );
+  const manual = await createLiveOpsDraft({
+    userId: 9,
+    commandType: "CLOSE_LIVE_POSITION",
+    brokerTicket: "456",
+    symbol: "EURUSD.a",
+    side: "BUY",
+    volume: 0.1,
+    sourcePage: "LIVE_POSITION_OPS",
+  });
+  assert.equal(
+    manual.ok,
+    true,
+    "manual protective draft is not governed by agent accounting hold",
+  );
+});
+
+it("a loss-shaped close stays unknown and holds continuation rather than becoming zero profit", async () => {
+  const sent = (await send(await approved()))!;
+  await recordLiveCommandResult({
+    userId: 9,
+    commandId: sent.commandId,
+    outcome: "LIVE_FILLED",
+    reportingBridgeConnectionId: 1,
+    brokerTicket: "123",
+    executedVolume: 0.1,
+    fillPrice: 1.08,
+  });
+  assert.equal((await reconcileAgentExecutions(4)).closed, 1);
+  const [execution] = await db
+    .select()
+    .from(executions)
+    .where(eq(executions.id, 1));
+  assert.equal(execution!.realizedPnl, null);
+  const { hasUnresolvedAgentAccounting } = await import("../accountingHold.js");
+  assert.equal(await hasUnresolvedAgentAccounting(db, 4), true);
+  assert.equal((await applyRealizedFromFills(4)).posted, 0);
+});
+
+// Opt-in: no provider or broker timing is inferred from the local benchmark.
+it(
+  "controlled previous/current server consumer latency",
+  { skip: !process.env.ARX_MANAGEMENT_BENCHMARK_OUTPUT },
+  async () => {
+    const { runManagementConsumerBenchmark } =
+      await import("./managementConsumers.benchmark.js");
+    await runManagementConsumerBenchmark({
+      prepareModify,
+      resetFixture,
+      send,
+      approved,
+    });
+  },
+);
