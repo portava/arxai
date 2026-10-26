@@ -491,3 +491,191 @@ it(
     await runResultEvidenceBenchmark(resetFixture, report);
   },
 );
+
+it(
+  "profile actual32-report durability phases",
+  { skip: !process.env.ARX_RESULT_PROFILE_OUTPUT },
+  async () => {
+    const { profileResultEvidence } =
+      await import("./resultEvidence.profile.js");
+    await profileResultEvidence(resetFixture, report);
+  },
+);
+
+it("bounded per-command scheduling refuses overload without a receipt and drains after commit", async () => {
+  const { resultReceiptScheduler } =
+    await import("../resultReceiptScheduler.js");
+  const writer = await pool.connect();
+  await writer.query("BEGIN");
+  await writer.query(
+    "SELECT id FROM arx_live_commands WHERE id=$1 FOR UPDATE",
+    [command.id],
+  );
+  const reports = Array.from({ length: 64 }, (_, i) =>
+    recordLiveCommandResult({ ...report(), brokerMessage: `queued-${i}` }),
+  );
+  try {
+    await waitForWaiter();
+    const refused = await recordLiveCommandResult({
+      ...report(),
+      brokerMessage: "overloaded",
+    });
+    assert.equal(refused.ok, false);
+    assert.equal(refused.receiptPersisted, false);
+    assert.equal(refused.reason, "LIVE_RESULT_RECEIPT_CAPACITY");
+    assert.equal((await snapshot()).events.length, 0);
+    await writer.query("COMMIT");
+    assert.ok(
+      (await Promise.all(reports)).every((r) => r.ok && r.receiptPersisted),
+    );
+    await assertChain(64);
+    assert.equal((await snapshot()).command.duplicateResultCount, 63);
+    assert.deepEqual(resultReceiptScheduler.snapshot, {
+      keys: 0,
+      pending: 0,
+      bytes: 0,
+    });
+  } finally {
+    await writer.query("ROLLBACK");
+    writer.release();
+  }
+});
+it("a blocked command does not occupy the pool needed by independent commands or owners", async () => {
+  const writer = await pool.connect();
+  await writer.query("BEGIN");
+  await writer.query(
+    "SELECT id FROM arx_live_commands WHERE id=$1 FOR UPDATE",
+    [command.id],
+  );
+  const reports = Array.from({ length: 32 }, (_, i) =>
+    recordLiveCommandResult({ ...report(), brokerMessage: `held-${i}` }),
+  );
+  try {
+    await waitForWaiter();
+    for (const [userId, commandId] of [
+      [9, "qa-second"],
+      [88, "qa-other-owner"],
+    ] as const) {
+      await db.insert(commands).values({
+        commandId,
+        userId,
+        bridgeConnectionId: 1,
+        commandType: "MODIFY_LIVE_SLTP",
+        symbol: "EURUSD.a",
+        side: "BUY",
+        orderType: "MODIFY",
+        requestedVolume: 0.1,
+        status: "SENT_TO_MT5_LIVE",
+      });
+      const reply = await recordLiveCommandResult({
+        ...report(),
+        userId,
+        commandId,
+      });
+      assert.ok(reply.ok && reply.receiptPersisted);
+    }
+    assert.equal(
+      (await pool.query("SELECT count(*)::int AS n FROM execution_events"))
+        .rows[0].n,
+      2,
+    );
+    await writer.query("COMMIT");
+    await Promise.all(reports);
+    await assertChain(34);
+  } finally {
+    await writer.query("ROLLBACK");
+    writer.release();
+  }
+});
+it("separate server processes with independent queues preserve one outcome and every report", async () => {
+  const { fork } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const workers = Array.from({ length: 2 }, (_, worker) => {
+    const child = fork(
+      fileURLToPath(new URL("./resultEvidence.worker.ts", import.meta.url)),
+      [],
+      {
+        execArgv: ["--import", "tsx", "--experimental-test-module-mocks"],
+        env: { ...process.env },
+        stdio: ["ignore", "ignore", "pipe", "ipc"],
+      },
+    );
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => {
+      stderr = (stderr + String(chunk)).slice(-2000);
+    });
+    const ready = new Promise<void>((resolve, reject) => {
+      child.on("message", (m: any) => {
+        if (m.ready) resolve();
+        if (m.error) reject(new Error(m.error));
+      });
+      child.once("error", reject);
+      child.once("exit", (code) =>
+        reject(new Error(`worker exited before ready: ${code}`)),
+      );
+    });
+    const exited = new Promise<void>((resolve, reject) => {
+      child.once("exit", (code) =>
+        code === 0
+          ? resolve()
+          : reject(new Error(`worker exit${code}: ${stderr}`)),
+      );
+      child.once("error", reject);
+    });
+    return { child, ready, exited, worker };
+  });
+  try {
+    await Promise.all(workers.map((w) => w.ready));
+    workers.forEach((w) => w.child.send({ worker: w.worker }));
+    await Promise.all(workers.map((w) => w.exited));
+    await assertChain(24);
+    const state = await snapshot();
+    assert.equal(state.command.duplicateResultCount, 23);
+    assert.equal(
+      state.events.filter((e) => (e.payload as any).applied === true).length,
+      1,
+    );
+  } finally {
+    workers.forEach((w) => {
+      if (w.child.exitCode === null) w.child.kill();
+    });
+  }
+});
+
+it("a cancelled active result releases its queued follower without accepting the cancelled report", async () => {
+  const { resultReceiptScheduler } =
+    await import("../resultReceiptScheduler.js");
+  const writer = await pool.connect();
+  await writer.query("BEGIN");
+  await writer.query(
+    "SELECT id FROM arx_live_commands WHERE id=$1 FOR UPDATE",
+    [command.id],
+  );
+  const first = recordLiveCommandResult({
+    ...report(),
+    brokerMessage: "cancel-me",
+  });
+  const observed = first.catch((error) => error);
+  const next = recordLiveCommandResult({
+    ...report(),
+    brokerMessage: "keep-me",
+  });
+  try {
+    const pid = await waitForWaiter();
+    await pool.query("SELECT pg_cancel_backend($1)", [pid]);
+    assert.ok((await observed) instanceof Error);
+    await writer.query("COMMIT");
+    assert.ok((await next).receiptPersisted);
+    await assertChain(1);
+    const state = await snapshot();
+    assert.equal((state.events[0].payload as any).brokerMessage, "keep-me");
+    assert.deepEqual(resultReceiptScheduler.snapshot, {
+      keys: 0,
+      pending: 0,
+      bytes: 0,
+    });
+  } finally {
+    await writer.query("ROLLBACK");
+    writer.release();
+  }
+});

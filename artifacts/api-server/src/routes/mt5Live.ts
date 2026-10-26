@@ -189,6 +189,10 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     // Capture it so the row surfaces the real cause instead of EA_REJECTED_NO_DETAIL.
     eaReason: typeof b["reason"] === "string" ? String(b["reason"]) : null,
   });
+  if (result.reason === "LIVE_RESULT_RECEIPT_CAPACITY") {
+    res.status(503).json({ ...result, ...LIVE_SAFETY_ENVELOPE });
+    return;
+  }
   // Position Guardian — a confirmed entry fill (full or partial) starts
   // protection checks on its ticket; a filled close re-checks the remainder.
   const resulting = result.ok
