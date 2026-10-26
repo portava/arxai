@@ -1,5 +1,9 @@
 // Authority lasts until the final dispatch claim, not merely until admission.
 // This layer can only refuse; the Trade Engine still owns every live gate.
+import {
+  hasUnresolvedAgentAccounting,
+  ENTRY_ACCOUNTING_UNRESOLVED,
+} from "./accountingHold.js";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { eq } from "drizzle-orm";
@@ -240,6 +244,8 @@ export async function withEntryAuthority<T>(
       ledger.allocatedFunds <= 0
     )
       return refuse("ENTRY_NOT_FUNDED");
+    if (await hasUnresolvedAgentAccounting(tx, agent.id))
+      return refuse(ENTRY_ACCOUNTING_UNRESOLVED);
     return operation(tx, execution, envelope);
   });
 }

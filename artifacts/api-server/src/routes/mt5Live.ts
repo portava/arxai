@@ -22,9 +22,10 @@ import { runBrokerAbsenceReconcile } from "../lib/live/brokerAbsenceReconcileRun
 import {
   pickupNextLiveCommand,
   recordLiveCommandResult,
-  findGhostClosedPositionIds,
+  reconcileGhostClosedPositions,
 } from "../lib/live/liveCommandPipeline.js";
 import { boundManagementTransportSymbol } from "../lib/selfTrade/managementTarget.js";
+import { reportedManagementIdentity } from "../lib/selfTrade/managementConsumers.js";
 import { resolveBrokerSymbolName } from "../lib/instruments/index.js";
 import { emitLiveAccountChanged } from "../lib/live/liveAccountEventBus.js";
 import { scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
@@ -176,6 +177,7 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     commandId,
     outcome,
     reportingBridgeConnectionId: conn.id,
+    reportedExecutionIdentity: reportedManagementIdentity(b),
     brokerTicket: typeof b["brokerTicket"] === "string" || typeof b["brokerTicket"] === "number" ? String(b["brokerTicket"]) : null,
     fillPrice: typeof b["fillPrice"] === "number" ? Number(b["fillPrice"]) : null,
     executedVolume: typeof b["executedVolume"] === "number" ? Number(b["executedVolume"]) : null,
@@ -353,44 +355,7 @@ async function handleLivePositionsSnapshot(req: AugReq, res: Response): Promise<
   // initiate a close, only record one the broker already executed.
   let reconciledClosed = 0;
   try {
-    const openRows = await livePositionLedger.select(
-      {
-        id: livePositionColumns.id,
-        brokerTicket: livePositionColumns.brokerTicket,
-      },
-      { where: and(eq(livePositionColumns.userId, conn.userId!), isNull(livePositionColumns.closedAt)) },
-    );
-    if (openRows.length > 0) {
-      const filledCloses = await db.select({
-        payload: arxLiveCommandsTable.payload,
-        brokerTicket: arxLiveCommandsTable.brokerTicket,
-      }).from(arxLiveCommandsTable).where(and(
-        eq(arxLiveCommandsTable.userId, conn.userId!),
-        eq(arxLiveCommandsTable.commandType, "CLOSE_LIVE_POSITION"),
-        eq(arxLiveCommandsTable.status, "LIVE_FILLED"),
-      ));
-      const ghostIds = findGhostClosedPositionIds(
-        openRows.map((r) => ({ id: r.id, brokerTicket: r.brokerTicket ?? "" })),
-        filledCloses.map((c) => ({
-          brokerTicket: c.brokerTicket,
-          payload: c.payload as Record<string, unknown> | null,
-        })),
-      );
-      if (ghostIds.length > 0) {
-        await livePositionWriter.update(
-          {
-            closedAt: new Date(),
-            lastSyncedAt: new Date(),
-          },
-          and(
-            eq(livePositionColumns.userId, conn.userId!),
-            inArray(livePositionColumns.id, ghostIds),
-            isNull(livePositionColumns.closedAt),
-          ),
-        );
-        reconciledClosed = ghostIds.length;
-      }
-    }
+    reconciledClosed = await reconcileGhostClosedPositions(conn.userId!, snapshotNow);
   } catch (err) {
     req.log.warn({ err }, "sync-live-positions ghost-close reconciliation failed");
   }

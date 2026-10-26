@@ -928,17 +928,15 @@ it("draft callback crash rolls back the command and linkage; retry stages once",
   const context = await reservedAuthority();
   await assert.rejects(
     createAgentEntryDraft(context.request, async (tx) => {
-      await tx
-        .insert(commands)
-        .values({
-          commandId: "rolled-back",
-          userId: 9,
-          commandType: "PLACE_LIVE_MARKET_ORDER",
-          symbol: "EURUSD.a",
-          side: "BUY",
-          orderType: "MARKET_BUY",
-          requestedVolume: 0.1,
-        });
+      await tx.insert(commands).values({
+        commandId: "rolled-back",
+        userId: 9,
+        commandType: "PLACE_LIVE_MARKET_ORDER",
+        symbol: "EURUSD.a",
+        side: "BUY",
+        orderType: "MARKET_BUY",
+        requestedVolume: 0.1,
+      });
       throw new Error("crash before linkage");
     }),
     /crash before linkage/,
@@ -1445,4 +1443,129 @@ it("a stale gate refusal cannot overwrite a concurrent real final claim or publi
     await loser;
     integrityBarrier = null;
   }
+});
+
+async function accountingHold(
+  marker: unknown = {
+    status: "UNVERIFIED",
+    reason: "HISTORICAL_ACCOUNTING_EVIDENCE_MISSING",
+  },
+) {
+  const r = await reserve();
+  assert.ok(r.ok);
+  await db
+    .update(executions)
+    .set({
+      status: "CLOSED",
+      realizedPnl: null,
+      filledAt: new Date("2020-01-01T00:00:00Z"),
+      managementState: { closeAccounting: marker },
+    })
+    .where(eq(executions.id, r.execution.id));
+  return r.execution;
+}
+for (const marker of [
+  null,
+  {},
+  { status: "UNVERIFIED" },
+  { status: "RESOLVED" },
+])
+  it(`accounting marker never implicitly resolves: ${JSON.stringify(marker)}`, async () => {
+    await accountingHold(marker);
+    const request = await input();
+    [request.decision] = await db
+      .update(decisions)
+      .set({ setupExpiresAt: null })
+      .where(eq(decisions.id, request.decision.id))
+      .returning();
+    const result = await reserveAgentEntry({
+      ...request,
+      now: new Date("2030-01-01T00:00:00Z"),
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.reason, "ENTRY_ACCOUNTING_UNRESOLVED");
+  });
+it("shared agent accounting survives an owner transfer while another agent stays isolated", async () => {
+  const row = await accountingHold();
+  [agent] = await db
+    .update(agents)
+    .set({ ownerId: 88 })
+    .where(eq(agents.id, agent.id))
+    .returning();
+  const next = { ...(await input()), executingUserId: 88 };
+  const refused = await reserveAgentEntry(next);
+  assert.equal(refused.ok, false);
+  if (!refused.ok) assert.equal(refused.reason, "ENTRY_ACCOUNTING_UNRESOLVED");
+  await db
+    .update(executions)
+    .set({ agentId: 999 })
+    .where(eq(executions.id, row.id));
+  assert.ok(
+    (await reserveAgentEntry({ ...(await input()), executingUserId: 88 })).ok,
+  );
+});
+it("accounting hold published after staging refuses final dispatch claim", async () => {
+  await configure({ maxConcurrentPositions: 0, baseMaxTrades: 100 });
+  const { row } = await approveAuthority(await stageAuthority());
+  await accountingHold();
+  await assert.rejects(
+    claimLiveCommandForDispatch(row.commandId, sendPatch(), row),
+    /ENTRY_ACCOUNTING_UNRESOLVED/,
+  );
+  const [current] = await db
+    .select()
+    .from(commands)
+    .where(eq(commands.commandId, row.commandId));
+  assert.equal(current!.status, "LIVE_APPROVED");
+});
+
+it("final ENTRY claim waiting behind accounting writer cannot send after the hold commits", async () => {
+  await configure({ maxConcurrentPositions: 0, baseMaxTrades: 100 });
+  const { row } = await approveAuthority();
+  const historical = await reserve();
+  assert.ok(historical.ok);
+  const writer = await pool.connect();
+  await writer.query("BEGIN");
+  await writer.query(
+    "SELECT id FROM self_trade_agents WHERE id=$1 FOR UPDATE",
+    [agent.id],
+  );
+  await writer.query(
+    "UPDATE self_trade_agent_executions SET status='CLOSED',realized_pnl=NULL,management_state=$1::jsonb WHERE id=$2",
+    [
+      JSON.stringify({ closeAccounting: { status: "UNVERIFIED" } }),
+      historical.execution.id,
+    ],
+  );
+  const pending = claimLiveCommandForDispatch(row.commandId, sendPatch(), row);
+  const caught = pending.catch((e) => e);
+  await waitForLock(
+    "SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%self_trade_agents%for update%'",
+  );
+  await writer.query("COMMIT");
+  writer.release();
+  assert.match(String(await caught), /ENTRY_ACCOUNTING_UNRESOLVED/);
+  const [current] = await db
+    .select()
+    .from(commands)
+    .where(eq(commands.commandId, row.commandId));
+  assert.equal(current!.status, "LIVE_APPROVED");
+});
+it("unverified accounting cannot be withdrawn or escaped by assigning zero profit", async () => {
+  const e = await accountingHold();
+  await db
+    .update(executions)
+    .set({ realizedPnl: 0, mode: "SHADOW" })
+    .where(eq(executions.id, e.id));
+  const before = await db.select().from(ledger);
+  const result = await defundAgent({
+    ...actor,
+    agentId: agent.id,
+    amount: 100,
+  });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.error, "ACCOUNTING_UNRESOLVED");
+  assert.deepEqual(await db.select().from(ledger), before);
+  assert.equal((await reserve()).ok, false);
+  assert.equal((await applyRealizedFromFills(agent.id)).posted, 0);
 });
