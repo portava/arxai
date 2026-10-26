@@ -38,7 +38,7 @@ function sameSymbol(a: string, b: string): boolean {
  * are excluded before sufficiency, regime, features or scoring can see them. */
 export function prepareScannerCandles(
   result: MarketCandlesResult, symbol: string, timeframe: string, now: number,
-): { rawClosed: Candle[]; openClosed: Candle[] } | null {
+): { rawClosed: Candle[]; openClosed: Candle[]; trailingIntervals: number | null } | null {
   const tf = normalizeChartTimeframe(timeframe);
   const source = result.primaryProvider;
   if (!Number.isFinite(now) || !tf || !result.ok || !sameSymbol(result.symbol, symbol) || !source) return null;
@@ -80,6 +80,11 @@ export function prepareScannerCandles(
   return {
     rawClosed: closed.map((bar) => toCandle(bar, source.startsWith("assistant_real") ? bar.closeTime : bar.openTime)),
     openClosed: closed.map((bar) => toCandle(bar, bar.openTime)),
+    // Anchor to the actual accepted provider bar, including session opens such
+    // as :30. UTC flooring can falsely age an H1 bar before its next bar closes.
+    // A newly closed bar trails by one interval under the shared freshness
+    // policy. Forming/future/invalid tails never contribute to this measure.
+    trailingIntervals: closed.length ? Math.floor((now - Date.parse(closed[closed.length - 1]!.openTime)) / interval) : null,
   };
 }
 

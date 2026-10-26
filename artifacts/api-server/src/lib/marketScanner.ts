@@ -9,8 +9,7 @@ import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
 import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, bindScannerSource } from "./scannerInputIntegrity.js";
 import { getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
-import { type ChartTimeframe, isChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
-import { rawTrailingIntervalGap } from "./data/chart/candleNormalization.js";
+import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { buildPatternTruthVerdict } from "./data/chart/patternTruthService.js";
 import { buildTrendlineTruthVerdict } from "./data/chart/trendlineTruthService.js";
 import { resolveSymbolFeedVerdict } from "./data/symbolFeedVerdict.js";
@@ -1277,13 +1276,12 @@ async function analyzeViaRouter(
     // prevents its close or an unknown spread from becoming live trade geometry.
     const quote = usableQuote ? { mid: usableQuote.mid, spread: usableQuote.spread ?? 0 }
       : { mid: last.c, spread: 0 };
-    // Trailing-interval freshness over the SAME raw bars, using the identical
-    // open-time basis + interval rule the chart feed-status contract applies.
-    // Surfaced so scanSymbolTimeframe can demote a lagging feed away from
-    // LIVE_FEED, keeping scanner row freshness ≤ chart feed freshness.
-    const trailingIntervals = isChartTimeframe(tf)
-      ? rawTrailingIntervalGap(cr.candles, cr.primaryProvider ?? null, tf)
-      : null;
+    // Freshness must describe the accepted CLOSED analysis window. Forming or
+    // future tails cannot make older closed history look current. Keep the same
+    // provider timestamp basis and the same captured clock as input validation.
+    // Surfaced so scanSymbolTimeframe demotes lagging analysis history using
+    // the shared freshness thresholds, without borrowing a live forming tip.
+    const trailingIntervals = prepared.trailingIntervals;
     const analysis = analyzeMarketFromCandles(
       sym, tf, candles, quote, "LIVE_FEED",
       cr.primaryProvider ?? undefined,
