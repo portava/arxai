@@ -14,11 +14,11 @@ export interface MissionTestMetrics {
   losingTrades: number;
   /** Win rate as a fraction 0..1. */
   winRate: number;
-  /** Net realised P/L over the sample (account currency or R-normalised). */
+  /** P/L in the producer's declared units; generated runs use gross price units. */
   netProfitLoss: number;
-  /** Max drawdown as a non-negative percentage (0..100). */
+  /** Maximum peak-relative realised drawdown, non-negative percentage. */
   maxDrawdownPct: number;
-  /** Average reward-to-risk realised. */
+  /** Average realised R among profitable trades. */
   averageRr: number;
   /** Expectancy in R per trade. */
   expectancyR: number;
@@ -30,8 +30,8 @@ export type MissionTestKind = "BACKTEST" | "FORWARD";
 
 /** Honest label for each result kind — never implies live unless truly forward-live. */
 export const MISSION_TEST_LABEL: Record<MissionTestKind, string> = {
-  BACKTEST: "Historical / simulated",
-  FORWARD: "Forward (paper / demo / live)",
+  BACKTEST: "Backtest — source unverified",
+  FORWARD: "Forward — execution mode unverified",
 };
 
 // Minimum sample sizes a result must reach before it counts toward promotion.
@@ -42,7 +42,28 @@ export const MISSION_TEST_MIN_SAMPLES: Record<MissionTestKind, number> = {
   FORWARD: 20,
 };
 
-export function labelForKind(kind: MissionTestKind): string {
+/** Current producers have no independently validated market/transaction record.
+ * A new verified producer must supply an audited contract before promotion can use it.
+ * These values are evidence descriptions, never client-supplied authorizations. */
+export interface MissionTestEvidence {
+  version: 1;
+  source: "generated_prices" | "closed_mission_drafts" | "unknown";
+  validation: "unverified";
+}
+
+export function normalizeMissionTestEvidence(value: unknown, kind: MissionTestKind): MissionTestEvidence {
+  const raw = value != null && typeof value === "object" ? value as Record<string, unknown> : {};
+  const source = raw.version === 1 && raw.validation === "unverified" && (
+    (kind === "BACKTEST" && raw.source === "generated_prices") ||
+    (kind === "FORWARD" && raw.source === "closed_mission_drafts")
+  ) ? raw.source as MissionTestEvidence["source"] : "unknown";
+  return { version: 1, source, validation: "unverified" };
+}
+
+export function labelForKind(kind: MissionTestKind, evidence?: MissionTestEvidence): string {
+  const source = normalizeMissionTestEvidence(evidence, kind).source;
+  if (source === "generated_prices") return "Generated-price simulation";
+  if (source === "closed_mission_drafts") return "Closed mission drafts — execution mode unverified";
   return MISSION_TEST_LABEL[kind];
 }
 
@@ -50,16 +71,16 @@ export function minSamplesForKind(kind: MissionTestKind): number {
   return MISSION_TEST_MIN_SAMPLES[kind];
 }
 
-/** True once the result has enough trades to be statistically meaningful. */
+/** A product minimum only; sample size alone does not establish statistical significance. */
 export function hasSufficientSample(kind: MissionTestKind, sampleSize: number): boolean {
-  return Number.isFinite(sampleSize) && sampleSize >= MISSION_TEST_MIN_SAMPLES[kind];
+  return Number.isSafeInteger(sampleSize) && sampleSize >= MISSION_TEST_MIN_SAMPLES[kind];
 }
 
 /** Honest small-sample warning string, or null when the sample is sufficient. */
 export function sampleWarning(kind: MissionTestKind, sampleSize: number): string | null {
   const min = MISSION_TEST_MIN_SAMPLES[kind];
   if (hasSufficientSample(kind, sampleSize)) return null;
-  return `Small sample: ${Math.max(0, Math.trunc(sampleSize))} trade(s) — at least ${min} are needed before this result is meaningful. Treat it as a low-confidence estimate, not proof.`;
+  return `Small sample: ${Number.isFinite(sampleSize) ? Math.max(0, Math.trunc(sampleSize)) : 0} trade(s) — at least ${min} are required by the minimum-sample rule. This threshold does not establish statistical significance.`;
 }
 
 export interface MissionTestSummaryInput {
@@ -68,34 +89,45 @@ export interface MissionTestSummaryInput {
   symbol: string;
   timeframe: string;
   metrics: MissionTestMetrics;
+  evidence?: MissionTestEvidence;
 }
 
 export interface MissionTestSummary {
   kind: MissionTestKind;
+  evidence: MissionTestEvidence;
   label: string;
   sampleSize: number;
   sampleSufficient: boolean;
   sampleWarning: string | null;
-  /** Eligible-for-promotion verdict for THIS result (sample + positive edge). */
+  /** Validated evidence is required in addition to sample size and positive results. */
   promotionEligible: boolean;
   headline: string;
   notes: string[];
 }
 
 /**
- * Build an honest, banned-vocabulary-clean summary of one test result. A result is
- * "promotionEligible" only when it has a sufficient sample AND a positive edge
- * (expectancy > 0 and profit factor > 1) — and even then it is advisory input to
- * the promotion gate, never a grant.
+ * Build a labelled diagnostic summary of one test result.
+ * Minimum sample size and positive gross metrics do not verify a strategy.
+ * Current generated-price and unreconciled-draft producers are diagnostics only.
+ * No current producer establishes costs, execution identity, and independent
+ * chronological validation, so neither can authorize promotion.
  */
 export function summarizeMissionTest(input: MissionTestSummaryInput): MissionTestSummary {
   const m = input.metrics;
-  const sampleSize = Math.max(0, Math.trunc(m.totalTrades));
+  const sampleSize = Number.isSafeInteger(m.totalTrades) && m.totalTrades >= 0 ? m.totalTrades : 0;
+  const evidence = normalizeMissionTestEvidence(input.evidence, input.kind);
+  const label = labelForKind(input.kind, evidence);
   const sufficient = hasSufficientSample(input.kind, sampleSize);
   const positiveEdge = m.expectancyR > 0 && m.profitFactor > 1;
-  const promotionEligible = sufficient && positiveEdge;
+  const promotionEligible = false;
+  const evidenceNote = evidence.source === "generated_prices"
+    ? "Generated prices are diagnostic data, not observed market history. Costs and chronological out-of-sample validation are not modelled. Excluded from promotion and strategy-drift evidence."
+    : evidence.source === "closed_mission_drafts"
+      ? "Closed draft outcomes have not been reconciled to execution mode, complete realised risk, and net trading costs. Excluded from promotion and strategy-drift evidence."
+      : "This stored result has no supported evidence provenance. Previous verified or eligible flags are not proof. Excluded from promotion and strategy-drift evidence.";
 
-  const notes: string[] = [];
+  const notes: string[] = [evidenceNote];
+  if (sufficient) notes.push("Minimum sample threshold met; this does not establish statistical significance or a validated edge.");
   const warn = sampleWarning(input.kind, sampleSize);
   if (warn) notes.push(warn);
   if (!positiveEdge) {
@@ -105,13 +137,14 @@ export function summarizeMissionTest(input: MissionTestSummaryInput): MissionTes
 
   const winPct = (m.winRate * 100).toFixed(1);
   const headline =
-    `${MISSION_TEST_LABEL[input.kind]} — ${input.strategyKey} on ${input.symbol} ${input.timeframe}: ` +
+    `${label} — ${input.strategyKey} on ${input.symbol} ${input.timeframe}: ` +
     `${sampleSize} trades, ${winPct}% win rate, expectancy ${m.expectancyR.toFixed(2)}R, ` +
     `profit factor ${m.profitFactor.toFixed(2)}, max drawdown ${m.maxDrawdownPct.toFixed(1)}%.`;
 
   return {
     kind: input.kind,
-    label: MISSION_TEST_LABEL[input.kind],
+    evidence,
+    label,
     sampleSize,
     sampleSufficient: sufficient,
     sampleWarning: warn,
