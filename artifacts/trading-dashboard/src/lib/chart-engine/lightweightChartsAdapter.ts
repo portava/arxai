@@ -1,6 +1,8 @@
 import {
   createChart,
   CandlestickSeries,
+  BarSeries,
+  LineSeries,
   createSeriesMarkers,
   ColorType,
   CrosshairMode,
@@ -27,6 +29,9 @@ import type {
   ChartStructureMarker,
 } from "./types";
 import { candleDisplayPrecision, incrementalCandles, historyRangeShift } from "./candleReconciliation";
+import { ChartAnalysisRenderer } from "./chartAnalysisRenderer";
+import type { ChartStudy } from "./chartStudies";
+import type { ChartAnchor, ChartDrawing, ChartStyle } from "./chartWorkspace";
 import { applyStructureLines, clearStructureLines } from "./structureLines";
 
 
@@ -42,9 +47,8 @@ const CAPABILITIES: ChartEngineCapabilities = {
   markers: true,
   zones: true,
   coordinateApi: true,
-  // Staged for later tasks — lightweight-charts has no built-in drawing tools
-  // or draggable order handles, so we advertise them as unsupported today.
-  drawingTools: false,
+  // Drawing tools are owned by the ARX shell; execution handles stay separate.
+  drawingTools: true,
   draggableOrders: false,
 };
 
@@ -71,7 +75,13 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   readonly capabilities = CAPABILITIES;
 
   private chart: IChartApi | null = null;
-  private series: ISeriesApi<"Candlestick"> | null = null;
+  private series: ISeriesApi<"Candlestick" | "Bar" | "Line"> | null = null;
+  private style: ChartStyle = "candles";
+  private analysis: ChartAnalysisRenderer | null = null;
+  private drawingCleanup: (() => void) | null = null;
+  private drawingHandler: ((anchor: ChartAnchor) => void) | null = null;
+  private overlaysRaw: ChartOverlay[] = [];
+  private overlayTime: number | null = null;
   private lastPriceLine: IPriceLine | null = null;
   private overlayLines: IPriceLine[] = [];
   private markersApi: { detach: () => void } | null = null;
@@ -177,12 +187,34 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
 
     // At most one legend update per animation frame; no React render per pixel.
     chart.subscribeCrosshairMove((event) => {
-      const bar = event.seriesData.get(series);
-      this.hoveredCandle = event.point && typeof event.time === "number" && bar && "open" in bar
-        ? { time: event.time, open: bar.open, high: bar.high, low: bar.low, close: bar.close }
-        : null;
+      const time = event.time;
+      // Read canonical OHLC even when the visible series is a close-price line.
+      let lo = 0, hi = this.candles.length - 1;
+      this.hoveredCandle = null;
+      if (event.point && event.paneIndex === 0 && typeof time === "number") while (lo <= hi) {
+        const mid = (lo + hi) >>> 1, candle = this.candles[mid]!;
+        if (candle.time === time) { this.hoveredCandle = candle; break; }
+        if (candle.time < time) lo = mid + 1; else hi = mid - 1;
+      }
       this.queueLegendUpdate();
     });
+
+    // Handle drawing anchors directly: the library intentionally consumes the
+    // second rapid click even when it is too far away to be a double-click.
+    // Pointer coordinates keep fast two-anchor tools and touch taps reliable.
+    let down: {x:number;y:number} | null = null;
+    const pointerDown = (event: PointerEvent) => { down = event.button === 0 ? {x:event.clientX,y:event.clientY} : null; };
+    const pointerUp = (event: PointerEvent) => {
+      const start = down; down = null;
+      if (!start || !this.drawingHandler || Math.hypot(event.clientX-start.x,event.clientY-start.y) > 5) return;
+      if (!(event.target instanceof HTMLCanvasElement)) return;
+      const rect = el.getBoundingClientRect(), x = event.clientX-rect.left, y = event.clientY-rect.top;
+      if (x < 0 || x > chart.timeScale().width() || y < 0 || y > chart.panes()[0]!.getHeight()) return;
+      const time = chart.timeScale().coordinateToTime(x), price = this.series?.coordinateToPrice(y);
+      if (typeof time === "number" && price != null && Number.isFinite(price) && price > 0 && this.candles.some(c => c.time === time)) this.drawingHandler({time,price});
+    };
+    el.addEventListener("pointerdown",pointerDown); el.addEventListener("pointerup",pointerUp);
+    this.drawingCleanup = () => {el.removeEventListener("pointerdown",pointerDown);el.removeEventListener("pointerup",pointerUp);};
 
     // Deep-history scroll-back: when the user pans so the left edge approaches the
     // OLDEST loaded bar (logical index near 0), ask the Shell to load more. The
@@ -196,6 +228,8 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
 
     this.chart = chart;
     this.series = series;
+    this.style = "candles";
+    this.analysis = new ChartAnalysisRenderer(chart, series);
     this.lastPriceLine = null;
     this.overlayLines = [];
     this.markersApi = null;
@@ -233,6 +267,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     }
     this.chart = null;
     this.series = null;
+    this.analysis = null;
+    this.drawingHandler = null;
+    this.drawingCleanup?.(); this.drawingCleanup = null;
+    this.overlaysRaw = [];
+    this.overlayTime = null;
     this.lastPriceLine = null;
     this.overlayLines = [];
     this.markersApi = null;
@@ -282,10 +321,13 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.newestSeriesTime = sanitized.at(-1)?.time ?? null;
     this.applyPricePrecision();
     if (updates === null) {
-      series.setData(sanitized);
+      series.setData(sanitized.map(c => this.priceData(c)));
     } else {
-      for (const candle of updates) series.update({ ...candle, time: candle.time as UTCTimestamp });
+      for (const candle of updates) series.update(this.priceData(candle));
     }
+
+    if (updates === null || updates.length) this.analysis?.refresh(this.candles, updates === null ? 0 : Math.max(0, previous.length - 1), updates === null);
+    if (updates === null) this.analysis?.refreshDrawings(this.candles);
 
     // Re-anchor any structural markers onto the NEW bar set. When the fixed-size
     // window slides forward (oldest bars roll off), a marker still pointing at a
@@ -310,6 +352,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
 
 
   setOverlays(overlays: ChartOverlay[], latestBarTime: number | null): void {
+    this.overlaysRaw = overlays; this.overlayTime = latestBarTime;
     const series = this.series;
     if (!series) return;
 
@@ -464,6 +507,41 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
   setCrosshairHandler(handler: ((candle: ChartEngineCandle | null) => void) | null): void { this.crosshairHandler = handler; }
 
+  private priceData(candle: ChartEngineCandle) {
+    return this.style === "line" ? {time:candle.time as UTCTimestamp,value:candle.close} : {...candle,time:candle.time as UTCTimestamp};
+  }
+
+  setChartStyle(style: ChartStyle): void {
+    const chart = this.chart, previous = this.series;
+    if (!chart || !previous || this.style === style) return;
+    const range = chart.timeScale().getVisibleLogicalRange();
+    this.markersApi?.detach(); this.markersApi = null;
+    this.clearStructureOverlays();
+    const options = {priceLineVisible:false,lastValueVisible:false};
+    const next: ISeriesApi<"Candlestick" | "Bar" | "Line"> = style === "line"
+      ? chart.addSeries(LineSeries, {...options,color:"#38bdf8",lineWidth:2})
+      : style === "bars"
+      ? chart.addSeries(BarSeries, {...options,upColor:"#10b981",downColor:"#ef4444"})
+      : chart.addSeries(CandlestickSeries, {...options,upColor:"#10b981",downColor:"#ef4444",wickUpColor:"#10b981",wickDownColor:"#ef4444",borderVisible:false});
+    this.style = style; this.series = next;
+    next.setData(this.candles.map(c => this.priceData(c)));
+    this.analysis?.replacePriceSeries(next, this.candles);
+    chart.removeSeries(previous);
+    this.lastPriceLine = null; this.overlayLines = []; this.precision = -1;
+    this.applyPricePrecision(); this.applyLivePriceAffordance();
+    this.setOverlays(this.overlaysRaw, this.overlayTime);
+    this.applyStructureFromRaw(true);
+    if (range) chart.timeScale().setVisibleLogicalRange(range);
+  }
+  setStudies(studies: ChartStudy[]): void { this.analysis?.setStudies(studies, this.candles); }
+  setDrawings(drawings: ChartDrawing[]): void { this.analysis?.setDrawings(drawings, this.candles); }
+  setDrawingHandler(handler: ((anchor: ChartAnchor) => void) | null): void {
+    this.drawingHandler = handler;
+    this.chart?.applyOptions({handleScroll:!handler});
+    if (this.container) this.container.style.cursor = handler ? "crosshair" : "";
+  }
+  exportImage(): string | null { return this.chart?.takeScreenshot().toDataURL("image/png") ?? null; }
+
   priceToCoordinate(price: number): number | null {
     const s = this.series;
     if (!s) return null;
@@ -496,19 +574,15 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       return;
     }
     try {
-      series.update({
-        time: candle.time as UTCTimestamp,
-        open: candle.open,
-        high: candle.high,
-        low: candle.low,
-        close: candle.close,
-      });
+      series.update(this.priceData(candle));
+      const changedIndex = this.candles.at(-1)?.time === candle.time ? this.candles.length - 1 : this.candles.length;
       this.newestSeriesTime = candle.time;
       this.streamTip = { ...candle };
       if (this.hoveredCandle?.time === candle.time) this.hoveredCandle = { ...candle };
       this.queueLegendUpdate();
       if (this.candles.at(-1)?.time === candle.time) this.candles[this.candles.length - 1] = { ...candle };
       else this.candles.push({ ...candle });
+      this.analysis?.refresh(this.candles, changedIndex, false);
       if (this.lastPriceLine && this.feedState.livePriceAffordance) this.lastPriceLine.applyOptions({ price: candle.close });
     } catch { /* ignore a bad streaming update */ }
   }

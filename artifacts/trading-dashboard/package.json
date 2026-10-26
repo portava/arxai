@@ -55,7 +55,7 @@
     "test:testing-lab": "vitest run src/components/testing-lab/TestingLab.test.tsx src/components/testing-lab/ChartPanels.test.tsx",
     "test:live-ai-harness": "vitest run src/pages/live-ai-auto-test.honesty.test.tsx",
     "test:mission-honest-labelling": "vitest run src/pages/profit-missions.honest-labelling.test.ts",
-    "test:chart-performance": "vitest run src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts src/lib/chart-engine/lightweightChartsAdapter.markers.test.ts"
+    "test:chart-performance": "vitest run src/lib/chart-engine/lightweightChartsAdapter.performance.test.ts src/lib/chart-engine/lightweightChartsAdapter.markers.test.ts src/lib/chart-engine/lightweightChartsAdapter.workbench.test.ts src/lib/chart-engine/chartStudies.test.ts src/lib/chart-engine/chartWorkspace.test.ts src/components/charts/ChartWorkbenchTools.test.tsx src/components/charts/SmartChartLayout.test.tsx"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

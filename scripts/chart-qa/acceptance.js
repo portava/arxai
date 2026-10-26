@@ -1,6 +1,8 @@
 async page => {
  const errors=[]; page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:4178');
+ await page.evaluate(()=>localStorage.clear()); await page.reload();
+ await page.setViewportSize({width:1440,height:1000});
  await page.getByRole('button',{name:'Latest',exact:true}).waitFor();
  await page.getByRole('button',{name:'Fit history',exact:true}).click();
  await page.getByRole('button',{name:'Latest',exact:true}).click();

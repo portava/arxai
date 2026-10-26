@@ -2,6 +2,7 @@ import React, {useState} from "react";
 import {createRoot} from "react-dom/client";
 import "./styles.css";
 import {ARXNativeChart} from "../../artifacts/trading-dashboard/src/components/charts/ARXNativeChart";
+import {SmartChartLayout} from "../../artifacts/trading-dashboard/src/components/charts/SmartChartLayout";
 // This browser-only fixture cannot open a network stream or execute an order.
 class OfflineEventSource { onmessage: any; onerror: any; constructor(){ (window as any).chartStream=this; } close(){} }
 (window as any).EventSource=OfflineEventSource;
@@ -11,13 +12,15 @@ function Workbench(){
  <h1 style={{fontSize:24,fontWeight:600}}>Smart Chart · Browser acceptance</h1>
  <p style={{color:"#fbbf24",margin:"8px 0 20px"}}>OFFLINE FIXTURE — synthetic candles, no market connection or trading</p>
  <button onClick={()=>setSymbol(s=>s==="EURUSD"?"XAUUSD":"EURUSD")} style={{marginBottom:12}}>Switch instrument</button>
- <ARXNativeChart symbol={symbol} limit={5000} height={520} showFeedStatus={false}/>
+ <SmartChartLayout symbol={symbol}><ARXNativeChart symbol={symbol} limit={5000} height={520} showFeedStatus={false}/></SmartChartLayout>
  </main>;
 }
-createRoot(document.getElementById("root")!).render(<Workbench/>);
+const root=createRoot(document.getElementById("root")!);
+root.render(<Workbench/>);
+if(import.meta.hot) import.meta.hot.dispose(()=>root.unmount());
 
 // Exposed only by this isolated fixture, never by the shipped application.
-(window as any).runChartBenchmark = async (moduleUrl?: string) => {
+(window as any).runChartBenchmark = async (moduleUrl?: string, withStudies = false) => {
  const {LightweightChartsAdapter} = moduleUrl
   ? await import(/* @vite-ignore */ moduleUrl)
   : await import("../../artifacts/trading-dashboard/src/lib/chart-engine/lightweightChartsAdapter");
@@ -30,6 +33,7 @@ createRoot(document.getElementById("root")!).render(<Workbench/>);
  series.setData=(data:any)=>{replacements++;return setData(data);};
  series.update=(data:any)=>{updates++;return update(data);};
  adapter.setCandles(bars);
+ if (withStudies) { const {STUDY_DEFAULTS}=await import("../../artifacts/trading-dashboard/src/lib/chart-engine/chartStudies"); adapter.setStudies(STUDY_DEFAULTS); }
  const costs:number[]=[];
  for(let n=0;n<100;n++){
   const next=bars.map(b=>({...b})); next[next.length-1]!.close=1.15+(n%10)*.001;
@@ -49,6 +53,6 @@ createRoot(document.getElementById("root")!).render(<Workbench/>);
  await new Promise(requestAnimationFrame);
  const range=scale.getVisibleLogicalRange();
  const percentile=(xs:number[],p:number)=>xs.sort((a,b)=>a-b)[Math.floor((xs.length-1)*p)];
- const result={bars:5000,polls:100,ticks:1000,fullReplacements:replacements,incrementalUpdates:updates,pollP95Ms:percentile(costs,.95),tickP95Ms:percentile(tickCosts,.95),range,historyAnchorPreserved:Math.abs(range.from-1100)<.01&&Math.abs(range.to-1200)<.01};
+ const result={withStudies,bars:5000,polls:100,ticks:1000,fullReplacements:replacements,incrementalUpdates:updates,pollP95Ms:percentile(costs,.95),tickP95Ms:percentile(tickCosts,.95),range,historyAnchorPreserved:Math.abs(range.from-1100)<.01&&Math.abs(range.to-1200)<.01};
  adapter.destroy();el.remove();return result;
 };

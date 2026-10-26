@@ -11,6 +11,7 @@ From the repository root, with dashboard dependencies installed:
 node scripts/chart-qa/server.mjs
 playwright-cli -s=arx-chart open http://127.0.0.1:4178 --browser=chrome
 playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/acceptance.js
+playwright-cli -s=arx-chart run-code --filename=scripts/chart-qa/workbench-acceptance.js
 ```
 
 The server binds only to 127.0.0.1. Stop it when finished. If the local workspace
@@ -26,6 +27,18 @@ The benchmark runs 100 tail-changing snapshot refreshes and 1,000 forming-bar
 updates, followed by a 100-bar history prepend. It measures synchronous adapter
 work using performance.now. Every test starts with 5,000 synthetic candles.
 Only the initial load and history prepend should replace the entire series.
+
+Workbench acceptance covers styles, configurable studies and pane cleanup,
+three drawing tools, editable objects, undo/redo, symbol/timeframe persistence,
+templates, an annotated PNG, two-chart layouts and mobile touch placement. It
+also repeats the benchmark with all five studies enabled. Both scripts clear
+only this isolated fixture origin's browser storage before running. Exported
+images and browser screenshots are written under `/private/tmp/` for inspection.
+
+The fixture mounts the real `SmartChartLayout` and primary `ARXNativeChart`.
+The comparison chart uses the same synthetic data hooks. No order ticket or
+authenticated application shell is present, so these browser checks are not
+end-to-end deployment or broker tests.
 
 For a same-machine comparison, the benchmark optionally accepts a module URL
 exporting the baseline LightweightChartsAdapter. The recorded baseline was copied

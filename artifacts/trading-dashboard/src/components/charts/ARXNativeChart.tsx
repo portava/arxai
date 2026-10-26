@@ -29,6 +29,8 @@ import {
   Minimize2,
   ArrowRightToLine,
 } from "lucide-react";
+import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
@@ -183,6 +185,8 @@ function checkOhlcDiversity(candles: { open: number; high: number; low: number; 
 }
 
 export interface ARXNativeChartProps {
+  /** Distinguishes browser preferences for primary and comparison views. */
+  workspaceId?: "primary" | "comparison";
   /** ARX-canonical or display symbol (e.g. "EURUSD", "FX:EURUSD", "V75"). */
   symbol: string;
   /** Controlled timeframe. When omitted the chart manages its own (persisted). */
@@ -242,6 +246,7 @@ export interface ARXNativeChartProps {
 }
 
 export function ARXNativeChart({
+  workspaceId = "primary",
   symbol,
   timeframe: controlledTf,
   onTimeframeChange,
@@ -267,7 +272,12 @@ export function ARXNativeChart({
 
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [scaleMode, setScaleMode] = useState<"linear" | "log">("linear");
+  const preferencesKey = workspaceId === "primary" ? PREFERENCES_KEY : `${PREFERENCES_KEY}:${workspaceId}`;
+  const [preferences, setPreferences] = useState(() => validatePreferences(readChartStorage(preferencesKey) ?? readChartStorage(PREFERENCES_KEY)));
+  const [preferencesSaved, setPreferencesSaved] = useState(true);
+  const scaleMode = preferences.scale;
+  const setScaleMode = (fn: (mode: "linear" | "log") => "linear" | "log") => setPreferences(p=>({...p,scale:fn(p.scale)}));
+  useEffect(()=>{setPreferencesSaved(writeChartStorage(preferencesKey,preferences));},[preferences,preferencesKey]);
   const legendRef = useRef<HTMLOutputElement | null>(null);
   const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
     const bar = candle;
@@ -285,7 +295,7 @@ export function ARXNativeChart({
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setExpanded(false);
       if (event.key === "Tab") {
-        const items = cardRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], [tabindex="0"]');
+        const items = cardRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), summary, a[href], [tabindex="0"]');
         const first = items?.[0];
         const last = items?.[items.length - 1];
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
@@ -482,6 +492,9 @@ export function ARXNativeChart({
 
   useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
   useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
+
+  useEffect(() => { adapterRef.current?.setChartStyle?.(preferences.style); }, [preferences.style, chartEpoch]);
+  useEffect(() => { adapterRef.current?.setStudies?.(preferences.studies); }, [preferences.studies, chartEpoch]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
@@ -1127,6 +1140,8 @@ export function ARXNativeChart({
           {expanded ? "Exit fullscreen" : "Fullscreen"}
         </Button>
       </div>
+      <ChartWorkbenchTools key={`${resolvedSymbol}:${timeframe}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
         Move the crosshair over a candle to inspect it
       </output>

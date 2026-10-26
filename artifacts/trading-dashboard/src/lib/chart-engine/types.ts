@@ -1,4 +1,6 @@
 import type { ChartOverlay } from "@/lib/chart-overlays";
+import type { ChartStudy } from "./chartStudies";
+import type { ChartAnchor, ChartDrawing, ChartStyle } from "./chartWorkspace";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ARX Smart Chart — swappable chart-engine adapter contract (Task #373).
@@ -77,7 +79,7 @@ export interface ChartEngineCapabilities {
   zones: boolean;
   /** Price↔coordinate API for DOM overlays (e.g. floating P/L bubbles). */
   coordinateApi: boolean;
-  /** User drawing tools (trendlines, rays, etc.). Staged — not built yet. */
+  /** User drawing tools, when supported by the active renderer. */
   drawingTools: boolean;
   /** Draggable order/SL/TP handles. Staged — not built yet. */
   draggableOrders: boolean;
@@ -156,6 +158,11 @@ export interface ChartEngineAdapter {
   fitHistory?(): void;
   setScaleMode?(mode: "linear" | "log"): void;
   setCrosshairHandler?(handler: ((candle: ChartEngineCandle | null) => void) | null): void;
+  setChartStyle?(style: ChartStyle): void;
+  setStudies?(studies: ChartStudy[]): void;
+  setDrawings?(drawings: ChartDrawing[]): void;
+  setDrawingHandler?(handler: ((anchor: ChartAnchor) => void) | null): void;
+  exportImage?(): string | null;
 
   // ── Optional / staged. Present so the Shell can feature-detect support. ──────
   /** Update the most-recent forming bar from the existing tick stream. */

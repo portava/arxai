@@ -1,4 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { SmartChartLayout } from "@/components/charts/SmartChartLayout";
+import { readChartStorage, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import TradingViewLiveChart from "@/components/charts/TradingViewLiveChart";
 import {
   ARXNativeChart,
@@ -53,15 +55,18 @@ export default function LiveChartPage() {
   // as a small label so the Shell is honest about which engine is drawing and so
   // a future engine swap is visible without code spelunking.
   const activeEngine = CHART_ENGINE_DESCRIPTORS[DEFAULT_CHART_ENGINE_ID];
-  // TradingView is the proven default; ARX Native is shown beside it for the
-  // user to opt into. The chart-symbol bus is shared so switching views keeps
-  // the same instrument.
-  const [chartView, setChartView] = useState<ChartView>("tv");
+  // Smart Chart is the workspace default; the external reference is optional.
+  const [chartView, setChartView] = useState<ChartView>(()=>readChartStorage("arx.chart.view.v1") === "tv" ? "tv" : "native");
+  useEffect(()=>{writeChartStorage("arx.chart.view.v1",chartView);},[chartView]);
   const [chartSymbol] = useChartSymbol();
   // The Shell owns the timeframe (controlled). The Native renderer reflects this
   // value and reports user changes back via onTimeframeChange, so the Shell — not
   // the renderer — is the single source of truth for the timeframe on screen.
-  const [timeframe, setTimeframe] = useState<ArxTimeframe>("M15");
+  const [timeframe, setTimeframe] = useState<ArxTimeframe>(()=>{
+    const saved=readChartStorage("arx.chart.primaryTimeframe.v1");
+    return ["M1","M5","M15","M30","H1","H4","D1"].includes(String(saved)) ? saved as ArxTimeframe : "M15";
+  });
+  useEffect(()=>{writeChartStorage("arx.chart.primaryTimeframe.v1",timeframe);},[timeframe]);
   const onTimeframeChange = useCallback((tf: ArxTimeframe) => setTimeframe(tf), []);
   // Level 4 — read-only open-position overlays for the ARX Native chart, sourced
   // from the existing per-user live-position endpoint. Always called (hooks rule)
@@ -132,7 +137,7 @@ export default function LiveChartPage() {
     <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold leading-tight">
-          Live Market Chart
+          Smart Chart
           {mode.envelope && (
             <Badge variant="outline" className="text-[10px]" data-testid="chart-mode-badge">{mode.cleanModeLabel}</Badge>
           )}
@@ -140,7 +145,7 @@ export default function LiveChartPage() {
         <p className="text-sm text-txt-secondary">
           {chartView === "tv"
             ? "TradingView Advanced Real-Time Chart. Symbols, intervals, indicators, and watchlist available below."
-            : "ARX Native chart — candles served directly by the ARX market-data contract. Switch back to TradingView anytime."}
+            : "Your chart workspace — price action, studies, drawings and multiple timeframes with visible feed quality."}
         </p>
       </div>
       <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-card p-1" role="tablist" data-testid="chart-view-toggle">
@@ -164,7 +169,7 @@ export default function LiveChartPage() {
           aria-selected={chartView === "native"}
           data-testid="chart-view-native"
         >
-          <CandlestickChart className="mr-1.5 h-3.5 w-3.5" /> ARX Native
+          <CandlestickChart className="mr-1.5 h-3.5 w-3.5" /> Smart Chart
         </Button>
       </div>
       <div className="flex items-start gap-2 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm">
@@ -175,24 +180,26 @@ export default function LiveChartPage() {
             : <>Read-only chart. The trade ticket on this page still requires your confirmation, and in {mode.cleanModeLabel} no real broker order is placed.</>}
         </p>
       </div>
-      <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         {chartView === "tv" ? (
           <TradingViewLiveChart defaultSymbol={chartSymbol || "V75"} height={680} />
         ) : (
-          <div className="space-y-4">
-            <ARXNativeChart
-              symbol={chartSymbol}
-              mode={mode.cleanModeLabel}
-              timeframe={timeframe}
-              onTimeframeChange={onTimeframeChange}
-              height={680}
-              showFeedStatus
-              showFallbackToggle
-              onRequestFallback={() => setChartView("tv")}
-              overlays={[...overlayData.overlays, ...aiOverlays.overlays, ...setupPreview.overlays]}
-              onChartContextChange={onChartContextChange}
-              onIntelligenceChange={onIntelligenceChange}
-            />
+          <div className="min-w-0 space-y-4">
+            <SmartChartLayout symbol={chartSymbol}>
+              <ARXNativeChart
+                symbol={chartSymbol}
+                mode={mode.cleanModeLabel}
+                timeframe={timeframe}
+                onTimeframeChange={onTimeframeChange}
+                height={680}
+                showFeedStatus
+                showFallbackToggle
+                onRequestFallback={() => setChartView("tv")}
+                overlays={[...overlayData.overlays, ...aiOverlays.overlays, ...setupPreview.overlays]}
+                onChartContextChange={onChartContextChange}
+                onIntelligenceChange={onIntelligenceChange}
+              />
+            </SmartChartLayout>
             <p className="text-[10px] text-txt-secondary" data-testid="chart-engine-label">
               Rendering engine: {activeEngine.label}
             </p>
