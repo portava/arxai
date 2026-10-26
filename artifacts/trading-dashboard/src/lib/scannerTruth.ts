@@ -44,13 +44,13 @@ import {
 
 // ── Stable read-ID generator (display-only, no execution semantics) ──────────
 // Derived deterministically from the input's identity fields: same symbol +
-// timeframe + candle window → SAME readId on every call. This guarantees that
+// timeframe + source + candle window + last price → SAME readId on every call. This guarantees that
 // the header strip, chart CTA, and Eleanor panel carry an identical readId for
 // the same market snapshot, enabling reliable cross-surface mismatch tracing.
 // A new candle (different lastTime or candleCount) produces a different readId,
 // naturally advancing the cycle identity without any random component.
 function genReadId(input: ScannerTruthInputs): string {
-  const key = `${input.symbolInternal}|${input.timeframe}|${input.lastTime ?? ""}|${String(input.candleCount)}`;
+  const key = `${input.symbolInternal}|${input.timeframe}|${input.feedStatus?.source ?? ""}|${input.lastTime ?? ""}|${input.lastClose ?? ""}|${String(input.candleCount)}`;
   let h = 0;
   for (let i = 0; i < key.length; i++) {
     h = (Math.imul(31, h) + key.charCodeAt(i)) | 0;
@@ -333,8 +333,12 @@ function genericSourceLabel(tier: FeedProviderTier): string {
 function ageMsOf(iso: string | null, nowMs: number): number | null {
   if (!iso) return null;
   const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return null;
-  return Math.max(0, nowMs - t);
+  if (!Number.isFinite(t) || !Number.isFinite(nowMs) || t > nowMs) return null;
+  return nowMs - t;
+}
+
+function positivePrice(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 export function resolveScannerTruth(
@@ -366,6 +370,7 @@ export function resolveScannerTruth(
   const provider = providerInfo(fs?.source ?? null);
   const sourceLabel = genericSourceLabel(provider.tier);
   const candleAgeMs = ageMsOf(input.lastTime, nowMs);
+  const lastClose = positivePrice(input.lastClose);
 
   // ── Candle status (freshness + minimum-candle gating) ──────────────────────
   let candleStatus: CandleStatus;
@@ -377,6 +382,9 @@ export function resolveScannerTruth(
   } else if (!minMet) {
     candleStatus = "insufficient";
     candleReason = `Only ${count} ${count === 1 ? "candle" : "candles"} loaded — need at least ${thr.minCandles} on ${input.timeframe} for a reliable read.`;
+  } else if (!fs?.source || fs.symbol?.trim().toUpperCase() !== input.symbolInternal.trim().toUpperCase() || candleAgeMs == null || lastClose == null) {
+    candleStatus = "historical_only";
+    candleReason = "The latest candle's market, source, time or price is unconfirmed — historical context only.";
   } else if (displayStatus === "STALE") {
     candleStatus = "stale";
     candleReason = "The latest candle is frozen — this is historical context, not a live read.";
@@ -388,7 +396,7 @@ export function resolveScannerTruth(
     candleReason = "Delayed market data — readable, but slightly behind live.";
   } else if (
     displayStatus === "LIVE" &&
-    (candleAgeMs == null || candleAgeMs <= thr.candleMaxAgeMs)
+    candleAgeMs <= thr.candleMaxAgeMs
   ) {
     candleStatus = "live";
     candleReason = "Live, confirmed candles.";
@@ -401,12 +409,16 @@ export function resolveScannerTruth(
   // ── Quote status (no real quote source today → unavailable, honestly) ───────
   const q = input.quote ?? null;
   const quoteAgeMs = ageMsOf(q?.timestamp ?? null, nowMs);
+  const quoteMid = positivePrice(q?.mid);
   let quoteStatus: QuoteStatus;
   let quoteReason: string;
-  if (!q || q.mid == null) {
+  if (!q || quoteMid == null || !q.source) {
     quoteStatus = "unavailable";
     quoteReason = "No separate live quote feed — price shown is the latest candle close.";
-  } else if (quoteAgeMs != null && quoteAgeMs <= thr.quoteMaxAgeMs) {
+  } else if (quoteAgeMs == null) {
+    quoteStatus = "unavailable";
+    quoteReason = "The quote's observation time is unconfirmed.";
+  } else if (quoteAgeMs <= thr.quoteMaxAgeMs) {
     quoteStatus = "live";
     quoteReason = "Live quote.";
   } else if (quoteAgeMs != null && quoteAgeMs <= thr.quoteMaxAgeMs * 6) {
@@ -419,7 +431,7 @@ export function resolveScannerTruth(
 
   // Displayed price: real candle close (NOT a simulator quote). When a real
   // quote is supplied we surface it; otherwise the candle close is the price.
-  const priceMid = q?.mid ?? input.lastClose ?? null;
+  const priceMid = quoteStatus === "live" ? quoteMid : lastClose;
 
   // ── Quote↔candle consistency ───────────────────────────────────────────────
   let delta: number | null = null;
@@ -427,10 +439,12 @@ export function resolveScannerTruth(
   let withinTol: boolean | null = null;
   let consistencyStatus: ConsistencyStatus = "unknown";
   let consistencyReason =
-    "No independent quote to compare — price comes straight from the candle feed.";
-  if (q && q.mid != null && input.lastClose != null && input.lastClose !== 0) {
-    delta = q.mid - input.lastClose;
-    deltaPct = Math.abs(delta / input.lastClose) * 100;
+    q && quoteStatus !== "live"
+      ? "No confirmed current quote to compare — price comes straight from the candle feed."
+      : "No independent quote to compare — price comes straight from the candle feed.";
+  if (q && quoteStatus === "live" && quoteMid != null && lastClose != null) {
+    delta = quoteMid - lastClose;
+    deltaPct = Math.abs(delta / lastClose) * 100;
     const tolPct = consistencyTolerancePct(fs?.assetClass);
     withinTol = deltaPct <= tolPct;
     consistencyStatus = withinTol ? "aligned" : "mismatch";
@@ -742,7 +756,7 @@ export function resolveScannerTruth(
     userMessage,
     internalReasonCode,
     readId: genReadId(input),
-    readTimestamp: Date.now(),
+    readTimestamp: nowMs,
   };
 
   // ── Shared trade-health / readiness DISPLAY verdict (Trade Health contract) ──
@@ -776,8 +790,8 @@ export function resolveScannerTruth(
     symbolInternal: input.symbolInternal,
     timeframe: input.timeframe,
     quote: {
-      bid: q?.bid ?? null,
-      ask: q?.ask ?? null,
+      bid: positivePrice(q?.bid),
+      ask: positivePrice(q?.ask),
       mid: priceMid,
       source: q?.source ?? null,
       sourceLabel,
@@ -797,7 +811,7 @@ export function resolveScannerTruth(
       minRequired: thr.minCandles,
       firstTime: input.firstTime,
       lastTime: input.lastTime,
-      lastClose: input.lastClose,
+      lastClose,
       ageMs: candleAgeMs,
       status: candleStatus,
       reason: candleReason,
