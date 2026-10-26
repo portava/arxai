@@ -1,7 +1,8 @@
 # Tier 1: owner runbook for production
 
-Current scope: PR #68 plus the operational-readiness follow-up; approved Option A.
-The architecture is complete under Scorecard v2; operational readiness still requires
+Current scope: approved Option A, with the exact measured revision and current
+verification linked from [Scorecard results](../scripts/arx-scorecard/results/README.md).
+The architecture gates pass under Scorecard v2; operational readiness still requires
 the evidence below. Earlier rounds and owner decisions 1–19 remain recorded. This is
 a runbook for the owner. **Nothing in it has been run against production.** No
 agent deploys, applies a migration, alters a production row, arms live
@@ -679,3 +680,8 @@ checks do not replace the operational evidence above.
 the audit-correlated log event and owner-scoped dashboard notification for
 `OPERATIONAL_RATE_CAP_REACHED`. Offline tests prove the code path; production
 log collection and external monitoring receipt still require owner verification.
+
+The [non-broker completion report](TIER1_NON_BROKER_COMPLETION.md) records the
+October 26 release preparation and remaining external prerequisites.
+Use [market-data readiness](TIER1_MARKET_DATA_READINESS.md) to distinguish current
+quotes from usable intraday history; the diagnostic does not connect to a broker.
