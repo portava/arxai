@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { isScannerMapFresh } from "./scannerMapFreshness";
 import { Radar, Loader2, RefreshCw, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -203,6 +204,12 @@ export function BroadScanOpportunityMap({
   onScanned?: (scanned: boolean) => void;
 }) {
   const { name } = useAssistantName();
+  const [now, setNow] = useState(Date.now);
+  const [refreshMs, setRefreshMs] = useState<10_000 | 60_000 | 0>(10_000);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
   const params = useMemo(
     () => ({
       marketGroup,
@@ -214,7 +221,9 @@ export function BroadScanOpportunityMap({
   const { data, isLoading, isFetching, isError, refetch } = useGetMeOpportunityMap(params, {
     query: {
       queryKey: getGetMeOpportunityMapQueryKey(params),
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: true,
+      refetchInterval: refreshMs || false,
+      refetchIntervalInBackground: false,
     },
   });
 
@@ -263,7 +272,17 @@ export function BroadScanOpportunityMap({
     rawMap.best != null
       ? rawMap
       : null;
-  const bestVsSelected = data?.bestVsSelected ?? null;
+  const snapshotFresh = !isError && isScannerMapFresh(data?.generatedAt, now);
+  const capForRow = (row: Pick<OpportunityMapRow, "symbol">): ScannerActionability | null => {
+    if (!snapshotFresh) return "FEED_LIMITED";
+    return selectedKey != null && symbolKey(row.symbol) === selectedKey ? selectedFeedCap : null;
+  };
+  const rawBestVsSelected = data?.bestVsSelected ?? null;
+  const bestVsSelected = snapshotFresh && (!rawBestVsSelected?.best || !capForRow(rawBestVsSelected.best))
+    ? rawBestVsSelected : null;
+  const safeBest = map ? Object.fromEntries(Object.entries(map.best).map(([kind, row]) =>
+    [kind, row && !capForRow(row) ? row : null],
+  )) as OpportunityBestPicks : null;
   const scannedAtLabel = formatScannedAt(data?.generatedAt);
   // Skipped symbols + the universe total (M). `universeCount` is server-truth;
   // we fall back to scanned + skipped so an older cached payload still reconciles.
@@ -280,15 +299,15 @@ export function BroadScanOpportunityMap({
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4" data-testid="opportunity-map">
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2.5">
         <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25">
           <Radar className="h-[18px] w-[18px]" />
         </span>
-        <div>
+        <div className="min-w-0 flex-1 basis-48">
           <div className="text-[15px] font-semibold text-foreground">Opportunity Map</div>
           {map && (
             <div className="text-xs text-txt-muted" data-testid="opportunity-map-summary">
-              {map.scannedCount} of {universeCount} scanned · {map.liveCount} on live data
+              {map.scannedCount} of {universeCount} scanned · {map.liveCount} {snapshotFresh ? "on live data" : "live at last scan"}
               {skippedSymbols.length > 0 && (
                 <span data-testid="opportunity-map-skipped-count"> · {skippedSymbols.length} skipped</span>
               )}
@@ -296,10 +315,23 @@ export function BroadScanOpportunityMap({
             </div>
           )}
         </div>
+        <label className="ml-auto text-xs text-txt-muted">
+          Refresh
+          <select
+            aria-label="Scanner refresh interval"
+            className="ml-1 rounded border border-border bg-background p-1 text-foreground"
+            value={refreshMs}
+            onChange={(event) => setRefreshMs(Number(event.target.value) as 10_000 | 60_000 | 0)}
+          >
+            <option value={10000}>10 seconds</option>
+            <option value={60000}>1 minute</option>
+            <option value={0}>Manual</option>
+          </select>
+        </label>
         <Button
           size="sm"
           variant="outline"
-          className="ml-auto h-8 gap-1.5 px-2.5 text-xs"
+          className="h-8 gap-1.5 px-2.5 text-xs"
           disabled={isFetching}
           onClick={() => void refetch()}
           data-testid="opportunity-map-refresh"
@@ -308,6 +340,12 @@ export function BroadScanOpportunityMap({
           Rescan
         </Button>
       </div>
+
+      {map && !snapshotFresh && (
+        <div className="mt-3 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning" data-testid="opportunity-map-expired" role="status">
+          This scan needs a fresh check. Directions, scores and best picks stay hidden until a recent scan succeeds.
+        </div>
+      )}
 
       {/* Best vs selected */}
       {bestVsSelected?.message && (
@@ -366,7 +404,7 @@ export function BroadScanOpportunityMap({
       )}
 
       {/* Best picks */}
-      {map && <BestPicks best={map.best} onPick={onPick} />}
+      {map && snapshotFresh && <BestPicks best={safeBest} onPick={onPick} />}
 
       {/* Body */}
       <div className="mt-3">
@@ -388,7 +426,7 @@ export function BroadScanOpportunityMap({
               // Group-honesty cap: a group whose EVERY row lacks live data shows
               // honest degraded header wording instead of the bucket's (possibly
               // affirmative) category label — never the reverse. Display-only.
-              const allDegraded = rows.every((r) => !r.hasLiveData);
+              const allDegraded = rows.every((r) => !r.hasLiveData || capForRow(r) !== null);
               const meta = allDegraded ? DEGRADED_GROUP_META : CATEGORY_META[cat];
               return (
                 <div
@@ -414,7 +452,7 @@ export function BroadScanOpportunityMap({
                           key={`${r.symbol}-${r.kind}`}
                           row={r}
                           onPick={onPick}
-                          feedCapOverride={isSelectedRow ? selectedFeedCap : null}
+                          feedCapOverride={capForRow(r)}
                           scanTimeframe={isSelectedRow ? scanTimeframe : null}
                           chartTimeframe={isSelectedRow ? chartTimeframe : null}
                         />
