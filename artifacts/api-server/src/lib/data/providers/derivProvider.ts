@@ -317,6 +317,8 @@ export function getDerivSymbolFeedStatus(
 export interface DerivCandlesResult {
   ok: boolean;
   reason: string | null;
+  /** Transport captured before any awaited work, never inferred on completion. */
+  source: "deriv" | "deriv_public" | null;
   candles: DerivCandle[];
   symbol: string;
   derivSymbol: string | null;
@@ -334,22 +336,23 @@ export async function getDerivCandles(
 ): Promise<DerivCandlesResult> {
   const map = resolveDerivSymbol(symbol);
   if (!map) {
-    return { ok: false, reason: "SYMBOL_UNAVAILABLE_FROM_DERIV_FEED", candles: [], symbol, derivSymbol: null, granularitySeconds: null };
+    return { ok: false, reason: "SYMBOL_UNAVAILABLE_FROM_DERIV_FEED", source: null, candles: [], symbol, derivSymbol: null, granularitySeconds: null };
   }
   const granularity = toDerivGranularity(timeframe);
   if (!granularity) {
-    return { ok: false, reason: "TIMEFRAME_UNSUPPORTED", candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: null };
+    return { ok: false, reason: "TIMEFRAME_UNSUPPORTED", source: null, candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: null };
   }
   const client = getDerivFeedClient();
+  const source = client.getMode() === "public" ? "deriv_public" : "deriv";
   if (!client.configured()) {
-    return { ok: false, reason: "DERIV_NOT_CONFIGURED", candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
+    return { ok: false, reason: "DERIV_NOT_CONFIGURED", source, candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
   }
   client.ensureConnection();
   try {
     const candles = await client.getCandles(map.derivId, granularity, count, endEpochSeconds);
-    return { ok: candles.length > 0, reason: candles.length > 0 ? null : "NO_CANDLES_RETURNED", candles, symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
+    return { ok: candles.length > 0, reason: candles.length > 0 ? null : "NO_CANDLES_RETURNED", source, candles, symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
   } catch (err) {
-    return { ok: false, reason: (err as Error).message.replace(/app_id=[^&\s]+/gi, "app_id=<redacted>"), candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
+    return { ok: false, reason: (err as Error).message.replace(/app_id=[^&\s]+/gi, "app_id=<redacted>"), source, candles: [], symbol, derivSymbol: map.derivId, granularitySeconds: granularity };
   }
 }
 

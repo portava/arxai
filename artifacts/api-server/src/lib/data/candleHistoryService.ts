@@ -371,6 +371,13 @@ async function getLegacyCandleHistory(args: GetCandleHistoryArgs): Promise<Candl
         fetches += 1;
         cacheHit = false;
         if (source !== derivMarketDataSource()) { providerLimitReached = true; providerMessage = "The Deriv data source changed during the history read. Reload the chart."; break; }
+        // Current configuration can return to its prior value while the fetch
+        // awaits. Only the captured producer can attest this response's source.
+        if (res.source !== source) {
+          providerLimitReached = true;
+          providerMessage = "The history response could not verify its original Deriv transport. Reload the chart.";
+          break;
+        }
         if (!res.ok || res.candles.length === 0) {
           providerLimitReached = true;
           providerMessage = res.reason
