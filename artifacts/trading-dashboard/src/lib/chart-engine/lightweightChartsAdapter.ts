@@ -35,6 +35,8 @@ import type { ChartStudy } from "./chartStudies";
 import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
 import { applyStructureLines, clearStructureLines } from "./structureLines";
 import { candleAtLinkedTime, validTimeRange, type ChartTimeRange, type ChartViewEvent } from "./chartViewLink";
+import { panChartWindow, zoomChartWindow } from "./chartNavigation";
+import { SmartChartAnnotationPrimitive, type SmartChartAnnotation } from "./smartChartAnnotation";
 
 
 const DEFAULT_VISIBLE_DESKTOP = 150;
@@ -82,6 +84,13 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   private analysis: ChartAnalysisRenderer | null = null;
   private drawingEditor: ChartDrawingEditor | null = null;
   private drawingHandler: ((anchor: ChartAnchor) => void) | null = null;
+  private drawingInteraction: DrawingInteraction | null = null;
+  private navigationMode: "inspect" | "pan" = "inspect";
+  private viewportListeners = new Set<() => void>();
+  private viewportFrame: number | null = null;
+  private smartAnnotation: SmartChartAnnotation | null = null;
+  private smartAnnotationKey = "null";
+  private smartAnnotationPrimitive: SmartChartAnnotationPrimitive | null = null;
   private overlaysRaw: ChartOverlay[] = [];
   private overlayTime: number | null = null;
   private lastPriceLine: IPriceLine | null = null;
@@ -220,6 +229,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // OLDEST loaded bar (logical index near 0), ask the Shell to load more. The
     // handler guards its own concurrency; this only signals intent. View-only.
     chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      this.queueViewportUpdate();
       if (this.ownsRange) { this.pendingRange = true; this.queueViewLinkUpdate(); }
       // Linking only inspects loaded history. A clipped follower must not
       // silently page its entire provider history across several views.
@@ -305,6 +315,15 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   destroy(): void {
+    if (this.viewportFrame != null) cancelAnimationFrame(this.viewportFrame);
+    this.viewportFrame = null;
+    this.viewportListeners.clear();
+    this.navigationMode = "inspect";
+    this.smartAnnotation = null;
+    this.smartAnnotationKey = "null";
+    this.smartAnnotationPrimitive = null;
+    this.drawingInteraction = null;
+    if (this.container) delete this.container.dataset.chartNavigation;
     if (this.resizeObserver) {
       try { this.resizeObserver.disconnect(); } catch { /* already gone */ }
       this.resizeObserver = null;
@@ -393,6 +412,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     const trimTail = removed > 0 && removed <= 32 && unchanged === sanitized.length;
     const bulk = updates != null && updates.length > 32;
     this.candles = sanitized;
+    this.smartAnnotationPrimitive?.setData(this.smartAnnotation, this.candles);
     this.newestSeriesTime = sanitized.at(-1)?.time ?? null;
     this.applyPricePrecision();
     const reconcile = () => {
@@ -433,6 +453,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
 
     if (this.linkedRange) this.setLinkedTimeRange(this.linkedRange);
     if (this.linkedCursor !== undefined) this.setLinkedCrosshair(this.linkedCursor);
+    this.queueViewportUpdate();
   }
 
 
@@ -529,6 +550,9 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     const chart = this.chart;
     const series = this.series;
     if (!chart || !series) return;
+    // A focused smart explanation owns the visual structure budget. Keep raw
+    // server geometry available, but do not draw competing pattern stories.
+    if (this.smartAnnotation) { this.clearStructureOverlays(); return; }
 
     const lines = this.structureLinesRaw;
     const rawMarkers = this.structureMarkersRaw;
@@ -588,6 +612,57 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     const scale = this.chart?.timeScale();
     if (animated) scale?.scrollToRealTime();
     else scale?.scrollToPosition(scale.options().rightOffset, false);
+  }
+  panBy(fraction: number): boolean {
+    if (!this.chart) return false;
+    const range = panChartWindow(this.chart.timeScale().getVisibleLogicalRange(), fraction, this.candles.length);
+    if (!range) return false;
+    this.takeRangeOwnership();
+    this.chart.timeScale().setVisibleLogicalRange(range);
+    return true;
+  }
+  zoomBy(factor: number): boolean {
+    if (!this.chart) return false;
+    const range = zoomChartWindow(this.chart.timeScale().getVisibleLogicalRange(), factor, this.candles.length);
+    if (!range) return false;
+    this.takeRangeOwnership();
+    this.chart.timeScale().setVisibleLogicalRange(range);
+    return true;
+  }
+  getVisibleCandles(): ChartEngineCandle[] {
+    const range = this.chart?.timeScale().getVisibleLogicalRange();
+    if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to) || range.to < range.from) return [];
+    return this.candles.slice(Math.max(0, Math.ceil(range.from)), Math.max(0, Math.floor(range.to) + 1)).map(candle => ({...candle}));
+  }
+  subscribeViewport(listener: () => void): () => void {
+    this.viewportListeners.add(listener);
+    return () => { this.viewportListeners.delete(listener); };
+  }
+  private queueViewportUpdate(): void {
+    if (this.viewportFrame != null || !this.viewportListeners.size) return;
+    this.viewportFrame = requestAnimationFrame(() => {
+      this.viewportFrame = null;
+      for (const listener of this.viewportListeners) listener();
+    });
+  }
+  setNavigationMode(mode: "inspect" | "pan"): void {
+    if (mode === this.navigationMode) return;
+    this.navigationMode = mode;
+    this.drawingEditor?.configure(mode === "pan" ? null : this.drawingInteraction);
+    this.applyDrawingPlacement();
+    if (this.container) this.container.dataset.chartNavigation = mode;
+  }
+  setSmartAnnotation(annotation: SmartChartAnnotation | null): void {
+    const key=JSON.stringify(annotation);
+    if(key===this.smartAnnotationKey)return;
+    this.smartAnnotationKey=key;
+    this.smartAnnotation=annotation;
+    if (this.series && !this.smartAnnotationPrimitive && annotation) {
+      this.smartAnnotationPrimitive=new SmartChartAnnotationPrimitive();
+      this.series.attachPrimitive(this.smartAnnotationPrimitive);
+    }
+    this.smartAnnotationPrimitive?.setData(annotation,this.candles);
+    this.applyStructureFromRaw(true);
   }
   fitHistory(): void {
     this.takeRangeOwnership();
@@ -708,6 +783,11 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.style = style; this.series = next;
     next.setData(this.candles.map(c => this.priceData(c)));
     this.analysis?.replacePriceSeries(next, this.candles);
+    if (this.smartAnnotationPrimitive) {
+      previous.detachPrimitive(this.smartAnnotationPrimitive);
+      next.attachPrimitive(this.smartAnnotationPrimitive);
+      this.smartAnnotationPrimitive.setData(this.smartAnnotation,this.candles);
+    }
     chart.removeSeries(previous);
     this.lastPriceLine = null; this.overlayLines = []; this.precision = -1;
     this.applyPricePrecision(); this.applyLivePriceAffordance();
@@ -718,12 +798,19 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
   setStudies(studies: ChartStudy[]): void { this.analysis?.setStudies(studies, this.candles); }
   setDrawings(drawings: ChartDrawing[]): void { this.drawingEditor?.setDrawings(drawings); this.analysis?.setDrawings(drawings, this.candles); }
-  setDrawingInteraction(config: DrawingInteraction | null): void { this.drawingEditor?.configure(config); }
+  setDrawingInteraction(config: DrawingInteraction | null): void {
+    this.drawingInteraction = config;
+    this.drawingEditor?.configure(this.navigationMode === "pan" ? null : config);
+  }
   setDrawingHandler(handler: ((anchor: ChartAnchor) => void) | null): void {
     this.drawingHandler = handler;
+    this.applyDrawingPlacement();
+  }
+  private applyDrawingPlacement(): void {
+    const handler = this.navigationMode === "pan" ? null : this.drawingHandler;
     this.drawingEditor?.setPlacement(handler);
     this.chart?.applyOptions({handleScroll:!handler});
-    if (this.container) this.container.style.cursor = handler ? "crosshair" : "";
+    if (this.container) this.container.style.cursor = this.navigationMode === "pan" ? "grab" : handler ? "crosshair" : "";
   }
   exportImage(): string | null { this.analysis?.flushPending(); return this.chart?.takeScreenshot().toDataURL("image/png") ?? null; }
 

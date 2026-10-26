@@ -43,7 +43,7 @@ function page(over: Partial<{
   providerMessage: string | null;
   coverageDays: number | null;
   depthTargetDays: number;
-  historyEvidence: { symbol: string; timeframe: string; source: string; sourceIdentity: string } | null;
+  historyEvidence: { symbol: string; timeframe: string; source: string; sourceIdentity: string; scope?: "public_provider"; lastClosedCandleAt?: string } | null;
 }> = {}) {
   return {
     source: "assistant_real",
@@ -62,6 +62,39 @@ function page(over: Partial<{
 describe("useChartDeepHistory", () => {
   beforeEach(() => {
     fetchChartHistory.mockReset();
+  });
+
+  it("retains only observed public history evidence and masks it on a source change",async()=>{
+    const time=Date.parse("2026-01-01T00:00:00Z"),identity="a".repeat(64);
+    const evidence={symbol:"V75",timeframe:"M15",source:"deriv_public",sourceIdentity:identity,scope:"public_provider" as const,lastClosedCandleAt:new Date(time+900_000).toISOString()};
+    fetchChartHistory.mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time)],historyEvidence:evidence}));
+    const {result,rerender}=renderHook(({id})=>useChartDeepHistory("V75","M15",true,"deriv_public",id,true),{initialProps:{id:identity}});
+    await act(async()=>result.current.loadOlder(before));
+    expect(result.current.analysisEvidence).toEqual(evidence);
+    rerender({id:"b".repeat(64)});expect(result.current.analysisEvidence).toBeNull();expect(result.current.olderCandles).toEqual([]);
+  });
+
+  it("conflicting page overlap permanently withholds analysis before display deduplication",async()=>{
+    const time=Date.parse("2026-01-01T00:00:00Z"),identity="a".repeat(64);
+    const evidence={symbol:"V75",timeframe:"M15",source:"deriv_public",sourceIdentity:identity,scope:"public_provider" as const,lastClosedCandleAt:new Date(time+900_000).toISOString()};
+    fetchChartHistory.mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time)],historyEvidence:evidence}))
+      .mockResolvedValueOnce(page({source:"deriv_public",candles:[{...candle(time),high:2,close:2}],historyEvidence:evidence}))
+      .mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time-900_000)],historyEvidence:evidence}));
+    const {result}=renderHook(()=>useChartDeepHistory("V75","M15",true,"deriv_public",identity,true));
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toEqual(evidence);
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toBeNull();
+    expect(result.current.olderCandles).toEqual([candle(time)]);
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toBeNull();expect(result.current.olderCandles).toHaveLength(2);
+  });
+
+  it("checks each page's own closed boundary rather than borrowing a newer page's cutoff",async()=>{
+    const time=Date.parse("2026-01-01T00:00:00Z"),identity="a".repeat(64);
+    const evidence={symbol:"V75",timeframe:"M15",source:"deriv_public",sourceIdentity:identity,scope:"public_provider" as const,lastClosedCandleAt:new Date(time+900_000).toISOString()};
+    fetchChartHistory.mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time)],historyEvidence:evidence}))
+      .mockResolvedValueOnce(page({source:"deriv_public",candles:[candle(time-900_000)],historyEvidence:{...evidence,lastClosedCandleAt:new Date(time-1).toISOString()}}));
+    const {result}=renderHook(()=>useChartDeepHistory("V75","M15",true,"deriv_public",identity,true));
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toEqual(evidence);
+    await act(async()=>result.current.loadOlder(before));expect(result.current.analysisEvidence).toBeNull();
   });
 
   it.each([

@@ -15,6 +15,45 @@ let container:HTMLDivElement;
 beforeEach(()=>{vi.clearAllMocks();m.handles.length=0;vi.stubGlobal("ResizeObserver",class{observe(){}disconnect(){}});adapter=new LightweightChartsAdapter();container=document.createElement("div");document.body.append(container);adapter.init({container,height:500});adapter.setCandles(bars);});
 afterEach(()=>{adapter.destroy();container.remove();});
 describe("Smart Chart studies, styles and drawing ownership",()=>{
+  it("navigates the actual viewport without rewriting candle data",()=>{
+    const price=m.handles[0], before=price.setData.mock.calls.length;
+    expect(adapter.panBy(-0.25)).toBe(true);
+    expect(m.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:5,to:25});
+    expect(adapter.zoomBy(0.75)).toBe(true);
+    expect(m.scale.setVisibleLogicalRange).toHaveBeenLastCalledWith({from:12.5,to:27.5});
+    expect(price.setData).toHaveBeenCalledTimes(before);
+    const visible=adapter.getVisibleCandles();
+    expect(visible).toEqual(bars.slice(10,31));
+    visible[0]!.close=99;
+    expect(adapter.getVisibleCandles()[0]!.close).toBe(bars[10]!.close);
+  });
+  it("hand mode cannot place drawings and restores the prior tool on inspection",()=>{
+    const handler=vi.fn();adapter.setDrawingHandler(handler);
+    const canvas=document.createElement("canvas");container.append(canvas);
+    const click=()=>{canvas.dispatchEvent(new MouseEvent("pointerdown",{bubbles:true,clientX:100,clientY:50}));canvas.dispatchEvent(new MouseEvent("pointerup",{bubbles:true,clientX:100,clientY:50}));};
+    adapter.setNavigationMode("pan");click();
+    expect(handler).not.toHaveBeenCalled();
+    expect(container.dataset.chartNavigation).toBe("pan");
+    expect(m.chart.applyOptions).toHaveBeenLastCalledWith({handleScroll:true});
+    adapter.setNavigationMode("inspect");click();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+  it("keeps automatic annotations separate from saved drawings and suppresses competing structure",()=>{
+    adapter.setDrawings([{id:"saved",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"}]);
+    const price=m.handles[0],drawing=price.attachPrimitive.mock.calls[0][0];
+    const line={id:"structure",start:{time:100,price:1.3},end:{time:160,price:1.4},color:"#ffffff",dashed:false,width:1};
+    adapter.setStructureLines([line],[]);const structure=m.handles.at(-1);
+    const annotation={id:"doji",anchors:[{time:100,price:1.5,label:"Doji"}],color:"#38bdf8",dashed:true};
+    adapter.setSmartAnnotation(annotation);const automatic=price.attachPrimitive.mock.calls.at(-1)[0];
+    expect(m.chart.removeSeries).toHaveBeenCalledWith(structure);
+    expect(drawing.drawings).toHaveLength(1);expect(automatic).not.toBe(drawing);
+    const count=m.chart.addSeries.mock.calls.length;
+    adapter.setSmartAnnotation({...annotation});adapter.setStructureLines([line],[]);
+    expect(m.chart.addSeries).toHaveBeenCalledTimes(count);
+    adapter.setChartStyle("line");expect(m.handles.at(-1).attachPrimitive).toHaveBeenCalledWith(automatic);
+    adapter.setSmartAnnotation(null);expect(m.chart.addSeries.mock.calls.length).toBeGreaterThan(count);
+    expect(drawing.drawings).toHaveLength(1);
+  });
   it("keeps studies incremental and independent of style switches and live-price truth",()=>{
     adapter.setStudies(STUDY_DEFAULTS);const studies=m.handles.slice(1);
     expect(studies).toHaveLength(9);expect(studies.filter(s=>s.pane===1)).toHaveLength(1);expect(studies.filter(s=>s.pane===2)).toHaveLength(3);

@@ -1,4 +1,5 @@
 import type { DrawingInteraction } from "./chartDrawingEditor";
+import type { SmartChartAnnotation } from "./smartChartAnnotation";
 import type { ChartTimeRange, ChartViewEvent } from "./chartViewLink";
 import type { ChartOverlay } from "@/lib/chart-overlays";
 import type { ChartStudy } from "./chartStudies";
@@ -158,6 +159,17 @@ export interface ChartEngineAdapter {
   /** View controls only; none of these methods touches execution. */
   goToLatest?(animated?: boolean): void;
   fitHistory?(): void;
+  /** Explicit hand mode ignores drawing hit targets; inspect restores editing. */
+  setNavigationMode?(mode: "inspect" | "pan"): void;
+  /** Pan by a fraction of the visible span; zoom around the current midpoint. */
+  panBy?(fraction: number): boolean;
+  zoomBy?(factor: number): boolean;
+  /** Snapshot of actual applied bars intersecting the viewport; no inferred bars. */
+  getVisibleCandles?(): ChartEngineCandle[];
+  /** Coalesced viewport changes for optional contextual chart analysis. */
+  subscribeViewport?(listener: () => void): () => void;
+  /** One non-interactive explanatory pattern; separate from user drawings. */
+  setSmartAnnotation?(annotation: SmartChartAnnotation | null): void;
   setScaleMode?(mode: ChartScaleMode): void;
   setPriceScaleInverted?(inverted: boolean): void;
   goToTime?(time: number): boolean;
