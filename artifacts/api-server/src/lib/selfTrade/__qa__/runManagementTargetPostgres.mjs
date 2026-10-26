@@ -77,6 +77,14 @@ try {
         ...env,
         DATABASE_URL: `postgresql://arx_qa@localhost/arx_management_target_test?host=${encodeURIComponent(socket)}&port=55447`,
         ARX_MANAGEMENT_TARGET_PG: "1",
+        ...(process.env.ARX_MANUAL_RESULT_BENCHMARK_OUTPUT
+          ? {
+              ARX_MANUAL_RESULT_BENCHMARK_OUTPUT:
+                process.env.ARX_MANUAL_RESULT_BENCHMARK_OUTPUT,
+              ARX_MANUAL_RESULT_BASELINE_ROOT:
+                process.env.ARX_MANUAL_RESULT_BASELINE_ROOT,
+            }
+          : {}),
         ...(process.env.ARX_MANAGEMENT_BENCHMARK_OUTPUT
           ? {
               ARX_MANAGEMENT_BENCHMARK_OUTPUT:
@@ -87,7 +95,11 @@ try {
           : {}),
       },
       stdio: "inherit",
-      timeout: process.env.ARX_MANAGEMENT_BENCHMARK_OUTPUT ? 180_000 : 60_000,
+      timeout:
+        process.env.ARX_MANAGEMENT_BENCHMARK_OUTPUT ||
+        process.env.ARX_MANUAL_RESULT_BENCHMARK_OUTPUT
+          ? 180_000
+          : 60_000,
     },
   );
   status = result.status ?? 1;

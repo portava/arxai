@@ -66,10 +66,6 @@ export const OPEN_READ_ALLOWLIST: Record<string, OpenReadAllowance> = {
     openReads: 1, category: "BROKER_TRUTH",
     reason: "LIVE snapshot ingest compares the incoming broker snapshot with the connection's open rows",
   },
-  "lib/live/liveCommandPipeline.ts": {
-    openReads: 1, category: "BROKER_TRUTH",
-    reason: "a LIVE_FILLED CLOSE reads the open row's volume and immediately writes the partial-close volume or closed_at for that row (read-modify-write beside livePositionWriter)",
-  },
 };
 
 export interface OperatorReadAllowance {
