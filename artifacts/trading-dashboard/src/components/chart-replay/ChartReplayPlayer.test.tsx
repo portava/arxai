@@ -74,4 +74,22 @@ describe("isolated chart replay player",()=>{
   fireEvent.keyDown(window,{key:"ArrowRight"});expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(51);
   fireEvent.keyDown(screen.getByLabelText("Replay through UTC close"),{key:"ArrowLeft"});expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(51);
  });
+ it("leaves native evidence disclosure keys available without starting playback",()=>{
+  render(<ChartReplayPlayer snapshot={snapshot()} onExit={vi.fn()}/>);
+  const summary=screen.getByText("Analysis, evidence and chart statistics");
+  for(const [key,code] of [[" ","Space"],["ArrowRight","ArrowRight"],["ArrowLeft","ArrowLeft"]]){
+   const event=new KeyboardEvent("keydown",{key,code,bubbles:true,cancelable:true});
+   fireEvent(summary,event);expect(event.defaultPrevented).toBe(false);
+  }
+  act(()=>vi.advanceTimersByTime(2000));
+  expect(screen.getByRole("button",{name:"Play",exact:true}).getAttribute("aria-pressed")).toBe("false");
+  expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(100);
+ });
+ it("does not take shortcuts already handled by another control",()=>{
+  render(<ChartReplayPlayer snapshot={snapshot()} onExit={vi.fn()}/>);
+  const event=new KeyboardEvent("keydown",{key:" ",code:"Space",bubbles:true,cancelable:true});
+  event.preventDefault();fireEvent(window,event);act(()=>vi.advanceTimersByTime(2000));
+  expect(screen.getByRole("button",{name:"Play",exact:true}).getAttribute("aria-pressed")).toBe("false");
+  expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(100);
+ });
 });

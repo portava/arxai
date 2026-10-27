@@ -67,7 +67,7 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
   useEffect(()=>{
     const keyboard=(event:KeyboardEvent)=>{
       const target=event.target;
-      if((target instanceof Element && target.closest("input,select,textarea,button,[contenteditable=true]")) || event.altKey || event.ctrlKey || event.metaKey)return;
+      if(event.defaultPrevented || (target instanceof Element && target.closest("input,select,textarea,button,summary,[contenteditable=true]")) || event.altKey || event.ctrlKey || event.metaKey)return;
       if(event.key==="ArrowRight"){event.preventDefault();seek(count+1);}
       if(event.key==="ArrowLeft"){event.preventDefault();seek(count-1);}
       if(event.code==="Space"){event.preventDefault();if(!document.hidden && count<snapshot.bars.length)setPlaying(value=>!value);}
