@@ -3,6 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+// The real classifier: an unversioned body takes the legacy mapping path.
+import { normalizeTerminalResultEvidence } from "../../lib/mt5/terminalResultEvidence.js";
 const source = readFileSync(new URL("../mt5Live.ts", import.meta.url), "utf8");
 const tree = ts.createSourceFile(
   "mt5Live.ts",
@@ -72,6 +74,7 @@ test("direct result route returns retryable503 with receiptPersisted false on ca
     "eq",
     "recordLiveCommandResult",
     "reportedManagementIdentity",
+    "normalizeTerminalResultEvidence",
     "scheduleGuardian",
     "loadModule",
     "LIVE_SAFETY_ENVELOPE",
@@ -93,6 +96,7 @@ test("direct result route returns retryable503 with receiptPersisted false on ca
       receiptPersisted: false,
     }),
     () => [],
+    normalizeTerminalResultEvidence,
     () => {
       guardian++;
     },

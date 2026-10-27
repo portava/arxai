@@ -1,4 +1,6 @@
+import { normalizeTerminalResultEvidence } from "../lib/mt5/terminalResultEvidence.js";
 import { projectManagementMailbox } from "../lib/mt5/managementTargetTransport.js";
+import { appendExecutionEvidence as recordExecutionEvent } from "../lib/live/executionEvidence.js";
 import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported, legacyManagementPickupPredicate } from "../lib/mt5/managementTargetProtocol.js";
 import {
   MT5_ACCOUNT_SNAPSHOT_FRESH_MS,
@@ -949,13 +951,25 @@ router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
       eq(arxLiveCommandsTable.bridgeConnectionId, conn.id),
     )) : [];
     const byId = new Map(authority.map(row => [row.commandId, row]));
+    // Broker names each signed entry may legitimately be mirrored as, read with
+    // this transaction's reader (no second pooled connection while locked).
+    const entrySymbols = new Map<string, Set<string>>();
+    for (const command of authority) if (command.commandType === "PLACE_LIVE_MARKET_ORDER") {
+      const { resolveBrokerSymbolName } = await import("../lib/instruments/index.js");
+      const { boundManagementTransportSymbol } = await import("../lib/selfTrade/managementTarget.js");
+      let bound: string | null = null;
+      try { bound = boundManagementTransportSymbol(command); } catch { bound = null; }
+      // Same choice enqueueBridgedMt5Command made when it wrote the mirror.
+      entrySymbols.set(command.commandId, new Set([command.symbol, bound ?? await resolveBrokerSymbolName(command.symbol, tx)]));
+    }
     const projected = new Map<number, Command>();
     let heldTargets = 0;
     const selected: number[] = [];
     const planned: ReturnType<typeof wire>[] = [];
     for (const row of candidates) {
       const linked = (row.payload as Record<string, unknown> | null)?.liveCommandId;
-      const precise = projectManagementMailbox(row, typeof linked === "string" ? byId.get(linked) : undefined);
+      const precise = projectManagementMailbox(row, typeof linked === "string" ? byId.get(linked) : undefined,
+        typeof linked === "string" ? entrySymbols.get(linked) : undefined);
       if (!precise) { heldTargets++; continue; }
       projected.set(row.id, precise);
       const candidate = wire({ ...precise, status: "DELIVERED", deliveredAt: now, claimedAt: now, updatedAt: now });
@@ -974,6 +988,24 @@ router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
         legacyManagementPickupPredicate(targetSupported),
       )).returning();
     if (claimed.length !== selected.length) throw new Error("MT5_MAILBOX_CLAIM_CHANGED");
+    // A delivered entry mirror is the EA's one pickup of that entry: stamp the
+    // authority so /mt5/live-commands-poll can never serve it a second time.
+    // Compare-and-set on the dispatched, unpicked row; otherwise roll back.
+    const entryIds = claimed.map(row => (row.payload as Record<string, unknown> | null)?.liveCommandId)
+      .filter((id): id is string => typeof id === "string" && byId.get(id)?.commandType === "PLACE_LIVE_MARKET_ORDER");
+    if (entryIds.length) {
+      const stamped = await tx.update(arxLiveCommandsTable).set({ pickedByEaAt: now }).where(and(
+        inArray(arxLiveCommandsTable.commandId, entryIds),
+        eq(arxLiveCommandsTable.bridgeConnectionId, conn.id),
+        eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+        isNull(arxLiveCommandsTable.pickedByEaAt),
+      )).returning({ id: arxLiveCommandsTable.id, commandId: arxLiveCommandsTable.commandId });
+      if (stamped.length !== entryIds.length) throw new Error("MT5_MAILBOX_ENTRY_PICKUP_CHANGED");
+      for (const row of stamped) await recordExecutionEvent({
+        commandRowId: row.id, source: "ea", eventType: "EA_PICKED_UP", occurredAt: now,
+        payload: { commandId: row.commandId, bridgeConnectionId: conn.id, transport: "mt5_commands" },
+      }, tx);
+    }
     const body = JSON.stringify(envelope(claimed.map(row => wire({ ...row, symbol: projected.get(row.id)!.symbol, side: projected.get(row.id)!.side, lot: projected.get(row.id)!.lot, sl: projected.get(row.id)!.sl, tp: projected.get(row.id)!.tp }))));
     // A defensive invariant failure rolls back every claim, never discards a
     // committed delivery. JSON is sent verbatim so formatting cannot grow it.
@@ -1019,7 +1051,6 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
   try {
     const conn = (req as Request & { mt5Connection: BrokerConnectionRecord }).mt5Connection;
     const body = PostMt5CommandResultBody.parse(req.body);
-    const isFailed = /fail|error|reject/i.test(body.status);
     const now = new Date();
     // Preserve the FULL raw EA result body for admin/debug (requirement 4).
     // The EA sends a flat body, not a resultPayload wrapper, so capture the
@@ -1045,15 +1076,36 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
     const rp = resultPayload ?? {};
     const mt5Retcode = num(raw["mt5Retcode"] ?? rp["mt5Retcode"] ?? rp["retcode"]);
     const brokerMessage = str(raw["mt5Comment"] ?? raw["brokerMessage"] ?? rp["brokerMessage"] ?? rp["comment"]);
-    const fillPrice = num(raw["fillPrice"] ?? raw["price"] ?? rp["fillPrice"]);
-    const filledLotSize = num(raw["filledLotSize"] ?? raw["requestedVolume"] ?? rp["filledLotSize"]);
+    const [ownedMailbox] = await db.select().from(mt5CommandsTable).where(and(
+      eq(mt5CommandsTable.id, body.commandId), eq(mt5CommandsTable.userId, conn.userId!), eq(mt5CommandsTable.mt5ConnectionId, conn.id),
+    )).limit(1);
+    if (!ownedMailbox) { res.status(404).json({error:"Command not found for this connection."}); return; }
+    const linkedPayload = (ownedMailbox.payload ?? {}) as Record<string, unknown>;
+    const linkedId = linkedPayload.bridged === "LIVE_PHASE_B" && typeof linkedPayload.liveCommandId === "string" ? linkedPayload.liveCommandId : null;
+    const linkedOwner = num(linkedPayload.liveCommandOwnerUserId) ?? ownedMailbox.requestedByUserId ?? conn.userId!;
+    const [linkedCommand] = linkedId ? await db.select().from(arxLiveCommandsTable).where(and(
+      eq(arxLiveCommandsTable.commandId, linkedId), eq(arxLiveCommandsTable.userId, linkedOwner), eq(arxLiveCommandsTable.bridgeConnectionId, conn.id),
+    )).limit(1) : [];
+    if (linkedId && !linkedCommand) { res.status(404).json({error:"Linked command not found for this connection."}); return; }
+    const terminal = normalizeTerminalResultEvidence(raw, linkedCommand?.commandType ?? ownedMailbox.action,
+      linkedCommand ? linkedCommand.requestedVolume : num(ownedMailbox.lot) ?? num(raw.requestedVolume),
+      linkedCommand ? linkedCommand.brokerTicket ?? (linkedCommand.payload as Record<string, unknown> | null)?.brokerTicket as string | undefined : undefined);
+    // Acceptance/partial claims need versioned terminal evidence; otherwise
+    // unknown, exactly as the direct result route treats them.
+    const unproven = !terminal && ["LIVE_ACKNOWLEDGED", "LIVE_PARTIALLY_FILLED"].includes(body.status);
+    const reportedStatus = terminal?.outcome ?? (unproven ? "LIVE_UNKNOWN" : body.status);
+    const isFailed = /fail|error|reject/i.test(reportedStatus);
+    const unresolved = ["LIVE_ACKNOWLEDGED","LIVE_PARTIALLY_FILLED","LIVE_UNKNOWN"].includes(reportedStatus);
+    // Versioned reports use only actual broker evidence, never requestedVolume.
+    const fillPrice = terminal ? terminal.fillPrice : unproven ? null : num(raw["fillPrice"] ?? raw["price"] ?? rp["fillPrice"]);
+    const filledLotSize = terminal ? terminal.executedVolume : unproven ? null : num(raw["filledLotSize"] ?? raw["requestedVolume"] ?? rp["filledLotSize"]);
     const rawTicket = raw["mt5Ticket"] ?? raw["mt5OrderTicket"] ?? rp["mt5OrderTicket"] ?? rp["orderTicket"];
     // mt5Ticket=0 from the EA means "no ticket" (rejections) — treat 0 as null.
     const mt5OrderTicket = (rawTicket != null && String(rawTicket) !== "0") ? String(rawTicket) : null;
     const rawPosTicket = raw["mt5PositionTicket"] ?? rp["mt5PositionTicket"] ?? rp["positionTicket"];
     const mt5PositionTicket = (rawPosTicket != null && String(rawPosTicket) !== "0") ? String(rawPosTicket) : null;
     const updated = await db.update(mt5CommandsTable).set({
-      status: body.status,
+      status: reportedStatus,
       detail: body.detail ?? null,
       errorMessage: isFailed ? (body.detail ?? null) : null,
       resultPayload,
@@ -1063,7 +1115,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
       filledLotSize,
       mt5OrderTicket,
       mt5PositionTicket,
-      completedAt: isFailed ? null : now,
+      completedAt: isFailed || unresolved ? null : now,
       failedAt: isFailed ? now : null,
       updatedAt: now,
     }).where(and(
@@ -1093,6 +1145,8 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
       let setMt5OrderTicket: string | null = null;
       if (isFailed) {
         nextPendingStatus = "REJECTED";
+      } else if (unresolved) {
+        // Unproven acceptance/execution never advances the pending draft.
       } else if (action === "PLACE_PENDING_ORDER") {
         nextPendingStatus = "PLACED";
         setMt5OrderTicket = mt5OrderTicket != null ? String(mt5OrderTicket) : null;
@@ -1203,7 +1257,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
       const liveOwnerUserId =
         num(bridgePayload["liveCommandOwnerUserId"]) ?? cmd.requestedByUserId ?? conn.userId!;
       const eaReason = str(raw["reason"] ?? rp["reason"]);
-      const liveBrokerTicket = mt5PositionTicket ?? mt5OrderTicket;
+      const liveBrokerTicket = terminal ? terminal.brokerTicket : mt5PositionTicket ?? mt5OrderTicket;
       try {
         const { recordLiveCommandResult, mapBridgedLiveOutcome } = await import(
           "../lib/live/liveCommandPipeline.js"
@@ -1211,15 +1265,18 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
         // Map the EA/broker outcome honestly: LIVE_FILLED requires a confirmed
         // broker ticket (no ticket => never reported as a fill), so a false fill
         // can never fulfil an exposure reservation. See mapBridgedLiveOutcome.
-        const liveOutcome = mapBridgedLiveOutcome({
-          status: body.status,
+        const liveOutcome = terminal?.outcome ?? mapBridgedLiveOutcome({
+          status: reportedStatus,
           reason: eaReason,
           hasBrokerTicket: liveBrokerTicket != null,
+          executedVolume: filledLotSize,
+          requestedVolume: linkedCommand?.requestedVolume,
         });
         const fwd = await recordLiveCommandResult({
           userId: liveOwnerUserId,
           commandId: liveCommandId,
           outcome: liveOutcome,
+          terminalResultEvidence: terminal?.evidence,
           reportingBridgeConnectionId: conn.id,
           reportedExecutionIdentity: (await import("../lib/selfTrade/managementConsumers.js")).reportedManagementIdentity(raw, rp),
           brokerTicket: liveBrokerTicket,

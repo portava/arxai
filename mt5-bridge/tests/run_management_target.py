@@ -3,7 +3,7 @@ No MetaEditor/terminal/broker I/O. --baseline-dir checks prior source behavior.
 """
 from pathlib import Path
 import argparse, os, shutil, subprocess, tempfile, re
-parser=argparse.ArgumentParser();parser.add_argument('--baseline-dir');parser.add_argument('--benchmark',action='store_true');parser.add_argument('--wire-file');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--baseline-dir');parser.add_argument('--benchmark',action='store_true');parser.add_argument('--wire-file');parser.add_argument('--result-evidence',action='store_true');parser.add_argument('--emit',action='store_true');parser.add_argument('--entry-wire-file');args=parser.parse_args()
 root=Path(__file__).resolve().parents[1]
 source_root=Path(args.baseline_dir) if args.baseline_dir else root
 compiler=shutil.which(os.environ.get('CXX','c++'))
@@ -36,9 +36,11 @@ v131=(source_root/'ReplitMT5BridgeEA_v131.mq5').read_text();v154=(source_root/'A
 with tempfile.TemporaryDirectory(prefix='arx-terminal-target-') as folder:
  folder=Path(folder)
  wire='\n'.join(function(v131,n) for n in ['JsonReadInt','JsonReadDouble','JsonReadString','LiveDoneIndexOf','LiveDoneRecord','PollAndExecuteLiveCommands'])
- wire+='\n'+'\n'.join(function(v154,n) for n in ['JsonStr','JsonNum','JsonLong','HandleClosePosition','HandleModifyProtection','IsReadOnlyAction','IsEntryAction','HandleCommand','PollAndExecute'])
+ wire+='\n'+'\n'.join(function(v154,n) for n in ['JsonStr','JsonNum','JsonLong','HandleOpenMarket','HandleClosePosition','HandleModifyProtection','IsReadOnlyAction','IsEntryAction','HandleCommand','PollAndExecute'])
+ if 'void PostTradeEvidence(' in v154:
+  wire+='\n'+function(v154,'ReplayTradeEvidence')+'\n'+function(v154,'PostTradeEvidence')
  (folder/'management_wire.inc').write_text(wire)
  binary=folder/'management_target'
  subprocess.run([compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror','-I',str(folder),'-I',str(root),
-  '-DARX_BASELINE='+('1' if args.baseline_dir else '0'),str(root/'tests/management_target_test.cpp'),'-o',str(binary)],check=True)
- subprocess.run([str(binary)]+(['--benchmark'] if args.benchmark else ['--wire-file',args.wire_file] if args.wire_file else []),check=True)
+  '-DARX_BASELINE='+('1' if args.baseline_dir else '0'),str(root/('tests/terminal_result_test.cpp' if args.result_evidence else 'tests/management_target_test.cpp')),'-o',str(binary)],check=True)
+ subprocess.run([str(binary)]+(['--entry-wire-file',args.entry_wire_file] if args.entry_wire_file else ['--emit'] if args.emit else ['--benchmark'] if args.benchmark else ['--wire-file',args.wire_file] if args.wire_file else []),check=True)
