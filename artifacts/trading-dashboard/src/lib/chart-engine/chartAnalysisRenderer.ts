@@ -71,7 +71,7 @@ export class ChartAnalysisRenderer {
     // earliest dirty index must survive coalescing into this synchronous read.
     const dirtyFrom = Math.min(from, this.pending?.from ?? from);
     this.cancelPending();
-    for (const study of this.studies) study.calculator.calculate(candles, dirtyFrom);
+    for (const study of this.studies) study.calculator.calculate(candles, dirtyFrom, false);
     const window = this.nextWindow();
     if (replace || !this.displayWindow || window.from !== this.displayWindow.from) { this.renderWindow(window); return; }
     this.displayWindow = window;
