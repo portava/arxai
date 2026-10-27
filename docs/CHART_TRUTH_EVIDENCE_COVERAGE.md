@@ -31,9 +31,18 @@ quote freshness budget and not more than 5 s in the future (the shared
 `MAX_FUTURE_CLOCK_SKEW_MS` clock-skew allowance; before the 2026-10-27 review
 follow-up an EA clock 1 ms ahead read `QUOTE_TIME_FUTURE` permanently). The chart producer keeps the
 served series' router provenance off the wire (non-enumerable) for this check.
-`/me/chart/intelligence` tries the live MT5 quote pushed by the series' own
-bridge (only when that bridge belongs to the requesting user), then the user's
-`arx_symbol_specs` row, which binds only from an EA-reported `lastTickTime`.
+`/me/chart/intelligence` and Ruby's chart context (`buildRubyChartContext`,
+used by Ruby's draw-setup/structural reads) share one enrichment,
+`enrichStateWithUserBrokerQuote` (`userBrokerAlignment.ts`). It tries the live
+MT5 quote pushed by the series' own bridge (only when that bridge belongs to the
+requesting user), then the user's `arx_symbol_specs` row, which binds only from
+an EA-reported `lastTickTime` on the same bridge. Ruby's `VERIFIED` basis and
+the draft read's `feedUsable` require the handshake `sourceOverall` (candle-data
+rollup, renderer telemetry excluded) to PASS, which needs a measured, BOUND
+broker comparison: with no quote, or only an unbound one (another account's
+bridge, no observed tick time, stale), Ruby stays non-VERIFIED. The earlier gap
+where Ruby's per-user path compared the spec row's bid/ask without checking its
+quote age or account provenance is closed.
 Otherwise the sub-metric is null and its detail names the reasons (for example
 `BRIDGE_MISMATCH`, `QUOTE_STALE`, `QUOTE_TIME_UNKNOWN`). An observed failed
 deviation from an unbound quote still blocks chart trade confirmation and shows

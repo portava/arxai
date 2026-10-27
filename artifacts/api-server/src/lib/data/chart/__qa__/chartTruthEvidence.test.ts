@@ -149,6 +149,25 @@ test("candle-data rollup excludes only renderer telemetry and keeps it out of ov
   const noQuote = computeChartTruthScore(truth, feed, unmeasured);
   const noQuoteGate = computeChartGateOutput(noQuote, read, unmeasured, truth, false);
   assert.equal(buildChartHandshake(noQuoteGate, noQuote).sourceOverall, "WARN");
+  // The same in-tolerance numbers from an UNBOUND quote (stale tick, or
+  // another account's bridge) are not a measured comparison: no PASS.
+  const series = { providerId: "mt5_broker", subProviderId: null, bridgeConnectionId: 7, userId: 70, environment: "unknown" as const, brokerSymbol: null };
+  const quote = { source: "mt5_live_quote" as const, providerId: "mt5_broker", bridgeConnectionId: 7, userId: 70, environment: null, brokerSymbol: null,
+    tickAt: new Date(epoch).toISOString(), bid: 1.09999, ask: 1.10001, spreadPoints: 2 };
+  for (const binding of [
+    bindBrokerQuote({ series, quote, requestingUserId: 70, now: epoch + 60_000 }),
+    bindBrokerQuote({ series, quote: { ...quote, bridgeConnectionId: 8, userId: 71 }, requestingUserId: 70, now: epoch + 1_000 }),
+    bindBrokerQuote({ series, quote: { ...quote, tickAt: null }, requestingUserId: 70, now: epoch + 1_000 }),
+  ]) {
+    assert.notEqual(binding.status, "BOUND");
+    const unbound = computeBrokerPriceAlignment({ chartPrice: 1.1, chartPriceBasis: "MID", assetClass: "forex",
+      brokerBid: 1.09999, brokerAsk: 1.10001, spreadPoints: 2, quoteBinding: binding });
+    const unboundScore = computeChartTruthScore(truth, feed, unbound);
+    const unboundGate = computeChartGateOutput(unboundScore, read, unbound, truth, false);
+    const handshake = buildChartHandshake(unboundGate, unboundScore);
+    assert.notEqual(handshake.BrokerPriceAlignment, "PASS", binding.status);
+    assert.notEqual(handshake.sourceOverall, "PASS", binding.status);
+  }
   // A measured renderer failure still fails the candle-data rollup.
   const failedRender = JSON.parse(JSON.stringify(score));
   const render = failedRender.subMetrics.find((m: { key: string }) => m.key === "render_accuracy");
