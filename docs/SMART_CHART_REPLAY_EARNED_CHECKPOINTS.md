@@ -1,0 +1,13 @@
+# Replay earned study checkpoints
+
+This slice reuses only study checkpoints that this active Replay session has already calculated. It never passes unrevealed candles to a study, the reader or the chart. Initial visits still calculate the revealed prefix; an earned return to the same prefix can restore exact existing values.
+
+The explicit Replay context includes owner, session, source, opaque source identity, instrument and timeframe. Each study also compares a serialized configuration and private copies of every used input field: time, open, high, low and close. A changed input discards all descendants. A changed context or configuration starts over. The current 17 OHLC studies opt in explicitly; a future volume-dependent study must extend the identity contract before reuse is allowed.
+
+Only the active prefix appears in public points or active calculation states. Cached outputs are frozen to prevent caller mutation; cached inputs are copied. The renderer, inspection API and reader do not enumerate the private suffix. Rewinding removes future price/study time coordinates using the existing whitespace-safe chart reconciliation. No live/native calculation uses this cache. Native no-op reads, source changes, streaming updates, reset, study removal and chart destruction discard it.
+
+Retention is bounded by the active Replay session and existing limits of 12 studies and 5,000 candles. A local Node V8 retained-heap probe using 12 MACD studies (three average states and three output channels) measured 42.13 MiB for full earned state versus 33.29 MiB for native full-prefix state. Rewinding retained 40.91 MiB privately; native clearing returned within 20.2 KiB of the module baseline, and disposal within 3.2 KiB. This excludes browser/canvas/GPU memory and is not a universal memory bound.
+
+Validation: 1,636 frontend tests pass with nine optional live checks skipped; four typecheck units, 87 guards, seven structural guard assertions and the production dashboard build pass. The installed Lightweight Charts 5.2 library passes 384 series/channel comparisons and 272 time-axis/future-inspection cases across all 17 studies, including warmup whitespace, empty prefixes and earned rewinds. Exact full-recomputation tests cover same-close high/low/open/time changes, corrections, prepends, mutable caller inputs, configuration and every context field.
+
+Performance acceptance is pending on the full combined 65-name catalogue/descriptive-reader build. Cold first reveal and earned warm visits must be reported separately. Earlier full-seek failures remain valid; this implementation is not evidence of 100 ms completion or competitor parity until measured.

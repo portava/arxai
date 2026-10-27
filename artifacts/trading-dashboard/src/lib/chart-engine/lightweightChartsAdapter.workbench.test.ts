@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const m=vi.hoisted(()=>{
   const handles:any[]=[];
   const range={from:10,to:30};
-  const scale={subscribeVisibleLogicalRangeChange:vi.fn(),getVisibleLogicalRange:()=>range,setVisibleLogicalRange:vi.fn(),setVisibleRange:vi.fn(),fitContent:vi.fn(),width:()=>800,coordinateToTime:vi.fn(()=>100)};
+  const scale={subscribeVisibleLogicalRangeChange:vi.fn(),getVisibleLogicalRange:()=>range,setVisibleLogicalRange:vi.fn(),setVisibleRange:vi.fn(),fitContent:vi.fn(),options:()=>({rightOffset:10}),scrollToPosition:vi.fn(),width:()=>800,coordinateToTime:vi.fn(()=>100)};
   const chart={addSeries:vi.fn((kind:any,options:any,pane=0)=>{const data:any[]=[];const handle={kind,options,pane,data,
     setData:vi.fn((next:any[])=>data.splice(0,data.length,...next.map(point=>({...point})))),
     update:vi.fn((point:any)=>{const last=data.at(-1);if(last&&point.time<last.time)throw new Error('Historical update');if(last?.time===point.time)data[data.length-1]={...point};else data.push({...point});}),
@@ -18,6 +18,17 @@ let container:HTMLDivElement;
 beforeEach(()=>{Object.assign(m.scale.getVisibleLogicalRange(),{from:10,to:30});vi.clearAllMocks();m.handles.length=0;vi.stubGlobal("ResizeObserver",class{observe(){}disconnect(){}});adapter=new LightweightChartsAdapter();container=document.createElement("div");document.body.append(container);adapter.init({container,height:500});adapter.setCandles(bars);});
 afterEach(()=>{adapter.destroy();container.remove();});
 describe("Smart Chart studies, styles and drawing ownership",()=>{
+  it("discards Replay checkpoints at native no-op, source, streaming and reset boundaries",()=>{
+    adapter.setStudies([STUDY_DEFAULTS[0]!]);
+    const calc=(adapter as any).analysis.studies[0].calculator;
+    const replay={sessionId:"one",ownerId:7,source:"deriv_public",sourceIdentity:"a".repeat(64),symbol:"V75",timeframe:"M15"};
+    const earn=()=>{adapter.setCandles(bars,{revealLatest:true,replay});expect(calc.replayCache.inputs).toHaveLength(100);};
+    earn();adapter.setCandles(bars);expect(calc.replayCache).toBeNull();
+    earn();adapter.setFeedState({livePriceAffordance:false,source:"other"});expect(calc.replayCache).toBeNull();
+    earn();adapter.updateActiveCandle({...bars.at(-1)!,close:1.85});expect(calc.replayCache).toBeNull();
+    earn();adapter.resetDataContext();expect(calc.replayCache).toBeNull();expect(calc.points).toEqual([]);
+    earn();adapter.destroy();expect(calc.replayCache).toBeNull();
+  });
   it("resets all context-owned geometry and stream state without destroying the canvas",()=>{
     adapter.setStudies(STUDY_DEFAULTS);
     adapter.setDrawings([{id:"old",kind:"horizontal",start:{time:100,price:1.2},color:"#ffffff"}]);

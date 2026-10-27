@@ -1,6 +1,6 @@
 import { LineSeries, HistogramSeries, LineStyle, type IChartApi, type ISeriesApi, type UTCTimestamp, type LogicalRange } from "lightweight-charts";
 import type { ChartEngineCandle } from "./types";
-import { StudyCalculator, studyDefinition, studyLabel, type ChartStudy, type StudyPoint } from "./chartStudies";
+import { StudyCalculator, studyDefinition, studyLabel, type ChartStudy, type StudyPoint, type ReplayStudyContext } from "./chartStudies";
 import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
 import { validateDrawings, validatePreferences, type ChartDrawing } from "./chartWorkspace";
 
@@ -66,12 +66,15 @@ export class ChartAnalysisRenderer {
     this.rendering = true;
     try { work(); } finally { this.rendering = previous; }
   }
-  refresh(candles: ChartEngineCandle[], from: number, replace: boolean): void {
+  refresh(candles: ChartEngineCandle[], from: number, replace: boolean, replay?: ReplayStudyContext): void {
     // A stream revision may still be queued when a poll/seek arrives. Its
     // earliest dirty index must survive coalescing into this synchronous read.
     const dirtyFrom = Math.min(from, this.pending?.from ?? from);
     this.cancelPending();
-    for (const study of this.studies) study.calculator.calculate(candles, dirtyFrom, false);
+    for (const study of this.studies) {
+      if (replay) study.calculator.calculateReplay(candles,replay);
+      else study.calculator.calculate(candles,dirtyFrom,false);
+    }
     const window = this.nextWindow();
     if (replace || !this.displayWindow || window.from !== this.displayWindow.from) { this.renderWindow(window); return; }
     this.displayWindow = window;
@@ -149,7 +152,10 @@ export class ChartAnalysisRenderer {
     this.frame = null;
     this.pending = null;
   }
-  destroy(): void { this.cancelPending(); this.chart.timeScale().unsubscribeVisibleLogicalRangeChange?.(this.onViewport); }
+  clearReplayCache(): void {
+    for (const study of this.studies) study.calculator.clearReplayCache();
+  }
+  destroy(): void { this.clearReplayCache(); this.cancelPending(); this.chart.timeScale().unsubscribeVisibleLogicalRangeChange?.(this.onViewport); }
   inspect(time: number): { label: string; color: string; values: { name: string; value: number | null }[] }[] {
     this.flushPending();
     return this.studies.map(({ calculator }) => {
@@ -188,7 +194,10 @@ export class ChartAnalysisRenderer {
   }
   private clearStudies(): void {
     // Empty oscillator panes are automatically removed by the library.
-    for (const study of [...this.studies].reverse()) for (const line of study.lines) this.chart.removeSeries(line);
+    for (const study of [...this.studies].reverse()) {
+      study.calculator.clearReplayCache();
+      for (const line of study.lines) this.chart.removeSeries(line);
+    }
     this.studies = [];
   }
 }
