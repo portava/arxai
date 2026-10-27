@@ -27,6 +27,7 @@ import { writeSelfTradeAudit } from "./audit.js";
 import { enforceSensitiveAction } from "../security/handshake.js";
 import { mirrorCriticalEvent } from "../security/events.js";
 import { readAccountingRows, projectAccounting, combineAccounting } from "./accountingCoverage.js";
+import { lockKillSwitchesExclusive } from "./killSwitchScope.js";
 
 export interface Actor {
   userId: number;
@@ -362,6 +363,10 @@ export async function toggleKillSwitch(
     if (!hs.ok) return { ok: false, error: hs.reasonCode, message: hs.userMessage };
   }
   const result = await db.transaction(async (tx) => {
+    // Exclusive side of the kill-switch lock: waits for in-flight agent-entry
+    // final claims (shared side, entryAuthority) and makes later claims see
+    // this write. See killSwitchScope.KILL_SWITCH_ADVISORY_LOCK_KEY.
+    await lockKillSwitchesExclusive(tx);
     const existing = await tx
       .select()
       .from(selfTradeKillSwitchesTable)

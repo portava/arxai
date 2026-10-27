@@ -72,6 +72,7 @@ import { checkSingleRiskAuthority } from "./check-single-risk-authority.js";
 import { checkBrokerConnectionSingleOwner } from "./check-broker-connection-single-owner.js";
 import { checkLearningMemorySingleOwner } from "./check-learning-memory-single-owner.js";
 import { checkPositionGuardianWired } from "./check-position-guardian-wired.js";
+import { checkSelfTradeKillSwitchCoverage } from "./check-self-trade-kill-switch-coverage.js";
 import { checkSingleRoleModel } from "./check-single-role-model.js";
 import { checkStopModificationAuthority } from "./check-stop-modification-authority.js";
 import { checkSinglePositionSizer } from "./check-single-position-sizer.js";
@@ -175,6 +176,7 @@ const checks: Array<() => CheckResult> = [
   checkSinglePositionGuardian,
   checkSingleOpenPositionView,
   checkTradeEngineSinglePipeline,
+  checkSelfTradeKillSwitchCoverage,
   checkSinglePaperBook,
   checkSingleLimitStore,
   checkLegacyLiveStateConfined,

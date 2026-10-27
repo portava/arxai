@@ -84,6 +84,9 @@ export interface ExecuteAgentDecisionInput {
   now?: Date;
 }
 
+/** Block reason when the pre-submission kill-switch re-check cannot be read. */
+export const KILL_SWITCH_UNREADABLE = "KILL_SWITCH_UNREADABLE" as const;
+
 const LOT_MIN = 0.01;
 const LOT_STEP = 0.01;
 
@@ -362,12 +365,27 @@ export async function executeAgentDecision(
     return { status: "BLOCKED", blockReason: "ENTRY_RESERVATION_UNAVAILABLE", action: "BLOCK" };
   }
 
-  // TOCTOU: re-check the kill switch immediately before dispatch.
-  const killNow = await assertAgentNotKilled({
-    agentKey: agent.agentKey,
-    symbol: decision.symbol,
-    strategy: decision.setupType ?? null,
-  });
+  // TOCTOU: re-check the kill switch immediately before dispatch. A read
+  // failure is a refusal (fail closed). Nothing has been submitted yet, so the
+  // reservation is released truthfully instead of leaking as an unlinked
+  // PENDING_TICKET that reconciliation can never resolve. The final entry
+  // authority claim re-checks the switches again under its locks.
+  let killNow: Awaited<ReturnType<typeof assertAgentNotKilled>>;
+  try {
+    killNow = await assertAgentNotKilled({
+      agentKey: agent.agentKey,
+      symbol: decision.symbol,
+      strategy: decision.setupType ?? null,
+    });
+  } catch (err) {
+    logger.error({ err, executionId: execRow.id }, "self-trade: kill-switch state unreadable at dispatch; refusing");
+    killNow = {
+      killed: true,
+      scope: null,
+      scopeRef: null,
+      reason: KILL_SWITCH_UNREADABLE,
+    };
+  }
   if (killNow.killed) {
     await db
       .update(selfTradeAgentExecutionsTable)
@@ -381,7 +399,9 @@ export async function executeAgentDecision(
       actorRole: actorRole ?? null,
       severity: "WARNING",
       afterState: { executionId: execRow.id, kill: killNow },
-      reason: killNow.reason ?? "Kill switch engaged at dispatch.",
+      reason: killNow.reason === KILL_SWITCH_UNREADABLE
+        ? "Kill-switch state unreadable at dispatch; refused (fail closed)."
+        : killNow.reason ?? "Kill switch engaged at dispatch.",
     });
     return { status: "BLOCKED", executionId: execRow.id, blockReason: killNow.reason ?? "KILL_SWITCH_ENGAGED", action: "BLOCK" };
   }

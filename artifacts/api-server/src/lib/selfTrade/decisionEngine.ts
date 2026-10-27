@@ -481,7 +481,13 @@ export async function runDecisionCycle(
       logger.warn({ err }, "self-trade: handshake run failed (degrading to UNAVAILABLE)");
       return null;
     }),
-    globalKillEngaged().catch(() => false),
+    // Fail closed: an unreadable kill-switch state is treated as engaged, never
+    // as released. (The executor gate and the final entry claim re-read and
+    // refuse independently; this keeps the advisory decision feed honest.)
+    globalKillEngaged().catch((err) => {
+      logger.warn({ err }, "self-trade: kill-switch read failed (treating as engaged)");
+      return true;
+    }),
   ]);
 
   const governor = governorFromHalt(governorEval);
