@@ -114,5 +114,5 @@ await db.insert(killSwitches).values({ scope: "AGENT", scopeRef: "bench", engage
 await assert.rejects(current.withEntryAuthority(request, noop), /ENTRY_KILL_SWITCH_ENGAGED/);
 if (previous) assert.equal(await previous.withEntryAuthority(request, noop), null);
 
-console.log(JSON.stringify({ iterations: N, abComparison: !!previous, results }, null, 2));
+process.stdout.write(`${JSON.stringify({ iterations: N, abComparison: !!previous, results }, null, 2)}\n`);
 await pool.end();
