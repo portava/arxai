@@ -2428,3 +2428,30 @@ it("byte prefilter and UTF16 envelope budget remain distinct for Unicode payload
   const rows=await db.select().from(mailbox);assert.equal(rows.find(r=>r.id===large!.id)!.status,"PENDING");
   assert.equal(rows.filter(r=>r.status==="PENDING").length,2);
 });
+
+// ── Fresh position observation at the final management claim (2026-10-27) ──
+for (const [label, offsetMs, reason] of [
+  ["stale", -91_000, "MANAGEMENT_OBSERVATION_STALE"],
+  ["future-dated", 60_000, "MANAGEMENT_OBSERVATION_FUTURE_DATED"],
+] as const)
+  it(`final claim refuses a ${label} broker position observation`, async () => {
+    const row = await approved();
+    await db
+      .update(positions)
+      .set({ lastSyncedAt: new Date(Date.now() + offsetMs) })
+      .where(eq(positions.id, 1));
+    await denied(send(row), reason);
+    const [current] = await db
+      .select()
+      .from(commands)
+      .where(eq(commands.commandId, row.commandId));
+    assert.equal(current!.status, "LIVE_APPROVED");
+  });
+it("final claim accepts a just-refreshed observation with unchanged geometry", async () => {
+  const row = await approved();
+  await db
+    .update(positions)
+    .set({ lastSyncedAt: new Date() })
+    .where(eq(positions.id, 1));
+  assert.equal((await send(row))?.status, "SENT_TO_MT5_LIVE");
+});
