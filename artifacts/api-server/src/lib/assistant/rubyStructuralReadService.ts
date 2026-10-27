@@ -25,6 +25,7 @@
 import {
   analyzeChartStructure,
   readHigherTimeframeBias,
+  humanTimeframeLabel,
   type StructureBias,
   type DraftPlan,
 } from "./chartStructure.js";
@@ -43,9 +44,9 @@ import {
   evaluateTradeHealthReadiness,
   requiredClosedBarsForTimeframe,
 } from "@workspace/domain/market";
-import { buildPatternTruthVerdict } from "../data/chart/patternTruthService.js";
+import { buildPatternTruthVerdict, classifyPatternDetection } from "../data/chart/patternTruthService.js";
 import { applyPatternLearning } from "./patternLearningRuntime.js";
-import { buildTrendlineTruthVerdict } from "../data/chart/trendlineTruthService.js";
+import { buildTrendlineTruthVerdict, classifyTrendlineDetection } from "../data/chart/trendlineTruthService.js";
 import { applyTrendlineLearning } from "./trendlineLearningRuntime.js";
 import { buildMarketIntelligenceSnapshot } from "../data/chart/marketIntelligenceService.js";
 import { buildGoldStrategyRead } from "./goldStrategyRead.js";
@@ -74,6 +75,8 @@ async function buildRubyPatternNote(args: {
   patternStatus: string;
   patternConditional: boolean;
   patternContextOnly: boolean;
+  /** What the detector saw: a pattern, none, or too few bars to look. */
+  patternDetection: "detected" | "none" | "insufficient";
   // ── ADDITIVE learning-loop fields — present ONLY when the user has accrued
   // enough resolved history for a non-zero (bounded, ceiling-capped) nudge.
   patternConfidenceAdjustment?: number;
@@ -96,7 +99,36 @@ async function buildRubyPatternNote(args: {
     distanceToSrAtr: null,
     volatilityAtr: null,
   });
-  if (!verdict || !verdict.dominantPattern) return null;
+  if (!verdict || !verdict.dominantPattern) {
+    // Absence is stated as an OBSERVATION only when the detector actually looked
+    // (and why it could not, when the window was too short). Detector error /
+    // unsupported timeframe ⇒ null (the reader says "unavailable", never "none").
+    const seen = classifyPatternDetection({
+      symbol: args.symbol,
+      timeframe: args.timeframe,
+      rawCandles: args.candles,
+    });
+    if (seen === null) return null;
+    const tfLabel = humanTimeframeLabel(args.timeframe);
+    if (seen === "insufficient") {
+      return {
+        patternNote: `Not enough closed ${tfLabel} candles to look for chart patterns.`,
+        patternStatus: "none",
+        patternConditional: false,
+        patternContextOnly: false,
+        patternDetection: "insufficient",
+      };
+    }
+    return {
+      patternNote: verdict
+        ? neutralizeFeedCopy(verdict.rubyExplanation)
+        : `No chart pattern detected on the ${tfLabel} closed-candle window.`,
+      patternStatus: "none",
+      patternConditional: verdict?.scannerTruthImpact.conditional ?? false,
+      patternContextOnly: false,
+      patternDetection: "none",
+    };
+  }
 
   // Learning loop: record this detection (fire-and-forget) and read back the
   // BOUNDED, ceiling-capped confidence nudge from the user's accrued history.
@@ -118,6 +150,7 @@ async function buildRubyPatternNote(args: {
     patternStatus: verdict.status,
     patternConditional: verdict.scannerTruthImpact.conditional,
     patternContextOnly: verdict.scannerTruthImpact.contextOnly,
+    patternDetection: "detected",
     ...(learning
       ? {
           patternConfidenceAdjustment: learning.confidenceAdjustment,
@@ -153,6 +186,8 @@ async function buildRubyTrendlineNote(args: {
   trendlineStatus: string;
   trendlineConditional: boolean;
   trendlineContextOnly: boolean;
+  /** What the detector saw: a dominant line, none, or too few bars to look. */
+  trendlineDetection: "detected" | "none" | "insufficient";
   // ── ADDITIVE learning-loop fields — present ONLY when the user has accrued
   // enough resolved history for a non-zero (bounded, ceiling-capped) nudge.
   trendlineConfidenceAdjustment?: number;
@@ -175,7 +210,35 @@ async function buildRubyTrendlineNote(args: {
     distanceToSrAtr: null,
     volatilityAtr: null,
   });
-  if (!verdict || !verdict.dominantTrendline) return null;
+  if (!verdict || !verdict.dominantTrendline) {
+    // Same rule as patterns: "none" only when the detector looked; detector
+    // error / unsupported timeframe ⇒ null ("unavailable" on the reader).
+    const seen = classifyTrendlineDetection({
+      symbol: args.symbol,
+      timeframe: args.timeframe,
+      rawCandles: args.candles,
+    });
+    if (seen === null) return null;
+    const tfLabel = humanTimeframeLabel(args.timeframe);
+    if (seen === "insufficient") {
+      return {
+        trendlineNote: `Not enough closed ${tfLabel} candles for trendline geometry.`,
+        trendlineStatus: "none",
+        trendlineConditional: false,
+        trendlineContextOnly: false,
+        trendlineDetection: "insufficient",
+      };
+    }
+    return {
+      trendlineNote: verdict
+        ? neutralizeFeedCopy(verdict.rubyExplanation)
+        : `No trendline detected on the ${tfLabel} closed-candle window.`,
+      trendlineStatus: "none",
+      trendlineConditional: verdict?.scannerTruthImpact.conditional ?? false,
+      trendlineContextOnly: false,
+      trendlineDetection: "none",
+    };
+  }
 
   // Learning loop: record this detection (fire-and-forget) and read back the
   // BOUNDED, ceiling-capped confidence nudge from the user's accrued history.
@@ -197,6 +260,7 @@ async function buildRubyTrendlineNote(args: {
     trendlineStatus: verdict.status,
     trendlineConditional: verdict.scannerTruthImpact.conditional,
     trendlineContextOnly: verdict.scannerTruthImpact.contextOnly,
+    trendlineDetection: "detected",
     ...(learning
       ? {
           trendlineConfidenceAdjustment: learning.confidenceAdjustment,

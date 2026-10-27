@@ -816,3 +816,29 @@ describe("owner screenshot 2026-10-27 — HTF bias is stated only when it was re
     expect(screen.getByTestId("ruby-chart-read-htf-bias").textContent).toBe("Bullish");
   });
 });
+
+// ── Owner screenshot 2026-10-27 — trendline drawn on the chart, "none named" in the read ──
+describe("owner screenshot 2026-10-27 — the chart read's Trendline row is the server's detector note", () => {
+  it("a STRUCTURAL_ONLY payload with trendlineRead renders the note, not 'No specific trendline named.'", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    const note =
+      "Rising support trendline (bullish) has broken on a decisive close. Feed is not live-confirmed, so treat this trendline as context only.";
+    mockStoredRead = {
+      gated: false,
+      dataQuality: "ok",
+      readLayer: "STRUCTURAL_ONLY",
+      liveSetupWithheld: true,
+      canShowLiveTradeSetup: false,
+      bias: "Mixed",
+      supportZone: "1",
+      resistanceZone: "2",
+      cautions: ["Exact entry, stop, and target levels withheld — Live feed is delayed."],
+      trendlineRead: { trendlineNote: note, trendlineStatus: "broken", trendlineContextOnly: true, trendlineDetection: "detected" },
+    } as unknown as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const row = screen.getByTestId("ruby-chart-read-reasoning-evidence-trendline").textContent ?? "";
+    expect(row).toBe(note);
+    expect(row).not.toContain("No specific trendline named.");
+    expect(row).not.toContain("Trendline read withheld");
+  });
+});

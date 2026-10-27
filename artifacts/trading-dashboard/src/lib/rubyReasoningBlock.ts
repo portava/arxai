@@ -160,17 +160,25 @@ export function buildReasoningFromMarketRead(
   );
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = orElse(chosen?.whatIsHappening, NOT_ENOUGH);
+  // The direction evidence (e.g. "Higher highs / higher lows") is swing
+  // STRUCTURE, not a chart pattern — it belongs in the Structure row.
+  const directionEvidence = downgraded ? "" : clean(chosen?.whyThisDirection);
+  const structureBase = clean(chosen?.whatIsHappening);
+  const structure = structureBase
+    ? directionEvidence
+      ? `${structureBase} ${directionEvidence}`
+      : structureBase
+    : NOT_ENOUGH;
   const momentum = orElse(
     chosen?.whyNow,
     orElse(chosen?.timingState, NOT_ENOUGH),
   );
-  const pattern = downgraded
-    ? "Pattern read withheld until the live feed confirms."
-    : orElse(chosen?.whyThisDirection, "No confirmed chart pattern called out.");
-  const trendline = downgraded
-    ? "Trendline read withheld until the live feed confirms."
-    : "No specific trendline called out.";
+  // The market-read engine has no chart-pattern or trendline producer, so these
+  // rows say so in every state (a "withheld until the feed confirms" variant
+  // would promise an assessment that never comes; "none called out" would imply
+  // one was made). Trendlines/patterns come from the chart read and overlay.
+  const pattern = "Chart patterns are not assessed by this read.";
+  const trendline = "Trendlines are not assessed by this read.";
 
   // Feed wording is used ONLY when the feed is actually the reason: the gate is
   // downgraded, or the signal's own feed isn't a confirmed live feed, or the
@@ -587,12 +595,18 @@ export function buildReasoningFromChartRead(
   const momentum = clean(read.confidence)
     ? `Read confidence ${read.confidence}.`
     : NOT_ENOUGH;
-  const pattern = withheld
+  // Pattern / Trendline rows say what the server's detectors reported on this
+  // read's closed-candle window (a structural read carries them too — the server
+  // already flags them context-only). Withheld only when there is no readable
+  // structure (gated / feed not confirmed). A missing key means the read did not
+  // assess it: "unavailable" — never "none named", which would claim a look.
+  const feedWithheld = gated || feedNotConfirmed;
+  const pattern = feedWithheld
     ? "Pattern read withheld until the live feed confirms."
-    : "No specific chart pattern named.";
-  const trendline = withheld
+    : orElse(read.patternRead?.patternNote, "Pattern read unavailable for this read.");
+  const trendline = feedWithheld
     ? "Trendline read withheld until the live feed confirms."
-    : "No specific trendline named.";
+    : orElse(read.trendlineRead?.trendlineNote, "Trendline read unavailable for this read.");
 
   let supportResistance: string;
   if (gated || feedNotConfirmed) {
