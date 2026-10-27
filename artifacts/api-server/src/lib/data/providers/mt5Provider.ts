@@ -116,7 +116,20 @@ interface CandleSeries {
 // symbol|timeframe → (bridgeKey → series). Partitions are hard walls: no read
 // or write path may merge candles across two partition entries.
 const candleStore = new Map<string, Map<string, CandleSeries>>();
-const quoteStore = new Map<string, { quote: MarketQuote; updatedAt: number }>();
+
+interface QuoteEntry {
+  quote: MarketQuote;
+  updatedAt: number;
+  /** Monotonic write ordinal — the recency ranking for the unscoped read. */
+  writeSeq: number;
+  /** null = unattributed partition (writer identity unknown — never guessed). */
+  bridgeConnectionId: number | null;
+  userId: number | null;
+}
+// symbol → (bridgeKey → latest quote). Same partition wall as the candle store:
+// a bridge-scoped read serves ONLY that bridge's quote; the unscoped legacy read
+// serves the most recent writer (single-writer behaviour unchanged).
+const quoteStore = new Map<string, Map<string, QuoteEntry>>();
 let lastUpdate = 0;
 let writeCounter = 0;
 // symbol → last contention-warn emit time (rate limit state).
@@ -239,9 +252,61 @@ export function mergeCandleFromMT5(
   lastUpdate = Date.now();
 }
 
-export function updateQuoteFromMT5(symbol: string, quote: MarketQuote): void {
-  quoteStore.set(normalizeSymbolKey(symbol), { quote, updatedAt: Date.now() });
+/**
+ * Store the latest quote for a symbol in the pushing bridge's partition. The
+ * legacy 2-arg form (no bridge identity) still works and writes the
+ * unattributed partition, which a bridge-scoped read never serves.
+ */
+export function updateQuoteFromMT5(
+  symbol: string,
+  quote: MarketQuote,
+  bridge?: Mt5BridgeIdentity | null,
+): void {
+  const key = normalizeSymbolKey(symbol);
+  const partitions = quoteStore.get(key) ?? new Map<string, QuoteEntry>();
+  partitions.set(bridgeKeyOf(bridge), {
+    quote,
+    updatedAt: Date.now(),
+    writeSeq: ++writeCounter,
+    bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+    userId: bridge?.userId ?? null,
+  });
+  quoteStore.set(key, partitions);
   lastUpdate = Date.now();
+}
+
+function servingQuote(partitions: Map<string, QuoteEntry> | undefined): QuoteEntry | null {
+  if (!partitions || partitions.size === 0) return null;
+  let best: QuoteEntry | null = null;
+  for (const q of partitions.values()) {
+    if (!best || q.writeSeq > best.writeSeq) best = q;
+  }
+  return best;
+}
+
+export interface Mt5QuoteRead {
+  /** The bridge's own latest quote; null when that bridge never pushed the
+   *  symbol or its push exceeded the store TTL. Never another bridge's. */
+  quote: MarketQuote | null;
+  bridgeConnectionId: number | null;
+  userId: number | null;
+}
+
+/**
+ * Bridge-scoped quote read: serve ONLY the named bridge's partition (miss or
+ * stale → honest null; no fallback to another bridge or to the unattributed
+ * partition). This is the read the self-trade entry claim uses, so one user's
+ * EA can never supply the quote fact for another user's command.
+ */
+export function readMt5Quote(
+  symbol: string,
+  opts: { bridgeConnectionId: number; now?: number },
+): Mt5QuoteRead {
+  const now = opts.now ?? Date.now();
+  const q = quoteStore.get(normalizeSymbolKey(symbol))?.get(String(opts.bridgeConnectionId));
+  if (!q || now - q.updatedAt > CANDLE_TTL_MS)
+    return { quote: null, bridgeConnectionId: null, userId: null };
+  return { quote: q.quote, bridgeConnectionId: q.bridgeConnectionId, userId: q.userId };
 }
 
 /** Test/diagnostic helper — clear all pushed data + contention-warn state. */
@@ -406,7 +471,7 @@ export function getMt5QuoteAvailability(
   symbol: string,
   now: number = Date.now(),
 ): { hasQuote: boolean; fresh: boolean; hasPrice: boolean; ageMs: number | null } {
-  const q = quoteStore.get(normalizeSymbolKey(symbol));
+  const q = servingQuote(quoteStore.get(normalizeSymbolKey(symbol)));
   if (!q) return { hasQuote: false, fresh: false, hasPrice: false, ageMs: null };
   const ageMs = Math.max(0, now - q.updatedAt);
   const fresh = ageMs <= CANDLE_TTL_MS;
@@ -489,8 +554,11 @@ export class Mt5Provider implements DataProvider {
     return readMt5Candles(symbol, timeframe, limit).candles;
   }
 
+  // Legacy DataProvider surface — bridge-unscoped: serves the most recent
+  // writer's quote (chart/scanner/router reads). Execution-bound readers use
+  // readMt5Quote with the bridge identity instead.
   async getQuote(symbol: string): Promise<MarketQuote> {
-    const q = quoteStore.get(normalizeSymbolKey(symbol));
+    const q = servingQuote(quoteStore.get(normalizeSymbolKey(symbol)));
     if (q && Date.now() - q.updatedAt <= CANDLE_TTL_MS) return q.quote;
     return { symbol, timestamp: new Date().toISOString() };
   }

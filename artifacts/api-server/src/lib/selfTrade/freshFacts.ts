@@ -111,6 +111,8 @@ export interface EntryMarketObservation {
   requestedSymbol?: string;
   /** The broker-native name the quote and spec were read under; null if unresolved. */
   brokerSymbol?: string | null;
+  /** The bridge connection whose quote partition was read; null when unknown. */
+  bridgeConnectionId?: number | null;
   /** Present when the quote or spec could not be read. */
   error?: string | null;
 }

@@ -29,6 +29,12 @@ mock.module("../../data/providers/mt5Provider.js", {
         return quoteResult;
       },
     },
+    // Bridge-scoped read (quoteBridgeScope.test.ts covers the real partitions).
+    readMt5Quote: (symbol: string, opts: { bridgeConnectionId: number }) => {
+      calls.push(`quote:${symbol}@${opts.bridgeConnectionId}`);
+      if (quoteResult instanceof Error) throw quoteResult;
+      return { quote: quoteResult, bridgeConnectionId: opts.bridgeConnectionId, userId: null };
+    },
   },
 });
 mock.module("../../mt5/brokerSymbolSpec.js", {
@@ -65,6 +71,13 @@ describe("observeAgentEntryMarket", () => {
       brokerSymbol: "EURUSD.a",
     });
     assert.deepEqual(calls.sort(), ["quote:EURUSD.a", "resolve:EURUSD.a", "spec:9:EURUSD.a"]);
+  });
+  it("with a dispatch context the quote comes from that bridge's partition only", async () => {
+    const obs = await observeAgentEntryMarket(9, "EURUSD.a", { bridgeConnectionId: 4 });
+    assert.equal(obs.bid, 1.1);
+    assert.equal(obs.bridgeConnectionId, 4);
+    assert.ok(calls.includes("quote:EURUSD.a@4"));
+    assert.ok(!calls.includes("quote:EURUSD.a"));
   });
   it("reads the quote and point under the broker-native name the transport would send", async () => {
     // A suffix broker quotes and specs "EURUSD.r"; the command row says "EURUSD".
@@ -154,12 +167,14 @@ describe("dispatch wiring (source order)", () => {
   it("observes agent entries after every gate and passes the observation to the only claim", () => {
     const evaluator = body.indexOf("evaluateLivePhaseBDispatchGate(");
     const exposure = body.indexOf("reserveExposureAtomicWithUserHeadroom(");
-    const observe = body.indexOf("observeAgentEntryMarket(args.userId, row.symbol)");
+    const observe = body.indexOf("observeAgentEntryMarket(args.userId, row.symbol, {");
     const claim = body.indexOf("claimLiveCommandForDispatch(");
     assert.ok(evaluator > 0 && exposure > 0 && observe > 0 && claim > 0);
     assert.ok(evaluator < observe && exposure < observe && observe < claim);
     assert.equal(body.split("claimLiveCommandForDispatch(").length, 2);
     assert.match(body.slice(claim, claim + 1200), /\{ entryMarket \}/);
     assert.match(body.slice(observe - 120, observe), /isAgentEntryCommand\(row\)/);
+    // The observation is bound to the bridge the command is dispatched to.
+    assert.match(body.slice(observe, observe + 200), /bridgeConnectionId: bridge\?\.id \?\? null/);
   });
 });

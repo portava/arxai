@@ -18,17 +18,33 @@
 // ARX-internal name. Both reads use the same resolver the transport applies when
 // the command leaves for the EA (liveCommandPipeline → resolveBrokerSymbolName),
 // then match exactly: no case-folding, suffix guessing or alias invention here.
-import { mt5Provider } from "../data/providers/mt5Provider.js";
+// Bridge: the quote store is partitioned by the bridge connection that pushed
+// the tick. With a dispatch context the observer reads ONLY the dispatch bridge's
+// partition, so another user's EA quoting the same symbol can never supply this
+// user's quote fact; a context without a bridge identity refuses. Without a
+// context (legacy/unit callers) the unscoped most-recent-writer read is used.
+import { mt5Provider, readMt5Quote } from "../data/providers/mt5Provider.js";
 import { resolveBrokerSymbolName } from "../instruments/brokerSymbolName.js";
 import { getBrokerSymbolSpec } from "../mt5/brokerSymbolSpec.js";
 import type { EntryMarketObservation } from "./freshFacts.js";
+import type { MarketQuote } from "../data/types.js";
 
 export const ENTRY_QUOTE_SOURCE = "mt5_broker";
+
+export interface EntryObservationContext {
+  /** The bridge the command is being dispatched to (dispatchLiveCommand's `bridge.id`). */
+  bridgeConnectionId: number | null | undefined;
+}
 
 export async function observeAgentEntryMarket(
   userId: number,
   symbol: string,
+  context?: EntryObservationContext,
 ): Promise<EntryMarketObservation> {
+  const bridgeConnectionId =
+    typeof context?.bridgeConnectionId === "number" && Number.isFinite(context.bridgeConnectionId)
+      ? context.bridgeConnectionId
+      : null;
   const unavailable = (
     error: string,
     brokerSymbol: string | null,
@@ -42,22 +58,29 @@ export async function observeAgentEntryMarket(
     error,
     requestedSymbol: symbol,
     brokerSymbol,
+    bridgeConnectionId,
   });
+  if (context !== undefined && bridgeConnectionId == null)
+    return unavailable("BROKER_QUOTE_BRIDGE_UNKNOWN", null);
   let brokerSymbol: string;
   try {
     brokerSymbol = await resolveBrokerSymbolName(symbol);
   } catch {
     return unavailable("BROKER_SYMBOL_RESOLVE_FAILED", null);
   }
+  const readQuote = async (): Promise<MarketQuote | null> =>
+    bridgeConnectionId == null
+      ? mt5Provider.getQuote(brokerSymbol)
+      : readMt5Quote(brokerSymbol, { bridgeConnectionId }).quote;
   const [quote, spec] = await Promise.all([
-    mt5Provider.getQuote(brokerSymbol).catch((err: unknown) => ({ error: err })),
+    readQuote().catch((err: unknown) => ({ error: err })),
     getBrokerSymbolSpec(userId, brokerSymbol).catch((err: unknown) => ({ error: err })),
   ]);
   const point =
     "error" in spec ? null : spec.hasBrokerTruth ? spec.spec.point : null;
-  if ("error" in quote || (quote.bid == null && quote.ask == null))
+  if (quote == null || "error" in quote || (quote.bid == null && quote.ask == null))
     return unavailable(
-      "error" in quote ? "BROKER_QUOTE_READ_FAILED" : "BROKER_QUOTE_UNAVAILABLE",
+      quote != null && "error" in quote ? "BROKER_QUOTE_READ_FAILED" : "BROKER_QUOTE_UNAVAILABLE",
       brokerSymbol,
       point,
     );
@@ -73,6 +96,7 @@ export async function observeAgentEntryMarket(
         : null,
     requestedSymbol: symbol,
     brokerSymbol,
+    bridgeConnectionId,
     ...("error" in spec ? { error: "BROKER_SPEC_READ_FAILED" } : {}),
   };
 }

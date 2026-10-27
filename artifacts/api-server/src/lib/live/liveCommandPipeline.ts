@@ -4122,10 +4122,13 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // Fresh facts — agent entries are re-checked against a quote read here, after
   // every gate and immediately before the claim. The read happens outside the
   // claim's locks; the claim evaluates it after locking (quote age, spread,
-  // price vs the admitted entry zone and stop). null-safe: a failed read is an
-  // observation with an error, which the claim refuses.
+  // price vs the admitted entry zone and stop). The quote is read from THIS
+  // dispatch bridge's partition only, under the broker-native symbol. null-safe:
+  // a failed read is an observation with an error, which the claim refuses.
   const entryMarket = isAgentEntryCommand(row)
-    ? await observeAgentEntryMarket(args.userId, row.symbol)
+    ? await observeAgentEntryMarket(args.userId, row.symbol, {
+        bridgeConnectionId: bridge?.id ?? null,
+      })
     : undefined;
   // Task #28 — stamp TTL + authoritative server clock at the moment of
   // dispatch. A command not executed by the EA before `expiresAt` is swept

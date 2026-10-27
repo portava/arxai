@@ -29,6 +29,7 @@ import { bridgeV2 } from "@workspace/domain";
 import {
   mergeCandleFromMT5,
   updateQuoteFromMT5,
+  type Mt5BridgeIdentity,
 } from "../data/providers/mt5Provider.js";
 import { foldFormingTick } from "../data/chart/formingBarComposer.js";
 import type { Candle, MarketQuote } from "../data/types.js";
@@ -231,6 +232,7 @@ export async function ingestBridgeV2Message(
         payload,
         freshnessVerdict,
         eaCreatedAtEpochMs: envelope.eaCreatedAtEpochMs,
+        bridge: bridgeConnectionId == null ? null : { bridgeConnectionId, userId },
       });
     }
 
@@ -253,12 +255,17 @@ export interface MarketDataFeedInput {
   /** Envelope `eaCreatedAtEpochMs`: the EA's own UTC clock when it built the
    *  message (schema-validated positive integer; re-checked here, fail closed). */
   eaCreatedAtEpochMs: unknown;
+  /** The authenticated bridge connection the message came from; null when the
+   *  route could not attribute one (the write then lands in the unattributed
+   *  partition, which no bridge-scoped read serves). */
+  bridge?: Mt5BridgeIdentity | null;
 }
 
 // Exported for the offline fresh-facts tests only; the ingest API is
 // `ingestBridgeV2Message`, which calls this after its transaction commits.
 export function feedMarketDataStore(input: MarketDataFeedInput): void {
   const { messageType, payload, freshnessVerdict } = input;
+  const bridge = input.bridge ?? null;
   // Transport-STALE (>30s late) data is not trustworthy as a live feed.
   if (freshnessVerdict === "STALE") return;
   if (messageType !== "TICK" && messageType !== "CANDLE") return;
@@ -315,7 +322,7 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
       brokerClockOffsetMs:
         brokerTimeEpochMs == null ? null : brokerTimeEpochMs - eaCreatedAtEpochMs,
     };
-    updateQuoteFromMT5(symbol, quote);
+    updateQuoteFromMT5(symbol, quote, bridge);
     // Task #496 — fold this accepted, fresh tick into the in-memory forming-bar
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an
