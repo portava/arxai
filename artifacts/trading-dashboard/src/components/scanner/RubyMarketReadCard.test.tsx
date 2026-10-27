@@ -308,3 +308,30 @@ describe("RubyMarketReadCard — honest render states", () => {
     expect(screen.queryByText("Levels")).toBeNull();
   });
 });
+
+// levels-withheld-vs-shown (owner's [H]): a live, non-actionable read on a full
+// shared truth must not blame the feed for missing levels on the same card that
+// says "Live feed confirmed.".
+describe("RubyMarketReadCard — missing levels are never attributed to a confirmed feed", () => {
+  it("full gate + live non-actionable read: no 'until the live feed confirms' anywhere, server reason shown", () => {
+    mockUseGetMeMarketEdge.mockReturnValue(
+      hookState({
+        data: resp({
+          signal: { lifecycleStage: "SETUP_FORMING", evidence: { for: [{ key: "hh", label: "Higher highs / higher lows", weight: 2 }], against: [], conflicts: [], meetsMinimum: false, netScore: 1 } },
+          explanation: explanation({
+            actionable: false,
+            missingContext: ["enough confirming evidence"],
+            levels: { entryZone: null, watchZone: null, lateZone: null, invalidation: null, takeProfits: [], stopLoss: null },
+            levelsWithheldReason: "No scanner entry or stop is attached to this read yet.",
+            noTrade: { isNoTrade: true, confidence: 66, reason: "There isn't enough confirming evidence yet to justify the risk." },
+          }),
+        }),
+      }),
+    );
+    const { container } = render(<RubyMarketReadCard symbol="R_75" timeframe="M1" />);
+    const text = container.textContent ?? "";
+    expect(text).toContain("Live feed confirmed.");
+    expect(text).not.toMatch(/until the live feed confirms/);
+    expect(text).toContain("No scanner entry or stop is attached to this read yet.");
+  });
+});

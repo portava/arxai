@@ -18408,6 +18408,12 @@ export const GetMeMarketEdgeResponse = zod.object({
       hasSufficientData: zod.boolean(),
       actionable: zod.boolean(),
       missingContext: zod.array(zod.string()),
+      levelsWithheldReason: zod
+        .string()
+        .nullish()
+        .describe(
+          "Optional. Why no entry\/watch\/stop\/invalidation level is published on this read (plain English), or null when any level is present. Composed only from facts on the signal; absent from older servers.",
+        ),
       disclaimer: zod.string(),
     })
     .nullish(),

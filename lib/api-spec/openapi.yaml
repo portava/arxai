@@ -22511,6 +22511,10 @@ components:
         missingContext:
           type: array
           items: { type: string }
+        levelsWithheldReason:
+          type: string
+          nullable: true
+          description: Optional. Why no entry/watch/stop/invalidation level is published on this read (plain English), or null when any level is present. Composed only from facts on the signal; absent from older servers.
         disclaimer: { type: string }
 
     OpportunityMapRow:

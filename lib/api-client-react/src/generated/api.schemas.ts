@@ -14184,6 +14184,8 @@ export interface RubyMarketReadExplanation {
   hasSufficientData: boolean;
   actionable: boolean;
   missingContext: string[];
+  /** Optional. Why no entry/watch/stop/invalidation level is published on this read (plain English), or null when any level is present. Composed only from facts on the signal; absent from older servers. */
+  levelsWithheldReason?: string | null;
   disclaimer: string;
 }
 

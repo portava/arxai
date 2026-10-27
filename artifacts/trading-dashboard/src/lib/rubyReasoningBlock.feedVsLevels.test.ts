@@ -72,8 +72,10 @@ describe("Market Read card — levels withheld for no setup are never blamed on 
     expect(d.decision).toBe("NO TRADE");
     expect(d.evidence.feedData).toBe("Live feed confirmed.");
     expect(d.evidence.supportResistance).not.toMatch(FEED_BLAME);
-    expect(d.evidence.supportResistance).toContain("No level to watch yet.");
-    expect(d.evidence.supportResistance).toContain("No entry, stop or target published");
+    // No server levelsWithheldReason on this fixture → neutral fact + what is
+    // still missing; never a number (the card hides Levels for a non-actionable read).
+    expect(d.evidence.supportResistance).toMatch(/^No entry\/stop levels are bound to this read\./);
+    expect(d.evidence.supportResistance).toContain("Still needed: enough confirming evidence.");
     expect(d.evidence.supportResistance).not.toMatch(/\d/);
   });
 
@@ -90,7 +92,7 @@ describe("Market Read card — levels withheld for no setup are never blamed on 
     expect(d.evidence.supportResistance).toMatch(/until the live feed confirms/);
   });
 
-  it("gate full but the signal itself is delayed → feed wording, delayed Feed/Data line", () => {
+  it("gate full but the signal itself is delayed → data wording, delayed Feed/Data line", () => {
     const d = buildReasoningFromMarketRead({
       explanation: ownerExplanation(),
       signal: signal("LIVE_DELAYED"),
@@ -99,10 +101,10 @@ describe("Market Read card — levels withheld for no setup are never blamed on 
       newsRiskLabel: null,
     });
     expect(d.evidence.feedData).toBe("Live feed is delayed — treat as lower confidence.");
-    expect(d.evidence.supportResistance).toMatch(/until the live feed confirms/);
+    expect(d.evidence.supportResistance).toBe("Levels withheld — not enough confirmed live candles/feed for this read.");
   });
 
-  it("an extended (late) move on a confirmed feed uses the server's own entry-zone statement", () => {
+  it("an extended (late) move on a confirmed feed: no feed blame and no level numbers in S/R", () => {
     const exp = ownerExplanation();
     exp.simple = { ...exp.simple, entryZone: "Already extended past 33600 — do not chase." };
     const d = buildReasoningFromMarketRead({
@@ -113,7 +115,9 @@ describe("Market Read card — levels withheld for no setup are never blamed on 
       newsRiskLabel: null,
     });
     expect(d.evidence.supportResistance).not.toMatch(FEED_BLAME);
-    expect(d.evidence.supportResistance).toContain("do not chase");
+    // The late zone is the server's ENTRY copy on the same card; the S/R line of a
+    // non-actionable read stays number-free (downgrade-only).
+    expect(d.evidence.supportResistance).not.toMatch(/33600/);
   });
 });
 

@@ -444,6 +444,13 @@ export interface RubyMarketReadExplanation {
   actionable: boolean;
   /** Plain-English list of what's missing before acting (handshake gating). */
   missingContext: string[];
+  /**
+   * ADDITIVE, optional. Why NO entry/watch/stop/invalidation level is published
+   * on this read (one plain-English sentence), or null when
+   * any level is present. Composed only from facts the signal carries, so a
+   * card never has to guess the cause (e.g. blame the feed) for missing levels.
+   */
+  levelsWithheldReason?: string | null;
   disclaimer: string;
 }
 
