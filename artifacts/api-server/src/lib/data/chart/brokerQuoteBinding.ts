@@ -250,7 +250,9 @@ export function selectBrokerQuote(
 ): { quote: BrokerQuoteObservation | null; binding: BrokerQuoteBinding } {
   let fallback: { quote: BrokerQuoteObservation; binding: BrokerQuoteBinding } | null = null;
   for (const quote of candidates) {
-    if (!quote) continue;
+    // A candidate without both prices cannot be compared, so it must not
+    // shadow a later priced candidate.
+    if (!quote || quote.bid == null || quote.ask == null) continue;
     const binding = bindBrokerQuote({ ...ctx, quote });
     if (binding.status === "BOUND") return { quote, binding };
     fallback ??= { quote, binding };

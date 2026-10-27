@@ -161,6 +161,10 @@ test("candidate selection prefers a bound quote and otherwise keeps the first ob
   assert.equal(fallback.quote, stale); assert.equal(fallback.binding.status, "STALE");
   const none = selectBrokerQuote([null, null], ctx);
   assert.equal(none.quote, null); assert.deepEqual(none.binding.reasons, ["QUOTE_ABSENT"]);
+  // A bound but unpriced live read cannot shadow a later priced candidate.
+  const unpriced = quote({ bid: null, ask: null });
+  assert.equal(selectBrokerQuote([unpriced, snapshot], ctx).quote, snapshot);
+  assert.equal(selectBrokerQuote([unpriced], ctx).quote, null);
 });
 
 test("snapshot rows bind only from the EA tick time and never from report time", () => {
