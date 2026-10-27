@@ -23,8 +23,15 @@ import type {
   SignalEvidenceItem,
   SignalLifecycleStage,
   NoTradeIntelligence,
+  NoTradeRuleKey,
 } from "./signalIntelligence.types.js";
 import { confidenceBandFor } from "./scoring.js";
+import {
+  MIN_EVIDENCE_NET_SCORE,
+  MIN_EVIDENCE_SUPPORTING_ITEMS,
+  isHighConfidenceOpposingTrap,
+  minimumEvidenceShortfall,
+} from "./freshnessEvidence.js";
 
 const DISCLAIMER =
   "Decision support only — confirm live readiness and risk before trading.";
@@ -185,6 +192,8 @@ interface Derived {
   tps: string[];
   newsL: NewsRiskLevel;
   meetsMin: boolean;
+  /** Plain-English names of the minimum-evidence sub-rules that failed. */
+  evidenceShortfall: string[];
   hasData: boolean;
   liveFeed: boolean;
   late: boolean;
@@ -224,6 +233,7 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
     tps: signal.takeProfitZones.map((z) => zoneText(z)).filter((s): s is string => !!s),
     newsL,
     meetsMin: signal.evidence.meetsMinimum,
+    evidenceShortfall: evidenceShortfallText(signal),
     hasData: signal.hasSufficientData,
     liveFeed: signal.dataSource === "LIVE_FEED",
     late: signal.late.isLate,
@@ -233,6 +243,48 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
     isHighLiquidity: signal.session.isHighLiquidity,
     invalSide: signal.direction === "SELL" ? "above" : "below",
   };
+}
+
+// Names the minimum-evidence sub-rules that failed, from the same rule inputs
+// and thresholds the producer applied (freshnessEvidence.minimumEvidenceShortfall).
+// No direction is reported by its own no-trade branch, so it is not repeated.
+function evidenceShortfallText(signal: RubyMarketEdgeSignal): string[] {
+  if (signal.evidence.meetsMinimum) return [];
+  const supporting = signal.evidence.for.length;
+  const net = Math.round(signal.evidence.netScore);
+  const highConfOpposingTrap =
+    !!signal.fakeout && isHighConfidenceOpposingTrap(signal.fakeout, signal.direction);
+  const failed = minimumEvidenceShortfall({
+    direction: signal.direction,
+    bias: signal.bias,
+    supportingCount: supporting,
+    netScore: net,
+    highConfOpposingTrap,
+  });
+  const out: string[] = [];
+  for (const f of failed) {
+    switch (f) {
+      case "TOO_FEW_SUPPORTING":
+        out.push(
+          supporting === 0
+            ? `no supporting signals yet (at least ${MIN_EVIDENCE_SUPPORTING_ITEMS} needed)`
+            : `only ${supporting} supporting signal${supporting === 1 ? "" : "s"} (at least ${MIN_EVIDENCE_SUPPORTING_ITEMS} needed)`,
+        );
+        break;
+      case "NET_TOO_LOW":
+        out.push(`net supporting evidence ${net}/100 (at least ${MIN_EVIDENCE_NET_SCORE} needed)`);
+        break;
+      case "UNCLEAR_STRUCTURE":
+        out.push("the price structure is unclear");
+        break;
+      case "OPPOSING_TRAP":
+        out.push("a likely trap works against this side");
+        break;
+      default:
+        break;
+    }
+  }
+  return out;
 }
 
 // News risk is not a typed field on the signal; it is folded into evidence
@@ -298,34 +350,49 @@ function computeNoTrade(
     return {
       isNoTrade: false,
       confidence: Math.max(0, 35 - Math.round(d.edge / 4)),
+      basis: "EDGE_DERIVED",
+      ruleKey: null,
       reason: null,
     };
   }
+  // `confidence` below is a FIXED weight per rule (basis RULE_TIER), not a
+  // measured probability — the surfaces render the rule's reason, never "% sure".
   let confidence: number;
+  let ruleKey: NoTradeRuleKey;
   let reason: string;
   if (!d.hasData || !d.liveFeed) {
     confidence = 90;
+    ruleKey = "NO_LIVE_DATA";
     reason = "Not enough live data to read this market — acting blind isn't worth it.";
   } else if (stage === "INVALID" || stage === "EXPIRED") {
     confidence = 92;
+    ruleKey = "INVALID_OR_EXPIRED";
     reason = "The setup is no longer valid, so there's nothing clean to trade.";
   } else if (d.neutral) {
     confidence = 78;
+    ruleKey = "NO_DIRECTION";
     reason = "No side has the edge right now — better to wait for direction.";
   } else if (d.late || d.doNotChase) {
     confidence = 74;
+    ruleKey = "LATE";
     reason = "The clean entry has passed — chasing here pays a poor reward-to-risk.";
   } else if (!d.meetsMin) {
     confidence = 66;
-    reason = "There isn't enough confirming evidence yet to justify the risk.";
+    ruleKey = "BELOW_MIN_EVIDENCE";
+    reason =
+      d.evidenceShortfall.length > 0
+        ? `There isn't enough confirming evidence yet to justify the risk: ${joinAnd(d.evidenceShortfall)}.`
+        : "There isn't enough confirming evidence yet to justify the risk.";
   } else if (d.timing === "early") {
     confidence = 60;
+    ruleKey = "EARLY";
     reason = "The setup is still forming — it's early to commit.";
   } else {
     confidence = 45;
+    ruleKey = "NOT_AT_ENTRY";
     reason = "Price hasn't reached the entry yet — wait for it to come to you.";
   }
-  return { isNoTrade: true, confidence, reason };
+  return { isNoTrade: true, confidence, basis: "RULE_TIER", ruleKey, reason };
 }
 
 // ── Per-mode composer ─────────────────────────────────────────────────────────

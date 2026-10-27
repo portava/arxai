@@ -1480,6 +1480,8 @@ export * from "./rubyMissedOpportunity";
 export * from "./rubyMissedOpportunityHowItMoved";
 export * from "./rubyMissedOpportunityWhatRubySaw";
 export * from "./rubyNoTradeIntelligence";
+export * from "./rubyNoTradeIntelligenceBasis";
+export * from "./rubyNoTradeIntelligenceRuleKey";
 export * from "./rubyQualityErrorResp";
 export * from "./rubyQualityMetrics";
 export * from "./rubyQualityMetricsAverages";

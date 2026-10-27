@@ -14167,9 +14167,42 @@ export interface RubyExplanationLevels {
   stopLoss: number | null;
 }
 
+/**
+ * What the confidence number is (optional for older servers).
+ */
+export type RubyNoTradeIntelligenceBasis =
+  (typeof RubyNoTradeIntelligenceBasis)[keyof typeof RubyNoTradeIntelligenceBasis];
+
+export const RubyNoTradeIntelligenceBasis = {
+  RULE_TIER: "RULE_TIER",
+  EDGE_DERIVED: "EDGE_DERIVED",
+} as const;
+
+/**
+ * The no-trade rule that fired; null when the read is actionable.
+ */
+export type RubyNoTradeIntelligenceRuleKey =
+  | (typeof RubyNoTradeIntelligenceRuleKey)[keyof typeof RubyNoTradeIntelligenceRuleKey]
+  | null;
+
+export const RubyNoTradeIntelligenceRuleKey = {
+  NO_LIVE_DATA: "NO_LIVE_DATA",
+  INVALID_OR_EXPIRED: "INVALID_OR_EXPIRED",
+  NO_DIRECTION: "NO_DIRECTION",
+  LATE: "LATE",
+  BELOW_MIN_EVIDENCE: "BELOW_MIN_EVIDENCE",
+  EARLY: "EARLY",
+  NOT_AT_ENTRY: "NOT_AT_ENTRY",
+} as const;
+
 export interface RubyNoTradeIntelligence {
   isNoTrade: boolean;
+  /** 0-100. With basis RULE_TIER this is a fixed weight for the no-trade rule that fired (one constant per rule), with basis EDGE_DERIVED it is computed from the edge score. It is NOT a measured probability and must never be rendered as "% sure". Kept for back-compat. */
   confidence: number;
+  /** What the confidence number is (optional for older servers). */
+  basis?: RubyNoTradeIntelligenceBasis;
+  /** The no-trade rule that fired; null when the read is actionable. */
+  ruleKey?: RubyNoTradeIntelligenceRuleKey;
   reason: string | null;
 }
 

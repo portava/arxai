@@ -22481,7 +22481,22 @@ components:
       required: [isNoTrade, confidence, reason]
       properties:
         isNoTrade: { type: boolean }
-        confidence: { type: number }
+        confidence:
+          type: number
+          description: >-
+            0-100. With basis RULE_TIER this is a fixed weight for the no-trade
+            rule that fired (one constant per rule), with basis EDGE_DERIVED it
+            is computed from the edge score. It is NOT a measured probability
+            and must never be rendered as "% sure". Kept for back-compat.
+        basis:
+          type: string
+          enum: [RULE_TIER, EDGE_DERIVED]
+          description: What the confidence number is (optional for older servers).
+        ruleKey:
+          type: string
+          nullable: true
+          enum: [NO_LIVE_DATA, INVALID_OR_EXPIRED, NO_DIRECTION, LATE, BELOW_MIN_EVIDENCE, EARLY, NOT_AT_ENTRY, null]
+          description: The no-trade rule that fired; null when the read is actionable.
         reason: { type: string, nullable: true }
 
     RubyMarketReadExplanation:

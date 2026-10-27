@@ -423,11 +423,35 @@ export interface ExplanationLevels {
   stopLoss: number | null;
 }
 
-/** No-trade intelligence — why skipping is the right call, and how sure. */
+/**
+ * What the no-trade `confidence` number is. RULE_TIER: a fixed weight assigned
+ * to the rule that fired (one constant per rule) — NOT a measured or
+ * back-tested probability. EDGE_DERIVED: computed from the edge score on an
+ * actionable read. Neither may be rendered as "% sure".
+ */
+export type NoTradeBasis = "RULE_TIER" | "EDGE_DERIVED";
+
+/** The no-trade rule that fired (null when the read is actionable). */
+export type NoTradeRuleKey =
+  | "NO_LIVE_DATA"
+  | "INVALID_OR_EXPIRED"
+  | "NO_DIRECTION"
+  | "LATE"
+  | "BELOW_MIN_EVIDENCE"
+  | "EARLY"
+  | "NOT_AT_ENTRY";
+
+/** No-trade intelligence — why skipping is the right call, and which rule said so. */
 export interface NoTradeIntelligence {
   isNoTrade: boolean;
-  /** 0–100 — how confident Ruby is that not trading is correct right now. */
+  /**
+   * 0–100 fixed rule weight (basis RULE_TIER) or edge-derived value (basis
+   * EDGE_DERIVED). NOT a measured probability; never render it as "% sure".
+   * Kept for back-compat.
+   */
   confidence: number;
+  basis: NoTradeBasis;
+  ruleKey: NoTradeRuleKey | null;
   reason: string | null;
 }
 

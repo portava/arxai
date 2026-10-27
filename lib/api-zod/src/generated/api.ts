@@ -18402,7 +18402,32 @@ export const GetMeMarketEdgeResponse = zod.object({
       bestAction: zod.string(),
       noTrade: zod.object({
         isNoTrade: zod.boolean(),
-        confidence: zod.number(),
+        confidence: zod
+          .number()
+          .describe(
+            '0-100. With basis RULE_TIER this is a fixed weight for the no-trade rule that fired (one constant per rule), with basis EDGE_DERIVED it is computed from the edge score. It is NOT a measured probability and must never be rendered as \"% sure\". Kept for back-compat.',
+          ),
+        basis: zod
+          .enum(["RULE_TIER", "EDGE_DERIVED"])
+          .optional()
+          .describe(
+            "What the confidence number is (optional for older servers).",
+          ),
+        ruleKey: zod
+          .union([
+            zod.literal("NO_LIVE_DATA"),
+            zod.literal("INVALID_OR_EXPIRED"),
+            zod.literal("NO_DIRECTION"),
+            zod.literal("LATE"),
+            zod.literal("BELOW_MIN_EVIDENCE"),
+            zod.literal("EARLY"),
+            zod.literal("NOT_AT_ENTRY"),
+            zod.literal(null),
+          ])
+          .nullish()
+          .describe(
+            "The no-trade rule that fired; null when the read is actionable.",
+          ),
         reason: zod.string().nullable(),
       }),
       hasSufficientData: zod.boolean(),

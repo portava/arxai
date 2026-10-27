@@ -472,9 +472,11 @@ export function RubyMarketReadCard({
               {/* No-trade intelligence */}
               {explanation.noTrade.isNoTrade && (
                 <div className="rounded-xl border border-border bg-background/40 p-3" data-testid="ruby-market-read-no-trade">
+                  {/* noTrade.confidence is a fixed weight per no-trade rule
+                      (basis RULE_TIER), not a measured probability, so it is
+                      never rendered as "% sure" — the rule's reason is the claim. */}
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-foreground">Why sitting out is the trade</span>
-                    <span className="ml-auto text-xs text-txt-muted">{Math.round(explanation.noTrade.confidence)}% sure</span>
                   </div>
                   {explanation.noTrade.reason && (
                     <p className="mt-1 text-sm leading-snug text-txt-secondary">{explanation.noTrade.reason}</p>
