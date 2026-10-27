@@ -2436,7 +2436,7 @@ let terminalBodies: any[] | undefined;
 function actualTerminalBody(legacy:boolean,kind:string,scenario:string){
   if(!terminalBodies){
     const runner=fileURLToPath(new URL("../../../../../../mt5-bridge/tests/run_management_target.py",import.meta.url));
-    const compiled=spawnSync("python3",[runner,"--result-evidence","--emit"],{encoding:"utf8",timeout:20000,env:{...process.env,TMPDIR:"/private/tmp"}});
+    const compiled=spawnSync("python3",[runner,"--result-evidence","--emit"],{encoding:"utf8",timeout:20000,env:{...process.env,TMPDIR:process.env.TMPDIR ?? tmpdir()}});
     assert.equal(compiled.status,0,`${compiled.error??""} ${compiled.stderr}`);
     terminalBodies=compiled.stdout.trim().split("\n").map(line=>JSON.parse(line));
   }
@@ -2528,4 +2528,102 @@ for(const legacy of [false,true]){
   const events=await db.select().from(executionEvents).where(eq(executionEvents.commandId,row.id));
   assert.ok(events.some(e=>(e.payload as any)?.terminalResultEvidence?.resultDeal==="43"));
  });
+}
+
+// Entry precision transport: actual signer, mailbox column types, poll route,
+// extracted v154 entry handler and the actual result route. Only the broker is
+// a fixture; it fills its own exact 0.02 step volume.
+const { buildCommandIntegrityFields } = await import("../../security/commandIntegrity.js");
+async function signedEntry(overrides: Record<string, unknown> = {}) {
+  const base = { commandId: "precise-entry", userId: 9, commandType: "PLACE_LIVE_MARKET_ORDER", symbol: "EURUSD.a", side: "BUY",
+    orderType: "MARKET_BUY", requestedVolume: .02, stopLoss: 1.123456789, takeProfit: 1.3, payload: { source: "offline-fixture" } };
+  const integrity = buildCommandIntegrityFields({ ...base, actorId: 9, actorType: "USER" });
+  assert.equal(integrity.integrityStatus, "ACTIVE", "fixture must be signed by the actual signer");
+  const [row] = await db.insert(commands).values({ ...base, ...integrity, bridgeConnectionId: 1, status: "SENT_TO_MT5_LIVE", ...overrides }).returning();
+  await db.insert(reservations).values({ userId: 9, commandId: row!.commandId, symbol: row!.symbol, lotSize: .02, status: "RESERVED" });
+  // Same columns enqueueBridgedMt5Command writes: float8 authority into float4 mirror.
+  const [mail] = await db.insert(mailbox).values({ userId: 9, requestedByUserId: row!.userId, mt5ConnectionId: 1, action: "OPEN_MARKET",
+    symbol: row!.symbol, side: row!.side, lot: Number(row!.requestedVolume), sl: row!.stopLoss, tp: row!.takeProfit, status: "PENDING",
+    payload: buildBridgedMt5CommandPayload({ ...row!, payload: row!.payload as Record<string, unknown> | null }) }).returning();
+  return { row: row!, mail: mail! };
+}
+function extractedEntry(response: unknown) {
+  const folder = mkdtempSync(join(tmpdir(), "arx-entry-wire-"));
+  try {
+    const path = join(folder, "wire.json"); writeFileSync(path, JSON.stringify(response));
+    const runner = fileURLToPath(new URL("../../../../../../mt5-bridge/tests/run_management_target.py", import.meta.url));
+    const result = spawnSync("python3", [runner, "--result-evidence", "--entry-wire-file", path], { encoding: "utf8", timeout: 30000, env: { ...process.env, TMPDIR: process.env.TMPDIR ?? tmpdir() } });
+    assert.equal(result.status, 0, `${result.error ?? ""} ${result.stdout} ${result.stderr}`);
+    return JSON.parse(result.stdout.trim().split("\n").at(-1)!);
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+}
+it("control: the legacy float4 mirror cannot represent authoritative 0.02 entry volume", async () => {
+  const { mail } = await signedEntry();
+  const raw = await pool.query("select lot::float8 as lot, sl::float8 as sl from mt5_commands where id=$1", [mail.id]);
+  assert.equal(raw.rows[0].lot, Math.fround(.02)); assert.notEqual(raw.rows[0].lot, .02);
+  assert.notEqual(raw.rows[0].sl, 1.123456789);
+  // The unprojected rounded volume, echoed honestly by the terminal, cannot prove a 0.02 fill.
+  const response = await pollRoute(true, "1"); const wire = { ...response, commands: response.commands.map((c: any) => ({ ...c, lot: Math.fround(.02) })) };
+  const terminal = extractedEntry(wire);
+  assert.equal(terminal.tradedLot, Math.fround(.02));
+  const result = await terminalResultRoute(true, mail.id, terminal.body); assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal((await db.select().from(commands).where(eq(commands.commandId, "precise-entry")))[0]!.status, "LIVE_UNKNOWN");
+  assert.equal((await db.select().from(reservations))[0]!.status, "RESERVED");
+});
+it("actual signed entry: PG mailbox -> poll -> extracted v154 EA -> result route preserves exact 0.02 and fills once", async () => {
+  const { mail } = await signedEntry();
+  const response = await pollRoute(true, "1");
+  assert.equal(response.commands.length, 1); assert.equal(response.commands[0].id, mail.id);
+  assert.equal(response.commands[0].lot, .02); assert.equal(response.commands[0].sl, 1.123456789); assert.equal(response.commands[0].tp, 1.3);
+  const terminal = extractedEntry(response);
+  assert.equal(terminal.tradedLot, .02); assert.equal(terminal.tradedSL, 1.123456789); assert.equal(terminal.tradedTP, 1.3);
+  assert.equal(terminal.body.requestedVolume, .02); assert.equal(terminal.body.status, "LIVE_FILLED");
+  const result = await terminalResultRoute(true, mail.id, terminal.body); assert.equal(result.status, 200, JSON.stringify(result.body));
+  const [stored] = await db.select().from(commands).where(eq(commands.commandId, "precise-entry"));
+  assert.equal(stored!.status, "LIVE_FILLED"); assert.equal(stored!.executedVolume, .02); assert.equal(stored!.fillPrice, 1.234567891);
+  assert.equal((await db.select().from(reservations))[0]!.status, "FULFILLED");
+  const events = (await db.select().from(executionEvents).where(eq(executionEvents.commandId, stored!.id))).length;
+  await Promise.all(Array.from({ length: 3 }, () => terminalResultRoute(true, mail.id, terminal.body)));
+  assert.equal((await db.select().from(executionEvents).where(eq(executionEvents.commandId, stored!.id))).length, events);
+});
+it("shared-master entry keeps trader and bridge-owner identities while projecting exact volume", async () => {
+  await updateConnection(1, { userId: 19 });
+  const { mail } = await signedEntry();
+  await db.update(mailbox).set({ userId: 19 }).where(eq(mailbox.id, mail.id));
+  const response = await pollRoute(true, "1");
+  assert.equal(response.commands.length, 1); assert.equal(response.commands[0].lot, .02);
+  assert.equal(response.commands[0].payload.liveCommandOwnerUserId, 9);
+});
+for (const [label, corrupt] of [
+  ["changed authoritative volume", async (r: any) => { await db.update(commands).set({ requestedVolume: .03 }).where(eq(commands.commandId, r.commandId)); }],
+  ["broken signature", async (r: any) => { await db.update(commands).set({ integrityHash: "0".repeat(64) }).where(eq(commands.commandId, r.commandId)); }],
+  ["unsigned authority", async (r: any) => { await db.update(commands).set({ integrityStatus: "CREATED", integrityHash: null }).where(eq(commands.commandId, r.commandId)); }],
+  ["authority no longer dispatched", async (r: any) => { await db.update(commands).set({ status: "LIVE_UNKNOWN" }).where(eq(commands.commandId, r.commandId)); }],
+  ["crossed trader", async (_r: any, m: any) => { await db.update(mailbox).set({ requestedByUserId: 18 }).where(eq(mailbox.id, m.id)); }],
+  ["mirror volume diverged", async (_r: any, m: any) => { await db.update(mailbox).set({ lot: .03 }).where(eq(mailbox.id, m.id)); }],
+  ["mirror side diverged", async (_r: any, m: any) => { await db.update(mailbox).set({ side: "SELL" }).where(eq(mailbox.id, m.id)); }],
+  ["forged owner claim", async (_r: any, m: any) => { await db.update(mailbox).set({ payload: { ...(m.payload as object), liveCommandOwnerUserId: 18 } }).where(eq(mailbox.id, m.id)); }],
+  ["authority missing", async (r: any) => { await db.delete(reservations); await db.delete(commands).where(eq(commands.commandId, r.commandId)); }],
+] as const) {
+  it(`bridged entry with ${label} stays pending; later manual work is still delivered`, async () => {
+    const { row, mail } = await signedEntry();
+    await corrupt(row, mail);
+    await db.insert(mailbox).values({ userId: 9, mt5ConnectionId: 1, action: "CLOSE_POSITION", symbol: "EURUSD.a", status: "PENDING", payload: { positionTicket: "123" } });
+    const response = await pollRoute(true, "1");
+    assert.equal(response.commands.length, 1); assert.notEqual(response.commands[0].id, mail.id);
+    assert.equal((await db.select().from(mailbox).where(eq(mailbox.id, mail.id)))[0]!.status, "PENDING");
+  });
+}
+for (const action of ["OPEN_MARKET", "PLACE_MARKET_ORDER", "DEMO_MARKET_ORDER"]) {
+  it(`manual ${action} mailbox entry: actual poll -> extracted v154 dispatch -> result route classifies versioned evidence`, async () => {
+    const [mail] = await db.insert(mailbox).values({ userId: 9, requestedByUserId: 9, mt5ConnectionId: 1, action, symbol: "EURUSD.a", side: "BUY", lot: .02, status: "PENDING",
+      payload: { confirmedByUser: true } }).returning();
+    const response = await pollRoute(true, "1");
+    assert.equal(response.commands.length, 1); assert.equal(response.commands[0].action, action);
+    const terminal = extractedEntry(response);
+    assert.equal(terminal.body.resultKind, "ENTRY"); assert.equal(terminal.body.status, "LIVE_FILLED");
+    const result = await terminalResultRoute(true, mail!.id, terminal.body); assert.equal(result.status, 200, JSON.stringify(result.body));
+    const [stored] = await db.select().from(mailbox).where(eq(mailbox.id, mail!.id));
+    assert.equal(stored!.status, "LIVE_FILLED", `${action} must not fall back to UNKNOWN`); assert.equal(stored!.filledLotSize, .02); assert.ok(stored!.completedAt);
+  });
 }

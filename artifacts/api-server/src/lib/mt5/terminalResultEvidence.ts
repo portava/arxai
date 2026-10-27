@@ -5,8 +5,11 @@ const finite = (n: unknown): n is number => typeof n === "number" && Number.isFi
 const positive = (n: unknown): n is number => finite(n) && n > 0;
 const ticket = (n: unknown): n is string => typeof n === "string" && /^[1-9]\d{0,19}$/.test(n) && BigInt(n) <= 18446744073709551615n;
 const definiteReject = (c: number) => [10004,10006,10007,10026,10027,10030,10032,10033,10034,10035,10038].includes(c) || (c>=10013&&c<=10022) || (c>=10040&&c<=10046);
+// Exactly the market-entry actions v154 dispatches to HandleOpenMarket, plus the
+// authoritative live type. Pending/bulk/reverse actions stay outside this guarantee.
+export const TERMINAL_ENTRY_COMMAND_TYPES: readonly string[] = ["PLACE_LIVE_MARKET_ORDER","OPEN_MARKET","PLACE_MARKET_ORDER","DEMO_MARKET_ORDER"];
 export function terminalResultKind(commandType: string): "ENTRY" | "CLOSE" | "MODIFY" | null {
-  return ["PLACE_LIVE_MARKET_ORDER","OPEN_MARKET"].includes(commandType) ? "ENTRY" :
+  return TERMINAL_ENTRY_COMMAND_TYPES.includes(commandType) ? "ENTRY" :
     ["CLOSE_LIVE_POSITION","CLOSE_POSITION"].includes(commandType) ? "CLOSE" :
     ["MODIFY_LIVE_SLTP","MODIFY_POSITION","MODIFY_POSITION_PROTECTION","MOVE_SL","MOVE_TP"].includes(commandType) ? "MODIFY" : null;
 }
