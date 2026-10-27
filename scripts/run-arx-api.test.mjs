@@ -23,6 +23,8 @@ set -eu
 [[ "$ARX_ADMIN_EMAIL" == "admin@example.invalid" ]]
 [[ "$ARX_ADMIN_INITIAL_PASSWORD" == "synthetic-fixture-only" ]]
 [[ "$ARX_LIVE_BROKER_EXECUTION_ENABLED" == "false" ]]
+[[ "$ARX_PREVIEW_SAFE_START" == "true" ]]
+[[ "$ARX_RESULT_SETTLEMENT_WORKER_ENABLED" == "false" ]]
 [[ "$ARX_DERIV_PUBLIC_DATA_ENABLED" == "true" ]]
 for key in ${blocked.join(' ')}; do
   [[ ! -v "$key" ]]
@@ -36,6 +38,8 @@ printf '%s\\n' 'preview-launcher-contract-ok'
         ARX_ADMIN_EMAIL: 'admin@example.invalid',
         ARX_ADMIN_INITIAL_PASSWORD: 'synthetic-fixture-only',
         ARX_LIVE_BROKER_EXECUTION_ENABLED: 'true',
+        ARX_PREVIEW_SAFE_START: 'false',
+        ARX_RESULT_SETTLEMENT_WORKER_ENABLED: 'true',
         ...Object.fromEntries(blocked.map(key => [key, 'synthetic-blocked-fixture'])),
       },
     });
@@ -45,4 +49,14 @@ printf '%s\\n' 'preview-launcher-contract-ok'
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('safe preview startup is explicit and never changes production startup', async () => {
+  const { isPreviewSafeStart } = await import('../arxai/artifacts/api-server/src/lib/startup/previewSafety.ts');
+  assert.equal(isPreviewSafeStart({ NODE_ENV: 'development', ARX_PREVIEW_SAFE_START: 'true' }), true);
+  for (const NODE_ENV of ['production', 'test', undefined]) {
+    assert.equal(isPreviewSafeStart({ NODE_ENV, ARX_PREVIEW_SAFE_START: 'true' }), false);
+  }
+  assert.equal(isPreviewSafeStart({ NODE_ENV: 'development' }), false);
+  assert.equal(isPreviewSafeStart({ NODE_ENV: 'development', ARX_PREVIEW_SAFE_START: 'false' }), false);
 });

@@ -17,6 +17,7 @@ import { startExpiringKeysDigestWorker } from "./lib/registrationKeys/expiringKe
 import { computeEnvChecklist, summarizeEnvChecklist } from "./lib/startup/envChecklist";
 import { runStartupReadinessCheck } from "./lib/startup/readinessCheck";
 import { seedCoreAgents } from "./lib/agentEcosystem/seedCoreAgents";
+import { isPreviewSafeStart } from "./lib/startup/previewSafety.js";
 
 const rawPort = process.env["PORT"];
 
@@ -92,11 +93,14 @@ ensureSafetyCoreInitialized()
   .then(() => bootstrapLegacyOwnerDowngrade().catch((err) => {
     logger.error({ err }, "Legacy-owner downgrade failed (non-fatal); continuing");
   }))
-  .then(() => seedCoreAgents().then((r) => {
+  .then(() => {
+    if (isPreviewSafeStart()) return;
+    return seedCoreAgents().then((r) => {
     logger.info({ ...r }, "Agent Ecosystem core agents seeded (advisory/shadow only)");
   }).catch((err) => {
     logger.error({ err }, "Core-agent seed failed (non-fatal); continuing");
-  }))
+    });
+  })
   .then(() => {
     httpServer = app.listen(port, (err) => {
       if (err) {
@@ -132,6 +136,9 @@ ensureSafetyCoreInitialized()
       void runStartupReadinessCheck(port).catch((e) =>
         logger.error({ err: String(e) }, "Startup readiness check threw (non-fatal)"),
       );
+      if (isPreviewSafeStart()) {
+        logger.warn("Development preview safe start: background jobs paused; authentication available; no schema migration performed");
+      } else {
       startStuckCommandWatchdog();
       // R2 S3/S4 — scheduled UNKNOWN-command reconciler. Resolves LIVE_UNKNOWN
       // commands from broker evidence (never fabricates an outcome) and
@@ -180,6 +187,7 @@ ensureSafetyCoreInitialized()
       // read-only over beta_invites, audited, fail-soft; never touches any
       // trade/live/demo/gate surface. First cycle after one interval.
       startExpiringKeysDigestWorker();
+      }
       // Eagerly bootstrap the Deriv WebSocket so synthetic-index candles
       // (V10/V25/V50/V75/V100, 1Hz variants, Boom/Crash, Step) are ready
       // before the first scanner pass. Non-blocking; lazy ensureConnection

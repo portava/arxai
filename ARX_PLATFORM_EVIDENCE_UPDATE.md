@@ -1,5 +1,14 @@
 # ARX combined integration — development checkpoint
 
+> Subsequent preview restoration: the API now runs with an explicit
+> development-only safe-start setting that pauses background jobs and core-agent
+> seeding. Authentication does not depend on the new feature tables. No migration
+> or password change was performed. The login endpoint now returns the expected
+> JSON 401 for a synthetic invalid account, rather than a proxy 502; the public
+> login page also renders normally. The original validation results and feature
+> schema blockers below remain unchanged. The runtime-status section below
+> describes the initial integration checkpoint, before this restoration.
+
 Recorded: 2026-10-27. **Source applied; validation is not fully green. Not approved for publication or existing-database rollout.**
 
 ## Source and checkpoint

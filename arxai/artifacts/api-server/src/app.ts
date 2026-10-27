@@ -12,6 +12,7 @@ import { perfTimer } from "./middlewares/perfTimer";
 import { CANDLE_INGEST_BODY_LIMIT_BYTES } from "./lib/data/brokerCandleStore";
 import { recordIngestRejection, isIngestRoute } from "./lib/data/ingestRejectionCounter";
 import { mountProductionDashboard } from "./lib/startup/dashboard.js";
+import { isPreviewSafeStart } from "./lib/startup/previewSafety.js";
 import path from "node:path";
 
 const app: Express = express();
@@ -187,12 +188,12 @@ if (process.env.ARX_SERVE_DASHBOARD === "true") {
 }
 
 // UX4 — start the background trade-monitor worker (paper-only, read-mostly).
-startMonitor();
+if (!isPreviewSafeStart()) startMonitor();
 
 // Task #199 — start the Ruby Quality outcome-resolution worker (observation
 // only: resolves recorded signal outcomes from real evidence + appends
 // self-reviews; never touches any execution path).
-startRubyOutcomeWorker();
+if (!isPreviewSafeStart()) startRubyOutcomeWorker();
 
 // ── Phase 22D — JSON-only error handler ───────────────────────────────
 // Guarantees the frontend never receives an HTML stack trace. Catches

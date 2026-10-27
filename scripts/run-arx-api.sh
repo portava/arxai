@@ -12,6 +12,10 @@ unset MT5_BRIDGE_TOKEN MT5_ENVIRONMENT BROKER_PROVIDER LIVE_TRADING_ALLOWED ARX_
 unset ARX_OWNER_EMAIL ARX_OWNER_INITIAL_PASSWORD OWNER_RESET_PASSWORD NEW_ADMIN_PASSWORD QA_OWNER_PASSWORD ARX_AUTH_TEST_PASSWORD
 unset VAULT_OVERRIDE_TOKEN
 export ARX_LIVE_BROKER_EXECUTION_ENABLED=false
+# Serve sign-in without starting scheduled email, reconciliation, retention or
+# schema-dependent workers. This switch is ignored outside development.
+export ARX_PREVIEW_SAFE_START=true
+export ARX_RESULT_SETTLEMENT_WORKER_ENABLED=false
 # Public prices only in development; account authorization and trading remain disabled.
 export ARX_DERIV_PUBLIC_DATA_ENABLED=true
 exec pnpm --filter @workspace/api-server run dev
