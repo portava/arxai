@@ -12,7 +12,7 @@ export function useGetChartCandles({symbol,timeframe,limit}: {symbol:string;time
  const close=open+Math.sin(i*7)*step/8;
  return {symbol,displaySymbol:symbol,timeframe,openTime:new Date(time).toISOString(),closeTime:new Date(time+interval*1000).toISOString(),open:+open.toFixed(5),high:+(Math.max(open,close)+step/7).toFixed(5),low:+(Math.min(open,close)-step/7).toFixed(5),close:+close.toFixed(5),source:"offline_fixture",isComplete:true};
  });
- return {candles,feedStatus:{symbol,source:"offline_fixture",quality:"delayed",isLive:false,stale:false,aiUsable:false,latencyMs:0,missingCandleCount:0,warning:"Synthetic fixture — not market data"}};
+ return {symbol,timeframe,candles,feedStatus:{symbol,source:"offline_fixture",quality:"delayed",isLive:false,stale:false,aiUsable:false,latencyMs:0,missingCandleCount:0,warning:"Synthetic fixture — not market data"}};
  },[symbol,timeframe,limit]);
  return {data,isLoading:false,isError:false,isFetching:false};
 }
