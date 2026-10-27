@@ -1530,6 +1530,7 @@ export * from "./scalpResultConfidenceLabel";
 export * from "./scalpResultDirection";
 export * from "./scalpResultEntryType";
 export * from "./scalpResultNewsRisk";
+export * from "./scalpResultRejectReason";
 export * from "./scalpResultSlippageRisk";
 export * from "./scalpResultSpreadRisk";
 export * from "./scalpResultStatus";
