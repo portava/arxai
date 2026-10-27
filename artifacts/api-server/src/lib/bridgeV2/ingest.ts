@@ -226,7 +226,12 @@ export async function ingestBridgeV2Message(
     // touches arx_live_* / positions / balances / the 16-gate pipeline. A feed
     // failure is swallowed so it can never corrupt the honest ingest response.
     if (result.accepted) {
-      feedMarketDataStore(envelope.messageType, payload, freshnessVerdict);
+      feedMarketDataStore({
+        messageType: envelope.messageType,
+        payload,
+        freshnessVerdict,
+        eaCreatedAtEpochMs: envelope.eaCreatedAtEpochMs,
+      });
     }
 
     return result;
@@ -241,11 +246,19 @@ export async function ingestBridgeV2Message(
 // masquerade as a fresh broker feed (stamping updatedAt=now would do exactly
 // that). Best-effort: any error is contained — market-data caching must never
 // throw into the EA ingest path.
-function feedMarketDataStore(
-  messageType: string,
-  payload: unknown,
-  freshnessVerdict: string | null,
-): void {
+export interface MarketDataFeedInput {
+  messageType: string;
+  payload: unknown;
+  freshnessVerdict: string | null;
+  /** Envelope `eaCreatedAtEpochMs`: the EA's own UTC clock when it built the
+   *  message (schema-validated positive integer; re-checked here, fail closed). */
+  eaCreatedAtEpochMs: unknown;
+}
+
+// Exported for the offline fresh-facts tests only; the ingest API is
+// `ingestBridgeV2Message`, which calls this after its transaction commits.
+export function feedMarketDataStore(input: MarketDataFeedInput): void {
+  const { messageType, payload, freshnessVerdict } = input;
   // Transport-STALE (>30s late) data is not trustworthy as a live feed.
   if (freshnessVerdict === "STALE") return;
   if (messageType !== "TICK" && messageType !== "CANDLE") return;
@@ -271,20 +284,44 @@ function feedMarketDataStore(
     const symbol = typeof p.symbol === "string" ? p.symbol : null;
     const bid = typeof p.bid === "number" ? p.bid : null;
     const ask = typeof p.ask === "number" ? p.ask : null;
-    const brokerTimeEpochMs = typeof p.brokerTimeEpochMs === "number" ? p.brokerTimeEpochMs : null;
+    const brokerTimeEpochMs =
+      typeof p.brokerTimeEpochMs === "number" && Number.isFinite(p.brokerTimeEpochMs)
+        ? p.brokerTimeEpochMs
+        : null;
     if (!symbol || bid == null || ask == null) return;
+    // Time base. The EA's `brokerTimeEpochMs` is MQL5 `MqlTick.time_msc`: the
+    // trade server's wall clock encoded as epoch ms, which is UTC only on a
+    // GMT+0 server (a GMT+3 server reads three hours ahead). The envelope's
+    // `eaCreatedAtEpochMs` is MQL5 `TimeGMT()` taken in the same call as the
+    // tick read (Universal Agent v1.52/v1.54 `PushLiveTickV2` → `PostV2Ingest`),
+    // so it IS the observation's UTC instant to within the EA's own latency,
+    // and it is already the basis of the transport-STALE drop above. Stamp the
+    // quote from it; keep the broker clock and its offset as diagnostics. Never
+    // fall back to the server receive time: a missing EA clock stores nothing.
+    const eaCreatedAtEpochMs =
+      typeof input.eaCreatedAtEpochMs === "number" &&
+      Number.isFinite(input.eaCreatedAtEpochMs) &&
+      input.eaCreatedAtEpochMs > 0
+        ? input.eaCreatedAtEpochMs
+        : null;
+    if (eaCreatedAtEpochMs == null) return;
     const quote: MarketQuote = {
       symbol,
       bid,
       ask,
       spread: ask - bid,
-      timestamp: new Date(brokerTimeEpochMs ?? Date.now()).toISOString(),
+      timestamp: new Date(eaCreatedAtEpochMs).toISOString(),
+      brokerClockMs: brokerTimeEpochMs,
+      brokerClockOffsetMs:
+        brokerTimeEpochMs == null ? null : brokerTimeEpochMs - eaCreatedAtEpochMs,
     };
     updateQuoteFromMT5(symbol, quote);
     // Task #496 — fold this accepted, fresh tick into the in-memory forming-bar
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an
-    // analysis/execution input.
+    // analysis/execution input. Deliberately keeps the broker clock: the EA's
+    // CANDLE `openTimeEpochMs` is bar time on the same trade-server clock, so
+    // the forming bar buckets consistently with the stored closed bars.
     foldFormingTick(symbol, bid, brokerTimeEpochMs, Date.now(), "mt5_broker");
   } catch {
     // Market-data caching is best-effort; never propagate into the EA response.

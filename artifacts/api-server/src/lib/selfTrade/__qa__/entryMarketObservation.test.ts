@@ -47,6 +47,7 @@ describe("observeAgentEntryMarket", () => {
       observedAt: "2026-10-27T12:00:00.000Z",
       source: "mt5_broker",
       point: 0.00001,
+      brokerClockOffsetMs: null,
     });
     assert.deepEqual(calls.sort(), ["quote:EURUSD.a", "spec:9:EURUSD.a"]);
   });

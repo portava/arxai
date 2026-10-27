@@ -97,11 +97,16 @@ const positive = (v: unknown): v is number =>
 export interface EntryMarketObservation {
   bid: unknown;
   ask: unknown;
-  /** Source observation time of the quote (broker tick time), never fetch time. */
+  /** EA observation time of the quote (UTC), never fetch or receive time. */
   observedAt: unknown;
   source: string | null;
   /** Broker SYMBOL_POINT for converting distances to points; null when unknown. */
   point: unknown;
+  /**
+   * Diagnostic: the broker trade server's clock minus the EA's UTC clock at the
+   * tick (e.g. +10_800_000 on a GMT+3 server). Recorded, never evaluated.
+   */
+  brokerClockOffsetMs?: number | null;
   /** Present when the quote or spec could not be read. */
   error?: string | null;
 }
@@ -126,6 +131,8 @@ export interface EntryFreshFacts {
   executablePrice: number;
   zoneDeviationPoints: number;
   source: string | null;
+  /** Diagnostic copy of the observation's broker-clock offset; null when unknown. */
+  brokerClockOffsetMs: number | null;
 }
 
 export type EntryFreshVerdict =
@@ -231,6 +238,10 @@ export function evaluateEntryFreshFacts(input: EntryFreshInput): EntryFreshVerdi
       executablePrice,
       zoneDeviationPoints,
       source: obs.source,
+      brokerClockOffsetMs:
+        typeof obs.brokerClockOffsetMs === "number" && Number.isFinite(obs.brokerClockOffsetMs)
+          ? obs.brokerClockOffsetMs
+          : null,
     },
   };
 }
