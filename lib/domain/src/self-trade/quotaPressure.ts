@@ -40,6 +40,18 @@ const MAX_SCORE_THRESHOLD = 95;
 export function evaluateQuotaPressure(input: QuotaPressureInput): QuotaPressureVerdict {
   const base = clampScore(input.baseMinScore);
 
+  // Unknown daily P/L (NaN / ±Infinity) must fail SAFE. Every comparison below
+  // is false for NaN, which used to fall through to NORMAL (full size).
+  if (!Number.isFinite(input.dailyPnlUsd)) {
+    return {
+      regime: "PROTECT",
+      sizeMultiplier: 0.5,
+      minScoreThreshold: clampScore(base + 10),
+      requireExtraConfirmation: true,
+      reason: "Daily P/L unavailable — protecting capital.",
+    };
+  }
+
   const nearLossCap =
     input.maxDailyLossUsd > 0 &&
     input.dailyPnlUsd <= -(NEAR_LOSS_CAP_FRACTION * input.maxDailyLossUsd);
