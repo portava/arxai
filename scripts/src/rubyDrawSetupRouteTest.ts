@@ -29,7 +29,10 @@
 //   so the push wins outright. source === "mt5_broker" → ohlcSourceType
 //   "true_ohlc" → providerDeliversRealOhlc=true, satisfying the chart-truth +
 //   handshake gates. The newest bar opens at the CURRENT bucket (trailing 0) so
-//   feed quality resolves "clean" (aiUsable=true) and the basis is VERIFIED.
+//   feed quality resolves "clean" (aiUsable=true). The user's spec row carries
+//   an EA bid/ask straddling the newest CLOSED bar, so the per-user broker
+//   comparison is actually measured (an absent quote can no longer pass the
+//   mirror check) and the basis is VERIFIED.
 //
 // SAFETY / ISOLATION
 //   - Seeds a single isolated system user (isSystemUser=true, fixed email) and
@@ -232,11 +235,13 @@ function makeScannerProvider(candles: Candle[], quote: MarketQuote): MarketProvi
   };
 }
 
-/** Per-user broker-truth spec row for a forex symbol. */
-function specRow(userId: number, symbol: string) {
+/** Per-user broker-truth spec row for a forex symbol, with the EA's bid/ask. */
+function specRow(userId: number, symbol: string, quote: { bid: number; ask: number }) {
   return {
     userId,
     symbol,
+    bid: quote.bid,
+    ask: quote.ask,
     accountType: "demo",
     visible: true,
     tradeAllowed: true,
@@ -316,8 +321,14 @@ export async function run(): Promise<CiTestResultLike> {
   const cookie = `arx_user_session=${rawToken}`;
 
   // ── Seed broker truth + inject the live feed for the verified symbol ──────
-  await db.insert(arxSymbolSpecsTable).values([specRow(user.id, VERIFIED_SYMBOL)]);
-  updateCandlesFromMT5(VERIFIED_SYMBOL, buildCleanWindow());
+  // The newest bar is the forming candle; alignment compares the latest CLOSED
+  // close against the broker mid, so straddle that close by one point.
+  const cleanWindow = buildCleanWindow();
+  const lastClosedClose = cleanWindow[cleanWindow.length - 2]!.close;
+  await db.insert(arxSymbolSpecsTable).values([
+    specRow(user.id, VERIFIED_SYMBOL, { bid: lastClosedClose - 0.00001, ask: lastClosedClose + 0.00001 }),
+  ]);
+  updateCandlesFromMT5(VERIFIED_SYMBOL, cleanWindow);
 
   const postJson = async (body: unknown) => {
     const res = await fetch(`${baseUrl}/api/me/assistant/draw-setup`, {

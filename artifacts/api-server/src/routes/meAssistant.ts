@@ -717,7 +717,7 @@ router.post("/me/assistant/draw-setup", requireUser, safe(async (req, res) => {
   // null context (→ INSUFFICIENT basis → the producer refuses a drawing).
   let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
   try {
-    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, 200);
+    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, 200, { userId: req.authUser?.id });
   } catch {
     // fail-safe — handled as a gated (non-VERIFIED) read below.
   }
@@ -930,7 +930,7 @@ router.post("/me/assistant/draft-read", requireUser, safe(async (req, res) => {
   // gate-blocked (basis !== "VERIFIED") below.
   let rubyCtx: Awaited<ReturnType<typeof buildRubyChartContext>> | null = null;
   try {
-    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, limit);
+    rubyCtx = await buildRubyChartContext(symbol, timeframe as ChartTimeframe, limit, { userId: req.authUser?.id });
   } catch {
     // fail-safe — treat as gate-blocked below
   }

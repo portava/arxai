@@ -49,7 +49,11 @@
 //
 // Run: pnpm --filter @workspace/scripts run test:ruby-feed-not-confirmed
 
-import { buildChartIntelligenceState } from "../../artifacts/api-server/src/lib/data/chart/chartIntelligence.js";
+import {
+  buildChartIntelligenceState,
+  enrichStateWithBrokerAlignment,
+  getCachedIntelligenceContext,
+} from "../../artifacts/api-server/src/lib/data/chart/chartIntelligence.js";
 import { buildRubyDraftRead } from "../../artifacts/api-server/src/lib/assistant/rubyDraftRead.js";
 import { getSymbolMarketContextTool, getTradeMarketContextTool, getMarketSnapshot } from "../../artifacts/api-server/src/lib/assistant/tools.js";
 import { updateCandlesFromMT5 } from "../../artifacts/api-server/src/lib/data/providers/mt5Provider.js";
@@ -194,7 +198,26 @@ export async function run(): Promise<CiTestResultLike> {
   // eslint-disable-next-line no-console
   console.log(`buildRubyDraftRead (${VERIFIED_SYMBOL}) — clean feed pushed → usable`);
   updateCandlesFromMT5(VERIFIED_SYMBOL, buildCleanWindow());
-  const usableState = await buildChartIntelligenceState(VERIFIED_SYMBOL, TIMEFRAME, CANDLE_COUNT);
+  const sharedState = await buildChartIntelligenceState(VERIFIED_SYMBOL, TIMEFRAME, CANDLE_COUNT);
+  // The shared state has no broker quote, so its mirror check is unmeasured and
+  // must not count as a usable read.
+  assert(
+    buildRubyDraftRead(sharedState, "analyze").feedUsable === false,
+    "usable: shared state without a broker quote is NOT usable (mirror unmeasured)",
+  );
+  // Same enrichment the per-user routes apply: an EA bid/ask straddling the
+  // latest closed close gives a measured, tight broker comparison.
+  const cached = getCachedIntelligenceContext(VERIFIED_SYMBOL, TIMEFRAME, CANDLE_COUNT);
+  const closedClose = sharedState.latestClosedCandle?.close ?? Number.NaN;
+  assert(cached != null && Number.isFinite(closedClose), "usable: cached context and closed close present");
+  const usableState = enrichStateWithBrokerAlignment(cached!.state, cached!.truthResult, cached!.feedStatus, {
+    chartPrice: closedClose,
+    chartPriceBasis: "MID",
+    assetClass: sharedState.assetClass,
+    brokerBid: closedClose - 0.00001,
+    brokerAsk: closedClose + 0.00001,
+    spreadPoints: 2,
+  });
   const usableRead = buildRubyDraftRead(usableState, "analyze");
   assert(
     usableRead.feedUsable === true,
