@@ -36,6 +36,7 @@ import type { UniverseId } from "../lib/marketScanner.js";
 import { getAssistantDisplayName } from "../lib/assistant/assistantName.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
 import { normalizeChartTimeframe } from "../lib/data/chart/timeframes.js";
+import { withScannerReadAdmission } from "../lib/scannerReadAdmission.js";
 
 function isAdminSession(req: import("express").Request): boolean {
   const role = (req.authUser as { role?: string } | undefined)?.role;
@@ -330,7 +331,7 @@ const OpportunityMapQuery = z.object({
   timeframe: z.string().min(1).max(8).optional(),
 });
 
-router.get("/me/opportunity-map", requireUser, async (req, res) => {
+router.get("/me/opportunity-map", requireUser, withScannerReadAdmission(async (req, res) => {
   const parsed = OpportunityMapQuery.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({ error: "invalid_request", message: "Please pick a market group to scan." });
@@ -355,6 +356,6 @@ router.get("/me/opportunity-map", requireUser, async (req, res) => {
     const assistant = await getAssistantDisplayName(req.authUser!.id);
     return res.status(500).json({ error: "opportunity_map_failed", message: `${assistant} could not scan the markets just now.` });
   }
-});
+}));
 
 export default router;

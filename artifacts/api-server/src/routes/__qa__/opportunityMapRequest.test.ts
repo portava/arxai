@@ -60,3 +60,18 @@ test("an unsigned caller still receives 401 before any scan", async () => {
   assert.equal((await fetch(base + "?timeframe=M5")).status, 401);
   assert.equal(calls.length, 0);
 });
+
+
+test("map overload returns503 before cache/build work and recovers after capacity is released", async () => {
+  const { scannerReadAdmission, SCANNER_READ_LIMITS } = await import("../../lib/scannerReadAdmission.js");
+  const permits = Array.from({ length: SCANNER_READ_LIMITS.perViewer }, () => scannerReadAdmission.acquire(1)!);
+  try {
+    const response = await read("?timeframe=M5");
+    assert.equal(response.status, 503); assert.equal(response.headers.get("retry-after"), "1");
+    assert.equal((await response.json() as { reason: string }).reason, "SCANNER_BUSY");
+    assert.equal(calls.length, 0);
+    assert.equal((await fetch(base + "?timeframe=M5")).status, 401);
+  } finally { permits.forEach(release => release()); }
+  assert.equal(scannerReadAdmission.activeCount, 0);
+  assert.equal((await read("?timeframe=M5")).status, 200); assert.equal(calls.length, 1);
+});

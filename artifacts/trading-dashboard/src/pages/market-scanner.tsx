@@ -453,7 +453,7 @@ export default function MarketScanner() {
     setErr(e instanceof Error ? e.message : String(e));
   }
 
-  // Shared 429 handler for the rate-limited /market-scanner/scan endpoint.
+  // Shared retry feedback for a busy or rate-limited manual scan.
   // Both the Scan button and the admin universe-switch hit the SAME per-user
   // cooldown, so both must surface the identical honest "Scanning too fast"
   // copy and reconcile the cooldown countdown to the server's authoritative
@@ -461,6 +461,12 @@ export default function MarketScanner() {
   // skips the raw-error fallback.
   function handleScanCooldown(e: unknown): boolean {
     const status = (e as { status?: number } | null)?.status;
+    const capacityBody = (e as { body?: { reason?: unknown } } | null)?.body;
+    if (status === 503 && capacityBody?.reason === "SCANNER_BUSY") {
+      setCooldownUntil(Date.now() + 1000);
+      setErr("The scanner is busy. Try again in a moment.");
+      return true;
+    }
     if (status !== 429) return false;
     const body = (e as { body?: { retryAfterMs?: unknown } } | null)?.body;
     const retryMs = typeof body?.retryAfterMs === "number" ? body.retryAfterMs : 0;

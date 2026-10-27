@@ -36,6 +36,7 @@ import { analyzeMarket, generateTradeCard } from "../lib/aiBrain.js";
 import { getSelectedMarketSnapshot } from "../lib/scannerSelected/selectedMarket.js";
 import { normalizeChartTimeframe } from "../lib/data/chart/timeframes.js";
 import { ALL_SUPPORTED_SYMBOLS, normalizeSymbol } from "../lib/instruments/index.js";
+import { withScannerReadAdmission } from "../lib/scannerReadAdmission.js";
 
 const router = Router();
 
@@ -68,7 +69,7 @@ router.post("/market-scanner/__dev/outage", (req, res) => {
   return res.json({ armed });
 });
 
-router.get("/market-scanner/opportunities", async (req, res) => {
+router.get("/market-scanner/opportunities", withScannerReadAdmission(async (req, res) => {
   if (isScannerOutageArmed()) return res.status(502).end();
   const parsedLimit = z.coerce.number().int().min(1).max(200).safeParse(req.query.limit ?? 50);
   if (!parsedLimit.success) return res.status(400).json({ error: "limit must be an integer from 1 to 200" });
@@ -101,7 +102,7 @@ router.get("/market-scanner/opportunities", async (req, res) => {
     dataSource: "ROUTER",
     feedNote: scannerFeedNote(snapshot?.universe ?? status.universe),
   });
-});
+}));
 
 router.get("/market-scanner/universes", (_req, res) => {
   return res.json({
@@ -141,7 +142,7 @@ router.post("/market-scanner/stop", requireAdmin, (_req, res) => res.json(scanne
 // engine (start/stop) stays operator-only above. This stays a read-only
 // discovery surface: the per-viewer projection + bounded enrichment below are
 // unchanged, so a normal user never sees simulator-derived/privileged fields.
-router.post("/market-scanner/scan", requireUser, async (req, res) => {
+router.post("/market-scanner/scan", requireUser, withScannerReadAdmission(async (req, res) => {
   const Body = z.object({
     symbols: z.array(z.string().trim().min(1).max(80)).min(1).max(36).optional(),
     timeframes: z.array(z.string().trim().min(1).max(12)).min(1).max(21).optional(),
@@ -189,7 +190,7 @@ router.post("/market-scanner/scan", requireUser, async (req, res) => {
     dataSource: "ROUTER",
     feedNote: scannerFeedNote(snapshot.universe),
   });
-});
+}));
 
 // ── AI helpers ─────────────────────────────────────────────────────────────
 // SAFETY (Task #573): these three reads are 100% simulator-derived scored
@@ -292,7 +293,7 @@ router.get("/market-scanner/supported-symbols", (_req, res) => {
   });
 });
 
-router.get("/market-scanner/selected-market", requireUser, async (req, res) => {
+router.get("/market-scanner/selected-market", requireUser, withScannerReadAdmission(async (req, res) => {
   const rawSymbol = String(req.query.symbol ?? "").trim();
   const timeframe = (typeof req.query.timeframe === "string" ? req.query.timeframe : "M15") || "M15";
   const refresh = req.query.refresh === "true" || req.query.refresh === "1";
@@ -332,6 +333,6 @@ router.get("/market-scanner/selected-market", requireUser, async (req, res) => {
       message: "We couldn't load this market right now. Try again.",
     });
   }
-});
+}));
 
 export default router;

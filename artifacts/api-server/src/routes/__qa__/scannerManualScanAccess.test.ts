@@ -93,14 +93,18 @@ const SIM_ROW = opp({ symbol: "GBPUSD", dataSource: "SIMULATOR" });
 const LIVE_ROW = opp({ symbol: "EURUSD", dataSource: "LIVE_FEED" });
 
 const identityDecorator = async (rows: ScannerOpportunity[]) => rows;
+let heldScan: { started: () => void; untilReleased: Promise<void> } | null = null;
 
 mock.module("../../lib/marketScanner.js", {
   namedExports: {
     ...realScanner,
-    scanOnceSnapshot: async () => ({
-      universe: "forex", symbols: ["EURUSD", "GBPUSD"], timeframes: ["M5"],
-      opportunities: [SIM_ROW, LIVE_ROW], generatedAt: new Date().toISOString(), durationMs: 1,
-    }),
+    scanOnceSnapshot: async () => {
+      if (heldScan) { heldScan.started(); await heldScan.untilReleased; }
+      return {
+        universe: "forex", symbols: ["EURUSD", "GBPUSD"], timeframes: ["M5"],
+        opportunities: [SIM_ROW, LIVE_ROW], generatedAt: new Date().toISOString(), durationMs: 1,
+      };
+    },
     decorateOpportunitiesWithHistory: identityDecorator,
     decorateOpportunitiesWithNewsRisk: identityDecorator,
     decorateOpportunitiesWithTimingContext: identityDecorator,
@@ -314,4 +318,59 @@ test("invalid or excessive scan selections return 400 without consuming the user
     assert.equal(response.status, 400, JSON.stringify(body));
   }
   assert.equal((await scanReq(90008, "TESTER")).status, 200);
+});
+
+
+// The real route wrapper must refuse before the durable cooldown or any market
+// work, and retain the existing session/role gates.
+test("scanner HTTP reads refuse overload before cooldown and recover after settlement", async () => {
+  const { scannerReadAdmission, SCANNER_READ_LIMITS } = await import("../../lib/scannerReadAdmission.js");
+  const permits = Array.from({ length: SCANNER_READ_LIMITS.perViewer }, () => scannerReadAdmission.acquire(90001)!);
+  try {
+    const manual = await scanReq(90001, "USER");
+    assert.equal(manual.status, 503); assert.equal(manual.headers.get("retry-after"), "1");
+    assert.equal((await manual.json() as { reason: string }).reason, "SCANNER_BUSY");
+    assert.equal(scanConsumed.size, 0, "a rejected operation must not consume the durable cooldown");
+    for (const path of ["/market-scanner/opportunities", "/market-scanner/selected-market?symbol=EURUSD"]) {
+      const res = await fetch(`${base}/api${path}`, { headers: { cookie: "arx_user_session=u:90001:USER" } });
+      assert.equal(res.status, 503, path);
+      const body = await res.json() as Record<string, unknown>;
+      assert.equal(body.ok, false); assert.equal(body.opportunities, undefined); assert.equal(body.generatedAt, undefined);
+    }
+    const unsigned = await fetch(`${base}/api/market-scanner/scan`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(unsigned.status, 401);
+  } finally { permits.forEach(release => release()); }
+  assert.equal(scannerReadAdmission.activeCount, 0);
+  assert.equal((await scanReq(90001, "USER")).status, 200);
+  assert.equal(scannerReadAdmission.activeCount, 0);
+});
+
+test("aborting an actual HTTP scan does not release its running provider capacity", async () => {
+  const { scannerReadAdmission, SCANNER_READ_LIMITS } = await import("../../lib/scannerReadAdmission.js");
+  let begin!: () => void, finish!: () => void;
+  const started = new Promise<void>(resolve => { begin = resolve; });
+  const untilReleased = new Promise<void>(resolve => { finish = resolve; });
+  heldScan = { started: begin, untilReleased };
+  const controller = new AbortController();
+  const pending = fetch(`${base}/api/market-scanner/scan`, {
+    method: "POST", signal: controller.signal,
+    headers: { "content-type": "application/json", cookie: "arx_user_session=u:90001:USER" },
+    body: JSON.stringify({ universe: "forex" }),
+  });
+  const aborted = assert.rejects(pending, error => (error as Error).name === "AbortError");
+  const others: Array<() => void> = [];
+  try {
+    await started; assert.equal(scannerReadAdmission.activeCount, 1);
+    controller.abort(); await aborted;
+    for (let i = 1; i < SCANNER_READ_LIMITS.perViewer; i++) others.push(scannerReadAdmission.acquire(90001)!);
+    assert.ok(others.every(Boolean)); assert.equal(scannerReadAdmission.activeCount, SCANNER_READ_LIMITS.perViewer);
+    const refused = await fetch(`${base}/api/market-scanner/selected-market?symbol=EURUSD`, { headers: { cookie: "arx_user_session=u:90001:USER" } });
+    assert.equal(refused.status, 503, "disconnected scan still owns capacity until actual work settles");
+    finish();
+    for (let i = 0; i < 100 && scannerReadAdmission.activeCount !== others.length; i++) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(scannerReadAdmission.activeCount, others.length);
+  } finally {
+    finish(); controller.abort(); heldScan = null; others.forEach(release => release());
+  }
+  assert.equal(scannerReadAdmission.activeCount, 0);
 });
