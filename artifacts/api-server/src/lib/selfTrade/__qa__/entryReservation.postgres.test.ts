@@ -1698,7 +1698,7 @@ it("fresh facts: confirmation is not the final step and does not need a quote", 
 it(
   "fresh facts: paired final-claim latency benchmark",
   { skip: process.env.ARX_FRESH_FACTS_BENCHMARK !== "1" },
-  async () => {
+  async (t) => {
     const { arxSymbolSpecsTable } = database;
     await pool.query("DROP TABLE IF EXISTS arx_symbol_specs");
     await createTable(arxSymbolSpecsTable);
@@ -1749,9 +1749,8 @@ it(
       p95: pct(xs, 95),
       p99: pct(xs, 99),
     });
-    console.log(
-      "FRESH_FACTS_BENCHMARK",
-      JSON.stringify({ before: summary(before), after: summary(after) }),
+    t.diagnostic(
+      `FRESH_FACTS_BENCHMARK ${JSON.stringify({ before: summary(before), after: summary(after) })}`,
     );
   },
 );

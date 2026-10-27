@@ -84,8 +84,9 @@ The PostgreSQL disposable cluster ran 300 paired claims per variant, interleaved
 | 1 | 13.40 / 23.97 / 37.71 | 14.92 / 28.69 / 52.10 |
 | 2 | 14.32 / 23.28 / 42.07 | 15.91 / 27.16 / 43.46 |
 | 3 | 13.71 / 25.39 / 40.54 | 14.53 / 28.12 / 47.12 |
+| 4 | 13.29 / 20.36 / 30.11 | 14.91 / 23.02 / 41.29 |
 
-The median cost is about 0.8–1.6 ms per entry dispatch. p95 adds about 3–5 ms. p99 is noisy in this shared container, adding 1–14 ms. Offline, the broker quote store read (`mt5Provider.getQuote`, n=5,000) took 0.0009 / 0.0048 / 0.0087 ms. These are container measurements, not production SLOs. Management adds one command read (user, ticket, close/modify, sent) per evaluated position in the manager and no extra query at its claim; that was not benchmarked.
+The median cost is about 0.8–1.6 ms per entry dispatch. p95 adds about 3–5 ms. p99 is noisy in this shared container, adding 1–14 ms. The diagnostic line is `FRESH_FACTS_BENCHMARK` in the test output. Offline, the broker quote store read (`mt5Provider.getQuote`, n=5,000) took 0.0009 / 0.0048 / 0.0087 ms. These are container measurements, not production SLOs. Management adds one command read (user, ticket, close/modify, sent) per evaluated position in the manager and no extra query at its claim; that was not benchmarked.
 
 ## Remaining gaps (honest)
 
