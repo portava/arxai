@@ -19,9 +19,33 @@ closed-to-forming merge boundary. Missing expected precision is unmeasured.
 Conflicting stale/non-live flags cap the feed score even when quality says clean.
 Observed failed broker comparisons remain FAIL in the named handshake field.
 Cached legacy sub-scores without evidence status cannot prove a PASS.
-The broker comparison remains a comparison of supplied numeric values. It does
-not independently prove the quote's account, source identity or freshness;
-those provenance checks remain separate unfinished work.
+Broker comparison provenance (2026-10-27): the comparison now carries an
+additive `quoteBinding` (`BOUND | MISMATCH | STALE | UNVERIFIED` plus every
+failed reason). Symbol Mirror Accuracy earns points, the handshake
+`BrokerPriceAlignment` can PASS and Ruby's trust line can say "Mirror synced" or
+"Mirror drifting" only when the quote is BOUND: same observed provider, bridge
+and owner as the served chart series, owner equal to the requesting user, no
+observed environment/broker-symbol contradiction (unknown on either side is not
+a contradiction), and an observed tick time no older than the shared 15-second
+quote freshness budget and not in the future. The chart producer keeps the
+served series' router provenance off the wire (non-enumerable) for this check.
+`/me/chart/intelligence` tries the live MT5 quote pushed by the series' own
+bridge (only when that bridge belongs to the requesting user), then the user's
+`arx_symbol_specs` row, which binds only from an EA-reported `lastTickTime`.
+Otherwise the sub-metric is null and its detail names the reasons (for example
+`BRIDGE_MISMATCH`, `QUOTE_STALE`, `QUOTE_TIME_UNKNOWN`). An observed failed
+deviation from an unbound quote still blocks chart trade confirmation and shows
+`MirrorSync` FAIL, but cannot earn or lose mirror points. A perfect window
+without a bound quote now earns at most 75.
+
+Still open: no current ingest path writes `arx_symbol_specs.last_tick_time`,
+so snapshot rows stay `UNVERIFIED` and only the live same-bridge quote can bind; durable-mirror series have no
+bridge/owner and stay unattributed; shared chart series served from another
+user's bridge cannot be compared for this user; environment and broker-native
+symbol are not observed on the live push path; EA clock/time-zone correctness
+is not independently verified; self-trade's cached chart context still uses the
+unenriched placeholder. No production broker data, latency or terminal behavior
+was exercised.
 
 The existing chart-advisory threshold remains 75. Fewer earned points can
 therefore withhold confident chart reads, scanner confirmation and self-trade
