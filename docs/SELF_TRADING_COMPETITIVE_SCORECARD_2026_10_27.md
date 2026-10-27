@@ -131,6 +131,8 @@ Evidence: `artifacts/api-server/src/lib/selfTrade/decisionEngine.ts:258`; `artif
 
 Evidence: `mt5-bridge/ReplitMT5BridgeEA_v131.mq5:759-773,825`; `mt5-bridge/ARX_AI_Universal_Agent_v154.mq5:825-838,1393-1425`; `docs/SELF_TRADING_RELIABILITY_2026_10_26.md (evidence model)`; `docs/SELF_TRADE_TERMINAL_TARGET_PREFLIGHT.md (remaining gaps)`
 
+**In progress elsewhere (not on this branch):** branch `codex/terminal-result-evidence` adds versioned result evidence to v154 and v131 (10010 → LIVE_PARTIALLY_FILLED, 10008 → ACK, executed volume/price from the CTrade result, boolean success without deal/volume/price → LIVE_UNKNOWN). It is not yet integrated into PR 99 and has no ACK/PARTIAL aging path, so this row stays **behind** until it lands and is validated.
+
 **Acceptance criterion to match or beat:** EA maps 10009/10010/10008/other retcodes to FILLED/PARTIAL/PLACED/REJECTED-or-UNKNOWN; results carry ResultVolume, ResultPrice, ResultDeal, position identifier and request time; server never records executed volume it did not receive; extracted-handler test matrix covers every retcode in the MQL5 table; demo test reproduces a partial or rejected fill.
 
 *Note:* Highest-risk finding: a partial fill reported as REJECTED can leave real exposure that ARX believes does not exist.
