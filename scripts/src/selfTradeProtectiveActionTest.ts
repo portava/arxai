@@ -390,6 +390,68 @@ const row: ProtectiveRowFacts = {
   check("volume change detail carries both sizes", !vol.ok && vol.detail.observed === 0.05 && vol.detail.expected === 0.1);
 }
 
+// ── 10b. Standalone predicates agree with the full geometry ──────────────────
+// Each standalone predicate applies a subset of evaluateProtectiveGeometry's
+// rules in the same order, so wherever it refuses it names the same reason.
+{
+  const withTp = { ...BUY, takeProfit: 1.13 };
+  expect("exposure: stop removal refuses (removing the stop increases risk)", doesNotIncreaseExposure(BUY, modify(BUY, null)), "PROTECTIVE_STOP_NOT_TIGHTER");
+  expect("exposure: SELL stop removal refuses", doesNotIncreaseExposure(SELL, modify(SELL, null)), "PROTECTIVE_STOP_NOT_TIGHTER");
+  expect("exposure: stop removal refuses before a TP change (same order as geometry)", doesNotIncreaseExposure(withTp, modify(withTp, null, 1.125)), "PROTECTIVE_STOP_NOT_TIGHTER");
+  expect("exposure: a tighter stop with the same TP passes", doesNotIncreaseExposure(withTp, modify(withTp, 1.1, 1.13)), "OK");
+  const cases: Array<[string, ProtectivePositionFacts, ProtectiveIntent]> = [
+    ["close exact", BUY, close(BUY)],
+    ["close partial", BUY, close(BUY, 0.05)],
+    ["close over", BUY, close(BUY, 0.15)],
+    ["close wrong side", BUY, close(BUY, 0.1, "SELL")],
+    ["modify removal", withTp, modify(withTp, null)],
+    ["modify removal + TP change", withTp, modify(withTp, null, 1.2)],
+    ["modify TP change", withTp, modify(withTp, 1.1, 1.2)],
+    ["modify loosen", BUY, modify(BUY, 1.09)],
+    ["modify through price", BUY, modify(BUY, 1.2)],
+    ["modify ok", BUY, modify(BUY, 1.1)],
+    ["SELL modify removal", SELL, modify(SELL, null)],
+    ["SELL close over", SELL, close(SELL, 0.3)],
+  ];
+  for (const [label, p, i] of cases) {
+    const full = evaluateProtectiveGeometry(p, i);
+    for (const [name, pred] of [["exposure", doesNotIncreaseExposure], ["reverse", doesNotReverse], ["stop", doesNotLoosenStop]] as const) {
+      const v = pred(p, i);
+      check(`${name} agrees with geometry: ${label}`, v.ok || reason(v) === reason(full), `${name}=${reason(v)} geometry=${reason(full)}`);
+    }
+  }
+}
+
+// ── 10c. Heartbeat wording: missing / future-dated are not an age ────────────
+{
+  const missing = explainProtectiveHold("PROTECTIVE_BRIDGE_OFFLINE", { heartbeat: "unknown", ageMs: null });
+  check("missing heartbeat says missing, not 'unknown s old'", /no heartbeat|missing/i.test(missing) && !/unknown ?s old/i.test(missing), missing);
+  const ahead = explainProtectiveHold("PROTECTIVE_BRIDGE_OFFLINE", { heartbeat: "unknown", ageMs: -2_000 });
+  check("future heartbeat says ahead of the server clock, not '-2s old'", /ahead of the server clock/i.test(ahead) && /2s/.test(ahead) && !/-\d+s old/.test(ahead), ahead);
+  const aheadSmall = explainProtectiveHold("PROTECTIVE_BRIDGE_OFFLINE", { heartbeat: "unknown", ageMs: -400 });
+  check("sub-second future heartbeat is still 'ahead', never '0s old'", /ahead of the server clock/i.test(aheadSmall) && !/0s old/.test(aheadSmall), aheadSmall);
+  const notFreshMissing = explainProtectiveHold("PROTECTIVE_BRIDGE_HEARTBEAT_NOT_FRESH", { ageMs: null });
+  check("not-fresh with no heartbeat says missing", /no heartbeat|missing/i.test(notFreshMissing) && !/unknown ?s old/.test(notFreshMissing), notFreshMissing);
+  const notFreshAhead = explainProtectiveHold("PROTECTIVE_BRIDGE_HEARTBEAT_NOT_FRESH", { ageMs: -5_000 });
+  check("not-fresh with a future heartbeat says ahead", /ahead of the server clock/i.test(notFreshAhead), notFreshAhead);
+  const old = explainProtectiveHold("PROTECTIVE_BRIDGE_OFFLINE", { heartbeat: "offline", ageMs: 75_000 });
+  check("an old heartbeat keeps the age wording", /75s old/.test(old), old);
+  for (const t of [missing, ahead, notFreshMissing, notFreshAhead])
+    check("heartbeat variants still say broker-side stops remain active", /broker-side stops remain active/i.test(t), t);
+}
+
+// ── 10d. New hold reasons carry their own text ───────────────────────────────
+{
+  const budget = explainProtectiveHold("PROTECTIVE_HOLD_WAIT_BUDGET_USED", { heldAt: "2026-10-27T12:00:00.000Z", expectedBridge: 12 });
+  check("budget-used text names the shared bridge budget, never 'within 0s'", /already used/i.test(budget) && !/within 0s/.test(budget), budget);
+  const withCmd = explainProtectiveHold("PROTECTIVE_HOLD_REFUSED_WITH_COMMAND", { commandId: "cmd-1", pipelineReason: "CLOSE_ONLY" });
+  check("refused-with-command text names the command and reason", /cmd-1/.test(withCmd) && /CLOSE_ONLY/.test(withCmd), withCmd);
+  const inFlight = explainProtectiveHold("PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT", { commandId: "manual-1", sentAt: "2026-10-27T12:00:00.000Z" });
+  check("in-flight text names the command and manual control", /manual-1/.test(inFlight) && /in flight/i.test(inFlight), inFlight);
+  const after = explainProtectiveHold("PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE", { commandId: "manual-2", eventAt: "x", observedAt: "y" });
+  check("after-evidence text names the command", /manual-2/.test(after), after);
+}
+
 // ── 11. Micro-benchmark (informational; never a pass/fail gate) ──────────────
 {
   const n = 10_000;
