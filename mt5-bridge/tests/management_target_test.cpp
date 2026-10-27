@@ -16,7 +16,7 @@ enum {ACCOUNT_LOGIN,ACCOUNT_SERVER,ACCOUNT_TRADE_MODE,ACCOUNT_TRADE_MODE_REAL,AC
 long login=100,mode=ACCOUNT_TRADE_MODE_REAL,positionSide=POSITION_TYPE_BUY;
 string server="Venue-Server-1",native="EURUSD.a",response,posted,lastSuccessAction;
 double volume=.02,oldSL=1.1,oldTP=1.3;
-double mutatedSL=0,mutatedTP=0;
+double mutatedSL=0,mutatedTP=0,tradedLot=0;
 int calls=0,selections=0,checks=0;bool exists=true,connected=true;
 std::function<void()> pollHook,selectHook;
 bool ReadOnlyMode=false,EnableLiveExecution=true,g_maintenanceMode=false,g_closeCommandSupport=true;
@@ -85,8 +85,8 @@ void PostJson(const string&,const string&body){posted=body;}
 string JsonEscape(const string&s){return JString(s);}
 struct CTrade{
  void SetTypeFillingBySymbol(const string&){}
- void SetDeviationInPoints(double){}bool Buy(double,const string&,double,double,double,const string&){++calls;return tradeResultOk;}
- bool Sell(double,const string&,double,double,double,const string&){++calls;return tradeResultOk;}
+ void SetDeviationInPoints(double){}bool Buy(double lot,const string&,double,double sl,double tp,const string&){++calls;tradedLot=lot;mutatedSL=sl;mutatedTP=tp;return tradeResultOk;}
+ bool Sell(double lot,const string&,double,double sl,double tp,const string&){++calls;tradedLot=lot;mutatedSL=sl;mutatedTP=tp;return tradeResultOk;}
  bool PositionClose(ulong){++calls;return tradeResultOk;}bool PositionModify(ulong,double sl,double tp){++calls;mutatedSL=sl;mutatedTP=tp;return tradeResultOk;}
  ulong ResultOrder(){return resultOrder;}ulong ResultDeal(){return resultDeal;}double ResultPrice(){return resultPrice;}double ResultVolume(){return resultVolume;}
  int ResultRetcode(){return resultRetcode;}string ResultComment(){return "fixture";}
@@ -96,7 +96,7 @@ template<class...A>void PostResultStruct(long,const string&status,const string&r
 #include "ArxManagementTarget.mqh"
 #include "ArxTradeResult.mqh"
 #include "management_wire.inc"
-void reset(){tradeResultOk=true;resultRetcode=10009;resultDeal=43;resultOrder=42;resultVolume=.02;resultPrice=1.2;g_tradeEvidenceCount=g_tradeEvidenceNext=0;login=100;mode=ACCOUNT_TRADE_MODE_REAL;server="Venue-Server-1";native="EURUSD.a";volume=.02;oldSL=1.1;oldTP=1.3;positionSide=POSITION_TYPE_BUY;exists=true;connected=true;calls=selections=0;pollHook=nullptr;selectHook=nullptr;g_liveDoneCount=g_liveDoneNext=0;posted="";seen.clear();AllowOrderExecution=true;ReadOnlyMode=false;EnableLiveExecution=true;AllowPositionClose=AllowProtectionModify=true;}
+void reset(){tradeResultOk=true;resultRetcode=10009;resultDeal=43;resultOrder=42;resultVolume=.02;resultPrice=1.2;g_tradeEvidenceCount=g_tradeEvidenceNext=0;login=100;mode=ACCOUNT_TRADE_MODE_REAL;server="Venue-Server-1";native="EURUSD.a";volume=.02;oldSL=1.1;oldTP=1.3;positionSide=POSITION_TYPE_BUY;exists=true;connected=true;calls=selections=0;tradedLot=0;pollHook=nullptr;selectHook=nullptr;g_liveDoneCount=g_liveDoneNext=0;posted="";seen.clear();AllowOrderExecution=true;ReadOnlyMode=false;EnableLiveExecution=true;AllowPositionClose=AllowProtectionModify=true;}
 string target(bool modify=false){return string("{\"version\":1,\"accountLogin\":\"100\",\"observedServerName\":\"Venue-Server-1\",\"brokerTicket\":\"42\",\"symbol\":\"EURUSD.a\",\"side\":\"BUY\",\"volume\":0.02,\"currentStopLoss\":1.1,\"currentTakeProfit\":1.3,\"nextStopLoss\":1.2,\"action\":\"")+(modify?"TIGHTEN_SL":"EXIT")+"\"}";}
 string wire(bool live,bool modify=false,bool bound=true){return string("{\"id\":1,\"action\":\"")+(modify?"MODIFY_POSITION":"CLOSE_POSITION")+"\",\"commandId\":\"command-1\",\"commandType\":\""+(modify?"MODIFY_LIVE_SLTP":"CLOSE_LIVE_POSITION")+"\",\"symbol\":\"EURUSD.a\",\"side\":\"BUY\",\"requestedVolume\":0.02,\"stopLoss\":1.2,\"takeProfit\":1.3,\"sl\":1.2,\"tp\":1.3,\"positionTicket\":\"42\",\"secondsUntilExpiry\":30,\"payload\":{\"brokerTicket\":\"42\""+(bound?",\"managementTargetV1\":"+target(modify):"")+"}}"+(live?"":"");}
 void run(bool live,const string&w,bool modify=false){if(live){response="{\"command\":"+w+"}";PollAndExecuteLiveCommands();}else {response="{\"commands\":["+w+"]}";PollAndExecute();}(void)modify;}

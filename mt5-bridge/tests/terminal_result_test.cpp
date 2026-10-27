@@ -10,6 +10,16 @@ void runResult(bool live,const string&kind){
 string actualStatus(bool live){(void)live;return JsonReadString(posted,"status");}
 void field(const string&key,const string&expected){string raw;bool found=false;check(ArxJsonMember(posted,key,raw,found)&&found&&raw==expected,key+"="+expected+" got="+raw);}
 int main(int argc,char**argv){
+ if(argc==3&&string(argv[1])=="--entry-wire-file"){
+  // Actual PostgreSQL poll response -> extracted v154 entry handler. The fake
+  // broker fills its own exact step volume (0.02); the posted body is printed
+  // for the actual server result route. No terminal/broker/network I/O.
+  std::ifstream file(argv[2]);std::stringstream contents;contents<<file.rdbuf();reset();response=contents.str();
+  if(response.empty())throw std::runtime_error("empty entry wire fixture");
+  resultVolume=.02;resultPrice=1.234567891;
+  PollAndExecute();check(calls==1,"actual PostgreSQL entry mirror reaches CTrade");
+  std::cout<<"{\"tradedLot\":"<<ArxResultNumber(tradedLot)<<",\"tradedSL\":"<<ArxResultNumber(mutatedSL)<<",\"tradedTP\":"<<ArxResultNumber(mutatedTP)<<",\"body\":"<<posted<<"}\n";return 0;
+ }
  bool emit=argc>1&&string(argv[1])=="--emit";
  struct Scenario{const char*name;bool ok;int code;ulong deal;double vol,price;const char*expected;};
  const Scenario cases[]={
