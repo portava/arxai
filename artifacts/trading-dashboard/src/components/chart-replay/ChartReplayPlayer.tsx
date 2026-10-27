@@ -22,6 +22,8 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
   const [installed,setInstalled]=useState(0);
   const container=useRef<HTMLDivElement>(null);
   const adapter=useRef<ChartEngineAdapter|null>(null);
+  const replayStudyContext=useMemo(()=>({sessionId:snapshot.id,ownerId:snapshot.ownerId,source:snapshot.source,
+    sourceIdentity:snapshot.sourceIdentity,symbol:snapshot.symbol,timeframe:snapshot.timeframe}),[snapshot]);
   const replayRead=useMemo(()=>({snapshot,installedCount:installed}),[snapshot,installed]);
   const current=snapshot.bars[count-1]!;
   const seek=(next:number)=>{setPlaying(false);setCount(replayCount(next,snapshot.bars.length));setMessage("");};
@@ -47,12 +49,12 @@ export default function ChartReplayPlayer({snapshot,onExit}:{snapshot:ChartRepla
     // Synchronous before-paint replacement prevents a backwards seek from
     // showing a later bar under the new cursor. The adapter recalculates studies
     // only from the supplied prefix, including backwards and non-adjacent seeks.
-    engine.setCandles(prefix,{revealLatest:true});
+    engine.setCandles(prefix,{revealLatest:true,replay:replayStudyContext});
     setInstalled(count);
     const witness={sessionId:snapshot.id,symbol:snapshot.symbol,timeframe:snapshot.timeframe,source:snapshot.source,
       sourceIdentity:snapshot.sourceIdentity,count,lastOpenTime:prefix.at(-1)!.time,lastClose:prefix.at(-1)!.close,appliedAt:performance.now()};
     container.current?.dispatchEvent(new CustomEvent("arx.chart.replay.applied",{bubbles:true,detail:witness}));
-  },[snapshot,count,epoch]);
+  },[snapshot,count,epoch,replayStudyContext]);
   useEffect(()=>{
     if(!playing || count>=snapshot.bars.length || document.hidden){if(playing)setPlaying(false);return;}
     // One bar per delivered timer. No catch-up burst after a busy/hidden tab.

@@ -1,4 +1,5 @@
 import type { ChartEngineCandle } from "./types";
+import { MAX_REPLAY_BARS } from "./chartReplayLimits";
 
 export type StudyKind =
   | "sma" | "ema" | "smma" | "wma" | "dema" | "tema" | "bollinger"
@@ -77,6 +78,37 @@ export function appliedPrice(bar: ChartEngineCandle, source: AppliedPrice = "clo
   }
 }
 
+export interface ReplayStudyContext {
+  sessionId: string;
+  ownerId: number;
+  source: string;
+  sourceIdentity: string;
+  symbol: string;
+  timeframe: string;
+}
+// Explicit input contract: a new volume-dependent study must extend this
+// identity and opt in below before it can reuse any replay checkpoint.
+const REPLAY_OHLC_STUDIES = new Set<StudyKind>([
+  "sma","ema","smma","wma","dema","tema","bollinger","rsi","macd",
+  "atr","cci","stochastic","williams","stddev","envelopes","momentum","roc",
+]);
+interface ReplayStudyCache {
+  key: string;
+  inputs: ChartEngineCandle[];
+  states: State[];
+  points: StudyPoint[];
+}
+function sameReplayInput(a: ChartEngineCandle, b: ChartEngineCandle): boolean {
+  return Object.is(a.time,b.time) && Object.is(a.open,b.open) && Object.is(a.high,b.high) &&
+    Object.is(a.low,b.low) && Object.is(a.close,b.close);
+}
+function replayStudyKey(context: ReplayStudyContext, config: ChartStudy): string | null {
+  if (!Number.isSafeInteger(context.ownerId) || context.ownerId<=0 || !/^[a-f0-9]{64}$/i.test(context.sourceIdentity) ||
+      ![context.sessionId,context.source,context.symbol,context.timeframe].every(value=>typeof value==='string' && value.length>0 && value.length<=200) ||
+      !REPLAY_OHLC_STUDIES.has(config.kind)) return null;
+  return JSON.stringify([context.sessionId,context.ownerId,context.source,context.sourceIdentity,context.symbol,context.timeframe,config]);
+}
+
 interface AverageState { input: number | null; count: number; sum: number; weighted: number; value: number | null }
 interface State { price: number; averages: Record<string, AverageState> }
 
@@ -87,12 +119,50 @@ interface State { price: number; averages: Record<string, AverageState> }
  * See docs/SMART_CHART_STUDY_CONVENTIONS.md for seeds and flat-market choices. */
 export class StudyCalculator {
   private states: State[] = [];
+  private replayCache: ReplayStudyCache | null = null;
   readonly points: StudyPoint[] = [];
   constructor(readonly config: ChartStudy) {}
 
   /** Rendering reads points directly and can omit the duplicate changed list.
    * Default callers still receive every changed point in its original order. */
   calculate(bars: ChartEngineCandle[], from = 0, collectChanges = true): StudyPoint[] {
+    // Native/live callers never retain a hidden historical suffix.
+    this.clearReplayCache();
+    return this.calculateCurrent(bars,from,collectChanges);
+  }
+  clearReplayCache(): void { this.replayCache = null; }
+  /** Reuse only checkpoints actually earned earlier in this explicit replay
+   * identity. Public points/state always stop at the supplied revealed prefix. */
+  calculateReplay(bars: ChartEngineCandle[], context: ReplayStudyContext): void {
+    const key = replayStudyKey(context,this.config);
+    if (!key || !bars.length || bars.length>MAX_REPLAY_BARS) {
+      this.calculate(bars,0,false);
+      return;
+    }
+    let cache = this.replayCache;
+    if (cache?.key!==key) cache={key,inputs:[],states:[],points:[]};
+    let shared=0;
+    while(shared<bars.length && shared<cache.inputs.length && sameReplayInput(bars[shared]!,cache.inputs[shared]!))shared++;
+    // Restore only the requested matching prefix. Cached future checkpoints are
+    // private; inspect/render/reader cannot enumerate them through points.
+    this.states=cache.states.slice(0,shared);
+    this.points.length=shared;
+    for(let i=0;i<shared;i++)this.points[i]=cache.points[i]!;
+    if(shared<bars.length){
+      this.calculateCurrent(bars,shared,false);
+      // A corrected/prepended input invalidates every cached descendant. Copies
+      // prevent caller mutation after insertion from changing the stored key.
+      cache.inputs.length=shared;
+      for(let i=shared;i<bars.length;i++){
+        const bar=bars[i]!;
+        cache.inputs.push({time:bar.time,open:bar.open,high:bar.high,low:bar.low,close:bar.close});
+        Object.freeze(this.points[i]!.values);Object.freeze(this.points[i]!);
+      }
+      cache.states=this.states.slice();cache.points=this.points.slice();
+    }
+    this.replayCache=cache;
+  }
+  private calculateCurrent(bars: ChartEngineCandle[], from: number, collectChanges: boolean): StudyPoint[] {
     const c = this.config;
     const p = c.period;
     from = Math.max(0, Math.min(from, this.states.length, bars.length));

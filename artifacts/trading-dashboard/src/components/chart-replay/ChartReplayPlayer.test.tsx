@@ -11,6 +11,7 @@ describe("isolated chart replay player",()=>{
  it("installs historical prefix only and makes no market/account or stream requests",()=>{
   render(<ChartReplayPlayer snapshot={snapshot()} onExit={vi.fn()}/>);
   expect(engine.setCandles.mock.lastCall?.[0]).toHaveLength(100);
+  expect(engine.setCandles.mock.lastCall?.[1]).toEqual({revealLatest:true,replay:{sessionId:'session-1',ownerId:7,source:'deriv_public',sourceIdentity:'a'.repeat(64),symbol:'V75',timeframe:'M15'}});
   expect(engine.setFeedState).toHaveBeenCalledWith({livePriceAffordance:false,source:"deriv_public"});
   expect(engine.setOverlays).toHaveBeenCalledWith([],null);expect(engine.setStructureLines).toHaveBeenCalledWith([],[]);
   expect(fetch).not.toHaveBeenCalled();expect(EventSource).not.toHaveBeenCalled();

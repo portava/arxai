@@ -2,7 +2,7 @@ import type { DrawingInteraction } from "./chartDrawingEditor";
 import type { SmartChartAnnotation } from "./smartChartAnnotation";
 import type { ChartTimeRange, ChartViewEvent } from "./chartViewLink";
 import type { ChartOverlay } from "@/lib/chart-overlays";
-import type { ChartStudy } from "./chartStudies";
+import type { ChartStudy, ReplayStudyContext } from "./chartStudies";
 import type { ChartAnchor, ChartDrawing, ChartStyle, ChartScaleMode } from "./chartWorkspace";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ export interface ChartEngineAdapter {
   /** Update the live-price affordance verdict. Re-applies on the next paint. */
   setFeedState(state: ChartEngineFeedState): void;
   /** Reconcile candles incrementally; replace only changed history. Preserve zoom/pan. */
-  setCandles(candles: ChartEngineCandle[], view?: { revealLatest?: boolean }): void;
+  setCandles(candles: ChartEngineCandle[], view?: { revealLatest?: boolean; replay?: ReplayStudyContext }): void;
   /** Clear context-owned observations/geometry while retaining the renderer. */
   resetDataContext?(): void;
   /**

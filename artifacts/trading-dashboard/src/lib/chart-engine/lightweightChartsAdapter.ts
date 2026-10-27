@@ -380,7 +380,10 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     // A lagging history poll may retain a newer streamed tip only while both
     // belong to the same source. Clear it before the shell reconciles candles;
     // rejecting new mismatched SSE frames cannot remove an already accepted tip.
-    if (this.feedState.source !== state.source) this.streamTip = null;
+    if (this.feedState.source !== state.source) {
+      this.streamTip = null;
+      this.analysis?.clearReplayCache();
+    }
     this.feedState = state;
     // Re-apply affordance immediately if data is already on screen so a feed
     // verdict flip (live→stale) takes effect without waiting for new candles.
@@ -407,11 +410,14 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
     this.chart?.clearCrosshairPosition();
   }
 
-  setCandles(candles: ChartEngineCandle[], view?: { revealLatest?: boolean }): void {
+  setCandles(candles: ChartEngineCandle[], view?: { revealLatest?: boolean; replay?: import("./chartStudies").ReplayStudyContext }): void {
     const series = this.series;
     const chart = this.chart;
     if (!series) return;
 
+    // A native no-op poll also exits Replay ownership; it must not leave a
+    // hidden earned suffix merely because no series write is necessary.
+    if (!view?.replay) this.analysis?.clearReplayCache();
     let sanitized = sanitizeCandlestickData(candles.map((c) => ({ ...c, time: c.time as UTCTimestamp })));
     // A closed-window poll may lag a streamed forming bar. Keep that newer tip
     // until the authoritative window reaches it; never make a candle disappear.
@@ -452,7 +458,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       // Replay explicitly follows its cursor. Set its final range before the
       // study render; never render the old viewport then rebuild it on a jump.
       if (view?.revealLatest && sanitized.length) this.goToLatest(false);
-      if (updates === null || updates.length || view?.revealLatest) this.analysis?.refresh(this.candles, unchanged, (updates === null && !trimTail) || bulk);
+      if (updates === null || updates.length || view?.revealLatest) this.analysis?.refresh(this.candles, unchanged, (updates === null && !trimTail) || bulk, view?.replay);
       if (updates === null) this.analysis?.refreshDrawings(this.candles);
     };
     if (this.analysis) this.analysis.batchViewport(reconcile);
@@ -846,6 +852,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
   }
 
   updateActiveCandle(candle: ChartEngineCandle): void {
+    this.analysis?.clearReplayCache();
     const series = this.series;
     if (!series) return;
     // Defensive out-of-order guard: lightweight-charts' series.update throws if

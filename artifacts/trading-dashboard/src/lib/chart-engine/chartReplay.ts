@@ -2,7 +2,8 @@ import type { ChartCandlesResponse } from "@workspace/api-client-react";
 import { validatePreferences, type ChartPreferences } from "./chartWorkspace";
 import type { ChartEngineCandle } from "./types";
 
-export const MAX_REPLAY_BARS = 5_000;
+import { MAX_REPLAY_BARS } from "./chartReplayLimits";
+export { MAX_REPLAY_BARS } from "./chartReplayLimits";
 export const REPLAY_SPEEDS = [0.5, 1, 2, 4, 8] as const;
 const intervals: Record<string, number> = { M1:60, M5:300, M15:900, M30:1800, H1:3600, H4:14400, D1:86400 };
 export interface ReplayBar extends ChartEngineCandle { closeTime: number }
