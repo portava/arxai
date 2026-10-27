@@ -1,5 +1,6 @@
 import { normalizeTerminalResultEvidence } from "../lib/mt5/terminalResultEvidence.js";
 import { projectManagementMailbox } from "../lib/mt5/managementTargetTransport.js";
+import { appendExecutionEvidence as recordExecutionEvent } from "../lib/live/executionEvidence.js";
 import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported, legacyManagementPickupPredicate } from "../lib/mt5/managementTargetProtocol.js";
 import {
   MT5_ACCOUNT_SNAPSHOT_FRESH_MS,
@@ -987,6 +988,24 @@ router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
         legacyManagementPickupPredicate(targetSupported),
       )).returning();
     if (claimed.length !== selected.length) throw new Error("MT5_MAILBOX_CLAIM_CHANGED");
+    // A delivered entry mirror is the EA's one pickup of that entry: stamp the
+    // authority so /mt5/live-commands-poll can never serve it a second time.
+    // Compare-and-set on the dispatched, unpicked row; otherwise roll back.
+    const entryIds = claimed.map(row => (row.payload as Record<string, unknown> | null)?.liveCommandId)
+      .filter((id): id is string => typeof id === "string" && byId.get(id)?.commandType === "PLACE_LIVE_MARKET_ORDER");
+    if (entryIds.length) {
+      const stamped = await tx.update(arxLiveCommandsTable).set({ pickedByEaAt: now }).where(and(
+        inArray(arxLiveCommandsTable.commandId, entryIds),
+        eq(arxLiveCommandsTable.bridgeConnectionId, conn.id),
+        eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+        isNull(arxLiveCommandsTable.pickedByEaAt),
+      )).returning({ id: arxLiveCommandsTable.id, commandId: arxLiveCommandsTable.commandId });
+      if (stamped.length !== entryIds.length) throw new Error("MT5_MAILBOX_ENTRY_PICKUP_CHANGED");
+      for (const row of stamped) await recordExecutionEvent({
+        commandRowId: row.id, source: "ea", eventType: "EA_PICKED_UP", occurredAt: now,
+        payload: { commandId: row.commandId, bridgeConnectionId: conn.id, transport: "mt5_commands" },
+      }, tx);
+    }
     const body = JSON.stringify(envelope(claimed.map(row => wire({ ...row, symbol: projected.get(row.id)!.symbol, side: projected.get(row.id)!.side, lot: projected.get(row.id)!.lot, sl: projected.get(row.id)!.sl, tp: projected.get(row.id)!.tp }))));
     // A defensive invariant failure rolls back every claim, never discards a
     // committed delivery. JSON is sent verbatim so formatting cannot grow it.
@@ -1071,12 +1090,15 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
     const terminal = normalizeTerminalResultEvidence(raw, linkedCommand?.commandType ?? ownedMailbox.action,
       linkedCommand ? linkedCommand.requestedVolume : num(ownedMailbox.lot) ?? num(raw.requestedVolume),
       linkedCommand ? linkedCommand.brokerTicket ?? (linkedCommand.payload as Record<string, unknown> | null)?.brokerTicket as string | undefined : undefined);
-    const reportedStatus = terminal?.outcome ?? body.status;
+    // Acceptance/partial claims need versioned terminal evidence; otherwise
+    // unknown, exactly as the direct result route treats them.
+    const unproven = !terminal && ["LIVE_ACKNOWLEDGED", "LIVE_PARTIALLY_FILLED"].includes(body.status);
+    const reportedStatus = terminal?.outcome ?? (unproven ? "LIVE_UNKNOWN" : body.status);
     const isFailed = /fail|error|reject/i.test(reportedStatus);
     const unresolved = ["LIVE_ACKNOWLEDGED","LIVE_PARTIALLY_FILLED","LIVE_UNKNOWN"].includes(reportedStatus);
     // Versioned reports use only actual broker evidence, never requestedVolume.
-    const fillPrice = terminal ? terminal.fillPrice : num(raw["fillPrice"] ?? raw["price"] ?? rp["fillPrice"]);
-    const filledLotSize = terminal ? terminal.executedVolume : num(raw["filledLotSize"] ?? raw["requestedVolume"] ?? rp["filledLotSize"]);
+    const fillPrice = terminal ? terminal.fillPrice : unproven ? null : num(raw["fillPrice"] ?? raw["price"] ?? rp["fillPrice"]);
+    const filledLotSize = terminal ? terminal.executedVolume : unproven ? null : num(raw["filledLotSize"] ?? raw["requestedVolume"] ?? rp["filledLotSize"]);
     const rawTicket = raw["mt5Ticket"] ?? raw["mt5OrderTicket"] ?? rp["mt5OrderTicket"] ?? rp["orderTicket"];
     // mt5Ticket=0 from the EA means "no ticket" (rejections) — treat 0 as null.
     const mt5OrderTicket = (rawTicket != null && String(rawTicket) !== "0") ? String(rawTicket) : null;
