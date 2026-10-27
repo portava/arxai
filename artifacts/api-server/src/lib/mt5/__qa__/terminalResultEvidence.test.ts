@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { normalizeTerminalResultEvidence as normalize } from "../terminalResultEvidence.js";
+import { tmpdir } from "node:os";
+import { normalizeTerminalResultEvidence as normalize, terminalResultKind, TERMINAL_ENTRY_COMMAND_TYPES } from "../terminalResultEvidence.js";
 const full = {resultEvidenceVersion:1,resultKind:"ENTRY",tradeCallSucceeded:true,mt5Retcode:10009,resultDeal:"43",resultOrder:"42",requestedVolume:.02,resultVolume:.02,resultPrice:1.234567891};
 const read=(raw:Record<string,unknown>,type="PLACE_LIVE_MARKET_ORDER",volume:number|null=.02,ticket?:string)=>normalize(raw,type,volume,ticket)!;
 test("legacy reports remain explicit compatibility, no evidence certification",()=>assert.equal(normalize({status:"FILLED"},"OPEN_MARKET",.02),null));
@@ -47,12 +48,29 @@ test("evidence is fixed, bounded primitives and never an arbitrary payload",()=>
 });
 test("actual extracted v131/v154 handlers agree with server for all synchronous result fixtures",()=>{
  const runner=fileURLToPath(new URL("../../../../../../mt5-bridge/tests/run_management_target.py",import.meta.url));
- const result=spawnSync("python3",[runner,"--result-evidence","--emit"],{encoding:"utf8",timeout:20000,env:{...process.env,TMPDIR:"/private/tmp"}});
+ const result=spawnSync("python3",[runner,"--result-evidence","--emit"],{encoding:"utf8",timeout:20000,env:{...process.env,TMPDIR:process.env.TMPDIR ?? tmpdir()}});
  assert.equal(result.status,0,`${result.error??""} ${result.stderr}`);
  const rows=result.stdout.trim().split("\n").map(line=>JSON.parse(line));assert.equal(rows.length,96);
  for(const {kind,body,path,scenario}of rows){
-  const type=kind==="ENTRY"?"PLACE_LIVE_MARKET_ORDER":kind==="CLOSE"?"CLOSE_LIVE_POSITION":"MODIFY_LIVE_SLTP";
-  const r=read(body,type,.02,kind==="ENTRY"?undefined:"42");
-  assert.equal(r.outcome,body.status,`${path} ${kind} ${scenario}`);assert.equal(r.executedVolume,body.executedVolume);assert.equal(r.fillPrice,body.fillPrice);
+  const types=kind==="ENTRY"?TERMINAL_ENTRY_COMMAND_TYPES:[kind==="CLOSE"?"CLOSE_LIVE_POSITION":"MODIFY_LIVE_SLTP"];
+  for(const type of types){
+   const r=read(body,type,.02,kind==="ENTRY"?undefined:"42");
+   assert.equal(r.outcome,body.status,`${path} ${kind} ${type} ${scenario}`);assert.equal(r.executedVolume,body.executedVolume);assert.equal(r.fillPrice,body.fillPrice);
+  }
  }
+});
+test("every v154 market-entry dispatch alias maps to ENTRY; pending, bulk and unknown actions do not",()=>{
+ for(const type of ["PLACE_LIVE_MARKET_ORDER","OPEN_MARKET","PLACE_MARKET_ORDER","DEMO_MARKET_ORDER"]){
+  assert.equal(terminalResultKind(type),"ENTRY",type);
+  const r=read(full,type);assert.equal(r.outcome,"LIVE_FILLED",type);assert.equal(r.executedVolume,.02);assert.equal(r.brokerTicket,"42");
+ }
+ for(const type of ["PLACE_PENDING","PLACE_PENDING_ORDER","PLACE_LIVE_PENDING_ORDER","REVERSE_POSITION","CLOSE_ALL","PARTIAL_CLOSE","open_market","OPEN_MARKET ",""]){
+  assert.equal(terminalResultKind(type),null,type);assert.equal(read(full,type).outcome,"LIVE_UNKNOWN",type);
+ }
+});
+test("actual v154 dispatcher routes exactly the declared entry aliases to the evidence-emitting handler",async()=>{
+ const {readFileSync}=await import("node:fs");
+ const source=readFileSync(fileURLToPath(new URL("../../../../../../mt5-bridge/ARX_AI_Universal_Agent_v154.mq5",import.meta.url)),"utf8");
+ const routed=[...source.matchAll(/(?:if|else if)\(([^)]*?)\)\s*HandleOpenMarket\(/g)].flatMap(m=>[...m[1]!.matchAll(/action == "([A-Z_]+)"/g)].map(a=>a[1]));
+ assert.deepEqual([...routed].sort(),TERMINAL_ENTRY_COMMAND_TYPES.filter(t=>t!=="PLACE_LIVE_MARKET_ORDER").sort());
 });

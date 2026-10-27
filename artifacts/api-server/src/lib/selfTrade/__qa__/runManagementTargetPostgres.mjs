@@ -103,7 +103,7 @@ try {
         process.env.ARX_MANAGEMENT_BENCHMARK_OUTPUT ||
         process.env.ARX_MANUAL_RESULT_BENCHMARK_OUTPUT
           ? 180_000
-          : 60_000,
+          : 240_000, // extracted-EA cases compile the C++ harness per case
     },
   );
   status = result.status ?? 1;
