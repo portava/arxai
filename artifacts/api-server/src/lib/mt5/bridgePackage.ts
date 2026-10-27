@@ -7,6 +7,7 @@ import { buildZip } from "../zipBuilder.js";
 // The Universal Agent uses a different mailbox; never select it by version alone.
 export const BRIDGE_PACKAGE_VERSION = "1.31";
 export const BRIDGE_FILES = {
+  tradeResultCore: { name: "ArxTradeResult.mqh", contentType: "text/plain; charset=utf-8" },
   managementCore: { name: "ArxManagementTarget.mqh", contentType: "text/plain; charset=utf-8" },
   ea: { name: "ReplitMT5BridgeEA_v131.mq5", contentType: "text/x-mql5; charset=utf-8" },
   "demo-core": { name: "ArxDemoExecution.mqh", contentType: "text/x-mql5; charset=utf-8" },

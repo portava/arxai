@@ -4,6 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+// The real classifier: unversioned EA bodies take the legacy mapping path.
+import { normalizeTerminalResultEvidence } from "../../lib/mt5/terminalResultEvidence.js";
 const source = readFileSync(new URL("../mt5.ts", import.meta.url), "utf8");
 const tree = ts.createSourceFile(
   "mt5.ts",
@@ -67,7 +69,19 @@ async function run(
         }
       : {},
   };
+  // Table sentinels let the ownership lookup and the linked-command lookup
+  // answer differently; a row is only visible to the connection that owns it.
+  const mt5CommandsTable = { table: "mt5_commands" };
+  const arxLiveCommandsTable = { table: "arx_live_commands" };
+  const linked = { commandId: "cmd", commandType: "PLACE_LIVE_MARKET_ORDER", requestedVolume: 0.1, brokerTicket: null, payload: {} };
   const db = {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () => (table === mt5CommandsTable ? (owned ? [cmd] : []) : table === arxLiveCommandsTable ? [linked] : []),
+        }),
+      }),
+    }),
     update: () => ({
       set: () => ({
         where: () => ({ returning: async () => (owned ? [cmd] : []) }),
@@ -88,6 +102,8 @@ async function run(
     "db",
     "PostMt5CommandResultBody",
     "mt5CommandsTable",
+    "arxLiveCommandsTable",
+    "normalizeTerminalResultEvidence",
     "and",
     "eq",
     "loadModule",
@@ -95,7 +111,9 @@ async function run(
   )(
     db,
     { parse: (x: unknown) => x },
-    {},
+    mt5CommandsTable,
+    arxLiveCommandsTable,
+    normalizeTerminalResultEvidence,
     () => true,
     () => true,
     loadModule,

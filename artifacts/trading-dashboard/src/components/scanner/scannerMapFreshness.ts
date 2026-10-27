@@ -19,3 +19,19 @@ export function canUseScannerOpportunity(row: {
     isScannerMapFresh(row.generatedAt, now) &&
     isScannerMapFresh(row.scanGeneratedAt, now);
 }
+
+/**
+ * The next instant at which `isScannerMapFresh(generatedAt, now)` changes its
+ * answer, or null when it never will (missing/invalid stamp, or already past
+ * the maximum age). A stamp ahead of the clock first becomes fresh once the
+ * clock is within the skew allowance, then expires at the maximum age. Lets
+ * the map re-render exactly at the boundary instead of polling every second.
+ */
+export function nextScannerMapFreshnessChange(generatedAt: string | null | undefined, now: number): number | null {
+  if (!generatedAt || !Number.isFinite(now)) return null;
+  const time = Date.parse(generatedAt);
+  if (!Number.isFinite(time)) return null;
+  if (now < time - SCANNER_MAP_CLOCK_SKEW_MS) return time - SCANNER_MAP_CLOCK_SKEW_MS;
+  if (now - time <= SCANNER_MAP_MAX_AGE_MS) return time + SCANNER_MAP_MAX_AGE_MS + 1;
+  return null;
+}
