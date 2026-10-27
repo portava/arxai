@@ -24,6 +24,11 @@ import type {
 import type { SetupReason } from "@/components/scanner/RubySetupReason";
 import { isStructuralOnlyRead, type ChartRead } from "@/lib/rubyReadPanelState";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
+import {
+  isScalpAwaitingBrokerSpecs,
+  isScalpAwaitingFeed,
+  scalpTimeframeWords,
+} from "@/components/scanner/scalpLabels";
 
 export interface RubyReasoningEvidence {
   structure: string;
@@ -372,7 +377,12 @@ export function buildReasoningFromScalp(
   input: ScalpReasoningInput,
 ): RubyReasoningBlockData {
   const r = input.result;
-  const awaiting = r.status === "AWAITING_DATA";
+  // AWAITING_DATA splits by engine reason: a feed/data reason (or an unnamed
+  // one, fail-closed) is "awaiting live data"; NO_SPECS means the live feed
+  // passed every check and only the broker's symbol details are missing.
+  const awaiting = isScalpAwaitingFeed(r);
+  const noSpecs = isScalpAwaitingBrokerSpecs(r);
+  const tfWords = scalpTimeframeWords(r);
   const dir = r.direction === "BUY" || r.direction === "SELL" ? r.direction : null;
   const flame = r.flame && !r.flame.blind ? r.flame : null;
   const chase = clean(r.chaseWarning);
@@ -381,6 +391,8 @@ export function buildReasoningFromScalp(
   let decision: string;
   if (awaiting) {
     decision = "WAIT — awaiting live data";
+  } else if (noSpecs) {
+    decision = "WAIT — broker symbol details unavailable";
   } else if (clean(r.noTradeReason)) {
     decision = "NO TRADE";
   } else if (!dir) {
@@ -399,10 +411,14 @@ export function buildReasoningFromScalp(
     ? orElse(flame.whyNow, `Flame momentum read ${flame.scalpScore}/100.`)
     : awaiting
       ? "Awaiting live candles before judging momentum."
-      : "Momentum not read on this blind scan.";
+      : noSpecs
+        ? "Momentum not read — the scalp stopped before its read because the broker's symbol details are unavailable."
+        : "Momentum not read on this blind scan.";
   const pattern = awaiting
     ? "Pattern read withheld until live candles confirm."
-    : orElse(input.patternLabel, "No specific scalp pattern called out.");
+    : noSpecs
+      ? "No scalp pattern read — the broker's symbol details are needed first."
+      : orElse(input.patternLabel, "No specific scalp pattern called out.");
   const trendline = awaiting
     ? "Trendline read withheld until live candles confirm."
     : "No specific trendline called out.";
@@ -410,6 +426,9 @@ export function buildReasoningFromScalp(
   let supportResistance: string;
   if (awaiting) {
     supportResistance = "Entry, stop, and target are withheld until live candles confirm.";
+  } else if (noSpecs) {
+    supportResistance =
+      "Entry, stop, and target are withheld — the broker's symbol details (lot size, point value) are unavailable, so the scalp can't be sized.";
   } else {
     const parts: string[] = [];
     if (r.entryZone) parts.push(`entry ${fmtNum(r.entryZone.from)} – ${fmtNum(r.entryZone.to)}`);
@@ -422,9 +441,13 @@ export function buildReasoningFromScalp(
 
   const feedData = awaiting
     ? "Awaiting live feed — no confirmed candles yet, so this read is provisional."
-    : flame
-      ? "Live 1-minute candles read."
-      : "Scanner-level (blind) read — limited candle visibility on this symbol.";
+    : noSpecs
+      ? `Live ${tfWords ?? "scalp-timeframe"} data passed the feed checks; no broker symbol details (lot size, point value) are synced for this account, so no scalp is built.`
+      : flame
+        ? tfWords
+          ? `Live ${tfWords} candles read.`
+          : "Live candles read."
+        : "Scanner-level (blind) read — limited candle visibility on this symbol.";
 
   const newsLabel = clean(r.newsRisk);
   const riskBits = [

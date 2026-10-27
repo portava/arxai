@@ -170,7 +170,7 @@ describe("cross-builder invariant — a confirmed-feed line never pairs with fee
   ];
   for (const [name, d] of cases) {
     it(name, () => {
-      const confirmed = /^(Live feed confirmed|Live read on|Live 1-minute candles read)/.test(d.evidence.feedData);
+      const confirmed = /^(Live feed confirmed|Live read on|Live (\d+-minute )?candles read)/.test(d.evidence.feedData);
       expect(confirmed, `${name}: fixture must be a confirmed-feed read`).toBe(true);
       for (const line of evidenceLines(d)) expect(line, `${name}: ${line}`).not.toMatch(FEED_BLAME);
     });
