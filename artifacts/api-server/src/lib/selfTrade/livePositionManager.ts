@@ -21,7 +21,7 @@ import {
   livePositionLedger,
   livePositionColumns,
 } from "../positions/ledger.js";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   db,
@@ -38,6 +38,7 @@ import {
 import { logger } from "../logger.js";
 import { guardianInstantManage } from "../positionGuardian/manage.js";
 import { writeSelfTradeAudit } from "./audit.js";
+import { evaluatePositionObservation } from "./freshFacts.js";
 import {
   ownedEntryBinding,
   sameBrokerAccount,
@@ -55,6 +56,8 @@ export interface ManagePositionsResult {
   closed: number;
   alerted: number;
   held: number;
+  /** Structured reasons for holds that refused to act on the observation. */
+  heldReasons: Record<string, number>;
 }
 
 // One durable claim per execution. Compare-and-set prevents overlapping cycles
@@ -98,6 +101,7 @@ export async function manageAgentPositions(
     closed: 0,
     alerted: 0,
     held: 0,
+    heldReasons: {},
   };
 
   const filled = await db
@@ -232,6 +236,47 @@ export async function manageAgentPositions(
       else result.held++;
       continue;
     }
+    // Fresh facts: act only on a current broker snapshot that already reflects
+    // every broker-affecting command on this ticket (entry fill, and any
+    // close/modify that was actually sent, including manual ones).
+    const ticketCommands = await db
+      .select({
+        sentToMt5At: arxLiveCommandsTable.sentToMt5At,
+        filledAt: arxLiveCommandsTable.filledAt,
+        rejectedAt: arxLiveCommandsTable.rejectedAt,
+      })
+      .from(arxLiveCommandsTable)
+      .where(
+        and(
+          eq(arxLiveCommandsTable.userId, e.executingUserId),
+          inArray(arxLiveCommandsTable.commandType, [
+            "CLOSE_LIVE_POSITION",
+            "MODIFY_LIVE_SLTP",
+          ]),
+          sql`${arxLiveCommandsTable.payload}->>'brokerTicket' = ${e.brokerTicket}`,
+          isNotNull(arxLiveCommandsTable.sentToMt5At),
+        ),
+      );
+    const observation = evaluatePositionObservation({
+      lastSyncedAt: pos.lastSyncedAt,
+      currentPrice: pos.currentPrice,
+      commandEventTimes: [
+        entryCommand?.filledAt,
+        ...ticketCommands.flatMap((c) => [c.sentToMt5At, c.filledAt, c.rejectedAt]),
+      ],
+      nowMs: Date.now(),
+    });
+    if (!observation.ok) {
+      result.held++;
+      result.heldReasons[observation.reason] =
+        (result.heldReasons[observation.reason] ?? 0) + 1;
+      logger.warn(
+        { executionId: e.id, reason: observation.reason, detail: observation.detail },
+        "self-trade: management held on position observation",
+      );
+      continue;
+    }
+
     // Position Guardian rule "self-trade-manage": every modify/close is checked
     // against the guardian registry (never a widened stop) before the router.
     const guardedPosition = {

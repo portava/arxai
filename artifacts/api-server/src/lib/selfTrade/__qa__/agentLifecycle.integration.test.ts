@@ -29,6 +29,8 @@ const dialect = new PgDialect();
 const stamp = new Date("2026-10-25T23:59:58Z");
 let execution: SelfTradeAgentExecution;
 let commandRows: ArxLiveCommand[];
+// Broker-affecting commands for the managed ticket (fresh-facts ordering check).
+let ticketCommands: Partial<ArxLiveCommand>[] = [];
 let entryCommand: ArxLiveCommand;
 let position: Record<string, unknown>;
 let competingPosition: Record<string, unknown> | undefined;
@@ -69,6 +71,11 @@ function queryFor(table: unknown) {
               thesis: { stopLoss: 1.09, takeProfits: [], invalidation: null },
             },
           ];
+        else if (
+          table === commands &&
+          dialect.sqlToQuery(predicate).sql.includes("->>'brokerTicket'")
+        )
+          rows = ticketCommands.map((c) => structuredClone(c));
         else if (table === commands)
           rows = [
             ...commandRows,
@@ -273,7 +280,10 @@ beforeEach(() => {
     currentPrice: 1.112,
     stopLoss: 1.09,
     closedAt: null,
+    // arx_live_positions.last_synced_at is NOT NULL DEFAULT now() in the schema.
+    lastSyncedAt: new Date(),
   };
+  ticketCommands = [];
   dispatches = [];
   submit = async () => ({ ok: true, commandId: "modify-1" });
   auditFails = false;
@@ -642,4 +652,50 @@ it("ticket reuse selects the exact account even when another account's row comes
   };
   await manageAgentPositions(agent);
   assert.equal(dispatches.length, 1);
+});
+
+describe("fresh position observation before automatic management", () => {
+  async function heldWith(reason: string) {
+    const result = await manageAgentPositions(agent);
+    assert.equal(dispatches.length, 0);
+    assert.equal(result.held, 1);
+    assert.equal(result.evaluated, 0);
+    assert.equal(result.heldReasons?.[reason], 1);
+    // No claim is taken: the next fresh observation can be evaluated normally.
+    assert.deepEqual(execution.managementState, {});
+  }
+  it("a stale broker snapshot never drives a stop move", async () => {
+    position.lastSyncedAt = new Date(Date.now() - 91_000);
+    await heldWith("MANAGEMENT_OBSERVATION_STALE");
+  });
+  it("a snapshot dated beyond clock-skew tolerance is refused", async () => {
+    position.lastSyncedAt = new Date(Date.now() + 60_000);
+    await heldWith("MANAGEMENT_OBSERVATION_FUTURE_DATED");
+  });
+  for (const lastSyncedAt of [null, "garbage", new Date(Number.NaN)])
+    it(`malformed snapshot time ${String(lastSyncedAt)} is refused`, async () => {
+      position.lastSyncedAt = lastSyncedAt;
+      await heldWith("MANAGEMENT_OBSERVATION_TIMESTAMP_INVALID");
+    });
+  it("a snapshot older than the entry fill is refused", async () => {
+    entryCommand.filledAt = new Date();
+    position.lastSyncedAt = new Date(Date.now() - 1_000);
+    await heldWith("MANAGEMENT_OBSERVATION_PREDATES_COMMAND");
+  });
+  it("a snapshot older than the last command sent for this ticket is refused", async () => {
+    ticketCommands = [
+      { commandId: "manual-modify", sentToMt5At: new Date(Date.now() - 1_000), filledAt: null, rejectedAt: null },
+    ];
+    position.lastSyncedAt = new Date(Date.now() - 5_000);
+    await heldWith("MANAGEMENT_OBSERVATION_PREDATES_COMMAND");
+  });
+  it("a fresh snapshot newer than every command still manages normally", async () => {
+    ticketCommands = [
+      { commandId: "old-modify", sentToMt5At: new Date(Date.now() - 60_000), filledAt: new Date(Date.now() - 59_000), rejectedAt: null },
+    ];
+    position.lastSyncedAt = new Date(Date.now() - 1_000);
+    const result = await manageAgentPositions(agent);
+    assert.equal(dispatches.length, 1);
+    assert.equal(result.evaluated, 1);
+  });
 });

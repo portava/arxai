@@ -29,6 +29,7 @@ import {
   sameBrokerAccount,
 } from "./executionLifecycle.js";
 import type { AuthorityTransaction } from "./entryAuthority.js";
+import { evaluatePositionObservation } from "./freshFacts.js";
 
 export const MANAGEMENT_TARGET_SOURCE = "INSTANT_SELF_TRADE_MANAGEMENT";
 export class ManagementTargetError extends Error {
@@ -471,6 +472,17 @@ export function claimManagementCommand(
       }
       if (patch.expiresAt != null && patch.expiresAt.getTime() <= Date.now())
         refuse("MANAGEMENT_COMMAND_EXPIRED");
+      // The decision used a broker snapshot. At the final claim the locked row
+      // must still be a current observation (geometry equality is checked above
+      // via the target); a stale or future-dated snapshot refuses.
+      if (requiredStatus === "LIVE_APPROVED") {
+        const observed = evaluatePositionObservation({
+          lastSyncedAt: facts.position?.lastSyncedAt,
+          commandEventTimes: [facts.entry?.filledAt],
+          nowMs: Date.now(),
+        });
+        if (!observed.ok) refuse(observed.reason);
+      }
       const [claimed] = await tx
         .update(commands)
         .set(patch)
