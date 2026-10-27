@@ -63,6 +63,14 @@ mutate(FILES.cas, /if \(observed && isAgentEntryCommand\(observed\)\)\s*return c
   'if (false) return claimAgentCommand(observed, "LIVE_APPROVED"', /claimLiveCommandForDispatch must route/);
 mutate(FILES.pipeline, "agentOrigin ? await createAgentEntryDraft(", "agentOrigin ? await createUnchecked(", /createAgentEntryDraft/);
 
+// 0. Pre-decision advisory read.
+n++;
+assert.ok(
+  checkChokepoints({ ...real, [FILES.decisionEngine]: real[FILES.decisionEngine]!.replace(/globalKillEngaged\(\)\.catch\([\s\S]*?return true;\s*\}\),/, "globalKillEngaged().catch(() => false),") })
+    .some((x) => /must count as engaged/.test(x)),
+  "fail-open pre-decision catch must be flagged",
+);
+
 // 4. Writes.
 mutate(FILES.service, "await lockKillSwitchesExclusive(tx);", "", /exclusive kill lock/);
 

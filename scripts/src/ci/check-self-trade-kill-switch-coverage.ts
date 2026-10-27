@@ -45,6 +45,7 @@ export const FILES = {
   cas: "lib/live/liveCommandCas.ts",
   pipeline: "lib/live/liveCommandPipeline.ts",
   service: "lib/selfTrade/service.ts",
+  decisionEngine: "lib/selfTrade/decisionEngine.ts",
 } as const;
 
 /** Runtime files allowed to reference selfTradeKillSwitchesTable, and why. */
@@ -189,6 +190,13 @@ export function checkChokepoints(src: Sources): string[] {
   const dispatchBody = functionBody(pipe, "dispatchLiveCommand") ?? "";
   if (!/await claimLiveCommandForDispatch\(/.test(dispatchBody))
     v.push(`${FILES.pipeline}: dispatchLiveCommand must claim through claimLiveCommandForDispatch`);
+
+  // 0. Pre-decision advisory read: an unreadable state must not read as "released".
+  const de = get(FILES.decisionEngine);
+  if (/globalKillEngaged\(\)\.catch\(\s*\([^)]*\)\s*=>\s*false\s*\)/.test(de))
+    v.push(`${FILES.decisionEngine}: a failed GLOBAL kill-switch read must count as engaged, not released`);
+  if (!/globalKillEngaged\(\)\.catch\(/.test(de))
+    v.push(`${FILES.decisionEngine}: the pre-decision GLOBAL kill-switch read must handle failure explicitly (as engaged)`);
 
   // 4. Writes serialize against claims.
   const svc = get(FILES.service);
