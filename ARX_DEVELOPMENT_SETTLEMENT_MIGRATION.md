@@ -1,11 +1,94 @@
-# Development settlement-outbox migration: stopped before application
+# Development settlement-outbox migration: applied and verified
 
 Date: 2026-10-27 UTC.
 
-**Outcome:** preview sign-in restored and verified. Backup created and restored
-on a disposable instance. The restore's encoding-parity gate failed, so the
-settlement migration was **not applied** to development or the disposable copy.
-The research-experiments migration remains deferred.
+**Current outcome:** the authorized retry passed all gates.
+`2026-10-26_result_settlement_outbox.sql` was applied transactionally to
+**development only** at **2026-10-27 05:12:41 UTC**. Preview sign-in and API health
+are verified. Research migration remains deferred; background jobs, settlement
+processing and trading remain disabled. No production changes or publication.
+
+## Successful authorized retry
+
+The prior failure was not bypassed and development's settings were not changed.
+The fresh disposable cluster and its database explicitly matched:
+
+| Property | Development and disposable copy |
+| --- | --- |
+| Encoding | `UTF8` |
+| Locale provider | `libc` (`c`) |
+| Collation | `C.UTF-8` |
+| Character classification | `C.UTF-8` |
+| ICU locale | Not applicable |
+| Recorded / actual collation version | Both null, matching source |
+| Disposable creation template | `template0` |
+
+Properties matched before and after restore. The current full backup was
+restored into this copy; normalized logical schema, all **334 existing tables**
+(row counts and order-independent row digests), and all **331 existing sequence
+values/called states** matched development.
+
+The exact reviewed upstream SQL, not a forced schema push, passed migration and
+repeat-run/idempotence checks on the disposable copy. Existing data and sequences
+were unchanged. The copy was then stopped and removed.
+
+Immediately before application, the development identity, all existing data,
+schema, locale settings, archive checksum and reviewed SQL checksum were
+rechecked. All still matched the successful rehearsal. The SQL ran inside
+`BEGIN` / `COMMIT`, with bounded lock/statement timeouts and explicit public
+search path. No research migration or backfill was included.
+
+Post-application schema matched the rehearsal exactly. All original table row
+digests and original sequence states remained unchanged before API restart.
+Normal authentication verification afterward wrote only its ordinary login
+activity/session bookkeeping.
+
+### Resulting development schema and runtime
+
+- **335 public tables**, including the one new settlement table.
+- `result_settlement_jobs`: **15 columns, 3 indexes, 1 foreign key, zero rows**;
+  constraints/defaults match the rehearsed SQL definition.
+- Only the settlement table and its serial sequence were added to the recorded
+  table/sequence inventory.
+- Research-experiments table remains absent.
+- Existing **4 accounts** retained; no password or role changes.
+- Encoding/provider/collation/character classification unchanged.
+- API restored with development-only safe start; startup log confirms jobs paused.
+- Login, authenticated identity, logout: **HTTP 200**, identity matched the
+  configured admin. Post-logout identity request: expected **HTTP 401**.
+- `/api/healthz`: **HTTP 200**; `/api/health/ready`: **HTTP 200**, `ready`.
+- No missing-table/column errors observed in the inspected startup output.
+
+### Current recoverable pre-migration backup
+
+`.local/private-backups/arx-settlement-development-20261027T051159Z/development-before.dump`
+
+- Full custom-format archive: **1,436,759 bytes**.
+- SHA-256:
+  `93462fea9e5b06d0e5972a71ab633d73a4e5a70e067235d3f8e79ac61b91d708`
+- Reviewed SQL SHA-256:
+  `fee01b7bd054c8d00dec6db3fd27f9cbf4f16d71bc2e56d9faaf5cda7b7df0c3`
+- Source SQL byte-compared with upstream commit
+  `273103076237a9bcc9bfbf0222b03e19e6211d5b`.
+- Directory mode `0700`; archive mode `0600`; excluded from Git and deployment.
+- The archive retains ownership/ACL metadata; the isolated restore intentionally
+  used its own local role with `--no-owner --no-privileges`. Logical schema,
+  database properties, application data and sequence recovery were verified.
+- The earlier archive and failed-rehearsal diagnostics were retained unchanged.
+
+Rehearsal/application receipt:
+`generated-artifacts/arx-settlement-development/receipt.json`.
+Runtime results:
+`generated-artifacts/arx-settlement-development/runtime-results.json`.
+
+These results certify this migration and its requested checks, not a new full
+application CI or browser-acceptance pass. Earlier unrelated source-validation
+failures are not reclassified.
+
+## Initial attempt history — stopped before application
+
+The following records the earlier stopped attempt, before the successful retry
+above. Its then-absent settlement table and 334-table totals are historical.
 
 ## Authentication and runtime
 
@@ -84,14 +167,11 @@ Neither reviewed migration ran, no forced schema push or backfill was performed,
 and no existing application rows were rewritten by a migration. Normal sign-in
 verification created/revoked its own sessions and recorded normal login activity.
 
-## Next authorized step
+## Remediation requested after the initial stop
 
-Repeat preparation using a disposable database with source-matched encoding and
-locale settings. Require complete restore/schema/data/sequence parity, then test
-the exact `2026-10-26_result_settlement_outbox.sql` in a transaction on that copy.
-Only after those gates pass may the development-only application proceed under
-the user's approval. Keep research migration, background jobs, settlement
-processing, trading and production unchanged.
+The user authorized a fresh, source-matched `template0` rehearsal and application
+only after all gates passed. That retry is documented above. Research migration,
+background jobs, settlement processing, trading and production remain unchanged.
 
 Sanitized operation results:
 `generated-artifacts/arx-settlement-development/stopped-results.json`.
