@@ -104,8 +104,16 @@ mock.module("../executionGate.js", {
     }),
   },
 });
+// Default: no switch engaged (unchanged). Kill-switch tests swap the behaviour.
+let killGateBehavior: () => Promise<unknown> = async () => ({ killed: false });
+let killGateCalls = 0;
 mock.module("../killSwitchGate.js", {
-  namedExports: { assertAgentNotKilled: async () => ({ killed: false }) },
+  namedExports: {
+    assertAgentNotKilled: async () => {
+      killGateCalls++;
+      return killGateBehavior();
+    },
+  },
 });
 mock.module("../../data/marketDataRouter.js", {
   namedExports: {
@@ -308,6 +316,8 @@ before(async () => {
 });
 beforeEach(async () => {
   integrityBarrier = null;
+  killGateBehavior = async () => ({ killed: false });
+  killGateCalls = 0;
   submissions = 0;
   dispatchRequests = 0;
   submittedPrepareOnly = undefined;
@@ -1729,4 +1739,42 @@ it("manual entry commands are not subject to self-trade kill switches", async ()
     .returning();
   assert.equal(isAgentEntryCommand(manual), false);
   assert.equal((await claimLiveCommandForDispatch(manual.commandId, sendPatch(), manual))?.status, "SENT_TO_MT5_LIVE");
+});
+
+// ── Executor TOCTOU read (immediately before submission) ──────────────────
+// evaluateAgentExecution is mocked to PERMIT, so the only kill-switch read the
+// executor makes here is the pre-submission TOCTOU re-check.
+it("executor: a switch engaged after the gate evaluation blocks before submission and frees the slot", async () => {
+  killGateBehavior = async () => ({ killed: true, scope: "AGENT", scopeRef: "alpha", reason: "desk halt" });
+  const result = await executeAgentDecision(await executeInput());
+  assert.equal(killGateCalls, 1);
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.blockReason, "desk halt");
+  assert.equal(submissions, 0);
+  const [row] = await db.select().from(executions);
+  assert.equal(row.status, "BLOCKED");
+  assert.ok((await db.select().from(audit)).some((r) => r.eventType === "EXECUTION_BLOCKED_TOCTOU"));
+});
+it("executor: a kill-switch READ FAILURE at the TOCTOU re-check fails closed, is audited and frees the slot", async () => {
+  killGateBehavior = async () => {
+    throw new Error("simulated kill-switch read failure");
+  };
+  const result = await executeAgentDecision(await executeInput());
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.blockReason, "KILL_SWITCH_UNREADABLE");
+  assert.equal(submissions, 0);
+  const [row] = await db.select().from(executions);
+  // Non-submission is certain (the venue was never called), so the slot is
+  // released truthfully instead of leaking as an unlinked PENDING_TICKET.
+  assert.equal(row.status, "BLOCKED");
+  assert.equal(row.blockReason, "KILL_SWITCH_UNREADABLE");
+  assert.equal(row.commandId, null);
+  assert.ok(
+    (await db.select().from(audit)).some(
+      (r) => r.eventType === "EXECUTION_BLOCKED_TOCTOU" && r.reason?.includes("unreadable"),
+    ),
+  );
+  killGateBehavior = async () => ({ killed: false });
+  assert.equal((await executeAgentDecision(await executeInput())).status, "DISPATCHED");
+  assert.equal(submissions, 1);
 });
