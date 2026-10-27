@@ -11,9 +11,11 @@ type Mailbox = typeof mt5CommandsTable.$inferSelect;
  * target and action must agree. No new command lock is acquired by callers.
  * null means leave the mailbox row pending; ordinary manual rows pass through.
  */
-export function projectManagementMailbox(row: Mailbox, command?: ArxLiveCommand): Mailbox | null {
+export function projectManagementMailbox(row: Mailbox, command?: ArxLiveCommand, entrySymbols?: ReadonlySet<string>): Mailbox | null {
   const payload = row.payload as Record<string, unknown> | null;
-  if (payload?.bridged === "LIVE_PHASE_B" && payload.liveCommandType === "PLACE_LIVE_MARKET_ORDER") return projectBridgedEntryMailbox(row, command);
+  // Chosen by the authority or the wire action, never only by the mirror's own claim.
+  if (payload?.bridged === "LIVE_PHASE_B" && (payload.liveCommandType === "PLACE_LIVE_MARKET_ORDER" ||
+      command?.commandType === "PLACE_LIVE_MARKET_ORDER" || row.action === "OPEN_MARKET")) return projectBridgedEntryMailbox(row, command, entrySymbols);
   const attributed = !!payload && ["managementTargetV1", "agentOwnership", "selfTradeSymbolBinding"].some(key => Object.hasOwn(payload, key));
   if (!attributed && (!command || !isAgentManagementCommand(command))) return row;
   if (!command || !isAgentManagementCommand(command) || !hasIntactCommandSignature(command)) return null;
@@ -38,17 +40,23 @@ export function projectManagementMailbox(row: Mailbox, command?: ArxLiveCommand)
  * 0.0199999995529651641845703125. Terminal result evidence compares actual
  * broker volume with the authoritative float8 request, so the wire must carry
  * that exact value. Only an intact signed authoritative entry, still in the
- * dispatched state, for the same trader, bridge connection, side and mirrored
- * float4 volume may supply it; anything else is held pending, never delivered
- * with the rounded mirror. The bridge owner is already scoped by the poll.
+ * dispatched state, for the same trader, bridge connection, side, broker symbol
+ * and mirrored float4 volume/protection may supply it; anything else is held
+ * pending, never delivered with the rounded mirror. The bridge owner is
+ * already scoped by the poll. `entrySymbols` are the broker names the signed
+ * command's symbol resolves to, read by the caller in its own transaction.
  */
-export function projectBridgedEntryMailbox(row: Mailbox, command?: ArxLiveCommand): Mailbox | null {
+export function projectBridgedEntryMailbox(row: Mailbox, command?: ArxLiveCommand, entrySymbols?: ReadonlySet<string>): Mailbox | null {
   const payload = row.payload as Record<string, unknown> | null;
   if (!command || !payload || command.commandType !== "PLACE_LIVE_MARKET_ORDER" || command.status !== "SENT_TO_MT5_LIVE" ||
       !hasIntactCommandSignature(command) || row.action !== "OPEN_MARKET" ||
       payload.liveCommandId !== command.commandId || payload.liveCommandOwnerUserId !== command.userId ||
       payload.liveCommandType !== command.commandType || row.requestedByUserId !== command.userId ||
-      command.bridgeConnectionId !== row.mt5ConnectionId || row.side !== command.side) return null;
+      command.bridgeConnectionId !== row.mt5ConnectionId || row.side !== command.side ||
+      !row.symbol || !(row.symbol === command.symbol || entrySymbols?.has(row.symbol))) return null;
+  const mirrored = (stored: number | null, authority: number | null) =>
+    stored == null ? authority == null : authority != null && Math.fround(stored) === Math.fround(authority);
+  if (!mirrored(row.sl, command.stopLoss) || !mirrored(row.tp, command.takeProfit)) return null;
   const volume = command.requestedVolume;
   if (typeof volume !== "number" || !Number.isFinite(volume) || volume <= 0 ||
       typeof row.lot !== "number" || Math.fround(row.lot) !== Math.fround(volume)) return null;

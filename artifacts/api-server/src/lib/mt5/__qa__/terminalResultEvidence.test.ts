@@ -74,3 +74,14 @@ test("actual v154 dispatcher routes exactly the declared entry aliases to the ev
  const routed=[...source.matchAll(/(?:if|else if)\(([^)]*?)\)\s*HandleOpenMarket\(/g)].flatMap(m=>[...m[1]!.matchAll(/action == "([A-Z_]+)"/g)].map(a=>a[1]));
  assert.deepEqual([...routed].sort(),TERMINAL_ENTRY_COMMAND_TYPES.filter(t=>t!=="PLACE_LIVE_MARKET_ORDER").sort());
 });
+test("one synchronous command has one execution: different later evidence conflicts, same-order settlement does not",async()=>{
+ const {terminalEvidenceConflicts:c}=await import("../terminalResultEvidence.js");
+ const ack={resultDeal:"0",resultOrder:"42",resultVolume:0}, part={resultDeal:"43",resultOrder:"42",resultVolume:.00789123};
+ assert.equal(c(ack,{resultDeal:"43",resultOrder:"42",resultVolume:.02}),false);
+ assert.equal(c(ack,{resultDeal:"43",resultOrder:"77",resultVolume:.02}),true);
+ assert.equal(c(part,{...part}),false);
+ assert.equal(c(part,{...part,resultVolume:.02}),true);
+ assert.equal(c(part,{...part,resultDeal:"44"}),true);
+ assert.equal(c(part,{...part,resultOrder:"77"}),true);
+ assert.equal(c(part,{resultDeal:"0",resultOrder:"0",resultVolume:0}),true);
+});

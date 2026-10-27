@@ -2466,14 +2466,13 @@ async function terminalBoundFixture(legacy:boolean,modify=false){
 }
 for(const legacy of [false,true]){
  const label=legacy?"legacy mailbox":"direct live";
- it(`${label}: actual accepted/partial/full reports retain then fulfill exposure, retries and late reports do not regress`,async()=>{
+ it(`${label}: actual accepted then full report settles the same order once; retries and late reports do not regress`,async()=>{
   const {row,id}=await terminalEntryFixture(legacy);
-  for(const [scenario,expected,reserved] of [["accepted","LIVE_ACKNOWLEDGED","RESERVED"],["partial","LIVE_PARTIALLY_FILLED","RESERVED"],["full","LIVE_FILLED","FULFILLED"]]){
+  for(const [scenario,expected,reserved] of [["accepted","LIVE_ACKNOWLEDGED","RESERVED"],["full","LIVE_FILLED","FULFILLED"]]){
    const result=await terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY",scenario));
    assert.equal(result.status,200,JSON.stringify(result.body));
    const [stored]=await db.select().from(commands).where(eq(commands.commandId,row.commandId));
    assert.equal(stored!.status,expected);assert.equal((await db.select().from(reservations))[0]!.status,reserved);
-   if(scenario==="partial")assert.equal(stored!.executedVolume,.00789123);
   }
   const events=await db.select().from(executionEvents).where(eq(executionEvents.commandId,row.id));
   await Promise.all(Array.from({length:3},()=>terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY","full"))));
@@ -2481,6 +2480,24 @@ for(const legacy of [false,true]){
   await terminalResultRoute(legacy,id,{...actualTerminalBody(legacy,"ENTRY","partial"),mt5Comment:"late partial",brokerMessage:"late partial"});
   assert.equal((await db.select().from(commands).where(eq(commands.commandId,row.commandId)))[0]!.status,"LIVE_FILLED");
   assert.equal((await db.select().from(reservations))[0]!.status,"FULFILLED");
+ });
+ it(`${label}: a second, different synchronous execution after a partial is held unknown, never summed or replaced`,async()=>{
+  const {row,id}=await terminalEntryFixture(legacy);
+  assert.equal((await terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY","partial"))).status,200);
+  for(const conflicting of [actualTerminalBody(legacy,"ENTRY","full"),{...actualTerminalBody(legacy,"ENTRY","full"),resultDeal:"44"}]){
+   assert.equal((await terminalResultRoute(legacy,id,conflicting)).status,200);
+   const [stored]=await db.select().from(commands).where(eq(commands.commandId,row.commandId));
+   assert.equal(stored!.status,"LIVE_UNKNOWN");assert.equal(stored!.executedVolume,.00789123,"applied exposure is preserved, not replaced");
+   assert.equal(stored!.filledAt,null);assert.equal((await db.select().from(reservations))[0]!.status,"RESERVED");
+  }
+ });
+ it(`${label}: acceptance for one order cannot be settled by another order's fill`,async()=>{
+  const {row,id}=await terminalEntryFixture(legacy);
+  await terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY","accepted"));
+  await terminalResultRoute(legacy,id,{...actualTerminalBody(legacy,"ENTRY","full"),resultOrder:"77"});
+  const [stored]=await db.select().from(commands).where(eq(commands.commandId,row.commandId));
+  assert.equal(stored!.status,"LIVE_UNKNOWN");assert.equal(stored!.executedVolume,null);
+  assert.equal((await db.select().from(reservations))[0]!.status,"RESERVED");
  });
  it(`${label}: actual missing-volume success never falls back to requested volume; late full is retained for reconciliation`,async()=>{
   const {row,id}=await terminalEntryFixture(legacy);
@@ -2562,7 +2579,20 @@ it("control: the legacy float4 mirror cannot represent authoritative 0.02 entry 
   const raw = await pool.query("select lot::float8 as lot, sl::float8 as sl from mt5_commands where id=$1", [mail.id]);
   assert.equal(raw.rows[0].lot, Math.fround(.02)); assert.notEqual(raw.rows[0].lot, .02);
   assert.notEqual(raw.rows[0].sl, 1.123456789);
-  // The unprojected rounded volume, echoed honestly by the terminal, cannot prove a 0.02 fill.
+  // Measured, not assumed: PostgreSQL's shortest round-trip text output (also
+  // with extra_float_digits=3) reads this lot back as exactly 0.02, so the
+  // pre-fix text path did not widen 0.02 itself. Only a float8 cast/consumer
+  // sees the widened value, while SL/TP digits beyond float4 are really lost.
+  const client = await pool.connect();
+  try {
+    for (const digits of ["1", "3"]) {
+      await client.query(`set extra_float_digits=${digits}`);
+      assert.equal((await client.query("select lot from mt5_commands where id=$1", [mail.id])).rows[0].lot, .02);
+      assert.notEqual((await client.query("select sl from mt5_commands where id=$1", [mail.id])).rows[0].sl, 1.123456789);
+    }
+    await client.query("reset extra_float_digits");
+  } finally { client.release(); }
+  // Simulated float8-widened wire: echoed honestly, it cannot prove a 0.02 fill.
   const response = await pollRoute(true, "1"); const wire = { ...response, commands: response.commands.map((c: any) => ({ ...c, lot: Math.fround(.02) })) };
   const terminal = extractedEntry(wire);
   assert.equal(terminal.tradedLot, Math.fround(.02));
@@ -2595,7 +2625,17 @@ it("shared-master entry keeps trader and bridge-owner identities while projectin
   assert.equal(response.commands[0].payload.liveCommandOwnerUserId, 9);
 });
 for (const [label, corrupt] of [
+  ["re-signed authority with a different volume", async (r: any) => { await db.update(commands).set({ requestedVolume: .03,
+    ...buildCommandIntegrityFields({ commandId: r.commandId, userId: r.userId, commandType: r.commandType, symbol: r.symbol, side: r.side, orderType: r.orderType,
+      requestedVolume: .03, stopLoss: r.stopLoss, takeProfit: r.takeProfit, payload: r.payload, actorId: 9, actorType: "USER" }) }).where(eq(commands.commandId, r.commandId)); }],
   ["changed authoritative volume", async (r: any) => { await db.update(commands).set({ requestedVolume: .03 }).where(eq(commands.commandId, r.commandId)); }],
+  ["mirror symbol diverged", async (_r: any, m: any) => { await db.update(mailbox).set({ symbol: "XAUUSD" }).where(eq(mailbox.id, m.id)); }],
+  ["mirror stop loss diverged", async (_r: any, m: any) => { await db.update(mailbox).set({ sl: 1.2 }).where(eq(mailbox.id, m.id)); }],
+  ["mirror take profit removed", async (_r: any, m: any) => { await db.update(mailbox).set({ tp: null }).where(eq(mailbox.id, m.id)); }],
+  ["forged mirror command type", async (_r: any, m: any) => { await db.update(mailbox).set({ payload: { ...(m.payload as object), liveCommandType: "CLOSE_LIVE_POSITION" } }).where(eq(mailbox.id, m.id)); }],
+  ["missing mirror command type", async (_r: any, m: any) => { const { liveCommandType: _t, ...rest } = m.payload as Record<string, unknown>; await db.update(mailbox).set({ payload: rest }).where(eq(mailbox.id, m.id)); }],
+  ["wrong wire action", async (_r: any, m: any) => { await db.update(mailbox).set({ action: "PLACE_MARKET_ORDER" }).where(eq(mailbox.id, m.id)); }],
+  ["crossed bridge connection", async (r: any) => { await db.update(commands).set({ bridgeConnectionId: 2 }).where(eq(commands.commandId, r.commandId)); }],
   ["broken signature", async (r: any) => { await db.update(commands).set({ integrityHash: "0".repeat(64) }).where(eq(commands.commandId, r.commandId)); }],
   ["unsigned authority", async (r: any) => { await db.update(commands).set({ integrityStatus: "CREATED", integrityHash: null }).where(eq(commands.commandId, r.commandId)); }],
   ["authority no longer dispatched", async (r: any) => { await db.update(commands).set({ status: "LIVE_UNKNOWN" }).where(eq(commands.commandId, r.commandId)); }],
@@ -2627,3 +2667,13 @@ for (const action of ["OPEN_MARKET", "PLACE_MARKET_ORDER", "DEMO_MARKET_ORDER"])
     assert.equal(stored!.status, "LIVE_FILLED", `${action} must not fall back to UNKNOWN`); assert.equal(stored!.filledLotSize, .02); assert.ok(stored!.completedAt);
   });
 }
+it("direct live route: unversioned acceptance/partial claims without terminal evidence are held unknown", async () => {
+  for (const status of ["LIVE_PARTIALLY_FILLED", "LIVE_ACKNOWLEDGED"]) {
+    await resetFixture();
+    const { row } = await terminalEntryFixture(false);
+    const result = await terminalResultRoute(false, row.commandId, { status, brokerTicket: "42", executedVolume: .01, fillPrice: 1.2 });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    const [stored] = await db.select().from(commands).where(eq(commands.commandId, row.commandId));
+    assert.equal(stored!.status, "LIVE_UNKNOWN", status); assert.equal((await db.select().from(reservations))[0]!.status, "RESERVED");
+  }
+});
