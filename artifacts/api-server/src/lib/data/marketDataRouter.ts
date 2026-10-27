@@ -41,6 +41,7 @@
 
 import { derivMarketDataSource } from "./providers/derivFeedClient.js";
 import type { Candle, MarketQuote, SeriesProvenance } from "./types.js";
+import { FUTURE_STAMPED_SERIES_NOTE } from "./freshness.js";
 import { resolveCanonicalSymbol, type CanonicalAssetClass } from "../instruments/index.js";
 import {
   getDerivCandles,
@@ -100,7 +101,9 @@ export interface MarketCandlesResult {
    * Provenance qualifier notes for the served series (R4 slice 2), e.g.
    * MULTI_BRIDGE_CONTENTION when ≥2 attributed bridges held fresh series for
    * this symbol|timeframe and the read served the primary (most recent)
-   * WITHOUT blending. Present only when non-empty; additive — carried beside
+   * WITHOUT blending, or FUTURE_STAMPED_SERIES when the serving partition was
+   * observed stamped ahead of its receipt time (freshness.ts). Present only
+   * when non-empty; additive — carried beside
    * the envelope because `SeriesProvenance` (types.ts, wave-2 ownership) has
    * no notes field yet.
    */
@@ -322,7 +325,16 @@ async function tryMt5Candles(
           }),
           // Contention is a serve-time truth about the store (two attributed
           // bridges fresh on one series): named, never silently resolved.
-          ...(read.contention ? { notes: [MULTI_BRIDGE_CONTENTION_NOTE] } : {}),
+          // A partition observed stamped ahead of its receipt time is named so
+          // freshness consumers fail closed even after the series stalls.
+          ...(read.contention || read.futureStamped
+            ? {
+                notes: [
+                  ...(read.contention ? [MULTI_BRIDGE_CONTENTION_NOTE] : []),
+                  ...(read.futureStamped ? [FUTURE_STAMPED_SERIES_NOTE] : []),
+                ],
+              }
+            : {}),
         };
       }
     } catch (err) {

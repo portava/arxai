@@ -39,7 +39,13 @@ import { getSessionProfile, type WeeklyPresenceProfile } from "./sessionProfile.
 import type { NormalizedChartCandle } from "./candleNormalization.js";
 import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 import { computeChartTruthScore, type ChartTruthScore } from "./chartTruthScore.js";
-import { buildFeedStatus, MAX_FUTURE_LEAD_INTERVALS, type FeedQuality } from "../freshness.js";
+import {
+  buildFeedStatus,
+  feedTimestampsUnconfirmed,
+  newestBarLeadMs,
+  FUTURE_STAMPED_SERIES_NOTE,
+  type FeedQuality,
+} from "../freshness.js";
 import {
   attachSeriesAttribution,
   seriesAttributionFrom,
@@ -269,6 +275,15 @@ async function buildChartFeed(
   const trailing = trailingIntervalGap(candles, timeframe, now);
   const lastCandle = candles[candles.length - 1] ?? null;
   const lastCandleTime = lastCandle ? lastCandle.closeTime : null;
+  // Future-stamp bound uses the newest provider bar's OPEN time, not its
+  // closeTime: a forming bar legitimately has a scheduled closeTime after now,
+  // but no bar can open before its first tick. Bounded by an absolute
+  // clock-skew allowance (ms), never by "one interval". A series the producer
+  // observed stamped ahead of its receipt time stays unconfirmed even after it
+  // stalls into a past-looking open time (sticky producer note).
+  const newestOpenLeadMs = lastCandle ? newestBarLeadMs(Date.parse(lastCandle.openTime), now) : null;
+  const futureStampObserved = result.ok && (result.provenanceNotes ?? []).includes(FUTURE_STAMPED_SERIES_NOTE);
+  const timestampsUnconfirmed = feedTimestampsUnconfirmed({ trailingIntervals: trailing, newestOpenLeadMs, futureStampObserved });
   const lastTickTime = derivSymbolStatus?.lastTickAt ?? null;
 
   // ── Forming tip (Task #496, opt-in, any live provider) ────────────────
@@ -340,6 +355,8 @@ async function buildChartFeed(
     completenessReason: truthResult?.completenessReason ?? null,
     formingTipPresent,
     formingTickAgeMs,
+    newestOpenLeadMs,
+    futureStampObserved,
   });
   const quality = verdict.quality;
   const warning = verdict.warning;
@@ -351,9 +368,11 @@ async function buildChartFeed(
   // liveness — a frozen tip (>15s silent) reads NOT live even though a closed
   // bar still trails by only one interval.
   const reachable = source != null && candles.length > 0;
-  const isLive = formingTipPresent
-    ? reachable && !verdict.stale
-    : reachable && trailing != null && trailing >= -MAX_FUTURE_LEAD_INTERVALS && trailing <= 1 && (!derivBacked || hasLiveTick);
+  const isLive = timestampsUnconfirmed
+    ? false
+    : formingTipPresent
+      ? reachable && !verdict.stale
+      : reachable && trailing != null && trailing <= 1 && (!derivBacked || hasLiveTick);
 
   const message = buildMessage(quality, source, displaySymbol);
 

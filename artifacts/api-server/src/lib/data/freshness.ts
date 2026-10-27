@@ -36,12 +36,51 @@ export const DELAYED_TRAILING_INTERVALS = 2;
 /** Trailing by >= this many intervals → stale (not safe as live truth). */
 export const STALE_TRAILING_INTERVALS = 3;
 /**
- * A newest bar may open at most this many intervals AHEAD of the expected
- * current bar (boundary clock skew between provider and server). Anything
- * further ahead is a mis-stamped (e.g. broker server-time read as UTC) series,
- * whose freshness cannot be confirmed.
+ * Absolute clock-skew allowance (ms) between a producer's clock and this
+ * server's clock. A newest bar may OPEN at most this far after `now`: a bar
+ * cannot open before its first tick, so anything further ahead is a
+ * mis-stamped series (e.g. broker server time read as UTC) whose freshness
+ * cannot be confirmed. The allowance is absolute, not "one interval", so a
+ * +2h/+3h offset is caught on every timeframe (H2/H4/D1 included). Same value
+ * as the Truth evidence tick-time allowance (`TRUTH_EVIDENCE_TICK_SKEW_MS`,
+ * lib/domain truth/evidenceClass.ts); a test pins the two together.
  */
-export const MAX_FUTURE_LEAD_INTERVALS = 1;
+export const MAX_FUTURE_CLOCK_SKEW_MS = 5_000;
+
+/**
+ * Router/provider note: the producing series was OBSERVED stamped ahead of its
+ * own receipt time (newest bar opened after the server received it, beyond
+ * MAX_FUTURE_CLOCK_SKEW_MS). Sticky for the life of the stored series, so a
+ * mis-stamped series that later stalls (and whose offset then hides the stall)
+ * cannot read current.
+ */
+export const FUTURE_STAMPED_SERIES_NOTE = "FUTURE_STAMPED_SERIES";
+
+/** newestOpenMs − now (ms). Positive = the newest bar opens in the future.
+ *  null/non-finite inputs → null (unknown). */
+export function newestBarLeadMs(newestOpenMs: number | null | undefined, now: number): number | null {
+  if (newestOpenMs == null || !Number.isFinite(newestOpenMs) || !Number.isFinite(now)) return null;
+  return newestOpenMs - now;
+}
+
+/**
+ * True when the newest bar's recency cannot be confirmed: unknown gap, a
+ * newest bar opening more than MAX_FUTURE_CLOCK_SKEW_MS after `now`, or a
+ * series the producer observed future-stamped. When the caller does not
+ * supply `newestOpenLeadMs`, a negative gap alone cannot separate clock skew
+ * from a mis-stamped series, so it fails closed.
+ */
+export function feedTimestampsUnconfirmed(inputs: {
+  trailingIntervals: number | null;
+  newestOpenLeadMs?: number | null;
+  futureStampObserved?: boolean;
+}): boolean {
+  const { trailingIntervals, newestOpenLeadMs, futureStampObserved = false } = inputs;
+  if (trailingIntervals == null || !Number.isFinite(trailingIntervals)) return true;
+  if (futureStampObserved) return true;
+  if (newestOpenLeadMs === undefined) return trailingIntervals < 0;
+  return newestOpenLeadMs == null || !Number.isFinite(newestOpenLeadMs) || newestOpenLeadMs > MAX_FUTURE_CLOCK_SKEW_MS;
+}
 
 // ── MT5 broker in-memory provider TTLs ───────────────────────────────────────
 
@@ -219,6 +258,14 @@ export interface FeedQualityInputs {
   formingTipPresent?: boolean;
   /** Age (ms) of the last tick folded into the forming tip (null when none). */
   formingTickAgeMs?: number | null;
+  /**
+   * Newest PROVIDER bar's open time minus `now` (ms; see newestBarLeadMs).
+   * Bounded by the absolute MAX_FUTURE_CLOCK_SKEW_MS. Omitted → a negative
+   * trailing gap fails closed (see feedTimestampsUnconfirmed).
+   */
+  newestOpenLeadMs?: number | null;
+  /** The producer observed this series stamped ahead of its receipt time. */
+  futureStampObserved?: boolean;
 }
 
 export interface FeedQualityVerdict {
@@ -253,6 +300,8 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
     completenessReason = null,
     formingTipPresent = false,
     formingTickAgeMs = null,
+    newestOpenLeadMs,
+    futureStampObserved = false,
   } = inputs;
 
   const freshness = classifyCandleFreshness(trailingIntervals, { syntheticAwaitingTick });
@@ -278,9 +327,10 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
   } else if (missingCandleCount > 0 || duplicateCount > 0 || outOfOrderCount > 0) {
     quality = "partial";
     warning = `Incomplete sequence: ${missingCandleCount} missing, ${duplicateCount} duplicate, ${outOfOrderCount} out-of-order bar(s).`;
-  } else if (trailingIntervals == null || !Number.isFinite(trailingIntervals) || trailingIntervals < -MAX_FUTURE_LEAD_INTERVALS) {
-    // Candles exist but their recency is unknown, or the newest bar is stamped
-    // in the future. Unknown/unverifiable recency is never "clean".
+  } else if (feedTimestampsUnconfirmed({ trailingIntervals, newestOpenLeadMs, futureStampObserved })) {
+    // Candles exist but their recency is unknown, the newest bar opens after
+    // now (beyond the absolute clock-skew allowance), or the producer saw the
+    // series stamped ahead of receipt. Unverifiable recency is never "clean".
     quality = "invalid";
     warning = "Candle timestamps could not be confirmed (newest bar is missing a usable time or is stamped in the future). Not safe for analysis.";
   } else if (formingTipPresent) {

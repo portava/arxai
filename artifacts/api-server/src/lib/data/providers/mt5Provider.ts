@@ -1,5 +1,5 @@
 import type { Candle, DataProvider, MarketQuote } from "../types.js";
-import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS } from "../freshness.js";
+import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS, MAX_FUTURE_CLOCK_SKEW_MS } from "../freshness.js";
 
 // ── MT5 broker market-data provider ──────────────────────────────────────────
 //
@@ -46,6 +46,19 @@ import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS } from "../freshness.js";
 //   CANDLE_TTL_MS (so the router falls through / refuses rather than serving
 //   stale broker bars). isConnected() is true when ANY series OR quote is
 //   fresh within FEED_FRESH_MS — i.e. the EA is actively pushing.
+//
+// FUTURE-STAMP OBSERVATION:
+//   At write time the store records, PER WRITER (bridge key), whether any
+//   incoming bar opened more than MAX_FUTURE_CLOCK_SKEW_MS after the server
+//   received it (e.g. broker server time pushed as UTC). One terminal stamps
+//   every symbol/timeframe with the same clock, so a +2h offset exposed by an
+//   M5 or forming H4/D1 bar marks that writer's H4/D1 series too. The mark is
+//   sticky while the writer keeps pushing (cleared only after the writer was
+//   silent past CANDLE_TTL_MS), so a mis-stamped series that later stalls —
+//   whose offset then makes old bars look current — still reads
+//   `futureStamped`. Limit: an offset the writer's pushed bars never expose
+//   (e.g. +2h on closed-only H4 pushes with no lower timeframe) cannot be
+//   seen from bar times alone.
 
 const DEFAULT_TIMEFRAME = "M5";
 
@@ -119,6 +132,34 @@ interface CandleSeries {
   /** null = unattributed partition (writer identity unknown — never guessed). */
   bridgeConnectionId: number | null;
   userId: number | null;
+}
+
+/** Per-writer future-stamp marks: bridgeKey → { first observed, last write }. */
+const futureStampMarks = new Map<string, { firstAt: number; lastWriteAt: number }>();
+
+/** Record a write by `bKey` at `now`; mark the writer when any incoming bar
+ *  opens beyond receipt + MAX_FUTURE_CLOCK_SKEW_MS. A mark survives while the
+ *  writer keeps pushing; a writer silent past CANDLE_TTL_MS starts clean.
+ *  Unparseable bar times are ignored here (the ingest paths reject them). */
+function observeFutureStamp(bKey: string, incoming: Candle[], now: number): void {
+  const mark = futureStampMarks.get(bKey);
+  if (mark && now - mark.lastWriteAt > CANDLE_TTL_MS) futureStampMarks.delete(bKey);
+  const live = futureStampMarks.get(bKey);
+  if (live) {
+    live.lastWriteAt = now;
+    return;
+  }
+  for (const c of incoming) {
+    const t = Date.parse(c.time);
+    if (Number.isFinite(t) && t - now > MAX_FUTURE_CLOCK_SKEW_MS) {
+      futureStampMarks.set(bKey, { firstAt: now, lastWriteAt: now });
+      return;
+    }
+  }
+}
+
+function writerFutureStamped(s: CandleSeries): boolean {
+  return futureStampMarks.has(s.bridgeConnectionId != null ? String(s.bridgeConnectionId) : UNATTRIBUTED_BRIDGE_KEY);
 }
 
 // symbol|timeframe → (bridgeKey → series). Partitions are hard walls: no read
@@ -203,14 +244,17 @@ export function updateCandlesFromMT5(
   bridge?: Mt5BridgeIdentity | null,
 ): void {
   const partitions = partitionsFor(symbol, timeframe);
-  partitions.set(bridgeKeyOf(bridge), {
+  const bKey = bridgeKeyOf(bridge);
+  const now = Date.now();
+  partitions.set(bKey, {
     candles,
-    updatedAt: Date.now(),
+    updatedAt: now,
     writeSeq: ++writeCounter,
     bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
     userId: bridge?.userId ?? null,
   });
-  lastUpdate = Date.now();
+  observeFutureStamp(bKey, candles, now);
+  lastUpdate = now;
 }
 
 // The most bars a single series retains. The v2 bridge pushes ONE closed bar
@@ -252,14 +296,16 @@ export function mergeCandleFromMT5(
   );
   const capped =
     merged.length > MAX_MERGED_BARS ? merged.slice(-MAX_MERGED_BARS) : merged;
+  const now = Date.now();
   partitions.set(bKey, {
     candles: capped,
-    updatedAt: Date.now(),
+    updatedAt: now,
     writeSeq: ++writeCounter,
     bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
     userId: bridge?.userId ?? null,
   });
-  lastUpdate = Date.now();
+  observeFutureStamp(bKey, [candle], now);
+  lastUpdate = now;
 }
 
 /**
@@ -340,6 +386,7 @@ export function __resetMt5ProviderStore(): void {
   candleStore.clear();
   quoteStore.clear();
   contentionWarnAt.clear();
+  futureStampMarks.clear();
   lastUpdate = 0;
   writeCounter = 0;
 }
@@ -357,6 +404,9 @@ export interface Mt5CandleRead {
   contention: boolean;
   /** The distinct attributed bridge ids that were fresh at read time. */
   contendingBridgeIds: number[];
+  /** The serving writer was observed stamping bars ahead of their receipt
+   *  time (sticky; see FUTURE-STAMP OBSERVATION). Recency cannot be confirmed. */
+  futureStamped: boolean;
 }
 
 const EMPTY_READ: Mt5CandleRead = {
@@ -365,6 +415,7 @@ const EMPTY_READ: Mt5CandleRead = {
   userId: null,
   contention: false,
   contendingBridgeIds: [],
+  futureStamped: false,
 };
 
 /**
@@ -392,6 +443,7 @@ export function readMt5Candles(
       userId: s.userId,
       contention: false,
       contendingBridgeIds: [],
+      futureStamped: writerFutureStamped(s),
     };
   }
 
@@ -432,6 +484,7 @@ export function readMt5Candles(
     userId: serving.userId,
     contention,
     contendingBridgeIds: contention ? [...freshAttributed].sort((a, b) => a - b) : [],
+    futureStamped: writerFutureStamped(serving),
   };
 }
 
