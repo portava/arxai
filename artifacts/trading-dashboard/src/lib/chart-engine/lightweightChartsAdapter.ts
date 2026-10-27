@@ -452,7 +452,7 @@ export class LightweightChartsAdapter implements ChartEngineAdapter {
       // Replay explicitly follows its cursor. Set its final range before the
       // study render; never render the old viewport then rebuild it on a jump.
       if (view?.revealLatest && sanitized.length) this.goToLatest(false);
-      if (updates === null || updates.length || view?.revealLatest) this.analysis?.refresh(this.candles, unchanged, updates === null || bulk);
+      if (updates === null || updates.length || view?.revealLatest) this.analysis?.refresh(this.candles, unchanged, (updates === null && !trimTail) || bulk);
       if (updates === null) this.analysis?.refreshDrawings(this.candles);
     };
     if (this.analysis) this.analysis.batchViewport(reconcile);

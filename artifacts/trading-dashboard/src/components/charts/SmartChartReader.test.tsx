@@ -7,6 +7,15 @@ import { captureChartReplay } from "@/lib/chart-engine/chartReplay";
 import { DEFAULT_PREFERENCES } from "@/lib/chart-engine/chartWorkspace";
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { analyzeSmartChart, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
+vi.mock("@/lib/chart-engine/smartChartAnalysis",async importOriginal=>{
+  const actual=await importOriginal<typeof import("@/lib/chart-engine/smartChartAnalysis")>();
+  return {...actual,analyzeSmartChart:vi.fn(actual.analyzeSmartChart)};
+});
+import { describeSmartChartWindow } from "@/lib/chart-engine/chartDescriptiveAnalysis";
+vi.mock("@/lib/chart-engine/chartDescriptiveAnalysis",async importOriginal=>{
+  const actual=await importOriginal<typeof import("@/lib/chart-engine/chartDescriptiveAnalysis")>();
+  return {...actual,describeSmartChartWindow:vi.fn(actual.describeSmartChartWindow)};
+});
 const START=Date.parse("2026-10-25T10:00:00Z"),NOW=START+100*300_000;
 function fixture(){
   const candles=Array.from({length:30},(_,i)=>({symbol:"V75",timeframe:"M5",source:"deriv_public",sourceMode:"live",openTime:new Date(START+i*300_000).toISOString(),closeTime:new Date(START+(i+1)*300_000).toISOString(),open:100,high:101,low:99,close:100,isComplete:true,isFinal:true,isForming:false,qualityFlags:[]}));
@@ -18,7 +27,7 @@ function fixture(){
   const props={adapter,epoch:1,symbol:"V75",timeframe:"M5",data,older:[],historyEvidence:null,liveConfirmed:true,readFailed:false};
   return {data,props,all,setSmartAnnotation,unsubscribe,show:(bars:ChartEngineCandle[])=>{visible=bars;act(()=>listener?.());}};
 }
-beforeEach(()=>{vi.spyOn(Date,"now").mockReturnValue(NOW);});
+beforeEach(()=>{vi.mocked(describeSmartChartWindow).mockClear();vi.mocked(analyzeSmartChart).mockClear();vi.spyOn(Date,"now").mockReturnValue(NOW);});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 describe("embedded chart reader follows applied candles",()=>{
   it("automatically explains closed patterns, exposes every detail and shows one annotation",()=>{
@@ -130,4 +139,56 @@ describe("embedded chart reader follows applied candles",()=>{
     expect(screen.getByText("Lower / upper close quartile").parentElement?.textContent).toContain("100");
   });
 
+});
+
+
+describe("Replay analysis duplicate notifications",()=>{
+  it("runs once per installed prefix; skips identical viewport notifications and unrelated parent renders",()=>{
+    const f=fixture(),snapshot=captureChartReplay(f.data,7,DEFAULT_PREFERENCES,NOW).snapshot!;
+    f.show(f.all.slice(0,10));const replay={snapshot,installedCount:10};
+    const v=render(<SmartChartReader {...f.props} replay={replay}/>);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(1);expect(describeSmartChartWindow).toHaveBeenCalledTimes(1);
+    f.show(f.all.slice(0,10));f.show(f.all.slice(0,10));
+    v.rerender(<SmartChartReader {...f.props} replay={replay}/>);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(1);expect(describeSmartChartWindow).toHaveBeenCalledTimes(1);
+    f.show(f.all.slice(0,9)); // changed actual view recomputes even before installation
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(2);
+    v.rerender(<SmartChartReader {...f.props} replay={{snapshot,installedCount:9}}/>);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(3);expect(describeSmartChartWindow).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-asof')).toBe(String(snapshot.bars[8]!.closeTime));
+    expect(screen.getByTestId('chart-reader-context').textContent).toContain('9 closed candles');
+    f.show(f.all.slice(0,9));expect(analyzeSmartChart).toHaveBeenCalledTimes(3);expect(describeSmartChartWindow).toHaveBeenCalledTimes(3);
+  });
+  it("invalidates changed OHLC, source/epoch, read failure, and axis state while retaining independent annotation controls",()=>{
+    const f=fixture(),snapshot=captureChartReplay(f.data,7,DEFAULT_PREFERENCES,NOW).snapshot!;
+    const replay={snapshot,installedCount:30};const v=render(<SmartChartReader {...f.props} replay={replay}/>);
+    f.show(f.all.map((bar,i)=>i===10?{...bar,close:100.5}:bar));
+    expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-status')).toBe('unavailable');
+    expect(screen.queryByTestId('chart-reader-context')).toBeNull();
+    f.show(f.all);expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-status')).toBe('ready');
+    const calls=vi.mocked(analyzeSmartChart).mock.calls.length;
+    v.rerender(<SmartChartReader {...f.props} replay={replay} readFailed/>);
+    v.rerender(<SmartChartReader {...f.props} replay={replay} epoch={2}/>);
+    v.rerender(<SmartChartReader {...f.props} replay={replay} view={{style:'line',scale:'log',inverted:true}}/>);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(calls+3);
+    fireEvent.click(screen.getByRole('button',{name:'Show automatic chart annotations'}));
+    expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
+    const selected=within(screen.getByLabelText('Relevant chart patterns')).getAllByRole('button');
+    fireEvent.click(selected.at(-1)!);
+    f.show(f.all);expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
+    fireEvent.click(screen.getByRole('button',{name:'Show automatic chart annotations'}));
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]).toBeTruthy();
+    const next={...snapshot,sourceIdentity:'b'.repeat(64)};
+    v.rerender(<SmartChartReader {...f.props} replay={{snapshot:next,installedCount:30}}/>);
+    expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-source-identity')).toBe('b'.repeat(64));
+    v.unmount();expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
+  });
+  it("never deduplicates live callbacks or a revised same-bar forming tip",()=>{
+    const f=fixture();render(<SmartChartReader {...f.props}/>);
+    f.show(f.all);expect(analyzeSmartChart).toHaveBeenCalledTimes(2);
+    f.show([...f.all,{...f.all.at(-1)!,time:f.all.at(-1)!.time+300}]);
+    f.show([...f.all,{...f.all.at(-1)!,time:f.all.at(-1)!.time+300,close:100.5}]);
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(4);expect(describeSmartChartWindow).toHaveBeenCalledTimes(4);
+    expect(screen.getByTestId('smart-chart-reader').getAttribute('data-analysis-asof')).toBe(String(START/1000+30*300));
+  });
 });
