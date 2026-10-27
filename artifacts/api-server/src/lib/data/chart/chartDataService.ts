@@ -41,6 +41,11 @@ import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 import { computeChartTruthScore, type ChartTruthScore } from "./chartTruthScore.js";
 import { buildFeedStatus, type FeedQuality } from "../freshness.js";
 import {
+  attachSeriesAttribution,
+  seriesAttributionFrom,
+  type ChartSeriesAttribution,
+} from "./brokerQuoteBinding.js";
+import {
   getFormingBar,
   isFormingTickSource,
   getFormingTickAgeMs,
@@ -119,6 +124,8 @@ function resolveDisplaySymbol(symbol: string, assetClass: AssetClass): string {
 
 interface BuiltFeed {
   marketEvidence: TruthReadEvidence | null;
+  /** Observed router provenance of the served series (server-internal). */
+  seriesAttribution: ChartSeriesAttribution | null;
   assetClass: AssetClass;
   displaySymbol: string;
   source: string | null;
@@ -377,7 +384,8 @@ async function buildChartFeed(
   const chartTruthScore = computeChartTruthScore(truthResult, status);
 
   return { assetClass, displaySymbol, source, candles, status, truthResult, chartTruthScore,
-    marketEvidence: prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null };
+    marketEvidence: prepareMarketRead(result, symbol, timeframe, now)?.evidence ?? null,
+    seriesAttribution: result.ok ? seriesAttributionFrom(result.provenance) : null };
 }
 
 /**
@@ -430,7 +438,9 @@ export async function getChartCandles(
   // chart-intelligence, timeframe agreement, market overview, truth audit) gets
   // closed bars only. The chart DISPLAY route passes true.
   const feed = await buildChartFeed(symbol, timeframe, limit, includeFormingTip);
-  return {
+  // The series' observed identity rides along as a non-enumerable symbol
+  // property (read with chartSeriesAttribution); the JSON wire is unchanged.
+  return attachSeriesAttribution({
     symbol,
     displaySymbol: feed.displaySymbol,
     timeframe,
@@ -447,7 +457,7 @@ export async function getChartCandles(
     marketEvidence: feed.marketEvidence,
     truthResult: feed.truthResult,
     chartTruthScore: feed.chartTruthScore,
-  };
+  }, feed.seriesAttribution);
 }
 
 // feed-status probes with a small window — enough to assess liveness and

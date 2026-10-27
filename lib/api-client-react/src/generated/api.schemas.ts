@@ -3828,6 +3828,70 @@ export const BrokerPriceAlignmentTolerance = {
 } as const;
 
 /**
+ * BOUND only when every condition holds; MISMATCH names an observed identity contradiction; STALE an observed tick outside the budget; UNVERIFIED a required fact is unknown.
+ */
+export type BrokerQuoteBindingStatus =
+  (typeof BrokerQuoteBindingStatus)[keyof typeof BrokerQuoteBindingStatus];
+
+export const BrokerQuoteBindingStatus = {
+  BOUND: "BOUND",
+  MISMATCH: "MISMATCH",
+  STALE: "STALE",
+  UNVERIFIED: "UNVERIFIED",
+} as const;
+
+export type BrokerQuoteBindingReasonsItem =
+  (typeof BrokerQuoteBindingReasonsItem)[keyof typeof BrokerQuoteBindingReasonsItem];
+
+export const BrokerQuoteBindingReasonsItem = {
+  QUOTE_ABSENT: "QUOTE_ABSENT",
+  REQUESTER_UNKNOWN: "REQUESTER_UNKNOWN",
+  SERIES_UNATTRIBUTED: "SERIES_UNATTRIBUTED",
+  QUOTE_UNATTRIBUTED: "QUOTE_UNATTRIBUTED",
+  PROVIDER_MISMATCH: "PROVIDER_MISMATCH",
+  BRIDGE_MISMATCH: "BRIDGE_MISMATCH",
+  OWNER_MISMATCH: "OWNER_MISMATCH",
+  ACCOUNT_NOT_REQUESTER: "ACCOUNT_NOT_REQUESTER",
+  ENVIRONMENT_MISMATCH: "ENVIRONMENT_MISMATCH",
+  BROKER_SYMBOL_MISMATCH: "BROKER_SYMBOL_MISMATCH",
+  QUOTE_TIME_UNKNOWN: "QUOTE_TIME_UNKNOWN",
+  QUOTE_TIME_FUTURE: "QUOTE_TIME_FUTURE",
+  QUOTE_STALE: "QUOTE_STALE",
+} as const;
+
+/**
+ * @nullable
+ */
+export type BrokerQuoteBindingQuoteSource =
+  | (typeof BrokerQuoteBindingQuoteSource)[keyof typeof BrokerQuoteBindingQuoteSource]
+  | null;
+
+export const BrokerQuoteBindingQuoteSource = {
+  mt5_live_quote: "mt5_live_quote",
+  mt5_symbol_snapshot: "mt5_symbol_snapshot",
+} as const;
+
+export interface BrokerQuoteBinding {
+  /** BOUND only when every condition holds; MISMATCH names an observed identity contradiction; STALE an observed tick outside the budget; UNVERIFIED a required fact is unknown. */
+  status: BrokerQuoteBindingStatus;
+  /** Every failed condition, in evaluation order. Empty only when BOUND. */
+  reasons: BrokerQuoteBindingReasonsItem[];
+  /** @nullable */
+  quoteSource: BrokerQuoteBindingQuoteSource;
+  /**
+   * Producer-observed tick time; null when unknown
+   * @nullable
+   */
+  quoteObservedAt: string | null;
+  /**
+   * Age of the observed tick time; null when unknown
+   * @nullable
+   */
+  quoteAgeMs: number | null;
+  freshnessBudgetMs: number;
+}
+
+/**
  * Chart latest-close vs MT5 broker bid/ask alignment. User-safe message only;
 adminDetail is admin-only. Honest unknown when broker data unavailable.
 
@@ -3861,6 +3925,14 @@ export interface BrokerPriceAlignment {
    */
   adminDetail: string | null;
   brokerDataAvailable: boolean;
+  /** Additive. Whether the compared broker quote is bound to the chart
+series: same observed provider, bridge and owner (the requesting
+user), no observed environment/broker-symbol contradiction, and an
+observed tick time within the quote freshness budget. Only BOUND
+comparisons earn Symbol Mirror Accuracy points or claim alignment.
+null or absent means no binding was evaluated (unmeasured).
+ */
+  quoteBinding?: BrokerQuoteBinding | null;
 }
 
 /**

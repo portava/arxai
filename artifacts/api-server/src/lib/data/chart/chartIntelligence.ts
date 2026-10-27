@@ -64,6 +64,7 @@ import {
   type BrokerPriceAlignment,
   type BrokerAlignmentInputs,
 } from "./brokerPriceAlignment.js";
+import { chartSeriesAttribution, type ChartSeriesAttribution } from "./brokerQuoteBinding.js";
 import type {
   ChartTrendRead,
   ChartLevelsRead,
@@ -203,6 +204,9 @@ interface CacheEntry {
   truthResult: TimeframeTruthResult | null;
   /** Feed status at build time — needed for truth-score recompute. */
   feedStatus: ChartFeedStatus;
+  /** Observed identity of the served series — binds any broker quote used
+   *  for route-level alignment enrichment. null = not attributable. */
+  seriesAttribution: ChartSeriesAttribution | null;
   expiresAt: number;
 }
 const cache = new Map<string, CacheEntry>();
@@ -220,10 +224,16 @@ export function getCachedIntelligenceContext(
   symbol: string,
   timeframe: ChartTimeframe,
   limit: number,
-): { state: ChartIntelligenceState; truthResult: TimeframeTruthResult | null; feedStatus: ChartFeedStatus } | null {
+): {
+  state: ChartIntelligenceState;
+  truthResult: TimeframeTruthResult | null;
+  feedStatus: ChartFeedStatus;
+  seriesAttribution: ChartSeriesAttribution | null;
+} | null {
   const entry = cache.get(`${symbol}|${timeframe}|${limit}`);
   if (!entry || entry.expiresAt <= Date.now()) return null;
-  return { state: entry.state, truthResult: entry.truthResult, feedStatus: entry.feedStatus };
+  return { state: entry.state, truthResult: entry.truthResult, feedStatus: entry.feedStatus,
+    seriesAttribution: entry.seriesAttribution };
 }
 
 /**
@@ -640,6 +650,7 @@ export async function buildChartIntelligenceState(
     state,
     truthResult: truth.truthResult,
     feedStatus: truth.feedStatus,
+    seriesAttribution: chartSeriesAttribution(truth),
     expiresAt: Date.now() + CACHE_TTL_MS,
   });
   return state;

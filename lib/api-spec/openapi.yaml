@@ -13957,6 +13957,40 @@ components:
         userMessage: { type: string, description: User-safe message — never contains raw deviation numbers }
         adminDetail: { type: ["string", "null"], description: Admin-only diagnostic with bid/ask/deviation; null when broker unavailable }
         brokerDataAvailable: { type: boolean }
+        quoteBinding:
+          description: |
+            Additive. Whether the compared broker quote is bound to the chart
+            series: same observed provider, bridge and owner (the requesting
+            user), no observed environment/broker-symbol contradiction, and an
+            observed tick time within the quote freshness budget. Only BOUND
+            comparisons earn Symbol Mirror Accuracy points or claim alignment.
+            null or absent means no binding was evaluated (unmeasured).
+          oneOf:
+            - $ref: "#/components/schemas/BrokerQuoteBinding"
+            - type: "null"
+
+    BrokerQuoteBinding:
+      type: object
+      required: [status, reasons, quoteSource, quoteObservedAt, quoteAgeMs, freshnessBudgetMs]
+      properties:
+        status:
+          type: string
+          enum: [BOUND, MISMATCH, STALE, UNVERIFIED]
+          description: BOUND only when every condition holds; MISMATCH names an observed identity contradiction; STALE an observed tick outside the budget; UNVERIFIED a required fact is unknown.
+        reasons:
+          type: array
+          description: Every failed condition, in evaluation order. Empty only when BOUND.
+          items:
+            type: string
+            enum: [QUOTE_ABSENT, REQUESTER_UNKNOWN, SERIES_UNATTRIBUTED, QUOTE_UNATTRIBUTED, PROVIDER_MISMATCH,
+              BRIDGE_MISMATCH, OWNER_MISMATCH, ACCOUNT_NOT_REQUESTER, ENVIRONMENT_MISMATCH, BROKER_SYMBOL_MISMATCH,
+              QUOTE_TIME_UNKNOWN, QUOTE_TIME_FUTURE, QUOTE_STALE]
+        quoteSource:
+          type: ["string", "null"]
+          enum: [mt5_live_quote, mt5_symbol_snapshot, null]
+        quoteObservedAt: { type: ["string", "null"], format: date-time, description: Producer-observed tick time; null when unknown }
+        quoteAgeMs: { type: ["number", "null"], description: Age of the observed tick time; null when unknown }
+        freshnessBudgetMs: { type: number }
 
     ChartGateOutput:
       type: object

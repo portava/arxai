@@ -13,7 +13,12 @@ import {
   getCachedIntelligenceContext,
   enrichStateWithBrokerAlignment,
 } from "../lib/data/chart/chartIntelligence.js";
-import { computeBrokerPriceAlignment } from "../lib/data/chart/brokerPriceAlignment.js";
+import {
+  observationFromMt5Quote,
+  observationFromSymbolSpec,
+  selectBrokerQuote,
+} from "../lib/data/chart/brokerQuoteBinding.js";
+import { readMt5Quote } from "../lib/data/providers/mt5Provider.js";
 
 const router = Router();
 const SAFETY_ENVELOPE = {
@@ -52,32 +57,50 @@ router.get("/me/chart/intelligence", requireUser, async (req, res): Promise<void
   // Build (or return cached) base state — shared across users.
   let state = await buildChartIntelligenceState(q.symbol, q.timeframe, q.limit);
 
-  // Route-level enrichment: look up per-user broker bid/ask from arx_symbol_specs
-  // (EA-reported truth). If found, recompute broker alignment, truth score and
-  // gate output with real data so the response reflects the actual chart vs
-  // broker divergence for this user. Fail-open: any error falls through to the
-  // base state with the noBrokerAlignment placeholder.
+  // Route-level enrichment: compare the chart close with a broker quote for
+  // this user. Candidates, in order: (1) the live MT5 quote pushed by the SAME
+  // bridge that produced the served series (in-memory, bridge-pinned read);
+  // (2) the EA-reported symbol snapshot in arx_symbol_specs. Each candidate is
+  // bound to the series' observed identity and its observed tick time; only a
+  // BOUND quote can earn chart-Truth points or claim alignment. An unbound
+  // quote's numbers stay a visible, unmeasured comparison with named reasons.
+  // Fail-open: any error falls through to the base state with the
+  // noBrokerAlignment placeholder.
   const userId = req.authUser?.id;
   if (userId != null) {
     try {
-      const symUpper = q.symbol.toUpperCase();
-      const specRow = await db
-        .select({
-          bid: arxSymbolSpecsTable.bid,
-          ask: arxSymbolSpecsTable.ask,
-          spreadPoints: arxSymbolSpecsTable.spreadPoints,
-        })
-        .from(arxSymbolSpecsTable)
-        .where(and(
-          eq(arxSymbolSpecsTable.userId, userId),
-          eq(arxSymbolSpecsTable.symbol, symUpper),
-        ))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-
-      if (specRow?.bid != null && specRow.ask != null) {
-        const ctx = getCachedIntelligenceContext(q.symbol, q.timeframe, q.limit);
-        if (ctx) {
+      const ctx = getCachedIntelligenceContext(q.symbol, q.timeframe, q.limit);
+      if (ctx) {
+        const symUpper = q.symbol.toUpperCase();
+        const series = ctx.seriesAttribution;
+        // Never read another user's bridge quote: pin only to a series this
+        // user's own bridge produced.
+        const live = series?.bridgeConnectionId != null && series.userId === userId
+          ? observationFromMt5Quote(readMt5Quote(q.symbol, { bridgeConnectionId: series.bridgeConnectionId }))
+          : null;
+        const specRow = await db
+          .select({
+            userId: arxSymbolSpecsTable.userId,
+            bridgeConnectionId: arxSymbolSpecsTable.bridgeConnectionId,
+            accountType: arxSymbolSpecsTable.accountType,
+            brokerSymbol: arxSymbolSpecsTable.brokerSymbol,
+            bid: arxSymbolSpecsTable.bid,
+            ask: arxSymbolSpecsTable.ask,
+            spreadPoints: arxSymbolSpecsTable.spreadPoints,
+            lastTickTime: arxSymbolSpecsTable.lastTickTime,
+          })
+          .from(arxSymbolSpecsTable)
+          .where(and(
+            eq(arxSymbolSpecsTable.userId, userId),
+            eq(arxSymbolSpecsTable.symbol, symUpper),
+          ))
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        const snapshot = specRow?.bid != null && specRow.ask != null ? observationFromSymbolSpec(specRow) : null;
+        const { quote, binding } = selectBrokerQuote([live, snapshot], {
+          series, requestingUserId: userId, now: Date.now(),
+        });
+        if (quote) {
           const chartPriceBasis = deriveChartPriceBasis(state.assetClass);
           // computeBrokerPriceAlignment exposed via enrichStateWithBrokerAlignment;
           // adminDetail is stripped below before returning to the end user.
@@ -85,9 +108,10 @@ router.get("/me/chart/intelligence", requireUser, async (req, res): Promise<void
             chartPrice: state.latestClosedCandle?.close ?? null,
             chartPriceBasis,
             assetClass: state.assetClass,
-            brokerBid: specRow.bid,
-            brokerAsk: specRow.ask,
-            spreadPoints: specRow.spreadPoints ?? null,
+            brokerBid: quote.bid,
+            brokerAsk: quote.ask,
+            spreadPoints: quote.spreadPoints,
+            quoteBinding: binding,
           });
         }
       }
