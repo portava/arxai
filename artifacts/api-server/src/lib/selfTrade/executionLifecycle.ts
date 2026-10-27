@@ -21,6 +21,12 @@ export interface ProtectiveClaimEvidence {
   volume: number;
   stopLoss: number | null;
   takeProfit: number | null;
+  /**
+   * Newest event time of any other close/modify on the ticket that the
+   * evidence was ordered after ("" when none). Informational: the final claim
+   * refuses any ticket command at or after lastSyncedAt, or still in flight.
+   */
+  ticketCommandAt?: string;
 }
 
 export interface ProtectiveClaim {

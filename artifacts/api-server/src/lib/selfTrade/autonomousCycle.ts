@@ -8,6 +8,9 @@
 //   4. For every distinct agent touched (decisions ∪ active executions),
 //      manage open positions, reconcile real outcomes, post realized P/L, and
 //      soft-audit any missed daily-minimum quota.
+//   5. Run the protective-action candidates every agent's manager queued, once,
+//      after all ordinary dispatches (one wait budget per cycle, bridges
+//      concurrently).
 //
 // SAFETY (inviolable): no always-on loop, no new MT5 path, no gate bypass, no
 // fabricated fills. This orchestrator only sequences the existing, gated steps.
@@ -29,6 +32,7 @@ import { logger } from "../logger.js";
 import { runDecisionCycle, buildFleetSafetyContext } from "./decisionEngine.js";
 import { executeAgentDecision, reconcileAgentExecutions, type AgentExecutionStatus } from "./agentExecutor.js";
 import { manageAgentPositions } from "./livePositionManager.js";
+import { createProtectiveCycle, drainProtectiveCycle } from "./protectiveActionPath.js";
 import { applyRealizedFromFills } from "./agentLedger.js";
 import { countAgentFilledTradesToday } from "./agentQuotaEngine.js";
 import { writeSelfTradeAudit } from "./audit.js";
@@ -66,6 +70,13 @@ export interface RunAutonomousCycleResult {
    * per-agent AACI pause. Read-only visibility for the operator surface.
    */
   managementHeld: Record<string, number>;
+  /** Protective-action drain (step 5); holds are also counted in managementHeld. */
+  protective: {
+    considered: number;
+    acted: number;
+    bridges: number;
+    elapsedMs: number;
+  };
 }
 
 export async function runAutonomousCycle(
@@ -272,7 +283,11 @@ export async function runAutonomousCycle(
     reconciled: { filled: 0, rejected: 0, closed: 0, expired: 0 },
     realizedPosted: 0,
     managementHeld: {},
+    protective: { considered: 0, acted: 0, bridges: 0, elapsedMs: 0 },
   };
+  // Protective candidates are only collected per agent below and run in step 5,
+  // so a justified ordinary exit for a later agent never waits behind them.
+  const protectiveCycle = createProtectiveCycle();
 
   for (const agentId of agentIds) {
     const bundle = manageBundles.get(agentId);
@@ -296,12 +311,13 @@ export async function runAutonomousCycle(
       // 3. Manage open positions (L2 alert-only / L3+ act) — SKIPPED when AACI
       //    detected an incoherent chain that needs operator review first.
       if (!chain.shouldPauseManagement) {
-        const managed = await manageAgentPositions(bundle.agent, actorUserId, actorRole);
+        const managed = await manageAgentPositions(bundle.agent, actorUserId, actorRole, {
+          protectiveCycle,
+        });
         result.positionsModified += managed.modified;
         result.positionsClosed += managed.closed;
-        for (const held of [managed.heldReasons, managed.protective.held])
-          for (const [reason, count] of Object.entries(held))
-            result.managementHeld[reason] = (result.managementHeld[reason] ?? 0) + count;
+        for (const [reason, count] of Object.entries(managed.heldReasons))
+          result.managementHeld[reason] = (result.managementHeld[reason] ?? 0) + count;
       } else {
         result.managementHeld.MANAGEMENT_PAUSED_AACI_REVIEW =
           (result.managementHeld.MANAGEMENT_PAUSED_AACI_REVIEW ?? 0) + 1;
@@ -350,6 +366,23 @@ export async function runAutonomousCycle(
     } catch (err) {
       logger.error({ err, agentId }, "self-trade: manage/reconcile threw");
     }
+  }
+
+  // 5. Protective-action candidates queued above (only from agents whose
+  //    management was not paused). Each re-reads the platform stop, arming and
+  //    kill switch at run time and dispatches through the same gated pipeline.
+  try {
+    const drained = await drainProtectiveCycle(protectiveCycle);
+    result.protective = {
+      considered: drained.considered,
+      acted: drained.acted,
+      bridges: drained.bridges,
+      elapsedMs: drained.elapsedMs,
+    };
+    for (const [reason, count] of Object.entries(drained.held))
+      result.managementHeld[reason] = (result.managementHeld[reason] ?? 0) + count;
+  } catch (err) {
+    logger.error({ err }, "self-trade: protective drain threw");
   }
 
   return result;

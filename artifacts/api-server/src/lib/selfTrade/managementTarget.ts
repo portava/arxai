@@ -4,7 +4,7 @@
 // atomicity and broker execution identity remain unverified.
 import { supportsManagementTarget } from "../mt5/managementTargetProtocol.js";
 import { isDeepStrictEqual } from "node:util";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import {
   db,
   arxLiveCommandsTable as commands,
@@ -32,6 +32,7 @@ import type { AuthorityTransaction } from "./entryAuthority.js";
 import {
   evaluatePositionObservation,
   evaluateProtectiveObservation,
+  evaluateTicketCommands,
   parseObservationTime,
 } from "./freshFacts.js";
 import { doesNotLoosenStop } from "@workspace/domain/self-trade";
@@ -489,21 +490,44 @@ export function claimManagementCommand(
         if (!observed.ok) refuse(observed.reason);
         // Protective-action parity: a claim taken by the protective path was
         // justified by a specific complete-sweep row. The locked row must still
-        // be sweep evidence at least as new as that, and a stop move must still
-        // tighten against the locked price. Pure evaluation over rows already
-        // locked above; no new statement, no new lock.
+        // be sweep evidence at least as new as that, no other close/modify on
+        // the ticket may be in flight or have moved since that evidence, and a
+        // stop move must still tighten against the locked price. One plain
+        // read of the ticket's other commands (protective claims only); no new
+        // lock.
         const protective = readManagementMemory(facts.execution.managementState)
           .pendingManagement?.protective;
         if (protective) {
+          const evidenceAtMs =
+            parseObservationTime(protective.evidence?.lastSyncedAt) ?? Number.NaN;
           const evidence = evaluateProtectiveObservation({
             row: facts.position!,
             connection: bridge,
-            mustNotPrecedeMs:
-              parseObservationTime(protective.evidence?.lastSyncedAt) ?? Number.NaN,
+            mustNotPrecedeMs: evidenceAtMs,
             commandEventTimes: [facts.entry?.filledAt],
             nowMs: Date.now(),
           });
           if (!evidence.ok) refuse(evidence.reason);
+          const ticketCommands = await tx
+            .select({
+              commandId: commands.commandId,
+              status: commands.status,
+              sentToMt5At: commands.sentToMt5At,
+              filledAt: commands.filledAt,
+              rejectedAt: commands.rejectedAt,
+            })
+            .from(commands)
+            .where(
+              and(
+                eq(commands.userId, target.userId),
+                inArray(commands.commandType, ["CLOSE_LIVE_POSITION", "MODIFY_LIVE_SLTP"]),
+                sql`${commands.payload}->>'brokerTicket' = ${target.brokerTicket}`,
+                isNotNull(commands.sentToMt5At),
+                ne(commands.commandId, current.commandId),
+              ),
+            );
+          const ordered = evaluateTicketCommands(ticketCommands, evidenceAtMs);
+          if (!ordered.ok) refuse(ordered.reason);
           if (target.action !== "EXIT") {
             const geometry = doesNotLoosenStop(
               {

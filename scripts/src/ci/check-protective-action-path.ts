@@ -8,18 +8,24 @@
 // pipeline. This guard pins the source order and import discipline that keep
 // it that way:
 //
-//   1. livePositionManager.ts invokes runProtectiveActionPath( inside the
-//      observation-hold branch (after the hold is counted, before its
-//      `continue`), and the ordinary evaluatePositionObservation( call carries
-//      no maxAgeMs of its own (the 90 s contract is untouched).
-//   2. protectiveActionPath.ts never value-imports a position writer, a
-//      command table, the live command pipeline, the Trade Engine, the MT5
-//      transport, fetch or node:http; its only ruleId literal (if any) is
-//      "self-trade-manage"; and within runProtectiveActionPath the evidence
-//      evaluation precedes identity, identity precedes geometry, geometry
-//      precedes the compare-and-set claim, and the claim precedes dispatch.
+//   1. livePositionManager.ts queues the candidate (queueProtectiveCandidate()
+//      inside the bracket-matched `if (!observation.ok) {` block, after the
+//      hold is counted, and that block ends with `continue;`), never calls
+//      runProtectiveActionPath( itself, drains its own cycle only after the
+//      per-execution loop, and the ordinary evaluatePositionObservation( call
+//      carries no maxAgeMs of its own (the 90 s contract is untouched).
+//   2. protectiveActionPath.ts never imports (statically or with import())
+//      a position writer, a command table, the live command pipeline,
+//      instantTrade, the Trade Engine, the MT5 transport, fetch or node:http;
+//      its only ruleId literal (if any) is "self-trade-manage"; within
+//      runProtectiveActionPath the order is evidence → identity → final
+//      bridge identity → geometry → compare-and-set claim → dispatch, and each
+//      of those checks refuses in the exact shape `if (!X.ok) return hold(`
+//      (evidence after its wait loop, every verifyProtectiveBridge( call,
+//      identity, geometry); drainProtectiveCycle calls runProtectiveActionPath(.
 //   3. managementTarget.claimManagementCommand re-checks a protective claim
-//      (pendingManagement?.protective → evaluateProtectiveObservation) after
+//      (pendingManagement?.protective → evaluateProtectiveObservation, then
+//      evaluateTicketCommands over the ticket's other commands) after
 //      assertManagementGeometry.
 //   4. Only protectiveActionPath.ts constructs a `protective: {` block inside a
 //      pendingManagement claim.
@@ -27,7 +33,9 @@
 //      evaluateProtectiveObservation has no window literal of its own.
 //   6. lib/domain/src/self-trade/protectiveAction.ts imports only from "./".
 //   7. autonomousCycle.ts calls manageAgentPositions( only inside the
-//      `!chain.shouldPauseManagement` block.
+//      `!chain.shouldPauseManagement` block, with the cycle's protectiveCycle,
+//      and drains that cycle (drainProtectiveCycle() only after the per-agent
+//      loop.
 //
 // Pure source analysis (comment-stripped text): no network, no DB.
 
@@ -55,14 +63,20 @@ const PATH_MODULE_ID = "lib/selfTrade/protectiveActionPath.ts";
 
 export type Sources = Record<string, string>;
 
-/** Module specifiers the path may never value-import (first match wins in the message). */
-const FORBIDDEN_IMPORTS: Array<[RegExp, string]> = [
+/** Identifiers the path may never reference (a writer or a command table). */
+const FORBIDDEN_IDENTIFIERS: Array<[RegExp, string]> = [
   [/\blivePositionWriter\b/, "livePositionWriter"],
   [/\bdemoPositionWriter\b/, "demoPositionWriter"],
   [/\bmt5CommandsTable\b/, "mt5CommandsTable"],
+  [/\barxLiveCommandsTable\b/, "arxLiveCommandsTable"],
+];
+/** Module specifiers the path may never import, statically or with import() (first match wins in the message). */
+const FORBIDDEN_IMPORTS: Array<[RegExp, string]> = [
+  ...FORBIDDEN_IDENTIFIERS,
   [/^node:https?$/, "node:http"],
   [/mt5\/managementTargetTransport/, "../mt5/managementTargetTransport"],
   [/live\/liveCommandPipeline/, "../live/liveCommandPipeline"],
+  [/live\/instantTrade/, "../live/instantTrade"],
   [/(?:^|\/)tradeEngine\//, "tradeEngine/"],
 ];
 
@@ -101,21 +115,89 @@ function imports(src: string): Array<{ spec: string; typeOnly: boolean }> {
   return out;
 }
 
+/** Every dynamic import( call: its literal specifier, or null when computed. */
+function dynamicImports(src: string): Array<string | null> {
+  const out: Array<string | null> = [];
+  const re = /(?<![\w$.])import\s*\(\s*/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) {
+    const rest = src.slice(m.index + m[0].length);
+    const lit = /^(["'`])([^"'`$]+)\1\s*[,)]/.exec(rest);
+    out.push(lit ? lit[2]! : null);
+  }
+  return out;
+}
+
+/** Index just past the `)` that closes the `name(` call starting at `at`, or -1. */
+function callEnd(src: string, at: number, name: string): number {
+  let depth = 0;
+  for (let i = at + name.length; i < src.length; i++) {
+    if (src[i] === "(") depth++;
+    else if (src[i] === ")" && --depth === 0) return i + 1;
+  }
+  return -1;
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Every `const X = name(` (or `X = name(` when `assigned`) in `body`, with
+ * whether the statement right after the call is the exact refusal
+ * `if (!X.ok) <then>` (or, when `anywhereAfter`, whether that refusal
+ * appears anywhere after the call).
+ */
+function refusalShapes(
+  body: string,
+  name: string,
+  then: string,
+  opts: { assigned?: boolean; anywhereAfter?: boolean } = {},
+): Array<{ at: number; variable: string; refuses: boolean }> {
+  const decl = opts.assigned
+    ? new RegExp(`(?:const\\s+|let\\s+)?(\\w+)\\s*=\\s*${name}\\(`, "g")
+    : new RegExp(`const\\s+(\\w+)\\s*=\\s*${name}\\(`, "g");
+  const out: Array<{ at: number; variable: string; refuses: boolean }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = decl.exec(body))) {
+    const variable = m[1]!;
+    const callAt = m.index + m[0].length - name.length - 1;
+    const end = callEnd(body, callAt, name);
+    const refusal = new RegExp(`${opts.anywhereAfter ? "" : "^\\s*;?\\s*"}if\\s*\\(\\s*!\\s*${escapeRe(variable)}\\.ok\\s*\\)\\s*${then}`);
+    out.push({ at: m.index, variable, refuses: end > 0 && refusal.test(body.slice(end)) });
+  }
+  return out;
+}
+
 export function scanProtectiveSources(raw: Sources): string[] {
   const v: string[] = [];
   const get = (k: string) => (raw[k] == null ? null : stripComments(raw[k]!));
 
-  // 1. Manager: invocation inside the hold branch; no private window.
+  // 1. Manager: the candidate is queued inside the hold branch, which still
+  //    counts the hold and ends with continue; it runs only after the loop.
   const manager = get(PROTECTIVE_FILES.manager);
   if (manager == null) v.push(`${PROTECTIVE_FILES.manager}: missing`);
   else {
-    const counted = manager.indexOf("result.heldReasons[observation.reason]");
-    const call = manager.indexOf("runProtectiveActionPath(");
-    const next = counted < 0 ? -1 : manager.indexOf("continue;", counted);
-    if (counted < 0) v.push(`${PROTECTIVE_FILES.manager}: the observation hold must still count result.heldReasons[observation.reason]`);
-    else if (call < 0) v.push(`${PROTECTIVE_FILES.manager}: must invoke runProtectiveActionPath( from the observation hold`);
-    else if (!(call > counted && next > call))
-      v.push(`${PROTECTIVE_FILES.manager}: runProtectiveActionPath( must run after the hold is counted and before that branch's continue (not a bypass)`);
+    const gate = manager.indexOf("if (!observation.ok) {");
+    const block = gate < 0 ? null : blockAfter(manager, gate);
+    if (block == null) v.push(`${PROTECTIVE_FILES.manager}: the observation hold block (if (!observation.ok) {) is missing`);
+    else {
+      const counted = block.indexOf("result.heldReasons[observation.reason]");
+      const queued = block.indexOf("queueProtectiveCandidate(");
+      if (counted < 0) v.push(`${PROTECTIVE_FILES.manager}: the observation hold must still count result.heldReasons[observation.reason]`);
+      else if (queued < 0) v.push(`${PROTECTIVE_FILES.manager}: must queue the protective candidate (queueProtectiveCandidate() from the observation hold`);
+      else if (!(queued > counted))
+        v.push(`${PROTECTIVE_FILES.manager}: queueProtectiveCandidate( must run after the hold is counted (not a bypass)`);
+      if (!/continue;\s*\}$/.test(block))
+        v.push(`${PROTECTIVE_FILES.manager}: the observation hold block must end with continue; (the refused observation never reaches the ordinary decision)`);
+      const loopAt = manager.indexOf("for (const e of filled) {");
+      const loop = loopAt < 0 ? null : blockAfter(manager, loopAt);
+      const loopEnd = loop == null ? -1 : manager.indexOf(loop, loopAt) + loop.length;
+      const drain = manager.indexOf("drainProtectiveCycle(");
+      if (loop == null) v.push(`${PROTECTIVE_FILES.manager}: the per-execution loop (for (const e of filled) {) is missing`);
+      else if (drain < 0 || drain < loopEnd)
+        v.push(`${PROTECTIVE_FILES.manager}: a standalone call must drainProtectiveCycle( after the per-execution loop (ordinary dispatches first)`);
+    }
+    if (/\brunProtectiveActionPath\(/.test(manager))
+      v.push(`${PROTECTIVE_FILES.manager}: must not call runProtectiveActionPath( inline; queue the candidate and drain after the ordinary loop`);
     const ordinary = callArgs(manager, "evaluatePositionObservation");
     if (ordinary == null) v.push(`${PROTECTIVE_FILES.manager}: the ordinary evaluatePositionObservation( call is missing`);
     else if (/\bmaxAgeMs\b/.test(ordinary))
@@ -131,7 +213,13 @@ export function scanProtectiveSources(raw: Sources): string[] {
       for (const [re, label] of FORBIDDEN_IMPORTS)
         if (re.test(imp.spec)) v.push(`${PROTECTIVE_FILES.path}: value-imports "${imp.spec}" (${label}); the path never writes positions or commands and never reaches a broker itself`);
     }
-    for (const [re, label] of FORBIDDEN_IMPORTS.slice(0, 3))
+    for (const spec of dynamicImports(path)) {
+      if (spec == null) v.push(`${PROTECTIVE_FILES.path}: dynamic import( of a computed specifier; every dependency must be a static, checkable import`);
+      else
+        for (const [re, label] of FORBIDDEN_IMPORTS)
+          if (re.test(spec)) v.push(`${PROTECTIVE_FILES.path}: dynamically imports "${spec}" (${label}); the path never writes positions or commands and never reaches a broker itself`);
+    }
+    for (const [re, label] of FORBIDDEN_IDENTIFIERS)
       if (re.test(path)) v.push(`${PROTECTIVE_FILES.path}: references ${label}`);
     if (/\bfetch\s*\(/.test(path)) v.push(`${PROTECTIVE_FILES.path}: calls fetch(`);
     const ruleIds = [...path.matchAll(/\bruleId\s*:\s*["']([^"']+)["']/g)].map((m) => m[1]);
@@ -145,11 +233,31 @@ export function scanProtectiveSources(raw: Sources): string[] {
       const geometry = body.indexOf("evaluateProtectiveGeometry(");
       const claim = body.indexOf("updateManagement(");
       const dispatch = body.search(/\bdispatch\(|\bdispatchClaimedManagement\(/);
+      const bridges = refusalShapes(body, "verifyProtectiveBridge", "return\\s+hold\\(");
+      const finalBridge = bridges.length ? bridges[bridges.length - 1]!.at : -1;
       if (evidence < 0 || identity < 0 || geometry < 0 || claim < 0 || dispatch < 0)
         v.push(`${PROTECTIVE_FILES.path}: runProtectiveActionPath must evaluate evidence, verify identity, prove geometry, claim and dispatch`);
       else if (!(evidence < identity && identity < geometry && geometry < claim && claim < dispatch))
         v.push(`${PROTECTIVE_FILES.path}: order must be evidence → identity → geometry → compare-and-set claim → dispatch`);
+      else if (bridges.length < 2 || !(finalBridge > evidence && finalBridge < geometry))
+        v.push(`${PROTECTIVE_FILES.path}: bridge identity must be verified before the wait and again on the final connection record (after evidence, before geometry and the claim)`);
+      // Each refusal in its exact shape: a removed or weakened `if (!X.ok)
+      // return hold(` (e.g. `|| true`, deleted line) is a violation.
+      const shapes: Array<[string, ReturnType<typeof refusalShapes>]> = [
+        ["evidence (evaluateProtectiveObservation)", refusalShapes(body, "evaluateProtectiveObservation", "return\\s+hold\\(", { assigned: true, anywhereAfter: true })],
+        ["identity (verifyProtectivePosition)", refusalShapes(body, "verifyProtectivePosition", "return\\s+hold\\(")],
+        ["geometry (evaluateProtectiveGeometry)", refusalShapes(body, "evaluateProtectiveGeometry", "return\\s+hold\\(")],
+        ["bridge (verifyProtectiveBridge)", bridges],
+      ];
+      for (const [label, found] of shapes) {
+        if (found.length === 0) v.push(`${PROTECTIVE_FILES.path}: ${label} must be bound to a variable and refused with if (!X.ok) return hold(`);
+        for (const f of found)
+          if (!f.refuses) v.push(`${PROTECTIVE_FILES.path}: ${label} result "${f.variable}" must be refused with if (!${f.variable}.ok) return hold(`);
+      }
     }
+    const drain = functionBody(path, "drainProtectiveCycle");
+    if (drain == null || !drain.includes("runProtectiveActionPath("))
+      v.push(`${PROTECTIVE_FILES.path}: drainProtectiveCycle must run each queued candidate through runProtectiveActionPath(`);
   }
 
   // 3. Final-claim parity.
@@ -168,8 +276,11 @@ export function scanProtectiveSources(raw: Sources): string[] {
     else {
       const after = body.slice(protective);
       const refusals = after.match(/\brefuse\(/g)?.length ?? 0;
-      if (!after.includes("doesNotLoosenStop(") || refusals < 2)
+      if (!after.includes("doesNotLoosenStop(") || refusals < 3)
         v.push(`${PROTECTIVE_FILES.target}: the protective re-check must refuse on failed evidence and on a stop that no longer tightens (doesNotLoosenStop)`);
+      const tickets = refusalShapes(after, "evaluateTicketCommands", "refuse\\(");
+      if (tickets.length === 0 || tickets.some((t) => !t.refuses))
+        v.push(`${PROTECTIVE_FILES.target}: the protective re-check must refuse a ticket command in flight or after the evidence (const X = evaluateTicketCommands(...); if (!X.ok) refuse(...))`);
     }
   }
 
@@ -219,6 +330,16 @@ export function scanProtectiveSources(raw: Sources): string[] {
           v.push(`${PROTECTIVE_FILES.cycle}: manageAgentPositions( is called outside the !chain.shouldPauseManagement block`);
       }
       if (calls === 0) v.push(`${PROTECTIVE_FILES.cycle}: manageAgentPositions( is never called`);
+      const args = callArgs(cycle, "manageAgentPositions") ?? "";
+      if (!/\bprotectiveCycle\b/.test(args))
+        v.push(`${PROTECTIVE_FILES.cycle}: manageAgentPositions( must receive the cycle's protectiveCycle (protective waits run after every agent's ordinary dispatches)`);
+      const loopAt = cycle.indexOf("for (const agentId of agentIds) {");
+      const loop = loopAt < 0 ? null : blockAfter(cycle, loopAt);
+      const loopEnd = loop == null ? -1 : cycle.indexOf(loop, loopAt) + loop.length;
+      const drains = [...cycle.matchAll(/\bdrainProtectiveCycle\(/g)].map((m) => m.index!);
+      if (loop == null) v.push(`${PROTECTIVE_FILES.cycle}: the per-agent loop (for (const agentId of agentIds) {) is missing`);
+      else if (drains.length !== 1 || drains[0]! < loopEnd)
+        v.push(`${PROTECTIVE_FILES.cycle}: drainProtectiveCycle( must run exactly once, after the per-agent loop`);
     }
   }
 
