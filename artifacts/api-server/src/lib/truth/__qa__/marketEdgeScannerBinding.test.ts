@@ -119,3 +119,24 @@ test("bound quote + live scanner setup → bound, geometry published, no withhel
   assert.equal(signal.stopLoss, 1.097);
   assert.equal(explanation.levelsWithheldReason, null);
 });
+
+// RC5 — the scanner's real entry zone reaches the lifecycle engine. Before,
+// oppToScannerInput never mapped it, so ENTRY_WINDOW_OPEN was unreachable and
+// the read said "No precise entry level published yet" even with geometry.
+test("bound BUY scanner row with an entry zone → the read can open its entry window and publishes that zone", async () => {
+  oppOverride = (b) => ({ ...b, entryZone: { low: 1.0975, high: 1.0985 } });
+  const { signal, explanation } = await read();
+  assert.equal(signal.scannerBinding?.bound, true);
+  assert.equal(signal.late.isLate, false);
+  assert.equal(signal.lifecycleStage, "ENTRY_WINDOW_OPEN");
+  assert.deepEqual(signal.entryZone, { from: 1.0975, to: 1.0985 });
+  assert.deepEqual(explanation.levels.entryZone, { from: 1.0975, to: 1.0985 });
+  assert.match(explanation.simple.entryZone, /^Entry zone 1\.0975–1\.0985\.$/);
+});
+
+test("a WAIT scanner row's entry zone is never setup evidence → no entry stage, no entry zone", async () => {
+  oppOverride = (b) => ({ ...b, recommendedAction: "WAIT", entryZone: { low: 1.0975, high: 1.0985 } });
+  const { signal } = await read();
+  assert.notEqual(signal.lifecycleStage, "ENTRY_WINDOW_OPEN");
+  assert.equal(signal.entryZone, null);
+});

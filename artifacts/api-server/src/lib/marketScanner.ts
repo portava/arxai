@@ -274,6 +274,14 @@ export interface ScannerOpportunity {
   statusBadge: StatusBadge;
   opportunity: OpportunityScore;
   entry: number; stopLoss: number; takeProfit: number;
+  /**
+   * ADDITIVE, optional. The analysed entry zone behind `entry` (its midpoint),
+   * present ONLY when the shared sufficiency verdict allows a trade setup and
+   * the zone is a real finite, positive, ordered range (a blank analysis carries
+   * {0,0}). Lets the market-edge read reach its entry stages with the scanner's
+   * real zone instead of a degenerate point. Display/reason input only.
+   */
+  entryZone?: { low: number; high: number } | null;
   generatedAt: string;
   dataSource: "SIMULATOR" | "LIVE_FEED" | "LIVE_DELAYED" | "AWAITING_FEED" | "HISTORY_READY_AWAITING_LIVE_TICK" | "STALE_FEED";
   feedProvider?: string;
@@ -1581,6 +1589,12 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       statusBadge: statusBadgeFor(a, opp),
       opportunity: opp,
       entry, stopLoss: a.stopLoss, takeProfit: a.takeProfit,
+      entryZone:
+        sufficiency.canShowTradeSetup &&
+        Number.isFinite(a.entryZone.low) && Number.isFinite(a.entryZone.high) &&
+        a.entryZone.low > 0 && a.entryZone.low <= a.entryZone.high
+          ? { low: a.entryZone.low, high: a.entryZone.high }
+          : null,
       generatedAt: a.generatedAt,
       dataSource: ds,
       feedProvider: a.feedProvider,

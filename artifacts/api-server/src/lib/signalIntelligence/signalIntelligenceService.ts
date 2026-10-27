@@ -96,6 +96,12 @@ function oppToScannerInput(opp: DecoratedOpportunity): SignalScannerInput {
     entry: Number.isFinite(opp.entry) ? opp.entry : null,
     stopLoss: Number.isFinite(opp.stopLoss) ? opp.stopLoss : null,
     takeProfit: Number.isFinite(opp.takeProfit) ? opp.takeProfit : null,
+    // The scanner's real analysed zone (only shipped when its setup is allowed);
+    // without it the lifecycle engine could never reach ENTRY_WINDOW_OPEN.
+    entryZone: opp.entryZone && Number.isFinite(opp.entryZone.low) && Number.isFinite(opp.entryZone.high) &&
+      opp.entryZone.low > 0 && opp.entryZone.low <= opp.entryZone.high
+      ? { from: opp.entryZone.low, to: opp.entryZone.high }
+      : null,
     reasonForTrade: opp.reasonForTrade ?? null,
     reasonToAvoid: opp.reasonToAvoid ?? null,
   };
