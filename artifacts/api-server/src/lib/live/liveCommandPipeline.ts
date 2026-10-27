@@ -1,3 +1,4 @@
+import { liveManagementPickupPredicate } from "../mt5/managementTargetProtocol.js";
 import { holdChangedSettlementEvidence, SettlementEvidenceHeld, enqueueResultSettlement, settleCommandJobs, settlementWorkerEnabled, assertSettlementClaim, StaleSettlementClaim, type SettlementClaim, type SettlementConsumer } from "./resultSettlementOutbox.js";
 // Phase A — Live command pipeline (per-user).
 //
@@ -4555,7 +4556,10 @@ export async function pickupNextLiveCommand(args: {
   userId: number;
   bridgeConnectionId: number;
   bridgeAccountType: string | null;
-}): Promise<{ command: ArxLiveCommand | null; refusalReason: string | null }> {
+  managementTargetSupported?: boolean;
+  /** Server-owned read-only serializer; no broker/provider/network operations. */
+  prepareResponse: (command: ArxLiveCommand, reader: Pick<typeof db, "select">) => Promise<string>;
+}): Promise<{ command: ArxLiveCommand | null; refusalReason: string | null; serializedResponse?: string }> {
   // Re-validate accountType=LIVE at pickup.
   const acct = (args.bridgeAccountType ?? "").toLowerCase();
   if (acct !== "live" && acct !== "real") {
@@ -4567,17 +4571,9 @@ export async function pickupNextLiveCommand(args: {
   // elapsed during a network stall.
   await sweepExpiredLiveCommands({ userId: args.userId });
 
-  // Atomic single-consumer claim. We RETURNING the row that was
-  // transitioned in a single SQL update so two concurrent polls (or a
-  // replayed poll) cannot both receive the same command. The claim
-  // requires `pickedByEaAt IS NULL` so a previously-served command is
-  // never re-served.
-  //
-  // We select the candidate commandId first (oldest unpicked
-  // SENT_TO_MT5_LIVE for this user), then CAS-update it with both the
-  // status and the NULL pickedByEaAt guard. The update returns 0 rows
-  // if another poll won the race — we then return "no command" so the
-  // EA simply tries again next poll.
+  // Lock only one eligible command with SKIP LOCKED, prepare its exact wire
+  // response using this transaction's reader, then conditionally claim it.
+  // A serialization failure/oversize never consumes the pickup marker.
   // Bridge-binding invariant: a command dispatched and stamped with
   // bridgeConnectionId=B may ONLY be picked up by bridge B. Any other
   // live bridge for the same user polling /live-commands-poll receives
@@ -4585,34 +4581,36 @@ export async function pickupNextLiveCommand(args: {
   // cross-bridge account-mix-up risk where user U has two live MT5
   // bridges (e.g. two terminals on the same login) and the wrong one
   // races to claim the command.
-  const candidates = await db.select({ commandId: arxLiveCommandsTable.commandId })
-    .from(arxLiveCommandsTable)
-    .where(and(
+  const delivery = await db.transaction(async (tx) => {
+    const [candidate] = await tx.select().from(arxLiveCommandsTable).where(and(
       eq(arxLiveCommandsTable.userId, args.userId),
       eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
       isNull(arxLiveCommandsTable.pickedByEaAt),
       eq(arxLiveCommandsTable.bridgeConnectionId, args.bridgeConnectionId),
-    ))
-    .orderBy(arxLiveCommandsTable.id)
-    .limit(1);
-  const cand = candidates[0];
-  if (!cand) return { command: null, refusalReason: null };
-
-  // Atomic CAS claim — re-asserts the same bridge binding so a concurrent
-  // poll from a different bridge cannot win the race. We do NOT rewrite
-  // bridgeConnectionId on claim (would defeat the binding); we only stamp
-  // pickedByEaAt to mark the row as served exactly once.
-  const claimed = await db.update(arxLiveCommandsTable).set({
-    pickedByEaAt: new Date(),
-  }).where(and(
-    eq(arxLiveCommandsTable.commandId, cand.commandId),
-    eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
-    isNull(arxLiveCommandsTable.pickedByEaAt),
-    eq(arxLiveCommandsTable.bridgeConnectionId, args.bridgeConnectionId),
-  )).returning();
-  const updated = claimed[0];
-  if (!updated) return { command: null, refusalReason: null };
-  const row = updated;
+      liveManagementPickupPredicate(args.managementTargetSupported === true),
+      // Leave oversized rows unpicked; do not starve later manual protection.
+      sql`octet_length(to_jsonb(${arxLiveCommandsTable})::text) <= 64000`,
+    )).orderBy(arxLiveCommandsTable.id).limit(1).for("update", { skipLocked: true });
+    if (!candidate) return { command: null, refusalReason: null };
+    // Serialize while the row is locked, before CAS. No rejected/oversized
+    // response may consume pickedByEaAt, and formatting after commit cannot
+    // invalidate the EA parser's limit. Symbol mapping is a DB read only.
+    const serializedResponse = await args.prepareResponse(candidate, tx);
+    if (serializedResponse.length > 65_536)
+      return { command: null, refusalReason: "MT5_COMMAND_ENVELOPE_TOO_LARGE" };
+    const [command] = await tx.update(arxLiveCommandsTable).set({ pickedByEaAt: new Date() })
+      .where(and(
+        eq(arxLiveCommandsTable.commandId, candidate.commandId),
+        eq(arxLiveCommandsTable.userId, args.userId),
+        eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+        isNull(arxLiveCommandsTable.pickedByEaAt),
+        eq(arxLiveCommandsTable.bridgeConnectionId, args.bridgeConnectionId),
+        liveManagementPickupPredicate(args.managementTargetSupported === true),
+      )).returning();
+    return command ? { command, refusalReason: null, serializedResponse } : { command: null, refusalReason: null };
+  });
+  if (!delivery.command) return delivery;
+  const row = delivery.command;
 
   logger.warn({
     [PHASE_B_LIVE_LOG_PREFIX]: true,
@@ -4627,7 +4625,7 @@ export async function pickupNextLiveCommand(args: {
     payload: { commandId: row.commandId, bridgeConnectionId: args.bridgeConnectionId },
   });
 
-  return { command: updated, refusalReason: null };
+  return delivery;
 }
 
 /** Phase B — EA posts result for a SENT_TO_MT5_LIVE command. */
