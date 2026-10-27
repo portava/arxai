@@ -27,6 +27,11 @@ function fixture(){
   const props={adapter,epoch:1,symbol:"V75",timeframe:"M5",data,older:[],historyEvidence:null,liveConfirmed:true,readFailed:false};
   return {data,props,all,setSmartAnnotation,unsubscribe,show:(bars:ChartEngineCandle[])=>{visible=bars;act(()=>listener?.());}};
 }
+function toggleDetails(open=true){
+  const details=screen.getByText("Analysis, evidence and chart statistics").parentElement as HTMLDetailsElement;
+  act(()=>{details.open=open;fireEvent(details,new Event("toggle"));});
+  return details;
+}
 beforeEach(()=>{vi.mocked(describeSmartChartWindow).mockClear();vi.mocked(analyzeSmartChart).mockClear();vi.spyOn(Date,"now").mockReturnValue(NOW);});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 describe("embedded chart reader follows applied candles",()=>{
@@ -35,7 +40,9 @@ describe("embedded chart reader follows applied candles",()=>{
     expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("are nearly equal");
     const bound=captureSmartChartBars(f.data,{symbol:"V75",timeframe:"M5"},[],null,NOW);
     const result=analyzeSmartChart({...bound.context,bars:bound.bars,asOfMs:NOW,visibleRange:{from:f.all[0]!.time,to:f.all.at(-1)!.time},dataState:"current"});
-    expect(screen.getByTestId("chart-reader-anatomy").closest("details")?.hasAttribute("open")).toBe(false);
+    expect(screen.queryByTestId("chart-reader-anatomy")).toBeNull();
+    expect(screen.getByText("Analysis, evidence and chart statistics").parentElement?.hasAttribute("open")).toBe(false);
+    toggleDetails();
     expect(screen.getByTestId("chart-reader-anatomy").textContent).toContain("Open");
     const chips=within(screen.getByLabelText("Relevant chart patterns")).getAllByRole("button");
     const more=within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true});
@@ -46,6 +53,7 @@ describe("embedded chart reader follows applied candles",()=>{
   });
   it("distinguishes repeated older readings by their exact UTC as-of time and preserves selection",()=>{
     const f=fixture();render(<SmartChartReader {...f.props}/>);
+    toggleDetails();
     expect(screen.getByText("More readings · deriv_public · times in UTC")).toBeTruthy();
     const more=within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true});
     const dates=more.map(button=>button.querySelector("time")!);
@@ -59,10 +67,18 @@ describe("embedded chart reader follows applied candles",()=>{
     fireEvent.click(more.at(-1)!);
     expect(screen.getByText(`Observed shape · observed ${chosenDate.slice(0,19).replace("T"," ")} UTC`)).toBeTruthy();
     expect(f.setSmartAnnotation.mock.lastCall?.[0]?.anchors.at(-1).time).toBeLessThan(Date.parse(chosenDate)/1000);
-    expect(screen.getByText("Analysis, evidence and chart statistics").parentElement?.hasAttribute("open")).toBe(false);
+    const annotation=f.setSmartAnnotation.mock.lastCall?.[0];
+    const narrative=screen.getByTestId("chart-reader-explanation").textContent;
+    toggleDetails(false);expect(screen.queryByLabelText("More observed patterns")).toBeNull();
+    expect(screen.getByTestId("chart-reader-explanation").textContent).toBe(narrative);
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]).toBe(annotation);
+    toggleDetails();
+    expect(screen.getByText(`Observed shape · observed ${chosenDate.slice(0,19).replace("T"," ")} UTC`)).toBeTruthy();
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]).toBe(annotation);
   });
   it("historical viewport explains only its own closed prefix and keeps the stale warning",()=>{
     const f=fixture();render(<SmartChartReader {...f.props} liveConfirmed={false} readFailed/>);
+    toggleDetails();
     f.show(f.all.slice(0,10));
     expect(screen.getByText(/Historical window · Stored candles/)).toBeTruthy();
     expect(screen.getByText(/10 closed candles analyzed/)).toBeTruthy();
@@ -89,6 +105,7 @@ describe("embedded chart reader follows applied candles",()=>{
     const snapshot=captureChartReplay(f.data,7,DEFAULT_PREFERENCES,NOW).snapshot!;
     f.show(f.all.slice(0,10));
     const view=render(<SmartChartReader {...f.props} data={{...f.data,symbol:"EURUSD"}} liveConfirmed replay={{snapshot,installedCount:10}}/>);
+    toggleDetails();
     expect(screen.getByText("Historical replay · closed candles only")).toBeTruthy();
     expect(screen.getByText(/10 closed candles analyzed/)).toBeTruthy();
     expect(screen.getByTestId("smart-chart-reader").getAttribute("data-replay-installed-count")).toBe("10");
@@ -118,6 +135,7 @@ describe("embedded chart reader follows applied candles",()=>{
   });
   it("discloses inverted/nonlinear and close-only views while preserving underlying analysis",()=>{
     const f=fixture();render(<SmartChartReader {...f.props} view={{style:"line",scale:"log",inverted:true}}/>);
+    toggleDetails();
     expect(screen.getByText("Inverted scale · higher prices appear lower")).toBeTruthy();
     expect(screen.getByText(/The line shows closes; candle patterns also use open, high and low/)).toBeTruthy();
     expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("are nearly equal");
@@ -126,6 +144,7 @@ describe("embedded chart reader follows applied candles",()=>{
     const f=fixture();render(<SmartChartReader {...f.props}/>);
     expect(screen.getByTestId("chart-reader-context").textContent).toContain("30 closed candles");
     const summary=screen.getByText("Analysis, evidence and chart statistics");expect(summary.parentElement?.hasAttribute("open")).toBe(false);
+    expect(screen.queryByText("RSI14 · visible seed")).toBeNull();toggleDetails();
     expect(screen.getByText("RSI14 · visible seed").parentElement?.textContent).toContain("50");
     f.show(f.all.slice(0,14));
     expect(screen.getByText("RSI14 · visible seed").parentElement?.textContent).toContain("Unavailable");
@@ -136,6 +155,7 @@ describe("embedded chart reader follows applied candles",()=>{
   });
   it("withdraws every descriptive metric with stale display ownership or missing source evidence",()=>{
     const f=fixture(),view=render(<SmartChartReader {...f.props}/>);
+    toggleDetails();
     expect(screen.getByLabelText("Descriptive window metrics")).toBeTruthy();
     f.show(f.all.map((bar,i)=>i===2?{...bar,close:100.5}:bar));
     expect(screen.queryByTestId("chart-reader-context")).toBeNull();expect(screen.queryByLabelText("Descriptive window metrics")).toBeNull();
@@ -148,6 +168,7 @@ describe("embedded chart reader follows applied candles",()=>{
     const gapped=f.data.candles!.filter((_,i)=>i!==10);
     const data={...f.data,candles:gapped};f.show(f.all.filter((_,i)=>i!==10));
     render(<SmartChartReader {...f.props} data={data}/>);
+    toggleDetails();
     expect(screen.getByTestId("chart-reader-context").textContent).toContain("29 closed candles");
     expect(screen.getByText("RSI14 · visible seed").parentElement?.textContent).toContain("Unavailable");
     expect(screen.getByText("ATR14 · visible seed").parentElement?.textContent).toContain("Unavailable");
@@ -160,6 +181,53 @@ describe("embedded chart reader follows applied candles",()=>{
 
 
 describe("Replay analysis duplicate notifications",()=>{
+  it("mounts details from the latest acknowledged prefix and updates them while open",()=>{
+    const f=fixture(),snapshot=captureChartReplay(f.data,7,DEFAULT_PREFERENCES,NOW).snapshot!;
+    f.show(f.all.slice(0,10));
+    const view=render(<SmartChartReader {...f.props} replay={{snapshot,installedCount:10}}/>);
+    expect(screen.queryByLabelText("Descriptive window metrics")).toBeNull();
+    expect(screen.queryByTestId("chart-reader-anatomy")).toBeNull();
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]).toBeTruthy();
+    f.show(f.all.slice(0,5));
+    view.rerender(<SmartChartReader {...f.props} replay={{snapshot,installedCount:5}}/>);
+    const calls=vi.mocked(analyzeSmartChart).mock.calls.length;
+    const descriptionCalls=vi.mocked(describeSmartChartWindow).mock.calls.length;
+    const summary=screen.getByText("Analysis, evidence and chart statistics");
+    expect(summary.tagName).toBe("SUMMARY");expect(summary.parentElement?.tagName).toBe("DETAILS");
+    toggleDetails();
+    expect(screen.getByText(/5 closed candles analyzed/)).toBeTruthy();
+    expect(screen.getByText("RSI14 · visible seed").parentElement?.textContent).toContain("Unavailable");
+    expect(screen.getByTestId("smart-chart-reader").dataset.analysisAsof).toBe(String(snapshot.bars[4]!.closeTime));
+    expect(analyzeSmartChart).toHaveBeenCalledTimes(calls);
+    expect(describeSmartChartWindow).toHaveBeenCalledTimes(descriptionCalls);
+    f.show(f.all.slice(0,20));
+    view.rerender(<SmartChartReader {...f.props} replay={{snapshot,installedCount:20}}/>);
+    expect(screen.getByText(/20 closed candles analyzed/)).toBeTruthy();
+    expect(screen.getByText("RSI14 · visible seed").parentElement?.textContent).toContain("50");
+    expect(screen.getByTestId("smart-chart-reader").dataset.analysisAsof).toBe(String(snapshot.bars[19]!.closeTime));
+    toggleDetails(false);
+    f.show(f.all.slice(0,8));view.rerender(<SmartChartReader {...f.props} replay={{snapshot,installedCount:8}}/>);
+    expect(screen.queryByLabelText("Descriptive window metrics")).toBeNull();
+    toggleDetails();expect(screen.getByText(/8 closed candles analyzed/)).toBeTruthy();
+    expect(screen.queryByText(/20 closed candles analyzed/)).toBeNull();
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]?.anchors.every((anchor:any)=>anchor.time<=f.all[7]!.time)).toBe(true);
+  });
+  it("reopening after source withdrawal cannot resurrect old evidence or history selection",()=>{
+    const f=fixture(),view=render(<SmartChartReader {...f.props}/>);
+    toggleDetails();
+    fireEvent.click(within(screen.getByLabelText("More observed patterns")).getAllByRole("button").at(-1)!);
+    toggleDetails(false);
+    view.rerender(<SmartChartReader {...f.props} data={{...f.data,marketEvidence:null}} readFailed/>);
+    expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
+    toggleDetails();
+    expect(screen.queryByTestId("chart-reader-anatomy")).toBeNull();
+    expect(screen.queryByLabelText("Descriptive window metrics")).toBeNull();
+    expect(screen.queryByLabelText("More observed patterns")).toBeNull();
+    expect(screen.getByTestId("smart-chart-reader").dataset.analysisStatus).toBe("unavailable");
+    view.rerender(<SmartChartReader {...f.props}/>);
+    expect(screen.getByLabelText("Descriptive window metrics")).toBeTruthy();
+    expect(screen.getByTestId("smart-chart-reader").dataset.analysisStatus).toBe("ready");
+  });
   it("runs once per installed prefix; skips identical viewport notifications and unrelated parent renders",()=>{
     const f=fixture(),snapshot=captureChartReplay(f.data,7,DEFAULT_PREFERENCES,NOW).snapshot!;
     f.show(f.all.slice(0,10));const replay={snapshot,installedCount:10};

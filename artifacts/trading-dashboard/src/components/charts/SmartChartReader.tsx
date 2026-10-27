@@ -42,6 +42,7 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
   const [reading,setReading]=useState<{key:string;result:SmartChartAnalysisResult;description:ChartDescriptiveAnalysis;historical:boolean}|null>(null);
   const [selected,setSelected]=useState<string|null>(null);
   const [annotations,setAnnotations]=useState(true);
+  const [detailsOpen,setDetailsOpen]=useState(false);
   const refresh=useCallback(()=>{
     const actual=adapter?.getVisibleCandles?.()??[];
     if(replay && previousReplayRead.current?.key===readKey && sameVisibleCandles(previousReplayRead.current.actual,actual))return;
@@ -66,7 +67,7 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
   const current=reading?.key===contextKey?reading:null;
   const result=current?.result;
   const chosen=result?.allFindings.find(finding=>finding.id===selected)??result?.findings[0]??null;
-  const moreFindings=result?.allFindings.filter(finding=>!result.findings.some(summary=>summary.id===finding.id))??[];
+  const moreFindings=detailsOpen?result?.allFindings.filter(finding=>!result.findings.some(summary=>summary.id===finding.id))??[]:[];
   const description=result?.status==="ready"&&current?.description.status==="ready"?current.description:null;
   const stats=description?.basics;
   const gaps=description?{gaps:description.cadence.elapsedGaps,largestSeconds:description.cadence.largestSeconds}:null;
@@ -91,9 +92,12 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
     {result?.findings.length? <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Relevant chart patterns">{result.findings.map(finding=><button type="button" key={finding.id} className={`rounded border px-2 py-1 text-[11px] ${chosen?.id===finding.id?"border-sky-500/50 bg-sky-500/10 text-sky-200":"border-zinc-700 text-zinc-300 hover:bg-zinc-800"}`} aria-pressed={chosen?.id===finding.id} onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}</button>)}</div>:null}
     <p className="mt-2 max-w-[110ch] leading-relaxed text-zinc-200" data-testid="chart-reader-explanation">{narrative}</p>
     {description&&<p className="mt-1 text-[11px] leading-relaxed text-sky-200/80" data-testid="chart-reader-context">{description.summary}</p>}
-    <details className="mt-2 text-zinc-400">
+    <details className="mt-2 text-zinc-400" onToggle={event=>setDetailsOpen(event.currentTarget.open)}>
       <summary className="w-fit cursor-pointer text-[11px] text-sky-300">Analysis, evidence and chart statistics</summary>
-      <div className="mt-3 space-y-3">
+      {/* Keep the native disclosure/keyboard behavior, but do not reconcile a
+          hidden evidence tree on every applied viewport. Opening reads the
+          current result; analysis and annotations never depend on disclosure. */}
+      {detailsOpen&&<div className="mt-3 space-y-3">
         {chosen&&<div className="space-y-1.5"><p className="text-zinc-200">{statusText[chosen.status]} · observed {new Date(chosen.asOf*1000).toISOString().slice(0,19).replace("T"," ")} UTC</p>{chosenNarrative?.detail&&<p data-testid="chart-reader-anatomy">{chosenNarrative.detail}</p>}{chosen.invalidation&&<p>What would change this reading: {chosen.invalidation}</p>}<p>{chosen.caveat}</p></div>}
         {stats&&<dl className="grid grid-cols-2 gap-x-4 gap-y-2 md:grid-cols-4">{[["Price change",`${chartNumber(stats.change)} (${chartNumber(stats.changePercent)}%)`],["Mean close",chartNumber(stats.mean)],["Median close",chartNumber(stats.median)],["Close variability",chartNumber(stats.stdDev)],["Highest observed price",chartNumber(stats.high)],["Lowest observed price",chartNumber(stats.low)],["Price range",chartNumber(stats.range)],["Close-to-close drawdown",`${chartNumber(stats.maxDrawdownPercent)}%`]].map(([label,value])=><div key={label}><dt className="text-[10px]">{label}</dt><dd className="mt-0.5 font-mono text-zinc-200">{value}</dd></div>)}</dl>}
         {description&&<div className="space-y-2" aria-label="Descriptive window metrics">
@@ -125,7 +129,7 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
           })}</div>
         </div>}
         <p className="text-[10px]">Volume, order flow, forecasts and statistical significance are not inferred from this OHLC window. A pattern alone does not establish causation or a profitable trade.</p>
-      </div>
+      </div>}
     </details>
   </section>;
 });
