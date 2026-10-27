@@ -167,10 +167,24 @@ export function buildReasoningFromMarketRead(
     ? "Trendline read withheld until the live feed confirms."
     : "No specific trendline called out.";
 
+  const ds = String(signal.dataSource ?? "").toUpperCase();
   let supportResistance: string;
-  if (downgraded || !actionable) {
+  if (downgraded) {
     supportResistance =
       "Key support/resistance levels are withheld until the live feed confirms.";
+  } else if (!exp.hasSufficientData || ds !== "LIVE_FEED") {
+    // The signal's own data facts say this read is not on enough confirmed live
+    // data — say that, without naming any other cause.
+    supportResistance = "Levels withheld — not enough confirmed live candles/feed for this read.";
+  } else if (!actionable) {
+    // A live, sufficient read that simply isn't actionable: the feed is NOT why
+    // levels are absent. Cite the server's own reason (or a neutral fact) plus
+    // what is still missing — and never print level numbers here (the card hides
+    // the Levels panel for a non-actionable read; stay downgrade-only).
+    const missing = (exp.missingContext ?? []).filter((m) => clean(m).length > 0);
+    supportResistance =
+      `${orElse(exp.levelsWithheldReason, "No entry/stop levels are bound to this read.")}` +
+      (missing.length ? ` Still needed: ${missing.join(", ")}.` : "");
   } else {
     const lv = exp.levels;
     const parts: string[] = [];
@@ -182,7 +196,6 @@ export function buildReasoningFromMarketRead(
       : "No clean support/resistance level marked yet — be cautious entering blind.";
   }
 
-  const ds = String(signal.dataSource ?? "").toUpperCase();
   let feedData: string;
   if (downgraded) {
     const cat =

@@ -188,6 +188,8 @@ interface Derived {
   sessionNote: string;
   isHighLiquidity: boolean;
   invalSide: "above" | "below";
+  /** Why no level is published (see levelsWithheldReasonFor), else null. */
+  levelsWithheld: string | null;
 }
 
 function derive(signal: RubyMarketEdgeSignal): Derived {
@@ -222,7 +224,25 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
     sessionNote: signal.session.note,
     isHighLiquidity: signal.session.isHighLiquidity,
     invalSide: signal.direction === "SELL" ? "above" : "below",
+    levelsWithheld: null,
   };
+}
+
+/**
+ * Why the read publishes NO entry/watch/stop/invalidation level — null whenever
+ * any of them is present. Built ONLY from facts on the signal (data sufficiency,
+ * live-feed tag, scanner geometry), never a guessed cause: on a live feed with
+ * enough candles the honest fact is that no scanner entry/stop is attached.
+ */
+function levelsWithheldReasonFor(d: Derived): string | null {
+  if (d.entryZ || d.watchZ || d.sl || d.inval) return null;
+  if (!d.hasData) return "there aren't enough confirmed live candles for this read yet";
+  if (!d.liveFeed) return "the data behind this read isn't a confirmed live feed";
+  return "no scanner entry or stop is attached to this read yet";
+}
+
+function capitalize(s: string): string {
+  return s.length ? s[0]!.toUpperCase() + s.slice(1) : s;
 }
 
 // News risk is not a typed field on the signal; it is folded into evidence
@@ -372,13 +392,21 @@ function buildMode(
   // entry zone — speak in levels
   let entryZone: string;
   if (d.timing === "ready" || d.timing === "approaching") {
-    entryZone = d.entryZ ? `Entry zone ${d.entryZ}.` : "No precise entry level published yet.";
+    entryZone = d.entryZ
+      ? `Entry zone ${d.entryZ}.`
+      : d.levelsWithheld
+        ? `No precise entry level published yet — ${d.levelsWithheld}.`
+        : "No precise entry level published yet.";
   } else if (d.timing === "late") {
     entryZone = d.lateZ
       ? `Already extended past ${d.lateZ} — do not chase.`
       : "Already extended — wait for a pullback before any entry.";
   } else {
-    entryZone = d.watchZ ? `Watching ${d.watchZ} for a setup.` : "No level to watch yet.";
+    entryZone = d.watchZ
+      ? `Watching ${d.watchZ} for a setup.`
+      : d.levelsWithheld
+        ? `No level to watch yet — ${d.levelsWithheld}.`
+        : "No level to watch yet.";
   }
 
   // risk
@@ -388,7 +416,9 @@ function buildMode(
   if (d.newsL !== "none") riskParts.push(`Note ${NEWS_TEXT[d.newsL]}.`);
   const risk = riskParts.length > 0
     ? riskParts.join(" ")
-    : "Risk level not published yet — wait for a defined stop before sizing.";
+    : d.levelsWithheld
+      ? `Risk level not published yet — ${d.levelsWithheld}. Wait for a defined stop before sizing.`
+      : "Risk level not published yet — wait for a defined stop before sizing.";
 
   // what confirms
   let whatConfirms: string;
@@ -431,6 +461,7 @@ export function explainMarketRead(
 ): RubyMarketReadExplanation {
   const d = derive(signal);
   d.newsL = newsRiskFromEvidence(d, signal);
+  d.levelsWithheld = levelsWithheldReasonFor(d);
 
   const bestAction = computeBestAction(d, signal.lifecycleStage);
   const actionable = computeActionable(d);
@@ -464,6 +495,7 @@ export function explainMarketRead(
     hasSufficientData: d.hasData,
     actionable,
     missingContext,
+    levelsWithheldReason: d.levelsWithheld ? `${capitalize(d.levelsWithheld)}.` : null,
     disclaimer: DISCLAIMER,
   };
 }
