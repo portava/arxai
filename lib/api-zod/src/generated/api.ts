@@ -18253,6 +18253,26 @@ export const GetMeMarketEdgeResponse = zod.object({
       expiresAt: zod.string(),
       firstSeenAt: zod.string(),
       lateReason: zod.string().nullable(),
+      scannerBinding: zod
+        .object({
+          bound: zod.boolean(),
+          reasonCode: zod
+            .union([
+              zod.literal("no_scanner_read"),
+              zod.literal("quote_last_only"),
+              zod.literal("no_bound_quote"),
+              zod.literal("different_candles"),
+              zod.literal("scanner_not_live"),
+              zod.literal("setup_withheld"),
+              zod.literal(null),
+            ])
+            .nullable(),
+          reason: zod.string().nullable(),
+        })
+        .optional()
+        .describe(
+          "Optional. Whether the scanner's read (and its entry\/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers.",
+        ),
     })
     .describe(
       "ONE normalized signal object shared by Scanner, Scalp, Ruby, and downstream explanation\/UX. Direction (BUY\/SELL\/NEUTRAL) is always kept separate from edge\/quality. When data is insufficient the read collapses to an honest WATCHING\/UNKNOWN\/NONE state with hasSufficientData=false — never a fabricated number.",

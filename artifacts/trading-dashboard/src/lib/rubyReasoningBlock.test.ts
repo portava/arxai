@@ -122,3 +122,17 @@ describe("buildReasoningFromMarketRead — S/R never blames a confirmed feed", (
     expect(r.evidence.supportResistance).toMatch(/^Watch nearby levels — entry/);
   });
 });
+
+describe("buildReasoningFromMarketRead — quote-binding reason (Deriv last-price ticks)", () => {
+  it("Feed/Data and S/R both state the spread-less quote, never a delayed feed", () => {
+    const reason = "No scanner entry or stop is attached to this read because the live quote is last-price only — no bid/ask spread is bound to these candles.";
+    const r = buildReasoningFromMarketRead({
+      explanation: exp({ levelsWithheldReason: reason }),
+      signal: sig({ scannerBinding: { bound: false, reasonCode: "quote_last_only", reason: "the live quote is last-price only — no bid/ask spread is bound to these candles" } }),
+      downgraded: false,
+    });
+    expect(r.evidence.feedData).toBe("Live feed confirmed · no bid/ask quote is bound to these candles.");
+    expect(r.evidence.supportResistance).toContain(reason);
+    expect(r.evidence.supportResistance).not.toMatch(/delayed|until the live feed/i);
+  });
+});

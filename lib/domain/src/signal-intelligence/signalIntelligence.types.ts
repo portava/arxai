@@ -252,7 +252,35 @@ export interface PreviousSignalSnapshot {
 
 // ── The normalized signal object ─────────────────────────────────────────────
 
+/**
+ * Why the scanner's read (and its entry/stop geometry) was NOT bound into a
+ * market-edge signal. lower_snake machine codes; `reason` is the user-safe
+ * clause. Display/reason only — never an execution input.
+ */
+export type ScannerBindingReasonCode =
+  | "no_scanner_read"
+  | "quote_last_only"
+  | "no_bound_quote"
+  | "different_candles"
+  | "scanner_not_live"
+  | "setup_withheld";
+
+export interface ScannerBinding {
+  /** True when the scanner read was bound into this signal. */
+  bound: boolean;
+  /** Why it was not bound (null when bound, or when there was no market read). */
+  reasonCode: ScannerBindingReasonCode | null;
+  /** Plain-English clause ("the live quote is last-price only — …"), or null. */
+  reason: string | null;
+}
+
 export interface RubyMarketEdgeSignal {
+  /**
+   * ADDITIVE, optional. Whether the scanner's read was bound into this signal
+   * and, if not, the gate that dropped it — so a card can say WHY no
+   * entry/stop level exists instead of guessing (e.g. blaming the feed).
+   */
+  scannerBinding?: ScannerBinding;
   /** First observation is not proof of when a setup formed. A read-side poll
    * or failed persistence must never claim it saved durable continuity. */
   continuity?: { basis: "source_bound_memory" | "current_observation"; saved: boolean };

@@ -202,7 +202,11 @@ export function buildReasoningFromMarketRead(
       level === "blocked" ? "blocked" : level === "limited" ? "delayed / limited" : "historical";
     feedData = `Feed not fully confirmed (${cat} read).${reason ? ` ${reason}` : ""}`;
   } else if (ds === "LIVE_FEED") {
-    feedData = "Live feed confirmed.";
+    // The server records when the live quote binds no bid/ask spread to these
+    // candles — say so beside the live-feed claim so Feed/Data and S/R agree.
+    feedData = signal.scannerBinding?.reasonCode === "quote_last_only"
+      ? "Live feed confirmed · no bid/ask quote is bound to these candles."
+      : "Live feed confirmed.";
   } else if (ds === "LIVE_DELAYED") {
     feedData = "Live feed is delayed — treat as lower confidence.";
   } else if (ds === "AWAITING_FEED") {

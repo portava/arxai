@@ -14096,6 +14096,28 @@ export const RubyMarketEdgeSignalFreshness = {
   EXPIRED: "EXPIRED",
 } as const;
 
+export type RubyMarketEdgeSignalScannerBindingReasonCode =
+  | (typeof RubyMarketEdgeSignalScannerBindingReasonCode)[keyof typeof RubyMarketEdgeSignalScannerBindingReasonCode]
+  | null;
+
+export const RubyMarketEdgeSignalScannerBindingReasonCode = {
+  no_scanner_read: "no_scanner_read",
+  quote_last_only: "quote_last_only",
+  no_bound_quote: "no_bound_quote",
+  different_candles: "different_candles",
+  scanner_not_live: "scanner_not_live",
+  setup_withheld: "setup_withheld",
+} as const;
+
+/**
+ * Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers.
+ */
+export type RubyMarketEdgeSignalScannerBinding = {
+  bound: boolean;
+  reasonCode: RubyMarketEdgeSignalScannerBindingReasonCode;
+  reason: string | null;
+};
+
 /**
  * ONE normalized signal object shared by Scanner, Scalp, Ruby, and downstream explanation/UX. Direction (BUY/SELL/NEUTRAL) is always kept separate from edge/quality. When data is insufficient the read collapses to an honest WATCHING/UNKNOWN/NONE state with hasSufficientData=false — never a fabricated number.
  */
@@ -14134,6 +14156,8 @@ export interface RubyMarketEdgeSignal {
   expiresAt: string;
   firstSeenAt: string;
   lateReason: string | null;
+  /** Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers. */
+  scannerBinding?: RubyMarketEdgeSignalScannerBinding;
 }
 
 export type RubyMarketReadExplanationDefaultMode =

@@ -1474,6 +1474,8 @@ export * from "./rubyMarketEdgeSignalDirection";
 export * from "./rubyMarketEdgeSignalFreshness";
 export * from "./rubyMarketEdgeSignalLifecycleStage";
 export * from "./rubyMarketEdgeSignalRegime";
+export * from "./rubyMarketEdgeSignalScannerBinding";
+export * from "./rubyMarketEdgeSignalScannerBindingReasonCode";
 export * from "./rubyMarketReadExplanation";
 export * from "./rubyMarketReadExplanationDefaultMode";
 export * from "./rubyMissedOpportunity";
