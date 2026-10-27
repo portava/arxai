@@ -4807,6 +4807,7 @@ const mt5ExecutionAdapter: ExecutionAdapter<Mt5DeliveryResult> = new Mt5EaBridge
 );
 
 export type BridgedLiveOutcome =
+  | "LIVE_ACKNOWLEDGED"
   | "LIVE_FILLED"
   | "LIVE_PARTIALLY_FILLED"
   | "LIVE_REJECTED"
@@ -4880,6 +4881,11 @@ export function mapBridgedLiveOutcome(input: {
   if (LIVE_FAILED_STATUS_RE.test(status)) {
     return statusLc.includes("reject") ? "LIVE_REJECTED" : "LIVE_FAILED";
   }
+  // Explicit uncertainty/acceptance is never promoted by an existing ticket.
+  if (["unknown","live_unknown"].includes(statusLc)) return "LIVE_UNKNOWN";
+  if (["acknowledged","live_acknowledged","accepted","placed"].includes(statusLc)) return "LIVE_ACKNOWLEDGED";
+  if (["partially_filled","live_partially_filled"].includes(statusLc))
+    return input.hasBrokerTicket && typeof input.executedVolume === "number" && Number.isFinite(input.executedVolume) && input.executedVolume>0 ? "LIVE_PARTIALLY_FILLED" : "LIVE_UNKNOWN";
   // R2 S5 — a ticket with a short fill is a PARTIAL, not a full fill. Checked
   // before the full-fill branch so a partial can never be recorded as
   // complete (spec §12: partial fills update exposure immediately).
@@ -4901,11 +4907,8 @@ export async function recordLiveCommandResult(args: {
   // R2 S1 — LIVE_UNKNOWN is the honest mapping of an ambiguous EA report
   // (success-looking status, no broker ticket): non-terminal, reservation
   // held, resolved only by reconciliation.
-  // R2 S5 — LIVE_ACKNOWLEDGED is accepted here but is NOT producible by
-  // mapBridgedLiveOutcome: the v1.5x EA posts only a settled result and has no
-  // ack signal. It is forward-declared for the bridge-v2 TRADE_TRANSACTION
-  // lifecycle (REQUEST/ORDER_ADD without a dealTicket), which can call this
-  // entry point directly once its lifecycle mapping lands.
+  // Upgraded synchronous terminal reports distinguish placed/partial/unknown.
+  // ACK does not release reservations or certify settlement.
   outcome:
     | "LIVE_FILLED"
     | "LIVE_PARTIALLY_FILLED"
@@ -4917,6 +4920,7 @@ export async function recordLiveCommandResult(args: {
   reportingBridgeConnectionId: number;
   /** Only identity explicitly reported by the terminal; never filled from the current bridge. */
   reportedExecutionIdentity?: ReturnType<typeof reportedManagementIdentity>;
+  terminalResultEvidence?: import("../mt5/terminalResultEvidence.js").TerminalResultEvidence;
   brokerTicket?: string | null;
   fillPrice?: number | null;
   executedVolume?: number | null;
@@ -4952,6 +4956,7 @@ export async function recordLiveCommandResult(args: {
     eaReason: args.eaReason ?? null,
     reportingBridgeConnectionId: args.reportingBridgeConnectionId,
     reportedExecutionIdentity: args.reportedExecutionIdentity ?? [],
+    ...(args.terminalResultEvidence ? { terminalResultEvidence: args.terminalResultEvidence } : {}),
   };
 
   const reportFingerprint = executionReportFingerprint(reportedEvidence);

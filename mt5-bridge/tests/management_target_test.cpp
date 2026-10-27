@@ -12,7 +12,7 @@
 #include <vector>
 using string=std::string;using ushort=unsigned short;using ulong=unsigned long;
 enum {ACCOUNT_LOGIN,ACCOUNT_SERVER,ACCOUNT_TRADE_MODE,ACCOUNT_TRADE_MODE_REAL,ACCOUNT_TRADE_MODE_DEMO,
- TERMINAL_CONNECTED,POSITION_SYMBOL,POSITION_TYPE,POSITION_TYPE_BUY,POSITION_TYPE_SELL,POSITION_VOLUME,POSITION_SL,POSITION_TP,SYMBOL_ASK,SYMBOL_BID,TRADE_RETCODE_DONE};
+ TERMINAL_CONNECTED,POSITION_SYMBOL,POSITION_TYPE,POSITION_TYPE_BUY,POSITION_TYPE_SELL,POSITION_VOLUME,POSITION_SL,POSITION_TP,SYMBOL_ASK,SYMBOL_BID,ORDER_TYPE_BUY,ORDER_TYPE_SELL,TRADE_RETCODE_DONE=10009};
 long login=100,mode=ACCOUNT_TRADE_MODE_REAL,positionSide=POSITION_TYPE_BUY;
 string server="Venue-Server-1",native="EURUSD.a",response,posted,lastSuccessAction;
 double volume=.02,oldSL=1.1,oldTP=1.3;
@@ -30,7 +30,7 @@ string GetJson(const string&){if(pollHook)pollHook();return response;}
 void HandleCommand(const string);
 void DispatchReadOnly(long,const string&,const string&){throw std::runtime_error("unexpected readonly action");}
 #define UNRELATED_HANDLER(name) void name(long,const string&){throw std::runtime_error("unexpected " #name);}
-UNRELATED_HANDLER(HandleOpenMarket)
+// Market handler is extracted too for result-evidence tests.
 UNRELATED_HANDLER(HandlePlacePending)
 UNRELATED_HANDLER(HandleBreakEven)
 UNRELATED_HANDLER(HandlePartialClose)
@@ -43,7 +43,8 @@ void HandleCloseAll(long,const string&,bool,const string&){throw std::runtime_er
 void HandleCancelAllPending(long,const string&,bool,const string&){throw std::runtime_error("unexpected bulk cancel");}
 string BridgeToken="synthetic-token";double MaxLiveLot=1,g_maxDeviationPoints=20;
 #define ARX_LIVE_DEDUP_CAP 64
-string g_liveDoneIds[64],g_liveDoneStatus[64];int g_liveDoneCount=0,g_liveDoneNext=0;
+string g_liveDoneIds[64],g_liveDoneStatus[64],g_liveDoneBody[64];
+long g_tradeEvidenceIds[64];string g_tradeEvidenceBodies[64];int g_tradeEvidenceCount=0,g_tradeEvidenceNext=0;int g_liveDoneCount=0,g_liveDoneNext=0;
 int StringLen(const string&s){return (int)s.size();}
 int StringFind(const string&s,const string&q,int start=0){auto n=s.find(q,start);return n==string::npos?-1:(int)n;}
 string StringSubstr(const string&s,int start,int len=-1){return s.substr(start,len<0?string::npos:(size_t)len);}
@@ -71,18 +72,31 @@ bool HttpPost(const string&path,const string&body,string&out,const string&){if(p
 void SendAccountSnapshotNow(){}void SyncLivePositionsNow(){}
 bool IsCommandTypeAllowedRemotely(const string&){return true;}double EffectiveMaxLiveLot(){return MaxLiveLot;}
 bool PreTradeBrokerGuard(const string&,const string&,double,double,double,double,double,string&){return true;}
+bool tradeResultOk=true;int resultRetcode=10009;ulong resultDeal=43,resultOrder=42;double resultVolume=.02,resultPrice=1.2;
+using ENUM_ORDER_TYPE=int;
+struct Preflight{bool ok=true;string resolvedSymbol="EURUSD.a";double ask=1.2,bid=1.19,minVol=.001,maxVol=1,stepVol=.001;long tradeMode=1,fillingMode=1,stopsLevel=0;};
+void RunPreflight(const string&,const string&,double,double,double,Preflight&){}
+void PostPreflightReject(long,const string&,const string&,const string&,double,const Preflight&){posted="PREFLIGHT_REJECTED";}
+string BuildArxComment(const string&){return "ARX-fixture";}string lastErrorSeen;
+int GetLastError(){return 0;}
+void PostTradeEvidence(const long,const string,const bool,const ulong,const double);
+bool ReplayTradeEvidence(const long);
+void PostJson(const string&,const string&body){posted=body;}
+string JsonEscape(const string&s){return JString(s);}
 struct CTrade{
- void SetDeviationInPoints(double){}bool Buy(double,const string&,double,double,double,const string&){++calls;return true;}
- bool Sell(double,const string&,double,double,double,const string&){++calls;return true;}
- bool PositionClose(ulong){++calls;return true;}bool PositionModify(ulong,double sl,double tp){++calls;mutatedSL=sl;mutatedTP=tp;return true;}
- ulong ResultOrder(){return 42;}double ResultPrice(){return 1.2;}double ResultVolume(){return .02;}
- int ResultRetcode(){return TRADE_RETCODE_DONE;}string ResultComment(){return "fixture";}
+ void SetTypeFillingBySymbol(const string&){}
+ void SetDeviationInPoints(double){}bool Buy(double,const string&,double,double,double,const string&){++calls;return tradeResultOk;}
+ bool Sell(double,const string&,double,double,double,const string&){++calls;return tradeResultOk;}
+ bool PositionClose(ulong){++calls;return tradeResultOk;}bool PositionModify(ulong,double sl,double tp){++calls;mutatedSL=sl;mutatedTP=tp;return tradeResultOk;}
+ ulong ResultOrder(){return resultOrder;}ulong ResultDeal(){return resultDeal;}double ResultPrice(){return resultPrice;}double ResultVolume(){return resultVolume;}
+ int ResultRetcode(){return resultRetcode;}string ResultComment(){return "fixture";}
 }trade;
 void ArmReject(long,const string&,const string&){posted="ARM_REJECTED";}
-template<class...A>void PostResultStruct(long,const string&status,const string&reason,A...){posted=status+":"+reason;}
+template<class...A>void PostResultStruct(long,const string&status,const string&reason,A...){posted="{\"status\":"+JString(status)+",\"reason\":"+JString(reason)+"}";}
 #include "ArxManagementTarget.mqh"
+#include "ArxTradeResult.mqh"
 #include "management_wire.inc"
-void reset(){login=100;mode=ACCOUNT_TRADE_MODE_REAL;server="Venue-Server-1";native="EURUSD.a";volume=.02;oldSL=1.1;oldTP=1.3;positionSide=POSITION_TYPE_BUY;exists=true;connected=true;calls=selections=0;pollHook=nullptr;selectHook=nullptr;g_liveDoneCount=g_liveDoneNext=0;posted="";seen.clear();AllowOrderExecution=true;ReadOnlyMode=false;EnableLiveExecution=true;AllowPositionClose=AllowProtectionModify=true;}
+void reset(){tradeResultOk=true;resultRetcode=10009;resultDeal=43;resultOrder=42;resultVolume=.02;resultPrice=1.2;g_tradeEvidenceCount=g_tradeEvidenceNext=0;login=100;mode=ACCOUNT_TRADE_MODE_REAL;server="Venue-Server-1";native="EURUSD.a";volume=.02;oldSL=1.1;oldTP=1.3;positionSide=POSITION_TYPE_BUY;exists=true;connected=true;calls=selections=0;pollHook=nullptr;selectHook=nullptr;g_liveDoneCount=g_liveDoneNext=0;posted="";seen.clear();AllowOrderExecution=true;ReadOnlyMode=false;EnableLiveExecution=true;AllowPositionClose=AllowProtectionModify=true;}
 string target(bool modify=false){return string("{\"version\":1,\"accountLogin\":\"100\",\"observedServerName\":\"Venue-Server-1\",\"brokerTicket\":\"42\",\"symbol\":\"EURUSD.a\",\"side\":\"BUY\",\"volume\":0.02,\"currentStopLoss\":1.1,\"currentTakeProfit\":1.3,\"nextStopLoss\":1.2,\"action\":\"")+(modify?"TIGHTEN_SL":"EXIT")+"\"}";}
 string wire(bool live,bool modify=false,bool bound=true){return string("{\"id\":1,\"action\":\"")+(modify?"MODIFY_POSITION":"CLOSE_POSITION")+"\",\"commandId\":\"command-1\",\"commandType\":\""+(modify?"MODIFY_LIVE_SLTP":"CLOSE_LIVE_POSITION")+"\",\"symbol\":\"EURUSD.a\",\"side\":\"BUY\",\"requestedVolume\":0.02,\"stopLoss\":1.2,\"takeProfit\":1.3,\"sl\":1.2,\"tp\":1.3,\"positionTicket\":\"42\",\"secondsUntilExpiry\":30,\"payload\":{\"brokerTicket\":\"42\""+(bound?",\"managementTargetV1\":"+target(modify):"")+"}}"+(live?"":"");}
 void run(bool live,const string&w,bool modify=false){if(live){response="{\"command\":"+w+"}";PollAndExecuteLiveCommands();}else {response="{\"commands\":["+w+"]}";PollAndExecute();}(void)modify;}
@@ -142,4 +156,5 @@ int main(int argc,char**argv){
   reset();AllowOrderExecution=false;run(false,wire(false));check(calls==0,"legacy execution arm preserved");
  }
  std::cout<<checks<<" actual-handler checks passed; baseline="<<ARX_BASELINE<<" (no terminal/broker I/O)\n";
+ return 0;
 }

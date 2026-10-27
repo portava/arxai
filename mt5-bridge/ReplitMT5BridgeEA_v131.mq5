@@ -25,6 +25,7 @@
 
 #include <Trade/Trade.mqh>
 #include "ArxManagementTarget.mqh"
+#include "ArxTradeResult.mqh"
 
 //--- Inputs (configure on the EA chart properties dialog) ----------
 input string  ServerBaseUrl           = "https://your-replit-app.replit.app"; // e.g. https://<repl>.replit.app  (no trailing slash)
@@ -84,7 +85,7 @@ string   g_lastAppliedConfigVersion = "";
 long     g_timerTickCount    = 0;
 int      g_heartbeatPeriodS  = 5; // bound from HeartbeatPeriodSeconds in OnInit
 
-// Task #28 — EA-side exactly-once dedup memory. A bounded ring of recently
+// EA-side bounded RAM duplicate suppression. A ring of recently
 // processed live commandIds and the status the EA already reported for each.
 // If the server re-serves a commandId the EA already acted on (e.g. its result
 // POST was lost), the EA re-acknowledges the SAME prior status instead of
@@ -92,6 +93,7 @@ int      g_heartbeatPeriodS  = 5; // bound from HeartbeatPeriodSeconds in OnInit
 #define ARX_LIVE_DEDUP_CAP 64
 string   g_liveDoneIds[ARX_LIVE_DEDUP_CAP];
 string   g_liveDoneStatus[ARX_LIVE_DEDUP_CAP];
+string   g_liveDoneBody[ARX_LIVE_DEDUP_CAP]; // bounded RAM replay, not durable exactly-once
 int      g_liveDoneCount      = 0;   // number of valid slots (caps at CAP)
 int      g_liveDoneNext       = 0;   // next write slot (ring index)
 int      g_snapshotPeriodS   = 5; // bound from SnapshotPeriodSeconds in OnInit
@@ -584,13 +586,14 @@ int LiveDoneIndexOf(const string commandId)
    return -1;
 }
 
-void LiveDoneRecord(const string commandId, const string status)
+void LiveDoneRecord(const string commandId, const string status, const string body="")
 {
    int existing = LiveDoneIndexOf(commandId);
-   if(existing >= 0) { g_liveDoneStatus[existing] = status; return; }
+   if(existing >= 0) { g_liveDoneStatus[existing] = status; g_liveDoneBody[existing]=body; return; }
    int slot = g_liveDoneNext;
    g_liveDoneIds[slot]    = commandId;
    g_liveDoneStatus[slot] = status;
+   g_liveDoneBody[slot] = body;
    g_liveDoneNext = (g_liveDoneNext + 1) % ARX_LIVE_DEDUP_CAP;
    if(g_liveDoneCount < ARX_LIVE_DEDUP_CAP) g_liveDoneCount++;
 }
@@ -633,17 +636,18 @@ void PollAndExecuteLiveCommands()
    string commandId   = JsonReadString(resp, "commandId");
    if(StringLen(commandId) == 0) return; // no command available
 
-   // Task #28 — exactly-once: if we already processed this commandId, do NOT
-   // execute again. Re-acknowledge the SAME status we reported before so the
-   // server can settle the (idempotent) duplicate and stop re-serving it.
+   // Bounded process-local duplicate suppression. Replay the exact evidence
+   // body when available; a status-only memory entry cannot recreate a fill.
    int doneIdx = LiveDoneIndexOf(commandId);
    if(doneIdx >= 0)
    {
-      string priorStatus = g_liveDoneStatus[doneIdx];
-      string dup = StringFormat("{\"commandId\":\"%s\",\"status\":\"%s\",\"reason\":\"DUPLICATE_IGNORED_BY_EA\"}",
-                                commandId, priorStatus);
-      string dupAck;
-      HttpPost("/api/mt5/live-command-result", dup, dupAck, "LIVERES");
+      string dup=g_liveDoneBody[doneIdx];
+      if(StringLen(dup)==0) {
+         string prior=g_liveDoneStatus[doneIdx];
+         if(prior!="LIVE_REJECTED" && prior!="STALE_COMMAND_REJECTED") prior="LIVE_UNKNOWN";
+         dup=StringFormat("{\"commandId\":\"%s\",\"status\":\"%s\",\"reason\":\"DUPLICATE_EVIDENCE_UNAVAILABLE\"}",commandId,prior);
+      }
+      string dupAck; HttpPost("/api/mt5/live-command-result",dup,dupAck,"LIVERES");
       return;
    }
 
@@ -755,9 +759,12 @@ void PollAndExecuteLiveCommands()
    double fillPrice = 0.0;
    int retcode = 0;
    string brokerMsg = "";
+   string resultKind = "";
+   double requestedForResult=lot;
 
    if(commandType == "PLACE_LIVE_MARKET_ORDER")
    {
+      resultKind="ENTRY";
       bool isBuy = (side == "BUY");
       double price = isBuy ? SymbolInfoDouble(symbol, SYMBOL_ASK)
                            : SymbolInfoDouble(symbol, SYMBOL_BID);
@@ -784,15 +791,10 @@ void PollAndExecuteLiveCommands()
          string rejectedAck; HttpPost("/api/mt5/live-command-result",rejected,rejectedAck,"LIVERES");
          LiveDoneRecord(commandId,"LIVE_REJECTED"); return;
       }
+      resultKind="CLOSE";
       ok = trade.PositionClose(tkt);
       ticket    = tkt;
-      // v1.28: capture the broker's real close fill price + executed volume
-      // so the server can compute realised P/L deterministically. The
-      // server-side P/L guard previously had to mark closed cycles as
-      // pnlStatus=UNKNOWN whenever close fillPrice was 0.0 / missing.
       fillPrice = trade.ResultPrice();
-      double closedVol = trade.ResultVolume();
-      if(closedVol > 0.0) lot = closedVol; // executedVolume field below uses `lot`
       retcode = (int)trade.ResultRetcode();
       brokerMsg = trade.ResultComment();
    }
@@ -808,6 +810,7 @@ void PollAndExecuteLiveCommands()
          string rejectedAck; HttpPost("/api/mt5/live-command-result",rejected,rejectedAck,"LIVERES");
          LiveDoneRecord(commandId,"LIVE_REJECTED"); return;
       }
+      resultKind="MODIFY"; requestedForResult=0;
       ok = trade.PositionModify(tkt, sl, tp);
       ticket  = tkt;
       retcode = (int)trade.ResultRetcode();
@@ -823,26 +826,18 @@ void PollAndExecuteLiveCommands()
       return;
    }
 
-   string status = ok ? "LIVE_FILLED" : "LIVE_REJECTED";
-   // v1.28: for CLOSE results, also include the explicit `closeFillPrice`
-   // field alongside the existing `fillPrice` so downstream readers that key
-   // off the semantic close-fill name see a real number (server P/L guard
-   // accepts the existing `fillPrice` field — `closeFillPrice` is sent for
-   // clarity and forward-compat).
-   string closeFillSuffix = "";
-   if(commandType == "CLOSE_LIVE_POSITION" && ok)
-      closeFillSuffix = StringFormat(",\"closeFillPrice\":%.5f", fillPrice);
-   string body = StringFormat(
-      "{\"commandId\":\"%s\",\"status\":\"%s\",\"brokerTicket\":\"%I64u\",\"fillPrice\":%.5f,\"executedVolume\":%.2f,\"mt5Retcode\":%d,\"brokerMessage\":%s,\"reportedEaVersion\":\"1.31\"%s}",
-      commandId, status, ticket, fillPrice, lot, retcode, JString(brokerMsg), closeFillSuffix);
-   string ack;
-   HttpPost("/api/mt5/live-command-result", body, ack, "LIVERES");
+   // A successful CTrade call only validates basic request structures.
+   // Retcode + deal + actual broker volume/price determine the reported state.
+   ulong resultDeal=trade.ResultDeal();
+   double resultVolume=trade.ResultVolume();
+   string status=ArxTradeResultOutcome(resultKind,ok,retcode,resultDeal,trade.ResultOrder(),requestedForResult,resultVolume,fillPrice);
+   string body=StringFormat("{\"commandId\":\"%s\",\"status\":\"%s\",\"brokerTicket\":\"%I64u\",\"positionTicket\":\"%I64u\",%s,\"brokerMessage\":%s,\"reportedEaVersion\":\"1.31\"}",
+      commandId,status,ticket,resultKind=="ENTRY"?(ulong)0:ticket,ArxTradeResultFields(resultKind,ok,retcode,resultDeal,trade.ResultOrder(),requestedForResult,resultVolume,fillPrice),JString(brokerMsg));
+   // Save complete evidence before the HTTP attempt. This survives only this
+   // EA process and ring capacity; a restart still needs durable reconciliation.
+   LiveDoneRecord(commandId,status,body);
+   string ack; HttpPost("/api/mt5/live-command-result",body,ack,"LIVERES");
 
-   // Task #28 — record the outcome in dedup memory so a re-served copy of this
-   // commandId is never executed a second time, and force an immediate account
-   // + live-positions snapshot so the server reconciles balances and the
-   // closedAt of any just-closed position without waiting for the next cycle.
-   LiveDoneRecord(commandId, status);
    SendAccountSnapshotNow();
    SyncLivePositionsNow();
 }
@@ -958,7 +953,7 @@ void SendHeartbeatNow()
    body += "\"supportsRemoteConfig\":"      + JBool(true) + ",";
    body += "\"supportsCommandTtl\":"        + JBool(true) + ",";
    body += "\"supportsManagementTargetV1\":true,";
-   body += "\"supportsExactlyOnce\":"       + JBool(true) + ",";
+   body += "\"supportsExactlyOnce\":"       + JBool(false) + ",";
    body += "\"supportsSymbolCapabilities\":"+ JBool(true) + ",";
    body += "\"supportsEmergencyClose\":"    + JBool(true) + ",";
    body += "\"supportsTokenRotation\":"     + JBool(true) + ",";

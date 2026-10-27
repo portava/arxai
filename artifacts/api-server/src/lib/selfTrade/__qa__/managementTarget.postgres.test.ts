@@ -2428,3 +2428,104 @@ it("byte prefilter and UTF16 envelope budget remain distinct for Unicode payload
   const rows=await db.select().from(mailbox);assert.equal(rows.find(r=>r.id===large!.id)!.status,"PENDING");
   assert.equal(rows.filter(r=>r.status==="PENDING").length,2);
 });
+
+// Versioned synchronous CTrade reports pass through both actual route handlers
+// and the existing atomic result/outbox/position consumers. Only transport,
+// terminal and broker operations remain controlled fixtures.
+let terminalBodies: any[] | undefined;
+function actualTerminalBody(legacy:boolean,kind:string,scenario:string){
+  if(!terminalBodies){
+    const runner=fileURLToPath(new URL("../../../../../../mt5-bridge/tests/run_management_target.py",import.meta.url));
+    const compiled=spawnSync("python3",[runner,"--result-evidence","--emit"],{encoding:"utf8",timeout:20000,env:{...process.env,TMPDIR:"/private/tmp"}});
+    assert.equal(compiled.status,0,`${compiled.error??""} ${compiled.stderr}`);
+    terminalBodies=compiled.stdout.trim().split("\n").map(line=>JSON.parse(line));
+  }
+  return structuredClone(terminalBodies.find(r=>r.path===(legacy?"legacy":"live")&&r.kind===kind&&r.scenario===scenario)!.body);
+}
+async function terminalResultRoute(legacy:boolean,commandId:string|number,body:any,connectionId=1){
+  const route=(legacy?mt5Router:mt5LiveRouter).stack.find((l:any)=>l.route?.path===(legacy?"/mt5/command-result":"/mt5/live-command-result"))!.route!;
+  const [connection]=await db.select().from(bridges).where(eq(bridges.id,connectionId));
+  let result:any;let status=200;
+  const res:any={status(n:number){status=n;return res;},json(b:any){result=b;return res;}};
+  await route.stack.at(-1)!.handle({mt5Connection:connection,body:{...body,commandId},headers:{},log:{info(){},warn(){},error(){}}},res,()=>{});
+  return {status,body:result};
+}
+async function terminalEntryFixture(legacy:boolean){
+  const [row]=await db.insert(commands).values({commandId:"terminal-entry",userId:9,bridgeConnectionId:1,commandType:"PLACE_LIVE_MARKET_ORDER",symbol:"EURUSD.a",side:"BUY",orderType:"MARKET_BUY",requestedVolume:.02,status:"SENT_TO_MT5_LIVE"}).returning();
+  await db.insert(reservations).values({userId:9,commandId:row!.commandId,symbol:row!.symbol,lotSize:.02,status:"RESERVED"});
+  const [mail]=legacy?await db.insert(mailbox).values({userId:9,requestedByUserId:9,mt5ConnectionId:1,action:"OPEN_MARKET",symbol:"EURUSD.a",lot:.02,status:"DELIVERED",payload:{bridged:"LIVE_PHASE_B",liveCommandId:row!.commandId,liveCommandOwnerUserId:9}}).returning():[];
+  return {row:row!,id:mail?.id??row!.commandId};
+}
+async function terminalBoundFixture(legacy:boolean,modify=false){
+  await updateConnection(1,{accountNumber:"100"});
+  await db.update(commands).set({accountLogin:"100",brokerTicket:"42",requestedVolume:.02,executedVolume:.02}).where(eq(commands.commandId,"entry-1"));
+  await db.update(positions).set({accountLogin:"100",brokerTicket:"42",volume:.02,stopLoss:1.1,takeProfit:1.3}).where(eq(positions.id,1));
+  await db.update(executions).set({brokerTicket:"42",intendedVolume:.02,managementState:{pendingManagement:{claimId:"claim-1",action:modify?"TIGHTEN_SL":"EXIT",stopLoss:modify?1.2:null,requestedAt:new Date().toISOString()}}}).where(eq(executions.id,1));
+  const row=await queuedManagement();const mail=legacy?await mirror(row):null;
+  return {row,id:mail?.id??row.commandId};
+}
+for(const legacy of [false,true]){
+ const label=legacy?"legacy mailbox":"direct live";
+ it(`${label}: actual accepted/partial/full reports retain then fulfill exposure, retries and late reports do not regress`,async()=>{
+  const {row,id}=await terminalEntryFixture(legacy);
+  for(const [scenario,expected,reserved] of [["accepted","LIVE_ACKNOWLEDGED","RESERVED"],["partial","LIVE_PARTIALLY_FILLED","RESERVED"],["full","LIVE_FILLED","FULFILLED"]]){
+   const result=await terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY",scenario));
+   assert.equal(result.status,200,JSON.stringify(result.body));
+   const [stored]=await db.select().from(commands).where(eq(commands.commandId,row.commandId));
+   assert.equal(stored!.status,expected);assert.equal((await db.select().from(reservations))[0]!.status,reserved);
+   if(scenario==="partial")assert.equal(stored!.executedVolume,.00789123);
+  }
+  const events=await db.select().from(executionEvents).where(eq(executionEvents.commandId,row.id));
+  await Promise.all(Array.from({length:3},()=>terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY","full"))));
+  assert.equal((await db.select().from(executionEvents).where(eq(executionEvents.commandId,row.id))).length,events.length);
+  await terminalResultRoute(legacy,id,{...actualTerminalBody(legacy,"ENTRY","partial"),mt5Comment:"late partial",brokerMessage:"late partial"});
+  assert.equal((await db.select().from(commands).where(eq(commands.commandId,row.commandId)))[0]!.status,"LIVE_FILLED");
+  assert.equal((await db.select().from(reservations))[0]!.status,"FULFILLED");
+ });
+ it(`${label}: actual missing-volume success never falls back to requested volume; late full is retained for reconciliation`,async()=>{
+  const {row,id}=await terminalEntryFixture(legacy);
+  const body={...actualTerminalBody(legacy,"ENTRY","missing_volume"),status:"LIVE_FILLED",executedVolume:.02,filledLotSize:.02};
+  const response=await terminalResultRoute(legacy,id,body);assert.equal(response.status,200,JSON.stringify(response.body));
+  const [stored]=await db.select().from(commands).where(eq(commands.commandId,row.commandId));
+  assert.equal(stored!.status,"LIVE_UNKNOWN");assert.equal(stored!.executedVolume,null);assert.equal(stored!.filledAt,null);
+  assert.equal((await db.select().from(reservations))[0]!.status,"RESERVED");
+  await terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY","full"));
+  assert.equal((await db.select().from(commands).where(eq(commands.commandId,row.commandId)))[0]!.status,"LIVE_UNKNOWN");
+  assert.equal((await db.select().from(reservations))[0]!.status,"RESERVED");
+  assert.ok((await db.select().from(executionEvents).where(eq(executionEvents.commandId,row.id))).some(e=>e.eventType==="LATE_RESULT_RETAINED"));
+ });
+ it(`${label}: actual definite broker rejection releases reservation without fabricated execution`,async()=>{
+  const {row,id}=await terminalEntryFixture(legacy);assert.equal((await terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY","rejected"))).status,200);
+  const [stored]=await db.select().from(commands).where(eq(commands.commandId,row.commandId));assert.equal(stored!.status,"LIVE_REJECTED");assert.equal(stored!.executedVolume,null);
+  assert.equal((await db.select().from(reservations))[0]!.status,"RELEASED");
+ });
+ it(`${label}: bound partial close and a later residual request never masquerade as full position closure`,async()=>{
+  const {row,id}=await terminalBoundFixture(legacy);
+  assert.equal((await terminalResultRoute(legacy,id,actualTerminalBody(legacy,"CLOSE","partial"))).status,200);
+  assert.equal((await ledgerRows())[0].closedAt,null);assert.equal((await ledgerRows())[0].volume,.02);
+  const residual={...actualTerminalBody(legacy,"CLOSE","full"),requestedVolume:.01210877,resultVolume:.01210877};
+  assert.equal((await terminalResultRoute(legacy,id,residual)).status,200);
+  assert.equal((await db.select().from(commands).where(eq(commands.commandId,row.commandId)))[0]!.status,"LIVE_UNKNOWN");
+  assert.equal((await ledgerRows())[0].closedAt,null);assert.equal((await ledgerRows())[0].volume,.02);
+  assert.equal((await db.select().from(executions).where(eq(executions.id,1)))[0]!.realizedPnl,null);
+ });
+ it(`${label}: bound full close applies once with unverified accounting hold; protection completion has no fill`,async()=>{
+  const {id}=await terminalBoundFixture(legacy);
+  const body=actualTerminalBody(legacy,"CLOSE","full");assert.equal((await terminalResultRoute(legacy,id,body)).status,200);
+  assert.ok((await ledgerRows())[0].closedAt);assert.equal((await reconcileAgentExecutions(4)).closed,1);
+  const {hasUnresolvedAgentAccounting}=await import("../accountingHold.js");assert.equal(await hasUnresolvedAgentAccounting(db,4),true);
+  await terminalResultRoute(legacy,id,body);assert.equal((await reconcileAgentExecutions(4)).closed,0);
+  await resetFixture();const modify=await terminalBoundFixture(legacy,true);
+  assert.equal((await terminalResultRoute(legacy,modify.id,actualTerminalBody(legacy,"MODIFY","full"))).status,200);
+  const [stored]=await db.select().from(commands).where(eq(commands.commandId,modify.row.commandId));
+  assert.equal(stored!.status,"LIVE_FILLED");assert.equal(stored!.executedVolume,null);assert.equal(stored!.fillPrice,null);assert.equal((await ledgerRows())[0].closedAt,null);
+ });
+ it(`${label}: result route refuses crossed bridge and retains raw v1 evidence only for owned command`,async()=>{
+  const {row,id}=await terminalEntryFixture(legacy);
+  const denied=await terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY","full"),2);assert.ok([404,409].includes(denied.status));
+  assert.equal((await db.select().from(commands).where(eq(commands.commandId,row.commandId)))[0]!.status,"SENT_TO_MT5_LIVE");
+  await terminalResultRoute(legacy,id,actualTerminalBody(legacy,"ENTRY","full"));
+  const events=await db.select().from(executionEvents).where(eq(executionEvents.commandId,row.id));
+  assert.ok(events.some(e=>(e.payload as any)?.terminalResultEvidence?.resultDeal==="43"));
+ });
+}
