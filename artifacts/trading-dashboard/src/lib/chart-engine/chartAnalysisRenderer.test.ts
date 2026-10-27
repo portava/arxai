@@ -165,11 +165,11 @@ describe("Replay cache renderer ownership",()=>{
     const f=fixture(200);f.renderer.setStudies(STUDY_DEFAULTS,f.candles);
     f.renderer.refresh(f.candles,0,true,replay);
     const owned=[...(f.renderer as any).studies];
-    expect(owned.every(study=>study.calculator.replayCache.inputs.length===200)).toBe(true);
+    expect(owned.every(study=>study.calculator.replayCache.count===200)).toBe(true);
     f.renderer.batchViewport(()=>{f.move(0,10);f.renderer.refresh(f.candles.slice(0,2),2,true,replay);});
     expect(f.handles.every(line=>line.data.every((point:any)=>point.time<=f.candles[1]!.time))).toBe(true);
     expect(f.renderer.inspect(f.candles.at(-1)!.time).every(row=>row.values.every(item=>item.value===null))).toBe(true);
-    expect(owned.every(study=>study.calculator.replayCache.inputs.length===200)).toBe(true);
+    expect(owned.every(study=>study.calculator.replayCache.count===200)).toBe(true);
     f.renderer.setStudies(STUDY_DEFAULTS.slice(0,1),f.candles.slice(0,2));
     expect(owned.every(study=>study.calculator.replayCache===null)).toBe(true);
     f.renderer.refresh(f.candles,0,true,replay);const current=(f.renderer as any).studies[0].calculator;

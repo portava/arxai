@@ -94,13 +94,44 @@ const REPLAY_OHLC_STUDIES = new Set<StudyKind>([
 ]);
 interface ReplayStudyCache {
   key: string;
-  inputs: ChartEngineCandle[];
+  count: number;
+  capacity: number;
+  channels: number;
+  // Private numeric copies preserve exact values without allocating/freezing
+  // every historical point on its first reveal. NaN represents output null;
+  // normalized study outputs are otherwise finite, including signed zero.
+  inputs: Float64Array;
+  outputs: Float64Array;
   states: State[];
-  points: StudyPoint[];
+  points: (StudyPoint | undefined)[];
 }
-function sameReplayInput(a: ChartEngineCandle, b: ChartEngineCandle): boolean {
-  return Object.is(a.time,b.time) && Object.is(a.open,b.open) && Object.is(a.high,b.high) &&
-    Object.is(a.low,b.low) && Object.is(a.close,b.close);
+const REPLAY_INPUT_WIDTH = 5;
+function sameReplayInput(bar: ChartEngineCandle, cache: ReplayStudyCache, index: number): boolean {
+  const offset = index * REPLAY_INPUT_WIDTH;
+  return Object.is(bar.time,cache.inputs[offset]) && Object.is(bar.open,cache.inputs[offset+1]) &&
+    Object.is(bar.high,cache.inputs[offset+2]) && Object.is(bar.low,cache.inputs[offset+3]) &&
+    Object.is(bar.close,cache.inputs[offset+4]);
+}
+function reserveReplayInputs(cache: ReplayStudyCache, count: number): void {
+  if (cache.capacity >= count) return;
+  const capacity = Math.min(MAX_REPLAY_BARS,Math.max(count,256,cache.capacity*2));
+  const inputs = new Float64Array(capacity*REPLAY_INPUT_WIDTH);
+  const outputs = new Float64Array(capacity*cache.channels);
+  inputs.set(cache.inputs.subarray(0,cache.count*REPLAY_INPUT_WIDTH));
+  outputs.set(cache.outputs.subarray(0,cache.count*cache.channels));
+  cache.inputs=inputs;cache.outputs=outputs;cache.capacity=capacity;
+}
+function earnedReplayPoint(cache: ReplayStudyCache, index: number): StudyPoint {
+  if (index<0 || index>=cache.count) throw new RangeError("Unrevealed Replay checkpoint");
+  const existing=cache.points[index];
+  if (existing) return existing;
+  const values=Array.from({length:cache.channels},(_,channel)=>{
+    const value=cache.outputs[index*cache.channels+channel]!;
+    return Number.isNaN(value)?null:value;
+  });
+  const point={time:cache.inputs[index*REPLAY_INPUT_WIDTH]!,values};
+  Object.freeze(values);Object.freeze(point);cache.points[index]=point;
+  return point;
 }
 function replayStudyKey(context: ReplayStudyContext, config: ChartStudy): string | null {
   if (!Number.isSafeInteger(context.ownerId) || context.ownerId<=0 || !/^[a-f0-9]{64}$/i.test(context.sourceIdentity) ||
@@ -134,31 +165,41 @@ export class StudyCalculator {
   /** Reuse only checkpoints actually earned earlier in this explicit replay
    * identity. Public points/state always stop at the supplied revealed prefix. */
   calculateReplay(bars: ChartEngineCandle[], context: ReplayStudyContext): void {
-    const key = replayStudyKey(context,this.config);
+    const key=replayStudyKey(context,this.config);
     if (!key || !bars.length || bars.length>MAX_REPLAY_BARS) {
       this.calculate(bars,0,false);
       return;
     }
-    let cache = this.replayCache;
-    if (cache?.key!==key) cache={key,inputs:[],states:[],points:[]};
+    let cache=this.replayCache;
+    if (cache?.key!==key) cache={key,count:0,capacity:0,channels:studyDefinition(this.config.kind).channels.length,
+      inputs:new Float64Array(0),outputs:new Float64Array(0),states:[],points:[]};
     let shared=0;
-    while(shared<bars.length && shared<cache.inputs.length && sameReplayInput(bars[shared]!,cache.inputs[shared]!))shared++;
-    // Restore only the requested matching prefix. Cached future checkpoints are
-    // private; inspect/render/reader cannot enumerate them through points.
+    while (shared<bars.length && shared<cache.count && sameReplayInput(bars[shared]!,cache,shared)) shared++;
+    const rewind=shared===bars.length && bars.length<cache.count;
+    if (shared<bars.length && shared<cache.count) {
+      // A correction invalidates descendants, including their private numeric
+      // records. Capacity is bounded; discarded records cannot be restored.
+      cache.inputs.fill(NaN,shared*REPLAY_INPUT_WIDTH,cache.count*REPLAY_INPUT_WIDTH);
+      cache.outputs.fill(NaN,shared*cache.channels,cache.count*cache.channels);
+      cache.count=shared;cache.states.length=shared;cache.points.length=shared;
+    }
     this.states=cache.states.slice(0,shared);
     this.points.length=shared;
-    for(let i=0;i<shared;i++)this.points[i]=cache.points[i]!;
-    if(shared<bars.length){
+    // First rewind pays for preparing the previously earned immutable objects.
+    // This is synchronous and separately measured; no idle or future-bar work.
+    if (rewind) for (let i=0;i<cache.count;i++) earnedReplayPoint(cache,i);
+    for (let i=0;i<shared;i++) this.points[i]=earnedReplayPoint(cache,i);
+    if (shared<bars.length) {
+      reserveReplayInputs(cache,bars.length);
       this.calculateCurrent(bars,shared,false);
-      // A corrected/prepended input invalidates every cached descendant. Copies
-      // prevent caller mutation after insertion from changing the stored key.
-      cache.inputs.length=shared;
-      for(let i=shared;i<bars.length;i++){
-        const bar=bars[i]!;
-        cache.inputs.push({time:bar.time,open:bar.open,high:bar.high,low:bar.low,close:bar.close});
-        Object.freeze(this.points[i]!.values);Object.freeze(this.points[i]!);
+      for (let i=shared;i<bars.length;i++) {
+        const bar=bars[i]!,offset=i*REPLAY_INPUT_WIDTH,point=this.points[i]!;
+        cache.inputs[offset]=bar.time;cache.inputs[offset+1]=bar.open;
+        cache.inputs[offset+2]=bar.high;cache.inputs[offset+3]=bar.low;cache.inputs[offset+4]=bar.close;
+        for (let channel=0;channel<cache.channels;channel++) cache.outputs[i*cache.channels+channel]=point.values[channel]??NaN;
       }
-      cache.states=this.states.slice();cache.points=this.points.slice();
+      cache.count=bars.length;cache.points.length=bars.length;
+      cache.states=this.states.slice();
     }
     this.replayCache=cache;
   }

@@ -22,7 +22,7 @@ describe("Smart Chart studies, styles and drawing ownership",()=>{
     adapter.setStudies([STUDY_DEFAULTS[0]!]);
     const calc=(adapter as any).analysis.studies[0].calculator;
     const replay={sessionId:"one",ownerId:7,source:"deriv_public",sourceIdentity:"a".repeat(64),symbol:"V75",timeframe:"M15"};
-    const earn=()=>{adapter.setCandles(bars,{revealLatest:true,replay});expect(calc.replayCache.inputs).toHaveLength(100);};
+    const earn=()=>{adapter.setCandles(bars,{revealLatest:true,replay});expect(calc.replayCache.count).toBe(100);};
     earn();adapter.setCandles(bars);expect(calc.replayCache).toBeNull();
     earn();adapter.setFeedState({livePriceAffordance:false,source:"other"});expect(calc.replayCache).toBeNull();
     earn();adapter.updateActiveCandle({...bars.at(-1)!,close:1.85});expect(calc.replayCache).toBeNull();
