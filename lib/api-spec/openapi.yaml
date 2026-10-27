@@ -13869,24 +13869,26 @@ components:
     ChartTruthSubMetric:
       type: object
       description: A single weighted sub-metric contributing to the Chart Truth Score.
-      required: [key, label, weight, rawScore, weightedScore, detail]
+      required: [key, label, weight, rawScore, weightedScore, evidenceStatus, detail]
       properties:
         key: { type: string }
         label: { type: string }
-        weight: { type: number, description: Contribution weight (0–1, sum=1.0) }
-        rawScore: { type: number, description: Raw 0–100 score for this sub-metric }
-        weightedScore: { type: number, description: rawScore × weight }
+        weight: { type: number, minimum: 0, maximum: 1, description: "Contribution weight (0–1, sum=1.0)" }
+        rawScore: { type: [number, "null"], minimum: 0, maximum: 100, description: Measured 0–100 score; null when this property has not been measured }
+        weightedScore: { type: [number, "null"], minimum: 0, maximum: 100, description: rawScore × weight; null evidence earns no aggregate points }
+        evidenceStatus: { type: string, enum: [measured, unavailable] }
         detail: { type: string, description: Plain-language explanation of the score }
 
     ChartTruthScore:
       type: object
       description: |
         Weighted 10-sub-metric score (0–100) answering "is the data real, fresh,
-        correctly mapped/timed/mirrored/rendered?" Derived entirely from Phase 1
-        signals — never fabricated.
+        correctly mapped/timed/mirrored/rendered?" Only measured properties earn
+        points. Unavailable properties have null sub-scores and weights are not
+        redistributed. This is an earned evidence score, not a probability.
         Labels: Verified (95–100), Healthy (85–94), Usable-but-watch (75–84),
         Degraded (60–74), Read-blocked (<60).
-      required: [score, label, subMetrics, primaryConcern, note]
+      required: [score, label, subMetrics, evidenceCoverage, unmeasuredKeys, primaryConcern, note]
       properties:
         score: { type: number, description: Aggregate weighted 0–100 score }
         label:
@@ -13895,6 +13897,10 @@ components:
         subMetrics:
           type: array
           items: { $ref: "#/components/schemas/ChartTruthSubMetric" }
+        evidenceCoverage: { type: number, minimum: 0, maximum: 1, description: Fraction of total weight with measured evidence (0–1) }
+        unmeasuredKeys:
+          type: array
+          items: { type: string }
         primaryConcern: { type: ["string", "null"], description: Worst sub-metric detail, or null when all healthy }
         note: { type: string }
 

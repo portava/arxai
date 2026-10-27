@@ -5248,6 +5248,18 @@ export const GetChartCandlesQueryParams = zod.object({
     .default(getChartCandlesQueryLimitDefault),
 });
 
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMin = 0;
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMax = 1;
+
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemRawScoreMin = 0;
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemRawScoreMax = 100;
+
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightedScoreMin = 0;
+export const getChartCandlesResponseChartTruthScoreSubMetricsItemWeightedScoreMax = 100;
+
+export const getChartCandlesResponseChartTruthScoreEvidenceCoverageMin = 0;
+export const getChartCandlesResponseChartTruthScoreEvidenceCoverageMax = 1;
+
 export const GetChartCandlesResponse = zod.object({
   symbol: zod.string(),
   displaySymbol: zod.string(),
@@ -5720,11 +5732,40 @@ export const GetChartCandlesResponse = zod.object({
           .object({
             key: zod.string(),
             label: zod.string(),
-            weight: zod.number().describe("Contribution weight (0–1"),
+            weight: zod
+              .number()
+              .min(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMin,
+              )
+              .max(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemWeightMax,
+              )
+              .describe("Contribution weight (0–1, sum=1.0)"),
             rawScore: zod
               .number()
-              .describe("Raw 0–100 score for this sub-metric"),
-            weightedScore: zod.number().describe("rawScore × weight"),
+              .min(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemRawScoreMin,
+              )
+              .max(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemRawScoreMax,
+              )
+              .nullable()
+              .describe(
+                "Measured 0–100 score; null when this property has not been measured",
+              ),
+            weightedScore: zod
+              .number()
+              .min(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemWeightedScoreMin,
+              )
+              .max(
+                getChartCandlesResponseChartTruthScoreSubMetricsItemWeightedScoreMax,
+              )
+              .nullable()
+              .describe(
+                "rawScore × weight; null evidence earns no aggregate points",
+              ),
+            evidenceStatus: zod.enum(["measured", "unavailable"]),
             detail: zod
               .string()
               .describe("Plain-language explanation of the score"),
@@ -5733,6 +5774,12 @@ export const GetChartCandlesResponse = zod.object({
             "A single weighted sub-metric contributing to the Chart Truth Score.",
           ),
       ),
+      evidenceCoverage: zod
+        .number()
+        .min(getChartCandlesResponseChartTruthScoreEvidenceCoverageMin)
+        .max(getChartCandlesResponseChartTruthScoreEvidenceCoverageMax)
+        .describe("Fraction of total weight with measured evidence (0–1)"),
+      unmeasuredKeys: zod.array(zod.string()),
       primaryConcern: zod
         .string()
         .nullable()
@@ -6091,6 +6138,18 @@ export const GetMeChartIntelligenceQueryParams = zod.object({
     .max(getMeChartIntelligenceQueryLimitMax)
     .default(getMeChartIntelligenceQueryLimitDefault),
 });
+
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMin = 0;
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMax = 1;
+
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemRawScoreMin = 0;
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemRawScoreMax = 100;
+
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightedScoreMin = 0;
+export const getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightedScoreMax = 100;
+
+export const getMeChartIntelligenceResponseStateChartTruthScoreEvidenceCoverageMin = 0;
+export const getMeChartIntelligenceResponseStateChartTruthScoreEvidenceCoverageMax = 1;
 
 export const GetMeChartIntelligenceResponse = zod.object({
   state: zod
@@ -7297,11 +7356,40 @@ export const GetMeChartIntelligenceResponse = zod.object({
               .object({
                 key: zod.string(),
                 label: zod.string(),
-                weight: zod.number().describe("Contribution weight (0–1"),
+                weight: zod
+                  .number()
+                  .min(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMin,
+                  )
+                  .max(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightMax,
+                  )
+                  .describe("Contribution weight (0–1, sum=1.0)"),
                 rawScore: zod
                   .number()
-                  .describe("Raw 0–100 score for this sub-metric"),
-                weightedScore: zod.number().describe("rawScore × weight"),
+                  .min(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemRawScoreMin,
+                  )
+                  .max(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemRawScoreMax,
+                  )
+                  .nullable()
+                  .describe(
+                    "Measured 0–100 score; null when this property has not been measured",
+                  ),
+                weightedScore: zod
+                  .number()
+                  .min(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightedScoreMin,
+                  )
+                  .max(
+                    getMeChartIntelligenceResponseStateChartTruthScoreSubMetricsItemWeightedScoreMax,
+                  )
+                  .nullable()
+                  .describe(
+                    "rawScore × weight; null evidence earns no aggregate points",
+                  ),
+                evidenceStatus: zod.enum(["measured", "unavailable"]),
                 detail: zod
                   .string()
                   .describe("Plain-language explanation of the score"),
@@ -7310,6 +7398,16 @@ export const GetMeChartIntelligenceResponse = zod.object({
                 "A single weighted sub-metric contributing to the Chart Truth Score.",
               ),
           ),
+          evidenceCoverage: zod
+            .number()
+            .min(
+              getMeChartIntelligenceResponseStateChartTruthScoreEvidenceCoverageMin,
+            )
+            .max(
+              getMeChartIntelligenceResponseStateChartTruthScoreEvidenceCoverageMax,
+            )
+            .describe("Fraction of total weight with measured evidence (0–1)"),
+          unmeasuredKeys: zod.array(zod.string()),
           primaryConcern: zod
             .string()
             .nullable()

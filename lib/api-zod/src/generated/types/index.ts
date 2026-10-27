@@ -503,6 +503,7 @@ export * from "./chartTrendReadRegime";
 export * from "./chartTruthScore";
 export * from "./chartTruthScoreLabel";
 export * from "./chartTruthSubMetric";
+export * from "./chartTruthSubMetricEvidenceStatus";
 export * from "./clearAlertsResult";
 export * from "./closePaperOrder200";
 export * from "./closePositionBody";
