@@ -176,7 +176,7 @@ export default function LiveChartPage() {
         <AlertTriangle className="mt-0.5 h-4 w-4 text-warning" />
         <p>
           {mode.isLiveShared
-            ? <>Live chart active. The chart itself is read-only — orders only dispatch after you <strong>review and confirm</strong> in the trade ticket, and every server safety check still applies.</>
+            ? <>Read-only chart. Check the chart's feed status for current data. Orders only dispatch after you <strong>review and confirm</strong> in the trade ticket, and every server safety check still applies.</>
             : <>Read-only chart. The trade ticket on this page still requires your confirmation, and in {mode.cleanModeLabel} no real broker order is placed.</>}
         </p>
       </div>
