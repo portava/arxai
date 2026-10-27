@@ -31,11 +31,13 @@
  *   - Never prints a seeded password or a raw bridge token to stdout.
  *   - Cleans up ONLY the isolated rows it created, in a finally block.
  *
- * Requires the API server running at $BASE_URL (defaults to http://localhost:80).
+ * Boots an isolated in-process API with the invite gate ON by default.
+ * BASE_URL can explicitly target an existing invite-gated API instead.
  * Run: pnpm --filter @workspace/scripts run test:security-regression
  */
 
 import { pool } from "@workspace/db";
+import { getSharedBaseUrl, closeSharedServer } from "./ci/inProcessAppHarness.js";
 import { passwordResetTokensRepo } from "@workspace/db/repositories";
 import { randomBytes, scryptSync, createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -71,7 +73,7 @@ import {
   type SignalScannerInput,
 } from "@workspace/domain/signal-intelligence";
 
-const BASE = (process.env.BASE_URL ?? "http://localhost:80").replace(/\/$/, "");
+let BASE = (process.env.BASE_URL ?? "").replace(/\/$/, "");
 
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = ""): void {
@@ -193,6 +195,12 @@ function signalInput(overrides: Partial<SignalEngineInput> = {}): SignalEngineIn
 }
 
 async function main(): Promise<void> {
+  if (!BASE) {
+    // Test only: the invalid-code limiter exists only with the invite gate ON.
+    // Never change the shared workflow's registration policy to satisfy a test.
+    process.env.ARX_BETA_INVITE_REQUIRED = "true";
+    BASE = await getSharedBaseUrl();
+  }
   const startRow = await pool.query<{ c: number }>(`SELECT count(*)::int AS c FROM arx_live_commands`);
   const start = startRow.rows[0]!.c;
 
@@ -584,7 +592,7 @@ async function main(): Promise<void> {
 }
 
 main()
-  .then(async () => { try { await pool.end(); } catch { /* ignore */ } process.exit(fail > 0 ? 1 : 0); })
-  .catch(async (err) => { console.error(err); try { await pool.end(); } catch { /* ignore */ } process.exit(1); });
+  .then(async () => { await closeSharedServer(); try { await pool.end(); } catch { /* ignore */ } process.exit(fail > 0 ? 1 : 0); })
+  .catch(async (err) => { console.error(err); await closeSharedServer(); try { await pool.end(); } catch { /* ignore */ } process.exit(1); });
 
 export {};

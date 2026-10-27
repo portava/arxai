@@ -221,8 +221,9 @@ export interface RubyStructuralReadParams {
   /** Client-observed: the chart feed was NOT confirmed at read-time. Advisory
    *  only — the server still runs its own authoritative gate. */
   clientFeedUnconfirmed?: boolean;
-  /** Authenticated user id, threaded ONLY for the per-user pattern learning loop
-   *  (Task #617 Gap C). Null/absent ⇒ no observation recorded, no nudge. */
+  /** Authenticated user id, threaded for the per-user pattern learning loop
+   *  (Task #617 Gap C) and the user's own broker quote comparison. Null/absent
+   *  ⇒ no observation recorded, no nudge, broker mirror unmeasured. */
   userId?: number | null;
   /** Per-user assistant display name for user-facing copy (default Eleanor). */
   assistantName?: string;
@@ -365,7 +366,7 @@ export async function buildRubyStructuralRead(
   let feedStatus: Awaited<ReturnType<typeof getChartFeedStatus>> | null = null;
   try {
     [rubyCtx, feedStatus] = await Promise.all([
-      buildRubyChartContext(symbol, tf, 200),
+      buildRubyChartContext(symbol, tf, 200, { userId: params.userId }),
       // The SAME getChartFeedStatus(symbol, tf, true) the chart header badge
       // renders. Independently fail-safe: a thrown probe resolves to null and
       // resolveFeedUnconfirmed treats null as UNCONFIRMED (fail-closed).

@@ -115,8 +115,15 @@ describe("C2 — Broad/Builder use a real live quote", () => {
     );
   });
 
-  it("Focus still uses the same helper (unchanged)", () => {
-    assert.ok(/currentPriceFor\(args\.symbol\)/.test(scalpService));
+  // 8c35627 moved Focus to scalpMarketInputsFor, which binds the quote to the
+  // same confirmed candle evidence. Its price still comes from routeQuote, the
+  // same route currentPriceFor (Broad/Builder) reads.
+  it("Focus reads its quote through the same route as Broad/Builder", () => {
+    assert.ok(/scalpMarketInputsFor\(args\.symbol\)/.test(scalpService));
+    const inputs = read("artifacts/api-server/src/lib/scalp/scalpServiceInputs.ts");
+    const body = (name: string) => inputs.slice(inputs.indexOf(`export async function ${name}(`), inputs.indexOf("\n}\n", inputs.indexOf(`export async function ${name}(`)));
+    assert.ok(/routeQuote\(symbol\)/.test(body("currentPriceFor")));
+    assert.ok(/routeQuote\(symbol\)/.test(body("scalpMarketInputsFor")));
   });
 });
 
