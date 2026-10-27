@@ -521,6 +521,12 @@ export interface ChartReadReasoningInput {
   feedNotConfirmed?: boolean;
   /** Panel-resolved downgrade reason (same dimension that drove the downgrade). */
   reason?: string | null;
+  /**
+   * The read is older than its timeframe's candle budget (or its time is
+   * unknown). `asOf` is its newest closed candle ("HH:MM UTC") when known.
+   */
+  expired?: boolean;
+  asOf?: string | null;
 }
 
 function biasDir(bias: string | null | undefined): "BUY" | "SELL" | null {
@@ -552,9 +558,13 @@ export function buildReasoningFromChartRead(
   const lowConf = /low|weak/i.test(clean(read.confidence));
 
   // ── Decision ──────────────────────────────────────────────────────────────
+  const expired = !gated && input.expired === true;
+  const asOf = clean(input.asOf);
   let decision: string;
   if (gated || feedNotConfirmed) {
     decision = "WAIT — live feed not confirmed";
+  } else if (expired) {
+    decision = "WAIT — this read has expired";
   } else if (structuralOnly) {
     decision = dir ? `Conditional ${dir} — structural read only` : "WAIT — structure only";
   } else if (!dir) {
@@ -612,6 +622,13 @@ export function buildReasoningFromChartRead(
   } else {
     feedData = `Live read on ${symbol} ${timeframe}.`;
   }
+  if (expired) {
+    // A one-shot read describes the chart at its newest closed candle; once that
+    // is older than the timeframe's budget it must not read as current.
+    feedData = asOf
+      ? `Read from closed candles as of ${asOf} — expired for ${timeframe}; re-read for the current chart.`
+      : `Read time unknown — treat this ${symbol} ${timeframe} read as expired and re-read for the current chart.`;
+  }
 
   const cautionLine = read.cautions?.length ? read.cautions.join("; ") : "";
   const riskBase = orElse(read.riskNote, "Manage risk to your plan.");
@@ -619,7 +636,9 @@ export function buildReasoningFromChartRead(
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   let confirmation: string;
-  if (feedBlocked) {
+  if (expired && !feedBlocked) {
+    confirmation = "Re-read this chart first — the read above is older than the current candle window.";
+  } else if (feedBlocked) {
     confirmation = "Confirm the live feed first, then re-check the conditions before acting.";
   } else if (structuralOnly) {
     confirmation = "Re-read once exact entry/stop/target are published for this chart, then re-check the conditions before acting.";

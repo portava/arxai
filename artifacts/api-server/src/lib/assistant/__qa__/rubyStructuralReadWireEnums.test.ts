@@ -122,7 +122,10 @@ test("STRUCTURAL_ONLY (owner state: delayed 1m feed, 199 closed bars) keeps read
   assert.equal(cr.timeframe, "M1");
   const cautions = (cr.cautions as string[]).join(" | ");
   assert.match(cautions, /Exact entry, stop, and target levels withheld/);
-  assert.match(cautions, /Live feed is delayed/);
+  // The closed-bar state lags while the server feed status is clean, so the
+  // caution names the real limit (closed candles only), never "delayed feed".
+  assert.match(cautions, /Read uses closed candles only/);
+  assert.doesNotMatch(cautions, /Live feed is delayed/);
   assertNarrativeClean(cr);
 });
 

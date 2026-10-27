@@ -65,6 +65,39 @@ export interface RubyReadServerState {
   tradeHealthFreshness?: string;
   tradeHealthLabel?: string;
   tradeHealthTrustLine?: string;
+  /**
+   * Data time of the read: the latest CLOSED candle's close boundary (ISO), or
+   * null when the server did not know it. A read is a one-shot snapshot, so this
+   * is what "as of" means — never the time the read was requested.
+   */
+  observedAt?: string | null;
+  /** Gate that withheld the exact setup on a structural read (display-only). */
+  withheldBy?: string | null;
+}
+
+/**
+ * When a non-gated chart read stops describing the current chart: its newest
+ * closed candle + the timeframe's candle freshness budget (the same
+ * `candleMaxAgeMs` the shared scanner truth uses). Returns `null` for a gated
+ * read (nothing directional to expire) and `NaN` when the read carries no valid
+ * `observedAt` — the caller treats NaN as already expired (fail-closed).
+ */
+export function chartReadExpiresAtMs(
+  read: RubyReadServerState | null | undefined,
+  candleMaxAgeMs: number,
+): number | null {
+  if (!read || read.gated === true) return null;
+  const t = typeof read.observedAt === "string" ? Date.parse(read.observedAt) : Number.NaN;
+  if (!Number.isFinite(t)) return Number.NaN;
+  return t + candleMaxAgeMs;
+}
+
+/** "HH:MM UTC" for a read's observedAt, or null when unknown. */
+export function chartReadAsOfLabel(read: RubyReadServerState | null | undefined): string | null {
+  const t = typeof read?.observedAt === "string" ? Date.parse(read.observedAt) : Number.NaN;
+  if (!Number.isFinite(t)) return null;
+  const d = new Date(t);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
 }
 
 /**
@@ -279,6 +312,11 @@ export interface RubyReadPanelInputs {
   aiUsableProp: boolean | undefined;
   /** The server read-chart response once a read has run; `null` before. */
   read: RubyReadServerState | null;
+  /**
+   * The read's data is older than the timeframe's candle budget (or its time is
+   * unknown). Downgrade-only: the badge can no longer claim clean/AI.
+   */
+  readExpired?: boolean;
 }
 
 export interface RubyReadPanelState {
@@ -301,6 +339,8 @@ export interface RubyReadPanelState {
    * the server falls back to its own gate.
    */
   reportedAiUsable: boolean | undefined;
+  /** The shown read no longer describes the current chart (see input). */
+  readExpired: boolean;
 }
 
 export function resolveRubyReadPanelState(
@@ -365,14 +405,17 @@ export function resolveRubyReadPanelState(
 
   // The badge may claim clean/AI only on a fully-confirmed read. A
   // structural-only read is a downgrade → never clean/AI.
+  // An expired read (older than its timeframe's candle budget, or of unknown
+  // time) can never back a clean/AI claim either.
+  const readExpired = !!read && read.gated !== true && input.readExpired === true;
   const badgeAiUsable: boolean | null =
-    verdict === "confirmed"
+    verdict === "confirmed" && !readExpired
       ? true
-      : verdict === "not_confirmed" || verdict === "structural_only"
+      : verdict === "not_confirmed" || verdict === "structural_only" || readExpired
         ? false
         : null;
 
-  return { verdict, feedNotConfirmed, reason, badgeAiUsable, reportedAiUsable };
+  return { verdict, feedNotConfirmed, reason, badgeAiUsable, reportedAiUsable, readExpired };
 }
 
 /**
