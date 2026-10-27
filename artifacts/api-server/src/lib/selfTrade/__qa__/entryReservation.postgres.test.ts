@@ -1590,14 +1590,30 @@ it("unverified accounting cannot be withdrawn or escaped by assigning zero profi
 // ── Fresh market facts at the final dispatch claim (2026-10-27) ─────────────
 // The fixture decision priced a BUY at entry zone 1.1-1.1 with stop 1.09.
 // Quotes are local values; nothing reads a feed or contacts a venue.
-const freshQuote = (patch: Record<string, unknown> = {}) => ({
-  bid: 1.09995,
-  ask: 1.10005,
-  observedAt: new Date(now.getTime() - 1_000).toISOString(),
-  source: "fixture",
-  point: 0.00001,
-  ...patch,
-});
+// The store's first-sight provenance the observer copies (mt5Provider
+// recordMt5Tick): the tick first seen at `observedAt`, two seconds after the
+// feed's previous post, never re-posted.
+const provenanceFor = (observedAt: unknown) => {
+  const ms = typeof observedAt === "string" ? Date.parse(observedAt) : NaN;
+  return {
+    firstSeenAt: observedAt,
+    lastPostedAt: observedAt,
+    reposts: 0,
+    priorPostAt: Number.isFinite(ms) ? new Date(ms - 2_000).toISOString() : null,
+  };
+};
+const freshQuote = (patch: Record<string, unknown> = {}) => {
+  const observedAt = "observedAt" in patch ? patch.observedAt : new Date(now.getTime() - 1_000).toISOString();
+  return {
+    bid: 1.09995,
+    ask: 1.10005,
+    observedAt,
+    source: "fixture",
+    point: 0.00001,
+    tickProvenance: provenanceFor(observedAt),
+    ...patch,
+  };
+};
 async function refusedFreshClaim(
   entryMarket: Record<string, unknown> | null,
   reason: RegExp,
@@ -1676,6 +1692,26 @@ it("fresh facts: setup expiry between decision and dispatch still refuses first"
     () => new Date("2026-10-30T00:00:00Z"),
   );
 });
+it("fresh facts: the first tick a bridge ever posted (no earlier post bounds it) refuses STALE under the locks", async () => {
+  await refusedFreshClaim(
+    freshQuote({ tickProvenance: { ...provenanceFor(new Date(now.getTime() - 1_000).toISOString()), priorPostAt: null } }),
+    /^ENTRY_FRESH_QUOTE_STALE$/,
+  );
+});
+it("fresh facts: a tick that follows a 40 h feed silence refuses STALE under the locks", async () => {
+  await refusedFreshClaim(
+    freshQuote({
+      tickProvenance: {
+        ...provenanceFor(new Date(now.getTime() - 1_000).toISOString()),
+        priorPostAt: new Date(now.getTime() - 40 * 3_600_000).toISOString(),
+      },
+    }),
+    /^ENTRY_FRESH_QUOTE_STALE$/,
+  );
+});
+it("fresh facts: a quote without tick provenance refuses TIMESTAMP_INVALID under the locks", async () => {
+  await refusedFreshClaim(freshQuote({ tickProvenance: null }), /^ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID$/);
+});
 it("fresh facts: a fresh in-zone quote claims once and records the facts", async () => {
   const { row } = await approveAuthority();
   const claimed = await claimLiveCommandForDispatch(
@@ -1694,6 +1730,8 @@ it("fresh facts: a fresh in-zone quote claims once and records the facts", async
   assert.equal(facts.quoteAgeMs, 1_000);
   assert.equal(facts.executablePrice, 1.10005);
   assert.equal(Math.round(facts.spreadPoints), 10);
+  assert.equal(facts.quoteReposts, 0);
+  assert.equal(facts.quoteFeedGapMs, 2_000);
 });
 it("fresh facts: confirmation is not the final step and does not need a quote", async () => {
   const staged = await stageAuthority();
