@@ -226,6 +226,7 @@
     "test:no-fabrication": "tsx ./src/ci/check-no-fabrication.test.ts",
     "test:market-model": "tsx ./src/marketModelTest.ts",
     "test:objective-sizing": "tsx ./src/objectiveSizingTest.ts",
+    "test:lot-sizer-invariants": "tsx ./src/riskAwareLotSizerInvariantsTest.ts",
     "test:money-truth": "tsx ./src/moneyTruthTest.ts",
     "test:black-box-features": "tsx ./src/blackBoxFeaturesTest.ts",
     "test:event-log-db": "tsx ./src/eventLogDbTest.ts",
