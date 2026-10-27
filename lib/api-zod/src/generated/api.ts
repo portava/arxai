@@ -7676,6 +7676,362 @@ export const GetMeMarketTruthResponse = zod.object({
       })
       .nullable(),
   }),
+  evidence: zod
+    .object({
+      price: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      lastCandle: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      lastTick: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      news: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      components: zod.object({
+        scanner: zod
+          .object({
+            evidenceClass: zod.enum([
+              "verified",
+              "estimate",
+              "stale",
+              "unavailable",
+            ]),
+            reason: zod.enum([
+              "LIVE_FEED_OBSERVATION",
+              "MODEL_ESTIMATE",
+              "FEED_UNCONFIRMED",
+              "CALENDAR_FETCH_TIME_UNKNOWN",
+              "FEED_STALE",
+              "EXPIRED",
+              "NO_FEED",
+              "NO_VALUE",
+              "NO_OBSERVATION_TIME",
+              "INVALID_TIMESTAMP",
+              "NO_CALENDAR",
+              "COMPONENT_ABSENT",
+              "LEVELS_WITHHELD",
+              "INSUFFICIENT_DATA",
+              "UNCLASSIFIED",
+            ]),
+            observedAt: zod
+              .string()
+              .nullable()
+              .describe(
+                "Data timestamp the claim rests on (never build time), or null.",
+              ),
+          })
+          .describe(
+            'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+          ),
+        flame: zod
+          .object({
+            evidenceClass: zod.enum([
+              "verified",
+              "estimate",
+              "stale",
+              "unavailable",
+            ]),
+            reason: zod.enum([
+              "LIVE_FEED_OBSERVATION",
+              "MODEL_ESTIMATE",
+              "FEED_UNCONFIRMED",
+              "CALENDAR_FETCH_TIME_UNKNOWN",
+              "FEED_STALE",
+              "EXPIRED",
+              "NO_FEED",
+              "NO_VALUE",
+              "NO_OBSERVATION_TIME",
+              "INVALID_TIMESTAMP",
+              "NO_CALENDAR",
+              "COMPONENT_ABSENT",
+              "LEVELS_WITHHELD",
+              "INSUFFICIENT_DATA",
+              "UNCLASSIFIED",
+            ]),
+            observedAt: zod
+              .string()
+              .nullable()
+              .describe(
+                "Data timestamp the claim rests on (never build time), or null.",
+              ),
+          })
+          .describe(
+            'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+          ),
+        timing: zod
+          .object({
+            evidenceClass: zod.enum([
+              "verified",
+              "estimate",
+              "stale",
+              "unavailable",
+            ]),
+            reason: zod.enum([
+              "LIVE_FEED_OBSERVATION",
+              "MODEL_ESTIMATE",
+              "FEED_UNCONFIRMED",
+              "CALENDAR_FETCH_TIME_UNKNOWN",
+              "FEED_STALE",
+              "EXPIRED",
+              "NO_FEED",
+              "NO_VALUE",
+              "NO_OBSERVATION_TIME",
+              "INVALID_TIMESTAMP",
+              "NO_CALENDAR",
+              "COMPONENT_ABSENT",
+              "LEVELS_WITHHELD",
+              "INSUFFICIENT_DATA",
+              "UNCLASSIFIED",
+            ]),
+            observedAt: zod
+              .string()
+              .nullable()
+              .describe(
+                "Data timestamp the claim rests on (never build time), or null.",
+              ),
+          })
+          .describe(
+            'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+          ),
+        scalp: zod
+          .object({
+            evidenceClass: zod.enum([
+              "verified",
+              "estimate",
+              "stale",
+              "unavailable",
+            ]),
+            reason: zod.enum([
+              "LIVE_FEED_OBSERVATION",
+              "MODEL_ESTIMATE",
+              "FEED_UNCONFIRMED",
+              "CALENDAR_FETCH_TIME_UNKNOWN",
+              "FEED_STALE",
+              "EXPIRED",
+              "NO_FEED",
+              "NO_VALUE",
+              "NO_OBSERVATION_TIME",
+              "INVALID_TIMESTAMP",
+              "NO_CALENDAR",
+              "COMPONENT_ABSENT",
+              "LEVELS_WITHHELD",
+              "INSUFFICIENT_DATA",
+              "UNCLASSIFIED",
+            ]),
+            observedAt: zod
+              .string()
+              .nullable()
+              .describe(
+                "Data timestamp the claim rests on (never build time), or null.",
+              ),
+          })
+          .describe(
+            'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+          ),
+      }),
+      levels: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+      verdict: zod
+        .object({
+          evidenceClass: zod.enum([
+            "verified",
+            "estimate",
+            "stale",
+            "unavailable",
+          ]),
+          reason: zod.enum([
+            "LIVE_FEED_OBSERVATION",
+            "MODEL_ESTIMATE",
+            "FEED_UNCONFIRMED",
+            "CALENDAR_FETCH_TIME_UNKNOWN",
+            "FEED_STALE",
+            "EXPIRED",
+            "NO_FEED",
+            "NO_VALUE",
+            "NO_OBSERVATION_TIME",
+            "INVALID_TIMESTAMP",
+            "NO_CALENDAR",
+            "COMPONENT_ABSENT",
+            "LEVELS_WITHHELD",
+            "INSUFFICIENT_DATA",
+            "UNCLASSIFIED",
+          ]),
+          observedAt: zod
+            .string()
+            .nullable()
+            .describe(
+              "Data timestamp the claim rests on (never build time), or null.",
+            ),
+        })
+        .describe(
+          'Per-claim evidence class. \"verified\" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; \"estimate\" = calculated\/heuristic (never better than this) or observed on an unconfirmed feed; \"stale\" = past its freshness budget or expired; \"unavailable\" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.\n',
+        ),
+    })
+    .optional(),
 });
 
 /**

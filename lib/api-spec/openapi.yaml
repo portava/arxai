@@ -15407,6 +15407,50 @@ components:
           properties:
             price: { type: number }
             side: { type: string, enum: [ABOVE, BELOW] }
+    TruthEvidenceClaim:
+      type: object
+      description: >
+        Per-claim evidence class. "verified" = direct observation on a
+        LIVE_CONFIRMED feed with an identified source and observation time;
+        "estimate" = calculated/heuristic (never better than this) or observed
+        on an unconfirmed feed; "stale" = past its freshness budget or expired;
+        "unavailable" = absent, withheld, unattributed or unmeasured. Advisory
+        labelling only; never an execution gate. Clients may only downgrade.
+      required: [evidenceClass, reason, observedAt]
+      properties:
+        evidenceClass:
+          type: string
+          enum: [verified, estimate, stale, unavailable]
+        reason:
+          type: string
+          enum:
+            [LIVE_FEED_OBSERVATION, MODEL_ESTIMATE, FEED_UNCONFIRMED,
+             CALENDAR_FETCH_TIME_UNKNOWN, FEED_STALE, EXPIRED, NO_FEED, NO_VALUE,
+             NO_OBSERVATION_TIME, INVALID_TIMESTAMP, NO_CALENDAR, COMPONENT_ABSENT,
+             LEVELS_WITHHELD, INSUFFICIENT_DATA, UNCLASSIFIED]
+        observedAt:
+          type: string
+          nullable: true
+          description: Data timestamp the claim rests on (never build time), or null.
+    TruthEvidenceComponents:
+      type: object
+      required: [scanner, flame, timing, scalp]
+      properties:
+        scanner: { $ref: "#/components/schemas/TruthEvidenceClaim" }
+        flame: { $ref: "#/components/schemas/TruthEvidenceClaim" }
+        timing: { $ref: "#/components/schemas/TruthEvidenceClaim" }
+        scalp: { $ref: "#/components/schemas/TruthEvidenceClaim" }
+    TruthEvidence:
+      type: object
+      required: [price, lastCandle, lastTick, news, components, levels, verdict]
+      properties:
+        price: { $ref: "#/components/schemas/TruthEvidenceClaim" }
+        lastCandle: { $ref: "#/components/schemas/TruthEvidenceClaim" }
+        lastTick: { $ref: "#/components/schemas/TruthEvidenceClaim" }
+        news: { $ref: "#/components/schemas/TruthEvidenceClaim" }
+        components: { $ref: "#/components/schemas/TruthEvidenceComponents" }
+        levels: { $ref: "#/components/schemas/TruthEvidenceClaim" }
+        verdict: { $ref: "#/components/schemas/TruthEvidenceClaim" }
     MarketTruthResponse:
       type: object
       required:
@@ -15421,6 +15465,9 @@ components:
         components: { $ref: "#/components/schemas/TruthComponents" }
         levels: { $ref: "#/components/schemas/TruthLevels" }
         verdict: { $ref: "#/components/schemas/TruthVerdict" }
+        # Additive per-claim evidence classes. Optional: older servers omit it,
+        # and clients then show no classification rather than inventing one.
+        evidence: { $ref: "#/components/schemas/TruthEvidence" }
     ChartIntelligenceResponse:
       type: object
       required:

@@ -43,6 +43,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import { resolveSymbolTruthEvidence, symbolTruthDeadline } from "@/lib/symbolTruthEvidence";
 import type { ScannerTruth } from "@/lib/scannerTruth";
+import type { TruthEvidence } from "@workspace/domain/truth";
 
 export interface UseSymbolTruthResult {
   /** Snapshot after the evidence cap (null while loading / on error / expired). */
@@ -70,6 +71,12 @@ export interface UseSymbolTruthResult {
   verdict: TruthVerdict | null;
   /** True when the cap neutralized the directional read / best action. */
   actionCapped: boolean;
+  /**
+   * Per-claim evidence classes (verified / estimate / stale / unavailable),
+   * re-validated against the capped snapshot — the client can only downgrade
+   * the server's classes. Null when no snapshot or the server sent none.
+   */
+  evidence: TruthEvidence | null;
 
   isLoading: boolean;
   isError: boolean;
@@ -123,6 +130,7 @@ export function useSymbolTruth(
     levels: snapshot?.levels ?? null,
     verdict: snapshot?.verdict ?? null,
     actionCapped,
+    evidence: (snapshot?.evidence as TruthEvidence | undefined) ?? null,
     isLoading: scanner.isLoading || snapQ.isLoading,
     isError: scanner.isError || snapQ.isError,
     refetch: () => {

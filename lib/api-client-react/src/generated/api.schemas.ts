@@ -6355,6 +6355,65 @@ export interface TruthVerdict {
   invalidation: TruthVerdictInvalidation;
 }
 
+export type TruthEvidenceClaimEvidenceClass =
+  (typeof TruthEvidenceClaimEvidenceClass)[keyof typeof TruthEvidenceClaimEvidenceClass];
+
+export const TruthEvidenceClaimEvidenceClass = {
+  verified: "verified",
+  estimate: "estimate",
+  stale: "stale",
+  unavailable: "unavailable",
+} as const;
+
+export type TruthEvidenceClaimReason =
+  (typeof TruthEvidenceClaimReason)[keyof typeof TruthEvidenceClaimReason];
+
+export const TruthEvidenceClaimReason = {
+  LIVE_FEED_OBSERVATION: "LIVE_FEED_OBSERVATION",
+  MODEL_ESTIMATE: "MODEL_ESTIMATE",
+  FEED_UNCONFIRMED: "FEED_UNCONFIRMED",
+  CALENDAR_FETCH_TIME_UNKNOWN: "CALENDAR_FETCH_TIME_UNKNOWN",
+  FEED_STALE: "FEED_STALE",
+  EXPIRED: "EXPIRED",
+  NO_FEED: "NO_FEED",
+  NO_VALUE: "NO_VALUE",
+  NO_OBSERVATION_TIME: "NO_OBSERVATION_TIME",
+  INVALID_TIMESTAMP: "INVALID_TIMESTAMP",
+  NO_CALENDAR: "NO_CALENDAR",
+  COMPONENT_ABSENT: "COMPONENT_ABSENT",
+  LEVELS_WITHHELD: "LEVELS_WITHHELD",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
+  UNCLASSIFIED: "UNCLASSIFIED",
+} as const;
+
+/**
+ * Per-claim evidence class. "verified" = direct observation on a LIVE_CONFIRMED feed with an identified source and observation time; "estimate" = calculated/heuristic (never better than this) or observed on an unconfirmed feed; "stale" = past its freshness budget or expired; "unavailable" = absent, withheld, unattributed or unmeasured. Advisory labelling only; never an execution gate. Clients may only downgrade.
+
+ */
+export interface TruthEvidenceClaim {
+  evidenceClass: TruthEvidenceClaimEvidenceClass;
+  reason: TruthEvidenceClaimReason;
+  /** Data timestamp the claim rests on (never build time), or null. */
+  observedAt: string | null;
+}
+
+export interface TruthEvidenceComponents {
+  scanner: TruthEvidenceClaim;
+  flame: TruthEvidenceClaim;
+  timing: TruthEvidenceClaim;
+  scalp: TruthEvidenceClaim;
+}
+
+export interface TruthEvidence {
+  price: TruthEvidenceClaim;
+  lastCandle: TruthEvidenceClaim;
+  lastTick: TruthEvidenceClaim;
+  news: TruthEvidenceClaim;
+  components: TruthEvidenceComponents;
+  levels: TruthEvidenceClaim;
+  verdict: TruthEvidenceClaim;
+}
+
 export interface MarketTruthResponse {
   symbol: string;
   displaySymbol: string;
@@ -6365,6 +6424,7 @@ export interface MarketTruthResponse {
   components: TruthComponents;
   levels: TruthLevels;
   verdict: TruthVerdict;
+  evidence?: TruthEvidence;
 }
 
 export type ChartIntelligenceResponseSafetyMode =

@@ -5,6 +5,7 @@ import { ScannerReadGate } from "@/components/scanner/ScannerReadGate";
 import { useScannerReadGate } from "@/hooks/useScannerReadGate";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
+import { TruthEvidenceClasses } from "@/components/scanner/TruthEvidenceClasses";
 import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromMarketRead } from "@/lib/rubyReasoningBlock";
@@ -175,7 +176,7 @@ export function RubyMarketReadCard({
   // the ONE per-symbol Truth Snapshot, so this card can never disagree with the
   // chart / scanner rows on the same page. The age is anchored to the DATA
   // timestamp (newest of lastTickAt / lastCandleAt), never the signal build time.
-  const { news, data: truthData } = useSymbolTruth(symbol, chartTimeframe);
+  const { news, data: truthData, evidence: truthEvidence } = useSymbolTruth(symbol, chartTimeframe);
   const dataUpdatedIso = useMemo(() => {
     const stamps = [truthData?.lastTickAt, truthData?.lastCandleAt]
       .map((s) => (s ? Date.parse(s) : NaN))
@@ -475,6 +476,10 @@ export function RubyMarketReadCard({
               <p className="text-[10px] italic text-txt-muted">{explanation.disclaimer}</p>
             </>
           )}
+          {/* Per-claim evidence classes from the ONE Truth Snapshot (already
+              capped client-side; can only be downgraded). Shown in every body
+              state so "unavailable" is stated rather than hidden. */}
+          <TruthEvidenceClasses evidence={truthEvidence} testid="ruby-market-read-evidence-classes" />
         </div>
       )}
     </div>

@@ -37,6 +37,9 @@ import {
   type TruthInvalidation,
   type TruthStage,
   type TruthReadEvidence,
+  classifyTruthEvidence,
+  expireTruthEvidence,
+  type TruthEvidence,
 } from "@workspace/domain/truth";
 import type { RubyMarketEdgeSignal } from "@workspace/domain/signal-intelligence";
 import { evaluateMarketDataSufficiency } from "@workspace/domain/market";
@@ -141,6 +144,27 @@ export interface SymbolTruthSnapshot {
   };
   levels: ComposedLevels;
   verdict: TruthVerdict;
+  /**
+   * Additive per-claim evidence class (verified / estimate / stale /
+   * unavailable) + reason + the data timestamp each claim rests on. Derived
+   * only from the fields above; advisory labelling, never an execution gate.
+   */
+  evidence: TruthEvidence;
+}
+
+/** Classify a built snapshot's claims from its own fields (see evidenceClass.ts). */
+export function classifySnapshotEvidence(
+  s: Omit<SymbolTruthSnapshot, "evidence">,
+  nowMs: number,
+): TruthEvidence {
+  return classifyTruthEvidence({
+    nowMs,
+    data: s.data,
+    news: s.news,
+    components: s.components,
+    levels: s.levels,
+    verdict: s.verdict,
+  });
 }
 
 // ── Injectable SOURCEs (real by default; tests inject deterministic stubs) ────
@@ -550,7 +574,7 @@ export async function buildSymbolTruthSnapshot(
   if (components.scanner.present) deadlines.push(Date.parse(scanner!.expiresAt));
   if (components.flame.present || components.scalp.present) deadlines.push(Date.parse(scalp!.expiresAt));
   if (deadlines.length && expected) deadlines.push(Date.parse(expected.lastClosedCandleAt) + timeframeMs(timeframe));
-  return {
+  const snapshot: Omit<SymbolTruthSnapshot, "evidence"> = {
     symbol,
     displaySymbol: chart?.displaySymbol ?? symbol,
     timeframe,
@@ -571,6 +595,7 @@ export async function buildSymbolTruthSnapshot(
       invalidation: directionReadable ? composed.invalidation : null,
     },
   };
+  return { ...snapshot, evidence: classifySnapshotEvidence(snapshot, now) };
 }
 
 /** A read can expire inside the cache window. Withdraw the directional advice
@@ -582,7 +607,9 @@ export function capExpiredTruthSnapshot(snapshot: SymbolTruthSnapshot, now = Dat
     highImpactWindowActive: snapshot.news.highImpactWindowActive, components: [], levels });
   const expired = (component: TruthComponent): TruthComponent => component.present
     ? { ...component, present: false, alignment: "UNKNOWN", label: "This read expired; waiting for current evidence." } : component;
-  return { ...snapshot, components: { scanner: expired(snapshot.components.scanner), flame: expired(snapshot.components.flame),
+  // Classes: claims the read derived become stale/EXPIRED; data claims keep theirs.
+  return { ...snapshot, evidence: expireTruthEvidence(snapshot.evidence),
+    components: { scanner: expired(snapshot.components.scanner), flame: expired(snapshot.components.flame),
     timing: expired(snapshot.components.timing), scalp: expired(snapshot.components.scalp) },
     levels: { ...composed.levels, withheldReason: "The component evidence expired; waiting for a new read." },
     verdict: { stage: composed.stage, bias: composed.bias, headline: composed.headline, bestAction: composed.bestAction,

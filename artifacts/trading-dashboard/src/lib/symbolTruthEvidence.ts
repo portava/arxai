@@ -1,4 +1,9 @@
 import type { MarketTruthResponse } from "@workspace/api-client-react";
+import {
+  classifyTruthEvidence,
+  downgradeTruthEvidence,
+  type TruthEvidence,
+} from "@workspace/domain/truth";
 import type { ScannerTruth } from "./scannerTruth";
 import { normalizeChartTimeframe } from "./chartCandlesQuery";
 
@@ -24,6 +29,40 @@ export function symbolTruthDeadline(snapshot: MarketTruthResponse | null): numbe
   if (supplied == null) return localDeadline;
   const serverDeadline = typeof supplied === "string" ? Date.parse(supplied) : NaN;
   return Number.isFinite(serverDeadline) ? Math.min(localDeadline, serverDeadline) : built;
+}
+
+/**
+ * Re-validate the server's per-claim evidence classes against the snapshot as
+ * this client will display it (after any cap). Each claim keeps the WEAKER of
+ * the server class and a local re-classification, so the client can only ever
+ * downgrade. No server classification (older server) → null: nothing invented.
+ */
+export function capSymbolTruthEvidenceClasses(
+  snapshot: MarketTruthResponse,
+  nowMs: number,
+): TruthEvidence | null {
+  const local = classifyTruthEvidence({
+    nowMs,
+    data: snapshot.data,
+    news: snapshot.news,
+    components: snapshot.components,
+    levels: snapshot.levels,
+    verdict: snapshot.verdict,
+  });
+  return downgradeTruthEvidence(snapshot.evidence, local);
+}
+
+/** Returns the SAME object when the supplied classes already stand (or none
+ * were supplied), so a confirmed read keeps referential identity. */
+function withCappedClasses(snapshot: MarketTruthResponse, nowMs: number): MarketTruthResponse {
+  if (snapshot.evidence === undefined) return snapshot;
+  const evidence = capSymbolTruthEvidenceClasses(snapshot, nowMs);
+  if (evidence == null) {
+    const { evidence: _malformed, ...rest } = snapshot;
+    void _malformed;
+    return rest;
+  }
+  return JSON.stringify(evidence) === JSON.stringify(snapshot.evidence) ? snapshot : { ...snapshot, evidence };
 }
 
 /** Bind advice to the same confirmed chart evidence; this grants no execution authority. */
@@ -57,7 +96,7 @@ export function resolveSymbolTruthEvidence(input: {
     snapshot.data.state === "LIVE_CONFIRMED" &&
     snapshot.data.source != null && snapshot.data.source === scannerTruth.candles.source &&
     Number.isFinite(snapshotCandleAt) && snapshotCandleAt === chartCandleAt;
-  if (confirmed) return { snapshot, actionCapped: false };
+  if (confirmed) return { snapshot: withCappedClasses(snapshot, nowMs), actionCapped: false };
 
   const absent = () => ({ present: false, alignment: "UNKNOWN" as const, label: "No confirmed read.", asOf: null });
   const components: MarketTruthResponse["components"] = {
@@ -67,7 +106,7 @@ export function resolveSymbolTruthEvidence(input: {
     scannerTruth?.candles.status === "unavailable" ? "UNAVAILABLE" : "SYNCING";
   return {
     actionCapped: true,
-    snapshot: {
+    snapshot: withCappedClasses({
       ...snapshot,
       data: { ...snapshot.data, state: dataState },
       components,
@@ -80,6 +119,6 @@ export function resolveSymbolTruthEvidence(input: {
         bestAction: "WATCH_ONLY",
         bestActionText: "Watch only — the live feed isn't confirmed for a live entry right now.",
       },
-    },
+    }, nowMs),
   };
 }
