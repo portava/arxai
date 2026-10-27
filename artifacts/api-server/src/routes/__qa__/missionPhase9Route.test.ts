@@ -268,11 +268,28 @@ test("certificate is phrase-gated and append-only; promotion read is honest", as
   assert.equal((promoBody as { decision?: { approved?: boolean } }).decision?.approved ?? false, false);
   assertNoSecretLeak(promoBody, "promotion");
 
+  // A generated-price simulation with a large drawdown must never supply the
+  // certificate's drawdown line (only closed-draft evidence can).
+  await db.insert(missionTestResultsTable).values({
+    userId: userAId, missionId: missionAId, kind: "BACKTEST", strategyKey: "trendContinuation", symbol: "EURUSD",
+    timeframe: "M15", label: "Generated-price simulation", sampleSize: 40, isVerified: false,
+    metricsJson: {
+      metrics: { totalTrades: 40, winningTrades: 20, losingTrades: 20, winRate: 0.5, netProfitLoss: 1, maxDrawdownPct: 40, averageRr: 1, expectancyR: 0, profitFactor: 1 },
+      evidence: { version: 1, source: "generated_prices", validation: "unverified" },
+    },
+  });
+
   const certGet = await req(`/api/profit-missions/${missionAId}/certificate?targetAutomationLevel=4`, cookieA);
   assert.equal(certGet.status, 200);
   const certBody = await certGet.json();
   assert.equal((certBody as { phrase: string }).phrase, MISSION_CERTIFICATE_PHRASE);
   assertNoSecretLeak(certBody, "certificate-content");
+  const summaryLines = (certBody as { summaryLines: unknown }).summaryLines;
+  assert.ok(Array.isArray(summaryLines) && summaryLines.every((l) => typeof l === "string"), "summaryLines stays string[]");
+  const drawdownLines = (summaryLines as string[]).filter((l) => /drawdown/i.test(l));
+  assert.equal(drawdownLines.length, 1);
+  assert.match(drawdownLines[0]!, /unavailable \(no closed-trade drawdown record available for this mission\)/);
+  assert.doesNotMatch(drawdownLines[0]!, /\d+(\.\d+)?%/, "no pooled generated-price figure");
 
   // Wrong phrase → 400, nothing recorded.
   const wrong = await jsonReq("POST", `/api/profit-missions/${missionAId}/certificate`, cookieA, {
