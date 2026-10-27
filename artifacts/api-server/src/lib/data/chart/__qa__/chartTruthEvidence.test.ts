@@ -138,6 +138,25 @@ test("handshake cannot turn unmeasured rendering into PASS from clean aggregate 
   for (const key of ["RenderHealth", "BrokerPriceAlignment", "HistoricalLiveMerge", "MirrorSync", "OHLCIntegrity", "FeedFreshness"] as const)
     assert.equal(absent[key], "WARN");
 });
+test("candle-data rollup excludes only renderer telemetry and keeps it out of overall PASS", () => {
+  const truth = fixture(), score = computeChartTruthScore(truth, feed, alignment);
+  const gate = computeChartGateOutput(score, read, alignment, truth, false);
+  const result = buildChartHandshake(gate, score);
+  assert.equal(result.RenderHealth, "WARN"); assert.equal(result.overall, "WARN");
+  assert.equal(result.sourceOverall, "PASS");
+  // Without a measured broker comparison the candle-data rollup cannot pass.
+  const unmeasured = noBrokerAlignment(1.1, "MID");
+  const noQuote = computeChartTruthScore(truth, feed, unmeasured);
+  const noQuoteGate = computeChartGateOutput(noQuote, read, unmeasured, truth, false);
+  assert.equal(buildChartHandshake(noQuoteGate, noQuote).sourceOverall, "WARN");
+  // A measured renderer failure still fails the candle-data rollup.
+  const failedRender = JSON.parse(JSON.stringify(score));
+  const render = failedRender.subMetrics.find((m: { key: string }) => m.key === "render_accuracy");
+  render.evidenceStatus = "measured"; render.rawScore = 10;
+  assert.equal(buildChartHandshake(gate, failedRender).RenderHealth, "FAIL");
+  assert.equal(buildChartHandshake(gate, failedRender).sourceOverall, "FAIL");
+  assert.equal(buildChartHandshake(gate).sourceOverall, "WARN");
+});
 test("legacy cached perfect sub-scores without evidence status remain unknown", () => {
   const truth = fixture(), score = computeChartTruthScore(truth, feed, alignment);
   const gate = computeChartGateOutput(score, read, alignment, truth, false);

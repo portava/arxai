@@ -150,7 +150,9 @@ test("compare-and-set refuses a stale absence cycle and keeps returning projecti
 test("writes require a predicate and read interfaces expose no mutation or table", async () => {
   await assert.rejects(livePositionWriter.update({ stopLoss: 0 }, undefined), /explicit predicate/);
   await assert.rejects(demoPositionWriter.update({ stopLoss: 0 }, undefined), /explicit predicate/);
-  assert.deepEqual(Object.keys(livePositionLedger).sort(), ["read", "select"]);
+  // readForUpdate is a row-locking read on the caller's transaction (acdf50a);
+  // it exposes neither a mutation nor the table.
+  assert.deepEqual(Object.keys(livePositionLedger).sort(), ["read", "readForUpdate", "select"]);
   assert.deepEqual(Object.keys(demoPositionLedger).sort(), ["read", "select"]);
 });
 

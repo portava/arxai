@@ -22,6 +22,7 @@ import { higherTimeframeOf } from "../../assistant/chartStructure.js";
 import type { Candle } from "../../data/types.js";
 import type { MarketDataSufficiencyVerdict } from "@workspace/domain/market";
 import { evaluateSufficiencyFromChartState } from "./chartSufficiency.js";
+import { enrichStateWithUserBrokerQuote } from "./userBrokerAlignment.js";
 
 /** Canonical trust basis for this Ruby chart read. */
 export type RubyChartReadBasis =
@@ -81,7 +82,8 @@ export interface RubyChartContext {
 
   /**
    * AACI chart handshake overall verdict, derived from the Phase 3 gate output.
-   * "PASS" is required for basis === "VERIFIED". "WARN" → PARTIAL, "FAIL" → SYNCING.
+   * Includes renderer telemetry. Basis uses the candle-data rollup
+   * (`sourceOverall`): "PASS" is required for basis === "VERIFIED".
    */
   aaciChartHandshakeOverall: ChartHandshakeVerdict;
 
@@ -225,7 +227,7 @@ function toBasis(
   // All three conditions must pass for VERIFIED:
   // - freshness (autonomousChartActionAllowed)
   // - mirror sync (tradeConfirmationAllowed)
-  // - AACI chart handshake PASS
+  // - AACI candle-data handshake PASS (renderer telemetry excluded)
   if (!gate.autonomousChartActionAllowed || !gate.tradeConfirmationAllowed || aaciOverall !== "PASS") {
     return "PARTIAL";
   }
@@ -246,8 +248,18 @@ export async function buildRubyChartContext(
   symbol: string,
   timeframe: ChartTimeframe,
   limit = 300,
+  opts: { userId?: number | null } = {},
 ): Promise<RubyChartContext> {
-  const state = await buildChartIntelligenceState(symbol, timeframe, limit);
+  let state = await buildChartIntelligenceState(symbol, timeframe, limit);
+  // A VERIFIED read needs a measured broker comparison; only the requesting
+  // user's own EA quote can supply one. Without it the mirror stays unmeasured.
+  if (opts.userId != null) {
+    try {
+      state = await enrichStateWithUserBrokerQuote(state, { userId: opts.userId, symbol, timeframe, limit });
+    } catch {
+      // fail-open to the unenriched state: mirror remains unmeasured
+    }
+  }
   const gate = state.gateOutput;
 
   // Compute AACI chart handshake from the Phase 3 gate — this is the same
@@ -261,7 +273,10 @@ export async function buildRubyChartContext(
   const limitedHistory = closedBarsCount < MIN_BARS_FULL_READ && closedBarsCount > 0;
   const liveDelayed =
     state.truthState.quality === "delayed" && hasRecentDerivTickFor(state.symbol);
-  let basis = toBasis(gate, state, aaciChartHandshakeOverall);
+  // Basis uses the candle-data rollup: Ruby reads candles, not the client
+  // renderer, whose telemetry is unmeasured. The trust line keeps the full
+  // overall so it never says "AACI verified" while a check is unmeasured.
+  let basis = toBasis(gate, state, aaciHandshake.sourceOverall);
   const trustLine = buildTrustLine(gate, state.brokerAlignment, timeframe, hasFormingCandle, aaciChartHandshakeOverall);
   let blockReason = gate.primaryBlockReason;
 
