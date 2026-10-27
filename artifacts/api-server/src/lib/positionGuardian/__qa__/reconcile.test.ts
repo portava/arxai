@@ -360,8 +360,8 @@ test("live: a filled partial close shrinks the position and keeps it guarded; a 
       userId, commandType: "CLOSE_LIVE_POSITION", brokerTicket: TICKET, symbol: "EURUSD", side: "BUY", volume,
       sourcePage: "LIVE_POSITION_OPS",
     });
-    assert.equal(draft.ok, true, JSON.stringify(draft));
-    if (!draft.ok) throw new Error(draft.reason);
+    // assert/strict narrows `draft.ok` to true, so the refusal is reported here.
+    if (!draft.ok) assert.fail(`draft refused: ${draft.reason}${draft.detail ? ` (${draft.detail})` : ""}`);
     await db.update(arxLiveCommandsTable).set({ status: "SENT_TO_MT5_LIVE", sentToMt5At: new Date() })
       .where(eq(arxLiveCommandsTable.id, draft.command.id));
     return recordLiveCommandResult({ userId, commandId: draft.command.commandId, outcome: "LIVE_FILLED",
