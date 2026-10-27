@@ -22,7 +22,8 @@ import { selectLiveOpenPositions } from "../positions/openPositions.js";
 import { getConnection, listUserConnections } from "../brokerHub/connections.js";
 import { randomUUID } from "node:crypto";
 import { resultReceiptScheduler, ResultReceiptCapacityError } from "./resultReceiptScheduler.js";
-import { AgentEntryAuthorityError, createAgentEntryDraft, type AgentAdmissionEnvelope, type AuthorityTransaction } from "../selfTrade/entryAuthority.js";
+import { AgentEntryAuthorityError, createAgentEntryDraft, isAgentEntryCommand, type AgentAdmissionEnvelope, type AuthorityTransaction } from "../selfTrade/entryAuthority.js";
+import { observeAgentEntryMarket } from "../selfTrade/entryMarketObservation.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
@@ -4118,6 +4119,14 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     stopLoss: row.stopLoss != null ? Number(row.stopLoss) : null,
     takeProfit: row.takeProfit != null ? Number(row.takeProfit) : null,
   });
+  // Fresh facts — agent entries are re-checked against a quote read here, after
+  // every gate and immediately before the claim. The read happens outside the
+  // claim's locks; the claim evaluates it after locking (quote age, spread,
+  // price vs the admitted entry zone and stop). null-safe: a failed read is an
+  // observation with an error, which the claim refuses.
+  const entryMarket = isAgentEntryCommand(row)
+    ? await observeAgentEntryMarket(args.userId, row.symbol)
+    : undefined;
   // Task #28 — stamp TTL + authoritative server clock at the moment of
   // dispatch. A command not executed by the EA before `expiresAt` is swept
   // to LIVE_EXPIRED and the EA itself refuses it as stale. This is the
@@ -4151,7 +4160,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       accountLogin: bridge!.accountNumber,
       brokerServer: bridge!.brokerName,
       dispatchGateSnapshot: snapshot as unknown as Record<string, unknown>,
-    }, row);
+    }, row, undefined, undefined, entryMarket === undefined ? undefined : { entryMarket });
     if (!sent) {
       // LOST THE RACE. A concurrent dispatcher already claimed this command.
       // Refuse fail-CLOSED: return BEFORE the EA mailbox mirror below so this

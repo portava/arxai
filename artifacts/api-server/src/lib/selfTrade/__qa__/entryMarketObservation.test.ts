@@ -1,0 +1,102 @@
+// The dispatch-time observer and its wiring. Market router and broker spec are
+// local module doubles; no feed, database or venue is reached.
+import { beforeEach, describe, it, mock } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+let quoteResult: unknown;
+let specResult: unknown;
+const calls: string[] = [];
+mock.module("../../data/marketDataRouter.js", {
+  namedExports: {
+    routeQuote: async (symbol: string) => {
+      calls.push(`quote:${symbol}`);
+      if (quoteResult instanceof Error) throw quoteResult;
+      return quoteResult;
+    },
+  },
+});
+mock.module("../../mt5/brokerSymbolSpec.js", {
+  namedExports: {
+    getBrokerSymbolSpec: async (userId: number, symbol: string) => {
+      calls.push(`spec:${userId}:${symbol}`);
+      if (specResult instanceof Error) throw specResult;
+      return specResult;
+    },
+  },
+});
+const { observeAgentEntryMarket } = await import("../entryMarketObservation.js");
+const { evaluateEntryFreshFacts } = await import("../freshFacts.js");
+
+const tick = {
+  ok: true,
+  primaryProvider: "mt5_broker",
+  quote: { symbol: "EURUSD.a", bid: 1.1, ask: 1.1001, timestamp: "2026-10-27T12:00:00.000Z" },
+};
+const spec = { hasBrokerTruth: true, spec: { point: 0.00001 } };
+beforeEach(() => {
+  quoteResult = tick;
+  specResult = spec;
+  calls.length = 0;
+});
+
+describe("observeAgentEntryMarket", () => {
+  it("reads the execution symbol's quote and broker point without inventing a time", async () => {
+    assert.deepEqual(await observeAgentEntryMarket(9, "EURUSD.a"), {
+      bid: 1.1,
+      ask: 1.1001,
+      observedAt: "2026-10-27T12:00:00.000Z",
+      source: "mt5_broker",
+      point: 0.00001,
+    });
+    assert.deepEqual(calls.sort(), ["quote:EURUSD.a", "spec:9:EURUSD.a"]);
+  });
+  it("a quote without a source timestamp stays unknown (refused later)", async () => {
+    quoteResult = { ...tick, quote: { symbol: "EURUSD.a", bid: 1.1, ask: 1.1001 } };
+    const obs = await observeAgentEntryMarket(9, "EURUSD.a");
+    assert.equal(obs.observedAt, null);
+    const v = evaluateEntryFreshFacts({
+      side: "BUY",
+      stopLoss: 1.09,
+      thesis: { entryZone: { from: 1.1, to: 1.1001 } },
+      observation: obs,
+      nowMs: Date.parse("2026-10-27T12:00:00.000Z"),
+    });
+    assert.equal(v.ok ? "OK" : v.reason, "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID");
+  });
+  it("no feed, router failure and spec failure become error observations", async () => {
+    quoteResult = { ok: false, primaryProvider: null, quote: null };
+    assert.equal((await observeAgentEntryMarket(9, "EURUSD.a")).error, "QUOTE_UNAVAILABLE");
+    quoteResult = new Error("router exploded");
+    assert.equal((await observeAgentEntryMarket(9, "EURUSD.a")).error, "QUOTE_READ_FAILED");
+    quoteResult = tick;
+    specResult = new Error("db down");
+    assert.equal((await observeAgentEntryMarket(9, "EURUSD.a")).error, "BROKER_SPEC_READ_FAILED");
+  });
+  it("without broker truth the point is unknown, so spread cannot be proven", async () => {
+    specResult = { hasBrokerTruth: false, spec: { point: null } };
+    assert.equal((await observeAgentEntryMarket(9, "EURUSD.a")).point, null);
+  });
+});
+
+describe("dispatch wiring (source order)", () => {
+  const source = readFileSync(
+    fileURLToPath(new URL("../../live/liveCommandPipeline.ts", import.meta.url)),
+    "utf8",
+  );
+  const start = source.indexOf("export async function dispatchLiveCommand");
+  const end = source.indexOf("export async function sweepExpiredLiveCommands", start);
+  const body = source.slice(start, end);
+  it("observes agent entries after every gate and passes the observation to the only claim", () => {
+    const evaluator = body.indexOf("evaluateLivePhaseBDispatchGate(");
+    const exposure = body.indexOf("reserveExposureAtomicWithUserHeadroom(");
+    const observe = body.indexOf("observeAgentEntryMarket(args.userId, row.symbol)");
+    const claim = body.indexOf("claimLiveCommandForDispatch(");
+    assert.ok(evaluator > 0 && exposure > 0 && observe > 0 && claim > 0);
+    assert.ok(evaluator < observe && exposure < observe && observe < claim);
+    assert.equal(body.split("claimLiveCommandForDispatch(").length, 2);
+    assert.match(body.slice(claim, claim + 1200), /\{ entryMarket \}/);
+    assert.match(body.slice(observe - 120, observe), /isAgentEntryCommand\(row\)/);
+  });
+});

@@ -1571,3 +1571,122 @@ it("unverified accounting cannot be withdrawn or escaped by assigning zero profi
   assert.equal((await reserve()).ok, false);
   assert.equal((await applyRealizedFromFills(agent.id)).posted, 0);
 });
+
+// ── Fresh market facts at the final dispatch claim (2026-10-27) ─────────────
+// The fixture decision priced a BUY at entry zone 1.1-1.1 with stop 1.09.
+// Quotes are local values; nothing reads a feed or contacts a venue.
+const freshQuote = (patch: Record<string, unknown> = {}) => ({
+  bid: 1.09995,
+  ask: 1.10005,
+  observedAt: new Date(now.getTime() - 1_000).toISOString(),
+  source: "fixture",
+  point: 0.00001,
+  ...patch,
+});
+async function refusedFreshClaim(
+  entryMarket: Record<string, unknown> | null,
+  reason: RegExp,
+  clock?: () => Date,
+) {
+  const { row } = await approveAuthority();
+  await assert.rejects(
+    claimLiveCommandForDispatch(row.commandId, sendPatch(), row, db, clock, {
+      entryMarket: entryMarket as never,
+    }),
+    (error: unknown) =>
+      error instanceof AgentEntryAuthorityError && reason.test(error.reason),
+  );
+  // The authority transaction rolled back: unsent, reserved, no claim audit.
+  assert.equal((await db.select().from(commands))[0].status, "LIVE_APPROVED");
+  assert.equal((await db.select().from(executions))[0].status, "PENDING_TICKET");
+  assert.equal(
+    (await db.select().from(audit)).filter(
+      (r) => r.eventType === "ENTRY_AUTHORITY_DISPATCH_CLAIMED",
+    ).length,
+    0,
+  );
+}
+it("fresh facts: stale quote refuses the final claim", async () => {
+  await refusedFreshClaim(
+    freshQuote({ observedAt: new Date(now.getTime() - 5_001).toISOString() }),
+    /^ENTRY_FRESH_QUOTE_STALE$/,
+  );
+});
+it("fresh facts: quote dated beyond clock-skew tolerance refuses", async () => {
+  await refusedFreshClaim(
+    freshQuote({ observedAt: new Date(now.getTime() + 60_000).toISOString() }),
+    /^ENTRY_FRESH_QUOTE_FUTURE_DATED$/,
+  );
+});
+for (const observedAt of [NaN, null, "not-a-time", "1761480000000"])
+  it(`fresh facts: malformed quote timestamp ${String(observedAt)} refuses`, async () => {
+    await refusedFreshClaim(
+      freshQuote({ observedAt }),
+      /^ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID$/,
+    );
+  });
+it("fresh facts: missing observation (feed down) refuses", async () => {
+  await refusedFreshClaim(null, /^ENTRY_FRESH_QUOTE_UNAVAILABLE$/);
+});
+it("fresh facts: spread blown out since decision refuses", async () => {
+  await refusedFreshClaim(
+    freshQuote({ bid: 1.0997, ask: 1.1003 }),
+    /^ENTRY_FRESH_SPREAD_TOO_WIDE$/,
+  );
+});
+it("fresh facts: price moved beyond the decision's zone tolerance refuses", async () => {
+  await refusedFreshClaim(
+    freshQuote({ bid: 1.1004, ask: 1.1005 }),
+    /^ENTRY_FRESH_PRICE_MOVED$/,
+  );
+});
+it("fresh facts: price already through the decision stop refuses", async () => {
+  await refusedFreshClaim(
+    freshQuote({ bid: 1.0899, ask: 1.09 }),
+    /^ENTRY_FRESH_STOP_CROSSED$/,
+  );
+});
+it("fresh facts: age is measured after lock acquisition, not at fetch", async () => {
+  // Fresh when fetched; six seconds pass before the claim holds its locks.
+  await refusedFreshClaim(
+    freshQuote({ observedAt: now.toISOString() }),
+    /^ENTRY_FRESH_QUOTE_STALE$/,
+    () => new Date(now.getTime() + 6_000),
+  );
+});
+it("fresh facts: setup expiry between decision and dispatch still refuses first", async () => {
+  await refusedFreshClaim(
+    freshQuote({ observedAt: "2026-10-30T00:00:00.000Z" }),
+    /^ENTRY_SETUP_EXPIRED$/,
+    () => new Date("2026-10-30T00:00:00Z"),
+  );
+});
+it("fresh facts: a fresh in-zone quote claims once and records the facts", async () => {
+  const { row } = await approveAuthority();
+  const claimed = await claimLiveCommandForDispatch(
+    row.commandId,
+    sendPatch(),
+    row,
+    db,
+    undefined,
+    { entryMarket: freshQuote() },
+  );
+  assert.equal(claimed?.status, "SENT_TO_MT5_LIVE");
+  const [claimAudit] = (await db.select().from(audit)).filter(
+    (r) => r.eventType === "ENTRY_AUTHORITY_DISPATCH_CLAIMED",
+  );
+  const facts = (claimAudit.afterState as any).freshFacts;
+  assert.equal(facts.quoteAgeMs, 1_000);
+  assert.equal(facts.executablePrice, 1.10005);
+  assert.equal(Math.round(facts.spreadPoints), 10);
+});
+it("fresh facts: confirmation is not the final step and does not need a quote", async () => {
+  const staged = await stageAuthority();
+  assert.ok(
+    await claimLiveCommandForConfirm(
+      staged.row.commandId,
+      { status: "LIVE_APPROVED", confirmedAt: now },
+      staged.row,
+    ),
+  );
+});
