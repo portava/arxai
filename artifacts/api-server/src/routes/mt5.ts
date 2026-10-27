@@ -950,13 +950,25 @@ router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
       eq(arxLiveCommandsTable.bridgeConnectionId, conn.id),
     )) : [];
     const byId = new Map(authority.map(row => [row.commandId, row]));
+    // Broker names each signed entry may legitimately be mirrored as, read with
+    // this transaction's reader (no second pooled connection while locked).
+    const entrySymbols = new Map<string, Set<string>>();
+    for (const command of authority) if (command.commandType === "PLACE_LIVE_MARKET_ORDER") {
+      const { resolveBrokerSymbolName } = await import("../lib/instruments/index.js");
+      const { boundManagementTransportSymbol } = await import("../lib/selfTrade/managementTarget.js");
+      let bound: string | null = null;
+      try { bound = boundManagementTransportSymbol(command); } catch { bound = null; }
+      // Same choice enqueueBridgedMt5Command made when it wrote the mirror.
+      entrySymbols.set(command.commandId, new Set([command.symbol, bound ?? await resolveBrokerSymbolName(command.symbol, tx)]));
+    }
     const projected = new Map<number, Command>();
     let heldTargets = 0;
     const selected: number[] = [];
     const planned: ReturnType<typeof wire>[] = [];
     for (const row of candidates) {
       const linked = (row.payload as Record<string, unknown> | null)?.liveCommandId;
-      const precise = projectManagementMailbox(row, typeof linked === "string" ? byId.get(linked) : undefined);
+      const precise = projectManagementMailbox(row, typeof linked === "string" ? byId.get(linked) : undefined,
+        typeof linked === "string" ? entrySymbols.get(linked) : undefined);
       if (!precise) { heldTargets++; continue; }
       projected.set(row.id, precise);
       const candidate = wire({ ...precise, status: "DELIVERED", deliveredAt: now, claimedAt: now, updatedAt: now });
@@ -1058,7 +1070,7 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
     if (linkedId && !linkedCommand) { res.status(404).json({error:"Linked command not found for this connection."}); return; }
     const terminal = normalizeTerminalResultEvidence(raw, linkedCommand?.commandType ?? ownedMailbox.action,
       linkedCommand ? linkedCommand.requestedVolume : num(ownedMailbox.lot) ?? num(raw.requestedVolume),
-      (linkedCommand?.payload as Record<string, unknown> | null)?.brokerTicket as string | undefined);
+      linkedCommand ? linkedCommand.brokerTicket ?? (linkedCommand.payload as Record<string, unknown> | null)?.brokerTicket as string | undefined : undefined);
     const reportedStatus = terminal?.outcome ?? body.status;
     const isFailed = /fail|error|reject/i.test(reportedStatus);
     const unresolved = ["LIVE_ACKNOWLEDGED","LIVE_PARTIALLY_FILLED","LIVE_UNKNOWN"].includes(reportedStatus);
@@ -1111,12 +1123,14 @@ router.post("/mt5/command-result", bridgeAuthPerUserOnly, async (req, res): Prom
       let setMt5OrderTicket: string | null = null;
       if (isFailed) {
         nextPendingStatus = "REJECTED";
+      } else if (unresolved) {
+        // Unproven acceptance/execution never advances the pending draft.
       } else if (action === "PLACE_PENDING_ORDER") {
         nextPendingStatus = "PLACED";
         setMt5OrderTicket = mt5OrderTicket != null ? String(mt5OrderTicket) : null;
       } else if (action === "CANCEL_PENDING_ORDER") {
         nextPendingStatus = "CANCELLED";
-      } else if (!unresolved && (action === "MODIFY_PENDING_ORDER" || action === "MODIFY_POSITION_PROTECTION")) {
+      } else if (action === "MODIFY_PENDING_ORDER" || action === "MODIFY_POSITION_PROTECTION") {
         nextPendingStatus = "MODIFIED";
       }
       if (nextPendingStatus) {

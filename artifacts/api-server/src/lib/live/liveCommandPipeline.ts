@@ -4883,7 +4883,9 @@ export function mapBridgedLiveOutcome(input: {
   }
   // Explicit uncertainty/acceptance is never promoted by an existing ticket.
   if (["unknown","live_unknown"].includes(statusLc)) return "LIVE_UNKNOWN";
-  if (["acknowledged","live_acknowledged","accepted","placed"].includes(statusLc)) return "LIVE_ACKNOWLEDGED";
+  // Only an explicit acknowledgement. Unversioned PLACED/ACCEPTED keep their
+  // existing mapping: nothing yet resolves an ACK for pending orders.
+  if (["acknowledged","live_acknowledged"].includes(statusLc)) return "LIVE_ACKNOWLEDGED";
   if (["partially_filled","live_partially_filled"].includes(statusLc))
     return input.hasBrokerTicket && typeof input.executedVolume === "number" && Number.isFinite(input.executedVolume) && input.executedVolume>0 ? "LIVE_PARTIALLY_FILLED" : "LIVE_UNKNOWN";
   // R2 S5 — a ticket with a short fill is a PARTIAL, not a full fill. Checked
@@ -5002,6 +5004,17 @@ export async function recordLiveCommandResult(args: {
         reason: "DUPLICATE_IGNORED",
         applied: false as const,
       };
+    }
+    if (args.terminalResultEvidence && (row.status === "LIVE_ACKNOWLEDGED" || row.status === "LIVE_PARTIALLY_FILLED")) {
+      const prior = await tx.execute(sql`select payload->'terminalResultEvidence' as evidence from execution_events
+        where command_id=${row.id} and payload->>'applied'='true' and payload ? 'terminalResultEvidence'
+        order by sequence_no desc limit 1`);
+      const before = prior.rows[0]?.evidence as import("../mt5/terminalResultEvidence.js").TerminalResultEvidence | undefined;
+      const { terminalEvidenceConflicts } = await import("../mt5/terminalResultEvidence.js");
+      // Contradictory executions stay held for reconciliation with the
+      // already-applied exposure; they are never summed or replaced.
+      if (before && terminalEvidenceConflicts(before, args.terminalResultEvidence))
+        args = { ...args, outcome: "LIVE_UNKNOWN", brokerTicket: row.brokerTicket, fillPrice: row.fillPrice, executedVolume: row.executedVolume };
     }
     const effectiveOutcome: typeof args.outcome =
       args.outcome === "LIVE_FILLED" &&
