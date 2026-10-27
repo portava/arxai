@@ -2219,7 +2219,10 @@ router.post("/mt5/sync-candles", bridgeAuthPerUserOnly, async (req, res) => {
   }
 
   // Attribute the series to the authenticated bridge that pushed it, matching
-  // the bridge-scoped /mt5/candles/ingest mirror and the quote store.
+  // the bridge-scoped /mt5/candles/ingest mirror and the quote store. An
+  // attributed window MERGES into that bridge's partition by bar time, so this
+  // short rolling window never truncates deeper history the same bridge
+  // merged via /mt5/candles/ingest, v2 CANDLE or /mt5/sync-candle-history.
   updateCandlesFromMT5(symbol, candles, timeframe, { bridgeConnectionId: userConn.id, userId: userConn.userId });
 
   // Honest freshness summary so the EA (and operators) can see exactly how the

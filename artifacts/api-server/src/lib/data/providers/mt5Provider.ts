@@ -238,10 +238,19 @@ function servingSeries(partitions: Map<string, CandleSeries> | undefined): Candl
 }
 
 /**
- * Push a candle series for an exact symbol+timeframe. Replaces the stored series
- * FOR THAT WRITER'S PARTITION only (the EA sends the latest window each push).
- * Stamps freshness. The legacy 3-arg form (no bridge identity) still works and
- * writes the unattributed partition, so un-threaded callers compile unchanged.
+ * Push a candle WINDOW for an exact symbol+timeframe.
+ *
+ * - Attributed writer (bridge identity known): the window is MERGED into that
+ *   bridge's partition by bar time (upsert, last write wins, ascending, capped
+ *   to MAX_MERGED_BARS). The same partition also holds deeper bars merged by
+ *   /mt5/candles/ingest, bridge v2 CANDLE events and /mt5/sync-candle-history,
+ *   so a short v1 rolling window must never truncate that history.
+ * - Unattributed writer (legacy 3-arg form): REPLACES the unattributed
+ *   partition, exactly as before (the EA sends the latest window each push).
+ *
+ * Callers validate bars before calling (the /mt5/sync-candles route rejects
+ * impossible OHLC and unparseable times, like the other ingest paths).
+ * Stamps freshness.
  */
 export function updateCandlesFromMT5(
   symbol: string,
@@ -252,8 +261,9 @@ export function updateCandlesFromMT5(
   const partitions = partitionsFor(symbol, timeframe);
   const bKey = bridgeKeyOf(bridge);
   const now = Date.now();
+  const stored = bridge != null ? mergeByBarTime(partitions.get(bKey)?.candles ?? [], candles) : candles;
   partitions.set(bKey, {
-    candles,
+    candles: stored,
     updatedAt: now,
     writeSeq: ++writeCounter,
     bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
@@ -263,8 +273,32 @@ export function updateCandlesFromMT5(
   lastUpdate = now;
 }
 
+/** Bar identity for merging: the parsed instant, so "…T08:00:00Z" and
+ *  "…T08:00:00.000Z" are the same bar; unparseable times key by raw string. */
+function barKey(c: Candle): string {
+  const t = Date.parse(c.time);
+  return Number.isFinite(t) ? `t${t}` : `s${c.time}`;
+}
+function barOrder(c: Candle): number {
+  const t = Date.parse(c.time);
+  return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
+}
+
+/** Upsert `incoming` into `existing` by bar time (incoming wins), ascending,
+ *  capped to the most recent MAX_MERGED_BARS. Never mixes partitions. */
+function mergeByBarTime(existing: Candle[], incoming: Candle[]): Candle[] {
+  const byTime = new Map<string, Candle>();
+  for (const c of existing) byTime.set(barKey(c), c);
+  for (const c of incoming) byTime.set(barKey(c), c);
+  const merged = Array.from(byTime.values()).sort((a, b) => {
+    const d = barOrder(a) - barOrder(b);
+    return d !== 0 && Number.isFinite(d) ? d : a.time < b.time ? -1 : a.time > b.time ? 1 : 0;
+  });
+  return merged.length > MAX_MERGED_BARS ? merged.slice(-MAX_MERGED_BARS) : merged;
+}
+
 // The most bars a single series retains. The v2 bridge pushes ONE closed bar
-// per CANDLE event (unlike the v1 sync path, which replaces the whole window),
+// per CANDLE event (unlike an unattributed v1 sync push, which replaces the whole window),
 // so a long-running stream would grow unboundedly without a cap. Keep the most
 // recent window — more than enough for every chart/scan timeframe.
 const MAX_MERGED_BARS = 1500;
@@ -291,17 +325,8 @@ export function mergeCandleFromMT5(
   const partitions = partitionsFor(symbol, timeframe);
   const bKey = bridgeKeyOf(bridge);
   const existing = partitions.get(bKey);
-  const byTime = new Map<string, Candle>();
-  if (existing) {
-    for (const c of existing.candles) byTime.set(c.time, c);
-  }
   // Last-write-wins on identical bar time (an idempotent re-send is a no-op).
-  byTime.set(candle.time, candle);
-  const merged = Array.from(byTime.values()).sort((a, b) =>
-    a.time < b.time ? -1 : a.time > b.time ? 1 : 0,
-  );
-  const capped =
-    merged.length > MAX_MERGED_BARS ? merged.slice(-MAX_MERGED_BARS) : merged;
+  const capped = mergeByBarTime(existing?.candles ?? [], [candle]);
   const now = Date.now();
   partitions.set(bKey, {
     candles: capped,

@@ -274,10 +274,12 @@ export async function run(): Promise<CiTestResultLike> {
     const m5 = (feed.body.series ?? []).find((s) => s.symbol === SYM && s.timeframe === "M5");
     const h1row = (feed.body.series ?? []).find((s) => s.symbol === SYM && s.timeframe === "H1");
     assert(!!m5 && m5.status === "contributing", `M5 series reads contributing (status=${m5?.status})`);
-    // updateCandlesFromMT5 REPLACES the series each push (the EA sends a rolling
-    // window), so the latest M5 push — the de-dupe push of 2 distinct bars —
-    // defines the current series.
-    assert(!!m5 && m5.barCount === 2, `M5 contributing barCount=2 (latest push replaces; got ${m5?.barCount})`);
+    // The push is attributed to the authenticated bridge, and an attributed
+    // v1 window MERGES into that bridge's partition by bar time (the partition
+    // also holds deeper history from /mt5/candles/ingest, v2 CANDLE and
+    // sync-candle-history, which a rolling window must not truncate). The
+    // 3-bar push (08:00–08:10) plus the de-dupe push (09:00, 09:05) = 5 bars.
+    assert(!!m5 && m5.barCount === 5, `M5 contributing barCount=5 (attributed v1 windows merge by bar time; got ${m5?.barCount})`);
     assert(!!h1row && h1row.status === "contributing" && h1row.barCount === 1, `H1 series isolated, barCount=1 (got ${h1row?.barCount})`);
 
     // Single-series probe for a never-pushed symbol while the feed is connected.
@@ -305,7 +307,7 @@ export async function run(): Promise<CiTestResultLike> {
     const feedAfter = await getFeed(base, adminCookie);
     const m5After = (feedAfter.body.series ?? []).find((s) => s.symbol === SYM && s.timeframe === "M5");
     assert(
-      !!m5After && m5After.status === "contributing" && m5After.barCount === 2,
+      !!m5After && m5After.status === "contributing" && m5After.barCount === 5,
       `prior good M5 series untouched after garbage push (status=${m5After?.status}, bars=${m5After?.barCount})`,
     );
 
@@ -336,7 +338,7 @@ export async function run(): Promise<CiTestResultLike> {
     const feedAfterGuards = await getFeed(base, adminCookie);
     const m5Guarded = (feedAfterGuards.body.series ?? []).find((s) => s.symbol === SYM && s.timeframe === "M5");
     assert(
-      !!m5Guarded && m5Guarded.status === "contributing" && m5Guarded.barCount === 2,
+      !!m5Guarded && m5Guarded.status === "contributing" && m5Guarded.barCount === 5,
       `good M5 series survives stale+invalid pushes (status=${m5Guarded?.status}, bars=${m5Guarded?.barCount})`,
     );
 
