@@ -100,7 +100,11 @@ const STALE_PUSH_MAX_FUTURE_MS = 2 * 60_000; // tolerate ≤2 min EA clock skew
  */
 export async function ingestMt5CandleHistory(
   payload: Mt5CandleHistoryIngest,
-  opts?: { now?: number },
+  opts?: {
+    now?: number;
+    /** Authenticated writer. Omitted → unattributed partition (never guessed). */
+    bridge?: { bridgeConnectionId: number; userId?: number | null } | null;
+  },
 ): Promise<Mt5CandleHistoryIngestResult> {
   const now = opts?.now ?? Date.now();
   const { symbol, timeframe, bars, sentAt } = payload;
@@ -178,7 +182,7 @@ export async function ingestMt5CandleHistory(
   // Merge each bar (preserves existing history; capped window) rather than
   // replacing — a backfill must not wipe the live tail.
   const { mergeCandleFromMT5 } = await import("./providers/mt5Provider.js");
-  for (const c of candles) mergeCandleFromMT5(symbol, c, timeframe);
+  for (const c of candles) mergeCandleFromMT5(symbol, c, timeframe, opts?.bridge ?? null);
 
   return {
     received: true,

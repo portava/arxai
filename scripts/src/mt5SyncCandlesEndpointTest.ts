@@ -194,14 +194,15 @@ export async function run(): Promise<CiTestResultLike> {
     if (!bridgeUser || !adminUser || !normalUser) throw new Error("user creation failed");
 
     const rawToken = randomBytes(24).toString("base64url");
-    await db.insert(mt5ConnectionTable).values({
+    const [bridgeConn] = await db.insert(mt5ConnectionTable).values({
       userId: bridgeUser.id,
       connectionName: "QA Candle Bridge",
       status: "connected",
       apiKeyHash: sha256(rawToken),
       tokenLast4: rawToken.slice(-4),
       tokenCreatedAt: new Date(),
-    });
+    }).returning();
+    if (!bridgeConn) throw new Error("bridge connection creation failed");
 
     const adminCookie = await mintSession(adminUser.id);
     const userCookie = await mintSession(normalUser.id);
@@ -350,6 +351,23 @@ export async function run(): Promise<CiTestResultLike> {
     });
     assert(goodQuote.status === 200, `fresh quote -> 200 (got ${goodQuote.status})`);
     assert(goodQuote.body.accepted === 1, `fresh quote accepted=1 (got ${goodQuote.body.accepted})`);
+
+    // The authenticated bridge is the quote's observed writer identity, and an
+    // EA-supplied timestamp is an observed tick time (in-process store read).
+    const { readMt5Quote, readMt5Candles } = await import("../../artifacts/api-server/src/lib/data/providers/mt5Provider.js");
+    const storedQuote = readMt5Quote(SYM, { bridgeConnectionId: bridgeConn.id });
+    assert(storedQuote?.bridgeConnectionId === bridgeConn.id && storedQuote.userId === bridgeUser.id,
+      `fresh quote attributed to its bridge/owner (got ${storedQuote?.bridgeConnectionId}/${storedQuote?.userId})`);
+    assert(storedQuote?.tickTimeObserved === true, `EA-timestamped quote records an observed tick time`);
+    const storedSeries = readMt5Candles(SYM, "M5", 10, { bridgeConnectionId: bridgeConn.id });
+    assert(storedSeries.candles.length > 0 && storedSeries.userId === bridgeUser.id,
+      `synced candles attributed to the same bridge/owner (got ${storedSeries.candles.length} bars, user ${storedSeries.userId})`);
+
+    // No EA timestamp → stored with receive time, but NOT as an observed tick.
+    const untimedQuote = await syncQuotes(base, rawToken, { symbol: SYM, bid: 1.10, ask: 1.11 });
+    assert(untimedQuote.status === 200 && untimedQuote.body.accepted === 1, `untimed quote accepted (got ${untimedQuote.status})`);
+    assert(readMt5Quote(SYM, { bridgeConnectionId: bridgeConn.id })?.tickTimeObserved === false,
+      `receive-time stamped quote is not an observed tick time`);
 
     // An UNPARSABLE quote timestamp must fail CLOSED (explicit reject, never 500).
     const invalidQuote = await syncQuotes(base, rawToken, {

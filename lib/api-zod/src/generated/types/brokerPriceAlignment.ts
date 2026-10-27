@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BrokerPriceAlignmentTolerance } from "./brokerPriceAlignmentTolerance";
+import type { BrokerQuoteBinding } from "./brokerQuoteBinding";
 
 /**
  * Chart latest-close vs MT5 broker bid/ask alignment. User-safe message only;
@@ -41,4 +42,12 @@ export interface BrokerPriceAlignment {
    */
   adminDetail: string | null;
   brokerDataAvailable: boolean;
+  /** Additive. Whether the compared broker quote is bound to the chart
+series: same observed provider, bridge and owner (the requesting
+user), no observed environment/broker-symbol contradiction, and an
+observed tick time within the quote freshness budget. Only BOUND
+comparisons earn Symbol Mirror Accuracy points or claim alignment.
+null or absent means no binding was evaluated (unmeasured).
+ */
+  quoteBinding?: BrokerQuoteBinding | null;
 }

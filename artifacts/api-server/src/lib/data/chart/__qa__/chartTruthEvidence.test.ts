@@ -5,6 +5,7 @@ import { computeChartTruthScore } from "../chartTruthScore.js";
 import { computeChartGateOutput } from "../chartGateOutput.js";
 import { buildChartHandshake } from "../chartHandshake.js";
 import { computeBrokerPriceAlignment, noBrokerAlignment } from "../brokerPriceAlignment.js";
+import { bindBrokerQuote } from "../brokerQuoteBinding.js";
 import type { ChartFeedStatus } from "../chartDataService.js";
 import { GetChartCandlesResponse } from "@workspace/api-zod";
 
@@ -25,8 +26,15 @@ const feed: ChartFeedStatus = { symbol: "TESTFX_FIXTURE", displaySymbol: "Offlin
   missingCandleCount: 0, duplicateCount: 0, outOfOrderCount: 0, invalidOhlcCount: 0, trailingIntervals: 0,
   stale: false, quality: "clean", warning: null, aiUsable: true, feedReadinessState: null, message: "Offline fixture",
   completenessReason: null };
+// A quote bound to the series identity with an observed current tick time.
+const bound = bindBrokerQuote({
+  series: { providerId: "mt5_broker", subProviderId: null, bridgeConnectionId: 7, userId: 70, environment: "unknown", brokerSymbol: null },
+  quote: { source: "mt5_live_quote", providerId: "mt5_broker", bridgeConnectionId: 7, userId: 70, environment: null, brokerSymbol: null,
+    tickAt: new Date(epoch).toISOString(), bid: 1.09999, ask: 1.10001, spreadPoints: 2 },
+  requestingUserId: 70, now: epoch + 1_000,
+});
 const alignment = computeBrokerPriceAlignment({ chartPrice: 1.1, chartPriceBasis: "MID", assetClass: "forex",
-  brokerBid: 1.09999, brokerAsk: 1.10001, spreadPoints: 2 });
+  brokerBid: 1.09999, brokerAsk: 1.10001, spreadPoints: 2, quoteBinding: bound });
 const read = { score: 100, label: "Highly Readable" as const, subMetrics: [], primaryConcern: null, note: "Offline fixture" };
 function metric(score: ReturnType<typeof computeChartTruthScore>, key: string) {
   const value = score.subMetrics.find(m => m.key === key); assert.ok(value); return value;
@@ -83,7 +91,7 @@ test("actual all-forming source has no measured historical-to-live boundary", ()
 for (const [bid, ask] of [[0, 0], [-1, 1], [NaN, 1], [1, Infinity], [2, 1]] as const)
   test(`unusable actual broker quote ${bid}/${ask} cannot become measured alignment`, () => {
     const invalid = computeBrokerPriceAlignment({ chartPrice: 1.1, chartPriceBasis: "MID", assetClass: "forex",
-      brokerBid: bid, brokerAsk: ask, spreadPoints: 0 });
+      brokerBid: bid, brokerAsk: ask, spreadPoints: 0, quoteBinding: bound });
     assert.equal(invalid.brokerDataAvailable, false); assert.equal(invalid.aligned, false);
     assert.equal(invalid.tolerance, "unknown");
     assert.equal(metric(computeChartTruthScore(fixture(), feed, invalid), "symbol_mirror_accuracy").rawScore, null);
@@ -111,7 +119,7 @@ test("known source and seam failures remain measured failures", () => {
 });
 test("a measured failed broker comparison remains FAIL in its named handshake field", () => {
   const failed = computeBrokerPriceAlignment({ chartPrice: 1.1, chartPriceBasis: "MID", assetClass: "forex",
-    brokerBid: 2, brokerAsk: 2.0001, spreadPoints: 1 });
+    brokerBid: 2, brokerAsk: 2.0001, spreadPoints: 1, quoteBinding: bound });
   assert.equal(failed.tolerance, "failed");
   const truth = fixture(), score = computeChartTruthScore(truth, feed, failed);
   const gate = computeChartGateOutput(score, read, failed, truth, false);

@@ -70,9 +70,17 @@ function makeAlignment(
     userMessage: "",
     adminDetail: null,
     brokerDataAvailable,
+    // Broker data here models a quote bound to the series identity with a
+    // current observed tick (the only kind that may earn a mirror claim).
+    quoteBinding: brokerDataAvailable ? BOUND : null,
     ...over,
   };
 }
+
+const BOUND = {
+  status: "BOUND" as const, reasons: [], quoteSource: "mt5_live_quote" as const,
+  quoteObservedAt: "2026-10-27T00:00:00.000Z", quoteAgeMs: 1_000, freshnessBudgetMs: 15_000,
+};
 
 // ── 1. mirrorTrustSegment maps each tier to the correct honest copy ──────────
 console.log("mirrorTrustSegment tier mapping:");
@@ -134,6 +142,25 @@ console.log("\nwide/unknown line composition:");
 {
   const unknown = buildTrustLine(makeGate(), makeAlignment("unknown"), "M5", false, "PASS");
   check("unknown → line carries NO Mirror segment at all", !unknown.includes("Mirror"), unknown);
+}
+
+// ── 5. An unbound quote's numbers never earn a mirror claim ─────────────────
+console.log("\nunbound quote makes no mirror claim:");
+for (const binding of [
+  null,
+  { ...BOUND, status: "MISMATCH" as const, reasons: ["BRIDGE_MISMATCH" as const] },
+  { ...BOUND, status: "STALE" as const, reasons: ["QUOTE_STALE" as const] },
+  { ...BOUND, status: "UNVERIFIED" as const, reasons: ["QUOTE_TIME_UNKNOWN" as const] },
+]) {
+  for (const tolerance of ["tight", "wide"] as const) {
+    const line = buildTrustLine(makeGate(), makeAlignment(tolerance, { quoteBinding: binding }), "M5", false, "PASS");
+    check(`${binding?.status ?? "no binding"} + ${tolerance} → no Mirror segment`, !line.includes("Mirror"), line);
+  }
+}
+{
+  const line = buildTrustLine(makeGate({ tradeConfirmationAllowed: false }),
+    makeAlignment("failed", { quoteBinding: null }), "M5", false, "PASS");
+  check("unbound failed comparison still reads Mirror degraded", line.includes("Mirror degraded"), line);
 }
 
 if (failures > 0) {

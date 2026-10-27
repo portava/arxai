@@ -7522,6 +7522,58 @@ export const GetMeChartIntelligenceResponse = zod.object({
               "Admin-only diagnostic with bid\/ask\/deviation; null when broker unavailable",
             ),
           brokerDataAvailable: zod.boolean(),
+          quoteBinding: zod
+            .union([
+              zod.object({
+                status: zod
+                  .enum(["BOUND", "MISMATCH", "STALE", "UNVERIFIED"])
+                  .describe(
+                    "BOUND only when every condition holds; MISMATCH names an observed identity contradiction; STALE an observed tick outside the budget; UNVERIFIED a required fact is unknown.",
+                  ),
+                reasons: zod
+                  .array(
+                    zod.enum([
+                      "QUOTE_ABSENT",
+                      "REQUESTER_UNKNOWN",
+                      "SERIES_UNATTRIBUTED",
+                      "QUOTE_UNATTRIBUTED",
+                      "PROVIDER_MISMATCH",
+                      "BRIDGE_MISMATCH",
+                      "OWNER_MISMATCH",
+                      "ACCOUNT_NOT_REQUESTER",
+                      "ENVIRONMENT_MISMATCH",
+                      "BROKER_SYMBOL_MISMATCH",
+                      "QUOTE_TIME_UNKNOWN",
+                      "QUOTE_TIME_FUTURE",
+                      "QUOTE_STALE",
+                    ]),
+                  )
+                  .describe(
+                    "Every failed condition, in evaluation order. Empty only when BOUND.",
+                  ),
+                quoteSource: zod
+                  .union([
+                    zod.literal("mt5_live_quote"),
+                    zod.literal("mt5_symbol_snapshot"),
+                    zod.literal(null),
+                  ])
+                  .nullable(),
+                quoteObservedAt: zod.coerce
+                  .date()
+                  .nullable()
+                  .describe("Producer-observed tick time; null when unknown"),
+                quoteAgeMs: zod
+                  .number()
+                  .nullable()
+                  .describe("Age of the observed tick time; null when unknown"),
+                freshnessBudgetMs: zod.number(),
+              }),
+              zod.null(),
+            ])
+            .optional()
+            .describe(
+              "Additive. Whether the compared broker quote is bound to the chart\nseries: same observed provider, bridge and owner (the requesting\nuser), no observed environment\/broker-symbol contradiction, and an\nobserved tick time within the quote freshness budget. Only BOUND\ncomparisons earn Symbol Mirror Accuracy points or claim alignment.\nnull or absent means no binding was evaluated (unmeasured).\n",
+            ),
         })
         .describe(
           "Phase 3 broker price alignment. Uses noBrokerAlignment placeholder in the cached intelligence path; Phase 4 route-level enrichment supplies live per-user broker data.\n",
