@@ -3699,18 +3699,41 @@ export interface ChartCandleTruthResult {
   sourceDocumentation: ChartCandleTruthResultSourceDocumentation;
 }
 
+export type ChartTruthSubMetricEvidenceStatus =
+  (typeof ChartTruthSubMetricEvidenceStatus)[keyof typeof ChartTruthSubMetricEvidenceStatus];
+
+export const ChartTruthSubMetricEvidenceStatus = {
+  measured: "measured",
+  unavailable: "unavailable",
+} as const;
+
 /**
  * A single weighted sub-metric contributing to the Chart Truth Score.
  */
 export interface ChartTruthSubMetric {
   key: string;
   label: string;
-  /** Contribution weight (0–1 */
+  /**
+   * Contribution weight (0–1, sum=1.0)
+   * @minimum 0
+   * @maximum 1
+   */
   weight: number;
-  /** Raw 0–100 score for this sub-metric */
-  rawScore: number;
-  /** rawScore × weight */
-  weightedScore: number;
+  /**
+   * Measured 0–100 score; null when this property has not been measured
+   * @minimum 0
+   * @maximum 100
+   * @nullable
+   */
+  rawScore: number | null;
+  /**
+   * rawScore × weight; null evidence earns no aggregate points
+   * @minimum 0
+   * @maximum 100
+   * @nullable
+   */
+  weightedScore: number | null;
+  evidenceStatus: ChartTruthSubMetricEvidenceStatus;
   /** Plain-language explanation of the score */
   detail: string;
 }
@@ -3728,8 +3751,9 @@ export const ChartTruthScoreLabel = {
 
 /**
  * Weighted 10-sub-metric score (0–100) answering "is the data real, fresh,
-correctly mapped/timed/mirrored/rendered?" Derived entirely from Phase 1
-signals — never fabricated.
+correctly mapped/timed/mirrored/rendered?" Only measured properties earn
+points. Unavailable properties have null sub-scores and weights are not
+redistributed. This is an earned evidence score, not a probability.
 Labels: Verified (95–100), Healthy (85–94), Usable-but-watch (75–84),
 Degraded (60–74), Read-blocked (<60).
 
@@ -3739,6 +3763,13 @@ export interface ChartTruthScore {
   score: number;
   label: ChartTruthScoreLabel;
   subMetrics: ChartTruthSubMetric[];
+  /**
+   * Fraction of total weight with measured evidence (0–1)
+   * @minimum 0
+   * @maximum 1
+   */
+  evidenceCoverage: number;
+  unmeasuredKeys: string[];
   /**
    * Worst sub-metric detail
    * @nullable
