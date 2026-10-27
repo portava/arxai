@@ -5377,17 +5377,33 @@ export async function recordLiveCommandResult(args: {
 }
 
 
+/** Typed refusal — the command left the status this cancel validated. */
+export const LIVE_CANCEL_RACE_LOST = "LIVE_CANCEL_RACE_LOST" as const;
+
 export async function cancelLiveCommand(args: { userId: number; commandId: string; reason: string }) {
   const row = await loadOwned(args.userId, args.commandId);
   if (!row) return { ok: false as const, reason: "COMMAND_NOT_FOUND" as const };
   if (!ALLOWED_TRANSITIONS[row.status as ArxLiveCommandStatus].includes("LIVE_CANCELLED")) {
     return { ok: false as const, reason: "BAD_STATE" as const, currentStatus: row.status };
   }
+  // Compare-and-set on the status this caller validated. Without it a
+  // concurrent dispatch (LIVE_APPROVED → SENT_TO_MT5_LIVE, mirror queued) or a
+  // fill (LIVE_PARTIALLY_FILLED → LIVE_FILLED) committed after the read above
+  // was relabelled LIVE_CANCELLED — confirmed non-execution — and its exposure
+  // reservation released while the order stood at the broker.
   const [updated] = await db.update(arxLiveCommandsTable).set({
     status: "LIVE_CANCELLED",
     rejectionReason: args.reason,
     rejectedAt: new Date(),
-  }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+  }).where(and(
+    eq(arxLiveCommandsTable.commandId, args.commandId),
+    eq(arxLiveCommandsTable.userId, args.userId),
+    eq(arxLiveCommandsTable.status, row.status),
+  )).returning();
+  if (!updated) {
+    const latest = await loadOwned(args.userId, args.commandId);
+    return { ok: false as const, reason: LIVE_CANCEL_RACE_LOST, currentStatus: latest?.status ?? row.status };
+  }
   // Release any reservation tied to this command (no-op if absent).
   try {
     const { releaseReservationByCommandId } =
