@@ -7,7 +7,19 @@ import { fileURLToPath } from "node:url";
 
 let quoteResult: unknown;
 let specResult: unknown;
+// Registry double for the transport's broker-symbol resolver: ARX-internal name
+// → exact broker Market Watch name; unknown names pass through verbatim.
+let registry: Record<string, string> | Error = {};
 const calls: string[] = [];
+mock.module("../../instruments/brokerSymbolName.js", {
+  namedExports: {
+    resolveBrokerSymbolName: async (stored: string) => {
+      calls.push(`resolve:${stored}`);
+      if (registry instanceof Error) throw registry;
+      return registry[stored] ?? stored;
+    },
+  },
+});
 mock.module("../../data/providers/mt5Provider.js", {
   namedExports: {
     mt5Provider: {
@@ -36,6 +48,7 @@ const spec = { hasBrokerTruth: true, spec: { point: 0.00001 } };
 beforeEach(() => {
   quoteResult = tick;
   specResult = spec;
+  registry = {};
   calls.length = 0;
 });
 
@@ -48,8 +61,55 @@ describe("observeAgentEntryMarket", () => {
       source: "mt5_broker",
       point: 0.00001,
       brokerClockOffsetMs: null,
+      requestedSymbol: "EURUSD.a",
+      brokerSymbol: "EURUSD.a",
     });
-    assert.deepEqual(calls.sort(), ["quote:EURUSD.a", "spec:9:EURUSD.a"]);
+    assert.deepEqual(calls.sort(), ["quote:EURUSD.a", "resolve:EURUSD.a", "spec:9:EURUSD.a"]);
+  });
+  it("reads the quote and point under the broker-native name the transport would send", async () => {
+    // A suffix broker quotes and specs "EURUSD.r"; the command row says "EURUSD".
+    registry = { EURUSD: "EURUSD.r" };
+    const obs = await observeAgentEntryMarket(9, "EURUSD");
+    assert.equal(obs.requestedSymbol, "EURUSD");
+    assert.equal(obs.brokerSymbol, "EURUSD.r");
+    assert.equal(obs.bid, 1.1);
+    assert.deepEqual(calls.sort(), ["quote:EURUSD.r", "resolve:EURUSD", "spec:9:EURUSD.r"]);
+  });
+  it("resolution is exact after the lookup: no case-folding or suffix guessing", async () => {
+    registry = { V75: "Volatility 75 Index" };
+    await observeAgentEntryMarket(9, "V75");
+    assert.ok(calls.includes("quote:Volatility 75 Index"));
+    assert.ok(calls.includes("spec:9:Volatility 75 Index"));
+  });
+  it("a symbol the registry does not know is looked up verbatim and fails closed when the broker never quoted it", async () => {
+    quoteResult = { symbol: "XYZ", timestamp: new Date().toISOString() };
+    const obs = await observeAgentEntryMarket(9, "XYZ");
+    assert.equal(obs.brokerSymbol, "XYZ");
+    assert.equal(obs.error, "BROKER_QUOTE_UNAVAILABLE");
+    const v = evaluateEntryFreshFacts({
+      side: "BUY",
+      stopLoss: 1.09,
+      thesis: { entryZone: { from: 1.1, to: 1.1001 } },
+      observation: obs,
+      nowMs: Date.now(),
+    });
+    assert.equal(v.ok ? "OK" : v.reason, "ENTRY_FRESH_QUOTE_UNAVAILABLE");
+  });
+  it("a resolver failure refuses before any quote or spec is read", async () => {
+    registry = new Error("registry down");
+    const obs = await observeAgentEntryMarket(9, "EURUSD");
+    assert.equal(obs.error, "BROKER_SYMBOL_RESOLVE_FAILED");
+    assert.equal(obs.brokerSymbol, null);
+    assert.equal(obs.observedAt, null);
+    assert.deepEqual(calls, ["resolve:EURUSD"]);
+    const v = evaluateEntryFreshFacts({
+      side: "BUY",
+      stopLoss: 1.09,
+      thesis: { entryZone: { from: 1.1, to: 1.1001 } },
+      observation: obs,
+      nowMs: Date.now(),
+    });
+    assert.equal(v.ok ? "OK" : v.reason, "ENTRY_FRESH_QUOTE_UNAVAILABLE");
   });
   it("a quote without a source timestamp stays unknown (refused later)", async () => {
     quoteResult = { symbol: "EURUSD.a", bid: 1.1, ask: 1.1001 };

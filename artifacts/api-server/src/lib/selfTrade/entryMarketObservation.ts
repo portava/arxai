@@ -13,7 +13,13 @@
 // now-timestamp, so it is never passed on.
 // Point: the broker's own SYMBOL_POINT from arx_symbol_specs, to measure spread
 // and deviation in broker points like the EA pre-trade guard does.
+// Symbol: the EA quotes and reports specs under the broker's exact Market Watch
+// name ("EURUSD.r", "Volatility 75 Index"), while the command row carries the
+// ARX-internal name. Both reads use the same resolver the transport applies when
+// the command leaves for the EA (liveCommandPipeline → resolveBrokerSymbolName),
+// then match exactly: no case-folding, suffix guessing or alias invention here.
 import { mt5Provider } from "../data/providers/mt5Provider.js";
+import { resolveBrokerSymbolName } from "../instruments/brokerSymbolName.js";
 import { getBrokerSymbolSpec } from "../mt5/brokerSymbolSpec.js";
 import type { EntryMarketObservation } from "./freshFacts.js";
 
@@ -23,21 +29,38 @@ export async function observeAgentEntryMarket(
   userId: number,
   symbol: string,
 ): Promise<EntryMarketObservation> {
+  const unavailable = (
+    error: string,
+    brokerSymbol: string | null,
+    point: unknown = null,
+  ): EntryMarketObservation => ({
+    bid: null,
+    ask: null,
+    observedAt: null,
+    source: ENTRY_QUOTE_SOURCE,
+    point,
+    error,
+    requestedSymbol: symbol,
+    brokerSymbol,
+  });
+  let brokerSymbol: string;
+  try {
+    brokerSymbol = await resolveBrokerSymbolName(symbol);
+  } catch {
+    return unavailable("BROKER_SYMBOL_RESOLVE_FAILED", null);
+  }
   const [quote, spec] = await Promise.all([
-    mt5Provider.getQuote(symbol).catch((err: unknown) => ({ error: err })),
-    getBrokerSymbolSpec(userId, symbol).catch((err: unknown) => ({ error: err })),
+    mt5Provider.getQuote(brokerSymbol).catch((err: unknown) => ({ error: err })),
+    getBrokerSymbolSpec(userId, brokerSymbol).catch((err: unknown) => ({ error: err })),
   ]);
   const point =
     "error" in spec ? null : spec.hasBrokerTruth ? spec.spec.point : null;
   if ("error" in quote || (quote.bid == null && quote.ask == null))
-    return {
-      bid: null,
-      ask: null,
-      observedAt: null,
-      source: ENTRY_QUOTE_SOURCE,
+    return unavailable(
+      "error" in quote ? "BROKER_QUOTE_READ_FAILED" : "BROKER_QUOTE_UNAVAILABLE",
+      brokerSymbol,
       point,
-      error: "error" in quote ? "BROKER_QUOTE_READ_FAILED" : "BROKER_QUOTE_UNAVAILABLE",
-    };
+    );
   return {
     bid: quote.bid ?? null,
     ask: quote.ask ?? null,
@@ -48,6 +71,8 @@ export async function observeAgentEntryMarket(
       typeof quote.brokerClockOffsetMs === "number" && Number.isFinite(quote.brokerClockOffsetMs)
         ? quote.brokerClockOffsetMs
         : null,
+    requestedSymbol: symbol,
+    brokerSymbol,
     ...("error" in spec ? { error: "BROKER_SPEC_READ_FAILED" } : {}),
   };
 }

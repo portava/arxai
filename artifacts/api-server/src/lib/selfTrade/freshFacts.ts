@@ -107,6 +107,10 @@ export interface EntryMarketObservation {
    * tick (e.g. +10_800_000 on a GMT+3 server). Recorded, never evaluated.
    */
   brokerClockOffsetMs?: number | null;
+  /** The command row's ARX-internal symbol the observation was requested for. */
+  requestedSymbol?: string;
+  /** The broker-native name the quote and spec were read under; null if unresolved. */
+  brokerSymbol?: string | null;
   /** Present when the quote or spec could not be read. */
   error?: string | null;
 }

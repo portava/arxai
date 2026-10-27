@@ -13,6 +13,9 @@ import assert from "node:assert/strict";
 mock.module("@workspace/db", {
   namedExports: { db: {}, bridgeV2EventsTable: {}, bridgeV2StreamStateTable: {} },
 });
+mock.module("../../instruments/brokerSymbolName.js", {
+  namedExports: { resolveBrokerSymbolName: async (stored: string) => stored },
+});
 mock.module("../../mt5/brokerSymbolSpec.js", {
   namedExports: {
     getBrokerSymbolSpec: async () => ({ hasBrokerTruth: true, spec: { point: 0.00001 } }),
