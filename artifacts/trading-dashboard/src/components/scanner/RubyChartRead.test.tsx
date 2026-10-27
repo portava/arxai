@@ -651,3 +651,111 @@ describe("Task #609 — RubyChartRead survives a half-loaded read payload", () =
     fetchSpy.mockRestore();
   });
 });
+
+// ── Owner screenshot 2026-10-27 (V75 1m, Deriv public data) ───────────────────
+//
+// The server's STRUCTURAL_ONLY read reached the client with `readLayer: ""` and
+// `tradeHealthFreshness: ""` (blanked by the user-copy scrubber), so the panel
+// treated it as a full read: Feed/Data "Live read on V75 1m.", S/R "… Mind room
+// into these levels." and Pattern/Trendline "No specific … named" — while the
+// SAME read's Risk line said "Exact entry, stop, and target levels withheld —
+// Live feed is delayed …". The server now keeps the enum; the client also reads
+// the transparency booleans (which always survived) and the cautions, so either
+// wire shape renders the withheld state. Downgrade-only.
+describe("owner screenshot 2026-10-27 — STRUCTURAL_ONLY read never renders as a live read", () => {
+  const WITHHELD_REASON =
+    "Live feed is delayed — read uses the last confirmed bars, not the current candle.";
+  function serverStructuralRead(readLayer: string, tradeHealthFreshness: string): RubyReadServerState {
+    return {
+      symbol: "V75",
+      timeframe: "M1",
+      bias: "Mixed",
+      htfBias: "No clear edge",
+      confidence: "Low",
+      why: "Higher-timeframe bias is unclear. On this timeframe the trend structure leans up, with momentum cooling; price is trading up near resistance.",
+      supportZone: "33250.6 – 33273.2",
+      resistanceZone: "33639.4 – 33662.0",
+      cautions: [
+        `Exact entry, stop, and target levels withheld — ${WITHHELD_REASON}`,
+        "Read is from closed candles only — current-candle/entry confirmation pending.",
+      ],
+      gated: false,
+      dataQuality: "ok",
+      readLayer,
+      liveSetupWithheld: true,
+      canReadStructure: true,
+      canShowLiveTradeSetup: false,
+      tradeHealthFreshness,
+      tradeHealthLabel: "Historical read only",
+      tradeHealthTrustLine:
+        "Historical/closed-candle M1 structural read — feed not confirmed for live entry.",
+      basis: "VERIFIED",
+      blockedReason: WITHHELD_REASON,
+    } as unknown as RubyReadServerState;
+  }
+
+  for (const [label, read] of [
+    ["fixed server wire (readLayer STRUCTURAL_ONLY)", () => serverStructuralRead("STRUCTURAL_ONLY", "HISTORICAL_ONLY")],
+    ["pre-fix scrubbed wire (readLayer \"\")", () => serverStructuralRead("", "")],
+  ] as const) {
+    it(`${label}: Feed/Data, S/R, notice and header cap all say the setup is withheld`, () => {
+      mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full", "Live data — valid for a live read") }));
+      mockStoredRead = read();
+      render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+
+      const feedData = screen.getByTestId("ruby-chart-read-reasoning-evidence-feedData").textContent ?? "";
+      expect(feedData).not.toContain("Live read on");
+      expect(feedData).toContain("Structural read only — exact setup withheld until V75 1m confirms.");
+      expect(feedData).toContain(WITHHELD_REASON);
+      const sr = screen.getByTestId("ruby-chart-read-reasoning-evidence-supportResistance").textContent ?? "";
+      expect(sr).toContain("Exact entry/stop/target withheld");
+      expect(sr).not.toContain("Mind room into these levels");
+      expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-pattern").textContent).not.toContain("No specific chart pattern named");
+      expect(screen.getByTestId("ruby-chart-read-structural-notice")).toBeTruthy();
+      expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+
+      const capped = resolveCappedRubyReadStatus("FULL_READ", mockStoredRead);
+      expect(capped.status).toBe("LIMITED_READ");
+      expect(capped.reason).toBe(WITHHELD_REASON);
+    });
+  }
+
+  it("contradiction guard: cautions that withhold levels never pair with 'Live read on'", () => {
+    // Even a read whose panel verdict was not structural (no layer, no
+    // transparency booleans) may not claim a live read while its own cautions
+    // say the exact levels are withheld.
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = {
+      gated: false,
+      dataQuality: "ok",
+      bias: "Bullish",
+      supportZone: "1",
+      resistanceZone: "2",
+      cautions: ["Exact entry, stop, and target levels withheld — Live feed is delayed."],
+    } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const feedData = screen.getByTestId("ruby-chart-read-reasoning-evidence-feedData").textContent ?? "";
+    expect(feedData).not.toContain("Live read on");
+    expect(
+      screen.getByTestId("ruby-chart-read-reasoning-evidence-supportResistance").textContent,
+    ).not.toContain("Mind room into these levels");
+  });
+
+  it("a genuine FULL read with no withheld signals still renders the live read (no over-downgrade)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = {
+      gated: false,
+      dataQuality: "ok",
+      readLayer: "FULL",
+      liveSetupWithheld: false,
+      canShowLiveTradeSetup: true,
+      bias: "Bullish",
+      supportZone: "1",
+      resistanceZone: "2",
+      cautions: [],
+    } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-feedData").textContent).toBe("Live read on V75 1m.");
+    expect(screen.queryByTestId("ruby-chart-read-structural-notice")).toBeNull();
+  });
+});

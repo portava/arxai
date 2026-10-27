@@ -22,7 +22,7 @@ import type {
   ScalpResult,
 } from "@workspace/api-client-react";
 import type { SetupReason } from "@/components/scanner/RubySetupReason";
-import type { ChartRead } from "@/lib/rubyReadPanelState";
+import { isStructuralOnlyRead, type ChartRead } from "@/lib/rubyReadPanelState";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 
 export interface RubyReasoningEvidence {
@@ -501,8 +501,16 @@ export function buildReasoningFromChartRead(
   const { read, symbol, timeframe } = input;
   const reason = clean(input.reason);
   const gated = read.gated === true;
-  const structuralOnly = !!input.structuralOnly;
   const feedNotConfirmed = !!input.feedNotConfirmed;
+  // Contradiction guard (owner screenshot 2026-10-27): a read whose own cautions
+  // say the exact levels are withheld, or whose transparency booleans say the
+  // live setup is withheld, can never render "Live read on …" / "Mind room into
+  // these levels." — it is a structural read even if the panel verdict missed it.
+  // Downgrade-only: it can only move the block toward the withheld wording.
+  const cautionsWithholdLevels = (read.cautions ?? []).some((c) => /levels withheld/i.test(clean(c)));
+  const structuralOnly =
+    !!input.structuralOnly ||
+    (!gated && !feedNotConfirmed && (cautionsWithholdLevels || isStructuralOnlyRead(read)));
   const withheld = gated || feedNotConfirmed || structuralOnly;
   const dir = biasDir(read.bias);
   const lowConf = /low|weak/i.test(clean(read.confidence));
