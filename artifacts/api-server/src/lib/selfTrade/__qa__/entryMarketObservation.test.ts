@@ -56,7 +56,7 @@ const T = Date.parse(tick.timestamp);
 const provenance = { firstSeenEaMs: T, lastPostedEaMs: T + 2_000, reposts: 1, priorPostEaMs: T - 2_000 };
 const spec = { hasBrokerTruth: true, spec: { point: 0.00001 } };
 // The dispatch context: the bridge the command goes to and its reported EA.
-const CTX = { bridgeConnectionId: 4, eaVersion: "1.54" };
+const CTX = { bridgeConnectionId: 4, bridgeUserId: 9, eaVersion: "1.54" };
 const verdict = (observation: Awaited<ReturnType<typeof observeAgentEntryMarket>>) =>
   evaluateEntryFreshFacts({
     side: "BUY",
@@ -91,9 +91,39 @@ describe("observeAgentEntryMarket", () => {
       requestedSymbol: "EURUSD.a",
       brokerSymbol: "EURUSD.a",
       bridgeConnectionId: 4,
+      specUserId: 9,
       eaVersion: "1.54",
     });
     assert.deepEqual(calls.sort(), ["quote:EURUSD.a@4", "resolve:EURUSD.a", "spec:9:EURUSD.a"]);
+  });
+  it("reads the spec under the dispatch bridge's owner, which in SHARED_MASTER_MT5 mode is the master account, not the command's user", async () => {
+    // arx_symbol_specs rows are written under the pushing bridge's owner
+    // (routes/mt5.ts sync-symbol-specs / ENUMERATE_SYMBOLS). A follower's
+    // command executes on the master's bridge, so the spec that describes the
+    // executing account is the master's.
+    const obs = await observeAgentEntryMarket(9, "EURUSD.a", { bridgeConnectionId: 4, bridgeUserId: 3, eaVersion: "1.54" });
+    assert.equal(obs.specUserId, 3);
+    assert.equal(obs.point, 0.00001);
+    assert.ok(calls.includes("spec:3:EURUSD.a"));
+    assert.ok(!calls.some((c) => c.startsWith("spec:9:")), "the follower's own (absent) spec is never read");
+  });
+  it("a bridge without an owner reads no spec at all: the point stays unknown and the spread unmeasurable", async () => {
+    for (const bridgeUserId of [null, undefined, NaN]) {
+      calls.length = 0;
+      const obs = await observeAgentEntryMarket(9, "EURUSD.a", { bridgeConnectionId: 4, bridgeUserId, eaVersion: "1.54" });
+      assert.equal(obs.specUserId, null);
+      assert.equal(obs.point, null);
+      assert.equal(obs.bid, 1.1);
+      assert.ok(!calls.some((c) => c.startsWith("spec:")), "no spec read under a guessed user");
+      const v = evaluateEntryFreshFacts({
+        side: "BUY",
+        stopLoss: 1.09,
+        thesis: { entryZone: { from: 1.1, to: 1.1001 } },
+        observation: obs,
+        nowMs: T + 1_000,
+      });
+      assert.equal(v.ok ? "OK" : v.reason, "ENTRY_FRESH_SPREAD_UNMEASURABLE");
+    }
   });
   it("copies the store's provenance verbatim: a first-ever tick has no prior post, a legacy write has none at all", async () => {
     tickResult = { firstSeenEaMs: T, lastPostedEaMs: T, reposts: 0, priorPostEaMs: null };
@@ -154,7 +184,7 @@ describe("observeAgentEntryMarket", () => {
   it("a dispatch without a bridge identity refuses before any read", async () => {
     for (const bridgeConnectionId of [null, undefined, NaN]) {
       calls.length = 0;
-      const obs = await observeAgentEntryMarket(9, "EURUSD.a", { bridgeConnectionId, eaVersion: "1.54" });
+      const obs = await observeAgentEntryMarket(9, "EURUSD.a", { bridgeConnectionId, bridgeUserId: 9, eaVersion: "1.54" });
       assert.equal(obs.error, "BROKER_QUOTE_BRIDGE_UNKNOWN");
       assert.equal(obs.bridgeConnectionId, null);
       assert.deepEqual(calls, []);
@@ -165,7 +195,7 @@ describe("observeAgentEntryMarket", () => {
   });
   it("on the shipped v1.31 kit a missing quote says the EA streams none, and still refuses", async () => {
     quoteResult = null;
-    const obs = await observeAgentEntryMarket(9, "EURUSD", { bridgeConnectionId: 12, eaVersion: "1.31" });
+    const obs = await observeAgentEntryMarket(9, "EURUSD", { bridgeConnectionId: 12, bridgeUserId: 9, eaVersion: "1.31" });
     assert.equal(obs.error, "BROKER_QUOTE_UNAVAILABLE");
     assert.equal(obs.eaVersion, "1.31");
     assert.equal(obs.eaQuoteSupply?.quoteStream, "NONE");
@@ -178,16 +208,16 @@ describe("observeAgentEntryMarket", () => {
   });
   it("an EA version outside the verified table is reported as unknown, never guessed", async () => {
     quoteResult = null;
-    const obs = await observeAgentEntryMarket(9, "EURUSD", { bridgeConnectionId: 12, eaVersion: "1.55" });
+    const obs = await observeAgentEntryMarket(9, "EURUSD", { bridgeConnectionId: 12, bridgeUserId: 9, eaVersion: "1.55" });
     assert.equal(obs.eaQuoteSupply?.quoteStream, "UNKNOWN");
     const v = verdict(obs);
     assert.ok(!v.ok && /EA v1\.55 is not in the verified table/.test(v.detail));
-    const none = await observeAgentEntryMarket(9, "EURUSD", { bridgeConnectionId: 12, eaVersion: null });
+    const none = await observeAgentEntryMarket(9, "EURUSD", { bridgeConnectionId: 12, bridgeUserId: 9, eaVersion: null });
     assert.equal(none.eaVersion, null);
     assert.equal(none.eaQuoteSupply?.quoteStream, "UNKNOWN");
   });
   it("a present quote carries the EA version but no supply note (nothing to explain)", async () => {
-    const obs = await observeAgentEntryMarket(9, "EURUSD.a", { bridgeConnectionId: 4, eaVersion: " 1.31 " });
+    const obs = await observeAgentEntryMarket(9, "EURUSD.a", { bridgeConnectionId: 4, bridgeUserId: 9, eaVersion: " 1.31 " });
     assert.equal(obs.eaVersion, "1.31");
     assert.equal(obs.eaQuoteSupply, undefined);
     assert.equal(verdict(obs).ok, false); // nowMs is far from the fixture time: STALE, not UNAVAILABLE
@@ -244,8 +274,9 @@ describe("dispatch wiring (source order)", () => {
     assert.match(body.slice(observe - 120, observe), /isAgentEntryCommand\(row\)/);
     // The observation is bound to the bridge the command is dispatched to, and
     // carries that bridge's EA version for the supply note.
-    assert.match(body.slice(observe, observe + 240), /bridgeConnectionId: bridge\?\.id \?\? null/);
-    assert.match(body.slice(observe, observe + 240), /eaVersion: bridge\?\.eaVersion \?\? null/);
+    assert.match(body.slice(observe, observe + 320), /bridgeConnectionId: bridge\?\.id \?\? null/);
+    assert.match(body.slice(observe, observe + 320), /bridgeUserId: bridge\?\.userId \?\? null/);
+    assert.match(body.slice(observe, observe + 320), /eaVersion: bridge\?\.eaVersion \?\? null/);
   });
   it("the claim forwards the verdict detail and the dispatch catch persists it beside the reason", () => {
     const cas = readFileSync(

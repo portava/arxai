@@ -11,7 +11,13 @@
 // trade server's wall clock, not UTC, and is carried only as a diagnostic offset.
 // The store's priceless "not available" placeholder is never passed on.
 // Point: the broker's own SYMBOL_POINT from arx_symbol_specs, to measure spread
-// and deviation in broker points like the EA pre-trade guard does.
+// and deviation in broker points like the EA pre-trade guard does. Spec rows are
+// written under the pushing bridge's OWNER (routes/mt5.ts sync-symbol-specs and
+// ENUMERATE_SYMBOLS), so the spec is read under the dispatch bridge's owner —
+// the account the command executes on — not the command's user. The two differ
+// in SHARED_MASTER_MT5 mode, where a follower's command goes to the master's
+// bridge; reading under the follower found no row and refused every entry
+// ENTRY_FRESH_SPREAD_UNMEASURABLE. A bridge without an owner reads no spec.
 // Symbol: the EA quotes and reports specs under the broker's exact Market Watch
 // name ("EURUSD.r", "Volatility 75 Index"), while the command row carries the
 // ARX-internal name. Both reads use the same resolver the transport applies when
@@ -41,18 +47,25 @@ export const ENTRY_QUOTE_SOURCE = "mt5_broker";
 export interface EntryObservationContext {
   /** The bridge the command is being dispatched to (dispatchLiveCommand's `bridge.id`). */
   bridgeConnectionId: number | null | undefined;
+  /** That bridge's owner (`bridge.userId`): the account whose spec rows describe it. */
+  bridgeUserId: number | null | undefined;
   /** That bridge's heartbeat-reported EA version (`bridge.eaVersion`), for the supply note. */
   eaVersion?: string | null;
 }
 
 export async function observeAgentEntryMarket(
-  userId: number,
+  /** The command's user (kept for the call shape; the reads key by bridge and its owner). */
+  _userId: number,
   symbol: string,
   context: EntryObservationContext,
 ): Promise<EntryMarketObservation> {
   const bridgeConnectionId =
     typeof context.bridgeConnectionId === "number" && Number.isFinite(context.bridgeConnectionId)
       ? context.bridgeConnectionId
+      : null;
+  const specUserId =
+    typeof context.bridgeUserId === "number" && Number.isFinite(context.bridgeUserId)
+      ? context.bridgeUserId
       : null;
   const eaVersion =
     typeof context.eaVersion === "string" && context.eaVersion.trim() !== ""
@@ -72,6 +85,7 @@ export async function observeAgentEntryMarket(
     requestedSymbol: symbol,
     brokerSymbol,
     bridgeConnectionId,
+    specUserId,
     eaVersion,
     eaQuoteSupply: describeEaQuoteSupply(eaVersion),
   });
@@ -86,10 +100,12 @@ export async function observeAgentEntryMarket(
     Promise.resolve()
       .then(() => readMt5Quote(brokerSymbol, { bridgeConnectionId }))
       .catch((err: unknown) => ({ error: err })),
-    getBrokerSymbolSpec(userId, brokerSymbol).catch((err: unknown) => ({ error: err })),
+    specUserId == null
+      ? Promise.resolve(null)
+      : getBrokerSymbolSpec(specUserId, brokerSymbol).catch((err: unknown) => ({ error: err })),
   ]);
   const point =
-    "error" in spec ? null : spec.hasBrokerTruth ? spec.spec.point : null;
+    spec == null || "error" in spec ? null : spec.hasBrokerTruth ? spec.spec.point : null;
   const quote = "error" in read ? null : read.quote;
   if ("error" in read || quote == null || (quote.bid == null && quote.ask == null))
     return unavailable(
@@ -111,8 +127,9 @@ export async function observeAgentEntryMarket(
     requestedSymbol: symbol,
     brokerSymbol,
     bridgeConnectionId,
+    specUserId,
     eaVersion,
-    ...("error" in spec ? { error: "BROKER_SPEC_READ_FAILED" } : {}),
+    ...(spec != null && "error" in spec ? { error: "BROKER_SPEC_READ_FAILED" } : {}),
   };
 }
 

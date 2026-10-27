@@ -35,7 +35,7 @@ const HOURS_3 = 3 * 3_600_000;
 // The authenticated bridge the route attributes the push to, and the dispatch
 // context that reads it back.
 const BRIDGE = { bridgeConnectionId: 7, userId: 9 };
-const CTX = { bridgeConnectionId: 7, eaVersion: "1.54" };
+const CTX = { bridgeConnectionId: 7, bridgeUserId: 9, eaVersion: "1.54" };
 const tick = (brokerTimeEpochMs: unknown) => ({
   symbol: "EURUSD",
   bid: 1.1,

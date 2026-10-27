@@ -40,6 +40,7 @@ const quote = (bid: number) => ({
 async function verdict(bridgeConnectionId: number | null) {
   const observation = await observeAgentEntryMarket(9, "EURUSD", {
     bridgeConnectionId,
+    bridgeUserId: 9,
     eaVersion: "1.54",
   });
   const v = evaluateEntryFreshFacts({

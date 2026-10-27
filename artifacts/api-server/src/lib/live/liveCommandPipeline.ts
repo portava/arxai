@@ -4123,13 +4123,16 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // every gate and immediately before the claim. The read happens outside the
   // claim's locks; the claim evaluates it after locking (quote age, spread,
   // price vs the admitted entry zone and stop). The quote is read from THIS
-  // dispatch bridge's partition only, under the broker-native symbol; the bridge's
-  // EA version lets a missing quote say whether that EA streams quotes at all.
-  // null-safe: a failed read is an observation with an error, which the claim
-  // refuses.
+  // dispatch bridge's partition only, under the broker-native symbol, and the
+  // broker spec under this bridge's OWNER (the executing account — the master
+  // in SHARED_MASTER_MT5 mode, where specs are never written under the
+  // follower); the bridge's EA version lets a missing quote say whether that
+  // EA streams quotes at all. null-safe: a failed read is an observation with
+  // an error, which the claim refuses.
   const entryMarket = isAgentEntryCommand(row)
     ? await observeAgentEntryMarket(args.userId, row.symbol, {
         bridgeConnectionId: bridge?.id ?? null,
+        bridgeUserId: bridge?.userId ?? null,
         eaVersion: bridge?.eaVersion ?? null,
       })
     : undefined;

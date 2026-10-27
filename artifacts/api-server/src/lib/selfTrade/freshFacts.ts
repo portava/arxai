@@ -119,6 +119,8 @@ export interface EntryMarketObservation {
   brokerSymbol?: string | null;
   /** The bridge connection whose quote partition was read; null when unknown. */
   bridgeConnectionId?: number | null;
+  /** The user the broker spec was read under: the dispatch bridge's owner; null = no spec read. */
+  specUserId?: number | null;
   /** The dispatch bridge's heartbeat-reported EA version; null when unknown. */
   eaVersion?: string | null;
   /**
