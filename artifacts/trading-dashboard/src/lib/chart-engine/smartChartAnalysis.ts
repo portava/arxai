@@ -132,12 +132,15 @@ function validBar(bar: SmartChartAnalysisBar, interval: number): boolean {
     && bar.isComplete === bar.isFinal && !(bar.isComplete && bar.isForming);
 }
 
-/** Pure automatic analysis. It observes the selected historical endpoint, never
- * later candles, and reports a bounded catalog without a confidence percentage. */
-export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAnalysisResult {
+export interface SmartChartSelectedWindow {
+  status:"ready"|"unavailable";reason:string|null;contextKey:string;asOf:number|null;
+  coverage:SmartChartAnalysisResult["coverage"];bars:SmartChartAnalysisBar[];
+}
+/** Shared source/finality/viewport boundary for patterns and descriptive metrics.
+ * No caller can add hidden warmup candles or replay observations beyond cutoff. */
+export function selectSmartChartWindow(input:SmartChartAnalysisInput):SmartChartSelectedWindow {
   const key = contextKey(input);
-  const unavailable = (reason: string): SmartChartAnalysisResult => ({ status: "unavailable", reason,
-    contextKey: key, asOf: null, closedBarsUsed: 0, coverage: { available: 0, analyzed: 0, truncated: false, note: null }, findings: [], allFindings: [] });
+  const unavailable = (reason:string):SmartChartSelectedWindow => ({status:"unavailable",reason,contextKey:key,asOf:null,coverage:{available:0,analyzed:0,truncated:false,note:null},bars:[]});
   if (!validContext(input)) return unavailable("Analysis is waiting for this chart's original data-source evidence.");
   if (!finite(input.asOfMs) || input.asOfMs <= 0) return unavailable("The analysis observation time is unavailable.");
   const range = input.visibleRange;
@@ -166,6 +169,17 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
   }
   if (selected.length === 0) return unavailable("No confirmed closed candles are available in this chart window.");
   const bars = selected.slice(-MAX_ANALYSIS_BARS);
+  return {status:"ready",reason:null,contextKey:key,asOf:bars.at(-1)!.closeTime,bars,
+    coverage:{available:selected.length,analyzed:bars.length,truncated:selected.length>bars.length,
+      note:selected.length>bars.length?`Analyzing the latest ${bars.length} of ${selected.length} closed candles in view; earlier pattern context is outside this window.`:null}};
+}
+
+/** Pure automatic analysis. It observes the selected historical endpoint, never
+ * later candles, and reports a bounded catalog without a confidence percentage. */
+export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAnalysisResult {
+  const window=selectSmartChartWindow(input),key=window.contextKey;
+  if(window.status!=="ready")return {status:"unavailable",reason:window.reason,contextKey:key,asOf:null,closedBarsUsed:0,coverage:window.coverage,findings:[],allFindings:[]};
+  const bars=window.bars,interval=smartChartIntervalSeconds(input.timeframe)!;
   const last = bars[bars.length - 1]!;
   const note = caveat(input);
   const rows = new Map<string, Ranked>();
@@ -271,8 +285,7 @@ export function analyzeSmartChart(input: SmartChartAnalysisInput): SmartChartAna
   }).slice(0, 3);
   return { status: "ready", reason: allFindings.length ? null : "No supported pattern is confirmed in this window.", contextKey: key,
     asOf: last.closeTime, closedBarsUsed: bars.length,
-    coverage: { available: selected.length, analyzed: bars.length, truncated: selected.length > bars.length,
-      note: selected.length > bars.length ? `Analyzing the latest ${bars.length} of ${selected.length} closed candles in view; earlier pattern context is outside this window.` : null },
+    coverage: window.coverage,
     findings, allFindings,
     catalogue: {criteriaVersion:CANDLE_CRITERIA_VERSION,definedVariants:CANDLE_DEFINITIONS.length,
       geometryFamilies:new Set(CANDLE_DEFINITIONS.map(d=>d.family)).size,

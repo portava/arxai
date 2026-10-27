@@ -1,0 +1,158 @@
+{
+  "version": "arx-chart-descriptive-scope-v1",
+  "meaning": "Statuses describe the explicit local reader scope only, not overall architecture or family completion percentages.",
+  "ownerManifest": "SMART_CHART_OWNER_REQUIREMENTS.json",
+  "sourceBoundary": "Same source-identified closed viewport as chart patterns; most recent 600 visible candles; no hidden warmup; replay uses only the acknowledged prefix.",
+  "analysisFamilies": [
+    {
+      "name": "Trend",
+      "status": "PARTIAL",
+      "implementedScope": "Actual-time straight-line fit within the analyzed viewport, plus existing causal chart structures.",
+      "limitation": "No extrapolation, future direction, regime or trend profitability claim."
+    },
+    {
+      "name": "Comparison",
+      "status": "PARTIAL",
+      "implementedScope": "First/last close, current close rank, and latest return versus its prior-only baseline.",
+      "limitation": "No cross-asset, fundamental, benchmark or matched competitor comparison."
+    },
+    {
+      "name": "Ranking",
+      "status": "PARTIAL",
+      "implementedScope": "Tied midrank of the last close among the selected closes.",
+      "limitation": "Not a probability, forecast or ranking across instruments."
+    },
+    {
+      "name": "Change and growth",
+      "status": "PARTIAL",
+      "implementedScope": "Observed close-to-close price change and ROC14.",
+      "limitation": "No fundamental growth or future return estimate."
+    },
+    {
+      "name": "Distribution",
+      "status": "PARTIAL",
+      "implementedScope": "Type7 quartiles, median and interquartile range of selected closes.",
+      "limitation": "No inferred probability density or population model."
+    },
+    {
+      "name": "Central tendency",
+      "status": "SUPPORTED_DESCRIPTIVE_SCOPE",
+      "implementedScope": "Mean and median of analyzed visible closes.",
+      "limitation": "Only the stated descriptive scope is supported; no entire-family completion claim."
+    },
+    {
+      "name": "Variability",
+      "status": "SUPPORTED_DESCRIPTIVE_SCOPE",
+      "implementedScope": "Population close deviation, population adjacent-return deviation and visible-seeded ATR14.",
+      "limitation": "No annualized risk, forward risk, or entire-family completion claim."
+    },
+    {
+      "name": "Outliers and anomalies",
+      "status": "PARTIAL",
+      "implementedScope": "Latest adjacent return compared with 20–120 strictly prior contiguous returns using 1.5IQR fences.",
+      "limitation": "No historical event backfill, significance or forecast; zero-IQR and gaps withhold the flag."
+    },
+    {
+      "name": "Seasonality and cycles",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No tested periodicity model, session calendar or multi-season sample."
+    },
+    {
+      "name": "Relationships",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No paired independently sourced variables or causal model."
+    },
+    {
+      "name": "Lead–lag relationships",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No aligned multiple series, causal delay model or validated lag selection."
+    },
+    {
+      "name": "Composition",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "OHLC does not provide a complete parts-of-whole quantity."
+    },
+    {
+      "name": "Contribution to change",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No identified components or attributable contribution model."
+    },
+    {
+      "name": "Concentration",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No participant, holdings or activity distribution."
+    },
+    {
+      "name": "Segmentation",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No independently defined segments and validated grouped comparison."
+    },
+    {
+      "name": "Cumulative patterns",
+      "status": "PARTIAL",
+      "implementedScope": "Maximum close-peak-to-later-close drawdown inside the selected window.",
+      "limitation": "Price-series drawdown is not account P/L or a strategy return."
+    },
+    {
+      "name": "Benchmarks and targets",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No sourced comparator or user-defined target contract."
+    },
+    {
+      "name": "Breakpoints",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "Existing geometric breakouts are not validated statistical change points."
+    },
+    {
+      "name": "Forecasting",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No fitted out-of-sample forecasting contract or calibrated error evidence."
+    },
+    {
+      "name": "Uncertainty",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "Descriptive variation and R² are not predictive intervals or calibrated uncertainty."
+    },
+    {
+      "name": "Statistical significance",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No stated null model, sampling assumptions, multiplicity policy or inferential test."
+    },
+    {
+      "name": "Sensitivity and scenarios",
+      "status": "UNAVAILABLE",
+      "implementedScope": "None in this reader.",
+      "limitation": "No validated perturbation/scenario model; price-scale regression tests are correctness checks only."
+    },
+    {
+      "name": "Data quality",
+      "status": "PARTIAL",
+      "implementedScope": "Source identity, source/symbol/timeframe, OHLC, finality, observation order and cadence checks.",
+      "limitation": "No independent venue verification or session calendar; elapsed gaps do not prove missing trading."
+    },
+    {
+      "name": "Chart integrity",
+      "status": "PARTIAL",
+      "implementedScope": "Applied chart/source OHLC agreement, viewport bound, replay cutoff and numerical validation.",
+      "limitation": "Display transformations disclosed; corporate adjustments and external data truth are not established."
+    }
+  ],
+  "candlestickCoverage": {
+    "implementedDefinitions": 62,
+    "ownerNamesCovered": 65,
+    "ownerNamesTotal": 104,
+    "pendingOwnerNames": 39
+  }
+}

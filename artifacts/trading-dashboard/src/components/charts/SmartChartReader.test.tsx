@@ -26,6 +26,8 @@ describe("embedded chart reader follows applied candles",()=>{
     expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("are nearly equal");
     const bound=captureSmartChartBars(f.data,{symbol:"V75",timeframe:"M5"},[],null,NOW);
     const result=analyzeSmartChart({...bound.context,bars:bound.bars,asOfMs:NOW,visibleRange:{from:f.all[0]!.time,to:f.all.at(-1)!.time},dataState:"current"});
+    expect(screen.getByTestId("chart-reader-anatomy").closest("details")?.hasAttribute("open")).toBe(false);
+    expect(screen.getByTestId("chart-reader-anatomy").textContent).toContain("Open");
     const chips=within(screen.getByLabelText("Relevant chart patterns")).getAllByRole("button");
     const more=within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true});
     expect(chips.length).toBeLessThanOrEqual(3);expect(chips.length+more.length).toBe(result.allFindings.length);
@@ -94,4 +96,38 @@ describe("embedded chart reader follows applied candles",()=>{
     expect(screen.getByText(/The line shows closes; candle patterns also use open, high and low/)).toBeTruthy();
     expect(screen.getByTestId("chart-reader-explanation").textContent).toContain("are nearly equal");
   });
+  it("keeps factual context concise and metric details collapsed with visible-only warmup",()=>{
+    const f=fixture();render(<SmartChartReader {...f.props}/>);
+    expect(screen.getByTestId("chart-reader-context").textContent).toContain("30 closed candles");
+    const summary=screen.getByText("Analysis, evidence and chart statistics");expect(summary.parentElement?.hasAttribute("open")).toBe(false);
+    expect(screen.getByText("RSI14 · visible seed").parentElement?.textContent).toContain("50");
+    f.show(f.all.slice(0,14));
+    expect(screen.getByText("RSI14 · visible seed").parentElement?.textContent).toContain("Unavailable");
+    expect(screen.getByText("ATR14 · visible seed").parentElement?.textContent).not.toContain("Unavailable");
+    expect(screen.getByTestId("chart-reader-context").textContent).toContain("14 closed candles");
+    expect(screen.getByText(/RSI14 needs 15 closed candles/)).toBeTruthy();
+    expect(screen.getByText("Fit R² in this window").parentElement?.textContent).toContain("Unavailable");
+  });
+  it("withdraws every descriptive metric with stale display ownership or missing source evidence",()=>{
+    const f=fixture(),view=render(<SmartChartReader {...f.props}/>);
+    expect(screen.getByLabelText("Descriptive window metrics")).toBeTruthy();
+    f.show(f.all.map((bar,i)=>i===2?{...bar,close:100.5}:bar));
+    expect(screen.queryByTestId("chart-reader-context")).toBeNull();expect(screen.queryByLabelText("Descriptive window metrics")).toBeNull();
+    f.show(f.all);expect(screen.getByLabelText("Descriptive window metrics")).toBeTruthy();
+    view.rerender(<SmartChartReader {...f.props} data={{...f.data,marketEvidence:null}}/>);
+    expect(screen.queryByLabelText("Descriptive window metrics")).toBeNull();
+  });
+  it("preserves gap-aware price context while withholding cadence-dependent readings",()=>{
+    const f=fixture();
+    const gapped=f.data.candles!.filter((_,i)=>i!==10);
+    const data={...f.data,candles:gapped};f.show(f.all.filter((_,i)=>i!==10));
+    render(<SmartChartReader {...f.props} data={data}/>);
+    expect(screen.getByTestId("chart-reader-context").textContent).toContain("29 closed candles");
+    expect(screen.getByText("RSI14 · visible seed").parentElement?.textContent).toContain("Unavailable");
+    expect(screen.getByText("ATR14 · visible seed").parentElement?.textContent).toContain("Unavailable");
+    expect(screen.getAllByText(/Unequal observation intervals are present/).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("chart-reader-unusual-move").textContent).toContain("unavailable");
+    expect(screen.getByText("Lower / upper close quartile").parentElement?.textContent).toContain("100");
+  });
+
 });
