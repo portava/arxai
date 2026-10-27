@@ -9,6 +9,17 @@ const input=(values:number[]|SmartChartAnalysisBar[]):SmartChartAnalysisInput=>{
 const series=(returns:number[])=>returns.reduce((values,r)=>[...values,values.at(-1)!*(1+r/100)],[100]);
 const prior=Array.from({length:20},(_,i)=>[1,-1,.5,-.5][i%4]!);
 describe("source-bound descriptive window",()=>{
+ it("shortens narrative precision without changing measured evidence or tiny-move direction",()=>{
+  const regular=describeSmartChartWindow(input([100,100.123456]));
+  expect(regular.summary).toContain("price rose 0.12%");
+  expect(regular.basics!.changePercent).toBeCloseTo(.123456,10);
+  const tiny=describeSmartChartWindow(input([100,100.000001]));
+  expect(tiny.summary).toContain("price rose less than 0.01%");
+  const falling=describeSmartChartWindow(input([100,99.999999]));
+  expect(falling.summary).toContain("price fell less than 0.01%");
+  expect(falling.basics!.changePercent).toBeLessThan(0);
+  expect(describeSmartChartWindow(input([100,100])).summary).toContain("price stayed level;");
+ });
  it("uses explicit type7 quartiles and tied midrank rather than probability",()=>{
   expect(windowQuantile([1,2,3,4],.25)).toBe(1.75);expect(windowQuantile([1,2,3,4],.75)).toBe(3.25);
   const r=describeSmartChartWindow(input([10,20,20,30,20]));

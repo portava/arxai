@@ -23,6 +23,15 @@ export function chartNumber(value:number):string {
   return Number(value.toPrecision(7)).toString();
 }
 
+/** Concise narrative only; numerical evidence retains chartNumber precision.
+ * A nonzero move must never become a claim that price stayed level. */
+export function chartChangeSummary(change:number,changePercent:number):string {
+  if(!Number.isFinite(change)||!Number.isFinite(changePercent))return "change is unavailable";
+  if(change===0)return "stayed level";
+  const magnitude=Math.abs(changePercent);
+  return `${change>0?"rose":"fell"} ${magnitude<0.01?"less than 0.01%":`${Number(magnitude.toFixed(2))}%`}`;
+}
+
 /** Elapsed gaps are observations, not proof of missing trades: market closures
  * and provider/session calendars are not established by these bars alone. */
 export function chartObservationGaps(bars:readonly SmartChartAnalysisBar[],interval:number) {
