@@ -90,7 +90,9 @@ export class StudyCalculator {
   readonly points: StudyPoint[] = [];
   constructor(readonly config: ChartStudy) {}
 
-  calculate(bars: ChartEngineCandle[], from = 0): StudyPoint[] {
+  /** Rendering reads points directly and can omit the duplicate changed list.
+   * Default callers still receive every changed point in its original order. */
+  calculate(bars: ChartEngineCandle[], from = 0, collectChanges = true): StudyPoint[] {
     const c = this.config;
     const p = c.period;
     from = Math.max(0, Math.min(from, this.states.length, bars.length));
@@ -122,7 +124,7 @@ export class StudyCalculator {
       const price = appliedPrice(bar, c.source ?? (c.kind === "cci" ? "hlc3" : "close"));
       state = { price, averages: {} };
       previous = this.states[i - 1];
-      let values: (number | null)[] = [null];
+      let values: (number | null)[];
       switch (c.kind) {
         case "sma": case "ema": case "smma": case "wma":
           values = [average("basis", price, p, c.kind)];
@@ -201,6 +203,7 @@ export class StudyCalculator {
           values = [ratio == null ? null : c.kind === "momentum" ? 100 * ratio : 100 * (ratio - 1)];
           break;
         }
+        default: values = [null];
       }
       this.states.push(state);
       // Normalize the newly created channel array in place; no other owner has it.
@@ -210,7 +213,7 @@ export class StudyCalculator {
       }
       const point = { time: bar.time, values };
       this.points.push(point);
-      changed.push(point);
+      if (collectChanges) changed.push(point);
     }
     return changed;
   }

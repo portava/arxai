@@ -110,3 +110,17 @@ describe("independent study reference vectors", () => {
     expect(calculate("sma", [bar, { ...bar, time: 2 }, { ...bar, time: 3 }], { source: "open" })[2]![0]).toBe(10);
   });
 });
+
+
+describe("render-only calculation retains causal checkpoints without a duplicate change list",()=>{
+  it.each(STUDY_CATALOG)("$name preserves default return semantics and exact values",({defaults})=>{
+    const data=Array.from({length:220},(_,i)=>({time:100+i*60,open:100,high:103,low:97,close:100+Math.sin(i/7)}));
+    const normal=new StudyCalculator(defaults),renderOnly=new StudyCalculator(defaults);
+    for(const [next,from] of [[data,0],[data.slice(0,200),200],[data,200],[data.map((b,i)=>i===30?{...b,close:102}:b),30],[data.slice(0,1),1],[data,1],[[],0],[data,0]] as const){
+      const changed=normal.calculate([...next],from);
+      expect(renderOnly.calculate([...next],from,false)).toEqual([]);
+      expect(renderOnly.points).toEqual(normal.points);
+      expect(changed).toEqual(normal.points.slice(Math.min(from, next.length)));
+    }
+  });
+});
