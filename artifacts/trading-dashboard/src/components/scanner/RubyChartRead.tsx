@@ -7,6 +7,7 @@ import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromChartRead } from "@/lib/rubyReasoningBlock";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import {
+  resolveHtfRead,
   resolveRubyReadPanelState,
   type ChartRead,
 } from "@/lib/rubyReadPanelState";
@@ -242,7 +243,19 @@ export function RubyChartRead({
           <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-background/40 p-3">
             <Metric label="Bias" value={read.bias ?? "—"} className={biasTone(read.bias ?? "")} testid="ruby-chart-read-bias" />
             <Metric label="Confidence" value={read.confidence ?? "—"} className={confTone(read.confidence ?? "")} />
-            <Metric label="HTF Bias" value={read.htfBias ?? "—"} className={biasTone(read.htfBias ?? "")} />
+            {(() => {
+              // "—" when the server did not read the HTF (null / legacy sentinel);
+              // the label names the server's HTF timeframe when it sent one.
+              const htf = resolveHtfRead(read);
+              return (
+                <Metric
+                  label={htf.label ? `HTF (${htf.label}) bias` : "HTF Bias"}
+                  value={htf.bias ?? "—"}
+                  className={biasTone(htf.bias ?? "")}
+                  testid="ruby-chart-read-htf-bias"
+                />
+              );
+            })()}
           </div>
 
           {/* Ruby's full reasoning — ALWAYS visible (no accordion). Honesty flags

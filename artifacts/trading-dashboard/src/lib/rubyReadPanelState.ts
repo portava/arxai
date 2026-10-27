@@ -160,9 +160,35 @@ export interface ChartRead extends RubyReadServerState {
   sellCondition?: string;
   invalidation?: string;
   riskNote?: string;
-  htfBias?: string;
+  /** Higher-timeframe bias; null/absent ⇒ the HTF was NOT read. */
+  htfBias?: string | null;
+  /** Canonical code of the timeframe htfBias came from (server-supplied). */
+  htfTimeframe?: string | null;
   cautions?: string[];
   disclaimer?: string;
+}
+
+/**
+ * The server's higher-timeframe read, resolved for display. `bias` is null when
+ * the HTF was not read — including the legacy "No clear edge" sentinel older
+ * servers sent when they never fetched HTF candles (quickTrend never yields it
+ * once it has bars). `label` is the server's htfTimeframe as a chart-pill label
+ * ("M15" → "15m"); the client never derives which timeframe is "higher".
+ */
+export function resolveHtfRead(read: Pick<ChartRead, "htfBias" | "htfTimeframe"> | null | undefined): {
+  bias: string | null;
+  label: string | null;
+} {
+  const raw = (read?.htfBias ?? "").trim();
+  const bias = raw && raw.toLowerCase() !== "no clear edge" ? raw : null;
+  const code = (read?.htfTimeframe ?? "").trim().toUpperCase();
+  const m = /^(MN|[MHDW])(\d+)$/.exec(code);
+  let label: string | null = null;
+  if (m) {
+    const unit = m[1] === "MN" ? "mo" : m[1] === "M" ? "m" : m[1] === "H" ? "h" : m[1] === "D" ? "D" : "W";
+    label = `${m[2]}${unit}`;
+  }
+  return { bias, label };
 }
 
 /** The Ruby read status capped against the server read + an optional override. */

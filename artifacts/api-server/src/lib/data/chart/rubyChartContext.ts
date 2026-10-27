@@ -105,6 +105,13 @@ export interface RubyChartContext {
    * Same source as candles above.
    */
   htfCandles: Candle[];
+
+  /**
+   * The canonical timeframe `htfCandles` were fetched on, or null when this
+   * timeframe has no higher timeframe. Consumers must label any HTF-derived
+   * statement with it (and must not assume the HTF is daily).
+   */
+  htfTimeframe: ChartTimeframe | null;
 }
 
 export function buildTrustLine(
@@ -323,5 +330,6 @@ export async function buildRubyChartContext(
     state,
     candles,
     htfCandles,
+    htfTimeframe: htf,
   };
 }

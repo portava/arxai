@@ -22,7 +22,7 @@ import type {
   ScalpResult,
 } from "@workspace/api-client-react";
 import type { SetupReason } from "@/components/scanner/RubySetupReason";
-import { isStructuralOnlyRead, type ChartRead } from "@/lib/rubyReadPanelState";
+import { isStructuralOnlyRead, resolveHtfRead, type ChartRead } from "@/lib/rubyReadPanelState";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 import {
   isScalpAwaitingBrokerSpecs,
@@ -523,6 +523,14 @@ export interface ChartReadReasoningInput {
   reason?: string | null;
 }
 
+function describeHtfBias(bias: string): string {
+  const b = bias.toLowerCase();
+  if (b.includes("bull")) return "leans bullish";
+  if (b.includes("bear")) return "leans bearish";
+  if (b.includes("range")) return "is range-bound";
+  return `is ${b}`;
+}
+
 function biasDir(bias: string | null | undefined): "BUY" | "SELL" | null {
   const b = clean(bias).toLowerCase();
   if (b.includes("bull")) return "BUY";
@@ -566,12 +574,16 @@ export function buildReasoningFromChartRead(
   }
 
   // ── Evidence ────────────────────────────────────────────────────────────────
-  const structure = orElse(
-    clean(read.htfBias)
-      ? `Higher-timeframe bias ${read.htfBias}${clean(read.bias) ? `; ${read.bias} on ${timeframe}` : ""}.`
-      : read.bias,
-    NOT_ENOUGH,
-  );
+  // The HTF clause says only what was read: a bias named with the timeframe it
+  // came from, or "not read" — never a bias word for an HTF nobody fetched.
+  const htf = resolveHtfRead(read);
+  const htfName = htf.label ? `Higher timeframe (${htf.label})` : "Higher timeframe";
+  const htfClause = htf.bias
+    ? `${htfName} ${describeHtfBias(htf.bias)}`
+    : `${htf.label ? `Higher-timeframe (${htf.label})` : "Higher-timeframe"} bias not read`;
+  const structure = clean(read.bias)
+    ? `${htfClause}; ${read.bias} on ${timeframe}.`
+    : NOT_ENOUGH;
   const momentum = clean(read.confidence)
     ? `Read confidence ${read.confidence}.`
     : NOT_ENOUGH;

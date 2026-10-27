@@ -17,6 +17,11 @@
 
 import type { Candle } from "../data/types.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
+import {
+  normalizeChartTimeframe,
+  timeframeMs,
+  type ChartTimeframe,
+} from "../data/chart/timeframes.js";
 
 export type StructureBias =
   | "Bullish"
@@ -37,7 +42,15 @@ export type ChartReadResult = {
   sellCondition: string;
   invalidation: string;
   riskNote: string;
-  htfBias: StructureBias;
+  /**
+   * Higher-timeframe bias, or `null` when the higher timeframe was NOT read
+   * (no HTF for this timeframe, the HTF fetch returned too few bars, or the
+   * newest HTF bar is stale). `null` must render as "not read" — never as a
+   * bias like "No clear edge", which would claim the HTF was looked at.
+   */
+  htfBias: StructureBias | null;
+  /** The canonical timeframe `htfBias` came from (or would have, when null). */
+  htfTimeframe: ChartTimeframe | null;
   dataQuality: "ok" | "insufficient";
   cautions: string[];
 };
@@ -135,9 +148,16 @@ export const STRUCTURE_MIN_CLOSED_BARS = 20;
 // ── main analyzer ─────────────────────────────────────────────────────────
 export function analyzeChartStructure(
   rawCandles: Candle[],
-  opts: { htfBias?: StructureBias; draft?: DraftPlan; assistantName?: string } = {},
+  opts: {
+    htfBias?: StructureBias | null;
+    htfTimeframe?: ChartTimeframe | null;
+    draft?: DraftPlan;
+    assistantName?: string;
+  } = {},
 ): ChartReadResult {
-  const htfBias: StructureBias = opts.htfBias ?? "No clear edge";
+  // Absent ⇒ the HTF was not read. Never default to a bias sentinel.
+  const htfBias: StructureBias | null = opts.htfBias ?? null;
+  const htfTimeframe: ChartTimeframe | null = opts.htfTimeframe ?? null;
   const draft = opts.draft ?? null;
   const assistantName = opts.assistantName ?? DEFAULT_ASSISTANT_NAME;
 
@@ -156,6 +176,7 @@ export function analyzeChartStructure(
       invalidation: "No structure to invalidate yet — treat any move as noise until the chart fills in.",
       riskNote: "Avoid acting on an unread chart. Let the data load, then re-read.",
       htfBias,
+      htfTimeframe,
       dataQuality: "insufficient",
       cautions: ["Insufficient candle history for a structural read."],
     };
@@ -262,12 +283,11 @@ export function analyzeChartStructure(
       ? "with recent upside momentum"
       : "with recent downside momentum"
     : "with momentum cooling";
-  const htfWord =
-    htfBias === "No clear edge"
-      ? "Higher-timeframe bias is unclear"
-      : `Higher-timeframe bias leans ${htfBias.toLowerCase()}`;
+  // Only a higher timeframe that was ACTUALLY read is narrated, named by its
+  // timeframe. Not read ⇒ no HTF clause at all (never "bias is unclear").
+  const htfWord = htfBias == null ? null : describeHtfBias(htfBias, htfTimeframe);
 
-  const why = `${htfWord}. On this timeframe ${trendWord}, ${momWord}; price is ${stateWord}.`;
+  const why = `${htfWord ? `${htfWord}. ` : ""}On this timeframe ${trendWord}, ${momWord}; price is ${stateWord}.`;
 
   // Conditional triggers — never an unconditional "buy now".
   const buyCondition =
@@ -329,23 +349,81 @@ export function analyzeChartStructure(
     invalidation,
     riskNote,
     htfBias,
+    htfTimeframe,
     dataQuality: "ok",
     cautions,
   };
 }
 
 // Map a chart timeframe to a sensible higher timeframe for bias context.
-export function higherTimeframeOf(timeframe: string): string | null {
-  const tf = timeframe.trim().toLowerCase();
-  const map: Record<string, string> = {
-    "1m": "15m",
-    "5m": "1h",
-    "15m": "1h",
-    "30m": "4h",
-    "1h": "4h",
-    "4h": "1d",
-    "1d": "1w",
-    "1w": "1w",
-  };
-  return map[tf] ?? null;
+// Accepts canonical codes ("M1") and aliases ("1m"), returns a CANONICAL code
+// (the HTF fetch and every chart-layer consumer is canonical). Returns null when
+// there is no higher timeframe to read (W1/MN1, or an unknown timeframe): the
+// same timeframe is never its own "higher timeframe".
+const HIGHER_TIMEFRAME: Partial<Record<ChartTimeframe, ChartTimeframe>> = {
+  M1: "M15", M2: "M15", M3: "M15", M4: "M15",
+  M5: "H1", M6: "H1", M10: "H1", M12: "H1", M15: "H1", M20: "H1",
+  M30: "H4", H1: "H4", H2: "H4", H3: "H4",
+  H4: "D1", H6: "D1", H8: "D1", H12: "D1",
+  D1: "W1",
+};
+
+export function higherTimeframeOf(timeframe: string): ChartTimeframe | null {
+  const tf = normalizeChartTimeframe(timeframe);
+  if (!tf) return null;
+  return HIGHER_TIMEFRAME[tf] ?? null;
+}
+
+/** Short human label for a canonical timeframe, matching the chart pills. */
+export function humanTimeframeLabel(tf: ChartTimeframe): string {
+  const m = /^([MHDW]|MN)(\d+)$/.exec(tf);
+  if (!m) return tf;
+  const unit = m[1]!;
+  const n = m[2]!;
+  if (unit === "M") return `${n}m`;
+  if (unit === "H") return `${n}h`;
+  if (unit === "D") return `${n}D`;
+  if (unit === "W") return `${n}W`;
+  return `${n}M`;
+}
+
+function describeHtfBias(bias: StructureBias, tf: ChartTimeframe | null): string {
+  const label = tf ? `Higher timeframe (${humanTimeframeLabel(tf)})` : "Higher timeframe";
+  switch (bias) {
+    case "Bullish":
+      return `${label} leans bullish`;
+    case "Bearish":
+      return `${label} leans bearish`;
+    case "Range-bound":
+      return `${label} is range-bound`;
+    case "Mixed":
+      return `${label} is mixed`;
+    default:
+      return `${label} shows no clear edge`;
+  }
+}
+
+/** Minimum HTF bars quickTrend needs before its answer means anything. */
+export const HTF_MIN_BARS = 10;
+
+/**
+ * Read the higher-timeframe bias from the HTF candles the chart context fetched.
+ * Fails closed to `null` ("not read") when there is no HTF, too few bars, or the
+ * newest HTF bar opened more than three HTF intervals ago (a cached/stale series
+ * must not be presented as the CURRENT higher-timeframe bias).
+ */
+export function readHigherTimeframeBias(
+  htfCandles: Candle[] | null | undefined,
+  htfTimeframe: ChartTimeframe | null | undefined,
+  nowMs: number = Date.now(),
+): StructureBias | null {
+  if (!htfTimeframe || !htfCandles || htfCandles.length < HTF_MIN_BARS) return null;
+  let newest = Number.NEGATIVE_INFINITY;
+  for (const c of htfCandles) {
+    const t = Date.parse(c.time);
+    if (Number.isFinite(t) && t > newest) newest = t;
+  }
+  if (!Number.isFinite(newest)) return null;
+  if (nowMs - newest > 3 * timeframeMs(htfTimeframe)) return null;
+  return quickTrend(htfCandles);
 }

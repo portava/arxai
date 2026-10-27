@@ -24,7 +24,7 @@
 
 import {
   analyzeChartStructure,
-  quickTrend,
+  readHigherTimeframeBias,
   type StructureBias,
   type DraftPlan,
 } from "./chartStructure.js";
@@ -487,8 +487,10 @@ export async function buildRubyStructuralRead(
   // Enough closed history to read structure. Use candles already owned by
   // RubyChartContext — no separate provider fetch; rubyCtx is the sole source.
   const candles = rubyCtx.candles;
-  let htfBias: StructureBias = "No clear edge";
-  if (rubyCtx.htfCandles.length >= 10) htfBias = quickTrend(rubyCtx.htfCandles);
+  // Higher-timeframe bias ONLY when the HTF was actually read (enough fresh HTF
+  // bars on the context's own htfTimeframe); null ⇒ "not read", never a bias.
+  const htfTimeframe = rubyCtx.htfTimeframe ?? null;
+  const htfBias: StructureBias | null = readHigherTimeframeBias(rubyCtx.htfCandles, htfTimeframe);
 
   // ── MARKET INTELLIGENCE (Task #652) — ADDITIVE, DISPLAY-ONLY child input ─────
   // Composes the six pure "Truth" verdicts (Pivot/Direction/Entry/OrderFlow/
@@ -565,7 +567,7 @@ export async function buildRubyStructuralRead(
   // ── Layer FULL — verified feed AND the shared sufficiency verdict allows the
   // exact live trade setup (entry/SL/TP echoed from the user's draft when present).
   if (rubyCtx.basis === "VERIFIED" && layers.canShowLiveTradeSetup) {
-    const read = analyzeChartStructure(candles, { htfBias, draft: draft ?? null, assistantName });
+    const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: draft ?? null, assistantName });
     const trustLine = rubyCtx.trustLine;
     const patternNote = await buildRubyPatternNote({
       symbol,
@@ -631,7 +633,7 @@ export async function buildRubyStructuralRead(
   // read and EXPLICITLY WITHHOLD exact entry/stop/target/reward:risk. The
   // structure analyzer never emits numeric levels, and we force `draft: null` so
   // no level echo can leak.
-  const read = analyzeChartStructure(candles, { htfBias, draft: null, assistantName });
+  const read = analyzeChartStructure(candles, { htfBias, htfTimeframe, draft: null, assistantName });
   const withheldReason =
     rubyCtx.sufficiency.humanReason ??
     rubyCtx.blockReason ??
