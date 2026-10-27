@@ -1690,3 +1690,68 @@ it("fresh facts: confirmation is not the final step and does not need a quote", 
     ),
   );
 });
+// Opt-in (ARX_FRESH_FACTS_BENCHMARK=1): paired, interleaved final-claim latency
+// in this disposable cluster. "before" is the claim without facts (the previous
+// code path); "after" adds the dispatch-time observation (real broker-spec read
+// from PostgreSQL; the quote router is replaced by an in-memory value here and
+// measured separately offline) plus in-claim evaluation.
+it(
+  "fresh facts: paired final-claim latency benchmark",
+  { skip: process.env.ARX_FRESH_FACTS_BENCHMARK !== "1" },
+  async () => {
+    const { arxSymbolSpecsTable } = database;
+    await pool.query("DROP TABLE IF EXISTS arx_symbol_specs");
+    await createTable(arxSymbolSpecsTable);
+    await db.insert(arxSymbolSpecsTable).values({
+      userId: 9,
+      symbol: "EURUSD.a",
+      point: 0.00001,
+    } as never);
+    const { getBrokerSymbolSpec } = await import("../../mt5/brokerSymbolSpec.js");
+    await configure({ maxConcurrentPositions: 0, baseMaxTrades: 100_000 });
+    const observe = async () => {
+      const [q, spec] = await Promise.all([
+        Promise.resolve(freshQuote()),
+        getBrokerSymbolSpec(9, "EURUSD.a"),
+      ]);
+      return { ...q, point: spec.spec.point };
+    };
+    const before: number[] = [];
+    const after: number[] = [];
+    const rounds = 300;
+    for (let i = 0; i < rounds + 20; i++) {
+      for (const variant of i % 2 ? ["after", "before"] : ["before", "after"]) {
+        const { row } = await approveAuthority();
+        const t0 = performance.now();
+        const claimed =
+          variant === "before"
+            ? await claimLiveCommandForDispatch(row.commandId, sendPatch(), row)
+            : await claimLiveCommandForDispatch(
+                row.commandId,
+                sendPatch(),
+                row,
+                db,
+                undefined,
+                { entryMarket: await observe() },
+              );
+        const ms = performance.now() - t0;
+        assert.equal(claimed?.status, "SENT_TO_MT5_LIVE");
+        if (i >= 20) (variant === "before" ? before : after).push(ms);
+      }
+    }
+    const pct = (xs: number[], p: number) => {
+      const s = [...xs].sort((a, b) => a - b);
+      return Number(s[Math.min(s.length - 1, Math.ceil((p / 100) * s.length) - 1)].toFixed(3));
+    };
+    const summary = (xs: number[]) => ({
+      n: xs.length,
+      median: pct(xs, 50),
+      p95: pct(xs, 95),
+      p99: pct(xs, 99),
+    });
+    console.log(
+      "FRESH_FACTS_BENCHMARK",
+      JSON.stringify({ before: summary(before), after: summary(after) }),
+    );
+  },
+);

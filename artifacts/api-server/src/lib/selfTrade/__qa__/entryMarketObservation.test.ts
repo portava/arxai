@@ -1,5 +1,5 @@
-// The dispatch-time observer and its wiring. Market router and broker spec are
-// local module doubles; no feed, database or venue is reached.
+// The dispatch-time observer and its wiring. The broker quote store and broker
+// spec are local module doubles; no feed, database or venue is reached.
 import { beforeEach, describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -8,12 +8,14 @@ import { fileURLToPath } from "node:url";
 let quoteResult: unknown;
 let specResult: unknown;
 const calls: string[] = [];
-mock.module("../../data/marketDataRouter.js", {
+mock.module("../../data/providers/mt5Provider.js", {
   namedExports: {
-    routeQuote: async (symbol: string) => {
-      calls.push(`quote:${symbol}`);
-      if (quoteResult instanceof Error) throw quoteResult;
-      return quoteResult;
+    mt5Provider: {
+      getQuote: async (symbol: string) => {
+        calls.push(`quote:${symbol}`);
+        if (quoteResult instanceof Error) throw quoteResult;
+        return quoteResult;
+      },
     },
   },
 });
@@ -29,11 +31,7 @@ mock.module("../../mt5/brokerSymbolSpec.js", {
 const { observeAgentEntryMarket } = await import("../entryMarketObservation.js");
 const { evaluateEntryFreshFacts } = await import("../freshFacts.js");
 
-const tick = {
-  ok: true,
-  primaryProvider: "mt5_broker",
-  quote: { symbol: "EURUSD.a", bid: 1.1, ask: 1.1001, timestamp: "2026-10-27T12:00:00.000Z" },
-};
+const tick = { symbol: "EURUSD.a", bid: 1.1, ask: 1.1001, timestamp: "2026-10-27T12:00:00.000Z" };
 const spec = { hasBrokerTruth: true, spec: { point: 0.00001 } };
 beforeEach(() => {
   quoteResult = tick;
@@ -42,7 +40,7 @@ beforeEach(() => {
 });
 
 describe("observeAgentEntryMarket", () => {
-  it("reads the execution symbol's quote and broker point without inventing a time", async () => {
+  it("reads the execution broker's quote and point without inventing a time", async () => {
     assert.deepEqual(await observeAgentEntryMarket(9, "EURUSD.a"), {
       bid: 1.1,
       ask: 1.1001,
@@ -53,7 +51,7 @@ describe("observeAgentEntryMarket", () => {
     assert.deepEqual(calls.sort(), ["quote:EURUSD.a", "spec:9:EURUSD.a"]);
   });
   it("a quote without a source timestamp stays unknown (refused later)", async () => {
-    quoteResult = { ...tick, quote: { symbol: "EURUSD.a", bid: 1.1, ask: 1.1001 } };
+    quoteResult = { symbol: "EURUSD.a", bid: 1.1, ask: 1.1001 };
     const obs = await observeAgentEntryMarket(9, "EURUSD.a");
     assert.equal(obs.observedAt, null);
     const v = evaluateEntryFreshFacts({
@@ -65,11 +63,15 @@ describe("observeAgentEntryMarket", () => {
     });
     assert.equal(v.ok ? "OK" : v.reason, "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID");
   });
-  it("no feed, router failure and spec failure become error observations", async () => {
-    quoteResult = { ok: false, primaryProvider: null, quote: null };
-    assert.equal((await observeAgentEntryMarket(9, "EURUSD.a")).error, "QUOTE_UNAVAILABLE");
-    quoteResult = new Error("router exploded");
-    assert.equal((await observeAgentEntryMarket(9, "EURUSD.a")).error, "QUOTE_READ_FAILED");
+  it("the store's priceless placeholder never passes on its fabricated now-timestamp", async () => {
+    quoteResult = { symbol: "EURUSD.a", timestamp: new Date().toISOString() };
+    const obs = await observeAgentEntryMarket(9, "EURUSD.a");
+    assert.equal(obs.error, "BROKER_QUOTE_UNAVAILABLE");
+    assert.equal(obs.observedAt, null);
+  });
+  it("store failure and spec failure become error observations", async () => {
+    quoteResult = new Error("store exploded");
+    assert.equal((await observeAgentEntryMarket(9, "EURUSD.a")).error, "BROKER_QUOTE_READ_FAILED");
     quoteResult = tick;
     specResult = new Error("db down");
     assert.equal((await observeAgentEntryMarket(9, "EURUSD.a")).error, "BROKER_SPEC_READ_FAILED");
