@@ -488,13 +488,15 @@ export async function manageAgentPositions(
           },
           { readTicketCommands, ...(options.protective ?? {}) },
         );
-        if (protective.status !== "NOT_APPLICABLE" && protective.status !== "NOT_PROTECTIVE") {
+        if (protective.status === "DISPATCHED") {
           result.protective.considered++;
           result.protective.waitedMs += protective.waitedMs;
-          if (protective.status === "DISPATCHED") result.protective.acted++;
-          else
-            result.protective.held[protective.reason] =
-              (result.protective.held[protective.reason] ?? 0) + 1;
+          result.protective.acted++;
+        } else if (protective.status === "HELD") {
+          result.protective.considered++;
+          result.protective.waitedMs += protective.waitedMs;
+          result.protective.held[protective.reason] =
+            (result.protective.held[protective.reason] ?? 0) + 1;
         }
       } catch (err) {
         // The path fails closed on its own; this only keeps the cycle alive.

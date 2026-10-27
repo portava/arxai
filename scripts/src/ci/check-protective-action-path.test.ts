@@ -104,6 +104,12 @@ mutate(PROTECTIVE_FILES.domain, 'import type { PositionManagementVerdict } from 
 mutate(PROTECTIVE_FILES.cycle, "if (!chain.shouldPauseManagement) {\n        const managed = await manageAgentPositions(bundle.agent, actorUserId, actorRole);", "const managed = await manageAgentPositions(bundle.agent, actorUserId, actorRole);\n      if (!chain.shouldPauseManagement) {", /outside the !chain.shouldPauseManagement block/);
 mutate(PROTECTIVE_FILES.cycle, "if (!chain.shouldPauseManagement) {", "if (chain.shouldPauseManagement === false) {", /block is missing/);
 
+// 8. Registration parity: dropping either registration is a violation.
+mutate(PROTECTIVE_FILES.rules, '      "lib/selfTrade/livePositionManager.ts",\n      "lib/selfTrade/protectiveActionPath.ts",\n', '      "lib/selfTrade/livePositionManager.ts",\n', /"self-trade-manage"\.modules must list/);
+mutate(PROTECTIVE_FILES.rules, 'id: "self-trade-manage",', 'id: "self-trade-manage-v2",', /"self-trade-manage" rule is missing/);
+mutate(PROTECTIVE_FILES.killSwitch, '  "lib/selfTrade/protectiveActionPath.ts": "MANAGEMENT",\n', "", /SELF_TRADE_PRODUCERS must classify/);
+mutate(PROTECTIVE_FILES.killSwitch, '  "lib/selfTrade/protectiveActionPath.ts": "MANAGEMENT",', '  "lib/selfTrade/protectiveActionPath.ts": "PASS_THROUGH",', /SELF_TRADE_PRODUCERS must classify/);
+
 // Missing files are violations, not silent passes.
 n++;
 assert.ok(scanProtectiveSources({ ...real, [PROTECTIVE_FILES.path]: undefined as never }).some((x) => /missing/.test(x)));

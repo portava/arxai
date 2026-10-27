@@ -305,6 +305,7 @@ export async function runProtectiveActionPath(
       symbol: entry.symbol,
       side: e.side as "BUY" | "SELL",
     });
+    if (!scope) throw new Error("exact position scope could not be built");
     let row: LivePositionRow | undefined;
     let evidence: { observedAtMs: number; sweepAtMs: number } | null = null;
     let lastReason: ProtectiveHoldReason = "PROTECTIVE_OBSERVATION_NOT_NEWER";

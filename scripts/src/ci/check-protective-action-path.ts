@@ -46,7 +46,12 @@ export const PROTECTIVE_FILES = {
   freshFacts: "artifacts/api-server/src/lib/selfTrade/freshFacts.ts",
   domain: "lib/domain/src/self-trade/protectiveAction.ts",
   cycle: "artifacts/api-server/src/lib/selfTrade/autonomousCycle.ts",
+  rules: "artifacts/api-server/src/lib/positionGuardian/rules.ts",
+  killSwitch: "scripts/src/ci/check-self-trade-kill-switch-coverage.ts",
 } as const;
+
+/** The api-server-relative module id both registries must carry. */
+const PATH_MODULE_ID = "lib/selfTrade/protectiveActionPath.ts";
 
 export type Sources = Record<string, string>;
 
@@ -216,7 +221,47 @@ export function scanProtectiveSources(raw: Sources): string[] {
       if (calls === 0) v.push(`${PROTECTIVE_FILES.cycle}: manageAgentPositions( is never called`);
     }
   }
+
+  // 8. Registration parity: the path is a module of the "self-trade-manage"
+  //    Guardian rule and a classified MANAGEMENT producer in the kill-switch
+  //    guard. Without this, dropping either registration would pass ci:guards,
+  //    because the path itself carries no ruleId literal and no producer call.
+  const rules = get(PROTECTIVE_FILES.rules);
+  if (rules == null) v.push(`${PROTECTIVE_FILES.rules}: missing`);
+  else {
+    const id = rules.indexOf('id: "self-trade-manage"');
+    const next = id < 0 ? -1 : rules.indexOf("\n  {", id);
+    const block = id < 0 ? "" : rules.slice(id, next < 0 ? undefined : next);
+    const modules = callArgsLike(block, "modules");
+    if (id < 0) v.push(`${PROTECTIVE_FILES.rules}: the "self-trade-manage" rule is missing`);
+    else if (modules == null || !modules.includes(`"${PATH_MODULE_ID}"`))
+      v.push(`${PROTECTIVE_FILES.rules}: "self-trade-manage".modules must list "${PATH_MODULE_ID}" (the path acts under that rule)`);
+  }
+  const ks = get(PROTECTIVE_FILES.killSwitch);
+  if (ks == null) v.push(`${PROTECTIVE_FILES.killSwitch}: missing`);
+  else {
+    const decl = ks.indexOf("export const SELF_TRADE_PRODUCERS");
+    const body = decl < 0 ? null : blockAfter(ks, decl);
+    const entry = new RegExp(`"${PATH_MODULE_ID.replace(/[./]/g, "\\$&")}"\\s*:\\s*"MANAGEMENT"`);
+    if (decl < 0 || body == null) v.push(`${PROTECTIVE_FILES.killSwitch}: SELF_TRADE_PRODUCERS is missing`);
+    else if (!entry.test(body))
+      v.push(`${PROTECTIVE_FILES.killSwitch}: SELF_TRADE_PRODUCERS must classify "${PATH_MODULE_ID}" as "MANAGEMENT"`);
+  }
   return v;
+}
+
+/** Text of the `[...]` array assigned to `name:` inside `src`, or null. */
+function callArgsLike(src: string, name: string): string | null {
+  const at = src.indexOf(`${name}:`);
+  if (at < 0) return null;
+  const open = src.indexOf("[", at);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "[") depth++;
+    else if (src[i] === "]" && --depth === 0) return src.slice(open, i + 1);
+  }
+  return null;
 }
 
 export function checkProtectiveActionPath(): CheckResult {
