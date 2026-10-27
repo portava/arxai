@@ -5,6 +5,7 @@ import {
   resolveRubyReadPanelState,
   resolveCappedRubyReadStatus,
   withRouteReadLayer,
+  chartReadExpiresAtMs,
   type RubyReadServerState,
 } from "@/lib/rubyReadPanelState";
 import type { RubyReadStatus } from "@/lib/scannerActionability";
@@ -673,6 +674,9 @@ describe("RubyChartRead — a withheld structural read never renders as a live r
     canReadStructure: true,
     canShowLiveTradeSetup: false,
     dataQuality: undefined,
+    // Fresh data time (newest closed candle 10s ago) so this pins the
+    // structural copy, not the expiry downgrade covered below.
+    observedAt: new Date(Date.now() - 10_000).toISOString(),
     bias: "Mixed",
     confidence: "Low",
     htfBias: "No clear edge",
@@ -771,5 +775,77 @@ describe("RubyChartRead — a withheld structural read never renders as a live r
     fireEvent.click(screen.getByTestId("ruby-chart-read-ask"));
     expect(await screen.findByTestId("ruby-chart-read-structural-notice")).toBeTruthy();
     fetchSpy.mockRestore();
+  });
+});
+
+// ── Read data time + expiry (levels-withheld-vs-shown RC4) ────────────────────
+//
+// A chart read is a one-shot snapshot kept in the page store. Its caution
+// ("… withheld — <reason>") described the feed at READ time, but nothing on the
+// panel said when that was, so a minutes-old read sat under a live page as if
+// current. The server now ships `observedAt` (newest CLOSED candle close); the
+// panel shows it and, past the timeframe's candle budget (or with no time at
+// all), downgrades the read — never upgrades it.
+describe("RubyChartRead — read data time and expiry", () => {
+  const FRESH = () => new Date(Date.now() - 10_000).toISOString();
+  const OLD = () => new Date(Date.now() - 10 * 60_000).toISOString();
+
+  it("chartReadExpiresAtMs: gated → null, missing time → NaN (fail-closed), else observedAt + budget", () => {
+    expect(chartReadExpiresAtMs({ gated: true }, 90_000)).toBeNull();
+    expect(Number.isNaN(chartReadExpiresAtMs({ gated: false }, 90_000))).toBe(true);
+    expect(Number.isNaN(chartReadExpiresAtMs({ gated: false, observedAt: "not-a-time" }, 90_000))).toBe(true);
+    expect(chartReadExpiresAtMs({ gated: false, observedAt: "2026-10-27T16:03:00.000Z" }, 90_000)).toBe(
+      Date.parse("2026-10-27T16:03:00.000Z") + 90_000,
+    );
+  });
+
+  it("resolver: an expired read never lets the badge claim clean/AI, even on a confirmed FULL read", () => {
+    const panel = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true },
+      readExpired: true,
+    });
+    expect(panel.readExpired).toBe(true);
+    expect(panel.badgeAiUsable).toBe(false);
+  });
+
+  it("render: a fresh FULL read shows its newest-closed-candle time and is not expired", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, observedAt: FRESH(), bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const asOf = screen.getByTestId("ruby-chart-read-asof").textContent ?? "";
+    expect(asOf).toMatch(/newest closed candle \d\d:\d\d UTC/);
+    expect(asOf).not.toContain("expired");
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(true);
+  });
+
+  it("render: a read older than the 1m candle budget is labelled expired and the reasoning says so", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, observedAt: OLD(), bias: "Bullish" } as RubyReadServerState;
+    const { container } = render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-asof").textContent).toContain("expired");
+    const text = container.textContent ?? "";
+    expect(text).toContain("WAIT — this read has expired");
+    expect(text).not.toContain("Live read on");
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+  });
+
+  it("render: the same age is still current on 1h (budget follows the timeframe, normalised from H1)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, observedAt: OLD(), bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="EURUSD" timeframe="H1" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-asof").textContent).not.toContain("expired");
+  });
+
+  it("render: a non-gated read with no data time is treated as expired (fail-closed)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    const asOf = screen.getByTestId("ruby-chart-read-asof").textContent ?? "";
+    expect(asOf).toContain("Read time unknown");
+    expect(asOf).toContain("expired");
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
   });
 });

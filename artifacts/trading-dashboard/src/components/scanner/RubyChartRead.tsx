@@ -6,7 +6,12 @@ import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromChartRead } from "@/lib/rubyReasoningBlock";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
+import { thresholdsFor } from "@/lib/scannerTruth";
+import { normalizeChartTimeframe } from "@/lib/chartCandlesQuery";
 import {
+  chartReadAsOfLabel,
+  chartReadExpiresAtMs,
   resolveRubyReadPanelState,
   withRouteReadLayer,
   type ChartRead,
@@ -112,11 +117,25 @@ export function RubyChartRead({
   // this single resolution — the shared scanner truth folded together with the
   // server read-chart response — so they can never render contradictory claims
   // (e.g. badge "Clean · AI" + banner "not confirmed" + body "cannot verify").
+  // A read is a one-shot snapshot of the chart at its newest CLOSED candle
+  // (server `observedAt`). Once that is older than this timeframe's candle
+  // budget — or its time is unknown — it no longer describes the current chart.
+  const readExpiresAtMs = chartReadExpiresAtMs(
+    read,
+    thresholdsFor(normalizeChartTimeframe(timeframe)).candleMaxAgeMs,
+  );
+  const readNowMs = useEvidenceDeadline(
+    readExpiresAtMs != null && Number.isFinite(readExpiresAtMs) ? readExpiresAtMs : null,
+  );
+  const readExpired =
+    readExpiresAtMs != null && !(Number.isFinite(readExpiresAtMs) && readNowMs < readExpiresAtMs);
+  const readAsOf = chartReadAsOfLabel(read);
   const panel = resolveRubyReadPanelState({
     truthLevel: truth?.analysis.level ?? null,
     truthReason: truth?.analysis.reason ?? null,
     aiUsableProp,
     read,
+    readExpired,
   });
   const feedNotConfirmed = panel.feedNotConfirmed;
   // Task #602 — a directional STRUCTURAL read is available, but the exact live
@@ -240,6 +259,17 @@ export function RubyChartRead({
 
       {read && !read.gated && (
         <div className="mt-3 space-y-3" data-testid="ruby-chart-read-body">
+          {/* Data time of this one-shot read — never presented as "now". */}
+          <p
+            className={`text-[11px] ${panel.readExpired ? "text-warning" : "text-txt-muted"}`}
+            data-testid="ruby-chart-read-asof"
+          >
+            {readAsOf
+              ? `Read from closed candles · newest closed candle ${readAsOf}`
+              : "Read time unknown"}
+            {panel.readExpired ? " · expired — tap Re-read for the current chart" : ""}
+          </p>
+
           {/* Bias / Confidence / HTF row */}
           <div className="grid grid-cols-3 gap-2 rounded-xl border border-border bg-background/40 p-3">
             <Metric label="Bias" value={read.bias ?? "—"} className={biasTone(read.bias ?? "")} testid="ruby-chart-read-bias" />
@@ -259,6 +289,8 @@ export function RubyChartRead({
               structuralOnly,
               feedNotConfirmed,
               reason: panel.reason,
+              expired: panel.readExpired,
+              asOf: readAsOf,
             }, name)}
             testid="ruby-chart-read-reasoning"
           />

@@ -298,6 +298,13 @@ function tradeHealthDisplayFields(args: {
 }
 
 /**
+ * Which gate withheld the exact live setup on a STRUCTURAL_ONLY read. lower_snake
+ * on purpose: SCREAMING_SNAKE strings are deleted by the user-copy scrubber, and
+ * this value must survive even if a caller ever routes it through one.
+ */
+export type RubyStructuralWithheldBy = "sufficiency" | "feed_status" | "basis";
+
+/**
  * MACHINE fields of the chart-read payload. The client compares these EXACTLY
  * (`readLayer === "STRUCTURAL_ONLY"`, `reasonCode`, `tradeHealthFreshness`, …) so
  * they ride BESIDE the scrubbed narrative and are NEVER passed through
@@ -324,6 +331,14 @@ export interface RubyChartReadMachineFields {
   hasFormingCandle: boolean;
   /** TradeDataFreshnessBand enum from the shared Trade Health contract. */
   tradeHealthFreshness: string;
+  /** Gate that withheld the exact setup (STRUCTURAL_ONLY only), else null. */
+  withheldBy: RubyStructuralWithheldBy | null;
+  /**
+   * Data time of the read: the latest CLOSED candle's close boundary (ISO), or
+   * null when unknown. Never the build/read time, so a later live page cannot
+   * present this snapshot as current.
+   */
+  observedAt: string | null;
 }
 
 /**
@@ -338,6 +353,23 @@ function composeChartRead(
   const scrubbed = scrubUserCopyDeep(narrative);
   const safe = opts.neutralize ? neutralizeFeedCopyDeep(scrubbed) : scrubbed;
   return { ...safe, ...machine };
+}
+
+/** Latest CLOSED candle close time from the chart state, or null when unknown. */
+function observedAtOf(
+  rubyCtx: { state?: { latestClosedCandle?: { closeTime?: unknown } | null } } | null,
+): string | null {
+  const t = rubyCtx?.state?.latestClosedCandle?.closeTime;
+  return typeof t === "string" && Number.isFinite(Date.parse(t)) ? t : null;
+}
+
+function fmtUtcMinute(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return null;
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm} UTC`;
 }
 
 export async function buildRubyStructuralRead(
@@ -387,6 +419,8 @@ export async function buildRubyStructuralRead(
           hasFormingCandle: false,
           dataQuality: "insufficient",
           tradeHealthFreshness,
+          withheldBy: null,
+          observedAt: null,
         },
         { neutralize: false },
       ),
@@ -505,6 +539,8 @@ export async function buildRubyStructuralRead(
           hasFormingCandle: rubyCtx?.hasFormingCandle ?? false,
           dataQuality: "insufficient",
           tradeHealthFreshness,
+          withheldBy: null,
+          observedAt: observedAtOf(rubyCtx),
         },
         { neutralize: false },
       ),
@@ -651,6 +687,8 @@ export async function buildRubyStructuralRead(
         hasFormingCandle: rubyCtx.hasFormingCandle,
         reasonCode: rubyCtx.sufficiency.reasonCode,
         tradeHealthFreshness,
+        withheldBy: null,
+        observedAt: observedAtOf(rubyCtx),
       },
       { neutralize: false },
     );
@@ -671,15 +709,52 @@ export async function buildRubyStructuralRead(
   // structure analyzer never emits numeric levels, and we force `draft: null` so
   // no level echo can leak.
   const read = analyzeChartStructure(candles, { htfBias, draft: null, assistantName });
-  const withheldReason =
-    rubyCtx.sufficiency.humanReason ??
-    rubyCtx.blockReason ??
-    "Live trade setup withheld until the feed confirms.";
+  const observedAt = observedAtOf(rubyCtx);
+  // ── WHICH GATE withheld the exact setup — in the precedence the layers apply:
+  //   1. sufficiency  — the shared verdict won't allow the setup (closed-bar
+  //      floor or freshness). Owner's case: the CLOSED-BAR state says delayed
+  //      (reasonCode stale_feed) while the forming-tip ChartFeedStatus the page
+  //      header/DATA tile render is clean. Then "Live feed is delayed" is false
+  //      on screen; what is true is that this read used closed candles only.
+  //   2. feed_status  — sufficiency allows it, but the feed was not confirmed:
+  //      the client chart reported it, the server probe said not-clean, or the
+  //      probe failed (null → fail-closed).
+  //   3. basis        — feed + sufficiency fine, but chart truth is not VERIFIED.
+  // Before this, `sufficiency.humanReason` (never null) was always quoted, so a
+  // feed-status / basis withhold read "… withheld — Enough recent closed candles
+  // on a live feed to support a read."
+  const feedStatusClean = feedStatus?.aiUsable === true && feedStatus.quality === "clean";
+  let withheldBy: RubyStructuralWithheldBy;
+  let withheldReason: string;
+  let closedBarLagOnly = false;
+  if (!rubyCtx.sufficiency.canShowTradeSetup) {
+    withheldBy = "sufficiency";
+    closedBarLagOnly =
+      rubyCtx.sufficiency.reasonCode === "stale_feed" && feedStatusClean && !clientFeedUnconfirmed;
+    const at = fmtUtcMinute(observedAt);
+    withheldReason = closedBarLagOnly
+      ? `Read uses closed candles only${at ? ` — newest closed candle ${at}` : ""}; the current candle isn't confirmed for entry.`
+      : rubyCtx.sufficiency.humanReason;
+  } else if (feedUnconfirmed) {
+    withheldBy = "feed_status";
+    withheldReason = clientFeedUnconfirmed
+      ? "The chart reported its feed as not confirmed at read time."
+      : feedStatus == null
+        ? "The chart feed status was unavailable at read time, so the feed is treated as unconfirmed."
+        : `The chart feed quality was "${String(feedStatus.quality)}" (not clean) at read time.`;
+  } else {
+    withheldBy = "basis";
+    withheldReason =
+      rubyCtx.blockReason ??
+      `Chart truth is ${String(rubyCtx.basis).toLowerCase()} (not fully verified) — exact setup withheld.`;
+  }
   read.cautions = [
     ...read.cautions,
     `Exact entry, stop, and target levels withheld — ${withheldReason}`,
   ];
-  if (!layers.canUseCurrentCandleForEntry) {
+  // (Skipped when the withheld reason already says the read is closed-candle
+  // only, so the same limitation is not stated twice.)
+  if (!layers.canUseCurrentCandleForEntry && !closedBarLagOnly) {
     read.cautions = [
       ...read.cautions,
       "Read is from closed candles only — current-candle/entry confirmation pending.",
@@ -728,6 +803,8 @@ export async function buildRubyStructuralRead(
       trustLine: buildStructuralReadTrustLine(tf, {
         canUseCurrentCandleForEntry: layers.canUseCurrentCandleForEntry,
       }),
+      // The panel reads blockedReason as its PRIMARY reason — same gate-specific
+      // text as the caution, never a different gate's prose.
       blockedReason: withheldReason,
       disclaimer: DISCLAIMER,
     },
@@ -746,6 +823,8 @@ export async function buildRubyStructuralRead(
       hasFormingCandle: rubyCtx.hasFormingCandle,
       reasonCode: rubyCtx.sufficiency.reasonCode,
       tradeHealthFreshness,
+      withheldBy,
+      observedAt,
     },
     { neutralize: true },
   );
