@@ -250,6 +250,31 @@ export interface RubyStructuralReadOutcome {
   feedUnconfirmed: boolean;
 }
 
+/**
+ * Machine fields of the chartRead wire whose values are enums, not narrative.
+ * The user-copy scrubber strips every multi-segment SCREAMING_SNAKE token, which
+ * used to blank `readLayer: "STRUCTURAL_ONLY"` and `tradeHealthFreshness:
+ * "HISTORICAL_ONLY" | "LIVE_DELAYED" | "LIVE_CONFIRMED"` to "" — so the Scanner
+ * could not see a withheld read and rendered "Full read" / "Live read on …"
+ * beside the server's own "Exact entry, stop, and target levels withheld"
+ * caution. These keys are preserved (whole-value enum tokens only); every
+ * narrative field is still scrubbed. Restoring them can only make the client cap
+ * the read LOWER (downgrade-only).
+ */
+export const RUBY_READ_MACHINE_KEYS: ReadonlySet<string> = new Set([
+  "symbol",
+  "timeframe",
+  "readLayer",
+  "tradeHealthFreshness",
+  "basis",
+  "reasonCode",
+  "dataQuality",
+  // fvgStrategyRead enums (strategy "HTF_TREND_FVG_PULLBACK", stage "FVG_ENTRY_ZONE" …)
+  "strategy",
+  "stage",
+]);
+const SCRUB_OPTS = { preserveKeys: RUBY_READ_MACHINE_KEYS } as const;
+
 const DISCLAIMER =
   "Decision support only — confirm live readiness and risk before trading.";
 
@@ -339,7 +364,7 @@ export async function buildRubyStructuralRead(
         hasFormingCandle: false,
         dataQuality: "insufficient",
         disclaimer: DISCLAIMER,
-      }),
+      }, SCRUB_OPTS),
       readLayer: "INSUFFICIENT",
       normalizedTimeframe: null,
       shouldRecordReadDecision: false,
@@ -450,7 +475,7 @@ export async function buildRubyStructuralRead(
         hasFormingCandle: rubyCtx?.hasFormingCandle ?? false,
         dataQuality: "insufficient",
         disclaimer: DISCLAIMER,
-      }),
+      }, SCRUB_OPTS),
       readLayer: "INSUFFICIENT",
       normalizedTimeframe: tf,
       shouldRecordReadDecision: false,
@@ -589,7 +614,7 @@ export async function buildRubyStructuralRead(
       hasFormingCandle: rubyCtx.hasFormingCandle,
       reasonCode: rubyCtx.sufficiency.reasonCode,
       disclaimer: DISCLAIMER,
-    });
+    }, SCRUB_OPTS);
     return {
       chartRead: chartReadPayload,
       readLayer: "FULL",
@@ -675,7 +700,7 @@ export async function buildRubyStructuralRead(
     hasFormingCandle: rubyCtx.hasFormingCandle,
     reasonCode: rubyCtx.sufficiency.reasonCode,
     disclaimer: DISCLAIMER,
-  });
+  }, SCRUB_OPTS);
   return {
     // The exact setup is withheld, so neutralise any confident trade language.
     chartRead: neutralizeFeedCopyDeep(structuralPayload),

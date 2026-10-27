@@ -22693,6 +22693,20 @@ components:
         status:
           type: string
           enum: [READY, FORMING, WAIT_FOR_ENTRY, LATE, INVALID, NO_CLEAN_SCALP, SPREAD_TOO_WIDE, NEWS_DANGER, MARKET_CLOSED, SYMBOL_NOT_TRADEABLE, INSUFFICIENT_MARGIN, AWAITING_DATA]
+        rejectReason:
+          type: string
+          nullable: true
+          enum: [NO_SCANNER_READ, NOT_LIVE, INSUFFICIENT_DATA, NO_SPECS]
+          description: >-
+            Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and
+            INSUFFICIENT_DATA are feed/data reasons; NO_SPECS means the feed is live
+            and sufficient but the broker's symbol details (lot size, point value)
+            are unavailable, so no scalp can be sized. Absent on other statuses and
+            from older servers.
+        timeframe:
+          type: string
+          nullable: true
+          description: The engine timeframe this result was evaluated on (e.g. "M5").
         qualityScore: { type: number }
         confidenceLabel: { type: string, enum: [Weak, Modest, Fair, Strong, "Very Strong"] }
         entryType: { type: string, nullable: true, enum: [MARKET_BUY, MARKET_SELL, BUY_LIMIT, SELL_LIMIT, BUY_STOP, SELL_STOP] }

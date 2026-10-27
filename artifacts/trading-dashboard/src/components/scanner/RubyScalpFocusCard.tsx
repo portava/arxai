@@ -34,7 +34,9 @@ export function RubyScalpFocusCard({
 
   // Publish the selected-symbol verdict the scalp card computes so the header's
   // Action cell shows EXACTLY it (Task #600). The verdict is keyed by symbol AND
-  // the scalp's timeframe (the card publishes its real "1m" read), so when the
+  // the timeframe the engine actually read (the card publishes under the result's
+  // own `timeframe`, "5m" for the M5 Focus read — never the 1m cell), and a null
+  // publish retracts it (e.g. a refresh that returns NO_SPECS), so when the
   // symbol OR timeframe switches we clear the PREVIOUS symbol+timeframe key
   // first, and clear on unmount — a stale verdict can never linger for a
   // symbol/timeframe whose Focus card is no longer mounted there. `setAction` is
@@ -49,7 +51,7 @@ export function RubyScalpFocusCard({
    *  identity-only effect re-runs retracting a published verdict. */
   const lastRunKeyRef = useRef<string | null>(null);
   const publishAction = useCallback(
-    (pubSymbol: string, pubTimeframe: string, action: PublishedScannerAction) => {
+    (pubSymbol: string, pubTimeframe: string, action: PublishedScannerAction | null) => {
       const prev = lastKeyRef.current;
       if (prev && (prev.symbol !== pubSymbol || prev.timeframe !== pubTimeframe)) {
         setAction(prev.symbol, prev.timeframe, null);

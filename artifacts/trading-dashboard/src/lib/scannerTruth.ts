@@ -783,6 +783,16 @@ export function resolveScannerTruth(
     availableClosedCandles: count,
     minimumRequiredCandles: thr.minCandles,
     readLayer: readinessReadLayer,
+    // The account's ALREADY-RESOLVED execution refusal (frozen / manual trading
+    // not enabled / read-only mode), so the chip reads "Live read · execution
+    // gated" instead of an unconditional "Live-confirmed … read" next to the
+    // TRADING "Blocked" tile, and the trade-button ceilings close. Never while
+    // the account mode is still loading (every flag is false then — that is not
+    // a refusal). DISPLAY-ONLY: execution gates are untouched. Ruby's server
+    // read composes the same contract without this per-user fold, so the two
+    // agree on every read-quality field (status, dataFreshness, readLayer,
+    // structureConfidence) and differ only by this gate label.
+    executionGateBlocked: !m.isLoading && !executionAllowed,
   });
 
   return {

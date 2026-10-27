@@ -20,7 +20,12 @@ import { RubyChartRead } from "@/components/scanner/RubyChartRead";
 import { SetupSignalStrip } from "@/components/signals/SetupSignalStrip";
 import {
   scalpStatusToSetup,
-  SCALP_STATUS_LABEL,
+  scalpStatusLabel,
+  isScalpAwaitingFeed,
+  hasKnownScalpRejectReason,
+  scalpBusTimeframe,
+  scalpEngineTimeframe,
+  SCALP_ENGINE_FALLBACK_TIMEFRAME,
   SCALP_STATUS_TONE,
   SCALP_MODE_LABEL,
   SCALP_TIMING_LABEL,
@@ -88,13 +93,15 @@ function Tip({
   );
 }
 
-// The scalp engine reads M1 (see `evaluateMarketDataSufficiency` + RubyChartRead
-// below, both timeframe "M1"). Its lifted action verdict is therefore the M1
-// verdict — published under the SCANNER BUS form of M1 ("1m") so it keys
-// identically to what the header reads via `coerceVisibleTimeframe(selectedTf)`.
-// Do NOT pass "M1" through coerceVisibleTimeframe (it isn't a visible chip and
-// would wrongly fall back to "15m").
-export const SCALP_SIGNAL_BUS_TIMEFRAME = "1m";
+// The Focus scalp engine reads M5 (server SCALP_TIMEFRAME; every Focus result
+// carries it as `timeframe`). Its lifted action verdict is therefore an M5
+// verdict — published under the SCANNER BUS form of the engine timeframe ("5m")
+// so the header adopts it ONLY when the user is viewing 5m, never under the 1m
+// cell (owner screenshot 2026-10-27: an M5 "Feed limited" sat under V75 1m).
+// This constant is the key used before any result exists (the CHECK_FAILED
+// marker); a result's own `timeframe` always decides its publish key.
+export const SCALP_SIGNAL_BUS_TIMEFRAME =
+  scalpBusTimeframe({ timeframe: SCALP_ENGINE_FALLBACK_TIMEFRAME }) ?? "5m";
 
 export function ScalpSignalCard({
   result,
@@ -109,7 +116,8 @@ export function ScalpSignalCard({
   onWatch?: (r: ScalpResult) => void;
   compact?: boolean;
   highlightLabel?: string;
-  onActionability?: (symbol: string, timeframe: string, a: ScannerActionability) => void;
+  /** Publish (or retract with null) this card's verdict for symbol+timeframe. */
+  onActionability?: (symbol: string, timeframe: string, a: ScannerActionability | null) => void;
 }) {
   const r = result;
   const { name } = useAssistantName();
@@ -130,10 +138,17 @@ export function ScalpSignalCard({
   // candle count, which would wrongly hide the intentionally-blind Broad reads.
   // Display-only — build/watch eligibility is re-gated server-side on every action
   // regardless of what is shown here.
-  const scalpDataReady = r.status !== "AWAITING_DATA";
+  //
+  // AWAITING_DATA has four engine reasons. Only the feed/data ones (no scanner
+  // read / not live / insufficient — or an unnamed reason from an older server,
+  // fail-closed) collapse the data cap. NO_SPECS means the feed passed every
+  // check and the scalp stopped only because the broker's symbol details are
+  // unavailable — that is never shown as "Feed limited".
+  const scalpDataReady = !isScalpAwaitingFeed(r);
+  const engineTf = scalpEngineTimeframe(r);
   const readability = evaluateMarketDataSufficiency({
     symbol: r.symbol,
-    timeframe: "M1",
+    timeframe: engineTf,
     freshnessVerdict: scalpDataReady ? "LIVE" : "AWAITING",
     availableClosedCandles: scalpDataReady ? MIN_SUFFICIENT_CLOSED_BARS : 0,
   });
@@ -160,15 +175,28 @@ export function ScalpSignalCard({
   // Lift the ONE selected-symbol verdict to the page (Task #600): the Focus card
   // passes onActionability so the header's Action cell shows EXACTLY this card's
   // setup-aware verdict instead of its own data-only one. Keyed by r.symbol (the
-  // engine's bare symbol) AND the scalp's bus timeframe ("1m") — matching the
-  // rubyReadStore symbol+timeframe convention — so the header only adopts this
-  // verdict when the user is actually viewing 1m, and a timeframe switch can
-  // never leave a stale M1 verdict showing under another timeframe. MUST sit
+  // engine's bare symbol) AND the bus form of the engine timeframe the result
+  // was read on ("5m" for M5) — matching the rubyReadStore symbol+timeframe
+  // convention — so the header only adopts this verdict when the user is
+  // actually viewing that timeframe, and a timeframe switch can never leave an
+  // M5 verdict showing under another timeframe (e.g. 1m). MUST sit
   // after `actionability` is declared (temporal-dead-zone trap). Other render
   // sites omit the prop, so only the Focus card publishes.
+  //
+  // What may be lifted: any non-AWAITING verdict, and a feed-reason
+  // AWAITING_DATA the server explicitly named (a genuine engine-timeframe feed
+  // verdict). NOT lifted (retracted with null so a stale earlier verdict can't
+  // survive a refresh): NO_SPECS — the engine never evaluated a setup, so the
+  // header falls back to its own data-only verdict — and an AWAITING_DATA with no
+  // named reason, whose feed state this card cannot vouch for.
+  const busTf = scalpBusTimeframe(r);
+  const liftable =
+    r.status !== "AWAITING_DATA" || (isScalpAwaitingFeed(r) && hasKnownScalpRejectReason(r));
+  const published: ScannerActionability | null = liftable ? actionability : null;
   useEffect(() => {
-    onActionability?.(r.symbol, SCALP_SIGNAL_BUS_TIMEFRAME, actionability);
-  }, [r.symbol, actionability, onActionability]);
+    if (!busTf) return;
+    onActionability?.(r.symbol, busTf, published);
+  }, [r.symbol, busTf, published, onActionability]);
 
   const borderColor =
     r.direction === "BUY" ? "#10b981" : r.direction === "SELL" ? "#f43f5e" : "#3f3f46";
@@ -202,7 +230,7 @@ export function ScalpSignalCard({
             className={`${SCALP_STATUS_TONE[r.status]} text-xs shrink-0`}
             data-status-token={r.status}
           >
-            {SCALP_STATUS_LABEL[r.status]}
+            {scalpStatusLabel(r)}
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -456,7 +484,7 @@ export function ScalpSignalCard({
         {askRuby && (
           <RubyChartRead
             symbol={r.symbol}
-            timeframe="M1"
+            timeframe={engineTf}
             draft={
               r.direction && r.entryZone && r.stopLoss != null && r.takeProfit.main != null
                 ? {
