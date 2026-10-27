@@ -5,6 +5,7 @@ import { ScannerReadGate } from "@/components/scanner/ScannerReadGate";
 import { useScannerReadGate } from "@/hooks/useScannerReadGate";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSymbolTruth } from "@/hooks/useSymbolTruth";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import { normalizeChartTimeframe, toApiTimeframe } from "@/lib/chartCandlesQuery";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromMarketRead } from "@/lib/rubyReasoningBlock";
@@ -169,7 +170,7 @@ export function RubyMarketReadCard({
   // /100 confidence numbers) so it can never look more confident than the rest
   // of the scanner. The compact ScannerReadGate caption above is the headline
   // notice; this is the in-body content gate.
-  const { downgraded, level, reason } = useScannerReadGate(symbol, chartTimeframe);
+  const gate = useScannerReadGate(symbol, chartTimeframe);
 
   // Task #515 — news state and the "updated X ago" freshness anchor come from
   // the ONE per-symbol Truth Snapshot, so this card can never disagree with the
@@ -185,6 +186,20 @@ export function RubyMarketReadCard({
 
   const explanation: RubyMarketReadExplanation | null = data?.explanation ?? null;
   const signal = data?.signal ?? null;
+
+  // The read is fetched once (no polling). A live chart cannot keep an expired
+  // read current: past/missing/malformed expiresAt, or an expired/invalid
+  // lifecycle, withholds the directional content exactly like a downgraded feed.
+  const expiresAtMs = typeof signal?.expiresAt === "string" ? Date.parse(signal.expiresAt) : NaN;
+  const readNowMs = useEvidenceDeadline(Number.isFinite(expiresAtMs) ? expiresAtMs : null);
+  const readExpired = signal != null && (!(Number.isFinite(expiresAtMs) && readNowMs < expiresAtMs) ||
+    ["EXPIRED", "STALE"].includes(String(signal.freshness ?? "").toUpperCase()) ||
+    ["EXPIRED", "INVALID"].includes(String(signal.lifecycleStage ?? "").toUpperCase()));
+  const downgraded = gate.downgraded || readExpired;
+  const level = gate.level;
+  const reason = readExpired && !gate.downgraded
+    ? `This ${name} read has expired — refresh for a current read.`
+    : gate.reason;
 
   const chosen: RubyExplanationMode | null = explanation
     ? mode === "ADVANCED"
@@ -381,7 +396,11 @@ export function RubyMarketReadCard({
                   confident action over stale/insufficient/blocked data). */}
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-txt-muted">Best action</div>
-                {downgraded ? (
+                {readExpired && !gate.downgraded ? (
+                  <p className="mt-0.5 text-sm text-txt-muted" data-testid="ruby-market-read-best-action-expired">
+                    Not actionable — {reason}
+                  </p>
+                ) : downgraded ? (
                   <p className="mt-0.5 text-sm text-txt-muted" data-testid="ruby-market-read-best-action-downgraded">
                     Not actionable on the current feed — this is a{" "}
                     {level === "blocked"

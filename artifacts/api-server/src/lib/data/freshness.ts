@@ -35,6 +35,13 @@ export const LIVE_TRAILING_INTERVALS = 1;
 export const DELAYED_TRAILING_INTERVALS = 2;
 /** Trailing by >= this many intervals → stale (not safe as live truth). */
 export const STALE_TRAILING_INTERVALS = 3;
+/**
+ * A newest bar may open at most this many intervals AHEAD of the expected
+ * current bar (boundary clock skew between provider and server). Anything
+ * further ahead is a mis-stamped (e.g. broker server-time read as UTC) series,
+ * whose freshness cannot be confirmed.
+ */
+export const MAX_FUTURE_LEAD_INTERVALS = 1;
 
 // ── MT5 broker in-memory provider TTLs ───────────────────────────────────────
 
@@ -271,6 +278,11 @@ export function buildFeedStatus(inputs: FeedQualityInputs): FeedQualityVerdict {
   } else if (missingCandleCount > 0 || duplicateCount > 0 || outOfOrderCount > 0) {
     quality = "partial";
     warning = `Incomplete sequence: ${missingCandleCount} missing, ${duplicateCount} duplicate, ${outOfOrderCount} out-of-order bar(s).`;
+  } else if (trailingIntervals == null || !Number.isFinite(trailingIntervals) || trailingIntervals < -MAX_FUTURE_LEAD_INTERVALS) {
+    // Candles exist but their recency is unknown, or the newest bar is stamped
+    // in the future. Unknown/unverifiable recency is never "clean".
+    quality = "invalid";
+    warning = "Candle timestamps could not be confirmed (newest bar is missing a usable time or is stamped in the future). Not safe for analysis.";
   } else if (formingTipPresent) {
     // Forming-tip path takes over the freshness verdict (integrity checks above
     // still run on the closed bars first).

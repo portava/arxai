@@ -39,7 +39,7 @@ import { getSessionProfile, type WeeklyPresenceProfile } from "./sessionProfile.
 import type { NormalizedChartCandle } from "./candleNormalization.js";
 import { timeframeMs, type ChartTimeframe } from "./timeframes.js";
 import { computeChartTruthScore, type ChartTruthScore } from "./chartTruthScore.js";
-import { buildFeedStatus, type FeedQuality } from "../freshness.js";
+import { buildFeedStatus, MAX_FUTURE_LEAD_INTERVALS, type FeedQuality } from "../freshness.js";
 import {
   getFormingBar,
   isFormingTickSource,
@@ -346,7 +346,7 @@ async function buildChartFeed(
   const reachable = source != null && candles.length > 0;
   const isLive = formingTipPresent
     ? reachable && !verdict.stale
-    : reachable && trailing != null && trailing <= 1 && (!derivBacked || hasLiveTick);
+    : reachable && trailing != null && trailing >= -MAX_FUTURE_LEAD_INTERVALS && trailing <= 1 && (!derivBacked || hasLiveTick);
 
   const message = buildMessage(quality, source, displaySymbol);
 
