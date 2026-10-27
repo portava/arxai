@@ -141,6 +141,9 @@ function signal(over: Record<string, unknown> = {}) {
       netScore: 1,
     },
     freshness: "FRESH",
+    // Required by the API contract; the card withholds advice past this time.
+    validForSeconds: 900,
+    expiresAt: new Date(Date.now() + 900_000).toISOString(),
     late: { isLate: false, doNotChase: false, reason: null },
     ...over,
   };

@@ -22,6 +22,7 @@
 
 import {
   buildRadarEvents,
+  classifyNewsSeverity,
   deriveNewsBehavior,
   severityRank,
   type MarketImpactRadar,
@@ -32,6 +33,21 @@ import {
 } from "@workspace/domain/smart-chart";
 import { getNewsIntelligence } from "./newsIntelligenceService.js";
 import { getEconomicCalendar, type CalendarProviderState } from "./economicCalendarProvider.js";
+import { FRED_PROVIDER } from "./calendar/fredCalendarProvider.js";
+
+const DATE_SENTINEL_SUFFIX = "T00:00:00.000Z";
+
+/**
+ * FRED release dates are DATE-granularity: the provider emits a midnight-UTC
+ * sentinel, not a release time. During that UTC date the release can occur at
+ * any moment, so it must never be reported as already past (RECENT) or as
+ * outside its window. It is held as IMMINENT for the whole date (fail closed).
+ */
+function isUnconfirmedTimeToday(provider: string, e: NewsRadarEvent, nowMs: number): boolean {
+  if (provider !== FRED_PROVIDER || !e.eventTimeIso.endsWith(DATE_SENTINEL_SUFFIX)) return false;
+  const dayStart = Date.parse(e.eventTimeIso);
+  return Number.isFinite(dayStart) && nowMs >= dayStart && nowMs < dayStart + 86_400_000;
+}
 
 export interface MarketImpactRadarResult {
   radar: MarketImpactRadar;
@@ -101,12 +117,19 @@ export async function buildMarketImpactRadar(
   // Honesty gate: `buildRadarEvents` returns [] whenever `calendarConnected` is
   // false, regardless of `rawEvents` — no fabricated macro events, no actionable
   // alerts from a disconnected/synthetic source.
+  const rawImpact = new Map(rawEvents.map((e) => [e.id, e.impact]));
+  const unconfirmedToday = new Set<string>();
   const events: NewsRadarEvent[] = buildRadarEvents({
     calendarConnected,
     rawEvents,
     symbol,
     synthetic,
     nowMs,
+  }).map((e) => {
+    const impact = rawImpact.get(e.id);
+    if (!impact || !isUnconfirmedTimeToday(calendarProvider, e, nowMs)) return e;
+    unconfirmedToday.add(e.id);
+    return { ...e, state: "IMMINENT", severity: classifyNewsSeverity(impact, "IMMINENT") };
   });
 
   // Sort: affecting first, then by absolute proximity to now.
@@ -138,6 +161,7 @@ export async function buildMarketImpactRadar(
     affecting,
     topSeverity,
     highImpactWindowActive,
+    unconfirmedToday,
   );
 
   return {
@@ -169,6 +193,7 @@ function buildSummary(
   affecting: readonly NewsRadarEvent[],
   topSeverity: NewsRadarSeverity | null,
   highImpactWindowActive: boolean,
+  unconfirmedToday: ReadonlySet<string> = new Set(),
 ): string {
   if (synthetic) {
     return "This is a synthetic instrument — it is not driven by real-world economic events.";
@@ -180,8 +205,9 @@ function buildSummary(
   }
   const next = affecting[0]!;
   const mins = Math.round(Math.abs(next.countdownSeconds) / 60);
-  const when =
-    next.countdownSeconds >= 0
+  const when = unconfirmedToday.has(next.id)
+    ? "today (release time not confirmed)"
+    : next.countdownSeconds >= 0
       ? `in about ${mins} min`
       : `about ${mins} min ago`;
   if (highImpactWindowActive) {

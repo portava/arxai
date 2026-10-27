@@ -57,6 +57,7 @@ import {
   type ChartTimeframe,
 } from "../data/chart/timeframes.js";
 import { buildMarketImpactRadar } from "../news/marketImpactRadar.js";
+import { classifySymbol } from "../data/marketDataRouter.js";
 import { buildRubyMarketEdgeForUser } from "../signalIntelligence/signalIntelligenceService.js";
 import { evaluateScalpForSymbol } from "../scalp/scalpService.js";
 import type { ScalpResult } from "../scalp/scalpTypes.js";
@@ -341,6 +342,12 @@ const SEVERITY_LABEL: Record<string, string> = {
 
 type RadarResult = Awaited<ReturnType<typeof buildMarketImpactRadar>>;
 
+/** Scheduled event risk applies but could not be checked: the radar read failed,
+ * or a configured calendar ("none" means not configured) is not connected. */
+function eventRiskUnchecked(radar: RadarResult | null): boolean {
+  return radar == null || (!radar.radar.provider.connected && radar.radar.provider.name !== "none");
+}
+
 function buildNews(radar: RadarResult | null): TruthNews {
   if (!radar) {
     return {
@@ -382,7 +389,9 @@ function buildNews(radar: RadarResult | null): TruthNews {
   } else {
     riskLabel = providerConnected
       ? "No scheduled events affect this symbol."
-      : "No event calendar is connected.";
+      : eventRiskUnchecked(radar)
+        ? "Event risk is unavailable — the economic calendar could not be checked."
+        : "No event calendar is connected.";
   }
 
   return {
@@ -392,7 +401,9 @@ function buildNews(radar: RadarResult | null): TruthNews {
     highImpactWindowActive: r.highImpactWindowActive,
     disclaimer: providerConnected
       ? null
-      : "No economic-calendar provider is connected, so no scheduled events are shown.",
+      : eventRiskUnchecked(radar)
+        ? "The economic calendar could not be checked, so scheduled events are not shown."
+        : "No economic-calendar provider is connected, so no scheduled events are shown.",
   };
 }
 
@@ -533,6 +544,8 @@ export async function buildSymbolTruthSnapshot(
     dataState: data.state,
     price: data.price,
     highImpactWindowActive: newsBlock.highImpactWindowActive,
+    // Synthetic instruments are immune to macro events (same rule as the radar).
+    eventRiskUnchecked: classifySymbol(symbol) !== "synthetic" && eventRiskUnchecked(news),
     components: verdictComponents.map((c, i) => {
       const key = (["scanner", "flame", "timing", "scalp"] as const)[i];
       const input: TruthComponentInput = {

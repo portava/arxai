@@ -136,6 +136,9 @@ const BEST_ACTION_TEXT: Record<TruthBestAction, string> = {
   WATCH_ONLY: "Watch only — there is no clean setup right now.",
 };
 
+const EVENT_RISK_UNCHECKED_TEXT =
+  "Watch only — scheduled news risk could not be checked right now.";
+
 function opposite(side: "BULLISH" | "BEARISH"): "BULLISH" | "BEARISH" {
   return side === "BULLISH" ? "BEARISH" : "BULLISH";
 }
@@ -318,14 +321,24 @@ export function composeVerdict(input: ComposeVerdictInput): ComposedVerdict {
     bestAction = "WATCH_ONLY";
   }
 
+  let headline = buildHeadline(bias, bestAction);
+  let bestActionText = BEST_ACTION_TEXT[bestAction];
+  // Event risk that could not be checked is not "no event risk": never present
+  // an entry as clear of scheduled news when the calendar read failed.
+  if (input.eventRiskUnchecked === true && (bestAction === "BUY" || bestAction === "SELL")) {
+    headline = `The read leans ${bestAction === "BUY" ? "bullish" : "bearish"}, but scheduled news risk could not be checked.`;
+    bestAction = "WATCH_ONLY";
+    bestActionText = EVENT_RISK_UNCHECKED_TEXT;
+  }
+
   return {
     stage,
     bias,
-    headline: buildHeadline(bias, bestAction),
+    headline,
     evidenceFor,
     evidenceAgainst,
     bestAction,
-    bestActionText: BEST_ACTION_TEXT[bestAction],
+    bestActionText,
     invalidation,
     levels,
   };

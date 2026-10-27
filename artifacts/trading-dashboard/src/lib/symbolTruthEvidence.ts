@@ -10,7 +10,10 @@ import { normalizeChartTimeframe } from "./chartCandlesQuery";
 // Two normal 15s polls. This limits the lifetime of the composed advice/news;
 // it never substitutes snapshot build time for the underlying candle timestamp.
 export const SYMBOL_TRUTH_MAX_AGE_MS = 30_000;
-const CAPPED_REASON = "The live feed isn't confirmed for this market right now, so there's no directional read to show.";
+const DATA_STATE_RANK: Record<MarketTruthResponse["data"]["state"], number> = {
+  UNAVAILABLE: 0, STALE: 1, SYNCING: 2, LIVE_CONFIRMED: 3,
+};
+const CAPPED_REASON ="The live feed isn't confirmed for this market right now, so there's no directional read to show.";
 
 function currentTimestamp(iso: string | null | undefined, nowMs: number): number | null {
   const stamp = iso ? Date.parse(iso) : NaN;
@@ -102,8 +105,10 @@ export function resolveSymbolTruthEvidence(input: {
   const components: MarketTruthResponse["components"] = {
     scanner: absent(), flame: absent(), timing: absent(), scalp: absent(),
   };
-  const dataState = scannerTruth?.candles.status === "stale" ? "STALE" :
+  const chartState = scannerTruth?.candles.status === "stale" ? "STALE" :
     scannerTruth?.candles.status === "unavailable" ? "UNAVAILABLE" : "SYNCING";
+  // The cap may only downgrade: keep the server's state when it is already worse.
+  const dataState = DATA_STATE_RANK[snapshot.data.state] < DATA_STATE_RANK[chartState] ? snapshot.data.state : chartState;
   return {
     actionCapped: true,
     snapshot: withCappedClasses({
