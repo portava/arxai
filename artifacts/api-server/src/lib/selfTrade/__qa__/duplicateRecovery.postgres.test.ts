@@ -399,3 +399,15 @@ it("dispatch fails an enqueue error only after neutralising mirrors in the same 
   assert.match(between, /eq\(arxLiveCommandsTable\.status, "SENT_TO_MT5_LIVE"\)/, "the failure write is a CAS");
   assert.match(between, /if \(failed && reservationId != null\)/, "release only after a committed failure");
 });
+
+it("the shared-trade attribution fail-safe never force-blocks a command that already left LIVE_APPROVED (source)", async () => {
+  // cancelLiveCommand now refuses a lost race; its force-block fallback must
+  // not then overwrite a command the alternate dispatch route already sent.
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../../../routes/tradesLiveShared.ts", import.meta.url), "utf8");
+  const start = source.indexOf('reason: "ATTRIBUTION_INSERT_FAILED",');
+  const block = source.slice(start, source.indexOf("ATTRIBUTION_FAILSAFE_CASCADE_FAILED", start));
+  assert.ok(start > -1 && block.includes('status: "LIVE_BLOCKED"'));
+  assert.match(block, /eq\(arxLiveCommandsTable\.status, "LIVE_APPROVED"\)/, "force-block is a CAS from LIVE_APPROVED");
+  assert.match(block, /madeTerminal = blocked\.length === 1/, "terminal only when the CAS matched");
+});
