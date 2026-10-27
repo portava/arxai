@@ -11,7 +11,7 @@
 // - No call to any trade-placement, MT5 dispatch, or live-pipeline path.
 
 import type { MarketTimingRead, BestAction, TimingDataQuality, DataQualityLabel } from "@workspace/domain/timing-brain";
-import { classifySymbol, routeCandles, routeQuote } from "../../lib/data/marketDataRouter.js";
+import { classifySymbol, routeCandles, routeQuote, quotePinForSeries } from "../../lib/data/marketDataRouter.js";
 import { computeSessionKillZone } from "./sessionKillZoneEngine.js";
 import { computeHeat } from "./heatEngine.js";
 import { computeTradeability } from "./tradeabilityEngine.js";
@@ -65,9 +65,11 @@ export async function computeTimingRead(
   const isSynthetic = assetClass === "synthetic";
 
   // ─── 1. Fetch real candles + quote (best-effort) ─────────────────────────
-  const [candleResult, quoteResult] = await Promise.allSettled([
-    routeCandlesFn(symbol, timeframe, 80),
-    routeQuoteFn(symbol),
+  // The quote is routed after the candles, pinned to the served series' MT5
+  // writer, so it can only pair with the bridge that produced these candles.
+  const [candleResult] = await Promise.allSettled([routeCandlesFn(symbol, timeframe, 80)]);
+  const [quoteResult] = await Promise.allSettled([
+    routeQuoteFn(symbol, quotePinForSeries(candleResult.status === "fulfilled" ? candleResult.value : null)),
   ]);
 
   const observedAt = Date.now();

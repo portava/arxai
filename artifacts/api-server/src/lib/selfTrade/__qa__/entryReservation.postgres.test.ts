@@ -122,6 +122,7 @@ mock.module("../../data/marketDataRouter.js", {
     routeQuote: async () => {
       throw new Error("No market-data access in test");
     },
+    quotePinForSeries: () => undefined,
   },
 });
 mock.module("../../mt5/contractSize.js", {

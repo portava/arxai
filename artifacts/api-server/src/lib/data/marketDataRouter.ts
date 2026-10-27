@@ -392,20 +392,22 @@ async function tryMt5Candles(
 
 type QuoteAttempt = ProviderAttempt & { quote: MarketQuote | null; provenance: SeriesProvenance | null; tickTimeObserved?: boolean };
 
-async function tryMt5Quote(symbol: string): Promise<QuoteAttempt> {
+async function tryMt5Quote(symbol: string, writer?: { bridgeConnectionId: number | null }): Promise<QuoteAttempt> {
   const t0 = Date.now();
   const connected = await mt5Provider.isConnected();
   if (!connected) {
     return { provider: "mt5_broker", ok: false, reason: "MT5_BROKER_FEED_NOT_ACTIVE", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
   }
   try {
-    // Bridge-partitioned read: serves the most recent writer (the previous
-    // single-latest behavior) and reports that writer's identity.
-    const read = readMt5Quote(symbol);
+    // Bridge-partitioned read. Unpinned: serves the most recent writer (the
+    // previous single-latest behavior) and reports that writer's identity.
+    // Pinned (`writer`): ONLY that writer's partition — never another bridge.
+    const read = writer ? readMt5Quote(symbol, { writer }) : readMt5Quote(symbol);
     const q = read?.quote ?? null;
     const hasPrice = q != null && ((q.bid != null && q.bid > 0) || (q.ask != null && q.ask > 0) || (q.last != null && q.last > 0));
     if (!read || !q || !hasPrice) {
-      return { provider: "mt5_broker", ok: false, reason: "MT5_QUOTES_NOT_PUSHED", candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
+      const reason = writer && readMt5Quote(symbol) ? "MT5_WRITER_QUOTE_MISSING" : "MT5_QUOTES_NOT_PUSHED";
+      return { provider: "mt5_broker", ok: false, reason, candleCount: 0, ms: Date.now() - t0, quote: null, provenance: null };
     }
     return {
       provider: "mt5_broker", ok: true, reason: null, candleCount: 0, ms: Date.now() - t0, quote: q,
@@ -753,14 +755,39 @@ export async function routeCandlesForDecision(
   );
 }
 
-export async function routeQuote(symbol: string): Promise<MarketQuoteResult> {
+export interface RouteQuoteOptions {
+  /**
+   * Pin the quote to the MT5 WRITER that produced a served candle series
+   * (`bridgeConnectionId: null` = the unattributed partition). A pinned read
+   * serves only that writer's quote: no other bridge and no other provider
+   * is tried, so a quote is never paired across writers. Build it with
+   * `quotePinForSeries`.
+   */
+  mt5Writer?: { bridgeConnectionId: number | null };
+}
+
+/**
+ * The quote pin for a served candle series: its live MT5 writer when the
+ * series came from the in-memory MT5 store; otherwise none (unpinned routing).
+ * With several v1 EAs on one symbol, candles and an unscoped quote would come
+ * from different bridges and never pair; Truth consumers that pair a quote
+ * with a series route the quote through this pin.
+ */
+export function quotePinForSeries(candles: MarketCandlesResult | null | undefined): RouteQuoteOptions | undefined {
+  const p = candles?.ok ? candles.provenance : undefined;
+  if (!p || p.providerId !== "mt5_broker" || p.subProviderId != null) return undefined;
+  return { mt5Writer: { bridgeConnectionId: p.bridgeConnectionId ?? null } };
+}
+
+export async function routeQuote(symbol: string, opts?: RouteQuoteOptions): Promise<MarketQuoteResult> {
   const assetClass = classifySymbol(symbol);
-  const chain = CHAIN_BY_CLASS[assetClass];
+  const pinned = opts?.mt5Writer;
+  const chain = pinned ? CHAIN_BY_CLASS[assetClass].filter((id) => id === "mt5_broker") : CHAIN_BY_CLASS[assetClass];
   const attempts: ProviderAttempt[] = [];
 
   for (const id of chain) {
     if (id === "mt5_broker") {
-      const r = await tryMt5Quote(symbol);
+      const r = await tryMt5Quote(symbol, pinned);
       attempts.push(stripQuote(r));
       if (r.ok && r.quote) return successQuote(symbol, assetClass, r.quote, r.provider, attempts, r.provenance, r.tickTimeObserved);
     } else if (id === "deriv") {

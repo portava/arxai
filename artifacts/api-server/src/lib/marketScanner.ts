@@ -35,7 +35,7 @@ import {
   resolveScannerRegime,
   type ScannerRegimeRead,
 } from "./regime/marketRegimeAuthority.js";
-import { routeCandles, routeQuote } from "./data/marketDataRouter.js";
+import { routeCandles, routeQuote, quotePinForSeries } from "./data/marketDataRouter.js";
 import { classifySymbol, resolveDerivSymbol } from "./data/marketDataRouter.js";
 import {
   buildFeatureSnapshot,
@@ -1261,10 +1261,10 @@ async function analyzeViaRouter(
     // its own typed slot (no casts, no result-union).
     let cr!: Awaited<ReturnType<typeof routeCandles>>;
     let qr!: Awaited<ReturnType<typeof routeQuote>>;
-    await Promise.all([
-      runWithScannerBudget(async () => { cr = await routeCandles(sym, tf, SCAN_ROUTED_LIMIT); }),
-      runWithScannerBudget(async () => { qr = await routeQuote(sym); }),
-    ]);
+    // The quote follows the candles, pinned to the served series' MT5 writer
+    // (several bridges on one symbol must never pair across writers).
+    await runWithScannerBudget(async () => { cr = await routeCandles(sym, tf, SCAN_ROUTED_LIMIT); });
+    await runWithScannerBudget(async () => { qr = await routeQuote(sym, quotePinForSeries(cr)); });
     const now = Date.now();
     const prepared = prepareScannerCandles(cr, sym, tf, now);
     if (!prepared || prepared.rawClosed.length === 0) return null;

@@ -28,7 +28,11 @@ import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS, MAX_FUTURE_CLOCK_SKEW_MS } from "
 //   - CONTENTION: when two or more DISTINCT ATTRIBUTED bridges have fresh
 //     non-empty series for the same symbol|timeframe, the read still serves
 //     the most recent one but flags MULTI_BRIDGE_CONTENTION and emits a
-//     rate-limited logger.warn (once per symbol per hour). An unattributed
+//     rate-limited logger.warn. Since v1 sync-candles is attributed, several
+//     users' EAs on one symbol is a normal multi-user state, so the warn fires
+//     when a symbol's contending bridge SET is first seen or changes (at most
+//     hourly), and repeats for an unchanged set at most once a day. The
+//     per-read `contention` flag stays truthful on every read. An unattributed
 //     writer alongside one attributed bridge is NOT flagged as contention —
 //     the unattributed writer's identity is unknown and may be the same
 //     physical bridge; claiming "multi-bridge" there would be fabrication.
@@ -76,8 +80,10 @@ const FEED_FRESH_MS = MT5_FEED_FRESH_MS; // 60s
  *  it serves the primary (most recent) and names the contention. */
 export const MULTI_BRIDGE_CONTENTION_NOTE = "MULTI_BRIDGE_CONTENTION";
 
-// Contention warn rate limit: once per SYMBOL per hour.
+// Contention warn rate limit (per SYMBOL): a new/changed contending set warns
+// at most hourly; an unchanged set re-warns at most once a day.
 const CONTENTION_WARN_INTERVAL_MS = 60 * 60_000;
+const CONTENTION_REPEAT_INTERVAL_MS = 24 * 60 * 60_000;
 
 function normalizeTf(tf: string | undefined | null): string {
   const t = (tf ?? "").trim();
@@ -184,7 +190,7 @@ const quoteStore = new Map<string, Map<string, QuoteEntry>>();
 let lastUpdate = 0;
 let writeCounter = 0;
 // symbol → last contention-warn emit time (rate limit state).
-const contentionWarnAt = new Map<string, number>();
+const contentionWarnAt = new Map<string, { at: number; setKey: string }>();
 
 type ContentionWarnSink = (payload: Record<string, unknown>) => void;
 let contentionWarnSink: ContentionWarnSink | null = null;
@@ -348,18 +354,24 @@ export interface Mt5QuoteRead {
 
 /**
  * Read the latest quote. With opts.bridgeConnectionId: ONLY that bridge's
- * partition (miss/stale → null; no fallback to another writer). Without: the
- * most recent writer, reporting its identity. Never blends writers.
+ * partition (miss/stale → null; no fallback to another writer). With
+ * opts.writer: ONLY that writer's partition, where `bridgeConnectionId: null`
+ * names the unattributed partition (used to pair a quote with a served
+ * candle series from the same writer). Without either: the most recent
+ * writer, reporting its identity. Never blends writers.
  */
 export function readMt5Quote(
   symbol: string,
-  opts?: { bridgeConnectionId?: number | null; now?: number },
+  opts?: { bridgeConnectionId?: number | null; writer?: { bridgeConnectionId: number | null }; now?: number },
 ): Mt5QuoteRead | null {
   const now = opts?.now ?? Date.now();
   const partitions = quoteStore.get(normalizeSymbolKey(symbol));
   if (!partitions || partitions.size === 0) return null;
   let entry: QuoteEntry | null = null;
-  if (opts?.bridgeConnectionId != null) {
+  if (opts?.writer) {
+    const id = opts.writer.bridgeConnectionId;
+    entry = partitions.get(id != null ? String(id) : UNATTRIBUTED_BRIDGE_KEY) ?? null;
+  } else if (opts?.bridgeConnectionId != null) {
     entry = partitions.get(String(opts.bridgeConnectionId)) ?? null;
   } else {
     for (const e of partitions.values()) if (!entry || e.writeSeq > entry.writeSeq) entry = e;
@@ -465,9 +477,14 @@ export function readMt5Candles(
   const contention = freshAttributed.length >= 2;
   if (contention) {
     const symKey = normalizeSymbolKey(symbol);
+    const setKey = [...freshAttributed].sort((a, b) => a - b).join(",");
     const lastWarn = contentionWarnAt.get(symKey);
-    if (lastWarn == null || now - lastWarn >= CONTENTION_WARN_INTERVAL_MS) {
-      contentionWarnAt.set(symKey, now);
+    const due =
+      lastWarn == null ||
+      (lastWarn.setKey !== setKey && now - lastWarn.at >= CONTENTION_WARN_INTERVAL_MS) ||
+      now - lastWarn.at >= CONTENTION_REPEAT_INTERVAL_MS;
+    if (due) {
+      contentionWarnAt.set(symKey, { at: now, setKey });
       emitContentionWarn({
         symbol: symKey,
         timeframe: normalizeTf(timeframe),

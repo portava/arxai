@@ -13,7 +13,7 @@ import { isHeartbeatAgeMsOnline } from "../brokerHub/freshness.js";
 import { getUserPrimaryConnection } from "../brokerHub/connections.js";
 import { db, arxSymbolSpecsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { routeQuote, routeCandles } from "../data/marketDataRouter.js";
+import { routeQuote, routeCandles, quotePinForSeries } from "../data/marketDataRouter.js";
 import { getUserAllocationView } from "../live/masterBridgePool.js";
 import { getSymbolInfo } from "../instruments/index.js";
 import type {
@@ -175,8 +175,10 @@ export function deriveHtfBias(candles: ScalpCandle[] | null): "bullish" | "beari
 /** Focus reads bind the actual M5 bars and price before discarding timestamps.
  * Legacy management input loaders retain their separate protective-command path. */
 export async function scalpMarketInputsFor(symbol: string) {
-  const [bars, quote] = await Promise.allSettled([
-    routeCandles(symbol, SCALP_TIMEFRAME, SCALP_CANDLE_LIMIT), routeQuote(symbol),
+  // Quote pinned to the served series' MT5 writer (never another bridge).
+  const [bars] = await Promise.allSettled([routeCandles(symbol, SCALP_TIMEFRAME, SCALP_CANDLE_LIMIT)]);
+  const [quote] = await Promise.allSettled([
+    routeQuote(symbol, quotePinForSeries(bars.status === "fulfilled" ? bars.value : null)),
   ]);
   const now = Date.now();
   const read = bars.status === "fulfilled" ? prepareMarketRead(bars.value, symbol, SCALP_TIMEFRAME, now) : null;

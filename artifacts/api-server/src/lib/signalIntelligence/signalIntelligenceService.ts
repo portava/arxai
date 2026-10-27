@@ -32,7 +32,7 @@ import type {
 } from "@workspace/domain/signal-intelligence";
 import { prepareMarketRead, matchedMarketQuote, evidenceMatches, isCurrentBuild } from "../truth/marketReadEvidence.js";
 import { scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
-import { routeCandles, routeQuote, classifySymbol, resolveDerivSymbol } from "../data/marketDataRouter.js";
+import { routeCandles, routeQuote, quotePinForSeries, classifySymbol, resolveDerivSymbol } from "../data/marketDataRouter.js";
 import {
   scanSymbolTimeframe,
   decorateOpportunitiesWithNewsRisk,
@@ -239,12 +239,16 @@ export async function buildRubyMarketEdgeForUser(
       ? Promise.resolve(options.scalp)
       : evaluateScalpForSymbol(userId, { symbol, mode: "ANY" }).catch(() => null);
 
-  const [candleResult, opp, scalp, execution, quoteResult] = await Promise.all([
-    routeCandles(symbol, timeframe, SIGNAL_CANDLE_LIMIT),
+  // The quote is routed AFTER the candles and pinned to the served series'
+  // writer, so with several MT5 bridges on one symbol the price can only come
+  // from the bridge that produced these candles (never blended).
+  const [[candleResult, quoteResult], opp, scalp, execution] = await Promise.all([
+    routeCandles(symbol, timeframe, SIGNAL_CANDLE_LIMIT).then(
+      async (c) => [c, await routeQuote(symbol, quotePinForSeries(c))] as const,
+    ),
     scanSymbolTimeframe(symbol, timeframe),
     scalpPromise,
     loadExecutionInput(userId),
-    routeQuote(symbol),
   ]);
 
   const now = Date.now();

@@ -14,7 +14,8 @@ import {
   updateQuoteFromMT5,
   mt5Provider,
 } from "../../data/providers/mt5Provider.js";
-import { routeCandles, routeQuote } from "../../data/marketDataRouter.js";
+import { routeCandles, routeQuote, quotePinForSeries } from "../../data/marketDataRouter.js";
+import { scalpMarketInputsFor, SCALP_TIMEFRAME } from "../../scalp/scalpServiceInputs.js";
 import { matchedMarketQuote, prepareMarketRead } from "../marketReadEvidence.js";
 import { computeTimingRead } from "../../../brain/timing/marketTimingBrainService.js";
 import { timeframeMs } from "../../data/chart/timeframes.js";
@@ -25,8 +26,8 @@ const TF = "M15" as const;
 const A = { bridgeConnectionId: 4, userId: 40 };
 const B = { bridgeConnectionId: 5, userId: 50 };
 
-function closedBars(now: number, count = 80): Candle[] {
-  const interval = timeframeMs(TF);
+function closedBars(now: number, count = 80, tf: string = TF): Candle[] {
+  const interval = timeframeMs(tf as typeof TF);
   const currentOpen = Math.floor(now / interval) * interval;
   return Array.from({ length: count }, (_, i) => {
     const open = 1.09 + i * 0.0001;
@@ -116,5 +117,81 @@ test("actual timing producer uses an attributed same-bridge quote and refuses a 
     assert.equal(timing.dataQuality.hasQuoteData, expected, `writer ${writer.bridgeConnectionId}`);
     assert.ok(timing.marketEvidence, "closed-bar evidence is independent of the quote");
   }
+  __resetMt5ProviderStore();
+});
+
+// Review 2026-10-27 finding 2: with several v1 EAs on one symbol the candle
+// read and the unscoped quote read chose writers independently (candles from
+// the latest candle writer, quote from the latest quote writer), so the quote
+// match was null most of the time. Truth consumers now pin the quote to the
+// served series' writer.
+function multiBridge(now: number, tf: string = TF) {
+  __resetMt5ProviderStore();
+  updateCandlesFromMT5(SYMBOL, closedBars(now, 80, tf), tf, A);
+  updateCandlesFromMT5(SYMBOL, closedBars(now, 80, tf), tf, B); // B serves candles
+  updateQuoteFromMT5(SYMBOL, tick(now), B, { tickTimeObserved: true });
+  updateQuoteFromMT5(SYMBOL, tick(now), A, { tickTimeObserved: true }); // A is the latest quote writer
+}
+
+test("multiple v1 EAs: the quote is pinned to the served series' bridge and pairs", async () => {
+  const now = Date.now();
+  multiBridge(now);
+  const candles = await routeCandles(SYMBOL, TF, 80);
+  assert.equal(candles.provenance?.bridgeConnectionId, 5);
+  const unscoped = await routeQuote(SYMBOL);
+  assert.equal(unscoped.provenance?.bridgeConnectionId, 4, "unscoped read serves the latest quote writer");
+  assert.equal(matchedMarketQuote(candles, unscoped, SYMBOL, Date.now()), null);
+
+  assert.deepEqual(quotePinForSeries(candles), { mt5Writer: { bridgeConnectionId: 5 } });
+  const pinned = await routeQuote(SYMBOL, quotePinForSeries(candles));
+  assert.equal(pinned.provenance?.bridgeConnectionId, 5); assert.equal(pinned.provenance?.userId, 50);
+  assert.ok(matchedMarketQuote(candles, pinned, SYMBOL, Date.now()));
+});
+
+test("a pinned quote read never borrows another bridge's quote or another provider", async () => {
+  __resetMt5ProviderStore();
+  const now = Date.now();
+  updateCandlesFromMT5(SYMBOL, closedBars(now), TF, B);
+  updateQuoteFromMT5(SYMBOL, tick(now), A, { tickTimeObserved: true }); // only A has a quote
+  const candles = await routeCandles(SYMBOL, TF, 80);
+  const pinned = await routeQuote(SYMBOL, quotePinForSeries(candles));
+  assert.equal(pinned.ok, false); assert.equal(pinned.quote, null);
+  assert.deepEqual(pinned.attempts.map((a) => [a.provider, a.reason]), [["mt5_broker", "MT5_WRITER_QUOTE_MISSING"]]);
+  assert.equal(matchedMarketQuote(candles, pinned, SYMBOL, Date.now()), null);
+});
+
+test("an unattributed live series pins to the unattributed quote partition only", async () => {
+  __resetMt5ProviderStore();
+  const now = Date.now();
+  updateCandlesFromMT5(SYMBOL, closedBars(now), TF); // legacy writer, identity unknown
+  updateQuoteFromMT5(SYMBOL, tick(now), null, { tickTimeObserved: true });
+  updateQuoteFromMT5(SYMBOL, tick(now), B, { tickTimeObserved: true }); // latest, attributed
+  const candles = await routeCandles(SYMBOL, TF, 80);
+  assert.deepEqual(quotePinForSeries(candles), { mt5Writer: { bridgeConnectionId: null } });
+  const pinned = await routeQuote(SYMBOL, quotePinForSeries(candles));
+  assert.equal(pinned.provenance?.bridgeConnectionId, null);
+  assert.ok(matchedMarketQuote(candles, pinned, SYMBOL, Date.now()));
+});
+
+test("non-MT5 or failed candle results leave quote routing unpinned", () => {
+  assert.equal(quotePinForSeries(null), undefined);
+  assert.equal(quotePinForSeries({ ok: false } as never), undefined);
+  assert.equal(quotePinForSeries({ ok: true, provenance: { providerId: "deriv", subProviderId: null, bridgeConnectionId: null } } as never), undefined);
+  assert.equal(quotePinForSeries({ ok: true, provenance: { providerId: "mt5_broker", subProviderId: "durable_mirror", bridgeConnectionId: null } } as never), undefined);
+});
+
+test("actual timing and scalp producers pair the served bridge's quote under multi-bridge contention", async () => {
+  const quiet = {
+    computeNewsHeatFn: async () => ({ phase: "NONE", eventName: null, minutesUntil: null, minutesSince: null, eventType: "none", surpriseScore: null, heatAdjustment: 0, blocksTrade: false }) as never,
+    computeBroadFlowFn: async () => ({ verdict: "UNAVAILABLE", institutionalFlowScore: 50, competingCatalyst: false, description: "", correlatedAssets: [], dataQuality: "unavailable" }) as never,
+  };
+  multiBridge(Date.now());
+  const timing = await computeTimingRead({ symbol: SYMBOL, timeframe: TF, persistSnapshot: false },
+    { ...quiet, routeCandlesFn: routeCandles, routeQuoteFn: routeQuote });
+  assert.equal(timing.dataQuality.hasQuoteData, true);
+
+  multiBridge(Date.now(), SCALP_TIMEFRAME);
+  const scalp = await scalpMarketInputsFor(SYMBOL);
+  assert.ok(scalp.price != null && Math.abs(scalp.price - 1.098) < 1e-9, `scalp price ${scalp.price}`);
   __resetMt5ProviderStore();
 });

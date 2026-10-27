@@ -42,7 +42,7 @@ import {
   type UniverseId,
 } from "../marketScanner.js";
 import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
-import { routeCandles, routeQuote } from "../data/marketDataRouter.js";
+import { routeCandles, routeQuote, quotePinForSeries } from "../data/marketDataRouter.js";
 
 /** Timeframe the opportunity map reads at (aligns with the market-edge default). */
 export const OPPORTUNITY_MAP_TIMEFRAME = "M5";
@@ -131,10 +131,9 @@ async function latenessFor(opp: ScannerOpportunity): Promise<LateDetection | nul
   try {
     let cr!: Awaited<ReturnType<typeof routeCandles>>;
     let qr!: Awaited<ReturnType<typeof routeQuote>>;
-    await Promise.all([
-      runWithScannerBudget(async () => { cr = await routeCandles(opp.symbol, opp.timeframe, 30); }),
-      runWithScannerBudget(async () => { qr = await routeQuote(opp.symbol); }),
-    ]);
+    // Quote pinned to the served series' MT5 writer (never another bridge).
+    await runWithScannerBudget(async () => { cr = await routeCandles(opp.symbol, opp.timeframe, 30); });
+    await runWithScannerBudget(async () => { qr = await routeQuote(opp.symbol, quotePinForSeries(cr)); });
     if (!opp.feedProvider || cr.primaryProvider !== opp.feedProvider ||
         scannerRowSourceIdentity(opp) !== scannerSourceIdentity(cr)) return null;
     const now = Date.now();

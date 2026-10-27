@@ -35,7 +35,7 @@ delete process.env.NEWSAPI_API_KEY;
 delete process.env.DERIV_APP_ID;
 delete process.env.DERIV_API_TOKEN;
 
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import type { Candle } from "../types.js";
 
@@ -123,7 +123,7 @@ test("unscoped read serves the single most-recent writer and carries its identit
   }
 });
 
-test("contention warn is rate-limited: once per symbol per hour", () => {
+test("contention warn is rate-limited: once per symbol per window", () => {
   __resetMt5ProviderStore();
   updateCandlesFromMT5("EURUSD", bars(5, 1.1), "M1", { bridgeConnectionId: 1 });
   updateCandlesFromMT5("EURUSD", bars(5, 2.2), "M1", { bridgeConnectionId: 2 });
@@ -138,6 +138,38 @@ test("contention warn is rate-limited: once per symbol per hour", () => {
     assert.equal(warns.length, 1, "the WARN fires once within the hour window");
   } finally {
     restore();
+  }
+});
+
+test("contention warn is not hourly noise: an unchanged bridge set re-warns at most daily, a changed set warns again", () => {
+  // Review 2026-10-27: v1 sync-candles is now attributed, so several users'
+  // EAs on one symbol is a normal multi-user state, not an hourly incident.
+  __resetMt5ProviderStore();
+  const t0 = Date.UTC(2026, 9, 27, 0, 0, 0);
+  mock.timers.enable({ apis: ["Date"], now: t0 });
+  const { warns, restore } = warnCapture();
+  const pushAndRead = (ids: number[]) => {
+    for (const id of ids) updateCandlesFromMT5("EURUSD", bars(5, 1 + id), "M1", { bridgeConnectionId: id });
+    return readMt5Candles("EURUSD", "M1", 100);
+  };
+  try {
+    assert.equal(pushAndRead([1, 2]).contention, true);
+    assert.equal(warns.length, 1, "first sighting of the set warns");
+    for (let h = 1; h <= 23; h++) {
+      mock.timers.setTime(t0 + h * 3_600_000);
+      assert.equal(pushAndRead([1, 2]).contention, true, "the per-read flag stays truthful");
+    }
+    assert.equal(warns.length, 1, "an unchanged set does not re-warn every hour");
+    mock.timers.setTime(t0 + 23 * 3_600_000 + 30 * 60_000);
+    pushAndRead([1, 2, 3]);
+    assert.equal(warns.length, 2, "a changed contending set warns again");
+    assert.deepEqual(warns[1]?.contendingBridgeIds, [1, 2, 3]);
+    mock.timers.setTime(t0 + 47 * 3_600_000 + 31 * 60_000);
+    pushAndRead([1, 2, 3]);
+    assert.equal(warns.length, 3, "an unchanged set re-warns after a day");
+  } finally {
+    restore();
+    mock.timers.reset();
   }
 });
 
