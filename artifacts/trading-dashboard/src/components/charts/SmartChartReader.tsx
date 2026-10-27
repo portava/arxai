@@ -8,7 +8,7 @@ import { analyzeSmartChart, type SmartChartAnalysisResult, type SmartChartFindin
 import { captureSmartChartBars } from "@/lib/chart-engine/smartChartCapture";
 import { captureReplayAnalysisPrefix, type ChartReplayReadWindow } from "@/lib/chart-engine/chartReplayAnalysis";
 import { smartChartNarrative } from "@/lib/chart-engine/smartChartNarrative";
-import { chartNumber } from "@/lib/chart-engine/chartDescriptiveStats";
+import { chartNumber, chartChangeSummary } from "@/lib/chart-engine/chartDescriptiveStats";
 import { describeSmartChartWindow, type ChartDescriptiveAnalysis, type ObservedMetric } from "@/lib/chart-engine/chartDescriptiveAnalysis";
 import type { ChartPreferences } from "@/lib/chart-engine/chartWorkspace";
 import type { SmartChartAnnotation } from "@/lib/chart-engine/smartChartAnnotation";
@@ -77,7 +77,7 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
   // toggling null between two readings would rebuild hidden server overlays.
   useLayoutEffect(()=>()=>adapter?.setSmartAnnotation?.(null),[adapter,epoch,ownershipKey]);
   const chosenNarrative=chosen?smartChartNarrative(chosen):null;
-  const narrative=chosenNarrative?.summary??(stats?`Price ${stats.change>0?"rose":stats.change<0?"fell":"stayed level"} ${chartNumber(Math.abs(stats.changePercent))}% across ${stats.count} closed candles. The observed range is ${chartNumber(stats.low)} to ${chartNumber(stats.high)}. No clear pattern was found by the available detectors.`:result?.reason??"Waiting for a source-identified chart window.");
+  const narrative=chosenNarrative?.summary??(stats?`Price ${chartChangeSummary(stats.change,stats.changePercent)} across ${stats.count} closed candles. The observed range is ${chartNumber(stats.low)} to ${chartNumber(stats.high)}. No clear pattern was found by the available detectors.`:result?.reason??"Waiting for a source-identified chart window.");
   return <section className="border-b border-zinc-800 bg-sky-950/10 px-3 py-2.5 text-xs" aria-label="Automatic chart analysis" data-testid="smart-chart-reader"
     data-analysis-status={result?.status??"unavailable"} data-analysis-asof={result?.status==="ready"?result.asOf??undefined:undefined}
     data-analysis-source-identity={result?.status==="ready"?bound.context.sourceIdentity??undefined:undefined}
@@ -117,7 +117,13 @@ export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,sy
         <p>{symbol} · {timeframe} · {bound.context.source??"Source unavailable"} · {result?.closedBarsUsed??0} closed candles analyzed. {result?.coverage.note} Statistics describe visible closes; variability is their population standard deviation. Drawdown is a price series measure, not trading P/L.</p>
         {gaps&&<p>{gaps.gaps?`${gaps.gaps} elapsed gap${gaps.gaps===1?"":"s"} between observations; the largest spans ${chartNumber(gaps.largestSeconds/60)} minutes. Market closures or missing intervals may explain these gaps; this view cannot distinguish them.`:"No elapsed gaps between the observed candles in this window."} Missing volume is not treated as zero trading activity.</p>}
         {view&&<p>Display: {view.style} · {view.scale} scale{view.inverted?" · inverted":""}. Readings use the underlying prices and selected period. {view.style==="line"?"The line shows closes; candle patterns also use open, high and low prices.":""}{view.scale!=="linear"?" Axis transformations change visual spacing, not the observed price change.":""}</p>}
-        {moreFindings.length>0&&<div className="flex flex-wrap gap-2" aria-label="More observed patterns">{moreFindings.map(finding=><button type="button" key={finding.id} className="rounded border border-zinc-700 px-2 py-1 text-left text-zinc-300" onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}</button>)}</div>}
+        {moreFindings.length>0&&<div className="space-y-2">
+          <p className="text-[10px]">More readings · {bound.context.source??"Source unavailable"} · times in UTC</p>
+          <div className="flex flex-wrap gap-2" aria-label="More observed patterns">{moreFindings.map(finding=>{
+            const observedAt=new Date(finding.asOf*1000).toISOString();
+            return <button type="button" key={finding.id} className="rounded border border-zinc-700 px-2 py-1 text-left text-zinc-300" onClick={()=>setSelected(finding.id)}>{finding.title} · {finding.status}<time dateTime={observedAt} className="block text-[10px] text-zinc-400">As of {observedAt.slice(0,19).replace("T"," ")} UTC</time></button>;
+          })}</div>
+        </div>}
         <p className="text-[10px]">Volume, order flow, forecasts and statistical significance are not inferred from this OHLC window. A pattern alone does not establish causation or a profitable trade.</p>
       </div>
     </details>
