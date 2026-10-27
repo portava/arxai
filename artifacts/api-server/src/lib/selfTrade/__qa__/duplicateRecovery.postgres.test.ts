@@ -411,3 +411,39 @@ it("the shared-trade attribution fail-safe never force-blocks a command that alr
   assert.match(block, /eq\(arxLiveCommandsTable\.status, "LIVE_APPROVED"\)/, "force-block is a CAS from LIVE_APPROVED");
   assert.match(block, /madeTerminal = blocked\.length === 1/, "terminal only when the CAS matched");
 });
+
+// ── 4. Overlapping reconciliation (held; regression guard) ───────────────────
+
+it("overlapping reconcile cycles advance a fill once and keep broker event time", async () => {
+  const filledAt = new Date("2026-10-26T23:59:58Z");
+  const row = await command({
+    status: "LIVE_FILLED",
+    bridgeConnectionId: BRIDGE,
+    accountLogin: "A",
+    brokerServer: "S",
+    brokerTicket: "T-1",
+    fillPrice: 1.1,
+    executedVolume: 0.1,
+    filledAt,
+    sentToMt5At: new Date("2026-10-26T23:59:50Z"),
+  });
+  const execution = await linkedExecution(row);
+  const results = await Promise.all(Array.from({ length: 8 }, () => reconcileAgentExecutions(execution.agentId)));
+  assert.equal(results.reduce((n, r) => n + r.filled, 0), 1, "exactly one writer counts the fill");
+  const [exec] = await db.select().from(executions).where(eq(executions.id, execution.id));
+  assert.equal(exec!.status, "FILLED");
+  assert.equal(exec!.brokerTicket, "T-1");
+  assert.equal(exec!.filledAt?.toISOString(), filledAt.toISOString(), "poll time never replaces the broker fill time");
+});
+
+it("a command owned by another user never settles this user's reservation", async () => {
+  const row = await command({
+    userId: 10,
+    status: "LIVE_REJECTED",
+    bridgeConnectionId: BRIDGE,
+  });
+  const execution = await linkedExecution({ ...row, userId: USER });
+  await reconcileAgentExecutions(execution.agentId);
+  const [exec] = await db.select().from(executions).where(eq(executions.id, execution.id));
+  assert.equal(exec!.status, "PENDING_TICKET", "foreign evidence leaves the reservation held");
+});
