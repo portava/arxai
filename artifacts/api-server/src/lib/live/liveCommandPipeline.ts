@@ -5005,15 +5005,18 @@ export async function recordLiveCommandResult(args: {
         applied: false as const,
       };
     }
-    if (args.terminalResultEvidence && (row.status === "LIVE_ACKNOWLEDGED" || row.status === "LIVE_PARTIALLY_FILLED")) {
+    if (row.status === "LIVE_ACKNOWLEDGED" || row.status === "LIVE_PARTIALLY_FILLED") {
       const prior = await tx.execute(sql`select payload->'terminalResultEvidence' as evidence from execution_events
         where command_id=${row.id} and payload->>'applied'='true' and payload ? 'terminalResultEvidence'
         order by sequence_no desc limit 1`);
       const before = prior.rows[0]?.evidence as import("../mt5/terminalResultEvidence.js").TerminalResultEvidence | undefined;
       const { terminalEvidenceConflicts } = await import("../mt5/terminalResultEvidence.js");
-      // Contradictory executions stay held for reconciliation with the
-      // already-applied exposure; they are never summed or replaced.
-      if (before && terminalEvidenceConflicts(before, args.terminalResultEvidence))
+      // Exposure applied from versioned evidence is only ever advanced by
+      // versioned evidence that agrees with it. A later unversioned report
+      // cannot be checked, and a contradictory execution is never summed or
+      // replaced: both stay held for reconciliation. Legacy cumulative manual
+      // reports (no versioned prior) keep their own marker-based path.
+      if (before && (!args.terminalResultEvidence || terminalEvidenceConflicts(before, args.terminalResultEvidence)))
         args = { ...args, outcome: "LIVE_UNKNOWN", brokerTicket: row.brokerTicket, fillPrice: row.fillPrice, executedVolume: row.executedVolume };
     }
     const effectiveOutcome: typeof args.outcome =

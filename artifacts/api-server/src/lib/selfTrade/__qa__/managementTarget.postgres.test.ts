@@ -2447,7 +2447,7 @@ async function terminalResultRoute(legacy:boolean,commandId:string|number,body:a
   const [connection]=await db.select().from(bridges).where(eq(bridges.id,connectionId));
   let result:any;let status=200;
   const res:any={status(n:number){status=n;return res;},json(b:any){result=b;return res;}};
-  await route.stack.at(-1)!.handle({mt5Connection:connection,body:{...body,commandId},headers:{},log:{info(){},warn(){},error(){}}},res,()=>{});
+  await route.stack.at(-1)!.handle({mt5Connection:connection,body:{...body,commandId},headers:{},log:{info(){},warn(){},error(){}}} as any,res,()=>{});
   return {status,body:result};
 }
 async function terminalEntryFixture(legacy:boolean){
@@ -2667,6 +2667,48 @@ for (const action of ["OPEN_MARKET", "PLACE_MARKET_ORDER", "DEMO_MARKET_ORDER"])
     assert.equal(stored!.status, "LIVE_FILLED", `${action} must not fall back to UNKNOWN`); assert.equal(stored!.filledLotSize, .02); assert.ok(stored!.completedAt);
   });
 }
+it("legacy mailbox route: unversioned acceptance/partial claims without terminal evidence are held unknown", async () => {
+  for (const status of ["LIVE_PARTIALLY_FILLED", "LIVE_ACKNOWLEDGED"]) {
+    await resetFixture();
+    const { row, id } = await terminalEntryFixture(true);
+    const result = await terminalResultRoute(true, id, { status, mt5Ticket: "42", filledLotSize: .01, fillPrice: 1.2 });
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    const [stored] = await db.select().from(commands).where(eq(commands.commandId, row.commandId));
+    assert.equal(stored!.status, "LIVE_UNKNOWN", status); assert.equal(stored!.executedVolume, null, status);
+    assert.equal((await db.select().from(reservations))[0]!.status, "RESERVED");
+    assert.equal((await db.select().from(mailbox).where(eq(mailbox.id, id as number)))[0]!.status, "LIVE_UNKNOWN");
+  }
+});
+it("an unversioned later fill after applied partial exposure is held unknown on both routes", async () => {
+  for (const legacy of [false, true]) {
+    await resetFixture();
+    const { row, id } = await terminalEntryFixture(legacy);
+    assert.equal((await terminalResultRoute(legacy, id, actualTerminalBody(legacy, "ENTRY", "partial"))).status, 200);
+    const { resultEvidenceVersion: _version, ...unversioned } = actualTerminalBody(legacy, "ENTRY", "full");
+    assert.equal((await terminalResultRoute(legacy, id, { ...unversioned, status: "LIVE_FILLED" })).status, 200);
+    const [stored] = await db.select().from(commands).where(eq(commands.commandId, row.commandId));
+    assert.equal(stored!.status, "LIVE_UNKNOWN", legacy ? "legacy" : "direct");
+    assert.equal(stored!.executedVolume, .00789123, "applied exposure is preserved, not replaced");
+    assert.equal(stored!.filledAt, null); assert.equal((await db.select().from(reservations))[0]!.status, "RESERVED");
+  }
+});
+it("an entry is served to the EA once: a direct pickup holds its mirror and a mirror delivery consumes the direct pickup", async () => {
+  const { row, mail } = await signedEntry();
+  const direct = await pollRoute(false);
+  assert.equal(direct.command?.commandId, row.commandId);
+  const afterDirect = await pollRoute(true, "1");
+  assert.equal(afterDirect.commands.length, 0, "mirror of a picked entry is held, never delivered again");
+  assert.equal((await db.select().from(mailbox).where(eq(mailbox.id, mail.id)))[0]!.status, "PENDING");
+  await resetFixture();
+  const second = await signedEntry();
+  const delivered = await pollRoute(true, "1");
+  assert.equal(delivered.commands.length, 1); assert.equal(delivered.commands[0].id, second.mail.id);
+  const [stored] = await db.select().from(commands).where(eq(commands.commandId, second.row.commandId));
+  assert.ok(stored!.pickedByEaAt, "mirror delivery stamps the authority's pickup");
+  assert.ok((await db.select().from(executionEvents).where(eq(executionEvents.commandId, stored!.id)))
+    .some(e => e.eventType === "EA_PICKED_UP" && (e.payload as any)?.transport === "mt5_commands"));
+  assert.equal((await pollRoute(false)).command, null, "the direct poll never serves a delivered mirror's entry");
+});
 it("direct live route: unversioned acceptance/partial claims without terminal evidence are held unknown", async () => {
   for (const status of ["LIVE_PARTIALLY_FILLED", "LIVE_ACKNOWLEDGED"]) {
     await resetFixture();
@@ -2674,6 +2716,6 @@ it("direct live route: unversioned acceptance/partial claims without terminal ev
     const result = await terminalResultRoute(false, row.commandId, { status, brokerTicket: "42", executedVolume: .01, fillPrice: 1.2 });
     assert.equal(result.status, 200, JSON.stringify(result.body));
     const [stored] = await db.select().from(commands).where(eq(commands.commandId, row.commandId));
-    assert.equal(stored!.status, "LIVE_UNKNOWN", status); assert.equal((await db.select().from(reservations))[0]!.status, "RESERVED");
+    assert.equal(stored!.status, "LIVE_UNKNOWN", status); assert.equal(stored!.executedVolume, null, status); assert.equal((await db.select().from(reservations))[0]!.status, "RESERVED");
   }
 });

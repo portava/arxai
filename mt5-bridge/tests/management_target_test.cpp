@@ -23,7 +23,7 @@ bool ReadOnlyMode=false,EnableLiveExecution=true,g_maintenanceMode=false,g_close
 bool AllowPositionClose=true,AllowProtectionModify=true,AllowOrderExecution=true;
 long lastCommandAt=0;int CommandExpirySeconds=120;string EA_VERSION="fixture";
 std::vector<long>seen;
-long TimeCurrent(){return 1000;}
+long brokerNow=1000,gmtNow=1000;long TimeCurrent(){return brokerNow;}long TimeGMT(){return gmtNow;}
 bool WasCmdSeen(long id){return std::find(seen.begin(),seen.end(),id)!=seen.end();}
 void RememberCmd(long id){seen.push_back(id);}
 string GetJson(const string&){if(pollHook)pollHook();return response;}
@@ -96,7 +96,7 @@ template<class...A>void PostResultStruct(long,const string&status,const string&r
 #include "ArxManagementTarget.mqh"
 #include "ArxTradeResult.mqh"
 #include "management_wire.inc"
-void reset(){tradeResultOk=true;resultRetcode=10009;resultDeal=43;resultOrder=42;resultVolume=.02;resultPrice=1.2;g_tradeEvidenceCount=g_tradeEvidenceNext=0;login=100;mode=ACCOUNT_TRADE_MODE_REAL;server="Venue-Server-1";native="EURUSD.a";volume=.02;oldSL=1.1;oldTP=1.3;positionSide=POSITION_TYPE_BUY;exists=true;connected=true;calls=selections=0;tradedLot=0;pollHook=nullptr;selectHook=nullptr;g_liveDoneCount=g_liveDoneNext=0;posted="";seen.clear();AllowOrderExecution=true;ReadOnlyMode=false;EnableLiveExecution=true;AllowPositionClose=AllowProtectionModify=true;}
+void reset(){brokerNow=gmtNow=1000;tradeResultOk=true;resultRetcode=10009;resultDeal=43;resultOrder=42;resultVolume=.02;resultPrice=1.2;g_tradeEvidenceCount=g_tradeEvidenceNext=0;login=100;mode=ACCOUNT_TRADE_MODE_REAL;server="Venue-Server-1";native="EURUSD.a";volume=.02;oldSL=1.1;oldTP=1.3;positionSide=POSITION_TYPE_BUY;exists=true;connected=true;calls=selections=0;tradedLot=0;pollHook=nullptr;selectHook=nullptr;g_liveDoneCount=g_liveDoneNext=0;posted="";seen.clear();AllowOrderExecution=true;ReadOnlyMode=false;EnableLiveExecution=true;AllowPositionClose=AllowProtectionModify=true;}
 string target(bool modify=false){return string("{\"version\":1,\"accountLogin\":\"100\",\"observedServerName\":\"Venue-Server-1\",\"brokerTicket\":\"42\",\"symbol\":\"EURUSD.a\",\"side\":\"BUY\",\"volume\":0.02,\"currentStopLoss\":1.1,\"currentTakeProfit\":1.3,\"nextStopLoss\":1.2,\"action\":\"")+(modify?"TIGHTEN_SL":"EXIT")+"\"}";}
 string wire(bool live,bool modify=false,bool bound=true){return string("{\"id\":1,\"action\":\"")+(modify?"MODIFY_POSITION":"CLOSE_POSITION")+"\",\"commandId\":\"command-1\",\"commandType\":\""+(modify?"MODIFY_LIVE_SLTP":"CLOSE_LIVE_POSITION")+"\",\"symbol\":\"EURUSD.a\",\"side\":\"BUY\",\"requestedVolume\":0.02,\"stopLoss\":1.2,\"takeProfit\":1.3,\"sl\":1.2,\"tp\":1.3,\"positionTicket\":\"42\",\"secondsUntilExpiry\":30,\"payload\":{\"brokerTicket\":\"42\""+(bound?",\"managementTargetV1\":"+target(modify):"")+"}}"+(live?"":"");}
 void run(bool live,const string&w,bool modify=false){if(live){response="{\"command\":"+w+"}";PollAndExecuteLiveCommands();}else {response="{\"commands\":["+w+"]}";PollAndExecute();}(void)modify;}

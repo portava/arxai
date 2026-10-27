@@ -486,7 +486,10 @@ void HandleCommand(const string slice)
    // ── Expiry: reject stale commands (retry/reconnect safety) ──
    long createdAtEpoch = JsonLong(slice, "createdAtEpoch");
    if(createdAtEpoch > 0) {
-      long ageSec = (long)TimeCurrent() - createdAtEpoch;
+      // createdAtEpoch is UTC; TimeCurrent() is broker time, so compare in GMT.
+      long nowEpoch = (long)TimeGMT();
+      if(nowEpoch <= 0) nowEpoch = (long)TimeCurrent();
+      long ageSec = nowEpoch - createdAtEpoch;
       if(ageSec > CommandExpirySeconds) {
          RememberCmd(cmdId);
          PostResultStruct(cmdId, "EXPIRED", "COMMAND_EXPIRED", 0,

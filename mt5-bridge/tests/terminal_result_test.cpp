@@ -2,7 +2,7 @@
 #include "management_target_test.cpp"
 #undef main
 #include <limits>
-string entryWire(){return "{\"id\":1,\"action\":\"OPEN_MARKET\",\"commandId\":\"entry-1\",\"commandType\":\"PLACE_LIVE_MARKET_ORDER\",\"symbol\":\"EURUSD.a\",\"side\":\"BUY\",\"lot\":0.02,\"requestedVolume\":0.02,\"secondsUntilExpiry\":30,\"confirmedByUser\":true,\"payload\":{}}";}
+string entryWire(const string&extra=""){return "{\"id\":1,"+extra+"\"action\":\"OPEN_MARKET\",\"commandId\":\"entry-1\",\"commandType\":\"PLACE_LIVE_MARKET_ORDER\",\"symbol\":\"EURUSD.a\",\"side\":\"BUY\",\"lot\":0.02,\"requestedVolume\":0.02,\"secondsUntilExpiry\":30,\"confirmedByUser\":true,\"payload\":{}}";}
 void runResult(bool live,const string&kind){
  if(kind=="ENTRY") {if(live){response="{\"command\":"+entryWire()+"}";PollAndExecuteLiveCommands();}else {response="{\"commands\":["+entryWire()+"]}";PollAndExecute();}}
  else run(live,wire(live,kind=="MODIFY"),kind=="MODIFY");
@@ -21,6 +21,15 @@ int main(int argc,char**argv){
   std::cout<<"{\"tradedLot\":"<<ArxResultNumber(tradedLot)<<",\"tradedSL\":"<<ArxResultNumber(mutatedSL)<<",\"tradedTP\":"<<ArxResultNumber(mutatedTP)<<",\"body\":"<<posted<<"}\n";return 0;
  }
  bool emit=argc>1&&string(argv[1])=="--emit";
+ // Mailbox expiry compares the server's UTC createdAtEpoch with the terminal
+ // clock. A UTC+3 broker must not expire a 10 s old command; a 200 s old one
+ // must expire everywhere. Baseline source used broker time and got both wrong.
+ reset();gmtNow=1000;brokerNow=1000+10800;response="{\"commands\":["+entryWire("\"createdAtEpoch\":990,")+"]}";PollAndExecute();
+ check(calls==(ARX_BASELINE?0:1),"fresh command on a UTC+3 broker clock is executed, not expired");
+ if(ARX_BASELINE)check(JsonReadString(posted,"status")=="EXPIRED","baseline expires fresh commands on offset broker clocks");
+ reset();gmtNow=1000;brokerNow=1000-10800;response="{\"commands\":["+entryWire("\"createdAtEpoch\":800,")+"]}";PollAndExecute();
+ if(ARX_BASELINE)check(calls==1,"baseline never expires commands when the broker clock lags UTC");
+ else check(calls==0&&JsonReadString(posted,"status")=="EXPIRED","stale command expires even when the broker clock lags UTC "+posted);
  struct Scenario{const char*name;bool ok;int code;ulong deal;double vol,price;const char*expected;};
  const Scenario cases[]={
   {"full",true,10009,43,.02,1.234567891,"LIVE_FILLED"},
