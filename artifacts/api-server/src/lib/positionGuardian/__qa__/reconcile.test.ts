@@ -23,10 +23,12 @@ import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import {
+  arxLiveArmingTable,
   arxLiveCommandsTable,
   arxLivePositionsTable,
   db,
   livePositionsTable,
+  mt5ConnectionTable,
   mt5DemoCommandsTable,
   userRiskEventsTable,
   usersTable,
@@ -38,10 +40,17 @@ import {
 import { applyOwnPositionSnapshot } from "../../mt5/executionReconciler.js";
 import { evaluatePreTradeRisk, resolveEffectiveLimits } from "../../riskGovernor/preTrade.js";
 
+// Manual close commands are only applied to the ledger when their draft-time
+// integrity signature is intact; the signing key derives from SESSION_SECRET.
+process.env.SESSION_SECRET ??= "synthetic-offline-position-guardian";
+
 const EMAIL = "qa+position-guardian@arx.test";
 const TICKET = "880001";
 const DEMO_TICKET = "880002";
+const ACCOUNT_LOGIN = "QA-880";
+const BROKER_SERVER = "QA Broker";
 let userId = 0;
+let bridgeId = 0;
 
 type Call = { venue: string; ticket: string; stopLoss: number; takeProfit: number | null };
 let calls: Call[] = [];
@@ -56,6 +65,8 @@ async function deleteFixtures(): Promise<void> {
   const ids = users.map((u) => u.id);
   if (!ids.length) return;
   await db.delete(userRiskEventsTable).where(inArray(userRiskEventsTable.userId, ids));
+  await db.delete(arxLiveArmingTable).where(inArray(arxLiveArmingTable.userId, ids));
+  await db.delete(mt5ConnectionTable).where(inArray(mt5ConnectionTable.userId, ids));
   await db.delete(arxLivePositionsTable).where(inArray(arxLivePositionsTable.userId, ids));
   await db.delete(arxLiveCommandsTable).where(inArray(arxLiveCommandsTable.userId, ids));
   await db.delete(livePositionsTable).where(inArray(livePositionsTable.userId, ids));
@@ -73,7 +84,8 @@ async function seedLive(opts: { brokerStop: number | null; syncedAgoMs?: number;
     stopLoss: 1.095, takeProfit: 1.11, brokerTicket: TICKET, filledAt, sourcePage: "LIVE_TRADE_TICKET",
   });
   await db.insert(arxLivePositionsTable).values({
-    userId, bridgeConnectionId: 1, brokerTicket: TICKET, symbol: "EURUSD", side: "BUY", volume: 0.1,
+    userId, bridgeConnectionId: bridgeId, accountLogin: ACCOUNT_LOGIN, brokerServer: BROKER_SERVER,
+    brokerTicket: TICKET, symbol: "EURUSD", side: "BUY", volume: 0.1,
     entryPrice: 1.1, currentPrice: 1.1, stopLoss: opts.brokerStop, takeProfit: 1.11, openedAt: filledAt,
     sourceCommandId: "qa_open_1", lastSyncedAt: new Date(Date.now() - (opts.syncedAgoMs ?? 5_000)),
   });
@@ -90,6 +102,13 @@ before(async () => {
   const [u] = await db.insert(usersTable).values({ email: EMAIL, name: "QA Guardian", role: "USER", isSystemUser: true })
     .returning({ id: usersTable.id });
   userId = u!.id;
+  // The trader's live bridge: what the real close draft builder binds a
+  // manual CLOSE_LIVE_POSITION command to.
+  const [bridge] = await db.insert(mt5ConnectionTable).values({
+    userId, connectionName: "QA Guardian bridge", status: "connected", accountType: "live", mode: "LIVE",
+    accountNumber: ACCOUNT_LOGIN, brokerName: BROKER_SERVER, apiKeyHash: "qa-position-guardian-fixture",
+  }).returning({ id: mt5ConnectionTable.id });
+  bridgeId = bridge!.id;
 });
 beforeEach(async () => {
   calls = [];
@@ -328,18 +347,30 @@ test("demo: a governed demo fill reported by the bridge starts being tracked; a 
 
 test("live: a filled partial close shrinks the position and keeps it guarded; a full close closes it", async () => {
   await seedLive({ brokerStop: 1.095 });
-  const { recordLiveCommandResult } = await import("../../live/liveCommandPipeline.js");
-  const close = async (id: string, volume: number) => {
-    await db.insert(arxLiveCommandsTable).values({
-      commandId: id, userId, commandType: "CLOSE_LIVE_POSITION", status: "SENT_TO_MT5_LIVE", bridgeConnectionId: 1,
-      symbol: "EURUSD", side: "BUY", orderType: "CLOSE", requestedVolume: volume,
-      payload: { brokerTicket: TICKET }, filledAt: null,
+  // Armed for this test only: the draft builder refuses an unarmed trader.
+  await db.insert(arxLiveArmingTable).values({
+    userId, isArmed: true, armedAt: new Date(), killSwitchEngaged: false, accountNumberConfirmed: ACCOUNT_LOGIN,
+  });
+  const { createLiveOpsDraft, recordLiveCommandResult } = await import("../../live/liveCommandPipeline.js");
+  // The close is drafted by the real builder so it carries the signed
+  // manualClosePositionBasisV1 that result application verifies against; the
+  // test stands in for approval + dispatch by marking the draft sent.
+  const close = async (volume: number) => {
+    const draft = await createLiveOpsDraft({
+      userId, commandType: "CLOSE_LIVE_POSITION", brokerTicket: TICKET, symbol: "EURUSD", side: "BUY", volume,
+      sourcePage: "LIVE_POSITION_OPS",
     });
-    return recordLiveCommandResult({ userId, commandId: id, outcome: "LIVE_FILLED", reportingBridgeConnectionId: 1,
-      brokerTicket: TICKET, executedVolume: volume, fillPrice: 1.1 });
+    assert.equal(draft.ok, true, JSON.stringify(draft));
+    if (!draft.ok) throw new Error(draft.reason);
+    await db.update(arxLiveCommandsTable).set({ status: "SENT_TO_MT5_LIVE", sentToMt5At: new Date() })
+      .where(eq(arxLiveCommandsTable.id, draft.command.id));
+    return recordLiveCommandResult({ userId, commandId: draft.command.commandId, outcome: "LIVE_FILLED",
+      reportingBridgeConnectionId: bridgeId, brokerTicket: TICKET, executedVolume: volume, fillPrice: 1.1 });
   };
-  const first = await close("qa_close_part", 0.04);
+  try {
+  const first = await close(0.04);
   assert.equal(first.ok, true, JSON.stringify(first));
+  assert.equal(first.positionSettlement, "APPLIED", JSON.stringify(first));
   const [pos] = await db.select().from(arxLivePositionsTable).where(eq(arxLivePositionsTable.userId, userId));
   assert.equal(pos!.closedAt, null, "a partial close does not close the position");
   assert.equal(pos!.volume, 0.06);
@@ -347,8 +378,12 @@ test("live: a filled partial close shrinks the position and keeps it guarded; a 
   assert.ok(r, "the remainder is still guarded");
   assert.equal(r.assessment.action, "NONE");
 
-  await close("qa_close_rest", 0.06);
+  const rest = await close(0.06);
+  assert.equal(rest.positionSettlement, "APPLIED", JSON.stringify(rest));
   const [after] = await db.select().from(arxLivePositionsTable).where(eq(arxLivePositionsTable.userId, userId));
   assert.ok(after!.closedAt, "the close of the whole remainder closes it");
   assert.equal(await reconcilePosition("LIVE", userId, TICKET, { trigger: "fill", submit: accept }), null);
+  } finally {
+    await db.delete(arxLiveArmingTable).where(eq(arxLiveArmingTable.userId, userId));
+  }
 });
