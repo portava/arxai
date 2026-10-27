@@ -19,6 +19,7 @@
 
 import { CLOCK_DRIFT_WARN_SECONDS } from "@workspace/domain/safety-contracts/clockDrift";
 import { DEFAULT_PRE_TRADE_GUARD_LIMITS } from "@workspace/domain/safety-contracts/preTradeBrokerGuard";
+import type { EaQuoteSupply } from "./eaQuoteSupply.js";
 
 /** The EA pre-trade guard's own quote-age bound (preTradeBrokerGuard.ts). */
 export const ENTRY_QUOTE_MAX_AGE_MS = DEFAULT_PRE_TRADE_GUARD_LIMITS.maxQuoteAgeMs;
@@ -113,8 +114,33 @@ export interface EntryMarketObservation {
   brokerSymbol?: string | null;
   /** The bridge connection whose quote partition was read; null when unknown. */
   bridgeConnectionId?: number | null;
+  /** The dispatch bridge's heartbeat-reported EA version; null when unknown. */
+  eaVersion?: string | null;
+  /**
+   * Set on a missing-quote observation: whether that EA build streams broker
+   * quotes at all (pure lookup, eaQuoteSupply.ts). Explains the refusal; never
+   * changes it.
+   */
+  eaQuoteSupply?: EaQuoteSupply | null;
   /** Present when the quote or spec could not be read. */
   error?: string | null;
+}
+
+/** Operator-facing detail for ENTRY_FRESH_QUOTE_UNAVAILABLE: what was read where, and why the EA may have nothing. */
+export function describeQuoteUnavailable(obs: EntryMarketObservation | null | undefined): string {
+  if (obs == null) return "no quote observation";
+  const parts = [obs.error ?? "no quote observation"];
+  if (obs.brokerSymbol != null || obs.requestedSymbol != null) {
+    const broker = obs.brokerSymbol ?? "unresolved";
+    parts.push(
+      obs.requestedSymbol != null && obs.requestedSymbol !== obs.brokerSymbol
+        ? `symbol ${broker} (requested ${obs.requestedSymbol})`
+        : `symbol ${broker}`,
+    );
+  }
+  parts.push(obs.bridgeConnectionId != null ? `bridge ${obs.bridgeConnectionId}` : "bridge unknown");
+  if (obs.eaQuoteSupply?.note) parts.push(obs.eaQuoteSupply.note);
+  return parts.join("; ");
 }
 
 export type EntryFreshReason =
@@ -180,7 +206,7 @@ function zoneOf(thesis: unknown): { lo: number; hi: number } | null {
 export function evaluateEntryFreshFacts(input: EntryFreshInput): EntryFreshVerdict {
   const obs = input.observation;
   if (obs == null || obs.error)
-    return refuseEntry("ENTRY_FRESH_QUOTE_UNAVAILABLE", obs?.error ?? "no quote observation");
+    return refuseEntry("ENTRY_FRESH_QUOTE_UNAVAILABLE", describeQuoteUnavailable(obs));
   const age = classifyObservationAge(obs.observedAt, input.nowMs, ENTRY_QUOTE_MAX_AGE_MS);
   if (!age.ok)
     return refuseEntry(

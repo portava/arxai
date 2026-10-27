@@ -9,8 +9,7 @@
 // clock stamped on the bridge v2 envelope in the same call that read the tick
 // (bridgeV2/ingest.ts feedMarketDataStore). The EA's `brokerTimeEpochMs` is the
 // trade server's wall clock, not UTC, and is carried only as a diagnostic offset.
-// The store's priceless "not available" placeholder carries a fabricated
-// now-timestamp, so it is never passed on.
+// The store's priceless "not available" placeholder is never passed on.
 // Point: the broker's own SYMBOL_POINT from arx_symbol_specs, to measure spread
 // and deviation in broker points like the EA pre-trade guard does.
 // Symbol: the EA quotes and reports specs under the broker's exact Market Watch
@@ -19,31 +18,41 @@
 // the command leaves for the EA (liveCommandPipeline → resolveBrokerSymbolName),
 // then match exactly: no case-folding, suffix guessing or alias invention here.
 // Bridge: the quote store is partitioned by the bridge connection that pushed
-// the tick. With a dispatch context the observer reads ONLY the dispatch bridge's
-// partition, so another user's EA quoting the same symbol can never supply this
-// user's quote fact; a context without a bridge identity refuses. Without a
-// context (legacy/unit callers) the unscoped most-recent-writer read is used.
-import { mt5Provider, readMt5Quote } from "../data/providers/mt5Provider.js";
-import { resolveBrokerSymbolName } from "../instruments/brokerSymbolName.js";
+// the tick (mt5Provider Mt5BridgeIdentity). The observer reads ONLY the dispatch
+// bridge's partition, so another bridge quoting the same symbol can never supply
+// this command's quote fact; a dispatch without a bridge identity refuses. There
+// is no unscoped read on this path.
+// EA supply: when the quote is missing, the observation also states whether the
+// bridge's EA build streams quotes at all (eaQuoteSupply.ts), so the refusal
+// explains "EA v1.31 does not stream broker quotes" rather than a bare
+// UNAVAILABLE. The outcome is unchanged: no quote, no entry.
+import { readMt5Quote } from "../data/providers/mt5Provider.js";
+import { resolveBrokerSymbolName } from "../instruments/index.js";
 import { getBrokerSymbolSpec } from "../mt5/brokerSymbolSpec.js";
+import { describeEaQuoteSupply } from "./eaQuoteSupply.js";
 import type { EntryMarketObservation } from "./freshFacts.js";
-import type { MarketQuote } from "../data/types.js";
 
 export const ENTRY_QUOTE_SOURCE = "mt5_broker";
 
 export interface EntryObservationContext {
   /** The bridge the command is being dispatched to (dispatchLiveCommand's `bridge.id`). */
   bridgeConnectionId: number | null | undefined;
+  /** That bridge's heartbeat-reported EA version (`bridge.eaVersion`), for the supply note. */
+  eaVersion?: string | null;
 }
 
 export async function observeAgentEntryMarket(
   userId: number,
   symbol: string,
-  context?: EntryObservationContext,
+  context: EntryObservationContext,
 ): Promise<EntryMarketObservation> {
   const bridgeConnectionId =
-    typeof context?.bridgeConnectionId === "number" && Number.isFinite(context.bridgeConnectionId)
+    typeof context.bridgeConnectionId === "number" && Number.isFinite(context.bridgeConnectionId)
       ? context.bridgeConnectionId
+      : null;
+  const eaVersion =
+    typeof context.eaVersion === "string" && context.eaVersion.trim() !== ""
+      ? context.eaVersion.trim()
       : null;
   const unavailable = (
     error: string,
@@ -59,21 +68,20 @@ export async function observeAgentEntryMarket(
     requestedSymbol: symbol,
     brokerSymbol,
     bridgeConnectionId,
+    eaVersion,
+    eaQuoteSupply: describeEaQuoteSupply(eaVersion),
   });
-  if (context !== undefined && bridgeConnectionId == null)
-    return unavailable("BROKER_QUOTE_BRIDGE_UNKNOWN", null);
+  if (bridgeConnectionId == null) return unavailable("BROKER_QUOTE_BRIDGE_UNKNOWN", null);
   let brokerSymbol: string;
   try {
     brokerSymbol = await resolveBrokerSymbolName(symbol);
   } catch {
     return unavailable("BROKER_SYMBOL_RESOLVE_FAILED", null);
   }
-  const readQuote = async (): Promise<MarketQuote | null> =>
-    bridgeConnectionId == null
-      ? mt5Provider.getQuote(brokerSymbol)
-      : readMt5Quote(brokerSymbol, { bridgeConnectionId }).quote;
   const [quote, spec] = await Promise.all([
-    readQuote().catch((err: unknown) => ({ error: err })),
+    Promise.resolve()
+      .then(() => readMt5Quote(brokerSymbol, { bridgeConnectionId }).quote)
+      .catch((err: unknown) => ({ error: err })),
     getBrokerSymbolSpec(userId, brokerSymbol).catch((err: unknown) => ({ error: err })),
   ]);
   const point =
@@ -97,6 +105,7 @@ export async function observeAgentEntryMarket(
     requestedSymbol: symbol,
     brokerSymbol,
     bridgeConnectionId,
+    eaVersion,
     ...("error" in spec ? { error: "BROKER_SPEC_READ_FAILED" } : {}),
   };
 }

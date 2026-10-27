@@ -69,7 +69,15 @@ export interface AgentAdmissionEnvelope {
 }
 
 export class AgentEntryAuthorityError extends Error {
-  constructor(public readonly reason: string) {
+  /**
+   * `reason` is the structured code (the row's rejectionReason and `message`).
+   * `detail` is optional operator-facing text (what was measured, where it was
+   * read) for the dispatch snapshot and audit; it never changes the outcome.
+   */
+  constructor(
+    public readonly reason: string,
+    public readonly detail: string | null = null,
+  ) {
     super(reason);
   }
 }

@@ -9,12 +9,14 @@
 // the real feed function are exercised; no network, broker or venue is reached.
 import { beforeEach, describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
+import * as realInstruments from "../../instruments/index.js";
 
 mock.module("@workspace/db", {
   namedExports: { db: {}, bridgeV2EventsTable: {}, bridgeV2StreamStateTable: {} },
 });
-mock.module("../../instruments/brokerSymbolName.js", {
-  namedExports: { resolveBrokerSymbolName: async (stored: string) => stored },
+// No registry here: the symbol resolves to itself (forex-style no-op).
+mock.module("../../instruments/index.js", {
+  namedExports: { ...realInstruments, resolveBrokerSymbolName: async (stored: string) => stored },
 });
 mock.module("../../mt5/brokerSymbolSpec.js", {
   namedExports: {
@@ -22,7 +24,7 @@ mock.module("../../mt5/brokerSymbolSpec.js", {
   },
 });
 const { feedMarketDataStore } = await import("../../bridgeV2/ingest.js");
-const { mt5Provider, __resetMt5ProviderStore } = await import(
+const { mt5Provider, readMt5Quote, __resetMt5ProviderStore } = await import(
   "../../data/providers/mt5Provider.js"
 );
 const { observeAgentEntryMarket } = await import("../entryMarketObservation.js");
@@ -30,6 +32,10 @@ const { evaluateEntryFreshFacts } = await import("../freshFacts.js");
 
 const EA_UTC = Date.parse("2026-10-27T12:00:00.000Z");
 const HOURS_3 = 3 * 3_600_000;
+// The authenticated bridge the route attributes the push to, and the dispatch
+// context that reads it back.
+const BRIDGE = { bridgeConnectionId: 7, userId: 9 };
+const CTX = { bridgeConnectionId: 7, eaVersion: "1.54" };
 const tick = (brokerTimeEpochMs: unknown) => ({
   symbol: "EURUSD",
   bid: 1.1,
@@ -37,10 +43,17 @@ const tick = (brokerTimeEpochMs: unknown) => ({
   brokerTimeEpochMs,
 });
 function feed(payload: unknown, eaCreatedAtEpochMs: unknown, freshnessVerdict = "LIVE") {
-  feedMarketDataStore({ messageType: "TICK", payload, freshnessVerdict, eaCreatedAtEpochMs });
+  feedMarketDataStore({
+    messageType: "TICK",
+    payload,
+    freshnessVerdict,
+    eaCreatedAtEpochMs,
+    bridge: BRIDGE,
+  });
 }
+const stored = () => readMt5Quote("EURUSD", { bridgeConnectionId: 7 }).quote;
 async function claimVerdict(nowMs = EA_UTC + 1_000) {
-  const observation = await observeAgentEntryMarket(9, "EURUSD");
+  const observation = await observeAgentEntryMarket(9, "EURUSD", CTX);
   const v = evaluateEntryFreshFacts({
     side: "BUY",
     stopLoss: 1.09,
@@ -56,12 +69,13 @@ beforeEach(() => __resetMt5ProviderStore());
 describe("quote time base at ingest", () => {
   it("a GMT+3 trade server: the stored time is the EA's UTC clock, the offset is recorded", async () => {
     feed(tick(EA_UTC + HOURS_3), EA_UTC);
-    const q = await mt5Provider.getQuote("EURUSD");
-    assert.equal(q.timestamp, "2026-10-27T12:00:00.000Z");
-    assert.equal(q.brokerClockMs, EA_UTC + HOURS_3);
-    assert.equal(q.brokerClockOffsetMs, HOURS_3);
-    const { v, reason } = await claimVerdict();
+    const q = stored();
+    assert.equal(q?.timestamp, "2026-10-27T12:00:00.000Z");
+    assert.equal(q?.brokerClockMs, EA_UTC + HOURS_3);
+    assert.equal(q?.brokerClockOffsetMs, HOURS_3);
+    const { v, observation, reason } = await claimVerdict();
     assert.equal(reason, "OK");
+    assert.equal(observation.brokerClockOffsetMs, HOURS_3);
     if (v.ok) {
       assert.equal(v.facts.quoteAgeMs, 1_000);
       assert.equal(v.facts.brokerClockOffsetMs, HOURS_3);
@@ -69,14 +83,16 @@ describe("quote time base at ingest", () => {
   });
   it("a GMT-3 trade server passes on the UTC stamp as well", async () => {
     feed(tick(EA_UTC - HOURS_3), EA_UTC);
-    const q = await mt5Provider.getQuote("EURUSD");
-    assert.equal(q.timestamp, "2026-10-27T12:00:00.000Z");
-    assert.equal(q.brokerClockOffsetMs, -HOURS_3);
-    assert.equal((await claimVerdict()).reason, "OK");
+    const q = stored();
+    assert.equal(q?.timestamp, "2026-10-27T12:00:00.000Z");
+    assert.equal(q?.brokerClockOffsetMs, -HOURS_3);
+    const { v, reason } = await claimVerdict();
+    assert.equal(reason, "OK");
+    if (v.ok) assert.equal(v.facts.brokerClockOffsetMs, -HOURS_3);
   });
   it("a GMT+0 trade server records a zero offset", async () => {
     feed(tick(EA_UTC), EA_UTC);
-    assert.equal((await mt5Provider.getQuote("EURUSD")).brokerClockOffsetMs, 0);
+    assert.equal(stored()?.brokerClockOffsetMs, 0);
     assert.equal((await claimVerdict()).reason, "OK");
   });
   it("the UTC stamp is still subject to the age bounds (no loosening)", async () => {
@@ -87,8 +103,7 @@ describe("quote time base at ingest", () => {
   for (const eaCreatedAt of [undefined, null, NaN, 0, -1, Infinity, "1761566400000", {}]) {
     it(`a missing or malformed EA clock (${typeof eaCreatedAt === "string" ? JSON.stringify(eaCreatedAt) : String(eaCreatedAt)}) stores nothing (fail closed)`, async () => {
       feed(tick(EA_UTC + HOURS_3), eaCreatedAt);
-      const q = await mt5Provider.getQuote("EURUSD");
-      assert.equal(q.bid, undefined);
+      assert.equal(stored(), null);
       const { observation, reason } = await claimVerdict();
       assert.equal(observation.error, "BROKER_QUOTE_UNAVAILABLE");
       assert.equal(reason, "ENTRY_FRESH_QUOTE_UNAVAILABLE");
@@ -97,18 +112,23 @@ describe("quote time base at ingest", () => {
   it("server receive time is never used: no quote is stamped 'now'", async () => {
     const before = Date.now();
     feed(tick(before + HOURS_3), EA_UTC);
-    const q = await mt5Provider.getQuote("EURUSD");
-    assert.equal(Date.parse(q.timestamp), EA_UTC);
+    assert.equal(Date.parse(stored()?.timestamp ?? ""), EA_UTC);
   });
   it("a tick without a broker clock still stores the UTC time with null diagnostics", async () => {
     feed(tick(undefined), EA_UTC);
-    const q = await mt5Provider.getQuote("EURUSD");
-    assert.equal(q.timestamp, "2026-10-27T12:00:00.000Z");
-    assert.equal(q.brokerClockMs, null);
-    assert.equal(q.brokerClockOffsetMs, null);
+    const q = stored();
+    assert.equal(q?.timestamp, "2026-10-27T12:00:00.000Z");
+    assert.equal(q?.brokerClockMs, null);
+    assert.equal(q?.brokerClockOffsetMs, null);
   });
   it("a transport-STALE tick is still dropped", async () => {
     feed(tick(EA_UTC), EA_UTC, "STALE");
-    assert.equal((await mt5Provider.getQuote("EURUSD")).bid, undefined);
+    assert.equal(stored(), null);
+  });
+  it("the unscoped chart/scanner read sees the same UTC stamp (one time base for every reader)", async () => {
+    feed(tick(EA_UTC + HOURS_3), EA_UTC);
+    const q = await mt5Provider.getQuote("EURUSD");
+    assert.equal(q.timestamp, "2026-10-27T12:00:00.000Z");
+    assert.equal(q.brokerClockOffsetMs, HOURS_3);
   });
 });

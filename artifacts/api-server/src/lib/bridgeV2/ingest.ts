@@ -257,15 +257,15 @@ export interface MarketDataFeedInput {
   eaCreatedAtEpochMs: unknown;
   /** The authenticated bridge connection the message came from; null when the
    *  route could not attribute one (the write then lands in the unattributed
-   *  partition, which no bridge-scoped read serves). */
-  bridge?: Mt5BridgeIdentity | null;
+   *  partition, which no bridge-scoped read serves). Required so every caller
+   *  states the attribution explicitly. */
+  bridge: Mt5BridgeIdentity | null;
 }
 
 // Exported for the offline fresh-facts tests only; the ingest API is
 // `ingestBridgeV2Message`, which calls this after its transaction commits.
 export function feedMarketDataStore(input: MarketDataFeedInput): void {
-  const { messageType, payload, freshnessVerdict } = input;
-  const bridge = input.bridge ?? null;
+  const { messageType, payload, freshnessVerdict, bridge } = input;
   // Transport-STALE (>30s late) data is not trustworthy as a live feed.
   if (freshnessVerdict === "STALE") return;
   if (messageType !== "TICK" && messageType !== "CANDLE") return;
