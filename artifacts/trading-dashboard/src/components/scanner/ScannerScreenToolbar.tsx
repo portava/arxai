@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_SCREEN, SCREEN_STORAGE_KEY, parseSavedScreens, saveScreen, writeSavedScreens,
   type SavedScannerScreen, type ScannerScreen, type ScreenWatchlist } from "./scannerScreen";
 
 const inputClass = "mt-1 w-full min-w-0 rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground";
-export function ScannerScreenToolbar({ screen, onChange, watchlists, watchlistsUnavailable, marketGroup, timeframe,
+// Memoized: the map passes stable `screen` / `onChange` / `onExport` / `watchlists`
+// references, so a row click or fetching flip in the map skips these controls.
+export const ScannerScreenToolbar = memo(function ScannerScreenToolbar({ screen, onChange, watchlists, watchlistsUnavailable, marketGroup, timeframe,
   visibleCount, totalCount, onExport }: {
   screen: ScannerScreen; onChange: (screen: ScannerScreen) => void; watchlists: readonly ScreenWatchlist[];
   watchlistsUnavailable: boolean; marketGroup: string; timeframe: string | null;
@@ -115,4 +117,4 @@ export function ScannerScreenToolbar({ screen, onChange, watchlists, watchlistsU
     {notice && <p className="mt-2 text-[11px] text-txt-muted" role="status">{notice}</p>}
     {error && <p className="mt-2 text-[11px] text-danger" role="alert">{error}</p>}
   </div>;
-}
+});

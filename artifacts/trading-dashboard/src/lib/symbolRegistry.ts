@@ -173,7 +173,8 @@ export interface ResolveOptions {
 }
 
 /** Single best resolve. Returns null only when query is empty / nothing
- *  matches even loosely. */
+ *  matches even loosely. The registry is static, so repeated resolves of the
+ *  same query return the SAME object (see `searchSymbols` memo). */
 export function resolveSymbol(query: string, opts: ResolveOptions = {}): ResolvedSymbol | null {
   const hits = searchSymbols(query, { limit: 1, ...opts });
   return hits[0] ?? null;
@@ -183,13 +184,47 @@ export interface SearchOptions extends ResolveOptions {
   limit?: number;
 }
 
+// Memo of ranked results. The registry never changes at runtime and the search
+// is a pure function of (normalized query, limit, derivFeedConfigured), so the
+// result list is computed once per distinct key and shared afterwards. The
+// scanner map resolves every row's symbol several times per render, so this
+// turns a ~47-entry regex scan into a Map lookup on the hot path. Bounded so
+// free-typed search strings can't grow it without limit; a stale-but-correct
+// entry is never possible because nothing it depends on can change.
+const SEARCH_CACHE_LIMIT = 512;
+const SEARCH_CACHE: Map<string, readonly ResolvedSymbol[]> = new Map();
+
+function searchCacheKey(q: string, limit: number, opts: ResolveOptions): string {
+  return `${q}\u0000${limit}\u0000${opts.derivFeedConfigured === undefined ? "" : String(opts.derivFeedConfigured)}`;
+}
+
 /** Ranked search. Always returns the strongest matches first so the
- *  caller can show suggestions (e.g. "75" → [V75, V75_1S, V25, ...]). */
+ *  caller can show suggestions (e.g. "75" → [V75, V75_1S, V25, ...]).
+ *  Returns a fresh array each call; the entries inside are shared. */
 export function searchSymbols(query: string, opts: SearchOptions = {}): ResolvedSymbol[] {
   const limit = opts.limit ?? 12;
   const q = norm(query);
   if (!q) return [];
+  const key = searchCacheKey(q, limit, opts);
+  const cached = SEARCH_CACHE.get(key);
+  if (cached) return cached.slice();
+  const computed = rankSymbols(q, limit, opts);
+  if (SEARCH_CACHE.size >= SEARCH_CACHE_LIMIT) SEARCH_CACHE.clear();
+  SEARCH_CACHE.set(key, computed);
+  return computed.slice();
+}
+
+function rankSymbols(q: string, limit: number, opts: ResolveOptions): ResolvedSymbol[] {
   const qc = compact(q);
+
+  // Early exact canonical hit for a single-result resolve: 1000 is the top
+  // score and only the exact canonical entry can earn it, so the full scan
+  // below could never rank anything above it. Same result, no scan.
+  const cExact = BY_CANONICAL.get(q.toUpperCase()) ?? BY_CANONICAL.get(qc.toUpperCase());
+  if (cExact && limit === 1) {
+    const a = availabilityFor(cExact, opts);
+    return [{ ...cExact, matchSource: "exact", isAvailable: a.isAvailable, unavailableReason: a.unavailableReason }];
+  }
 
   const scored: Array<{ e: SymbolEntry; score: number; source: ResolvedSymbol["matchSource"] }> = [];
   const push = (e: SymbolEntry, score: number, source: ResolvedSymbol["matchSource"]) => {
@@ -197,7 +232,6 @@ export function searchSymbols(query: string, opts: SearchOptions = {}): Resolved
   };
 
   // 1) Exact canonical
-  const cExact = BY_CANONICAL.get(q.toUpperCase()) ?? BY_CANONICAL.get(qc.toUpperCase());
   if (cExact) push(cExact, 1000, "exact");
 
   // 2) Exact broker symbol
