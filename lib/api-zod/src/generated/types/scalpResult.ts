@@ -12,6 +12,7 @@ import type { ScalpResultConfidenceLabel } from "./scalpResultConfidenceLabel";
 import type { ScalpResultDirection } from "./scalpResultDirection";
 import type { ScalpResultEntryType } from "./scalpResultEntryType";
 import type { ScalpResultNewsRisk } from "./scalpResultNewsRisk";
+import type { ScalpResultRejectReason } from "./scalpResultRejectReason";
 import type { ScalpResultSlippageRisk } from "./scalpResultSlippageRisk";
 import type { ScalpResultSpreadRisk } from "./scalpResultSpreadRisk";
 import type { ScalpResultStatus } from "./scalpResultStatus";
@@ -28,6 +29,10 @@ export interface ScalpResult {
   scalpType: string;
   mode: ScalpMode;
   status: ScalpResultStatus;
+  /** Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers. */
+  rejectReason?: ScalpResultRejectReason;
+  /** The engine timeframe this result was evaluated on (e.g. "M5"). */
+  timeframe?: string | null;
   qualityScore: number;
   confidenceLabel: ScalpResultConfidenceLabel;
   entryType: ScalpResultEntryType;
