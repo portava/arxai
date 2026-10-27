@@ -101,6 +101,10 @@ const MACHINE_ENUM_VALUE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/;
  * freshness band, a reason code) MUST be listed in `opts.preserveKeys`, otherwise
  * a multi-segment enum like `STRUCTURAL_ONLY` is blanked to "" and the client
  * can no longer tell a withheld read from a full one.
+ *
+ * Prefer keeping machine fields OUT of the scrubbed object entirely (scrub the
+ * prose, then attach enum/flag fields the client compares exactly);
+ * `preserveKeys` is the safety net for enums nested inside narrative blocks.
  */
 export function scrubUserCopyDeep<T>(value: T, opts?: ScrubUserCopyDeepOptions): T {
   const preserve =

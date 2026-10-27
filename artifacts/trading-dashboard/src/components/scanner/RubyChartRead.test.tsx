@@ -4,6 +4,7 @@ import type { ScannerTruth } from "@/lib/scannerTruth";
 import {
   resolveRubyReadPanelState,
   resolveCappedRubyReadStatus,
+  withRouteReadLayer,
   type RubyReadServerState,
 } from "@/lib/rubyReadPanelState";
 import type { RubyReadStatus } from "@/lib/scannerActionability";
@@ -705,7 +706,8 @@ describe("owner screenshot 2026-10-27 — STRUCTURAL_ONLY read never renders as 
 
       const feedData = screen.getByTestId("ruby-chart-read-reasoning-evidence-feedData").textContent ?? "";
       expect(feedData).not.toContain("Live read on");
-      expect(feedData).toContain("Structural read only — exact setup withheld until V75 1m confirms.");
+      expect(feedData).toContain("Structural read only on V75 1m — exact entry/stop/target withheld:");
+      expect(feedData).not.toContain("until V75 1m confirms");
       expect(feedData).toContain(WITHHELD_REASON);
       const sr = screen.getByTestId("ruby-chart-read-reasoning-evidence-supportResistance").textContent ?? "";
       expect(sr).toContain("Exact entry/stop/target withheld");
@@ -757,5 +759,126 @@ describe("owner screenshot 2026-10-27 — STRUCTURAL_ONLY read never renders as 
     render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
     expect(screen.getByTestId("ruby-chart-read-reasoning-evidence-feedData").textContent).toBe("Live read on V75 1m.");
     expect(screen.queryByTestId("ruby-chart-read-structural-notice")).toBeNull();
+  });
+});
+
+// ── levels-withheld-vs-shown (owner's V75 1m screenshot [F]) ──────────────────
+//
+// The read-chart service used to scrub its WHOLE payload through the user-copy
+// scrubber, which deletes SCREAMING_SNAKE tokens: "STRUCTURAL_ONLY" reached the
+// wire as "". The panel then compared `readLayer === "STRUCTURAL_ONLY"` → false,
+// fell to "confirmed" on a full shared truth, and rendered "WAIT — no confirmed
+// direction" / "Live read on V75 1m." / "Mind room into these levels." beside
+// the server's own caution "Exact entry, stop, and target levels withheld — …".
+// The withheld-setup flags that survived the scrubber must be enough to keep the
+// panel structural (downgrade-only), and the route's top-level readLayer may only
+// lower the payload's.
+describe("RubyChartRead — a withheld structural read never renders as a live read (owner's [F])", () => {
+  const BLOCKED = "Live feed is delayed — read uses the last confirmed bars, not the current candle.";
+  const OWNER_WIRE = {
+    gated: false,
+    readLayer: "",
+    liveSetupWithheld: true,
+    canReadStructure: true,
+    canShowLiveTradeSetup: false,
+    dataQuality: undefined,
+    bias: "Mixed",
+    confidence: "Low",
+    htfBias: "No clear edge",
+    why: "Higher-timeframe bias is unclear. On this timeframe the trend structure leans up, with momentum cooling; price is trading up near resistance.",
+    supportZone: "33250.6 – 33273.2",
+    resistanceZone: "33639.4 – 33662.0",
+    blockedReason: BLOCKED,
+    cautions: [
+      `Exact entry, stop, and target levels withheld — ${BLOCKED}`,
+      "Read is from closed candles only — current-candle/entry confirmation pending.",
+    ],
+  } as unknown as RubyReadServerState;
+
+  it("resolver: liveSetupWithheld without a readLayer resolves structural_only (badge never Clean/AI)", () => {
+    const panel = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: OWNER_WIRE,
+    });
+    expect(panel.verdict).toBe("structural_only");
+    expect(panel.badgeAiUsable).toBe(false);
+    expect(panel.reason).toBe(BLOCKED);
+    expect(resolveCappedRubyReadStatus("FULL_READ", OWNER_WIRE).status).toBe("LIMITED_READ");
+  });
+
+  it("resolver: an INSUFFICIENT-shaped read (also liveSetupWithheld) stays not_confirmed, not structural_only", () => {
+    const panel = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: {
+        gated: true,
+        readLayer: "INSUFFICIENT",
+        liveSetupWithheld: true,
+        canReadStructure: false,
+        canShowLiveTradeSetup: false,
+        dataQuality: "insufficient",
+        blockedReason: "Not enough closed candles yet (5/150).",
+      },
+    });
+    expect(panel.verdict).toBe("not_confirmed");
+  });
+
+  it("resolver: a FULL read with the live setup allowed stays confirmed on a full truth", () => {
+    const panel = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: { gated: false, readLayer: "FULL", liveSetupWithheld: false, canReadStructure: true, canShowLiveTradeSetup: true },
+    });
+    expect(panel.verdict).toBe("confirmed");
+  });
+
+  it("withRouteReadLayer is downgrade-only", () => {
+    expect(withRouteReadLayer({ readLayer: "" } as unknown as RubyReadServerState, "STRUCTURAL_ONLY")?.readLayer).toBe("STRUCTURAL_ONLY");
+    expect(withRouteReadLayer({} as RubyReadServerState, "FULL")?.readLayer).toBeUndefined();
+    expect(withRouteReadLayer({ readLayer: "FULL" }, "STRUCTURAL_ONLY")?.readLayer).toBe("STRUCTURAL_ONLY");
+    expect(withRouteReadLayer({ readLayer: "STRUCTURAL_ONLY" }, "FULL")?.readLayer).toBe("STRUCTURAL_ONLY");
+    expect(withRouteReadLayer(null, "FULL")).toBeNull();
+  });
+
+  it("render: the owner's wire payload shows the structural notice, cites the server reason, and never says 'Live read on'", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full", "Live data — valid for a live read") }));
+    mockStoredRead = OWNER_WIRE;
+    const { container } = render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+
+    const notice = screen.getByTestId("ruby-chart-read-structural-notice");
+    expect(notice.textContent).toContain(BLOCKED);
+    expect(screen.queryByTestId("ruby-chart-read-feed-warning")).toBeNull();
+    const text = container.textContent ?? "";
+    expect(text).not.toContain("Live read on");
+    expect(text).not.toContain("WAIT — no confirmed direction");
+    expect(text).not.toContain("Mind room into these levels");
+    expect(text).toContain("WAIT — structure only");
+    expect(text).toContain(`Exact entry/stop/target withheld — ${BLOCKED}`);
+    expect(text).not.toMatch(/Mark support .* on V75; watch which one price tests first/);
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+    for (const token of FORBIDDEN_TRUST_TOKENS) {
+      expect(screen.getByTestId("feed-confidence-badge").textContent).not.toContain(token);
+    }
+  });
+
+  it("render: the route's top-level readLayer restores STRUCTURAL_ONLY when chartRead.readLayer is blank", async () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          chartRead: { gated: false, readLayer: "", blockedReason: BLOCKED, bias: "Mixed" },
+          readLayer: "STRUCTURAL_ONLY",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} />);
+    fireEvent.click(screen.getByTestId("ruby-chart-read-ask"));
+    expect(await screen.findByTestId("ruby-chart-read-structural-notice")).toBeTruthy();
+    fetchSpy.mockRestore();
   });
 });

@@ -575,18 +575,27 @@ export function buildReasoningFromChartRead(
   const momentum = clean(read.confidence)
     ? `Read confidence ${read.confidence}.`
     : NOT_ENOUGH;
-  const pattern = withheld
+  const feedBlocked = gated || feedNotConfirmed;
+  // The server's own withheld-setup reason (blockedReason, surfaced by the panel
+  // resolver as `reason`) — a structural read must cite the gate that actually
+  // withheld the setup, never assume "the feed isn't confirmed".
+  const structuralWhy = reason || clean(read.blockedReason);
+  const pattern = feedBlocked
     ? "Pattern read withheld until the live feed confirms."
-    : "No specific chart pattern named.";
-  const trendline = withheld
+    : structuralOnly
+      ? "Pattern call withheld — structural read only."
+      : "No specific chart pattern named.";
+  const trendline = feedBlocked
     ? "Trendline read withheld until the live feed confirms."
-    : "No specific trendline named.";
+    : structuralOnly
+      ? "Trendline call withheld — structural read only."
+      : "No specific trendline named.";
 
   let supportResistance: string;
-  if (gated || feedNotConfirmed) {
+  if (feedBlocked) {
     supportResistance = "Support/resistance levels are withheld until the live feed confirms.";
   } else if (structuralOnly) {
-    supportResistance = `Support ${orElse(read.supportZone, "—")} · Resistance ${orElse(read.resistanceZone, "—")}. Exact entry/stop/target withheld until the feed confirms.`;
+    supportResistance = `Support ${orElse(read.supportZone, "—")} · Resistance ${orElse(read.resistanceZone, "—")} (structure from closed candles). Exact entry/stop/target withheld${structuralWhy ? ` — ${structuralWhy}` : "."}`;
   } else {
     supportResistance = `Support ${orElse(read.supportZone, "—")} · Resistance ${orElse(read.resistanceZone, "—")}. Mind room into these levels.`;
   }
@@ -595,7 +604,9 @@ export function buildReasoningFromChartRead(
   if (gated) {
     feedData = orElse(read.blockedReason, "Feed not confirmed — no directional structure available.");
   } else if (structuralOnly) {
-    feedData = `Structural read only — exact setup withheld until ${symbol} ${timeframe} confirms.${reason ? ` ${reason}` : ""}`;
+    feedData = structuralWhy
+      ? `Structural read only on ${symbol} ${timeframe} — exact entry/stop/target withheld: ${structuralWhy}`
+      : `Structural read only on ${symbol} ${timeframe} — exact entry/stop/target withheld.`;
   } else if (feedNotConfirmed) {
     feedData = `Feed not confirmed for ${symbol} ${timeframe}.${reason ? ` ${reason}` : ""}`;
   } else {
@@ -608,8 +619,10 @@ export function buildReasoningFromChartRead(
 
   // ── Confirmation / Invalidation / Trader Test ───────────────────────────────
   let confirmation: string;
-  if (withheld) {
+  if (feedBlocked) {
     confirmation = "Confirm the live feed first, then re-check the conditions before acting.";
+  } else if (structuralOnly) {
+    confirmation = "Re-read once exact entry/stop/target are published for this chart, then re-check the conditions before acting.";
   } else if (dir === "BUY") {
     confirmation = orElse(read.buyCondition, NOT_ENOUGH);
   } else if (dir === "SELL") {
@@ -618,19 +631,24 @@ export function buildReasoningFromChartRead(
     confirmation = orElse(read.buyCondition, orElse(read.sellCondition, "Wait for a clear directional break first."));
   }
 
-  const invalidation = withheld
+  const invalidation = feedBlocked
     ? "Treat the idea as invalid while the feed is unconfirmed or structure breaks against it."
-    : orElse(read.invalidation, NOT_ENOUGH);
+    : structuralOnly
+      ? "Treat the idea as unconfirmed while the exact setup is withheld, and invalid if structure breaks against it."
+      : orElse(read.invalidation, NOT_ENOUGH);
 
-  const traderTest =
-    clean(read.supportZone) || clean(read.resistanceZone)
+  const traderTest = structuralOnly && !feedBlocked
+    ? `Structure only — on the next closed candle, see whether price holds support ${orElse(read.supportZone, "—")} or resistance ${orElse(read.resistanceZone, "—")}; exact entry/stop/target are withheld, so don't size a trade from these zones.`
+    : clean(read.supportZone) || clean(read.resistanceZone)
       ? `Mark support ${orElse(read.supportZone, "—")} and resistance ${orElse(read.resistanceZone, "—")} on ${symbol}; watch which one price tests first.`
       : "Check the chart's feed-status badge, then mark the nearest visible level and watch whether the next candle breaks or rejects it.";
 
   const riskNote = gated
     ? orElse(read.blockedReason, "Feed unconfirmed — treat as no-trade until it clears.")
-    : structuralOnly || feedNotConfirmed
+    : feedNotConfirmed
       ? "Structure only — wait for the feed to confirm before acting on a live setup."
+      : structuralOnly
+        ? "Structure only — exact entry/stop/target are withheld; don't act on a live setup from this read."
       : orElse(read.riskNote, "Don't force it — wait for your confirmation trigger before committing.");
 
   return {
