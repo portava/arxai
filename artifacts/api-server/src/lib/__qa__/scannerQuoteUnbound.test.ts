@@ -55,6 +55,7 @@ for (const [name, quote] of [
     assert.equal(op.selectable, false);
     assert.equal(op.tradeable, false);
     assert.equal(op.sufficiency?.canShowTradeSetup, false);
+    assert.equal(op.entryZone, null, "no entry zone ships on a row whose setup is withheld");
     // Reason: the quote-binding limit, everywhere this row states one.
     assert.equal(op.sufficiency?.reasonCode, "quote_unbound");
     assert.match(op.sufficiency?.humanReason ?? "", /no bid\/ask spread is bound/);
@@ -74,6 +75,10 @@ test("fresh candles + a bound bid/ask quote stays live (contrast)", async () => 
   assert.ok(op != null);
   assert.equal(op.dataSource, "LIVE_FEED");
   assert.notEqual(op.sufficiency?.reasonCode, "quote_unbound");
+  if (op.sufficiency?.canShowTradeSetup) {
+    assert.ok(op.entryZone && op.entryZone.low > 0 && op.entryZone.low <= op.entryZone.high, "setup-allowed row carries its real entry zone");
+    assert.ok(Math.abs((op.entryZone.low + op.entryZone.high) / 2 - op.entry) < 1e-9, "entry is the zone midpoint");
+  }
 });
 
 test("fresh candles + NO quote at all keeps the existing 'waiting for a fresh quote' reason (not quote_unbound)", async () => {
