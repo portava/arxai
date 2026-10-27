@@ -24,6 +24,7 @@ import type {
   SignalLifecycleStage,
   NoTradeIntelligence,
 } from "./signalIntelligence.types.js";
+import { confidenceBandFor } from "./scoring.js";
 
 const DISCLAIMER =
   "Decision support only — confirm live readiness and risk before trading.";
@@ -163,8 +164,12 @@ interface Derived {
   biasL: string;
   dirL: string;
   regimeL: string;
-  bandLong: string;
+  /** Band of the OVERALL quality number — only ever said next to `overall`. */
   bandShort: string;
+  /** Band of the EDGE number actually shown (`edge`) — the only adjective ever
+   * written before the word "edge". Overall quality bands never describe edge. */
+  edgeBandLong: string;
+  edgeBandShort: string;
   stagePlain: string;
   timing: TimingClass;
   edge: number;
@@ -192,16 +197,21 @@ interface Derived {
 
 function derive(signal: RubyMarketEdgeSignal): Derived {
   const newsL: NewsRiskLevel = "none"; // overwritten below if carried
+  const edge = Math.round(signal.edgeScore);
+  // Banded from the rounded number the copy prints, so "(30/100)" and its
+  // adjective can never straddle a band boundary.
+  const edgeBand = confidenceBandFor(edge);
   return {
     name: signal.displayName || signal.symbol,
     biasL: BIAS_LABEL[signal.bias],
     dirL: DIRECTION_LABEL[signal.direction],
     regimeL: REGIME_LABEL[signal.regime],
-    bandLong: BAND_LONG[signal.confidenceBand],
     bandShort: BAND_SHORT[signal.confidenceBand],
+    edgeBandLong: BAND_LONG[edgeBand],
+    edgeBandShort: BAND_SHORT[edgeBand],
     stagePlain: STAGE_PLAIN[signal.lifecycleStage],
     timing: timingOf(signal.lifecycleStage),
-    edge: Math.round(signal.edgeScore),
+    edge,
     overall: Math.round(signal.scores.overall),
     forTop: topLabels(signal.evidence.for, 3),
     againstTop: topLabels(signal.evidence.against, 2),
@@ -344,10 +354,22 @@ function buildMode(
     why = `${joinAnd(d.forTop.slice(0, 2))} support the read.`;
   }
 
-  // why this market
-  const whyThisMarket = advanced
-    ? `This market shows ${d.bandLong} edge (${d.edge}/100) with overall quality ${d.overall}/100 on this timeframe.`
-    : `This market currently shows ${d.bandLong} edge (${d.edge}/100).`;
+  // why this market — the adjective before "edge" is the band of the edge
+  // number; the overall-quality band is only ever said next to the overall
+  // number. A read below the minimum-evidence rule says so in the same words as
+  // the best-action line, never as a sized edge.
+  const edgeClause = `${d.edgeBandLong} edge (${d.edge}/100)`;
+  const qualityClause = `overall setup quality is ${d.bandShort} (${d.overall}/100) on this timeframe`;
+  let whyThisMarket: string;
+  if (!d.meetsMin) {
+    whyThisMarket = advanced
+      ? `This market shows ${edgeClause} — not enough confirming evidence yet; ${qualityClause}.`
+      : `This market shows ${edgeClause} — not enough confirming evidence yet.`;
+  } else {
+    whyThisMarket = advanced
+      ? `This market shows ${edgeClause}; ${qualityClause}.`
+      : `This market currently shows ${edgeClause}.`;
+  }
 
   // why this direction
   let whyThisDirection: string;
@@ -443,7 +465,9 @@ export function explainMarketRead(
   } else if (d.neutral) {
     headline = `${d.name}: ${TIMING_SHORT[d.timing]} — no clear side yet.`;
   } else {
-    headline = `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, ${d.bandShort} edge.`;
+    headline = d.meetsMin
+      ? `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, ${d.edgeBandShort} edge (${d.edge}/100).`
+      : `${d.name}: ${TIMING_SHORT[d.timing]} — ${d.dirL} bias, no tradeable edge yet (${d.edge}/100).`;
   }
 
   return {
