@@ -287,7 +287,8 @@
     "test:result-evidence-postgres": "node src/lib/live/__qa__/runResultEvidencePostgres.mjs",
     "test:candlestick-catalogue": "node --import tsx --test ../../lib/domain/src/chart-patterns/__qa__/candlestickCatalogue.test.ts",
     "test:causal-research": "node --import tsx --test src/lib/backtest/__qa__/causalResearch.test.ts",
-    "benchmark:causal-research": "node --import tsx src/lib/backtest/__qa__/causalResearch.benchmark.ts"
+    "benchmark:causal-research": "node --import tsx src/lib/backtest/__qa__/causalResearch.benchmark.ts",
+    "test:research-evidence-postgres": "node src/lib/backtest/__qa__/runResearchEvidencePostgres.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
