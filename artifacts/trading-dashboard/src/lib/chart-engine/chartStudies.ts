@@ -97,28 +97,31 @@ export class StudyCalculator {
     this.states.length = from;
     this.points.length = from;
     const changed: StudyPoint[] = [];
-    for (let i = from; i < bars.length; i++) {
+    let i = from;
+    let state: State;
+    let previous: State | undefined;
+    const average = (key: string, input: number | null, period: number, method: AverageMethod): number | null => {
+      const prior = previous?.averages[key];
+      const count = input == null ? 0 : (prior?.count ?? 0) + 1;
+      const expired = this.states[i - period]?.averages[key]?.input ?? 0;
+      const sum = input == null ? 0 : (prior?.sum ?? 0) + input - (count > period ? expired : 0);
+      const weighted = method !== "wma" || input == null ? 0 : count <= period
+        ? (prior?.weighted ?? 0) + count * input
+        : (prior?.weighted ?? 0) - (prior?.sum ?? 0) + period * input;
+      let value: number | null = null;
+      if (input != null && count >= period) {
+        if (method === "wma") value = weighted / (period * (period + 1) / 2);
+        else if (method === "sma" || prior?.value == null) value = sum / period;
+        else value = prior.value + (method === "smma" ? 1 / period : 2 / (period + 1)) * (input - prior.value);
+      }
+      state.averages[key] = { input, count, sum, weighted, value };
+      return value;
+    };
+    for (i = from; i < bars.length; i++) {
       const bar = bars[i]!;
       const price = appliedPrice(bar, c.source ?? (c.kind === "cci" ? "hlc3" : "close"));
-      const state: State = { price, averages: {} };
-      const previous = this.states[i - 1];
-      const average = (key: string, input: number | null, period: number, method: AverageMethod): number | null => {
-        const prior = previous?.averages[key];
-        const count = input == null ? 0 : (prior?.count ?? 0) + 1;
-        const expired = this.states[i - period]?.averages[key]?.input ?? 0;
-        const sum = input == null ? 0 : (prior?.sum ?? 0) + input - (count > period ? expired : 0);
-        const weighted = method !== "wma" || input == null ? 0 : count <= period
-          ? (prior?.weighted ?? 0) + count * input
-          : (prior?.weighted ?? 0) - (prior?.sum ?? 0) + period * input;
-        let value: number | null = null;
-        if (input != null && count >= period) {
-          if (method === "wma") value = weighted / (period * (period + 1) / 2);
-          else if (method === "sma" || prior?.value == null) value = sum / period;
-          else value = prior.value + (method === "smma" ? 1 / period : 2 / (period + 1)) * (input - prior.value);
-        }
-        state.averages[key] = { input, count, sum, weighted, value };
-        return value;
-      };
+      state = { price, averages: {} };
+      previous = this.states[i - 1];
       let values: (number | null)[] = [null];
       switch (c.kind) {
         case "sma": case "ema": case "smma": case "wma":
@@ -200,7 +203,12 @@ export class StudyCalculator {
         }
       }
       this.states.push(state);
-      const point = { time: bar.time, values: values.map(value => value != null && Number.isFinite(value) ? value : null) };
+      // Normalize the newly created channel array in place; no other owner has it.
+      for (let channel = 0; channel < values.length; channel++) {
+        const value = values[channel];
+        if (value == null || !Number.isFinite(value)) values[channel] = null;
+      }
+      const point = { time: bar.time, values };
       this.points.push(point);
       changed.push(point);
     }
