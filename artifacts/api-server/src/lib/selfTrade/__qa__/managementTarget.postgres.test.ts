@@ -2333,9 +2333,18 @@ it("actual concurrent cold-map manual polls complete with a one-connection pool"
   await db.insert(commands).values([1,2].map(n=>({commandId:`cold-manual-${n}`,userId:9,bridgeConnectionId:1,
     commandType:"CLOSE_LIVE_POSITION",symbol:"INTERNAL",side:"BUY",orderType:"CLOSE",requestedVolume:.1,
     status:"SENT_TO_MT5_LIVE",payload:{brokerTicket:"123"}})));
+  // The child enforces the poll deadline itself (the property); this timeout is
+  // liveness only and must cover a cold ~360-module tsx bootstrap on a slow
+  // host (6-10 s measured on a loaded 4-vCPU VM) while staying well inside the
+  // runner's 120 s suite budget.
   const result=spawnSync(process.execPath,["--import","tsx",fileURLToPath(new URL("./terminalPollSingleConnection.ts",import.meta.url))],
-    {env:process.env,encoding:"utf8",timeout:8000});
+    {env:process.env,encoding:"utf8",timeout:45_000});
   assert.equal(result.status,0,`${result.error ?? ""} ${result.stdout} ${result.stderr}`);
+  const report=result.stdout.split("\n").map(line=>{try{return JSON.parse(line);}catch{return null;}})
+    .find(v=>v?.terminalPollSingleConnection)?.terminalPollSingleConnection;
+  assert.ok(report,`child reported no poll timing: ${result.stdout} ${result.stderr}`);
+  assert.ok(Number.isFinite(report.pollsMs)&&report.pollsMs>=0&&report.pollsMs<report.pollDeadlineMs,
+    `polls took ${report.pollsMs} ms over a one-connection pool (deadline ${report.pollDeadlineMs} ms, bootstrap ${report.bootstrapMs} ms)`);
 });
 it("actual precision-rich automatic mirror survives float4 storage through mailbox poll and extracted EA", async () => {
   await updateConnection(1,{accountNumber:"100"});
