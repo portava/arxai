@@ -138,7 +138,7 @@ test("analyzeViaRouter routes its candle+quote lookups through the shared budget
 });
 
 test("scanOnce core symbol×timeframe scan fans out through the bounded helper", () => {
-  const body = bodyOf("export async function scanOnce(");
+  const body = bodyOf("export async function scanOnceSnapshot(");
   assert.match(
     body,
     /mapWithConcurrency\(/,

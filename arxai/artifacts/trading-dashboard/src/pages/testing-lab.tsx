@@ -26,7 +26,7 @@ export default function TestingLab() {
   const [tab, setTab] = useState<TabKey>(initialTab);
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="min-w-0 max-w-full space-y-4 p-4">
       <header className="space-y-1">
         <h1 className="text-2xl font-bold text-slate-100">Testing Lab</h1>
         <p className="text-sm text-muted-foreground">
@@ -35,21 +35,21 @@ export default function TestingLab() {
         </p>
       </header>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-slate-400">Strategy</span>
         <select
           data-testid="shared-strategy-select"
           value={strategyId}
           onChange={(e) => setStrategyId(e.target.value)}
-          className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
+          className="max-w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100"
         >
           {TESTING_STRATEGIES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <span className="text-[10px] text-slate-500">shared across all tabs</span>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
-        <TabsList>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} className="min-w-0">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
           <TabsTrigger value="backtesting">Backtesting</TabsTrigger>
           <TabsTrigger value="forward">Forward Testing</TabsTrigger>
           <TabsTrigger value="comparison">Comparison</TabsTrigger>

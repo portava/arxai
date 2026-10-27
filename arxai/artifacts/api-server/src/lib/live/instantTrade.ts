@@ -38,6 +38,8 @@ import { draftTrade, confirmTrade, dispatchTrade } from "../tradeEngine/pipeline
 import { liveBrokerExecutionEnabled } from "./phaseBConfig.js";
 import { resolveBrokerSymbol } from "../mt5/symbolDirectory.js";
 import { recordManualAaciAdvisory } from "../aaci/manualAdvisory.js";
+import { MANAGEMENT_TARGET_SOURCE, ManagementTargetError, resolveManagementTarget,
+  type ManagementReference, type ManagementTarget } from "../selfTrade/managementTarget.js";
 import { enforceSensitiveAction } from "../security/handshake.js";
 
 export const INSTANT_TRADE_SOURCES = [
@@ -75,7 +77,11 @@ export type InstantTradeIntent = {
   selfTradeAgentId?: number | null;
   selfTradeDecisionId?: number | null;
   selfTradeAgentKey?: string | null;
+  /** Server-only durable admission; no browser input sets this field. */
+  selfTradeExecutionId?: number | null;
   prepareOnly?: boolean;
+  /** Internal reference only. Public request schemas do not accept this field. */
+  selfTradeManagement?: ManagementReference;
   // Task #319 — Ruby bounded executor. `rubyCommandKind` lets the auth layer
   // distinguish a plain MODIFY from a break-even move, and a full CLOSE from a
   // PARTIAL_CLOSE, so the per-action permission flags map correctly. Optional;
@@ -116,7 +122,9 @@ export type RubyAuthReason = (typeof RUBY_AUTH_REASONS)[number];
 
 export type InstantTradeResult =
   | { ok: true; commandId?: string; action: InstantTradeAction; detail?: unknown }
-  | { ok: false; error: string; primaryReason?: string; blockingReasonCode?: string; detail?: unknown; httpStatus: number };
+  | { ok: false; error: string; primaryReason?: string; blockingReasonCode?: string; detail?: unknown; httpStatus: number;
+      /** Retain management command evidence even when confirm/dispatch refuses. */
+      commandId?: string };
 
 async function writeAudit(args: {
   userId: number; action: string; ip?: string | null; ua?: string | null; metadata?: unknown;
@@ -458,11 +466,14 @@ async function executeOpen(args: {
       requestedVolume: intent.volume!, stopLoss: intent.stopLoss ?? null, takeProfit: intent.takeProfit ?? null,
       sourcePage: `INSTANT_${intent.source.toUpperCase()}`,
       rubyExplanationSummary: intent.rawUserCommand ?? null,
-      payload: {},
+      // Server-created provenance survives canonical → broker symbol mapping.
+      // createLiveDraft integrity-signs this payload with the exact broker symbol.
+      payload: intent.source === "self_trade" ? { selfTradeSymbolBinding: { requestedSymbol: typedSymbol, brokerSymbol: symbol } } : {},
       allowNoStopLossThisDraft: noSlOverride,
       selfTradeAgentId: intent.selfTradeAgentId ?? null,
       selfTradeDecisionId: intent.selfTradeDecisionId ?? null,
       selfTradeAgentKey: intent.selfTradeAgentKey ?? null,
+      selfTradeExecutionId: intent.selfTradeExecutionId ?? null,
     });
     if (!("ok" in draft) || draft.ok !== true) return { stage: "draft" as const, result: draft };
     // Task #213 — autonomy L1 (prepareOnly): the supervisor-approved draft is
@@ -509,11 +520,33 @@ async function executeOpen(args: {
   }
   return {
     ok: false, httpStatus: 409,
+    commandId: (stage as { commandId?: string }).commandId,
     error: draftR?.blockReason ?? draftR?.reason ?? draftR?.primaryReason ?? "EXECUTE_REJECTED",
     primaryReason: draftR?.primaryReason ?? draftR?.blockReason ?? draftR?.reason,
     blockingReasonCode: draftR?.blockingReasonCode,
     detail: draftR,
   };
+}
+
+async function resolveInstantManagementPosition(userId: number, intent: InstantTradeIntent) {
+  const attributed = intent.source === "self_trade" || intent.selfTradeAgentId != null ||
+    intent.selfTradeDecisionId != null || intent.selfTradeManagement != null;
+  if (!attributed) {
+    const [position] = await livePositionLedger.read({
+      where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, intent.positionId!)), limit: 1,
+    });
+    return { position, target: undefined as ManagementTarget | undefined };
+  }
+  if (intent.source !== "self_trade" || !intent.selfTradeManagement) throw new ManagementTargetError("MANAGEMENT_TARGET_REQUIRED");
+  const facts = await resolveManagementTarget(userId, intent.selfTradeManagement);
+  const target = facts.target;
+  if (intent.selfTradeAgentId !== target.agentId || intent.selfTradeDecisionId !== target.decisionId ||
+      intent.positionId !== target.brokerTicket || intent.closeVolume != null ||
+      intent.action !== (target.action === "EXIT" ? "CLOSE" : "MODIFY_SL_TP") ||
+      (target.action !== "EXIT" && (intent.newStopLoss !== target.nextStopLoss ||
+        (intent.newTakeProfit != null && intent.newTakeProfit !== target.currentTakeProfit))))
+    throw new ManagementTargetError("MANAGEMENT_INTENT_MISMATCH");
+  return { position: facts.position, target };
 }
 
 async function executeClose(args: {
@@ -526,11 +559,13 @@ async function executeClose(args: {
     await writeAudit({ userId, action: "INSTANT_CLOSE_REJECTED", ip, ua, metadata: { intent, blockReason: "MISSING_POSITION_ID" } });
     return { ok: false, httpStatus: 400, error: "MISSING_POSITION_ID" };
   }
-  const pos = await livePositionLedger.read({
-    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, intent.positionId)),
-    limit: 1,
-  });
-  const row = pos[0];
+  let resolved: Awaited<ReturnType<typeof resolveInstantManagementPosition>>;
+  try { resolved = await resolveInstantManagementPosition(userId, intent); }
+  catch (error) {
+    if (!(error instanceof ManagementTargetError)) throw error;
+    return { ok: false, httpStatus: 409, error: error.reason };
+  }
+  const { position: row, target } = resolved;
   if (!row) {
     await writeAudit({ userId, action: "INSTANT_CLOSE_REJECTED", ip, ua, metadata: { intent, blockReason: "POSITION_NOT_FOUND" } });
     return { ok: false, httpStatus: 404, error: "POSITION_NOT_FOUND" };
@@ -546,7 +581,7 @@ async function executeClose(args: {
     if (intent.closeVolume < full) closeVolume = intent.closeVolume;
   }
 
-  const r = await closeOnePosition({ userId, position: row, closeVolume });
+  const r = await closeOnePosition({ userId, position: row, closeVolume, managementTarget: target });
   await writeAudit({
     userId, action: r.ok ? "INSTANT_CLOSE_ACCEPTED" : "INSTANT_CLOSE_REJECTED", ip, ua,
     metadata: {
@@ -588,11 +623,13 @@ async function executeModify(args: {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "MISSING_POSITION_ID" } });
     return { ok: false, httpStatus: 400, error: "MISSING_POSITION_ID" };
   }
-  const pos = await livePositionLedger.read({
-    where: and(eq(livePositionColumns.userId, userId), eq(livePositionColumns.brokerTicket, intent.positionId)),
-    limit: 1,
-  });
-  const row = pos[0];
+  let resolved: Awaited<ReturnType<typeof resolveInstantManagementPosition>>;
+  try { resolved = await resolveInstantManagementPosition(userId, intent); }
+  catch (error) {
+    if (!(error instanceof ManagementTargetError)) throw error;
+    return { ok: false, httpStatus: 409, error: error.reason };
+  }
+  const { position: row, target } = resolved;
   if (!row) {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, blockReason: "POSITION_NOT_FOUND" } });
     return { ok: false, httpStatus: 404, error: "POSITION_NOT_FOUND" };
@@ -607,7 +644,8 @@ async function executeModify(args: {
     volume: Number(row.volume),
     newStopLoss: intent.newStopLoss ?? (row.stopLoss != null ? Number(row.stopLoss) : null),
     newTakeProfit: intent.newTakeProfit ?? (row.takeProfit != null ? Number(row.takeProfit) : null),
-    sourcePage: `INSTANT_MODIFY_${intent.source.toUpperCase()}`,
+    sourcePage: target ? MANAGEMENT_TARGET_SOURCE : `INSTANT_MODIFY_${intent.source.toUpperCase()}`,
+    managementTarget: target,
   });
   if (!("ok" in draft) || draft.ok !== true) {
     const d = draft as { reason?: string; primaryReason?: string };
@@ -617,7 +655,7 @@ async function executeModify(args: {
   const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   if (!confirmed.ok) {
     await writeAudit({ userId, action: "INSTANT_EXECUTE_REJECTED", ip, ua, metadata: { intent, modify: true, blockReason: confirmed.reason ?? "MODIFY_CONFIRM_FAILED", commandId: draft.command.commandId } });
-    return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED" };
+    return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED", commandId: draft.command.commandId };
   }
   const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   const accepted = dispatched.ok === true;
@@ -632,7 +670,7 @@ async function executeModify(args: {
   });
   return accepted
     ? { ok: true, action: "MODIFY_SL_TP", commandId: draft.command.commandId }
-    : { ok: false, httpStatus: 409, error: dispatched.primaryReason ?? dispatched.reason ?? "MODIFY_DISPATCH_REJECTED", detail: dispatched };
+    : { ok: false, httpStatus: 409, error: dispatched.primaryReason ?? dispatched.reason ?? "MODIFY_DISPATCH_REJECTED", commandId: draft.command.commandId, detail: dispatched };
 }
 
 // Internal: dispatch ONE reduce-only CLOSE for a given position row.
@@ -644,8 +682,9 @@ async function closeOnePosition(args: {
   // When set (PARTIAL_CLOSE), reduce only this many lots via the SAME
   // CLOSE_LIVE_POSITION draft. Must already be validated as > 0 and < full.
   closeVolume?: number;
+  managementTarget?: ManagementTarget;
 }): Promise<InstantTradeResult> {
-  const { userId, position, closeVolume } = args;
+  const { userId, position, closeVolume, managementTarget } = args;
   if (!position.brokerTicket) return { ok: false, httpStatus: 400, error: "POSITION_MISSING_BROKER_TICKET" };
   const draft = await draftTrade({ mode: "LIVE", kind: "OPS" }, {
     userId,
@@ -654,18 +693,19 @@ async function closeOnePosition(args: {
     symbol: position.symbol,
     side: position.side as "BUY" | "SELL",
     volume: closeVolume ?? Number(position.volume),
-    sourcePage: "INSTANT_CLOSE",
+    sourcePage: managementTarget ? MANAGEMENT_TARGET_SOURCE : "INSTANT_CLOSE",
+    managementTarget,
   });
   if (!("ok" in draft) || draft.ok !== true) {
     const d = draft as { reason?: string; primaryReason?: string };
     return { ok: false, httpStatus: 409, error: d.primaryReason ?? d.reason ?? "CLOSE_REJECTED", detail: d };
   }
   const confirmed = await confirmTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
-  if (!confirmed.ok) return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED" };
+  if (!confirmed.ok) return { ok: false, httpStatus: 409, error: confirmed.reason ?? "CONFIRM_FAILED", commandId: draft.command.commandId };
   const dispatched = await dispatchTrade({ mode: "LIVE" }, { userId, commandId: draft.command.commandId });
   return dispatched.ok === true
     ? { ok: true, action: "CLOSE", commandId: draft.command.commandId }
-    : { ok: false, httpStatus: 409, error: dispatched.primaryReason ?? dispatched.reason ?? "CLOSE_DISPATCH_REJECTED", detail: dispatched };
+    : { ok: false, httpStatus: 409, error: dispatched.primaryReason ?? dispatched.reason ?? "CLOSE_DISPATCH_REJECTED", commandId: draft.command.commandId, detail: dispatched };
 }
 
 /**

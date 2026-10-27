@@ -1,5 +1,7 @@
 # ARX AI — Auto-Trading Bot Safety Audit
 
+> Historical audit. See [the 2026-10-26 reliability review](SELF_TRADING_RELIABILITY_2026_10_26.md) for subsequently confirmed lifecycle defects, fixes and remaining validation gaps. The ratings below are not current certification.
+
 **Date:** 2026-06-19  
 **Scope:** Self-Trade AI stack + Ruby AI_ASSISTED path + all shared execution gates  
 **Auditor:** ARX AI agent executor (automated, evidence-backed)  

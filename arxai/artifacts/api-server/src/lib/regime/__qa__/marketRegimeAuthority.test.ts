@@ -161,3 +161,24 @@ test("DOWNGRADE-ONLY: a KNOWN regime never raises a read; no regime read leaves 
   assert.equal(withKnown.label, baseline.label);
   assert.equal(withKnown.confidence, baseline.confidence);
 });
+
+
+test("regime state never carries confirmation across feed identities", () => {
+  const up = bars(60, { driftPerBar: 1 });
+  const a = resolveScannerRegime("EURUSD", "M5", up, "mt5:bridge-1");
+  const down = bars(60, { start: 200, driftPerBar: -1 });
+  const b = resolveScannerRegime("EURUSD", "M5", down, "mt5:bridge-2");
+  assert.equal(a.regime, "TREND_UP");
+  assert.equal(b.regime, "TREND_DOWN");
+  assert.deepEqual(resolveScannerRegime("EURUSD", "M5", up, "mt5:bridge-1"), a);
+});
+
+test("an older window or a same-bar correction cannot advance or borrow future regime evidence", () => {
+  const older = bars(60, { driftPerBar: 1 });
+  const newer = bars(61, { driftPerBar: 1 });
+  const held = resolveScannerRegime("EURUSD", "M5", newer, "mt5:bridge-1");
+  assert.equal(resolveScannerRegime("EURUSD", "M5", older, "mt5:bridge-1").regime, "UNKNOWN");
+  const correction = structuredClone(newer); correction[20]!.close += 0.01;
+  assert.equal(resolveScannerRegime("EURUSD", "M5", correction, "mt5:bridge-1").regime, "UNKNOWN");
+  assert.deepEqual(resolveScannerRegime("EURUSD", "M5", newer, "mt5:bridge-1"), held);
+});

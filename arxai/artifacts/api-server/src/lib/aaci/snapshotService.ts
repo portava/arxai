@@ -28,12 +28,9 @@ export interface BuildAaciSnapshotInput {
   role: string;
   symbol?: string;
   timeframe?: string;
-  // Read the SHARED master/operator broker connector into account/bridge/
-  // positions. Defaults to admin-only (a regular USER's verdict must never be
-  // driven by master state — see the broker block below). The autonomous
-  // self-trade executor sets this true because an AGENT genuinely runs ON the
-  // shared master bridge, so reading that bridge for the agent's own cohesion
-  // check is correct, not a per-user isolation breach.
+  // Explicit operator context may include only operator agents created by this
+  // caller, in addition to their user-owned agents. It never attributes a shared
+  // broker account to this user; account/bridge facts remain unavailable below.
   includeMasterBroker?: boolean;
 }
 
@@ -222,11 +219,13 @@ export async function buildAaciSnapshot(
 
   // ── Self-Trade fleet health (agent context) ───────────────────────────────
   try {
-    const fleet = await computeFleetHealth();
+    // A user's advisory context cannot borrow another owner's funded/healthy
+    // fleet. Explicit operator execution may include only the caller's fleet.
+    const fleet = await computeFleetHealth({ userId, includeOperatorFleet: input.includeMasterBroker === true });
     snapshot.selfTradeAgent = {
       funded: fleet.fundedAgents > 0,
       active: fleet.activeAgents > 0,
-      ledgerHealthy: true,
+      ledgerHealthy: fleet.totalAgents > 0 ? fleet.accounting.status === "RECORDED" : undefined,
     };
   } catch (err) {
     logger.warn({ err }, "aaci: self-trade fleet read failed");

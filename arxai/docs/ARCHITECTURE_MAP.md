@@ -69,6 +69,13 @@ orders without sending a broker command. Unsupported operations refuse explicitl
   queued command, acknowledgement, partial fill and final fill are distinct facts.
 - **API and dashboard** adapt canonical contracts and display their results.
   They do not recreate risk formulas, stop policy or broker readiness.
+- **Smart Chart** displays canonical candles and feed quality. Its shell owns
+  instrument/timeframe and setup context; the renderer owns viewport/series
+  lifecycle; study calculators derive display-only indicators; the workbench
+  owns local drawings/templates; the layout keeps comparison charts separate
+  from the single gated trade ticket. It adds no execution authority. See the
+  [feature acceptance report](SMART_CHART_ACCEPTANCE.md) and
+  [TradingView/MT5 comparison](SMART_CHART_PLATFORM_COMPARISON.md).
 
 ## Verification and operational boundaries
 

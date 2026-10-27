@@ -121,8 +121,19 @@ export function checkScannerSelectedMarket(): CheckResult {
   let panel = "";
   try { panel = read("artifacts/trading-dashboard/src/components/scanner/SelectedMarketPanel.tsx"); }
   catch { violations.push("components/scanner/SelectedMarketPanel.tsx missing"); }
-  if (panel && !/\/api\/market-scanner\/selected-market/.test(panel)) {
-    violations.push("SelectedMarketPanel must call /api/market-scanner/selected-market");
+  // Follow the shared request path instead of accepting an endpoint mentioned
+  // only in a panel comment. Header and panel must consume this same query.
+  const codeOnly = (source: string) => source.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  let sharedHook = "", sharedQuery = "", scannerTruth = "";
+  try {
+    sharedHook = codeOnly(read("artifacts/trading-dashboard/src/hooks/useSelectedMarketSnapshot.ts"));
+    sharedQuery = codeOnly(read("artifacts/trading-dashboard/src/lib/selectedMarketQuery.ts"));
+    scannerTruth = codeOnly(read("artifacts/trading-dashboard/src/hooks/useScannerTruth.ts"));
+  } catch { violations.push("Selected-market shared query path missing"); }
+  if (!/useSelectedMarketSnapshot\(/.test(codeOnly(panel)) || !/useSelectedMarketSnapshot\(/.test(scannerTruth)
+    || !/useQuery\(options\)/.test(sharedHook) || !/selectedMarketQueryOptions\(/.test(sharedHook)
+    || !/fetch\(`\$\{BASE\}\/api\/market-scanner\/selected-market/.test(sharedQuery)) {
+    violations.push("Panel and scanner truth must share the authenticated selected-market query");
   }
   if (panel && !/LiveTradeTicket/.test(panel)) {
     violations.push("SelectedMarketPanel must open the existing LiveTradeTicket (no parallel ticket)");

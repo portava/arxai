@@ -100,6 +100,33 @@ describe("Chart/trade feed badge cap — capConfidence honesty (Task #521)", () 
   });
 });
 
+describe("Feed integrity labels also respect freshness", () => {
+  it.each([
+    { stale: true, isLive: false, label: "Stale" },
+    { stale: true, isLive: true, label: "Stale" },
+    { stale: false, isLive: false, label: "Not live" },
+  ])("does not show Clean when stale=$stale and isLive=$isLive", ({ stale, isLive, label }) => {
+    const feed = cleanLiveFeed({ stale, isLive, aiUsable: false, message: "Live feed looks clean and confirmed." });
+    const confidence = feedConfidence(feed);
+    expect(confidence.statusLabel).toBe(label);
+    expect(confidence.severity).toBe("caution");
+    expect(confidence.message).not.toMatch(/looks clean|live feed active/i);
+    const { container } = render(<FeedConfidenceBadge feedStatus={feed} aiUsableResolved={true} />);
+    const badge = container.querySelector('[data-testid="arx-feed-badge"]')!;
+    expect(badge.getAttribute("aria-label")).toContain(`Feed status: ${label}`);
+    expect(badge.textContent).not.toContain("Clean");
+    expect(badge.getAttribute("data-ai-usable")).toBe("false");
+  });
+
+  it("retains stronger integrity failures and useful provider warnings", () => {
+    for (const quality of ["invalid", "partial", "unavailable"] as const) {
+      const confidence = feedConfidence(cleanLiveFeed({ quality, stale: true, isLive: false, aiUsable: false, message: "Provider reported incomplete candles." }));
+      expect(confidence.statusLabel).toBe({ invalid: "Invalid", partial: "Partial", unavailable: "Unavailable" }[quality]);
+      expect(confidence.message).toBe("Provider reported incomplete candles.");
+    }
+  });
+});
+
 describe("Chart/trade feed badge cap — verdict derived from shared truth (Task #521)", () => {
   it("maps a full scanner-truth verdict to a confirmed (true) badge", () => {
     expect(badgeVerdictForLevel("full")).toBe(true);

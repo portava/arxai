@@ -23,6 +23,7 @@
 //     only mt5_connection and global_trading_settings.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import ts from "typescript";
 
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 
@@ -36,6 +37,37 @@ function stripComments(s: string): string {
 }
 
 import type { CheckResult } from "./_lib.js";
+
+/** Inspect the actual branch, not a character window that grows with gates. */
+export function hasMasterGateInSharedBranch(source: string): boolean {
+  const file = ts.createSourceFile("pipeline.ts", source, ts.ScriptTarget.Latest, true);
+  let found = false;
+  function visit(node: ts.Node): void {
+    if (ts.isIfStatement(node) && ts.isBinaryExpression(node.expression)) {
+      const c = node.expression;
+      if (c.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken &&
+        ts.isIdentifier(c.left) && c.left.text === "routingMode" &&
+        ts.isStringLiteral(c.right) && c.right.text === "SHARED_MASTER_MT5") {
+        const statements = ts.isBlock(node.thenStatement) ? node.thenStatement.statements : [node.thenStatement];
+        found ||= statements.some(statement => ts.isVariableStatement(statement) &&
+          statement.declarationList.declarations.some(declaration => {
+            const init = declaration.initializer;
+            return init != null && ts.isAwaitExpression(init) && ts.isCallExpression(init.expression) &&
+              ts.isIdentifier(init.expression.expression) &&
+              init.expression.expression.text === "loadAndEvaluateMasterLiveBridgeGate";
+          }));
+      }
+    }
+    // A declaration of an uncalled function is not an execution gate.
+    if (ts.isFunctionLike(node)) return;
+    ts.forEachChild(node, visit);
+  }
+  for (const statement of file.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === "dispatchLiveCommand" && statement.body)
+      visit(statement.body);
+  }
+  return found;
+}
 
 export function checkMasterLiveBridgeBinding(): CheckResult {
   const failures: string[] = [];
@@ -53,10 +85,9 @@ export function checkMasterLiveBridgeBinding(): CheckResult {
   if (!/loadAndEvaluateMasterLiveBridgeGate/.test(pipeline)) {
     failures.push("liveCommandPipeline.ts does not import/use loadAndEvaluateMasterLiveBridgeGate");
   }
-  // Window widened from 400 → 2000 chars: the SHARED_MASTER_MT5 branch
-  // now contains both the per-user access gate (added May 2026) AND the
-  // master-bridge gate. Both must live inside the same branch.
-  if (!/SHARED_MASTER_MT5[\s\S]{0,2000}?loadAndEvaluateMasterLiveBridgeGate/.test(pipeline)) {
+  // Refusal-CAS predicates add source length without moving the gate. Check
+  // syntax/containment so neither comments nor a call outside the branch pass.
+  if (!hasMasterGateInSharedBranch(pipeline)) {
     failures.push("master-live gate is not branch-gated by SHARED_MASTER_MT5 routing mode");
   }
 

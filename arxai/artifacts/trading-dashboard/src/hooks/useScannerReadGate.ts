@@ -19,21 +19,21 @@ export interface ScannerReadGateState {
   level: ScannerAnalysisLevel | null;
   /** Truth resolved AND fully actionable (analysis.level === "full"). */
   isFull: boolean;
-  /** Truth resolved AND NOT fully actionable — actionable content must downgrade. */
+  /** True until truth positively confirms a full read, including loading/error. */
   downgraded: boolean;
   reason: string | null;
 }
 
-export function useScannerReadGate(symbol: string): ScannerReadGateState {
-  const [timeframe] = useScannerTimeframe();
-  const { truth } = useScannerTruth(symbol, timeframe);
+export function useScannerReadGate(symbol: string, timeframe?: string): ScannerReadGateState {
+  const [scannerTimeframe] = useScannerTimeframe();
+  const { truth } = useScannerTruth(symbol, timeframe || scannerTimeframe);
   const level = truth?.analysis.level ?? null;
   const isFull = level === "full";
   return {
     truth,
     level,
     isFull,
-    downgraded: truth != null && !isFull,
-    reason: truth?.analysis.reason ?? null,
+    downgraded: !isFull,
+    reason: truth?.analysis.reason ?? "Confirming this market's live feed — directional reads and trade ideas are withheld.",
   };
 }

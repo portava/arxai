@@ -400,14 +400,15 @@ async function tryMt5Quote(symbol: string): Promise<ProviderAttempt & { quote: M
 async function tryDerivCandles(symbol: string, timeframe: string, limit: number): Promise<ProviderAttempt & { candles: Candle[]; provenance: SeriesProvenance | null }> {
   const t0 = Date.now();
   const status = getDerivFeedStatus();
-  const source = derivMarketDataSource();
+  let source = derivMarketDataSource();
   if (!status.configured) {
     return { provider: source, ok: false, reason: "DERIV_NOT_CONFIGURED", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
   }
   const r = await getDerivCandles(symbol, timeframe, limit);
-  if (!r.ok) {
+  if (!r.ok || (r.source !== "deriv_public" && r.source !== "deriv")) {
     return { provider: source, ok: false, reason: r.reason ?? "DERIV_FETCH_FAILED", candleCount: 0, ms: Date.now() - t0, candles: [], provenance: null };
   }
+  source = r.source;
   // Normalize DerivCandle → lib/data Candle.
   const candles: Candle[] = r.candles.map((c) => ({
     time: new Date(c.epoch * 1000).toISOString(),

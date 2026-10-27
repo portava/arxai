@@ -1,6 +1,7 @@
 // (P) Backtest results dashboard — KPIs for one run.
 
 import { useQuery } from "@tanstack/react-query";
+import { backtestSourceLabel, backtestEvidence, formatBacktestPriceUnits, formatBacktestNumber, formatBacktestPercent, formatBacktestProfitFactor } from "@workspace/domain/backtest";
 
 interface DataReliability {
   status: "sufficient" | "partial" | "insufficient" | "blocked";
@@ -26,6 +27,7 @@ interface Run {
 }
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
+  if (value.startsWith("Unavailable")) tone = undefined;
   return (
     <div className="rounded-md border border-slate-800 bg-slate-950/40 p-2">
       <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
@@ -35,7 +37,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "go
 }
 
 export function BacktestResultsDashboard({ runId }: { runId: number | null }) {
-  const { data: run, isLoading } = useQuery<Run>({
+  const { data: run, isLoading, isError } = useQuery<Run>({
     queryKey: ["backtest-run", runId],
     queryFn: async () => {
       const r = await fetch(`/api/backtest-runs/${runId}`);
@@ -45,25 +47,12 @@ export function BacktestResultsDashboard({ runId }: { runId: number | null }) {
     enabled: runId != null,
   });
   if (!runId) return <p className="text-xs text-slate-500">Pick a run to see results.</p>;
-  if (isLoading || !run) return <p className="text-xs text-slate-500">Loading…</p>;
+  if (isLoading) return <p className="text-xs text-slate-500">Loading…</p>;
+  if (isError || !run) return <p className="text-xs text-amber-300">Results unavailable for this run.</p>;
 
-  const verified = run.isVerified === "VERIFIED";
-  // The verdict pill describes this BACKTEST run over HISTORICAL candles — it is
-  // never a live-readiness signal. The tooltip makes that explicit so "VERIFIED"
-  // can't be mistaken for "this market is live-confirmed / executable now".
-  const verdictPill = verified
-    ? <span className="rounded bg-green-700 px-2 py-0.5 text-[10px] font-semibold text-white" title="Backtest verdict over historical candles — not a live-readiness or execution signal.">VERIFIED</span>
-    : run.status === "INSUFFICIENT_DATA"
-      ? <span className="rounded bg-amber-700 px-2 py-0.5 text-[10px] font-semibold text-white" title="Not enough historical candles to verify this backtest run.">INSUFFICIENT DATA</span>
-      : <span className="rounded bg-slate-700 px-2 py-0.5 text-[10px] font-semibold text-slate-200" title="This backtest run has not been verified.">UNVERIFIED</span>;
-
-  // PART B (Phase 2) — DISPLAY-only reliability badge. Reflects whether the run
-  // had enough historical candle depth to trust the sample; never blocks a run.
-  // Task #797 — honest data-source label: real broker history vs the
-  // clearly-labeled synthetic generator. Display-only.
-  const dataSourcePill = run.dataSource === "broker"
-    ? <span className="rounded bg-emerald-900/60 px-2 py-0.5 text-[10px] font-semibold text-emerald-300" title="Simulated over real closed broker bars from the durable broker candle store.">REAL BROKER DATA</span>
-    : <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-400" title="Simulated over deterministic synthetic candles — no broker history was used.">SYNTHETIC DATA</span>;
+  const evidence = backtestEvidence(run.dataSource);
+  const verdictPill = <span className="rounded bg-amber-900/50 px-2 py-0.5 text-[10px] font-semibold text-amber-200">{run.status === "INSUFFICIENT_DATA" ? "INSUFFICIENT DATA" : "DIAGNOSTIC ONLY"}</span>;
+  const dataSourcePill = <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">{backtestSourceLabel(run.dataSource)}</span>;
 
   const dr = run.dataReliability;
   const reliabilityPill = dr
@@ -93,18 +82,18 @@ export function BacktestResultsDashboard({ runId }: { runId: number | null }) {
       </header>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="Trades" value={`${run.totalTrades}`} />
-        <Stat label="Win rate" value={`${(run.winRate * 100).toFixed(1)}%`} tone={run.winRate >= 0.5 ? "good" : "bad"} />
-        <Stat label="Net P&L" value={run.netProfitLoss.toFixed(2)} tone={run.netProfitLoss >= 0 ? "good" : "bad"} />
-        <Stat label="Max DD" value={run.maxDrawdown.toFixed(2)} tone="bad" />
-        <Stat label="Avg R:R" value={run.averageRr.toFixed(2)} />
-        <Stat label="Expectancy" value={run.expectancy.toFixed(2)} tone={run.expectancy >= 0 ? "good" : "bad"} />
-        <Stat label="Profit factor" value={run.profitFactor >= 999 ? "∞" : run.profitFactor.toFixed(2)} tone={run.profitFactor > 1 ? "good" : "bad"} />
-        <Stat label="Wins / losses" value={`${run.winningTrades} / ${run.losingTrades}`} />
+        <Stat label="Trades" value={formatBacktestNumber(run.totalTrades)} />
+        <Stat label="Win rate" value={formatBacktestPercent(run.winRate)} tone={run.winRate >= 0.5 ? "good" : "bad"} />
+        <Stat label="Gross P&L (price units)" value={formatBacktestPriceUnits(run.netProfitLoss)} tone={run.netProfitLoss >= 0 ? "good" : "bad"} />
+        <Stat label="Max DD (price units)" value={formatBacktestPriceUnits(run.maxDrawdown)} tone="bad" />
+        <Stat label="Avg R:R" value={formatBacktestNumber(run.averageRr)} />
+        <Stat label="Expectancy (price units)" value={formatBacktestPriceUnits(run.expectancy)} tone={run.expectancy >= 0 ? "good" : "bad"} />
+        <Stat label="Profit factor" value={formatBacktestProfitFactor(run.profitFactor)} tone={run.profitFactor > 1 ? "good" : "bad"} />
+        <Stat label="Wins / losses" value={`${formatBacktestNumber(run.winningTrades)} / ${formatBacktestNumber(run.losingTrades)}`} />
       </div>
 
       <p className="rounded-md border border-amber-700 bg-amber-950/30 p-2 text-[11px] text-amber-200">
-        ⚠ Past performance does not guarantee future results. Backtests are historical simulations only.
+        {evidence.limitations.join(" ")} Past performance does not guarantee future results.
       </p>
     </div>
   );

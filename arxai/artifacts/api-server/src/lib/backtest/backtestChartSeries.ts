@@ -31,6 +31,8 @@ export interface BacktestEquityPoint {
   equity: number;
   peak: number;
   drawdown: number;
+  grossPriceUnits: number;
+  peakGrossPriceUnits: number;
 }
 
 export interface BacktestTradeMarker {
@@ -67,10 +69,11 @@ export interface BacktestChartSeries {
   summary: BacktestChartSeriesSummary;
 }
 
-export const BACKTEST_SERIES_LABEL = "Historical simulation";
+export const BACKTEST_SERIES_LABEL = "Diagnostic simulation · price units";
 
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
+function finite(value: number, label: string): number {
+  if (!Number.isFinite(value)) throw new RangeError(`Backtest chart ${label} is unavailable`);
+  return value;
 }
 
 /**
@@ -84,12 +87,26 @@ export function buildBacktestChartSeries(args: {
   trades: BacktestChartTradeInput[];
 }): BacktestChartSeries {
   const { initialBalance, trades } = args;
+  finite(initialBalance, "plotting offset");
+  // Refuse malformed stored observations rather than serializing NaN to null
+  // or replacing missing P/L with a flat/zero result.
+  for (const t of trades) {
+    finite(t.entryPrice, "entryPrice");
+    finite(t.exitPrice, "exitPrice");
+    finite(t.stopLoss, "stopLoss");
+    finite(t.takeProfit, "takeProfit");
+    finite(t.profitLoss, "profitLoss");
+    finite(t.rewardToRisk, "rewardToRisk");
+  }
 
   const equity: BacktestEquityPoint[] = [];
   const markers: BacktestTradeMarker[] = [];
 
-  let balance = initialBalance;
-  let peak = initialBalance;
+  // Accumulate P/L independently: adding a tiny FX move to an arbitrary large
+  // plotting offset can erase it in binary floating point. The new gross fields
+  // and drawdown never derive from subtracting those legacy equity values.
+  let gross = 0;
+  let grossPeak = 0;
   let maxDrawdown = 0;
 
   let longTrades = 0;
@@ -105,24 +122,28 @@ export function buildBacktestChartSeries(args: {
     equity.push({
       tradeId: 0,
       openedAt: trades[0]!.entryTime,
-      equity: round2(initialBalance),
-      peak: round2(initialBalance),
+      equity: initialBalance,
+      peak: initialBalance,
       drawdown: 0,
+      grossPriceUnits: 0,
+      peakGrossPriceUnits: 0,
     });
   }
 
   trades.forEach((t, i) => {
-    balance += t.profitLoss;
-    if (balance > peak) peak = balance;
-    const drawdown = Math.max(0, peak - balance);
+    gross = finite(gross + t.profitLoss, "cumulative P/L");
+    grossPeak = Math.max(grossPeak, gross);
+    const drawdown = finite(Math.max(0, grossPeak - gross), "drawdown");
     if (drawdown > maxDrawdown) maxDrawdown = drawdown;
 
     equity.push({
       tradeId: i + 1,
       openedAt: t.exitTime,
-      equity: round2(balance),
-      peak: round2(peak),
-      drawdown: round2(drawdown),
+      equity: finite(initialBalance + gross, "legacy equity"),
+      peak: finite(initialBalance + grossPeak, "legacy peak"),
+      drawdown,
+      grossPriceUnits: gross,
+      peakGrossPriceUnits: grossPeak,
     });
     markers.push({
       tradeId: i + 1,
@@ -131,12 +152,12 @@ export function buildBacktestChartSeries(args: {
       exitTime: t.exitTime,
       entryPrice: t.entryPrice,
       exitPrice: t.exitPrice,
-      profitLoss: round2(t.profitLoss),
+      profitLoss: t.profitLoss,
       result: t.result,
     });
 
-    if (t.direction === "BUY") { longTrades++; longNet += t.profitLoss; }
-    else { shortTrades++; shortNet += t.profitLoss; }
+    if (t.direction === "BUY") { longTrades++; longNet = finite(longNet + t.profitLoss, "long P/L"); }
+    else { shortTrades++; shortNet = finite(shortNet + t.profitLoss, "short P/L"); }
     if (t.profitLoss > bestTrade) bestTrade = t.profitLoss;
     if (t.profitLoss < worstTrade) worstTrade = t.profitLoss;
   });
@@ -144,20 +165,20 @@ export function buildBacktestChartSeries(args: {
   return {
     kind: "BACKTEST",
     label: BACKTEST_SERIES_LABEL,
-    initialBalance: round2(initialBalance),
-    finalBalance: round2(balance),
-    maxDrawdown: round2(maxDrawdown),
+    initialBalance,
+    finalBalance: finite(initialBalance + gross, "legacy final equity"),
+    maxDrawdown,
     equity,
     markers,
     summary: {
       totalTrades: trades.length,
       longTrades,
       shortTrades,
-      longNetProfitLoss: round2(longNet),
-      shortNetProfitLoss: round2(shortNet),
-      bestTradeProfitLoss: round2(trades.length ? bestTrade : 0),
-      worstTradeProfitLoss: round2(trades.length ? worstTrade : 0),
-      netProfitLoss: round2(balance - initialBalance),
+      longNetProfitLoss: longNet,
+      shortNetProfitLoss: shortNet,
+      bestTradeProfitLoss: trades.length ? bestTrade : 0,
+      worstTradeProfitLoss: trades.length ? worstTrade : 0,
+      netProfitLoss: gross,
     },
   };
 }

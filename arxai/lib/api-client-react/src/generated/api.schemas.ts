@@ -1274,7 +1274,7 @@ export interface MissionDispatchResult {
 }
 
 /**
- * Phase 9 backtest request. Runs a deterministic historical/simulated backtest for the named strategy; advisory only — never a live grant.
+ * Generated-price diagnostic request. Prices are synthetic; this is not historical market validation and cannot support promotion or strategy drift.
 
  */
 export interface MissionBacktestRequest {
@@ -1294,7 +1294,7 @@ export interface MissionBacktestRequest {
 }
 
 /**
- * Phase 9 forward-test request. Aggregates the mission's OWN closed trade drafts (real outcomes); all fields optional (derived from the drafts).
+ * Aggregate the mission's own closed drafts. Optional fields are exact source filters, never display labels. Unfiltered mixed contexts are labelled Mixed.
 
  */
 export interface MissionForwardRequest {
@@ -1323,8 +1323,37 @@ export const MissionTestResultKind = {
   FORWARD: "FORWARD",
 } as const;
 
+export type MissionTestResultEvidenceVersion =
+  (typeof MissionTestResultEvidenceVersion)[keyof typeof MissionTestResultEvidenceVersion];
+
+export const MissionTestResultEvidenceVersion = {
+  NUMBER_1: 1,
+} as const;
+
+export type MissionTestResultEvidenceSource =
+  (typeof MissionTestResultEvidenceSource)[keyof typeof MissionTestResultEvidenceSource];
+
+export const MissionTestResultEvidenceSource = {
+  generated_prices: "generated_prices",
+  closed_mission_drafts: "closed_mission_drafts",
+  unknown: "unknown",
+} as const;
+
+export type MissionTestResultEvidenceValidation =
+  (typeof MissionTestResultEvidenceValidation)[keyof typeof MissionTestResultEvidenceValidation];
+
+export const MissionTestResultEvidenceValidation = {
+  unverified: "unverified",
+} as const;
+
+export type MissionTestResultEvidence = {
+  version: MissionTestResultEvidenceVersion;
+  source: MissionTestResultEvidenceSource;
+  validation: MissionTestResultEvidenceValidation;
+};
+
 /**
- * An honestly-labelled, append-only mission test result. `kind` distinguishes BACKTEST (historical/simulated) from FORWARD (real realised). `sampleWarning` is set when the sample is too small to be meaningful. Advisory only.
+ * Append-only diagnostic history, projected through current evidence rules. Generated prices and unreconciled closed drafts remain unverified. Legacy verified and eligible flags are not trusted. Sample minima do not establish statistical significance; current diagnostics cannot support promotion or drift.
 
  */
 export interface MissionTestResult {
@@ -1343,6 +1372,7 @@ export interface MissionTestResult {
   notes: string[];
   promotionEligible: boolean;
   createdAt: string;
+  evidence?: MissionTestResultEvidence;
 }
 
 export type MissionDriftResultDrift = { [key: string]: unknown };
@@ -3669,18 +3699,41 @@ export interface ChartCandleTruthResult {
   sourceDocumentation: ChartCandleTruthResultSourceDocumentation;
 }
 
+export type ChartTruthSubMetricEvidenceStatus =
+  (typeof ChartTruthSubMetricEvidenceStatus)[keyof typeof ChartTruthSubMetricEvidenceStatus];
+
+export const ChartTruthSubMetricEvidenceStatus = {
+  measured: "measured",
+  unavailable: "unavailable",
+} as const;
+
 /**
  * A single weighted sub-metric contributing to the Chart Truth Score.
  */
 export interface ChartTruthSubMetric {
   key: string;
   label: string;
-  /** Contribution weight (0–1 */
+  /**
+   * Contribution weight (0–1, sum=1.0)
+   * @minimum 0
+   * @maximum 1
+   */
   weight: number;
-  /** Raw 0–100 score for this sub-metric */
-  rawScore: number;
-  /** rawScore × weight */
-  weightedScore: number;
+  /**
+   * Measured 0–100 score; null when this property has not been measured
+   * @minimum 0
+   * @maximum 100
+   * @nullable
+   */
+  rawScore: number | null;
+  /**
+   * rawScore × weight; null evidence earns no aggregate points
+   * @minimum 0
+   * @maximum 100
+   * @nullable
+   */
+  weightedScore: number | null;
+  evidenceStatus: ChartTruthSubMetricEvidenceStatus;
   /** Plain-language explanation of the score */
   detail: string;
 }
@@ -3698,8 +3751,9 @@ export const ChartTruthScoreLabel = {
 
 /**
  * Weighted 10-sub-metric score (0–100) answering "is the data real, fresh,
-correctly mapped/timed/mirrored/rendered?" Derived entirely from Phase 1
-signals — never fabricated.
+correctly mapped/timed/mirrored/rendered?" Only measured properties earn
+points. Unavailable properties have null sub-scores and weights are not
+redistributed. This is an earned evidence score, not a probability.
 Labels: Verified (95–100), Healthy (85–94), Usable-but-watch (75–84),
 Degraded (60–74), Read-blocked (<60).
 
@@ -3709,6 +3763,13 @@ export interface ChartTruthScore {
   score: number;
   label: ChartTruthScoreLabel;
   subMetrics: ChartTruthSubMetric[];
+  /**
+   * Fraction of total weight with measured evidence (0–1)
+   * @minimum 0
+   * @maximum 1
+   */
+  evidenceCoverage: number;
+  unmeasuredKeys: string[];
   /**
    * Worst sub-metric detail
    * @nullable
@@ -3931,6 +3992,18 @@ export const ChartCandlesResponseQuality = {
   unavailable: "unavailable",
 } as const;
 
+/**
+ * Observed current candle source identity and latest confirmed close; no current account is inferred for legacy rows.
+ * @nullable
+ */
+export type ChartCandlesResponseMarketEvidence = {
+  symbol: string;
+  timeframe: string;
+  source: string;
+  sourceIdentity: string;
+  lastClosedCandleAt: string;
+} | null;
+
 export interface ChartCandlesResponse {
   symbol: string;
   displaySymbol: string;
@@ -3946,6 +4019,11 @@ export interface ChartCandlesResponse {
   latencyMs: number | null;
   requestedLimit: number;
   candleCount: number;
+  /**
+   * Observed current candle source identity and latest confirmed close; no current account is inferred for legacy rows.
+   * @nullable
+   */
+  marketEvidence?: ChartCandlesResponseMarketEvidence;
   candles: ChartCandle[];
   feedStatus: ChartFeedStatus;
   /** Phase 1 structured per-timeframe truth audit result alongside candles. null when no candles were returned (unavailable/empty feed).
@@ -3996,6 +4074,20 @@ export const ChartHistoryResponseAssetClass = {
 } as const;
 
 /**
+ * Actual producer evidence for the returned historical page; absent legacy evidence is never inferred from current account settings.
+ * @nullable
+ */
+export type ChartHistoryResponseHistoryEvidence = {
+  symbol: string;
+  timeframe: string;
+  source: string;
+  /** @pattern ^[a-f0-9]{64}$ */
+  sourceIdentity: string;
+  lastClosedCandleAt: string;
+  scope: "public_provider";
+} | null;
+
+/**
  * live/stale apply only to the newest window; a page reached via the `before` cursor is always historical_only; unavailable = no source/candles.
 
  */
@@ -4032,6 +4124,11 @@ export interface ChartHistoryResponse {
    * @nullable
    */
   source: string | null;
+  /**
+   * Actual producer evidence for the returned historical page; absent legacy evidence is never inferred from current account settings.
+   * @nullable
+   */
+  historyEvidence?: ChartHistoryResponseHistoryEvidence;
   /** Ascending by time. */
   candles: Candle[];
   /** live/stale apply only to the newest window; a page reached via the `before` cursor is always historical_only; unavailable = no source/candles.
@@ -10383,6 +10480,69 @@ export interface PaperOrder {
   updatedAt: string;
 }
 
+export type BacktestEvidenceVersion =
+  (typeof BacktestEvidenceVersion)[keyof typeof BacktestEvidenceVersion];
+
+export const BacktestEvidenceVersion = {
+  NUMBER_1: 1,
+} as const;
+
+export type BacktestEvidenceClassification =
+  (typeof BacktestEvidenceClassification)[keyof typeof BacktestEvidenceClassification];
+
+export const BacktestEvidenceClassification = {
+  diagnostic: "diagnostic",
+} as const;
+
+export type BacktestEvidenceVerification =
+  (typeof BacktestEvidenceVerification)[keyof typeof BacktestEvidenceVerification];
+
+export const BacktestEvidenceVerification = {
+  unverified: "unverified",
+} as const;
+
+export type BacktestEvidenceSource =
+  (typeof BacktestEvidenceSource)[keyof typeof BacktestEvidenceSource];
+
+export const BacktestEvidenceSource = {
+  generated_prices: "generated_prices",
+  unattested_broker_history: "unattested_broker_history",
+  unknown: "unknown",
+} as const;
+
+export type BacktestEvidencePnlUnit =
+  (typeof BacktestEvidencePnlUnit)[keyof typeof BacktestEvidencePnlUnit];
+
+export const BacktestEvidencePnlUnit = {
+  price_units: "price_units",
+} as const;
+
+export type BacktestEvidenceCosts =
+  (typeof BacktestEvidenceCosts)[keyof typeof BacktestEvidenceCosts];
+
+export const BacktestEvidenceCosts = {
+  not_modelled: "not_modelled",
+} as const;
+
+export type BacktestEvidenceHoldout =
+  (typeof BacktestEvidenceHoldout)[keyof typeof BacktestEvidenceHoldout];
+
+export const BacktestEvidenceHoldout = {
+  not_recorded: "not_recorded",
+} as const;
+
+export interface BacktestEvidence {
+  version: BacktestEvidenceVersion;
+  classification: BacktestEvidenceClassification;
+  verification: BacktestEvidenceVerification;
+  comparisonEligible: boolean;
+  source: BacktestEvidenceSource;
+  pnlUnit: BacktestEvidencePnlUnit;
+  costs: BacktestEvidenceCosts;
+  holdout: BacktestEvidenceHoldout;
+  limitations: string[];
+}
+
 export type BacktestRunStatus =
   (typeof BacktestRunStatus)[keyof typeof BacktestRunStatus];
 
@@ -10410,6 +10570,16 @@ export const BacktestRunDataSource = {
   synthetic: "synthetic",
 } as const;
 
+export type BacktestRunHistoryStatus =
+  (typeof BacktestRunHistoryStatus)[keyof typeof BacktestRunHistoryStatus];
+
+export const BacktestRunHistoryStatus = {
+  available_unattested: "available_unattested",
+  unavailable: "unavailable",
+  ambiguous_source: "ambiguous_source",
+  invalid_bars: "invalid_bars",
+} as const;
+
 export interface BacktestRun {
   id: number;
   /** @nullable */
@@ -10432,6 +10602,8 @@ export interface BacktestRun {
   status: BacktestRunStatus;
   isVerified: BacktestRunIsVerified;
   dataSource?: BacktestRunDataSource;
+  evidence?: BacktestEvidence;
+  historyStatus?: BacktestRunHistoryStatus;
   /** @nullable */
   aiSummary?: string | null;
   equityCurve?: number[];
@@ -10479,6 +10651,10 @@ export interface BacktestEquityPoint {
   equity: number;
   peak: number;
   drawdown: number;
+  /** Cumulative unscaled P/L independent of the plotting offset. */
+  grossPriceUnits?: number;
+  /** Running peak of cumulative unscaled P/L. */
+  peakGrossPriceUnits?: number;
 }
 
 export type BacktestTradeMarkerDirection =
@@ -10529,6 +10705,7 @@ export type BacktestChartSeriesSummary = {
 };
 
 export interface BacktestChartSeries {
+  evidence?: BacktestEvidence;
   kind: BacktestChartSeriesKind;
   label: string;
   initialBalance: number;
@@ -14463,6 +14640,47 @@ export interface SelfTradeMutationOkResp {
 
 export type SelfTradeOverviewRespByStatus = { [key: string]: number };
 
+export type SelfTradeAccountingCoverageStatus =
+  (typeof SelfTradeAccountingCoverageStatus)[keyof typeof SelfTradeAccountingCoverageStatus];
+
+export const SelfTradeAccountingCoverageStatus = {
+  RECORDED: "RECORDED",
+  INCOMPLETE: "INCOMPLETE",
+  UNAVAILABLE: "UNAVAILABLE",
+} as const;
+
+/**
+ * Recorded book coverage, not broker verification. Subtotals exclude unknown values and do not assert a complete account balance or usable risk budget.
+ */
+export interface SelfTradeAccountingCoverage {
+  status: SelfTradeAccountingCoverageStatus;
+  asOf: string;
+  /** Inclusive UTC start of the current reporting day. */
+  dayStart: string;
+  closedTrades: number;
+  recordedTrades: number;
+  unknownTrades: number;
+  unresolvedAccounting: number;
+  unknownCloseTime: number;
+  /** Missing or invalid ledgers. */
+  missingLedgers: number;
+  /** Numeric closed outcomes without exactly one matching ledger posting. */
+  unpostedTrades: number;
+  /** Ledgers whose realized subtotal or posting currency does not reconcile. */
+  unreconciledLedgers: number;
+  /** Realized postings without one matching usable closed execution for the same agent. */
+  unmatchedPostings: number;
+  /** Recorded ledger subtotal in USD. An incomplete subtotal is not total realized performance. */
+  recordedRealizedPnl: number | null;
+  /** Recorded ledger subtotal in USD, not independently verified withdrawable or tradeable capital. */
+  recordedAvailableFunds: number | null;
+  /** Recorded execution P/L subtotal from dayStart through asOf; unknown outcomes are excluded. */
+  dailyRecordedPnl: number | null;
+  /** Nonnegative net recorded loss for the current UTC day; unavailable when coverage is incomplete. */
+  dailyLossUsed: number | null;
+  notes: string[];
+}
+
 export interface SelfTradeOverviewResp {
   totalAgents: number;
   activeAgents: number;
@@ -14472,6 +14690,7 @@ export interface SelfTradeOverviewResp {
   totalAvailable: number;
   totalRealizedPnl: number;
   totalOpenPnl: number;
+  accounting?: SelfTradeAccountingCoverage;
 }
 
 export interface SelfTradeAgent {
@@ -14531,6 +14750,7 @@ export interface SelfTradeAgentsResp {
 
 export interface SelfTradeAgentDetailResp {
   agent: SelfTradeAgent;
+  accounting?: SelfTradeAccountingCoverage;
   settings?: SelfTradeAgentSettings | null;
   ledger?: SelfTradeAgentLedger | null;
 }
@@ -14849,6 +15069,8 @@ export interface SelfTradeExecution {
   closePrice?: number | null;
   realizedPnl?: number | null;
   blockReason?: string | null;
+  /** Broker-confirmation or review status for an outstanding management request; never an execution confirmation. */
+  managementNote?: string | null;
   openedAt?: string | null;
   filledAt?: string | null;
   closedAt?: string | null;
@@ -15798,6 +16020,13 @@ export type GetChartHistoryParams = {
    * Continuation — the source echoed by a previous page (keeps one coherent series).
    */
   source?: string;
+  /**
+   * Expected opaque source identity for strict chart continuation. This is not authorization; unverified historical sources return no bars.
+   * @minLength 64
+   * @maxLength 64
+   * @pattern ^[a-f0-9]{64}$
+   */
+  sourceIdentity?: string;
 };
 
 export type GetChartHistoryTimeframe =
@@ -17349,8 +17578,8 @@ export const GetMeOpportunityMapMarketGroup = {
   all: "all",
   forex: "forex",
   metals: "metals",
+  indices: "indices",
   crypto: "crypto",
-  stocks: "stocks",
   synthetic: "synthetic",
 } as const;
 

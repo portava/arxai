@@ -116,3 +116,15 @@ describe("the normal-user filtering is real (non-vacuous guard)", () => {
     expect(asAdmin().length).toBeGreaterThan(asTrader().length);
   });
 });
+
+
+describe("Journal navigation keeps personal and operator records separate", () => {
+  it("approved traders open the personal journal", () => {
+    expect(asTrader().find((item) => item.label === "Journal")?.href).toBe("/journal");
+    expect(asTrader().some((item) => item.href === "/shadow-journal")).toBe(false);
+  });
+  it("the operator shadow journal is explicitly named and admin-only", () => {
+    expect(asAdmin().find((item) => item.href === "/shadow-journal")).toMatchObject({ label: "Shadow Journal", admin: true });
+    expect(asPendingTrader().some((item) => item.href === "/journal" || item.href === "/shadow-journal")).toBe(false);
+  });
+});

@@ -30,7 +30,7 @@ vi.mock("lightweight-charts", () => {
     setData: vi.fn(),
     update: vi.fn(),
     applyOptions: vi.fn(),
-    createPriceLine: vi.fn(() => ({})),
+    createPriceLine: vi.fn(() => ({ applyOptions: vi.fn() })),
     removePriceLine: vi.fn(),
     priceToCoordinate: vi.fn(() => 0),
   });

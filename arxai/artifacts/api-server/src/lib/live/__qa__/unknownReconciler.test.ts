@@ -368,7 +368,10 @@ test("reconciliation writes RECONCILED_FILLED / RECONCILED_ABSENT / escalation e
     "the UNKNOWN→RECONCILIATION_REQUIRED hop emits its event",
   );
   // The event writer reuses the S2 pure shaping — no second shaping law.
-  assert.ok(reconcilerSource.includes("buildExecutionEventRow(input)"), "events are shaped by the S2 pure helper");
+  assert.ok(reconcilerSource.includes('import { appendExecutionEvidence } from "./executionEvidence.js"'), "reconciler delegates to shared strict writer");
+  const writer = readFileSync(fileURLToPath(new URL("../executionEvidence.ts", import.meta.url)), "utf8");
+  assert.ok(writer.includes("buildExecutionEventRow(input)"), "shared writer owns shaping");
+  assert.ok(writer.includes('.for("update")'), "shared writer serializes per-command appends");
 });
 
 test("reconciliation never sends broker commands (source pin)", () => {

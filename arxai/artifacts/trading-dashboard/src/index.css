@@ -187,3 +187,7 @@
     font-size: 16px;
   }
 }
+
+/* Hand navigation must remain legible over renderer-owned canvases. */
+[data-chart-navigation="pan"] canvas { cursor: grab !important; }
+[data-chart-navigation="pan"] canvas:active { cursor: grabbing !important; }

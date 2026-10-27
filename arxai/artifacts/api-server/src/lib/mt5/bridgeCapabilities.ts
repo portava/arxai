@@ -40,6 +40,7 @@ export const TRADE_CAPABILITY_KEYS = [
 // does not report it normalises to false (= legacy / unsupported), exactly the
 // behaviour we want.
 export const FEATURE_CAPABILITY_KEYS = [
+  "supportsManagementTargetV1",
   "supportsCloseFillPrice",
   "supportsDealHistorySync",
   "supportsSelfUpdate",

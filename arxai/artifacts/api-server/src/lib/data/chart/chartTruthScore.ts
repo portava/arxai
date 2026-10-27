@@ -2,8 +2,8 @@
 //
 // Computes a weighted 0–100 score answering "is the data real, fresh, synced,
 // correctly mapped/timed/mirrored/rendered?" from real Phase 1 / Phase 2
-// signals. NEVER fabricates a sub-metric — when a Phase 2 surface hasn't
-// reported yet, the sub-metric honestly defaults to its conservative baseline.
+// signals. Missing evidence has a null sub-score and earns no aggregate
+// points. Weights are never redistributed to hide an unmeasured dimension.
 //
 // Weights (must sum to 1.0):
 //   OHLCIntegrity            0.20  — bad OHLC bars, duplicates, out-of-order
@@ -13,9 +13,9 @@
 //   HistoricalLiveMergeQuality 0.10 — merge seam quality (gap intervals)
 //   FeedFreshness            0.09  — stale, quality, trailing gap
 //   PricePrecision           0.08  — precision violations
-//   RenderAccuracy           0.07  — Phase 2 proxy (outlier wicks / historic shift)
-//   ScaleQuality             0.04  — Phase 2 proxy (historical period shift)
-//   InteractionStability     0.02  — Phase 2 placeholder (honest full score until wired)
+//   RenderAccuracy           0.07  — unavailable until observed in the renderer
+//   ScaleQuality             0.04  — unavailable until observed in the renderer
+//   InteractionStability     0.02  — unavailable until interactions are measured
 //
 // Score labels:
 //   95–100  Verified
@@ -27,7 +27,7 @@
 import { clamp, round } from "./engines/chartMath.js";
 import type { TimeframeTruthResult } from "./candleTruthEngine.js";
 import type { ChartFeedStatus } from "./chartDataService.js";
-import type { BrokerPriceAlignment } from "./brokerPriceAlignment.js";
+import { hasMeasuredBrokerAlignment, type BrokerPriceAlignment } from "./brokerPriceAlignment.js";
 
 export type ChartTruthLabel =
   | "Verified"
@@ -40,8 +40,9 @@ export interface ChartTruthSubMetric {
   key: string;
   label: string;
   weight: number;
-  rawScore: number;
-  weightedScore: number;
+  rawScore: number | null;
+  weightedScore: number | null;
+  evidenceStatus: "measured" | "unavailable";
   detail: string;
 }
 
@@ -49,6 +50,9 @@ export interface ChartTruthScore {
   score: number;
   label: ChartTruthLabel;
   subMetrics: ChartTruthSubMetric[];
+  /** Fraction of the fixed total weight supported by measured evidence. */
+  evidenceCoverage: number;
+  unmeasuredKeys: string[];
   primaryConcern: string | null;
   note: string;
 }
@@ -65,18 +69,35 @@ function sub(
   key: string,
   label: string,
   weight: number,
-  rawScore: number,
+  rawScore: number | null,
   detail: string,
 ): ChartTruthSubMetric {
-  const clamped = clamp(rawScore, 0, 100);
+  const clamped = rawScore != null && Number.isFinite(rawScore) ? clamp(rawScore, 0, 100) : null;
   return {
     key,
     label,
     weight,
-    rawScore: round(clamped),
-    weightedScore: round(clamped * weight),
+    rawScore: clamped == null ? null : round(clamped),
+    weightedScore: clamped == null ? null : round(clamped * weight),
+    evidenceStatus: clamped == null ? "unavailable" : "measured",
     detail,
   };
+}
+
+function aggregate(subMetrics: ChartTruthSubMetric[]): ChartTruthScore {
+  const score = round(subMetrics.reduce((sum, metric) => sum + (metric.weightedScore ?? 0), 0));
+  const evidenceCoverage = round(subMetrics.reduce((sum, metric) => sum +
+    (metric.evidenceStatus === "measured" ? metric.weight : 0), 0), 4);
+  const unmeasured = subMetrics.filter(metric => metric.evidenceStatus === "unavailable");
+  const worst = subMetrics.filter(metric => metric.rawScore != null && metric.rawScore < 90)
+    .sort((a, b) => b.weight * (100 - b.rawScore!) - a.weight * (100 - a.rawScore!))[0];
+  const primaryConcern = worst?.detail ?? (unmeasured.length
+    ? `Not measured: ${unmeasured.map(metric => metric.label).join(", ")}.` : null);
+  const label = labelFor(score);
+  return { score, label, subMetrics, evidenceCoverage, unmeasuredKeys: unmeasured.map(metric => metric.key), primaryConcern,
+    note: `Chart evidence score ${score} (${label}); ${round(evidenceCoverage * 100)}% of weighted checks measured. ` +
+      (unmeasured.length ? "Unmeasured checks earn no points; this is incomplete verification. " : "") +
+      (primaryConcern ?? "All measured checks healthy.") };
 }
 
 /**
@@ -86,7 +107,7 @@ function sub(
  *   `brokerDataAvailable === true`, the broker deviation is folded into the
  *   SymbolMirrorAccuracy sub-metric so real mis-sync degrades the score.
  *   Pass `undefined` or `noBrokerAlignment(...)` when no per-user broker
- *   data is available (the sub-metric then uses seam-only evidence).
+ *   data is available (broker mirror accuracy is then unmeasured).
  *
  * When truthResult is null (no candles returned), returns the minimum honest score.
  */
@@ -97,34 +118,27 @@ export function computeChartTruthScore(
 ): ChartTruthScore {
   const subMetrics: ChartTruthSubMetric[] = [];
 
-  if (!truthResult) {
+  if (!truthResult || !Number.isFinite(truthResult.candleCount) || truthResult.candleCount <= 0) {
     const floor = sub(
       "ohlc_integrity",
       "OHLC Integrity",
       0.20,
-      0,
+      null,
       "No candles returned — feed unavailable.",
     );
     const rest: ChartTruthSubMetric[] = [
-      sub("source_authenticity", "Source Authenticity", 0.15, 0, "No feed data."),
-      sub("timeframe_accuracy", "Timeframe Accuracy", 0.13, 0, "No feed data."),
-      sub("symbol_mirror_accuracy", "Symbol Mirror Accuracy", 0.12, 0, "No feed data."),
-      sub("historical_live_merge", "Historical/Live Merge Quality", 0.10, 0, "No feed data."),
+      sub("source_authenticity", "Source Authenticity", 0.15, null, "No feed data."),
+      sub("timeframe_accuracy", "Timeframe Accuracy", 0.13, null, "No feed data."),
+      sub("symbol_mirror_accuracy", "Symbol Mirror Accuracy", 0.12, null, "No feed data."),
+      sub("historical_live_merge", "Historical/Live Merge Quality", 0.10, null, "No feed data."),
       sub("feed_freshness", "Feed Freshness", 0.09, 0, "No feed data."),
-      sub("price_precision", "Price Precision", 0.08, 0, "No feed data."),
-      sub("render_accuracy", "Render Accuracy", 0.07, 50, "Phase 2 placeholder — defaulting 50."),
-      sub("scale_quality", "Scale Quality", 0.04, 50, "Phase 2 placeholder — defaulting 50."),
-      sub("interaction_stability", "Interaction Stability", 0.02, 100, "No Phase 2 data — honest 100."),
+      sub("price_precision", "Price Precision", 0.08, null, "No feed data."),
+      sub("render_accuracy", "Render Accuracy", 0.07, null, "Renderer measurements unavailable."),
+      sub("scale_quality", "Scale Quality", 0.04, null, "Scale measurements unavailable."),
+      sub("interaction_stability", "Interaction Stability", 0.02, null, "Interaction measurements unavailable."),
     ];
     const all = [floor, ...rest];
-    const score = round(all.reduce((s, m) => s + m.weightedScore, 0));
-    return {
-      score,
-      label: labelFor(score),
-      subMetrics: all,
-      primaryConcern: "No candles returned — feed unavailable",
-      note: `Chart Truth Score ${score} (${labelFor(score)}) — feed returned no data; data-driven sub-metrics scored 0.`,
-    };
+    return aggregate(all);
   }
 
   const n = truthResult.candleCount;
@@ -153,7 +167,7 @@ export function computeChartTruthScore(
 
   // ── 2. Source Authenticity (0.15) ─────────────────────────────────────────
   // Mock data = 0, real OHLC from live source = 100.
-  let sourceRaw: number;
+  let sourceRaw: number | null;
   let sourceDetail: string;
   if (truthResult.mockDataDetected) {
     sourceRaw = 0;
@@ -171,7 +185,7 @@ export function computeChartTruthScore(
     sourceRaw = 20;
     sourceDetail = "Dev/test source — not safe as tradable truth.";
   } else {
-    sourceRaw = 60;
+    sourceRaw = null;
     sourceDetail = `Source mode: ${truthResult.sourceMode} — authenticity unconfirmed.`;
   }
   subMetrics.push(sub("source_authenticity", "Source Authenticity", 0.15, sourceRaw, sourceDetail));
@@ -210,11 +224,13 @@ export function computeChartTruthScore(
   // When real broker bid/ask is available, a wide or failed deviation means the
   // chart price and broker price have diverged — a real mirror sync issue.
   const seam = truthResult.mergeSeam;
+  const seamMeasured = seam.formingBarDetected && Number.isSafeInteger(seam.formingBarCount) &&
+    seam.formingBarCount > 0 && n > seam.formingBarCount && Number.isSafeInteger(seam.seamGapIntervals) && seam.seamGapIntervals >= 0;
   let mirrorRaw: number;
   let mirrorDetail: string;
-  if (!seam.formingBarDetected) {
+  if (!seamMeasured) {
     mirrorRaw = 80;
-    mirrorDetail = "No forming bar detected — seam not assessable; assumed clean.";
+    mirrorDetail = "No closed-to-forming pair available — seam not assessable.";
   } else if (seam.overlapAtSeam) {
     mirrorRaw = 30;
     mirrorDetail = "Seam overlap detected — forming bar open overlaps last closed bar.";
@@ -252,20 +268,25 @@ export function computeChartTruthScore(
         alignNote = `Broker alignment ${alignment.tolerance}.`;
     }
     mirrorRaw = clamp(mirrorRaw - alignPenalty - basisPenalty);
+    // Preserve the observed failed comparison in the downstream <50 FAIL band.
+    if (alignment.tolerance === "failed") mirrorRaw = Math.min(mirrorRaw, 49);
     mirrorDetail = [mirrorDetail, alignNote].filter(Boolean).join(" ");
   } else if (alignment) {
     // Broker not enumerated — note it without penalising.
     mirrorDetail += " Broker quote unavailable for alignment check.";
   }
-  subMetrics.push(sub("symbol_mirror_accuracy", "Symbol Mirror Accuracy", 0.12, mirrorRaw, mirrorDetail));
+  const alignmentMeasured = hasMeasuredBrokerAlignment(alignment);
+  subMetrics.push(sub("symbol_mirror_accuracy", "Symbol Mirror Accuracy", 0.12,
+    alignmentMeasured ? mirrorRaw : null,
+    alignmentMeasured ? mirrorDetail : "Broker mirror accuracy unmeasured — no usable broker-price comparison."));
 
   // ── 5. Historical/Live Merge Quality (0.10) ───────────────────────────────
   // Strictly the quality of the merge seam itself.
   let mergeRaw: number;
   let mergeDetail: string;
-  if (!seam.formingBarDetected) {
+  if (!seamMeasured) {
     mergeRaw = 85;
-    mergeDetail = "No forming bar — merge seam N/A.";
+    mergeDetail = "No closed-to-forming pair available — merge seam unmeasured.";
   } else if (seam.gapAtSeam) {
     mergeRaw = clamp(100 - seam.seamGapIntervals * 20);
     mergeDetail = `Merge gap of ${seam.seamGapIntervals} interval(s).`;
@@ -276,7 +297,8 @@ export function computeChartTruthScore(
     mergeRaw = 100;
     mergeDetail = "Clean merge seam.";
   }
-  subMetrics.push(sub("historical_live_merge", "Historical/Live Merge Quality", 0.10, mergeRaw, mergeDetail));
+  subMetrics.push(sub("historical_live_merge", "Historical/Live Merge Quality", 0.10,
+    seamMeasured ? mergeRaw : null, mergeDetail));
 
   // ── 6. Feed Freshness (0.09) ──────────────────────────────────────────────
   let freshnessRaw: number;
@@ -310,6 +332,13 @@ export function computeChartTruthScore(
       freshnessRaw = 0;
       freshnessDetail = "Feed unavailable.";
   }
+  if (feedStatus.stale && freshnessRaw > 35) {
+    freshnessRaw = 35;
+    freshnessDetail = "Feed marked stale — current data is not confirmed.";
+  } else if (!feedStatus.stale && feedStatus.isLive !== true && freshnessRaw > 70) {
+    freshnessRaw = 70;
+    freshnessDetail = "Feed is not confirmed live.";
+  }
   subMetrics.push(sub("feed_freshness", "Feed Freshness", 0.09, freshnessRaw, freshnessDetail));
 
   // ── 7. Price Precision (0.08) ─────────────────────────────────────────────
@@ -320,62 +349,37 @@ export function computeChartTruthScore(
     : truthResult.pricePrecision != null
       ? `Price precision ${truthResult.pricePrecision}dp — all bars within expected range.`
       : "Price precision profile unavailable; violations not measured.";
-  subMetrics.push(sub("price_precision", "Price Precision", 0.08, precisionRaw, precisionDetail));
+  subMetrics.push(sub("price_precision", "Price Precision", 0.08,
+    truthResult.pricePrecision != null && Number.isSafeInteger(truthResult.pricePrecision) && truthResult.pricePrecision >= 0
+      ? precisionRaw : null, precisionDetail));
 
   // ── 8. Render Accuracy (0.07) — Phase 2 proxy ────────────────────────────
   // Proxy: outlier wick count + phantom zero-volume bars as a render-truth proxy.
   // Phase 2 will replace with real render / scale / interaction signals.
-  const wickRate = n > 0 ? truthResult.outlierWickCount / n : 0;
-  const ghostRate = n > 0 ? truthResult.zeroVolumeGhostCount / n : 0;
-  const renderRaw = clamp(
-    100
-    - wickRate * 30          // wick outliers reduce render clarity
-    - ghostRate * 25,        // zero-volume ghosts distort renders
-  );
   const renderDetail = [
     truthResult.outlierWickCount > 0 ? `${truthResult.outlierWickCount} wick outlier(s)` : null,
     truthResult.zeroVolumeGhostCount > 0 ? `${truthResult.zeroVolumeGhostCount} zero-volume ghost(s)` : null,
-    "(Phase 2 proxy — real render signals pending)",
+    "Source-bar diagnostics do not measure rendering; renderer evidence unavailable",
   ].filter(Boolean).join("; ");
-  subMetrics.push(sub("render_accuracy", "Render Accuracy", 0.07, renderRaw, renderDetail));
+  subMetrics.push(sub("render_accuracy", "Render Accuracy", 0.07, null, renderDetail));
 
   // ── 9. Scale Quality (0.04) — Phase 2 proxy ──────────────────────────────
   // Proxy: historical-period-shift bars distort auto-scale.
-  const shiftRate = n > 0 ? truthResult.historicalPeriodShiftCount / n : 0;
-  const scaleRaw = clamp(100 - shiftRate * 60);
   const scaleDetail = truthResult.historicalPeriodShiftCount > 0
-    ? `${truthResult.historicalPeriodShiftCount} bar(s) from a different price epoch — Y-axis auto-scale may be distorted. (Phase 2 proxy)`
-    : "No historical-period-shift bars detected. (Phase 2 proxy)";
-  subMetrics.push(sub("scale_quality", "Scale Quality", 0.04, scaleRaw, scaleDetail));
+    ? `${truthResult.historicalPeriodShiftCount} bar(s) from a different price epoch; actual chart scale has not been measured.`
+    : "No historical-period-shift bars detected; actual chart scale has not been measured.";
+  subMetrics.push(sub("scale_quality", "Scale Quality", 0.04, null, scaleDetail));
 
   // ── 10. Interaction Stability (0.02) — Phase 2 placeholder ───────────────
-  // No Phase 2 interaction signals available yet. Honest 100 (not degraded,
-  // not fabricated — we simply have no evidence of instability).
+  // Absence of a reported failure is not a successful interaction measurement.
   subMetrics.push(sub(
     "interaction_stability",
     "Interaction Stability",
     0.02,
-    100,
-    "No Phase 2 interaction signals available yet — honest 100 (no evidence of instability).",
+    null,
+    "Interaction measurements unavailable.",
   ));
 
   // ── Aggregate ─────────────────────────────────────────────────────────────
-  const score = round(subMetrics.reduce((s, m) => s + m.weightedScore, 0));
-
-  // Primary concern: worst weighted penalty sub-metric (excluding placeholders).
-  const worstByGap = subMetrics
-    .filter((m) => m.key !== "interaction_stability" && m.rawScore < 90)
-    .sort((a, b) => (b.weight * (100 - b.rawScore)) - (a.weight * (100 - a.rawScore)));
-  const primaryConcern = worstByGap[0]?.detail ?? null;
-
-  const note = `Chart Truth Score ${score} (${labelFor(score)}). `
-    + (primaryConcern ? `Primary concern: ${primaryConcern}` : "All sub-metrics healthy.");
-
-  return {
-    score,
-    label: labelFor(score),
-    subMetrics,
-    primaryConcern,
-    note,
-  };
+  return aggregate(subMetrics);
 }

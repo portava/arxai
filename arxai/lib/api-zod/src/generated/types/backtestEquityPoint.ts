@@ -12,4 +12,8 @@ export interface BacktestEquityPoint {
   equity: number;
   peak: number;
   drawdown: number;
+  /** Cumulative unscaled P/L independent of the plotting offset. */
+  grossPriceUnits?: number;
+  /** Running peak of cumulative unscaled P/L. */
+  peakGrossPriceUnits?: number;
 }

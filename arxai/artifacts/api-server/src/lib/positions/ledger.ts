@@ -69,6 +69,15 @@ export const livePositionLedger = {
     configure(query, options);
     return query;
   },
+  /** Identity validation under the caller's transaction; never use a global executor. */
+  async readForUpdate(
+    options: Omit<PositionReadOptions, "distinct" | "groupBy">,
+    executor: Reader,
+  ) {
+    const query = executor.select().from(arxLivePositionsTable).$dynamic();
+    configure(query, options);
+    return query.for("update");
+  },
   async select<T extends SelectedFields>(
     fields: T,
     options: PositionReadOptions = {},

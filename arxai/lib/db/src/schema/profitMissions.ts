@@ -382,7 +382,7 @@ export const missionTestResultsTable = pgTable("mission_test_results", {
   sampleWarning: text("sample_warning"),
   // Normalized MissionTestMetrics snapshot + the engine summary.
   metricsJson:   jsonb("metrics_json").notNull().default({}),
-  // True only when sample is sufficient AND a positive edge is present.
+  // Historical flag only; reads must revalidate evidence provenance before use.
   isVerified:    boolean("is_verified").notNull().default(false),
 
   createdAt:     timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

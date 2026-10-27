@@ -27,4 +27,11 @@ export type GetChartHistoryParams = {
    * Continuation — the source echoed by a previous page (keeps one coherent series).
    */
   source?: string;
+  /**
+   * Expected opaque source identity for strict chart continuation. This is not authorization; unverified historical sources return no bars.
+   * @minLength 64
+   * @maxLength 64
+   * @pattern ^[a-f0-9]{64}$
+   */
+  sourceIdentity?: string;
 };

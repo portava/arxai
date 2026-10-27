@@ -1,46 +1,55 @@
 import { describe, it, expect } from "vitest";
-import { suggestApprovedSymbols, isCanonical, resolveSymbol, SYMBOL_REGISTRY } from "./symbolRegistry";
+import { resolveUserMarketInput } from "@workspace/markets";
+import { suggestApprovedSymbols, searchSymbols, isCanonical, resolveSymbol, SYMBOL_REGISTRY } from "./symbolRegistry";
 
-/**
- * Task #423 — near-match suggestions must surface ONLY approved markets, and
- * only for a typed token that did not resolve to a single approved market.
- */
-describe("suggestApprovedSymbols", () => {
-  it("surfaces the approved candidates for an ambiguous alias", () => {
-    // "oil" / "crude" map to both WTI (USOIL) and Brent (UKOIL) in the universe.
-    for (const q of ["oil", "crude", "crude oil", "  OIL  "]) {
-      const out = suggestApprovedSymbols(q);
-      const syms = out.map((s) => s.canonicalSymbol);
-      expect(syms).toContain("USOIL");
-      expect(syms).toContain("UKOIL");
+// The upstream Top250 directory has oil ambiguities, but Focus43 deliberately
+// excludes both oil markets. Test that real boundary rather than adding markets
+// to satisfy an obsolete fixture. Approved multi-match search remains useful.
+describe("approved symbol suggestions and multi-match search", () => {
+  it("filters real upstream oil ambiguity to an empty approved Focus result", () => {
+    for (const query of ["oil", "crude", "crude oil", "  OIL  "]) {
+      const upstream = resolveUserMarketInput(query);
+      expect(upstream.status).toBe("ambiguous");
+      expect(upstream.candidates.map((market) => market.standardSymbol)).toEqual(["USOIL", "UKOIL"]);
+      expect(suggestApprovedSymbols(query)).toEqual([]);
+    }
+    expect(SYMBOL_REGISTRY).toHaveLength(43);
+    for (const outside of ["USOIL", "UKOIL"]) {
+      expect(isCanonical(outside)).toBe(false);
+      expect(SYMBOL_REGISTRY.some((entry) => entry.canonicalSymbol === outside)).toBe(false);
     }
   });
 
-  it("only ever returns approved, registry-visible markets", () => {
-    const out = suggestApprovedSymbols("oil");
-    expect(out.length).toBeGreaterThan(0);
-    for (const s of out) {
-      expect(isCanonical(s.canonicalSymbol)).toBe(true);
-      expect(SYMBOL_REGISTRY.some((e) => e.canonicalSymbol === s.canonicalSymbol)).toBe(true);
+  it("keeps both genuinely approved 75 variants discoverable and distinct", () => {
+    for (const query of ["75", "volatility 75", "  V75  "]) {
+      const matches = searchSymbols(query);
+      expect(matches.map((entry) => entry.canonicalSymbol)).toEqual(expect.arrayContaining(["V75", "V75_1S"]));
+      for (const entry of matches) {
+        expect(isCanonical(entry.canonicalSymbol)).toBe(true);
+        expect(SYMBOL_REGISTRY.some((approved) => approved.canonicalSymbol === entry.canonicalSymbol)).toBe(true);
+      }
+    }
+    expect(resolveSymbol("V75")?.canonicalSymbol).toBe("V75");
+    expect(resolveSymbol("V75_1S")?.canonicalSymbol).toBe("V75_1S");
+  });
+
+  it("returns deterministic, nonempty multi-match search without duplicate markets", () => {
+    const symbols = searchSymbols("75").map((entry) => entry.canonicalSymbol);
+    expect(symbols.length).toBeGreaterThan(1);
+    expect(new Set(symbols).size).toBe(symbols.length);
+    expect(searchSymbols("75").map((entry) => entry.canonicalSymbol)).toEqual(symbols);
+  });
+
+  it("returns no ambiguous suggestions for a resolved approved market", () => {
+    for (const query of ["EURUSD", "gold", "V75", "btc"]) {
+      expect(resolveSymbol(query)).not.toBeNull();
+      expect(suggestApprovedSymbols(query)).toEqual([]);
     }
   });
 
-  it("returns no duplicates", () => {
-    const syms = suggestApprovedSymbols("oil").map((s) => s.canonicalSymbol);
-    expect(new Set(syms).size).toBe(syms.length);
-  });
-
-  it("returns [] when the input resolves cleanly to a single market", () => {
-    // These resolve to exactly one approved market — not a dead end.
-    for (const q of ["EURUSD", "gold", "V75", "btc"]) {
-      expect(resolveSymbol(q)).not.toBeNull();
-      expect(suggestApprovedSymbols(q)).toEqual([]);
-    }
-  });
-
-  it("returns [] for empty / whitespace / genuinely-unknown input", () => {
-    for (const q of ["", "   ", "zzzznotamarket", "qwertyuiop"]) {
-      expect(suggestApprovedSymbols(q)).toEqual([]);
+  it("returns no suggestions for empty, unknown or outside-Focus symbols", () => {
+    for (const query of ["", "   ", "zzzznotamarket", "qwertyuiop", "USOIL", "UKOIL", "AAPL"]) {
+      expect(suggestApprovedSymbols(query)).toEqual([]);
     }
   });
 });

@@ -24,6 +24,7 @@ import { MIN_SUFFICIENT_CLOSED_BARS } from "@workspace/domain/market";
 
 import {
   updateCandlesFromMT5,
+  updateQuoteFromMT5,
   __resetMt5ProviderStore,
 } from "../data/providers/mt5Provider.js";
 import { scanSymbolTimeframe } from "../marketScanner.js";
@@ -78,6 +79,7 @@ test("a sufficient fresh LIVE feed stays LIVE_FEED/live (downgrade is feed-depth
   __resetMt5ProviderStore();
   // Same symbol, same provider seam — but enough fresh closed bars to analyse.
   updateCandlesFromMT5("EURUSD", freshM5Bars(120), "M5");
+  updateQuoteFromMT5("EURUSD", { symbol: "EURUSD", bid: 1.082, ask: 1.0822, spread: 0.0002, timestamp: new Date().toISOString() });
 
   const op = await scanSymbolTimeframe("EURUSD", "M5");
   assert.ok(op != null, "scanner must return a row for an approved symbol");

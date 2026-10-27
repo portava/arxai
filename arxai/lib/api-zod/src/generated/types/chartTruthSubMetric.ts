@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { ChartTruthSubMetricEvidenceStatus } from "./chartTruthSubMetricEvidenceStatus";
 
 /**
  * A single weighted sub-metric contributing to the Chart Truth Score.
@@ -12,12 +13,27 @@
 export interface ChartTruthSubMetric {
   key: string;
   label: string;
-  /** Contribution weight (0–1 */
+  /**
+   * Contribution weight (0–1, sum=1.0)
+   * @minimum 0
+   * @maximum 1
+   */
   weight: number;
-  /** Raw 0–100 score for this sub-metric */
-  rawScore: number;
-  /** rawScore × weight */
-  weightedScore: number;
+  /**
+   * Measured 0–100 score; null when this property has not been measured
+   * @minimum 0
+   * @maximum 100
+   * @nullable
+   */
+  rawScore: number | null;
+  /**
+   * rawScore × weight; null evidence earns no aggregate points
+   * @minimum 0
+   * @maximum 100
+   * @nullable
+   */
+  weightedScore: number | null;
+  evidenceStatus: ChartTruthSubMetricEvidenceStatus;
   /** Plain-language explanation of the score */
   detail: string;
 }

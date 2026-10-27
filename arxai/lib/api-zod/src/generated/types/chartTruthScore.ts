@@ -10,8 +10,9 @@ import type { ChartTruthSubMetric } from "./chartTruthSubMetric";
 
 /**
  * Weighted 10-sub-metric score (0–100) answering "is the data real, fresh,
-correctly mapped/timed/mirrored/rendered?" Derived entirely from Phase 1
-signals — never fabricated.
+correctly mapped/timed/mirrored/rendered?" Only measured properties earn
+points. Unavailable properties have null sub-scores and weights are not
+redistributed. This is an earned evidence score, not a probability.
 Labels: Verified (95–100), Healthy (85–94), Usable-but-watch (75–84),
 Degraded (60–74), Read-blocked (<60).
 
@@ -21,6 +22,13 @@ export interface ChartTruthScore {
   score: number;
   label: ChartTruthScoreLabel;
   subMetrics: ChartTruthSubMetric[];
+  /**
+   * Fraction of total weight with measured evidence (0–1)
+   * @minimum 0
+   * @maximum 1
+   */
+  evidenceCoverage: number;
+  unmeasuredKeys: string[];
   /**
    * Worst sub-metric detail
    * @nullable

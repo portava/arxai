@@ -93,8 +93,10 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
 
   const results = testing?.results ?? [];
   const { backtest, forward } = latestByKind(results);
-  const rows = buildComparisonRows(backtest, forward);
-  const trend = buildForwardTrend(results);
+  const verifiedBacktest = backtest?.isVerified ? backtest : null;
+  const verifiedForward = forward?.isVerified ? forward : null;
+  const rows = buildComparisonRows(verifiedBacktest, verifiedForward);
+  const trend = buildForwardTrend(results.filter((result) => result.isVerified));
   const driftHistory = buildDriftHistory(events ?? []);
 
   const driftObj = (drift?.drift && typeof drift.drift === "object" ? drift.drift : null) as
@@ -125,13 +127,12 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
         tone="info"
         testId="alert-performance-honesty"
         title="Strategy performance over time"
-        description="Backtest is historical / simulated. Forward numbers come only from real closed trades."
+        description="Generated-price runs and closed-draft aggregates are unverified diagnostics. Only verified records can support comparison or promotion."
         details={
           <span>
-            Backtest results model the strategy against historical data. Forward results are
-            aggregated from your mission's real closed trades, so they may be empty until trades
-            close. This view never estimates or implies live performance — when there is no real
-            evidence, you'll see an honest empty state instead of a number.
+            Generated-price runs do not establish market performance. Closed-draft aggregates still
+            need execution identity and net-cost verification. Diagnostic records remain visible below;
+            comparison and drift require a validated, matching historical and forward record.
           </span>
         }
       />
@@ -141,7 +142,7 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
         <CardHeader>
           <CardTitle>Backtest vs Forward</CardTitle>
           <CardDescription>
-            Side-by-side, honestly labelled. Lower is better for drawdown; higher is better elsewhere.
+            Verified records only. Unverified diagnostic values are not comparable trading performance.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -162,8 +163,8 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <SideSummary kind="Backtest" sub="Historical / simulated" result={backtest} testId="summary-backtest" />
-            <SideSummary kind="Forward" sub="Real closed trades" result={forward} testId="summary-forward" />
+            <SideSummary kind="Backtest" sub="Source evidence" result={backtest} testId="summary-backtest" />
+            <SideSummary kind="Forward" sub="Execution evidence" result={forward} testId="summary-forward" />
           </div>
         </CardContent>
       </Card>
@@ -173,7 +174,7 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
         <CardHeader>
           <CardTitle>Forward expectancy over time</CardTitle>
           <CardDescription>
-            Each point is a real forward result, compared against the backtest baseline.
+            Each point requires verified forward evidence; any reference baseline must also be verified.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -182,8 +183,8 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
               className="rounded border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
               data-testid="empty-performance-trend"
             >
-              No real forward trades yet. Forward performance will appear here once your mission closes
-              real trades — nothing is estimated.
+              No verified forward evidence yet. Closed-draft diagnostics remain available below and in the
+              Testing Lab; they do not establish live or demo performance.
             </p>
           ) : (
             <div className="h-60" data-testid="chart-performance-trend">
@@ -196,13 +197,13 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
                     contentStyle={{ background: "#0f172a", border: "1px solid #334155", fontSize: 11 }}
                     formatter={(v: number) => [`${v.toFixed(2)}R`, "Forward expectancy"]}
                   />
-                  {backtest && (
+                  {verifiedBacktest && (
                     <ReferenceLine
-                      y={backtest.metrics.expectancyR}
+                      y={verifiedBacktest.metrics.expectancyR}
                       stroke={BASELINE}
                       strokeDasharray="4 4"
                       label={{
-                        value: `Backtest baseline ${backtest.metrics.expectancyR.toFixed(2)}R`,
+                        value: `Backtest baseline ${verifiedBacktest.metrics.expectancyR.toFixed(2)}R`,
                         position: "insideTopRight",
                         fill: BASELINE,
                         fontSize: 10,
@@ -220,10 +221,10 @@ export function MissionPerformanceView({ missionId }: { missionId: number }): Re
               </ResponsiveContainer>
             </div>
           )}
-          {trend.length > 0 && !backtest && (
+          {trend.length > 0 && !verifiedBacktest && (
             <p className="mt-2 text-xs text-muted-foreground" data-testid="text-no-baseline">
-              No backtest baseline yet — run a backtest in the Testing Lab to compare forward results
-              against an expected expectancy.
+              No verified historical baseline is available. Generated-price diagnostics cannot establish
+              an expected market expectancy.
             </p>
           )}
         </CardContent>
@@ -399,8 +400,14 @@ function SideSummary({
           <p className="text-xs text-muted-foreground">{result.label}</p>
           <p className="text-xs text-muted-foreground" data-testid={`${testId}-sample`}>
             Sample size: {result.sampleSize} trade{result.sampleSize === 1 ? "" : "s"}
-            {result.isVerified ? " · verified" : ""}
+            {result.isVerified ? " · verified" : " · unverified"}
           </p>
+          {!result.isVerified && (
+            <div className="space-y-1 text-xs text-muted-foreground" data-testid={`${testId}-evidence`}>
+              <p>{result.headline}</p>
+              {result.notes.map((note, index) => <p key={index}>{note}</p>)}
+            </div>
+          )}
           {result.sampleWarning && (
             <p className="text-xs text-warning" data-testid={`${testId}-warning`}>
               ⚠ {result.sampleWarning}
@@ -410,8 +417,8 @@ function SideSummary({
       ) : (
         <p className="mt-1 text-xs text-muted-foreground" data-testid={`${testId}-empty`}>
           {kind === "Forward"
-            ? "No real forward results yet — nothing is estimated."
-            : "No backtest yet — run one in the Testing Lab to set a baseline."}
+            ? "No closed-draft results yet — nothing is estimated."
+            : "No diagnostic run yet. Generated prices do not establish a market baseline."}
         </p>
       )}
     </div>

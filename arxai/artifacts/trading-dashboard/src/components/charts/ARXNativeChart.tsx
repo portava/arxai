@@ -1,5 +1,8 @@
 import { chartTickSource, matchesChartTickContext } from "@/lib/chartTickStreamContext";
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, useContext } from "react";
+import { ChartReplayContext } from "@/components/chart-replay/ChartReplayContext";
+import { ChartLinkContext } from "./ChartLinkContext";
+import { hasMatchingOverlayEvidence, useDerivedOverlayContext } from "../scanner/useDerivedOverlayContext";
 import {
   useGetChartCandles,
   getGetChartCandlesQueryKey,
@@ -26,7 +29,14 @@ import {
   AlertCircle,
   LineChart,
   Clock,
+  Maximize2,
+  Minimize2,
+  ArrowRightToLine,
 } from "lucide-react";
+import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { SmartChartReader } from "./SmartChartReader";
+import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
+import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
 import { bareSymbol } from "@/lib/use-chart-symbol";
 import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
@@ -86,9 +96,9 @@ import {
 //  - Chart-mode gate: if candles are present but OHLC spread is flat across
 //    >80% of bars, a "Line mode — OHLC candles are flat" banner is shown so
 //    the user is never misled about what they are looking at.
-//  - Overlay anchoring: series is rebuilt on symbol/timeframe change (existing
-//    chartEpoch mechanism) so no stale levels bleed across instruments.
-//  - Performance: timeframe switch is debounced (200ms); crosshair updates are
+//  - Overlay anchoring: context-owned observations reset before paint on
+//    instrument, timeframe or source changes while the canvas stays mounted.
+//  - Performance: timeframe selection is immediate; crosshair updates are
 //    throttled to 60fps; AI/intelligence panel stays off the chart render loop.
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -108,11 +118,13 @@ const TIMEFRAMES: { id: ArxTimeframe; label: string }[] = [
 
 const TF_KEY = "arx.nativeChart.timeframe";
 const DEFAULT_TF: ArxTimeframe = "M15";
+const EMPTY_OVERLAYS: ChartOverlay[] = [];
 
 
 function loadTimeframe(): ArxTimeframe {
   if (typeof window === "undefined") return DEFAULT_TF;
-  const v = localStorage.getItem(TF_KEY);
+  let v: string | null = null;
+  try { v = localStorage.getItem(TF_KEY); } catch { /* private storage unavailable */ }
   return (TIMEFRAMES.some((t) => t.id === v) ? (v as ArxTimeframe) : DEFAULT_TF);
 }
 
@@ -178,6 +190,8 @@ function checkOhlcDiversity(candles: { open: number; high: number; low: number; 
 }
 
 export interface ARXNativeChartProps {
+  /** Distinguishes browser preferences for primary and comparison views. */
+  workspaceId?: "primary" | "comparison" | "comparison-2" | "comparison-3";
   /** ARX-canonical or display symbol (e.g. "EURUSD", "FX:EURUSD", "V75"). */
   symbol: string;
   /** Controlled timeframe. When omitted the chart manages its own (persisted). */
@@ -237,6 +251,7 @@ export interface ARXNativeChartProps {
 }
 
 export function ARXNativeChart({
+  workspaceId = "primary",
   symbol,
   timeframe: controlledTf,
   onTimeframeChange,
@@ -248,7 +263,7 @@ export function ARXNativeChart({
   showFallbackToggle = false,
   onRequestFallback,
   limit = 300,
-  overlays = [],
+  overlays: suppliedOverlays = EMPTY_OVERLAYS,
   onChartContextChange,
   onIntelligenceChange,
   mirrorLockDefault = true,
@@ -260,8 +275,70 @@ export function ARXNativeChart({
     [symbol],
   );
 
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const viewLinks = useContext(ChartLinkContext);
+  const linkStatusRef = useRef<HTMLOutputElement | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const preferencesKey = workspaceId === "primary" ? PREFERENCES_KEY : `${PREFERENCES_KEY}:${workspaceId}`;
+  const [preferences, setPreferences] = useState(() => validatePreferences(readChartStorage(preferencesKey) ?? readChartStorage(PREFERENCES_KEY)));
+  const [preferencesSaved, setPreferencesSaved] = useState(true);
+  const scaleMode = preferences.scale;
+
+  useEffect(()=>{setPreferencesSaved(writeChartStorage(preferencesKey,preferences));},[preferences,preferencesKey]);
+  const legendRef = useRef<HTMLOutputElement | null>(null);
+  const studyInspectorRef = useRef<HTMLOutputElement | null>(null);
+  const dataWindowRef = useRef<HTMLDetailsElement | null>(null);
+  const inspectedCandleRef = useRef<ChartEngineCandle | null>(null);
+  const updateLegend = useCallback((candle: ChartEngineCandle | null) => {
+    const bar = candle;
+    inspectedCandleRef.current = bar;
+    if (!legendRef.current) return;
+    const digits = bar ? candleDisplayPrecision([bar], symbol) : 5;
+    legendRef.current.textContent = bar
+      ? `${new Date(bar.time * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC  ·  O ${bar.open.toFixed(digits)}  H ${bar.high.toFixed(digits)}  L ${bar.low.toFixed(digits)}  C ${bar.close.toFixed(digits)}`
+      : "Move the crosshair over a candle to inspect it";
+    if (studyInspectorRef.current && dataWindowRef.current?.open) {
+      const rows = bar ? adapterRef.current?.getStudyValues?.(bar.time) ?? [] : [];
+      const fragment = document.createDocumentFragment();
+      for (const row of rows) {
+        const line = document.createElement("div");
+        line.className = "flex flex-wrap justify-between gap-x-4 gap-y-1 border-t border-zinc-800 py-1.5";
+        const label = document.createElement("span");
+        label.textContent = row.label;
+        label.style.color = row.color;
+        const values = document.createElement("span");
+        values.textContent = row.values.map(item => `${item.name}: ${item.value == null ? "— (warm-up / unavailable)" : Number(item.value.toPrecision(8))}`).join(" · ");
+        line.append(label, values);
+        fragment.append(line);
+      }
+      if (!rows.length) fragment.append(document.createTextNode("Add a study to inspect its values."));
+      studyInspectorRef.current.replaceChildren(fragment);
+    }
+  }, [symbol]);
+  useEffect(() => {
+    if (!expanded) return;
+    const previous = document.body.style.overflow;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = "hidden";
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+      if (event.key === "Tab") {
+        const items = cardRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), summary, a[href], [tabindex="0"]');
+        const first = items?.[0];
+        const last = items?.[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", escape); previousFocus?.focus(); };
+  }, [expanded]);
+
   const [internalTf, setInternalTf] = useState<ArxTimeframe>(() => loadTimeframe());
   const timeframe = controlledTf ?? internalTf;
+  const overlays = useMemo(() => suppliedOverlays.filter(overlay =>
+    overlay.symbol === resolvedSymbol && (!overlay.timeframe || overlay.timeframe === timeframe)),
+  [suppliedOverlays, resolvedSymbol, timeframe]);
 
   // Phase 2 — Mirror Lock. When on, the chart advertises its symbol/timeframe
   // as "mirrored" with the rest of the UI. When off, an inspection-mode
@@ -277,26 +354,20 @@ export function ARXNativeChart({
     { id: string; y: number; pnl: number; side: string | null; mode: string | null }[]
   >([]);
 
-  // Phase 2 — debounce timeframe switching (200ms). Rapidly clicking through
-  // TF buttons normally triggers one chart rebuild + fetch per click; the
-  // debounce collapses that to a single rebuild for the settled value.
-  const tfDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   useEffect(() => {
     onSymbolChange?.(resolvedSymbol);
   }, [resolvedSymbol, onSymbolChange]);
 
   const setTimeframe = useCallback(
     (tf: ArxTimeframe) => {
-      if (tfDebounceRef.current != null) clearTimeout(tfDebounceRef.current);
-      tfDebounceRef.current = setTimeout(() => {
-        tfDebounceRef.current = null;
-        if (controlledTf == null) {
-          setInternalTf(tf);
-          if (typeof window !== "undefined") localStorage.setItem(TF_KEY, tf);
-        }
-        onTimeframeChange?.(tf);
-      }, 200);
+      // The adapter is retained across contexts and clears old observations
+      // before paint. Selection no longer needs a timer that delays feedback.
+      // Query cancellation and source/context checks own stale response safety.
+      if (controlledTf == null) {
+        setInternalTf(tf);
+        try { localStorage.setItem(TF_KEY, tf); } catch { /* optional preference */ }
+      }
+      onTimeframeChange?.(tf);
     },
     [controlledTf, onTimeframeChange],
   );
@@ -315,7 +386,13 @@ export function ARXNativeChart({
     },
   );
 
-  const data: ChartCandlesResponse | undefined = query.data;
+  const replay = useContext(ChartReplayContext);
+  const [replayError,setReplayError] = useState<string | null>(null);
+  const response: ChartCandlesResponse | undefined = query.data;
+  const data = useMemo(() => response?.symbol === resolvedSymbol && response.timeframe === timeframe
+    && response.candles.every(candle => candle.symbol === resolvedSymbol
+      && candle.timeframe === timeframe && candle.source === response.feedStatus?.source)
+    ? response : undefined, [response, resolvedSymbol, timeframe]);
   const candles = data?.candles ?? [];
   const hasCandles = candles.length > 0;
 
@@ -324,7 +401,13 @@ export function ARXNativeChart({
   // View-only: loading history never touches an execution path, and the hook
   // never fabricates a bar — a provider ceiling stops paging and is reported
   // honestly via the history badge.
-  const deepHistory = useChartDeepHistory(resolvedSymbol, timeframe, hasCandles);
+  const evidence = data?.marketEvidence;
+  const evidenceIdentity = evidence?.symbol === resolvedSymbol && evidence.timeframe === timeframe
+    && evidence.source === data?.feedStatus?.source ? evidence.sourceIdentity : null;
+  const overlayRequiresEvidence = useDerivedOverlayContext(JSON.stringify([resolvedSymbol, timeframe]),
+    hasCandles ? JSON.stringify([data?.feedStatus?.source ?? null, evidenceIdentity]) : null);
+  const deepHistory = useChartDeepHistory(resolvedSymbol, timeframe, hasCandles,
+    data?.feedStatus?.source ?? null, evidenceIdentity, true);
 
   // ── Live-price affordance honesty (shared rule, Task #351) ──────────────────
   // The candlestick last-value label and the dashed "Last" price line are
@@ -377,7 +460,9 @@ export function ARXNativeChart({
       },
     },
   );
-  const intelligenceState = intelligenceQuery.data?.state;
+  const intelligenceResponse = intelligenceQuery.data?.state;
+  const intelligenceState = intelligenceResponse?.symbol === resolvedSymbol && intelligenceResponse.timeframe === timeframe
+    ? intelligenceResponse : undefined;
 
   useEffect(() => {
     if (intelligenceState) onIntelligenceChange?.(intelligenceState);
@@ -388,6 +473,8 @@ export function ARXNativeChart({
   // #373). This component owns React state, data, feed-status and UI; the
   // imperative engine (lightweight-charts v5) is driven only through the adapter.
   const adapterRef = useRef<ChartEngineAdapter | null>(null);
+  const chartContext = JSON.stringify([resolvedSymbol, timeframe, data?.feedStatus?.source ?? null, evidenceIdentity]);
+  const activeChartContext = useRef<{ key: string; adapter: ChartEngineAdapter } | null>(null);
   // Newest bar time (Unix seconds) currently on screen. The poll keeps this in
   // sync with the authoritative closed window; the SSE tick handler reads it to
   // reject an out-of-order forming tip (one behind the newest bar).
@@ -401,7 +488,9 @@ export function ARXNativeChart({
   useEffect(() => {
     const update = () => {
       const isMobile = window.innerWidth < 768;
-      if (isMobile && mobileHeight != null) {
+      if (expanded) {
+        setEffectiveHeight(Math.max(240, window.innerHeight - 240));
+      } else if (isMobile && mobileHeight != null) {
         setEffectiveHeight(mobileHeight);
       } else if (isMobile) {
         setEffectiveHeight(Math.max(320, Math.min(height, 380)));
@@ -412,14 +501,11 @@ export function ARXNativeChart({
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, [height, mobileHeight]);
+  }, [height, mobileHeight, expanded]);
 
-  // ── Build the engine once per (symbol, timeframe, height). Rebuilding only on
-  //    these keys preserves the user's zoom/scroll across data polls and
-  //    guarantees overlays/levels never bleed across instruments. The actual
-  //    chart engine is created behind the adapter — this component never touches
-  //    lightweight-charts directly (Task #373).
-  useEffect(() => {
+  // Retain the expensive canvas. Context-owned observations are cleared in the
+  // layout phase below, before a new market label can paint over old geometry.
+  useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
@@ -427,17 +513,58 @@ export function ARXNativeChart({
     adapter.init({ container: el, height: effectiveHeight });
     adapter.setSymbol?.(resolvedSymbol);
     adapter.setTimeframe?.(timeframe);
+    adapter.setCrosshairHandler?.(updateLegend);
+    adapter.setViewLinkStatusHandler?.(message => {if (linkStatusRef.current) linkStatusRef.current.textContent = message;});
+    updateLegend(null);
     adapterRef.current = adapter;
-
-    // Signal the data + overlay effects that a fresh engine is ready to draw onto.
-    setChartEpoch((e) => e + 1);
 
     return () => {
       adapter.destroy();
       adapterRef.current = null;
+      activeChartContext.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedSymbol, timeframe, effectiveHeight]);
+  }, [viewLinks, workspaceId]);
+
+  useLayoutEffect(() => {
+    const adapter = adapterRef.current;
+    if (!adapter) return;
+    if (activeChartContext.current?.key === chartContext && activeChartContext.current.adapter === adapter) return;
+    activeChartContext.current = { key: chartContext, adapter };
+    if (adapter.resetDataContext) adapter.resetDataContext();
+    else {
+      adapter.setFeedState({ livePriceAffordance: false, source: null });
+      adapter.setOverlays([], null);
+      adapter.setStructureLines?.([], []);
+      adapter.setSmartAnnotation?.(null);
+      adapter.setDrawings?.([]);
+      adapter.setCandles([]);
+    }
+    adapter.setSymbol?.(resolvedSymbol);
+    adapter.setTimeframe?.(timeframe);
+    newestBarSecRef.current = null;
+    inspectedCandleRef.current = null;
+    updateLegend(null);
+    setMarketFrozen(null);
+    setBubbles([]);
+    // Rebind channel ownership even when identity changes within one provider.
+    setChartEpoch(epoch => epoch + 1);
+  }, [chartContext, resolvedSymbol, timeframe, viewLinks, workspaceId, updateLegend]);
+  useLayoutEffect(() => {
+    const adapter = adapterRef.current;
+    return adapter ? viewLinks?.register(workspaceId, adapter) : undefined;
+  }, [viewLinks, workspaceId, chartContext]);
+  useLayoutEffect(() => { adapterRef.current?.setCrosshairHandler?.(updateLegend); }, [updateLegend, chartEpoch]);
+
+  useEffect(() => { adapterRef.current?.resize(undefined, effectiveHeight); }, [effectiveHeight, chartEpoch]);
+  useEffect(() => { adapterRef.current?.setScaleMode?.(scaleMode); }, [scaleMode, chartEpoch]);
+  useEffect(() => { adapterRef.current?.setPriceScaleInverted?.(preferences.inverted === true); }, [preferences.inverted, chartEpoch]);
+
+  useEffect(() => { adapterRef.current?.setChartStyle?.(preferences.style); }, [preferences.style, chartEpoch]);
+  useEffect(() => {
+    adapterRef.current?.setStudies?.(preferences.studies);
+    updateLegend(inspectedCandleRef.current);
+  }, [preferences.studies, chartEpoch, updateLegend]);
 
   // Phase 2 — reset scale: restore the default visible range (last N candles).
   const resetScale = useCallback(() => {
@@ -501,21 +628,23 @@ export function ARXNativeChart({
       : null;
   }, [mergedEngineCandles]);
 
+  const historySource = data?.feedStatus?.source ?? null;
+
   // ── Push data into the existing series on every poll WITHOUT recreating the
-  //    chart. setData keeps the current visible range, so the still-forming last
+  //    chart. The adapter reconciles the current visible range, so the forming last
   //    bar updates and new bars append while the user's zoom/pan is preserved.
   //    Phase 2: on first data load we set a smart visible range (last N candles)
   //    instead of fitContent() over the whole history. This prevents the y-axis
   //    from covering a huge distant-outlier price range, and ensures recent price
   //    action fills the canvas rather than being compressed into a horizontal line.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const adapter = adapterRef.current;
     if (!adapter) return;
     // The live-price affordance (last-value label + dashed "Last" line) is
     // suppressed unless the feed is genuinely LIVE (Task #351, shared honesty
-    // rule). chartEpoch re-runs this after a rebuild so the fresh engine is
-    // populated immediately rather than waiting for the next poll.
-    adapter.setFeedState({ livePriceAffordance: isLivePriceAffordance });
+    // rule). chartEpoch re-runs this after a context reset so the retained engine
+    // is populated immediately rather than waiting for the next poll.
+    adapter.setFeedState({ livePriceAffordance: isLivePriceAffordance, source: historySource });
     adapter.setCandles(mergedEngineCandles);
     // Keep the newest-bar watermark in sync with the authoritative closed
     // window. When the poll reconciles a new closed bar it advances here, so the
@@ -523,7 +652,7 @@ export function ARXNativeChart({
     // closed bar cleanly supersedes any prior synthesized tip with no orphan dup.
     const newest = mergedEngineCandles[mergedEngineCandles.length - 1];
     if (newest) newestBarSecRef.current = newest.time;
-  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch]);
+  }, [mergedEngineCandles, isLivePriceAffordance, chartEpoch, historySource, chartContext]);
 
   const tickSource = chartTickSource(data?.feedStatus?.source);
 
@@ -562,6 +691,7 @@ export function ARXNativeChart({
     );
     let es: EventSource | null = null;
     let disposed = false;
+    const ownedAdapter = adapterRef.current;
     try {
       es = new EventSource(url, { withCredentials: true });
     } catch {
@@ -569,7 +699,7 @@ export function ARXNativeChart({
     }
     streamWatchdog.noteStreamOpened();
     es.onmessage = (ev) => {
-      if (disposed) return;
+      if (disposed || activeChartContext.current?.key !== chartContext || activeChartContext.current.adapter !== ownedAdapter) return;
       // Any frame — tip, feed_status, or heartbeat — proves the stream is alive.
       // Recorded before parsing so even an unrecognised frame counts as liveness.
       streamWatchdog.noteFrame();
@@ -635,6 +765,7 @@ export function ARXNativeChart({
       newestBarSecRef.current = tipSec;
     };
     es.onerror = () => {
+      if (disposed || activeChartContext.current?.key !== chartContext || activeChartContext.current.adapter !== ownedAdapter) return;
       // The browser retries an EventSource on its own, but only for errors it
       // actually surfaces — and it never recovers a connection that stays "open"
       // while silently delivering nothing. Record the state so the UI is honest;
@@ -649,7 +780,7 @@ export function ARXNativeChart({
     // The watchdog's callbacks are stable; `epoch` is the reconnect signal and
     // this effect's cleanup closes the dead stream before the replacement opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedSymbol, timeframe, streamWatchdog.epoch, tickSource]);
+  }, [resolvedSymbol, timeframe, streamWatchdog.epoch, tickSource, chartContext]);
 
   // ── Deep-history scroll-back wiring. Register a stable handler with the engine
   //    that fires when the user pans near the oldest loaded bar; it asks the
@@ -793,7 +924,9 @@ export function ARXNativeChart({
 
     const overlay = intelligenceState?.trendlineOverlay;
     const mayDraw =
-      overlay != null && overlay.visible && conf.aiUsable && isLivePriceAffordance;
+      overlay != null && overlay.visible && conf.aiUsable && isLivePriceAffordance
+      && intelligenceState?.truthState?.source === historySource
+      && (!overlayRequiresEvidence || hasMatchingOverlayEvidence(evidence, intelligenceQuery.data));
 
     if (!mayDraw || !overlay) {
       adapter.setStructureLines([], []);
@@ -833,9 +966,9 @@ export function ARXNativeChart({
 
     adapter.setStructureLines(lines, markers);
     // displayStatus is captured via `isLivePriceAffordance` (derived from it) +
-    // `conf.aiUsable`; chartEpoch re-runs this after a rebuild so structure is
-    // redrawn onto the fresh engine and cleared across a symbol/timeframe switch.
-  }, [intelligenceState, conf.aiUsable, isLivePriceAffordance, chartEpoch]);
+    // `conf.aiUsable`; chartEpoch re-runs this after a context reset so structure
+    // is applied only to the matching instrument, timeframe and provider.
+  }, [intelligenceState, conf.aiUsable, isLivePriceAffordance, chartEpoch, historySource, overlayRequiresEvidence, evidence, intelligenceQuery.data]);
 
   // Phase 2 — mirror status derived from feed quality + fetch state.
   const mirrorStatus = getMirrorStatus(
@@ -892,7 +1025,7 @@ export function ARXNativeChart({
   const isEmpty = !isInitialLoading && !isError && !hasCandles;
 
   return (
-    <Card data-testid="arx-native-chart" className="overflow-hidden border-zinc-800 bg-zinc-950/40">
+    <Card ref={cardRef} role={expanded ? "dialog" : undefined} aria-modal={expanded || undefined} aria-label={expanded ? `${resolvedSymbol} fullscreen chart` : undefined} data-testid="arx-native-chart" className={expanded ? "fixed inset-0 z-50 overflow-auto rounded-none border-zinc-800 bg-zinc-950" : "overflow-hidden border-zinc-800 bg-zinc-950/40"}>
       <CardHeader className="py-3 px-3 md:px-4">
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
@@ -976,6 +1109,7 @@ export function ARXNativeChart({
           </div>
           {/* Phase 2 — TF controls + Reset Scale button. */}
           <div className="flex flex-wrap items-center gap-1" data-testid="arx-native-tf-controls">
+            {replay && <Button size="sm" variant="outline" className="h-7 px-2 text-xs" title="Replay the current source-identified response window; separately paginated older history is not included" disabled={!hasCandles || query.isFetching || query.isError} onClick={()=>setReplayError(replay.open(data,preferences,{symbol:resolvedSymbol,timeframe}))}>Replay loaded bars</Button>}
             {TIMEFRAMES.map((tf) => (
               <Button
                 key={tf.id}
@@ -983,6 +1117,8 @@ export function ARXNativeChart({
                 variant={timeframe === tf.id ? "default" : "outline"}
                 className="h-7 px-2 text-xs"
                 onClick={() => setTimeframe(tf.id)}
+                aria-pressed={timeframe === tf.id}
+                aria-label={`${tf.label} timeframe`}
                 data-testid={`arx-native-tf-${tf.id}`}
               >
                 {tf.label}
@@ -994,6 +1130,7 @@ export function ARXNativeChart({
                 variant="ghost"
                 className="h-7 px-2 text-[11px] text-zinc-500 hover:text-zinc-300"
                 onClick={resetScale}
+                aria-label="Reset chart scale"
                 title="Reset scale — restore default visible range"
                 data-testid="arx-native-reset-scale"
               >
@@ -1003,6 +1140,8 @@ export function ARXNativeChart({
           </div>
         </CardTitle>
       </CardHeader>
+
+      {replayError && <p className="px-3 pb-2 text-xs text-amber-300" role="status">{replayError}</p>}
 
       {/* Phase 2 — Chart Mirror Layer.
           Compact status bar between the header and the canvas. Shows the
@@ -1074,11 +1213,49 @@ export function ARXNativeChart({
         </span>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2" role="toolbar" aria-label="Chart view controls">
+        <div className="flex flex-wrap items-center gap-1">
+          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.goToLatest?.()} title="Return to latest candles (End)">
+            <ArrowRightToLine className="mr-1 h-3.5 w-3.5" /> Latest
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!hasCandles} onClick={() => adapterRef.current?.fitHistory?.()} title="Fit all loaded history (Home)">Fit history</Button>
+          <label className="ml-1 flex items-center gap-2 text-xs text-zinc-400">Scale<select aria-label="Price scale" className="h-8 rounded border border-zinc-700 bg-zinc-900 px-2 text-zinc-100" value={scaleMode} onChange={event => setPreferences(p => ({...p, scale:event.target.value as typeof p.scale}))}>
+            <option value="linear">Regular price</option><option value="log">Logarithmic</option><option value="percent">Percentage</option><option value="indexed">Indexed to 100</option>
+          </select></label>
+          <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={preferences.inverted === true} onClick={() => setPreferences(p => ({...p,inverted:!p.inverted}))}>Invert scale</Button>
+        </div>
+        <Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={expanded} onClick={() => setExpanded((v) => !v)}>
+          {expanded ? <Minimize2 className="mr-1 h-3.5 w-3.5" /> : <Maximize2 className="mr-1 h-3.5 w-3.5" />}
+          {expanded ? "Exit fullscreen" : "Fullscreen"}
+        </Button>
+      </div>
+      <ChartWorkbenchTools key={chartContext} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
+      <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
+      <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
+        Move the crosshair over a candle to inspect it
+      </output>
+      <output ref={linkStatusRef} aria-label="Linked chart history status" className="block px-3 text-xs text-amber-300 empty:hidden" />
+      <details ref={dataWindowRef} className="border-t border-zinc-800 px-3 py-2 text-xs" onToggle={() => updateLegend(inspectedCandleRef.current)}>
+        <summary className="cursor-pointer text-zinc-400">Data window · study values at the crosshair</summary>
+        <output ref={studyInspectorRef} aria-label="Study values at selected candle" className="mt-2 block font-mono text-[11px] text-zinc-300">Add a study to inspect its values.</output>
+      </details>
       <CardContent className="relative p-0">
         {/* The chart canvas is always mounted so the v5 series handle is stable;
             overlays cover it for loading / empty / error. */}
         <div
           ref={containerRef}
+          tabIndex={0}
+          role="region"
+          aria-label={`${resolvedSymbol} ${timeframe} price chart. Drag or arrow keys to pan; scroll, plus or minus to zoom. Home fits history; End returns to latest candles.`}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.key === "End") { event.preventDefault(); adapterRef.current?.goToLatest?.(); }
+            if (event.key === "Home") { event.preventDefault(); adapterRef.current?.fitHistory?.(); }
+            if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); adapterRef.current?.panBy?.(event.key === "ArrowLeft" ? -0.25 : 0.25); }
+            if (event.key === "+" || event.key === "=") { event.preventDefault(); adapterRef.current?.zoomBy?.(0.75); }
+            if (event.key === "-" || event.key === "_") { event.preventDefault(); adapterRef.current?.zoomBy?.(4/3); }
+          }}
           data-testid="arx-native-canvas"
           className="w-full overflow-hidden"
           style={{ height: effectiveHeight }}

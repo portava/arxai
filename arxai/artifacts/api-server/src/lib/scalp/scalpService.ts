@@ -23,11 +23,14 @@ import {
   type ScannerOpportunity,
   type UniverseId,
 } from "../marketScanner.js";
+import { scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
+import { isCurrentBuild } from "../truth/marketReadEvidence.js";
 import { evaluateScalp } from "./scalpEngine.js";
 import {
   loadSpecInput,
   loadAccountInput,
   candleWindowFor,
+  scalpMarketInputsFor,
   loadExecutionInput,
   currentPriceFor,
   deriveHtfBias,
@@ -183,20 +186,25 @@ export interface ScalpFocusArgs {
 
 /** Focus card: on-demand live read of ONE symbol, evaluated by the engine. */
 export async function evaluateScalpForSymbol(userId: number, args: ScalpFocusArgs): Promise<ScalpResult> {
-  const [spec, account, opp, price, candles, execution, personality] = await Promise.all([
+  const [spec, account, opp, market, execution, personality] = await Promise.all([
     loadSpecInput(userId, args.symbol),
     loadAccountInput(userId),
     scanSymbolTimeframe(args.symbol, SCALP_TIMEFRAME),
-    currentPriceFor(args.symbol),
-    candleWindowFor(args.symbol),
+    scalpMarketInputsFor(args.symbol),
     loadExecutionInput(userId),
     loadSymbolPersonality(userId, args.symbol),
   ]);
 
+  const { price, candles } = market;
   let scanner: ScalpScannerInput | null = null;
-  if (opp) {
+  let patternImpact: ScalpPatternImpact | null = null;
+  if (opp && market.evidence && opp.symbol === args.symbol && opp.timeframe === SCALP_TIMEFRAME &&
+      opp.featureSnapshot?.computedAt === market.evidence.lastClosedCandleAt && scannerRowSourceIdentity(opp) === market.evidence.sourceIdentity && isCurrentBuild(opp.generatedAt, Date.now())) {
     const [decorated] = await decorateOpportunitiesWithNewsRisk([opp]);
     scanner = oppToScannerInput((decorated ?? opp) as DecoratedOpportunity);
+    // A downgrade is still a factual claim about this market context. Never
+    // fold a rejected source/bar's pattern back in through an independent input.
+    patternImpact = oppToScalpPatternImpact(opp.patternImpact);
   }
 
   const input: ScalpEngineInput = {
@@ -215,7 +223,7 @@ export async function evaluateScalpForSymbol(userId: number, args: ScalpFocusArg
     symbolPersonality: personality
       ? { qualityBias: personality.qualityBias, minQualityDelta: personality.minQualityDelta }
       : null,
-    patternImpact: opp ? oppToScalpPatternImpact(opp.patternImpact) : null,
+    patternImpact,
   };
   let result = evaluateScalp(input);
 
@@ -258,6 +266,7 @@ export async function evaluateScalpForSymbol(userId: number, args: ScalpFocusArg
     };
   }
 
+  result.marketEvidence = market.evidence ? { ...market.evidence, userId } : null;
   return await attachScalpAdvisory(result);
 }
 

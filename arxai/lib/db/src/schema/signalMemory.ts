@@ -11,7 +11,12 @@ import {
 // Signal Intelligence Core (Task #194) — per-user market memory for the Ruby
 // Market Edge "what changed since last read" diff.
 //
-// One row per (user_id, symbol, timeframe). The service loads the row to build
+// One row per (user_id, symbol, private context key). The text `timeframe` column
+// now stores source-v1:[canonical timeframe, provider, opaque source identity].
+// Public signal DTOs retain their canonical timeframe. Bare legacy timeframe
+// rows are preserved history, never source-bound lifecycle evidence. Only the
+// signal intelligence service interprets this private key; no migration needed.
+// The service loads the row to build
 // the pure `PreviousSignalSnapshot`, computes the fresh signal, then UPSERTs the
 // new snapshot back. Strictly PER-USER: every read is scoped by user_id and no
 // row from one user is ever returned to another.

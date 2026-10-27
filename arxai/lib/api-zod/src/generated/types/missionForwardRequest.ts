@@ -7,7 +7,7 @@
  */
 
 /**
- * Phase 9 forward-test request. Aggregates the mission's OWN closed trade drafts (real outcomes); all fields optional (derived from the drafts).
+ * Aggregate the mission's own closed drafts. Optional fields are exact source filters, never display labels. Unfiltered mixed contexts are labelled Mixed.
 
  */
 export interface MissionForwardRequest {

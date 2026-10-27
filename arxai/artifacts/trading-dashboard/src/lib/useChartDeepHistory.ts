@@ -11,13 +11,15 @@
 // no balances, no fills. Never fabricates a bar — older candles come solely from
 // the backend deep-history layer; on a provider ceiling we stop and report.
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchChartHistory } from "@/lib/chartCandlesQuery";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { fetchChartHistory, type ChartHistoryPage } from "@/lib/chartCandlesQuery";
 import type { Candle } from "@/components/scanner/scannerCandleAdapter";
 
 export interface ChartDeepHistoryState {
   /** Older candles accumulated in front of the newest window (epoch-ms, ascending). */
   olderCandles: Candle[];
+  /** Actual producer evidence retained for optional historical analysis. */
+  analysisEvidence: ChartHistoryPage["historyEvidence"];
   /** True while a back-page fetch is in flight. */
   loading: boolean;
   /** Older bars may still exist (cache or a deep-cursor provider). */
@@ -53,7 +55,11 @@ export function useChartDeepHistory(
   symbol: string,
   apiTf: string,
   enabled = true,
+  source: string | null = null,
+  evidenceIdentity: string | null = null,
+  requireEvidence = false,
 ): ChartDeepHistoryState {
+  const sourceIdentity = JSON.stringify([source, evidenceIdentity, requireEvidence]);
   const [olderCandles, setOlderCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -62,6 +68,10 @@ export function useChartDeepHistory(
   const [coverageDays, setCoverageDays] = useState<number | null>(null);
   const [depthTargetDays, setDepthTargetDays] = useState(0);
   const [loadedAny, setLoadedAny] = useState(false);
+  const [analysisEvidence, setAnalysisEvidence] = useState<ChartHistoryPage["historyEvidence"]>(null);
+  const analysisRefused = useRef(false);
+  const analysisObservations = useRef(new Map<number,string>());
+  const [stateIdentity, setStateIdentity] = useState({ symbol, apiTf, sourceIdentity });
 
   // The source pinned by the first page keeps the whole series coherent.
   const sourceRef = useRef<string | null>(null);
@@ -69,11 +79,22 @@ export function useChartDeepHistory(
   const cursorRef = useRef<string | null>(null);
   // Guards against overlapping fetches independent of the async state setter.
   const inFlightRef = useRef(false);
+  const generationRef = useRef(0);
+  const requestRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(false);
+  const identityRef = useRef({ symbol, apiTf, sourceIdentity, source });
 
   const reset = useCallback(() => {
-    sourceRef.current = null;
+    if (!mountedRef.current) return;
+    // Invalidate before abort: even clients that finish after cancellation may
+    // never change another series or clear a newer request's in-flight guard.
+    generationRef.current++;
+    requestRef.current?.abort();
+    requestRef.current = null;
+    sourceRef.current = identityRef.current.source;
     cursorRef.current = null;
     inFlightRef.current = false;
+    setStateIdentity(identityRef.current);
     setOlderCandles([]);
     setLoading(false);
     setHasMore(true);
@@ -82,21 +103,44 @@ export function useChartDeepHistory(
     setCoverageDays(null);
     setDepthTargetDays(0);
     setLoadedAny(false);
+    setAnalysisEvidence(null);
+    analysisRefused.current = false;
+    analysisObservations.current.clear();
   }, []);
 
   // Reset whenever the series identity changes so pages never cross symbols/tfs.
-  useEffect(() => {
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    identityRef.current = { symbol, apiTf, sourceIdentity, source };
     reset();
-  }, [symbol, apiTf, reset]);
+    return () => {
+      mountedRef.current = false;
+      generationRef.current++;
+      requestRef.current?.abort();
+      requestRef.current = null;
+      inFlightRef.current = false;
+    };
+  }, [symbol, apiTf, sourceIdentity, source, reset]);
 
   const loadOlder = useCallback(
     (oldestLoadedIso: string | null) => {
-      if (!enabled || inFlightRef.current) return;
+      if (!mountedRef.current || !enabled || inFlightRef.current) return;
+      // A renderer may retain a prior series' reach-start callback briefly.
+      if (identityRef.current.symbol !== symbol || identityRef.current.apiTf !== apiTf || identityRef.current.sourceIdentity !== sourceIdentity) return;
       if (!hasMore) return;
       const before = cursorRef.current ?? oldestLoadedIso;
       if (!before) return; // nothing on screen yet to page behind
-
+      if (requireEvidence && (!source || !evidenceIdentity)) {
+        setHasMore(false);
+        setProviderCapped(true);
+        setLimitationReason("Older history is unavailable until the chart's data-source identity can be verified.");
+        return;
+      }
       inFlightRef.current = true;
+      const generation = generationRef.current;
+      const controller = new AbortController();
+      requestRef.current = controller;
+      const isCurrent = () => mountedRef.current && generationRef.current === generation;
       setLoading(true);
       setLoadedAny(true);
 
@@ -108,11 +152,51 @@ export function useChartDeepHistory(
             limit: 500,
             before,
             source: sourceRef.current,
+            ...(evidenceIdentity ? { sourceIdentity: evidenceIdentity } : {}),
+            signal: controller.signal,
           });
+          if (!isCurrent()) return;
+          if (source != null && page.source !== source) {
+            setHasMore(false);
+            setProviderCapped(true);
+            setLimitationReason("Older history did not match the chart's data source.");
+            return;
+          }
+          if ((requireEvidence || evidenceIdentity != null) && (!page.historyEvidence
+            || page.historyEvidence.symbol !== symbol || page.historyEvidence.timeframe !== apiTf
+            || page.historyEvidence.source !== source || page.historyEvidence.sourceIdentity !== evidenceIdentity)) {
+            setHasMore(false);
+            setProviderCapped(true);
+            setLimitationReason(page.limitationReason ?? "Older history could not verify the chart's original data source.");
+            return;
+          }
           if (page.source) sourceRef.current = page.source;
+          // Retain producer evidence, never stamp the newest feed's identity
+          // onto an earlier page. Unattested pages remain display-only.
+          if (page.candles.length > 0) {
+            const observed = page.historyEvidence;
+            const unit = apiTf.match(/^(M|H|D|W)(\d+)$/);
+            const interval = apiTf === "MN1" ? 2592000 : unit ? Number(unit[2]) * ({M:60,H:3600,D:86400,W:604800}[unit[1] as "M"] ?? 0) : 0;
+            const closedThrough = observed ? Date.parse(observed.lastClosedCandleAt) : NaN;
+            let disagreement = false;
+            for (let i=0;i<page.candles.length;i++) {
+              const bar=page.candles[i]!, value=JSON.stringify([bar.open,bar.high,bar.low,bar.close]);
+              const previous=analysisObservations.current.get(bar.time);
+              if (!Number.isFinite(bar.time) || bar.time+interval*1000>closedThrough
+                || (i>0 && bar.time<=page.candles[i-1]!.time) || (previous!=null && previous!==value)) disagreement=true;
+              analysisObservations.current.set(bar.time,value);
+            }
+            if (!observed || observed.scope !== "public_provider" || !interval || !Number.isFinite(closedThrough)
+              || closedThrough>Date.now() || disagreement) {
+              analysisRefused.current = true;
+              setAnalysisEvidence(null);
+            } else if (!analysisRefused.current) {
+              setAnalysisEvidence(previous => previous && Date.parse(previous.lastClosedCandleAt) > Date.parse(observed.lastClosedCandleAt) ? previous : observed);
+            }
+          }
           cursorRef.current = page.nextBefore;
           if (page.candles.length > 0) {
-            setOlderCandles((prev) => dedupeAscending(prev, page.candles));
+            setOlderCandles((prev) => isCurrent() ? dedupeAscending(prev, page.candles) : prev);
           }
           setHasMore(page.hasMoreHistory && page.nextBefore != null);
           setProviderCapped(page.providerLimitReached);
@@ -122,25 +206,32 @@ export function useChartDeepHistory(
         } catch {
           // Network/parse failure: stop paging rather than silently retrying in a
           // loop. The chart keeps the bars it already has; nothing is fabricated.
-          setHasMore(false);
+          if (isCurrent()) setHasMore(false);
         } finally {
-          inFlightRef.current = false;
-          setLoading(false);
+          if (isCurrent()) {
+            requestRef.current = null;
+            inFlightRef.current = false;
+            setLoading(false);
+          }
         }
       })();
     },
-    [enabled, hasMore, symbol, apiTf],
+    [enabled, hasMore, symbol, apiTf, sourceIdentity, source, evidenceIdentity, requireEvidence],
   );
 
+  // Never expose the previous instrument's accumulated bars during the render
+  // before its layout-effect reset. Both chart renderers share this contract.
+  const currentState = stateIdentity.symbol === symbol && stateIdentity.apiTf === apiTf && stateIdentity.sourceIdentity === sourceIdentity;
   return {
-    olderCandles,
-    loading,
-    hasMore,
-    providerCapped,
-    limitationReason,
-    coverageDays,
-    depthTargetDays,
-    loadedAny,
+    olderCandles: currentState ? olderCandles : [],
+    analysisEvidence: currentState ? analysisEvidence : null,
+    loading: currentState ? loading : false,
+    hasMore: currentState ? hasMore : true,
+    providerCapped: currentState ? providerCapped : false,
+    limitationReason: currentState ? limitationReason : null,
+    coverageDays: currentState ? coverageDays : null,
+    depthTargetDays: currentState ? depthTargetDays : 0,
+    loadedAny: currentState ? loadedAny : false,
     loadOlder,
     reset,
   };

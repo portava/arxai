@@ -7,6 +7,7 @@
  */
 import type { Candle } from "./candle";
 import type { ChartHistoryResponseAssetClass } from "./chartHistoryResponseAssetClass";
+import type { ChartHistoryResponseHistoryEvidence } from "./chartHistoryResponseHistoryEvidence";
 import type { ChartHistoryResponseStatus } from "./chartHistoryResponseStatus";
 import type { ChartHistoryResponseTimeframe } from "./chartHistoryResponseTimeframe";
 
@@ -24,6 +25,11 @@ export interface ChartHistoryResponse {
    * @nullable
    */
   source: string | null;
+  /**
+   * Actual producer evidence for the returned historical page; absent legacy evidence is never inferred from current account settings.
+   * @nullable
+   */
+  historyEvidence?: ChartHistoryResponseHistoryEvidence;
   /** Ascending by time. */
   candles: Candle[];
   /** live/stale apply only to the newest window; a page reached via the `before` cursor is always historical_only; unavailable = no source/candles.

@@ -221,6 +221,8 @@ export interface ScalpEntryZone {
 
 /** The single normalized object shared by UI, Ruby, and the trade modal. */
 export interface ScalpResult {
+  /** Focus reads carry their actual M5/provider/user evidence. */
+  marketEvidence?: import("@workspace/domain/truth").TruthReadEvidence | null;
   symbol: string;
   displayName: string;
   assetClass: string;

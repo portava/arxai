@@ -104,6 +104,7 @@ router.get("/chart/history", async (req, res) => {
       limit: req.query["limit"] != null ? Number(req.query["limit"]) : 500,
       before: req.query["before"],
       source: req.query["source"],
+      sourceIdentity: req.query["sourceIdentity"],
     });
   } catch (err) {
     req.log.warn({ err }, "invalid chart history request");
@@ -120,6 +121,7 @@ router.get("/chart/history", async (req, res) => {
     limit: q.limit,
     before: q.before ?? null,
     source: q.source ?? null,
+    expectedSourceIdentity: q.sourceIdentity ?? null,
   });
   res.json(out);
 });

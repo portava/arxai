@@ -8,7 +8,7 @@
     "ss:smoke": "tsx ./src/ss-smoke.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:ci": "tsx ./src/typecheckCi.ts",
-    "ci:guards": "tsx ./src/ci/run-all.ts",
+    "ci:guards": "tsx ./src/ci/run-all.ts && tsx ./src/ci/check-master-live-bridge-binding.test.ts",
     "ci:integration": "tsx ./src/ci/runIntegrationCiTests.ts",
     "ci:integration-inprocess": "tsx ./src/ci/runIntegrationInProcessTests.ts",
     "test:unified-live-readiness": "tsx ./src/unifiedLiveReadinessDecisionTest.ts",

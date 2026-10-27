@@ -15,16 +15,15 @@
 // - dispatch ≠ fill. A DISPATCHED row means the command reached the bridge. A
 //   row becomes FILLED ONLY when a real brokerTicket + LIVE_FILLED arrives via
 //   reconcile. Fills are never fabricated.
-// - Agent-layer exactly-once: the PENDING_TICKET row is inserted FIRST with a
-//   deterministic idempotencyKey (`decision:<id>`); the partial-unique index
-//   over active states turns a duplicate into SKIPPED_DUPLICATE.
+// - Atomic agent admission: PENDING_TICKET reserves concurrency/daily capacity
+//   before submission. Agent-row locking serializes distinct decisions; a
+//   decision key stays consumed after terminal outcomes. Unknowns retain slots.
 // - TOCTOU: the kill switch is re-checked immediately before dispatch.
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   db,
   selfTradeAgentExecutionsTable,
-  arxLiveCommandsTable,
   type SelfTradeAgent,
   type SelfTradeAgentSettings,
   type SelfTradeAgentLedger,
@@ -39,7 +38,6 @@ import {
 import { logger } from "../logger.js";
 import { submitInstantTrade } from "../tradeEngine/pipeline.js";
 import { routeQuote } from "../data/marketDataRouter.js";
-import { computeRealizedPnlUsd, isRealizedPnlIngestible } from "../live/realizedPnl.js";
 import {
   FX_STANDARD_LOT_UNITS,
   isForexPair,
@@ -47,6 +45,7 @@ import {
   resolveQuoteToAccountFx,
 } from "../mt5/contractSize.js";
 import { getAccountCurrency } from "../live/accountCurrency.js";
+import { reserveAgentEntry } from "./entryReservation.js";
 import { evaluateAgentExecution } from "./executionGate.js";
 import { assertAgentNotKilled } from "./killSwitchGate.js";
 import { writeSelfTradeAudit } from "./audit.js";
@@ -335,37 +334,21 @@ export async function executeAgentDecision(
     return { status: "BLOCKED", blockReason, action: "BLOCK" };
   }
 
-  // Insert the PENDING_TICKET row FIRST (agent-layer exactly-once). A duplicate
-  // active row for the same (agentId, idempotencyKey) is rejected by the partial
-  // unique index → SKIPPED_DUPLICATE.
-  let execRow: SelfTradeAgentExecution | undefined;
+  // Atomically reserve per-agent concurrency and daily headroom using fresh
+  // identity/settings/funding/decision rows, before the pipeline can see it.
+  let execRow: SelfTradeAgentExecution;
   try {
-    const [row] = await db
-      .insert(selfTradeAgentExecutionsTable)
-      .values({
-        agentId: agent.id,
-        agentKey: agent.agentKey,
-        decisionId: decision.id,
-        cycleId: decision.cycleId,
-        symbol: decision.symbol,
-        side,
-        autonomyLevel: agent.autonomyLevel,
-        mode: agent.mode,
-        executingUserId,
-        intendedVolume: lotResult.lot,
-        slPrice: thesis.stopLoss ?? null,
-        tpPrice: thesis.takeProfits[0]?.from ?? null,
-        idempotencyKey: `decision:${decision.id}`,
-        status: "PENDING_TICKET",
-      })
-      .returning();
-    execRow = row;
+    const reservation = await reserveAgentEntry({ agent, settings, ledger: input.ledger,
+      decision, executingUserId, actorUserId, actorRole, side, volume: lotResult.lot,
+      stopLoss: thesis.stopLoss ?? null, takeProfit: thesis.takeProfits[0]?.from ?? null });
+    if (!reservation.ok) return {
+      status: reservation.duplicate ? "SKIPPED_DUPLICATE" : "BLOCKED",
+      blockReason: reservation.reason, action: verdict.action,
+    };
+    execRow = reservation.execution;
   } catch (err) {
-    logger.warn({ err, decisionId: decision.id }, "self-trade: duplicate execution suppressed");
-    return { status: "SKIPPED_DUPLICATE", action: verdict.action };
-  }
-  if (!execRow) {
-    return { status: "SKIPPED_DUPLICATE", action: verdict.action };
+    logger.error({ err, decisionId: decision.id }, "self-trade: entry reservation unavailable");
+    return { status: "BLOCKED", blockReason: "ENTRY_RESERVATION_UNAVAILABLE", action: "BLOCK" };
   }
 
   // TOCTOU: re-check the kill switch immediately before dispatch.
@@ -378,7 +361,8 @@ export async function executeAgentDecision(
     await db
       .update(selfTradeAgentExecutionsTable)
       .set({ status: "BLOCKED", blockReason: killNow.reason ?? "KILL_SWITCH_ENGAGED", updatedAt: new Date() })
-      .where(eq(selfTradeAgentExecutionsTable.id, execRow.id));
+      .where(and(eq(selfTradeAgentExecutionsTable.id, execRow.id),
+        eq(selfTradeAgentExecutionsTable.status, "PENDING_TICKET")));
     await writeSelfTradeAudit(db, {
       agentId: agent.id,
       eventType: "EXECUTION_BLOCKED_TOCTOU",
@@ -430,6 +414,7 @@ export async function executeAgentDecision(
       selfTradeAgentId: agent.id,
       selfTradeDecisionId: decision.id,
       selfTradeAgentKey: agent.agentKey,
+      selfTradeExecutionId: execRow.id,
     },
   });
 
@@ -437,8 +422,14 @@ export async function executeAgentDecision(
     const blockReason = res.primaryReason ?? res.error;
     await db
       .update(selfTradeAgentExecutionsTable)
-      .set({ status: "BLOCKED", blockReason, updatedAt: new Date() })
-      .where(eq(selfTradeAgentExecutionsTable.id, execRow.id));
+      .set({
+        // A failure after draft creation can still be unknown at the broker.
+        // Keep capacity until reconciliation proves non-execution.
+        status: res.commandId ? "PENDING_TICKET" : "BLOCKED",
+        commandId: res.commandId ?? null, blockReason, updatedAt: new Date(),
+      })
+      .where(and(eq(selfTradeAgentExecutionsTable.id, execRow.id),
+        eq(selfTradeAgentExecutionsTable.status, "PENDING_TICKET")));
     return { status: "BLOCKED", executionId: execRow.id, blockReason, action: side };
   }
 
@@ -448,7 +439,8 @@ export async function executeAgentDecision(
     await db
       .update(selfTradeAgentExecutionsTable)
       .set({ commandId: res.commandId ?? null, updatedAt: new Date() })
-      .where(eq(selfTradeAgentExecutionsTable.id, execRow.id));
+      .where(and(eq(selfTradeAgentExecutionsTable.id, execRow.id),
+        eq(selfTradeAgentExecutionsTable.status, "PENDING_TICKET")));
     return { status: "PREPARED", executionId: execRow.id, commandId: res.commandId, action: side };
   }
 
@@ -456,125 +448,12 @@ export async function executeAgentDecision(
   await db
     .update(selfTradeAgentExecutionsTable)
     .set({ status: "DISPATCHED", commandId: res.commandId ?? null, openedAt: new Date(), updatedAt: new Date() })
-    .where(eq(selfTradeAgentExecutionsTable.id, execRow.id));
+    .where(and(eq(selfTradeAgentExecutionsTable.id, execRow.id),
+      eq(selfTradeAgentExecutionsTable.status, "PENDING_TICKET")));
   return { status: "DISPATCHED", executionId: execRow.id, commandId: res.commandId, action: side };
 }
 
-export interface ReconcileResult {
-  filled: number;
-  rejected: number;
-  closed: number;
-  expired: number;
-}
-
-/**
- * Reconcile DISPATCHED / FILLED executions against their REAL arx_live_commands
- * outcomes. dispatch ≠ fill: a DISPATCHED row only becomes FILLED on a real
- * LIVE_FILLED + brokerTicket. Close P/L is computed ONLY from genuine open +
- * close fill prices (never fabricated).
- */
-export async function reconcileAgentExecutions(agentId: number): Promise<ReconcileResult> {
-  const result: ReconcileResult = { filled: 0, rejected: 0, closed: 0, expired: 0 };
-
-  const active = await db
-    .select()
-    .from(selfTradeAgentExecutionsTable)
-    .where(eq(selfTradeAgentExecutionsTable.agentId, agentId));
-
-  for (const e of active) {
-    // ── Resolve the entry outcome for DISPATCHED rows ──────────────────────
-    if (e.status === "DISPATCHED" && e.commandId) {
-      const [cmd] = await db
-        .select()
-        .from(arxLiveCommandsTable)
-        .where(eq(arxLiveCommandsTable.commandId, e.commandId))
-        .limit(1);
-      if (!cmd) continue;
-      if (cmd.status === "LIVE_FILLED" && cmd.brokerTicket) {
-        await db
-          .update(selfTradeAgentExecutionsTable)
-          .set({
-            status: "FILLED",
-            brokerTicket: cmd.brokerTicket,
-            fillPrice: cmd.fillPrice ?? null,
-            filledAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(selfTradeAgentExecutionsTable.id, e.id));
-        result.filled++;
-      } else if (cmd.status === "LIVE_REJECTED" || cmd.status === "LIVE_FAILED") {
-        await db
-          .update(selfTradeAgentExecutionsTable)
-          .set({ status: "REJECTED", blockReason: cmd.rejectionReason ?? cmd.brokerMessage ?? "LIVE_REJECTED", updatedAt: new Date() })
-          .where(eq(selfTradeAgentExecutionsTable.id, e.id));
-        result.rejected++;
-      } else if (cmd.status === "LIVE_BLOCKED") {
-        await db
-          .update(selfTradeAgentExecutionsTable)
-          .set({ status: "BLOCKED", blockReason: cmd.rejectionReason ?? "LIVE_BLOCKED", updatedAt: new Date() })
-          .where(eq(selfTradeAgentExecutionsTable.id, e.id));
-      } else if (cmd.status === "LIVE_EXPIRED") {
-        await db
-          .update(selfTradeAgentExecutionsTable)
-          .set({ status: "EXPIRED", blockReason: "LIVE_EXPIRED", updatedAt: new Date() })
-          .where(eq(selfTradeAgentExecutionsTable.id, e.id));
-        result.expired++;
-      }
-      continue;
-    }
-
-    // ── Resolve close for FILLED rows that issued a close command ──────────
-    if (e.status === "FILLED") {
-      const mgmt = (e.managementState ?? {}) as { closeCommandId?: string };
-      if (!mgmt.closeCommandId) continue;
-      const [closeCmd] = await db
-        .select()
-        .from(arxLiveCommandsTable)
-        .where(eq(arxLiveCommandsTable.commandId, mgmt.closeCommandId))
-        .limit(1);
-      if (!closeCmd) continue;
-      const closedOk =
-        (closeCmd.status === "LIVE_FILLED" || closeCmd.status === "LIVE_CLOSED") &&
-        closeCmd.fillPrice != null;
-      if (!closedOk) continue;
-
-      // P0-2 — size the close from broker truth for THIS user's symbol spec.
-      // The close command carries the authoritative dispatching user.
-      const pnlUserId = closeCmd.userId ?? e.executingUserId;
-      const sizing = pnlUserId != null
-        ? await resolveContractSize(pnlUserId, e.symbol)
-        : { contractSize: null, profitCurrency: null, source: null, reason: null } as const;
-      const accountCurrency = pnlUserId != null ? await getAccountCurrency(pnlUserId) : "USD";
-      const fx = resolveQuoteToAccountFx({
-        symbol: e.symbol,
-        profitCurrency: sizing.profitCurrency,
-        accountCurrency,
-        closePrice: closeCmd.fillPrice ?? 0,
-      });
-      const pnl = computeRealizedPnlUsd({
-        side: e.side as "BUY" | "SELL",
-        requestedVolume: e.intendedVolume,
-        openFillPrice: e.fillPrice,
-        closeFillPrice: closeCmd.fillPrice,
-        contractSize: sizing.contractSize,
-        quoteToAccountFx: fx.factor,
-      });
-      await db
-        .update(selfTradeAgentExecutionsTable)
-        .set({
-          status: "CLOSED",
-          closePrice: closeCmd.fillPrice ?? null,
-          realizedPnl: isRealizedPnlIngestible(pnl) ? pnl.realizedPlUsd : null,
-          closedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(selfTradeAgentExecutionsTable.id, e.id));
-      result.closed++;
-    }
-  }
-
-  return result;
-}
+export { reconcileAgentExecutions, type ReconcileResult } from "./agentReconciliation.js";
 
 // Re-exported so callers can scope reconcile to one agent's active rows.
 export type { SelfTradeAgentExecution };

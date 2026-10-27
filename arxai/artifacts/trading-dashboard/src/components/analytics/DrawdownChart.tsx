@@ -1,13 +1,14 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { formatBacktestPriceUnits } from "@workspace/domain/backtest";
 import type { EquityPoint } from "./types";
 
-export function DrawdownChart({ points, maxDrawdown }: { points: EquityPoint[]; maxDrawdown: number }) {
+export function DrawdownChart({ points, maxDrawdown, unit = "$" }: { points: EquityPoint[]; maxDrawdown: number; unit?: "$" | "price units" }) {
   if (points.length === 0) return null;
   return (
     <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold text-red-200">Drawdown</h3>
-        <span className="text-[11px] text-red-300">Peak-to-trough: ${maxDrawdown.toFixed(2)}</span>
+        <span className="text-[11px] text-red-300">Peak-to-trough: {unit === "$" ? "$" : ""}{unit === "price units" ? formatBacktestPriceUnits(maxDrawdown) : maxDrawdown.toFixed(2)}{unit === "price units" ? " price units" : ""}</span>
       </div>
       <div className="h-44">
         <ResponsiveContainer width="100%" height="100%">

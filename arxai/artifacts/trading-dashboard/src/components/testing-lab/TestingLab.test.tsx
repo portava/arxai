@@ -15,7 +15,11 @@ import TestingLab from "@/pages/testing-lab";
 // useQuery → honest-empty (no runs / no forward results) for every tab.
 // useQueries (Comparison overlay) → no selected runs → empty results array.
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: undefined }),
+  useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
+    data: queryKey[0] === "backtest-runs" ? { runs: [] }
+      : queryKey[0] === "forward-testing-results" ? { shadowTradesTracked: 0, totalShadowDecisions: 0, winRate: 0, avgR: 0 }
+        : undefined,
+  }),
   useQueries: () => [],
 }));
 

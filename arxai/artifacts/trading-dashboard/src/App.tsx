@@ -11,6 +11,7 @@ import { SymbolProvider } from "@/lib/symbol-context";
 import { OnboardingProvider } from "@/components/onboarding/OnboardingProvider";
 import { AssistantNameProvider } from "@/lib/assistant-name";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChartReplayBoundary } from "@/components/chart-replay/ChartReplayBoundary";
 import { AuthGate } from "@/components/auth/AuthGate";
 import { useActivityPing } from "@/hooks/useActivityPing";
 
@@ -472,7 +473,7 @@ function App() {
               <PerfObserverMount />
               <AssistantNameProvider>
                 <OnboardingProvider>
-                  <Router />
+                  <ChartReplayBoundary><Router /></ChartReplayBoundary>
                 </OnboardingProvider>
               </AssistantNameProvider>
             </AuthGate>

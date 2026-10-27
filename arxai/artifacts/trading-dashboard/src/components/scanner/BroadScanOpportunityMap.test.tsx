@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import type {
   MeOpportunityMapResp,
   OpportunityMapResult,
@@ -21,9 +21,13 @@ import type {
 // The categorizer's own determinism + no-fabrication is proven in
 // scannerExplanationTest; this guards the renderer + its query wiring.
 
+vi.mock("@/hooks/useCurrentUser", () => ({ useCurrentUser: () => ({ user: { id: 1 } }) }));
 const mockUseGetMeOpportunityMap = vi.fn();
+const mockUseGetWatchlists = vi.fn();
 
 vi.mock("@workspace/api-client-react", () => ({
+  useGetWatchlists: () => mockUseGetWatchlists(),
+  getGetWatchlistsQueryKey: () => ["watchlists"],
   useGetMeOpportunityMap: (...args: unknown[]) => mockUseGetMeOpportunityMap(...args),
   getGetMeOpportunityMapQueryKey: () => ["get-me-opportunity-map"],
 }));
@@ -102,6 +106,7 @@ function mapResult(rows: OpportunityMapRow[]): OpportunityMapResult {
 function resp(over: Partial<MeOpportunityMapResp> = {}): MeOpportunityMapResp {
   return {
     universe: "all",
+    generatedAt: new Date().toISOString(),
     timeframe: "M5",
     map: mapResult([
       row({}),
@@ -131,13 +136,15 @@ function hookState(over: Record<string, unknown>) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  mockUseGetWatchlists.mockReturnValue({ data: [], isError: false });
   mockUseGetMeOpportunityMap.mockReset();
   mockUseSymbolTruth.mockReset();
   mockUseSymbolTruth.mockReturnValue({ scannerTruth: null });
   mockUseScannerTimeframe.mockReset();
   mockUseScannerTimeframe.mockReturnValue(["15m", () => {}]);
 });
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 // A `useSymbolTruth` return whose consolidated verdict is `verdict` — the exact
 // shape the chart header & Ruby Chart Read read from. Only the field the map
@@ -162,7 +169,7 @@ describe("BroadScanOpportunityMap — honest render states", () => {
 
   it("renders the empty state honestly", () => {
     mockUseGetMeOpportunityMap.mockReturnValue(
-      hookState({ data: resp({ map: mapResult([]) }) }),
+      hookState({ data: resp({ generatedAt: undefined, map: mapResult([]) }) }),
     );
     render(<BroadScanOpportunityMap marketGroup="all" />);
     expect(screen.getByTestId("opportunity-map-empty")).toBeTruthy();
@@ -290,6 +297,7 @@ describe("BroadScanOpportunityMap — honest render states", () => {
     mockUseGetMeOpportunityMap.mockReturnValue(
       hookState({
         data: resp({
+          map: mapResult([row(), best]),
           bestVsSelected: {
             hasCleanerAlternative: true,
             selectedSymbol: "EURUSD",
@@ -461,7 +469,7 @@ describe("Task #605 — onScanned reports real scan-existence to the page", () =
   it("fires onScanned(false) for a genuine no-scan payload (no generatedAt, zero scanned)", () => {
     const onScanned = vi.fn();
     mockUseGetMeOpportunityMap.mockReturnValue(
-      hookState({ data: resp({ map: mapResult([]) }) }),
+      hookState({ data: resp({ generatedAt: undefined, map: mapResult([]) }) }),
     );
     render(<BroadScanOpportunityMap marketGroup="all" onScanned={onScanned} />);
     expect(onScanned).toHaveBeenCalledWith(false);
@@ -1107,7 +1115,7 @@ describe("BroadScanOpportunityMap — a SELECTED degraded opportunity stays cont
           bestVsSelected: {
             hasCleanerAlternative: true,
             selectedSymbol: "GBPUSD",
-            selectedEdge: 80,
+            selectedEdge: null,
             best: live,
             message:
               "GBPUSD isn't on a live-confirmed feed right now — EURUSD has the cleaner live read.",
@@ -1167,7 +1175,7 @@ describe("BroadScanOpportunityMap — a SELECTED degraded opportunity stays cont
           bestVsSelected: {
             hasCleanerAlternative: false,
             selectedSymbol: "GBPUSD",
-            selectedEdge: 80,
+            selectedEdge: null,
             best: null,
             message:
               "GBPUSD is the only read right now and its feed isn't live-confirmed — historical context only.",
@@ -1386,5 +1394,240 @@ describe("Task #609 — BroadScanOpportunityMap survives a half-loaded payload",
     mockUseGetMeOpportunityMap.mockReturnValue(hookState({ isError: true }));
     rerender(<BroadScanOpportunityMap marketGroup="all" />);
     expect(screen.getByTestId("opportunity-map-err")).toBeTruthy();
+  });
+});
+
+
+describe("BroadScanOpportunityMap — snapshot freshness", () => {
+  it("expires all directions, scores, best picks and affirmative headers without another response", () => {
+    vi.useFakeTimers();
+    const data = resp();
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-row-direction-EURUSD")).toBeTruthy();
+    expect(screen.getByTestId("opportunity-map-best-picks")).toBeTruthy();
+    act(() => vi.advanceTimersByTime(31_000));
+    expect(screen.getByTestId("opportunity-map-expired")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-row-direction-EURUSD")).toBeNull();
+    expect(screen.queryByTestId("opportunity-row-stats-EURUSD")).toBeNull();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    expect(screen.getByTestId("opportunity-map-cat-READY_NOW").getAttribute("data-group-degraded")).toBe("true");
+    expect(screen.getByTestId("opportunity-map-summary").textContent).toContain("live at last scan");
+  });
+
+  it.each([undefined, "invalid", new Date(Date.now() + 60_000).toISOString()])("withholds readiness for an untrusted scan timestamp: %s", (generatedAt) => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ generatedAt }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-map-expired")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    expect(screen.queryByTestId("opportunity-row-direction-EURUSD")).toBeNull();
+  });
+
+  it("removes cached best picks and comparisons when refresh fails", () => {
+    const best = row();
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ isError: true, data: resp({
+      bestVsSelected: { hasCleanerAlternative: true, best, message: "Cleaner alternative", selectedSymbol: "GBPUSD", selectedEdge: 40 },
+    }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("opportunity-map-err")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    expect(screen.queryByTestId("opportunity-map-best-vs-selected")).toBeNull();
+  });
+
+  it("applies the selected chart feed cap to best picks as well as row cards", () => {
+    mockUseSymbolTruth.mockReturnValue(truthWithVerdict("FEED_LIMITED"));
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([row()]) }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="EURUSD" />);
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    expect(screen.getByTestId("opportunity-map-cat-READY_NOW").getAttribute("data-group-degraded")).toBe("true");
+  });
+
+  it("offers bounded refresh choices and never polls hidden tabs", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    let options = mockUseGetMeOpportunityMap.mock.lastCall?.[1];
+    expect(options.query.refetchInterval).toBe(10_000);
+    expect(options.query.refetchIntervalInBackground).toBe(false);
+    fireEvent.change(screen.getByLabelText("Scanner refresh interval"), { target: { value: "0" } });
+    options = mockUseGetMeOpportunityMap.mock.lastCall?.[1];
+    expect(options.query.refetchInterval).toBe(false);
+  });
+});
+
+
+it.each(["0", "60000"])("refresh mode %s expires cached selected-row actions and recovers only with a newer scan", (interval) => {
+  vi.useFakeTimers();
+  const cached = resp();
+  mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: cached }));
+  const view = render(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="EURUSD" />);
+  fireEvent.change(screen.getByLabelText("Scanner refresh interval"), { target: { value: interval } });
+  expect(screen.getByTestId("opportunity-row-EURUSD").getAttribute("data-actionability")).toBe("READY_NOW");
+  act(() => vi.advanceTimersByTime(31_000));
+  expect(screen.getByTestId("opportunity-row-EURUSD").getAttribute("data-actionability")).toBe("FEED_LIMITED");
+  expect(screen.queryByTestId("opportunity-row-direction-EURUSD")).toBeNull();
+  // A successful request serving the same cached scan is not a new read.
+  mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: { ...cached }, dataUpdatedAt: Date.now() }));
+  view.rerender(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="EURUSD" />);
+  expect(screen.getByTestId("opportunity-map-expired")).toBeTruthy();
+  expect(screen.getByTestId("opportunity-row-EURUSD").getAttribute("data-actionability")).toBe("FEED_LIMITED");
+  mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+  view.rerender(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="EURUSD" />);
+  expect(screen.queryByTestId("opportunity-map-expired")).toBeNull();
+  expect(screen.getByTestId("opportunity-row-EURUSD").getAttribute("data-actionability")).toBe("READY_NOW");
+  expect(screen.getByTestId("opportunity-row-direction-EURUSD")).toBeTruthy();
+});
+
+describe("scanner saved views and honest result filters", () => {
+  it("scopes existing watchlists and explains symbols outside this scan", () => {
+    mockUseGetWatchlists.mockReturnValue({ data: [{ id: 1, name: "Focused", items: [{ symbol: "EURUSD" }, { symbol: "AUDUSD" }] }], isError: false });
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+    render(<BroadScanOpportunityMap marketGroup="forex" />);
+    fireEvent.change(screen.getByLabelText("Scanner watchlist scope"), { target: { value: "1" } });
+    expect(screen.getByTestId("scanner-screen-count").textContent).toBe("1 of 2 results shown");
+    expect(screen.queryByTestId("opportunity-row-USDJPY")).toBeNull();
+    expect(screen.getByTestId("scanner-watchlist-coverage").textContent).toContain("1 watchlist symbols are outside this scan: AUDUSD");
+    expect(screen.getByTestId("opportunity-map-summary").textContent).toContain("2 of 2 scanned");
+  });
+
+  it("fails closed when a selected watchlist read fails, even with old cached membership", () => {
+    mockUseGetWatchlists.mockReturnValue({ data: [{ id: 1, name: "Focused", items: [{ symbol: "EURUSD" }] }], isError: false });
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+    const view = render(<BroadScanOpportunityMap marketGroup="all" />);
+    fireEvent.change(screen.getByLabelText("Scanner watchlist scope"), { target: { value: "1" } });
+    mockUseGetWatchlists.mockReturnValue({ data: [{ id: 1, name: "Focused", items: [{ symbol: "EURUSD" }] }], isError: true });
+    view.rerender(<BroadScanOpportunityMap marketGroup="all" />);
+    expect(screen.getByTestId("scanner-screen-empty")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(screen.getByTestId("opportunity-row-EURUSD")).toBeTruthy();
+  });
+
+  it("hides best picks and the comparison when their candidate is filtered out", () => {
+    const eur = row(), gbp = row({ symbol: "GBPUSD", displayName: "GBPUSD", direction: "SELL" });
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([eur, gbp]),
+      bestVsSelected: { hasCleanerAlternative: true, best: eur, selectedSymbol: "GBPUSD", selectedEdge: 60, message: "Euro is cleaner" } }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    fireEvent.change(screen.getByLabelText("Scanner direction filter"), { target: { value: "SELL" } });
+    expect(screen.getByTestId("opportunity-row-GBPUSD")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    expect(screen.queryByTestId("opportunity-map-best-vs-selected")).toBeNull();
+  });
+
+  it.each(["0", "60000"])("expires a saved Ready view during refresh interval %s and recovers only on a new scan", (interval) => {
+    vi.useFakeTimers(); const start = new Date("2026-10-26T15:00:00Z"); vi.setSystemTime(start);
+    const payload = resp({ generatedAt: start.toISOString() });
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: payload }));
+    const view = render(<BroadScanOpportunityMap marketGroup="forex" />);
+    fireEvent.change(screen.getByLabelText("Scanner refresh interval"), { target: { value: interval } });
+    fireEvent.change(screen.getByLabelText("Scanner readiness filter"), { target: { value: "READY_NOW" } });
+    fireEvent.change(screen.getByLabelText("Scanner view name"), { target: { value: "Ready" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save / replace view" }));
+    act(() => vi.advanceTimersByTime(31_000));
+    expect(screen.getByTestId("scanner-screen-empty")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    fireEvent.change(screen.getByLabelText("Open saved scanner view"), { target: { value: "Ready" } });
+    expect(screen.getByTestId("scanner-screen-empty")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: { ...payload } }));
+    view.rerender(<BroadScanOpportunityMap marketGroup="forex" />);
+    expect(screen.getByTestId("scanner-screen-empty")).toBeTruthy();
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+    view.rerender(<BroadScanOpportunityMap marketGroup="forex" />);
+    expect(screen.getByTestId("opportunity-row-direction-EURUSD")).toBeTruthy();
+  });
+
+  it("saves browser-local filters across remounts, discloses context changes, and deletes a view", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+    const view = render(<BroadScanOpportunityMap marketGroup="forex" />);
+    fireEvent.change(screen.getByLabelText("Find in scanner results"), { target: { value: "EUR" } });
+    fireEvent.change(screen.getByLabelText("Scanner view name"), { target: { value: "My view" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save / replace view" }));
+    view.unmount();
+    render(<BroadScanOpportunityMap marketGroup="crypto" />);
+    // No saved screen silently applies on mount or changes scan ownership.
+    expect(screen.getByTestId("scanner-screen-count").textContent).toBe("2 of 2 results shown");
+    fireEvent.change(screen.getByLabelText("Open saved scanner view"), { target: { value: "My view" } });
+    expect(screen.getByTestId("scanner-screen-count").textContent).toBe("1 of 2 results shown");
+    expect(screen.getByText(/current crypto \/ M5 scan stays selected/)).toBeTruthy();
+    expect(mockUseGetMeOpportunityMap.mock.lastCall?.[0].marketGroup).toBe("crypto");
+    fireEvent.click(screen.getByRole("button", { name: "Delete view" }));
+    expect(localStorage.getItem("arx.scanner.screens.v1")).toContain('"screens":[]');
+  });
+
+  it("does not claim a save when browser storage refuses it", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    const denied = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    try {
+      fireEvent.change(screen.getByLabelText("Scanner view name"), { target: { value: "My view" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save / replace view" }));
+      expect(screen.getByRole("alert").textContent).toContain("could not save");
+      expect(screen.queryByText(/Saved “My view”/)).toBeNull();
+    } finally { denied.mockRestore(); }
+  });
+
+  it("selected feed caps still remove rows from a saved confirmed-data view", () => {
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+    mockUseSymbolTruth.mockReturnValue(truthWithVerdict("MARKET_CLOSED"));
+    render(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="EURUSD" />);
+    fireEvent.change(screen.getByLabelText("Scanner data filter"), { target: { value: "confirmed" } });
+    expect(screen.queryByTestId("opportunity-row-EURUSD")).toBeNull();
+    expect(screen.getByTestId("opportunity-row-USDJPY")).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-map-best-picks")).toBeNull();
+  });
+
+  it("rechecks freshness at export click even before the next display-clock tick", () => {
+    vi.useFakeTimers(); const start = new Date("2026-10-26T15:00:00Z"); vi.setSystemTime(start);
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp() }));
+    render(<BroadScanOpportunityMap marketGroup="all" />);
+    fireEvent.change(screen.getByLabelText("Scanner direction filter"), { target: { value: "BUY" } });
+    // Advance wall time without firing the component's interval.
+    vi.setSystemTime(new Date(start.getTime() + 31_000));
+    fireEvent.click(screen.getByRole("button", { name: "Export 2 rows" }));
+    expect(screen.getByText(/No rows currently match/)).toBeTruthy();
+  });
+
+  it("sorts cards within their readiness group and keeps chart selection read-only", () => {
+    const onPick = vi.fn();
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([
+      row({ symbol: "USDJPY", displayName: "USDJPY", edgeScore: 95 }), row({ edgeScore: 75 }),
+    ]) }) }));
+    render(<BroadScanOpportunityMap marketGroup="all" onPick={onPick} />);
+    fireEvent.change(screen.getByLabelText("Scanner result sort"), { target: { value: "symbol" } });
+    const cards = document.querySelectorAll('[data-testid^="opportunity-row-"][data-actionability]');
+    expect([...cards].map((card) => card.getAttribute("data-testid"))).toEqual(["opportunity-row-EURUSD", "opportunity-row-USDJPY"]);
+    fireEvent.click(screen.getByTestId("opportunity-row-EURUSD"));
+    expect(onPick).toHaveBeenCalledWith("EURUSD");
+  });
+});
+
+it("withholds invalid metric fields from cards and best picks", () => {
+  mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: resp({ map: mapResult([
+    row({ edgeScore: NaN, entryQuality: Infinity, executionQuality: -1 }),
+  ]) }) }));
+  render(<BroadScanOpportunityMap marketGroup="all" />);
+  const card = screen.getByTestId("opportunity-row-EURUSD");
+  expect(card.textContent).not.toMatch(/NaN|Infinity|Feed -1/);
+  expect(screen.getByTestId("opportunity-map-best-picks").textContent).not.toContain("NaN");
+});
+
+describe("comparison selected baseline containment", () => {
+  it.each(["selected chart cap", "expired selected row", "selected row filtered out"])("withholds both-score comparison for %s", (cause) => {
+    const best = row({ symbol: "EURUSD", displayName: "EURUSD", edgeScore: 80 });
+    const selected = row({ symbol: "GBPUSD", displayName: "GBPUSD", edgeScore: 40 });
+    const payload = resp({ map: mapResult([best, selected]), bestVsSelected: {
+      hasCleanerAlternative: true, selectedSymbol: "GBPUSD", selectedEdge: 40, best,
+      message: "EURUSD looks cleaner than GBPUSD right now (edge 80 vs 40).",
+    } });
+    mockUseGetMeOpportunityMap.mockReturnValue(hookState({ data: payload }));
+    const view = render(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="GBPUSD" />);
+    expect(screen.getByTestId("opportunity-map-best-vs-selected").textContent).toContain("80 vs 40");
+    if (cause === "selected chart cap") mockUseSymbolTruth.mockReturnValue(truthWithVerdict("FEED_LIMITED"));
+    if (cause === "expired selected row") Object.assign(selected, { generatedAt: new Date(Date.now() - 31_000).toISOString() });
+    if (cause === "selected row filtered out") fireEvent.change(screen.getByLabelText("Find in scanner results"), { target: { value: "EUR" } });
+    view.rerender(<BroadScanOpportunityMap marketGroup="all" selectedSymbol="GBPUSD" />);
+    expect(screen.queryByTestId("opportunity-map-best-vs-selected")).toBeNull();
+    expect(screen.getByTestId("opportunity-row-direction-EURUSD")).toBeTruthy();
+    expect(screen.getByTestId("opportunity-map-best-picks")).toBeTruthy();
   });
 });

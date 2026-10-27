@@ -195,3 +195,39 @@ describe("RouteAccessGuard — admin / investor containment", () => {
     expect(screen.queryByTestId("button-viewmode-return-admin")).toBeNull();
   });
 });
+
+
+describe("personal Journal route containment", () => {
+  it("renders the approved trader's personal journal", () => {
+    renderAsTrader("/journal");
+    expect(screen.getByTestId(PAGE_TESTID)).toBeTruthy();
+    expect(h.setLocation).not.toHaveBeenCalled();
+  });
+  it("keeps the personal journal outside the pending tier", async () => {
+    renderAsTrader("/journal", { isLoading: false, isApprovedTrader: false });
+    expect(screen.queryByTestId(PAGE_TESTID)).toBeNull();
+    await waitFor(() => expect(h.setLocation).toHaveBeenCalledWith("/"));
+  });
+  it("refuses the operator shadow journal for normal traders", async () => {
+    renderAsTrader("/shadow-journal");
+    expect(screen.queryByTestId(PAGE_TESTID)).toBeNull();
+    await waitFor(() => expect(h.setLocation).toHaveBeenCalledWith("/"));
+  });
+  it("keeps the operator shadow journal available to administrators", () => {
+    h.location = "/shadow-journal";
+    h.viewMode.realIsAdmin = h.viewMode.effectiveIsAdmin = true;
+    h.currentUser = { isLoading: false };
+    h.productRole = { isInvestor: false };
+    render(<RouteAccessGuard><div data-testid={PAGE_TESTID}>Operator journal</div></RouteAccessGuard>);
+    expect(screen.getByTestId(PAGE_TESTID)).toBeTruthy();
+  });
+  it("keeps investors confined to their own portal", async () => {
+    h.location = "/journal";
+    h.viewMode.realIsAdmin = h.viewMode.effectiveIsAdmin = false;
+    h.currentUser = { isLoading: false };
+    h.productRole = { isInvestor: true };
+    render(<RouteAccessGuard><div data-testid={PAGE_TESTID}>Personal journal</div></RouteAccessGuard>);
+    expect(screen.queryByTestId(PAGE_TESTID)).toBeNull();
+    await waitFor(() => expect(h.setLocation).toHaveBeenCalledWith("/investor"));
+  });
+});

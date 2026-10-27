@@ -25,6 +25,7 @@ import {
 import { runDecisionCycle } from "../lib/selfTrade/decisionEngine.js";
 import { getVolatilityMatrix } from "../lib/selfTrade/volatilityMatrixService.js";
 import { runAutonomousCycle } from "../lib/selfTrade/autonomousCycle.js";
+import { managementNote } from "../lib/selfTrade/executionLifecycle.js";
 
 const router = Router();
 
@@ -144,7 +145,7 @@ router.get("/self-trade-ai/executions", requireUser, async (req, res) => {
   const q = execQuery.safeParse(req.query ?? {});
   if (!q.success) { err(res, 400, "INVALID_QUERY", "Invalid query."); return; }
   const executions = await listAgentExecutions(scopeFor(req), q.data.agentId, q.data.limit ?? 100);
-  res.json({ executions });
+  res.json({ executions: executions.map((execution) => ({ ...execution, managementNote: managementNote(execution) })) });
 });
 
 const runCycleInput = z

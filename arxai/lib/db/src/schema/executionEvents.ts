@@ -13,10 +13,11 @@
 //     express a REVOKE; the DB-layer `REVOKE UPDATE, DELETE ON execution_events`
 //     (spec line 705) must be applied on Replit alongside `db push`.
 //   - `unique(command_id, sequence_no)` gives each command a gap-free-ish,
-//     monotonically increasing event order; writers compute the next
-//     sequence_no in the INSERT itself and retry on a unique-violation race.
-//   - Event writes are best-effort evidence: writers try/catch-to-warn and
-//     MUST NEVER fail or delay dispatch/result settlement.
+//     monotonically increasing server observation order. The shared writer locks
+//     the command before reading/inserting the next number. This is not broker
+//     event order and does not require globally gapless serial IDs.
+//   - Result outcome, evidence and critical audit commit atomically. A failed
+//     persistence operation must not be acknowledged as a received result.
 //
 // COLUMNS:
 //   - command_id: arx_live_commands.id (the integer PK, not the uuid text

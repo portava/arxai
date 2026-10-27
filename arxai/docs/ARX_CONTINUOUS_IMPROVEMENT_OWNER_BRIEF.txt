@@ -1,0 +1,66 @@
+Continuously upgrade the scanner, Smart Chart, Truth System, self-trading system, and Profit Mission. Implement, test, research, benchmark, and iterate until the platform demonstrably matches or exceeds leading market competitors across every relevant capability and quality dimension.
+
+Do not stop at suggestions, cosmetic changes, or passing basic tests. Speed, correctness, reliability, and product quality are core requirements.
+
+**Smart Chart: explicitly target MetaTrader 5 and TradingView**
+
+The Smart Chart must reach or exceed the standard of BOTH MetaTrader 5 (MT5) and TradingView. Treat these products as ongoing competitive benchmarks throughout development.
+
+Build a detailed comparison covering chart quality, rendering speed, live updates, historical data, chart types, timeframes, indicators, drawing tools, crosshairs, zooming, scrolling, multi-chart layouts, customization, alerts, trading interactions, accessibility, and stability under heavy use.
+
+Inventory their relevant capabilities and maintain a feature-by-feature parity checklist. Any missing capability, slower interaction, weaker workflow, or reliability gap remains unfinished work. Do not declare the Smart Chart world class until measured results and functional testing support that conclusion. Any exclusions from the comparison must be explicit and approved.
+
+**Check EVERY improvement against market competitors**
+
+For every improvement to ANY system:
+
+1. Identify the leading competing products or approaches for that capability.
+2. Research their current functionality, performance, reliability, and user experience.
+3. Define measurable criteria for matching or beating them.
+4. Implement the improvement.
+5. Rigorously test it against the previous version and those competitive criteria.
+6. If it falls short, investigate, research better approaches, upgrade again, and repeat.
+
+Compare equivalent tasks under comparable conditions. Use direct measurements where available and authoritative documentation where measurement is unavailable. Cite sources. Never invent competitor results or treat unverified claims as proven parity.
+
+Maintain a competitive scorecard covering features, speed, accuracy, usability, reliability, scalability, integration, and operating efficiency. The objective is to match or beat competitors in every relevant dimension—not merely win an average score while concealing weaknesses. Record tradeoffs and unresolved gaps.
+
+**Speed is a top priority**
+
+Every user action should respond in a fraction of a second. Initially require visible feedback within 100 milliseconds at the 95th percentile for local interactions, then pursue lower latency wherever competitors or user experience justify it.
+
+Target consistently smooth chart interaction at 60 frames per second or better on documented reference hardware. Measure frame drops, input latency, rendering time, data-update latency, scanner throughput, signal-processing time, and trading execution latency.
+
+Track median, p95, and p99 results under typical and heavy loads. Measure acknowledgement and actual completion separately. Network or broker delays must remain visible; never disguise incomplete work as success.
+
+Every upgrade must include an appropriate performance regression check. Do not sacrifice correctness, data integrity, or trading safeguards to achieve a faster benchmark.
+
+**System-specific requirements**
+
+- Scanner: Match or exceed leading alternatives in discovery speed, coverage, filtering, ranking, accuracy, alerts, and data freshness.
+- Truth System: Verify source provenance, calculations, signals, timestamps, and system status. Distinguish verified information, estimates, stale data, and unavailable information.
+- Self-trading: Validate execution quality, position sizing, risk controls, duplicate prevention, reconciliation, recovery, and emergency stops.
+- Profit Mission: Improve risk-adjusted outcomes and robustness using realistic fees, spreads, slippage, liquidity, and execution constraints. Evaluate drawdown and out-of-sample performance. Never claim guaranteed profits or proven future returns from backtests.
+
+**Mandatory continuous improvement cycle**
+
+Inspect the codebase and establish reproducible baselines first. Then repeatedly:
+
+Research competitors → identify gaps → define acceptance criteria → implement → test correctness and integrations → benchmark speed and reliability → compare against competitors → fix remaining weaknesses → retest.
+
+Use realistic workloads and test failures, stale feeds, disconnections, malformed responses, rapid interactions, large histories, and concurrent activity. For trading strategies, prevent data leakage and use time-aware out-of-sample or walk-forward evaluation. Record repeated experiments to control overfitting.
+
+Preserve working features and user changes. Retain upgrades only when evidence supports improvement without unacceptable regressions. Do not weaken acceptance criteria or narrow the comparison silently to claim success.
+
+Maintain a durable progress record containing:
+- Baseline, target, and current measurements.
+- Competitors and supporting evidence for each capability.
+- Tests performed and their results.
+- Remaining parity and performance gaps.
+- The next highest-impact improvement.
+
+Work autonomously on development and reversible testing. Use simulation or paper trading for validation. Obtain explicit authorization before enabling live trading, moving real funds, or increasing live risk.
+
+Continue until the competitive and performance targets are demonstrably achieved. If access, data, or execution limits block progress, save an exact checkpoint and identify the blocker. Do not claim completion while targets remain unmet, and do not imply work continues after execution stops.
+
+Provide concise progress updates. Completion requires an evidence-based report showing how every system compares with its competitors and how Smart Chart measures against BOTH MT5 and TradingView.

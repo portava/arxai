@@ -90,7 +90,23 @@ function bestActionOf(r: OpportunityInput, category: OpportunityCategory): strin
   }
 }
 
-function toRow(r: OpportunityInput): OpportunityMapRow {
+function validScore(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 100;
+}
+
+function toRow(input: OpportunityInput): OpportunityMapRow {
+  const invalidScore = ![input.edgeScore, input.entryQuality, input.executionQuality].every(validScore);
+  const contradictoryDirection = (input.recommendedAction === "BUY" || input.recommendedAction === "SELL") &&
+    input.recommendedAction !== input.direction;
+  const r = invalidScore || contradictoryDirection ? {
+    ...input,
+    direction: "NEUTRAL" as const,
+    recommendedAction: "REJECT" as const,
+    edgeScore: 0,
+    entryQuality: 0,
+    executionQuality: validScore(input.executionQuality) ? input.executionQuality : 0,
+    reason: "Scanner inputs are inconsistent — wait for a valid new scan.",
+  } : input;
   const category = categoryOf(r);
   return {
     ...r,
@@ -99,6 +115,20 @@ function toRow(r: OpportunityInput): OpportunityMapRow {
     bestAction: bestActionOf(r, category),
     stageLabel: stageLabelOf(category),
   };
+}
+
+function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Stable ties never depend on provider completion or input enumeration order.
+ * These remain heuristic ranks; none of these scores is a probability. */
+function compareRank(a: OpportunityMapRow, b: OpportunityMapRow): number {
+  return b.edgeScore - a.edgeScore ||
+    CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category) ||
+    b.entryQuality - a.entryQuality || b.executionQuality - a.executionQuality ||
+    compareText(a.symbol, b.symbol) || compareText(a.setupType, b.setupType) ||
+    compareText(a.direction, b.direction);
 }
 
 /** True when a row is a genuine, live, non-avoided candidate for a "best" pick. */
@@ -116,13 +146,13 @@ function pickByKind(
 ): OpportunityMapRow | null {
   const pool = rows.filter((r) => isCandidate(r) && r.kind === kind);
   if (pool.length === 0) return null;
-  return [...pool].sort((a, b) => b.edgeScore - a.edgeScore)[0]!;
+  return [...pool].sort(compareRank)[0]!;
 }
 
 export function categorizeOpportunities(
   inputs: OpportunityInput[],
 ): OpportunityMapResult {
-  const rows = inputs.map(toRow);
+  const rows = inputs.map(toRow).sort(compareRank);
 
   const categories = Object.fromEntries(
     CATEGORY_ORDER.map((c) => [c, [] as OpportunityMapRow[]]),
@@ -130,13 +160,13 @@ export function categorizeOpportunities(
   for (const row of rows) categories[row.category].push(row);
   // Within each bucket, strongest edge first.
   for (const c of CATEGORY_ORDER) {
-    categories[c].sort((a, b) => b.edgeScore - a.edgeScore);
+    categories[c].sort(compareRank);
   }
 
   const candidates = rows.filter(isCandidate);
   const bestScalp =
     candidates.length > 0
-      ? [...candidates].sort((a, b) => b.entryQuality - a.entryQuality)[0]!
+      ? [...candidates].sort((a, b) => b.entryQuality - a.entryQuality || compareRank(a, b))[0]!
       : null;
 
   const best: OpportunityBestPicks = {
@@ -179,7 +209,7 @@ export function compareBestVsSelected(
       const ra = a.category === "READY_NOW" ? 1 : 0;
       const rb = b.category === "READY_NOW" ? 1 : 0;
       if (ra !== rb) return rb - ra;
-      return b.edgeScore - a.edgeScore;
+      return compareRank(a, b);
     });
   const best = ranked[0] ?? null;
 

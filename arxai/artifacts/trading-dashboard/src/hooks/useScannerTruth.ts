@@ -7,17 +7,21 @@
 // consume this rather than re-deriving freshness/permission logic on its own.
 
 import { useQuery } from "@tanstack/react-query";
+import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import type { ChartFeedStatus } from "@workspace/api-client-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useAssistantName } from "@/lib/assistant-name";
+import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
 import {
   chartCandlesQueryKey,
   fetchChartCandles,
   toApiTimeframe,
+  normalizeChartTimeframe,
   type ChartCandlesResult,
 } from "@/lib/chartCandlesQuery";
 import {
   resolveScannerTruth,
+  thresholdsFor,
   type ScannerTruth,
   type ScannerTruthMode,
 } from "@/lib/scannerTruth";
@@ -36,20 +40,26 @@ export interface UseScannerTruthResult {
 }
 
 const DEFAULT_LIMIT = 200;
-const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+
+function candleTimeIso(time: number | undefined): string | null {
+  if (time == null) return null;
+  const date = new Date(time);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
 
 export function useScannerTruth(
   symbolDisplay: string,
   timeframe: string,
   opts?: { limit?: number; refetchInterval?: number },
 ): UseScannerTruthResult {
-  const symbol = (symbolDisplay || "").toUpperCase();
-  const apiTf = toApiTimeframe(timeframe);
+  const symbol = (symbolDisplay || "").trim().toUpperCase();
+  const chartTimeframe = normalizeChartTimeframe(timeframe);
+  const apiTf = toApiTimeframe(chartTimeframe);
   const limit = opts?.limit ?? DEFAULT_LIMIT;
 
   const candlesQ = useQuery<ChartCandlesResult>({
     queryKey: chartCandlesQueryKey(symbol, apiTf, limit),
-    queryFn: () => fetchChartCandles(symbol, apiTf, limit),
+    queryFn: ({ signal }) => fetchChartCandles(symbol, apiTf, limit, signal),
     enabled: symbol.length > 0,
     refetchInterval: opts?.refetchInterval ?? 15_000,
     staleTime: 5_000,
@@ -58,20 +68,8 @@ export function useScannerTruth(
   // Header feed-ok snapshot — resolved INSIDE the one truth source so the header
   // strip, chart, read-gate and cards all share an identical header-ok cap. No
   // surface re-applies applyHeaderCap on its own afterwards (Task #391).
-  const headerSnapQ = useQuery<{ ok?: boolean }>({
-    queryKey: ["scanner-header-snapshot", symbol],
-    queryFn: async () => {
-      const r = await fetch(
-        `${BASE}/api/market-scanner/selected-market?symbol=${encodeURIComponent(symbol)}`,
-        { credentials: "include" },
-      );
-      return r.json() as Promise<{ ok?: boolean }>;
-    },
-    enabled: symbol.length > 0,
-    refetchInterval: 15_000,
-    staleTime: 5_000,
-  });
-  const headerOk: boolean | null = headerSnapQ.data?.ok ?? null;
+  const headerSnapQ = useSelectedMarketSnapshot(symbol, chartTimeframe);
+  const headerOk: boolean | null = headerSnapQ.isError ? false : headerSnapQ.data?.ok ?? false;
 
   const mode = useTradingMode();
   const { name: assistantName } = useAssistantName();
@@ -80,6 +78,10 @@ export function useScannerTruth(
   const feedStatus = candlesQ.data?.feedStatus ?? null;
   const last = candles.length > 0 ? candles[candles.length - 1] : null;
   const first = candles.length > 0 ? candles[0] : null;
+  const lastTime = candleTimeIso(last?.time);
+  const nowMs = useEvidenceDeadline(lastTime != null
+    ? Date.parse(lastTime) + thresholdsFor(chartTimeframe).candleMaxAgeMs + 1
+    : null);
 
   const env = mode.envelope;
   const truthMode: ScannerTruthMode = {
@@ -102,12 +104,12 @@ export function useScannerTruth(
     ? resolveScannerTruth({
         symbolDisplay: symbol,
         symbolInternal: symbol,
-        timeframe,
+        timeframe: chartTimeframe,
         feedStatus,
         candleCount: candles.length,
         requestedCount: limit,
-        firstTime: first ? new Date(first.time).toISOString() : null,
-        lastTime: last ? new Date(last.time).toISOString() : null,
+        firstTime: candleTimeIso(first?.time),
+        lastTime,
         lastClose: last ? last.close : null,
         // No trusted independent real-time quote exists: the only quote endpoint
         // is the simulator (the very source that caused the divergence bug and is
@@ -115,8 +117,11 @@ export function useScannerTruth(
         // divergence class entirely, so the consistency dimension stays neutral
         // rather than cross-checking against fabricated data (Task #391).
         quote: null,
-        headerOk,
+        // Keep cached bars as historical context after a failed refresh, but
+        // withdraw live affordances for every direct truth consumer as well.
+        headerOk: candlesQ.isError ? false : headerOk,
         mode: truthMode,
+        nowMs,
       }, assistantName)
     : null;
 

@@ -26,6 +26,7 @@ import { getProfileSpec } from "./profiles.js";
 import { writeSelfTradeAudit } from "./audit.js";
 import { enforceSensitiveAction } from "../security/handshake.js";
 import { mirrorCriticalEvent } from "../security/events.js";
+import { readAccountingRows, projectAccounting, combineAccounting } from "./accountingCoverage.js";
 
 export interface Actor {
   userId: number;
@@ -160,6 +161,10 @@ export async function configureAgent(
   });
   if (!hs.ok) return { ok: false, error: hs.reasonCode, message: hs.userMessage };
   return db.transaction(async (tx) => {
+    // Common order with admission/funding: agent before settings/ledger.
+    const [lockedAgent] = await tx.select({ id: selfTradeAgentsTable.id }).from(selfTradeAgentsTable)
+      .where(eq(selfTradeAgentsTable.id, agentId)).for("update");
+    if (!lockedAgent) return { ok: false, error: "AGENT_NOT_FOUND", message: "Agent not found." };
     const before = await tx
       .select()
       .from(selfTradeAgentSettingsTable)
@@ -207,7 +212,7 @@ export async function setAutonomyLevel(
       .select()
       .from(selfTradeAgentsTable)
       .where(eq(selfTradeAgentsTable.id, agentId))
-      .limit(1);
+      .limit(1).for("update");
     if (!before[0]) return { ok: false, error: "AGENT_NOT_FOUND", message: "Agent not found." };
 
     await tx
@@ -269,7 +274,7 @@ export async function setAgentStatus(
       .select()
       .from(selfTradeAgentsTable)
       .where(eq(selfTradeAgentsTable.id, agentId))
-      .limit(1);
+      .limit(1).for("update");
     const agent = before[0];
     if (!agent) return { ok: false, error: "AGENT_NOT_FOUND", message: "Agent not found." };
 
@@ -460,13 +465,15 @@ export async function getAgentById(agentId: number, scope?: AgentScope) {
   if (scope?.ownerType === "USER") {
     if (agent.ownerType !== "USER" || agent.ownerId !== scope.ownerId) return null;
   }
-  const [settings, ledger] = await Promise.all([
+  const now = new Date();
+  const [settings, ledger, accountingRows] = await Promise.all([
     db.select().from(selfTradeAgentSettingsTable)
       .where(eq(selfTradeAgentSettingsTable.agentId, agentId)).limit(1),
     db.select().from(selfTradeAgentLedgerTable)
       .where(eq(selfTradeAgentLedgerTable.agentId, agentId)).limit(1),
+    readAccountingRows([agentId], scopeWhere(scope), now),
   ]);
-  return { agent, settings: settings[0] ?? null, ledger: ledger[0] ?? null };
+  return { agent, settings: settings[0] ?? null, ledger: ledger[0] ?? null, accounting: projectAccounting(accountingRows[0], now) };
 }
 
 export async function listLedgerEntries(agentId: number, limit = 100) {
@@ -537,14 +544,15 @@ export async function listAgentExecutions(
 export async function getFleetOverview(scope?: AgentScope) {
   const agents = await listAgents(scope);
   const ids = agents.map((a) => a.id);
-  const ledgers = ids.length
-    ? await db.select().from(selfTradeAgentLedgerTable)
-        .where(inArray(selfTradeAgentLedgerTable.agentId, ids))
-    : [];
-  const totalAllocated = ledgers.reduce((s, l) => s + l.allocatedFunds, 0);
-  const totalAvailable = ledgers.reduce((s, l) => s + l.availableFunds, 0);
-  const totalRealizedPnl = ledgers.reduce((s, l) => s + l.realizedPnl, 0);
-  const totalOpenPnl = ledgers.reduce((s, l) => s + l.openPnl, 0);
+  const now = new Date();
+  const ledgers = await readAccountingRows(ids, scopeWhere(scope), now);
+  const recorded = (key: "allocatedFunds" | "availableFunds" | "realizedPnl" | "openPnl") => ledgers.reduce((sum, row) => sum + (Number.isFinite(row[key]) ? row[key]! : 0), 0);
+  const totalAllocated = recorded("allocatedFunds");
+  const totalAvailable = recorded("availableFunds");
+  const totalRealizedPnl = recorded("realizedPnl");
+  const totalOpenPnl = recorded("openPnl");
+  const byAgent = new Map(ledgers.map(row => [row.agentId, row]));
+  const accounting = combineAccounting(ids.map(id => projectAccounting(byAgent.get(id), now)), now);
 
   const byStatus: Record<string, number> = {};
   for (const a of agents) byStatus[a.status] = (byStatus[a.status] ?? 0) + 1;
@@ -552,11 +560,12 @@ export async function getFleetOverview(scope?: AgentScope) {
   return {
     totalAgents: agents.length,
     activeAgents: agents.filter((a) => a.status === "ACTIVE").length,
-    fundedAgents: ledgers.filter((l) => l.allocatedFunds > 0).length,
+    fundedAgents: ledgers.filter((l) => Number.isFinite(l.allocatedFunds) && l.allocatedFunds! > 0).length,
     byStatus,
     totalAllocated,
     totalAvailable,
     totalRealizedPnl,
     totalOpenPnl,
+    accounting,
   };
 }

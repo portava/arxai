@@ -59,16 +59,35 @@ describe("BacktestChartPanel", () => {
         initialBalance: 10000,
         finalBalance: 10250,
         maxDrawdown: 400,
-        equity: [{ tradeId: 0, openedAt: "x", equity: 10000, peak: 10000, drawdown: 0 }],
+        equity: [{ tradeId: 0, openedAt: "x", equity: 10000, peak: 10000, drawdown: 0, grossPriceUnits: 0, peakGrossPriceUnits: 0 }],
         markers: [],
-        summary: {},
+        summary: { netProfitLoss: 250 },
       },
     });
     render(<BacktestChartPanel runId={1} />);
-    expect(screen.getByText("Historical simulation")).toBeTruthy();
+    expect(screen.getByText("Diagnostic simulation · price units")).toBeTruthy();
+    expect(screen.queryByText("Historical simulation")).toBeNull();
     expect(screen.getByText(/Past performance does not guarantee future results/i)).toBeTruthy();
     expect(screen.getByTestId("equity-chart")).toBeTruthy();
     expect(screen.getByTestId("drawdown-chart")).toBeTruthy();
+  });
+
+  it.each([null, undefined, Infinity, NaN])("keeps unavailable legacy net %s neutral", (netProfitLoss) => {
+    useQueryImpl = () => ({ isLoading: false, isError: false, data: {
+      equity: [{ grossPriceUnits: 0, peakGrossPriceUnits: 0 }],
+      summary: { netProfitLoss }, maxDrawdown: 0,
+    } });
+    render(<BacktestChartPanel runId={1} />);
+    const net = screen.getByText("Unavailable");
+    expect(net.className).toContain("text-slate-400");
+    expect(screen.queryByText("+Unavailable")).toBeNull();
+  });
+
+  it.each([undefined, [null], [{ equity: 10000, peak: 10000 }]])("does not fabricate a precise curve from legacy or malformed points", (equity) => {
+    useQueryImpl = () => ({ isLoading: false, isError: false, data: { equity, summary: { netProfitLoss: 0 } } });
+    render(<BacktestChartPanel runId={1} />);
+    expect(screen.getByText(/Precise price-unit curve unavailable/)).toBeTruthy();
+    expect(screen.queryByTestId("equity-chart")).toBeNull();
   });
 });
 

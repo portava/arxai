@@ -19,6 +19,7 @@
 // deterministic — no DB, no network, no clock dependence (generatedAt aside).
 // The pure composer is exercised directly where the rule lives in the domain.
 
+import { marketFixture, NOW } from "./marketEvidenceFixtures.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -39,7 +40,9 @@ type TimingResult = Awaited<ReturnType<TruthSnapshotDeps["computeTimingFn"]>>;
 // ── Deterministic SOURCE stubs (only the fields the brain reads matter) ───────
 
 function candles(closes: number[], spread = 0.001): unknown[] {
-  return closes.map((c) => ({
+  const normalized = marketFixture({ count: closes.length }).chart.candles;
+  return closes.map((c, i) => ({
+    ...normalized[i],
     open: c,
     high: c + spread,
     low: c - spread,
@@ -82,6 +85,7 @@ function chartStub(opts: {
   );
   return {
     candles: candles(closes, opts.spread),
+    marketEvidence: marketFixture().evidence,
     feedStatus,
     source: "mt5_broker",
     displaySymbol: "EUR/USD",
@@ -133,7 +137,9 @@ function scannerStub(opts: {
     symbol: "EURUSD",
     displayName: "EUR/USD",
     timeframe: "M15",
-    generatedAt: "2026-06-07T00:00:00.000Z",
+    generatedAt: new Date(NOW).toISOString(),
+    marketEvidence: { ...marketFixture().evidence, userId: 1 },
+    dataSource: "LIVE_FEED", freshness: "FRESH", expiresAt: new Date(NOW + 60_000).toISOString(),
     hasSufficientData: opts.sufficient ?? true,
     bias: opts.bias ?? "BULLISH",
     direction: opts.direction ?? "BUY",
@@ -160,7 +166,9 @@ function scalpStub(opts: {
     symbol: "EURUSD",
     direction: opts.direction === undefined ? "BUY" : opts.direction,
     status: opts.status ?? "READY",
-    expiresAt: "2026-06-07T00:01:00.000Z",
+    marketEvidence: { ...marketFixture({ timeframe: "M5" }).evidence, userId: 1 },
+    generatedAt: new Date(NOW).toISOString(),
+    expiresAt: new Date(NOW + 60_000).toISOString(),
     validForSeconds: 60,
     flame: {
       blind: opts.blind ?? false,
@@ -177,11 +185,12 @@ function timingStub(opts: {
   entryPermission?: string;
 } = {}): TimingResult {
   return {
-    dataQuality: { label: opts.quality ?? "good" },
+    symbol: "EURUSD", timeframe: "M15", marketEvidence: marketFixture().evidence,
+    dataQuality: { label: opts.quality ?? "real", hasCandleData: true },
     pressureBias: opts.bias ?? "BUY",
     timingGrade: opts.grade ?? "A",
     entryPermission: opts.entryPermission ?? "ENTER_NOW",
-    generatedAt: "2026-06-07T00:00:00.000Z",
+    generatedAt: new Date(NOW).toISOString(),
   } as unknown as TimingResult;
 }
 
@@ -459,8 +468,10 @@ test("strength labels are clean, single-sourced, and deterministic", async () =>
   const b = await build();
   // Each component has exactly one clean-English label.
   assert.equal(a.components.scanner.label, "Bullish · Entry window open");
-  assert.equal(a.components.flame.label, "Igniting");
-  assert.equal(a.components.scalp.label, "Ready (long)");
+  assert.equal(a.components.flame.present, false);
+  assert.match(a.components.flame.label, /M5/);
+  assert.equal(a.components.scalp.present, false);
+  assert.match(a.components.scalp.label, /M5/);
   assert.equal(a.components.timing.label, "Grade A · Enter now");
   // Same inputs → byte-identical snapshot (generatedAt aside) so two surfaces
   // can never render different words.

@@ -18,14 +18,14 @@
 
 import { Router } from "express";
 import {
-  db, backtestRunsTable, backtestTradesTable, vaultEventsTable, brokerCandlesTable,
+  db, backtestRunsTable, backtestTradesTable, vaultEventsTable,
 } from "@workspace/db";
-import { and, countDistinct, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { ownerScope } from "../lib/auth/ownerScope.js";
 import { requireUser } from "../lib/auth/middleware.js";
 import {
-  simulateBacktest, computeMetrics, summarizeBacktest, isVerificationEligible,
+  simulateBacktest, computeMetrics, summarizeBacktest, projectBacktestRun, backtestEvidence,
   type BacktestCandle, type BacktestSignal,
 } from "@workspace/domain/backtest";
 import {
@@ -43,6 +43,8 @@ import {
 import {
   buildBacktestChartSeries, type BacktestChartTradeInput,
 } from "../lib/backtest/backtestChartSeries.js";
+
+import { loadDiagnosticBrokerHistory } from "../lib/backtest/backtestHistory.js";
 
 const router = Router();
 // Runs belong to the trader who started them (legacy ownerless runs to the
@@ -81,33 +83,12 @@ function backtestDataReliability(args: {
   });
 }
 
-// Task #797 — dataSource-aware reliability for read surfaces. Broker runs have
-// calendar gaps (weekends/closed sessions), so the window formula above would
-// overstate their bar count; instead count the REAL distinct closed bars inside
-// the run's window. Synthetic runs keep the exact window formula (the generator
-// has no gaps). Display-only, never a gate.
-async function resolveRunDataReliability(
-  run: { symbol: string; timeframe: string; startTime: Date; endTime: Date; dataSource: string },
-  canonicalSymbol: string,
-) {
-  if (run.dataSource === "broker") {
-    const rows = await db
-      .select({ n: countDistinct(brokerCandlesTable.openTimeUtc) })
-      .from(brokerCandlesTable)
-      .where(and(
-        eq(brokerCandlesTable.symbol, canonicalSymbol),
-        eq(brokerCandlesTable.timeframe, run.timeframe),
-        eq(brokerCandlesTable.isClosedBar, true),
-        gte(brokerCandlesTable.openTimeUtc, run.startTime),
-        lte(brokerCandlesTable.openTimeUtc, run.endTime),
-      ));
-    return evaluateBacktestDataReliability({
-      symbol: run.symbol,
-      timeframe: run.timeframe,
-      availableClosedCandles: Number(rows[0]?.n ?? 0),
-    });
-  }
-  return backtestDataReliability(run);
+// Broker history is mutable and the original run did not retain a candle
+// snapshot. Recounting today's shared store cannot establish the original depth.
+function resolveRunDataReliability(run: {
+  symbol: string; timeframe: string; startTime: Date; endTime: Date; dataSource: string;
+}, _canonicalSymbol: string) {
+  return run.dataSource === "synthetic" ? backtestDataReliability(run) : undefined;
 }
 
 // ── POST /backtest-runs ───────────────────────────────────────────────────
@@ -135,56 +116,6 @@ const CreateBacktestBody = z.object({
 // smallest candleCount the request schema accepts (strategy warm-up windows
 // need depth; fewer bars would produce a misleadingly thin sample).
 const MIN_BROKER_BARS = 50;
-
-// Read REAL closed bars from the durable broker_candles store (market-data /
-// telemetry only — this table never touches execution or the live pipeline).
-// Multiple bridges can report the same bar, so rows are deduped on the open
-// instant (first accepted row wins) and returned oldest→newest.
-async function loadBrokerHistory(args: {
-  symbol: string;
-  timeframe: string;
-  rangeStart: Date | null;
-  rangeEnd: Date | null;
-  maxBars: number;
-}): Promise<Candle[]> {
-  const conds = [
-    eq(brokerCandlesTable.symbol, args.symbol),
-    eq(brokerCandlesTable.timeframe, args.timeframe),
-    eq(brokerCandlesTable.isClosedBar, true),
-  ];
-  if (args.rangeStart) conds.push(gte(brokerCandlesTable.openTimeUtc, args.rangeStart));
-  if (args.rangeEnd) conds.push(lte(brokerCandlesTable.openTimeUtc, args.rangeEnd));
-  const rows = await db
-    .select({
-      openTimeUtc: brokerCandlesTable.openTimeUtc,
-      open: brokerCandlesTable.open,
-      high: brokerCandlesTable.high,
-      low: brokerCandlesTable.low,
-      close: brokerCandlesTable.close,
-      tickVolume: brokerCandlesTable.tickVolume,
-    })
-    .from(brokerCandlesTable)
-    .where(and(...conds))
-    .orderBy(desc(brokerCandlesTable.openTimeUtc))
-    // Headroom for multi-bridge duplicates of the same bar (deduped below).
-    .limit(args.maxBars * 3);
-  const byOpen = new Map<number, (typeof rows)[number]>();
-  for (const r of rows) {
-    const k = r.openTimeUtc.getTime();
-    if (!byOpen.has(k)) byOpen.set(k, r);
-  }
-  return [...byOpen.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .slice(-args.maxBars)
-    .map(([, r]) => ({
-      time: r.openTimeUtc.toISOString(),
-      open: r.open,
-      high: r.high,
-      low: r.low,
-      close: r.close,
-      volume: r.tickVolume ?? 0,
-    }));
-}
 
 router.post("/backtest-runs", async (req, res): Promise<void> => {
   try {
@@ -235,30 +166,32 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
 
     // Real closed broker bars for the canonical symbol (the broker store keys
     // candles by the normalized ARX symbol the charts query by).
-    const brokerCandles = await loadBrokerHistory({
+    const history = await loadDiagnosticBrokerHistory({
+      userId: req.authUser!.id,
       symbol: focusMarket.canonicalSymbol,
       timeframe: body.timeframe,
       rangeStart, rangeEnd,
       maxBars: body.candleCount,
     });
+    const brokerCandles = history.candles;
 
     // Data-source decision (honest, never a silent substitution):
     //   - enough real bars              → run on REAL broker history ("broker")
     //   - explicit range + not enough   → honest INSUFFICIENT_DATA run, NO
     //                                     synthetic fallback (real-or-nothing)
     //   - no range + no broker history  → clearly-labeled synthetic path
-    if (hasRange && brokerCandles.length < MIN_BROKER_BARS) {
+    if ((hasRange && brokerCandles.length < MIN_BROKER_BARS) || ["ambiguous_source", "invalid_bars"].includes(history.reason)) {
       const insufficientSummary =
         `Insufficient broker history for ${focusMarket.canonicalSymbol} ${body.timeframe} in the requested range: ` +
-        `${brokerCandles.length} closed bars available, ${MIN_BROKER_BARS} required. ` +
+        `${brokerCandles.length} usable closed bars, ${MIN_BROKER_BARS} required; source status ${history.reason}. ` +
         `No simulation was run — synthetic data is never substituted for an explicit history range.`;
       const insertedInsufficient = await db.insert(backtestRunsTable).values({
         userId: req.authUser!.id,
         strategyId,
         symbol: body.symbol,
         timeframe: body.timeframe,
-        startTime: rangeStart!,
-        endTime: rangeEnd!,
+        startTime: rangeStart ?? new Date(),
+        endTime: rangeEnd ?? new Date(),
         initialBalance: body.initialBalance,
         status: "INSUFFICIENT_DATA",
         dataSource: "broker",
@@ -270,10 +203,11 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
         runId: insufficientRun.id, strategyId, symbol: body.symbol,
         timeframe: body.timeframe, dataSource: "broker",
         availableClosedCandles: brokerCandles.length, requiredClosedCandles: MIN_BROKER_BARS,
-        rangeStart: rangeStart!.toISOString(), rangeEnd: rangeEnd!.toISOString(),
+        rangeStart: rangeStart?.toISOString() ?? null, rangeEnd: rangeEnd?.toISOString() ?? null, historyReason: history.reason,
       });
       res.json({
-        ...insufficientRun,
+        ...projectBacktestRun(insufficientRun),
+        historyStatus: history.reason,
         startTime: insufficientRun.startTime.toISOString(),
         endTime: insufficientRun.endTime.toISOString(),
         createdAt: insufficientRun.createdAt.toISOString(),
@@ -325,11 +259,10 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
     const status = sim.metrics.totalTrades === 0
       ? "INSUFFICIENT_DATA"
       : "COMPLETED";
-    const isVerified = sim.metrics.totalTrades > 0 && isVerificationEligible(sim.metrics)
-      ? "VERIFIED" : "UNVERIFIED";
+    const isVerified = "UNVERIFIED" as const;
     const aiSummary = summarizeBacktest({
       strategyId, symbol: body.symbol,
-      timeframe: body.timeframe, metrics: sim.metrics,
+      timeframe: body.timeframe, metrics: sim.metrics, dataSource,
     });
 
     const inserted = await db.insert(backtestRunsTable).values({
@@ -394,7 +327,8 @@ router.post("/backtest-runs", async (req, res): Promise<void> => {
       : null;
 
     res.json({
-      ...run,
+      ...projectBacktestRun(run),
+      historyStatus: history.reason,
       startTime: run.startTime.toISOString(),
       endTime: run.endTime.toISOString(),
       createdAt: run.createdAt.toISOString(),
@@ -433,7 +367,7 @@ router.get("/backtest-runs", async (req, res): Promise<void> => {
     res.json({ runs: rows.map((r) => {
       const focusMarket = resolveArxMarket(r.symbol);
       return {
-        ...r,
+        ...projectBacktestRun(r),
         startTime: r.startTime.toISOString(),
         endTime: r.endTime.toISOString(),
         createdAt: r.createdAt.toISOString(),
@@ -463,7 +397,7 @@ router.get("/backtest-runs/:id", async (req, res): Promise<void> => {
       return;
     }
     res.json({
-      ...r,
+      ...projectBacktestRun(r),
       startTime: r.startTime.toISOString(),
       endTime: r.endTime.toISOString(),
       createdAt: r.createdAt.toISOString(),
@@ -537,6 +471,7 @@ router.get("/backtest-runs/:id/chart-series", async (req, res): Promise<void> =>
     const series = buildBacktestChartSeries({ initialBalance: run.initialBalance, trades });
     res.json({
       ...series,
+      evidence: backtestEvidence(run.dataSource),
       runId: run.id,
       strategyId: run.strategyId,
       symbol: run.symbol,
@@ -585,27 +520,23 @@ router.post("/backtest-runs/:id/ai-review", async (req, res): Promise<void> => {
     );
     const aiSummary = summarizeBacktest({
       strategyId: run.strategyId, symbol: run.symbol,
-      timeframe: run.timeframe, metrics,
+      timeframe: run.timeframe, metrics, dataSource: run.dataSource,
     });
 
     await db.update(backtestRunsTable).set({ aiSummary }).where(eq(backtestRunsTable.id, id));
     await vaultBehavior("BACKTEST_AI_REVIEW_GENERATED", { runId: id });
-    res.json({ id, aiSummary, metrics });
+    res.json({ id, aiSummary, metrics, isVerified: "UNVERIFIED", evidence: backtestEvidence(run.dataSource) });
   } catch (err) {
     req.log.error({ err: String(err) }, "POST /backtest-runs/:id/ai-review failed");
     res.status(500).json({ error: "Failed to generate AI review" });
   }
 });
 
-// Strategy-level evidence: the latest VERIFIED run for a strategy, whoever ran
-// it (runs hold strategy results on shared candles, no account data).
-// Export latest VERIFIED run summary per strategy for the strategy-fit
-// scoring engine to consume (read-only). Future build can pull from this.
-export async function getLatestVerifiedRunForStrategy(strategyId: string): Promise<typeof backtestRunsTable.$inferSelect | null> {
-  const rows = await db.select().from(backtestRunsTable)
-    .where(eq(backtestRunsTable.strategyId, strategyId))
-    .orderBy(desc(backtestRunsTable.createdAt)).limit(20);
-  return rows.find((r) => r.isVerified === "VERIFIED") ?? null;
+// No current producer has immutable source, costs and holdout evidence.
+// Retain the exported compatibility seam but never turn stored legacy labels
+// (including another user's labels) into strategy-scoring authority.
+export async function getLatestVerifiedRunForStrategy(_strategyId: string): Promise<typeof backtestRunsTable.$inferSelect | null> {
+  return null;
 }
 
 export default router;

@@ -69,7 +69,7 @@ const forwardResults = [
     label: "Forward — real closed trades",
     sampleSize: 6,
     sampleWarning: "Small sample — treat with caution.",
-    isVerified: false,
+    isVerified: true,
     metrics: metrics({ totalTrades: 6, winRate: 0.33, netProfitLoss: -45, maxDrawdownPct: 14, averageRr: 1.1, expectancyR: -0.12, profitFactor: 0.7 }),
     headline: "Forward is lagging the baseline.",
     notes: [],
@@ -86,7 +86,7 @@ const forwardResults = [
     label: "Forward — real closed trades",
     sampleSize: 9,
     sampleWarning: "Small sample — treat with caution.",
-    isVerified: false,
+    isVerified: true,
     metrics: metrics({ totalTrades: 9, winRate: 0.3, netProfitLoss: -80, maxDrawdownPct: 18, averageRr: 1.0, expectancyR: -0.2, profitFactor: 0.6 }),
     headline: "Forward is lagging the baseline.",
     notes: [],
@@ -165,8 +165,8 @@ describe("MissionPerformanceView", () => {
     // Forward expectancy is worse than backtest → "worse" tone delta.
     expect(within(card).getByTestId("cell-delta-expectancyR").className).toMatch(/text-danger/);
     // Honest framing on both sides + the small-sample warning surfaces.
-    expect(within(card).getByTestId("summary-backtest").textContent).toMatch(/historical/i);
-    expect(within(card).getByTestId("summary-forward").textContent).toMatch(/real closed trades/i);
+    expect(within(card).getByTestId("summary-backtest").textContent).toMatch(/source evidence/i);
+    expect(within(card).getByTestId("summary-forward").textContent).toMatch(/execution evidence/i);
     expect(within(card).getByTestId("summary-forward-warning").textContent).toMatch(/small sample/i);
   });
 
@@ -198,10 +198,24 @@ describe("MissionPerformanceView", () => {
     driftData = { drift: { severity: "UNKNOWN", score: 0, signals: [], reasons: [], recommendDemote: false, recommendReduceRisk: false, recommendPausePromotion: false }, demoted: false, promotionPaused: false, insufficientEvidence: true };
     eventsData = [];
     render(<MissionPerformanceView missionId={1} />);
-    expect(screen.getByTestId("empty-performance-trend").textContent).toMatch(/no real forward trades yet/i);
+    expect(screen.getByTestId("empty-performance-trend").textContent).toMatch(/no verified forward evidence yet/i);
     expect(screen.getByTestId("summary-forward-empty").textContent).toMatch(/nothing is estimated/i);
     expect(screen.getByTestId("text-drift-insufficient")).toBeTruthy();
     expect(screen.getByTestId("empty-drift-history").textContent).toMatch(/no drift checks/i);
+  });
+
+  it("keeps generated and unreconciled results visible without comparing them as trading evidence", () => {
+    testResultsData = { results: [
+      { ...backtestResult, isVerified: false, promotionEligible: false, label: "Generated-price simulation", notes: ["Costs excluded; P/L is not account currency."] },
+      ...forwardResults.map((r) => ({ ...r, isVerified: false, promotionEligible: false, label: "Closed mission drafts — execution mode unverified" })),
+    ] };
+    render(<MissionPerformanceView missionId={1} />);
+    expect(screen.getByTestId("cell-backtest-expectancyR").textContent).toBe("—");
+    expect(screen.getByTestId("cell-forward-netProfitLoss").textContent).toBe("—");
+    expect(screen.queryByTestId("chart-performance-trend")).toBeNull();
+    expect(screen.getByTestId("summary-backtest").textContent).toMatch(/Generated-price simulation/);
+    expect(screen.getByTestId("summary-backtest-evidence").textContent).toMatch(/not account currency/);
+    expect(screen.getByTestId("summary-forward-sample").textContent).toMatch(/unverified/);
   });
 
   it("never leaks banned promise vocabulary", () => {

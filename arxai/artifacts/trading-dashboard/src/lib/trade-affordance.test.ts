@@ -121,7 +121,7 @@ describe("resolveTradeAffordance — never blocks, honest when not live", () => 
 
   it("GBPUSD case: live via third-party (not broker) is actionable → still NO friction", () => {
     // Live, fresh, sufficient candles from a third-party (non-broker) feed.
-    const t = resolveScannerTruth(inputs({ symbolDisplay: "GBPUSD", symbolInternal: "GBPUSD", feedStatus: feed({ source: "twelvedata" }) }));
+    const t = resolveScannerTruth(inputs({ symbolDisplay: "GBPUSD", symbolInternal: "GBPUSD", feedStatus: feed({ symbol: "GBPUSD", source: "twelvedata" }) }));
     expect(t.actionable).toBe(true);
     expect(t.brokerFeedActive).toBe(false); // honesty handled by dataHealth, not friction
     expect(resolveTradeAffordance(t, "live").warningTitle).toBe("");

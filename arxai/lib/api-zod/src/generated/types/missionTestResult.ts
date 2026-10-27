@@ -6,10 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { MissionTestMetrics } from "./missionTestMetrics";
+import type { MissionTestResultEvidence } from "./missionTestResultEvidence";
 import type { MissionTestResultKind } from "./missionTestResultKind";
 
 /**
- * An honestly-labelled, append-only mission test result. `kind` distinguishes BACKTEST (historical/simulated) from FORWARD (real realised). `sampleWarning` is set when the sample is too small to be meaningful. Advisory only.
+ * Append-only diagnostic history, projected through current evidence rules. Generated prices and unreconciled closed drafts remain unverified. Legacy verified and eligible flags are not trusted. Sample minima do not establish statistical significance; current diagnostics cannot support promotion or drift.
 
  */
 export interface MissionTestResult {
@@ -28,4 +29,5 @@ export interface MissionTestResult {
   notes: string[];
   promotionEligible: boolean;
   createdAt: string;
+  evidence?: MissionTestResultEvidence;
 }

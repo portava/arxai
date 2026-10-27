@@ -90,8 +90,9 @@ function classifyDeviation(deviationPct: number, tolerances: Tolerances): Alignm
 export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): BrokerPriceAlignment {
   const { chartPrice, chartPriceBasis, assetClass, brokerBid, brokerAsk, spreadPoints } = inputs;
 
-  const hasBrokerData = brokerBid != null && brokerAsk != null;
-  const hasChartPrice = chartPrice != null && chartPrice > 0;
+  const hasBrokerData = brokerBid != null && brokerAsk != null &&
+    Number.isFinite(brokerBid) && Number.isFinite(brokerAsk) && brokerBid > 0 && brokerAsk >= brokerBid;
+  const hasChartPrice = chartPrice != null && Number.isFinite(chartPrice) && chartPrice > 0;
 
   if (!hasChartPrice) {
     return {
@@ -126,20 +127,21 @@ export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): Brok
       spreadPoints: null,
       deviationPct: null,
       chartPriceBasis,
-      userMessage: "Broker quote not yet available for this symbol.",
-      adminDetail: "Broker bid/ask not enumerated in arx_symbol_specs for this user — alignment check skipped.",
+      userMessage: "A usable broker quote is not available for this symbol.",
+      adminDetail: "Broker comparison requires finite positive bid/ask with ask at least bid — alignment unmeasured.",
       brokerDataAvailable: false,
     };
   }
 
-  const brokerMid = (brokerBid! + brokerAsk!) / 2;
+  const brokerMid = brokerBid! + (brokerAsk! - brokerBid!) / 2;
 
   // Compute deviation: chart price vs broker mid.
   // For BID-basis charts we compare against brokerBid; for others against brokerMid.
   const referencePrice =
     chartPriceBasis === "BID" ? brokerBid! : brokerMid;
   const deviation = Math.abs(chartPrice - referencePrice);
-  const deviationPct = referencePrice > 0 ? deviation / referencePrice : 0;
+  const deviationPct = deviation / referencePrice;
+  if (!Number.isFinite(deviationPct)) return noBrokerAlignment(chartPrice, chartPriceBasis);
 
   const tolerances = tolerancesFor(assetClass);
   const tolerance = classifyDeviation(deviationPct, tolerances);
@@ -170,6 +172,15 @@ export function computeBrokerPriceAlignment(inputs: BrokerAlignmentInputs): Brok
     adminDetail,
     brokerDataAvailable: true,
   };
+}
+
+/** A cached/type-cast object cannot establish alignment from flags alone. */
+export function hasMeasuredBrokerAlignment(alignment: BrokerPriceAlignment | undefined): boolean {
+  if (!alignment || alignment.brokerDataAvailable !== true ||
+      !["tight", "normal", "wide", "failed"].includes(alignment.tolerance)) return false;
+  const { chartPrice, brokerBid, brokerAsk, brokerMid, deviationPct } = alignment;
+  return [chartPrice, brokerBid, brokerAsk, brokerMid].every(value => value != null && Number.isFinite(value) && value > 0) &&
+    brokerAsk! >= brokerBid! && deviationPct != null && Number.isFinite(deviationPct) && deviationPct >= 0;
 }
 
 /**

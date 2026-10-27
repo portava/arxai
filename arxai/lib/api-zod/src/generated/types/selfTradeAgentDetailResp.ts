@@ -5,12 +5,14 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { SelfTradeAccountingCoverage } from "./selfTradeAccountingCoverage";
 import type { SelfTradeAgent } from "./selfTradeAgent";
 import type { SelfTradeAgentLedger } from "./selfTradeAgentLedger";
 import type { SelfTradeAgentSettings } from "./selfTradeAgentSettings";
 
 export interface SelfTradeAgentDetailResp {
   agent: SelfTradeAgent;
+  accounting?: SelfTradeAccountingCoverage;
   settings?: SelfTradeAgentSettings | null;
   ledger?: SelfTradeAgentLedger | null;
 }

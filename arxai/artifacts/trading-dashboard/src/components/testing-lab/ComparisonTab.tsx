@@ -5,21 +5,16 @@
 // state and is never fabricated.
 
 import { useQuery, useQueries } from "@tanstack/react-query";
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ComparisonOverlayChart, type OverlaySeries } from "./ComparisonOverlayChart";
 import type { BacktestRunRow, ForwardResults } from "./types";
+import { formatBacktestNumber } from "@workspace/domain/backtest";
 import type { BacktestChartSeries, ForwardChartSeries } from "@workspace/api-client-react";
 
 const OVERLAY_COLORS = ["#6366f1", "#f59e0b"];
 
-const DRIFT_THRESHOLD_PCTPTS = 15;
-const MIN_SAMPLE = 10;
-
-function avg(xs: number[]): number | null {
-  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
-}
 
 export function ComparisonTab({ strategyId }: { strategyId?: string }) {
   const { data: btData } = useQuery<{ runs: BacktestRunRow[] }>({
@@ -30,7 +25,7 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
       return r.json();
     },
   });
-  const { data: fwd } = useQuery<ForwardResults>({
+  const { data: fwd, isError: forwardError } = useQuery<ForwardResults>({
     queryKey: ["forward-testing-results"],
     queryFn: async () => {
       const r = await fetch("/api/forward-testing/results");
@@ -39,12 +34,13 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
     },
   });
 
-  const allRuns = btData?.runs ?? [];
+  const allRuns = (btData?.runs ?? []).filter((r) => !strategyId || r.strategyId === strategyId);
   const [runA, setRunA] = useState<number | null>(null);
   const [runB, setRunB] = useState<number | null>(null);
   const [includeForward, setIncludeForward] = useState(true);
+  useLayoutEffect(() => { setRunA(null); setRunB(null); }, [strategyId]);
 
-  const selectedRunIds = [runA, runB].filter((x): x is number => x != null);
+  const selectedRunIds = [...new Set([runA, runB])].filter((x): x is number => x != null && allRuns.some((r) => r.id === x));
   const seriesQueries = useQueries({
     queries: selectedRunIds.map((id) => ({
       queryKey: ["backtest-chart-series", id],
@@ -59,82 +55,49 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
     queryKey: ["forward-chart-series"],
     enabled: includeForward,
     queryFn: async () => {
-      const r = await fetch("/api/forward-testing/chart-series", { headers: { "x-security-role": "ADMIN" } });
+      const r = await fetch("/api/forward-testing/chart-series");
       if (!r.ok) throw new Error("failed");
       return r.json();
     },
   });
 
   const overlaySeries: OverlaySeries[] = [];
+  let unavailablePreciseCurve = false;
   seriesQueries.forEach((q, i) => {
     const s = q.data;
     if (!s || "blocked" in (s as object)) return;
+    if (!(s.equity ?? []).every((point) => typeof point.grossPriceUnits === "number" && Number.isFinite(point.grossPriceUnits))) { unavailablePreciseCurve = true; return; }
     overlaySeries.push({
       key: `bt-${selectedRunIds[i]}`,
       label: `${s.strategyId ?? "backtest"} · ${s.symbol ?? ""}`.trim(),
-      unit: "$",
+      unit: "price units",
       color: OVERLAY_COLORS[i % OVERLAY_COLORS.length]!,
-      points: (s.equity ?? []).map((p) => ({ tradeId: p.tradeId, value: p.equity - s.initialBalance })),
+      points: (s.equity ?? []).map((p) => ({ tradeId: p.tradeId, value: p.grossPriceUnits! })),
     });
   });
   if (includeForward && fwdSeriesQuery.data) {
     const f = fwdSeriesQuery.data;
     overlaySeries.push({
       key: "forward",
-      label: "Forward (shadow)",
+      label: "Forward (shadow, all strategies)",
       unit: "R",
       color: "#10b981",
       points: (f.equity ?? []).map((p) => ({ tradeId: p.tradeId, value: p.equity })),
     });
   }
 
-  const runs = allRuns.filter((r) => !strategyId || r.strategyId === strategyId);
+  const runs = allRuns;
   const btTrades = runs.reduce((a, r) => a + r.totalTrades, 0);
-  const btWinRatePct = btTrades > 0
-    ? (runs.reduce((a, r) => a + r.winRate * r.totalTrades, 0) / btTrades) * 100
-    : null;
-  const finitePf = runs.map((r) => r.profitFactor).filter((p) => Number.isFinite(p) && p < 999);
-  const btPf = avg(finitePf);
-
   const fwdTrades = fwd?.shadowTradesTracked ?? 0;
-  const fwdWinRatePct = fwd && fwdTrades > 0 ? fwd.winRate : null;
-
   const hasData = runs.length > 0 || fwdTrades > 0;
-
-  let driftLabel = "Not enough data";
-  let driftTone: "warn" | "ok" | "muted" = "muted";
-  let drift: number | null = null;
-  if (btWinRatePct != null && fwdWinRatePct != null && btTrades >= MIN_SAMPLE && fwdTrades >= MIN_SAMPLE) {
-    drift = Math.abs(btWinRatePct - fwdWinRatePct);
-    if (drift > DRIFT_THRESHOLD_PCTPTS) {
-      driftLabel = `Drift ${drift.toFixed(0)} pts`;
-      driftTone = "warn";
-    } else {
-      driftLabel = `Aligned (${drift.toFixed(0)} pts)`;
-      driftTone = "ok";
-    }
-  }
-
-  let recommendation: string;
-  if (!hasData) {
-    recommendation = "No comparison data yet.";
-  } else if (drift == null) {
-    recommendation = "Run both a backtest and a forward test for this strategy (at least " +
-      `${MIN_SAMPLE} trades each) before comparing — there isn't enough sample to judge drift yet.`;
-  } else if (driftTone === "warn") {
-    recommendation = "Backtest and forward win rates diverge meaningfully. The strategy may be " +
-      "overfit to historical candles — keep it on the demo/shadow path and do not trust it live yet.";
-  } else {
-    recommendation = "Backtest and forward results are consistent. The edge is holding up out of " +
-      "sample, but continue forward testing before increasing exposure.";
-  }
+  const recommendation = "Comparison is unavailable: these backtests have no source-bound experiment or recorded costs and holdout. The forward summary covers all strategies, symbols and timeframes. Similar win rates do not establish out-of-sample performance.";
 
   if (!hasData) {
     return (
       <div className="pt-2">
         <p className="text-sm text-slate-400">
           No comparison data yet{strategyId ? ` for ${strategyId}` : ""}. Run a backtest and a
-          forward test, then return here to compare historical vs live behaviour.
+          forward test to inspect diagnostic records. Matched out-of-sample comparison requires verified experiment evidence.
         </p>
       </div>
     );
@@ -144,36 +107,34 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
     <div className="space-y-4 pt-2">
       <div className="flex items-center gap-2">
         <p className="text-sm text-muted-foreground">
-          Backtest (historical) vs forward test (live simulator)
+          Diagnostic backtests and unfiltered shadow results
           {strategyId ? ` — ${strategyId}` : ""}.
         </p>
-        <Badge className={
-          driftTone === "warn" ? "bg-amber-500/20 text-amber-300"
-            : driftTone === "ok" ? "bg-emerald-500/20 text-emerald-300"
-              : ""
-        }>{driftLabel}</Badge>
+        <Badge>Comparison unavailable</Badge>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle className="text-base">Backtest (historical)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Backtest diagnostics</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
             <Row label="Runs" value={String(runs.length)} />
             <Row label="Sample (trades)" value={String(btTrades)} />
-            <Row label="Win rate" value={btWinRatePct != null ? `${btWinRatePct.toFixed(0)}%` : "—"} />
-            <Row label="Profit factor" value={btPf != null ? btPf.toFixed(2) : "—"} />
+            <Row label="Cross-run performance" value="Not aggregated across experiments" muted />
+            <Row label="Verification" value="Unavailable" muted />
             <Row label="Drawdown" value="open a run for detail" muted />
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-base">Forward test (live sim)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Forward test · all strategies</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
+            {!fwd ? <p className="text-xs text-slate-400">{forwardError ? "Forward results are unavailable for this account." : "Forward results have not loaded."}</p> : <>
             <Row label="Decisions" value={String(fwd?.totalShadowDecisions ?? 0)} />
             <Row label="Sample (trades)" value={String(fwdTrades)} />
-            <Row label="Win rate" value={fwdWinRatePct != null ? `${fwdWinRatePct}%` : "—"} />
-            <Row label="Avg R" value={fwd ? String(fwd.avgR) : "—"} />
-            <Row label="Max DD (R)" value={fwd ? String(fwd.maxDrawdownR) : "—"} />
+            <Row label="Win rate" value={fwd && fwdTrades > 0 ? `${formatBacktestNumber(fwd.winRate)}%` : "—"} />
+            <Row label="Avg R" value={fwd ? formatBacktestNumber(fwd.avgR) : "—"} />
+            <Row label="Max DD (R)" value={fwd ? formatBacktestNumber(fwd.maxDrawdownR) : "—"} />
             <Row label="Best / worst symbol" value={`${fwd?.bestSymbol ?? "—"} / ${fwd?.worstSymbol ?? "—"}`} />
+            </>}
           </CardContent>
         </Card>
       </div>
@@ -204,30 +165,27 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
             </label>
             <label className="flex items-center gap-1 text-slate-400">
               <input type="checkbox" checked={includeForward} onChange={(e) => setIncludeForward(e.target.checked)} />
-              Forward (shadow, R)
+              Forward (shadow, all strategies, R)
             </label>
           </div>
+          {unavailablePreciseCurve && <p className="text-xs text-amber-300">A selected curve lacks precise price-unit values. Reload it from the updated service.</p>}
+          {includeForward && fwdSeriesQuery.isError && <p className="text-xs text-slate-400">Forward curve is unavailable for this account.</p>}
           <ComparisonOverlayChart series={overlaySeries} />
           <p className="text-[10px] text-slate-500">
-            Backtest curves are account-currency growth; the forward curve is
-            cumulative R. Each line is labeled with its unit — they are not merged
-            into one magnitude.
+            Backtest curves use gross price units; forward curves use R and are shown on a separate scale.
+            Different markets, sources or experiment periods are not comparable just because their curves look similar.
           </p>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">{nameHint()} recommendation</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Evidence required</CardTitle></CardHeader>
         <CardContent>
           <p className="text-sm text-slate-300">{recommendation}</p>
         </CardContent>
       </Card>
     </div>
   );
-}
-
-function nameHint(): string {
-  return "Eleanor";
 }
 
 function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {

@@ -161,6 +161,41 @@ describe("displayStatus is capped by resolved truth (finding #3)", () => {
 });
 
 describe("candle status", () => {
+  it.each([null, "not-a-time", new Date(NOW + 1).toISOString()])("never promotes an unconfirmed candle time %s to live", (lastTime) => {
+    const truth = resolveScannerTruth(inputs({ lastTime }));
+    expect(truth.candles.ageMs).toBeNull();
+    expect(truth.actionable).toBe(false);
+    expect(truth.isLivePrice).toBe(false);
+    expect(truth.strip.data.verdict).not.toBe("Live");
+  });
+
+  it.each([null, NaN, Infinity, 0, -1])("never promotes an invalid close %s to live", (lastClose) => {
+    const truth = resolveScannerTruth(inputs({ lastClose }));
+    expect(truth.actionable).toBe(false);
+    expect(truth.candles.lastClose).toBeNull();
+    expect(truth.quote.mid).toBeNull();
+  });
+
+  it("requires a source and the selected symbol, even when the response claims live", () => {
+    expect(resolveScannerTruth(inputs({ feedStatus: feed({ source: null }) })).actionable).toBe(false);
+    expect(resolveScannerTruth(inputs({ feedStatus: feed({ symbol: "GBPUSD" }) })).actionable).toBe(false);
+  });
+
+  it("never clamps a future quote to a live zero age", () => {
+    const truth = resolveScannerTruth(inputs({ quote: { bid: 9, ask: 10, mid: 9.5, source: "mt5_broker", timestamp: new Date(NOW + 1).toISOString() } }));
+    expect(truth.quote.status).not.toBe("live");
+    expect(truth.quote.ageMs).toBeNull();
+    expect(truth.quote.mid).toBe(1.15059); // the confirmed candle stays the display source
+    expect(truth.consistency.status).toBe("unknown");
+  });
+
+  it("keeps the same observation deterministic and distinguishes provider changes", () => {
+    const first = resolveScannerTruth(inputs());
+    expect(first.consolidated.readTimestamp).toBe(NOW);
+    expect(first.consolidated.readId).toBe(resolveScannerTruth(inputs()).consolidated.readId);
+    expect(first.consolidated.readId).not.toBe(resolveScannerTruth(inputs({ feedStatus: feed({ source: "mt5_broker" }) })).consolidated.readId);
+  });
+
   it("live when clean+isLive+sufficient+fresh", () => {
     const t = resolveScannerTruth(inputs());
     expect(t.candles.status).toBe("live");
@@ -380,7 +415,7 @@ describe("brokerFeedActive — execution bridge never implies broker chart bars 
   });
 
   it("GBPUSD: live via third-party feed → actionable but brokerFeedActive false, honest source note", () => {
-    const t = resolveScannerTruth(inputs({ symbolDisplay: "GBPUSD", symbolInternal: "GBPUSD", feedStatus: feed({ source: "twelvedata" }) }));
+    const t = resolveScannerTruth(inputs({ symbolDisplay: "GBPUSD", symbolInternal: "GBPUSD", feedStatus: feed({ symbol: "GBPUSD", source: "twelvedata" }) }));
     expect(t.actionable).toBe(true);
     expect(t.isLivePrice).toBe(true);
     expect(t.brokerFeedActive).toBe(false);

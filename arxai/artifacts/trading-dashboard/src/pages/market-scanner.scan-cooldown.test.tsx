@@ -19,13 +19,16 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 // ---- Controllable scan endpoint (the `api()` helper uses global fetch) -----
-type ScanOutcome = "success" | "rate_limited";
+type ScanOutcome = "success" | "rate_limited" | "busy";
 let scanOutcome: ScanOutcome = "success";
 let serverRetryAfterMs = 3_000;
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   const url = typeof input === "string" ? input : input.toString();
   if (url.includes("/market-scanner/scan")) {
+    if (scanOutcome === "busy") {
+      return { ok: false, status: 503, json: async () => ({ ok: false, error: "SCANNER_BUSY", reason: "SCANNER_BUSY", retryAfterMs: 1000 }) } as unknown as Response;
+    }
     if (scanOutcome === "rate_limited") {
       return {
         ok: false,
@@ -210,6 +213,16 @@ afterEach(() => {
 });
 
 describe("Market Scanner — Scan-button cooldown countdown", () => {
+  it("shows busy feedback and a short retry without claiming a completed scan", async () => {
+    render(<MarketScanner />);
+    await settle(); scanOutcome = "busy";
+    await act(async () => { fireEvent.click(scanButton()); await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText("The scanner is busy. Try again in a moment.")).toBeTruthy();
+    expect(screen.queryByText(/SCANNER_BUSY/)).toBeNull();
+    expect(scanButton().textContent).toContain("Scan again in 1s");
+    expect(scanButton().textContent).not.toContain("Scan again in 7s");
+    await settle(1100); expect(scanButton().disabled).toBe(false);
+  });
   it("disables the Scan button and shows a countdown after a successful scan", async () => {
     render(<MarketScanner />);
     await settle();

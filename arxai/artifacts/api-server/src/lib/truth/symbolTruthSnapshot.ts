@@ -36,10 +36,12 @@ import {
   type TruthDataState,
   type TruthInvalidation,
   type TruthStage,
+  type TruthReadEvidence,
 } from "@workspace/domain/truth";
 import type { RubyMarketEdgeSignal } from "@workspace/domain/signal-intelligence";
 import { evaluateMarketDataSufficiency } from "@workspace/domain/market";
 import type { MarketTimingRead } from "@workspace/domain/timing-brain";
+import { COMPONENT_BUILD_TTL_MS, evidenceMatches, isCurrentBuild } from "./marketReadEvidence.js";
 import { createShortTtlCache } from "../perf/shortTtlCache.js";
 import {
   getChartCandles,
@@ -48,6 +50,7 @@ import {
 import type { NormalizedChartCandle } from "../data/chart/candleNormalization.js";
 import {
   isChartTimeframe,
+  timeframeMs,
   type ChartTimeframe,
 } from "../data/chart/timeframes.js";
 import { buildMarketImpactRadar } from "../news/marketImpactRadar.js";
@@ -65,6 +68,8 @@ export interface TruthComponent {
   label: string;
   /** ISO data-time of this component's read, or null. */
   asOf: string | null;
+  /** Build time is separate from the confirmed bar observation above. */
+  generatedAt?: string | null;
 }
 
 export interface TruthNewsEvent {
@@ -99,7 +104,7 @@ export interface TruthData {
   source: string | null;
   /** Clean-English provider label for display. */
   sourceLabel: string | null;
-  /** Last confirmed price (close of newest closed bar), or null. */
+  /** Newest observed chart close (may be a provider forming bar), or null. */
   price: number | null;
   /** DATA timestamp of the newest candle, or null. */
   lastCandleAt: string | null;
@@ -124,6 +129,8 @@ export interface SymbolTruthSnapshot {
   timeframe: ChartTimeframe;
   /** Snapshot build time (read-time). NOT a data timestamp. */
   generatedAt: string;
+  /** Earliest component/bar deadline, separate from cache lifetime. */
+  validUntil?: string | null;
   data: TruthData;
   news: TruthNews;
   components: {
@@ -244,14 +251,9 @@ function scannerComponent(signal: RubyMarketEdgeSignal | null): TruthComponent {
     present: true,
     alignment,
     label: `${biasWord} · ${stageWord}`,
-    asOf: signal.generatedAt ?? null,
+    asOf: signal.marketEvidence?.lastClosedCandleAt ?? null,
+    generatedAt: signal.generatedAt,
   };
-}
-
-function scalpAsOf(scalp: ScalpResult): string | null {
-  const expires = Date.parse(scalp.expiresAt);
-  if (!Number.isFinite(expires)) return null;
-  return new Date(expires - scalp.validForSeconds * 1000).toISOString();
 }
 
 function flameComponent(scalp: ScalpResult | null): TruthComponent {
@@ -266,7 +268,8 @@ function flameComponent(scalp: ScalpResult | null): TruthComponent {
     present: scalp.flame.flameStage !== "NONE",
     alignment,
     label: stageWord.length > 0 ? stageWord : "No clear momentum.",
-    asOf: scalpAsOf(scalp),
+    asOf: scalp.marketEvidence?.lastClosedCandleAt ?? null,
+    generatedAt: scalp.generatedAt,
   };
 }
 
@@ -281,7 +284,8 @@ function scalpComponent(scalp: ScalpResult | null): TruthComponent {
     present: true,
     alignment,
     label: `${humanize(scalp.status)} (${dirWord})`,
-    asOf: scalpAsOf(scalp),
+    asOf: scalp.marketEvidence?.lastClosedCandleAt ?? null,
+    generatedAt: scalp.generatedAt,
   };
 }
 
@@ -297,7 +301,8 @@ function timingComponent(timing: MarketTimingRead | null): TruthComponent {
     present: true,
     alignment,
     label: `Grade ${timing.timingGrade} · ${humanize(timing.entryPermission)}`,
-    asOf: timing.generatedAt ?? null,
+    asOf: timing.marketEvidence?.lastClosedCandleAt ?? null,
+    generatedAt: timing.generatedAt,
   };
 }
 
@@ -410,7 +415,7 @@ export async function buildSymbolTruthSnapshot(
     deps.buildScannerFn(
       userId,
       { symbol, timeframe },
-      { skipPersist: true, scalp },
+      { skipPersist: true, scalp: timeframe === "M5" ? scalp : null },
     ),
   ]);
   const scanner = valueOrNull(scannerR);
@@ -427,19 +432,39 @@ export async function buildSymbolTruthSnapshot(
     lastTickAt: feedStatus?.lastTickTime ?? null,
   };
 
-  // ── components ──────────────────────────────────────────────────────────────
+  // A current chart cannot refresh another engine's older/different input.
+  // The opaque source identity includes observed bridge/account/environment,
+  // while userId separately binds account-dependent evaluation to this reader.
+  const now = Date.now();
+  const chartEvidence = chart?.marketEvidence;
+  const expected: TruthReadEvidence | null = chartEvidence?.symbol === symbol && chartEvidence.timeframe === timeframe && chartEvidence.source === data.source
+    ? chartEvidence : null;
+  const matches = (e: TruthReadEvidence | null | undefined, generatedAt: unknown, accountDependent = false) =>
+    evidenceMatches(e, expected, now, accountDependent ? userId : undefined) && isCurrentBuild(generatedAt, now);
+  const scannerUsable = scanner != null && scanner.symbol === symbol && scanner.timeframe === timeframe &&
+    matches(scanner.marketEvidence, scanner.generatedAt, true) && scanner.dataSource === "LIVE_FEED" &&
+    !["EXPIRED", "INVALID"].includes(scanner.lifecycleStage) && !["STALE", "EXPIRED"].includes(scanner.freshness) &&
+    Number.isFinite(Date.parse(scanner.expiresAt)) && Date.parse(scanner.expiresAt) > now;
+  const scalpUsable = scalp != null && scalp.symbol === symbol &&
+    matches(scalp.marketEvidence, scalp.generatedAt, true) &&
+    Number.isFinite(Date.parse(scalp.expiresAt)) && Date.parse(scalp.expiresAt) > now && scalp.flame.freshness !== "EXPIRED";
+  const timingUsable = timing != null && timing.symbol === symbol && timing.timeframe === timeframe &&
+    matches(timing.marketEvidence, timing.generatedAt) && timing.dataQuality.hasCandleData;
   const components = {
-    scanner: scannerComponent(scanner),
-    flame: flameComponent(scalp),
-    timing: timingComponent(timing),
-    scalp: scalpComponent(scalp),
+    scanner: scannerComponent(scannerUsable ? scanner : null),
+    flame: flameComponent(scalpUsable ? scalp : null),
+    timing: timingComponent(timingUsable ? timing : null),
+    scalp: scalpComponent(scalpUsable ? scalp : null),
   };
+  if (scalp?.marketEvidence?.timeframe && scalp.marketEvidence.timeframe !== timeframe) {
+    components.flame.label = components.scalp.label = `The scalp read uses ${scalp.marketEvidence.timeframe}; it is not a vote on this timeframe.`;
+  }
 
   // ── news ────────────────────────────────────────────────────────────────────
   const newsBlock = buildNews(news);
 
   // ── level geometry (from the scanner signal only) ──────────────────────────
-  const hasScannerLevels = scanner != null && scanner.hasSufficientData;
+  const hasScannerLevels = scannerUsable && scanner!.hasSufficientData;
   const levelInput = {
     entryFrom: hasScannerLevels ? (scanner!.entryZone?.from ?? null) : null,
     entryTo: hasScannerLevels ? (scanner!.entryZone?.to ?? null) : null,
@@ -468,7 +493,7 @@ export async function buildSymbolTruthSnapshot(
     symbol,
     timeframe,
     freshnessVerdict: data.state === "LIVE_CONFIRMED" ? "LIVE" : "AWAITING",
-    availableClosedCandles: candles.length,
+    availableClosedCandles: candles.filter((c) => c.isComplete && !c.isForming && Date.parse(c.closeTime) <= now).length,
   });
   const directionReadable = sufficiency.canShowTradeSetup;
   const verdictComponents = directionReadable
@@ -521,11 +546,16 @@ export async function buildSymbolTruthSnapshot(
           composed.levels.withheldReason ?? sufficiency.humanReason,
       };
 
+  const deadlines = Object.values(components).filter(c => c.present).map(c => Date.parse(c.generatedAt!) + COMPONENT_BUILD_TTL_MS);
+  if (components.scanner.present) deadlines.push(Date.parse(scanner!.expiresAt));
+  if (components.flame.present || components.scalp.present) deadlines.push(Date.parse(scalp!.expiresAt));
+  if (deadlines.length && expected) deadlines.push(Date.parse(expected.lastClosedCandleAt) + timeframeMs(timeframe));
   return {
     symbol,
     displaySymbol: chart?.displaySymbol ?? symbol,
     timeframe,
     generatedAt: new Date().toISOString(),
+    validUntil: deadlines.length ? new Date(Math.min(...deadlines)).toISOString() : null,
     data,
     news: newsBlock,
     components,
@@ -541,6 +571,22 @@ export async function buildSymbolTruthSnapshot(
       invalidation: directionReadable ? composed.invalidation : null,
     },
   };
+}
+
+/** A read can expire inside the cache window. Withdraw the directional advice
+ * without refetch fan-out, and keep the original build/data timestamps intact. */
+export function capExpiredTruthSnapshot(snapshot: SymbolTruthSnapshot, now = Date.now()): SymbolTruthSnapshot {
+  if (snapshot.validUntil == null || now < Date.parse(snapshot.validUntil)) return snapshot;
+  const levels = { entryFrom: null, entryTo: null, stopLoss: null, invalidation: null, takeProfit: [] };
+  const composed = composeVerdict({ dataState: snapshot.data.state, price: snapshot.data.price,
+    highImpactWindowActive: snapshot.news.highImpactWindowActive, components: [], levels });
+  const expired = (component: TruthComponent): TruthComponent => component.present
+    ? { ...component, present: false, alignment: "UNKNOWN", label: "This read expired; waiting for current evidence." } : component;
+  return { ...snapshot, components: { scanner: expired(snapshot.components.scanner), flame: expired(snapshot.components.flame),
+    timing: expired(snapshot.components.timing), scalp: expired(snapshot.components.scalp) },
+    levels: { ...composed.levels, withheldReason: "The component evidence expired; waiting for a new read." },
+    verdict: { stage: composed.stage, bias: composed.bias, headline: composed.headline, bestAction: composed.bestAction,
+      bestActionText: composed.bestActionText, evidenceFor: [], evidenceAgainst: [], invalidation: null } };
 }
 
 // ── Cached wrapper (per-user keyed, short TTL) ────────────────────────────────
@@ -562,9 +608,10 @@ export async function getSymbolTruthSnapshot(
 ): Promise<SymbolTruthSnapshot> {
   const tf: ChartTimeframe = isChartTimeframe(timeframe) ? timeframe : "M15";
   const key = `${userId}|${symbol.trim().toUpperCase()}|${tf}`;
-  return snapshotCache.get(key, () =>
+  const snapshot = await snapshotCache.get(key, () =>
     buildSymbolTruthSnapshot(symbol, tf, userId),
   );
+  return capExpiredTruthSnapshot(snapshot);
 }
 
 /** Test helper — drop all cached snapshots. */

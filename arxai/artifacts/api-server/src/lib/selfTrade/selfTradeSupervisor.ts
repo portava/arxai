@@ -7,14 +7,14 @@
 // agent automatically, or touches any execution surface — auto-close stays
 // ALERT_ONLY across the whole product.
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import {
   db,
   selfTradeAgentsTable,
   selfTradeAgentSettingsTable,
-  selfTradeAgentLedgerTable,
   type SelfTradeAgent,
 } from "@workspace/db";
+import { readAccountingRows, projectAccounting, combineAccounting, type AccountingCoverage } from "./accountingCoverage.js";
 
 export type AgentHealthBand = "HEALTHY" | "WATCH" | "AT_RISK" | "UNKNOWN";
 
@@ -23,13 +23,14 @@ export interface AgentHealth {
   agentKey: string;
   status: SelfTradeAgent["status"];
   band: AgentHealthBand;
-  allocatedFunds: number;
-  availableFunds: number;
-  openPnl: number;
-  realizedPnl: number;
-  dailyLossUsed: number;     // |realized loss| measured against the cap (read-only)
+  allocatedFunds: number | null;
+  availableFunds: number | null;
+  openPnl: number | null;
+  realizedPnl: number | null;
+  dailyLossUsed: number | null; // Current UTC day's recorded net loss; null when coverage is incomplete.
   dailyLossCapUsd: number;
   notes: string[];
+  accounting: AccountingCoverage;
 }
 
 export interface FleetHealth {
@@ -41,6 +42,7 @@ export interface FleetHealth {
   totalOpenPnl: number;
   totalRealizedPnl: number;
   agents: AgentHealth[];
+  accounting: AccountingCoverage;
 }
 
 function bandFor(
@@ -60,18 +62,18 @@ function bandFor(
 }
 
 // Read-only fleet health roll-up. No side effects, no execution.
-export async function computeFleetHealth(): Promise<FleetHealth> {
-  const agents = await db.select().from(selfTradeAgentsTable);
+export async function computeFleetHealth(scope?: { userId: number; includeOperatorFleet?: boolean }, now = new Date()): Promise<FleetHealth> {
+  const ownerWhere = scope ? or(
+    and(eq(selfTradeAgentsTable.ownerType, "USER"), eq(selfTradeAgentsTable.ownerId, scope.userId)),
+    scope.includeOperatorFleet ? and(eq(selfTradeAgentsTable.ownerType, "OPERATOR_FLEET"), isNull(selfTradeAgentsTable.ownerId), eq(selfTradeAgentsTable.createdByUserId, scope.userId)) : undefined,
+  ) : undefined;
+  const agents = await db.select().from(selfTradeAgentsTable).where(ownerWhere);
   const ids = agents.map((a) => a.id);
 
-  const ledgers = ids.length
-    ? await db.select().from(selfTradeAgentLedgerTable)
-        .where(inArray(selfTradeAgentLedgerTable.agentId, ids))
-    : [];
-  const settings = ids.length
-    ? await db.select().from(selfTradeAgentSettingsTable)
-        .where(inArray(selfTradeAgentSettingsTable.agentId, ids))
-    : [];
+  const [ledgers, settings] = await Promise.all([
+    readAccountingRows(ids, ownerWhere, now),
+    ids.length ? db.select().from(selfTradeAgentSettingsTable).where(inArray(selfTradeAgentSettingsTable.agentId, ids)) : [],
+  ]);
 
   const ledgerByAgent = new Map(ledgers.map((l) => [l.agentId, l]));
   const settingsByAgent = new Map(settings.map((s) => [s.agentId, s]));
@@ -79,38 +81,42 @@ export async function computeFleetHealth(): Promise<FleetHealth> {
   const agentHealth: AgentHealth[] = agents.map((a) => {
     const l = ledgerByAgent.get(a.id);
     const s = settingsByAgent.get(a.id);
-    const allocated = l?.allocatedFunds ?? 0;
-    const available = l?.availableFunds ?? 0;
-    const realized = l?.realizedPnl ?? 0;
-    const realizedLoss = realized < 0 ? Math.abs(realized) : 0;
+    const recorded = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value) ? value : null;
+    const allocated = recorded(l?.allocatedFunds);
+    const available = recorded(l?.availableFunds);
+    const realized = recorded(l?.realizedPnl);
+    const accounting = projectAccounting(l, now);
+    const realizedLoss = accounting.dailyLossUsed;
     const cap = s?.maxDailyLossUsd ?? 0;
-    const notes: string[] = [];
-    if (allocated <= 0) notes.push("Unfunded — no capital allocated.");
+    const notes: string[] = [...accounting.notes];
+    if (allocated != null && allocated <= 0) notes.push("Unfunded — no capital allocated.");
     if (!s) notes.push("No settings row — using defaults.");
     return {
       agentId: a.id,
       agentKey: a.agentKey,
       status: a.status,
-      band: bandFor(available, allocated, realizedLoss, cap),
+      band: accounting.status !== "RECORDED" || realizedLoss == null || available == null || allocated == null ? "UNKNOWN" : bandFor(available, allocated, realizedLoss, cap),
       allocatedFunds: allocated,
       availableFunds: available,
-      openPnl: l?.openPnl ?? 0,
+      openPnl: recorded(l?.openPnl),
       realizedPnl: realized,
       dailyLossUsed: realizedLoss,
       dailyLossCapUsd: cap,
       notes,
+      accounting,
     };
   });
 
   return {
     totalAgents: agents.length,
     activeAgents: agents.filter((a) => a.status === "ACTIVE").length,
-    fundedAgents: agentHealth.filter((a) => a.allocatedFunds > 0).length,
-    totalAllocated: agentHealth.reduce((s, a) => s + a.allocatedFunds, 0),
-    totalAvailable: agentHealth.reduce((s, a) => s + a.availableFunds, 0),
-    totalOpenPnl: agentHealth.reduce((s, a) => s + a.openPnl, 0),
-    totalRealizedPnl: agentHealth.reduce((s, a) => s + a.realizedPnl, 0),
+    fundedAgents: agentHealth.filter((a) => a.allocatedFunds != null && a.allocatedFunds > 0).length,
+    totalAllocated: agentHealth.reduce((s, a) => s + (a.allocatedFunds ?? 0), 0),
+    totalAvailable: agentHealth.reduce((s, a) => s + (a.availableFunds ?? 0), 0),
+    totalOpenPnl: agentHealth.reduce((s, a) => s + (a.openPnl ?? 0), 0),
+    totalRealizedPnl: agentHealth.reduce((s, a) => s + (a.realizedPnl ?? 0), 0),
     agents: agentHealth,
+    accounting: combineAccounting(agentHealth.map(a => a.accounting), now),
   };
 }
 

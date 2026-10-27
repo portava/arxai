@@ -51,7 +51,6 @@ import { getConnection } from "../brokerHub/connections.js";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, arxLiveCommandsTable, type ArxLiveCommand, type ArxLiveCommandStatus } from "@workspace/db";
 import {
-  buildExecutionEventRow,
   isAllowedLiveTransition,
   settleReservationForStatus,
 } from "./liveCommandPipeline.js";
@@ -152,77 +151,10 @@ export function reconciliationFreshnessVerdict(
   return { ok: true, reason: "FRESH_AND_CLEAN", ageMs };
 }
 
-// ── Best-effort execution_events writer ─────────────────────────────────────
-// Same contract as the pipeline's private recordExecutionEvent (R2 S2): the
-// pure shaping is REUSED via the exported buildExecutionEventRow; the insert
-// computes sequence_no in-statement and retries the unique-violation race a
-// bounded number of times; every failure warns and returns — evidence writes
-// must never fail or delay reconciliation. Exported so the legacy
-// executionReconciler (R2 S5 partial fills) can append evidence for bridged
-// live commands through ONE writer instead of cloning the SQL.
-
-const EVENT_INSERT_ATTEMPTS = 3;
-
-export async function appendExecutionEvidence(input: {
-  commandRowId: number | null | undefined;
-  source: string;
-  eventType: string;
-  payload?: Record<string, unknown> | null;
-  occurredAt?: Date | null;
-}): Promise<void> {
-  try {
-    const shaped = buildExecutionEventRow(input);
-    if (!shaped.ok) {
-      logger.warn({
-        [PHASE_B_LIVE_LOG_PREFIX]: true,
-        event: "EXECUTION_EVENT_SKIPPED",
-        reason: shaped.reason, eventType: input.eventType,
-      }, "execution event refused by shaping — evidence not recorded");
-      return;
-    }
-    const { row } = shaped;
-    let payloadJson: string;
-    try {
-      payloadJson = JSON.stringify(row.payload);
-    } catch {
-      payloadJson = JSON.stringify({ unserializablePayload: true });
-    }
-    for (let attempt = 1; attempt <= EVENT_INSERT_ATTEMPTS; attempt++) {
-      try {
-        await db.execute(sql`
-          insert into execution_events
-            (command_id, source, event_type, payload, occurred_at, sequence_no)
-          values (
-            ${row.commandRowId}, ${row.source}, ${row.eventType},
-            ${payloadJson}::jsonb, ${row.occurredAt},
-            (select coalesce(max(sequence_no), 0) + 1
-               from execution_events where command_id = ${row.commandRowId})
-          )
-        `);
-        return;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        const isSeqRace = /execution_events_command_seq_uq|duplicate key/.test(msg);
-        if (isSeqRace && attempt < EVENT_INSERT_ATTEMPTS) continue;
-        logger.warn({
-          [PHASE_B_LIVE_LOG_PREFIX]: true,
-          event: "EXECUTION_EVENT_WRITE_FAILED",
-          commandRowId: row.commandRowId, eventType: row.eventType,
-          attempt, error: msg,
-        }, "execution event write failed — evidence not recorded (reconciliation unaffected)");
-        return;
-      }
-    }
-  } catch (e) {
-    logger.warn({
-      [PHASE_B_LIVE_LOG_PREFIX]: true,
-      event: "EXECUTION_EVENT_WRITE_FAILED",
-      eventType: input.eventType,
-      error: e instanceof Error ? e.message : String(e),
-    }, "execution event write failed — evidence not recorded (reconciliation unaffected)");
-  }
-}
-
+// Shared strict writer; command-level serialization also covers concurrent
+// broker results and legacy partial-fill observations. Persistence errors propagate.
+import { appendExecutionEvidence } from "./executionEvidence.js";
+export { appendExecutionEvidence } from "./executionEvidence.js";
 // ── The runner ───────────────────────────────────────────────────────────────
 
 export interface UnknownReconcileReport {
