@@ -5,6 +5,7 @@ export * from "./strategies";
 export * from "./signals";
 export * from "./trades";
 export * from "./backtests";
+export * from "./researchExperiments";
 export * from "./performanceDaily";
 export * from "./mt5Commands";
 export * from "./alerts";

@@ -281,7 +281,8 @@
     "test:backtest-evidence": "node --import tsx --test src/lib/backtest/__qa__/backtestEvidence.test.ts",
     "test:backtest-evidence:postgres": "node src/lib/backtest/__qa__/runBacktestEvidencePostgres.mjs",
     "test:causal-research": "node --import tsx --test src/lib/backtest/__qa__/causalResearch.test.ts",
-    "benchmark:causal-research": "node --import tsx src/lib/backtest/__qa__/causalResearch.benchmark.ts"
+    "benchmark:causal-research": "node --import tsx src/lib/backtest/__qa__/causalResearch.benchmark.ts",
+    "test:research-evidence-postgres": "node src/lib/backtest/__qa__/runResearchEvidencePostgres.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
