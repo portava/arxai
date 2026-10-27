@@ -167,10 +167,24 @@ export function buildReasoningFromMarketRead(
     ? "Trendline read withheld until the live feed confirms."
     : "No specific trendline called out.";
 
+  // Feed wording is used ONLY when the feed is actually the reason: the gate is
+  // downgraded, or the signal's own feed isn't a confirmed live feed, or the
+  // server says the data is insufficient — exactly the cases where Feed/Data
+  // below is NOT "Live feed confirmed.". On a confirmed feed a non-actionable
+  // read withholds levels because no setup exists yet, so say that and reuse the
+  // server's own cause-specific level statement (owner screenshot 2026-10-27:
+  // NO TRADE / "No level to watch yet." beside "Live feed confirmed.").
+  const ds = String(signal.dataSource ?? "").toUpperCase();
+  const feedIsWithholdingReason = downgraded || ds !== "LIVE_FEED" || !exp.hasSufficientData;
   let supportResistance: string;
-  if (downgraded || !actionable) {
+  if (feedIsWithholdingReason && (downgraded || !actionable)) {
     supportResistance =
       "Key support/resistance levels are withheld until the live feed confirms.";
+  } else if (!actionable) {
+    supportResistance = `No entry, stop or target published — this read isn't actionable yet. ${orElse(
+      chosen?.entryZone,
+      orElse(exp.noTrade?.reason, "No level to watch yet."),
+    )}`;
   } else {
     const lv = exp.levels;
     const parts: string[] = [];
@@ -182,7 +196,6 @@ export function buildReasoningFromMarketRead(
       : "No clean support/resistance level marked yet — be cautious entering blind.";
   }
 
-  const ds = String(signal.dataSource ?? "").toUpperCase();
   let feedData: string;
   if (downgraded) {
     const cat =
@@ -673,7 +686,10 @@ export function buildReasoningFromOppMap(
   );
   const momentum = `Confidence ${orElse(input.confidenceLabel, "—")}; volatility ${orElse(input.volatilityLabel, "—")}.`;
   const pattern = orElse(exp.whyItMatters, "No specific pattern called out.");
-  const trendline = withheld
+  // Blame the feed only when the feed is the reason (not LIVE_CONFIRMED). A
+  // confirmed snapshot with no entry zone simply has no setup yet.
+  const feedConfirmed = ds === "LIVE_CONFIRMED";
+  const trendline = withheld && !feedConfirmed
     ? "Trendline read withheld until a confirmed live feed."
     : "No specific trendline called out.";
 
@@ -681,7 +697,9 @@ export function buildReasoningFromOppMap(
   if (withheld || !input.entryZone) {
     supportResistance = orElse(
       input.levelsWithheldReason,
-      "Entry, stop, and target are withheld until a confirmed live feed.",
+      feedConfirmed
+        ? "No entry, stop or target published yet — no actionable setup."
+        : "Entry, stop, and target are withheld until a confirmed live feed.",
     );
   } else {
     supportResistance = `Entry ${fmtNum(input.entryZone.low)} – ${fmtNum(input.entryZone.high)}, stop ${fmtNum(input.suggestedStop)}, target ${fmtNum(input.suggestedTakeProfit)} (R:R 1:${input.riskRewardRatio}). Mind room into nearby support/resistance.`;
@@ -726,9 +744,11 @@ export function buildReasoningFromOppMap(
     exp.cautions?.length ? exp.cautions.join(" ") : "",
     orElse(
       input.riskWarnings?.length ? input.riskWarnings.join(" ") : "",
-      withheld
+      withheld && !feedConfirmed
         ? "Levels are withheld on an unconfirmed feed — wait for confirmation before committing."
-        : "Don't force it — wait for your confirmation trigger before committing.",
+        : withheld
+          ? "No levels published yet — wait for a defined setup before committing."
+          : "Don't force it — wait for your confirmation trigger before committing.",
     ),
   );
 
