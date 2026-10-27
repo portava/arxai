@@ -1,6 +1,8 @@
 // Exact SERVER management identity. legacyBrokerCompany is the existing
 // brokerServer column's company label, NOT an MT5 server or terminal session.
-// Terminal account switches after the claim remain an unresolved EA contract.
+// Upgraded EAs additionally preflight current identity; terminal-session
+// atomicity and broker execution identity remain unverified.
+import { supportsManagementTarget } from "../mt5/managementTargetProtocol.js";
 import { isDeepStrictEqual } from "node:util";
 import { and, eq } from "drizzle-orm";
 import {
@@ -418,6 +420,7 @@ export function claimManagementCommand(
         )
         .for("update");
       if (!current || current.status !== requiredStatus) return null;
+      if (!supportsManagementTarget(bridge.capabilities)) refuse("MANAGEMENT_TERMINAL_UPGRADE_REQUIRED");
       if (
         !isDeepStrictEqual(current, expected) ||
         readManagementMemory(facts.execution.managementState).pendingManagement

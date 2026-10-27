@@ -24,6 +24,7 @@
 #property description "ARX MT5 bridge 1.31: guarded DEMO hedging execution, exact close volume, broker results and durable replay protection. All trading arms default off."
 
 #include <Trade/Trade.mqh>
+#include "ArxManagementTarget.mqh"
 
 //--- Inputs (configure on the EA chart properties dialog) ----------
 input string  ServerBaseUrl           = "https://your-replit-app.replit.app"; // e.g. https://<repl>.replit.app  (no trailing slash)
@@ -351,7 +352,7 @@ string ValidateServerBaseUrl()
 // Build common headers (token + content-type). Token never appears in log.
 string BuildHeaders()
 {
-   return StringFormat("%s: %s\r\nContent-Type: application/json\r\n",
+   return StringFormat("%s: %s\r\nContent-Type: application/json\r\nX-ARX-Management-Target: 1\r\n",
                        HDR_TOKEN_NAME, BridgeToken);
 }
 
@@ -775,6 +776,14 @@ void PollAndExecuteLiveCommands()
    {
       string ticketStr = JsonReadString(resp, "brokerTicket");
       ulong tkt = (ulong)StringToInteger(ticketStr);
+      string managementWire, managementReason; bool hasCommand, boundManagement;
+      if(!ArxJsonMember(resp,"command",managementWire,hasCommand) || !hasCommand ||
+         !ArxManagementPreflight(managementWire,commandType,tkt,sl,tp,boundManagement,managementReason))
+      {
+         string rejected=StringFormat("{\"commandId\":\"%s\",\"status\":\"LIVE_REJECTED\",\"reason\":%s}",commandId,JString(managementReason));
+         string rejectedAck; HttpPost("/api/mt5/live-command-result",rejected,rejectedAck,"LIVERES");
+         LiveDoneRecord(commandId,"LIVE_REJECTED"); return;
+      }
       ok = trade.PositionClose(tkt);
       ticket    = tkt;
       // v1.28: capture the broker's real close fill price + executed volume
@@ -791,6 +800,14 @@ void PollAndExecuteLiveCommands()
    {
       string ticketStr = JsonReadString(resp, "brokerTicket");
       ulong tkt = (ulong)StringToInteger(ticketStr);
+      string managementWire, managementReason; bool hasCommand, boundManagement;
+      if(!ArxJsonMember(resp,"command",managementWire,hasCommand) || !hasCommand ||
+         !ArxManagementPreflight(managementWire,commandType,tkt,sl,tp,boundManagement,managementReason))
+      {
+         string rejected=StringFormat("{\"commandId\":\"%s\",\"status\":\"LIVE_REJECTED\",\"reason\":%s}",commandId,JString(managementReason));
+         string rejectedAck; HttpPost("/api/mt5/live-command-result",rejected,rejectedAck,"LIVERES");
+         LiveDoneRecord(commandId,"LIVE_REJECTED"); return;
+      }
       ok = trade.PositionModify(tkt, sl, tp);
       ticket  = tkt;
       retcode = (int)trade.ResultRetcode();
@@ -940,6 +957,7 @@ void SendHeartbeatNow()
    body += "\"supportsSelfUpdate\":"        + JBool(true) + ",";
    body += "\"supportsRemoteConfig\":"      + JBool(true) + ",";
    body += "\"supportsCommandTtl\":"        + JBool(true) + ",";
+   body += "\"supportsManagementTargetV1\":true,";
    body += "\"supportsExactlyOnce\":"       + JBool(true) + ",";
    body += "\"supportsSymbolCapabilities\":"+ JBool(true) + ",";
    body += "\"supportsEmergencyClose\":"    + JBool(true) + ",";

@@ -77,6 +77,10 @@ try {
         ...env,
         DATABASE_URL: `postgresql://arx_qa@localhost/arx_management_target_test?host=${encodeURIComponent(socket)}&port=55447`,
         ARX_MANAGEMENT_TARGET_PG: "1",
+        ...(process.env.ARX_TERMINAL_MAILBOX_BENCHMARK ? {
+          ARX_TERMINAL_MAILBOX_BENCHMARK: process.env.ARX_TERMINAL_MAILBOX_BENCHMARK,
+          ARX_TERMINAL_BASELINE_ROOT: process.env.ARX_TERMINAL_BASELINE_ROOT,
+        } : {}),
         ...(process.env.ARX_MANUAL_RESULT_BENCHMARK_OUTPUT
           ? {
               ARX_MANUAL_RESULT_BENCHMARK_OUTPUT:

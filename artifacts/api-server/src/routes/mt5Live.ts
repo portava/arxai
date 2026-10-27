@@ -1,3 +1,4 @@
+import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported } from "../lib/mt5/managementTargetProtocol.js";
 // Phase B — EA-facing LIVE execution endpoints.
 //
 // SAFETY (inviolable):
@@ -83,6 +84,53 @@ router.post("/mt5/live-commands-poll", bridgeAuthPerUserOnly, async (req: AugReq
     userId: conn.userId!,
     bridgeConnectionId: conn.id,
     bridgeAccountType: conn.accountType,
+    managementTargetSupported: managementTargetPollSupported(conn.capabilities, req.get(MANAGEMENT_TARGET_HEADER)),
+    prepareResponse: async (c, reader) => {
+      // Task #28 — expose TTL freshness to the EA. `secondsUntilExpiry` is
+      // computed server-side so the EA never has to parse ISO timestamps or
+      // trust its own wall-clock: if it is <= 0 the EA refuses the command with
+      // STALE_COMMAND_REJECTED. `expiresAt`/`serverTimestamp`/`ttlSeconds` are
+      // included for audit + forward-compat.
+      const nowMs = Date.now();
+      const expiresAtMs = c.expiresAt ? new Date(c.expiresAt).getTime() : null;
+      const secondsUntilExpiry = expiresAtMs != null
+        ? Math.floor((expiresAtMs - nowMs) / 1000)
+        : null;
+      // Transport-layer name translation: hand the EA the broker's EXACT,
+      // case-sensitive Market Watch symbol (e.g. "Volatility 75 Index") rather
+      // than ARX's internal uppercased/alias form. No-op for forex; verbatim
+      // fallback for anything not in the registry. Does NOT alter the stored
+      // command or any safety gate.
+      const brokerSymbol = boundManagementTransportSymbol(c) ?? await resolveBrokerSymbolName(c.symbol, reader);
+      return JSON.stringify({
+        command: {
+          commandId: c.commandId,
+          commandType: c.commandType,
+          symbol: brokerSymbol,
+          side: c.side,
+          orderType: c.orderType,
+          requestedVolume: c.requestedVolume,
+          stopLoss: c.stopLoss,
+          takeProfit: c.takeProfit,
+          // Task #30 — drafted reference price for the EA's slippage/deviation
+          // guard. Stored on payload at draft; null when the caller drafted no
+          // reference price (EA then skips the deviation leg, fail-open).
+          referencePrice: ((): number | null => {
+            const p = c.payload as Record<string, unknown> | null | undefined;
+            const v = p?.["referencePrice"];
+            return typeof v === "number" && v > 0 ? v : null;
+          })(),
+          payload: c.payload,
+          accountLogin: c.accountLogin,
+          brokerServer: c.brokerServer,
+          ttlSeconds: c.ttlSeconds,
+          expiresAt: c.expiresAt,
+          serverTimestamp: c.serverTimestamp,
+          secondsUntilExpiry,
+    },
+    ...LIVE_SAFETY_ENVELOPE,
+  });
+    },
   });
   if (result.refusalReason) {
     res.status(403).json({ error: result.refusalReason, ...LIVE_SAFETY_ENVELOPE });
@@ -92,51 +140,7 @@ router.post("/mt5/live-commands-poll", bridgeAuthPerUserOnly, async (req: AugReq
     res.json({ command: null, ...LIVE_SAFETY_ENVELOPE });
     return;
   }
-  const c = result.command;
-  // Task #28 — expose TTL freshness to the EA. `secondsUntilExpiry` is
-  // computed server-side so the EA never has to parse ISO timestamps or
-  // trust its own wall-clock: if it is <= 0 the EA refuses the command with
-  // STALE_COMMAND_REJECTED. `expiresAt`/`serverTimestamp`/`ttlSeconds` are
-  // included for audit + forward-compat.
-  const nowMs = Date.now();
-  const expiresAtMs = c.expiresAt ? new Date(c.expiresAt).getTime() : null;
-  const secondsUntilExpiry = expiresAtMs != null
-    ? Math.floor((expiresAtMs - nowMs) / 1000)
-    : null;
-  // Transport-layer name translation: hand the EA the broker's EXACT,
-  // case-sensitive Market Watch symbol (e.g. "Volatility 75 Index") rather
-  // than ARX's internal uppercased/alias form. No-op for forex; verbatim
-  // fallback for anything not in the registry. Does NOT alter the stored
-  // command or any safety gate.
-  const brokerSymbol = boundManagementTransportSymbol(c) ?? await resolveBrokerSymbolName(c.symbol);
-  res.json({
-    command: {
-      commandId: c.commandId,
-      commandType: c.commandType,
-      symbol: brokerSymbol,
-      side: c.side,
-      orderType: c.orderType,
-      requestedVolume: c.requestedVolume,
-      stopLoss: c.stopLoss,
-      takeProfit: c.takeProfit,
-      // Task #30 — drafted reference price for the EA's slippage/deviation
-      // guard. Stored on payload at draft; null when the caller drafted no
-      // reference price (EA then skips the deviation leg, fail-open).
-      referencePrice: ((): number | null => {
-        const p = c.payload as Record<string, unknown> | null | undefined;
-        const v = p?.["referencePrice"];
-        return typeof v === "number" && v > 0 ? v : null;
-      })(),
-      payload: c.payload,
-      accountLogin: c.accountLogin,
-      brokerServer: c.brokerServer,
-      ttlSeconds: c.ttlSeconds,
-      expiresAt: c.expiresAt,
-      serverTimestamp: c.serverTimestamp,
-      secondsUntilExpiry,
-    },
-    ...LIVE_SAFETY_ENVELOPE,
-  });
+  res.type("application/json").send(result.serializedResponse!);
 });
 
 // ── POST /api/mt5/live-command-result ──────────────────────────────────────

@@ -1,3 +1,5 @@
+import { projectManagementMailbox } from "../lib/mt5/managementTargetTransport.js";
+import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported, legacyManagementPickupPredicate } from "../lib/mt5/managementTargetProtocol.js";
 import {
   MT5_ACCOUNT_SNAPSHOT_FRESH_MS,
   MT5_HEARTBEAT_FRESH_BELOW_SECONDS,
@@ -11,7 +13,7 @@ import { applyOwnPositionSnapshot } from "../lib/mt5/executionReconciler.js";
 import { noteBridgeHeartbeat, scheduleGuardian } from "../lib/positionGuardian/reconcile.js";
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod/v4";
-import { db, mt5CommandsTable, mt5StateTable, sharedMasterAccountsTable, sharedTradeAttributionTable, arxSymbolSpecsTable } from "@workspace/db";
+import { db, arxLiveCommandsTable, mt5CommandsTable, mt5StateTable, sharedMasterAccountsTable, sharedTradeAttributionTable, arxSymbolSpecsTable } from "@workspace/db";
 import { recordUnattributedMasterTrade } from "../lib/mt5/unattributedMasterTrades.js";
 import { mapV150Enumeration, type V150EnumEntry } from "../lib/mt5/symbolDirectory.js";
 import { ingestEaCapabilities } from "../lib/mt5/eaCapabilityMapping.js";
@@ -903,50 +905,84 @@ router.get("/mt5/setup-checklist", async (req, res) => {
 // or resurrect a cancelled row.
 router.get("/mt5/commands", bridgeAuthPerUserOnly, async (req, res) => {
   const conn = (req as Request & { mt5Connection: BrokerConnectionRecord }).mt5Connection;
-  const candidateIds = (await db.select({ id: mt5CommandsTable.id }).from(mt5CommandsTable)
-    .where(and(
+  const targetSupported = managementTargetPollSupported(conn.capabilities, req.get(MANAGEMENT_TARGET_HEADER));
+  // Align the actual wire response with ArxJsonMember's UTF-16 code-unit cap.
+  // The conservative per-row byte prefilter excludes oversized head rows BEFORE
+  // LIMIT, so normal manual protection behind them remains eligible.
+  const MAX_COMMAND_JSON_BYTES = 64_000;
+  const MAX_RESPONSE_UTF16_UNITS = 65_536;
+  const now = new Date();
+  const COMMAND_EXPIRY_SECONDS = 120;
+  type Command = typeof mt5CommandsTable.$inferSelect;
+  const wire = (r: Command) => {
+    const created = r.createdAt ?? now;
+    const expiresAt = new Date(created.getTime() + COMMAND_EXPIRY_SECONDS * 1000);
+    return { ...r, createdAt: created.toISOString(),
+      createdAtEpoch: Math.floor(created.getTime() / 1000),
+      expiresAt: expiresAt.toISOString(), expiresAtEpoch: Math.floor(expiresAt.getTime() / 1000),
+      expirySeconds: COMMAND_EXPIRY_SECONDS,
+      deliveredAt: r.deliveredAt?.toISOString() ?? null,
+      completedAt: r.completedAt?.toISOString() ?? null };
+  };
+  const envelope = (commands: ReturnType<typeof wire>[]) => ({ commands,
+    deliveryLimits: { maxCommandJsonBytes: MAX_COMMAND_JSON_BYTES, maxResponseUtf16Units: MAX_RESPONSE_UTF16_UNITS } });
+  const result = await db.transaction(async (tx) => {
+    // Mailbox rows only; no broker/agent/position lock or network operation.
+    // Locked snapshots make the pre-claim size calculation stable through CAS.
+    const candidates = await tx.select().from(mt5CommandsTable).where(and(
       eq(mt5CommandsTable.status, "PENDING"),
       eq(mt5CommandsTable.userId, conn.userId!),
       eq(mt5CommandsTable.mt5ConnectionId, conn.id),
-    ))
-    .orderBy(asc(mt5CommandsTable.createdAt))
-    .limit(50)).map((r) => r.id);
-  if (candidateIds.length === 0) { res.json({ commands: [] }); return; }
-  const now = new Date();
-  const claimed = await db.update(mt5CommandsTable)
-    .set({ status: "DELIVERED", deliveredAt: now, claimedAt: now, updatedAt: now })
-    .where(and(
-      inArray(mt5CommandsTable.id, candidateIds),
-      eq(mt5CommandsTable.status, "PENDING"),                    // atomic guard
-      eq(mt5CommandsTable.userId, conn.userId!),                 // re-check ownership
-      eq(mt5CommandsTable.mt5ConnectionId, conn.id),
-    ))
-    .returning();
-  if (claimed.length) {
-    req.log.info({ count: claimed.length, userId: conn.userId, connectionId: conn.id }, "MT5 commands delivered (per-user, atomic)");
-  }
-  // T033 Phase 9 — stamp server-time expiry fields on every command the EA
-  // polls. createdAtEpoch (seconds) is what the v1.50 EA's expiry check reads;
-  // expiresAt/expirySeconds make the TTL explicit. Derived from the row's
-  // server-set createdAt — never client/browser time. Command IDs unchanged.
-  const COMMAND_EXPIRY_SECONDS = 120;
-  res.json({
-    commands: claimed.map((r) => {
-      const created = r.createdAt ?? now;
-      const createdAtEpoch = Math.floor(created.getTime() / 1000);
-      const expiresAtDate = new Date(created.getTime() + COMMAND_EXPIRY_SECONDS * 1000);
-      return {
-        ...r,
-        createdAt: created.toISOString(),
-        createdAtEpoch,
-        expiresAt: expiresAtDate.toISOString(),
-        expiresAtEpoch: Math.floor(expiresAtDate.getTime() / 1000),
-        expirySeconds: COMMAND_EXPIRY_SECONDS,
-        deliveredAt: r.deliveredAt?.toISOString() ?? null,
-        completedAt: r.completedAt?.toISOString() ?? null,
-      };
-    }),
+      legacyManagementPickupPredicate(targetSupported),
+      sql`octet_length(to_jsonb(${mt5CommandsTable})::text) <= ${MAX_COMMAND_JSON_BYTES}`,
+    )).orderBy(asc(mt5CommandsTable.createdAt), asc(mt5CommandsTable.id))
+      .limit(50).for("update", { skipLocked: true });
+    // Same transaction reader; never acquire another pooled connection while
+    // holding mailbox locks. Authoritative commands are read, not locked, so
+    // this does not add mailbox→command to the existing lock order.
+    const commandIds = [...new Set(candidates.map(row => {
+      const id = (row.payload as Record<string, unknown> | null)?.liveCommandId;
+      return typeof id === "string" ? id : "";
+    }).filter(Boolean))];
+    const authority = commandIds.length ? await tx.select().from(arxLiveCommandsTable).where(and(
+      inArray(arxLiveCommandsTable.commandId, commandIds),
+      eq(arxLiveCommandsTable.bridgeConnectionId, conn.id),
+    )) : [];
+    const byId = new Map(authority.map(row => [row.commandId, row]));
+    const projected = new Map<number, Command>();
+    let heldTargets = 0;
+    const selected: number[] = [];
+    const planned: ReturnType<typeof wire>[] = [];
+    for (const row of candidates) {
+      const linked = (row.payload as Record<string, unknown> | null)?.liveCommandId;
+      const precise = projectManagementMailbox(row, typeof linked === "string" ? byId.get(linked) : undefined);
+      if (!precise) { heldTargets++; continue; }
+      projected.set(row.id, precise);
+      const candidate = wire({ ...precise, status: "DELIVERED", deliveredAt: now, claimedAt: now, updatedAt: now });
+      if (JSON.stringify(envelope([...planned, candidate])).length <= MAX_RESPONSE_UTF16_UNITS) {
+        selected.push(row.id); planned.push(candidate);
+      }
+    }
+    if (!selected.length) return { count: 0, heldTargets, body: JSON.stringify(envelope([])) };
+    const claimed = await tx.update(mt5CommandsTable)
+      .set({ status: "DELIVERED", deliveredAt: now, claimedAt: now, updatedAt: now })
+      .where(and(
+        inArray(mt5CommandsTable.id, selected),
+        eq(mt5CommandsTable.status, "PENDING"),
+        eq(mt5CommandsTable.userId, conn.userId!),
+        eq(mt5CommandsTable.mt5ConnectionId, conn.id),
+        legacyManagementPickupPredicate(targetSupported),
+      )).returning();
+    if (claimed.length !== selected.length) throw new Error("MT5_MAILBOX_CLAIM_CHANGED");
+    const body = JSON.stringify(envelope(claimed.map(row => wire({ ...row, symbol: projected.get(row.id)!.symbol, side: projected.get(row.id)!.side, lot: projected.get(row.id)!.lot, sl: projected.get(row.id)!.sl, tp: projected.get(row.id)!.tp }))));
+    // A defensive invariant failure rolls back every claim, never discards a
+    // committed delivery. JSON is sent verbatim so formatting cannot grow it.
+    if (body.length > MAX_RESPONSE_UTF16_UNITS) throw new Error("MT5_MAILBOX_ENVELOPE_TOO_LARGE");
+    return { count: claimed.length, heldTargets, body };
   });
+  if (result.heldTargets) req.log.warn({ count: result.heldTargets, connectionId: conn.id }, "MT5 automatic targets held pending: authoritative mirror projection refused");
+  if (result.count) req.log.info({ count: result.count, userId: conn.userId, connectionId: conn.id }, "MT5 commands delivered (per-user, bounded atomic claim)");
+  res.type("application/json").send(result.body);
 });
 
 router.post("/mt5/queue-command", requireUser, refuseWhenNotArmed, async (req, res) => {

@@ -4,6 +4,7 @@ import { after, before, beforeEach, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import {
   and,
+  asc,
   eq,
   inArray,
   isNull,
@@ -12,7 +13,11 @@ import {
   getTableName,
   SQL,
 } from "drizzle-orm";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { PgDialect, type PgTable } from "drizzle-orm/pg-core";
 const destination = new URL(process.env.DATABASE_URL ?? "postgres://invalid");
@@ -46,6 +51,8 @@ const {
   userSlotAllocationTable: allocations,
   arxDispatchExposureReservationsTable: reservations,
   resultSettlementJobsTable: settlementJobs,
+  mt5CommandsTable: mailbox,
+  symbolsTable: symbolRegistry,
 } = database;
 process.env.SESSION_SECRET = "synthetic-offline-management-signing-material";
 mock.method(globalThis, "fetch", async () => {
@@ -118,6 +125,7 @@ const {
   reconcileBoundManagementClose,
   reconcileGhostClosedPositions,
   recordLiveCommandResult,
+  pickupNextLiveCommand,
 } = await import("../../live/liveCommandPipeline.js");
 let deliveries = 0;
 mock.module("../../tradeEngine/pipeline.js", {
@@ -186,6 +194,8 @@ const tables = [
   ledgerEntries,
   reservations,
   settlementJobs,
+  mailbox,
+  symbolRegistry,
 ];
 const dialect = new PgDialect();
 const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
@@ -237,6 +247,7 @@ async function resetFixture() {
       accountNumber: "A",
       brokerName: "Venue Company",
       serverName: "Venue-Server-1",
+      capabilities: { supportsManagementTargetV1: true },
       apiKeyHash: "fixture-a",
       status: "connected",
       accountType: "live",
@@ -2198,4 +2209,222 @@ it("lease expiring after committed position application cannot certify DONE; rep
   assert.equal((await pool.query("select status from result_settlement_jobs where id=$1",[claim.id])).rows[0].status,"DONE");
   assert.equal((await pool.query("select count(*) from execution_events where event_type='POSITION_RESULT_APPLIED'")).rows[0].count,"1");
   assert.equal(missionCloseCalls,0);
+});
+
+// Terminal target protocol: real route handlers, SQL predicates and final CAS.
+const { default: mt5Router } = await import("../../../routes/mt5.js");
+const { default: mt5LiveRouter } = await import("../../../routes/mt5Live.js");
+async function pollRoute(legacy: boolean, header?: string) {
+  const route = (legacy ? mt5Router : mt5LiveRouter).stack.find((layer: any) =>
+    layer.route?.path === (legacy ? "/mt5/commands" : "/mt5/live-commands-poll"))!.route!;
+  const [connection] = await db.select().from(bridges).where(eq(bridges.id, 1));
+  let body: any; let status = 200;
+  const response: any = { json: (value: unknown) => { body = value; return response; },
+    status: (value: number) => { status = value; return response; },
+    type: () => response, send: (value: string) => { body = JSON.parse(value); return response; } };
+  await route.stack.at(-1)!.handle({ mt5Connection: connection,
+    get: (key: string) => key === "x-arx-management-target" ? header : undefined,
+    log: { info() {}, warn() {}, error() {} }, body: {}, headers: {},
+  } as any, response, () => {});
+  assert.equal(status, 200, JSON.stringify(body));
+  return body;
+}
+async function queuedManagement() {
+  const row = await approved(); await send(row);
+  return row;
+}
+async function mirror(row: Awaited<ReturnType<typeof approved>>, payload = buildBridgedMt5CommandPayload({ ...row, payload: row.payload as Record<string, unknown> | null })) {
+  return (await db.insert(mailbox).values({ userId: (row.payload as any).managementTargetV1?.bridgeOwnerUserId ?? 9, requestedByUserId: row.userId, mt5ConnectionId: 1,
+    action: row.commandType === "MODIFY_LIVE_SLTP" ? "MODIFY_POSITION" : "CLOSE_POSITION", symbol: row.symbol, lot: row.requestedVolume, sl: row.stopLoss, tp: row.takeProfit,
+    status: "PENDING", payload }).returning())[0]!;
+}
+it("missing or nonboolean capability refuses automatic confirmation and never promotes it", async () => {
+  const row = await draft();
+  for (const capabilities of [null, {}, { supportsManagementTargetV1: false }, { supportsManagementTargetV1: "true" }]) {
+    await updateConnection(1, { capabilities });
+    await denied(claimLiveCommandForConfirm(row.commandId, { status: "LIVE_APPROVED" }, row), "MANAGEMENT_TERMINAL_UPGRADE_REQUIRED");
+  }
+  assert.equal((await db.select().from(commands).where(eq(commands.commandId,row.commandId)))[0]!.status,row.status);
+});
+it("capability removal after confirmation refuses final automatic dispatch", async () => {
+  const row = await approved(); await updateConnection(1, { capabilities: {} });
+  await denied(send(row), "MANAGEMENT_TERMINAL_UPGRADE_REQUIRED");
+});
+it("actual live poll requires both current capability and per-request protocol header", async () => {
+  const row = await queuedManagement();
+  assert.equal((await pollRoute(false)).command,null);
+  assert.equal((await pollRoute(false,"true")).command,null);
+  await updateConnection(1,{ capabilities: {} });
+  assert.equal((await pollRoute(false,"1")).command,null);
+  assert.equal((await db.select().from(commands).where(eq(commands.commandId,row.commandId)))[0]!.pickedByEaAt,null);
+  await updateConnection(1,{ capabilities: { supportsManagementTargetV1: true } });
+  assert.equal((await pollRoute(false,"1")).command.commandId,row.commandId);
+  assert.equal((await pollRoute(false,"1")).command,null);
+});
+it("old live poll skips automatic work and still delivers later manual protection", async () => {
+  await queuedManagement();
+  await db.insert(commands).values({ commandId:"manual-protect",userId:9,bridgeConnectionId:1,
+    commandType:"CLOSE_LIVE_POSITION",symbol:"EURUSD.a",side:"BUY",orderType:"CLOSE",
+    requestedVolume:.1,status:"SENT_TO_MT5_LIVE",payload:{brokerTicket:"123"} });
+  assert.equal((await pollRoute(false)).command.commandId,"manual-protect");
+});
+it("actual legacy mailbox withholds automation without marking it delivered; manual protection is unaffected", async () => {
+  const row = await queuedManagement(); const bound = await mirror(row);
+  await db.insert(mailbox).values({userId:9,mt5ConnectionId:1,action:"CLOSE_POSITION",symbol:"EURUSD.a",status:"PENDING",payload:{positionTicket:"123"}});
+  const first = await pollRoute(true);
+  assert.equal(first.commands.length,1);assert.notEqual(first.commands[0].id,bound.id);
+  assert.equal((await db.select().from(mailbox).where(eq(mailbox.id,bound.id)))[0]!.status,"PENDING");
+  await updateConnection(1,{ capabilities: {} });
+  assert.deepEqual((await pollRoute(true,"1")).commands,[]);
+  await updateConnection(1,{ capabilities:{supportsManagementTargetV1:true} });
+  const results = await Promise.all([pollRoute(true,"1"),pollRoute(true,"1")]);
+  assert.equal(results.flatMap(r=>r.commands).length,1);
+});
+it("partial attribution and null target cannot downgrade automatic mailbox work to manual", async () => {
+  const row = await queuedManagement();
+  for (const payload of [{liveCommandId:row.commandId}, {managementTargetV1:null}, {agentOwnership:{}}]) await mirror(row,payload);
+  assert.deepEqual((await pollRoute(true)).commands,[]);
+  assert.deepEqual((await pollRoute(true,"1")).commands,[]);
+  await db.update(commands).set({payload:{managementTargetV1:null}}).where(eq(commands.commandId,row.commandId));
+  assert.equal((await pollRoute(false,"1")).command,null);
+});
+
+it("oversized mailbox rows stay pending without starving later manual protection", async () => {
+  const oversized = await db.insert(mailbox).values(Array.from({length:51},()=>({
+    userId:9,mt5ConnectionId:1,action:"CLOSE_POSITION",symbol:"EURUSD.a",status:"PENDING",
+    payload:{positionTicket:"123",comment:"x".repeat(66_000)} }))).returning();
+  const [manual] = await db.insert(mailbox).values({userId:9,mt5ConnectionId:1,action:"CLOSE_POSITION",symbol:"EURUSD.a",status:"PENDING",payload:{positionTicket:"123"}}).returning();
+  const result = await pollRoute(true,"1");
+  assert.deepEqual(result.commands.map((c: any)=>c.id),[manual!.id]);
+  assert.ok(JSON.stringify(result).length<=65_536);
+  assert.ok((await db.select().from(mailbox).where(inArray(mailbox.id,oversized.map(r=>r.id)))).every(r=>r.status==="PENDING"));
+});
+it("a legitimate multi-command response fits parser capacity before any delivery commits", async () => {
+  await db.insert(mailbox).values(Array.from({length:5},()=>({userId:9,mt5ConnectionId:1,action:"CLOSE_POSITION",symbol:"EURUSD.a",status:"PENDING",payload:{positionTicket:"123",comment:"x".repeat(25_000)}})));
+  const first = await pollRoute(true,"1");
+  assert.equal(first.commands.length,2);assert.ok(JSON.stringify(first).length<=65_536);
+  const rows=await db.select().from(mailbox);
+  assert.equal(rows.filter(r=>r.status==="DELIVERED").length,2);
+  assert.equal(rows.filter(r=>r.status==="PENDING").length,3);
+  const second = await pollRoute(true,"1");assert.equal(second.commands.length,2);
+});
+
+it("oversized live row remains unpicked while later manual protection is delivered", async () => {
+  await db.insert(commands).values([
+    {commandId:"large-live",userId:9,bridgeConnectionId:1,commandType:"CLOSE_LIVE_POSITION",symbol:"EURUSD.a",side:"BUY",orderType:"CLOSE",requestedVolume:.1,status:"SENT_TO_MT5_LIVE",payload:{brokerTicket:"123",comment:"x".repeat(66_000)}},
+    {commandId:"normal-live",userId:9,bridgeConnectionId:1,commandType:"CLOSE_LIVE_POSITION",symbol:"EURUSD.a",side:"BUY",orderType:"CLOSE",requestedVolume:.1,status:"SENT_TO_MT5_LIVE",payload:{brokerTicket:"123"}},
+  ]);
+  const result = await pollRoute(false);
+  assert.equal(result.command.commandId,"normal-live");assert.ok(JSON.stringify(result).length<=65_536);
+  assert.equal((await db.select().from(commands).where(eq(commands.commandId,"large-live")))[0]!.pickedByEaAt,null);
+});
+it("unexpected live serialization growth or failure never consumes the pickup claim", async () => {
+  const row = await queuedManagement();
+  const args={userId:9,bridgeConnectionId:1,bridgeAccountType:"live",managementTargetSupported:true};
+  const refused=await pickupNextLiveCommand({...args,prepareResponse:async()=>"x".repeat(65_537)});
+  assert.equal(refused.refusalReason,"MT5_COMMAND_ENVELOPE_TOO_LARGE");
+  await assert.rejects(pickupNextLiveCommand({...args,prepareResponse:async()=>{throw new Error("serializer failed");}}),/serializer failed/);
+  assert.equal((await db.select().from(commands).where(eq(commands.commandId,row.commandId)))[0]!.pickedByEaAt,null);
+  assert.equal((await pollRoute(false,"1")).command.commandId,row.commandId);
+});
+
+it("actual concurrent cold-map manual polls complete with a one-connection pool", async () => {
+  await db.insert(symbolRegistry).values({symbol:"INTERNAL",brokerSymbol:"Exact.Native",displayName:"Fixture",marketType:"forex"});
+  await db.insert(commands).values([1,2].map(n=>({commandId:`cold-manual-${n}`,userId:9,bridgeConnectionId:1,
+    commandType:"CLOSE_LIVE_POSITION",symbol:"INTERNAL",side:"BUY",orderType:"CLOSE",requestedVolume:.1,
+    status:"SENT_TO_MT5_LIVE",payload:{brokerTicket:"123"}})));
+  const result=spawnSync(process.execPath,["--import","tsx",fileURLToPath(new URL("./terminalPollSingleConnection.ts",import.meta.url))],
+    {env:process.env,encoding:"utf8",timeout:8000});
+  assert.equal(result.status,0,`${result.error ?? ""} ${result.stdout} ${result.stderr}`);
+});
+it("actual precision-rich automatic mirror survives float4 storage through mailbox poll and extracted EA", async () => {
+  await updateConnection(1,{accountNumber:"100"});
+  await db.update(commands).set({accountLogin:"100",brokerTicket:"42",requestedVolume:.02,executedVolume:.02}).where(eq(commands.commandId,"entry-1"));
+  await db.update(positions).set({accountLogin:"100",brokerTicket:"42",volume:.02,stopLoss:1.1,takeProfit:1.3}).where(eq(positions.id,1));
+  await db.update(executions).set({brokerTicket:"42",intendedVolume:.02,managementState:{pendingManagement:{
+    claimId:"claim-1",action:"TIGHTEN_SL",stopLoss:1.123456789,requestedAt:new Date().toISOString(),
+  }}}).where(eq(executions.id,1));
+  const row=await approved();await send(row);const stored=await mirror(row);
+  assert.notEqual(stored.sl,1.123456789,"control: legacy real column actually rounds this value");
+  const response=await pollRoute(true,"1");
+  assert.equal(response.commands.length,1);
+  assert.equal(response.commands[0].sl,1.123456789);
+  assert.equal(response.commands[0].tp,1.3);
+  assert.equal(response.commands[0].lot,.02);
+  const folder=mkdtempSync(join(tmpdir(),"arx-target-wire-"));
+  try {
+    const path=join(folder,"wire.json");writeFileSync(path,JSON.stringify(response));
+    const runner=fileURLToPath(new URL("../../../../../../mt5-bridge/tests/run_management_target.py",import.meta.url));
+    const result=spawnSync("python3",[runner,"--wire-file",path],{encoding:"utf8",timeout:15000});
+    assert.equal(result.status,0,`${result.error ?? ""} ${result.stdout} ${result.stderr}`);
+  } finally {rmSync(folder,{recursive:true,force:true});}
+});
+it("forged target or changed authoritative signature stays pending while later manual work is delivered", async () => {
+  const row=await queuedManagement();const bound=await mirror(row);
+  const original=bound.payload as Record<string,unknown>;
+  await db.update(mailbox).set({payload:{...original,managementTargetV1:{...(original.managementTargetV1 as object),accountLogin:"B"}}}).where(eq(mailbox.id,bound.id));
+  assert.equal((await pollRoute(true,"1")).commands.length,0);
+  await db.update(mailbox).set({payload:original}).where(eq(mailbox.id,bound.id));
+  await db.update(commands).set({stopLoss:99}).where(eq(commands.commandId,row.commandId));
+  await db.insert(mailbox).values({userId:9,mt5ConnectionId:1,action:"CLOSE_POSITION",symbol:"EURUSD.a",status:"PENDING",payload:{positionTicket:"123"}});
+  const result=await pollRoute(true,"1");assert.equal(result.commands.length,1);assert.notEqual(result.commands[0].id,bound.id);
+  assert.equal((await db.select().from(mailbox).where(eq(mailbox.id,bound.id)))[0]!.status,"PENDING");
+});
+
+it("shared-master mailbox preserves distinct trader and bridge-owner identities", async () => {
+  await updateConnection(1,{userId:19});
+  const row=await queuedManagement();const bound=await mirror(row);
+  assert.equal(bound.userId,19);assert.equal(bound.requestedByUserId,9);
+  const response=await pollRoute(true,"1");
+  assert.equal(response.commands.length,1);assert.equal(response.commands[0].id,bound.id);
+  assert.equal(response.commands[0].payload.liveCommandOwnerUserId,9);
+});
+for(const corruption of ["trader","targetBridgeOwner","mirrorBridge"]){
+  it(`shared-master automatic mirror refuses crossed ${corruption}`,async()=>{
+    await updateConnection(1,{userId:19});const row=await queuedManagement();const bound=await mirror(row);
+    if(corruption==="trader")await db.update(mailbox).set({requestedByUserId:18}).where(eq(mailbox.id,bound.id));
+    if(corruption==="targetBridgeOwner")await db.update(mailbox).set({payload:{...(bound.payload as any),managementTargetV1:{...(bound.payload as any).managementTargetV1,bridgeOwnerUserId:9}}}).where(eq(mailbox.id,bound.id));
+    if(corruption==="mirrorBridge")await db.update(mailbox).set({mt5ConnectionId:2}).where(eq(mailbox.id,bound.id));
+    assert.equal((await pollRoute(true,"1")).commands.length,0);
+    assert.equal((await db.select().from(mailbox).where(eq(mailbox.id,bound.id)))[0]!.status,"PENDING");
+  });
+}
+
+it("paired actual mailbox route completion and transaction overhead", {skip:!process.env.ARX_TERMINAL_MAILBOX_BENCHMARK}, async()=>{
+  const baselineFile=join(process.env.ARX_TERMINAL_BASELINE_ROOT!,"artifacts/api-server/src/routes/mt5.ts");
+  const source=readFileSync(baselineFile,"utf8");
+  const tree=ts.createSourceFile("mt5.ts",source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+  let callback:ts.ArrowFunction|undefined;
+  function visit(n:ts.Node){if(ts.isCallExpression(n)&&ts.isPropertyAccessExpression(n.expression)&&n.expression.name.text==="get"&&n.arguments[0]&&ts.isStringLiteral(n.arguments[0])&&n.arguments[0].text==="/mt5/commands")callback=n.arguments.at(-1) as ts.ArrowFunction;ts.forEachChild(n,visit);}visit(tree);
+  assert.ok(callback);
+  const js=ts.transpileModule(`const handler=${callback.getText(tree)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText;
+  const baseline=new Function("db","mt5CommandsTable","and","eq","asc","inArray",`${js};return handler;`)(db,mailbox,and,eq,asc,inArray);
+  const current=mt5Router.stack.find((l:any)=>l.route?.path==="/mt5/commands")!.route!.stack.at(-1)!.handle;
+  const [connection]=await db.select().from(bridges).where(eq(bridges.id,1));
+  const measure=async(handler:any)=>{
+    let body:any;
+    const res:any={json(v:unknown){body=JSON.parse(JSON.stringify(v));return res;},type(){return res;},send(v:string){body=JSON.parse(v);return res;}};
+    const t=performance.now();await handler({mt5Connection:connection,get:()=>"1",log:{info(){},warn(){}}},res,()=>{});const elapsed=performance.now()-t;
+    assert.equal(body.commands.length,50);assert.equal((await db.select().from(mailbox)).filter(r=>r.status==="DELIVERED").length,50);return elapsed;
+  };
+  await db.insert(mailbox).values(Array.from({length:50},()=>({userId:9,mt5ConnectionId:1,action:"CLOSE_POSITION",symbol:"EURUSD.a",status:"PENDING",payload:{positionTicket:"123"}})));
+  const samples:{baseline:number[],current:number[],currentTransactionUpperBound:number[]}={baseline:[],current:[],currentTransactionUpperBound:[]};
+  const original=db.transaction.bind(db);let transactionMs=0;
+  const transactionSpy=mock.method(db,"transaction",async(...args:any[])=>{const t=performance.now();try{return await (original as any)(...args);}finally{transactionMs=performance.now()-t;}});
+  try {for(let i=0;i<110;i++)for(const name of (i%2?["current","baseline"]:["baseline","current"]) as ["baseline"|"current","baseline"|"current"]){
+    await db.update(mailbox).set({status:"PENDING",claimedAt:null,deliveredAt:null});
+    const elapsed=await measure(name==="baseline"?baseline:current);
+    if(i>=10){samples[name].push(elapsed);if(name==="current")samples.currentTransactionUpperBound.push(transactionMs);}
+  }}finally{transactionSpy.mock.restore();}
+  const summary=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return{median:sorted[49],p95:sorted[94],p99:sorted[98],max:sorted.at(-1)}};
+  writeFileSync(process.env.ARX_TERMINAL_MAILBOX_BENCHMARK!,JSON.stringify({unit:"milliseconds",fixture:"50 ordinary manual protective rows; actual old handler extracted by AST and actual current router share identical db/pool/schema; no broker",completion:"response serialized and DB delivery committed",transactionMetric:"current transaction wall time is an upper bound on its row-lock holding duration",baselineFile,raw:samples,summary:Object.fromEntries(Object.entries(samples).map(([k,v])=>[k,summary(v)]))},null,2));
+  assert.ok(summary(samples.current).p95<100,"50-command local completion p95 budget100ms");
+});
+it("byte prefilter and UTF16 envelope budget remain distinct for Unicode payloads", async()=>{
+  const [large]=await db.insert(mailbox).values({userId:9,mt5ConnectionId:1,action:"CLOSE_POSITION",symbol:"EURUSD.a",status:"PENDING",payload:{positionTicket:"123",comment:"😀".repeat(17000)}}).returning();
+  await db.insert(mailbox).values(Array.from({length:4},()=>({userId:9,mt5ConnectionId:1,action:"CLOSE_POSITION",symbol:"EURUSD.a",status:"PENDING",payload:{positionTicket:"123",comment:"😀".repeat(9000)}})));
+  const response=await pollRoute(true,"1");const body=JSON.stringify(response);
+  assert.equal(response.commands.length,3);assert.ok(body.length<=65536);assert.ok(Buffer.byteLength(body)>65536);
+  const rows=await db.select().from(mailbox);assert.equal(rows.find(r=>r.id===large!.id)!.status,"PENDING");
+  assert.equal(rows.filter(r=>r.status==="PENDING").length,2);
 });
