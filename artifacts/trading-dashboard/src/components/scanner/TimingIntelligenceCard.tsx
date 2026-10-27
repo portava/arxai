@@ -7,6 +7,7 @@
 // backend returns; when data quality is "unavailable" it collapses to an
 // honest "not enough data" state and never fabricates scores or levels.
 
+import { timingTimeframeLabel } from "@/components/scanner/ChartTimingChip";
 import { useEffect, useMemo, useState } from "react";
 import {
   Gauge,
@@ -225,6 +226,13 @@ export function TimingIntelligenceCard({ symbol }: { symbol: string }) {
           <div className="flex items-center gap-2">
             <span className="text-[15px] font-semibold text-foreground">Timing Intelligence</span>
             <span className="text-xs text-txt-muted">{symbol}</span>
+            {/* The timing brain reads its own timeframe (M15 by default), not the
+                chart's — name it so the grade below is not read as the chart's. */}
+            {timingTimeframeLabel(read?.timeframe) && (
+              <span className="text-xs text-txt-muted" data-testid="timing-intel-timeframe">
+                · {timingTimeframeLabel(read?.timeframe)} timing
+              </span>
+            )}
           </div>
           <p className="text-[11px] text-txt-muted">Advisory only — never gates a trade.</p>
           <ScannerReadGate symbol={symbol} compact />

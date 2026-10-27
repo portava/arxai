@@ -88,9 +88,8 @@ import {
   useGetAlertPreferences,
   useGetMeTradeHealth,
   getGetMeTradeHealthQueryKey,
-  useGetTimingBrain,
-  getGetTimingBrainQueryKey,
 } from "@workspace/api-client-react";
+import { ChartTimingChip } from "@/components/scanner/ChartTimingChip";
 import { cn } from "@/lib/utils";
 import type {
   ChartAnnotation,
@@ -293,34 +292,6 @@ function normSym(s: string | null | undefined): string {
   if (!s) return "";
   const bare = s.includes(":") ? s.split(":")[1]! : s;
   return bare.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-}
-
-// Phase 3 — compact timing status chip for the chart header. Advisory only,
-// fail-open (absent when data unavailable). Never an execution gate.
-function ChartTimingChip({ symbol }: { symbol: string }) {
-  const q = useGetTimingBrain(symbol, undefined, {
-    query: { queryKey: getGetTimingBrainQueryKey(symbol, undefined), refetchInterval: 30_000, staleTime: 20_000 },
-  });
-  const read = q.data as { timingGrade?: string; entryPermission?: string; heatScore?: number } | undefined;
-  if (!read?.timingGrade || !read.entryPermission) return null;
-  const permColor: Record<string, string> = {
-    GO: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-    WAIT_FOR_ENTRY: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-    WAIT_NEWS: "border-orange-500/40 bg-orange-500/10 text-orange-400",
-    NO_TRADE: "border-rose-500/40 bg-rose-500/10 text-rose-400",
-    STAND_DOWN: "border-rose-600/50 bg-rose-600/15 text-rose-300",
-  };
-  return (
-    <Badge
-      variant="outline"
-      className={cn("gap-1 text-[10px]", permColor[read.entryPermission] ?? "border-border text-txt-muted")}
-      title={`Heat grade ${read.timingGrade} · ${read.entryPermission} (H:${read.heatScore ?? "?"}) — advisory only`}
-      data-testid="scanner-chart-timing-chip"
-    >
-      <Flame className="h-2.5 w-2.5" />
-      {read.timingGrade} · {read.entryPermission.replace(/_/g, " ")}
-    </Badge>
-  );
 }
 
 // Candle-close countdown chip (Task #524). HONESTY-GATED by the parent: it only
@@ -2375,7 +2346,7 @@ export function ScannerChartPanel() {
               </Badge>
             )}
             {/* Phase 3 — timing overlay chip (advisory, fail-open) */}
-            <ChartTimingChip symbol={symbol} />
+            <ChartTimingChip symbol={symbol} apiTf={apiTf} timeframeLabel={timeframe} />
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1">
             {PRIMARY_TIMEFRAMES.map((tf) => (
