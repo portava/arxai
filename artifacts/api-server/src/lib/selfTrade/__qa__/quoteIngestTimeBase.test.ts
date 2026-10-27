@@ -51,6 +51,11 @@ function feed(payload: unknown, eaCreatedAtEpochMs: unknown, freshnessVerdict = 
     bridge: BRIDGE,
   });
 }
+// The feed's previous post: a different tick two seconds earlier on the same
+// broker clock offset, so the tick under test is bounded (quoteTickProvenance
+// .test.ts covers the unbounded cases).
+const prime = (offsetMs: number) =>
+  feed({ ...tick(EA_UTC - 2_000 + offsetMs), bid: 1.0999, ask: 1.1 }, EA_UTC - 2_000);
 const stored = () => readMt5Quote("EURUSD", { bridgeConnectionId: 7 }).quote;
 async function claimVerdict(nowMs = EA_UTC + 1_000) {
   const observation = await observeAgentEntryMarket(9, "EURUSD", CTX);
@@ -68,6 +73,7 @@ beforeEach(() => __resetMt5ProviderStore());
 
 describe("quote time base at ingest", () => {
   it("a GMT+3 trade server: the stored time is the EA's UTC clock, the offset is recorded", async () => {
+    prime(HOURS_3);
     feed(tick(EA_UTC + HOURS_3), EA_UTC);
     const q = stored();
     assert.equal(q?.timestamp, "2026-10-27T12:00:00.000Z");
@@ -82,6 +88,7 @@ describe("quote time base at ingest", () => {
     }
   });
   it("a GMT-3 trade server passes on the UTC stamp as well", async () => {
+    prime(-HOURS_3);
     feed(tick(EA_UTC - HOURS_3), EA_UTC);
     const q = stored();
     assert.equal(q?.timestamp, "2026-10-27T12:00:00.000Z");
@@ -91,11 +98,13 @@ describe("quote time base at ingest", () => {
     if (v.ok) assert.equal(v.facts.brokerClockOffsetMs, -HOURS_3);
   });
   it("a GMT+0 trade server records a zero offset", async () => {
+    prime(0);
     feed(tick(EA_UTC), EA_UTC);
     assert.equal(stored()?.brokerClockOffsetMs, 0);
     assert.equal((await claimVerdict()).reason, "OK");
   });
   it("the UTC stamp is still subject to the age bounds (no loosening)", async () => {
+    prime(HOURS_3);
     feed(tick(EA_UTC + HOURS_3), EA_UTC);
     assert.equal((await claimVerdict(EA_UTC + 5_001)).reason, "ENTRY_FRESH_QUOTE_STALE");
     assert.equal((await claimVerdict(EA_UTC - 5_001)).reason, "ENTRY_FRESH_QUOTE_FUTURE_DATED");

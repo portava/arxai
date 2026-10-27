@@ -28,11 +28,11 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { bridgeV2 } from "@workspace/domain";
 import {
   mergeCandleFromMT5,
-  updateQuoteFromMT5,
+  recordMt5Tick,
   type Mt5BridgeIdentity,
 } from "../data/providers/mt5Provider.js";
 import { foldFormingTick } from "../data/chart/formingBarComposer.js";
-import type { Candle, MarketQuote } from "../data/types.js";
+import type { Candle } from "../data/types.js";
 import { isUniqueViolation } from "../pgError.js";
 
 const {
@@ -299,12 +299,22 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
     // Time base. The EA's `brokerTimeEpochMs` is MQL5 `MqlTick.time_msc`: the
     // trade server's wall clock encoded as epoch ms, which is UTC only on a
     // GMT+0 server (a GMT+3 server reads three hours ahead). The envelope's
-    // `eaCreatedAtEpochMs` is MQL5 `TimeGMT()` taken in the same call as the
-    // tick read (Universal Agent v1.52/v1.54 `PushLiveTickV2` → `PostV2Ingest`),
-    // so it IS the observation's UTC instant to within the EA's own latency,
-    // and it is already the basis of the transport-STALE drop above. Stamp the
-    // quote from it; keep the broker clock and its offset as diagnostics. Never
-    // fall back to the server receive time: a missing EA clock stores nothing.
+    // `eaCreatedAtEpochMs` is the EA's UTC clock taken in the same call as the
+    // tick read (Universal Agent v1.52/v1.54 `PushLiveTickV2` → `PostV2Ingest`
+    // → `V2NowEpochMs`: `TimeGMT()*1000`, falling back to `TimeCurrent()`, the
+    // trade-server clock, only if `TimeGMT()` returns 0 — a state the server
+    // cannot detect, and one in which a non-GMT+0 server's quotes read as
+    // future-dated or stale and are refused). It is already the basis of the
+    // transport-STALE drop above.
+    //
+    // But the EA posts its LAST tick on every sweep whether or not it changed,
+    // so the EA clock of a post is the tick's observation time only for the
+    // post in which that tick first appeared: on a closed market the broker's
+    // final quote is re-posted for days with an ever-newer EA clock. The store
+    // (`recordMt5Tick`) stamps a tick at its first sight in this bridge's
+    // partition and keeps that stamp across identical re-posts; the broker
+    // clock and its offset at first sight are kept as diagnostics. Never fall
+    // back to the server receive time: a missing EA clock stores nothing.
     const eaCreatedAtEpochMs =
       typeof input.eaCreatedAtEpochMs === "number" &&
       Number.isFinite(input.eaCreatedAtEpochMs) &&
@@ -312,17 +322,7 @@ export function feedMarketDataStore(input: MarketDataFeedInput): void {
         ? input.eaCreatedAtEpochMs
         : null;
     if (eaCreatedAtEpochMs == null) return;
-    const quote: MarketQuote = {
-      symbol,
-      bid,
-      ask,
-      spread: ask - bid,
-      timestamp: new Date(eaCreatedAtEpochMs).toISOString(),
-      brokerClockMs: brokerTimeEpochMs,
-      brokerClockOffsetMs:
-        brokerTimeEpochMs == null ? null : brokerTimeEpochMs - eaCreatedAtEpochMs,
-    };
-    updateQuoteFromMT5(symbol, quote, bridge);
+    recordMt5Tick(symbol, { bid, ask, brokerTimeMs: brokerTimeEpochMs, eaUtcMs: eaCreatedAtEpochMs }, bridge);
     // Task #496 — fold this accepted, fresh tick into the in-memory forming-bar
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
     // tip ticks in real time. Display/telemetry only; never persisted, never an

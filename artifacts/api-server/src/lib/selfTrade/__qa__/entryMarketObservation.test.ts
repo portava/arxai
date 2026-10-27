@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import * as realInstruments from "../../instruments/index.js";
 
 let quoteResult: unknown;
+let tickResult: unknown;
 let specResult: unknown;
 // Registry double for the transport's broker-symbol resolver: ARX-internal name
 // → exact broker Market Watch name; unknown names pass through verbatim.
@@ -33,7 +34,7 @@ mock.module("../../data/providers/mt5Provider.js", {
     readMt5Quote: (symbol: string, opts: { bridgeConnectionId: number }) => {
       calls.push(`quote:${symbol}@${opts.bridgeConnectionId}`);
       if (quoteResult instanceof Error) throw quoteResult;
-      return { quote: quoteResult, bridgeConnectionId: opts.bridgeConnectionId, userId: null };
+      return { quote: quoteResult, bridgeConnectionId: opts.bridgeConnectionId, userId: null, tick: tickResult };
     },
   },
 });
@@ -50,6 +51,9 @@ const { observeAgentEntryMarket } = await import("../entryMarketObservation.js")
 const { evaluateEntryFreshFacts } = await import("../freshFacts.js");
 
 const tick = { symbol: "EURUSD.a", bid: 1.1, ask: 1.1001, timestamp: "2026-10-27T12:00:00.000Z" };
+// The store's first-sight provenance of that tick (epoch ms), as readMt5Quote returns it.
+const T = Date.parse(tick.timestamp);
+const provenance = { firstSeenEaMs: T, lastPostedEaMs: T + 2_000, reposts: 1, priorPostEaMs: T - 2_000 };
 const spec = { hasBrokerTruth: true, spec: { point: 0.00001 } };
 // The dispatch context: the bridge the command goes to and its reported EA.
 const CTX = { bridgeConnectionId: 4, eaVersion: "1.54" };
@@ -63,6 +67,7 @@ const verdict = (observation: Awaited<ReturnType<typeof observeAgentEntryMarket>
   });
 beforeEach(() => {
   quoteResult = tick;
+  tickResult = provenance;
   specResult = spec;
   registry = {};
   calls.length = 0;
@@ -74,6 +79,12 @@ describe("observeAgentEntryMarket", () => {
       bid: 1.1,
       ask: 1.1001,
       observedAt: "2026-10-27T12:00:00.000Z",
+      tickProvenance: {
+        firstSeenAt: "2026-10-27T12:00:00.000Z",
+        lastPostedAt: "2026-10-27T12:00:02.000Z",
+        reposts: 1,
+        priorPostAt: "2026-10-27T11:59:58.000Z",
+      },
       source: "mt5_broker",
       point: 0.00001,
       brokerClockOffsetMs: null,
@@ -83,6 +94,28 @@ describe("observeAgentEntryMarket", () => {
       eaVersion: "1.54",
     });
     assert.deepEqual(calls.sort(), ["quote:EURUSD.a@4", "resolve:EURUSD.a", "spec:9:EURUSD.a"]);
+  });
+  it("copies the store's provenance verbatim: a first-ever tick has no prior post, a legacy write has none at all", async () => {
+    tickResult = { firstSeenEaMs: T, lastPostedEaMs: T, reposts: 0, priorPostEaMs: null };
+    const first = await observeAgentEntryMarket(9, "EURUSD.a", CTX);
+    assert.deepEqual(first.tickProvenance, {
+      firstSeenAt: "2026-10-27T12:00:00.000Z",
+      lastPostedAt: "2026-10-27T12:00:00.000Z",
+      reposts: 0,
+      priorPostAt: null,
+    });
+    tickResult = null;
+    const legacy = await observeAgentEntryMarket(9, "EURUSD.a", CTX);
+    assert.equal(legacy.tickProvenance, null);
+    assert.equal(legacy.observedAt, tick.timestamp);
+    const v = evaluateEntryFreshFacts({
+      side: "BUY",
+      stopLoss: 1.09,
+      thesis: { entryZone: { from: 1.1, to: 1.1001 } },
+      observation: legacy,
+      nowMs: T + 1_000,
+    });
+    assert.equal(v.ok ? "OK" : v.reason, "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID");
   });
   it("reads the quote and point under the broker-native name the transport would send", async () => {
     // A suffix broker quotes and specs "EURUSD.r"; the command row says "EURUSD".

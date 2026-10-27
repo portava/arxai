@@ -122,13 +122,24 @@ describe("entry observation is bound to the dispatch bridge", () => {
       eaCreatedAtEpochMs: EA_UTC,
       bridge,
     });
+  // The feed's previous post from the same bridge (bounds the tick's age).
+  const prime = (bridge: { bridgeConnectionId: number; userId: number } | null) =>
+    feedMarketDataStore({
+      messageType: "TICK",
+      payload: { ...tick, bid: 1.0999, ask: 1.1, brokerTimeEpochMs: EA_UTC - 2_000 },
+      freshnessVerdict: "LIVE",
+      eaCreatedAtEpochMs: EA_UTC - 2_000,
+      bridge,
+    });
   it("the ingest feed attributes the tick to the authenticated bridge and the claim passes on it", async () => {
+    prime({ bridgeConnectionId: 7, userId: 9 });
     feed({ bridgeConnectionId: 7, userId: 9 });
     const { observation, reason } = await verdict(7);
     assert.equal(reason, "OK");
     assert.equal(observation.bridgeConnectionId, 7);
   });
   it("another bridge quoting the same symbol does not satisfy this dispatch's claim", async () => {
+    prime({ bridgeConnectionId: 8, userId: 10 });
     feed({ bridgeConnectionId: 8, userId: 10 });
     const { observation, reason, detail } = await verdict(7);
     assert.equal(observation.error, "BROKER_QUOTE_UNAVAILABLE");

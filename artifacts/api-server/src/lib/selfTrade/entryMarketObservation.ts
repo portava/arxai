@@ -26,7 +26,11 @@
 // bridge's EA build streams quotes at all (eaQuoteSupply.ts), so the refusal
 // explains "EA v1.31 does not stream broker quotes" rather than a bare
 // UNAVAILABLE. The outcome is unchanged: no quote, no entry.
-import { readMt5Quote } from "../data/providers/mt5Provider.js";
+// Provenance: the store stamps a tick at the EA time it was FIRST seen in the
+// bridge's partition (the EA re-posts its last tick every sweep), and records
+// the feed's previous post. The observer copies that verbatim; the claim
+// refuses a tick whose occurrence no earlier post bounds (freshFacts.ts).
+import { readMt5Quote, type Mt5TickProvenance } from "../data/providers/mt5Provider.js";
 import { resolveBrokerSymbolName } from "../instruments/index.js";
 import { getBrokerSymbolSpec } from "../mt5/brokerSymbolSpec.js";
 import { describeEaQuoteSupply } from "./eaQuoteSupply.js";
@@ -78,17 +82,18 @@ export async function observeAgentEntryMarket(
   } catch {
     return unavailable("BROKER_SYMBOL_RESOLVE_FAILED", null);
   }
-  const [quote, spec] = await Promise.all([
+  const [read, spec] = await Promise.all([
     Promise.resolve()
-      .then(() => readMt5Quote(brokerSymbol, { bridgeConnectionId }).quote)
+      .then(() => readMt5Quote(brokerSymbol, { bridgeConnectionId }))
       .catch((err: unknown) => ({ error: err })),
     getBrokerSymbolSpec(userId, brokerSymbol).catch((err: unknown) => ({ error: err })),
   ]);
   const point =
     "error" in spec ? null : spec.hasBrokerTruth ? spec.spec.point : null;
-  if (quote == null || "error" in quote || (quote.bid == null && quote.ask == null))
+  const quote = "error" in read ? null : read.quote;
+  if ("error" in read || quote == null || (quote.bid == null && quote.ask == null))
     return unavailable(
-      quote != null && "error" in quote ? "BROKER_QUOTE_READ_FAILED" : "BROKER_QUOTE_UNAVAILABLE",
+      "error" in read ? "BROKER_QUOTE_READ_FAILED" : "BROKER_QUOTE_UNAVAILABLE",
       brokerSymbol,
       point,
     );
@@ -96,6 +101,7 @@ export async function observeAgentEntryMarket(
     bid: quote.bid ?? null,
     ask: quote.ask ?? null,
     observedAt: quote.timestamp ?? null,
+    tickProvenance: copyProvenance(read.tick),
     source: ENTRY_QUOTE_SOURCE,
     point,
     brokerClockOffsetMs:
@@ -107,5 +113,18 @@ export async function observeAgentEntryMarket(
     bridgeConnectionId,
     eaVersion,
     ...("error" in spec ? { error: "BROKER_SPEC_READ_FAILED" } : {}),
+  };
+}
+
+/** The store's first-sight provenance as ISO instants; null when the quote has none. */
+function copyProvenance(tick: Mt5TickProvenance | null | undefined): EntryMarketObservation["tickProvenance"] {
+  if (tick == null) return null;
+  const iso = (ms: unknown) =>
+    typeof ms === "number" && Number.isFinite(ms) ? new Date(ms).toISOString() : ms ?? null;
+  return {
+    firstSeenAt: iso(tick.firstSeenEaMs),
+    lastPostedAt: iso(tick.lastPostedEaMs),
+    reposts: tick.reposts,
+    priorPostAt: tick.priorPostEaMs == null ? null : iso(tick.priorPostEaMs),
   };
 }
