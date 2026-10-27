@@ -4249,17 +4249,36 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       const reason = msg.startsWith("UNMAPPED_LIVE_COMMAND_TYPE")
         ? "BRIDGE_UNMAPPED_COMMAND_TYPE"
         : "BRIDGE_ENQUEUE_FAILED";
-      const [failed] = await db.update(arxLiveCommandsTable).set({
-        status: "LIVE_FAILED",
-        rejectionReason: reason,
-        brokerMessage: msg.slice(0, 400),
-        rejectedAt: new Date(),
-      }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
-      if (reservationId != null) {
+      // The INSERT may have committed although its caller saw an error. Fail
+      // only after cancelling any such never-served mirror in the same
+      // transaction; otherwise leave SENT for the TTL sweep to classify.
+      let failed: ArxLiveCommand | undefined;
+      try {
+        failed = await db.transaction(async (tx) => {
+          if (await neutralizeUndeliveredMirrors(tx, args.commandId) !== "NOT_DELIVERABLE") return undefined;
+          return (await tx.update(arxLiveCommandsTable).set({
+            status: "LIVE_FAILED",
+            rejectionReason: reason,
+            brokerMessage: msg.slice(0, 400),
+            rejectedAt: new Date(),
+          }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
+            eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"))).returning())[0];
+        });
+      } catch { failed = undefined; }
+      if (failed && reservationId != null) {
         try {
           const { releaseReservation } = await import("../concurrency/exposureReservation.js");
           await releaseReservation(reservationId);
         } catch { /* audit-only failure */ }
+      }
+      if (!failed) {
+        await audit({
+          eventType: "LIVE_DISPATCH_OUTCOME_UNKNOWN", severity: "CRITICAL",
+          userId: args.userId, symbol: row.symbol,
+          message: `Live bridge enqueue reported ${reason} but a transport mirror may exist; left SENT for reconciliation`,
+          metadata: { commandId: args.commandId, bridgeConnectionId: bridge!.id, error: msg },
+        });
+        return { ok: false as const, reason: "BRIDGE_ENQUEUE_OUTCOME_UNKNOWN", command: sent, gate: phaseBGate };
       }
       await audit({
         eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
@@ -4391,6 +4410,34 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
  * the EA poll); call with no userId for a global sweep. `expired` counts only
  * LIVE_EXPIRED terminalizations; `unknown` counts LIVE_UNKNOWN entries.
  */
+class SweepRaceLost extends Error {}
+
+export type MirrorDeliverability = "NOT_DELIVERABLE" | "MAY_BE_DELIVERED";
+
+/**
+ * Inside the caller's transaction, cancel every never-served (PENDING)
+ * mt5_commands transport mirror of one live command, then report whether any
+ * mirror can still have reached the EA. Only an absent or cancelled mirror is
+ * NOT_DELIVERABLE; DELIVERED or any other status is MAY_BE_DELIVERED. The
+ * conditional UPDATE waits for a concurrent mailbox claim and then re-checks
+ * the status, so a claim committed first is never cancelled. The caller must
+ * take the command row lock AFTER this (mailbox → command order).
+ */
+export async function neutralizeUndeliveredMirrors(
+  tx: Pick<typeof db, "update" | "select">,
+  commandId: string,
+): Promise<MirrorDeliverability> {
+  const { mt5CommandsTable } = await import("@workspace/db");
+  const linked = sql`${mt5CommandsTable.payload} ->> 'liveCommandId'`;
+  await tx.update(mt5CommandsTable)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(and(eq(linked, commandId), eq(mt5CommandsTable.status, "PENDING")));
+  const live = await tx.select({ id: mt5CommandsTable.id }).from(mt5CommandsTable)
+    .where(and(eq(linked, commandId), sql`${mt5CommandsTable.status} is distinct from 'cancelled'`))
+    .limit(1);
+  return live.length === 0 ? "NOT_DELIVERABLE" : "MAY_BE_DELIVERED";
+}
+
 export async function sweepExpiredLiveCommands(args?: { userId?: number }): Promise<{
   expired: number;
   commandIds: string[];
@@ -4461,15 +4508,51 @@ export async function sweepExpiredLiveCommands(args?: { userId?: number }): Prom
 
   // CAS updates guarded by status so a concurrent EA result/pickup cannot
   // race the sweep — only rows still SENT_TO_MT5_LIVE transition.
-  const expired = toExpire.length === 0 ? [] : await db.update(arxLiveCommandsTable).set({
-    status: "LIVE_EXPIRED",
-    expiredAt: now,
-    rejectedAt: now,
-    rejectionReason: "LIVE_COMMAND_TTL_EXPIRED",
-  }).where(and(
-    inArray(arxLiveCommandsTable.commandId, toExpire),
-    eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
-  )).returning();
+  //
+  // "Never served" read above is only a snapshot: the EA mailbox can claim the
+  // mirror after that read, and a still-PENDING mirror stays deliverable after
+  // expiry (the EA's own expiry is 120 s against this 60 s TTL and uses the
+  // broker clock). Each expiry therefore cancels its never-served mirrors and
+  // expires the command in ONE transaction; a mirror the EA already claimed
+  // turns the verdict into LIVE_UNKNOWN. Lock order mailbox → command matches
+  // the GET /api/mt5/commands claim (mailbox locks, command read only).
+  const expired: ArxLiveCommand[] = [];
+  for (const commandId of toExpire) {
+    try {
+      const outcome = await db.transaction(async (tx) => {
+        if (await neutralizeUndeliveredMirrors(tx, commandId) !== "NOT_DELIVERABLE") return "UNKNOWN" as const;
+        const [row] = await tx.update(arxLiveCommandsTable).set({
+          status: "LIVE_EXPIRED",
+          expiredAt: now,
+          rejectedAt: now,
+          rejectionReason: "LIVE_COMMAND_TTL_EXPIRED",
+        }).where(and(
+          eq(arxLiveCommandsTable.commandId, commandId),
+          eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+          // Re-checked after the row lock: a live-commands-poll pickup that
+          // committed after the candidate read is delivery evidence.
+          isNull(arxLiveCommandsTable.pickedByEaAt),
+        )).returning();
+        // A concurrent result/pickup settled it: undo the mirror cancellation.
+        if (!row) throw new SweepRaceLost();
+        return row;
+      });
+      if (outcome === "UNKNOWN") {
+        mirrorStatusByCommandId.set(commandId, "CLAIMED_DURING_SWEEP");
+        toUnknown.push(commandId);
+      }
+      else expired.push(outcome);
+    } catch (e) {
+      if (e instanceof SweepRaceLost) continue;
+      // Left SENT_TO_MT5_LIVE (mirror untouched); the next sweep re-evaluates.
+      logger.warn({
+        [PHASE_B_LIVE_LOG_PREFIX]: true,
+        event: "LIVE_SWEEP_EXPIRY_DEFERRED",
+        commandId,
+        error: e instanceof Error ? e.message : String(e),
+      }, "sweep could not neutralise the transport mirror — expiry deferred");
+    }
+  }
 
   const unknown = toUnknown.length === 0 ? [] : await db.update(arxLiveCommandsTable).set({
     status: "LIVE_UNKNOWN",
@@ -5377,17 +5460,33 @@ export async function recordLiveCommandResult(args: {
 }
 
 
+/** Typed refusal — the command left the status this cancel validated. */
+export const LIVE_CANCEL_RACE_LOST = "LIVE_CANCEL_RACE_LOST" as const;
+
 export async function cancelLiveCommand(args: { userId: number; commandId: string; reason: string }) {
   const row = await loadOwned(args.userId, args.commandId);
   if (!row) return { ok: false as const, reason: "COMMAND_NOT_FOUND" as const };
   if (!ALLOWED_TRANSITIONS[row.status as ArxLiveCommandStatus].includes("LIVE_CANCELLED")) {
     return { ok: false as const, reason: "BAD_STATE" as const, currentStatus: row.status };
   }
+  // Compare-and-set on the status this caller validated. Without it a
+  // concurrent dispatch (LIVE_APPROVED → SENT_TO_MT5_LIVE, mirror queued) or a
+  // fill (LIVE_PARTIALLY_FILLED → LIVE_FILLED) committed after the read above
+  // was relabelled LIVE_CANCELLED — confirmed non-execution — and its exposure
+  // reservation released while the order stood at the broker.
   const [updated] = await db.update(arxLiveCommandsTable).set({
     status: "LIVE_CANCELLED",
     rejectionReason: args.reason,
     rejectedAt: new Date(),
-  }).where(eq(arxLiveCommandsTable.commandId, args.commandId)).returning();
+  }).where(and(
+    eq(arxLiveCommandsTable.commandId, args.commandId),
+    eq(arxLiveCommandsTable.userId, args.userId),
+    eq(arxLiveCommandsTable.status, row.status),
+  )).returning();
+  if (!updated) {
+    const latest = await loadOwned(args.userId, args.commandId);
+    return { ok: false as const, reason: LIVE_CANCEL_RACE_LOST, currentStatus: latest?.status ?? row.status };
+  }
   // Release any reservation tied to this command (no-op if absent).
   try {
     const { releaseReservationByCommandId } =

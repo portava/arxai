@@ -146,6 +146,7 @@ export const INTEGRATION_LANE_TESTS: readonly IntegrationLaneTest[] = [
   // removes fixtures on completion. Requires initdb/pg_ctl/createdb on PATH
   // (or ARX_TEST_PG_BIN). A missing PostgreSQL runtime fails, never skips.
   { pkg: "@workspace/api-server", script: "test:self-trade-entry-postgres" },
+  { pkg: "@workspace/api-server", script: "test:self-trade-duplicate-recovery-postgres" },
   { pkg: "@workspace/api-server", script: "test:research-evidence-postgres" },
   { pkg: "@workspace/api-server", script: "test:self-trade-management-postgres" },
   { pkg: "@workspace/api-server", script: "test:mission-evidence:postgres" },

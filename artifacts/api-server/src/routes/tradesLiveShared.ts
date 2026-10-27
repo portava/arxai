@@ -504,15 +504,17 @@ router.post("/trades/live-shared/execute", requireUser, async (req, res) => {
     if (cancelRes.ok) { madeTerminal = true; }
     else {
       try {
-        await db.update(arxLiveCommandsTable).set({
+        // CAS: never relabel a command another route already dispatched.
+        const blocked = await db.update(arxLiveCommandsTable).set({
           status: "LIVE_BLOCKED",
           rejectionReason: "ATTRIBUTION_INSERT_FAILED",
           rejectedAt: new Date(),
         }).where(and(
           eq(arxLiveCommandsTable.commandId, draft.command.commandId),
           eq(arxLiveCommandsTable.userId, userId),
-        ));
-        madeTerminal = true;
+          eq(arxLiveCommandsTable.status, "LIVE_APPROVED"),
+        )).returning({ id: arxLiveCommandsTable.id });
+        madeTerminal = blocked.length === 1;
       } catch (e2) {
         await db.insert(liveTradingAuditTable).values({
           eventId: randomUUID(),
