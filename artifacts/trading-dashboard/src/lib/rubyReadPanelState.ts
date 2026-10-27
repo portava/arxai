@@ -49,6 +49,31 @@ export interface RubyReadServerState {
   readLayer?: RubyReadLayer;
   /** The exact live trade setup is withheld (true on a STRUCTURAL_ONLY read). */
   liveSetupWithheld?: boolean;
+  /** Server flag: enough closed history to read structure (false on INSUFFICIENT). */
+  canReadStructure?: boolean;
+  /** Server flag: the exact live setup may be shown (true only on FULL). */
+  canShowLiveTradeSetup?: boolean;
+}
+
+/**
+ * True when the server read is a STRUCTURAL_ONLY read: a directional structure
+ * read with the exact live setup withheld. `readLayer` is the primary signal,
+ * but the withheld-setup flags are honoured too (downgrade-only): a payload
+ * whose `readLayer` was lost on the wire (the user-copy scrubber used to blank
+ * the SCREAMING_SNAKE "STRUCTURAL_ONLY" to "") still says the setup is withheld,
+ * and must never render as a confirmed live read. Gated / insufficient reads are
+ * excluded — they also carry `liveSetupWithheld` but are a harder block.
+ */
+export function isStructuralOnlyRead(read: RubyReadServerState | null | undefined): boolean {
+  if (!read) return false;
+  if (read.readLayer === "STRUCTURAL_ONLY") return true;
+  if (read.gated === true || read.dataQuality === "insufficient" || read.readLayer === "INSUFFICIENT") {
+    return false;
+  }
+  return (
+    read.canReadStructure !== false &&
+    (read.liveSetupWithheld === true || read.canShowLiveTradeSetup === false)
+  );
 }
 
 /**
@@ -71,6 +96,34 @@ export interface ChartRead extends RubyReadServerState {
   htfBias?: string;
   cautions?: string[];
   disclaimer?: string;
+}
+
+const READ_LAYER_RANK: Record<RubyReadLayer, number> = {
+  INSUFFICIENT: 0,
+  STRUCTURAL_ONLY: 1,
+  FULL: 2,
+};
+function asReadLayer(v: unknown): RubyReadLayer | null {
+  return v === "FULL" || v === "STRUCTURAL_ONLY" || v === "INSUFFICIENT" ? v : null;
+}
+
+/**
+ * Fold the route's top-level `readLayer` (the read-chart service's own layer,
+ * returned beside `chartRead`) into the read — DOWNGRADE-ONLY. A missing or
+ * blank `chartRead.readLayer` takes the route layer only when that layer is
+ * STRUCTURAL_ONLY / INSUFFICIENT; a route "FULL" never promotes a blank layer,
+ * and a lower route layer always wins over a higher payload layer.
+ */
+export function withRouteReadLayer<T extends RubyReadServerState>(
+  read: T | null | undefined,
+  routeLayer: unknown,
+): T | null {
+  if (!read || typeof read !== "object") return read ?? null;
+  const route = asReadLayer(routeLayer);
+  if (!route) return read;
+  const own = asReadLayer(read.readLayer);
+  if (own == null) return route === "FULL" ? read : { ...read, readLayer: route };
+  return READ_LAYER_RANK[route] < READ_LAYER_RANK[own] ? { ...read, readLayer: route } : read;
 }
 
 /** The Ruby read status capped against the server read + an optional override. */
@@ -112,7 +165,7 @@ export function resolveCappedRubyReadStatus(
     !!read &&
     (read.gated === true ||
       read.dataQuality === "insufficient" ||
-      read.readLayer === "STRUCTURAL_ONLY");
+      isStructuralOnlyRead(read));
   const serverReason = readDowngraded
     ? read?.blockedReason ?? read?.headline ?? null
     : null;
@@ -199,7 +252,7 @@ export function resolveRubyReadPanelState(
   // available, but the exact live setup is withheld. It takes precedence over a
   // generic "not confirmed" (it's the more specific, more honest state) and over
   // "confirmed" (the badge must never claim clean/AI while the setup is withheld).
-  const structuralOnly = read?.readLayer === "STRUCTURAL_ONLY";
+  const structuralOnly = isStructuralOnlyRead(read);
 
   let verdict: RubyReadVerdict;
   if (structuralOnly) {

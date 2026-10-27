@@ -76,6 +76,12 @@ export function scrubUserCopy(text: string | null | undefined): string {
  * strings). Numbers, booleans, null/undefined are returned unchanged. Pure and
  * deterministic — returns a new value, never mutates the input. Use on
  * regular-user-facing narrative payloads before serialization.
+ *
+ * NARRATIVE ONLY: the first forbidden pattern deletes every SCREAMING_SNAKE
+ * token, so a machine enum passed through here is silently blanked
+ * (`"STRUCTURAL_ONLY"` → `""`, `"LIVE_DELAYED"` → `""`). Scrub the prose and
+ * attach enum/flag fields the client compares exactly (readLayer, reasonCode,
+ * freshness bands, …) AFTER scrubbing, never through it.
  */
 export function scrubUserCopyDeep<T>(value: T): T {
   if (typeof value === "string") return scrubUserCopy(value) as unknown as T;

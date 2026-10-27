@@ -8,6 +8,7 @@ import { buildReasoningFromChartRead } from "@/lib/rubyReasoningBlock";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import {
   resolveRubyReadPanelState,
+  withRouteReadLayer,
   type ChartRead,
 } from "@/lib/rubyReadPanelState";
 import { useRubyReadStore } from "@/components/scanner/rubyReadStore";
@@ -154,8 +155,9 @@ export function RubyChartRead({
         body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as { chartRead: ChartRead };
-      setRead(j.chartRead);
+      const j = (await r.json()) as { chartRead: ChartRead; readLayer?: unknown };
+      // Downgrade-only: the route's own readLayer can only lower the payload's.
+      setRead(withRouteReadLayer(j.chartRead, j.readLayer));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "network error");
     } finally {
@@ -214,7 +216,7 @@ export function RubyChartRead({
         >
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Structural read available — exact entry, stop, and target are withheld until {symbol} {timeframe} confirms.
+            Structural read available — exact entry, stop, and target are withheld for {symbol} {timeframe}.
             {panel.reason ? ` ${panel.reason}` : ""}
           </span>
         </div>

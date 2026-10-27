@@ -297,6 +297,49 @@ function tradeHealthDisplayFields(args: {
   };
 }
 
+/**
+ * MACHINE fields of the chart-read payload. The client compares these EXACTLY
+ * (`readLayer === "STRUCTURAL_ONLY"`, `reasonCode`, `tradeHealthFreshness`, …) so
+ * they ride BESIDE the scrubbed narrative and are NEVER passed through
+ * `scrubUserCopyDeep` / `neutralizeFeedCopyDeep`. The scrubber's first pattern
+ * deletes every SCREAMING_SNAKE token from every string it touches; when the
+ * whole payload was scrubbed as one object the wire carried `readLayer: ""`,
+ * `reasonCode: ""` and `tradeHealthFreshness: ""`, and the Scanner panel
+ * rendered a withheld structural read as a full live read.
+ */
+export interface RubyChartReadMachineFields {
+  symbol: string;
+  timeframe: string;
+  gated: boolean;
+  readLayer: RubyReadLayer;
+  liveSetupWithheld: boolean;
+  canReadStructure: boolean;
+  canShowLiveTradeSetup: boolean;
+  canUseCurrentCandleForEntry: boolean;
+  basis: string;
+  reasonCode: string | null;
+  dataQuality?: "ok" | "insufficient";
+  chartTruthScore: number | null;
+  chartReadScore: number | null;
+  hasFormingCandle: boolean;
+  /** TradeDataFreshnessBand enum from the shared Trade Health contract. */
+  tradeHealthFreshness: string;
+}
+
+/**
+ * Compose the wire payload: scrub (and, when the setup is withheld, neutralise)
+ * ONLY the narrative strings, then attach the machine fields untouched.
+ */
+function composeChartRead(
+  narrative: Record<string, unknown>,
+  machine: RubyChartReadMachineFields,
+  opts: { neutralize: boolean },
+): Record<string, unknown> {
+  const scrubbed = scrubUserCopyDeep(narrative);
+  const safe = opts.neutralize ? neutralizeFeedCopyDeep(scrubbed) : scrubbed;
+  return { ...safe, ...machine };
+}
+
 export async function buildRubyStructuralRead(
   params: RubyStructuralReadParams,
 ): Promise<RubyStructuralReadOutcome> {
@@ -311,35 +354,42 @@ export async function buildRubyStructuralRead(
   // honest, explicit "unsupported timeframe" — never silently coerced.
   const tf = normalizeChartTimeframe(timeframe);
   if (!tf) {
+    const { tradeHealthFreshness, ...tradeHealthCopy } = tradeHealthDisplayFields({
+      symbol,
+      timeframe,
+      freshnessVerdict: "AWAITING",
+      availableClosedCandles: 0,
+      readLayer: "INSUFFICIENT",
+    });
     return {
-      chartRead: scrubUserCopyDeep({
-        symbol,
-        timeframe,
-        gated: true,
-        ...tradeHealthDisplayFields({
+      chartRead: composeChartRead(
+        {
+          ...tradeHealthCopy,
+          headline: "That timeframe isn't supported for a chart read.",
+          trustLine: `${timeframe}: unsupported timeframe`,
+          blockedReason: `Unsupported timeframe "${timeframe}" — pick a standard chart timeframe (e.g. M15, H1, D1).`,
+          disclaimer: DISCLAIMER,
+        },
+        {
           symbol,
           timeframe,
-          freshnessVerdict: "AWAITING",
-          availableClosedCandles: 0,
+          gated: true,
+          // Display-only read layers (Task #602) — never an execution input.
           readLayer: "INSUFFICIENT",
-        }),
-        // Display-only read layers (Task #602) — never an execution input.
-        readLayer: "INSUFFICIENT",
-        liveSetupWithheld: true,
-        canReadStructure: false,
-        canShowLiveTradeSetup: false,
-        canUseCurrentCandleForEntry: false,
-        basis: "INSUFFICIENT",
-        headline: "That timeframe isn't supported for a chart read.",
-        trustLine: `${timeframe}: unsupported timeframe`,
-        blockedReason: `Unsupported timeframe "${timeframe}" — pick a standard chart timeframe (e.g. M15, H1, D1).`,
-        reasonCode: null,
-        chartTruthScore: null,
-        chartReadScore: null,
-        hasFormingCandle: false,
-        dataQuality: "insufficient",
-        disclaimer: DISCLAIMER,
-      }),
+          liveSetupWithheld: true,
+          canReadStructure: false,
+          canShowLiveTradeSetup: false,
+          canUseCurrentCandleForEntry: false,
+          basis: "INSUFFICIENT",
+          reasonCode: null,
+          chartTruthScore: null,
+          chartReadScore: null,
+          hasFormingCandle: false,
+          dataQuality: "insufficient",
+          tradeHealthFreshness,
+        },
+        { neutralize: false },
+      ),
       readLayer: "INSUFFICIENT",
       normalizedTimeframe: null,
       shouldRecordReadDecision: false,
@@ -413,44 +463,51 @@ export async function buildRubyStructuralRead(
       : rubyCtx?.basis === "PARTIAL"
         ? "Chart data is partially verified. I'll give a full read once the feed and mirror are healthy."
         : "Not enough closed candle history yet to read structure on this timeframe. I'll read it once more candles load.";
+    const { tradeHealthFreshness, ...tradeHealthCopy } = tradeHealthDisplayFields({
+      symbol,
+      timeframe: tf,
+      freshnessVerdict: rubyCtx?.sufficiency.freshnessVerdict ?? "AWAITING",
+      availableClosedCandles: rubyCtx?.closedBarsCount ?? 0,
+      readLayer: "INSUFFICIENT",
+    });
     return {
-      chartRead: scrubUserCopyDeep({
-        symbol,
-        timeframe: tf,
-        gated: true,
-        ...tradeHealthDisplayFields({
+      chartRead: composeChartRead(
+        {
+          ...tradeHealthCopy,
+          headline,
+          // HONESTY: never reuse rubyCtx.trustLine here — the success-path trust
+          // line is composed from raw gate flags and can read "Verified · Live
+          // feed" even when this branch is gated. Derive from the ACTUAL feed state.
+          trustLine: buildGatedTrustLine(tf, {
+            available: rubyCtx != null,
+            stale: rubyCtx?.state.stale ?? false,
+            aiUsable: rubyCtx?.state.aiUsable ?? false,
+            basis: rubyCtx?.basis ?? "INSUFFICIENT",
+          }),
+          blockedReason,
+          disclaimer: DISCLAIMER,
+        },
+        {
           symbol,
           timeframe: tf,
-          freshnessVerdict: rubyCtx?.sufficiency.freshnessVerdict ?? "AWAITING",
-          availableClosedCandles: rubyCtx?.closedBarsCount ?? 0,
+          gated: true,
           readLayer: "INSUFFICIENT",
-        }),
-        readLayer: "INSUFFICIENT",
-        liveSetupWithheld: true,
-        canReadStructure: false,
-        canShowLiveTradeSetup: false,
-        canUseCurrentCandleForEntry: layers.canUseCurrentCandleForEntry,
-        basis: rubyCtx?.basis ?? "INSUFFICIENT",
-        headline,
-        // HONESTY: never reuse rubyCtx.trustLine here — the success-path trust
-        // line is composed from raw gate flags and can read "Verified · Live
-        // feed" even when this branch is gated. Derive from the ACTUAL feed state.
-        trustLine: buildGatedTrustLine(tf, {
-          available: rubyCtx != null,
-          stale: rubyCtx?.state.stale ?? false,
-          aiUsable: rubyCtx?.state.aiUsable ?? false,
+          liveSetupWithheld: true,
+          canReadStructure: false,
+          canShowLiveTradeSetup: false,
+          canUseCurrentCandleForEntry: layers.canUseCurrentCandleForEntry,
           basis: rubyCtx?.basis ?? "INSUFFICIENT",
-        }),
-        blockedReason,
-        // READABILITY CONTRACT: emit the SAME shared reasonCode the scanner and
-        // opportunity map surface, so every surface withholds for one reason.
-        reasonCode: rubyCtx?.sufficiency.reasonCode ?? null,
-        chartTruthScore: rubyCtx?.gateOutput.chartTruthScore ?? null,
-        chartReadScore: rubyCtx?.gateOutput.chartReadScore ?? null,
-        hasFormingCandle: rubyCtx?.hasFormingCandle ?? false,
-        dataQuality: "insufficient",
-        disclaimer: DISCLAIMER,
-      }),
+          // READABILITY CONTRACT: emit the SAME shared reasonCode the scanner and
+          // opportunity map surface, so every surface withholds for one reason.
+          reasonCode: rubyCtx?.sufficiency.reasonCode ?? null,
+          chartTruthScore: rubyCtx?.gateOutput.chartTruthScore ?? null,
+          chartReadScore: rubyCtx?.gateOutput.chartReadScore ?? null,
+          hasFormingCandle: rubyCtx?.hasFormingCandle ?? false,
+          dataQuality: "insufficient",
+          tradeHealthFreshness,
+        },
+        { neutralize: false },
+      ),
       readLayer: "INSUFFICIENT",
       normalizedTimeframe: tf,
       shouldRecordReadDecision: false,
@@ -560,36 +617,43 @@ export async function buildRubyStructuralRead(
       sufficiencyAllowsSetup: true,
       userId: params.userId ?? null,
     });
-    const chartReadPayload = scrubUserCopyDeep({
+    const { tradeHealthFreshness, ...tradeHealthCopy } = tradeHealthDisplayFields({
       symbol,
       timeframe: tf,
-      ...read,
-      ...(patternNote ? { patternRead: patternNote } : {}),
-      ...(trendlineNote ? { trendlineRead: trendlineNote } : {}),
-      ...intelRead,
-      ...goldBlock,
-      ...fvgBlock,
-      gated: false,
-      ...tradeHealthDisplayFields({
+      freshnessVerdict: rubyCtx.sufficiency.freshnessVerdict ?? "AWAITING",
+      availableClosedCandles: rubyCtx.closedBarsCount,
+      readLayer: "FULL",
+    });
+    const chartReadPayload = composeChartRead(
+      {
+        ...read,
+        ...(patternNote ? { patternRead: patternNote } : {}),
+        ...(trendlineNote ? { trendlineRead: trendlineNote } : {}),
+        ...intelRead,
+        ...goldBlock,
+        ...fvgBlock,
+        ...tradeHealthCopy,
+        trustLine,
+        disclaimer: DISCLAIMER,
+      },
+      {
         symbol,
         timeframe: tf,
-        freshnessVerdict: rubyCtx.sufficiency.freshnessVerdict ?? "AWAITING",
-        availableClosedCandles: rubyCtx.closedBarsCount,
+        gated: false,
         readLayer: "FULL",
-      }),
-      readLayer: "FULL",
-      liveSetupWithheld: false,
-      canReadStructure: true,
-      canShowLiveTradeSetup: true,
-      canUseCurrentCandleForEntry: layers.canUseCurrentCandleForEntry,
-      trustLine,
-      basis: rubyCtx.basis,
-      chartTruthScore: rubyCtx.gateOutput.chartTruthScore,
-      chartReadScore: rubyCtx.gateOutput.chartReadScore,
-      hasFormingCandle: rubyCtx.hasFormingCandle,
-      reasonCode: rubyCtx.sufficiency.reasonCode,
-      disclaimer: DISCLAIMER,
-    });
+        liveSetupWithheld: false,
+        canReadStructure: true,
+        canShowLiveTradeSetup: true,
+        canUseCurrentCandleForEntry: layers.canUseCurrentCandleForEntry,
+        basis: rubyCtx.basis,
+        chartTruthScore: rubyCtx.gateOutput.chartTruthScore,
+        chartReadScore: rubyCtx.gateOutput.chartReadScore,
+        hasFormingCandle: rubyCtx.hasFormingCandle,
+        reasonCode: rubyCtx.sufficiency.reasonCode,
+        tradeHealthFreshness,
+      },
+      { neutralize: false },
+    );
     return {
       chartRead: chartReadPayload,
       readLayer: "FULL",
@@ -639,46 +703,54 @@ export async function buildRubyStructuralRead(
     sufficiencyAllowsSetup: false,
     userId: params.userId ?? null,
   });
-  const structuralPayload = scrubUserCopyDeep({
+  const { tradeHealthFreshness, ...tradeHealthCopy } = tradeHealthDisplayFields({
     symbol,
     timeframe: tf,
-    ...read,
-    ...(structuralPattern ? { patternRead: structuralPattern } : {}),
-    ...(structuralTrendline ? { trendlineRead: structuralTrendline } : {}),
-    ...intelRead,
-    ...goldBlock,
-    ...fvgBlockWithheld,
-    gated: false,
-    ...tradeHealthDisplayFields({
+    freshnessVerdict: rubyCtx.sufficiency.freshnessVerdict ?? "AWAITING",
+    availableClosedCandles: rubyCtx.closedBarsCount,
+    readLayer: "STRUCTURAL_ONLY",
+  });
+  // The exact setup is withheld, so the narrative is scrubbed AND neutralised
+  // (no confident trade language); the machine fields ride beside it untouched.
+  const structuralPayload = composeChartRead(
+    {
+      ...read,
+      ...(structuralPattern ? { patternRead: structuralPattern } : {}),
+      ...(structuralTrendline ? { trendlineRead: structuralTrendline } : {}),
+      ...intelRead,
+      ...goldBlock,
+      ...fvgBlockWithheld,
+      ...tradeHealthCopy,
+      // Honest trust line that mirrors the Scanner panel/header feed limitation —
+      // a structural read never claims "Verified · Live feed · AACI verified"
+      // while the exact live setup is withheld. Names the closed-candle /
+      // feed-not-confirmed-for-entry limitation explicitly.
+      trustLine: buildStructuralReadTrustLine(tf, {
+        canUseCurrentCandleForEntry: layers.canUseCurrentCandleForEntry,
+      }),
+      blockedReason: withheldReason,
+      disclaimer: DISCLAIMER,
+    },
+    {
       symbol,
       timeframe: tf,
-      freshnessVerdict: rubyCtx.sufficiency.freshnessVerdict ?? "AWAITING",
-      availableClosedCandles: rubyCtx.closedBarsCount,
+      gated: false,
       readLayer: "STRUCTURAL_ONLY",
-    }),
-    readLayer: "STRUCTURAL_ONLY",
-    liveSetupWithheld: true,
-    canReadStructure: true,
-    canShowLiveTradeSetup: false,
-    canUseCurrentCandleForEntry: layers.canUseCurrentCandleForEntry,
-    // Honest trust line that mirrors the Scanner panel/header feed limitation —
-    // a structural read never claims "Verified · Live feed · AACI verified"
-    // while the exact live setup is withheld. Names the closed-candle /
-    // feed-not-confirmed-for-entry limitation explicitly.
-    trustLine: buildStructuralReadTrustLine(tf, {
+      liveSetupWithheld: true,
+      canReadStructure: true,
+      canShowLiveTradeSetup: false,
       canUseCurrentCandleForEntry: layers.canUseCurrentCandleForEntry,
-    }),
-    basis: rubyCtx.basis,
-    blockedReason: withheldReason,
-    chartTruthScore: rubyCtx.gateOutput.chartTruthScore,
-    chartReadScore: rubyCtx.gateOutput.chartReadScore,
-    hasFormingCandle: rubyCtx.hasFormingCandle,
-    reasonCode: rubyCtx.sufficiency.reasonCode,
-    disclaimer: DISCLAIMER,
-  });
+      basis: rubyCtx.basis,
+      chartTruthScore: rubyCtx.gateOutput.chartTruthScore,
+      chartReadScore: rubyCtx.gateOutput.chartReadScore,
+      hasFormingCandle: rubyCtx.hasFormingCandle,
+      reasonCode: rubyCtx.sufficiency.reasonCode,
+      tradeHealthFreshness,
+    },
+    { neutralize: true },
+  );
   return {
-    // The exact setup is withheld, so neutralise any confident trade language.
-    chartRead: neutralizeFeedCopyDeep(structuralPayload),
+    chartRead: structuralPayload,
     readLayer: "STRUCTURAL_ONLY",
     normalizedTimeframe: tf,
     shouldRecordReadDecision: true,

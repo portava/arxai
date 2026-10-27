@@ -671,6 +671,10 @@ router.post("/me/assistant/read-chart", requireUser, safe(async (req, res) => {
   ]);
   res.json({
     chartRead: outcome.chartRead,
+    // The service's own read layer, beside chartRead, so the Scanner panel and
+    // the chat tool (tools.ts forwards outcome.readLayer) share one source.
+    // Display-only; the client may only use it to DOWNGRADE a missing layer.
+    readLayer: outcome.readLayer,
     ...(aaci ? { aaci } : {}),
     ...envelope,
     readOnlyMode: true,
