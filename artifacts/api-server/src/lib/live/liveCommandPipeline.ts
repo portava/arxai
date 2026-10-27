@@ -4280,7 +4280,10 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
             brokerMessage: msg.slice(0, 400),
             rejectedAt: new Date(),
           }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
-            eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"))).returning())[0];
+            eq(arxLiveCommandsTable.status, "SENT_TO_MT5_LIVE"),
+            // A live-commands-poll pickup is delivery evidence without any
+            // mirror: leave the command SENT for the sweep to hold UNKNOWN.
+            isNull(arxLiveCommandsTable.pickedByEaAt))).returning())[0];
         });
       } catch { failed = undefined; }
       if (failed && reservationId != null) {

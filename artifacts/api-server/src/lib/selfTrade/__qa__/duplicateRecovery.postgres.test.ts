@@ -397,6 +397,7 @@ it("dispatch fails an enqueue error only after neutralising mirrors in the same 
   assert.ok(failedWrite < release, "reservation release follows the failure write");
   const between = source.slice(handler, release);
   assert.match(between, /eq\(arxLiveCommandsTable\.status, "SENT_TO_MT5_LIVE"\)/, "the failure write is a CAS");
+  assert.match(between, /isNull\(arxLiveCommandsTable\.pickedByEaAt\)/, "a direct-poll pickup is never failed as non-execution");
   assert.match(between, /if \(failed && reservationId != null\)/, "release only after a committed failure");
 });
 
