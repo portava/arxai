@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildRubyMarketEdge, type SignalEngineInput } from "@workspace/domain/signal-intelligence";
 import { buildSymbolTruthSnapshot, type TruthSnapshotDeps } from "../symbolTruthSnapshot.js";
+import { TRUTH_EVIDENCE_REASON_TEXT } from "@workspace/domain/truth";
 import { NOW, marketFixture } from "./marketEvidenceFixtures.js";
 
 const fixture = marketFixture();
@@ -33,6 +34,10 @@ test("control: connected quiet calendar keeps a genuine BUY", async () => {
 test("control: no calendar configured stays technicals-only (documented design)", async () => {
   const s = await snapshot(async () => radar(false, "none"));
   assert.equal(s.verdict.bestAction, "BUY");
+  // Copy and evidence agree: not configured is "not connected".
+  assert.equal(s.news.riskUnchecked, false);
+  assert.equal(s.evidence.news.reason, "NO_CALENDAR");
+  assert.match(s.news.disclaimer ?? "", /No economic-calendar provider is connected/);
 });
 
 for (const [name, build] of Object.entries({
@@ -45,6 +50,14 @@ for (const [name, build] of Object.entries({
   assert.notEqual(s.verdict.bestAction, "SELL");
   assert.equal(s.news.providerConnected, false);
   assert.doesNotMatch(s.news.riskLabel, /No scheduled events|No event calendar is connected/);
+  // Review 2026-10-27 finding 5: the evidence reason, risk label and
+  // disclaimer all say "could not be checked" — none says "not connected".
+  assert.equal(s.news.riskUnchecked, true);
+  assert.deepEqual(s.evidence.news, { evidenceClass: "unavailable", reason: "CALENDAR_UNCHECKED", observedAt: null });
+  for (const copy of [s.news.riskLabel, s.news.disclaimer ?? "", TRUTH_EVIDENCE_REASON_TEXT[s.evidence.news.reason]]) {
+    assert.match(copy, /could not be checked/, copy);
+    assert.doesNotMatch(copy, /connected/, copy);
+  }
 });
 
 test("synthetic instruments are not held back by a failed macro calendar", async () => {

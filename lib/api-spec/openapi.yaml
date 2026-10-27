@@ -15377,6 +15377,12 @@ components:
           items: { $ref: "#/components/schemas/TruthNewsEvent" }
         riskLabel: { type: string }
         highImpactWindowActive: { type: boolean }
+        riskUnchecked:
+          type: boolean
+          description: >-
+            Scheduled event risk could not be checked (the calendar read failed,
+            or a configured calendar is not connected). Distinct from "no
+            calendar configured". Absent on older servers; treat absent as false.
         disclaimer: { type: string, nullable: true }
     TruthData:
       type: object
@@ -15460,8 +15466,8 @@ components:
           enum:
             [LIVE_FEED_OBSERVATION, MODEL_ESTIMATE, FEED_UNCONFIRMED,
              CALENDAR_FETCH_TIME_UNKNOWN, FEED_STALE, EXPIRED, NO_FEED, NO_VALUE,
-             NO_OBSERVATION_TIME, INVALID_TIMESTAMP, NO_CALENDAR, COMPONENT_ABSENT,
-             LEVELS_WITHHELD, INSUFFICIENT_DATA, UNCLASSIFIED]
+             NO_OBSERVATION_TIME, INVALID_TIMESTAMP, NO_CALENDAR, CALENDAR_UNCHECKED,
+             COMPONENT_ABSENT, LEVELS_WITHHELD, INSUFFICIENT_DATA, UNCLASSIFIED]
         observedAt:
           type: string
           nullable: true

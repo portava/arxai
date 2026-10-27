@@ -102,6 +102,26 @@ test("absent, unattributed and invalid values are unavailable, never coerced", (
   assert.deepEqual(noCalendar.news, { evidenceClass: "unavailable", reason: "NO_CALENDAR", observedAt: null });
 });
 
+// Review 2026-10-27 finding 5: a calendar that could not be checked was
+// labelled "No economic calendar is connected." while the risk label said it
+// could not be checked.
+test("a calendar that could not be checked is CALENDAR_UNCHECKED, never \"not connected\"", () => {
+  const unchecked = classifyTruthEvidence(input({ news: { providerConnected: false, riskUnchecked: true } }));
+  assert.deepEqual(unchecked.news, { evidenceClass: "unavailable", reason: "CALENDAR_UNCHECKED", observedAt: null });
+  assert.doesNotMatch(TRUTH_EVIDENCE_REASON_TEXT.CALENDAR_UNCHECKED, /connected/);
+  assert.match(TRUTH_EVIDENCE_REASON_TEXT.CALENDAR_UNCHECKED, /could not be checked/);
+  // Unchecked wins over a stale "connected" flag; it is never an estimate.
+  const both = classifyTruthEvidence(input({ news: { providerConnected: true, riskUnchecked: true } }));
+  assert.equal(both.news.reason, "CALENDAR_UNCHECKED"); assert.equal(both.news.evidenceClass, "unavailable");
+  // Not configured (or an older server without the flag) keeps NO_CALENDAR.
+  for (const news of [{ providerConnected: false, riskUnchecked: false }, { providerConnected: false }]) {
+    assert.equal(classifyTruthEvidence(input({ news })).news.reason, "NO_CALENDAR");
+  }
+  // The wire pairing is validated like every other reason.
+  assert.equal(parseTruthClaimEvidence({ evidenceClass: "unavailable", reason: "CALENDAR_UNCHECKED", observedAt: null }).reason, "CALENDAR_UNCHECKED");
+  assert.equal(parseTruthClaimEvidence({ evidenceClass: "estimate", reason: "CALENDAR_UNCHECKED", observedAt: null }).reason, "UNCLASSIFIED");
+});
+
 test("a scheduled future candle close is bar identity, not rejected as an observation", () => {
   const boundary = new Date(NOW + 59_000).toISOString();
   const e = classifyTruthEvidence(input({ data: { ...input().data, lastCandleAt: boundary } }));

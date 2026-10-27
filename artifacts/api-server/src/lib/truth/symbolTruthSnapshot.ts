@@ -98,6 +98,12 @@ export interface TruthNews {
   /** Clean-English risk summary. */
   riskLabel: string;
   highImpactWindowActive: boolean;
+  /**
+   * Scheduled event risk could not be checked: the radar read failed, or a
+   * configured calendar is not connected (distinct from "not configured").
+   * Drives the CALENDAR_UNCHECKED evidence reason.
+   */
+  riskUnchecked: boolean;
   /** Single clean-English disclaimer when no calendar provider is connected. */
   disclaimer: string | null;
 }
@@ -348,15 +354,20 @@ function eventRiskUnchecked(radar: RadarResult | null): boolean {
   return radar == null || (!radar.radar.provider.connected && radar.radar.provider.name !== "none");
 }
 
+const CALENDAR_UNCHECKED_RISK_LABEL = "Event risk is unavailable — the economic calendar could not be checked.";
+const CALENDAR_UNCHECKED_DISCLAIMER = "The economic calendar could not be checked, so scheduled events are not shown.";
+
 function buildNews(radar: RadarResult | null): TruthNews {
   if (!radar) {
+    // The radar read itself failed: whether a calendar is configured is not
+    // known here, so never claim "not connected" — it could not be checked.
     return {
       providerConnected: false,
       events: [],
-      riskLabel: "Event risk is unavailable.",
+      riskLabel: CALENDAR_UNCHECKED_RISK_LABEL,
       highImpactWindowActive: false,
-      disclaimer:
-        "No economic-calendar provider is connected, so no scheduled events are shown.",
+      riskUnchecked: true,
+      disclaimer: CALENDAR_UNCHECKED_DISCLAIMER,
     };
   }
   const { radar: r } = radar;
@@ -390,19 +401,21 @@ function buildNews(radar: RadarResult | null): TruthNews {
     riskLabel = providerConnected
       ? "No scheduled events affect this symbol."
       : eventRiskUnchecked(radar)
-        ? "Event risk is unavailable — the economic calendar could not be checked."
+        ? CALENDAR_UNCHECKED_RISK_LABEL
         : "No event calendar is connected.";
   }
 
+  const riskUnchecked = eventRiskUnchecked(radar);
   return {
     providerConnected,
     events,
     riskLabel,
     highImpactWindowActive: r.highImpactWindowActive,
+    riskUnchecked,
     disclaimer: providerConnected
       ? null
-      : eventRiskUnchecked(radar)
-        ? "The economic calendar could not be checked, so scheduled events are not shown."
+      : riskUnchecked
+        ? CALENDAR_UNCHECKED_DISCLAIMER
         : "No economic-calendar provider is connected, so no scheduled events are shown.",
   };
 }

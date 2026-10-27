@@ -6331,6 +6331,8 @@ export interface TruthNews {
   events: TruthNewsEvent[];
   riskLabel: string;
   highImpactWindowActive: boolean;
+  /** Scheduled event risk could not be checked (the calendar read failed, or a configured calendar is not connected). Distinct from "no calendar configured". Absent on older servers; treat absent as false. */
+  riskUnchecked?: boolean;
   disclaimer: string | null;
 }
 
@@ -6452,6 +6454,7 @@ export const TruthEvidenceClaimReason = {
   NO_OBSERVATION_TIME: "NO_OBSERVATION_TIME",
   INVALID_TIMESTAMP: "INVALID_TIMESTAMP",
   NO_CALENDAR: "NO_CALENDAR",
+  CALENDAR_UNCHECKED: "CALENDAR_UNCHECKED",
   COMPONENT_ABSENT: "COMPONENT_ABSENT",
   LEVELS_WITHHELD: "LEVELS_WITHHELD",
   INSUFFICIENT_DATA: "INSUFFICIENT_DATA",

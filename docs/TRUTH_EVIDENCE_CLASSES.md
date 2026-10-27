@@ -39,7 +39,8 @@ Each claim has this shape: `{ evidenceClass, reason, observedAt }`.
   - `NO_VALUE`
   - `NO_OBSERVATION_TIME`: a value exists, but no observation is attributed to it.
   - `INVALID_TIMESTAMP`: the time is unparsable, or the tick time is more than 5 s in the future.
-  - `NO_CALENDAR`
+  - `NO_CALENDAR`: no economic calendar is configured.
+  - `CALENDAR_UNCHECKED` (added 2026-10-27 review follow-up): scheduled event risk could not be checked. Either the calendar read failed, or a configured calendar is not connected. The snapshot's new `news.riskUnchecked` flag drives this reason, and the risk label and disclaimer use the same "could not be checked" wording. Before this, the claim said "No economic calendar is connected." while the label said the calendar could not be checked. The flag is optional on the wire. When an older server omits it, the reason falls back to `NO_CALENDAR`. If a server reports a calendar claim at `estimate` while setting `riskUnchecked`, the client downgrades that claim.
   - `COMPONENT_ABSENT`
   - `LEVELS_WITHHELD`
   - `INSUFFICIENT_DATA`: the verdict bias is `UNKNOWN`.

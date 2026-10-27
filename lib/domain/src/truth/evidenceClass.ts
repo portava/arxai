@@ -54,6 +54,7 @@ export type TruthEvidenceReason =
   | "NO_OBSERVATION_TIME"
   | "INVALID_TIMESTAMP"
   | "NO_CALENDAR"
+  | "CALENDAR_UNCHECKED"
   | "COMPONENT_ABSENT"
   | "LEVELS_WITHHELD"
   | "INSUFFICIENT_DATA"
@@ -71,6 +72,7 @@ export const TRUTH_EVIDENCE_REASONS: readonly TruthEvidenceReason[] = [
   "NO_OBSERVATION_TIME",
   "INVALID_TIMESTAMP",
   "NO_CALENDAR",
+  "CALENDAR_UNCHECKED",
   "COMPONENT_ABSENT",
   "LEVELS_WITHHELD",
   "INSUFFICIENT_DATA",
@@ -90,6 +92,7 @@ const REASON_CLASS: Record<TruthEvidenceReason, TruthEvidenceClass> = {
   NO_OBSERVATION_TIME: "unavailable",
   INVALID_TIMESTAMP: "unavailable",
   NO_CALENDAR: "unavailable",
+  CALENDAR_UNCHECKED: "unavailable",
   COMPONENT_ABSENT: "unavailable",
   LEVELS_WITHHELD: "unavailable",
   INSUFFICIENT_DATA: "unavailable",
@@ -129,7 +132,15 @@ export interface TruthEvidenceInput {
     lastCandleAt: string | null;
     lastTickAt: string | null;
   };
-  news: { providerConnected: boolean };
+  news: {
+    providerConnected: boolean;
+    /**
+     * Scheduled event risk could not be checked: the calendar read failed, or
+     * a configured calendar is not connected. Distinct from "no calendar is
+     * configured". Absent (older server) is treated as false.
+     */
+    riskUnchecked?: boolean;
+  };
   components: Record<TruthComponentKey, { present: boolean; asOf: string | null }>;
   levels: { withheld: boolean };
   verdict: { bias: TruthBias };
@@ -226,10 +237,14 @@ export function classifyTruthEvidence(input: TruthEvidenceInput): TruthEvidence 
       : feedClaim(data.state, data.source, tickAt);
 
   // ── News / calendar. The snapshot does not carry the calendar's fetch time,
-  // so even a connected provider is never labelled "verified" here.
-  const news = input.news.providerConnected
-    ? claim("CALENDAR_FETCH_TIME_UNKNOWN", null)
-    : claim("NO_CALENDAR", null);
+  // so even a connected provider is never labelled "verified" here. A calendar
+  // that could not be checked is unavailable for that reason — never
+  // described as "not connected", and never as an estimate.
+  const news = input.news.riskUnchecked === true
+    ? claim("CALENDAR_UNCHECKED", null)
+    : input.news.providerConnected
+      ? claim("CALENDAR_FETCH_TIME_UNKNOWN", null)
+      : claim("NO_CALENDAR", null);
 
   // ── Components: heuristic reads over the feed.
   const feed = feedClaim(data.state, data.source, candleAt);
@@ -360,6 +375,7 @@ export const TRUTH_EVIDENCE_REASON_TEXT: Record<TruthEvidenceReason, string> = {
   NO_OBSERVATION_TIME: "There is no observation time to attribute this to.",
   INVALID_TIMESTAMP: "The reported time is invalid, so it is not used.",
   NO_CALENDAR: "No economic calendar is connected.",
+  CALENDAR_UNCHECKED: "The economic calendar could not be checked right now.",
   COMPONENT_ABSENT: "This read has no current, matching evidence.",
   LEVELS_WITHHELD: "Entry, stop and target are withheld.",
   INSUFFICIENT_DATA: "There is not enough confirmed data for a read.",

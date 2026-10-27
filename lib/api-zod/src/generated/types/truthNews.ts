@@ -12,5 +12,7 @@ export interface TruthNews {
   events: TruthNewsEvent[];
   riskLabel: string;
   highImpactWindowActive: boolean;
+  /** Scheduled event risk could not be checked (the calendar read failed, or a configured calendar is not connected). Distinct from "no calendar configured". Absent on older servers; treat absent as false. */
+  riskUnchecked?: boolean;
   disclaimer: string | null;
 }

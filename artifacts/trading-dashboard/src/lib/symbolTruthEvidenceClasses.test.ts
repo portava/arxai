@@ -106,4 +106,21 @@ describe("evidence classes after the client cap", () => {
     const value = input(); value.nowMs += SYMBOL_TRUTH_MAX_AGE_MS + 1;
     expect(resolveSymbolTruthEvidence(value)).toEqual({ snapshot: null, actionCapped: true });
   });
+  // Review 2026-10-27 finding 5: an unchecked calendar has its own reason.
+  it("labels an unchecked calendar CALENDAR_UNCHECKED and downgrades a server claim that hides it", () => {
+    const value = input();
+    value.snapshot!.news = { ...value.snapshot!.news, providerConnected: false, riskUnchecked: true,
+      riskLabel: "Event risk is unavailable — the economic calendar could not be checked.",
+      disclaimer: "The economic calendar could not be checked, so scheduled events are not shown." };
+    // A server claim that still says "connected calendar" (estimate) is weaker-capped.
+    value.snapshot!.evidence!.news = { evidenceClass: "estimate", reason: "CALENDAR_FETCH_TIME_UNKNOWN", observedAt: null };
+    expect(resolveSymbolTruthEvidence(value).snapshot?.evidence?.news)
+      .toEqual({ evidenceClass: "unavailable", reason: "CALENDAR_UNCHECKED", observedAt: null });
+    // The server's own CALENDAR_UNCHECKED claim stands as supplied.
+    const fresh = input();
+    fresh.snapshot!.news = { ...value.snapshot!.news };
+    fresh.snapshot!.evidence = serverEvidence(fresh.snapshot!);
+    expect(fresh.snapshot!.evidence.news.reason).toBe("CALENDAR_UNCHECKED");
+    expect(resolveSymbolTruthEvidence(fresh).snapshot?.evidence?.news.reason).toBe("CALENDAR_UNCHECKED");
+  });
 });

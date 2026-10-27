@@ -63,6 +63,18 @@ test("live matching read: direct observations verified, calculations estimates, 
   for (const c of derivedClaims(s)) assert.notEqual(c.evidenceClass, "verified");
   assert.equal(s.evidence.levels.reason, s.levels.withheld ? "LEVELS_WITHHELD" : "MODEL_ESTIMATE");
   assert.equal(s.evidence.verdict.reason, s.verdict.bias === "UNKNOWN" ? "INSUFFICIENT_DATA" : "MODEL_ESTIMATE");
+  // The news build failed in this fixture: it could not be checked, which is
+  // not the same as "no calendar is connected".
+  assert.equal(s.news.riskUnchecked, true);
+  assert.deepEqual(s.evidence.news, { evidenceClass: "unavailable", reason: "CALENDAR_UNCHECKED", observedAt: null });
+});
+
+test("a calendar that is not configured stays NO_CALENDAR", async () => {
+  const s = await snapshot({ buildNewsFn: async () => ({
+    radar: { symbol: "EURUSD", provider: { connected: false, name: "none", note: "" }, events: [], topSeverity: null, highImpactWindowActive: false, summary: "" },
+    behavior: { mode: "NO_PROVIDER", note: "" },
+  }) as never });
+  assert.equal(s.news.riskUnchecked, false);
   assert.deepEqual(s.evidence.news, { evidenceClass: "unavailable", reason: "NO_CALENDAR", observedAt: null });
 });
 

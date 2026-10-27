@@ -46,6 +46,14 @@ function evidence(over: Partial<Parameters<typeof classifyTruthEvidence>[0]> = {
 
 afterEach(() => cleanup());
 
+describe("TruthEvidenceClasses — unchecked calendar copy", () => {
+  it("says the calendar could not be checked, not that none is connected", () => {
+    render(<TruthEvidenceClasses evidence={evidence({ news: { providerConnected: false, riskUnchecked: true } })} />);
+    expect(screen.getByText("The economic calendar could not be checked right now.")).toBeTruthy();
+    expect(screen.queryByText("No economic calendar is connected.")).toBeNull();
+  });
+});
+
 describe("TruthEvidenceClasses", () => {
   it("renders nothing when no classification was supplied", () => {
     const { container } = render(<TruthEvidenceClasses evidence={null} />);
