@@ -22426,6 +22426,17 @@ components:
         expiresAt: { type: string }
         firstSeenAt: { type: string }
         lateReason: { type: string, nullable: true }
+        scannerBinding:
+          type: object
+          description: Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers.
+          required: [bound, reasonCode, reason]
+          properties:
+            bound: { type: boolean }
+            reasonCode:
+              type: string
+              nullable: true
+              enum: [no_scanner_read, quote_last_only, no_bound_quote, different_candles, scanner_not_live, setup_withheld, null]
+            reason: { type: string, nullable: true }
 
     MeMarketEdgeResp:
       type: object

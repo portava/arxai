@@ -14,6 +14,7 @@ import type { RubyMarketEdgeSignalDirection } from "./rubyMarketEdgeSignalDirect
 import type { RubyMarketEdgeSignalFreshness } from "./rubyMarketEdgeSignalFreshness";
 import type { RubyMarketEdgeSignalLifecycleStage } from "./rubyMarketEdgeSignalLifecycleStage";
 import type { RubyMarketEdgeSignalRegime } from "./rubyMarketEdgeSignalRegime";
+import type { RubyMarketEdgeSignalScannerBinding } from "./rubyMarketEdgeSignalScannerBinding";
 import type { SessionContext } from "./sessionContext";
 import type { SignalEvidence } from "./signalEvidence";
 import type { SignalPriceZone } from "./signalPriceZone";
@@ -58,4 +59,6 @@ export interface RubyMarketEdgeSignal {
   expiresAt: string;
   firstSeenAt: string;
   lateReason: string | null;
+  /** Optional. Whether the scanner's read (and its entry/stop geometry) was bound into this signal and, if not, the gate that dropped it. Reason only — never an execution input; absent from older servers. */
+  scannerBinding?: RubyMarketEdgeSignalScannerBinding;
 }

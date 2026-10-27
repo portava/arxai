@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, bindScannerSource, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
+import { prepareScannerCandles, scannerQuoteFor, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
 
 const now = Date.parse("2026-10-26T12:02:00Z"), interval = 300_000;
@@ -111,4 +111,31 @@ test("private source binding survives spread decorators but cannot disclose iden
   assert.equal(JSON.stringify(decorated), '{"symbol":"EURUSD","score":60,"news":"fixture"}');
   assert.equal(JSON.stringify(decorated).includes(identity), false);
   assert.equal(scannerRowSourceIdentity(JSON.parse(JSON.stringify(decorated))), null);
+});
+
+// levels-withheld-vs-shown: Deriv public ticks carry `last` only. The bound-or-
+// null contract of scannerQuoteFor is unchanged (no spread is ever invented),
+// but the classifier names WHY no quote binds, so the scanner can say "no
+// bid/ask spread is bound" instead of "Live feed is delayed".
+test("a fresh same-feed last-price-only quote is LAST_ONLY: never a usable quote, never a synthesized spread", () => {
+  const candles = bars("deriv");
+  candles.provenance = { providerId: "deriv", subProviderId: null, brokerCode: "deriv", source: "DERIVED", sourceId: "deriv:EURUSD:M5", bridgeConnectionId: null, userId: null, brokerSymbol: null, environment: "unknown", receivedAt: new Date(now).toISOString(), delayed: false };
+  const derivTick: MarketQuoteResult = { ok: true, symbol: "EURUSD", assetClass: "forex", primaryProvider: "deriv", attempts: [], userMessage: "", adminDetail: "",
+    quote: { symbol: "EURUSD", last: 1.11, timestamp: new Date(now).toISOString() },
+    provenance: { ...candles.provenance, source: "LIVE_TICK", sourceId: "deriv:EURUSD" } };
+  assert.equal(scannerQuoteFor(candles, derivTick, "EURUSD", now), null);
+  assert.deepEqual(classifyScannerQuoteBinding(candles, derivTick, "EURUSD", now), { binding: "LAST_ONLY", mid: null, spread: null });
+  const flat: MarketQuoteResult = { ...derivTick, quote: { symbol: "EURUSD", bid: 1.11, ask: 1.11, timestamp: new Date(now).toISOString() } };
+  assert.equal(scannerQuoteFor(candles, flat, "EURUSD", now), null);
+  assert.equal(classifyScannerQuoteBinding(candles, flat, "EURUSD", now).binding, "LAST_ONLY");
+  const stale: MarketQuoteResult = { ...derivTick, quote: { symbol: "EURUSD", last: 1.11, timestamp: new Date(now - 3_600_000).toISOString() } };
+  assert.equal(classifyScannerQuoteBinding(candles, stale, "EURUSD", now).binding, "NONE", "a stale price is not last-only, it is unbound");
+  const other: MarketQuoteResult = { ...derivTick, primaryProvider: "mt5_broker" };
+  assert.equal(classifyScannerQuoteBinding(candles, other, "EURUSD", now).binding, "NONE", "another feed never binds");
+});
+
+test("a bid/ask quote with a positive spread is BOUND and matches scannerQuoteFor exactly", () => {
+  const b = classifyScannerQuoteBinding(bars(), quote(), "EURUSD", now);
+  assert.equal(b.binding, "BOUND");
+  assert.deepEqual(scannerQuoteFor(bars(), quote(), "EURUSD", now), { mid: b.mid, spread: b.spread });
 });

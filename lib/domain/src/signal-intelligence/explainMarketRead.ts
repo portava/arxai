@@ -234,10 +234,15 @@ function derive(signal: RubyMarketEdgeSignal): Derived {
  * live-feed tag, scanner geometry), never a guessed cause: on a live feed with
  * enough candles the honest fact is that no scanner entry/stop is attached.
  */
-function levelsWithheldReasonFor(d: Derived): string | null {
+function levelsWithheldReasonFor(d: Derived, signal: RubyMarketEdgeSignal): string | null {
   if (d.entryZ || d.watchZ || d.sl || d.inval) return null;
   if (!d.hasData) return "there aren't enough confirmed live candles for this read yet";
   if (!d.liveFeed) return "the data behind this read isn't a confirmed live feed";
+  // The service records the gate that dropped the scanner's geometry; cite it.
+  const binding = signal.scannerBinding;
+  const why = binding && !binding.bound ? (binding.reason ?? "").trim().replace(/\.$/, "") : "";
+  if (why) return `no scanner entry or stop is attached to this read because ${why}`;
+  if (binding?.bound) return "the scanner read is bound, but it defines no entry or stop for this stage yet";
   return "no scanner entry or stop is attached to this read yet";
 }
 
@@ -461,7 +466,7 @@ export function explainMarketRead(
 ): RubyMarketReadExplanation {
   const d = derive(signal);
   d.newsL = newsRiskFromEvidence(d, signal);
-  d.levelsWithheld = levelsWithheldReasonFor(d);
+  d.levelsWithheld = levelsWithheldReasonFor(d, signal);
 
   const bestAction = computeBestAction(d, signal.lifecycleStage);
   const actionable = computeActionable(d);

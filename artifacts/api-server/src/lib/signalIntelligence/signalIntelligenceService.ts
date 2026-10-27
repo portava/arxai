@@ -29,8 +29,11 @@ import type {
   MarketRegime,
   SignalLifecycleStage,
   ConfidenceBand,
+  ScannerBinding,
 } from "@workspace/domain/signal-intelligence";
-import { prepareMarketRead, matchedMarketQuote, evidenceMatches, isCurrentBuild } from "../truth/marketReadEvidence.js";
+import {
+  prepareMarketRead, matchedMarketQuote, matchedMarketQuoteBinding, evidenceMatches, isCurrentBuild,
+} from "../truth/marketReadEvidence.js";
 import { scannerRowSourceIdentity } from "../scannerInputIntegrity.js";
 import { routeCandles, routeQuote, quotePinForSeries, classifySymbol, resolveDerivSymbol } from "../data/marketDataRouter.js";
 import {
@@ -288,6 +291,33 @@ export async function buildRubyMarketEdgeForUser(
     scannerOpp = (decorated ?? opp) as DecoratedOpportunity;
     scanner = oppToScannerInput(scannerOpp);
   }
+  // Record WHY the scanner's geometry was (not) bound — the first failing check
+  // of the gate above, in its order — so the explanation can state the real
+  // cause of missing levels instead of a guess. Reason-only: the gate is
+  // unchanged, and nothing here can bind a level.
+  const scannerBinding: ScannerBinding = scanner
+    ? { bound: true, reasonCode: null, reason: null }
+    : !marketRead
+      ? { bound: false, reasonCode: null, reason: null }
+      : !opp
+        ? { bound: false, reasonCode: "no_scanner_read", reason: "the scanner has no current read for this market and timeframe" }
+        : price == null
+          ? matchedMarketQuoteBinding(candleResult, quoteResult, symbol, now) === "LAST_ONLY"
+            ? { bound: false, reasonCode: "quote_last_only", reason: "the live quote is last-price only — no bid/ask spread is bound to these candles" }
+            : { bound: false, reasonCode: "no_bound_quote", reason: "no live quote from the same feed is matched to these candles" }
+          : opp.symbol !== symbol || opp.timeframe !== timeframe ||
+              opp.featureSnapshot?.computedAt !== marketRead.evidence.lastClosedCandleAt ||
+              scannerRowSourceIdentity(opp) !== marketRead.evidence.sourceIdentity || !isCurrentBuild(opp.generatedAt, now)
+            ? { bound: false, reasonCode: "different_candles", reason: "the scanner's read is from a different candle set than this read" }
+            : opp.dataSource !== "LIVE_FEED"
+              ? { bound: false, reasonCode: "scanner_not_live", reason: "the scanner's read isn't on a confirmed live feed" }
+              : {
+                  bound: false,
+                  reasonCode: "setup_withheld",
+                  reason: opp.sufficiency?.humanReason
+                    ? `the scanner withheld its setup: ${opp.sufficiency.humanReason.replace(/\.$/, "")}`
+                    : "the scanner withheld its setup",
+                };
   const newsRiskLevel: NewsRiskLevel | null = scannerOpp
     ? mapNewsRiskLevel(scannerOpp)
     : null;
@@ -334,6 +364,7 @@ export async function buildRubyMarketEdgeForUser(
   });
 
   signal.marketEvidence = marketRead ? { ...marketRead.evidence, userId } : null;
+  signal.scannerBinding = scannerBinding;
 
   const saved = !options.skipPersist && contextKey != null
     ? await persistSnapshot(userId, signal, contextKey) : false;

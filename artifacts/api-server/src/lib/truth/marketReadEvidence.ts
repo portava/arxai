@@ -1,7 +1,10 @@
 import type { TruthReadEvidence } from "@workspace/domain/truth";
 import { resolveArxMarket } from "@workspace/domain/market";
 import type { MarketCandlesResult, MarketQuoteResult } from "../data/marketDataRouter.js";
-import { prepareScannerCandles, scannerSourceIdentity, scannerQuoteFor } from "../scannerInputIntegrity.js";
+import {
+  prepareScannerCandles, scannerSourceIdentity, scannerQuoteFor, classifyScannerQuoteBinding,
+  type ScannerQuoteBinding,
+} from "../scannerInputIntegrity.js";
 import { normalizeChartTimeframe, timeframeMs } from "../data/chart/timeframes.js";
 
 /** Calculation freshness is bounded separately from the age of an observed bar.
@@ -55,11 +58,27 @@ export function evidenceMatches(
  * rather than silently matching an attributed series. No spread is invented.
  * The quote's timestamp must be the producer-observed tick time: a receive-time
  * stamp (or an older result without the flag) cannot establish freshness. */
-export function matchedMarketQuote(candles: MarketCandlesResult, quote: MarketQuoteResult, symbol: string, now: number) {
+function sameAttribution(candles: MarketCandlesResult, quote: MarketQuoteResult): boolean {
   const cp = candles.provenance, qp = quote.provenance;
-  if (!cp || !qp || quote.tickTimeObserved !== true) return null;
+  if (!cp || !qp || quote.tickTimeObserved !== true) return false;
   for (const key of ["bridgeConnectionId", "userId", "brokerSymbol", "environment", "subProviderId"] as const) {
-    if ((cp[key] ?? null) !== (qp[key] ?? null)) return null;
+    if ((cp[key] ?? null) !== (qp[key] ?? null)) return false;
   }
+  return true;
+}
+
+export function matchedMarketQuote(candles: MarketCandlesResult, quote: MarketQuoteResult, symbol: string, now: number) {
+  if (!sameAttribution(candles, quote)) return null;
   return scannerQuoteFor(candles, quote, symbol, now);
+}
+
+/** The binding class behind `matchedMarketQuote` (same attribution checks):
+ * BOUND exactly when `matchedMarketQuote` returns a quote; LAST_ONLY when a
+ * fresh same-feed price exists but no bid/ask spread is observed. Reason-only —
+ * it never yields a price. */
+export function matchedMarketQuoteBinding(
+  candles: MarketCandlesResult, quote: MarketQuoteResult, symbol: string, now: number,
+): ScannerQuoteBinding {
+  if (!sameAttribution(candles, quote)) return "NONE";
+  return classifyScannerQuoteBinding(candles, quote, symbol, now).binding;
 }

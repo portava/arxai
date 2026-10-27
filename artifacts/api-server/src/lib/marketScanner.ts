@@ -7,7 +7,7 @@
 
 import { analyzeMarketFromCandles, type MarketAnalysis } from "./aiBrain.js";
 import { ScannerPollLoop, ScannerRunCoordinator } from "./scannerRunCoordinator.js";
-import { prepareScannerCandles, scannerQuoteFor, scannerSourceIdentity, bindScannerSource } from "./scannerInputIntegrity.js";
+import { prepareScannerCandles, classifyScannerQuoteBinding, scannerSourceIdentity, bindScannerSource, type ScannerQuoteBinding } from "./scannerInputIntegrity.js";
 import { getCachedIntelligenceContext } from "./data/chart/chartIntelligence.js";
 import { type ChartTimeframe, normalizeChartTimeframe } from "./data/chart/timeframes.js";
 import { buildPatternTruthVerdict } from "./data/chart/patternTruthService.js";
@@ -597,7 +597,11 @@ export function computeFinalRead(
       // Real feed, but lagging (chart calls it delayed/stale). Already demoted
       // from HIGH above; a still-MEDIUM read drops to LOW. Be plain about why.
       if (confidence === "MEDIUM") confidence = "LOW";
-      reasons.push("Live feed is delayed — read is based on the last available candles, not current market data.");
+      // A live price with no bound bid/ask spread is not a delayed feed — the
+      // shared sufficiency reason (step 5b) states the quote-binding limit.
+      if (opp.sufficiency?.reasonCode !== "quote_unbound") {
+        reasons.push("Live feed is delayed — read is based on the last available candles, not current market data.");
+      }
     } else {
       // AWAITING_FEED / HISTORY_READY_AWAITING_LIVE_TICK — warming up. Already
       // demoted from HIGH above; a still-MEDIUM read drops to LOW (LOW stays LOW).
@@ -1251,6 +1255,9 @@ async function analyzeViaRouter(
    *  Feeds opportunityScore's spreadCondition factor — never riskScore. */
   quoteSpreadPrice: number | null;
   quoteUsable: boolean;
+  /** How the quote binds to these bars (LAST_ONLY = fresh price, no spread).
+   *  Reason input only — quoteUsable stays false for LAST_ONLY. */
+  quoteBinding: ScannerQuoteBinding;
   sourceIdentity: string;
 } | null> {
   try {
@@ -1271,7 +1278,9 @@ async function analyzeViaRouter(
     const analysisWindow = prepared.rawClosed.slice(-SCAN_ANALYSIS_WINDOW);
     const candles = analysisWindow.map((c) => ({ o: c.open, h: c.high, l: c.low, c: c.close }));
     const last = candles[candles.length - 1];
-    const usableQuote = scannerQuoteFor(cr, qr, sym, now);
+    const binding = classifyScannerQuoteBinding(cr, qr, sym, now);
+    const usableQuote = binding.binding === "BOUND" && binding.mid != null
+      ? { mid: binding.mid, spread: binding.spread } : null;
     // A closed candle can support historical context, but quoteUsable below
     // prevents its close or an unknown spread from becoming live trade geometry.
     const quote = usableQuote ? { mid: usableQuote.mid, spread: usableQuote.spread ?? 0 }
@@ -1295,6 +1304,7 @@ async function analyzeViaRouter(
       primaryProvider: cr.primaryProvider ?? null,
       quoteSpreadPrice: usableQuote?.spread ?? null,
       quoteUsable: usableQuote !== null,
+      quoteBinding: binding.binding,
       sourceIdentity: scannerSourceIdentity(cr),
     };
   } catch { return null; }
@@ -1451,13 +1461,17 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     const sufficiency = evaluateMarketDataSufficiency({
       symbol: sym,
       timeframe: tf,
+      // A fresh same-feed price with no bid/ask spread (LAST_ONLY) is still a
+      // LIVE feed: the shared verdict withholds the setup for the quote-binding
+      // reason (quote_unbound) instead of calling the feed delayed.
       freshnessVerdict:
         ds === "LIVE_FEED"
-          ? routed?.quoteUsable ? "LIVE" : "LIVE_DELAYED"
+          ? routed?.quoteUsable || routed?.quoteBinding === "LAST_ONLY" ? "LIVE" : "LIVE_DELAYED"
           : ds === "LIVE_DELAYED" || ds === "STALE_FEED"
             ? "LIVE_DELAYED"
             : "AWAITING",
       availableClosedCandles: routed?.closedCandleCount ?? 0,
+      quoteBinding: ds === "LIVE_FEED" ? routed?.quoteBinding ?? null : null,
     });
     // The ONLY state the data-source switch above misses is a feed reporting
     // LIVE_FEED with too few closed bars to analyse — force that row honest.
@@ -1475,9 +1489,13 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
       disabledReason = sufficiency.humanReason;
     }
     if (ds === "LIVE_FEED" && !routed?.quoteUsable) {
+      // Not selectable without a bound quote (gating unchanged). The stated
+      // reason distinguishes a spread-less live price from a missing quote.
       ds = "STALE_FEED";
       dataStatus = "stale";
-      disabledReason = "Waiting for a fresh quote from the same market feed as the candles.";
+      disabledReason = sufficiency.reasonCode === "quote_unbound"
+        ? sufficiency.humanReason
+        : "Waiting for a fresh quote from the same market feed as the candles.";
     }
     const selectable = dataStatus === "live";
 
