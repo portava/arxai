@@ -1,3 +1,4 @@
+import { normalizeTerminalResultEvidence } from "../lib/mt5/terminalResultEvidence.js";
 import { MANAGEMENT_TARGET_HEADER, managementTargetPollSupported } from "../lib/mt5/managementTargetProtocol.js";
 // Phase B — EA-facing LIVE execution endpoints.
 //
@@ -160,7 +161,7 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     typeof b["status"] === "string" ? b["status"]
     : typeof b["outcome"] === "string" ? b["outcome"]
     : null;
-  const allowedOutcomes = ["LIVE_FILLED", "LIVE_REJECTED", "LIVE_FAILED", "STALE_COMMAND_REJECTED"] as const;
+  const allowedOutcomes = ["LIVE_FILLED", "LIVE_PARTIALLY_FILLED", "LIVE_ACKNOWLEDGED", "LIVE_UNKNOWN", "LIVE_REJECTED", "LIVE_FAILED", "STALE_COMMAND_REJECTED"] as const;
   if (!commandId || !outcomeRaw || !(allowedOutcomes as readonly string[]).includes(outcomeRaw)) {
     res.status(400).json({ error: "INVALID_BODY", detail: "commandId and status required" });
     return;
@@ -176,15 +177,20 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     return;
   }
 
+  const terminal = normalizeTerminalResultEvidence(b, owned[0].commandType, owned[0].requestedVolume,
+    owned[0].brokerTicket ?? (owned[0].payload as Record<string, unknown> | null)?.brokerTicket as string | undefined);
+  // Acceptance/partial claims need versioned terminal evidence; otherwise unknown.
+  const unproven = !terminal && (outcome === "LIVE_PARTIALLY_FILLED" || outcome === "LIVE_ACKNOWLEDGED");
   const result = await recordLiveCommandResult({
     userId: conn.userId!,
     commandId,
-    outcome,
+    outcome: terminal?.outcome ?? (unproven ? "LIVE_UNKNOWN" : outcome),
+    terminalResultEvidence: terminal?.evidence,
     reportingBridgeConnectionId: conn.id,
     reportedExecutionIdentity: reportedManagementIdentity(b),
-    brokerTicket: typeof b["brokerTicket"] === "string" || typeof b["brokerTicket"] === "number" ? String(b["brokerTicket"]) : null,
-    fillPrice: typeof b["fillPrice"] === "number" ? Number(b["fillPrice"]) : null,
-    executedVolume: typeof b["executedVolume"] === "number" ? Number(b["executedVolume"]) : null,
+    brokerTicket: terminal ? terminal.brokerTicket : typeof b["brokerTicket"] === "string" || typeof b["brokerTicket"] === "number" ? String(b["brokerTicket"]) : null,
+    fillPrice: terminal ? terminal.fillPrice : !unproven && typeof b["fillPrice"] === "number" ? Number(b["fillPrice"]) : null,
+    executedVolume: terminal ? terminal.executedVolume : !unproven && typeof b["executedVolume"] === "number" ? Number(b["executedVolume"]) : null,
     mt5Retcode: typeof b["mt5Retcode"] === "number" ? Number(b["mt5Retcode"]) : null,
     brokerMessage: typeof b["brokerMessage"] === "string" ? String(b["brokerMessage"]) : null,
     // EA-side preflight refusals (PreTradeBrokerGuard, lot ceiling, maintenance,
