@@ -20,6 +20,11 @@
 import { CLOCK_DRIFT_WARN_SECONDS } from "@workspace/domain/safety-contracts/clockDrift";
 import { DEFAULT_PRE_TRADE_GUARD_LIMITS } from "@workspace/domain/safety-contracts/preTradeBrokerGuard";
 import type { EaQuoteSupply } from "./eaQuoteSupply.js";
+import {
+  classifyHeartbeatAt,
+  heartbeatIsOnline,
+} from "@workspace/domain/broker-health/heartbeatPolicy";
+import type { ProtectiveHoldReason } from "@workspace/domain/self-trade";
 
 /** The EA pre-trade guard's own quote-age bound (preTradeBrokerGuard.ts). */
 export const ENTRY_QUOTE_MAX_AGE_MS = DEFAULT_PRE_TRADE_GUARD_LIMITS.maxQuoteAgeMs;
@@ -428,4 +433,165 @@ export function evaluatePositionObservation(
       };
   }
   return { ok: true, ageMs: age.ageMs };
+}
+
+// ── Protective action: fresh, sweep-provenance evidence for the exact row ────
+//
+// Stricter than evaluatePositionObservation, never looser. The protective path
+// starts from an ordinary hold and may only act on a row that a COMPLETE
+// terminal sweep wrote strictly after that hold. The same 90 s window applies;
+// there is no separate protective window.
+
+export type ProtectiveObservationReason = Extract<
+  ProtectiveHoldReason,
+  | `PROTECTIVE_OBSERVATION_${string}`
+  | "PROTECTIVE_POSITION_ABSENT_AT_BROKER"
+  | "PROTECTIVE_SWEEP_MARKER_STALE"
+  | "PROTECTIVE_BRIDGE_OFFLINE"
+>;
+
+export interface ProtectiveObservationRow {
+  lastSyncedAt: unknown;
+  /** Only the complete sweep writes this equal to lastSyncedAt (routes/mt5Live.ts). */
+  lastReliableSnapshotAt: unknown;
+  brokerAbsentSnapshotCount: unknown;
+  closedAt: unknown;
+  reconcileState: unknown;
+  currentPrice: unknown;
+  entryPrice: unknown;
+  volume: unknown;
+  /** Detail only. */
+  brokerTicket?: unknown;
+  firstBrokerAbsentAt?: unknown;
+}
+
+export interface ProtectiveObservationConnection {
+  lastPositionsSnapshotAt: unknown;
+  lastHeartbeat: unknown;
+}
+
+export interface ProtectiveObservationInput {
+  row: ProtectiveObservationRow;
+  connection: ProtectiveObservationConnection | null | undefined;
+  /** The hold time: the observation must be strictly newer (manager wait loop). */
+  mustBeAfterMs?: number | null;
+  /** The claimed evidence time: the locked row may not precede it (final claim). */
+  mustNotPrecedeMs?: number | null;
+  commandEventTimes?: readonly unknown[];
+  nowMs: number;
+  maxAgeMs?: number;
+}
+
+export type ProtectiveObservationVerdict =
+  | { ok: true; observedAtMs: number; ageMs: number; sweepAtMs: number }
+  | { ok: false; reason: ProtectiveObservationReason; detail: Record<string, unknown> };
+
+const heartbeatValue = (v: unknown): Date | string | number | null =>
+  v instanceof Date || typeof v === "string" || typeof v === "number" ? v : null;
+
+export function evaluateProtectiveObservation(
+  input: ProtectiveObservationInput,
+): ProtectiveObservationVerdict {
+  const maxAgeMs = input.maxAgeMs ?? POSITION_OBSERVATION_MAX_AGE_MS;
+  const row = input.row;
+  const no = (
+    reason: ProtectiveObservationReason,
+    detail: Record<string, unknown>,
+  ): ProtectiveObservationVerdict => ({ ok: false, reason, detail });
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  // 1. Still an open, unreconciled row.
+  if (row.closedAt != null || row.reconcileState != null)
+    return no("PROTECTIVE_OBSERVATION_POSITION_CLOSED", {
+      closedAt: row.closedAt instanceof Date ? row.closedAt.toISOString() : row.closedAt,
+      reconcileState: row.reconcileState,
+    });
+  // 2. Usable, current row time (same parsing as the ordinary rule).
+  const age = classifyObservationAge(row.lastSyncedAt, input.nowMs, maxAgeMs);
+  if (!age.ok)
+    return no(
+      age.kind === "FUTURE"
+        ? "PROTECTIVE_OBSERVATION_FUTURE_DATED"
+        : age.kind === "STALE"
+          ? "PROTECTIVE_OBSERVATION_STALE"
+          : "PROTECTIVE_OBSERVATION_TIMESTAMP_INVALID",
+      {
+        detail: age.detail,
+        ageMs: age.kind === "STALE" ? input.nowMs - (parseObservationTime(row.lastSyncedAt) ?? 0) : undefined,
+        ms: age.kind === "FUTURE" ? (parseObservationTime(row.lastSyncedAt) ?? 0) - input.nowMs : undefined,
+      },
+    );
+  const observedAtMs = age.atMs;
+  // 3. The latest complete sweep listed the ticket. Checked before provenance:
+  //    the sweep's absent bump stamps lastReliableSnapshotAt without touching
+  //    lastSyncedAt (routes/mt5Live.ts), so such a row would otherwise read as
+  //    "not from a sweep" and the more specific reason would be unreachable.
+  if (row.brokerAbsentSnapshotCount !== 0)
+    return no("PROTECTIVE_POSITION_ABSENT_AT_BROKER", {
+      ticket: row.brokerTicket,
+      count: row.brokerAbsentSnapshotCount,
+      firstAbsentAt:
+        row.firstBrokerAbsentAt instanceof Date
+          ? row.firstBrokerAbsentAt.toISOString()
+          : row.firstBrokerAbsentAt,
+    });
+  // 4. Written by a complete sweep, not a reconciler.
+  if (parseObservationTime(row.lastReliableSnapshotAt) !== observedAtMs)
+    return no("PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP", {
+      observedAt: iso(observedAtMs),
+      lastReliableSnapshotAt: describe(row.lastReliableSnapshotAt),
+    });
+  // 5. Strictly newer than the hold / not before the claimed evidence. A bound
+  //    that is present but unusable refuses (fail closed).
+  if (input.mustBeAfterMs != null) {
+    const bound = input.mustBeAfterMs;
+    if (!Number.isFinite(bound) || !(observedAtMs > bound))
+      return no("PROTECTIVE_OBSERVATION_NOT_NEWER", {
+        observedAt: iso(observedAtMs),
+        heldAt: Number.isFinite(bound) ? iso(bound) : describe(bound),
+      });
+  }
+  if (input.mustNotPrecedeMs != null) {
+    const bound = input.mustNotPrecedeMs;
+    if (!Number.isFinite(bound) || !(observedAtMs >= bound))
+      return no("PROTECTIVE_OBSERVATION_NOT_NEWER", {
+        observedAt: iso(observedAtMs),
+        heldAt: Number.isFinite(bound) ? iso(bound) : describe(bound),
+      });
+  }
+  // 6. After every broker-affecting command on the ticket.
+  for (const event of input.commandEventTimes ?? []) {
+    if (event == null) continue;
+    const eventMs = parseObservationTime(event);
+    if (eventMs == null || eventMs >= observedAtMs)
+      return no("PROTECTIVE_OBSERVATION_PREDATES_COMMAND", {
+        observedAt: iso(observedAtMs),
+        eventAt: eventMs == null ? describe(event) : iso(eventMs),
+      });
+  }
+  // 7. The bridge's complete-sweep marker covers the row and is itself current.
+  const conn = input.connection;
+  const sweepAtMs = conn ? parseObservationTime(conn.lastPositionsSnapshotAt) : null;
+  const marker = sweepAtMs == null ? null : classifyObservationAge(sweepAtMs, input.nowMs, maxAgeMs);
+  if (sweepAtMs == null || sweepAtMs < observedAtMs || !marker || !marker.ok)
+    return no("PROTECTIVE_SWEEP_MARKER_STALE", {
+      observedAt: iso(observedAtMs),
+      sweepAt: sweepAtMs == null ? describe(conn?.lastPositionsSnapshotAt) : iso(sweepAtMs),
+      ageMs: sweepAtMs == null ? undefined : input.nowMs - sweepAtMs,
+    });
+  // 8. The bridge is online (fresh or degraded); "fresh" is required separately before a claim.
+  const heartbeat = classifyHeartbeatAt(heartbeatValue(conn!.lastHeartbeat), input.nowMs);
+  if (!heartbeatIsOnline(heartbeat)) {
+    const hbMs = parseObservationTime(conn!.lastHeartbeat);
+    return no("PROTECTIVE_BRIDGE_OFFLINE", {
+      heartbeat,
+      ageMs: hbMs == null ? undefined : input.nowMs - hbMs,
+    });
+  }
+  // 9. Usable price and size.
+  if (!positive(row.currentPrice) || !positive(row.entryPrice) || !positive(row.volume))
+    return no("PROTECTIVE_OBSERVATION_PRICE_INVALID", {
+      detail: `currentPrice=${describe(row.currentPrice)} entryPrice=${describe(row.entryPrice)} volume=${describe(row.volume)}`,
+    });
+  return { ok: true, observedAtMs, ageMs: age.ageMs, sweepAtMs };
 }

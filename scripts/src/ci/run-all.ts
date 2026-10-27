@@ -78,6 +78,7 @@ import { checkStopModificationAuthority } from "./check-stop-modification-author
 import { checkSinglePositionSizer } from "./check-single-position-sizer.js";
 import { checkSinglePositionLedger } from "./check-single-position-ledger.js";
 import { checkSinglePositionGuardian } from "./check-single-position-guardian.js";
+import { checkProtectiveActionPath } from "./check-protective-action-path.js";
 import { checkSingleOpenPositionView } from "./check-single-open-position-view.js";
 import { checkTradeEngineSinglePipeline } from "./check-trade-engine-single-pipeline.js";
 import { checkSinglePaperBook } from "./check-single-paper-book.js";
@@ -177,6 +178,7 @@ const checks: Array<() => CheckResult> = [
   checkSingleOpenPositionView,
   checkTradeEngineSinglePipeline,
   checkSelfTradeKillSwitchCoverage,
+  checkProtectiveActionPath,
   checkSinglePaperBook,
   checkSingleLimitStore,
   checkLegacyLiveStateConfined,

@@ -10,9 +10,11 @@ import {
   classifyObservationAge,
   evaluateEntryFreshFacts,
   evaluatePositionObservation,
+  evaluateProtectiveObservation,
   futureToleranceMs,
   parseObservationTime,
   type EntryMarketObservation,
+  type ProtectiveObservationInput,
 } from "../freshFacts.js";
 
 const NOW = Date.parse("2026-10-27T12:00:00.000Z");
@@ -301,5 +303,192 @@ describe("management position observation", () => {
   });
   it("timestamp-only mode (final claim) ignores price", () => {
     assert.equal(evaluatePositionObservation({ lastSyncedAt: new Date(NOW - 1), nowMs: NOW }).ok, true);
+  });
+});
+
+// ── Protective-action evidence: stricter than the ordinary rule, never looser ──
+describe("protective observation evidence", () => {
+  const T = NOW - 5_000; // the complete sweep that wrote the row
+  function input(patch: {
+    row?: Partial<ProtectiveObservationInput["row"]>;
+    connection?: Partial<NonNullable<ProtectiveObservationInput["connection"]>> | null;
+  } & Partial<Omit<ProtectiveObservationInput, "row" | "connection">> = {}): ProtectiveObservationInput {
+    const { row, connection, ...rest } = patch;
+    return {
+      row: {
+        lastSyncedAt: new Date(T),
+        lastReliableSnapshotAt: new Date(T),
+        brokerAbsentSnapshotCount: 0,
+        closedAt: null,
+        reconcileState: null,
+        currentPrice: 1.112,
+        entryPrice: 1.1,
+        volume: 0.1,
+        brokerTicket: "123",
+        ...row,
+      },
+      connection:
+        connection === null
+          ? null
+          : { lastPositionsSnapshotAt: new Date(T + 10), lastHeartbeat: new Date(NOW - 3_000), ...connection },
+      mustBeAfterMs: NOW - 20_000,
+      commandEventTimes: [new Date(NOW - 60_000), null, undefined],
+      nowMs: NOW,
+      ...rest,
+    };
+  }
+  const why = (v: ReturnType<typeof evaluateProtectiveObservation>) => (v.ok ? "OK" : v.reason);
+
+  it("a sweep-written row strictly newer than the hold passes with its sweep time", () => {
+    assert.deepEqual(evaluateProtectiveObservation(input()), {
+      ok: true,
+      observedAtMs: T,
+      ageMs: 5_000,
+      sweepAtMs: T + 10,
+    });
+  });
+  it("a tie with the hold time refuses; a tie with the claimed evidence passes", () => {
+    assert.equal(why(evaluateProtectiveObservation(input({ mustBeAfterMs: T }))), "PROTECTIVE_OBSERVATION_NOT_NEWER");
+    assert.equal(why(evaluateProtectiveObservation(input({ mustBeAfterMs: T - 1 }))), "OK");
+    assert.equal(why(evaluateProtectiveObservation(input({ mustBeAfterMs: null, mustNotPrecedeMs: T }))), "OK");
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ mustBeAfterMs: null, mustNotPrecedeMs: T + 1 }))),
+      "PROTECTIVE_OBSERVATION_NOT_NEWER",
+    );
+  });
+  it("an unusable bound refuses instead of being ignored", () => {
+    assert.equal(why(evaluateProtectiveObservation(input({ mustBeAfterMs: Number.NaN }))), "PROTECTIVE_OBSERVATION_NOT_NEWER");
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ mustBeAfterMs: null, mustNotPrecedeMs: Number.NaN }))),
+      "PROTECTIVE_OBSERVATION_NOT_NEWER",
+    );
+  });
+  it("a row written by a reconciler (lastReliableSnapshotAt differs) is not sweep evidence", () => {
+    for (const lastReliableSnapshotAt of [null, undefined, new Date(T - 1), new Date(T + 1), "garbage"])
+      assert.equal(
+        why(evaluateProtectiveObservation(input({ row: { lastReliableSnapshotAt } }))),
+        "PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP",
+        String(lastReliableSnapshotAt),
+      );
+  });
+  it("a ticket absent from the latest complete sweep refuses", () => {
+    for (const brokerAbsentSnapshotCount of [1, 3, null, undefined, "0"])
+      assert.equal(
+        why(evaluateProtectiveObservation(input({ row: { brokerAbsentSnapshotCount } }))),
+        "PROTECTIVE_POSITION_ABSENT_AT_BROKER",
+        String(brokerAbsentSnapshotCount),
+      );
+  });
+  it("the complete-sweep marker must cover the row and be current", () => {
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ connection: { lastPositionsSnapshotAt: new Date(T - 1) } }))),
+      "PROTECTIVE_SWEEP_MARKER_STALE",
+    );
+    assert.equal(why(evaluateProtectiveObservation(input({ connection: { lastPositionsSnapshotAt: new Date(T) } }))), "OK");
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ connection: { lastPositionsSnapshotAt: null } }))),
+      "PROTECTIVE_SWEEP_MARKER_STALE",
+    );
+    assert.equal(why(evaluateProtectiveObservation(input({ connection: null }))), "PROTECTIVE_SWEEP_MARKER_STALE");
+    // Row 5 s old but marker 91 s old cannot happen for a sweep-written row; refuse anyway.
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ connection: { lastPositionsSnapshotAt: new Date(NOW - 91_000) } }))),
+      "PROTECTIVE_SWEEP_MARKER_STALE",
+    );
+  });
+  it("an offline bridge heartbeat refuses; a degraded one is still online", () => {
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ connection: { lastHeartbeat: new Date(NOW - 61_000) } }))),
+      "PROTECTIVE_BRIDGE_OFFLINE",
+    );
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ connection: { lastHeartbeat: new Date(NOW - 60_000) } }))),
+      "PROTECTIVE_BRIDGE_OFFLINE",
+    );
+    assert.equal(why(evaluateProtectiveObservation(input({ connection: { lastHeartbeat: new Date(NOW - 59_000) } }))), "OK");
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ connection: { lastHeartbeat: null } }))),
+      "PROTECTIVE_BRIDGE_OFFLINE",
+    );
+  });
+  it("the existing 90 s window applies unchanged: 90 001 ms stale, 89 999 ms ok", () => {
+    const at = (ms: number) => ({
+      row: { lastSyncedAt: new Date(ms), lastReliableSnapshotAt: new Date(ms) },
+      connection: { lastPositionsSnapshotAt: new Date(ms) },
+      mustBeAfterMs: ms - 1,
+      commandEventTimes: [],
+    });
+    assert.equal(why(evaluateProtectiveObservation(input(at(NOW - 90_001)))), "PROTECTIVE_OBSERVATION_STALE");
+    assert.equal(why(evaluateProtectiveObservation(input(at(NOW - 89_999)))), "OK");
+    assert.equal(why(evaluateProtectiveObservation(input(at(NOW - 90_000)))), "OK");
+  });
+  it("future dating beyond 30 s refuses; 29 s passes", () => {
+    const at = (ms: number) => ({
+      row: { lastSyncedAt: new Date(ms), lastReliableSnapshotAt: new Date(ms) },
+      connection: { lastPositionsSnapshotAt: new Date(ms) },
+    });
+    assert.equal(why(evaluateProtectiveObservation(input(at(NOW + 31_000)))), "PROTECTIVE_OBSERVATION_FUTURE_DATED");
+    assert.equal(why(evaluateProtectiveObservation(input(at(NOW + 29_000)))), "OK");
+  });
+  for (const lastSyncedAt of [null, undefined, Number.NaN, "garbage", "1700000000", new Date(Number.NaN), 0, -5])
+    it(`malformed lastSyncedAt ${String(lastSyncedAt)} refuses`, () => {
+      assert.equal(
+        why(evaluateProtectiveObservation(input({ row: { lastSyncedAt, lastReliableSnapshotAt: lastSyncedAt } }))),
+        "PROTECTIVE_OBSERVATION_TIMESTAMP_INVALID",
+      );
+    });
+  it("a closed or reconciled row has nothing to protect", () => {
+    assert.equal(why(evaluateProtectiveObservation(input({ row: { closedAt: new Date(NOW - 1) } }))), "PROTECTIVE_OBSERVATION_POSITION_CLOSED");
+    for (const reconcileState of ["IGNORED", "EXTERNAL", "IMPORTED", "RECONCILED_BROKER_ABSENT"])
+      assert.equal(why(evaluateProtectiveObservation(input({ row: { reconcileState } }))), "PROTECTIVE_OBSERVATION_POSITION_CLOSED");
+  });
+  it("unusable price or volume refuses after every evidence rule passed", () => {
+    for (const currentPrice of [null, undefined, Number.NaN, 0, -1, "1.11"])
+      assert.equal(why(evaluateProtectiveObservation(input({ row: { currentPrice } }))), "PROTECTIVE_OBSERVATION_PRICE_INVALID");
+    assert.equal(why(evaluateProtectiveObservation(input({ row: { entryPrice: 0 } }))), "PROTECTIVE_OBSERVATION_PRICE_INVALID");
+    assert.equal(why(evaluateProtectiveObservation(input({ row: { volume: Number.NaN } }))), "PROTECTIVE_OBSERVATION_PRICE_INVALID");
+  });
+  it("a command event at exactly the observation time, or malformed, refuses", () => {
+    for (const event of [new Date(T), new Date(T + 1), "garbage", "1700000000"])
+      assert.equal(
+        why(evaluateProtectiveObservation(input({ commandEventTimes: [event] }))),
+        "PROTECTIVE_OBSERVATION_PREDATES_COMMAND",
+        String(event),
+      );
+    assert.equal(why(evaluateProtectiveObservation(input({ commandEventTimes: [new Date(T - 1)] }))), "OK");
+  });
+  it("rules run in a fixed order: closed, time, provenance, absence, newer, commands, marker, heartbeat, price", () => {
+    const bad = input({
+      row: { lastReliableSnapshotAt: null, brokerAbsentSnapshotCount: 2, currentPrice: null },
+      connection: { lastPositionsSnapshotAt: null, lastHeartbeat: null },
+      mustBeAfterMs: T,
+      commandEventTimes: ["garbage"],
+    });
+    // Absence is reported before provenance: a sweep's absent bump stamps
+    // lastReliableSnapshotAt without lastSyncedAt, so the order matters.
+    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_POSITION_ABSENT_AT_BROKER");
+    bad.row.brokerAbsentSnapshotCount = 0;
+    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP");
+    bad.row.lastReliableSnapshotAt = new Date(T);
+    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_NOT_NEWER");
+    bad.mustBeAfterMs = T - 1;
+    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_PREDATES_COMMAND");
+    bad.commandEventTimes = [];
+    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_SWEEP_MARKER_STALE");
+    bad.connection!.lastPositionsSnapshotAt = new Date(T);
+    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_BRIDGE_OFFLINE");
+    bad.connection!.lastHeartbeat = new Date(NOW - 1_000);
+    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_PRICE_INVALID");
+    bad.row.currentPrice = 1.112;
+    assert.equal(why(evaluateProtectiveObservation(bad)), "OK");
+  });
+  it("the ordinary rule still passes what the protective rule refuses (stricter, not a bypass)", () => {
+    // 45 s old, reconciler-written row: ordinary management accepts the age; the protective path does not.
+    const ms = NOW - 45_000;
+    assert.equal(evaluatePositionObservation({ lastSyncedAt: new Date(ms), currentPrice: 1.112, nowMs: NOW }).ok, true);
+    assert.equal(
+      why(evaluateProtectiveObservation(input({ row: { lastSyncedAt: new Date(ms), lastReliableSnapshotAt: null } }))),
+      "PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP",
+    );
   });
 });

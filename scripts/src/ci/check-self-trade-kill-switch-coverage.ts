@@ -71,6 +71,9 @@ export const TABLE_WRITER = FILES.service;
 export const SELF_TRADE_PRODUCERS: Record<string, "ENTRY" | "MANAGEMENT" | "PASS_THROUGH"> = {
   [FILES.executor]: "ENTRY",
   "lib/selfTrade/livePositionManager.ts": "MANAGEMENT",
+  // Protective-action path: EXIT / stop tighten on an existing position from a
+  // fresh sweep, after the ordinary observation hold (docs/SELF_TRADING_PROTECTIVE_PATH_2026_10_27.md).
+  "lib/selfTrade/protectiveActionPath.ts": "MANAGEMENT",
   "lib/live/instantTrade.ts": "PASS_THROUGH",
 };
 const PRODUCER_CALLS = /\b(submitInstantTrade|guardianInstantManage|submitTrade|draftTrade)\s*\(/;

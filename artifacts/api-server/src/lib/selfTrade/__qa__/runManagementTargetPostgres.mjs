@@ -66,6 +66,10 @@ try {
       "--experimental-test-module-mocks",
       "--test",
       "--test-force-exit",
+      // Local narrowing only (e.g. ARX_TEST_NAME_PATTERN="lock race"); CI leaves it unset.
+      ...(process.env.ARX_TEST_NAME_PATTERN
+        ? [`--test-name-pattern=${process.env.ARX_TEST_NAME_PATTERN}`]
+        : []),
       join(
         dirname(fileURLToPath(import.meta.url)),
         "managementTarget.postgres.test.ts",
@@ -97,13 +101,18 @@ try {
                 process.env.ARX_MANAGEMENT_BASELINE_ROOT,
             }
           : {}),
+        ...(process.env.ARX_PROTECTIVE_BENCHMARK
+          ? { ARX_PROTECTIVE_BENCHMARK: process.env.ARX_PROTECTIVE_BENCHMARK }
+          : {}),
       },
       stdio: "inherit",
       timeout:
         process.env.ARX_MANAGEMENT_BENCHMARK_OUTPUT ||
         process.env.ARX_MANUAL_RESULT_BENCHMARK_OUTPUT
           ? 180_000
-          : 240_000, // extracted-EA cases compile the C++ harness per case
+          : process.env.ARX_PROTECTIVE_BENCHMARK
+            ? 420_000 // 640 extra draft/approve/claim cycles
+            : 240_000, // extracted-EA cases compile the C++ harness per case
     },
   );
   status = result.status ?? 1;

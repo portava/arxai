@@ -1,8 +1,35 @@
 // Evidence rules shared by reconciliation and management. Acceptance, unknown
 // outcomes and partial fills never become completed actions by elapsed time.
 import type { ArxLiveCommand, SelfTradeAgentExecution } from "@workspace/db";
-import type { ManagementAction } from "@workspace/domain/self-trade";
+import type {
+  ManagementAction,
+  ProtectiveTrigger,
+} from "@workspace/domain/self-trade";
 import { isValidFillPrice } from "../live/realizedPnl.js";
+
+/**
+ * Evidence a protective claim was taken on: the fresh sweep row and bridge
+ * facts that passed the stricter protective standard. The final claim refuses
+ * when the locked row precedes this evidence (managementTarget.ts).
+ */
+export interface ProtectiveClaimEvidence {
+  lastSyncedAt: string;
+  sweepAt: string;
+  heartbeatAt: string;
+  serverName: string;
+  currentPrice: number;
+  volume: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+}
+
+export interface ProtectiveClaim {
+  trigger: ProtectiveTrigger;
+  /** The ordinary observation hold this protective action started from. */
+  heldReason: string;
+  heldAtMs: number;
+  evidence: ProtectiveClaimEvidence;
+}
 
 export interface PendingManagement {
   claimId: string;
@@ -10,6 +37,8 @@ export interface PendingManagement {
   requestedAt: string;
   stopLoss: number | null;
   commandId?: string;
+  /** Present only when the protective-action path took the claim. */
+  protective?: ProtectiveClaim;
 }
 
 export interface ManagementMemory {
@@ -53,6 +82,10 @@ export function managementNote(
   if (!pending)
     return memory.closeCommandId ? "Close awaiting broker confirmation." : null;
   if (pending.commandId) {
+    if (pending.protective)
+      return pending.action === "EXIT"
+        ? "Protective close awaiting broker confirmation."
+        : "Protective stop change awaiting broker confirmation.";
     return pending.action === "EXIT"
       ? "Close awaiting broker confirmation."
       : "Stop change awaiting broker confirmation.";

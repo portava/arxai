@@ -29,7 +29,12 @@ import {
   sameBrokerAccount,
 } from "./executionLifecycle.js";
 import type { AuthorityTransaction } from "./entryAuthority.js";
-import { evaluatePositionObservation } from "./freshFacts.js";
+import {
+  evaluatePositionObservation,
+  evaluateProtectiveObservation,
+  parseObservationTime,
+} from "./freshFacts.js";
+import { doesNotLoosenStop } from "@workspace/domain/self-trade";
 
 export const MANAGEMENT_TARGET_SOURCE = "INSTANT_SELF_TRADE_MANAGEMENT";
 export class ManagementTargetError extends Error {
@@ -482,6 +487,43 @@ export function claimManagementCommand(
           nowMs: Date.now(),
         });
         if (!observed.ok) refuse(observed.reason);
+        // Protective-action parity: a claim taken by the protective path was
+        // justified by a specific complete-sweep row. The locked row must still
+        // be sweep evidence at least as new as that, and a stop move must still
+        // tighten against the locked price. Pure evaluation over rows already
+        // locked above; no new statement, no new lock.
+        const protective = readManagementMemory(facts.execution.managementState)
+          .pendingManagement?.protective;
+        if (protective) {
+          const evidence = evaluateProtectiveObservation({
+            row: facts.position!,
+            connection: bridge,
+            mustNotPrecedeMs:
+              parseObservationTime(protective.evidence?.lastSyncedAt) ?? Number.NaN,
+            commandEventTimes: [facts.entry?.filledAt],
+            nowMs: Date.now(),
+          });
+          if (!evidence.ok) refuse(evidence.reason);
+          if (target.action !== "EXIT") {
+            const geometry = doesNotLoosenStop(
+              {
+                side: target.side,
+                volume: facts.position!.volume,
+                entryPrice: facts.position!.entryPrice,
+                currentPrice: facts.position!.currentPrice as number,
+                stopLoss: facts.position!.stopLoss,
+                takeProfit: facts.position!.takeProfit,
+              },
+              {
+                kind: "MODIFY_STOP",
+                side: target.side,
+                newStopLoss: target.nextStopLoss as number,
+                newTakeProfit: target.currentTakeProfit,
+              },
+            );
+            if (!geometry.ok) refuse(geometry.reason);
+          }
+        }
       }
       const [claimed] = await tx
         .update(commands)

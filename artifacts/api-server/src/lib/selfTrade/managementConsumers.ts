@@ -113,7 +113,20 @@ export function reportedManagementIdentity(
 }
 
 /** Immutable row identity. Current bridge labels are deliberately not consulted. */
-export function managementPositionScope(target: ManagementTarget) {
+export function managementPositionScope(
+  target: Pick<
+    ManagementTarget,
+    | "positionRowId"
+    | "userId"
+    | "bridgeConnectionId"
+    | "accountLogin"
+    | "legacyBrokerCompany"
+    | "brokerTicket"
+    | "entryCommandId"
+    | "symbol"
+    | "side"
+  >,
+) {
   return and(
     eq(positions.id, target.positionRowId),
     eq(positions.userId, target.userId),
