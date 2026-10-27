@@ -60,6 +60,12 @@ export interface RunAutonomousCycleResult {
   positionsClosed: number;
   reconciled: { filled: number; rejected: number; closed: number; expired: number };
   realizedPosted: number;
+  /**
+   * Management holds by structured reason: ordinary observation holds
+   * (MANAGEMENT_OBSERVATION_*), protective-path holds (PROTECTIVE_*) and the
+   * per-agent AACI pause. Read-only visibility for the operator surface.
+   */
+  managementHeld: Record<string, number>;
 }
 
 export async function runAutonomousCycle(
@@ -265,6 +271,7 @@ export async function runAutonomousCycle(
     positionsClosed: 0,
     reconciled: { filled: 0, rejected: 0, closed: 0, expired: 0 },
     realizedPosted: 0,
+    managementHeld: {},
   };
 
   for (const agentId of agentIds) {
@@ -292,6 +299,12 @@ export async function runAutonomousCycle(
         const managed = await manageAgentPositions(bundle.agent, actorUserId, actorRole);
         result.positionsModified += managed.modified;
         result.positionsClosed += managed.closed;
+        for (const held of [managed.heldReasons, managed.protective.held])
+          for (const [reason, count] of Object.entries(held))
+            result.managementHeld[reason] = (result.managementHeld[reason] ?? 0) + count;
+      } else {
+        result.managementHeld.MANAGEMENT_PAUSED_AACI_REVIEW =
+          (result.managementHeld.MANAGEMENT_PAUSED_AACI_REVIEW ?? 0) + 1;
       }
 
       // 4. Post realized P/L from real closed fills into the ledger.

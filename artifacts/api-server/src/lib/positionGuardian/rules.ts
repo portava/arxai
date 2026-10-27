@@ -90,7 +90,10 @@ export const GUARDIAN_RULES = [
     id: "self-trade-manage",
     label: "Self-Trade agent position manager (break-even, tighten, exit)",
     kind: "ACTING",
-    modules: ["lib/selfTrade/livePositionManager.ts"],
+    modules: [
+      "lib/selfTrade/livePositionManager.ts",
+      "lib/selfTrade/protectiveActionPath.ts",
+    ],
     actions: ["MOVE_STOP", "CLOSE"],
     route: "INSTANT_ROUTER",
   },
