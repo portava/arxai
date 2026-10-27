@@ -392,13 +392,10 @@ export function evaluateProtectiveObservation(
       },
     );
   const observedAtMs = age.atMs;
-  // 3. Written by a complete sweep, not a reconciler.
-  if (parseObservationTime(row.lastReliableSnapshotAt) !== observedAtMs)
-    return no("PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP", {
-      observedAt: iso(observedAtMs),
-      lastReliableSnapshotAt: describe(row.lastReliableSnapshotAt),
-    });
-  // 4. The latest complete sweep listed the ticket.
+  // 3. The latest complete sweep listed the ticket. Checked before provenance:
+  //    the sweep's absent bump stamps lastReliableSnapshotAt without touching
+  //    lastSyncedAt (routes/mt5Live.ts), so such a row would otherwise read as
+  //    "not from a sweep" and the more specific reason would be unreachable.
   if (row.brokerAbsentSnapshotCount !== 0)
     return no("PROTECTIVE_POSITION_ABSENT_AT_BROKER", {
       ticket: row.brokerTicket,
@@ -407,6 +404,12 @@ export function evaluateProtectiveObservation(
         row.firstBrokerAbsentAt instanceof Date
           ? row.firstBrokerAbsentAt.toISOString()
           : row.firstBrokerAbsentAt,
+    });
+  // 4. Written by a complete sweep, not a reconciler.
+  if (parseObservationTime(row.lastReliableSnapshotAt) !== observedAtMs)
+    return no("PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP", {
+      observedAt: iso(observedAtMs),
+      lastReliableSnapshotAt: describe(row.lastReliableSnapshotAt),
     });
   // 5. Strictly newer than the hold / not before the claimed evidence. A bound
   //    that is present but unusable refuses (fail closed).

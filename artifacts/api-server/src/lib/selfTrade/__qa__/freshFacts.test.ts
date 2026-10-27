@@ -391,10 +391,12 @@ describe("protective observation evidence", () => {
       mustBeAfterMs: T,
       commandEventTimes: ["garbage"],
     });
-    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP");
-    bad.row.lastReliableSnapshotAt = new Date(T);
+    // Absence is reported before provenance: a sweep's absent bump stamps
+    // lastReliableSnapshotAt without lastSyncedAt, so the order matters.
     assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_POSITION_ABSENT_AT_BROKER");
     bad.row.brokerAbsentSnapshotCount = 0;
+    assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_NOT_FROM_SWEEP");
+    bad.row.lastReliableSnapshotAt = new Date(T);
     assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_NOT_NEWER");
     bad.mustBeAfterMs = T - 1;
     assert.equal(why(evaluateProtectiveObservation(bad)), "PROTECTIVE_OBSERVATION_PREDATES_COMMAND");
