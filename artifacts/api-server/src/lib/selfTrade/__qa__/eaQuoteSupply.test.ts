@@ -4,7 +4,7 @@
 // outcome, and an unknown version is reported as unknown, never guessed.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { describeEaQuoteSupply, eaVersionKey } from "../eaQuoteSupply.js";
+import { EA_VERSION_PROVENANCE_NOTE, describeEaQuoteSupply, eaVersionKey } from "../eaQuoteSupply.js";
 import { describeQuoteUnavailable, evaluateEntryFreshFacts } from "../freshFacts.js";
 
 describe("eaVersionKey", () => {
@@ -50,6 +50,17 @@ describe("describeEaQuoteSupply", () => {
     const s = describeEaQuoteSupply("2.00");
     assert.equal(s.quoteStream, "OPT_IN_DEFAULT_OFF");
     assert.match(s.note, /EnableTickStream=true/);
+  });
+  it("every note says the version is the heartbeat's last report, since a build that reports none keeps the previous one", () => {
+    for (const v of ["1.27", "1.31", "1.52", "1.54", "2.00", "1.55", null, "junk"])
+      assert.match(describeEaQuoteSupply(v).note, new RegExp(EA_VERSION_PROVENANCE_NOTE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\)$"), String(v));
+    assert.match(EA_VERSION_PROVENANCE_NOTE, /last reported by a bridge heartbeat/);
+  });
+  it("the v1.30 row says that build never reports its version (routes/mt5.ts keeps the prior one)", () => {
+    const s = describeEaQuoteSupply("1.30");
+    assert.equal(s.quoteStream, "NONE");
+    assert.match(s.note, /ReplitMT5BridgeEA_DemoExec_v130\.mq5/);
+    assert.match(s.note, /sends no eaVersion in its heartbeat/);
   });
   it("a version outside the table is unknown: ordering is never used to infer support", () => {
     for (const v of ["1.53", "1.55", "1.60", "3.00", "0.99"]) {

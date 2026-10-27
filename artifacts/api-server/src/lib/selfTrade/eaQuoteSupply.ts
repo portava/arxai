@@ -14,6 +14,14 @@
 // for the per-file cites). A version that is not in the table is "UNKNOWN":
 // nothing is inferred from version ordering, because a later build may drop or
 // gate the stream (v2.00 ships it opt-in and off).
+//
+// Provenance of the version itself: the heartbeat handler (routes/mt5.ts)
+// stores `eaVersion: extras.eaVersion ?? userConn.eaVersion`, so a heartbeat
+// that carries no `eaVersion` keeps the last reported one. The v1.30 build
+// sends none, so a connection re-attached to it after a newer build still
+// reads as that newer build, and the note is about the version last reported,
+// not necessarily the EA attached now. Every note says so. The server cannot
+// tell the two apart; the outcome (no quote → refuse) is the same either way.
 
 export type EaQuoteStreamSupport =
   /** Streams TICKs for the EA's `CandleSymbols` set (default: chart symbol) by default. */
@@ -42,6 +50,9 @@ interface KnownBuild {
 }
 
 const NO_STREAM_NOTE = "posts heartbeat/account/position/command traffic only; no TICK, quote or candle POST";
+/** Appended to every note: the version is the heartbeat's last report, which a build that reports none leaves in place. */
+export const EA_VERSION_PROVENANCE_NOTE =
+  "version as last reported by a bridge heartbeat; a build that reports none leaves the previous one in place";
 
 // Verified against mt5-bridge/*.mq5 on 2026-10-27 (grep for
 // "/api/bridge/v2/ingest", "/api/mt5/sync-quotes" and PushLiveTickV2).
@@ -49,7 +60,11 @@ const KNOWN_BUILDS: Readonly<Record<string, KnownBuild>> = {
   "1.27": { file: "ReplitMT5BridgeEA.mq5", quoteStream: "NONE", note: NO_STREAM_NOTE },
   "1.28": { file: "ReplitMT5BridgeEA_v128.mq5", quoteStream: "NONE", note: NO_STREAM_NOTE },
   "1.29": { file: "ReplitMT5BridgeEA_v129.mq5", quoteStream: "NONE", note: NO_STREAM_NOTE },
-  "1.30": { file: "ReplitMT5BridgeEA_DemoExec_v130.mq5", quoteStream: "NONE", note: NO_STREAM_NOTE },
+  "1.30": {
+    file: "ReplitMT5BridgeEA_DemoExec_v130.mq5",
+    quoteStream: "NONE",
+    note: `${NO_STREAM_NOTE}; this build sends no eaVersion in its heartbeat, so a connection running it keeps the version of the build before it`,
+  },
   "1.31": {
     file: "ReplitMT5BridgeEA_v131.mq5",
     quoteStream: "NONE",
@@ -99,8 +114,8 @@ export function describeEaQuoteSupply(eaVersion: unknown): EaQuoteSupply {
       quoteStream: "UNKNOWN",
       note:
         reported == null
-          ? "bridge reported no EA version; whether it streams broker quotes is unknown"
-          : `EA v${reported} is not in the verified table; whether it streams broker quotes is unknown`,
+          ? `bridge reported no EA version; whether it streams broker quotes is unknown (${EA_VERSION_PROVENANCE_NOTE})`
+          : `EA v${reported} is not in the verified table; whether it streams broker quotes is unknown (${EA_VERSION_PROVENANCE_NOTE})`,
     };
   const verb =
     known.quoteStream === "NONE"
@@ -112,6 +127,6 @@ export function describeEaQuoteSupply(eaVersion: unknown): EaQuoteSupply {
     eaVersion: reported,
     versionKey,
     quoteStream: known.quoteStream,
-    note: `EA v${versionKey} ${verb} (${known.file}: ${known.note})`,
+    note: `EA v${versionKey} ${verb} (${known.file}: ${known.note}; ${EA_VERSION_PROVENANCE_NOTE})`,
   };
 }
