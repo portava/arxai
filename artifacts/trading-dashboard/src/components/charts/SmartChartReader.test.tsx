@@ -44,6 +44,23 @@ describe("embedded chart reader follows applied candles",()=>{
     fireEvent.click(screen.getByRole("button",{name:"Show automatic chart annotations"}));
     expect(f.setSmartAnnotation).toHaveBeenLastCalledWith(null);
   });
+  it("distinguishes repeated older readings by their exact UTC as-of time and preserves selection",()=>{
+    const f=fixture();render(<SmartChartReader {...f.props}/>);
+    expect(screen.getByText("More readings · deriv_public · times in UTC")).toBeTruthy();
+    const more=within(screen.getByLabelText("More observed patterns")).getAllByRole("button",{hidden:true});
+    const dates=more.map(button=>button.querySelector("time")!);
+    expect(dates.length).toBeGreaterThan(1);
+    expect(new Set(dates.map(time=>time.dateTime)).size).toBeGreaterThan(1);
+    for(const time of dates){
+      expect(time.textContent).toBe(`As of ${time.dateTime.slice(0,19).replace("T"," ")} UTC`);
+      expect(Date.parse(time.dateTime)).toBeLessThanOrEqual(Date.parse(f.data.candles!.at(-1)!.closeTime!));
+    }
+    const chosenDate=dates.at(-1)!.dateTime;
+    fireEvent.click(more.at(-1)!);
+    expect(screen.getByText(`Observed shape · observed ${chosenDate.slice(0,19).replace("T"," ")} UTC`)).toBeTruthy();
+    expect(f.setSmartAnnotation.mock.lastCall?.[0]?.anchors.at(-1).time).toBeLessThan(Date.parse(chosenDate)/1000);
+    expect(screen.getByText("Analysis, evidence and chart statistics").parentElement?.hasAttribute("open")).toBe(false);
+  });
   it("historical viewport explains only its own closed prefix and keeps the stale warning",()=>{
     const f=fixture();render(<SmartChartReader {...f.props} liveConfirmed={false} readFailed/>);
     f.show(f.all.slice(0,10));

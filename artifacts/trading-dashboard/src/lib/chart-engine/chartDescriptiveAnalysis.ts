@@ -1,4 +1,4 @@
-import { chartDescriptiveStats, chartNumber } from "./chartDescriptiveStats";
+import { chartDescriptiveStats, chartChangeSummary } from "./chartDescriptiveStats";
 import { StudyCalculator } from "./chartStudies";
 import { selectSmartChartWindow, smartChartIntervalSeconds, type SmartChartAnalysisInput, type SmartChartSelectedWindow } from "./smartChartAnalysis";
 
@@ -87,6 +87,6 @@ export function describeSmartChartWindow(input:SmartChartAnalysisInput):ChartDes
  const unusualMove=irregularSteps||!finiteReturns?no<PriorReturnFlag>(returnReason):priorReturnFlag(returns);
  const trend=fittedTrend(bars,interval);
  const rank=latestCloseMidrankPercent.status==="available"?`; its last close sits ${latestCloseMidrankPercent.value<100/3?"in the lower third of":latestCloseMidrankPercent.value>200/3?"in the upper third of":"around the middle of"} this window's closing prices`:"";
- const summary=`Across ${basics.count} closed candles, price ${basics.change>0?"rose":basics.change<0?"fell":"stayed level"} ${chartNumber(Math.abs(basics.changePercent))}%${rank}.`;
+ const summary=`Across ${basics.count} closed candles, price ${chartChangeSummary(basics.change,basics.changePercent)}${rank}.`;
  return {status:"ready",reason:null,contextKey:window.contextKey,asOf:window.asOf,coverage:window.coverage,basics,trend,distribution,latestCloseMidrankPercent,rsi14,roc14Percent,atr14,atr14PercentOfClose,returnStdDevPercent,unusualMove,cadence:{irregularSteps,elapsedGaps,largestSeconds},summary,scope:SCOPE};
 }

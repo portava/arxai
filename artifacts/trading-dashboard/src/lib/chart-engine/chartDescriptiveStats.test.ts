@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chartDescriptiveStats, chartNumber, chartObservationGaps } from "./chartDescriptiveStats";
+import { chartDescriptiveStats, chartNumber, chartObservationGaps, chartChangeSummary } from "./chartDescriptiveStats";
 import type { SmartChartAnalysisBar } from "./smartChartAnalysis";
 const bars=(closes:number[]):SmartChartAnalysisBar[]=>closes.map((close,i)=>({time:100+i*60,closeTime:160+i*60,open:close,high:close+0.1,low:close-0.1,close,isComplete:true,isFinal:true,isForming:false}));
 describe("visible price statistics",()=>{
@@ -24,5 +24,20 @@ describe("visible price statistics",()=>{
     const data=bars([10,11,12]);expect(chartObservationGaps(data,60)).toEqual({gaps:0,largestSeconds:0});
     data[2]!.time+=120;expect(chartObservationGaps(data,60)).toEqual({gaps:1,largestSeconds:180});
     expect(chartObservationGaps(data,0)).toBeNull();expect(chartObservationGaps([...data].reverse(),60)).toBeNull();
+  });
+  it("keeps summary percentages concise while preserving tiny nonzero direction",()=>{
+    expect(chartChangeSummary(5.503098,5.503098)).toBe("rose 5.5%");
+    expect(chartChangeSummary(-4.888689,-4.888689)).toBe("fell 4.89%");
+    for(const tiny of [0.00999,0.000000001,Number.MIN_VALUE]){
+      expect(chartChangeSummary(tiny,tiny)).toBe("rose less than 0.01%");
+      expect(chartChangeSummary(-tiny,-tiny)).toBe("fell less than 0.01%");
+    }
+    expect(chartChangeSummary(0.01,0.01)).toBe("rose 0.01%");
+    expect(chartChangeSummary(Number.MIN_VALUE,0)).toBe("rose less than 0.01%");
+    expect(chartChangeSummary(0,0)).toBe("stayed level");
+    expect(chartChangeSummary(-0,-0)).toBe("stayed level");
+    expect(chartChangeSummary(1,NaN)).toBe("change is unavailable");
+    expect(chartChangeSummary(Infinity,1)).toBe("change is unavailable");
+    expect(chartNumber(-4.888689)).toBe("-4.888689");
   });
 });
