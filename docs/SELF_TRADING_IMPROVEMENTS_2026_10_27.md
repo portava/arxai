@@ -13,6 +13,7 @@ This is offline evidence only. It does not establish real execution correctness,
 | Fresh facts | [SELF_TRADING_FRESH_FACTS_2026_10_27.md](SELF_TRADING_FRESH_FACTS_2026_10_27.md) | Autonomous entries re-check broker quote age, future dating, spread and price against the locked decision at the final claim; automatic management holds on stale, future-dated, malformed or superseded position snapshots and re-checks at its final claim. |
 | Duplicate prevention and recovery | [SELF_TRADING_DUPLICATE_RECOVERY_AUDIT_2026_10_27.md](SELF_TRADING_DUPLICATE_RECOVERY_AUDIT_2026_10_27.md) | `cancelLiveCommand` and the shared-route force-block are compare-and-set; TTL expiry and enqueue failure cancel never-served mailbox mirrors in the same transaction and otherwise leave the command for reconciliation. |
 | Competitive scorecard | [SELF_TRADING_COMPETITIVE_SCORECARD_2026_10_27.md](SELF_TRADING_COMPETITIVE_SCORECARD_2026_10_27.md) (+ `.json`) | 42 cited rows vs MT5, TradingView, QuantConnect LEAN, NinjaTrader, cTrader, IBKR and Freqtrade: 2 ahead (narrow), 15 parity claimed but unverified, 19 behind, 6 not measured. No aggregate score. |
+| Broker quote supply (follow-up to fresh facts) | [SELF_TRADING_BROKER_QUOTE_SUPPLY_2026_10_27.md](SELF_TRADING_BROKER_QUOTE_SUPPLY_2026_10_27.md) | Verified per EA whether the entry claim's quote and point are supplied: v1.31 (shipped kit) streams no quotes, v1.52/v1.54 stream the `CandleSymbols` set only with `brokerTimeEpochMs` = trade-server clock (not UTC). Server fixes: stored quotes are stamped from the EA's UTC envelope clock with the broker offset kept as a diagnostic; the observer reads under the broker-resolved symbol; the quote store is partitioned by bridge and the claim reads only the dispatch bridge's partition; a missing quote names the EA's quote supply in the persisted refusal detail. Review fixes: the store stamps a tick at its first sight in the bridge's partition (the EA re-posts its last tick every sweep) and the claim refuses a tick no earlier post bounds, so a frozen closed-market quote can no longer pass; the broker spec is read under the dispatch bridge's owner (shared-master followers); the EA-version note states it is the heartbeat's last report. Fail-closed outcomes unchanged. |
 
 ## Combined validation of the merged branch
 
@@ -24,9 +25,9 @@ Node 24.22.1, pnpm 10.28.0, `DATABASE_URL=postgres://nobody@127.0.0.1:1/none` fo
 | test:self-trade-kill-switch-coverage (new guard) | — | pass, 34 assertions |
 | test:lot-sizer-invariants (new) | — | 36/36 |
 | test:entry-sizer-risk-budget (new) | — | 7/7 |
-| test:self-trade-fresh-facts (new) | — | 58/58 |
+| test:self-trade-fresh-facts (new) | — | 58/58; 105/105 after the broker-quote-supply slice; 135/135 after its review fixes |
 | test:self-trade-duplicate-recovery-postgres (new) | — | 15/15 |
-| test:self-trade-entry-postgres | 73/73 | 105 pass, 1 opt-in benchmark skipped |
+| test:self-trade-entry-postgres | 73/73 | 105 pass, 1 opt-in benchmark skipped; 108 pass, 1 skipped after the broker-quote-supply review fixes |
 | test:self-trade-lifecycle | 44/44 | 52/52 |
 | test:self-trade-management-postgres | 103 pass, 1 fail, 3 skip | 106 pass, 1 fail, 3 skip |
 | test:self-trade-accounting-postgres | 34 pass, 3 skip | 34 pass, 3 skip |
@@ -42,7 +43,7 @@ The one management failure, "actual concurrent cold-map manual polls complete wi
 ## Behaviour changes to know about
 
 - Agent entries whose broker minimum lot exceeds the risk budget are now refused (`MIN_LOT_EXCEEDS_RISK_BUDGET`) instead of sent over budget.
-- Agent entries now need a fresh in-memory broker quote and broker symbol point. Whether production EAs push per-symbol quotes, and whether `brokerTimeEpochMs` is UTC, is unverified; if not, every agent entry refuses (fails closed).
+- Agent entries now need a fresh in-memory broker quote and broker symbol point from the dispatch bridge. Verified: the shipped v1.31 kit pushes no quotes, so agent entries on it always refuse (the refusal says so); v1.52/v1.54 push quotes only for their `CandleSymbols` input and supply `point` only after symbol sync, so an operator must configure both. `brokerTimeEpochMs` is not UTC; the server now stamps quotes from the EA's UTC envelope clock of the post in which the tick was first seen (the EA re-posts its last tick every sweep), and the claim refuses a tick that no earlier post from the bridge bounds — so the first tick after a server restart, and a frozen closed-market quote however often it is re-posted, refuse `ENTRY_FRESH_QUOTE_STALE`. In `SHARED_MASTER_MT5` mode the broker spec is read under the master (the dispatch bridge's owner), so followers' entries can measure spread once the master has run symbol sync.
 - Stale position snapshots now hold automatic protective management (EXIT / stop moves) as well as non-protective actions. Manual commands and broker-side stops are unaffected. Whether protective actions deserve an exception is an owner decision.
 - A cancel that loses a race returns `LIVE_CANCEL_RACE_LOST` (HTTP 409); an ambiguous enqueue failure leaves the command SENT with `BRIDGE_ENQUEUE_OUTCOME_UNKNOWN`; the sweep defers an expiry it cannot safely neutralise.
 

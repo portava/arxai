@@ -220,7 +220,7 @@ async function claimAgentCommand(
           observation: facts.entryMarket,
           nowMs: now.getTime(),
         });
-        if (!verdict.ok) throw new AgentEntryAuthorityError(verdict.reason);
+        if (!verdict.ok) throw new AgentEntryAuthorityError(verdict.reason, verdict.detail);
         freshFacts = verdict.facts;
       }
       // This committed CAS is the authority linearization point. A later pause

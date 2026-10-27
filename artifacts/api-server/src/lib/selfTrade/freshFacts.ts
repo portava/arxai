@@ -19,6 +19,7 @@
 
 import { CLOCK_DRIFT_WARN_SECONDS } from "@workspace/domain/safety-contracts/clockDrift";
 import { DEFAULT_PRE_TRADE_GUARD_LIMITS } from "@workspace/domain/safety-contracts/preTradeBrokerGuard";
+import type { EaQuoteSupply } from "./eaQuoteSupply.js";
 
 /** The EA pre-trade guard's own quote-age bound (preTradeBrokerGuard.ts). */
 export const ENTRY_QUOTE_MAX_AGE_MS = DEFAULT_PRE_TRADE_GUARD_LIMITS.maxQuoteAgeMs;
@@ -79,6 +80,11 @@ export function classifyObservationAge(
   return { ok: true, ageMs: Math.max(0, ageMs), atMs };
 }
 
+/** An ISO time verbatim; anything else through `describe`. */
+function showTime(value: unknown): string {
+  return typeof value === "string" ? value : describe(value);
+}
+
 function describe(value: unknown): string {
   if (value === undefined) return "undefined";
   if (typeof value === "number" || typeof value === "boolean" || value === null)
@@ -97,13 +103,81 @@ const positive = (v: unknown): v is number =>
 export interface EntryMarketObservation {
   bid: unknown;
   ask: unknown;
-  /** Source observation time of the quote (broker tick time), never fetch time. */
+  /** EA observation time of the quote (UTC), never fetch or receive time. */
   observedAt: unknown;
   source: string | null;
   /** Broker SYMBOL_POINT for converting distances to points; null when unknown. */
   point: unknown;
+  /**
+   * Diagnostic: the broker trade server's clock minus the EA's UTC clock at the
+   * tick (e.g. +10_800_000 on a GMT+3 server). Recorded, never evaluated.
+   */
+  brokerClockOffsetMs?: number | null;
+  /** The command row's ARX-internal symbol the observation was requested for. */
+  requestedSymbol?: string;
+  /** The broker-native name the quote and spec were read under; null if unresolved. */
+  brokerSymbol?: string | null;
+  /** The bridge connection whose quote partition was read; null when unknown. */
+  bridgeConnectionId?: number | null;
+  /** The user the broker spec was read under: the dispatch bridge's owner; null = no spec read. */
+  specUserId?: number | null;
+  /** The dispatch bridge's heartbeat-reported EA version; null when unknown. */
+  eaVersion?: string | null;
+  /**
+   * Set on a missing-quote observation: whether that EA build streams broker
+   * quotes at all (pure lookup, eaQuoteSupply.ts). Explains the refusal; never
+   * changes it.
+   */
+  eaQuoteSupply?: EaQuoteSupply | null;
+  /**
+   * How the bridge's partition came to hold this tick (mt5Provider
+   * `recordMt5Tick`): first sight, latest re-post, re-post count and the
+   * feed's previous post. null when the quote was written without it, which
+   * the claim refuses: such a timestamp is not a tick observation time.
+   */
+  tickProvenance?: EntryTickProvenance | null;
   /** Present when the quote or spec could not be read. */
   error?: string | null;
+}
+
+/** Raw (unvalidated) tick provenance as the observer copies it from the store. */
+export interface EntryTickProvenance {
+  /** EA UTC time at which this exact tick was first seen in the bridge's partition. */
+  firstSeenAt: unknown;
+  /** EA UTC time of its most recent (re-)post. */
+  lastPostedAt: unknown;
+  /** Identical re-posts since first sight. */
+  reposts: unknown;
+  /** EA UTC time of the partition's last post before this tick appeared; null if none. */
+  priorPostAt: unknown;
+}
+
+/**
+ * The longest silence of the bridge's feed before a tick's first sight that
+ * still bounds when the tick occurred. The EA sweeps every 2 s; a tick first
+ * seen within this much of the feed's previous post occurred inside that gap,
+ * so `now - firstSeenAt` under-states its true age by at most the gap. A tick
+ * that follows a longer silence (feed restart, terminal down over a weekend)
+ * can have occurred at any point in it and is refused. Same bound as the age
+ * window, so the true age of an accepted tick is at most twice the window.
+ */
+export const ENTRY_QUOTE_MAX_FEED_GAP_MS = ENTRY_QUOTE_MAX_AGE_MS;
+
+/** Operator-facing detail for ENTRY_FRESH_QUOTE_UNAVAILABLE: what was read where, and why the EA may have nothing. */
+export function describeQuoteUnavailable(obs: EntryMarketObservation | null | undefined): string {
+  if (obs == null) return "no quote observation";
+  const parts = [obs.error ?? "no quote observation"];
+  if (obs.brokerSymbol != null || obs.requestedSymbol != null) {
+    const broker = obs.brokerSymbol ?? "unresolved";
+    parts.push(
+      obs.requestedSymbol != null && obs.requestedSymbol !== obs.brokerSymbol
+        ? `symbol ${broker} (requested ${obs.requestedSymbol})`
+        : `symbol ${broker}`,
+    );
+  }
+  parts.push(obs.bridgeConnectionId != null ? `bridge ${obs.bridgeConnectionId}` : "bridge unknown");
+  if (obs.eaQuoteSupply?.note) parts.push(obs.eaQuoteSupply.note);
+  return parts.join("; ");
 }
 
 export type EntryFreshReason =
@@ -126,6 +200,12 @@ export interface EntryFreshFacts {
   executablePrice: number;
   zoneDeviationPoints: number;
   source: string | null;
+  /** Diagnostic copy of the observation's broker-clock offset; null when unknown. */
+  brokerClockOffsetMs: number | null;
+  /** Identical EA re-posts of the accepted tick before the claim. */
+  quoteReposts: number;
+  /** Silence of the feed before the tick's first sight (firstSeenAt − priorPostAt). */
+  quoteFeedGapMs: number;
 }
 
 export type EntryFreshVerdict =
@@ -167,7 +247,7 @@ function zoneOf(thesis: unknown): { lo: number; hi: number } | null {
 export function evaluateEntryFreshFacts(input: EntryFreshInput): EntryFreshVerdict {
   const obs = input.observation;
   if (obs == null || obs.error)
-    return refuseEntry("ENTRY_FRESH_QUOTE_UNAVAILABLE", obs?.error ?? "no quote observation");
+    return refuseEntry("ENTRY_FRESH_QUOTE_UNAVAILABLE", describeQuoteUnavailable(obs));
   const age = classifyObservationAge(obs.observedAt, input.nowMs, ENTRY_QUOTE_MAX_AGE_MS);
   if (!age.ok)
     return refuseEntry(
@@ -177,6 +257,50 @@ export function evaluateEntryFreshFacts(input: EntryFreshInput): EntryFreshVerdi
           ? "ENTRY_FRESH_QUOTE_STALE"
           : "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID",
       age.detail,
+    );
+  // The age above is `now − firstSeenAt`. It bounds the tick's age only when the
+  // feed's previous post bounds when the tick occurred (see
+  // ENTRY_QUOTE_MAX_FEED_GAP_MS); otherwise the quote may be the broker's frozen
+  // last tick first seen just now, and "stale" is the honest verdict.
+  const prov = obs.tickProvenance;
+  if (prov == null)
+    return refuseEntry(
+      "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID",
+      "no tick provenance: quote was not written by the bridge tick ingest",
+    );
+  const firstSeenMs = parseObservationTime(prov.firstSeenAt);
+  if (firstSeenMs == null || firstSeenMs !== age.atMs)
+    return refuseEntry(
+      "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID",
+      `tick provenance firstSeenAt=${describe(prov.firstSeenAt)} does not match observedAt=${describe(obs.observedAt)}`,
+    );
+  const reposts =
+    typeof prov.reposts === "number" && Number.isInteger(prov.reposts) && prov.reposts >= 0
+      ? prov.reposts
+      : null;
+  if (reposts == null)
+    return refuseEntry(
+      "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID",
+      `tick provenance reposts=${describe(prov.reposts)}`,
+    );
+  const repostNote =
+    reposts > 0 ? `, re-posted ${reposts} time${reposts === 1 ? "" : "s"} to ${showTime(prov.lastPostedAt)}` : "";
+  if (prov.priorPostAt == null)
+    return refuseEntry(
+      "ENTRY_FRESH_QUOTE_STALE",
+      `tick age unbounded: first tick this bridge posted for the symbol, first seen ${showTime(prov.firstSeenAt)}${repostNote}; no earlier post bounds when it occurred`,
+    );
+  const priorPostMs = parseObservationTime(prov.priorPostAt);
+  if (priorPostMs == null)
+    return refuseEntry(
+      "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID",
+      `tick provenance priorPostAt=${describe(prov.priorPostAt)}`,
+    );
+  const feedGapMs = firstSeenMs - priorPostMs;
+  if (feedGapMs < 0 || feedGapMs > ENTRY_QUOTE_MAX_FEED_GAP_MS)
+    return refuseEntry(
+      "ENTRY_FRESH_QUOTE_STALE",
+      `tick age unbounded: the feed's previous post was ${feedGapMs}ms before this tick was first seen ${showTime(prov.firstSeenAt)} (max ${ENTRY_QUOTE_MAX_FEED_GAP_MS}ms)${repostNote}; it may have occurred anywhere in that gap`,
     );
   const { bid, ask } = obs;
   if (!positive(bid) || !positive(ask) || ask < bid)
@@ -231,6 +355,12 @@ export function evaluateEntryFreshFacts(input: EntryFreshInput): EntryFreshVerdi
       executablePrice,
       zoneDeviationPoints,
       source: obs.source,
+      brokerClockOffsetMs:
+        typeof obs.brokerClockOffsetMs === "number" && Number.isFinite(obs.brokerClockOffsetMs)
+          ? obs.brokerClockOffsetMs
+          : null,
+      quoteReposts: reposts,
+      quoteFeedGapMs: feedGapMs,
     },
   };
 }

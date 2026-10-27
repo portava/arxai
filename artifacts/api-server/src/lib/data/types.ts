@@ -81,7 +81,20 @@ export interface MarketQuote {
   ask?: number;
   spread?: number;
   last?: number;
+  /** Observation time as a UTC instant (ISO-8601). For a bridge v2 TICK this is
+   *  the EA's own UTC clock (`eaCreatedAtEpochMs`, MQL5 `TimeGMT`) at the post
+   *  in which this exact tick was FIRST seen in the pushing bridge's partition
+   *  (mt5Provider `recordMt5Tick`); an identical re-post of the same tick does
+   *  not move it. Never the server receive time. */
   timestamp: string;
+  /** The EA's `brokerTimeEpochMs` verbatim: MT5 `MqlTick.time_msc`, which is the
+   *  trade server's wall clock encoded as epoch ms, NOT UTC (equal to UTC only on
+   *  a GMT+0 server). Diagnostic only; never an age input. */
+  brokerClockMs?: number | null;
+  /** `brokerClockMs - eaCreatedAtEpochMs` at the tick's first sight: the broker
+   *  server's apparent offset from the EA's UTC clock (e.g. +10_800_000 on a
+   *  GMT+3 server). Diagnostic. */
+  brokerClockOffsetMs?: number | null;
 }
 
 export interface DataProvider {

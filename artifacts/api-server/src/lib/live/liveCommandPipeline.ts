@@ -4122,10 +4122,19 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
   // Fresh facts — agent entries are re-checked against a quote read here, after
   // every gate and immediately before the claim. The read happens outside the
   // claim's locks; the claim evaluates it after locking (quote age, spread,
-  // price vs the admitted entry zone and stop). null-safe: a failed read is an
-  // observation with an error, which the claim refuses.
+  // price vs the admitted entry zone and stop). The quote is read from THIS
+  // dispatch bridge's partition only, under the broker-native symbol, and the
+  // broker spec under this bridge's OWNER (the executing account — the master
+  // in SHARED_MASTER_MT5 mode, where specs are never written under the
+  // follower); the bridge's EA version lets a missing quote say whether that
+  // EA streams quotes at all. null-safe: a failed read is an observation with
+  // an error, which the claim refuses.
   const entryMarket = isAgentEntryCommand(row)
-    ? await observeAgentEntryMarket(args.userId, row.symbol)
+    ? await observeAgentEntryMarket(args.userId, row.symbol, {
+        bridgeConnectionId: bridge?.id ?? null,
+        bridgeUserId: bridge?.userId ?? null,
+        eaVersion: bridge?.eaVersion ?? null,
+      })
     : undefined;
   // Task #28 — stamp TTL + authoritative server clock at the moment of
   // dispatch. A command not executed by the EA before `expiresAt` is swept
@@ -4363,6 +4372,11 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
     const isDup = /arx_live_commands_idem_active_uq|duplicate key/.test(msg);
     const reason = e instanceof AgentEntryAuthorityError || e instanceof ManagementTargetError ? e.reason
       : isDup ? "DUPLICATE_LIVE_IDEMPOTENCY_KEY" : "DB_INSERT_FAILED";
+    // Fresh-facts refusals carry operator-facing detail (what was measured and
+    // where it was read, e.g. "EA v1.31 does not stream broker quotes"). Kept on
+    // the blocked row's snapshot and the audit; the structured reason is unchanged.
+    const refusalDetail =
+      e instanceof AgentEntryAuthorityError && e.detail ? { refusalDetail: e.detail } : {};
     // AACI Security Phase 3 — a duplicate-idempotency collision is a replayed /
     // double-submitted command. Record a redacted security event + admin alert
     // (best-effort) so duplicate live dispatch is observable.
@@ -4375,7 +4389,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       status: "LIVE_BLOCKED",
       rejectionReason: reason,
       rejectedAt: new Date(),
-      dispatchGateSnapshot: { ...snapshot, dbError: msg } as unknown as Record<string, unknown>,
+      dispatchGateSnapshot: { ...snapshot, dbError: msg, ...refusalDetail } as unknown as Record<string, unknown>,
     }).where(and(eq(arxLiveCommandsTable.commandId, args.commandId),
       eq(arxLiveCommandsTable.userId, args.userId),
       eq(arxLiveCommandsTable.status, "LIVE_APPROVED"))).returning();
@@ -4390,7 +4404,7 @@ export async function dispatchLiveCommand(args: { userId: number; commandId: str
       eventType: "LIVE_DISPATCH_BLOCKED", severity: "HIGH",
       userId: args.userId, symbol: row.symbol,
       message: `Live dispatch BLOCKED at DB writeback: ${reason}`,
-      metadata: { commandId: args.commandId, dbError: msg },
+      metadata: { commandId: args.commandId, dbError: msg, ...refusalDetail },
     });
     return {
       ok: false as const,

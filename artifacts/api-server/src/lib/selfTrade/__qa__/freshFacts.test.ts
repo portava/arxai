@@ -19,13 +19,28 @@ const NOW = Date.parse("2026-10-27T12:00:00.000Z");
 const POINT = 0.00001;
 const thesis = { entryZone: { from: 1.1, to: 1.1002 }, stopLoss: 1.09 };
 const at = (offsetMs: number) => new Date(NOW + offsetMs).toISOString();
+// Provenance that follows the observation time: the tick was first seen at
+// `observedAt`, never re-posted, two seconds after the feed's previous post
+// (the EA's sweep cadence). Malformed times get no prior post; the age check
+// refuses them before provenance is looked at.
+function provenanceFor(observedAt: unknown) {
+  const ms = typeof observedAt === "string" ? Date.parse(observedAt) : NaN;
+  return {
+    firstSeenAt: observedAt,
+    lastPostedAt: observedAt,
+    reposts: 0,
+    priorPostAt: Number.isFinite(ms) ? new Date(ms - 2_000).toISOString() : null,
+  };
+}
 function quote(patch: Partial<EntryMarketObservation> = {}): EntryMarketObservation {
+  const observedAt = "observedAt" in patch ? patch.observedAt : at(-1000);
   return {
     bid: 1.10005,
     ask: 1.10015,
-    observedAt: at(-1000),
+    observedAt,
     source: "mt5_broker",
     point: POINT,
+    tickProvenance: provenanceFor(observedAt),
     ...patch,
   };
 }
@@ -95,7 +110,65 @@ describe("entry quote freshness at the final claim", () => {
       assert.equal(Math.round(v.facts.spreadPoints), 10);
       assert.equal(v.facts.executablePrice, 1.10015);
       assert.equal(v.facts.zoneDeviationPoints, 0);
+      assert.equal(v.facts.quoteReposts, 0);
+      assert.equal(v.facts.quoteFeedGapMs, 2_000);
     }
+  });
+  describe("the age is a tick age only when the feed's previous post bounds the tick", () => {
+    const prov = (patch: Record<string, unknown>) =>
+      quote({ tickProvenance: { ...provenanceFor(at(-1000)), ...patch } });
+    const detail = (v: ReturnType<typeof evaluateEntryFreshFacts>) => (v.ok ? "" : v.detail);
+    it("the first tick a bridge ever posted for the symbol is STALE: nothing bounds when it occurred", () => {
+      const v = entry(prov({ priorPostAt: null }));
+      assert.equal(reason(v), "ENTRY_FRESH_QUOTE_STALE");
+      assert.match(detail(v), /^tick age unbounded: first tick this bridge posted for the symbol, first seen 2026-10-27T11:59:59\.000Z; no earlier post bounds when it occurred$/);
+    });
+    it("re-posts are named in the unbounded detail", () => {
+      const v = entry(prov({ priorPostAt: null, reposts: 3, lastPostedAt: at(-200) }));
+      assert.match(detail(v), /re-posted 3 times to 2026-10-27T11:59:59\.800Z; no earlier post/);
+      assert.match(detail(entry(prov({ priorPostAt: null, reposts: 1 }))), /re-posted 1 time to/);
+    });
+    it("a feed silence longer than the window before the tick is STALE; the bound itself passes", () => {
+      assert.equal(reason(entry(prov({ priorPostAt: at(-1000 - ENTRY_QUOTE_MAX_AGE_MS) }))), "OK");
+      const v = entry(prov({ priorPostAt: at(-1000 - ENTRY_QUOTE_MAX_AGE_MS - 1) }));
+      assert.equal(reason(v), "ENTRY_FRESH_QUOTE_STALE");
+      assert.match(detail(v), /^tick age unbounded: the feed's previous post was 5001ms before this tick was first seen 2026-10-27T11:59:59\.000Z \(max 5000ms\); it may have occurred anywhere in that gap$/);
+      assert.equal(reason(entry(prov({ priorPostAt: at(-40 * 3_600_000) }))), "ENTRY_FRESH_QUOTE_STALE");
+    });
+    it("a prior post after the first sight is impossible and refuses", () => {
+      assert.equal(reason(entry(prov({ priorPostAt: at(-500) }))), "ENTRY_FRESH_QUOTE_STALE");
+    });
+    it("a quote without provenance is not a tick observation: TIMESTAMP_INVALID", () => {
+      for (const tickProvenance of [null, undefined]) {
+        const v = entry(quote({ tickProvenance }));
+        assert.equal(reason(v), "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID");
+        assert.match(detail(v), /no tick provenance/);
+      }
+    });
+    it("provenance that does not describe the observed time refuses", () => {
+      assert.equal(reason(entry(prov({ firstSeenAt: at(-1001) }))), "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID");
+      for (const firstSeenAt of [null, undefined, NaN, "garbage", 0, "1761566399000", NOW - 1001])
+        assert.equal(reason(entry(prov({ firstSeenAt }))), "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID", String(firstSeenAt));
+      for (const priorPostAt of [NaN, "garbage", 0, "1761566397000", {}])
+        assert.equal(reason(entry(prov({ priorPostAt }))), "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID", String(priorPostAt));
+      // Epoch-ms forms parse like ISO strings do (parseObservationTime), so they are not refused.
+      assert.equal(reason(entry(prov({ firstSeenAt: NOW - 1000, priorPostAt: NOW - 3000 }))), "OK");
+      for (const reposts of [null, undefined, -1, 1.5, "2", NaN])
+        assert.equal(reason(entry(prov({ reposts }))), "ENTRY_FRESH_QUOTE_TIMESTAMP_INVALID", String(reposts));
+    });
+    it("age and future checks still come first, on the first-sight time", () => {
+      assert.equal(reason(entry(quote({ observedAt: at(-5_001), tickProvenance: { ...provenanceFor(at(-5_001)), priorPostAt: null } }))), "ENTRY_FRESH_QUOTE_STALE");
+      assert.match(detail(entry(quote({ observedAt: at(-5_001), tickProvenance: { ...provenanceFor(at(-5_001)), priorPostAt: null } }))), /^age 5001ms/);
+      assert.equal(reason(entry(quote({ observedAt: at(5_001), tickProvenance: null }))), "ENTRY_FRESH_QUOTE_FUTURE_DATED");
+    });
+    it("the accepted facts carry the re-post count and the feed gap", () => {
+      const v = entry(prov({ reposts: 2, lastPostedAt: at(-100), priorPostAt: at(-3_500) }));
+      assert.equal(v.ok, true);
+      if (v.ok) {
+        assert.equal(v.facts.quoteReposts, 2);
+        assert.equal(v.facts.quoteFeedGapMs, 2_500);
+      }
+    });
   });
   it("missing observation or read error refuses", () => {
     assert.equal(reason(entry(null)), "ENTRY_FRESH_QUOTE_UNAVAILABLE");
