@@ -42,14 +42,15 @@ export function projectManagementMailbox(row: Mailbox, command?: ArxLiveCommand,
  * that exact value. Only an intact signed authoritative entry, still in the
  * dispatched state, for the same trader, bridge connection, side, broker symbol
  * and mirrored float4 volume/protection may supply it; anything else is held
- * pending, never delivered with the rounded mirror. The bridge owner is
- * already scoped by the poll. `entrySymbols` are the broker names the signed
+ * pending, never delivered with the rounded mirror. An entry the EA already
+ * received through the direct poll (pickedByEaAt set) is never served again
+ * through the mirror. The bridge owner is already scoped by the poll. `entrySymbols` are the broker names the signed
  * command's symbol resolves to, read by the caller in its own transaction.
  */
 export function projectBridgedEntryMailbox(row: Mailbox, command?: ArxLiveCommand, entrySymbols?: ReadonlySet<string>): Mailbox | null {
   const payload = row.payload as Record<string, unknown> | null;
   if (!command || !payload || command.commandType !== "PLACE_LIVE_MARKET_ORDER" || command.status !== "SENT_TO_MT5_LIVE" ||
-      !hasIntactCommandSignature(command) || row.action !== "OPEN_MARKET" ||
+      command.pickedByEaAt != null || !hasIntactCommandSignature(command) || row.action !== "OPEN_MARKET" ||
       payload.liveCommandId !== command.commandId || payload.liveCommandOwnerUserId !== command.userId ||
       payload.liveCommandType !== command.commandType || row.requestedByUserId !== command.userId ||
       command.bridgeConnectionId !== row.mt5ConnectionId || row.side !== command.side ||
