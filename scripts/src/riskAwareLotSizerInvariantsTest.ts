@@ -17,6 +17,8 @@
 //   M1  wider stop ⇒ lot never grows;  M2  bigger budget ⇒ lot never shrinks
 //   R*  impossible / non-finite inputs refuse with a structured reasonCode
 //       instead of silently clamping up
+//   Q*  quota-pressure multipliers are reductions in (0, 1], a drawdown never
+//       sizes at 1.0, and an unknown (non-finite) daily P/L fails SAFE
 //
 // Tolerance: risk comparisons allow a RELATIVE 1e-9. Stop distances such as
 // 1.1 − 1.095 are not exactly representable in binary floating point, so the
@@ -29,7 +31,7 @@
 //
 // Pure unit test — no DB, no network, no clock. Offline CI lane.
 
-import { computeRiskAwareLot } from "@workspace/domain/self-trade";
+import { computeRiskAwareLot, evaluateQuotaPressure } from "@workspace/domain/self-trade";
 
 type Input = Parameters<typeof computeRiskAwareLot>[0];
 
@@ -330,6 +332,48 @@ function genInput(rnd: () => number): Input {
   check("I6 a multiplier never grows the lot (10000 draws)", multUp === 0, mFirst);
   check("M1 doubling the stop distance never grows the lot (10000 draws)", stopUp === 0, mFirst);
   check("M2 raising the budget never shrinks / un-sizes the lot (10000 draws)", budgetDown === 0, mFirst);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log("\nquotaPressure — composition into the sizer");
+{
+  const quota: Parameters<typeof evaluateQuotaPressure>[0]["quota"] = {
+    dailyMinTrades: 0, effectiveMaxTrades: 5, tradesTakenToday: 0, remainingToMax: 5,
+    belowDailyMinimum: false, baseReached: false, hardCapReached: false,
+  };
+  const qp = (dailyPnlUsd: number, maxDailyLossUsd = 100, dailyProfitGoalUsd = 200) =>
+    evaluateQuotaPressure({ dailyPnlUsd, maxDailyLossUsd, dailyProfitGoalUsd, quota, baseMinScore: 60 });
+
+  for (const [name, v] of [["NaN", Number.NaN], ["-Infinity", -Infinity], ["+Infinity", Infinity]] as const) {
+    const r = qp(v);
+    check(`Q1 daily P/L ${name} ⇒ fails safe (PROTECT, multiplier 0.5, extra confirmation)`,
+      r.regime === "PROTECT" && r.sizeMultiplier === 0.5 && r.requireExtraConfirmation,
+      `regime=${r.regime} mult=${r.sizeMultiplier}`);
+  }
+
+  const rnd = seeded(0x9a7e);
+  let bad = 0;
+  let first = "";
+  for (let k = 0; k < 5_000; k++) {
+    const cap = rnd() < 0.2 ? 0 : rnd() * 1000;
+    const goal = rnd() < 0.2 ? 0 : rnd() * 1000;
+    const pnl = (rnd() - 0.6) * 2000;
+    const r = qp(pnl, cap, goal);
+    const ok =
+      r.sizeMultiplier > 0 && r.sizeMultiplier <= 1 &&
+      (pnl >= 0 || r.sizeMultiplier < 1) &&
+      (!(cap > 0 && pnl <= -0.7 * cap) || r.sizeMultiplier === 0.5);
+    if (!ok) { bad++; first ||= `#${k} pnl=${pnl} cap=${cap} goal=${goal} → ${r.regime} ${r.sizeMultiplier}`; }
+    // Composed with APPROVED_REDUCED (×0.5) as executionGate does, the sizer
+    // never sizes above the un-reduced lot.
+    const composed = Math.round((r.sizeMultiplier * 0.5 + Number.EPSILON) * 100) / 100;
+    const full = computeRiskAwareLot({ ...BASE, riskBudgetUsd: 10 + rnd() * 1000 });
+    const red = computeRiskAwareLot({ ...BASE, riskBudgetUsd: full.riskBudgetUsd, sizeMultiplier: composed });
+    if (!full.cannotSize && !red.cannotSize && red.lot > full.lot) {
+      bad++; first ||= `composition #${k}: ${red.lot} > ${full.lot}`;
+    }
+  }
+  check("Q2 multipliers in (0,1], drawdown < 1, near-cap = 0.5, composition only shrinks (5000 draws)", bad === 0, first);
 }
 
 console.log(`\nResult: ${passed} passed, ${failed} failed`);
