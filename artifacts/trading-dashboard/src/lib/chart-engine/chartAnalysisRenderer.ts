@@ -5,7 +5,7 @@ import { ChartDrawingPrimitive } from "./chartDrawingPrimitive";
 import { validateDrawings, validatePreferences, type ChartDrawing } from "./chartWorkspace";
 
 type PriceSeries = ISeriesApi<"Candlestick" | "Bar" | "Line">;
-interface StudyHandle { calculator: StudyCalculator; lines: ISeriesApi<"Line" | "Histogram">[] }
+interface StudyHandle { calculator: StudyCalculator; lines: ISeriesApi<"Line" | "Histogram">[]; rendered: StudyPoint[] }
 
 /** Separate ownership for user studies/drawings. Clearing these never removes
  * execution overlays or server-detected structure. Auxiliary series never add
@@ -50,7 +50,7 @@ export class ChartAnalysisRenderer {
         if (i === 0) for (const price of definition.levels ?? []) line.createPriceLine({price,color:"#71717a",lineWidth:1,lineStyle:LineStyle.Dashed,axisLabelVisible:true,title:String(price)});
         return line;
       });
-      this.studies.push({calculator:new StudyCalculator(config),lines});
+      this.studies.push({calculator:new StudyCalculator(config),lines,rendered:[]});
 
     }
     // Set proportions only after all panes exist; inserting a later pane must
@@ -71,19 +71,40 @@ export class ChartAnalysisRenderer {
     // earliest dirty index must survive coalescing into this synchronous read.
     const dirtyFrom = Math.min(from, this.pending?.from ?? from);
     this.cancelPending();
-    const changed = this.studies.map(study => study.calculator.calculate(candles, dirtyFrom));
+    for (const study of this.studies) study.calculator.calculate(candles, dirtyFrom);
     const window = this.nextWindow();
-    if (replace || window !== this.displayWindow) { this.renderWindow(window); return; }
-    const first = this.studies[0]?.calculator.points[window.from]?.time;
-    const last = this.studies[0]?.calculator.points[window.to - 1]?.time;
+    if (replace || !this.displayWindow || window.from !== this.displayWindow.from) { this.renderWindow(window); return; }
+    this.displayWindow = window;
     this.rendering = true;
     try {
-      this.studies.forEach((study, index) => {
-        const visible = changed[index]!.filter(point => first != null && last != null && point.time >= first && point.time <= last);
+      for (const study of this.studies) {
+        const next = study.calculator.points.slice(window.from, window.to);
+        const previous = study.rendered;
+        let same = 0;
+        while (same < previous.length && same < next.length && sameStudyPoint(previous[same]!, next[same]!)) same++;
+        // Only a small changed tail can use the series tail API. A moved buffer,
+        // historical correction or large seek keeps the complete replacement.
+        const removed = previous.length - same, added = next.length - same;
         study.lines.forEach((line, channel) => {
-          for (const point of visible) line.update(this.renderPoint(study, point, channel));
+          if (!removed && !added) return;
+          // LWC pop counts plotted values, not whitespace rows. Warmup/null
+          // channels must replace their data so removed timestamps cannot linger
+          // or cause pop to remove an earlier finite value instead.
+          const finite = (point: StudyPoint | undefined) => point?.values[channel] != null && Number.isFinite(point.values[channel]);
+          const finiteTail = finite(previous.at(-1)) && finite(next.at(-1)) &&
+            previous.slice(same).every(finite) && next.slice(same).every(finite);
+          if (removed > 32 || added > 32 || !finiteTail) {
+            line.setData(next.map(point => this.renderPoint(study, point, channel)));
+          } else if (removed === 1 && added > 0 && previous[same]!.time === next[same]!.time) {
+            // Revising the last point uses update, preserving the shared axis.
+            for (const point of next.slice(same)) line.update(this.renderPoint(study, point, channel));
+          } else {
+            if (removed) line.pop(removed);
+            for (const point of next.slice(same)) line.update(this.renderPoint(study, point, channel));
+          }
         });
-      });
+        study.rendered = next;
+      }
     } finally { this.rendering = false; }
   }
   private renderPoint(study: StudyHandle, point: StudyPoint, channel: number) {
@@ -105,6 +126,7 @@ export class ChartAnalysisRenderer {
     try {
       for (const study of this.studies) {
         const visible = study.calculator.points.slice(window.from, window.to);
+        study.rendered = visible;
         study.lines.forEach((line, channel) => line.setData(visible.map(point => this.renderPoint(study, point, channel))));
       }
     } finally { this.rendering = false; }
@@ -177,7 +199,19 @@ export function studyDisplayWindow(count: number, visible: LogicalRange | null, 
   if (!visible || !count) return current?.from === 0 && current.to === count ? current : { from: 0, to: count };
   const from = Math.max(0, Math.min(count, Math.floor(visible.from)));
   const to = Math.max(from, Math.min(count, Math.ceil(visible.to) + 1));
-  if (current && current.to <= count && from >= current.from && to <= current.to &&
-      (current.from === 0 || from - current.from >= 50) && (current.to === count || current.to - to >= 50)) return current;
+  if (current && from >= current.from && (current.from === 0 || from - current.from >= 50) &&
+      from - current.from <= 400) {
+    if (current.to <= count && to <= current.to && (current.to === count || current.to - to >= 50)) return current;
+    // Keep the left buffer stable while the revealed tail grows/shrinks. Moving
+    // it on every single bar would rebuild every study's shared time-axis data.
+    if (Math.abs(current.to - count) <= 32 && to <= count && count - to < 50) {
+      return current.to === count ? current : {from: current.from, to: count};
+    }
+  }
   return { from: Math.max(0, from - 200), to: Math.min(count, to + 200) };
+}
+
+function sameStudyPoint(a: StudyPoint, b: StudyPoint): boolean {
+  return a === b || a.time === b.time && a.values.length === b.values.length &&
+    a.values.every((value, index) => Object.is(value, b.values[index]));
 }

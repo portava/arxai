@@ -1,7 +1,7 @@
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Sparkles, Eye, EyeOff } from "lucide-react";
 import type { ChartCandlesResponse } from "@workspace/api-client-react";
-import type { ChartEngineAdapter } from "@/lib/chart-engine";
+import type { ChartEngineAdapter, ChartEngineCandle } from "@/lib/chart-engine";
 import type { Candle } from "@/components/scanner/scannerCandleAdapter";
 import type { ChartHistoryPage } from "@/lib/chartCandlesQuery";
 import { analyzeSmartChart, smartChartIntervalSeconds, type SmartChartAnalysisResult, type SmartChartAnalysisBar, type SmartChartFinding } from "@/lib/chart-engine/smartChartAnalysis";
@@ -26,16 +26,23 @@ export function findingAnnotation(finding:SmartChartFinding|null):SmartChartAnno
 
 /** Explanations live inside the chart frame. A single selected shape owns the
  * automatic annotation layer; detailed readings stay collapsed by default. */
-export function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view,replay}:Props) {
+export const SmartChartReader = memo(function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPTY,historyEvidence,liveConfirmed,readFailed,view,replay}:Props) {
   const ownershipKey=JSON.stringify([symbol,timeframe,replay?.snapshot.id,replay?.snapshot.sourceIdentity??data?.marketEvidence?.sourceIdentity,replay?.snapshot.source??data?.feedStatus?.source]);
   const contextKey=JSON.stringify([ownershipKey,replay?.installedCount]);
   const bound=useMemo<ReturnType<typeof captureSmartChartBars> & {asOfMs?:number|null;replayCutoff?:number|null}>(()=>replay?captureReplayAnalysisPrefix(replay,{symbol,timeframe}):captureSmartChartBars(data,{symbol,timeframe},older,historyEvidence,Date.now()),[data,symbol,timeframe,older,historyEvidence,replay?.snapshot,replay?.installedCount]);
+  const byTime=useMemo(()=>new Map(bound.bars.map(bar=>[bar.time,bar])),[bound]);
+  // Replay has an immutable observation cutoff. A layout refresh and its queued
+  // viewport notification often describe the exact same applied prefix. Live
+  // reads intentionally retain every refresh, including wall-clock changes.
+  const previousReplayRead=useRef<{key:object;actual:ChartEngineCandle[]}|null>(null);
+  const readKey=useMemo(()=>({}),[adapter,epoch,bound,contextKey,liveConfirmed,readFailed,view?.style,view?.scale,view?.inverted]);
   const [reading,setReading]=useState<{key:string;result:SmartChartAnalysisResult;bars:SmartChartAnalysisBar[];historical:boolean}|null>(null);
   const [selected,setSelected]=useState<string|null>(null);
   const [annotations,setAnnotations]=useState(true);
   const refresh=useCallback(()=>{
     const actual=adapter?.getVisibleCandles?.()??[];
-    const byTime=new Map(bound.bars.map(bar=>[bar.time,bar]));
+    if(replay && previousReplayRead.current?.key===readKey && sameVisibleCandles(previousReplayRead.current.actual,actual))return;
+    previousReplayRead.current=replay?{key:readKey,actual:actual.map(bar=>({...bar}))}:null;
     const observed=actual.flatMap(bar=>{const source=byTime.get(bar.time);return source?[source]:[];});
     const mismatch=actual.some((bar,index)=>{const source=byTime.get(bar.time);
       if(!source)return index!==actual.length-1||bar.time<(bound.bars.at(-1)?.closeTime??Infinity);
@@ -48,7 +55,7 @@ export function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPT
       dataState:replay?"historical":!liveConfirmed||readFailed?"stale":historical?"historical":"current"});
     if(bound.status!=="ready"||mismatch||!actual.length){result.status="unavailable";result.findings=[];result.allFindings=[];result.reason=bound.reason??(mismatch?"The displayed candles are updating; analysis will follow the applied chart.":"Waiting for the chart's visible candles.");}
     setReading({key:contextKey,result,bars:observed,historical});
-  },[adapter,bound,contextKey,liveConfirmed,readFailed,replay]);
+  },[adapter,bound,byTime,contextKey,liveConfirmed,readFailed,replay,readKey]);
   useLayoutEffect(()=>{
     setSelected(null);refresh();
     return adapter?.subscribeViewport?.(refresh);
@@ -91,4 +98,11 @@ export function SmartChartReader({adapter,epoch,symbol,timeframe,data,older=EMPT
       </div>
     </details>
   </section>;
+});
+
+function sameVisibleCandles(a:readonly ChartEngineCandle[],b:readonly ChartEngineCandle[]):boolean {
+  return a.length===b.length && a.every((bar,index)=>{
+    const other=b[index]!;
+    return bar.time===other.time && bar.open===other.open && bar.high===other.high && bar.low===other.low && bar.close===other.close;
+  });
 }

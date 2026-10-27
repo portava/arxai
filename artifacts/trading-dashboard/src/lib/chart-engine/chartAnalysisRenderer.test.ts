@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChartAnalysisRenderer, studyDisplayWindow } from "./chartAnalysisRenderer";
-import { StudyCalculator, STUDY_DEFAULTS } from "./chartStudies";
+import { StudyCalculator, STUDY_DEFAULTS, STUDY_CATALOG } from "./chartStudies";
 
-function fixture() {
-  let range = { from: 9800, to: 10010 } as any;
+function fixture(count = 10000) {
+  let range = { from: Math.max(0,count-200), to: count+10 } as any;
   let callback: (() => void) | undefined;
   let scheduled: (() => void) | undefined;
   vi.stubGlobal("requestAnimationFrame", vi.fn((fn: () => void) => { scheduled = fn; return 1; }));
@@ -11,11 +11,21 @@ function fixture() {
   const handles: any[] = [];
   const scale = { getVisibleLogicalRange: () => range, setVisibleLogicalRange: vi.fn(), subscribeVisibleLogicalRangeChange: (fn: () => void) => { callback = fn; }, unsubscribeVisibleLogicalRangeChange: vi.fn() };
   const chart = { timeScale: () => scale, panes: () => [], removeSeries: vi.fn(), addSeries: vi.fn(() => {
-    const line = { setData: vi.fn(), update: vi.fn(), createPriceLine: vi.fn() };
+    const line: any = { data: [], createPriceLine: vi.fn() };
+    line.setData=vi.fn((data:any[])=>{line.data=data.map(point=>({...point}));});
+    line.update=vi.fn((point:any)=>{
+      const last=line.data.at(-1);
+      if(last && point.time<last.time)throw new Error("Historical update requires full replacement");
+      if(last?.time===point.time)line.data[line.data.length-1]={...point};else line.data.push({...point});
+    });
+    line.pop=vi.fn((count:number)=>{
+      // Actual LWC pop counts plotted values and leaves whitespace mappings.
+      for(let i=line.data.length-1;i>=0&&count>0;i--)if(line.data[i].value!=null){line.data.splice(i,1);count--;}
+    });
     handles.push(line); return line;
   }) };
   const renderer = new ChartAnalysisRenderer(chart as any, {} as any);
-  const candles = Array.from({ length: 10000 }, (_, i) => ({ time: 100 + i * 60, open: 100, high: 120, low: 90, close: 100 + Math.sin(i / 4) }));
+  const candles = Array.from({ length: count }, (_, i) => ({ time: 100 + i * 60, open: 100, high: 120, low: 90, close: 100 + Math.sin(i / 4) }));
   return { renderer, candles, handles, chart, scale, frame: () => scheduled?.(), move: (from: number, to: number) => { range = { from, to }; callback?.(); } };
 }
 afterEach(() => vi.unstubAllGlobals());
@@ -53,7 +63,7 @@ describe("study viewport rendering and streaming", () => {
     frame();
     const expected = new StudyCalculator(config).calculate(candles);
     for (let i = 9999; i < candles.length; i++) expect(renderer.inspect(candles[i]!.time)[0]!.values[0]!.value).toBeCloseTo(expected[i]!.values[0]!, 10);
-    const visible = handles[0].setData.mock.calls.at(-1)[0];
+    const visible = handles[0].data;
     expect(visible.at(-1).time).toBe(candles.at(-1)!.time);
     expect(visible.at(-2).time).toBe(candles.at(-2)!.time);
   });
@@ -98,5 +108,52 @@ describe("study viewport rendering and streaming", () => {
     expect(studyDisplayWindow(10000, { from: -100, to: 100 } as any, null)).toEqual({ from: 0, to: 301 });
     expect(studyDisplayWindow(10000, { from: 9900, to: 11000 } as any, null)).toEqual({ from: 9700, to: 10000 });
     expect(studyDisplayWindow(10, null, null)).toEqual({ from: 0, to: 10 });
+  });
+});
+
+
+describe("exact study tail reconciliation",()=>{
+  for(const {defaults:config} of STUDY_CATALOG) it(`${config.kind}: all rendered channels equal a full calculation through replay and corrections`,()=>{
+    const f=fixture(320);let bars=f.candles;
+    f.renderer.setStudies([config],bars);
+    const verify=()=>{
+      const expected=new StudyCalculator(config).calculate(bars);
+      for(const [channel,line] of f.handles.entries()) {
+        const visible=expected.filter(point=>point.time>=line.data[0]?.time&&point.time<=line.data.at(-1)?.time);
+        expect(line.data).toEqual(visible.map(point=>{
+          const value=point.values[channel];
+          return value==null||!Number.isFinite(value)?{time:point.time}:{time:point.time,value,
+            ...(config.kind==='macd'&&channel===2?{color:value>=0?'#10b981':'#ef4444'}:{})};
+        }));
+        expect(line.data.length).toBe(bars.length); // full visible fixture, including whitespace
+      }
+    };
+    verify();const original=bars;
+    for(const count of [319,320,288,320,1,2,Math.max(1,config.period-1),config.period,config.period+1,320]){
+      bars=original.slice(0,count);f.renderer.batchViewport(()=>{f.move(0,count+10);f.renderer.refresh(bars,0,false);});verify();
+    }
+    expect(f.handles.every(line=>line.pop.mock.calls.length>0)).toBe(true);
+    bars=bars.map((bar,i)=>i===319?{...bar,close:105}:bar);f.renderer.refresh(bars,319,false);verify();
+    bars=bars.map((bar,i)=>i===180?{...bar,close:107}:bar);f.renderer.refresh(bars,180,true);verify();
+    bars=[{...bars[0]!,time:40},...bars];f.renderer.refresh(bars,0,true);verify();
+    bars=[];f.renderer.refresh(bars,0,true);verify();
+    bars=original.slice(0,1);f.renderer.refresh(bars,0,true);verify();
+    bars=original;f.renderer.refresh(bars,0,true);verify();
+    // Changed periods/config rebuild their calculators and series, not old data.
+    const altered={...config,period:Math.max(2,config.period+1)};
+    f.renderer.setStudies([altered],bars);
+    const last=f.handles.at(-1).data.at(-1);
+    const values=new StudyCalculator(altered).calculate(bars).at(-1)!.values;
+    expect(last.value??null).toBe(values.at(-1)??null);
+  });
+  it("uses tail writes for adjacent bars without shifting the buffer, and rebuilds on actual viewport changes",()=>{
+    const f=fixture();f.renderer.setStudies(STUDY_DEFAULTS.slice(0,2),f.candles);
+    const start=f.handles[0].data[0].time;
+    for(const n of [9999,10000])f.renderer.batchViewport(()=>{
+      f.move(n-150,n+10);f.renderer.refresh(f.candles.slice(0,n),9999,false);
+    });
+    for(const line of f.handles){expect(line.setData).toHaveBeenCalledTimes(1);expect(line.pop).toHaveBeenCalledWith(1);expect(line.update).toHaveBeenCalledTimes(1);expect(line.data[0].time).toBe(start);}
+    f.move(1000,1100);expect(f.handles[0].setData).toHaveBeenCalledTimes(2);
+    f.move(0,9999);expect(f.handles[0].data).toHaveLength(10000);
   });
 });
