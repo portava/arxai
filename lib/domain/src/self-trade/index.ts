@@ -63,6 +63,32 @@ export type {
 export { evaluateManagementAction } from "./positionManagement.js";
 export type {
   ManagementAction,
+  ManagementTrigger,
   PositionManagementInput,
   PositionManagementVerdict,
 } from "./positionManagement.js";
+export {
+  PROTECTIVE_HOLD_REASONS,
+  classifyProtectiveTrigger,
+  doesNotIncreaseExposure,
+  doesNotReverse,
+  doesNotLoosenStop,
+  evaluateProtectiveGeometry,
+  verifyProtectiveBridge,
+  verifyProtectivePosition,
+  explainProtectiveHold,
+  redactProtectiveDetail,
+} from "./protectiveAction.js";
+export type {
+  ProtectiveTrigger,
+  ProtectiveSide,
+  ProtectivePositionFacts,
+  ProtectiveIntent,
+  ProtectiveCheck,
+  ProtectiveHoldReason,
+  ProtectiveHeartbeat,
+  ProtectiveEntryFacts,
+  ProtectiveExecutionFacts,
+  ProtectiveBridgeFacts,
+  ProtectiveRowFacts,
+} from "./protectiveAction.js";

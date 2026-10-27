@@ -283,6 +283,7 @@
     "test:fundbook-regression": "tsx ./src/fundBookRegressionTest.ts",
     "test:self-trade-execution-domain": "tsx ./src/selfTradeExecutionDomainTest.ts",
     "test:self-trade-safety-audit": "tsx ./src/selfTradeSafetyAuditTest.ts",
+    "test:self-trade-protective-domain": "tsx ./src/selfTradeProtectiveActionTest.ts",
     "test:security": "tsx ./src/securityEngineTest.ts",
     "test:ruby-quality": "tsx ./src/rubyQualityEngineTest.ts",
     "test:ruby-calibration": "tsx ./src/rubyCalibrationEngineTest.ts",
