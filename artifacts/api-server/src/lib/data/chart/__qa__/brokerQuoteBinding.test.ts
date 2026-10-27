@@ -25,6 +25,7 @@ import {
 import { getChartCandles, type ChartFeedStatus } from "../chartDataService.js";
 import { __resetMt5ProviderStore, readMt5Quote, updateCandlesFromMT5, updateQuoteFromMT5 } from "../../providers/mt5Provider.js";
 import { timeframeMs } from "../timeframes.js";
+import { MAX_FUTURE_CLOCK_SKEW_MS } from "../../freshness.js";
 import { GetMeChartIntelligenceResponse } from "@workspace/api-zod";
 
 const epoch = 1_700_000_000_000;
@@ -92,7 +93,8 @@ for (const [name, q, s, requester, status, reason] of [
   ["contradicting environment", quote({ environment: "live" }), { ...series, environment: "demo" }, 70, "MISMATCH", "ENVIRONMENT_MISMATCH"],
   ["contradicting native symbol", quote({ brokerSymbol: "EURUSD.m" }), { ...series, brokerSymbol: "EURUSD" }, 70, "MISMATCH", "BROKER_SYMBOL_MISMATCH"],
   ["stale tick", quote({ tickAt: new Date(now - 15_001).toISOString() }), series, 70, "STALE", "QUOTE_STALE"],
-  ["future tick", quote({ tickAt: new Date(now + 1).toISOString() }), series, 70, "STALE", "QUOTE_TIME_FUTURE"],
+  ["future tick beyond clock-skew allowance", quote({ tickAt: new Date(now + MAX_FUTURE_CLOCK_SKEW_MS + 1).toISOString() }), series, 70, "STALE", "QUOTE_TIME_FUTURE"],
+  ["tick an hour in the future", quote({ tickAt: new Date(now + 3_600_000).toISOString() }), series, 70, "STALE", "QUOTE_TIME_FUTURE"],
   ["receive-time only", quote({ tickAt: null }), series, 70, "UNVERIFIED", "QUOTE_TIME_UNKNOWN"],
   ["malformed tick time", quote({ tickAt: "not-a-time" }), series, 70, "UNVERIFIED", "QUOTE_TIME_UNKNOWN"],
   ["unattributed quote", quote({ bridgeConnectionId: null, userId: null }), series, 70, "UNVERIFIED", "QUOTE_UNATTRIBUTED"],
@@ -109,6 +111,18 @@ for (const [name, q, s, requester, status, reason] of [
   assert.notEqual(r.handshake.BrokerPriceAlignment, "PASS");
   assert.equal(mirrorTrustSegment(r.gate.tradeConfirmationAllowed, r.alignment), null);
   assert.doesNotMatch(r.alignment.userMessage, /aligned with broker/);
+});
+
+// Review 2026-10-27 finding 4: zero future tolerance made an EA clock 1 ms
+// ahead permanently STALE. Clock skew within the shared allowance binds.
+test("an EA clock slightly ahead (within the shared skew allowance) still binds", () => {
+  for (const lead of [1, 1_000, MAX_FUTURE_CLOCK_SKEW_MS]) {
+    const r = evaluate(quote({ tickAt: new Date(now + lead).toISOString() }));
+    assert.equal(r.binding.status, "BOUND", `+${lead} ms`);
+    assert.deepEqual(r.binding.reasons, []);
+    assert.equal(r.binding.quoteAgeMs, -lead, "the observed age is reported as-is, never clamped");
+  }
+  assert.equal(MAX_FUTURE_CLOCK_SKEW_MS, 5_000);
 });
 
 test("unknown environment or native symbol on one side is not a contradiction", () => {

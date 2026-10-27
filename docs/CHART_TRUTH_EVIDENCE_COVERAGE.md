@@ -27,7 +27,9 @@ failed reason). Symbol Mirror Accuracy earns points, the handshake
 and owner as the served chart series, owner equal to the requesting user, no
 observed environment/broker-symbol contradiction (unknown on either side is not
 a contradiction), and an observed tick time no older than the shared 15-second
-quote freshness budget and not in the future. The chart producer keeps the
+quote freshness budget and not more than 5 s in the future (the shared
+`MAX_FUTURE_CLOCK_SKEW_MS` clock-skew allowance; before the 2026-10-27 review
+follow-up an EA clock 1 ms ahead read `QUOTE_TIME_FUTURE` permanently). The chart producer keeps the
 served series' router provenance off the wire (non-enumerable) for this check.
 `/me/chart/intelligence` tries the live MT5 quote pushed by the series' own
 bridge (only when that bridge belongs to the requesting user), then the user's
@@ -43,7 +45,12 @@ so snapshot rows stay `UNVERIFIED` and only the live same-bridge quote can bind;
 bridge/owner and stay unattributed; shared chart series served from another
 user's bridge cannot be compared for this user; environment and broker-native
 symbol are not observed on the live push path; EA clock/time-zone correctness
-is not independently verified; self-trade's cached chart context still uses the
+is not independently verified (v2 TICK `brokerTimeEpochMs` is broker server
+time by contract and is recorded as an observed tick time without any
+conversion, so an un-converted broker clock fails closed as future or stale
+rather than binding); the router's Truth quote pairing (`scannerQuoteFor`)
+still rejects any negative quote age via `classifyQuoteFreshness`, which is
+stricter than this binding; self-trade's cached chart context still uses the
 unenriched placeholder. No production broker data, latency or terminal behavior
 was exercised.
 

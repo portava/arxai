@@ -13,7 +13,9 @@
 //              observed tick time within the shared quote freshness budget.
 //   MISMATCH   an observed identity contradiction (different provider, bridge,
 //              owner, environment or native symbol, or another user's account).
-//   STALE      identity binds but the observed tick time is too old or future.
+//   STALE      identity binds but the observed tick time is too old, or more
+//              than MAX_FUTURE_CLOCK_SKEW_MS (5 s, the shared producer clock-skew
+//              allowance) in the future.
 //   UNVERIFIED a required fact is unknown (unattributed series/quote, no
 //              observed tick time, no quote, unknown requester).
 //
@@ -21,7 +23,7 @@
 // timestamp is synthesized here. Read-only; never touches an execution path.
 
 import type { SeriesProvenance } from "../types.js";
-import { QUOTE_FRESH_TTL_MS } from "../freshness.js";
+import { MAX_FUTURE_CLOCK_SKEW_MS, QUOTE_FRESH_TTL_MS } from "../freshness.js";
 
 /** Observed identity of the series that produced the chart candles. */
 export interface ChartSeriesAttribution {
@@ -132,7 +134,10 @@ export function bindBrokerQuote(args: {
     } else {
       quoteObservedAt = new Date(tickMs).toISOString();
       quoteAgeMs = now - tickMs;
-      if (quoteAgeMs < 0) reasons.push("QUOTE_TIME_FUTURE");
+      // A producer clock slightly ahead of this server is clock skew, not a
+      // future quote: allow the shared absolute skew (same as bar open times
+      // and Truth tick evidence). Beyond it the tick time cannot be trusted.
+      if (quoteAgeMs < -MAX_FUTURE_CLOCK_SKEW_MS) reasons.push("QUOTE_TIME_FUTURE");
       else if (quoteAgeMs > freshnessBudgetMs) reasons.push("QUOTE_STALE");
     }
   }

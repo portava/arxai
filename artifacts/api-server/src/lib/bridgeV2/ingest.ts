@@ -286,6 +286,14 @@ function feedMarketDataStore(
     // The v2 TICK contract requires brokerTimeEpochMs; should the defensive
     // receive-time fallback ever be used, the store records that it is not an
     // observed tick time.
+    //
+    // Limit (documented, not repaired): tickTimeObserved=true means only that
+    // the PRODUCER supplied the tick's own time. brokerTimeEpochMs is broker
+    // server time per the contract; it is a UTC instant only if the EA
+    // converted it, and nothing here can verify that. No timezone conversion
+    // is attempted. Consumers compare it with server UTC and fail closed: an
+    // un-converted clock ahead of UTC beyond the 5 s skew allowance reads
+    // QUOTE_TIME_FUTURE / not fresh, and one behind reads stale.
     updateQuoteFromMT5(symbol, quote, bridge, { tickTimeObserved: brokerTimeEpochMs != null });
     // Task #496 — fold this accepted, fresh tick into the in-memory forming-bar
     // composer (BID basis, matching the mt5_broker candle basis) so the chart
