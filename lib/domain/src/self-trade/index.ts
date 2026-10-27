@@ -47,11 +47,12 @@ export type {
   ExecutionPermissionInput,
   ExecutionPermissionVerdict,
 } from "./executionPermission.js";
-export { computeRiskAwareLot } from "./riskAwareLotSizer.js";
+export { computeRiskAwareLot, riskAwareLotBlockReason } from "./riskAwareLotSizer.js";
 export type {
   RiskAwareLotInput,
   RiskAwareLotResult,
   LotClampReason,
+  RiskAwareLotBlockReason,
 } from "./riskAwareLotSizer.js";
 export { evaluateQuotaPressure } from "./quotaPressure.js";
 export type {

@@ -196,3 +196,20 @@ function stepDecimals(step: number): number {
   }
   return 10;
 }
+
+export type RiskAwareLotBlockReason =
+  | NonNullable<RiskAwareLotResult["reasonCode"]>
+  /** Only the broker-minimum lot is legal and it risks more than the budget. */
+  | "MIN_LOT_EXCEEDS_RISK_BUDGET";
+
+/**
+ * Dispatchability verdict for a sizing result: null when the lot may be sent,
+ * otherwise a structured refusal. A dispatching caller must use this rather
+ * than `cannotSize` alone — `cannotSize=false` with `withinRiskBudget=false`
+ * means the broker minimum would over-risk, which must refuse, not upsize.
+ */
+export function riskAwareLotBlockReason(r: RiskAwareLotResult): RiskAwareLotBlockReason | null {
+  if (r.cannotSize || !(r.lot > 0)) return r.reasonCode ?? "NON_POSITIVE_LOT";
+  if (!r.withinRiskBudget) return "MIN_LOT_EXCEEDS_RISK_BUDGET";
+  return null;
+}
