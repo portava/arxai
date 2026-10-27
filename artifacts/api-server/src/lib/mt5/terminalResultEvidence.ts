@@ -13,6 +13,19 @@ export function terminalResultKind(commandType: string): "ENTRY" | "CLOSE" | "MO
     ["CLOSE_LIVE_POSITION","CLOSE_POSITION"].includes(commandType) ? "CLOSE" :
     ["MODIFY_LIVE_SLTP","MODIFY_POSITION","MODIFY_POSITION_PROTECTION","MOVE_SL","MOVE_TP"].includes(commandType) ? "MODIFY" : null;
 }
+/**
+ * Synchronous CTrade evidence has no deal aggregation or remainder reporting,
+ * so one command can produce only one execution. After an applied versioned
+ * report, a different versioned execution is contradictory, never a
+ * continuation: a fill may be followed only by an identical deal/volume, and
+ * an acceptance (deal 0) may settle only for the same order ticket.
+ */
+export function terminalEvidenceConflicts(prior: TerminalResultEvidence, next: TerminalResultEvidence): boolean {
+  const deal = (e: TerminalResultEvidence) => typeof e.resultDeal === "string" && e.resultDeal !== "0" ? e.resultDeal : null;
+  const priorDeal = deal(prior);
+  if (priorDeal) return deal(next) !== priorDeal || next.resultVolume !== prior.resultVolume || next.resultOrder !== prior.resultOrder;
+  return typeof prior.resultOrder === "string" && prior.resultOrder !== "0" && next.resultOrder !== prior.resultOrder;
+}
 export function normalizeTerminalResultEvidence(raw: Record<string, unknown>, commandType: string, requestedVolume: number | null, expectedPositionTicket?: string | null) {
   if (!Object.hasOwn(raw,"resultEvidenceVersion")) return null; // explicit legacy compatibility, not certification
   const kind=terminalResultKind(commandType), code=raw.mt5Retcode, actual=raw.resultVolume, price=raw.resultPrice;

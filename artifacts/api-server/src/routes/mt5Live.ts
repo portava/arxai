@@ -177,11 +177,14 @@ router.post("/mt5/live-command-result", bridgeAuthPerUserOnly, async (req: AugRe
     return;
   }
 
-  const terminal = normalizeTerminalResultEvidence(b, owned[0].commandType, owned[0].requestedVolume, (owned[0].payload as Record<string, unknown> | null)?.brokerTicket as string | undefined);
+  const terminal = normalizeTerminalResultEvidence(b, owned[0].commandType, owned[0].requestedVolume,
+    owned[0].brokerTicket ?? (owned[0].payload as Record<string, unknown> | null)?.brokerTicket as string | undefined);
+  // Acceptance/partial claims need versioned terminal evidence; otherwise unknown.
+  const unproven = !terminal && (outcome === "LIVE_PARTIALLY_FILLED" || outcome === "LIVE_ACKNOWLEDGED");
   const result = await recordLiveCommandResult({
     userId: conn.userId!,
     commandId,
-    outcome: terminal?.outcome ?? outcome,
+    outcome: terminal?.outcome ?? (unproven ? "LIVE_UNKNOWN" : outcome),
     terminalResultEvidence: terminal?.evidence,
     reportingBridgeConnectionId: conn.id,
     reportedExecutionIdentity: reportedManagementIdentity(b),
