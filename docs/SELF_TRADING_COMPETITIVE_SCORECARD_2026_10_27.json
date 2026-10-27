@@ -1,0 +1,1657 @@
+{
+  "title": "Self-trading competitive scorecard",
+  "date": "2026-10-27",
+  "base_commit": "5767ec5",
+  "scope": "ARX self-trading (automated agent trading) vs MetaTrader 5, TradingView, QuantConnect LEAN, NinjaTrader, cTrader Automate, Interactive Brokers TWS API, Freqtrade.",
+  "policy": "No aggregate or percentage score. Competitor facts only from cited official documentation; anything not retrieved is marked unverified. ARX 'ahead' is limited to documented semantics and never implies broker-verified superiority.",
+  "status_values": {
+    "ahead": "ARX's documented and offline-tested behaviour exceeds what the cited competitor documentation describes; not broker-verified.",
+    "parity-claimed-unverified": "ARX implements a comparable control, but evidence is offline only or the comparison is not measured.",
+    "behind": "Competitors document a capability that ARX lacks or implements only partially.",
+    "not measured": "No measurement exists on ARX and/or no comparable competitor figure was found."
+  },
+  "evidence_levels_note": "offline-tested = repository tests with fixtures/disposable PostgreSQL/extracted-handler harness; broker-verified = observed on a real MT5 demo or live account. No self-trading agent row is broker-verified. The repository records one controlled manual LIVE micro-test (artifacts/api-server/src/scripts/liveMicroTestFinalize.ts) on a non-agent path; it was not re-verified here.",
+  "sources": {
+    "M1": {
+      "title": "MetaQuotes: OrderSend",
+      "url": "https://www.mql5.com/en/docs/trading/ordersend",
+      "access": "fetched"
+    },
+    "M2": {
+      "title": "MetaQuotes: OrderCheck",
+      "url": "https://www.mql5.com/en/docs/trading/ordercheck",
+      "access": "fetched"
+    },
+    "M3": {
+      "title": "MetaQuotes: MqlTradeRequest",
+      "url": "https://www.mql5.com/en/docs/constants/structures/mqltraderequest",
+      "access": "fetched"
+    },
+    "M4": {
+      "title": "MetaQuotes: MqlTradeResult",
+      "url": "https://www.mql5.com/en/docs/constants/structures/mqltraderesult",
+      "access": "fetched"
+    },
+    "M5": {
+      "title": "MetaQuotes: trade server return codes",
+      "url": "https://www.mql5.com/en/docs/constants/errorswarnings/enum_trade_return_codes",
+      "access": "fetched"
+    },
+    "M6": {
+      "title": "MetaQuotes: OnTradeTransaction",
+      "url": "https://www.mql5.com/en/docs/event_handlers/ontradetransaction",
+      "access": "fetched"
+    },
+    "M7": {
+      "title": "MetaTrader 5 Help: Expert Advisors settings",
+      "url": "https://www.metatrader5.com/en/terminal/help/algotrading/trade_robots_indicators",
+      "access": "fetched"
+    },
+    "M8": {
+      "title": "MetaTrader 5 Help: Strategy Testing",
+      "url": "https://metatrader5.com/en/terminal/help/algotrading/testing",
+      "access": "fetched"
+    },
+    "M9": {
+      "title": "MetaQuotes: Strategy Tester overview",
+      "url": "https://metaquotes.net/en/metatrader5/algorithmic-trading/tester",
+      "access": "fetched"
+    },
+    "M10": {
+      "title": "MetaQuotes: deal properties",
+      "url": "https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties",
+      "access": "cited by ARX docs; not re-fetched in this research"
+    },
+    "M11": {
+      "title": "MetaQuotes: position properties",
+      "url": "https://www.mql5.com/en/docs/constants/tradingconstants/positionproperties",
+      "access": "cited by ARX docs; not re-fetched in this research"
+    },
+    "T1": {
+      "title": "TradingView Pine Script: alerts",
+      "url": "https://tradingview.com/pine-script-docs/concepts/alerts",
+      "access": "fetched"
+    },
+    "T2": {
+      "title": "TradingView Pine Script: strategies",
+      "url": "https://www.tradingview.com/pine-script-docs/concepts/strategies/",
+      "access": "fetched (strategy.risk.* section not retrieved)"
+    },
+    "T3": {
+      "title": "TradingView Help: webhook alerts",
+      "url": "https://www.tradingview.com/support/solutions/43000529348-how-to-configure-webhook-alerts/",
+      "access": "fetched"
+    },
+    "T4": {
+      "title": "TradingView: Broker Integration API",
+      "url": "https://www.tradingview.com/broker-api-docs/",
+      "access": "fetched (landing page only)"
+    },
+    "Q1": {
+      "title": "QuantConnect: supported risk models",
+      "url": "https://www.quantconnect.com/docs/v2/writing-algorithms/algorithm-framework/risk-management/supported-models",
+      "access": "fetched; only model names retrievable, parameters not rendered"
+    },
+    "Q2": {
+      "title": "QuantConnect: risk management key concepts",
+      "url": "https://www.quantconnect.com/docs/v2/writing-algorithms/algorithm-framework/risk-management/key-concepts",
+      "access": "fetched (partial)"
+    },
+    "Q3": {
+      "title": "QuantConnect: order tickets",
+      "url": "https://quantconnect.com/docs/v2/writing-algorithms/trading-and-orders/order-management/order-tickets",
+      "access": "fetched (tracking section only)"
+    },
+    "Q4": {
+      "title": "QuantConnect: live reconciliation",
+      "url": "https://www.quantconnect.com/docs/v2/writing-algorithms/live-trading/reconciliation",
+      "access": "fetched"
+    },
+    "Q5": {
+      "title": "QuantConnect: cloud live trading getting started",
+      "url": "https://www.quantconnect.com/docs/v2/cloud-platform/live-trading/getting-started",
+      "access": "fetched"
+    },
+    "N1": {
+      "title": "NinjaTrader 8 Help: ATM Strategy",
+      "url": "https://static.ninjatrader.com/support/helpGuides/nt8/atm_strategy.htm",
+      "access": "fetched"
+    },
+    "N2": {
+      "title": "NinjaTrader 8 Help: server-side vs local ATMs",
+      "url": "https://static.ninjatrader.com/support/helpGuides/nt8/server-side-vs-local-atms.htm",
+      "access": "fetched"
+    },
+    "N3": {
+      "title": "NinjaTrader 8 Help: server-side ATM strategy",
+      "url": "https://static.ninjatrader.com/support/helpGuides/nt8/server-side-atm-strategy.htm",
+      "access": "fetched"
+    },
+    "N4": {
+      "title": "NinjaTrader 8 Help: StartBehavior",
+      "url": "https://static.ninjatrader.com/support/helpGuides/nt8/startbehavior.htm",
+      "access": "fetched"
+    },
+    "N5": {
+      "title": "NinjaTrader support forum (staff answers): account Daily Loss Limit",
+      "url": "https://forum.ninjatrader.com/forum/ninjatrader-8/platform-technical-support-aa/1238947-question-about-the-daily-loss-limit-in-account-risk-settings?p=1239084",
+      "access": "fetched; official forum staff statements, not the help guide"
+    },
+    "N6": {
+      "title": "NinjaTrader partner docs: post-trade risk (prop-firm management)",
+      "url": "https://partner.ninjatrader.com/overview/prop-firm-management/post-trade-risk",
+      "access": "fetched; partner/prop-firm API, not retail desktop"
+    },
+    "C1": {
+      "title": "cTrader Algo: TradeResult",
+      "url": "https://help.ctrader.com/ctrader-algo/references/Trading/TradeResult/",
+      "access": "fetched"
+    },
+    "C2": {
+      "title": "cTrader Algo: ProtectionType",
+      "url": "https://help.ctrader.com/ctrader-algo/references/Trading/ProtectionType",
+      "access": "fetched"
+    },
+    "C3": {
+      "title": "cTrader Algo: cBot trading operations",
+      "url": "https://help.ctrader.com/ctrader-algo/how-tos/cbots/cbot-trading-operations/",
+      "access": "fetched"
+    },
+    "C4": {
+      "title": "cTrader Algo: parallel order execution",
+      "url": "https://help.ctrader.com/ctrader-algo/how-tos/cbots/parallel-order-execution/",
+      "access": "fetched"
+    },
+    "C5": {
+      "title": "cTrader Algo: cloud features",
+      "url": "https://help.ctrader.com/ctrader-algo/documentation/cloud-features/",
+      "access": "fetched"
+    },
+    "C6": {
+      "title": "cTrader Algo: backtest a cBot",
+      "url": "https://help.ctrader.com/ctrader-algo/how-tos/cbots/backtest-a-cbot/",
+      "access": "fetched"
+    },
+    "I1": {
+      "title": "IBKR TWS API: order precautions",
+      "url": "https://www.interactivebrokers.com/docs/tws-api/doc/tws-settings/order-precautions",
+      "access": "fetched"
+    },
+    "I2": {
+      "title": "IBKR TWS API: ApiPrecautionsConfig",
+      "url": "https://www.interactivebrokers.com/docs/tws-api/protobuf/api-precautions-config.md",
+      "access": "fetched"
+    },
+    "I3": {
+      "title": "IBKR TWS API: ApiSettingsConfig",
+      "url": "https://www.interactivebrokers.com/docs/tws-api/protobuf/api-settings-config.md",
+      "access": "fetched"
+    },
+    "I4": {
+      "title": "IBKR TWS API: error codes",
+      "url": "https://www.interactivebrokers.com/docs/tws-api/doc/error-handling/error-codes",
+      "access": "fetched (first 100k chars)"
+    },
+    "I5": {
+      "title": "IBKR TWS Users' Guide (archived): precautionary settings",
+      "url": "https://interactivebrokers.co.uk/en/software/tws.bak/usersguidebook/configuretws/define_precautionary_settings.htm",
+      "access": "fetched; archived guide, may be stale"
+    },
+    "I6": {
+      "title": "IBKR Campus: configuring TWS presets",
+      "url": "https://ibkrcampus.com/campus/trading-lessons/configuring-tws-presets/",
+      "access": "fetched"
+    },
+    "F1": {
+      "title": "Freqtrade: plugins / protections",
+      "url": "https://www.freqtrade.io/en/stable/plugins/",
+      "access": "fetched"
+    },
+    "F2": {
+      "title": "Freqtrade: stoploss",
+      "url": "https://www.freqtrade.io/en/stable/stoploss/",
+      "access": "fetched"
+    },
+    "F3": {
+      "title": "Freqtrade: configuration",
+      "url": "https://www.freqtrade.io/en/stable/configuration/",
+      "access": "fetched (first 100k chars)"
+    },
+    "F4": {
+      "title": "Freqtrade: Telegram usage",
+      "url": "https://www.freqtrade.io/en/stable/telegram-usage/",
+      "access": "fetched"
+    }
+  },
+  "rows": [
+    {
+      "id": "EXQ-1",
+      "dimension": "execution quality",
+      "scorecard_dimension": "accuracy",
+      "capability": "Pre-submission broker check of margin and request validity",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "OrderCheck() validates a request and returns projected balance, equity, margin, free margin and margin level plus a return code before OrderSend(); a true result is not a promise of execution.",
+          "sources": [
+            "M1",
+            "M2"
+          ]
+        },
+        {
+          "product": "Interactive Brokers",
+          "approach": "TWS order precautions warn/confirm before transmission; API users can bypass them individually (bypassOrderPrecautions etc.).",
+          "sources": [
+            "I1",
+            "I2"
+          ]
+        }
+      ],
+      "arx_current_state": "Server-side broker symbol guard (min/max volume, volume step, freeze distance, SL/TP proximity) runs in the live pipeline preflight; the EA runs its own RunPreflight before CTrade. No OrderCheck() call exists in any EA, so projected margin/free margin is never checked at the terminal.",
+      "arx_evidence": [
+        "lib/domain/src/safety-contracts/preTradeBrokerGuard.ts",
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md (Layer 3)",
+        "mt5-bridge/ARX_AI_Universal_Agent_v154.mq5 (RunPreflight, line ~680)",
+        "grep: no OrderCheck( in mt5-bridge/"
+      ],
+      "arx_evidence_level": "offline-tested (server guard); EA preflight compiled only in C++ harness; broker-unverified",
+      "acceptance_criterion": "Every automated entry runs OrderCheck() (or equivalent margin projection) immediately before submission; a failing check refuses with the broker retcode recorded; extracted-handler tests cover insufficient margin, invalid volume, invalid stops and auto-trading disabled (10027).",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "EXQ-2",
+      "dimension": "execution quality",
+      "scorecard_dimension": "accuracy",
+      "capability": "Maximum slippage (price deviation) cap on market orders",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "MqlTradeRequest.deviation sets the maximum deviation in points; it is a required field only for Request and Instant execution modes, not Market/Exchange execution.",
+          "sources": [
+            "M3"
+          ]
+        },
+        {
+          "product": "cTrader",
+          "approach": "Market orders are sent with optional parameters via ExecuteMarketOrder; the trading-operations page does not name a slippage parameter (market-range semantics unverified).",
+          "sources": [
+            "C3"
+          ]
+        }
+      ],
+      "arx_current_state": "v131 live poll applies SetDeviationInPoints with a compile-time ceiling of 20 points that the server can only tighten; v154 uses an input MaxSlippagePoints (default 30). Because deviation is ignored on market-execution symbols, ARX has no post-fill slippage check.",
+      "arx_evidence": [
+        "mt5-bridge/ReplitMT5BridgeEA_v131.mq5 (ARX_MAX_DEVIATION_POINTS 20, lines 138-150, 1560)",
+        "mt5-bridge/ARX_AI_Universal_Agent_v154.mq5 (MaxSlippagePoints line 83)"
+      ],
+      "arx_evidence_level": "source review only; broker-unverified",
+      "acceptance_criterion": "(a) Deviation cap applied on every automated entry; (b) for market-execution symbols, measured |fill price - requested price| is recorded per fill and fills beyond the cap raise an execution-quality event; (c) demo-broker test shows both behaviours.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": "Parity only for request/instant execution symbols; market-execution coverage is missing."
+    },
+    {
+      "id": "EXQ-3",
+      "dimension": "execution quality",
+      "scorecard_dimension": "accuracy",
+      "capability": "Spread re-check between decision and dispatch",
+      "competitors": [
+        {
+          "product": "Interactive Brokers",
+          "approach": "Precautions flag limit orders too far from the market by percentage or number of ticks.",
+          "sources": [
+            "I5"
+          ]
+        },
+        {
+          "product": "cTrader",
+          "approach": "Backtests can use fixed, live-symbol or random spread, so spread sensitivity can be evaluated before deployment.",
+          "sources": [
+            "C6"
+          ]
+        }
+      ],
+      "arx_current_state": "Decision engine still passes maxSpreadPoints: null; the agent executor has no spread check (audit gap G1 remains open). The EA deviation cap is the only backstop.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/decisionEngine.ts:258",
+        "artifacts/api-server/src/lib/selfTrade/agentExecutor.ts (no spread reference)",
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §10 G1"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "Executor refuses with SPREAD_TOO_WIDE when observed live spread (with source and timestamp) exceeds the agent limit, and refuses when spread is unobservable; tests cover wide, stale and missing quotes.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "EXQ-4",
+      "dimension": "execution quality",
+      "scorecard_dimension": "accuracy",
+      "capability": "Truthful fill result: executed volume, price, deal ID and partial fills",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "MqlTradeResult carries retcode, deal, order, broker-confirmed volume and price, request_id and retcode_external; retcode 10009 is DONE and 10010 DONE_PARTIAL.",
+          "sources": [
+            "M4",
+            "M5"
+          ]
+        },
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Order tickets update automatically; PARTIALLY_FILLED is a distinct status and an order is closed only when filled, canceled or invalid.",
+          "sources": [
+            "Q3"
+          ]
+        },
+        {
+          "product": "cTrader",
+          "approach": "TradeResult exposes IsSuccessful, Error, Position and PendingOrder.",
+          "sources": [
+            "C1"
+          ]
+        }
+      ],
+      "arx_current_state": "Server lifecycle refuses to treat partial or unknown outcomes as full fills. Terminal side is weaker: v131 reports LIVE_FILLED from the CTrade boolean and sends the requested lot as executedVolume for entries; v154 maps every non-10009 retcode, including 10010 DONE_PARTIAL, to REJECTED and its result payload omits ResultVolume/ResultPrice (deal ID only inside a text comment).",
+      "arx_evidence": [
+        "mt5-bridge/ReplitMT5BridgeEA_v131.mq5:759-773,825",
+        "mt5-bridge/ARX_AI_Universal_Agent_v154.mq5:825-838,1393-1425",
+        "docs/SELF_TRADING_RELIABILITY_2026_10_26.md (evidence model)",
+        "docs/SELF_TRADE_TERMINAL_TARGET_PREFLIGHT.md (remaining gaps)"
+      ],
+      "arx_evidence_level": "server rules offline-tested; terminal behaviour source-reviewed; broker-unverified",
+      "acceptance_criterion": "EA maps 10009/10010/10008/other retcodes to FILLED/PARTIAL/PLACED/REJECTED-or-UNKNOWN; results carry ResultVolume, ResultPrice, ResultDeal, position identifier and request time; server never records executed volume it did not receive; extracted-handler test matrix covers every retcode in the MQL5 table; demo test reproduces a partial or rejected fill.",
+      "gap_status": "behind",
+      "notes": "Highest-risk finding: a partial fill reported as REJECTED can leave real exposure that ARX believes does not exist."
+    },
+    {
+      "id": "EXQ-5",
+      "dimension": "execution quality",
+      "scorecard_dimension": "accuracy",
+      "capability": "Execution-quality measurement (slippage, latency, live vs simulation)",
+      "competitors": [
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Runs an out-of-sample backtest in parallel with each live deployment and overlays live and backtest equity and fills.",
+          "sources": [
+            "Q4"
+          ]
+        },
+        {
+          "product": "MetaTrader 5",
+          "approach": "Tester can model zero, fixed or random execution delay (0-8 s 90% of the time, 9-18 s otherwise).",
+          "sources": [
+            "M8"
+          ]
+        }
+      ],
+      "arx_current_state": "No per-fill slippage or latency record exists for self-trade executions. missionExecutionQuality is a block/downgrade pre-check for Profit Mission and is not imported by the self-trade executor.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/missionExecutionQuality.ts (header)",
+        "grep: imported only by missionAgents.ts",
+        "artifacts/api-server/src/lib/selfTrade/agentReconciliation.ts (fill prices only)"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "Per automated fill: requested price, fill price, signed slippage in points and account currency, decision→claim→pickup→broker-result timestamps; median/p95/p99 reported per symbol and broker; dashboard and weekly report; live-vs-simulation divergence computed for each agent.",
+      "gap_status": "not measured",
+      "notes": ""
+    },
+    {
+      "id": "EXQ-6",
+      "dimension": "execution quality",
+      "scorecard_dimension": "reliability",
+      "capability": "Asynchronous broker events processed without ordering assumptions",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "OnTradeTransaction arrival order is not guaranteed and the queue holds 1024 elements; one request can produce several transactions.",
+          "sources": [
+            "M6"
+          ]
+        },
+        {
+          "product": "cTrader",
+          "approach": "ExecuteMarketOrderAsync returns a TradeOperation with IsExecuting and an optional completion callback.",
+          "sources": [
+            "C4"
+          ]
+        }
+      ],
+      "arx_current_state": "Settlement treats receipt sequence as server observation order, not broker order; identical retries are idempotent and contradictions are retained as evidence. The EA does not use OnTradeTransaction for automated results.",
+      "arx_evidence": [
+        "docs/RESULT_SETTLEMENT_OUTBOX.md",
+        "docs/SELF_TRADE_TERMINAL_TARGET_PREFLIGHT.md"
+      ],
+      "arx_evidence_level": "offline-tested (PostgreSQL fixtures); broker-unverified",
+      "acceptance_criterion": "Fault tests deliver duplicated, reordered and dropped result events and show no double application, no lost exposure and HELD state for contradictions; demo test confirms with real terminal events.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": ""
+    },
+    {
+      "id": "SIZE-1",
+      "dimension": "position sizing",
+      "scorecard_dimension": "accuracy",
+      "capability": "Risk-based lot sizing from stop distance, contract size and account-currency conversion",
+      "competitors": [
+        {
+          "product": "Freqtrade",
+          "approach": "stake_amount per trade (fixed or 'unlimited') and tradable_balance_ratio (default 0.99) cap the capital used.",
+          "sources": [
+            "F3"
+          ]
+        },
+        {
+          "product": "NinjaTrader",
+          "approach": "ATM strategies size stop and target orders to the position and resize them when the position is added to.",
+          "sources": [
+            "N1"
+          ]
+        },
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Risk models receive and adjust PortfolioTarget objects from portfolio construction, chained in order.",
+          "sources": [
+            "Q2"
+          ]
+        }
+      ],
+      "arx_current_state": "computeRiskAwareLot divides an account-currency risk budget by stop distance × contract size × quote→account FX, rounds down to lot step, and refuses with NO_CONTRACT_SPEC or NO_QUOTE_FX rather than guessing. AACI may reduce size; quota regimes apply multipliers.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/agentExecutor.ts:100-140,311-320",
+        "lib/domain/src/self-trade/riskAwareLotSizer.ts:99",
+        "artifacts/api-server/src/lib/selfTrade/__qa__/entrySizerQuoteFx.test.ts"
+      ],
+      "arx_evidence_level": "offline-tested; broker-unverified",
+      "acceptance_criterion": "For each supported symbol class, sized lot × stop distance × value-per-lot equals the risk budget within one lot step (never above); verified against broker contract specs on a demo account for at least FX majors, JPY crosses, metals and indices.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": "Design refuses unknown contract specs, which the cited competitor docs do not describe; superiority is not claimed without broker verification."
+    },
+    {
+      "id": "SIZE-2",
+      "dimension": "position sizing",
+      "scorecard_dimension": "accuracy",
+      "capability": "Margin- and notional-aware capacity",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "OrderCheck returns projected margin, free margin and margin level.",
+          "sources": [
+            "M2"
+          ]
+        },
+        {
+          "product": "Interactive Brokers",
+          "approach": "Total Value Limit and Algorithm Total Value Limit (default 10× the manual limit, per archived guide) gate order notional.",
+          "sources": [
+            "I5",
+            "I6"
+          ]
+        }
+      ],
+      "arx_current_state": "Agent admission reserves position count and daily attempt headroom, not cash margin or portfolio VaR. The shared Risk Governor applies leverage ceilings (gross notional/equity 30, single symbol 15).",
+      "arx_evidence": [
+        "docs/SELF_TRADING_ENTRY_CAPACITY_2026_10_26.md (still unresolved)",
+        "artifacts/api-server/src/lib/riskGovernor/preTrade.ts:82-83"
+      ],
+      "arx_evidence_level": "offline-tested (governor); agent-level margin absent",
+      "acceptance_criterion": "Agent admission includes pending + open margin from broker-reported margin requirements; refusals when projected free margin < configured floor; test with concurrent agents sharing one account.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "SIZE-3",
+      "dimension": "position sizing",
+      "scorecard_dimension": "accuracy",
+      "capability": "Volume normalisation to broker min/max/step",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "TRADE_RETCODE_LIMIT_VOLUME (10034) and invalid-volume refusals come from the trade server.",
+          "sources": [
+            "M5"
+          ]
+        }
+      ],
+      "arx_current_state": "Sizer rounds down to lot step; pre-trade broker guard refuses VOLUME_OFF_STEP and out-of-range volumes; EA preflight rechecks.",
+      "arx_evidence": [
+        "lib/domain/src/self-trade/riskAwareLotSizer.ts:99",
+        "lib/domain/src/safety-contracts/preTradeBrokerGuard.ts:30"
+      ],
+      "arx_evidence_level": "offline-tested; broker-unverified",
+      "acceptance_criterion": "Zero broker volume rejections across a demo run covering every enabled symbol; any 10014/10034 rejection is recorded with symbol specs.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": ""
+    },
+    {
+      "id": "RISK-1",
+      "dimension": "risk controls",
+      "scorecard_dimension": "reliability",
+      "capability": "Daily loss limit with automatic flatten",
+      "competitors": [
+        {
+          "product": "NinjaTrader",
+          "approach": "Account Daily Loss Limit (NinjaTrader Brokerage accounts): on breach working orders are cancelled, positions liquidated and later orders rejected for the session; staff state no mobile/email notification is sent.",
+          "sources": [
+            "N5"
+          ]
+        },
+        {
+          "product": "NinjaTrader partner (prop-firm)",
+          "approach": "dailyLossAutoLiq / dailyLossPercentageAutoLiq trigger liquidation, unlock at next open; alert and liquidate-only thresholds below.",
+          "sources": [
+            "N6"
+          ]
+        },
+        {
+          "product": "Freqtrade",
+          "approach": "MaxDrawdown protection locks trading for a duration after drawdown over a lookback exceeds max_allowed_drawdown; equity mode recommended.",
+          "sources": [
+            "F1"
+          ]
+        },
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "A Maximum Portfolio Drawdown risk model exists (parameters not retrievable in this research).",
+          "sources": [
+            "Q1"
+          ]
+        }
+      ],
+      "arx_current_state": "Phase B gate DAILY_LOSS_LIMIT_REACHED blocks new dispatch at the user-level realised daily cap; the agent gate tracks agent daily P/L; accounting withholds daily loss when outcomes are unknown. A breach blocks entries but does not liquidate open positions.",
+      "arx_evidence": [
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §5 Layer 4 gate 15",
+        "docs/SELF_TRADE_ACCOUNTING_REPORTING.md",
+        "artifacts/api-server/src/lib/live/emergencyClose.ts (manual only)"
+      ],
+      "arx_evidence_level": "offline-tested; broker-unverified",
+      "acceptance_criterion": "(a) Breach detected from realised + floating P/L including costs within one evaluation cycle; (b) owner-configurable action: block entries, or block and flatten via the gated emergency-close path; (c) measured time from breach to all positions confirmed closed on demo, p95 reported; (d) operator notification on breach.",
+      "gap_status": "behind",
+      "notes": "Entry blocking reaches parity in design; auto-flatten and floating-P/L inclusion are absent."
+    },
+    {
+      "id": "RISK-2",
+      "dimension": "risk controls",
+      "scorecard_dimension": "reliability",
+      "capability": "Agent weekly / rolling drawdown cap",
+      "competitors": [
+        {
+          "product": "NinjaTrader partner (prop-firm)",
+          "approach": "Weekly loss auto-liquidation locks the account until the Sunday open; trailing max drawdown in EOD or real-time mode.",
+          "sources": [
+            "N6"
+          ]
+        },
+        {
+          "product": "Freqtrade",
+          "approach": "MaxDrawdown evaluates any lookback window (lookback_period or candles).",
+          "sources": [
+            "F1"
+          ]
+        }
+      ],
+      "arx_current_state": "maxWeeklyLossUsd is stored in agent settings and profiles but is not evaluated by the execution gate or permission evaluator (audit gap G5 still open).",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/profiles.ts:22,50-138",
+        "artifacts/api-server/src/lib/selfTrade/service.ts:94,131",
+        "grep: no weekly reference in executionGate.ts / executionPermission.ts"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "WEEKLY_LOSS_CAP_REACHED refuses entries when the rolling 7-day realised (and optionally floating) agent loss reaches the cap; unknown accounting refuses; PostgreSQL tests at UTC boundaries.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "RISK-3",
+      "dimension": "risk controls",
+      "scorecard_dimension": "reliability",
+      "capability": "Loss-streak, cooldown and per-instrument locks",
+      "competitors": [
+        {
+          "product": "Freqtrade",
+          "approach": "StoplossGuard (N stoplosses in lookback → lock, global or per pair), CooldownPeriod (per-pair re-entry lock), LowProfitPairs; supported in backtesting with --enable-protections; /locks and /unlock.",
+          "sources": [
+            "F1",
+            "F4"
+          ]
+        }
+      ],
+      "arx_current_state": "Quota engine moves agents into RECOVERY/PROTECT regimes that reduce size near loss caps; SYMBOL- and STRATEGY-scoped kill switches exist. No automatic time-boxed per-symbol cooldown lock after a stop-out was found in the reviewed files.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/agentQuotaEngine.ts",
+        "artifacts/api-server/src/lib/selfTrade/killSwitchGate.ts:34"
+      ],
+      "arx_evidence_level": "offline-tested (regimes)",
+      "acceptance_criterion": "Configurable automatic lock after N losing exits per agent/symbol within a lookback, with audited expiry; included in the agent replay harness so its effect is measured out of sample.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "RISK-4",
+      "dimension": "risk controls",
+      "scorecard_dimension": "reliability",
+      "capability": "Mandatory protective stop held at the broker",
+      "competitors": [
+        {
+          "product": "Freqtrade",
+          "approach": "stoploss_on_exchange places the stop on the exchange after entry fills; on placement failure emergency_exit (default market) exits; re-creates a manually cancelled stop every stoploss_on_exchange_interval (default 60 s).",
+          "sources": [
+            "F2"
+          ]
+        },
+        {
+          "product": "NinjaTrader",
+          "approach": "ATM strategies submit stop and target automatically; server-side ATMs attach them on partial or full fill and cancel the sibling when one fills.",
+          "sources": [
+            "N1",
+            "N2",
+            "N3"
+          ]
+        },
+        {
+          "product": "cTrader",
+          "approach": "ProtectionType Relative/Absolute SL/TP on orders and positions.",
+          "sources": [
+            "C2"
+          ]
+        }
+      ],
+      "arx_current_state": "No thesis or no stop → refusal (NO_THESIS, NO_PROTECTIVE_STOP); Phase B MISSING_STOP_LOSS (admin override exists); SL/TP are sent on the entry request itself; stop changes are recorded only after a settled MODIFY and a matching or stronger observed broker stop.",
+      "arx_evidence": [
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §5",
+        "docs/SELF_TRADING_RELIABILITY_2026_10_26.md (defect 3)",
+        "mt5-bridge/ARX_AI_Universal_Agent_v154.mq5:820-822"
+      ],
+      "arx_evidence_level": "offline-tested; broker-unverified",
+      "acceptance_criterion": "On demo: 100% of automated entries show a broker-side SL in the position snapshot within one poll; a missing or removed SL is detected and either restored or the position closed within a configured time; admin override use is audited and counted.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": "No detection/restoration loop for an SL removed after entry was found."
+    },
+    {
+      "id": "RISK-5",
+      "dimension": "risk controls",
+      "scorecard_dimension": "reliability",
+      "capability": "Order size and value limits (fat-finger protection)",
+      "competitors": [
+        {
+          "product": "Interactive Brokers",
+          "approach": "Size Limit, Total Value Limit, Percentage / Number of Ticks away from market, separate algorithm size/value limits; error 383 for size-constraint violations.",
+          "sources": [
+            "I4",
+            "I5",
+            "I6"
+          ]
+        }
+      ],
+      "arx_current_state": "Per-symbol max live lot (Phase B), platform lot ceiling, arming confirmed max lot ≤ 1.0, governor leverage caps, and an anomaly screen that blocks lots far above baseline with fail-safe BLOCK.",
+      "arx_evidence": [
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §5 (gate 14, Layer 0 anomaly)",
+        "docs/TIER1_RISK_GOVERNOR_SOURCE.md",
+        "artifacts/api-server/src/lib/riskGovernor/preTrade.ts:82-83"
+      ],
+      "arx_evidence_level": "offline-tested; broker-unverified",
+      "acceptance_criterion": "Table-driven tests show refusal at limit+1 step for lot, notional and leverage on every automated path (entry, modify, close-by-reverse); audit row names the limit in force.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": ""
+    },
+    {
+      "id": "RISK-6",
+      "dimension": "risk controls",
+      "scorecard_dimension": "reliability",
+      "capability": "Event/news risk re-check at dispatch",
+      "competitors": [
+        {
+          "product": "(none found)",
+          "approach": "None of the researched official docs describe a built-in economic-calendar gate for automated orders.",
+          "sources": []
+        }
+      ],
+      "arx_current_state": "News risk is captured at decision time from a hard-coded schedule; it is not re-evaluated before dispatch and there is no live calendar provider (audit gaps G2, G3 still open).",
+      "arx_evidence": [
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §10 G2/G3",
+        "artifacts/api-server/src/lib/selfTrade/agentExecutor.ts (no news reference)"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "Executor re-reads news risk immediately before draft and refuses on escalation; provider-unavailable state is surfaced; tests for event starting between decision and dispatch.",
+      "gap_status": "not measured",
+      "notes": "No competitor baseline; kept because the audit rates it a promotion blocker."
+    },
+    {
+      "id": "RISK-7",
+      "dimension": "risk controls",
+      "scorecard_dimension": "scalability",
+      "capability": "Concurrent-position and in-flight capacity limits",
+      "competitors": [
+        {
+          "product": "Freqtrade",
+          "approach": "max_open_trades; only one open trade per pair.",
+          "sources": [
+            "F3"
+          ]
+        }
+      ],
+      "arx_current_state": "Checking and reserving capacity happen in one PostgreSQL transaction under the agent lock; pending, dispatched and filled-unclosed entries count; elapsed time never releases capacity.",
+      "arx_evidence": [
+        "docs/SELF_TRADING_ENTRY_CAPACITY_2026_10_26.md",
+        "artifacts/api-server/src/lib/selfTrade/entryReservation.ts",
+        "artifacts/api-server/src/lib/selfTrade/__qa__/entryReservation.postgres.test.ts"
+      ],
+      "arx_evidence_level": "offline-tested (24-way PostgreSQL contention); broker-unverified",
+      "acceptance_criterion": "Under N concurrent cycles (N ≥ 24) no agent exceeds its concurrent or daily cap, including after process restart and UTC rollover; repeated in a deployed staging environment.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": "Competitor concurrency semantics are not documented, so no 'ahead' claim."
+    },
+    {
+      "id": "DUP-1",
+      "dimension": "duplicate prevention",
+      "scorecard_dimension": "reliability",
+      "capability": "Server-side idempotent order intent and management claims",
+      "competitors": [
+        {
+          "product": "Interactive Brokers",
+          "approach": "Order IDs must increase per client; a reused or lower ID is rejected with error 103 'Duplicate order ID'.",
+          "sources": [
+            "I4"
+          ]
+        },
+        {
+          "product": "MetaTrader 5",
+          "approach": "request_id assigned by the terminal links a call to its result, mainly for OrderSendAsync.",
+          "sources": [
+            "M4"
+          ]
+        }
+      ],
+      "arx_current_state": "Partial-unique idempotency key per agent; a decision ID is consumed once an execution row commits; draft creation and reservation link are atomic; durable compare-and-set management claims survive restart and are never released by age or timeout.",
+      "arx_evidence": [
+        "docs/SELF_TRADING_ENTRY_CAPACITY_2026_10_26.md",
+        "docs/SELF_TRADING_DISPATCH_AUTHORITY_2026_10_26.md",
+        "docs/SELF_TRADE_MANAGEMENT_TARGET.md",
+        "docs/SELF_TRADING_RELIABILITY_2026_10_26.md (defect 4)"
+      ],
+      "arx_evidence_level": "offline-tested (8-way and 24-way PostgreSQL contention); broker-unverified",
+      "acceptance_criterion": "Zero duplicate broker orders in fault-injection runs (crash after claim, lost response, retry storm) at the server boundary; replicated against a demo broker.",
+      "gap_status": "ahead",
+      "notes": "'Ahead' is limited to documented server-side semantics: IBKR's documented check rejects reused IDs, not logically duplicate intents. Not established end to end (see DUP-2)."
+    },
+    {
+      "id": "DUP-2",
+      "dimension": "duplicate prevention",
+      "scorecard_dimension": "reliability",
+      "capability": "Terminal-side deduplication across EA restart",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "Magic number in each request lets an EA identify and filter its own orders/positions (e.g. after restart).",
+          "sources": [
+            "M1",
+            "M3"
+          ]
+        },
+        {
+          "product": "Interactive Brokers",
+          "approach": "maintainAndResubmitOrdersOnReconnect resubmits orders attempted while disconnected.",
+          "sources": [
+            "I3"
+          ]
+        }
+      ],
+      "arx_current_state": "v131 live deduplication is a RAM ring buffer (lost on restart); v154 duplicate handling does not replay durable original outcomes.",
+      "arx_evidence": [
+        "mt5-bridge/ReplitMT5BridgeEA_v131.mq5:587-595",
+        "docs/SELF_TRADE_TERMINAL_TARGET_PREFLIGHT.md (remaining gaps)"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "EA persists commandId → outcome durably (file or terminal global variables) before acknowledging; after a forced EA restart mid-command, a redelivered command returns the original outcome and never re-submits; extracted-handler and demo tests.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "DUP-3",
+      "dimension": "duplicate prevention",
+      "scorecard_dimension": "integration",
+      "capability": "Ownership tagging of automated orders",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "MqlTradeRequest.magic is the Expert Advisor ID for grouping its orders.",
+          "sources": [
+            "M3"
+          ]
+        },
+        {
+          "product": "cTrader",
+          "approach": "Trading events fire for both cBot-initiated and manual activity; label semantics not verified in this research.",
+          "sources": [
+            "C3"
+          ]
+        }
+      ],
+      "arx_current_state": "v150+ EAs set MagicNumber (v154 default 73154777) and an ARX comment; server attribution (agent, decision, owner) is covered by the command integrity hash/signature.",
+      "arx_evidence": [
+        "mt5-bridge/ARX_AI_Universal_Agent_v154.mq5:82,187",
+        "artifacts/api-server/src/lib/security/commandIntegrity.ts"
+      ],
+      "arx_evidence_level": "offline-tested (integrity); broker-unverified",
+      "acceptance_criterion": "Every broker deal produced by ARX automation can be attributed to one command and agent from broker history alone (magic + comment/position identifier) in a demo reconciliation report.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": ""
+    },
+    {
+      "id": "REC-1",
+      "dimension": "reconciliation",
+      "scorecard_dimension": "reliability",
+      "capability": "Strategy/account position synchronisation at start-up",
+      "competitors": [
+        {
+          "product": "NinjaTrader",
+          "approach": "StartBehavior: WaitUntilFlat (default), WaitUntilFlatSynchronizeAccount, ImmediatelySubmit, ImmediatelySubmitSynchronizeAccount, AdoptAccountPosition.",
+          "sources": [
+            "N4"
+          ]
+        },
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Deployments can be seeded with existing cash and holdings; restarts carry cash, holdings and some open orders.",
+          "sources": [
+            "Q5"
+          ]
+        },
+        {
+          "product": "Freqtrade",
+          "approach": "Open orders are updated on start-up unless exchange.skip_open_order_update is set.",
+          "sources": [
+            "F3"
+          ]
+        }
+      ],
+      "arx_current_state": "Agent reconciliation advances executions only from owned command evidence; snapshot ingestion and ghost reconciliation exist. Position uniqueness, ingestion and backfill still key on (user, ticket), and the MT5 position identifier is discarded from the newer EA snapshot.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/agentReconciliation.ts",
+        "docs/SELF_TRADING_DISPATCH_AUTHORITY_2026_10_26.md (slice C)",
+        "docs/SELF_TRADE_TARGET_CONSUMERS.md"
+      ],
+      "arx_evidence_level": "offline-tested; broker-unverified",
+      "acceptance_criterion": "Account-scoped identity (connection, login, actual server, position identifier); a restart with two accounts holding equal ticket numbers produces zero cross-account matches; documented start-up policy equivalent to wait-until-flat / adopt.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "REC-2",
+      "dimension": "reconciliation",
+      "scorecard_dimension": "reliability",
+      "capability": "Broker-vs-app mismatch handling",
+      "competitors": [
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Restart reloads holdings from the brokerage; algorithm state itself is not saved.",
+          "sources": [
+            "Q5"
+          ]
+        }
+      ],
+      "arx_current_state": "Lost-command or position mismatch pauses management (no auto-close); unknown evidence and exhausted retries stay HELD; accounting holds block new entries for the affected agent ledger.",
+      "arx_evidence": [
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §8",
+        "docs/RESULT_SETTLEMENT_OUTBOX.md",
+        "docs/SELF_TRADE_TARGET_CONSUMERS.md"
+      ],
+      "arx_evidence_level": "offline-tested; broker-unverified",
+      "acceptance_criterion": "Injected mismatches (external close, manual partial close, missing position, extra position) are each detected within one reconciliation cycle and surfaced with an operator action; measured detection lag p95.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": ""
+    },
+    {
+      "id": "REC-3",
+      "dimension": "reconciliation",
+      "scorecard_dimension": "accuracy",
+      "capability": "Realised P/L reconciled to broker deals and costs",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "Deal properties separate profit, commission, swap and fee with position identity (per ARX's prior research).",
+          "sources": [
+            "M10"
+          ]
+        }
+      ],
+      "arx_current_state": "Accounting labels RECORDED / INCOMPLETE / UNAVAILABLE and never substitutes zero; broker deal completeness, corrections and costs remain unverified; bound automatic closes record null profit plus a ledger hold.",
+      "arx_evidence": [
+        "docs/SELF_TRADE_ACCOUNTING_REPORTING.md",
+        "docs/SELF_TRADE_TARGET_CONSUMERS.md"
+      ],
+      "arx_evidence_level": "offline-tested (PostgreSQL)",
+      "acceptance_criterion": "For a demo period, every closed automated position matches broker deal history on volume, price, commission, swap and fee to the cent; mismatches remain INCOMPLETE with reason.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "REC-4",
+      "dimension": "reconciliation",
+      "scorecard_dimension": "accuracy",
+      "capability": "Live-vs-simulation reconciliation",
+      "competitors": [
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Parallel out-of-sample backtest overlaid on each live deployment's equity and fills.",
+          "sources": [
+            "Q4"
+          ]
+        }
+      ],
+      "arx_current_state": "No equivalent for self-trade agents.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/ (no simulation counterpart)"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "Each agent's live or demo fills are replayed through the same decision logic on the same data, and divergence (entries, exits, P/L) is reported per agent per week.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "RCV-1",
+      "dimension": "recovery",
+      "scorecard_dimension": "reliability",
+      "capability": "Crash recovery of in-flight work",
+      "competitors": [
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Optional automatic restarts are best effort and stop after five failed attempts; state is not saved.",
+          "sources": [
+            "Q5"
+          ]
+        },
+        {
+          "product": "Freqtrade",
+          "approach": "Trade history in an SQL database (separate dry-run database by default).",
+          "sources": [
+            "F3"
+          ]
+        }
+      ],
+      "arx_current_state": "Reservations, claims and receipts are durable; a server settlement outbox recovers accepted receipts, but its worker defaults OFF and the migration has not been applied anywhere. A crash between the dispatch claim and mailbox delivery remains an uncertain handoff with no outbox and no audited repair workflow.",
+      "arx_evidence": [
+        "docs/RESULT_SETTLEMENT_OUTBOX.md",
+        "docs/SELF_TRADING_DISPATCH_AUTHORITY_2026_10_26.md (compatibility and recovery)",
+        "docs/SELF_TRADING_RELIABILITY_2026_10_26.md (remaining work)"
+      ],
+      "arx_evidence_level": "offline-tested (fresh-process PostgreSQL recovery); not deployed",
+      "acceptance_criterion": "Kill -9 at each boundary (after reservation, after claim, after pickup, after broker result, after receipt) recovers to a correct state without duplicate orders; uncertain handoffs are resolved through an audited evidence-based repair action; recovery time measured.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": ""
+    },
+    {
+      "id": "RCV-2",
+      "dimension": "recovery",
+      "scorecard_dimension": "reliability",
+      "capability": "Durable terminal result delivery",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "Terminal transaction queue is bounded (1024) and unordered, so an EA must persist what it needs.",
+          "sources": [
+            "M6"
+          ]
+        }
+      ],
+      "arx_current_state": "The settlement outbox is server-side only; results the terminal never delivered are outside its protection.",
+      "arx_evidence": [
+        "docs/RESULT_SETTLEMENT_OUTBOX.md (remaining limits)",
+        "docs/ARX_CHECKPOINT_2026_10_27.md (uncommitted successor work)"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "EA writes each broker result to a durable local outbox before posting and retries until acknowledged; test: network cut after broker fill, EA restart, result still arrives exactly once.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "RCV-3",
+      "dimension": "recovery",
+      "scorecard_dimension": "reliability",
+      "capability": "Connection-loss behaviour",
+      "competitors": [
+        {
+          "product": "Interactive Brokers",
+          "approach": "maintainAndResubmitOrdersOnReconnect; rejectMessagesAboveMaxRate.",
+          "sources": [
+            "I3"
+          ]
+        },
+        {
+          "product": "MetaTrader 5",
+          "approach": "TRADE_RETCODE_CONNECTION (10031) when there is no connection to the trade server.",
+          "sources": [
+            "M5"
+          ]
+        }
+      ],
+      "arx_current_state": "Phase B blocks dispatch when the EA heartbeat is older than 15 s; heartbeat connection identity is still mutable.",
+      "arx_evidence": [
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §5 gate 7",
+        "docs/SELF_TRADE_MANAGEMENT_TARGET.md (remaining work)"
+      ],
+      "arx_evidence_level": "offline-tested; broker-unverified",
+      "acceptance_criterion": "Demo drill: drop EA network for 30 s and 5 min during open positions; no new dispatch while stale, no lost commands, protective commands delivered after reconnect, operator alerted.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": ""
+    },
+    {
+      "id": "RCV-4",
+      "dimension": "recovery",
+      "scorecard_dimension": "reliability",
+      "capability": "Account / server switch protection",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "Terminal option disables EA trading when the account is changed (also on profile and symbol/period change).",
+          "sources": [
+            "M7"
+          ]
+        }
+      ],
+      "arx_current_state": "Automatic CLOSE/MODIFY re-read login, actual server, mode, ticket, symbol, side and volume immediately before CTrade. Entry routing is not yet pinned to an account/session; a switch between the final check and the broker call is still possible.",
+      "arx_evidence": [
+        "docs/SELF_TRADE_TERMINAL_TARGET_PREFLIGHT.md",
+        "docs/SELF_TRADING_DISPATCH_AUTHORITY_2026_10_26.md (slice B)"
+      ],
+      "arx_evidence_level": "C++ harness of extracted MQL; native MetaEditor and broker unverified",
+      "acceptance_criterion": "Entry and management commands carry a signed target (login, actual server, connection, symbol); terminal refuses on any mismatch; demo drill switches accounts between claim and pickup with zero mis-routed orders.",
+      "gap_status": "behind",
+      "notes": "Management path is closer to parity than entries."
+    },
+    {
+      "id": "STOP-1",
+      "dimension": "emergency stops",
+      "scorecard_dimension": "reliability",
+      "capability": "Global automated-trading kill switch",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "Algo Trading button disables automated trading for all EAs.",
+          "sources": [
+            "M7"
+          ]
+        },
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Stop button immediately stops the algorithm; holdings are kept.",
+          "sources": [
+            "Q5"
+          ]
+        },
+        {
+          "product": "Freqtrade",
+          "approach": "/stop stops the trader.",
+          "sources": [
+            "F4"
+          ]
+        }
+      ],
+      "arx_current_state": "Platform emergency stop and safety-core kill switch combine in platformStop(), which fails closed on unreadable settings; agent kill switches are checked at the gate and re-checked immediately before submission; release is a single audited operation.",
+      "arx_evidence": [
+        "docs/TIER1_PLATFORM_SAFETY_SOURCE.md",
+        "artifacts/api-server/src/lib/selfTrade/killSwitchGate.ts",
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §5"
+      ],
+      "arx_evidence_level": "offline-tested; broker-unverified",
+      "acceptance_criterion": "Measured engage → last possible new broker order: zero orders submitted after the engage commit (including commands already in the mailbox); p95 engage latency reported; drill on demo.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": "Whether already-queued mailbox entry commands are withdrawn on engage was not established in this research."
+    },
+    {
+      "id": "STOP-2",
+      "dimension": "emergency stops",
+      "scorecard_dimension": "usability",
+      "capability": "Pause new entries while still managing exits",
+      "competitors": [
+        {
+          "product": "Freqtrade",
+          "approach": "/stopentry stops new trades while exits continue; the pause is not persisted across restart.",
+          "sources": [
+            "F4"
+          ]
+        }
+      ],
+      "arx_current_state": "LOCKDOWN/INCIDENT posture pauses autonomous entries; stops refuse only new risk while closes and stop tightening stay open; state is stored in the database.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/autonomousCycle.ts:114",
+        "docs/TIER1_PLATFORM_SAFETY_SOURCE.md (preCheckStopRefusal)"
+      ],
+      "arx_evidence_level": "offline-tested",
+      "acceptance_criterion": "Pause survives process restart; protective closes and stop tightening succeed during pause in tests and on demo.",
+      "gap_status": "ahead",
+      "notes": "'Ahead' only versus Freqtrade's documented non-persistent pause; broker behaviour unverified."
+    },
+    {
+      "id": "STOP-3",
+      "dimension": "emergency stops",
+      "scorecard_dimension": "speed",
+      "capability": "Flatten all / liquidate",
+      "competitors": [
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Liquidate button sends market orders (market-on-open when closed) then stops the algorithm.",
+          "sources": [
+            "Q5"
+          ]
+        },
+        {
+          "product": "Freqtrade",
+          "approach": "/forceexit all exits every open trade.",
+          "sources": [
+            "F4"
+          ]
+        }
+      ],
+      "arx_current_state": "Operator emergency close supports ticket, user, allocation, all-shared and all scopes, only enqueuing closes through the normal gated pipeline; callers require admin/owner, confirmation phrase and reason.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/live/emergencyClose.ts"
+      ],
+      "arx_evidence_level": "source review; broker-unverified",
+      "acceptance_criterion": "Demo drill with ≥10 positions across ≥2 accounts: time from command to all positions confirmed closed by broker evidence (median/p95), per-ticket outcome, zero closes against the wrong account.",
+      "gap_status": "not measured",
+      "notes": ""
+    },
+    {
+      "id": "STOP-4",
+      "dimension": "emergency stops",
+      "scorecard_dimension": "features",
+      "capability": "Scoped stops (agent, strategy, symbol, news)",
+      "competitors": [
+        {
+          "product": "Freqtrade",
+          "approach": "Per-pair and global locks; /locks and /unlock.",
+          "sources": [
+            "F1",
+            "F4"
+          ]
+        }
+      ],
+      "arx_current_state": "Kill switch scopes GLOBAL, NEWS, AGENT, STRATEGY, SYMBOL with precedence; per-trader halt and frozen allocations.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/killSwitchGate.ts:34",
+        "docs/TIER1_PLATFORM_SAFETY_SOURCE.md"
+      ],
+      "arx_evidence_level": "offline-tested",
+      "acceptance_criterion": "Each scope blocks exactly its target and nothing else in a table-driven test; engage/release audited with actor and reason.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": ""
+    },
+    {
+      "id": "SIM-1",
+      "dimension": "paper/simulation",
+      "scorecard_dimension": "features",
+      "capability": "Paper / dry-run forward test of automated agents",
+      "competitors": [
+        {
+          "product": "Freqtrade",
+          "approach": "dry_run with dry_run_wallet (default 1000) and a separate dry-run database.",
+          "sources": [
+            "F3"
+          ]
+        },
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Deploy to the Paper Trading brokerage.",
+          "sources": [
+            "Q5"
+          ]
+        },
+        {
+          "product": "cTrader",
+          "approach": "Cloud cBots on demo: 1 concurrent instance for 7 days.",
+          "sources": [
+            "C5"
+          ]
+        }
+      ],
+      "arx_current_state": "Agents run in SHADOW (audit-only intent, no simulated fill) or LIVE; the executor submits with accountMode 'live' and the instant-trade helper rejects 'paper'. No agent DEMO or paper execution path with fill accounting was found, although the Capital Constitution requires demo execution before real money.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/agentExecutor.ts:178-190,407",
+        "artifacts/api-server/src/lib/live/instantTrade.ts:22-28",
+        "docs/CAPITAL_CONSTITUTION.md Article VII"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "Agent mode DEMO (governed demo queue) and PAPER (real-quote paper book) use the same decision, sizing and gate code as LIVE, with separate ledgers; a 2-week forward run reports fills, slippage and P/L per agent.",
+      "gap_status": "behind",
+      "notes": "Whether per-user SIMULATED routing intercepts agent intents was not established; the executor itself hard-codes live."
+    },
+    {
+      "id": "SIM-2",
+      "dimension": "paper/simulation",
+      "scorecard_dimension": "accuracy",
+      "capability": "Historical replay with realistic ticks, spread and delay",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "Every tick based on real ticks; zero/fixed/random execution delay; forward period split (1/2, 1/3, 1/4, custom); genetic optimisation.",
+          "sources": [
+            "M8",
+            "M9"
+          ]
+        },
+        {
+          "product": "cTrader",
+          "approach": "Tick data from server; fixed/live/random spread; commission per million.",
+          "sources": [
+            "C6"
+          ]
+        },
+        {
+          "product": "TradingView",
+          "approach": "Broker emulator with intrabar assumptions; bar magnifier uses lower-timeframe bars (up to 200,000).",
+          "sources": [
+            "T2"
+          ]
+        }
+      ],
+      "arx_current_state": "Research backtest modules exist, but there is no replay harness for the self-trade agent decision/executor path (audit: 'no backtest harness for live scenario replay'; G4 end-to-end cycle test).",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/backtest/",
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §10 G4, §11"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "Agent replay on broker tick history with spread, commission and delay models, walk-forward splits, and recorded experiment count; results reproducible from a commit and dataset hash.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "AUD-1",
+      "dimension": "audit trail",
+      "scorecard_dimension": "reliability",
+      "capability": "Decision and execution audit trail",
+      "competitors": [
+        {
+          "product": "Freqtrade",
+          "approach": "Trade history stored in an SQL database; Telegram /status shows open trades and pending orders.",
+          "sources": [
+            "F3",
+            "F4"
+          ]
+        },
+        {
+          "product": "TradingView",
+          "approach": "Alert log shows webhook delivery status; webhooks may occasionally fail to arrive.",
+          "sources": [
+            "T3"
+          ]
+        }
+      ],
+      "arx_current_state": "Append-only ledgers by constitution; dispatch claim and its audit commit in one transaction (audit failure rolls back the claim); autonomous cycle aborts if the audit insert fails.",
+      "arx_evidence": [
+        "docs/CAPITAL_CONSTITUTION.md Article V",
+        "docs/SELF_TRADING_DISPATCH_AUTHORITY_2026_10_26.md",
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §5 Layer 0"
+      ],
+      "arx_evidence_level": "offline-tested",
+      "acceptance_criterion": "For a sampled set of automated orders, the audit chain reconstructs decision → admission → draft → claim → pickup → broker result → settlement with timestamps and actors, with no gaps.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": "Competitor audit atomicity is undocumented; no comparison claim."
+    },
+    {
+      "id": "OPS-1",
+      "dimension": "operator controls",
+      "scorecard_dimension": "usability",
+      "capability": "Mode control and LIVE escalation consent",
+      "competitors": [
+        {
+          "product": "Interactive Brokers",
+          "approach": "readOnlyApi blocks modifications through the API; trusted IPs / localhost-only.",
+          "sources": [
+            "I3"
+          ]
+        },
+        {
+          "product": "MetaTrader 5",
+          "approach": "Global Algo Trading toggle; per-EA permissions; WebRequest URL allowlist.",
+          "sources": [
+            "M7"
+          ]
+        }
+      ],
+      "arx_current_state": "PAPER/DEMO/LIVE per user; escalation to LIVE requires the exact phrase 'CONFIRM LIVE MODE' and a ≥10-character reason; every change audited; LIVE also requires the server env flag and all Phase B gates.",
+      "arx_evidence": [
+        "docs/OPERATOR_TRADING_MODE_CONTROL.md",
+        "lib/db/src/repositories/tradingModeGate.ts"
+      ],
+      "arx_evidence_level": "offline-tested",
+      "acceptance_criterion": "Truth-table tests for every transition; no automated path can raise authority without an audited owner action.",
+      "gap_status": "parity-claimed-unverified",
+      "notes": ""
+    },
+    {
+      "id": "OPS-2",
+      "dimension": "operator controls",
+      "scorecard_dimension": "operating efficiency",
+      "capability": "Risk-event alerting and operational SLOs",
+      "competitors": [
+        {
+          "product": "NinjaTrader partner (prop-firm)",
+          "approach": "Alert thresholds below liquidation thresholds.",
+          "sources": [
+            "N6"
+          ]
+        },
+        {
+          "product": "Freqtrade",
+          "approach": "Telegram control and status messages.",
+          "sources": [
+            "F4"
+          ]
+        },
+        {
+          "product": "NinjaTrader (retail)",
+          "approach": "Staff state no app/email notification when the Daily Loss Limit is hit.",
+          "sources": [
+            "N5"
+          ]
+        }
+      ],
+      "arx_current_state": "An OPERATIONAL_RATE_CAP_REACHED monitor exists; reconciliation lag, unresolved-claim age, rejection/duplicate rates and cycle latency SLOs are listed as missing.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/alerts/operationalRateCapMonitor.ts",
+        "docs/SELF_TRADING_RELIABILITY_2026_10_26.md (operational SLOs)"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "Defined SLOs with alert rules for: HELD settlements, unresolved claims older than X, reconciliation lag, EA heartbeat staleness, loss-limit breach, kill-switch engage; alert delivery tested end to end.",
+      "gap_status": "behind",
+      "notes": ""
+    },
+    {
+      "id": "OPS-3",
+      "dimension": "operator controls",
+      "scorecard_dimension": "scalability",
+      "capability": "Unattended 24/7 operation",
+      "competitors": [
+        {
+          "product": "cTrader",
+          "approach": "Cloud cBots run with the app closed; up to 10 concurrent live instances (broker-dependent).",
+          "sources": [
+            "C5"
+          ]
+        },
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Cloud live deployments with optional automatic restart.",
+          "sources": [
+            "Q5"
+          ]
+        }
+      ],
+      "arx_current_state": "By policy there is no always-on autonomous loop; cycles are admin-triggered. MT5 execution depends on a terminal-side EA.",
+      "arx_evidence": [
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §1",
+        "docs/SELF_TRADING_RELIABILITY_2026_10_26.md",
+        "docs/CAPITAL_CONSTITUTION.md Article VII"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "Owner-approved scheduler with explicit enable, bounded cadence, health checks and automatic disable on SLO breach; demonstrated on demo for 7 days.",
+      "gap_status": "behind",
+      "notes": "Deliberate safety posture; changing it needs an owner decision."
+    },
+    {
+      "id": "SPEED-1",
+      "dimension": "execution quality",
+      "scorecard_dimension": "speed",
+      "capability": "Decision-to-broker latency",
+      "competitors": [
+        {
+          "product": "TradingView",
+          "approach": "Webhook receiver must respond within 3 s or the request is cancelled; ports 80/443 only.",
+          "sources": [
+            "T3"
+          ]
+        }
+      ],
+      "arx_current_state": "Only local component timings exist: mailbox 50-command completion p95 6.989 ms; result receipt mixed-load p95 123.749 ms (fails the 100 ms target); no broker or network latency measured.",
+      "arx_evidence": [
+        "docs/SELF_TRADE_TERMINAL_TARGET_PREFLIGHT.md",
+        "docs/RESULT_SETTLEMENT_OUTBOX.md"
+      ],
+      "arx_evidence_level": "local benchmarks only",
+      "acceptance_criterion": "End-to-end median/p95/p99 from decision commit to broker result receipt on demo, acknowledgement and completion measured separately; receipt p95 ≤ 100 ms locally under the mixed fixture.",
+      "gap_status": "not measured",
+      "notes": "No competitor publishes comparable latency figures in the researched docs."
+    },
+    {
+      "id": "SCALE-1",
+      "dimension": "risk controls",
+      "scorecard_dimension": "scalability",
+      "capability": "Agents and commands per account/install",
+      "competitors": [
+        {
+          "product": "cTrader",
+          "approach": "Up to 10 concurrent live cloud instances; 1 on demo.",
+          "sources": [
+            "C5"
+          ]
+        }
+      ],
+      "arx_current_state": "Mailbox pickup bounded to 50 commands and 64,000 bytes per row; accounting read p95 6.996 ms at 100 agents / 1,000 executions locally; 24-way admission contention tested.",
+      "arx_evidence": [
+        "docs/SELF_TRADE_TERMINAL_TARGET_PREFLIGHT.md",
+        "docs/SELF_TRADE_ACCOUNTING_REPORTING.md",
+        "docs/SELF_TRADING_ENTRY_CAPACITY_2026_10_26.md"
+      ],
+      "arx_evidence_level": "local benchmarks only",
+      "acceptance_criterion": "Documented capacity envelope (agents, cycles/min, commands/min per bridge) with p95 latency and zero correctness failures at 2× the target load.",
+      "gap_status": "not measured",
+      "notes": ""
+    },
+    {
+      "id": "INTEG-1",
+      "dimension": "execution quality",
+      "scorecard_dimension": "integration",
+      "capability": "Venue / broker coverage",
+      "competitors": [
+        {
+          "product": "QuantConnect LEAN",
+          "approach": "Live brokerage integrations documented for multiple brokers (e.g. Interactive Brokers, Tradier, TradeStation).",
+          "sources": [
+            "Q5"
+          ]
+        },
+        {
+          "product": "TradingView",
+          "approach": "Broker Integration API lets brokers expose order placement and position closing in TradingView.",
+          "sources": [
+            "T4"
+          ]
+        }
+      ],
+      "arx_current_state": "MT5 via terminal-side EA only (constitutionally required when no direct broker API exists).",
+      "arx_evidence": [
+        "docs/CAPITAL_CONSTITUTION.md Article VII",
+        "mt5-bridge/"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "A second certified venue adapter behind the same Trade Engine contract, passing the same duplicate/recovery/reconciliation suite.",
+      "gap_status": "behind",
+      "notes": "Breadth is a product choice; correctness on MT5 is the priority."
+    },
+    {
+      "id": "USAB-1",
+      "dimension": "operator controls",
+      "scorecard_dimension": "usability",
+      "capability": "Strategy authoring and transparency for users",
+      "competitors": [
+        {
+          "product": "MetaTrader 5",
+          "approach": "MQL5 Expert Advisors.",
+          "sources": [
+            "M1"
+          ]
+        },
+        {
+          "product": "cTrader",
+          "approach": "C# cBots with events and async APIs.",
+          "sources": [
+            "C3",
+            "C4"
+          ]
+        },
+        {
+          "product": "TradingView",
+          "approach": "Pine Script strategies with alert messages.",
+          "sources": [
+            "T1",
+            "T2"
+          ]
+        },
+        {
+          "product": "Freqtrade",
+          "approach": "Python strategies with protections and hyperopt.",
+          "sources": [
+            "F1"
+          ]
+        }
+      ],
+      "arx_current_state": "Five fixed profile templates (ALPHA/BLAZE/ATLAS/NOVA/TITAN) seed agents; decisions come from the ARX decision engine; users cannot author strategies.",
+      "arx_evidence": [
+        "artifacts/api-server/src/lib/selfTrade/profiles.ts",
+        "docs/AUTO_TRADING_BOT_SAFETY_AUDIT.md §2"
+      ],
+      "arx_evidence_level": "source review",
+      "acceptance_criterion": "User-visible per-trade rationale (entry, stop, target, R:R, invalidation) for 100% of automated decisions; any configurable parameter is bounded by deterministic limits.",
+      "gap_status": "behind",
+      "notes": "Custom authoring may be out of scope; transparency is the measurable target (audit R7)."
+    },
+    {
+      "id": "EFF-1",
+      "dimension": "reconciliation",
+      "scorecard_dimension": "operating efficiency",
+      "capability": "Reconciliation cost per cycle",
+      "competitors": [
+        {
+          "product": "Freqtrade",
+          "approach": "stoploss_on_exchange_interval default 60 s to avoid exchange bans from checking every iteration.",
+          "sources": [
+            "F2"
+          ]
+        }
+      ],
+      "arx_current_state": "Reconciliation reads only active execution states and batches linked command reads; accounting overview uses one grouped statement with constant query count.",
+      "arx_evidence": [
+        "docs/SELF_TRADING_RELIABILITY_2026_10_26.md",
+        "docs/SELF_TRADE_ACCOUNTING_REPORTING.md"
+      ],
+      "arx_evidence_level": "offline-tested",
+      "acceptance_criterion": "Queries per reconciliation cycle constant in the number of agents (asserted in tests) and broker/EA requests per minute within documented terminal limits (10024 TOO_MANY_REQUESTS never observed on demo).",
+      "gap_status": "not measured",
+      "notes": ""
+    }
+  ],
+  "ranked_gaps": [
+    {
+      "rank": 1,
+      "rows": "EXQ-4",
+      "title": "Truthful terminal fill results",
+      "why": "A broker partial fill (10010) is reported as REJECTED by v154, and v131 reports LIVE_FILLED from the CTrade boolean with the requested lot as executed volume. Real exposure can diverge from ARX's record.",
+      "next_steps": [
+        "Map retcodes exactly per the MQL5 table in both EAs: 10009 FILLED, 10010 PARTIAL, 10008 PLACED, connection/timeout codes UNKNOWN (never REJECTED).",
+        "Add ResultVolume, ResultPrice, ResultDeal, request_id and the deal's position identifier (via HistoryDealSelect) to every result payload.",
+        "Server: accept PARTIAL with executed volume; never default executed volume to requested volume; UNKNOWN goes to reconciliation.",
+        "Extend the extracted C++ handler harness with a retcode matrix; schedule a demo partial-fill/rejection test under owner authorisation."
+      ]
+    },
+    {
+      "rank": 2,
+      "rows": "SIM-1",
+      "title": "Agent DEMO / paper forward testing",
+      "why": "The Capital Constitution requires demo execution before real money, but the agent executor only submits LIVE intents; SHADOW records intents without fills.",
+      "next_steps": [
+        "Add agent modes DEMO and PAPER that reuse decision, sizing, admission and gate code and route to the governed DEMO queue or the real-quote paper book.",
+        "Separate agent ledgers per mode; reports must label simulated vs broker-demo fills.",
+        "Run a 2-week forward test per profile and publish fills, slippage and P/L (no profitability claims)."
+      ]
+    },
+    {
+      "rank": 3,
+      "rows": "RCV-1/RCV-2/DUP-2",
+      "title": "Durable handoff on both sides of the bridge",
+      "why": "Claim-to-mailbox has no outbox, EA deduplication is RAM-only, and terminal results are not durably queued. A crash or restart at these points can lose or repeat a broker action.",
+      "next_steps": [
+        "Server: transactional dispatch outbox written in the claim transaction, delivered idempotently.",
+        "EA: persist commandId → outcome before acknowledging; replay original outcome on redelivery; local result outbox retried until acknowledged.",
+        "Audited evidence-based repair action for uncertain handoffs (no time-based release).",
+        "Kill -9 fault matrix at each boundary in the PostgreSQL + extracted-EA lanes."
+      ]
+    },
+    {
+      "rank": 4,
+      "rows": "REC-1/RCV-4",
+      "title": "Account-scoped identity and entry account pinning",
+      "why": "Positions key on (user, ticket), the MT5 position identifier is discarded, and entry routing can still pick or rebind a bridge after admission.",
+      "next_steps": [
+        "Implement slice B (signed immutable entry target checked by the terminal before mutation) and slice C (additive identity migration: connection, login, actual server, position identifier) from SELF_TRADING_DISPATCH_AUTHORITY_2026_10_26.md.",
+        "Tests: equal ticket numbers on two accounts; account switch between claim and pickup."
+      ]
+    },
+    {
+      "rank": 5,
+      "rows": "RISK-1/RISK-2",
+      "title": "Loss limits: weekly cap and breach response",
+      "why": "maxWeeklyLossUsd is stored but never evaluated; a daily-loss breach blocks entries but does not flatten, and floating P/L is not included.",
+      "next_steps": [
+        "Add WEEKLY_LOSS_CAP_REACHED to the execution permission evaluator using rolling 7-day realised (and optionally floating) P/L; unknown accounting refuses.",
+        "Owner-configurable breach action: block, or block and flatten through emergencyClose; notify the operator.",
+        "Measure breach-to-flat time on demo."
+      ]
+    },
+    {
+      "rank": 6,
+      "rows": "EXQ-3/RISK-6",
+      "title": "Dispatch-time spread and news re-check",
+      "why": "Spread and news risk are judged at decision time only (audit G1, G3).",
+      "next_steps": [
+        "Executor re-reads the live quote and news risk immediately before draft; refuses SPREAD_TOO_WIDE / NEWS_RISK_ESCALATED; unobservable inputs refuse."
+      ]
+    },
+    {
+      "rank": 7,
+      "rows": "EXQ-5/SPEED-1",
+      "title": "Execution-quality and latency measurement",
+      "why": "No per-fill slippage or end-to-end latency is recorded, so execution quality cannot be compared with anything.",
+      "next_steps": [
+        "Record requested vs fill price, signed slippage and stage timestamps per automated fill; median/p95/p99 dashboards; include in demo reports."
+      ]
+    },
+    {
+      "rank": 8,
+      "rows": "EXQ-1/SIZE-2",
+      "title": "Margin-aware pre-check",
+      "why": "No OrderCheck() call; agent admission ignores margin.",
+      "next_steps": [
+        "Call OrderCheck() in the EA before entry and report margin projections; add margin-aware agent admission using broker-reported requirements."
+      ]
+    },
+    {
+      "rank": 9,
+      "rows": "OPS-2",
+      "title": "Alerting and SLOs",
+      "why": "Reliability doc lists missing SLOs for reconciliation lag, unresolved claims, rejection/duplicate rates.",
+      "next_steps": [
+        "Define SLOs and alert rules; test delivery end to end."
+      ]
+    },
+    {
+      "rank": 10,
+      "rows": "SIM-2",
+      "title": "Agent replay harness",
+      "why": "No tick-level replay of the agent path with spread, commission and delay.",
+      "next_steps": [
+        "Build replay on broker tick history with walk-forward splits and recorded experiment counts."
+      ]
+    }
+  ],
+  "inaccessible_or_partial_sources": [
+    "QuantConnect supported risk models: only model names rendered; parameters/defaults unverified.",
+    "QuantConnect live-trading key concepts (Stateful Strategies, Algorithm Portfolio): body not retrievable.",
+    "QuantConnect order tickets: update/cancel/OrderResponse sections not retrieved.",
+    "TradingView strategies page: strategy.risk.* section not retrieved; Pine risk functions unverified.",
+    "cTrader cBots landing and 'backtesting and optimizing' pages returned redirect stubs; ExecuteMarketOrder parameter names (label, market range) unverified.",
+    "NinjaTrader: no official help-guide page for the account Daily Loss Limit was found; staff forum answers used. ConnectionLossHandling not verified.",
+    "Interactive Brokers: current size/value limit precaution settings verified only via an archived Users' Guide and an IBKR Campus lesson.",
+    "MQL5 ENUM_ORDER_TYPE_FILLING page not fetched; filling-mode semantics not compared.",
+    "3Commas not researched (Freqtrade chosen as the crypto bot platform).",
+    "Direct HTTPS (curl) to all documentation hosts was refused by the sandbox proxy; WebFetch summaries were used instead of raw pages."
+  ]
+}
