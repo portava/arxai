@@ -4,6 +4,12 @@ import { scannerSourceIdentity } from "../../scannerInputIntegrity.js";
 import type { TruthReadEvidence } from "@workspace/domain/truth";
 import { timeframeMs, type ChartTimeframe } from "../../data/chart/timeframes.js";
 
+// Producers under test read the real clock, so a fixture built just before an
+// M5 boundary disagrees with them by one closed bar once the boundary passes.
+// Start just after a boundary when the current bar is about to close.
+const M5_MS = 5 * 60_000, BOUNDARY_GUARD_MS = 30_000;
+const untilBoundary = M5_MS - (Date.now() % M5_MS);
+if (untilBoundary < BOUNDARY_GUARD_MS) await new Promise((resolve) => setTimeout(resolve, untilBoundary + 50));
 export const NOW = Date.now();
 export function marketFixture(options: { now?: number; timeframe?: ChartTimeframe; source?: string; symbol?: string; count?: number; ageMs?: number; bridge?: number | null; forming?: boolean } = {}) {
   const { now = NOW, timeframe = "M15", source = "mt5_broker", symbol = "EURUSD", count = 80, ageMs = 0, bridge = null, forming = false } = options;
