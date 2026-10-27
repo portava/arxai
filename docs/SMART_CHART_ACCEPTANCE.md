@@ -173,7 +173,10 @@ is claimed without matching data, seed boundary and configuration.
 - The broader commercial-chart gaps are listed in
   [SMART_CHART_PLATFORM_COMPARISON.md](SMART_CHART_PLATFORM_COMPARISON.md):
   broader drawing tools/studies, overlaid comparison series,
-  named cloud workspaces, replay, custom scripting and validated market feeds.
+  named cloud workspaces, multi-chart and saved-session replay with deeper
+  attested history and historical order simulation (single-chart loaded-window
+  replay is Partial; see [SMART_CHART_REPLAY.md](SMART_CHART_REPLAY.md)), custom
+  scripting and validated market feeds.
 - Saving is local to the current browser/device, shared by users of that browser
   profile, and may be unavailable in restrictive browsing modes. It is not an
   account-backed cloud workspace or a backup service.
