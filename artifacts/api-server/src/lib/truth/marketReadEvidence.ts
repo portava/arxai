@@ -52,10 +52,12 @@ export function evidenceMatches(
 
 /** Quotes are optional context, but a supplied price may never cross observed
  * venue/account/environment boundaries. Unknown attribution must match unknown,
- * rather than silently matching an attributed series. No spread is invented. */
+ * rather than silently matching an attributed series. No spread is invented.
+ * The quote's timestamp must be the producer-observed tick time: a receive-time
+ * stamp (or an older result without the flag) cannot establish freshness. */
 export function matchedMarketQuote(candles: MarketCandlesResult, quote: MarketQuoteResult, symbol: string, now: number) {
   const cp = candles.provenance, qp = quote.provenance;
-  if (!cp || !qp) return null;
+  if (!cp || !qp || quote.tickTimeObserved !== true) return null;
   for (const key of ["bridgeConnectionId", "userId", "brokerSymbol", "environment", "subProviderId"] as const) {
     if ((cp[key] ?? null) !== (qp[key] ?? null)) return null;
   }

@@ -29,6 +29,8 @@ import {
   __resetMt5ProviderStore,
   getMt5SeriesFreshness,
   getMt5QuoteAvailability,
+  readMt5Quote,
+  readMt5Candles,
 } from "../../artifacts/api-server/src/lib/data/providers/mt5Provider.js";
 import { routeCandles } from "../../artifacts/api-server/src/lib/data/marketDataRouter.js";
 
@@ -70,11 +72,11 @@ function envelope(
   };
 }
 
-async function ingest(raw: unknown, eaCreatedAtEpochMs?: number) {
+async function ingest(raw: unknown, eaCreatedAtEpochMs?: number, bridgeConnectionId: number | null = null) {
   const now = Date.now();
   const input: BridgeV2IngestInput = {
     userId: USER_ID,
-    bridgeConnectionId: null,
+    bridgeConnectionId,
     raw,
     serverReceivedAtEpochMs: now,
   };
@@ -165,6 +167,41 @@ async function main(): Promise<void> {
     const q = getMt5QuoteAvailability("EURUSD");
     eq(q.hasQuote, true, "TICK created a quote");
     eq(q.hasPrice, true, "TICK quote has a usable price");
+    const read = readMt5Quote("EURUSD");
+    eq(read?.bridgeConnectionId ?? null, null, "TICK without a bridge connection stays unattributed");
+    eq(read?.userId ?? null, null, "unattributed TICK carries no owner");
+    eq(read?.tickTimeObserved, true, "TICK with brokerTimeEpochMs records an observed tick time");
+  }
+
+  // ── 5b. Bridge-attributed TICK/CANDLE carry the authenticated writer; a TICK
+  //        without broker time never becomes a stored quote ──
+  {
+    const BRIDGE = USER_ID; // synthetic id; rows are removed by user_id below
+    const tick = { symbol: "NZDUSD", bid: 0.6012, ask: 0.6014, brokerTimeEpochMs: Date.now() };
+    const res = await ingest(envelope("TICK", tick, { sequence: 1, idem: `${RUN}-bt1`, streamKey: "btick" }), undefined, BRIDGE);
+    eq(res.accepted, true, "attributed TICK accepted");
+    const pinned = readMt5Quote("NZDUSD", { bridgeConnectionId: BRIDGE });
+    eq(pinned?.bridgeConnectionId, BRIDGE, "attributed TICK stored under its bridge");
+    eq(pinned?.userId, USER_ID, "attributed TICK carries its owner");
+    eq(pinned?.tickTimeObserved, true, "attributed TICK tick time observed");
+    eq(readMt5Quote("NZDUSD", { bridgeConnectionId: BRIDGE - 1 }), null, "another bridge's pinned read does not fall back");
+
+    const untimed = { symbol: "NZDUSD", bid: 0.6013, ask: 0.6015 };
+    const res2 = await ingest(envelope("TICK", untimed, { sequence: 2, idem: `${RUN}-bt2`, streamKey: "btick" }), undefined, BRIDGE);
+    // The v2 TICK contract requires broker time, so an untimed tick never
+    // reaches the store and cannot replace the observed quote.
+    eq(res2.accepted, false, "untimed TICK rejected by the v2 contract");
+    eq(readMt5Quote("NZDUSD", { bridgeConnectionId: BRIDGE })?.quote.bid, 0.6012, "rejected untimed TICK did not replace the observed quote");
+
+    const candle = {
+      symbol: "NZDUSD", timeframe: "M5", openTimeEpochMs: Date.UTC(2026, 5, 9, 12, 0, 0),
+      open: 0.6, high: 0.602, low: 0.599, close: 0.601, volume: 50, isClosed: true as const,
+    };
+    const res3 = await ingest(envelope("CANDLE", candle, { sequence: 1, idem: `${RUN}-bc1`, streamKey: "bcandle" }), undefined, BRIDGE);
+    eq(res3.accepted, true, "attributed CANDLE accepted");
+    const series = readMt5Candles("NZDUSD", "M5", 10, { bridgeConnectionId: BRIDGE });
+    eq(series.candles.length, 1, "attributed CANDLE merged into its bridge partition");
+    eq(series.userId, USER_ID, "attributed CANDLE carries its owner");
   }
 
   // ── 6. EXACT idempotency-key replay → clean DUPLICATE, NOT re-fed (Task #416) ──

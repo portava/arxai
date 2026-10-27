@@ -17,7 +17,7 @@ export function marketFixture(options: { now?: number; timeframe?: ChartTimefram
     }),
     provenance: { providerId: source.startsWith("assistant_real") ? "assistant_real" : source, subProviderId: source.startsWith("assistant_real:") ? source.split(":")[1]! : null, brokerCode: source === "mt5_broker" ? "mt5" : source.startsWith("deriv") ? "deriv" : "third_party", source: "DERIVED", sourceId: `${source}:${symbol}:${timeframe}`, bridgeConnectionId: bridge, userId: bridge == null ? null : 1, brokerSymbol: null, environment: "unknown", receivedAt: new Date(now).toISOString(), delayed: false },
   };
-  const quote: MarketQuoteResult = { ...result, quote: { symbol, bid: 1.0979, ask: 1.0981, last: 1.098, spread: 0.0002, timestamp: new Date(now - ageMs).toISOString() }, provenance: { ...result.provenance!, source: "LIVE_TICK", sourceId: `${source}:${symbol}` } };
+  const quote: MarketQuoteResult = { ...result, quote: { symbol, bid: 1.0979, ask: 1.0981, last: 1.098, spread: 0.0002, timestamp: new Date(now - ageMs).toISOString() }, tickTimeObserved: true, provenance: { ...result.provenance!, source: "LIVE_TICK", sourceId: `${source}:${symbol}` } };
   const evidence: TruthReadEvidence = { symbol, timeframe, source, sourceIdentity: scannerSourceIdentity(result), lastClosedCandleAt: new Date(end).toISOString() };
   const candles = normalizeCandles(result.candles, { symbol, displaySymbol: symbol, timeframe, source, now }).candles;
   const chart = { symbol, displaySymbol: symbol, timeframe, source, candles, marketEvidence: evidence, feedStatus: { symbol, source, isLive: ageMs === 0, stale: ageMs > 0, quality: ageMs === 0 ? "clean" : "stale", lastCandleTime: candles.at(-1)?.closeTime ?? null, lastTickTime: quote.quote?.timestamp ?? null } };

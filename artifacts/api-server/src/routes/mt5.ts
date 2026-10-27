@@ -2218,7 +2218,9 @@ router.post("/mt5/sync-candles", bridgeAuthPerUserOnly, async (req, res) => {
     return;
   }
 
-  updateCandlesFromMT5(symbol, candles, timeframe);
+  // Attribute the series to the authenticated bridge that pushed it, matching
+  // the bridge-scoped /mt5/candles/ingest mirror and the quote store.
+  updateCandlesFromMT5(symbol, candles, timeframe, { bridgeConnectionId: userConn.id, userId: userConn.userId });
 
   // Honest freshness summary so the EA (and operators) can see exactly how the
   // server will treat this series: newest bar time, the serving TTL, and
@@ -2311,7 +2313,13 @@ router.post("/mt5/sync-quotes", bridgeAuthPerUserOnly, async (req, res) => {
 
   // Safe: if tsRaw was present it parsed successfully above (NaN already returned).
   const timestamp = tsRaw != null ? new Date(tsRaw).toISOString() : new Date().toISOString();
-  updateQuoteFromMT5(symbol, { symbol, bid, ask, spread, last, timestamp });
+  // The authenticated per-user bridge is the observed writer identity. A
+  // receive-time stamp (no EA timestamp) is NOT an observed tick time, so the
+  // store records tickTimeObserved=false and Truth consumers cannot treat it
+  // as a current tick.
+  updateQuoteFromMT5(symbol, { symbol, bid, ask, spread, last, timestamp },
+    { bridgeConnectionId: userConn.id, userId: userConn.userId },
+    { tickTimeObserved: tsRaw != null });
 
   req.log.info({ event: "mt5_quote_synced", connectionId: userConn.id, symbol }, "MT5 quote ingested");
   res.json({
@@ -2344,7 +2352,7 @@ router.post("/mt5/sync-candle-history", bridgeAuthPerUserOnly, async (req, res) 
   const parsed = Mt5CandleHistoryIngestSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Invalid candle-history payload", details: parsed.error.issues }); return; }
 
-  const result = await ingestMt5CandleHistory(parsed.data);
+  const result = await ingestMt5CandleHistory(parsed.data, { bridge: { bridgeConnectionId: userConn.id, userId: userConn.userId } });
   req.log.info(
     {
       event: "mt5_candle_history_ingested",

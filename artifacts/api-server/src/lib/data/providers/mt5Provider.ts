@@ -33,6 +33,14 @@ import { MT5_CANDLE_TTL_MS, MT5_FEED_FRESH_MS } from "../freshness.js";
 //     the unattributed writer's identity is unknown and may be the same
 //     physical bridge; claiming "multi-bridge" there would be fabrication.
 //
+// QUOTES:
+//   The latest quote is kept per symbol AND per writer partition (same bridge
+//   keying as candles). An unscoped read serves the most recent writer (the
+//   previous single-latest behavior) and reports its bridge/owner; a pinned
+//   read never falls back to another writer. Each quote also records whether
+//   its timestamp is the producer's own tick time (`tickTimeObserved`) or a
+//   receive-time stamp — the latter cannot prove quote freshness.
+//
 // FRESHNESS:
 //   Each series stores `updatedAt`. Reads return [] for a series older than
 //   CANDLE_TTL_MS (so the router falls through / refuses rather than serving
@@ -116,7 +124,22 @@ interface CandleSeries {
 // symbol|timeframe → (bridgeKey → series). Partitions are hard walls: no read
 // or write path may merge candles across two partition entries.
 const candleStore = new Map<string, Map<string, CandleSeries>>();
-const quoteStore = new Map<string, { quote: MarketQuote; updatedAt: number }>();
+/** One writer's latest quote. Quotes are partitioned by bridge exactly like
+ *  candle series, so a quote can carry the identity of the bridge that pushed
+ *  it. `tickTimeObserved` is true only when the producer received the tick's
+ *  own timestamp; a receive-time stamp is not an observed tick time. */
+interface QuoteEntry {
+  quote: MarketQuote;
+  updatedAt: number;
+  writeSeq: number;
+  /** null = unattributed partition (writer identity unknown — never guessed). */
+  bridgeConnectionId: number | null;
+  userId: number | null;
+  tickTimeObserved: boolean;
+}
+// symbol → (bridgeKey → latest quote). Unscoped reads serve the most recent
+// writer, which preserves the previous single-latest-quote behavior.
+const quoteStore = new Map<string, Map<string, QuoteEntry>>();
 let lastUpdate = 0;
 let writeCounter = 0;
 // symbol → last contention-warn emit time (rate limit state).
@@ -239,9 +262,77 @@ export function mergeCandleFromMT5(
   lastUpdate = Date.now();
 }
 
-export function updateQuoteFromMT5(symbol: string, quote: MarketQuote): void {
-  quoteStore.set(normalizeSymbolKey(symbol), { quote, updatedAt: Date.now() });
+/**
+ * Store the latest quote for a symbol WITHIN THE WRITER'S PARTITION. The
+ * legacy 2-arg form writes the unattributed partition. `tickTimeObserved`
+ * must be true only when `quote.timestamp` is the producer-supplied tick time;
+ * omitted means unknown and is reported as not observed.
+ */
+export function updateQuoteFromMT5(
+  symbol: string,
+  quote: MarketQuote,
+  bridge?: Mt5BridgeIdentity | null,
+  observation?: { tickTimeObserved?: boolean },
+): void {
+  const key = normalizeSymbolKey(symbol);
+  let partitions = quoteStore.get(key);
+  if (!partitions) {
+    partitions = new Map<string, QuoteEntry>();
+    quoteStore.set(key, partitions);
+  }
+  partitions.set(bridgeKeyOf(bridge), {
+    quote,
+    updatedAt: Date.now(),
+    writeSeq: ++writeCounter,
+    bridgeConnectionId: bridge?.bridgeConnectionId ?? null,
+    userId: bridge?.bridgeConnectionId != null ? bridge.userId ?? null : null,
+    tickTimeObserved: observation?.tickTimeObserved === true,
+  });
   lastUpdate = Date.now();
+}
+
+export interface Mt5QuoteRead {
+  quote: MarketQuote;
+  /** Identity of the serving writer; null = unattributed partition served. */
+  bridgeConnectionId: number | null;
+  userId: number | null;
+  /** True only when the producer supplied the tick's own timestamp. */
+  tickTimeObserved: boolean;
+}
+
+/**
+ * Read the latest quote. With opts.bridgeConnectionId: ONLY that bridge's
+ * partition (miss/stale → null; no fallback to another writer). Without: the
+ * most recent writer, reporting its identity. Never blends writers.
+ */
+export function readMt5Quote(
+  symbol: string,
+  opts?: { bridgeConnectionId?: number | null; now?: number },
+): Mt5QuoteRead | null {
+  const now = opts?.now ?? Date.now();
+  const partitions = quoteStore.get(normalizeSymbolKey(symbol));
+  if (!partitions || partitions.size === 0) return null;
+  let entry: QuoteEntry | null = null;
+  if (opts?.bridgeConnectionId != null) {
+    entry = partitions.get(String(opts.bridgeConnectionId)) ?? null;
+  } else {
+    for (const e of partitions.values()) if (!entry || e.writeSeq > entry.writeSeq) entry = e;
+  }
+  if (!entry || now - entry.updatedAt > CANDLE_TTL_MS) return null;
+  return {
+    quote: entry.quote,
+    bridgeConnectionId: entry.bridgeConnectionId,
+    userId: entry.userId,
+    tickTimeObserved: entry.tickTimeObserved,
+  };
+}
+
+/** The most recently written quote partition for a symbol (any age). */
+function servingQuote(symbol: string): QuoteEntry | null {
+  const partitions = quoteStore.get(normalizeSymbolKey(symbol));
+  let best: QuoteEntry | null = null;
+  for (const e of partitions?.values() ?? []) if (!best || e.writeSeq > best.writeSeq) best = e;
+  return best;
 }
 
 /** Test/diagnostic helper — clear all pushed data + contention-warn state. */
@@ -406,7 +497,7 @@ export function getMt5QuoteAvailability(
   symbol: string,
   now: number = Date.now(),
 ): { hasQuote: boolean; fresh: boolean; hasPrice: boolean; ageMs: number | null } {
-  const q = quoteStore.get(normalizeSymbolKey(symbol));
+  const q = servingQuote(symbol);
   if (!q) return { hasQuote: false, fresh: false, hasPrice: false, ageMs: null };
   const ageMs = Math.max(0, now - q.updatedAt);
   const fresh = ageMs <= CANDLE_TTL_MS;
@@ -490,8 +581,10 @@ export class Mt5Provider implements DataProvider {
   }
 
   async getQuote(symbol: string): Promise<MarketQuote> {
-    const q = quoteStore.get(normalizeSymbolKey(symbol));
-    if (q && Date.now() - q.updatedAt <= CANDLE_TTL_MS) return q.quote;
+    // Legacy DataProvider surface — bridge-unscoped and identity-free
+    // (callers needing identity use readMt5Quote directly).
+    const q = readMt5Quote(symbol);
+    if (q) return q.quote;
     return { symbol, timestamp: new Date().toISOString() };
   }
 
