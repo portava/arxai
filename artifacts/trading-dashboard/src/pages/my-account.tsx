@@ -22,7 +22,11 @@ type ShellResponse = {
   userId: number;
   accountMode: "DEMO" | "PERSONAL_MT5" | "SHARED_MASTER_MT5";
   approvalStatus: string;
+  // Platform + approval status only (it ignores the user's own mode and an
+  // allocation freeze). The badge shows accountTradingStatus when present.
   tradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
+  accountTradingStatus?: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
+  accountTradingStatusReason?: string;
   allocation: {
     assignedStartingBalance: number | null;
     // null = not available / not measured (see balanceNote / marginNote).
@@ -174,6 +178,9 @@ export default function MyAccountPage() {
   }
 
   const s = q.data;
+  // The badge shows the user's own status (their trading mode and an
+  // allocation freeze included), not the platform-only tradingStatus.
+  const badgeStatus: ShellResponse["tradingStatus"] = s.accountTradingStatus ?? s.tradingStatus;
   const pnlClass = (v: number | null | undefined) => v == null ? "text-txt-secondary" : v > 0 ? "text-success" : v < 0 ? "text-danger" : "";
   const fmtCount = (v: number | null | undefined) => v == null ? NOT_MEASURED : String(v);
 
@@ -200,8 +207,12 @@ export default function MyAccountPage() {
               {mode.cleanModeLabel}
             </Badge>
           )}
-          <Badge variant={statusVariant[s.tradingStatus]} data-testid="trading-status-badge">
-            {safeLabel(s.tradingStatus)}
+          <Badge
+            variant={statusVariant[badgeStatus]}
+            data-testid="trading-status-badge"
+            title={s.accountTradingStatusReason}
+          >
+            {safeLabel(badgeStatus)}
           </Badge>
           {s.accountMode === "SHARED_MASTER_MT5" && (
             <Badge variant="outline" data-testid="approval-status-badge">
@@ -210,6 +221,11 @@ export default function MyAccountPage() {
           )}
         </div>
       </div>
+      {s.accountTradingStatusReason && (
+        <p className="text-xs text-txt-secondary" data-testid="trading-status-reason">
+          {s.accountTradingStatusReason}
+        </p>
+      )}
 
       {/* Canonical balance (Task #430) — same source of truth as the Dashboard,
           Open Trades, risk panel, wallet and admin. */}

@@ -9,6 +9,8 @@
 //   * "Open P/L" was the lifetime realized P/L (virtualPnl) for shared-master
 //     users and the sum of paper_trades.pnl (null until close, so $0) for
 //     everyone else; "Open Exposure" was paper-journal lots for personal MT5.
+//   * The trading-status badge said ACTIVE from the platform mode alone while
+//     the user's own mode was DISABLED or their allocation was frozen.
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
@@ -195,4 +197,27 @@ test("demo / personal MT5: Open P/L is not measured (never a $0 journal sum); pe
   assert.equal(personal.pnl.openPnl, null);
   assert.equal(personal.risk.openExposureLots, null, "paper-journal lots are not a live account's exposure");
   assert.equal(personal.risk.openExposureSource, null);
+});
+
+test("the badge status is not ACTIVE when the user's own mode is DISABLED or the allocation is frozen", async () => {
+  platformMode = "SIMULATED";
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DISABLED" }];
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", allocationStatus: "active", tradingFrozen: true }];
+
+  const shell = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  // The platform/approval status the mode resolver reads is unchanged.
+  assert.equal(shell.tradingStatus, "ACTIVE");
+  assert.notEqual(shell.accountTradingStatus, "ACTIVE");
+  assert.equal(shell.accountTradingStatus, "RESTRICTED");
+  assert.match(shell.accountTradingStatusReason, /operator has not enabled trading/);
+
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "SIMULATED" }];
+  const frozen = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(frozen.accountTradingStatus, "PAUSED");
+  assert.match(frozen.accountTradingStatusReason, /temporarily paused/);
+
+  tables.user_slot_allocation = [{ allocatedFunds: "1000", allocationStatus: "active", tradingFrozen: false }];
+  const active = await computeAccountShell(USER, { skipInvestorSnapshot: true });
+  assert.equal(active.accountTradingStatus, "ACTIVE");
+  assert.match(active.accountTradingStatusReason, /kill switch and risk limits are checked on every order/);
 });

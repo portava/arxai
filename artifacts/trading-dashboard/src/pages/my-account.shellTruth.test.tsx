@@ -16,6 +16,8 @@ type Shell = Record<string, any>;
 function shell(patch: (s: Shell) => void = () => {}): Shell {
   const s: Shell = {
     ok: true, userId: 41, accountMode: "DEMO", approvalStatus: "NOT_REQUIRED", tradingStatus: "ACTIVE",
+    accountTradingStatus: "ACTIVE",
+    accountTradingStatusReason: "The platform mode, your trading mode, your approval and your allocation allow trading. Your kill switch and risk limits are checked on every order and are not part of this status.",
     tradingMode: "SIMULATED", tradingModeLabel: "Paper Mode — simulated only.",
     allocation: {
       assignedStartingBalance: 1000, currentBalance: 1000, equity: 1000, marginUsed: null,
@@ -112,5 +114,19 @@ describe("My Account — measured figures only", () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId("my-open-exposure").textContent).toBe("0.30"));
     expect(screen.getByText("Open Exposure (journal lots)")).toBeTruthy();
+  });
+
+  it("the status badge is not ACTIVE when the user's own mode is DISABLED, and it says why", async () => {
+    stub(shell((s) => {
+      s.tradingMode = "DISABLED";
+      s.tradingModeLabel = "Your operator has not enabled trading.";
+      s.accountTradingStatus = "RESTRICTED";
+      s.accountTradingStatusReason = "Your operator has not enabled trading on your account.";
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("trading-status-badge")).toBeTruthy());
+    expect(screen.getByTestId("trading-status-badge").textContent).not.toMatch(/active/i);
+    expect(screen.getByTestId("trading-status-badge").textContent).toBe("RESTRICTED");
+    expect(screen.getByTestId("trading-status-reason").textContent).toMatch(/not enabled trading/);
   });
 });

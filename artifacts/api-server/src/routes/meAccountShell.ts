@@ -53,7 +53,17 @@ export type AccountShellResponse = {
     | "SUSPENDED"
     | "RISK_LOCKED"
     | "DISABLED";
+  // Platform-mode + shared-master approval status. Consumed by the account-
+  // mode precedence resolver (computeAccountModePrecedence) and left exactly
+  // as it was. It does NOT look at this user's own trading mode or an
+  // allocation freeze, so it is not what the user-facing badge shows.
   tradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
+  // What the My Account badge shows: tradingStatus, overridden by this
+  // user's own trading mode (DISABLED → RESTRICTED) and an operator
+  // allocation freeze (→ PAUSED). Display only; the order paths enforce
+  // these themselves. The reason names what was checked.
+  accountTradingStatus: "ACTIVE" | "WAITING_APPROVAL" | "PAUSED" | "RESTRICTED" | "NEEDS_REVIEW";
+  accountTradingStatusReason: string;
   // Money view — user's own slice only.
   allocation: {
     assignedStartingBalance: number | null;
@@ -458,6 +468,25 @@ export async function computeAccountShell(
       const raw = String(permRows[0]?.tradingMode ?? "DISABLED").toUpperCase();
       return (raw === "SIMULATED" || raw === "DEMO" || raw === "LIVE") ? raw : "DISABLED";
     })() as "DISABLED" | "SIMULATED" | "DEMO" | "LIVE";
+    // The user-facing status. A per-user DISABLED mode is refused by the
+    // order guards (USER_TRADING_DISABLED) and an allocation freeze by the
+    // live pipeline, so ACTIVE must not be shown over either.
+    const fullFreeze = allocRow?.allocationStatus === "frozen" || Boolean(allocRow?.tradingFrozen);
+    const accountTradingStatus: AccountShellResponse["accountTradingStatus"] =
+      tradingStatus !== "ACTIVE" ? tradingStatus
+        : perUserTradingMode === "DISABLED" ? "RESTRICTED"
+        : fullFreeze ? "PAUSED"
+        : "ACTIVE";
+    const accountTradingStatusReason = (() => {
+      if (tradingMode === "DISABLED") return "Trading is switched off for the whole platform.";
+      if (tradingStatus === "WAITING_APPROVAL") return "Your shared-master access is waiting for operator approval.";
+      if (tradingStatus === "PAUSED") return `Your shared-master access is ${String(approvalStatus).toLowerCase()}.`;
+      if (tradingStatus === "RESTRICTED") return "Your shared-master access is risk-locked.";
+      if (perUserTradingMode === "DISABLED") return "Your operator has not enabled trading on your account.";
+      if (fullFreeze) return allocFreezeMessage ?? "Trading has been paused on your account by an operator.";
+      return "The platform mode, your trading mode, your approval and your allocation allow trading. " +
+        "Your kill switch and risk limits are checked on every order and are not part of this status.";
+    })();
     const tradingModeLabel = (() => {
       switch (perUserTradingMode) {
         case "SIMULATED": return "Paper Mode — simulated only.";
@@ -504,6 +533,8 @@ export async function computeAccountShell(
       previousTradingMode: permRows[0]?.previousTradingMode ?? null,
       approvalStatus,
       tradingStatus,
+      accountTradingStatus,
+      accountTradingStatusReason,
       allocation: {
         assignedStartingBalance: hasAlloc
           ? round2(totalAlloc)
