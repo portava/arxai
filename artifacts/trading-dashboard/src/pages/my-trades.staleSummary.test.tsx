@@ -49,7 +49,8 @@ describe("Open Trades summary truth", () => {
     render(<MyTradesPage />);
     await waitFor(() => expect(screen.getByTestId("position-summary-badge").textContent).toBe("Healthy"));
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    await waitFor(() => expect(screen.getByText(/Bridge unavailable/)).toBeTruthy());
+    // The banner names the failed request (not the MT5 bridge) once the poll fails.
+    await waitFor(() => expect(screen.getByTestId("open-trades-error-banner").textContent).toMatch(/could not be refreshed \(HTTP 500\)/));
     const badge = screen.getByTestId("position-summary-badge");
     expect(badge.textContent).not.toBe("Healthy");
     expect(badge.textContent).toBe("Not current");

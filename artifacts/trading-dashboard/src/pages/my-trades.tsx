@@ -252,6 +252,13 @@ export default function MyTradesPage() {
     ? liveSnap.snapshot!.openPL
     : data == null ? null : sum.openPnl;
   const stripIsEstimate = stripFromSnapshot ? liveSnap.isEstimate === true : sum.estimateN > 0;
+  // When the strip shows the account snapshot's total while some positions
+  // have no P/L yet, both figures are named by source so the page never gives
+  // two unexplained answers for the same book.
+  const snapshotOpenPl: number | null = stripFromSnapshot ? liveSnap.snapshot!.openPL : null;
+  const snapshotNote = snapshotOpenPl != null && sum.openPnl == null && cards.length > 0
+    ? `The account snapshot reports ${money(snapshotOpenPl)}${stripIsEstimate ? " est." : ""} in total.`
+    : null;
 
   // Summary badge: "Healthy" only for a book that loaded on the latest poll.
   const summaryBadge: { label: string; tone: string } = data == null
@@ -317,7 +324,7 @@ export default function MyTradesPage() {
                 ? liveSnap.snapshot.openPositionsCount
                 : cards.length) === 1 ? "" : "s")}
         </span>
-        <span className="text-txt-muted">Open P/L <span data-testid="open-trades-strip-pnl" className={cn("font-medium", pnlTone(stripPnl))}>{stripPnl == null ? (cards.length === 0 ? "—" : `${UNREPORTED} (${sum.unreportedN} of ${cards.length} positions)`) : <>{money(stripPnl)}{stripIsEstimate && <span className="ml-1 text-[10px] text-txt-muted">est.</span>}</>}</span></span>
+        <span className="text-txt-muted">Open P/L <span data-testid="open-trades-strip-pnl" className={cn("font-medium", pnlTone(stripPnl))}>{stripPnl == null ? (cards.length === 0 ? "—" : `${UNREPORTED} (${sum.unreportedN} of ${cards.length} positions)`) : <>{money(stripPnl)}{stripIsEstimate && <span className="ml-1 text-[10px] text-txt-muted">est.</span>}</>}</span>{stripFromSnapshot && <span data-testid="open-trades-strip-pnl-source" className="ml-1 text-[10px] text-txt-muted">account snapshot</span>}</span>
         <span className="text-txt-muted">Total Lots <span className="text-foreground font-medium">{sum.totalLots.toFixed(2)}</span></span>
         <span className="text-txt-muted">Exposure <span className="text-success font-medium">{cards.length === 0 ? "None" : "Active"}</span></span>
         {liveSnap.snapshot != null && (
@@ -336,7 +343,9 @@ export default function MyTradesPage() {
       {/* Bridge / error state */}
       {err && (
         <div className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
-          <span className="inline-flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Bridge unavailable. Open positions will refresh when the MT5 bridge reconnects.</span>
+          {/* The failure is the /me/trades/open request; its cause is not
+              known here, so the banner names the request, as the summary does. */}
+          <span data-testid="open-trades-error-banner" className="inline-flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> {data == null ? notLoadedCopy : `Open positions could not be refreshed (${err}).`} Retrying every 5 seconds.</span>
         </div>
       )}
 
@@ -360,7 +369,7 @@ export default function MyTradesPage() {
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Mini label="Open Trades" value={String(cards.length)} />
-              <Mini testId="position-summary-open-pnl" label="Open P/L" value={sum.openPnl == null ? UNREPORTED : `${money(sum.openPnl)}${sum.estimateN > 0 ? " est." : ""}`} tone={pnlTone(sum.openPnl)} sub={sum.openPnl == null ? `${sum.unreportedN} of ${cards.length} awaiting broker P/L` : sum.estimateN > 0 ? `${sum.estimateN} of ${cards.length} estimated (shared-account allocation)` : undefined} />
+              <Mini testId="position-summary-open-pnl" label="Open P/L" value={sum.openPnl == null ? UNREPORTED : `${money(sum.openPnl)}${sum.estimateN > 0 ? " est." : ""}`} tone={pnlTone(sum.openPnl)} sub={sum.openPnl == null ? `${sum.unreportedN} of ${cards.length} awaiting broker P/L${snapshotNote ? `. ${snapshotNote}` : ""}` : sum.estimateN > 0 ? `${sum.estimateN} of ${cards.length} estimated (shared-account allocation)` : undefined} />
               <Mini label="Total Lots" value={sum.totalLots.toFixed(2)} />
               <Mini label="Protected" value={`${sum.protectedN} / ${cards.length}`} />
               <Mini label="Unprotected" value={String(sum.unprotectedN)} tone={sum.unprotectedN ? "text-danger" : undefined} />
@@ -379,7 +388,7 @@ export default function MyTradesPage() {
             <>
               <p className="mt-2 text-sm text-txt-secondary">
                 {sum.openPnl == null
-                  ? `Open P/L is not reported yet for ${sum.unreportedN} of ${cards.length} position${cards.length === 1 ? "" : "s"}.`
+                  ? `Open P/L is not reported yet for ${sum.unreportedN} of ${cards.length} position${cards.length === 1 ? "" : "s"}.${snapshotNote ? ` ${snapshotNote}` : ""}`
                   : sum.openPnl > 0 ? "Your open trades are net positive right now."
                   : sum.openPnl < 0 ? "Your open trades are net negative right now."
                   : "Your open trades are flat right now."}{" "}
