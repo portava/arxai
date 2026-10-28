@@ -320,6 +320,13 @@ export default function LiveAiAssistPage() {
                         : "Approve → live-intent"}
                   </Button>
                 </div>
+                {/* The live ticket is opened with this card's symbol and side
+                    only; say so before the user approves. */}
+                {liveAccess.loaded && liveAccess.canTrade && (
+                  <p className="text-[11px] text-amber-300" data-testid="ai-live-ticket-levels-note">
+                    The live ticket opens with this card&apos;s symbol and side only. It does not copy this card&apos;s stop and target: it fills them from its own ATR suggestion when one is available, which can differ from the levels above. If one-click trading is armed on your account, the ticket sends the order as soon as its form is valid, without a Confirm click.
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}

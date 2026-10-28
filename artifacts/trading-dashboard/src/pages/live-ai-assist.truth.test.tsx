@@ -171,3 +171,42 @@ describe("Live AI Assist admin permission diagnostics", () => {
     vi.doUnmock("@/hooks/useViewMode");
   });
 });
+
+// The live shared ticket is opened without the card's SL/TP and without
+// suppressAutoConfirm (changing either is an execution decision left to the
+// owner). Until then the card must say so plainly before the user approves.
+describe("Live AI Assist live-ticket disclosure", () => {
+  it("says the live ticket uses its own ATR levels and may auto-send when one-click is armed", async () => {
+    vi.resetModules();
+    vi.doMock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ effectiveIsAdmin: false }) }));
+    vi.doMock("@/components/live/MasterLiveAccessGuard", () => ({
+      useMasterLiveAccess: () => ({ canTrade: true, loaded: true, error: null }),
+    }));
+    const { default: Page } = await import("./live-ai-assist");
+    serve({ ...WITHHELD, levelsWithheld: false, levelsWithheldReason: null,
+      highlights: { ...WITHHELD.highlights, entryZone: { low: 1.081, high: 1.082 }, suggestedStop: 1.079, suggestedTakeProfit: 1.086, riskRewardRatio: 2 } });
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("generate-card"));
+    expect((await screen.findByTestId("approve-card")).textContent).toMatch(/Live ticket/);
+    const note = screen.getByTestId("ai-live-ticket-levels-note").textContent ?? "";
+    expect(note).toMatch(/does not copy this card's stop and target/);
+    expect(note).toMatch(/ATR suggestion/);
+    expect(note).toMatch(/one-click trading is armed/);
+    expect(note).toMatch(/without a Confirm click/);
+    vi.doUnmock("@/components/live/MasterLiveAccessGuard");
+  });
+
+  it("the live-intent path (no live access) shows no live-ticket note", async () => {
+    vi.resetModules();
+    vi.doMock("@/hooks/useViewMode", () => ({ useViewMode: () => ({ effectiveIsAdmin: false }) }));
+    vi.doMock("@/components/live/MasterLiveAccessGuard", () => ({
+      useMasterLiveAccess: () => ({ canTrade: false, loaded: true, error: null }),
+    }));
+    const { default: Page } = await import("./live-ai-assist");
+    serve(WITHHELD);
+    render(<Page />);
+    fireEvent.click(screen.getByTestId("generate-card"));
+    await screen.findByTestId("approve-card");
+    expect(screen.queryByTestId("ai-live-ticket-levels-note")).toBeNull();
+  });
+});
