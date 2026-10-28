@@ -131,6 +131,49 @@ export const MARKET_FROZEN_BROKER_STALE_MS = 5 * 60_000; // 5 minutes
  * lingers before degrading. Display/telemetry only — never a gate.
  */
 export const MARKET_FROZEN_WALL_FRESH_MS = 2 * 60_000; // 2 minutes
+/**
+ * The session fields the scheduled-closure check reads (structurally the
+ * chart SymbolProfile.session shape; kept local so this module stays leaf).
+ */
+export interface WeekendSessionShape {
+  alwaysOpen: boolean;
+  closedOnWeekends: boolean;
+  openHourUtc: number | null;
+  closeHourUtc: number | null;
+}
+
+/** A scheduled weekend closure window, in epoch ms. */
+export interface ScheduledClosure {
+  /** Friday close (UTC) the window started at. */
+  closedAtMs: number;
+  /** Monday open (UTC) the window ends at (the market may reopen earlier — callers must accept observed trading over the schedule). */
+  reopensAtMs: number;
+}
+
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+
+/**
+ * The scheduled weekend closure that contains `nowMs`, or null when the
+ * instrument trades 24/7, has no weekend closure, or `nowMs` is outside the
+ * window [Fri closeHourUtc, Mon openHourUtc). Approximate by design (session
+ * hours are static UTC estimates), so callers use it ONLY to withhold a
+ * "live" claim for a series whose newest bar predates the close and that
+ * shows no observed trading — never to promote anything.
+ */
+export function scheduledWeekendClosure(session: WeekendSessionShape, nowMs: number): ScheduledClosure | null {
+  if (session.alwaysOpen || !session.closedOnWeekends || !Number.isFinite(nowMs)) return null;
+  const closeHour = session.closeHourUtc ?? 22;
+  const openHour = session.openHourUtc ?? 0;
+  const dayStart = Math.floor(nowMs / DAY_MS) * DAY_MS;
+  const daysSinceFriday = (new Date(dayStart).getUTCDay() - 5 + 7) % 7;
+  let fridayStart = dayStart - daysSinceFriday * DAY_MS;
+  if (fridayStart + closeHour * HOUR_MS > nowMs) fridayStart -= 7 * DAY_MS;
+  const closedAtMs = fridayStart + closeHour * HOUR_MS;
+  const reopensAtMs = fridayStart + 3 * DAY_MS + openHour * HOUR_MS;
+  return nowMs < reopensAtMs ? { closedAtMs, reopensAtMs } : null;
+}
+
 /** A provider's last successful fetch older than this counts as stale. */
 export const QUOTE_STALE_AFTER_MS = 5 * 60_000; // 5 minutes
 /** A cached third-party candle window is reusable for this long. */

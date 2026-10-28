@@ -6,6 +6,8 @@
 //   - "Latency" is the winning provider read time; nothing served → unknown.
 //   - Source copy never says "your" broker: the chart route has no viewer.
 //   - The durable market_candles mirror is stored data, never a live bridge.
+//   - A closed market (scheduled weekend) is not live just because a coarse
+//     bar is within one interval of the epoch-aligned current bar.
 //
 // Run: node --import tsx --experimental-test-module-mocks --test --test-force-exit \
 //   src/lib/data/chart/__qa__/feedStatusTruthLabels.test.ts
@@ -168,4 +170,81 @@ test("Live bridge push (no sub-channel) still reads live", async () => {
   const out = await withNow(WEEKDAY_NOW, () => getChartCandles("EURUSD", "M5", 60));
   assert.equal(out.feedStatus.isLive, true);
   assert.match(out.feedStatus.message, /^Live feed active for EURUSD/);
+});
+
+// ── Scheduled weekend closure (forex: Fri ~22:00 UTC → reopen) ──────────────
+const HOUR = 60 * MIN;
+const H4 = 4 * HOUR;
+const D1 = 24 * HOUR;
+const FRI = Date.UTC(2026, 9, 30); // Fri 2026-10-30 00:00 UTC
+
+function closedBars(intervalMs: number, newestOpenMs: number, nowMs: number) {
+  route.ok = true;
+  route.primaryProvider = "mt5_broker";
+  route.assetClass = "forex";
+  route.candles = series(60, newestOpenMs, intervalMs);
+  route.attempts = [{ provider: "mt5_broker", ok: true, reason: null, candleCount: 60, ms: 1 }];
+  route.provenance = { providerId: "mt5_broker", subProviderId: null, brokerCode: "mt5", bridgeConnectionId: 7, userId: 42,
+    brokerSymbol: null, environment: "unknown", receivedAt: new Date(nowMs).toISOString(), delayed: false, source: "DERIVED", sourceId: "mt5_broker:EURUSD" };
+}
+
+test("Closed market: H4 at Sat 02:00 UTC whose newest bar opened Fri 20:00 is not live", async () => {
+  const now = FRI + D1 + 2 * HOUR;
+  closedBars(H4, FRI + 20 * HOUR, now);
+  const out = await withNow(now, () => getChartCandles("EURUSD", "H4", 60, true));
+  assert.equal(out.feedStatus.trailingIntervals, 1, "precondition: trailing gap alone reads current");
+  assert.equal(out.feedStatus.isLive, false);
+  assert.doesNotMatch(out.feedStatus.message, /^Live feed active/);
+  assert.match(out.feedStatus.message, /market closed/i);
+  assert.match(out.feedStatus.message, /2026-10-30 20:00 UTC/);
+});
+
+test("Closed market: D1 at Sat 10:00 UTC whose newest bar opened Fri 00:00 is not live", async () => {
+  const now = FRI + D1 + 10 * HOUR;
+  closedBars(D1, FRI, now);
+  const out = await withNow(now, () => getChartCandles("EURUSD", "D1", 60));
+  assert.equal(out.feedStatus.trailingIntervals, 1);
+  assert.equal(out.feedStatus.isLive, false);
+  assert.match(out.feedStatus.message, /market closed/i);
+});
+
+test("Closed market: the EA replaying its frozen Friday quote on Saturday does not count as trading", async () => {
+  const now = FRI + D1 + 2 * HOUR;
+  closedBars(H4, FRI + 20 * HOUR, now);
+  const lastQuote = FRI + 21 * HOUR + 54 * MIN;
+  for (let i = 5; i >= 0; i--) foldFormingTick("EURUSD", 1.1, lastQuote, now - i * 10_000, "mt5_broker");
+  const out = await withNow(now, () => getChartCandles("EURUSD", "H4", 60, true));
+  assert.equal(out.feedStatus.isLive, false);
+});
+
+test("Open market: a weekday D1 series one interval behind still reads live", async () => {
+  const now = FRI - 3 * D1 + 10 * HOUR; // Tue 10:00 UTC
+  closedBars(D1, FRI - 4 * D1, now);
+  const out = await withNow(now, () => getChartCandles("EURUSD", "D1", 60));
+  assert.equal(out.feedStatus.isLive, true);
+});
+
+test("Reopen: bars printed after the Friday close are observed trading, not closed", async () => {
+  const now = FRI + 2 * D1 + 22 * HOUR + 30 * MIN; // Sun 22:30 UTC
+  closedBars(M5, Math.floor(now / M5) * M5 - M5, now);
+  const out = await withNow(now, () => getChartCandles("EURUSD", "M5", 60));
+  assert.equal(out.feedStatus.isLive, true);
+});
+
+test("Friday after the scheduled close: a quote still moving is trading, not closed", async () => {
+  const now = FRI + 22 * HOUR + 20 * MIN;
+  closedBars(D1, FRI, now);
+  foldFormingTick("EURUSD", 1.1, now - 1_000, now - 1_000, "mt5_broker");
+  foldFormingTick("EURUSD", 1.1001, now, now, "mt5_broker");
+  const out = await withNow(now, () => getChartCandles("EURUSD", "D1", 60));
+  assert.equal(out.feedStatus.isLive, true);
+});
+
+test("24/7 synthetic is never treated as weekend-closed", async () => {
+  const now = FRI + D1 + 10 * HOUR;
+  closedBars(D1, FRI, now);
+  route.assetClass = "synthetic";
+  route.primaryProvider = "mt5_broker";
+  const out = await withNow(now, () => getChartCandles("V75", "D1", 60));
+  assert.equal(out.feedStatus.isLive, true);
 });

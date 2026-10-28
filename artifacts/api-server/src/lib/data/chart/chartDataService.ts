@@ -44,6 +44,8 @@ import {
   feedTimestampsUnconfirmed,
   newestBarLeadMs,
   FUTURE_STAMPED_SERIES_NOTE,
+  MARKET_FROZEN_WALL_FRESH_MS,
+  scheduledWeekendClosure,
   type FeedQuality,
 } from "../freshness.js";
 import {
@@ -382,8 +384,31 @@ async function buildChartFeed(
   // are real stored broker bars (quality still describes them), but nothing
   // backs a "live" claim.
   const durableMirror = result.ok && result.provenance?.subProviderId === DURABLE_MIRROR_SUB_PROVIDER;
+  //
+  // Scheduled weekend closure: on coarse timeframes the newest bar of a closed
+  // market stays within one interval of the epoch-aligned "current" bar for
+  // hours (D1: all Saturday morning), so the trailing gap alone reads current.
+  // When the instrument's session is in its weekend window, the newest
+  // provider bar opened before the scheduled close, and no tick for this
+  // series' source has observably MOVED in the last two minutes (the EA keeps
+  // replaying a frozen quote on weekends), nothing shows a trading market —
+  // the series is not live. Observed trading always beats the static schedule.
+  const tickSource = isFormingTickSource(source) ? source : null;
+  const tickFreshness = tickSource === "mt5_broker"
+    ? mt5TickFreshness
+    : tickSource
+      ? getFeedFreshness(symbol, now, tickSource)
+      : null;
+  const tradingObserved =
+    tickFreshness?.quoteMovedWallMs != null && now - tickFreshness.quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
+  const closure = lastCandle && !tradingObserved
+    ? scheduledWeekendClosure(getSymbolProfile(symbol, assetClass).session, now)
+    : null;
+  const marketClosedAtMs = closure && lastCandle && Date.parse(lastCandle.openTime) < closure.closedAtMs
+    ? closure.closedAtMs
+    : null;
   const reachable = source != null && candles.length > 0;
-  const isLive = timestampsUnconfirmed || durableMirror
+  const isLive = timestampsUnconfirmed || durableMirror || marketClosedAtMs != null
     ? false
     : formingTipPresent
       ? reachable && !verdict.stale
@@ -393,6 +418,7 @@ async function buildChartFeed(
     isLive,
     durableMirror,
     newestOpenTime: lastCandle?.openTime ?? null,
+    marketClosedAtMs,
   });
 
   const status: ChartFeedStatus = {
@@ -452,6 +478,8 @@ interface MessageContext {
   durableMirror: boolean;
   /** Newest provider bar's open time (ISO), before any display tip. */
   newestOpenTime: string | null;
+  /** Scheduled weekend close (epoch ms) the series predates, or null. */
+  marketClosedAtMs: number | null;
 }
 
 function utcStamp(iso: string | null): string {
@@ -467,6 +495,9 @@ function buildMessage(
   displaySymbol: string,
   ctx: MessageContext,
 ): string {
+  if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed")) {
+    return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. No live data until the market reopens.`;
+  }
   if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) {
     return `Showing stored MetaTrader 5 broker candles for ${displaySymbol} (newest bar opened ${utcStamp(ctx.newestOpenTime)}). No broker bridge is pushing this series right now, so this is not a live feed.`;
   }

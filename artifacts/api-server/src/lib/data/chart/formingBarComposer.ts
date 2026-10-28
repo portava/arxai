@@ -283,6 +283,12 @@ export interface MarketFreshness {
    * only; never an execution gate.
    */
   marketFrozen: boolean;
+  /**
+   * Wall-clock ms the quote last observably moved (new bid or new broker
+   * time), or null when no movement has been observed. Positive evidence that
+   * the market is trading right now — independent of the broker clock.
+   */
+  quoteMovedWallMs: number | null;
 }
 
 /**
@@ -323,6 +329,7 @@ export function getFeedFreshness(
     brokerStaleMs,
     wallStaleMs,
     marketFrozen,
+    quoteMovedWallMs: last.quoteMovedWallMs,
   };
 }
 
