@@ -301,7 +301,7 @@ function ChecklistCard({ items, progress }: { items: ReturnType<typeof buildSetu
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${tone.chip}`}>{tone.icon} {tone.label}</span>
               </div>
               <div className="mt-1 text-xs text-zinc-400">{item.explanation}</div>
-              <div className="mt-1 text-xs text-zinc-300"><span className="text-zinc-500">Why:</span> {item.safeNextAction}</div>
+              <div className="mt-1 text-xs text-zinc-300"><span className="text-zinc-500">Next step:</span> {item.safeNextAction}</div>
               {item.blockerReason && <div className="text-xs text-rose-300">Blocker: {item.blockerReason}</div>}
               {item.related && (
                 <Link href={item.related.route}>
@@ -374,8 +374,12 @@ function RuntimeSummaryCard({ ctx, status }: { ctx: RuntimeContext; status: Retu
         <dt className="text-zinc-500">Bridge mode</dt><dd>{ctx.bridge?.bridgeMode ?? "unknown"}</dd>
         <dt className="text-zinc-500">Heartbeat</dt><dd>{heartbeatLine(ctx.bridge)}</dd>
         <dt className="text-zinc-500">Broker read-only</dt><dd>{String(ctx.brokerReadOnly)}</dd>
-        <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness}</dd>
-        <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive ? "ENGAGED" : "off"}</dd>
+        {/* The runtime context does not read a readiness verdict or the
+            emergency-stop state from the server (both are placeholders in
+            collectRuntimeContext), so "unknown" / false are not measurements.
+            Only a positive ENGAGED reading is shown as a value. */}
+        <dt className="text-zinc-500">Readiness</dt><dd>{ctx.readiness === "unknown" ? "not checked by this page" : ctx.readiness}</dd>
+        <dt className="text-zinc-500">Emergency Stop</dt><dd>{ctx.emergencyStopActive ? "ENGAGED" : "not checked by this page — see Emergency"}</dd>
         <dt className="text-zinc-500">Selected symbol</dt><dd>{ctx.selectedSymbol ?? "—"}</dd>
         <dt className="text-zinc-500">Route</dt><dd className="truncate">{ctx.route}</dd>
         <dt className="text-zinc-500">Recent failed APIs</dt><dd>{ctx.recentFailedEndpoints.length}</dd>
