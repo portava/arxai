@@ -106,3 +106,35 @@ describe("check-failed action copy", () => {
     expect(ui.copy).toMatch(/couldn't complete/);
   });
 });
+
+describe("delayed feed copy states the real lag", () => {
+  const H = 3_600_000;
+  it("an H4 feed two intervals behind is not 'slightly behind live' or SYNCING", () => {
+    const t = resolveScannerTruth(inputs({
+      timeframe: "4h",
+      candleCount: 120,
+      requestedCount: 120,
+      lastTime: new Date(NOW - 9 * H).toISOString(),
+      feedStatus: feed({ quality: "delayed", isLive: false, aiUsable: false, trailingIntervals: 2 }),
+    }));
+    expect(t.candles.status).toBe("delayed");
+    expect(t.candles.reason).not.toMatch(/slightly behind/i);
+    expect(t.candles.reason).toMatch(/9h ago/);
+    expect(t.candles.reason).toMatch(/2 bars behind/);
+    expect(t.strip.data.detail).toBe(t.candles.reason);
+    expect(t.consolidated.candleStatus).not.toBe("SYNCING");
+    expect(t.consolidated.candleStatus).toBe("STALE");
+    expect(t.consolidated.scannerActionability).toBe("FEED_LIMITED");
+  });
+
+  it("an M1 feed a couple of minutes behind still reads as catching up, with its lag", () => {
+    const t = resolveScannerTruth(inputs({
+      timeframe: "1m",
+      lastTime: new Date(NOW - 150_000).toISOString(),
+      feedStatus: feed({ quality: "delayed", isLive: false, aiUsable: false, trailingIntervals: 2 }),
+    }));
+    expect(t.candles.reason).not.toMatch(/slightly behind/i);
+    expect(t.candles.reason).toMatch(/2m ago/);
+    expect(t.consolidated.candleStatus).toBe("SYNCING");
+  });
+});
