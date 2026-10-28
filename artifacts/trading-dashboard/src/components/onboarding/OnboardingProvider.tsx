@@ -47,7 +47,7 @@ export function describeOnboardingTradingStatus(
     if (tradingMode.cleanBlockedReason) return { tone: "warning" as const, title: "Trading blocked", note: tradingMode.cleanBlockedReason };
     // userCanManualTrade is status + approval only — it reads no heartbeat, so
     // the note must not claim a connection.
-    if (tradingMode.isLiveShared && tradingMode.canManualTrade) return { tone: "success" as const, title: "Live trading available", note: "Your account is approved for live trading. Bridge connection is not checked here — see MT5 status." };
+    if (tradingMode.isLiveShared && tradingMode.canManualTrade) return { tone: "success" as const, title: "Live trading approved", note: "Your account is approved for live trading. Bridge connection is not checked here — see MT5 status." };
     return { tone: "muted" as const, title: "Checking trading status", note: "ARX AI is reading your account permissions." };
   })();
 

@@ -58,6 +58,7 @@ import { cn } from "@/lib/utils";
 import { CockpitCard, StatTile, Pill, ActionButton, SectionLink } from "./primitives";
 import { ARXLogoMark } from "@/components/brand/ARXLogo";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "./bridgeObservation";
+import { describeRiskCaps } from "./riskCapsSummary";
 
 const money = (n: number | null | undefined) =>
   n == null ? "—" : `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -362,6 +363,24 @@ export function TradingPermissionSummaryCard() {
   const frozen = mode.isFrozen;
   const waitingApproval = !mode.canManualTrade && !blocked && !frozen;
 
+  // Bridge connectivity comes from the shared master pool's heartbeat-derived
+  // availability (same query the account snapshot card uses), never from the
+  // presence or absence of an account-mode blocker.
+  const summaryQ = useGetMeSharedAccountSummary({
+    query: { queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
+  });
+  const onSharedRoute = isOnSharedMasterRoute(mode);
+  const bridge = describeBridgeObservation({
+    onSharedRoute,
+    allocationView: summaryQ.data?.allocationView ?? null,
+    summaryLoading: summaryQ.isLoading,
+  });
+
+  // userCanManualTrade is account status + approval + no blocker. It does not
+  // read the bridge, feed, kill switch or risk caps, so the label is a
+  // permission statement ("Approved to trade"), never "All clear". On the
+  // shared master route it is downgraded while the bridge is not online.
+  const bridgeNotOnline = onSharedRoute && bridge.state !== "online";
   const status = frozen
     ? { label: "Paused", tone: "warning" as const }
     : blocked
@@ -370,25 +389,18 @@ export function TradingPermissionSummaryCard() {
       : waitingApproval
         ? { label: "Waiting for approval", tone: "warning" as const }
         : mode.canManualTrade
-          ? { label: "All clear", tone: "success" as const }
+          ? bridgeNotOnline
+            ? { label: `Approved · bridge ${bridge.label.toLowerCase()}`, tone: "warning" as const }
+            : { label: "Approved to trade", tone: "success" as const }
           : { label: "Locked", tone: "danger" as const };
 
   const headline = blocked
     ? mode.cleanBlockedReason
-    : mode.cleanUserMessage || "Your account is approved for trading.";
+    : mode.canManualTrade && bridgeNotOnline
+      ? bridge.detail
+      : mode.cleanUserMessage || "Your account is approved for trading.";
 
-  const sessionActive = !mode.isLoading && !frozen;
-  // Bridge connectivity comes from the shared master pool's heartbeat-derived
-  // availability (same query the account snapshot card uses), never from the
-  // presence or absence of an account-mode blocker.
-  const summaryQ = useGetMeSharedAccountSummary({
-    query: { queryKey: getGetMeSharedAccountSummaryQueryKey(), refetchInterval: 5000 },
-  });
-  const bridge = describeBridgeObservation({
-    onSharedRoute: isOnSharedMasterRoute(mode),
-    allocationView: summaryQ.data?.allocationView ?? null,
-    summaryLoading: summaryQ.isLoading,
-  });
+  const riskCaps = describeRiskCaps(mode.envelope?.userRiskCaps ?? null);
 
   return (
     <CockpitCard
@@ -404,9 +416,10 @@ export function TradingPermissionSummaryCard() {
       <p className="mt-1 text-sm text-txt-secondary">{headline}</p>
 
       <dl className="mt-4 space-y-2.5 text-sm">
-        <Row label="Risk level" value={mode.envelope?.userRiskCaps ? "Managed" : "Low"} valueClass="text-success" />
+        <Row label="Risk caps" value={riskCaps.label} valueClass={BRIDGE_TEXT[riskCaps.tone]} title={riskCaps.detail} data-testid="permission-risk-caps" />
         <Row label="Bridge" value={bridge.label} valueClass={BRIDGE_TEXT[bridge.tone]} title={bridge.detail} data-testid="permission-bridge" />
-        <Row label="Session" value={sessionActive ? "Active" : "Inactive"} valueClass={sessionActive ? "text-success" : "text-txt-muted"} />
+        {/* Only the operator pause flag is known here; no session or system health is measured. */}
+        <Row label="Account pause" value={mode.isLoading ? "Checking" : frozen ? "Paused" : "Not paused"} valueClass={frozen ? "text-warning" : "text-txt-secondary"} data-testid="permission-pause" />
         <Row label="Market" value={active} valueClass="text-foreground font-mono" />
       </dl>
 

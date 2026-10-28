@@ -225,7 +225,7 @@ export function RiskGovernorCard({
     <CockpitCard title="Risk Governor" subtitle="Account risk status and controls" icon={<ShieldCheck className="h-[18px] w-[18px]" />} accent={statusTone} data-testid="risk-governor-card">
       <div className="grid grid-cols-2 gap-y-2.5 text-sm sm:grid-cols-4">
         <Stat label="Status" value={statusLabel} tone={statusTone} />
-        <Stat label="Risk level" value={riskLevel} tone="success" />
+        <Stat label="Risk caps" value={riskLevel} />
         <Stat label="Bridge" value={bridge} />
         <Stat label="Approval" value={approval} />
       </div>

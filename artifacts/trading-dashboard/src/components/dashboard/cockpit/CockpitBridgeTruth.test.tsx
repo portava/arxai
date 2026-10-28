@@ -212,3 +212,50 @@ describe("bridge connectivity comes from a heartbeat-derived observation, not th
     expect(screen.getByTestId("trade-connection-bridge").textContent).toBe("Bridge: Unavailable");
   });
 });
+
+describe("permission-only envelope never reads as 'All clear' / 'All systems operational' / risk 'Managed'", () => {
+  it("approved LIVE_SHARED with the shared bridge offline and every risk cap null", () => {
+    setMode();
+    setSummary(allocationView({ bridgeAvailability: "UNAVAILABLE", bridgeMessage: "Live bridge is offline." }));
+    render(<TradingPermissionSummaryCard />);
+    const card = screen.getByTestId("cockpit-trading-permission");
+    expect(card.textContent).not.toContain("All clear");
+    expect(card.textContent).not.toContain("Managed");
+    expect(screen.getByTestId("permission-status").textContent).toBe("Approved · bridge unavailable");
+    expect(card.textContent).toContain("Live bridge is offline.");
+    expect(screen.getByTestId("permission-risk-caps").querySelector("dd")!.textContent).toBe("None set");
+    // No session / system health is measured here — only the pause flag.
+    expect(card.textContent).not.toMatch(/Session/);
+    expect(screen.getByTestId("permission-pause").querySelector("dd")!.textContent).toBe("Not paused");
+  });
+
+  it("approved with the bridge online says 'Approved to trade' (a permission statement) and counts real caps", () => {
+    setMode({ envelope: envelope({ userRiskCaps: { maxLotSize: 0.1, maxOpenTrades: null, maxDailyLossAmount: 50, allowedSymbols: null, requireStopLoss: true } }) });
+    setSummary(allocationView({ bridgeAvailability: "HEALTHY" }));
+    render(<TradingPermissionSummaryCard />);
+    expect(screen.getByTestId("permission-status").textContent).toBe("Approved to trade");
+    const caps = screen.getByTestId("permission-risk-caps");
+    expect(caps.querySelector("dd")!.textContent).toBe("2 set");
+    expect(caps.getAttribute("title")).toBe("Account caps: max lot 0.1, daily loss limit $50.");
+  });
+
+  it("EnvironmentPill LIVE sub-line is a permission statement, not 'All systems operational'", () => {
+    setMode();
+    render(<EnvironmentPill />);
+    const pill = screen.getByTestId("cockpit-env-pill");
+    expect(pill.textContent).not.toContain("All systems operational");
+    expect(pill.textContent).toContain("Approved for live trading");
+  });
+
+  it("onboarding says live trading is approved, not 'available'", () => {
+    setMode();
+    const { platform } = describeOnboardingTradingStatus(h.mode as never);
+    expect(platform.title).toBe("Live trading approved");
+  });
+
+  it("trade room Risk Governor does not print 'Trading available' from the envelope alone", () => {
+    setMode();
+    const s = resolveTradeRoomStatus(h.mode as never, describeBridgeObservation({ onSharedRoute: true, allocationView: allocationView() }));
+    expect(s.rgStatus.label).toBe("Approved to trade");
+  });
+});

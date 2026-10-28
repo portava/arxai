@@ -54,7 +54,8 @@ export function resolveTradeRoomStatus(m: TradeRoomModeInput, bridgeObs: BridgeO
 
   const rgStatus = frozen ? { label: "Trading paused", tone: "warning" as const }
     : blocked ? { label: "Trading blocked", tone: "warning" as const }
-    : canTrade ? { label: "Trading available", tone: "success" as const }
+    // canManualTrade is permission only (status + approval + no blocker).
+    : canTrade ? { label: "Approved to trade", tone: "success" as const }
     : { label: "Risk lock active", tone: "danger" as const };
 
   const bridge = bridgeObs.label;

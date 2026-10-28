@@ -32,6 +32,7 @@ import {
 } from "@/components/dashboard/trade/TradePanels";
 import { resolveTradeRoomStatus } from "@/components/dashboard/trade/tradeRoomStatus";
 import { describeBridgeObservation, isOnSharedMasterRoute } from "@/components/dashboard/cockpit/bridgeObservation";
+import { describeRiskCaps } from "@/components/dashboard/cockpit/riskCapsSummary";
 
 type Opp = {
   symbol: string; timeframe: string; bias: string; recommendedAction: string;
@@ -200,7 +201,7 @@ export default function TradeCommandRoom() {
     <div className="space-y-4">
       <RiskGovernorCard
         statusLabel={rgStatus.label} statusTone={rgStatus.tone}
-        riskLevel="Low" bridge={bridge}
+        riskLevel={describeRiskCaps(tradingMode.envelope?.userRiskCaps ?? null).label} bridge={bridge}
         approval={tradingMode.canManualTrade ? "Approved" : "Pending"}
         isAdmin={isAdmin} rawCanPlace={tradingMode.canManualTrade} rawMode={tradingMode.cleanModeLabel || "—"}
       />

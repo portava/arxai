@@ -24,7 +24,8 @@ export function EnvironmentPill() {
     : mode.isFrozen
       ? { label: "Trading Paused", dot: "bg-warning", text: "text-warning", icon: Pause, sub: mode.cleanUserMessage }
       : mode.isLiveShared
-        ? { label: "LIVE · Shared MT5", dot: "bg-success", text: "text-success", icon: CheckCircle2, sub: "All systems operational" }
+        // The envelope measures permission, not systems: say what it knows.
+        ? { label: "LIVE · Shared MT5", dot: "bg-success", text: "text-success", icon: CheckCircle2, sub: mode.canManualTrade ? "Approved for live trading" : mode.cleanUserMessage }
         : mode.isDemo
           ? { label: "Demo · Simulator", dot: "bg-primary", text: "text-primary", icon: CheckCircle2, sub: "Demo environment" }
           : { label: mode.cleanModeLabel || "Simulator", dot: "bg-muted", text: "text-txt-secondary", icon: AlertTriangle, sub: mode.cleanUserMessage };
