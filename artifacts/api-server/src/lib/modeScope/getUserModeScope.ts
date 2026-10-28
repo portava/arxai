@@ -47,6 +47,14 @@ export interface UserModeScope {
    *   PAPER       → "paper"  (paper_trades)
    */
   primaryDataDomain: "live" | "demo" | "paper";
+  /**
+   * False when the account's mode could not be read and the fields above are
+   * the PAPER fallback (the safest row filter). A surface must not present a
+   * fallback as the account being in PAPER mode.
+   */
+  modeResolved: boolean;
+  /** Plain English when modeResolved is false (what failed, when); null otherwise. */
+  modeNote: string | null;
 }
 
 export interface ResolveOptions {
@@ -64,10 +72,23 @@ function modeToDomain(m: CurrentAccountMode): UserModeScope["primaryDataDomain"]
   return "paper";
 }
 
+function hhmmUtc(at: Date): string {
+  return at.toISOString().slice(11, 16) + " UTC";
+}
+
+/** The note carried when the mode could not be read (rows filtered as PAPER). */
+export function unresolvedModeNote(at: Date = new Date()): string {
+  return (
+    `The account's trading mode could not be read (tried ${hhmmUtc(at)}), so rows here are filtered as PAPER, the safest scope. ` +
+    "The account may not be in PAPER mode."
+  );
+}
+
 /**
  * Resolve the mode-scope for `userId`. Always returns a value — never
  * throws, so a degraded resolver never silently leaks the wrong rows.
- * On any internal failure, falls back to the safest mode (PAPER).
+ * On any internal failure, falls back to the safest mode (PAPER) and says so
+ * (modeResolved false, modeNote).
  */
 export async function getUserModeScope(
   userId: number,
@@ -125,6 +146,8 @@ export async function getUserModeScope(
       sharedMasterAttached,
       isAdmin,
       primaryDataDomain: modeToDomain(currentAccountMode),
+      modeResolved: true,
+      modeNote: null,
     };
   } catch {
     // Safest fallback — PAPER never reads live tables and never claims
@@ -137,6 +160,9 @@ export async function getUserModeScope(
       sharedMasterAttached: false,
       isAdmin,
       primaryDataDomain: "paper",
+      // The fallback is a row filter, not a reading of the account's mode.
+      modeResolved: false,
+      modeNote: unresolvedModeNote(),
     };
   }
 }
@@ -150,10 +176,18 @@ export function modeScopeEnvelope(scope: UserModeScope): {
   currentAccountMode: CurrentAccountMode;
   modeScopeApplied: true;
   primaryDataDomain: UserModeScope["primaryDataDomain"];
+  /** False when currentAccountMode is the PAPER fallback for an unreadable mode. */
+  modeResolved: boolean;
+  /** Plain English when modeResolved is false; null otherwise. */
+  modeScopeNote: string | null;
 } {
+  // Only an explicit successful read counts as resolved.
+  const modeResolved = scope.modeResolved === true;
   return {
     currentAccountMode: scope.currentAccountMode,
     modeScopeApplied: true,
     primaryDataDomain: scope.primaryDataDomain,
+    modeResolved,
+    modeScopeNote: modeResolved ? null : (scope.modeNote ?? unresolvedModeNote()),
   };
 }
