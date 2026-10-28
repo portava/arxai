@@ -23444,14 +23444,17 @@ components:
       type: object
       description: >-
         Whether the cycle finished. COMPLETED only when every step ran and none
-        threw or hit a bounded database wait. INCOMPLETE: a step failed or a
-        connection/statement/lock wait timed out; the failed step's outcome is
+        threw, hit a bounded database wait, lost its database connection or
+        left a protective outcome unproven. INCOMPLETE: a step failed, a
+        connection/statement/lock/read wait timed out, a database connection
+        was lost, or a protective action's outcome is uncertain; the outcome is
         not proven by the cycle (check the execution feed). STOPPED: the
         cross-process cycle lock was lost, so the cycle stopped at a safe point
         before its next dispatch.
       required:
         [status, stopReason, decisionsFailed, decisionsNotStarted, agentsFailed,
-         agentsNotStarted, managementStepFailed, protectiveNotRun, dbWaitTimeouts]
+         agentsNotStarted, managementStepFailed, protectiveNotRun, dbWaitTimeouts,
+         dbConnectionFailures]
       properties:
         status: { type: string, enum: [COMPLETED, INCOMPLETE, STOPPED] }
         stopReason: { type: string, nullable: true, enum: [LEASE_LOST] }
@@ -23462,6 +23465,7 @@ components:
         managementStepFailed: { type: boolean }
         protectiveNotRun: { type: integer }
         dbWaitTimeouts: { type: integer }
+        dbConnectionFailures: { type: integer }
 
     RunAutonomousCycleHoldDetail:
       type: object

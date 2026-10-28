@@ -85,7 +85,7 @@ try {
       cwd: join(dirname(fileURLToPath(import.meta.url)), "../../../.."),
       stdio: "inherit",
       // Each case forks one to three API processes (cold tsx start each).
-      timeout: 600_000,
+      timeout: 900_000,
     },
   );
   status = result.status ?? 1;

@@ -3,13 +3,16 @@
 // OS process (cycleCoordination.child.ts, forked) serving the real route; this
 // file only seeds rows, drives the children over HTTP/IPC, injects failures
 // (SIGKILL, row locks held by another connection, a terminated lock session,
-// an exhausted pool) and reads the database afterwards. No broker, terminal,
-// bridge or network endpoint is contacted.
+// an exhausted pool, a loopback TCP proxy that goes silent like a half-open
+// connection) and reads the database afterwards. The pooler cases call the
+// coordinator in this process with statements routed to chosen server
+// sessions. No broker, terminal, bridge or network endpoint is contacted.
 //
 // Run only via: pnpm --filter @workspace/api-server run test:self-trade-cycle-coordination-postgres
 import { after, before, beforeEach, it } from "node:test";
 import assert from "node:assert/strict";
 import { fork, type ChildProcess } from "node:child_process";
+import net from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getTableColumns, getTableName, SQL } from "drizzle-orm";
@@ -593,4 +596,266 @@ it("a lost lock session stops the cycle before its next dispatch while another p
   await waitForLockFree();
   const again = await post(a);
   assert.equal(again.status, 200, "A recovers for the next run");
+});
+
+// Lost at the other two safe points: between agents, and before the drain.
+it("a lock lost between agents stops before the next agent's management", { timeout: 240_000 }, async () => {
+  const a = await spawnApi({ ARX_QA_PAUSE_AT: "aaci:agent-1" });
+  const pendingA = post(a);
+  await waitFor(() => paused(a, "aaci:agent-1"), 60_000, () => `did not reach agent 1: ${logsOf(a)}`);
+  const [holder] = await lockHolders();
+  assert.ok(holder, "A holds the lock");
+  await pool.query("SELECT pg_terminate_backend($1)", [holder]);
+  await waitForLockFree();
+  const lostAt = a.messages.length;
+  resume(a, "aaci:agent-1");
+  const ranA = await deadline(pendingA, 60_000, () => `A did not answer: ${logsOf(a)}`);
+  assert.equal(ranA.status, 200, JSON.stringify(ranA.body));
+  assert.equal(ranA.body.completion.status, "STOPPED", JSON.stringify(ranA.body.completion));
+  assert.equal(ranA.body.completion.stopReason, "LEASE_LOST");
+  assert.equal(ranA.body.completion.decisionsNotStarted, 0);
+  assert.equal(ranA.body.completion.agentsNotStarted, 1, "agent 4 not started");
+  assert.equal(ranA.body.executed.DISPATCHED, 1, "the entry before the loss is still reported");
+  const after = a.messages.slice(lostAt).filter((m) => m.type === "point").map((m) => m.name!);
+  assert.ok(!after.some((n) => n.startsWith("manage:") || n === "aaci:agent-4"), `A went on after losing the lock: ${after}`);
+  const s = await state();
+  assert.equal(s.managementCommands.length, 0, "no management command after the loss");
+  assert.equal(s.entryCommands.length, 1);
+
+  // The next run manages agent 4 once and does not repeat the entry.
+  const again = await deadline(post(a), 60_000, () => `second run did not answer: ${logsOf(a)}`);
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.equal(again.body.completion.status, "COMPLETED", JSON.stringify(again.body.completion));
+  assert.equal(again.body.executed.SKIPPED_DUPLICATE, 1);
+  const s2 = await state();
+  assert.equal(s2.entryCommands.length, 1);
+  assert.equal(s2.managementCommands.length, 1);
+});
+
+it("a lock lost after the last agent leaves the protective drain unrun (nothing claimed)", { timeout: 240_000 }, async () => {
+  const a = await spawnApi({ ARX_QA_PAUSE_AT: "quota:agent-4", ARX_QA_PROTECTIVE_STUB: "1" });
+  const pendingA = post(a);
+  await waitFor(() => paused(a, "quota:agent-4"), 60_000, () => `did not reach the end of agent 4: ${logsOf(a)}`);
+  const [holder] = await lockHolders();
+  await pool.query("SELECT pg_terminate_backend($1)", [holder]);
+  await waitForLockFree();
+  const lostAt = a.messages.length;
+  resume(a, "quota:agent-4");
+  const ranA = await deadline(pendingA, 60_000, () => `A did not answer: ${logsOf(a)}`);
+  assert.equal(ranA.status, 200, JSON.stringify(ranA.body));
+  assert.equal(ranA.body.completion.status, "STOPPED", JSON.stringify(ranA.body.completion));
+  assert.equal(ranA.body.completion.agentsNotStarted, 0);
+  assert.equal(ranA.body.completion.protectiveNotRun, 1);
+  assert.equal(ranA.body.protective.considered, 0);
+  const after = a.messages.slice(lostAt).filter((m) => m.type === "point").map((m) => m.name!);
+  assert.ok(!after.includes("protective:drain"), `drain ran after losing the lock: ${after}`);
+  assert.ok(!after.some((n) => n.startsWith("manage:") || n.startsWith("entry:")), `dispatch after the loss: ${after}`);
+  const s = await state();
+  assert.equal(s.managementCommands.length, 1, "agent 4 was managed before the loss, once");
+
+  const again = await deadline(post(a), 60_000, () => `second run did not answer: ${logsOf(a)}`);
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.equal(again.body.completion.status, "COMPLETED", JSON.stringify(again.body.completion));
+  assert.ok(a.messages.slice(lostAt).some((m) => m.name === "protective:drain"), "the next run drains");
+  assert.equal((await state()).managementCommands.length, 1);
+});
+
+// ── (f) half-open connections: the server's cancel never arrives ─────────────
+/**
+ * Loopback TCP proxy to the cluster's socket. A connection whose startup
+ * packet names `app` goes silent in both directions (nothing forwarded,
+ * nothing closed) from the first chunk matching `match`, like a flow a NAT or
+ * load balancer dropped without a reset.
+ */
+async function silentProxy() {
+  const socketPath = join(destination.searchParams.get("host")!, `.s.PGSQL.${destination.searchParams.get("port")}`);
+  let rule: { app: string; match: RegExp } | null = null;
+  let silenced = 0;
+  const sockets = new Set<net.Socket>();
+  const server = net.createServer((down) => {
+    const up = net.connect({ path: socketPath });
+    sockets.add(down).add(up);
+    let app: string | null = null;
+    let silent = false;
+    down.on("data", (chunk) => {
+      const text = chunk.toString("latin1");
+      app ??= /application_name\0([^\0]*)\0/.exec(text)?.[1] ?? "";
+      if (!silent && rule && app === rule.app && rule.match.test(text)) {
+        silent = true;
+        silenced++;
+      }
+      if (!silent) up.write(chunk);
+    });
+    up.on("data", (chunk) => {
+      if (!silent) down.write(chunk);
+    });
+    const close = () => {
+      down.destroy();
+      up.destroy();
+    };
+    for (const sock of [down, up]) {
+      sock.on("close", close);
+      sock.on("error", close);
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as net.AddressInfo).port;
+  return {
+    url: `postgresql://arx_qa@127.0.0.1:${port}/arx_cycle_coordination_test`,
+    stall: (app: string, match: RegExp) => {
+      rule = { app, match };
+    },
+    clear: () => {
+      rule = null;
+    },
+    silenced: () => silenced,
+    close: () => {
+      for (const sock of sockets) sock.destroy();
+      server.close();
+    },
+  };
+}
+
+it("a cycle connection that goes silent mid-query ends the cycle within the client bound and frees both locks", { timeout: 240_000 }, async () => {
+  const proxy = await silentProxy();
+  try {
+    const a = await spawnApi({
+      DATABASE_URL: proxy.url,
+      ARX_CYCLE_DB_STATEMENT_TIMEOUT_MS: "1500",
+      ARX_CYCLE_DB_CLIENT_READ_GRACE_MS: "500",
+    });
+    // The cycle's first read of the decisions table never gets an answer.
+    proxy.stall("arx-autonomous-cycle-work", /"self_trade_decisions"/);
+    const res = await deadline(post(a), 20_000, () => `cycle did not answer within the bound: ${logsOf(a)}`);
+    assert.equal(proxy.silenced(), 1, "the work connection went silent");
+    assert.equal(res.status, 500, JSON.stringify(res.body));
+    assert.equal(res.body.error, "CYCLE_FAILED");
+    assert.match(res.body.message, /database wait exceeded its limit/);
+    assert.ok(res.ms < 10_000, `answered in ${res.ms} ms`);
+    assert.ok(a.messages.some((m) => m.level === "error" && (m.fields as any)?.dbWaitTimeout === true), logsOf(a));
+    await waitForLockFree();
+    const s = await state();
+    assert.equal(s.entryCommands.length, 0, "nothing dispatched");
+    assert.equal(s.managementCommands.length, 0);
+
+    // The silent connection was discarded, not handed to the next cycle.
+    proxy.clear();
+    const later = await deadline(post(a), 60_000, () => `later run did not answer: ${logsOf(a)}`);
+    assert.equal(later.status, 200, JSON.stringify(later.body));
+    assert.equal(later.body.completion.status, "COMPLETED", JSON.stringify(later.body.completion));
+    assert.equal(later.body.executed.DISPATCHED, 1);
+    const s2 = await state();
+    assert.equal(s2.entryCommands.length, 1);
+    assert.equal(s2.managementCommands.length, 1);
+  } finally {
+    proxy.close();
+  }
+});
+
+it("a lock connection that goes silent during acquisition refuses within the bound and starts nothing", { timeout: 240_000 }, async () => {
+  const proxy = await silentProxy();
+  try {
+    const a = await spawnApi({ DATABASE_URL: proxy.url, ARX_CYCLE_LEASE_CHECK_TIMEOUT_MS: "800" });
+    proxy.stall("arx-autonomous-cycle", /pg_try_advisory_lock/);
+    const res = await deadline(post(a), 20_000, () => `acquisition did not answer within the bound: ${logsOf(a)}`);
+    assert.equal(proxy.silenced(), 1);
+    assert.equal(res.status, 500, JSON.stringify(res.body));
+    assert.match(res.body.message, /No cycle was started/);
+    assert.ok(res.ms < 8_000, `answered in ${res.ms} ms`);
+    assert.deepEqual(await lockHolders(), []);
+    assert.equal((await rows("SELECT count(*)::int AS n FROM self_trade_audit_log WHERE event_type = 'AUTONOMOUS_CYCLE_RUN'"))[0].n, 0);
+
+    proxy.clear();
+    const later = await deadline(post(a), 60_000, () => `later run did not answer: ${logsOf(a)}`);
+    assert.equal(later.status, 200, "the single flight was freed");
+  } finally {
+    proxy.close();
+  }
+});
+
+// ── (g) transaction-mode pooler: statements land on other server sessions ────
+const coordinator = await import("../cycleCoordinator.js");
+type LockClient = InstanceType<typeof database.PgClient>;
+async function serverSessions(n: number): Promise<LockClient[]> {
+  return Promise.all(
+    Array.from({ length: n }, async () => {
+      const c = new database.PgClient({ connectionString: process.env.DATABASE_URL });
+      await c.connect();
+      return c;
+    }),
+  );
+}
+/** One "pooled" client whose i-th statement runs on sessions[route[i]] (the last entry repeats). */
+function routed(sessions: LockClient[], route: number[]): LockClient {
+  let i = 0;
+  const pick = () => sessions[route[Math.min(i++, route.length - 1)]!]!;
+  const fake = {
+    connect: async () => undefined,
+    query: (...args: unknown[]) => (pick().query as (...a: unknown[]) => unknown)(...args),
+    on: () => fake,
+    off: () => fake,
+    end: async () => undefined,
+  };
+  return fake as unknown as LockClient;
+}
+const unlockOn = async (c: LockClient) =>
+  (await c.query("SELECT pg_advisory_unlock($1::int4, $2::int4) AS ok", [CYCLE_LOCK.classid, CYCLE_LOCK.objid])).rows[0].ok;
+const pidOf = async (c: LockClient) => (await c.query("SELECT pg_backend_pid() AS pid")).rows[0].pid as number;
+
+it("pooler: a server session that already holds the lock (re-entrant) is refused without bumping its count", { timeout: 60_000 }, async () => {
+  const [x] = await serverSessions(1);
+  try {
+    await x!.query("SELECT pg_advisory_lock($1::int4, $2::int4)", [CYCLE_LOCK.classid, CYCLE_LOCK.objid]);
+    await assert.rejects(
+      coordinator.acquireCycleLease(coordinator.readCycleDbBounds(), () => routed([x!], [0])),
+      (e: Error) => e instanceof coordinator.CycleCoordinationError && /already held by this database session/.test(e.message),
+    );
+    assert.equal(await unlockOn(x!), true);
+    assert.equal(await unlockOn(x!), false, "held once: the refused attempt did not take it again");
+    assert.deepEqual(await lockHolders(), []);
+  } finally {
+    await x!.end();
+  }
+});
+
+it("pooler: verification on another session refuses, and unlocks only on the session that took the lock", { timeout: 60_000 }, async () => {
+  const [x, y] = await serverSessions(2);
+  try {
+    // try on X, verify on Y (refused), unlock lands on X: freed.
+    await assert.rejects(
+      coordinator.acquireCycleLease(coordinator.readCycleDbBounds(), () => routed([x!, y!], [0, 1, 0])),
+      /could not be verified on the session that took it/,
+    );
+    assert.deepEqual(await lockHolders(), []);
+
+    // try on X, verify and unlock on Y: Y never unlocks X's lock; X keeps it
+    // until the pooler recycles that session (later runs see 409).
+    await assert.rejects(
+      coordinator.acquireCycleLease(coordinator.readCycleDbBounds(), () => routed([x!, y!], [0, 1, 1])),
+      /could not be verified/,
+    );
+    assert.deepEqual(await lockHolders(), [await pidOf(x!)]);
+    const refused = await coordinator.acquireCycleLease();
+    assert.equal(refused.acquired, false);
+  } finally {
+    await x!.end();
+    await y!.end();
+  }
+  await waitForLockFree();
+});
+
+it("pooler: a lease whose check lands on another session is lost, so the cycle stops", { timeout: 60_000 }, async () => {
+  const [x, y] = await serverSessions(2);
+  try {
+    const attempt = await coordinator.acquireCycleLease(coordinator.readCycleDbBounds(), () => routed([x!, y!], [0, 0, 1]));
+    assert.ok(attempt.acquired);
+    assert.equal(attempt.lease.backendPid, await pidOf(x!));
+    assert.equal(await attempt.lease.stillHeld(), false);
+    assert.match(attempt.lease.lostReason ?? "", /^LOCK_SESSION_MOVED/);
+    await attempt.lease.release();
+  } finally {
+    await x!.end();
+    await y!.end();
+  }
+  await waitForLockFree();
 });

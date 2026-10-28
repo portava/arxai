@@ -116,6 +116,7 @@ mock.module("../../security/anomalyService.js", { namedExports: { evaluateTradeA
 
 const { runAutonomousCycle } = await import("../autonomousCycle.js");
 const { buildRunCycleResponse, createCycleSingleFlight } = await import("../cycleReport.js");
+const { isDbConnectionLost, isDbWaitTimeout } = await import("../cycleCoordinator.js");
 
 const run = (guard?: Parameters<typeof runAutonomousCycle>[0]["guard"]) =>
   runAutonomousCycle({ actorUserId: 1, actorRole: "admin", reason: "qa protective accounting", guard });
@@ -129,6 +130,7 @@ const COMPLETED = {
   managementStepFailed: false,
   protectiveNotRun: 0,
   dbWaitTimeouts: 0,
+  dbConnectionFailures: 0,
 };
 
 beforeEach(() => {
@@ -323,12 +325,12 @@ describe("autonomous cycle: completion is never claimed after a failure, a bound
     tableRows.set(database.selfTradeAgentSettingsTable, [{ agentId: 5, maxLotPerTrade: 1, dailyMinTrades: 0 }]);
   };
   const timeoutError = () => Object.assign(new Error("canceling statement due to lock timeout"), { code: "55P03" });
-  const guardFrom = (answers: boolean[], dbWaitTimeouts = 0) => {
+  const guardFrom = (answers: boolean[], dbWaitTimeouts = 0, dbConnectionFailures = 0) => {
     let calls = 0;
     return {
       calls: () => calls,
       stillHeld: async () => answers[Math.min(calls++, answers.length - 1)]!,
-      stats: () => ({ dbWaitTimeouts, leaseLost: null }),
+      stats: () => ({ dbWaitTimeouts, dbConnectionFailures, leaseLost: null }),
     };
   };
 
@@ -367,6 +369,54 @@ describe("autonomous cycle: completion is never claimed after a failure, a bound
     const result = await run(guardFrom([true], 2));
     assert.equal(result.completion.dbWaitTimeouts, 2);
     assert.equal(result.completion.status, "INCOMPLETE");
+  });
+
+  it("a database connection lost below the cycle (counted by the guard) makes it INCOMPLETE, not a timeout", async () => {
+    const result = await run(guardFrom([true], 0, 1));
+    assert.equal(result.completion.dbConnectionFailures, 1);
+    assert.equal(result.completion.dbWaitTimeouts, 0);
+    assert.equal(result.completion.status, "INCOMPLETE");
+  });
+
+  it("a step that throws on a terminated connection is counted as a connection failure", async () => {
+    reconcileImpl = async () => {
+      throw Object.assign(new Error("terminating connection due to administrator command"), { code: "57P01" });
+    };
+    const result = await run();
+    assert.equal(result.completion.dbConnectionFailures, 1);
+    assert.equal(result.completion.status, "INCOMPLETE");
+  });
+
+  for (const reason of ["PROTECTIVE_HOLD_OUTCOME_UNCERTAIN", "PROTECTIVE_HOLD_INTERNAL_ERROR"]) {
+    it(`a protective ${reason} hold (outcome not established) is never COMPLETED`, async () => {
+      drained = { considered: 1, acted: 0, waitedMs: 0, held: { [reason]: 1 }, bridges: 1, elapsedMs: 5 };
+      const result = await run();
+      assert.equal(result.completion.agentsFailed, 0, "no step threw");
+      assert.equal(result.completion.status, "INCOMPLETE");
+    });
+  }
+
+  it("classifies lost connections apart from bounded-wait timeouts", () => {
+    for (const lost of [
+      { code: "57P01" },
+      { code: "57P02" },
+      { code: "08006" },
+      { code: "ECONNRESET" },
+      new Error("Connection terminated unexpectedly"),
+      new Error("Client has encountered a connection error and is not queryable"),
+      Object.assign(new Error("wrapped"), { cause: { code: "57P01" } }),
+    ])
+      assert.equal(isDbConnectionLost(lost), true, JSON.stringify(lost) + String(lost));
+    for (const timeout of [
+      new Error("Query read timeout"),
+      new Error("Connection terminated due to connection timeout"),
+      { code: "57014" },
+      { code: "55P03" },
+    ]) {
+      assert.equal(isDbWaitTimeout(timeout), true, String(timeout));
+      assert.equal(isDbConnectionLost(timeout), false, String(timeout));
+    }
+    assert.equal(isDbConnectionLost(new Error("duplicate key value")), false);
   });
 
   it("a lock lost before the first decision stops everything after it: nothing executed, managed or drained", async () => {

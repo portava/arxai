@@ -135,6 +135,8 @@ function unfinishedParts(c: RunAutonomousCycleCompletion): string[] {
   if (c.agentsNotStarted > 0) parts.push(`${plural(c.agentsNotStarted, "agent")} not managed`);
   if (c.protectiveNotRun > 0) parts.push(`${plural(c.protectiveNotRun, "protective candidate")} not run (nothing sent for them)`);
   if (c.dbWaitTimeouts > 0) parts.push(`${plural(c.dbWaitTimeouts, "database wait")} timed out`);
+  if ((c.dbConnectionFailures ?? 0) > 0)
+    parts.push(`${plural(c.dbConnectionFailures, "database connection")} lost (outcome of the step not proven)`);
   return parts;
 }
 

@@ -154,11 +154,13 @@ mock.module("../decisionEngine.js", {
 });
 // Pool exhaustion seam: inside the cycle's DB scope, take N connections and
 // hand them back only after the configured delay, so the next real query in
-// the cycle has to wait for a connection.
+// the cycle has to wait for a connection. Also a pause point per agent, after
+// its reconciliation and before its management.
 let heldOnce = false;
 mock.module("../../aaci/reconciliationAudit.js", {
   namedExports: {
-    reconcileAaciChain: async () => {
+    reconcileAaciChain: async ({ agentId }: { agentId: number }) => {
+      await pausePoint(`aaci:agent-${agentId}`);
       const hold = Number(process.env.ARX_QA_HOLD_CONNECTIONS ?? 0);
       if (hold > 0 && !heldOnce) {
         heldOnce = true;
@@ -170,6 +172,18 @@ mock.module("../../aaci/reconciliationAudit.js", {
         }, Number(process.env.ARX_QA_HOLD_MS ?? 1500));
       }
       return { shouldPauseManagement: false };
+    },
+  },
+});
+// Pause point at the end of each agent's step (after its management), so the
+// next safe point is the following agent or the protective drain.
+const realQuota = await import("../agentQuotaEngine.js");
+mock.module("../agentQuotaEngine.js", {
+  namedExports: {
+    ...realQuota,
+    countAgentFilledTradesToday: async (agentId: number) => {
+      await pausePoint(`quota:agent-${agentId}`);
+      return realQuota.countAgentFilledTradesToday(agentId);
     },
   },
 });
@@ -325,6 +339,22 @@ mock.module("../../tradeEngine/pipeline.js", {
     }),
   },
 });
+// ARX_QA_PROTECTIVE_STUB=1: every cycle queues one stand-in protective
+// candidate, and the drain only reports that it ran (never dispatches), so the
+// cycle's safe point before the drain can be observed.
+const realProtective = await import("../protectiveActionPath.js");
+if (process.env.ARX_QA_PROTECTIVE_STUB === "1")
+  mock.module("../protectiveActionPath.js", {
+    namedExports: {
+      ...realProtective,
+      createProtectiveCycle: () => ({ candidates: [{ qaStandIn: true }] }),
+      drainProtectiveCycle: async (cycle: { candidates: unknown[] }) => {
+        const queued = cycle.candidates.splice(0).length;
+        process.send?.({ type: "point", name: "protective:drain" });
+        return { considered: queued, acted: 0, waitedMs: 0, held: {}, bridges: 0, elapsedMs: 0 };
+      },
+    },
+  });
 const { createAgentEntryDraft } = await import("../entryAuthority.js");
 const { claimLiveCommandForConfirm, claimLiveCommandForDispatch } = await import("../../live/liveCommandCas.js");
 const { reserveExposureAtomic } = await import("../../concurrency/exposureReservation.js");

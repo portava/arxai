@@ -15166,7 +15166,7 @@ export const RunAutonomousCycleCompletionStopReason = {
 } as const;
 
 /**
- * Whether the cycle finished. COMPLETED only when every step ran and none threw or hit a bounded database wait. INCOMPLETE: a step failed or a connection/statement/lock wait timed out; the failed step's outcome is not proven by the cycle (check the execution feed). STOPPED: the cross-process cycle lock was lost, so the cycle stopped at a safe point before its next dispatch.
+ * Whether the cycle finished. COMPLETED only when every step ran and none threw, hit a bounded database wait, lost its database connection or left a protective outcome unproven. INCOMPLETE: a step failed, a connection/statement/lock/read wait timed out, a database connection was lost, or a protective action's outcome is uncertain; the outcome is not proven by the cycle (check the execution feed). STOPPED: the cross-process cycle lock was lost, so the cycle stopped at a safe point before its next dispatch.
  */
 export interface RunAutonomousCycleCompletion {
   status: RunAutonomousCycleCompletionStatus;
@@ -15178,6 +15178,7 @@ export interface RunAutonomousCycleCompletion {
   managementStepFailed: boolean;
   protectiveNotRun: number;
   dbWaitTimeouts: number;
+  dbConnectionFailures: number;
 }
 
 export interface RunAutonomousCycleResp {

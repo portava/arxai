@@ -101,7 +101,8 @@ export type SingleFlightResult<T> = { ran: true; value: T } | { ran: false; star
  *
  * No ceiling: the slot is never released early, because the first cycle may
  * still be dispatching. The cycle's database waits are bounded (connection,
- * statement, lock and idle-transaction timeouts), so a database stall now ends
+ * statement, lock and idle-transaction timeouts on the server, and a client
+ * read timeout for a connection that went silent), so a database stall ends
  * the cycle with an honest INCOMPLETE report or a 500. A non-database await
  * that never settles (for example a hung guardian call) still keeps the slot
  * until the process restarts; past CYCLE_STUCK_AFTER_MS describeCycleConflict
@@ -127,7 +128,8 @@ export function createCycleSingleFlight(now: () => number = Date.now) {
 export const CYCLE_STUCK_AFTER_MS = 10 * 60_000;
 
 export interface CycleConflict {
-  runningForSec: number;
+  /** null when the holder's start time could not be read (another process). */
+  runningForSec: number | null;
   stuck: boolean;
   message: string;
 }
@@ -141,13 +143,17 @@ export function describeCycleConflict(
   now: number,
   where: "this-process" | "another-process" = "this-process",
 ): CycleConflict {
-  const runningMs = startedAt == null ? 0 : Math.max(0, now - startedAt);
+  if (startedAt == null)
+    return {
+      runningForSec: null,
+      stuck: false,
+      message:
+        "An autonomous cycle is still running on the server, so this run was not started. How long it has been running could not be read, so whether it is stuck is unknown; if runs keep being refused, check the server logs, the execution feed and the audit log.",
+    };
+  const runningMs = Math.max(0, now - startedAt);
   const runningForSec = Math.round(runningMs / 1000);
   const stuck = runningMs > CYCLE_STUCK_AFTER_MS;
-  const base =
-    startedAt == null
-      ? "An autonomous cycle is still running on the server, so this run was not started."
-      : `An autonomous cycle started ${runningForSec} s ago is still running on the server, so this run was not started.`;
+  const base = `An autonomous cycle started ${runningForSec} s ago is still running on the server, so this run was not started.`;
   const restart = where === "this-process" ? "the API server is restarted" : "the API server process running it stops";
   const message = stuck
     ? `${base} It has been running unusually long (over ${Math.round(CYCLE_STUCK_AFTER_MS / 60_000)} min) and may be stuck; until it finishes or ${restart}, every run is refused. Check the server logs, the execution feed and the audit log; a server restart may be required.`

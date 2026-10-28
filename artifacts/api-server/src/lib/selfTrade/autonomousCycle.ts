@@ -16,7 +16,8 @@
 // with bounded database waits (cycleCoordinator.ts). Before each decision,
 // each agent's management and the protective drain it re-verifies the lock
 // (input.guard) and stops there if it was lost. `completion` says whether the
-// cycle finished: a step that threw, a bounded wait that expired or a stop is
+// cycle finished: a step that threw, a bounded wait that expired, a lost
+// database connection, a protective outcome that is not proven or a stop is
 // never reported as COMPLETED.
 //
 // SAFETY (inviolable): no always-on loop, no new MT5 path, no gate bypass, no
@@ -50,7 +51,7 @@ import { evaluateEntityDrift } from "../aaci/learning/driftService.js";
 import { getOperationalMode } from "../security/operationalMode.js";
 import { evaluateTradeAnomalyForUser } from "../security/anomalyService.js";
 import { DEFAULT_ANOMALY_POLICY } from "@workspace/domain/security";
-import { isDbWaitTimeout, type CycleGuard } from "./cycleCoordinator.js";
+import { isDbConnectionLost, isDbWaitTimeout, type CycleGuard } from "./cycleCoordinator.js";
 
 const EXECUTABLE_OUTCOMES = ["APPROVED", "APPROVED_REDUCED", "PREPARE_ONLY"] as const;
 const ACTIVE_EXEC_STATUSES = ["PENDING_TICKET", "DISPATCHED", "FILLED"] as const;
@@ -67,7 +68,9 @@ export interface RunAutonomousCycleInput {
 
 /**
  * Whether the cycle finished. COMPLETED only when every step ran and none
- * threw or hit a bounded database wait. A failed step's outcome is not proven
+ * threw, hit a bounded database wait, lost its database connection or left a
+ * protective outcome unproven (PROTECTIVE_HOLD_OUTCOME_UNCERTAIN /
+ * PROTECTIVE_HOLD_INTERNAL_ERROR / PROTECTIVE_DRAIN_FAILED). A failed step's outcome is not proven
  * by the cycle: a decision whose executor threw may have created a command
  * (its reservation, if any, is kept), so the operator checks the execution
  * feed rather than reading the tallies as the whole truth.
@@ -87,8 +90,14 @@ export interface CycleCompletion {
   managementStepFailed: boolean;
   /** Queued protective candidates not drained because the cycle stopped (nothing claimed or sent). */
   protectiveNotRun: number;
-  /** Connection, statement, lock or idle-transaction timeouts seen during the cycle. */
+  /** Connection, statement, lock, idle-transaction or client-read timeouts seen during the cycle. */
   dbWaitTimeouts: number;
+  /**
+   * Database connections lost during the cycle (terminated backend, restart,
+   * network failure). A lower layer may have turned one into an "outcome
+   * uncertain" hold, so the cycle is not COMPLETED.
+   */
+  dbConnectionFailures: number;
 }
 
 export interface RunAutonomousCycleResult {
@@ -130,10 +139,12 @@ export async function runAutonomousCycle(
     managementStepFailed: false,
     protectiveNotRun: 0,
     dbWaitTimeouts: 0,
+    dbConnectionFailures: 0,
   };
-  let caughtTimeouts = 0;
+  const caught = { timeouts: 0, connectionFailures: 0 };
   const noteFailure = (err: unknown) => {
-    if (isDbWaitTimeout(err)) caughtTimeouts++;
+    if (isDbWaitTimeout(err)) caught.timeouts++;
+    else if (isDbConnectionLost(err)) caught.connectionFailures++;
   };
   // Safe point: false once the cross-process lock is gone (stop, never continue unguarded).
   const mayContinue = async (): Promise<boolean> => {
@@ -461,7 +472,7 @@ export async function runAutonomousCycle(
   if (completion.stopReason || (protectiveQueued > 0 && !(await mayContinue()))) {
     // Not drained: no protective claim was taken, so nothing was sent.
     completion.protectiveNotRun = protectiveQueued;
-    return finishCompletion(result, guard, caughtTimeouts);
+    return finishCompletion(result, guard, caught);
   }
   try {
     const drained = await drainProtectiveCycle(protectiveCycle);
@@ -487,24 +498,34 @@ export async function runAutonomousCycle(
     }
   }
 
-  return finishCompletion(result, guard, caughtTimeouts);
+  return finishCompletion(result, guard, caught);
 }
+
+/** Protective holds whose outcome the cycle did not establish (a command may exist, or a step broke). */
+const UNPROVEN_PROTECTIVE_HOLDS = [
+  "PROTECTIVE_HOLD_OUTCOME_UNCERTAIN",
+  "PROTECTIVE_HOLD_INTERNAL_ERROR",
+  "PROTECTIVE_DRAIN_FAILED",
+] as const;
 
 /** Settle `completion.status` from what happened; never COMPLETED after a failure or stop. */
 function finishCompletion(
   result: RunAutonomousCycleResult,
   guard: CycleGuard | undefined,
-  caughtTimeouts: number,
+  caught: { timeouts: number; connectionFailures: number },
 ): RunAutonomousCycleResult {
   const c = result.completion;
-  // The guard also counts timeouts a lower layer absorbed into a refusal.
-  c.dbWaitTimeouts = Math.max(caughtTimeouts, guard?.stats().dbWaitTimeouts ?? 0);
+  // The guard also counts errors a lower layer absorbed into a refusal or hold.
+  const stats = guard?.stats();
+  c.dbWaitTimeouts = Math.max(caught.timeouts, stats?.dbWaitTimeouts ?? 0);
+  c.dbConnectionFailures = Math.max(caught.connectionFailures, stats?.dbConnectionFailures ?? 0);
   const failed =
     c.decisionsFailed > 0 ||
     c.agentsFailed > 0 ||
     c.managementStepFailed ||
     c.dbWaitTimeouts > 0 ||
-    (result.managementHeld.PROTECTIVE_DRAIN_FAILED ?? 0) > 0;
+    c.dbConnectionFailures > 0 ||
+    UNPROVEN_PROTECTIVE_HOLDS.some((reason) => (result.managementHeld[reason] ?? 0) > 0);
   c.status = c.stopReason ? "STOPPED" : failed ? "INCOMPLETE" : "COMPLETED";
   return result;
 }

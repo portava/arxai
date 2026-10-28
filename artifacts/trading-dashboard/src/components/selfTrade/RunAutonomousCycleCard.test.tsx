@@ -275,6 +275,7 @@ describe("run autonomous cycle: a cycle that did not finish", () => {
     managementStepFailed: false,
     protectiveNotRun: 0,
     dbWaitTimeouts: 0,
+    dbConnectionFailures: 0,
     ...over,
   });
 
@@ -289,7 +290,7 @@ describe("run autonomous cycle: a cycle that did not finish", () => {
 
   it("INCOMPLETE says which steps failed and never says the cycle finished", async () => {
     h.runCycle.mockReturnValue(
-      Promise.resolve(response({ completion: completion({ status: "INCOMPLETE", decisionsFailed: 1, agentsFailed: 2, dbWaitTimeouts: 3 }) })),
+      Promise.resolve(response({ completion: completion({ status: "INCOMPLETE", decisionsFailed: 1, agentsFailed: 2, dbWaitTimeouts: 3, dbConnectionFailures: 1 }) })),
     );
     renderTab();
     startRun();
@@ -301,6 +302,7 @@ describe("run autonomous cycle: a cycle that did not finish", () => {
     expect(text).toMatch(/1 decision failed while executing \(outcome not proven\)/);
     expect(text).toMatch(/management failed for 2 agents/);
     expect(text).toMatch(/3 database waits timed out/);
+    expect(text).toMatch(/1 database connection lost \(outcome of the step not proven\)/);
     expect(region.getByText(/cover only what ran/i)).toBeTruthy();
     expect(document.body.textContent ?? "").not.toMatch(/completed/i);
   });

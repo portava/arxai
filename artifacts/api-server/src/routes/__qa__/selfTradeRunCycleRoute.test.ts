@@ -44,7 +44,7 @@ mock.module("../../lib/selfTrade/autonomousCycle.js", {
 type Coordinated = (fn: (guard: unknown) => Promise<unknown>) => Promise<unknown>;
 const passThrough: Coordinated = async (fn) => ({
   ran: true,
-  value: await fn({ stillHeld: async () => true, stats: () => ({ dbWaitTimeouts: 0, leaseLost: null }) }),
+  value: await fn({ stillHeld: async () => true, stats: () => ({ dbWaitTimeouts: 0, dbConnectionFailures: 0, leaseLost: null }) }),
 });
 let coordinate: Coordinated = passThrough;
 class CycleCoordinationError extends Error {}
@@ -60,12 +60,12 @@ const express = (await import("express")).default;
 const router = (await import("../selfTradeAi.js")).default;
 const { CYCLE_STUCK_AFTER_MS } = await import("../../lib/selfTrade/cycleReport.js");
 
-const logs: { level: string; msg: string }[] = [];
+const logs: { level: string; msg: string; fields?: Record<string, unknown> }[] = [];
 const app = express();
 app.use(express.json());
 app.use((req, _res, next) => {
   (req as unknown as { authUser: unknown }).authUser = { id: 7, role: "ADMIN" };
-  const at = (level: string) => (_fields: unknown, msg: string) => logs.push({ level, msg });
+  const at = (level: string) => (fields: Record<string, unknown>, msg: string) => logs.push({ level, msg, fields });
   (req as unknown as { log: unknown }).log = { warn: at("warn"), error: at("error"), info: at("info") };
   next();
 });
@@ -210,6 +210,9 @@ describe("POST /self-trade-ai/run-autonomous-cycle: cross-process coordination",
     assert.equal(res.status, 409);
     const body = (await res.json()) as { message: string };
     assert.match(body.message, /^An autonomous cycle is still running on the server, so this run was not started\./);
+    assert.match(body.message, /could not be read, so whether it is stuck is unknown/);
+    assert.doesNotMatch(body.message, /\b0 s ago\b/);
+    assert.deepEqual(logs.filter((l) => /refused/.test(l.msg)).map((l) => l.fields?.runningForSec), [null]);
   });
 
   it("a lock that cannot be taken is a 500 that says no cycle was started, and frees the slot", async () => {
