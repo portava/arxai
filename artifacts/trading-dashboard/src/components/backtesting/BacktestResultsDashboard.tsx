@@ -58,18 +58,38 @@ export function BacktestResultsDashboard({ runId }: { runId: number | null }) {
   const verdictPill = <span className="rounded bg-amber-900/50 px-2 py-0.5 text-[10px] font-semibold text-amber-200">{run.status === "INSUFFICIENT_DATA" ? "INSUFFICIENT DATA" : "DIAGNOSTIC ONLY"}</span>;
   const dataSourcePill = <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">{backtestSourceLabel(run.dataSource)}</span>;
 
+  // Depth pill. It must describe what the candles actually were:
+  //   - generated prices: the count is the length of a generated series, not
+  //     observed market depth, so it can never read as reliable "DATA";
+  //   - no recorded depth (broker history is mutable and the run kept no
+  //     snapshot): say the depth is not recorded rather than render nothing;
+  //   - a run that produced no completed trades never gets the reliable pill.
   const dr = run.dataReliability;
-  const reliabilityPill = dr
-    ? dr.reliable
+  const neutralPill = "rounded border border-slate-700 bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-300";
+  const reliabilityPill = !dr
+    ? <span
+        className={neutralPill}
+        title="The number of history bars this run used was not recorded, and today's candle store cannot reconstruct it."
+      >DEPTH NOT RECORDED</span>
+    : run.dataSource === "synthetic"
       ? <span
-          className="rounded border border-slate-700 bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-300"
-          title={`${dr.availableClosedCandles} closed candles analysed (min ${dr.minimumRequiredCandles}).`}
-        >DATA · {dr.availableClosedCandles} bars</span>
-      : <span
-          className="rounded bg-amber-700 px-2 py-0.5 text-[10px] font-semibold text-white"
-          title={`Only ${dr.availableClosedCandles} closed candles (min ${dr.minimumRequiredCandles}). Thin sample — treat metrics with caution.`}
-        >THIN DATA · {dr.availableClosedCandles} bars</span>
-    : null;
+          className={neutralPill}
+          title={`${dr.availableClosedCandles} candles simulated. Prices were generated, not observed market history, so this count says nothing about real data depth.`}
+        >GENERATED · {dr.availableClosedCandles} bars</span>
+      : !dr.reliable
+        ? <span
+            className="rounded bg-amber-700 px-2 py-0.5 text-[10px] font-semibold text-white"
+            title={`Only ${dr.availableClosedCandles} closed candles (min ${dr.minimumRequiredCandles}). Thin sample — treat metrics with caution.`}
+          >THIN DATA · {dr.availableClosedCandles} bars</span>
+        : run.status === "INSUFFICIENT_DATA"
+          ? <span
+              className={neutralPill}
+              title={`${dr.availableClosedCandles} closed candles analysed, but the run produced no completed simulated trades.`}
+            >{dr.availableClosedCandles} bars</span>
+          : <span
+              className={neutralPill}
+              title={`${dr.availableClosedCandles} closed candles analysed (min ${dr.minimumRequiredCandles}).`}
+            >DATA · {dr.availableClosedCandles} bars</span>;
 
   return (
     <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-4">

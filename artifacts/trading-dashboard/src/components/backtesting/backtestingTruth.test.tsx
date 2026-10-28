@@ -100,3 +100,34 @@ describe("INSUFFICIENT_DATA runs are not shown as measured results", () => {
   });
 });
 
+describe("data depth pill describes what the candles were", () => {
+  it("generated prices are not labelled as observed DATA next to INSUFFICIENT DATA", () => {
+    run = { ...run, dataSource: "synthetic",
+      dataReliability: { reliable: true, availableClosedCandles: 500, minimumRequiredCandles: 200, status: "sufficient" } };
+    render(<BacktestResultsDashboard runId={7} />);
+    expect(screen.queryByText("DATA · 500 bars")).toBeNull();
+    const pill = screen.getByText("GENERATED · 500 bars");
+    expect(pill.getAttribute("title")).toMatch(/generated, not observed market history/);
+  });
+
+  it("a broker run without a recorded depth says so instead of rendering nothing", () => {
+    render(<BacktestResultsDashboard runId={7} />);
+    const pill = screen.getByText("DEPTH NOT RECORDED");
+    expect(pill.getAttribute("title")).toMatch(/not recorded/);
+  });
+
+  it("observed depth marked reliable still cannot read as reliable on an insufficient run", () => {
+    run = { ...run, dataReliability: { reliable: true, availableClosedCandles: 400, minimumRequiredCandles: 200, status: "sufficient" } };
+    render(<BacktestResultsDashboard runId={7} />);
+    expect(screen.queryByText("DATA · 400 bars")).toBeNull();
+    expect(screen.getByText("400 bars")).toBeTruthy();
+  });
+
+  it("observed depth on a completed run keeps the DATA pill", () => {
+    run = { ...run, status: "COMPLETED", totalTrades: 3,
+      dataReliability: { reliable: true, availableClosedCandles: 400, minimumRequiredCandles: 200, status: "sufficient" } };
+    render(<BacktestResultsDashboard runId={7} />);
+    expect(screen.getByText("DATA · 400 bars")).toBeTruthy();
+  });
+});
+
