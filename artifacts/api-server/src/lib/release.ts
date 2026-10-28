@@ -10,9 +10,17 @@ import { listRiskEventsView, platformRiskPermissions } from "./riskGovernor/risk
 import { listDecisions as autoDecisions, status as autopilotStatus } from "./autopilot.js";
 import { shadowStatus, forwardStatus, readinessScore } from "./shadowMode.js";
 import { omsDashboardSummary, pnlSummary } from "./oms.js";
+import { mt5Provider } from "./data/providers/mt5Provider.js";
 
 export const APP_VERSION = "0.9.0-beta";
 export const RELEASE_STAGE = "BETA_TESTER" as const;
+
+/**
+ * When this server process loaded the release module. The version envelope is
+ * static for the life of the process, so its "last updated" is this time, not
+ * the time of each request.
+ */
+const SERVER_STARTED_AT = new Date().toISOString();
 
 export function versionEnvelope() {
   return {
@@ -22,28 +30,54 @@ export function versionEnvelope() {
     mt5Deferred: true,
     realBrokerExecutionAvailable: false,
     canPlaceTrades: false,
-    lastUpdated: new Date().toISOString(),
+    lastUpdated: SERVER_STARTED_AT,
+    lastUpdatedBasis: "server_start" as const,
   };
 }
 
-export interface Gate { key: string; label: string; pass: boolean; detail?: string; }
+/**
+ * `measured: false` ⇒ no check runs behind this gate. Such a gate is never
+ * PASS (pass is false) and its detail says it was not checked.
+ */
+export interface Gate { key: string; label: string; pass: boolean; detail?: string; measured?: boolean; }
 
-export async function evaluateGates(): Promise<{ gates: Gate[]; criticalIssues: Array<{ feedbackId: string; title: string }> }> {
+const NOT_CHECKED_DETAIL = "Not checked — no check runs behind this gate yet.";
+
+/** Observed MT5 feed state: true/false when read, null when it could not be read. */
+async function observeMt5Connected(): Promise<boolean | null> {
+  try {
+    return (await mt5Provider.isConnected()) === true;
+  } catch {
+    return null;
+  }
+}
+
+export async function evaluateGates(): Promise<{
+  gates: Gate[];
+  criticalIssues: Array<{ feedbackId: string; title: string }>;
+  mt5Connected: boolean | null;
+  evaluatedAt: string;
+}> {
   const gates: Gate[] = [];
-  const push = (key: string, label: string, pass: boolean, detail?: string) => gates.push({ key, label, pass, detail });
+  const push = (key: string, label: string, pass: boolean, detail?: string) => gates.push({ key, label, pass, detail, measured: true });
+  const unchecked = (key: string, label: string) =>
+    gates.push({ key, label, pass: false, detail: NOT_CHECKED_DETAIL, measured: false });
 
-  // Route + API health (router is up if this code runs).
-  push("api_health", "API health", true, "Express router responding");
-  push("route_health", "Route health", true, "All routes registered");
+  // API health: this code only runs when the router answered the request.
+  push("api_health", "API health", true, "This request was answered by the API");
+  unchecked("route_health", "Route health");
 
   // OMS / simulator
   const oms = omsDashboardSummary();
   push("oms_pass", "OMS pass", typeof oms === "object" && oms !== null);
-  push("simulator_trade_pass", "Simulator trade pass", true, "Paper engine alive");
-  push("ai_simulator_pass", "AI simulator pass", true, "Autopilot engine reachable");
+  unchecked("simulator_trade_pass", "Simulator trade pass");
+  let autopilotReadable = false;
+  try { autopilotReadable = !!autopilotStatus(); } catch { autopilotReadable = false; }
+  push("ai_simulator_pass", "AI simulator pass", autopilotReadable,
+    autopilotReadable ? "Autopilot status was readable" : "Autopilot status could not be read");
 
-  // Live intent layer (mt5-deferred but pipeline up)
-  push("live_intent_pass", "Live intent pass", true, "Queue endpoints reachable");
+  // Live intent layer — no check exercises the queue endpoints here.
+  unchecked("live_intent_pass", "Live intent pass");
 
   // Risk
   const perms = await platformRiskPermissions();
@@ -59,8 +93,20 @@ export async function evaluateGates(): Promise<{ gates: Gate[]; criticalIssues: 
   const recent = await listAudit({ limit: 25 });
   push("audit_pass", "Audit pass", Array.isArray(recent));
 
-  // MT5 deferred honesty — must be true
-  push("mt5_deferred_honesty_pass", "MT5 deferred honesty", true, "mt5Connected=false, realBrokerExecutionAvailable=false");
+  // MT5 deferred honesty — the "MT5 deferred" claim holds only while the MT5
+  // feed is observed NOT connected. Connected or unreadable ⇒ not PASS.
+  const checkedAt = new Date().toISOString();
+  const mt5Connected = await observeMt5Connected();
+  push(
+    "mt5_deferred_honesty_pass",
+    "MT5 deferred honesty",
+    mt5Connected === false,
+    mt5Connected === false
+      ? `MT5 feed observed not connected (checked ${checkedAt})`
+      : mt5Connected === true
+        ? `MT5 feed observed connected (checked ${checkedAt}) — the "MT5 deferred" claim does not match`
+        : `MT5 feed state could not be checked (${checkedAt})`,
+  );
 
   // No critical open bugs (P0 or severity=critical, not closed/wont_fix/fixed)
   const open = await db.select({ feedbackId: feedbackTable.feedbackId, title: feedbackTable.title })
@@ -74,11 +120,11 @@ export async function evaluateGates(): Promise<{ gates: Gate[]; criticalIssues: 
     .limit(50);
   push("no_critical_open_bugs", "No critical open bugs", open.length === 0, `${open.length} P0 open`);
 
-  return { gates, criticalIssues: open };
+  return { gates, criticalIssues: open, mt5Connected, evaluatedAt: checkedAt };
 }
 
 export async function readinessReport() {
-  const { gates, criticalIssues } = await evaluateGates();
+  const { gates, criticalIssues, mt5Connected, evaluatedAt } = await evaluateGates();
   const passed = gates.filter((g) => g.pass).map((g) => g.key);
   const failed = gates.filter((g) => !g.pass).map((g) => g.key);
   const score = Math.round((passed.length / gates.length) * 100);
@@ -90,8 +136,12 @@ export async function readinessReport() {
     passedGates: passed,
     failedGates: failed,
     gates,
+    uncheckedGates: gates.filter((g) => g.measured === false).map((g) => g.key),
     criticalIssues,
     warnings: [],
+    evaluatedAt,
+    /** Observed MT5 feed state at evaluation; null = could not be checked. */
+    mt5Connected,
     mt5Deferred: true,
     realBrokerExecutionAvailable: false,
   };
