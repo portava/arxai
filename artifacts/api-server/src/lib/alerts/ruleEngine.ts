@@ -148,13 +148,20 @@ async function positionNearStopLossRule() {
       : Math.max(0, p.stopLoss - p.currentPrice);
     const pctOfSlRemaining = remaining / slDist;
     if (pctOfSlRemaining <= 0.25) {
+      // live_positions is the DEMO / legacy EA mirror, never the LIVE venue
+      // (arx_live_positions): say so, and say which price the distance was
+      // measured from and when that row was last synced.
+      const syncedMs = p.lastSyncedAt ? new Date(p.lastSyncedAt).getTime() : NaN;
+      const asOf = Number.isFinite(syncedMs)
+        ? `, last synced ${new Date(syncedMs).toISOString().slice(0, 16).replace("T", " ")} UTC`
+        : " (sync time not recorded)";
       const r = await createAlert({
         userId: p.userId,
         type: "POSITION_WARNING",
         priority: pctOfSlRemaining <= 0.05 ? "CRITICAL" : "HIGH",
         severity: pctOfSlRemaining <= 0.05 ? "danger" : "warning",
-        title: `Position near stop loss: ${p.symbol}`,
-        message: `Live position #${p.id} (${p.direction} ${p.symbol}) is ${(pctOfSlRemaining * 100).toFixed(0)}% from stop loss.`,
+        title: `Demo position near stop loss: ${p.symbol}`,
+        message: `Demo position #${p.id} (${p.direction} ${p.symbol}) has ${(pctOfSlRemaining * 100).toFixed(0)}% of its stop-loss distance left at the last recorded price ${p.currentPrice}${asOf}.`,
         symbol: p.symbol,
         relatedPositionId: p.id,
         relatedTradeId: p.tradeId ?? undefined,

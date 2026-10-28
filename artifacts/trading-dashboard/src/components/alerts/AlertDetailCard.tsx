@@ -28,16 +28,22 @@ interface Props {
 }
 
 // (L) Map related ids to the primary destination so a click takes the user
-// directly to the page where they can act on the alert.
+// directly to the page where they can act on the alert. A related position id
+// is a live_positions row (the DEMO / legacy EA mirror, raised by the
+// near-stop-loss rule): My Trades lists those rows; Portfolio reads only the
+// legacy trades table and cannot show them.
 function relatedHref(a: AlertLike): string | null {
   if (a.relatedTradePlanId) return `/trade-plan-builder?planId=${a.relatedTradePlanId}`;
-  if (a.relatedPositionId)  return `/portfolio`;
+  if (a.relatedPositionId)  return `/my-trades`;
   if (a.relatedTradeId)     return `/trade-logs`;
   if (a.type === "WEEKLY_REVIEW")    return "/weekly-review";
   if (a.type === "BROKER_HEALTH" || a.type === "MT5_DISCONNECTED") return "/mt5-bridge";
   if (a.type === "RISK_LOCK") return "/risk-settings";
   if (a.type === "MARKET_CONDITION") return "/scanner";
-  if (a.type === "POSITION_WARNING") return "/portfolio";
+  // A position warning with no related position (the autonomous agent's
+  // app-vs-broker mismatch) has no page that lists those positions; offer no
+  // link rather than one to a board that cannot show them.
+  if (a.type === "POSITION_WARNING") return null;
   if (a.type === "AI_COACH" || a.type === "REPLAY_DRILL") return "/learning";
   if (a.type === "EXECUTION_SAFETY" || a.type === "KILL_SWITCH_ACTIVATED") return "/emergency";
   return null;
