@@ -1,6 +1,6 @@
 import type { ChartIntelligenceResponse } from "@workspace/api-client-react";
 import { Gauge, CheckCircle2, XCircle, AlertTriangle, Info } from "lucide-react";
-import { relativeTime } from "@/lib/feed-confidence";
+import { isFutureTime, relativeTime } from "@/lib/feed-confidence";
 import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
 import { useChartPricePrecision } from "./chartPricePrecisionStore";
 
@@ -113,7 +113,16 @@ export function ChartDiagnosticsPanel({ state }: { state: ChartState | null }) {
             label="Candle count (bars)"
             value={stats.barsAnalyzed > 0 ? String(stats.barsAnalyzed) : "—"}
           />
-          <DiagRow label="Last candle" value={relativeTime(truth.lastCandleTime)} />
+          {/* A future candle time is the provider's forming bar's scheduled
+              close, not an observation (same wording as the feed badge). */}
+          <DiagRow
+            label="Last candle"
+            value={
+              isFutureTime(truth.lastCandleTime)
+                ? `Forming bar · closes ${relativeTime(truth.lastCandleTime)}`
+                : relativeTime(truth.lastCandleTime)
+            }
+          />
           <DiagRow label="Latest price" value={formatInstrumentPrice(stats.lastClose, pricePrecision)} />
           <DiagRow label="Feed latency" value={ms(truth.latencyMs)} />
           <DiagRow label="AI-usable" value={state.aiUsable ? "Yes" : "No"} />

@@ -67,3 +67,26 @@ describe("Admin Chart Diagnostics — candle stats", () => {
     expect(statValue("Change %")).toBe("—");
   });
 });
+
+function diagRowValue(label: string): string {
+  const block = screen.getByTestId("chart-diag-feed-summary");
+  const labelEl = Array.from(block.querySelectorAll("span")).find((s) => s.textContent === label);
+  expect(labelEl, `row ${label}`).toBeTruthy();
+  return labelEl!.nextElementSibling?.textContent ?? "";
+}
+
+describe("Admin Chart Diagnostics — last candle time", () => {
+  it("a future closeTime is the forming bar's scheduled close, not an observation", () => {
+    const future = new Date(Date.now() + 4 * 60_000 + 5_000).toISOString();
+    render(<ChartDiagnosticsPanel state={state({ lastCandleTime: future })} />);
+    const value = diagRowValue("Last candle");
+    expect(value).not.toMatch(/^in /);
+    expect(value).toMatch(/^Forming bar · closes in 4m/);
+  });
+
+  it("a past closeTime still reads as an age", () => {
+    const past = new Date(Date.now() - 3 * 60_000 - 5_000).toISOString();
+    render(<ChartDiagnosticsPanel state={state({ lastCandleTime: past })} />);
+    expect(diagRowValue("Last candle")).toMatch(/^3m ago$/);
+  });
+});
