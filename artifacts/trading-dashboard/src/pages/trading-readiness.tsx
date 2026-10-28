@@ -51,12 +51,18 @@ export default function TradingReadinessPage() {
   });
   const evald = evalQ.data?.evaluation ?? null;
 
-  const latest = useQuery<{ check: Check }>({
+  // 404 is the server's "no check on record"; any other non-OK reply (not
+  // signed in, server error) or an unexpected body is a failed read, shown as
+  // "could not be loaded" rather than read as a check.
+  const latest = useQuery<{ check: Check | null }>({
     queryKey: ["readiness-latest"],
     queryFn: async () => {
       const r = await fetch("/api/readiness/checks/latest");
-      if (r.status === 404) throw new Error("none");
-      return r.json();
+      if (r.status === 404) return { check: null };
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const body = await r.json() as { check?: unknown } | null;
+      if (!body || typeof body.check !== "object" || body.check === null) throw new Error("unexpected response");
+      return { check: body.check as Check };
     },
     retry: false,
   });
@@ -114,15 +120,24 @@ export default function TradingReadinessPage() {
               {submit.isError && <p className="text-[11px] text-red-400">{(submit.error as Error).message}</p>}
             </div>
           )}
-          {latest.data && (
-            <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-[11px]">
-              <div className="mb-1 text-slate-400">Last submitted check</div>
-              <div className="font-mono text-slate-300">
+          <div data-testid="readiness-last-check"
+            className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-[11px]">
+            <div className="mb-1 text-slate-400">Last submitted check</div>
+            {latest.isError ? (
+              <div className="text-red-300">
+                Could not be loaded ({(latest.error as Error).message}).
+              </div>
+            ) : latest.isPending ? (
+              <div className="text-slate-500">Loading…</div>
+            ) : latest.data.check == null ? (
+              <div className="text-slate-500">No readiness check has been submitted yet.</div>
+            ) : (
+              <div data-testid="readiness-last-check-summary" className="font-mono text-slate-300">
                 {latest.data.check.status} · {latest.data.check.readinessScore}/100 ·
                 {" "}{safeDate(latest.data.check.createdAt)}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 // Trading Readiness truth: the mental check-in starts unanswered (no invented
-// 4/5 self-report earning a PASS).
+// 4/5 self-report earning a PASS), and a failed "last check" read says it
+// could not be loaded instead of crashing the board.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -75,5 +76,40 @@ describe("Trading Readiness mental check-in", () => {
     });
     expect(screen.getByRole("radio", { name: "Mental state 3 of 5" }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText("3/5")).toBeTruthy();
+  });
+});
+
+describe("Trading Readiness last submitted check", () => {
+  for (const [label, reply] of [
+    ["500", { status: 500, body: { error: "x" } }],
+    ["401 not signed in", { status: 401, body: { error: "AUTH_REQUIRED" } }],
+    ["network failure", "reject"],
+  ] as const) {
+    it(`a ${label} read says it could not be loaded and keeps the live evaluation`, async () => {
+      stubFetch({ evaluate: () => ({ status: 200, body: READY_EVAL }), latest: () => reply });
+      renderPage();
+      expect(await screen.findByText("Readiness score")).toBeTruthy();
+      const box = await screen.findByTestId("readiness-last-check");
+      await waitFor(() => expect(box.textContent).toMatch(/could not be loaded/i));
+      expect(screen.queryByTestId("readiness-last-check-summary")).toBeNull();
+    });
+  }
+
+  it("no check on record says so instead of showing nothing", async () => {
+    stubFetch({ evaluate: () => ({ status: 200, body: READY_EVAL }), latest: () => NO_CHECK });
+    renderPage();
+    const box = await screen.findByTestId("readiness-last-check");
+    await waitFor(() => expect(box.textContent).toMatch(/no readiness check has been submitted yet/i));
+    expect(screen.queryByTestId("readiness-last-check-summary")).toBeNull();
+  });
+
+  it("a stored check is shown with its status, score and time", async () => {
+    stubFetch({
+      evaluate: () => ({ status: 200, body: READY_EVAL }),
+      latest: () => ({ status: 200, body: { check: { id: 1, status: "CAUTION", readinessScore: 72, createdAt: "2026-10-27T08:00:00.000Z" } } }),
+    });
+    renderPage();
+    const summary = await screen.findByTestId("readiness-last-check-summary");
+    expect(summary.textContent).toMatch(/CAUTION · 72\/100/);
   });
 });
