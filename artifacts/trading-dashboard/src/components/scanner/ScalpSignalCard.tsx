@@ -387,7 +387,12 @@ export function ScalpSignalCard({
             Slippage <span className={riskTone(r.slippageRisk)}>{r.slippageRisk}</span>
           </Tip>
           <Tip className="text-txt-muted" help="The risk of upcoming or recent news shaking this market — a higher reading means more event risk around now, so the move can turn sharply.">
-            News <span className={riskTone(r.newsRisk)}>{r.newsRisk}</span>
+            News{" "}
+            {r.newsRiskUnchecked ? (
+              <span className="text-warning" data-testid="scalp-news-unchecked">Unchecked</span>
+            ) : (
+              <span className={riskTone(r.newsRisk)}>{r.newsRisk}</span>
+            )}
           </Tip>
           {r.targetRealityCheck && (
             <Tip className="text-txt-muted ml-auto" help="A sanity check on whether the planned target is realistically reachable in current conditions — not just mathematically possible.">

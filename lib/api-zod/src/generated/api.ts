@@ -16437,6 +16437,12 @@ export const CreateMeScalpFocusResponse = zod.object({
   spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
   slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
   newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+  newsRiskUnchecked: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+    ),
   timingStatus: zod.enum(["VALID_NOW", "WAIT_FOR_ENTRY", "LATE", "EXPIRED"]),
   validForSeconds: zod.number(),
   expiresAt: zod.string(),
@@ -16627,6 +16633,12 @@ export const CreateMeScalpRankResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -16808,6 +16820,12 @@ export const CreateMeScalpRankResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -16989,6 +17007,12 @@ export const CreateMeScalpRankResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17170,6 +17194,12 @@ export const CreateMeScalpRankResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17372,6 +17402,12 @@ export const CreateMeScalpBuildResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",
@@ -17553,6 +17589,12 @@ export const CreateMeScalpBuildResponse = zod.object({
       spreadRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       slippageRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
       newsRisk: zod.enum(["LOW", "MEDIUM", "HIGH"]),
+      newsRiskUnchecked: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when scheduled news risk could not be checked (the news lookup failed or a configured economic calendar did not answer). newsRisk is then not an observation and must not be shown as LOW.",
+        ),
       timingStatus: zod.enum([
         "VALID_NOW",
         "WAIT_FOR_ENTRY",

@@ -30,6 +30,7 @@ import {
   type UserGovernance,
 } from "./agentEcosystem/governance.js";
 import type { AdvisoryDirection } from "@workspace/domain/agent-system";
+import { isSyntheticInstrument } from "@workspace/domain/smart-chart";
 import { getDerivFeedStatus, hasRecentDerivTickFor } from "./data/providers/derivProvider.js";
 import {
   resolveScannerRegime,
@@ -518,7 +519,9 @@ export function computeFinalRead(
   const reasons: string[] = [];
   const histScore = hist && hist.available && hist.winRate != null ? hist.winRate : null;
   const newsLevel = news?.riskLevel ?? "none";
-  const newsAvail = !!news;
+  // A failed check is not news data: "none" there was never observed.
+  const newsUnchecked = news?.eventRiskUnchecked === true;
+  const newsAvail = !!news && !newsUnchecked;
   const histAvail = !!hist?.available;
 
   // Conflict = scanner direction opposes either news bias or historical bias.
@@ -569,6 +572,15 @@ export function computeFinalRead(
     confidence = "MEDIUM";
   } else {
     confidence = techScore >= 75 && newsLevel === "none" && !conflict ? "HIGH" : "MEDIUM";
+  }
+
+  // 4b. EVENT-RISK-UNCHECKED CAP. Scheduled event risk applies but could not be
+  //     checked, so a release minutes away would not be seen. Downgrade-only:
+  //     withhold the actionable label, floor confidence, and say so plainly.
+  if (newsUnchecked) {
+    confidence = "LOW";
+    if (label === "TRADE_WATCH") label = "WAIT_FOR_CONFIRMATION";
+    reasons.push(NEWS_RISK_UNCHECKED_REASON);
   }
 
   // 5. DATA-SOURCE TRUTH CAP (ARX Scanner Truth Principle). A read can only be
@@ -883,6 +895,28 @@ export interface ScannerNewsContext {
   minutesUntilEvent: number | null;
   warning: string;
   alignsWithScanner: boolean | null;
+  /**
+   * True when scheduled event risk applies to this market but could NOT be
+   * checked: the news lookup failed, or a configured economic calendar did not
+   * answer. `riskLevel` is then "none" only because nothing was observed — it is
+   * not an all-clear. Never set for synthetic instruments (scheduled events do
+   * not move them) or when no calendar is configured (technicals-only by design).
+   */
+  eventRiskUnchecked?: boolean;
+}
+
+/** Plain-English reason shown when scheduled event risk could not be checked. */
+export const NEWS_RISK_UNCHECKED_REASON =
+  "Scheduled news risk could not be checked right now — the economic calendar did not answer.";
+
+/** A configured calendar that did not answer (or failed outright) is a failed check, not "no news". */
+function scannerCalendarCheckFailed(
+  calendar: { connected?: boolean | null; provider?: string | null; providerState?: string | null } | null | undefined,
+): boolean {
+  if (!calendar || calendar.connected === true) return false;
+  if (calendar.providerState === "fetch_error") return true;
+  if (calendar.providerState === "not_configured") return false;
+  return typeof calendar.provider === "string" && calendar.provider !== "none" && calendar.provider !== "";
 }
 
 // Phase News — decorate scanner opportunities with news intelligence. Pure
@@ -909,8 +943,13 @@ export async function decorateOpportunitiesWithNewsRisk(
           minutesUntilEvent: pack.upcomingEvent?.minutesUntil ?? null,
           warning: pack.warningSummary,
           alignsWithScanner: null,
+          eventRiskUnchecked: !isSyntheticInstrument(sym) && scannerCalendarCheckFailed(pack.dataSources?.calendar),
         });
       } catch {
+        // The lookup failed: nothing was observed. riskLevel "none" here means
+        // "not checked", so the row carries eventRiskUnchecked and the final
+        // read / map / scalp withhold any clean or actionable read.
+        const synthetic = isSyntheticInstrument(sym);
         ctxBySymbol.set(sym, {
           riskLevel: "none",
           bias: "unclear",
@@ -920,8 +959,11 @@ export async function decorateOpportunitiesWithNewsRisk(
           headlinesConnected: false,
           upcomingEventTitle: null,
           minutesUntilEvent: null,
-          warning: "News intelligence temporarily unavailable.",
+          warning: synthetic
+            ? "News intelligence temporarily unavailable."
+            : "News intelligence temporarily unavailable — scheduled news risk could not be checked.",
           alignsWithScanner: null,
+          eventRiskUnchecked: !synthetic,
         });
       }
     });

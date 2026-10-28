@@ -84,13 +84,18 @@ export function toInput(
   late: LateDetection | null,
 ): OpportunityInput {
   const isLate = !!late?.isLate;
-  const timingUnknown = opp.dataStatus === "live" &&
-    (opp.recommendedAction === "BUY" || opp.recommendedAction === "SELL") && late === null;
+  const directional = opp.recommendedAction === "BUY" || opp.recommendedAction === "SELL";
+  const timingUnknown = opp.dataStatus === "live" && directional && late === null;
+  // Scheduled event risk applies but the calendar/news lookup did not answer:
+  // "none" there was never observed, so directional readiness is withheld the
+  // same way unknown timing withholds it (never READY_NOW on an unchecked risk).
+  const newsUnchecked = directional && opp.newsContext?.eventRiskUnchecked === true;
+  const withheld = timingUnknown || newsUnchecked;
   return {
     symbol: opp.symbol,
     displayName: opp.symbol,
-    direction: timingUnknown ? "NEUTRAL" : dirFromAction(opp.recommendedAction),
-    recommendedAction: timingUnknown ? "WAIT" : actionInput(opp.recommendedAction),
+    direction: withheld ? "NEUTRAL" : dirFromAction(opp.recommendedAction),
+    recommendedAction: withheld ? "WAIT" : actionInput(opp.recommendedAction),
     setupType: opp.setupType,
     edgeScore: Math.round(effectiveOpportunityScore(opp)),
     entryQuality: Math.round(opp.entrySniperScore),
@@ -108,6 +113,7 @@ export function toInput(
     isLate,
     reason:
       (timingUnknown ? "Entry timing could not be verified with a fresh quote — wait for a new scan." : null) ??
+      (newsUnchecked ? "Scheduled news risk could not be checked — the economic calendar did not answer. Wait for a new scan." : null) ??
       (isLate ? late?.reason : null) ??
       opp.finalRead?.headline ??
       opp.reasonForTrade ??
