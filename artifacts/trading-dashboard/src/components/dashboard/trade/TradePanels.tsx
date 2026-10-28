@@ -16,8 +16,14 @@ import { scannerResultActionChip } from "@/components/scanner/scannerResultActio
 
 /* ── 1 · Top status bar ─────────────────────────────────────────────── */
 export function TradeStatusBar({
-  modeLabel, isLive, gatesLabel, intentCount,
-}: { modeLabel: string; isLive: boolean; gatesLabel: string; intentCount: number }) {
+  modeLabel, isLive, gatesLabel, intentCount, intentError = false,
+}: {
+  modeLabel: string; isLive: boolean; gatesLabel: string;
+  /** null while the queue has not answered yet. */
+  intentCount: number | null;
+  /** The intent queue read failed: the count is unknown, never 0. */
+  intentError?: boolean;
+}) {
   return (
     <div className="flex flex-wrap items-center gap-2.5">
       <span className={cn("inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-sm font-semibold", isLive ? "text-success" : "text-primary")}>
@@ -29,7 +35,7 @@ export function TradeStatusBar({
       </span>
       <Link href="/live-intent-queue" className="ml-auto" data-testid="trade-intent-badge">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 px-3 py-1 text-sm font-semibold text-primary hover:bg-primary/10">
-          {intentCount} intents
+          {intentError ? "Intents: could not be loaded" : intentCount == null ? "Intents: loading…" : `${intentCount} intents`}
         </span>
       </Link>
     </div>
@@ -81,11 +87,16 @@ export function TradeHero({
  * `isError` are now explicit inputs and are resolved BEFORE the empty state,
  * so "No open positions" can only render on a confirmed successful read.
  */
-export function PositionsPanel({ positions, isLoading = false, isError = false, onRetry }: {
+export function PositionsPanel({ positions, isLoading = false, isError = false, onRetry, unavailableReason = null }: {
   positions: Array<{ id: string | number; symbol: string; side: string; lotSize: number; entry?: number; pnl?: number | null; stopLoss?: number | null; takeProfit?: number | null; status?: string }>;
   isLoading?: boolean;
   isError?: boolean;
   onRetry?: () => void;
+  /**
+   * Set when the read answered but could not see the positions (e.g. the
+   * master bridge is not pinned). Shown instead of "No open positions".
+   */
+  unavailableReason?: string | null;
 }) {
   return (
     <CockpitCard title="Positions" subtitle="Live MT5-confirmed positions." icon={<Layers className="h-[18px] w-[18px]" />} accent="blue" data-testid="positions-tab">
@@ -116,6 +127,18 @@ export function PositionsPanel({ positions, isLoading = false, isError = false, 
               Retry
             </button>
           )}
+        </div>
+      ) : unavailableReason && positions.length === 0 ? (
+        <div
+          className="flex flex-col items-center gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-5 text-center"
+          role="alert"
+          data-testid="positions-unavailable"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-warning">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Positions could not be read. Do not assume you are flat.
+          </div>
+          <p className="text-xs text-warning/80">{unavailableReason}</p>
         </div>
       ) : positions.length === 0 ? (
         <div className="py-6 text-center">
@@ -186,12 +209,26 @@ function ordersPanelRowRead(o: Opp, now: number): { usable: true; chip: ReturnTy
 }
 
 export function OrdersPanel({
-  opps, intentCount, picked, onPick,
-}: { opps: Opp[]; intentCount: number; picked: { symbol: string; timeframe: string } | null; onPick: (o: Opp) => void }) {
+  opps, intentCount, picked, onPick, oppsError = false, intentError = false,
+}: {
+  opps: Opp[];
+  /** null while the queue has not answered yet. */
+  intentCount: number | null;
+  picked: { symbol: string; timeframe: string } | null;
+  onPick: (o: Opp) => void;
+  /** The opportunities read failed: never shown as "No scan results yet". */
+  oppsError?: boolean;
+  /** The intent queue read failed: never shown as 0 / "No live intents queued". */
+  intentError?: boolean;
+}) {
   return (
     <div className="space-y-4" data-testid="orders-tab">
-      <CockpitCard title="Scanner Opportunities" icon={<Crosshair className="h-[18px] w-[18px]" />} accent="ruby" badge={opps.length ? String(opps.length) : undefined}>
-        {opps.length === 0 ? (
+      <CockpitCard title="Scanner Opportunities" icon={<Crosshair className="h-[18px] w-[18px]" />} accent="ruby" badge={!oppsError && opps.length ? String(opps.length) : undefined}>
+        {oppsError ? (
+          <p className="py-4 text-center text-sm text-warning" role="alert" data-testid="orders-opps-error">
+            Scanner results could not be loaded. Retrying every 5 seconds.
+          </p>
+        ) : opps.length === 0 ? (
           <p className="py-4 text-center text-sm text-txt-secondary">No scan results yet — start the scanner from the Market Scanner page.</p>
         ) : (
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
@@ -221,10 +258,14 @@ export function OrdersPanel({
 
       <CockpitCard title="Live Intent Queue" icon={<ListChecks className="h-[18px] w-[18px]" />} accent="blue">
         <div className="flex items-baseline justify-between">
-          <span className="font-mono text-3xl font-bold" data-testid="orders-intent-count">{intentCount}</span>
+          <span className="font-mono text-3xl font-bold" data-testid="orders-intent-count">{intentError || intentCount == null ? "—" : intentCount}</span>
           <ActionButton href="/live-intent-queue" subtle data-testid="orders-open-queue">Open Queue</ActionButton>
         </div>
-        {intentCount === 0 && <p className="mt-2 text-xs text-txt-muted">No live intents queued.</p>}
+        {intentError ? (
+          <p className="mt-2 text-xs text-warning" role="alert" data-testid="orders-intent-error">The live intent queue could not be loaded. Retrying every 5 seconds.</p>
+        ) : intentCount === 0 ? (
+          <p className="mt-2 text-xs text-txt-muted">No live intents queued.</p>
+        ) : null}
       </CockpitCard>
     </div>
   );
@@ -294,10 +335,16 @@ export function RiskGovernorCard({
 }
 
 /* ── 7 · Decision Stream ────────────────────────────────────────────── */
-export function DecisionStreamCard({ decisions }: { decisions: Array<{ id: string; type: string; summary: string; createdAt: string }> }) {
+export function DecisionStreamCard({ decisions, error = false }: {
+  decisions: Array<{ id: string; type: string; summary: string; createdAt: string }>;
+  /** The decision stream read failed: never shown as "No decisions yet". */
+  error?: boolean;
+}) {
   return (
-    <CockpitCard title="Decision Stream" subtitle="Live trade decisions and confirmations." icon={<Activity className="h-[18px] w-[18px]" />} accent="ruby" badge={decisions.length ? String(decisions.length) : undefined}>
-      {decisions.length === 0 ? (
+    <CockpitCard title="Decision Stream" subtitle="Live trade decisions and confirmations." icon={<Activity className="h-[18px] w-[18px]" />} accent="ruby" badge={!error && decisions.length ? String(decisions.length) : undefined}>
+      {error ? (
+        <p className="py-4 text-center text-sm text-warning" role="alert" data-testid="decision-stream-error">The decision stream could not be loaded. Retrying every 5 seconds.</p>
+      ) : decisions.length === 0 ? (
         <p className="py-4 text-center text-sm text-txt-secondary">No decisions yet.</p>
       ) : (
         <ul className="max-h-64 space-y-1.5 overflow-y-auto text-xs">

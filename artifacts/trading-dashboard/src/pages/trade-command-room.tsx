@@ -45,6 +45,27 @@ type Opp = {
 };
 type Decision = { id: string; type: string; summary: string; createdAt: string };
 
+// One read of the page's 5-second poll. null = the read failed (network error,
+// non-2xx, or a body that is not JSON) — "could not be loaded", never an
+// empty answer. Each read settles on its own, so one failure never blanks the
+// others.
+async function readJson(path: string): Promise<any | null> {
+  try {
+    const r = await fetch(path);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+// The operator positions read answers rows:[] with one of these notes when it
+// could not see the master account at all — that is not "no open positions".
+const POSITIONS_UNAVAILABLE_NOTES: Record<string, string> = {
+  MASTER_BRIDGE_NOT_PINNED: "The master bridge is not pinned, so ARX could not read the master account's positions. Check MT5 directly.",
+  MASTER_CONNECTION_MISSING: "The pinned master connection could not be found, so ARX could not read the master account's positions. Check MT5 directly.",
+};
+
 async function api(path: string, init?: RequestInit) {
   const r = await fetch(path, {
     headers: { "x-security-role": "ADMIN", "content-type": "application/json", ...(init?.headers ?? {}) }, ...init,
@@ -70,10 +91,14 @@ export default function TradeCommandRoom() {
   const [safetyGatesOn, setSafetyGatesOn] = useState(true);
 
   const [opps, setOpps] = useState<Opp[]>([]);
+  const [oppsError, setOppsError] = useState(false);
   const [picked, setPicked] = useState<Opp | null>(null);
   const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [decisionsError, setDecisionsError] = useState(false);
   const [quote, setQuote] = useState<Quote>(null);
-  const [intentCount, setIntentCount] = useState(0);
+  // null until the queue answers; intentError when it could not be loaded.
+  const [intentCount, setIntentCount] = useState<number | null>(null);
+  const [intentError, setIntentError] = useState(false);
   const [, setAlertCount] = useState(0);
 
   // Connection card data — existing shared master summary (no fake data).
@@ -95,16 +120,23 @@ export default function TradeCommandRoom() {
   async function load() {
     const bare = symbol.includes(":") ? symbol.split(":")[1] : symbol;
     const [o, d, q, ic, ac] = await Promise.all([
-      fetch("/api/market-scanner/opportunities?limit=12").then((r) => r.json()),
-      fetch("/api/decision-stream?limit=20").then((r) => r.json()),
+      readJson("/api/market-scanner/opportunities?limit=12"),
+      readJson("/api/decision-stream?limit=20"),
       fetch(`/api/market/quote/${bare}`).then((r) => r.json()).catch(() => null),
-      fetch("/api/live-intent/queue").then((r) => r.json()).catch(() => ({ counts: { total: 0 } })),
+      readJson("/api/live-intent/queue"),
       fetch("/api/alerts/scanner?unackedOnly=true").then((r) => r.json()).catch(() => ({ count: 0 })),
     ]);
-    setOpps(o.opportunities ?? []);
-    setDecisions(d.decisions ?? []);
+    const oppsOk = Array.isArray(o?.opportunities);
+    setOpps(oppsOk ? o.opportunities : []);
+    setOppsError(!oppsOk);
+    const decisionsOk = Array.isArray(d?.decisions);
+    setDecisions(decisionsOk ? d.decisions : []);
+    setDecisionsError(!decisionsOk);
     setQuote(q);
-    setIntentCount(ic.counts?.total ?? 0);
+    const total = ic?.counts?.total;
+    const intentOk = typeof total === "number" && Number.isFinite(total);
+    setIntentCount(intentOk ? total : null);
+    setIntentError(!intentOk);
     setAlertCount(ac.count ?? 0);
   }
 
@@ -170,17 +202,20 @@ export default function TradeCommandRoom() {
   // failed or in-flight fetch into an empty array, which the panel would have
   // rendered as "No open positions" — telling a trader they are flat when ARX
   // could not answer.
+  const positionsNote = (positionsQ.data as { note?: unknown } | undefined)?.note;
+  const positionsUnavailable = typeof positionsNote === "string" ? POSITIONS_UNAVAILABLE_NOTES[positionsNote] ?? null : null;
   const positionsTab = (
     <PositionsPanel
       positions={positionRows}
       isLoading={positionsQ.isLoading}
       isError={positionsQ.isError}
       onRetry={() => void positionsQ.refetch()}
+      unavailableReason={positionsUnavailable}
     />
   );
 
   const ordersTab = (
-    <OrdersPanel opps={opps} intentCount={intentCount} picked={picked} onPick={(o) => pickAndAnalyze(o as Opp)} />
+    <OrdersPanel opps={opps} oppsError={oppsError} intentCount={intentCount} intentError={intentError} picked={picked} onPick={(o) => pickAndAnalyze(o as Opp)} />
   );
 
   const advancedTab = (
@@ -191,7 +226,7 @@ export default function TradeCommandRoom() {
         approval={tradingMode.canManualTrade ? "Approved" : "Pending"}
         isAdmin={isAdmin} rawCanPlace={tradingMode.canManualTrade} rawMode={tradingMode.cleanModeLabel || "—"}
       />
-      <DecisionStreamCard decisions={decisions} />
+      <DecisionStreamCard decisions={decisions} error={decisionsError} />
       <AdvancedPanel isAdmin={isAdmin} />
     </div>
   );
@@ -205,7 +240,7 @@ export default function TradeCommandRoom() {
           </MobileMenuTrigger>
         }
       />
-      <TradeStatusBar modeLabel={modeLabel} isLive={isLive} gatesLabel={gatesLabel} intentCount={intentCount} />
+      <TradeStatusBar modeLabel={modeLabel} isLive={isLive} gatesLabel={gatesLabel} intentCount={intentCount} intentError={intentError} />
       <TradeHero description={heroDescription} connStatus={connStatus} isLive={isLive} bridge={bridgeObs} routeHeading={route.heading} broker={broker} account={account} />
 
       <PageTabs
