@@ -49,11 +49,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+// The safety core's operating mode. The governed order pipeline (paper, demo
+// and live tickets) does not read it; only the legacy /mt5 command endpoints
+// and broker reconnect do, and they act only in LIVE_TRADING. The subs name
+// the posture each mode records, not something the order paths enforce.
+// PAPER_TRADING is simulated execution (safetyCore.ts), not an MT5 demo account.
 const MODE_DEFS: { mode: SetSystemModeBodyMode; label: string; sub: string; icon: typeof Eye }[] = [
-  { mode: "OBSERVE_ONLY", label: "OBSERVE", sub: "Watch market, no signals", icon: Eye },
-  { mode: "SUGGEST_ONLY", label: "SUGGEST", sub: "Generate signals, no execution", icon: Lightbulb },
-  { mode: "PAPER_TRADING", label: "DEMO", sub: "Execute on demo account", icon: FileText },
-  { mode: "LIVE_TRADING", label: "LIVE", sub: "Real capital at risk", icon: Zap },
+  { mode: "OBSERVE_ONLY", label: "OBSERVE", sub: "Watch-only posture", icon: Eye },
+  { mode: "SUGGEST_ONLY", label: "SUGGEST", sub: "Signals-only posture", icon: Lightbulb },
+  { mode: "PAPER_TRADING", label: "PAPER", sub: "Simulated-execution posture, not a demo account", icon: FileText },
+  { mode: "LIVE_TRADING", label: "LIVE", sub: "Real-money posture", icon: Zap },
 ];
 
 function severityClass(sev: string): string {
@@ -136,8 +141,13 @@ function StatusBanner({ status }: { status: SystemStatus }) {
               MT5 LINK: {status.mt5LinkHealth}
               {status.secondsSinceMt5Heartbeat !== null && status.secondsSinceMt5Heartbeat !== undefined ? ` · ${status.secondsSinceMt5Heartbeat}s` : ""}
             </Badge>
-            <Badge variant="outline" className="font-mono text-xs">
-              EXEC: {profile.executionPermission ?? "—"}
+            <Badge
+              variant="outline"
+              className="font-mono text-xs"
+              data-testid="state-profile-exec"
+              title="The execution permission the global state's profile names. It is advisory: no order path reads it, and it does not reflect the operational mode."
+            >
+              STATE PROFILE: {profile.executionPermission ?? "—"} · advisory
             </Badge>
           </div>
         </div>
@@ -245,7 +255,12 @@ function ModeSwitcher({ status }: { status: SystemStatus }) {
         <CardTitle className="flex items-center gap-2">
           <ShieldCheck size={20} /> Operational Mode
         </CardTitle>
-        <CardDescription>Control Tower governs which mode is allowed. LIVE requires multi-step acknowledgement.</CardDescription>
+        <CardDescription data-testid="mode-scope">
+          Records the safety core&apos;s operating mode. The governed order pipeline (paper, demo and live tickets)
+          does not read it: OBSERVE or SUGGEST does not stop those orders (use the kill switch to halt them), and
+          LIVE does not enable live orders. Only the legacy MT5 command endpoints and broker reconnect read it,
+          and they act only in LIVE. LIVE requires multi-step acknowledgement.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -290,7 +305,7 @@ function ModeSwitcher({ status }: { status: SystemStatus }) {
             </AlertDialogTitle>
             <AlertDialogDescription className="py-3 text-base">
               {confirmLive?.step === 1
-                ? "LIVE mode places real capital at risk. The Risk Governor and Control Tower will still gate every order, but live executions cannot be undone. Continue?"
+                ? "This records LIVE_TRADING as the safety core's mode. The legacy MT5 command endpoints and broker reconnect act only in this mode. Whether a live order can be placed is decided by the live venue switch, the stop switches and the pre-trade Risk Governor, not by this mode, and live executions cannot be undone. Continue?"
                 : "Final confirmation: switching to LIVE_TRADING now. Type-equivalent click required."}
             </AlertDialogDescription>
           </AlertDialogHeader>

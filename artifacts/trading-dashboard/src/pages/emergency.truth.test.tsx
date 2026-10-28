@@ -104,3 +104,35 @@ describe("Control Tower — stops other than the safety-core switch", () => {
     expect(screen.getByTestId("safety-core-halts").textContent).toMatch(/platform emergency stop/);
   });
 });
+
+// PAPER_TRADING is simulated execution in the safety core, not an MT5 demo
+// account. The EXEC badge is the global state's profile permission, which no
+// order path reads (tradeGate, its only reader, has no caller), and the
+// operational mode is not read by the governed order pipeline either.
+describe("Control Tower — mode and execution labels", () => {
+  it("does not label PAPER_TRADING as executing on a demo account", () => {
+    renderPage();
+    const paper = screen.getByTestId("button-mode-PAPER_TRADING").textContent ?? "";
+    expect(paper).not.toMatch(/Execute on demo account/);
+    expect(paper).not.toMatch(/^DEMO/);
+    expect(paper).toMatch(/^PAPER/);
+    expect(paper).toMatch(/not a demo account/);
+  });
+
+  it("does not show EXEC: FULL as the execution state while the mode is OBSERVE_ONLY", () => {
+    h.status.data = baseStatus({ operationalMode: "OBSERVE_ONLY", effectiveProfile: { executionPermission: "FULL" } });
+    renderPage();
+    const badge = screen.getByTestId("state-profile-exec").textContent ?? "";
+    expect(badge).not.toMatch(/^EXEC: FULL/);
+    expect(badge).toMatch(/STATE PROFILE: FULL · advisory/);
+    expect(screen.getByTestId("state-profile-exec").getAttribute("title")).toMatch(/no order path reads it/);
+  });
+
+  it("says what the operational mode does and does not control", () => {
+    renderPage();
+    const scope = screen.getByTestId("mode-scope").textContent ?? "";
+    expect(scope).not.toMatch(/governs which mode is allowed/);
+    expect(scope).toMatch(/governed order pipeline \(paper, demo and live tickets\)\s+does not read it/);
+    expect(scope).toMatch(/use the kill switch to halt them/);
+  });
+});
