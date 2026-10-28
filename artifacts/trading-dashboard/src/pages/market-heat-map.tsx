@@ -390,6 +390,18 @@ function sessionCardsFor(sessionName: string): SessionCardName[] {
   return SESSION_CARD_NAMES.filter((name) => n === name.toLowerCase());
 }
 
+/**
+ * Kill zone chip text. LONDON_NY_OVERLAP runs 13:00-17:00 UTC on the server,
+ * one hour past the 16:00 UTC London close; when the session is not the
+ * overlap (London closed) the chip says so instead of implying an overlap.
+ */
+function killZoneLabel(session: MarketTimingRead["session"]): string {
+  if (session.killZone === "LONDON_NY_OVERLAP" && sessionCardsFor(session.sessionName).length !== 2) {
+    return "LONDON_NY_OVERLAP (London closed, New York only)";
+  }
+  return session.killZone;
+}
+
 export function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; multiData: MarketTimingRead[] }) {
   const session = data?.session;
   const localTime = useViewerLocalTime();
@@ -438,7 +450,7 @@ export function TodayTab({ data, multiData }: { data: MarketTimingRead | undefin
                       </div>
                       {isCurrent && (
                         <div className="space-y-0.5 text-muted-foreground">
-                          <div>Kill zone: <span className="text-foreground">{session.killZone}</span></div>
+                          <div>Kill zone: <span className="text-foreground">{killZoneLabel(session)}</span></div>
                           <div>Heat bonus: <span className="text-foreground font-mono">+{session.sessionHeatBonus}</span></div>
                           <div>Fakeout risk: <span className="text-foreground font-mono">{formatScorePct(session.fakeoutRisk)}</span></div>
                         </div>
@@ -593,7 +605,7 @@ export function SessionCard({
               </Badge>
             )}
             <Badge variant="outline" className="text-[10px] text-muted-foreground">
-              {session.killZone}
+              {killZoneLabel(session)}
             </Badge>
           </div>
         </div>

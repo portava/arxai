@@ -135,7 +135,7 @@ export interface BroadFlowResult {
 export type KillZone =
   | "LONDON_OPEN"        // 07:00-08:30 UTC
   | "NY_OPEN"            // 12:00-13:30 UTC
-  | "LONDON_NY_OVERLAP"  // 13:00-17:00 UTC
+  | "LONDON_NY_OVERLAP"  // 13:00-17:00 UTC (true overlap 13:00-16:00; 16:00-17:00 is New York only)
   | "ASIAN_KILLZONE"     // 00:00-02:30 UTC
   | "LONDON_CLOSE"       // 14:00-16:00 UTC
   | "OFF_KILLZONE";      // Outside all kill zones

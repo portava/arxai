@@ -181,3 +181,27 @@ describe("Percent scales (server scores are already 0-100)", () => {
     expect(text).toContain("40%");
   });
 });
+
+describe("Kill zone label — overlap window past the London close", () => {
+  // The server's LONDON_NY_OVERLAP kill zone runs 13:00-17:00 UTC; London
+  // closes at 16:00. In the last hour the session is New York only, so the
+  // kill zone chip must not read as a London/NY overlap on its own.
+  const tail = { sessionName: "New York", killZone: "LONDON_NY_OVERLAP" as const, isKillZoneActive: true };
+
+  it("SessionCard says London is closed when the overlap kill zone is reported outside the overlap", () => {
+    render(<SessionCard session={makeRead({}, tail).session} />);
+    expect(screen.getByText(/LONDON_NY_OVERLAP.*London closed, New York only/)).toBeTruthy();
+  });
+
+  it("Today tab's New York card says London is closed for the same read", () => {
+    render(<TodayTab data={makeRead({}, tail)} multiData={[]} />);
+    const ny = screen.getByTestId("session-card-New York");
+    expect(within(ny).getByText(/London closed, New York only/)).toBeTruthy();
+  });
+
+  it("during the real overlap the chip is the plain kill zone id", () => {
+    render(<SessionCard session={makeRead({}, { ...tail, sessionName: "London/NY Overlap" }).session} />);
+    expect(screen.getByText("LONDON_NY_OVERLAP")).toBeTruthy();
+    expect(screen.queryByText(/London closed/)).toBeNull();
+  });
+});
