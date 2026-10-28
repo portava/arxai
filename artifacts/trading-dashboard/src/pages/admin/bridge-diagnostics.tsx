@@ -404,8 +404,9 @@ function BridgeDiagnosticsInner() {
                       <td className="py-1 pr-3 text-txt-muted">#{s.userId}</td>
                       <td className="py-1 pr-3 font-medium">{s.symbol}</td>
                       <td className="py-1 pr-3 text-txt-secondary">{s.brokerSymbol ?? "—"}</td>
-                      <td className="py-1 pr-3">{s.visible ? "yes" : "no"}</td>
-                      <td className="py-1 pr-3">{s.tradeAllowed ? "yes" : "no"}</td>
+                      {/* null = the EA did not report it: "—", never "no". */}
+                      <td className="py-1 pr-3">{s.visible == null ? "—" : s.visible ? "yes" : "no"}</td>
+                      <td className="py-1 pr-3">{s.tradeAllowed == null ? "—" : s.tradeAllowed ? "yes" : "no"}</td>
                       <td className="py-1 pr-3">{s.marketOpen === null ? "—" : s.marketOpen ? "open" : "closed"}</td>
                       <td className="py-1 pr-3 text-txt-secondary">{s.minVolume ?? "—"}/{s.volumeStep ?? "—"}/{s.maxVolume ?? "—"}</td>
                       <td className="py-1 pr-3">{s.spreadPoints ?? "—"}</td>

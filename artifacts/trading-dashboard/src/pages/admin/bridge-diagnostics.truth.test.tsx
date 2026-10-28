@@ -143,3 +143,30 @@ describe("bridge diagnostics — a failed endpoint is 'could not be loaded', nev
     expect(screen.getByTestId("retcodes-unavailable")).toBeTruthy();
   });
 });
+
+describe("bridge diagnostics — symbol capabilities the EA did not report", () => {
+  const SPEC = {
+    userId: 3, symbol: "EURUSD", brokerSymbol: "EURUSD.r", accountType: "live",
+    visible: null, tradeAllowed: null, tradeMode: null, marketOpen: null,
+    minVolume: 0.01, maxVolume: 100, volumeStep: 0.01, spreadPoints: 12, stopsLevelPoints: 0,
+    reportedAgeSeconds: 30,
+  };
+
+  it("unreported visibility and tradability read '—', not 'no'", async () => {
+    stubFetch([{ ...okRoutes(), symbols: { ok: true, symbols: [SPEC] } }]);
+    render(<AdminBridgeDiagnosticsPage />); await settle();
+    const cells = screen.getByTestId("symbol-row-3-EURUSD").querySelectorAll("td");
+    expect(cells[3]!.textContent).toBe("—");
+    expect(cells[4]!.textContent).toBe("—");
+    expect(cells[5]!.textContent).toBe("—");
+  });
+
+  it("reported values still read yes / no", async () => {
+    stubFetch([{ ...okRoutes(), symbols: { ok: true, symbols: [{ ...SPEC, visible: true, tradeAllowed: false, marketOpen: true }] } }]);
+    render(<AdminBridgeDiagnosticsPage />); await settle();
+    const cells = screen.getByTestId("symbol-row-3-EURUSD").querySelectorAll("td");
+    expect(cells[3]!.textContent).toBe("yes");
+    expect(cells[4]!.textContent).toBe("no");
+    expect(cells[5]!.textContent).toBe("open");
+  });
+});
