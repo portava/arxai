@@ -27,8 +27,21 @@ import {
 } from "react";
 import type { ChartRead } from "@/lib/rubyReadPanelState";
 
+// Canonical engine timeframes ("M1", "M5", "H1", "D1") normalised to the
+// scanner-bus form ("1m", "5m", "1h", "1d") so a read run from a panel mounted
+// with the engine form (e.g. the scalp card's "Ask Eleanor") lands on the SAME
+// key the header reads via `coerceVisibleTimeframe(selectedTf)`. Bus-form keys
+// pass through unchanged.
+function busTimeframe(timeframe: string): string {
+  const tf = (timeframe || "").trim();
+  const m = /^([MHDW])(\d+)$/.exec(tf);
+  if (!m) return tf;
+  const unit = { M: "m", H: "h", D: "d", W: "w" }[m[1] as "M" | "H" | "D" | "W"];
+  return `${m[2]}${unit}`;
+}
+
 function keyOf(symbol: string, timeframe: string): string {
-  return `${(symbol || "").toUpperCase()}|${timeframe || ""}`;
+  return `${(symbol || "").toUpperCase()}|${busTimeframe(timeframe)}`;
 }
 
 interface RubyReadStore {

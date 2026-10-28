@@ -759,3 +759,58 @@ describe("owner screenshot 2026-10-27 — STRUCTURAL_ONLY read never renders as 
     expect(screen.queryByTestId("ruby-chart-read-structural-notice")).toBeNull();
   });
 });
+
+// Owner screenshot 2026-10-27: the header Action cell said "Feed limited" while
+// the Eleanor tile said "Full read" and the panel's chip could still read
+// Clean/AI. The page's canonical action verdict now caps both, downgrade-only.
+describe("feed-limited action verdict caps the Eleanor read (header + panel agree)", () => {
+  it("pure: FEED_LIMITED / ANALYSIS_ONLY cap a FULL_READ; CHECK_FAILED does not", async () => {
+    const { isFeedLimitedAction } = await import("@/lib/rubyReadPanelState");
+    expect(isFeedLimitedAction("FEED_LIMITED")).toBe(true);
+    expect(isFeedLimitedAction("ANALYSIS_ONLY")).toBe(true);
+    expect(isFeedLimitedAction("CHECK_FAILED")).toBe(false);
+    expect(isFeedLimitedAction("WAIT_FOR_CONFIRMATION")).toBe(false);
+    expect(isFeedLimitedAction("PENDING")).toBe(false);
+    const full: RubyReadServerState = { gated: false, dataQuality: "ok", readLayer: "FULL" };
+    expect(resolveCappedRubyReadStatus("FULL_READ", full, undefined, "Eleanor", true)).toEqual({
+      status: "LIMITED_READ",
+      reason: "The live feed isn't fully confirmed — Eleanor reads with caution.",
+    });
+    expect(resolveCappedRubyReadStatus("FULL_READ", full, undefined, "Eleanor", false).status).toBe("FULL_READ");
+    // never raises
+    expect(resolveCappedRubyReadStatus("NO_READ", full, undefined, "Eleanor", true).status).toBe("NO_READ");
+  });
+
+  it("pure: panel verdict is not_confirmed and the badge can't claim Clean/AI; the endpoint report is unchanged", () => {
+    const s = resolveRubyReadPanelState({
+      truthLevel: "full",
+      truthReason: "Live data — valid for a live read",
+      aiUsableProp: undefined,
+      read: { gated: false, dataQuality: "ok", readLayer: "FULL" },
+      actionFeedLimited: true,
+      assistantName: "Eleanor",
+    });
+    expect(s.verdict).toBe("not_confirmed");
+    expect(s.badgeAiUsable).toBe(false);
+    expect(s.reason).toBe("The live feed isn't fully confirmed — Eleanor reads with caution.");
+    expect(s.reportedAiUsable).toBe(true);
+  });
+
+  it("render: a FULL read under a FEED_LIMITED canonical action never feeds the chip a confirmed verdict", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, dataQuality: "ok", readLayer: "FULL", bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="FEED_LIMITED" />);
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+    expect(screen.getByTestId("ruby-chart-read-feed-warning").textContent).toContain(
+      "isn't fully confirmed",
+    );
+  });
+
+  it("render: a FULL read under WAIT_FOR_CONFIRMATION keeps the confirmed chip (no over-downgrade)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    mockStoredRead = { gated: false, dataQuality: "ok", readLayer: "FULL", bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="V75" timeframe="1m" draft={null} canonicalAction="WAIT_FOR_CONFIRMATION" />);
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(true);
+    expect(screen.queryByTestId("ruby-chart-read-feed-warning")).toBeNull();
+  });
+});

@@ -7,6 +7,7 @@ import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromChartRead } from "@/lib/rubyReasoningBlock";
 import { useScannerTruth } from "@/hooks/useScannerTruth";
 import {
+  isFeedLimitedAction,
   resolveRubyReadPanelState,
   type ChartRead,
 } from "@/lib/rubyReadPanelState";
@@ -116,6 +117,10 @@ export function RubyChartRead({
     truthReason: truth?.analysis.reason ?? null,
     aiUsableProp,
     read,
+    // The page's canonical action says the feed is limited → the badge can't
+    // claim Clean/AI and the panel agrees with the header's "Limited read".
+    actionFeedLimited: isFeedLimitedAction(canonicalAction),
+    assistantName: name,
   });
   const feedNotConfirmed = panel.feedNotConfirmed;
   // Task #602 — a directional STRUCTURAL read is available, but the exact live
