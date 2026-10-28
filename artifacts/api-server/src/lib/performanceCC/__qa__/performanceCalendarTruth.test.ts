@@ -33,7 +33,7 @@ mock.module("../../learning/scopedMemory.js", {
   namedExports: { listOwnEdges: async () => [], listOwnMistakes: async () => [] },
 });
 
-const { computeCalendarMonth, computeDailyStats } = await import("../aggregator.js");
+const { computeCalendarMonth, computeDailyStats, computeDayDetail } = await import("../aggregator.js");
 
 function order(over: Record<string, unknown>) {
   return {
@@ -74,4 +74,20 @@ test("day stats: no closed trades → day_rating null; a winning day is still gr
   rows.set(database.paperOrdersTable, [order({})]);
   const won = await computeDailyStats(7, "2026-05-04");
   assert.equal(won.day_rating, "A");
+});
+
+test("day detail: an OPEN or CANCELLED order has no P&L (null), not a measured 0.00", async () => {
+  rows.set(database.paperOrdersTable, [
+    order({ id: 12, status: "OPEN", closedAt: null, exitPrice: null, profitLoss: 0 }),
+    order({ id: 13, status: "CANCELLED", profitLoss: 0 }),
+    order({ id: 14, status: "CLOSED_TP", profitLoss: 2 }),
+  ]);
+  const detail = await computeDayDetail(7, "2026-05-04");
+  const byId = new Map(detail.trades.map((t) => [t.trade_id, t]));
+  assert.equal(byId.get(12)!.pnl, null);
+  assert.match(String(byId.get(12)!.pnl_note), /open/i);
+  assert.equal(byId.get(13)!.pnl, null);
+  assert.match(String(byId.get(13)!.pnl_note), /cancelled/i);
+  assert.equal(byId.get(14)!.pnl, 2);
+  assert.equal(byId.get(14)!.pnl_note, null);
 });

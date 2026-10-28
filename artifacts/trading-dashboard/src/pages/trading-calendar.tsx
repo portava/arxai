@@ -25,6 +25,23 @@ interface CalendarDay {
 interface CalendarResp { calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number } }
 interface DayDetailResp { day: { date: string; stats: any; trades: any[] } }
 
+/**
+ * A day-detail row's P&L is a realized result only when the order closed.
+ * An open or cancelled order's stored 0 is not a measurement (the server
+ * sends pnl null for those; an older server sent 0, which is downgraded here).
+ */
+function realizedPnl(t: { status?: unknown; pnl?: unknown }): number | null {
+  const closed = typeof t.status === "string" && /^(PAPER_)?CLOSED/.test(t.status);
+  return closed && typeof t.pnl === "number" && Number.isFinite(t.pnl) ? t.pnl : null;
+}
+
+function noPnlText(t: { status?: unknown; pnl_note?: unknown }): string {
+  if (typeof t.pnl_note === "string" && t.pnl_note) return t.pnl_note;
+  if (t.status === "OPEN") return "Still open — no realized P&L yet";
+  if (t.status === "CANCELLED") return "Cancelled — no P&L";
+  return "No P&L recorded";
+}
+
 function dayColor(d: CalendarDay) {
   switch (d.day_status) {
     case "WINNING_DAY": return "bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
@@ -122,7 +139,8 @@ export default function TradingCalendarPage() {
             },
             trades: Array.isArray(d.trades) ? d.trades.map((t: any) => ({
               trade_id: t.id, symbol: t.symbol, action: t.side, status: "CLOSED",
-              pnl: Number(t.pnl ?? 0), decision_id: null,
+              // A live trade with no recorded P&L stays null (never 0.00).
+              pnl: t.pnl == null || !Number.isFinite(Number(t.pnl)) ? null : Number(t.pnl), decision_id: null,
               entry_price: t.entryPrice, exit_price: t.exitPrice,
               stop_loss: "—", take_profit: "—",
             })) : [],
@@ -259,7 +277,14 @@ export default function TradingCalendarPage() {
                     <div key={t.trade_id} className="border border-slate-700 rounded p-3 text-sm" data-testid={`trade-row-${t.trade_id}`}>
                       <div className="flex items-center justify-between">
                         <div className="font-semibold">#{t.trade_id} {t.symbol} <Badge variant="outline">{t.action}</Badge> <Badge>{t.status}</Badge></div>
-                        <div className={`font-bold ${t.pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{t.pnl.toFixed(2)}</div>
+                        {(() => {
+                          const pnl = realizedPnl(t);
+                          return pnl == null ? (
+                            <div className="text-xs text-muted-foreground text-right" data-testid={`trade-pnl-${t.trade_id}`}>{noPnlText(t)}</div>
+                          ) : (
+                            <div className={`font-bold ${pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`} data-testid={`trade-pnl-${t.trade_id}`}>{pnl.toFixed(2)}</div>
+                          );
+                        })()}
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         decision_id: {t.decision_id ?? "—"} · entry: {t.entry_price} · exit: {t.exit_price ?? "—"} · SL: {t.stop_loss} · TP: {t.take_profit}

@@ -78,3 +78,47 @@ describe("trading calendar: day grades", () => {
     expect(screen.getByTestId(`day-${MONTH}-02`).textContent).not.toMatch(/C/);
   });
 });
+
+describe("trading calendar: day detail P&L", () => {
+  it("an open or cancelled order shows no P&L, not a green 0.00 (also when an older server sends 0)", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { tradingMode: "PAPER" },
+      "/api/performance/calendar": {
+        calendar: { month: MONTH, total_pnl: 0, total_trades: 0, winning_days: 0, losing_days: 0, no_trade_days: 1, days: [day(`${MONTH}-01`)] },
+      },
+      "/api/performance/day": {
+        day: {
+          date: `${MONTH}-01`,
+          stats: { net_pnl: 2, total_trades: 1, win_rate: 100, profit_factor: null, day_rating: "A", top_lesson: "" },
+          trades: [
+            { trade_id: 12, symbol: "EURUSD", action: "BUY", status: "OPEN", pnl: null, pnl_note: "Still open — no realized P&L yet (unrealized P&L is not recorded on the order).", entry_price: 1.1, exit_price: null, stop_loss: 1.09, take_profit: 1.12, decision_id: null },
+            { trade_id: 13, symbol: "EURUSD", action: "SELL", status: "CANCELLED", pnl: 0, entry_price: 1.1, exit_price: null, stop_loss: 1.11, take_profit: 1.08, decision_id: null },
+            { trade_id: 14, symbol: "EURUSD", action: "BUY", status: "CLOSED_TP", pnl: 2, pnl_note: null, entry_price: 1.1, exit_price: 1.12, stop_loss: 1.09, take_profit: 1.12, decision_id: null },
+          ],
+        },
+      },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId(`day-${MONTH}-01`));
+    const open = await screen.findByTestId("trade-pnl-12");
+    expect(open.textContent).not.toMatch(/0\.00/);
+    expect(open.textContent).toMatch(/no realized P&L/);
+    expect(open.className).not.toMatch(/emerald/);
+    const cancelled = screen.getByTestId("trade-pnl-13");
+    expect(cancelled.textContent).not.toMatch(/0\.00/);
+    expect(cancelled.textContent).toMatch(/Cancelled/);
+    expect(screen.getByTestId("trade-pnl-14").textContent).toBe("2.00");
+  });
+
+  it("a live trade with no recorded P&L is not shown as 0.00", async () => {
+    mockFetch({
+      "/api/me/trading/mode": { tradingMode: "LIVE" },
+      "/api/me/performance-calendar/": { date: `${MONTH}-02`, totalPnl: 0, tradesCount: 1, winRate: 0, trades: [{ id: 5, symbol: "EURUSD", side: "buy", pnl: null, entryPrice: 1.1, exitPrice: 1.1 }] },
+      "/api/me/performance-calendar": { days: [{ date: `${MONTH}-02`, totalPnl: 0, tradesCount: 1, wins: 0, losses: 0, winRate: 0 }] },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId(`day-${MONTH}-02`));
+    const cell = await screen.findByTestId("trade-pnl-5");
+    expect(cell.textContent).not.toMatch(/0\.00/);
+  });
+});

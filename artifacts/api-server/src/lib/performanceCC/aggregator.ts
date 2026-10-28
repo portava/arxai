@@ -425,6 +425,23 @@ export async function computeCalendarMonth(userId: number, month: string) {
   };
 }
 
+/** A paper order whose P&L is a realized result (it closed with a fill). */
+function hasRealizedPnl(status: string | null | undefined): boolean {
+  return typeof status === "string" && (status.startsWith("CLOSED") || status.startsWith("PAPER_CLOSED"));
+}
+
+/**
+ * Why a day-detail row has no P&L. profit_loss is NOT NULL default 0 and is
+ * written only when an order closes, so on an open or cancelled order the 0
+ * is not a measurement.
+ */
+function noPnlNote(status: string | null | undefined): string | null {
+  if (hasRealizedPnl(status)) return null;
+  if (status === "OPEN") return "Still open — no realized P&L yet (unrealized P&L is not recorded on the order).";
+  if (status === "CANCELLED") return "Cancelled — no P&L.";
+  return "No realized P&L recorded for this order.";
+}
+
 /** Per-day detail: trades + debriefs + decisions + learning events. */
 export async function computeDayDetail(userId: number, date: string) {
   const dayStart = new Date(`${date}T00:00:00.000Z`);
@@ -482,7 +499,9 @@ export async function computeDayDetail(userId: number, date: string) {
         symbol: t.symbol,
         action: t.direction,
         status: t.status,
-        pnl: Number((t.profitLoss ?? 0).toFixed(2)),
+        // null unless the order closed: an open or cancelled order's stored 0 is not a result.
+        pnl: hasRealizedPnl(t.status) ? Number((t.profitLoss ?? 0).toFixed(2)) : null,
+        pnl_note: noPnlNote(t.status),
         entry_price: t.entryPrice,
         exit_price: t.exitPrice,
         stop_loss: t.stopLoss,
