@@ -120,3 +120,30 @@ test("connected bridge label is not presented as the account's live permission",
   const off = await getReconciliationStatus(11);
   assert.match(off.bridge.modeNote, /offline/);
 });
+
+test("bridge mode and canonical mode agree, and only emitted labels are produced", async () => {
+  currentEnv = PAPER;
+  // A connected bridge whose connection is locked for live orders: both labels
+  // must say LIVE_LOCKED, not one LIVE_LOCKED and the other READ_ONLY.
+  primaryConnection = { ...connectedBridge(), liveLocked: true };
+  const locked = await getReconciliationStatus(12);
+  assert.equal(locked.bridge.mode, "LIVE_LOCKED");
+  assert.equal(locked.bridge.canonicalMode, "LIVE_LOCKED");
+  assert.match(locked.bridge.modeNote, /locked for live orders/);
+
+  primaryConnection = connectedBridge();
+  const open = await getReconciliationStatus(13);
+  assert.equal(open.bridge.mode, "READ_ONLY");
+  assert.equal(open.bridge.canonicalMode, "READ_ONLY");
+
+  primaryConnection = null;
+  const off = await getReconciliationStatus(14);
+  assert.equal(off.bridge.mode, "OFFLINE");
+  assert.equal(off.bridge.canonicalMode, "OFFLINE");
+
+  // PAPER_ONLY is never emitted by this tool (it has no paper-routing input).
+  for (const r of [locked, open, off]) {
+    assert.notEqual(r.bridge.mode, "PAPER_ONLY");
+    assert.notEqual(r.bridge.canonicalMode, "PAPER_ONLY");
+  }
+});

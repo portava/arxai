@@ -721,7 +721,9 @@ export async function getReconciliationStatus(userId: number) {
     : null;
   // Shared heartbeat policy: connected = online (fresh or degraded, < 60 s).
   const bridgeConnected = !!conn && isHeartbeatAgeSecondsOnline(heartbeatAgeSec);
-  const bridgeMode: "OFFLINE" | "READ_ONLY" | "PAPER_ONLY" | "LIVE_LOCKED" =
+  // Only these three labels are ever emitted: this tool has no paper-routing
+  // input, so the contract's PAPER_ONLY value is never produced here.
+  const bridgeMode: "OFFLINE" | "READ_ONLY" | "LIVE_LOCKED" =
     !bridgeConnected ? "OFFLINE" : (conn?.liveLocked ? "LIVE_LOCKED" : "READ_ONLY");
 
   // 2. Per-user attribution rows (shared-master routing model — currently
@@ -794,8 +796,10 @@ export async function getReconciliationStatus(userId: number) {
   // consume the shared contract enums at lib/domain/safety-contracts.
   const canonicalReconciliationStatus = mapLegacyReconciliationStatus(reconciliationStatus);
   const heartbeatStale = !bridgeConnected;
+  // Mapped from the same label as bridge.mode, so a live-locked connection
+  // reads LIVE_LOCKED in both fields (not LIVE_LOCKED and READ_ONLY).
   const canonicalBridgeMode = applyHeartbeatStaleness(
-    mapLegacyBridgeMode(bridgeConnected ? "connected" : "disconnected"),
+    mapLegacyBridgeMode(bridgeMode),
     heartbeatStale,
   );
   return {
