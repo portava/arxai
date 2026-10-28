@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, CandlestickChart, BarChart3 } from "lucide-react";
 import { useTradingMode } from "@/hooks/useTradingMode";
 import { useProductRole } from "@/hooks/useProductRole";
-import { useChartSymbol } from "@/lib/use-chart-symbol";
+import { bareSymbol, useChartSymbol } from "@/lib/use-chart-symbol";
 
 type ChartView = "tv" | "native";
 
@@ -133,6 +133,17 @@ export default function LiveChartPage() {
     (state: ChartIntelligenceResponse["state"]) => setChartIntelligence(state),
     [],
   );
+  // The chart only reports a state once one matches its instrument, so the
+  // last one held here can belong to the previous symbol/timeframe. Show it
+  // only for the instrument on screen (same normalisation as the chart);
+  // otherwise the panels show their waiting state until the new read lands.
+  const onScreenSymbol = bareSymbol(chartSymbol || "EURUSD").toUpperCase();
+  const shownIntelligence =
+    chartIntelligence != null
+    && chartIntelligence.symbol === onScreenSymbol
+    && chartIntelligence.timeframe === timeframe
+      ? chartIntelligence
+      : null;
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
       <div>
@@ -210,7 +221,7 @@ export default function LiveChartPage() {
               canUseSetup={canSeeTradeEntry}
               onUseSetup={onUseSetup}
             />
-            <ChartModes state={chartIntelligence} />
+            <ChartModes state={shownIntelligence} />
           </div>
         )}
         <div className="space-y-4">
