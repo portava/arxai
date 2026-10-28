@@ -119,3 +119,51 @@ export function quoteObservationFreshness(input: {
     plainEnglish: `Price${from} observed ${fmtAge(ageMs)} ago (${basisWords} ${observedAt}) — ${state}.`,
   };
 }
+
+// ── GET /api/data/quote response ─────────────────────────────────────────────
+
+type RoutedQuote = {
+  ok: boolean;
+  quote: { symbol: string; bid?: number; ask?: number; last?: number; spread?: number; timestamp: string } | null;
+  primaryProvider: string | null;
+  provenance?: { providerId: string } | undefined;
+  tickTimeObserved?: boolean;
+};
+
+/**
+ * The /data/quote body: the router's quote (unchanged legacy fields) plus its
+ * observation evidence. When no provider served a quote the body carries NO
+ * price, `available: false`, `observedAt: null`, and `timestamp` is the time
+ * the check ran (never presented as an observation). Tick time is claimed only
+ * when the router says the producer observed it.
+ */
+export function quoteRouteResponse(symbol: string, r: RoutedQuote | null, nowMs: number = Date.now()) {
+  const checkedAt = new Date(nowMs).toISOString();
+  const q = r?.ok ? r.quote : null;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const hasPrice = !!q && (num(q.last) != null || num(q.bid) != null || num(q.ask) != null);
+  const source = q ? (r?.provenance?.providerId ?? r?.primaryProvider ?? null) : null;
+  const obs = quoteObservationFreshness({
+    hasPrice,
+    observedAt: q?.timestamp ?? null,
+    basis: r?.tickTimeObserved === true ? "producer_tick" : "server_receive",
+    sourceLabel: source,
+    nowMs,
+  });
+  const evidence = {
+    available: hasPrice,
+    source,
+    observedAt: obs.observedAt,
+    timeBasis: obs.timeBasis,
+    ageMs: obs.ageMs,
+    freshness: obs.freshness,
+    stale: obs.stale,
+    staleAfterMs: obs.staleAfterMs,
+    checkedAt,
+    observationNote: obs.plainEnglish,
+  };
+  if (!q || !hasPrice) {
+    return { symbol, timestamp: checkedAt, ...evidence };
+  }
+  return { ...q, ...evidence };
+}

@@ -19203,7 +19203,43 @@ components:
         ask: { type: ["number", "null"] }
         last: { type: ["number", "null"] }
         spread: { type: ["number", "null"] }
-        timestamp: { type: string }
+        timestamp:
+          type: string
+          description: >-
+            For a served quote, the quote's own time (see timeBasis). When no
+            quote was available (available=false) this is only the time the
+            check ran — it is not an observation time.
+        available:
+          type: boolean
+          description: True only when a price (last, bid or ask) was served.
+        source:
+          type: ["string", "null"]
+          description: Router provider that served the quote; null when none did.
+        observedAt:
+          type: ["string", "null"]
+          description: When the price was observed (ISO); null when unknown or unavailable.
+        timeBasis:
+          type: string
+          enum: [producer_tick, provider_as_of, server_receive, none]
+          description: >-
+            What observedAt means. server_receive is the time ARX received the
+            quote (the market tick may be older) and can never read fresh.
+        ageMs:
+          type: ["number", "null"]
+        freshness:
+          type: string
+          enum: [fresh, delayed, stale, unknown, unavailable]
+        stale:
+          type: boolean
+          description: True when stale, unknown or unavailable — the price must not be shown as current.
+        staleAfterMs:
+          type: number
+        checkedAt:
+          type: string
+          description: When this lookup ran (ISO).
+        observationNote:
+          type: string
+          description: Plain English — what was observed, from which source, as of when, or that it could not be.
 
     TradeHealth:
       type: object

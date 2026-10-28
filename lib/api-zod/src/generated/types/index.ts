@@ -1084,6 +1084,8 @@ export * from "./marketHeatVerdictSourceStatus";
 export * from "./marketImpactRadar";
 export * from "./marketImpactRadarTopSeverity";
 export * from "./marketQuote";
+export * from "./marketQuoteFreshness";
+export * from "./marketQuoteTimeBasis";
 export * from "./marketTimingRead";
 export * from "./marketTimingReadBestAction";
 export * from "./marketTimingReadEntryPermission";

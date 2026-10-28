@@ -5217,7 +5217,49 @@ export const GetMarketQuoteResponse = zod.object({
   ask: zod.number().nullish(),
   last: zod.number().nullish(),
   spread: zod.number().nullish(),
-  timestamp: zod.string(),
+  timestamp: zod
+    .string()
+    .describe(
+      "For a served quote, the quote's own time (see timeBasis). When no quote was available (available=false) this is only the time the check ran — it is not an observation time.",
+    ),
+  available: zod
+    .boolean()
+    .optional()
+    .describe("True only when a price (last, bid or ask) was served."),
+  source: zod
+    .string()
+    .nullish()
+    .describe("Router provider that served the quote; null when none did."),
+  observedAt: zod
+    .string()
+    .nullish()
+    .describe(
+      "When the price was observed (ISO); null when unknown or unavailable.",
+    ),
+  timeBasis: zod
+    .enum(["producer_tick", "provider_as_of", "server_receive", "none"])
+    .optional()
+    .describe(
+      "What observedAt means. server_receive is the time ARX received the quote (the market tick may be older) and can never read fresh.",
+    ),
+  ageMs: zod.number().nullish(),
+  freshness: zod
+    .enum(["fresh", "delayed", "stale", "unknown", "unavailable"])
+    .optional(),
+  stale: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when stale, unknown or unavailable — the price must not be shown as current.",
+    ),
+  staleAfterMs: zod.number().optional(),
+  checkedAt: zod.string().optional().describe("When this lookup ran (ISO)."),
+  observationNote: zod
+    .string()
+    .optional()
+    .describe(
+      "Plain English — what was observed, from which source, as of when, or that it could not be.",
+    ),
 });
 
 /**
