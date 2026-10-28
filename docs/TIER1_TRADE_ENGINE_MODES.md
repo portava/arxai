@@ -322,6 +322,37 @@ flight refused.
     stopped by the Trade Action duplicate check (an identical open in flight
     within 5 minutes), not by a key.
 
+### Legacy server-backed lane after the retirement
+
+The 16 cases in `artifacts/api-server/tests/phase1.test.mjs` and
+`phase2.test.mjs` that drove the Safety Core through `/execute-trade` now
+assert the same requirement against the governed paths (PAPER through
+`POST /api/paper/orders`, SIMULATED / DEMO / LIVE through the Trade Action
+Center, decisions read from `GET /api/me/risk/events`).
+`tests/execute-trade-retired.test.mjs` proves the endpoint answers 410 for
+PAPER-, DEMO- and LIVE-shaped bodies and writes no execution, order, command,
+audit or vault row. Run the lane with
+`pnpm --filter @workspace/api-server run test:isolated-server-lane` (non-root;
+disposable PostgreSQL, no background workers, external connections refused;
+see `artifacts/api-server/scripts/isolated-lane/run.mjs`).
+
+Nine cases fail on purpose: the governed paths do not enforce these original
+requirements. They are open, not accepted:
+
+1. **Safety Core mode and state are not enforced on PAPER** (CT-2, CT-3,
+   RG-2, LOG-5). `POST /paper/orders` books an order while the Safety Core is
+   `OBSERVE_ONLY`, `SUGGEST_ONLY` or in a non-trading global state; the PAPER
+   halt reads only the kill switches (`lib/safety/tradingHalt.ts`).
+2. **Governed trade decisions do not reach the Black Box vault** (LOG-2,
+   QUERY-2, QUERY-3). Blocked and allowed decisions are audited only in
+   `user_risk_events`; no vault row carries their symbol or the
+   `RISK_GOVERNOR` source (the vault trade loggers in `lib/vaultLogger.ts`
+   have no caller, see "What remains" 1).
+3. **The paper order's vault row is not linked** (LOG-4, QUERY-7).
+   `PAPER_ORDER_PLACED` carries the order id only in its payload
+   (`lib/tradeEngine/paperVenue.ts` `vaultBehavior`), so `linkedTradeId`
+   queries cannot find it.
+
 ## Round 3: one entry for every producer
 
 ### What changed in this round

@@ -8,19 +8,28 @@
 // Usage: pnpm --filter @workspace/api-server run test
 //        (api-server workflow must be running)
 
-// NOTE (owner decision 14, 2026-10-25): POST /execute-trade is retired and
-// returns 410 EXECUTE_TRADE_RETIRED for every authenticated call (401 before
-// that, as since Phase-2 requireUser). The cases below that drive the Safety
-// Core through /execute-trade no longer reach it. This server-dependent
-// legacy suite is not part of ci; see docs/TIER1_TRADE_ENGINE_MODES.md
-// (round 5) for the retirement and the governed paths that replace it.
+// Owner decision 14 (2026-10-25): POST /execute-trade is retired (410
+// EXECUTE_TRADE_RETIRED, nothing recorded; see execute-trade-retired.test.mjs).
+// The cases that produced vault rows through it now produce the same event
+// through the governed paths that replaced it (support/governed.mjs;
+// docs/TIER1_TRADE_ENGINE_MODES.md round 5) and still assert the vault row
+// and query this suite requires. The legacy vault trade loggers have no
+// runtime caller since the retirement (lib/vaultLogger.ts logBlockedTrade /
+// logApprovedTrade / logPaperTrade / logSimulatedTrade; round 5 "What
+// remains" 1), so the cases a governed path does not cover fail; they are
+// not relaxed to match the code.
+//
+// Usage (isolated: disposable database, no background workers, no external
+// connections): pnpm --filter @workspace/api-server run test:isolated-server-lane
 
 import { test, before, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import pkg from "pg";
+import {
+  BASE, freshTrader, paperOrder, paperOrdersOf, tradeAction, countRows,
+} from "./support/governed.mjs";
 
 const { Client } = pkg;
-const BASE = process.env.API_BASE_URL ?? "http://localhost:80/api";
 
 async function j(method, path, body) {
   const res = await fetch(`${BASE}${path}`, {
@@ -50,18 +59,6 @@ async function override(body) {
   try { data = await res.json(); } catch {}
   return { status: res.status, data };
 }
-const trade       = (overrides = {})  => j("POST", "/execute-trade", {
-  symbol: "Volatility 75 Index",
-  direction: "BUY",
-  lot: 0.5,
-  entry: 100,
-  sl: 95,
-  tp: 110,
-  strategy: "Trend Continuation",
-  confidence: 75,
-  ...overrides,
-});
-
 let pg;
 before(async () => {
   pg = new Client({ connectionString: process.env.DATABASE_URL });
@@ -115,59 +112,94 @@ test("LOG-1 mode change produces MODE_CHANGE vault row", async () => {
   assert.ok(modeChanges.length >= 2, `expected ≥2 MODE_CHANGE rows, got ${modeChanges.length}`);
 });
 
-test("LOG-2 blocked trade produces TRADE_GATE + BLOCKED_TRADE rows with linked symbol", async () => {
+// LOG-2: a blocked trade produces a vault row carrying its symbol and
+// blockers. Governed block: POST /paper/orders refused by the Risk Governor
+// (kill switch). The governor audits it in user_risk_events (phase1 V-2);
+// nothing writes it to the vault (lib/tradeEngine/paperVenue.ts
+// openPaperOrder returns governorRefusal without a vault row).
+test("LOG-2 blocked governed trade produces a vault row with its symbol and blockers", async () => {
+  const t = await freshTrader(pg, "phase2-LOG-2");
   await engageKs("LOG-2 test");
   const since = new Date().toISOString();
-  await trade();
+  const r = await paperOrder(t, { symbol: "Volatility 75 Index" });
+  assert.equal(r.status, 422, "precondition: the governed path refused the order");
   const recent = await recentEvents(since);
-  const blocked = recent.find((e) => e.kind === "BLOCKED_TRADE");
-  assert.ok(blocked, "BLOCKED_TRADE row required");
-  assert.equal(blocked.symbol, "Volatility 75 Index");
+  const blocked = recent.find((e) => e.symbol === "Volatility 75 Index" && e.blockers.length > 0);
+  assert.ok(blocked, `a vault row for the blocked order is required; vault kinds since the attempt: ${JSON.stringify(recent.map((e) => e.kind))}`);
   assert.equal(blocked.truthDomain, "DECISION");
-  assert.ok(blocked.blockers.length > 0);
-  assert.ok(recent.find((e) => e.kind === "TRADE_GATE"), "TRADE_GATE row required");
 });
 
-test("LOG-3 approved (LIVE) trade produces APPROVED_TRADE row with linkedTradeId", async () => {
-  // Stand up healthy LIVE conditions.
+// LOG-3: an approved LIVE trade is recorded with a link to its execution.
+// Trading stays disabled here (no broker connection, ARX_LIVE_BROKER_EXECUTION_
+// ENABLED=false), so the governed LIVE path (Trade Action Center) is driven to
+// its refusal: the server-side typed phrase first, then the guard chain, whose
+// routing step refuses a LIVE action without a resolved broker connection
+// (lib/tradeAction/guards.ts step 6) before any venue queue. The refusal must
+// be recorded and bound to the action, and nothing may reach a broker queue.
+// An approved LIVE execution is not exercised in this lane.
+test("LOG-3 governed LIVE action is refused by a safety gate, recorded against the action, and queues nothing", async () => {
   await setHeartbeatAge(2);
-  // Need a trade to first drive global state to NORMAL after reset
-  await setMode("PAPER_TRADING");
-  await trade();
-  const sUp = await setMode("LIVE_TRADING");
-  assert.equal(sUp.status, 200, `expected LIVE accepted, got ${JSON.stringify(sUp.data)}`);
-  const since = new Date().toISOString();
-  const r = await trade();
-  assert.equal(r.status, 200, `LIVE trade should succeed, got ${JSON.stringify(r.data)}`);
-  const recent = await recentEvents(since);
-  const approved = recent.find((e) => e.kind === "APPROVED_TRADE");
-  assert.ok(approved, "APPROVED_TRADE row required for LIVE trade");
-  assert.equal(approved.symbol, "Volatility 75 Index");
-  assert.equal(approved.linkedTradeId, String(r.data.tradeId));
-  assert.equal(approved.truthDomain, "EXECUTION");
+  const t = await freshTrader(pg, "phase2-LOG-3");
+  const before = await countRows(pg, ["arx_live_commands", "mt5_commands", "mt5_demo_commands", "live_trade_approvals", "trades", "paper_orders"]);
+
+  const unphrased = await tradeAction(t, "LIVE", { phrase: "" });
+  assert.equal(unphrased.confirm.status, 400);
+  assert.equal(unphrased.confirm.data.error, "live_confirmation_phrase_required");
+  assert.equal(unphrased.confirm.data.action.status, "awaiting_confirmation", "without the phrase nothing is claimed");
+
+  const live = await t.call("POST", `/me/trade-actions/${unphrased.id}/confirm`, { liveConfirmPhrase: "CONFIRM LIVE" });
+  assert.equal(live.status, 400, JSON.stringify(live.data));
+  assert.equal(live.data.error, "guard_rejected");
+  const action = live.data.action;
+  assert.equal(action.status, "rejected");
+  assert.equal(action.requestedMode, "LIVE", "a LIVE request is never converted to another mode");
+  assert.equal(action.guardResult.failedCheckId, "routing");
+  assert.equal(action.rejectionReason, "USER_OWNED_NO_CONNECTION");
+  for (const id of ["auth", "kill_switch", "platform_mode", "user_active"]) {
+    assert.ok(action.guardResult.checks.find((c) => c.id === id)?.passed, `${id} ran before the refusal`);
+  }
+  assert.equal(action.executionVenue, null);
+  assert.equal(action.venueCommandId, null);
+
+  const audit = await t.call("GET", `/me/trade-actions/${unphrased.id}/audit`);
+  assert.equal(audit.status, 200);
+  assert.equal(audit.data.action.id, unphrased.id, "the audit is bound to the action");
+  const text = JSON.stringify(audit.data);
+  assert.ok(text.includes("action_confirmed") && text.includes("action_guard_rejected"), "confirm and refusal are on the action's timeline");
+  assert.deepEqual(await countRows(pg, ["arx_live_commands", "mt5_commands", "mt5_demo_commands", "live_trade_approvals", "trades", "paper_orders"]), before,
+    "no live command, broker command, approval, trade or order row");
 });
 
-test("LOG-4 paper trade produces PAPER_TRADE row with linkedTradeId", async () => {
+// LOG-4: a paper trade produces a vault row linked to the trade
+// (linkedTradeId). Governed: POST /paper/orders writes PAPER_ORDER_PLACED with
+// the order id in its payload; the vault's linked_trade_id column is not set
+// (lib/tradeEngine/paperVenue.ts vaultBehavior).
+test("LOG-4 governed paper order produces a vault row linked to the order (linkedTradeId)", async () => {
   await setHeartbeatAge(2);
   await setMode("PAPER_TRADING");
+  const t = await freshTrader(pg, "phase2-LOG-4");
   const since = new Date().toISOString();
-  const r = await trade();
-  assert.equal(r.status, 200);
+  const r = await paperOrder(t);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
   const recent = await recentEvents(since);
-  const paper = recent.find((e) => e.kind === "PAPER_TRADE");
-  assert.ok(paper, "PAPER_TRADE row required");
-  assert.equal(paper.linkedTradeId, String(r.data.tradeId));
+  const paper = recent.find((e) => e.kind === "PAPER_ORDER_PLACED" && e.payload?.orderId === r.data.order.id);
+  assert.ok(paper, "a vault row for the paper order is required");
+  assert.equal(paper.payload.simulated, true);
+  assert.equal(paper.linkedTradeId, String(r.data.order.id), "the vault row must be linked to the order through linkedTradeId");
 });
 
-test("LOG-5 simulated (signal-only) trade produces SIMULATED_TRADE row", async () => {
+// LOG-5: a signal-only outcome (SUGGEST_ONLY) is recorded in the vault and
+// nothing is booked. No governed path reads the Safety Core mode (see phase1
+// CT-2/CT-3) and none writes a signal-only vault row.
+test("LOG-5 signal-only (SUGGEST_ONLY) governed attempt books nothing and is recorded in the vault", async () => {
   await setHeartbeatAge(2);
   await setMode("SUGGEST_ONLY");
+  const t = await freshTrader(pg, "phase2-LOG-5");
   const since = new Date().toISOString();
-  const r = await trade();
-  assert.equal(r.status, 200);
-  assert.equal(r.data.tradeId, 0);
+  const r = await paperOrder(t);
   const recent = await recentEvents(since);
-  assert.ok(recent.find((e) => e.kind === "SIMULATED_TRADE"), "SIMULATED_TRADE row required");
+  assert.deepEqual(await paperOrdersOf(pg, t.id), [], `SUGGEST_ONLY must not book (got HTTP ${r.status})`);
+  assert.ok(recent.find((e) => e.kind === "SIMULATED_TRADE"), "a signal-only vault row is required");
 });
 
 test("LOG-6 kill-switch engage logs KILL_SWITCH (CRITICAL, SAFETY domain)", async () => {
@@ -226,22 +258,31 @@ test("QUERY-1 by date range (sinceIso/untilIso)", async () => {
   }
 });
 
-test("QUERY-2 by symbol", async () => {
+// QUERY-2/3: the vault is queryable by symbol and by source for trade
+// decisions. The governed decision is made and audited (user_risk_events),
+// but no vault row carries its symbol or the RISK_GOVERNOR source.
+test("QUERY-2 by symbol finds the governed blocked trade", async () => {
+  const t = await freshTrader(pg, "phase2-QUERY-2");
   await engageKs("QUERY-2 setup");
-  await trade({ symbol: "Volatility 75 Index" });
-  const v = await vaultQ(`symbol=${encodeURIComponent("Volatility 75 Index")}&kind=BLOCKED_TRADE&limit=20`);
+  const since = new Date().toISOString();
+  const r = await paperOrder(t, { symbol: "Volatility 75 Index" });
+  assert.equal(r.status, 422, "precondition: the governed path refused the order");
+  const v = await vaultQ(`symbol=${encodeURIComponent("Volatility 75 Index")}&sinceIso=${encodeURIComponent(since)}&limit=20`);
   assert.equal(v.status, 200);
-  assert.ok(v.data.count >= 1);
+  assert.ok(v.data.count >= 1, "the blocked trade must be queryable by symbol");
   for (const e of v.data.events) assert.equal(e.symbol, "Volatility 75 Index");
 });
 
-test("QUERY-3 by source (RISK_GOVERNOR)", async () => {
+test("QUERY-3 by source (RISK_GOVERNOR) finds the governed risk decision", async () => {
   await setHeartbeatAge(2);
   await setMode("PAPER_TRADING");
-  await trade();
-  const v = await vaultQ("source=RISK_GOVERNOR&limit=20");
+  const t = await freshTrader(pg, "phase2-QUERY-3");
+  const since = new Date().toISOString();
+  const r = await paperOrder(t);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const v = await vaultQ(`source=RISK_GOVERNOR&sinceIso=${encodeURIComponent(since)}&limit=20`);
   assert.equal(v.status, 200);
-  assert.ok(v.data.count >= 1);
+  assert.ok(v.data.count >= 1, "the Risk Governor's decision must be queryable by source");
   for (const e of v.data.events) assert.equal(e.source, "RISK_GOVERNOR");
 });
 
@@ -264,7 +305,7 @@ test("QUERY-5 by severity (CRITICAL)", async () => {
 test("QUERY-6 by operationalMode and truthDomain", async () => {
   await setHeartbeatAge(2);
   await setMode("PAPER_TRADING");
-  await trade();
+  await paperOrder(await freshTrader(pg, "phase2-QUERY-6"));
   const v = await vaultQ("operationalMode=PAPER_TRADING&truthDomain=EXECUTION&limit=20");
   assert.equal(v.status, 200);
   for (const e of v.data.events) {
@@ -273,15 +314,20 @@ test("QUERY-6 by operationalMode and truthDomain", async () => {
   }
 });
 
-test("QUERY-7 by linkedTradeId returns events bound to that trade", async () => {
+// QUERY-7: the vault is queryable by linkedTradeId for a booked trade.
+// Governed: the paper order's vault row carries the id only in its payload
+// (see LOG-4), so the linkedTradeId filter cannot find it.
+test("QUERY-7 by linkedTradeId returns events bound to the governed paper order", async () => {
   await setHeartbeatAge(2);
   await setMode("PAPER_TRADING");
-  const r = await trade();
-  assert.ok(r.data.tradeId > 0);
-  const v = await vaultQ(`linkedTradeId=${r.data.tradeId}&limit=20`);
+  const t = await freshTrader(pg, "phase2-QUERY-7");
+  const r = await paperOrder(t);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const id = r.data.order.id;
+  const v = await vaultQ(`linkedTradeId=${id}&limit=20`);
   assert.equal(v.status, 200);
-  assert.ok(v.data.count >= 1);
-  for (const e of v.data.events) assert.equal(e.linkedTradeId, String(r.data.tradeId));
+  assert.ok(v.data.count >= 1, `vault events bound to paper order ${id} are required`);
+  for (const e of v.data.events) assert.equal(e.linkedTradeId, String(id));
 });
 
 // ═══════════════════════════════════════════════════════════════════════
