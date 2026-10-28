@@ -198,3 +198,21 @@ describe("LiveTradeCard management buttons report a refused request", () => {
     expect(msg).toMatch(/NO_CURRENT_QUOTE/);
   });
 });
+
+// Round 3: trades.mode is the Safety Core state at entry, not a venue. Every
+// row this card renders is a simulated ARX record (lib/db schema/trades.ts),
+// so the simulated badge must not depend on mode.
+describe("LiveTradeCard simulated-record badge does not read trades.mode as a venue", () => {
+  it("marks a record written while Safety Core was LIVE as simulated", () => {
+    render(<LiveTradeCard trade={trade} />);
+    expect(screen.getByTestId("badge-trade-mode-1").getAttribute("title") ?? "").toMatch(/not a broker venue/i);
+    const b = screen.getByTestId("badge-paper-only");
+    expect(b.textContent).toMatch(/Simulated/);
+    expect(b.getAttribute("title") ?? "").toMatch(/no broker order/i);
+  });
+
+  it("marks a DEMO-mode record the same way", () => {
+    render(<LiveTradeCard trade={{ ...(trade as object), mode: "DEMO" } as never} />);
+    expect(screen.getByTestId("badge-paper-only").textContent).toMatch(/Simulated/);
+  });
+});

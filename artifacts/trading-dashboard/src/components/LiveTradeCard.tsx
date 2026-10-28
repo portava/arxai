@@ -112,7 +112,6 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   const pacEnabled = safety?.settings?.enabled === true;
   const killEngaged = safety?.settings?.killSwitchEngaged === true;
   const activity = safety?.activity?.status ?? "UNKNOWN";
-  const isPaper = (trade.mode ?? "").toUpperCase() !== "LIVE";
   const newsConnected = market?.features?.news === true;
   const candlesConnected = market?.features?.candles === true;
   const dataInsufficient = !snap || !candlesConnected;
@@ -132,7 +131,14 @@ function SafetyBadgeRow({ trade, snap, snapTargetsUnavailable }: { trade: Trade;
   // online or live execution enabled. They now derive from the real backend
   // MT5 state (same source as the page header) and are only asserted when the
   // status has loaded AND reports that state. Unknown status asserts nothing.
-  if (isPaper) badges.push({ label: "Demo Only", tone: "muted", testId: "badge-paper-only" });
+  // Every row this card renders is a legacy simulated ARX record (lib/db
+  // schema/trades.ts: no broker order stands behind any row). trade.mode is
+  // the Safety Core state when the record was written, not a venue, so it
+  // must not decide this badge — a mode of LIVE is still a simulated record.
+  badges.push({
+    label: "Simulated Record", tone: "muted", testId: "badge-paper-only",
+    title: "This ARX trade record is simulated on the paper book; no broker order stands behind it, whatever the Safety Core state was at entry.",
+  });
   if (mt5State && mt5State.liveAllowed !== true) {
     badges.push({ label: "Live Trading Blocked", tone: "warn", testId: "badge-live-blocked" });
   }
