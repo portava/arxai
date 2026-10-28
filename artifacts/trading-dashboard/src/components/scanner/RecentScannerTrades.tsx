@@ -123,13 +123,13 @@ export function RecentScannerTrades() {
      
   }, [showDemoFeed, mode.shouldShowAdminDiagnostics]);
 
-  const cardTitle = mode.isLiveShared
-    ? "Recent Scanner Trades — Live Shared"
-    : mode.isDemo
-      ? "Recent Scanner Trades — Demo"
-      : mode.isPaper
-        ? "Recent Scanner Trades — Paper"
-        : "Recent Scanner Trades";
+  // The card reads ONE source: the MT5 demo command queue. The title names
+  // that source, never the account mode — an admin in Live Shared reading demo
+  // commands for diagnostics is not looking at live order history.
+  const cardTitle = showDemoFeed ? "Recent Scanner Trades — MT5 Demo" : "Recent Scanner Trades";
+  // Shown only because admin diagnostics are on, not because the account is
+  // in a demo/paper mode.
+  const adminDemoView = showDemoFeed && !mode.shouldShowDemoPaperCopy;
 
   return (
     <Card className="rounded-xl border-border bg-background/40">
@@ -143,6 +143,11 @@ export function RecentScannerTrades() {
         </Button>
       </CardHeader>
       <CardContent className="p-0">
+        {adminDemoView && (
+          <div className="px-3 pb-1 text-[11px] text-muted-foreground" data-testid="recent-scanner-trades-source">
+            Admin diagnostics: these are MT5 demo orders sent from the scanner. They are not Live Shared orders, and Live Shared orders are not listed here.
+          </div>
+        )}
         {err && (
           <div
             className="flex items-center justify-between gap-2 px-3 py-2"
