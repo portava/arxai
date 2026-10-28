@@ -36,6 +36,17 @@ Validation: 333 scanner/page tests passed, nine optional live integration tests 
 
 The repeatable click acceptance now fails on a missing selection highlight, any same-universe blank transition, or p95 above the local 100 ms render-opportunity target. A final rerun passed at 31.9 ms desktop and 51.5 ms with 4× CPU slowdown. This is a test budget, not a production guarantee.
 
+## Reproducible measurement (added October 28, 2026)
+
+`scripts/scanner-qa/measure.mjs` makes these measurements repeatable from the checked-in tooling; usage is in `scripts/scanner-qa/README.md`. It builds and serves each variant itself, runs the scenarios N times (optionally alternating two checkouts), keeps every click sample, and writes raw JSON plus a summary. The summary reports production and development builds separately, and the isolated fixture separately from the integrated page.
+
+- **Target unchanged:** each run's p95 from click to the second animation frame must be at most 100 ms, at 1× and 4× CPU throttle. The runner changes only the scenario's final p95 throw, which it checks verbatim, into a recorded breach, so a breaching run keeps its samples. It exits non-zero on any breach or error unless `--report-only` is given.
+- **Production build:** `prod-server.mjs --target=fixture` is the fixture in production mode, served on port 4182. Development is `server.mjs`, on port 4181.
+- **Integrated page:** `app-responsiveness.js` applies the same method and target to the real dashboard `/market-scanner` route (Broad Scan tab, real Opportunity Map rows). The production build uses the dashboard's own `vite.config.ts` (`prod-server.mjs --target=app`, port 4187); the development build is `app-dev-server.mjs` (port 4188). Every API call is answered in the browser with invented data, and mutations and other origins are refused. The fixture's numbers do not stand in for this page.
+- **Failures and outliers:** breaches, scenario errors, server failures and MAD-based outliers are listed rather than dropped, alongside load averages, CPU count and commits.
+
+Numbers from a busy container are not evidence. Only alternating runs on a quiet machine count, recorded with their commits.
+
 ## Limits
 
 These changes are development work, unmerged and undeployed. They do not establish TradingView/MT5 parity, production latency, profitable signals or broker readiness. UI feedback and fresh analysis are separate timings: a click should acknowledge immediately while data can still be pending, unavailable or expired. The backend sharing change reduces duplicate work without extending freshness; provider/database deadlines and account/session binding have separate outstanding work documented in the other reports.
