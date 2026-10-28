@@ -673,20 +673,62 @@ export function readinessScore() {
 }
 
 // ── Shadow Journal ────────────────────────────────────────────────────────
+/**
+ * Journal verdict: RIGHT / WRONG only for a measured win / loss; BREAKEVEN for
+ * an idea that expired within 0.1R of entry; PENDING only while the tracker
+ * is still watching it; NOT_TRADED when no trade was proposed or the risk
+ * governor blocked it; NOT_MEASURED when the idea ended with no R measured.
+ */
+export type JournalVerdict = "RIGHT" | "WRONG" | "PENDING" | "BREAKEVEN" | "NOT_TRADED" | "NOT_MEASURED";
+
 export function shadowJournal(limit = 200) {
   const arr = [...decisions.values()].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).slice(0, limit);
   return arr.map((d) => ({
     id: d.id, ts: d.ts, symbol: d.symbol, strategy: d.strategy, marketCondition: d.marketCondition,
-    aiSaw: d.reason, whatHappened: d.outcomeAt ? `${d.status} (R=${d.pnlR ?? 0})` : d.status,
-    rightOrWrong: d.status === "SHADOW_WIN" ? "RIGHT" : d.status === "SHADOW_LOSS" ? "WRONG" : "PENDING",
+    aiSaw: d.reason, whatHappened: whatHappened(d),
+    rightOrWrong: verdictFor(d),
     lesson: lessonFor(d), dataSource: "SHADOW" as const,
   }));
+}
+function fmtR(r: number): string { return `${r > 0 ? "+" : ""}${r.toFixed(2)}`; }
+function whatHappened(d: ShadowDecision): string {
+  switch (d.status) {
+    case "SHADOW_WIN":
+    case "SHADOW_LOSS":
+      return d.pnlR != null ? `${d.status} (R=${fmtR(d.pnlR)})` : `${d.status} (R not recorded)`;
+    case "SHADOW_BREAKEVEN":
+      return `${d.status} (R=0.00: within 0.1R of entry when the window ended)`;
+    case "SHADOW_EXPIRED":
+      if (d.untrackedReason === "TRACKING_STOPPED") return `${d.status} — R not measured: shadow mode was stopped before the idea reached its stop or target`;
+      if (d.sl == null || d.tp == null || d.sl === d.entry) return `${d.status} — R not measured: the idea had no usable stop and target`;
+      return `${d.status} — R not measured: neither stop nor target was reached before the window ended`;
+    case "SHADOW_TRADE_IDEA":
+      return d.untrackedReason === "TRACKER_NOT_RUNNING"
+        ? `${d.status} — outcome not tracked: shadow mode was stopped when it was made`
+        : `${d.status} — outcome not tracked`;
+    case "SHADOW_REJECTED": return `${d.status} — blocked by the risk governor, not traded`;
+    case "SHADOW_WAIT": return `${d.status} — no trade proposed`;
+    case "SHADOW_TRACKING_OUTCOME": return `${d.status} — open, tracked until ${d.expiresAt}`;
+    default: return d.status;
+  }
+}
+function verdictFor(d: ShadowDecision): JournalVerdict {
+  switch (d.status) {
+    case "SHADOW_WIN": return "RIGHT";
+    case "SHADOW_LOSS": return "WRONG";
+    case "SHADOW_BREAKEVEN": return "BREAKEVEN";
+    case "SHADOW_TRACKING_OUTCOME": return "PENDING";
+    case "SHADOW_REJECTED":
+    case "SHADOW_WAIT": return "NOT_TRADED";
+    default: return "NOT_MEASURED";
+  }
 }
 function lessonFor(d: ShadowDecision): string {
   if (d.status === "SHADOW_LOSS" && d.confidence >= 80) return "High-confidence loss — recalibrate model";
   if (d.status === "SHADOW_WIN" && d.confidence < 60) return "Low-confidence win — model may be too cautious";
   if (d.status === "SHADOW_REJECTED") return `Risk Governor rejection: ${d.reasonToAvoid}`;
-  if (d.status === "SHADOW_EXPIRED") return "Setup expired — entry timing too late or chop";
+  if (d.untrackedReason) return "No lesson: the outcome was not observed.";
+  if (d.status === "SHADOW_EXPIRED") return "Expired without reaching its stop or target; the cause was not analysed.";
   return "Neutral observation";
 }
 

@@ -23,6 +23,7 @@ vi.mock("@/hooks/useProductRole", () => ({
 
 import StrategyTournament from "./strategy-tournament";
 import ShadowMode from "./shadow-mode";
+import ShadowJournal from "./shadow-journal";
 
 function jsonResponse(status: number, body: unknown): Response {
   return { status, ok: status >= 200 && status < 300, json: async () => body } as unknown as Response;
@@ -111,5 +112,18 @@ describe("Shadow Mode", () => {
     expect(screen.getByText(/shadow mode was stopped at .*before this idea reached its stop or target/i)).toBeTruthy();
     expect(screen.getByText(/shadow mode was stopped when this decision was made/i)).toBeTruthy();
     expect(screen.getByText("Outcome not tracked").nextSibling?.textContent).toBe("2");
+  });
+});
+
+describe("Shadow Journal", () => {
+  it("a finished idea with no measured R reads NOT MEASURED, not PENDING", async () => {
+    bodies["/api/shadow-journal"] = { entries: [{
+      id: "e1", ts: "2026-10-01T10:00:00Z", symbol: "EURUSD", strategy: "Trend Continuation", marketCondition: "MIXED",
+      aiSaw: "r", whatHappened: "SHADOW_EXPIRED — R not measured: neither stop nor target was reached before the window ended",
+      rightOrWrong: "NOT_MEASURED", lesson: "Expired without reaching its stop or target; the cause was not analysed.",
+    }] };
+    await show(<ShadowJournal />);
+    expect(screen.getByText("NOT MEASURED")).toBeTruthy();
+    expect(screen.queryByText("PENDING")).toBeNull();
   });
 });

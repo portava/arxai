@@ -5,8 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { NotebookPen } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
-type Entry = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; aiSaw: string; whatHappened: string; rightOrWrong: "RIGHT" | "WRONG" | "PENDING"; lesson: string };
-const RW_COLOR: Record<string, string> = { RIGHT: "bg-emerald-500/20 text-emerald-400", WRONG: "bg-rose-500/20 text-rose-400", PENDING: "bg-slate-500/20 text-slate-300" };
+type Entry = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; aiSaw: string; whatHappened: string; rightOrWrong: "RIGHT" | "WRONG" | "PENDING" | "BREAKEVEN" | "NOT_TRADED" | "NOT_MEASURED"; lesson: string };
+const RW_COLOR: Record<string, string> = { RIGHT: "bg-emerald-500/20 text-emerald-400", WRONG: "bg-rose-500/20 text-rose-400", PENDING: "bg-blue-500/20 text-blue-400", BREAKEVEN: "bg-slate-500/20 text-slate-300", NOT_TRADED: "bg-slate-500/20 text-slate-300", NOT_MEASURED: "bg-amber-500/20 text-amber-400" };
+// PENDING = still being tracked; NOT_TRADED = no trade proposed or risk-blocked;
+// NOT_MEASURED = the idea ended with no R measured.
+const RW_LABEL: Record<string, string> = { NOT_TRADED: "NOT TRADED", NOT_MEASURED: "NOT MEASURED" };
 
 const PAGE_ICON = <NotebookPen className="h-6 w-6 text-primary" />;
 
@@ -62,7 +65,7 @@ export default function ShadowJournal() {
           {es.map((e) => (
             <div key={e.id} className="border rounded p-2 text-xs">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge className={RW_COLOR[e.rightOrWrong]}>{e.rightOrWrong}</Badge>
+                <Badge className={RW_COLOR[e.rightOrWrong] ?? ""}>{RW_LABEL[e.rightOrWrong] ?? e.rightOrWrong}</Badge>
                 <Badge variant="outline">{e.symbol}</Badge>
                 <Badge variant="outline">{e.strategy}</Badge>
                 <Badge variant="outline">mc {e.marketCondition}</Badge>
