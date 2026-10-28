@@ -84,6 +84,22 @@ The occasional management failure, "actual concurrent cold-map manual polls comp
 
 Also run after the changes: `pnpm run typecheck:libs`, the api-server and scripts typechecks (scripts needed `--max-old-space-size=4096`; it ran out of heap at the default), and `ci:guards` with the offline `DATABASE_URL`: 87/87 guards plus 7 bridge-binding assertions. The full root `pnpm run typecheck` (every artifact) was not run.
 
+## Autonomous-cycle coordination and bounded waits (28 October 2026)
+
+Branch `claude/self-trading-cycle-r3` from `a89c999`. Gap closed: the run-cycle single flight was per process, and the database pool had no connection, statement or lock timeout, so two API processes could overlap cycles and one stalled wait could hold the cycle slot forever.
+
+Design (`lib/selfTrade/cycleCoordinator.ts`): a session-level `pg_try_advisory_lock(ARX_LOCK_NS.SELF_TRADE_CYCLE, 1)` on a dedicated connection held for the cycle; the cycle re-verifies it before each decision, each agent's management and the protective drain and stops there if it is gone; the cycle's queries run on a dedicated pool with bounded waits; the response carries `completion` (`COMPLETED` / `INCOMPLETE` / `STOPPED`). A lease row with a fencing token was not chosen: it needs a migration, its TTL would have to guess how long a cycle may legitimately run, and a fence protects only writes that check it. The per-item compare-and-set claims listed above stay the backstop for the item in flight when a lock session drops.
+
+`test:self-trade-cycle-coordination-postgres` (new, in `ci:integration`) runs each API process as a real OS process (`cycleCoordination.child.ts`, forked) serving the real route, coordinator, cycle, executor, entry authority claims, exposure reservation, reconciliation, position manager, Position Guardian and `executeInstant`. Decision generation, advisories and access gates are stand-ins; the last dispatch hop runs the production claim helpers in production order (reserve exposure, final claim, mailbox mirror) with pause points. All 11 cases failed against `a89c999` (log kept locally) and pass after the change:
+
+- Two processes started together: one runs, the other gets 409 and never reaches the decision step; afterwards it runs and skips the consumed decision.
+- SIGKILL of the lock holder at six points (entry and management: before the final claim, after the claim, after the mailbox mirror): the lock frees; the next cycle in another process creates no second command or mirror for that decision or management action; a fresh decision for the same agent is refused by the occupied slot; the killed entry keeps its `RESERVED` exposure row and its `PENDING_TICKET` / `DISPATCHED` reservation; the management claim is retained; no command becomes filled, expired, cancelled or failed.
+- `lock_timeout` and `statement_timeout` (400 ms) on a final claim whose command row another connection holds: the cycle answers while the row is still locked, the claim and its audit roll back, the reservation is kept, `completion` is `INCOMPLETE` with the timeout counted, the lock is free, and the next cycle completes without a duplicate.
+- Pool of 2 exhausted mid-cycle with a 300 ms acquisition timeout: `INCOMPLETE` with the failed agents and timeouts counted; a run while still exhausted answers `500 CYCLE_FAILED` within the bound and dispatches nothing; once connections return, the next cycle completes once.
+- Lock session terminated (`pg_terminate_backend`) mid-cycle: another process takes the lock and runs; the first resumes, stops before its first dispatch, reports `STOPPED` / `LEASE_LOST` and recovers for its next run.
+
+Still not covered: a lock session that drops while one item is mid-dispatch (that item finishes; its own claims prevent a duplicate, but the cycle notices only at the next safe point); the protective drain's 20 s wait is not interrupted by a lost lock; non-database awaits (guardian, AACI services) remain unbounded; a half-open lock connection is noticed by the server only through TCP keepalive, and until then other processes are refused (safe direction); the lock requires a direct or session-mode connection (a transaction-mode pooler fails the post-acquire check, so no cycle starts); the real `dispatchLiveCommand` and the real decision engine are not driven in this lane; no broker, terminal or EA.
+
 ## Not verified
 
 - No live/demo broker, terminal or EA behaviour, including EA expiry (item 2) and dual-channel execution (item 1).
