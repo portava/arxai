@@ -5,6 +5,7 @@
 // are classified; unmeasured reads are named as such.
 // Honest empty when timing data is unavailable — never fabricated.
 
+import { useEffect, useReducer } from "react";
 import { cn } from "@/lib/utils";
 import {
   useGetTimingBrainMulti,
@@ -68,11 +69,17 @@ export function timingFooter(rows: TimingRow[], opts: { isError?: boolean; now?:
   if (rows.length === 0) {
     return opts.isError ? "Timing reads could not be loaded." : "No timing reads returned.";
   }
+  // React Query keeps the last rows after a failed refetch: say the refresh
+  // failed, so the rows still on screen are not taken for a fresh poll.
+  const body = timingFooterBody(rows, opts.now ?? Date.now());
+  return opts.isError ? `Last refresh failed · ${body}` : body;
+}
+
+function timingFooterBody(rows: TimingRow[], now: number): string {
   const measured = rows.filter(isMeasuredTimingRead);
   if (measured.length === 0) {
     return "No current candles for any scanned market — timing not measured.";
   }
-  const now = opts.now ?? Date.now();
   const tfs = Array.from(new Set(measured.map((r) => String(r["timeframe"] ?? "")).filter(Boolean)));
   const tf = tfs.length === 1 ? `${tfs[0]} ` : "";
   const full = measured.filter((r) => rowQuality(r).label === "real").length;
@@ -82,6 +89,22 @@ export function timingFooter(rows: TimingRow[], opts: { isError?: boolean; now?:
     .filter((t) => Number.isFinite(t));
   if (times.length < measured.length) return `${tf}timing reads · read time not reported · ${coverage}`;
   return `${tf}timing reads computed ${formatAge(now - Math.min(...times))} · ${coverage}`;
+}
+
+// The cards poll every 90 s and re-render only when data or isError changes,
+// so the footer keeps its own clock: "computed Xs ago" counts up between polls
+// instead of freezing at the age it had when the data arrived.
+const FOOTER_TICK_MS = 1_000;
+
+function TimingFooter({ rows, isError }: { rows: TimingRow[]; isError: boolean }) {
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const id = setInterval(tick, FOOTER_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-footer">{timingFooter(rows, { isError, now: Date.now() })}</p>
+  );
 }
 
 function UnmeasuredLine({ rows }: { rows: TimingRow[] }) {
@@ -191,7 +214,7 @@ export function BestMarketsCard() {
         </ul>
       )}
       <UnmeasuredLine rows={rows} />
-      <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-footer">{timingFooter(rows, { isError: q.isError })}</p>
+      <TimingFooter rows={rows} isError={q.isError} />
       <div className="mt-3">
         <ActionButton href="/market-scanner" subtle icon={<Flame className="h-4 w-4" />} data-testid="best-markets-scanner">
           Open Scanner
@@ -288,7 +311,7 @@ export function AvoidMarketsCard() {
         </ul>
       )}
       <UnmeasuredLine rows={rows} />
-      <p className="mt-2 text-[10px] text-txt-muted" data-testid="timing-footer">{timingFooter(rows, { isError: q.isError })}</p>
+      <TimingFooter rows={rows} isError={q.isError} />
       <div className="mt-3">
         <ActionButton href="/market-heat-map" subtle icon={<TrendingDown className="h-4 w-4" />} data-testid="avoid-markets-heat">
           Heat Map
