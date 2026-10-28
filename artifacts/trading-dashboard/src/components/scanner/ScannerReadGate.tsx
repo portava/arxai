@@ -25,16 +25,19 @@ export function ScannerReadGate({
   timeframe?: string;
   compact?: boolean;
 }) {
-  const { truth, level, isFull, reason } = useScannerReadGate(symbol, timeframe);
+  const { truth, level, isFull, reason, loadFailed } = useScannerReadGate(symbol, timeframe);
   if (isFull) return null;
+  // The truth request failed: the check returned, unsuccessfully — never a
+  // "confirming" (pending) state.
+  const failed = truth == null && loadFailed === true;
   // A live read still waiting on the scanner's market analysis is confirming,
   // not a measured historical-only verdict.
-  const pending = truth == null || truth.candles?.headerCapReason === "analysis_pending";
+  const pending = (truth == null && !failed) || truth?.candles?.headerCapReason === "analysis_pending";
 
   const tone: CompactAlertTone =
-    pending ? "info" : level === "blocked" ? "danger" : level === "limited" ? "info" : "warning";
+    failed ? "warning" : pending ? "info" : level === "blocked" ? "danger" : level === "limited" ? "info" : "warning";
   const title =
-    pending ? "Confirming market data" : level === "blocked"
+    failed ? "Market data could not be loaded" : pending ? "Confirming market data" : level === "blocked"
       ? "No live data — analysis unavailable"
       : level === "limited"
         ? "Delayed data — read with caution"
@@ -42,7 +45,7 @@ export function ScannerReadGate({
 
   if (compact) {
     const toneCls =
-      pending ? "text-blue-400" : level === "blocked"
+      failed ? "text-amber-400" : pending ? "text-blue-400" : level === "blocked"
         ? "text-rose-400"
         : level === "limited"
           ? "text-blue-400"

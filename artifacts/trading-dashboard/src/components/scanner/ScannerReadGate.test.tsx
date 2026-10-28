@@ -45,6 +45,15 @@ describe("ScannerReadGate — shared-truth downgrade surface", () => {
     expect(screen.getByTestId("scanner-read-gate-compact").textContent).toContain("Confirming market data");
   });
 
+  it("says the check could not be loaded (not 'confirming') when the truth request failed", () => {
+    mockTruth.mockReturnValue({ truth: null, isError: true });
+    render(<ScannerReadGate symbol="EURUSD" />);
+    const gate = screen.getByTestId("scanner-read-gate").textContent ?? "";
+    expect(gate).not.toContain("Confirming");
+    expect(gate).toContain("Market data could not be loaded");
+    expect(gate).toContain("could not be loaded — directional reads and trade ideas are withheld");
+  });
+
   it("renders nothing when the read is fully actionable", () => {
     mockTruth.mockReturnValue(truthAt("full"));
     const { container } = render(<ScannerReadGate symbol="EURUSD" />);
