@@ -104,7 +104,9 @@ const BADGE_LABELS: Record<string, string> = {
   WATCHLIST: "Watchlist",
   WAIT_FOR_CONFIRMATION: "Wait for confirmation",
   REJECTED_BY_RISK: "Risk too high",
-  CHOPPY_MARKET: "Choppy market",
+  // The scanner sets this when the last bar's range is > 1.8x the window
+  // average — a volatility spike (often an expansion bar), not a range/chop.
+  CHOPPY_MARKET: "Volatility spike",
   LOW_CONFIDENCE: "Low confidence",
   SPREAD_TOO_HIGH: "Spread too wide",
   PENDING_MT5_CONNECTION: "Waiting for connection",
@@ -707,7 +709,7 @@ export default function MarketScanner() {
                     const chip = scannerResultActionChip(o.recommendedAction, o.finalRead?.label);
                     return <Badge variant={chip.variant} className="text-xs" data-testid={`scanner-action-${o.symbol}`}>{chip.text}</Badge>;
                   })()}
-                  <Badge variant="outline" className="text-xs">{o.bias}</Badge>
+                  <Badge variant="outline" className="text-xs">{o.bias === "choppy" ? "volatile" : o.bias}</Badge>
                   <Badge
                     className={`text-xs ${BADGE_COLORS[o.statusBadge] ?? ""}`}
                     data-status-badge={o.statusBadge}

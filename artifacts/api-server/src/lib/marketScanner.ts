@@ -1210,10 +1210,21 @@ export async function decorateOpportunitiesWithHistory(
   });
 }
 
-function setupTypeFor(a: MarketAnalysis): string {
-  if (a.marketBias === "choppy") return "Range / chop";
-  if (a.marketBias === "neutral") return "Consolidation";
-  return a.recommendedAction === "WAIT" ? "Pullback watch" : "Trend continuation";
+/**
+ * Plain name for what the analysis actually measured. The analyser has no
+ * range, pullback, retest or continuation detector: its bias is the sign of the
+ * 30-bar close drift, and "choppy" means only that the LAST bar's range is more
+ * than 1.8x the window average (usually an expansion bar). Names must not claim
+ * more than that. `mayShowBias` false (direction withheld) gets no directional
+ * name.
+ */
+export function setupTypeFor(a: MarketAnalysis, mayShowBias = true): string {
+  if (!mayShowBias) return "Direction withheld";
+  if (a.marketBias === "choppy") return "Volatility spike";
+  if (a.marketBias === "neutral") return "Flat drift";
+  if (a.recommendedAction === "REJECT") return "No setup — rules failed";
+  const side = a.marketBias === "bullish" ? "Upward" : "Downward";
+  return a.recommendedAction === "WAIT" ? `${side} drift — not confirmed` : `${side} drift`;
 }
 
 export function statusBadgeFor(a: MarketAnalysis, opp: OpportunityScore): StatusBadge {
@@ -1650,7 +1661,7 @@ export async function scanSymbolTimeframe(sym: string, tf: string): Promise<Scan
     const op: ScannerOpportunity = {
       symbol: sym, timeframe: tf, bias: displayBias,
       recommendedAction: displayAction,
-      setupType: setupTypeFor(a),
+      setupType: setupTypeFor(a, mayShowBias),
       confidenceScore: displayConfidenceScore, riskScore: a.riskScore,
       entrySniperScore: displayEntrySniperScore,
       riskRewardRatio: a.riskRewardRatio,
