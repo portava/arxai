@@ -73,14 +73,20 @@ router.get("/mt5/diagnostic-summary", async (req, res) => {
     if (r.ok) hb = (await r.json()) as HbShape;
   } catch { /* ignore */ }
 
-  const tokenConfigured = !!process.env["MT5_BRIDGE_TOKEN"];
+  // Bridge state comes from the heartbeat authority, never from the legacy
+  // MT5_BRIDGE_TOKEN env var: that env token is rejected on every EA
+  // endpoint, so its absence is the normal production state. Per-user bridge
+  // tokens are the only EA auth, and /mt5/heartbeat/status reports whether one
+  // is active (bridgeTokenConfigured). A fresh accepted heartbeat proves the
+  // bridge is wired whatever the token flag says. No readable status → unknown.
+  const tokenConfigured: boolean | null = hb ? hb.bridgeTokenConfigured === true : null;
   const heartbeatPresent = !!hb?.eaConnected;
   const eaConnected = heartbeatPresent;
   const bridgeMode: "deferred" | "simulator" | "connected" | "disconnected" | "unknown" =
-    !tokenConfigured ? "deferred"
+    !hb ? "unknown"
       : eaConnected ? "connected"
-        : hb ? "disconnected"
-          : "unknown";
+        : !tokenConfigured ? "deferred"
+          : "disconnected";
 
   // SAFETY: live trading and broker execution are server-enforced OFF until
   // an operator clears them server-side. The assistant never claims they're on.
@@ -91,16 +97,16 @@ router.get("/mt5/diagnostic-summary", async (req, res) => {
 
   const reason =
     bridgeMode === "deferred"
-      ? "MT5 bridge is intentionally deferred (no MT5_BRIDGE_TOKEN configured). ARX runs in simulator/paper mode."
+      ? "No MT5 bridge token is active and no fresh EA heartbeat was received. ARX runs in simulator/paper mode."
       : bridgeMode === "disconnected"
-        ? "Bridge token is configured, but no fresh EA heartbeat was received. ARX stays in simulator/paper mode until the EA reports in."
+        ? "A bridge token is active, but no fresh EA heartbeat was received. ARX stays in simulator/paper mode until the EA reports in."
         : bridgeMode === "connected"
           ? "Bridge is connected and the EA is heartbeating. Broker remains read-only until execution is explicitly cleared server-side."
-          : "Bridge state is unknown; treating as deferred for safety.";
+          : "The bridge heartbeat status could not be read, so the bridge state is unknown; treating as deferred for safety.";
 
   const safestNextStep =
     bridgeMode === "deferred"
-      ? "Continue in simulator/paper mode. Configure MT5_BRIDGE_TOKEN server-side only when you are ready to wire the EA."
+      ? "Continue in simulator/paper mode. Create a bridge token on the MT5 Bridge page when you are ready to wire the EA."
       : bridgeMode === "disconnected"
         ? "Open the MT5 Bridge page and verify the EA is running, the WebRequest URL is allow-listed, and the X-MT5-Bridge-Token header matches."
         : "Stay read-only and verify positions/balance match the broker terminal before considering execution.";
