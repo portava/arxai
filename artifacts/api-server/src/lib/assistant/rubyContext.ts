@@ -82,7 +82,16 @@ export interface RubyContext {
     } | null;
     // Every user's own ARX allocation slice.
     allocation: { allocated: number; available: number; reserved: number } | null;
+    /** Broker-verified open positions (same truth source as getMyLiveOpenTrades). */
     openPositions: number;
+    /**
+     * False when the open-positions read failed — then openPositions is 0 only
+     * because nothing could be counted, and the briefing must not say "none are
+     * open". Absent = checked (older fixtures).
+     */
+    openPositionsChecked?: boolean;
+    /** Rows that exist but the broker has not verified (never counted as open). */
+    unverifiedPositions?: number;
     /** Open floating P/L from the shared buildLiveAccountSnapshot adapter. null = not available. */
     openPL: number | null;
     /** Freshness of the open P/L figure — same bands as the frontend badge. */
@@ -281,7 +290,7 @@ export async function buildRubyContext(
     connected: false,
     message: "Live bridge is not currently available.",
   };
-  let account: RubyContext["account"] = { mt5: null, allocation: null, openPositions: 0, openPL: null, snapshotFreshness: null, live: null };
+  let account: RubyContext["account"] = { mt5: null, allocation: null, openPositions: 0, openPositionsChecked: false, unverifiedPositions: 0, openPL: null, snapshotFreshness: null, live: null };
   try {
     const view = await getUserAllocationView(userId);
     bridge = {
@@ -317,8 +326,12 @@ export async function buildRubyContext(
     const { getMyLiveOpenTrades } = await import("./tools.js");
     const open = await getMyLiveOpenTrades(userId);
     account.openPositions = open.count;
+    account.unverifiedPositions = open.unsyncedCount ?? 0;
+    account.openPositionsChecked = true;
   } catch {
+    // Not checked — 0 here is "could not count", never "none open".
     account.openPositions = 0;
+    account.openPositionsChecked = false;
   }
 
   // ── Open P/L via shared snapshot adapter (LIVE_SHARED users only) ────────
@@ -567,6 +580,13 @@ export function composeRubyBriefing(ctx: RubyContext): RubyBriefing {
         fresh === "stale" ? " (last known — may be stale)" : "";
       lines.push(`Open floating P/L: ${fmtMoney(ctx.account.openPL, null)}${freshnessNote}.`);
     }
+  } else if (ctx.account.openPositionsChecked === false) {
+    lines.push("I couldn't check your open positions just now, so I can't say whether any are open — check the Trades page.");
+  } else if ((ctx.account.unverifiedPositions ?? 0) > 0) {
+    const n = ctx.account.unverifiedPositions!;
+    lines.push(
+      `No broker-verified positions are open; ${n} position${n === 1 ? " is" : "s are"} waiting for broker verification and not counted.`,
+    );
   } else {
     lines.push("No positions are currently open.");
   }
