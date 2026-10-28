@@ -28,7 +28,8 @@ type SlotSummary = {
   positions: SlotPosition[];
   isLive: boolean;
   isStale: boolean;
-  lastUpdated: string;
+  /** When the broker last reported this book (null = never). Not the response time. */
+  lastUpdated: string | null;
 };
 
 function fmtMoney(v: number | null, ccy: string): string {
@@ -165,9 +166,11 @@ export function LiveOpenTradesPanel() {
             </div>
           </>
         )}
-        {q.data?.lastUpdated && (
-          <div className="mt-3 text-[11px] text-muted-foreground">
-            Last refresh: {new Date(q.data.lastUpdated).toLocaleTimeString()}
+        {q.data && (
+          <div className="mt-3 text-[11px] text-muted-foreground" data-testid="open-trades-last-update">
+            {q.data.lastUpdated
+              ? <>Last broker update: {new Date(q.data.lastUpdated).toLocaleTimeString()}{q.data.isStale ? " (stale)" : ""}</>
+              : "Last broker update: none received"}
           </div>
         )}
       </CardContent>

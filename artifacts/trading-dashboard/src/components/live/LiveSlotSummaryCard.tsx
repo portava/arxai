@@ -23,7 +23,8 @@ type SlotSummary = {
   isStale: boolean;
   isAllocated: boolean;
   allocationNote: string | null;
-  lastUpdated: string;
+  /** When the broker last reported this book (null = never). Not the response time. */
+  lastUpdated: string | null;
 };
 
 function fmtMoney(v: number, ccy: string): string {
@@ -137,8 +138,10 @@ export function LiveSlotSummaryCard() {
             </span>
           </div>
         ) : null}
-        <div className="mt-3 text-[11px] text-muted-foreground">
-          Last update: {new Date(s.lastUpdated).toLocaleTimeString()}
+        <div className="mt-3 text-[11px] text-muted-foreground" data-testid="slot-last-update">
+          {s.lastUpdated
+            ? <>Last broker update: {new Date(s.lastUpdated).toLocaleTimeString()}{s.isStale ? " (stale)" : ""}</>
+            : "Last broker update: none received"}
         </div>
       </CardContent>
     </Card>

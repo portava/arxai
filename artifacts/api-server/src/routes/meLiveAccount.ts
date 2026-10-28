@@ -245,6 +245,13 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
   const slotEquity = slotBalance + openPnL;
   const freeMargin = slotEquity - usedMargin;
   const marginLevelPercent = usedMargin > 0 ? (slotEquity / usedMargin) * 100 : null;
+  // When the broker last reported this book: the bridge's complete-sweep
+  // marker or the newest row sync, whichever is later. Null when nothing
+  // was ever reported. This, not the response time, is the data's "last update".
+  const reportedTimes = [snapshotAtMs, lastSnapshotMs as number | null]
+    .filter((t): t is number => t != null && Number.isFinite(t));
+  const dataAsOfMs = reportedTimes.length > 0 ? Math.max(...reportedTimes) : null;
+  const lastUpdated: string | null = dataAsOfMs != null ? new Date(dataAsOfMs).toISOString() : null;
 
   // Task #451 — carry the canonical mark-to-market balance block (the SAME wire
   // shape the SSE stream sends as its `live` sibling, built from the same
@@ -292,7 +299,9 @@ router.get("/me/live/slot-summary", requireUser, async (req, res) => {
     isFrozen,
     freezeMessage,
     aiSleeve,
-    lastUpdated: new Date().toISOString(),
+    lastUpdated,
+    // When this response was built (not a data time).
+    servedAt: new Date().toISOString(),
     readOnly: true,
     safetyMode: "phase_b_live_runtime_gated" as const,
   });
