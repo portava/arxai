@@ -41,7 +41,7 @@ import { useChartDeepHistory } from "@/lib/useChartDeepHistory";
 import { ChartHistoryBadge } from "@/components/charts/ChartHistoryBadge";
 import { FeedConfidenceBadge } from "@/components/charts/FeedConfidenceBadge";
 import { frozenQuoteChip } from "@/components/charts/marketFrozenFormat";
-import { scheduledWeekendClosureFor } from "@/lib/scannerTruth";
+import { scheduledWeekendClosureFor, nextWeekendClosureBoundaryMs } from "@/lib/scannerTruth";
 import { useTickStreamWatchdog } from "@/components/charts/useTickStreamWatchdog";
 import { capConfidence, feedConfidence } from "@/lib/feed-confidence";
 import { resolveDisplayStatus, isLivePriceDisplay } from "@/lib/chart-display-status";
@@ -990,6 +990,22 @@ export function ARXNativeChart({
   const stripStyle = FEED_STRIP_STYLE[stripTone];
   const stripIntegrityFailed = feedStatus?.quality === "invalid";
   const stripStale = !stripIntegrityFailed && (feedStatus?.quality === "stale" || feedStatus?.stale === true);
+  // The stale chip names only the cause the evidence supports. Inside the
+  // instrument's scheduled weekend close with no bar since the close it is a
+  // closed market (the server's own feed warning says so), not a feed fault; a
+  // market with session closes may be closed (daily break, holiday) or its feed
+  // delayed; only a 24/7 market's stale grade is plainly a stale feed.
+  const stripNowMs = Date.now();
+  const stripAssetClass = feedStatus?.assetClass ?? null;
+  const stripClosure = stripStale ? scheduledWeekendClosureFor(stripAssetClass, stripNowMs) : null;
+  const stripNewestOpenMs = hasCandles ? Date.parse(candles[candles.length - 1]!.openTime) : Number.NaN;
+  const stripStaleText = !stripStale
+    ? null
+    : stripClosure != null && Number.isFinite(stripNewestOpenMs) && stripNewestOpenMs < stripClosure.closedAtMs
+      ? "Market closed for the weekend — no new bars, not a feed fault"
+      : nextWeekendClosureBoundaryMs(stripAssetClass, stripNowMs) != null
+        ? "No new bars — the market may be closed or the feed delayed"
+        : "Feed is stale";
   const stripUnavailable = feedStatus?.quality === "unavailable" || feedStatus?.quality === "empty";
   const stripRefreshing = query.isFetching && !query.isLoading;
 
@@ -1219,9 +1235,9 @@ export function ARXNativeChart({
             Data integrity failed — use TradingView for reference
           </span>
         )}
-        {stripStale && (
+        {stripStaleText && (
           <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300" data-testid="arx-mirror-stale">
-            Feed is stale
+            {stripStaleText}
           </span>
         )}
         {stripUnavailable && (

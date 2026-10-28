@@ -465,3 +465,58 @@ describe("the header price is last-known while the broker repeats a frozen quote
     expect(badge.getAttribute("title") ?? "").toMatch(/same quote/i);
   });
 });
+
+// The mirror strip's stale chip read "Feed is stale" for every stale grade.
+// Inside a scheduled weekend close with no bar since the close, the server's
+// own feed warning says "Market closed … Not a feed fault"; for a market with
+// session closes outside that window it says the market may be closed or the
+// feed delayed. Only a 24/7 market's stale grade is a stale feed.
+describe("the stale chip names the cause the evidence supports", () => {
+  const staleChip = () => screen.getByTestId("arx-mirror-stale").textContent ?? "";
+  function staleResponse(newestOpenMs: number, assetClass = "forex"): ChartCandlesResponse {
+    const base = makeResponse({ quality: "stale", stale: true, isLive: false, aiUsable: false, assetClass } as Partial<ChartFeedStatus>);
+    return {
+      ...base,
+      candles: [
+        makeCandle(newestOpenMs - 2 * M5_MS, 1.1, "mt5_broker"),
+        makeCandle(newestOpenMs - M5_MS, 1.101, "mt5_broker"),
+        makeCandle(newestOpenMs, 1.102, "mt5_broker"),
+      ],
+    } as unknown as ChartCandlesResponse;
+  }
+
+  it("inside the weekend close with no bar since the close it says market closed, not a stale feed", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 12, 0)); // Saturday
+    setResponse(staleResponse(Date.UTC(2026, 9, 30, 21, 55))); // Fri 21:55, before the 22:00 close
+    renderChart();
+    expect(staleChip()).toMatch(/market closed/i);
+    expect(staleChip()).toMatch(/not a feed fault/i);
+    expect(staleChip()).not.toMatch(/feed is stale/i);
+  });
+
+  it("a session market outside the weekend close says it may be closed or delayed, not 'Feed is stale'", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 28, 12, 0)); // Wednesday
+    setResponse(staleResponse(Date.UTC(2026, 9, 28, 9, 0)));
+    renderChart();
+    expect(staleChip()).not.toMatch(/feed is stale/i);
+    expect(staleChip()).toMatch(/may be closed or the feed delayed/i);
+  });
+
+  it("a bar after the weekend close is not a closed market", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 12, 0)); // Saturday
+    setResponse(staleResponse(Date.UTC(2026, 9, 31, 10, 0)));
+    renderChart();
+    expect(staleChip()).not.toMatch(/market closed/i);
+  });
+
+  it("a 24/7 market's stale grade is a stale feed", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 12, 0)); // Saturday
+    setResponse(staleResponse(Date.UTC(2026, 9, 30, 21, 55), "crypto"));
+    renderChart();
+    expect(staleChip()).toBe("Feed is stale");
+  });
+});
