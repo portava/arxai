@@ -267,6 +267,10 @@ export async function evaluateScalpForSymbol(userId: number, args: ScalpFocusArg
   }
 
   result.marketEvidence = market.evidence ? { ...market.evidence, userId } : null;
+  // The timeframe this Focus read was actually evaluated on, so the client keys
+  // the lifted verdict under the right chart timeframe (never a 1m cell for an
+  // M5 read) without a second hard-coded copy of SCALP_TIMEFRAME.
+  result.timeframe = SCALP_TIMEFRAME;
   return await attachScalpAdvisory(result);
 }
 

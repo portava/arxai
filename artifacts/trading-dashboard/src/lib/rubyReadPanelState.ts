@@ -23,6 +23,10 @@
 import type { ReadLevel } from "./scannerTruth";
 import type { RubyReadStatus } from "./scannerActionability";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
+import type {
+  TradeDataFreshnessBand,
+  TradeHealthReadinessVerdict,
+} from "@workspace/domain/market";
 
 export type RubyReadVerdict =
   | "confirmed"
@@ -49,6 +53,94 @@ export interface RubyReadServerState {
   readLayer?: RubyReadLayer;
   /** The exact live trade setup is withheld (true on a STRUCTURAL_ONLY read). */
   liveSetupWithheld?: boolean;
+  /** Enough closed history to read structure (transparency boolean). */
+  canReadStructure?: boolean;
+  /** The exact live trade setup may be shown (false on STRUCTURAL_ONLY). */
+  canShowLiveTradeSetup?: boolean;
+  /**
+   * The server's Trade-Health contract verdict for THIS read (same contract the
+   * Scanner composes): freshness band, display label and trust line. Used only
+   * to cap the header's Trade Health chip DOWN to what the read actually had.
+   */
+  tradeHealthFreshness?: string;
+  tradeHealthLabel?: string;
+  tradeHealthTrustLine?: string;
+}
+
+/**
+ * True when a server read is a STRUCTURAL_ONLY read — direction from closed
+ * candles, exact entry/stop/target withheld.
+ *
+ * Primary signal: `readLayer === "STRUCTURAL_ONLY"`. Belt-and-braces: the
+ * transparency booleans (`liveSetupWithheld`, `canShowLiveTradeSetup`) travel
+ * beside it and survive the server's user-copy scrubber, which once blanked
+ * `readLayer` to "" (owner screenshot 2026-10-27: "Full read" + "Live read on
+ * V75 1m." beside "Exact entry, stop, and target levels withheld"). A non-gated
+ * read that says its live setup is withheld is therefore treated as structural
+ * even when `readLayer` is missing, empty or contradicts it. DOWNGRADE-ONLY: this
+ * can only lower the panel/header verdict, never raise it. A gated read is the
+ * stricter "not confirmed" state and is left to that path.
+ */
+export function isStructuralOnlyRead(read: RubyReadServerState | null | undefined): boolean {
+  if (!read) return false;
+  if (read.readLayer === "STRUCTURAL_ONLY") return true;
+  if (read.gated === true || read.readLayer === "INSUFFICIENT") return false;
+  return read.liveSetupWithheld === true || read.canShowLiveTradeSetup === false;
+}
+
+const FRESHNESS_RANK: Record<TradeDataFreshnessBand, number> = {
+  LIVE_CONFIRMED: 4,
+  LIVE_DELAYED: 3,
+  HISTORICAL_ONLY: 2,
+  AWAITING: 1,
+  UNKNOWN: 0,
+};
+
+const FALLBACK_FRESHNESS_LABEL: Record<TradeDataFreshnessBand, string> = {
+  LIVE_CONFIRMED: "Live-confirmed",
+  LIVE_DELAYED: "Delayed feed",
+  HISTORICAL_ONLY: "Historical read only",
+  AWAITING: "Awaiting live feed",
+  UNKNOWN: "Unconfirmed",
+};
+
+function isFreshnessBand(v: unknown): v is TradeDataFreshnessBand {
+  return typeof v === "string" && Object.prototype.hasOwnProperty.call(FRESHNESS_RANK, v);
+}
+
+/**
+ * Cap the header's Trade Health readiness DISPLAY by the same-key server read.
+ *
+ * The header chip is composed client-side from the scanner's own candle verdict;
+ * the Ruby read for the same symbol+timeframe carries the server's contract
+ * verdict (`tradeHealthFreshness` / label / trust line). When the server read is
+ * strictly LESS fresh (LIVE_CONFIRMED > LIVE_DELAYED > HISTORICAL_ONLY >
+ * AWAITING > UNKNOWN) the chip adopts the server's label and trust line and every
+ * affordance flag drops to false, so the board can never say "Live-confirmed 1m
+ * read with enough recent closed candles" next to a read whose exact levels are
+ * withheld because the feed is delayed. Never upgrades: an equal or fresher
+ * server band, a missing/unknown band, or no read returns `readiness` unchanged.
+ * DISPLAY-ONLY — no execution path reads this.
+ */
+export function capReadinessByServerRead(
+  readiness: TradeHealthReadinessVerdict,
+  read: RubyReadServerState | null | undefined,
+): TradeHealthReadinessVerdict {
+  const band = read?.tradeHealthFreshness;
+  if (!read || !isFreshnessBand(band)) return readiness;
+  if (FRESHNESS_RANK[band] >= FRESHNESS_RANK[readiness.dataFreshness]) return readiness;
+  const label = typeof read.tradeHealthLabel === "string" ? read.tradeHealthLabel.trim() : "";
+  const trust = typeof read.tradeHealthTrustLine === "string" ? read.tradeHealthTrustLine.trim() : "";
+  return {
+    ...readiness,
+    dataFreshness: band,
+    displayLabel: label || FALLBACK_FRESHNESS_LABEL[band],
+    userFacingTrustLine: trust || read.blockedReason || "",
+    mayDescribeSetup: false,
+    mayShowTradeButton: false,
+    mayShowOneClickButton: false,
+    mayOfferLiveExecutionRequest: false,
+  };
 }
 
 /**
@@ -112,7 +204,7 @@ export function resolveCappedRubyReadStatus(
     !!read &&
     (read.gated === true ||
       read.dataQuality === "insufficient" ||
-      read.readLayer === "STRUCTURAL_ONLY");
+      isStructuralOnlyRead(read));
   const serverReason = readDowngraded
     ? read?.blockedReason ?? read?.headline ?? null
     : null;
@@ -199,7 +291,7 @@ export function resolveRubyReadPanelState(
   // available, but the exact live setup is withheld. It takes precedence over a
   // generic "not confirmed" (it's the more specific, more honest state) and over
   // "confirmed" (the badge must never claim clean/AI while the setup is withheld).
-  const structuralOnly = read?.readLayer === "STRUCTURAL_ONLY";
+  const structuralOnly = isStructuralOnlyRead(read);
 
   let verdict: RubyReadVerdict;
   if (structuralOnly) {

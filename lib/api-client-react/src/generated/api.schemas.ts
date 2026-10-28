@@ -14369,6 +14369,20 @@ export const ScalpResultStatus = {
   AWAITING_DATA: "AWAITING_DATA",
 } as const;
 
+/**
+ * Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers.
+ */
+export type ScalpResultRejectReason =
+  | (typeof ScalpResultRejectReason)[keyof typeof ScalpResultRejectReason]
+  | null;
+
+export const ScalpResultRejectReason = {
+  NO_SCANNER_READ: "NO_SCANNER_READ",
+  NOT_LIVE: "NOT_LIVE",
+  INSUFFICIENT_DATA: "INSUFFICIENT_DATA",
+  NO_SPECS: "NO_SPECS",
+} as const;
+
 export type ScalpResultConfidenceLabel =
   (typeof ScalpResultConfidenceLabel)[keyof typeof ScalpResultConfidenceLabel];
 
@@ -14459,6 +14473,10 @@ export interface ScalpResult {
   scalpType: string;
   mode: ScalpMode;
   status: ScalpResultStatus;
+  /** Why an AWAITING_DATA result was returned. NO_SCANNER_READ, NOT_LIVE and INSUFFICIENT_DATA are feed/data reasons; NO_SPECS means the feed is live and sufficient but the broker's symbol details (lot size, point value) are unavailable, so no scalp can be sized. Absent on other statuses and from older servers. */
+  rejectReason?: ScalpResultRejectReason;
+  /** The engine timeframe this result was evaluated on (e.g. "M5"). */
+  timeframe?: string | null;
   qualityScore: number;
   confidenceLabel: ScalpResultConfidenceLabel;
   entryType: ScalpResultEntryType;
