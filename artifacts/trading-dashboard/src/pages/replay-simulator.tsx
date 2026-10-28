@@ -46,6 +46,26 @@ function runStatusPill(status: string): { kind: StatusKind; label: string; ariaL
   }
 }
 
+// A scenario's market condition is a label, never a measurement: the
+// generator setting for a synthetic scenario, the caller's label for an import
+// (older imports with no label were stored as a defaulted RANGING).
+function conditionLabel(s: Scenario): { label: string; aria: string } {
+  const cond = (s.marketCondition ?? "").trim().toUpperCase();
+  const src = (s.source ?? "").trim().toUpperCase();
+  if (cond === "" || cond === "UNSPECIFIED") {
+    return { label: "Condition not specified", aria: "market condition: not specified and not measured" };
+  }
+  const basis = src === "SYNTHETIC" ? "generator setting"
+    : src === "IMPORTED" ? (cond === "RANGING" ? "import label or default" : "import label")
+    : "label";
+  return { label: `${cond} (${basis}, not measured)`, aria: `market condition: ${cond}, ${basis}, not measured from the candles` };
+}
+
+function sourceWord(source: string): string {
+  const src = (source ?? "").trim().toLowerCase();
+  return src === "" ? "source unknown" : src;
+}
+
 // Win rate needs at least one closed trade. An older server sent 0 here.
 function winRateText(r: RunResult): string {
   if (!(r.simulated_trades_closed > 0) || r.win_rate == null) return "— (no closed trades)";
@@ -129,15 +149,22 @@ export default function ReplaySimulator() {
               aria-label="Select replay scenario"
             >
               <option value="">— pick one —</option>
-              {scenarios.map(s => <option key={s.scenarioId} value={s.scenarioId}>{s.title} ({s.candleCount}c)</option>)}
+              {scenarios.map(s => <option key={s.scenarioId} value={s.scenarioId}>{s.title} ({s.candleCount}c, {sourceWord(s.source)})</option>)}
             </select>
             <Button size="sm" variant="outline" disabled={busy} onClick={createDemo}>+ New Synthetic</Button>
             <Button size="sm" disabled={busy || !selected} onClick={runReplay}>{busy ? "Running…" : "Run Replay"}</Button>
           </div>
           {scn && (
             <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
-              <StatusPill status="REPLAY_ONLY" size="xs" label={scn.marketCondition} />
-              <span>{scn.symbol} · {scn.timeframe} · {scn.source} · {scn.candleCount} candles</span>
+              {(() => { const c = conditionLabel(scn); return (
+                <span data-testid="replay-scenario-condition">
+                  <StatusPill status="REPLAY_ONLY" size="xs" label={c.label} ariaLabel={c.aria} />
+                </span>
+              ); })()}
+              <span data-testid="replay-scenario-meta">
+                {scn.symbol} · {scn.timeframe} · {scn.source} · {scn.candleCount} candles
+                {(scn.source ?? "").toUpperCase() === "SYNTHETIC" && ` · generated prices, not real ${scn.symbol} market data`}
+              </span>
             </div>
           )}
           {err && <ErrorState description={err} onRetry={loadScenarios} />}

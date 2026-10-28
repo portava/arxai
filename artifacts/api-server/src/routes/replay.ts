@@ -58,7 +58,9 @@ router.post("/replay/scenarios", async (req, res) => {
         symbol: String(body.symbol ?? "V75"),
         timeframe: String(body.timeframe ?? "M5"),
         source: "IMPORTED" as const,
-        marketCondition: (body.marketCondition ?? "RANGING") as MarketCondition,
+        // Nothing measures the condition from the candles: keep the caller's
+        // label, or say none was given (never a defaulted "RANGING").
+        marketCondition: (body.marketCondition ?? "UNSPECIFIED") as MarketCondition,
         candles: v.candles!,
         notes: String(body.notes ?? "User-imported candles."),
       };

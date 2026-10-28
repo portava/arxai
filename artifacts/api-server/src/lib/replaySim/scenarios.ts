@@ -12,9 +12,14 @@ export interface Candle {
   v: number;
 }
 
+// A scenario's market condition is a label, never a measurement: for a
+// synthetic scenario it is the generator setting, for an import it is what the
+// caller said. "UNSPECIFIED" is an import that gave none (it used to be
+// stored as a defaulted "RANGING").
 export type MarketCondition =
   | "TRENDING_UP" | "TRENDING_DOWN" | "RANGING"
-  | "VOLATILE"   | "CHOPPY"        | "BREAKOUT" | "REVERSAL";
+  | "VOLATILE"   | "CHOPPY"        | "BREAKOUT" | "REVERSAL"
+  | "UNSPECIFIED";
 
 export interface Scenario {
   scenarioId: string;

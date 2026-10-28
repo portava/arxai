@@ -38,7 +38,7 @@ function stubFetch(run: Record<string, unknown>) {
 
 async function runIt() {
   render(<ReplaySimulator />);
-  await screen.findByText("Scenario A (80c)");
+  await screen.findByText("Scenario A (80c, synthetic)");
   fireEvent.click(screen.getByRole("button", { name: "Run Replay" }));
   await screen.findByText("Replay Result");
 }
