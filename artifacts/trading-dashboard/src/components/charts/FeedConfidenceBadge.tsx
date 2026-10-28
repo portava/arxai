@@ -1,3 +1,4 @@
+import { useEffect, useReducer, useState } from "react";
 import { type ChartFeedStatus } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -132,9 +133,19 @@ export function FeedConfidenceBadge({
   // Inline trailing-interval gap for the always-visible chip (opt-in). Reuses
   // the shared formatTrailingGap over the SAME feed status the popover reads.
   const inlineGap = showTrailingGap ? formatTrailingGap(fs?.trailingIntervals) : null;
+  // The popover's "Last tick" / "Last candle" ages are relative to NOW, so they
+  // re-render once a second while it is open instead of freezing at the age
+  // they had when it opened.
+  const [open, setOpen] = useState(false);
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(tick, 1_000);
+    return () => clearInterval(id);
+  }, [open]);
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"

@@ -2,8 +2,8 @@
 //  - must not say "Last candle: just now" for a timestamp in the future (the
 //    forming bar's scheduled close), independent of whether ticks arrive;
 //  - must not print the raw Deriv readiness token (e.g. AUTH_FAILED).
-import { describe, it, expect, afterEach } from "vitest";
-import { render, cleanup, fireEvent, screen } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { render, cleanup, fireEvent, screen, act } from "@testing-library/react";
 import type { ChartFeedStatus } from "@workspace/api-client-react";
 import { relativeTime, feedReadinessLabel } from "@/lib/feed-confidence";
 import { FeedConfidenceBadge } from "./FeedConfidenceBadge";
@@ -55,4 +55,33 @@ describe("FeedConfidenceBadge popover", () => {
       expect(value).not.toContain(state);
       expect(value).toBe(feedReadinessLabel(state));
     });
+});
+
+describe("FeedConfidenceBadge popover clock", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("ages the Last tick / Last candle rows while the popover stays open", () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    const t0 = Date.parse("2026-10-28T12:00:00.000Z");
+    vi.setSystemTime(t0);
+    const fs = feed({
+      lastTickTime: new Date(t0 - 12_000).toISOString(),
+      lastCandleTime: new Date(t0 + 10 * 60_000).toISOString(),
+    });
+    render(<FeedConfidenceBadge feedStatus={fs} />);
+    fireEvent.click(screen.getByTestId("arx-feed-badge"));
+    const row = (label: string) => {
+      const detail = screen.getByTestId("arx-feed-detail");
+      const el = [...detail.querySelectorAll("div")].find((d) => d.firstElementChild?.textContent === label);
+      return el?.lastElementChild?.textContent ?? "";
+    };
+    expect(row("Last tick")).toBe("12s ago");
+    expect(row("Last candle")).toBe("Forming bar · closes in 10m");
+    act(() => {
+      vi.setSystemTime(t0 + 5 * 60_000);
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(row("Last tick")).toBe("5m ago");
+    expect(row("Last candle")).toBe("Forming bar · closes in 4m");
+  });
 });
