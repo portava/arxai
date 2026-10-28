@@ -563,3 +563,47 @@ test("a stale mt5_broker feed's source label makes no liveness claim", async () 
   assert.equal(env.dataState, "STALE");
   assert.doesNotMatch(env.dataSourceLabel ?? "", /live/i);
 });
+
+// ── Volatility is measured, and "spread ok" needs an observed spread ─────────
+// The label mapped riskScore (a constant 20 with no spread observed), so every
+// non-choppy market read "Calm"; the why text printed "spread ok" though this
+// builder never observes a spread.
+function barsWithRecentRange(baseRange: number, recentRange: number): Bar[] {
+  const bars = bullishBars(120, 1.15, baseRange);
+  return bars.map((b, i) => i < bars.length - 14 ? b
+    : { ...b, high: b.close + recentRange / 2, low: b.close - recentRange / 2 });
+}
+
+test("volatilityLabel measures recent bars against older bars; no 'spread ok' without a spread", async () => {
+  const run = async (bars: Bar[]) => {
+    clearSelectedMarketCache();
+    const stub = (async () => makeChart(bars, FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+    const env = await getSelectedMarketSnapshot(
+      { symbolRaw: "EURUSD", refresh: true },
+      { getChartCandlesFn: stub, loadEventsFn: noEvents },
+    );
+    assert.ok(env.ok);
+    if (!env.ok) throw new Error("expected ok");
+    return env;
+  };
+  const wide = await run(barsWithRecentRange(0.001, 0.0016));
+  const narrow = await run(barsWithRecentRange(0.001, 0.0002));
+  assert.equal(wide.highlights.volatilityLabel, "Elevated");
+  assert.equal(narrow.highlights.volatilityLabel, "Calm");
+  for (const env of [wide, narrow]) {
+    assert.doesNotMatch(env.explanation.why, /spread ok/, env.explanation.why);
+  }
+  // Too few closed bars to compare: never a confident "Calm".
+  const thin = await run(bullishBars(10, 1.15, 0.0005));
+  assert.equal(thin.highlights.volatilityLabel, "Unmeasured");
+});
+
+test("the no-data envelope does not claim a Calm market", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () =>
+    makeChart([], { source: null, quality: "empty", isLive: false, lastCandleTime: null })) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot({ symbolRaw: "EURUSD", refresh: true }, { getChartCandlesFn: stub, loadEventsFn: noEvents });
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.equal(env.highlights.volatilityLabel, "Unmeasured");
+});

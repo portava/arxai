@@ -106,7 +106,12 @@ export interface SelectedMarketHighlights {
   bias: "BUY" | "SELL" | "NEUTRAL" | "WAIT";
   confidenceLabel: "Very Low" | "Low" | "Medium" | "High";
   confidenceScore: number;
-  volatilityLabel: "Calm" | "Normal" | "Elevated" | "Choppy";
+  /**
+   * Measured volatility: the newest 14-bar ATR against the mean true range of
+   * the older closed bars. "Unmeasured" when there are too few closed bars to
+   * compare; "Choppy" when the read itself is choppy.
+   */
+  volatilityLabel: "Calm" | "Normal" | "Elevated" | "Choppy" | "Unmeasured";
   trendState: "bullish" | "bearish" | "neutral" | "choppy";
   // Level geometry is NULL when withheld by the stale-level guard or when there
   // is no live data — never zeros styled as levels (Task #518).
@@ -223,11 +228,41 @@ function confidenceLabel(score: number): SelectedMarketHighlights["confidenceLab
   return "Very Low";
 }
 
-function volatilityLabel(riskScore: number, bias: MarketAnalysis["marketBias"]): SelectedMarketHighlights["volatilityLabel"] {
+// Recent-vs-baseline volatility. The label used to map the analysis riskScore,
+// which (with no spread observed here) is a constant 20 — so every non-choppy
+// market read "Calm" whatever its ranges were. It now MEASURES the bars.
+const VOL_RECENT_BARS = 14;
+const VOL_MIN_BASELINE_BARS = 14;
+const VOL_ELEVATED_RATIO = 1.5;
+const VOL_CALM_RATIO = 0.67;
+
+function trueRanges(candles: NormalizedChartCandle[]): number[] {
+  const trs: number[] = [];
+  for (let i = 1; i < candles.length; i++) {
+    const c = candles[i];
+    const p = candles[i - 1];
+    if (!c || !p) continue;
+    const tr = Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+    if (Number.isFinite(tr)) trs.push(tr);
+  }
+  return trs;
+}
+
+function volatilityLabel(
+  closed: NormalizedChartCandle[], bias: MarketAnalysis["marketBias"],
+): SelectedMarketHighlights["volatilityLabel"] {
   if (bias === "choppy") return "Choppy";
-  if (riskScore >= 70) return "Elevated";
-  if (riskScore >= 40) return "Normal";
-  return "Calm";
+  const trs = trueRanges(closed);
+  if (trs.length < VOL_RECENT_BARS + VOL_MIN_BASELINE_BARS) return "Unmeasured";
+  const recent = trs.slice(-VOL_RECENT_BARS);
+  const baseline = trs.slice(0, -VOL_RECENT_BARS);
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const base = mean(baseline);
+  if (!(base > 0)) return "Unmeasured";
+  const ratio = mean(recent) / base;
+  if (ratio >= VOL_ELEVATED_RATIO) return "Elevated";
+  if (ratio <= VOL_CALM_RATIO) return "Calm";
+  return "Normal";
 }
 
 function biasFromAction(a: MarketAnalysis["recommendedAction"]): SelectedMarketHighlights["bias"] {
@@ -243,7 +278,10 @@ function impactDbToLower(level: string): "low" | "medium" | "high" {
   return "low";
 }
 
-function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: string): SelectedMarketExplanation {
+function buildExplanation(
+  a: MarketAnalysis, newsBlocking: boolean, newsReason: string,
+  volatility: SelectedMarketHighlights["volatilityLabel"],
+): SelectedMarketExplanation {
   const side = biasFromAction(a.recommendedAction);
   const hedge = side === "BUY"
     ? "This looks like a possible buy setup right now."
@@ -261,7 +299,7 @@ function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: 
   if (newsBlocking) {
     whyItMattersBits.push("A high-impact event is near — large moves are possible.");
   }
-  if (a.riskScore >= 70) whyItMattersBits.push("Volatility is elevated, so position sizing matters.");
+  if (volatility === "Elevated") whyItMattersBits.push("Recent bars are much wider than usual, so position sizing matters.");
   if (a.confidenceScore < 50) whyItMattersBits.push("Confidence is not high — wait for confirmation before sizing up.");
   if (!whyItMattersBits.length) whyItMattersBits.push("Conditions look stable for the scanner's read.");
   const whyItMatters = whyItMattersBits.join(" ");
@@ -276,7 +314,7 @@ function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: 
   const cautions: string[] = [];
   if (newsReason) cautions.push(newsReason);
   if (a.confidenceScore < 50) cautions.push("Confidence is low — confirm with price action.");
-  if (a.riskScore >= 70) cautions.push("Size smaller than usual while volatility is elevated.");
+  if (volatility === "Elevated") cautions.push("Size smaller than usual while volatility is elevated.");
   if (a.marketBias === "choppy") cautions.push("Market is choppy — wait for a clear direction.");
   return {
     hedge, why, whyItMatters, risk, invalidation, cautions,
@@ -377,20 +415,7 @@ function newestClose(candles: NormalizedChartCandle[]): number | null {
 }
 
 function computeAtr(candles: NormalizedChartCandle[], period = 14): number | null {
-  if (candles.length < 2) return null;
-  const trs: number[] = [];
-  for (let i = 1; i < candles.length; i++) {
-    const c = candles[i];
-    const p = candles[i - 1];
-    if (!c || !p) continue;
-    const tr = Math.max(
-      c.high - c.low,
-      Math.abs(c.high - p.close),
-      Math.abs(c.low - p.close),
-    );
-    if (Number.isFinite(tr)) trs.push(tr);
-  }
-  const window = trs.slice(-period);
+  const window = trueRanges(candles).slice(-period);
   if (window.length === 0) return null;
   return window.reduce((a, b) => a + b, 0) / window.length;
 }
@@ -515,7 +540,7 @@ async function buildSelectedMarketSnapshot(
         bias: "WAIT",
         confidenceLabel: "Very Low",
         confidenceScore: 0,
-        volatilityLabel: "Calm",
+        volatilityLabel: "Unmeasured",
         trendState: "neutral",
         entryZone: null,
         suggestedStop: null,
@@ -575,11 +600,12 @@ async function buildSelectedMarketSnapshot(
   const hints = currencyHintsFor(symbol);
   const { events, scorerInput } = await deps.loadEventsFn(symbol, hints);
   const news = scoreNewsRisk(symbol, scorerInput);
+  const volatility = volatilityLabel(closed, a.marketBias);
   const highlights: SelectedMarketHighlights = {
     bias: readShown ? biasFromAction(a.recommendedAction) : "WAIT",
     confidenceLabel: readShown ? confidenceLabel(a.confidenceScore) : "Very Low",
     confidenceScore: readShown ? Math.round(a.confidenceScore) : 0,
-    volatilityLabel: volatilityLabel(a.riskScore, a.marketBias),
+    volatilityLabel: volatility,
     trendState: readShown ? a.marketBias : "neutral",
     entryZone: levelsShown ? a.entryZone : null,
     suggestedStop: levelsShown ? a.stopLoss : null,
@@ -588,7 +614,7 @@ async function buildSelectedMarketSnapshot(
     riskWarnings: news.blockTrading ? [news.reason] : [],
   };
   const explanation = readWithheldReason === null
-    ? buildExplanation(a, news.blockTrading, news.reason)
+    ? buildExplanation(a, news.blockTrading, news.reason, volatility)
     : withheldExplanation(readWithheldReason, news.reason);
   const result: SelectedMarketResult = {
     ok: true,

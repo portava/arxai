@@ -155,7 +155,7 @@ function analyzeCore(
     entryQualityScore, riskScore, confidenceScore, recommendedAction,
     entryZone: { low: round(entry - avgRange * 0.25, 5), high: round(entry + avgRange * 0.25, 5) },
     stopLoss, takeProfit, riskRewardRatio,
-    reasonForTrade: `${marketBias} bias on ${symbol} ${timeframe}; trend=${trendStrength}, spread ok, RR ${riskRewardRatio}`,
+    reasonForTrade: `${marketBias} bias on ${symbol} ${timeframe}; trend=${trendStrength}, ${spreadNote(spread, spreadPenalty)}, RR ${riskRewardRatio}`,
     reasonToAvoid: rulesFailed.length ? `Failed rules: ${rulesFailed.join(", ")}` : "",
     invalidationReason: dir === "BUY" ? `Close below ${stopLoss}` : `Close above ${stopLoss}`,
     rulesPassed, rulesFailed,
@@ -163,6 +163,13 @@ function analyzeCore(
     feedProvider,
     generatedAt: new Date().toISOString(),
   };
+}
+
+// "spread ok" only when a positive spread was observed and passed the rule. A
+// zero/absent spread is the callers' "no quote spread" substitute, not a cost.
+function spreadNote(spread: number, spreadPenalty: number): string {
+  if (!Number.isFinite(spread) || spread <= 0) return "spread not observed";
+  return spreadPenalty < 30 ? "spread ok" : "spread wide";
 }
 
 export interface TradeCard extends MarketAnalysis {
