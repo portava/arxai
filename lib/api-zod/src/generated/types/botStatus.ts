@@ -13,7 +13,9 @@ export interface BotStatus {
   symbol: string;
   strategy: string;
   riskMode: BotStatusRiskMode;
+  /** Stored bot setting. No order path reads it. */
   isRunning: boolean;
+  /** Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST /risk/pause) does. */
   isPaused: boolean;
   /** @nullable */
   lastScanAt?: string | null;

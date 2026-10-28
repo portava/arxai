@@ -3918,8 +3918,14 @@ export const GetBotStatusResponse = zod.object({
   symbol: zod.string(),
   strategy: zod.string(),
   riskMode: zod.enum(["Conservative", "Balanced", "Aggressive"]),
-  isRunning: zod.boolean(),
-  isPaused: zod.boolean(),
+  isRunning: zod
+    .boolean()
+    .describe("Stored bot setting. No order path reads it."),
+  isPaused: zod
+    .boolean()
+    .describe(
+      "Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST \/risk\/pause) does.",
+    ),
   lastScanAt: zod.string().nullish(),
 });
 
@@ -3940,8 +3946,14 @@ export const UpdateBotStatusResponse = zod.object({
   symbol: zod.string(),
   strategy: zod.string(),
   riskMode: zod.enum(["Conservative", "Balanced", "Aggressive"]),
-  isRunning: zod.boolean(),
-  isPaused: zod.boolean(),
+  isRunning: zod
+    .boolean()
+    .describe("Stored bot setting. No order path reads it."),
+  isPaused: zod
+    .boolean()
+    .describe(
+      "Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST \/risk\/pause) does.",
+    ),
   lastScanAt: zod.string().nullish(),
 });
 

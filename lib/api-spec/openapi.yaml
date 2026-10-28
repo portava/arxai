@@ -18136,8 +18136,10 @@ components:
           enum: [Conservative, Balanced, Aggressive]
         isRunning:
           type: boolean
+          description: Stored bot setting. No order path reads it.
         isPaused:
           type: boolean
+          description: Stored bot setting. No order path (Risk Governor, paper autopilot, live pipeline) reads it, so it does not stop new trades. The trader's kill switch (POST /risk/pause) does.
         lastScanAt:
           type: ["string", "null"]
 

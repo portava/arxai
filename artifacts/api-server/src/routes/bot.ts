@@ -45,6 +45,10 @@ router.get("/bot/status", requireUser, async (req, res) => {
   }
 });
 
+// mode / isRunning / isPaused are stored bot settings only: no order path
+// (Risk Governor, paper autopilot, live pipeline) reads them, so setting
+// isPaused does not stop new trades. The trader's kill switch does
+// (POST /risk/pause). The Risk Settings page says so.
 router.patch("/bot/status", requireUser, async (req, res) => {
   try {
     const body = UpdateBotStatusBody.parse(req.body);

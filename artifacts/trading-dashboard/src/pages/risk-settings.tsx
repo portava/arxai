@@ -276,6 +276,21 @@ export function AuditBanner({ symbol }: { symbol?: string }) {
   );
 }
 
+// ── Bot settings flags ───────────────────────────────────────────────────────
+
+/**
+ * What the bot settings flags do. Bot mode, "is running" and the paused flag
+ * are stored in your bot settings and echoed back here; no order path (the
+ * Risk Governor, the paper autopilot, the live pipeline) reads them. Only a
+ * stop switch halts new trades.
+ */
+export const BOT_PAUSE_FLAG_NOTE =
+  "Stores a paused flag in your bot settings. No order path reads this flag, so it does not stop new trades. " +
+  "To halt new trades on your account, use \"Pause my trading\" on Risk Command Center (Audit tab), which engages your kill switch.";
+
+export const BOT_FLAGS_NOTE =
+  "Bot Mode, Is Running and the paused flag are stored bot settings; no order path reads them. The Stop switch row is what halts new trades.";
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 const VALID_RISK_TABS = ["mode", "limits", "rules", "calculator", "emergency"] as const;
@@ -476,8 +491,8 @@ export default function RiskSettings() {
     updateBotStatus.mutate(
       { data: { isPaused: true } },
       {
-        onSuccess: () => toast({ title: "Trading paused", description: "Bot will not open new positions." }),
-        onError: () => toast({ title: "Failed to pause", variant: "destructive" }),
+        onSuccess: () => toast({ title: "Bot paused flag set", description: BOT_PAUSE_FLAG_NOTE }),
+        onError: () => toast({ title: "Could not set the bot paused flag", variant: "destructive" }),
       }
     );
   }
@@ -486,8 +501,8 @@ export default function RiskSettings() {
     updateBotStatus.mutate(
       { data: { isPaused: false } },
       {
-        onSuccess: () => toast({ title: "Trading resumed" }),
-        onError: () => toast({ title: "Failed to resume", variant: "destructive" }),
+        onSuccess: () => toast({ title: "Bot paused flag cleared", description: BOT_PAUSE_FLAG_NOTE }),
+        onError: () => toast({ title: "Could not clear the bot paused flag", variant: "destructive" }),
       }
     );
   }
@@ -542,8 +557,8 @@ export default function RiskSettings() {
             </Badge>
           )}
           {botStatus?.isPaused && (
-            <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30 px-3 py-1 border">
-              <PauseCircle size={12} className="mr-1.5" /> Paused
+            <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30 px-3 py-1 border" data-testid="bot-paused-flag-badge">
+              <PauseCircle size={12} className="mr-1.5" /> Bot paused flag set
             </Badge>
           )}
         </div>
@@ -1223,17 +1238,17 @@ export default function RiskSettings() {
             <Card className="border-yellow-500/30">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2 text-yellow-400">
-                  <PauseCircle size={16} /> Pause Trading
+                  <PauseCircle size={16} /> Bot Paused Flag
                 </CardTitle>
-                <CardDescription className="text-xs">
-                  Suspends new trade entries while keeping the bot running and open positions intact.
+                <CardDescription className="text-xs" data-testid="bot-paused-flag-note">
+                  {BOT_PAUSE_FLAG_NOTE}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 {botStatus?.isPaused ? (
                   <Alert className="border-yellow-500/30 bg-yellow-500/5 py-2">
                     <PauseCircle className="h-3 w-3 text-yellow-400" />
-                    <AlertDescription className="text-xs text-yellow-300 ml-1">Bot is currently paused</AlertDescription>
+                    <AlertDescription className="text-xs text-yellow-300 ml-1">The bot paused flag is set. New trades are not stopped by it.</AlertDescription>
                   </Alert>
                 ) : null}
                 <Button
@@ -1248,9 +1263,9 @@ export default function RiskSettings() {
                   disabled={updateBotStatus.isPending}
                 >
                   {botStatus?.isPaused ? (
-                    <><Activity size={14} /> Resume Trading</>
+                    <><Activity size={14} /> Clear Paused Flag</>
                   ) : (
-                    <><PauseCircle size={14} /> Pause All Trading</>
+                    <><PauseCircle size={14} /> Set Paused Flag</>
                   )}
                 </Button>
               </CardContent>
@@ -1307,6 +1322,7 @@ export default function RiskSettings() {
                 <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
                   <ShieldAlert size={16} /> System Status
                 </CardTitle>
+                <CardDescription className="text-xs" data-testid="bot-flags-note">{BOT_FLAGS_NOTE}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 {[
@@ -1330,8 +1346,8 @@ export default function RiskSettings() {
                     ok: !botStatus?.isRunning,
                   },
                   {
-                    label: "Is Paused",
-                    value: botStatus?.isPaused ? "YES" : "NO",
+                    label: "Paused flag",
+                    value: botStatus?.isPaused ? "SET" : "NOT SET",
                     ok: true,
                   },
                   {

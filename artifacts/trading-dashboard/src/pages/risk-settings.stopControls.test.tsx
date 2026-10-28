@@ -5,7 +5,7 @@
 // where to release the switch; System Status showed Bot Mode OFF / Is
 // Running NO / Is Paused NO in green and the audit banner read a pass.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 type MutateOpts = { onSuccess?: (r: unknown) => void; onError?: (e: unknown) => void };
 const h = vi.hoisted(() => ({
@@ -115,5 +115,32 @@ describe("Risk Settings: an engaged kill switch is visible", () => {
     render(<RiskSettings />);
     expect(statusRow("Stop switch")).toMatch(/not read/);
     expect(statusRow("Stop switch")).not.toMatch(/none engaged/);
+  });
+});
+
+// Before: "Pause All Trading" PATCHed bot_settings.isPaused, which no order
+// path reads, yet the toast said "Bot will not open new positions", the header
+// showed "Paused" and the card said "Bot is currently paused".
+describe("Risk Settings: the bot paused flag says what it does", () => {
+  it("setting the flag never claims new positions are stopped, and names the real pause", () => {
+    render(<RiskSettings />);
+    fireEvent.click(screen.getByRole("button", { name: /Set Paused Flag/ }));
+    expect(h.botPatch).toEqual({ isPaused: true });
+    const t = h.toasts.at(-1)!;
+    expect(`${t.title} ${t.description}`).not.toMatch(/will not open new positions|Trading paused/i);
+    expect(t.description).toMatch(/does not stop new trades/);
+    expect(t.description).toMatch(/Pause my trading.*Risk Command Center/);
+    expect(screen.getByTestId("bot-paused-flag-note").textContent).toMatch(/No order path reads this flag/);
+    expect(screen.queryByText(/Suspends new trade entries/)).toBeNull();
+  });
+
+  it("a set flag is labelled as a flag, not as paused trading", () => {
+    h.bot = { ...(h.bot as object), isPaused: true };
+    render(<RiskSettings />);
+    expect(screen.getByTestId("bot-paused-flag-badge").textContent).toMatch(/Bot paused flag set/);
+    expect(screen.queryByText("Bot is currently paused")).toBeNull();
+    expect(screen.getByText(/New trades are not stopped by it/)).toBeTruthy();
+    expect(statusRow("Paused flag")).toMatch(/SET/);
+    expect(screen.getByTestId("bot-flags-note").textContent).toMatch(/no order path reads them/);
   });
 });
