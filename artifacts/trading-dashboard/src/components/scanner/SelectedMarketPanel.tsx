@@ -24,6 +24,7 @@ import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
 import { eventCountdownFromIso } from "@/lib/eventCountdown";
+import { calendarEventWhen, isDateOnlyCalendarSource } from "@/lib/calendarCoverage";
 import { derivFeedStateFromStatus, type DerivStatusPayload } from "@/lib/derivFeedState";
 
 const BASE = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -419,7 +420,16 @@ export function SelectedMarketPanel() {
                         <Badge className={impactBadgeClass(e.impactLevel)}>{e.impactLevel}</Badge>
                         <span className="font-mono text-txt-muted">{e.currency}</span>
                         <span className="flex-1 truncate">{e.title}</span>
-                        <span className="text-txt-muted" data-testid="text-selected-event-countdown">{eventCountdownFromIso(e.eventTime, nowTs)}</span>
+                        <span
+                          className="text-txt-muted"
+                          data-testid="text-selected-event-countdown"
+                          title={isDateOnlyCalendarSource(e.source) ? calendarEventWhen(e, nowTs).display : undefined}
+                        >
+                          {/* A date-only source (FRED) publishes no release time: say
+                              the day, as the calendar page does — never a countdown
+                              to its midnight date marker. */}
+                          {isDateOnlyCalendarSource(e.source) ? calendarEventWhen(e, nowTs).label : eventCountdownFromIso(e.eventTime, nowTs)}
+                        </span>
                       </li>
                     ))}
                   </ul>

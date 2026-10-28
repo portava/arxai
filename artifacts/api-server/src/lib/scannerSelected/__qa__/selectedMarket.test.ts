@@ -27,6 +27,9 @@ import {
   SELECTED_ANALYSIS_WINDOW,
   filterEventRowsForSymbol,
   CALENDAR_NOT_CONFIGURED_NOTE,
+  isDateOnlyEventSource,
+  selectListedEventRows,
+  toSelectedMarketEvent,
 } from "../selectedMarket.js";
 import { analyzeMarketFromCandles } from "../../aiBrain.js";
 import { readFileSync } from "node:fs";
@@ -675,4 +678,98 @@ test("an unchecked calendar is never reported as checked", async () => {
     assert.ok((env.newsRisk.calendarNote ?? "").length > 0);
     assert.doesNotMatch(env.newsRisk.summary, /No relevant/);
   }
+});
+
+// ── FRED date-only releases: listed when dated today, never given a countdown ─
+// FRED publishes only the release DATE; its rows carry a midnight-UTC date
+// marker as eventTime. The loader listed only rows with eventTime >= now, so a
+// FRED release dated today vanished once its marker passed, and the event
+// carried no `source`, so the panel could not tell a date marker from a time.
+const DAY_MS = 86_400_000;
+const utcMidnight = (ms: number) => { const d = new Date(ms); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); };
+
+test("selectListedEventRows keeps a FRED release dated today; a timed row in the past is dropped", () => {
+  const now = Date.parse("2026-10-28T11:40:00.000Z");
+  const today = new Date(utcMidnight(now));
+  const tomorrow = new Date(utcMidnight(now) + DAY_MS);
+  const rows = [
+    { id: "fred-today", eventTime: today, source: "FRED" },
+    { id: "fred-tomorrow", eventTime: tomorrow, source: "FRED" },
+    { id: "timed-past", eventTime: new Date(now - 3600_000), source: "trading_economics" },
+    { id: "timed-future", eventTime: new Date(now + 3600_000), source: "trading_economics" },
+    { id: "fred-yesterday", eventTime: new Date(utcMidnight(now) - DAY_MS), source: "FRED" },
+  ];
+  assert.deepEqual(selectListedEventRows(rows, now).map((r) => r.id), ["fred-today", "fred-tomorrow", "timed-future"]);
+  assert.equal(isDateOnlyEventSource("FRED"), true);
+  assert.equal(isDateOnlyEventSource("fred"), true);
+  assert.equal(isDateOnlyEventSource("trading_economics"), false);
+  assert.equal(isDateOnlyEventSource(null), false);
+});
+
+test("a listed event carries its source and whether a release time was published", () => {
+  const now = Date.parse("2026-10-28T11:40:00.000Z");
+  const row = {
+    externalId: "fred-cpi", eventName: "CPI", currency: "USD", impactLevel: "HIGH",
+    eventTime: new Date(utcMidnight(now) + DAY_MS), source: "FRED",
+  };
+  const e = toSelectedMarketEvent(row, now);
+  assert.equal(e.source, "FRED");
+  assert.equal(e.timePublished, false);
+  const timed = toSelectedMarketEvent({ ...row, source: "trading_economics", eventTime: new Date(now + 3600_000) }, now);
+  assert.equal(timed.timePublished, true);
+  assert.equal(timed.minutesUntil, 60);
+});
+
+test("the news-risk line never gives a FRED date marker an exact countdown", async () => {
+  clearSelectedMarketCache();
+  const now = Date.now();
+  const marker = new Date(utcMidnight(now) + DAY_MS).toISOString();
+  const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", refresh: true },
+    {
+      getChartCandlesFn: stub,
+      loadEventsFn: async () => ({
+        events: [{
+          externalId: "fred-cpi", title: "CPI", currency: "USD", impactLevel: "HIGH", eventTime: marker,
+          minutesUntil: Math.round((Date.parse(marker) - now) / 60000), source: "FRED", timePublished: false,
+        }],
+        scorerInput: [{
+          id: "fred-cpi", title: "CPI", country: "United States", currency: "USD", impact: "high",
+          actual: null, forecast: null, previous: null, eventTime: marker, affectedMarkets: ["EURUSD"], source: "FRED",
+        }],
+        calendar: { checked: true, note: null },
+      }),
+    },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.doesNotMatch(env.newsRisk.summary, /\bin \d+m\b|\d+m ago/);
+  assert.match(env.newsRisk.summary, /release time not published/);
+  assert.match(env.newsRisk.summary, new RegExp(marker.slice(0, 10)));
+});
+
+test("a FRED release dated today that the scorer cannot time is named in the news-risk line", async () => {
+  clearSelectedMarketCache();
+  const now = Date.now();
+  const todayMarker = new Date(utcMidnight(now)).toISOString();
+  const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", refresh: true },
+    {
+      getChartCandlesFn: stub,
+      loadEventsFn: async () => ({
+        events: [{
+          externalId: "fred-gdp", title: "GDP", currency: "USD", impactLevel: "HIGH", eventTime: todayMarker,
+          minutesUntil: Math.round((Date.parse(todayMarker) - now) / 60000), source: "FRED", timePublished: false,
+        }],
+        scorerInput: [],
+        calendar: { checked: true, note: null },
+      }),
+    },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.equal(env.upcomingEvents.length, 1);
+  assert.match(env.newsRisk.summary, /dated today with no published release time/);
 });
