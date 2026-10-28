@@ -84,6 +84,11 @@ mock.module("../../safety/platformSwitches.js", {
     platformStop: async () => ({}),
     platformStopForVenue: () => ({ engaged: false, detail: {} }),
     readSafetyCorePosture: async () => ({ operationalMode: "PAPER_ONLY" }),
+    // The report's livePosture reads the platform live-execution switch.
+    readPlatformSwitches: async () => ({
+      readable: true,
+      liveBrokerExecution: { envEnabled: false, operatorArmed: false, enabled: false, armedAt: null, armedBy: null, armedBridgeId: null },
+    }),
   },
 });
 mock.module("../../marketData/marketDataService.js", {

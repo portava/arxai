@@ -14,8 +14,8 @@
 //     /api/me/account-mode (computeAccountShell + getMyArming +
 //     readPlatformSwitches → computeAccountModePrecedence, non-admin wording),
 //     so the sentence is the cockpit's own cleanModeLabel/cleanUserMessage;
-//   * for the platform (reports that are not about one account): the
-//     live-execution master switch from readPlatformSwitches.
+//   * for the platform (reports that are not about one account): see
+//     ./platformLivePosture.ts (the live-execution master switch).
 //
 // It describes; it decides nothing. No gate reads it, nothing here can arm,
 // enable or loosen anything, and a read that fails is reported as UNKNOWN —
@@ -24,6 +24,7 @@
 import { computeAccountShell } from "../../routes/meAccountShell.js";
 import { getMyArming } from "../live/liveArming.js";
 import { readPlatformSwitches, type PlatformSwitches } from "../safety/platformSwitches.js";
+import { hhmm } from "./platformLivePosture.js";
 import {
   computeAccountModePrecedence,
   type CurrentAccountMode,
@@ -31,8 +32,6 @@ import {
 
 export const ACCOUNT_POSTURE_SOURCE =
   "Account mode check (the same resolver as /api/me/account-mode and the dashboard's Trading Permission card)";
-export const PLATFORM_POSTURE_SOURCE =
-  "Platform live-execution switch (server setting AND operator arm, global_trading_settings)";
 
 export interface AccountLivePosture {
   /** LIVE_ARMED: armed and no account blocker. LIVE_BLOCKED: shown as live but a blocker stops live orders. NOT_LIVE: demo or paper. UNKNOWN: could not be read. */
@@ -46,15 +45,6 @@ export interface AccountLivePosture {
   checkedAt: string;
 }
 
-export interface PlatformLivePosture {
-  state: "ON" | "OFF" | "UNKNOWN";
-  serverSettingOn: boolean | null;
-  operatorArmed: boolean | null;
-  plainEnglish: string;
-  source: string;
-  checkedAt: string;
-}
-
 export interface AccountPostureReads {
   accountShell: {
     tradingMode: "DISABLED" | "SIMULATED" | "DEMO" | "LIVE";
@@ -63,10 +53,6 @@ export interface AccountPostureReads {
   };
   arming: { isArmed?: boolean | null } | null;
   switches: Pick<PlatformSwitches, "liveBrokerExecution">;
-}
-
-function hhmm(at: Date): string {
-  return at.toISOString().slice(11, 16) + " UTC";
 }
 
 /** Pure: the account posture from the same inputs /api/me/account-mode reads. */
@@ -128,56 +114,5 @@ export async function readAccountLivePosture(userId: number): Promise<AccountLiv
     return accountPostureFrom({ accountShell, arming, switches });
   } catch {
     return unknownAccountPosture();
-  }
-}
-
-/** Pure: the platform live-execution posture from one switch read. */
-export function platformPostureFrom(
-  switches: Pick<PlatformSwitches, "readable" | "liveBrokerExecution">,
-  at: Date = new Date(),
-): PlatformLivePosture {
-  const checkedAt = at.toISOString();
-  if (!switches.readable) {
-    return {
-      state: "UNKNOWN",
-      serverSettingOn: null,
-      operatorArmed: null,
-      plainEnglish:
-        `The platform's live-execution switch could not be read (tried ${hhmm(at)}), so it is unknown whether live orders can be sent. ` +
-        "Order checks treat an unreadable switch as off.",
-      source: PLATFORM_POSTURE_SOURCE,
-      checkedAt,
-    };
-  }
-  const lbe = switches.liveBrokerExecution;
-  const onOff = (b: boolean) => (b ? "on" : "off");
-  const detail = `server setting ${onOff(lbe.envEnabled)}, operator arm ${onOff(lbe.operatorArmed)}`;
-  return lbe.enabled
-    ? {
-        state: "ON",
-        serverSettingOn: lbe.envEnabled,
-        operatorArmed: lbe.operatorArmed,
-        plainEnglish:
-          `Live broker execution is switched on for the platform (${detail}; checked ${hhmm(at)}). ` +
-          "An account sends live orders only when it is armed and every server check passes.",
-        source: PLATFORM_POSTURE_SOURCE,
-        checkedAt,
-      }
-    : {
-        state: "OFF",
-        serverSettingOn: lbe.envEnabled,
-        operatorArmed: lbe.operatorArmed,
-        plainEnglish: `Live broker execution is switched off for the platform (${detail}; checked ${hhmm(at)}).`,
-        source: PLATFORM_POSTURE_SOURCE,
-        checkedAt,
-      };
-}
-
-/** The platform posture from one switch read. Never throws (the reader fails closed to "unreadable"). */
-export async function readPlatformLivePosture(): Promise<PlatformLivePosture> {
-  try {
-    return platformPostureFrom(await readPlatformSwitches());
-  } catch {
-    return platformPostureFrom({ readable: false, liveBrokerExecution: { envEnabled: false, operatorArmed: false, enabled: false, armedAt: null, armedBy: null, armedBridgeId: null } });
   }
 }

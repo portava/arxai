@@ -23,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { auditEvent } from "./audit.js";
 import { platformStop, platformStopForVenue, readSafetyCorePosture } from "../safety/platformSwitches.js";
 import { patchConfig, getConfig } from "./config.js";
+import { readPlatformLivePosture, type PlatformLivePosture } from "./platformLivePosture.js";
 import { marketDataHealthCheck } from "../marketData/marketDataService.js";
 
 export type SubsystemBuild = "AA"|"BB"|"CC"|"DD"|"EE"|"FF"|"GG"|"HH"|"II"|"JJ"|"KK"|"LL";
@@ -99,8 +100,16 @@ export interface HealthCheckReport {
   health_check_id: string;
   generated_at: string;
   overallStatus: "HEALTHY" | "DEGRADED" | "UNSAFE" | "FAILED";
+  /**
+   * Legacy constants (also persisted): they name the paper stack this report
+   * covers, NOT the platform's live-trading state. See liveTradingStatusScope
+   * and livePosture.
+   */
   liveTradingStatus: "DISABLED";
   mode: "PAPER_ONLY";
+  liveTradingStatusScope: string;
+  /** The platform's live-execution switch, read when the report ran. */
+  livePosture: PlatformLivePosture;
   subsystemStatus: Record<SubsystemBuild, SubsystemReport>;
   databaseStatus: DatabaseStatus;
   endpointStatus: EndpointStatus;
@@ -325,6 +334,13 @@ async function probeEndpoints(): Promise<EndpointStatus> {
   return { totalChecked: results.length, passed, failed, degraded, results };
 }
 
+// liveTradingStatus / mode are fixed labels for the paper stack this report
+// checks; an armed LIVE_SHARED trader can trade live while they read
+// DISABLED / PAPER_ONLY. Said in the report so the constants are not read as
+// the platform's live state, which is livePosture.
+const LIVE_STATUS_SCOPE =
+  "liveTradingStatus and mode describe the paper stack this health check covers, not whether live trading is on. livePosture is the platform's live-execution switch as read for this report.";
+
 // ── Safety probe (READ-ONLY) ────────────────────────────────────────────────
 async function probeSafety(subs: Record<SubsystemBuild, SubsystemReport>): Promise<SafetyStatus> {
   const warnings: string[] = [];
@@ -451,9 +467,12 @@ export async function runHealthCheck(): Promise<HealthCheckReport> {
   };
   let overallStatus = deriveOverall();
 
+  const livePosture = await readPlatformLivePosture();
   const report: HealthCheckReport = {
     health_check_id: id, generated_at, overallStatus,
     liveTradingStatus: "DISABLED", mode: "PAPER_ONLY",
+    liveTradingStatusScope: LIVE_STATUS_SCOPE,
+    livePosture,
     subsystemStatus, databaseStatus, endpointStatus, safetyStatus, secretSafetyStatus, performanceStatus,
     recommendedAdminActions, warnings, errors,
   };
