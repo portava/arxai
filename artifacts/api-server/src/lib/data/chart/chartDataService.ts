@@ -55,6 +55,7 @@ import {
   getFormingBar,
   isFormingTickSource,
   getFormingTickAgeMs,
+  getFeedFreshness,
   type FormingBarSnapshot,
 } from "./formingBarComposer.js";
 
@@ -284,7 +285,16 @@ async function buildChartFeed(
   const newestOpenLeadMs = lastCandle ? newestBarLeadMs(Date.parse(lastCandle.openTime), now) : null;
   const futureStampObserved = result.ok && (result.provenanceNotes ?? []).includes(FUTURE_STAMPED_SERIES_NOTE);
   const timestampsUnconfirmed = feedTimestampsUnconfirmed({ trailingIntervals: trailing, newestOpenLeadMs, futureStampObserved });
-  const lastTickTime = derivSymbolStatus?.lastTickAt ?? null;
+  // "Last tick": the Deriv WS tick for a Deriv-served series, else the MT5
+  // broker tick the server last RECEIVED for this symbol (receive time — the
+  // broker clock is not zone-verified). A quote the broker is only replaying
+  // (market frozen) is not a new tick, so it reports unknown, never "just now".
+  const mt5TickFreshness = source === "mt5_broker" ? getFeedFreshness(symbol, now, "mt5_broker") : null;
+  const lastTickTime = derivBacked
+    ? derivSymbolStatus?.lastTickAt ?? null
+    : mt5TickFreshness && !mt5TickFreshness.marketFrozen
+      ? new Date(mt5TickFreshness.lastTickWallMs).toISOString()
+      : null;
 
   // ── Forming tip (Task #496, opt-in, any live provider) ────────────────
   // Fold the live-tick forming bar onto the newest bar for the DISPLAY surface.
