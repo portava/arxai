@@ -6,6 +6,9 @@
 //     Loss Remaining" equal to the whole cap even after losing money today.
 //   * A user with no allocation row and no virtual account (personal MT5,
 //     demo, paper) saw My Balance / My Equity / Margin Used as $0.
+//   * "Open P/L" was the lifetime realized P/L (virtualPnl) for shared-master
+//     users and the sum of paper_trades.pnl (null until close, so $0) for
+//     everyone else; "Open Exposure" was paper-journal lots for personal MT5.
 import { test, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 process.env.DATABASE_URL = "postgres://qa:qa@127.0.0.1:1/offline_never_connects";
@@ -145,4 +148,51 @@ test("an allocated user's balance names its source; margin is never reported as 
   assert.match(shell.allocation.balanceNote, /allocation your operator assigned/);
   assert.equal(shell.allocation.marginUsed, null);
   assert.match(shell.allocation.marginNote, /not measured/i);
+});
+
+test("shared master: Open P/L is the live floating P/L, not the realized virtualPnl", async () => {
+  platformMode = "LIVE";
+  accountRoutingMode = "SHARED_MASTER_MT5";
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  tables.virtual_trading_accounts = [{ virtualBalance: 1250, virtualEquity: 1250, virtualMarginUsed: 0, virtualPnl: 250, status: "active", sharedMasterAccountId: 3 }];
+  tables.shared_trade_attribution = [{ lotSize: 0.2 }];
+  investor = liveSnapshot({ floatingPnL: -12.5, openTradeCount: 1 });
+
+  const shell = await computeAccountShell(USER);
+
+  assert.notEqual(shell.pnl.openPnl, 250, "realized P/L is not open P/L");
+  assert.equal(shell.pnl.openPnl, -12.5);
+  assert.equal(shell.pnl.openPnlSource, "live_shared_positions");
+  assert.equal(shell.risk.openExposureLots, 0.2);
+  assert.equal(shell.risk.openExposureSource, "shared_trade_attribution");
+
+  // Same user, live feed stale: not shown as current.
+  investor = liveSnapshot({ floatingPnL: -12.5, openTradeCount: 1, freshness: { status: "stale", lastUpdatedAt: null, ageMs: null } });
+  const stale = await computeAccountShell(USER);
+  assert.equal(stale.pnl.openPnl, null);
+  assert.match(stale.pnl.openPnlNote, /not fresh/);
+});
+
+test("demo / personal MT5: Open P/L is not measured (never a $0 journal sum); personal exposure is not read", async () => {
+  platformMode = "DEMO";
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "DEMO" }];
+  tables.paper_trades = [{ lotSize: 0.3, pnl: null, status: "open" }];
+  investor = liveSnapshot({ source: "demo" });
+
+  const demo = await computeAccountShell(USER);
+  assert.equal(demo.pnl.openPnl, null);
+  assert.equal(demo.pnl.openPnlSource, null);
+  assert.match(demo.pnl.openPnlNote, /not measured/i);
+  assert.equal(demo.risk.openExposureLots, 0.3);
+  assert.equal(demo.risk.openExposureSource, "paper_trades");
+  assert.match(demo.risk.openExposureNote, /trade journal/);
+
+  platformMode = "LIVE";
+  tables.user_trading_permissions = [{ accountRoutingOverride: "inherit", tradingMode: "LIVE" }];
+  connections = [{ accountType: "live" }];
+  const personal = await computeAccountShell(USER);
+  assert.equal(personal.accountMode, "PERSONAL_MT5");
+  assert.equal(personal.pnl.openPnl, null);
+  assert.equal(personal.risk.openExposureLots, null, "paper-journal lots are not a live account's exposure");
+  assert.equal(personal.risk.openExposureSource, null);
 });

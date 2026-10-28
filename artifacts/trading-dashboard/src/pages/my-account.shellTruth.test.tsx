@@ -27,14 +27,18 @@ function shell(patch: (s: Shell) => void = () => {}): Shell {
       allocationPending: false, frozen: false, freezeMessage: null,
     },
     pnl: {
-      openPnl: 0, closedPnlToday: null, closedPnlWeek: null, closedPnlTotal: null,
+      openPnl: null, openPnlSource: null,
+      openPnlNote: "Not measured: floating P/L is only read for live positions on the shared master account, not for your account here.",
+      closedPnlToday: null, closedPnlWeek: null, closedPnlTotal: null,
       tradesToday: null, winsToday: null, lossesToday: null, closedMeasured: false,
       closedNote: "Not measured: this card has no source for your closed trades yet, so today's P/L, closed P/L and trade counts are not shown.",
     },
     risk: {
       availableRiskAmount: 10, dailyLossRemaining: null,
       dailyLossRemainingNote: "Not measured: today's closed P/L is not available here, so the loss left under your daily limit cannot be worked out.",
-      openExposureLots: 0, maxLotSize: null, maxOpenTrades: null, maxDailyLossAmount: 100,
+      openExposureLots: null, openExposureSource: null,
+      openExposureNote: "Not measured: positions on your own MT5 account are not read here.",
+      maxLotSize: null, maxOpenTrades: null, maxDailyLossAmount: 100,
       maxExposurePerSymbolLots: null, allowedSymbols: null, requireStopLoss: false, limits: {},
     },
     notes: { needsReviewItems: 0, sharedMasterAccountAssigned: false },
@@ -87,5 +91,26 @@ describe("My Account — measured figures only", () => {
     expect(screen.getByTestId("my-allocation").textContent).toBe("—");
     expect(screen.getByTestId("my-balance-source").textContent).toMatch(/no shared-account allocation or virtual account/);
     expect(within(screen.getByTestId("my-balance-card")).queryByText("$0")).toBeNull();
+  });
+
+  it("Open P/L that was not measured reads 'Not measured' and says why; unread exposure is not 0.00", async () => {
+    stub(shell());
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("my-pnl-card")).toBeTruthy());
+    expect(screen.getByTestId("my-pnl-open").textContent).toBe("Not measured");
+    expect(screen.getByTestId("my-pnl-open-note").textContent).toMatch(/only read for live positions/);
+    expect(screen.getByTestId("my-open-exposure").textContent).toBe("Not measured");
+    expect(screen.getByTestId("my-open-exposure-note").textContent).toMatch(/own MT5 account are not read/);
+  });
+
+  it("journal exposure is labelled as journal lots", async () => {
+    stub(shell((s) => {
+      s.risk.openExposureLots = 0.3;
+      s.risk.openExposureSource = "paper_trades";
+      s.risk.openExposureNote = "Lots of the open entries in your trade journal, not positions read from a broker.";
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("my-open-exposure").textContent).toBe("0.30"));
+    expect(screen.getByText("Open Exposure (journal lots)")).toBeTruthy();
   });
 });

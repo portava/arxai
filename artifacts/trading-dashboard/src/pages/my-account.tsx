@@ -45,7 +45,10 @@ type ShellResponse = {
     freezeMessage?: string | null;
   };
   pnl: {
-    openPnl: number;
+    // Floating P/L of open positions; null = not measured / not current (see openPnlNote).
+    openPnl: number | null;
+    openPnlSource?: "live_shared_positions" | null;
+    openPnlNote?: string;
     // null = not measured (the server has no closed-trade source for this view).
     closedPnlToday: number | null;
     closedPnlWeek: number | null;
@@ -60,7 +63,10 @@ type ShellResponse = {
     availableRiskAmount: number | null;
     dailyLossRemaining: number | null;
     dailyLossRemainingNote?: string | null;
-    openExposureLots: number;
+    // null = not measured (see openExposureNote).
+    openExposureLots: number | null;
+    openExposureSource?: "shared_trade_attribution" | "paper_trades" | null;
+    openExposureNote?: string;
     maxLotSize: number | null;
     maxOpenTrades: number | null;
     maxDailyLossAmount: number | null;
@@ -311,16 +317,22 @@ export default function MyAccountPage() {
         </CardHeader>
         <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Stat label="Today's P/L" valueClass={pnlClass(s.pnl.closedPnlToday)} value={fmtPnl(s.pnl.closedPnlToday)} testid="my-pnl-today" />
-          <Stat label="Open P/L" valueClass={pnlClass(s.pnl.openPnl)} value={fmtPnl(s.pnl.openPnl)} testid="my-pnl-open" />
+          <Stat
+            label="Open P/L"
+            valueClass={pnlClass(s.pnl.openPnl)}
+            value={s.pnl.openPnl == null && s.pnl.openPnlSource ? NOT_AVAILABLE : fmtPnl(s.pnl.openPnl)}
+            testid="my-pnl-open"
+          />
           <Stat label="Closed P/L (7d)" valueClass={pnlClass(s.pnl.closedPnlWeek)} value={fmtPnl(s.pnl.closedPnlWeek)} testid="my-pnl-week" />
           <Stat label="Closed P/L (total)" valueClass={pnlClass(s.pnl.closedPnlTotal)} value={fmtPnl(s.pnl.closedPnlTotal)} testid="my-pnl-total" />
           <Stat label="Trades Today" value={fmtCount(s.pnl.tradesToday)} testid="my-trades-today" />
           <Stat label="Wins Today" value={fmtCount(s.pnl.winsToday)} testid="my-wins-today" />
           <Stat label="Losses Today" value={fmtCount(s.pnl.lossesToday)} testid="my-losses-today" />
         </CardContent>
-        {s.pnl.closedNote && (
-          <CardContent className="pt-0 text-xs text-txt-secondary" data-testid="my-pnl-closed-note">
-            {s.pnl.closedNote}
+        {(s.pnl.openPnlNote || s.pnl.closedNote) && (
+          <CardContent className="pt-0 text-xs text-txt-secondary space-y-1">
+            {s.pnl.openPnlNote && <div data-testid="my-pnl-open-note">Open P/L: {s.pnl.openPnlNote}</div>}
+            {s.pnl.closedNote && <div data-testid="my-pnl-closed-note">{s.pnl.closedNote}</div>}
           </CardContent>
         )}
       </Card>
@@ -339,7 +351,11 @@ export default function MyAccountPage() {
             value={s.risk.dailyLossRemaining == null && s.risk.dailyLossRemainingNote ? NOT_MEASURED : fmtMoney(s.risk.dailyLossRemaining)}
             testid="my-daily-loss-remaining"
           />
-          <Stat label="Open Exposure (lots)" value={s.risk.openExposureLots.toFixed(2)} testid="my-open-exposure" />
+          <Stat
+            label={s.risk.openExposureSource === "paper_trades" ? "Open Exposure (journal lots)" : "Open Exposure (lots)"}
+            value={s.risk.openExposureLots == null ? NOT_MEASURED : s.risk.openExposureLots.toFixed(2)}
+            testid="my-open-exposure"
+          />
           <Stat label="Max Lot Size" value={s.risk.maxLotSize != null ? s.risk.maxLotSize.toFixed(2) : "—"} testid="my-max-lot" />
           <Stat label="Max Open Trades" value={s.risk.maxOpenTrades != null ? String(s.risk.maxOpenTrades) : "—"} testid="my-max-open" />
           <Stat label="Max Daily Loss" value={fmtMoney(s.risk.maxDailyLossAmount)} testid="my-max-daily-loss" />
@@ -353,6 +369,7 @@ export default function MyAccountPage() {
         <CardContent className="pt-0 text-xs text-txt-secondary space-y-1" data-testid="my-risk-limits-in-force">
           <div>Limits shown are the ones enforced on every order. Your saved preferences are edited in Risk settings.</div>
           {s.risk.dailyLossRemainingNote && <div data-testid="my-daily-loss-remaining-note">{s.risk.dailyLossRemainingNote}</div>}
+          {s.risk.openExposureNote && <div data-testid="my-open-exposure-note">Open exposure: {s.risk.openExposureNote}</div>}
           {Object.entries(s.risk.limits ?? {})
             .filter(([k, v]) => ["maxLotSize", "maxOpenTrades", "maxDailyLossAmount", "maxRiskPerTradePercent"].includes(k) && v.reason && v.overriddenBy !== "default")
             .map(([k, v]) => <div key={k} data-testid={`my-risk-override-${k}`}>{v.label}: {v.reason}</div>)}

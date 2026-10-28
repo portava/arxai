@@ -85,7 +85,12 @@ export type AccountShellResponse = {
     freezeMessage: string | null;
   };
   pnl: {
-    openPnl: number;
+    // Floating P/L of open positions, read from the canonical live snapshot
+    // for live shared-master positions only. null = not measured / not
+    // current (openPnlNote says which). Never realized P/L, never a journal sum.
+    openPnl: number | null;
+    openPnlSource: "live_shared_positions" | null;
+    openPnlNote: string;
     // Closed P/L and today's trade counts. null = not measured: this view has
     // no ledger for closed trades (performance_daily, the table it used to
     // read, has no writer), so it reports them as unknown rather than 0.
@@ -105,7 +110,11 @@ export type AccountShellResponse = {
     // measured (then dailyLossRemainingNote says so) — never the whole cap.
     dailyLossRemaining: number | null;
     dailyLossRemainingNote: string | null;
-    openExposureLots: number;
+    // Lots open, from the ledger named by openExposureSource; null = not
+    // measured (positions on a personal MT5 account are not read here).
+    openExposureLots: number | null;
+    openExposureSource: "shared_trade_attribution" | "paper_trades" | null;
+    openExposureNote: string;
     maxLotSize: number | null;
     maxOpenTrades: number | null;
     maxDailyLossAmount: number | null;
@@ -239,7 +248,8 @@ export async function computeAccountShell(
     const shellBalance = vAccounts.reduce((s, a) => s + Number(a.virtualBalance || 0), 0);
     const shellEquity = vAccounts.reduce((s, a) => s + Number(a.virtualEquity || 0), 0);
     const allocatedMargin = vAccounts.reduce((s, a) => s + Number(a.virtualMarginUsed || 0), 0);
-    const allocatedOpenPnl = vAccounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0);
+    // virtualPnl is realized P/L booked from closed trades (virtualPnlSync).
+    const allocatedRealizedPnl = vAccounts.reduce((s, a) => s + Number(a.virtualPnl || 0), 0);
     const sharedMasterAssigned = vAccounts.some(
       (a) => a.sharedMasterAccountId != null && String(a.status ?? "").toLowerCase() === "active"
     );
@@ -290,7 +300,7 @@ export async function computeAccountShell(
       ? "user_slot_allocation"
       : vAccounts.length > 0 ? "virtual_trading_accounts" : null;
     const allocatedBalance: number | null = hasAlloc
-      ? round2(totalAlloc + allocatedOpenPnl)
+      ? round2(totalAlloc + allocatedRealizedPnl)
       : balanceSource != null ? shellBalance : null;
     const allocatedEquity: number | null = hasAlloc
       ? allocatedBalance
@@ -328,11 +338,13 @@ export async function computeAccountShell(
       "Not measured: this card has no source for your closed trades yet, so today's P/L, " +
       "closed P/L and trade counts are not shown.";
 
-    // 6) Open exposure & open P/L (per-user). For SHARED_MASTER_MT5 use
-    //    open attributions; otherwise use open paper trades. Both already
-    //    scoped by userId.
-    let openExposureLots = 0;
-    let openPnl = allocatedOpenPnl;
+    // 6) Open exposure (per-user). SHARED_MASTER_MT5: open attributions.
+    //    Personal live MT5: not read here (null). Otherwise: open entries of
+    //    the paper journal (paper_trades), labelled as such. Open P/L is read
+    //    from the canonical live snapshot below, never from these rows.
+    let openExposureLots: number | null = null;
+    let openExposureSource: AccountShellResponse["risk"]["openExposureSource"] = null;
+    let openExposureNote = "Not measured: positions on your own MT5 account are not read here.";
     if (routingMode === "SHARED_MASTER_MT5") {
       const openAtts = await db
         .select({
@@ -346,11 +358,12 @@ export async function computeAccountShell(
           )
         );
       openExposureLots = openAtts.reduce((s, r) => s + Number(r.lotSize || 0), 0);
-    } else {
+      openExposureSource = "shared_trade_attribution";
+      openExposureNote = "Lots of your open trades on the shared master account.";
+    } else if (accountMode !== "PERSONAL_MT5") {
       const openPapers = await db
         .select({
           lotSize: paperTradesTable.lotSize,
-          pnl: paperTradesTable.pnl,
         })
         .from(paperTradesTable)
         .where(
@@ -360,7 +373,8 @@ export async function computeAccountShell(
           )
         );
       openExposureLots = openPapers.reduce((s, r) => s + Number(r.lotSize || 0), 0);
-      openPnl = openPapers.reduce((s, r) => s + Number(r.pnl || 0), 0);
+      openExposureSource = "paper_trades";
+      openExposureNote = "Lots of the open entries in your trade journal, not positions read from a broker.";
     }
 
     // 7) Approval + trading status.
@@ -464,6 +478,21 @@ export async function computeAccountShell(
       ? null
       : await buildInvestorLiveBalanceSnapshot(userId);
 
+    // Open P/L = floating P/L of open positions. The only per-user source is
+    // the canonical snapshot, which reads positions for live shared-master
+    // users only. virtualPnl (realized closes) and paper_trades.pnl (null
+    // until a journal entry closes) are not open P/L and are not used.
+    const liveShared = inv != null && inv.source === "live_shared" && routingMode === "SHARED_MASTER_MT5";
+    const openPnl: number | null = liveShared && inv!.freshness.status === "fresh" ? inv!.floatingPnL : null;
+    const openPnlSource: AccountShellResponse["pnl"]["openPnlSource"] = liveShared ? "live_shared_positions" : null;
+    const openPnlNote = !liveShared
+      ? "Not measured: floating P/L is only read for live positions on the shared master account, not for your account here."
+      : inv!.freshness.status !== "fresh"
+        ? "Not current: the live position feed is not fresh, so open P/L is not shown here. Live balance above shows the last reported value and its age."
+        : inv!.floatingPnL == null
+          ? "Not available: your open positions have not reported floating P/L yet."
+          : "Floating P/L of your open positions on the shared master account.";
+
     const response: AccountShellResponse = {
       ok: true,
       userId,
@@ -499,6 +528,8 @@ export async function computeAccountShell(
       },
       pnl: {
         openPnl,
+        openPnlSource,
+        openPnlNote,
         closedPnlToday,
         closedPnlWeek: null,
         closedPnlTotal: null,
@@ -513,6 +544,8 @@ export async function computeAccountShell(
         dailyLossRemaining,
         dailyLossRemainingNote,
         openExposureLots,
+        openExposureSource,
+        openExposureNote,
         maxLotSize: effMaxLotSize,
         maxOpenTrades: effMaxOpenTrades,
         maxDailyLossAmount: effMaxDailyLossAmount,
