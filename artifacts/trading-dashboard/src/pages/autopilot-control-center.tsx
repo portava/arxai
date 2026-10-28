@@ -15,8 +15,20 @@ type Status = {
   dailyRiskRemainingUsd: number; dailyTradesRemaining: number;
   activeRiskLocks: string[];
   mt5Connected: boolean; killSwitchEngaged: boolean;
+  /** False when nothing feeds the losing-streak counter (it then stays 0). Missing = not reported. */
+  consecutiveLossesMeasured?: boolean;
+  /** The platform's install-wide stops as they bear on the autopilot. Missing = not reported. */
+  platformStop?: PlatformStop;
   discipline: number;
   lastDecision: Decision | null;
+};
+
+type PlatformStopSource = {
+  source: string; reason: string | null; engagedAt: string | null; haltsAutopilotOrders: boolean;
+};
+type PlatformStop = {
+  readable: boolean; engaged: boolean; sources: PlatformStopSource[];
+  haltsAutopilotOrders: boolean; readByAutopilot: boolean; checkedAt: string;
 };
 
 type Decision = {
@@ -29,7 +41,32 @@ type Decision = {
   humanOverride?: { mark: string; note?: string };
 };
 
-type Lock = { code: string; tripped: boolean; reason?: string };
+type Lock = {
+  code: string; tripped: boolean; reason?: string; ts?: string;
+  /** True only when some autopilot code path sets this lock. Missing = not confirmed. */
+  evaluated?: boolean;
+  lastCheckedAt?: string | null;
+  checks?: string;
+};
+
+const PLATFORM_STOP_NAME: Record<string, string> = {
+  safety_core_kill_switch: "Safety-core kill switch",
+  platform_emergency_stop: "Platform emergency stop",
+};
+
+/** What a lock badge may claim. A lock reads "clear" only when the autopilot checked it. */
+function lockReading(l: Lock): { label: string; tone: "set" | "clear" | "unchecked" } {
+  if (l.tripped) return { label: "set", tone: "set" };
+  if (l.evaluated !== true) return { label: "not checked", tone: "unchecked" };
+  if (!l.lastCheckedAt) return { label: "not checked yet", tone: "unchecked" };
+  return { label: "clear", tone: "clear" };
+}
+
+function fmtTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? new Date(t).toLocaleString() : null;
+}
 
 const MODE_COLOR: Record<string, string> = {
   OFF: "bg-zinc-500/20 text-zinc-300",
@@ -182,12 +219,19 @@ export default function AutopilotControlCenter() {
       </div>
 
       {s?.killSwitchEngaged && (
-        <Card className="border-rose-500/40 bg-rose-500/10">
-          <CardContent className="p-3 text-rose-300 text-sm flex items-center gap-2">
-            <AlertOctagon className="h-4 w-4" />Kill switch is engaged — autopilot cannot start.
+        <Card className="border-rose-500/40 bg-rose-500/10" data-testid="autopilot-emergency-stop">
+          <CardContent className="p-3 text-rose-300 text-sm flex items-start gap-2">
+            <AlertOctagon className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
+              Autopilot emergency stop is engaged{fmtTime(locks.find((l) => l.code === "KILL_SWITCH")?.ts) ? ` since ${fmtTime(locks.find((l) => l.code === "KILL_SWITCH")?.ts)}` : ""}.
+              New sessions and scans are refused. Nothing on this page releases it; it clears only when the API server restarts.
+              This is the autopilot's own stop, not the platform kill switch.
+            </span>
           </CardContent>
         </Card>
       )}
+
+      {s && <PlatformStopNotice stop={s.platformStop} />}
 
       <Card>
         <CardHeader><CardTitle className="text-base">Start session</CardTitle>
@@ -227,21 +271,43 @@ export default function AutopilotControlCenter() {
           <Stat label="Open positions" value={String(s.openSimulatedPositions)} />
           <Stat label="Daily risk left" value={`$${s.dailyRiskRemainingUsd}`} />
           <Stat label="Trades remaining" value={String(s.dailyTradesRemaining)} />
-          <Stat label="Consec losses" value={String(s.consecutiveLosses)} />
+          <Stat label="Consec losses" value={s.consecutiveLossesMeasured === true ? String(s.consecutiveLosses) : "not measured"} />
           <Stat label="Discipline" value={`${s.discipline}/100`} />
           <Stat label="MT5" value={s.mt5Connected ? "ON" : "DEFERRED"} />
         </div>
       )}
 
       <Card>
-        <CardHeader><CardTitle className="text-base">Safety locks</CardTitle></CardHeader>
-        <CardContent className="flex flex-wrap gap-1">
+        <CardHeader><CardTitle className="text-base">Safety locks</CardTitle>
+          <CardDescription>
+            A lock reads clear only after the autopilot checked it. A lock marked "not checked" has no autopilot check behind it.
+            A set lock stays set until the API server restarts. Only KILL_SWITCH stops sessions and scans.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
           {locks.length === 0 && <p className="text-xs text-muted-foreground">No locks data yet.</p>}
-          {locks.map((l) => (
-            <Badge key={l.code} variant={l.tripped ? "destructive" : "outline"} title={l.reason ?? ""}>
-              {l.code}{l.tripped ? " ⚠" : ""}
-            </Badge>
-          ))}
+          <div className="flex flex-wrap gap-1">
+            {locks.map((l) => {
+              const r = lockReading(l);
+              const when = fmtTime(l.tripped ? l.ts : l.lastCheckedAt);
+              return (
+                <Badge
+                  key={l.code}
+                  data-testid={`lock-${l.code}`}
+                  variant={r.tone === "set" ? "destructive" : "outline"}
+                  className={r.tone === "unchecked" ? "border-dashed text-muted-foreground" : undefined}
+                  title={[l.reason, l.checks, when ? `as of ${when}` : null].filter(Boolean).join(" — ")}
+                >
+                  {l.code} · {r.label}
+                </Badge>
+              );
+            })}
+          </div>
+          {locks.some((l) => lockReading(l).tone === "unchecked") && (
+            <p className="text-xs text-muted-foreground" data-testid="locks-unchecked">
+              Not checked by the autopilot: {locks.filter((l) => lockReading(l).tone === "unchecked").map((l) => l.code).join(", ")}.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -286,6 +352,54 @@ export default function AutopilotControlCenter() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function PlatformStopNotice({ stop }: { stop: PlatformStop | undefined }) {
+  if (!stop) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid="platform-stop">
+        Platform kill switch: not reported by the server.
+      </p>
+    );
+  }
+  const asOf = fmtTime(stop.checkedAt);
+  if (!stop.readable) {
+    return (
+      <Card className="border-amber-500/40 bg-amber-500/10" data-testid="platform-stop">
+        <CardContent className="p-3 text-amber-300 text-sm">
+          Could not read the platform kill switch{asOf ? ` (checked ${asOf})` : ""}. The pre-trade Risk Governor treats a stop it
+          cannot read as engaged, so it refuses the autopilot's simulator orders. The autopilot itself does not read this switch.
+        </CardContent>
+      </Card>
+    );
+  }
+  if (!stop.engaged) {
+    return (
+      <p className="text-xs text-muted-foreground" data-testid="platform-stop">
+        Platform kill switch and emergency stop: released{asOf ? ` as of ${asOf}` : ""}.
+      </p>
+    );
+  }
+  return (
+    <Card className="border-rose-500/40 bg-rose-500/10" data-testid="platform-stop">
+      <CardContent className="p-3 text-rose-300 text-sm space-y-1">
+        {stop.sources.map((src) => {
+          const since = fmtTime(src.engagedAt);
+          return (
+            <p key={src.source}>
+              {PLATFORM_STOP_NAME[src.source] ?? src.source} is engaged{since ? ` since ${since}` : ""}{src.reason ? ` (${src.reason})` : ""}.{" "}
+              {src.haltsAutopilotOrders
+                ? "The pre-trade Risk Governor refuses every simulator order the autopilot places."
+                : "It does not halt the paper simulator, so it does not refuse the autopilot's simulator orders."}
+            </p>
+          );
+        })}
+        <p className="text-xs text-rose-300/80">
+          The autopilot does not read the platform stops: sessions can still start and scans still decide{asOf ? ` (checked ${asOf})` : ""}.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

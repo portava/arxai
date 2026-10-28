@@ -15,6 +15,10 @@ import {
 } from "./marketDataLayer.js";
 import { pushDecision } from "./marketScanner.js";
 import { placeOrder, fillOrder, listOrders, listPositions, pnlSummary } from "./oms.js";
+import {
+  platformStop, platformStopForVenue,
+  type PlatformStopReaders, type PlatformStopSource,
+} from "./safety/platformSwitches.js";
 
 export type AutopilotMode =
   | "OFF" | "OBSERVE_ONLY" | "AI_ASSIST"
@@ -117,7 +121,21 @@ export interface AutopilotStateLog {
   ts: string; from: AutopilotState; to: AutopilotState; reason: string;
 }
 
-export interface SafetyLock { code: string; tripped: boolean; reason?: string; ts?: string; }
+export interface SafetyLock {
+  code: string;
+  tripped: boolean;
+  reason?: string;
+  ts?: string;
+  /**
+   * True only for a lock some autopilot code path can set. A lock nothing
+   * sets was never checked, so it must not read as "clear".
+   */
+  evaluated: boolean;
+  /** When the autopilot last checked this lock's condition; null = not checked yet. */
+  lastCheckedAt: string | null;
+  /** Plain English: what sets this lock, or that nothing does. */
+  checks: string;
+}
 
 const sessions = new Map<string, AutopilotSession>();
 const decisions: AutopilotDecision[] = [];
@@ -131,21 +149,41 @@ let nextScanInSec = 30;
 let cooldownUntil: number | null = null;
 let consecutiveLosses = 0;
 
+// Only KILL_SWITCH, DAILY_LOSS and WEEKLY_LOSS have a code path that sets
+// them (tripLock). CONSECUTIVE_LOSSES has a tripLock call, but its counter is
+// fed only by recordTradeOutcome, which nothing calls, so it can never trip.
+// Every other lock is listed so the page can say it is not checked. Only
+// KILL_SWITCH is read by a gate (startSession, runDecisionPipeline). A set
+// lock stays set until the API server restarts: nothing calls clearLock
+// outside setKillSwitch(false), which has no caller.
+const NEVER_SET = "Not checked: no autopilot code sets this lock.";
+function lock(code: string, evaluated: boolean, checks: string): SafetyLock {
+  return { code, tripped: false, evaluated, lastCheckedAt: null, checks };
+}
 const safetyLocks: Record<string, SafetyLock> = {
-  KILL_SWITCH: { code: "KILL_SWITCH", tripped: false },
-  RISK_BLOCK: { code: "RISK_BLOCK", tripped: false },
-  DAILY_LOSS: { code: "DAILY_LOSS", tripped: false },
-  WEEKLY_LOSS: { code: "WEEKLY_LOSS", tripped: false },
-  MAX_DRAWDOWN: { code: "MAX_DRAWDOWN", tripped: false },
-  MT5_STATUS: { code: "MT5_STATUS", tripped: false, reason: "MT5 deferred — not active" },
-  STALE_DATA: { code: "STALE_DATA", tripped: false },
-  WIDE_SPREAD: { code: "WIDE_SPREAD", tripped: false },
-  NEWS_WINDOW: { code: "NEWS_WINDOW", tripped: false },
-  CONSECUTIVE_LOSSES: { code: "CONSECUTIVE_LOSSES", tripped: false },
-  DUPLICATE_ORDER: { code: "DUPLICATE_ORDER", tripped: false },
-  AUDIT_FAIL: { code: "AUDIT_FAIL", tripped: false },
-  OMS_FAIL: { code: "OMS_FAIL", tripped: false },
-  POSITION_MGR_FAIL: { code: "POSITION_MGR_FAIL", tripped: false },
+  KILL_SWITCH: lock("KILL_SWITCH", true,
+    "The autopilot's own emergency stop, set by Emergency Stop on this page. While set, new sessions and scans are refused. Nothing releases it; it clears only when the API server restarts. It is not the platform kill switch."),
+  RISK_BLOCK: lock("RISK_BLOCK", false,
+    `${NEVER_SET} Each scan runs the risk guard; a refusal shows in State (BLOCKED_BY_RISK) and on the decision row, not here.`),
+  DAILY_LOSS: lock("DAILY_LOSS", true,
+    "Set when a scan that finds a setup sees today's simulator P/L at or below the session's daily loss limit. Stays set until the API server restarts."),
+  WEEKLY_LOSS: lock("WEEKLY_LOSS", true,
+    "Set when a scan that finds a setup sees this week's simulator P/L at or below the session's weekly loss limit. Stays set until the API server restarts."),
+  MAX_DRAWDOWN: lock("MAX_DRAWDOWN", false, `${NEVER_SET} Drawdown is not measured by the autopilot.`),
+  MT5_STATUS: lock("MT5_STATUS", false, `${NEVER_SET} The autopilot does not read the MT5 connection.`),
+  STALE_DATA: lock("STALE_DATA", false,
+    `${NEVER_SET} Scans read data quality, but no rule or lock acts on it.`),
+  WIDE_SPREAD: lock("WIDE_SPREAD", false,
+    `${NEVER_SET} A wide spread on a scan shows in State (BLOCKED_BY_SPREAD) and in the decision's market health, not here.`),
+  NEWS_WINDOW: lock("NEWS_WINDOW", false,
+    `${NEVER_SET} A blocking news window on a scan shows in State (BLOCKED_BY_NEWS) and on the decision row, not here.`),
+  CONSECUTIVE_LOSSES: lock("CONSECUTIVE_LOSSES", false,
+    `${NEVER_SET} Closed trade results are not reported to the autopilot, so its losing-streak count stays 0 and this lock cannot be set.`),
+  DUPLICATE_ORDER: lock("DUPLICATE_ORDER", false,
+    `${NEVER_SET} A duplicate order on a scan is refused and named on the decision row, not here.`),
+  AUDIT_FAIL: lock("AUDIT_FAIL", false, `${NEVER_SET} The audit trail is not watched by the autopilot.`),
+  OMS_FAIL: lock("OMS_FAIL", false, `${NEVER_SET} An OMS refusal is named on the decision row, not here.`),
+  POSITION_MGR_FAIL: lock("POSITION_MGR_FAIL", false, `${NEVER_SET} The position manager is not watched by the autopilot.`),
 };
 
 function newId(prefix: string) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
@@ -160,8 +198,10 @@ function transition(to: AutopilotState, reason: string) {
   pushDecision({ type: "AUTOPILOT_STATE", summary: `${from} → ${to}: ${reason}`, payload: { from, to } });
 }
 
+function markChecked(code: string) { const l = safetyLocks[code]; if (l) l.lastCheckedAt = nowIso(); }
 function tripLock(code: string, reason: string) {
   const l = safetyLocks[code]; if (!l) return;
+  l.lastCheckedAt = nowIso();
   if (!l.tripped) {
     l.tripped = true; l.reason = reason; l.ts = nowIso();
     pushDecision({ type: "AUTOPILOT_LOCK_TRIPPED", summary: `Safety lock ${code}: ${reason}`, payload: l });
@@ -331,6 +371,7 @@ export async function runDecisionPipeline(opts: RunPipelineOptions = {}): Promis
   if (todayOrders >= session.rules.maxTrades) rulesFailed.push("MAX_TRADES"); else rulesPassed.push("MAX_TRADES");
 
   const pnl = pnlSummary();
+  markChecked("DAILY_LOSS"); markChecked("WEEKLY_LOSS");
   if (pnl.dailyPnL <= -session.rules.maxDailyLossUsd) { rulesFailed.push("DAILY_LOSS"); tripLock("DAILY_LOSS", `Daily loss ${pnl.dailyPnL}`); }
   if (pnl.weeklyPnL <= -session.rules.maxWeeklyLossUsd) { rulesFailed.push("WEEKLY_LOSS"); tripLock("WEEKLY_LOSS", `Weekly loss ${pnl.weeklyPnL}`); }
   if (consecutiveLosses >= session.rules.stopAfterConsecutiveLosses) { rulesFailed.push("CONSECUTIVE_LOSSES"); tripLock("CONSECUTIVE_LOSSES", `${consecutiveLosses} losses in a row`); }
@@ -523,6 +564,8 @@ export function status() {
     lastScanTs, nextScanInSec,
     cooldownUntil,
     consecutiveLosses,
+    /** False: nothing reports closed trade results to the autopilot (recordTradeOutcome has no caller), so consecutiveLosses stays 0. */
+    consecutiveLossesMeasured: false as const,
     openSimulatedPositions: openPos.length,
     dailyRiskRemainingUsd: dailyRiskRemaining,
     dailyTradesRemaining: remaining,
@@ -544,7 +587,57 @@ export function discipline() {
 
 export function listDecisions(limit = 100) { return decisions.slice(0, limit); }
 export function getStateMachine() { return { current: currentState, log: stateLogs.slice(-100) }; }
-export function getSafetyLocks() { return Object.values(safetyLocks); }
+export function getSafetyLocks(): SafetyLock[] {
+  // The emergency stop is an in-memory flag, so reading it is checking it.
+  const now = nowIso();
+  return Object.values(safetyLocks).map((l) => (l.code === "KILL_SWITCH" ? { ...l, lastCheckedAt: now } : { ...l }));
+}
+
+/** One install-wide stop as it bears on the autopilot. */
+export interface AutopilotPlatformStopSource {
+  source: PlatformStopSource;
+  reason: string | null;
+  engagedAt: string | null;
+  /** True when the pre-trade Risk Governor refuses the autopilot's simulator (paper) orders because of it. */
+  haltsAutopilotOrders: boolean;
+}
+
+/**
+ * The platform's install-wide stops (emergency stop, safety-core kill switch)
+ * as they bear on the autopilot. The autopilot itself does not read them:
+ * sessions start and scans decide whatever they say. Its orders are simulator
+ * (paper venue) orders, which the pre-trade Risk Governor refuses while the
+ * safety-core kill switch is engaged; the emergency stop does not halt paper.
+ * Display only — this adds no gate.
+ */
+export interface AutopilotPlatformStop {
+  /** False when either stop could not be read (the Risk Governor then treats it as engaged). */
+  readable: boolean;
+  engaged: boolean;
+  sources: AutopilotPlatformStopSource[];
+  haltsAutopilotOrders: boolean;
+  /** Always false: no autopilot code reads these stops. */
+  readByAutopilot: false;
+  checkedAt: string;
+}
+
+export async function autopilotPlatformStop(readers: PlatformStopReaders = {}): Promise<AutopilotPlatformStop> {
+  const stop = await platformStop(readers);
+  const paper = platformStopForVenue(stop, "PAPER");
+  return {
+    readable: stop.readable,
+    engaged: stop.engaged,
+    sources: stop.sources.map((source) => ({
+      source,
+      reason: stop.detail[source] ?? null,
+      engagedAt: stop.engagedAt?.[source]?.toISOString() ?? null,
+      haltsAutopilotOrders: paper.sources.includes(source),
+    })),
+    haltsAutopilotOrders: paper.engaged,
+    readByAutopilot: false,
+    checkedAt: nowIso(),
+  };
+}
 
 export function generateReport(sessionId?: string) {
   const sid = sessionId ?? activeSessionId; if (!sid) return { error: "no session" };
