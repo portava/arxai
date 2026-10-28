@@ -24,6 +24,10 @@ Checked on 2026-10-28 from the cloud container:
 
 Allowing `download.mql5.com` in the environment's network settings would make a Wine-based attempt possible. Even then, MetaEditor under Wine is community-supported rather than official, so a compile on Windows is the authoritative result.
 
+## Compile package
+
+`scripts/mt5-compile-package/build-package.sh <commit> <output-dir>` builds a downloadable zip from an exact commit. It holds both EAs and every companion include (byte-exact from `git show`), `MANIFEST.sha256`, the full commit hash, the EA changes since `cd44c73`, `COMPILE_INSTRUCTIONS.md`, and `compile_mac_wine.sh`. That script compiles with an existing macOS MetaTrader 5 Wine installation, without starting the terminal, and zips the logs, the new `.ex5` files, and the MetaEditor and Wine versions. A Mac/Wine compile is recorded as such, never as Windows validation. The result stays pending until those logs and `.ex5` files are returned.
+
 ## Exact source to compile
 
 Commit: PR #99 head `cd44c73` (`codex/platform-evidence-integration`). PR #100 (`claude/self-trading-improvements`) changes no file under `mt5-bridge/`: `git diff --stat cd44c73 <PR100 head> -- mt5-bridge` is empty. Check that is still true for the commit you compile.
