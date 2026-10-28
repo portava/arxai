@@ -139,6 +139,17 @@ test("/ai/grade-trade masks for TESTER, raw for OWNER", async () => {
   assert.equal(raw.withheld, undefined, "operator sees raw trade grade");
 });
 
+// The grade is masked by the viewer's role alone (gradeTrade always runs on
+// simulator prices), so no verified feed will ever un-hide it. Its reason must
+// say that, not "hidden until a verified feed is available".
+test("/ai/grade-trade withheld reason names the role mask, not a missing feed", async () => {
+  const masked = await post("/api/ai/grade-trade", "TESTER", TRADE);
+  const reason = String(masked.improvementSuggestion);
+  assert.doesNotMatch(reason, /verified feed|isn't confirmed yet/i, "a feed will not un-hide a role-masked grade");
+  assert.match(reason, /simulator/i, "the reason says the grader runs on simulator prices");
+  assert.match(reason, /operator/i, "the reason says who may see simulator-based grades");
+});
+
 // ── (5) /ai/opportunity-score (scanner) ─────────────────────────────────────
 test("/ai/opportunity-score masks for TESTER, raw for OWNER", async () => {
   const masked = await post("/api/ai/opportunity-score", "TESTER", SYMBOL);

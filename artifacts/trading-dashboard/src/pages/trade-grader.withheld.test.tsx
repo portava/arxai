@@ -36,6 +36,9 @@ describe("Trade Grader withheld result", () => {
     const grade = src.slice(src.indexOf("export function maskSimulatorTradeGrade"));
     const sniper = src.slice(src.indexOf("export function maskSimulatorEntrySniperScore"));
     expect(grade).toMatch(/overallScore: 0[\s\S]*withheld: true/);
+    // The grade is masked by role alone, so its reason is not the
+    // "waiting for a verified feed" sentence.
+    expect(grade.slice(0, grade.indexOf("\n}"))).not.toMatch(/WAITING_FOR_FEED_REASON/);
     expect(sniper).toMatch(/label: "DO_NOT_ENTER"[\s\S]*withheld: true/);
   });
 
@@ -45,7 +48,12 @@ describe("Trade Grader withheld result", () => {
     fireEvent.click(screen.getByText("Grade this trade"));
     const card = await screen.findByTestId("trade-grader-withheld");
     expect(card.textContent).toContain("Not graded");
-    expect(card.textContent).toContain(WAITING);
+    // Masking depends only on the viewer's role, never on feed state: no
+    // verified feed will un-hide this grade, so the card must not say it is
+    // waiting for one (even if an older server still sends that sentence).
+    expect(card.textContent).not.toContain(WAITING);
+    expect(card.textContent).not.toMatch(/verified feed/i);
+    expect(card.textContent).toMatch(/simulator prices/);
     const body = document.body.textContent ?? "";
     expect(body).not.toContain("should NOT take");
     expect(body).not.toContain("DO_NOT_ENTER");

@@ -237,6 +237,14 @@ export function maskSimulatorEntrySniperScore(
   };
 }
 
+/**
+ * Reason for a withheld trade grade. gradeTrade() always runs on simulator
+ * prices and /ai/grade-trade masks by the viewer's role alone, so no verified
+ * feed will ever un-hide the grade — the feed reason above would be false here.
+ */
+export const SIMULATOR_GRADE_WITHHELD_REASON =
+  "Not graded: the trade grader runs only on simulator prices, and simulator-based grades are shown only to platform operators.";
+
 /** Mask a simulator-derived trade grade. `tradeGrade` becomes a neutral "—". */
 export function maskSimulatorTradeGrade(
   _g: TradeGrade,
@@ -247,7 +255,7 @@ export function maskSimulatorTradeGrade(
     strengths: [],
     weaknesses: [],
     mistakesDetected: [],
-    improvementSuggestion: WAITING_FOR_FEED_REASON,
+    improvementSuggestion: SIMULATOR_GRADE_WITHHELD_REASON,
     shouldHaveTakenTrade: false,
     dataSource: "SIMULATOR",
     withheld: true,
