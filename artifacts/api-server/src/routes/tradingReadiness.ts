@@ -185,6 +185,8 @@ export function evaluateReadiness(
   const warnings: string[] = [];
   const blockers: string[] = [];
   let lockedByHard = false;
+  // Items whose WARN means "could not be checked": they earn no score points.
+  const notChecked = new Set<string>();
 
   // 1. Broker health check
   // Source: the newest broker_health_logs row — a PLATFORM-wide snapshot that
@@ -231,19 +233,25 @@ export function evaluateReadiness(
   else if (brokerWarn) warnings.push(`Broker ${meaning.short} (${loggedStatus}, checked ${checkedAtText})`);
   else if (log == null) warnings.push("Broker connection not checked — no broker health check on record");
   else if (bs === "UNKNOWN") warnings.push("Broker connection unknown — the last broker health check is too old");
+  if (!brokerOk && bs === "UNKNOWN") notChecked.add("broker");
 
-  // 2. Market conditions acceptable (proxy: any CRITICAL upcoming news ⇒ poor)
+  // 2. Economic calendar clear for the next 2h. Only the stored economic
+  // calendar is read here — no volatility, spread or price data — so the item
+  // is named for the calendar and never states a market condition. The
+  // marketCondition field keeps its stored values (NORMAL / ELEVATED /
+  // VOLATILE / UNKNOWN), which mean "by the calendar" only.
   const criticalSoon = signals.upcomingNews.filter((e) => e.impactLevel === "CRITICAL").length;
   const highSoon = signals.upcomingNews.filter((e) => e.impactLevel === "HIGH").length;
   // Calendar not covering the next 2h: what was found is real, but the
   // absence of events is not — those checks read "not checked", never PASS.
   const calendarCovered = signals.calendarCoverage.windowCovered;
   const marketCondition = criticalSoon > 0 ? "VOLATILE" : highSoon > 0 ? "ELEVATED" : calendarCovered ? "NORMAL" : "UNKNOWN";
-  checklist.push({ id: "market", label: "Market conditions acceptable",
+  checklist.push({ id: "market", label: "No major economic events in the next 2h",
     status: criticalSoon > 0 ? "FAIL" : highSoon > 0 ? "WARN" : calendarCovered ? "PASS" : "WARN",
     detail: criticalSoon > 0 || highSoon > 0 || calendarCovered
-      ? `${marketCondition} (${highSoon} HIGH, ${criticalSoon} CRITICAL upcoming)`
+      ? `Stored economic calendar: ${highSoon} HIGH and ${criticalSoon} CRITICAL event(s) in the next 2h. Volatility, spreads and prices are not checked here.`
       : `Not checked: ${signals.calendarCoverage.note ?? "the stored economic calendar does not cover the next 2h."}` });
+  if (!(criticalSoon > 0 || highSoon > 0 || calendarCovered)) notChecked.add("market");
   if (criticalSoon > 0) reasons.push(`${criticalSoon} CRITICAL economic event(s) within 2h`);
   else if (highSoon > 0) warnings.push(`${highSoon} HIGH-impact event(s) within 2h`);
   if (!calendarCovered) warnings.push("Economic calendar not checked for the next 2h — the stored calendar does not reach that far");
@@ -261,6 +269,7 @@ export function evaluateReadiness(
     detail: newsRiskLevel === "UNKNOWN"
       ? "Not checked: the stored economic calendar does not cover the next 30 min"
       : `${within30.length} HIGH/CRITICAL within 30 min` });
+  if (newsRiskLevel === "UNKNOWN") notChecked.add("news");
   if (newsRiskLevel === "CRITICAL") { blockers.push("CRITICAL news within 30 min"); lockedByHard = true; }
   else if (newsRiskLevel === "HIGH") warnings.push("HIGH-impact news within 30 min — consider waiting");
 
@@ -334,8 +343,11 @@ export function evaluateReadiness(
   const passes = checklist.filter((c) => c.status === "PASS").length;
   const warns  = checklist.filter((c) => c.status === "WARN").length;
   const fails  = checklist.filter((c) => c.status === "FAIL").length;
-  // 9 items max. Pass=full, Warn=half, Fail=zero.
-  const raw = passes + warns * 0.5;
+  // 9 items max. Pass=full, Warn=half, Fail=zero. A check that could not be
+  // run (WARN "not checked") earns nothing but stays in the denominator, so
+  // an unverified item never adds to the score.
+  const checkedWarns = checklist.filter((c) => c.status === "WARN" && !notChecked.has(c.id)).length;
+  const raw = passes + checkedWarns * 0.5;
   const score = Math.round((raw / checklist.length) * 100);
 
   let status: EvalOut["status"];
