@@ -52,6 +52,10 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // STATUS_RUNNING's window is fixed (10:00–11:00 UTC); pin the clock inside
+  // it so the RUNNING phase does not depend on the wall-clock time the suite
+  // runs at (after 11:00 UTC on 2026-10-28 forwardPhase rightly says ENDED).
+  vi.setSystemTime(new Date("2026-10-28T10:30:00.000Z"));
   fetchMock = vi.fn((url: string, init?: RequestInit) => route(String(url), init));
   vi.stubGlobal("fetch", fetchMock);
 });
