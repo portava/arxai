@@ -22,6 +22,7 @@ vi.mock("@/hooks/useProductRole", () => ({
 }));
 
 import StrategyTournament from "./strategy-tournament";
+import ShadowMode from "./shadow-mode";
 
 function jsonResponse(status: number, body: unknown): Response {
   return { status, ok: status >= 200 && status < 300, json: async () => body } as unknown as Response;
@@ -61,5 +62,40 @@ describe("Strategy Tournament", () => {
     await show(<StrategyTournament />);
     const cell = screen.getByTitle(/No R lost yet/i);
     expect(cell.textContent).toBe("n/a");
+  });
+});
+
+const STATUS = {
+  enabled: false, startedAt: null, totalsObserved: 1, totalDecisions: 1, tracking: 0, wins: 0, losses: 0,
+  breakevens: 0, expired: 0, rejected: 0, waits: 1,
+};
+const WAIT_DEC = {
+  id: "w1", ts: "2026-10-01T10:00:00Z", symbol: "EURUSD", strategy: "No Trade Filter", marketCondition: "RANGE",
+  action: "WAIT", entry: 1.085, sl: null, tp: null, confidence: 0, status: "SHADOW_WAIT",
+  reason: "No actionable signal from any strategy", reasonToAvoid: "",
+  riskGovernor: { approved: false, level: "NOT_CHECKED", hardBlocks: [] },
+};
+
+describe("Shadow Mode", () => {
+  it("says the prices come from the synthetic simulator when the server reports it", async () => {
+    bodies["/api/shadow-mode/status"] = { ...STATUS, priceSource: "SYNTHETIC_SIMULATOR" };
+    bodies["/api/shadow-mode/decisions"] = { decisions: [] };
+    await show(<ShadowMode />);
+    expect(screen.getByTestId("shadow-price-source").textContent).toMatch(/synthetic market simulator, not a live market feed or a broker/i);
+  });
+
+  it("an unreported price source reads unverified, never live", async () => {
+    bodies["/api/shadow-mode/status"] = STATUS;
+    bodies["/api/shadow-mode/decisions"] = { decisions: [] };
+    await show(<ShadowMode />);
+    expect(screen.getByTestId("shadow-price-source").textContent).toMatch(/unverified/i);
+  });
+
+  it("a WAIT with no proposed levels shows no stop or target, never invented prices", async () => {
+    bodies["/api/shadow-mode/status"] = { ...STATUS, priceSource: "SYNTHETIC_SIMULATOR" };
+    bodies["/api/shadow-mode/decisions"] = { decisions: [WAIT_DEC] };
+    await show(<ShadowMode />);
+    expect(screen.getByText(/no stop or target proposed/i)).toBeTruthy();
+    expect(screen.queryByText(/sl 1\.08/)).toBeNull();
   });
 });

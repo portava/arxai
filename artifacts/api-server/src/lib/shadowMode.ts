@@ -42,7 +42,12 @@ export type ShadowStatus =
 
 export interface ShadowDecision {
   id: string; ts: string; symbol: string; tf: string; strategy: string;
-  marketCondition: string; action: "BUY" | "SELL" | "WAIT"; entry: number; sl: number; tp: number;
+  marketCondition: string; action: "BUY" | "SELL" | "WAIT"; entry: number;
+  /**
+   * Stop / target the strategy actually proposed. null = none proposed (a
+   * WAIT with no setup) — never an invented fallback level.
+   */
+  sl: number | null; tp: number | null;
   confidence: number; opportunity: number; sniper: number; grade: number;
   riskGovernor: { approved: boolean; level: string; hardBlocks: string[]; warnings: string[] };
   reason: string; reasonToAvoid: string;
@@ -69,6 +74,11 @@ let scanTimer: NodeJS.Timeout | null = null;
 let trackTimer: NodeJS.Timeout | null = null;
 let totalsObserved = 0;
 
+/** A proposed trade (BUY/SELL) the risk governor blocked. A WAIT proposes no trade and is never a block. */
+function rgBlocked(d: ShadowDecision): boolean {
+  return d.action !== "WAIT" && !d.riskGovernor.approved;
+}
+
 function newId() { return `sh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
 function classifyMarket(symbol: string): string {
@@ -86,20 +96,30 @@ export function createShadowDecision(symbol: string, tf = "M15"): ShadowDecision
   if (!scan) return null;
   const q = marketSimulator.quote(symbol);
   const entry = scan.entryPrice || q?.mid || 0;
-  const sl = scan.stopLoss || (scan.direction === "BUY" ? entry * 0.997 : entry * 1.003);
-  const tp = scan.takeProfit || (scan.direction === "BUY" ? entry * 1.005 : entry * 0.995);
+  // Only levels the strategy proposed. A WAIT with no setup reports 0 for
+  // both: that is "none", not a cue to invent entry * 0.997 / 1.005.
+  const proposed = (v: number) => (Number.isFinite(v) && v > 0 ? v : null);
+  const sl = proposed(scan.stopLoss);
+  const tp = proposed(scan.takeProfit);
   const action = scan.direction === "WAIT" ? "WAIT" : (scan.direction as "BUY" | "SELL");
 
-  const verdict = previewSimulatorEntry({
-    symbol, side: action === "WAIT" ? "BUY" : action, lots: 0.01,
-    stopLoss: sl, takeProfit: tp, aiConfidence: scan.confidence, origin: "automation",
-  });
-  const rg = {
-    approved: verdict.decision === "ALLOW",
-    riskLevel: verdict.decision === "ALLOW" ? "LOW" : "BLOCK",
-    hardBlocks: verdict.blockedBy.map(String),
-    warnings: verdict.rules.map((r) => r.measured?.["warnings"]).filter((w): w is string => typeof w === "string"),
-  };
+  // The risk governor checks a proposed trade. A WAIT proposes none, so it is
+  // NOT_CHECKED (and never counted as a risk block) instead of a preview of a
+  // made-up BUY at made-up levels.
+  const rg = action === "WAIT"
+    ? { approved: false, riskLevel: "NOT_CHECKED", hardBlocks: [] as string[], warnings: [] as string[] }
+    : (() => {
+        const verdict = previewSimulatorEntry({
+          symbol, side: action, lots: 0.01,
+          stopLoss: sl, takeProfit: tp, aiConfidence: scan.confidence, origin: "automation",
+        });
+        return {
+          approved: verdict.decision === "ALLOW",
+          riskLevel: verdict.decision === "ALLOW" ? "LOW" : "BLOCK",
+          hardBlocks: verdict.blockedBy.map(String),
+          warnings: verdict.rules.map((r) => r.measured?.["warnings"]).filter((w): w is string => typeof w === "string"),
+        };
+      })();
 
   let status: ShadowStatus =
     action === "WAIT" ? "SHADOW_WAIT"
@@ -165,6 +185,7 @@ function trackOutcomes() {
     const q = marketSimulator.quote(d.symbol);
     if (!q) continue;
     const px = q.mid;
+    if (d.sl == null || d.tp == null) { d.status = "SHADOW_EXPIRED"; d.outcomeAt = new Date(now).toISOString(); persistOutcome(d); continue; }
     const r = Math.abs(d.entry - d.sl);
     if (r === 0) { d.status = "SHADOW_EXPIRED"; d.outcomeAt = new Date(now).toISOString(); persistOutcome(d); continue; }
     if (d.action === "BUY") {
@@ -218,6 +239,9 @@ export function shadowStatus() {
     expired: arr.filter((d) => d.status === "SHADOW_EXPIRED").length,
     rejected: arr.filter((d) => d.status === "SHADOW_REJECTED").length,
     waits: arr.filter((d) => d.status === "SHADOW_WAIT").length,
+    // Every candle and quote shadow mode reads comes from the built-in
+    // synthetic market simulator, not a live feed or broker.
+    priceSource: SYNTHETIC_SIMULATOR_SOURCE,
     dataSource: "SHADOW" as const,
   };
 }
@@ -418,7 +442,7 @@ export function tournamentResults() {
   for (const d of arr) {
     const s = byStrategy[d.strategy] = byStrategy[d.strategy] ?? { n: 0, wins: 0, losses: 0, sumR: 0, grossWinR: 0, grossLossR: 0, rgBlocks: 0, gradeSum: 0, gradeN: 0 };
     s.gradeSum += d.grade; s.gradeN++;
-    if (!d.riskGovernor.approved) s.rgBlocks++;
+    if (rgBlocked(d)) s.rgBlocks++;
     if (d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS") {
       const r = d.pnlR ?? 0;
       s.n++; s.sumR += r;
@@ -516,7 +540,7 @@ function strategyStats(strategy: string) {
   const winRate = tracked.length ? wins.length / tracked.length : 0;
   const avgR = tracked.length ? tracked.reduce((a, d) => a + (d.pnlR ?? 0), 0) / tracked.length : 0;
   const dd = maxDrawdownR(arr);
-  const rgViolations = arr.filter((d) => !d.riskGovernor.approved).length;
+  const rgViolations = arr.filter(rgBlocked).length;
   // Expectancy per tracked trade, in R, is the average R itself.
   const expectancy = avgR;
   return { sample: arr.length, tracked: tracked.length, winRate, avgR, drawdownR: dd, rgViolations, expectancy };
@@ -591,7 +615,7 @@ export function readinessScore() {
   const wr = tracked.length ? wins / tracked.length : 0;
   const cal = confidenceCalibration();
   const calScore = cal.label === "WELL_CALIBRATED" ? 100 : cal.label === "UNDERCONFIDENT" ? 75 : cal.label === "OVERCONFIDENT" ? 40 : cal.label === "RANDOM_CONFIDENCE" ? 20 : 30;
-  const rgViolations = all.filter((d) => !d.riskGovernor.approved).length;
+  const rgViolations = all.filter(rgBlocked).length;
   const riskDiscipline = Math.max(0, 100 - Math.round((rgViolations / Math.max(1, all.length)) * 100));
   const ddR = maxDrawdownR(all);
   const ddScore = Math.max(0, 100 - Math.round(ddR * 8));

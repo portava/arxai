@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Eye, Play, StopCircle } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
-type Status = { enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number; tracking: number; wins: number; losses: number; breakevens: number; expired: number; rejected: number; waits: number };
-type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number; tp: number; confidence: number; status: string; pnlR?: number; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
+type Status = { enabled: boolean; startedAt: string | null; totalsObserved: number; totalDecisions: number; tracking: number; wins: number; losses: number; breakevens: number; expired: number; rejected: number; waits: number; priceSource?: string };
+type Dec = { id: string; ts: string; symbol: string; strategy: string; marketCondition: string; action: string; entry: number; sl: number | null; tp: number | null; confidence: number; status: string; pnlR?: number; reason: string; reasonToAvoid: string; riskGovernor: { approved: boolean; level: string; hardBlocks: string[] } };
 
 const STATUS_COLOR: Record<string, string> = { SHADOW_WIN: "bg-emerald-500/20 text-emerald-400", SHADOW_LOSS: "bg-rose-500/20 text-rose-400", SHADOW_BREAKEVEN: "bg-slate-500/20 text-slate-300", SHADOW_TRACKING_OUTCOME: "bg-blue-500/20 text-blue-400", SHADOW_REJECTED: "bg-amber-500/20 text-amber-400", SHADOW_WAIT: "bg-slate-500/20 text-slate-300", SHADOW_EXPIRED: "bg-slate-500/20 text-slate-300" };
 
@@ -62,6 +62,7 @@ export default function ShadowMode() {
         <Eye className="h-6 w-6 text-primary" />
         <div className="flex-1"><h1 className="text-2xl font-bold">Shadow Mode</h1>
           <p className="text-sm text-muted-foreground">AI generates trade ideas and tracks hypothetical outcomes. No simulator orders, no broker calls.</p>
+          {s && <p className="text-xs text-amber-400" data-testid="shadow-price-source">{priceSourceText(s.priceSource)}</p>}
         </div>
         <Badge variant="outline">SHADOW</Badge>
         {s && <Badge className={s.enabled ? "bg-emerald-500/20 text-emerald-400" : ""}>{s.enabled ? "RUNNING" : "STOPPED"}</Badge>}
@@ -110,7 +111,7 @@ export default function ShadowMode() {
                 {d.pnlR != null && <span className="text-muted-foreground">R={d.pnlR.toFixed(2)}</span>}
                 <span className="ml-auto text-muted-foreground">{new Date(d.ts).toLocaleTimeString()}</span>
               </div>
-              <div className="text-muted-foreground mt-1">entry {d.entry.toFixed(5)} sl {d.sl.toFixed(5)} tp {d.tp.toFixed(5)}</div>
+              <div className="text-muted-foreground mt-1">{levelsText(d)}</div>
               <div className="text-muted-foreground">{d.reason}</div>
               {d.reasonToAvoid && <div className="text-rose-400">avoid: {d.reasonToAvoid}</div>}
             </div>
@@ -120,6 +121,21 @@ export default function ShadowMode() {
       </Card>
     </div>
   );
+}
+
+/** Where the prices on this page come from, as the server reported it. */
+function priceSourceText(priceSource: string | undefined): string {
+  return priceSource === "SYNTHETIC_SIMULATOR"
+    ? "Every price here comes from the built-in synthetic market simulator, not a live market feed or a broker. These are not real market levels."
+    : "The server did not report where these prices come from, so they are unverified.";
+}
+
+/** Entry / stop / target as the strategy proposed them; never an invented level. */
+function levelsText(d: Dec): string {
+  const px = (v: number | null) => (v == null ? "none" : v.toFixed(5));
+  if (d.sl == null && d.tp == null) return `price ${d.entry.toFixed(5)} · no stop or target proposed`;
+  const prefix = d.action === "WAIT" ? "proposed before the filter said WAIT: " : "";
+  return `${prefix}entry ${d.entry.toFixed(5)} sl ${px(d.sl)} tp ${px(d.tp)}`;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
