@@ -733,37 +733,60 @@ export function demotionScan() {
 }
 
 // ── AI Readiness Score ────────────────────────────────────────────────────
+/** Tracked outcomes (wins + losses) needed before readiness can read PAPER_READY or above. */
+export const READINESS_MIN_TRACKED_OUTCOMES = 20;
+
+/**
+ * Composite of MEASURED factors only. A factor nothing measures (a constant,
+ * or a stand-in derived from confidence) earns no points: it is listed under
+ * notMeasured with why, never given a score. With fewer than
+ * READINESS_MIN_TRACKED_OUTCOMES tracked outcomes the label is capped at
+ * NEEDS_MORE_TESTING, whatever the average.
+ */
 export function readinessScore() {
   const all = [...decisions.values()];
   const tracked = all.filter((d) => d.status === "SHADOW_WIN" || d.status === "SHADOW_LOSS");
   const wins = tracked.filter((d) => d.status === "SHADOW_WIN").length;
-  const wr = tracked.length ? wins / tracked.length : 0;
+  const resolvedWithR = all.filter((d) => d.pnlR != null);
+  const ideas = all.filter((d) => d.action !== "WAIT");
   const cal = confidenceCalibration();
-  const calScore = cal.label === "WELL_CALIBRATED" ? 100 : cal.label === "UNDERCONFIDENT" ? 75 : cal.label === "OVERCONFIDENT" ? 40 : cal.label === "RANDOM_CONFIDENCE" ? 20 : 30;
-  const rgViolations = all.filter(rgBlocked).length;
-  const riskDiscipline = Math.max(0, 100 - Math.round((rgViolations / Math.max(1, all.length)) * 100));
-  const ddR = maxDrawdownR(all);
-  const ddScore = Math.max(0, 100 - Math.round(ddR * 8));
-  const sample = Math.min(100, all.length);
-  const grades = all.map((d) => d.grade); const avgGrade = grades.length ? avg(grades) * 10 : 0;
 
-  const factors = {
-    strategyPerformance: Math.round(wr * 100),
-    confidenceCalibration: calScore,
-    riskDiscipline,
-    drawdownBehavior: ddScore,
-    overtradingBehavior: 100,
-    tradeGradeAvg: Math.round(avgGrade),
-    entrySniperAvg: Math.round(avg(all.map((d) => d.sniper))),
-    opportunityScoreAccuracy: Math.round(avg(all.map((d) => d.opportunity))),
-    sampleSize: sample,
-    learningLoopStability: 80,
-    safetyCompliance: 100,
+  const factors: Record<string, number> = {};
+  const notMeasured: Array<{ factor: string; why: string }> = [];
+  const factor = (name: string, value: number | null, why: string) => {
+    if (value === null) notMeasured.push({ factor: name, why });
+    else factors[name] = value;
   };
-  const score = Math.round(avg(Object.values(factors)));
-  const label = score < 50 ? "NOT_READY" : score < 70 ? "NEEDS_MORE_TESTING" : score < 85 ? "PAPER_READY" : score < 95 ? "DEMO_READY" : "LIVE_INTENT_READY";
+
+  factor("strategyPerformance", tracked.length ? Math.round((wins / tracked.length) * 100) : null,
+    "No tracked win or loss yet.");
+  factor("confidenceCalibration",
+    cal.label === "NEEDS_MORE_DATA" ? null
+      : cal.label === "WELL_CALIBRATED" ? 100 : cal.label === "UNDERCONFIDENT" ? 75 : cal.label === "OVERCONFIDENT" ? 40 : 20,
+    `Calibration needs more data: ${cal.labelBasis}`);
+  factor("riskDiscipline",
+    ideas.length ? Math.max(0, 100 - Math.round((ideas.filter(rgBlocked).length / ideas.length) * 100)) : null,
+    "No trade was proposed, so the risk governor checked nothing.");
+  factor("drawdownBehavior", resolvedWithR.length ? Math.max(0, 100 - Math.round(maxDrawdownR(all) * 8)) : null,
+    "No outcome with a measured R yet.");
+  factor("sampleSize", Math.min(100, tracked.length), "");
+  factor("overtradingBehavior", null, "Nothing measures over-trading in shadow mode.");
+  factor("tradeGradeAvg", null, "Each decision's trade grade is its confidence / 10, not an independent grade.");
+  factor("entrySniperAvg", null, "Each decision's entry score is its confidence - 5, not a measured entry quality.");
+  factor("opportunityScoreAccuracy", null, "Each decision's opportunity score is its confidence; no accuracy is computed.");
+  factor("learningLoopStability", null, "Nothing measures learning-loop stability in shadow mode.");
+  factor("safetyCompliance", null, "No safety-compliance check feeds this score.");
+
+  const measured = Object.values(factors);
+  const score = Math.round(avg(measured));
+  let label: "NOT_READY" | "NEEDS_MORE_TESTING" | "PAPER_READY" | "DEMO_READY" | "LIVE_INTENT_READY" = score < 50 ? "NOT_READY" : score < 70 ? "NEEDS_MORE_TESTING" : score < 85 ? "PAPER_READY" : score < 95 ? "DEMO_READY" : "LIVE_INTENT_READY";
+  if (tracked.length < READINESS_MIN_TRACKED_OUTCOMES && label !== "NOT_READY") label = "NEEDS_MORE_TESTING";
   return {
-    score, label, factors,
+    score, label, factors, notMeasured,
+    trackedOutcomes: tracked.length,
+    minTrackedOutcomes: READINESS_MIN_TRACKED_OUTCOMES,
+    basis: `Average of ${measured.length} measured factor${measured.length === 1 ? "" : "s"} over ${tracked.length} tracked outcome${tracked.length === 1 ? "" : "s"}; ${notMeasured.length} not measured and not scored.`
+      + (tracked.length < READINESS_MIN_TRACKED_OUTCOMES ? ` Below ${READINESS_MIN_TRACKED_OUTCOMES} tracked outcomes the label cannot be higher than NEEDS_MORE_TESTING.` : ""),
     realBrokerReadiness: "Real broker readiness unavailable until MT5 bridge is connected.",
     dataSource: "SHADOW" as const,
   };

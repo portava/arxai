@@ -5,7 +5,12 @@ import { Badge } from "@/components/ui/badge";
 import { Sparkles } from "lucide-react";
 import { AccessCheckingShell, AccessDeniedCard, SHADOW_ADMIN_DENIED_NOTE, shadowAdminDeniedMessage } from "@/components/access/AdminOnlyGate";
 
-type R = { score: number; label: string; factors: Record<string, number>; realBrokerReadiness: string };
+type R = {
+  score: number; label: string; factors: Record<string, number>; realBrokerReadiness: string;
+  // Factors nothing measured: shown as "not measured", never as a score.
+  notMeasured?: Array<{ factor: string; why: string }>;
+  trackedOutcomes?: number; basis?: string;
+};
 const LABEL_COLOR: Record<string, string> = { NOT_READY: "bg-rose-500/20 text-rose-400", NEEDS_MORE_TESTING: "bg-amber-500/20 text-amber-400", PAPER_READY: "bg-blue-500/20 text-blue-400", DEMO_READY: "bg-emerald-500/20 text-emerald-400", LIVE_INTENT_READY: "bg-violet-500/20 text-violet-300" };
 
 const PAGE_ICON = <Sparkles className="h-6 w-6 text-primary" />;
@@ -67,6 +72,13 @@ export default function AiReadinessScore() {
                   <div className="flex-1 h-2 bg-muted rounded"><div className="h-2 bg-primary rounded" style={{ width: `${Math.min(100, v)}%` }} /></div>
                   <span className="font-mono w-10 text-right">{v}</span>
                 </div>
+              </div>
+            ))}
+            {r.basis && <p className="col-span-full text-xs text-muted-foreground" data-testid="readiness-basis">{r.basis}</p>}
+            {(r.notMeasured ?? []).map((n) => (
+              <div key={n.factor} className="border border-dashed rounded p-2 text-xs" data-testid="readiness-not-measured">
+                <p className="text-[10px] uppercase text-muted-foreground">{n.factor}</p>
+                <p className="mt-1 text-muted-foreground">Not measured — no points. {n.why}</p>
               </div>
             ))}
           </CardContent>

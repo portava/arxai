@@ -26,6 +26,7 @@ import ShadowMode from "./shadow-mode";
 import ShadowJournal from "./shadow-journal";
 import ConfidenceCalibration from "./confidence-calibration";
 import StrategyPromotion from "./strategy-promotion";
+import AiReadinessScore from "./ai-readiness-score";
 
 function jsonResponse(status: number, body: unknown): Response {
   return { status, ok: status >= 200 && status < 300, json: async () => body } as unknown as Response;
@@ -182,5 +183,23 @@ describe("Strategy Promotion", () => {
     await show(<StrategyPromotion />);
     expect(screen.queryByText(/No demotions suggested/)).toBeNull();
     expect(screen.getByText(/none was checked for demotion/)).toBeTruthy();
+  });
+});
+
+describe("AI Readiness Score", () => {
+  it("unmeasured factors read 'not measured', with no bar or number", async () => {
+    bodies["/api/ai-readiness-score"] = {
+      score: 50, label: "NEEDS_MORE_TESTING", factors: { riskDiscipline: 100, sampleSize: 0 },
+      notMeasured: [{ factor: "safetyCompliance", why: "No safety-compliance check feeds this score." }],
+      trackedOutcomes: 0,
+      basis: "Average of 2 measured factors over 0 tracked outcomes; 1 not measured and not scored.",
+      realBrokerReadiness: "Real broker readiness unavailable until MT5 bridge is connected.",
+    };
+    await show(<AiReadinessScore />);
+    const nm = screen.getByTestId("readiness-not-measured");
+    expect(nm.textContent).toMatch(/safetyCompliance/);
+    expect(nm.textContent).toMatch(/Not measured — no points/);
+    expect(nm.textContent).not.toMatch(/\b100\b/);
+    expect(screen.getByTestId("readiness-basis").textContent).toMatch(/over 0 tracked outcomes/);
   });
 });
