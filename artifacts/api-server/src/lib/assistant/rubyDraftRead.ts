@@ -18,7 +18,7 @@ import type {
 } from "../data/chart/chartIntelligence.js";
 import type { ChartEvidenceDirection } from "../data/chart/engines/marketUnderstandingTypes.js";
 import type { ChartConsensusStance } from "../data/chart/chartAgentConsensus.js";
-import { buildChartHandshake } from "../data/chart/chartHandshake.js";
+import { buildChartHandshake, type AaciChartHandshake } from "../data/chart/chartHandshake.js";
 import { mirrorTrustSegment } from "../data/chart/brokerPriceAlignment.js";
 import { DEFAULT_ASSISTANT_NAME } from "@workspace/domain/assistant-name";
 
@@ -67,11 +67,16 @@ export interface RubyDraftReadResult {
   /** True when the state is fresh, understanding engines are populated, AND
    *  Phase 3 confidentReadAllowed gate passes (Chart Truth ≥ 75). */
   feedUsable: boolean;
-  /** Mirrors the chart-read honesty signal: "ok" when the feed is confirmed
+  /** Mirrors the chart-read honesty signal: "ok" when the read is usable
    *  (feedUsable), "insufficient" when the underlying feed for this
-   *  symbol/timeframe is stale/unverified. Decision-support only — this flag
-   *  NEVER gates execution (Ruby stays read-only) and never fabricates data. */
+   *  symbol/timeframe is stale/unverified OR a chart check did not pass.
+   *  Decision-support only — this flag NEVER gates execution (Ruby stays
+   *  read-only) and never fabricates data. */
   dataQuality: "ok" | "insufficient";
+  /** True when the candle feed itself passed its quality and freshness check
+   *  (clean and not stale). An insufficient read with feedConfirmed=true was
+   *  gated by another chart check (named in `points`), not by the feed. */
+  feedConfirmed: boolean;
   /** True when confidentReadAllowed from Phase 3 gate (Chart Truth ≥ 75). */
   confidentReadAllowed: boolean;
   /** True when the current candle is still forming (not yet closed). */
@@ -110,6 +115,10 @@ const disclaimerFor = (assistantName: string): string =>
 // gates execution and Ruby never fabricates a read from missing data.
 const FEED_NOT_CONFIRMED_CAUTION =
   "Feed not confirmed at read-time — limited visibility.";
+// The feed is clean and current but another chart check (truth score, broker
+// comparison, merge seam, …) did not pass: never call that feed unconfirmed.
+const CHECKS_NOT_PASSED_CAUTION =
+  "The feed is clean, but not every chart check passed at read-time — limited visibility.";
 
 const MIN_BARS_HISTORY = 50;
 
@@ -242,6 +251,7 @@ function baseResult(
     timeframe: state.timeframe,
     feedUsable: usable,
     dataQuality: usable ? "ok" : "insufficient",
+    feedConfirmed: state.aiUsable && !state.stale,
     confidentReadAllowed: state.gateOutput.confidentReadAllowed,
     hasFormingCandle,
     limitedHistory: closedBars > 0 && closedBars < MIN_BARS_HISTORY,
@@ -315,8 +325,71 @@ function neutralizeDirectionalFields(r: RubyDraftReadResult): RubyDraftReadResul
   return r;
 }
 
-// When Chart Truth < 75 OR freshness/mirror gate fails, every intent
-// degrades to the honest "syncing" explanation. Directional fields are
+// Handshake checks backed by a Chart Truth sub-metric, so an unmet check can
+// be named with what was (or was not) measured.
+const HANDSHAKE_SUBMETRIC: [keyof AaciChartHandshake, string][] = [
+  ["OHLCIntegrity", "ohlc_integrity"],
+  ["TimeframeAccuracy", "timeframe_accuracy"],
+  ["FeedFreshness", "feed_freshness"],
+  ["HistoricalLiveMerge", "historical_live_merge"],
+  ["BrokerPriceAlignment", "symbol_mirror_accuracy"],
+  ["RenderHealth", "render_accuracy"],
+];
+
+/**
+ * Plain-English reasons a read with a clean, current feed is still gated —
+ * each one the real check that did not pass, never a generic "syncing" or a
+ * threshold claim the score does not support.
+ */
+function gateShortfalls(state: ChartIntelligenceState): string[] {
+  const gate = state.gateOutput;
+  const reasons: string[] = [];
+  if (!state.marketUnderstanding.populated || !state.decisionState.populated) {
+    reasons.push(
+      "The chart has not produced a market read for this symbol and timeframe yet.",
+    );
+  }
+  if (!gate.confidentReadAllowed) {
+    reasons.push(
+      `Chart Truth score is ${gate.chartTruthScore}, below the 75 needed for a verified read.`,
+    );
+  }
+  if (!gate.candlestickModeAllowed) {
+    reasons.push("The provider does not deliver real OHLC candles for this series.");
+  }
+  if (!gate.autonomousChartActionAllowed) {
+    reasons.push("The feed is marked stale.");
+  }
+  if (!gate.tradeConfirmationAllowed) {
+    reasons.push(
+      "The broker-price mirror check failed (merge seam or broker price alignment).",
+    );
+  }
+  const hs = buildChartHandshake(gate, state.chartTruthScore);
+  for (const [check, key] of HANDSHAKE_SUBMETRIC) {
+    const verdict = hs[check];
+    if (verdict === "PASS") continue;
+    // Renderer telemetry only gates a candle read when it measured a FAIL.
+    if (check === "RenderHealth" && verdict !== "FAIL") continue;
+    if (check === "FeedFreshness" && !gate.autonomousChartActionAllowed) continue;
+    const m = state.chartTruthScore.subMetrics.find((sm) => sm.key === key);
+    const label = m?.label ?? check;
+    const detail = m?.detail ? ` — ${m.detail}` : ".";
+    if (!m || m.evidenceStatus !== "measured" || m.rawScore == null || !Number.isFinite(m.rawScore)) {
+      reasons.push(`${label} could not be measured${detail}`);
+    } else {
+      const band = verdict === "FAIL" ? "a failing score" : "below the 75 pass mark";
+      reasons.push(`${label} scored ${Math.round(m.rawScore)}/100, ${band}${detail}`);
+    }
+  }
+  return reasons.length > 0
+    ? reasons
+    : ["A chart check did not pass, and the check did not report why."];
+}
+
+// The feed is clean and current, but a chart check (truth score, broker
+// comparison, merge seam, engines) did not pass. Every intent degrades to an
+// honest explanation that names the checks. Directional fields are
 // neutralized — no bias, bestNextAction, confidenceLabel, or confidenceScore
 // is returned when the gate is blocked.
 function honestSyncing(
@@ -325,16 +398,12 @@ function honestSyncing(
 ): RubyDraftReadResult {
   const r = neutralizeDirectionalFields(baseResult(state, intent));
   r.headline =
-    "Chart data is syncing. I'll read the market once candles are verified.";
+    "The candle feed is clean, but not every chart check passed, so I'm not giving a directional read yet.";
   r.points = [
-    state.gateOutput.primaryBlockReason ??
-      "Chart Truth score is below the confidence threshold for a verified read.",
-    "No directional read, entry, or stop idea is being shown until verification passes.",
+    ...gateShortfalls(state),
+    "No directional read, entry, or stop idea is being shown until every check passes.",
   ];
-  r.cautions = [
-    "Wait for the chart to verify before acting on any signals.",
-    ...(state.gateOutput.blockedReasons.slice(1, 3)),
-  ].filter(Boolean);
+  r.cautions = ["Wait for every chart check to pass before acting on any signal."];
   return r;
 }
 
@@ -535,14 +604,14 @@ export function buildRubyDraftRead(
 ): RubyDraftReadResult {
   const result = computeDraftRead(state, intent, draft);
   result.disclaimer = disclaimerFor(assistantName);
-  // Honesty: an unconfirmed/insufficient feed always carries the visible
-  // "feed not confirmed" caveat — surfaced regardless of which read path ran.
-  // This never gates execution; Ruby is read-only.
-  if (
-    result.dataQuality === "insufficient" &&
-    !result.cautions.includes(FEED_NOT_CONFIRMED_CAUTION)
-  ) {
-    result.cautions = [FEED_NOT_CONFIRMED_CAUTION, ...result.cautions];
+  // Honesty: an insufficient read always carries a visible caveat, surfaced
+  // regardless of which read path ran: "feed not confirmed" when the feed
+  // itself is not clean/current. This never gates execution; Ruby is read-only.
+  // When the feed itself is clean the read was gated by another chart check,
+  // so it carries that caveat instead of calling the feed unconfirmed.
+  const caveat = result.feedConfirmed ? CHECKS_NOT_PASSED_CAUTION : FEED_NOT_CONFIRMED_CAUTION;
+  if (result.dataQuality === "insufficient" && !result.cautions.includes(caveat)) {
+    result.cautions = [caveat, ...result.cautions];
   }
   return result;
 }

@@ -97,7 +97,9 @@ rec(
   stale,
 );
 
-// 6. Fresh feed but PARTIAL basis (mirror/AACI degraded) → "mirror syncing".
+// 6. Fresh feed but PARTIAL basis (a mirror/AACI check did not pass or could
+//    not be measured) → the clean feed is not called "syncing"; the line says
+//    a check did not pass.
 const partial = buildGatedTrustLine("H1", {
   available: true,
   stale: false,
@@ -106,13 +108,13 @@ const partial = buildGatedTrustLine("H1", {
 });
 rec(
   6,
-  "fresh+PARTIAL → 'mirror syncing', honest",
-  partial === "H1 candles syncing · mirror syncing · read gated" &&
+  "fresh+PARTIAL → 'not every chart check passed', honest",
+  partial === "H1 candles clean · not every chart check passed · read gated" &&
     hasForbidden(partial).length === 0,
   partial,
 );
 
-// 7. Fresh feed but SYNCING basis (truth < threshold) → "awaiting sync".
+// 7. Fresh feed but SYNCING basis (truth < threshold) → names the threshold.
 const syncing = buildGatedTrustLine("H4", {
   available: true,
   stale: false,
@@ -121,15 +123,16 @@ const syncing = buildGatedTrustLine("H4", {
 });
 rec(
   7,
-  "fresh+SYNCING → 'awaiting sync', honest",
-  syncing === "H4 candles syncing · awaiting sync · read gated" &&
+  "fresh+SYNCING → 'Chart Truth below 75', honest",
+  syncing === "H4 candles clean · Chart Truth below 75 · read gated" &&
     hasForbidden(syncing).length === 0,
   syncing,
 );
 
 // 8. EXHAUSTIVE INVARIANT: across every feed-state combination, a gated trust
 //    line must never contain "Verified" or "Live feed", and must echo the
-//    timeframe + the "read gated" suffix.
+//    timeframe + the "read gated" suffix. A clean, current feed is never
+//    called "syncing"; an unavailable / stale / delayed feed never "clean".
 const bases: RubyChartReadBasis[] = ["INSUFFICIENT", "PARTIAL", "SYNCING", "VERIFIED"];
 const tfs = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"];
 const leaks: string[] = [];
@@ -140,8 +143,11 @@ for (const tf of tfs) {
         for (const basis of bases) {
           const line = buildGatedTrustLine(tf, { available, stale: sstale, aiUsable, basis });
           const bad = hasForbidden(line);
+          const feedClean = available && !sstale && aiUsable;
           const wellFormed =
-            line.startsWith(`${tf} candles syncing · `) && line.endsWith(" · read gated");
+            line.startsWith(feedClean ? `${tf} candles clean · ` : `${tf} candles syncing · `) &&
+            line.endsWith(" · read gated") &&
+            (feedClean ? !/syncing/i.test(line) : !/clean/i.test(line));
           if (bad.length > 0 || !wellFormed) {
             leaks.push(`${tf}/${available}/${sstale}/${aiUsable}/${basis} → "${line}"`);
           }

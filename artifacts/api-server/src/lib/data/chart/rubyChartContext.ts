@@ -187,10 +187,17 @@ export function buildGatedTrustLine(
   } else if (!feed.aiUsable) {
     feedPart = "feed delayed";
   } else {
-    // The feed itself is fresh/usable but the read is still gated for a
-    // non-feed reason (truth still syncing, or mirror/AACI handshake degraded
-    // on a PARTIAL basis). Never claim verification or liveness.
-    feedPart = feed.basis === "PARTIAL" ? "mirror syncing" : "awaiting sync";
+    // The feed itself is clean and current, so nothing is "syncing": the read
+    // is gated by another check — Chart Truth below the 75 bar (SYNCING), or
+    // a mirror / AACI handshake check that did not pass or could not be
+    // measured (PARTIAL). Any other basis was gated by the caller for its own
+    // stated reason (e.g. thin history), so no check is blamed here. Never
+    // claim verification or liveness.
+    const reason =
+      feed.basis === "SYNCING" ? " · Chart Truth below 75"
+      : feed.basis === "PARTIAL" ? " · not every chart check passed"
+      : "";
+    return `${timeframe} candles clean${reason} · read gated`;
   }
   return `${timeframe} candles syncing · ${feedPart} · read gated`;
 }

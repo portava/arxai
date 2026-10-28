@@ -5,8 +5,11 @@
 //      ChartIntelligenceState. When the feed is NOT usable it must return
 //      dataQuality:"insufficient" AND surface the visible read-time caution
 //      "Feed not confirmed at read-time — limited visibility.". When the feed
-//      IS usable it must return dataQuality:"ok" with NO such caution. The
-//      caveat is advisory only — it never gates execution (Ruby is read-only).
+//      is clean but another chart check (e.g. the broker comparison) did not
+//      pass, it is still "insufficient" but carries the checks-not-passed
+//      caution instead. When the read IS usable it must return
+//      dataQuality:"ok" with NO such caution. The caveat is advisory only —
+//      it never gates execution (Ruby is read-only).
 //
 //   2. getSymbolMarketContextTool — the assistant chat tool. When the built
 //      market context is not good / not REALTIME it must set
@@ -88,6 +91,10 @@ import {
 // feed (mirrors the chart-read honesty signal). Kept verbatim so a copy change
 // in rubyDraftRead.ts trips this test.
 const DRAFT_FEED_CAUTION = "Feed not confirmed at read-time — limited visibility.";
+// The caution a gated read with a CLEAN feed carries instead (another chart
+// check, e.g. the broker comparison, did not pass).
+const DRAFT_CHECKS_CAUTION =
+  "The feed is clean, but not every chart check passed at read-time — limited visibility.";
 
 // A forex symbol with a REAL pushed candle window → the only feed-confirmable
 // read. Forex routes through [mt5_broker, ...]; the mt5_broker seam is FIRST so
@@ -299,9 +306,16 @@ export async function run(): Promise<CiTestResultLike> {
     unboundRead.feedUsable === false,
     `unbound: draft feedUsable === false (got ${String(unboundRead.feedUsable)})`,
   );
+  // The feed itself is clean; the read is gated by the unmeasured broker
+  // comparison, so it carries the checks-not-passed caveat — never "feed not
+  // confirmed" for a feed that is.
   assert(
-    unboundRead.cautions.includes(DRAFT_FEED_CAUTION),
-    "unbound: draft carries the feed-not-confirmed caution",
+    unboundRead.dataQuality === "insufficient" && unboundRead.feedConfirmed === true,
+    `unbound: draft is insufficient with a confirmed feed (got ${String(unboundRead.dataQuality)} / feedConfirmed=${String(unboundRead.feedConfirmed)})`,
+  );
+  assert(
+    unboundRead.cautions.includes(DRAFT_CHECKS_CAUTION) && !unboundRead.cautions.includes(DRAFT_FEED_CAUTION),
+    "unbound: draft carries the checks-not-passed caution, not feed-not-confirmed",
   );
   // A quote with no observed tick time is UNVERIFIED even from the right bridge.
   updateQuoteFromMT5(VERIFIED_SYMBOL, {

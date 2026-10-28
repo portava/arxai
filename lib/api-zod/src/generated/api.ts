@@ -8751,7 +8751,13 @@ export const PostMeAssistantDraftReadResponse = zod.object({
       dataQuality: zod
         .enum(["ok", "insufficient"])
         .describe(
-          "Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale\/unconfirmed so the read carries a visible 'feed not confirmed' caveat. Advisory only; never gates execution.",
+          "Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale\/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution.",
+        ),
+      feedConfirmed: zod
+        .boolean()
+        .optional()
+        .describe(
+          "True when the candle feed itself passed its quality and freshness check (clean and not stale). An insufficient read with feedConfirmed=true was gated by another chart check, not by the feed. Absent from older servers.",
         ),
       bias: zod.enum(["bullish", "bearish", "neutral", "unknown"]),
       headline: zod.string(),

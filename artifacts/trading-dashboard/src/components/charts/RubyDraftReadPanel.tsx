@@ -110,7 +110,23 @@ export function RubyDraftReadPanel({
 
         {read && !mut.isPending && (
           <>
-            {read.dataQuality === "insufficient" && (
+            {/* A clean feed gated by another chart check (truth score, broker
+                comparison, merge seam) is not an unconfirmed feed: say which it is.
+                An older server without feedConfirmed keeps the cautious copy. */}
+            {read.dataQuality === "insufficient" && read.feedConfirmed === true && (
+              <div
+                className="flex items-start gap-1.5 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-amber-300"
+                data-testid="ruby-draft-checks-not-passed"
+              >
+                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>
+                  Feed is clean for {read.displaySymbol || trimmed} · {read.timeframe},
+                  but not every chart check passed — {name} is not giving a
+                  directional read. The checks are listed below.
+                </span>
+              </div>
+            )}
+            {read.dataQuality === "insufficient" && read.feedConfirmed !== true && (
               <div
                 className="flex items-start gap-1.5 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-amber-300"
                 data-testid="ruby-draft-feed-not-confirmed"
