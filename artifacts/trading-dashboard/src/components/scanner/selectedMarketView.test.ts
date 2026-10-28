@@ -9,6 +9,7 @@ import {
   resolveSelectedMarketView,
   WITHHELD_FALLBACK_REASON,
   selectedMarketDataAsOfLabel,
+  NOT_LIVE_LEVELS_REASON,
   type SelectedMarketViewInput,
 } from "./selectedMarketView";
 
@@ -42,8 +43,10 @@ describe("resolveSelectedMarketView", () => {
   });
 
   it("withheld with no reason falls back to a clean sentence (never empty)", () => {
+    // The drift fallback applies to a live-confirmed feed whose levels the
+    // guard withheld; a STALE feed states the feed reason instead (below).
     const view = resolveSelectedMarketView(
-      input({ levelsWithheld: true, levelsWithheldReason: null, dataState: "STALE" }),
+      input({ levelsWithheld: true, levelsWithheldReason: null, dataState: "LIVE_CONFIRMED" }),
     );
     expect(view.kind).toBe("withheld");
     if (view.kind !== "withheld") throw new Error("expected withheld");
@@ -92,5 +95,24 @@ describe("selectedMarketDataAsOfLabel", () => {
   it("no data time is awaiting data, an unparseable one is unknown", () => {
     expect(selectedMarketDataAsOfLabel(null, NOW)).toBe("Awaiting live market data");
     expect(selectedMarketDataAsOfLabel("not-a-time", NOW)).toBe("Data time unknown");
+  });
+});
+
+describe("resolveSelectedMarketView — a feed that is not live-confirmed never renders levels", () => {
+  for (const dataState of ["STALE", "SYNCING"] as const) {
+    it(`${dataState} with numbers present still renders no levels`, () => {
+      const view = resolveSelectedMarketView(input({ dataState }));
+      expect(view.kind).toBe("withheld");
+      if (view.kind !== "withheld") throw new Error("expected withheld");
+      expect(view.reason).toBe(NOT_LIVE_LEVELS_REASON);
+    });
+  }
+  it("a missing dataState is not a confirmation", () => {
+    expect(resolveSelectedMarketView(input({ dataState: undefined })).kind).toBe("withheld");
+  });
+  it("the server's withheld-read reason is shown as given", () => {
+    const reason = "The market data feed is stale: its newest bars are not current, so no direction, confidence or levels are shown.";
+    const view = resolveSelectedMarketView(input({ dataState: "STALE", readWithheldReason: reason }));
+    expect(view.kind === "withheld" && view.reason).toBe(reason);
   });
 });

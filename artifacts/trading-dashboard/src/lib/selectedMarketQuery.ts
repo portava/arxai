@@ -57,6 +57,8 @@ export interface SnapshotOk {
   dataAsOf?: string | null;
   levelsWithheld?: boolean;
   levelsWithheldReason?: string | null;
+  /** Why no directional read is shown (stale/syncing feed, too few bars); null when one is. */
+  readWithheldReason?: string | null;
   generatedAt: string;
   cacheHit: boolean;
 }

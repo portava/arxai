@@ -460,4 +460,26 @@ describe("SelectedMarketPanel — labels describe what was observed", () => {
     expect(label).not.toContain("0s ago");
     expect(label).toContain("unconfirmed");
   });
+
+  it("a STALE snapshot never shows BUY, confidence, trend or levels, even if the payload carries them", () => {
+    // A stale feed with the pre-fix envelope: BUY / High / bullish + levels.
+    mockSnapshotQuery.mockReturnValue(hookState({
+      data: liveOkSnapshot({ dataState: "STALE", readWithheldReason: undefined }),
+    }));
+    render(<SelectedMarketPanel />);
+    expect(screen.queryByTestId("badge-selected-bias")).toBeNull();
+    expect(screen.getByTestId("badge-read-withheld").textContent).toBe("No directional read");
+    expect(screen.queryByTestId("selected-market-levels")).toBeNull();
+    expect(screen.getByTestId("selected-market-levels-withheld").textContent).toContain("not confirmed live");
+    const panelText = screen.getByTestId("selected-market-panel").textContent ?? "";
+    expect(panelText).not.toContain("High confidence");
+    expect(panelText).not.toContain("Trend bullish");
+  });
+
+  it("a LIVE_CONFIRMED snapshot with levels still shows its read", () => {
+    mockSnapshotQuery.mockReturnValue(hookState({ data: liveOkSnapshot({ readWithheldReason: null }) }));
+    render(<SelectedMarketPanel />);
+    expect(screen.getByTestId("badge-selected-bias").textContent).toBe("BUY");
+    expect(screen.getByTestId("selected-market-levels")).toBeTruthy();
+  });
 });

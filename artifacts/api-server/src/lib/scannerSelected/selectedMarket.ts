@@ -36,6 +36,10 @@ import {
   isChartTimeframe,
   type ChartTimeframe,
 } from "../data/chart/timeframes.js";
+import {
+  evaluateMarketDataSufficiency,
+  type MarketDataSufficiencyVerdict,
+} from "@workspace/domain/market";
 import { scoreNewsRisk } from "../news/calendar/newsRiskScorer.js";
 import type { EconomicEvent } from "../news/calendar/economicEvents.js";
 import { isSupported, normalizeSymbol } from "../instruments/index.js";
@@ -165,6 +169,12 @@ export interface SelectedMarketResult {
   levelsWithheld: boolean;
   /** The guard's reason sentence when levels are withheld, else null. */
   levelsWithheldReason: string | null;
+  /**
+   * Why NO directional read (bias, confidence, trend, levels) is shown, or null
+   * when one is. Set whenever the feed is not LIVE_CONFIRMED or the shared
+   * data-sufficiency verdict (the scanner row's) withholds direction.
+   */
+  readWithheldReason: string | null;
   generatedAt: string;
   cacheHit: boolean;
 }
@@ -274,6 +284,19 @@ function buildExplanation(a: MarketAnalysis, newsBlocking: boolean, newsReason: 
   };
 }
 
+/** Non-directional copy for a withheld read: no side, no level, no "setup". */
+function withheldExplanation(reason: string, newsReason: string): SelectedMarketExplanation {
+  return {
+    hedge: "No directional read right now.",
+    why: reason,
+    whyItMatters: "Direction, confidence and levels return once the feed is confirmed live with enough closed bars.",
+    risk: "There is no actionable read until the feed is confirmed live.",
+    invalidation: "Not available without a current read.",
+    cautions: newsReason ? [newsReason] : [],
+    disclaimer: "Decision support only — confirm live readiness and risk before trading.",
+  };
+}
+
 async function loadEventRows(symbol: string, currencyHints: string[]): Promise<{
   events: SelectedMarketEvent[];
   scorerInput: EconomicEvent[];
@@ -370,6 +393,31 @@ function computeAtr(candles: NormalizedChartCandle[], period = 14): number | nul
   const window = trs.slice(-period);
   if (window.length === 0) return null;
   return window.reduce((a, b) => a + b, 0) / window.length;
+}
+
+/** The shared freshness scale the scanner row feeds the sufficiency verdict. */
+function freshnessVerdictFor(state: TruthDataState): "LIVE" | "LIVE_DELAYED" | "AWAITING" {
+  if (state === "LIVE_CONFIRMED") return "LIVE";
+  if (state === "STALE") return "LIVE_DELAYED";
+  return "AWAITING";
+}
+
+/**
+ * Why the directional read is withheld, or null when it may be shown. Only a
+ * LIVE_CONFIRMED feed that also passes the scanner's shared sufficiency verdict
+ * may show a bias, confidence, trend or levels.
+ */
+function readWithheldReasonFor(state: TruthDataState, sufficiency: MarketDataSufficiencyVerdict): string | null {
+  if (state === "STALE") {
+    return "The market data feed is stale: its newest bars are not current, so no direction, confidence or levels are shown.";
+  }
+  if (state === "SYNCING") {
+    return "The market data feed is not confirmed live yet (it is still syncing), so no direction, confidence or levels are shown.";
+  }
+  if (state !== "LIVE_CONFIRMED") {
+    return "No confirmed market data feed, so no direction, confidence or levels are shown.";
+  }
+  return sufficiency.mayShowBias ? null : sufficiency.humanReason;
 }
 
 // ── Public ────────────────────────────────────────────────────────────────
@@ -492,6 +540,7 @@ async function buildSelectedMarketSnapshot(
       dataAsOf,
       levelsWithheld: true,
       levelsWithheldReason: null,
+      readWithheldReason: "No closed candles from the market data feed yet, so there is no read to show.",
       generatedAt: new Date().toISOString(),
       cacheHit: false,
     };
@@ -510,23 +559,37 @@ async function buildSelectedMarketSnapshot(
   };
   const staleness = evaluateLevelStaleness({ price, levels: levelInput, atr });
   const dataState = deriveDataState(fs);
+  // ONE data-sufficiency truth: the SAME shared verdict the scanner row applies.
+  // A stale or syncing feed, or too few closed bars, withholds every directional
+  // field — never a BUY / High confidence / levels read on data that is not current.
+  const sufficiency = evaluateMarketDataSufficiency({
+    symbol,
+    timeframe,
+    freshnessVerdict: freshnessVerdictFor(dataState),
+    availableClosedCandles: closed.length,
+  });
+  const readWithheldReason = readWithheldReasonFor(dataState, sufficiency);
+  const readShown = readWithheldReason === null;
+  const levelsShown = readShown && !staleness.stale;
 
   const hints = currencyHintsFor(symbol);
   const { events, scorerInput } = await deps.loadEventsFn(symbol, hints);
   const news = scoreNewsRisk(symbol, scorerInput);
   const highlights: SelectedMarketHighlights = {
-    bias: biasFromAction(a.recommendedAction),
-    confidenceLabel: confidenceLabel(a.confidenceScore),
-    confidenceScore: Math.round(a.confidenceScore),
+    bias: readShown ? biasFromAction(a.recommendedAction) : "WAIT",
+    confidenceLabel: readShown ? confidenceLabel(a.confidenceScore) : "Very Low",
+    confidenceScore: readShown ? Math.round(a.confidenceScore) : 0,
     volatilityLabel: volatilityLabel(a.riskScore, a.marketBias),
-    trendState: a.marketBias,
-    entryZone: staleness.stale ? null : a.entryZone,
-    suggestedStop: staleness.stale ? null : a.stopLoss,
-    suggestedTakeProfit: staleness.stale ? null : a.takeProfit,
-    riskRewardRatio: a.riskRewardRatio,
+    trendState: readShown ? a.marketBias : "neutral",
+    entryZone: levelsShown ? a.entryZone : null,
+    suggestedStop: levelsShown ? a.stopLoss : null,
+    suggestedTakeProfit: levelsShown ? a.takeProfit : null,
+    riskRewardRatio: levelsShown ? a.riskRewardRatio : 0,
     riskWarnings: news.blockTrading ? [news.reason] : [],
   };
-  const explanation = buildExplanation(a, news.blockTrading, news.reason);
+  const explanation = readWithheldReason === null
+    ? buildExplanation(a, news.blockTrading, news.reason)
+    : withheldExplanation(readWithheldReason, news.reason);
   const result: SelectedMarketResult = {
     ok: true,
     symbolRaw,
@@ -540,8 +603,9 @@ async function buildSelectedMarketSnapshot(
     dataSourceLabel,
     dataState,
     dataAsOf,
-    levelsWithheld: staleness.stale,
-    levelsWithheldReason: staleness.stale ? staleness.reason : null,
+    levelsWithheld: !levelsShown,
+    levelsWithheldReason: !readShown ? readWithheldReason : staleness.stale ? staleness.reason : null,
+    readWithheldReason,
     generatedAt: new Date().toISOString(),
     cacheHit: false,
   };

@@ -14,7 +14,12 @@ import { useScannerTruth } from "@/hooks/useScannerTruth";
 import { useScannerTimeframe } from "@/hooks/useScannerTimeframe";
 import { useSelectedMarketSnapshot } from "@/hooks/useSelectedMarketSnapshot";
 import { resolveTradeAffordance } from "@/lib/trade-affordance";
-import { resolveSelectedMarketView, selectedMarketDataAsOfLabel } from "@/components/scanner/selectedMarketView";
+import {
+  resolveSelectedMarketView,
+  selectedMarketDataAsOfLabel,
+  selectedMarketReadShown,
+  NOT_LIVE_LEVELS_REASON,
+} from "@/components/scanner/selectedMarketView";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { buildReasoningFromOppMap } from "@/lib/rubyReasoningBlock";
 import { useAssistantName } from "@/lib/assistant-name";
@@ -131,10 +136,17 @@ export function SelectedMarketPanel() {
   const fallbackMessage =
     fallback && fallback.ok === false ? fallback.message : undefined;
 
+  // Downgrade-only: a read the feed cannot support is never shown as direction.
+  const readShown = ok ? selectedMarketReadShown(ok) : false;
+  const readWithheldReason = ok && !readShown
+    ? ok.readWithheldReason ?? NOT_LIVE_LEVELS_REASON
+    : null;
+
   const rubyNote = useMemo(() => {
     if (!ok) return null;
+    if (readWithheldReason) return `No directional read right now. ${readWithheldReason}`;
     return `${ok.explanation.hedge} ${ok.explanation.why}`;
-  }, [ok]);
+  }, [ok, readWithheldReason]);
 
   // ONE always-visible Ruby Reasoning Block for the selected/detail view.
   // Honesty: levelsWithheld / a degraded dataState collapse this to
@@ -142,6 +154,36 @@ export function SelectedMarketPanel() {
   // entry/stop/target. Display only; grants no execution permission.
   const oppReasoning = useMemo(() => {
     if (!ok) return null;
+    if (readWithheldReason) {
+      // Downgrade-only: no side, confidence, trend or level reaches the
+      // reasoning block when the feed cannot support a directional read.
+      return buildReasoningFromOppMap({
+        symbol: ok.symbol,
+        timeframe: ok.timeframe,
+        bias: "WAIT",
+        confidenceLabel: "",
+        trendState: "",
+        volatilityLabel: "",
+        entryZone: null,
+        suggestedStop: null,
+        suggestedTakeProfit: null,
+        riskRewardRatio: 0,
+        riskWarnings: ok.highlights.riskWarnings ?? [],
+        explanation: {
+          hedge: "No directional read right now.",
+          why: readWithheldReason,
+          whyItMatters: "Direction, confidence and levels return once the feed is confirmed live with enough closed bars.",
+          risk: "There is no actionable read until the feed is confirmed live.",
+          invalidation: "Not available without a current read.",
+          cautions: ok.explanation.cautions ?? [],
+        },
+        levelsWithheld: true,
+        levelsWithheldReason: readWithheldReason,
+        dataState: ok.dataState ?? null,
+        dataSourceLabel: ok.dataSourceLabel ?? null,
+        newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
+      });
+    }
     return buildReasoningFromOppMap({
       symbol: ok.symbol,
       timeframe: ok.timeframe,
@@ -168,7 +210,7 @@ export function SelectedMarketPanel() {
       dataSourceLabel: ok.dataSourceLabel ?? null,
       newsRiskLevel: ok.newsRisk?.riskLevel ?? null,
     });
-  }, [ok]);
+  }, [ok, readWithheldReason]);
 
   return (
     <Card className="rounded-2xl border-success/25 bg-card" data-testid="selected-market-panel">
@@ -248,10 +290,18 @@ export function SelectedMarketPanel() {
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="outline">{ok.symbol}</Badge>
               <Badge variant="outline">{ok.timeframe}</Badge>
-              <Badge className={biasBadgeClass(ok.highlights.bias)}>{ok.highlights.bias}</Badge>
-              <Badge variant="outline">{ok.highlights.confidenceLabel} confidence</Badge>
-              <Badge variant="outline">Volatility {ok.highlights.volatilityLabel}</Badge>
-              <Badge variant="outline">Trend {ok.highlights.trendState}</Badge>
+              {readShown ? (
+                <>
+                  <Badge className={biasBadgeClass(ok.highlights.bias)} data-testid="badge-selected-bias">{ok.highlights.bias}</Badge>
+                  <Badge variant="outline">{ok.highlights.confidenceLabel} confidence</Badge>
+                  <Badge variant="outline">Volatility {ok.highlights.volatilityLabel}</Badge>
+                  <Badge variant="outline">Trend {ok.highlights.trendState}</Badge>
+                </>
+              ) : (
+                <Badge variant="outline" data-testid="badge-read-withheld" title={readWithheldReason ?? undefined}>
+                  No directional read
+                </Badge>
+              )}
               {ok.dataSourceLabel && (
                 <Badge variant="outline" data-testid="badge-data-source">{ok.dataSourceLabel}</Badge>
               )}

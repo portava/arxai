@@ -481,3 +481,85 @@ test("dataAsOf is the newest CLOSED bar's close time and never later than now", 
   assert.ok(Date.parse(env.dataAsOf) <= Date.now(), `dataAsOf ${env.dataAsOf} must not be in the future`);
   assert.equal(env.dataAsOf, new Date(formingOpenMs).toISOString());
 });
+
+// ── A stale or syncing feed never shows a directional read ──────────────────
+// Repro: EURUSD H1 on a stale mt5_broker feed, newest bar 6h old, window drifting
+// up. The price equals the last close, so the level guard does not fire. The
+// envelope said dataState STALE but bias BUY, High confidence, trend bullish,
+// an entry zone, stop and target, and "This looks like a possible buy setup".
+for (const [label, fs] of [
+  ["STALE", { source: "mt5_broker", stale: true, quality: "stale", isLive: false, trailingIntervals: 6 }],
+  ["SYNCING", { source: "mt5_broker", stale: false, quality: "delayed", isLive: false, trailingIntervals: 2 }],
+] as const) {
+  test(`a ${label} feed withholds bias, confidence, trend and levels`, async () => {
+    clearSelectedMarketCache();
+    const lastCandleTime = new Date(Date.now() - 6 * 3600_000).toISOString();
+    const stub = (async () => makeChart(bullishBars(200, 1.1033, 0.0002), {
+      ...(fs as Partial<ChartFeedStatus>), lastCandleTime,
+    })) as SelectedMarketDeps["getChartCandlesFn"];
+    const env = await getSelectedMarketSnapshot(
+      { symbolRaw: "EURUSD", timeframe: "H1", refresh: true },
+      { getChartCandlesFn: stub, loadEventsFn: noEvents },
+    );
+    assert.equal(env.ok, true);
+    if (!env.ok) return;
+    assert.equal(env.dataState, label);
+    assert.ok(env.highlights.bias === "WAIT" || env.highlights.bias === "NEUTRAL", `bias ${env.highlights.bias}`);
+    assert.notEqual(env.highlights.confidenceLabel, "High");
+    assert.equal(env.highlights.confidenceScore, 0);
+    assert.notEqual(env.highlights.trendState, "bullish");
+    assert.equal(env.highlights.entryZone, null);
+    assert.equal(env.highlights.suggestedStop, null);
+    assert.equal(env.highlights.suggestedTakeProfit, null);
+    assert.equal(env.levelsWithheld, true);
+    assert.ok(typeof env.readWithheldReason === "string" && env.readWithheldReason.length > 0);
+    assert.equal(env.levelsWithheldReason, env.readWithheldReason);
+    const copy = [env.explanation.hedge, env.explanation.why, env.explanation.risk, env.explanation.invalidation].join(" ");
+    assert.doesNotMatch(copy, /\b(buy|sell|bullish|bearish)\b/i, copy);
+  });
+}
+
+test("a LIVE_CONFIRMED feed with enough closed bars still shows its read", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: noEvents },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.equal(env.readWithheldReason, null);
+  assert.equal(env.highlights.trendState, "bullish");
+});
+
+test("too few closed bars withholds the read with the shared sufficiency reason", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () => makeChart(bullishBars(3, 1.15, 0.0005), FRESH_FS)) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: noEvents },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.match(env.readWithheldReason ?? "", /Not enough closed candles yet \(3\/5\)/);
+  assert.equal(env.highlights.bias, "WAIT");
+  assert.equal(env.highlights.entryZone, null);
+});
+
+// Finding: the source label must not claim liveness. Already fixed upstream
+// (sourceLabelFor names the provider only); locked here for stale data.
+test("a stale mt5_broker feed's source label makes no liveness claim", async () => {
+  clearSelectedMarketCache();
+  const stub = (async () => makeChart(bullishBars(60, 1.15, 0.0005), {
+    source: "mt5_broker", stale: true, quality: "stale", isLive: false,
+    lastCandleTime: new Date(Date.now() - 4 * 60_000).toISOString(),
+  })) as SelectedMarketDeps["getChartCandlesFn"];
+  const env = await getSelectedMarketSnapshot(
+    { symbolRaw: "EURUSD", timeframe: "M1", refresh: true },
+    { getChartCandlesFn: stub, loadEventsFn: noEvents },
+  );
+  assert.ok(env.ok);
+  if (!env.ok) return;
+  assert.equal(env.dataState, "STALE");
+  assert.doesNotMatch(env.dataSourceLabel ?? "", /live/i);
+});
