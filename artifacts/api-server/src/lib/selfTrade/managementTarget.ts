@@ -34,6 +34,7 @@ import {
   evaluateProtectiveObservation,
   evaluateTicketCommands,
   parseObservationTime,
+  sameAccountTicketCommands,
 } from "./freshFacts.js";
 import { doesNotLoosenStop } from "@workspace/domain/self-trade";
 
@@ -515,6 +516,8 @@ export function claimManagementCommand(
               sentToMt5At: commands.sentToMt5At,
               filledAt: commands.filledAt,
               rejectedAt: commands.rejectedAt,
+              bridgeConnectionId: commands.bridgeConnectionId,
+              accountLogin: commands.accountLogin,
             })
             .from(commands)
             .where(
@@ -526,7 +529,15 @@ export function claimManagementCommand(
                 ne(commands.commandId, current.commandId),
               ),
             );
-          const ordered = evaluateTicketCommands(ticketCommands, evidenceAtMs);
+          // Only this position's account: the same ticket number on another
+          // bridge or login is another position (unattributed rows are kept).
+          const ordered = evaluateTicketCommands(
+            sameAccountTicketCommands(ticketCommands, {
+              bridgeConnectionId: target.bridgeConnectionId,
+              accountLogin: target.accountLogin,
+            }),
+            evidenceAtMs,
+          );
           if (!ordered.ok) refuse(ordered.reason);
           if (target.action !== "EXIT") {
             const geometry = doesNotLoosenStop(

@@ -22,8 +22,9 @@
 //   2. pre-checks what would make waiting pointless (bridge identity, online
 //      heartbeat, EA capability, platform stop, user arming / kill switch);
 //   3. waits for the next COMPLETE terminal sweep strictly newer than the hold
-//      (sweep-provenance, marker, heartbeat, after every ticket command, with
-//      no close/modify for the ticket still in flight);
+//      (sweep-provenance, marker, heartbeat, after every ticket command on this
+//      position's account, with no close/modify for the ticket still in
+//      flight), re-verifying the bridge identity on every poll;
 //   4. recomputes the decision from the fresh row, re-verifies the exact
 //      position identity and the bridge identity on the final connection
 //      record, requires a fresh heartbeat, proves the geometry invariants,
@@ -46,6 +47,7 @@ import {
   type SelfTradeAgentExecution,
 } from "@workspace/db";
 import {
+  PROTECTIVE_HOLD_REASONS,
   classifyProtectiveTrigger,
   evaluateManagementAction,
   evaluateProtectiveGeometry,
@@ -72,6 +74,7 @@ import { writeSelfTradeAudit } from "./audit.js";
 import {
   evaluateProtectiveObservation,
   evaluateTicketCommands,
+  sameAccountTicketCommands,
   type ProtectiveObservationVerdict,
 } from "./freshFacts.js";
 import { managementPositionScope } from "./managementConsumers.js";
@@ -128,6 +131,9 @@ export interface TicketCommandTimes {
   sentToMt5At: Date | null;
   filledAt: Date | null;
   rejectedAt: Date | null;
+  /** The command's account; a same-numbered ticket elsewhere is filtered out. */
+  bridgeConnectionId?: number | null;
+  accountLogin?: string | null;
 }
 
 export interface ProtectivePathDeps {
@@ -181,6 +187,16 @@ const NOTHING_NEWER = new Set<string>([
   "PROTECTIVE_OBSERVATION_STALE",
 ]);
 
+/** A pipeline refusal carrying one of these is a protective final-claim refusal with its own text. */
+const PROTECTIVE_REFUSALS = new Set<string>(
+  PROTECTIVE_HOLD_REASONS.filter((r) => r.startsWith("PROTECTIVE_")),
+);
+/** Final-claim refusals caused by another command on the ticket; re-read to name it. */
+const TICKET_COMMAND_REFUSALS = new Set<string>([
+  "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT",
+  "PROTECTIVE_TICKET_COMMAND_AFTER_EVIDENCE",
+]);
+
 const INFO_HOLDS = new Set<ProtectiveHoldReason>([
   "PROTECTIVE_HOLD_TRIGGER_CLEARED",
   "PROTECTIVE_HOLD_DEFERRED_TO_NEXT_CYCLE",
@@ -224,7 +240,12 @@ export async function runProtectiveActionPath(
     deps.readRowByScope ??
     (async (scope: SQL) => (await livePositionLedger.read({ where: scope, limit: 1 }))[0]);
   const readConnection = deps.readConnection ?? ((id: number) => getConnection(id));
-  const readTicketCommands = deps.readTicketCommands ?? (async () => []);
+  // Only this position's account (same bridge and login, or unattributed).
+  const readTicketCommands = async () =>
+    sameAccountTicketCommands(await (deps.readTicketCommands ?? (async () => []))(), {
+      bridgeConnectionId: ctx.entry.bridgeConnectionId,
+      accountLogin: ctx.entry.accountLogin,
+    });
   const readPlatformStop = deps.readPlatformStop ?? (() => platformStop());
   const readArming = deps.readArming ?? ((userId: number) => getMyArming(userId));
   const dispatch = deps.dispatch ?? dispatchClaimedManagement;
@@ -237,10 +258,12 @@ export async function runProtectiveActionPath(
   const hold = async (
     reason: ProtectiveHoldReason,
     detail: Record<string, unknown>,
+    note?: string,
   ): Promise<ProtectivePathResult> => {
     const waitedMs = Math.max(0, now() - startedAt);
     const safe = redactProtectiveDetail({ ...detail, waitedMs, polls });
-    const explanation = explainProtectiveHold(reason, safe);
+    const text = explainProtectiveHold(reason, safe);
+    const explanation = note ? `${text} ${note}` : text;
     try {
       await writeSelfTradeAudit(db, {
         agentId: agent.id,
@@ -335,6 +358,12 @@ export async function runProtectiveActionPath(
       if (!row) return hold("PROTECTIVE_IDENTITY_ROW_MISSING", { ticket: e.brokerTicket });
       conn = await readConnection(bridgeId!);
       if (!conn) return hold("PROTECTIVE_BRIDGE_UNVERIFIED", { expectedBridge: bridgeId, bridge: null });
+      // Bridge identity on every poll: a revocation, account change or lost
+      // heartbeat during the wait is reported as itself at once, never as "no
+      // fresh sweep" after the whole budget.
+      const bridgeWait = verifyProtectiveBridge(entry, e, conn, classifyHeartbeatAt(conn.lastHeartbeat, now()));
+      if (!bridgeWait.ok)
+        return hold(bridgeWait.reason, { ...bridgeWait.detail, stage: "wait", ageMs: heartbeatAgeMs(conn, now()) });
       ticketCommands = await readTicketCommands();
       // A close/modify still in flight may not be reflected by any sweep yet.
       const inFlight = evaluateTicketCommands(ticketCommands);
@@ -381,7 +410,8 @@ export async function runProtectiveActionPath(
     if (!row) return hold("PROTECTIVE_IDENTITY_ROW_MISSING", { ticket: e.brokerTicket });
     // Every ticket command seen is strictly older than the evidence; the newest
     // one's time travels with the claim for the final-claim parity check.
-    const ordered = evaluateTicketCommands(ticketCommands, v.observedAtMs);
+    const observedAtMs = v.observedAtMs;
+    const ordered = evaluateTicketCommands(ticketCommands, observedAtMs);
     if (!ordered.ok) return hold(ordered.reason, ordered.detail);
     const evidenceAtMs = now();
     const verifyStart = performance.now();
@@ -492,10 +522,34 @@ export async function runProtectiveActionPath(
         },
       },
     });
+    // A final-claim refusal that names a protective reason (claimManagementCommand
+    // parity, e.g. a manual command that reached the terminal after this
+    // evidence) is held under that reason with its own text; the command it
+    // concerns is re-read to name it, and a recorded agent command is still
+    // named for reconciliation.
+    const protectiveRefusal = async (error: string, commandId: string | null) => {
+      let detail: Record<string, unknown> = {};
+      if (TICKET_COMMAND_REFUSALS.has(error)) {
+        try {
+          const again = evaluateTicketCommands(await readTicketCommands(), observedAtMs);
+          if (!again.ok) detail = again.detail;
+        } catch {
+          // The reason alone still explains the hold.
+        }
+      }
+      return hold(
+        error as ProtectiveHoldReason,
+        { ...detail, trigger, stage: "final-claim", refusedCommandId: commandId, pipelineReason: error },
+        commandId
+          ? `The refused command ${commandId} is kept for reconciliation and is not retried.`
+          : undefined,
+      );
+    };
     switch (outcome.outcome) {
       case "DISPATCHED":
         return { status: "DISPATCHED", trigger, waitedMs, polls, outcome };
       case "REFUSED_WITH_COMMAND":
+        if (PROTECTIVE_REFUSALS.has(outcome.error)) return protectiveRefusal(outcome.error, outcome.commandId);
         // A gate refused after the command row existed. The row is kept for
         // reconciliation (never rolled back here); the position was not acted on.
         return hold("PROTECTIVE_HOLD_REFUSED_WITH_COMMAND", {
@@ -504,6 +558,7 @@ export async function runProtectiveActionPath(
           pipelineReason: outcome.error,
         });
       case "REFUSED_WITHOUT_COMMAND":
+        if (PROTECTIVE_REFUSALS.has(outcome.error)) return protectiveRefusal(outcome.error, null);
         return hold("PROTECTIVE_HOLD_PIPELINE_REFUSED", { trigger, pipelineReason: outcome.error });
       case "AUDIT_FAILED":
         return hold("PROTECTIVE_HOLD_INTERNAL_ERROR", {

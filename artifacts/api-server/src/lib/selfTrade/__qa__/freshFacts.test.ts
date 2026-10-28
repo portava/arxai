@@ -15,6 +15,7 @@ import {
   evaluateTicketCommands,
   futureToleranceMs,
   parseObservationTime,
+  sameAccountTicketCommands,
   type EntryMarketObservation,
   type ProtectiveObservationInput,
 } from "../freshFacts.js";
@@ -594,5 +595,21 @@ describe("ticket commands for a protective action", () => {
       why(evaluateTicketCommands([cmd({ filledAt: new Date(T + 5) }), cmd({ commandId: "m3", status: "SENT_TO_MT5_LIVE", filledAt: null })], T)),
       "PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT",
     );
+  });
+  it("only commands on this position's bridge and login count; unknown attribution is kept", () => {
+    const account = { bridgeConnectionId: 12, accountLogin: "A" };
+    const same = { ...cmd({ commandId: "same" }), bridgeConnectionId: 12, accountLogin: "A" };
+    const otherBridge = { ...cmd({ commandId: "other-bridge" }), bridgeConnectionId: 13, accountLogin: "A" };
+    const otherLogin = { ...cmd({ commandId: "other-login" }), bridgeConnectionId: 12, accountLogin: "B" };
+    const noBridge = { ...cmd({ commandId: "no-bridge" }), bridgeConnectionId: null, accountLogin: "A" };
+    const noLogin = { ...cmd({ commandId: "no-login" }), bridgeConnectionId: 12, accountLogin: null };
+    const bare = { ...cmd({ commandId: "bare" }), bridgeConnectionId: undefined, accountLogin: undefined };
+    const kept = sameAccountTicketCommands([same, otherBridge, otherLogin, noBridge, noLogin, bare], account);
+    assert.deepEqual(kept.map((c) => c.commandId), ["same", "no-bridge", "no-login", "bare"]);
+    // A same-numbered ticket in flight on another account never holds this one.
+    const stuck = { ...cmd({ commandId: "b-close", status: "SENT_TO_MT5_LIVE", filledAt: null }), bridgeConnectionId: 13, accountLogin: "B" };
+    assert.equal(why(evaluateTicketCommands(sameAccountTicketCommands([stuck], account), T)), "OK");
+    // An unknown position account cannot place anything: keep every command.
+    assert.equal(sameAccountTicketCommands([otherBridge, otherLogin], { bridgeConnectionId: null, accountLogin: null }).length, 2);
   });
 });

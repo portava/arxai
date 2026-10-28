@@ -450,6 +450,10 @@ export async function manageAgentPositions(
           sentToMt5At: arxLiveCommandsTable.sentToMt5At,
           filledAt: arxLiveCommandsTable.filledAt,
           rejectedAt: arxLiveCommandsTable.rejectedAt,
+          // Read for the protective path, which keeps only this position's
+          // account; the ordinary ordering check below uses every row.
+          bridgeConnectionId: arxLiveCommandsTable.bridgeConnectionId,
+          accountLogin: arxLiveCommandsTable.accountLogin,
         })
         .from(arxLiveCommandsTable)
         .where(

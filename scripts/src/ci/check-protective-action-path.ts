@@ -10,19 +10,24 @@
 //
 //   1. livePositionManager.ts queues the candidate (queueProtectiveCandidate()
 //      inside the bracket-matched `if (!observation.ok) {` block, after the
-//      hold is counted, and that block ends with `continue;`), never calls
-//      runProtectiveActionPath( itself, drains its own cycle only after the
-//      per-execution loop, and the ordinary evaluatePositionObservation( call
+//      hold is counted, and that block's last statement is an unconditional
+//      `continue;`), never calls runProtectiveActionPath( itself, binds
+//      `protectiveCycle = options.protectiveCycle ?? createProtectiveCycle()`,
+//      drains only inside a bracket-matched `if (!options.protectiveCycle) {`
+//      block after the per-execution loop (a caller-supplied cycle is never
+//      drained per agent), and the ordinary evaluatePositionObservation( call
 //      carries no maxAgeMs of its own (the 90 s contract is untouched).
 //   2. protectiveActionPath.ts never imports (statically or with import())
 //      a position writer, a command table, the live command pipeline,
 //      instantTrade, the Trade Engine, the MT5 transport, fetch or node:http;
 //      its only ruleId literal (if any) is "self-trade-manage"; within
 //      runProtectiveActionPath the order is evidence → identity → final
-//      bridge identity → geometry → compare-and-set claim → dispatch, and each
+//      bridge identity → geometry → compare-and-set claim → dispatch, the wait
+//      loop re-verifies the bridge on every poll, and each
 //      of those checks refuses in the exact shape `if (!X.ok) return hold(`
-//      (evidence after its wait loop, every verifyProtectiveBridge( call,
-//      identity, geometry); drainProtectiveCycle calls runProtectiveActionPath(.
+//      (evidence after its wait loop and before identity and the claim, every
+//      verifyProtectiveBridge( call, identity, geometry); drainProtectiveCycle
+//      calls runProtectiveActionPath(.
 //   3. managementTarget.claimManagementCommand re-checks a protective claim
 //      (pendingManagement?.protective → evaluateProtectiveObservation, then
 //      evaluateTicketCommands over the ticket's other commands) after
@@ -32,10 +37,11 @@
 //   5. freshFacts.ts still exports POSITION_OBSERVATION_MAX_AGE_MS = 90_000 and
 //      evaluateProtectiveObservation has no window literal of its own.
 //   6. lib/domain/src/self-trade/protectiveAction.ts imports only from "./".
-//   7. autonomousCycle.ts calls manageAgentPositions( only inside the
-//      `!chain.shouldPauseManagement` block, with the cycle's protectiveCycle,
-//      and drains that cycle (drainProtectiveCycle() only after the per-agent
-//      loop.
+//   7. autonomousCycle.ts binds `const protectiveCycle = createProtectiveCycle()`
+//      once, before the per-agent loop, calls manageAgentPositions( only inside
+//      the `!chain.shouldPauseManagement` block passing that same binding, and
+//      drains it (drainProtectiveCycle(protectiveCycle)) exactly once after
+//      the per-agent loop.
 //
 // Pure source analysis (comment-stripped text): no network, no DB.
 
@@ -144,27 +150,42 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * Every `const X = name(` (or `X = name(` when `assigned`) in `body`, with
  * whether the statement right after the call is the exact refusal
  * `if (!X.ok) <then>` (or, when `anywhereAfter`, whether that refusal
- * appears anywhere after the call).
+ * appears anywhere after the call) and where that refusal starts (-1 if none).
  */
 function refusalShapes(
   body: string,
   name: string,
   then: string,
   opts: { assigned?: boolean; anywhereAfter?: boolean } = {},
-): Array<{ at: number; variable: string; refuses: boolean }> {
+): Array<{ at: number; variable: string; refuses: boolean; refusalAt: number }> {
   const decl = opts.assigned
     ? new RegExp(`(?:const\\s+|let\\s+)?(\\w+)\\s*=\\s*${name}\\(`, "g")
     : new RegExp(`const\\s+(\\w+)\\s*=\\s*${name}\\(`, "g");
-  const out: Array<{ at: number; variable: string; refuses: boolean }> = [];
+  const out: Array<{ at: number; variable: string; refuses: boolean; refusalAt: number }> = [];
   let m: RegExpExecArray | null;
   while ((m = decl.exec(body))) {
     const variable = m[1]!;
     const callAt = m.index + m[0].length - name.length - 1;
     const end = callEnd(body, callAt, name);
     const refusal = new RegExp(`${opts.anywhereAfter ? "" : "^\\s*;?\\s*"}if\\s*\\(\\s*!\\s*${escapeRe(variable)}\\.ok\\s*\\)\\s*${then}`);
-    out.push({ at: m.index, variable, refuses: end > 0 && refusal.test(body.slice(end)) });
+    const found = end > 0 ? refusal.exec(body.slice(end)) : null;
+    out.push({ at: m.index, variable, refuses: found != null, refusalAt: found ? end + found.index : -1 });
   }
   return out;
+}
+
+/**
+ * True when the block's last statement is an unconditional `continue;`:
+ * nested blocks are collapsed to `{}`, and the text before `continue;` must end
+ * a statement (`;` or `}`), not a condition (`if (x) continue;`, `else continue;`).
+ */
+function endsWithUnconditionalContinue(block: string): boolean {
+  let inner = block.slice(1, -1);
+  for (let prev = ""; prev !== inner; ) {
+    prev = inner;
+    inner = inner.replace(/\{[^{}]*\}/g, "{}");
+  }
+  return /(?:^|[;}])\s*continue;\s*$/.test(inner);
 }
 
 export function scanProtectiveSources(raw: Sources): string[] {
@@ -186,16 +207,27 @@ export function scanProtectiveSources(raw: Sources): string[] {
       else if (queued < 0) v.push(`${PROTECTIVE_FILES.manager}: must queue the protective candidate (queueProtectiveCandidate() from the observation hold`);
       else if (!(queued > counted))
         v.push(`${PROTECTIVE_FILES.manager}: queueProtectiveCandidate( must run after the hold is counted (not a bypass)`);
-      if (!/continue;\s*\}$/.test(block))
-        v.push(`${PROTECTIVE_FILES.manager}: the observation hold block must end with continue; (the refused observation never reaches the ordinary decision)`);
+      if (!endsWithUnconditionalContinue(block))
+        v.push(`${PROTECTIVE_FILES.manager}: the observation hold block must end with an unconditional continue; (the refused observation never reaches the ordinary decision)`);
       const loopAt = manager.indexOf("for (const e of filled) {");
       const loop = loopAt < 0 ? null : blockAfter(manager, loopAt);
       const loopEnd = loop == null ? -1 : manager.indexOf(loop, loopAt) + loop.length;
-      const drain = manager.indexOf("drainProtectiveCycle(");
+      const drains = [...manager.matchAll(/\bdrainProtectiveCycle\(/g)].map((m) => m.index!);
+      const standaloneAt = loopEnd < 0 ? -1 : manager.indexOf("if (!options.protectiveCycle) {", loopEnd);
+      const standalone = standaloneAt < 0 ? null : blockAfter(manager, standaloneAt);
+      const standaloneStart = standalone == null ? -1 : manager.indexOf(standalone, standaloneAt);
       if (loop == null) v.push(`${PROTECTIVE_FILES.manager}: the per-execution loop (for (const e of filled) {) is missing`);
-      else if (drain < 0 || drain < loopEnd)
-        v.push(`${PROTECTIVE_FILES.manager}: a standalone call must drainProtectiveCycle( after the per-execution loop (ordinary dispatches first)`);
+      else if (
+        drains.length !== 1 ||
+        standalone == null ||
+        drains[0]! < standaloneStart ||
+        drains[0]! > standaloneStart + standalone.length ||
+        !standalone.includes("drainProtectiveCycle(protectiveCycle)")
+      )
+        v.push(`${PROTECTIVE_FILES.manager}: a standalone call must drainProtectiveCycle(protectiveCycle) once, inside if (!options.protectiveCycle) { after the per-execution loop (ordinary dispatches first; a caller's cycle is drained by the caller)`);
     }
+    if (!/const\s+protectiveCycle\s*=\s*options\.protectiveCycle\s*\?\?\s*createProtectiveCycle\(\)/.test(manager))
+      v.push(`${PROTECTIVE_FILES.manager}: must queue into the caller's cycle (const protectiveCycle = options.protectiveCycle ?? createProtectiveCycle())`);
     if (/\brunProtectiveActionPath\(/.test(manager))
       v.push(`${PROTECTIVE_FILES.manager}: must not call runProtectiveActionPath( inline; queue the candidate and drain after the ordinary loop`);
     const ordinary = callArgs(manager, "evaluatePositionObservation");
@@ -241,6 +273,12 @@ export function scanProtectiveSources(raw: Sources): string[] {
         v.push(`${PROTECTIVE_FILES.path}: order must be evidence → identity → geometry → compare-and-set claim → dispatch`);
       else if (bridges.length < 2 || !(finalBridge > evidence && finalBridge < geometry))
         v.push(`${PROTECTIVE_FILES.path}: bridge identity must be verified before the wait and again on the final connection record (after evidence, before geometry and the claim)`);
+      // ...and on every poll of the wait loop, so a revocation mid-wait holds
+      // as itself instead of spending the budget as "no fresh sweep".
+      const waitAt = body.indexOf("for (;;) {");
+      const wait = waitAt < 0 ? null : blockAfter(body, waitAt);
+      if (wait == null || !wait.includes("evaluateProtectiveObservation(") || !refusalShapes(wait, "verifyProtectiveBridge", "return\\s+hold\\(").some((b) => b.refuses))
+        v.push(`${PROTECTIVE_FILES.path}: the evidence wait loop (for (;;) {) must re-verify the bridge on every poll (const X = verifyProtectiveBridge(...); if (!X.ok) return hold(...))`);
       // Each refusal in its exact shape: a removed or weakened `if (!X.ok)
       // return hold(` (e.g. `|| true`, deleted line) is a violation.
       const shapes: Array<[string, ReturnType<typeof refusalShapes>]> = [
@@ -254,6 +292,12 @@ export function scanProtectiveSources(raw: Sources): string[] {
         for (const f of found)
           if (!f.refuses) v.push(`${PROTECTIVE_FILES.path}: ${label} result "${f.variable}" must be refused with if (!${f.variable}.ok) return hold(`);
       }
+      // The evidence refusal (after the wait loop) is pinned in place too: it
+      // must hold before identity is verified and before the claim, never
+      // after a claim or dispatch on a non-fresh row.
+      for (const f of shapes[0]![1])
+        if (f.refuses && identity >= 0 && claim >= 0 && !(f.refusalAt < identity && f.refusalAt < claim))
+          v.push(`${PROTECTIVE_FILES.path}: the evidence refusal if (!${f.variable}.ok) return hold( must come before verifyProtectivePosition( and the compare-and-set claim`);
     }
     const drain = functionBody(path, "drainProtectiveCycle");
     if (drain == null || !drain.includes("runProtectiveActionPath("))
@@ -331,15 +375,23 @@ export function scanProtectiveSources(raw: Sources): string[] {
       }
       if (calls === 0) v.push(`${PROTECTIVE_FILES.cycle}: manageAgentPositions( is never called`);
       const args = callArgs(cycle, "manageAgentPositions") ?? "";
-      if (!/\bprotectiveCycle\b/.test(args))
-        v.push(`${PROTECTIVE_FILES.cycle}: manageAgentPositions( must receive the cycle's protectiveCycle (protective waits run after every agent's ordinary dispatches)`);
+      // The same binding the drain receives: shorthand `protectiveCycle` or
+      // `protectiveCycle: protectiveCycle`, never a fresh queue nobody drains.
+      if (!/[{,]\s*protectiveCycle\s*(?:,|\})|\bprotectiveCycle\s*:\s*protectiveCycle\s*(?:,|\})/.test(args))
+        v.push(`${PROTECTIVE_FILES.cycle}: manageAgentPositions( must receive the cycle's protectiveCycle binding (protective waits run after every agent's ordinary dispatches)`);
       const loopAt = cycle.indexOf("for (const agentId of agentIds) {");
       const loop = loopAt < 0 ? null : blockAfter(cycle, loopAt);
       const loopEnd = loop == null ? -1 : cycle.indexOf(loop, loopAt) + loop.length;
       const drains = [...cycle.matchAll(/\bdrainProtectiveCycle\(/g)].map((m) => m.index!);
+      const creates = [...cycle.matchAll(/\bcreateProtectiveCycle\(/g)].map((m) => m.index!);
+      const bound = cycle.search(/const\s+protectiveCycle\s*=\s*createProtectiveCycle\(\)/);
       if (loop == null) v.push(`${PROTECTIVE_FILES.cycle}: the per-agent loop (for (const agentId of agentIds) {) is missing`);
-      else if (drains.length !== 1 || drains[0]! < loopEnd)
-        v.push(`${PROTECTIVE_FILES.cycle}: drainProtectiveCycle( must run exactly once, after the per-agent loop`);
+      else {
+        if (drains.length !== 1 || drains[0]! < loopEnd || callArgs(cycle, "drainProtectiveCycle", drains[0]!)?.replace(/\s/g, "") !== "(protectiveCycle)")
+          v.push(`${PROTECTIVE_FILES.cycle}: drainProtectiveCycle(protectiveCycle) must run exactly once, after the per-agent loop`);
+        if (creates.length !== 1 || bound < 0 || bound > loopAt)
+          v.push(`${PROTECTIVE_FILES.cycle}: exactly one queue, bound as const protectiveCycle = createProtectiveCycle() before the per-agent loop`);
+      }
     }
   }
 
