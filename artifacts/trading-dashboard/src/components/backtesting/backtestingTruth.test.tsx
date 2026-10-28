@@ -131,3 +131,11 @@ describe("data depth pill describes what the candles were", () => {
   });
 });
 
+describe("form and summary copy", () => {
+  it("form footer does not upgrade unattested broker history to 'real'", () => {
+    render(<StrategyBacktestForm />);
+    expect(screen.queryByText(/real broker history/)).toBeNull();
+    expect(screen.getByText(/broker history whose source and account identity are not verified/)).toBeTruthy();
+  });
+
+});
