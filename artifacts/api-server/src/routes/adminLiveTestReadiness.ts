@@ -49,6 +49,7 @@ import {
   T015_MANUAL_LIVE_PHASE_LABEL,
 } from "../lib/live/liveCommandPipeline.js";
 import { operatorRoleFromSession } from "../lib/security/adminRoleGate.js";
+import { buildOperatorAccessPanel } from "../lib/live/liveTestReadinessOperatorAccess.js";
 
 const router: IRouter = Router();
 router.use(express.json());
@@ -209,24 +210,16 @@ router.get("/admin/live-test-readiness/state", async (req, res) => {
     ok: true,
     panelA_currentConnectedBridge: bridge,
     panelB_masterLiveGates: master,
-    panelC_operatorAccess: {
+    // Stored settings only: no access row → requireStopLoss / requireTakeProfit
+    // are null (not read), never the dispatch gate's fail-closed defaults.
+    panelC_operatorAccess: buildOperatorAccessPanel({
       adminUserId: admin.id,
       adminEmail: adminUser[0]?.email ?? null,
       role: adminUser[0]?.role ?? null,
-      approvedForMasterLive: opAccess.access?.approvedForMasterLive ?? false,
-      masterLiveTradingEnabled: opAccess.access?.masterLiveTradingEnabled ?? false,
-      masterLiveStatus: opAccess.access?.masterLiveStatus ?? "NOT_APPROVED",
-      riskDisclosureAcceptedAt: opAccess.access?.riskDisclosureAcceptedAt ?? null,
-      riskSettingsConfiguredAt: opAccess.access?.riskSettingsConfiguredAt ?? null,
-      maxLot: opAccess.access?.maxLot ?? null,
-      maxOpenPositions: opAccess.access?.maxOpenPositions ?? null,
-      maxExposurePerSymbolLots: opAccess.access?.maxExposurePerSymbolLots ?? null,
-      requireStopLoss: opAccess.access?.requireStopLoss ?? true,
-      scannerLiveEnabled: opAccess.access?.scannerLiveEnabled ?? false,
+      access: opAccess.access,
+      arming: opAccess.arming,
       allowedSymbols,
-      userArmed: opAccess.arming?.isArmed ?? false,
-      userKillSwitchEngaged: opAccess.arming?.killSwitchEngaged ?? false,
-    },
+    }),
     panelD_controlledTestPreview: {
       symbol: CONTROLLED_TEST_SYMBOL,
       side: CONTROLLED_TEST_SIDE,

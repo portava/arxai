@@ -33,7 +33,7 @@ type BridgeFacts = {
   maxLiveLot: number | null;
 };
 
-type State = {
+export type State = {
   ok: boolean;
   panelA_currentConnectedBridge: BridgeFacts;
   panelB_masterLiveGates: {
@@ -49,8 +49,12 @@ type State = {
     masterLiveStatus: string; riskDisclosureAcceptedAt: string | null;
     riskSettingsConfiguredAt: string | null;
     maxLot: number | null; maxOpenPositions: number | null;
-    maxExposurePerSymbolLots: number | null; requireStopLoss: boolean;
-    requireTakeProfit?: boolean;
+    maxExposurePerSymbolLots: number | null;
+    // Stored settings; null (or absent from an older server) when the admin
+    // has no operator access row, so the setting could not be read.
+    operatorAccessRowFound?: boolean;
+    requireStopLoss: boolean | null;
+    requireTakeProfit?: boolean | null;
     scannerLiveEnabled: boolean; allowedSymbols: string[];
     userArmed: boolean; userKillSwitchEngaged: boolean;
   };
@@ -63,7 +67,7 @@ type State = {
   };
 };
 
-type Preflight = {
+export type Preflight = {
   ok: boolean; decision: "PASS" | "BLOCKED"; primaryReason: string | null;
   blockReasons: string[];
   gates: { key: string; passed: boolean; detail: string | null }[];
@@ -86,9 +90,16 @@ type CommandStatus = {
 
 // ── Gate checklist definition ─────────────────────────────────────────────────
 // Maps backend keys → friendly labels
-function buildGateChecklist(state: State, pre: Preflight | null): Array<{
-  label: string; pass: boolean | null; blocker: string;
-}> {
+// pass: true = checked and passing, false = checked and failing,
+// null = not checked / not reported (shown as unknown, never as PASS).
+export type GateChecklistRow = { label: string; pass: boolean | null; blocker: string; unknown?: string };
+
+/** A stored boolean setting, or null when the server did not report one. */
+function reportedSetting(v: boolean | null | undefined): boolean | null {
+  return typeof v === "boolean" ? v : null;
+}
+
+export function buildGateChecklist(state: State, pre: Preflight | null): GateChecklistRow[] {
   const A = state.panelA_currentConnectedBridge;
   const B = state.panelB_masterLiveGates;
   const C = state.panelC_operatorAccess;
@@ -113,8 +124,10 @@ function buildGateChecklist(state: State, pre: Preflight | null): Array<{
     { label: "OWNER live approved",           pass: C.approvedForMasterLive,                blocker: "OWNER is not approved for live trading" },
     { label: "Risk disclosure accepted",      pass: !!C.riskDisclosureAcceptedAt,           blocker: "Risk disclosure has not been accepted" },
     { label: "Risk template assigned",        pass: C.maxLot != null,                       blocker: "No risk template assigned — max lot is unset" },
-    { label: "Stop loss required",            pass: C.requireStopLoss,                      blocker: "Stop loss requirement is disabled" },
-    { label: "Take profit required",          pass: C.requireTakeProfit !== false,           blocker: "Take profit requirement is disabled" },
+    { label: "Stop loss required",            pass: reportedSetting(C.requireStopLoss),     blocker: "Stop loss requirement is disabled",
+      unknown: "Not reported: no operator access row for this admin, so the stop-loss setting could not be read" },
+    { label: "Take profit required",          pass: reportedSetting(C.requireTakeProfit),   blocker: "Take profit requirement is disabled",
+      unknown: "Not reported: no operator access row for this admin, so the take-profit setting could not be read" },
     { label: "Max lot cap active",            pass: C.maxLot != null && C.maxLot <= 0.01,  blocker: `Lot cap too high (${C.maxLot ?? "unset"}) — must be ≤ 0.01` },
     { label: "Max open trades cap active",    pass: C.maxOpenPositions != null && C.maxOpenPositions <= 1, blocker: "Max open positions cap not set or too high" },
     { label: "Algo trading allowed by broker",pass: A.algoTradingAllowed === true,          blocker: "Algo trading is disabled on the broker account" },
@@ -161,7 +174,7 @@ function ConfirmModal({ onConfirm, onCancel, busy }: {
 }
 
 // ── Gate row ──────────────────────────────────────────────────────────────────
-function GateRow({ label, pass, blocker }: { label: string; pass: boolean | null; blocker: string }) {
+function GateRow({ label, pass, blocker, unknown }: { label: string; pass: boolean | null; blocker: string; unknown?: string }) {
   return (
     <div className={`flex items-center justify-between gap-3 rounded px-2 py-1.5 text-xs
       ${pass === true ? "bg-success/20" : pass === false ? "bg-danger/20" : "bg-card"}`}>
@@ -174,6 +187,9 @@ function GateRow({ label, pass, blocker }: { label: string; pass: boolean | null
       </div>
       {pass === false && (
         <span className="text-danger text-[10px] shrink-0 text-right max-w-[45%]">{blocker}</span>
+      )}
+      {pass === null && unknown && (
+        <span className="text-txt-muted text-[10px] shrink-0 text-right max-w-[45%]">{unknown}</span>
       )}
     </div>
   );
