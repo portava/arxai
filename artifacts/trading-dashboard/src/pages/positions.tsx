@@ -9,6 +9,9 @@ type Pos = {
   positionId: string; orderId: string; environment: string;
   symbol: string; direction: string; lotSize: number;
   entryPrice: number; currentPrice: number;
+  /** What currentPrice is (server-stated); absent from older servers. */
+  currentPriceBasis?: "SIMULATOR_QUOTE" | "NO_QUOTE" | "EXIT_PRICE";
+  currentPriceAsOf?: string;
   stopLoss?: number; takeProfit?: number;
   unrealizedPnL: number; realizedPnL: number; rMultiple: number;
   status: string; openedAt: string; closedAt?: string; closeReason?: string;
@@ -32,6 +35,22 @@ const STATUS_LABEL: Record<string, string> = {
   OPEN: "Open", CLOSED: "Closed", STOPPED_OUT: "Stopped out",
   TAKE_PROFIT_HIT: "Take profit", MANUALLY_CLOSED: "Closed",
 };
+const timeOf = (iso: string | undefined): string | null => {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : new Date(t).toLocaleTimeString();
+};
+// The card's price cell says what the price is: a live simulator mark ("Now"),
+// the last mark when the simulator had no quote, or a closed card's exit price.
+function priceCell(p: Pos): { label: string; sub: string } {
+  const at = timeOf(p.currentPriceAsOf);
+  if (p.status !== "OPEN") {
+    return { label: "Exit", sub: `closed ${timeOf(p.closedAt) ?? at ?? "(time not reported)"}` };
+  }
+  if (p.currentPriceBasis === "SIMULATOR_QUOTE" && at) return { label: "Now", sub: `sim quote ${at}` };
+  if (p.currentPriceBasis === "NO_QUOTE") return { label: "Last mark", sub: at ? `no simulator quote since ${at}` : "no simulator quote" };
+  return { label: "Last price", sub: "time not reported" };
+}
 const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 async function api(path: string, init?: RequestInit) {
@@ -134,7 +153,7 @@ export default function PositionsPage() {
               <div className="space-y-2 text-xs">
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <Stat small label="Entry" value={String(p.entryPrice)} />
-                  <Stat small label="Now" value={String(p.currentPrice)} />
+                  <Stat small label={priceCell(p).label} value={String(p.currentPrice)} sub={priceCell(p).sub} />
                   <Stat small label="SL" value={p.stopLoss ? String(p.stopLoss) : "—"} />
                   <Stat small label="TP" value={p.takeProfit ? String(p.takeProfit) : "—"} />
                 </div>
@@ -160,11 +179,12 @@ export default function PositionsPage() {
   );
 }
 
-function Stat({ label, value, small }: { label: string; value: string; small?: boolean }) {
+function Stat({ label, value, small, sub }: { label: string; value: string; small?: boolean; sub?: string }) {
   return (
     <div className={cn("rounded-xl border border-border bg-card", small ? "p-2" : "p-3")}>
       <p className="text-[10px] uppercase text-txt-muted">{label}</p>
       <p className={small ? "font-mono text-sm" : "text-lg font-bold"}>{value}</p>
+      {sub && <p className="text-[10px] text-txt-muted">{sub}</p>}
     </div>
   );
 }
