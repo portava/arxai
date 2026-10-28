@@ -148,6 +148,11 @@ export default function Alerts() {
   const [statusFilter, setStatusFilter] = useState<"all" | "unread" | "read">("all");
   const [selected, setSelected] = useState<Notification | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // A failed read of the inbox is not an empty inbox. Keep the last good list
+  // (if any) and say when it was read; never show "Quiet" for an unread inbox.
+  const [loadError, setLoadError] = useState<{ status: number; at: number } | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
+  const [serverRowCount, setServerRowCount] = useState(0);
   const qc = useQueryClient();
 
   const invalidateBadge = () => {
@@ -156,8 +161,17 @@ export default function Alerts() {
   };
 
   const load = useCallback(async () => {
-    const r = await jget("/api/me/notifications");
-    const list: Notification[] = Array.isArray(r.body?.notifications) ? r.body.notifications : [];
+    let r: { ok: boolean; status: number; body: any };
+    try { r = await jget("/api/me/notifications"); }
+    catch { setLoadError({ status: 0, at: Date.now() }); return; }
+    if (!r.ok || !Array.isArray(r.body?.notifications)) {
+      setLoadError({ status: r.status, at: Date.now() });
+      return;
+    }
+    const list: Notification[] = r.body.notifications;
+    setLoadError(null);
+    setLoadedAt(Date.now());
+    setServerRowCount(list.length);
     setItems(list.filter((n) => !isDismissed(n.status)));
   }, []);
 
@@ -192,7 +206,12 @@ export default function Alerts() {
   };
 
   const all = items ?? [];
-  const loading = items === null;
+  // Never read successfully and the last read failed: counts are unknown.
+  const unavailable = items === null && loadError !== null;
+  const loading = items === null && !unavailable;
+  const num = (n: number) => (unavailable ? "—" : String(n));
+  // GET /api/me/notifications returns at most the newest 200 rows.
+  const capped = serverRowCount >= 200;
 
   // ── Derived counts (real) ─────────────────────────────────────────────────
   const counts = useMemo(() => {
@@ -232,7 +251,7 @@ export default function Alerts() {
       .sort((a, b) => (b.repeatCount ?? 0) - (a.repeatCount ?? 0)).slice(0, 5),
   [all]);
 
-  const sysStatus = counts.urgent > 0 ? { label: "Needs Attention", tone: "text-warning" } : counts.total > 0 ? { label: "Monitoring", tone: "text-success" } : { label: "Quiet", tone: "text-txt-secondary" };
+  const sysStatus = unavailable ? { label: "Unavailable", tone: "text-warning" } : counts.urgent > 0 ? { label: "Needs Attention", tone: "text-warning" } : counts.total > 0 ? { label: "Monitoring", tone: "text-success" } : { label: "Quiet", tone: "text-txt-secondary" };
 
   return (
     <div className="mx-auto w-full max-w-[1280px] space-y-4 p-4 md:p-6 pb-32 md:pb-6">
@@ -270,16 +289,24 @@ export default function Alerts() {
         </div>
       )}
 
+      {loadError && (
+        <div role="alert" className="rounded-2xl border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+          {unavailable
+            ? `Your alerts could not be loaded${loadError.status ? ` (HTTP ${loadError.status})` : ""}. Unread or urgent alerts may exist — retrying every 5 seconds.`
+            : `The latest refresh failed${loadError.status ? ` (HTTP ${loadError.status})` : ""}. Showing alerts as read at ${loadedAt ? new Date(loadedAt).toLocaleTimeString() : "an earlier time"}.`}
+        </div>
+      )}
+
       {/* Alert Overview */}
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-txt-muted">Alert Overview</div>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-          <Ov label="Total Alerts" sub="All time" value={String(counts.total)} />
-          <Ov label="Urgent" sub="Requires action" value={String(counts.urgent)} tone="text-danger" />
-          <Ov label="Unread" sub="New alerts" value={String(counts.unread)} tone="text-primary" />
-          <Ov label="Risk Alerts" sub="Risk & exposure" value={String(counts.byTab["risk"] ?? 0)} tone="text-warning" />
-          <Ov label="Trade Alerts" sub="Positions & fills" value={String(counts.byTab["trades"] ?? 0)} />
-          <Ov label="Scanner Alerts" sub="Signals" value={String(counts.byTab["scanner"] ?? 0)} />
+          <Ov label="Total Alerts" sub={capped ? "Newest 200 only" : "Not dismissed"} value={num(counts.total)} />
+          <Ov label="Urgent" sub="Requires action" value={num(counts.urgent)} tone="text-danger" />
+          <Ov label="Unread" sub="New alerts" value={num(counts.unread)} tone="text-primary" />
+          <Ov label="Risk Alerts" sub="Risk & exposure" value={num(counts.byTab["risk"] ?? 0)} tone="text-warning" />
+          <Ov label="Trade Alerts" sub="Positions & fills" value={num(counts.byTab["trades"] ?? 0)} />
+          <Ov label="Scanner Alerts" sub="Signals" value={num(counts.byTab["scanner"] ?? 0)} />
           <Ov label="System" sub={sysStatus.label} value="" tone={sysStatus.tone} icon={<Activity className="h-4 w-4 text-success" />} />
         </div>
       </div>
@@ -288,7 +315,9 @@ export default function Alerts() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-[#A855F7]/25 bg-card p-4 lg:col-span-2">
           <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-[#A855F7]" /><h3 className="text-sm font-semibold text-[#A855F7]">{name}’s Alert Read</h3></div>
-          {counts.total === 0 ? (
+          {unavailable ? (
+            <p className="mt-2 text-sm text-txt-muted">{name} cannot summarize your alerts because they could not be loaded.</p>
+          ) : counts.total === 0 ? (
             <p className="mt-2 text-sm text-txt-muted">{name} will summarize alerts when alert history is available.</p>
           ) : (
             <>
@@ -364,6 +393,8 @@ export default function Alerts() {
           <div className="rounded-2xl border border-border bg-card p-2">
             {loading ? (
               <p className="py-10 text-center text-sm text-txt-muted">Loading alerts…</p>
+            ) : unavailable ? (
+              <p className="py-10 text-center text-sm text-warning">Alerts could not be loaded. This is not an empty inbox — unread alerts may exist.</p>
             ) : visible.length === 0 ? (
               <p className="py-10 text-center text-sm text-txt-muted">{tab === "urgent" ? "No urgent alerts." : statusFilter === "unread" ? "No unread alerts." : `No alerts right now. ${name} will notify you when something needs attention.`}</p>
             ) : (
