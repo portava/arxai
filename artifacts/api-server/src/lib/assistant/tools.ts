@@ -754,6 +754,15 @@ export async function getReconciliationStatus(userId: number) {
     .where(eq(unattributedMasterTradesTable.status, "pending_review"));
   const unattributedSystemPendingCount = unattributedPending.length;
 
+  // 3b. The user's REAL live-execution posture, from the same derived envelope
+  //     every other assistant surface reports (getMT5BridgeStatus, risk check).
+  //     Reporting only — it opens nothing. A failed read collapses fail-closed
+  //     inside deriveAssistantEnvelope, never to "live available".
+  const env = await deriveAssistantEnvelope(userId);
+  const assistantName = await getAssistantDisplayName(userId);
+  const liveNote = liveExecutionAvailabilityNote(env, assistantName);
+  const liveOpenForAccount = !env.liveLocked && env.allowOrderExecution;
+
   // 4. Status precedence
   let reconciliationStatus:
     | "BRIDGE_OFFLINE" | "RECONCILIATION_BLOCKED"
@@ -764,13 +773,13 @@ export async function getReconciliationStatus(userId: number) {
     note = "MT5 bridge is offline or has no recent heartbeat. Reconciliation cannot run until the EA reconnects. Broker balance/positions are unavailable — never inferred.";
   } else if (attrRows.length === 0) {
     reconciliationStatus = "NO_ROUTED_TRADES";
-    note = "No shared-routing attribution rows for this user. Shared MT5 routing is currently BLOCKED at the placement layer (paper-only by construction), so nothing is being executed against the broker.";
+    note = `No shared-routing attribution rows for this user, so there is nothing to reconcile yet. ${liveNote}`;
   } else if (missingTicketCount > 0 || missingAttributionMetadataCount > 0) {
     reconciliationStatus = "ATTRIBUTION_INCOMPLETE";
     note = `${missingTicketCount} attribution row(s) have no broker ticket yet; ${missingAttributionMetadataCount} row(s) are missing required metadata (commandId / auditId / virtualAccountId). Affected commands stay BLOCKED until attribution is complete.`;
   } else {
     reconciliationStatus = "MATCHED";
-    note = `All ${matchedCount} attribution row(s) reference a broker ticket. Real placement is still BLOCKED — this confirms only the observation-side mapping.`;
+    note = `All ${matchedCount} attribution row(s) reference a broker ticket. This confirms only the app-to-broker ticket mapping, not current broker positions or P/L. ${liveNote}`;
   }
 
   // Cleanup phase A + B — emit canonical bridge mode + canonical
@@ -799,8 +808,12 @@ export async function getReconciliationStatus(userId: number) {
       allowOrderExecution: false as const,
       liveLocked: conn?.liveLocked ?? true,
     },
-    placementLayer: "BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED" as const,
-    placementLayerNote: "All real MT5 commands resolve to BLOCKED — placeLiveOrderGuarded always returns REJECTED.",
+    // Derived from the user's real envelope, never a constant: an armed live
+    // account and a paper account must not read the same placement claim.
+    placementLayer: liveOpenForAccount
+      ? ("LIVE_DISPATCH_GATED" as const)
+      : ("LIVE_LOCKED_FOR_ACCOUNT" as const),
+    placementLayerNote: liveNote,
     userAttributions: {
       total: attrRows.length,
       matchedToBrokerTicket: matchedCount,
@@ -1677,7 +1690,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getRiskLimits", description: "Returns the user's risk governor limits.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getOpenExposure", description: "Phase 26 — Portfolio awareness. Returns the user's total open exposure broken down by symbol and side (long lots / short lots / net lots / positions count). Paper-trade lot totals only. Per-user-scoped — never returns another user's positions. Use for 'am I overexposed', 'what symbols do I have open', 'how much am I trading right now', 'what's my net exposure on EURUSD'. To convert lots → USD notional honestly, call getMarketSnapshot per symbol; never fabricate a notional number.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getRiskUtilization", description: "Phase 26 — Portfolio awareness. Reports how much of the user's configured risk envelope is currently used: open trades vs maxOpenTrades, today's realized loss, and which limits are at/over threshold. Returns hasRiskSettings:false when the user has none — never invents defaults. Per-user-scoped. Use for 'how much risk am I taking', 'am I close to my daily loss limit', 'should I reduce risk', 'how many open trades can I still take', 'am I at my limit'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
-  { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. NEVER imply broker execution is enabled (placementLayer is always BROKER_PLACEMENT_LAYER_NOT_IMPLEMENTED today). Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. For whether live orders can be placed, read placementLayer (LIVE_DISPATCH_GATED = live orders are possible for this account but every one still needs the user's confirmation and every live gate; LIVE_LOCKED_FOR_ACCOUNT = live orders are not available) and repeat placementLayerNote — never claim live execution is on or off beyond what it says. Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "runPreTradeRiskCheck", description: "Advisory: would this trade pass the risk governor? Returns blocking reasons + warnings. Does NOT execute anything.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, size: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, entry: { type: "number" } }, required: ["symbol", "side", "size"], additionalProperties: false } },
   { name: "getMarketSnapshot", description: "Returns the per-symbol market snapshot from the SAME shared chart-truth resolver the chart uses, so source/quality/freshness match exactly what the chart shows for that symbol. Read source, quality, aiUsable, freshness, lastPrice, and (when not usable) cause/message — report them honestly; when no feed is available, say so with the actual cause and never fabricate a price. An optional provider quote (bid/ask/spread) may be present as enrichment but never overrides the shared feed status. ALSO read feedConfirmed — when it is false you MUST surface the feedCaveat line (feed not confirmed / low-confidence, verify before trading) and never present the snapshot as a confident/firm number. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
   { name: "getEconomicCalendar", description: "Returns upcoming economic events from the configured market provider, or empty + connected:false if no provider is wired.", parameters: { type: "object", properties: {}, additionalProperties: false } },
