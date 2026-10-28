@@ -20,13 +20,15 @@
 //    missing / malformed / future generatedAt, and not while the chart's own
 //    scanner-truth gate is downgraded (stale / delayed / unconfirmed feed).
 //    A non-current read shows "no current read" instead of a grade.
+//  - Ask for the next read shortly BEFORE the current one expires, so a healthy
+//    30-second poll never lets the grade lapse into "no current read".
 //  - Request the SAME params as the Timing Intelligence card ({timeframe, tz})
 //    so, on a 15m chart, chip and card consume one query / one server cache
 //    entry and cannot disagree for cache-partition reasons.
 
 import { Flame } from "lucide-react";
 import { useEvidenceDeadline } from "@/hooks/useEvidenceDeadline";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   useGetTimingBrain,
   getGetTimingBrainQueryKey,
@@ -38,6 +40,12 @@ import { useScannerReadGate } from "@/hooks/useScannerReadGate";
 
 // A generatedAt later than now by more than this is not a usable build time.
 const FUTURE_SKEW_MS = 5_000;
+
+// Ask for the next read this long before the current one expires, so a healthy
+// poll replaces the grade before its lifetime ends. The poll interval equals
+// the lifetime and restarts after each response, so without this every cycle
+// would expire first and flash "no current read".
+const REFRESH_LEAD_MS = 5_000;
 
 // The timing route's timeframe enum (GetTimingBrainTimeframe). Spelled out so a
 // unit test's module mock cannot empty it; the type keeps it in lock-step.
@@ -159,6 +167,23 @@ function SupportedTimingChip({
   const builtAt = typeof read?.generatedAt === "string" ? Date.parse(read.generatedAt) : NaN;
   const expiresAt = timingReadExpiresAtMs(read?.generatedAt);
   const nowMs = useEvidenceDeadline(Number.isFinite(expiresAt) ? expiresAt + 1 : null);
+  // One early request per read (keyed by its generatedAt): no loop if the
+  // server returns the same read again; the regular poll carries on.
+  const refetch = q.refetch;
+  const requestedForRef = useRef<string | null>(null);
+  const readKey = read?.generatedAt ?? null;
+  useEffect(() => {
+    if (readKey == null || !Number.isFinite(expiresAt)) return;
+    if (requestedForRef.current === readKey) return;
+    const id = setTimeout(() => {
+      // Hidden tab: polling is paused there too; the focus refetch takes over.
+      if (typeof document !== "undefined" && document.hidden) return;
+      requestedForRef.current = readKey;
+      // Joins an in-flight poll instead of cancelling it.
+      void refetch({ cancelRefetch: false });
+    }, Math.max(0, expiresAt - REFRESH_LEAD_MS - Date.now()));
+    return () => clearTimeout(id);
+  }, [readKey, expiresAt, refetch]);
   if (!read?.timingGrade || !read.entryPermission) return null;
   // The server's echo is the authority on which timeframe this grade is for.
   if (read.timeframe !== apiTf) return null;
