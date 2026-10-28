@@ -106,6 +106,16 @@ describe("ScannerHeaderSummary — an expired chart read is not a current 'Full 
     expect(text).toContain("Read expired");
   });
 
+  // The read stops being current when the next 15m candle closes (newest
+  // closed candle + one interval, the shared trailing-interval rule), not after
+  // the old 18-minute budget.
+  it("a 15m read whose newest closed candle is 16 minutes old reads 'Read expired'", () => {
+    renderHeader({ ...BASE_READ, observedAt: new Date(Date.now() - 16 * 60_000).toISOString() });
+    const text = eleanorCell();
+    expect(text).not.toContain("Full read");
+    expect(text).toContain("Read expired");
+  });
+
   it("a fresh read inside the budget still reads 'Full read'", () => {
     renderHeader({ ...BASE_READ, observedAt: new Date(Date.now() - 60_000).toISOString() });
     expect(eleanorCell()).toContain("Full read");

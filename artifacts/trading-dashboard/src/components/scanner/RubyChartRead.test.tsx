@@ -951,6 +951,18 @@ describe("RubyChartRead — read data time and expiry", () => {
     expect(screen.getByTestId("ruby-chart-read-asof").textContent).not.toContain("expired");
   });
 
+  // The read stops describing the chart when the next candle closes (its
+  // newest closed candle + one interval) — the shared trailing-interval rule
+  // the server's evidence matching uses — not after a 1.2–1.5× budget.
+  it("render: an H1 read whose newest closed candle is 65 min old is expired (a newer H1 candle has closed)", () => {
+    mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
+    const observedAt = new Date(Date.now() - 65 * 60_000).toISOString();
+    mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, observedAt, bias: "Bullish" } as RubyReadServerState;
+    render(<RubyChartRead symbol="EURUSD" timeframe="H1" draft={null} />);
+    expect(screen.getByTestId("ruby-chart-read-asof").textContent).toContain("expired");
+    expect(mockFeedBadgeProps.aiUsableResolved).toBe(false);
+  });
+
   it("render: a non-gated read with no data time is treated as expired (fail-closed)", () => {
     mockUseScannerTruth.mockReturnValue(hookState({ truth: truthAt("full") }));
     mockStoredRead = { gated: false, readLayer: "FULL", canShowLiveTradeSetup: true, bias: "Bullish" } as RubyReadServerState;

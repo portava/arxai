@@ -77,19 +77,23 @@ export interface RubyReadServerState {
 
 /**
  * When a non-gated chart read stops describing the current chart: its newest
- * closed candle + the timeframe's candle freshness budget (the same
- * `candleMaxAgeMs` the shared scanner truth uses). Returns `null` for a gated
+ * closed candle + ONE timeframe interval, i.e. the moment the next candle
+ * closes. That is the shared trailing-interval rule (@workspace/domain/market
+ * candleFreshnessRule) and the bound the server's evidence matching applies;
+ * the old 1.2–1.5× `candleMaxAgeMs` budget kept a read "current" for up to
+ * half an interval after a newer candle had closed. Returns `null` for a gated
  * read (nothing directional to expire) and `NaN` when the read carries no valid
- * `observedAt` — the caller treats NaN as already expired (fail-closed).
+ * `observedAt` or the interval is unknown — the caller treats NaN as already
+ * expired (fail-closed).
  */
 export function chartReadExpiresAtMs(
   read: RubyReadServerState | null | undefined,
-  candleMaxAgeMs: number,
+  candleIntervalMs: number,
 ): number | null {
   if (!read || read.gated === true) return null;
   const t = typeof read.observedAt === "string" ? Date.parse(read.observedAt) : Number.NaN;
-  if (!Number.isFinite(t)) return Number.NaN;
-  return t + candleMaxAgeMs;
+  if (!Number.isFinite(t) || !(candleIntervalMs > 0)) return Number.NaN;
+  return t + candleIntervalMs;
 }
 
 /** "HH:MM UTC" for a read's observedAt, or null when unknown. */

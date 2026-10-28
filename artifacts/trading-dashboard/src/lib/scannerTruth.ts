@@ -69,7 +69,8 @@ function genReadId(input: ScannerTruthInputs): string {
 // delayed / stale) is NOT graded from candleMaxAgeMs: it uses the shared domain
 // trailing-interval rule (@workspace/domain/market candleFreshnessRule) so the
 // client and the server's freshness.ts / candleNormalization.ts always agree.
-// candleMaxAgeMs remains only as the read-expiry budget for downstream reads.
+// candleMaxAgeMs is no longer read by any freshness or read-expiry rule (chart
+// reads expire one interval after their newest closed candle — rubyReadPanelState).
 export interface TimeframeThresholds {
   quoteMaxAgeMs: number;
   candleMaxAgeMs: number;
@@ -82,7 +83,7 @@ const MIN = 60 * SEC;
 // Keyed by the canonical lowercase timeframe tokens the chart panel uses. Covers
 // the full 21 MT5 set (1m,2m,3m,4m,5m,6m,10m,12m,15m,20m,30m,1h,2h,3h,4h,6h,8h,
 // 12h,1d,1w,1mo). The month token is "1mo" (never "1m", which is one minute).
-// candleMaxAgeMs ≈ 1.2–1.5× the interval (read-expiry budget only); minCandles
+// candleMaxAgeMs ≈ 1.2–1.5× the interval (unused by freshness/expiry); minCandles
 // eases as the interval coarsens (1d mirrors the backend D1 floor of 50). Every
 // timeframe the chart can select MUST have an entry — an unknown token falls back
 // to the strict 1m budget and would wrongly downgrade valid coarse-timeframe data.
