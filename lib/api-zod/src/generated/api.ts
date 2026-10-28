@@ -8759,7 +8759,17 @@ export const PostMeAssistantDraftReadResponse = zod.object({
         .describe(
           "True when the candle feed itself passed its quality and freshness check (clean and not stale). An insufficient read with feedConfirmed=true was gated by another chart check, not by the feed. Absent from older servers.",
         ),
-      bias: zod.enum(["bullish", "bearish", "neutral", "unknown"]),
+      bias: zod
+        .enum(["bullish", "bearish", "neutral", "unknown"])
+        .describe(
+          "'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral').",
+        ),
+      asOf: zod
+        .string()
+        .optional()
+        .describe(
+          "When the chart state this read describes was computed (ISO time). The read does not update after it is returned. Absent from older servers.",
+        ),
       headline: zod.string(),
       points: zod.array(zod.string()),
       cautions: zod.array(zod.string()),

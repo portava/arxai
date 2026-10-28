@@ -37,6 +37,22 @@ const INTENTS: { key: RubyDraftReadIntentValue; label: string }[] = [
   },
 ];
 
+// A gated read did not read the direction: "unknown" (or, from an older
+// server, "neutral" with an unverifiable label) is shown as not read, never as
+// a balanced "neutral" market.
+function biasLabel(bias: string, confidenceLabel: string): string {
+  if (bias === "unknown" || confidenceLabel === "unverifiable") return "direction not read";
+  return bias;
+}
+
+// The read describes the chart at one moment and does not refresh while it
+// stays on screen; say when that moment was.
+function asOfLabel(asOf: string | undefined): string {
+  const t = asOf ? Date.parse(asOf) : NaN;
+  if (!Number.isFinite(t)) return "Time of this read not reported";
+  return `Chart as of ${new Date(t).toLocaleTimeString()} · does not update — ask again to refresh`;
+}
+
 export function RubyDraftReadPanel({
   symbol,
   timeframe,
@@ -141,11 +157,17 @@ export function RubyDraftReadPanel({
             )}
 
             <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-zinc-500">
-                {read.bias} · {read.confidenceLabel}
+              <span
+                className="text-[10px] uppercase tracking-wide text-zinc-500"
+                data-testid="ruby-draft-bias"
+              >
+                {biasLabel(read.bias, read.confidenceLabel)} · {read.confidenceLabel}
                 {read.confidenceScore != null
                   ? ` · ${read.confidenceScore}/100`
                   : ""}
+              </span>
+              <span className="ml-auto text-[10px] text-zinc-500" data-testid="ruby-draft-as-of">
+                {asOfLabel(read.asOf)}
               </span>
             </div>
 

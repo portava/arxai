@@ -53,3 +53,37 @@ describe("RubyDraftReadPanel gated banner", () => {
     expect(screen.getByTestId("ruby-draft-feed-not-confirmed")).toBeTruthy();
   });
 });
+
+describe("RubyDraftReadPanel direction and as-of", () => {
+  it("a gated read shows the direction as not read, never 'neutral'", () => {
+    mutation.data = read({ bias: "unknown", confidenceLabel: "unverifiable" });
+    render(<RubyDraftReadPanel symbol="EURUSD" timeframe="M5" />);
+    const label = screen.getByTestId("ruby-draft-bias").textContent ?? "";
+    expect(label).toContain("direction not read · unverifiable");
+    expect(label).not.toMatch(/neutral/i);
+  });
+
+  it("an older server's gated 'neutral · unverifiable' is downgraded to not read", () => {
+    mutation.data = read({ bias: "neutral", confidenceLabel: "unverifiable" });
+    render(<RubyDraftReadPanel symbol="EURUSD" timeframe="M5" />);
+    expect(screen.getByTestId("ruby-draft-bias").textContent).not.toMatch(/neutral/i);
+  });
+
+  it("a usable neutral read stays neutral", () => {
+    mutation.data = read({ bias: "neutral", confidenceLabel: "B", confidenceScore: 64, dataQuality: "ok", feedUsable: true });
+    render(<RubyDraftReadPanel symbol="EURUSD" timeframe="M5" />);
+    expect(screen.getByTestId("ruby-draft-bias").textContent).toContain("neutral · B · 64/100");
+  });
+
+  it("the read says when the chart state it describes was taken, or that the time is unknown", () => {
+    const asOf = "2026-10-28T11:41:07.000Z";
+    mutation.data = read({ asOf });
+    render(<RubyDraftReadPanel symbol="EURUSD" timeframe="M5" />);
+    expect(screen.getByTestId("ruby-draft-as-of").textContent).toBe(
+      `Chart as of ${new Date(asOf).toLocaleTimeString()} · does not update — ask again to refresh`);
+    cleanup();
+    mutation.data = read({});
+    render(<RubyDraftReadPanel symbol="EURUSD" timeframe="M5" />);
+    expect(screen.getByTestId("ruby-draft-as-of").textContent).toBe("Time of this read not reported");
+  });
+});

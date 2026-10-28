@@ -162,3 +162,19 @@ test("hold-or-close with no position side does not assume one and says positions
     "Evidence is leaning down. I don't know your position side: that supports a short and runs against a long.");
   assert.ok(r.points.includes("I did not check your open positions — this restates the chart only."));
 });
+
+// ── Item: a gated read's direction is unknown, and every read has an as-of ──
+
+test("a gated read reports the direction as unknown, never a balanced 'neutral' read", () => {
+  const r = buildRubyDraftRead(state({ stale: true, bias: "bullish" }), "analyze");
+  assert.equal(r.confidenceLabel, "unverifiable");
+  assert.equal(r.bias, "unknown");
+  const clean = buildRubyDraftRead(state({ truthScore: 80, subMetrics: UNMEASURED_MIRROR }), "analyze");
+  assert.equal(clean.bias, "unknown");
+});
+
+test("every read carries the time of the chart state it describes", () => {
+  const at = "2026-10-28T11:41:07.000Z";
+  assert.equal(buildRubyDraftRead(state({ lastUpdated: at }), "analyze").asOf, at);
+  assert.equal(buildRubyDraftRead(state({ lastUpdated: at, stale: true }), "why-not-now").asOf, at);
+});

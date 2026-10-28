@@ -4988,6 +4988,9 @@ export const RubyDraftReadDataQuality = {
   insufficient: "insufficient",
 } as const;
 
+/**
+ * 'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral').
+ */
 export type RubyDraftReadBias =
   (typeof RubyDraftReadBias)[keyof typeof RubyDraftReadBias];
 
@@ -5012,7 +5015,10 @@ export interface RubyDraftRead {
   dataQuality: RubyDraftReadDataQuality;
   /** True when the candle feed itself passed its quality and freshness check (clean and not stale). An insufficient read with feedConfirmed=true was gated by another chart check, not by the feed. Absent from older servers. */
   feedConfirmed?: boolean;
+  /** 'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral'). */
   bias: RubyDraftReadBias;
+  /** When the chart state this read describes was computed (ISO time). The read does not update after it is returned. Absent from older servers. */
+  asOf?: string;
   headline: string;
   points: string[];
   cautions: string[];

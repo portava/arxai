@@ -14607,7 +14607,8 @@ components:
         feedUsable: { type: boolean, description: True when the state is fresh and understanding engines are populated }
         dataQuality: { type: string, enum: [ok, insufficient], description: "Mirrors the chart-read honesty signal — 'insufficient' when the underlying feed is stale/unconfirmed (the read carries a visible 'feed not confirmed' caveat) or when the feed is clean but another chart check did not pass (see feedConfirmed; the read names the checks in points). Advisory only; never gates execution." }
         feedConfirmed: { type: boolean, description: "True when the candle feed itself passed its quality and freshness check (clean and not stale). An insufficient read with feedConfirmed=true was gated by another chart check, not by the feed. Absent from older servers." }
-        bias: { type: string, enum: [bullish, bearish, neutral, unknown] }
+        bias: { type: string, enum: [bullish, bearish, neutral, unknown], description: "'unknown' on a gated read — the direction was not read from verified data (never shown as 'neutral')." }
+        asOf: { type: string, description: "When the chart state this read describes was computed (ISO time). The read does not update after it is returned. Absent from older servers." }
         headline: { type: string }
         points: { type: array, items: { type: string } }
         cautions: { type: array, items: { type: string } }

@@ -88,8 +88,12 @@ export interface RubyDraftReadResult {
    * e.g. "Verified M5 candles · Live feed · Mirror synced"
    */
   trustLine: string;
-  /** The bias the read is built around. */
+  /** The bias the read is built around; "unknown" on a gated read (the
+   *  direction was not read from verified data — never shown as "neutral"). */
   bias: ChartEvidenceDirection;
+  /** When the chart state this read describes was computed (ISO). The read
+   *  does not update after it is returned. */
+  asOf: string;
   /** Direct, plain-language answer to the asked intent. */
   headline: string;
   /** Supporting plain-language points drawn from the state. */
@@ -257,6 +261,7 @@ function baseResult(
     limitedHistory: closedBars > 0 && closedBars < MIN_BARS_HISTORY,
     trustLine: buildTrustLine(state, hasFormingCandle),
     bias: state.decisionState.bias,
+    asOf: state.lastUpdated,
     headline: "",
     points: [],
     cautions: [],
@@ -304,11 +309,13 @@ function pushCautions(state: ChartIntelligenceState, out: string[]): void {
  * confidenceScore — those fields would drive UI/state into directional
  * confidence from unverified data.
  *
- * Only neutral/null values are returned. agentConsensus is also wiped so
+ * Only unknown/null values are returned. agentConsensus is also wiped so
  * nothing downstream can pull a directional reading from the consensus block.
  */
 function neutralizeDirectionalFields(r: RubyDraftReadResult): RubyDraftReadResult {
-  r.bias = "neutral";
+  // Unknown, not "neutral": a gated read did not read the direction at all,
+  // and "neutral" would present that as a balanced market.
+  r.bias = "unknown";
   r.bestNextAction = "";
   r.confidenceLabel = "unverifiable";
   r.confidenceScore = null;
