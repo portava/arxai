@@ -13,6 +13,10 @@ vi.mock("@workspace/api-client-react", () => ({
   getGetTimingBrainQueryKey: (symbol: string, params?: unknown) => ["/api/me/timing-brain", symbol, params],
 }));
 
+vi.mock("@/hooks/useScannerReadGate", () => ({
+  useScannerReadGate: () => ({ truth: null, level: "full", isFull: true, downgraded: false, reason: null }),
+}));
+
 import { ChartTimingChip, timingTimeframeLabel } from "./ChartTimingChip";
 
 function read(over: Record<string, unknown> = {}) {
@@ -20,6 +24,7 @@ function read(over: Record<string, unknown> = {}) {
     data: {
       symbol: "V75",
       timeframe: "M1",
+      generatedAt: new Date().toISOString(),
       timingGrade: "D",
       entryPermission: "WAIT_FOR_ENTRY",
       heatScore: 41,
