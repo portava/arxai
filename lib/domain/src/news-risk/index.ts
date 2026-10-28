@@ -41,14 +41,26 @@ export interface NewsRiskResult {
   reasons: string[];
 }
 
-// ── Symbol → currency map (mirrors existing news lib for back-compat) ───
+// ── Symbol → currency map ────────────────────────────────────────────────
+// Must agree with the radar / Truth path (api-server calendarSymbolMap
+// `currenciesForSymbol`): any six-letter pair splits into its two codes and an
+// unmapped non-synthetic instrument is treated as US-listed (USD macro). The
+// old 13-symbol table left CADJPY, EURAUD, GER30, BTCUSD … with NO currencies,
+// so the News Risk card said CLEAR for events the radar flagged.
 const SYMBOL_CURRENCIES: Record<string, string[]> = {
-  EURUSD: ["EUR", "USD"], GBPUSD: ["GBP", "USD"], USDJPY: ["USD", "JPY"],
-  AUDUSD: ["AUD", "USD"], USDCAD: ["USD", "CAD"], EURJPY: ["EUR", "JPY"],
-  GBPJPY: ["GBP", "JPY"],
-  US30: ["USD"], NAS100: ["USD"], SPX500: ["USD"],
+  US30: ["USD"], NAS100: ["USD"], SPX500: ["USD"], US500: ["USD"], US100: ["USD"],
+  DXY: ["USD"], USDX: ["USD"],
+  GER30: ["EUR"], GER40: ["EUR"], DE30: ["EUR"], DE40: ["EUR"], EU50: ["EUR"],
+  UK100: ["GBP"], JP225: ["JPY"],
   AAPL: ["USD"], TSLA: ["USD"], MSFT: ["USD"],
 };
+// Codes that can carry a scheduled macro calendar event. Metals (XAU/XAG) and
+// crypto (BTC/ETH) halves are dropped, so XAUUSD / BTCUSD key off USD only.
+const MACRO_CURRENCIES: ReadonlySet<string> = new Set([
+  "USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "SEK", "NOK", "DKK",
+  "SGD", "HKD", "ZAR", "MXN", "PLN", "TRY", "CZK", "HUF", "CNH", "CNY", "RUB",
+  "INR", "THB", "ILS", "KRW",
+]);
 // Synthetic indices come in many naming variants. We match prefixes (Deriv's
 // canonical "Volatility 75 Index") *and* short aliases (Vol75, V75, R_75,
 // JD25, Crash500, Boom1000, Step Index, RB100, etc.). Any of these are
@@ -60,8 +72,33 @@ export function isSynthetic(symbol: string): boolean {
   return SYNTHETIC_PREFIX_RE.test(symbol) || SYNTHETIC_ALIAS_RE.test(symbol);
 }
 
+/** Upper-case and drop a broker suffix (`EURUSD.raw`, `GER30_i`, `CADJPY-ECN`). */
+function canonicalSymbol(symbol: string): string {
+  return symbol.trim().toUpperCase().replace(/[._-][A-Z0-9]+$/, "");
+}
+
+/** True when the symbol had no explicit or derivable mapping (USD assumed). */
+function currenciesAssumed(symbol: string): boolean {
+  const s = canonicalSymbol(symbol);
+  if (SYMBOL_CURRENCIES[s]) return false;
+  if (/^[A-Z]{6}$/.test(s)) {
+    return ![s.slice(0, 3), s.slice(3, 6)].some((c) => MACRO_CURRENCIES.has(c));
+  }
+  return true;
+}
+
 export function relatedCurrenciesFor(symbol: string): string[] {
-  return SYMBOL_CURRENCIES[symbol] ?? [];
+  if (isSynthetic(symbol)) return [];
+  const s = canonicalSymbol(symbol);
+  const mapped = SYMBOL_CURRENCIES[s];
+  if (mapped) return mapped;
+  if (/^[A-Z]{6}$/.test(s)) {
+    const halves = [s.slice(0, 3), s.slice(3, 6)].filter((c) => MACRO_CURRENCIES.has(c));
+    if (halves.length > 0) return halves;
+  }
+  // Same rule as the radar: an unmapped real-world instrument is treated as
+  // US-listed, so USD macro events still surface rather than a silent CLEAR.
+  return ["USD"];
 }
 
 // ── Volatility heuristic: actual vs forecast >50% relative delta ───────
@@ -95,6 +132,9 @@ export function scoreNewsRisk(args: {
   }
 
   const currencies = relatedCurrenciesFor(symbol);
+  if (currenciesAssumed(symbol)) {
+    reasons.push(`No currency mapping for ${symbol} — treated as a US-listed instrument (USD events).`);
+  }
   // Filter relevant events: matches a related currency OR explicitly includes symbol.
   const relevant = args.events.filter((e) =>
     currencies.includes(e.currency)
@@ -125,8 +165,8 @@ export function scoreNewsRisk(args: {
       timeUntilEventMinutes: null,
       relatedCurrency: currencies[0] ?? null,
       event: null, tradeWarning: null,
-      aiSummary: `No relevant economic events in the next 24h or last 2h for ${symbol}. Risk: CLEAR. This is not a guarantee, gated by live-execution safety layer.`,
-      reasons: ["No relevant events in window."],
+      aiSummary: `No ${currencies.join(" or ")} economic events in the next 24h or last 2h for ${symbol}. Risk: CLEAR. This is not a guarantee, gated by live-execution safety layer.`,
+      reasons: [...reasons, `No ${currencies.join(" or ")} events in window.`],
     };
   }
 

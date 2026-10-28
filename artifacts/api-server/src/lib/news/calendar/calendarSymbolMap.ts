@@ -18,7 +18,7 @@ const SYMBOL_CURRENCIES: Record<string, string[]> = {
   XAUUSD: ["USD"], XAGUSD: ["USD"],
   // Indices — US indices key off US (USD) macro; European/Asian off their bloc.
   US30: ["USD"], NAS100: ["USD"], SPX500: ["USD"], US500: ["USD"], US100: ["USD"],
-  GER40: ["EUR"], UK100: ["GBP"], JP225: ["JPY"], EU50: ["EUR"],
+  GER40: ["EUR"], GER30: ["EUR"], UK100: ["GBP"], JP225: ["JPY"], EU50: ["EUR"],
 };
 
 /** ISO currency → Trading Economics country name (for fallback filtering). */
