@@ -7,7 +7,7 @@ import {
 import type { AnalyticsSnapshot, StrategyRow, EquityPoint } from "@/components/analytics";
 
 interface DrawdownResponse { equityCurve: EquityPoint[]; maxDrawdown: number }
-interface SessionBucket { trades: number; pnl: number; wins: number }
+interface SessionBucket { trades: number; pnl: number; wins: number; sizedTrades?: number }
 type SessionData = Record<"ASIA"|"LONDON"|"NEWYORK", SessionBucket>;
 interface EmotionalResponse { trend: Array<{ idx:number; isCalm:number; followedPlan:number; emotion:string }>; totalDebriefs: number }
 
@@ -21,7 +21,7 @@ export default function AnalyticsCommandCenter() {
     queryKey: ["analytics-strategy"],
     queryFn: async () => (await fetch("/api/analytics/strategy")).json(),
   });
-  const sess = useQuery<{ session: SessionData }>({
+  const sess = useQuery<{ session: SessionData; sessionBasis?: string }>({
     queryKey: ["analytics-session"],
     queryFn: async () => (await fetch("/api/analytics/session")).json(),
   });
@@ -85,7 +85,7 @@ export default function AnalyticsCommandCenter() {
           <div className="grid gap-3 lg:grid-cols-3">
             <RiskExposureGraph snapshot={s} />
             <ConsistencyTrendCard snapshot={s} />
-            <SessionHeatmap data={(sess.data?.session ?? {}) as any} />
+            <SessionHeatmap data={(sess.data?.session ?? {}) as any} basis={sess.data?.sessionBasis} />
           </div>
 
           <EmotionalTrendGraph trend={emo.data?.trend ?? []} />

@@ -96,11 +96,16 @@ function maxDrawdown(equityCurve: Array<{ pnl: number }>): number {
   }
   return mdd;
 }
-function sessionOf(d: Date): "ASIA"|"LONDON"|"NEWYORK" {
+// Session of a trade by its open time (UTC hour). New York closes at 21:00
+// UTC (the same boundary as lib/domain resolveSession); 21:00–07:00 is the
+// Sydney and Tokyo (Asia-Pacific) session, not New York.
+export const SESSION_BASIS =
+  "Sessions are by each trade's open time in UTC: ASIA 21:00–07:00 (Sydney and Tokyo), LONDON 07:00–13:00, NEWYORK 13:00–21:00.";
+export function sessionOf(d: Date): "ASIA"|"LONDON"|"NEWYORK" {
   const h = d.getUTCHours();
-  if (h >= 0 && h < 7) return "ASIA";
   if (h >= 7 && h < 13) return "LONDON";
-  return "NEWYORK";
+  if (h >= 13 && h < 21) return "NEWYORK";
+  return "ASIA";
 }
 
 // ── Compute snapshot from current data ──────────────────────────────────────
@@ -306,7 +311,7 @@ router.get("/analytics/strategy", requireUser, async (req, res): Promise<void> =
 router.get("/analytics/session", requireUser, async (req, res): Promise<void> => {
   try {
     const all = await buildAllHeatmaps(req.authUser!.id);
-    ok(res, { session: all.find((h) => h.heatmapType === "SESSION_PNL")?.dataset ?? {} });
+    ok(res, { session: all.find((h) => h.heatmapType === "SESSION_PNL")?.dataset ?? {}, sessionBasis: SESSION_BASIS });
   } catch (err) {
     req.log?.error?.({ err: String(err) }, "GET /analytics/session failed");
     fail(res, 500, "Failed to load session analytics");
