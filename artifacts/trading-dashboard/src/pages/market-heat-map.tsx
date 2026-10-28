@@ -27,6 +27,19 @@ import {
 
 const MULTI_SYMBOLS = "EURUSD,GBPUSD,USDJPY,XAUUSD,GBPJPY,USDCAD";
 
+// ── Score formatting ────────────────────────────────────────────────────────
+// Every timing-brain score (trapProbability, fakeoutRisk, heat-source
+// confidence, …) is already on a 0–100 scale (lib/domain timing-brain types).
+// Print it as-is; never multiply by 100. A missing / non-finite value says so
+// instead of inventing a number.
+export function formatScorePct(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${Math.round(Math.min(100, Math.max(0, value)))}%`;
+}
+
+/** Trap probability (0–100) at or above which the danger ranking flags "Trap". */
+export const TRAP_BADGE_THRESHOLD = 50;
+
 // ── Colour helpers ───────────────────────────────────────────────────────────
 
 function heatBg(score: number): string {
@@ -197,7 +210,7 @@ function DataQualityBadge({ label }: { label: string }) {
 
 // ── Tab: Now ────────────────────────────────────────────────────────────────
 
-function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefined; isLoading: boolean; symbol: string }) {
+export function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefined; isLoading: boolean; symbol: string }) {
   if (isLoading) return <TimingLoadingSkeleton />;
   if (!data) return <HonestEmpty message={`No timing data available for ${symbol || "the selected symbol"}.`} />;
 
@@ -244,7 +257,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
             <ScorePill label="Tradeability" value={Math.round(data.tradeabilityScore)} />
             <ScorePill label="Edge" value={Math.round(data.edgeScore)} />
             <ScorePill label="Danger" value={Math.round(data.dangerScore)} cls="border-rose-500/20" />
-            <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability * 100)}%`} />
+            <ScorePill label="Trap prob." value={formatScorePct(data.trapProbability)} />
             <ScorePill label="Room to move" value={Math.round(data.roomToMove)} />
             <ScorePill
               label="Pressure"
@@ -331,7 +344,7 @@ function NowTab({ data, isLoading, symbol }: { data: MarketTimingRead | undefine
 
 // ── Tab: Today ─────────────────────────────────────────────────────────────
 
-function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; multiData: MarketTimingRead[] }) {
+export function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; multiData: MarketTimingRead[] }) {
   const session = data?.session;
   const localTime = session?.userLocalTime;
 
@@ -500,7 +513,7 @@ function BySymbolTab({ results, isLoading, selectedSymbol }: { results: MarketTi
 
 // ── Shared session card ─────────────────────────────────────────────────────
 
-function SessionCard({
+export function SessionCard({
   session,
   compact = false,
 }: {
@@ -685,7 +698,7 @@ function BuySellWindowsTab({ data }: { data: MarketTimingRead | undefined }) {
 
 // ── Tab: Danger Windows ─────────────────────────────────────────────────────
 
-function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefined; results: MarketTimingRead[] }) {
+export function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefined; results: MarketTimingRead[] }) {
   return (
     <div className="space-y-4">
       {data && (
@@ -712,7 +725,7 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <ScorePill label="Danger score" value={Math.round(data.dangerScore)} cls={data.dangerScore >= 60 ? "border-rose-500/20" : ""} />
-              <ScorePill label="Trap prob." value={`${Math.round(data.trapProbability * 100)}%`} cls={data.trapProbability >= 0.5 ? "border-amber-500/20" : ""} />
+              <ScorePill label="Trap prob." value={formatScorePct(data.trapProbability)} cls={data.trapProbability >= TRAP_BADGE_THRESHOLD ? "border-amber-500/20" : ""} />
               <ScorePill label="Move stage" value={humanizeMoveStage(data.moveStage)} />
             </div>
             {data.newsOverlay.blocksTrade && (
@@ -759,7 +772,7 @@ function DangerWindowsTab({ data, results }: { data: MarketTimingRead | undefine
                     />
                   </div>
                   <span className="text-xs font-mono tabular-nums w-8 text-right">{Math.round(r.dangerScore)}</span>
-                  {r.trapProbability >= 0.5 && (
+                  {r.trapProbability >= TRAP_BADGE_THRESHOLD && (
                     <Badge variant="outline" className="text-[9px] px-1 bg-amber-500/10 text-amber-400 border-amber-500/30">
                       Trap
                     </Badge>
