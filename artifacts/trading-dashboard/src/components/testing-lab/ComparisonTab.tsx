@@ -133,7 +133,7 @@ export function ComparisonTab({ strategyId }: { strategyId?: string }) {
             <Row label="Win rate" value={fwd && fwdTrades > 0 ? `${formatBacktestNumber(fwd.winRate)}%` : "—"} />
             <Row label="Avg R" value={fwd ? formatBacktestNumber(fwd.avgR) : "—"} />
             <Row label="Max DD (R)" value={fwd ? formatBacktestNumber(fwd.maxDrawdownR) : "—"} />
-            <Row label="Best / worst symbol" value={`${fwd?.bestSymbol ?? "—"} / ${fwd?.worstSymbol ?? "—"}`} />
+            <Row label="Best / worst symbol" value={fwd && fwdTrades > 0 ? `${fwd.bestSymbol ?? "—"} / ${fwd.worstSymbol ?? "—"}` : "No tracked outcomes"} muted={!(fwd && fwdTrades > 0)} />
             </>}
           </CardContent>
         </Card>

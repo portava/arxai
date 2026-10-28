@@ -127,10 +127,11 @@ export function ForwardTestingTab({ strategyId }: { strategyId?: string }) {
           <Stat label="Avg R" value={String(results.avgR)} />
           <Stat label="Max DD R" value={String(results.maxDrawdownR)} />
           <Stat label="Calibration" value={results.confidenceCalibration} />
-          <Stat label="Best symbol" value={results.bestSymbol ?? "—"} />
-          <Stat label="Worst symbol" value={results.worstSymbol ?? "—"} />
-          <Stat label="Best strategy" value={results.bestStrategy ?? "—"} />
-          <Stat label="Weakest strategy" value={results.weakestStrategy ?? "—"} />
+          {/* Named only from tracked outcomes: with nothing tracked there is no best or worst. */}
+          <Stat label="Best symbol" value={results.shadowTradesTracked > 0 ? results.bestSymbol ?? "—" : "No tracked outcomes"} />
+          <Stat label="Worst symbol" value={results.shadowTradesTracked > 0 ? results.worstSymbol ?? "—" : "No tracked outcomes"} />
+          <Stat label="Best strategy" value={results.shadowTradesTracked > 0 ? results.bestStrategy ?? "—" : "No tracked outcomes"} />
+          <Stat label="Weakest strategy" value={results.shadowTradesTracked > 0 ? results.weakestStrategy ?? "—" : "No tracked outcomes"} />
         </div>
       ) : (
         <p className="text-xs text-slate-500">No forward-test results yet.</p>

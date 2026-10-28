@@ -284,10 +284,16 @@ export function forwardResults() {
       if (d.status === "SHADOW_WIN") { bySymbol[d.symbol].wins++; byStrategy[d.strategy].wins++; }
     }
   }
+  // Only entries with at least one tracked outcome (win or loss) are ranked:
+  // a symbol/strategy with no outcome has no win rate, so it is never named
+  // best or worst. A worst pick needs a second ranked entry (one entry is not
+  // both the best and the worst).
   const ranked = (m: Record<string, { n: number; wins: number }>) =>
-    Object.entries(m).map(([k, v]) => ({ k, winRate: v.n ? v.wins / v.n : 0, n: v.n })).sort((a, b) => b.winRate - a.winRate);
+    Object.entries(m).filter(([, v]) => v.n > 0)
+      .map(([k, v]) => ({ k, winRate: v.wins / v.n, n: v.n })).sort((a, b) => b.winRate - a.winRate);
   const symbolRank = ranked(bySymbol);
   const stratRank = ranked(byStrategy);
+  const worstOf = (r: { k: string }[]) => (r.length >= 2 ? r[r.length - 1]!.k : null);
   return {
     totalShadowDecisions: arr.length,
     shadowTradesTracked: tracked,
@@ -298,8 +304,8 @@ export function forwardResults() {
     winRate: Number((winRate * 100).toFixed(1)),
     avgR: Number(avgR.toFixed(2)),
     maxDrawdownR: Number(maxDrawdownR(arr).toFixed(2)),
-    bestSymbol: symbolRank[0]?.k ?? null, worstSymbol: symbolRank.at(-1)?.k ?? null,
-    bestStrategy: stratRank[0]?.k ?? null, weakestStrategy: stratRank.at(-1)?.k ?? null,
+    bestSymbol: symbolRank[0]?.k ?? null, worstSymbol: worstOf(symbolRank),
+    bestStrategy: stratRank[0]?.k ?? null, weakestStrategy: worstOf(stratRank),
     confidenceCalibration: confidenceCalibration().label,
     dataSource: "SHADOW" as const,
   };

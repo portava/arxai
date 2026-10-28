@@ -105,7 +105,7 @@
     "test:scanner-stale-feed-downgrade": "node --import tsx --test --test-force-exit src/lib/__qa__/scannerStaleFeedDowngrade.test.ts",
     "test:scanner-no-feed-honesty": "node --import tsx --test --test-force-exit src/lib/__qa__/scannerNoFeedHonesty.test.ts",
     "test:backtest-chart-series": "node --import tsx --test --test-force-exit src/lib/backtest/__qa__/backtestChartSeries.test.ts",
-    "test:forward-chart-series": "node --import tsx --test --test-force-exit src/lib/shadow/__qa__/forwardChartSeries.test.ts",
+    "test:forward-chart-series": "node --import tsx --test --test-force-exit src/lib/shadow/__qa__/forwardChartSeries.test.ts src/lib/shadow/__qa__/forwardBestWorst.test.ts",
     "test:ruby-read-layers": "node --import tsx --test --test-force-exit src/lib/assistant/__qa__/rubyReadLayers.test.ts",
     "test:assistant-name": "node --import tsx --test --test-force-exit src/lib/assistant/__qa__/assistantName.test.ts",
     "test:assistant-settings-route": "node --import tsx --test --test-force-exit src/routes/__qa__/assistantSettingsRoute.test.ts",
