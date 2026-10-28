@@ -35,3 +35,13 @@ export const STATUS_TONE: Record<EdgeReport["status"], string> = {
   NO_EDGE:           "border-red-700 bg-red-950/30 text-red-100",
   INSUFFICIENT_DATA: "border-slate-700 bg-slate-900/40 text-slate-300",
 };
+
+// The server stores 999 in profitFactor when a slice has wins but no losing
+// trade (gross loss 0, ratio undefined). That is a marker, not a measurement:
+// never print it as "999.00".
+export const PF_NO_LOSSES_MARKER = 999;
+export function formatProfitFactor(pf: number, short = false): string {
+  if (!Number.isFinite(pf)) return "n/a";
+  if (pf >= PF_NO_LOSSES_MARKER) return short ? "n/a (no losses)" : "Not measurable — no losing trade recorded";
+  return pf.toFixed(2);
+}

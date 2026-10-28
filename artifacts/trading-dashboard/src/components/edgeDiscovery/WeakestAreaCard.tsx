@@ -1,4 +1,4 @@
-import { STATUS_TONE, type EdgeReport } from "./types";
+import { STATUS_TONE, formatProfitFactor, type EdgeReport } from "./types";
 
 export function WeakestAreaCard({ report }: { report: EdgeReport }) {
   return (
@@ -10,7 +10,7 @@ export function WeakestAreaCard({ report }: { report: EdgeReport }) {
       <p className="mb-1 text-[11px] leading-relaxed">{report.aiSummary}</p>
       <div className="flex gap-3 text-[10px] text-slate-300">
         <span>n={report.sampleSize}</span>
-        <span>PF {report.profitFactor.toFixed(2)}</span>
+        <span>PF {formatProfitFactor(report.profitFactor, true)}</span>
         <span>exp {report.expectancy.toFixed(2)}</span>
       </div>
     </div>
