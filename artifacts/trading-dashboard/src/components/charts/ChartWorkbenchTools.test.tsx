@@ -14,6 +14,38 @@ const mount=(symbol="EURUSD",timeframe="M15",engine=adapter)=>render(<ChartWorkb
 beforeEach(()=>{localStorage.clear();vi.clearAllMocks();click=null;});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();__resetBrowserZoneCacheForTests();});
 describe("drawing workspace controls",()=>{
+  it("keeps an in-progress drawing visible and cancellable when tools close",()=>{
+    mount();
+    const toggle=screen.getByRole("button",{name:"Chart tools",exact:true});
+    const advanced=screen.getByTestId("chart-advanced-tools");
+    expect(toggle.getAttribute("aria-controls")).toBe(advanced.id);
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"trend"}});
+    act(()=>click?.({time:100,price:1.2}));
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByTestId("chart-advanced-tools")).toBe(advanced);
+    const cancel=screen.getByRole("button",{name:"Cancel drawing",exact:true});
+    expect(advanced.contains(cancel)).toBe(false);
+    expect(screen.getByText(/choose the second candle and price/)).toBeTruthy();
+    fireEvent.click(cancel);
+    expect(click).toBeNull();
+    expect(localStorage.getItem(drawingStorageKey("EURUSD","M15"))).toBeNull();
+  });
+  it("preserves exact-price edits and undo history across tools disclosure",()=>{
+    mount();
+    const toggle=screen.getByRole("button",{name:"Chart tools",exact:true});
+    fireEvent.click(toggle);
+    fireEvent.change(screen.getByLabelText("Drawing tool"),{target:{value:"horizontal"}});
+    act(()=>click?.({time:100,price:1.2}));
+    fireEvent.click(screen.getByRole("button",{name:"Objects (1)"}));
+    const field=screen.getByLabelText("Drawing 1 start price");
+    fireEvent.blur(field,{target:{value:"1.3"}});
+    fireEvent.click(toggle);fireEvent.click(toggle);
+    expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)[0].start.price).toBe(1.3);
+    fireEvent.click(screen.getByRole("button",{name:"Undo",exact:true}));
+    expect(JSON.parse(localStorage.getItem(drawingStorageKey("EURUSD","M15"))!)[0].start.price).toBe(1.2);
+  });
   it("explains transformed styles beside the controls and associates each view with its own explanation",()=>{
     function View(){const [preferences,onPreferences]=useState(DEFAULT_PREFERENCES);return <ChartWorkbenchTools adapter={adapter} epoch={1} symbol="EURUSD" timeframe="M15" preferences={preferences} onPreferences={onPreferences} hasCandles feedLabel="Offline fixture"/>;}
     const first=render(<View/>), second=render(<View/>);

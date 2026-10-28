@@ -81,6 +81,7 @@ async page => {
  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)) throw Error('Mobile page overflow');
  await page.screenshot({path:'/private/tmp/arx-smart-chart-workbench-mobile.png',fullPage:true});
  await page.getByRole('button',{name:'One chart',exact:true}).click();
+ await page.getByRole('button',{name:'Chart tools',exact:true}).click();
  await page.getByRole('button',{name:'Studies (5)',exact:true}).click();
  for(let i=0;i<5;i++) await page.getByRole('button',{name:'Remove study 1',exact:true}).click();
  await page.getByRole('button',{name:'Studies (0)',exact:true}).click();
@@ -88,6 +89,7 @@ async page => {
  const touchContext=await page.context().browser().newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
  const touch=await touchContext.newPage();
  await touch.goto(base);
+ await touch.getByRole('button',{name:'Chart tools',exact:true}).click();
  await touch.getByLabel('Drawing tool',{exact:true}).selectOption('trend');
  await touch.getByTestId('arx-native-canvas').tap({position:{x:70,y:70}});
  await touch.getByTestId('arx-native-canvas').tap({position:{x:200,y:140}});

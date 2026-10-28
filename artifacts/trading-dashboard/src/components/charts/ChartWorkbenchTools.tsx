@@ -49,6 +49,42 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
   const [selectedId,setSelectedId] = useState<string | null>(null);
   const [snap,setSnap] = useState(false);
   const [panOnly,setPanOnly] = useState(false);
+  const [toolsOpen,setToolsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const advancedRef = useRef<HTMLDivElement | null>(null);
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
+  const panRef = useRef<HTMLButtonElement | null>(null);
+  const toolsId = `${instanceId}-tools`;
+  const [compact,setCompact] = useState(false);
+  const compactRef = useRef(false);
+  const resizeFocus = useRef<"toggle" | "pan" | null>(null);
+  // Measure each pane, not the window. Capture focus BEFORE React hides controls:
+  // CSS-only breakpoints can blur the element before ResizeObserver runs.
+  useLayoutEffect(()=>{
+    const root=rootRef.current;
+    if (!root || typeof ResizeObserver === "undefined") return;
+    const measure=(width:number)=>{
+      if(width<=0)return;
+      const next=width<640;
+      if(next===compactRef.current)return;
+      const active=document.activeElement;
+      if(next && !toolsOpen && advancedRef.current?.contains(active))resizeFocus.current="toggle";
+      else if(!next && active===toggleRef.current)resizeFocus.current="pan";
+      compactRef.current=next;setCompact(next);
+    };
+    const css=getComputedStyle(root);
+    measure(root.clientWidth-parseFloat(css.paddingLeft)-parseFloat(css.paddingRight));
+    const observer=new ResizeObserver(entries=>{const entry=entries[0];if(entry)measure(entry.contentRect.width);});
+    observer.observe(root);return()=>observer.disconnect();
+  },[toolsOpen]);
+  useLayoutEffect(()=>{
+    if(resizeFocus.current === "toggle")toggleRef.current?.focus();
+    if(resizeFocus.current === "pan") {
+      const next=panRef.current && !panRef.current.disabled ? panRef.current : advancedRef.current?.querySelector<HTMLElement>('select:not(:disabled),button:not(:disabled)');
+      next?.focus();
+    }
+    resizeFocus.current=null;
+  },[compact]);
   // Display-only zone; daily bars keep UTC. Typed go-to values follow a switch.
   const selectedZone: ChartTimeZone = preferences.timeZone ?? "UTC";
   const zone = effectiveDisplayZone(selectedZone, timeframe);
@@ -140,15 +176,25 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       };image.src=url;
     } catch {setMessage("Chart image could not be saved in this browser.");}
   };
-  return <div className="border-b border-zinc-800 px-3 py-2 text-xs" data-testid="chart-workbench-tools">
+  return <div ref={rootRef} className="border-b border-zinc-800 px-3 py-2 text-xs" data-testid="chart-workbench-tools" onKeyDown={event=>{
+    if(event.key === "Escape" && toolsOpen && advancedRef.current?.contains(event.target as Node) && toggleRef.current?.getClientRects().length){
+      event.preventDefault();event.stopPropagation();toggleRef.current.focus();setToolsOpen(false);setTool(null);setAnchor(null);
+    }
+  }}>
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-1 rounded-md border border-zinc-800 p-0.5" role="group" aria-label="Zoom and pan">
-        <Button size="sm" variant={panOnly ? "secondary" : "ghost"} className="h-8 gap-1.5 text-xs" aria-pressed={panOnly} disabled={!hasCandles || !adapter?.setNavigationMode} title="Drag freely across candles and drawings. Select again to edit drawings." onClick={()=>{setPanOnly(value=>!value);setTool(null);setAnchor(null);setSelectedId(null);setMessage("");}}><Hand className="h-3.5 w-3.5"/>Pan</Button>
+        <Button ref={panRef} size="sm" variant={panOnly ? "secondary" : "ghost"} className="h-8 gap-1.5 text-xs" aria-pressed={panOnly} disabled={!hasCandles || !adapter?.setNavigationMode} title="Drag freely across candles and drawings. Select again to edit drawings." onClick={()=>{setPanOnly(value=>!value);setTool(null);setAnchor(null);setSelectedId(null);setMessage("");}}><Hand className="h-3.5 w-3.5"/>Pan</Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Pan to earlier candles" title="Earlier candles (Left arrow on chart)" disabled={!hasCandles || !adapter?.panBy} onClick={()=>adapter?.panBy?.(-0.25)}><ArrowLeft className="h-3.5 w-3.5"/></Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Pan to later candles" title="Later candles (Right arrow on chart)" disabled={!hasCandles || !adapter?.panBy} onClick={()=>adapter?.panBy?.(0.25)}><ArrowRight className="h-3.5 w-3.5"/></Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom in chart" title="Zoom in (+ on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(0.75)}><ZoomIn className="h-3.5 w-3.5"/></Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" aria-label="Zoom out chart" title="Zoom out (− on chart)" disabled={!hasCandles || !adapter?.zoomBy} onClick={()=>adapter?.zoomBy?.(4/3)}><ZoomOut className="h-3.5 w-3.5"/></Button>
       </div>
+      <Button ref={toggleRef} size="sm" variant="outline" className={compact ? "h-8 text-xs" : "hidden"} aria-label="Chart tools" aria-controls={toolsId} aria-expanded={toolsOpen} onClick={()=>{toggleRef.current?.focus();setToolsOpen(value=>!value);}}>Tools {toolsOpen ? "−" : "+"}</Button>
+      <div ref={advancedRef} id={toolsId} data-testid="chart-advanced-tools" className={compact && !toolsOpen ? "hidden" : "contents"}>
+      <label className="flex items-center gap-2 text-zinc-400">Scale<select aria-label="Price scale" className={field} value={preferences.scale} onChange={event=>onPreferences(p=>({...p,scale:event.target.value as typeof p.scale}))}>
+        <option value="linear">Regular price</option><option value="log">Logarithmic</option><option value="percent">Percentage</option><option value="indexed">Indexed to 100</option>
+      </select></label>
+      <Button size="sm" variant="ghost" className="h-8 text-xs" aria-pressed={preferences.inverted === true} onClick={()=>onPreferences(p=>({...p,inverted:!p.inverted}))}>Invert scale</Button>
       <label className="flex items-center gap-2">Style <select className={field} aria-label="Chart style" aria-describedby={styleNote ? styleNoteId : undefined} value={preferences.style} onChange={e=>onPreferences(p=>({...p,style:e.target.value as ChartPreferences["style"]}))}>
         {CHART_STYLES.map(style=><option key={style} value={style}>{CHART_STYLE_NAMES[style]}</option>)}
       </select></label>
@@ -167,9 +213,7 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
       <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{const {timeZone:_zone,...template}=preferences;const ok=writeChartStorage(TEMPLATE_KEY,template);setMessage(ok ? "Style, scale and studies saved as this browser’s template." : "Template could not be saved; browser storage is unavailable.");}}>Save template</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={()=>{const saved=readChartStorage(TEMPLATE_KEY);if(saved){const {timeZone:_zone,...loaded}=validatePreferences(saved);onPreferences(p=>p.timeZone ? {...loaded,timeZone:p.timeZone} : loaded);setMessage("Template applied. Drawings remain with their instrument and timeframe.");}else setMessage("No template saved in this browser yet.");}}>Load template</Button>
       <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles} onClick={exportImage}>Export PNG</Button>
-    </div>
-    {styleNote && <p id={styleNoteId} data-testid="chart-style-note" className="mt-2 text-[11px] leading-relaxed text-zinc-400">{styleNote}</p>}
-    <div className="mt-2 flex flex-wrap items-center gap-2 text-zinc-400" aria-label="Chart date navigation">
+    <div className="basis-full mt-2 flex flex-wrap items-center gap-2 text-zinc-400" aria-label="Chart date navigation">
       <span>Range</span>{[["1D",86400],["5D",432000],["1M",2592000],["3M",7776000],["1Y",31536000]].map(([label,seconds])=><button key={label} type="button" className="rounded px-2 py-1 text-[11px] hover:bg-zinc-800 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40" disabled={!hasCandles} onClick={()=>{const range=adapter?.showRecentRange?.(Number(seconds));setMessage(range ? range.complete ? "Range shown from loaded history." : "Showing available history; the requested range starts before the loaded candles." : "No history available.");}}>{label}</button>)}
       <form className="flex flex-wrap items-center gap-2" onSubmit={event=>{event.preventDefault();const parsed=parseWallClockInZone(goToDate,zone);
           if(parsed.kind==="invalid"){setMessage("Enter a complete date and time.");return;}
@@ -180,13 +224,9 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <Button size="sm" variant="ghost" className="h-8 text-xs" disabled={!hasCandles || !goToDate} type="submit">{`Go to ${zoneText}`}</Button>
       </form>
     </div>
-    {preferences.studies.length > 0 && <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label="Active studies">{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyLabel(study)}</span>)}</div>}
-    {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Escape cancels. Drawings are analysis only.</p>}
-    {panOnly && <p className="mt-2 text-zinc-400" role="status">Pan mode · drag through history without moving drawings. Use + / − to zoom and arrow keys to pan while the chart is focused.</p>}
-    {message && <p className="mt-2 text-zinc-300" role="status">{message}</p>}
-    {storageFailed && <p className="mt-2 text-amber-300" role="alert">Browser storage is unavailable. Drawing changes will be lost when this view closes.</p>}
-    {panel === "studies" && <ChartStudySettings preferences={preferences} onPreferences={onPreferences} />}
-    {panel === "objects" && <div className="mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Drawing objects">
+    {preferences.studies.length > 0 && <div className="basis-full mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]" aria-label="Active studies">{preferences.studies.map(study=><span key={studyId(study)} style={{color:study.color}}>{studyLabel(study)}</span>)}</div>}
+    {panel === "studies" && <div className="basis-full"><ChartStudySettings preferences={preferences} onPreferences={onPreferences} /></div>}
+    {panel === "objects" && <div className="basis-full mt-3 space-y-2 rounded border border-zinc-800 p-3" aria-label="Drawing objects">
       <div className="flex flex-wrap items-center gap-2"><p className="flex-1 text-zinc-400">{ephemeralDrawings ? <>Private to this replay session · {symbol} · {timeframe}. Drawings are discarded when the session closes.</> : <>Saved on this browser for {symbol} · {timeframe}. Lines outside loaded history appear when their candles load.</>}</p><Button size="sm" variant="outline" className="h-8 text-xs" aria-pressed={hidden} onClick={()=>setHidden(h=>!h)}>{hidden ? "Show drawings" : "Hide drawings"}</Button></div>
       {!drawings.length && <p>No drawings on this chart. Choose a drawing tool to begin.</p>}
       {drawings.map((d,index)=><div key={d.id} className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-2" data-testid="chart-drawing-object">
@@ -199,5 +239,12 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         <Button size="sm" variant="ghost" className="h-8 text-xs" aria-label={`Delete drawing ${index+1}`} onClick={()=>change(drawings.filter(item=>item.id!==d.id))}>Delete</Button>
       </div>)}
     </div>}
+      </div>
+    </div>
+    {styleNote && <p id={styleNoteId} data-testid="chart-style-note" className="mt-2 text-[11px] leading-relaxed text-zinc-400">{styleNote}</p>}
+    {tool && <p className="mt-2 text-amber-300" role="status">{names[tool]}: {anchor ? "choose the second candle and price" : "click or tap a candle at the desired price"}. Drawings are analysis only. <Button size="sm" variant="ghost" className="ml-1 h-8 text-xs" onClick={()=>{setTool(null);setAnchor(null);panRef.current?.focus();}}>Cancel drawing</Button></p>}
+    {panOnly && <p className="mt-2 text-zinc-400" role="status">Pan mode · drag through history without moving drawings. Use + / − to zoom and arrow keys to pan while the chart is focused.</p>}
+    {message && <p className="mt-2 text-zinc-300" role="status">{message}</p>}
+    {storageFailed && <p className="mt-2 text-amber-300" role="alert">Browser storage is unavailable. Drawing changes will be lost when this view closes.</p>}
   </div>;
 }

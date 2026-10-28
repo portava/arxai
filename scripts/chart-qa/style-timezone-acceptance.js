@@ -79,8 +79,11 @@ async page => {
     check(await zone.inputValue() === 'America/New_York' && await style.inputValue() === 'heikinAshi', 'Style or zone did not persist');
     await page.getByTestId('chart-style-note').waitFor();
     await page.setViewportSize({ width: 390, height: 844 });
+    const tools = page.getByRole('button', { name: 'Chart tools', exact: true });
     for (const value of ['heikinAshi', 'baseline', 'hollow']) {
+      await tools.click();
       await style.selectOption(value);
+      await tools.click();
       check(await page.getByTestId('chart-style-note').isVisible(), `${value}: mobile explanation hidden`);
       check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${value}: mobile overflow`);
     }
