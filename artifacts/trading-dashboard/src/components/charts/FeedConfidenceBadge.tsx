@@ -127,6 +127,15 @@ export function FeedConfidenceBadge({
   // the badge can never look more confident than the rest of the panel.
   const conf = capConfidence(rawConf, aiUsableResolved);
   const fs = feedStatus ?? null;
+  // The State row follows the same cap: a raw isLive is not shown as "Live"
+  // while the resolved verdict is unconfirmed (false) or still checking (null).
+  const rawFeedState = fs ? (fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed") : "—";
+  const feedStateLabel =
+    rawFeedState === "Live" && aiUsableResolved === false
+      ? "Unconfirmed (feed reports live)"
+      : rawFeedState === "Live" && aiUsableResolved === null
+        ? "Checking…"
+        : rawFeedState;
   const provider = providerInfo(fs?.source);
   const ProviderIcon = TIER_ICON[provider.tier];
   // Task #776 — a synthetic served by the MT5 broker has NO separate Deriv tick
@@ -221,7 +230,7 @@ export function FeedConfidenceBadge({
 
         <div className="space-y-1 rounded-md border border-zinc-800 p-2">
           <Row label="Source" value={fs?.source || "—"} />
-          <Row label="State" value={fs ? (fs.stale ? "Stale" : fs.isLive ? "Live" : "Delayed") : "—"} />
+          <Row label="State" value={feedStateLabel} />
           <Row label="Latency" value={fs?.latencyMs != null ? `${fs.latencyMs} ms` : "—"} />
           <Row label="Last candle" value={relativeTime(fs?.lastCandleTime)} />
           <Row

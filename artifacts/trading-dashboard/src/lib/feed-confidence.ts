@@ -123,12 +123,21 @@ export function capConfidence(
   resolved: boolean | null | undefined,
 ): FeedConfidence {
   if (resolved === undefined || resolved === true) return conf;
+  // A raw "clean" verdict carries the server's live-sounding message (e.g.
+  // "Live feed active for EURUSD …"). Once the cap withholds "clean", that
+  // message would contradict the capped label in the same popover, so it is
+  // replaced with what is actually known. A non-clean raw message (stale /
+  // delayed / partial) is already an honest limitation and is kept.
   if (resolved === null) {
     return {
       ...conf,
       severity: "unknown",
       statusLabel: "Checking…",
       aiUsable: false,
+      message:
+        conf.severity === "clean"
+          ? "Still checking whether this feed is confirmed for this market and timeframe."
+          : conf.message,
     };
   }
   // resolved === false → not confirmed.
@@ -137,6 +146,10 @@ export function capConfidence(
     severity: conf.severity === "clean" ? "caution" : conf.severity,
     statusLabel: conf.severity === "clean" ? "Unconfirmed" : conf.statusLabel,
     aiUsable: false,
+    message:
+      conf.severity === "clean"
+        ? "The feed reports clean bars, but this market and timeframe's read is not confirmed current — treat it as unconfirmed."
+        : conf.message,
   };
 }
 
