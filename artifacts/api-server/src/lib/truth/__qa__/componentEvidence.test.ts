@@ -142,7 +142,13 @@ test("a valid Deriv public forming candle remains chart context while votes use 
   assert.equal(read.evidence.source, "deriv_public"); assert.equal(read.openClosed.length, 80);
   const valid = { ...signal(), symbol: "V50", marketEvidence: { ...read.evidence, userId: 1 } };
   const result = await buildSymbolTruthSnapshot("V50", "M15", 1, { getChartCandlesFn: async () => f.chart as never, buildNewsFn: absent, evaluateScalpFn: absent, computeTimingFn: absent, buildScannerFn: async () => valid });
-  assert.equal(result.components.scanner.present, true); assert.ok(Date.parse(result.data.lastCandleAt!) > NOW);
+  assert.equal(result.components.scanner.present, true);
+  // The forming candle stays chart context (its close is the newest price), but
+  // its scheduled future close is not an observation: lastCandleAt is the
+  // preceding closed bar's close.
+  assert.equal(result.data.price, f.chart.candles.at(-1)!.close);
+  assert.equal(result.data.lastCandleAt, read.evidence.lastClosedCandleAt);
+  assert.ok(Date.parse(result.data.lastCandleAt!) <= NOW);
   assert.ok(Date.parse(result.components.scanner.asOf!) <= NOW);
 });
 

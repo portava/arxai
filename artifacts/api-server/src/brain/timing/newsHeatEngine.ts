@@ -69,8 +69,13 @@ export async function computeNewsHeat(symbol: string, deps: NewsHeatDeps = {}): 
     const { radar } = await buildRadarFn(symbol);
     calendarConnected = radar.provider.connected;
 
-    if (calendarConnected && radar.events.length > 0) {
-      const topEvent = radar.events[0]!;
+    // Only an event the radar mapped to THIS symbol may set its phase/heat.
+    // The radar also lists unrelated releases (sorted after the affecting
+    // ones), so events[0] is not necessarily about this symbol.
+    const topEvent = calendarConnected
+      ? radar.events.find((e) => e.affectsSymbol === true)
+      : undefined;
+    if (topEvent) {
       radarEventName = topEvent.title;
       const secsRemaining = topEvent.countdownSeconds;
       // The radar's state is the authority on whether the release has

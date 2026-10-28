@@ -42,6 +42,48 @@ export interface SnapshotReconciliation {
   excludedCount: number;
   brokerAbsentExcludedCount: number;
   stalePLCount: number;
+  /**
+   * Client-side only. True when this marker was NOT produced by the server's
+   * reconciler: the snapshot was rebuilt from the slot-summary poll (stream
+   * down / tab hidden), whose open P/L is the per-position sum that was never
+   * compared with equity − balance. Such a snapshot is flagged
+   * (exceedsThreshold) until a stream snapshot reconciles it.
+   */
+  unverified?: boolean;
+}
+
+/**
+ * Reconciliation marker for a snapshot rebuilt from the slot-summary poll.
+ * Downgrade-only: a discrepancy the stream already flagged is kept as-is, and
+ * an unchecked poll total is never presented as reconciled (no marker would
+ * read as "in agreement" to every consumer).
+ */
+/**
+ * Position rows carried from the last stream snapshot into a poll-built one.
+ * The poll does not refresh them, so a "live" / "fresh" row label is
+ * downgraded to "stale"; delayed / stale / unavailable rows keep their label.
+ */
+export function carriedPositionsForPoll(rows: LivePositionPL[] | null | undefined): LivePositionPL[] {
+  return (rows ?? []).map((r) =>
+    r.freshness === "live" || r.freshness === "fresh" ? { ...r, freshness: "stale" as const } : r,
+  );
+}
+
+export function pollReconciliationMarker(
+  prev: SnapshotReconciliation | null | undefined,
+  polledOpenPL: number | null,
+): SnapshotReconciliation {
+  if (prev?.exceedsThreshold) return { ...prev };
+  return {
+    snapshotSummedPL: polledOpenPL,
+    equityMinusBalancePL: null,
+    discrepancy: null,
+    exceedsThreshold: true,
+    excludedCount: 0,
+    brokerAbsentExcludedCount: 0,
+    stalePLCount: 0,
+    unverified: true,
+  };
 }
 
 export interface LivePositionPL {
@@ -285,6 +327,9 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
           ? { ...baseLive, freshness: { ...baseLive.freshness, status: balanceStatus } }
           : baseLive;
 
+      const synthOpenPL: number | null = accountMode === "LIVE_SHARED"
+        ? ((data["openPnL"] as number | null | undefined) ?? prev?.openPL ?? null)
+        : null;
       const synth: LiveAccountSnapshot = {
         userId: prev?.userId ?? "",
         accountMode,
@@ -300,17 +345,22 @@ export function useLiveAccountSnapshot(): UseLiveAccountSnapshotResult {
         accountSyncedAtMs: prev?.accountSyncedAtMs ?? null,
         // Only forward financial figures when the user is actually in live-shared
         // mode — never surface a LIVE_SHARED-sourced number to a non-live user.
-        openPL: accountMode === "LIVE_SHARED"
-          ? ((data["openPnL"] as number | null | undefined) ?? prev?.openPL ?? null)
-          : null,
+        openPL: synthOpenPL,
         openPositionsCount: accountMode === "LIVE_SHARED"
           ? Number((data["openPositionCount"] as number | undefined) ?? prev?.openPositionsCount ?? 0)
           : 0,
-        positions: accountMode === "LIVE_SHARED" ? (prev?.positions ?? []) : [],
+        // slot-summary does not re-read the rows: these are the last stream
+        // rows, frozen. Never keep their "live"/"fresh" label on the poll path.
+        positions: accountMode === "LIVE_SHARED" ? carriedPositionsForPoll(prev?.positions) : [],
         lastComputedAtMs: Date.now(),
         freshness: accountMode === "LIVE_SHARED" ? freshness : "unavailable",
         warnings: (data["snapshotWarning"] ? [String(data["snapshotWarning"])] : prev?.warnings) ?? [],
         notLiveReason,
+        // The poll path never runs the server reconciler: carry an explicit
+        // unverified marker instead of silently dropping it.
+        reconciliation: accountMode === "LIVE_SHARED"
+          ? pollReconciliationMarker(prev?.reconciliation, synthOpenPL)
+          : undefined,
       };
       setSnapshot(synth);
       setConnectionStatus("polling");

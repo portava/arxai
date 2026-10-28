@@ -10231,6 +10231,57 @@ export const GetEconomicCalendarResponse = zod.array(
 );
 
 /**
+ * @summary Upcoming economic events with the calendar read state in one read
+ */
+export const getEconomicCalendarEnvelopeQueryDaysDefault = 7;
+
+export const GetEconomicCalendarEnvelopeQueryParams = zod.object({
+  currency: zod.coerce.string().optional(),
+  impact: zod.coerce.string().optional(),
+  days: zod.coerce
+    .number()
+    .default(getEconomicCalendarEnvelopeQueryDaysDefault),
+});
+
+export const GetEconomicCalendarEnvelopeResponse = zod.object({
+  read: zod
+    .boolean()
+    .describe(
+      "True only when a connected provider was read; an empty list then means none listed.",
+    ),
+  status: zod.enum(["ok", "empty", "missing", "error"]),
+  provider: zod.string(),
+  configured: zod.boolean(),
+  eventsAsOf: zod
+    .string()
+    .nullable()
+    .describe("When the served events were fetched from the provider."),
+  checkedAt: zod.string(),
+  note: zod
+    .string()
+    .nullable()
+    .describe(
+      "Plain-English reason the calendar was not read; null when it was.",
+    ),
+  windowDays: zod.number(),
+  events: zod.array(
+    zod.object({
+      id: zod.string(),
+      title: zod.string(),
+      country: zod.string(),
+      currency: zod.string(),
+      impact: zod.enum(["low", "medium", "high"]),
+      actual: zod.string().nullish(),
+      forecast: zod.string().nullish(),
+      previous: zod.string().nullish(),
+      eventTime: zod.string(),
+      affectedMarkets: zod.array(zod.string()),
+      source: zod.string(),
+    }),
+  ),
+});
+
+/**
  * @summary Live upcoming events from the configured real economic-calendar
 provider (Trading Economics). Returns provider metadata + a
 window-filtered array of enriched events. `connected` is false when no
@@ -10506,6 +10557,18 @@ export const GenerateNewsRiskReportResponse = zod.object({
     .describe(
       'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
     ),
+  reportAge: zod
+    .object({
+      generatedAt: zod.string().nullable(),
+      ageMinutes: zod.number().nullable(),
+      current: zod.boolean(),
+      maxCurrentAgeMinutes: zod.number(),
+      note: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "How old a persisted news-risk scan is. Its riskLevel and timeUntilEventMinutes were computed at scan time; a scan older than maxCurrentAgeMinutes (or with an unconfirmable time) is not the current risk.\n",
+    ),
   id: zod.number(),
   userId: zod.number().nullish(),
   symbol: zod.string(),
@@ -10578,6 +10641,18 @@ export const GetLatestNewsRiskReportResponse = zod.object({
     .optional()
     .describe(
       'Whether the stored economic calendar (economic_events, filled only by POST \/economic-events\/sync) reaches the end of the window read. An empty event list is a real \"no events\" only when windowCovered is true.\n',
+    ),
+  reportAge: zod
+    .object({
+      generatedAt: zod.string().nullable(),
+      ageMinutes: zod.number().nullable(),
+      current: zod.boolean(),
+      maxCurrentAgeMinutes: zod.number(),
+      note: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "How old a persisted news-risk scan is. Its riskLevel and timeUntilEventMinutes were computed at scan time; a scan older than maxCurrentAgeMinutes (or with an unconfirmable time) is not the current risk.\n",
     ),
   id: zod.number(),
   userId: zod.number().nullish(),
@@ -10850,6 +10925,49 @@ export const GetBacktestRunsResponse = zod.object({
           "invalid_bars",
         ])
         .optional(),
+      metricsMeasurement: zod
+        .object({
+          measured: zod
+            .boolean()
+            .describe(
+              "True only for a COMPLETED run with at least one completed simulated trade.",
+            ),
+          unmeasuredFields: zod
+            .array(zod.string())
+            .describe(
+              "Metric fields whose stored values are placeholders ([] when measured).",
+            ),
+          note: zod
+            .string()
+            .nullable()
+            .describe(
+              "Plain-English reason the metrics were not measured; null when they were.",
+            ),
+        })
+        .optional()
+        .describe(
+          "Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.\n",
+        ),
+      dataReliability: zod
+        .object({
+          status: zod.enum([
+            "sufficient",
+            "partial",
+            "insufficient",
+            "blocked",
+          ]),
+          availableClosedCandles: zod.number(),
+          minimumRequiredCandles: zod.number(),
+          reliable: zod.boolean(),
+          basis: zod
+            .enum(["generated_prices", "broker_history", "unknown"])
+            .optional(),
+          note: zod.string().nullish(),
+        })
+        .optional()
+        .describe(
+          "Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).\n",
+        ),
       aiSummary: zod.string().nullish(),
       equityCurve: zod.array(zod.number()).optional(),
       createdAt: zod.string(),
@@ -10942,6 +11060,44 @@ export const CreateBacktestRunResponse = zod.object({
       "invalid_bars",
     ])
     .optional(),
+  metricsMeasurement: zod
+    .object({
+      measured: zod
+        .boolean()
+        .describe(
+          "True only for a COMPLETED run with at least one completed simulated trade.",
+        ),
+      unmeasuredFields: zod
+        .array(zod.string())
+        .describe(
+          "Metric fields whose stored values are placeholders ([] when measured).",
+        ),
+      note: zod
+        .string()
+        .nullable()
+        .describe(
+          "Plain-English reason the metrics were not measured; null when they were.",
+        ),
+    })
+    .optional()
+    .describe(
+      "Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.\n",
+    ),
+  dataReliability: zod
+    .object({
+      status: zod.enum(["sufficient", "partial", "insufficient", "blocked"]),
+      availableClosedCandles: zod.number(),
+      minimumRequiredCandles: zod.number(),
+      reliable: zod.boolean(),
+      basis: zod
+        .enum(["generated_prices", "broker_history", "unknown"])
+        .optional(),
+      note: zod.string().nullish(),
+    })
+    .optional()
+    .describe(
+      "Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).\n",
+    ),
   aiSummary: zod.string().nullish(),
   equityCurve: zod.array(zod.number()).optional(),
   createdAt: zod.string(),
@@ -11003,6 +11159,44 @@ export const GetBacktestRunResponse = zod.object({
       "invalid_bars",
     ])
     .optional(),
+  metricsMeasurement: zod
+    .object({
+      measured: zod
+        .boolean()
+        .describe(
+          "True only for a COMPLETED run with at least one completed simulated trade.",
+        ),
+      unmeasuredFields: zod
+        .array(zod.string())
+        .describe(
+          "Metric fields whose stored values are placeholders ([] when measured).",
+        ),
+      note: zod
+        .string()
+        .nullable()
+        .describe(
+          "Plain-English reason the metrics were not measured; null when they were.",
+        ),
+    })
+    .optional()
+    .describe(
+      "Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.\n",
+    ),
+  dataReliability: zod
+    .object({
+      status: zod.enum(["sufficient", "partial", "insufficient", "blocked"]),
+      availableClosedCandles: zod.number(),
+      minimumRequiredCandles: zod.number(),
+      reliable: zod.boolean(),
+      basis: zod
+        .enum(["generated_prices", "broker_history", "unknown"])
+        .optional(),
+      note: zod.string().nullish(),
+    })
+    .optional()
+    .describe(
+      "Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).\n",
+    ),
   aiSummary: zod.string().nullish(),
   equityCurve: zod.array(zod.number()).optional(),
   createdAt: zod.string(),
@@ -11108,6 +11302,21 @@ export const GetBacktestChartSeriesResponse = zod.object({
   strategyId: zod.string().optional(),
   symbol: zod.string().optional(),
   timeframe: zod.string().optional(),
+  dataReliability: zod
+    .object({
+      status: zod.enum(["sufficient", "partial", "insufficient", "blocked"]),
+      availableClosedCandles: zod.number(),
+      minimumRequiredCandles: zod.number(),
+      reliable: zod.boolean(),
+      basis: zod
+        .enum(["generated_prices", "broker_history", "unknown"])
+        .optional(),
+      note: zod.string().nullish(),
+    })
+    .optional()
+    .describe(
+      "Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).\n",
+    ),
 });
 
 export const GenerateBacktestAiReviewParams = zod.object({
@@ -11117,6 +11326,29 @@ export const GenerateBacktestAiReviewParams = zod.object({
 export const GenerateBacktestAiReviewResponse = zod.object({
   id: zod.number(),
   aiSummary: zod.string(),
+  metricsMeasurement: zod
+    .object({
+      measured: zod
+        .boolean()
+        .describe(
+          "True only for a COMPLETED run with at least one completed simulated trade.",
+        ),
+      unmeasuredFields: zod
+        .array(zod.string())
+        .describe(
+          "Metric fields whose stored values are placeholders ([] when measured).",
+        ),
+      note: zod
+        .string()
+        .nullable()
+        .describe(
+          "Plain-English reason the metrics were not measured; null when they were.",
+        ),
+    })
+    .optional()
+    .describe(
+      "Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.\n",
+    ),
 });
 
 /**

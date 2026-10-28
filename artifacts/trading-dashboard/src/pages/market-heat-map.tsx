@@ -390,6 +390,18 @@ function sessionCardsFor(sessionName: string): SessionCardName[] {
   return SESSION_CARD_NAMES.filter((name) => n === name.toLowerCase());
 }
 
+/**
+ * Kill zone chip text. LONDON_NY_OVERLAP runs 13:00-17:00 UTC on the server,
+ * one hour past the 16:00 UTC London close; when the session is not the
+ * overlap (London closed) the chip says so instead of implying an overlap.
+ */
+function killZoneLabel(session: MarketTimingRead["session"]): string {
+  if (session.killZone === "LONDON_NY_OVERLAP" && sessionCardsFor(session.sessionName).length !== 2) {
+    return "LONDON_NY_OVERLAP (London closed, New York only)";
+  }
+  return session.killZone;
+}
+
 export function TodayTab({ data, multiData }: { data: MarketTimingRead | undefined; multiData: MarketTimingRead[] }) {
   const session = data?.session;
   const localTime = useViewerLocalTime();
@@ -438,7 +450,7 @@ export function TodayTab({ data, multiData }: { data: MarketTimingRead | undefin
                       </div>
                       {isCurrent && (
                         <div className="space-y-0.5 text-muted-foreground">
-                          <div>Kill zone: <span className="text-foreground">{session.killZone}</span></div>
+                          <div>Kill zone: <span className="text-foreground">{killZoneLabel(session)}</span></div>
                           <div>Heat bonus: <span className="text-foreground font-mono">+{session.sessionHeatBonus}</span></div>
                           <div>Fakeout risk: <span className="text-foreground font-mono">{formatScorePct(session.fakeoutRisk)}</span></div>
                         </div>
@@ -593,7 +605,7 @@ export function SessionCard({
               </Badge>
             )}
             <Badge variant="outline" className="text-[10px] text-muted-foreground">
-              {session.killZone}
+              {killZoneLabel(session)}
             </Badge>
           </div>
         </div>
@@ -1418,6 +1430,22 @@ function AdminDataStatusTab({ data, isLoading }: { data: MarketTimingRead | unde
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
+/**
+ * Header clock for the timing read. `generatedAt` is the server's wall clock
+ * when it recalculated the read, not the time of the latest candle or quote,
+ * so it is labelled as a calculation time, never as "Updated".
+ */
+export function TimingReadClock({ generatedAt }: { generatedAt: string }) {
+  const clock = utcClockOf(generatedAt);
+  return (
+    <span data-testid="timing-read-clock">
+      {clock === "unknown time"
+        ? "Read calculation time unknown"
+        : `Read calculated ${clock} UTC (when the server recalculated it, not the time of the latest price)`}
+    </span>
+  );
+}
+
 export default function MarketHeatMapPage() {
   const [chartSymbol] = useChartSymbol();
   const symbol = bareSymbol(chartSymbol);
@@ -1548,7 +1576,7 @@ export default function MarketHeatMapPage() {
           {data && (
             <>
               <span>·</span>
-              <span>Updated {new Date(data.generatedAt).toLocaleTimeString()}</span>
+              <TimingReadClock generatedAt={data.generatedAt} />
             </>
           )}
         </div>

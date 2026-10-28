@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup, within, act } from "@testing-library/react";
 import type { MarketTimingRead } from "@workspace/api-client-react";
-import { BySessionTab, TodayTab, NowTab, NewsHeatTab, SessionCard } from "./market-heat-map";
+import { BySessionTab, TodayTab, NowTab, NewsHeatTab, SessionCard, TimingReadClock } from "./market-heat-map";
 
 afterEach(() => {
   cleanup();
@@ -179,5 +179,47 @@ describe("Percent scales (server scores are already 0-100)", () => {
     expect(text).toContain("45%");
     expect(text).toContain("70%");
     expect(text).toContain("40%");
+  });
+});
+
+describe("Kill zone label — overlap window past the London close", () => {
+  // The server's LONDON_NY_OVERLAP kill zone runs 13:00-17:00 UTC; London
+  // closes at 16:00. In the last hour the session is New York only, so the
+  // kill zone chip must not read as a London/NY overlap on its own.
+  const tail = { sessionName: "New York", killZone: "LONDON_NY_OVERLAP" as const, isKillZoneActive: true };
+
+  it("SessionCard says London is closed when the overlap kill zone is reported outside the overlap", () => {
+    render(<SessionCard session={makeRead({}, tail).session} />);
+    expect(screen.getByText(/LONDON_NY_OVERLAP.*London closed, New York only/)).toBeTruthy();
+  });
+
+  it("Today tab's New York card says London is closed for the same read", () => {
+    render(<TodayTab data={makeRead({}, tail)} multiData={[]} />);
+    const ny = screen.getByTestId("session-card-New York");
+    expect(within(ny).getByText(/London closed, New York only/)).toBeTruthy();
+  });
+
+  it("during the real overlap the chip is the plain kill zone id", () => {
+    render(<SessionCard session={makeRead({}, { ...tail, sessionName: "London/NY Overlap" }).session} />);
+    expect(screen.getByText("LONDON_NY_OVERLAP")).toBeTruthy();
+    expect(screen.queryByText(/London closed/)).toBeNull();
+  });
+});
+
+describe("Page header clock — calculation time is not data time", () => {
+  // generatedAt is the server's wall clock when it recalculated the read
+  // (marketTimingBrainService: new Date()), not the time of the latest candle
+  // or quote. The header must not present it as "Updated <time>".
+  it("says the read was calculated at that time and that it is not the price time", () => {
+    render(<TimingReadClock generatedAt="2026-10-27T16:30:00.000Z" />);
+    const el = screen.getByTestId("timing-read-clock");
+    expect(el.textContent).not.toMatch(/^Updated/);
+    expect(el.textContent).toMatch(/Read calculated 16:30 UTC/);
+    expect(el.textContent).toMatch(/not the time of the latest price/);
+  });
+
+  it("an unparseable generatedAt is not printed as a time", () => {
+    render(<TimingReadClock generatedAt="garbage" />);
+    expect(screen.getByTestId("timing-read-clock").textContent).toMatch(/calculation time unknown/);
   });
 });

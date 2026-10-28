@@ -167,3 +167,56 @@ test("FRED date-only release held IMMINENT by the radar is not 'Settled' or 'N m
   assert.equal(out.minutesUntil, null);
   assert.equal(out.heatAdjustment, 15);
 });
+
+// The radar lists every calendar event (affecting ones sorted first), so when
+// nothing affects the symbol events[0] is an UNRELATED release. Its phase and
+// heat must not be applied to this symbol.
+function radarWith(events: Array<{ id: string; title: string; currency: string; affectsSymbol: boolean; countdownSeconds: number; state: string }>): NewsHeatDeps["buildRadarFn"] {
+  return async () => ({
+    radar: {
+      symbol: "EURUSD",
+      provider: { connected: true, name: "calendar", note: "live" },
+      events: events.map((e) => ({
+        ...e,
+        severity: "CRITICAL",
+        eventTimeIso: "2026-10-28T13:00:00Z",
+        affectedSymbols: e.affectsSymbol ? ["EURUSD"] : ["USDJPY"],
+      })),
+      topSeverity: "CRITICAL",
+      highImpactWindowActive: false,
+      summary: "",
+    },
+    behavior: { mode: "NORMAL", note: "" },
+  }) as never;
+}
+
+test("an unrelated event (affectsSymbol false) never sets this symbol's news phase or heat", async () => {
+  const out = await computeNewsHeat("EURUSD", {
+    classify: () => "forex",
+    analyzeNewsRiskFn: () => newsRisk(),
+    buildRadarFn: radarWith([
+      { id: "jp", title: "BoJ Rate Decision", currency: "JPY", affectsSymbol: false, countdownSeconds: 0, state: "LIVE" },
+    ]),
+  });
+  assert.equal(out.calendarConnected, true);
+  assert.equal(out.phase, "NONE");
+  assert.equal(out.eventName, null);
+  assert.equal(out.heatAdjustment, 0);
+  assert.equal(out.minutesSince, null);
+  assert.equal(out.eventType, "none");
+});
+
+test("the event that affects the symbol drives the overlay even when an unrelated one is listed first", async () => {
+  const out = await computeNewsHeat("EURUSD", {
+    classify: () => "forex",
+    analyzeNewsRiskFn: () => newsRisk(),
+    buildRadarFn: radarWith([
+      { id: "jp", title: "BoJ Rate Decision", currency: "JPY", affectsSymbol: false, countdownSeconds: 0, state: "LIVE" },
+      { id: "eu", title: "ECB Rate Decision", currency: "EUR", affectsSymbol: true, countdownSeconds: 600, state: "IMMINENT" },
+    ]),
+  });
+  assert.equal(out.eventName, "ECB Rate Decision");
+  assert.equal(out.phase, "PRE_EVENT");
+  assert.equal(out.minutesUntil, 10);
+  assert.equal(out.heatAdjustment, 15);
+});

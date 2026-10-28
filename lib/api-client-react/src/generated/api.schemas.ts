@@ -10801,6 +10801,55 @@ export interface BacktestEvidence {
   limitations: string[];
 }
 
+/**
+ * Whether the run's aggregate metrics were measured. The metric columns default to 0 and an INSUFFICIENT_DATA run simulates nothing, so a run that did not complete any simulated trade carries placeholder zeros, not results. Display only.
+
+ */
+export interface BacktestMetricsMeasurement {
+  /** True only for a COMPLETED run with at least one completed simulated trade. */
+  measured: boolean;
+  /** Metric fields whose stored values are placeholders ([] when measured). */
+  unmeasuredFields: string[];
+  /**
+   * Plain-English reason the metrics were not measured; null when they were.
+   * @nullable
+   */
+  note: string | null;
+}
+
+export type BacktestDataReliabilityStatus =
+  (typeof BacktestDataReliabilityStatus)[keyof typeof BacktestDataReliabilityStatus];
+
+export const BacktestDataReliabilityStatus = {
+  sufficient: "sufficient",
+  partial: "partial",
+  insufficient: "insufficient",
+  blocked: "blocked",
+} as const;
+
+export type BacktestDataReliabilityBasis =
+  (typeof BacktestDataReliabilityBasis)[keyof typeof BacktestDataReliabilityBasis];
+
+export const BacktestDataReliabilityBasis = {
+  generated_prices: "generated_prices",
+  broker_history: "broker_history",
+  unknown: "unknown",
+} as const;
+
+/**
+ * Display-only depth verdict for the bars a run used. Never reliable for generated prices (their count is not observed market depth).
+
+ */
+export interface BacktestDataReliability {
+  status: BacktestDataReliabilityStatus;
+  availableClosedCandles: number;
+  minimumRequiredCandles: number;
+  reliable: boolean;
+  basis?: BacktestDataReliabilityBasis;
+  /** @nullable */
+  note?: string | null;
+}
+
 export type BacktestRunStatus =
   (typeof BacktestRunStatus)[keyof typeof BacktestRunStatus];
 
@@ -10862,6 +10911,8 @@ export interface BacktestRun {
   dataSource?: BacktestRunDataSource;
   evidence?: BacktestEvidence;
   historyStatus?: BacktestRunHistoryStatus;
+  metricsMeasurement?: BacktestMetricsMeasurement;
+  dataReliability?: BacktestDataReliability;
   /** @nullable */
   aiSummary?: string | null;
   equityCurve?: number[];
@@ -10976,6 +11027,7 @@ export interface BacktestChartSeries {
   strategyId?: string;
   symbol?: string;
   timeframe?: string;
+  dataReliability?: BacktestDataReliability;
 }
 
 export interface ForwardEquityPoint {
@@ -11168,6 +11220,78 @@ export interface StoredCalendarCoverage {
   note: string | null;
 }
 
+export type EconomicCalendarEnvelopeStatus =
+  (typeof EconomicCalendarEnvelopeStatus)[keyof typeof EconomicCalendarEnvelopeStatus];
+
+export const EconomicCalendarEnvelopeStatus = {
+  ok: "ok",
+  empty: "empty",
+  missing: "missing",
+  error: "error",
+} as const;
+
+export type EconomicEventImpact =
+  (typeof EconomicEventImpact)[keyof typeof EconomicEventImpact];
+
+export const EconomicEventImpact = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+} as const;
+
+export interface EconomicEvent {
+  id: string;
+  title: string;
+  country: string;
+  currency: string;
+  impact: EconomicEventImpact;
+  /** @nullable */
+  actual?: string | null;
+  /** @nullable */
+  forecast?: string | null;
+  /** @nullable */
+  previous?: string | null;
+  eventTime: string;
+  affectedMarkets: string[];
+  source: string;
+}
+
+export interface EconomicCalendarEnvelope {
+  /** True only when a connected provider was read; an empty list then means none listed. */
+  read: boolean;
+  status: EconomicCalendarEnvelopeStatus;
+  provider: string;
+  configured: boolean;
+  /**
+   * When the served events were fetched from the provider.
+   * @nullable
+   */
+  eventsAsOf: string | null;
+  checkedAt: string;
+  /**
+   * Plain-English reason the calendar was not read; null when it was.
+   * @nullable
+   */
+  note: string | null;
+  windowDays: number;
+  events: EconomicEvent[];
+}
+
+/**
+ * How old a persisted news-risk scan is. Its riskLevel and timeUntilEventMinutes were computed at scan time; a scan older than maxCurrentAgeMinutes (or with an unconfirmable time) is not the current risk.
+
+ */
+export interface NewsRiskReportAge {
+  /** @nullable */
+  generatedAt: string | null;
+  /** @nullable */
+  ageMinutes: number | null;
+  current: boolean;
+  maxCurrentAgeMinutes: number;
+  /** @nullable */
+  note: string | null;
+}
+
 export type NewsRiskReportRiskLevel =
   (typeof NewsRiskReportRiskLevel)[keyof typeof NewsRiskReportRiskLevel];
 
@@ -11195,6 +11319,7 @@ export type NewsRiskReportNews = {
 
 export interface NewsRiskReport {
   calendarCoverage?: StoredCalendarCoverage;
+  reportAge?: NewsRiskReportAge;
   id: number;
   /** @nullable */
   userId?: number | null;
@@ -11292,32 +11417,6 @@ format it using Intl.DateTimeFormat with the user's browser locale.
    * @nullable
    */
   riskNote?: string | null;
-}
-
-export type EconomicEventImpact =
-  (typeof EconomicEventImpact)[keyof typeof EconomicEventImpact];
-
-export const EconomicEventImpact = {
-  low: "low",
-  medium: "medium",
-  high: "high",
-} as const;
-
-export interface EconomicEvent {
-  id: string;
-  title: string;
-  country: string;
-  currency: string;
-  impact: EconomicEventImpact;
-  /** @nullable */
-  actual?: string | null;
-  /** @nullable */
-  forecast?: string | null;
-  /** @nullable */
-  previous?: string | null;
-  eventTime: string;
-  affectedMarkets: string[];
-  source: string;
 }
 
 export type NewsRiskRiskLevel =
@@ -16730,6 +16829,12 @@ export type GetEconomicCalendarParams = {
   days?: number;
 };
 
+export type GetEconomicCalendarEnvelopeParams = {
+  currency?: string;
+  impact?: string;
+  days?: number;
+};
+
 export type GetLiveCalendarEventsParams = {
   /**
    * Optional ARX symbol to scope the window (e.g. EURUSD). When omitted all events are returned.
@@ -16941,6 +17046,7 @@ export type GetBacktestTrades200 = {
 export type GenerateBacktestAiReview200 = {
   id: number;
   aiSummary: string;
+  metricsMeasurement?: BacktestMetricsMeasurement;
 };
 
 export type GetPaperAccounts200 = {

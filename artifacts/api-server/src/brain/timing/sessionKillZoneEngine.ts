@@ -45,7 +45,10 @@ const KILL_ZONES: KillZoneDef[] = [
   },
   {
     id: "LONDON_NY_OVERLAP",
-    label: "London/NY Overlap",
+    // The window runs to 17:00 UTC, one hour past the 16:00 UTC London
+    // close (trading-model choice, unchanged). The label says so; see
+    // overlapWindowNote for the copy shown inside the window.
+    label: "London/NY Overlap Kill Zone",
     openUTC: 13, closeUTC: 17,
     heatBonus: 30, tradeabilityBonus: 25, fakeoutRisk: 40,
     bestSymbols: ["EURUSD", "GBPUSD", "USDJPY", "USDCAD", "US30", "NAS100", "SPX500", "GER40", "XAUUSD"],
@@ -173,6 +176,17 @@ function detectSession(hour: number): SessionDef {
   return SESSIONS.find((s) => s.name === "Off-hours")!;
 }
 
+/**
+ * Plain-English note for the LONDON_NY_OVERLAP kill zone: London and New York
+ * are both open only 13:00-16:00 UTC; the kill zone's last hour (16:00-17:00)
+ * is New York only, and must not read as an overlap while London is closed.
+ */
+function overlapWindowNote(londonActive: boolean): string {
+  return londonActive
+    ? "London and New York are both open 13:00-16:00 UTC; this kill zone runs one hour past the London close, to 17:00 UTC."
+    : "London closed at 16:00 UTC, so this last hour of the kill zone (16:00-17:00 UTC) is New York only, not an overlap.";
+}
+
 export interface SessionKillZoneInput {
   symbol: string;
   isSynthetic: boolean;
@@ -251,7 +265,9 @@ export function computeSessionKillZone(input: SessionKillZoneInput): SessionTimi
     bestSymbols,
     dangerSymbols,
     sessionDescription: kz
-      ? `${kz.label} active (${formatUtcClock(kz.openUTC)}-${formatUtcClock(kz.closeUTC)} UTC). ${session.description}`
+      ? `${kz.label} active (${formatUtcClock(kz.openUTC)}-${formatUtcClock(kz.closeUTC)} UTC). ${
+          kz.id === "LONDON_NY_OVERLAP" ? `${overlapWindowNote(londonActive)} ` : ""
+        }${session.description}`
       : session.description,
     userLocalTime: getUserLocalTime(now, input.userTimezone),
   };

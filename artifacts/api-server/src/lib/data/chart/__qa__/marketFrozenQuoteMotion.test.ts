@@ -43,3 +43,38 @@ test("a market that stopped moving more than five minutes ago reads frozen again
   for (let i = 18; i >= 0; i--) foldFormingTick("EURUSD", 1.1002, brokerTime, now - i * 60_000, "mt5_broker");
   assert.equal(getFeedFreshness("EURUSD", now, "mt5_broker")?.marketFrozen, true);
 });
+
+// A broker clock AHEAD of server UTC (the EA sends unconverted server time,
+// e.g. UTC+3) makes brokerStaleMs clamp to 0, so a closed market replaying its
+// last quote never read frozen. The clock-independent signal is the quote
+// itself: identical bid + broker time replayed for more than five minutes
+// while ticks keep arriving is the closed-market replay.
+const AHEAD = 3 * 60 * 60_000; // broker clock 3 h ahead of server UTC
+
+test("broker clock ahead of UTC: a quote replayed unchanged for 10 minutes reads frozen", () => {
+  const brokerTime = now + AHEAD - 30 * 60_000; // frozen quote, stamped in the broker's future-looking clock
+  for (let i = 20; i >= 0; i--) foldFormingTick("EURUSD", 1.1, brokerTime, now - i * 30_000, "mt5_broker");
+  const f = getFeedFreshness("EURUSD", now, "mt5_broker");
+  assert.ok(f);
+  assert.equal(f.brokerStaleMs, 0, "precondition: the ahead clock cannot measure staleness");
+  assert.equal(f.marketFrozen, true);
+});
+
+test("broker clock ahead of UTC: a moving quote is not called closed", () => {
+  for (let i = 20; i >= 0; i--) {
+    foldFormingTick("EURUSD", 1.1 + i * 0.0001, now + AHEAD - i * 30_000, now - i * 30_000, "mt5_broker");
+  }
+  assert.equal(getFeedFreshness("EURUSD", now, "mt5_broker")?.marketFrozen, false);
+});
+
+test("broker clock ahead of UTC: a replay seen for under five minutes is not yet called closed", () => {
+  const brokerTime = now + AHEAD - 30 * 60_000;
+  for (let i = 4; i >= 0; i--) foldFormingTick("EURUSD", 1.1, brokerTime, now - i * 60_000, "mt5_broker");
+  assert.equal(getFeedFreshness("EURUSD", now, "mt5_broker")?.marketFrozen, false);
+});
+
+test("a feed that stopped arriving is never called closed, whatever the clock", () => {
+  const brokerTime = now + AHEAD - 30 * 60_000;
+  for (let i = 20; i >= 10; i--) foldFormingTick("EURUSD", 1.1, brokerTime, now - i * 60_000, "mt5_broker");
+  assert.equal(getFeedFreshness("EURUSD", now, "mt5_broker")?.marketFrozen, false);
+});

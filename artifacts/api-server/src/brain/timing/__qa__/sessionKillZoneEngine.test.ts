@@ -170,3 +170,34 @@ test("synthetic instruments still trade on the weekend", () => {
     mock.timers.reset();
   }
 });
+
+// The LONDON_NY_OVERLAP kill zone runs 13:00-17:00 UTC but London closes at
+// 16:00 UTC. The window is a trading-model choice and is NOT changed here; the
+// label must say what the window is and must not describe 16:00-17:00 as a
+// London/NY overlap while London is closed.
+test("16:30 UTC: overlap kill zone's last hour says London is closed, not 'London/NY Overlap active'", () => {
+  atUtc(16, 30);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.killZone, "LONDON_NY_OVERLAP"); // window unchanged
+    assert.equal(out.sessionName, "New York");
+    assert.doesNotMatch(out.sessionDescription, /London\/NY Overlap active/);
+    assert.match(out.sessionDescription, /London closed at 16:00 UTC/);
+    assert.match(out.sessionDescription, /13:00-17:00 UTC/);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("13:45 UTC: overlap kill zone label states the real overlap (13:00-16:00) and the window end (17:00)", () => {
+  atUtc(13, 45);
+  try {
+    const out = computeSessionKillZone({ symbol: "EURUSD", isSynthetic: false });
+    assert.equal(out.killZone, "LONDON_NY_OVERLAP");
+    assert.equal(out.sessionName, "London/NY Overlap");
+    assert.match(out.sessionDescription, /13:00-17:00 UTC/);
+    assert.match(out.sessionDescription, /London and New York are both open 13:00-16:00 UTC/);
+  } finally {
+    mock.timers.reset();
+  }
+});

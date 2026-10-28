@@ -369,7 +369,7 @@ async function buildChartFeed(
     futureStampObserved,
   });
   const quality = verdict.quality;
-  const warning = verdict.warning;
+  let warning = verdict.warning;
   const stale = verdict.stale;
   const aiUsable = verdict.aiUsable;
 
@@ -401,8 +401,9 @@ async function buildChartFeed(
       : null;
   const quoteMovedWallMs: number | null = tickFreshness ? tickFreshness.quoteMovedWallMs : null;
   const tradingObserved = quoteMovedWallMs != null && now - quoteMovedWallMs <= MARKET_FROZEN_WALL_FRESH_MS;
+  const session = getSymbolProfile(symbol, assetClass).session;
   const closure = lastCandle && !tradingObserved
-    ? scheduledWeekendClosure(getSymbolProfile(symbol, assetClass).session, now)
+    ? scheduledWeekendClosure(session, now)
     : null;
   const marketClosedAtMs = closure && lastCandle && Date.parse(lastCandle.openTime) < closure.closedAtMs
     ? closure.closedAtMs
@@ -414,12 +415,19 @@ async function buildChartFeed(
       ? reachable && !verdict.stale
       : reachable && trailing != null && trailing <= 1 && (!derivBacked || hasLiveTick);
 
-  const message = buildMessage(quality, source, displaySymbol, {
+  const messageCtx: MessageContext = {
     isLive,
     durableMirror,
     newestOpenTime: lastCandle?.openTime ?? null,
     marketClosedAtMs,
-  });
+    alwaysOpen: session.alwaysOpen,
+    trailingIntervals: verdict.trailingIntervals,
+  };
+  const message = buildMessage(quality, source, displaySymbol, messageCtx);
+  // The shared verdict's lag warning cannot see the session: never let it
+  // call a closed (or possibly closed) market a stale feed. Wording only —
+  // quality, stale and isLive are unchanged.
+  warning = lagWarning(quality, displaySymbol, messageCtx) ?? warning;
 
   const status: ChartFeedStatus = {
     symbol,
@@ -480,6 +488,37 @@ interface MessageContext {
   newestOpenTime: string | null;
   /** Scheduled weekend close (epoch ms) the series predates, or null. */
   marketClosedAtMs: number | null;
+  /** The instrument trades 24/7 (it never has a session close). */
+  alwaysOpen?: boolean;
+  /** Bars the newest bar trails the current bar by, or null. */
+  trailingIntervals?: number | null;
+}
+
+/**
+ * Plain wording for a lagging series (quality stale or delayed) that does not
+ * call a closed market a stale feed:
+ *   - scheduled weekend closure the series predates → market closed;
+ *   - an instrument with session closes, outside that window → what was
+ *     observed (no new bar since …) and that the market may be closed or the
+ *     feed delayed (there is no reliable daily-session / holiday source);
+ *   - a 24/7 instrument → null (the generic stale/delayed wording is true).
+ */
+function lagWarning(quality: ChartQuality, displaySymbol: string, ctx: MessageContext): string | null {
+  if (quality !== "stale" && quality !== "delayed") return null;
+  if (ctx.marketClosedAtMs != null) {
+    return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. Not a feed fault, and not live data.`;
+  }
+  if (quality === "stale" && ctx.alwaysOpen === false) {
+    const gap = typeof ctx.trailingIntervals === "number" && Number.isFinite(ctx.trailingIntervals) ? ctx.trailingIntervals : null;
+    if (gap == null || gap >= 2) {
+      const behind = gap == null ? "" : ` (${gap} bars behind the current bar)`;
+      return `No new ${displaySymbol} bar since one opened ${utcStamp(ctx.newestOpenTime)}${behind}. The market may be closed or the feed delayed; this is not live data.`;
+    }
+    // Bars are current but the live tick stream that forms the newest bar
+    // went silent (forming-tip path).
+    return `Live ticks for ${displaySymbol} have stopped, so the forming bar is frozen. The market may be closed or the feed delayed; this is not live data.`;
+  }
+  return null;
 }
 
 function utcStamp(iso: string | null): string {
@@ -495,7 +534,7 @@ function buildMessage(
   displaySymbol: string,
   ctx: MessageContext,
 ): string {
-  if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed")) {
+  if (ctx.marketClosedAtMs != null && (quality === "clean" || quality === "delayed" || quality === "stale")) {
     return `Market closed for ${displaySymbol} since the scheduled weekend close (${utcStamp(new Date(ctx.marketClosedAtMs).toISOString())}); newest bar opened ${utcStamp(ctx.newestOpenTime)}. No live data until the market reopens.`;
   }
   if (ctx.durableMirror && (quality === "clean" || quality === "delayed")) {
@@ -509,7 +548,7 @@ function buildMessage(
     case "delayed":
       return `Feed for ${displaySymbol} is delayed / not yet confirmed real-time.`;
     case "stale":
-      return `Feed for ${displaySymbol} is stale.`;
+      return lagWarning(quality, displaySymbol, ctx) ?? `Feed for ${displaySymbol} is stale.`;
     case "partial":
       return `Feed for ${displaySymbol} returned an incomplete candle sequence.`;
     case "invalid":
