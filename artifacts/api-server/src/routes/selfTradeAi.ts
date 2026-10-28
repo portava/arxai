@@ -25,6 +25,7 @@ import {
 import { runDecisionCycle } from "../lib/selfTrade/decisionEngine.js";
 import { getVolatilityMatrix } from "../lib/selfTrade/volatilityMatrixService.js";
 import { runAutonomousCycle } from "../lib/selfTrade/autonomousCycle.js";
+import { buildRunCycleResponse, createCycleSingleFlight, describeCycleConflict } from "../lib/selfTrade/cycleReport.js";
 import { managementNote } from "../lib/selfTrade/executionLifecycle.js";
 
 const router = Router();
@@ -159,6 +160,9 @@ const runCycleInput = z
     path: ["ownerId"],
   });
 
+// One admin-triggered cycle at a time in this process (see createCycleSingleFlight).
+const autonomousCycleFlight = createCycleSingleFlight();
+
 router.post("/self-trade-ai/run-autonomous-cycle", requireUser, async (req, res) => {
   // ADMIN/OWNER only, audited. Drives ONE controlled autonomous cycle through
   // the existing gated pipeline — no always-on loop, no gate bypass.
@@ -171,14 +175,28 @@ router.post("/self-trade-ai/run-autonomous-cycle", requireUser, async (req, res)
     p.data.ownerType != null
       ? { ownerType: p.data.ownerType, ownerId: p.data.ownerId ?? null }
       : undefined;
-  req.log.warn({ actorUserId, scope, reason: p.data.reason }, "self-trade autonomous cycle invoked");
-  const result = await runAutonomousCycle({
-    scope,
-    actorUserId,
-    actorRole: req.authUser?.role ?? null,
-    reason: p.data.reason,
+  const flight = await autonomousCycleFlight.run(() => {
+    // Logged only once the slot is taken, so a refused run is not logged as invoked.
+    req.log.warn({ actorUserId, scope, reason: p.data.reason }, "self-trade autonomous cycle invoked");
+    return runAutonomousCycle({
+      scope,
+      actorUserId,
+      actorRole: req.authUser?.role ?? null,
+      reason: p.data.reason,
+    });
   });
-  res.json({ ok: true, ...result });
+  if (!flight.ran) {
+    const conflict = describeCycleConflict(flight.startedAt, Date.now());
+    const logFields = { actorUserId, scope, reason: p.data.reason, runningForSec: conflict.runningForSec };
+    if (conflict.stuck) {
+      req.log.error(logFields, "self-trade autonomous cycle refused: a cycle has held the single-flight slot unusually long (possibly stuck)");
+    } else {
+      req.log.warn(logFields, "self-trade autonomous cycle refused: one is already running");
+    }
+    err(res, 409, "CYCLE_ALREADY_RUNNING", conflict.message);
+    return;
+  }
+  res.json(buildRunCycleResponse(flight.value));
 });
 
 export default router;

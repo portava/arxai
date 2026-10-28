@@ -665,3 +665,75 @@ export function explainProtectiveHold(
     `Automatic protective management is held (${String(reason)}); nothing was sent. Manual controls and broker-side stops remain active.`;
   return template.replace(/\{([a-zA-Z]+)\}/g, (_m, key: string) => render(safe[key]));
 }
+
+// ── Cycle-level summaries (operator surface after one autonomous cycle) ──────
+//
+// A cycle reports holds as reason → count, without per-position detail (that
+// lives in the audit rows). These texts therefore stand alone: no placeholder,
+// no account data. They never describe a dispatch as a completed close.
+
+const NO_ACTION_TAIL = "Manual controls and the stop held at the broker remain active.";
+
+const CYCLE_SUMMARY: Record<string, string> = {
+  PROTECTIVE_HOLD_PLATFORM_STOP_ENGAGED:
+    "The platform emergency stop is engaged, so automatic closes and stop moves are refused by design. Use the admin emergency close or the broker terminal. Broker-side stop and take-profit remain active.",
+  PROTECTIVE_HOLD_NO_FRESH_SWEEP:
+    `Timed out: no broker position snapshot newer than the held one arrived from the EA within the {waitWindow} wait. ARX did not close or move a stop from old data and re-checks next cycle. ${NO_ACTION_TAIL}`,
+  PROTECTIVE_HOLD_WAIT_BUDGET_USED:
+    `No fresh broker position snapshot was available, and this bridge's wait budget for the cycle{budgetSuffix} was already used by an earlier held position (one snapshot refreshes every position on the bridge). ARX did not act on old data and re-checks next cycle. ${NO_ACTION_TAIL}`,
+  PROTECTIVE_HOLD_MANUAL_COMMAND_IN_FLIGHT:
+    "A close/modify for this ticket is still in flight at the terminal (neither filled nor rejected). ARX will not act on top of a manual or pending order; it re-checks after that command settles. Broker-side stops remain active.",
+  PROTECTIVE_HOLD_TRIGGER_CLEARED:
+    "A fresh snapshot arrived and the price no longer triggers the protective action, so no action was taken.",
+  PROTECTIVE_HOLD_PIPELINE_REFUSED:
+    "The live pipeline refused the request before a command existed. Nothing was sent to the broker; the refusal reason is in the self-trade audit log.",
+  PROTECTIVE_HOLD_REFUSED_WITH_COMMAND:
+    `The live pipeline refused the request after a command was recorded. The command is kept for reconciliation and is not retried; the position is not protected by this cycle. ${NO_ACTION_TAIL}`,
+  PROTECTIVE_HOLD_OUTCOME_UNCERTAIN:
+    "The request was handed to the live pipeline but its outcome is not yet proven; the claim is retained for review and no retry is made.",
+  PROTECTIVE_HOLD_INTERNAL_ERROR:
+    `The protective path failed safely; nothing was sent. ${NO_ACTION_TAIL}`,
+  // Cycle-level only: the drain itself threw, so per-position outcomes are not
+  // known here. Deliberately claims neither "nothing was sent" nor "sent".
+  PROTECTIVE_DRAIN_FAILED:
+    "The protective step failed before it reported results for the queued position(s), so this report cannot say whether any request reached the EA. Check the execution feed and the self-trade audit log before acting again; nothing is retried automatically. Manual controls and the stop held at the broker remain active.",
+  MANAGEMENT_OBSERVATION_STALE:
+    "The latest broker position snapshot was too old for ordinary management to act on. Where a protective trigger applied, the position was handed to the protective path, which waits for a fresh snapshot (see protective results).",
+  MANAGEMENT_OBSERVATION_TIMESTAMP_INVALID:
+    "The broker position snapshot had no usable time, so ordinary management did not act. Where a protective trigger applied, the position was handed to the protective path.",
+  MANAGEMENT_OBSERVATION_FUTURE_DATED:
+    "The broker position snapshot was dated ahead of the server clock, so ordinary management did not act. Where a protective trigger applied, the position was handed to the protective path.",
+  MANAGEMENT_OBSERVATION_PRICE_INVALID:
+    "The broker position snapshot carried an unusable price, so ordinary management did not act. Where a protective trigger applied, the position was handed to the protective path.",
+  MANAGEMENT_OBSERVATION_PREDATES_COMMAND:
+    "The broker position snapshot predates a close/modify already sent for this ticket, so ordinary management did not act. Where a protective trigger applied, the position was handed to the protective path.",
+};
+
+const CYCLE_CATEGORY: ReadonlyArray<[RegExp, string]> = [
+  [/^PROTECTIVE_BRIDGE_/, "The bridge this position was opened on could not be verified as the same live, online account, so nothing was sent. Broker-side stops remain active."],
+  [/^PROTECTIVE_IDENTITY_/, "The broker position no longer matches the one this agent opened, so nothing was sent; automatic management is held for review."],
+  [/^PROTECTIVE_(OBSERVATION_|POSITION_ABSENT|TICKET_COMMAND|SWEEP_MARKER)/, `The fresh snapshot could not prove the position's current state, so nothing was sent. ${NO_ACTION_TAIL}`],
+  [/^PROTECTIVE_(GEOMETRY|SIDE|WOULD|PARTIAL|STOP|TAKE_PROFIT)/, "The proposed protective action failed the exposure / stop-direction checks and was refused. Broker-side stop and take-profit remain active."],
+];
+
+/**
+ * Cycle-level, standalone operator text for a management / protective hold
+ * reason. Per-position detail is in the audit log; this never needs it.
+ */
+export function summarizeManagementHold(
+  reason: string,
+  opts: { waitBudgetSec?: number } = {},
+): string {
+  const sec = opts.waitBudgetSec;
+  const whole = typeof sec === "number" && Number.isFinite(sec) && sec > 0 ? Math.round(sec) : null;
+  const waitWindow = whole != null ? `${whole} s` : "cycle's";
+  const budgetSuffix = whole != null ? ` (${whole} s)` : "";
+  const direct = CYCLE_SUMMARY[reason];
+  const template = (TEXT as Record<string, string>)[reason];
+  const text =
+    direct ??
+    (template && !/\{[a-zA-Z]+\}/.test(template) ? template : undefined) ??
+    CYCLE_CATEGORY.find(([re]) => re.test(reason))?.[1] ??
+    `Automatic management was held (${reason}); nothing was sent for it. Per-position detail is in the self-trade audit log. ${NO_ACTION_TAIL}`;
+  return text.replace(/\{waitWindow\}/g, waitWindow).replace(/\{budgetSuffix\}/g, budgetSuffix);
+}

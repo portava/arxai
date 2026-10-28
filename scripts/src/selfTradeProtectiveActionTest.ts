@@ -15,6 +15,7 @@ import {
   verifyProtectivePosition,
   explainProtectiveHold,
   redactProtectiveDetail,
+  summarizeManagementHold,
   PROTECTIVE_HOLD_REASONS,
   evaluateManagementAction,
   type ProtectivePositionFacts,
@@ -296,6 +297,28 @@ const SELL: ProtectivePositionFacts = { side: "SELL", volume: 0.1, entryPrice: 1
   check("identity text carries field/expected/observed", /symbol.*EURUSD.*EURUSD\.r/.test(explainProtectiveHold("PROTECTIVE_IDENTITY_SYMBOL_MISMATCH", poison)));
   check("redaction keeps operator-useful fields", (redactProtectiveDetail(poison) as { login?: unknown }).login === "12345");
   check("redaction drops nested token material", !/secret/.test(JSON.stringify(redactProtectiveDetail({ nested: { bridgeToken: "secret", ok: 1 } }))));
+  // Cycle-level summaries (operator surface after a run): no per-position
+  // detail exists there, so every text must stand alone with no placeholder.
+  const observationReasons = [
+    "MANAGEMENT_OBSERVATION_TIMESTAMP_INVALID",
+    "MANAGEMENT_OBSERVATION_FUTURE_DATED",
+    "MANAGEMENT_OBSERVATION_STALE",
+    "MANAGEMENT_OBSERVATION_PRICE_INVALID",
+    "MANAGEMENT_OBSERVATION_PREDATES_COMMAND",
+  ];
+  for (const r of [...PROTECTIVE_HOLD_REASONS, ...observationReasons, "PROTECTIVE_DRAIN_FAILED", "SOMETHING_ELSE"]) {
+    const text = summarizeManagementHold(r, { waitBudgetSec: 20 });
+    check(`${r} cycle summary is standalone text`, text.trim().length > 20 && !/\{[a-zA-Z]+\}|unknown/.test(text), text);
+    check(`${r} cycle summary never claims a completed close`, !/\b(closed|completed)\b/i.test(text.replace(/already marked closed|may already be closed/gi, "")), text);
+  }
+  const timeout = summarizeManagementHold("PROTECTIVE_HOLD_NO_FRESH_SWEEP", { waitBudgetSec: 20 });
+  check("NO_FRESH_SWEEP summary names the timeout and the 20 s wait", /timed out/i.test(timeout) && /20 s/.test(timeout), timeout);
+  check("WAIT_BUDGET_USED summary names the used wait budget", /wait budget/i.test(summarizeManagementHold("PROTECTIVE_HOLD_WAIT_BUDGET_USED", { waitBudgetSec: 20 })));
+  check("stale observation summary says it was handed to the protective path", /protective/i.test(summarizeManagementHold("MANAGEMENT_OBSERVATION_STALE", { waitBudgetSec: 20 })));
+  check("summary without a budget still reads cleanly", !/\{|unknown|undefined/.test(summarizeManagementHold("PROTECTIVE_HOLD_NO_FRESH_SWEEP")));
+  const drainFailed = summarizeManagementHold("PROTECTIVE_DRAIN_FAILED", { waitBudgetSec: 20 });
+  check("DRAIN_FAILED summary claims neither 'nothing was sent' nor a dispatch, and points to the feed", !/nothing was sent|sent to (the )?EA\b/i.test(drainFailed) && /execution feed/i.test(drainFailed), drainFailed);
+  check("unknown reason summary names the code and the audit log", /SOMETHING_ELSE/.test(summarizeManagementHold("SOMETHING_ELSE")) && /audit/i.test(summarizeManagementHold("SOMETHING_ELSE")));
 }
 
 // ── 9. Identity — bridge ─────────────────────────────────────────────────────

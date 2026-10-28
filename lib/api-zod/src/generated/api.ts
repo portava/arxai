@@ -23711,6 +23711,52 @@ export const AdminRunSelfTradeAutonomousCycleResponse = zod.object({
     expired: zod.number(),
   }),
   realizedPosted: zod.number(),
+  managementHeld: zod
+    .record(zod.string(), zod.number())
+    .optional()
+    .describe(
+      "Management holds by structured reason code -> count (ordinary observation holds MANAGEMENT_OBSERVATION_\*, protective-path holds PROTECTIVE_\*, and the per-agent MANAGEMENT_PAUSED_AACI_REVIEW).",
+    ),
+  managementHeldDetails: zod
+    .array(
+      zod.object({
+        reason: zod.string(),
+        count: zod.number(),
+        kind: zod.enum(["PROTECTIVE", "OBSERVATION", "PAUSE", "OTHER"]),
+        text: zod.string(),
+      }),
+    )
+    .optional()
+    .describe(
+      "One entry per hold reason with standalone plain-English text. Per-position detail stays in the self-trade audit log.",
+    ),
+  protective: zod
+    .object({
+      considered: zod.number(),
+      acted: zod.number(),
+      held: zod
+        .number()
+        .describe(
+          "Held with nothing sent: considered − acted − commandRecordedOrUnknown.",
+        ),
+      commandRecordedOrUnknown: zod
+        .number()
+        .optional()
+        .describe(
+          "Neither sent nor plainly held: a command was recorded but refused, the outcome is not yet proven, or the drain failed (PROTECTIVE_HOLD_REFUSED_WITH_COMMAND, PROTECTIVE_HOLD_OUTCOME_UNCERTAIN, PROTECTIVE_DRAIN_FAILED).",
+        ),
+      bridges: zod.number(),
+      elapsedMs: zod
+        .number()
+        .describe(
+          "Wall time of the whole protective step (sweep wait plus dispatch round-trips); not the sweep wait alone, so it can exceed waitBudgetMs.",
+        ),
+      waitBudgetMs: zod.number(),
+    })
+    .optional()
+    .describe(
+      'Protective-action drain for this cycle. \"acted\" counts actions sent to the EA through the gated pipeline (awaiting broker confirmation); it is never a confirmed close or stop move and is not part of positionsClosed \/ positionsModified.',
+    ),
 });
 
 /**
