@@ -16,6 +16,10 @@
 //     says nothing about completeness.
 //   - marginUsed / freeMargin are computed from ARX reserved risk, not broker
 //     margin, so they are labelled "Reserved risk" / "Equity after reserve".
+//   - Live positions are read only for Live Shared data (source live_shared).
+//     For demo / paper / unknown data the heading never says "Live", the
+//     equity tile is "Equity" (no open P/L in it) and the open-trade count,
+//     which was never read, is "—" rather than 0.
 
 import { cn } from "@/lib/utils";
 import { FreshnessBadge } from "@/components/ui/FreshnessBadge";
@@ -57,8 +61,27 @@ function Tile({ label, value, tone, sub }: { label: string; value: string; tone?
   );
 }
 
+const SOURCE_TITLE: Record<InvestorLiveBalance["source"], string> = {
+  live_shared: "Live balance",
+  demo: "Demo balance",
+  paper: "Paper balance",
+  unknown: "Account balance",
+};
+
+/**
+ * The panel heading. A caller's title that says "live" is used only for Live
+ * Shared data; demo, paper or unknown data is titled by its source.
+ */
+export function canonicalBalanceTitle(live: InvestorLiveBalance | null, title?: string): string {
+  if (live?.source === "live_shared") return title ?? "Account balance";
+  if (title && !/\blive\b/i.test(title)) return title;
+  return live ? SOURCE_TITLE[live.source] ?? "Account balance" : "Account balance";
+}
+
 export function CanonicalBalancePanel({ live, className, title }: CanonicalBalancePanelProps) {
   const status = live?.freshness.status ?? "unavailable";
+  // Live positions (floating P/L, open-trade count) are read only for Live Shared data.
+  const livePositionsRead = live?.source === "live_shared";
   const lastUpdatedMs = live?.freshness.lastUpdatedAt ? Date.parse(live.freshness.lastUpdatedAt) : null;
   const floating = signedMoney(live?.floatingPnL ?? null);
   const realized = signedMoney(live?.realizedPnL ?? null);
@@ -70,7 +93,7 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
   return (
     <div className={cn("rounded-xl border border-border bg-surface/40 p-3", className)}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-txt">{title ?? "Account balance"}</span>
+        <span className="text-xs font-semibold text-txt" data-testid="canonical-balance-title">{canonicalBalanceTitle(live, title)}</span>
         <FreshnessBadge
           freshness={toBadgeFreshness(status)}
           lastUpdatedMs={Number.isFinite(lastUpdatedMs) ? lastUpdatedMs : null}
@@ -79,7 +102,11 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Tile label="Allocated" value={money(live?.allocatedBalance ?? null)} />
-        <Tile label="Live equity" value={money(live?.liveEquity ?? null)} sub={pending ? "incomplete" : undefined} />
+        <Tile
+          label={livePositionsRead ? "Live equity" : "Equity"}
+          value={money(live?.liveEquity ?? null)}
+          sub={[pending ? "incomplete" : null, live && !livePositionsRead ? "no open P/L included" : null].filter(Boolean).join(" · ") || undefined}
+        />
         <Tile label="Available" value={money(live?.availableBalance ?? null)} />
         <Tile
           label="Floating P/L"
@@ -90,7 +117,11 @@ export function CanonicalBalancePanel({ live, className, title }: CanonicalBalan
         <Tile label="Realized P/L" value={realized.text} tone={realized.tone} sub={pendingSub} />
         <Tile label="Reserved risk" value={money(live?.marginUsed ?? null)} sub="ARX reserve, not broker margin" />
         <Tile label="Equity after reserve" value={money(live?.freeMargin ?? null)} />
-        <Tile label="Open trades" value={String(live?.openTradeCount ?? 0)} />
+        <Tile
+          label="Open trades"
+          value={livePositionsRead && live ? String(live.openTradeCount) : "—"}
+          sub={live && !livePositionsRead ? "not read for this account mode" : undefined}
+        />
       </div>
       {pending && (
         <p className="mt-2 text-[11px] text-warning/80" data-testid="canonical-balance-pnl-pending-note">

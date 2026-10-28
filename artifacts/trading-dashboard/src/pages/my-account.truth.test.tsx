@@ -122,3 +122,29 @@ describe("My Account: bridge preference load failure", () => {
     expect(screen.queryByTestId("badge-personal-bridge-state")).toBeNull();
   });
 });
+
+describe("My Account: canonical balance panel title follows the data source", () => {
+  const demoLive: InvestorLiveBalance = {
+    source: "demo", allocatedBalance: 500, realizedPnL: 0, floatingPnL: null, liveEquity: 500, marginUsed: 0,
+    freeMargin: 500, availableBalance: 500, openTradeCount: 0,
+    freshness: { status: "unavailable", lastUpdatedAt: null, ageMs: null },
+  };
+
+  it("is not titled 'Live balance' for a demo account", async () => {
+    live = demoLive;
+    stubFetch({ "/api/me/account-shell": shell(), "/api/me/bridge-preference": BRIDGE_PREF });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("my-account-page")).toBeTruthy());
+    expect(screen.queryByText("Live balance")).toBeNull();
+    expect(screen.getByText("Demo balance")).toBeTruthy();
+    expect(screen.queryByText("Live equity")).toBeNull();
+  });
+
+  it("keeps 'Live balance' for Live Shared data", async () => {
+    live = { ...demoLive, source: "live_shared", floatingPnL: 0, freshness: { status: "fresh", lastUpdatedAt: new Date().toISOString(), ageMs: 1000 } };
+    stubFetch({ "/api/me/account-shell": shell(), "/api/me/bridge-preference": BRIDGE_PREF });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("my-account-page")).toBeTruthy());
+    expect(screen.getByText("Live balance")).toBeTruthy();
+  });
+});

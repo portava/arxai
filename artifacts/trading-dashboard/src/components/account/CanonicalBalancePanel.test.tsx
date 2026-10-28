@@ -59,3 +59,36 @@ describe("CanonicalBalancePanel reserved risk label", () => {
     expect(within(tile("Reserved risk")).getByText("$12.00")).toBeTruthy();
   });
 });
+
+describe("CanonicalBalancePanel source truth", () => {
+  const demo: InvestorLiveBalance = {
+    ...base, source: "demo", floatingPnL: null, openTradeCount: 0,
+    freshness: { status: "unavailable", lastUpdatedAt: null, ageMs: null },
+  };
+
+  it("never calls demo or paper data live, even when the caller passes a 'Live balance' title", () => {
+    render(<CanonicalBalancePanel live={demo} title="Live balance" />);
+    expect(screen.queryByText("Live balance")).toBeNull();
+    expect(screen.getByText("Demo balance")).toBeTruthy();
+    expect(screen.queryByText("Live equity")).toBeNull();
+    cleanup();
+    render(<CanonicalBalancePanel live={{ ...demo, source: "paper" }} title="Live balance" />);
+    expect(screen.getByText("Paper balance")).toBeTruthy();
+  });
+
+  it("does not show 'Open trades 0' when no live position snapshot was read", () => {
+    render(<CanonicalBalancePanel live={demo} />);
+    expect(within(tile("Open trades")).queryByText("0")).toBeNull();
+    expect(within(tile("Open trades")).getByText("—")).toBeTruthy();
+    cleanup();
+    render(<CanonicalBalancePanel live={null} />);
+    expect(within(tile("Open trades")).getByText("—")).toBeTruthy();
+  });
+
+  it("keeps the live labels and the measured count for Live Shared data", () => {
+    render(<CanonicalBalancePanel live={base} title="Live balance" />);
+    expect(screen.getByText("Live balance")).toBeTruthy();
+    expect(within(tile("Live equity")).getByText("$1,030.00")).toBeTruthy();
+    expect(within(tile("Open trades")).getByText("1")).toBeTruthy();
+  });
+});

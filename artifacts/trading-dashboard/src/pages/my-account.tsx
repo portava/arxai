@@ -194,7 +194,9 @@ export default function MyAccountPage() {
       </div>
 
       {/* Canonical balance (Task #430) — same source of truth as the Dashboard,
-          Open Trades, risk panel, wallet and admin. */}
+          Open Trades, risk panel, wallet and admin. The panel uses this
+          title only for Live Shared data; demo / paper data is titled by
+          its source (canonicalBalanceTitle). */}
       <CanonicalBalancePanel live={liveAcct.live} title="Live balance" />
 
       {/* My Balance + Equity */}
