@@ -27,7 +27,7 @@ async page => {
   const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   const screenshot=async label=>{const path=prefix+'-'+label+'.png';await page.screenshot({path,fullPage:false});report.screenshots.push(path);};
   const button=name=>page.getByRole('button',{name,exact:true});
-  const open=async()=>{await button('Templates').click();await page.getByRole('dialog',{name:'Chart templates',exact:true}).waitFor();};
+  const open=async()=>{await button('Templates').click();const dialog=page.getByRole('dialog',{name:'Chart templates',exact:true});await dialog.waitFor();await dialog.evaluate(async element=>{await Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{})));});};
   const close=async()=>{await button('Close').click();await page.getByRole('dialog',{name:'Chart templates',exact:true}).waitFor({state:'hidden'});};
   const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('arx.chart.templates.v1')??'null'));
   const save=async name=>{await page.getByLabel('Template name',{exact:true}).fill(name);await button('Save new').click();await page.getByText('Template saved in this browser.',{exact:true}).waitFor();};
