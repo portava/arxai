@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { BridgeDiagnosticsPanel } from "@/components/mt5/BridgeDiagnosticsPanel";
 import { OneClickToggleCard } from "@/components/mt5/OneClickToggleCard";
 import { BridgeV2FeedStatus } from "@/components/mt5/BridgeV2FeedStatus";
-import { classifyHeartbeatAt, type HeartbeatFreshness } from "@workspace/domain/broker-health/heartbeatPolicy";
+import { classifyHeartbeatAt, classifyHeartbeatAgeSeconds, type HeartbeatFreshness } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 type SecretsStatus = {
   provider: string;
@@ -1486,6 +1486,26 @@ type DemoBridgeDebugResponse = {
   diagnoses: string[];
 };
 
+/**
+ * Debug-panel heartbeat label under the shared heartbeat policy. The server's
+ * `heartbeatFresh` is the legacy 60 s presence ("online") flag, so it must not
+ * be printed as "fresh": a 40 s old heartbeat is degraded under the policy the
+ * rest of the app (and /mt5/status) uses. The client only downgrades — a
+ * server "not online" verdict is never upgraded by the local band.
+ */
+export function describeDebugHeartbeat(bridge: { heartbeatAgeSeconds: number | null; heartbeatFresh: boolean }): {
+  label: "fresh" | "delayed" | "stale" | "age unknown";
+  tone: "text-success" | "text-warning" | "text-danger";
+} {
+  if (bridge.heartbeatAgeSeconds == null) return { label: "age unknown", tone: "text-danger" };
+  if (!bridge.heartbeatFresh) return { label: "stale", tone: "text-danger" };
+  const band = classifyHeartbeatAgeSeconds(bridge.heartbeatAgeSeconds);
+  if (band === "fresh") return { label: "fresh", tone: "text-success" };
+  if (band === "degraded") return { label: "delayed", tone: "text-warning" };
+  if (band === "offline") return { label: "stale", tone: "text-danger" };
+  return { label: "age unknown", tone: "text-danger" };
+}
+
 function DemoBridgeDebugCard() {
   const { toast } = useToast();
   const [data, setData] = useState<DemoBridgeDebugResponse | null>(null);
@@ -1594,9 +1614,10 @@ function DemoBridgeDebugCard() {
             {data.bridge.heartbeatAgeSeconds != null
               ? `${data.bridge.heartbeatAgeSeconds}s ago`
               : "never"}{" "}
-            <span className={data.bridge.heartbeatFresh ? "text-success" : "text-danger"}>
-              ({data.bridge.heartbeatFresh ? "fresh" : "stale"})
-            </span>
+            {(() => {
+              const hb = describeDebugHeartbeat(data.bridge);
+              return <span className={hb.tone}>({hb.label})</span>;
+            })()}
           </div>
 
           <div className="text-txt-secondary">EA account</div>
