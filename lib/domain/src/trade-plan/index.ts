@@ -137,7 +137,9 @@ export function evaluateChecklist(input: ChecklistInputs): ChecklistResult {
   return { items, passCount, failCount, warnCount, isReady: failCount === 0, rewardToRisk: rr };
 }
 
-// ── AI plan review (deterministic, advisory-only) ──────────────────────────
+// ── Plan review (deterministic rules, advisory-only) ───────────────────────
+// No AI model is consulted: the text restates the plan's inputs and the
+// checklist results, so the UI labels it a rule-based review, not an AI one.
 
 export interface PlanForReview {
   symbol: string | null;
