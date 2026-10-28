@@ -7,9 +7,12 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 
 let exposure: Record<string, unknown> = {};
+// Query-state overrides for the read-failure tests (data, isError, times).
+let exposureQ: Record<string, unknown> | null = null;
+let warnQ: Record<string, unknown> = { data: [] };
 vi.mock("@workspace/api-client-react", () => ({
-  useGetPortfolioExposure: () => ({ data: exposure, isLoading: false }),
-  useGetCorrelationWarnings: () => ({ data: [] }),
+  useGetPortfolioExposure: () => exposureQ ?? ({ data: exposure, isLoading: false }),
+  useGetCorrelationWarnings: () => warnQ,
   getGetPortfolioExposureQueryKey: () => ["exp"],
   getGetCorrelationWarningsQueryKey: () => ["warn"],
 }));
@@ -22,7 +25,7 @@ const base = {
   exposureByMarket: {}, exposureByStrategy: {}, exposureByCurrency: [], dailyDrawdown: 0, weeklyDrawdown: 0,
 };
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); exposureQ = null; warnQ = { data: [] }; });
 
 describe("portfolio page truth", () => {
   it("shows unmeasured floating P&L as unavailable, not $0.00", () => {
@@ -64,5 +67,60 @@ describe("portfolio page truth", () => {
     expect(screen.getByText(/Simulated realized P&L/)).toBeTruthy();
     // A zero 24h net loss is not painted as a loss.
     expect(screen.getByTestId("daily-net-loss").className).not.toMatch(/text-destructive/);
+  });
+});
+
+// Regression: "if (isLoading || !exp) return <Skeleton/>" left the page
+// loading forever when the first read failed; a failed 10 s refetch kept the
+// old figures with no marker; a failed correlation read made the warnings
+// card vanish, which looked the same as having no correlated positions; and
+// negative P&L printed as "$-12.00".
+describe("portfolio page read failures", () => {
+  it("a failed first read says the exposure could not be loaded, not an endless skeleton", () => {
+    const refetch = vi.fn();
+    exposureQ = { data: undefined, isLoading: false, isError: true, refetch };
+    const { container } = render(<Portfolio />);
+    expect(screen.getByTestId("portfolio-load-error").textContent).toMatch(/could not be loaded/);
+    expect(container.querySelector(".animate-pulse")).toBeNull();
+    screen.getByTestId("button-retry-exposure").click();
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("a failed refetch after a good read marks the kept figures as not current, with the load time", () => {
+    const loadedAt = new Date("2026-10-28T11:00:00Z").getTime();
+    exposureQ = { data: { ...base }, isLoading: false, isError: true, dataUpdatedAt: loadedAt, errorUpdatedAt: loadedAt + 10_000 };
+    render(<Portfolio />);
+    const stale = screen.getByTestId("portfolio-stale").textContent ?? "";
+    expect(stale).toMatch(/not current/);
+    expect(stale).toContain(new Date(loadedAt).toLocaleTimeString());
+  });
+
+  it("a successful read shows when it was loaded and no stale marker", () => {
+    exposureQ = { data: { ...base }, isLoading: false, isError: false, dataUpdatedAt: Date.now() };
+    render(<Portfolio />);
+    expect(screen.queryByTestId("portfolio-stale")).toBeNull();
+    expect(screen.getByTestId("portfolio-loaded-at").textContent).toMatch(/Loaded at/);
+  });
+
+  it("a failed correlation read says the check could not be loaded instead of vanishing", () => {
+    exposure = { ...base };
+    warnQ = { data: undefined, isError: true };
+    render(<Portfolio />);
+    expect(screen.getByTestId("correlation-load-error").textContent).toMatch(/could not be loaded/);
+    expect(screen.queryByTestId("correlation-none")).toBeNull();
+  });
+
+  it("an empty correlation result says so plainly", () => {
+    exposure = { ...base };
+    render(<Portfolio />);
+    expect(screen.getByTestId("correlation-none").textContent).toMatch(/No correlated open rows in this source/);
+  });
+
+  it("prints a negative P&L as -$12.00, not $-12.00", () => {
+    exposure = { ...base, floatingPnl: -12, floatingPnlUnavailableReason: null, realizedPnl: -12, realizedPnlExcludedUnknown: 0 };
+    render(<Portfolio />);
+    expect(screen.getByTestId("floating-pnl").textContent).toBe("-$12.00");
+    expect(screen.getByTestId("realized-pnl").textContent).toBe("-$12.00");
+    expect(document.body.textContent).not.toMatch(/\$-/);
   });
 });
