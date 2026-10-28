@@ -225,6 +225,12 @@ router.get("/learning/recommendations", requireUser, async (req, res) => {
   } catch (e) { return res.status(500).json({ error: String(e) }); }
 });
 
+type JournalRow = typeof tradeJournalTable.$inferSelect;
+/** A journal row whose trade has a known result: BUY/SELL with a finite P&L. */
+function hasRecordedOutcome(j: JournalRow): j is JournalRow & { pnl: number } {
+  return j.direction !== "WAIT" && typeof j.pnl === "number" && Number.isFinite(j.pnl);
+}
+
 // Phase 25 — Per-user scope. Was leaking the entire journal table across
 // all users (the coach was literally summarising other users' mistakes back
 // to the caller). Now filtered to req.authUser.id with an honest empty state.
@@ -250,8 +256,19 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
       });
     }
     const total = journal.length;
-    const wins = journal.filter((j) => (j.pnl ?? 0) > 0).length;
-    const winRate = total ? Math.round((wins / total) * 100) : 0;
+    // Only rows with a recorded P&L on an actual BUY/SELL have an outcome.
+    // WAIT rows are decisions not to trade; rows with no P&L are undecided.
+    // Neither is a loss, so neither enters the win-rate denominator (same
+    // "decided" basis as the scalp journal).
+    const outcomes = journal.filter(hasRecordedOutcome);
+    const wins = outcomes.filter((j) => j.pnl > 0).length;
+    const losses = outcomes.filter((j) => j.pnl < 0).length;
+    const decided = wins + losses;
+    const withoutOutcome = total - outcomes.length;
+    const winRate: number | null = decided ? Math.round((wins / decided) * 100) : null;
+    const excludedNote = withoutOutcome > 0
+      ? ` (${withoutOutcome} journal ${withoutOutcome === 1 ? "entry" : "entries"} with no result — WAIT or no P&L entered — not counted)`
+      : "";
 
     const bySymbol = new Map<string, number>();
     const byStrategy = new Map<string, number>();
@@ -271,9 +288,14 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
     const topMistake = sorted(byMistake)[0]?.[0] ?? "none";
 
     return res.json({
-      doingWell: winRate >= 50
-        ? `Win rate ${winRate}% across ${total} simulated trades — keep the same selection criteria.`
-        : `${wins} winners out of ${total} so far — discipline before frequency.`,
+      doingWell: winRate == null
+        ? `None of your ${total} journal ${total === 1 ? "entry has" : "entries have"} a recorded win or loss yet, so there is no win rate to report. Enter the P&L on closed trades to build one.`
+        : winRate >= 50
+          ? `Win rate ${winRate}% across ${decided} simulated trades with a recorded result${excludedNote} — keep the same selection criteria.`
+          : `${wins} winners out of ${decided} simulated trades with a recorded result${excludedNote} — discipline before frequency.`,
+      winRate,
+      tradesWithOutcome: decided,
+      entriesWithoutOutcome: withoutOutcome,
       doingPoorly: topMistake !== "none"
         ? `Most common mistake: "${topMistake}". Add a pre-trade check that blocks this case.`
         : "No clear pattern of mistakes yet — log more trades.",
@@ -288,9 +310,11 @@ router.get("/ai/coach-summary", requireUser, async (req, res) => {
         "Reject trades when marketBias is 'choppy'.",
         "Block any entry with riskRewardRatio < 1.5.",
       ],
-      confidenceCalibration: total < 10
+      // Journal rows carry no confidence score, so calibration cannot be
+      // measured here; never compare the win rate to a fixed constant.
+      confidenceCalibration: decided < 10
         ? "Sample size too small — confidence numbers are not yet calibrated."
-        : `Average confidence aligns with win rate within ${Math.abs(winRate - 60)} pts.`,
+        : "Confidence calibration is not measured — journal entries do not record a confidence score to compare against outcomes.",
       dataSource: "SIMULATOR",
       generatedAt: new Date().toISOString(),
     });

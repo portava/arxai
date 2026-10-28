@@ -8,6 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+// GET /api/journal returns the latest 100 entries (artifacts/api-server/src/routes/journal.ts).
+const JOURNAL_PAGE_CAP = 100;
+
 function fetchJournal() {
   return fetch("/api/journal").then((r) => r.json());
 }
@@ -64,10 +67,17 @@ export default function JournalPage() {
 
   const filtered = filterEmotion === "All" ? entries : entries.filter((e: any) => e.emotionTag === filterEmotion);
 
-  // Stats
-  const totalPnl = entries.reduce((s: number, e: any) => s + (e.pnl ?? 0), 0);
-  const wins = entries.filter((e: any) => (e.pnl ?? 0) > 0).length;
-  const winRate = entries.length > 0 ? Math.round((wins / entries.length) * 100) : 0;
+  // Stats. GET /api/journal returns at most the latest JOURNAL_PAGE_CAP
+  // entries, so a full page is labelled as such rather than as a total.
+  const pageFull = entries.length >= JOURNAL_PAGE_CAP;
+  const totalPnl = entries.reduce((s: number, e: any) => s + (typeof e.pnl === "number" ? e.pnl : 0), 0);
+  // Win rate counts only entries with a recorded result: a BUY/SELL with a
+  // P&L. WAIT entries (no trade) and entries with no P&L yet are not losses.
+  const withResult = entries.filter((e: any) => e.direction !== "WAIT" && typeof e.pnl === "number" && Number.isFinite(e.pnl));
+  const wins = withResult.filter((e: any) => e.pnl > 0).length;
+  const losses = withResult.filter((e: any) => e.pnl < 0).length;
+  const decided = wins + losses;
+  const winRate: number | null = decided > 0 ? Math.round((wins / decided) * 100) : null;
   const emotions: Record<string, number> = {};
   entries.forEach((e: any) => { if (e.emotionTag) emotions[e.emotionTag] = (emotions[e.emotionTag] ?? 0) + 1; });
   const topEmotion = Object.entries(emotions).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
@@ -87,14 +97,20 @@ export default function JournalPage() {
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "Total Entries", value: entries.length, cls: "text-foreground" },
-          { label: "Win Rate", value: `${winRate}%`, cls: winRate >= 50 ? "text-success" : "text-danger" },
-          { label: "Total P&L", value: `$${totalPnl.toFixed(2)}`, cls: totalPnl >= 0 ? "text-success" : "text-danger" },
+          { label: pageFull ? `Entries (latest ${JOURNAL_PAGE_CAP})` : "Total Entries", value: entries.length, cls: "text-foreground" },
+          {
+            label: "Win Rate",
+            value: winRate == null ? "—" : `${winRate}%`,
+            sub: winRate == null ? "No entries with a result yet" : `${decided} with a result`,
+            cls: winRate == null ? "text-txt-muted" : winRate >= 50 ? "text-success" : "text-danger",
+          },
+          { label: pageFull ? `P&L (latest ${JOURNAL_PAGE_CAP} entries)` : "Total P&L", value: `$${totalPnl.toFixed(2)}`, cls: totalPnl >= 0 ? "text-success" : "text-danger" },
           { label: "Top Emotion", value: topEmotion, cls: topEmotion === "Disciplined" ? "text-success" : topEmotion === "FOMO" || topEmotion === "Revenge" ? "text-danger" : "text-warning" },
         ].map((s) => (
           <div key={s.label} className="rounded-2xl border border-border bg-card p-4">
             <div className="mb-1 text-xs text-txt-muted">{s.label}</div>
             <div className={cn("text-xl font-bold", s.cls)}>{s.value}</div>
+            {"sub" in s && s.sub ? <div className="mt-0.5 text-[11px] text-txt-muted">{s.sub}</div> : null}
           </div>
         ))}
       </div>
