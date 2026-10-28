@@ -271,8 +271,16 @@ export async function runAutoDebrief(
   const openedMs = trade.openedAt.getTime();
   const closedMs = (trade.closedAt ?? new Date()).getTime();
   const holdTimeSeconds = Math.max(0, Math.floor((closedMs - openedMs) / 1000));
-  const notional = trade.entryPrice * trade.lotSize * 100;
-  const pnlPercent = notional > 0 ? (pnl / notional) * 100 : 0;
+  // Return on notional, in percent. P&L and notional are both
+  // lots × contract size × price in the same currency, so the contract size
+  // cancels: it is the price move in the trade's favour ÷ entry. It used to be
+  // profit_loss ÷ (entry × lots × 100), a fixed 100-unit contract, so a
+  // 1.00-lot EURUSD trade booked at +$1,000 read 921.66%. null when there is
+  // no exit price (cancelled) or no valid entry — never 0.
+  const pnlPercent: number | null =
+    trade.exitPrice != null && Number.isFinite(trade.exitPrice) && trade.entryPrice > 0
+      ? Number(((trade.direction === "BUY" ? 1 : -1) * (trade.exitPrice - trade.entryPrice) / trade.entryPrice * 100).toFixed(4))
+      : null;
 
   // 5a. Heat tag at entry — look up closest heat snapshot at trade open time.
   //     Fail-soft: returns null when no snapshot exists (honest absence, not fabricated).
