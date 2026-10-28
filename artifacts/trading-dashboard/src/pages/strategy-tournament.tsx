@@ -81,7 +81,7 @@ export default function StrategyTournament() {
           <CardContent>
             <div className="overflow-auto">
               <table className="w-full text-xs">
-                <thead><tr className="text-left text-muted-foreground"><th>Strategy</th><th>n</th><th>WR%</th><th>avgR</th><th>PF</th><th>Exp</th><th>RAR</th><th>Conf acc</th><th>Risk disc</th><th>Grade</th></tr></thead>
+                <thead><tr className="text-left text-muted-foreground"><th>Strategy</th><th>n</th><th>WR%</th><th>avgR</th><th>PF</th><th>Exp</th><th>RAR</th><th>Conf acc</th><th>Risk disc</th><th title="Average of each decision's grade, which is its confidence ÷ 10 — not an independent trade grade">Grade (conf÷10)</th></tr></thead>
                 <tbody>
                   {r.ranked.map((row) => (
                     <tr key={row.strategy} className="border-t">

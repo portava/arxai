@@ -79,6 +79,12 @@ describe("Strategy Tournament", () => {
     expect(screen.getByText(/No strategy has a tracked win or loss yet/)).toBeTruthy();
     expect(screen.getByTestId("tournament-unranked").textContent).toMatch(/Session Breakout \(3 decisions\)/);
   });
+
+  it("the Grade column says it is confidence ÷ 10, not an independent trade grade", async () => {
+    bodies["/api/strategy-tournament/results"] = { running: true, startedAt: null, ranked: [ROW], leaderboard: {} };
+    await show(<StrategyTournament />);
+    expect(screen.getByText("Grade (conf÷10)").getAttribute("title")).toMatch(/not an independent trade grade/);
+  });
 });
 
 const STATUS = {
