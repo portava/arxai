@@ -19,6 +19,35 @@ interface Props {
   /** Replay has no further history read beyond its frozen window. */
   historyWindowOnly?: boolean;
 }
+/**
+ * Export provenance line for a live chart. Built only from what the chart
+ * actually holds: the server feed source, the server's closed-candle grade
+ * (downgraded while the tick stream is reconnecting or the market is closed),
+ * the server's own warning verbatim, and the open time of the newest bar.
+ * Nothing is filled in when unknown.
+ */
+export function chartExportFeedLabel(input: {
+  source: string | null | undefined;
+  liveConfirmed: boolean;
+  warning: string | null | undefined;
+  newestBarOpenTime: string | null | undefined;
+  streamReconnecting?: boolean;
+  marketClosed?: boolean;
+}): string {
+  const live = input.liveConfirmed && !input.streamReconnecting && !input.marketClosed;
+  const newestMs = input.newestBarOpenTime ? Date.parse(input.newestBarOpenTime) : NaN;
+  return [
+    input.source || "Unknown source",
+    live ? "Feed graded live-confirmed at last update" : "Not live-confirmed",
+    input.streamReconnecting ? "Tick stream reconnecting, prices delayed" : null,
+    input.marketClosed ? "Market closed" : null,
+    input.warning || null,
+    input.newestBarOpenTime == null
+      ? "No bars received"
+      : Number.isFinite(newestMs) ? `Newest bar opened ${new Date(newestMs).toISOString()}` : "Newest bar time unknown",
+  ].filter((part): part is string => part != null).join(" · ");
+}
+
 export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,onPreferences,hasCandles,feedLabel,drawingKey,ephemeralDrawings=false,historyWindowOnly=false}: Props) {
   const key = drawingKey ?? drawingStorageKey(symbol,timeframe);
   const instanceId = useId();
@@ -98,7 +127,9 @@ export function ChartWorkbenchTools({adapter,epoch,symbol,timeframe,preferences,
         const canvas = document.createElement("canvas");
         const ctx=canvas.getContext("2d");if(!ctx) return;
         ctx.font="12px sans-serif";
-        const labels = [`ARX · ${symbol} ${timeframe}`, `Captured ${new Date().toISOString()}`, feedLabel,
+        // The wall clock is when the PNG was made, not the data time; the
+        // newest bar's time belongs in feedLabel.
+        const labels = [`ARX · ${symbol} ${timeframe}`, `Image exported ${new Date().toISOString()}`, feedLabel,
           preferences.studies.map(studyLabel).join(" · ")].filter(Boolean);
         const lines:string[]=[];
         for(const label of labels) {

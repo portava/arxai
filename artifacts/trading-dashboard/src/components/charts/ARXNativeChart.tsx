@@ -33,7 +33,7 @@ import {
   Minimize2,
   ArrowRightToLine,
 } from "lucide-react";
-import { ChartWorkbenchTools } from "./ChartWorkbenchTools";
+import { ChartWorkbenchTools, chartExportFeedLabel } from "./ChartWorkbenchTools";
 import { SmartChartReader } from "./SmartChartReader";
 import { PREFERENCES_KEY, readChartStorage, validatePreferences, writeChartStorage } from "@/lib/chart-engine/chartWorkspace";
 import { candleDisplayPrecision } from "@/lib/chart-engine/candleReconciliation";
@@ -1248,7 +1248,7 @@ export function ARXNativeChart({
           {expanded ? "Exit fullscreen" : "Fullscreen"}
         </Button>
       </div>
-      <ChartWorkbenchTools key={chartContext} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={`${data?.feedStatus?.source ?? "Unknown source"} · ${isLivePriceAffordance ? "Live at capture" : "Not live-confirmed"} · ${data?.feedStatus?.warning ?? "Display only"}`} />
+      <ChartWorkbenchTools key={chartContext} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} preferences={preferences} onPreferences={setPreferences} hasCandles={hasCandles} feedLabel={chartExportFeedLabel({ source: data?.feedStatus?.source, liveConfirmed: isLivePriceAffordance, warning: data?.feedStatus?.warning, newestBarOpenTime: hasCandles ? candles[candles.length - 1]!.openTime : null, streamReconnecting: streamWatchdog.stalled, marketClosed: marketFrozen != null })} />
       {!preferencesSaved && <p className="px-3 py-2 text-xs text-amber-300" role="alert">Browser storage is unavailable. Chart preferences will reset when this view closes.</p>}
       <SmartChartReader key={`${resolvedSymbol}:${timeframe}:${evidenceIdentity??"unidentified"}`} adapter={adapterRef.current} epoch={chartEpoch} symbol={resolvedSymbol} timeframe={timeframe} data={data} older={deepHistory.olderCandles} historyEvidence={deepHistory.analysisEvidence} liveConfirmed={isLivePriceAffordance} readFailed={query.isError} view={preferences} />
       <output ref={legendRef} aria-label="Candle time and OHLC prices" className="block min-h-8 overflow-x-auto whitespace-nowrap px-3 py-2 font-mono text-[11px] text-zinc-300" data-testid="chart-candle-inspector">
