@@ -114,8 +114,8 @@ export default function ActionCenterPage() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <ShieldCheck className="h-6 w-6 text-primary" /> Trade Action Center
           </h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Review, confirm, and audit every AI-suggested or user-initiated trade action. ARX never executes automatically — every action requires your explicit confirmation. Decision support only — not guaranteed.
+          <p className="text-sm text-muted-foreground mt-1 max-w-2xl" data-testid="text-action-center-scope">
+            Review, confirm, and audit trade actions. Actions drafted for you here — AI suggestions and your own requests — are never sent until you confirm them. Other automation does not wait for that: autopilot sessions place simulator and paper trades on their own and do not appear on this page, and Protective Auto-Close, when its policy allows, confirms its own close actions. Decision support only — not guaranteed.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={reload} disabled={loading} data-testid="button-refresh-actions">

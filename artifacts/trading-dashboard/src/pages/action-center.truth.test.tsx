@@ -96,3 +96,16 @@ describe("Trade Action Center rejection attribution", () => {
     expect(text).toContain("The DEMO queue refused this action");
   });
 });
+
+describe("Trade Action Center subtitle", () => {
+  it("scopes the confirmation claim to actions drafted here and names the automation that does not wait", async () => {
+    render(<ActionCenterPage />);
+    await flush();
+    const subtitle = screen.getByTestId("text-action-center-scope").textContent ?? "";
+    expect(subtitle).not.toMatch(/ARX never executes automatically/);
+    expect(subtitle).toMatch(/drafted for you here/i);
+    expect(subtitle).toMatch(/until you confirm them/i);
+    expect(subtitle).toMatch(/autopilot sessions place simulator and paper trades on their own/i);
+    expect(subtitle).toMatch(/Protective Auto-Close/);
+  });
+});
