@@ -20,6 +20,7 @@ const {
   executionEventsTable: executionEvents,
   selfTradeAgentExecutionsTable: executions,
   selfTradeAuditLogTable: selfAudit,
+  symbolsTable: symbols,
 } = database;
 process.env.SESSION_SECRET = "synthetic-offline-duplicate-recovery-material";
 mock.method(globalThis, "fetch", async () => {
@@ -45,9 +46,12 @@ mock.module("../../notificationService.js", {
 const pipeline = await import("../../live/liveCommandPipeline.js");
 const { cancelLiveCommand, sweepExpiredLiveCommands } = pipeline;
 const { reconcileAgentExecutions } = await import("../agentReconciliation.js");
+const { buildCommandIntegrityFields } = await import("../../security/commandIntegrity.js");
 const { default: mt5Router } = await import("../../../routes/mt5.js");
 
-const tables = [commands, mailbox, liveAudit, executionEvents, executions, selfAudit];
+// `symbols`: the mailbox route resolves an entry's broker symbol name (PR 99's
+// 99f2a18); an empty table resolves to the command's own symbol.
+const tables = [commands, mailbox, liveAudit, executionEvents, executions, selfAudit, symbols];
 const dialect = new PgDialect();
 const quote = (s: string) => `"${s.replaceAll('"', '""')}"`;
 function defaultValue(value: unknown): string {
@@ -84,24 +88,36 @@ const BRIDGE = 1;
 let sequence = 0;
 async function command(patch: Partial<typeof commands.$inferInsert>) {
   sequence++;
-  return (
-    await db
-      .insert(commands)
-      .values({
-        commandId: `qa-cmd-${sequence}`,
-        userId: USER,
-        commandType: "PLACE_LIVE_MARKET_ORDER",
-        status: "LIVE_APPROVED",
-        symbol: "EURUSD",
-        side: "BUY",
-        orderType: "MARKET_BUY",
-        requestedVolume: 0.1,
-        selfTradeAgentId: 1,
-        selfTradeDecisionId: 100 + sequence,
-        ...patch,
-      })
-      .returning()
-  )[0]!;
+  const values = {
+    commandId: `qa-cmd-${sequence}`,
+    userId: USER,
+    commandType: "PLACE_LIVE_MARKET_ORDER",
+    status: "LIVE_APPROVED",
+    symbol: "EURUSD",
+    side: "BUY",
+    orderType: "MARKET_BUY",
+    requestedVolume: 0.1,
+    selfTradeAgentId: 1,
+    selfTradeDecisionId: 100 + sequence,
+    ...patch,
+  };
+  // Signed like a real draft: PR 99's mailbox projection serves only an intact
+  // signed entry (projectBridgedEntryMailbox).
+  const integrity = buildCommandIntegrityFields({
+    commandId: values.commandId,
+    userId: values.userId,
+    commandType: values.commandType,
+    symbol: values.symbol,
+    side: values.side,
+    orderType: values.orderType,
+    requestedVolume: values.requestedVolume,
+    stopLoss: values.stopLoss ?? null,
+    takeProfit: values.takeProfit ?? null,
+    payload: (values.payload as Record<string, unknown> | null | undefined) ?? null,
+    actorId: values.userId,
+    actorType: "SELF_TRADE_AGENT",
+  });
+  return (await db.insert(commands).values({ ...values, ...integrity }).returning())[0]!;
 }
 /** A reserved self-trade entry linked to the command, as createAgentEntryDraft leaves it. */
 async function linkedExecution(row: typeof commands.$inferSelect) {
