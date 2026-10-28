@@ -47,6 +47,33 @@ describe("describeBridgeHeartbeat", () => {
     const v = describeBridgeHeartbeat({ ...BASE, lastHeartbeatAt: new Date(NOW - 90_000).toISOString(), heartbeatFreshness: "fresh" }, NOW);
     expect(v.state).toBe("offline");
   });
+
+  // Browser clock 3 s behind the server: the server measured the heartbeat as
+  // 1 s old. The server's age (plus the time since the response arrived) is
+  // used, not Date.now() - lastHeartbeatAt across two different clocks.
+  it("a fresh heartbeat stays Connected when the browser clock is behind the server", () => {
+    const skewed = { ...BASE, lastHeartbeatAt: new Date(NOW + 3_000).toISOString(), heartbeatAgeSeconds: 1, heartbeatFreshness: "fresh" as const };
+    const v = describeBridgeHeartbeat(skewed, NOW, NOW);
+    expect(v.state).toBe("connected");
+    expect(v.label).toBe("Connected");
+    expect(v.lastHeartbeat).toContain("1s ago");
+  });
+
+  it("the server-measured age grows with the time since the response arrived, so Connected decays", () => {
+    const skewed = { ...BASE, lastHeartbeatAt: new Date(NOW + 3_000).toISOString(), heartbeatAgeSeconds: 1, heartbeatFreshness: "fresh" as const };
+    const delayed = describeBridgeHeartbeat(skewed, NOW + 20_000, NOW);
+    expect(delayed.state).toBe("delayed");
+    expect(delayed.label).toBe("Heartbeat delayed (21s ago)");
+    expect(delayed.lastHeartbeat).toContain("21s ago");
+    expect(describeBridgeHeartbeat(skewed, NOW + 70_000, NOW).state).toBe("offline");
+  });
+
+  it("a heartbeat time ahead of this browser with no server age is 'age unknown', never '0s ago'", () => {
+    const v = describeBridgeHeartbeat({ ...BASE, lastHeartbeatAt: new Date(NOW + 3_000).toISOString(), heartbeatFreshness: "fresh" }, NOW);
+    expect(v.state).toBe("unconfirmed");
+    expect(v.lastHeartbeat).not.toContain("0s ago");
+    expect(v.lastHeartbeat).toContain("age unknown");
+  });
 });
 
 describe("MT5 Setup header", () => {
@@ -67,6 +94,24 @@ describe("MT5 Setup header", () => {
     }));
   });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  it("a skewed browser clock does not hide a fresh heartbeat, and the label decays while the page sits open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      conn = { ...conn, lastHeartbeatAt: new Date(Date.now() + 3_000).toISOString(), heartbeatAgeSeconds: 1, heartbeatFreshness: "fresh" };
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(<QueryClientProvider client={qc}><MT5SetupWizardPage /></QueryClientProvider>);
+      await vi.waitFor(() => expect(screen.getByTestId("bridge-heartbeat-state").textContent).toMatch(/Connected/));
+      expect(screen.getByTestId("bridge-heartbeat-line").getAttribute("data-state")).toBe("connected");
+      await vi.advanceTimersByTimeAsync(20_000);
+      await vi.waitFor(() => expect(screen.getByTestId("bridge-heartbeat-state").textContent).toMatch(/delayed/i));
+      // The bottom heartbeat line follows the same state: no green check for a delayed heartbeat.
+      expect(screen.getByTestId("bridge-heartbeat-line").getAttribute("data-state")).toBe("delayed");
+      expect(screen.getByTestId("bridge-heartbeat-line").querySelector(".text-success")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("shows the EA heartbeat time under 'Last heartbeat' and does not say 'Connected' for a 50 s old heartbeat", async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

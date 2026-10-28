@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { BridgeDiagnosticsPanel } from "@/components/mt5/BridgeDiagnosticsPanel";
 import { OneClickToggleCard } from "@/components/mt5/OneClickToggleCard";
 import { BridgeV2FeedStatus } from "@/components/mt5/BridgeV2FeedStatus";
-import { classifyHeartbeatAt, classifyHeartbeatAgeSeconds, type HeartbeatFreshness } from "@workspace/domain/broker-health/heartbeatPolicy";
+import { classifyHeartbeatAgeMs, classifyHeartbeatAgeSeconds, heartbeatAgeMsFrom, type HeartbeatFreshness } from "@workspace/domain/broker-health/heartbeatPolicy";
 
 type SecretsStatus = {
   provider: string;
@@ -60,8 +60,14 @@ export type BridgeHeartbeatView = {
  * worse of the server's band and the band at `nowMs` (the client only
  * downgrades). `lastCheckedAt` is the request time and is never shown as a
  * heartbeat.
+ *
+ * The age is the server's own measurement (`heartbeatAgeSeconds`, server
+ * clock) plus the time this browser has waited since the response arrived
+ * (`receivedAtMs`, browser clock), so a browser clock that runs ahead of or
+ * behind the server neither hides a fresh heartbeat nor freezes the age. Only
+ * an older server that sends no age falls back to `nowMs - lastHeartbeatAt`.
  */
-export function describeBridgeHeartbeat(conn: ConnectionCheck | null, nowMs: number): BridgeHeartbeatView {
+export function describeBridgeHeartbeat(conn: ConnectionCheck | null, nowMs: number, receivedAtMs: number = nowMs): BridgeHeartbeatView {
   if (!conn) return { state: "waiting", label: "Waiting for heartbeat", lastHeartbeat: "—" };
   if (conn.lastHeartbeatAt === undefined) {
     // Server did not report a heartbeat time: it cannot be shown or banded.
@@ -74,14 +80,20 @@ export function describeBridgeHeartbeat(conn: ConnectionCheck | null, nowMs: num
   if (conn.lastHeartbeatAt === null) {
     return { state: "waiting", label: "Waiting for heartbeat", lastHeartbeat: "None received" };
   }
-  const local = classifyHeartbeatAt(conn.lastHeartbeatAt, nowMs);
+  const serverAgeS = conn.heartbeatAgeSeconds;
+  const ageMs = typeof serverAgeS === "number" && Number.isFinite(serverAgeS) && serverAgeS >= 0
+    ? serverAgeS * 1000 + Math.max(0, nowMs - receivedAtMs)
+    : heartbeatAgeMsFrom(conn.lastHeartbeatAt, nowMs);
+  const local = classifyHeartbeatAgeMs(ageMs);
   const server = conn.heartbeatFreshness ?? local;
   const band: HeartbeatFreshness = FRESHNESS_RANK[server] <= FRESHNESS_RANK[local] ? server : local;
   const t = new Date(conn.lastHeartbeatAt);
-  const ageS = Math.max(0, Math.floor((nowMs - t.getTime()) / 1000));
-  const lastHeartbeat = Number.isFinite(t.getTime()) ? `${t.toLocaleTimeString()} (${ageS}s ago)` : "Not reported";
+  const ageKnown = ageMs != null && Number.isFinite(ageMs) && ageMs >= 0;
+  const ageS = ageKnown ? Math.floor(ageMs / 1000) : null;
+  const ageText = ageS != null ? `${ageS}s ago` : "age unknown";
+  const lastHeartbeat = Number.isFinite(t.getTime()) ? `${t.toLocaleTimeString()} (${ageText})` : "Not reported";
   if (!conn.connected || band === "offline") {
-    return { state: "offline", label: `Offline — last heartbeat ${ageS}s ago`, lastHeartbeat };
+    return { state: "offline", label: ageS != null ? `Offline — last heartbeat ${ageS}s ago` : "Offline — heartbeat age unknown", lastHeartbeat };
   }
   if (band === "fresh") return { state: "connected", label: "Connected", lastHeartbeat };
   if (band === "degraded") return { state: "delayed", label: `Heartbeat delayed (${ageS}s ago)`, lastHeartbeat };
@@ -1773,6 +1785,10 @@ function PlatformMasterBridgeCard() {
 export default function MT5SetupWizardPage() {
   const [secrets, setSecrets] = useState<SecretsStatus | null>(null);
   const [conn, setConn] = useState<ConnectionCheck | null>(null);
+  // Browser time the connection check arrived, and a 1 s clock, so the
+  // heartbeat age keeps counting (and the label decays) between refreshes.
+  const [connReceivedAt, setConnReceivedAt] = useState<number>(() => Date.now());
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [bstat, setBstat] = useState<BrokerStatus | null>(null);
   const [acct, setAcct] = useState<BrokerAccount | null>(null);
   const [posCount, setPosCount] = useState<number | null>(null);
@@ -1791,6 +1807,8 @@ export default function MT5SetupWizardPage() {
     ]);
     setSecrets(s as SecretsStatus | null);
     setConn(c);
+    setConnReceivedAt(Date.now());
+    setNowMs(Date.now());
     setBstat(b);
     setAcct(a);
     setPosCount(p?.count ?? null);
@@ -1798,9 +1816,13 @@ export default function MT5SetupWizardPage() {
     setRefreshing(false);
   }
   useEffect(() => { void refreshAll(); }, []);
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, []);
 
   const heartbeatWaiting = !conn?.connected;
-  const hb = describeBridgeHeartbeat(conn, Date.now());
+  const hb = describeBridgeHeartbeat(conn, nowMs, connReceivedAt);
   const accountWaiting = !conn?.checks?.accountReadable;
   const liveLocked = true; // server-enforced; this page never unlocks it
 
@@ -2071,7 +2093,14 @@ export default function MT5SetupWizardPage() {
 
           <div className="mt-4 grid gap-2 text-xs text-muted-foreground">
             {heartbeatWaiting && <div className="flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 text-warning" /> Heartbeat: <strong className="text-warning">waiting</strong> — start the EA on a chart to see this flip.</div>}
-            {!heartbeatWaiting && <div className="flex items-center gap-2"><ShieldCheck className="w-3.5 h-3.5 text-success" /> Heartbeat: {hb.label}. Last heartbeat {hb.lastHeartbeat}; checked at {conn?.lastCheckedAt}.</div>}
+            {!heartbeatWaiting && (
+              <div className="flex items-center gap-2" data-testid="bridge-heartbeat-line" data-state={hb.state}>
+                {hb.state === "connected"
+                  ? <ShieldCheck className="w-3.5 h-3.5 text-success" />
+                  : <AlertTriangle className={`w-3.5 h-3.5 ${hb.state === "offline" ? "text-danger" : "text-warning"}`} />}
+                Heartbeat: {hb.label}. Last heartbeat {hb.lastHeartbeat}; checked at {conn?.lastCheckedAt}.
+              </div>
+            )}
             {accountWaiting && <div className="flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 text-warning" /> Account data: <strong className="text-warning">waiting</strong> — make sure MT5 is logged into your broker.</div>}
             {conn?.errors && conn.errors.length > 0 && <div className="text-danger">errors: {conn.errors.join("; ")}</div>}
           </div>
