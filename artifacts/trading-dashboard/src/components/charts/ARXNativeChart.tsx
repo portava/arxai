@@ -349,6 +349,10 @@ export function ARXNativeChart({
     ? response : undefined, [response, resolvedSymbol, timeframe]);
   const candles = data?.candles ?? [];
   const hasCandles = candles.length > 0;
+  // The latest refetch failed while React Query keeps the previous response on
+  // screen. Those bars are a frozen cache, so every live / AI / clean claim
+  // derived from them is withdrawn until a refresh succeeds again.
+  const refreshFailed = query.isError && hasCandles;
 
   // ── Deep history scroll-back (Task #438) ────────────────────────────────────
   // Accumulates OLDER bars from GET /api/chart/history as the user pans left.
@@ -371,7 +375,7 @@ export function ARXNativeChart({
   // own feed-confidence badge system (which stays as the header). The header
   // here derives from the same feedStatus, so chart and header can never
   // disagree and no separate header cap is needed.
-  const isLivePriceAffordance = isLivePriceDisplay(
+  const isLivePriceAffordance = !refreshFailed && isLivePriceDisplay(
     resolveDisplayStatus(data?.feedStatus ?? null, hasCandles),
   );
   // NOTE (Theme C3.3): this verdict is NOT mirrored into a ref for the SSE tick
@@ -857,9 +861,11 @@ export function ARXNativeChart({
     resolvedSymbol,
     normalizeChartTimeframe(timeframe),
   );
-  const badgeAiUsableResolved = resolveFeedBadgeVerdict(
-    badgeTruth?.analysis.level ?? null,
-  );
+  // A failed refresh of THIS chart's candles caps the chip too: the response it
+  // describes is no longer current.
+  const badgeAiUsableResolved = refreshFailed
+    ? false
+    : resolveFeedBadgeVerdict(badgeTruth?.analysis.level ?? null);
   // ONE AI-usability verdict for everything this panel shows or reports: the
   // chip, the "Not AI-confirmed" badge, the structure lines and the context the
   // page uses to draw scanner/Ruby AI overlays. The raw feed flag can only be
@@ -937,14 +943,16 @@ export function ARXNativeChart({
   // a stale / invalid / unavailable grade. A background refetch is shown as its
   // own marker and never replaces the verdict.
   const stripConf = capConfidence(conf, badgeAiUsableResolved);
-  const stripLabel = feedStatus
+  const stripLabel = refreshFailed
+    ? "Refresh failed"
+    : feedStatus
     ? stripConf.statusLabel
     : query.isLoading
       ? "Loading"
       : query.isError
         ? "Request failed"
         : "Unknown";
-  const stripTone: FeedStripTone = feedStatus ? stripConf.severity : "unknown";
+  const stripTone: FeedStripTone = refreshFailed ? "caution" : feedStatus ? stripConf.severity : "unknown";
   const stripStyle = FEED_STRIP_STYLE[stripTone];
   const stripIntegrityFailed = feedStatus?.quality === "invalid";
   const stripStale = !stripIntegrityFailed && (feedStatus?.quality === "stale" || feedStatus?.stale === true);
@@ -1033,6 +1041,19 @@ export function ARXNativeChart({
                 showFallback={showFallbackToggle}
                 onRequestFallback={onRequestFallback}
               />
+            )}
+            {refreshFailed && (
+              <Badge
+                variant="outline"
+                className="flex items-center gap-1 border-amber-500/50 bg-amber-500/10 text-[10px] text-amber-200"
+                data-testid="arx-native-refresh-failed"
+                title="The latest candle request failed. The bars shown are the last successful response and are not updating."
+              >
+                <AlertTriangle className="h-3 w-3" /> Refresh failed
+                {query.dataUpdatedAt > 0
+                  ? ` — showing data from ${new Date(query.dataUpdatedAt).toISOString().slice(11, 19)} UTC`
+                  : " — showing the last response"}
+              </Badge>
             )}
             {showNotAiConfirmed && (
               <Badge

@@ -11,6 +11,8 @@
 //     flipped to "Refreshing" on every poll (hiding "Stale"/"Conflict"), read
 //     "Syncing · Waiting for data" when every provider had declined, and showed
 //     a "Lock ON/OFF" toggle that locked nothing.
+//   - a LIVE last-price line, "Clean · AI" chip and clean strip kept on screen
+//     after the chart's own candle refresh failed (frozen cached response).
 //
 // The harness renders the REAL ARXNativeChart with the candle query, the
 // chart engine and the scanner-truth hook replaced by controllable stubs.
@@ -312,5 +314,27 @@ describe("feed strip says what the server graded, never an unmeasured mirror", (
     expect(screen.queryByTestId("arx-mirror-lock")).toBeNull();
     expect(screen.queryByTestId("arx-mirror-inspection")).toBeNull();
     expect(screen.getByTestId("arx-mirror-layer").textContent).not.toMatch(/mirror|lock/i);
+  });
+});
+
+describe("a failed candle refresh withdraws every live claim", () => {
+  it("drops the live price line, the AI marker and the clean strip, and says the refresh failed", () => {
+    const onChartContextChange = vi.fn();
+    const view = renderChart({ onChartContextChange });
+    expect(adapterSpies.setFeedState.mock.calls.at(-1)?.[0]).toMatchObject({ livePriceAffordance: true });
+    expect(screen.getByTestId("arx-mirror-status").textContent).toBe("Clean");
+
+    // React Query keeps the last good data while the refetch errors.
+    setResponse(candleQuery.data, { isError: true });
+    view.rerender(
+      <ARXNativeChart symbol={SYMBOL} timeframe={TF} showFeedStatus overlays={NO_OVERLAYS} onChartContextChange={onChartContextChange} />,
+    );
+
+    expect(adapterSpies.setFeedState.mock.calls.at(-1)?.[0]).toMatchObject({ livePriceAffordance: false });
+    expect(screen.getByTestId("arx-mirror-status").textContent).toBe("Refresh failed");
+    expect(screen.getByTestId("arx-feed-badge").getAttribute("data-ai-usable")).toBe("false");
+    expect(screen.getByTestId("arx-feed-badge").getAttribute("data-severity")).not.toBe("clean");
+    expect(screen.getByTestId("arx-native-refresh-failed").textContent).toMatch(/refresh failed/i);
+    expect((onChartContextChange.mock.calls.at(-1)?.[0] as { aiUsable: boolean }).aiUsable).toBe(false);
   });
 });
