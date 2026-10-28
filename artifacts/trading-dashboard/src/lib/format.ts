@@ -1,8 +1,15 @@
 import { format } from "date-fns";
+import { priceDecimalsOf } from "@/lib/instrumentPriceFormat";
 
+/**
+ * Format a stored price without rounding away the digits it was quoted at:
+ * at least 2 decimals, more when the value carries them (EURUSD 1.08523 →
+ * "1.08523", USDJPY 150.123 → "150.123"), capped at 8. A missing or
+ * non-finite price is "—", never a fabricated "0.00".
+ */
 export function formatPrice(price: number | undefined | null): string {
-  if (price == null) return "0.00";
-  return price.toFixed(2);
+  if (price == null || !Number.isFinite(price)) return "—";
+  return price.toFixed(Math.max(2, priceDecimalsOf(price)));
 }
 
 export function formatPnl(pnl: number | undefined | null): string {
