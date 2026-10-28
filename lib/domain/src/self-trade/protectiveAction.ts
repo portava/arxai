@@ -296,11 +296,15 @@ function takeProfitRule(p: ProtectivePositionFacts, i: ValidIntent): ProtectiveC
 }
 
 // The standalone predicates below each apply a subset of
-// evaluateProtectiveGeometry's rules in the same order, so wherever one refuses
-// it names the reason the full geometry would. Only evaluateProtectiveGeometry
-// carries the whole guarantee (G1 ∧ G2 ∧ G3 + take-profit pin); the path and
-// the final claim use it, or doesNotLoosenStop for a stop move whose volume and
-// take-profit are pinned by the management target.
+// evaluateProtectiveGeometry's rules in the same order, so each refuses only
+// where the full geometry also refuses. doesNotReverse and doesNotLoosenStop
+// name the reason the full geometry would; doesNotIncreaseExposure checks stop
+// removal but not stop placement (through price, tighter), so for a MODIFY
+// that both misplaces the stop and changes the take-profit it names the
+// take-profit. Only evaluateProtectiveGeometry carries the whole guarantee
+// (G1 ∧ G2 ∧ G3 + take-profit pin); the path and the final claim use it, or
+// doesNotLoosenStop for a stop move whose volume and take-profit are pinned by
+// the management target.
 
 /** G1 — CLOSE never over-volume or partial; MODIFY never removes the stop or changes the take-profit. */
 export function doesNotIncreaseExposure(

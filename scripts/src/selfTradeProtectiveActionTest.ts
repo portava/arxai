@@ -390,9 +390,12 @@ const row: ProtectiveRowFacts = {
   check("volume change detail carries both sizes", !vol.ok && vol.detail.observed === 0.05 && vol.detail.expected === 0.1);
 }
 
-// ── 10b. Standalone predicates agree with the full geometry ──────────────────
+// ── 10b. Standalone predicates never refuse where the full geometry passes ───
 // Each standalone predicate applies a subset of evaluateProtectiveGeometry's
-// rules in the same order, so wherever it refuses it names the same reason.
+// rules in the same order, so it refuses only where the full geometry also
+// refuses. doesNotReverse and doesNotLoosenStop name the same first reason;
+// doesNotIncreaseExposure skips the through-price and tighter checks, so its
+// first reason can be the take-profit change where the geometry names the stop.
 {
   const withTp = { ...BUY, takeProfit: 1.13 };
   expect("exposure: stop removal refuses (removing the stop increases risk)", doesNotIncreaseExposure(BUY, modify(BUY, null)), "PROTECTIVE_STOP_NOT_TIGHTER");
@@ -410,6 +413,8 @@ const row: ProtectiveRowFacts = {
     ["modify loosen", BUY, modify(BUY, 1.09)],
     ["modify through price", BUY, modify(BUY, 1.2)],
     ["modify ok", BUY, modify(BUY, 1.1)],
+    ["modify loosen + TP change", withTp, modify(withTp, 1.09, 1.2)],
+    ["modify through price + TP change", withTp, modify(withTp, 1.125, 1.2)],
     ["SELL modify removal", SELL, modify(SELL, null)],
     ["SELL close over", SELL, close(SELL, 0.3)],
   ];
@@ -417,9 +422,16 @@ const row: ProtectiveRowFacts = {
     const full = evaluateProtectiveGeometry(p, i);
     for (const [name, pred] of [["exposure", doesNotIncreaseExposure], ["reverse", doesNotReverse], ["stop", doesNotLoosenStop]] as const) {
       const v = pred(p, i);
-      check(`${name} agrees with geometry: ${label}`, v.ok || reason(v) === reason(full), `${name}=${reason(v)} geometry=${reason(full)}`);
+      check(`${name} refuses only where geometry refuses: ${label}`, v.ok || !full.ok, `${name}=${reason(v)} geometry=${reason(full)}`);
+      if (name !== "exposure")
+        check(`${name} names geometry's reason: ${label}`, v.ok || reason(v) === reason(full), `${name}=${reason(v)} geometry=${reason(full)}`);
     }
   }
+  // The documented difference: G1 has no stop-placement rule beyond removal.
+  const loosenTp = modify(withTp, 1.09, 1.2);
+  expect("exposure: loosen + TP change names the TP (no tighter rule in G1)", doesNotIncreaseExposure(withTp, loosenTp), "PROTECTIVE_TAKE_PROFIT_CHANGED");
+  expect("geometry: loosen + TP change names the stop", evaluateProtectiveGeometry(withTp, loosenTp), "PROTECTIVE_STOP_NOT_TIGHTER");
+  expect("geometry: through price + TP change names the stop", evaluateProtectiveGeometry(withTp, modify(withTp, 1.125, 1.2)), "PROTECTIVE_STOP_THROUGH_PRICE");
 }
 
 // ── 10c. Heartbeat wording: missing / future-dated are not an age ────────────
