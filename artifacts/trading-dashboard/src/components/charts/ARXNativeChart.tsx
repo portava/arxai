@@ -1105,6 +1105,7 @@ export function ARXNativeChart({
                 coverageDays={deepHistory.coverageDays}
                 depthTargetDays={deepHistory.depthTargetDays}
                 loadedAny={deepHistory.loadedAny}
+                loadError={deepHistory.loadError}
               />
             )}
           </div>
