@@ -51,6 +51,11 @@ import {
 import type { PositionTruthVerdict } from "@workspace/domain/live-position";
 import { isApprovedArxMarket, ARX_FOCUS_BLOCKED_REASON } from "@workspace/domain/market";
 import { isSyntheticInstrument } from "@workspace/domain/smart-chart";
+import {
+  quoteObservationFreshness,
+  type QuoteObservation,
+  type QuoteTimeBasis,
+} from "../data/quoteObservationFreshness.js";
 import { deriveOpportunityLabel, projectOpportunitySetup } from "../data/opportunityAdapters.js";
 import { evaluatePaperTradePlan, getTradingStyleProfile } from "./coachTools.js";
 import { getVoiceModeStatus } from "./realtimeSession.js";
@@ -900,18 +905,42 @@ export async function getMarketSnapshot(symbol: string) {
     let quote: {
       bid: number | null; ask: number | null; spread: number | null;
       price: number | null; providerFreshness: string; source: string;
+      observedAt: string | null; timeBasis: QuoteTimeBasis; ageMs: number | null;
+      freshness: QuoteObservation["freshness"]; stale: boolean; staleAfterMs: number;
+      observationNote: string;
     } | null = null;
     if (p.connected && p.features.quotes) {
       try {
         const q = await p.getLiveQuote((symbol ?? "").toString().trim() || symbol);
         const bid = typeof q.bid === "number" ? q.bid : null;
         const ask = typeof q.ask === "number" ? q.ask : null;
+        const price = typeof q.price === "number" ? q.price : null;
+        // Observation evidence: when this quote was observed (the vendor's own
+        // as-of time) and whether it is past the shared quote budget. The
+        // vendor's own stale/error verdict can only make it staler.
+        const obs = quoteObservationFreshness({
+          hasPrice: price != null || bid != null || ask != null,
+          observedAt: q.asOf,
+          basis: "provider_as_of",
+          sourceLabel: q.source,
+        });
+        const providerSaysStale = q.stale === true || q.freshness === "STALE" || q.freshness === "ERROR" || q.freshness === "UNAVAILABLE";
+        const stale = obs.stale || providerSaysStale;
         quote = {
           bid, ask,
           spread: bid != null && ask != null ? ask - bid : null,
-          price: typeof q.price === "number" ? q.price : null,
+          price,
           providerFreshness: q.freshness,
           source: q.source,
+          observedAt: obs.observedAt,
+          timeBasis: obs.timeBasis,
+          ageMs: obs.ageMs,
+          freshness: stale && obs.freshness !== "unavailable" && obs.freshness !== "unknown" ? "stale" : obs.freshness,
+          stale,
+          staleAfterMs: obs.staleAfterMs,
+          observationNote: providerSaysStale && !obs.stale
+            ? `${obs.plainEnglish} The provider itself marks this quote ${String(q.freshness).toLowerCase()}, so it is not a current price.`
+            : obs.plainEnglish,
         };
       } catch {
         quote = null;
@@ -1693,7 +1722,7 @@ export const TOOL_DEFINITIONS = [
   { name: "getRiskUtilization", description: "Phase 26 — Portfolio awareness. Reports how much of the user's configured risk envelope is currently used: open trades vs maxOpenTrades, today's realized loss, and which limits are at/over threshold. Returns hasRiskSettings:false when the user has none — never invents defaults. Per-user-scoped. Use for 'how much risk am I taking', 'am I close to my daily loss limit', 'should I reduce risk', 'how many open trades can I still take', 'am I at my limit'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getReconciliationStatus", description: "Phase 27 — MT5 bridge + reconciliation awareness. Returns the user's broker/app reconciliation state: bridge connected + mode (OFFLINE | READ_ONLY | LIVE_LOCKED), heartbeat age, attribution rows matched-vs-missing-broker-ticket, system-wide unattributed-fill count. Per-user-scoped — never returns another user's attribution rows. Possible reconciliationStatus values: BRIDGE_OFFLINE | RECONCILIATION_BLOCKED | ATTRIBUTION_INCOMPLETE | MATCHED | NO_ROUTED_TRADES. ALWAYS check bridge.connected — if false, say MT5 is not connected and reconciliation cannot run. For whether live orders can be placed, read placementLayer (LIVE_DISPATCH_GATED = live orders are possible for this account but every one still needs the user's confirmation and every live gate; LIVE_LOCKED_FOR_ACCOUNT = live orders are not available) and repeat placementLayerNote — never claim live execution is on or off beyond what it says. Use for 'is my MT5 connected', 'is this trade synced with MT5', 'why is broker balance unavailable', 'are any trades missing attribution', 'is the bridge live'.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "runPreTradeRiskCheck", description: "Advisory: would this trade pass the risk governor? Returns blocking reasons + warnings. Does NOT execute anything.", parameters: { type: "object", properties: { symbol: { type: "string" }, side: { type: "string", enum: ["buy", "sell"] }, size: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, entry: { type: "number" } }, required: ["symbol", "side", "size"], additionalProperties: false } },
-  { name: "getMarketSnapshot", description: "Returns the per-symbol market snapshot from the SAME shared chart-truth resolver the chart uses, so source/quality/freshness match exactly what the chart shows for that symbol. Read source, quality, aiUsable, freshness, lastPrice, and (when not usable) cause/message — report them honestly; when no feed is available, say so with the actual cause and never fabricate a price. An optional provider quote (bid/ask/spread) may be present as enrichment but never overrides the shared feed status. ALSO read feedConfirmed — when it is false you MUST surface the feedCaveat line (feed not confirmed / low-confidence, verify before trading) and never present the snapshot as a confident/firm number. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
+  { name: "getMarketSnapshot", description: "Returns the per-symbol market snapshot from the SAME shared chart-truth resolver the chart uses, so source/quality/freshness match exactly what the chart shows for that symbol. Read source, quality, aiUsable, freshness, lastPrice, and (when not usable) cause/message — report them honestly; when no feed is available, say so with the actual cause and never fabricate a price. An optional provider quote (bid/ask/spread) may be present as enrichment but never overrides the shared feed status; when present, state quote.observedAt / quote.observationNote, and if quote.stale is true call its price last-known (never current). ALSO read feedConfirmed — when it is false you MUST surface the feedCaveat line (feed not confirmed / low-confidence, verify before trading) and never present the snapshot as a confident/firm number. This caveat is advisory only and never blocks anything.", parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"], additionalProperties: false } },
   { name: "getEconomicCalendar", description: "Returns upcoming economic events from the configured market provider, or empty + connected:false if no provider is wired.", parameters: { type: "object", properties: {}, additionalProperties: false } },
   { name: "getRecentMarketNews", description: "Returns recent market headlines from the configured market provider, or empty + connected:false if no provider is wired. SYMBOL-SCOPED FINANCIAL NEWS ONLY. For geopolitical / real-world / current-events context, call getCurrentEvents instead.", parameters: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20, default: 5 } }, required: ["query"], additionalProperties: false } },
   { name: "getCurrentEvents", description: "Phase 24 — SEPARATE current-events / real-world / geopolitical news channel. Distinct from getRecentMarketNews (which is symbol-scoped financial news). Use for: 'what's happening in the world', 'any geopolitical risk', 'wars / conflicts / supply shocks', 'major news today', 'current events affecting markets'. Returns connected:false today (no adapter wired). If connected:false, you MUST say 'current events are unavailable' — do NOT substitute symbol-scoped market news. Treat events as CONTEXT/RISK MODIFIER only, never as a trading signal.", parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, default: 10 } }, additionalProperties: false } },
