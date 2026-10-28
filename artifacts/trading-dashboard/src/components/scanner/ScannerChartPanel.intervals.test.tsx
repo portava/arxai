@@ -1,9 +1,9 @@
 import { useLayoutEffect } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
-  timeframe: "8h", candles: null as any, intelligence: null as any,
+  timeframe: "8h", candles: null as any, intelligence: null as any, annotations: [] as any[],
   intelligenceHook: vi.fn(), layersHook: vi.fn(), applyStructure: vi.fn(),
   surface: { chart: {}, series: { createPriceLine: vi.fn(), removePriceLine: vi.fn() }, container: null as HTMLElement | null },
 }));
@@ -27,7 +27,7 @@ vi.mock("@workspace/api-client-react", async importOriginal => ({
   ...await importOriginal<any>(),
   useGetMeChartIntelligence: (params: any, options: any) => { h.intelligenceHook(params, options); return { data: h.intelligence }; },
   useGetMeChartSmartLayers: (params: any, options: any) => { h.layersHook(params, options); return { data: undefined }; },
-  useGetMeChartAnnotations: () => ({ data: { annotations: [] } }),
+  useGetMeChartAnnotations: () => ({ data: { annotations: h.annotations } }),
   usePostMeChartAnnotation: () => ({ mutate: vi.fn() }),
   useDeleteMeChartAnnotation: () => ({ mutate: vi.fn() }),
   usePostMeChartAiAlertsScan: () => ({ mutate: vi.fn() }),
@@ -41,8 +41,9 @@ vi.mock("@/lib/chart-engine/structureLines", () => ({
   applyStructureLines: (...args: any[]) => { h.applyStructure(...args); return { series: [], markersApi: null }; },
 }));
 vi.mock("@/components/charts/ARXNativeChart", () => ({
-  ARXNativeChart: ({ onScannerSurfaceChange, timeframe }: any) => {
-    useLayoutEffect(() => { onScannerSurfaceChange(h.surface); return () => onScannerSurfaceChange(null); }, [onScannerSurfaceChange]);
+  ARXNativeChart: ({ onScannerSurfaceChange, timeframe, externalFeed }: any) => {
+    const identity = externalFeed.data?.marketEvidence?.sourceIdentity;
+    useLayoutEffect(() => { onScannerSurfaceChange(h.surface); return () => onScannerSurfaceChange(null); }, [onScannerSurfaceChange, timeframe, identity]);
     return <div data-testid="native-chart">{timeframe}</div>;
   },
 }));
@@ -59,7 +60,9 @@ function fixture(timeframe: string, identity = "source-A") {
     lines: [{ id: "trend", bias: "bullish", start: { time: 1, price: 1 }, end: { time: 2, price: 2 } }], markers: [] } } };
 }
 beforeEach(() => {
-  vi.clearAllMocks(); localStorage.clear(); h.timeframe = "8h"; h.surface.container = document.createElement("div"); fixture("H8");
+  vi.clearAllMocks(); localStorage.clear(); h.timeframe = "8h"; h.annotations = [];
+  h.surface = { chart: {}, series: { createPriceLine: vi.fn(options => ({ ...options })), removePriceLine: vi.fn() }, container: document.createElement("div") };
+  fixture("H8");
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ live: [], demo: [], drafts: [] }) })));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -105,4 +108,44 @@ it.each([{ symbol: "GBPUSD" }, { timeframe: "H4" }])("withholds a foreign intell
   await waitFor(() => expect(fetch).toHaveBeenCalled());
   expect(h.intelligenceHook.mock.calls.at(-1)?.[1].query.enabled).toBe(true);
   expect(h.applyStructure).not.toHaveBeenCalled();
+});
+
+async function renderAnnotatedChart() {
+  h.timeframe = "15m"; fixture("M15");
+  h.annotations = [{ id: 1, symbol: "EURUSD", timeframe: "M15", kind: "SUPPORT", price: 1.25, note: "Owned note" }];
+  const view = render(<ScannerChartPanel />);
+  // Settle the existing position/pending fetch before measuring unrelated renders.
+  await act(async () => { await Promise.resolve(); });
+  expect(h.surface.series.createPriceLine).toHaveBeenCalled();
+  return view;
+}
+
+it("keeps existing annotation price lines through unrelated parent renders with the same annotation array", async () => {
+  const view = await renderAnnotatedChart();
+  const series = h.surface.series;
+  series.createPriceLine.mockClear(); series.removePriceLine.mockClear();
+  for (let i = 0; i < 5; i++) view.rerender(<ScannerChartPanel />);
+  expect(series.removePriceLine).not.toHaveBeenCalled();
+  expect(series.createPriceLine).not.toHaveBeenCalled();
+});
+
+it("redraws an actual annotation edit using the new price", async () => {
+  const view = await renderAnnotatedChart();
+  const series = h.surface.series, previous = series.createPriceLine.mock.results.at(-1)!.value;
+  series.createPriceLine.mockClear(); series.removePriceLine.mockClear();
+  h.annotations = h.annotations.map(annotation => ({ ...annotation, price: 1.75 }));
+  view.rerender(<ScannerChartPanel />);
+  expect(series.removePriceLine).toHaveBeenCalledWith(previous);
+  expect(series.createPriceLine).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ price: 1.75, title: "S Owned note" }));
+});
+
+it("revokes old-series annotations on a source context swap and installs them on the replacement surface", async () => {
+  const view = await renderAnnotatedChart();
+  const previousSeries = h.surface.series, previous = previousSeries.createPriceLine.mock.results.at(-1)!.value;
+  previousSeries.removePriceLine.mockClear();
+  h.surface = { chart: {}, series: { createPriceLine: vi.fn(options => ({ ...options })), removePriceLine: vi.fn() }, container: document.createElement("div") };
+  fixture("M15", "source-B");
+  view.rerender(<ScannerChartPanel />);
+  expect(previousSeries.removePriceLine).toHaveBeenCalledWith(previous);
+  expect(h.surface.series.createPriceLine).toHaveBeenCalledWith(expect.objectContaining({ price: 1.25, title: "S Owned note" }));
 });

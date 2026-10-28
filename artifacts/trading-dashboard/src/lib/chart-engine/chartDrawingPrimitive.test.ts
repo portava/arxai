@@ -13,7 +13,7 @@ function fixture() {
   const requestUpdate = vi.fn();
   const primitive = new ChartDrawingPrimitive();
   primitive.attached({ chart: { timeScale: () => ({ timeToCoordinate, width: () => 800 }) }, series: { getPane: () => ({getHeight: () => 400}), priceToCoordinate, priceFormatter: () => ({ format: String }) }, requestUpdate } as any);
-  const context = { save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), rect: vi.fn(), clip: vi.fn(), setLineDash: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fillText: vi.fn() };
+  const context = { save: vi.fn(), restore: vi.fn(), beginPath: vi.fn(), rect: vi.fn(), clip: vi.fn(), setLineDash: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fillText: vi.fn(), arc: vi.fn(), fill: vi.fn() };
   const draw = () => primitive.paneViews()[0]!.renderer()!.draw({ useMediaCoordinateSpace: (callback: any) => callback({ context, mediaSize: { width: 800, height: 400 } }) } as any);
   return { primitive, draw, context, requestUpdate, timeToCoordinate, priceToCoordinate };
 }
@@ -51,5 +51,34 @@ describe("shared drawing canvas", () => {
     primitive.detached(); draw();
     expect(primitive.priceAxisViews()).toEqual([]);
     expect(context.save).toHaveBeenCalledTimes(context.restore.mock.calls.length);
+  });
+  it("does not invalidate geometry or request a repaint when the same drawing remains selected", () => {
+    const { primitive, draw, requestUpdate, timeToCoordinate } = fixture();
+    primitive.setData(drawings, candles); primitive.setSelection("trend"); draw();
+    requestUpdate.mockClear(); timeToCoordinate.mockClear();
+    for (let i = 0; i < 20; i++) primitive.setSelection("trend");
+    draw();
+    expect(requestUpdate).not.toHaveBeenCalled();
+    expect(timeToCoordinate).not.toHaveBeenCalled();
+  });
+  it("repaints a changed or cleared selection and still invalidates independently for viewport and data changes", () => {
+    const { primitive, draw, requestUpdate, timeToCoordinate, context } = fixture();
+    primitive.setData(drawings, candles); draw(); requestUpdate.mockClear();
+    primitive.setSelection("trend"); draw();
+    expect(requestUpdate).toHaveBeenCalledTimes(1);
+    expect(context.arc).toHaveBeenCalled();
+    primitive.setSelection("fib"); draw();
+    expect(requestUpdate).toHaveBeenCalledTimes(2);
+    primitive.setSelection(null); draw();
+    expect(requestUpdate).toHaveBeenCalledTimes(3);
+    requestUpdate.mockClear(); timeToCoordinate.mockClear();
+    primitive.updateAllViews(); primitive.setSelection(null); draw();
+    expect(timeToCoordinate).toHaveBeenCalled();
+    timeToCoordinate.mockClear();
+    primitive.setData([{ ...drawings[1]!, end: { time: 200, price: 25 } }], candles);
+    draw();
+    expect(requestUpdate).toHaveBeenCalled();
+    expect(timeToCoordinate).toHaveBeenCalled();
+    expect(context.lineTo).toHaveBeenLastCalledWith(200, 75);
   });
 });

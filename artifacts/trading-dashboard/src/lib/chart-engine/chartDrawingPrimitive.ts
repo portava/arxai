@@ -122,7 +122,14 @@ export class ChartDrawingPrimitive implements ISeriesPrimitive {
     this.attachment?.requestUpdate();
   }
 
-  setSelection(id: string | null): void { this.selected = id; this.updateAllViews(); this.attachment?.requestUpdate(); }
+  setSelection(id: string | null): void {
+    // Toolbar callbacks may refresh without changing selection. Data/viewport
+    // invalidations have their own paths; an identical ID needs no repaint.
+    if (this.selected === id) return;
+    this.selected = id;
+    this.updateAllViews();
+    this.attachment?.requestUpdate();
+  }
 
   // The chart can invalidate primitives for every series/tick in a burst.
   // Projection belongs at draw time, once per frame, not once per invalidation.

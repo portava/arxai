@@ -595,7 +595,13 @@ export function ScannerChartPanel() {
     { symbol },
     { query: { queryKey: getGetMeChartAnnotationsQueryKey({ symbol }), refetchInterval: 30_000 } },
   );
-  const annotations: ChartAnnotation[] = (annotationsQuery.data?.annotations ?? []).filter(annotation => annotation.timeframe === apiTf);
+  // Shared query data is structurally stable between unchanged polls. Preserve
+  // this filtered identity so unrelated Scanner clocks do not rebuild every
+  // saved-note/position line; data, interval and surface changes still redraw.
+  const annotations = useMemo<ChartAnnotation[]>(
+    () => (annotationsQuery.data?.annotations ?? []).filter(annotation => annotation.timeframe === apiTf),
+    [annotationsQuery.data?.annotations, apiTf],
+  );
   const invalidateAnnotations = () =>
     void queryClient.invalidateQueries({
       queryKey: getGetMeChartAnnotationsQueryKey({ symbol }),
