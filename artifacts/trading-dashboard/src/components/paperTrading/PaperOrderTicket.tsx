@@ -60,16 +60,18 @@ function runPreview(input: {
   if (!Number.isFinite(lot) || lot <= 0) errors.push("Lot size must be positive.");
 
   let eff: number | null = null;
+  // `current` is the price the user TYPED — no quote is read here. Every check
+  // below is against that typed reference price, and says so.
   if (isMarket(t)) {
-    if (current == null) { warnings.push("Live market price unavailable — SL/TP direction checks skipped."); }
+    if (current == null) { warnings.push("No reference price typed — SL/TP direction checks skipped."); }
     else { eff = current; }
   } else if (isStopLimit(t)) {
     if (trigger == null) errors.push("Stop-Limit requires a Stop Trigger Price.");
     if (limit == null) errors.push("Stop-Limit requires a Stop-Limit Price.");
     eff = limit;
     if (current != null && trigger != null) {
-      if (t === "BUY_STOP_LIMIT" && trigger <= current) errors.push("Buy Stop-Limit trigger must be ABOVE current ask.");
-      if (t === "SELL_STOP_LIMIT" && trigger >= current) errors.push("Sell Stop-Limit trigger must be BELOW current bid.");
+      if (t === "BUY_STOP_LIMIT" && trigger <= current) errors.push("Buy Stop-Limit trigger must be ABOVE your typed reference price.");
+      if (t === "SELL_STOP_LIMIT" && trigger >= current) errors.push("Sell Stop-Limit trigger must be BELOW your typed reference price.");
     }
     if (trigger != null && limit != null) {
       if (t === "BUY_STOP_LIMIT" && limit >= trigger) errors.push("Buy Stop-Limit limit price must be STRICTLY BELOW the trigger.");
@@ -79,10 +81,10 @@ function runPreview(input: {
     if (entry == null) errors.push("Pending orders require an Entry Price.");
     eff = entry;
     if (current != null && entry != null) {
-      if (t === "BUY_LIMIT" && entry >= current) errors.push("Buy Limit entry must be BELOW current market.");
-      if (t === "SELL_LIMIT" && entry <= current) errors.push("Sell Limit entry must be ABOVE current market.");
-      if (t === "BUY_STOP" && entry <= current) errors.push("Buy Stop entry must be ABOVE current market.");
-      if (t === "SELL_STOP" && entry >= current) errors.push("Sell Stop entry must be BELOW current market.");
+      if (t === "BUY_LIMIT" && entry >= current) errors.push("Buy Limit entry must be BELOW your typed reference price.");
+      if (t === "SELL_LIMIT" && entry <= current) errors.push("Sell Limit entry must be ABOVE your typed reference price.");
+      if (t === "BUY_STOP" && entry <= current) errors.push("Buy Stop entry must be ABOVE your typed reference price.");
+      if (t === "SELL_STOP" && entry >= current) errors.push("Sell Stop entry must be BELOW your typed reference price.");
     }
   }
 
@@ -254,8 +256,11 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
         </label>
 
         <label className="col-span-2">
-          <span className="text-slate-400">Current price (live) <span className="text-[10px] text-amber-300">— leave blank if not available</span></span>
-          <input type="number" step="0.00001" value={current} placeholder="e.g. 1.08500" onChange={(e) => setCurrent(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" />
+          <span className="text-slate-400">
+            Reference price (typed by you){" "}
+            <span className="text-[10px] text-amber-300">— not a live quote; only used for the checks below. Leave blank to skip them.</span>
+          </span>
+          <input type="number" step="0.00001" value={current} placeholder="e.g. 1.08500" onChange={(e) => setCurrent(e.target.value)} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100" data-testid="input-reference-price" />
         </label>
 
         {showEntry && (
@@ -294,11 +299,13 @@ export function PaperOrderTicket({ accountId: _accountId }: { accountId: number 
           <span className="font-mono text-slate-100" data-testid="rr-preview">{preview.riskReward == null ? "—" : `${preview.riskReward}:1`}</span>
         </div>
         <div className="flex justify-between text-slate-300">
-          <span>Effective entry</span>
+          <span data-testid="entry-preview-label">
+            {isMarket(orderType) ? "Entry (your typed price — the server fills at its own quote)" : "Effective entry"}
+          </span>
           <span className="font-mono text-slate-100">{preview.effectiveEntry == null ? "—" : preview.effectiveEntry}</span>
         </div>
         {!current.trim() && (
-          <p className="text-amber-300">Live price unavailable — direction checks against market are skipped. Real submission of a pending order may still be rejected at execution time.</p>
+          <p className="text-amber-300">No reference price typed — direction checks against the market are skipped. Real submission of a pending order may still be rejected at execution time.</p>
         )}
         {preview.warnings.map((w, i) => <p key={`w${i}`} className="text-amber-300">{w}</p>)}
         {preview.errors.map((e, i) => <p key={`e${i}`} className="text-red-400" data-testid={`error-${i}`}>{e}</p>)}
