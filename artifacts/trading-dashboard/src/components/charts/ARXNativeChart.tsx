@@ -1015,10 +1015,12 @@ export function ARXNativeChart({
     showFeedStatus && hasCandles && !isSafeMode && conf.severity !== "clean";
   const showNotAiConfirmed = showFeedStatus && hasCandles && !conf.aiUsable && !isSafeMode;
 
-  const decimals = useMemo(() => {
-    const sample = lastClose ?? 1;
-    return sample < 10 ? 5 : sample < 1000 ? 3 : 2;
-  }, [lastClose]);
+  // Same digit count the price axis uses (adapter.applyPricePrecision), so the
+  // header and the axis never print the same bar with different precision.
+  const decimals = useMemo(
+    () => candleDisplayPrecision(mergedEngineCandles, resolvedSymbol),
+    [mergedEngineCandles, resolvedSymbol],
+  );
 
   const isInitialLoading = query.isLoading && !hasCandles;
   const isError = query.isError && !hasCandles;
@@ -1041,7 +1043,17 @@ export function ARXNativeChart({
               </Badge>
             )}
             {lastClose != null && (
-              <Badge variant="outline" className="font-mono text-xs" data-testid="arx-native-last">
+              // The canvas removes its live-price line/label when the feed is not
+              // live-confirmed; the header must say the same thing in words.
+              <Badge
+                variant="outline"
+                className={`font-mono text-xs ${isLivePriceAffordance ? "" : "text-zinc-400"}`}
+                data-testid="arx-native-last"
+                title={isLivePriceAffordance
+                  ? undefined
+                  : "Close of the newest bar received. The feed is not live-confirmed, so this may not be the current price."}
+              >
+                {isLivePriceAffordance ? "" : "Last known "}
                 {lastClose.toFixed(decimals)}
               </Badge>
             )}
