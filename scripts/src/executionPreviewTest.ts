@@ -299,7 +299,7 @@ function baseInput(overrides: Partial<ExecutionPreviewInput> = {}): ExecutionPre
   }
   // Forex pairs (both halves real currencies, incl. a broker suffix) still priced,
   // and the note says the money uses ARX's model, not a broker tick value.
-  for (const symbol of ["EURUSD", "GBPJPY", "EURUSD.raw"]) {
+  for (const symbol of ["EURUSD", "USDJPY", "EURUSD.raw"]) {
     const p = estimateExecutionPreview(baseInput({ symbol }));
     check(`${symbol}: forex contract model still prices money`, (p.moneyPerPoint ?? 0) > 0);
     check(`${symbol}: money is labelled as ARX's standard contract model`,
@@ -368,6 +368,82 @@ function baseInput(overrides: Partial<ExecutionPreviewInput> = {}): ExecutionPre
   }));
   check("EURUSDm with broker contract size 100,000: $1 per point per lot",
     approx(suffixedReported.moneyPerPoint ?? -1, 1));
+}
+
+// ── Fiat pairs: pip value is in the QUOTE currency, not a flat $10 ───────────
+// The model priced every fiat pair at $10 per pip per lot and margin at
+// price × 100,000: USDTRY's spread showed ~34× too high, USDJPY's margin
+// ~150× too high, and EURGBP (GBP P/L) was shown in dollars. Quick Trade's
+// risk readout already converts USD-base pairs by the pair's price and
+// refuses crosses; the preview now does the same.
+{
+  // USDTRY: 1 point = 1 TRY per lot = 1/34 USD. Spread 0.002 = 200 points.
+  const tryP = estimateExecutionPreview(baseInput({
+    symbol: "USDTRY", lots: 1, spec: { ...fxSpec, point: 0.00001 },
+    quote: { bid: 34.0, ask: 34.002, quoteAgeMs: 500 }, leverage: 100, accountBalance: 10_000,
+  }));
+  check("USDTRY: money per point is 1 TRY in dollars (~$0.0294), not $1",
+    approx(tryP.moneyPerPoint ?? -1, 1 / 34.001, 0.01));
+  check("USDTRY: 200-point spread costs ~$5.88, not $200",
+    approx(tryP.spreadCost.money ?? -1, 200 / 34.001, 0.02));
+  check("USDTRY: margin is 100,000 USD / 100 = $1,000, not price × 100,000",
+    approx(tryP.accountImpact.marginRequired ?? -1, 1000, 0.01));
+  check("USDTRY: the note says TRY amounts are converted at the pair's price",
+    tryP.dataQuality.notes.some((n) => /TRY/.test(n) && /converted/i.test(n)));
+
+  // USDJPY: 1 point (0.001) = 100 JPY per lot = 100/150.005 USD.
+  const jpy = estimateExecutionPreview(baseInput({
+    symbol: "USDJPY", lots: 1, spec: { ...fxSpec, point: 0.001 },
+    quote: { bid: 150.0, ask: 150.01, quoteAgeMs: 500 }, leverage: 100,
+  }));
+  check("USDJPY: money per point ~$0.667", approx(jpy.moneyPerPoint ?? -1, 100 / 150.005, 0.01));
+  check("USDJPY: margin is $1,000 at 1:100, not ~$150,000",
+    approx(jpy.accountImpact.marginRequired ?? -1, 1000, 0.01));
+
+  // EURUSD is unchanged: $1 per point per lot, margin = price × 100,000 / leverage.
+  const eur = estimateExecutionPreview(baseInput({ symbol: "EURUSD", lots: 1 }));
+  check("EURUSD: still $1 per point per lot", approx(eur.moneyPerPoint ?? -1, 1, 0.001));
+  check("EURUSD: margin = price × 100,000 / 100", approx(eur.accountImpact.marginRequired ?? -1, 1.10005 * 1000, 0.001));
+
+  // Cross pairs (GBP / JPY P/L, no USD leg) are withheld with the reason.
+  for (const c of [
+    { symbol: "EURGBP", quote: "GBP", point: 0.00001, bid: 0.85, ask: 0.8501 },
+    { symbol: "GBPJPY", quote: "JPY", point: 0.001, bid: 190.0, ask: 190.02 },
+  ]) {
+    const p = estimateExecutionPreview(baseInput({
+      symbol: c.symbol, lots: 1, spec: { ...fxSpec, point: c.point },
+      quote: { bid: c.bid, ask: c.ask, quoteAgeMs: 500 },
+      entry: null, stopLoss: c.bid - (c.ask - c.bid) * 20,
+    }));
+    check(`${c.symbol}: not shown in dollars without a ${c.quote}→USD rate`,
+      p.moneyPerPoint == null && p.spreadCost.money == null && p.accountImpact.riskMoney == null &&
+      p.accountImpact.marginRequired == null);
+    check(`${c.symbol}: the note names the missing ${c.quote}→USD rate`,
+      p.dataQuality.notes.some((n) => n.includes(`${c.quote}→USD`)));
+    check(`${c.symbol}: no claim the money uses the standard model`,
+      !p.dataQuality.notes.some((n) => /Money values use/i.test(n)));
+  }
+
+  // With the broker's tick value on a USD account, a cross is priced from it.
+  const eurgbpTick = estimateExecutionPreview(baseInput({
+    symbol: "EURGBP", lots: 1, quote: { bid: 0.85, ask: 0.8501, quoteAgeMs: 500 }, leverage: 100,
+    contract: { contractSize: 100_000, tickSize: 0.00001, tickValue: 1.27, profitCurrency: "GBP", reportedAt: null },
+    accountCurrency: "USD",
+  }));
+  check("EURGBP with the broker's USD tick value: $1.27 per point per lot",
+    approx(eurgbpTick.moneyPerPoint ?? -1, 1.27, 0.001));
+  check("EURGBP with the broker's USD tick value: margin is the EUR notional in dollars (~$1,080)",
+    approx(eurgbpTick.accountImpact.marginRequired ?? -1, 0.85005 * 127_000 / 100, 0.01));
+
+  // A broker contract size on a USD-base pair converts JPY at the pair's price.
+  const jpyContract = estimateExecutionPreview(baseInput({
+    symbol: "USDJPY", lots: 1, spec: { ...fxSpec, point: 0.001 },
+    quote: { bid: 150.0, ask: 150.01, quoteAgeMs: 500 }, leverage: 100,
+    contract: { contractSize: 100_000, tickSize: null, tickValue: null, profitCurrency: "JPY", reportedAt: null },
+  }));
+  check("USDJPY with the broker's contract size: ~$0.667 per point, from the broker figure",
+    approx(jpyContract.moneyPerPoint ?? -1, 100 / 150.005, 0.01) &&
+    jpyContract.dataQuality.notes.some((n) => /contract size your broker reported/i.test(n)));
 }
 
 if (failures > 0) {
