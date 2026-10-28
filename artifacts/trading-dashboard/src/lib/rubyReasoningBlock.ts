@@ -31,6 +31,7 @@ import {
   scalpTimeframeWords,
 } from "@/components/scanner/scalpLabels";
 import { EVENT_RISK_NOT_ASSESSED_IN_READ } from "@/lib/eventRiskCopy";
+import { formatInstrumentPrice } from "@/lib/instrumentPriceFormat";
 
 export interface RubyReasoningEvidence {
   structure: string;
@@ -119,6 +120,13 @@ export interface MarketReadReasoningInput {
    * is confirmed. Downgrade-only: replaces "Live feed confirmed." in Feed/Data.
    */
   feedUnconfirmedReason?: string | null;
+  /**
+   * The instrument's display precision the card's Levels cells use
+   * (scannerTruth.candles.pricePrecision). Levels in this block are printed
+   * with the same shared formatter, so one level reads as one string on the
+   * card; null → the shared formatter's magnitude fallback, again identical.
+   */
+  pricePrecision?: number | null;
 }
 
 const BIAS_DIR: Record<string, "BUY" | "SELL" | null> = {
@@ -133,6 +141,10 @@ export function buildReasoningFromMarketRead(
   input: MarketReadReasoningInput,
   assistantName: string = DEFAULT_ASSISTANT_NAME,
 ): RubyReasoningBlockData {
+  // Same formatter + precision as the card's Levels cells (instrumentPriceFormat).
+  const px = (n: number | null | undefined): string => formatInstrumentPrice(n, input.pricePrecision ?? null);
+  const pxZone = (z: SignalPriceZone | null | undefined): string =>
+    !z ? "—" : z.from === z.to ? px(z.from) : `${px(z.from)} – ${px(z.to)}`;
   const { explanation: exp, signal, downgraded } = input;
   const level = input.level ?? null;
   const reason = clean(input.reason);
@@ -214,9 +226,9 @@ export function buildReasoningFromMarketRead(
   } else {
     const lv = exp.levels;
     const parts: string[] = [];
-    if (lv?.entryZone) parts.push(`entry ${fmtZone(lv.entryZone)}`);
-    if (lv?.stopLoss != null) parts.push(`stop ${fmtNum(lv.stopLoss)}`);
-    if (lv?.invalidation != null) parts.push(`invalidation ${fmtNum(lv.invalidation)}`);
+    if (lv?.entryZone) parts.push(`entry ${pxZone(lv.entryZone)}`);
+    if (lv?.stopLoss != null) parts.push(`stop ${px(lv.stopLoss)}`);
+    if (lv?.invalidation != null) parts.push(`invalidation ${px(lv.invalidation)}`);
     supportResistance = parts.length
       ? `Watch nearby levels — ${parts.join(", ")}. Room can be limited near these.`
       : "No clean support/resistance level marked yet — be cautious entering blind.";
@@ -254,7 +266,7 @@ export function buildReasoningFromMarketRead(
     : orElse(
         chosen?.whatConfirms,
         actionable && exp.levels?.entryZone
-          ? `Strengthens if price respects ${fmtZone(exp.levels.entryZone)} and follows through with momentum.`
+          ? `Strengthens if price respects ${pxZone(exp.levels.entryZone)} and follows through with momentum.`
           : NOT_ENOUGH,
       );
 
@@ -263,7 +275,7 @@ export function buildReasoningFromMarketRead(
     : orElse(
         chosen?.whatInvalidates,
         actionable && exp.levels?.invalidation != null
-          ? `Cancel if price reclaims and holds beyond ${fmtNum(exp.levels.invalidation)}.`
+          ? `Cancel if price reclaims and holds beyond ${px(exp.levels.invalidation)}.`
           : NOT_ENOUGH,
       );
 
@@ -271,7 +283,7 @@ export function buildReasoningFromMarketRead(
   if (downgraded) {
     traderTest = "Check the chart's feed-status badge before trusting any level or direction.";
   } else if (actionable && exp.levels?.invalidation != null) {
-    traderTest = `Mark ${fmtNum(exp.levels.invalidation)} on the chart and watch whether the next candle breaks or rejects it. Don't chase if price stalls there.`;
+    traderTest = `Mark ${px(exp.levels.invalidation)} on the chart and watch whether the next candle breaks or rejects it. Don't chase if price stalls there.`;
   } else {
     traderTest = orElse(
       chosen?.whatToDoNext,

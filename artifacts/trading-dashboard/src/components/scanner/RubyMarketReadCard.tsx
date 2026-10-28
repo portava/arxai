@@ -356,9 +356,10 @@ export function RubyMarketReadCard({
             reason,
             newsRiskLabel: eventRisk,
             feedUnconfirmedReason: feedRow.feedDataNote,
+            pricePrecision,
           }, name)
         : null,
-    [explanation, signal, downgraded, level, reason, eventRisk, feedRow.feedDataNote, name],
+    [explanation, signal, downgraded, level, reason, eventRisk, feedRow.feedDataNote, name, pricePrecision],
   );
 
   return (
