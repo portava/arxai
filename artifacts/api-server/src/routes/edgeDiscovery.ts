@@ -188,6 +188,9 @@ type ReportRow = typeof edgeDiscoveryReportsTable.$inferSelect;
 // a saturated confidence and a "PF 999.00" summary. Re-derive status,
 // confidence and summary from the stored numbers so no read presents the
 // marker as a measured profit factor. Rows with a measured PF are unchanged.
+// The stored behaviour sentence (behaviourSentence, always last in the
+// summary) is kept: it is what behaviourBasisOf reads, and dropping it made a
+// slice measured from its own debriefs read as an older account-wide report.
 function presentReport(r: ReportRow): ReportRow {
   if (r.profitFactor < PF_NO_LOSSES_MARKER) return r;
   const s: Stats = {
@@ -197,7 +200,19 @@ function presentReport(r: ReportRow): ReportRow {
   const status = classifyStatus(s);
   const eqAt = r.edgeName.indexOf("=");
   const name = eqAt >= 0 ? r.edgeName.slice(eqAt + 1) : r.edgeName;
-  return { ...r, status, confidenceScore: confidence(s, status), aiSummary: summarize(name, status, s) };
+  const behaviour = storedBehaviourSentence(r.aiSummary);
+  const summary = summarize(name, status, s);
+  return {
+    ...r, status, confidenceScore: confidence(s, status),
+    aiSummary: behaviour ? `${summary} ${behaviour}` : summary,
+  };
+}
+
+/** The behaviour sentence a POST appended to a stored summary, or null (older rows have none). */
+function storedBehaviourSentence(summary: string | null | undefined): string | null {
+  const text = String(summary ?? "");
+  const at = text.indexOf("Behaviour scores");
+  return at >= 0 ? text.slice(at).trim() : null;
 }
 
 // Every POST inserts a fresh row per slice and never supersedes the old ones.

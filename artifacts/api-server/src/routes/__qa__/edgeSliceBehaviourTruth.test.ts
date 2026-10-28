@@ -85,3 +85,61 @@ test("detail read reports the behaviour basis of a stored report", async () => {
     assert.equal(body["behaviourBasis"], "ACCOUNT_WIDE_LEGACY");
   });
 });
+
+// A slice with wins and no losing trade stores profitFactor = the no-losses
+// marker (999). presentReport re-derives its summary so the marker is never
+// shown as a measured PF, and used to drop the stored behaviour sentence with
+// it: the detail read then called a new, per-slice measured report an "older
+// account-wide report" and the card hid its scores.
+const NO_LOSS_ROW = {
+  id: 12, userId: 7, edgeName: "symbol=EURUSD", symbol: "EURUSD", sampleSize: 6, winRate: 1, averageRr: 1.5,
+  expectancy: 4, profitFactor: 999, status: "DEVELOPING_EDGE", confidenceScore: 60,
+  disciplineScoreAvg: 100, executionScoreAvg: 0, emotionalScoreAvg: 50,
+  createdAt: new Date(),
+};
+
+test("a no-loss slice measured from its own debriefs keeps that basis on the detail read", async () => {
+  fake = createFakeDb({
+    edge_discovery_reports: [{
+      ...NO_LOSS_ROW,
+      aiSummary: "EURUSD: developing edge (profit factor not measurable — no losing trade recorded, 6 trades). Promising. Behaviour scores come from 2 post-trade debriefs on trades in this slice; execution is not measured by debriefs.",
+    }],
+    edge_warnings: [{ id: 1, userId: 7, edgeReportId: 12, warningType: "NO_LOSSES_RECORDED", message: "x", severity: "INFO" }],
+  });
+  await withRouter(router, { id: 7 }, async (base) => {
+    const body = await (await fetch(`${base}/edge/reports/12`)).json() as { behaviourBasis: string; report: { aiSummary: string } };
+    assert.equal(body.behaviourBasis, "SLICE_DEBRIEFS");
+    assert.match(body.report.aiSummary, /from 2 post-trade debriefs on trades in this slice/);
+    assert.doesNotMatch(body.report.aiSummary, /PF 999/);
+  });
+});
+
+test("a no-loss slice with no linked debrief keeps its 'not measured' sentence on every read", async () => {
+  fake = createFakeDb({
+    edge_discovery_reports: [{
+      ...NO_LOSS_ROW,
+      disciplineScoreAvg: 0, emotionalScoreAvg: 0,
+      aiSummary: "EURUSD: developing edge (profit factor not measurable — no losing trade recorded, 6 trades). Promising. Behaviour scores: not measured — no post-trade debrief is linked to a trade in this slice.",
+    }],
+    edge_warnings: [],
+  });
+  await withRouter(router, { id: 7 }, async (base) => {
+    const detail = await (await fetch(`${base}/edge/reports/12`)).json() as { behaviourBasis: string; report: { aiSummary: string } };
+    assert.equal(detail.behaviourBasis, "NOT_MEASURED");
+    assert.match(detail.report.aiSummary, /Behaviour scores: not measured/);
+    const list = await (await fetch(`${base}/edge/reports`)).json() as { reports: Array<{ aiSummary: string }> };
+    assert.match(list.reports[0]!.aiSummary, /Behaviour scores: not measured/);
+  });
+});
+
+test("an old marker row with no behaviour sentence is still read as account-wide legacy", async () => {
+  fake = createFakeDb({
+    edge_discovery_reports: [{ ...NO_LOSS_ROW, status: "STRONG_EDGE", aiSummary: "EURUSD: a measurable historical edge (PF 999.00, win rate 100%, 6 trades)." }],
+    edge_warnings: [],
+  });
+  await withRouter(router, { id: 7 }, async (base) => {
+    const body = await (await fetch(`${base}/edge/reports/12`)).json() as { behaviourBasis: string; report: { aiSummary: string } };
+    assert.equal(body.behaviourBasis, "ACCOUNT_WIDE_LEGACY");
+    assert.doesNotMatch(body.report.aiSummary, /PF 999/);
+  });
+});
