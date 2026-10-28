@@ -50,7 +50,7 @@ async page => {
     await frames();
     const initial=await page.evaluate(()=>({state:window.__arxChartQa.snapshot(),data:window.__arxChartQa.data()}));
     check(matchesSeries(initial,expected,'candles'),'Full context, source and displayed/canonical series match the exact Scanner request after rendering opportunities');
-    const tools=panel.getByRole('button',{name:'Chart tools',exact:true});
+    const tools=panel.locator('button[aria-label="Chart tools"]');
     if(await tools.isVisible()&&await tools.getAttribute('aria-expanded')!=='true')await tools.click();
     await panel.getByLabel('Chart style',{exact:true}).selectOption('bars');
     await panel.getByLabel('Price scale',{exact:true}).selectOption('log');
