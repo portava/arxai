@@ -18,7 +18,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import {
-  Form, FormControl, FormDescription, FormField, FormItem, FormLabel,
+  Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -120,7 +120,11 @@ const MODES = {
 const limitsSchema = z.object({
   riskPerTradePct:          z.coerce.number().min(0.01).max(10),
   maxDailyLossPct:          z.coerce.number().min(0.1).max(20),
-  maxWeeklyLossPct:         z.coerce.number().min(0.1).max(50),
+  // 0 is the store's "no weekly cap" (user_risk_settings keeps NULL, the
+  // governor applies no weekly % limit). Saving it keeps the cap off.
+  maxWeeklyLossPct:         z.coerce.number().refine((v) => v === 0 || (v >= 0.1 && v <= 50), {
+    message: "Set a weekly cap between 0.1% and 50%.",
+  }),
   maxTradesPerDay:          z.coerce.number().min(1).max(500),
   maxOpenTrades:            z.coerce.number().min(1).max(50),
   maxLotSize:               z.coerce.number().min(0.01).max(100),
@@ -656,6 +660,7 @@ export default function RiskSettings() {
                             value={[field.value]} onValueChange={(v) => field.onChange(v[0])} />
                         </FormControl>
                         <FormDescription className="text-xs">% of account per trade</FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )} />
                   <FormField control={limitsForm.control} name="maxDailyLossPct"
@@ -669,19 +674,25 @@ export default function RiskSettings() {
                             value={[field.value]} onValueChange={(v) => field.onChange(v[0])} />
                         </FormControl>
                         <FormDescription className="text-xs">Bot halts at this daily drawdown</FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )} />
                   <FormField control={limitsForm.control} name="maxWeeklyLossPct"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="flex justify-between text-xs">
-                          Max Weekly Loss <span className="font-mono text-primary">{field.value}%</span>
+                          Max Weekly Loss <span className="font-mono text-primary">{field.value > 0 ? `${field.value}%` : "Off"}</span>
                         </FormLabel>
                         <FormControl>
                           <Slider min={0.1} max={50} step={0.1}
                             value={[field.value]} onValueChange={(v) => field.onChange(v[0])} />
                         </FormControl>
-                        <FormDescription className="text-xs">Weekly cumulative drawdown cap</FormDescription>
+                        <FormDescription className="text-xs">
+                          {field.value > 0
+                            ? "Weekly cumulative drawdown cap"
+                            : "No weekly cap is set, so no weekly loss % limit blocks trades. Move the slider to set one."}
+                        </FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )} />
                 </CardContent>
@@ -704,6 +715,7 @@ export default function RiskSettings() {
                             value={[field.value]} onValueChange={(v) => field.onChange(v[0])} />
                         </FormControl>
                         <FormDescription className="text-xs">Total trades allowed per day</FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )} />
                   <FormField control={limitsForm.control} name="maxOpenTrades"
@@ -717,6 +729,7 @@ export default function RiskSettings() {
                             value={[field.value]} onValueChange={(v) => field.onChange(v[0])} />
                         </FormControl>
                         <FormDescription className="text-xs">Max concurrent positions</FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )} />
                   <FormField control={limitsForm.control} name="maxLotSize"
@@ -730,6 +743,7 @@ export default function RiskSettings() {
                             value={[field.value]} onValueChange={(v) => field.onChange(v[0])} />
                         </FormControl>
                         <FormDescription className="text-xs">Absolute lot cap per position</FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )} />
                 </CardContent>
@@ -752,6 +766,7 @@ export default function RiskSettings() {
                             value={[field.value]} onValueChange={(v) => field.onChange(v[0])} />
                         </FormControl>
                         <FormDescription className="text-xs">Consecutive losses before cooldown</FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )} />
                   <FormField control={limitsForm.control} name="cooldownAfterLossMinutes"
@@ -765,6 +780,7 @@ export default function RiskSettings() {
                             value={[field.value]} onValueChange={(v) => field.onChange(v[0])} />
                         </FormControl>
                         <FormDescription className="text-xs">Pause duration after hitting streak</FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )} />
                   <FormField control={limitsForm.control} name="minConfidenceScore"
@@ -778,6 +794,7 @@ export default function RiskSettings() {
                             value={[field.value]} onValueChange={(v) => field.onChange(v[0])} />
                         </FormControl>
                         <FormDescription className="text-xs">Signals below this are blocked</FormDescription>
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )} />
                 </CardContent>
