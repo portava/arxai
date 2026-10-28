@@ -276,7 +276,7 @@ router.get("/admin/live-shared/readiness", async (req, res) => {
       brokerCredentialsOnServer: false,
     },
     globalSwitches: {
-      // Effective master switch: env OR DB-armed. Treat THIS as the "is
+      // Effective master switch: env AND DB-armed. Treat THIS as the "is
       // live execution actually enabled?" signal for downstream logic.
       serverMasterSwitchEnabled: masterSwitch,
       // Source breakdown so the UI can distinguish "armed by admin via UI"

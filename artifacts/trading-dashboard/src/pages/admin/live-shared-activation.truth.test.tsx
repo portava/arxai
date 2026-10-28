@@ -208,3 +208,21 @@ describe("live shared activation — checklist rows nothing checked", () => {
     expect(el.textContent).toMatch(/readiness endpoint accepted this session as admin\/owner/);
   });
 });
+
+describe("live shared activation — master switch labels", () => {
+  it("env var set, operator not armed: the Safety card names the env value and the effective value separately", async () => {
+    await renderWith(readiness({
+      globalSwitches: { serverMasterSwitchEnabled: false, serverMasterSwitchEnvOnly: true, liveBrokerExecutionArmedDb: false },
+    }));
+    expect(screen.queryByText("Master switch (env)")).toBeNull();
+    const env = screen.getByTestId("safety-master-switch-env");
+    expect(env.textContent).toContain("ARX_LIVE_BROKER_EXECUTION_ENABLED");
+    expect(env.textContent).toContain("true");
+    const armed = screen.getByTestId("safety-master-switch-armed");
+    expect(armed.textContent).toMatch(/Operator arm/);
+    expect(armed.textContent).toContain("false");
+    const eff = screen.getByTestId("safety-master-switch-effective");
+    expect(eff.textContent).toMatch(/effective: env AND operator arm/);
+    expect(eff.textContent).toContain("false");
+  });
+});

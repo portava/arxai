@@ -31,7 +31,7 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<ApiResp<T>>
 type ReadinessResp = {
   ok: boolean;
   globalSwitches: {
-    serverMasterSwitchEnabled: boolean; // effective = env OR db-armed
+    serverMasterSwitchEnabled: boolean; // effective = env AND db-armed
     serverMasterSwitchEnvOnly: boolean; // ARX_LIVE_BROKER_EXECUTION_ENABLED=true
     liveBrokerExecutionArmedDb: boolean; // admin armed via cockpit UI
     liveBrokerExecutionArmedAt: string | null;
@@ -224,7 +224,7 @@ export default function AdminLiveSharedActivationPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Compute the four mutually-exclusive arm states from readiness.
-// IMPORTANT: serverMasterSwitchEnabled (env OR db-armed) is NOT itself a
+// IMPORTANT: serverMasterSwitchEnabled (env AND db-armed) is NOT itself a
 // pre-arm safety gate. It IS the arm state. Pre-arm gates are independent
 // of the arm flag — that's how the operator can reach READY TO ARM.
 type ArmState = "LOCKED" | "READY_TO_ARM" | "LIVE_BROKER_EXECUTION_ENABLED" | "KILL_SWITCH_ACTIVE";
@@ -367,7 +367,9 @@ function ReadinessCards({ readiness }: { readiness: ReadinessResp | null }) {
         {row("ReadOnlyMode", String(b?.readOnlyMode ?? "—"), b?.readOnlyMode === false)}
       </CardContent></Card>
       <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Safety</CardTitle></CardHeader><CardContent className="pt-1">
-        {row("Master switch (env)", String(g.serverMasterSwitchEnabled), g.serverMasterSwitchEnabled)}
+        <div data-testid="safety-master-switch-env">{row("Env ARX_LIVE_BROKER_EXECUTION_ENABLED", String(g.serverMasterSwitchEnvOnly))}</div>
+        <div data-testid="safety-master-switch-armed">{row("Operator arm (DB flag)", String(g.liveBrokerExecutionArmedDb))}</div>
+        <div data-testid="safety-master-switch-effective">{row("Live broker execution (effective: env AND operator arm)", String(g.serverMasterSwitchEnabled), g.serverMasterSwitchEnabled)}</div>
         {row("Platform emergency stop engaged", String(g.emergencyKillSwitch), g.emergencyKillSwitch === false)}
         {row("Kill engaged at", g.killSwitchEngagedAt ?? "—")}
         <div data-testid="safety-core-kill-row">
