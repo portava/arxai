@@ -11469,6 +11469,15 @@ export const GetPaperAccountsResponse = zod.object({
       isActive: zod.number(),
       createdAt: zod.string(),
       updatedAt: zod.string(),
+      pnlSizing: zod
+        .object({
+          unsizedClosedOrders: zod.number(),
+          note: zod.string().nullable(),
+        })
+        .optional()
+        .describe(
+          "Present when the account was just valued (GET \/paper\/accounts\/active). Says how many closes the balance counts without a sized P&L.",
+        ),
     }),
   ),
   simulated: zod.boolean().optional(),
@@ -11491,6 +11500,15 @@ export const CreatePaperAccountResponse = zod.object({
   isActive: zod.number(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
+  pnlSizing: zod
+    .object({
+      unsizedClosedOrders: zod.number(),
+      note: zod.string().nullable(),
+    })
+    .optional()
+    .describe(
+      "Present when the account was just valued (GET \/paper\/accounts\/active). Says how many closes the balance counts without a sized P&L.",
+    ),
 });
 
 export const GetActivePaperAccountResponse = zod.object({
@@ -11505,6 +11523,15 @@ export const GetActivePaperAccountResponse = zod.object({
     isActive: zod.number(),
     createdAt: zod.string(),
     updatedAt: zod.string(),
+    pnlSizing: zod
+      .object({
+        unsizedClosedOrders: zod.number(),
+        note: zod.string().nullable(),
+      })
+      .optional()
+      .describe(
+        "Present when the account was just valued (GET \/paper\/accounts\/active). Says how many closes the balance counts without a sized P&L.",
+      ),
   }),
   simulated: zod.boolean().optional(),
   disclaimer: zod.string().optional(),

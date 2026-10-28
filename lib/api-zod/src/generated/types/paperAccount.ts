@@ -5,6 +5,7 @@
  * ARX AI — Analyze. Risk. eXecute. — API
  * OpenAPI spec version: 0.1.0
  */
+import type { PaperPnlSizing } from "./paperPnlSizing";
 
 export interface PaperAccount {
   id: number;
@@ -18,4 +19,6 @@ export interface PaperAccount {
   isActive: number;
   createdAt: string;
   updatedAt: string;
+  /** Present when the account was just valued (GET /paper/accounts/active). Says how many closes the balance counts without a sized P&L. */
+  pnlSizing?: PaperPnlSizing;
 }

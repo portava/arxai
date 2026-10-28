@@ -1318,6 +1318,7 @@ export * from "./paperOrder";
 export * from "./paperOrderDirection";
 export * from "./paperOrderOrderType";
 export * from "./paperOrderStatus";
+export * from "./paperPnlSizing";
 export * from "./parseMissionIntentRequest";
 export * from "./parseMissionIntentResponse";
 export * from "./parseMissionIntentResponseRiskProfile";

@@ -36,6 +36,8 @@ import { generateDeterministicCandles } from "../backtestStrategyRegistry.js";
 import { runAutoDebrief } from "../autoDebriefService.js";
 import { enforcePreTradeRisk, type EnforceResult } from "../riskGovernor/enforce.js";
 import { currentQuote } from "./marketQuote.js";
+import { realizedOf } from "./paperBookReader.js";
+import { isUnsizedPaperClose } from "../paperExecution/paperPnl.js";
 import type { IntentOrigin, RiskQuote } from "../riskGovernor/preTrade.js";
 
 export const SIMULATED_TAG = "Simulated — paper trading does not guarantee live results.";
@@ -52,6 +54,7 @@ export const MARKET_PRICED_SIMULATED_OPEN = "market_priced_simulated_open";
 export interface PaperQuote { bid: number; ask: number; at: Date; source: string }
 
 export type PaperOrderRow = typeof paperOrdersTable.$inferSelect;
+export type PaperAccountRow = typeof paperAccountsTable.$inferSelect;
 
 export type PaperRefusal =
   | { ok: false; reason: "NO_VALID_PRICE_SOURCE" }
@@ -144,6 +147,22 @@ function pnlFor(direction: string, lotSize: number, entry: number, exit: number)
   return dir * (exit - entry) * lotSize * 100;
 }
 
+/** How a valued paper account counts P&L that could not be sized. */
+export interface PaperPnlSizing {
+  /** Settled orders whose stored P&L is the not-sized 0 placeholder. */
+  unsizedClosedOrders: number;
+  /** Plain-English note for the account; null when every close was sized. */
+  note: string | null;
+}
+
+export function paperPnlSizingNote(unsizedClosed: number): string | null {
+  if (unsizedClosed <= 0) return null;
+  const one = unsizedClosed === 1;
+  return `Balance includes ${unsizedClosed} closed trade${one ? "" : "s"} whose P&L could not be sized for the instrument `
+    + `(no contract size or currency conversion). ${one ? "It is" : "They are"} counted at the paper risk model `
+    + `(price move × lots × 100), not a measured amount.`;
+}
+
 function governorRefusal(risk: { primaryReason?: string | null; blockedBy: string[]; auditEventId?: number | null }): PaperRefusal {
   return {
     ok: false, reason: "RISK_GOVERNOR_BLOCK",
@@ -157,7 +176,10 @@ function governorRefusal(risk: { primaryReason?: string | null; blockedBy: strin
 // reflected even if the order transitioned to CLOSED before mark-to-market
 // runs. Equity = balance + unrealized; margin = Σ open lot. An SL/TP hit is
 // the simulator venue's own fill, not a new order, so it is not re-governed.
-export async function markToMarket(accountId: number) {
+// A close whose amount could not be sized (stored 0 placeholder) counts the
+// way the paper book's read side counts it (realizedOf), so the balance moves
+// with the stop or target hit; pnlSizing says how many closes that covers.
+export async function markToMarket(accountId: number): Promise<(PaperAccountRow & { pnlSizing: PaperPnlSizing }) | null> {
   const account = (await db.select().from(paperAccountsTable)
     .where(eq(paperAccountsTable.id, accountId)).limit(1))[0];
   if (!account) return null;
@@ -217,19 +239,20 @@ export async function markToMarket(accountId: number) {
   }
 
   // Authoritative balance: starting + Σ realized P&L from EVERY closed order.
-  const closed = await db.select().from(paperOrdersTable)
-    .where(and(eq(paperOrdersTable.paperAccountId, accountId), ownedBy));
-  const realizedTotal = closed
-    .filter((o) => o.status !== "OPEN")
-    .reduce((s, o) => s + o.profitLoss, 0);
+  const closed = (await db.select().from(paperOrdersTable)
+    .where(and(eq(paperOrdersTable.paperAccountId, accountId), ownedBy)))
+    .filter((o) => o.status !== "OPEN");
+  const realizedTotal = closed.reduce((s, o) => s + realizedOf(o), 0);
+  const unsizedClosedOrders = closed.filter((o) => isUnsizedPaperClose(o)).length;
   const newBalance = account.startingBalance + realizedTotal;
   const equity = newBalance + unrealized;
   await db.update(paperAccountsTable).set({
     currentBalance: newBalance, equity, marginUsed: margin, updatedAt: new Date(),
   }).where(eq(paperAccountsTable.id, accountId));
 
-  return (await db.select().from(paperAccountsTable)
-    .where(eq(paperAccountsTable.id, accountId)).limit(1))[0] ?? null;
+  const row = (await db.select().from(paperAccountsTable)
+    .where(eq(paperAccountsTable.id, accountId)).limit(1))[0];
+  return row ? { ...row, pnlSizing: { unsizedClosedOrders, note: paperPnlSizingNote(unsizedClosedOrders) } } : null;
 }
 
 /** Open a paper order: owner check, SL/TP geometry, Risk Governor, then the simulator book. */

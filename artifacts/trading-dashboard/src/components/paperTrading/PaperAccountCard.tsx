@@ -5,6 +5,8 @@ interface PaperAccount {
   id: number; accountName: string;
   startingBalance: number; currentBalance: number; equity: number; marginUsed: number;
   isActive: number; createdAt: string;
+  /** Server note when the balance counts closes whose P&L could not be sized. */
+  pnlSizing?: { unsizedClosedOrders: number; note: string | null };
 }
 
 export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void }) {
@@ -54,6 +56,9 @@ export function PaperAccountCard({ onActive }: { onActive?: (id: number) => void
               </div>
             </div>
           </div>
+          {acc.pnlSizing?.note ? (
+            <p className="text-[10px] text-amber-200" data-testid="paper-account-sizing-note">{acc.pnlSizing.note}</p>
+          ) : null}
         </div>
       ) : (
         <div className="space-y-2">
