@@ -81,3 +81,13 @@ test("the calendar check is named for the economic calendar, not as a market-con
   assert.match(market.detail, /volatility, spreads and prices are not checked/i);
   assert.doesNotMatch(market.detail, /\bNORMAL\b/, "no market-condition verdict from a calendar read");
 });
+
+test("the NOT_READY summary names the items that actually failed", () => {
+  const s = signals({ brokerLog: brokerLog("CONNECTED", 20_000), calendarCovered: true });
+  const out = evaluateReadiness({ ...s, activeContract: null } as Signals, INPUT);
+  assert.equal(out.status, "NOT_READY");
+  const failed = out.checklist.filter((c) => c.status === "FAIL").map((c) => c.label);
+  assert.deepEqual(failed, ["Trading rules confirmed", "Risk limit confirmed"]);
+  for (const label of failed) assert.ok(out.aiSummary.includes(label), `summary names "${label}": ${out.aiSummary}`);
+  assert.doesNotMatch(out.aiSummary, /mental check-in|broker|news/i, "items that passed are not listed as failed");
+});

@@ -356,7 +356,7 @@ export function evaluateReadiness(
   else if (warns > 0) status = "CAUTION";
   else status = "READY";
 
-  const aiSummary = buildSummary(status, score, blockers, warnings, signals, inp);
+  const aiSummary = buildSummary(status, score, blockers, warnings, signals, inp, checklist);
 
   return {
     status, score, checklist, reasons, warnings, blockers,
@@ -369,12 +369,14 @@ function buildSummary(
   blockers: string[], warnings: string[],
   signals: Awaited<ReturnType<typeof gatherSignals>>,
   inp: EvalInput,
+  checklist: ChecklistItem[],
 ): string {
   if (status === "LOCKED") {
     return `LOCKED — ${blockers.join("; ")}. Resolve hard blockers before trading. ${signals.safety?.killSwitchEngaged || signals.emergencyStopEngaged ? "Kill switch must be cleared by an operator." : "This is a safety hold, not a punishment."}`;
   }
   if (status === "NOT_READY") {
-    return `NOT_READY — readiness score ${score}/100. Complete the failed checklist items (mental check-in, broker, news) before starting.`;
+    const failed = checklist.filter((c) => c.status === "FAIL").map((c) => c.label);
+    return `NOT_READY — readiness score ${score}/100. Complete the failed checklist items (${failed.join(", ")}) before starting.`;
   }
   if (status === "CAUTION") {
     const sleep = inp.sleepQuality ?? 0;
