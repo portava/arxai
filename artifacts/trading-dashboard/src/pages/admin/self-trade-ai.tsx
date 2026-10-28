@@ -35,6 +35,7 @@ import {
 import { STATUS_COLORS, type StatusTone } from "@/lib/design-tokens";
 import { RubyReasoningBlock } from "@/components/ruby/RubyReasoningBlock";
 import { AccountingSummary } from "@/components/selfTrade/AccountingSummary";
+import { RunAutonomousCycleCard } from "@/components/selfTrade/RunAutonomousCycleCard";
 import { buildReasoningFromSelfTrade } from "@/lib/rubyReasoningBlock";
 import {
   useGetSelfTradeOverview,
@@ -54,7 +55,6 @@ import {
   useGetSelfTradeDecisions,
   useGetSelfTradeVolatilityMatrix,
   useGetSelfTradeExecutions,
-  useAdminRunSelfTradeAutonomousCycle,
   getGetSelfTradeExecutionsQueryKey,
   getGetSelfTradeOverviewQueryKey,
   getGetSelfTradeAgentsQueryKey,
@@ -1077,15 +1077,11 @@ function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function AutonomousExecutionTab() {
+export function AutonomousExecutionTab() {
   const qc = useQueryClient();
   const { data, isLoading, isError, refetch, isFetching } = useGetSelfTradeExecutions(undefined, {
     query: { refetchInterval: 8000, queryKey: getGetSelfTradeExecutionsQueryKey(undefined) },
   });
-  const runCycle = useAdminRunSelfTradeAutonomousCycle();
-  const [reason, setReason] = useState("");
-  const reasonOk = reason.trim().length >= 3;
-
   const rows = (data?.executions ?? []) as SelfTradeExecution[];
   const counts = useMemo(() => {
     const today = todayKey();
@@ -1129,53 +1125,7 @@ function AutonomousExecutionTab() {
         <StatCard label="Real fills today" value={String(counts.filledToday)} tone="bullish" sub="counted from fills only" />
       </div>
 
-      <Card className="border-cyan-500/20">
-        <CardHeader>
-          <CardTitle className="text-sm">Run autonomous cycle</CardTitle>
-          <CardDescription className="text-xs">
-            Admin-triggered, audited single cycle: evaluates approved decisions, executes the permitted
-            ones through the gated pipeline, manages open agent positions, and reconciles ledger / positions
-            from real fills. No always-on loop — every run is one controlled, reason-stamped action.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="grid gap-2 md:grid-cols-[1fr_auto] md:items-end">
-            <div>
-              <Label className="text-xs">Reason</Label>
-              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="why this run (≥3 chars)" />
-            </div>
-            <Button
-              size="sm"
-              disabled={runCycle.isPending || !reasonOk}
-              onClick={() =>
-                runCycle.mutate(
-                  { data: { reason: reason.trim() } },
-                  { onSuccess: () => { setReason(""); invalidate(); } },
-                )
-              }
-            >
-              <Rocket className="mr-1 h-4 w-4" />
-              {runCycle.isPending ? "Running cycle…" : "Run cycle"}
-            </Button>
-          </div>
-          {runCycle.isError && (
-            <p className="text-xs text-rose-300">
-              Cycle failed. {(runCycle.error as { message?: string } | undefined)?.message ?? "The run-cycle endpoint refused."}
-            </p>
-          )}
-          {runCycle.isSuccess && runCycle.data && (
-            <div className="flex flex-wrap items-center gap-1 text-xs">
-              <Tone tone="info">considered {runCycle.data.decisionsConsidered}</Tone>
-              <Tone tone="success">filled {runCycle.data.reconciled.filled}</Tone>
-              <Tone tone="warning">managed {runCycle.data.agentsManaged}</Tone>
-              <Tone tone="neutral">modified {runCycle.data.positionsModified}</Tone>
-              <Tone tone="info">closed {runCycle.data.positionsClosed}</Tone>
-              <Tone tone="danger">rejected {runCycle.data.reconciled.rejected}</Tone>
-              <span className="text-muted-foreground">cycle {runCycle.data.cycleId}</span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <RunAutonomousCycleCard onRan={invalidate} />
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
