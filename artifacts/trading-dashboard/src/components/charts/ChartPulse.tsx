@@ -13,7 +13,7 @@ import { chartReadVerification } from "./chartReadVerification";
 // ChartPulse — Chart Brain v2 (Task 3) compact at-a-glance state panel.
 //
 // A small, mobile-friendly grid that summarises the live Chart Intelligence
-// State: feed status, regime, bias, active level, momentum, risk, readiness,
+// State: feed status, regime, bias, active level, last bar, risk, readiness,
 // best action, setup age — plus the agent-court chip (from the state's agent
 // consensus, withheld on an unverified read) and the Ruby chip. EVERYTHING is generated from the
 // state object; nothing is hardcoded and no verdict is invented. PURE DISPLAY —
@@ -31,6 +31,8 @@ interface PulseItem {
   value: string;
   tone: ChartMarketSentenceTone;
   testid: string;
+  /** Hover text saying exactly what the tile measures. */
+  title?: string;
 }
 
 
@@ -105,21 +107,32 @@ function buildItems(
     testid: "pulse-level",
   });
 
-  // Momentum.
-  const burst = state.fastFlags.momentumBurst;
+  // Last closed bar. candleStats.direction is ONE close compared with the
+  // previous close — not momentum — so the tile says exactly that. A momentum
+  // burst (wide-range bar) is coloured by the burst bar's OWN body, never by
+  // the close-to-close direction (a wide bearish bar can still close above the
+  // prior close).
+  const flags = state.fastFlags;
+  const burst = flags.populated && flags.momentumBurst;
+  const closeVsPrior =
+    state.candleStats.direction === "unknown"
+      ? "No prior close"
+      : `${titleCase(state.candleStats.direction)} vs prior close`;
+  const bar = state.latestClosedCandle;
+  const barTone: ChartMarketSentenceTone =
+    bar && bar.close > bar.open ? "bullish" : bar && bar.close < bar.open ? "bearish" : "neutral";
+  const barBody =
+    barTone === "bullish" ? "bullish" : barTone === "bearish" ? "bearish" : "no clear body";
   items.push({
-    label: "Momentum",
-    value: burst
-      ? "Burst"
-      : state.candleStats.direction === "flat"
-        ? "Flat"
-        : titleCase(state.candleStats.direction),
-    tone: burst
-      ? state.candleStats.direction === "down"
-        ? "bearish"
-        : "bullish"
-      : "neutral",
+    label: "Last bar",
+    value: burst ? `Wide-range bar · ${barBody}` : closeVsPrior,
+    tone: burst ? barTone : "neutral",
     testid: "pulse-momentum",
+    title: !flags.populated
+      ? "Last closed bar's close compared with the previous close. Not enough closed bars to check for a wide-range (burst) bar."
+      : burst
+        ? `The last closed bar's range is well above the recent average; coloured by that bar's own body (${barBody}). ${closeVsPrior}.`
+        : "Last closed bar's close compared with the previous close — one bar, not a momentum measure.",
   });
 
   // Risk — reuse the deterministic risk sentence tone.
@@ -276,6 +289,7 @@ export function ChartPulse({ state }: { state: ChartState | null }) {
               key={it.testid}
               className={`rounded border ${tc.border} ${tc.bg} px-2 py-1`}
               data-testid={it.testid}
+              title={it.title}
             >
               <div className="text-[9px] uppercase tracking-wide text-zinc-500">
                 {it.label}
