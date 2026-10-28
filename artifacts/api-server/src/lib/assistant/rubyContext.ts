@@ -435,8 +435,9 @@ export async function buildRubyContext(
         hasTrades: true,
         count: s.count,
         closedCount: s.closedCount,
-        winRate: s.winRate,
-        netPnl: s.totalNetPnl,
+        // null (no closed trade with a result) is left out, never sent as 0.
+        winRate: s.winRate ?? undefined,
+        netPnl: s.totalNetPnl ?? undefined,
       };
     }
   } catch {
