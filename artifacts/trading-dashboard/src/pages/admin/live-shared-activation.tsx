@@ -30,6 +30,11 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<ApiResp<T>>
 // ── readiness response shape (subset we render) ──────────────────────────
 type ReadinessResp = {
   ok: boolean;
+  // The route's catch branch answers ok:true, degraded:true with fail-closed
+  // placeholders (stops "engaged", platformMode UNKNOWN, no users): not
+  // observations, so the page treats it as "could not be loaded".
+  degraded?: boolean;
+  message?: string;
   globalSwitches: {
     serverMasterSwitchEnabled: boolean; // effective = env AND db-armed
     serverMasterSwitchEnvOnly: boolean; // ARX_LIVE_BROKER_EXECUTION_ENABLED=true
@@ -129,15 +134,24 @@ type TabKey = "readiness" | "wizard" | "bridge" | "users" | "commands" | "smoke"
 export default function AdminLiveSharedActivationPage() {
   const [tab, setTab] = useState<TabKey>("readiness");
   const [readiness, setReadiness] = useState<ReadinessResp | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
+  // A failed, refused or degraded load drops the earlier readiness (it is no
+  // longer current) and says it could not be loaded.
   async function loadReadiness() {
     setBusy(true); setActionMsg(null);
     try {
       const r = await apiJson<ReadinessResp>("/api/admin/live-shared/readiness");
-      if (r.ok) setReadiness(r);
-      else setActionMsg(`readiness error: ${r.error ?? "unknown"}`);
+      if (r.ok && r.degraded !== true) { setReadiness(r); setLoadError(null); }
+      else {
+        setReadiness(null);
+        setLoadError(r.degraded === true ? (r.message ?? "the server could not evaluate readiness") : (r.error ?? "the server did not answer ok"));
+      }
+    } catch (e) {
+      setReadiness(null);
+      setLoadError(e instanceof Error ? e.message : "request failed");
     } finally { setBusy(false); }
   }
   useEffect(() => { void loadReadiness(); }, []);
@@ -150,13 +164,13 @@ export default function AdminLiveSharedActivationPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <ShieldAlert className="h-6 w-6 text-amber-400" /> Live Shared — Activation
         </h1>
-        <ModeChip readiness={readiness} />
+        <ModeChip readiness={readiness} loadError={loadError} />
         <Button size="sm" variant="outline" className="ml-auto" disabled={busy} onClick={loadReadiness} data-testid="act-refresh">
           <RefreshCw className={`h-3 w-3 mr-1 ${busy ? "animate-spin" : ""}`} /> Refresh
         </Button>
       </div>
 
-      <ActivationStateBanner readiness={readiness} />
+      <ActivationStateBanner readiness={readiness} loadError={loadError} />
 
       {actionMsg && (
         <Alert className="py-2" data-testid="act-msg">
@@ -178,21 +192,21 @@ export default function AdminLiveSharedActivationPage() {
         </TabsList>
 
         <TabsContent value="readiness" className="mt-3 space-y-3">
-          <ReadinessCards readiness={readiness} />
-          <ChecklistCard items={checklist} />
+          <ReadinessCards readiness={readiness} loadError={loadError} />
+          {readiness && <ChecklistCard items={checklist} />}
           <ArmExecutionCard readiness={readiness} onAfter={loadReadiness} />
         </TabsContent>
 
         <TabsContent value="wizard" className="mt-3">
-          <ActivationWizard readiness={readiness} checklist={checklist} onAfterStep={loadReadiness} />
+          <ActivationWizard readiness={readiness} loadError={loadError} checklist={checklist} onAfterStep={loadReadiness} />
         </TabsContent>
 
         <TabsContent value="bridge" className="mt-3">
-          <BridgeTab readiness={readiness} onAction={loadReadiness} setActionMsg={setActionMsg} />
+          <BridgeTab readiness={readiness} loadError={loadError} onAction={loadReadiness} setActionMsg={setActionMsg} />
         </TabsContent>
 
         <TabsContent value="users" className="mt-3">
-          <UsersTab readiness={readiness} />
+          <UsersTab readiness={readiness} loadError={loadError} />
         </TabsContent>
 
         <TabsContent value="commands" className="mt-3">
@@ -212,7 +226,7 @@ export default function AdminLiveSharedActivationPage() {
         </TabsContent>
 
         <TabsContent value="audit" className="mt-3">
-          <AuditTab readiness={readiness} />
+          <AuditTab readiness={readiness} loadError={loadError} />
         </TabsContent>
       </Tabs>
     </div>
@@ -222,6 +236,14 @@ export default function AdminLiveSharedActivationPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
+
+// What a readiness-backed section shows while it has no readiness: still
+// loading, or the load failed (never an empty or default state).
+function ReadinessPending({ loadError }: { loadError: string | null }) {
+  return loadError
+    ? <div className="text-xs text-rose-300">Readiness could not be loaded — nothing here is checked.</div>
+    : <div className="text-xs text-muted-foreground italic">loading…</div>;
+}
 
 // Compute the four mutually-exclusive arm states from readiness.
 // IMPORTANT: serverMasterSwitchEnabled (env AND db-armed) is NOT itself a
@@ -256,7 +278,19 @@ function computeArmState(r: ReadinessResp | null): { state: ArmState; preArmFail
 
 // 4-state activation banner. LOCKED (red), READY_TO_ARM (amber),
 // LIVE_BROKER_EXECUTION_ENABLED (emerald), KILL_SWITCH_ACTIVE (rose).
-function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null }) {
+function ActivationStateBanner({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness && loadError) {
+    return (
+      <Alert className="py-3 border-rose-500/60 bg-rose-500/10" data-testid="banner-load-failed">
+        <AlertCircle className="h-4 w-4 text-rose-400" />
+        <AlertTitle className="text-sm text-rose-200">READINESS COULD NOT BE LOADED — STATE UNKNOWN</AlertTitle>
+        <AlertDescription className="text-xs text-rose-200/80">
+          Arm state, pre-arm checks and both install-wide stops are unknown, so nothing on this page
+          is shown as current. Reason: <code className="font-mono">{loadError}</code>
+        </AlertDescription>
+      </Alert>
+    );
+  }
   if (!readiness) return null;
   const { state, preArmFailures } = computeArmState(readiness);
   if (state === "KILL_SWITCH_ACTIVE") {
@@ -319,7 +353,8 @@ function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null 
   );
 }
 
-function ModeChip({ readiness }: { readiness: ReadinessResp | null }) {
+function ModeChip({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness && loadError) return <Badge variant="outline" className="border-rose-500/40 text-rose-300" data-testid="mode-chip-not-loaded">NOT LOADED</Badge>;
   if (!readiness) return <Badge variant="outline">loading…</Badge>;
   const { state } = computeArmState(readiness);
   if (state === "KILL_SWITCH_ACTIVE") {
@@ -346,8 +381,8 @@ function row(label: string, value: React.ReactNode, ok?: boolean) {
   );
 }
 
-function ReadinessCards({ readiness }: { readiness: ReadinessResp | null }) {
-  if (!readiness) return <div className="text-xs text-muted-foreground italic">loading…</div>;
+function ReadinessCards({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness) return <ReadinessPending loadError={loadError} />;
   const g = readiness.globalSwitches;
   const b = readiness.liveAccount.pinnedBridge;
   const fresh = isHeartbeatAgeSecondsFresh(b?.heartbeatAgeSeconds);
@@ -614,13 +649,13 @@ const WIZARD_STEPS: Array<{ id: string; label: string; checks: string[] }> = [
 ];
 
 function ActivationWizard({
-  readiness, checklist, onAfterStep,
-}: { readiness: ReadinessResp | null; checklist: Check[]; onAfterStep: () => void }) {
+  readiness, loadError, checklist, onAfterStep,
+}: { readiness: ReadinessResp | null; loadError: string | null; checklist: Check[]; onAfterStep: () => void }) {
   const [phrase, setPhrase] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
-  if (!readiness) return <div className="text-xs text-muted-foreground italic">loading…</div>;
+  if (!readiness) return <ReadinessPending loadError={loadError} />;
   const required = readiness.requiredConfirmationPhrases.activate;
   const phraseOk = phrase === required;
   const detectedAccount = readiness.liveAccount.detectedAccountNumber;
@@ -772,8 +807,8 @@ function ActivationWizard({
 
 // ── Bridge / EA tab ──────────────────────────────────────────────────────────
 function BridgeTab({
-  readiness, onAction, setActionMsg,
-}: { readiness: ReadinessResp | null; onAction: () => void; setActionMsg: (s: string | null) => void }) {
+  readiness, loadError, onAction, setActionMsg,
+}: { readiness: ReadinessResp | null; loadError: string | null; onAction: () => void; setActionMsg: (s: string | null) => void }) {
   const [busy, setBusy] = useState(false);
   async function refresh() {
     setBusy(true); setActionMsg(null);
@@ -789,7 +824,8 @@ function BridgeTab({
       <CardTitle className="text-sm">Bridge / EA</CardTitle>
       <Button size="sm" variant="outline" disabled={busy} onClick={refresh} data-testid="bridge-test-connection">Refresh snapshot</Button>
     </CardHeader><CardContent className="space-y-1">
-      {!b && <Alert className="py-2"><AlertTitle className="text-xs">No master bridge pinned.</AlertTitle></Alert>}
+      {!readiness && <ReadinessPending loadError={loadError} />}
+      {readiness && !b && <Alert className="py-2"><AlertTitle className="text-xs">No master bridge pinned.</AlertTitle></Alert>}
       {b && (
         <>
           {row("Connection ID", `#${b.connectionId}`)}
@@ -807,8 +843,8 @@ function BridgeTab({
 }
 
 // ── Users tab ────────────────────────────────────────────────────────────────
-function UsersTab({ readiness }: { readiness: ReadinessResp | null }) {
-  if (!readiness) return <div className="text-xs text-muted-foreground italic">loading…</div>;
+function UsersTab({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness) return <ReadinessPending loadError={loadError} />;
   const rows = readiness.approvedUsers.rows;
   return (
     <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Approved users ({readiness.approvedUsers.approvedCount} / active {readiness.approvedUsers.activeCount})</CardTitle></CardHeader><CardContent>
@@ -999,7 +1035,8 @@ function MicroTestTab({ readiness }: { readiness: ReadinessResp | null }) {
   }
 
   const canExec = validated != null && phrase === REQUIRED_QUEUE && sl !== "" && Number(lot) <= 0.01;
-  const noApproved = (readiness?.approvedUsers.approvedCount ?? 0) === 0;
+  // Only a loaded readiness can say there are no approved users.
+  const noApproved = readiness != null && readiness.approvedUsers.approvedCount === 0;
 
   return (
     <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Micro live test (operator runs as self)</CardTitle></CardHeader><CardContent className="space-y-2">
@@ -1062,8 +1099,8 @@ function RollbackTab({ onDone, setActionMsg }: { onDone: () => void; setActionMs
 }
 
 // ── Audit tab ────────────────────────────────────────────────────────────────
-function AuditTab({ readiness }: { readiness: ReadinessResp | null }) {
-  if (!readiness) return <div className="text-xs text-muted-foreground italic">loading…</div>;
+function AuditTab({ readiness, loadError }: { readiness: ReadinessResp | null; loadError: string | null }) {
+  if (!readiness) return <ReadinessPending loadError={loadError} />;
   return (
     <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Recent admin actions (last 50)</CardTitle></CardHeader><CardContent>
       <ul className="space-y-1 text-xs">

@@ -264,3 +264,58 @@ describe("live shared activation — identity confirmation copy", () => {
     expect(card.textContent).toMatch(/server refuses Arm/);
   });
 });
+
+describe("live shared activation — readiness that could not be loaded", () => {
+  // The readiness route's catch branch answers ok:true, degraded:true with
+  // fail-closed placeholders (both stops "engaged", platformMode UNKNOWN, no
+  // users). Those are not observations and must not be shown as state.
+  function degraded(): Json {
+    return {
+      ...readiness({
+        globalSwitches: {
+          platformMode: "UNKNOWN", emergencyKillSwitch: true, platformStopEngaged: true,
+          platformStopSources: ["platform_emergency_stop", "safety_core_kill_switch"],
+        },
+        liveAccount: { pinnedBridge: null, detector: { detected: false, primaryReason: "READINESS_DEGRADED" } },
+      }),
+      degraded: true,
+      degradedReason: "READINESS_QUERY_FAILED",
+      message: "Live Shared readiness data is temporarily unavailable. Live dispatch remains blocked while readiness cannot be evaluated.",
+      approvedUsers: { approvedCount: 0, activeCount: 0, rows: [] },
+    };
+  }
+
+  it("a degraded readiness is 'could not be loaded', not an engaged kill switch or zero users", async () => {
+    await renderWith(degraded());
+    const banner = screen.getByTestId("banner-load-failed");
+    expect(banner.textContent).toMatch(/could not be loaded/i);
+    expect(banner.textContent).toMatch(/temporarily unavailable/);
+    expect(screen.queryByTestId("banner-kill-switch")).toBeNull();
+    expect(screen.queryByText(/safety-core kill switch is engaged/)).toBeNull();
+    expect(screen.queryByTestId("checklist-badge")).toBeNull();
+    expect(screen.queryByText("loading…")).toBeNull();
+    expect(screen.getAllByText(/Readiness could not be loaded/).length).toBeGreaterThan(0);
+  });
+
+  it("a refused readiness request is 'could not be loaded', and does not keep the earlier state as current", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => readiness() } as Response)
+      .mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({ ok: false, error: "ADMIN_REQUIRED" }) } as Response);
+    vi.stubGlobal("fetch", fetcher);
+    render(<AdminLiveSharedActivationPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByTestId("banner-ready-to-arm")).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByTestId("act-refresh")); });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.queryByTestId("banner-ready-to-arm")).toBeNull();
+    expect(screen.getByTestId("banner-load-failed").textContent).toMatch(/ADMIN_REQUIRED/);
+  });
+
+  it("a network failure is 'could not be loaded'", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+    render(<AdminLiveSharedActivationPage />);
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    expect(screen.getByTestId("banner-load-failed").textContent).toMatch(/network down/);
+    expect(screen.getByTestId("mode-chip-not-loaded")).toBeTruthy();
+  });
+});
