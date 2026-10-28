@@ -112,6 +112,31 @@ function SectionCard({ title, icon: Icon, action, children, className }: { title
   );
 }
 
+// What each userApprovalStatus the server sends (meAccountShell) means here.
+// NOT_REQUIRED is the demo route: no live approval applies, so it is neither
+// "awaiting approval" nor a reason in itself. Suspended / risk-locked /
+// disabled accounts are named as such, not as merely "not approved".
+// Live execution is only ever shown as available for APPROVED.
+function approvalStatusInfo(status: string | null): { label: string; tone: Tone; execution: string; reason: string } {
+  switch (status) {
+    case "NOT_REQUIRED":
+      return { label: "Not required", tone: "muted", execution: "Demo route",
+        reason: "your account is on the demo route (your own MT5 account is not a live account, or the platform is not in live mode), so live approval does not apply" };
+    case "NOT_APPROVED":
+      return { label: "Not approved", tone: "warning", execution: "Awaiting approval", reason: "your account is not approved for live execution yet" };
+    case "PENDING":
+      return { label: "Pending", tone: "warning", execution: "Awaiting approval", reason: "approval is pending" };
+    case "SUSPENDED":
+      return { label: "Suspended", tone: "danger", execution: "Suspended", reason: "your live access is suspended" };
+    case "RISK_LOCKED":
+      return { label: "Risk locked", tone: "danger", execution: "Risk locked", reason: "your account is risk-locked" };
+    case "DISABLED":
+      return { label: "Disabled", tone: "danger", execution: "Disabled", reason: "your live access is disabled" };
+    default:
+      return { label: "Unknown", tone: "warning", execution: "Not confirmed", reason: "your approval status could not be confirmed" };
+  }
+}
+
 export default function MT5BridgePage() {
   const qc = useQueryClient();
   const mode = useTradingMode();
@@ -168,14 +193,13 @@ export default function MT5BridgePage() {
   const blockedReason = mode.cleanBlockedReason ?? null;
   const liveArmed = mode.isLiveArmed === true;
   const approved = approvalStatus === "APPROVED";
-  const approvalTone: Tone = frozen ? "danger" : blockedReason ? "warning" : approved ? "success" : "warning";
+  const approvalInfo = approvalStatusInfo(approvalStatus);
+  const approvalTone: Tone = frozen ? "danger" : blockedReason ? "warning" : approved ? "success" : approvalInfo.tone;
   const approvalLabel = frozen ? "Frozen"
     : !env ? "Unknown"
     : blockedReason ? "Blocked"
     : approved ? "Approved"
-    : approvalStatus === "NOT_REQUIRED" ? "Not required"
-    : approvalStatus === "PENDING" ? "Pending"
-    : "Not approved";
+    : approvalInfo.label;
   const liveAccessLabel = liveArmed ? "Enabled" : mode.isLiveShared ? "Live Shared · not armed" : "Not enabled";
 
   const routeLabel = (mode as any).cleanModeLabel ?? ((mode as any).isLiveShared ? "Live Shared MT5" : (mode as any).isDemo ? "Demo" : "Analysis Only");
@@ -186,7 +210,7 @@ export default function MT5BridgePage() {
   const executionAvailable = bridgeHealthy && approved && liveArmed && !blockedReason;
   const executionLabel = !bridgeHealthy ? (statusUnreadable && !frozen ? "Not confirmed" : "Paused")
     : blockedReason ? "Blocked"
-    : !approved ? "Awaiting approval"
+    : !approved ? approvalInfo.execution
     : !liveArmed ? "Not armed"
     : "Available";
   // This page reads only the bridge heartbeat. It does not measure the price
@@ -236,7 +260,7 @@ export default function MT5BridgePage() {
     : bridgeUp
       ? (executionAvailable
           ? `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected and your account mode has live execution armed with no block reported. Server safety gates still check every order. If it disconnects, ARX pauses live execution until the connection returns.`
-          : `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected, but live execution is not available on your account: ${blockedReason ? `blocked (${blockedReason})` : !approved ? `approval is ${approvalLabel.toLowerCase()}` : !liveArmed ? "live execution is not armed" : "not confirmed"}. You can still analyze the market and prepare ideas.`)
+          : `Your trading route is reporting: ${onShared ? "the shared MT5 bridge" : "your own MT5 EA"} is connected, but live execution is not available on your account: ${blockedReason ? `blocked (${blockedReason})` : !approved ? approvalInfo.reason : !liveArmed ? "live execution is not armed" : "not confirmed"}. You can still analyze the market and prepare ideas.`)
       : `${bridgeCopy} Live execution is paused until the bridge reports in. You can still analyze the market and prepare ideas.`;
 
   const activity: { time: string; event: string; tone: Tone; chip: string }[] = [];

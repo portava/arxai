@@ -60,3 +60,44 @@ describe("mt5-bridge access truth", () => {
     expect(tile("Access")).toMatch(/Approved/);
   });
 });
+
+// meAccountShell sends userApprovalStatus NOT_REQUIRED for the demo route
+// (own MT5 account not live, or platform not in live mode). The page called
+// that "Awaiting approval" on Execution / Order Routing and gave "approval is
+// not required" as the reason live execution is off; SUSPENDED / RISK_LOCKED /
+// DISABLED all read as a plain "Not approved".
+describe("mt5-bridge approval statuses the server actually sends", () => {
+  const base = { isLoading: false, isFrozen: false, isLiveShared: false, isLiveArmed: false, liveExecutionArmed: false, cleanBlockedReason: null, cleanModeLabel: "Demo" };
+
+  it("NOT_REQUIRED (demo route) is not 'Awaiting approval' and approval is not given as the reason", () => {
+    mode = { ...base, envelope: { userApprovalStatus: "NOT_REQUIRED", liveExecutionArmed: false } };
+    const { container } = render(<MT5BridgePage />);
+    const text = container.textContent ?? "";
+    expect(tile("Execution")).not.toMatch(/Awaiting approval/);
+    expect(tile("Order Routing")).not.toMatch(/Awaiting approval/);
+    expect(text).not.toMatch(/approval is not required/i);
+    expect(text).toMatch(/demo route/i);
+    expect(tile("Access")).toMatch(/Not required/);
+  });
+
+  it("a suspended account says suspended, not merely not approved", () => {
+    mode = { ...base, envelope: { userApprovalStatus: "SUSPENDED", liveExecutionArmed: false } };
+    render(<MT5BridgePage />);
+    expect(tile("Access")).toMatch(/Suspended/);
+    expect(tile("Access")).not.toMatch(/Not approved/);
+    expect(tile("Execution")).toMatch(/Suspended/);
+  });
+
+  it("a risk-locked account says risk locked", () => {
+    mode = { ...base, envelope: { userApprovalStatus: "RISK_LOCKED", liveExecutionArmed: false } };
+    render(<MT5BridgePage />);
+    expect(tile("Access")).toMatch(/Risk locked/);
+    expect(tile("Execution")).not.toMatch(/Awaiting approval/);
+  });
+
+  it("a disabled account says disabled", () => {
+    mode = { ...base, envelope: { userApprovalStatus: "DISABLED", liveExecutionArmed: false } };
+    render(<MT5BridgePage />);
+    expect(tile("Access")).toMatch(/Disabled/);
+  });
+});
