@@ -10,13 +10,41 @@ import { LiveSharedTradeTicket } from "@/components/live/LiveSharedTradeTicket";
 import { useMasterLiveAccess } from "@/components/live/MasterLiveAccessGuard";
 import { useAssistantName } from "@/lib/assistant-name";
 
+// Every level / score is null when the feed did not supply it — never 0
+// shown or submitted as if it were a measured value. There is no risk score:
+// the selected-market read does not compute one, so none is shown or sent.
 type TradeCard = {
   symbol: string; direction: "BUY" | "SELL"; setup: string;
-  entry: number; stopLoss: number; takeProfit: number;
-  confidenceScore: number; riskScore: number; riskRewardRatio: number;
+  entry: number | null; stopLoss: number | null; takeProfit: number | null;
+  confidenceScore: number | null; riskRewardRatio: number | null;
   reasonForTrade: string; invalidationReason: string;
   marketCondition: string;
+  /** Plain-English source of the read (e.g. "MT5 broker feed"), or null when not stated. */
+  sourceLabel: string | null;
+  /** Close time of the newest closed bar the read used, or null when unknown. */
+  dataAsOf: string | null;
+  /** When the live read stops holding without a new analysis, or null when unknown. */
+  liveClaimExpiresAt: string | null;
+  /** Why the levels were withheld, or null when they were shown. */
+  levelsWithheldReason: string | null;
+  riskWarnings: string[];
 };
+
+function positiveOrNull(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function fmtLevel(v: number | null): string {
+  return v == null ? "Not provided" : String(v);
+}
+
+function fmtUtc(iso: string | null): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+}
 
 // Display label → real symbol the Market Data Router understands.
 const SYMBOLS: { label: string; value: string; tv: string }[] = [
@@ -42,7 +70,9 @@ async function jget(url: string, init?: RequestInit) {
 
 // Map the real selected-market snapshot → trade card. Returns a FeedState so
 // NEUTRAL/WAIT and unavailable feeds produce honest states, never a fake setup.
-function snapshotToState(snap: any): FeedState {
+// Downgrade-only: a directional bias is shown only when the server says the
+// read is LIVE_CONFIRMED; anything it did not supply stays null.
+export function snapshotToState(snap: any): FeedState {
   if (!snap || snap.ok !== true) {
     const reason = snap?.reason === "SYMBOL_NOT_SUPPORTED"
       ? "This symbol isn't available on the live feed yet."
@@ -53,30 +83,45 @@ function snapshotToState(snap: any): FeedState {
   }
   const h = snap.highlights ?? {};
   const bias = h.bias as "BUY" | "SELL" | "NEUTRAL" | "WAIT";
+  if (snap.dataState !== "LIVE_CONFIRMED") {
+    return {
+      kind: "nodata",
+      reason: snap.readWithheldReason
+        || "The feed did not confirm this market's data is live, so no setup is shown.",
+    };
+  }
   if (bias !== "BUY" && bias !== "SELL") {
     return {
       kind: "neutral",
       reason: snap.explanation?.why || "No clear directional edge right now — wait for confirmation.",
     };
   }
-  const entry = (h.entryZone?.low != null && h.entryZone?.high != null)
-    ? Number(((h.entryZone.low + h.entryZone.high) / 2).toFixed(5))
-    : 0;
+  const low = positiveOrNull(h.entryZone?.low);
+  const high = positiveOrNull(h.entryZone?.high);
+  const entry = low != null && high != null ? Number(((low + high) / 2).toFixed(5)) : null;
+  const conf = typeof h.confidenceScore === "number" && Number.isFinite(h.confidenceScore)
+    ? Math.round(h.confidenceScore) : null;
   return {
     kind: "card",
     card: {
       symbol: snap.symbol,
       direction: bias,
-      setup: h.trendState ? `Trend: ${h.trendState}` : "Live setup",
+      setup: h.trendState ? `Trend: ${h.trendState}` : "Setup type not stated by the feed",
       entry,
-      stopLoss: Number(h.suggestedStop ?? 0),
-      takeProfit: Number(h.suggestedTakeProfit ?? 0),
-      confidenceScore: Number(h.confidenceScore ?? 0),
-      riskScore: 0,
-      riskRewardRatio: Number(h.riskRewardRatio ?? 0),
+      stopLoss: positiveOrNull(h.suggestedStop),
+      takeProfit: positiveOrNull(h.suggestedTakeProfit),
+      confidenceScore: conf,
+      riskRewardRatio: positiveOrNull(h.riskRewardRatio),
       reasonForTrade: snap.explanation?.why || "",
       invalidationReason: snap.explanation?.invalidation || "",
-      marketCondition: h.volatilityLabel || h.trendState || "—",
+      marketCondition: h.volatilityLabel || h.trendState || "Not stated",
+      sourceLabel: typeof snap.dataSourceLabel === "string" && snap.dataSourceLabel ? snap.dataSourceLabel : null,
+      dataAsOf: typeof snap.dataAsOf === "string" ? snap.dataAsOf : null,
+      liveClaimExpiresAt: typeof snap.liveClaimExpiresAt === "string" ? snap.liveClaimExpiresAt : null,
+      levelsWithheldReason: snap.levelsWithheld === true || entry == null
+        ? (snap.levelsWithheldReason || "The feed did not supply entry, stop and target levels.")
+        : null,
+      riskWarnings: Array.isArray(h.riskWarnings) ? h.riskWarnings.filter((w: unknown) => typeof w === "string") : [],
     },
   };
 }
@@ -149,7 +194,8 @@ export default function LiveAiAssistPage() {
       body: JSON.stringify({
         source: "AI_ASSIST", symbol: card.symbol, direction: card.direction, orderType: "MARKET",
         lotSize: 0.01, entryPrice: card.entry, stopLoss: card.stopLoss, takeProfit: card.takeProfit,
-        confidenceScore: card.confidenceScore, riskScore: card.riskScore,
+        // null = not supplied by the feed; no risk score is computed, so none is sent.
+        confidenceScore: card.confidenceScore, riskScore: null,
         riskRewardRatio: card.riskRewardRatio,
         reasonForTrade: card.reasonForTrade, invalidationReason: card.invalidationReason,
         marketCondition: card.marketCondition,
@@ -221,15 +267,27 @@ export default function LiveAiAssistPage() {
             <Card className="border-blue-500/30">
               <CardHeader><CardTitle className="text-sm flex justify-between">{card.symbol} <Badge>{card.direction}</Badge></CardTitle><CardDescription>{card.setup}</CardDescription></CardHeader>
               <CardContent className="space-y-2 text-xs">
+                <p className="text-[11px] text-muted-foreground" data-testid="ai-card-provenance">
+                  Source: {card.sourceLabel ?? "not stated by the feed"} · data as of {fmtUtc(card.dataAsOf) ?? "an unknown time"}
+                  {fmtUtc(card.liveClaimExpiresAt) ? ` · live read holds until ${fmtUtc(card.liveClaimExpiresAt)}; analyze again after that` : ""}
+                </p>
                 <div className="grid grid-cols-3 gap-1 font-mono">
-                  <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">Entry</div>{card.entry || "—"}</div>
-                  <div className="rounded border border-red-500/30 p-1.5"><div className="text-muted-foreground">SL</div>{card.stopLoss || "—"}</div>
-                  <div className="rounded border border-emerald-500/30 p-1.5"><div className="text-muted-foreground">TP</div>{card.takeProfit || "—"}</div>
+                  <div className="rounded border border-border p-1.5" data-testid="ai-card-entry"><div className="text-muted-foreground">Entry</div>{fmtLevel(card.entry)}</div>
+                  <div className="rounded border border-red-500/30 p-1.5" data-testid="ai-card-sl"><div className="text-muted-foreground">SL</div>{fmtLevel(card.stopLoss)}</div>
+                  <div className="rounded border border-emerald-500/30 p-1.5" data-testid="ai-card-tp"><div className="text-muted-foreground">TP</div>{fmtLevel(card.takeProfit)}</div>
                 </div>
+                {card.levelsWithheldReason && (
+                  <p className="text-[11px] text-amber-300" data-testid="ai-card-levels-withheld">Levels withheld: {card.levelsWithheldReason}</p>
+                )}
                 <div className="grid grid-cols-2 gap-1">
-                  <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">Confidence</div>{card.confidenceScore}</div>
-                  <div className="rounded border border-border p-1.5"><div className="text-muted-foreground">R:R</div>{card.riskRewardRatio || "—"}</div>
+                  <div className="rounded border border-border p-1.5" data-testid="ai-card-confidence"><div className="text-muted-foreground">Confidence</div>{card.confidenceScore == null ? "Not provided" : `${card.confidenceScore}/100`}</div>
+                  <div className="rounded border border-border p-1.5" data-testid="ai-card-rr"><div className="text-muted-foreground">R:R</div>{card.riskRewardRatio == null ? "Not provided" : card.riskRewardRatio}</div>
                 </div>
+                {card.riskWarnings.length > 0 && (
+                  <ul className="text-[11px] text-red-300" data-testid="ai-card-risk-warnings">
+                    {card.riskWarnings.map((w) => <li key={w}>{w}</li>)}
+                  </ul>
+                )}
                 {card.reasonForTrade && <p><span className="text-muted-foreground">Reason:</span> {card.reasonForTrade}</p>}
                 {card.invalidationReason && <p><span className="text-muted-foreground">Invalidation:</span> {card.invalidationReason}</p>}
                 <p><span className="text-muted-foreground">Market:</span> {card.marketCondition}</p>
