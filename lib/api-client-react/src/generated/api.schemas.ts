@@ -7077,6 +7077,10 @@ export interface AdminBrokerMirrorBridge {
   freshnessAsOf?: string | null;
   openPositionCount: number;
   floatingPlTotal: number;
+  /** False when the EA never reported a balance for this bridge; accountBalance is then 0 and is not a measured value. */
+  accountBalanceReported?: boolean;
+  /** False when the EA never reported equity for this bridge; accountEquity is then 0 and is not a measured value. */
+  accountEquityReported?: boolean;
 }
 
 export interface AdminBrokerMirrorPosition {

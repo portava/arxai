@@ -21673,6 +21673,18 @@ export const GetAdminFundBookBrokerMirrorResponse = zod.object({
       freshnessAsOf: zod.string().nullish(),
       openPositionCount: zod.number(),
       floatingPlTotal: zod.number(),
+      accountBalanceReported: zod
+        .boolean()
+        .optional()
+        .describe(
+          "False when the EA never reported a balance for this bridge; accountBalance is then 0 and is not a measured value.",
+        ),
+      accountEquityReported: zod
+        .boolean()
+        .optional()
+        .describe(
+          "False when the EA never reported equity for this bridge; accountEquity is then 0 and is not a measured value.",
+        ),
     }),
   ),
   openPositions: zod.array(
