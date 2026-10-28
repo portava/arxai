@@ -8,13 +8,19 @@ Release validation measured long tasks of up to about 185 ms on the admin self-t
 
 ## Method
 
-The real `AutonomousExecutionTab` and `OverviewTab` are mounted inside the real `PageTabs`, with the real generated query hooks. Only `window.fetch` is stubbed: one execution row, no kill switches. The harness is built with `vite build` in production mode. Chromium runs at 4× CPU throttle, and the harness switches Overview → Autonomous Execution 8–12 times per run. Three instruments:
+The real `AutonomousExecutionTab` and `OverviewTab` are mounted inside the real `PageTabs`, with the real generated query hooks. Only `window.fetch` is stubbed: one execution row, no kill switches.
+
+The harness is not the full page, and differs from it in these ways:
+
+- There is no app shell or layout (sidebar, header, route wrapper). The tabs render alone in a `<main>`.
+- The stubbed data is one execution row and no kill switches, so the table and the kill-switch list are near their smallest.
+- The harness's `QueryClient` was created with `retry: false` only. The real app's global `QueryClient` (`App.tsx`) sets `retry: 1`, `staleTime: 30_000`, `gcTime: 5 min`, `refetchOnWindowFocus: false`, `refetchOnReconnect: "always"` and `refetchIntervalInBackground: false`. Item 4 below and the re-profile under it account for this difference. The harness is built with `vite build` in production mode. Chromium runs at 4× CPU throttle, and the harness switches Overview → Autonomous Execution 8–12 times per run. Three instruments:
 
 1. **Long tasks:** a `PerformanceObserver` records them for each switch.
 2. **Trace and CPU profile:** a Chrome devtools timeline trace and a CDP CPU profile (100 µs sampling) are taken on an unminified build. Each switch window is delimited by a named marker function and `performance.mark`.
 3. **Per-component render time:** a React profiling build (`react-dom/profiling`) reports each commit's self render time through the DevTools global hook, by component and by tab section.
 
-Scratch harness (not part of the repository): `/home/claude/val/r3-scanner/tabs/`. It contains `profile.cjs`, `trace.py`, `longtask.py`, `fibers.cjs` and `build.mjs`.
+Scratch harness (not part of the repository): `/home/claude/val/r3-scanner/tabs/`. It contains `profile.cjs`, `trace.py`, `longtask.py`, `fibers.cjs` and `build.mjs`. `build.mjs --app-query-defaults` builds it with the app's `QueryClient` defaults; `profile2.cjs` also records the reads made in each switch window (results `qd-*.json`).
 
 The container was shared with other jobs, with a 1-minute load average of 1.4–3 on 4 CPUs. The absolute numbers below are noisy. The breakdown is consistent across runs.
 
@@ -42,11 +48,20 @@ Each switch back takes 73–232 ms of long tasks at 4× (median per-switch maxim
    | `Alert` | 3.7 ms |
 
    Two more commits follow, both in `KillSwitchesSection`: 23.6 ms (96 new fibers: `SelectCollectionItemSlot`, `PopperProvider`, `<style>`) and 9.5 ms (`SelectItem`, `SelectItemText`). They come from the single Radix `Select` in `KillSwitchesSection`. When closed, it still renders its items into a detached fragment, and it does so in follow-up commits. Averaged over 6 switches, that section is 35 of about 55 ms of render self-time per switch.
-4. **Every remount refetches.** The executions query (`refetchInterval` 8 s) and the kill-switch query have no `staleTime`, so each mount starts new reads. Their `isFetching` transitions cause further commits after the switch. This is a smaller cost; the long task comes before the responses.
+4. **Refetch on remount came from the harness, not the app.** In the first profiles, each switch back started two reads (executions and kill switches), and their `isFetching` transitions caused further commits. That happened because the harness's `QueryClient` lacked the app's defaults. Neither query overrides the app's global `staleTime: 30_000`, and the executions query polls every 8 s while mounted. So in the real app, a return within 30 s of the last read does not refetch on mount.
+
+   A re-profile with the app's `QueryClient` defaults in the harness confirms this. Everything else was unchanged: production build, 4× CPU, 12 switches per run, the two variants alternated, 1-minute load about 1–1.6.
+
+   | Harness `QueryClient` | Reads per switch back | Median of per-switch max long task (switch back), run 1 / run 2 | Largest |
+   | --- | --- | --- | --- |
+   | `retry: false` only (first profiles) | 2 | 121.5 / 112 ms | 168 ms |
+   | App defaults (`App.tsx`) | 0 | 125 / 111 ms | 249 ms |
+
+   The stall does not change. It comes from the remount (items 1–3), not from the reads.
 
 ### Variant experiments
 
-These were built from the same sources with a Vite alias swapped in the scratch harness. Nothing in the repository was changed. Each variant ran 2 × 12 switches at 4×.
+These were built from the same sources with a Vite alias swapped in the scratch harness. Nothing in the repository was changed. Each variant ran 2 × 12 switches at 4×. They used the first harness, with the `retry: false` `QueryClient`. The re-profile under item 4 shows that this difference does not change the stall.
 
 | Variant | Median of per-switch max long task (switch back) |
 | --- | --- |
@@ -63,7 +78,7 @@ None of these is both small and clearly free of behaviour change, so no fix is i
 - **A. Keep visited tabs mounted** (an opt-in `PageTabs` prop using `forceMount`, hiding inactive content). This has the largest measured effect. But hidden tabs keep their 8-second polling (executions, live decisions, volatility matrix), timers and memory, and form state persists across switches. That includes a typed kill-switch reason, which the owner would have to accept.
 - **B. Make tab activation a transition** (`startTransition` or `useDeferredValue` for the content). The trigger highlight stays immediate while the mount is time-sliced. Commit, style and layout of the new subtree remain synchronous, so this needs `PageTabs` to decouple the trigger and content values. It is medium-sized and affects every page that uses `PageTabs`.
 - **C. A lighter kill-switch scope picker** (for example, a native `<select>`, or a Radix `Select` whose items render only when open). The profiler attributes about 35 ms of throttled render per switch to it, but the probe did not show a measurable improvement. It also changes UI and accessibility behaviour, so it needs its own tests and review.
-- **D. `staleTime` for the executions query** (it polls every 8 s regardless), so a remount does not refetch immediately. This removes the extra commits and reads. The kill-switch state should stay fresh on display, so it is not a candidate for the same change.
+- ~~**D. `staleTime` for the executions query.**~~ Withdrawn. The app's global `staleTime: 30_000` already applies to both queries, so a remount within 30 s does not refetch. The re-profile under item 4 shows no reads on return and no change in the stall.
 
 ## Next step
 
