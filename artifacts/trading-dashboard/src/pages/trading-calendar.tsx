@@ -13,13 +13,22 @@ interface CalendarDay {
   wins: number;
   losses: number;
   win_rate: number;
-  day_rating: "A" | "B" | "C" | "D" | "F";
+  /** "—" = not rated (the live route computes no day rating). */
+  day_rating: "A" | "B" | "C" | "D" | "F" | "—";
   day_status: "WINNING_DAY" | "LOSING_DAY" | "BREAK_EVEN_DAY" | "NO_TRADE_DAY";
   debriefs_created: number;
   learning_events_created: number;
   symbols_traded: string[];
 }
-interface CalendarResp { calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number } }
+interface CalendarResp {
+  calendar: { month: string; days: CalendarDay[]; total_pnl: number; total_trades: number; winning_days: number; losing_days: number; no_trade_days: number };
+  /**
+   * The server answered for a LIVE_SHARED account without reading any trades
+   * (an empty, mode-tagged reply). Nothing was looked up, so the page must not
+   * show it as "no trades" or a 0.00 month.
+   */
+  notShownHere?: boolean;
+}
 interface DayDetailResp { day: { date: string; stats: any; trades: any[] } }
 
 function dayColor(d: CalendarDay) {
@@ -33,29 +42,43 @@ function dayColor(d: CalendarDay) {
 
 // Map the LIVE mode-aware route ({ days:[{date,totalPnl,tradesCount,winRate,...}] })
 // into the CalendarResp shape the existing UI renders. No paper data in LIVE mode.
-function mapLiveToCalendarResp(month: string, live: { days?: any[]; isEmpty?: boolean } | undefined): CalendarResp {
+// The route lists only days that had closed trades over the whole from..to
+// range it read, so every other day of the month is a no-trade day. It
+// computes no day rating, so live days are shown as not rated ("—").
+function mapLiveToCalendarResp(
+  month: string,
+  live: { days?: any[]; isEmpty?: boolean; currentAccountMode?: string } | undefined,
+): CalendarResp {
   const src = Array.isArray(live?.days) ? live!.days : [];
-  const inMonth = src.filter((d) => typeof d.date === "string" && d.date.startsWith(month));
-  const days: CalendarDay[] = inMonth.map((d) => {
+  const byDate = new Map<string, any>();
+  for (const d of src) {
+    if (typeof d?.date === "string" && d.date.startsWith(month)) byDate.set(d.date, d);
+  }
+  const [y, m] = month.split("-").map(Number);
+  const daysInMonth = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 0;
+  const days: CalendarDay[] = Array.from({ length: daysInMonth }, (_, i) => {
+    const date = `${month}-${String(i + 1).padStart(2, "0")}`;
+    const d = byDate.get(date) ?? {};
     const pnl = Number(d.totalPnl ?? 0);
     const trades = Number(d.tradesCount ?? 0);
     const status: CalendarDay["day_status"] =
       trades === 0 ? "NO_TRADE_DAY" : pnl > 0 ? "WINNING_DAY" : pnl < 0 ? "LOSING_DAY" : "BREAK_EVEN_DAY";
     return {
-      date: d.date,
+      date,
       net_pnl: pnl,
       total_trades: trades,
       wins: Number(d.wins ?? 0),
       losses: Number(d.losses ?? 0),
       win_rate: Number(d.winRate ?? 0),
-      day_rating: "C" as const,
+      day_rating: "—" as const,
       day_status: status,
       debriefs_created: 0,
       learning_events_created: 0,
       symbols_traded: [],
     };
-  }).sort((a, b) => a.date.localeCompare(b.date));
+  });
   return {
+    notShownHere: live?.currentAccountMode === "LIVE_SHARED",
     calendar: {
       month,
       days,
@@ -74,12 +97,15 @@ export default function TradingCalendarPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // Read the live/account mode so the calendar shows LIVE trades in LIVE mode
-  // and paper trades otherwise — never mixed.
-  const mode = useQuery<{ tradingMode: string }>({
+  // and paper trades otherwise — never mixed. GET /api/me/trading/mode answers
+  // { ok, envelope: { tradingMode }, perUserTradingMode: { mode } }; the
+  // envelope's tradingMode is the same value the live calendar route uses to
+  // pick live vs paper rows (mePerformanceCalendar.ts loadClosedRows).
+  const mode = useQuery<{ ok?: boolean; envelope?: { tradingMode?: string } }>({
     queryKey: ["trading-mode-for-calendar"],
     queryFn: async () => (await fetch("/api/me/trading/mode", { credentials: "include" })).json(),
   });
-  const isLive = mode.data?.tradingMode === "LIVE";
+  const isLive = mode.data?.envelope?.tradingMode === "LIVE";
 
   const cal = useQuery<CalendarResp>({
     queryKey: ["trading-calendar", month, isLive],
@@ -94,9 +120,11 @@ export default function TradingCalendarPage() {
         const live = await (await fetch(`/api/me/performance-calendar?from=${from}&to=${to}`, { credentials: "include" })).json();
         return mapLiveToCalendarResp(month, live);
       }
-      return (await fetch(`/api/performance/calendar?month=${month}`)).json();
+      const paper = await (await fetch(`/api/performance/calendar?month=${month}`)).json();
+      return { ...paper, notShownHere: paper?.currentAccountMode === "LIVE_SHARED" };
     },
   });
+  const notShownHere = cal.data?.notShownHere === true;
 
   const day = useQuery<DayDetailResp>({
     queryKey: ["trading-calendar-day", selectedDate, isLive],
@@ -146,7 +174,9 @@ export default function TradingCalendarPage() {
             <CalendarDays className="text-primary" /> Trading Calendar
           </h2>
           <div className="text-muted-foreground flex items-center gap-2 flex-wrap">
-            {isLive ? "Daily P&L and win rate from your live trades." : "Daily P&L, win rate, and AI activity from your demo trades."}
+            {notShownHere
+              ? "Live trades on your shared account are not shown on this calendar."
+              : isLive ? "Daily P&L and win rate from your live trades." : "Daily P&L, win rate, and AI activity from your demo trades."}
           </div>
         </div>
         <div className="flex gap-2">
@@ -166,7 +196,16 @@ export default function TradingCalendarPage() {
         </div>
       </div>
 
-      {cal.data && (
+      {notShownHere && (
+        <Card className="border-border" data-testid="calendar-not-shown">
+          <CardContent className="pt-4 text-sm text-muted-foreground">
+            This calendar does not read live trades on a shared account, so it has no P&amp;L to show for {month}.
+            Check Live Trades or your broker statement for your live results.
+          </CardContent>
+        </Card>
+      )}
+
+      {cal.data && !notShownHere && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card><CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Net P&L (month)</CardTitle></CardHeader>
             <CardContent><div className={`text-xl font-bold ${cal.data.calendar.total_pnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{cal.data.calendar.total_pnl.toFixed(2)}</div></CardContent></Card>
@@ -179,7 +218,7 @@ export default function TradingCalendarPage() {
         </div>
       )}
 
-      {isLive && cal.data && cal.data.calendar.total_trades === 0 && (
+      {isLive && cal.data && !notShownHere && cal.data.calendar.total_trades === 0 && (
         <Card className="border-border">
           <CardContent className="pt-4 text-sm text-muted-foreground">
             No live trades recorded yet for {month}. Live P&amp;L will appear here once you place and close live trades.
@@ -187,7 +226,7 @@ export default function TradingCalendarPage() {
         </Card>
       )}
 
-      <Card>
+      {!notShownHere && <Card>
         <CardHeader><CardTitle>{month}</CardTitle></CardHeader>
         <CardContent>
           {cal.isLoading ? (
@@ -208,7 +247,7 @@ export default function TradingCalendarPage() {
                   >
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-semibold">{Number(d.date.slice(8))}</span>
-                      <Badge variant="outline" className="text-[10px] px-1 py-0">{d.day_rating}</Badge>
+                      {d.day_rating !== "—" && <Badge variant="outline" className="text-[10px] px-1 py-0">{d.day_rating}</Badge>}
                     </div>
                     <div className="mt-1 text-sm font-bold flex items-center gap-1">
                       {d.day_status === "WINNING_DAY" && <TrendingUp className="h-3 w-3" />}
@@ -231,7 +270,7 @@ export default function TradingCalendarPage() {
             </>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       {selectedDate && (
         <Card data-testid="day-detail-card">
