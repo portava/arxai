@@ -14,6 +14,8 @@
 // It is driven ONLY by the shared ScannerTruth (the single honest market
 // source) and is mode-aware:
 //   • truth null / still loading  → no warning, no ack (don't nag prematurely)
+//   • truth null + read FAILED    → warn (feed state unknown); demo ack, as for
+//                                   an unavailable feed
 //   • read_only mode              → no warning, no ack (no trade buttons render)
 //   • truth.actionable === true   → no warning, no ack. This INCLUDES the
 //                                   GBPUSD case (genuinely live, but via ARX
@@ -82,12 +84,36 @@ const NONE: TradeAffordance = {
   mayOfferLiveExecutionRequest: false,
 };
 
+/** The feed read's request state, when the caller knows it. */
+export interface TradeAffordanceFeedRead {
+  /** The candles/feed request failed — the feed state is unknown, not pending. */
+  isError?: boolean;
+}
+
+export const FEED_UNKNOWN_WARNING_TITLE = "Feed status couldn't be checked";
+export const FEED_UNKNOWN_WARNING_DETAIL =
+  "The market-data request for this symbol failed, so we couldn't confirm whether its prices are current. Any price shown here may not be live.";
+
 export function resolveTradeAffordance(
   truth: ScannerTruth | null,
   tradeMode: TradeAffordanceMode,
+  feedRead?: TradeAffordanceFeedRead,
 ): TradeAffordance {
-  // No resolved truth yet → nothing to say (don't nag prematurely).
-  if (!truth) return NONE;
+  if (!truth) {
+    // A FAILED feed read is not "still loading": the feed state is unknown, so
+    // it gets the same warn (+ demo ack) treatment as an unavailable feed.
+    // Every display ceiling stays closed. read_only renders no trade buttons.
+    if (feedRead?.isError === true && tradeMode !== "read_only") {
+      return {
+        ...NONE,
+        requireAck: tradeMode === "demo",
+        warningTitle: FEED_UNKNOWN_WARNING_TITLE,
+        warningDetail: FEED_UNKNOWN_WARNING_DETAIL,
+      };
+    }
+    // No resolved truth yet → nothing to say (don't nag prematurely).
+    return NONE;
+  }
 
   // The shared read-quality label + trust line are surfaced regardless of mode
   // (read honesty applies even in read-only). The display affordance ceilings,

@@ -224,12 +224,13 @@ export function ScannerTradeModal({
   // explicit acknowledgement; a live one-click stays frictionless but the live
   // ticket carries a non-blocking feed warning. Called unconditionally (before
   // any early return) so hook order stays stable.
-  const { truth: feedTruth } = useScannerTruth(
+  const { truth: feedTruth, isError: feedReadFailed } = useScannerTruth(
     signal.symbol,
     normalizeChartTimeframe(signal.timeframe ?? "5m"),
   );
-  const demoAffordance = resolveTradeAffordance(feedTruth, "demo");
-  const liveAffordance = resolveTradeAffordance(feedTruth, "live");
+  // A failed feed read is an unknown feed, not a pending one → warn + demo ack.
+  const demoAffordance = resolveTradeAffordance(feedTruth, "demo", { isError: feedReadFailed });
+  const liveAffordance = resolveTradeAffordance(feedTruth, "live", { isError: feedReadFailed });
   const liveFeedWarning = liveAffordance.warningTitle
     ? { warningTitle: liveAffordance.warningTitle, warningDetail: liveAffordance.warningDetail }
     : null;
