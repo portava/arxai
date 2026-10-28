@@ -67,6 +67,7 @@ async page => {
     const latestExpected=(await page.evaluate(()=>window.__readFixtureLog())).candleResponses.filter(item=>item.symbol===symbol&&item.timeframe===timeframe).at(-1);
     check(matchesCompletedSeries(current,latestExpected,{symbol,intervalSeconds}),'Full context, canonical and displayed bars match after a rendering opportunity: '+symbol+' '+timeframe);
     check(current.state.canvasIds.length>0&&current.state.bounds.width>0&&current.state.bounds.height>0,'Mounted canvas has dimensions: '+symbol+' '+timeframe);
+    check(await page.locator('#tv-attr-logo').count()===0,'Completed chart renders without a TradingView logo: '+symbol+' '+timeframe);
     return current;
   };
   try {

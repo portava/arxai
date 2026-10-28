@@ -61,6 +61,7 @@ async page => {
     const latest=(await log()).candleResponses.slice(offset).filter(x=>x.symbol===symbol&&x.timeframe===timeframe).at(-1);
     check(completedSeries(current,latest,{symbol,intervalSeconds}),entry.route+': exact context, canonical and displayed bars after two frames: '+symbol+' '+timeframe);
     check(current.state.canvasIds.length>0&&current.state.bounds.width>0&&current.state.bounds.height>0,entry.route+': native canvas is mounted with dimensions');
+    check(await page.locator('#tv-attr-logo').count()===0,entry.route+': completed chart has no TradingView logo');
     entry.snapshots.push({label:symbol+'-'+timeframe,...current});
     return current;
   }
