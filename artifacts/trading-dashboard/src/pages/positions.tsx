@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -119,15 +120,17 @@ export default function PositionsPage() {
             {t === "OPEN" && "Open Simulated"}
             {t === "CLOSED" && "Closed"}
             {t === "INTENT" && "Live Tester Intent"}
-            {t === "MT5" && "Future MT5 Broker"}
+            {t === "MT5" && "MT5 Broker"}
           </Button>
         ))}
       </div>
 
       {tab === "MT5" ? (
-        <div className="rounded-2xl border border-border bg-card p-6 text-sm text-txt-muted">
-          <span className="mr-2 rounded-md border border-ruby/40 bg-ruby/10 px-2 py-0.5 text-xs text-ruby">MT5 deferred</span>
-          Real broker positions route through the MT5 bridge. This panel activates once the bridge is connected.
+        <div data-testid="positions-mt5-panel" className="rounded-2xl border border-border bg-card p-6 text-sm text-txt-muted">
+          <span className="mr-2 rounded-md border border-ruby/40 bg-ruby/10 px-2 py-0.5 text-xs text-ruby">Not on this page</span>
+          This page lists the simulator book only and does not read broker positions, whether or not the MT5 bridge is connected.
+          {" "}MT5-confirmed positions are listed on{" "}
+          <Link href="/my-trades" className="text-primary underline">Open Trades</Link>.
         </div>
       ) : visible.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card p-2">
