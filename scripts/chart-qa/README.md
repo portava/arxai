@@ -78,6 +78,12 @@ canonical-candle identities. It also counts data installation calls, catching
 in-place forming-bar changes. Completion requires actual disclosure geometry and
 association plus unchanged source, OHLC endpoints, timeframe, style, dimensions
 and logical range, followed by another animation frame with the same invariants.
+The expanded subtree uses `display:contents` and has no own box. The witness
+checks descendant controls and their union rectangle; closed means that none of
+those controls has a visible box. It does not mistake a zero-size parent for a
+closed panel. A data-revision change fails this preservation workload, including
+an unrelated source/watchdog refresh: retain and diagnose that trial rather than
+silently excusing it or attributing its cost to the toggle.
 It separately reports second-rAF feedback. This is a rendering-opportunity proxy,
 not a hardware paint timestamp. Full canonical/rendered price arrays are captured
 outside timed actions before/after; all samples, warmups, long tasks and witness

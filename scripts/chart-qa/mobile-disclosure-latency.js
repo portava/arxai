@@ -30,17 +30,32 @@ async outer => {
       if(!a.range || !b.range || Math.abs(a.range.from-b.range.from)>1e-6 || Math.abs(a.range.to-b.range.to)>1e-6)return false;
       return Math.abs(a.bounds.width-b.bounds.width)<.5 && Math.abs(a.bounds.height-b.bounds.height)<.5;
     };
+    function visibleDescendantGeometry(panel) {
+      // Expanded tools use display:contents: their parent has no own box.
+      // Inspect real controls, and union their visible boxes instead.
+      const controls=[...panel.querySelectorAll('button,input,select,textarea,[tabindex],[role="button"]')];
+      const rects=controls.flatMap(control=>{
+        const rect=control.getBoundingClientRect(),style=getComputedStyle(control);
+        return control.getClientRects().length>0 && rect.width>0 && rect.height>0
+          && style.display!=='none' && style.visibility!=='hidden' && style.visibility!=='collapse'
+          && Number(style.opacity)!==0 ? [rect] : [];
+      });
+      if(!rects.length)return {visible:false,totalControls:controls.length,visibleControls:0,bounds:null};
+      const x=Math.min(...rects.map(r=>r.x)),y=Math.min(...rects.map(r=>r.y));
+      const right=Math.max(...rects.map(r=>r.x+r.width)),bottom=Math.max(...rects.map(r=>r.y+r.height));
+      return {visible:true,totalControls:controls.length,visibleControls:rects.length,bounds:{x,y,width:right-x,height:bottom-y}};
+    }
     const witness = arm => {
       const current=window.__arxChartQa?.snapshot();
       const button=document.querySelector('[data-testid="arx-native-chart"] button[aria-label="Chart tools"]');
       const panel=document.querySelector('[data-testid="arx-native-chart"] [data-testid="chart-advanced-tools"]');
       if(!button || !panel)return {pass:false,reason:'controls missing',current};
-      const rect=panel.getBoundingClientRect(),style=getComputedStyle(panel);
-      const visible=panel.getClientRects().length>0 && rect.height>0 && rect.width>0 && style.display!=='none' && style.visibility!=='hidden';
-      if(button.getAttribute('aria-expanded')!==String(arm.expanded) || visible!==arm.expanded)return {pass:false,reason:'disclosure geometry pending',current};
+      const geometry=visibleDescendantGeometry(panel);
+      if(!geometry.totalControls)return {pass:false,reason:'disclosure controls missing',current,geometry};
+      if(button.getAttribute('aria-expanded')!==String(arm.expanded) || geometry.visible!==arm.expanded)return {pass:false,reason:'disclosure geometry pending',current,geometry};
       if(button.getAttribute('aria-controls')!==panel.id || !panel.id)return {pass:false,reason:'disclosure association missing',current};
       if(!preserved(arm.before,current))return {pass:false,reason:'chart/source/range changed',current};
-      return {pass:true,current,panelBounds:{x:rect.x,y:rect.y,width:rect.width,height:rect.height}};
+      return {pass:true,current,geometry};
     };
     window.addEventListener('click',event=>{
       const arm=state.armed;
