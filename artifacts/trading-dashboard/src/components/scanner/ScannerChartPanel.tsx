@@ -2456,6 +2456,7 @@ export function ScannerChartPanel() {
                 coverageDays={deepHistory.coverageDays}
                 depthTargetDays={deepHistory.depthTargetDays}
                 loadedAny={deepHistory.loadedAny}
+                loadError={deepHistory.loadError}
               />
             )}
             {symbolPositions.length > 0 && (
