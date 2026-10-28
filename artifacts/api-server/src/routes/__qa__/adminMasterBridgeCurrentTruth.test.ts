@@ -12,14 +12,19 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { withRouter } from "./_fakeRouteDb.js";
-import type { PlatformSwitches, GlobalTradingConfig } from "../../lib/safety/platformSwitches.js";
+import type { PlatformSwitches, GlobalTradingConfig, PlatformStop } from "../../lib/safety/platformSwitches.js";
 
 type Settings = { switches: PlatformSwitches; config: GlobalTradingConfig | null };
 let settings: Settings;
+let stop: PlatformStop;
 
 const realSwitches = await import("../../lib/safety/platformSwitches.js");
 mock.module("../../lib/safety/platformSwitches.js", {
-  namedExports: { ...realSwitches, loadPlatformSettings: async () => settings },
+  namedExports: {
+    ...realSwitches,
+    loadPlatformSettings: async () => settings,
+    platformStopWith: async () => stop,
+  },
 });
 const realDetector = await import("../../lib/mt5/currentConnectedBridgeDetector.js");
 mock.module("../../lib/mt5/currentConnectedBridgeDetector.js", {
@@ -56,6 +61,8 @@ async function current(): Promise<Record<string, unknown>> {
   return body;
 }
 
+stop = realSwitches.NO_PLATFORM_STOP;
+
 test("shared live and master-bridge live ON are reported ON, with the platform mode and routing", async () => {
   settings = {
     switches: switchesWith(),
@@ -86,4 +93,57 @@ test("unreadable settings are null, not OFF", async () => {
   assert.equal(s["sharedLiveTradingEnabled"], null);
   assert.equal(s["masterBridgeLiveEnabled"], null);
   assert.equal(s["platformMode"], null);
+});
+
+// The page's "ready" badge and env box must not read green while the
+// effective switch (env AND operator arm) is off or a platform stop is
+// engaged. The response carries that execution state.
+const savedEnv = process.env["ARX_LIVE_BROKER_EXECUTION_ENABLED"];
+process.on("exit", () => {
+  if (savedEnv === undefined) delete process.env["ARX_LIVE_BROKER_EXECUTION_ENABLED"];
+  else process.env["ARX_LIVE_BROKER_EXECUTION_ENABLED"] = savedEnv;
+});
+
+function armedSwitches(armed: boolean): PlatformSwitches {
+  return realSwitches.switchesFromRows([
+    { ...realSwitches.DEFAULT_SWITCH_ROW, platformMode: "LIVE", liveBrokerExecutionArmed: armed },
+  ]);
+}
+
+test("env on but not armed: the effective live switch is off", async () => {
+  process.env["ARX_LIVE_BROKER_EXECUTION_ENABLED"] = "true";
+  settings = { switches: armedSwitches(false), config: config({ sharedLiveTradingEnabled: true, masterBridgeLiveEnabled: true }) };
+  stop = realSwitches.NO_PLATFORM_STOP;
+  const body = await current();
+  assert.equal(body["liveBrokerExecutionEnabled"], true, "the env-only field is unchanged");
+  const x = body["liveExecution"] as Record<string, unknown>;
+  assert.equal(x["readable"], true);
+  assert.equal(x["envEnabled"], true);
+  assert.equal(x["operatorArmed"], false);
+  assert.equal(x["effectiveEnabled"], false);
+  assert.equal(x["platformStopEngaged"], false);
+});
+
+test("env on and armed, but the safety-core kill switch is engaged: the stop is reported", async () => {
+  process.env["ARX_LIVE_BROKER_EXECUTION_ENABLED"] = "true";
+  settings = { switches: armedSwitches(true), config: config({}) };
+  stop = realSwitches.platformStopFrom(
+    { readable: true, emergencyStop: { engaged: false, reason: null, engagedAt: null } },
+    { readable: true, engaged: true, reason: "operator halt" },
+  );
+  const x = (await current())["liveExecution"] as Record<string, unknown>;
+  assert.equal(x["effectiveEnabled"], true);
+  assert.equal(x["platformStopEngaged"], true);
+  assert.deepEqual(x["platformStopSources"], ["safety_core_kill_switch"]);
+  assert.match(String(x["platformStopReason"]), /operator halt/);
+});
+
+test("unreadable switches: arm unknown, effective switch off, readable false", async () => {
+  process.env["ARX_LIVE_BROKER_EXECUTION_ENABLED"] = "true";
+  settings = { switches: switchesWith({ readable: false, unreadableReason: "error" }), config: null };
+  stop = realSwitches.NO_PLATFORM_STOP;
+  const x = (await current())["liveExecution"] as Record<string, unknown>;
+  assert.equal(x["readable"], false);
+  assert.equal(x["operatorArmed"], null);
+  assert.equal(x["effectiveEnabled"], false);
 });

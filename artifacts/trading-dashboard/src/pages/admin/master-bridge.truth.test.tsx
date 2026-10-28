@@ -147,3 +147,69 @@ describe("Master Bridge loads that fail say so instead of showing an empty state
     expect(env).not.toContain("will refuse");
   });
 });
+
+describe("Master Bridge 'ready' is a bridge-binding verdict, not execution readiness", () => {
+  const detected = {
+    detected: true,
+    primaryReason: undefined,
+    bridge: {
+      bridgeId: 41, brokerName: "Broker", accountNumberMasked: "••••1234", eaVersion: "1.50",
+      heartbeatAgeSec: 2, accountType: "live", mode: "LIVE", readOnlyMode: false,
+      enableLiveExecution: true, enableDemoExecution: false, terminalConnected: true,
+      algoTradingAllowed: true, maxLiveLot: 0.1,
+    },
+    liveBrokerExecutionEnabled: true,
+  };
+  const pass = { body: { ok: true, verdict: { decision: "PASS", boundBridgeId: 41 } } };
+  const exec = (over: Record<string, unknown> = {}) => ({
+    readable: true, envEnabled: true, operatorArmed: true, effectiveEnabled: true,
+    platformStopEngaged: false, platformStopSources: [], platformStopReason: null, ...over,
+  });
+
+  it("detector OK + gate PASS + env on but NOT armed: no green 'ready', no green env box", async () => {
+    await renderPage({
+      "/api/admin/master-bridge/current": { body: current({ ...detected, liveExecution: exec({ operatorArmed: false, effectiveEnabled: false }) }) },
+      "/api/admin/master-bridge/gate": pass,
+    });
+    const badge = screen.getByTestId("badge-main-bridge-binding");
+    expect(badge.textContent).toContain("live dispatch blocked");
+    expect(badge.textContent).not.toMatch(/^ready$/);
+    const env = screen.getByTestId("kv-arx-live-broker-execution-enabled");
+    expect(env.className).not.toContain("text-success");
+    expect(env.textContent).toContain("not armed by an operator");
+    expect(env.textContent).toContain("OFF");
+    expect(screen.getByTestId("text-live-dispatch-blockers").textContent).toContain("not armed by an operator");
+  });
+
+  it("an engaged safety-core kill switch degrades the badge and is named", async () => {
+    await renderPage({
+      "/api/admin/master-bridge/current": {
+        body: current({ ...detected, liveExecution: exec({ platformStopEngaged: true, platformStopSources: ["safety_core_kill_switch"] }) }),
+      },
+      "/api/admin/master-bridge/gate": pass,
+    });
+    expect(screen.getByTestId("badge-main-bridge-binding").textContent).toContain("live dispatch blocked");
+    expect(screen.getByTestId("text-live-dispatch-blockers").textContent).toContain("safety-core kill switch engaged");
+  });
+
+  it("an older response without the execution state never shows green", async () => {
+    await renderPage({
+      "/api/admin/master-bridge/current": { body: current({ ...detected }) },
+      "/api/admin/master-bridge/gate": pass,
+    });
+    expect(screen.getByTestId("badge-main-bridge-binding").textContent).toContain("live dispatch blocked");
+    const env = screen.getByTestId("kv-arx-live-broker-execution-enabled");
+    expect(env.className).not.toContain("text-success");
+    expect(env.textContent).toContain("could not be read");
+  });
+
+  it("binding PASS with env on, armed and no stop: green 'bridge binding ready' (wording limited to binding)", async () => {
+    await renderPage({
+      "/api/admin/master-bridge/current": { body: current({ ...detected, liveExecution: exec() }) },
+      "/api/admin/master-bridge/gate": pass,
+    });
+    expect(screen.getByTestId("badge-main-bridge-binding").textContent).toBe("bridge binding ready");
+    expect(screen.queryByTestId("text-live-dispatch-blockers")).toBeNull();
+    expect(screen.getByTestId("kv-arx-live-broker-execution-enabled").textContent).toContain("effective switch (env AND arm) is ON");
+  });
+});

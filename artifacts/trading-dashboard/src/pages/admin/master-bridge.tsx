@@ -46,7 +46,45 @@ type MainBridge = {
   };
   latestHint?: MainBridge["bridge"];
   masterLiveSettings?: MasterLiveSettings;
+  liveExecution?: LiveExecutionState;
 };
+// The execution switches a master live order also has to clear, as
+// GET /admin/master-bridge/current read them: the effective switch is the
+// server env AND the operator arm; either install-wide stop refuses new live
+// orders. readable:false = could not be read (treated as blocked).
+type LiveExecutionState = {
+  readable: boolean;
+  envEnabled: boolean;
+  operatorArmed: boolean | null;
+  effectiveEnabled: boolean;
+  platformStopEngaged: boolean;
+  platformStopSources: string[];
+  platformStopReason: string | null;
+};
+const STOP_SOURCE_LABEL: Record<string, string> = {
+  platform_emergency_stop: "platform emergency stop",
+  safety_core_kill_switch: "safety-core kill switch",
+};
+/** Why live dispatch is refused regardless of the bridge, in plain words ([] = none of these). */
+export function liveDispatchBlockers(main: Pick<MainBridge, "liveBrokerExecutionEnabled" | "liveExecution"> | null): string[] {
+  if (!main) return ["the live execution switches could not be read"];
+  const x = main.liveExecution;
+  if (!x) {
+    return main.liveBrokerExecutionEnabled === false
+      ? ["the server switch ARX_LIVE_BROKER_EXECUTION_ENABLED is off"]
+      : ["the operator arm and platform stops were not reported"];
+  }
+  const out: string[] = [];
+  if (!x.readable) out.push("the live execution switches could not be read");
+  if (!x.envEnabled) out.push("the server switch ARX_LIVE_BROKER_EXECUTION_ENABLED is off");
+  if (x.operatorArmed === false) out.push("live execution is not armed by an operator");
+  if (x.platformStopEngaged) {
+    const names = x.platformStopSources.map((s) => STOP_SOURCE_LABEL[s] ?? s);
+    out.push(`${names.length ? names.join(" and ") : "a platform stop"} engaged`);
+  }
+  if (!out.length && !x.effectiveEnabled) out.push("the effective live execution switch is off");
+  return out;
+}
 // The stored master-live settings as GET /admin/master-bridge/current read
 // them. readable:false (or a failed load) means they could not be read — the
 // page then says so instead of asserting live is off.
@@ -128,15 +166,29 @@ function MainBridgeCurrentConnectedCard({
     } finally { setBusy(false); }
   }
   const b = main?.bridge ?? main?.latestHint ?? null;
-  const ready = main?.detected && gate?.verdict.decision === "PASS";
+  // The detector + master gate verdict is a bridge-binding verdict only. It
+  // says nothing about the server switch, the operator arm or the stops, so
+  // "binding ready" is green only when none of those refuses live dispatch.
+  const bindingReady = main?.detected === true && gate?.verdict.decision === "PASS";
+  const blockers = liveDispatchBlockers(main);
   return (
     <Card className="border border-primary/40 bg-primary/10" data-testid="card-main-bridge-current-connected">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-primary">
           <Plug className="w-5 h-5" /> Main Bridge: Current Connected Bridge
-          {ready
-            ? <Badge className="ml-2 bg-success/20 text-success"><ShieldCheck className="w-3 h-3 mr-1" />ready</Badge>
-            : <Badge variant="destructive" className="ml-2"><AlertTriangle className="w-3 h-3 mr-1" />not ready</Badge>}
+          {bindingReady && blockers.length === 0 ? (
+            <Badge className="ml-2 bg-success/20 text-success" data-testid="badge-main-bridge-binding">
+              <ShieldCheck className="w-3 h-3 mr-1" />bridge binding ready
+            </Badge>
+          ) : bindingReady ? (
+            <Badge className="ml-2 bg-warning/20 text-warning" data-testid="badge-main-bridge-binding">
+              <AlertTriangle className="w-3 h-3 mr-1" />bridge bound · live dispatch blocked
+            </Badge>
+          ) : (
+            <Badge variant="destructive" className="ml-2" data-testid="badge-main-bridge-binding">
+              <AlertTriangle className="w-3 h-3 mr-1" />bridge binding not ready
+            </Badge>
+          )}
         </CardTitle>
         <CardDescription>
           The freshest REAL-mode EA bridge meeting every readiness criterion
@@ -145,6 +197,9 @@ function MainBridgeCurrentConnectedCard({
           The dispatch pipeline binds every master live command to this exact
           bridge id; the EA reporting back must match or the result is
           rejected with <code className="font-mono">BRIDGE_BINDING_MISMATCH</code>.
+          The badge covers bridge selection and binding only; every live order
+          still has to pass the server switch, the operator arm, the platform
+          stops and the full live gate set.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
@@ -159,7 +214,7 @@ function MainBridgeCurrentConnectedCard({
           </div>
         ) : (
         <div
-          className={`rounded-md border px-3 py-2 text-[12px] ${main.liveBrokerExecutionEnabled
+          className={`rounded-md border px-3 py-2 text-[12px] ${main.liveBrokerExecutionEnabled && main.liveExecution?.readable === true && main.liveExecution.effectiveEnabled
             ? "border-success/40 bg-success/10 text-success"
             : "border-warning/40 bg-warning/10 text-warning"}`}
           data-testid="kv-arx-live-broker-execution-enabled"
@@ -170,10 +225,21 @@ function MainBridgeCurrentConnectedCard({
           <span className="font-mono">
             {main.liveBrokerExecutionEnabled ? "true" : "false"}
           </span>
-          {!main.liveBrokerExecutionEnabled && (
+          {!main.liveBrokerExecutionEnabled ? (
             <span className="ml-2">— live dispatch will refuse with <span className="font-mono">LIVE_BROKER_EXECUTION_DISABLED</span> regardless of bridge state.</span>
+          ) : !main.liveExecution || !main.liveExecution.readable || main.liveExecution.operatorArmed == null ? (
+            <span className="ml-2">(server env permits live). The operator arm could not be read, so the effective switch (env AND arm) is unknown — treat live dispatch as refused.</span>
+          ) : !main.liveExecution.effectiveEnabled ? (
+            <span className="ml-2">(server env permits live), but live execution is not armed by an operator. The effective switch (env AND arm) is OFF — live dispatch will refuse with <span className="font-mono">LIVE_BROKER_EXECUTION_DISABLED</span>.</span>
+          ) : (
+            <span className="ml-2">and armed by an operator: the effective switch (env AND arm) is ON. Every other live gate still applies.</span>
           )}
         </div>
+        )}
+        {main && blockers.length > 0 && (
+          <div className="text-[12px] text-warning" data-testid="text-live-dispatch-blockers">
+            Live dispatch is refused whatever the bridge state: {blockers.join("; ")}.
+          </div>
         )}
         {b ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
