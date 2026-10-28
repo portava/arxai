@@ -124,6 +124,12 @@ export default function MarketHealthPage() {
 
   // The ONE honest feed source — the same hook the scanner and chart consume.
   const { truth, feedStatus, isLoading, isError, refetch } = useScannerTruth(symbol, tf);
+  // The raw feed status can still say clean/live after the resolved truth has
+  // judged the newest bar stale or delayed (its freshness budget is tighter).
+  // The badge sits beside that verdict, so it is only ever downgraded to match.
+  const badgeFeedStatus = feedStatus && truth && (truth.candles.status === "stale" || truth.candles.status === "delayed")
+    ? { ...feedStatus, isLive: false, stale: feedStatus.stale || truth.candles.status === "stale" }
+    : feedStatus;
 
   const loadStatus = useCallback(async () => {
     try {
@@ -255,7 +261,7 @@ export default function MarketHealthPage() {
                 <Badge className={verdictColor(truth.strip.data.verdict)} data-testid="badge-data-verdict">
                   {truth.strip.data.verdict}
                 </Badge>
-                <FeedConfidenceBadge feedStatus={feedStatus} />
+                <FeedConfidenceBadge feedStatus={badgeFeedStatus} />
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-xs">
