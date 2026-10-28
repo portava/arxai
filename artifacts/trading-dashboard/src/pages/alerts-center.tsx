@@ -82,12 +82,26 @@ async function postAction(kind: ActionKind, body: Record<string, unknown>): Prom
 
 export default function AlertsCenter() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [openCount, setOpenCount] = useState<number | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<{ alertId: string; message: string } | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   async function load() {
-    const r = await fetch(`/api/alerts/scanner?limit=${LIST_LIMIT}${showAll ? "" : "&unackedOnly=true"}`).then((x) => x.json());
-    setAlerts(r.alerts ?? []);
+    try {
+      const x = await fetch(`/api/alerts/scanner?limit=${LIST_LIMIT}${showAll ? "" : "&unackedOnly=true"}`);
+      if (!x.ok) throw new Error(`HTTP ${x.status}`);
+      const r = (await x.json()) as { alerts?: unknown; count?: unknown };
+      if (!Array.isArray(r.alerts)) throw new Error("response had no alert list");
+      setAlerts(r.alerts as Alert[]);
+      setOpenCount(typeof r.count === "number" && Number.isFinite(r.count) ? r.count : null);
+      setLoadError(null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "unknown error");
+    } finally {
+      setLoaded(true);
+    }
   }
 
   async function act(kind: ActionKind, alertId: string, extra: Record<string, unknown> = {}) {
@@ -109,14 +123,36 @@ export default function AlertsCenter() {
           </p>
         </div>
         <Badge variant="outline">SHARED · ANALYSIS ONLY</Badge>
-        <Badge>{alerts.length}</Badge>
+        <Badge data-testid="alerts-open-count" title="Open (not acknowledged) alerts in the server's list">
+          {openCount == null ? "open count unknown" : openCount >= LIST_LIMIT ? `at least ${LIST_LIMIT} open` : `${openCount} open`}
+        </Badge>
         <Button size="sm" variant="outline" onClick={() => setShowAll((s) => !s)}>
           {showAll ? "Show open only" : "Show all"}
         </Button>
       </div>
 
+      {loadError && (
+        <Card><CardContent className="p-4 text-sm text-rose-400" data-testid="alerts-load-error">
+          The alert list could not be loaded ({loadError}).{" "}
+          {loaded && alerts.length > 0 ? "The alerts below are from the last successful load and may be out of date." : "Whether any alerts exist is unknown."}
+        </CardContent></Card>
+      )}
+
+      {loaded && !loadError && alerts.length > 0 && (
+        <p className="text-xs text-muted-foreground" data-testid="alerts-shown-count">
+          {alerts.length >= LIST_LIMIT
+            ? `Showing the newest ${alerts.length} ${showAll ? "open and acknowledged" : "open"} alerts; older ones are not listed.`
+            : `Showing ${alerts.length} ${showAll ? "open and acknowledged" : "open"} alert${alerts.length === 1 ? "" : "s"}.`}
+        </p>
+      )}
+
       {alerts.length === 0
-        ? <Card><CardContent className="p-6 text-sm text-muted-foreground">No alerts yet — start the scanner to generate hot-setup alerts.</CardContent></Card>
+        ? (loadError || !loaded ? null : (
+          <Card><CardContent className="p-6 text-sm text-muted-foreground" data-testid="alerts-empty">
+            {showAll ? "No alerts" : "No open alerts"} in the server's list right now. This list is held in server memory only:
+            it is cleared whenever the API server restarts, so earlier alerts may have existed and are no longer shown.
+          </CardContent></Card>
+        ))
         : <div className="space-y-2">
             {alerts.map((a) => {
               const { ageMs, superseded } = alertAge(a, Date.now());
