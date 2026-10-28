@@ -42,9 +42,17 @@ type ReadinessResp = {
     accountRoutingMode: string;
     sharedLiveTradingEnabled: boolean;
     masterBridgeLiveEnabled: boolean;
+    // The platform emergency stop only (POST /admin/trading/reset-kill
+    // releases it).
     emergencyKillSwitch: boolean;
     killSwitchEngagedAt: string | null;
     killSwitchReason: string | null;
+    // Either install-wide stop (platform emergency stop OR safety-core kill
+    // switch), as the Risk Governor reads them (platformStopReport()). Missing
+    // fields are "not reported" and never read as released.
+    platformStopEngaged?: boolean;
+    platformStopSources?: PlatformStopSource[];
+    platformStopReason?: string | null;
   };
   liveAccount: {
     pinnedBridge: null | {
@@ -79,6 +87,21 @@ type ReadinessResp = {
   constants: { MIN_LIVE_EA_VERSION: string; LIVE_HEARTBEAT_MAX_AGE_SEC: number };
   requiredConfirmationPhrases: { activate: string; killSwitch: string };
 };
+
+type PlatformStopSource = "platform_emergency_stop" | "safety_core_kill_switch";
+
+// Which install-wide stops the readiness response says are engaged. The
+// platform emergency stop is engaged when either field says so; the
+// safety-core kill switch only appears in platformStopSources. `reported` is
+// false when the server did not send the combined fields.
+function installWideStops(g: ReadinessResp["globalSwitches"]) {
+  const sources = Array.isArray(g.platformStopSources) ? g.platformStopSources : [];
+  const reported = typeof g.platformStopEngaged === "boolean";
+  const emergencyStop = g.emergencyKillSwitch === true || sources.includes("platform_emergency_stop");
+  const safetyCore = sources.includes("safety_core_kill_switch");
+  const engaged = emergencyStop || safetyCore || g.platformStopEngaged === true;
+  return { reported, emergencyStop, safetyCore, engaged, released: reported && !engaged };
+}
 
 type SmokeResp = {
   ok: boolean;
@@ -209,7 +232,10 @@ function computeArmState(r: ReadinessResp | null): { state: ArmState; preArmFail
   if (!r) return { state: "LOCKED", preArmFailures: ["loading"] };
   const g = r.globalSwitches;
   const b = r.liveAccount.pinnedBridge;
-  if (g.emergencyKillSwitch === true) return { state: "KILL_SWITCH_ACTIVE", preArmFailures: [] };
+  // Either install-wide stop refuses every new live order at the Risk
+  // Governor, so either one is the kill-switch state.
+  const stops = installWideStops(g);
+  if (stops.engaged) return { state: "KILL_SWITCH_ACTIVE", preArmFailures: [] };
   const fresh = isHeartbeatAgeSecondsFresh(b?.heartbeatAgeSeconds);
   const eaOk = b?.eaVersion != null && b.eaVersion >= r.constants.MIN_LIVE_EA_VERSION;
   const liveAccountType = b?.accountType === "live" || b?.accountType === "real";
@@ -221,6 +247,7 @@ function computeArmState(r: ReadinessResp | null): { state: ArmState; preArmFail
   if (!eaOk) failures.push("EA version < 1.27");
   if (b && b.readOnlyMode !== false) failures.push("EA ReadOnlyMode is not false");
   if (!detected) failures.push("bridge identity (account/broker/server) not detected");
+  if (!stops.reported) failures.push("install-wide stop state not reported (safety-core kill switch unknown)");
   // Pre-arm pass; arm state depends on flag.
   if (failures.length === 0 && g.serverMasterSwitchEnabled) return { state: "LIVE_BROKER_EXECUTION_ENABLED", preArmFailures: [] };
   if (failures.length === 0) return { state: "READY_TO_ARM", preArmFailures: [] };
@@ -233,15 +260,19 @@ function ActivationStateBanner({ readiness }: { readiness: ReadinessResp | null 
   if (!readiness) return null;
   const { state, preArmFailures } = computeArmState(readiness);
   if (state === "KILL_SWITCH_ACTIVE") {
+    const g = readiness.globalSwitches;
+    const stops = installWideStops(g);
+    const reason = g.platformStopReason ?? g.killSwitchReason;
     return (
       <Alert className="py-3 border-rose-500/60 bg-rose-500/10" data-testid="banner-kill-switch">
         <ShieldAlert className="h-4 w-4 text-rose-400" />
         <AlertTitle className="text-sm text-rose-200">KILL SWITCH ACTIVE — LIVE ORDERS BLOCKED</AlertTitle>
         <AlertDescription className="text-xs text-rose-200/80">
-          The emergency kill switch overrides every other state. New live dispatches
-          are refused. Release the kill switch (Wizard step 9) once you've confirmed
-          the cause of the engage event.
-          {readiness.globalSwitches.killSwitchReason && <> Reason: <code className="font-mono">{readiness.globalSwitches.killSwitchReason}</code></>}
+          An install-wide stop is engaged and overrides every other state: the Risk
+          Governor refuses every new live order.
+          {stops.emergencyStop && <> The platform emergency stop is engaged; release it with Wizard step 9 once you've confirmed the cause.</>}
+          {stops.safetyCore && <> The safety-core kill switch is engaged; Wizard step 9 does not release it — release it on the Emergency page.</>}
+          {reason && <> Reason: <code className="font-mono">{reason}</code></>}
         </AlertDescription>
       </Alert>
     );
@@ -318,6 +349,7 @@ function ReadinessCards({ readiness }: { readiness: ReadinessResp | null }) {
   const g = readiness.globalSwitches;
   const b = readiness.liveAccount.pinnedBridge;
   const fresh = isHeartbeatAgeSecondsFresh(b?.heartbeatAgeSeconds);
+  const stops = installWideStops(g);
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Platform</CardTitle></CardHeader><CardContent className="pt-1">
@@ -336,8 +368,13 @@ function ReadinessCards({ readiness }: { readiness: ReadinessResp | null }) {
       </CardContent></Card>
       <Card><CardHeader className="pb-1"><CardTitle className="text-xs">Safety</CardTitle></CardHeader><CardContent className="pt-1">
         {row("Master switch (env)", String(g.serverMasterSwitchEnabled), g.serverMasterSwitchEnabled)}
-        {row("Kill switch engaged", String(g.emergencyKillSwitch), g.emergencyKillSwitch === false)}
+        {row("Platform emergency stop engaged", String(g.emergencyKillSwitch), g.emergencyKillSwitch === false)}
         {row("Kill engaged at", g.killSwitchEngagedAt ?? "—")}
+        <div data-testid="safety-core-kill-row">
+          {row("Safety-core kill switch engaged",
+            stops.reported ? String(stops.safetyCore) : "not reported",
+            stops.reported ? !stops.safetyCore : undefined)}
+        </div>
         {row("Approved users", String(readiness.approvedUsers.approvedCount), readiness.approvedUsers.approvedCount > 0)}
         {row("Active users", String(readiness.approvedUsers.activeCount))}
       </CardContent></Card>
@@ -366,6 +403,12 @@ function useChecklist(r: ReadinessResp | null): Check[] {
     type EaInputs = { terminalConnected?: boolean | null; algoTradingAllowed?: boolean | null; enableLiveExecution?: boolean | null };
     const det = r.liveAccount.detector as { detected: boolean; bridge?: { eaInputs?: EaInputs | null } };
     const ea: EaInputs = (det.detected && det.bridge?.eaInputs) ? det.bridge.eaInputs : {};
+    const stops = installWideStops(g);
+    const engagedStops = [
+      stops.emergencyStop ? "platform emergency stop engaged" : null,
+      stops.safetyCore ? "safety-core kill switch engaged (release on the Emergency page)" : null,
+      !stops.reported ? "safety-core kill switch not reported" : null,
+    ].filter(Boolean).join("; ");
     return [
       { id: "operator_auth", ok: true, label: "Admin/operator authenticated" },
       { id: "bridge_pinned", ok: b != null, label: "Master bridge pinned" },
@@ -381,7 +424,7 @@ function useChecklist(r: ReadinessResp | null): Check[] {
       { id: "shared_live_enabled", ok: g.sharedLiveTradingEnabled, label: "Shared live trading enabled" },
       { id: "platform_mode_live", ok: g.platformMode === "LIVE", label: "Platform mode = LIVE" },
       { id: "live_enabled", ok: g.liveEnabled, label: "liveEnabled flag = true" },
-      { id: "kill_released", ok: g.emergencyKillSwitch === false, label: "Kill switch released" },
+      { id: "kill_released", ok: g.emergencyKillSwitch === false && stops.released, label: "Kill switches released (platform emergency stop and safety-core)", detail: engagedStops || undefined },
       { id: "approved_users", ok: r.approvedUsers.approvedCount > 0, label: "At least one user approved", detail: `${r.approvedUsers.approvedCount} approved` },
       { id: "user_limits", ok: usersWithCaps > 0 && usersWithCaps === r.approvedUsers.approvedCount, label: "Approved users have symbol/lot/risk caps", detail: `${usersWithCaps}/${r.approvedUsers.approvedCount} with caps` },
       { id: "audit", ok: true, label: "Audit logging active" },
@@ -404,7 +447,7 @@ function ChecklistCard({ items }: { items: Check[] }) {
       </CardTitle>
     </CardHeader><CardContent className="space-y-1">
       {items.map(i => (
-        <div key={i.id} className="flex items-center gap-2 text-xs">
+        <div key={i.id} className="flex items-center gap-2 text-xs" data-testid={`check-${i.id}`} data-state={i.ok ? "pass" : "fail"}>
           {i.ok ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> : <XCircle className="h-3 w-3 text-rose-400" />}
           <span>{i.label}</span>
           {i.detail && <span className="text-muted-foreground ml-auto font-mono text-[10px]">{i.detail}</span>}
@@ -493,12 +536,21 @@ function ArmExecutionCard({
             <AlertDescription className="text-[11px] text-rose-200/80">Resolve the failing checks in the checklist above, then return here.</AlertDescription>
           </Alert>
         )}
-        {state === "KILL_SWITCH_ACTIVE" && (
+        {state === "KILL_SWITCH_ACTIVE" && (installWideStops(g).emergencyStop ? (
           <Alert className="py-2 border-rose-500/60 bg-rose-500/10">
-            <AlertTitle className="text-xs text-rose-200">Kill switch active — Arm refused.</AlertTitle>
-            <AlertDescription className="text-[11px] text-rose-200/80">Release the kill switch (Wizard step 9) before arming.</AlertDescription>
+            <AlertTitle className="text-xs text-rose-200">Platform emergency stop engaged — the server refuses Arm.</AlertTitle>
+            <AlertDescription className="text-[11px] text-rose-200/80">Release it (Wizard step 9) before arming.</AlertDescription>
           </Alert>
-        )}
+        ) : (
+          <Alert className="py-2 border-rose-500/60 bg-rose-500/10" data-testid="arm-safety-core-stop">
+            <AlertTitle className="text-xs text-rose-200">Safety-core kill switch engaged — no live order can go through.</AlertTitle>
+            <AlertDescription className="text-[11px] text-rose-200/80">
+              The Risk Governor refuses every new live order while it is engaged. The server's Arm
+              check reads only the platform emergency stop, so it does not refuse Arm for this switch.
+              Release it on the Emergency page.
+            </AlertDescription>
+          </Alert>
+        ))}
         {state === "LIVE_BROKER_EXECUTION_ENABLED" && (
           <Alert className="py-2 border-emerald-500/60 bg-emerald-500/10">
             <AlertTitle className="text-xs text-emerald-200">Currently ARMED.</AlertTitle>
