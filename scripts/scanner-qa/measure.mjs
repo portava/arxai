@@ -27,7 +27,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import { MODES, TARGET_MS, outlierRule, percentile, round1, writeReport } from "./measure-report.mjs";
+import { gitState } from "./git-state.mjs";
+import { MODES, TARGET_MS, buildMismatch, outlierRule, percentile, round1, writeReport } from "./measure-report.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(root, "../..");
@@ -110,24 +111,41 @@ for (const surface of surfaces) {
   let source = original;
   const replace = (from, to) => { if (!source.includes(from)) fail(`${scenarioFiles[surface]} no longer contains ${JSON.stringify(from)}; refusing to measure a changed scenario`, 1); source = source.replaceAll(from, to); };
   replace(RULES[surface], "if (run.eventToSecondAnimationFrameP95Ms > 100) run.p95Breach = true;");
+  // The runner owns the scenario's runs array, so an iteration that fails a later rule (or
+  // times out) still keeps the runs it completed.
+  if (source.split("const runs = [];").length !== 2) fail(`${scenarioFiles[surface]} no longer declares "const runs = [];" exactly once; refusing to measure a changed scenario`, 1);
+  replace("const runs = [];", "const runs = __runs;");
   if (surface === "fixture") replace("/private/tmp/", `${path.join(outDir, "screenshots")}/`);
   scenarios[surface] = { file: path.relative(repo, file), sha256: sha256(original), rule: RULES[surface], source };
 }
-const evaluateScenario = (surface, baseUrl) => {
+const evaluateScenario = (surface, baseUrl, runs) => {
   let source = scenarios[surface].source;
   // responsiveness.js hard-codes the port its document used (4194); point it at this run's server.
   if (surface === "fixture") source = source.replaceAll("http://127.0.0.1:4194", baseUrl);
-  return vm.runInNewContext(`(${source})`, { URL, setTimeout, clearTimeout, SCANNER_QA_APP_BASE_URL: baseUrl });
+  return vm.runInNewContext(`(${source})`, { URL, setTimeout, clearTimeout, SCANNER_QA_APP_BASE_URL: baseUrl, __runs: runs });
+};
+// One scenario run as recorded: every click sample plus the scenario's own figures.
+const recordRun = run => {
+  const samples = run.interactions.map(i => i.nextFrameOpportunityMs);
+  return { cpuRate: run.cpuRate, viewport: run.viewport, clicks: run.clicks, samples,
+    p50: percentile(samples, .5), p95: percentile(samples, .95), p99: percentile(samples, .99), max: samples.length ? Math.max(...samples) : null,
+    scenarioP95: run.eventToSecondAnimationFrameP95Ms, breach: Boolean(run.p95Breach),
+    minRows: run.minRows, emptyTransitions: run.emptyTransitions.length,
+    selection: run.interactions.map(i => ({ symbol: i.symbol, selectedMarker: i.selectedMarker, ...(i.selectionCorrect !== undefined && { selectionCorrect: i.selectionCorrect }) })),
+    ...(run.longTasks && { longTasks: run.longTasks }),
+    ...(run.requests !== undefined && { requests: run.requests, opportunityMapReads: run.opportunityMapReads, cancelledRequests: run.cancelledRequests,
+      settledBeforeClicks: run.settledBeforeClicks, unsettledAfterClicks: run.unsettledAfterClicks }) };
 };
 
 // ---- Git -----------------------------------------------------------------------------------
-const gitInfo = dir => {
-  const git = (...a) => execFileSync("git", a, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).trim();
-  try { return { head: git("rev-parse", "HEAD"), branch: git("rev-parse", "--abbrev-ref", "HEAD"), dirty: git("status", "--porcelain=v1", "--untracked-files=all") !== "" }; }
-  catch (error) { return { head: null, branch: null, dirty: "unknown", error: (error.stderr?.toString() || error.message).trim().split("\n")[0] }; }
+// The same state (and dirtyHash) that prod-server.mjs records in a bundle's build info.
+const gitInfo = async dir => {
+  let branch = null;
+  try { branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).trim(); } catch {}
+  return { ...await gitState(dir), branch };
 };
 for (const c of checkouts) {
-  c.git = gitInfo(c.path);
+  c.git = await gitInfo(c.path);
   // Fixture sources of each checkout, so a comparison shows whether the measured fixture differs.
   c.fixtureSha256 = Object.fromEntries(["main.tsx", "api.ts", "hooks.ts", "server.mjs", "responsiveness.js"].map(f => {
     const p = path.join(c.path, "scripts/scanner-qa", f); return [f, existsSync(p) ? sha256(readFileSync(p)) : null];
@@ -171,6 +189,11 @@ const stopServer = server => new Promise(resolve => {
 });
 let liveServer = null;
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, async () => { await stopServer(liveServer); process.exit(130); });
+// However the runner ends (a crash, a rejected browser call, process.exit), the server it
+// started must not stay up holding its port and lock: SIGTERM lets it release both.
+process.on("exit", () => { if (liveServer && liveServer.proc.exited === undefined) try { liveServer.proc.kill("SIGTERM"); } catch {} });
+for (const event of ["uncaughtException", "unhandledRejection"])
+  process.on(event, error => { console.error(`measure: ${event}: ${error?.stack ?? error}`); process.exit(1); });
 
 // ---- Run -----------------------------------------------------------------------------------
 const browser = await playwright.module.chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
@@ -196,11 +219,18 @@ for (let round = 1; round <= rounds; round++) {
     try {
       server = liveServer = await startServer(surface, mode, checkout, build, `${surface}-${mode}-${checkout.label}-r${round}`);
       if (build) built.add(key);
+      const entry = { surface, mode, checkout: checkout.label, round, url: server.url, command: server.command, buildId: server.buildId, buildInfo: server.buildInfo, log: path.relative(outDir, server.logFile) };
       if (mode === "prod") {
         // The served page must carry the build id the server announced.
         const html = await (await fetch(`${server.url}/`)).text();
         const served = html.match(/<meta name="arx-scanner-qa-build-id" content="([^"]+)">/)?.[1];
         if (served !== server.buildId || server.buildInfo?.buildId !== server.buildId) throw Error(`served build id ${served} does not match ready line ${server.buildId} / build info ${server.buildInfo?.buildId}`);
+        // The bundle must have been built from the checkout as it is now (commit, dirty
+        // state, uncommitted changes, path): otherwise, as with a stale --no-build bundle,
+        // the results would be credited to a commit they were not measured on.
+        entry.checkoutGit = await gitInfo(checkout.path);
+        entry.buildMismatch = buildMismatch(server.buildInfo, { path: checkout.path, git: entry.checkoutGit });
+        if (entry.buildMismatch) { data.servers.push(entry); throw Error(`bundle provenance: ${entry.buildMismatch}; not measured (rebuild without --no-build)`); }
       }
       if (mode === "dev") {
         // A cold Vite dev server optimizes dependencies on first load and then reloads the
@@ -213,7 +243,7 @@ for (let round = 1; round <= rounds; round++) {
         await page.waitForTimeout(2000);
         await context.close();
       }
-      data.servers.push({ surface, mode, checkout: checkout.label, round, url: server.url, command: server.command, buildId: server.buildId, buildInfo: server.buildInfo, log: path.relative(outDir, server.logFile) });
+      data.servers.push(entry);
     } catch (error) {
       data.serverErrors.push({ surface, mode, checkout: checkout.label, round, error: String(error.message ?? error) });
       console.log(`measure: ${key} round ${round}: server failed: ${error.message}`);
@@ -223,37 +253,38 @@ for (let round = 1; round <= rounds; round++) {
     for (let index = 1 - warmup; index <= iterations; index++) {
       const entry = { surface, mode, checkout: checkout.label, round, index, warmup: index < 1, startedAt: new Date().toISOString(), load: { before: os.loadavg(), after: null }, buildId: server.buildId };
       const started = Date.now();
-      const context = await browser.newContext({ serviceWorkers: "block" });
-      const origin = new URL(server.url).origin;
-      // Defence in depth: the scenarios route requests themselves; anything else stays local.
-      await context.route("**/*", route => {
-        const url = new URL(route.request().url());
-        return url.origin === origin || ["data:", "blob:"].includes(url.protocol) ? route.continue() : route.abort("blockedbyclient");
-      });
-      const page = await context.newPage();
-      page.setDefaultTimeout(30_000);
-      let timer;
+      const runs = [];
+      let timer, context, page;
       try {
-        const scenario = evaluateScenario(surface, server.url);
-        const result = await Promise.race([scenario(page), new Promise((_, reject) => { timer = setTimeout(() => reject(Error("scenario timed out after 300 s")), 300_000); })]);
-        entry.runs = result.runs.map(run => {
-          const samples = run.interactions.map(i => i.nextFrameOpportunityMs);
-          return { cpuRate: run.cpuRate, viewport: run.viewport, clicks: run.clicks, samples,
-            p50: percentile(samples, .5), p95: percentile(samples, .95), p99: percentile(samples, .99), max: Math.max(...samples),
-            scenarioP95: run.eventToSecondAnimationFrameP95Ms, breach: Boolean(run.p95Breach),
-            minRows: run.minRows, emptyTransitions: run.emptyTransitions.length,
-            selection: run.interactions.map(i => ({ symbol: i.symbol, selectedMarker: i.selectedMarker, ...(i.selectionCorrect !== undefined && { selectionCorrect: i.selectionCorrect }) })),
-            ...(run.longTasks && { longTasks: run.longTasks }),
-            ...(run.requests !== undefined && { requests: run.requests, opportunityMapReads: run.opportunityMapReads, cancelledRequests: run.cancelledRequests, unsettledAfterClicks: run.unsettledAfterClicks }) };
+        context = await browser.newContext({ serviceWorkers: "block" });
+        const origin = new URL(server.url).origin;
+        // Defence in depth: the scenarios route requests themselves; anything else stays local.
+        await context.route("**/*", route => {
+          const url = new URL(route.request().url());
+          return url.origin === origin || ["data:", "blob:"].includes(url.protocol) ? route.continue() : route.abort("blockedbyclient");
         });
+        page = await context.newPage();
+        page.setDefaultTimeout(30_000);
+        const scenario = evaluateScenario(surface, server.url, runs);
+        const result = await Promise.race([scenario(page), new Promise((_, reject) => { timer = setTimeout(() => reject(Error("scenario timed out after 300 s")), 300_000); })]);
+        entry.runs = result.runs.map(recordRun);
         if (result.unknownEndpoints) entry.unknownEndpoints = result.unknownEndpoints;
+        if (result.partialModels) entry.partialModels = result.partialModels;
         if (result.blocked) entry.blocked = result.blocked;
         if (server.proc.exited !== undefined) throw Error(`server exited (${server.proc.exited}) during the scenario`);
       } catch (error) {
         entry.error = String(error.message ?? error).slice(0, 2000);
+        // Keep what was measured: the completed runs and, if a run was cut short, the
+        // clicks it had recorded so far (both scenarios run 1x, then 4x).
+        entry.partialRuns = runs.map(recordRun);
+        if (page && runs.length < 2) {
+          const speed = await Promise.race([page.evaluate(() => window.__speed ?? null), new Promise(resolve => setTimeout(resolve, 5000, null))]).catch(() => null);
+          if (speed?.interactions?.length) entry.partialRuns.push({ ...recordRun({ ...speed, cpuRate: [1, 4][runs.length], clicks: speed.interactions.length }), inProgress: true });
+        }
+        delete entry.runs;
       } finally {
         clearTimeout(timer);
-        await context.close().catch(() => {});
+        await context?.close().catch(() => {});
       }
       entry.durationMs = Date.now() - started;
       entry.load.after = os.loadavg();

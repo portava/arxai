@@ -49,16 +49,20 @@ What it records, in `results.json`:
 
 - every click sample in click order for every run (not only the p95), with the selected
   row state at the measured frame; per-run p50/p95/p99/max (nearest rank, as the
-  scenarios compute p95) and the scenario's own p95;
+  scenarios compute p95) and the scenario's own p95. An iteration that fails keeps the
+  runs it completed, and the clicks of a run cut short, under `partialRuns`; they are
+  named next to the error in the summary but not counted in the tables;
 - breaches of the unchanged 100 ms p95 target, per run;
 - errors: any other scenario rule that failed (missing selection highlight, blanked
   rows, page errors), timeouts, and servers that failed to start or exited;
-- for the integrated page, long tasks, request counts and the endpoints the fixture did
-  not model (answered 503);
+- for the integrated page, long tasks, request counts, whether each run's reads settled,
+  the endpoints the fixture did not model (answered 503), the ones it modelled only
+  partly, and every request it refused (mutations, WebSockets, other origins);
 - 1-minute load average before and after each run, CPU count and model, Node,
   Playwright and Chromium versions, each checkout's commit, branch and dirty flag, the
   scenario hashes, and each production build's build info (id, git state, label);
-- warm-up runs, flagged `"warmup": true` and excluded from the summary.
+- warm-up runs, flagged `"warmup": true`. They are excluded from the tables and the
+  verdict, but the summary lists each one's p95 values and flags any breach or error.
 
 `summary.md` reports **production and development separately**, and the isolated fixture
 separately from the integrated page. It lists every breach, every error and every
@@ -67,8 +71,16 @@ outlier. An outlier is a value further than 3 × 1.4826 × MAD from the median o
 for single clicks and for per-run p95 values. Iterations that started with a load
 average above half the CPU count are counted in a load warning.
 
-The runner exits 1 if any run breaches the target, any iteration fails or any server
-fails (0 with `--report-only`), and 2 on bad arguments. It refuses to run if a scenario's
+For production builds the summary also shows each bundle's build id, build time, the
+commit, dirty flag and source it was built from. The runner refuses to measure a bundle
+whose build info does not match the checkout as it is when the server starts (another
+commit, dirty state, uncommitted changes or source path, or a tree that changed during
+the build), as can happen with `--no-build`; `prod-server.mjs` itself refuses to serve or
+`--check` a bundle built from another `--source`.
+
+The runner exits 1 if any run breaches the target, any iteration fails, any server
+fails or any bundle does not match its checkout (0 with `--report-only`), and 2 on bad
+arguments. If the runner itself crashes, it still stops the server it started. It refuses to run if a scenario's
 final p95 rule no longer matches the text it expects: that rule is the only part of a
 scenario it changes (from a throw into a recorded breach, so a breaching run keeps its
 samples).
@@ -99,5 +111,12 @@ Limits. The second animation frame is a render-opportunity proxy, not a hardware
 presentation timestamp. CPU throttling is not a physical device. The fixture measures
 the Opportunity Map component alone; the integrated page includes the rest of the
 scanner page (chart panel, header, other cards) with invented data, but not network,
-provider or server latency. Timings depend on the host and its load: compare runs taken
+provider or server latency. The integrated-page fixture models the reads that row
+selection starts (selected market, candles, opportunity map, market truth, timing brain,
+smart layers, annotations, trade health; chart intelligence only as the minimal shape
+the page reads) with populated, direction-free data, but not every endpoint the page
+calls: the rest answer 503, so the cards behind them show error or empty states, and
+mutations (for example the chart's AI-alert scan) and WebSockets are refused. The
+summary lists those endpoints and counts for every integrated-page group; the page
+measured is therefore not the full page with every read populated. Timings depend on the host and its load: compare runs taken
 on the same machine at the same time, alternating heads with `--compare`.

@@ -6,6 +6,7 @@ async page => {
   // /api call is answered here with invented, deterministic JSON (43 approved-registry
   // symbols; a 450 ms delay when the map is asked for a selected symbol, as in the
   // fixture); non-GET calls, other origins and WebSockets are refused. No broker or API.
+  // Endpoints not modelled here answer 503 and are reported (unknownEndpoints).
   const base = (typeof SCANNER_QA_APP_BASE_URL === 'string' ? SCANNER_QA_APP_BASE_URL : 'http://127.0.0.1:4187').replace(/\/$/, '');
   const origin = new URL(base).origin;
   const errors = [], requests = [], unknown = [], blocked = [];
@@ -58,6 +59,38 @@ async page => {
     return { symbol, displaySymbol: symbol, timeframe, assetClass: 'forex', source: 'offline_fixture', quality: 'invalid', aiUsable: false, requestedLimit: limit, candleCount: bars.length, candles: bars,
       feedStatus, truthResult: null, chartTruthScore: null };
   };
+  // Reads the selected row starts (market truth, timing brain, chart overlays, annotations,
+  // trade health), answered with populated, invented, direction-free data so the click path
+  // renders content rather than error states. Same safety flags the API sends: paper only,
+  // read only, no order execution.
+  const safety = { safetyMode: 'paper_only', liveLocked: true, readOnlyMode: true, allowOrderExecution: false };
+  const truth = (symbol, timeframe) => {
+    const component = label => ({ present: true, alignment: 'NEUTRAL', label, asOf: '2026-01-02T12:00:00.000Z' });
+    return { symbol, displaySymbol: symbol, timeframe, generatedAt: '2026-01-02T12:00:01.000Z',
+      data: { state: 'STALE', source: 'offline_fixture', sourceLabel: 'Offline fixture — no live feed', price: 1, lastCandleAt: '2026-01-02T12:00:00.000Z', lastTickAt: null },
+      news: { providerConnected: false, events: [], riskLabel: 'News unavailable in offline fixture', highImpactWindowActive: false, disclaimer: 'OFFLINE QA ONLY' },
+      components: { scanner: component('Offline scanner fixture'), flame: component('Offline flame fixture'), timing: component('Offline timing fixture'), scalp: component('Offline scalp fixture') },
+      levels: { entryFrom: null, entryTo: null, stopLoss: null, invalidation: null, takeProfit: [], withheld: true, withheldReason: 'Offline fixture' },
+      verdict: { stage: 'DEVELOPING', bias: 'NEUTRAL', headline: 'Offline fixture: no market read', evidenceFor: ['Offline fixture evidence A'], evidenceAgainst: ['Offline fixture evidence B'],
+        bestAction: 'WATCH_ONLY', bestActionText: 'Watch only (offline fixture)', invalidation: null } };
+  };
+  const timing = (symbol, timeframe) => ({ symbol, timeframe, generatedAt: '2026-01-02T12:00:01.000Z', heatScore: 48, tradeabilityScore: 52, edgeScore: 50, dangerScore: 35,
+    trapProbability: 30, roomToMove: 55, buyPressure: 50, sellPressure: 50, pressureBias: 'NEUTRAL', timingGrade: 'C', entryPermission: 'WAIT_FOR_ENTRY', heatState: 'NEUTRAL', moveStage: 'DEVELOPING',
+    heatSource: { primary: 'offline_fixture', primaryConfidence: 0.5, backup: null, backupConfidence: null, explanation: 'Offline fixture heat; not a market read.' },
+    session: { sessionName: 'London', killZone: 'none', isKillZoneActive: false, utcHour: 12, sessionHeatBonus: 0, fakeoutRisk: 30, tradeabilityBonus: 0, bestSymbols: ['EURUSD', 'GBPUSD'], dangerSymbols: [],
+      sessionDescription: 'Offline fixture session.', userLocalTime: null },
+    newsOverlay: { phase: 'NONE', eventName: null, minutesUntil: null, minutesSince: null, eventType: 'none', surpriseScore: null, heatAdjustment: 0, blocksTrade: false },
+    broadFlow: { verdict: 'UNAVAILABLE', institutionalFlowScore: 0, competingCatalyst: false, description: 'Offline fixture: no flow data.', correlatedAssets: [], dataQuality: 'unavailable' },
+    bestAction: 'WATCH_ONLY', actionReason: 'Offline fixture: advisory display only.',
+    dataQuality: { label: 'basic_timing_estimate', hasCandleData: true, hasQuoteData: false, hasNewsData: false, hasBroadFlowData: false, note: 'Offline fixture.' } });
+  const smartLayers = (symbol, timeframe) => ({ symbol, timeframe, signal: null, layers: [],
+    newsRadar: { symbol, provider: { connected: false, name: 'offline_fixture', note: 'No calendar provider in offline QA' }, events: [], topSeverity: null, highImpactWindowActive: false, summary: 'No news provider (offline fixture)' },
+    newsBehavior: { mode: 'NO_PROVIDER', note: 'Offline fixture' },
+    handshake: { overallStatus: 'WARN', checks: [{ key: 'signalExists', status: 'NOT_AVAILABLE', detail: 'Offline fixture' }], userFacingMessage: 'Offline fixture overlays', warnings: [] },
+    handshakeInputs: { signalSymbol: symbol, signalExists: false, hasSufficientData: false, levelCount: 0, newsMapped: false }, ...safety });
+  // Minimal shape: the scanner page reads only state.trendlineOverlay from this endpoint.
+  const chartIntelligence = (symbol, timeframe) => ({ state: { symbol, displaySymbol: symbol, timeframe, aiUsable: false, stale: true, trendlineOverlay: null, lastUpdated: '2026-01-02T12:00:01.000Z' }, ...safety });
+  const partialModels = ['/api/me/chart/intelligence (minimal state: only trendlineOverlay, which the scanner page reads)'];
   await page.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.origin !== origin) { blocked.push({ kind: 'external', url: request.url() }); return route.abort('blockedbyclient'); }
@@ -86,6 +119,13 @@ async page => {
     else if (p === '/api/watchlists') payload = [];
     else if (p === '/api/me/live/positions') payload = { positions: [] };
     else if (p === '/api/me/live/commands') payload = { commands: [] };
+    else if (p.startsWith('/api/me/market/truth/')) payload = truth(decodeURIComponent(p.slice('/api/me/market/truth/'.length)), url.searchParams.get('timeframe') ?? 'M15');
+    else if (p.startsWith('/api/me/timing-brain/')) payload = timing(decodeURIComponent(p.slice('/api/me/timing-brain/'.length)), url.searchParams.get('timeframe') ?? 'M15');
+    else if (p === '/api/me/chart/smart-layers') payload = smartLayers(url.searchParams.get('symbol') ?? 'EURUSD', url.searchParams.get('timeframe') ?? 'M15');
+    else if (p === '/api/me/chart/intelligence') payload = chartIntelligence(url.searchParams.get('symbol') ?? 'EURUSD', url.searchParams.get('timeframe') ?? 'M15');
+    else if (p === '/api/me/chart/annotations') payload = { annotations: [], ...safety };
+    else if (p === '/api/me/trade-health') payload = { evaluatedAt: '2026-01-02T12:00:01.000Z', chartSymbol: url.searchParams.get('chartSymbol'), assessments: [], conflicts: [], correlations: [], overtrading: [], overlays: [],
+      summary: 'No open positions (offline fixture)', ...safety };
     else { unknown.push(p); item.status = 503; payload = { ok: false, error: 'OFFLINE_FIXTURE_UNAVAILABLE', message: 'Unavailable in offline QA' }; }
     await new Promise(resolve => setTimeout(resolve, delay));
     try { await route.fulfill({ status: item.status, contentType: 'application/json', body: JSON.stringify(payload) }); }
@@ -164,5 +204,5 @@ async page => {
   if (errors.length) throw Error(errors.join('\n'));
   return { surface: 'Integrated dashboard /market-scanner, Broad Scan tab, real Opportunity Map rows / invented data / 450ms delayed selected-symbol map read',
     method: 'Trusted click capture to second requestAnimationFrame after DOM commit; a render opportunity proxy, not a hardware presentation timestamp',
-    base, runs, errors, unknownEndpoints: [...new Set(unknown)].sort(), blocked };
+    base, runs, errors, unknownEndpoints: [...new Set(unknown)].sort(), partialModels, blocked };
 }

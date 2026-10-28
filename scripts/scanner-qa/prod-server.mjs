@@ -21,12 +21,13 @@
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { existsSync, linkSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
 import path from "node:path";
+import { gitState } from "./git-state.mjs";
 // A launcher that sets NODE_ENV=test (or development) would otherwise make Vite resolve
 // React and lightweight-charts development builds and define process.env.NODE_ENV to match.
 process.env.NODE_ENV = "production";
@@ -208,36 +209,16 @@ const readBuildInfo = async () => {
   catch (error) { fail(`no readable ${BUILD_INFO} in ${outDir} (${error.code ?? error.message}); rebuild without --no-build`); }
   if (info?.writer !== WRITER || typeof info.buildId !== "string" || typeof info.label !== "string") fail(`${BUILD_INFO} in ${outDir} was not written by ${WRITER}`);
   if (info.target !== target) fail(`${outDir} holds a --target=${info.target} bundle, not --target=${target}`);
+  // A bundle built from another checkout must not be served or checked as this one's.
+  const real = p => { try { return realpathSync(p); } catch { return null; } };
+  if (typeof info.source !== "string" || real(info.source) !== real(source))
+    fail(`${outDir} holds a bundle built from ${info.source ?? "an unrecorded source"}, not --source=${source}; rebuild without --no-build`);
   return info;
 };
 const label = isMinified => `${target === "app" ? "Dashboard" : "Scanner fixture"} Vite production build (${isMinified ? "minified" : "unminified"}) / React production build`;
 
 // ---- Git state ---------------------------------------------------------------------------
-// HEAD, a dirty flag and dirtyHash (SHA-256 of the tracked diff plus every untracked,
-// non-ignored file). If any git call fails (no git, "dubious ownership" for another user),
-// dirty is "unknown" and dirtyHash null rather than a clean-looking false.
-const gitState = async () => {
-  const errors = [];
-  const git = (...a) => {
-    try { return execFileSync("git", a, { cwd: source, maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }); }
-    catch (error) { errors.push(`git ${a[0]}: ${(error.stderr?.toString() || error.message).trim().split("\n")[0]}`); return null; }
-  };
-  const head = git("rev-parse", "HEAD")?.toString().trim() || null;
-  const status = git("status", "--porcelain=v1", "-z", "--untracked-files=all")?.toString();
-  let dirtyHash = null;
-  if (status) {
-    const diff = git("diff", "HEAD", "--binary");
-    const others = git("ls-files", "-z", "--others", "--exclude-standard")?.toString();
-    if (diff != null && others != null) {
-      const hash = createHash("sha256").update(diff);
-      for (const file of others.split("\0").filter(Boolean).sort())
-        hash.update(`\0${file}\0`).update(await readFile(path.join(source, file)).catch(error => `\0unreadable:${error.code}\0`));
-      dirtyHash = hash.digest("hex");
-    }
-  }
-  if (errors.length) return { head, dirty: "unknown", dirtyHash: null, error: errors.join("; ") };
-  return { head, dirty: Boolean(status), dirtyHash };
-};
+// gitState (git-state.mjs) records HEAD, dirty and dirtyHash of the built checkout.
 const describeGit = git => `git ${git?.head ?? "unknown"}${git?.dirty === true ? " dirty" : git?.dirty === "unknown" ? " dirty-state unknown" : ""}${git?.treeChangedDuringBuild === true ? ", tree changed during build" : git?.treeChangedDuringBuild === "unknown" ? ", tree change during build unknown" : ""}`;
 
 // ---- Port --------------------------------------------------------------------------------
@@ -313,7 +294,7 @@ if (build) {
   // The tree is recorded before the build, which bundles what is on disk then, and again
   // after it, so a build that raced an edit in this shared checkout says so.
   const buildStartedAt = new Date().toISOString();
-  const gitBefore = await gitState();
+  const gitBefore = await gitState(source);
   try {
     const buildOptions = { outDir, emptyOutDir: false, sourcemap: !minified, minify: minified ? "esbuild" : false,
       reportCompressedSize: false, chunkSizeWarningLimit: 100000 };
@@ -347,7 +328,7 @@ if (build) {
   } catch (error) { fail(`vite build failed: ${error.stack ?? error}`); }
   const problems = await scanBundle(outDir);
   if (problems.length) fail(`development code in, or production code missing from, the bundle at ${outDir}: ${problems.join("; ")}`);
-  const gitAfter = await gitState();
+  const gitAfter = await gitState(source);
   const treeChangedDuringBuild = gitBefore.dirty === "unknown" || gitAfter.dirty === "unknown" ? "unknown"
     : gitBefore.head !== gitAfter.head || gitBefore.dirty !== gitAfter.dirty || gitBefore.dirtyHash !== gitAfter.dirtyHash;
   info = { writer: WRITER, target, source, buildId: randomBytes(8).toString("hex"), buildStartedAt, builtAt: new Date().toISOString(),
