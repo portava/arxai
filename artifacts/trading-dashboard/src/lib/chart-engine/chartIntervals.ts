@@ -25,8 +25,27 @@ export function chartIntervalSeconds(value: unknown): number | null {
 /** Preserve recognized unavailable requests so saved workspaces explain their
  * limitation instead of silently displaying a different interval. */
 export function restoreChartInterval(value: unknown, fallback: ChartRequestedInterval = "M15"): ChartRequestedInterval {
-  return isChartInterval(value) || value === "W1" || value === "MN1" ? value : fallback;
+  return parseChartInterval(value) ?? fallback;
 }
 export function chartIntervalLimitation(value: unknown): string | null {
   return value === "W1" ? WEEKLY_CHART_LIMITATION : value === "MN1" ? MONTHLY_CHART_LIMITATION : null;
+}
+
+/** Accept recognized native/API codes and Scanner display IDs without the
+ * query helper's unknown-to-M5 fallback. Preserve 1M (month) versus 1m (minute). */
+export function parseChartInterval(value: unknown): ChartRequestedInterval | null {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (raw === "1M") return "MN1";
+  const code = raw.toUpperCase();
+  if (isChartInterval(code) || code === "W1" || code === "MN1") return code;
+  const match = /^(\d+)(mo|m|h|d|w)$/i.exec(raw);
+  if (!match) return null;
+  const candidate = match[2]!.toLowerCase() === "mo" ? `MN${match[1]}` : `${match[2]!.toUpperCase()}${match[1]}`;
+  return isChartInterval(candidate) || candidate === "W1" || candidate === "MN1" ? candidate : null;
+}
+
+/** Scanner storage/events use display IDs; native/API context stays uppercase. */
+export function chartIntervalDisplayId(timeframe: ChartRequestedInterval): string {
+  return timeframe === "MN1" ? "1mo" : `${timeframe.slice(1)}${timeframe[0]!.toLowerCase()}`;
 }

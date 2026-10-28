@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHART_INTERVALS, CHART_QUICK_INTERVALS, chartIntervalSeconds, isChartInterval, restoreChartInterval } from "./chartIntervals";
+import { CHART_INTERVALS, CHART_QUICK_INTERVALS, chartIntervalSeconds, isChartInterval, restoreChartInterval, parseChartInterval, chartIntervalDisplayId } from "./chartIntervals";
 import { validateChartLayout } from "./chartLayout";
 import { candleAtLinkedTime } from "./chartViewLink";
 import { smartChartIntervalSeconds } from "./smartChartAnalysis";
@@ -36,5 +36,33 @@ describe("unavailable saved chart contexts", () => {
   it("falls back only for unrecognized saved values", () => {
     expect(restoreChartInterval("bogus")).toBe("M15");
     expect(restoreChartInterval("bogus", "H4")).toBe("H4");
+  });
+});
+
+describe("Scanner/native interval vocabulary", () => {
+  it("uses the existing Scanner display IDs for all nineteen supported API intervals", () => {
+    expect(CHART_INTERVALS.map(chartIntervalDisplayId)).toEqual([
+      "1m","2m","3m","4m","5m","6m","10m","12m","15m","20m","30m",
+      "1h","2h","3h","4h","6h","8h","12h","1d",
+    ]);
+  });
+  it.each(expected)("round-trips %s without relying on an unknown-to-M5 query fallback", code => {
+    expect(parseChartInterval(code)).toBe(code);
+    expect(parseChartInterval(code.toLowerCase())).toBe(code);
+    expect(parseChartInterval(chartIntervalDisplayId(code))).toBe(code);
+    expect(restoreChartInterval(chartIntervalDisplayId(code))).toBe(code);
+  });
+  it.each([["W1","1w"],["MN1","1mo"]] as const)("retains recognized unavailable %s", (code, display) => {
+    expect(parseChartInterval(display)).toBe(code);
+    expect(restoreChartInterval(display)).toBe(code);
+    expect(chartIntervalDisplayId(code)).toBe(display);
+  });
+  it("keeps month and minute aliases distinct", () => {
+    expect(parseChartInterval("1M")).toBe("MN1");
+    expect(parseChartInterval("1m")).toBe("M1");
+    expect(parseChartInterval("M1")).toBe("M1");
+  });
+  it.each(["M60", "H24", "bogus", "", 12, null, {}, "01m"])("does not parse %s as a supported interval", value => {
+    expect(parseChartInterval(value)).toBeNull();
   });
 });

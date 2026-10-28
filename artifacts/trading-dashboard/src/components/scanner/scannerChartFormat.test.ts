@@ -3,6 +3,7 @@ import {
   PRIMARY_TIMEFRAMES,
   FALLBACK_TIMEFRAME,
   coerceVisibleTimeframe,
+  scannerTimeframeLimitation,
   formatCandleCountdown,
   NEWS_MARKER_LOOKAHEAD_BARS,
   isFeedConfirmedForEventMarkers,
@@ -10,6 +11,7 @@ import {
   resolveEventMarkerSec,
   snapSecToCandle,
 } from "@/components/scanner/scannerChartFormat";
+import { CHART_INTERVALS, chartIntervalDisplayId } from "@/lib/chart-engine/chartIntervals";
 import type { ChartDisplayStatus } from "@/lib/chart-display-status";
 
 // ── Scanner chart header display helpers (Task #524) ────────────────────────
@@ -42,11 +44,24 @@ describe("coerceVisibleTimeframe", () => {
     }
   });
 
-  it("falls back to 15m for a previously-selectable exotic timeframe", () => {
-    // Values that used to be reachable via the removed "More" dropdown / month.
-    for (const exotic of ["1mo", "6h", "12h", "2m", "1M", ""]) {
-      expect(coerceVisibleTimeframe(exotic)).toBe(FALLBACK_TIMEFRAME);
-    }
+  it.each(CHART_INTERVALS)("preserves supported %s in native and display form", timeframe => {
+    const display = chartIntervalDisplayId(timeframe);
+    expect(coerceVisibleTimeframe(timeframe)).toBe(display);
+    expect(coerceVisibleTimeframe(display)).toBe(display);
+    expect(scannerTimeframeLimitation(display)).toBeNull();
+  });
+  it.each([["W1","1w","week"],["MN1","1mo","calendar-month"],["1M","1mo","calendar-month"]])("keeps unavailable %s with an explicit reason", (code, display, reason) => {
+    expect(coerceVisibleTimeframe(code)).toBe(display);
+    expect(coerceVisibleTimeframe(display!)).toBe(display);
+    expect(scannerTimeframeLimitation(code!)).toContain(reason);
+  });
+  it("distinguishes a month from a minute without a silent supported fallback", () => {
+    expect(coerceVisibleTimeframe("1M")).toBe("1mo");
+    expect(coerceVisibleTimeframe("1m")).toBe("1m");
+    expect(coerceVisibleTimeframe("M1")).toBe("1m");
+  });
+  it.each(["", "bogus", "M60", "H24", "2w", "01m"])("falls back only for unrecognized %s", raw => {
+    expect(coerceVisibleTimeframe(raw)).toBe(FALLBACK_TIMEFRAME);
     expect(FALLBACK_TIMEFRAME).toBe("15m");
   });
 });

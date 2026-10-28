@@ -77,6 +77,10 @@ export function normalizeChartTimeframe(tf: string | null | undefined): string {
 }
 
 export interface ChartCandlesResult {
+  /** Exact transport response, before the legacy display adapter drops fields.
+   * This is unverified input: consumers must validate original source identity,
+   * close bounds and finality. Never reconstruct that evidence from Candle[]. */
+  originalResponse?: unknown;
   candles: Candle[];
   feedStatus: ChartFeedStatus | null;
   marketEvidence?: {
@@ -115,7 +119,7 @@ export async function fetchChartCandles(
     ? { symbol, timeframe: apiTf, source: evidence.source, sourceIdentity: evidence.sourceIdentity,
         lastClosedCandleAt: typeof evidence.lastClosedCandleAt === "string" ? evidence.lastClosedCandleAt : null }
     : null;
-  return { candles, feedStatus, ...(marketEvidence ? { marketEvidence } : {}) };
+  return { candles, feedStatus, originalResponse: data, ...(marketEvidence ? { marketEvidence } : {}) };
 }
 
 // ── Deep history (Task #438) ────────────────────────────────────────────────
