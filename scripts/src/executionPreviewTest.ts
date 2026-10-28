@@ -307,6 +307,69 @@ function baseInput(overrides: Partial<ExecutionPreviewInput> = {}): ExecutionPre
   }
 }
 
+// ── Broker-reported contract size / tick value price the money ───────────────
+// The EA reports contractSize / tickValue / tickSize (arx_symbol_specs). The
+// preview used to drop them and withhold every gold figure with "your broker
+// has not reported a contract size" — a false reason hiding a value ARX has.
+{
+  const reportedAt = "2026-10-28T10:00:00.000Z";
+  const gold = (contract: ExecutionPreviewInput["contract"], extra: Partial<ExecutionPreviewInput> = {}) =>
+    estimateExecutionPreview(baseInput({
+      symbol: "XAUUSD",
+      lots: 1,
+      spec: { ...fxSpec, point: 0.01 },
+      hasBrokerTruth: true,
+      contract,
+      quote: { bid: 2380.0, ask: 2380.3, quoteAgeMs: 500 },
+      atrPrice: 3,
+      entry: null,
+      stopLoss: 2370.3,
+      takeProfit: 2400.3,
+      ...extra,
+    }));
+
+  // Broker contract size (100 oz) — the sync-symbol-specs path reports no
+  // profit currency, so it is read from the symbol name (XAU/USD → USD).
+  const bySize = gold({ contractSize: 100, tickSize: null, tickValue: 1, profitCurrency: null, reportedAt });
+  check("XAUUSD with broker contract size 100: $1 per point per lot", approx(bySize.moneyPerPoint ?? -1, 1));
+  check("XAUUSD with broker contract size: 30-point spread costs $30", approx(bySize.spreadCost.money ?? -1, 30));
+  check("XAUUSD with broker contract size: risk to the stop is priced",
+    bySize.accountImpact.riskMoney != null && bySize.accountImpact.riskMoney > 1000);
+  check("XAUUSD with broker contract size: no false 'has not reported a contract size' note",
+    !bySize.dataQuality.notes.some((n) => /has not reported a contract size/i.test(n)));
+  check("XAUUSD with broker contract size: the note names the broker's contract size and report time",
+    bySize.dataQuality.notes.some((n) => /contract size your broker reported/i.test(n) && /100/.test(n) && /2026-10-28 10:00 UTC/.test(n)));
+  check("XAUUSD with broker contract size: no claim the money is ARX's model",
+    !bySize.dataQuality.notes.some((n) => /standard contract model/i.test(n)));
+
+  // Broker tick value / tick size on a USD account (deposit-currency money).
+  const byTick = gold({ contractSize: null, tickSize: 0.01, tickValue: 1, profitCurrency: null, reportedAt }, { accountCurrency: "USD" });
+  check("XAUUSD with broker tick value on a USD account: $1 per point per lot", approx(byTick.moneyPerPoint ?? -1, 1));
+  check("XAUUSD with broker tick value: the note names the broker's tick value",
+    byTick.dataQuality.notes.some((n) => /tick value your broker reported/i.test(n)));
+
+  // A tick value in a non-USD deposit currency is not shown as dollars.
+  const eurTick = gold({ contractSize: null, tickSize: 0.01, tickValue: 1, profitCurrency: null, reportedAt }, { accountCurrency: "EUR" });
+  check("tick value in EUR is not shown as dollars", eurTick.moneyPerPoint == null);
+  check("tick value in EUR: the note says why, without claiming nothing was reported",
+    eurTick.dataQuality.notes.some((n) => /EUR/.test(n)) &&
+    !eurTick.dataQuality.notes.some((n) => /has not reported/i.test(n)));
+
+  // A broker suffix without a separator (EURUSDm) is not called a metal.
+  const suffixed = estimateExecutionPreview(baseInput({ symbol: "EURUSDm" }));
+  check("EURUSDm without a broker contract: money withheld", suffixed.moneyPerPoint == null);
+  check("EURUSDm: the note does not call it a metal, crypto or index",
+    !suffixed.dataQuality.notes.some((n) => /metals, crypto and indices/i.test(n)));
+  check("EURUSDm: the note says ARX does not recognise the symbol and nothing was reported",
+    suffixed.dataQuality.notes.some((n) => /EURUSDm/.test(n) && /contract size/i.test(n)));
+  const suffixedReported = estimateExecutionPreview(baseInput({
+    symbol: "EURUSDm", lots: 1,
+    contract: { contractSize: 100_000, tickSize: null, tickValue: null, profitCurrency: null, reportedAt },
+  }));
+  check("EURUSDm with broker contract size 100,000: $1 per point per lot",
+    approx(suffixedReported.moneyPerPoint ?? -1, 1));
+}
+
 if (failures > 0) {
   console.error(`\nexecutionPreviewTest: ${failures} FAILED`);
   process.exit(1);

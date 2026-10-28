@@ -48,8 +48,9 @@ export async function buildExecutionPreviewForUser(
   const { symbol, side, orderType, entry, stopLoss, takeProfit, lots, maxSpreadPoints } =
     params;
 
-  // Broker truth (per-user) — point/volume bounds/trade mode. All-null when the
-  // EA has not reported this symbol yet; the estimator degrades honestly.
+  // Broker truth (per-user) — point/volume bounds/trade mode, plus the
+  // contract size / tick value the money is priced from. All-null when the EA
+  // has not reported this symbol yet; the estimator degrades honestly.
   const brokerSpec = await getBrokerSymbolSpec(userId, symbol);
 
   // Live quote (best-effort) → bid/ask/age for spread + fill range.
@@ -103,10 +104,15 @@ export async function buildExecutionPreviewForUser(
   } catch { /* null balance — account impact degrades honestly */ }
 
   let leverage: number | null = null;
+  // The MT5 account's deposit currency: broker tick values are quoted in it.
+  let accountCurrency: string | null = null;
   try {
-    const lev = (await getUserPrimaryConnection(userId))?.leverage;
+    const conn = await getUserPrimaryConnection(userId);
+    const lev = conn?.leverage;
     if (lev != null && lev > 0) leverage = lev;
-  } catch { /* null leverage — margin omitted honestly */ }
+    const ccy = conn?.accountCurrency;
+    if (typeof ccy === "string" && ccy.trim()) accountCurrency = ccy.trim().toUpperCase();
+  } catch { /* null leverage / currency — margin and tick-value money omitted honestly */ }
 
   // Existing open exposure on this symbol for this user (multi-entry awareness).
   let openExposure: Parameters<typeof estimateExecutionPreview>[0]["openExposure"] = null;
@@ -141,6 +147,8 @@ export async function buildExecutionPreviewForUser(
     lots,
     spec: brokerSpec.spec,
     hasBrokerTruth: brokerSpec.hasBrokerTruth,
+    contract: brokerSpec.contract,
+    accountCurrency,
     quote: { bid, ask, quoteAgeMs },
     atrPrice,
     slippageHistory: null, // no realised-slippage history store yet — honest fallback
