@@ -15876,6 +15876,12 @@ components:
           type: array
           items: { $ref: "#/components/schemas/SmartChartLayer" }
         summary: { type: string }
+        positionsMeasured:
+          type: boolean
+          description: False when the open positions for this account mode could not be read. An empty assessments list is then not a measured "no open positions".
+        positionsNote:
+          type: ["string", "null"]
+          description: Plain statement of why positions were not read; null when they were.
         safetyMode: { type: string, enum: [paper_only] }
         liveLocked: { type: boolean }
         readOnlyMode: { type: boolean }

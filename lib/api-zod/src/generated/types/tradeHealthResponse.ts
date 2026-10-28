@@ -21,6 +21,13 @@ export interface TradeHealthResponse {
   overtrading: TradeHealthOvertrading[];
   overlays: SmartChartLayer[];
   summary: string;
+  /** False when the open positions for this account mode could not be read. An empty assessments list is then not a measured "no open positions". */
+  positionsMeasured?: boolean;
+  /**
+   * Plain statement of why positions were not read; null when they were.
+   * @nullable
+   */
+  positionsNote?: string | null;
   safetyMode: TradeHealthResponseSafetyMode;
   liveLocked: boolean;
   readOnlyMode: boolean;

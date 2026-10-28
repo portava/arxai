@@ -8527,6 +8527,18 @@ export const GetMeTradeHealthResponse = zod.object({
     }),
   ),
   summary: zod.string(),
+  positionsMeasured: zod
+    .boolean()
+    .optional()
+    .describe(
+      'False when the open positions for this account mode could not be read. An empty assessments list is then not a measured \"no open positions\".',
+    ),
+  positionsNote: zod
+    .string()
+    .nullish()
+    .describe(
+      "Plain statement of why positions were not read; null when they were.",
+    ),
   safetyMode: zod.enum(["paper_only"]),
   liveLocked: zod.boolean(),
   readOnlyMode: zod.boolean(),
